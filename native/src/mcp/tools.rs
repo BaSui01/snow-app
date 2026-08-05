@@ -151,19 +151,49 @@ pub async fn list_mcp_project_servers(
             "Project id is required to list project MCP servers".to_string(),
         )
     })?;
+
+    // Image generation tool is only globally available when at least one
+    // channel (OpenAI / Gemini) is configured and enabled in Settings ->
+    // Image generation. When both are unconfigured the server is globally
+    // disabled so the front-end toggle reflects the real state (instead of
+    // appearing enabled while the tool is silently excluded from context).
+    let imagegen_configured = tokio::task::spawn_blocking(|| {
+        crate::mcp::servers::imagegen::is_imagegen_configured()
+    })
+    .await
+    .map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to check image generation configuration: {error}"),
+        )
+    })??;
+
     let mut servers = get_builtin_servers_with_tools()
         .into_iter()
         .map(|(server_id, tools)| {
             let scope_server_id = builtin_scope_server_id(&server_id);
             let enabled = scope.is_server_enabled(&scope_server_id);
+            // Reflect imagegen configuration state in global_enabled / error
+            // so the front-end toggle stays in sync with collect_all_mcp_tools.
+            // The error field uses a stable code (not a localized string) that
+            // the front-end maps to the user's language.
+            let (global_enabled, error) =
+                if server_id == "imagegen" && !imagegen_configured {
+                    (
+                        false,
+                        Some("imagegen:not_configured".to_string()),
+                    )
+                } else {
+                    (true, None)
+                };
             McpProjectServerStatus {
                 id: scope_server_id,
                 name: builtin_server_name(&server_id).to_string(),
                 source: "system".to_string(),
-                global_enabled: true,
+                global_enabled,
                 enabled,
                 tools: to_project_tool_statuses(&tools, &scope),
-                error: None,
+                error,
             }
         })
         .collect::<Vec<_>>();

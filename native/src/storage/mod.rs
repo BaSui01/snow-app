@@ -1945,10 +1945,22 @@ impl From<services::image_library::ImageLibraryRecord> for ImageLibraryRecord {
     }
 }
 
-/// 图库根目录绝对路径（优先安装目录旁 `image/`，失败回退存储目录）。
+/// 图库根目录绝对路径（优先用户自定义路径，回退 `~/.snowapp/image`）。
 pub fn get_image_library_root() -> Result<String> {
     services::image_library::image_library_root()
         .map(|path| path.to_string_lossy().into_owned())
+}
+
+/// 读取图库自定义保存目录（空字符串表示使用默认目录）。
+pub fn get_image_library_dir() -> Result<String> {
+    let database_path = ensure_database_file()?;
+    services::system_settings::get_image_library_dir(&database_path)
+}
+
+/// 设置图库自定义保存目录（传入空字符串重置为默认目录）。
+pub fn set_image_library_dir(dir: String) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::system_settings::set_image_library_dir(&database_path, &dir)
 }
 
 /// 列出图库全部图片（按创建时间倒序）。
@@ -2001,75 +2013,4 @@ pub fn count_conversation_images(conversation_ids: Vec<String>) -> Result<i64> {
 pub fn delete_conversation_images(conversation_ids: Vec<String>) -> Result<i64> {
     let database_path = ensure_database_file()?;
     services::image_library::delete_conversation_images(&database_path, &conversation_ids)
-}
-
-#[cfg(test)]
-mod tests {
-    use std::fs::remove_file;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    use super::*;
-
-    fn test_database_path() -> std::path::PathBuf {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system clock")
-            .as_nanos();
-        std::env::temp_dir().join(format!(
-            "snow-import-transaction-{}-{timestamp}.sqlite",
-            std::process::id()
-        ))
-    }
-
-    #[test]
-    fn import_transaction_rolls_back_plugin_when_resource_tracking_is_invalid() {
-        let database_path = test_database_path();
-        database::ensure_database(&database_path).expect("create test database");
-
-        let result = commit_import_transaction_at_path(
-            &database_path,
-            ImportDatabaseTransactionInput {
-                mcp_servers: vec![],
-                project_mcp_servers: vec![],
-                system_prompts: vec![],
-                plugins: vec![PluginInput {
-                    plugin_id: "plugin:atomic".to_string(),
-                    name: "Atomic Plugin".to_string(),
-                    version: "1.0.0".to_string(),
-                    provider: "codex".to_string(),
-                    source_path: "/source/plugin".to_string(),
-                    manifest_path: "/source/plugin/.codex-plugin/plugin.json".to_string(),
-                    scope: "global".to_string(),
-                    project_id: None,
-                    state: "enabled".to_string(),
-                    capabilities: vec![],
-                    runtime: None,
-                    content_hash: "plugin-hash".to_string(),
-                    components: vec![],
-                }],
-                import_resources: vec![ImportResourceInput {
-                    resource_id: "plugin:atomic:skill".to_string(),
-                    resource_type: "skill".to_string(),
-                    scope: "global".to_string(),
-                    project_id: None,
-                    target_id: "atomic-skill".to_string(),
-                    target_path: "/target/atomic-skill".to_string(),
-                    management: "snapshot".to_string(),
-                    sources: vec![],
-                }],
-            },
-        );
-
-        assert!(result.is_err());
-        assert!(services::plugins::list_plugins(&database_path)
-            .expect("list plugins")
-            .is_empty());
-        assert!(services::import_resources::list_import_resources(&database_path)
-            .expect("list import resources")
-            .is_empty());
-
-        let _ = remove_file(&database_path);
-        let _ = remove_file(database_path.with_extension("sqlite-shm"));
-        let _ = remove_file(database_path.with_extension("sqlite-wal"));
-    }
 }

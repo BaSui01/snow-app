@@ -24,7 +24,8 @@ type ChatItemProps = {
   onPin: () => void;
   onRename: (newTitle: string) => Promise<void>;
   onSetEmoji: (emoji: string) => Promise<void>;
-  onDelete: () => void;
+  /** 确认删除；deleteImages=true 表示同时级联删除图库图片 */
+  onDelete: (deleteImages: boolean) => void;
   onExport: (format: ExportFormat) => void;
   onEnterMultiSelect?: () => void;
   onToggleSelect?: () => void;
@@ -295,6 +296,7 @@ export function ChatItem({
           onKeyDown={(event) => event.stopPropagation()}
         >
           <ChatItemMenu
+            conversationId={conversation.conversationId}
             isPinned={isPinned}
             emoji={conversation.emoji}
             onPin={onPin}

@@ -15,10 +15,26 @@ fn map_spawn_error(error: tokio::task::JoinError) -> Error {
     )
 }
 
-/// 图库根目录绝对路径（优先安装目录旁 `image/`，失败回退存储目录）。
+/// 图库根目录绝对路径（`~/.snowapp/image`，跨平台一致）。
 #[napi]
 pub async fn get_image_library_root() -> napi::Result<String> {
     tokio::task::spawn_blocking(crate::storage::get_image_library_root)
+        .await
+        .map_err(map_spawn_error)?
+}
+
+/// 读取图库自定义保存目录（空字符串表示使用默认目录）。
+#[napi]
+pub async fn get_image_library_dir() -> napi::Result<String> {
+    tokio::task::spawn_blocking(crate::storage::get_image_library_dir)
+        .await
+        .map_err(map_spawn_error)?
+}
+
+/// 设置图库自定义保存目录（传入空字符串重置为默认目录）。
+#[napi]
+pub async fn set_image_library_dir(dir: String) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::set_image_library_dir(dir))
         .await
         .map_err(map_spawn_error)?
 }

@@ -1,5 +1,7 @@
 import {
+  CircleCheck,
   Clock,
+  Copy,
   Gauge,
   ImageIcon,
   Layers,
@@ -20,10 +22,12 @@ import {
   type ChangeEvent,
 } from "react";
 import { AutoDismissNotice } from "../AutoDismissNotice";
+import { ConfirmDialog } from "../common/ConfirmDialog";
 import { Modal } from "../common/Modal";
 import { CustomSelect, type CustomSelectOption } from "../common/CustomSelect";
 import { useI18n } from "../../i18n";
 import { ApiModelCombobox } from "./apiSettings/ApiModelCombobox";
+import { buildDuplicateName } from "./duplicateName";
 import type { Model } from "../../../preload";
 import {
   DEFAULT_GEMINI_BASE_URL,
@@ -416,6 +420,10 @@ export function ImageGenSettingsPanel({
   // 搜索
   const [searchQuery, setSearchQuery] = useState("");
 
+  // 删除渠道确认对话框
+  const [channelPendingDeletion, setChannelPendingDeletion] =
+    useState<ImageGenChannelValue | null>(null);
+
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
@@ -678,24 +686,52 @@ export function ImageGenSettingsPanel({
     }
   };
 
-  /** 删除渠道（确认后立即保存）。 */
-  const removeChannel = async (channel: ImageGenChannelValue) => {
-    const label = channelLabel(channel);
-    const confirmed = window.confirm(
-      t("settings.imagegenDeleteConfirm", {
-        values: { name: label },
-        defaultValue: `Delete channel "${label}"?`,
-      })
-    );
-    if (!confirmed) {
+  /** 请求删除渠道（弹出确认对话框）。 */
+  const requestRemoveChannel = (channel: ImageGenChannelValue) => {
+    setChannelPendingDeletion(channel);
+  };
+
+  /** 确认删除渠道（立即保存）。 */
+  const confirmRemoveChannel = async () => {
+    const channel = channelPendingDeletion;
+    if (!channel) {
       return;
     }
+    setChannelPendingDeletion(null);
+    const label = channelLabel(channel);
     const next = channels.filter((item) => item.id !== channel.id);
     await persistChannels(
       next,
       t("settings.imagegenDeleteChannelSuccess", {
         defaultValue: "Channel {name} deleted.",
       }).replace("{name}", label)
+    );
+  };
+
+  /** 复制渠道（生成 *-Copy-n 唯一名称与新 id，默认未启用）。 */
+  const duplicateChannel = async (channel: ImageGenChannelValue) => {
+    if (isSaving) {
+      return;
+    }
+    // 命名规则：*-Copy-n（n 为递增数字，避免与既有渠道名冲突）。
+    const sourceName = channel.name.trim() || defaultChannelName(channel.provider);
+    const nextName = buildDuplicateName(
+      sourceName,
+      channels.map((item) => item.name)
+    );
+    const cloned: ImageGenChannelValue = {
+      ...channel,
+      id: generateChannelId(channel.provider, channels.length),
+      name: nextName,
+      // 复制后默认未启用，避免多个渠道同时启用造成混淆。
+      enabled: false,
+    };
+    const next = [...channels, cloned];
+    await persistChannels(
+      next,
+      t("settings.imagegenDuplicateChannelSuccess", {
+        defaultValue: "Channel {name} duplicated.",
+      }).replace("{name}", channelLabel(cloned))
     );
   };
 
@@ -1199,7 +1235,7 @@ export function ImageGenSettingsPanel({
           <span className="settings-item-description">
             {t("settings.imagegenDescription", {
               defaultValue:
-                "Configure any number of independent channels, each with its own provider, base URL, API key and model. Channels can be enabled at the same time and the agent picks one per request. When no channel is configured, the image generation tool is hidden from the agent.",
+                "Configure independent OpenAI/Gemini channels; the agent picks one per request. Hidden when none configured.",
             })}
           </span>
         </div>
@@ -1230,7 +1266,7 @@ export function ImageGenSettingsPanel({
           </small>
         </div>
         <div className="api-settings-summary-card">
-          <Gauge size={15} strokeWidth={1.8} />
+          <CircleCheck size={15} strokeWidth={1.8} />
           <span>{enabledCount}</span>
           <small>
             {t("settings.imagegenEnabled", { defaultValue: "Enabled" })}
@@ -1297,7 +1333,13 @@ export function ImageGenSettingsPanel({
               {IMAGE_GEN_MAX_CONCURRENT_RANGE.max}
             </span>
           </div>
-          <small className="imagegen-concurrency-hint">
+          <small
+            className="imagegen-concurrency-hint"
+            title={t("settings.imagegenMaxConcurrentHint", {
+              defaultValue:
+                "When the agent requests several images at once, at most this many are generated in parallel; the rest wait in the queue. Lower it if your provider rate-limits image requests.",
+            })}
+          >
             {t("settings.imagegenMaxConcurrentHint", {
               defaultValue:
                 "When the agent requests several images at once, at most this many are generated in parallel; the rest wait in the queue. Lower it if your provider rate-limits image requests.",
@@ -1361,7 +1403,13 @@ export function ImageGenSettingsPanel({
               {IMAGE_GEN_TIMEOUT_RANGE.min}–{IMAGE_GEN_TIMEOUT_RANGE.max}
             </span>
           </div>
-          <small className="imagegen-concurrency-hint">
+          <small
+            className="imagegen-concurrency-hint"
+            title={t("settings.imagegenTimeoutHint", {
+              defaultValue:
+                "Max wait time per generation/edit request (including streaming). Complex prompts or 2K/4K output can take several minutes — raise this if requests time out.",
+            })}
+          >
             {t("settings.imagegenTimeoutHint", {
               defaultValue:
                 "Max wait time per generation/edit request (including streaming). Complex prompts or 2K/4K output can take several minutes — raise this if requests time out.",
@@ -1520,6 +1568,20 @@ export function ImageGenSettingsPanel({
                         <div className="api-settings-table-actions">
                           <button
                             className="icon-btn ghost"
+                            onClick={() => void duplicateChannel(channel)}
+                            type="button"
+                            title={t("settings.duplicate", {
+                              defaultValue: "Duplicate",
+                            })}
+                            aria-label={t("settings.duplicate", {
+                              defaultValue: "Duplicate",
+                            })}
+                            disabled={isBusy}
+                          >
+                            <Copy size={13} strokeWidth={1.8} />
+                          </button>
+                          <button
+                            className="icon-btn ghost"
                             onClick={() => openEditEditor(channel)}
                             type="button"
                             title={t("settings.edit", { defaultValue: "Edit" })}
@@ -1532,7 +1594,7 @@ export function ImageGenSettingsPanel({
                           </button>
                           <button
                             className="icon-btn ghost danger"
-                            onClick={() => void removeChannel(channel)}
+                            onClick={() => requestRemoveChannel(channel)}
                             type="button"
                             title={t("settings.delete", {
                               defaultValue: "Delete",
@@ -1613,6 +1675,28 @@ export function ImageGenSettingsPanel({
       >
         {renderDraftPanel()}
       </Modal>
+
+      <ConfirmDialog
+        open={channelPendingDeletion !== null}
+        title={t("settings.imagegenDeleteChannelTitle", {
+          defaultValue: "Delete channel",
+        })}
+        message={t("settings.imagegenDeleteConfirm", {
+          values: {
+            name: channelPendingDeletion
+              ? channelLabel(channelPendingDeletion)
+              : "",
+          },
+          defaultValue: `Delete channel "${
+            channelPendingDeletion ? channelLabel(channelPendingDeletion) : ""
+          }"?`,
+        })}
+        confirmLabel={t("settings.delete", { defaultValue: "Delete" })}
+        cancelLabel={t("settings.cancel", { defaultValue: "Cancel" })}
+        onConfirm={() => void confirmRemoveChannel()}
+        onCancel={() => setChannelPendingDeletion(null)}
+        variant="danger"
+      />
 
       <AutoDismissNotice
         message={error || status}

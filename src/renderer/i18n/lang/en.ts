@@ -662,7 +662,7 @@ export const en = {
   "settings.apiSettings": "API settings",
   "settings.imagegenSettings": "Image generation",
   "settings.imagegenDescription":
-    "Configure OpenAI and Gemini channels independently; both can be enabled at the same time and the agent picks one per request. When no channel is configured, the image generation tool is hidden from the agent.",
+    "Configure independent OpenAI/Gemini channels; the agent picks one per request. Hidden when none configured.",
   "settings.closeImagegenSettings": "Close image generation settings",
   "settings.imagegenChannels": "Channels",
   "settings.imagegenChannelOpenai": "OpenAI channel",
@@ -731,6 +731,7 @@ export const en = {
   "settings.imagegenAddChannel": "Add channel",
   "settings.imagegenRemoveChannel": "Remove channel",
   "settings.imagegenChannelName": "Channel name",
+  "settings.imagegenDeleteChannelTitle": "Delete channel",
   "settings.imagegenDeleteConfirm": 'Delete channel "{{name}}"?',
   "settings.imagegenNoChannels":
     'No channels yet. Click "Add channel" to create one.',
@@ -740,6 +741,7 @@ export const en = {
   "settings.imagegenAddChannelSuccess": "Channel {name} added.",
   "settings.imagegenEditChannelSuccess": "Channel {name} updated.",
   "settings.imagegenDeleteChannelSuccess": "Channel {name} deleted.",
+  "settings.imagegenDuplicateChannelSuccess": "Channel {name} duplicated.",
   "settings.imagegenChannelNameHint":
     "Custom name shown in the list and used by the agent (leave empty to use the default).",
   "settings.imagegenSearchPlaceholder": "Search channels, models, or base URLs",
@@ -789,8 +791,12 @@ export const en = {
   "settings.imageLibraryEmpty":
     "No images yet — generated images will appear here automatically",
   "settings.imageLibraryDelete": "Delete",
+  "settings.imageLibraryDeleteTitle": "Delete image",
   "settings.imageLibraryDeleteConfirm":
     "Delete this image? It will also be removed from the conversation.",
+  "settings.imageLibrarySelectDir": "Select image library directory",
+  "settings.imageLibraryChangeDir": "Change save directory",
+  "settings.imageLibraryResetDir": "Reset to default directory",
   "settings.apiSettingsInfo": "Configure providers, models, and credentials.",
   "settings.apiTreeTitle": "API configuration",
   "settings.closeApiSettings": "Close API settings",
@@ -849,6 +855,7 @@ export const en = {
   "settings.apiAtLeastOneActive": "At least one API profile must be enabled.",
   "settings.edit": "Edit",
   "settings.delete": "Delete",
+  "settings.duplicate": "Duplicate",
   "settings.cancel": "Cancel",
   "settings.add": "Add",
   "settings.name": "Name",
@@ -859,7 +866,11 @@ export const en = {
   "settings.apiManualProfileRequired": "Profile name is required.",
   "settings.apiManualAddSuccess": "Added API profile {name}.",
   "settings.apiImportSuccess": "Imported {count} Snow CLI profiles.",
+  "settings.apiDeleteTitle": "Delete API profile",
+  "settings.apiDeleteConfirm": 'Delete API profile "{{name}}"? This cannot be undone.',
   "settings.apiDeleteSuccess": "Deleted API profile {name}.",
+  "settings.apiDuplicateSuccess": "Duplicated API profile {name}.",
+  "settings.apiDuplicateError": "Failed to duplicate API config",
   "settings.apiEditTitle": "Edit profile",
   "settings.apiEditInfo": "Leave API key blank to keep the existing value.",
   "settings.apiEditSuccess": "Updated API profile {name}.",
@@ -2119,6 +2130,8 @@ export const en = {
   "projectMcp.retryTools": "Retry",
   "projectMcp.globalDisabled":
     "Disabled globally. Enable it in Settings before using it in this project.",
+  "projectMcp.serverErrorImagegenNotConfigured":
+    "No image generation channel configured. Configure at least one channel in Settings -> Image generation.",
   "projectCodebase.title": "Project Codebase",
   "projectCodebase.description": "Codebase indexing for {{project}}",
   "projectCodebase.noProject":
@@ -2231,8 +2244,6 @@ export const en = {
   "chat.fileChanges.selectFile": "Select a file to view changes",
   "chat.streamMetrics.pause": "Pause",
   "chat.streamMetrics.resume": "Resume",
-  "chat.streamMetrics.step": "Step {{current}}/{{total}}",
-  "chat.streamMetrics.filesLabel": "file(s) changed",
   "chat.streamMetrics.elapsedTitle": "Elapsed time",
   "chat.streamMetrics.ttftTitle": "TTFT (time to first token)",
   "chat.retrying": "Retrying",

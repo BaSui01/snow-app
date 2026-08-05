@@ -198,10 +198,6 @@ export type ConversationSessionState = {
   /** Time to first token in milliseconds. 0 until the first content
    *  or thinking delta arrives, then frozen for the iteration. */
   streamTtftMs: number;
-  /** Cumulative streamed tokens across every model iteration in the active run. */
-  runTokenCount: number;
-  /** Sum of the complete stream elapsed time reported by every iteration. */
-  runStreamElapsedMs: number;
   /** TTFT of the first model iteration in the active run. */
   runTtftMs: number;
   /** First checkpoint in the conversation, used as the cumulative diff baseline. */
@@ -247,9 +243,6 @@ export type ConversationSessionRef = {
    * execution).
    */
   runId: number;
-  /** Completed-iteration totals used to accumulate live run metrics. */
-  runTokenBase: number;
-  runElapsedBaseMs: number;
   /** Latest values reported by the current model iteration. */
   iterationTokenCount: number;
   iterationElapsedMs: number;
@@ -383,7 +376,10 @@ export type ConversationContextValue = {
   /** Merge pre-built records into a conversation's stats, de-duplicating by
    *  (filePath, kind, timestamp, agent). Used to re-hydrate stats from
    *  persisted history after a restart or when reopening a conversation. */
-  mergeFileChangeStats: (conversationId: string, records: FileChangeRecord[]) => void;
+  mergeFileChangeStats: (
+    conversationId: string,
+    records: FileChangeRecord[]
+  ) => void;
   /** Conversation ids whose file-change stats have already been re-hydrated
    *  from persisted history during this renderer session. Guards against
    *  repeated sub-agent scans when the same conversation is reopened. */
@@ -565,10 +561,6 @@ export type UseChatConversationResult = {
   streamElapsedMs: number;
   /** Time to first token in milliseconds. */
   streamTtftMs: number;
-  /** Cumulative token count across all model iterations in the active run. */
-  runTokenCount: number;
-  /** Complete stream elapsed time accumulated across all model iterations. */
-  runStreamElapsedMs: number;
   /** TTFT captured from the first model iteration in the active run. */
   runTtftMs: number;
   /** First checkpoint in the active conversation. */

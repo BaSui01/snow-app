@@ -960,6 +960,14 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to read image library")
         ),
+      getImageLibraryDir: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to read image library dir")
+        ),
+      setImageLibraryDir: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to write image library dir")
+        ),
       listImageLibrary: () =>
         Promise.reject(
           new Error("Rust native bridge is required to list image library")

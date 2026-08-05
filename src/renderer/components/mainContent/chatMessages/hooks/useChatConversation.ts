@@ -85,8 +85,9 @@ export const useChatConversation = (
       setFileChangeStats((prev) => {
         const existing = prev[conversationId] ?? [];
         const existingKeys = new Set(
-          existing.map((record) =>
-            `${record.filePath}\u0000${record.kind}\u0000${record.timestamp}\u0000${record.agent}`
+          existing.map(
+            (record) =>
+              `${record.filePath}\u0000${record.kind}\u0000${record.timestamp}\u0000${record.agent}`
           )
         );
         const fresh = records.filter(
@@ -566,8 +567,6 @@ export const useChatConversation = (
     streamTokenCount: activeSession?.streamTokenCount ?? 0,
     streamElapsedMs: activeSession?.streamElapsedMs ?? 0,
     streamTtftMs: activeSession?.streamTtftMs ?? 0,
-    runTokenCount: activeSession?.runTokenCount ?? 0,
-    runStreamElapsedMs: activeSession?.runStreamElapsedMs ?? 0,
     runTtftMs: activeSession?.runTtftMs ?? 0,
     baselineCheckpointId: activeSession?.baselineCheckpointId,
     streamStartedAt: activeSession?.streamStartedAt ?? 0,

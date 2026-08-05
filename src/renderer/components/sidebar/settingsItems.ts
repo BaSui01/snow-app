@@ -99,18 +99,18 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
     view: "mcp-settings",
   },
   {
-    id: "import-config",
-    icon: Download,
-    labelKey: "settings.thirdPartySettings",
-    defaultLabel: "Third-party configuration",
-    view: "import-settings",
-  },
-  {
     id: "skills",
     icon: Sparkles,
     labelKey: "settings.skillsSettings",
     defaultLabel: "Skills settings",
     view: "skills-settings",
+  },
+  {
+    id: "import-config",
+    icon: Download,
+    labelKey: "settings.thirdPartySettings",
+    defaultLabel: "Third-party configuration",
+    view: "import-settings",
   },
   {
     id: "subagent",

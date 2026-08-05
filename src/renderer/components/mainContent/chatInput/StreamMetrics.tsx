@@ -1,12 +1,4 @@
-import {
-  ArrowDown,
-  Circle,
-  Clock,
-  Gauge,
-  Pause,
-  Play,
-  Timer,
-} from "lucide-react";
+import { ArrowDown, Clock, Gauge, Pause, Play, Timer } from "lucide-react";
 import { memo, useEffect, useReducer } from "react";
 import { useI18n } from "../../../i18n";
 
@@ -29,16 +21,6 @@ export type StreamMetricsProps = {
   pausedAt: number;
   /** Whether the agent loop is currently paused. */
   isPaused: boolean;
-  /** One-based index of the active top-level TODO step. */
-  taskCurrent: number;
-  /** Total number of top-level TODO steps. */
-  taskTotal: number;
-  /** Number of unique files changed in the active conversation. */
-  changedFileCount: number;
-  additions: number;
-  deletions: number;
-  /** Open the detailed file-changes panel. */
-  onOpenFileChanges: () => void;
   /** Pause the agent loop (only valid while streaming and not already paused). */
   onPause: () => void;
   /** Resume a paused agent loop. */
@@ -72,105 +54,17 @@ const formatTokPerSec = (tokens: number, elapsedMs: number): string => {
   return tps >= 100 ? `${Math.round(tps)}` : tps.toFixed(1);
 };
 
-type StreamMetricsWorkSummaryProps = {
-  /** One-based index of the active top-level TODO step. */
-  taskCurrent: number;
-  /** Total number of top-level TODO steps. */
-  taskTotal: number;
-  /** Number of unique files changed in the active run. */
-  changedFileCount: number;
-  additions: number;
-  deletions: number;
-  /** Open the detailed file-changes panel. */
-  onOpenFileChanges: () => void;
-};
-
-/**
- * 步骤进度 + 文件更改统计区域。拆为独立 memo 子组件：指标栏的 elapsed
- * 500ms tick 与流式 token 更新只重绘主组件，只要本区域各 props 引用不变，
- * React 会跳过这里 —— 长 run（数十分钟）下避免整条指标栏随 tick 高频
- * 重绘（P0-1 性能优化）。
- */
-const StreamMetricsWorkSummary = memo(
-  ({
-    taskCurrent,
-    taskTotal,
-    changedFileCount,
-    additions,
-    deletions,
-    onOpenFileChanges,
-  }: StreamMetricsWorkSummaryProps): React.JSX.Element | null => {
-    const { t } = useI18n();
-    const hasWorkSummary =
-      taskTotal > 0 || changedFileCount > 0 || additions > 0 || deletions > 0;
-    if (!hasWorkSummary) {
-      return null;
-    }
-    return (
-      <>
-        <span className="stream-metrics-work-summary">
-          {taskTotal > 0 ? (
-            <span className="stream-metrics-task-progress">
-              <Circle
-                aria-hidden="true"
-                size={11}
-                className="stream-metrics-work-icon"
-              />
-              <span>
-                {t("chat.streamMetrics.step", {
-                  values: { current: taskCurrent, total: taskTotal },
-                })}
-              </span>
-            </span>
-          ) : null}
-          {taskTotal > 0 ? (
-            <span className="stream-metrics-work-dot">·</span>
-          ) : null}
-          <button
-            type="button"
-            className="stream-metrics-file-progress"
-            aria-label={t("chat.fileChanges.toggle")}
-            title={t("chat.fileChanges.toggle")}
-            onClick={onOpenFileChanges}
-          >
-            <span className="stream-metrics-files-count">
-              {changedFileCount}
-            </span>
-            <span className="stream-metrics-files-label">
-              {t("chat.streamMetrics.filesLabel")}
-            </span>
-            <span className="stream-metrics-additions">+{additions}</span>
-            <span className="stream-metrics-deletions">-{deletions}</span>
-          </button>
-        </span>
-        <span className="stream-metrics-sep" />
-      </>
-    );
-  }
-);
-StreamMetricsWorkSummary.displayName = "StreamMetricsWorkSummary";
-
 /**
  * Fixed streaming metrics bar displayed above the input box while the AI
  * is generating a response. Shows run-level token count, first-iteration
- * TTFT, cumulative stream speed, and accumulated elapsed time.
+ * TTFT, cumulative stream speed, and wall-clock elapsed time.
  *
- * Elapsed is a pure derivation of `startedAt` — a wall-clock timestamp the
- * agent loop captures once when it begins and resets to 0 when it ends
- * (the anchor lives in session state, owned and maintained by the state
- * layer). The component holds no parallel shadow state: a 500ms interval
- * only triggers re-renders, and the displayed value is recomputed from
- * `startedAt` on every render. This makes conversation switches, new runs
- * and first paint inherently consistent — no residual, no lag, no sync bugs.
- *
- * Elapsed is intentionally independent of `elapsedMs`, which contains the
- * sum of complete per-iteration stream durations used to calculate the
- * run's tok/s. Each parallel streaming conversation carries its own timer
- * anchor, so switching between them does not reset the accumulated duration.
- *
- * Pause semantics live in the state layer: on pause the interval stops
- * (display freezes), and on resume the state layer shifts `streamStartedAt`
- * forward by the paused duration, so paused time is excluded from the total.
+ * The elapsed timer is driven by `startedAt` — a wall-clock timestamp the
+ * agent loop captures once when it begins and resets to 0 when it ends.
+ * This is intentionally independent of `elapsedMs`, which contains the sum of
+ * complete per-iteration stream durations used to calculate the run's tok/s.
+ * Each parallel streaming conversation carries its own timer anchor, so
+ * switching between them does not reset the displayed wall-clock duration.
  *
  * The pause/resume button is rendered on the left edge of the bar. It
  * allows the user to pause the agent loop before the next iteration
@@ -185,12 +79,6 @@ export const StreamMetrics = memo(
     startedAt,
     pausedAt,
     isPaused,
-    taskCurrent,
-    taskTotal,
-    changedFileCount,
-    additions,
-    deletions,
-    onOpenFileChanges,
     onPause,
     onResume,
   }: StreamMetricsProps): React.JSX.Element => {
@@ -233,9 +121,7 @@ export const StreamMetrics = memo(
       <span className="stream-metrics">
         <button
           type="button"
-          className={`stream-metrics-pause-btn${
-            isPaused ? " is-paused" : ""
-          }`}
+          className={`stream-metrics-pause-btn${isPaused ? " is-paused" : ""}`}
           aria-label={
             isPaused
               ? t("chat.streamMetrics.resume")
@@ -255,14 +141,6 @@ export const StreamMetrics = memo(
           )}
         </button>
         <span className="stream-metrics-sep" />
-        <StreamMetricsWorkSummary
-          taskCurrent={taskCurrent}
-          taskTotal={taskTotal}
-          changedFileCount={changedFileCount}
-          additions={additions}
-          deletions={deletions}
-          onOpenFileChanges={onOpenFileChanges}
-        />
         <span
           className={`stream-metrics-metric stream-metrics-elapsed${
             isActive ? " is-active" : ""
@@ -291,7 +169,7 @@ export const StreamMetrics = memo(
         >
           <ArrowDown size={11} className="stream-metrics-icon" />
           <span className="stream-metrics-value">
-            {formatTokenCount(tokenCount)}
+            {hasTokens ? formatTokenCount(tokenCount) : "--"}
           </span>
           <span className="stream-metrics-label">tokens</span>
         </span>

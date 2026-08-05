@@ -1,6 +1,6 @@
 //! 图像管理系统（Image Library）
 //!
-//! 生成的图片落盘到 `image/` 目录（优先安装目录旁，失败回退存储目录），
+//! 生成的图片落盘到 `~/.snowapp/image/` 目录（按日期子目录区分），
 //! 元数据写入 `image_library` 表。删除图片时同步重写会话消息
 //! （content / raw_json 中的图片引用），保证会话内不再显示已删除的图。
 
@@ -14,6 +14,7 @@ use serde_json::Value;
 use base64::Engine;
 use super::super::database;
 use super::super::paths;
+use super::system_settings;
 
 /// image_library 记录（服务层结构体，napi 结构体在 storage/mod.rs 门面层）
 #[derive(Debug, Clone)]
@@ -52,31 +53,29 @@ pub fn ensure_image_library_table(connection: &rusqlite::Connection) -> rusqlite
     )
 }
 
-/// 图片根目录：优先「安装目录（exe 所在目录）/image」，无写权限时回退
-/// `~/.snowapp/image`（用户要求图片不要存到 C 盘系统目录）。
+/// 图片根目录：优先读取用户自定义路径（system_settings `image_library_dir`），
+/// 未设置或路径无效时回退到默认 `~/.snowapp/image`。跨平台一致
+/// （macOS / Windows / Linux 均解析到用户主目录），
+/// persist 时按 `root/YYYY-MM-DD/文件名` 落盘。
 pub fn image_library_root() -> Result<PathBuf> {
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(exe_dir) = exe.parent() {
-            let candidate = exe_dir.join("image");
-            if fs::create_dir_all(&candidate).is_ok() {
-                // 二次确认可写（Program Files 等只读目录会失败）
-                let probe = candidate.join(".snow-image-write-test");
-                if fs::write(&probe, b"ok").is_ok() {
-                    let _ = fs::remove_file(&probe);
-                    return Ok(candidate);
-                }
-            }
+    let database_path = paths::database_file_path(&paths::app_storage_dir()?);
+    let custom_dir = system_settings::get_image_library_dir(&database_path).unwrap_or_default();
+    if !custom_dir.is_empty() {
+        let candidate = PathBuf::from(&custom_dir);
+        if fs::create_dir_all(&candidate).is_ok() {
+            return Ok(candidate);
         }
+        // 自定义路径不可用，回退默认
     }
     let storage_dir = paths::app_storage_dir()?;
-    let fallback = storage_dir.join("image");
-    fs::create_dir_all(&fallback).map_err(|error| {
+    let image_dir = storage_dir.join("image");
+    fs::create_dir_all(&image_dir).map_err(|error| {
         Error::from_reason(format!(
             "Failed to create image library directory at '{}': {error}",
-            fallback.display()
+            image_dir.display()
         ))
     })?;
-    Ok(fallback)
+    Ok(image_dir)
 }
 
 fn ext_for_mime(mime_type: &str) -> &'static str {

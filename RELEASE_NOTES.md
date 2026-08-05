@@ -1,6 +1,19 @@
 # Release Notes
 
-## v0.1.17 (unreleased)
+## v0.1.18
+
+## New Features
+
+- Added image generation feature
+- Significantly reduced database usage
+- Optimized first launch speed
+- Scheduled tasks project isolation
+- Input box supports dragging and dropping images and files from external sources
+- Added copy function to configuration file
+- Optimized UI display of some components
+
+
+## v0.1.17
 
 ## New Features
 

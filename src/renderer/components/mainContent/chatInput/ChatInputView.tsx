@@ -58,13 +58,8 @@ import { ProjectSkillsPanel } from "./ProjectSkillsPanel";
 import { RoleEditorPanel } from "./RoleEditorPanel";
 import { StreamMetrics } from "./StreamMetrics";
 import { useChatConversationContext } from "../chatMessages";
-import { useTodoPanel } from "../chatMessages/hooks/useTodoPanel";
 import { directoryIdToPath } from "../chatMessages/utils/conversationHelpers";
-import {
-  collectConversationFileChanges,
-  countFileChangeLines,
-  countUniqueFiles,
-} from "../chatMessages/hooks/fileChangeTracking";
+import { collectConversationFileChanges } from "../chatMessages/hooks/fileChangeTracking";
 import { useConversationFileChanges } from "./useConversationFileChanges";
 import { CommandPanel, type CommandPanelHandle } from "./commands/CommandPanel";
 import { createChatCommands } from "./commands/commandRegistry";
@@ -149,9 +144,9 @@ export const ChatInputView = ({
     conversationDirectoryId,
     conversationVersion,
     fileChangeStats,
-    runTokenCount,
-    runStreamElapsedMs,
-    runTtftMs,
+    streamTokenCount,
+    streamElapsedMs,
+    streamTtftMs,
     baselineCheckpointId,
     streamStartedAt,
     streamPausedAt,
@@ -159,24 +154,6 @@ export const ChatInputView = ({
     handlePause,
     handleResume,
   } = useChatConversationContext();
-  const { todos } = useTodoPanel(messages);
-  const taskProgress = useMemo(() => {
-    const rootTodos = todos.filter((todo) => !todo.parentId);
-    const steps = rootTodos.length > 0 ? rootTodos : todos;
-    if (steps.length === 0) {
-      return { current: 0, total: 0 };
-    }
-
-    const activeIndex = steps.findIndex((todo) => todo.status === "inProgress");
-    const pendingIndex = steps.findIndex((todo) => todo.status === "pending");
-    const currentIndex =
-      activeIndex >= 0
-        ? activeIndex
-        : pendingIndex >= 0
-          ? pendingIndex
-          : steps.length - 1;
-    return { current: currentIndex + 1, total: steps.length };
-  }, [todos]);
   const fallbackFileChanges = useMemo(() => {
     if (!activeConversationId) {
       return [];
@@ -194,25 +171,6 @@ export const ChatInputView = ({
     conversationVersion,
     fallbackChanges: fallbackFileChanges,
   });
-  // 指标栏文件统计：run 级口径。仅统计当前 run（streamStartedAt 之后）工具
-  // 实际写入的文件，与步骤进度/耗时/tokens 等 run 级指标语义一致；不再使用
-  // 会话累计的 checkpoint diff（避免跨 run 累计 + CRLF 字节对比产生的假 diff）。
-  // 文件变更面板仍通过下方 changesOverride 使用会话累计视图，两者互不影响。
-  const runFileChanges = useMemo(() => {
-    if (!streamStartedAt) {
-      return [];
-    }
-    return fallbackFileChanges.filter(
-      (change) => change.timestamp >= streamStartedAt
-    );
-  }, [fallbackFileChanges, streamStartedAt]);
-  const fileProgress = useMemo(
-    () => ({
-      count: countUniqueFiles(runFileChanges),
-      ...countFileChangeLines(runFileChanges),
-    }),
-    [runFileChanges]
-  );
   const isDraggingOverRef = useRef(false);
   const [isMentionOpen, setIsMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
@@ -358,9 +316,9 @@ export const ChatInputView = ({
     x: number;
     y: number;
   } | null>(null);
-  const textSnippetPreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null
-  );
+  const textSnippetPreviewTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const [textSnippetEditor, setTextSnippetEditor] = useState<{
     chip: HTMLElement;
     content: string;
@@ -519,6 +477,37 @@ export const ChatInputView = ({
     [handleCloseCommand, restoreContent]
   );
 
+  /**
+   * 将单个图片文件读取为 dataUrl 并插入 image chip。
+   * 粘贴与拖入外部图片共用此逻辑，保持行为一致。
+   */
+  const insertImageFromFile = useCallback(
+    (file: File) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        if (!dataUrl) {
+          return;
+        }
+
+        const mimeMatch = file.type.match(/^image\/([a-z]+)$/);
+        const ext = mimeMatch ? mimeMatch[1] : "png";
+        const imageTag: ImageTag = {
+          name: `image.${ext}`,
+          dataUrl,
+        };
+
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+        }
+        insertHtmlAtSelection(createImageChipHtml(imageTag));
+        syncContent();
+      };
+      reader.readAsDataURL(file);
+    },
+    [syncContent, textareaRef]
+  );
+
   const handleMentionDragStart = useCallback(
     (event: React.DragEvent<HTMLDivElement>, tag: FileTag) => {
       event.dataTransfer.setData("application/json", JSON.stringify(tag));
@@ -586,6 +575,65 @@ export const ChatInputView = ({
 
       const jsonData = event.dataTransfer.getData("application/json");
       if (!jsonData) {
+        // 从文件管理器拖入的外部文件：dataTransfer.files 携带 File 对象。
+        // contextIsolation 下渲染进程无法直接读取真实路径，由 preload 的
+        // resolveDroppedFiles 解析路径并查询是否为目录。图片文件走 image
+        // chip（读取 dataUrl），其余文件/文件夹走 file chip（携带路径）。
+        const droppedFiles = event.dataTransfer.files;
+        if (droppedFiles && droppedFiles.length > 0) {
+          const files: File[] = [];
+          for (let i = 0; i < droppedFiles.length; i++) {
+            const file = droppedFiles.item(i);
+            if (file) {
+              files.push(file);
+            }
+          }
+          if (files.length > 0) {
+            void window.snow
+              .resolveDroppedFiles(files)
+              .then((entries) => {
+                if (entries.length === 0) {
+                  return;
+                }
+                const imageFiles: File[] = [];
+                const fileTags: FileTag[] = [];
+                // entries 顺序与 files 顺序一一对应；以 File.type 优先判断
+                // 图片，路径扩展名兜底（某些系统 File.type 可能为空）。
+                entries.forEach((entry, idx) => {
+                  const matchedFile = files[idx];
+                  const isImage =
+                    !entry.isDirectory &&
+                    ((matchedFile && matchedFile.type.startsWith("image/")) ||
+                      /\.(png|jpe?g|gif|webp|bmp|svg|avif|ico)$/i.test(
+                        entry.path
+                      ));
+                  if (isImage && matchedFile) {
+                    imageFiles.push(matchedFile);
+                  } else {
+                    const name =
+                      entry.path.split(/[\\/]/).filter(Boolean).pop() ||
+                      entry.path;
+                    fileTags.push({
+                      path: entry.path,
+                      name,
+                      isDirectory: entry.isDirectory,
+                    });
+                  }
+                });
+                if (imageFiles.length > 0) {
+                  for (const imageFile of imageFiles) {
+                    insertImageFromFile(imageFile);
+                  }
+                }
+                if (fileTags.length > 0) {
+                  insertFileTags(fileTags);
+                }
+              })
+              .catch(() => {
+                // 解析失败时静默处理
+              });
+          }
+        }
         return;
       }
 
@@ -704,15 +752,18 @@ export const ChatInputView = ({
         // Ignore invalid drag data
       }
     },
-    [insertFileTags, insertImageFiles, syncContent, textareaRef]
+    [insertFileTags, insertImageFromFile, syncContent, textareaRef]
   );
 
   const handleDragOver = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
-      const types = Array.from(event.dataTransfer.types);
-      const hasJson = types.includes("application/json");
-      const hasFiles = types.includes("Files");
-      if (!hasJson && !hasFiles) {
+      const types = event.dataTransfer.types;
+      // 应用内拖拽（文件/commit/change 标签）走 application/json；
+      // 从文件管理器拖入的外部文件走 Files。两者均需 preventDefault
+      // 才能允许 drop，否则浏览器默认拒绝（显示禁止光标）。
+      const allowed =
+        types.includes("application/json") || types.includes("Files");
+      if (!allowed) {
         return;
       }
       event.preventDefault();
@@ -863,10 +914,13 @@ export const ChatInputView = ({
       }
 
       if (imageItems.length > 0) {
-        const imageFiles = imageItems
-          .map((imageItem) => imageItem.getAsFile())
-          .filter((file): file is File => file !== null);
-        insertImageFiles(imageFiles);
+        for (const imageItem of imageItems) {
+          const file = imageItem.getAsFile();
+          if (!file) {
+            continue;
+          }
+          insertImageFromFile(file);
+        }
         return;
       }
 
@@ -940,7 +994,7 @@ export const ChatInputView = ({
       syncContent();
       checkInputTriggers();
     },
-    [insertImageFiles, syncContent, checkInputTriggers, textareaRef]
+    [syncContent, insertImageFromFile, checkInputTriggers, textareaRef]
   );
 
   /**
@@ -1214,7 +1268,8 @@ export const ChatInputView = ({
         setTextSnippetEditor({
           chip,
           content: parsed.content ?? "",
-          summary: parsed.summary ?? buildTextSnippetSummary(parsed.content ?? ""),
+          summary:
+            parsed.summary ?? buildTextSnippetSummary(parsed.content ?? ""),
         });
       } catch {
         // Ignore malformed data
@@ -1407,18 +1462,12 @@ export const ChatInputView = ({
         {isStreaming ? (
           <div className="stream-metrics-bar">
             <StreamMetrics
-              tokenCount={runTokenCount}
-              elapsedMs={runStreamElapsedMs}
-              ttftMs={runTtftMs}
+              tokenCount={streamTokenCount}
+              elapsedMs={streamElapsedMs}
+              ttftMs={streamTtftMs}
               startedAt={streamStartedAt}
               pausedAt={streamPausedAt}
               isPaused={isPaused}
-              taskCurrent={taskProgress.current}
-              taskTotal={taskProgress.total}
-              changedFileCount={fileProgress.count}
-              additions={fileProgress.additions}
-              deletions={fileProgress.deletions}
-              onOpenFileChanges={handleOpenFileChanges}
               onPause={handlePause}
               onResume={handleResume}
             />
@@ -1629,7 +1678,9 @@ export const ChatInputView = ({
                 <button
                   className={`toolbar-btn model ${
                     modelError ? "model-error" : ""
-                  }${isStreaming || isSubAgentConversation ? " is-disabled" : ""}`}
+                  }${
+                    isStreaming || isSubAgentConversation ? " is-disabled" : ""
+                  }`}
                   aria-label={labels.selectModel}
                   aria-expanded={isModelMenuOpen}
                   onClick={handleToggleModelMenu}

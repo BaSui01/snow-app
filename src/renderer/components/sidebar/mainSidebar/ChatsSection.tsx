@@ -17,7 +17,6 @@ import type {
 } from "../../../../preload";
 import { ChatItem } from "./ChatItem";
 import { ChatItemMenu, type ExportFormat } from "./ChatItemMenu";
-import { ChatDeleteConfirmModal } from "./ChatDeleteConfirmModal";
 import { SubAgentListPanel } from "./SubAgentListPanel";
 import {
   groupConversationsByTime,
@@ -116,12 +115,12 @@ export function ChatsSection({
     useState<Set<string>>(() => new Set());
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
-  // 删除会话确认弹窗（单选 + 批量共用）：待删除会话 id 与数量
-  const [pendingDelete, setPendingDelete] = useState<{
-    ids: string[];
-    count: number;
-  } | null>(null);
-  const [isDeleteConfirming, setIsDeleteConfirming] = useState(false);
+  // 批量删除确认：所选会话引用的图库图片数（null = 未查询），
+  // 以及用户是否选择级联删除图片
+  const [showBatchConfirm, setShowBatchConfirm] = useState(false);
+  const [batchImagesCount, setBatchImagesCount] = useState<number | null>(null);
+  const [batchDeleteImages, setBatchDeleteImages] = useState(false);
+  const [isBatchDeleting, setIsBatchDeleting] = useState(false);
   // 会话区域收起/展开（localStorage 持久化，与项目区域一致）
   const [isCollapsed, setIsCollapsed] = useState(() => {
     try {
@@ -378,12 +377,48 @@ export function ChatsSection({
     }
   };
 
-  const handleDelete = (conversation: ChatConversationRecord): void => {
-    // 打开删除确认弹窗（含图片级联选项）
-    setPendingDelete({
-      ids: [conversation.conversationId],
-      count: 1,
-    });
+  const handleDelete = async (
+    conversation: ChatConversationRecord,
+    deleteImages: boolean
+  ): Promise<void> => {
+    try {
+      // 用户选择不保留图片时，先级联删除图库图片（物理 + 索引），
+      // 再执行会话删除；删除失败不阻断会话删除
+      if (deleteImages) {
+        await window.snow.deleteConversationImages([
+          conversation.conversationId,
+        ]);
+      }
+
+      // Rust 侧级联删除子代理会话：收集全部待删 ID，以便中止对应流，
+      // 并在当前正打开被删会话或其子代理时清空聊天区
+      const deleteTargetIds = [
+        conversation.conversationId,
+        ...(subAgentMap[conversation.conversationId] ?? []).map(
+          (sub) => sub.conversationId
+        ),
+      ];
+      for (const targetId of deleteTargetIds) {
+        abortConversation(targetId);
+      }
+
+      await window.snow.deleteConversation(conversation.conversationId);
+
+      // 删除的会话不再需要保留输入草稿
+      for (const targetId of deleteTargetIds) {
+        clearInputDraft(targetId);
+      }
+
+      if (
+        activeConversationId &&
+        deleteTargetIds.includes(activeConversationId)
+      ) {
+        handleNewChat();
+      }
+      refreshConversations();
+    } catch {
+      // Silent fail
+    }
   };
 
   const handleExport = async (
@@ -407,7 +442,7 @@ export function ChatsSection({
   };
 
   const handleExitMultiSelect = (): void => {
-    if (isDeleteConfirming) {
+    if (isBatchDeleting) {
       return;
     }
     setIsMultiSelectMode(false);
@@ -452,80 +487,67 @@ export function ChatsSection({
     setSelectedIds(new Set());
   };
 
-  // 批量删除：打开确认弹窗（含图片级联选项）
+  // 打开批量删除确认框：查询所选会话引用的图库图片数
   const handleOpenBatchConfirm = (): void => {
-    if (selectedIds.size === 0) {
-      return;
+    setShowBatchConfirm(true);
+    setBatchImagesCount(null);
+    setBatchDeleteImages(false);
+    if (selectedIds.size > 0) {
+      void window.snow
+        .countConversationImages([...selectedIds])
+        .then((count) => setBatchImagesCount(count))
+        .catch(() => setBatchImagesCount(0));
     }
-    setPendingDelete({
-      ids: [...selectedIds],
-      count: selectedIds.size,
-    });
   };
 
-  // 删除确认弹窗确认：统一执行单选/批量删除。
-  // deleteImages=true 时先级联删除所选会话引用的图库图片（物理 + 索引）。
-  const handleDeleteConfirm = async (deleteImages: boolean): Promise<void> => {
-    if (!pendingDelete || isDeleteConfirming) {
+  const handleBatchDelete = async (): Promise<void> => {
+    if (isBatchDeleting || selectedIds.size === 0) {
       return;
     }
-    const { ids } = pendingDelete;
-    setIsDeleteConfirming(true);
+
+    setIsBatchDeleting(true);
+    setShowBatchConfirm(false);
 
     try {
-      if (deleteImages) {
-        await window.snow.deleteConversationImages(ids);
+      // 用户选择不保留图片时，先级联删除所选会话引用的图库图片
+      // （物理 + 索引；会话随后被删除，无需重写消息）
+      if (batchDeleteImages && (batchImagesCount ?? 0) > 0) {
+        await window.snow.deleteConversationImages([...selectedIds]);
       }
 
-      if (ids.length === 1) {
-        // 单选：Rust 侧级联删除子代理会话，收集全部待删 ID 以便中止流
-        const deleteTargetIds = [
-          ids[0],
-          ...(subAgentMap[ids[0]] ?? []).map((sub) => sub.conversationId),
-        ];
-        for (const targetId of deleteTargetIds) {
-          abortConversation(targetId);
+      // 收集所有受影响会话 ID（含子代理级联），用于中止流/清空聊天区
+      const targetIds = new Set<string>();
+      for (const convId of selectedIds) {
+        targetIds.add(convId);
+        const subs = subAgentMap[convId] ?? [];
+        for (const sub of subs) {
+          targetIds.add(sub.conversationId);
         }
-        await window.snow.deleteConversation(ids[0]);
-        for (const targetId of deleteTargetIds) {
-          clearInputDraft(targetId);
-        }
-        if (
-          activeConversationId &&
-          deleteTargetIds.includes(activeConversationId)
-        ) {
-          handleNewChat();
-        }
-      } else {
-        // 批量：native 单事务完成（选中父会话时子代理随级联删除）
-        const targetIds = new Set<string>();
-        for (const convId of ids) {
-          targetIds.add(convId);
-          const subs = subAgentMap[convId] ?? [];
-          for (const sub of subs) {
-            targetIds.add(sub.conversationId);
-          }
-        }
-        for (const targetId of targetIds) {
-          abortConversation(targetId);
-        }
-        await window.snow.deleteConversations(ids);
-        for (const targetId of targetIds) {
-          clearInputDraft(targetId);
-        }
-        if (activeConversationId && targetIds.has(activeConversationId)) {
-          handleNewChat();
-        }
-        setSelectedIds(new Set());
-        setIsMultiSelectMode(false);
       }
 
+      for (const targetId of targetIds) {
+        abortConversation(targetId);
+      }
+
+      // 单次批量删除：native 单事务完成（选中父会话时子代理随级联删除），
+      // 避免逐条 IPC + 逐条事务（N+1）
+      await window.snow.deleteConversations([...selectedIds]);
+
+      // 删除的会话不再需要保留输入草稿
+      for (const targetId of targetIds) {
+        clearInputDraft(targetId);
+      }
+
+      if (activeConversationId && targetIds.has(activeConversationId)) {
+        handleNewChat();
+      }
       refreshConversations();
+      setSelectedIds(new Set());
+      setIsMultiSelectMode(false);
     } catch {
       // Silent fail
     } finally {
-      setIsDeleteConfirming(false);
-      setPendingDelete(null);
+      setIsBatchDeleting(false);
     }
   };
 
@@ -714,7 +736,7 @@ export function ChatsSection({
             type="button"
             className="chat-multi-select-exit-btn"
             onClick={handleExitMultiSelect}
-            disabled={isDeleteConfirming}
+            disabled={isBatchDeleting}
             title={t("sidebar.chatMultiSelectExit", { defaultValue: "Exit" })}
           >
             <X size={14} />
@@ -737,7 +759,7 @@ export function ChatsSection({
                   ? handleDeselectAll()
                   : handleSelectAll()
               }
-              disabled={isDeleteConfirming}
+              disabled={isBatchDeleting}
             >
               <CheckSquare size={13} />
               <span>
@@ -757,15 +779,15 @@ export function ChatsSection({
               type="button"
               className="chat-multi-select-action-btn danger"
               onClick={handleOpenBatchConfirm}
-              disabled={isDeleteConfirming || selectedIds.size === 0}
+              disabled={isBatchDeleting || selectedIds.size === 0}
             >
-              {isDeleteConfirming ? (
+              {isBatchDeleting ? (
                 <Loader2 size={13} className="spin" />
               ) : (
                 <Trash2 size={13} />
               )}
               <span>
-                {isDeleteConfirming
+                {isBatchDeleting
                   ? t("sidebar.chatMultiSelectDeleting", {
                       defaultValue: "Deleting...",
                     })
@@ -797,6 +819,57 @@ export function ChatsSection({
           </button>
         </div>
       )}
+      {isMultiSelectMode && showBatchConfirm ? (
+        <div className="chat-batch-confirm">
+          <div className="chat-batch-confirm-content">
+            <AlertTriangle size={13} className="chat-item-menu-confirm-icon" />
+            <span className="chat-item-menu-confirm-text">
+              {t("sidebar.chatMultiSelectDeleteConfirm", {
+                defaultValue: "Delete {{count}} selected conversations?",
+                values: { count: selectedIds.size },
+              })}
+            </span>
+          </div>
+          {batchImagesCount !== null && batchImagesCount > 0 ? (
+            <label className="chat-item-menu-delete-images">
+              <input
+                type="checkbox"
+                checked={batchDeleteImages}
+                onChange={(event) => setBatchDeleteImages(event.target.checked)}
+              />
+              <span>
+                {t("sidebar.chatDeleteImagesOptionBatch", {
+                  defaultValue:
+                    "Also delete the {{count}} image(s) generated in the selected conversations",
+                  values: { count: batchImagesCount },
+                })}
+              </span>
+            </label>
+          ) : null}
+          <div className="chat-item-menu-confirm-actions">
+            <button
+              type="button"
+              className="chat-item-menu-confirm-btn cancel"
+              onClick={() => setShowBatchConfirm(false)}
+              disabled={isBatchDeleting}
+            >
+              {t("common.cancel", { defaultValue: "Cancel" })}
+            </button>
+            <button
+              type="button"
+              className="chat-item-menu-confirm-btn delete"
+              onClick={() => void handleBatchDelete()}
+              disabled={isBatchDeleting}
+            >
+              {isBatchDeleting ? (
+                <Loader2 size={12} className="spin" />
+              ) : (
+                t("sidebar.chatActionDelete", { defaultValue: "Delete" })
+              )}
+            </button>
+          </div>
+        </div>
+      ) : null}
       {!isCollapsed && (
         <div className="section-list" ref={sectionListRef}>
           {showLoading ? (
@@ -890,7 +963,9 @@ export function ChatsSection({
                               onSetEmoji={(emoji) =>
                                 handleSetEmoji(conversation, emoji)
                               }
-                              onDelete={() => void handleDelete(conversation)}
+                              onDelete={(deleteImages) =>
+                                void handleDelete(conversation, deleteImages)
+                              }
                               onExport={(format) =>
                                 handleExport(conversation, format)
                               }
@@ -972,18 +1047,6 @@ export function ChatsSection({
           )}
         </div>
       )}
-      <ChatDeleteConfirmModal
-        open={pendingDelete !== null}
-        conversationIds={pendingDelete?.ids ?? []}
-        conversationCount={pendingDelete?.count ?? 0}
-        deleting={isDeleteConfirming}
-        onClose={() => {
-          if (!isDeleteConfirming) {
-            setPendingDelete(null);
-          }
-        }}
-        onConfirm={(deleteImages) => void handleDeleteConfirm(deleteImages)}
-      />
     </div>
   );
 }

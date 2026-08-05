@@ -4,6 +4,27 @@
 
 ## New Features
 
+- **Image Generation (imagegen) upgrades**:
+  - **Remote URL results are downloaded & persisted**: when the upstream
+    returns `data[].url` (e.g. AWS S3 pre-signed links) instead of base64,
+    the tool now downloads the image (30s timeout / 50MB cap / content-type
+    check), stores it into the image library (disk + `image_library` index),
+    and renders it in the gallery like any other result — no more dead links,
+    and the "Remote image links" list stays as a fallback (failed loads show
+    a placeholder and open the original URL).
+  - **Multi-image per call via internal fan-out**: `n` now accepts 1-8. Since
+    relays/upstreams reject `n>1` in a single request, one call fans out to
+    `n` concurrent sub-requests (each `n=1`), merges the results, and persists
+    all images at once. Partial failures keep the successful images and report
+    the failed count. Streaming preview is disabled when `n>1`.
+  - **Per-request prompts & reference images**: new `prompts` (array of 1-8
+    prompt strings, one per image) and `requestImages` (array of reference
+    image groups, one per request) let a single call generate a whole set of
+    DIFFERENT designs or restyle several source images concurrently.
+  - **Gallery UI**: remote-URL results are displayed as real thumbnails via
+    the `img-proxy://` protocol (zoom lightbox + save supported), multi-prompt
+    calls render each prompt with a numbered badge, and reference-image groups
+    show "N groups total".
 - **Browser Automation Enhancement**:
   - **Accessibility-tree snapshot** (`browser-devtools action=ax`): engine-level
     accessibility tree via CDP `Accessibility.getFullAXTree` (pierces closed

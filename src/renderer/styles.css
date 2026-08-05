@@ -8129,6 +8129,21 @@ input {
   text-decoration: underline;
 }
 
+/* Markdown 内联图片：
+   - 图库（image/）或上传（upload/）本地路径由 worker 添加 data-local-image
+     标记，主线程经 IPC 解析为 data URL 前先隐藏，避免相对路径加载失败闪烁
+     破损图片图标；解析完成（移除标记）后自然显示。
+   - 图片最大宽度不超过消息容器，保持圆角风格与其余内容一致。 */
+img[data-local-image] {
+  visibility: hidden;
+}
+
+:is(.ai-message, .context-compaction-markdown, .thinking-block-body) img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-md);
+}
+
 /* Table — wrapper provides scroll + border so wide tables scroll instead of clip */
 :is(.ai-message, .context-compaction-markdown) .table-wrapper {
   width: 100%;

@@ -1,5 +1,33 @@
 # Release Notes
 
+## Unreleased
+
+## New Features
+
+- **Browser Automation Enhancement**:
+  - **Accessibility-tree snapshot** (`browser-devtools action=ax`): engine-level
+    accessibility tree via CDP `Accessibility.getFullAXTree` (pierces closed
+    shadow DOM), serialized with stable `[uid=eN]` refs; `verbose` / `maxNodes`
+    options. `browser-click` / `browser-type` / `browser-select-option` /
+    `browser-hover` / `browser-upload-file` accept `ref=` for deterministic
+    targeting (`uid → DOM.resolveNode → Runtime.callFunctionOn`).
+  - **Network debugging**: `action=networkDetails` (full request/response
+    headers + bodies via CDP, 128KB cap), `action=networkState` (offline
+    simulation), `action=route` / `routeClear` (response mocking via the CDP
+    Fetch domain, `/regex/` or substring patterns). CDP network records are the
+    primary source with webRequest fallback.
+  - **Encrypted login-state save & restore**: `action=storageSave` /
+    `storageRestore` persist cookies + localStorage encrypted with OS-level
+    safeStorage (never plaintext; keyring unavailable → refuse), origin-checked
+    localStorage injection, automatic encrypted backup before restore, and
+    `action=cookies` / `cookieDelete` with masked values by default.
+  - **Interaction completeness**: new `browser-wait` (text appear/disappear /
+    fixed time), `browser-press-key` (keys + modifiers), `browser-select-option`,
+    `browser-hover`, `browser-upload-file` (CDP file injection, no chooser
+    dialog), `browser-back` / `browser-forward` (history navigation with wait).
+  - **Performance trace**: `action=trace` records via the CDP Tracing domain
+    and returns long-task / event statistics (main-thread jank indicators).
+
 ## v0.1.18
 
 ## New Features

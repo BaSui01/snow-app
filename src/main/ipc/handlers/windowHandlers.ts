@@ -13,10 +13,23 @@ import { markCloseConfirmed } from "../../app/mainWindow";
 import { refreshTrayStats } from "../../app/tray";
 import { clearWindowState } from "../../app/windowState";
 import {
+  clearBrowserRouteRules,
+  ensureWebContentsDebugger,
+  getBrowserWebContents,
   listPendingDialogs,
+  queryNetworkDetails,
   queryNetworkRecords,
   respondPendingDialog,
+  setBrowserNetworkState,
+  setBrowserRouteRules,
 } from "./browserNetworkRecorder";
+import {
+  deleteBrowserCookie,
+  listBrowserCookies,
+  restoreBrowserStorageState,
+  saveBrowserStorageState,
+} from "./browserStorageState";
+import { runBrowserTrace } from "./browserTrace";
 
 export const registerWindowHandlers = (_native: NativeBridge): void => {
   // ===== Window Controls (Windows custom titlebar) =====
@@ -167,6 +180,53 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
     await session.defaultSession.clearStorageData({ storages: ["cookies"] });
   });
 
+  // CDP 命令桥（白名单）：供渲染进程执行无障碍快照（getFullAXTree）与
+  // 元素回指（resolveNode + callFunctionOn）。只放行最小必要命令集。
+  const CDP_METHOD_WHITELIST = new Set([
+    "Accessibility.getFullAXTree",
+    "DOM.resolveNode",
+    "Runtime.callFunctionOn",
+    "DOM.getDocument",
+    "DOM.querySelector",
+    "DOM.setFileInputFiles",
+  ]);
+  ipcMain.handle(
+    "browser:cdp-command",
+    async (
+      _event,
+      webContentsId: unknown,
+      method: unknown,
+      params: unknown
+    ) => {
+      if (typeof webContentsId !== "number") {
+        throw new Error("webContentsId must be a number");
+      }
+      if (typeof method !== "string" || !CDP_METHOD_WHITELIST.has(method)) {
+        throw new Error(`CDP method not allowed: ${String(method)}`);
+      }
+      const contents = getBrowserWebContents(webContentsId);
+      await ensureWebContentsDebugger(contents);
+      if (!contents.debugger.isAttached()) {
+        throw new Error(
+          "Browser debugger is unavailable; close the page DevTools and retry"
+        );
+      }
+      return contents.debugger.sendCommand(
+        method,
+        params !== null && typeof params === "object" ? params : {}
+      );
+    }
+  );
+  // 性能 trace：录制 durationMs 毫秒并返回精简统计（Tracing 域，主进程处理）。
+  ipcMain.handle(
+    "browser:trace",
+    (_event, webContentsId: number, durationMs: number) =>
+      runBrowserTrace(
+        typeof webContentsId === "number" ? webContentsId : -1,
+        typeof durationMs === "number" ? durationMs : 3000
+      )
+  );
+
   // 浏览器调试数据：网络请求记录与 JavaScript 弹窗（供 browser-devtools 查询/响应）
   ipcMain.handle(
     "browser:network-requests",
@@ -180,6 +240,92 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
         typeof webContentsId === "number" ? webContentsId : -1,
         typeof filter === "string" ? filter : undefined,
         typeof limit === "number" ? limit : 50
+      )
+  );
+  // 网络请求详情：请求/响应头 + 请求体 + 响应体（基于 CDP 记录中的 requestId）。
+  ipcMain.handle(
+    "browser:network-details",
+    (
+      _event,
+      webContentsId: number,
+      requestId: string,
+      maxBodyBytes?: number
+    ) =>
+      queryNetworkDetails(
+        typeof webContentsId === "number" ? webContentsId : -1,
+        typeof requestId === "string" ? requestId : "",
+        typeof maxBodyBytes === "number" ? maxBodyBytes : undefined
+      )
+  );
+  // 网络状态模拟：offline=true 离线，false 恢复在线。
+  ipcMain.handle(
+    "browser:network-state",
+    (_event, webContentsId: number, offline: boolean) =>
+      setBrowserNetworkState(
+        typeof webContentsId === "number" ? webContentsId : -1,
+        offline === true
+      )
+  );
+  // 路由 mock：设置拦截规则（全量替换；空数组 = 恢复真实网络）。
+  ipcMain.handle(
+    "browser:route-set",
+    (_event, webContentsId: number, rules: unknown) =>
+      setBrowserRouteRules(
+        typeof webContentsId === "number" ? webContentsId : -1,
+        Array.isArray(rules) ? (rules as Parameters<typeof setBrowserRouteRules>[1]) : []
+      )
+  );
+  ipcMain.handle("browser:route-clear", (_event, webContentsId: number) =>
+    clearBrowserRouteRules(
+      typeof webContentsId === "number" ? webContentsId : -1
+    )
+  );
+  // 登录态保存：cookie + localStorage → safeStorage 加密落盘（~/.snow/browser-state/）。
+  ipcMain.handle(
+    "browser:storage-save",
+    (_event, webContentsId: number, fileName?: string) =>
+      saveBrowserStorageState(
+        typeof webContentsId === "number" ? webContentsId : -1,
+        typeof fileName === "string" ? fileName : undefined
+      )
+  );
+  // 登录态恢复：解密 → cookies.set + localStorage 注入（origin 校验）；恢复前自动加密备份。
+  ipcMain.handle(
+    "browser:storage-restore",
+    (_event, webContentsId: number, fileName: string) =>
+      restoreBrowserStorageState(
+        typeof webContentsId === "number" ? webContentsId : -1,
+        typeof fileName === "string" ? fileName : ""
+      )
+  );
+  // 列出当前会话 cookie（默认脱敏值，showValues=true 返回明文）。
+  ipcMain.handle(
+    "browser:cookies-list",
+    (
+      _event,
+      webContentsId: number,
+      domain?: string,
+      showValues?: boolean
+    ) =>
+      listBrowserCookies(
+        typeof webContentsId === "number" ? webContentsId : -1,
+        typeof domain === "string" ? domain : undefined,
+        showValues === true
+      )
+  );
+  // 删除指定 cookie（name + domain 精确定位）。
+  ipcMain.handle(
+    "browser:cookie-delete",
+    (
+      _event,
+      webContentsId: number,
+      name: string,
+      domain: string
+    ) =>
+      deleteBrowserCookie(
+        typeof webContentsId === "number" ? webContentsId : -1,
+        typeof name === "string" ? name : "",
+        typeof domain === "string" ? domain : ""
       )
   );
   ipcMain.handle("browser:dialogs-list", (_event, webContentsId: number) =>

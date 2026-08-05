@@ -245,9 +245,36 @@ impl ConfigService {
     }
 
     /// Async entry point used by `call_mcp_tool` in tools.rs.
-    pub async fn execute_async(&self, tool_name: &str, args: &Value) -> napi::Result<Value> {
+    ///
+    /// `session_project_id` 是运行时已知的当前会话项目ID（directoryId）。
+    /// AI 调用方无法直接获知它，因此这里在支持项目级作用域的调用中自动
+    /// 注入，修复"项目级配置落到全局"的问题：
+    /// - 未显式传 projectId 且 scope 支持项目级 → 默认作用于当前项目；
+    /// - 显式传 `""` 仍表示全局，传非空值仍表示指定项目（向后兼容）；
+    /// - 不支持项目级的 scope（theme/app 等全局文件域）不注入，行为不变；
+    /// - 所有 `config-list` 返回统一附加 `currentProjectId`，让 AI 能够
+    ///   获取到当前会话绑定的项目。
+    pub async fn execute_async(
+        &self,
+        tool_name: &str,
+        args: &Value,
+        session_project_id: Option<String>,
+    ) -> napi::Result<Value> {
         let tool_name = tool_name.to_string();
-        let args = args.clone();
+        let mut args = args.clone();
+
+        // 注入当前会话 projectId（仅当调用方未显式提供且目标支持项目级）。
+        if !has_explicit_project_id(&args) {
+            if let Some(pid) = session_project_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                if config_scope_supports_project_id(&args) {
+                    args["projectId"] = json!(pid);
+                }
+            }
+        }
 
         // 破坏性操作统一二次确认：config-delete（任何 scope，含 imagegen 全量
         // 清空 / skills 卸载 / logs 删除日志文件）必须携带 `confirmed: true`，
@@ -259,33 +286,44 @@ impl ConfigService {
 
         // skills scope（能力委托给 SkillsConfigService）：需要 async 能力
         // （GitHub 下载等），因此在 spawn_blocking 之外直接分发。
-        if args.get("scope").and_then(Value::as_str) == Some(SCOPE_SKILLS) {
-            return self.execute_skills_scope(&tool_name, &args).await;
+        let result = if args.get("scope").and_then(Value::as_str) == Some(SCOPE_SKILLS) {
+            self.execute_skills_scope(&tool_name, &args).await?
+        } else if args.get("scope").and_then(Value::as_str) == Some(SCOPE_LOGS) {
+            execute_logs_scope(&tool_name, &args)?
+        } else if args.get("scope").and_then(Value::as_str) == Some(SCOPE_IMAGEGEN) {
+            execute_imagegen_scope(&tool_name, &args)?
+        } else {
+            let db_path = self.db_path.clone();
+            let tool_name_for_task = tool_name.clone();
+            tokio::task::spawn_blocking(move || {
+                let service = ConfigService { db_path };
+                service.execute(&tool_name_for_task, &args)
+            })
+            .await
+            .map_err(|error| {
+                Error::new(
+                    Status::GenericFailure,
+                    format!("Config service task failed: {error}"),
+                )
+            })??
+        };
+
+        // 所有 list 类调用统一附加当前会话项目ID，让 AI 调用方能够获取到
+        // 当前会话绑定的项目（directoryId），从而显式传 projectId 读写
+        // 项目级配置。
+        if tool_name == TOOL_LIST {
+            if let Some(pid) = session_project_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                if let Value::Object(mut map) = result {
+                    map.insert("currentProjectId".to_string(), json!(pid));
+                    return Ok(Value::Object(map));
+                }
+            }
         }
-
-        // logs scope（只读日志域）：文件读取是同步操作，直接分发。
-        if args.get("scope").and_then(Value::as_str) == Some(SCOPE_LOGS) {
-            return execute_logs_scope(&tool_name, &args);
-        }
-
-        // imagegen scope（图像生成设置，DB-backed）：同步 DB 操作，直接分发。
-        if args.get("scope").and_then(Value::as_str) == Some(SCOPE_IMAGEGEN) {
-            return execute_imagegen_scope(&tool_name, &args);
-        }
-
-        let db_path = self.db_path.clone();
-
-        tokio::task::spawn_blocking(move || {
-            let service = ConfigService { db_path };
-            service.execute(&tool_name, &args)
-        })
-        .await
-        .map_err(|error| {
-            Error::new(
-                Status::GenericFailure,
-                format!("Config service task failed: {error}"),
-            )
-        })?
+        Ok(result)
     }
 
     /// `~/.snow` 目录路径（与 Snow CLI 共享）。
@@ -2843,6 +2881,35 @@ fn optional_project_id(args: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
+/// args 是否显式提供了 projectId（哪怕为空串）。只要调用方显式传了
+/// projectId 字段就以调用方为准，绝不覆盖：
+/// - 显式传 `""` 表示全局；
+/// - 显式传非空值表示指定项目；
+/// - 未传该字段时才允许自动注入当前会话项目ID。
+fn has_explicit_project_id(args: &Value) -> bool {
+    args.get("projectId").is_some()
+}
+
+/// 当前调用（scope 与可选 key）是否支持项目级作用域。只有这些目标在
+/// 未显式传 projectId 时才允许自动注入当前会话项目ID：
+/// - subAgents / hooks / skills（DB 域，projectId 表示项目级）
+/// - settings 的 mcpServers / sensitiveCommands（项目级 settings 键）
+/// 其余 scope（theme/app/snowcfg 等全局文件域）不支持项目级，不注入，
+/// 保持全局语义不变。
+fn config_scope_supports_project_id(args: &Value) -> bool {
+    let Some(scope) = args.get("scope").and_then(Value::as_str) else {
+        return false;
+    };
+    match scope {
+        SCOPE_SUB_AGENTS | SCOPE_HOOKS | SCOPE_SKILLS => true,
+        "settings" => {
+            let key = args.get("key").and_then(Value::as_str).unwrap_or("");
+            key == "mcpServers" || key == "sensitiveCommands"
+        }
+        _ => false,
+    }
+}
+
 impl McpService for ConfigService {
     fn id(&self) -> &str {
         SERVER_ID
@@ -2853,7 +2920,7 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_LIST.to_string(),
-                description: "List configuration scopes and their keys; pass `scope` to inspect one scope (returns current values; sensitive keys masked).\nSCOPE REFERENCE:\n1. settings (~/.snow/settings.json): mcpServers, codebase, sensitiveCommands, yoloMode, planMode, goal, toolSearchEnabled, ...\n2. snowcfg (~/.snow/config.json): baseUrl, apiKey, advancedModel, basicModel, maxTokens, chatThinking, ...\n3. proxy (~/.snow/proxy-config.json): enabled, host, port, searchEngine, browserPath, browserDebugPort\n4. app (~/.snow/active-profile.json): activeProfile\n5. custom-headers (~/.snow/custom-headers.json): active, schemes (sensitive)\n6. system-prompt (~/.snow/system-prompt.json): active, prompts (sensitive)\n7. theme (~/.snow/theme.json): theme, simpleMode, diffOpacity, toolIcons, customColors, ...\n8. language (~/.snow/language.json): language\n9. permissions (~/.snow/permissions.json): alwaysApprovedTools\n10. lsp-config (~/.snow/lsp-config.json): schemaVersion, servers\n11. buddy (~/.snow/buddy.json): version, companion, muted\n12. subAgents (app DB): sub-agent configs, key=agentId; list returns items + CREATING guidance\n13. hooks (app DB): lifecycle hook configs, key=hookType; list returns items + CONFIGURING guidance\n14. imagegen (app DB): image generation channels + top-level maxConcurrentImages (1-8, default 4) and timeoutSecs (60-3600, default 300); list returns keys + note\n15. skills (delegated): skillId toggles / GitHub installs\n16. logs (read-only): log files under ~/.snow/log\nRULES: pass projectId to scope subAgents/hooks listings to a specific project (omitted = global); sensitive values (apiKey, visionApiKey, custom-header schemes, system-prompt prompts, imagegen apiKey) are always masked."
+                description: "List configuration scopes and their keys; pass `scope` to inspect one scope (returns current values; sensitive keys masked).\nSCOPE REFERENCE:\n1. settings (~/.snow/settings.json): mcpServers, codebase, sensitiveCommands, yoloMode, planMode, goal, toolSearchEnabled, ...\n2. snowcfg (~/.snow/config.json): baseUrl, apiKey, advancedModel, basicModel, maxTokens, chatThinking, ...\n3. proxy (~/.snow/proxy-config.json): enabled, host, port, searchEngine, browserPath, browserDebugPort\n4. app (~/.snow/active-profile.json): activeProfile\n5. custom-headers (~/.snow/custom-headers.json): active, schemes (sensitive)\n6. system-prompt (~/.snow/system-prompt.json): active, prompts (sensitive)\n7. theme (~/.snow/theme.json): theme, simpleMode, diffOpacity, toolIcons, customColors, ...\n8. language (~/.snow/language.json): language\n9. permissions (~/.snow/permissions.json): alwaysApprovedTools\n10. lsp-config (~/.snow/lsp-config.json): schemaVersion, servers\n11. buddy (~/.snow/buddy.json): version, companion, muted\n12. subAgents (app DB): sub-agent configs, key=agentId; list returns items + CREATING guidance\n13. hooks (app DB): lifecycle hook configs, key=hookType; list returns items + CONFIGURING guidance\n14. imagegen (app DB): image generation channels + top-level maxConcurrentImages (1-8, default 4) and timeoutSecs (60-3600, default 300); list returns keys + note\n15. skills (delegated): skillId toggles / GitHub installs\n16. logs (read-only): log files under ~/.snow/log\nRULES: pass projectId to scope subAgents/hooks/skills listings to a specific project (omitted = auto-injects the CURRENT SESSION's projectId, so you get/configure the active project's settings; pass an empty string \"\" for global); every list response includes the current session's projectId as `currentProjectId` — read it to obtain the project id bound to the current conversation; sensitive values (apiKey, visionApiKey, custom-header schemes, system-prompt prompts, imagegen apiKey) are always masked."
                     .to_string(),
                 input_schema: json!({
                     "type": "object",
@@ -2865,7 +2932,7 @@ impl McpService for ConfigService {
                         },
                         "projectId": {
                             "type": "string",
-                            "description": "Optional project id. For subAgents/hooks scopes: when provided, lists configs for that project; when omitted, lists global configs (subAgents without projectId returns ALL configs incl. project ones)."
+                            "description": "Optional project id. For subAgents/hooks scopes: when provided, lists configs for that project; when omitted, the CURRENT SESSION's projectId is auto-injected (lists the active project's configs; pass an empty string \"\" for global; subAgents without any projectId context returns ALL configs incl. project ones)."
                         }
                     },
                     "additionalProperties": false
@@ -2889,7 +2956,7 @@ impl McpService for ConfigService {
                         },
                         "projectId": {
                             "type": "string",
-                            "description": "Optional project id for subAgents/hooks scopes; omitted = global config."
+                            "description": "Optional project id for project-scoped targets (subAgents/hooks/skills/settings.mcpServers/settings.sensitiveCommands); omitted = auto-injects the CURRENT SESSION's projectId (pass \"\" for global config)."
                         },
                         "limit": {
                             "type": "integer",
@@ -2923,7 +2990,7 @@ impl McpService for ConfigService {
                         },
                         "projectId": {
                             "type": "string",
-                            "description": "Optional project id for subAgents/hooks scopes; omitted = global config."
+                            "description": "Optional project id for project-scoped targets (subAgents/hooks/skills/settings.mcpServers/settings.sensitiveCommands); omitted = auto-injects the CURRENT SESSION's projectId (pass \"\" for global config)."
                         }
                     },
                     "required": ["scope", "key", "value"],
@@ -2952,7 +3019,7 @@ impl McpService for ConfigService {
                         },
                         "projectId": {
                             "type": "string",
-                            "description": "Optional project id for subAgents/hooks scopes; omitted = global config."
+                            "description": "Optional project id for project-scoped targets (subAgents/hooks/skills/settings.mcpServers/settings.sensitiveCommands); omitted = auto-injects the CURRENT SESSION's projectId (pass \"\" for global config)."
                         }
                     },
                     "required": ["scope", "key", "confirmed"],

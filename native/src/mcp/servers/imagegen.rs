@@ -41,7 +41,6 @@ const REQUEST_TIMEOUT_SECS: u64 = 300;
 const MIN_TIMEOUT_SECS: u64 = 60;
 const MAX_TIMEOUT_SECS: u64 = 3600;
 const DEFAULT_N: usize = 1;
-const MAX_N: usize = 4;
 
 /// system_settings 表中的设置 code（与设置面板共用）。
 const IMAGE_GEN_SETTING_CODE: &str = "imagegen_settings";
@@ -129,7 +128,19 @@ impl ImageGenService {
         on_chunk: &BashStreamCallback,
     ) -> napi::Result<Value> {
         let prompt = required_string(args, "prompt", TOOL_GENERATE)?;
-        let n = bounded_usize(args.get("n").and_then(Value::as_u64), DEFAULT_N, 1, MAX_N);
+        // n>1 已禁用：一次调用只生成一张图（配置的中转/上游不支持一次多张，
+        // 实测 n>1 会触发连接中断）。多图请多次调用本工具，并行调用由应用侧
+        // maxConcurrentImages 自动管理并发。
+        let n = args
+            .get("n")
+            .and_then(Value::as_u64)
+            .unwrap_or(DEFAULT_N as u64);
+        if n > 1 {
+            return Err(Error::from_reason(format!(
+                "{TOOL_GENERATE} generates exactly one image per call (n>1 is disabled: the configured relay/upstream does not support multiple images per request). To create several images, call this tool multiple times — parallel calls are run concurrently, capped by the app's maxConcurrentImages setting."
+            )));
+        }
+        let n = n as usize;
 
         // --- 1. Load the independent front-end settings (blocking SQLite I/O) ---
         let settings = tokio::task::spawn_blocking(load_imagegen_settings)
@@ -587,7 +598,7 @@ impl ImageGenService {
         quality: &Option<String>,
         base_url: &str,
         api_key: &str,
-        n: usize,
+        _n: usize, // 一次调用固定 1 张（n>1 已在入口拦截）
         stream_enabled: bool,
         on_chunk: &BashStreamCallback,
         images: &[ReferenceImage],
@@ -778,10 +789,7 @@ impl ImageGenService {
                 generation_config["imageQuality"] = json!(quality);
             }
         }
-        if n > 1 {
-            // imagen-4 系列支持一次多张（1-4）
-            generation_config["numberOfImages"] = json!(n.min(4));
-        }
+        // 一次调用固定生成 1 张（n>1 已在入口拦截）；并发通过多次调用实现。
         if let Some(seed) = seed {
             generation_config["seed"] = json!(seed);
         }
@@ -869,7 +877,7 @@ impl McpService for ImageGenService {
         vec![McpTool {
             server_id: SERVER_ID.to_string(),
             name: TOOL_GENERATE.to_string(),
-            description: "Generate or edit image(s) using the INDEPENDENT image-generation configuration from Settings -> Image generation (separate from the conversation API; no built-in default model). TEXT-TO-IMAGE: pass only `prompt`. IMAGE-TO-IMAGE (edit / reference / restyle): pass `images` (reference images extracted from the user's attached images — either base64 from the @@image:...@@ tags, or the exact [Reference image #N for imagegen-generate: {...}] JSON blocks present in textified user messages when the main model is text-only) plus an edit `prompt`; the server resolves `path` references itself, so you NEVER need to copy huge base64 strings. OpenAI uses POST /v1/images/edits, Gemini embeds inlineData parts. Supported backends: OpenAI-compatible (gpt-image / dall-e) and Google Gemini Imagen (optional Google Search grounding). Provider auto-detected from the configured base URL unless overridden. USE THIS when the user asks to create, draw, generate, render, edit, restyle, or vary an image — ESPECIALLY when the user attached reference image(s): edit/vary THOSE images (image-to-image) instead of generating a new image from the text description alone. RENDERING TIP: after the tool returns, briefly mention the image(s) in your reply. TRANSPARENT BACKGROUND: when the user needs a transparent-background image (desktop pet, sticker, logo overlay, PNG cutout), pass background=\"transparent\" AND outputFormat=\"png\" AND prefer model gpt-image-1, the only model that can actually output transparency. gpt-image-2 CANNOT produce transparent backgrounds: requesting \"transparent\" there is silently downgraded to \"opaque\", so never expect transparency from gpt-image-2. dall-e-3 and Gemini ignore the background parameter entirely (always opaque). If the configured/available model cannot do transparency, tell the user and either switch to gpt-image-1 or generate with a plain solid background instead."
+            description: "Generate or edit image(s) using the INDEPENDENT image-generation configuration from Settings -> Image generation (separate from the conversation API; no built-in default model). TEXT-TO-IMAGE: pass only `prompt`. IMAGE-TO-IMAGE (edit / reference / restyle): pass `images` (reference images extracted from the user's attached images — either base64 from the @@image:...@@ tags, or the exact [Reference image #N for imagegen-generate: {...}] JSON blocks present in textified user messages when the main model is text-only) plus an edit `prompt`; the server resolves `path` references itself, so you NEVER need to copy huge base64 strings. OpenAI uses POST /v1/images/edits, Gemini embeds inlineData parts. Supported backends: OpenAI-compatible (gpt-image / dall-e) and Google Gemini Imagen (optional Google Search grounding). Provider auto-detected from the configured base URL unless overridden. USE THIS when the user asks to create, draw, generate, render, edit, restyle, or vary an image — ESPECIALLY when the user attached reference image(s): edit/vary THOSE images (image-to-image) instead of generating a new image from the text description alone. RENDERING TIP: after the tool returns, briefly mention the image(s) in your reply. TRANSPARENT BACKGROUND: when the user needs a transparent-background image (desktop pet, sticker, logo overlay, PNG cutout), pass background=\"transparent\" AND outputFormat=\"png\" AND prefer model gpt-image-1, the only model that can actually output transparency. gpt-image-2 CANNOT produce transparent backgrounds: requesting \"transparent\" there is silently downgraded to \"opaque\", so never expect transparency from gpt-image-2. dall-e-3 and Gemini ignore the background parameter entirely (always opaque). If the configured/available model cannot do transparency, tell the user and either switch to gpt-image-1 or generate with a plain solid background instead. ONE IMAGE PER CALL: this tool generates exactly one image per invocation — `n` is fixed at 1 and `n>1` is rejected (the configured relay/upstream does not support multiple images per request). When the user wants several images, call this tool multiple times; parallel calls are executed concurrently, capped by maxConcurrentImages in Settings -> Image generation."
                 .to_string(),
             input_schema: json!({
                 "type": "object",
@@ -922,10 +930,10 @@ impl McpService for ImageGenService {
                     },
                     "n": {
                         "type": "number",
-                        "description": "Number of images to generate in one request (default: 1, max: 4). OpenAI and Gemini (imagen-4) both support it.",
+                        "description": "Always 1 — generating multiple images per call is disabled (n>1 is rejected: the configured relay/upstream does not support it). To create several images, call this tool multiple times; parallel calls run concurrently, capped by the app's maxConcurrentImages setting.",
                         "default": 1,
                         "minimum": 1,
-                        "maximum": 4
+                        "maximum": 1
                     },
                     "personGeneration": {
                         "type": "string",
@@ -1813,13 +1821,6 @@ fn required_string<'a>(args: &'a Value, key: &str, tool_name: &str) -> napi::Res
                 format!("{key} is required for tool \"{tool_name}\""),
             )
         })
-}
-
-fn bounded_usize(value: Option<u64>, default: usize, min: usize, max: usize) -> usize {
-    value
-        .map(|value| value as usize)
-        .unwrap_or(default)
-        .clamp(min, max)
 }
 
 fn mime_for_format(format: &str) -> String {

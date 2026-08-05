@@ -818,6 +818,7 @@ export const zhTW = {
   "settings.name": "名稱",
   "settings.value": "值",
   "settings.remove": "移除",
+  "settings.save": "儲存",
   "settings.saveApiConfig": "儲存 API 配置",
   "settings.apiManualProfileRequired": "請填寫配置名稱。",
   "settings.apiManualAddSuccess": "已新增 API 配置 {name}。",

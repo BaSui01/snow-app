@@ -822,6 +822,7 @@ export const zhCN = {
   "settings.name": "名称",
   "settings.value": "值",
   "settings.remove": "移除",
+  "settings.save": "保存",
   "settings.saveApiConfig": "保存 API 配置",
   "settings.apiManualProfileRequired": "请填写配置名称。",
   "settings.apiManualAddSuccess": "已添加 API 配置 {name}。",

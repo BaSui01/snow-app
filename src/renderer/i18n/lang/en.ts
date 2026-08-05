@@ -851,6 +851,7 @@ export const en = {
   "settings.name": "Name",
   "settings.value": "Value",
   "settings.remove": "Remove",
+  "settings.save": "Save",
   "settings.saveApiConfig": "Save API profile",
   "settings.apiManualProfileRequired": "Profile name is required.",
   "settings.apiManualAddSuccess": "Added API profile {name}.",

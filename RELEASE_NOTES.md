@@ -86,9 +86,31 @@
   refuses to enable a channel that has no API key or model (with a
   localized hint) — matching the backend rule that only fully configured
   channels expose the generation tool to the agent.
+- **Composer Drag-and-Drop Images**: The input box now accepts images dragged
+  in from the file manager (single or multiple at once), inserting them as
+  image chips exactly like pasting — previously the drop handlers only
+  understood the app-internal `application/json` drag payloads (file / commit
+  / change tags) and silently ignored external files (no drop cursor, no
+  insertion).
+- **Path-Aware `@` File Mentions**: The `@` file panel now supports browsing
+  into folders like a file manager — clicking a folder entry (or `→` / `Enter`)
+  navigates into it and rewrites the `@` query to the relative path; a
+  breadcrumb bar (workspace root → path segments) lets you jump back, `←` goes
+  up one level, and typing paths directly (`src/`, `src/renderer/App`) browses
+  or filters inside the target directory.
 
 ## Bug Fixes
 
+- **Markdown Images with Local Paths**: When the model referenced generated
+  images by local relative paths (`image/...` library paths or `upload/...`
+  paths) inside the Markdown reply body, the renderer tried to load them as
+  relative URLs and showed broken-image icons. The markdown worker now tags
+  such `<img>` elements with `data-local-image` (backslash / URL-encoded
+  variants normalized, `..` traversal and absolute paths rejected), and the
+  renderer resolves them to data URLs via the existing
+  `images:resolve-library-image` / `images:resolve-upload-image` IPC channels
+  (module-level cache + in-flight dedupe, so streaming re-renders never
+  repeat IPC reads).
 - **i18n Placeholder Syntax**: `settings.imagegenChannelCount` and
   `settings.imageLibraryCount` used the single-brace `{count}` placeholder
   format, so the channel count and image-library count rendered literally

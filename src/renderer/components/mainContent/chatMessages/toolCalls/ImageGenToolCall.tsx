@@ -9,6 +9,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useI18n } from "../../../../i18n";
+import { dataUrlToBlob, saveBlobToFile } from "../../../../utils/imageDownload";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
 
@@ -302,66 +303,6 @@ const columnsForCount = (count: number): number => {
  */
 const uploadImageCache = new Map<string, string>();
 
-/** 将 data URL 直接解码为 Blob。不走 fetch(dataUrl) —— CSP connect-src
- *  不允许 data:，fetch 会被拦截导致保存静默失败（点击无反应）。 */
-const dataUrlToBlob = (dataUrl: string): Blob => {
-  const [header, base64] = dataUrl.split(",");
-  const mimeType =
-    /^data:([^;]+)/.exec(header)?.[1] ?? "application/octet-stream";
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return new Blob([bytes], { type: mimeType });
-};
-
-/** 保存生成的图片（原生文件选择器优先，回退为浏览器下载）。 */
-const saveImageBlob = async (
-  dataUrl: string,
-  filename: string
-): Promise<void> => {
-  const blob = dataUrlToBlob(dataUrl);
-
-  const picker = (
-    window as unknown as {
-      showSaveFilePicker?: (opts: {
-        suggestedName?: string;
-        types: { description?: string; accept: Record<string, string[]> }[];
-      }) => Promise<FileSystemFileHandle>;
-    }
-  ).showSaveFilePicker;
-
-  if (typeof picker === "function") {
-    try {
-      const handle = await picker({
-        suggestedName: filename,
-        types: [
-          {
-            description: "Image file",
-            accept: { [blob.type]: [blob.type] },
-          },
-        ],
-      });
-      const writable = await handle.createWritable();
-      await writable.write(blob);
-      await writable.close();
-      return;
-    } catch {
-      // User cancelled the picker — fall through to anchor download.
-    }
-  }
-
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-};
-
 export const ImageGenToolCall = ({
   toolCall,
 }: ImageGenToolCallProps): React.JSX.Element => {
@@ -640,8 +581,8 @@ export const ImageGenToolCall = ({
                       "";
                   }
                   if (src) {
-                    await saveImageBlob(
-                      src,
+                    await saveBlobToFile(
+                      dataUrlToBlob(src),
                       `generated-image.${mimeToExtension(lightbox.mimeType)}`
                     );
                   }

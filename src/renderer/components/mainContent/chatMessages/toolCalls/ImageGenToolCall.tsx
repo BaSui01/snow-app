@@ -9,7 +9,8 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useI18n } from "../../../../i18n";
-import { dataUrlToBlob, saveBlobToFile } from "../../../../utils/imageDownload";
+import { downloadImageSrc } from "../../../../utils/imageDownload";
+import { imageProxyUrl } from "../../../../utils/imageProxyUrl";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
 
@@ -19,6 +20,8 @@ type ImageGenToolCallProps = {
 
 type ParsedImageGenArgs = {
   prompt: string;
+  /** 逐请求不同提示词（一次调用生成多张不同设计稿）；提供时覆盖 n */
+  prompts?: string[];
   model?: string;
   size?: string;
   quality?: string;
@@ -41,6 +44,14 @@ type ParsedImageGenArgs = {
     /** 纯文本主模型场景下的磁盘相对路径引用（upload/...），渲染端仅作占位展示 */
     path?: string;
   }>;
+  /** 逐请求独立参考图组（第 i 组对应第 i 个请求） */
+  requestImages?: Array<
+    Array<{
+      data: string;
+      mimeType: string;
+      path?: string;
+    }>
+  >;
 };
 
 type GeneratedImage = {
@@ -63,6 +74,19 @@ type ParsedImageGenResult =
   | { type: "error"; message: string }
   | { type: "raw"; text: string }
   | { type: "empty" };
+
+/** 画廊统一展示项：本地图片（data / path）+ 远程 URL（经 img-proxy 代理展示）。 */
+type GalleryItem = {
+  key: string;
+  src: string;
+  image?: GeneratedImage;
+  remoteUrl?: string;
+};
+
+/** 灯箱目标：本地图片或远程 URL。 */
+type LightboxTarget =
+  | { kind: "image"; image: GeneratedImage }
+  | { kind: "remote"; url: string };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -155,6 +179,47 @@ const parseImageGenArgs = (args: string): ParsedImageGenArgs | null => {
       }
       if (images.length > 0) {
         result.images = images;
+      }
+    }
+    if (Array.isArray(parsed.prompts)) {
+      const prompts: string[] = [];
+      for (const item of parsed.prompts) {
+        if (typeof item === "string" && item.trim() !== "") {
+          prompts.push(item.trim());
+        }
+      }
+      if (prompts.length > 0) {
+        result.prompts = prompts;
+      }
+    }
+    if (Array.isArray(parsed.requestImages)) {
+      const requestImages: NonNullable<ParsedImageGenArgs["requestImages"]> = [];
+      for (const group of parsed.requestImages) {
+        if (!Array.isArray(group)) {
+          continue;
+        }
+        const groupItems: NonNullable<
+          NonNullable<ParsedImageGenArgs["requestImages"]>[number]
+        > = [];
+        for (const item of group) {
+          if (isRecord(item) && typeof item.mimeType === "string") {
+            if (typeof item.data === "string" && item.data.trim() !== "") {
+              groupItems.push({ data: item.data, mimeType: item.mimeType });
+            } else if (typeof item.path === "string" && item.path.trim() !== "") {
+              groupItems.push({
+                data: "",
+                mimeType: item.mimeType,
+                path: item.path.trim(),
+              });
+            }
+          }
+        }
+        if (groupItems.length > 0) {
+          requestImages.push(groupItems);
+        }
+      }
+      if (requestImages.length > 0) {
+        result.requestImages = requestImages;
       }
     }
     return result;
@@ -275,12 +340,6 @@ const parseImageGenResult = (
 const truncateLabel = (value: string, max: number): string =>
   value.length > max ? `${value.slice(0, max)}...` : value;
 
-const mimeToExtension = (mimeType: string): string => {
-  if (mimeType.includes("jpeg")) return "png";
-  if (mimeType.includes("webp")) return "webp";
-  return "png";
-};
-
 /** 宽高比超过该阈值视为超宽（通栏展示），低于该阈值视为超窄（限高展示） */
 const IMG_WIDE_RATIO = 1.6;
 const IMG_TALL_RATIO = 0.7;
@@ -307,7 +366,7 @@ export const ImageGenToolCall = ({
   toolCall,
 }: ImageGenToolCallProps): React.JSX.Element => {
   const { t } = useI18n();
-  const [lightbox, setLightbox] = useState<GeneratedImage | null>(null);
+  const [lightbox, setLightbox] = useState<LightboxTarget | null>(null);
 
   // 图片真实宽高比探测：index → width/height，加载完成后驱动卡片比例
   const [ratios, setRatios] = useState<Record<number, number>>({});
@@ -482,25 +541,74 @@ export const ImageGenToolCall = ({
 
   const streamingImages = toolCall.streamingImages ?? [];
 
+  // 画廊统一展示项：本地图片（data / path）+ 远程 URL。
+  // 远程图经 img-proxy:// 代理加载（CSP 放行、主进程转发、无 CORS 限制），
+  // 与本地图同规格展示；链接失效时降级为占位（原始链接列表仍保留兜底）。
+  const galleryItems = useMemo<GalleryItem[]>(() => {
+    if (parsedResult.type !== "success") {
+      return [];
+    }
+    const items: GalleryItem[] = [];
+    for (const image of parsedResult.images) {
+      items.push({
+        key: image.path ?? `img-${image.data.length}`,
+        src: image.path
+          ? (resolvedLibrary[image.path] ?? "")
+          : `data:${image.mimeType};base64,${image.data}`,
+        image,
+      });
+    }
+    for (const url of parsedResult.remoteUrls) {
+      items.push({
+        key: `remote-${url}`,
+        src: imageProxyUrl(url),
+        remoteUrl: url,
+      });
+    }
+    return items;
+  }, [parsedResult, resolvedLibrary]);
+
+  // 远程图加载失败（链接过期/403 等）的记录：按 key 降级为占位展示
+  const [failedRemotes, setFailedRemotes] = useState<Set<string>>(new Set());
+  const handleRemoteError = useCallback((key: string) => {
+    setFailedRemotes((prev) =>
+      prev.has(key) ? prev : new Set(prev).add(key)
+    );
+  }, []);
+
   const prompt = parsedArgs?.prompt ?? "";
   const imageCount =
     parsedResult.type === "success" ? parsedResult.imageCount : 0;
 
+  // 参考图展示来源：requestImages（逐请求独立参考图）时展示第 1 组并注明
+  // 总组数，否则展示顶层 images（所有请求共用）
+  const hasRequestImages =
+    parsedArgs?.requestImages !== undefined &&
+    parsedArgs.requestImages.length > 0;
+  const refImages = hasRequestImages
+    ? parsedArgs!.requestImages![0]
+    : parsedArgs?.images;
+  const refGroupCount = hasRequestImages
+    ? parsedArgs!.requestImages!.length
+    : 0;
+
   // 灯箱：挂载到 document.body，确保 fixed 定位始终相对视口，
   // 无论页面滚动到何处都保持水平 + 垂直居中。
   const lightboxSrc = lightbox
-    ? lightbox.path
-      ? resolvedLibrary[lightbox.path] ?? ""
-      : `data:${lightbox.mimeType};base64,${lightbox.data}`
+    ? lightbox.kind === "remote"
+      ? imageProxyUrl(lightbox.url)
+      : lightbox.image.path
+        ? resolvedLibrary[lightbox.image.path] ?? ""
+        : `data:${lightbox.image.mimeType};base64,${lightbox.image.data}`
     : "";
 
   // 灯箱打开时若图片数据尚未解析（path 引用），立即兜底解析，
   // 避免 src 为空导致破图图标闪烁
   useEffect(() => {
-    if (!lightbox?.path) {
+    if (lightbox?.kind !== "image" || !lightbox.image.path) {
       return;
     }
-    const targetPath = lightbox.path;
+    const targetPath = lightbox.image.path;
     if (resolvedLibrary[targetPath]) {
       return;
     }
@@ -522,7 +630,11 @@ export const ImageGenToolCall = ({
     return () => {
       cancelled = true;
     };
-  }, [lightbox?.path, resolvedLibrary]);
+  }, [
+    lightbox?.kind,
+    lightbox?.kind === "image" ? lightbox.image.path : undefined,
+    resolvedLibrary,
+  ]);
 
   // Esc 关闭灯箱
   useEffect(() => {
@@ -575,16 +687,15 @@ export const ImageGenToolCall = ({
               onClick={() => {
                 void (async () => {
                   let src = lightboxSrc;
-                  if (!src && lightbox.path) {
+                  if (!src && lightbox.kind === "image" && lightbox.image.path) {
                     src =
-                      (await window.snow.resolveLibraryImage(lightbox.path)) ??
-                      "";
+                      (await window.snow.resolveLibraryImage(
+                        lightbox.image.path
+                      )) ?? "";
                   }
                   if (src) {
-                    await saveBlobToFile(
-                      dataUrlToBlob(src),
-                      `generated-image.${mimeToExtension(lightbox.mimeType)}`
-                    );
+                    // data URL / http(s) / img-proxy:// 统一由工具函数解析为 Blob 保存
+                    await downloadImageSrc(src);
                   }
                 })().catch((error) => {
                   console.error("[imagegen] save image failed:", error);
@@ -610,9 +721,9 @@ export const ImageGenToolCall = ({
       )
     : null;
 
-  // 成功且有图片：直接以相框画廊展示，不再渲染工具卡片头部
-  if (parsedResult.type === "success" && parsedResult.images.length > 0) {
-    const resultImageCount = parsedResult.images.length;
+  // 成功且有图片（本地或远程 URL）：直接以相框画廊展示，不再渲染工具卡片头部
+  if (parsedResult.type === "success" && galleryItems.length > 0) {
+    const resultImageCount = galleryItems.length;
     // 并行生成的多张图共享同一宽度：按数量分档列数（见 columnsForCount），
     // 整批作为一个图块占满消息可用宽度，而非每张图独立小列
     const gridStyle =
@@ -631,34 +742,58 @@ export const ImageGenToolCall = ({
           }`}
           style={gridStyle}
         >
-          {parsedResult.images.map((image, index) => (
-            <figure
-              key={`${index}-${image.data.length}`}
-              className={figureClassName}
-              style={figureStyle}
-            >
-              <button
-                type="button"
-                className="tool-call-imagegen-thumb"
-                onClick={() => setLightbox(image)}
-                title={t("toolCall.imagegen.zoom")}
-                aria-label={t("toolCall.imagegen.zoom")}
+          {galleryItems.map((item, index) => {
+            const failed = Boolean(
+              item.remoteUrl && failedRemotes.has(item.key)
+            );
+            return (
+              <figure
+                key={item.key}
+                className={figureClassName}
+                style={figureStyle}
               >
-                <img
-                  src={
-                    image.path
-                      ? resolvedLibrary[image.path] ?? ""
-                      : `data:${image.mimeType};base64,${image.data}`
-                  }
-                  alt={`${t("toolCall.imagegen.generatedImage")} ${index + 1}`}
-                  onLoad={handleImageLoad(index)}
-                />
-                {resultImageCount > 1 ? (
-                  <span className="tool-call-imagegen-badge">{index + 1}</span>
-                ) : null}
-              </button>
-            </figure>
-          ))}
+                <button
+                  type="button"
+                  className="tool-call-imagegen-thumb"
+                  onClick={() => {
+                    if (failed && item.remoteUrl) {
+                      // 链接已失效：直接打开原始 URL（浏览器可尝试重试/登录）
+                      window.open(item.remoteUrl, "_blank", "noopener,noreferrer");
+                      return;
+                    }
+                    item.image
+                      ? setLightbox({ kind: "image", image: item.image })
+                      : setLightbox({ kind: "remote", url: item.remoteUrl! });
+                  }}
+                  title={t("toolCall.imagegen.zoom")}
+                  aria-label={t("toolCall.imagegen.zoom")}
+                >
+                  {failed ? (
+                    <div className="tool-call-imagegen-remote-fallback">
+                      <Link2 size={18} aria-hidden="true" />
+                      <span>{t("toolCall.imagegen.remoteFailed")}</span>
+                    </div>
+                  ) : (
+                    <img
+                      src={item.src}
+                      alt={`${t("toolCall.imagegen.generatedImage")} ${
+                        index + 1
+                      }`}
+                      onLoad={handleImageLoad(index)}
+                      onError={
+                        item.remoteUrl
+                          ? () => handleRemoteError(item.key)
+                          : undefined
+                      }
+                    />
+                  )}
+                  {resultImageCount > 1 ? (
+                    <span className="tool-call-imagegen-badge">{index + 1}</span>
+                  ) : null}
+                </button>
+              </figure>
+            );
+          })}
         </div>
 
         {parsedResult.remoteUrls.length > 0 ? (
@@ -768,11 +903,31 @@ export const ImageGenToolCall = ({
             <div className="tool-call-imagegen-param-item">
               <Sparkles size={11} aria-hidden="true" />
               <span className="tool-call-imagegen-param-label">
-                {t("toolCall.imagegen.prompt")}
+                {parsedArgs.prompts && parsedArgs.prompts.length > 1
+                  ? t("toolCall.imagegen.prompts", {
+                      values: { count: parsedArgs.prompts.length },
+                    })
+                  : t("toolCall.imagegen.prompt")}
               </span>
-              <code className="tool-call-imagegen-param-value">
-                {parsedArgs.prompt}
-              </code>
+              {parsedArgs.prompts && parsedArgs.prompts.length > 1 ? (
+                <div className="tool-call-imagegen-param-value tool-call-imagegen-prompts">
+                  {parsedArgs.prompts.map((item, index) => (
+                    <div
+                      key={`${index}-${item}`}
+                      className="tool-call-imagegen-prompts-item"
+                    >
+                      <span className="tool-call-imagegen-prompts-index">
+                        {index + 1}
+                      </span>
+                      <code>{item}</code>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <code className="tool-call-imagegen-param-value">
+                  {parsedArgs.prompts?.[0] ?? parsedArgs.prompt}
+                </code>
+              )}
             </div>
 
             {parsedArgs.model ||
@@ -875,17 +1030,23 @@ export const ImageGenToolCall = ({
               </div>
             ) : null}
 
-            {/* 参考图（图生图） */}
-            {parsedArgs?.images && parsedArgs.images.length > 0 ? (
+            {/* 参考图（图生图）：requestImages 时展示第 1 组并注明总组数，
+                否则展示顶层 images（所有请求共用） */}
+            {refImages && refImages.length > 0 ? (
               <div className="tool-call-imagegen-refs">
                 <span className="tool-call-imagegen-refs-label">
                   <ImageIcon size={10} aria-hidden="true" />
                   {t("toolCall.imagegen.refImages", {
-                    values: { count: parsedArgs.images.length },
+                    values: { count: refImages.length },
                   })}
+                  {refGroupCount > 0
+                    ? ` · ${t("toolCall.imagegen.refGroups", {
+                        values: { count: refGroupCount },
+                      })}`
+                    : ""}
                 </span>
                 <div className="tool-call-imagegen-refs-grid">
-                  {parsedArgs.images.map((image, index) => {
+                  {refImages.map((image, index) => {
                     const src = image.data
                       ? `data:${image.mimeType};base64,${image.data}`
                       : image.path

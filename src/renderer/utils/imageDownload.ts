@@ -19,11 +19,13 @@ export const dataUrlToBlob = (dataUrl: string): Blob => {
   return new Blob([bytes], { type: mimeType });
 };
 
-/** 把任意图片 src（data URL 或 http(s) URL）解析为 Blob。 */
+/** 把任意图片 src（data URL、http(s) URL 或 img-proxy:// 代理 URL）解析为 Blob。 */
 const srcToBlob = async (src: string): Promise<Blob> => {
   if (src.startsWith("data:")) {
     return dataUrlToBlob(src);
   }
+  // img-proxy:// 是主进程注册的自定义协议（CSP connect-src 已放行），
+  // fetch 由主进程代理转发，无 CORS 限制。
   const response = await fetch(src);
   if (!response.ok) {
     throw new Error(`fetch image failed: ${response.status}`);

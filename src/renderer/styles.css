@@ -11624,6 +11624,26 @@ input {
   user-select: none;
 }
 
+/* 远程图加载失败占位（链接过期/403 等）：浅色底 + 图标 + 提示，与画廊同尺寸 */
+.tool-call-imagegen-remote-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  min-height: 120px;
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: center;
+  user-select: none;
+}
+
 /* 图片：填满整个比例卡片，contain 保证完整显示不变形 */
 .tool-call-imagegen-thumb img {
   position: absolute;
@@ -11711,6 +11731,40 @@ input {
 .tool-call-imagegen-download:hover {
   color: var(--accent-blue-text);
   background: var(--accent-blue-bg);
+}
+
+/* 多提示词（prompts 数组）：逐行展示，序号徽章 + 等宽文本 */
+.tool-call-imagegen-prompts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tool-call-imagegen-prompts-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.tool-call-imagegen-prompts-index {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.tool-call-imagegen-prompts-item code {
+  word-break: break-word;
 }
 
 .tool-call-imagegen-remote {

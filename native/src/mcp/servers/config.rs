@@ -57,6 +57,19 @@ const SCOPE_LOGS: &str = "logs";
 /// key = 渠道 id / 名称 / 协议类型（openai|gemini），或全局键 maxConcurrentImages
 /// （缺省返回完整设置）。
 const SCOPE_IMAGEGEN: &str = "imagegen";
+
+/// 全局规则/角色定义域（~/.snow/ROLE.md，纯文本 markdown，非 JSON）。
+/// key = "role"，value 为规则全文；list 返回长度与预览（不返回全文，
+/// 避免占用上下文），get 返回全文；set 原子写全文（写前备份）；
+/// delete 需 confirmed，删除文件即恢复默认（应用对缺失 ROLE.md 有内置回退）。
+const SCOPE_PERSONALIZATION: &str = "personalization";
+/// ROLE.md 文件名（~/.snow/ROLE.md，与 personalizationHandlers.ts 约定一致）。
+const ROLE_FILE_NAME: &str = "ROLE.md";
+/// personalization scope 的唯一定义键。
+const PERSONALIZATION_ROLE_KEY: &str = "role";
+/// config-list personalization 返回的预览长度（避免全文进入上下文）。
+const ROLE_PREVIEW_LEN: usize = 300;
+
 /// 日志目录名（~/.snow/log）。
 const LOG_DIR_NAME: &str = "log";
 /// 日志文件名的合法形态：YYYY-MM-DD-(debug|info|warn|error).log。
@@ -292,6 +305,8 @@ impl ConfigService {
             execute_logs_scope(&tool_name, &args)?
         } else if args.get("scope").and_then(Value::as_str) == Some(SCOPE_IMAGEGEN) {
             execute_imagegen_scope(&tool_name, &args)?
+        } else if args.get("scope").and_then(Value::as_str) == Some(SCOPE_PERSONALIZATION) {
+            execute_personalization_scope(&tool_name, &args)?
         } else {
             let db_path = self.db_path.clone();
             let tool_name_for_task = tool_name.clone();
@@ -997,7 +1012,7 @@ impl ConfigService {
                 "keys": keys,
             }))
         } else {
-            let scopes: Vec<Value> = SCOPES
+            let mut scopes: Vec<Value> = SCOPES
                 .iter()
                 .map(|scope| {
                     json!({
@@ -1007,6 +1022,12 @@ impl ConfigService {
                     })
                 })
                 .collect();
+            // personalization（ROLE.md）不是 JSON 文件域，独立追加。
+            scopes.push(json!({
+                "scope": SCOPE_PERSONALIZATION,
+                "file": ROLE_FILE_NAME,
+                "keys": vec![PERSONALIZATION_ROLE_KEY],
+            }));
             Ok(json!({ "scopes": scopes }))
         }
     }
@@ -2591,6 +2612,182 @@ fn mask_api_key(key: &str) -> String {
     format!("{prefix}****{suffix}")
 }
 
+/// personalization scope：全局规则/角色定义文件（~/.snow/ROLE.md）。
+/// ROLE.md 是纯文本 markdown（非 JSON），key = "role"，值为规则全文：
+/// - list：返回键规格 + configured/长度/预览（不返回全文，避免上下文膨胀）；
+/// - get：返回规则全文（文件不存在时返回 null）；
+/// - set：备份后原子写入全文（值必须是字符串）；
+/// - delete：需 confirmed，删除文件即恢复默认（应用对缺失 ROLE.md 有内置回退）。
+fn execute_personalization_scope(tool_name: &str, args: &Value) -> napi::Result<Value> {
+    match tool_name {
+        TOOL_LIST => list_personalization_role(),
+        TOOL_GET => get_personalization_role(args),
+        TOOL_SET => set_personalization_role(args),
+        TOOL_DELETE => delete_personalization_role(args),
+        _ => Err(Error::new(
+            Status::GenericFailure,
+            format!(
+                "Unknown tool: \"{tool_name}\" for MCP server \"{SERVER_ID}\". Available tools: [config-list, config-get, config-set, config-delete]"
+            ),
+        )),
+    }
+}
+
+/// ~/.snow/ROLE.md 的完整路径。
+fn role_file_path() -> PathBuf {
+    ConfigService::snow_dir().join(ROLE_FILE_NAME)
+}
+
+/// 读取 ROLE.md 全文；文件不存在时返回 None。
+fn read_role_file() -> napi::Result<Option<String>> {
+    let file_path = role_file_path();
+    match fs::read_to_string(&file_path) {
+        Ok(content) => Ok(Some(content)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(Error::new(
+            Status::GenericFailure,
+            format!("Failed to read {}: {error}", file_path.display()),
+        )),
+    }
+}
+
+/// 原子写入 ROLE.md（临时文件 + rename，崩溃不损坏目标文件）。
+fn atomic_write_role(content: &str) -> napi::Result<()> {
+    let file_path = role_file_path();
+    let tmp_path = file_path.with_extension("role.tmp");
+    fs::write(&tmp_path, content).map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to write {}: {error}", tmp_path.display()),
+        )
+    })?;
+    fs::rename(&tmp_path, &file_path).map_err(|error| {
+        let _ = fs::remove_file(&tmp_path);
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to replace {}: {error}", file_path.display()),
+        )
+    })
+}
+
+/// config-list personalization：返回键规格（role）+ configured/长度/预览。
+fn list_personalization_role() -> napi::Result<Value> {
+    let content = read_role_file()?;
+    let (configured, length, preview) = match &content {
+        Some(text) => {
+            let preview: String = text.chars().take(ROLE_PREVIEW_LEN).collect();
+            (true, text.len(), preview)
+        }
+        None => (false, 0, String::new()),
+    };
+    Ok(json!({
+        "scope": SCOPE_PERSONALIZATION,
+        "file": ROLE_FILE_NAME,
+        "keys": [{
+            "key": PERSONALIZATION_ROLE_KEY,
+            "type": "string",
+            "sensitive": false,
+            "configured": configured,
+            "length": length,
+            "preview": preview,
+            "value": Value::Null,
+        }],
+        "note": "Use config-get scope=personalization key=role to read the full rules; config-set key=role writes the whole file (markdown text); config-delete removes ROLE.md and restores defaults.",
+    }))
+}
+
+/// config-get personalization：key=role 返回规则全文（文件不存在时返回 null）。
+fn get_personalization_role(args: &Value) -> napi::Result<Value> {
+    let key_name = required_string(args, "key")?;
+    if key_name != PERSONALIZATION_ROLE_KEY {
+        return Err(invalid_personalization_key_error(key_name));
+    }
+    let display = match read_role_file()? {
+        Some(text) => Value::String(text),
+        None => Value::Null,
+    };
+    Ok(json!({
+        "scope": SCOPE_PERSONALIZATION,
+        "key": PERSONALIZATION_ROLE_KEY,
+        "value": display,
+    }))
+}
+
+/// config-set personalization：key=role value=<字符串> 备份后原子写入全文。
+fn set_personalization_role(args: &Value) -> napi::Result<Value> {
+    let key_name = required_string(args, "key")?;
+    if key_name != PERSONALIZATION_ROLE_KEY {
+        return Err(invalid_personalization_key_error(key_name));
+    }
+    let value = args.get("value").cloned().ok_or_else(|| {
+        Error::new(Status::InvalidArg, "value is required for config-set".to_string())
+    })?;
+    if !value.is_string() {
+        return Err(Error::new(
+            Status::InvalidArg,
+            format!(
+                "Invalid value type for key `{}` (expected string)",
+                PERSONALIZATION_ROLE_KEY
+            ),
+        ));
+    }
+    let content = value.as_str().unwrap_or_default().to_string();
+
+    let file_path = role_file_path();
+    let backup = ConfigService::backup_file(&file_path)?;
+    atomic_write_role(&content)?;
+    // 写入成功：删除本次写前备份（临时安全网不再需要）。
+    ConfigService::cleanup_backup(backup);
+
+    Ok(json!({
+        "scope": SCOPE_PERSONALIZATION,
+        "key": PERSONALIZATION_ROLE_KEY,
+        "value": content,
+    }))
+}
+
+/// config-delete personalization：key=role 需 confirmed，删除 ROLE.md（恢复默认）。
+fn delete_personalization_role(args: &Value) -> napi::Result<Value> {
+    // 破坏性操作二次确认（统一在 execute_async 入口检查；此处防御性兜底）。
+    require_delete_confirmation(args)?;
+    let key_name = required_string(args, "key")?;
+    if key_name != PERSONALIZATION_ROLE_KEY {
+        return Err(invalid_personalization_key_error(key_name));
+    }
+    let file_path = role_file_path();
+    if !file_path.exists() {
+        return Ok(json!({
+            "scope": SCOPE_PERSONALIZATION,
+            "key": PERSONALIZATION_ROLE_KEY,
+            "deleted": false,
+        }));
+    }
+    let backup = ConfigService::backup_file(&file_path)?;
+    fs::remove_file(&file_path).map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to delete {}: {error}", file_path.display()),
+        )
+    })?;
+    // 删除成功：清理本次写前备份。
+    ConfigService::cleanup_backup(backup);
+    Ok(json!({
+        "scope": SCOPE_PERSONALIZATION,
+        "key": PERSONALIZATION_ROLE_KEY,
+        "deleted": true,
+    }))
+}
+
+/// personalization scope 键白名单错误。
+fn invalid_personalization_key_error(key: &str) -> Error {
+    Error::new(
+        Status::InvalidArg,
+        format!(
+            "Unknown config key: \"{key}\" in scope \"{SCOPE_PERSONALIZATION}\". Available keys: [{PERSONALIZATION_ROLE_KEY}]"
+        ),
+    )
+}
+
 /// 校验并返回应用数据库路径；native 存储未初始化时给出明确错误。
     /// logs scope（只读日志域）：列出/读取/清理 ~/.snow/log 下的应用日志，
     /// 供 agent 自主进行异常分析。set 只读；delete 需精确文件名（防路径穿越）。
@@ -2920,14 +3117,14 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_LIST.to_string(),
-                description: "List configuration scopes and their keys; pass `scope` to inspect one scope (returns current values; sensitive keys masked).\nSCOPE REFERENCE:\n1. settings (~/.snow/settings.json): mcpServers, codebase, sensitiveCommands, yoloMode, planMode, goal, toolSearchEnabled, ...\n2. snowcfg (~/.snow/config.json): baseUrl, apiKey, advancedModel, basicModel, maxTokens, chatThinking, ...\n3. proxy (~/.snow/proxy-config.json): enabled, host, port, searchEngine, browserPath, browserDebugPort\n4. app (~/.snow/active-profile.json): activeProfile\n5. custom-headers (~/.snow/custom-headers.json): active, schemes (sensitive)\n6. system-prompt (~/.snow/system-prompt.json): active, prompts (sensitive)\n7. theme (~/.snow/theme.json): theme, simpleMode, diffOpacity, toolIcons, customColors, ...\n8. language (~/.snow/language.json): language\n9. permissions (~/.snow/permissions.json): alwaysApprovedTools\n10. lsp-config (~/.snow/lsp-config.json): schemaVersion, servers\n11. buddy (~/.snow/buddy.json): version, companion, muted\n12. subAgents (app DB): sub-agent configs, key=agentId; list returns items + CREATING guidance\n13. hooks (app DB): lifecycle hook configs, key=hookType; list returns items + CONFIGURING guidance\n14. imagegen (app DB): image generation channels + top-level maxConcurrentImages (1-8, default 4) and timeoutSecs (60-3600, default 300); list returns keys + note\n15. skills (delegated): skillId toggles / GitHub installs\n16. logs (read-only): log files under ~/.snow/log\nRULES: pass projectId to scope subAgents/hooks/skills listings to a specific project (omitted = auto-injects the CURRENT SESSION's projectId, so you get/configure the active project's settings; pass an empty string \"\" for global); every list response includes the current session's projectId as `currentProjectId` — read it to obtain the project id bound to the current conversation; sensitive values (apiKey, visionApiKey, custom-header schemes, system-prompt prompts, imagegen apiKey) are always masked."
+                description: "List configuration scopes and their keys; pass `scope` to inspect one scope (returns current values; sensitive keys masked).\nSCOPE REFERENCE:\n1. settings (~/.snow/settings.json): mcpServers, codebase, sensitiveCommands, yoloMode, planMode, goal, toolSearchEnabled, ...\n2. snowcfg (~/.snow/config.json): baseUrl, apiKey, advancedModel, basicModel, maxTokens, chatThinking, ...\n3. proxy (~/.snow/proxy-config.json): enabled, host, port, searchEngine, browserPath, browserDebugPort\n4. app (~/.snow/active-profile.json): activeProfile\n5. custom-headers (~/.snow/custom-headers.json): active, schemes (sensitive)\n6. system-prompt (~/.snow/system-prompt.json): active, prompts (sensitive)\n7. theme (~/.snow/theme.json): theme, simpleMode, diffOpacity, toolIcons, customColors, ...\n8. language (~/.snow/language.json): language\n9. permissions (~/.snow/permissions.json): alwaysApprovedTools\n10. lsp-config (~/.snow/lsp-config.json): schemaVersion, servers\n11. buddy (~/.snow/buddy.json): version, companion, muted\n12. subAgents (app DB): sub-agent configs, key=agentId; list returns items + CREATING guidance\n13. hooks (app DB): lifecycle hook configs, key=hookType; list returns items + CONFIGURING guidance\n14. imagegen (app DB): image generation channels + top-level maxConcurrentImages (1-8, default 4) and timeoutSecs (60-3600, default 300); list returns keys + note\n15. skills (delegated): skillId toggles / GitHub installs\n16. logs (read-only): log files under ~/.snow/log\n17. personalization (~/.snow/ROLE.md): global role/rules file (plain markdown, non-JSON), key=role; list returns length + preview, get returns the full rules text, set writes the whole file, delete removes it (restores defaults)\nRULES: pass projectId to scope subAgents/hooks/skills listings to a specific project (omitted = auto-injects the CURRENT SESSION's projectId, so you get/configure the active project's settings; pass an empty string \"\" for global); every list response includes the current session's projectId as `currentProjectId` — read it to obtain the project id bound to the current conversation; sensitive values (apiKey, visionApiKey, custom-header schemes, system-prompt prompts, imagegen apiKey) are always masked."
                     .to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "scope": {
                             "type": "string",
-                            "enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs", "imagegen"],
+"enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs", "imagegen", "personalization"],
                             "description": "Optional config scope name; when omitted, lists all scopes."
                         },
                         "projectId": {
@@ -2941,13 +3138,13 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_GET.to_string(),
-                description: "Read the value of a configuration key. Sensitive keys (apiKey, visionApiKey) are always returned masked (e.g. sk-****abcd); this tool never exposes plaintext secrets. Returns null when the key is not configured. DB-backed scopes: subAgents (key=agentId) and hooks (key=hookType) read directly from the app database; pass optional `projectId` to read a project-scoped config (omitted = global). Read-only logs scope: key is a log file name (e.g. 2026-08-03-error.log) or a level shortcut (error/warn/info/debug for today's file); optional `limit` controls returned tail lines (default 200, max 2000). Project-scoped settings: pass `projectId` to read settings.mcpServers / settings.sensitiveCommands from the project-scoped app database (other keys reject projectId).".to_string(),
+                description: "Read the value of a configuration key. Sensitive keys (apiKey, visionApiKey) are always returned masked (e.g. sk-****abcd); this tool never exposes plaintext secrets. Returns null when the key is not configured. DB-backed scopes: subAgents (key=agentId) and hooks (key=hookType) read directly from the app database; pass optional `projectId` to read a project-scoped config (omitted = global). Read-only logs scope: key is a log file name (e.g. 2026-08-03-error.log) or a level shortcut (error/warn/info/debug for today's file); optional `limit` controls returned tail lines (default 200, max 2000). personalization (key=role): returns the full ~/.snow/ROLE.md rules text (null when the file does not exist). Project-scoped settings: pass `projectId` to read settings.mcpServers / settings.sensitiveCommands from the project-scoped app database (other keys reject projectId).".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "scope": {
                             "type": "string",
-                            "enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs", "imagegen"],
+"enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs", "imagegen", "personalization"],
                             "description": "Config scope name."
                         },
                         "key": {
@@ -2972,13 +3169,13 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_SET.to_string(),
-                description: "Write a value for a configuration key (whitelisted scopes only; type-checked; auto-backup to ~/.snow/.config-backups as a temporary safety net before the write, removed after a successful write; atomic write).\nRULES:\n- settings.mcpServers: syncs into the app database on write and takes effect immediately (same diff semantics as the UI sync action).\n- Other file-backed scopes (snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy): changes may need an app restart or a UI re-save.\n- DB-backed scopes (take effect immediately): subAgents (key=agentId, value={name, description?, systemPrompt?, toolsJson?, configProfile?}; an explicit toolsJson tool list requires projectId, see the guidance from config-list scope=subAgents); hooks (key=hookType, value={rules:[...]}, see the guidance from config-list scope=hooks); imagegen (value={channels:[...]} full replace, {<channelId>: {...}} per-channel merge keeping omitted fields, or a global field alone: {maxConcurrentImages: N} clamped to 1-8 / {timeoutSecs: N} clamped to 60-3600).\n- Project-scoped: pass projectId for settings.mcpServers (full replace of {name: {type,url,command,args,env,headers,enabled,timeoutMs}}) or settings.sensitiveCommands (full replace of [{commandId, pattern, description, enabled}]); other scopes ignore projectId.".to_string(),
+                description: "Write a value for a configuration key (whitelisted scopes only; type-checked; auto-backup to ~/.snow/.config-backups as a temporary safety net before the write, removed after a successful write; atomic write).\nRULES:\n- settings.mcpServers: syncs into the app database on write and takes effect immediately (same diff semantics as the UI sync action).\n- Other file-backed scopes (snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy): changes may need an app restart or a UI re-save. personalization (key=role, value must be a string): replaces the whole ~/.snow/ROLE.md file (markdown text); takes effect in the next conversation.\n- DB-backed scopes (take effect immediately): subAgents (key=agentId, value={name, description?, systemPrompt?, toolsJson?, configProfile?}; an explicit toolsJson tool list requires projectId, see the guidance from config-list scope=subAgents); hooks (key=hookType, value={rules:[...]}, see the guidance from config-list scope=hooks); imagegen (value={channels:[...]} full replace, {<channelId>: {...}} per-channel merge keeping omitted fields, or a global field alone: {maxConcurrentImages: N} clamped to 1-8 / {timeoutSecs: N} clamped to 60-3600).\n- Project-scoped: pass projectId for settings.mcpServers (full replace of {name: {type,url,command,args,env,headers,enabled,timeoutMs}}) or settings.sensitiveCommands (full replace of [{commandId, pattern, description, enabled}]); other scopes ignore projectId.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "scope": {
                             "type": "string",
-                            "enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs", "imagegen"],
+"enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs", "imagegen", "personalization"],
                             "description": "Config scope name."
                         },
                         "key": {
@@ -3000,13 +3197,13 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_DELETE.to_string(),
-                description: "Delete a configuration key (e.g. clear an apiKey). DESTRUCTIVE — REQUIRES EXPLICIT USER CONFIRMATION: before calling this tool you MUST call the `askUserQuestion` tool from the `user-interaction` server to show the user exactly which config will be deleted (scope, key, projectId) and its impact, then wait for their explicit approval; only then retry this call with `confirmed: true`. Calls without `confirmed: true` are rejected. Scope-specific semantics: `imagegen` DELETES ALL image generation channels (not just the named key — the whole image generation config is cleared); `skills` uninstalls the skill; `logs` deletes one log file; `subAgents` deletes a sub-agent (built-in agent_general cannot be deleted); `hooks` deletes the hookType config. The current value is backed up before the write (temporary safety net) and the backup is removed after a successful write. Returns deleted=false when the key was not configured. Pass optional `projectId` to delete a project-scoped config (omitted = global). Project-scoped settings: projectId + settings.mcpServers clears all project MCP servers; projectId + settings.sensitiveCommands clears all project sensitive-command overrides.".to_string(),
+                description: "Delete a configuration key (e.g. clear an apiKey). DESTRUCTIVE — REQUIRES EXPLICIT USER CONFIRMATION: before calling this tool you MUST call the `askUserQuestion` tool from the `user-interaction` server to show the user exactly which config will be deleted (scope, key, projectId) and its impact, then wait for their explicit approval; only then retry this call with `confirmed: true`. Calls without `confirmed: true` are rejected. Scope-specific semantics: `imagegen` DELETES ALL image generation channels (not just the named key — the whole image generation config is cleared); `skills` uninstalls the skill; `logs` deletes one log file; `subAgents` deletes a sub-agent (built-in agent_general cannot be deleted); `hooks` deletes the hookType config. `personalization` deletes ~/.snow/ROLE.md (restores default rules). The current value is backed up before the write (temporary safety net) and the backup is removed after a successful write. Returns deleted=false when the key was not configured. Pass optional `projectId` to delete a project-scoped config (omitted = global). Project-scoped settings: projectId + settings.mcpServers clears all project MCP servers; projectId + settings.sensitiveCommands clears all project sensitive-command overrides.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "scope": {
                             "type": "string",
-                            "enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs", "imagegen"],
+"enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs", "imagegen", "personalization"],
                             "description": "Config scope name."
                         },
                         "key": {
@@ -3066,6 +3263,7 @@ fn available_scopes() -> String {
     scopes.push(SCOPE_SKILLS);
     scopes.push(SCOPE_LOGS);
     scopes.push(SCOPE_IMAGEGEN);
+    scopes.push(SCOPE_PERSONALIZATION);
     scopes.join(", ")
 }
 

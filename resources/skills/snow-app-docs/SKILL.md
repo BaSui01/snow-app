@@ -9,7 +9,8 @@ description: >-
   troubleshoot any of these areas. Covers the config built-in service
   (config-list/get/set/delete; scopes: settings/snowcfg/proxy/app/
   custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy/
-  subAgents/hooks/skills/logs/imagegen), including project-scoped
+  subAgents/hooks/skills/logs/imagegen/personalization), including
+  project-scoped
   mcpServers/sensitiveCommands/subAgents/hooks/skills via `projectId`, the
   read-only logs scope for diagnostics, the imagegen multi-channel settings
   (channels keyed by id/name/provider type, plus the top-level
@@ -109,14 +110,24 @@ allowed_tools:
   key=<hookType> value={rules:[{description, matcher?, hooks:[{type,
   command?|prompt?|content?, timeout?, enabled?}]}]}` 配置；传 `projectId`
   为项目级。写入应用数据库**立即生效**。
+- **全局规则（personalization）**：`~/.snow/ROLE.md` 是全局角色/规则文件
+  （纯文本 markdown，非 JSON）。`config-list scope=personalization` 返回
+  键规格 + 长度/预览；`config-get scope=personalization key=role` 返回规则
+  全文（文件不存在时返回 null）；`config-set scope=personalization key=role
+  value=<字符串>` 整体替换规则全文（写前自动备份，写后下一个对话生效）；
+  `config-delete scope=personalization key=role` 删除 ROLE.md（恢复默认，
+  需用户确认）。修改后提示用户到「设置 → 个人化设置」或重启应用生效。
 - **管理 Skills**：用 `config-list scope=skills` 查看可用技能与 GitHub 已装
   记录；用 `config-set scope=skills key=<skillId> value={enabled: true|false}`
   切换开关——不传 `projectId` 时改写 SKILL.md frontmatter 的 `enable` 字段
   （全局生效，注意字段名是 `enable` 而非 `enabled`），传 `projectId` 时写入
   应用数据库项目级覆盖（立即生效且优先于 frontmatter）；用
   `config-set scope=skills key=<skillId> value={url, location}` 从 GitHub
-  安装（`url` 支持完整 URL 与 `owner/repo` 简写，`location` 为 `global` 或
-  `project`，项目安装需带 `projectId`），用
+  安装（`url` 支持完整 URL 与 `owner/repo` 简写；指定分支和子目录用
+  `https://github.com/<owner>/<repo>/tree/<branch>/<subdir>` 格式，例如
+  `https://github.com/cli/cli/tree/trunk/skills/gh` 安装 cli/cli 仓库 trunk
+  分支 skills/gh 子目录下的技能；`location` 为 `global` 或 `project`，
+  项目安装需带 `projectId`），用
   `config-delete scope=skills key=<skillId>` 卸载（**仅限 GitHub 安装的技能**，
   手动放置或应用自带的技能需删除目录）。
 - **图像生成（多渠道）**：用 `config-list scope=imagegen` 查看各渠道状态

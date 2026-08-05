@@ -69,6 +69,7 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
             runStreamElapsedMs: 0,
             runTtftMs: 0,
             streamStartedAt: 0,
+            streamPausedAt: 0,
           },
         };
       });

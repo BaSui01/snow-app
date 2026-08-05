@@ -213,6 +213,13 @@ export type ConversationSessionState = {
    *  rollback). Independent of the backend's per-iteration streamElapsedMs
    *  (which resets on every new createResponseStream call). */
   streamStartedAt: number;
+  /** Wall-clock timestamp (Date.now()) captured when the loop is paused.
+   *  Session-scoped like streamStartedAt so switching between parallel
+   *  paused sessions keeps each one's own pause anchor. StreamMetrics uses
+   *  it to freeze the elapsed display during pause; handleResume shifts
+   *  streamStartedAt forward by the paused duration so paused time is not
+   *  counted. 0 while not paused. */
+  streamPausedAt: number;
 };
 
 export type ConversationSessionRef = {
@@ -570,6 +577,11 @@ export type UseChatConversationResult = {
    *  starts. Drives the accumulating elapsed timer in StreamMetrics so it
    *  survives conversation switches between parallel streaming sessions. */
   streamStartedAt: number;
+  /** Wall-clock timestamp (Date.now()) captured when the loop is paused.
+   *  StreamMetrics freezes the elapsed display while paused; handleResume
+   *  shifts streamStartedAt forward by the paused duration so paused time
+   *  is not counted. 0 while not paused. */
+  streamPausedAt: number;
   forkedFromConversationId: string | undefined;
   forkMessageCount: number | undefined;
   streamingConversationIds: Set<string>;

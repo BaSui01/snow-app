@@ -1779,6 +1779,8 @@ export const zhCN = {
   "fileMention.results": "{{count}} 个结果",
   "fileMention.selected": "已选 {{count}}",
   "fileMention.navigate": "导航",
+  "fileMention.enter": "进入",
+  "fileMention.back": "返回",
   "fileMention.check": "勾选",
   "fileMention.confirm": "确认",
   "fileMention.close": "关闭",

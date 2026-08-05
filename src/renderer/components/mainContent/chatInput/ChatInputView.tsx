@@ -154,6 +154,7 @@ export const ChatInputView = ({
     runTtftMs,
     baselineCheckpointId,
     streamStartedAt,
+    streamPausedAt,
     isPaused,
     handlePause,
     handleResume,
@@ -193,12 +194,24 @@ export const ChatInputView = ({
     conversationVersion,
     fallbackChanges: fallbackFileChanges,
   });
+  // 指标栏文件统计：run 级口径。仅统计当前 run（streamStartedAt 之后）工具
+  // 实际写入的文件，与步骤进度/耗时/tokens 等 run 级指标语义一致；不再使用
+  // 会话累计的 checkpoint diff（避免跨 run 累计 + CRLF 字节对比产生的假 diff）。
+  // 文件变更面板仍通过下方 changesOverride 使用会话累计视图，两者互不影响。
+  const runFileChanges = useMemo(() => {
+    if (!streamStartedAt) {
+      return [];
+    }
+    return fallbackFileChanges.filter(
+      (change) => change.timestamp >= streamStartedAt
+    );
+  }, [fallbackFileChanges, streamStartedAt]);
   const fileProgress = useMemo(
     () => ({
-      count: countUniqueFiles(conversationFileChanges),
-      ...countFileChangeLines(conversationFileChanges),
+      count: countUniqueFiles(runFileChanges),
+      ...countFileChangeLines(runFileChanges),
     }),
-    [conversationFileChanges]
+    [runFileChanges]
   );
   const isDraggingOverRef = useRef(false);
   const [isMentionOpen, setIsMentionOpen] = useState(false);
@@ -217,6 +230,11 @@ export const ChatInputView = ({
   const [isProjectCodebaseOpen, setIsProjectCodebaseOpen] = useState(false);
   const [isRoleEditorOpen, setIsRoleEditorOpen] = useState(false);
   const [isFileChangesOpen, setIsFileChangesOpen] = useState(false);
+  // 稳定引用：供 StreamMetricsWorkSummary memo 使用，避免父组件重渲染时
+  // 传入新的 inline lambda 导致文件统计区域失效重绘（P0-1 性能优化）。
+  const handleOpenFileChanges = useCallback(() => {
+    setIsFileChangesOpen(true);
+  }, []);
   const [isCustomThinkingMode, setIsCustomThinkingMode] = useState(false);
   const [customThinkingValue, setCustomThinkingValue] = useState("");
 
@@ -509,12 +527,61 @@ export const ChatInputView = ({
     []
   );
 
+  /**
+   * 将图片文件（拖拽 / 粘贴）以 image chip 形式插入编辑区。
+   * 通过 FileReader 读取为 dataURL，逐个插入并触发 syncContent
+   * （内部会调用 renumberImageChips 统一编号）。
+   */
+  const insertImageFiles = useCallback(
+    (files: File[]) => {
+      if (files.length === 0) {
+        return;
+      }
+
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+      }
+
+      for (const file of files) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
+          if (!dataUrl) {
+            return;
+          }
+
+          const mimeMatch = file.type.match(/^image\/([a-z]+)$/);
+          const ext = mimeMatch ? mimeMatch[1] : "png";
+          const imageTag: ImageTag = {
+            name: `image.${ext}`,
+            dataUrl,
+          };
+
+          insertHtmlAtSelection(createImageChipHtml(imageTag));
+          syncContent();
+        };
+        reader.readAsDataURL(file);
+      }
+    },
+    [syncContent, textareaRef]
+  );
+
   const handleDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
       event.preventDefault();
       isDraggingOverRef.current = false;
       if (textareaRef.current) {
         textareaRef.current.classList.remove("drag-over");
+      }
+
+      // 支持从文件管理器拖入图片（单张或多张），与粘贴图片行为保持一致
+      const droppedFiles = Array.from(event.dataTransfer.files);
+      const imageFiles = droppedFiles.filter((file) =>
+        file.type.startsWith("image/")
+      );
+      if (imageFiles.length > 0) {
+        insertImageFiles(imageFiles);
+        return;
       }
 
       const jsonData = event.dataTransfer.getData("application/json");
@@ -637,13 +704,15 @@ export const ChatInputView = ({
         // Ignore invalid drag data
       }
     },
-    [insertFileTags, syncContent, textareaRef]
+    [insertFileTags, insertImageFiles, syncContent, textareaRef]
   );
 
   const handleDragOver = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
-      const jsonData = event.dataTransfer.types.includes("application/json");
-      if (!jsonData) {
+      const types = Array.from(event.dataTransfer.types);
+      const hasJson = types.includes("application/json");
+      const hasFiles = types.includes("Files");
+      if (!hasJson && !hasFiles) {
         return;
       }
       event.preventDefault();
@@ -794,34 +863,10 @@ export const ChatInputView = ({
       }
 
       if (imageItems.length > 0) {
-        for (const imageItem of imageItems) {
-          const file = imageItem.getAsFile();
-          if (!file) {
-            continue;
-          }
-
-          const reader = new FileReader();
-          reader.onload = () => {
-            const dataUrl = reader.result as string;
-            if (!dataUrl) {
-              return;
-            }
-
-            const mimeMatch = file.type.match(/^image\/([a-z]+)$/);
-            const ext = mimeMatch ? mimeMatch[1] : "png";
-            const imageTag: ImageTag = {
-              name: `image.${ext}`,
-              dataUrl,
-            };
-
-            if (textareaRef.current) {
-              textareaRef.current.focus();
-            }
-            insertHtmlAtSelection(createImageChipHtml(imageTag));
-            syncContent();
-          };
-          reader.readAsDataURL(file);
-        }
+        const imageFiles = imageItems
+          .map((imageItem) => imageItem.getAsFile())
+          .filter((file): file is File => file !== null);
+        insertImageFiles(imageFiles);
         return;
       }
 
@@ -895,7 +940,63 @@ export const ChatInputView = ({
       syncContent();
       checkInputTriggers();
     },
-    [syncContent, checkInputTriggers, textareaRef]
+    [insertImageFiles, syncContent, checkInputTriggers, textareaRef]
+  );
+
+  /**
+   * 路径@导航：将 @ 后的查询文本替换为相对路径（保留 @ 前缀），
+   * 用于 @ 面板"进入文件夹 / 面包屑跳转 / 返回上级"。
+   * 替换后重新解析触发词，面板随新路径刷新内容；relPath 为空表示回到根目录。
+   */
+  const replaceMentionQuery = useCallback(
+    (relPath: string) => {
+      const el = textareaRef.current;
+      if (!el || mentionStartOffsetRef.current < 0) {
+        return;
+      }
+
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) {
+        return;
+      }
+
+      const range = selection.getRangeAt(0);
+      const currentNode = range.startContainer;
+      const currentOffset = range.startOffset;
+
+      if (currentNode.nodeType !== Node.TEXT_NODE) {
+        return;
+      }
+
+      const textNode = currentNode as Text;
+      const start = mentionStartOffsetRef.current;
+      // @ 后无文本时（currentOffset === start，如刚输入 @ 就直接点目录）
+      // 也允许插入路径；仅当光标在 @ 之前时放弃。
+      if (currentOffset < start) {
+        return;
+      }
+
+      range.setStart(textNode, start);
+      range.setEnd(textNode, currentOffset);
+      range.deleteContents();
+      selection.removeAllRanges();
+      selection.addRange(range);
+
+      // 接入浏览器撤销栈，Ctrl+Z 可回退本次导航；空路径（回根）只做删除
+      const newText = relPath ? `${relPath}/` : "";
+      if (newText) {
+        document.execCommand("insertText", false, newText);
+      }
+      checkInputTriggers();
+    },
+    [checkInputTriggers, textareaRef]
+  );
+
+  const handleMentionNavigateTo = useCallback(
+    (relPath: string) => {
+      replaceMentionQuery(relPath);
+    },
+    [replaceMentionQuery]
   );
 
   const handleInput = useCallback(() => {
@@ -1288,6 +1389,7 @@ export const ChatInputView = ({
           onSelectBatch={handleMentionSelectBatch}
           textareaRef={textareaRef}
           onDragStart={handleMentionDragStart}
+          onNavigateTo={handleMentionNavigateTo}
         />
         <CommandPanel
           ref={commandPanelRef}
@@ -1309,13 +1411,14 @@ export const ChatInputView = ({
               elapsedMs={runStreamElapsedMs}
               ttftMs={runTtftMs}
               startedAt={streamStartedAt}
+              pausedAt={streamPausedAt}
               isPaused={isPaused}
               taskCurrent={taskProgress.current}
               taskTotal={taskProgress.total}
               changedFileCount={fileProgress.count}
               additions={fileProgress.additions}
               deletions={fileProgress.deletions}
-              onOpenFileChanges={() => setIsFileChangesOpen(true)}
+              onOpenFileChanges={handleOpenFileChanges}
               onPause={handlePause}
               onResume={handleResume}
             />

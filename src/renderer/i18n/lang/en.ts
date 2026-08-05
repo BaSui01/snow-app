@@ -1871,6 +1871,8 @@ export const en = {
   "fileMention.results": "{{count}} results",
   "fileMention.selected": "{{count}} selected",
   "fileMention.navigate": "navigate",
+  "fileMention.enter": "enter",
+  "fileMention.back": "back",
   "fileMention.check": "check",
   "fileMention.confirm": "confirm",
   "fileMention.close": "close",

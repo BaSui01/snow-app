@@ -1,4 +1,13 @@
-import { ArrowDown, ArrowUp, Check, Loader2 } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  Check,
+  ChevronRight,
+  Folder,
+  Loader2,
+} from "lucide-react";
 import {
   forwardRef,
   useImperativeHandle,
@@ -30,6 +39,11 @@ export type FileMentionPopupProps = {
   onSelectBatch: (tags: FileTag[]) => void;
   textareaRef: RefObject<HTMLDivElement | null>;
   onDragStart?: (event: React.DragEvent<HTMLDivElement>, tag: FileTag) => void;
+  /**
+   * 路径导航回调：将 @ 后的查询文本替换为相对路径并进入该目录浏览。
+   * 传空字符串表示回到工作区根目录。
+   */
+  onNavigateTo: (relPath: string) => void;
 };
 
 const isSshPath = (path: string): boolean => path.startsWith("ssh://");
@@ -44,6 +58,23 @@ const getRelativePath = (path: string, rootPath: string): string => {
   return normalizedPath.startsWith(`${normalizedRoot}/`)
     ? normalizedPath.slice(normalizedRoot.length + 1)
     : normalizedPath;
+};
+
+/**
+ * 从 @ 查询文本中提取路径段：最后一个 "/" 之前的部分按 "/" 拆分。
+ * 例如 "src/renderer/App" → ["src", "renderer"]，"src/" → ["src"]。
+ * 用于面包屑导航与 ← 返回上级。
+ */
+const getPathSegments = (query: string): string[] => {
+  const trimmed = query.trim().replace(/^\/+/, "");
+  const lastSlash = trimmed.lastIndexOf("/");
+  if (lastSlash <= 0) {
+    return [];
+  }
+  return trimmed
+    .slice(0, lastSlash)
+    .split("/")
+    .filter((segment) => segment.length > 0);
 };
 
 const toFileTag = (entry: FileSearchResult): FileTag => ({
@@ -95,6 +126,7 @@ export const FileMentionPopup = forwardRef<
     onSelectBatch,
     textareaRef,
     onDragStart,
+    onNavigateTo,
   },
   ref
 ): React.JSX.Element | null {
@@ -349,6 +381,24 @@ export const FileMentionPopup = forwardRef<
     };
   }, [visible, query, activeDirectory]);
 
+  // 路径导航：从查询文本解析当前浏览的路径段（用于面包屑与 ← 返回）
+  const pathSegments = useMemo(() => getPathSegments(query), [query]);
+
+  // 路径模式下（查询以 "/" 结尾，如 "src/renderer/"），后端会同时返回
+  // "当前目录本身"与其子项；过滤掉目录本身，使面板呈现"已进入目录内容"的效果。
+  const displayEntries = useMemo(() => {
+    const trimmed = query.trim();
+    if (!trimmed.endsWith("/")) {
+      return entries;
+    }
+    const currentRel = trimmed.replace(/\/+$/, "").toLowerCase();
+    const rootPath = activeDirectory?.path ?? "";
+    return entries.filter((entry) => {
+      const rel = getRelativePath(entry.path, rootPath).toLowerCase();
+      return rel !== currentRel;
+    });
+  }, [entries, query, activeDirectory]);
+
   const toggleCheck = useCallback((entry: FileSearchResult) => {
     setCheckedPaths((prev) => {
       const next = new Set(prev);
@@ -363,6 +413,18 @@ export const FileMentionPopup = forwardRef<
 
   const handleSelectEntry = useCallback(
     (entry: FileSearchResult) => {
+      // 目录条目：进入文件夹浏览（路径@），而不是直接插入目录引用。
+      if (entry.isDirectory) {
+        // 恢复输入框焦点与选区，确保父组件能正确回写 @ 路径
+        textareaRef.current?.focus();
+        const rootPath = activeDirectory?.path ?? "";
+        const rel = getRelativePath(entry.path, rootPath);
+        if (rel && rel !== entry.path) {
+          onNavigateTo(rel);
+        }
+        return;
+      }
+
       const checkedEntries = entries.filter((e) => checkedPaths.has(e.path));
       if (checkedEntries.length > 0 && !checkedPaths.has(entry.path)) {
         onSelectBatch([...checkedEntries.map(toFileTag), toFileTag(entry)]);
@@ -373,7 +435,15 @@ export const FileMentionPopup = forwardRef<
       }
       onClose();
     },
-    [entries, checkedPaths, onSelect, onSelectBatch, onClose]
+    [
+      entries,
+      checkedPaths,
+      onSelect,
+      onSelectBatch,
+      onClose,
+      onNavigateTo,
+      activeDirectory,
+    ]
   );
 
   const handleConfirmSelection = useCallback(() => {
@@ -381,11 +451,33 @@ export const FileMentionPopup = forwardRef<
     if (checkedEntries.length > 0) {
       onSelectBatch(checkedEntries.map(toFileTag));
       onClose();
-    } else if (entries[selectedIndex]) {
-      onSelect(toFileTag(entries[selectedIndex]));
-      onClose();
+      return;
     }
-  }, [entries, checkedPaths, selectedIndex, onSelect, onSelectBatch, onClose]);
+    const entry = entries[selectedIndex];
+    if (!entry) {
+      return;
+    }
+    // Enter 在目录上 → 进入文件夹浏览（与点击目录行为一致）
+    if (entry.isDirectory) {
+      const rootPath = activeDirectory?.path ?? "";
+      const rel = getRelativePath(entry.path, rootPath);
+      if (rel && rel !== entry.path) {
+        onNavigateTo(rel);
+      }
+      return;
+    }
+    onSelect(toFileTag(entry));
+    onClose();
+  }, [
+    entries,
+    checkedPaths,
+    selectedIndex,
+    onSelect,
+    onSelectBatch,
+    onClose,
+    onNavigateTo,
+    activeDirectory,
+  ]);
 
   useImperativeHandle(
     ref,
@@ -424,6 +516,29 @@ export const FileMentionPopup = forwardRef<
           return true;
         }
 
+        // → 进入选中的目录（路径导航）
+        if (event.key === "ArrowRight") {
+          const entry = entries[selectedIndex];
+          if (entry?.isDirectory) {
+            event.preventDefault();
+            const rootPath = activeDirectory?.path ?? "";
+            const rel = getRelativePath(entry.path, rootPath);
+            if (rel && rel !== entry.path) {
+              onNavigateTo(rel);
+            }
+            return true;
+          }
+        }
+
+        // ← 返回上级目录（移除最后一个路径段）
+        if (event.key === "ArrowLeft") {
+          if (pathSegments.length > 0) {
+            event.preventDefault();
+            onNavigateTo(pathSegments.slice(0, -1).join("/"));
+            return true;
+          }
+        }
+
         if (event.key === " ") {
           event.preventDefault();
           if (entries[selectedIndex]) {
@@ -441,7 +556,16 @@ export const FileMentionPopup = forwardRef<
         return false;
       },
     }),
-    [entries, selectedIndex, toggleCheck, handleConfirmSelection, onClose]
+    [
+      entries,
+      selectedIndex,
+      toggleCheck,
+      handleConfirmSelection,
+      onClose,
+      pathSegments,
+      onNavigateTo,
+      activeDirectory,
+    ]
   );
 
   useEffect(() => {
@@ -534,6 +658,37 @@ export const FileMentionPopup = forwardRef<
 
   return (
     <div className="file-mention-popup" ref={popupRef}>
+      {pathSegments.length > 0 && (
+        <div className="file-mention-breadcrumbs">
+          <button
+            type="button"
+            className="file-mention-crumb"
+            onClick={() => {
+              textareaRef.current?.focus();
+              onNavigateTo("");
+            }}
+            title={activeDirectory?.path ?? ""}
+          >
+            <Folder size={11} />
+            <span>{activeDirectory?.name ?? "workspace"}</span>
+          </button>
+          {pathSegments.map((segment, index) => (
+            <span className="file-mention-crumb-segment" key={index}>
+              <ChevronRight size={10} className="file-mention-crumb-sep" />
+              <button
+                type="button"
+                className="file-mention-crumb"
+                onClick={() => {
+                  textareaRef.current?.focus();
+                  onNavigateTo(pathSegments.slice(0, index + 1).join("/"));
+                }}
+              >
+                {segment}
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       <div className="file-mention-list" ref={listRef}>
         {isLoadingInitial ? (
           <div className="file-mention-skeleton">
@@ -588,21 +743,21 @@ export const FileMentionPopup = forwardRef<
           </div>
         ) : (
           <>
-            {(isSearching || entries.length > 0) && (
+            {(isSearching || displayEntries.length > 0) && (
               <span className="file-mention-count">
                 {isSearching && <Loader2 className="spin" size={11} />}
-                {entries.length > 0 &&
+                {displayEntries.length > 0 &&
                   t("fileMention.results", {
-                    values: { count: entries.length },
+                    values: { count: displayEntries.length },
                   })}
-                {entries.length > 0 &&
+                {displayEntries.length > 0 &&
                   checkedPaths.size > 0 &&
                   ` | ${t("fileMention.selected", {
                     values: { count: checkedPaths.size },
                   })}`}
               </span>
             )}
-            {entries.map((entry, index) => {
+            {displayEntries.map((entry, index) => {
               const isChecked = checkedPaths.has(entry.path);
               const isSelected = selectedIndex === index;
               return (
@@ -630,6 +785,13 @@ export const FileMentionPopup = forwardRef<
                       {entry.relativePath}
                     </span>
                   )}
+                  {entry.isDirectory && (
+                    <ChevronRight
+                      size={13}
+                      className="mention-entry-enter"
+                      aria-hidden
+                    />
+                  )}
                 </div>
               );
             })}
@@ -646,6 +808,18 @@ export const FileMentionPopup = forwardRef<
             <ArrowDown size={10} />
           </kbd>{" "}
           {t("fileMention.navigate")}
+        </span>
+        <span className="file-mention-hint">
+          <kbd className="mention-kbd-icon">
+            <ArrowRight size={10} />
+          </kbd>{" "}
+          {t("fileMention.enter")}
+        </span>
+        <span className="file-mention-hint">
+          <kbd className="mention-kbd-icon">
+            <ArrowLeft size={10} />
+          </kbd>{" "}
+          {t("fileMention.back")}
         </span>
         <span className="file-mention-hint">
           <kbd>Space</kbd> {t("fileMention.check")}

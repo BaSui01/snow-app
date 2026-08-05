@@ -1752,6 +1752,8 @@ export const zhTW = {
   "fileMention.results": "{{count}} 個結果",
   "fileMention.selected": "已選 {{count}}",
   "fileMention.navigate": "導覽",
+  "fileMention.enter": "進入",
+  "fileMention.back": "返回",
   "fileMention.check": "勾選",
   "fileMention.confirm": "確認",
   "fileMention.close": "關閉",

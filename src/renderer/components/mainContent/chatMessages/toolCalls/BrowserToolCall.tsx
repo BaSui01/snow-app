@@ -1081,7 +1081,6 @@ export const BrowserToolCall = ({
   return (
     <ToolCallNode
       toolName={toolCall.name}
-      badgeName={operation}
       category="web"
       displayName={displayName}
       displayNameTitle={

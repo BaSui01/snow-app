@@ -16,6 +16,7 @@ import {
   ImageGenToolCall,
   BrowserToolCall,
   TerminalToolCall,
+  SkillToolCall,
 } from "../toolCalls";
 import { ToolCallNode } from "../toolCalls/shared/ToolCallNode";
 import { useI18n } from "../../../../i18n";
@@ -125,6 +126,10 @@ export const ToolCallItem = memo(
 
     if (toolCall.name.startsWith("terminal-")) {
       return <TerminalToolCall toolCall={toolCall} />;
+    }
+
+    if (toolCall.name === "skills-skill-execute") {
+      return <SkillToolCall toolCall={toolCall} />;
     }
 
     const effectiveStatus = hasResultError(toolCall.result)

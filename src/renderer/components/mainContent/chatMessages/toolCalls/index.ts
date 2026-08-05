@@ -13,6 +13,7 @@ export { WebSearchToolCall } from "./WebSearchToolCall";
 export { ImageGenToolCall } from "./ImageGenToolCall";
 export { BrowserToolCall } from "./BrowserToolCall";
 export { TerminalToolCall } from "./TerminalToolCall";
+export { SkillToolCall } from "./SkillToolCall";
 export { HookExecutionUI } from "./HookExecutionUI";
 export type {
   HookExecutionRecord,

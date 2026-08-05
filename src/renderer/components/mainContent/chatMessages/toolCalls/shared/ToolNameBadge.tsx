@@ -1,19 +1,51 @@
 import {
-  FileText,
+  Bell,
+  BookOpen,
+  Bot,
+  Box,
+  Calendar,
+  Clock,
+  Code2,
+  Compass,
+  Cpu,
+  Database,
   FilePen,
   FilePlus,
-  Wrench,
-  Search,
-  Terminal,
-  Globe,
+  FileText,
+  Filter,
+  FolderOpen,
   GitBranch,
-  ListTree,
-  ListChecks,
-  MessageCircleQuestion,
-  Bot,
+  Globe,
   Hammer,
-  ScanSearch,
+  Hash,
+  HelpCircle,
   Image as ImageIcon,
+  Key,
+  Layers,
+  Lightbulb,
+  Link2,
+  ListChecks,
+  ListTree,
+  Lock,
+  MessageCircleQuestion,
+  MousePointerClick,
+  Package,
+  Pencil,
+  Puzzle,
+  RefreshCw,
+  Rocket,
+  ScanSearch,
+  Search,
+  Send,
+  Settings,
+  Star,
+  Tag,
+  Target,
+  Terminal,
+  User,
+  Users,
+  Wrench,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 
@@ -33,21 +65,74 @@ export type ToolCategory =
   | "image"
   | "generic";
 
-export const TOOL_ICON_MAP: Record<ToolCategory, LucideIcon> = {
-  read: FileText,
-  edit: FilePen,
-  create: FilePlus,
-  search: Search,
-  terminal: Terminal,
-  web: Globe,
-  git: GitBranch,
-  outline: ListTree,
-  todo: ListChecks,
-  interaction: MessageCircleQuestion,
-  agent: Bot,
-  lens: ScanSearch,
-  image: ImageIcon,
-  generic: Wrench,
+/**
+ * Pool of generic lucide icons used for tool-call badges. Each tool name is
+ * assigned one random icon from this pool per app session, so the icon stays
+ * stable across re-renders while different tools get varied icons.
+ */
+const TOOL_ICON_POOL: LucideIcon[] = [
+  Wrench,
+  Hammer,
+  Settings,
+  Zap,
+  Terminal,
+  FileText,
+  FilePen,
+  FilePlus,
+  Search,
+  Globe,
+  GitBranch,
+  ListTree,
+  ListChecks,
+  MessageCircleQuestion,
+  Bot,
+  ScanSearch,
+  ImageIcon,
+  Code2,
+  Layers,
+  Box,
+  Puzzle,
+  BookOpen,
+  Compass,
+  FolderOpen,
+  Cpu,
+  Database,
+  RefreshCw,
+  Lightbulb,
+  Rocket,
+  Bell,
+  Calendar,
+  Clock,
+  Star,
+  Lock,
+  Key,
+  MousePointerClick,
+  Link2,
+  HelpCircle,
+  Filter,
+  Hash,
+  Package,
+  Pencil,
+  Send,
+  Tag,
+  Target,
+  User,
+  Users,
+];
+
+const toolIconCache = new Map<string, LucideIcon>();
+
+/** Pick a random icon for a tool name; stable per app session. */
+const getToolIcon = (toolName: string): LucideIcon => {
+  const cached = toolIconCache.get(toolName);
+  if (cached) {
+    return cached;
+  }
+  const icon =
+    TOOL_ICON_POOL[Math.floor(Math.random() * TOOL_ICON_POOL.length)] ??
+    Hammer;
+  toolIconCache.set(toolName, icon);
+  return icon;
 };
 
 /**
@@ -111,16 +196,17 @@ export const getToolCategory = (toolName: string): ToolCategory => {
 type ToolNameBadgeProps = {
   /** The display name shown in the badge, e.g. "read", "edit", "create". */
   name: string;
-  /** Explicit category override; if omitted it is inferred from `name`. */
+  /**
+   * Legacy category hint, kept for API compatibility. Badge icons are now
+   * assigned randomly from the lucide icon pool, so this is not used.
+   */
   category?: ToolCategory;
 };
 
 export const ToolNameBadge = ({
   name,
-  category,
 }: ToolNameBadgeProps): React.JSX.Element => {
-  const cat = category ?? getToolCategory(name);
-  const Icon = TOOL_ICON_MAP[cat] ?? Hammer;
+  const Icon = getToolIcon(name);
 
   return (
     <span className="tool-call-tool-name">

@@ -1,5 +1,6 @@
 import { ChevronRight, Loader2 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { useI18n } from "../../../../../i18n";
 import type { ToolCategory } from "./ToolNameBadge";
 import { ToolNameBadge } from "./ToolNameBadge";
 
@@ -47,6 +48,7 @@ export const ToolCallNode = ({
   className,
   children,
 }: ToolCallNodeProps): React.JSX.Element => {
+  const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const isRunning = status === "running";
 
@@ -60,7 +62,12 @@ export const ToolCallNode = ({
     }
   }, [defaultOpen]);
 
-  const resolvedBadgeName = badgeName ?? shortName(toolName);
+  // Resolve the badge name: explicit badgeName wins; otherwise look up the
+  // full tool name in the i18n `toolNames` table (e.g. "browser-create" →
+  // "创建浏览器"); finally fall back to the parsed short name.
+  const localizedToolName = t(`toolNames.${toolName}`, { defaultValue: "" });
+  const resolvedBadgeName =
+    badgeName ?? (localizedToolName || shortName(toolName));
 
   const dotClass =
     status === "completed"

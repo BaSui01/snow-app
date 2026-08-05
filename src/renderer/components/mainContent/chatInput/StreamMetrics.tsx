@@ -1,5 +1,5 @@
 import { ArrowDown, Clock, Gauge, Pause, Play, Timer } from "lucide-react";
-import { memo, useEffect, useReducer } from "react";
+import { memo, useEffect, useState } from "react";
 import { useI18n } from "../../../i18n";
 
 export type StreamMetricsProps = {
@@ -14,11 +14,6 @@ export type StreamMetricsProps = {
    *  accumulating elapsed timer so it survives conversation switches between
    *  parallel streaming sessions. 0 when the loop is finished. */
   startedAt: number;
-  /** Wall-clock timestamp (Date.now()) captured when the loop was paused,
-   *  sourced from the active conversation session state (session-scoped like
-   *  startedAt, so parallel paused sessions keep their own anchor). Used to
-   *  freeze the elapsed display during pause. 0 while not paused. */
-  pausedAt: number;
   /** Whether the agent loop is currently paused. */
   isPaused: boolean;
   /** Pause the agent loop (only valid while streaming and not already paused). */
@@ -77,7 +72,6 @@ export const StreamMetrics = memo(
     elapsedMs,
     ttftMs,
     startedAt,
-    pausedAt,
     isPaused,
     onPause,
     onResume,
@@ -86,30 +80,27 @@ export const StreamMetrics = memo(
     const hasTtft = typeof ttftMs === "number" && ttftMs > 0;
     const isActive = typeof startedAt === "number" && startedAt > 0;
 
-    // --- Elapsed 计时：单一数据源设计 ---
-    // elapsed 不从任何本地状态派生（组件内无 state、无 ref），而是每次渲染
-    // 时从 props.startedAt 纯派生 —— 锚点由状态层持有并维护（暂停/恢复时状态
-    // 层调整锚点，组件不做任何补偿）。定时器只负责触发重渲染（forceTick），
-    // 不持有任何值。因此切换会话 / 新 run / 首帧天然一致，无残留、无延迟。
-    const [, forceTick] = useReducer((n: number) => n + 1, 0);
+    // Derive the accumulated elapsed time purely from `startedAt`. The anchor
+    // lives in session state, so switching conversations swaps it atomically
+    // without any local ref bookkeeping. A 500ms interval keeps the display
+    // ticking; it re-subscribes whenever the anchor changes (new send, switch).
+    const [localElapsed, setLocalElapsed] = useState(0);
 
     useEffect(() => {
-      if (!isActive || isPaused) {
+      if (!isActive) {
+        setLocalElapsed(0);
         return;
       }
-      const interval = setInterval(forceTick, 500);
-      return () => clearInterval(interval);
-    }, [isActive, isPaused]);
 
-    // 暂停期间：elapsed = 暂停时刻的累计值（冻结），暂停进行时长不累计。
-    // pausedAt 来自会话状态，随会话切换原子更新，不会串台。恢复时状态层已
-    // 将 streamStartedAt 前移（扣除暂停时长），派生值自动从冻结值继续。
-    const pausedSoFar =
-      isPaused && pausedAt > 0 ? Math.max(0, Date.now() - pausedAt) : 0;
-    // clamp 负值：debug 中系统时间回拨时避免显示 "-1s"
-    const elapsedDisplay = formatDuration(
-      isActive ? Math.max(0, Date.now() - startedAt - pausedSoFar) : 0
-    );
+      setLocalElapsed(Date.now() - startedAt);
+      const interval = setInterval(() => {
+        setLocalElapsed(Date.now() - startedAt);
+      }, 500);
+
+      return () => clearInterval(interval);
+    }, [isActive, startedAt]);
+
+    const elapsedDisplay = formatDuration(localElapsed);
     const hasTokens = tokenCount > 0;
     const tps =
       tokenCount > 0 && elapsedMs > 0

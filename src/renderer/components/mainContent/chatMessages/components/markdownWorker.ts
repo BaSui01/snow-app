@@ -15,7 +15,10 @@ import hljs from "highlight.js";
 import katex from "katex";
 import MarkdownIt from "markdown-it";
 import texmath from "markdown-it-texmath";
-import { imageProxyUrl } from "../../../../utils/imageProxyUrl";
+import {
+  imageProxyUrl,
+  localImageProxyUrl,
+} from "../../../../utils/imageProxyUrl";
 
 /**
  * Escape HTML special characters in a string so that when highlight.js
@@ -198,11 +201,11 @@ markdown.core.ruler.after("linkify", "de-linkify-fake-links", (state) => {
  * 判断是否为本地图片相对路径：图库落盘引用（image/...，安装目录旁图库目录）
  * 或会话上传引用（upload/...，数据库目录旁的 upload 目录）。这两类路径在
  * 渲染进程中没有对应静态资源，直接作为 <img src> 加载必然失败（破损图片），
- * 需要主线程经 IPC 读取磁盘后解析为 data URL 展示。
+ * 需要改写为 img-proxy:// 协议 URL，由主进程读取磁盘后返回。
  */
-const isLocalImagePath = (src: string): boolean => {
+const normalizeLocalImagePath = (src: string): string | null => {
   if (!src || src.length > 512 || /\s/.test(src)) {
-    return false;
+    return null;
   }
   // markdown-it 会把反斜杠路径（image\2026-...）URL 编码为 %5C，先解码
   // 再统一分隔符判断；非法 % 转义按字面值处理。
@@ -213,17 +216,16 @@ const isLocalImagePath = (src: string): boolean => {
     // 保留原值
   }
   const normalized = decoded.replace(/\\/g, "/").replace(/^\.\//, "");
-  return (
-    (normalized.startsWith("image/") || normalized.startsWith("upload/")) &&
-    !normalized.includes("..")
-  );
+  if (!/^(image|upload)\//.test(normalized) || normalized.includes("..")) {
+    return null;
+  }
+  return normalized;
 };
 
-// 改写外部 http(s) 图片 URL 为 img-proxy:// 协议，使其符合渲染进程的
-// CSP（img-src 允许 img-proxy: 但不允许任意 https:）。主进程通过 net.fetch
-// 代理请求并校验 scheme 与 Content-Type，保证安全性。
-// 本地图片路径（image/、upload/）则保留原 src（解析前由 CSS 隐藏），并添加
-// data-local-image 标记，主线程据此经 IPC 解析为 data URL 后替换展示。
+// 把图片 src 统一改写为 img-proxy:// 协议：外部 http(s) 图与本地相对路径
+// （image/、upload/）都经主进程协议处理器加载（外部 net.fetch 代理，本地
+// 直接读盘），符合渲染进程 CSP（img-src 允许 img-proxy: 但不允许任意 https:
+// 与本地相对路径）。
 const defaultImageRule = markdown.renderer.rules.image;
 markdown.renderer.rules.image = (
   tokens,
@@ -240,9 +242,11 @@ markdown.renderer.rules.image = (
       const src = pair[1];
       if (/^https?:\/\//i.test(src)) {
         pair[1] = imageProxyUrl(src);
-      } else if (isLocalImagePath(src)) {
-        // 真实路径存入 data-local-image；src 保留原值以便解析失败时回退。
-        token.attrSet("data-local-image", src);
+      } else {
+        const local = normalizeLocalImagePath(src);
+        if (local) {
+          pair[1] = localImageProxyUrl(local);
+        }
       }
     }
   }

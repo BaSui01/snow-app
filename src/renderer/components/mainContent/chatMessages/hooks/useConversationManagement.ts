@@ -323,7 +323,6 @@ export const useConversationManagement = (
                     runTtftMs: 0,
                     baselineCheckpointId,
                     streamStartedAt: 0,
-                    streamPausedAt: 0,
                   },
                 };
               });
@@ -615,7 +614,6 @@ export const useConversationManagement = (
         resolve();
       }
     }
-    ctx.updateSessionField(key, "streamPausedAt", 0);
 
     ref.isAbortRequested = true;
     ref.isSending = false;

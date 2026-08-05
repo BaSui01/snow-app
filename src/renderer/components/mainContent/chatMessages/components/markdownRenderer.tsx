@@ -231,98 +231,6 @@ const isFileLinkHref = (href: string): boolean => {
   );
 };
 
-/**
- * 本地图片（图库 image/ 或上传 upload/）data URL 缓存。
- *
- * Worker 渲染出的 HTML 只携带路径标记（data-local-image），不含图片数据；
- * 主线程注入 DOM 后经 IPC 读取磁盘解析为 data URL 再替换 src。模块级缓存
- * 让 streaming 期间反复重建的 DOM 复用同一份解析结果，避免重复 IPC。
- */
-const localImageCache = new Map<string, string>();
-/** 正在解析中的路径集合，防止 effect 重入时同一路径并发重复 IPC。 */
-const localImageInflight = new Set<string>();
-
-/** 规范化本地图片路径：统一分隔符、去掉 ./ 前缀、解码 URL 编码后校验前缀。 */
-const normalizeLocalImagePath = (raw: string): string | null => {
-  if (!raw || raw.length > 512) {
-    return null;
-  }
-  let path = raw.replace(/\\/g, "/").replace(/^\.\//, "");
-  try {
-    path = decodeURIComponent(path);
-  } catch {
-    // 路径含非法 % 转义时按字面值处理
-  }
-  if (path.includes("..") || !/^(image|upload)\//.test(path)) {
-    return null;
-  }
-  return path;
-};
-
-/**
- * 把 MarkdownBlock 内标记为本地图片的 <img> 解析为 data URL 并替换 src。
- * 解析失败（文件不存在 / IPC 异常）时移除标记，让 <img> 回退到原样展示
- * （浏览器加载相对路径失败后显示 alt 文本），避免永久占位。
- */
-const resolveLocalImages = async (root: HTMLElement): Promise<void> => {
-  const images = root.querySelectorAll<HTMLImageElement>(
-    "img[data-local-image]"
-  );
-  if (images.length === 0) {
-    return;
-  }
-  for (const img of Array.from(images)) {
-    const raw = img.getAttribute("data-local-image");
-    if (!raw) {
-      continue;
-    }
-    const path = normalizeLocalImagePath(raw);
-    if (!path) {
-      img.removeAttribute("data-local-image");
-      continue;
-    }
-    const cached = localImageCache.get(path);
-    if (cached !== undefined) {
-      img.src = cached;
-      img.removeAttribute("data-local-image");
-      continue;
-    }
-    if (localImageInflight.has(path)) {
-      // 同路径解析进行中：等待中的节点由本路径解析完成后的结算统一补齐
-      continue;
-    }
-    localImageInflight.add(path);
-    let dataUrl: string | null = null;
-    try {
-      dataUrl = path.startsWith("upload/")
-        ? await window.snow.resolveUploadImage(path)
-        : await window.snow.resolveLibraryImage(path);
-    } catch (error) {
-      console.warn("[markdown] resolve local image failed:", path, error);
-    }
-    // 结算 root 内所有引用同一路径的 <img>：成功则替换 src 为 data URL，
-    // 失败则移除标记让浏览器回退显示 alt 文本。
-    for (const candidate of root.querySelectorAll<HTMLImageElement>(
-      "img[data-local-image]"
-    )) {
-      const candidatePath = normalizeLocalImagePath(
-        candidate.getAttribute("data-local-image") ?? ""
-      );
-      if (candidatePath !== path) {
-        continue;
-      }
-      if (dataUrl) {
-        candidate.src = dataUrl;
-      }
-      candidate.removeAttribute("data-local-image");
-    }
-    if (dataUrl) {
-      localImageCache.set(path, dataUrl);
-    }
-    localImageInflight.delete(path);
-  }
-};
-
 export const MarkdownBlock = memo(
   ({
     className,
@@ -384,17 +292,6 @@ export const MarkdownBlock = memo(
       return () => cancelAnimationFrame(frame);
     }, [html, streaming]);
 
-    // Resolve local images (image/... library paths or upload/... paths) into
-    // data URLs via IPC. These relative paths have no static mapping in the
-    // renderer, so without this step the <img> would attempt a relative URL
-    // load and show a broken-image icon. Runs during streaming too — the
-    // module-level cache makes repeat scans cheap (no duplicate IPC).
-    useEffect(() => {
-      const node = containerRef.current;
-      if (!node || !html) return;
-      void resolveLocalImages(node);
-    }, [html]);
-
     // Attach the global theme-change observer once for the whole app so that
     // diagrams re-render when the user switches between light/dark.
     useEffect(() => watchThemeForMermaid(), []);
@@ -426,9 +323,8 @@ export const MarkdownBlock = memo(
       }
 
       // --- Markdown 图片点击放大 ---
-      // 复用生图工具灯箱体验：点击图片在放大视图中查看（本地图已由
-      // resolveLocalImages 解析为 data URL，远程图直接取 URL）。在链接处理
-      // 之后执行，保证 a 内的图片仍优先走链接逻辑。
+      // 复用生图工具灯箱体验：点击图片在放大视图中查看（本地/远程图均已是
+      // img-proxy:// URL）。在链接处理之后执行，保证 a 内的图片仍优先走链接逻辑。
       const image = target.closest("img") as HTMLImageElement | null;
       if (image) {
         const src = image.currentSrc || image.src;

@@ -494,10 +494,6 @@ export const useChatConversation = (
       return;
     }
     controller.paused = true;
-    // 暂停时刻写入会话状态（与 streamStartedAt 同级、随会话切换原子更新）：
-    // StreamMetrics 用它冻结 elapsed 显示，handleResume 用它计算暂停时长并
-    // 前移 streamStartedAt 锚点，使暂停时段不计入累计耗时。
-    ctx.updateSessionField(key, "streamPausedAt", Date.now());
     ctx.updateSessionField(key, "isPaused", true);
     // 依赖只取 ctx 上的稳定引用（ref 对象 / useCallback 回调），避免 ctx
     // 每次渲染重建导致 onPause 引用变化，击穿 StreamMetrics 的 memo 保护。
@@ -514,21 +510,7 @@ export const useChatConversation = (
     if (!controller || !controller.paused) {
       return;
     }
-    const session = ctx.sessionsRef.current[key];
-    const pausedAt = session?.streamPausedAt ?? Date.now();
     controller.paused = false;
-    // 暂停不计时：把暂停时长前移进 streamStartedAt 锚点。这样恢复后的派生值
-    // （Date.now() - startedAt）自动从冻结值继续，暂停时段不累计；组件侧无需
-    // 任何补偿逻辑。与 isPaused=false 同批更新，组件单次渲染即见一致状态。
-    const currentAnchor = session?.streamStartedAt ?? 0;
-    if (currentAnchor > 0) {
-      ctx.updateSessionField(
-        key,
-        "streamStartedAt",
-        currentAnchor + Math.max(0, Date.now() - pausedAt)
-      );
-    }
-    ctx.updateSessionField(key, "streamPausedAt", 0);
     ctx.updateSessionField(key, "isPaused", false);
     const resolve = controller.resolve;
     controller.resolve = null;
@@ -538,7 +520,6 @@ export const useChatConversation = (
   }, [
     ctx.activeConversationIdRef,
     ctx.pauseControllerRef,
-    ctx.sessionsRef,
     ctx.updateSessionField,
   ]);
 
@@ -570,7 +551,6 @@ export const useChatConversation = (
     runTtftMs: activeSession?.runTtftMs ?? 0,
     baselineCheckpointId: activeSession?.baselineCheckpointId,
     streamStartedAt: activeSession?.streamStartedAt ?? 0,
-    streamPausedAt: activeSession?.streamPausedAt ?? 0,
     forkedFromConversationId: activeSession?.forkedFromConversationId,
     forkMessageCount: activeSession?.forkMessageCount,
     streamingConversationIds,

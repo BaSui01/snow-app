@@ -93,9 +93,9 @@ export const bootstrapApplication = (): void => {
     // 注册 theme-bg:// 自定义协议处理器，使渲染进程能加载本地背景图。
     // 必须在 createWindow 之前调用，确保窗口加载时协议已就绪。
     registerThemeBgProtocol();
-    // 注册 img-proxy:// 协议处理器，代理渲染进程请求的外部 http(s) 图片，
-    // 使 markdown 图片能绕过 CSP 限制安全加载。
-    registerImageProxyProtocol();
+    // 注册 img-proxy:// 协议处理器：代理外部 http(s) 图片，并直接读取本地
+    // image/、upload/ 图片文件返回，使 markdown 图片能绕过 CSP 限制安全加载。
+    registerImageProxyProtocol(native);
 
     if (isMacOS && app.dock) {
       app.dock.setIcon(nativeImage.createFromPath(APP_ICON_PATH));

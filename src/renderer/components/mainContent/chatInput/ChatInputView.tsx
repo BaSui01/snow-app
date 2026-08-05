@@ -149,7 +149,6 @@ export const ChatInputView = ({
     streamTtftMs,
     baselineCheckpointId,
     streamStartedAt,
-    streamPausedAt,
     isPaused,
     handlePause,
     handleResume,
@@ -1466,7 +1465,6 @@ export const ChatInputView = ({
               elapsedMs={streamElapsedMs}
               ttftMs={streamTtftMs}
               startedAt={streamStartedAt}
-              pausedAt={streamPausedAt}
               isPaused={isPaused}
               onPause={handlePause}
               onResume={handleResume}

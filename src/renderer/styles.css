@@ -8130,15 +8130,8 @@ input {
 }
 
 /* Markdown 内联图片：
-   - 图库（image/）或上传（upload/）本地路径由 worker 添加 data-local-image
-     标记，主线程经 IPC 解析为 data URL 前先隐藏，避免相对路径加载失败闪烁
-     破损图片图标；解析完成（移除标记）后自然显示。
    - 图片限高居中展示（复用生图工具卡的相框观感）：过大图片不再撑满消息，
      点击可在灯箱中查看原图（cursor: zoom-in 提示）。 */
-img[data-local-image] {
-  visibility: hidden;
-}
-
 :is(.ai-message, .context-compaction-markdown, .thinking-block-body) img {
   display: block;
   max-width: 100%;

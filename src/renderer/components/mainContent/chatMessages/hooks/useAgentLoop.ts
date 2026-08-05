@@ -113,7 +113,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       // Reset pause state for a fresh send — the previous run may have
       // been paused and aborted without cleaning up the controller.
       ctx.updateSessionField(sessionKey, "isPaused", false);
-      ctx.updateSessionField(sessionKey, "streamPausedAt", 0);
       ctx.pauseControllerRef.current.delete(sessionKey);
 
       const userMessage: ChatConversationMessage = {
@@ -1146,7 +1145,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             ref.isSending = false;
             ctx.updateSessionField(finalSessionKey, "isStreaming", false);
             ctx.updateSessionField(finalSessionKey, "streamStartedAt", 0);
-            ctx.updateSessionField(finalSessionKey, "streamPausedAt", 0);
             ctx.updateSessionField(finalSessionKey, "isAborting", false);
             ctx.updateSessionField(finalSessionKey, "isPaused", false);
             // Clear the pause controller so a stale resolve callback from a

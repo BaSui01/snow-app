@@ -117,13 +117,11 @@
 - **Markdown Images with Local Paths**: When the model referenced generated
   images by local relative paths (`image/...` library paths or `upload/...`
   paths) inside the Markdown reply body, the renderer tried to load them as
-  relative URLs and showed broken-image icons. The markdown worker now tags
-  such `<img>` elements with `data-local-image` (backslash / URL-encoded
-  variants normalized, `..` traversal and absolute paths rejected), and the
-  renderer resolves them to data URLs via the existing
-  `images:resolve-library-image` / `images:resolve-upload-image` IPC channels
-  (module-level cache + in-flight dedupe, so streaming re-renders never
-  repeat IPC reads).
+  relative URLs and showed broken-image icons. Local paths (backslash /
+  URL-encoded variants normalized, `..` traversal and absolute paths
+  rejected) are now rewritten to `img-proxy://` protocol URLs together with
+  external images, and the main process serves them straight from disk —
+  no IPC round-trips or data-URL caches in the renderer.
 - **i18n Placeholder Syntax**: `settings.imagegenChannelCount` and
   `settings.imageLibraryCount` used the single-brace `{count}` placeholder
   format, so the channel count and image-library count rendered literally

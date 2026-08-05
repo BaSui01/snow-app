@@ -145,7 +145,14 @@ allowed_tools:
   `lsp-config.servers` 深度校验，防止写坏内部字段）；`config-get` 对
   `apiKey`/`visionApiKey`/自定义请求头/系统提示词等敏感键强制脱敏
   （如 `sk-****abcd`），**不要向用户索要或试图获取明文密钥**；每次写入前
-  自动备份到 `~/.snow/.config-backups/`，写入为原子替换——误写可恢复备份。
+  自动备份到 `~/.snow/.config-backups/`，写入为原子替换，**写入成功后清理
+  本次备份**（临时安全网）。
+- **删除必须二次确认**：`config-delete` 是破坏性操作，**调用前必须先通过
+  `user-interaction` 的 `askUserQuestion` 向用户展示将要删除的 scope/key 与
+  影响，获得明确同意后携带 `confirmed: true` 调用**，否则会被拒绝。特别
+  注意：`imagegen` 域的 delete 是**清空全部图像生成渠道**（不是只删命名
+  键）；`skills` 域 delete 卸载技能；`logs` 域 delete 删除日志文件。任何
+  delete 前都先 `config-get`/`config-list` 确认现状。
 - **打开设置页**：用 `app-control-openSettings`，`page` 参数取值见文档
   （如 `mcp-settings`、`api-settings`、`imagegen-settings`、
   `proxy-browser-settings`、`sub-agent-settings`、`hooks-settings`、

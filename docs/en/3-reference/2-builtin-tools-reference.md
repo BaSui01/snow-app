@@ -121,9 +121,22 @@ Listed in registration order:
 | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
 | `config-list`   | List manageable scopes (settings/snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy/subAgents/hooks/skills/logs/imagegen) and their keys; pass `scope` to inspect a single scope with current values (sensitive keys masked) | `scope`, `projectId`                 |
 | `config-get`    | Read a key's value; sensitive keys (`apiKey`, `visionApiKey`, custom-header schemes, system-prompt prompts) are always masked; `subAgents`/`hooks` scopes read directly from the app database                                                                        | `scope`, `key`, `projectId`          |
-| `config-set`    | Write a key (whitelist + type check + auto backup + atomic write); `settings.mcpServers` auto-syncs to the app database and takes effect immediately; `subAgents`/`hooks` scopes write directly to the app database and take effect immediately                      | `scope`, `key`, `value`, `projectId` |
-| `config-delete` | Delete a key; `subAgents`/`hooks` scopes delete database records directly                                                                                                                                                                                            | `scope`, `key`, `projectId`          |
+| `config-set`    | Write a key (whitelist + type check + pre-write auto backup + atomic write, **the temporary backup is removed after a successful write**); `settings.mcpServers` auto-syncs to the app database and takes effect immediately; `subAgents`/`hooks`/`imagegen` scopes write directly to the app database and take effect immediately (same backup-then-cleanup behavior) | `scope`, `key`, `value`, `projectId` |
+| `config-delete` | Delete a key; **DESTRUCTIVE — requires `confirmed: true`, which may only be set after the caller has obtained explicit user approval via the `user-interaction` `askUserQuestion` tool; calls without it are rejected**; pre-write backup with cleanup after success. **`imagegen` delete clears ALL image generation channels (not just the named key)**; `skills` delete uninstalls the skill; `logs` delete removes a log file; `subAgents`/`hooks` scopes delete database records directly | `scope`, `key`, `confirmed`, `projectId` |
 
+> **Safety mechanism (config-change protection)**: to prevent AI from
+> accidentally modifying/deleting user configuration, the config tool
+> enforces the following constraints —
+> - **Delete confirmation**: `config-delete` must first be confirmed by the
+>   user (`askUserQuestion`) and then called with `confirmed: true`; anything
+>   else is rejected. `imagegen` delete **clears all channels** (not a single
+>   key), so extra care is required.
+> - **Pre-write backup**: `config-set` / `config-delete` automatically back up
+>   the current value to `~/.snow/.config-backups/` before writing (both
+>   file-backed and DB-backed scopes), as a temporary safety net during the
+>   write; **the backup is removed after a successful verified write**, with a
+>   per-file cap of 10 backups as a fallback for leftovers.
+>
 > **Structural validation**: `settings.codebase`, `custom-headers.schemes`,
 > `system-prompt.prompts` and `lsp-config.servers` are deeply validated on
 > write (known fields are type-checked one by one, e.g.

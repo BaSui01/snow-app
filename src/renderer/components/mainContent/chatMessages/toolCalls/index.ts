@@ -11,6 +11,7 @@ export { CodebaseToolCall } from "./CodebaseToolCall";
 export { CodeLensToolCall } from "./CodeLensToolCall";
 export { WebSearchToolCall } from "./WebSearchToolCall";
 export { ImageGenToolCall } from "./ImageGenToolCall";
+export { ImageGenGallery } from "./ImageGenGallery";
 export { BrowserToolCall } from "./BrowserToolCall";
 export { TerminalToolCall } from "./TerminalToolCall";
 export { SkillToolCall } from "./SkillToolCall";

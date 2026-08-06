@@ -43,7 +43,8 @@ type GallerySlot =
       kind: "image";
       key: string;
       src: string;
-      image: GeneratedImage;
+      /** 本地图存在；远程 URL 条目（remoteUrl）时缺省 */
+      image?: GeneratedImage;
       remoteUrl?: string;
       promptLabel: string;
     }
@@ -118,7 +119,7 @@ export const ImageGenGallery = ({
               kind: "image",
               key: entry.key,
               src: "",
-              image: entry.image as GeneratedImage,
+              image: entry.image,
               remoteUrl: entry.remoteUrl,
               promptLabel,
             });
@@ -158,7 +159,7 @@ export const ImageGenGallery = ({
     for (const slot of slots) {
       if (
         slot.kind === "image" &&
-        slot.image.path &&
+        slot.image?.path &&
         slot.image.path.startsWith("image/") &&
         !paths.includes(slot.image.path)
       ) {
@@ -418,9 +419,10 @@ export const ImageGenGallery = ({
   };
 
   return (
-    <div className="tool-call-imagegen tool-call-imagegen-result">
+    <div className="tool-call-imagegen tool-call-imagegen-result tool-call-imagegen-gallery">
       <div
         className="tool-call-imagegen-grid tool-call-imagegen-gallery-grid"
+        data-count={slotCount}
         style={{
           gridTemplateColumns: `repeat(${Math.max(
             2,
@@ -435,9 +437,9 @@ export const ImageGenGallery = ({
               ? failedRemotes.has(slot.key)
               : false;
           const resolvedSrc =
-            isImage && slot.image.path
+            isImage && slot.image?.path
               ? (resolvedLibrary[slot.image.path] ?? "")
-              : isImage && slot.image.data
+              : isImage && slot.image?.data
                 ? `data:${slot.image.mimeType};base64,${slot.image.data}`
                 : isImage && slot.remoteUrl
                   ? imageProxyUrl(slot.remoteUrl)

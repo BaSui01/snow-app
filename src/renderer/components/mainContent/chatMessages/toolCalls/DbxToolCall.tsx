@@ -224,10 +224,13 @@ export const DbxToolCall = ({
 }: DbxToolCallProps): React.JSX.Element => {
   const { t } = useI18n();
   // 外部 MCP 工具名可能为连字符（dbx-execute-query）或下划线（dbx_execute_query），
-  // 统一归一为连字符后提取操作名，保证与下方 switch 的 case 匹配。
+  // 且 DBX MCP 工具名本身自带 dbx_ 前缀（完整 MCP 名如 dbx-dbx_execute_query），
+  // 需连续剥掉 server 前缀与工具名自带前缀，统一归一为连字符后提取操作名，
+  // 保证与下方 switch 的 case 匹配。
   // 另外 DBX server 自身拼写缺失的 execute_redis_comman 映射到标准名（execute-redis-command）。
   const operation = toolCall.name
     .replace(/^dbx[-_](.+)$/, "$1")
+    .replace(/^dbx[-_]/, "")
     .replace(/_/g, "-")
     .replace(/^execute-redis-comman$/, "execute-redis-command");
 

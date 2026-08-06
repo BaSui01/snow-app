@@ -56,6 +56,7 @@ const BACKEND_PROBE_CACHE_MS = 10 * 60 * 1000;
 const BACKEND_PROBE_FAILURES = new Map<string, string>();
 const STATE_LOCK_ATTEMPTS = 400;
 const POSIX_CANCEL_GRACE_SECONDS = 5;
+const SYSTEMD_RUNTIME_GRACE_SECONDS = 10;
 const POSIX_RUNNER_POLL_SECONDS = 0.2;
 const INACTIVE_RUNNER_SETTLE_MS = 750;
 const WINDOWS_BACKEND_PROBE_TIMEOUT_MS = 10_000;
@@ -679,12 +680,15 @@ const remoteBackends: Record<RemoteJobBackendKind, RemoteJobBackend> = {
     async launch(context): Promise<void> {
       const unit = getUnitName(context.jobId);
       const timeoutSeconds = Math.max(1, Math.ceil(context.timeoutMs / 1000));
+      // The runner owns timeout handling and needs time to stop the command
+      // group before atomically recording its terminal state.
+      const runtimeMaxSeconds = timeoutSeconds + SYSTEMD_RUNTIME_GRACE_SECONDS;
       await runConfirmedLaunchShell(
         context.sessionId,
         withSystemdUserEnvironment([
           "systemd-run --user --no-block --quiet",
           `--unit ${shellQuote(unit)}`,
-          `--property=${shellQuote(`RuntimeMaxSec=${timeoutSeconds}`)}`,
+          `--property=${shellQuote(`RuntimeMaxSec=${runtimeMaxSeconds}`)}`,
           `--property=${shellQuote("KillMode=control-group")}`,
           `/bin/sh ${shellQuote(`${context.jobDirectory}/runner.sh`)}`,
         ].join(" ")),

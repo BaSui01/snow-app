@@ -709,6 +709,7 @@ export const ptyApi = {
     cols: number;
     rows: number;
     shellPath?: string;
+    sessionId?: string;
   }): Promise<string> => ipcRenderer.invoke("pty:create", options),
   ptyWrite: (id: string, data: string): Promise<void> =>
     ipcRenderer.invoke("pty:write", id, data),

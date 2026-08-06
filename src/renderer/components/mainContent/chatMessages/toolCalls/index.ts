@@ -14,6 +14,9 @@ export { ImageGenToolCall } from "./ImageGenToolCall";
 export { BrowserToolCall } from "./BrowserToolCall";
 export { TerminalToolCall } from "./TerminalToolCall";
 export { SkillToolCall } from "./SkillToolCall";
+export { ConfigToolCall } from "./ConfigToolCall";
+export { AppControlToolCall } from "./AppControlToolCall";
+export { DbxToolCall } from "./DbxToolCall";
 export { HookExecutionUI } from "./HookExecutionUI";
 export type {
   HookExecutionRecord,

@@ -87,8 +87,6 @@ const buildElementLocatorScript = (
     '[tabindex]:not([tabindex="-1"])',
     '[onclick]'
   ].join(',');
-  const roots = [];
-  collectRoots(document, roots);
   ${DESCRIBE_ELEMENT_SCRIPT}
   const isVisible = (element) => {
     const style = getComputedStyle(element);

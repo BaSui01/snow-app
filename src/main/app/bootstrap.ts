@@ -28,6 +28,7 @@ import {
   initBrowserDialogHandler,
   initBrowserNetworkRecorder,
 } from "../ipc/handlers/browserNetworkRecorder";
+import { installWebviewContextMenu } from "../utils/webviewContextMenu";
 
 export const bootstrapApplication = (): void => {
   // ─── Chromium 启动加速开关（必须在 whenReady 之前）─────────────────────
@@ -129,6 +130,8 @@ export const bootstrapApplication = (): void => {
     // 需在 app ready 且 defaultSession 可用后初始化。
     initBrowserNetworkRecorder();
     initBrowserDialogHandler();
+    // 浏览器右键菜单：Electron webview 默认无右键菜单，需主进程手动弹出。
+    installWebviewContextMenu();
 
     // 渲染进程保存代理设置后通知主进程重新应用会话代理。
     ipcMain.handle("proxy-browser-settings:apply", () =>

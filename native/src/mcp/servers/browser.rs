@@ -320,7 +320,7 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "wait".to_string(),
-                description: "Wait for a condition on the page: fixed time, text to appear, or text to disappear. Inspired by Playwright's browser_wait_for. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                description: "Wait for a condition on the page: fixed time, text to appear/disappear, or element (CSS selector) to appear/disappear. Inspired by Playwright's browser_wait_for. Omit instanceId to use the most recently focused browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -330,7 +330,7 @@ impl McpService for BrowserService {
                         },
                         "time": {
                             "type": "number",
-                            "description": "Time to wait in milliseconds (maximum 30000). Mutually exclusive with text/textGone.",
+                            "description": "Time to wait in milliseconds (maximum 30000). Mutually exclusive with text/textGone/selector/selectorGone.",
                             "minimum": 100,
                             "maximum": MAX_WAIT_TIME_MS
                         },
@@ -342,9 +342,17 @@ impl McpService for BrowserService {
                             "type": "string",
                             "description": "Text to wait for to disappear from the page. Polls every 100ms until the text is gone or the timeout elapses. Mutually exclusive with time."
                         },
+                        "selector": {
+                            "type": "string",
+                            "description": "CSS selector to wait for to exist in the DOM (e.g. after a SPA renders). Polls every 100ms until the element is found or the timeout elapses. Mutually exclusive with time."
+                        },
+                        "selectorGone": {
+                            "type": "string",
+                            "description": "CSS selector to wait for to disappear from the DOM (e.g. a loading spinner). Polls every 100ms until the element is gone or the timeout elapses. Mutually exclusive with time."
+                        },
                         "timeoutMs": {
                             "type": "number",
-                            "description": "Maximum time to wait for text/textGone conditions in milliseconds (default 30000, range 1000-120000). Ignored for fixed time waits.",
+                            "description": "Maximum time to wait for text/textGone/selector/selectorGone conditions in milliseconds (default 30000, range 1000-120000). Ignored for fixed time waits.",
                             "default": DEFAULT_TIMEOUT_MS,
                             "minimum": MIN_TIMEOUT_MS,
                             "maximum": MAX_TIMEOUT_MS
@@ -922,18 +930,21 @@ fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi::Result<Va
             let time = args.get("time");
             let text = optional_non_empty_string(args, "text")?;
             let text_gone = optional_non_empty_string(args, "textGone")?;
+            let selector = optional_non_empty_string(args, "selector")?;
+            let selector_gone = optional_non_empty_string(args, "selectorGone")?;
             let has_time = time.is_some() && !time.is_some_and(Value::is_null);
-            let has_condition = text.is_some() || text_gone.is_some();
+            let has_condition =
+                text.is_some() || text_gone.is_some() || selector.is_some() || selector_gone.is_some();
             if !has_time && !has_condition {
                 return Err(Error::new(
                     Status::InvalidArg,
-                    "One of time, text, or textGone is required for browser-wait".to_string(),
+                    "One of time, text, textGone, selector, or selectorGone is required for browser-wait".to_string(),
                 ));
             }
             if has_time && has_condition {
                 return Err(Error::new(
                     Status::InvalidArg,
-                    "time is mutually exclusive with text/textGone for browser-wait".to_string(),
+                    "time is mutually exclusive with text/textGone/selector/selectorGone for browser-wait".to_string(),
                 ));
             }
             if has_time {

@@ -9,6 +9,19 @@ import type { BrowserMcpCommandArgs } from "./browserMcpController";
 const TEXT_PREVIEW_LENGTH = 160;
 const MAX_SCREENSHOT_BYTES = 20 * 1024 * 1024;
 
+// 公共元素描述函数片段（normalize + describe）。定位脚本、fill 脚本与
+// CDP callFunctionOn 复用。注意：const 在同一作用域重复声明会抛
+// SyntaxError，因此每个脚本作用域只能注入一次。
+const DESCRIBE_ELEMENT_SCRIPT = `
+  const normalize = (value) => String(value || '').replace(/\\s+/g, ' ').trim();
+  const describe = (element) => normalize(
+    element.innerText ||
+    element.textContent ||
+    element.value ||
+    element.getAttribute('aria-label') ||
+    element.getAttribute('title')
+  );`;
+
 // 路由 mock 规则（渲染进程侧累积，route 追加/覆盖，routeClear 清空；提交给主进程 Fetch 拦截）。
 const browserRouteRules: {
   pattern: string;
@@ -74,14 +87,9 @@ const buildElementLocatorScript = (
     '[tabindex]:not([tabindex="-1"])',
     '[onclick]'
   ].join(',');
-  const normalize = (value) => String(value || '').replace(/\\s+/g, ' ').trim();
-  const describe = (element) => normalize(
-    element.innerText ||
-    element.textContent ||
-    element.value ||
-    element.getAttribute('aria-label') ||
-    element.getAttribute('title')
-  );
+  const roots = [];
+  collectRoots(document, roots);
+  ${DESCRIBE_ELEMENT_SCRIPT}
   const isVisible = (element) => {
     const style = getComputedStyle(element);
     const rect = element.getBoundingClientRect();
@@ -196,6 +204,13 @@ const resolveRefHandle = async (
     {
       objectId,
       functionDeclaration: `function() {
+        // 视口外元素自动滚入可视区（selector/text 定位路径已内置
+        // scrollIntoView，这里对齐行为，避免 "outside the viewport" 误报）。
+        try {
+          this.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+        } catch {
+          // 非布局元素（如 SVG 内部节点）可能不支持 scrollIntoView，忽略。
+        }
         const r = this.getBoundingClientRect();
         const style = getComputedStyle(this);
         return {
@@ -450,6 +465,9 @@ const click = async (
     button: "left",
     clickCount: 1,
   });
+  // 按下与抬起之间留出真实点击间隔：部分站点（如必应搜索结果）在
+  // mouseup 前有 JS 拦截逻辑，瞬时点击会被忽略。
+  await new Promise((resolve) => setTimeout(resolve, 50));
   await webview.sendInputEvent({
     type: "mouseUp",
     x: target.x,
@@ -484,12 +502,10 @@ const evaluate = async (
 };
 
 /** 一次性设值逻辑（作用域内元素为 element）：原生 setter + input/change 事件
- * （React 受控组件兼容，与 Playwright fill 同原理）。定位脚本与 ref 回指共用。 */
-const buildFillBody = (value: string, submit: boolean): string => `const describe = (element) =>
-    String(element.innerText || element.textContent || element.value ||
-      element.getAttribute('aria-label') || element.getAttribute('title') || '')
-      .replace(/\\s+/g, ' ').trim();
-  const editable = element.matches(
+ * （React 受控组件兼容，与 Playwright fill 同原理）。定位脚本与 ref 回指共用。
+ * 注意：本片段不再定义 describe —— selector/text 路径由定位脚本注入，
+ * ref 路径由调用方在 functionDeclaration 中注入 DESCRIBE_ELEMENT_SCRIPT。 */
+const buildFillBody = (value: string, submit: boolean): string => `const editable = element.matches(
     'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), textarea, [contenteditable="true"], [contenteditable=""]'
   );
   if (!editable) {
@@ -613,6 +629,7 @@ const type = async (
         objectId,
         functionDeclaration: `function() {
           const element = this;
+          ${DESCRIBE_ELEMENT_SCRIPT}
           ${buildFillBody(value, submit)}
         }`,
         returnByValue: true,
@@ -831,25 +848,55 @@ const wait = async (
     return { ...metadata, condition: "time", waitedMs: waitTime, success: true };
   }
 
-  // 文本出现/消失等待：轮询页面 innerText，100ms 间隔
+  // 文本出现/消失、元素出现/消失等待：轮询页面，100ms 间隔
   const text = optionalString(args, "text");
   const textGone = optionalString(args, "textGone");
-  const condition = text ? "text" : "textGone";
-  const expected = text ?? textGone;
+  const selector = optionalString(args, "selector");
+  const selectorGone = optionalString(args, "selectorGone");
+  const condition = text
+    ? "text"
+    : textGone
+      ? "textGone"
+      : selector
+        ? "selector"
+        : "selectorGone";
+  const expected = text ?? textGone ?? selector ?? selectorGone;
   if (!expected) {
-    throw new Error("One of time, text, or textGone is required for browser-wait");
+    throw new Error(
+      "One of time, text, textGone, selector, or selectorGone is required for browser-wait"
+    );
   }
   const timeoutMs =
     typeof args.timeoutMs === "number" ? args.timeoutMs : 30_000;
   const pollInterval = 100;
   const startedAt = Date.now();
+  // selector 条件直接复用定位脚本的校验逻辑：无效 CSS 选择器视为不满足，
+  // 最终以超时失败返回（并携带提示），不会抛出未包装的异常。
+  const selectorQuery = (sel: string): string => `(() => {
+    try {
+      const element = document.querySelector(${JSON.stringify(sel)});
+      return element !== null;
+    } catch {
+      return false;
+    }
+  })()`;
+  const isSelectorCondition =
+    condition === "selector" || condition === "selectorGone";
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    const pageText = await webview.executeJavaScript(
-      "String(document.body?.innerText || '')"
-    );
-    const found = pageText.includes(expected);
-    const satisfied = condition === "text" ? found : !found;
+    let satisfied: boolean;
+    if (isSelectorCondition) {
+      const found = (await webview.executeJavaScript(
+        selectorQuery(expected)
+      )) as boolean;
+      satisfied = condition === "selector" ? found : !found;
+    } else {
+      const pageText = await webview.executeJavaScript(
+        "String(document.body?.innerText || '')"
+      );
+      const found = pageText.includes(expected);
+      satisfied = condition === "text" ? found : !found;
+    }
     if (satisfied) {
       return {
         ...metadata,
@@ -866,7 +913,11 @@ const wait = async (
         value: expected,
         waitedMs: Date.now() - startedAt,
         success: false,
-        error: `Timed out waiting for ${condition}: "${expected}"`,
+        error: `Timed out waiting for ${condition}: "${expected}"${
+          isSelectorCondition && condition === "selector"
+            ? " (element not found or selector is invalid)"
+            : ""
+        }`,
       };
     }
     await new Promise((resolve) => setTimeout(resolve, pollInterval));

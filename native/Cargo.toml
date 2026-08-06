@@ -7,6 +7,10 @@ license = "MIT"
 [lib]
 crate-type = ["cdylib"]
 
+[[bin]]
+name = "snow-agent"
+path = "src/bin/snow-agent.rs"
+
 [dependencies]
 chrono = "0.4.38"
 blake3 = "1"
@@ -86,4 +90,3 @@ opt-level = 1
 [profile.release]
 lto = "thin"
 codegen-units = 4
-

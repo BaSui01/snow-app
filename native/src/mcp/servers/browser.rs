@@ -574,67 +574,6 @@ impl McpService for BrowserService {
             },
             McpTool {
                 server_id: SERVER_ID.to_string(),
-                name: "press-key".to_string(),
-                description: "Press a keyboard key in the embedded browser (e.g. Enter, Tab, Escape, ArrowDown, F5, a). Optionally with modifier keys. Omit instanceId to use the most recently focused browser tab.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "instanceId": {
-                            "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
-                        },
-                        "key": {
-                            "type": "string",
-                            "description": "Key to press: a single character (a-z, 0-9) or a key name (Enter, Tab, Escape, Backspace, Delete, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Home, End, PageUp, PageDown, Space, F1-F12, Shift, Control, Alt, Meta)."
-                        },
-                        "modifiers": {
-                            "type": "array",
-                            "items": { "type": "string", "enum": ["Alt", "Control", "ControlOrMeta", "Meta", "Shift"] },
-                            "description": "Optional modifier keys to hold while pressing (e.g. Control for Ctrl+A)."
-                        }
-                    },
-                    "required": ["key"]
-                }),
-            },
-            McpTool {
-                server_id: SERVER_ID.to_string(),
-                name: "select-option".to_string(),
-                description: "Select option(s) in a dropdown (<select>). Target with a CSS selector, visible text, or accessibility ref (same locating rules as browser-click). Omit instanceId to use the most recently focused browser tab.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "instanceId": {
-                            "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
-                        },
-                        "selector": {
-                            "type": "string",
-                            "description": "Optional CSS selector for the <select> element."
-                        },
-                        "text": {
-                            "type": "string",
-                            "description": "Optional visible text to locate when selector is not provided."
-                        },
-                        "ref": {
-                            "type": "string",
-                            "description": "Optional accessibility ref (uid from a recent browser-devtools action=ax snapshot)."
-                        },
-                        "values": {
-                            "type": "array",
-                            "items": { "type": "string" },
-                            "description": "Option values or labels to select (value matched first, then label)."
-                        }
-                    },
-                    "anyOf": [
-                        { "required": ["selector"] },
-                        { "required": ["text"] },
-                        { "required": ["ref"] }
-                    ],
-                    "required": ["values"]
-                }),
-            },
-            McpTool {
-                server_id: SERVER_ID.to_string(),
                 name: "upload-file".to_string(),
                 description: "Upload file(s) to a file input element. Target with a CSS selector, visible text, or accessibility ref. Files are injected directly via CDP (no file chooser dialog). Omit instanceId to use the most recently focused browser tab.".to_string(),
                 input_schema: json!({
@@ -704,8 +643,8 @@ impl McpService for BrowserService {
     fn execute(&self, tool_name: &str, _args: &Value) -> napi::Result<Value> {
         match tool_name {
             "create" | "navigate" | "click" | "screenshot" | "devtools" | "close" | "focus"
-            | "list" | "evaluate" | "type" | "wait" | "press-key" | "press_key"
-            | "select-option" | "select_option" | "hover" | "upload-file" | "back"
+            | "list" | "evaluate" | "type" | "wait" | "press_key"
+            | "select_option" | "hover" | "upload-file" | "back"
             | "forward" | "navigate_back" | "navigate_forward" => Err(Error::new(
                 Status::GenericFailure,
                 "Browser tools must be executed through the asynchronous Electron command bridge"
@@ -1012,39 +951,7 @@ fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi::Result<Va
                 normalized.insert("timeoutMs".to_string(), json!(timeout));
             }
         }
-        "press-key" => {
-            optional_non_empty_string(args, "instanceId")?;
-            required_non_empty_string(args, "key", tool_name)?;
-            if let Some(modifiers) = args.get("modifiers") {
-                if !modifiers.is_null() {
-                    let list = modifiers.as_array().ok_or_else(|| {
-                        Error::new(
-                            Status::InvalidArg,
-                            "modifiers must be an array for browser-press-key".to_string(),
-                        )
-                    })?;
-                    for item in list {
-                        let value = item.as_str().ok_or_else(|| {
-                            Error::new(
-                                Status::InvalidArg,
-                                "modifiers items must be strings for browser-press-key".to_string(),
-                            )
-                        })?;
-                        if !matches!(
-                            value,
-                            "Alt" | "Control" | "ControlOrMeta" | "Meta" | "Shift"
-                        ) {
-                            return Err(Error::new(
-                                Status::InvalidArg,
-                                "modifiers must be one of Alt, Control, ControlOrMeta, Meta, Shift for browser-press-key"
-                                    .to_string(),
-                            ));
-                        }
-                    }
-                }
-            }
-        }
-        "select-option" | "hover" | "upload-file" => {
+        "hover" | "upload-file" => {
             optional_non_empty_string(args, "instanceId")?;
             let selector = optional_non_empty_string(args, "selector")?;
             let text = optional_non_empty_string(args, "text")?;
@@ -1057,31 +964,8 @@ fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi::Result<Va
                     ),
                 ));
             }
-            // hover/select-option：支持精确文本匹配。
+            // hover：支持精确文本匹配。
             optional_boolean(args, "exact")?;
-            if tool_name == "select-option" {
-                let values = args.get("values").and_then(Value::as_array).ok_or_else(|| {
-                    Error::new(
-                        Status::InvalidArg,
-                        "values must be a non-empty string array for browser-select-option"
-                            .to_string(),
-                    )
-                })?;
-                if values.is_empty() {
-                    return Err(Error::new(
-                        Status::InvalidArg,
-                        "values must not be empty for browser-select-option".to_string(),
-                    ));
-                }
-                for item in values {
-                    if !item.is_string() {
-                        return Err(Error::new(
-                            Status::InvalidArg,
-                            "values items must be strings for browser-select-option".to_string(),
-                        ));
-                    }
-                }
-            }
             if tool_name == "upload-file" {
                 let files = args.get("files").and_then(Value::as_array).ok_or_else(|| {
                     Error::new(

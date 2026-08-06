@@ -126,6 +126,12 @@ export type SshInternalFileWriteOptions = {
   signal?: AbortSignal;
   expectedVersion?: SshFileVersion;
   workspaceRoot?: string;
+  /**
+   * Explicit opt-in for Snow-managed files that must retain target inode
+   * metadata. This is a compatibility write: it preserves ACLs, xattrs, and
+   * security labels, but truncation is not atomic.
+   */
+  preserveInodeMetadata?: boolean;
 };
 
 export type SshFileWriteResult = {
@@ -1311,6 +1317,28 @@ const writeCompatibilityFile = async (
   }
 };
 
+const copyBasicPosixMode = async (
+  sftp: import("ssh2").SFTPWrapper,
+  handle: Buffer,
+  targetStats: import("ssh2").Stats | null,
+  signal?: AbortSignal
+): Promise<void> => {
+  if (!targetStats) {
+    return;
+  }
+
+  // An atomic replacement always creates a new inode. SFTP can copy the
+  // basic rwx mode, but has no portable ACL/xattr transfer operation. The
+  // temporary file receives directory-default metadata; target-specific ACLs,
+  // xattrs, labels, and special mode bits require an explicit compatibility
+  // write that preserves the target inode.
+  await sftpVoid(
+    sftp,
+    (callback) => sftp.fchmod(handle, targetStats.mode & 0o777, callback),
+    atomicWriteAbortOptions(signal)
+  );
+};
+
 const createTemporaryPath = (remotePath: string): string => {
   const parent = dirname(remotePath);
   const name = basename(remotePath);
@@ -1448,7 +1476,7 @@ const writeSshFileWithOptions = async (
       }
     }
 
-    if (initialStats) {
+    if (initialStats && options?.preserveInodeMetadata) {
       compatibilityWriteStarted = true;
       return await completeCompatibilityWrite(
         sessionId,
@@ -1470,9 +1498,6 @@ const writeSshFileWithOptions = async (
     );
     temporaryCreated = true;
     await writeHandle(session.sftp, handle, data, signal);
-    const fsynced = await tryFsync(session.sftp, handle, signal);
-    await closeHandle(session.sftp, handle, signal);
-    handle = undefined;
 
     assertNotAborted(signal);
     await assertWorkspaceBoundary(
@@ -1481,12 +1506,15 @@ const writeSshFileWithOptions = async (
       options?.workspaceRoot,
       signal
     );
+    const currentStats = await sftpLstat(
+      session.sftp,
+      normalizedPath,
+      atomicWriteAbortOptions(signal)
+    );
+    if (currentStats) {
+      assertRegularFile(normalizedPath, currentStats);
+    }
     if (options?.expectedVersion) {
-      const currentStats = await sftpLstat(
-        session.sftp,
-        normalizedPath,
-        atomicWriteAbortOptions(signal)
-      );
       const currentVersion = currentStats
         ? (await readSshFileWithVersion(sessionId, normalizedPath, { signal })).version
         : { exists: false };
@@ -1498,6 +1526,11 @@ const writeSshFileWithOptions = async (
         });
       }
     }
+
+    await copyBasicPosixMode(session.sftp, handle, currentStats, signal);
+    const fsynced = await tryFsync(session.sftp, handle, signal);
+    await closeHandle(session.sftp, handle, signal);
+    handle = undefined;
 
     renameAttempted = true;
     const usedPosixRename = await tryPosixRename(

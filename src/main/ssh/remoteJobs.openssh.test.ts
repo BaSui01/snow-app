@@ -41,6 +41,8 @@ import {
   disconnectSsh,
   executeSshCommand,
   probeSshCapabilities,
+  readSshFileWithVersion,
+  writeSshFile,
 } from "./sshManager";
 import {
   cancelRemoteJob,
@@ -297,6 +299,49 @@ openSsh("Durable Remote Job OpenSSH fault injection", () => {
     await expect(
       waitFor(jobId, (result) => isTerminal(result.state.status))
     ).resolves.toMatchObject({ state: { status: "succeeded" } });
+  }, 30_000);
+
+  it("atomically replaces an existing file while retaining its basic POSIX mode", async () => {
+    const remotePath = `/home/snow/${randomUUID()}.atomic-save`;
+    const sessionId = await connectSsh(passwordParams());
+    try {
+      await executeSshCommand(
+        sessionId,
+        `printf 'before' > ${remotePath} && chmod 640 -- ${remotePath}`
+      );
+      const before = await executeSshCommand(
+        sessionId,
+        `stat -c '%i %a' -- ${remotePath}`
+      );
+      const loaded = await readSshFileWithVersion(sessionId, remotePath);
+
+      await expect(
+        writeSshFile(sessionId, remotePath, "after", {
+          expectedVersion: loaded.version,
+          workspaceRoot: "/home/snow",
+        })
+      ).resolves.toMatchObject({
+        guarantee: "atomic_best_effort",
+        durability: { posixRename: true },
+      });
+
+      await expect(
+        executeSshCommand(sessionId, `cat -- ${remotePath}`)
+      ).resolves.toBe("after");
+      const after = await executeSshCommand(
+        sessionId,
+        `stat -c '%i %a' -- ${remotePath}`
+      );
+      const [beforeInode, beforeMode] = before.trim().split(" ");
+      const [afterInode, afterMode] = after.trim().split(" ");
+      expect(afterInode).not.toBe(beforeInode);
+      expect(afterMode).toBe(beforeMode);
+    } finally {
+      await executeSshCommand(sessionId, `rm -f -- ${remotePath}`).catch(
+        () => undefined
+      );
+      disconnectSsh(sessionId);
+    }
   }, 30_000);
 
   it.skipIf(fixture !== "systemd-user")(

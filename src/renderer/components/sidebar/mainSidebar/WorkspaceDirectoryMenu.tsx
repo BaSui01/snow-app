@@ -1,14 +1,10 @@
 import {
   AlertTriangle,
-  Braces,
   ChevronRight,
   Code2,
   Ellipsis,
   FileSearch,
   Loader2,
-  MousePointer2,
-  SquareTerminal,
-  Terminal,
   Trash2,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -16,6 +12,7 @@ import { createPortal } from "react-dom";
 
 import { useI18n } from "../../../i18n";
 import type { IdeInfo, WorkspaceDirectoryKind } from "../../../../preload";
+import { IdeIcon } from "../../icons/ideIcons";
 import { useMenuPosition } from "./useMenuPosition";
 
 type WorkspaceDirectoryMenuProps = {
@@ -28,32 +25,9 @@ type WorkspaceDirectoryMenuProps = {
   onShowDetails?: () => void;
 };
 
-const getIdeIcon = (ideId: string): React.JSX.Element => {
-  if (ideId === "cursor") {
-    return <MousePointer2 size={13} />;
-  }
-  if (ideId === "sublime" || ideId === "zed") {
-    return <Terminal size={13} />;
-  }
-  if (
-    ideId === "intellij" ||
-    ideId === "webstorm" ||
-    ideId === "pycharm" ||
-    ideId === "goland" ||
-    ideId === "clion" ||
-    ideId === "phpstorm" ||
-    ideId === "rubymine" ||
-    ideId === "rider" ||
-    ideId === "datagrip" ||
-    ideId === "fleet"
-  ) {
-    return <Braces size={13} />;
-  }
-  if (ideId === "android-studio" || ideId === "xcode") {
-    return <SquareTerminal size={13} />;
-  }
-  return <Code2 size={13} />;
-};
+const getIdeIcon = (ideId: string): React.JSX.Element => (
+  <IdeIcon ideId={ideId} size={13} />
+);
 
 export function WorkspaceDirectoryMenu({
   canDelete = true,

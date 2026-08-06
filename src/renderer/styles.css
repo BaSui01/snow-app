@@ -2238,6 +2238,11 @@ input {
   color: var(--text-secondary, var(--text-primary));
 }
 
+/* 真实 IDE 图标（内联 SVG）在 flex 菜单项中保持尺寸不被压缩 */
+.ide-icon {
+  flex-shrink: 0;
+}
+
 .workspace-directory-menu-submenu-trigger {
   position: relative;
   display: block;

@@ -14995,6 +14995,30 @@ input {
   gap: 8px;
 }
 
+/* Hook records bound to the sub-agent tool call (beforeSubAgentStart above
+   the card content, onSubAgentComplete below) — rendered as inset panels so
+   they read as pre/post steps of the sub-agent instead of a detached
+   message-footer block. */
+.tool-call-sub-agent-hooks {
+  min-width: 0;
+  padding: 6px 8px;
+  background: color-mix(in srgb, var(--bg-tertiary) 45%, transparent);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+}
+
+.tool-call-sub-agent-hooks .hook-exec-group-header {
+  padding-top: 0;
+}
+
+.tool-call-sub-agent-hooks--pre {
+  margin-bottom: -2px;
+}
+
+.tool-call-sub-agent-hooks--post {
+  margin-top: -2px;
+}
+
 .tool-call-sub-agent-identity {
   display: flex;
   align-items: center;

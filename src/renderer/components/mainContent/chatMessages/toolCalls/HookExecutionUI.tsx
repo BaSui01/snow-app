@@ -292,7 +292,7 @@ const HookActionDetails = ({
   );
 };
 
-const HookExecutionItem = ({
+export const HookExecutionItem = ({
   record,
 }: {
   record: HookExecutionRecord;

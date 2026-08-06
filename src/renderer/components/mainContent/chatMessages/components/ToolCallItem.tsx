@@ -1,5 +1,6 @@
 import { memo } from "react";
 import type { ToolCallInfo } from "../utils/conversationTypes";
+import type { HookExecutionRecord } from "../utils/conversationTypes";
 import {
   AskUserQuestionToolCall,
   PlanModeApprovalToolCall,
@@ -26,6 +27,10 @@ import { useI18n } from "../../../../i18n";
 
 type ToolCallItemProps = {
   toolCall: ToolCallInfo;
+  /** Hook execution records bound to this tool call (matched by
+   *  toolCallInteractionId).  Forwarded to the sub-agent card renderer;
+   *  other tool renderers ignore it. */
+  hookExecutions?: HookExecutionRecord[];
 };
 
 /** Pretty-print JSON arguments if possible, otherwise return raw string. */
@@ -150,7 +155,7 @@ const getArgsSummary = (args: string): string | undefined => {
 };
 
 export const ToolCallItem = memo(
-  ({ toolCall }: ToolCallItemProps): React.JSX.Element => {
+  ({ toolCall, hookExecutions }: ToolCallItemProps): React.JSX.Element => {
     const { t } = useI18n();
     // Delegate to specialized renderers based on tool name
     if (toolCall.name === "user-interaction-askUserQuestion") {
@@ -186,7 +191,12 @@ export const ToolCallItem = memo(
     }
 
     if (toolCall.name === "sub-agents-activate") {
-      return <SubAgentToolCall toolCall={toolCall} />;
+      return (
+        <SubAgentToolCall
+          toolCall={toolCall}
+          hookExecutions={hookExecutions}
+        />
+      );
     }
 
     if (toolCall.name === "codebase-search") {

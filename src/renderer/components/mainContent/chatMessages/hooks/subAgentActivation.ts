@@ -141,7 +141,12 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         );
         if (subHookResult) {
           ctx.updateSessionMessages(parentConversationId, (currentMessages) =>
-            appendHookExecutionToMessage(currentMessages, subHookResult.record)
+            appendHookExecutionToMessage(currentMessages, {
+              ...subHookResult.record,
+              // Bind to the sub-agent tool call so the hook renders attached
+              // to the sub-agent card ("启动前" step), not the message footer.
+              toolCallInteractionId,
+            })
           );
           if (subHookResult.outcome.kind === "abort") {
             return JSON.stringify({
@@ -879,10 +884,12 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         );
         if (onCompleteResult) {
           ctx.updateSessionMessages(parentConversationId, (currentMessages) =>
-            appendHookExecutionToMessage(
-              currentMessages,
-              onCompleteResult.record
-            )
+            appendHookExecutionToMessage(currentMessages, {
+              ...onCompleteResult.record,
+              // Bind to the sub-agent tool call so the hook renders attached
+              // to the sub-agent card ("完成" step), not the message footer.
+              toolCallInteractionId,
+            })
           );
           if (onCompleteResult.outcome.kind === "abort") {
             effectiveSummary = onCompleteResult.outcome.message;

@@ -1987,9 +1987,22 @@ input {
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: 16px;
+  width: 24px;
+  height: 100%;
+  margin-left: -4px;
+  border-radius: var(--radius-sm, 6px);
   color: var(--text-tertiary);
   cursor: grab;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.workspace-directory-drag-handle:hover {
+  color: var(--text-primary);
+  background: var(--bg-active);
+}
+
+.workspace-directory-drag-handle:active {
+  cursor: grabbing;
 }
 
 .workspace-directory-row.dragging .workspace-directory-drag-handle {
@@ -2064,96 +2077,282 @@ input {
   opacity: 0.68;
 }
 
-.workspace-directory-create {
+.form-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  margin: 2px 4px 4px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  background: var(--bg-tertiary);
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(2px);
 }
 
-.workspace-directory-create-title {
-  color: var(--text-tertiary);
-  font-size: 10.5px;
+.form-dialog-card {
+  display: flex;
+  width: 440px;
+  max-width: 100%;
+  max-height: 80vh;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  outline: none;
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-xl);
+}
+
+.form-dialog-header {
+  padding: 16px 18px 12px;
+}
+
+.form-dialog-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 15px;
   font-weight: 600;
 }
 
-.workspace-directory-create-input {
+.form-dialog-body {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 14px;
+  padding: 8px 18px 18px;
+  overflow-y: auto;
+}
+
+.form-dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.form-dialog-label {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.form-dialog-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.form-dialog-input {
   width: 100%;
   min-width: 0;
-  padding: 6px 8px;
+  padding: 8px 10px;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm, 6px);
   outline: none;
-  background: var(--bg-primary);
+  background: var(--bg-secondary);
   color: var(--text-primary);
   font: inherit;
   font-size: 12px;
   transition: border-color 0.12s, box-shadow 0.12s;
 }
 
-.workspace-directory-create-input:focus {
+.form-dialog-input:focus {
   border-color: var(--text-muted);
   box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
-.workspace-directory-create-input:disabled {
-  opacity: 0.7;
-  cursor: default;
+.form-dialog-input:disabled,
+.form-dialog-input[readonly] {
+  color: var(--text-secondary);
 }
 
-.workspace-directory-create-actions {
+.form-dialog-description {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.form-dialog-error {
+  color: var(--danger-color, #ef4444);
+  font-size: 11.5px;
+}
+
+.form-dialog-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 6px;
+  gap: 8px;
+  padding: 12px 18px 16px;
+  border-top: 1px solid var(--border-color);
 }
 
-.workspace-directory-create-btn {
+.form-dialog-button {
   display: inline-flex;
+  min-height: 30px;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  padding: 5px 10px;
+  gap: 6px;
+  padding: 6px 14px;
   border: 1px solid transparent;
   border-radius: var(--radius-sm, 6px);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
-  line-height: 1;
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s, opacity 0.12s;
 }
 
-.workspace-directory-create-btn > svg {
-  display: block;
-  flex-shrink: 0;
-}
-
-.workspace-directory-create-btn.cancel {
+.form-dialog-button.cancel {
   border-color: var(--border-color);
   background: var(--bg-secondary);
   color: var(--text-secondary);
 }
 
-.workspace-directory-create-btn.cancel:hover:not(:disabled) {
-  border-color: var(--border-color);
+.form-dialog-button.cancel:hover:not(:disabled) {
   background: var(--bg-hover);
 }
 
-.workspace-directory-create-btn.confirm {
+.form-dialog-button.confirm {
   background: var(--text-primary);
   color: var(--on-solid);
 }
 
-.workspace-directory-create-btn.confirm:hover:not(:disabled) {
-  background: var(--text-primary);
+.form-dialog-button.confirm:hover:not(:disabled) {
+  opacity: 0.88;
 }
 
-.workspace-directory-create-btn:disabled {
+.form-dialog-button:disabled {
   cursor: default;
-  opacity: 0.68;
+  opacity: 0.55;
+}
+
+.form-dialog-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.form-dialog-browse-button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.form-dialog-drop-zone {
+  display: flex;
+  min-height: 112px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-tertiary);
+  text-align: center;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.form-dialog-drop-zone > strong {
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.form-dialog-drop-zone > span {
+  font-size: 11px;
+}
+
+.form-dialog-drop-zone.drag-over {
+  border-color: var(--text-muted);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px var(--focus-ring);
+}
+
+.project-action-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.project-action-card {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.15s;
+}
+
+.project-action-card:hover {
+  border-color: var(--text-muted);
+  background: var(--bg-hover);
+  transform: translateY(-1px);
+}
+
+.project-action-card:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.project-action-card-icon {
+  display: flex;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.project-action-card-content {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.project-action-card-content strong {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.project-action-card-content span {
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+/* 目录行内重命名输入框：仿会话重命名输入框的紧凑样式 */
+.workspace-directory-rename-input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  outline: none;
+}
+
+.workspace-directory-rename-input:focus {
+  border-color: var(--text-muted);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.workspace-directory-row.editing {
+  cursor: default;
 }
 
 .workspace-directory-actions-wrapper {
@@ -6105,6 +6304,10 @@ input {
 }
 
 .chat-area {
+  /* 聊天内容最大宽度（响应式梯度，视口越宽内容越宽）。
+     所有聊天区内容（消息列表 / 骨架屏 / 压缩消息 / 输入区）通过继承
+     该变量对齐同一宽度，保证并行生图画廊与长行内容的阅读体验。 */
+  --chat-content-max: 720px;
   flex-grow: var(--chat-flex-grow, 0);
   flex-shrink: 1;
   flex-basis: auto;
@@ -6116,6 +6319,43 @@ input {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+/* 消息区响应式宽度梯度（按视口宽度分档，兼容 1366×768 ~ 4K/带鱼屏）：
+   <1024px（小窗/平板）       720px —— 窄屏保持紧凑单列阅读
+   ≥1024px（1280 笔记本）     860px
+   ≥1280px（1440 屏）        1000px
+   ≥1440px（1600/1920 屏）   1120px
+   ≥1920px（2K/带鱼屏）      1240px
+   ≥2560px（4K/超宽）        1400px —— 并行生图画廊 4 列每格 ~330px */
+@media (min-width: 1024px) {
+  .chat-area {
+    --chat-content-max: 860px;
+  }
+}
+
+@media (min-width: 1280px) {
+  .chat-area {
+    --chat-content-max: 1000px;
+  }
+}
+
+@media (min-width: 1440px) {
+  .chat-area {
+    --chat-content-max: 1120px;
+  }
+}
+
+@media (min-width: 1920px) {
+  .chat-area {
+    --chat-content-max: 1240px;
+  }
+}
+
+@media (min-width: 2560px) {
+  .chat-area {
+    --chat-content-max: 1400px;
+  }
 }
 
 .chat-input-region {
@@ -6537,7 +6777,7 @@ input {
 
 .chat-initial-history-skeleton {
   display: flex;
-  width: min(100%, 980px);
+  width: min(100%, var(--chat-content-max));
   min-height: 192px;
   margin: 0 auto;
   flex-direction: column;
@@ -7007,7 +7247,7 @@ input {
 
 .chat-history-skeleton {
   display: flex;
-  width: min(100%, 980px);
+  width: min(100%, var(--chat-content-max));
   min-height: 28px;
   margin: 0 auto;
   align-items: center;
@@ -7032,24 +7272,16 @@ input {
 
 .chat-message-list {
   display: flex;
-  /* 聊天内容最大宽度：默认 1080px；超宽屏视口 ≥1680px 时加宽到 1280px
-     （见下方媒体查询），让并行生图画廊（4 列网格）与长行代码更舒展。
-     子元素（.ai-message-content 等）通过继承该变量计算自身宽度。 */
-  --chat-content-max: 1080px;
+  /* 最大宽度继承自 .chat-area 的 --chat-content-max（多断点响应式梯度）；
+     min-width: 0 防止窄窗口下内容撑破容器溢出 */
   width: min(100%, var(--chat-content-max));
+  min-width: 0;
   margin: 0 auto;
   flex-direction: column;
   gap: 24px;
   /* Contain layout/paint so that resizing panels doesn't reflow the
      entire document — only this subtree is affected. */
   contain: layout paint;
-}
-
-/* 超宽屏（如 2560/3440 宽显示器）：消息区进一步加宽 */
-@media (min-width: 1680px) {
-  .chat-message-list {
-    --chat-content-max: 1280px;
-  }
 }
 
 /* File changes panel: full list of files modified by the main agent and its
@@ -7566,8 +7798,8 @@ input {
 }
 
 .ai-message-content {
-  /* 跟随 .chat-message-list 的响应式最大宽度，留 40px 呼吸空间 */
-  width: min(100%, calc(var(--chat-content-max, 1080px) - 40px));
+  /* 跟随 .chat-area 的响应式最大宽度，留 40px 呼吸空间 */
+  width: min(100%, calc(var(--chat-content-max, 720px) - 40px));
 }
 
 /* Raw Markdown view — shown when the user toggles off rendered output */
@@ -7688,7 +7920,7 @@ input {
 }
 
 .context-compaction-message {
-  width: min(100%, 980px);
+  width: min(100%, var(--chat-content-max));
   margin: 0 auto;
   overflow: hidden;
   border: 1px solid var(--border-color);
@@ -7832,7 +8064,7 @@ input {
 
 .context-compaction-stream,
 .context-compaction-error {
-  width: min(100%, 980px);
+  width: min(100%, var(--chat-content-max));
   margin: 0 auto;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
@@ -11765,6 +11997,33 @@ input {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 合并画廊容器：开启容器查询，消息区变窄时自动降列。
+   React inline 的数量分档（gridTemplateColumns）只在容器 ≥640px 时生效；
+   640/460/300 三档保证每格图片始终有可读大小（如 4 列在 600px 容器下
+   每格 ~140px 过窄 → 降到 3 列）。与 .chat-area 的视口断点互补：
+   视口断点管"内容区多宽"，容器查询管"网格在内容区内如何分列"。 */
+.tool-call-imagegen-gallery {
+  container-type: inline-size;
+}
+
+@container (max-width: 640px) {
+  .tool-call-imagegen-gallery-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+@container (max-width: 460px) {
+  .tool-call-imagegen-gallery-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@container (max-width: 300px) {
+  .tool-call-imagegen-gallery-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
 }
 
 .tool-call-imagegen-figure-caption .tool-call-imagegen-download {
@@ -23201,7 +23460,16 @@ body.ctrl-held [data-path] {
   color: var(--text-primary);
 }
 
+.ssh-wizard-saved-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .ssh-wizard-saved-method {
+  flex-shrink: 0;
   margin-left: auto;
   font-size: 10px;
   color: var(--text-muted);
@@ -23358,12 +23626,33 @@ body.ctrl-held [data-path] {
 }
 
 .ssh-wizard-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
   color: var(--accent-red);
   font-size: 12px;
-  line-height: 1.4;
-  padding: 6px 8px;
+  line-height: 1.5;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent-red) 40%, var(--border-color));
   border-radius: var(--radius-sm);
   background: var(--accent-red-bg);
+}
+
+.ssh-wizard-error-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.ssh-wizard-error-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ssh-wizard-error-detail {
+  color: var(--text-muted);
+  word-break: break-all;
 }
 
 .ssh-wizard-breadcrumb {

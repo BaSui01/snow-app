@@ -46,6 +46,7 @@ import {
 } from "./sshManager";
 import {
   cancelRemoteJob,
+  cleanupRemoteJobs,
   getRemoteJob,
   getRemoteJobAnalysisContext,
   getRemoteJobBackendsForTesting,
@@ -509,6 +510,68 @@ openSsh("Durable Remote Job OpenSSH fault injection", () => {
       ).resolves.toBe("");
     } finally {
       disconnectSsh(sessionId);
+    }
+  }, 30_000);
+
+  it("cleans expired Snow Agent terminal jobs with ISO-8601 timestamps", async () => {
+    const jobs = [
+      { status: "succeeded" as const, ageMs: 8 * 24 * 60 * 60 * 1000 },
+      { status: "failed" as const, ageMs: 15 * 24 * 60 * 60 * 1000 },
+    ];
+    const jobIds: string[] = [];
+
+    for (const { status, ageMs } of jobs) {
+      const jobId = randomUUID();
+      jobIds.push(jobId);
+      await startRemoteJob({
+        workspacePath: workspacePath(),
+        command: "true",
+        timeoutMs: 10_000,
+        jobId,
+        backend: "posix-detach",
+      });
+      const completed = await waitFor(jobId, (result) =>
+        result.state.status === "succeeded"
+      );
+      const updatedAt = new Date(Date.now() - ageMs).toISOString();
+      const statePath = `/home/snow/.local/state/snow-app/jobs/${jobId}/state.json`;
+      const sessionId = await connectSsh(passwordParams());
+      try {
+        const existing = await readSshFileWithVersion(sessionId, statePath);
+        await writeSshFile(
+          sessionId,
+          statePath,
+          JSON.stringify({
+            ...completed.state,
+            status,
+            revision: completed.state.revision + 1,
+            backend: "snow-agent",
+            createdAt: updatedAt,
+            updatedAt,
+            completedAt: updatedAt,
+            exitCode: status === "succeeded" ? 0 : 1,
+          }),
+          {
+            expectedVersion: existing.version,
+            workspaceRoot: "/home/snow",
+          }
+        );
+      } finally {
+        disconnectSsh(sessionId);
+      }
+
+      const observed = await getRemoteJob(jobId, { offset: 0 });
+      expect(observed.job).toMatchObject({
+        backend: "snow-agent",
+        status,
+        updatedAt,
+      });
+      expect(Date.parse(observed.job.updatedAt)).toBe(Date.parse(updatedAt));
+    }
+
+    await expect(cleanupRemoteJobs()).resolves.toEqual({ removed: expect.arrayContaining(jobIds) });
+    for (const jobId of jobIds) {
+      await expect(getRemoteJob(jobId)).rejects.toThrow("Remote Job binding was not found");
     }
   }, 30_000);
 

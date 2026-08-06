@@ -1,5 +1,6 @@
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
+use chrono::{SecondsFormat, Utc};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -12,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime};
 use uuid::Uuid;
 
 const PROTOCOL_VERSION: u64 = 1;
@@ -238,11 +239,7 @@ fn acquire_state_lock(directory: &Path) -> Result<StateLock, String> {
 }
 
 fn timestamp() -> String {
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    format!("unix-ms:{millis}")
+    Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
 fn write_state(
@@ -953,6 +950,27 @@ mod tests {
 
         fs::remove_file(marker).expect("remove self-test marker");
         fs::remove_dir_all(root).expect("remove test job directory");
+    }
+
+    #[test]
+    fn writes_iso_8601_timestamps_to_terminal_state() {
+        let directory = test_job_directory();
+        write_test_request(&directory, &directory);
+        let request = read_request(&directory).expect("read test request");
+
+        write_state(&directory, &request, "succeeded", Some(0), None)
+            .expect("write completed state");
+
+        let state = read_state(&directory).expect("read completed state");
+        for field in ["createdAt", "updatedAt", "completedAt"] {
+            let value = state[field].as_str().expect("timestamp must be a string");
+            assert!(
+                chrono::DateTime::parse_from_rfc3339(value).is_ok(),
+                "{field} must be an ISO-8601 timestamp: {value}"
+            );
+        }
+
+        fs::remove_dir_all(directory).expect("remove test job directory");
     }
 
     #[test]

@@ -230,6 +230,7 @@ export function WorkspaceDirectoryRow({
         contextMenuAnchor={contextMenuAnchor}
         disabled={isActionLocked}
         isActive={isActive}
+        kind={directory.kind}
         onActivate={() => onActivate(directory.directoryId)}
         onContextMenuClose={() => setContextMenuAnchor(null)}
         onDelete={() => onDelete(directory.directoryId)}

@@ -75,6 +75,7 @@ fn build_request(image_data_url: &str) -> ResponsesApiRequest {
         directory_id: None,
         checkpoint_id: None,
         context_compaction: None,
+        resume_after_compaction: None,
         // Empty tool whitelist: palette generation is a pure vision→JSON task
         // and must not carry any MCP/builtin tools in the payload.
         sub_agent_tools_json: Some("[]".to_string()),

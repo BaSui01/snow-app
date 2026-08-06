@@ -251,6 +251,16 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to delete workspace directories"
           )
         ),
+      listInstalledIdes: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to detect installed IDEs")
+        ),
+      openInIde: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to open projects in IDEs"
+          )
+        ),
       createProjectDirectory: () =>
         Promise.reject(
           new Error(
@@ -613,6 +623,9 @@ export const loadNativeBridge = (): NativeBridge => {
       },
       getGitCommitFiles: () => {
         throw new Error("Rust native bridge is required for git commit files");
+      },
+      getCommitDiff: () => {
+        throw new Error("Rust native bridge is required for git commit diff");
       },
       discoverGitRepos: () => {
         throw new Error(

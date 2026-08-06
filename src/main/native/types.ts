@@ -415,6 +415,12 @@ export type WorkspaceDirectoryRecord = WorkspaceDirectoryInput & {
   updatedAt: string;
 };
 
+export type IdeInfo = {
+  id: string;
+  name: string;
+  executable: string;
+};
+
 export type FileSearchResult = {
   path: string;
   relativePath: string;
@@ -722,6 +728,13 @@ export type ResponsesApiRequest = {
   directoryId?: string;
   checkpointId?: string;
   contextCompaction?: boolean;
+  /**
+   * Internal auto-compaction resume mode: the compaction handoff is already
+   * persisted as the latest `context_compaction` boundary, so `messages` is a
+   * placeholder that must not be re-injected into the payload nor persisted
+   * as normal user messages.
+   */
+  resumeAfterCompaction?: boolean;
   subAgentToolsJson?: string;
   subAgentConfigProfile?: string;
   skipContext?: boolean;
@@ -1111,6 +1124,8 @@ export type NativeBridge = {
   listWorkspaceDirectories: () => Promise<WorkspaceDirectoryRecord[]>;
   upsertWorkspaceDirectory: (item: WorkspaceDirectoryInput) => Promise<void>;
   activateWorkspaceDirectory: (directoryId: string) => Promise<void>;
+  listInstalledIdes: () => Promise<IdeInfo[]>;
+  openInIde: (ideId: string, projectPath: string) => Promise<void>;
   reorderWorkspaceDirectories: (
     items: WorkspaceDirectoryInput[]
   ) => Promise<void>;
@@ -1402,6 +1417,10 @@ export type NativeBridge = {
     repoPath: string,
     hash: string
   ) => Promise<GitCommitFile[]>;
+  getCommitDiff: (
+    repoPath: string,
+    hash: string
+  ) => Promise<GitDiffResult>;
   discoverGitRepos: (rootPath: string) => Promise<GitRepoInfo[]>;
   startGitWatch: (
     repoPath: string,

@@ -224,7 +224,12 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           toolResultsJson?: string;
         }[],
         currentConversationId: string | undefined,
-        checkpointId?: string
+        checkpointId?: string,
+        // Internal auto-compaction resume: the compaction handoff is already
+        // persisted as the latest context_compaction boundary, so the Rust
+        // backend builds the request context from the database and treats
+        // requestMessages as a placeholder (never sent nor persisted).
+        resumeAfterCompaction?: boolean
       ): Promise<void> => {
         const iterSessionKey = currentConversationId ?? PENDING_SESSION_KEY;
         let effectiveKey = iterSessionKey;
@@ -269,6 +274,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             conversationId: currentConversationId,
             directoryId: sessionDirId,
             checkpointId,
+            resumeAfterCompaction,
             planMode: iterRef?.planMode ?? ctx.planModeRef.current,
             goalMode: iterRef?.goalMode ?? ctx.goalModeRef.current,
           },
@@ -583,6 +589,11 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                   // context. The Rust backend uses conversationId to
                   // reconstruct context from the database, so the
                   // compaction summary message is automatically included.
+                  // resumeAfterCompaction tells Rust to treat the summary
+                  // passed below as a placeholder: the handoff is already
+                  // persisted as the context_compaction boundary, so it is
+                  // neither sent twice nor re-persisted as a normal user
+                  // message.
                   const postCompactionAssistantId =
                     createMessageId("assistant");
                   const postCompactionAssistant: ChatConversationMessage = {
@@ -600,7 +611,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                   await runAgentLoop(
                     postCompactionAssistantId,
                     [{ role: "user", content: compactionSummary }],
-                    response.conversationId
+                    response.conversationId,
+                    undefined,
+                    true
                   );
                   return;
                 }

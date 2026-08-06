@@ -67,6 +67,11 @@ pub struct ResponsesApiRequest {
     pub directory_id: Option<String>,
     pub checkpoint_id: Option<String>,
     pub context_compaction: Option<bool>,
+    /// Internal auto-compaction resume mode: the compaction handoff is
+    /// already persisted as the latest `context_compaction` boundary, so the
+    /// request's `messages` are a placeholder that must not be re-injected
+    /// into the payload nor persisted as normal user messages.
+    pub resume_after_compaction: Option<bool>,
     pub sub_agent_tools_json: Option<String>,
     pub sub_agent_config_profile: Option<String>,
     /// When true, skip loading conversation history and injecting the built-in
@@ -217,6 +222,7 @@ async fn create_response_async(
         max_context_tokens: api_config.max_context_tokens,
         directory_id: request.directory_id.as_deref(),
         context_compaction: request.context_compaction.unwrap_or(false),
+        resume_after_compaction: request.resume_after_compaction.unwrap_or(false),
         skip_context: request.skip_context.unwrap_or(false),
         plan_mode: request.plan_mode.unwrap_or(false),
         goal_mode: request.goal_mode.unwrap_or(false),
@@ -352,6 +358,7 @@ async fn create_response_async(
                 tool_calls_json: &streamed_response.tool_calls_json,
                 directory_id: request.directory_id.as_deref().unwrap_or(""),
                 context_compaction: request.context_compaction.unwrap_or(false),
+                resume_after_compaction: request.resume_after_compaction.unwrap_or(false),
                 total_duration_ms: streamed_response.total_duration_ms,
             },
         )?

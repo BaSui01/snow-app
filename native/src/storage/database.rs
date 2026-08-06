@@ -229,7 +229,7 @@ fn recover_database(database_path: &Path) -> Result<()> {
         // Read column names for this table from the corrupted database.
         let columns_result: rusqlite::Result<Vec<String>> = read_only_conn
             .prepare(&format!("SELECT * FROM \"{table_name}\" LIMIT 0"))
-            .and_then(|mut stmt| {
+            .and_then(|stmt| {
                 let count = stmt.column_count();
                 Ok((0..count)
                     .map(|i| stmt.column_name(i).unwrap_or("").to_string())

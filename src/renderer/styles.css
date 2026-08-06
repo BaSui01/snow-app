@@ -16074,6 +16074,16 @@ input {
   color: var(--text-primary);
 }
 
+/* ===== Review Chip ===== */
+.review-chip {
+  cursor: pointer;
+}
+
+.review-chip:hover {
+  border-color: #2ea043;
+  color: #2ea043;
+}
+
 .text-snippet-preview {
   position: fixed;
   z-index: 10000;

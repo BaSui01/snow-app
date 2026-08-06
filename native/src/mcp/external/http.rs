@@ -56,20 +56,10 @@ impl HttpMcpClient {
         {
             Ok(running) => running,
             Err(error) if super::should_retry_with_legacy_handshake(&error) => {
-                // 重建 transport 避免复用失败连接的状态，改用 legacy 握手重连。
-                let mut transport_config = StreamableHttpClientTransportConfig::with_uri(url);
-                if !custom_headers.is_empty() {
-                    transport_config = transport_config.custom_headers(custom_headers);
-                }
-                let transport: StreamableHttpClientTransport<_> =
-                    StreamableHttpClientTransport::from_config(transport_config);
-
-                match client_info
-                    .serve_with_lifecycle(transport, ClientLifecycleMode::Initialize)
-                    .await
-                {
-                    Ok(running) => running,
-                    // 重试失败时保留原始 Auto 错误（含版本协商诊断信息）
+                // 重建 transport 避免复用失败连接的状态,改用 legacy 握手重连。
+                match Self::connect_legacy(config).await {
+                    Ok(client) => return Ok(client),
+                    // 重试失败时保留原始 Auto 错误(含版本协商诊断信息)
                     Err(_) => {
                         return Err(Error::from_reason(format!(
                             "Failed to connect external MCP HTTP server {}: {error}",
@@ -85,6 +75,42 @@ impl HttpMcpClient {
                 )))
             }
         };
+
+        Ok(Self { client: running })
+    }
+
+    /// 旧版本回退:直接以 legacy `initialize` 握手建立连接,跳过
+    /// Auto 模式对 2026-07-28 无状态协议的 `server/discover` 探测。
+    /// 当 Auto 协商降级后的连接不稳定(如旧 SDK 服务器调用时报
+    /// Transport closed)时,用本方法重连可绕过协商探测路径。
+    pub(super) async fn connect_legacy(config: &McpServerConfigRecord) -> Result<Self> {
+        let url = config.url.trim();
+        if url.is_empty() {
+            return Err(Error::from_reason(format!(
+                "External MCP server {} has no URL",
+                config.name
+            )));
+        }
+
+        let custom_headers = parse_headers(&config.headers_json)?;
+
+        let mut transport_config = StreamableHttpClientTransportConfig::with_uri(url);
+        if !custom_headers.is_empty() {
+            transport_config = transport_config.custom_headers(custom_headers);
+        }
+        let transport: StreamableHttpClientTransport<_> =
+            StreamableHttpClientTransport::from_config(transport_config);
+
+        let client_info = ClientInfo::default();
+        let running = client_info
+            .serve_with_lifecycle(transport, ClientLifecycleMode::Initialize)
+            .await
+            .map_err(|error| {
+                Error::from_reason(format!(
+                    "Failed to connect external MCP HTTP server {}: {error}",
+                    config.name
+                ))
+            })?;
 
         Ok(Self { client: running })
     }

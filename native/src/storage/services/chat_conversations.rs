@@ -12,6 +12,7 @@ use super::super::{
     ChatConversationPage, ChatConversationRecord, ChatMessagePage, ChatMessageRecord,
     ConversationSearchResult, UserMessageSummary,
 };
+use crate::api::conversation::images::expand_review_tags_in_content;
 
 #[derive(Clone, Debug)]
 pub struct ChatContextMessage {
@@ -2040,10 +2041,14 @@ fn create_title(messages: &[ChatContextMessage]) -> String {
         .iter()
         .find(|message| normalize_role(&message.role) == "user" && !message.content.trim().is_empty())
         .or_else(|| messages.iter().find(|message| !message.content.trim().is_empty()))
-        .map(|message| message.content.as_str())
-        .unwrap_or("新对话");
+        .map(|message| {
+            // 展开 @@review: 标签，避免标题显示 base64 外壳；其余消息原文不变。
+            expand_review_tags_in_content(&message.content)
+                .unwrap_or_else(|| message.content.clone())
+        })
+        .unwrap_or_else(|| "新对话".to_string());
 
-    create_snippet(source, 80)
+    create_snippet(&source, 80)
 }
 
 fn create_snippet(content: &str, max_chars: usize) -> String {

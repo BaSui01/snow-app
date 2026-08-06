@@ -2140,6 +2140,7 @@ export const zhCN = {
   "chat.review.allLoaded": "已加载全部提交",
   "chat.review.selectedCount": "已选 {{count}} 项",
   "chat.review.startReview": "开始审查",
+  "chat.review.tagSummary": "代码审查 · {{count}} 项",
   "chat.review.instructionsLabel": "补充审查重点（可选）",
   "chat.review.instructionsPlaceholder": "例如：重点关注性能、并发安全、错误处理...",
   "chat.review.promptHeader": "请对以下 Git 变更执行代码审查（Code Review）。这是一个只读分析任务。",

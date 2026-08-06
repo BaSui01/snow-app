@@ -10,13 +10,17 @@ import {
 import { useI18n } from "../../../../i18n";
 import { Modal } from "../../../common/Modal";
 import type { GitLogEntry, GitStatusResult } from "../../../../../preload";
+import {
+  encodeReviewTag,
+  type ReviewTag,
+} from "../fileTagUtils";
 
 type ReviewPanelProps = {
   /** Whether the panel is visible. Controlled by the /review command. */
   open: boolean;
   /** Conversation working directory (used as the git repository path). */
   workDir: string;
-  /** Called with the constructed review prompt when the user confirms. */
+  /** Called with the encoded review tag (`@@review:...@@`) when the user confirms. */
   onStartReview: (prompt: string) => void;
   onClose: () => void;
 };
@@ -334,7 +338,22 @@ export const ReviewPanel = ({
     setIsSending(true);
     try {
       const prompt = await buildPrompt();
-      onStartReview(prompt);
+      // 完整 prompt 编码为 review 标签发送：消息渲染为 chip（避免渲染
+      // 海量 diff 文本节点），Rust 后端在请求 AI 时再展开为完整内容。
+      const summaryBase = t("chat.review.tagSummary", {
+        values: { count: selected.size },
+      });
+      const summary = status?.currentBranch
+        ? `${summaryBase} · ${status.currentBranch}`
+        : summaryBase;
+      const tag: ReviewTag = {
+        prompt,
+        summary,
+        charCount: prompt.length,
+        branch: status?.currentBranch,
+        repoPath: workDir,
+      };
+      onStartReview(encodeReviewTag(tag));
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

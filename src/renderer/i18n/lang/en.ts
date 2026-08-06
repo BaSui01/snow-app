@@ -2267,6 +2267,7 @@ export const en = {
   "chat.review.allLoaded": "All commits loaded",
   "chat.review.selectedCount": "{{count}} selected",
   "chat.review.startReview": "Start review",
+  "chat.review.tagSummary": "Code review · {{count}} items",
   "chat.review.instructionsLabel": "Additional review focus (optional)",
   "chat.review.instructionsPlaceholder":
     "e.g. Focus on performance, concurrency safety, error handling...",

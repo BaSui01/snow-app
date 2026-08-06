@@ -2114,6 +2114,7 @@ export const zhTW = {
   "chat.review.allLoaded": "已載入全部提交",
   "chat.review.selectedCount": "已選 {{count}} 項",
   "chat.review.startReview": "開始審查",
+  "chat.review.tagSummary": "程式碼審查 · {{count}} 項",
   "chat.review.instructionsLabel": "補充審查重點（選填）",
   "chat.review.instructionsPlaceholder": "例如：著重效能、並發安全、錯誤處理...",
   "chat.review.promptHeader": "請對以下 Git 變更執行程式碼審查（Code Review）。這是一個唯讀分析任務。",

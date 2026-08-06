@@ -5,6 +5,7 @@ import {
   GitCommitHorizontal,
   GitCompare,
   MessageSquare,
+  ScanSearch,
 } from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import type { UserMessageSummary } from "../../../../../preload";
@@ -75,6 +76,8 @@ const buildPlainTextSummary = (content: string): string => {
       );
       parts.push(lastSep === -1 ? segment.tag.path : segment.tag.path.slice(lastSep + 1));
     } else if (segment.type === "text-snippet") {
+      parts.push(segment.tag.summary);
+    } else if (segment.type === "review") {
       parts.push(segment.tag.summary);
     } else {
       const { tag } = segment;
@@ -178,6 +181,26 @@ const renderRailSegments = (content: string): React.ReactNode => {
             size={12}
             className="user-message-file-chip-icon"
             style={{ color: "#6c757d" }}
+          />
+          <span className="user-message-file-chip-name">
+            {segment.tag.summary}
+          </span>
+        </span>
+      );
+    }
+
+    if (segment.type === "review") {
+      const reviewTitle = `${segment.tag.summary} (${segment.tag.charCount} chars)`;
+      return (
+        <span
+          key={index}
+          className="user-message-file-chip review-chip"
+          title={reviewTitle}
+        >
+          <ScanSearch
+            size={12}
+            className="user-message-file-chip-icon"
+            style={{ color: "#2ea043" }}
           />
           <span className="user-message-file-chip-name">
             {segment.tag.summary}
@@ -604,7 +627,8 @@ export const UserMessageRail = memo(
                     msg.content.includes("@@image:") ||
                     msg.content.includes("@@commit:") ||
                     msg.content.includes("@@change:") ||
-                    msg.content.includes("@@text-snippet:");
+                    msg.content.includes("@@text-snippet:") ||
+                    msg.content.includes("@@review:");
                   const isVisible = visibleUserIndices.has(index);
                   return (
                     <button

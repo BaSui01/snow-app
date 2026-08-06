@@ -308,6 +308,8 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
           );
         }
 
+        const subToolCalls = parseToolCalls(subResponse.toolCallsJson);
+
         // Auto-compaction for sub-agents: mirrors the main agent loop. When the
         // sub-agent's effective API config has enableAutoCompress=true and the
         // total token usage crosses the configured threshold, finalize the
@@ -316,7 +318,17 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         // the sub-agent's configured profile (falling back to the active config)
         // so it matches the sub-agent's real context window, and is fetched
         // fresh on every check so user edits apply without a restart.
-        if (subResponse.tokenUsage && subResponse.status !== "error") {
+        //
+        // Only runs while the sub-agent loop is still alive (tool calls to
+        // process). When the sub-agent is finishing naturally (no tool calls),
+        // compaction must NOT fire even over the threshold — it would force
+        // another subAgentRunLoop iteration and wake the sub-agent back up
+        // after it completed.
+        if (
+          subToolCalls.length > 0 &&
+          subResponse.tokenUsage &&
+          subResponse.status !== "error"
+        ) {
           const subApiConfig = await ctx.getActiveApiConfig(
             subAgentConfigProfile || undefined
           );
@@ -390,8 +402,6 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
             }
           }
         }
-
-        const subToolCalls = parseToolCalls(subResponse.toolCallsJson);
 
         if (subToolCalls.length === 0) {
           ctx.updateSessionMessages(subConvId, (currentMessages) =>

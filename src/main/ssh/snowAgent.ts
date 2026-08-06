@@ -256,10 +256,21 @@ export const launchSnowAgentJob = async (
   }
 };
 
-export const probeSnowAgentLiveness = async (
+export type SnowAgentLivenessProbe = {
+  probeId: string;
+  markerToken: string;
+};
+
+const isUuid = (value: unknown): value is string =>
+  typeof value === "string" &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  );
+
+export const startSnowAgentLivenessProbe = async (
   sessionId: string,
   capabilities: SshCapabilities
-): Promise<void> => {
+): Promise<SnowAgentLivenessProbe> => {
   const result = parseJsonResult(
     await runSnowAgent(
       sessionId,
@@ -269,9 +280,14 @@ export const probeSnowAgentLiveness = async (
     ),
     "job self-test"
   );
-  if (result.disconnectSurvival !== true) {
-    throw new Error("snow-agent did not pass disconnect-survival self-test");
+  if (
+    result.accepted !== true ||
+    !isUuid(result.probeId) ||
+    !isUuid(result.markerToken)
+  ) {
+    throw new Error("snow-agent did not start a disconnect-survival probe");
   }
+  return { probeId: result.probeId, markerToken: result.markerToken };
 };
 
 export const inspectSnowAgentJob = async (

@@ -43,7 +43,7 @@ import {
   inspectSnowAgentJob,
   launchSnowAgentJob,
   negotiateSnowAgent,
-  probeSnowAgentLiveness,
+  startSnowAgentLivenessProbe,
 } from "./snowAgent";
 
 const JOB_SCHEMA_VERSION = 1;
@@ -1183,9 +1183,33 @@ const verifyBackendLiveness = async (
   const probeId = randomUUID();
   try {
     if (backend.kind === "snow-agent") {
-      await withSshSession(workspacePath, async (sessionId) => {
+      const probe = await withSshSession(workspacePath, async (sessionId) => {
         await negotiateSnowAgent(sessionId, capabilities);
-        await probeSnowAgentLiveness(sessionId, capabilities);
+        return startSnowAgentLivenessProbe(sessionId, capabilities);
+      });
+      await withSshSession(workspacePath, async (sessionId) => {
+        const root = await getRemoteJobRoot(sessionId, capabilities);
+        const marker = `${root}/.snow-agent-self-test-${probe.probeId}`;
+        const deadline = Date.now() + 3_000;
+        try {
+          while (Date.now() < deadline) {
+            if (await remotePathExists(sessionId, marker)) {
+              const content = await readSshFile(sessionId, marker);
+              if (content.toString("utf8") === probe.markerToken) {
+                return;
+              }
+              throw new Error("snow-agent disconnect-survival marker token mismatched");
+            }
+            await wait(125);
+          }
+          throw new Error(
+            "snow-agent detached runner did not write its marker after the SSH disconnect"
+          );
+        } finally {
+          await runShell(sessionId, `rm -f -- ${shellQuote(marker)}`).catch(
+            () => undefined
+          );
+        }
       });
       BACKEND_PROBE_CACHE.set(cacheKey, Date.now() + BACKEND_PROBE_CACHE_MS);
       return true;

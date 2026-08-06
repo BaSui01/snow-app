@@ -6,11 +6,13 @@ use sha2::{Digest, Sha256};
 use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
 const PROTOCOL_VERSION: u64 = 1;
@@ -27,6 +29,7 @@ const STATE_LOCK_ATTEMPTS: usize = 400;
 const LAUNCH_LOCK_OWNER_GRACE: Duration = Duration::from_secs(5);
 const LAUNCH_LOCK_OWNER_FILE: &str = "launcher.pid";
 const LAUNCH_LOCK_RUNNER_FILE: &str = "runner.pid";
+const SELF_TEST_DELAY: Duration = Duration::from_millis(750);
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -63,6 +66,9 @@ fn run() -> Result<(), String> {
             print_release_handshake()
         }
         ["job", "self-test", "--disconnect-survival"] => run_self_test(),
+        ["job", "self-test-run", "--probe-id", probe_id, "--marker-token", marker_token] => {
+            run_self_test_runner(probe_id, marker_token)
+        }
         ["job", "launch", "--job-directory", directory] => launch_job(Path::new(directory)),
         ["job", "run", "--job-directory", directory] => run_job(Path::new(directory)),
         ["job", "inspect", "--job-directory", directory] => inspect_job(Path::new(directory)),
@@ -115,21 +121,58 @@ fn print_release_handshake() -> Result<(), String> {
     print_json(manifest)
 }
 
-fn run_self_test() -> Result<(), String> {
-    // The launch command starts a new session below. This test is intentionally
-    // small: it verifies that the executable has a writable state root and can
-    // create an independently owned marker before the client closes SSH.
+fn self_test_root() -> Result<PathBuf, String> {
     let root = env::var_os("XDG_STATE_HOME")
         .map(PathBuf::from)
         .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state")))
         .unwrap_or_else(|| PathBuf::from("."))
         .join("snow-app/jobs");
     fs::create_dir_all(&root).map_err(|error| error.to_string())?;
-    let marker = root.join(format!(".snow-agent-self-test-{}", Uuid::new_v4()));
-    fs::write(&marker, b"ok").map_err(|error| error.to_string())?;
-    let survived = fs::read(&marker).map_err(|error| error.to_string())? == b"ok";
-    let _ = fs::remove_file(marker);
-    print_json(json!({ "disconnectSurvival": survived }))
+    #[cfg(unix)]
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o700))
+        .map_err(|error| error.to_string())?;
+    Ok(root)
+}
+
+fn self_test_marker(root: &Path, probe_id: &str) -> Result<PathBuf, String> {
+    Uuid::parse_str(probe_id).map_err(|_| "invalid self-test probe id".to_string())?;
+    Ok(root.join(format!(".snow-agent-self-test-{probe_id}")))
+}
+
+fn run_self_test() -> Result<(), String> {
+    // The caller closes its SSH session before it reads this marker. Keep the
+    // launch mechanism shared with actual runners so the probe exercises the
+    // same session-detachment path instead of self-certifying synchronously.
+    let probe_id = Uuid::new_v4().to_string();
+    let marker_token = Uuid::new_v4().to_string();
+    let root = self_test_root()?;
+    let _marker = self_test_marker(&root, &probe_id)?;
+    let executable = env::current_exe().map_err(|error| error.to_string())?;
+    launch_self_test_runner(&executable, &probe_id, &marker_token)?;
+    print_json(json!({
+        "accepted": true,
+        "probeId": probe_id,
+        "markerToken": marker_token,
+    }))
+}
+
+fn run_self_test_runner(probe_id: &str, marker_token: &str) -> Result<(), String> {
+    Uuid::parse_str(marker_token).map_err(|_| "invalid self-test marker token".to_string())?;
+    run_self_test_runner_at(&self_test_root()?, probe_id, marker_token)
+}
+
+fn run_self_test_runner_at(root: &Path, probe_id: &str, marker_token: &str) -> Result<(), String> {
+    let marker = self_test_marker(root, probe_id)?;
+    thread::sleep(SELF_TEST_DELAY);
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&marker)
+        .map_err(|error| format!("failed to create self-test marker: {error}"))?;
+    file.write_all(marker_token.as_bytes())
+        .map_err(|error| format!("failed to write self-test marker: {error}"))?;
+    file.sync_all()
+        .map_err(|error| format!("failed to sync self-test marker: {error}"))
 }
 
 fn read_request(directory: &Path) -> Result<AgentRequest, String> {
@@ -296,11 +339,14 @@ fn mark_output_truncated(directory: &Path) -> Result<(), String> {
 }
 
 #[cfg(unix)]
-fn launch_runner(executable: &Path, directory: &Path) -> Result<(), String> {
-    Command::new("setsid")
-        .arg(executable)
-        .args(["job", "run", "--job-directory"])
-        .arg(directory)
+fn launch_detached<F>(executable: &Path, configure: F) -> Result<(), String>
+where
+    F: FnOnce(&mut Command),
+{
+    let mut command = Command::new("setsid");
+    command.arg(executable);
+    configure(&mut command);
+    command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -310,8 +356,36 @@ fn launch_runner(executable: &Path, directory: &Path) -> Result<(), String> {
 }
 
 #[cfg(not(unix))]
-fn launch_runner(_executable: &Path, _directory: &Path) -> Result<(), String> {
+fn launch_detached<F>(_executable: &Path, _configure: F) -> Result<(), String>
+where
+    F: FnOnce(&mut Command),
+{
     Err("snow-agent runner is currently published for POSIX hosts only".to_string())
+}
+
+fn launch_runner(executable: &Path, directory: &Path) -> Result<(), String> {
+    launch_detached(executable, |command| {
+        command
+            .args(["job", "run", "--job-directory"])
+            .arg(directory);
+    })
+}
+
+fn launch_self_test_runner(
+    executable: &Path,
+    probe_id: &str,
+    marker_token: &str,
+) -> Result<(), String> {
+    launch_detached(executable, |command| {
+        command.args([
+            "job",
+            "self-test-run",
+            "--probe-id",
+            probe_id,
+            "--marker-token",
+            marker_token,
+        ]);
+    })
 }
 
 struct LaunchLock {
@@ -855,6 +929,30 @@ mod tests {
 
         release_launch_lock(&directory.join("launch.lock")).expect("release test lock");
         fs::remove_dir_all(directory).expect("remove test job directory");
+    }
+
+    #[test]
+    fn self_test_runner_writes_a_delayed_token_marker() {
+        let root = test_job_directory();
+        let probe_id = Uuid::new_v4().to_string();
+        let marker_token = Uuid::new_v4().to_string();
+        let marker = self_test_marker(&root, &probe_id).expect("build self-test marker path");
+        let started = Instant::now();
+
+        run_self_test_runner_at(&root, &probe_id, &marker_token)
+            .expect("write delayed self-test marker");
+
+        assert!(
+            started.elapsed() >= SELF_TEST_DELAY,
+            "the marker must not be written before the launching SSH session can close"
+        );
+        assert_eq!(
+            fs::read_to_string(&marker).expect("read self-test marker"),
+            marker_token
+        );
+
+        fs::remove_file(marker).expect("remove self-test marker");
+        fs::remove_dir_all(root).expect("remove test job directory");
     }
 
     #[test]

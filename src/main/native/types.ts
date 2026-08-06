@@ -415,6 +415,12 @@ export type WorkspaceDirectoryRecord = WorkspaceDirectoryInput & {
   updatedAt: string;
 };
 
+export type IdeInfo = {
+  id: string;
+  name: string;
+  executable: string;
+};
+
 export type FileSearchResult = {
   path: string;
   relativePath: string;
@@ -1111,6 +1117,8 @@ export type NativeBridge = {
   listWorkspaceDirectories: () => Promise<WorkspaceDirectoryRecord[]>;
   upsertWorkspaceDirectory: (item: WorkspaceDirectoryInput) => Promise<void>;
   activateWorkspaceDirectory: (directoryId: string) => Promise<void>;
+  listInstalledIdes: () => Promise<IdeInfo[]>;
+  openInIde: (ideId: string, projectPath: string) => Promise<void>;
   reorderWorkspaceDirectories: (
     items: WorkspaceDirectoryInput[]
   ) => Promise<void>;
@@ -1402,6 +1410,10 @@ export type NativeBridge = {
     repoPath: string,
     hash: string
   ) => Promise<GitCommitFile[]>;
+  getCommitDiff: (
+    repoPath: string,
+    hash: string
+  ) => Promise<GitDiffResult>;
   discoverGitRepos: (rootPath: string) => Promise<GitRepoInfo[]>;
   startGitWatch: (
     repoPath: string,

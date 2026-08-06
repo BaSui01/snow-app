@@ -66,6 +66,11 @@ export const en = {
   "sidebar.sshConnect": "Connect",
   "sidebar.sshConfirm": "Confirm",
   "sidebar.directoryDetails": "Details",
+  "sidebar.openWith": "Open with",
+  "sidebar.openWithLoading": "Detecting installed IDEs...",
+  "sidebar.openWithEmpty": "No installed IDEs detected",
+  "sidebar.openWithError": "Failed to detect installed IDEs",
+  "sidebar.openInIdeError": "Failed to open project in IDE",
   "sidebar.directoryKindLocal": "Local",
   "sidebar.directoryKindSsh": "SSH",
   "sidebar.explorerBack": "Back to main sidebar",
@@ -1957,6 +1962,10 @@ export const en = {
   "chatCommand.codebaseNoProject": "Select a project before managing codebase",
   "chatCommand.fileChangesDescription":
     "View files modified in this conversation",
+  "chatCommand.reviewDescription": "Review Git changes with AI",
+  "chatCommand.reviewNoProject":
+    "Select a project before reviewing Git changes",
+  "chatCommand.reviewNewChatOnly": "Only available in a new chat",
   "chatCommand.empty": "No matching commands",
   "chatCommand.trigger": "Open command panel",
   "projectSensitiveCommands.title": "Project sensitive commands",
@@ -2237,6 +2246,50 @@ export const en = {
   "chat.fileChanges.diffTitle": "Change preview",
   "chat.fileChanges.diffEmpty": "No changes to display",
   "chat.fileChanges.selectFile": "Select a file to view changes",
+  "chat.review.title": "Code Review",
+  "chat.review.description":
+    "Pick Git changes to review. The AI only analyzes and never modifies files.",
+  "chat.review.close": "Close",
+  "chat.review.loading": "Loading Git information...",
+  "chat.review.notRepo": "The current working directory is not a Git repository",
+  "chat.review.notRepoHint":
+    "Open a project inside a Git repository first, then use code review.",
+  "chat.review.empty": "Nothing to review",
+  "chat.review.refresh": "Refresh",
+  "chat.review.sectionStaged": "Staged changes",
+  "chat.review.sectionUnstaged": "Working tree changes",
+  "chat.review.sectionCommits": "Commits",
+  "chat.review.selectAll": "Select all",
+  "chat.review.noStaged": "No staged changes",
+  "chat.review.noUnstaged": "No working tree changes",
+  "chat.review.noCommits": "No commits yet",
+  "chat.review.loadingMore": "Loading more commits...",
+  "chat.review.allLoaded": "All commits loaded",
+  "chat.review.selectedCount": "{{count}} selected",
+  "chat.review.startReview": "Start review",
+  "chat.review.instructionsLabel": "Additional review focus (optional)",
+  "chat.review.instructionsPlaceholder":
+    "e.g. Focus on performance, concurrency safety, error handling...",
+  "chat.review.promptHeader":
+    "Please perform a code review of the following Git changes. This is a read-only analysis task.",
+  "chat.review.promptRule":
+    "- Analyze in depth only; do not modify, create or delete any files. Do not change code unless the user explicitly asks for fixes.",
+  "chat.review.promptFocus":
+    "- Focus on: logic correctness, edge cases, error handling, security risks, performance, readability and maintainability, and consistency with the project's existing style.",
+  "chat.review.promptSeverity":
+    "- Rate every issue by severity (critical / major / suggestion) and point out the related file and approximate location.",
+  "chat.review.promptSummary":
+    "- End with an overall assessment and a prioritized list of improvement suggestions.",
+  "chat.review.promptRepo": "Repository path",
+  "chat.review.promptBranch": "Current branch",
+  "chat.review.promptUserNote": "Additional user notes",
+  "chat.review.promptBinary": "(binary file, diff not available)",
+  "chat.review.promptDiffTruncated": "diff too large, truncated",
+  "chat.review.promptDiffOmitted":
+    "(diff omitted due to total size limit; use git commands if needed)",
+  "chat.review.promptTruncated":
+    "Some diffs were truncated because they are too large. If you need the full content, run git diff / git show in the repository yourself.",
+  "chat.review.promptEnd": "Start the review.",
   "chat.streamMetrics.pause": "Pause",
   "chat.streamMetrics.resume": "Resume",
   "chat.streamMetrics.elapsedTitle": "Elapsed time",

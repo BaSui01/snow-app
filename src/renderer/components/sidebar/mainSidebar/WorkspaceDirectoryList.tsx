@@ -186,7 +186,9 @@ export function WorkspaceDirectoryList({
                 </button>
                 <WorkspaceDirectoryMenu
                   canDelete={directory.source !== "builtin"}
+                  directoryPath={directory.path}
                   disabled={isActionLocked}
+                  kind={directory.kind}
                   onDelete={() => onDelete(directory.directoryId)}
                   onOpenChange={(isOpen) =>
                     setMenuOpenDirectoryId(

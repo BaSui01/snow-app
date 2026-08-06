@@ -64,6 +64,7 @@ import { useConversationFileChanges } from "./useConversationFileChanges";
 import { CommandPanel, type CommandPanelHandle } from "./commands/CommandPanel";
 import { createChatCommands } from "./commands/commandRegistry";
 import { FileChangesPanel } from "./commands/FileChangesPanel";
+import { ReviewPanel } from "./commands/ReviewPanel";
 import type { ChatCommand } from "./commands/types";
 
 export const ChatInputView = ({
@@ -139,6 +140,7 @@ export const ChatInputView = ({
   const { t } = useI18n();
   const {
     handleNewChat,
+    handleSendMessage,
     messages,
     activeConversationId,
     conversationDirectoryId,
@@ -187,6 +189,7 @@ export const ChatInputView = ({
   const [isProjectCodebaseOpen, setIsProjectCodebaseOpen] = useState(false);
   const [isRoleEditorOpen, setIsRoleEditorOpen] = useState(false);
   const [isFileChangesOpen, setIsFileChangesOpen] = useState(false);
+  const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [isCustomThinkingMode, setIsCustomThinkingMode] = useState(false);
   const [customThinkingValue, setCustomThinkingValue] = useState("");
 
@@ -196,6 +199,11 @@ export const ChatInputView = ({
       setIsCustomThinkingMode(false);
     }
   }, [isModelMenuOpen]);
+
+  // review 指令只在新建会话（尚未绑定历史会话）时开放，审查对象是
+  // 当前项目目录的 Git 状态，而不是某个历史会话绑定的目录。
+  const isNewChat = !activeConversationId;
+  const reviewWorkDir = directoryIdToPath(projectId);
 
   const commands = useMemo(
     () =>
@@ -250,11 +258,21 @@ export const ChatInputView = ({
           setIsFileChangesOpen(false);
           setIsProjectCodebaseOpen(true);
         },
+        onOpenReviewPanel: () => {
+          setIsProjectMcpOpen(false);
+          setIsProjectSensitiveCommandsOpen(false);
+          setIsProjectSkillsOpen(false);
+          setIsProjectCodebaseOpen(false);
+          setIsRoleEditorOpen(false);
+          setIsFileChangesOpen(false);
+          setIsReviewOpen(true);
+        },
         model: selectedModel || undefined,
         apiProfile: selectedApiProfile || undefined,
         compactDisabled: messages.length === 0 || isCompacting,
         fileChangesDisabled: !activeConversationId,
         mcpDisabled: !projectId,
+        reviewDisabled: !isNewChat || !reviewWorkDir,
         roleDisabled: !projectId,
         sensitiveCommandsDisabled: !projectId,
         skillsDisabled: !projectId,
@@ -277,16 +295,24 @@ export const ChatInputView = ({
             : t("chatCommand.skillsNoProject"),
           codebaseDescription: t("chatCommand.codebaseDescription"),
           codebaseNoProject: t("chatCommand.codebaseNoProject"),
+          reviewDescription: !isNewChat
+            ? t("chatCommand.reviewNewChatOnly")
+            : reviewWorkDir
+              ? t("chatCommand.reviewDescription")
+              : t("chatCommand.reviewNoProject"),
+          reviewNoProject: t("chatCommand.reviewNoProject"),
         },
       }),
     [
       activeConversationId,
       handleNewChat,
       isCompacting,
+      isNewChat,
       isStreaming,
       messages.length,
       onCompactConversation,
       projectId,
+      reviewWorkDir,
       selectedApiProfile,
       selectedModel,
       t,
@@ -502,6 +528,64 @@ export const ChatInputView = ({
     [syncContent, textareaRef]
   );
 
+  /**
+   * 将外部文件（拖入或粘贴，均为 File 对象）解析为真实磁盘路径，
+   * 图片文件插入 image chip（读取 dataUrl），其余文件/文件夹插入
+   * file chip（携带路径）。contextIsolation 下渲染进程无法直接读取
+   * 真实路径，由 preload 的 resolveDroppedFiles 解析。
+   */
+  const insertExternalFiles = useCallback(
+    (files: File[]) => {
+      if (!files || files.length === 0) {
+        return;
+      }
+      void window.snow
+        .resolveDroppedFiles(files)
+        .then((entries) => {
+          if (entries.length === 0) {
+            return;
+          }
+          const imageFiles: File[] = [];
+          const fileTags: FileTag[] = [];
+          // entries 顺序与 files 顺序一一对应；以 File.type 优先判断
+          // 图片，路径扩展名兜底（某些系统 File.type 可能为空）。
+          entries.forEach((entry, idx) => {
+            const matchedFile = files[idx];
+            const isImage =
+              !entry.isDirectory &&
+              ((matchedFile && matchedFile.type.startsWith("image/")) ||
+                /\.(png|jpe?g|gif|webp|bmp|svg|avif|ico)$/i.test(
+                  entry.path
+                ));
+            if (isImage && matchedFile) {
+              imageFiles.push(matchedFile);
+            } else {
+              const name =
+                entry.path.split(/[\\/]/).filter(Boolean).pop() ||
+                entry.path;
+              fileTags.push({
+                path: entry.path,
+                name,
+                isDirectory: entry.isDirectory,
+              });
+            }
+          });
+          if (imageFiles.length > 0) {
+            for (const imageFile of imageFiles) {
+              insertImageFromFile(imageFile);
+            }
+          }
+          if (fileTags.length > 0) {
+            insertFileTags(fileTags);
+          }
+        })
+        .catch(() => {
+          // 解析失败时静默处理
+        });
+    },
+    [insertFileTags, insertImageFromFile]
+  );
+
   const handleMentionDragStart = useCallback(
     (event: React.DragEvent<HTMLDivElement>, tag: FileTag) => {
       event.dataTransfer.setData("application/json", JSON.stringify(tag));
@@ -533,51 +617,7 @@ export const ChatInputView = ({
               files.push(file);
             }
           }
-          if (files.length > 0) {
-            void window.snow
-              .resolveDroppedFiles(files)
-              .then((entries) => {
-                if (entries.length === 0) {
-                  return;
-                }
-                const imageFiles: File[] = [];
-                const fileTags: FileTag[] = [];
-                // entries 顺序与 files 顺序一一对应；以 File.type 优先判断
-                // 图片，路径扩展名兜底（某些系统 File.type 可能为空）。
-                entries.forEach((entry, idx) => {
-                  const matchedFile = files[idx];
-                  const isImage =
-                    !entry.isDirectory &&
-                    ((matchedFile && matchedFile.type.startsWith("image/")) ||
-                      /\.(png|jpe?g|gif|webp|bmp|svg|avif|ico)$/i.test(
-                        entry.path
-                      ));
-                  if (isImage && matchedFile) {
-                    imageFiles.push(matchedFile);
-                  } else {
-                    const name =
-                      entry.path.split(/[\\/]/).filter(Boolean).pop() ||
-                      entry.path;
-                    fileTags.push({
-                      path: entry.path,
-                      name,
-                      isDirectory: entry.isDirectory,
-                    });
-                  }
-                });
-                if (imageFiles.length > 0) {
-                  for (const imageFile of imageFiles) {
-                    insertImageFromFile(imageFile);
-                  }
-                }
-                if (fileTags.length > 0) {
-                  insertFileTags(fileTags);
-                }
-              })
-              .catch(() => {
-                // 解析失败时静默处理
-              });
-          }
+          insertExternalFiles(files);
         }
         return;
       }
@@ -697,7 +737,7 @@ export const ChatInputView = ({
         // Ignore invalid drag data
       }
     },
-    [insertFileTags, insertImageFromFile, syncContent, textareaRef]
+    [insertExternalFiles, insertFileTags, syncContent, textareaRef]
   );
 
   const handleDragOver = useCallback(
@@ -851,10 +891,18 @@ export const ChatInputView = ({
 
       const items = event.clipboardData.items;
       const imageItems: DataTransferItem[] = [];
+      const fileItems: DataTransferItem[] = [];
 
       for (const item of items) {
+        if (item.kind !== "file") {
+          continue;
+        }
+        // 粘贴的图片（截图、从文件管理器复制的图片文件等）走 image chip；
+        // 其余文件（kind === "file" 且非图片 MIME）走 file chip。
         if (item.type.startsWith("image/")) {
           imageItems.push(item);
+        } else {
+          fileItems.push(item);
         }
       }
 
@@ -866,6 +914,24 @@ export const ChatInputView = ({
           }
           insertImageFromFile(file);
         }
+      }
+
+      // 粘贴的外部文件（如从文件管理器复制的文件）与拖入共用解析逻辑：
+      // 图片插入 image chip，其余文件/文件夹插入 file chip。
+      if (fileItems.length > 0) {
+        const pastedFiles: File[] = [];
+        for (const fileItem of fileItems) {
+          const file = fileItem.getAsFile();
+          if (file) {
+            pastedFiles.push(file);
+          }
+        }
+        if (pastedFiles.length > 0) {
+          insertExternalFiles(pastedFiles);
+        }
+      }
+
+      if (imageItems.length > 0 || fileItems.length > 0) {
         return;
       }
 
@@ -939,7 +1005,7 @@ export const ChatInputView = ({
       syncContent();
       checkInputTriggers();
     },
-    [syncContent, insertImageFromFile, checkInputTriggers, textareaRef]
+    [syncContent, insertImageFromFile, insertExternalFiles, checkInputTriggers, textareaRef]
   );
 
   const handleInput = useCallback(() => {
@@ -1322,6 +1388,17 @@ export const ChatInputView = ({
         open={isFileChangesOpen}
         changesOverride={conversationFileChanges}
         onClose={() => setIsFileChangesOpen(false)}
+      />
+      <ReviewPanel
+        open={isReviewOpen}
+        workDir={reviewWorkDir ?? ""}
+        onStartReview={(prompt) => {
+          handleSendMessage(prompt, {
+            model: selectedModel || undefined,
+            apiProfile: selectedApiProfile || undefined,
+          });
+        }}
+        onClose={() => setIsReviewOpen(false)}
       />
       <div className="input-content" ref={mentionAnchorRef}>
         <FileMentionPopup

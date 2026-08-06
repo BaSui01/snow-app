@@ -2232,6 +2232,36 @@ input {
   background: rgba(229, 72, 77, 0.1);
 }
 
+.workspace-directory-menu-item-chevron {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--text-secondary, var(--text-primary));
+}
+
+.workspace-directory-menu-submenu-trigger {
+  position: relative;
+  display: block;
+}
+
+.workspace-directory-menu-submenu {
+  min-width: 180px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.workspace-directory-menu-submenu-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  color: var(--text-secondary, var(--text-primary));
+  font-size: 11.5px;
+}
+
+.workspace-directory-menu-submenu-status.error {
+  color: var(--danger, #e5484d);
+}
+
 .workspace-directory-menu-confirm {
   display: flex;
   align-items: flex-start;
@@ -7290,6 +7320,396 @@ input {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+
+/* ===== Code review panel (/review) ===== */
+.review-modal .app-modal-body {
+  max-height: 66vh;
+  overflow-y: auto;
+}
+
+.review-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.review-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px 16px;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+}
+
+.review-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--accent-red-bg, rgba(248, 113, 113, 0.35));
+  border-radius: 8px;
+  background: var(--accent-red-bg, rgba(248, 113, 113, 0.12));
+  color: var(--accent-red-text, #f87171);
+  font-size: 12.5px;
+}
+
+.review-error span {
+  flex: 1;
+  min-width: 0;
+}
+
+.review-retry-btn,
+.review-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.review-retry-btn:hover,
+.review-refresh-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.review-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.review-empty-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.review-empty-hint {
+  max-width: 340px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.review-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.review-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 2px;
+}
+
+.review-branch {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(
+    --font-mono,
+    ui-monospace,
+    "Cascadia Code",
+    Consolas,
+    "Courier New",
+    monospace
+  );
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.review-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.review-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 2px;
+}
+
+.review-section-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.review-select-all {
+  margin-left: auto;
+  padding: 1px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.review-select-all:hover {
+  background: var(--bg-hover);
+  color: var(--accent-blue-text, #60a5fa);
+}
+
+.review-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+
+/* 提交记录列表：更高的可视区域以承载无限滚动。 */
+.review-list.is-commits {
+  max-height: 260px;
+}
+
+.review-load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 8px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  cursor: default;
+  user-select: none;
+}
+
+.review-load-more.is-done {
+  color: var(--text-tertiary);
+  opacity: 0.8;
+}
+
+.review-file-row,
+.review-commit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  min-width: 0;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.12s ease;
+}
+
+.review-file-row:hover,
+.review-commit-row:hover {
+  background: var(--surface-island-strong);
+}
+
+.review-file-row.is-selected,
+.review-commit-row.is-selected {
+  background: var(--accent-blue-bg, rgba(96, 165, 250, 0.14));
+}
+
+.review-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid var(--border-color);
+  border-radius: 4px;
+  flex-shrink: 0;
+  color: transparent;
+  background: var(--bg-primary);
+  transition: border-color 0.12s ease, background-color 0.12s ease;
+}
+
+.review-check.is-checked {
+  border-color: var(--accent-blue-text, #60a5fa);
+  background: var(--accent-blue-text, #60a5fa);
+  color: var(--bg-primary);
+}
+
+.review-file-path {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(
+    --font-mono,
+    ui-monospace,
+    "Cascadia Code",
+    Consolas,
+    "Courier New",
+    monospace
+  );
+  font-size: 11.5px;
+}
+
+.review-kind {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 17px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.review-kind.is-staged {
+  background: var(--accent-blue-bg);
+  color: var(--accent-blue-text);
+}
+
+.review-kind.is-unstaged {
+  background: var(--accent-yellow-bg, rgba(250, 204, 21, 0.16));
+  color: var(--accent-yellow-text, #facc15);
+}
+
+.review-kind.is-untracked {
+  background: var(--accent-green-bg);
+  color: var(--accent-green-text);
+}
+
+.review-commit-icon {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.review-commit-hash {
+  font-family: var(
+    --font-mono,
+    ui-monospace,
+    "Cascadia Code",
+    Consolas,
+    "Courier New",
+    monospace
+  );
+  font-size: 11px;
+  color: var(--accent-blue-text, #60a5fa);
+  flex-shrink: 0;
+}
+
+.review-commit-message {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.review-commit-author {
+  flex-shrink: 0;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.review-commit-date {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+}
+
+.review-section-empty {
+  padding: 8px 12px;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+
+.review-instructions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 2px;
+}
+
+.review-instructions-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.review-instructions-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-family: inherit;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.12s ease;
+}
+
+.review-instructions-input:focus {
+  border-color: var(--accent-blue-text, #60a5fa);
+}
+
+.review-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.review-selected-count {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.review-start-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent-blue-text, #60a5fa);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.12s ease;
+}
+
+.review-start-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 
 .chat-message-group {
   display: flex;

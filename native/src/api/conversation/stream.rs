@@ -123,6 +123,7 @@ pub async fn create_response_stream(
         .unwrap_or_else(|| context.api_config.advanced_model.clone());
     let failure_directory_id = request.directory_id.clone().unwrap_or_default();
     let failure_context_compaction = request.context_compaction.unwrap_or(false);
+    let failure_resume_after_compaction = request.resume_after_compaction.unwrap_or(false);
     let failure_database_path = context.database_path.clone();
     // The profile that actually served this request. Persisted on failed
     // exchanges too so a conversation created by a failed first message is
@@ -279,6 +280,7 @@ pub async fn create_response_stream(
             let persisted_failure_model = failure_model.clone();
             let failure_dir_id = failure_directory_id.clone();
             let persisted_failure_api_profile = failure_api_profile.clone();
+            let persisted_failure_resume = failure_resume_after_compaction;
             let conversation_id = tokio::task::spawn_blocking(move || {
                 store_failed_chat_exchange(
                     &failure_database_path,
@@ -289,6 +291,7 @@ pub async fn create_response_stream(
                     &persisted_failure_model,
                     &persisted_failure_api_profile,
                     &failure_directory_id,
+                    persisted_failure_resume,
                     &persisted_error_message,
                 )
             })

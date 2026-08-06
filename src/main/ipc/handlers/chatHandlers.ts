@@ -88,6 +88,10 @@ const normalizeResponsesApiRequest = (value: unknown): ResponsesApiRequest => {
       typeof source.contextCompaction === "boolean"
         ? source.contextCompaction
         : undefined,
+    resumeAfterCompaction:
+      typeof source.resumeAfterCompaction === "boolean"
+        ? source.resumeAfterCompaction
+        : undefined,
     subAgentToolsJson:
       typeof source.subAgentToolsJson === "string"
         ? source.subAgentToolsJson

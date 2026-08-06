@@ -67,6 +67,11 @@ pub struct StoreChatExchangeInput<'a> {
     pub tool_calls_json: &'a str,
     pub directory_id: &'a str,
     pub context_compaction: bool,
+    /// Internal auto-compaction resume mode: `request_messages` is a
+    /// placeholder that must NOT be persisted as normal user messages — the
+    /// handoff is already stored as the latest `context_compaction` boundary.
+    /// The assistant response is still persisted as usual.
+    pub resume_after_compaction: bool,
     pub total_duration_ms: i64,
 }
 
@@ -254,39 +259,47 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
                 )?;
                 persisted_user_message_ids.push(message_id);
             } else {
-                for (index, message) in input.request_messages.iter().enumerate() {
-                    let checkpoint_id = if index == 0 && normalize_role(&message.role) == "user" {
-                        input.checkpoint_id
-                    } else {
-                        ""
-                    };
-                    // For tool messages, persist tool_results_json into the
-                    // raw_json column so load_context_messages can reconstruct
-                    // the structured (name, callId, result) tuples needed to
-                    // emit proper tool_call_id on the next request. Other
-                    // message types keep raw_json as "{}".
-                    let raw_json = if normalize_role(&message.role) == "tool" {
-                        message.tool_results_json.as_deref().unwrap_or("{}")
-                    } else {
-                        "{}"
-                    };
-                    let message_id = insert_message(
-                        &transaction,
-                        input.conversation_id,
-                        &message.role,
-                        &message.content,
-                        "",
-                        checkpoint_id,
-                        input.model,
-                        "sent",
-                        raw_json,
-                        "",
-                        "[]",
-                        "[]",
-                        index,
-                    )?;
-                    if normalize_role(&message.role) == "user" {
-                        persisted_user_message_ids.push(message_id);
+                // Resume-after-compaction requests carry a placeholder
+                // `request_messages` whose content is already persisted as the
+                // `context_compaction` boundary — skip re-inserting it as a
+                // normal user message. The assistant response is still
+                // persisted below.
+                if !input.resume_after_compaction {
+                    for (index, message) in input.request_messages.iter().enumerate() {
+                        let checkpoint_id =
+                            if index == 0 && normalize_role(&message.role) == "user" {
+                                input.checkpoint_id
+                            } else {
+                                ""
+                            };
+                        // For tool messages, persist tool_results_json into the
+                        // raw_json column so load_context_messages can reconstruct
+                        // the structured (name, callId, result) tuples needed to
+                        // emit proper tool_call_id on the next request. Other
+                        // message types keep raw_json as "{}".
+                        let raw_json = if normalize_role(&message.role) == "tool" {
+                            message.tool_results_json.as_deref().unwrap_or("{}")
+                        } else {
+                            "{}"
+                        };
+                        let message_id = insert_message(
+                            &transaction,
+                            input.conversation_id,
+                            &message.role,
+                            &message.content,
+                            "",
+                            checkpoint_id,
+                            input.model,
+                            "sent",
+                            raw_json,
+                            "",
+                            "[]",
+                            "[]",
+                            index,
+                        )?;
+                        if normalize_role(&message.role) == "user" {
+                            persisted_user_message_ids.push(message_id);
+                        }
                     }
                 }
 
@@ -367,6 +380,7 @@ pub fn store_failed_chat_exchange(
     model: &str,
     api_profile_name: &str,
     directory_id: &str,
+    resume_after_compaction: bool,
     error_message: &str,
 ) -> Result<String> {
     let request_messages = request_messages
@@ -383,7 +397,10 @@ pub fn store_failed_chat_exchange(
             })
         })
         .collect::<Vec<_>>();
-    if request_messages.is_empty() {
+    // Resume-after-compaction requests carry a placeholder message that is
+    // already persisted as the `context_compaction` boundary — it must not be
+    // re-inserted as a normal user message, so allow it through empty.
+    if request_messages.is_empty() && !resume_after_compaction {
         return Err(Error::from_reason("Chat message content is required"));
     }
 
@@ -417,6 +434,7 @@ pub fn store_failed_chat_exchange(
             tool_calls_json: "[]",
             directory_id,
             context_compaction: false,
+            resume_after_compaction,
             total_duration_ms: 0,
         },
     )?;

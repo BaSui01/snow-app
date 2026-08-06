@@ -95,6 +95,7 @@ async fn create_anthropic_response_async(
         max_context_tokens: api_config.max_context_tokens,
         directory_id: request.directory_id.as_deref(),
         context_compaction: request.context_compaction.unwrap_or(false),
+        resume_after_compaction: request.resume_after_compaction.unwrap_or(false),
         skip_context: request.skip_context.unwrap_or(false),
         plan_mode: request.plan_mode.unwrap_or(false),
         goal_mode: request.goal_mode.unwrap_or(false),
@@ -215,6 +216,7 @@ async fn create_anthropic_response_async(
                 tool_calls_json: &streamed_response.tool_calls_json,
                 directory_id: request.directory_id.as_deref().unwrap_or(""),
                 context_compaction: request.context_compaction.unwrap_or(false),
+                resume_after_compaction: request.resume_after_compaction.unwrap_or(false),
                 total_duration_ms: streamed_response.total_duration_ms,
             },
         )?

@@ -14,16 +14,16 @@ common interactions.
 │ ・Projects    │ ・AI chat (conversation)     │ ・File viewer │
 │ ・Sessions    │ ・Terminal / SSH / Git /      │ ・MD preview  │
 │ ・Memos       │   Browser / Codebase         │ ・Diff preview│
-│ ・Scheduled   │ ・Input box (/ @ images)     │ ・Git panel   │
-│   tasks       │                              │              │
-│ ・Settings    │                              │              │
+│ ・Scheduled   │ ・Scheduled tasks /          │ ・Git panel   │
+│   tasks       │   Image library             │              │
+│ ・Settings    │ ・Input box (/ @ images)     │              │
 └──────────────┴──────────────────────────────┴──────────────┘
 ```
 
 | Area | Contents |
 | --- | --- |
 | Sidebar | Workspace directories (local & SSH), session list, memos, scheduled tasks, settings |
-| Main area | Current view: AI chat, terminal, Git, browser, codebase, etc. |
+| Main area | Current view: AI chat, terminal, Git, browser, codebase, image library, etc. |
 | Right panel | File viewer (Markdown render preview, images, Office docs), diff preview, Git panel — multi-tab |
 | Top bar | View switching, API profile switching (`Alt+P`, macOS `Ctrl+P`), settings |
 
@@ -148,6 +148,7 @@ When the AI calls tools, cards appear in the conversation:
 | Tool family | Shown content |
 | --- | --- |
 | `bash-terminal-execute` | Command, colored stdout/stderr streams, interactive input |
+| `terminal-*` | Persistent terminal session view (live output, can be operated in sync) |
 | `filesystem-*` | Read contents/image previews, edit diff summaries (open full diff in the right panel) |
 | `grep-search` / `websearch-*` | Query and matched results |
 | `browser-*` | Opened page, screenshots, console/network info |

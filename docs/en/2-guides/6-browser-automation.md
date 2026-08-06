@@ -12,7 +12,7 @@ tools of the built-in `browser` server and typical workflows.
 | `browser-navigate` | Navigate to a URL |
 | `browser-click` | Click page elements with real mouse events (CSS selector / visible text / accessibility ref) |
 | `browser-type` | Type text into an element (set at once or key by key; ref targeting supported) |
-| `browser-wait` | Wait for text to appear/disappear or a fixed duration |
+| `browser-wait` | Wait for text/element to appear or disappear, or a fixed duration |
 | `browser-press_key` | Press a keyboard key or combination (Enter/Tab/Escape/arrows, `Ctrl+A`-style) |
 | `browser-select_option` | Select option(s) in a dropdown (match by value or label) |
 | `browser-hover` | Hover an element (triggers hover overlays) |

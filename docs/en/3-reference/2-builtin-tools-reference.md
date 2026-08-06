@@ -10,22 +10,23 @@ Built-in tool full names follow the pattern `{server-id}-{tool-name}`, e.g. `fil
 
 Listed in registration order:
 
-| Server ID          | Description                                                                                                                                                                                                   |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `filesystem`       | Local file read/write (read / replace_edit / create)                                                                                                                                                          |
-| `bash`             | Terminal command execution                                                                                                                                                                                    |
-| `todo`             | Session task list management                                                                                                                                                                                  |
-| `grep`             | File content search (ripgrep)                                                                                                                                                                                 |
-| `websearch`        | Web search and page fetching                                                                                                                                                                                  |
-| `browser`          | Built-in browser automation (embedded Electron browser)                                                                                                                                                       |
-| `user-interaction` | Ask the user questions (blocking interaction)                                                                                                                                                                 |
-| `sub-agents`       | Activate sub-agents to run tasks independently                                                                                                                                                                |
-| `codebase`         | Codebase semantic search (embedding index)                                                                                                                                                                    |
-| `codelens`         | Code diagnostics and symbol location                                                                                                                                                                          |
-| `app-control`      | App control (memos / modes / settings pages / scheduled tasks / projects)                                                                                                                                     |
-| `config`           | Read/write global config (files: settings/snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy; database: subAgents/hooks/imagegen; delegated: skills; read-only: logs) |
-| `skills`           | Skill loading and execution                                                                                                                                                                                   |
-| `imagegen`         | AI image generation & editing (OpenAI / Gemini multiple channels; **hidden on demand when no channel is configured**)                                                                              |
+| Server ID          | Description                                                                                                                                                                                                                                        |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `filesystem`       | Local file read/write (read / replace_edit / create)                                                                                                                                                                                               |
+| `bash`             | Terminal command execution                                                                                                                                                                                                                         |
+| `todo`             | Session task list management                                                                                                                                                                                                                       |
+| `grep`             | File content search (ripgrep)                                                                                                                                                                                                                      |
+| `websearch`        | Web search and page fetching                                                                                                                                                                                                                       |
+| `browser`          | Built-in browser automation (embedded Electron browser)                                                                                                                                                                                            |
+| `user-interaction` | Ask the user questions (blocking interaction)                                                                                                                                                                                                      |
+| `sub-agents`       | Activate sub-agents to run tasks independently                                                                                                                                                                                                     |
+| `codebase`         | Codebase semantic search (embedding index; **only exposed when the project has codebase indexing enabled and an index has been built**)                                                                                                             |
+| `codelens`         | Code diagnostics and symbol location                                                                                                                                                                                                               |
+| `app-control`      | App control (memos / modes / settings pages / scheduled tasks / projects)                                                                                                                                                                          |
+| `config`           | Read/write global config (files: settings/snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy/personalization; database: subAgents/hooks/imagegen; delegated: skills; read-only: logs)                     |
+| `terminal`         | Terminal automation (persistent PTY session tabs, unlike bash's one-shot commands)                                                                                                                                                                 |
+| `imagegen`         | AI image generation & editing (OpenAI / Gemini multiple channels; **hidden on demand when no channel is configured**)                                                                                                                              |
+| `skills`           | Skill loading and execution (**dynamically registered**: hidden from the tool list when no enabled skill exists)                                                                                                                                   |
 
 ## 3. Tool Details
 
@@ -35,13 +36,13 @@ Listed in registration order:
 | ------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------- |
 | `filesystem-read`         | Read file content (supports text, images, Office documents) | `filePath`, `startLine`, `endLine`                          |
 | `filesystem-replace_edit` | Fuzzy search-and-replace editing                            | `filePath`, `searchContent`, `replaceContent`, `occurrence` |
-| `filesystem-create`       | Create a new file (auto-creates parent directories)         | `filePath`, `content`, `overwrite`                          |
+| `filesystem-create`       | Create a new file (auto-creates parent directories)         | `filePath`, `content`, `overwrite`, `encoding`                          |
 
 ### bash
 
-| Full tool name          | Purpose                                                           | Key parameters                                          |
-| ----------------------- | ----------------------------------------------------------------- | ------------------------------------------------------- |
-| `bash-terminal-execute` | Execute terminal commands (build, test, package management, etc.) | `command`, `description`, `workingDirectory`, `timeout` |
+| Full tool name          | Purpose                                                           | Key parameters                                                                                    |
+| ----------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `bash-terminal-execute` | Execute terminal commands (build, test, package management, etc.) | `command`, `description`, `workingDirectory`, `timeout`, `detach`, `isInteractive`, `sessionId`   |
 
 ### todo
 
@@ -60,7 +61,7 @@ Listed in registration order:
 | Full tool name               | Purpose                                                   | Key parameters                                    |
 | ---------------------------- | --------------------------------------------------------- | ------------------------------------------------- |
 | `websearch-websearch-search` | Web search, returns a list of results                     | `query`, `maxResults`                             |
-| `websearch-websearch-fetch`  | Fetch and read the full content of a web page or an image | `url`, `maxLength`, `isUserProvided`, `userQuery` |
+| `websearch-websearch-fetch`  | Fetch and read the full content of a web page or an image | `url`, `maxLength`, `isUserProvided`, `enableAiSummary`, `userQuery` |
 
 ### browser
 
@@ -71,7 +72,7 @@ Listed in registration order:
 | `browser-click`      | Click page elements with real mouse events (CSS selector / visible text / accessibility ref)            | `selector`, `text`, `ref`, `exact`, `instanceId`                     |
 | `browser-evaluate`   | Evaluate arbitrary JavaScript in the page and return the result                                          | `expression`, `instanceId`                                           |
 | `browser-type`       | Type text into an element (set at once or key by key; ref targeting supported)                           | `selector`/`text`/`ref`, `value`, `submit`, `delayMs`, `instanceId`  |
-| `browser-wait`       | Wait for text to appear/disappear or a fixed duration (essential for SPA async rendering)                | `text`, `textGone`, `time` (ms, 100-30000), `timeoutMs`, `instanceId` |
+| `browser-wait`       | Wait for text/element to appear or disappear, or a fixed duration (essential for SPA async rendering)                | `text`, `textGone`, `selector`, `selectorGone`, `time` (ms, 100-30000), `timeoutMs`, `instanceId` |
 | `browser-press_key`  | Press a keyboard key or combination (Enter/Tab/Escape/arrows, `Ctrl+A`-style)                             | `key`, `instanceId`                                                   |
 | `browser-select_option` | Select option(s) in a dropdown (match by value or label; exact text matching supported)               | `selector`/`text`, `values`, `exact`, `instanceId`                    |
 | `browser-hover`      | Hover an element (real mouse move, triggers hover overlays)                                               | `selector`/`text`, `exact`, `instanceId`                              |
@@ -102,7 +103,7 @@ Listed in registration order:
 
 | Full tool name    | Purpose                                                                                                                                       | Key parameters                              |
 | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| `codebase-search` | Codebase semantic search (embedding index based); **only exposed when the project has codebase indexing enabled and an index has been built** | `pattern`, `path`, `fileGlob`, `maxResults` |
+| `codebase-search` | Codebase semantic search (embedding index based); **only exposed when the project has codebase indexing enabled and an index has been built** | `query` (required), `topN` (default 10, max 50) |
 
 ### codelens
 
@@ -201,22 +202,28 @@ Read-only log scope (lets the agent self-diagnose app anomalies without a human 
 
 > Configuration examples: see [2-guides/5-configure-hooks-and-subagents](../2-guides/5-configure-hooks-and-subagents.md).
 
-### skills
+### terminal
 
-| Full tool name         | Purpose                              | Key parameters |
-| ---------------------- | ------------------------------------ | -------------- |
-| `skills-skill-execute` | Load and execute the specified skill | `skill`        |
+Manages terminal tabs in the right panel (persistent interactive PTY sessions
+that stay alive across multiple calls), complementary to `bash-terminal-execute`
+(single one-shot commands). Omitting `tabId` targets the most recently focused tab.
 
-> Note: the frontmatter field that controls the toggle is `enable` (not `enabled`).
-> The former `skills-config-*` tools (list/setEnabled/installGithub/uninstall)
-> have been removed; skill management now uses the `config` server's `skills`
-> scope exclusively (see above).
+| Full tool name      | Purpose                                                                                                                  | Key parameters                                                |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| `terminal-open`     | Open a new terminal tab (persistent login-shell session; `cwd` defaults to the active project directory)                 | `cwd`, `shellPath`                                            |
+| `terminal-send`     | Send input to the terminal PTY (as if typed; a trailing newline is appended automatically if omitted)                    | `input` (required), `tabId`                                   |
+| `terminal-read`     | Read the currently visible text of the terminal screen buffer (ANSI stripped; not the full scrollback)                   | `tabId`, `waitMs` (0-60000)                                   |
+| `terminal-resize`   | Resize the terminal PTY dimensions (updates both the PTY process and the display)                                        | `cols` (1-500), `rows` (1-200), `tabId`                       |
+| `terminal-wait`     | Wait for the terminal to become idle (no new output for a quiet period); detects long-running command completion         | `tabId`, `timeoutMs` (≥1000, default 30000), `idleMs` (100-5000) |
+| `terminal-close`    | Close a terminal tab and kill its PTY process                                                                            | `tabId`                                                       |
+| `terminal-focus`    | Switch to (activate) the specified terminal tab                                                                          | `tabId` (required)                                            |
+| `terminal-list`     | List all open terminal tabs (id, title, working directory, active state)                                                 | —                                                             |
 
 ### imagegen
 
 | Full tool name      | Purpose                                                                                                                                                                                                         | Key parameters                   |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
-| `imagegen-generate` | Text-to-image / image-to-image editing (OpenAI + Gemini Nano Banana multiple channels, independent from the conversation API config; **hidden from the AI tool list when no channel is configured**) | see the 18-parameter table below |
+| `imagegen-generate` | Text-to-image / image-to-image editing (OpenAI + Gemini Nano Banana multiple channels, independent from the conversation API config; **hidden from the AI tool list when no channel is configured**) | see the 20-parameter table below |
 
 `imagegen-generate` full parameters:
 
@@ -260,6 +267,22 @@ Read-only log scope (lets the agent self-diagnose app anomalies without a human 
 > **Imagen deprecated**: `imagen-*` models shut down 2026-08-17 — use the Nano
 > Banana family.
 
+### skills
+
+| Full tool name         | Purpose                              | Key parameters |
+| ---------------------- | ------------------------------------ | -------------- |
+| `skills-skill-execute` | Load and execute the specified skill | `skill`        |
+
+> Note: the frontmatter field that controls the toggle is `enable` (not `enabled`).
+> The former `skills-config-*` tools (list/setEnabled/installGithub/uninstall)
+> have been removed; skill management now uses the `config` server's `skills`
+> scope exclusively (see above).
+>
+> The `skills` server is **dynamically registered**: `skills-skill-execute`
+> appears in the tool list only when at least one enabled skill exists under
+> `~/.snow/skills` or the project's `.snow/skills`; it disappears automatically
+> when all skills are disabled/uninstalled.
+
 ## 4. Special Notes
 
 **Valid values for the `page` parameter of `app-control-openSettings`:**
@@ -267,11 +290,15 @@ Read-only log scope (lets the agent self-diagnose app anomalies without a human 
 | page value                    | Corresponding settings page |
 | ----------------------------- | --------------------------- |
 | `api-settings`                | API Settings                |
+| `imagegen-settings`           | Image Generation            |
+| `image-library`               | Image Library               |
 | `proxy-browser-settings`      | Proxy & Browser             |
 | `codebase-settings`           | Codebase Settings           |
 | `system-prompt-settings`      | System Prompts              |
+| `personalization-settings`    | Personalization             |
 | `custom-headers-settings`     | Custom Headers              |
 | `mcp-settings`                | MCP Settings                |
+| `import-settings`             | Import                      |
 | `skills-settings`             | Skills Settings             |
 | `sub-agent-settings`          | Sub-Agent Settings          |
 | `sensitive-command-settings`  | Sensitive Commands          |

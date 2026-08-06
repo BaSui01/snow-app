@@ -243,7 +243,31 @@ automatically:
 > (multipart), Gemini edits use `inlineData` multimodal prompts; the Gemini
 > Nano Banana family uses the Interactions API.
 
-## 5. Managing via the config Tool (AI / CLI)
+## 5. Image Library Management
+
+Every generated image is automatically persisted into the **image library**
+(disk `~/.snowapp/image/` + SQLite `image_library` index), viewable and
+manageable in **Sidebar → Image Library** (or `app-control-openSettings
+page=image-library`):
+
+| Capability | Description |
+| --- | --- |
+| View | Lists all images newest-first (thumbnail + model/date metadata) with filters for aspect ratio (landscape/square/portrait), time (today/7d/30d), provider and model; click for a lightbox view |
+| Delete | **Removes the disk file and index row, and rewrites conversation messages referencing the image** (the image becomes a broken reference in chat, no dead links remain) |
+| Custom save dir | The panel header shows the current root; **Change** picks a new directory, **Reset** restores the default `~/.snowapp/image/` (backed by the `image_library_dir` setting) |
+
+Related behaviors:
+
+- **Remote-URL results are downloaded & persisted**: when the upstream only
+  returns a URL, the tool downloads it into the library (30s timeout / 50MB
+  cap / content-type check), so expired links never break the gallery;
+- **Cascading delete on conversation removal**: deleting a conversation with
+  "don't keep images" cascades deletion of its referenced library images
+  (physical files + index rows);
+- **Backup**: the library defaults to `~/.snowapp/image/` — include it in
+  backups (see [3-reference/4-data-storage-locations](../3-reference/4-data-storage-locations.md)).
+
+## 6. Managing via the config Tool (AI / CLI)
 
 `imagegen` is a database-backed scope of the `config` tool (same source as the
 app database, takes effect immediately):
@@ -259,7 +283,7 @@ app database, takes effect immediately):
 > `sk-e****7890`) — plaintext secrets are never exposed. Writes merge per
 > channel; fields you omit keep their previous values.
 
-## 6. Troubleshooting
+## 7. Troubleshooting
 
 | Symptom                                              | Cause & fix                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -273,7 +297,7 @@ app database, takes effect immediately):
 | How do I control concurrency for many images at once | Two layers: **inside one call** `n` concurrent sub-requests (n ≤ 8); **between calls** Settings → Image generation → **Max concurrent generations** (1–8, default 4), excess calls queue automatically and start as one finishes. The two layers stack — lower the cap if your provider rate-limits (429) |
 | Imagen model errors                                  | Imagen is deprecated (shut down 2026-08-17); use the Nano Banana family                                                                                                                                                                                                                                                                                                                                                                 |
 
-## 7. References
+## 8. References
 
 - Full tool parameters: the `imagegen` section of
   [3-reference/2-builtin-tools-reference](../3-reference/2-builtin-tools-reference.md)

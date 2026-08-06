@@ -13,11 +13,12 @@ tools of the built-in `browser` server and typical workflows.
 | `browser-click` | Click page elements with real mouse events (CSS selector / visible text / accessibility ref) |
 | `browser-type` | Type text into an element (set at once or key by key; ref targeting supported) |
 | `browser-wait` | Wait for text to appear/disappear or a fixed duration |
-| `browser-press-key` | Press a keyboard key (Enter/Tab/Escape/arrows/combinations) |
-| `browser-select-option` | Select option(s) in a dropdown (match by value or label) |
+| `browser-press_key` | Press a keyboard key or combination (Enter/Tab/Escape/arrows, `Ctrl+A`-style) |
+| `browser-select_option` | Select option(s) in a dropdown (match by value or label) |
 | `browser-hover` | Hover an element (triggers hover overlays) |
 | `browser-upload-file` | Upload file(s) (CDP injection, no dialog) |
-| `browser-back` / `browser-forward` | Browser history back/forward |
+| `browser-back` / `browser-forward` | Browser history back/forward (waits for navigation) |
+| `browser-navigate_back` / `browser-navigate_forward` | Browser history back/forward (no navigation wait) |
 | `browser-evaluate` | Run arbitrary JavaScript in the page and return the result |
 | `browser-screenshot` | Capture the page as PNG (full page supported) |
 | `browser-devtools` | Text/accessibility-tree snapshot / performance trace / console messages / network requests & details / offline simulation / route mocking / encrypted login-state save & restore / cookie management / dialog handling / open DevTools |
@@ -99,20 +100,22 @@ browser-wait text="Loaded" instanceId=<id>
 browser-wait textGone="Loading..." timeoutMs=15000 instanceId=<id>
 
 # Keyboard actions
-browser-press-key key="Tab" instanceId=<id>
-browser-press-key key="a" modifiers=["Control"] instanceId=<id>   # Ctrl+A select all
-browser-press-key key="Escape" instanceId=<id>
+browser-press_key key="Tab" instanceId=<id>
+browser-press_key key="Control+a" instanceId=<id>   # Ctrl+A select all
+browser-press_key key="Escape" instanceId=<id>
 
 # Dropdown / hover / upload
-browser-select-option selector="#country" values=["CN"] instanceId=<id>
+browser-select_option selector="#country" values=["CN"] instanceId=<id>
 browser-hover text="User menu" instanceId=<id>
 browser-upload-file selector="input[type=file]" files=["C:/tmp/avatar.png"] instanceId=<id>
 
 # History navigation
 browser-back instanceId=<id>
 browser-forward instanceId=<id>
+browser-navigate_back instanceId=<id>
+browser-navigate_forward instanceId=<id>
 
-# Evaluate arbitrary JS (read/mutate page state)
+# Execute arbitrary JS (read/modify page state)
 browser-evaluate expression="document.title" instanceId=<id>
 ```
 

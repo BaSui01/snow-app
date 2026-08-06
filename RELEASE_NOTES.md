@@ -29,7 +29,7 @@
   - **Accessibility-tree snapshot** (`browser-devtools action=ax`): engine-level
     accessibility tree via CDP `Accessibility.getFullAXTree` (pierces closed
     shadow DOM), serialized with stable `[uid=eN]` refs; `verbose` / `maxNodes`
-    options. `browser-click` / `browser-type` / `browser-select-option` /
+    options. `browser-click` / `browser-type` / `browser-select_option` /
     `browser-hover` / `browser-upload-file` accept `ref=` for deterministic
     targeting (`uid → DOM.resolveNode → Runtime.callFunctionOn`).
   - **Network debugging**: `action=networkDetails` (full request/response
@@ -43,9 +43,10 @@
     localStorage injection, automatic encrypted backup before restore, and
     `action=cookies` / `cookieDelete` with masked values by default.
   - **Interaction completeness**: new `browser-wait` (text appear/disappear /
-    fixed time), `browser-press-key` (keys + modifiers), `browser-select-option`,
-    `browser-hover`, `browser-upload-file` (CDP file injection, no chooser
-    dialog), `browser-back` / `browser-forward` (history navigation with wait).
+    fixed time), `browser-press_key` (keys or `Ctrl+A`-style combinations),
+    `browser-select_option`, `browser-hover`, `browser-upload-file` (CDP file
+    injection, no chooser dialog), `browser-navigate_back` /
+    `browser-navigate_forward` (history navigation with wait).
   - **Performance trace**: `action=trace` records via the CDP Tracing domain
     and returns long-task / event statistics (main-thread jank indicators).
 

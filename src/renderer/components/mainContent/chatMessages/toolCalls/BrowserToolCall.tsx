@@ -37,7 +37,16 @@ type BrowserOperation =
   | "devtools"
   | "close"
   | "focus"
-  | "list";
+  | "list"
+  | "wait"
+  | "press_key"
+  | "hover"
+  | "navigate_back"
+  | "navigate_forward"
+  | "select_option"
+  | "upload-file"
+  | "back"
+  | "forward";
 
 type ParsedResult =
   | { type: "success"; data: Record<string, unknown> }
@@ -898,6 +907,15 @@ const RUNNING_LABEL_KEYS: Record<BrowserOperation, string> = {
   close: "toolCall.browser.running.close",
   focus: "toolCall.browser.running.focus",
   list: "toolCall.browser.running.list",
+  wait: "toolCall.browser.running.wait",
+  press_key: "toolCall.browser.running.press_key",
+  hover: "toolCall.browser.running.hover",
+  navigate_back: "toolCall.browser.running.navigate_back",
+  navigate_forward: "toolCall.browser.running.navigate_forward",
+  select_option: "toolCall.browser.running.select_option",
+  "upload-file": "toolCall.browser.running.upload_file",
+  back: "toolCall.browser.running.back",
+  forward: "toolCall.browser.running.forward",
 };
 
 export const BrowserToolCall = ({

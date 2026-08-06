@@ -1433,7 +1433,7 @@ export const en = {
   "settings.mcpJsonInvalid": "Invalid JSON",
   "settings.mcpJsonEditorLabel": "MCP server JSON configuration",
   "settings.mcpJsonHint":
-    "Edit the server configuration as JSON. name is required; stdio needs command, http needs url.",
+    "Edit the server configuration as JSON, e.g. {\"context7\": {\"url\": \"https://mcp.context7.com/mcp\"}}. type (http/stdio) is inferred from url or command when omitted.",
   "settings.mcpToolDetailsTitle": "Server tools",
   "settings.mcpToolDetailsCount": "{{count}} tool(s) fetched",
   "settings.mcpToolDetailsNotFetched": "Tool list has not been fetched",

@@ -10268,9 +10268,10 @@ input {
    Hook Execution UI - shows hook execution results
    ============================================================ */
 .hook-exec-group {
-  align-self: center;
+  align-self: stretch;
   width: 100%;
-  max-width: min(560px, 76%);
+  max-width: 100%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -10323,14 +10324,29 @@ input {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px;
+  min-width: 0;
+  padding: 5px 6px;
   cursor: pointer;
   list-style: none;
   font-size: 12px;
+  line-height: 1.4;
+  user-select: none;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s ease;
 }
 
 .hook-exec-item-header::-webkit-details-marker {
   display: none;
+}
+
+.hook-exec-item-header:focus {
+  outline: none;
+}
+
+.hook-exec-item-header:focus-visible {
+  background: var(--bg-hover);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--accent) 42%, transparent);
 }
 
 .hook-exec-item-header:hover {
@@ -10385,31 +10401,241 @@ input {
 }
 
 .hook-exec-item-body {
-  padding: 4px 0 8px 24px;
+  padding: 4px 0 8px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
 }
 
-.hook-exec-item-output {
+.hook-exec-block-message {
+  overflow: hidden;
+  border: 1px solid
+    color-mix(in srgb, var(--accent-red-text, #ef4444) 28%, var(--border-light));
+  border-radius: var(--radius-md);
+  background: color-mix(
+    in srgb,
+    var(--accent-red-text, #ef4444) 7%,
+    var(--bg-secondary)
+  );
+}
+
+.hook-exec-block-message-header,
+.hook-exec-action-header,
+.hook-exec-output-header {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.hook-exec-block-message-header {
+  gap: 6px;
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-red-text, #ef4444);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--accent-red-text, #ef4444) 18%, transparent);
+}
+
+.hook-exec-block-message-header > span {
+  flex: 1;
+}
+
+.hook-exec-block-message p {
   margin: 0;
+  padding: 9px 10px;
   font-size: 11.5px;
   line-height: 1.5;
   color: var(--text-secondary);
-  background: var(--bg-tertiary);
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
   white-space: pre-wrap;
   word-break: break-word;
-  font-family: var(--font-mono);
-  max-height: 300px;
-  overflow: auto;
 }
 
-.hook-exec-item--abort .hook-exec-item-label {
+.hook-exec-actions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.hook-exec-action {
+  overflow: hidden;
+  min-width: 0;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: transparent;
+}
+
+.hook-exec-action--error {
+  border-color: color-mix(
+    in srgb,
+    var(--accent-red-text, #ef4444) 28%,
+    var(--border-light)
+  );
+}
+
+.hook-exec-action-header {
+  gap: 6px;
+  padding: 6px 8px;
+  color: var(--text-tertiary);
+  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.hook-exec-action--success > .hook-exec-action-header > svg {
+  color: var(--success, #22c55e);
+}
+
+.hook-exec-action--error > .hook-exec-action-header > svg {
   color: var(--accent-red-text, #ef4444);
 }
 
-.hook-exec-item--warn .hook-exec-item-label {
+.hook-exec-action-index {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.hook-exec-action-type,
+.hook-exec-exit-code {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 10.5px;
+  line-height: 1.5;
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+}
+
+.hook-exec-exit-code--success {
+  color: var(--success, #22c55e);
+  background: color-mix(in srgb, var(--success, #22c55e) 10%, transparent);
+}
+
+.hook-exec-exit-code--error {
+  color: var(--accent-red-text, #ef4444);
+  background: color-mix(
+    in srgb,
+    var(--accent-red-text, #ef4444) 10%,
+    transparent
+  );
+}
+
+.hook-exec-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0.7;
+  transition: color 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+}
+
+.hook-exec-copy:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  opacity: 1;
+}
+
+.hook-exec-copy:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.hook-exec-copy--copied {
+  color: var(--success, #22c55e);
+  opacity: 1;
+}
+
+.hook-exec-action-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.hook-exec-output-section + .hook-exec-output-section {
+  border-top: 1px solid var(--border-light);
+}
+
+.hook-exec-output-section--error {
+  background: color-mix(
+    in srgb,
+    var(--accent-red-text, #ef4444) 4%,
+    transparent
+  );
+}
+
+.hook-exec-output-section--context {
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+
+.hook-exec-output-header {
+  gap: 6px;
+  min-height: 26px;
+  padding: 2px 6px 2px 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+}
+
+.hook-exec-output-meta {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  font-size: 9.5px;
+  font-weight: 500;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+.hook-exec-output-section--error .hook-exec-output-header {
+  color: var(--accent-red-text, #ef4444);
+}
+
+.hook-exec-output-section--context .hook-exec-output-header {
+  color: var(--accent);
+}
+
+.hook-exec-output-content {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 6px 8px 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--text-primary) 3%, transparent);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.hook-exec-empty-output {
+  padding: 10px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.hook-exec-item--abort .hook-exec-item-label,
+.hook-exec-item--error .hook-exec-item-label {
+  color: var(--accent-red-text, #ef4444);
+}
+
+.hook-exec-item--warn .hook-exec-item-label,
+.hook-exec-item--needsDecision .hook-exec-item-label {
   color: var(--warning, #e0a800);
 }
+
 .hook-exec-item--pass .hook-exec-item-label {
   color: var(--success, #22c55e);
 }
@@ -10418,15 +10644,16 @@ input {
   color: var(--warning, #e0a800);
 }
 
-.hook-exec-item--needsDecision .hook-exec-item-label {
-  color: var(--warning, #e0a800);
-}
-
 .hook-exec-decision {
-  padding: 8px 12px;
+  margin: 4px 0 8px 24px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  border: 1px solid
+    color-mix(in srgb, var(--warning, #e0a800) 28%, var(--border-light));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--warning, #e0a800) 6%, var(--bg-secondary));
 }
 
 .hook-exec-decision-message {
@@ -10440,13 +10667,16 @@ input {
 
 .hook-exec-decision-buttons {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
 .hook-exec-decision-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
+  min-height: 28px;
   padding: 4px 12px;
   border: none;
   border-radius: var(--radius-sm);
@@ -10464,6 +10694,11 @@ input {
   opacity: 0.7;
 }
 
+.hook-exec-decision-btn:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .hook-exec-decision-approve {
   background: color-mix(in srgb, var(--success, #22c55e) 15%, transparent);
   color: var(--success, #22c55e);
@@ -10476,6 +10711,46 @@ input {
     transparent
   );
   color: var(--accent-red-text, #ef4444);
+}
+
+@media (max-width: 720px) {
+  .hook-exec-group {
+    max-width: 100%;
+  }
+
+  .hook-exec-group-list {
+    margin-left: 4px;
+    padding-left: 10px;
+  }
+
+  .hook-exec-item-header {
+    gap: 4px;
+    padding-inline: 4px;
+  }
+
+  .hook-exec-item-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .hook-exec-item-body,
+  .hook-exec-decision {
+    margin-left: 0;
+    padding-left: 12px;
+  }
+
+  .hook-exec-item-body {
+    padding-right: 2px;
+  }
+
+  .hook-exec-action-header {
+    flex-wrap: wrap;
+  }
+
+  .hook-exec-action-header .hook-exec-copy {
+    margin-left: auto;
+  }
 }
 
 .tool-call-todo-pending {

@@ -19,7 +19,7 @@ npm install                 # Install deps (postinstall patches spectre / ensure
 
 npm run dev                 # Dev mode (electron-vite dev, renderer hot reload)
 npm run build:rust          # Compile Rust native module → snow_native.<platform>.node
-npm run typecheck           # tsc --noEmit (must pass before committing)
+npm run check:ts            # tsc --noEmit (must pass before committing)
 npm run build               # build:rust + tsc --noEmit + electron-vite build
 npm run build:app           # Full package (electron-builder)
 npm run build:win           # Windows installers (nsis + portable)
@@ -93,12 +93,13 @@ Using "add a settings item" as an example — the cross-layer change pattern:
 
 ⑤ Build & verify
    npm run build:rust   # required after Rust changes
-   npm run typecheck    # no `any`, must pass
+   npm run check:ts     # no `any`, must pass
 ```
 
-**Read-only query chain**: Renderer → `window.snow.xxxApi` →
+**Read-only query chain**: Renderer → `window.snow.xxxMethod` →
 `ipcRenderer.invoke` → `ipcMain.handle` → `native.xxx` (storageReady gate
-auto-waits) → rusqlite.
+auto-waits) → rusqlite. `src/preload/index.ts` spreads each `*Api` object, so
+the runtime API is flat.
 
 ## 5. Coding Conventions
 

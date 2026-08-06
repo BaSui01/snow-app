@@ -7,7 +7,7 @@
 
 | Layer | Technology | Notes |
 |-------|------------|-------|
-| Renderer | React 18 + TypeScript + Vite | UI, state (React Hooks), i18n (zh-CN/en/zh-TW) |
+| Renderer | React 19 + TypeScript + Vite | UI, state (React Hooks), i18n (zh-CN/en/zh-TW) |
 | Main | Electron 37 + TypeScript | Windows/lifecycle, IPC, system integration (PTY/SSH/updater/tray) |
 | Native | Rust + napi-rs | AI engine, MCP tools, SQLite storage, codebase indexing |
 | Database | SQLite (rusqlite, WAL) | Single file `~/.snowapp/snowapp.db` |
@@ -55,7 +55,7 @@
 
 ```
 React component
-  → window.snow.conversationApi.listChatConversations(dirId)
+  → window.snow.listChatConversations(dirId)
     → src/preload/modules/conversationApi.ts  (ipcRenderer.invoke)
       → src/main/ipc/handlers/conversationHandlers.ts  (ipcMain.handle)
         → native.conversations.listChatConversations(dirId)   ← nativeBridge Proxy
@@ -66,14 +66,16 @@ React component
 
 ### 3.2 Preload bridge (contextBridge)
 
-`src/preload/index.ts` spreads the `modules/*Api.ts` files and exposes them
+`src/preload/index.ts` spreads the methods from the `modules/*Api.ts` objects and exposes them
 via `contextBridge.exposeInMainWorld("snow", api)`. Type definitions live in
 `src/preload/types/`; the renderer imports types from `@preload`.
 
-13 modules are currently exposed (`window.snow.*`): `apiConfigApi`,
-`codexApi`, `configApi`, `conversationApi`, `gitApi`, `imageLibraryApi`,
-`importConfigApi`, `memoApi`, `personalizationApi`, `pluginsApi`, `sshApi`,
-`systemApi`, `workspaceApi`.
+The flat `window.snow` API is currently composed from 15 API objects:
+`apiConfigApi`, `codexApi`, `configApi`, `conversationApi`, `gitApi`,
+`imageLibraryApi`, `importConfigApi`, `memoApi`, `personalizationApi`,
+`pluginsApi`, `ptyApi`, `sshApi`, `systemApi`, `windowApi`, and `workspaceApi`.
+Methods live directly under `window.snow`; they are not nested under those
+API object names.
 
 ### 3.3 Main → Rust gate (key mechanism)
 

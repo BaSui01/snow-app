@@ -49,7 +49,7 @@ Snow App 是一款面向开发者的桌面应用，将 AI 对话、终端模拟�
 | 终端     | node-pty, xterm.js 6                          |
 | SSH      | ssh2                                          |
 | 存储     | rusqlite (SQLite, 内置)                       |
-| AI/HTTP  | async-openai, reqwest                         |
+| AI/HTTP  | reqwest（多供应商协议适配与流式 HTTP）        |
 | Markdown | markdown-it, streaming-markdown, highlight.js |
 | 图标     | lucide-react                                  |
 
@@ -164,7 +164,7 @@ npm run check
 
 Rust 原生模块（`snow_native`）通过 napi-rs 编译为 Node 插件（`.node`），提供以下能力：
 
-- **AI API 流式传输** - 通过 async-openai 实现异步流式响应，支持自带传输层（BYOT）
+- **AI API 流式传输** - 通过 reqwest 和供应商协议适配层实现异步流式响应，统一支持 OpenAI Chat/Responses、Anthropic 与 Gemini 协议
 - **SQLite 存储** - 通过 rusqlite 嵌入式数据库，用于存储设置和聊天记录
 - **文件监控** - 通过 `notify` crate 实现文件系统监听
 - **HTTP 客户端** - 通过 reqwest 实现全功能 HTTP 客户端，支持压缩

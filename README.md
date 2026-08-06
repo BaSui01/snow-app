@@ -49,7 +49,7 @@ Snow App is a developer-focused desktop application that integrates AI-powered c
 | Terminal  | node-pty, xterm.js 6                          |
 | SSH       | ssh2                                          |
 | Storage   | rusqlite (SQLite, bundled)                    |
-| AI/HTTP   | async-openai, reqwest                         |
+| AI/HTTP   | reqwest (multi-provider protocol adapters and streaming HTTP) |
 | Markdown  | markdown-it, streaming-markdown, highlight.js |
 | Icons     | lucide-react                                  |
 
@@ -165,7 +165,7 @@ Runs both TypeScript type checking (`tsc --noEmit`) and Rust checking (`cargo ch
 
 The Rust native module (`snow_native`) is compiled to a Node addon (`.node`) via napi-rs. It provides:
 
-- **AI API streaming** - Async streaming responses via async-openai with bring-your-own-transport (BYOT)
+- **AI API streaming** - Async streaming via reqwest and provider adapters for OpenAI Chat/Responses, Anthropic, and Gemini protocols
 - **SQLite storage** - Embedded database via rusqlite for settings and chat history
 - **File watching** - File system monitoring via the `notify` crate
 - **HTTP client** - Full-featured HTTP client via reqwest with compression support

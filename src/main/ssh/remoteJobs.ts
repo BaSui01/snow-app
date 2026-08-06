@@ -50,6 +50,7 @@ const JOB_SCHEMA_VERSION = 1;
 const MAX_JOB_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_JOB_TIMEOUT_MS = MAX_JOB_TIMEOUT_MS;
 const MAX_OUTPUT_READ_BYTES = 64 * 1024;
+const MAX_REMOTE_JOB_LOG_BYTES = 50 * 1024 * 1024;
 const SUCCESS_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const FAILURE_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
 const BACKEND_PROBE_CACHE_MS = 10 * 60 * 1000;
@@ -1572,7 +1573,7 @@ export const startRemoteJob = async (
         timeoutMs,
         createdAt,
         resourceLimits: {
-          maxLogBytes: 50 * 1024 * 1024,
+          maxLogBytes: MAX_REMOTE_JOB_LOG_BYTES,
           maxRuntimeMs: timeoutMs,
         },
       };
@@ -1595,7 +1596,7 @@ export const startRemoteJob = async (
             writeInternalSshFile(
               sessionId,
               `${temporaryDirectory}/command.ps1`,
-              buildWindowsCommandScript(workingDirectory)
+              buildWindowsCommandScript(workingDirectory, MAX_REMOTE_JOB_LOG_BYTES)
             ),
             writeInternalSshFile(sessionId, `${temporaryDirectory}/command.txt`, command),
             writeInternalSshFile(

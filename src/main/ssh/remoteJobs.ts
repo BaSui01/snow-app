@@ -551,6 +551,40 @@ const readRemoteState = async (
     jobId
   );
 
+const recoverStaleSnowAgentLaunch = async (
+  sessionId: string,
+  capabilities: SshCapabilities,
+  jobDirectory: string,
+  jobId: string,
+  state: RemoteJobState
+): Promise<RemoteJobState> => {
+  if (
+    state.status !== "launching" ||
+    state.backend !== "snow-agent"
+  ) {
+    return state;
+  }
+
+  // `launching` is recoverable only before the runner records `running`.
+  // The agent checks its recorded runner PID and atomically reacquires a stale
+  // handoff lock, so this never restarts a task that might already be running.
+  const active = await inspectSnowAgentJob(
+    sessionId,
+    capabilities,
+    jobDirectory
+  ).catch(() => true);
+  if (active) {
+    return state;
+  }
+  await launchSnowAgentJob(
+    sessionId,
+    capabilities,
+    jobDirectory,
+    jobId
+  );
+  return readRemoteState(sessionId, jobDirectory, jobId);
+};
+
 const writeRemoteState = async (
   sessionId: string,
   jobDirectory: string,
@@ -1198,6 +1232,7 @@ const buildBinding = (params: {
 
 const readExistingJob = async (
   sessionId: string,
+  capabilities: SshCapabilities,
   jobDirectory: string,
   expected: RemoteJobBinding,
   trustedJobTokenHash?: string
@@ -1223,7 +1258,13 @@ const readExistingJob = async (
   if (trustedJobTokenHash && manifest.jobTokenHash !== trustedJobTokenHash) {
     throw new Error("JOB_ID_COLLISION: jobId cleanup token does not match the local Binding");
   }
-  const state = await readRemoteState(sessionId, jobDirectory, expected.jobId);
+  const state = await recoverStaleSnowAgentLaunch(
+    sessionId,
+    capabilities,
+    jobDirectory,
+    expected.jobId,
+    await readRemoteState(sessionId, jobDirectory, expected.jobId)
+  );
   return {
     ...expected,
     jobTokenHash: manifest.jobTokenHash,
@@ -1318,6 +1359,7 @@ export const startRemoteJob = async (
     }
     return readExistingJob(
       sessionId,
+      capabilities,
       jobDirectory,
       recoveryBinding,
       existingBinding?.jobTokenHash
@@ -1343,6 +1385,7 @@ export const startRemoteJob = async (
       if (await remotePathExists(sessionId, jobDirectory)) {
         const recoveredExisting = await readExistingJob(
           sessionId,
+          capabilities,
           jobDirectory,
           binding,
           existingBinding?.jobTokenHash
@@ -1481,6 +1524,7 @@ export const startRemoteJob = async (
         if (existingAfterRace) {
           const recoveredExisting = await readExistingJob(
             sessionId,
+            capabilities,
             jobDirectory,
             binding,
             existingBinding?.jobTokenHash
@@ -1657,9 +1701,15 @@ export const getRemoteJob = async (
     const root = await getRemoteJobRoot(sessionId, capabilities);
     const jobDirectory = pathForJob(root, jobId);
     const state = await readRemoteState(sessionId, jobDirectory, jobId);
-    let resolvedState = state;
-    if (state.status === "running") {
-      const backend = remoteBackends[state.backend ?? binding.backend];
+    let resolvedState = await recoverStaleSnowAgentLaunch(
+      sessionId,
+      capabilities,
+      jobDirectory,
+      jobId,
+      state
+    );
+    if (resolvedState.status === "running") {
+      const backend = remoteBackends[resolvedState.backend ?? binding.backend];
       const activity = await backend
         .inspect({
           sessionId,

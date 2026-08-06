@@ -24,6 +24,9 @@ const TERMINAL_STATUSES: &[&str] = &[
     "indeterminate",
 ];
 const STATE_LOCK_ATTEMPTS: usize = 400;
+const LAUNCH_LOCK_OWNER_GRACE: Duration = Duration::from_secs(5);
+const LAUNCH_LOCK_OWNER_FILE: &str = "launcher.pid";
+const LAUNCH_LOCK_RUNNER_FILE: &str = "runner.pid";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -206,6 +209,28 @@ fn write_state(
     exit_code: Option<i32>,
     reason: Option<&str>,
 ) -> Result<(), String> {
+    write_state_with_runner_pid(
+        directory,
+        request,
+        status,
+        exit_code,
+        reason,
+        Some(std::process::id()),
+    )
+}
+
+fn write_launching_state(directory: &Path, request: &AgentRequest) -> Result<(), String> {
+    write_state_with_runner_pid(directory, request, "launching", None, None, None)
+}
+
+fn write_state_with_runner_pid(
+    directory: &Path,
+    request: &AgentRequest,
+    status: &str,
+    exit_code: Option<i32>,
+    reason: Option<&str>,
+    runner_pid: Option<u32>,
+) -> Result<(), String> {
     let _state_lock = acquire_state_lock(directory)?;
     if let Some(current) = read_state(directory) {
         if state_is_terminal(&current) {
@@ -219,11 +244,13 @@ fn write_state(
         "status": status,
         "revision": next_revision(directory),
         "backend": "snow-agent",
-        "runnerPid": std::process::id(),
         "createdAt": request.created_at.clone().unwrap_or_else(|| now.clone()),
         "updatedAt": now,
         "exitCode": exit_code,
     });
+    if let Some(runner_pid) = runner_pid {
+        state["runnerPid"] = json!(runner_pid);
+    }
     if TERMINAL_STATUSES.contains(&status) {
         state["completedAt"] = Value::String(timestamp());
     }
@@ -258,30 +285,170 @@ fn launch_runner(_executable: &Path, _directory: &Path) -> Result<(), String> {
     Err("snow-agent runner is currently published for POSIX hosts only".to_string())
 }
 
-fn launch_job(directory: &Path) -> Result<(), String> {
+struct LaunchLock {
+    path: PathBuf,
+    release_on_drop: bool,
+}
+
+impl LaunchLock {
+    fn acquire(directory: &Path) -> Result<Self, io::Error> {
+        let path = directory.join("launch.lock");
+        fs::create_dir(&path)?;
+        let lock = Self {
+            path,
+            release_on_drop: true,
+        };
+        if let Err(error) = fs::write(
+            lock.path.join(LAUNCH_LOCK_OWNER_FILE),
+            std::process::id().to_string(),
+        ) {
+            return Err(error);
+        }
+        Ok(lock)
+    }
+
+    fn claim_for_runner(directory: &Path) -> Result<Self, String> {
+        let path = directory.join("launch.lock");
+        if !path.is_dir() {
+            return Err("snow-agent runner started without a launch handoff lock".to_string());
+        }
+        let runner_marker = path.join(LAUNCH_LOCK_RUNNER_FILE);
+        OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&runner_marker)
+            .and_then(|mut file| write!(file, "{}", std::process::id()))
+            .map_err(|error| format!("failed to claim launch handoff lock: {error}"))?;
+        Ok(Self {
+            path,
+            release_on_drop: true,
+        })
+    }
+
+    fn hand_off(mut self) {
+        self.release_on_drop = false;
+    }
+
+    fn release(&mut self) -> Result<(), String> {
+        release_launch_lock(&self.path)?;
+        self.release_on_drop = false;
+        Ok(())
+    }
+}
+
+impl Drop for LaunchLock {
+    fn drop(&mut self) {
+        if self.release_on_drop {
+            let _ = release_launch_lock(&self.path);
+        }
+    }
+}
+
+fn read_lock_pid(path: &Path, name: &str) -> Option<u32> {
+    fs::read_to_string(path.join(name))
+        .ok()
+        .and_then(|value| value.trim().parse::<u32>().ok())
+}
+
+#[cfg(unix)]
+fn process_is_active(pid: u32) -> bool {
+    if pid == 0 || pid > i32::MAX as u32 {
+        return false;
+    }
+    Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+#[cfg(not(unix))]
+fn process_is_active(_pid: u32) -> bool {
+    false
+}
+
+fn launch_lock_is_active(path: &Path) -> bool {
+    if read_lock_pid(path, LAUNCH_LOCK_RUNNER_FILE).is_some_and(process_is_active) {
+        return true;
+    }
+    let Some(owner_pid) = read_lock_pid(path, LAUNCH_LOCK_OWNER_FILE) else {
+        // Older agents created an empty lock directory. A dead runner PID in
+        // state.json is enough to reclaim that legacy lock immediately.
+        return false;
+    };
+    if process_is_active(owner_pid) {
+        return true;
+    }
+    fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .and_then(|modified| modified.elapsed().map_err(io::Error::other))
+        .is_ok_and(|elapsed| elapsed < LAUNCH_LOCK_OWNER_GRACE)
+}
+
+fn release_launch_lock(path: &Path) -> Result<(), String> {
+    for marker in [LAUNCH_LOCK_RUNNER_FILE, LAUNCH_LOCK_OWNER_FILE] {
+        match fs::remove_file(path.join(marker)) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("failed to release launch lock: {error}")),
+        }
+    }
+    fs::remove_dir(path).map_err(|error| format!("failed to release launch lock: {error}"))
+}
+
+fn acquire_or_recover_launch_lock(directory: &Path) -> Result<Option<LaunchLock>, String> {
+    match LaunchLock::acquire(directory) {
+        Ok(lock) => Ok(Some(lock)),
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+            let path = directory.join("launch.lock");
+            if launch_lock_is_active(&path) {
+                return Ok(None);
+            }
+            release_launch_lock(&path)?;
+            match LaunchLock::acquire(directory) {
+                Ok(lock) => Ok(Some(lock)),
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Ok(None),
+                Err(error) => Err(format!("failed to acquire launch lock: {error}")),
+            }
+        }
+        Err(error) => Err(format!("failed to acquire launch lock: {error}")),
+    }
+}
+
+fn launch_job_with<F>(directory: &Path, launch_runner: F) -> Result<(), String>
+where
+    F: FnOnce(&Path) -> Result<(), String>,
+{
     let request = read_request(directory)?;
     if let Some(state) = read_state(directory) {
-        if state_is_terminal(&state)
-            || state.get("status").and_then(Value::as_str) == Some("running")
+        let status = state.get("status").and_then(Value::as_str);
+        if state_is_terminal(&state) || status == Some("running") {
+            return print_json(json!({ "accepted": true, "jobId": request.job_id }));
+        }
+        if status == Some("launching")
+            && state
+                .get("runnerPid")
+                .and_then(Value::as_u64)
+                .and_then(|pid| u32::try_from(pid).ok())
+                .is_some_and(process_is_active)
         {
             return print_json(json!({ "accepted": true, "jobId": request.job_id }));
         }
     }
-    let lock = directory.join("launch.lock");
-    match fs::create_dir(&lock) {
-        Ok(()) => {}
-        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-            return print_json(json!({ "accepted": true, "jobId": request.job_id }));
-        }
-        Err(error) => return Err(format!("failed to acquire launch lock: {error}")),
-    }
-    write_state(directory, &request, "launching", None, None)?;
-    let executable = env::current_exe().map_err(|error| error.to_string())?;
-    if let Err(error) = launch_runner(&executable, directory) {
+    let Some(lock) = acquire_or_recover_launch_lock(directory)? else {
+        return print_json(json!({ "accepted": true, "jobId": request.job_id }));
+    };
+    write_launching_state(directory, &request)?;
+    if let Err(error) = launch_runner(directory) {
         let _ = write_state(directory, &request, "launch_failed", None, Some(&error));
         return Err(error);
     }
+    lock.hand_off();
     print_json(json!({ "accepted": true, "jobId": request.job_id }))
+}
+
+fn launch_job(directory: &Path) -> Result<(), String> {
+    let executable = env::current_exe().map_err(|error| error.to_string())?;
+    launch_job_with(directory, |directory| launch_runner(&executable, directory))
 }
 
 fn shell_quote(value: &str) -> String {
@@ -343,6 +510,16 @@ fn terminate_process_group(child: &mut Child) {
 
 fn run_job(directory: &Path) -> Result<(), String> {
     let request = read_request(directory)?;
+    let mut lock = LaunchLock::claim_for_runner(directory)?;
+    if read_state(directory).is_some_and(|state| state_is_terminal(&state)) {
+        return lock.release();
+    }
+    write_state(directory, &request, "launching", None, None)?;
+    lock.release()?;
+    run_job_after_handoff(directory, &request)
+}
+
+fn run_job_after_handoff(directory: &Path, request: &AgentRequest) -> Result<(), String> {
     let max_runtime_ms = request
         .resource_limits
         .as_ref()
@@ -450,7 +627,12 @@ fn inspect_job(directory: &Path) -> Result<(), String> {
     let active = state
         .get("status")
         .and_then(Value::as_str)
-        .is_some_and(|status| !TERMINAL_STATUSES.contains(&status));
+        .is_some_and(|status| !TERMINAL_STATUSES.contains(&status))
+        && state
+            .get("runnerPid")
+            .and_then(Value::as_u64)
+            .and_then(|pid| u32::try_from(pid).ok())
+            .is_some_and(process_is_active);
     print_json(json!({ "active": active, "state": state }))
 }
 
@@ -498,4 +680,87 @@ fn cas_write(target: &Path, expected: &str, content: &str) -> Result<(), String>
         .map_err(|error| error.to_string())?;
     fs::rename(&temporary, target).map_err(|error| error.to_string())?;
     print_json(json!({ "committed": true, "sha256": sha256(&decoded), "bytes": decoded.len() }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_job_directory() -> PathBuf {
+        let directory = env::temp_dir().join(format!("snow-agent-test-{}", Uuid::new_v4()));
+        fs::create_dir_all(&directory).expect("create test job directory");
+        directory
+    }
+
+    fn write_test_request(directory: &Path, working_directory: &Path) {
+        fs::write(
+            directory.join("agent-request.json"),
+            serde_json::to_vec(&json!({
+                "schemaVersion": PROTOCOL_VERSION,
+                "jobId": Uuid::new_v4().to_string(),
+                "jobTokenHash": "a".repeat(64),
+                "workingDirectory": working_directory,
+                "command": "true",
+                "timeoutMs": 1_000,
+            }))
+            .expect("serialize agent request"),
+        )
+        .expect("write agent request");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn runner_releases_handoff_lock_before_a_missing_working_directory_fails() {
+        let directory = test_job_directory();
+        let missing_working_directory = directory.join("deleted-workspace");
+        write_test_request(&directory, &missing_working_directory);
+        let lock = directory.join("launch.lock");
+        fs::create_dir(&lock).expect("create handoff lock");
+        fs::write(lock.join(LAUNCH_LOCK_OWNER_FILE), "1").expect("write launcher marker");
+
+        let error = run_job(&directory).expect_err("missing working directory must fail");
+        assert!(error.contains("failed to start job command"));
+        assert!(!lock.exists(), "runner must release the handoff lock");
+        let state = read_state(&directory).expect("runner writes its launching state");
+        assert_eq!(state["status"], "launching");
+        assert_eq!(state["runnerPid"], std::process::id());
+
+        fs::remove_dir_all(directory).expect("remove test job directory");
+    }
+
+    #[test]
+    fn stale_launching_state_reclaims_a_legacy_lock_and_relaunches() {
+        let directory = test_job_directory();
+        write_test_request(&directory, &directory);
+        let request = read_request(&directory).expect("read test request");
+        fs::write(
+            directory.join("state.json"),
+            serde_json::to_vec(&json!({
+                "schemaVersion": PROTOCOL_VERSION,
+                "jobId": request.job_id,
+                "status": "launching",
+                "revision": 1,
+                "backend": "snow-agent",
+                "runnerPid": u32::MAX,
+                "createdAt": "unix-ms:0",
+                "updatedAt": "unix-ms:0",
+                "exitCode": null,
+            }))
+            .expect("serialize stale state"),
+        )
+        .expect("write stale state");
+        fs::create_dir(directory.join("launch.lock")).expect("create legacy lock");
+
+        let mut launches = 0;
+        launch_job_with(&directory, |_| {
+            launches += 1;
+            Ok(())
+        })
+        .expect("stale launch must be retried");
+        assert_eq!(launches, 1);
+        assert!(directory.join("launch.lock").is_dir());
+
+        release_launch_lock(&directory.join("launch.lock")).expect("release test lock");
+        fs::remove_dir_all(directory).expect("remove test job directory");
+    }
 }

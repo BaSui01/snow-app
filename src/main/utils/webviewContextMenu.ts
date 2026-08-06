@@ -1,4 +1,5 @@
 import { app, BrowserWindow, clipboard, Menu, type MenuItemConstructorOptions } from "electron";
+import { openBrowserDevTools } from "../ipc/handlers/windowHandlers";
 
 let installed = false;
 
@@ -28,6 +29,26 @@ export const installWebviewContextMenu = (): void => {
     }
 
     contents.on("context-menu", (_event, params) => {
+      const inspectBrowserElement = (): void => {
+        if (contents.isDestroyed()) {
+          return;
+        }
+
+        if (contents.isDevToolsOpened()) {
+          contents.inspectElement(params.x, params.y);
+          return;
+        }
+
+        // inspectElement() 会在 DevTools 未打开时创建 Electron 默认窗口；必须先让
+        // 自定义窗口完成打开，再定位到右键目标元素。
+        contents.once("devtools-opened", () => {
+          if (!contents.isDestroyed()) {
+            contents.inspectElement(params.x, params.y);
+          }
+        });
+        openBrowserDevTools(contents);
+      };
+
       const template: MenuItemConstructorOptions[] = [];
 
       // 编辑组：仅当目标可编辑/有选区时显示。
@@ -88,7 +109,7 @@ export const installWebviewContextMenu = (): void => {
         { type: "separator" },
         {
           label: "检查元素",
-          click: () => contents.inspectElement(params.x, params.y),
+          click: inspectBrowserElement,
         }
       );
 

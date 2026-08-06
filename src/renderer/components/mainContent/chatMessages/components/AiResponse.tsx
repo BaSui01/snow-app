@@ -12,6 +12,7 @@ import { SensitiveCommandConfirmDialog } from "../toolCalls/SensitiveCommandConf
 import { MarkdownBlock } from "./markdownRenderer";
 import type { AiResponseProps } from "../utils/types";
 import type { ToolCallInfo } from "../utils/conversationTypes";
+import type { HookExecutionRecord } from "../utils/conversationTypes";
 
 /** 工具调用渲染单元：连续的 imagegen-generate 调用合并为画廊，其余逐个渲染。 */
 type ToolCallRenderItem =
@@ -70,6 +71,7 @@ export const AiResponse = memo(
     retryError,
     showActions = true,
     toolCalls = [],
+    hookExecutions = [],
     pendingToolAuthorizations = [],
     onApproveToolAuthorization,
     onApproveToolAuthorizationAlways,
@@ -108,6 +110,25 @@ export const AiResponse = memo(
       () => groupToolCalls(toolCalls),
       [toolCalls]
     );
+
+    // Records bound to a specific tool call (toolCallInteractionId) are
+    // rendered attached to that tool card (e.g. beforeSubAgentStart above
+    // the sub-agent card).  Unbound records stay in the message footer.
+    const hooksByInteractionId = useMemo(() => {
+      const map = new Map<string, HookExecutionRecord[]>();
+      for (const record of hookExecutions) {
+        if (!record.toolCallInteractionId) {
+          continue;
+        }
+        const list = map.get(record.toolCallInteractionId);
+        if (list) {
+          list.push(record);
+        } else {
+          map.set(record.toolCallInteractionId, [record]);
+        }
+      }
+      return map;
+    }, [hookExecutions]);
 
     return (
       <article className="ai-message" aria-label="AI response">
@@ -167,6 +188,9 @@ export const AiResponse = memo(
                   <ToolCallItem
                     key={item.key}
                     toolCall={item.toolCall}
+                    hookExecutions={hooksByInteractionId.get(
+                      item.toolCall.interactionId
+                    )}
                   />
                 )
               )}

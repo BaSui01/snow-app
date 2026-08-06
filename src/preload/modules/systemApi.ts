@@ -709,6 +709,7 @@ export const ptyApi = {
     cols: number;
     rows: number;
     shellPath?: string;
+    sessionId?: string;
   }): Promise<string> => ipcRenderer.invoke("pty:create", options),
   ptyWrite: (id: string, data: string): Promise<void> =>
     ipcRenderer.invoke("pty:write", id, data),
@@ -779,6 +780,8 @@ export const windowApi = {
     ipcRenderer.invoke("browser:clear-cache"),
   clearBrowserCookies: (): Promise<void> =>
     ipcRenderer.invoke("browser:clear-cookies"),
+  openBrowserDevTools: (webContentsId: number): Promise<void> =>
+    ipcRenderer.invoke("browser:open-devtools", webContentsId),
   browserNetworkRequests: (
     webContentsId: number,
     filter?: string,

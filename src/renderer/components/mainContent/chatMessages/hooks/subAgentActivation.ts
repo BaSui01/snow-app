@@ -16,6 +16,7 @@ import {
 } from "../utils/conversationHelpers";
 import { appendHookExecutionToMessage, runHook } from "./hookOutcome";
 import { extractFileChangeFromTool } from "./fileChangeTracking";
+import { injectSessionIdIntoToolArgs } from "../utils/toolSessionMetadata";
 import {
   PARENT_PLAN_APPROVAL_REQUIRED,
   beginStreamMetricsIteration,
@@ -140,7 +141,12 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         );
         if (subHookResult) {
           ctx.updateSessionMessages(parentConversationId, (currentMessages) =>
-            appendHookExecutionToMessage(currentMessages, subHookResult.record)
+            appendHookExecutionToMessage(currentMessages, {
+              ...subHookResult.record,
+              // Bind to the sub-agent tool call so the hook renders attached
+              // to the sub-agent card ("启动前" step), not the message footer.
+              toolCallInteractionId,
+            })
           );
           if (subHookResult.outcome.kind === "abort") {
             return JSON.stringify({
@@ -529,6 +535,11 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
             continue;
           }
 
+          const subToolArgs = injectSessionIdIntoToolArgs(
+            subToolCall.name,
+            subToolCall.arguments,
+            subConvId
+          );
           let subSensitiveAuthorizationToken: string | undefined;
           if (
             subToolCall.name === "bash-terminal-execute" &&
@@ -536,9 +547,10 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
             subAuthorizationDecision.sensitiveCommandConfirmed === true
           ) {
             try {
-              const subParsedArgs = JSON.parse(
-                subToolCall.arguments || "{}"
-              ) as Record<string, unknown>;
+              const subParsedArgs = JSON.parse(subToolArgs) as Record<
+                string,
+                unknown
+              >;
               if (typeof subParsedArgs.command !== "string") {
                 throw new Error("Sensitive command argument is missing");
               }
@@ -577,7 +589,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
           try {
             subResult = await window.snow.callMcpTool(
               subToolCall.name,
-              subToolCall.arguments,
+              subToolArgs,
               dirId,
               parentCheckpointIds,
               subCheckpointWorkDir,
@@ -728,7 +740,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
           if (!subToolErrored && subResult !== undefined) {
             const subFileChange = extractFileChangeFromTool(
               subToolCall.name,
-              subToolCall.arguments,
+              subToolArgs,
               subResult
             );
             if (subFileChange) {
@@ -882,10 +894,12 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         );
         if (onCompleteResult) {
           ctx.updateSessionMessages(parentConversationId, (currentMessages) =>
-            appendHookExecutionToMessage(
-              currentMessages,
-              onCompleteResult.record
-            )
+            appendHookExecutionToMessage(currentMessages, {
+              ...onCompleteResult.record,
+              // Bind to the sub-agent tool call so the hook renders attached
+              // to the sub-agent card ("完成" step), not the message footer.
+              toolCallInteractionId,
+            })
           );
           if (onCompleteResult.outcome.kind === "abort") {
             effectiveSummary = onCompleteResult.outcome.message;

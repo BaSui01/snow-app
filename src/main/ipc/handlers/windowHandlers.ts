@@ -7,8 +7,14 @@ import {
   screen,
   session,
   shell,
+  type WebContents,
 } from "electron";
 import type { NativeBridge } from "../../native/types";
+import {
+  APP_FAVICON_32_PATH,
+  APP_WINDOW_ICON_PATH,
+  isMacOS,
+} from "../../app/constants";
 import { markCloseConfirmed } from "../../app/mainWindow";
 import { refreshTrayStats } from "../../app/tray";
 import { clearWindowState } from "../../app/windowState";
@@ -33,6 +39,132 @@ import {
   saveBrowserStorageState,
 } from "./browserStorageState";
 import { runBrowserTrace } from "./browserTrace";
+
+const browserDevToolsWindows = new Map<number, BrowserWindow>();
+
+const buildDevToolsTitle = (contents: WebContents): string => {
+  const url = contents.getURL();
+  return url ? `Developer Tools - ${url}` : "Developer Tools";
+};
+
+/**
+ * 使用应用自有 BrowserWindow 承载内置浏览器的 DevTools。
+ * Electron 默认 DevTools 使用内部 native view，无法可靠修改标题栏图标；显式提供
+ * devToolsWebContents 后即可通过 BrowserWindow 的 icon 使用 Snow App 图标。
+ */
+export const openBrowserDevTools = (contents: WebContents): void => {
+  if (contents.isDestroyed()) {
+    throw new Error("Browser webContents is destroyed");
+  }
+
+  if (isMacOS) {
+    contents.openDevTools({ mode: "detach", activate: true });
+    return;
+  }
+
+  const contentsId = contents.id;
+  const existingWindow = browserDevToolsWindows.get(contentsId);
+  if (existingWindow && !existingWindow.isDestroyed()) {
+    if (!existingWindow.isVisible()) {
+      existingWindow.show();
+    }
+    existingWindow.focus();
+    return;
+  }
+  browserDevToolsWindows.delete(contentsId);
+
+  // 若此前通过其他入口打开了 Electron 默认 DevTools，先关闭后改用可设置图标的窗口。
+  if (contents.isDevToolsOpened()) {
+    contents.closeDevTools();
+  }
+
+  const devToolsWindow = new BrowserWindow({
+    width: 1000,
+    height: 700,
+    minWidth: 600,
+    minHeight: 400,
+    title: buildDevToolsTitle(contents),
+    icon: APP_WINDOW_ICON_PATH,
+    autoHideMenuBar: true,
+    show: false,
+  });
+  devToolsWindow.setMenu(null);
+  devToolsWindow.setMenuBarVisibility(false);
+  browserDevToolsWindows.set(contentsId, devToolsWindow);
+
+  // Windows 标题栏同时受原生窗口 HICON 和 DevTools 页面 favicon 影响。
+  // 仅调用 BrowserWindow.setIcon 只能改变 WM_GETICON；Chromium 仍会绘制 Electron
+  // favicon。因此两层都覆盖为 Snow 图标。
+  const snowFaviconDataUrl = nativeImage
+    .createFromPath(APP_FAVICON_32_PATH)
+    .toDataURL();
+  const applyDevToolsBranding = (): void => {
+    if (devToolsWindow.isDestroyed()) {
+      return;
+    }
+    const icon = nativeImage.createFromPath(APP_WINDOW_ICON_PATH);
+    if (!icon.isEmpty()) {
+      devToolsWindow.setIcon(icon);
+    }
+    if (!snowFaviconDataUrl || devToolsWindow.webContents.isDestroyed()) {
+      return;
+    }
+    void devToolsWindow.webContents
+      .executeJavaScript(`
+        (() => {
+          const marker = "data-snow-devtools-favicon";
+          let link = document.head?.querySelector(
+            'link[' + marker + '="true"]'
+          );
+          if (!link) {
+            link = document.createElement("link");
+            link.setAttribute(marker, "true");
+            link.setAttribute("rel", "icon");
+            link.setAttribute("type", "image/png");
+            document.head?.appendChild(link);
+          }
+          for (const existing of document.querySelectorAll('link[rel~="icon"]')) {
+            if (existing !== link) {
+              existing.remove();
+            }
+          }
+          link.setAttribute("href", ${JSON.stringify(snowFaviconDataUrl)});
+        })();
+      `)
+      .catch(() => {
+        // DevTools 正在关闭时执行脚本可能失败，无需影响窗口生命周期。
+      });
+  };
+  devToolsWindow.webContents.on("did-finish-load", applyDevToolsBranding);
+  devToolsWindow.webContents.on("page-favicon-updated", (_event, favicons) => {
+    if (!favicons.includes(snowFaviconDataUrl)) {
+      setTimeout(applyDevToolsBranding, 0);
+    }
+  });
+
+  const closeDevToolsWindow = (): void => {
+    if (!devToolsWindow.isDestroyed()) {
+      devToolsWindow.close();
+    }
+  };
+  contents.once("destroyed", closeDevToolsWindow);
+  devToolsWindow.once("closed", () => {
+    contents.removeListener("destroyed", closeDevToolsWindow);
+    if (browserDevToolsWindows.get(contentsId) === devToolsWindow) {
+      browserDevToolsWindows.delete(contentsId);
+    }
+  });
+  devToolsWindow.once("ready-to-show", () => {
+    if (!devToolsWindow.isDestroyed()) {
+      applyDevToolsBranding();
+      devToolsWindow.show();
+    }
+  });
+
+  contents.setDevToolsWebContents(devToolsWindow.webContents);
+  contents.openDevTools({ mode: "detach", activate: true });
+  applyDevToolsBranding();
+};
 
 export const registerWindowHandlers = (_native: NativeBridge): void => {
   // ===== Window Controls (Windows custom titlebar) =====
@@ -181,6 +313,13 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
 
   ipcMain.handle("browser:clear-cookies", async () => {
     await session.defaultSession.clearStorageData({ storages: ["cookies"] });
+  });
+
+  ipcMain.handle("browser:open-devtools", (_event, webContentsId: unknown) => {
+    if (typeof webContentsId !== "number") {
+      throw new Error("webContentsId must be a number");
+    }
+    openBrowserDevTools(getBrowserWebContents(webContentsId));
   });
 
   // CDP 命令桥（白名单）：供渲染进程执行无障碍快照（getFullAXTree）与

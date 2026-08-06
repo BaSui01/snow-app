@@ -27450,14 +27450,16 @@ body.ctrl-held [data-path] {
 .image-library-root-action {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 20px;
+  gap: 3px;
   height: 20px;
+  padding: 0 6px;
   flex-shrink: 0;
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-tertiary);
+  font-size: 10.5px;
+  white-space: nowrap;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
@@ -27470,6 +27472,56 @@ body.ctrl-held [data-path] {
 .image-library-root-action:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.image-library-migrate-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+}
+
+.image-library-migrate-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.image-library-migrate-cancel {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.image-library-migrate-cancel:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.image-library-migrate-progress-bar {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-active);
+  overflow: hidden;
+}
+
+.image-library-migrate-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--text-primary);
+  transition: width 0.3s ease;
 }
 
 .image-library-close {

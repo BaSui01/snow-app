@@ -251,9 +251,22 @@ const readDialogOpeningParams = (
     ? (params as JavascriptDialogOpeningParams)
     : {};
 
-/** 确保 webview 的 CDP debugger 会话可用（attach + 启用监听域）。
+/** 已 attach 且 Page 域已启用的 webContents 集合（弹窗捕获所需）。
+ * 每个浏览器 MCP 命令都会调用 ensureWebContentsDebugger，多个 webview
+ * 实例时若每次都重复下发 Page.enable 会放大 CDP 往返开销；这里记录
+ * 已启用的实例，幂等跳过（attach 重置后自动失效重启用）。 */
+const debuggerDomainsEnabled = new Set<number>();
+
+/** 已启用 Network 记录（Network.enable）的 webContents 集合。
+ * 网络记录按需启用：webview 创建时只启用 Page 域（弹窗捕获），
+ * 只有真正查询网络调试数据的实例才开启 Network 事件流，其余
+ * webview（含用户手动新建、从未调试的 tab）保持零网络 CDP 开销。 */
+const networkRecordingEnabled = new Set<number>();
+
+/** 确保 webview 的 CDP debugger 会话可用（attach + 启用 Page 域）。
  * 弹窗捕获、CDP 网络记录、路由 mock 共用同一会话；
- * DevTools 打开时会话被占用，devtools-closed 后自动重连。 */
+ * DevTools 打开时会话被占用，devtools-closed 后自动重连。
+ * Network.enable 由 ensureNetworkRecording 按需启用。 */
 export const ensureWebContentsDebugger = async (
   contents: Electron.WebContents
 ): Promise<void> => {
@@ -263,11 +276,38 @@ export const ensureWebContentsDebugger = async (
   try {
     if (!contents.debugger.isAttached()) {
       contents.debugger.attach("1.3");
+      // 重新 attach 后域配置失效，需要重新启用。
+      debuggerDomainsEnabled.delete(contents.id);
+      networkRecordingEnabled.delete(contents.id);
     }
-    await contents.debugger.sendCommand("Page.enable");
-    await contents.debugger.sendCommand("Network.enable");
+    if (!debuggerDomainsEnabled.has(contents.id)) {
+      await contents.debugger.sendCommand("Page.enable");
+      debuggerDomainsEnabled.add(contents.id);
+    }
   } catch {
     // DevTools 或其他调试客户端可能暂时占用 CDP；devtools-closed 后会重试。
+    debuggerDomainsEnabled.delete(contents.id);
+  }
+};
+
+/** 按需启用 Network 网络记录（网络查询/详情/状态模拟前调用）。
+ * 多个浏览器实例时，只有真正使用网络调试的实例才开启事件流，
+ * 其余 webview 保持零网络 CDP 开销。 */
+export const ensureNetworkRecording = async (
+  contents: Electron.WebContents
+): Promise<void> => {
+  await ensureWebContentsDebugger(contents);
+  if (contents.isDestroyed() || !contents.debugger.isAttached()) {
+    return;
+  }
+  if (networkRecordingEnabled.has(contents.id)) {
+    return;
+  }
+  try {
+    await contents.debugger.sendCommand("Network.enable");
+    networkRecordingEnabled.add(contents.id);
+  } catch {
+    // DevTools 占用等场景；下次调用时重试。
   }
 };
 
@@ -339,6 +379,8 @@ export const initBrowserDialogHandler = (): void => {
     });
     contents.once("destroyed", () => {
       browserWebContentsIds.delete(contents.id);
+      debuggerDomainsEnabled.delete(contents.id);
+      networkRecordingEnabled.delete(contents.id);
       pendingDialogs.delete(contents.id);
       cdpNetworkRecords.delete(contents.id);
       routeRules.delete(contents.id);
@@ -623,7 +665,7 @@ export const queryNetworkDetails = async (
     };
   }
   const contents = getBrowserWebContents(webContentsId);
-  await ensureWebContentsDebugger(contents);
+  await ensureNetworkRecording(contents);
   if (!contents.debugger.isAttached()) {
     return {
       found: true,
@@ -671,7 +713,7 @@ export const setBrowserNetworkState = async (
   offline: boolean
 ): Promise<{ state: "online" | "offline" }> => {
   const contents = getBrowserWebContents(webContentsId);
-  await ensureWebContentsDebugger(contents);
+  await ensureNetworkRecording(contents);
   if (!contents.debugger.isAttached()) {
     throw new Error(
       "Browser debugger is unavailable; close the page DevTools and retry"

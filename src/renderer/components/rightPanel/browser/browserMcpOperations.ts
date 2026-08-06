@@ -22,14 +22,23 @@ const DESCRIBE_ELEMENT_SCRIPT = `
     element.getAttribute('title')
   );`;
 
-// 路由 mock 规则（渲染进程侧累积，route 追加/覆盖，routeClear 清空；提交给主进程 Fetch 拦截）。
-const browserRouteRules: {
+// 路由 mock 规则(渲染进程侧累积,route 追加/覆盖,routeClear 清空;提交给主进程 Fetch 拦截)。
+// 按实例隔离:每个浏览器实例维护自己的规则,实例卸载时由
+// clearBrowserRouteRulesForInstance 清理,避免跨实例残留/误提交。
+type BrowserRouteRule = {
   pattern: string;
   status?: number;
   body?: string;
   contentType?: string;
   headers?: Record<string, string>;
-}[] = [];
+};
+
+const browserRouteRulesByInstance = new Map<string, BrowserRouteRule[]>();
+
+/** 实例卸载时清理其累积的路由规则,防止残留规则影响其他实例。 */
+export const clearBrowserRouteRulesForInstance = (instanceId: string): void => {
+  browserRouteRulesByInstance.delete(instanceId);
+};
 
 // Electron webview console-message level: 0=verbose, 1=info, 2=warning, 3=error.
 const CONSOLE_LEVEL_MIN: Record<string, number> = {
@@ -1269,13 +1278,7 @@ const devtools = async (
   }
   if (action === "route") {
     const pattern = requiredString(args, "pattern");
-    const rule: {
-      pattern: string;
-      status?: number;
-      body?: string;
-      contentType?: string;
-      headers?: Record<string, string>;
-    } = {
+    const rule: BrowserRouteRule = {
       pattern,
       status: typeof args.status === "number" ? args.status : undefined,
       body: typeof args.body === "string" ? args.body : undefined,
@@ -1289,17 +1292,17 @@ const devtools = async (
           : undefined,
     };
     // 同一 pattern 覆盖，其余规则保留；全量提交给主进程。
-    const existingIndex = browserRouteRules.findIndex(
-      (item) => item.pattern === pattern
-    );
+    const rules = browserRouteRulesByInstance.get(instanceId) ?? [];
+    const existingIndex = rules.findIndex((item) => item.pattern === pattern);
     if (existingIndex >= 0) {
-      browserRouteRules[existingIndex] = rule;
+      rules[existingIndex] = rule;
     } else {
-      browserRouteRules.push(rule);
+      rules.push(rule);
     }
+    browserRouteRulesByInstance.set(instanceId, rules);
     const result = await window.snow.browserRouteSet(
       webview.getWebContentsId(),
-      browserRouteRules
+      rules
     );
     return {
       ...(await currentPageMetadata(webview, instanceId)),
@@ -1308,7 +1311,7 @@ const devtools = async (
     };
   }
   if (action === "routeClear") {
-    browserRouteRules.length = 0;
+    browserRouteRulesByInstance.delete(instanceId);
     const result = await window.snow.browserRouteClear(
       webview.getWebContentsId()
     );

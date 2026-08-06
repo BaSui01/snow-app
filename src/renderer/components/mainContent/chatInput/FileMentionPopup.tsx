@@ -494,6 +494,7 @@ export const FileMentionPopup = forwardRef<
 
         if (event.key === "Escape") {
           event.preventDefault();
+          event.stopPropagation();
           onClose();
           return true;
         }
@@ -657,7 +658,7 @@ export const FileMentionPopup = forwardRef<
   }
 
   return (
-    <div className="file-mention-popup" ref={popupRef}>
+    <div className="file-mention-popup" ref={popupRef} data-esc-panel>
       {pathSegments.length > 0 && (
         <div className="file-mention-breadcrumbs">
           <button

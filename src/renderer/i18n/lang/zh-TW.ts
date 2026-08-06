@@ -977,6 +977,13 @@ export const zhTW = {
   "settings.imageLibrarySelectDir": "選擇圖片庫儲存目錄",
   "settings.imageLibraryChangeDir": "更改儲存目錄",
   "settings.imageLibraryResetDir": "重置為預設目錄",
+  "settings.imageLibraryDefaultDir": "預設目錄",
+  "settings.imageLibraryMigrateTitle": "遷移圖片",
+  "settings.imageLibraryMigrateConfirm":
+    "現有 {{count}} 張圖片將遷移到：{{dir}}。遷移完成前不會刪除原圖片，中途取消或失敗會自動回滾。",
+  "settings.imageLibraryMigrateStart": "開始遷移",
+  "settings.imageLibraryMigrateProgress": "正在遷移圖片 {{current}}/{{total}}",
+  "settings.imageLibraryMigrateRollingBack": "正在回滾…",
   "settings.apiSettingsInfo": "配置服務商、模型和憑證。",
   "settings.apiTreeTitle": "API 配置",
   "settings.closeApiSettings": "關閉 API 設定",

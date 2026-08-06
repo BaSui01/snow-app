@@ -15,6 +15,7 @@ import { clearWindowState } from "../../app/windowState";
 import {
   clearBrowserRouteRules,
   clearNetworkRecords,
+  ensureNetworkRecording,
   ensureWebContentsDebugger,
   getBrowserWebContents,
   getNetworkRecord,
@@ -230,21 +231,28 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
   );
 
   // 浏览器调试数据：网络请求记录与 JavaScript 弹窗（供 browser-devtools 查询/响应）
+  // 网络记录按需启用：查询前才开启该实例的 Network.enable，未调试过的
+  // webview（含手动新建的 tab）不产生网络 CDP 事件流。
   ipcMain.handle(
     "browser:network-requests",
-    (
+    async (
       _event,
       webContentsId: number,
       filter?: string,
       limit?: number,
       includeStatic?: boolean
-    ) =>
-      queryNetworkRecords(
-        typeof webContentsId === "number" ? webContentsId : -1,
+    ) => {
+      const id = typeof webContentsId === "number" ? webContentsId : -1;
+      if (id >= 0) {
+        await ensureNetworkRecording(getBrowserWebContents(id));
+      }
+      return queryNetworkRecords(
+        id,
         typeof filter === "string" ? filter : undefined,
         typeof limit === "number" ? limit : 50,
         includeStatic === true
-      )
+      );
+    }
   );
   // 网络请求详情：请求/响应头 + 请求体 + 响应体（基于 CDP 记录中的 requestId）。
   ipcMain.handle(

@@ -1006,6 +1006,13 @@ export const en = {
   "settings.imageLibrarySelectDir": "Select image library directory",
   "settings.imageLibraryChangeDir": "Change save directory",
   "settings.imageLibraryResetDir": "Reset to default directory",
+  "settings.imageLibraryDefaultDir": "Default directory",
+  "settings.imageLibraryMigrateTitle": "Migrate images",
+  "settings.imageLibraryMigrateConfirm":
+    "{{count}} existing image(s) will be moved to: {{dir}}. Original images are kept until the migration completes; cancelling or failing rolls back automatically.",
+  "settings.imageLibraryMigrateStart": "Start migration",
+  "settings.imageLibraryMigrateProgress": "Migrating images {{current}}/{{total}}",
+  "settings.imageLibraryMigrateRollingBack": "Rolling back…",
   "settings.apiSettingsInfo": "Configure providers, models, and credentials.",
   "settings.apiTreeTitle": "API configuration",
   "settings.closeApiSettings": "Close API settings",

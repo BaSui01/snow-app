@@ -977,6 +977,13 @@ export const zhCN = {
   "settings.imageLibrarySelectDir": "选择图片库存储目录",
   "settings.imageLibraryChangeDir": "更改保存目录",
   "settings.imageLibraryResetDir": "重置为默认目录",
+  "settings.imageLibraryDefaultDir": "默认目录",
+  "settings.imageLibraryMigrateTitle": "迁移图片",
+  "settings.imageLibraryMigrateConfirm":
+    "现有 {{count}} 张图片将迁移到：{{dir}}。迁移完成前不会删除原图片，中途取消或失败会自动回滚。",
+  "settings.imageLibraryMigrateStart": "开始迁移",
+  "settings.imageLibraryMigrateProgress": "正在迁移图片 {{current}}/{{total}}",
+  "settings.imageLibraryMigrateRollingBack": "正在回滚…",
   "settings.apiSettingsInfo": "配置服务商、模型和凭据。",
   "settings.apiTreeTitle": "API 配置",
   "settings.closeApiSettings": "关闭 API 设置",

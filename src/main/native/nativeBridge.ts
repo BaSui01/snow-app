@@ -977,6 +977,30 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to cascade-delete conversation images"
           )
         ),
+      prepareImageLibraryMigration: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to migrate image library"
+          )
+        ),
+      migrateImageLibraryChunk: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to migrate image library"
+          )
+        ),
+      commitImageLibraryMigration: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to migrate image library"
+          )
+        ),
+      rollbackImageLibraryMigration: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to migrate image library"
+          )
+        ),
     };
   }
 };

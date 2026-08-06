@@ -684,6 +684,13 @@ export type ImageLibraryRecord = {
   createdAt: string;
 };
 
+/** 图库目录迁移进度 */
+export type ImageLibraryMigrationProgress = {
+  copied: number;
+  total: number;
+  done: boolean;
+};
+
 export type UserMessageSummary = {
   id: string;
   content: string;
@@ -1502,4 +1509,12 @@ export type NativeBridge = {
   deleteImageLibraryImage: (id: string) => Promise<void>;
   countConversationImages: (conversationIds: string[]) => Promise<number>;
   deleteConversationImages: (conversationIds: string[]) => Promise<number>;
+  /** 准备图库迁移：校验目标目录并写入迁移日志；返回待迁移图片数量（0 表示无需迁移） */
+  prepareImageLibraryMigration: (targetDir: string) => Promise<number>;
+  /** 复制下一批图库文件并返回迁移进度 */
+  migrateImageLibraryChunk: () => Promise<ImageLibraryMigrationProgress>;
+  /** 提交迁移：写入新目录设置并清理旧根目录文件 */
+  commitImageLibraryMigration: () => Promise<void>;
+  /** 回滚迁移：删除已复制到新目录的文件并移除日志（幂等） */
+  rollbackImageLibraryMigration: () => Promise<void>;
 };

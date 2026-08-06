@@ -1007,7 +1007,6 @@ pub async fn call_mcp_tool(
     } else if let Some(codelens_tool) = tool_full_name.strip_prefix("codelens-") {
         let service = CodeLensService::new();
         match codelens_tool {
-            "diagnose" => service.execute_diagnose(&args).await?,
             "find_definition" => service.execute_find_definition(&args, project_id.as_deref()).await?,
             "find_references" => service.execute_find_references(&args, project_id.as_deref()).await?,
             "file_outline" => service.execute_file_outline(&args).await?,
@@ -1015,7 +1014,7 @@ pub async fn call_mcp_tool(
                 return Err(Error::new(
                     Status::GenericFailure,
                     format!(
-                        "Unknown codelens tool: \"{codelens_tool}\". Available tools: [diagnose, find_definition, find_references, file_outline]"
+                        "Unknown codelens tool: \"{codelens_tool}\". Available tools: [find_definition, find_references, file_outline]"
                     ),
                 ));
             }

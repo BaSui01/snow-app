@@ -194,7 +194,6 @@ export const ToolCallItem = memo(
     }
 
     if (
-      toolCall.name === "codelens-diagnose" ||
       toolCall.name === "codelens-find_definition" ||
       toolCall.name === "codelens-find_references" ||
       toolCall.name === "codelens-file_outline"

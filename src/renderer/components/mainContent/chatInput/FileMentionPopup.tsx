@@ -51,9 +51,14 @@ const isSshPath = (path: string): boolean => path.startsWith("ssh://");
 /** 与 Rust 端 file_search_agent 的 MAX_AGENT_ROUNDS 保持一致。 */
 const MAX_AGENT_ROUNDS = 10;
 
+// 统一为 "/" 分隔后再比较：Rust 端在 Windows 上返回反斜杠路径，
+// 而 @ 查询文本与路径段均使用 "/"。
+const normalizePath = (p: string): string =>
+  p.replace(/\\/g, "/").replace(/\/+$/, "");
+
 const getRelativePath = (path: string, rootPath: string): string => {
-  const normalizedRoot = rootPath.replace(/\/+$/, "");
-  const normalizedPath = path.replace(/\/+$/, "");
+  const normalizedRoot = normalizePath(rootPath);
+  const normalizedPath = normalizePath(path);
 
   return normalizedPath.startsWith(`${normalizedRoot}/`)
     ? normalizedPath.slice(normalizedRoot.length + 1)
@@ -453,30 +458,21 @@ export const FileMentionPopup = forwardRef<
       onClose();
       return;
     }
-    const entry = entries[selectedIndex];
+    const entry = displayEntries[selectedIndex];
     if (!entry) {
       return;
     }
-    // Enter 在目录上 → 进入文件夹浏览（与点击目录行为一致）
-    if (entry.isDirectory) {
-      const rootPath = activeDirectory?.path ?? "";
-      const rel = getRelativePath(entry.path, rootPath);
-      if (rel && rel !== entry.path) {
-        onNavigateTo(rel);
-      }
-      return;
-    }
+    // Enter 直接选择（插入引用），与文件一致；进入目录请用 → 或点击。
     onSelect(toFileTag(entry));
     onClose();
   }, [
+    displayEntries,
     entries,
     checkedPaths,
     selectedIndex,
     onSelect,
     onSelectBatch,
     onClose,
-    onNavigateTo,
-    activeDirectory,
   ]);
 
   useImperativeHandle(
@@ -499,14 +495,14 @@ export const FileMentionPopup = forwardRef<
           return true;
         }
 
-        if (entries.length === 0) {
+        if (displayEntries.length === 0) {
           return false;
         }
 
         if (event.key === "ArrowDown") {
           event.preventDefault();
           setSelectedIndex((prev) =>
-            prev < entries.length - 1 ? prev + 1 : prev
+            prev < displayEntries.length - 1 ? prev + 1 : prev
           );
           return true;
         }
@@ -519,7 +515,7 @@ export const FileMentionPopup = forwardRef<
 
         // → 进入选中的目录（路径导航）
         if (event.key === "ArrowRight") {
-          const entry = entries[selectedIndex];
+          const entry = displayEntries[selectedIndex];
           if (entry?.isDirectory) {
             event.preventDefault();
             const rootPath = activeDirectory?.path ?? "";
@@ -542,8 +538,8 @@ export const FileMentionPopup = forwardRef<
 
         if (event.key === " ") {
           event.preventDefault();
-          if (entries[selectedIndex]) {
-            toggleCheck(entries[selectedIndex]);
+          if (displayEntries[selectedIndex]) {
+            toggleCheck(displayEntries[selectedIndex]);
           }
           return true;
         }
@@ -558,6 +554,7 @@ export const FileMentionPopup = forwardRef<
       },
     }),
     [
+      displayEntries,
       entries,
       selectedIndex,
       toggleCheck,
@@ -783,7 +780,7 @@ export const FileMentionPopup = forwardRef<
                   <span className="mention-entry-name">{entry.name}</span>
                   {entry.relativePath && (
                     <span className="mention-entry-path">
-                      {entry.relativePath}
+                      {entry.relativePath.replace(/\\/g, "/")}
                     </span>
                   )}
                   {entry.isDirectory && (

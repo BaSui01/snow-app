@@ -28,7 +28,7 @@ Snow App is a developer-focused desktop application that integrates AI-powered c
 - **Skills System** - Install / enable / manage AI skills (SKILL.md) that dynamically extend the agent
 - **Hooks** - Lifecycle hooks that run custom commands or prompts before/after events like requests and compression
 - **Sub-Agents** - Independent AI execution loops for parallel, complex multi-step tasks
-- **Codebase Semantic Search** - Embedding-index-based code search plus multi-language code diagnostics (codelens)
+- **Codebase Semantic Search** - Embedding-index-based code search plus multi-language code symbol location (codelens)
 - **Plan / Goal Modes** - Plan-first and autonomous long-running task execution modes
 - **Interactive Terminal Sessions** - The AI can drive persistent PTY sessions for long-running and interactive commands
 - **Codebase Explorer** - Project file tree with workspace directory management

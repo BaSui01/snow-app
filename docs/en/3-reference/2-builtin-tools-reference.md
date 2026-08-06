@@ -109,7 +109,6 @@ Listed in registration order:
 
 | Full tool name             | Purpose                                              | Key parameters               |
 | -------------------------- | ---------------------------------------------------- | ---------------------------- |
-| `codelens-diagnose`        | Run code diagnostics, returns syntax/semantic errors | `filePath`                   |
 | `codelens-find_definition` | Find a symbol's definition location                  | `filePath`, `line`, `column` |
 | `codelens-find_references` | Find a symbol's reference locations                  | `filePath`, `line`, `column` |
 | `codelens-file_outline`    | Get a file's symbol outline                          | `filePath`                   |

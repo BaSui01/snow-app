@@ -127,7 +127,7 @@ matching WebContents; renderer hooks like `useAgentLoop` consume them.
 - **servers/** — built-in MCP servers (the AI agent's toolset):
   `filesystem`, `bash` (command execution, supports detach/background), `todo`,
   `grep`, `websearch`, `browser`, `user_interaction` (blocking questions),
-  `sub_agents`, `codebase`, `codelens` (code diagnostics), `app_control`,
+  `sub_agents`, `codebase`, `codelens` (code symbol location), `app_control`,
   `config` (config read/write), `terminal` (persistent PTY sessions),
   `imagegen` (image generation), `skills` (dynamically registered),
   `remote_workspace` (SSH); `skills_config` is the internal delegation for the

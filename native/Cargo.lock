@@ -2601,7 +2601,6 @@ dependencies = [
  "napi-derive",
  "notify",
  "oxc",
- "oxc-miette",
  "pdf-extract",
  "regex",
  "reqwest 0.12.28",

@@ -25120,16 +25120,6 @@ body.ctrl-held [data-path] {
   background: var(--accent-green-bg);
 }
 
-.tool-call-codelens-count-error {
-  color: var(--accent-red-text);
-  background: var(--accent-red-bg);
-}
-
-.tool-call-codelens-count-warn {
-  color: var(--accent-amber-text);
-  background: var(--accent-amber-bg);
-}
-
 .tool-call-codelens-count-info {
   color: var(--accent-blue-text);
   background: var(--accent-blue-bg);
@@ -25186,114 +25176,6 @@ body.ctrl-held [data-path] {
   font-size: 11px;
   white-space: normal;
   word-break: break-all;
-}
-
-/* Diagnostics summary badges */
-.tool-call-codelens-summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.tool-call-codelens-summary-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: var(--radius-sm);
-  font-size: 11px;
-  font-weight: 500;
-}
-
-.tool-call-codelens-summary-badge svg {
-  display: block;
-  flex-shrink: 0;
-}
-
-.tool-call-codelens-sev-error {
-  color: var(--accent-red-text);
-  background: var(--accent-red-bg);
-}
-
-.tool-call-codelens-sev-warning {
-  color: var(--accent-amber-text);
-  background: var(--accent-amber-bg);
-}
-
-.tool-call-codelens-sev-hint {
-  color: var(--text-secondary);
-  background: var(--bg-tertiary);
-}
-
-.tool-call-codelens-sev-info {
-  color: var(--accent-blue-text);
-  background: var(--accent-blue-bg);
-}
-
-/* Diagnostics list */
-.tool-call-codelens-diagnostics {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-height: 440px;
-  overflow: auto;
-}
-
-.tool-call-codelens-diagnostic {
-  flex-shrink: 0;
-  padding: 6px 8px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  background: var(--bg-primary);
-}
-
-.tool-call-codelens-diag-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.tool-call-codelens-sev-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
-  font-size: 10.5px;
-  font-weight: 500;
-  text-transform: capitalize;
-}
-
-.tool-call-codelens-sev-badge svg {
-  display: block;
-  flex-shrink: 0;
-}
-
-.tool-call-codelens-diag-loc {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--text-tertiary);
-}
-
-.tool-call-codelens-diag-source {
-  font-size: 10.5px;
-  color: var(--text-muted);
-  padding: 1px 5px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-tertiary);
-}
-
-.tool-call-codelens-diag-message {
-  margin: 4px 0 0;
-  font-size: 11.5px;
-  line-height: 1.5;
-  color: var(--text-secondary);
-  word-break: break-word;
 }
 
 /* Symbol card (definition view) */

@@ -167,7 +167,10 @@ export const MainContent = ({
               onClose={() => onSelectView("chat")}
             />
           ) : activeView === "import-settings" ? (
-            <ImportSettingsPanel onClose={() => onSelectView("chat")} />
+            <ImportSettingsPanel
+              activeDirectory={activeDirectory}
+              onClose={() => onSelectView("chat")}
+            />
           ) : activeView === "skills-settings" ? (
             <SkillsSettingsPanel
               activeDirectory={activeDirectory}

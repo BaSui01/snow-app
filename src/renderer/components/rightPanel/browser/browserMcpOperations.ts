@@ -645,206 +645,6 @@ const type = async (
   };
 };
 
-// ===== 交互扩展：wait / press-key / select-option / hover / upload-file / back / forward =====
-
-const wait = async (
-  webview: Electron.WebviewTag,
-  instanceId: string,
-  args: BrowserMcpCommandArgs
-): Promise<unknown> => {
-  const text = optionalString(args, "text");
-  const textGone = optionalString(args, "textGone");
-  const time = typeof args.time === "number" ? args.time : undefined;
-  const timeoutMs = typeof args.timeoutMs === "number" ? args.timeoutMs : 30_000;
-
-  if (time !== undefined && text === undefined && textGone === undefined) {
-    await new Promise((resolve) => setTimeout(resolve, time * 1000));
-    return {
-      ...(await currentPageMetadata(webview, instanceId)),
-      waitedMs: Math.round(time * 1000),
-    };
-  }
-
-  const startedAt = Date.now();
-  const bodyText = (): Promise<string> =>
-    webview
-      .executeJavaScript(
-        "document.body ? (document.body.innerText || '') : ''"
-      )
-      .catch(() => "");
-  const satisfied = async (): Promise<boolean> => {
-    const content = await bodyText();
-    if (text !== undefined && !content.includes(text)) {
-      return false;
-    }
-    if (textGone !== undefined && content.includes(textGone)) {
-      return false;
-    }
-    return true;
-  };
-  while (Date.now() - startedAt < timeoutMs) {
-    if (await satisfied()) {
-      break;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-  const done = await satisfied();
-  if (!done) {
-    const reason =
-      text !== undefined
-        ? `text "${text}" not found`
-        : `text "${textGone}" still present`;
-    throw new Error(`browser-wait timed out after ${timeoutMs}ms: ${reason}`);
-  }
-  return {
-    ...(await currentPageMetadata(webview, instanceId)),
-    waitedMs: Date.now() - startedAt,
-    satisfied: true,
-  };
-};
-
-const MODIFIER_MAP: Record<string, "alt" | "control" | "meta" | "shift"> = {
-  Alt: "alt",
-  Control: "control",
-  ControlOrMeta: "control",
-  Meta: "meta",
-  Shift: "shift",
-};
-
-const pressKey = async (
-  webview: Electron.WebviewTag,
-  instanceId: string,
-  args: BrowserMcpCommandArgs
-): Promise<unknown> => {
-  const key = requiredString(args, "key");
-  const modifiers: ("alt" | "control" | "meta" | "shift")[] = Array.isArray(
-    args.modifiers
-  )
-    ? args.modifiers
-        .filter((item): item is string => typeof item === "string")
-        .map((item) => MODIFIER_MAP[item])
-        .filter((item): item is "alt" | "control" | "meta" | "shift" => item !== undefined)
-    : [];
-  webview.focus();
-  await webview.sendInputEvent({ type: "keyDown", keyCode: key, modifiers });
-  // 单字符键补 char 事件以触发文本输入。
-  if (/^[a-zA-Z0-9]$/.test(key)) {
-    await webview.sendInputEvent({ type: "char", keyCode: key, modifiers });
-  }
-  await webview.sendInputEvent({ type: "keyUp", keyCode: key, modifiers });
-  return {
-    ...(await currentPageMetadata(webview, instanceId)),
-    success: true,
-    key,
-    modifiers,
-  };
-};
-
-const selectOption = async (
-  webview: Electron.WebviewTag,
-  instanceId: string,
-  args: BrowserMcpCommandArgs
-): Promise<unknown> => {
-  const values = Array.isArray(args.values)
-    ? args.values.filter((item): item is string => typeof item === "string")
-    : [];
-  if (values.length === 0) {
-    throw new Error("values must be a non-empty string array");
-  }
-  const selectBody = `if (!element.matches('select')) {
-      throw new Error('Target element is not a <select> dropdown');
-    }
-    const values = ${JSON.stringify(values)};
-    const matched = [];
-    for (const value of values) {
-      const option = Array.from(element.options).find(
-        (o) => o.value === value || (o.textContent || '').trim() === value
-      );
-      if (!option) {
-        throw new Error('Option not found: ' + value);
-      }
-      option.selected = true;
-      matched.push(option.value);
-    }
-    element.dispatchEvent(new Event('change', { bubbles: true }));
-    element.dispatchEvent(new Event('input', { bubbles: true }));
-    return {
-      element: {
-        tagName: 'select',
-        id: element.id || null,
-        text: describe(element).slice(0, ${TEXT_PREVIEW_LENGTH}),
-      },
-      selected: matched,
-    };`;
-
-  const ref = optionalString(args, "ref");
-  let result: { element?: unknown; selected?: unknown };
-  if (ref) {
-    const { objectId } = await resolveRefHandle(
-      webview,
-      webview.getWebContentsId(),
-      ref
-    );
-    const called = (await window.snow.browserCdpCommand(
-      webview.getWebContentsId(),
-      "Runtime.callFunctionOn",
-      {
-        objectId,
-        functionDeclaration: `function() {
-          const element = this;
-          const describe = (e) => String(e.innerText || e.textContent || e.value || '')
-            .replace(/\\s+/g, ' ').trim();
-          ${selectBody}
-        }`,
-        returnByValue: true,
-      }
-    )) as { result?: { value?: { element?: unknown; selected?: unknown } } };
-    result = called?.result?.value ?? { element: undefined };
-  } else {
-    const target = await locateElementTarget(webview, args, selectBody);
-    result = { element: target.element };
-  }
-  return {
-    ...(await currentPageMetadata(webview, instanceId)),
-    success: true,
-    selected: result.selected ?? null,
-    element: result.element,
-  };
-};
-
-const hover = async (
-  webview: Electron.WebviewTag,
-  instanceId: string,
-  args: BrowserMcpCommandArgs
-): Promise<unknown> => {
-  const target = await locateElementTarget(
-    webview,
-    args,
-    `const rect = element.getBoundingClientRect();
-    const x = Math.round(rect.left + rect.width / 2);
-    const y = Math.round(rect.top + rect.height / 2);
-    if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) {
-      throw new Error('Hover target is outside the browser viewport');
-    }
-    return {
-      x,
-      y,
-      element: {
-        tagName: element.tagName.toLowerCase(),
-        id: element.id || null,
-        text: describe(element).slice(0, ${TEXT_PREVIEW_LENGTH}),
-      },
-    };`
-  );
-  webview.focus();
-  await webview.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
-  return {
-    ...(await currentPageMetadata(webview, instanceId)),
-    success: true,
-    element: target.element,
-  };
-};
-
 const UPLOAD_MARKER = "data-snow-upload";
 
 const uploadFile = async (
@@ -1017,6 +817,251 @@ const screenshot = async (
   };
 };
 
+const wait = async (
+  webview: Electron.WebviewTag,
+  instanceId: string,
+  args: BrowserMcpCommandArgs
+): Promise<unknown> => {
+  const metadata = await currentPageMetadata(webview, instanceId);
+
+  // 固定时长等待
+  if (typeof args.time === "number") {
+    const waitTime = Math.min(Math.max(args.time, 100), 30_000);
+    await new Promise((resolve) => setTimeout(resolve, waitTime));
+    return { ...metadata, condition: "time", waitedMs: waitTime, success: true };
+  }
+
+  // 文本出现/消失等待：轮询页面 innerText，100ms 间隔
+  const text = optionalString(args, "text");
+  const textGone = optionalString(args, "textGone");
+  const condition = text ? "text" : "textGone";
+  const expected = text ?? textGone;
+  if (!expected) {
+    throw new Error("One of time, text, or textGone is required for browser-wait");
+  }
+  const timeoutMs =
+    typeof args.timeoutMs === "number" ? args.timeoutMs : 30_000;
+  const pollInterval = 100;
+  const startedAt = Date.now();
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const pageText = await webview.executeJavaScript(
+      "String(document.body?.innerText || '')"
+    );
+    const found = pageText.includes(expected);
+    const satisfied = condition === "text" ? found : !found;
+    if (satisfied) {
+      return {
+        ...metadata,
+        condition,
+        value: expected,
+        waitedMs: Date.now() - startedAt,
+        success: true,
+      };
+    }
+    if (Date.now() - startedAt >= timeoutMs) {
+      return {
+        ...metadata,
+        condition,
+        value: expected,
+        waitedMs: Date.now() - startedAt,
+        success: false,
+        error: `Timed out waiting for ${condition}: "${expected}"`,
+      };
+    }
+    await new Promise((resolve) => setTimeout(resolve, pollInterval));
+  }
+};
+
+const pressKey = async (
+  webview: Electron.WebviewTag,
+  instanceId: string,
+  args: BrowserMcpCommandArgs
+): Promise<unknown> => {
+  const key = requiredString(args, "key");
+  const metadata = await currentPageMetadata(webview, instanceId);
+  webview.focus();
+
+  // 支持 "Control+a" / "Shift+ArrowDown" 形式的组合键
+  const parts = key.split("+");
+  const mainKey = parts.pop();
+  if (!mainKey) {
+    throw new Error("key must not be empty for browser-press_key");
+  }
+  // 按下修饰键
+  for (const modifier of parts) {
+    await webview.sendInputEvent({ type: "keyDown", keyCode: modifier });
+  }
+  await webview.sendInputEvent({ type: "keyDown", keyCode: mainKey });
+  await webview.sendInputEvent({ type: "char", keyCode: mainKey });
+  await webview.sendInputEvent({ type: "keyUp", keyCode: mainKey });
+  // 释放修饰键
+  for (const modifier of [...parts].reverse()) {
+    await webview.sendInputEvent({ type: "keyUp", keyCode: modifier });
+  }
+
+  return { ...metadata, success: true, key };
+};
+
+const hover = async (
+  webview: Electron.WebviewTag,
+  instanceId: string,
+  args: BrowserMcpCommandArgs
+): Promise<unknown> => {
+  const selector = optionalString(args, "selector");
+  const text = optionalString(args, "text");
+  const exact = args.exact === true;
+  const locateScript = buildElementLocatorScript(
+    selector ?? null,
+    text ?? null,
+    exact,
+    `const rect = element.getBoundingClientRect();
+    const x = Math.round(rect.left + rect.width / 2);
+    const y = Math.round(rect.top + rect.height / 2);
+    if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) {
+      throw new Error('Hoverable element is outside the browser viewport');
+    }
+    return {
+      x,
+      y,
+      element: {
+        tagName: element.tagName.toLowerCase(),
+        id: element.id || null,
+        text: describe(element).slice(0, ${TEXT_PREVIEW_LENGTH}),
+        href: element.href || null,
+      },
+    };`
+  );
+  const target = (await webview.executeJavaScript(locateScript)) as {
+    x: number;
+    y: number;
+    element: unknown;
+  };
+  const metadata = await currentPageMetadata(webview, instanceId);
+  webview.focus();
+  await webview.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
+  return {
+    ...metadata,
+    success: true,
+    element: target.element,
+    position: { x: target.x, y: target.y },
+  };
+};
+
+const navigateHistory = async (
+  webview: Electron.WebviewTag,
+  instanceId: string,
+  direction: "back" | "forward"
+): Promise<unknown> => {
+  const canGo =
+    direction === "back" ? webview.canGoBack() : webview.canGoForward();
+  if (!canGo) {
+    const metadata = await currentPageMetadata(webview, instanceId);
+    return {
+      ...metadata,
+      success: false,
+      error: `Cannot go ${direction}: no ${direction} history available`,
+    };
+  }
+  if (direction === "back") {
+    webview.goBack();
+  } else {
+    webview.goForward();
+  }
+  // 等待导航或 3 秒兜底
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = (): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      webview.removeEventListener(
+        "did-stop-loading",
+        finish as EventListener
+      );
+      resolve();
+    };
+    const timer = setTimeout(finish, 3000);
+    webview.addEventListener("did-stop-loading", finish as EventListener);
+  });
+  const metadata = await currentPageMetadata(webview, instanceId);
+  return { ...metadata, success: true, direction };
+};
+
+const selectOption = async (
+  webview: Electron.WebviewTag,
+  instanceId: string,
+  args: BrowserMcpCommandArgs
+): Promise<unknown> => {
+  const selector = optionalString(args, "selector");
+  const text = optionalString(args, "text");
+  const exact = args.exact === true;
+  const values = args.values;
+  if (!Array.isArray(values) || values.length === 0) {
+    throw new Error("values is required and must be a non-empty array");
+  }
+  const stringValues = values.map(String);
+
+  const selectScript = buildElementLocatorScript(
+    selector ?? null,
+    text ?? null,
+    exact,
+    `if (element.tagName !== 'SELECT') {
+      throw new Error('Target element is not a <select> element');
+    }
+    const values = ${JSON.stringify(stringValues)};
+    const multiple = element.multiple;
+    if (!multiple) {
+      element.value = values[0];
+      // 处理 value 未命中时按 option text 匹配
+      if (element.selectedIndex === -1) {
+        for (const option of element.options) {
+          if (option.text === values[0] || option.textContent === values[0]) {
+            option.selected = true;
+            element.value = option.value;
+            break;
+          }
+        }
+      }
+    } else {
+      for (const option of element.options) {
+        option.selected = values.includes(option.value) ||
+          values.includes(option.text) ||
+          values.includes(option.textContent);
+      }
+    }
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+    const selectedOptions = Array.from(element.selectedOptions).map((option) => ({
+      value: option.value,
+      text: option.text,
+    }));
+    return {
+      element: {
+        tagName: element.tagName.toLowerCase(),
+        id: element.id || null,
+        text: describe(element).slice(0, ${TEXT_PREVIEW_LENGTH}),
+        multiple,
+      },
+      selectedOptions,
+    };`
+  );
+  const result = (await webview.executeJavaScript(selectScript)) as {
+    element: unknown;
+    selectedOptions: unknown;
+  };
+  const metadata = await currentPageMetadata(webview, instanceId);
+  return {
+    ...metadata,
+    success: true,
+    values: stringValues,
+    element: result.element,
+    selectedOptions: result.selectedOptions,
+  };
+};
+
 const devtools = async (
   webview: Electron.WebviewTag,
   instanceId: string,
@@ -1092,16 +1137,57 @@ const devtools = async (
   if (action === "network") {
     const filter = optionalString(args, "filter");
     const limit = typeof args.limit === "number" ? args.limit : 50;
+    const includeStatic = args.static === true;
     const requests = await window.snow.browserNetworkRequests(
       webview.getWebContentsId(),
       filter,
-      limit
+      limit,
+      includeStatic
+    );
+    // 为每条记录附加序号，便于用 network_detail 按 index 查询
+    const numbered = (requests as unknown[]).map((record, index) => ({
+      index: index + 1,
+      record,
+    }));
+    return {
+      ...(await currentPageMetadata(webview, instanceId)),
+      requests: numbered,
+      total: numbered.length,
+      static: includeStatic,
+      note: "Use action=networkDetails with a requestId to fetch full headers and bodies (CDP records).",
+    };
+  }
+  if (action === "network_detail") {
+    const requestId = args.requestId;
+    if (typeof requestId !== "number") {
+      throw new Error(
+        "requestId is required for browser-devtools network_detail"
+      );
+    }
+    const record = await window.snow.browserNetworkRequest(requestId);
+    if (!record) {
+      return {
+        ...(await currentPageMetadata(webview, instanceId)),
+        found: false,
+        requestId,
+        error: `No network record found with id ${requestId}`,
+      };
+    }
+    return {
+      ...(await currentPageMetadata(webview, instanceId)),
+      found: true,
+      requestId,
+      request: record,
+    };
+  }
+  if (action === "network_clear") {
+    const result = await window.snow.browserNetworkClear(
+      webview.getWebContentsId()
     );
     return {
       ...(await currentPageMetadata(webview, instanceId)),
-      requests,
-      total: requests.length,
-      note: "Use action=networkDetails with a requestId to fetch full headers and bodies (CDP records).",
+      cleared: result.cleared,
+      success: true,
     };
   }
   if (action === "networkDetails") {
@@ -1321,16 +1407,20 @@ export const executeBrowserMcpOperation = async (
       return type(webview, instanceId, args);
     case "screenshot":
       return screenshot(webview, instanceId, args);
-    case "devtools":
-      return devtools(webview, instanceId, args, consoleMessages);
     case "wait":
       return wait(webview, instanceId, args);
-    case "press-key":
+    case "press_key":
       return pressKey(webview, instanceId, args);
-    case "select-option":
-      return selectOption(webview, instanceId, args);
     case "hover":
       return hover(webview, instanceId, args);
+    case "navigate_back":
+      return navigateHistory(webview, instanceId, "back");
+    case "navigate_forward":
+      return navigateHistory(webview, instanceId, "forward");
+    case "select_option":
+      return selectOption(webview, instanceId, args);
+    case "devtools":
+      return devtools(webview, instanceId, args, consoleMessages);
     case "upload-file":
       return uploadFile(webview, instanceId, args);
     case "back":

@@ -1,6 +1,6 @@
 [package]
 name = "snow_native"
-version = "0.1.18"
+version = "0.1.20"
 edition = "2021"
 license = "MIT"
 
@@ -8,7 +8,6 @@ license = "MIT"
 crate-type = ["cdylib"]
 
 [dependencies]
-async-openai = { version = "0.30.1", features = ["byot"] }
 chrono = "0.4.38"
 blake3 = "1"
 sha2 = "0.10"

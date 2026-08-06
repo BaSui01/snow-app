@@ -13,6 +13,7 @@ const MAX_TIMEOUT_MS: u64 = 120_000;
 const DEFAULT_MAX_CONTENT_LENGTH: u64 = 20_000;
 const MIN_MAX_CONTENT_LENGTH: u64 = 1_000;
 const MAX_MAX_CONTENT_LENGTH: u64 = 100_000;
+const MAX_WAIT_TIME_MS: u64 = 30_000;
 
 #[napi(object)]
 pub struct BrowserCommand {
@@ -177,7 +178,7 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "devtools".to_string(),
-                description: "Inspect developer-tools-related information for an embedded browser. Omit instanceId to inspect the most recently focused browser tab, including a browser opened by the user. Use action=snapshot for page metadata and text, action=console for captured console messages (optionally filtered by level), action=network for recorded network requests (CDP records include requestId for details), action=networkDetails for full request/response headers and bodies of one request, action=networkState to simulate offline/online, action=route to mock network responses (intercept and fulfill matching requests), action=routeClear to remove all route mocks, action=storageSave to save login state (cookies + localStorage) as an encrypted file, action=storageRestore to restore login state from an encrypted file, action=cookies to list session cookies (values masked by default), action=cookieDelete to remove one cookie, action=dialog to list and respond to pending JavaScript dialogs (alert/confirm/prompt), or action=open to open Electron DevTools for the page.".to_string(),
+                description: "Inspect developer-tools-related information for an embedded browser. Omit instanceId to inspect the most recently focused browser tab, including a browser opened by the user. Use action=snapshot for page metadata and text, action=console for captured console messages (optionally filtered by level), action=network for recorded network requests (CDP records include requestId for details), action=network_detail for full details of a single request by id, action=network_clear to clear all recorded requests, action=networkDetails for full request/response headers and bodies of one request, action=networkState to simulate offline/online, action=route to mock network responses (intercept and fulfill matching requests), action=routeClear to remove all route mocks, action=storageSave to save login state (cookies + localStorage) as an encrypted file, action=storageRestore to restore login state from an encrypted file, action=cookies to list session cookies (values masked by default), action=cookieDelete to remove one cookie, action=dialog to list and respond to pending JavaScript dialogs (alert/confirm/prompt), or action=open to open Electron DevTools for the page.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -187,8 +188,9 @@ impl McpService for BrowserService {
                         },
                         "action": {
                             "type": "string",
-                            "enum": ["snapshot", "console", "open", "network", "networkDetails", "networkState", "route", "routeClear", "storageSave", "storageRestore", "cookies", "cookieDelete", "ax", "trace", "dialog"],
-                            "description": "Developer tools action (default snapshot)."
+                            "enum": ["snapshot", "console", "open", "network", "network_detail", "network_clear", "networkDetails", "networkState", "route", "routeClear", "storageSave", "storageRestore", "cookies", "cookieDelete", "ax", "trace", "dialog"],
+                            "description": "Developer tools action (default snapshot).",
+                            "default": "snapshot"
                         },
                         "durationMs": {
                             "type": "number",
@@ -223,6 +225,11 @@ impl McpService for BrowserService {
                             "type": "string",
                             "description": "Only return network requests whose URL matches this regexp (network action only)."
                         },
+                        "static": {
+                            "type": "boolean",
+                            "description": "Whether to include successful static resources (images, fonts, scripts, stylesheets) in network listing (default false).",
+                            "default": false
+                        },
                         "limit": {
                             "type": "number",
                             "description": "Maximum number of network requests to return (network action only, default 50, range 1-200).",
@@ -231,8 +238,8 @@ impl McpService for BrowserService {
                             "maximum": 200
                         },
                         "requestId": {
-                            "type": "string",
-                            "description": "CDP request id from the network list, used to fetch full details (networkDetails action only)."
+                            "type": ["string", "number"],
+                            "description": "Network request reference. For networkDetails: CDP request id from the network list (string). For network_detail: the numeric id of the request to retrieve full details for (use network action first to obtain ids)."
                         },
                         "maxBodyBytes": {
                             "type": "number",
@@ -270,7 +277,6 @@ impl McpService for BrowserService {
                             "additionalProperties": { "type": "string" }
                         },
                         "dialogResponse": {
-                            "type": "object",
                             "description": "Response for the dialog action: { accept: boolean, promptText?: string }. When provided, the most recent pending dialog is answered instead of listing dialogs.",
                             "properties": {
                                 "accept": {
@@ -313,6 +319,156 @@ impl McpService for BrowserService {
             },
             McpTool {
                 server_id: SERVER_ID.to_string(),
+                name: "wait".to_string(),
+                description: "Wait for a condition on the page: fixed time, text to appear, or text to disappear. Inspired by Playwright's browser_wait_for. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "instanceId": {
+                            "type": "string",
+                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                        },
+                        "time": {
+                            "type": "number",
+                            "description": "Time to wait in milliseconds (maximum 30000). Mutually exclusive with text/textGone.",
+                            "minimum": 100,
+                            "maximum": MAX_WAIT_TIME_MS
+                        },
+                        "text": {
+                            "type": "string",
+                            "description": "Text to wait for to appear on the page. Polls every 100ms until the text is found or the timeout elapses. Mutually exclusive with time."
+                        },
+                        "textGone": {
+                            "type": "string",
+                            "description": "Text to wait for to disappear from the page. Polls every 100ms until the text is gone or the timeout elapses. Mutually exclusive with time."
+                        },
+                        "timeoutMs": {
+                            "type": "number",
+                            "description": "Maximum time to wait for text/textGone conditions in milliseconds (default 30000, range 1000-120000). Ignored for fixed time waits.",
+                            "default": DEFAULT_TIMEOUT_MS,
+                            "minimum": MIN_TIMEOUT_MS,
+                            "maximum": MAX_TIMEOUT_MS
+                        }
+                    }
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "press_key".to_string(),
+                description: "Press a keyboard key on the page. Use for shortcuts, Enter, Escape, Tab, Arrow keys, etc. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "instanceId": {
+                            "type": "string",
+                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                        },
+                        "key": {
+                            "type": "string",
+                            "description": "Name of the key to press (e.g. \"Enter\", \"Escape\", \"Tab\", \"ArrowLeft\", \"a\", \"F1\"). Supports key combinations with \"+\" (e.g. \"Control+a\", \"Shift+ArrowDown\")."
+                        }
+                    },
+                    "required": ["key"]
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "hover".to_string(),
+                description: "Hover over an element on the page with a real mouse move event. Target an element with a CSS selector or visible text. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "instanceId": {
+                            "type": "string",
+                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                        },
+                        "selector": {
+                            "type": "string",
+                            "description": "Optional CSS selector for the element to hover."
+                        },
+                        "text": {
+                            "type": "string",
+                            "description": "Optional visible text to locate when selector is not provided."
+                        },
+                        "exact": {
+                            "type": "boolean",
+                            "description": "Whether text matching must be exact (default false).",
+                            "default": false
+                        }
+                    },
+                    "anyOf": [
+                        { "required": ["selector"] },
+                        { "required": ["text"] }
+                    ]
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "navigate_back".to_string(),
+                description: "Go back to the previous page in the browser history. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "instanceId": {
+                            "type": "string",
+                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                        }
+                    }
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "navigate_forward".to_string(),
+                description: "Go forward to the next page in the browser history. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "instanceId": {
+                            "type": "string",
+                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                        }
+                    }
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "select_option".to_string(),
+                description: "Select option(s) in a dropdown (<select>) element. Target the element with a CSS selector or visible text. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "instanceId": {
+                            "type": "string",
+                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                        },
+                        "selector": {
+                            "type": "string",
+                            "description": "Optional CSS selector for the select element."
+                        },
+                        "text": {
+                            "type": "string",
+                            "description": "Optional visible text to locate the select element when selector is not provided."
+                        },
+                        "exact": {
+                            "type": "boolean",
+                            "description": "Whether text matching must be exact (default false).",
+                            "default": false
+                        },
+                        "values": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Array of option values to select. Can be a single value or multiple values for multi-select."
+                        }
+                    },
+                    "anyOf": [
+                        { "required": ["selector"] },
+                        { "required": ["text"] }
+                    ],
+                    "required": ["values"]
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
                 name: "close".to_string(),
                 description: "Close an embedded browser tab and destroy its webview. Omit instanceId to close the most recently focused browser tab. Use the list tool to see available browser tabs and their IDs.".to_string(),
                 input_schema: json!({
@@ -320,7 +476,7 @@ impl McpService for BrowserService {
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID to close. Omit it or use current to close the most recently focused embedded browser tab."
+                            "description": "Optional browser instance ID to close. Omit it or use current to close the most recently focused browser tab."
                         }
                     }
                 }),
@@ -418,46 +574,6 @@ impl McpService for BrowserService {
             },
             McpTool {
                 server_id: SERVER_ID.to_string(),
-                name: "wait".to_string(),
-                description: "Wait for text to appear or disappear on the page, or wait for a fixed time. Resolves when the condition is met or the timeout expires. Omit instanceId to use the most recently focused browser tab.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "instanceId": {
-                            "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
-                        },
-                        "text": {
-                            "type": "string",
-                            "description": "Wait until this text appears in the page."
-                        },
-                        "textGone": {
-                            "type": "string",
-                            "description": "Wait until this text disappears from the page."
-                        },
-                        "time": {
-                            "type": "number",
-                            "description": "Wait for this many seconds (0-120).",
-                            "minimum": 0,
-                            "maximum": 120
-                        },
-                        "timeoutMs": {
-                            "type": "number",
-                            "description": "Maximum wait time in milliseconds (default 30000, range 1000-120000).",
-                            "default": 30000,
-                            "minimum": 1000,
-                            "maximum": 120000
-                        }
-                    },
-                    "anyOf": [
-                        { "required": ["time"] },
-                        { "required": ["text"] },
-                        { "required": ["textGone"] }
-                    ]
-                }),
-            },
-            McpTool {
-                server_id: SERVER_ID.to_string(),
                 name: "press-key".to_string(),
                 description: "Press a keyboard key in the embedded browser (e.g. Enter, Tab, Escape, ArrowDown, F5, a). Optionally with modifier keys. Omit instanceId to use the most recently focused browser tab.".to_string(),
                 input_schema: json!({
@@ -515,37 +631,6 @@ impl McpService for BrowserService {
                         { "required": ["ref"] }
                     ],
                     "required": ["values"]
-                }),
-            },
-            McpTool {
-                server_id: SERVER_ID.to_string(),
-                name: "hover".to_string(),
-                description: "Hover over an element in the embedded browser with a real mouse move event. Target with a CSS selector, visible text, or accessibility ref. Omit instanceId to use the most recently focused browser tab.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "instanceId": {
-                            "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
-                        },
-                        "selector": {
-                            "type": "string",
-                            "description": "Optional CSS selector for the element to hover."
-                        },
-                        "text": {
-                            "type": "string",
-                            "description": "Optional visible text to locate when selector is not provided."
-                        },
-                        "ref": {
-                            "type": "string",
-                            "description": "Optional accessibility ref (uid from a recent browser-devtools action=ax snapshot)."
-                        }
-                    },
-                    "anyOf": [
-                        { "required": ["selector"] },
-                        { "required": ["text"] },
-                        { "required": ["ref"] }
-                    ]
                 }),
             },
             McpTool {
@@ -619,8 +704,9 @@ impl McpService for BrowserService {
     fn execute(&self, tool_name: &str, _args: &Value) -> napi::Result<Value> {
         match tool_name {
             "create" | "navigate" | "click" | "screenshot" | "devtools" | "close" | "focus"
-            | "list" | "evaluate" | "type" | "wait" | "press-key" | "select-option"
-            | "hover" | "upload-file" | "back" | "forward" => Err(Error::new(
+            | "list" | "evaluate" | "type" | "wait" | "press-key" | "press_key"
+            | "select-option" | "select_option" | "hover" | "upload-file" | "back"
+            | "forward" | "navigate_back" | "navigate_forward" => Err(Error::new(
                 Status::GenericFailure,
                 "Browser tools must be executed through the asynchronous Electron command bridge"
                     .to_string(),
@@ -687,6 +773,8 @@ fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi::Result<Va
                     | "console"
                     | "open"
                     | "network"
+                    | "network_detail"
+                    | "network_clear"
                     | "networkDetails"
                     | "networkState"
                     | "route"
@@ -701,7 +789,7 @@ fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi::Result<Va
             ) {
                 return Err(Error::new(
                     Status::InvalidArg,
-                    "action must be one of snapshot, console, open, network, networkDetails, networkState, route, routeClear, storageSave, storageRestore, cookies, cookieDelete, ax, trace, or dialog for browser-devtools"
+                    "action must be one of snapshot, console, open, network, network_detail, network_clear, networkDetails, networkState, route, routeClear, storageSave, storageRestore, cookies, cookieDelete, ax, trace, or dialog for browser-devtools"
                         .to_string(),
                 ));
             }
@@ -724,6 +812,7 @@ fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi::Result<Va
                     ));
                 }
             }
+            optional_boolean(args, "static")?;
             let limit = bounded_u64(args, "limit", 50, 1, 200)?;
             if let Some(response) = args.get("dialogResponse") {
                 if !response.is_object() {
@@ -850,6 +939,21 @@ fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi::Result<Va
                 let duration_ms = bounded_u64(args, "durationMs", 3000, 1000, 30_000)?;
                 normalized.insert("durationMs".to_string(), json!(duration_ms));
             }
+            // network_detail：requestId 必填且为正整数（network 列表中的序号 id）。
+            if action == "network_detail" {
+                let request_id = args.get("requestId").ok_or_else(|| {
+                    Error::new(
+                        Status::InvalidArg,
+                        "requestId is required for browser-devtools network_detail".to_string(),
+                    )
+                })?;
+                if request_id.as_u64().is_none() {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        "requestId must be a positive integer for browser-devtools".to_string(),
+                    ));
+                }
+            }
             normalized.insert("action".to_string(), json!(action));
             normalized.insert("limit".to_string(), json!(limit));
             normalized.insert("maxContentLength".to_string(), json!(max_content_length));
@@ -876,26 +980,37 @@ fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi::Result<Va
         }
         "wait" => {
             optional_non_empty_string(args, "instanceId")?;
-            let time = args.get("time").and_then(Value::as_f64);
+            let time = args.get("time");
             let text = optional_non_empty_string(args, "text")?;
             let text_gone = optional_non_empty_string(args, "textGone")?;
-            if time.is_none() && text.is_none() && text_gone.is_none() {
+            let has_time = time.is_some() && !time.is_some_and(Value::is_null);
+            let has_condition = text.is_some() || text_gone.is_some();
+            if !has_time && !has_condition {
                 return Err(Error::new(
                     Status::InvalidArg,
-                    "At least one of time, text, or textGone is required for browser-wait"
-                        .to_string(),
+                    "One of time, text, or textGone is required for browser-wait".to_string(),
                 ));
             }
-            if let Some(seconds) = time {
-                if !(0.0..=120.0).contains(&seconds) {
-                    return Err(Error::new(
-                        Status::InvalidArg,
-                        "time must be between 0 and 120 seconds for browser-wait".to_string(),
-                    ));
-                }
+            if has_time && has_condition {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "time is mutually exclusive with text/textGone for browser-wait".to_string(),
+                ));
             }
-            let timeout_ms = bounded_u64(args, "timeoutMs", 30_000, 1000, 120_000)?;
-            normalized.insert("timeoutMs".to_string(), json!(timeout_ms));
+            if has_time {
+                let wait_time = bounded_u64(args, "time", 0, 100, MAX_WAIT_TIME_MS)?;
+                normalized.insert("time".to_string(), json!(wait_time));
+            }
+            if has_condition {
+                let timeout = bounded_u64(
+                    args,
+                    "timeoutMs",
+                    DEFAULT_TIMEOUT_MS,
+                    MIN_TIMEOUT_MS,
+                    MAX_TIMEOUT_MS,
+                )?;
+                normalized.insert("timeoutMs".to_string(), json!(timeout));
+            }
         }
         "press-key" => {
             optional_non_empty_string(args, "instanceId")?;
@@ -942,6 +1057,8 @@ fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi::Result<Va
                     ),
                 ));
             }
+            // hover/select-option：支持精确文本匹配。
+            optional_boolean(args, "exact")?;
             if tool_name == "select-option" {
                 let values = args.get("values").and_then(Value::as_array).ok_or_else(|| {
                     Error::new(
@@ -991,6 +1108,52 @@ fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi::Result<Va
         }
         "back" | "forward" => {
             optional_non_empty_string(args, "instanceId")?;
+        }
+        "press_key" => {
+            optional_non_empty_string(args, "instanceId")?;
+            required_non_empty_string(args, "key", tool_name)?;
+        }
+        "navigate_back" | "navigate_forward" => {
+            optional_non_empty_string(args, "instanceId")?;
+        }
+        "select_option" => {
+            optional_non_empty_string(args, "instanceId")?;
+            let selector = optional_non_empty_string(args, "selector")?;
+            let text = optional_non_empty_string(args, "text")?;
+            if selector.is_none() && text.is_none() {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "Either selector or text is required for browser-select_option".to_string(),
+                ));
+            }
+            optional_boolean(args, "exact")?;
+            let values = args.get("values").ok_or_else(|| {
+                Error::new(
+                    Status::InvalidArg,
+                    "values is required for browser-select_option".to_string(),
+                )
+            })?;
+            let values_array = values.as_array().ok_or_else(|| {
+                Error::new(
+                    Status::InvalidArg,
+                    "values must be an array of strings for browser-select_option".to_string(),
+                )
+            })?;
+            if values_array.is_empty() {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "values must not be empty for browser-select_option".to_string(),
+                ));
+            }
+            for value in values_array {
+                if value.as_str().is_none() {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        "values must be an array of strings for browser-select_option"
+                            .to_string(),
+                    ));
+                }
+            }
         }
         "close" => {
             optional_non_empty_string(args, "instanceId")?;
@@ -1105,7 +1268,7 @@ fn unknown_tool_error(tool_name: &str) -> Error {
     Error::new(
         Status::GenericFailure,
         format!(
-            "Unknown tool: \"{tool_name}\" for MCP server \"browser\". Available tools: [browser-create, browser-navigate, browser-click, browser-screenshot, browser-devtools, browser-close, browser-focus, browser-list, browser-evaluate, browser-type]"
+            "Unknown tool: \"{tool_name}\" for MCP server \"browser\". Available tools: [browser-create, browser-navigate, browser-navigate_back, browser-navigate_forward, browser-click, browser-hover, browser-type, browser-select_option, browser-press_key, browser-screenshot, browser-wait, browser-devtools, browser-close, browser-focus, browser-list, browser-evaluate]"
         ),
     )
 }

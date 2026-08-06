@@ -1,10 +1,11 @@
 import {
-  AlertTriangle,
   ChevronRight,
+  CircleDot,
   Code2,
   Ellipsis,
   FileSearch,
   Loader2,
+  Pencil,
   Trash2,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -12,6 +13,7 @@ import { createPortal } from "react-dom";
 
 import { useI18n } from "../../../i18n";
 import type { IdeInfo, WorkspaceDirectoryKind } from "../../../../preload";
+import { ConfirmDialog } from "../../common/ConfirmDialog";
 import { IdeIcon } from "../../icons/ideIcons";
 import { useMenuPosition } from "./useMenuPosition";
 
@@ -19,10 +21,18 @@ type WorkspaceDirectoryMenuProps = {
   canDelete?: boolean;
   directoryPath?: string;
   disabled?: boolean;
+  /** 当前目录是否为活动目录（控制“设为活动目录”菜单项的显隐） */
+  isActive?: boolean;
+  onActivate?: () => void;
   kind?: WorkspaceDirectoryKind;
   onDelete: () => void;
   onOpenChange?: (isOpen: boolean) => void;
+  onRename?: () => void;
   onShowDetails?: () => void;
+  /** 右键菜单锚点（光标位置）：非空时菜单以该点定位并保持打开 */
+  contextMenuAnchor?: { x: number; y: number } | null;
+  /** 右键菜单关闭回调（父组件用于清空锚点） */
+  onContextMenuClose?: () => void;
 };
 
 const getIdeIcon = (ideId: string): React.JSX.Element => (
@@ -33,14 +43,21 @@ export function WorkspaceDirectoryMenu({
   canDelete = true,
   directoryPath,
   disabled,
+  isActive = false,
+  onActivate,
   kind,
   onDelete,
   onOpenChange,
+  onRename,
   onShowDetails,
+  contextMenuAnchor = null,
+  onContextMenuClose,
 }: WorkspaceDirectoryMenuProps): React.JSX.Element {
   const { t } = useI18n();
-  const [isOpen, setIsOpen] = useState(false);
+  const [isButtonOpen, setIsButtonOpen] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  // 右键锚点存在时菜单即为打开状态
+  const isOpen = isButtonOpen || contextMenuAnchor !== null;
   const [isOpenWithOpen, setIsOpenWithOpen] = useState(false);
   const [installedIdes, setInstalledIdes] = useState<IdeInfo[]>([]);
   const [isLoadingIdes, setIsLoadingIdes] = useState(false);
@@ -52,6 +69,8 @@ export function WorkspaceDirectoryMenu({
   const openWithPanelRef = useRef<HTMLDivElement>(null);
   const onOpenChangeRef = useRef(onOpenChange);
   onOpenChangeRef.current = onOpenChange;
+  const onContextMenuCloseRef = useRef(onContextMenuClose);
+  onContextMenuCloseRef.current = onContextMenuClose;
   const idesLoadedRef = useRef(false);
   const openWithCloseTimerRef = useRef<number | null>(null);
 
@@ -88,6 +107,7 @@ export function WorkspaceDirectoryMenu({
     placement: "auto-up-down",
     triggerRef,
     panelRef: menuRef,
+    anchorPoint: contextMenuAnchor,
   });
 
   const { position: openWithPosition } = useMenuPosition({
@@ -130,7 +150,21 @@ export function WorkspaceDirectoryMenu({
       return;
     }
 
+    // 关闭菜单：清空按钮态、右键锚点态与二级菜单态
+    const closeMenu = (): void => {
+      setIsButtonOpen(false);
+      onContextMenuCloseRef.current?.();
+      setShowConfirm(false);
+      setIsOpenWithOpen(false);
+    };
+
     const handleClickOutside = (event: MouseEvent): void => {
+      // 右键按下不立即关闭：由 document 级 contextmenu 监听统一处理，
+      // 允许在同一行上连续右键时直接重新定位菜单，避免闪烁。
+      if (event.button === 2) {
+        return;
+      }
+
       const target = event.target as Node;
 
       if (
@@ -143,32 +177,82 @@ export function WorkspaceDirectoryMenu({
         return;
       }
 
-      setIsOpen(false);
-      setShowConfirm(false);
-      setIsOpenWithOpen(false);
+      closeMenu();
+    };
+
+    // 其它区域右键时关闭本菜单（目标行会自行打开自己的菜单）。
+    // 注意：右键发生在同一目录行内任意位置（而非仅三点按钮）时，
+    // 需要让本行自行重新定位菜单，因此用 closest(".workspace-directory-row")
+    // 比较所在行，而不能只用 containerRef（它只包裹三点按钮）。
+    const handleGlobalContextMenu = (event: MouseEvent): void => {
+      const target = event.target as Node;
+
+      const isSameRow =
+        target instanceof Element &&
+        containerRef.current instanceof Element &&
+        containerRef.current.closest(".workspace-directory-row") !== null &&
+        containerRef.current.closest(".workspace-directory-row") ===
+          target.closest(".workspace-directory-row");
+
+      if (
+        (containerRef.current && containerRef.current.contains(target)) ||
+        (menuRef.current && menuRef.current.contains(target)) ||
+        isSameRow
+      ) {
+        return;
+      }
+
+      closeMenu();
+    };
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        closeMenu();
+      }
     };
 
     document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("contextmenu", handleGlobalContextMenu);
+    window.addEventListener("keydown", handleKeyDown);
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("contextmenu", handleGlobalContextMenu);
+      window.removeEventListener("keydown", handleKeyDown);
     };
   }, [isOpen]);
 
   const handleToggle = (event: React.SyntheticEvent): void => {
     event.stopPropagation();
     event.preventDefault();
-    setIsOpen((prev) => !prev);
+    // 点击 … 按钮切换按钮菜单；若右键菜单正打开则先清空锚点
+    setIsButtonOpen((prev) => !prev);
+    onContextMenuCloseRef.current?.();
     setShowConfirm(false);
     setIsOpenWithOpen(false);
   };
 
+  const handleActivateClick = (): void => {
+    onActivate?.();
+    setIsButtonOpen(false);
+    onContextMenuCloseRef.current?.();
+  };
+
+  const handleRenameClick = (): void => {
+    onRename?.();
+    setIsButtonOpen(false);
+    onContextMenuCloseRef.current?.();
+  };
+
   const handleDeleteClick = (): void => {
+    setIsButtonOpen(false);
+    onContextMenuCloseRef.current?.();
     setShowConfirm(true);
     setIsOpenWithOpen(false);
   };
 
   const handleShowDetailsClick = (): void => {
-    setIsOpen(false);
+    setIsButtonOpen(false);
+    onContextMenuCloseRef.current?.();
     setShowConfirm(false);
     setIsOpenWithOpen(false);
     onShowDetails?.();
@@ -176,7 +260,8 @@ export function WorkspaceDirectoryMenu({
 
   const handleDeleteConfirm = (): void => {
     onDelete();
-    setIsOpen(false);
+    setIsButtonOpen(false);
+    onContextMenuCloseRef.current?.();
     setShowConfirm(false);
     setIsOpenWithOpen(false);
   };
@@ -206,7 +291,8 @@ export function WorkspaceDirectoryMenu({
       );
       setIsOpenWithOpen(true);
     });
-    setIsOpen(false);
+    setIsButtonOpen(false);
+    onContextMenuCloseRef.current?.();
     setShowConfirm(false);
     setIsOpenWithOpen(false);
   };
@@ -254,163 +340,172 @@ export function WorkspaceDirectoryMenu({
   );
 
   return (
-    <span className="workspace-directory-actions-wrapper" ref={containerRef}>
-      <span
-        className="workspace-directory-actions"
-        ref={triggerRef}
-        role="button"
-        tabIndex={0}
-        aria-haspopup="menu"
-        aria-expanded={isOpen}
-        onClick={handleToggle}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            handleToggle(event);
-          }
-        }}
-      >
-        <Ellipsis size={14} />
-      </span>
-      {isOpen
-        ? createPortal(
-            <div
-              ref={menuRef}
-              className="workspace-directory-menu"
-              style={
-                menuPosition
-                  ? { top: menuPosition.top, left: menuPosition.left }
-                  : undefined
-              }
-              role="menu"
-            >
-              {showConfirm ? (
-                <>
-                  <div className="workspace-directory-menu-confirm">
-                    <AlertTriangle
-                      size={13}
-                      className="workspace-directory-menu-confirm-icon"
-                    />
-                    <span className="workspace-directory-menu-confirm-text">
-                      {t("sidebar.directoryDeleteConfirm", {
-                        defaultValue:
-                          "Are you sure you want to delete this directory?",
-                      })}
-                    </span>
-                  </div>
-                  <div className="workspace-directory-menu-confirm-actions">
-                    <button
-                      type="button"
-                      className="workspace-directory-menu-confirm-btn cancel"
-                      onClick={handleDeleteCancel}
-                    >
-                      {t("common.cancel", { defaultValue: "Cancel" })}
-                    </button>
-                    <button
-                      type="button"
-                      className="workspace-directory-menu-confirm-btn delete"
-                      onClick={handleDeleteConfirm}
-                    >
-                      {t("sidebar.deleteDirectory", {
-                        defaultValue: "Delete",
-                      })}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
+    <>
+      <span className="workspace-directory-actions-wrapper" ref={containerRef}>
+        <span
+          aria-expanded={isOpen}
+          aria-haspopup="menu"
+          className="workspace-directory-actions"
+          onClick={handleToggle}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              handleToggle(event);
+            }
+          }}
+          ref={triggerRef}
+          role="button"
+          tabIndex={0}
+        >
+          <Ellipsis size={14} />
+        </span>
+        {isOpen
+          ? createPortal(
+              <div
+                ref={menuRef}
+                className="workspace-directory-menu"
+                style={
+                  menuPosition
+                    ? { top: menuPosition.top, left: menuPosition.left }
+                    : undefined
+                }
+                role="menu"
+              >
+                {!isActive ? (
                   <button
                     type="button"
                     className="workspace-directory-menu-item"
-                    onClick={handleShowDetailsClick}
+                    onClick={handleActivateClick}
                     role="menuitem"
                   >
-                    <FileSearch size={13} />
+                    <CircleDot size={13} />
                     <span>
-                      {t("sidebar.directoryDetails", {
-                        defaultValue: "Details",
+                      {t("sidebar.directoryActionActivate", {
+                        defaultValue: "Set as active",
                       })}
                     </span>
                   </button>
-                  {canOpenWith ? (
-                    <span
-                      className="workspace-directory-menu-submenu-trigger"
-                      onMouseEnter={() => {
-                        cancelOpenWithClose();
-                        setIsOpenWithOpen(true);
-                      }}
-                      onMouseLeave={scheduleOpenWithClose}
-                    >
-                      <button
-                        ref={openWithItemRef}
-                        type="button"
-                        className="workspace-directory-menu-item"
-                        aria-expanded={isOpenWithOpen}
-                        aria-haspopup="menu"
-                        onClick={handleOpenWithToggle}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            handleOpenWithToggle(event);
-                          }
-                        }}
-                        role="menuitem"
-                      >
-                        <Code2 size={13} />
-                        <span>
-                          {t("sidebar.openWith", {
-                            defaultValue: "Open with",
-                          })}
-                        </span>
-                        <ChevronRight size={12} className="workspace-directory-menu-item-chevron" />
-                      </button>
-                      {isOpenWithOpen
-                        ? createPortal(
-                            <div
-                              ref={openWithPanelRef}
-                              className="workspace-directory-menu workspace-directory-menu-submenu"
-                              style={
-                                openWithPosition
-                                  ? {
-                                      top: openWithPosition.top,
-                                      left: openWithPosition.left,
-                                    }
-                                  : undefined
-                              }
-                              role="menu"
-                              onMouseEnter={() => {
-                                cancelOpenWithClose();
-                                setIsOpenWithOpen(true);
-                              }}
-                              onMouseLeave={scheduleOpenWithClose}
-                            >
-                              {renderOpenWithItems()}
-                            </div>,
-                            document.body
-                          )
-                        : null}
-                    </span>
-                  ) : null}
-                  {canDelete ? (
+                ) : null}
+                {canOpenWith ? (
+                  <span
+                    className="workspace-directory-menu-submenu-trigger"
+                    onMouseEnter={() => {
+                      cancelOpenWithClose();
+                      setIsOpenWithOpen(true);
+                    }}
+                    onMouseLeave={scheduleOpenWithClose}
+                  >
                     <button
+                      ref={openWithItemRef}
                       type="button"
-                      className="workspace-directory-menu-item danger"
-                      disabled={disabled}
-                      onClick={handleDeleteClick}
+                      className="workspace-directory-menu-item"
+                      aria-expanded={isOpenWithOpen}
+                      aria-haspopup="menu"
+                      onClick={handleOpenWithToggle}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          handleOpenWithToggle(event);
+                        }
+                      }}
                       role="menuitem"
                     >
-                      <Trash2 size={13} />
+                      <Code2 size={13} />
                       <span>
-                        {t("sidebar.deleteDirectory", {
-                          defaultValue: "Delete",
+                        {t("sidebar.openWith", {
+                          defaultValue: "Open with",
                         })}
                       </span>
+                      <ChevronRight size={12} className="workspace-directory-menu-item-chevron" />
                     </button>
-                  ) : null}
-                </>
-              )}
-            </div>,
-            document.body
-          )
-        : null}
-    </span>
+                    {isOpenWithOpen
+                      ? createPortal(
+                          <div
+                            ref={openWithPanelRef}
+                            className="workspace-directory-menu workspace-directory-menu-submenu"
+                            style={
+                              openWithPosition
+                                ? {
+                                    top: openWithPosition.top,
+                                    left: openWithPosition.left,
+                                  }
+                                : undefined
+                            }
+                            role="menu"
+                            onMouseEnter={() => {
+                              cancelOpenWithClose();
+                              setIsOpenWithOpen(true);
+                            }}
+                            onMouseLeave={scheduleOpenWithClose}
+                          >
+                            {renderOpenWithItems()}
+                          </div>,
+                          document.body
+                        )
+                      : null}
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  className="workspace-directory-menu-item"
+                  onClick={handleShowDetailsClick}
+                  role="menuitem"
+                >
+                  <FileSearch size={13} />
+                  <span>
+                    {t("sidebar.directoryDetails", {
+                      defaultValue: "Details",
+                    })}
+                  </span>
+                </button>
+                {onRename ? (
+                  <button
+                    type="button"
+                    className="workspace-directory-menu-item"
+                    onClick={handleRenameClick}
+                    role="menuitem"
+                  >
+                    <Pencil size={13} />
+                    <span>
+                      {t("sidebar.directoryActionRename", {
+                        defaultValue: "Rename",
+                      })}
+                    </span>
+                  </button>
+                ) : null}
+                {canDelete ? (
+                  <button
+                    type="button"
+                    className="workspace-directory-menu-item danger"
+                    disabled={disabled}
+                    onClick={handleDeleteClick}
+                    role="menuitem"
+                  >
+                    <Trash2 size={13} />
+                    <span>
+                      {t("sidebar.deleteDirectory", {
+                        defaultValue: "Delete",
+                      })}
+                    </span>
+                  </button>
+                ) : null}
+              </div>,
+              document.body
+            )
+          : null}
+      </span>
+      <ConfirmDialog
+        cancelLabel={t("common.cancel", { defaultValue: "Cancel" })}
+        confirmLabel={t("sidebar.deleteDirectory", { defaultValue: "Delete" })}
+        message={t("sidebar.directoryDeleteConfirm", {
+          defaultValue: "Are you sure you want to delete this directory?",
+        })}
+        onCancel={handleDeleteCancel}
+        onConfirm={handleDeleteConfirm}
+        open={showConfirm}
+        title={t("sidebar.deleteDirectoryTitle", {
+          defaultValue: "Delete directory",
+        })}
+        variant="danger"
+      />
+    </>
   );
 }

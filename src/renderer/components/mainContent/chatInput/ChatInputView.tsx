@@ -189,6 +189,11 @@ export const ChatInputView = ({
   const [isProjectCodebaseOpen, setIsProjectCodebaseOpen] = useState(false);
   const [isRoleEditorOpen, setIsRoleEditorOpen] = useState(false);
   const [isFileChangesOpen, setIsFileChangesOpen] = useState(false);
+  // 稳定引用：供 StreamMetricsWorkSummary memo 使用，避免父组件重渲染时
+  // 传入新的 inline lambda 导致文件统计区域失效重绘（P0-1 性能优化）。
+  const handleOpenFileChanges = useCallback(() => {
+    setIsFileChangesOpen(true);
+  }, []);
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [isCustomThinkingMode, setIsCustomThinkingMode] = useState(false);
   const [customThinkingValue, setCustomThinkingValue] = useState("");
@@ -594,12 +599,61 @@ export const ChatInputView = ({
     []
   );
 
+  /**
+   * 将图片文件（拖拽 / 粘贴）以 image chip 形式插入编辑区。
+   * 通过 FileReader 读取为 dataURL，逐个插入并触发 syncContent
+   * （内部会调用 renumberImageChips 统一编号）。
+   */
+  const insertImageFiles = useCallback(
+    (files: File[]) => {
+      if (files.length === 0) {
+        return;
+      }
+
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+      }
+
+      for (const file of files) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
+          if (!dataUrl) {
+            return;
+          }
+
+          const mimeMatch = file.type.match(/^image\/([a-z]+)$/);
+          const ext = mimeMatch ? mimeMatch[1] : "png";
+          const imageTag: ImageTag = {
+            name: `image.${ext}`,
+            dataUrl,
+          };
+
+          insertHtmlAtSelection(createImageChipHtml(imageTag));
+          syncContent();
+        };
+        reader.readAsDataURL(file);
+      }
+    },
+    [syncContent, textareaRef]
+  );
+
   const handleDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
       event.preventDefault();
       isDraggingOverRef.current = false;
       if (textareaRef.current) {
         textareaRef.current.classList.remove("drag-over");
+      }
+
+      // 支持从文件管理器拖入图片（单张或多张），与粘贴图片行为保持一致
+      const droppedFiles = Array.from(event.dataTransfer.files);
+      const imageFiles = droppedFiles.filter((file) =>
+        file.type.startsWith("image/")
+      );
+      if (imageFiles.length > 0) {
+        insertImageFiles(imageFiles);
+        return;
       }
 
       const jsonData = event.dataTransfer.getData("application/json");
@@ -1008,6 +1062,62 @@ export const ChatInputView = ({
     [syncContent, insertImageFromFile, insertExternalFiles, checkInputTriggers, textareaRef]
   );
 
+  /**
+   * 路径@导航：将 @ 后的查询文本替换为相对路径（保留 @ 前缀），
+   * 用于 @ 面板"进入文件夹 / 面包屑跳转 / 返回上级"。
+   * 替换后重新解析触发词，面板随新路径刷新内容；relPath 为空表示回到根目录。
+   */
+  const replaceMentionQuery = useCallback(
+    (relPath: string) => {
+      const el = textareaRef.current;
+      if (!el || mentionStartOffsetRef.current < 0) {
+        return;
+      }
+
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) {
+        return;
+      }
+
+      const range = selection.getRangeAt(0);
+      const currentNode = range.startContainer;
+      const currentOffset = range.startOffset;
+
+      if (currentNode.nodeType !== Node.TEXT_NODE) {
+        return;
+      }
+
+      const textNode = currentNode as Text;
+      const start = mentionStartOffsetRef.current;
+      // @ 后无文本时（currentOffset === start，如刚输入 @ 就直接点目录）
+      // 也允许插入路径；仅当光标在 @ 之前时放弃。
+      if (currentOffset < start) {
+        return;
+      }
+
+      range.setStart(textNode, start);
+      range.setEnd(textNode, currentOffset);
+      range.deleteContents();
+      selection.removeAllRanges();
+      selection.addRange(range);
+
+      // 接入浏览器撤销栈，Ctrl+Z 可回退本次导航；空路径（回根）只做删除
+      const newText = relPath ? `${relPath}/` : "";
+      if (newText) {
+        document.execCommand("insertText", false, newText);
+      }
+      checkInputTriggers();
+    },
+    [checkInputTriggers, textareaRef]
+  );
+
+  const handleMentionNavigateTo = useCallback(
+    (relPath: string) => {
+      replaceMentionQuery(relPath);
+    },
+    [replaceMentionQuery]
+  );
+
   const handleInput = useCallback(() => {
     syncContent();
     checkInputTriggers();
@@ -1410,6 +1520,7 @@ export const ChatInputView = ({
           onSelectBatch={handleMentionSelectBatch}
           textareaRef={textareaRef}
           onDragStart={handleMentionDragStart}
+          onNavigateTo={handleMentionNavigateTo}
         />
         <CommandPanel
           ref={commandPanelRef}

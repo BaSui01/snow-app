@@ -1021,12 +1021,6 @@ export type NativeBridge = {
   ) => Promise<void>;
   getYoloMode: () => Promise<boolean>;
   setYoloMode: (enabled: boolean) => Promise<void>;
-  getPlanMode: () => Promise<boolean>;
-  setPlanMode: (enabled: boolean) => Promise<void>;
-  getGoalMode: () => Promise<boolean>;
-  setGoalMode: (enabled: boolean) => Promise<void>;
-  getGoalModeTokenBudget: () => Promise<number>;
-  setGoalModeTokenBudget: (budget: number) => Promise<void>;
   getConversationModes: (
     conversationId: string
   ) => Promise<ConversationModesResult>;

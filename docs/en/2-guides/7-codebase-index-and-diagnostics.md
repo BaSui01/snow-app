@@ -21,17 +21,17 @@ page=codebase-settings`) and configure the embedding model (see the
 | --- | --- |
 | `codebase-search` | Semantic search over the embedding index |
 
-Parameters: `pattern` (query text), `path` (limit directory), `fileGlob`
-(limit file types), `maxResults` (result cap).
+Parameters: `query` (natural-language query text, required), `topN` (result
+cap, default 10, max 50).
 
 ### 1.3 Example
 
 ```text
-codebase-search pattern="how is config backslash escaping handled" path="src/main" maxResults=10
+codebase-search query="how is config backslash escaping handled" topN=10
 → returns semantically related code snippets
 
-codebase-search pattern="retry logic" fileGlob="*.rs" maxResults=5
-→ search Rust files only
+codebase-search query="retry logic" topN=5
+→ returns semantically related code snippets
 ```
 
 ### 1.4 Choosing between grep and codebase

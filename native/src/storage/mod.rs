@@ -654,36 +654,6 @@ pub fn set_yolo_mode(enabled: bool) -> Result<()> {
     services::yolo_settings::set_yolo_mode(&database_path, enabled)
 }
 
-pub fn get_plan_mode() -> Result<bool> {
-    let database_path = ensure_database_file()?;
-    services::plan_settings::get_plan_mode(&database_path)
-}
-
-pub fn set_plan_mode(enabled: bool) -> Result<()> {
-    let database_path = ensure_database_file()?;
-    services::plan_settings::set_plan_mode(&database_path, enabled)
-}
-
-pub fn get_goal_mode() -> Result<bool> {
-    let database_path = ensure_database_file()?;
-    services::goal_settings::get_goal_mode(&database_path)
-}
-
-pub fn set_goal_mode(enabled: bool) -> Result<()> {
-    let database_path = ensure_database_file()?;
-    services::goal_settings::set_goal_mode(&database_path, enabled)
-}
-
-pub fn get_goal_mode_token_budget() -> Result<i64> {
-    let database_path = ensure_database_file()?;
-    services::goal_settings::get_goal_mode_token_budget(&database_path)
-}
-
-pub fn set_goal_mode_token_budget(budget: i64) -> Result<()> {
-    let database_path = ensure_database_file()?;
-    services::goal_settings::set_goal_mode_token_budget(&database_path, budget)
-}
-
 pub fn get_conversation_modes(
     conversation_id: &str,
 ) -> Result<services::chat_conversations::ConversationModes> {

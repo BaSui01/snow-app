@@ -1,5 +1,55 @@
 # Release Notes
 
+## Unreleased
+
+## New Features
+
+- **Image Generation (imagegen) upgrades**:
+  - **Remote URL results are downloaded & persisted**: when the upstream
+    returns `data[].url` (e.g. AWS S3 pre-signed links) instead of base64,
+    the tool now downloads the image (30s timeout / 50MB cap / content-type
+    check), stores it into the image library (disk + `image_library` index),
+    and renders it in the gallery like any other result — no more dead links,
+    and the "Remote image links" list stays as a fallback (failed loads show
+    a placeholder and open the original URL).
+  - **Multi-image per call via internal fan-out**: `n` now accepts 1-8. Since
+    relays/upstreams reject `n>1` in a single request, one call fans out to
+    `n` concurrent sub-requests (each `n=1`), merges the results, and persists
+    all images at once. Partial failures keep the successful images and report
+    the failed count. Streaming preview is disabled when `n>1`.
+  - **Per-request prompts & reference images**: new `prompts` (array of 1-8
+    prompt strings, one per image) and `requestImages` (array of reference
+    image groups, one per request) let a single call generate a whole set of
+    DIFFERENT designs or restyle several source images concurrently.
+  - **Gallery UI**: remote-URL results are displayed as real thumbnails via
+    the `img-proxy://` protocol (zoom lightbox + save supported), multi-prompt
+    calls render each prompt with a numbered badge, and reference-image groups
+    show "N groups total".
+- **Browser Automation Enhancement**:
+  - **Accessibility-tree snapshot** (`browser-devtools action=ax`): engine-level
+    accessibility tree via CDP `Accessibility.getFullAXTree` (pierces closed
+    shadow DOM), serialized with stable `[uid=eN]` refs; `verbose` / `maxNodes`
+    options. `browser-click` / `browser-type` / `browser-select_option` /
+    `browser-hover` / `browser-upload-file` accept `ref=` for deterministic
+    targeting (`uid → DOM.resolveNode → Runtime.callFunctionOn`).
+  - **Network debugging**: `action=networkDetails` (full request/response
+    headers + bodies via CDP, 128KB cap), `action=networkState` (offline
+    simulation), `action=route` / `routeClear` (response mocking via the CDP
+    Fetch domain, `/regex/` or substring patterns). CDP network records are the
+    primary source with webRequest fallback.
+  - **Encrypted login-state save & restore**: `action=storageSave` /
+    `storageRestore` persist cookies + localStorage encrypted with OS-level
+    safeStorage (never plaintext; keyring unavailable → refuse), origin-checked
+    localStorage injection, automatic encrypted backup before restore, and
+    `action=cookies` / `cookieDelete` with masked values by default.
+  - **Interaction completeness**: new `browser-wait` (text appear/disappear /
+    fixed time), `browser-press_key` (keys or `Ctrl+A`-style combinations),
+    `browser-select_option`, `browser-hover`, `browser-upload-file` (CDP file
+    injection, no chooser dialog), `browser-navigate_back` /
+    `browser-navigate_forward` (history navigation with wait).
+  - **Performance trace**: `action=trace` records via the CDP Tracing domain
+    and returns long-task / event statistics (main-thread jank indicators).
+
 ## v0.1.20
 
 ## New Features
@@ -118,9 +168,29 @@
   refuses to enable a channel that has no API key or model (with a
   localized hint) — matching the backend rule that only fully configured
   channels expose the generation tool to the agent.
+- **Composer Drag-and-Drop Images**: The input box now accepts images dragged
+  in from the file manager (single or multiple at once), inserting them as
+  image chips exactly like pasting — previously the drop handlers only
+  understood the app-internal `application/json` drag payloads (file / commit
+  / change tags) and silently ignored external files (no drop cursor, no
+  insertion).
+- **Path-Aware `@` File Mentions**: The `@` file panel now supports browsing
+  into folders like a file manager — clicking a folder entry (or `→` / `Enter`)
+  navigates into it and rewrites the `@` query to the relative path; a
+  breadcrumb bar (workspace root → path segments) lets you jump back, `←` goes
+  up one level, and typing paths directly (`src/`, `src/renderer/App`) browses
+  or filters inside the target directory.
 
 ## Bug Fixes
 
+- **Markdown Images with Local Paths**: When the model referenced generated
+  images by local relative paths (`image/...` library paths or `upload/...`
+  paths) inside the Markdown reply body, the renderer tried to load them as
+  relative URLs and showed broken-image icons. Local paths (backslash /
+  URL-encoded variants normalized, `..` traversal and absolute paths
+  rejected) are now rewritten to `img-proxy://` protocol URLs together with
+  external images, and the main process serves them straight from disk —
+  no IPC round-trips or data-URL caches in the renderer.
 - **i18n Placeholder Syntax**: `settings.imagegenChannelCount` and
   `settings.imageLibraryCount` used the single-brace `{count}` placeholder
   format, so the channel count and image-library count rendered literally

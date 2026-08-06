@@ -21,6 +21,7 @@ import {
   remoteUnstageAll,
   remoteUnstageFiles,
 } from "../../ssh/remoteGit";
+import { safeSend } from "../../utils/safeSend";
 
 const GIT_COMMIT_MSG_CHUNK_CHANNEL = "git:commit-msg:chunk";
 
@@ -315,12 +316,10 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       const trimmed = repoPath.trim();
 
       const onChunk = (chunk: ResponsesApiStreamChunk): void => {
-        if (!event.sender.isDestroyed()) {
-          event.sender.send(GIT_COMMIT_MSG_CHUNK_CHANNEL, {
-            streamId: normalizedStreamId,
-            chunk,
-          });
-        }
+        safeSend(event.sender, GIT_COMMIT_MSG_CHUNK_CHANNEL, {
+          streamId: normalizedStreamId,
+          chunk,
+        });
       };
 
       if (isSshPath(trimmed)) {

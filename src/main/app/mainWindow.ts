@@ -17,6 +17,8 @@ import {
   isStatePositionVisible,
   loadWindowState,
 } from "./windowState";
+import { safeSend } from "../utils/safeSend";
+import { snowLog } from "../../utils/snowLogger";
 
 // 模块级关闭确认标志：渲染进程确认关闭后置为 true，使 close 事件不再被拦截。
 // 这样可以统一覆盖所有关闭路径（自定义标题栏按钮、Alt+F4、任务栏关闭等）。
@@ -129,7 +131,8 @@ export const createWindow = (): BrowserWindow => {
   // Windows: 通知渲染进程窗口最大化状态变化（自定义标题栏需要同步图标）
   if (isWindows) {
     const notifyMaximizeState = (): void => {
-      mainWindow.webContents.send(
+      safeSend(
+        mainWindow.webContents,
         "window:maximize-state-changed",
         mainWindow.isMaximized()
       );
@@ -144,10 +147,24 @@ export const createWindow = (): BrowserWindow => {
   mainWindow.on("close", (event) => {
     if (!isCloseConfirmed()) {
       event.preventDefault();
-      mainWindow.webContents.send("window:close-requested");
+      safeSend(mainWindow.webContents, "window:close-requested");
       return;
     }
     killAllPtyForWebContents(mainWindow.webContents);
+  });
+
+  // 渲染进程异常退出（崩溃/被系统回收）时自动重新加载，避免前端黑屏卡死。
+  // 崩溃细节记录到应用日志便于排查；reload 后 preload/React 会重新初始化。
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    snowLog.error({
+      module: "app/mainWindow",
+      func: "render-process-gone",
+      message: "Renderer process gone, reloading window",
+      context: JSON.stringify(details),
+    });
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.reload();
+    }
   });
 
   // 渲染进程每次主框架导航（含开发模式 Ctrl+R 刷新）后，旧页面的 PTY

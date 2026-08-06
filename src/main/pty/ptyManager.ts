@@ -1,11 +1,23 @@
 import { type WebContents } from "electron";
 import { createRequire } from "node:module";
-import { chmodSync, existsSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, isAbsolute, join } from "node:path";
+import { tmpdir } from "node:os";
 import type { IPty } from "node-pty";
 
-import { isSshPath, parseSshUrl } from "../ssh/sshManager";
+import {
+  connectSsh,
+  disconnectSsh,
+  isSshPath,
+  parseSshUrl,
+  type SshConnectParams,
+} from "../ssh/sshManager";
 import { getDecryptedSecret, getSshCredential } from "../ssh/sshCredentials";
+import {
+  formatSshKnownHost,
+  getSshHostKey,
+  type SshHostKeyRecord,
+} from "../ssh/sshHostKeys";
 import { ensureConptyDll } from "./conptyDllHelper";
 
 const require2 = createRequire(import.meta.url);
@@ -181,16 +193,119 @@ const conptyDllAvailable = ensureConptyDll();
 type SshSpawnConfig = {
   shell: string;
   args: string[];
+  /** True only after a host key has passed the application's verifier. */
+  hostKeyVerified: boolean;
+  dispose: () => void;
   /** Plaintext password to auto-inject when SSH prompts. Undefined = no injection. */
   password?: string;
   /** Plaintext passphrase for private key, auto-injected on prompt. */
   passphrase?: string;
 };
 
-const buildSshSpawnConfig = (
+const buildSshConnectParams = (
+  host: string,
+  port: number,
+  username: string
+): SshConnectParams | null => {
+  const credential = getSshCredential(host, port, username);
+  if (!credential) {
+    return null;
+  }
+
+  const params: SshConnectParams = {
+    host,
+    port,
+    username,
+    authMethod: credential.authMethod,
+  };
+  if (credential.privateKeyPath) {
+    params.privateKeyPath = credential.privateKeyPath;
+  }
+  if (credential.encryptedSecret) {
+    const secret = getDecryptedSecret(host, port, username);
+    if (secret) {
+      if (credential.authMethod === "password") {
+        params.password = secret;
+      } else {
+        params.passphrase = secret;
+      }
+    }
+  }
+  return params;
+};
+
+const resolveVerifiedSshHostKey = async (params: {
+  host: string;
+  port: number;
+  username: string;
+}): Promise<SshHostKeyRecord> => {
+  const existing = getSshHostKey(params.host, params.port);
+  if (existing && formatSshKnownHost(existing)) {
+    return existing;
+  }
+
+  // Fingerprint-only records from earlier versions must be upgraded through
+  // the same ssh2 host verifier before the system SSH client can use them.
+  const connectParams = buildSshConnectParams(
+    params.host,
+    params.port,
+    params.username
+  );
+  if (!connectParams) {
+    throw new Error(
+      "SSH terminal blocked: connect to this workspace first to verify its host key"
+    );
+  }
+
+  const sessionId = await connectSsh(connectParams);
+  try {
+    const verified = getSshHostKey(params.host, params.port);
+    if (verified && formatSshKnownHost(verified)) {
+      return verified;
+    }
+  } finally {
+    disconnectSsh(sessionId);
+  }
+  throw new Error("SSH terminal blocked: verified host key is unavailable");
+};
+
+const createKnownHostsFile = (record: SshHostKeyRecord): {
+  path: string;
+  dispose: () => void;
+} => {
+  const contents = formatSshKnownHost(record);
+  if (!contents) {
+    throw new Error("SSH terminal blocked: verified host key is unavailable");
+  }
+
+  const directory = mkdtempSync(join(tmpdir(), "snow-ssh-known-hosts-"));
+  const path = join(directory, "known_hosts");
+  try {
+    try {
+      chmodSync(directory, 0o700);
+    } catch {
+      // Some platforms cannot apply POSIX modes.
+    }
+    writeFileSync(path, contents, { encoding: "utf-8", mode: 0o600 });
+    try {
+      chmodSync(path, 0o600);
+    } catch {
+      // Some platforms cannot apply POSIX modes.
+    }
+  } catch (error) {
+    rmSync(directory, { recursive: true, force: true });
+    throw error;
+  }
+  return {
+    path,
+    dispose: () => rmSync(directory, { recursive: true, force: true }),
+  };
+};
+
+const buildSshSpawnConfig = async (
   cwd: string,
   remoteCommand?: string
-): SshSpawnConfig | null => {
+): Promise<SshSpawnConfig | null> => {
   if (!isSshPath(cwd)) {
     return null;
   }
@@ -203,10 +318,13 @@ const buildSshSpawnConfig = (
   }
 
   const { host, port, username, remotePath } = parsed;
+  const knownHosts = createKnownHostsFile(
+    await resolveVerifiedSshHostKey({ host, port, username })
+  );
   const sshArgs: string[] = [];
 
-  // Disable host key checking for smoother UX (can be improved later)
-  sshArgs.push("-o", "StrictHostKeyChecking=accept-new");
+  sshArgs.push("-o", `UserKnownHostsFile=${knownHosts.path}`);
+  sshArgs.push("-o", "StrictHostKeyChecking=yes");
   sshArgs.push("-o", "ConnectTimeout=10");
 
   if (port !== 22) {
@@ -218,6 +336,8 @@ const buildSshSpawnConfig = (
   const config: SshSpawnConfig = {
     shell: resolveWindowsExecutable("ssh"),
     args: sshArgs,
+    hostKeyVerified: true,
+    dispose: knownHosts.dispose,
   };
 
   if (credential) {
@@ -252,15 +372,18 @@ const buildSshSpawnConfig = (
   return config;
 };
 
-export const createPtySession = (
+export const createPtySession = async (
   webContents: WebContents,
   options: PtySessionOptions
-): string => {
+): Promise<string> => {
   const id = generatePtyId();
   const customShell = options.shellPath?.trim();
   const isWindows = process.platform === "win32";
 
-  const sshConfig = buildSshSpawnConfig(options.cwd, options.remoteCommand);
+  const sshConfig = await buildSshSpawnConfig(
+    options.cwd,
+    options.remoteCommand
+  );
 
   let shell: string;
   let shellArgs: string[];
@@ -289,26 +412,35 @@ export const createPtySession = (
     spawnCwd = options.cwd || undefined;
   }
 
-  const pty = getNodePty().spawn(shell, shellArgs, {
-    name: "xterm-256color",
-    cols: options.cols,
-    rows: options.rows,
-    cwd: spawnCwd,
-    env: sanitizeEnv(),
-    // Electron already has a console attached, so the default ConPTY kill path
-    // (which forks conpty_console_list_agent.js and calls AttachConsole) throws
-    // "AttachConsole failed". Setting useConptyDll routes kill() through a
-    // different code path that avoids the fork entirely. Falls back to false
-    // when conpty.dll is unavailable (ensureConptyDll could not locate or copy
-    // it), degrading to kernel32 ConPTY with a delayed kill cleanup.
-    useConptyDll: conptyDllAvailable,
-  });
+  let pty: IPty;
+  try {
+    pty = getNodePty().spawn(shell, shellArgs, {
+      name: "xterm-256color",
+      cols: options.cols,
+      rows: options.rows,
+      cwd: spawnCwd,
+      env: sanitizeEnv(),
+      // Electron already has a console attached, so the default ConPTY kill path
+      // (which forks conpty_console_list_agent.js and calls AttachConsole) throws
+      // "AttachConsole failed". Setting useConptyDll routes kill() through a
+      // different code path that avoids the fork entirely. Falls back to false
+      // when conpty.dll is unavailable (ensureConptyDll could not locate or copy
+      // it), degrading to kernel32 ConPTY with a delayed kill cleanup.
+      useConptyDll: conptyDllAvailable,
+    });
+  } catch (error) {
+    sshConfig?.dispose();
+    throw error;
+  }
 
   const session: PtySession = { id, pty, webContents };
   sessions.set(id, session);
 
   // Password/passphrase auto-injection for SSH sessions
-  if (sshConfig && (sshConfig.password || sshConfig.passphrase)) {
+  if (
+    sshConfig?.hostKeyVerified &&
+    (sshConfig.password || sshConfig.passphrase)
+  ) {
     let injectedPassword = false;
     let injectedPassphrase = false;
 
@@ -358,6 +490,7 @@ export const createPtySession = (
       wc.send(PTY_EXIT_CHANNEL, { id, exitCode });
     }
     sessions.delete(id);
+    sshConfig?.dispose();
   });
 
   return id;
@@ -374,7 +507,7 @@ export const createRemoteJobPtySession = (
   remoteCommand: string,
   cols: number,
   rows: number
-): string =>
+): Promise<string> =>
   createPtySession(webContents, {
     cwd: workspacePath,
     cols,

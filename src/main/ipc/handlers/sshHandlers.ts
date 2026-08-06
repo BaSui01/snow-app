@@ -648,7 +648,7 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
       return {
         jobId: spec.jobId,
         backend: spec.backend,
-        ptyId: createRemoteJobPtySession(
+        ptyId: await createRemoteJobPtySession(
           event.sender,
           spec.workspacePath,
           spec.remoteCommand,

@@ -177,6 +177,25 @@ export const setSshClientFactoryForTesting = (
 const generateSessionId = (): string =>
   `ssh-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
+type ObservedSshHostKey = {
+  fingerprint: string;
+  keyType: string;
+  publicKey: string;
+};
+
+const parseSshHostKeyType = (key: Buffer): string | null => {
+  if (key.length < 5) {
+    return null;
+  }
+  const keyTypeLength = key.readUInt32BE(0);
+  const end = 4 + keyTypeLength;
+  if (keyTypeLength === 0 || end > key.length) {
+    return null;
+  }
+  const keyType = key.subarray(4, end).toString("ascii");
+  return /^[A-Za-z0-9@._+-]+$/.test(keyType) ? keyType : null;
+};
+
 export const getSshProfileKey = (params: {
   host: string;
   port: number;
@@ -189,7 +208,7 @@ export const connectSsh = (
 ): Promise<string> => {
   return new Promise((resolve, reject) => {
     let settled = false;
-    let observedFingerprint: string | null = null;
+    let observedHostKey: ObservedSshHostKey | null = null;
     let hostKeyMismatch: { expected: string; received: string } | null = null;
     const client = sshClientFactory();
     const signal = options?.signal;
@@ -202,13 +221,26 @@ export const connectSsh = (
       keepaliveInterval: 10_000,
       keepaliveCountMax: 3,
       agentForward: false,
-      hostHash: "sha256",
       hostVerifier: (value: string | Buffer): boolean => {
-        const fingerprint = String(value);
+        const key = Buffer.isBuffer(value) ? value : Buffer.from(value);
+        const fingerprint = createHash("sha256").update(key).digest("hex");
+        const keyType = parseSshHostKeyType(key);
+        if (!keyType) {
+          rejectConnection(
+            new SshOperationError({
+              code: "SSH_HOST_KEY_UNAVAILABLE",
+              operation: "connect",
+              message: "SSH server provided an invalid host key",
+            })
+          );
+          return false;
+        }
+        const publicKey = key.toString("base64");
         const trusted = getSshHostKey(params.host, params.port);
         if (
           trusted &&
-          trusted.fingerprint !== fingerprint &&
+          (trusted.fingerprint !== fingerprint ||
+            (trusted.publicKey && trusted.publicKey !== publicKey)) &&
           params.hostKeyPolicy !== "replace"
         ) {
           hostKeyMismatch = {
@@ -218,7 +250,7 @@ export const connectSsh = (
           rejectHostKeyMismatch();
           return false;
         }
-        observedFingerprint = fingerprint;
+        observedHostKey = { fingerprint, keyType, publicKey };
         return true;
       },
     };
@@ -325,7 +357,7 @@ export const connectSsh = (
             return;
           }
 
-          if (!observedFingerprint) {
+          if (!observedHostKey) {
             rejectConnection(
               new SshOperationError({
                 code: "SSH_HOST_KEY_UNAVAILABLE",
@@ -340,7 +372,9 @@ export const connectSsh = (
             saveSshHostKey({
               host: params.host,
               port: params.port,
-              fingerprint: observedFingerprint,
+              fingerprint: observedHostKey.fingerprint,
+              keyType: observedHostKey.keyType,
+              publicKey: observedHostKey.publicKey,
             });
           } catch (error) {
             rejectConnection(

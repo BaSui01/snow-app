@@ -780,6 +780,8 @@ export const windowApi = {
     ipcRenderer.invoke("browser:clear-cache"),
   clearBrowserCookies: (): Promise<void> =>
     ipcRenderer.invoke("browser:clear-cookies"),
+  openBrowserDevTools: (webContentsId: number): Promise<void> =>
+    ipcRenderer.invoke("browser:open-devtools", webContentsId),
   browserNetworkRequests: (
     webContentsId: number,
     filter?: string,

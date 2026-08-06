@@ -1166,7 +1166,7 @@ const devtools = async (
     };
   }
   if (action === "open") {
-    webview.openDevTools();
+    await window.snow.openBrowserDevTools(webview.getWebContentsId());
     return {
       ...(await currentPageMetadata(webview, instanceId)),
       opened: true,

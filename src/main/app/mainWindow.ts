@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   APP_ICON_PATH,
+  APP_WINDOW_ICON_PATH,
   isMacOS,
   isWindows,
   macTrafficLightPosition,
@@ -76,7 +77,7 @@ const applyDevToolsSnowIcon = (contents: WebContents): void => {
     const devToolsWindow = BrowserWindow.fromWebContents(devToolsContents);
     if (devToolsWindow && !devToolsWindow.isDestroyed()) {
       try {
-        devToolsWindow.setIcon(APP_ICON_PATH);
+        devToolsWindow.setIcon(APP_WINDOW_ICON_PATH);
       } catch {
         // 窗口已关闭等竞态场景下忽略，下次打开 DevTools 时会重新设置。
       }

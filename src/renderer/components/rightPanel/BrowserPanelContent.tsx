@@ -412,7 +412,15 @@ export const BrowserPanelContent = ({
   };
 
   const handleOpenDevTools = (): void => {
-    webviewRef.current?.openDevTools();
+    const webview = webviewRef.current;
+    if (!webview) {
+      return;
+    }
+    void window.snow
+      .openBrowserDevTools(webview.getWebContentsId())
+      .catch((error) => {
+        console.error("Failed to open browser DevTools:", error);
+      });
   };
 
   const handleOpenFind = (): void => {

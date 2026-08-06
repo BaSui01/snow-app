@@ -103,6 +103,7 @@ export type RemoteJobState = {
   updatedAt: string;
   completedAt?: string;
   reason?: string;
+  truncated?: boolean;
 };
 
 export type RemoteJobBinding = {
@@ -538,6 +539,7 @@ const parseRemoteState = (value: unknown, expectedJobId: string): RemoteJobState
     completedAt:
       typeof value.completedAt === "string" ? value.completedAt : undefined,
     reason: typeof value.reason === "string" ? value.reason : undefined,
+    truncated: value.truncated === true ? true : undefined,
   };
 };
 

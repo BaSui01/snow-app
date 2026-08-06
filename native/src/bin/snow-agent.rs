@@ -232,11 +232,17 @@ fn write_state_with_runner_pid(
     runner_pid: Option<u32>,
 ) -> Result<(), String> {
     let _state_lock = acquire_state_lock(directory)?;
-    if let Some(current) = read_state(directory) {
+    let truncated = if let Some(current) = read_state(directory) {
         if state_is_terminal(&current) {
             return Ok(());
         }
-    }
+        current
+            .get("truncated")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    } else {
+        false
+    };
     let now = timestamp();
     let mut state = json!({
         "schemaVersion": PROTOCOL_VERSION,
@@ -257,6 +263,29 @@ fn write_state_with_runner_pid(
     if let Some(reason) = reason.filter(|reason| !reason.is_empty()) {
         state["reason"] = Value::String(reason.to_string());
     }
+    if truncated {
+        state["truncated"] = Value::Bool(true);
+    }
+    let temporary = directory.join(format!("state.{}.tmp", Uuid::new_v4()));
+    fs::write(
+        &temporary,
+        serde_json::to_vec(&state).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())?;
+    fs::rename(temporary, directory.join("state.json")).map_err(|error| error.to_string())
+}
+
+fn mark_output_truncated(directory: &Path) -> Result<(), String> {
+    let _state_lock = acquire_state_lock(directory)?;
+    let Some(mut state) = read_state(directory) else {
+        return Ok(());
+    };
+    if state_is_terminal(&state) || state["truncated"].as_bool() == Some(true) {
+        return Ok(());
+    }
+    state["truncated"] = Value::Bool(true);
+    state["revision"] = Value::from(next_revision(directory));
+    state["updatedAt"] = Value::String(timestamp());
     let temporary = directory.join(format!("state.{}.tmp", Uuid::new_v4()));
     fs::write(
         &temporary,
@@ -455,13 +484,107 @@ fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
+struct OutputCapture {
+    log: File,
+    frames: File,
+    offset: u64,
+    used_bytes: u64,
+    max_bytes: u64,
+    truncated: bool,
+}
+
+impl OutputCapture {
+    fn open(directory: &Path, max_bytes: u64) -> Result<Self, String> {
+        let log_path = directory.join("output.log");
+        let frames_path = directory.join("output.frames.ndjson");
+        let log_bytes = fs::metadata(&log_path)
+            .map(|metadata| metadata.len())
+            .unwrap_or(0);
+        let frame_bytes = fs::metadata(&frames_path)
+            .map(|metadata| metadata.len())
+            .unwrap_or(0);
+        Ok(Self {
+            log: OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(log_path)
+                .map_err(|error| error.to_string())?,
+            frames: OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(frames_path)
+                .map_err(|error| error.to_string())?,
+            offset: log_bytes,
+            used_bytes: log_bytes.saturating_add(frame_bytes),
+            max_bytes,
+            truncated: log_bytes.saturating_add(frame_bytes) >= max_bytes,
+        })
+    }
+
+    fn frame(start: u64, stream: &str, chunk: &[u8]) -> Result<Vec<u8>, String> {
+        let mut frame = serde_json::to_vec(&json!({
+            "offset": start,
+            "stream": stream,
+            "data": BASE64.encode(chunk),
+        }))
+        .map_err(|error| error.to_string())?;
+        frame.push(b'\n');
+        Ok(frame)
+    }
+
+    fn largest_recordable_chunk(&self, stream: &str, chunk: &[u8]) -> Result<usize, String> {
+        let remaining = self.max_bytes.saturating_sub(self.used_bytes);
+        let mut low = 0;
+        let mut high = chunk
+            .len()
+            .min(usize::try_from(remaining).unwrap_or(usize::MAX));
+        while low < high {
+            let middle = low + (high - low + 1) / 2;
+            let frame = Self::frame(self.offset, stream, &chunk[..middle])?;
+            if middle as u64 + frame.len() as u64 <= remaining {
+                low = middle;
+            } else {
+                high = middle - 1;
+            }
+        }
+        Ok(low)
+    }
+
+    fn capture(&mut self, stream: &str, chunk: &[u8]) -> Result<bool, String> {
+        if self.truncated {
+            return Ok(false);
+        }
+        let length = self.largest_recordable_chunk(stream, chunk)?;
+        if length == 0 {
+            self.truncated = true;
+            return Ok(true);
+        }
+        let frame = Self::frame(self.offset, stream, &chunk[..length])?;
+        self.log
+            .write_all(&chunk[..length])
+            .map_err(|error| error.to_string())?;
+        self.frames
+            .write_all(&frame)
+            .map_err(|error| error.to_string())?;
+        self.offset += length as u64;
+        self.used_bytes += length as u64 + frame.len() as u64;
+        if length < chunk.len() {
+            self.truncated = true;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    fn is_truncated(&self) -> bool {
+        self.truncated
+    }
+}
+
 fn capture_stream<R: Read + Send + 'static>(
     mut reader: R,
     stream: &'static str,
-    log: Arc<Mutex<File>>,
-    frames: Arc<Mutex<File>>,
-    offset: Arc<Mutex<u64>>,
-    max_log_bytes: u64,
+    output: Arc<Mutex<OutputCapture>>,
+    directory: PathBuf,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let mut buffer = [0u8; 16 * 1024];
@@ -471,29 +594,14 @@ fn capture_stream<R: Read + Send + 'static>(
                 Ok(read) => read,
             };
             let chunk = &buffer[..read];
-            let start = {
-                let mut current = offset.lock().expect("output offset lock poisoned");
-                let start = *current;
-                if start < max_log_bytes {
-                    let allowed = (max_log_bytes - start).min(chunk.len() as u64) as usize;
-                    let _ = log
-                        .lock()
-                        .expect("output log lock poisoned")
-                        .write_all(&chunk[..allowed]);
-                    *current += allowed as u64;
-                }
-                start
-            };
-            let frame = json!({
-                "offset": start,
-                "stream": stream,
-                "data": BASE64.encode(chunk),
-            });
-            let _ = writeln!(
-                frames.lock().expect("output frames lock poisoned"),
-                "{}",
-                frame
-            );
+            let truncated = output
+                .lock()
+                .expect("output capture lock poisoned")
+                .capture(stream, chunk)
+                .unwrap_or(false);
+            if truncated {
+                let _ = mark_output_truncated(&directory);
+            }
         }
     })
 }
@@ -526,33 +634,25 @@ fn run_job_after_handoff(directory: &Path, request: &AgentRequest) -> Result<(),
         .and_then(|limits| limits.max_runtime_ms)
         .unwrap_or(request.timeout_ms)
         .min(request.timeout_ms);
-    let max_log_bytes = request
+    let max_output_bytes = request
         .resource_limits
         .as_ref()
         .and_then(|limits| limits.max_log_bytes)
         .unwrap_or(50 * 1024 * 1024);
-    let log = Arc::new(Mutex::new(
-        OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(directory.join("output.log"))
-            .map_err(|error| error.to_string())?,
-    ));
-    let frames = Arc::new(Mutex::new(
-        OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(directory.join("output.frames.ndjson"))
-            .map_err(|error| error.to_string())?,
-    ));
-    let offset = Arc::new(Mutex::new(
-        fs::metadata(directory.join("output.log"))
-            .map(|metadata| metadata.len())
-            .unwrap_or(0),
-    ));
+    let output = Arc::new(Mutex::new(OutputCapture::open(
+        directory,
+        max_output_bytes,
+    )?));
+    if output
+        .lock()
+        .expect("output capture lock poisoned")
+        .is_truncated()
+    {
+        mark_output_truncated(directory)?;
+    }
     let wrapped = format!(
         "ulimit -f {} 2>/dev/null || true; exec /bin/sh -lc {}",
-        max_log_bytes / 512,
+        max_output_bytes / 512,
         shell_quote(&request.command)
     );
     let mut child = Command::new("setsid")
@@ -571,15 +671,8 @@ fn run_job_after_handoff(directory: &Path, request: &AgentRequest) -> Result<(),
         .stderr
         .take()
         .ok_or_else(|| "missing job stderr".to_string())?;
-    let stdout_reader = capture_stream(
-        stdout,
-        "stdout",
-        log.clone(),
-        frames.clone(),
-        offset.clone(),
-        max_log_bytes,
-    );
-    let stderr_reader = capture_stream(stderr, "stderr", log, frames, offset, max_log_bytes);
+    let stdout_reader = capture_stream(stdout, "stdout", output.clone(), directory.to_path_buf());
+    let stderr_reader = capture_stream(stderr, "stderr", output, directory.to_path_buf());
     write_state(directory, &request, "running", None, None)?;
     let started = SystemTime::now();
     let mut cancelled = false;
@@ -761,6 +854,47 @@ mod tests {
         assert!(directory.join("launch.lock").is_dir());
 
         release_launch_lock(&directory.join("launch.lock")).expect("release test lock");
+        fs::remove_dir_all(directory).expect("remove test job directory");
+    }
+
+    #[test]
+    fn output_capture_bounds_log_and_frames_and_preserves_truncation_state() {
+        let directory = test_job_directory();
+        write_test_request(&directory, &directory);
+        let request = read_request(&directory).expect("read test request");
+        write_state(&directory, &request, "running", None, None).expect("write running state");
+
+        let output = Arc::new(Mutex::new(
+            OutputCapture::open(&directory, 512).expect("open output capture"),
+        ));
+        let reader = io::Cursor::new(vec![b'x'; 16 * 1024]);
+        capture_stream(reader, "stdout", output, directory.clone())
+            .join()
+            .expect("join output capture");
+        write_state(&directory, &request, "succeeded", Some(0), None)
+            .expect("write completed state");
+
+        let log = fs::read(directory.join("output.log")).expect("read output log");
+        let frame_line =
+            fs::read_to_string(directory.join("output.frames.ndjson")).expect("read output frames");
+        let frame: Value = serde_json::from_str(frame_line.trim()).expect("parse output frame");
+        let framed = BASE64
+            .decode(frame["data"].as_str().expect("frame data"))
+            .expect("decode frame data");
+        let stored_bytes = fs::metadata(directory.join("output.log"))
+            .expect("stat output log")
+            .len()
+            + fs::metadata(directory.join("output.frames.ndjson"))
+                .expect("stat output frames")
+                .len();
+        let state = read_state(&directory).expect("read completed state");
+
+        assert!(!log.is_empty());
+        assert_eq!(framed, log);
+        assert!(stored_bytes <= 512, "combined output must fit the quota");
+        assert_eq!(state["status"], "succeeded");
+        assert_eq!(state["truncated"], true);
+
         fs::remove_dir_all(directory).expect("remove test job directory");
     }
 }

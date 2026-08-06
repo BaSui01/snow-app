@@ -169,6 +169,7 @@ export type RemoteJobState = {
   updatedAt: string;
   completedAt?: string;
   reason?: string;
+  truncated?: boolean;
 };
 
 export type RemoteJobStartRequest = {

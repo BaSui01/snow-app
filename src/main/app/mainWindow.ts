@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain, nativeTheme, shell } from "electron";
+import { BrowserWindow, ipcMain, nativeTheme, shell, WebContents } from "electron";
 import { is } from "@electron-toolkit/utils";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -60,6 +60,30 @@ const registerThemeBackgroundSync = (): void => {
 // 在模块加载时注册一次主题背景色同步 IPC。
 registerThemeBackgroundSync();
 
+// DevTools 独立窗口由 Chromium 内部管理，默认显示 DevTools 默认图标而非应用图标。
+// Electron 的 DevTools 窗口同样关联了 owner BrowserWindow（NativeWindowViews），
+// 因此在 devtools-opened 时通过 fromWebContents 取到 DevTools 窗口并设置 Snow 图标，
+// 使 DevTools 窗口的标题栏 / 任务栏图标与应用保持一致（仅 Windows/Linux 生效）。
+const applyDevToolsSnowIcon = (contents: WebContents): void => {
+  contents.on("devtools-opened", () => {
+    if (isMacOS) {
+      return;
+    }
+    const devToolsContents = contents.devToolsWebContents;
+    if (!devToolsContents || devToolsContents.isDestroyed()) {
+      return;
+    }
+    const devToolsWindow = BrowserWindow.fromWebContents(devToolsContents);
+    if (devToolsWindow && !devToolsWindow.isDestroyed()) {
+      try {
+        devToolsWindow.setIcon(APP_ICON_PATH);
+      } catch {
+        // 窗口已关闭等竞态场景下忽略，下次打开 DevTools 时会重新设置。
+      }
+    }
+  });
+};
+
 export const createWindow = (): BrowserWindow => {
   // macOS 关闭窗口后进程不退出，用户点击 dock 图标会重新 createWindow。
   // 此时需重置 closeConfirmed，使新窗口关闭时仍弹出二次确认。
@@ -104,6 +128,9 @@ export const createWindow = (): BrowserWindow => {
   if (savedState?.isMaximized) {
     mainWindow.maximize();
   }
+
+  // 主窗口自身的 DevTools（如 F12）也应用 Snow 图标。
+  applyDevToolsSnowIcon(mainWindow.webContents);
 
   // 监听尺寸/位置/最大化状态变化，防抖后持久化到 userData。
   bindWindowStatePersistence(mainWindow);
@@ -172,6 +199,11 @@ export const createWindow = (): BrowserWindow => {
   // 避免 PTY 泄漏。首次 loadURL 时会话表为空，kill 空集无副作用。
   mainWindow.webContents.on("did-navigate", () => {
     killAllPtyForWebContents(mainWindow.webContents);
+  });
+
+  // webview（如浏览器面板）打开的 DevTools 独立窗口同样应用 Snow 图标。
+  mainWindow.webContents.on("did-attach-webview", (_event, webContents) => {
+    applyDevToolsSnowIcon(webContents);
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

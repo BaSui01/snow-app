@@ -218,6 +218,51 @@ openSsh("Durable Remote Job OpenSSH fault injection", () => {
     }, 30_000);
   }
 
+  it("reclaims an orphaned state lock before the runner records completion", async () => {
+    const jobId = randomUUID();
+    await startRemoteJob({
+      workspacePath: workspacePath(),
+      command: "sleep 1; printf 'lock-recovered\\n'",
+      timeoutMs: 10_000,
+      jobId,
+      backend: "posix-detach",
+    });
+    await waitFor(jobId, (result) => result.state.status === "running");
+
+    const sessionId = await connectSsh(passwordParams());
+    try {
+      const lockPath = `/home/snow/.local/state/snow-app/jobs/${jobId}/state.lock`;
+      await executeSshCommand(
+        sessionId,
+        [
+          `mkdir -- ${lockPath}`,
+          `printf 'interrupted-client\\n99999999\\n1\\n' > ${lockPath}/owner`,
+        ].join("\n")
+      );
+    } finally {
+      disconnectSsh(sessionId);
+    }
+
+    await expect(
+      waitFor(jobId, (result) => result.state.status === "succeeded", 15_000)
+    ).resolves.toMatchObject({
+      state: { status: "succeeded" },
+      output: expect.stringContaining("lock-recovered"),
+    });
+
+    const verificationSession = await connectSsh(passwordParams());
+    try {
+      await expect(
+        executeSshCommand(
+          verificationSession,
+          `test ! -e /home/snow/.local/state/snow-app/jobs/${jobId}/state.lock`
+        )
+      ).resolves.toBe("");
+    } finally {
+      disconnectSsh(verificationSession);
+    }
+  }, 30_000);
+
   it("creates and repairs the POSIX Job state root with mode 0700", async () => {
     const sessionId = await connectSsh(passwordParams());
     try {

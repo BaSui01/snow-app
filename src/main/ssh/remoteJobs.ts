@@ -55,6 +55,7 @@ const FAILURE_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
 const BACKEND_PROBE_CACHE_MS = 10 * 60 * 1000;
 const BACKEND_PROBE_FAILURES = new Map<string, string>();
 const STATE_LOCK_ATTEMPTS = 400;
+const STATE_LOCK_STALE_SECONDS = 5;
 const POSIX_CANCEL_GRACE_SECONDS = 5;
 const SYSTEMD_RUNTIME_GRACE_SECONDS = 10;
 const POSIX_RUNNER_POLL_SECONDS = 0.2;
@@ -355,82 +356,208 @@ const summarizeCommand = (): string => "Remote command";
 
 const pathForJob = (root: string, jobId: string): string => `${root}/${jobId}`;
 
-const runPowerShell = (
+const powerShellQuote = (value: string): string =>
+  `'${value.replace(/'/g, "''")}'`;
+
+const writePosixRemoteState = async (
   sessionId: string,
-  script: string,
-  timeoutMs = 15_000
-): Promise<string> =>
-  executeSshCommand(
+  jobDirectory: string,
+  previous: RemoteJobState,
+  next: RemoteJobState
+): Promise<RemoteJobState> => {
+  const lockPath = `${jobDirectory}/state.lock`;
+  const statePath = `${jobDirectory}/state.json`;
+  const revisionPath = `${jobDirectory}/revision`;
+  const owner = randomUUID();
+  const script = [
+    "set -eu",
+    `state_path=${shellQuote(statePath)}`,
+    `revision_path=${shellQuote(revisionPath)}`,
+    `lock=${shellQuote(lockPath)}`,
+    'lock_owner="$lock/owner"',
+    'lock_reclaim="$lock/reclaim"',
+    `owner=${shellQuote(owner)}`,
+    `expected_revision=${Math.max(0, Math.floor(previous.revision))}`,
+    `next_state=${shellQuote(JSON.stringify(next))}`,
+    'state_tmp="$state_path.$owner.tmp"',
+    'revision_tmp="$revision_path.$owner.tmp"',
+    "lock_held=0",
+    "owns_state_lock() {",
+    '  [ -f "$lock_owner" ] || return 1',
+    '  [ ! -e "$lock_reclaim" ] || return 1',
+    '  [ "$(sed -n \'1p\' "$lock_owner" 2>/dev/null || true)" = "$owner" ]',
+    "}",
+    "release_state_lock() {",
+    '  rm -f -- "$state_tmp" "$revision_tmp" 2>/dev/null || true',
+    '  if [ "$lock_held" -eq 1 ] && owns_state_lock; then',
+    '    rm -f -- "$lock_owner" 2>/dev/null || true',
+    '    rmdir -- "$lock" 2>/dev/null || true',
+    "  fi",
+    "  lock_held=0",
+    "}",
+    "cleanup_state_lock() {",
+    "  status=$?",
+    "  trap - EXIT HUP INT TERM",
+    "  release_state_lock",
+    '  exit "$status"',
+    "}",
+    "trap cleanup_state_lock EXIT",
+    "trap 'exit 128' HUP INT TERM",
+    "state_lock_is_stale() {",
+    '  [ -f "$lock_owner" ] || return 0',
+    '  lock_owner_pid=$(sed -n \'2p\' "$lock_owner" 2>/dev/null || true)',
+    '  lock_owner_started=$(sed -n \'3p\' "$lock_owner" 2>/dev/null || true)',
+    '  case "$lock_owner_pid" in ""|*[!0-9]*) return 0 ;; esac',
+    '  case "$lock_owner_started" in ""|*[!0-9]*) return 0 ;; esac',
+    '  lock_now=$(date +%s)',
+    '  [ "$lock_now" -ge "$lock_owner_started" ] || return 1',
+    `  [ $((lock_now - lock_owner_started)) -ge ${STATE_LOCK_STALE_SECONDS} ] || return 1`,
+    '  kill -0 "$lock_owner_pid" 2>/dev/null && return 1',
+    "  return 0",
+    "}",
+    "reclaim_stale_state_lock() {",
+    '  mkdir -- "$lock_reclaim" 2>/dev/null || return 1',
+    '  if ! state_lock_is_stale; then rmdir -- "$lock_reclaim" 2>/dev/null || true; return 1; fi',
+    '  rm -f -- "$lock_owner" 2>/dev/null || true',
+    '  rmdir -- "$lock_reclaim" 2>/dev/null || return 1',
+    '  rmdir -- "$lock" 2>/dev/null',
+    "}",
+    "acquire_state_lock() {",
+    "  attempt=0",
+    "  while [ \"$attempt\" -lt " + STATE_LOCK_ATTEMPTS + " ]; do",
+    '    if owns_state_lock; then lock_held=1; return 0; fi',
+    '    if mkdir -- "$lock" 2>/dev/null; then',
+    '      lock_now=$(date +%s)',
+    '      (umask 077; printf "%s\\n%s\\n%s\\n" "$owner" "$$" "$lock_now" > "$lock_owner")',
+    '      if owns_state_lock; then lock_held=1; return 0; fi',
+    '    else',
+    '      reclaim_stale_state_lock || true',
+    "    fi",
+    "    attempt=$((attempt + 1))",
+    "    sleep 0.025",
+    "  done",
+    "  return 75",
+    "}",
+    "acquire_state_lock",
+    'current_state=$(cat -- "$state_path")',
+    'current_revision=$(sed -n \'s/.*"revision"[[:space:]]*:[[:space:]]*\\([0-9][0-9]*\\).*/\\1/p\' "$state_path" | head -n 1)',
+    'case "$current_revision" in ""|*[!0-9]*) exit 1 ;; esac',
+    'if [ "$current_revision" != "$expected_revision" ] || grep -Eq \'"status"[[:space:]]*:[[:space:]]*"(succeeded|failed|timed_out|cancelled|lost|launch_failed|indeterminate)"\' "$state_path"; then',
+    '  printf "%s\\n" "$current_state"',
+    "  exit 0",
+    "fi",
+    'next_revision=$((current_revision + 1))',
+    '(umask 077; printf "%s\\n" "$next_revision" > "$revision_tmp")',
+    'mv -f -- "$revision_tmp" "$revision_path"',
+    '(umask 077; printf "%s\\n" "$next_state" > "$state_tmp")',
+    'mv -f -- "$state_tmp" "$state_path"',
+    'cat -- "$state_path"',
+  ].join("\n");
+  const output = await executeSshCommand(
+    sessionId,
+    `sh -lc ${shellQuote(script)}`,
+    { timeoutMs: 15_000 }
+  );
+  return parseRemoteState(JSON.parse(output), previous.jobId);
+};
+
+const writeWindowsRemoteState = async (
+  sessionId: string,
+  jobDirectory: string,
+  previous: RemoteJobState,
+  next: RemoteJobState
+): Promise<RemoteJobState> => {
+  const owner = randomUUID();
+  const statePath = `${jobDirectory}/state.json`;
+  const revisionPath = `${jobDirectory}/revision`;
+  const lockPath = `${jobDirectory}/state.lock`;
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    `$statePath = ${powerShellQuote(statePath)}`,
+    `$revisionPath = ${powerShellQuote(revisionPath)}`,
+    `$stateLockPath = ${powerShellQuote(lockPath)}`,
+    "$stateLockOwnerPath = Join-Path $stateLockPath 'owner.json'",
+    "$stateLockReclaimPath = Join-Path $stateLockPath 'reclaim'",
+    `$owner = ${powerShellQuote(owner)}`,
+    `$expectedRevision = ${Math.max(0, Math.floor(previous.revision))}`,
+    `$nextStateJson = ${powerShellQuote(JSON.stringify(next))}`,
+    "$utf8NoBom = [System.Text.UTF8Encoding]::new($false)",
+    "$lockHeld = $false",
+    "function Test-StateLockOwner {",
+    "  if (-not (Test-Path -LiteralPath $stateLockOwnerPath) -or (Test-Path -LiteralPath $stateLockReclaimPath)) { return $false }",
+    "  try { return ((Get-Content -LiteralPath $stateLockOwnerPath -Raw | ConvertFrom-Json).owner -eq $owner) } catch { return $false }",
+    "}",
+    "function Exit-StateLock {",
+    "  if ($lockHeld -and (Test-StateLockOwner)) {",
+    "    Remove-Item -LiteralPath $stateLockOwnerPath -Force -ErrorAction SilentlyContinue",
+    "    Remove-Item -LiteralPath $stateLockPath -Force -ErrorAction SilentlyContinue",
+    "  }",
+    "  $lockHeld = $false",
+    "}",
+    "function Test-StateLockStale {",
+    "  if (-not (Test-Path -LiteralPath $stateLockOwnerPath)) { return $true }",
+    "  try { $metadata = Get-Content -LiteralPath $stateLockOwnerPath -Raw | ConvertFrom-Json } catch { return $true }",
+    "  if ($metadata.pid -isnot [long] -or $metadata.createdAtEpoch -isnot [long] -or $metadata.processStartTicks -isnot [long]) { return $true }",
+    "  $age = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - [long]$metadata.createdAtEpoch",
+    `  if ($age -lt ${STATE_LOCK_STALE_SECONDS}) { return $false }`,
+    "  try {",
+    "    $process = Get-Process -Id ([int]$metadata.pid) -ErrorAction Stop",
+    "    if ($process.StartTime.ToUniversalTime().Ticks -eq [long]$metadata.processStartTicks) { return $false }",
+    "  } catch {}",
+    "  return $true",
+    "}",
+    "function Try-ReclaimStateLock {",
+    "  try { New-Item -ItemType Directory -Path $stateLockReclaimPath -ErrorAction Stop | Out-Null } catch { return $false }",
+    "  if (-not (Test-StateLockStale)) { Remove-Item -LiteralPath $stateLockReclaimPath -Force -ErrorAction SilentlyContinue; return $false }",
+    "  try { Remove-Item -LiteralPath $stateLockPath -Force -Recurse -ErrorAction Stop; return $true } catch { return $false }",
+    "}",
+    "function Enter-StateLock {",
+    "  $deadline = [DateTime]::UtcNow.AddMilliseconds(10000)",
+    "  while ([DateTime]::UtcNow -lt $deadline) {",
+    "    if (Test-StateLockOwner) { $lockHeld = $true; return }",
+    "    try {",
+    "      New-Item -ItemType Directory -Path $stateLockPath -ErrorAction Stop | Out-Null",
+    "      $metadata = [ordered]@{ owner = $owner; pid = $PID; createdAtEpoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds(); processStartTicks = [Diagnostics.Process]::GetCurrentProcess().StartTime.ToUniversalTime().Ticks }",
+    "      [System.IO.File]::WriteAllText($stateLockOwnerPath, ($metadata | ConvertTo-Json -Compress), $utf8NoBom)",
+    "      if (Test-StateLockOwner) { $lockHeld = $true; return }",
+    "    } catch {",
+    "      if (Test-StateLockStale) { [void](Try-ReclaimStateLock) }",
+    "    }",
+    "    Start-Sleep -Milliseconds 25",
+    "  }",
+    "  throw 'Remote Job state lock timed out'",
+    "}",
+    "$result = $null",
+    "$revisionTemporary = \"$revisionPath.$owner.tmp\"",
+    "$stateTemporary = \"$statePath.$owner.tmp\"",
+    "try {",
+    "  Enter-StateLock",
+    "  $current = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json",
+    "  $terminal = $current.status -in @('succeeded','failed','timed_out','cancelled','lost','launch_failed','indeterminate')",
+    "  if ([int]$current.revision -ne $expectedRevision -or $terminal) {",
+    "    $result = $current",
+    "  } else {",
+    "    $nextRevision = [int]$current.revision + 1",
+    "    [System.IO.File]::WriteAllText($revisionTemporary, [string]$nextRevision, [System.Text.Encoding]::ASCII)",
+    "    [System.IO.File]::Replace($revisionTemporary, $revisionPath, $null)",
+    "    [System.IO.File]::WriteAllText($stateTemporary, $nextStateJson, $utf8NoBom)",
+    "    [System.IO.File]::Replace($stateTemporary, $statePath, $null)",
+    "    $result = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json",
+    "  }",
+    "  [Console]::Out.Write(($result | ConvertTo-Json -Compress))",
+    "} finally {",
+    "  Remove-Item -LiteralPath $revisionTemporary, $stateTemporary -Force -ErrorAction SilentlyContinue",
+    "  Exit-StateLock",
+    "}",
+  ].join("\r\n");
+  const output = await executeSshCommand(
     sessionId,
     `powershell.exe -NoProfile -NonInteractive -EncodedCommand ${encodeWindowsPowerShell(
       script
     )}`,
-    { timeoutMs }
+    { timeoutMs: 15_000 }
   );
-
-const runPlatformScript = (
-  sessionId: string,
-  capabilities: SshCapabilities,
-  posixScript: string,
-  powerShellScript: string,
-  timeoutMs = 15_000
-): Promise<string> =>
-  capabilities.platform === "windows"
-    ? runPowerShell(sessionId, powerShellScript, timeoutMs)
-    : executeSshCommand(sessionId, `sh -lc ${shellQuote(posixScript)}`, {
-        timeoutMs,
-      });
-
-const powerShellQuote = (value: string): string =>
-  `'${value.replace(/'/g, "''")}'`;
-
-const withRemoteStateLock = async <T>(
-  sessionId: string,
-  capabilities: SshCapabilities,
-  jobDirectory: string,
-  operation: () => Promise<T>
-): Promise<T> => {
-  const lockPath = `${jobDirectory}/state.lock`;
-  const acquirePosix = [
-    `lock=${shellQuote(lockPath)}`,
-    `i=0`,
-    `while ! mkdir -- "$lock" 2>/dev/null; do`,
-    `  i=$((i + 1))`,
-    `  if [ "$i" -ge ${STATE_LOCK_ATTEMPTS} ]; then exit 75; fi`,
-    `  sleep 0.025`,
-    `done`,
-  ].join("\n");
-  const acquireWindows = [
-    `$lock = ${powerShellQuote(lockPath)}`,
-    `$acquired = $false`,
-    `for ($i = 0; $i -lt ${STATE_LOCK_ATTEMPTS}; $i++) {`,
-    `  try { New-Item -ItemType Directory -Path $lock -ErrorAction Stop | Out-Null; $acquired = $true; break } catch { Start-Sleep -Milliseconds 25 }`,
-    `}`,
-    `if (-not $acquired) { throw 'Remote Job state lock timed out' }`,
-  ].join("\n");
-  const releasePosix = `rmdir -- ${shellQuote(lockPath)} 2>/dev/null || true`;
-  const releaseWindows = `Remove-Item -LiteralPath ${powerShellQuote(
-    lockPath
-  )} -Force -Recurse -ErrorAction SilentlyContinue`;
-
-  await runPlatformScript(
-    sessionId,
-    capabilities,
-    acquirePosix,
-    acquireWindows,
-    15_000
-  );
-  try {
-    return await operation();
-  } finally {
-    await runPlatformScript(
-      sessionId,
-      capabilities,
-      releasePosix,
-      releaseWindows,
-      15_000
-    ).catch(() => undefined);
-  }
+  return parseRemoteState(JSON.parse(output), previous.jobId);
 };
 
 const remotePathExists = async (sessionId: string, path: string): Promise<boolean> =>
@@ -594,38 +721,19 @@ const writeRemoteState = async (
   update: Partial<RemoteJobState>,
   capabilities: SshCapabilities
 ): Promise<RemoteJobState> => {
-  return withRemoteStateLock(sessionId, capabilities, jobDirectory, async () => {
-    const current = await readRemoteState(sessionId, jobDirectory, previous.jobId);
-    // A caller may have read an older snapshot while the Runner advanced the
-    // state. Returning the authoritative snapshot prevents a stale terminal
-    // write from changing a completed job back to cancelled/lost.
-    if (
-      current.revision !== previous.revision ||
-      TERMINAL_STATUSES.has(current.status)
-    ) {
-      return current;
-    }
-    const next: RemoteJobState = {
-      ...current,
-      ...update,
-      schemaVersion: JOB_SCHEMA_VERSION,
-      revision: current.revision + 1,
-      updatedAt: new Date().toISOString(),
-    };
-    // Keep the revision source used by all remote Runners in sync with the
-    // atomically replaced state file while holding the shared lock.
-    await writeInternalSshFile(
-      sessionId,
-      `${jobDirectory}/revision`,
-      `${next.revision}\n`
-    );
-    await writeInternalSshFile(
-      sessionId,
-      `${jobDirectory}/state.json`,
-      `${JSON.stringify(next)}\n`
-    );
-    return next;
-  });
+  const next: RemoteJobState = {
+    ...previous,
+    ...update,
+    schemaVersion: JOB_SCHEMA_VERSION,
+    revision: previous.revision + 1,
+    updatedAt: new Date().toISOString(),
+  };
+  // Keep the conditional read, revision update, state replacement, and lock
+  // cleanup in one remote process. A lost SSH channel can no longer strand a
+  // client-held lock between independent SFTP operations.
+  return capabilities.platform === "windows"
+    ? writeWindowsRemoteState(sessionId, jobDirectory, previous, next)
+    : writePosixRemoteState(sessionId, jobDirectory, previous, next);
 };
 
 const getUnitName = (jobId: string): string =>
@@ -879,20 +987,63 @@ const buildRunnerScript = (jobId: string, createdAt: string): string => [
   'log_path="$job_dir/output.log"',
   'revision_path="$job_dir/revision"',
   'state_lock="$job_dir/state.lock"',
+  'state_lock_owner="$state_lock/owner"',
+  'state_lock_reclaim="$state_lock/reclaim"',
+  'state_lock_owner_id="$job_id:$$:$(date +%s)"',
+  `state_lock_stale_seconds=${STATE_LOCK_STALE_SECONDS}`,
+  'state_lock_held=0',
   'runner_pid="$$"',
   'printf "%s\\n" "$runner_pid" > "$job_dir/runner.pid"',
   "chmod 600 \"$job_dir/runner.pid\" 2>/dev/null || true",
   "ulimit -f 102400 2>/dev/null || true",
-  "acquire_state_lock() {",
-  '  i=0',
-  '  while ! mkdir -- "$state_lock" 2>/dev/null; do',
-  '    i=$((i + 1))',
-  `    if [ "$i" -ge ${STATE_LOCK_ATTEMPTS} ]; then return 75; fi`,
-  '    sleep 0.025',
-  '  done',
+  "owns_state_lock() {",
+  '  [ -f "$state_lock_owner" ] || return 1',
+  '  [ ! -e "$state_lock_reclaim" ] || return 1',
+  '  [ "$(sed -n \'1p\' "$state_lock_owner" 2>/dev/null || true)" = "$state_lock_owner_id" ]',
   "}",
   "release_state_lock() {",
-  '  rmdir -- "$state_lock" 2>/dev/null || true',
+  '  if [ "$state_lock_held" -eq 1 ] && owns_state_lock; then',
+  '    rm -f -- "$state_lock_owner" 2>/dev/null || true',
+  '    rmdir -- "$state_lock" 2>/dev/null || true',
+  "  fi",
+  "  state_lock_held=0",
+  "}",
+  "trap 'release_state_lock' EXIT",
+  "trap 'exit 128' HUP INT TERM",
+  "state_lock_is_stale() {",
+  '  [ -f "$state_lock_owner" ] || return 0',
+  '  lock_owner_pid=$(sed -n \'2p\' "$state_lock_owner" 2>/dev/null || true)',
+  '  lock_owner_started=$(sed -n \'3p\' "$state_lock_owner" 2>/dev/null || true)',
+  '  case "$lock_owner_pid" in ""|*[!0-9]*) return 0 ;; esac',
+  '  case "$lock_owner_started" in ""|*[!0-9]*) return 0 ;; esac',
+  '  lock_now=$(date +%s)',
+  '  [ "$lock_now" -ge "$lock_owner_started" ] || return 1',
+  '  [ $((lock_now - lock_owner_started)) -ge "$state_lock_stale_seconds" ] || return 1',
+  '  kill -0 "$lock_owner_pid" 2>/dev/null && return 1',
+  "  return 0",
+  "}",
+  "reclaim_stale_state_lock() {",
+  '  mkdir -- "$state_lock_reclaim" 2>/dev/null || return 1',
+  '  if ! state_lock_is_stale; then rmdir -- "$state_lock_reclaim" 2>/dev/null || true; return 1; fi',
+  '  rm -f -- "$state_lock_owner" 2>/dev/null || true',
+  '  rmdir -- "$state_lock_reclaim" 2>/dev/null || return 1',
+  '  rmdir -- "$state_lock" 2>/dev/null',
+  "}",
+  "acquire_state_lock() {",
+  "  i=0",
+  `  while [ "$i" -lt ${STATE_LOCK_ATTEMPTS} ]; do`,
+  '    if owns_state_lock; then state_lock_held=1; return 0; fi',
+  '    if mkdir -- "$state_lock" 2>/dev/null; then',
+  '      lock_now=$(date +%s)',
+  '      (umask 077; printf "%s\\n%s\\n%s\\n" "$state_lock_owner_id" "$$" "$lock_now" > "$state_lock_owner")',
+  '      if owns_state_lock; then state_lock_held=1; return 0; fi',
+  "    else",
+  "      reclaim_stale_state_lock || true",
+  "    fi",
+  '    i=$((i + 1))',
+  '    sleep 0.025',
+  "  done",
+  "  return 75",
   "}",
   "next_revision() {",
   '  current=$(cat "$revision_path" 2>/dev/null || printf 0)',
@@ -904,7 +1055,7 @@ const buildRunnerScript = (jobId: string, createdAt: string): string => [
   '  status="$1"',
   '  exit_code="${2:-null}"',
   '  reason="${3:-}"',
-  '  acquire_state_lock',
+  '  acquire_state_lock || return $?',
   "  if [ -f \"$job_dir/state.json\" ] && grep -Eq '\"status\":\"(succeeded|failed|timed_out|cancelled|lost|launch_failed|indeterminate)\"' \"$job_dir/state.json\"; then",
   '    release_state_lock',
   '    return 0',
@@ -1647,7 +1798,9 @@ export const startRemoteJob = async (
           capabilities
         ).catch(() => ({
           ...current,
-          status: (confirmedRejection ? "launch_failed" : "indeterminate") as const,
+          status: confirmedRejection
+            ? ("launch_failed" as const)
+            : ("indeterminate" as const),
           revision: current.revision + 1,
           updatedAt: new Date().toISOString(),
         }));

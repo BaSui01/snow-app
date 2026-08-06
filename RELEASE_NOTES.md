@@ -1,54 +1,36 @@
 # Release Notes
 
-## Unreleased
+## v0.1.21
 
 ## New Features
 
-- **Image Generation (imagegen) upgrades**:
-  - **Remote URL results are downloaded & persisted**: when the upstream
-    returns `data[].url` (e.g. AWS S3 pre-signed links) instead of base64,
-    the tool now downloads the image (30s timeout / 50MB cap / content-type
-    check), stores it into the image library (disk + `image_library` index),
-    and renders it in the gallery like any other result — no more dead links,
-    and the "Remote image links" list stays as a fallback (failed loads show
-    a placeholder and open the original URL).
-  - **Multi-image per call via internal fan-out**: `n` now accepts 1-8. Since
-    relays/upstreams reject `n>1` in a single request, one call fans out to
-    `n` concurrent sub-requests (each `n=1`), merges the results, and persists
-    all images at once. Partial failures keep the successful images and report
-    the failed count. Streaming preview is disabled when `n>1`.
-  - **Per-request prompts & reference images**: new `prompts` (array of 1-8
-    prompt strings, one per image) and `requestImages` (array of reference
-    image groups, one per request) let a single call generate a whole set of
-    DIFFERENT designs or restyle several source images concurrently.
-  - **Gallery UI**: remote-URL results are displayed as real thumbnails via
-    the `img-proxy://` protocol (zoom lightbox + save supported), multi-prompt
-    calls render each prompt with a numbered badge, and reference-image groups
-    show "N groups total".
-- **Browser Automation Enhancement**:
-  - **Accessibility-tree snapshot** (`browser-devtools action=ax`): engine-level
-    accessibility tree via CDP `Accessibility.getFullAXTree` (pierces closed
-    shadow DOM), serialized with stable `[uid=eN]` refs; `verbose` / `maxNodes`
-    options. `browser-click` / `browser-type` / `browser-select_option` /
-    `browser-hover` / `browser-upload-file` accept `ref=` for deterministic
-    targeting (`uid → DOM.resolveNode → Runtime.callFunctionOn`).
-  - **Network debugging**: `action=networkDetails` (full request/response
-    headers + bodies via CDP, 128KB cap), `action=networkState` (offline
-    simulation), `action=route` / `routeClear` (response mocking via the CDP
-    Fetch domain, `/regex/` or substring patterns). CDP network records are the
-    primary source with webRequest fallback.
-  - **Encrypted login-state save & restore**: `action=storageSave` /
-    `storageRestore` persist cookies + localStorage encrypted with OS-level
-    safeStorage (never plaintext; keyring unavailable → refuse), origin-checked
-    localStorage injection, automatic encrypted backup before restore, and
-    `action=cookies` / `cookieDelete` with masked values by default.
-  - **Interaction completeness**: new `browser-wait` (text appear/disappear /
-    fixed time), `browser-press_key` (keys or `Ctrl+A`-style combinations),
-    `browser-select_option`, `browser-hover`, `browser-upload-file` (CDP file
-    injection, no chooser dialog), `browser-navigate_back` /
-    `browser-navigate_forward` (history navigation with wait).
-  - **Performance trace**: `action=trace` records via the CDP Tracing domain
-    and returns long-task / event statistics (main-thread jank indicators).
+- **AI Code Review (`/review`)**: Review selected Git changes (staged, unstaged, or commits) with a read-only prompt. The prompt is base64-tagged (`@@review:...@@`) and rendered as a chip; Rust expands it for generation and session titles. Added `git:commit-diff` IPC backed by Rust and SSH.
+- **Workspace Directory Management**: Right-click a workspace directory to rename or set it as the active directory (inline rename with Enter/Esc/on-blur commit). Directory add and project creation now use a generic FormDialog with drag-and-drop folder support.
+- **IDE Detection**: Installed IDEs are detected on Windows/Linux/macOS and offered in an "Open with" submenu with real brand icons (VS Code, Cursor, JetBrains, …) and a lucide fallback.
+- **SSH Improvements**: Connection errors are classified (network/timeout/auth/sftp/invalid/unknown) and localized; hosts can be imported from `~/.ssh/config` (with `~`/`%d` expansion) to prefill the connect wizard.
+- **Terminal Session Identity**: Local processes (one-shot commands and persistent tabs) inherit the Snow session identity via `SNOW_SESSION_ID`, `TRELLIS_CONTEXT_ID`, `SNOW_CWD`, `SNOW_PLATFORM`, without overriding inherited values.
+- **Tool Call Rendering**: Dedicated cards for skill / config / app-control / dbx tool calls; tool-name badges use stable category-based lucide icons and localized names (46 new i18n keys); DBX double-prefix normalization; ImageGen gallery drops columns in narrow containers.
+- **Markdown Image Lightbox**: Clicking an image in a markdown reply opens a zoomed lightbox with download.
+- **Database Recovery**: Corrupted SQLite databases are detected and automatically recovered at startup.
+- **MCP**: JSON draft editing refactored to single-entry `{name: {...}}` mapping with lenient parsing (container + legacy formats); external tool calls retry once via a legacy initialize handshake on "Transport closed"; stdio stderr is forwarded to app logs.
+- **Config Server**: New `personalization` scope for `~/.snow/ROLE.md`; config writes are pre-backed up and cleaned after success; `config-delete` requires explicit user confirmation.
+- **Session Isolation**: Plan/Goal mode is strictly per-session — the global mode settings chain was removed entirely.
+- **Agent Loop**: Compaction only runs when the loop will continue; `resume_after_compaction` prevents duplicate handoff after compaction; codelens refocused on symbol navigation (diagnose tool and semantic analyzers removed).
+- **Hooks**: Sub-agent lifecycle hooks are bound to the tool card; execution results fill the chat width with structured action details and localized labels.
+
+## Improvements
+
+- **ImageGen**: Remote-URL results are downloaded and persisted to the image library; `n` accepts 1-8 via internal fan-out; per-request `prompts` / `requestImages`; gallery migration is staged (prepare/chunk/commit) with crash recovery and rollback.
+- **Browser Automation**: Accessibility-tree snapshots (`action=ax`), network debugging (`networkDetails` / `networkState` / `route`), encrypted login-state save/restore, performance traces, and new interaction tools (`wait`, `press_key`, `select_option`, `hover`, `upload-file`, back/forward).
+- **Browser**: MCP tool names unified with upstream style (`press_key`, `select_option`); `browser-wait` gains `selector`/`selectorGone`; `ref` targeting auto scrolls into view; click uses a real 50 ms press interval; webview context menu; detached DevTools windows are branded with the Snow icon and lifecycle-managed.
+- Token tooltips show compact K/M/B units; Mermaid rendering recovers from import failures and retries on the next batch; conversation summaries follow the chat thinking configuration for reasoning effort; checkpoint diffs are cached to avoid repeated file reads.
+
+## Bug Fixes
+
+- `safeSend` IPC avoids renderer frame-release races; the window self-heals after a renderer crash.
+- ESC no longer accidentally cancels the session when a command/file panel is open.
+- Fixed `browser-type` selector syntax error; `openSettings` now accepts `imagegen-settings` / `image-library` pages.
+- Completed 63 missing i18n keys across all locales.
 
 ## v0.1.20
 

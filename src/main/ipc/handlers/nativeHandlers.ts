@@ -67,21 +67,6 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   ipcMain.handle("settings:set-yolo-mode", (_event, enabled: boolean) =>
     native.setYoloMode(enabled)
   );
-  ipcMain.handle("settings:get-plan-mode", () => native.getPlanMode());
-  ipcMain.handle("settings:set-plan-mode", (_event, enabled: boolean) =>
-    native.setPlanMode(enabled)
-  );
-  ipcMain.handle("settings:get-goal-mode", () => native.getGoalMode());
-  ipcMain.handle("settings:set-goal-mode", (_event, enabled: boolean) =>
-    native.setGoalMode(enabled)
-  );
-  ipcMain.handle("settings:get-goal-mode-token-budget", () =>
-    native.getGoalModeTokenBudget()
-  );
-  ipcMain.handle(
-    "settings:set-goal-mode-token-budget",
-    (_event, budget: number) => native.setGoalModeTokenBudget(budget)
-  );
   ipcMain.handle("settings:get-conversation-modes", (_event, conversationId: string) =>
     native.getConversationModes(conversationId)
   );

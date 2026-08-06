@@ -115,23 +115,17 @@ pub fn prepare_context_request(
         )
     } else if request.goal_mode {
         // Per-conversation budget isolation: the conversation's own override
-        // wins, then the global default budget, then the built-in default.
+        // wins; conversations without one use the built-in default. The
+        // formerly-global budget setting is no longer written by the UI
+        // (Plan/Goal Mode toggles are strictly per-conversation), so it must
+        // not leak into conversations that never set a budget of their own.
         let goal_token_budget = if !conversation_id.is_empty() {
             get_conversation_modes(request.database_path, &conversation_id)
                 .ok()
                 .and_then(|modes| modes.goal_mode_token_budget)
-                .or_else(|| {
-                    crate::storage::services::system_settings::get_goal_mode_token_budget(
-                        request.database_path,
-                    )
-                    .ok()
-                })
                 .unwrap_or(2000000)
         } else {
-            crate::storage::services::system_settings::get_goal_mode_token_budget(
-                request.database_path,
-            )
-            .unwrap_or(2000000)
+            2000000
         };
         build_goal_mode_system_prompt(
             &working_directory,

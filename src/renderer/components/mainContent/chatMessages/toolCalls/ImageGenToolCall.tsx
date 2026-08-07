@@ -29,7 +29,7 @@ type ImageGenToolCallProps = {
 };
 
 /**
- * upload 相对路径 → data URL 的进程内缓存。
+ * 参考图路径（绝对磁盘路径或 upload/ 相对路径）→ data URL 的进程内缓存。
  * path 引用（纯文本主模型场景的 [Reference image #N ...] 块）需要经主进程
  * 读取文件，同一图片在历史消息中会反复渲染，缓存避免重复 IPC。
  */

@@ -17,7 +17,7 @@
 //!   3. a clear error telling the agent to configure the settings or pass the
 //!      missing argument.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use base64::Engine;
@@ -1050,12 +1050,12 @@ impl McpService for ImageGenService {
                     },
                     "images": {
                         "type": "array",
-                        "description": "Reference images for image-to-image editing: [{ \\\"data\\\": \\\"<base64>\\\", \\\"mimeType\\\": \\\"image/png\\\" }] or [{ \\\"path\\\": \\\"upload/2026-07-25/x.png\\\", \\\"mimeType\\\": \\\"image/png\\\" }]. For `data`, extract base64 from the user's attached images in the conversation (the @@image:data:...@@ tags / multimodal image blocks). For `path`, copy the exact JSON object from a [Reference image #N for imagegen-generate: ...] block in a textified user message (text-only main model): the server resolves it relative to the conversation's upload/ directory and reads the file itself, so do NOT paste raw base64 into the context. Max 5 images, ~20MB each. When provided: OpenAI -> /images/edits endpoint; Gemini -> inlineData parts (prompt-based editing). When `requestImages` is provided, this `images` group is IGNORED (each request uses its own group).",
+                        "description": "Reference images for image-to-image editing: [{ \\\"data\\\": \\\"<base64>\\\", \\\"mimeType\\\": \\\"image/png\\\" }] or [{ \\\"path\\\": \\\"upload/2026-07-25/x.png\\\", \\\"mimeType\\\": \\\"image/png\\\" }]. For `data`, extract base64 from the user's attached images in the conversation (the @@image:data:...@@ tags / multimodal image blocks). For `path`, copy the exact JSON object from a [Reference image #N for imagegen-generate: ...] block in a textified user message (text-only main model), or use the file's absolute disk path (e.g. C:/Users/xx/photo.png): relative paths are resolved against the conversation's upload/ directory; the server reads the file itself, so do NOT paste raw base64 into the context. Max 5 images, ~20MB each. When provided: OpenAI -> /images/edits endpoint; Gemini -> inlineData parts (prompt-based editing). When `requestImages` is provided, this `images` group is IGNORED (each request uses its own group).",
                         "items": {
                             "type": "object",
                             "properties": {
                                 "data": { "type": "string", "description": "Base64-encoded image data (without the data: prefix)" },
-                                "path": { "type": "string", "description": "Relative file path under the conversation's upload/ directory, e.g. upload/2026-07-25/hash.png (from [Reference image #N for imagegen-generate: ...] blocks)" },
+                                "path": { "type": "string", "description": "Absolute disk path (e.g. C:/path/to/photo.png) or a path relative to the conversation's upload/ directory (e.g. upload/2026-07-25/hash.png, from [Reference image #N for imagegen-generate: ...] blocks)" },
                                 "mimeType": { "type": "string", "description": "Image MIME type, e.g. image/png, image/jpeg, image/webp" }
                             },
                             "required": ["data", "mimeType"]
@@ -1077,7 +1077,7 @@ impl McpService for ImageGenService {
                                 "type": "object",
                                 "properties": {
                                     "data": { "type": "string", "description": "Base64-encoded image data (without the data: prefix)" },
-                                    "path": { "type": "string", "description": "Relative file path under the conversation's upload/ directory, e.g. upload/2026-07-25/hash.png (from [Reference image #N for imagegen-generate: ...] blocks)" },
+                                    "path": { "type": "string", "description": "Absolute disk path (e.g. C:/path/to/photo.png) or a path relative to the conversation's upload/ directory (e.g. upload/2026-07-25/hash.png, from [Reference image #N for imagegen-generate: ...] blocks)" },
                                     "mimeType": { "type": "string", "description": "Image MIME type, e.g. image/png, image/jpeg, image/webp" }
                                 },
                                 "required": ["data", "mimeType"]
@@ -1192,10 +1192,12 @@ struct ReferenceImage {
 /// 解析 `images` 参数。每个元素支持两种引用方式：
 /// - `{ "data": "<base64>", "mimeType": "image/png" }` —— 内联 base64
 ///   （兼容 `data:image/png;base64,...` data URL 前缀，自动剥离）；
-/// - `{ "path": "upload/2026-07-25/hash.png", "mimeType": "image/png" }`
-///   —— 相对数据库文件所在目录的磁盘路径（来自纯文本主模型消息中的
-///   `[Reference image #N for imagegen-generate: ...]` 引用块），由服务端
-///   读取文件并转 base64，避免把大段 base64 塞进对话上下文。
+/// - `{ "path": "C:/Users/xx/photo.png", "mimeType": "image/png" }`
+///   —— 绝对磁盘路径（用户本地任意目录的图片），或
+///   `upload/2026-07-25/hash.png` 这种相对数据库文件所在目录的路径（来自
+///   纯文本主模型消息中的 `[Reference image #N for imagegen-generate: ...]`
+///   引用块），由服务端读取文件并转 base64，避免把大段 base64 塞进对话
+///   上下文。
 /// 最多 14 张（Gemini 3 Pro Image 官方上限），单张 base64 上限约 20MB。
 /// 解析参考图数组（`images` 或 `requestImages` 的单个分组）。
 fn parse_reference_image_items(
@@ -1333,10 +1335,13 @@ fn parse_request_images(
     Ok(result)
 }
 
-/// 按磁盘相对路径读取参考图（`{ "path": ... }` 引用块形式）。
+/// 按磁盘路径读取参考图（`{ "path": ... }` 引用块形式）。
 ///
-/// 仅允许 `upload/` 目录内的相对路径（相对数据库文件所在目录），拒绝绝对
-/// 路径与路径穿越（`..`），防止模型利用该参数读取 upload 目录以外的文件。
+/// 支持两种形式：
+/// - 绝对磁盘路径（如 `C:/Users/xx/photo.png`、`/home/xx/photo.png`）：
+///   直接读取，用于从任意目录引用用户本地图片；
+/// - `upload/` 目录内的相对路径（相对数据库文件所在目录）：读取会话上传
+///   目录下的文件；拒绝路径穿越（`..`），防止相对路径逃逸出 upload 目录。
 fn load_reference_image_from_path(
     path: &str,
     item: &Value,
@@ -1351,19 +1356,24 @@ fn load_reference_image_from_path(
             "Reference image `path` must not be empty".to_string(),
         ));
     }
-    if !normalized.starts_with("upload/") || normalized.contains("..") {
-        return Err(Error::new(
-            Status::InvalidArg,
-            format!(
-                "Invalid reference image path: \"{path}\". Only relative paths under the conversation's upload/ directory are allowed (e.g. upload/2026-07-25/hash.png)."
-            ),
-        ));
-    }
-
-    let file_path = database_path
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join(&normalized);
+    let file_path = if Path::new(&normalized).is_absolute() {
+        // 绝对磁盘路径：用户本地任意目录的图片，直接读取
+        PathBuf::from(&normalized)
+    } else {
+        // 相对路径：仅允许 upload/ 目录内，拒绝路径穿越（..）
+        if !normalized.starts_with("upload/") || normalized.contains("..") {
+            return Err(Error::new(
+                Status::InvalidArg,
+                format!(
+                    "Invalid reference image path: \"{path}\". Use an absolute file path (e.g. C:/path/to/image.png) or a relative path under the conversation's upload/ directory (e.g. upload/2026-07-25/hash.png)."
+                ),
+            ));
+        }
+        database_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join(&normalized)
+    };
     let bytes = std::fs::read(&file_path).map_err(|_| {
         Error::new(
             Status::InvalidArg,

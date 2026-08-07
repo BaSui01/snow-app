@@ -156,9 +156,9 @@ export const parseImageGenArgs = (args: string): ParsedImageGenArgs | null => {
             // 内联 base64 参考图
             images.push({ data: item.data, mimeType: item.mimeType });
           } else if (typeof item.path === "string" && item.path.trim() !== "") {
-            // 磁盘相对路径引用（来自文本化消息的 [Reference image #N ...] 块），
-            // 服务端已按此路径读取原图完成图生图；渲染端无法直接访问该路径，
-            // 以占位图展示
+            // 磁盘路径引用（绝对路径或 upload/ 相对路径，来自文本化消息的
+            // [Reference image #N ...] 块），服务端已按此路径读取原图完成
+            // 图生图；渲染端无法直接访问该路径，以占位图展示
             images.push({
               data: "",
               mimeType: item.mimeType,

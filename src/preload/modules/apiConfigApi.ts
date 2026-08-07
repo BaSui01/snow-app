@@ -262,7 +262,7 @@ export const apiConfigApi = {
   ): Promise<void> =>
     ipcRenderer.invoke("settings:set-keyboard-shortcuts", settings),
 
-  /** 把 upload 目录下的相对路径解析为 data URL（如 imagegen 参考图缩略图），失败返回 null */
+  /** 把参考图路径解析为 data URL（绝对磁盘路径或 upload/ 相对路径，如 imagegen 参考图缩略图），失败返回 null */
   resolveUploadImage: (relativePath: string): Promise<string | null> =>
     ipcRenderer.invoke("images:resolve-upload-image", relativePath),
 };

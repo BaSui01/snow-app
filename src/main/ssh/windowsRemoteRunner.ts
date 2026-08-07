@@ -4,6 +4,7 @@ import {
   getSshSession,
   type SshCapabilities,
 } from "./sshManager";
+import { WINDOWS_JOB_OBJECT_INTEROP_SCRIPT } from "./windowsJobObject";
 
 const powerShellQuote = (value: string): string =>
   `'${value.replace(/'/g, "''")}'`;
@@ -272,27 +273,7 @@ export const buildWindowsRunnerScript = (jobId: string, createdAt: string): stri
     "    if (-not [SnowWindowsJob]::MoveFileEx($temporary, $statePath, [SnowWindowsJob]::MoveFileReplaceExisting -bor [SnowWindowsJob]::MoveFileWriteThrough)) { throw [ComponentModel.Win32Exception]::new() }",
     "  } finally { Exit-StateLock }",
     "}",
-    "Add-Type @'",
-    "using System;",
-    "using System.Runtime.InteropServices;",
-    "public static class SnowWindowsJob {",
-    "  [DllImport(\"kernel32.dll\", CharSet=CharSet.Unicode, SetLastError=true)] public static extern IntPtr CreateJobObject(IntPtr attributes, string name);",
-    "  [DllImport(\"kernel32.dll\", SetLastError=true)] public static extern bool CloseHandle(IntPtr handle);",
-    "  [DllImport(\"kernel32.dll\", SetLastError=true)] public static extern IntPtr OpenProcess(uint desiredAccess, bool inheritHandle, uint processId);",
-    "  [DllImport(\"kernel32.dll\", SetLastError=true)] public static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);",
-    "  [DllImport(\"kernel32.dll\", SetLastError=true)] public static extern bool TerminateJobObject(IntPtr job, uint exitCode);",
-    "  [DllImport(\"kernel32.dll\", SetLastError=true)] public static extern bool SetInformationJobObject(IntPtr job, int informationClass, IntPtr information, uint informationLength);",
-    "  [DllImport(\"kernel32.dll\", CharSet=CharSet.Unicode, SetLastError=true)] public static extern bool MoveFileEx(string existingFileName, string newFileName, uint flags);",
-    "  public const uint MoveFileReplaceExisting = 0x00000001;",
-    "  public const uint MoveFileWriteThrough = 0x00000008;",
-    "  public const uint ProcessTerminate = 0x0001;",
-    "  public const uint ProcessSetQuota = 0x0100;",
-    "  [StructLayout(LayoutKind.Sequential)] public struct BasicLimit { public long PerProcessUserTimeLimit; public long PerJobUserTimeLimit; public uint LimitFlags; public UIntPtr MinimumWorkingSetSize; public UIntPtr MaximumWorkingSetSize; public uint ActiveProcessLimit; public UIntPtr Affinity; public uint PriorityClass; public uint SchedulingClass; }",
-    "  [StructLayout(LayoutKind.Sequential)] public struct IoCounters { public ulong ReadOperationCount; public ulong WriteOperationCount; public ulong OtherOperationCount; public ulong ReadTransferCount; public ulong WriteTransferCount; public ulong OtherTransferCount; }",
-    "  [StructLayout(LayoutKind.Sequential)] public struct ExtendedLimit { public BasicLimit BasicLimitInformation; public IoCounters IoInfo; public UIntPtr ProcessMemoryLimit; public UIntPtr JobMemoryLimit; public UIntPtr PeakProcessMemoryUsed; public UIntPtr PeakJobMemoryUsed; }",
-    "  public static IntPtr CreateKillOnCloseJob() { var job = CreateJobObject(IntPtr.Zero, null); if (job == IntPtr.Zero) throw new System.ComponentModel.Win32Exception(); var value = new ExtendedLimit(); value.BasicLimitInformation.LimitFlags = 0x00002000; int size = Marshal.SizeOf(value); IntPtr memory = Marshal.AllocHGlobal(size); try { Marshal.StructureToPtr(value, memory, false); if (!SetInformationJobObject(job, 9, memory, (uint)size)) throw new System.ComponentModel.Win32Exception(); return job; } catch { CloseHandle(job); throw; } finally { Marshal.FreeHGlobal(memory); } }",
-    "}",
-    "'@",
+    WINDOWS_JOB_OBJECT_INTEROP_SCRIPT,
     "$job = [IntPtr]::Zero",
     "try {",
     "  Write-State 'launching' $null ''",

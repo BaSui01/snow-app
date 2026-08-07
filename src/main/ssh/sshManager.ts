@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path/posix";
 import { createRequire } from "node:module";
 import { getSshHostKey, saveSshHostKey } from "./sshHostKeys";
+import { buildWindowsJobObjectLifecycleProbeScript } from "./windowsJobObject";
 
 const require2 = createRequire(import.meta.url);
 const ssh2 = require2("ssh2") as typeof import("ssh2");
@@ -707,8 +708,21 @@ const POSIX_CAPABILITY_PROBE_COMMAND = [
   'if XDG_RUNTIME_DIR="$runtime_dir" DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$runtime_dir/bus}" systemctl --user show-environment >/dev/null 2>&1; then printf "systemd_user=1\\n"; else printf "systemd_user=0\\n"; fi',
 ].join("\n");
 
+const WINDOWS_CAPABILITY_PROBE_SCRIPT = [
+  "$ErrorActionPreference = 'Stop'",
+  "[Console]::Out.WriteLine('platform=windows')",
+  "[Console]::Out.WriteLine('powershell=1')",
+  "try {",
+  buildWindowsJobObjectLifecycleProbeScript(""),
+  "  [Console]::Out.WriteLine('windows_job_objects=1')",
+  "} catch {",
+  "  [Console]::Out.WriteLine('windows_job_objects=0')",
+  "}",
+].join("\r\n");
+
 const WINDOWS_CAPABILITY_PROBE_COMMAND =
-  'powershell.exe -NoProfile -NonInteractive -Command "Write-Output \'platform=windows\';Write-Output \'powershell=1\';Write-Output \'windows_job_objects=1\'"';
+  "powershell.exe -NoProfile -NonInteractive -EncodedCommand " +
+  Buffer.from(WINDOWS_CAPABILITY_PROBE_SCRIPT, "utf16le").toString("base64");
 
 export const probeSshCapabilities = async (
   sessionId: string,
@@ -724,7 +738,7 @@ export const probeSshCapabilities = async (
   } catch (posixError) {
     try {
       output = await executeSshCommand(sessionId, WINDOWS_CAPABILITY_PROBE_COMMAND, {
-        timeoutMs: 5_000,
+        timeoutMs: 10_000,
         signal: options?.signal,
       });
       platform = "windows";

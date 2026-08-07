@@ -38,6 +38,7 @@ import {
   moveWindowsRemotePath,
   removeWindowsRemotePath,
 } from "./windowsRemoteRunner";
+import { buildWindowsJobObjectLifecycleProbeScript } from "./windowsJobObject";
 import {
   cancelSnowAgentJob,
   inspectSnowAgentJob,
@@ -1151,13 +1152,17 @@ const windowsBackendProbeScript = (
   taskName: string
 ): string =>
   // Avoid first-use PowerShell module loading in a probe that runs as a new
-  // OpenSSH user. The test still writes only after the launching session ends.
+  // scheduled-task user. The completion marker follows the same Job Object
+  // lifecycle as the runner, so selection validates both task permissions and
+  // the APIs that the runner will need after disconnecting.
   [
+    "$ErrorActionPreference = 'Stop'",
     "try {",
     "  [System.Threading.Thread]::Sleep(750)",
     `  [System.IO.File]::WriteAllText('${startedMarkerPath.replace(/'/g, "''")}', \"$PID|$env:USERNAME\", [System.Text.Encoding]::ASCII)`,
-    "  [System.Threading.Thread]::Sleep(1000)",
-    `  [System.IO.File]::WriteAllText('${markerPath.replace(/'/g, "''")}', 'ok', [System.Text.Encoding]::ASCII)`,
+    buildWindowsJobObjectLifecycleProbeScript(
+      `  [System.IO.File]::WriteAllText('${markerPath.replace(/'/g, "''")}', 'ok', [System.Text.Encoding]::ASCII)`
+    ),
     "} finally {",
     `  & schtasks.exe /Delete /TN '${taskName.replace(/'/g, "''")}' /F 2>$null | Out-Null`,
     "}",

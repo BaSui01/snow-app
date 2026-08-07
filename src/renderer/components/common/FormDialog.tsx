@@ -1,3 +1,4 @@
+import { X } from "lucide-react";
 import {
   type KeyboardEvent,
   type ReactNode,
@@ -22,6 +23,7 @@ type FormDialogProps = {
   title: string;
   confirmLabel?: string;
   cancelLabel?: string;
+  closeLabel?: string;
   showFooter?: boolean;
   confirmDisabled?: boolean;
   isSubmitting?: boolean;
@@ -36,6 +38,7 @@ export function FormDialog({
   title,
   confirmLabel,
   cancelLabel,
+  closeLabel = "Close",
   showFooter = true,
   confirmDisabled = false,
   isSubmitting = false,
@@ -103,12 +106,7 @@ export function FormDialog({
   };
 
   return createPortal(
-    <div
-      className="form-dialog-overlay"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !isSubmitting) onCancel();
-      }}
-    >
+    <div className="form-dialog-overlay">
       <div
         aria-labelledby={titleId}
         aria-modal="true"
@@ -122,6 +120,16 @@ export function FormDialog({
           <h2 className="form-dialog-title" id={titleId}>
             {title}
           </h2>
+          <button
+            aria-label={closeLabel}
+            className="icon-btn ghost form-dialog-close"
+            disabled={isSubmitting}
+            onClick={onCancel}
+            title={closeLabel}
+            type="button"
+          >
+            <X size={16} strokeWidth={1.9} />
+          </button>
         </div>
         <div className="form-dialog-body">{children}</div>
         {showFooter ? (

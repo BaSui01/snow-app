@@ -12,6 +12,7 @@ export const zhTW = {
   "sidebar.loadingWorkspaceContent": "正在載入工作區內容...",
   "sidebar.addDirectoryScheme": "新增目錄",
   "sidebar.chooseDirectoryScheme": "選擇新增方式",
+  "sidebar.close": "關閉",
   "sidebar.addLocalDirectory": "新增本機目錄",
   "sidebar.addSshDirectory": "新增 SSH 遠端目錄",
   "sidebar.createProject": "建立專案",

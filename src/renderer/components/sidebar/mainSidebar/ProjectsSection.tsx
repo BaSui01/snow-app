@@ -759,6 +759,7 @@ export function ProjectsSection({
         </div>
       </div>
       <FormDialog
+        closeLabel={t("sidebar.close", { defaultValue: "Close" })}
         onCancel={() => setIsAddMenuOpen(false)}
         open={isAddMenuOpen}
         showFooter={false}
@@ -832,6 +833,7 @@ export function ProjectsSection({
       </FormDialog>
       <FormDialog
         cancelLabel={t("common.cancel", { defaultValue: "Cancel" })}
+        closeLabel={t("sidebar.close", { defaultValue: "Close" })}
         confirmDisabled={!projectNameInput.trim()}
         confirmLabel={t("sidebar.createProjectConfirm", {
           defaultValue: "Create",
@@ -875,6 +877,7 @@ export function ProjectsSection({
       </FormDialog>
       <FormDialog
         cancelLabel={t("common.cancel", { defaultValue: "Cancel" })}
+        closeLabel={t("sidebar.close", { defaultValue: "Close" })}
         confirmDisabled={!selectedLocalPath.trim()}
         confirmLabel={t("sidebar.add", { defaultValue: "Add" })}
         initialFocusRef={localPathInputRef}

@@ -12,6 +12,7 @@ export const zhCN = {
   "sidebar.loadingWorkspaceContent": "正在加载工作区内容...",
   "sidebar.addDirectoryScheme": "添加目录",
   "sidebar.chooseDirectoryScheme": "选择添加方式",
+  "sidebar.close": "关闭",
   "sidebar.addLocalDirectory": "添加本地目录",
   "sidebar.addSshDirectory": "添加 SSH 远程目录",
   "sidebar.createProject": "创建项目",

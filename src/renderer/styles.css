@@ -2104,14 +2104,26 @@ input {
 }
 
 .form-dialog-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   padding: 16px 18px 12px;
 }
 
 .form-dialog-title {
   margin: 0;
+  overflow: hidden;
   color: var(--text-primary);
   font-size: 15px;
   font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.form-dialog-close {
+  flex-shrink: 0;
 }
 
 .form-dialog-body {

@@ -12,6 +12,7 @@ export const en = {
   "sidebar.loadingWorkspaceContent": "Loading workspace content...",
   "sidebar.addDirectoryScheme": "Add directory",
   "sidebar.chooseDirectoryScheme": "Choose add method",
+  "sidebar.close": "Close",
   "sidebar.addLocalDirectory": "Add local directory",
   "sidebar.addSshDirectory": "Add SSH directory",
   "sidebar.createProject": "Create project",

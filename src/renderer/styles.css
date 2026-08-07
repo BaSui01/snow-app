@@ -12808,6 +12808,165 @@ input {
   gap: 4px;
   font-size: 11px;
   color: var(--text-secondary);
+  min-width: 0;
+}
+
+.tool-call-imagegen-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* 实际 seed 标签（点击复制） */
+.tool-call-imagegen-seed {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  cursor: pointer;
+}
+
+.tool-call-imagegen-seed:hover {
+  color: var(--accent-blue-text);
+  background: var(--accent-blue-bg);
+}
+
+/* 结果图上的「以此为参考」按钮 */
+.tool-call-imagegen-figure-edit {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.tool-call-imagegen-figure:hover .tool-call-imagegen-figure-edit,
+.tool-call-imagegen-figure-edit:focus-visible {
+  opacity: 1;
+}
+
+.tool-call-imagegen-figure-edit:hover {
+  background: rgba(0, 0, 0, 0.65);
+}
+
+/* 以图为参考重生成（轻量工作台）面板 */
+.tool-call-imagegen-edit-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-color, rgba(128, 128, 128, 0.3));
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.tool-call-imagegen-edit-title {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.tool-call-imagegen-edit-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.tool-call-imagegen-edit-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+}
+
+.tool-call-imagegen-edit-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tool-call-imagegen-edit-panel textarea {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border-color, rgba(128, 128, 128, 0.3));
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.tool-call-imagegen-edit-panel textarea:focus {
+  outline: none;
+  border-color: var(--accent-blue-text);
+}
+
+.tool-call-imagegen-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.tool-call-imagegen-edit-go,
+.tool-call-imagegen-edit-cancel {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.tool-call-imagegen-edit-go {
+  background: var(--accent-blue-bg);
+  color: var(--accent-blue-text);
+}
+
+.tool-call-imagegen-edit-go:hover {
+  background: var(--accent-blue-text);
+  color: #fff;
+}
+
+.tool-call-imagegen-edit-go:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.tool-call-imagegen-edit-cancel {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.tool-call-imagegen-edit-cancel:hover {
+  color: var(--accent-red-text);
+  background: var(--accent-red-bg);
 }
 
 .tool-call-imagegen-download-all,

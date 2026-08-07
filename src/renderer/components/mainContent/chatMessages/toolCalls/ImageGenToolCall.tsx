@@ -20,6 +20,7 @@ import { imageProxyUrl } from "../../../../utils/imageProxyUrl";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { getErrorMessage } from "../utils/conversationHelpers";
 import { ToolCallNode } from "./shared/ToolCallNode";
+import { useChatConversationContext } from "../components/ChatConversationContext";
 import {
   classifyImageGenError,
   columnsForCount,
@@ -61,71 +62,167 @@ export const ImageGenToolCall = ({
   const [lightbox, setLightbox] = useState<LightboxTarget | null>(null);
 
   // ------------------------------------------------------------------
-  // 失败重试：复用 mcp:call-tool 通道以相同参数重跑，流式 partial_image
-  // chunk 恢复实时预览；结果覆盖展示（组件内 state，不写回会话）。
+  // 通用重跑通道：重试 / 变体 / 以图为参考重生成共用。
+  // 复用 mcp:call-tool 以指定参数执行，流式 partial_image 实时预览，
+  // 结果覆盖展示（组件内 state，不写回会话）。
   // ------------------------------------------------------------------
   const [retry, setRetry] = useState<RetryState>({ status: "idle" });
+  /** 变体生成时实际注入的 seed（供展示与复制） */
+  const [lastSeed, setLastSeed] = useState<number | null>(null);
 
-  const handleRetry = useCallback(async (): Promise<void> => {
-    setRetry({ status: "running", streamingImages: [] });
-    try {
-      const result = await window.snow.callMcpTool(
-        toolCall.name,
-        toolCall.arguments,
-        undefined, // projectId：生图不依赖会话目录
-        undefined, // checkpointIds
-        undefined, // checkpointWorkDir
-        undefined, // sensitiveAuthorizationToken
-        (chunk) => {
-          if (chunk.stream !== "imagegen") {
-            return;
-          }
-          try {
-            const parsed: unknown = JSON.parse(chunk.data);
-            if (
-              typeof parsed === "object" &&
-              parsed !== null &&
-              !Array.isArray(parsed) &&
-              (parsed as Record<string, unknown>).type === "partial_image" &&
-              typeof (parsed as Record<string, unknown>).data === "string" &&
-              typeof (parsed as Record<string, unknown>).mimeType ===
-                "string" &&
-              typeof (parsed as Record<string, unknown>).index === "number"
-            ) {
-              const image = {
-                index: (parsed as { index: number }).index,
-                mimeType: (parsed as { mimeType: string }).mimeType,
-                data: (parsed as { data: string }).data,
-              };
-              setRetry((prev) => {
-                if (prev.status !== "running") {
-                  return prev;
-                }
-                const list = prev.streamingImages;
-                const existing = list.findIndex(
-                  (item) => item.index === image.index
-                );
-                const next =
-                  existing >= 0
-                    ? list.map((item, i) => (i === existing ? image : item))
-                    : [...list, image].sort((a, b) => a.index - b.index);
-                return { status: "running", streamingImages: next };
-              });
+  const handleGenerate = useCallback(
+    async (argsJson: string, seedInfo?: { seed: number }): Promise<void> => {
+      setRetry({ status: "running", streamingImages: [] });
+      if (seedInfo) {
+        setLastSeed(seedInfo.seed);
+      }
+      try {
+        const result = await window.snow.callMcpTool(
+          toolCall.name,
+          argsJson,
+          undefined, // projectId：生图不依赖会话目录
+          undefined, // checkpointIds
+          undefined, // checkpointWorkDir
+          undefined, // sensitiveAuthorizationToken
+          (chunk) => {
+            if (chunk.stream !== "imagegen") {
+              return;
             }
-          } catch {
-            // 忽略无法解析的 chunk
-          }
-        },
-        toolCall.interactionId, // 沿用原调用 ID，chunk 路由到同一卡片
-        undefined, // subAgentAllowedTools
-        false, // planMode：生图不涉及写门
-        false // planApproved
-      );
-      setRetry({ status: "done", result });
-    } catch (error) {
-      setRetry({ status: "failed", error: getErrorMessage(error) });
+            try {
+              const parsed: unknown = JSON.parse(chunk.data);
+              if (
+                typeof parsed === "object" &&
+                parsed !== null &&
+                !Array.isArray(parsed) &&
+                (parsed as Record<string, unknown>).type === "partial_image" &&
+                typeof (parsed as Record<string, unknown>).data === "string" &&
+                typeof (parsed as Record<string, unknown>).mimeType ===
+                  "string" &&
+                typeof (parsed as Record<string, unknown>).index === "number"
+              ) {
+                const image = {
+                  index: (parsed as { index: number }).index,
+                  mimeType: (parsed as { mimeType: string }).mimeType,
+                  data: (parsed as { data: string }).data,
+                };
+                setRetry((prev) => {
+                  if (prev.status !== "running") {
+                    return prev;
+                  }
+                  const list = prev.streamingImages;
+                  const existing = list.findIndex(
+                    (item) => item.index === image.index
+                  );
+                  const next =
+                    existing >= 0
+                      ? list.map((item, i) => (i === existing ? image : item))
+                      : [...list, image].sort((a, b) => a.index - b.index);
+                  return { status: "running", streamingImages: next };
+                });
+              }
+            } catch {
+              // 忽略无法解析的 chunk
+            }
+          },
+          toolCall.interactionId, // 沿用原调用 ID，chunk 路由到同一卡片
+          undefined, // subAgentAllowedTools
+          false, // planMode：生图不涉及写门
+          false // planApproved
+        );
+        setRetry({ status: "done", result });
+      } catch (error) {
+        setRetry({ status: "failed", error: getErrorMessage(error) });
+      }
+    },
+    [toolCall.name, toolCall.interactionId]
+  );
+
+  /** 失败重试：完全相同参数重跑 */
+  const handleRetry = useCallback((): void => {
+    void handleGenerate(toolCall.arguments);
+  }, [handleGenerate, toolCall.arguments]);
+
+  /** 变体生成：同参数注入随机 seed，得到不同结果 */
+  const handleVariant = useCallback((): void => {
+    try {
+      const args = JSON.parse(toolCall.arguments) as Record<string, unknown>;
+      const seed = Math.floor(Math.random() * 2_147_483_647);
+      void handleGenerate(JSON.stringify({ ...args, seed }), { seed });
+    } catch {
+      // 参数解析失败时退化为普通重跑
+      void handleGenerate(toolCall.arguments);
     }
-  }, [toolCall.name, toolCall.arguments, toolCall.interactionId]);
+  }, [handleGenerate, toolCall.arguments]);
+
+  /** 以某张结果图为参考重生成（轻量图生图工作台） */
+  const [refEdit, setRefEdit] = useState<{
+    item: GalleryItem;
+    prompt: string;
+  } | null>(null);
+
+  const handleRegenerateWithRef = useCallback((): void => {
+    if (!refEdit?.item.image) {
+      setRefEdit(null);
+      return;
+    }
+    try {
+      const args = JSON.parse(toolCall.arguments) as Record<string, unknown>;
+      const image = refEdit.item.image;
+      const reference = image.path
+        ? { path: image.path, mimeType: image.mimeType }
+        : { data: image.data, mimeType: image.mimeType };
+      const next = {
+        ...args,
+        prompt: refEdit.prompt.trim() || (args.prompt as string) || "",
+        images: [reference],
+        // 参考图场景禁用逐请求分组与多图，避免与 images 冲突
+        requestImages: undefined,
+        n: 1,
+        prompts: undefined,
+      };
+      void handleGenerate(JSON.stringify(next));
+      setRefEdit(null);
+    } catch {
+      setRefEdit(null);
+    }
+  }, [refEdit, toolCall.arguments, handleGenerate]);
+
+  /** 复制完整参数 JSON（供复用/排查） */
+  const [copiedArgs, setCopiedArgs] = useState(false);
+  const handleCopyArgs = useCallback(async (): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(toolCall.arguments);
+      setCopiedArgs(true);
+      window.setTimeout(() => setCopiedArgs(false), 1500);
+    } catch (error) {
+      console.warn("[imagegen] copy args failed", error);
+    }
+  }, [toolCall.arguments]);
+
+  // ------------------------------------------------------------------
+  // 生成队列可视：统计当前会话内正在运行的生图任务数，
+  // pending 卡片据此展示排队提示（maxConcurrentImages 由应用侧管理）。
+  // ------------------------------------------------------------------
+  const { sessions, activeConversationId } = useChatConversationContext();
+  const runningImageGenCount = useMemo(() => {
+    if (!activeConversationId) {
+      return 0;
+    }
+    const session = sessions[activeConversationId];
+    if (!session?.messages) {
+      return 0;
+    }
+    let count = 0;
+    for (const message of session.messages) {
+      for (const call of message.toolCalls ?? []) {
+        if (call.name === "imagegen-generate" && call.status === "running") {
+          count += 1;
+        }
+      }
+    }
+    return count;
+  }, [sessions, activeConversationId]);
+
 
   // ------------------------------------------------------------------
   // 批量下载：优先一次选择目录写入全部（showDirectoryPicker），
@@ -177,6 +274,14 @@ export const ImageGenToolCall = ({
     () => parseImageGenArgs(toolCall.arguments),
     [toolCall.arguments]
   );
+
+  // 实际使用的 seed：变体注入的 seed 优先，其次原参数中的 seed
+  const displayedSeed = useMemo(() => {
+    if (lastSeed !== null) {
+      return lastSeed;
+    }
+    return parsedArgs?.seed !== undefined ? parsedArgs.seed : null;
+  }, [lastSeed, parsedArgs]);
   // 重试中：忽略旧失败结果回到生成中视图；重试成功：用新结果覆盖展示。
   const effectiveResult =
     retry.status === "running"
@@ -794,18 +899,53 @@ export const ImageGenToolCall = ({
             {t("toolCall.imagegen.count", {
               values: { count: resultImageCount },
             })}
+            {displayedSeed !== null ? (
+              <button
+                type="button"
+                className="tool-call-imagegen-seed"
+                title={`${t("toolCall.imagegen.seed")}: ${displayedSeed} · ${t(
+                  "toolCall.imagegen.seedCopy"
+                )}`}
+                onClick={() => {
+                  void navigator.clipboard.writeText(String(displayedSeed));
+                }}
+              >
+                {t("toolCall.imagegen.seed")}: {displayedSeed}
+              </button>
+            ) : null}
           </span>
-          <button
-            type="button"
-            className="tool-call-imagegen-download-all"
-            onClick={() => void handleDownloadAll()}
-            disabled={downloadingAll}
-          >
-            <Download size={12} aria-hidden="true" />
-            {downloadingAll
-              ? t("toolCall.imagegen.saving")
-              : t("toolCall.imagegen.downloadAll")}
-          </button>
+          <span className="tool-call-imagegen-toolbar-actions">
+            <button
+              type="button"
+              className="tool-call-imagegen-download-all"
+              onClick={handleVariant}
+              disabled={retry.status === "running"}
+            >
+              <Sparkles size={12} aria-hidden="true" />
+              {t("toolCall.imagegen.variant")}
+            </button>
+            <button
+              type="button"
+              className="tool-call-imagegen-download-all"
+              onClick={() => void handleCopyArgs()}
+            >
+              <Link2 size={12} aria-hidden="true" />
+              {copiedArgs
+                ? t("toolCall.imagegen.argsCopied")
+                : t("toolCall.imagegen.copyArgs")}
+            </button>
+            <button
+              type="button"
+              className="tool-call-imagegen-download-all"
+              onClick={() => void handleDownloadAll()}
+              disabled={downloadingAll}
+            >
+              <Download size={12} aria-hidden="true" />
+              {downloadingAll
+                ? t("toolCall.imagegen.saving")
+                : t("toolCall.imagegen.downloadAll")}
+            </button>
+          </span>
         </div>
         <div
           className={`tool-call-imagegen-grid${
@@ -862,6 +1002,23 @@ export const ImageGenToolCall = ({
                     <span className="tool-call-imagegen-badge">{index + 1}</span>
                   ) : null}
                 </button>
+                {item.image ? (
+                  <button
+                    type="button"
+                    className="tool-call-imagegen-figure-edit"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setRefEdit({
+                        item,
+                        prompt: parsedArgs?.prompt ?? "",
+                      });
+                    }}
+                    title={t("toolCall.imagegen.refEdit")}
+                    aria-label={t("toolCall.imagegen.refEdit")}
+                  >
+                    <ImageIcon size={11} aria-hidden="true" />
+                  </button>
+                ) : null}
               </figure>
             );
           })}
@@ -902,6 +1059,50 @@ export const ImageGenToolCall = ({
           </div>
         ) : null}
 
+        {/* 以图为参考重生成（轻量图生图工作台） */}
+        {refEdit ? (
+          <div className="tool-call-imagegen-edit-panel">
+            <span className="tool-call-imagegen-edit-title">
+              {t("toolCall.imagegen.refEditTitle")}
+            </span>
+            <div className="tool-call-imagegen-edit-row">
+              <div className="tool-call-imagegen-edit-thumb">
+                {refEdit.item.src ? (
+                  <img src={refEdit.item.src} alt="" />
+                ) : (
+                  <ImageIcon size={16} aria-hidden="true" />
+                )}
+              </div>
+              <textarea
+                value={refEdit.prompt}
+                onChange={(event) =>
+                  setRefEdit({ ...refEdit, prompt: event.target.value })
+                }
+                placeholder={t("toolCall.imagegen.editPromptPlaceholder")}
+                rows={2}
+              />
+            </div>
+            <div className="tool-call-imagegen-edit-actions">
+              <button
+                type="button"
+                className="tool-call-imagegen-edit-go"
+                onClick={handleRegenerateWithRef}
+                disabled={retry.status === "running"}
+              >
+                <Sparkles size={12} aria-hidden="true" />
+                {t("toolCall.imagegen.regenerate")}
+              </button>
+              <button
+                type="button"
+                className="tool-call-imagegen-edit-cancel"
+                onClick={() => setRefEdit(null)}
+              >
+                {t("common.cancel")}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         {lightboxElement}
       </div>
     );
@@ -939,7 +1140,12 @@ export const ImageGenToolCall = ({
                     aria-hidden="true"
                   />
                   <span>
-                    {toolCall.status === "running"
+                    {toolCall.status === "pending" &&
+                    runningImageGenCount > 0
+                      ? t("toolCall.imagegen.queued", {
+                          values: { count: runningImageGenCount },
+                        })
+                      : toolCall.status === "running"
                       ? t("toolCall.imagegen.generating")
                       : t("toolCall.imagegen.waiting")}
                   </span>
@@ -953,6 +1159,11 @@ export const ImageGenToolCall = ({
               <span className="tool-call-imagegen-figure-label">
                 {latestStream
                   ? t("toolCall.imagegen.streamingPreview")
+                  : toolCall.status === "pending" &&
+                    runningImageGenCount > 0
+                  ? t("toolCall.imagegen.queued", {
+                      values: { count: runningImageGenCount },
+                    })
                   : toolCall.status === "running"
                   ? t("toolCall.imagegen.generating")
                   : t("toolCall.imagegen.waiting")}

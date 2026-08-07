@@ -28853,6 +28853,128 @@ body.ctrl-held [data-path] {
   margin-left: 2px;
 }
 
+/* 图库相册栏：全部 / 未分类 / 相册 chips / 新建 */
+.image-library-albums {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color, rgba(128, 128, 128, 0.25));
+}
+
+.image-library-album-chip,
+.image-library-album-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  max-width: 160px;
+}
+
+.image-library-album-chip:hover,
+.image-library-album-add:hover {
+  color: var(--accent-blue-text);
+  background: var(--accent-blue-bg);
+}
+
+.image-library-album-chip.active {
+  color: var(--accent-blue-text);
+  background: var(--accent-blue-bg);
+  font-weight: 500;
+}
+
+.image-library-album-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-library-album-chip-count {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.image-library-album-chip-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.image-library-album-chip-actions {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 10;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.image-library-album-chip-wrap:hover .image-library-album-chip-actions {
+  display: flex;
+}
+
+.image-library-album-chip-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.image-library-album-chip-actions button:hover {
+  color: var(--accent-blue-text);
+  background: var(--accent-blue-bg);
+}
+
+.image-library-album-chip-actions button.danger:hover {
+  color: var(--accent-red-text);
+  background: var(--accent-red-bg);
+}
+
+.image-library-album-rename-input {
+  width: 140px;
+  padding: 3px 8px;
+  border: 1px solid var(--accent-blue-text);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+.image-library-album-rename-input:focus {
+  outline: none;
+}
+
+/* 图片卡片上的「移入相册」下拉 */
+.image-library-card-album-select {
+  max-width: 90px;
+  padding: 1px 2px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 10px;
+  cursor: pointer;
+}
+
 .image-library-toolbar {
   display: flex;
   align-items: center;

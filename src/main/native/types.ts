@@ -682,6 +682,19 @@ export type ImageLibraryRecord = {
   model: string;
   provider: string;
   createdAt: string;
+  /** 所属相册 id；null = 未分类 */
+  albumId: string | null;
+};
+
+/** 图库相册记录 */
+export type ImageAlbumRecord = {
+  id: string;
+  name: string;
+  createdAt: string;
+  /** 相册封面：最新一张图的图库相对路径（image/...）；空相册为 null */
+  coverPath: string | null;
+  /** 相册内图片数量 */
+  imageCount: number;
 };
 
 /** 图库目录迁移进度 */
@@ -1505,6 +1518,11 @@ export type NativeBridge = {
   getImageLibraryDir: () => Promise<string>;
   setImageLibraryDir: (dir: string) => Promise<void>;
   listImageLibrary: () => Promise<ImageLibraryRecord[]>;
+  listImageAlbums: () => Promise<ImageAlbumRecord[]>;
+  createImageAlbum: (name: string) => Promise<ImageAlbumRecord>;
+  renameImageAlbum: (id: string, name: string) => Promise<ImageAlbumRecord>;
+  deleteImageAlbum: (id: string) => Promise<void>;
+  setImageAlbum: (imageId: string, albumId: string | null) => Promise<void>;
   readImageLibraryFile: (relativePath: string) => Promise<string | null>;
   deleteImageLibraryImage: (id: string) => Promise<void>;
   countConversationImages: (conversationIds: string[]) => Promise<number>;

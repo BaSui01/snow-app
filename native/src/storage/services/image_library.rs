@@ -31,9 +31,28 @@ pub struct ImageLibraryRecord {
     pub model: String,
     pub provider: String,
     pub created_at: String,
+    /// 所属相册 id；None = 未归类
+    pub album_id: Option<String>,
+}
+
+/// 相册记录（服务层结构体）。
+#[derive(Debug, Clone)]
+pub struct ImageAlbumRecord {
+    pub id: String,
+    pub name: String,
+    pub created_at: String,
+    /// 相册封面：最新一张图的图库相对路径（image/...）；空相册为 None
+    pub cover_path: Option<String>,
+    /// 相册内图片数量
+    pub image_count: i64,
 }
 
 /// 建表（B 模式：在 database.rs::create_schema() 末尾调用）
+///
+/// 兼容旧库迁移：
+/// - `image_albums` 表用 CREATE TABLE IF NOT EXISTS（新库直接建，旧库首次升级建）
+/// - `image_library.album_id` 列通过 pragma_table_info 检测后补列（幂等），
+///   旧数据 album_id 为 NULL = 未归类，删除相册时图片置 NULL 不删图。
 pub fn ensure_image_library_table(connection: &rusqlite::Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS image_library (
@@ -50,8 +69,28 @@ pub fn ensure_image_library_table(connection: &rusqlite::Connection) -> rusqlite
            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
          );
          CREATE INDEX IF NOT EXISTS idx_image_library_created
-           ON image_library(created_at DESC, id DESC);",
-    )
+           ON image_library(created_at DESC, id DESC);
+         CREATE TABLE IF NOT EXISTS image_albums (
+           id TEXT PRIMARY KEY NOT NULL,
+           name TEXT NOT NULL,
+           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+         );",
+    )?;
+
+    // 幂等补列：image_library.album_id（旧库升级路径）
+    let has_album_id: bool = connection
+        .prepare(
+            "SELECT COUNT(*) FROM pragma_table_info('image_library') WHERE name = 'album_id'",
+        )?
+        .query_row([], |row| row.get(0))?;
+    if !has_album_id {
+        connection.execute_batch("ALTER TABLE image_library ADD COLUMN album_id TEXT;")?;
+    }
+    connection.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_image_library_album ON image_library(album_id);",
+    )?;
+
+    Ok(())
 }
 
 /// 图片根目录：优先读取用户自定义路径（system_settings `image_library_dir`），
@@ -249,6 +288,7 @@ fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ImageLibraryRecord> {
         model: row.get(8)?,
         provider: row.get(9)?,
         created_at: row.get(10)?,
+        album_id: row.get(11)?,
     })
 }
 
@@ -258,7 +298,7 @@ pub fn list_images(database_path: &Path) -> Result<Vec<ImageLibraryRecord>> {
         .and_then(|connection| {
             let mut statement = connection.prepare(
                 "SELECT id, relative_path, file_name, mime_type, size_bytes, width, height,
-                        prompt, model, provider, created_at
+                        prompt, model, provider, created_at, album_id
                    FROM image_library
                   ORDER BY created_at DESC, id DESC",
             )?;
@@ -266,6 +306,148 @@ pub fn list_images(database_path: &Path) -> Result<Vec<ImageLibraryRecord>> {
             rows.collect()
         })
         .map_err(|error| database::database_error(database_path, "list image library", error))
+}
+
+/// 列出全部相册（按创建时间倒序），含封面路径（最新一张图）与图片数量。
+pub fn list_albums(database_path: &Path) -> Result<Vec<ImageAlbumRecord>> {
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            let mut statement = connection.prepare(
+                "SELECT a.id, a.name, a.created_at,
+                        (SELECT i.relative_path FROM image_library i
+                          WHERE i.album_id = a.id
+                          ORDER BY i.created_at DESC, i.id DESC LIMIT 1) AS cover_path,
+                        (SELECT COUNT(*) FROM image_library i WHERE i.album_id = a.id) AS image_count
+                   FROM image_albums a
+                  ORDER BY a.created_at DESC, a.id DESC",
+            )?;
+            let rows = statement.query_map([], map_album_row)?;
+            rows.collect()
+        })
+        .map_err(|error| database::database_error(database_path, "list image albums", error))
+}
+
+fn map_album_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ImageAlbumRecord> {
+    Ok(ImageAlbumRecord {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        created_at: row.get(2)?,
+        cover_path: row.get(3)?,
+        image_count: row.get(4)?,
+    })
+}
+
+/// 按 id 查询相册（含封面与数量）。
+fn find_album(
+    connection: &rusqlite::Connection,
+    id: &str,
+) -> rusqlite::Result<Option<ImageAlbumRecord>> {
+    connection
+        .query_row(
+            "SELECT a.id, a.name, a.created_at,
+                    (SELECT i.relative_path FROM image_library i
+                      WHERE i.album_id = a.id
+                      ORDER BY i.created_at DESC, i.id DESC LIMIT 1) AS cover_path,
+                    (SELECT COUNT(*) FROM image_library i WHERE i.album_id = a.id) AS image_count
+               FROM image_albums a
+              WHERE a.id = ?1",
+            params![id],
+            map_album_row,
+        )
+        .optional()
+}
+
+/// 创建相册。名称去除首尾空白，不允许为空；名称不强制唯一。
+pub fn create_album(database_path: &Path, name: &str) -> Result<ImageAlbumRecord> {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err(napi::Error::from_reason(
+            "Image album name must not be empty".to_string(),
+        ));
+    }
+    let id = database::create_snowflake_id();
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            connection.execute(
+                "INSERT INTO image_albums (id, name) VALUES (?1, ?2)",
+                params![id, name],
+            )?;
+            find_album(&connection, &id).and_then(|album| {
+                album.ok_or_else(|| {
+                    rusqlite::Error::InvalidQuery
+                })
+            })
+        })
+        .map_err(|error| database::database_error(database_path, "create image album", error))
+}
+
+/// 重命名相册。相册不存在时返回错误。
+pub fn rename_album(database_path: &Path, id: &str, name: &str) -> Result<ImageAlbumRecord> {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err(napi::Error::from_reason(
+            "Image album name must not be empty".to_string(),
+        ));
+    }
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            let affected = connection.execute(
+                "UPDATE image_albums SET name = ?1 WHERE id = ?2",
+                params![name, id],
+            )?;
+            if affected == 0 {
+                return Err(rusqlite::Error::QueryReturnedNoRows);
+            }
+            find_album(&connection, id).and_then(|album| {
+                album.ok_or(rusqlite::Error::QueryReturnedNoRows)
+            })
+        })
+        .map_err(|error| database::database_error(database_path, "rename image album", error))
+}
+
+/// 删除相册：相册内图片的 album_id 置 NULL（图片本身保留），相册封面随之失效。
+pub fn delete_album(database_path: &Path, id: &str) -> Result<()> {
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            connection.execute(
+                "UPDATE image_library SET album_id = NULL WHERE album_id = ?1",
+                params![id],
+            )?;
+            connection.execute("DELETE FROM image_albums WHERE id = ?1", params![id])?;
+            Ok(())
+        })
+        .map_err(|error| database::database_error(database_path, "delete image album", error))
+}
+
+/// 将图片移入 / 移出相册（album_id 为 None 时移出）。
+/// 相册或图片不存在时返回错误。
+pub fn set_image_album(
+    database_path: &Path,
+    image_id: &str,
+    album_id: Option<&str>,
+) -> Result<()> {
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            if let Some(album_id) = album_id {
+                let album_exists: bool = connection.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM image_albums WHERE id = ?1)",
+                    params![album_id],
+                    |row| row.get(0),
+                )?;
+                if !album_exists {
+                    return Err(rusqlite::Error::QueryReturnedNoRows);
+                }
+            }
+            let affected = connection.execute(
+                "UPDATE image_library SET album_id = ?1 WHERE id = ?2",
+                params![album_id, image_id],
+            )?;
+            if affected == 0 {
+                return Err(rusqlite::Error::QueryReturnedNoRows);
+            }
+            Ok(())
+        })
+        .map_err(|error| database::database_error(database_path, "set image album", error))
 }
 
 /// 将图库相对路径（image/...）解析为根目录下的绝对路径。

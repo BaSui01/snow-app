@@ -1028,6 +1028,16 @@ export const en = {
   "settings.imageLibraryDescription":
     "Manage AI-generated images (stored on disk; deleting one also removes it from conversations)",
   "settings.imageLibraryRefresh": "Refresh",
+  "settings.imageLibraryAlbumAll": "All",
+  "settings.imageLibraryAlbumNone": "Uncategorized",
+  "settings.imageLibraryAlbumCreate": "New album",
+  "settings.imageLibraryAlbumNewPlaceholder": "Album name, Enter to confirm",
+  "settings.imageLibraryAlbumRename": "Rename",
+  "settings.imageLibraryAlbumDelete": "Delete album",
+  "settings.imageLibraryAlbumMove": "Move to album",
+  "settings.imageLibraryAlbumDeleteTitle": "Delete album",
+  "settings.imageLibraryAlbumDeleteConfirm":
+    "Delete album \"{{name}}\"? Its {{count}} image(s) will be kept (moved to Uncategorized).",
   "settings.imageLibraryCount": "{{count}} image(s)",
   "settings.imageLibraryFilterAll": "All",
   "settings.imageLibraryFilterLandscape": "Landscape",

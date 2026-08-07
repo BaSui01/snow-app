@@ -1904,6 +1904,8 @@ pub struct ImageLibraryRecord {
     pub model: String,
     pub provider: String,
     pub created_at: String,
+    /// 所属相册 id；null = 未归类
+    pub album_id: Option<String>,
 }
 
 impl From<services::image_library::ImageLibraryRecord> for ImageLibraryRecord {
@@ -1920,6 +1922,31 @@ impl From<services::image_library::ImageLibraryRecord> for ImageLibraryRecord {
             model: record.model,
             provider: record.provider,
             created_at: record.created_at,
+            album_id: record.album_id,
+        }
+    }
+}
+
+/// 相册记录（napi 结构体）。
+#[napi(object)]
+pub struct ImageAlbumRecord {
+    pub id: String,
+    pub name: String,
+    pub created_at: String,
+    /// 相册封面：最新一张图的图库相对路径（image/...）；空相册为 null
+    pub cover_path: Option<String>,
+    /// 相册内图片数量
+    pub image_count: i64,
+}
+
+impl From<services::image_library::ImageAlbumRecord> for ImageAlbumRecord {
+    fn from(record: services::image_library::ImageAlbumRecord) -> Self {
+        ImageAlbumRecord {
+            id: record.id,
+            name: record.name,
+            created_at: record.created_at,
+            cover_path: record.cover_path,
+            image_count: record.image_count,
         }
     }
 }
@@ -1951,6 +1978,41 @@ pub fn list_image_library() -> Result<Vec<ImageLibraryRecord>> {
             .map(ImageLibraryRecord::from)
             .collect()
     })
+}
+
+/// 列出全部相册（按创建时间倒序），含封面路径与图片数量。
+pub fn list_image_albums() -> Result<Vec<ImageAlbumRecord>> {
+    let database_path = ensure_database_file()?;
+    services::image_library::list_albums(&database_path).map(|records| {
+        records
+            .into_iter()
+            .map(ImageAlbumRecord::from)
+            .collect()
+    })
+}
+
+/// 创建相册（名称去除首尾空白，不允许为空）。
+pub fn create_image_album(name: String) -> Result<ImageAlbumRecord> {
+    let database_path = ensure_database_file()?;
+    services::image_library::create_album(&database_path, &name).map(ImageAlbumRecord::from)
+}
+
+/// 重命名相册。
+pub fn rename_image_album(id: String, name: String) -> Result<ImageAlbumRecord> {
+    let database_path = ensure_database_file()?;
+    services::image_library::rename_album(&database_path, &id, &name).map(ImageAlbumRecord::from)
+}
+
+/// 删除相册：相册内图片保留（album_id 置空）。
+pub fn delete_image_album(id: String) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::image_library::delete_album(&database_path, &id)
+}
+
+/// 将图片移入 / 移出相册（album_id 传 null 表示移出到未分类）。
+pub fn set_image_album(image_id: String, album_id: Option<String>) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::image_library::set_image_album(&database_path, &image_id, album_id.as_deref())
 }
 
 /// 读取图库图片并返回 data URL；路径非法或文件不存在返回 None。

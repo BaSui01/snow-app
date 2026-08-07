@@ -999,6 +999,16 @@ export const zhCN = {
   "settings.imageLibraryDescription":
     "管理 AI 生成的图片（自动落盘存储，删除会同步移除会话中的对应图片）",
   "settings.imageLibraryRefresh": "刷新",
+  "settings.imageLibraryAlbumAll": "全部",
+  "settings.imageLibraryAlbumNone": "未分类",
+  "settings.imageLibraryAlbumCreate": "新建相册",
+  "settings.imageLibraryAlbumNewPlaceholder": "相册名称，回车确认",
+  "settings.imageLibraryAlbumRename": "重命名",
+  "settings.imageLibraryAlbumDelete": "删除相册",
+  "settings.imageLibraryAlbumMove": "移入相册",
+  "settings.imageLibraryAlbumDeleteTitle": "删除相册",
+  "settings.imageLibraryAlbumDeleteConfirm":
+    "删除相册「{{name}}」？相册内 {{count}} 张图片将保留（移入未分类）。",
   "settings.imageLibraryCount": "{{count}} 张图片",
   "settings.imageLibraryFilterAll": "全部",
   "settings.imageLibraryFilterLandscape": "横图",

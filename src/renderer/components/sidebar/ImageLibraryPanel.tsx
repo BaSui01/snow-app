@@ -4,15 +4,20 @@ import {
   Download,
   FolderCog,
   FolderOpen,
+  FolderPlus,
   Image as ImageIcon,
   Loader2,
+  Pencil,
   RefreshCw,
   Trash2,
   X,
 } from "lucide-react";
 import { useI18n } from "../../i18n";
 import { ConfirmDialog } from "../common/ConfirmDialog";
-import type { ImageLibraryRecord } from "../../../preload";
+import type {
+  ImageAlbumRecord,
+  ImageLibraryRecord,
+} from "../../../preload";
 
 type RatioFilter = "all" | "landscape" | "square" | "portrait";
 type TimeFilter = "all" | "today" | "7d" | "30d";
@@ -62,6 +67,15 @@ export const ImageLibraryPanel = ({
 }: ImageLibraryPanelProps): React.JSX.Element => {
   const { t } = useI18n();
   const [items, setItems] = useState<ImageLibraryRecord[]>([]);
+  const [albums, setAlbums] = useState<ImageAlbumRecord[]>([]);
+  /** 当前选中的相册："all" = 全部，"" = 未分类，其他 = 相册 id */
+  const [activeAlbum, setActiveAlbum] = useState<string>("all");
+  const [creatingAlbum, setCreatingAlbum] = useState(false);
+  const [newAlbumName, setNewAlbumName] = useState("");
+  const [renamingAlbumId, setRenamingAlbumId] = useState<string | null>(null);
+  const [renameAlbumName, setRenameAlbumName] = useState("");
+  const [pendingAlbumDelete, setPendingAlbumDelete] =
+    useState<ImageAlbumRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [root, setRoot] = useState("");
@@ -96,12 +110,14 @@ export const ImageLibraryPanel = ({
     setLoading(true);
     setError("");
     try {
-      const [records, rootPath, savedDir] = await Promise.all([
+      const [records, rootPath, savedDir, albumRecords] = await Promise.all([
         window.snow.listImageLibrary(),
         window.snow.getImageLibraryRoot().catch(() => ""),
         window.snow.getImageLibraryDir().catch(() => ""),
+        window.snow.listImageAlbums().catch(() => []),
       ]);
       setItems(records);
+      setAlbums(albumRecords);
       setRoot(rootPath);
       setCustomDir(savedDir);
     } catch (loadError) {
@@ -166,6 +182,14 @@ export const ImageLibraryPanel = ({
     todayStart.setHours(0, 0, 0, 0);
     const dayMs = 24 * 60 * 60 * 1000;
     return items.filter((item) => {
+      // 相册过滤："all" = 全部；"" = 未分类；其他 = 指定相册
+      if (activeAlbum === "none") {
+        if (item.albumId !== null) {
+          return false;
+        }
+      } else if (activeAlbum !== "all" && item.albumId !== activeAlbum) {
+        return false;
+      }
       if (ratioFilter !== "all" && ratioKind(item) !== ratioFilter) {
         return false;
       }
@@ -189,7 +213,101 @@ export const ImageLibraryPanel = ({
       }
       return true;
     });
-  }, [items, ratioFilter, timeFilter, modelFilter, providerFilter]);
+  }, [items, activeAlbum, ratioFilter, timeFilter, modelFilter, providerFilter]);
+
+  // ------------------------------------------------------------------
+  // 相册操作
+  // ------------------------------------------------------------------
+
+  const confirmCreateAlbum = async (): Promise<void> => {
+    const name = newAlbumName.trim();
+    if (!name) {
+      setCreatingAlbum(false);
+      return;
+    }
+    try {
+      const album = await window.snow.createImageAlbum(name);
+      setAlbums((prev) => [album, ...prev]);
+      setNewAlbumName("");
+      setCreatingAlbum(false);
+      setActiveAlbum(album.id);
+    } catch (albumError) {
+      console.warn("[image-library] create album failed", albumError);
+      setCreatingAlbum(false);
+    }
+  };
+
+  const startRenameAlbum = (album: ImageAlbumRecord): void => {
+    setRenamingAlbumId(album.id);
+    setRenameAlbumName(album.name);
+  };
+
+  const confirmRenameAlbum = async (albumId: string): Promise<void> => {
+    const name = renameAlbumName.trim();
+    setRenamingAlbumId(null);
+    if (!name) {
+      return;
+    }
+    try {
+      const updated = await window.snow.renameImageAlbum(albumId, name);
+      setAlbums((prev) =>
+        prev.map((album) => (album.id === albumId ? updated : album))
+      );
+    } catch (renameError) {
+      console.warn("[image-library] rename album failed", renameError);
+    }
+  };
+
+  const confirmDeleteAlbum = async (): Promise<void> => {
+    const album = pendingAlbumDelete;
+    if (!album) {
+      return;
+    }
+    setPendingAlbumDelete(null);
+    try {
+      await window.snow.deleteImageAlbum(album.id);
+      setAlbums((prev) => prev.filter((item) => item.id !== album.id));
+      // 相册内图片置为未分类，同步本地状态
+      setItems((prev) =>
+        prev.map((item) =>
+          item.albumId === album.id ? { ...item, albumId: null } : item
+        )
+      );
+      if (activeAlbum === album.id) {
+        setActiveAlbum("all");
+      }
+    } catch (deleteError) {
+      console.warn("[image-library] delete album failed", deleteError);
+    }
+  };
+
+  /** 移动图片到相册（value 为空 = 未分类） */
+  const moveToAlbum = async (
+    record: ImageLibraryRecord,
+    albumId: string
+  ): Promise<void> => {
+    const target = albumId || null;
+    if (target === record.albumId) {
+      return;
+    }
+    try {
+      await window.snow.setImageAlbum(record.id, target);
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === record.id ? { ...item, albumId: target } : item
+        )
+      );
+      // 刷新相册计数与封面（懒刷新：移入/移出后重新拉取相册列表）
+      const albumRecords = await window.snow
+        .listImageAlbums()
+        .catch(() => null);
+      if (albumRecords) {
+        setAlbums(albumRecords);
+      }
+    } catch (moveError) {
+      console.warn("[image-library] move image failed", moveError);
+    }
+  };
 
   /** 请求删除图片（弹出确认对话框）。 */
   const requestDelete = (record: ImageLibraryRecord): void => {
@@ -427,6 +545,121 @@ export const ImageLibraryPanel = ({
         </div>
       ) : null}
 
+      {/* 相册栏 */}
+      <div className="image-library-albums">
+        <button
+          type="button"
+          className={`image-library-album-chip${
+            activeAlbum === "all" ? " active" : ""
+          }`}
+          onClick={() => setActiveAlbum("all")}
+        >
+          <ImageIcon size={12} aria-hidden="true" />
+          {t("settings.imageLibraryAlbumAll")}
+        </button>
+        <button
+          type="button"
+          className={`image-library-album-chip${
+            activeAlbum === "none" ? " active" : ""
+          }`}
+          onClick={() => setActiveAlbum("none")}
+        >
+          <FolderOpen size={12} aria-hidden="true" />
+          {t("settings.imageLibraryAlbumNone")}
+        </button>
+        {albums.map((album) => (
+          <span
+            key={album.id}
+            className={`image-library-album-chip-wrap${
+              activeAlbum === album.id ? " active" : ""
+            }`}
+          >
+            {renamingAlbumId === album.id ? (
+              <input
+                className="image-library-album-rename-input"
+                value={renameAlbumName}
+                autoFocus
+                onChange={(event) => setRenameAlbumName(event.target.value)}
+                onBlur={() => void confirmRenameAlbum(album.id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    void confirmRenameAlbum(album.id);
+                  }
+                  if (event.key === "Escape") {
+                    setRenamingAlbumId(null);
+                  }
+                }}
+              />
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="image-library-album-chip"
+                  onClick={() => setActiveAlbum(album.id)}
+                  title={`${album.name} · ${album.imageCount}`}
+                >
+                  <FolderOpen size={12} aria-hidden="true" />
+                  <span className="image-library-album-chip-name">
+                    {album.name}
+                  </span>
+                  <span className="image-library-album-chip-count">
+                    {album.imageCount}
+                  </span>
+                </button>
+                <span className="image-library-album-chip-actions">
+                  <button
+                    type="button"
+                    title={t("settings.imageLibraryAlbumRename")}
+                    aria-label={t("settings.imageLibraryAlbumRename")}
+                    onClick={() => startRenameAlbum(album)}
+                  >
+                    <Pencil size={10} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    className="danger"
+                    title={t("settings.imageLibraryAlbumDelete")}
+                    aria-label={t("settings.imageLibraryAlbumDelete")}
+                    onClick={() => setPendingAlbumDelete(album)}
+                  >
+                    <Trash2 size={10} aria-hidden="true" />
+                  </button>
+                </span>
+              </>
+            )}
+          </span>
+        ))}
+        {creatingAlbum ? (
+          <input
+            className="image-library-album-rename-input"
+            placeholder={t("settings.imageLibraryAlbumNewPlaceholder")}
+            value={newAlbumName}
+            autoFocus
+            onChange={(event) => setNewAlbumName(event.target.value)}
+            onBlur={() => void confirmCreateAlbum()}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                void confirmCreateAlbum();
+              }
+              if (event.key === "Escape") {
+                setCreatingAlbum(false);
+                setNewAlbumName("");
+              }
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            className="image-library-album-add"
+            onClick={() => setCreatingAlbum(true)}
+            title={t("settings.imageLibraryAlbumCreate")}
+          >
+            <FolderPlus size={12} aria-hidden="true" />
+            {t("settings.imageLibraryAlbumCreate")}
+          </button>
+        )}
+      </div>
+
       {migration ? (
         <div className="image-library-migrate-bar" role="status">
           <div className="image-library-migrate-info">
@@ -613,6 +846,25 @@ export const ImageLibraryPanel = ({
                     className="image-library-card-actions"
                     onClick={(event) => event.stopPropagation()}
                   >
+                    <select
+                      className="image-library-card-album-select"
+                      value={record.albumId ?? ""}
+                      onChange={(event) =>
+                        void moveToAlbum(record, event.target.value)
+                      }
+                      onClick={(event) => event.stopPropagation()}
+                      title={t("settings.imageLibraryAlbumMove")}
+                      aria-label={t("settings.imageLibraryAlbumMove")}
+                    >
+                      <option value="">
+                        {t("settings.imageLibraryAlbumNone")}
+                      </option>
+                      {albums.map((album) => (
+                        <option key={album.id} value={album.id}>
+                          {album.name}
+                        </option>
+                      ))}
+                    </select>
                     <button
                       type="button"
                       className="image-library-card-btn"
@@ -727,6 +979,28 @@ export const ImageLibraryPanel = ({
         cancelLabel={t("settings.cancel", { defaultValue: "Cancel" })}
         onConfirm={() => void confirmMigration()}
         onCancel={() => setPendingMigration(null)}
+      />
+
+      <ConfirmDialog
+        open={pendingAlbumDelete !== null}
+        title={t("settings.imageLibraryAlbumDeleteTitle", {
+          defaultValue: "Delete album",
+        })}
+        message={t("settings.imageLibraryAlbumDeleteConfirm", {
+          defaultValue:
+            'Delete album "{{name}}"? Its {{count}} image(s) will be kept (moved to Uncategorized).',
+          values: {
+            name: pendingAlbumDelete?.name ?? "",
+            count: pendingAlbumDelete?.imageCount ?? 0,
+          },
+        })}
+        confirmLabel={t("settings.imageLibraryAlbumDelete", {
+          defaultValue: "Delete",
+        })}
+        cancelLabel={t("settings.cancel", { defaultValue: "Cancel" })}
+        onConfirm={() => void confirmDeleteAlbum()}
+        onCancel={() => setPendingAlbumDelete(null)}
+        variant="danger"
       />
     </div>
   );

@@ -130,4 +130,60 @@ export const registerImageLibraryHandlers = (native: NativeBridge): void => {
   ipcMain.handle("images:library-migrate-rollback", async (): Promise<void> => {
     await native.rollbackImageLibraryMigration();
   });
+
+  // ---- 相册（Album）----
+
+  ipcMain.handle("images:album-list", async (): Promise<unknown> => {
+    return native.listImageAlbums();
+  });
+
+  ipcMain.handle(
+    "images:album-create",
+    async (_event, name: unknown): Promise<unknown> => {
+      if (typeof name !== "string" || name.trim() === "") {
+        throw new Error("Album name must not be empty");
+      }
+      return native.createImageAlbum(name.trim());
+    }
+  );
+
+  ipcMain.handle(
+    "images:album-rename",
+    async (_event, id: unknown, name: unknown): Promise<unknown> => {
+      if (typeof id !== "string" || id.trim() === "") {
+        throw new Error("Invalid album id");
+      }
+      if (typeof name !== "string" || name.trim() === "") {
+        throw new Error("Album name must not be empty");
+      }
+      return native.renameImageAlbum(id.trim(), name.trim());
+    }
+  );
+
+  ipcMain.handle(
+    "images:album-delete",
+    async (_event, id: unknown): Promise<void> => {
+      if (typeof id !== "string" || id.trim() === "") {
+        throw new Error("Invalid album id");
+      }
+      await native.deleteImageAlbum(id.trim());
+    }
+  );
+
+  ipcMain.handle(
+    "images:album-set-image",
+    async (_event, imageId: unknown, albumId: unknown): Promise<void> => {
+      if (typeof imageId !== "string" || imageId.trim() === "") {
+        throw new Error("Invalid image id");
+      }
+      if (albumId !== null && typeof albumId !== "string") {
+        throw new Error("Invalid album id");
+      }
+      const normalizedAlbumId =
+        typeof albumId === "string" && albumId.trim() !== ""
+          ? albumId.trim()
+          : null;
+      await native.setImageAlbum(imageId.trim(), normalizedAlbumId);
+    }
+  );
 };

@@ -999,6 +999,16 @@ export const zhTW = {
   "settings.imageLibraryDescription":
     "管理 AI 生成的圖片（自動落盤儲存，刪除會同步移除會話中的對應圖片）",
   "settings.imageLibraryRefresh": "重新整理",
+  "settings.imageLibraryAlbumAll": "全部",
+  "settings.imageLibraryAlbumNone": "未分類",
+  "settings.imageLibraryAlbumCreate": "新增相冊",
+  "settings.imageLibraryAlbumNewPlaceholder": "相冊名稱，Enter 確認",
+  "settings.imageLibraryAlbumRename": "重新命名",
+  "settings.imageLibraryAlbumDelete": "刪除相冊",
+  "settings.imageLibraryAlbumMove": "移入相冊",
+  "settings.imageLibraryAlbumDeleteTitle": "刪除相冊",
+  "settings.imageLibraryAlbumDeleteConfirm":
+    "刪除相冊「{{name}}」？相冊內 {{count}} 張圖片將保留（移入未分類）。",
   "settings.imageLibraryCount": "{{count}} 張圖片",
   "settings.imageLibraryFilterAll": "全部",
   "settings.imageLibraryFilterLandscape": "橫圖",

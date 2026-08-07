@@ -957,6 +957,26 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to list image library")
         ),
+      listImageAlbums: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to list image albums")
+        ),
+      createImageAlbum: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to create image albums")
+        ),
+      renameImageAlbum: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to rename image albums")
+        ),
+      deleteImageAlbum: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to delete image albums")
+        ),
+      setImageAlbum: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to manage image albums")
+        ),
       readImageLibraryFile: () =>
         Promise.reject(
           new Error("Rust native bridge is required to read library images")

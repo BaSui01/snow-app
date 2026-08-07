@@ -1517,4 +1517,10 @@ export type NativeBridge = {
   commitImageLibraryMigration: () => Promise<void>;
   /** 回滚迁移：删除已复制到新目录的文件并移除日志（幂等） */
   rollbackImageLibraryMigration: () => Promise<void>;
+  /** 探测浏览器导入数据源（native 不可用时的 fallback 占位，运行即 reject） */
+  browserImportListSources: () => Promise<unknown>;
+  /** 导入浏览器保存的密码（native 不可用时的 fallback 占位，运行即 reject） */
+  browserImportPasswords: () => Promise<unknown>;
+  /** 导入浏览器 Cookie（native 不可用时的 fallback 占位，运行即 reject） */
+  browserImportCookies: () => Promise<unknown>;
 };

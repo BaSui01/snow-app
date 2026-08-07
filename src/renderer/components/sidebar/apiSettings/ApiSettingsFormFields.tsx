@@ -28,6 +28,34 @@ import type { ApiConfigFormData } from "./types";
 
 type ModelField = "advancedModel" | "basicModel";
 
+type TokenPreset = {
+  value: string;
+  label: string;
+};
+
+// 基于 2026 年主流模型能力整理的数值档位；仅展示规格，不绑定模型名称。
+const CONTEXT_TOKEN_PRESETS: TokenPreset[] = [
+  { value: "128000", label: "128K" },
+  { value: "204800", label: "200K" },
+  { value: "262144", label: "256K" },
+  { value: "400000", label: "400K" },
+  { value: "500000", label: "500K" },
+  { value: "1000000", label: "1M" },
+  { value: "1048576", label: "1M (1,048,576)" },
+  { value: "1050000", label: "1.05M" },
+];
+
+const OUTPUT_TOKEN_PRESETS: TokenPreset[] = [
+  { value: "16384", label: "16K" },
+  { value: "32768", label: "32K" },
+  { value: "65536", label: "64K" },
+  { value: "128000", label: "128K" },
+  { value: "131072", label: "128K (131,072)" },
+  { value: "262144", label: "256K" },
+  { value: "384000", label: "384K" },
+  { value: "500000", label: "500K" },
+];
+
 type ApiSettingsFormFieldsProps = {
   data: ApiConfigFormData;
   onChange: (field: keyof ApiConfigFormData, value: string | boolean) => void;
@@ -405,8 +433,22 @@ export function ApiSettingsFormFields({
               placeholder="e.g. 128000"
               type="number"
               min={0}
+              list="api-context-token-presets"
               disabled={disabled}
             />
+            <datalist id="api-context-token-presets">
+              {CONTEXT_TOKEN_PRESETS.map((preset) => (
+                <option key={preset.value} value={preset.value}>
+                  {preset.label}
+                </option>
+              ))}
+            </datalist>
+            <small className="api-settings-hint-text">
+              {t("settings.apiTokenPresetsHint", {
+                defaultValue:
+                  "Choose a common preset from the input suggestions, or enter a custom value.",
+              })}
+            </small>
           </label>
           <label className="api-settings-field">
             <span>
@@ -418,8 +460,16 @@ export function ApiSettingsFormFields({
               placeholder="e.g. 4096"
               type="number"
               min={0}
+              list="api-output-token-presets"
               disabled={disabled}
             />
+            <datalist id="api-output-token-presets">
+              {OUTPUT_TOKEN_PRESETS.map((preset) => (
+                <option key={preset.value} value={preset.value}>
+                  {preset.label}
+                </option>
+              ))}
+            </datalist>
             <small className="api-settings-hint-text">
               {t("settings.apiMaxTokensHint", {
                 defaultValue: "Leave empty to omit this parameter from requests.",

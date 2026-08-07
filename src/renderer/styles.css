@@ -1877,19 +1877,6 @@ input {
   background: rgba(229, 72, 77, 0.1);
 }
 
-.chat-batch-confirm {
-  padding: 4px;
-  margin-bottom: 4px;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.chat-batch-confirm-content {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 4px 8px;
-}
-
 .chat-item-checkbox {
   display: flex;
   align-items: center;

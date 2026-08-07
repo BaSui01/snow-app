@@ -911,7 +911,7 @@ export const zhCN = {
   "settings.imagegenOutputFormat": "输出格式",
   "settings.imagegenFormatDefault": "默认（png）",
   "settings.imagegenWebSearch": "谷歌搜索联网",
-  "settings.imagegenWebSearchHint": "仅 Gemini：让 Imagen 使用实时联网信息",
+  "settings.imagegenWebSearchHint": "仅 Gemini：保存到当前渠道；生图请求未显式指定时，后端会使用此开关并注入 Google Search 工具。",
   "settings.imagegenStreaming": "流式预览",
   "settings.imagegenStreamingHint":
     "流式：生成过程中实时显示中间预览图；非流式：生成完成后一次性出图（OpenAI gpt-image / Gemini Imagen）",
@@ -1031,6 +1031,7 @@ export const zhCN = {
   "settings.apiAdvancedModel": "高级模型",
   "settings.apiBasicModel": "基础模型",
   "settings.apiMaxContext": "最大上下文（tokens）",
+  "settings.apiTokenPresetsHint": "可选择常见 token 规格，也可直接填写自定义值。",
   "settings.apiMaxTokens": "最大输出 tokens",
   "settings.apiMaxTokensHint": "留空则请求时不传该参数。",
   "settings.apiSetActive": "启用配置",
@@ -1541,6 +1542,10 @@ export const zhCN = {
   "settings.mcpSaveError": "保存 MCP 服务失败",
   "settings.mcpDeleteSuccess": "已删除 MCP 服务。",
   "settings.mcpDeleteError": "删除 MCP 服务失败",
+  "settings.mcpDeleteConfirmTitle": "删除 MCP 服务",
+  "settings.mcpDeleteConfirm": "确定删除 MCP 服务 {{name}} 吗？",
+  "settings.mcpDeleteSnowCliConfirm":
+    "确定从 Snow App 和 Snow CLI 设置文件中删除 {{name}} 吗？删除后，下次同步不会再恢复该服务。",
   "settings.mcpTitle": "MCP 设置",
   "settings.closeMcpSettings": "关闭 MCP 设置",
   "settings.mcpScopeTabs": "MCP 作用域",

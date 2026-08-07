@@ -934,7 +934,7 @@ export const en = {
   "settings.imagegenFormatDefault": "Default (png)",
   "settings.imagegenWebSearch": "Google Search grounding",
   "settings.imagegenWebSearchHint":
-    "Gemini only: let Imagen use real-time web information",
+    "Gemini only: saved per channel; when a generation request does not override it, the backend injects the Google Search tool.",
   "settings.imagegenStreaming": "Streaming preview",
   "settings.imagegenStreamingHint":
     "Streaming: show intermediate preview images while generating; Non-streaming: show images once generation finishes (OpenAI gpt-image / Gemini Imagen)",
@@ -1062,6 +1062,8 @@ export const en = {
   "settings.apiAdvancedModel": "Advanced model",
   "settings.apiBasicModel": "Basic model",
   "settings.apiMaxContext": "Max context (tokens)",
+  "settings.apiTokenPresetsHint":
+    "Choose a common token limit or enter a custom value.",
   "settings.apiMaxTokens": "Max tokens",
   "settings.apiMaxTokensHint": "Leave empty to omit this parameter from requests.",
   "settings.apiSetActive": "Enable profile",
@@ -1591,6 +1593,10 @@ export const en = {
   "settings.mcpSaveError": "Failed to save MCP server",
   "settings.mcpDeleteSuccess": "Deleted MCP server.",
   "settings.mcpDeleteError": "Failed to delete MCP server",
+  "settings.mcpDeleteConfirmTitle": "Delete MCP server",
+  "settings.mcpDeleteConfirm": "Delete the MCP server {{name}}?",
+  "settings.mcpDeleteSnowCliConfirm":
+    "Delete {{name}} from Snow App and its Snow CLI settings file? This prevents it from returning after the next sync.",
   "settings.mcpTitle": "MCP settings",
   "settings.closeMcpSettings": "Close MCP settings",
   "settings.mcpScopeTabs": "MCP scope",

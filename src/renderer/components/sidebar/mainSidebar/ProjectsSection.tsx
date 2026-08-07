@@ -370,11 +370,13 @@ export function ProjectsSection({
 
   const handleAddLocalDirectoryCancel = (): void => {
     if (isSavingDirectory) return;
+    // 取消时返回上一级（选择添加方式），而不是直接关闭整个模态框
     setIsAddLocalDialogOpen(false);
     setSelectedLocalPath("");
     setIsDraggingLocalDirectory(false);
     setAddDirectoryMode("");
     setDirectoryError(null);
+    setIsAddMenuOpen(true);
   };
 
   const handleLocalDirectoryDrop = async (
@@ -450,9 +452,11 @@ export function ProjectsSection({
     if (isSavingDirectory) {
       return;
     }
+    // 取消时返回上一级（选择添加方式），而不是直接关闭整个模态框
     setIsCreateProjectOpen(false);
     setProjectNameInput("");
     setDirectoryError(null);
+    setIsAddMenuOpen(true);
   };
 
   // 创建项目：先让用户选择保存目录（父目录），再交由主进程/Rust 创建文件夹

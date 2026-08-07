@@ -237,9 +237,11 @@ const ChatContentBody = ({
   const scrollRafIdRef = useRef(0);
   const hasMessagesRef = useRef(hasMessages);
   const autoScrollEnabledRef = useRef(autoScrollEnabled);
+  const isStreamingRef = useRef(isStreaming);
   activeConversationIdRef.current = activeConversationId;
   hasMessagesRef.current = hasMessages;
   autoScrollEnabledRef.current = autoScrollEnabled;
+  isStreamingRef.current = isStreaming;
 
   // 纯几何同步“回到底部”按钮显隐，绝不触碰跟随状态。内容增长、窗口缩放等
   // 非用户滚动场景只允许走这里——跟随状态只能被用户输入或显式动作改变。
@@ -428,17 +430,36 @@ const ChatContentBody = ({
         return;
       }
 
-      // 窗口变高或内容收缩后视口可能物理上贴在底部：重新吸附，让后续增长
-      // 继续跟随（“回到底部后继续自动滚动”的几何等价形态）。
+      // 窗口变高或内容收缩后视口可能物理上贴在底部：会话进行中时重新吸附，
+      // 让后续增长继续跟随（"回到底部后继续自动滚动"的几何等价形态）。会话
+      // 结束后不再重新吸附——用户阅读历史时视口恰好贴底，不应被记为"要跟随"。
       const distanceFromBottom =
         nextScrollHeight - container.scrollTop - nextClientHeight;
-      if (!shouldStickToBottomRef.current && distanceFromBottom <= 0) {
+      if (
+        !shouldStickToBottomRef.current &&
+        distanceFromBottom <= 0 &&
+        isStreamingRef.current
+      ) {
         shouldStickToBottomRef.current = true;
       }
 
       syncScrollButtonVisibility(container);
 
-      if (shouldStickToBottomRef.current && autoScrollEnabledRef.current) {
+      // 钉底在两种情况下生效：流式输出期间内容增长持续把视口钉在底部；
+      // 以及切换会话后的初始定位阶段（isInitialBottomPositioningRef）。
+      // 历史消息是异步渲染的（Markdown worker、代码高亮、图片解码、
+      // content-visibility 估算高度修正等），初始定位只在同步 + 几帧 rAF
+      // 里滚动过，几何高度在此之后仍会继续增长，若此时不继续钉底，
+      // 非流式会话的视口就会停在中间。用户一旦滚动（markUserScrollIntent
+      // 会清掉该标志）就不再拉回视口，用户停在哪儿就是哪儿。初始定位
+      // 不受自动滚动偏好约束——与初始滚动本身不看偏好保持一致；偏好只
+      // 约束流式期间的持续跟随。发送消息等显式动作（handleSendWithScroll）
+      // 不受影响，仍会主动滚到底部。
+      if (
+        shouldStickToBottomRef.current &&
+        (isInitialBottomPositioningRef.current ||
+          (autoScrollEnabledRef.current && isStreamingRef.current))
+      ) {
         container.scrollTop = nextScrollHeight;
       }
     };

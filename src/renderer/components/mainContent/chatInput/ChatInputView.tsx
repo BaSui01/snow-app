@@ -26,11 +26,14 @@ import { TEXT_SNIPPET_THRESHOLD } from "./constants";
 import { TokenUsageRing } from "./TokenUsageRing";
 import {
   CHIPS_CLIPBOARD_TYPE,
+  INSERT_ELEMENT_TAG_EVENT,
+  base64ToUtf8,
   buildSegmentsHtml,
   buildTextSnippetSummary,
   createChangeChipHtml,
   createChipHtml,
   createCommitChipHtml,
+  createElementChipHtml,
   createImageChipHtml,
   createTextSnippetChipHtml,
   insertHtmlAtSelection,
@@ -42,6 +45,7 @@ import {
   type ChangeTag,
   type CommitTag,
   type ContentSegment,
+  type ElementTag,
   type FileTag,
   type ImageTag,
   type TextSnippetTag,
@@ -361,6 +365,17 @@ export const ChatInputView = ({
     summary: string;
   } | null>(null);
 
+  // 通用 chip 详情悬停预览（file / commit / change / review / element）
+  const [chipDetails, setChipDetails] = useState<{
+    rows: { label: string; value: string }[];
+    content?: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const chipDetailsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+
   const modelDropdownDir = useDropdownDirection(dropdownRef, isModelMenuOpen);
   const isCustomThinkingValue = !thinkingOptions.some(
     (option) => option.value === thinkingValue
@@ -418,6 +433,26 @@ export const ChatInputView = ({
     },
     [syncContent, textareaRef]
   );
+
+  // 监听浏览器面板元素选择器派发的 element 标签事件，将选取的页面元素
+  // 以 element chip 形式插入编辑区（与 @ 文件 / 拖拽标签同一套编码体系）。
+  useEffect(() => {
+    const handleInsertElementTag = (event: Event) => {
+      const tag = (event as CustomEvent<ElementTag>).detail;
+      if (!tag) {
+        return;
+      }
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+      }
+      insertHtmlAtSelection(createElementChipHtml(tag));
+      syncContent();
+    };
+    window.addEventListener(INSERT_ELEMENT_TAG_EVENT, handleInsertElementTag);
+    return () => {
+      window.removeEventListener(INSERT_ELEMENT_TAG_EVENT, handleInsertElementTag);
+    };
+  }, [syncContent, textareaRef]);
 
   const deleteMentionQuery = useCallback(() => {
     const el = textareaRef.current;
@@ -1400,6 +1435,190 @@ export const ChatInputView = ({
     syncContent();
   }, [syncContent, textSnippetEditor]);
 
+  const showChipDetails = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement;
+      const chip = target.closest(
+        "[data-file-tag='true'],[data-commit-tag='true'],[data-change-tag='true'],[data-review-tag='true'],[data-element-tag='true']"
+      ) as HTMLElement | null;
+      const clear = (): void => {
+        if (chipDetailsTimerRef.current) {
+          clearTimeout(chipDetailsTimerRef.current);
+          chipDetailsTimerRef.current = null;
+        }
+        setChipDetails(null);
+      };
+      if (!chip) {
+        clear();
+        return;
+      }
+
+      const rows: { label: string; value: string }[] = [];
+      let content: string | undefined;
+      try {
+        if (chip.dataset.fileTag === "true") {
+          const path = chip.dataset.filePath ?? "";
+          const isDir = chip.dataset.fileIsDir === "true";
+          const lines = chip.dataset.fileLines;
+          rows.push({
+            label: t(isDir ? "chatInput.chipDetailsFolder" : "chatInput.chipDetailsFile"),
+            value: path,
+          });
+          if (lines) {
+            rows.push({ label: t("chatInput.chipDetailsLines"), value: lines });
+          }
+        } else if (chip.dataset.commitTag === "true") {
+          const data = JSON.parse(
+            chip.dataset.commitData ?? "{}"
+          ) as Partial<CommitTag>;
+          rows.push({
+            label: t("chatInput.chipDetailsCommit"),
+            value: data.shortHash ?? "",
+          });
+          rows.push({
+            label: t("chatInput.chipDetailsAuthor"),
+            value: data.author ?? "",
+          });
+          if (data.date) {
+            rows.push({
+              label: t("chatInput.chipDetailsDate"),
+              value: data.date,
+            });
+          }
+          if (data.repoPath) {
+            rows.push({
+              label: t("chatInput.chipDetailsRepo"),
+              value: data.repoPath,
+            });
+          }
+          if (data.message) {
+            content = data.message;
+          }
+        } else if (chip.dataset.changeTag === "true") {
+          const data = JSON.parse(
+            chip.dataset.changeData ?? "{}"
+          ) as Partial<ChangeTag>;
+          const sectionLabel =
+            data.section === "staged"
+              ? t("chatInput.chipDetailsStaged")
+              : t("chatInput.chipDetailsUnstaged");
+          rows.push({
+            label: t("chatInput.chipDetailsSection"),
+            value: data.status ? `${sectionLabel} · ${data.status}` : sectionLabel,
+          });
+          rows.push({
+            label: t("chatInput.chipDetailsPath"),
+            value: data.path ?? "",
+          });
+          if (data.repoPath) {
+            rows.push({
+              label: t("chatInput.chipDetailsRepo"),
+              value: data.repoPath,
+            });
+          }
+        } else if (chip.dataset.reviewTag === "true") {
+          const data = JSON.parse(
+            chip.dataset.reviewData ?? "{}"
+          ) as { prompt?: string; summary?: string; charCount?: number; branch?: string; repoPath?: string };
+          rows.push({
+            label: t("chatInput.chipDetailsSummary"),
+            value: data.summary ?? "",
+          });
+          if (typeof data.charCount === "number") {
+            rows.push({
+              label: t("chatInput.chipDetailsChars"),
+              value: String(data.charCount),
+            });
+          }
+          if (data.branch) {
+            rows.push({
+              label: t("chatInput.chipDetailsBranch"),
+              value: data.branch,
+            });
+          }
+          if (data.repoPath) {
+            rows.push({
+              label: t("chatInput.chipDetailsRepo"),
+              value: data.repoPath,
+            });
+          }
+          if (data.prompt) {
+            content = base64ToUtf8(data.prompt);
+          }
+        } else if (chip.dataset.elementTag === "true") {
+          const data = JSON.parse(
+            chip.dataset.elementData ?? "{}"
+          ) as { url?: string; tag?: string; label?: string; text?: string; note?: string };
+          rows.push({
+            label: t("chatInput.chipDetailsTag"),
+            value: data.label ?? "",
+          });
+          if (data.tag) {
+            rows.push({
+              label: t("chatInput.chipDetailsType"),
+              value: data.tag,
+            });
+          }
+          if (data.url) {
+            rows.push({
+              label: t("chatInput.chipDetailsUrl"),
+              value: data.url,
+            });
+          }
+          if (data.note) {
+            rows.push({
+              label: t("chatInput.chipDetailsNote"),
+              value: base64ToUtf8(data.note),
+            });
+          }
+          if (data.text) {
+            content = base64ToUtf8(data.text);
+          }
+        }
+      } catch {
+        clear();
+        return;
+      }
+      if (rows.length === 0) {
+        clear();
+        return;
+      }
+
+      if (chipDetailsTimerRef.current) {
+        clearTimeout(chipDetailsTimerRef.current);
+        chipDetailsTimerRef.current = null;
+      }
+
+      const rect = chip.getBoundingClientRect();
+      const PREVIEW_MAX_W = 420;
+      const halfW = PREVIEW_MAX_W / 2;
+      const clampedX = Math.max(
+        halfW + 4,
+        Math.min(rect.left + rect.width / 2, window.innerWidth - halfW - 4)
+      );
+      setChipDetails({
+        rows,
+        content,
+        x: clampedX,
+        y: rect.top,
+      });
+    },
+    [t]
+  );
+
+  const scheduleHideChipDetails = useCallback(() => {
+    chipDetailsTimerRef.current = setTimeout(() => {
+      setChipDetails(null);
+    }, 200);
+  }, []);
+
+  const cancelHideChipDetails = useCallback(() => {
+    if (chipDetailsTimerRef.current) {
+      clearTimeout(chipDetailsTimerRef.current);
+      chipDetailsTimerRef.current = null;
+    }
+  }, []);
+
   const handleSelectFilesAndFolders = useCallback(async () => {
     try {
       const selected = await window.snow.selectFiles(
@@ -1593,10 +1812,12 @@ export const ChatInputView = ({
             onMouseMove={(event) => {
               showImagePreview(event);
               showTextSnippetPreview(event);
+              showChipDetails(event);
             }}
             onMouseLeave={() => {
               scheduleHideImagePreview();
               scheduleHideTextSnippetPreview();
+              scheduleHideChipDetails();
             }}
             onClick={(event) => {
               handleChipRemove(event);
@@ -1648,6 +1869,38 @@ export const ChatInputView = ({
                 <pre className="text-snippet-preview-content">
                   {textSnippetPreview.content}
                 </pre>
+              </div>,
+              document.body
+            )}
+          {chipDetails &&
+            createPortal(
+              <div
+                className="chip-details-preview"
+                style={{
+                  left: chipDetails.x,
+                  top: chipDetails.y,
+                  transform: "translate(-50%, calc(-100% - 8px))",
+                }}
+                onMouseEnter={cancelHideChipDetails}
+                onMouseLeave={scheduleHideChipDetails}
+              >
+                <div className="chip-details-preview-rows">
+                  {chipDetails.rows.map((row) => (
+                    <div className="chip-details-preview-row" key={row.label}>
+                      <span className="chip-details-preview-label">
+                        {row.label}
+                      </span>
+                      <span className="chip-details-preview-value">
+                        {row.value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {chipDetails.content && (
+                  <pre className="chip-details-preview-content">
+                    {chipDetails.content}
+                  </pre>
+                )}
               </div>,
               document.body
             )}

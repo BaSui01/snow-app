@@ -40,7 +40,9 @@ import {
 } from "./windowsRemoteRunner";
 import { buildWindowsJobObjectLifecycleProbeScript } from "./windowsJobObject";
 import {
+  canUseSnowAgent,
   cancelSnowAgentJob,
+  getSnowAgentAttachCommand,
   inspectSnowAgentJob,
   launchSnowAgentJob,
   negotiateSnowAgent,
@@ -794,7 +796,7 @@ const withSystemdUserEnvironment = (command: string): string =>
 const remoteBackends: Record<RemoteJobBackendKind, RemoteJobBackend> = {
   "snow-agent": {
     kind: "snow-agent",
-    isAvailable: (capabilities) => capabilities.posixShell,
+    isAvailable: canUseSnowAgent,
     supportsInteractiveAttach: true,
     async launch(context): Promise<void> {
       await launchSnowAgentJob(
@@ -2058,18 +2060,15 @@ export const getRemoteJobAttachSpec = async (
       if (!agent.capabilities.interactiveAttach) {
         throw new Error("The negotiated snow-agent release does not support interactive attach");
       }
-      const remoteCommand =
-        capabilities.platform === "windows"
-          ? `snow-agent.exe job attach --job-directory \"${jobDirectory.replace(
-              /\"/g,
-              '\\\"'
-            )}\"`
-          : `snow-agent job attach --job-directory ${shellQuote(jobDirectory)}`;
       return {
         jobId,
         workspacePath: binding.workspacePath,
         backend: backendKind,
-        remoteCommand,
+        remoteCommand: await getSnowAgentAttachCommand(
+          sessionId,
+          capabilities,
+          jobDirectory
+        ),
       };
     }
     throw new Error(`Remote Job backend ${backendKind} has no attach command`);

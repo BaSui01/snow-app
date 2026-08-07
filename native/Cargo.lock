@@ -2596,6 +2596,7 @@ dependencies = [
  "flate2",
  "futures",
  "http",
+ "libc",
  "napi",
  "napi-build",
  "napi-derive",

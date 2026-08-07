@@ -89,6 +89,8 @@ export type SshSession = {
 
 export type SshCapabilities = {
   platform: "posix" | "windows";
+  remoteOs?: string;
+  remoteArch?: string;
   posixShell: boolean;
   systemdUser: boolean;
   tmux: boolean;
@@ -706,6 +708,7 @@ const POSIX_CAPABILITY_PROBE_COMMAND = [
   "done",
   'runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"',
   'if XDG_RUNTIME_DIR="$runtime_dir" DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$runtime_dir/bus}" systemctl --user show-environment >/dev/null 2>&1; then printf "systemd_user=1\\n"; else printf "systemd_user=0\\n"; fi',
+  'printf "os=%s\\narch=%s\\n" "$(uname -s 2>/dev/null || printf unknown)" "$(uname -m 2>/dev/null || printf unknown)"',
 ].join("\n");
 
 const WINDOWS_CAPABILITY_PROBE_SCRIPT = [
@@ -759,6 +762,8 @@ export const probeSshCapabilities = async (
   );
   const capabilities: SshCapabilities = {
     platform,
+    remoteOs: values.get("os")?.toLowerCase(),
+    remoteArch: values.get("arch")?.toLowerCase(),
     posixShell: values.get("sh") === "1",
     systemdUser: values.get("systemd_user") === "1",
     tmux: values.get("tmux") === "1",

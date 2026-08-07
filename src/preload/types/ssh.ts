@@ -39,6 +39,8 @@ export type SshDirectoryEntry = {
 
 export type SshCapabilities = {
   platform: "posix" | "windows";
+  remoteOs?: string;
+  remoteArch?: string;
   posixShell: boolean;
   systemdUser: boolean;
   tmux: boolean;

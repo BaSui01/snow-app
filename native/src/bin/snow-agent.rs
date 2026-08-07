@@ -72,6 +72,7 @@ fn run() -> Result<(), String> {
         }
         ["job", "launch", "--job-directory", directory] => launch_job(Path::new(directory)),
         ["job", "run", "--job-directory", directory] => run_job(Path::new(directory)),
+        ["job", "attach", "--job-directory", directory] => attach_job(Path::new(directory)),
         ["job", "inspect", "--job-directory", directory] => inspect_job(Path::new(directory)),
         ["job", "cancel", "--job-directory", directory] => cancel_job(Path::new(directory)),
         ["file", "cas-write", "--target", target, "--expected-sha256", expected, "--content-base64", content] => {
@@ -340,9 +341,20 @@ fn launch_detached<F>(executable: &Path, configure: F) -> Result<(), String>
 where
     F: FnOnce(&mut Command),
 {
-    let mut command = Command::new("setsid");
-    command.arg(executable);
+    use std::os::unix::process::CommandExt;
+
+    let mut command = Command::new(executable);
     configure(&mut command);
+    // Calling setsid(2) in the child keeps the agent portable across POSIX
+    // hosts. macOS does not ship the GNU `setsid` executable used previously.
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
     command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -800,6 +812,34 @@ fn inspect_job(directory: &Path) -> Result<(), String> {
     print_json(json!({ "active": active, "state": state }))
 }
 
+fn attach_job(directory: &Path) -> Result<(), String> {
+    let output_path = directory.join("output.log");
+    let mut offset = 0_u64;
+    let stdout = io::stdout();
+    let mut output = stdout.lock();
+    loop {
+        let content = fs::read(&output_path).unwrap_or_default();
+        let available = u64::try_from(content.len()).map_err(|error| error.to_string())?;
+        if available < offset {
+            // The retained log was replaced while a terminal was attached.
+            // Restart from its beginning rather than silently skipping output.
+            offset = 0;
+        }
+        if available > offset {
+            let start = usize::try_from(offset).map_err(|error| error.to_string())?;
+            output
+                .write_all(&content[start..])
+                .and_then(|()| output.flush())
+                .map_err(|error| format!("failed to write attached output: {error}"))?;
+            offset = available;
+        }
+        if read_state(directory).is_some_and(|state| state_is_terminal(&state)) {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+}
+
 fn cancel_job(directory: &Path) -> Result<(), String> {
     fs::write(directory.join("cancel.request"), b"").map_err(|error| error.to_string())?;
     print_json(json!({ "accepted": true }))
@@ -950,6 +990,23 @@ mod tests {
 
         fs::remove_file(marker).expect("remove self-test marker");
         fs::remove_dir_all(root).expect("remove test job directory");
+    }
+
+    #[test]
+    fn attach_replays_completed_job_output() {
+        let directory = test_job_directory();
+        fs::write(directory.join("output.log"), b"completed output\n")
+            .expect("write completed output");
+        fs::write(
+            directory.join("state.json"),
+            serde_json::to_vec(&json!({ "status": "succeeded" }))
+                .expect("serialize completed state"),
+        )
+        .expect("write completed state");
+
+        attach_job(&directory).expect("attach must replay output then return for completed jobs");
+
+        fs::remove_dir_all(directory).expect("remove test job directory");
     }
 
     #[test]

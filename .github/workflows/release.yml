@@ -81,7 +81,14 @@ jobs:
       - name: Build TypeScript + Vite + Rust native
         env:
           NATIVE_BUILD_ARCH: ${{ matrix.arch }}
+          SNOW_AGENT_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          SNOW_AGENT_RELEASE_KEY_ID: snow-agent-ed25519-2026
+          SNOW_AGENT_RELEASE_SIGNING_KEY: ${{ secrets.SNOW_AGENT_RELEASE_SIGNING_KEY }}
+          SNOW_AGENT_REQUIRE_RELEASE_SIGNING: "1"
         run: npm run build
+
+      - name: Verify signed Snow Agent release asset
+        run: npm run verify:snow-agent-release
 
       - name: Build electron packages
         env:
@@ -107,6 +114,7 @@ jobs:
             release/*.AppImage
             release/*.deb
             release/latest*.yml
+            release/snow-agent-*
           if-no-files-found: warn
 
   publish:
@@ -157,3 +165,4 @@ jobs:
             release/*.deb
             release/latest*.yml
             release/latest-mac.json
+            release/snow-agent-*

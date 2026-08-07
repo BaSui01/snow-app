@@ -15766,14 +15766,21 @@ input {
 
 /* 容器查询分级隐藏次要指标，避免胶囊条被截断成横向滚动（横向滚动条已
    隐藏，溢出内容不可见，因此断点按「最宽元素优先压缩」排布，保证常见
-   窄容器下不溢出）：
-   - 580px：隐藏 tok/s
-   - 480px：隐藏 TTFT
-   - 380px：隐藏运行时长
-   - 320px：隐藏 tokens 的文字 label，只留数值
+   窄容器下不溢出）。
+   断点依据当前元素的实测宽度校准（11px / tabular-nums，各阶段含 8px
+   gap、1px 分隔线与 20px 内边距）：
+   - 全量约 372px，隐藏 tok/s 后约 282px
+   - 再隐藏 TTFT 后约 221px
+   - 再隐藏运行时长后约 146px
+   - 再隐藏 tokens 文字 label 后约 106px
+   断点取「上一阶段所需宽度 + 余量」，保证不提前隐藏、不溢出：
+   - 390px：隐藏 tok/s
+   - 300px：隐藏 TTFT
+   - 240px：隐藏运行时长
+   - 150px：隐藏 tokens 的文字 label，只留数值
    分隔线跟随其后的指标一起隐藏，防止孤立竖线。
    Electron 37 (Chromium 130+) 支持 @container。 */
-@container (max-width: 580px) {
+@container (max-width: 390px) {
   .stream-metrics-sep:has(+ .stream-metrics-tps) {
     display: none;
   }
@@ -15782,7 +15789,7 @@ input {
   }
 }
 
-@container (max-width: 480px) {
+@container (max-width: 300px) {
   .stream-metrics-sep:has(+ .stream-metrics-ttft) {
     display: none;
   }
@@ -15791,7 +15798,7 @@ input {
   }
 }
 
-@container (max-width: 380px) {
+@container (max-width: 240px) {
   .stream-metrics-sep:has(+ .stream-metrics-elapsed) {
     display: none;
   }
@@ -15800,7 +15807,7 @@ input {
   }
 }
 
-@container (max-width: 320px) {
+@container (max-width: 150px) {
   .stream-metrics-tokens .stream-metrics-label {
     display: none;
   }

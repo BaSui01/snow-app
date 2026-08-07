@@ -29,6 +29,7 @@ import {
   initBrowserNetworkRecorder,
 } from "../ipc/handlers/browserNetworkRecorder";
 import { installWebviewContextMenu } from "../utils/webviewContextMenu";
+import { initBrowserPopupHandler } from "../browser/browserPopupWindow";
 
 export const bootstrapApplication = (): void => {
   // ─── Chromium 启动加速开关（必须在 whenReady 之前）─────────────────────
@@ -130,6 +131,9 @@ export const bootstrapApplication = (): void => {
     // 需在 app ready 且 defaultSession 可用后初始化。
     initBrowserNetworkRecorder();
     initBrowserDialogHandler();
+    // 浏览器弹出窗口：webview 内 window.open / target=_blank 创建真实窗体
+    // （Google 登录等 OAuth 弹窗依赖 window.opener 关系，不能转交系统浏览器）。
+    initBrowserPopupHandler();
     // 浏览器右键菜单：Electron webview 默认无右键菜单，需主进程手动弹出。
     installWebviewContextMenu();
 

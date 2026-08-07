@@ -12,7 +12,9 @@ use super::super::{
     ChatConversationPage, ChatConversationRecord, ChatMessagePage, ChatMessageRecord,
     ConversationSearchResult, UserMessageSummary,
 };
-use crate::api::conversation::images::expand_review_tags_in_content;
+use crate::api::conversation::images::{
+    expand_element_tags_in_content, expand_review_tags_in_content,
+};
 
 #[derive(Clone, Debug)]
 pub struct ChatContextMessage {
@@ -2042,9 +2044,16 @@ fn create_title(messages: &[ChatContextMessage]) -> String {
         .find(|message| normalize_role(&message.role) == "user" && !message.content.trim().is_empty())
         .or_else(|| messages.iter().find(|message| !message.content.trim().is_empty()))
         .map(|message| {
-            // 展开 @@review: 标签，避免标题显示 base64 外壳；其余消息原文不变。
-            expand_review_tags_in_content(&message.content)
-                .unwrap_or_else(|| message.content.clone())
+            // 展开 @@review: / @@element: 标签，避免标题显示 base64/JSON 外壳；
+            // 其余消息原文不变。
+            let mut content = message.content.clone();
+            if let Some(expanded) = expand_review_tags_in_content(&content) {
+                content = expanded;
+            }
+            if let Some(expanded) = expand_element_tags_in_content(&content) {
+                content = expanded;
+            }
+            content
         })
         .unwrap_or_else(|| "新对话".to_string());
 

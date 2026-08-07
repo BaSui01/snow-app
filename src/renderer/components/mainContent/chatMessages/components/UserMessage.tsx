@@ -6,6 +6,7 @@ import {
   FileText,
   GitCommitHorizontal,
   GitCompare,
+  MousePointer2,
   ScanSearch,
 } from "lucide-react";
 import { UserMessageActions } from "./UserMessageActions";
@@ -315,6 +316,31 @@ export const UserMessage = memo(
                     />
                     <span className="user-message-file-chip-name">
                       {segment.tag.summary}
+                    </span>
+                  </span>
+                );
+              }
+
+              if (segment.type === "element") {
+                const displayName = segment.tag.note
+                  ? `${segment.tag.label} · ${segment.tag.note}`
+                  : segment.tag.label;
+                const elementTitle = segment.tag.url
+                  ? `${segment.tag.label} (${segment.tag.url})`
+                  : segment.tag.label;
+                return (
+                  <span
+                    className="user-message-file-chip element-chip"
+                    key={index}
+                    title={elementTitle}
+                  >
+                    <MousePointer2
+                      size={12}
+                      className="user-message-file-chip-icon"
+                      style={{ color: "#1a73e8" }}
+                    />
+                    <span className="user-message-file-chip-name">
+                      {displayName}
                     </span>
                   </span>
                 );

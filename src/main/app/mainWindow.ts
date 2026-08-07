@@ -20,6 +20,7 @@ import {
 } from "./windowState";
 import { safeSend } from "../utils/safeSend";
 import { snowLog } from "../../utils/snowLogger";
+import { closeAllBrowserPopups } from "../browser/browserPopupWindow";
 
 // 模块级关闭确认标志：渲染进程确认关闭后置为 true，使 close 事件不再被拦截。
 // 这样可以统一覆盖所有关闭路径（自定义标题栏按钮、Alt+F4、任务栏关闭等）。
@@ -179,6 +180,12 @@ export const createWindow = (): BrowserWindow => {
       return;
     }
     killAllPtyForWebContents(mainWindow.webContents);
+  });
+
+  // 主窗口真正关闭后清理浏览器弹出窗口：Windows/Linux 上进程即将退出，
+  // macOS 上则避免关闭主窗口后残留孤儿弹出窗口。
+  mainWindow.on("closed", () => {
+    closeAllBrowserPopups();
   });
 
   // 渲染进程异常退出（崩溃/被系统回收）时自动重新加载，避免前端黑屏卡死。

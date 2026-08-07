@@ -1517,4 +1517,50 @@ export type NativeBridge = {
   commitImageLibraryMigration: () => Promise<void>;
   /** 回滚迁移：删除已复制到新目录的文件并移除日志（幂等） */
   rollbackImageLibraryMigration: () => Promise<void>;
+  /** 探测本机浏览器（Chrome/Edge/Chromium/Firefox）及其配置文件与数据量 */
+  browserImportListSources: () => Promise<BrowserImportSource[]>;
+  /** 解密并导出指定浏览器配置文件的已保存密码（明文，仅供主进程加密落盘） */
+  browserImportPasswords: (
+    sourceId: string,
+    profile: string
+  ) => Promise<ImportedBrowserPassword[]>;
+  /** 解析指定浏览器配置文件的 Cookie（Chrome 系已解密） */
+  browserImportCookies: (
+    sourceId: string,
+    profile: string
+  ) => Promise<ImportedBrowserCookie[]>;
+};
+
+/** 本机浏览器源（探测结果）。 */
+export type BrowserImportSource = {
+  /** "chrome" | "edge" | "chromium" | "firefox" */
+  id: string;
+  name: string;
+  profile: string;
+  /** 浏览器登录账号（Chrome: account_info email / Firefox: sync username） */
+  accountName: string;
+  passwordDb: string;
+  cookieDb: string;
+  passwordCount: number;
+  cookieCount: number;
+  note: string;
+};
+
+/** 导入的密码（明文仅存在于主进程内存，随即加密落盘）。 */
+export type ImportedBrowserPassword = {
+  origin: string;
+  username: string;
+  password: string;
+};
+
+/** 导入的 Cookie。 */
+export type ImportedBrowserCookie = {
+  domain: string;
+  path: string;
+  name: string;
+  value: string;
+  expires: number | null;
+  httpOnly: boolean;
+  secure: boolean;
+  sameSite: string;
 };

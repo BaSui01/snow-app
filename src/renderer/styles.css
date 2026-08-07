@@ -10794,6 +10794,46 @@ input {
   flex-shrink: 0;
 }
 
+/* 生图错误：本地化标题 + 原始英文详情（小字次级展示） */
+.tool-call-error-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tool-call-error-title {
+  font-weight: 500;
+}
+
+.tool-call-error-detail {
+  font-size: 11px;
+  opacity: 0.75;
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+/* 生图部分失败警告条（n 张中有失败时展示失败摘要） */
+.tool-call-imagegen-partial-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-yellow-bg, rgba(250, 204, 21, 0.16));
+  color: var(--accent-yellow-text, #facc15);
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.tool-call-imagegen-partial-warning svg {
+  display: block;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
 .tool-call-dir-listing {
   display: flex;
   flex-direction: column;
@@ -12745,6 +12785,53 @@ input {
 .tool-call-imagegen-download:hover {
   color: var(--accent-blue-text);
   background: var(--accent-blue-bg);
+}
+
+/* 生图结果画廊工具栏：图片数量 + 全部保存 */
+.tool-call-imagegen-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.tool-call-imagegen-toolbar-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.tool-call-imagegen-download-all,
+.tool-call-imagegen-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.tool-call-imagegen-download-all:hover,
+.tool-call-imagegen-retry:hover {
+  color: var(--accent-blue-text);
+  background: var(--accent-blue-bg);
+}
+
+.tool-call-imagegen-download-all:disabled,
+.tool-call-imagegen-retry:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.tool-call-imagegen-retry {
+  margin-top: 8px;
 }
 
 /* 多提示词（prompts 数组）：逐行展示，序号徽章 + 等宽文本 */

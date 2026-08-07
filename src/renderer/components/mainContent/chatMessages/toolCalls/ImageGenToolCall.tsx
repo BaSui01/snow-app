@@ -6,15 +6,24 @@ import {
   Image as ImageIcon,
   Link2,
   Loader2,
+  RotateCcw,
   Sparkles,
 } from "lucide-react";
 import { useI18n } from "../../../../i18n";
-import { downloadImageSrc } from "../../../../utils/imageDownload";
+import {
+  downloadImageSrc,
+  extensionForBlob,
+  saveBlobToFile,
+  srcToBlob,
+} from "../../../../utils/imageDownload";
 import { imageProxyUrl } from "../../../../utils/imageProxyUrl";
 import type { ToolCallInfo } from "../utils/conversationTypes";
+import { getErrorMessage } from "../utils/conversationHelpers";
 import { ToolCallNode } from "./shared/ToolCallNode";
 import {
+  classifyImageGenError,
   columnsForCount,
+  imageGenErrorTitleKey,
   IMG_TALL_RATIO,
   IMG_WIDE_RATIO,
   parseImageGenArgs,
@@ -35,11 +44,93 @@ type ImageGenToolCallProps = {
  */
 const uploadImageCache = new Map<string, string>();
 
+/** 失败重试状态：组件内自持，不写回会话（避免与 agent loop 状态机竞争）。 */
+type RetryState =
+  | { status: "idle" }
+  | {
+      status: "running";
+      streamingImages: NonNullable<ToolCallInfo["streamingImages"]>;
+    }
+  | { status: "done"; result: string }
+  | { status: "failed"; error: string };
+
 export const ImageGenToolCall = ({
   toolCall,
 }: ImageGenToolCallProps): React.JSX.Element => {
   const { t } = useI18n();
   const [lightbox, setLightbox] = useState<LightboxTarget | null>(null);
+
+  // ------------------------------------------------------------------
+  // 失败重试：复用 mcp:call-tool 通道以相同参数重跑，流式 partial_image
+  // chunk 恢复实时预览；结果覆盖展示（组件内 state，不写回会话）。
+  // ------------------------------------------------------------------
+  const [retry, setRetry] = useState<RetryState>({ status: "idle" });
+
+  const handleRetry = useCallback(async (): Promise<void> => {
+    setRetry({ status: "running", streamingImages: [] });
+    try {
+      const result = await window.snow.callMcpTool(
+        toolCall.name,
+        toolCall.arguments,
+        undefined, // projectId：生图不依赖会话目录
+        undefined, // checkpointIds
+        undefined, // checkpointWorkDir
+        undefined, // sensitiveAuthorizationToken
+        (chunk) => {
+          if (chunk.stream !== "imagegen") {
+            return;
+          }
+          try {
+            const parsed: unknown = JSON.parse(chunk.data);
+            if (
+              typeof parsed === "object" &&
+              parsed !== null &&
+              !Array.isArray(parsed) &&
+              (parsed as Record<string, unknown>).type === "partial_image" &&
+              typeof (parsed as Record<string, unknown>).data === "string" &&
+              typeof (parsed as Record<string, unknown>).mimeType ===
+                "string" &&
+              typeof (parsed as Record<string, unknown>).index === "number"
+            ) {
+              const image = {
+                index: (parsed as { index: number }).index,
+                mimeType: (parsed as { mimeType: string }).mimeType,
+                data: (parsed as { data: string }).data,
+              };
+              setRetry((prev) => {
+                if (prev.status !== "running") {
+                  return prev;
+                }
+                const list = prev.streamingImages;
+                const existing = list.findIndex(
+                  (item) => item.index === image.index
+                );
+                const next =
+                  existing >= 0
+                    ? list.map((item, i) => (i === existing ? image : item))
+                    : [...list, image].sort((a, b) => a.index - b.index);
+                return { status: "running", streamingImages: next };
+              });
+            }
+          } catch {
+            // 忽略无法解析的 chunk
+          }
+        },
+        toolCall.interactionId, // 沿用原调用 ID，chunk 路由到同一卡片
+        undefined, // subAgentAllowedTools
+        false, // planMode：生图不涉及写门
+        false // planApproved
+      );
+      setRetry({ status: "done", result });
+    } catch (error) {
+      setRetry({ status: "failed", error: getErrorMessage(error) });
+    }
+  }, [toolCall.name, toolCall.arguments, toolCall.interactionId]);
+
+  // ------------------------------------------------------------------
+  // 批量下载：优先一次选择目录写入全部（showDirectoryPicker），
+  // 回退为逐张保存（每张弹一次原生保存框）。
+  // ------------------------------------------------------------------
 
   // 图片真实宽高比探测：index → width/height，加载完成后驱动卡片比例
   const [ratios, setRatios] = useState<Record<number, number>>({});
@@ -86,9 +177,16 @@ export const ImageGenToolCall = ({
     () => parseImageGenArgs(toolCall.arguments),
     [toolCall.arguments]
   );
+  // 重试中：忽略旧失败结果回到生成中视图；重试成功：用新结果覆盖展示。
+  const effectiveResult =
+    retry.status === "running"
+      ? undefined
+      : retry.status === "done"
+      ? retry.result
+      : toolCall.result;
   const parsedResult = useMemo(
-    () => parseImageGenResult(toolCall.result),
-    [toolCall.result]
+    () => parseImageGenResult(effectiveResult),
+    [effectiveResult]
   );
 
   // 收集 path 引用参考图（无内联 data 的项），挂载后经主进程读取真实缩略图
@@ -212,7 +310,11 @@ export const ImageGenToolCall = ({
   const hasError = parsedResult.type === "error";
   const effectiveStatus = hasError ? "error" : toolCall.status;
 
-  const streamingImages = toolCall.streamingImages ?? [];
+  // 流式预览：重试中优先用重试的实时图，否则用会话里已记录的
+  const streamingImages =
+    retry.status === "running"
+      ? retry.streamingImages
+      : (toolCall.streamingImages ?? []);
 
   // 画廊统一展示项：本地图片（data / path）+ 远程 URL。
   // 远程图经 img-proxy:// 代理加载（CSP 放行、主进程转发、无 CORS 限制），
@@ -241,6 +343,78 @@ export const ImageGenToolCall = ({
     return items;
   }, [parsedResult, resolvedLibrary]);
 
+  const [downloadingAll, setDownloadingAll] = useState(false);
+
+  const handleDownloadAll = useCallback(async (): Promise<void> => {
+    if (downloadingAll || galleryItems.length === 0) {
+      return;
+    }
+    setDownloadingAll(true);
+    try {
+      // 1. 收集全部 Blob：单张失败跳过，不中断其余
+      const blobs: Blob[] = [];
+      for (const item of galleryItems) {
+        try {
+          let src = item.src;
+          if (!src && item.image?.path) {
+            src =
+              (await window.snow.resolveLibraryImage(item.image.path)) ?? "";
+          }
+          if (src) {
+            blobs.push(await srcToBlob(src));
+          }
+        } catch (error) {
+          console.warn("[imagegen] downloadAll failed for", item.key, error);
+        }
+      }
+      if (blobs.length === 0) {
+        return;
+      }
+      const base = `snow-app-${Date.now()}`;
+
+      // 2. 优先：一次选目录批量写入
+      const pickDirectory = (
+        window as unknown as {
+          showDirectoryPicker?: () => Promise<{
+            getFileHandle: (
+              name: string,
+              opts: { create: boolean }
+            ) => Promise<{
+              createWritable: () => Promise<{
+                write: (blob: Blob) => Promise<void>;
+                close: () => Promise<void>;
+              }>;
+            }>;
+          }>;
+        }
+      ).showDirectoryPicker;
+      if (typeof pickDirectory === "function") {
+        const dir = await pickDirectory();
+        for (let i = 0; i < blobs.length; i++) {
+          const fileHandle = await dir.getFileHandle(
+            `${base}-${i + 1}.${extensionForBlob(blobs[i])}`,
+            { create: true }
+          );
+          const writable = await fileHandle.createWritable();
+          await writable.write(blobs[i]);
+          await writable.close();
+        }
+      } else {
+        // 3. 回退：逐张保存（每张一次原生保存框）
+        for (let i = 0; i < blobs.length; i++) {
+          await saveBlobToFile(
+            blobs[i],
+            `${base}-${i + 1}.${extensionForBlob(blobs[i])}`
+          );
+        }
+      }
+    } catch (error) {
+      console.warn("[imagegen] downloadAll failed", error);
+    } finally {
+      setDownloadingAll(false);
+    }
+  }, [galleryItems, downloadingAll]);
+
   // 远程图加载失败（链接过期/403 等）的记录：按 key 降级为占位展示
   const [failedRemotes, setFailedRemotes] = useState<Set<string>>(new Set());
   const handleRemoteError = useCallback((key: string) => {
@@ -264,6 +438,211 @@ export const ImageGenToolCall = ({
   const refGroupCount = hasRequestImages
     ? parsedArgs!.requestImages!.length
     : 0;
+
+  // 生图参数区（提示词 / 参数标签 / 参考图）：生成中与完成后共用，
+  // 生成中即展示本次请求的意图，不再等生成完成才可见。
+  const paramsBlock = parsedArgs ? (
+    <div className="tool-call-imagegen-params">
+      <div className="tool-call-imagegen-param-item">
+        <Sparkles size={11} aria-hidden="true" />
+        <span className="tool-call-imagegen-param-label">
+          {parsedArgs.prompts && parsedArgs.prompts.length > 1
+            ? t("toolCall.imagegen.prompts", {
+                values: { count: parsedArgs.prompts.length },
+              })
+            : t("toolCall.imagegen.prompt")}
+        </span>
+        {parsedArgs.prompts && parsedArgs.prompts.length > 1 ? (
+          <div className="tool-call-imagegen-param-value tool-call-imagegen-prompts">
+            {parsedArgs.prompts.map((item, index) => (
+              <div
+                key={`${index}-${item}`}
+                className="tool-call-imagegen-prompts-item"
+              >
+                <span className="tool-call-imagegen-prompts-index">
+                  {index + 1}
+                </span>
+                <code>{item}</code>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <code className="tool-call-imagegen-param-value">
+            {parsedArgs.prompts?.[0] ?? parsedArgs.prompt}
+          </code>
+        )}
+      </div>
+
+      {parsedArgs.model ||
+      parsedArgs.size ||
+      parsedArgs.quality ||
+      parsedArgs.outputCompression !== undefined ||
+      parsedArgs.n !== undefined ||
+      parsedArgs.provider ||
+      parsedArgs.personGeneration ||
+      parsedArgs.webSearch === true ||
+      parsedArgs.stream === true ||
+      parsedArgs.inputFidelity ||
+      parsedArgs.background ||
+      parsedArgs.moderation ||
+      parsedArgs.seed !== undefined ||
+      parsedArgs.thinkingLevel ||
+      parsedArgs.imageSearch === true ? (
+        <div className="tool-call-imagegen-param-tags">
+          {parsedArgs.provider ? (
+            <span className="tool-call-imagegen-param-tag">
+              {t("toolCall.imagegen.provider")}: {parsedArgs.provider}
+            </span>
+          ) : null}
+          {parsedArgs.model ? (
+            <span className="tool-call-imagegen-param-tag">
+              {t("toolCall.imagegen.model")}: {parsedArgs.model}
+            </span>
+          ) : null}
+          {parsedArgs.size ? (
+            <span className="tool-call-imagegen-param-tag">
+              {t("toolCall.imagegen.size")}: {parsedArgs.size}
+            </span>
+          ) : null}
+          {parsedArgs.quality ? (
+            <span className="tool-call-imagegen-param-tag">
+              {t("toolCall.imagegen.quality")}: {parsedArgs.quality}
+            </span>
+          ) : null}
+          {parsedArgs.outputCompression !== undefined ? (
+            <span className="tool-call-imagegen-param-tag">
+              {t("toolCall.imagegen.outputCompression")}:{" "}
+              {parsedArgs.outputCompression}%
+            </span>
+          ) : null}
+          {parsedArgs.personGeneration ? (
+            <span className="tool-call-imagegen-param-tag">
+              {t("toolCall.imagegen.personGeneration")}:{" "}
+              {parsedArgs.personGeneration}
+            </span>
+          ) : null}
+          {parsedArgs.webSearch === true ? (
+            <span className="tool-call-imagegen-param-tag">
+              {t("toolCall.imagegen.webSearch")}
+            </span>
+          ) : null}
+          {parsedArgs.stream === true ? (
+            <span className="tool-call-imagegen-param-tag">
+              {t("toolCall.imagegen.streaming")}
+            </span>
+          ) : null}
+          {parsedArgs.n !== undefined && parsedArgs.n > 1 ? (
+            <span className="tool-call-imagegen-param-tag">
+              {t("toolCall.imagegen.countParam", {
+                values: { count: parsedArgs.n },
+              })}
+            </span>
+          ) : null}
+          {parsedArgs.inputFidelity ? (
+            <span className="tool-call-imagegen-param-tag">
+              {t("toolCall.imagegen.inputFidelity")}:{" "}
+              {parsedArgs.inputFidelity}
+            </span>
+          ) : null}
+          {parsedArgs.background ? (
+            <span className="tool-call-imagegen-param-tag">
+              {t("toolCall.imagegen.background")}: {parsedArgs.background}
+            </span>
+          ) : null}
+          {parsedArgs.moderation ? (
+            <span className="tool-call-imagegen-param-tag">
+              {t("toolCall.imagegen.moderation")}: {parsedArgs.moderation}
+            </span>
+          ) : null}
+          {parsedArgs.seed !== undefined ? (
+            <span className="tool-call-imagegen-param-tag">
+              {t("toolCall.imagegen.seed")}: {parsedArgs.seed}
+            </span>
+          ) : null}
+          {parsedArgs.thinkingLevel ? (
+            <span className="tool-call-imagegen-param-tag">
+              {t("toolCall.imagegen.thinkingLevel")}:{" "}
+              {parsedArgs.thinkingLevel}
+            </span>
+          ) : null}
+          {parsedArgs.imageSearch === true ? (
+            <span className="tool-call-imagegen-param-tag">
+              {t("toolCall.imagegen.imageSearch")}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* 参考图（图生图）：requestImages 时展示第 1 组并注明总组数，
+          否则展示顶层 images（所有请求共用） */}
+      {refImages && refImages.length > 0 ? (
+        <div className="tool-call-imagegen-refs">
+          <span className="tool-call-imagegen-refs-label">
+            <ImageIcon size={10} aria-hidden="true" />
+            {t("toolCall.imagegen.refImages", {
+              values: { count: refImages.length },
+            })}
+            {refGroupCount > 0
+              ? ` · ${t("toolCall.imagegen.refGroups", {
+                  values: { count: refGroupCount },
+                })}`
+              : ""}
+          </span>
+          <div className="tool-call-imagegen-refs-grid">
+            {refImages.map((image, index) => {
+              const src = image.data
+                ? `data:${image.mimeType};base64,${image.data}`
+                : image.path
+                ? resolvedRefs[image.path] ?? ""
+                : "";
+              return (
+                <div
+                  key={`${index}-${image.path ?? image.data.length}`}
+                  className="tool-call-imagegen-ref-thumb"
+                  title={image.path ?? undefined}
+                >
+                  {src ? (
+                    <img
+                      src={src}
+                      alt={`${t("toolCall.imagegen.refImage")} ${index + 1}`}
+                    />
+                  ) : (
+                    <span className="tool-call-imagegen-ref-placeholder">
+                      <ImageIcon size={14} aria-hidden="true" />
+                      {index + 1}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  ) : null;
+
+  // Rust 端部分失败时会在 contentPreview 末尾追加 "X/Y parallel requests
+  // failed: <原因>"；该字段默认只给模型看，这里仅在部分失败时向用户
+  // 展示失败摘要，正常 summary 不展示。
+  const partialFailureNote = useMemo(() => {
+    if (parsedResult.type !== "success") {
+      return "";
+    }
+    const preview = parsedResult.contentPreview ?? "";
+    const failedMatch = preview.match(
+      /(\d+\/\d+ parallel requests failed: [\s\S]*)$/
+    );
+    return failedMatch ? failedMatch[1] : "";
+  }, [parsedResult]);
+
+  // 失败原因分类：本地化标题（i18n）+ 原始英文详情（后端完整消息）。
+  const classifiedError = useMemo(
+    () =>
+      parsedResult.type === "error"
+        ? classifyImageGenError(parsedResult.message)
+        : null,
+    [parsedResult]
+  );
 
   // 灯箱：挂载到 document.body，确保 fixed 定位始终相对视口，
   // 无论页面滚动到何处都保持水平 + 垂直居中。
@@ -409,6 +788,25 @@ export const ImageGenToolCall = ({
         : undefined;
     return (
       <div className="tool-call-imagegen tool-call-imagegen-result">
+        <div className="tool-call-imagegen-toolbar">
+          <span className="tool-call-imagegen-toolbar-count">
+            <ImageIcon size={11} aria-hidden="true" />
+            {t("toolCall.imagegen.count", {
+              values: { count: resultImageCount },
+            })}
+          </span>
+          <button
+            type="button"
+            className="tool-call-imagegen-download-all"
+            onClick={() => void handleDownloadAll()}
+            disabled={downloadingAll}
+          >
+            <Download size={12} aria-hidden="true" />
+            {downloadingAll
+              ? t("toolCall.imagegen.saving")
+              : t("toolCall.imagegen.downloadAll")}
+          </button>
+        </div>
         <div
           className={`tool-call-imagegen-grid${
             resultImageCount === 1 ? " tool-call-imagegen-grid-single" : ""
@@ -490,15 +888,32 @@ export const ImageGenToolCall = ({
           </div>
         ) : null}
 
+        {/* 部分失败：n 张中有失败时展示失败摘要（正常 summary 不展示） */}
+        {partialFailureNote ? (
+          <div
+            className="tool-call-imagegen-partial-warning"
+            role="alert"
+            title={partialFailureNote}
+          >
+            <AlertCircle size={12} aria-hidden="true" />
+            <span>
+              {t("toolCall.imagegen.partialFailed")} {partialFailureNote}
+            </span>
+          </div>
+        ) : null}
+
         {lightboxElement}
       </div>
     );
   }
 
-  // 生成中（等待/执行/流式预览）：同样以纯相框画廊展示
+  // 生成中（等待/执行/流式预览）：参数区 + 实时预览同框展示，
+  // 提示词 / 参考图 / 参数标签不再等生成完成才可见
   const isGenerating =
     !hasError &&
-    (toolCall.status === "pending" || toolCall.status === "running");
+    (toolCall.status === "pending" ||
+      toolCall.status === "running" ||
+      retry.status === "running");
   if (isGenerating && parsedResult.type !== "success") {
     const latestStream =
       streamingImages.length > 0
@@ -506,6 +921,7 @@ export const ImageGenToolCall = ({
         : null;
     return (
       <div className="tool-call-imagegen tool-call-imagegen-result">
+        {paramsBlock}
         <div className="tool-call-imagegen-grid tool-call-imagegen-grid-single">
           <figure className={figureClassName} style={figureStyle}>
             <div className="tool-call-imagegen-thumb tool-call-imagegen-thumb-static">
@@ -570,195 +986,54 @@ export const ImageGenToolCall = ({
       className="tool-call-imagegen"
     >
       <div className="tool-call-body tool-call-imagegen-body">
-        {/* 生图参数 */}
-        {parsedArgs ? (
-          <div className="tool-call-imagegen-params">
-            <div className="tool-call-imagegen-param-item">
-              <Sparkles size={11} aria-hidden="true" />
-              <span className="tool-call-imagegen-param-label">
-                {parsedArgs.prompts && parsedArgs.prompts.length > 1
-                  ? t("toolCall.imagegen.prompts", {
-                      values: { count: parsedArgs.prompts.length },
-                    })
-                  : t("toolCall.imagegen.prompt")}
+        {/* 生图参数（生成中与完成后共用，见上方 paramsBlock） */}
+        {paramsBlock}
+
+        {/* 错误：本地化标题 + 原始英文详情（保留后端完整消息与修复建议）；
+            重试失败时优先展示重试的错误 */}
+        {retry.status === "failed" ? (
+          <div className="tool-call-error">
+            <AlertCircle size={12} aria-hidden="true" />
+            <span className="tool-call-error-summary">
+              <span className="tool-call-error-title">
+                {t(
+                  imageGenErrorTitleKey(
+                    classifyImageGenError(retry.error).kind
+                  )
+                )}
               </span>
-              {parsedArgs.prompts && parsedArgs.prompts.length > 1 ? (
-                <div className="tool-call-imagegen-param-value tool-call-imagegen-prompts">
-                  {parsedArgs.prompts.map((item, index) => (
-                    <div
-                      key={`${index}-${item}`}
-                      className="tool-call-imagegen-prompts-item"
-                    >
-                      <span className="tool-call-imagegen-prompts-index">
-                        {index + 1}
-                      </span>
-                      <code>{item}</code>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <code className="tool-call-imagegen-param-value">
-                  {parsedArgs.prompts?.[0] ?? parsedArgs.prompt}
-                </code>
-              )}
-            </div>
-
-            {parsedArgs.model ||
-            parsedArgs.size ||
-            parsedArgs.quality ||
-            parsedArgs.outputCompression !== undefined ||
-            parsedArgs.n !== undefined ||
-            parsedArgs.provider ||
-            parsedArgs.personGeneration ||
-            parsedArgs.webSearch === true ||
-            parsedArgs.stream === true ||
-            parsedArgs.inputFidelity ||
-            parsedArgs.background ||
-            parsedArgs.moderation ||
-            parsedArgs.seed !== undefined ||
-            parsedArgs.thinkingLevel ||
-            parsedArgs.imageSearch === true ? (
-              <div className="tool-call-imagegen-param-tags">
-                {parsedArgs.provider ? (
-                  <span className="tool-call-imagegen-param-tag">
-                    {t("toolCall.imagegen.provider")}: {parsedArgs.provider}
-                  </span>
-                ) : null}
-                {parsedArgs.model ? (
-                  <span className="tool-call-imagegen-param-tag">
-                    {t("toolCall.imagegen.model")}: {parsedArgs.model}
-                  </span>
-                ) : null}
-                {parsedArgs.size ? (
-                  <span className="tool-call-imagegen-param-tag">
-                    {t("toolCall.imagegen.size")}: {parsedArgs.size}
-                  </span>
-                ) : null}
-                {parsedArgs.quality ? (
-                  <span className="tool-call-imagegen-param-tag">
-                    {t("toolCall.imagegen.quality")}: {parsedArgs.quality}
-                  </span>
-                ) : null}
-                {parsedArgs.outputCompression !== undefined ? (
-                  <span className="tool-call-imagegen-param-tag">
-                    {t("toolCall.imagegen.outputCompression")}:{" "}
-                    {parsedArgs.outputCompression}%
-                  </span>
-                ) : null}
-                {parsedArgs.personGeneration ? (
-                  <span className="tool-call-imagegen-param-tag">
-                    {t("toolCall.imagegen.personGeneration")}:{" "}
-                    {parsedArgs.personGeneration}
-                  </span>
-                ) : null}
-                {parsedArgs.webSearch === true ? (
-                  <span className="tool-call-imagegen-param-tag">
-                    {t("toolCall.imagegen.webSearch")}
-                  </span>
-                ) : null}
-                {parsedArgs.stream === true ? (
-                  <span className="tool-call-imagegen-param-tag">
-                    {t("toolCall.imagegen.streaming")}
-                  </span>
-                ) : null}
-                {parsedArgs.n !== undefined && parsedArgs.n > 1 ? (
-                  <span className="tool-call-imagegen-param-tag">
-                    {t("toolCall.imagegen.countParam", {
-                      values: { count: parsedArgs.n },
-                    })}
-                  </span>
-                ) : null}
-                {parsedArgs.inputFidelity ? (
-                  <span className="tool-call-imagegen-param-tag">
-                    {t("toolCall.imagegen.inputFidelity")}:{" "}
-                    {parsedArgs.inputFidelity}
-                  </span>
-                ) : null}
-                {parsedArgs.background ? (
-                  <span className="tool-call-imagegen-param-tag">
-                    {t("toolCall.imagegen.background")}: {parsedArgs.background}
-                  </span>
-                ) : null}
-                {parsedArgs.moderation ? (
-                  <span className="tool-call-imagegen-param-tag">
-                    {t("toolCall.imagegen.moderation")}: {parsedArgs.moderation}
-                  </span>
-                ) : null}
-                {parsedArgs.seed !== undefined ? (
-                  <span className="tool-call-imagegen-param-tag">
-                    {t("toolCall.imagegen.seed")}: {parsedArgs.seed}
-                  </span>
-                ) : null}
-                {parsedArgs.thinkingLevel ? (
-                  <span className="tool-call-imagegen-param-tag">
-                    {t("toolCall.imagegen.thinkingLevel")}:{" "}
-                    {parsedArgs.thinkingLevel}
-                  </span>
-                ) : null}
-                {parsedArgs.imageSearch === true ? (
-                  <span className="tool-call-imagegen-param-tag">
-                    {t("toolCall.imagegen.imageSearch")}
-                  </span>
-                ) : null}
-              </div>
-            ) : null}
-
-            {/* 参考图（图生图）：requestImages 时展示第 1 组并注明总组数，
-                否则展示顶层 images（所有请求共用） */}
-            {refImages && refImages.length > 0 ? (
-              <div className="tool-call-imagegen-refs">
-                <span className="tool-call-imagegen-refs-label">
-                  <ImageIcon size={10} aria-hidden="true" />
-                  {t("toolCall.imagegen.refImages", {
-                    values: { count: refImages.length },
-                  })}
-                  {refGroupCount > 0
-                    ? ` · ${t("toolCall.imagegen.refGroups", {
-                        values: { count: refGroupCount },
-                      })}`
-                    : ""}
+              <span className="tool-call-error-detail">{retry.error}</span>
+            </span>
+          </div>
+        ) : parsedResult.type === "error" && classifiedError ? (
+          <div className="tool-call-error">
+            <AlertCircle size={12} aria-hidden="true" />
+            <span className="tool-call-error-summary">
+              <span className="tool-call-error-title">
+                {t(imageGenErrorTitleKey(classifiedError.kind))}
+              </span>
+              {classifiedError.detail ? (
+                <span className="tool-call-error-detail">
+                  {classifiedError.detail}
                 </span>
-                <div className="tool-call-imagegen-refs-grid">
-                  {refImages.map((image, index) => {
-                    const src = image.data
-                      ? `data:${image.mimeType};base64,${image.data}`
-                      : image.path
-                      ? resolvedRefs[image.path] ?? ""
-                      : "";
-                    return (
-                      <div
-                        key={`${index}-${image.path ?? image.data.length}`}
-                        className="tool-call-imagegen-ref-thumb"
-                        title={image.path ?? undefined}
-                      >
-                        {src ? (
-                          <img
-                            src={src}
-                            alt={`${t("toolCall.imagegen.refImage")} ${
-                              index + 1
-                            }`}
-                          />
-                        ) : (
-                          <span className="tool-call-imagegen-ref-placeholder">
-                            <ImageIcon size={14} aria-hidden="true" />
-                            {index + 1}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
+              ) : null}
+            </span>
           </div>
         ) : null}
 
-        {/* 错误 */}
-        {parsedResult.type === "error" ? (
-          <div className="tool-call-error">
-            <AlertCircle size={12} aria-hidden="true" />
-            <span>{parsedResult.message}</span>
-          </div>
+        {/* 重试：失败后一键用相同参数重新生成 */}
+        {retry.status === "failed" || parsedResult.type === "error" ? (
+          <button
+            type="button"
+            className="tool-call-imagegen-retry"
+            onClick={() => void handleRetry()}
+            disabled={retry.status === "running"}
+          >
+            <RotateCcw size={12} aria-hidden="true" />
+            {retry.status === "running"
+              ? t("toolCall.imagegen.retrying")
+              : t("toolCall.imagegen.retry")}
+          </button>
         ) : null}
 
         {/* 远程图片链接（兼容返回 url 的端点） */}

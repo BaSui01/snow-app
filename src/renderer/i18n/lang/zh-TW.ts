@@ -814,6 +814,7 @@ export const zhTW = {
   "toolNames.terminal-list": "列出終端",
   "toolCall.common.arguments": "參數",
   "toolCall.common.result": "結果",
+  "toolCall.common.charCount": "{{count}} 字元",
   "toolCall.common.status.pending": "等待中",
   "toolCall.common.status.running": "執行中",
   "toolCall.common.status.completed": "已完成",

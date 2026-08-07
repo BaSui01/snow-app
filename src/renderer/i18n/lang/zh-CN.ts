@@ -814,6 +814,7 @@ export const zhCN = {
   "toolNames.terminal-list": "列出终端",
   "toolCall.common.arguments": "参数",
   "toolCall.common.result": "结果",
+  "toolCall.common.charCount": "{{count}} 字符",
   "toolCall.common.status.pending": "等待中",
   "toolCall.common.status.running": "执行中",
   "toolCall.common.status.completed": "已完成",

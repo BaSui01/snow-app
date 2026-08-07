@@ -834,6 +834,7 @@ export const en = {
   "toolNames.terminal-list": "List terminals",
   "toolCall.common.arguments": "Arguments",
   "toolCall.common.result": "Result",
+  "toolCall.common.charCount": "{{count}} characters",
   "toolCall.common.status.pending": "Pending",
   "toolCall.common.status.running": "Running",
   "toolCall.common.status.completed": "Completed",

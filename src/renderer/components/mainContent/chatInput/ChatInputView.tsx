@@ -13,7 +13,9 @@ import {
   Loader2,
   Paperclip,
   RefreshCw,
+  Search,
   Square,
+  X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -197,6 +199,8 @@ export const ChatInputView = ({
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [isCustomThinkingMode, setIsCustomThinkingMode] = useState(false);
   const [customThinkingValue, setCustomThinkingValue] = useState("");
+  // 模型列表搜索关键词，仅 model 视图生效
+  const [modelSearchQuery, setModelSearchQuery] = useState("");
 
   // 菜单关闭时退出自定义思考强度输入
   useEffect(() => {
@@ -204,6 +208,13 @@ export const ChatInputView = ({
       setIsCustomThinkingMode(false);
     }
   }, [isModelMenuOpen]);
+
+  // 关闭菜单或离开模型列表视图时清空搜索词
+  useEffect(() => {
+    if (!isModelMenuOpen || modelMenuView !== "model") {
+      setModelSearchQuery("");
+    }
+  }, [isModelMenuOpen, modelMenuView]);
 
   // review 指令只在新建会话（尚未绑定历史会话）时开放，审查对象是
   // 当前项目目录的 Git 状态，而不是某个历史会话绑定的目录。
@@ -354,6 +365,19 @@ export const ChatInputView = ({
   const isCustomThinkingValue = !thinkingOptions.some(
     (option) => option.value === thinkingValue
   );
+
+  // 模型列表模糊过滤：关键词对 id / ownedBy 做不区分大小写的包含匹配
+  const filteredModels = useMemo(() => {
+    const query = modelSearchQuery.trim().toLowerCase();
+    if (!query) {
+      return models;
+    }
+    return models.filter(
+      (model) =>
+        model.id.toLowerCase().includes(query) ||
+        model.ownedBy.toLowerCase().includes(query)
+    );
+  }, [models, modelSearchQuery]);
 
   const renumberImageChips = useCallback(() => {
     const el = textareaRef.current;
@@ -1995,6 +2019,36 @@ export const ChatInputView = ({
                               </button>
                             </div>
                           )}
+                          <div className="model-dropdown-search">
+                            <Search
+                              size={13}
+                              className="model-dropdown-search-icon"
+                            />
+                            <input
+                              className="model-dropdown-search-input"
+                              type="text"
+                              value={modelSearchQuery}
+                              onChange={(event) =>
+                                setModelSearchQuery(event.target.value)
+                              }
+                              onKeyDown={(event) => {
+                                if (event.key === "Escape") {
+                                  setModelSearchQuery("");
+                                }
+                              }}
+                              placeholder={labels.searchModels}
+                            />
+                            {modelSearchQuery && (
+                              <button
+                                className="model-dropdown-search-clear"
+                                type="button"
+                                aria-label={labels.searchModels}
+                                onClick={() => setModelSearchQuery("")}
+                              >
+                                <X size={12} />
+                              </button>
+                            )}
+                          </div>
                           <div className="model-dropdown-list">
                             {models.length === 0 &&
                               !modelError &&
@@ -2003,7 +2057,13 @@ export const ChatInputView = ({
                                   {labels.noModelsFound}
                                 </div>
                               )}
-                            {models.map((model) => (
+                            {models.length > 0 &&
+                              filteredModels.length === 0 && (
+                                <div className="model-dropdown-empty">
+                                  {labels.noMatchingModels}
+                                </div>
+                              )}
+                            {filteredModels.map((model) => (
                               <button
                                 key={model.id}
                                 className={`model-dropdown-item ${

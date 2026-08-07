@@ -207,7 +207,13 @@ async fn create_gemini_response_async(
                 response_content: &streamed_response.content,
                 response_id: &streamed_response.id,
                 checkpoint_id: request.checkpoint_id.as_deref().unwrap_or(""),
-                model: &streamed_response.model,
+                // Persist the requested model, not the model echoed back by the
+                // API response body. Some providers (e.g. aliased models with
+                // date-stamped snapshots like `deepseek-flash-0731`) return a
+                // different name than what was requested; trusting the response
+                // would corrupt the conversation's recorded model and the chat
+                // input's model display on the next load.
+                model,
                 api_profile_name: &api_config.profile_name,
                 status: &streamed_response.status,
                 raw_response_json: &raw_response_json,
@@ -230,7 +236,10 @@ async fn create_gemini_response_async(
         conversation_id: prepared_request.conversation_id,
         content: streamed_response.content,
         thinking: streamed_response.thinking,
-        model: streamed_response.model,
+        // Return the requested model so the renderer's assistant message
+        // records match what was persisted (the response body's model is
+        // unreliable across providers and may carry date-stamped aliases).
+        model: model.to_string(),
         status: streamed_response.status,
         tool_calls_json: streamed_response.tool_calls_json,
         token_usage: TokenUsage {

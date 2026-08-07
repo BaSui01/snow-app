@@ -68,6 +68,18 @@ async fn create_anthropic_response_async(
         ));
     }
 
+    // Resolve the requested model up front so conversation/message persistence
+    // and the stream result use the model the user asked for, never the model
+    // echoed back by the API response body (some providers return aliased or
+    // date-stamped names, e.g. `deepseek-flash-0731`, which would otherwise
+    // overwrite the chat input's displayed model).
+    let model = request
+        .model
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| api_config.advanced_model.trim());
+
     let endpoint = payload::resolve_anthropic_endpoint(&api_config);
     if endpoint.is_empty() {
         return Err(Error::from_reason(
@@ -206,7 +218,7 @@ async fn create_anthropic_response_async(
                 response_content: &streamed_response.content,
                 response_id: &streamed_response.id,
                 checkpoint_id: request.checkpoint_id.as_deref().unwrap_or(""),
-                model: &streamed_response.model,
+                model,
                 api_profile_name: &api_config.profile_name,
                 status: &streamed_response.status,
                 raw_response_json: &raw_response_json,
@@ -229,7 +241,10 @@ async fn create_anthropic_response_async(
         conversation_id: prepared_request.conversation_id,
         content: streamed_response.content,
         thinking: streamed_response.thinking,
-        model: streamed_response.model,
+        // Return the requested model so the renderer's assistant message
+        // records match what was persisted (the response body's model is
+        // unreliable across providers and may carry date-stamped aliases).
+        model: model.to_string(),
         status: streamed_response.status,
         tool_calls_json: streamed_response.tool_calls_json,
         token_usage: TokenUsage {

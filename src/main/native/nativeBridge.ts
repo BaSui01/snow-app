@@ -1001,6 +1001,20 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to migrate image library"
           )
         ),
+      browserImportListSources: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to probe browser sources")
+        ),
+      browserImportPasswords: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to import browser passwords"
+          )
+        ),
+      browserImportCookies: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to import browser cookies")
+        ),
     };
   }
 };

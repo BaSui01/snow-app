@@ -318,16 +318,18 @@ fn chrome_master_key_macos(service: &str) -> Option<Vec<u8>> {
 /// DPAPI unprotect (Windows only).
 #[cfg(windows)]
 fn windows_dpapi_decrypt(data: &[u8]) -> Option<Vec<u8>> {
+    // windows-sys >= 0.59: DATA_BLOB 已更名为 CRYPT_INTEGER_BLOB（字段相同），
+    // LocalFree 移至 Win32::Foundation。
     use windows_sys::Win32::Security::Cryptography::{
-        CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, DATA_BLOB,
+        CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
     };
-    use windows_sys::Win32::System::Memory::LocalFree;
+    use windows_sys::Win32::Foundation::LocalFree;
 
-    let mut in_blob = DATA_BLOB {
+    let mut in_blob = CRYPT_INTEGER_BLOB {
         cbData: data.len() as u32,
         pbData: data.as_ptr() as *mut u8,
     };
-    let mut out_blob = DATA_BLOB {
+    let mut out_blob = CRYPT_INTEGER_BLOB {
         cbData: 0,
         pbData: std::ptr::null_mut(),
     };

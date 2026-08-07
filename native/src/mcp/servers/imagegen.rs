@@ -33,6 +33,13 @@ use super::super::tools::McpTool;
 
 const SERVER_ID: &str = "imagegen";
 const TOOL_GENERATE: &str = "generate";
+/// 视觉分析工具：读取项目中的图片（如 UI 设计稿）并用视觉模型生成描述，
+/// 供主模型理解设计后编码还原（前端页面等）。
+const TOOL_DESCRIBE: &str = "image-describe";
+const TOOL_DESCRIBE_NAME: &str = "imagegen-image-describe";
+
+/// image-describe 默认分析提示词（UI/UX 设计稿还原场景）。
+const DEFAULT_DESCRIBE_PROMPT: &str = "Describe this image as a UI/UX design reference for front-end implementation. Cover: overall layout structure (sections, columns, hierarchy), color palette (exact hex codes where discernible), typography (font styles, sizes, weights), spacing and margins, components (buttons, cards, forms, navigation, modals, lists), visual effects (shadows, gradients, border radius), icons and imagery, and any responsive/adaptive hints. Output a concise but COMPLETE structured description (use sections) that a developer can directly translate into code to recreate the page.";
 /// Image models may take several minutes for complex prompts (gpt-image 2K/4K,
 /// Gemini Nano Banana with web search). This is the DEFAULT when the settings
 /// panel value is missing; users can raise it in Settings -> Image generation.
@@ -130,6 +137,27 @@ pub struct ImageGenService;
 impl ImageGenService {
     pub fn new() -> Self {
         ImageGenService
+    }
+
+    /// `image-describe`：读取磁盘图片（绝对路径或 upload/ 相对路径）并用
+    /// 视觉模型生成描述。用于「读取项目中的 UI 设计稿 → 理解设计 →
+    /// 编码还原前端页面」的工作流。视觉配置复用主 API 的 vision 通道。
+    pub async fn execute_describe(&self, args: &Value) -> napi::Result<Value> {
+        let path = required_string(args, "path", TOOL_DESCRIBE)?;
+        let user_prompt = args
+            .get("prompt")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .unwrap_or(DEFAULT_DESCRIBE_PROMPT);
+
+        let description = crate::api::vision::describe_image_file(path, user_prompt).await?;
+
+        Ok(json!({
+            "path": path,
+            "description": description,
+            "note": "Use this description to understand the design. If the task is to recreate this UI with code, analyze the description carefully (layout, colors, typography, spacing, components) and implement it with the filesystem tools. Do NOT reference the image file in the final code — embed colors/values from the description."
+        }))
     }
 
     pub async fn execute_generate(
@@ -1167,6 +1195,25 @@ impl McpService for ImageGenService {
                 },
                 "required": ["prompt"]
             }),
+        }, McpTool {
+            server_id: SERVER_ID.to_string(),
+            name: TOOL_DESCRIBE_NAME.to_string(),
+            description: "Analyze an image file on disk with the vision model (uses the vision channel of the main API config) and return a structured description. USE THIS when the user asks you to read/understand a design image from the project (e.g. UI mockups, design screenshots, Figma exports) and implement or recreate it as code — for example 'look at the design in design/home.png and build this page'. The `path` accepts an absolute disk path (e.g. C:/Users/xx/project/design/home.png or /home/user/project/design/home.png) or a path relative to the conversation's upload/ directory (upload/2026-07-25/hash.png). Max 20MB, image formats only. Combine with filesystem tools: list/search the project for design files first, then describe each relevant image, then write the implementation code. The description focuses on UI/UX details (layout, colors with hex codes, typography, spacing, components, effects) so it can be translated directly into front-end code."
+                .to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path of the image to analyze: absolute disk path (e.g. C:/Users/xx/project/design/home.png) or upload/ relative path."
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": "Optional custom analysis focus (e.g. \\\"focus on the color palette and spacing\\\"). Defaults to a UI/UX design description prompt."
+                    }
+                },
+                "required": ["path"]
+            }),
         }]
     }
 
@@ -1176,8 +1223,12 @@ impl McpService for ImageGenService {
                 "The ImageGen tool must be executed through the asynchronous executor"
                     .to_string(),
             )),
+            TOOL_DESCRIBE => Err(generic_error(
+                "The image-describe tool must be executed through the asynchronous executor"
+                    .to_string(),
+            )),
             _ => Err(generic_error(format!(
-                "Unknown tool: \"{tool_name}\" for MCP server \"{SERVER_ID}\". Available tools: [imagegen-generate]"
+                "Unknown tool: \"{tool_name}\" for MCP server \"{SERVER_ID}\". Available tools: [imagegen-generate, imagegen-image-describe]"
             ))),
         }
     }

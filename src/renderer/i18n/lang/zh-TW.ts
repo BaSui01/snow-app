@@ -2638,6 +2638,7 @@ export const zhTW = {
   "git.graphLoading": "載入提交記錄中...",
   "git.graphNoCommits": "暫無提交記錄",
   "git.graphError": "載入提交記錄失敗",
+  "git.viewCommitFileDiff": "查看此檔案在此提交中的差異",
   "git.graphTooltipHash": "提交",
   "git.graphTooltipAuthor": "作者",
   "git.graphTooltipDate": "日期",

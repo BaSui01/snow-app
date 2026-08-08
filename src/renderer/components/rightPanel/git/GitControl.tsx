@@ -16,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
 import { ContextMenu, type ContextMenuItem } from "../../common/ContextMenu";
 import type {
+  GitCommitFile,
   GitFileStatus,
   GitRepoInfo,
   GitStatusResult,
@@ -33,6 +34,8 @@ type GitControlProps = {
   repos?: GitRepoInfo[];
   onRepoSelect?: (path: string) => void;
   onFileSelect: (file: GitFileStatus | null) => void;
+  /** 提交树中点击提交内文件，请求查看该提交中该文件的差异。 */
+  onCommitFileSelect?: (file: GitCommitFile, hash: string) => void;
   onStatusChange?: (status: GitStatusResult | null) => void;
   onOpenFile?: (filePath: string, fileName: string) => void;
   /** 在文件所在目录打开终端。 */
@@ -47,6 +50,7 @@ export const GitControl = ({
   repos,
   onRepoSelect,
   onFileSelect,
+  onCommitFileSelect,
   onStatusChange,
   onOpenFile,
   onOpenTerminal,
@@ -839,6 +843,7 @@ export const GitControl = ({
           repoPath={repoPath}
           refreshKey={graphRefreshKey}
           onLoaded={handleGraphLoaded}
+          onCommitFileSelect={onCommitFileSelect}
         />
       )}
 

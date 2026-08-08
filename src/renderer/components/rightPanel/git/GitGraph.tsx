@@ -22,6 +22,9 @@ type GitGraphProps = {
   refreshKey?: number;
   /** Fired when an initial load (mount or external refresh) settles. */
   onLoaded?: () => void;
+  /** Fired when a file in an expanded commit is clicked, requesting its
+      per-commit diff to be shown in the diff viewer. */
+  onCommitFileSelect?: (file: GitCommitFile, hash: string) => void;
 };
 
 // --- Types ---
@@ -321,6 +324,7 @@ export const GitGraph = ({
   repoPath,
   refreshKey,
   onLoaded,
+  onCommitFileSelect,
 }: GitGraphProps): React.JSX.Element => {
   const { t } = useI18n();
   const [commits, setCommits] = useState<GitLogEntry[]>([]);
@@ -330,6 +334,11 @@ export const GitGraph = ({
   const [selectedHash, setSelectedHash] = useState<string | null>(null);
   const [commitFiles, setCommitFiles] = useState<GitCommitFile[]>([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  // 当前正在查看差异的提交文件（hash + path），用于在文件列表中高亮。
+  const [viewedCommitFile, setViewedCommitFile] = useState<{
+    hash: string;
+    path: string;
+  } | null>(null);
 
   const loadingRef = useRef(false);
   const loadedCountRef = useRef(0);
@@ -379,6 +388,7 @@ export const GitGraph = ({
     setIsLoading(true);
     setSelectedHash(null);
     setCommitFiles([]);
+    setViewedCommitFile(null);
     loadedCountRef.current = 0;
     loadingRef.current = false;
 
@@ -844,23 +854,43 @@ export const GitGraph = ({
                 </svg>
                 {commitFiles.length > 0 ? (
                   <div className="git-graph-detail-files">
-                    {commitFiles.map((file, i) => (
-                      <div key={i} className="git-graph-detail-file">
-                        <span
-                          className={`git-file-status ${getCommitFileColor(
-                            file.status
-                          )}`}
+                    {commitFiles.map((file, i) => {
+                      const isViewed =
+                        viewedCommitFile?.hash === row.commit.hash &&
+                        viewedCommitFile.path === file.path;
+                      return (
+                        <div
+                          key={i}
+                          className={`git-graph-detail-file${
+                            isViewed ? " active" : ""
+                          }`}
+                          onClick={() => {
+                            setViewedCommitFile({
+                              hash: row.commit.hash,
+                              path: file.path,
+                            });
+                            onCommitFileSelect?.(file, row.commit.hash);
+                          }}
+                          title={t("git.viewCommitFileDiff", {
+                            defaultValue: "View File Diff in This Commit",
+                          })}
                         >
-                          {getCommitFileLabel(file.status)}
-                        </span>
-                        <span
-                          className="git-graph-detail-path"
-                          title={file.path}
-                        >
-                          {file.path}
-                        </span>
-                      </div>
-                    ))}
+                          <span
+                            className={`git-file-status ${getCommitFileColor(
+                              file.status
+                            )}`}
+                          >
+                            {getCommitFileLabel(file.status)}
+                          </span>
+                          <span
+                            className="git-graph-detail-path"
+                            title={file.path}
+                          >
+                            {file.path}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : isLoadingFiles ? (
                   <span className="git-graph-detail-loading">

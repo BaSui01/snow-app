@@ -2798,6 +2798,7 @@ export const en = {
   "git.graphLoading": "Loading commits...",
   "git.graphNoCommits": "No commits yet",
   "git.graphError": "Failed to load commit history",
+  "git.viewCommitFileDiff": "View File Diff in This Commit",
   "git.graphTooltipHash": "Commit",
   "git.graphTooltipAuthor": "Author",
   "git.graphTooltipDate": "Date",

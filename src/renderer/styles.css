@@ -23676,7 +23676,20 @@ input {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 0;
+  padding: 2px 6px;
+  margin: 0 -6px;
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s;
+}
+
+.git-graph-detail-file:hover {
+  background: var(--bg-hover);
+}
+
+.git-graph-detail-file.active {
+  background: var(--bg-active);
 }
 
 .git-graph-detail-path {

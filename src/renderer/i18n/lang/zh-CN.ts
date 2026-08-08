@@ -2656,6 +2656,7 @@ export const zhCN = {
   "git.graphLoading": "加载提交记录中...",
   "git.graphNoCommits": "暂无提交记录",
   "git.graphError": "加载提交记录失败",
+  "git.viewCommitFileDiff": "查看该文件在此提交中的差异",
   "git.graphTooltipHash": "提交",
   "git.graphTooltipAuthor": "作者",
   "git.graphTooltipDate": "日期",

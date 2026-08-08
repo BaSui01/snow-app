@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertCircle,
+  ChevronLeft,
+  ChevronRight,
   Download,
   Image as ImageIcon,
   Link2,
@@ -60,6 +62,8 @@ export const ImageGenToolCall = ({
 }: ImageGenToolCallProps): React.JSX.Element => {
   const { t } = useI18n();
   const [lightbox, setLightbox] = useState<LightboxTarget | null>(null);
+  /** 灯箱当前图片在 galleryItems 中的索引（-1 = 未打开），同批次切换用 */
+  const [lightboxIndex, setLightboxIndex] = useState(-1);
 
   // ------------------------------------------------------------------
   // 通用重跑通道：重试 / 变体 / 以图为参考重生成共用。
@@ -751,6 +755,33 @@ export const ImageGenToolCall = ({
 
   // 灯箱：挂载到 document.body，确保 fixed 定位始终相对视口，
   // 无论页面滚动到何处都保持水平 + 垂直居中。
+  /** 灯箱在同批次图片间切换（delta ±1），越界不响应 */
+  const lightboxDelta = useCallback(
+    (delta: number): void => {
+      if (lightboxIndex < 0) {
+        return;
+      }
+      const next = lightboxIndex + delta;
+      if (next < 0 || next >= galleryItems.length) {
+        return;
+      }
+      const item = galleryItems[next];
+      setLightbox(
+        item.image
+          ? { kind: "image", image: item.image }
+          : { kind: "remote", url: item.remoteUrl! }
+      );
+      setLightboxIndex(next);
+    },
+    [lightboxIndex, galleryItems]
+  );
+
+  /** 关闭灯箱（同时重置切换索引） */
+  const closeLightbox = useCallback(() => {
+    setLightbox(null);
+    setLightboxIndex(-1);
+  }, []);
+
   const lightboxSrc = lightbox
     ? lightbox.kind === "remote"
       ? imageProxyUrl(lightbox.url)
@@ -793,29 +824,55 @@ export const ImageGenToolCall = ({
     resolvedLibrary,
   ]);
 
-  // Esc 关闭灯箱
+  // Esc 关闭灯箱；方向键在同批次图片间上下/左右切换
   useEffect(() => {
     if (!lightbox) {
       return;
     }
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setLightbox(null);
+        closeLightbox();
+      } else if (
+        event.key === "ArrowUp" ||
+        event.key === "ArrowLeft"
+      ) {
+        event.preventDefault();
+        lightboxDelta(-1);
+      } else if (
+        event.key === "ArrowDown" ||
+        event.key === "ArrowRight"
+      ) {
+        event.preventDefault();
+        lightboxDelta(1);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [lightbox]);
+  }, [lightbox, lightboxDelta, closeLightbox]);
 
   const lightboxElement = lightbox
     ? createPortal(
         <div
           className="tool-call-imagegen-lightbox"
-          onClick={() => setLightbox(null)}
+          onClick={closeLightbox}
           role="presentation"
         >
+          <button
+            type="button"
+            className="image-library-lightbox-nav prev"
+            onClick={(event) => {
+              event.stopPropagation();
+              lightboxDelta(-1);
+            }}
+            aria-label={t("toolCall.imagegen.prev")}
+            title={t("toolCall.imagegen.prev")}
+            disabled={lightboxIndex <= 0}
+          >
+            <ChevronLeft size={22} aria-hidden="true" />
+          </button>
           {lightboxSrc ? (
             <img
+              key={lightboxIndex}
               src={lightboxSrc}
               alt={t("toolCall.imagegen.generatedImage")}
               draggable={false}
@@ -834,10 +891,30 @@ export const ImageGenToolCall = ({
               <span>{t("common.loading")}</span>
             </div>
           )}
+          <button
+            type="button"
+            className="image-library-lightbox-nav next"
+            onClick={(event) => {
+              event.stopPropagation();
+              lightboxDelta(1);
+            }}
+            aria-label={t("toolCall.imagegen.next")}
+            title={t("toolCall.imagegen.next")}
+            disabled={
+              lightboxIndex < 0 || lightboxIndex >= galleryItems.length - 1
+            }
+          >
+            <ChevronRight size={22} aria-hidden="true" />
+          </button>
           <div
             className="tool-call-imagegen-lightbox-toolbar"
             onClick={(event) => event.stopPropagation()}
           >
+            <span className="image-library-lightbox-meta">
+              {lightboxIndex >= 0 && galleryItems.length > 0
+                ? `${lightboxIndex + 1} / ${galleryItems.length}`
+                : ""}
+            </span>
             <button
               type="button"
               className="tool-call-imagegen-download"
@@ -867,7 +944,7 @@ export const ImageGenToolCall = ({
             <button
               type="button"
               className="tool-call-imagegen-lightbox-close"
-              onClick={() => setLightbox(null)}
+              onClick={closeLightbox}
               aria-label={t("toolCall.imagegen.close")}
             >
               ✕
@@ -975,6 +1052,7 @@ export const ImageGenToolCall = ({
                     item.image
                       ? setLightbox({ kind: "image", image: item.image })
                       : setLightbox({ kind: "remote", url: item.remoteUrl! });
+                    setLightboxIndex(index);
                   }}
                   title={t("toolCall.imagegen.zoom")}
                   aria-label={t("toolCall.imagegen.zoom")}

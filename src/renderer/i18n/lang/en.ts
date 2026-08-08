@@ -2673,6 +2673,7 @@ export const en = {
   "chatInput.chipDetailsTag": "Tag",
   "chatInput.chipDetailsType": "Type",
   "chatInput.chipDetailsUrl": "URL",
+  "chatInput.chipDetailsTitle": "Title",
   "chatInput.chipDetailsNote": "Note",
   "chatInput.chipDetailsStaged": "Staged",
   "chatInput.chipDetailsUnstaged": "Unstaged",

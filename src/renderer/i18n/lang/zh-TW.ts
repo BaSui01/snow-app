@@ -2510,6 +2510,7 @@ export const zhTW = {
   "chatInput.chipDetailsTag": "標籤",
   "chatInput.chipDetailsType": "類型",
   "chatInput.chipDetailsUrl": "URL",
+  "chatInput.chipDetailsTitle": "標題",
   "chatInput.chipDetailsNote": "備註",
   "chatInput.chipDetailsStaged": "已暫存",
   "chatInput.chipDetailsUnstaged": "未暫存",

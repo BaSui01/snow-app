@@ -2528,6 +2528,7 @@ export const zhCN = {
   "chatInput.chipDetailsTag": "标签",
   "chatInput.chipDetailsType": "类型",
   "chatInput.chipDetailsUrl": "URL",
+  "chatInput.chipDetailsTitle": "标题",
   "chatInput.chipDetailsNote": "备注",
   "chatInput.chipDetailsStaged": "已暂存",
   "chatInput.chipDetailsUnstaged": "未暂存",

@@ -2687,6 +2687,9 @@ export const en = {
   "remoteJobs.cancel": "Cancel remote job",
   "remoteJobs.copyAnalysis": "Copy job context for AI analysis",
   "remoteJobs.attach": "Attach interactive terminal",
+  "remoteJobs.startInteractive": "Start interactive task",
+  "remoteJobs.command": "Command",
+  "remoteJobs.commandPlaceholder": "Enter a command to run remotely",
   "rightPanel.fileViewerDiscardConfirm":
     "You have unsaved changes. Discard them and leave edit mode?",
   "rightPanel.fileSearchPlaceholder": "Search in file",

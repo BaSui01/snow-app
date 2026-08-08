@@ -2530,6 +2530,9 @@ export const zhTW = {
   "remoteJobs.cancel": "取消遠端任務",
   "remoteJobs.copyAnalysis": "複製任務內容供 AI 分析",
   "remoteJobs.attach": "附加互動式終端",
+  "remoteJobs.startInteractive": "啟動互動任務",
+  "remoteJobs.command": "命令",
+  "remoteJobs.commandPlaceholder": "輸入要在遠端主機執行的命令",
   "rightPanel.fileViewerDiscardConfirm":
     "存在未儲存的變更，是否放棄並退出編輯模式？",
   "rightPanel.fileSearchPlaceholder": "在檔案中尋找",

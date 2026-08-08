@@ -7,7 +7,8 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 const hostKeys = vi.hoisted(() => new Map<string, string>());
 
 vi.mock("electron", () => ({
-  app: { getPath: () => "/tmp" },
+  app: { getPath: () => "/tmp", getAppPath: () => process.cwd(), isPackaged: false },
+  net: { fetch: globalThis.fetch },
 }));
 
 vi.mock("./sshCredentials", () => ({
@@ -40,6 +41,7 @@ import {
   disconnectAllSsh,
   disconnectSsh,
   executeSshCommand,
+  getSshSession,
   probeSshCapabilities,
   readSshFileWithVersion,
   writeSshFile,
@@ -48,6 +50,7 @@ import {
   cancelRemoteJob,
   cleanupRemoteJobs,
   getRemoteJob,
+  getRemoteJobAttachSpec,
   getRemoteJobAnalysisContext,
   getRemoteJobBackendsForTesting,
   RemoteJobLaunchRejectedError,
@@ -61,7 +64,11 @@ const enabled = process.env.SNOW_SSH_TEST === "1";
 const host = process.env.SNOW_SSH_TEST_HOST ?? "127.0.0.1";
 const port = Number(process.env.SNOW_SSH_TEST_PORT ?? "0");
 const fixture = process.env.SNOW_SSH_TEST_FIXTURE ?? "full";
-const openSsh = enabled ? describe : describe.skip;
+const unavailableFixtures = new Set(["noexec", "sftp-disabled", "permit-tty-no"]);
+const durableOpenSsh =
+  enabled && !unavailableFixtures.has(fixture) ? describe : describe.skip;
+const unavailableOpenSsh =
+  enabled && unavailableFixtures.has(fixture) ? describe : describe.skip;
 const originalBindingsDir = process.env.SNOW_REMOTE_JOB_BINDINGS_DIR;
 let bindingsDirectory = "";
 
@@ -136,7 +143,57 @@ const isTerminal = (status: string): boolean =>
     "indeterminate",
   ].includes(status);
 
-openSsh("Durable Remote Job OpenSSH fault injection", () => {
+const openRemoteJobPty = async (jobId: string) => {
+  const spec = await getRemoteJobAttachSpec(jobId);
+  const sessionId = await connectSsh(passwordParams());
+  const session = getSshSession(sessionId);
+  if (!session) {
+    throw new Error("SSH session was not retained for PTY attach");
+  }
+  const channel = await new Promise<import("ssh2").ClientChannel>((resolve, reject) => {
+    session.client.exec(spec.remoteCommand, { pty: true }, (error, stream) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(stream);
+    });
+  });
+  return { sessionId, channel };
+};
+
+const waitForPtyOutput = (
+  channel: import("ssh2").ClientChannel,
+  text: string,
+  timeoutMs = 8_000
+): Promise<void> =>
+  new Promise((resolve, reject) => {
+    let output = "";
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error(`PTY did not produce ${text}: ${output}`));
+    }, timeoutMs);
+    const onData = (chunk: Buffer): void => {
+      output += chunk.toString("utf8");
+      if (output.includes(text)) {
+        cleanup();
+        resolve();
+      }
+    };
+    const onError = (error: Error): void => {
+      cleanup();
+      reject(error);
+    };
+    const cleanup = (): void => {
+      clearTimeout(timer);
+      channel.off("data", onData);
+      channel.off("error", onError);
+    };
+    channel.on("data", onData);
+    channel.on("error", onError);
+  });
+
+durableOpenSsh("Durable Remote Job OpenSSH fault injection", () => {
   beforeEach(async () => {
     expect(port).toBeGreaterThan(0);
     bindingsDirectory = mkdtempSync(join(tmpdir(), "snow-remote-jobs-test-"));
@@ -437,6 +494,44 @@ openSsh("Durable Remote Job OpenSSH fault injection", () => {
     expect(recovered.output).toContain("restart-started");
   }, 30_000);
 
+  it.skipIf(fixture !== "no-tmux")(
+    "keeps an interactive Snow Agent PTY alive across SSH controller disconnect",
+    async () => {
+      const jobId = randomUUID();
+      await startRemoteJob({
+        workspacePath: workspacePath(),
+        command:
+          "IFS= read first; printf 'first:%s\\n' \"$first\"; IFS= read second; printf 'second:%s\\n' \"$second\"",
+        timeoutMs: 15_000,
+        jobId,
+        mode: "interactive",
+      });
+      await waitFor(jobId, (result) => result.state.status === "running", 15_000);
+
+      const first = await openRemoteJobPty(jobId);
+      const firstOutput = waitForPtyOutput(first.channel, "first:one");
+      first.channel.write("one\n");
+      await firstOutput;
+      disconnectSsh(first.sessionId);
+
+      await wait(250);
+      const second = await openRemoteJobPty(jobId);
+      const secondOutput = waitForPtyOutput(second.channel, "second:two");
+      second.channel.write("two\n");
+      await secondOutput;
+      await new Promise<void>((resolve) => second.channel.once("close", () => resolve()));
+      disconnectSsh(second.sessionId);
+
+      await expect(
+        waitFor(jobId, (result) => result.state.status === "succeeded", 15_000)
+      ).resolves.toMatchObject({
+        state: { status: "succeeded", mode: "interactive" },
+        output: expect.stringContaining("first:one"),
+      });
+    },
+    40_000
+  );
+
   it("does not claim unavailable POSIX backends", async () => {
     const sessionId = await connectSsh(passwordParams());
     try {
@@ -664,5 +759,53 @@ openSsh("Durable Remote Job OpenSSH fault injection", () => {
     } finally {
       disconnectSsh(sessionId);
     }
+  }, 30_000);
+});
+
+unavailableOpenSsh("Interactive Remote Job OpenSSH availability failures", () => {
+  beforeEach(() => {
+    expect(port).toBeGreaterThan(0);
+    bindingsDirectory = mkdtempSync(join(tmpdir(), "snow-remote-jobs-test-"));
+    process.env.SNOW_REMOTE_JOB_BINDINGS_DIR = bindingsDirectory;
+  });
+
+  afterEach(() => {
+    disconnectAllSsh();
+    hostKeys.clear();
+    if (bindingsDirectory) {
+      rmSync(bindingsDirectory, { recursive: true, force: true });
+      bindingsDirectory = "";
+    }
+  });
+
+  afterAll(() => {
+    if (originalBindingsDir === undefined) {
+      delete process.env.SNOW_REMOTE_JOB_BINDINGS_DIR;
+    } else {
+      process.env.SNOW_REMOTE_JOB_BINDINGS_DIR = originalBindingsDir;
+    }
+  });
+
+  const expectedCode =
+    fixture === "noexec"
+      ? "AGENT_HOME_NOEXEC"
+      : fixture === "sftp-disabled"
+        ? "REMOTE_FILE_TRANSFER_UNAVAILABLE"
+        : "PTY_UNAVAILABLE";
+
+  it(`returns ${expectedCode} without creating an attachable job`, async () => {
+    const jobId = randomUUID();
+    await expect(
+      startRemoteJob({
+        workspacePath: workspacePath(),
+        command: "printf should-not-run",
+        jobId,
+        backend: fixture === "sftp-disabled" ? "posix-detach" : undefined,
+        mode: fixture === "sftp-disabled" ? "batch" : "interactive",
+      })
+    ).rejects.toMatchObject({ code: expectedCode });
+    await expect(getRemoteJobAttachSpec(jobId)).rejects.toThrow(
+      "Remote Job binding was not found"
+    );
   }, 30_000);
 });

@@ -30,7 +30,16 @@ if (
 const manifestNames = existsSync(releaseDir)
   ? readdirSync(releaseDir).filter((name) => /^snow-agent-[a-z0-9-]+\.json$/.test(name))
   : [];
+const requiredTargets = (process.env.SNOW_AGENT_REQUIRED_TARGETS || "")
+  .split(",")
+  .map((target) => target.trim())
+  .filter(Boolean);
 
+if (manifestNames.length === 0) {
+  throw new Error("No Snow Agent release manifest was found to verify");
+}
+
+const verifiedTargets = new Set();
 for (const manifestName of manifestNames) {
   const manifestPath = join(releaseDir, manifestName);
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
@@ -38,12 +47,14 @@ for (const manifestName of manifestNames) {
   if (
     manifest.protocolVersion !== 1 ||
     manifest.version !== trust.releaseTag.slice(1) ||
+    !["linux-x64-musl", "linux-arm64-musl"].includes(manifest.target) ||
     manifest.target !== payload.target ||
     manifest.artifactFileName !== `snow-agent-${manifest.target}` ||
     manifest.artifactFileName !== payload.artifactFileName ||
     manifest.artifactSha256 !== payload.artifactSha256 ||
     !/^[0-9a-f]{64}$/i.test(manifest.artifactSha256) ||
     !requiredCapabilities.every((name) => manifest.capabilities?.[name] === true) ||
+    manifest.capabilities?.interactiveAttachProtocolVersion !== 1 ||
     JSON.stringify(manifest.capabilities) !== JSON.stringify(payload.capabilities)
   ) {
     throw new Error(`Snow Agent manifest is invalid: ${manifestName}`);
@@ -64,6 +75,13 @@ for (const manifestName of manifestNames) {
     .digest("hex");
   if (artifactSha256 !== manifest.artifactSha256) {
     throw new Error(`Snow Agent artifact hash mismatch: ${manifest.artifactFileName}`);
+  }
+  verifiedTargets.add(manifest.target);
+}
+
+for (const target of requiredTargets) {
+  if (!verifiedTargets.has(target)) {
+    throw new Error(`Required Snow Agent release target is missing: ${target}`);
   }
 }
 

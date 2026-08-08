@@ -2549,6 +2549,9 @@ export const zhCN = {
   "remoteJobs.cancel": "取消远程任务",
   "remoteJobs.copyAnalysis": "复制任务上下文供 AI 分析",
   "remoteJobs.attach": "附加交互式终端",
+  "remoteJobs.startInteractive": "启动交互任务",
+  "remoteJobs.command": "命令",
+  "remoteJobs.commandPlaceholder": "输入要在远程主机执行的命令",
   "rightPanel.fileViewerDiscardConfirm":
     "存在未保存的更改，是否放弃并退出编辑模式？",
   "rightPanel.fileSearchPlaceholder": "在文件中查找",

@@ -10,6 +10,7 @@ import {
 } from "./sshManager";
 
 export const SNOW_AGENT_PROTOCOL_VERSION = 1;
+export const SNOW_AGENT_INTERACTIVE_ATTACH_PROTOCOL_VERSION = 1;
 
 const MAX_MANIFEST_BYTES = 128 * 1024;
 const MAX_AGENT_BYTES = 200 * 1024 * 1024;
@@ -23,9 +24,30 @@ export type SnowAgentCapabilities = {
   outputFrames: boolean;
   fileCas: boolean;
   interactiveAttach: boolean;
+  /** Older boolean-only releases remain batch-only. */
+  interactiveAttachProtocolVersion?: number;
 };
 
-export type SnowAgentTarget = "linux-x64-gnu" | "darwin-x64" | "darwin-arm64";
+export type SnowAgentTarget = "linux-x64-musl" | "linux-arm64-musl";
+
+export type SnowAgentErrorCode =
+  | "UNSUPPORTED_ARCH"
+  | "SFTP_UNAVAILABLE"
+  | "AGENT_HOME_NOEXEC"
+  | "PTY_UNAVAILABLE"
+  | "SIGNATURE_INVALID"
+  | "DISCONNECT_PROBE_FAILED"
+  | "CONTROLLER_BUSY";
+
+export class SnowAgentError extends Error {
+  readonly code: SnowAgentErrorCode;
+
+  constructor(code: SnowAgentErrorCode, message: string) {
+    super(`[${code}] ${message}`);
+    this.name = "SnowAgentError";
+    this.code = code;
+  }
+}
 
 export type SnowAgentHandshake = {
   protocolVersion: number;
@@ -78,13 +100,14 @@ const sameCapabilities = (
   left.resourceLimits === right.resourceLimits &&
   left.outputFrames === right.outputFrames &&
   left.fileCas === right.fileCas &&
-  left.interactiveAttach === right.interactiveAttach;
+  left.interactiveAttach === right.interactiveAttach &&
+  left.interactiveAttachProtocolVersion === right.interactiveAttachProtocolVersion;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const isSnowAgentTarget = (value: unknown): value is SnowAgentTarget =>
-  value === "linux-x64-gnu" || value === "darwin-x64" || value === "darwin-arm64";
+  value === "linux-x64-musl" || value === "linux-arm64-musl";
 
 const isSha256 = (value: unknown): value is string =>
   typeof value === "string" && /^[0-9a-f]{64}$/i.test(value);
@@ -110,6 +133,14 @@ const parseCapabilities = (value: unknown): SnowAgentCapabilities | null => {
   if (!names.every((name) => typeof value[name] === "boolean")) {
     return null;
   }
+  const interactiveAttachProtocolVersion = value.interactiveAttachProtocolVersion;
+  if (
+    interactiveAttachProtocolVersion !== undefined &&
+    (!Number.isInteger(interactiveAttachProtocolVersion) ||
+      interactiveAttachProtocolVersion < 1)
+  ) {
+    return null;
+  }
   return {
     transactionalQueue: value.transactionalQueue as boolean,
     processGroups: value.processGroups as boolean,
@@ -117,6 +148,7 @@ const parseCapabilities = (value: unknown): SnowAgentCapabilities | null => {
     outputFrames: value.outputFrames as boolean,
     fileCas: value.fileCas as boolean,
     interactiveAttach: value.interactiveAttach as boolean,
+    interactiveAttachProtocolVersion,
   };
 };
 
@@ -292,19 +324,23 @@ export const getSnowAgentTarget = (
     return null;
   }
   if (capabilities.remoteOs === "linux" && capabilities.remoteArch === "x86_64") {
-    return "linux-x64-gnu";
+    return "linux-x64-musl";
   }
-  if (capabilities.remoteOs === "darwin" && capabilities.remoteArch === "x86_64") {
-    return "darwin-x64";
-  }
-  if (capabilities.remoteOs === "darwin" && capabilities.remoteArch === "arm64") {
-    return "darwin-arm64";
+  if (capabilities.remoteOs === "linux" && capabilities.remoteArch === "aarch64") {
+    return "linux-arm64-musl";
   }
   return null;
 };
 
 export const canUseSnowAgent = (capabilities: SshCapabilities): boolean =>
   getSnowAgentTarget(capabilities) !== null;
+
+export const supportsSnowAgentInteractiveAttach = (
+  capabilities: SnowAgentCapabilities
+): boolean =>
+  capabilities.interactiveAttach &&
+  capabilities.interactiveAttachProtocolVersion ===
+    SNOW_AGENT_INTERACTIVE_ATTACH_PROTOCOL_VERSION;
 
 const shellQuote = (value: string): string =>
   `'${value.replace(/'/g, `"'"'`)}'`;
@@ -393,10 +429,17 @@ const readResponse = async (
   return content;
 };
 
-const releaseAssetUrl = (trust: SnowAgentReleaseTrust, asset: string): string =>
-  `https://github.com/${trust.repository}/releases/download/${encodeURIComponent(
+const releaseAssetUrl = (trust: SnowAgentReleaseTrust, asset: string): string => {
+  const developmentBaseUrl = !app.isPackaged
+    ? process.env.SNOW_AGENT_RELEASE_BASE_URL?.trim().replace(/\/+$/, "")
+    : undefined;
+  if (developmentBaseUrl) {
+    return `${developmentBaseUrl}/${encodeURIComponent(asset)}`;
+  }
+  return `https://github.com/${trust.repository}/releases/download/${encodeURIComponent(
     trust.releaseTag
   )}/${encodeURIComponent(asset)}`;
+};
 
 const fetchRelease = async (
   target: SnowAgentTarget
@@ -418,7 +461,16 @@ const fetchRelease = async (
       }`
     );
   }
-  verifySnowAgentHandshake(handshake, trust.publicKey);
+  try {
+    verifySnowAgentHandshake(handshake, trust.publicKey);
+  } catch (error) {
+    throw new SnowAgentError(
+      "SIGNATURE_INVALID",
+      `Snow Agent release manifest signature is invalid: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
   if (handshake.target !== target) {
     throw new Error("snow-agent release manifest target does not match the remote host");
   }
@@ -432,12 +484,15 @@ const fetchRelease = async (
   );
   const actualHash = createHash("sha256").update(artifact).digest("hex");
   if (actualHash !== handshake.artifactSha256) {
-    throw new Error("snow-agent release artifact does not match its signed manifest");
+    throw new SnowAgentError(
+      "SIGNATURE_INVALID",
+      "Snow Agent release artifact does not match its signed manifest"
+    );
   }
   return { handshake, manifest, artifact };
 };
 
-const remoteAgentRoot = async (sessionId: string, target: SnowAgentTarget): Promise<string> => {
+const remoteAgentRoot = async (sessionId: string): Promise<string> => {
   const home = (
     await executeSshCommand(
       sessionId,
@@ -448,7 +503,7 @@ const remoteAgentRoot = async (sessionId: string, target: SnowAgentTarget): Prom
   if (!home.startsWith("/") || /[\u0000\r\n]/.test(home)) {
     throw new Error("snow-agent remote home directory is invalid");
   }
-  return `${home}/.local/share/snow-app/agents/${target}`;
+  return `${home}/.local/lib/snow-app/agent`;
 };
 
 const remoteSha256 = async (sessionId: string, path: string): Promise<string> => {
@@ -471,16 +526,28 @@ const remoteSha256 = async (sessionId: string, path: string): Promise<string> =>
 
 const installedAgentFromManifest = async (
   sessionId: string,
-  root: string
+  root: string,
+  expected: SnowAgentHandshake
 ): Promise<InstalledSnowAgent | null> => {
   try {
-    const manifest = await readSshFile(sessionId, `${root}/current.json`);
+    const releaseDirectory = `${root}/${expected.version}`;
+    const manifest = await readSshFile(
+      sessionId,
+      `${releaseDirectory}/snow-agent-release.json`
+    );
     if (manifest.length === 0 || manifest.length > MAX_MANIFEST_BYTES) {
       return null;
     }
     const handshake = parseSnowAgentHandshake(JSON.parse(manifest.toString("utf8")) as unknown);
     verifySnowAgentHandshake(handshake);
-    const executable = `${root}/releases/${handshake.artifactSha256}/snow-agent`;
+    if (
+      handshake.target !== expected.target ||
+      handshake.version !== expected.version ||
+      handshake.artifactSha256 !== expected.artifactSha256
+    ) {
+      return null;
+    }
+    const executable = `${releaseDirectory}/snow-agent`;
     if ((await remoteSha256(sessionId, executable)) !== handshake.artifactSha256) {
       return null;
     }
@@ -490,23 +557,43 @@ const installedAgentFromManifest = async (
   }
 };
 
+const writeAgentFile = async (
+  sessionId: string,
+  path: string,
+  content: Buffer
+): Promise<void> => {
+  try {
+    const result = await writeInternalSshFile(sessionId, path, content);
+    if (result.guarantee !== "atomic_best_effort" || !result.durability.fsynced) {
+      throw new Error("the SFTP server does not provide fsync plus atomic rename");
+    }
+  } catch (error) {
+    throw new SnowAgentError(
+      "SFTP_UNAVAILABLE",
+      `Snow Agent deployment needs writable SFTP with fsync and atomic rename: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+};
+
 const installRelease = async (
   sessionId: string,
   root: string,
   release: { handshake: SnowAgentHandshake; manifest: Buffer; artifact: Buffer }
 ): Promise<InstalledSnowAgent> => {
-  const releaseDirectory = `${root}/releases/${release.handshake.artifactSha256}`;
+  const releaseDirectory = `${root}/${release.handshake.version}`;
   await executeSshCommand(
     sessionId,
     `umask 077; mkdir -p -- ${shellQuote(releaseDirectory)} && chmod 700 -- ${shellQuote(
       root
-    )} ${shellQuote(`${root}/releases`)} ${shellQuote(releaseDirectory)}`,
+    )} ${shellQuote(releaseDirectory)}`,
     { timeoutMs: 20_000 }
   );
   const executable = `${releaseDirectory}/snow-agent`;
   await Promise.all([
-    writeInternalSshFile(sessionId, executable, release.artifact),
-    writeInternalSshFile(
+    writeAgentFile(sessionId, executable, release.artifact),
+    writeAgentFile(
       sessionId,
       `${releaseDirectory}/snow-agent-release.json`,
       release.manifest
@@ -522,11 +609,51 @@ const installRelease = async (
   if ((await remoteSha256(sessionId, executable)) !== release.handshake.artifactSha256) {
     throw new Error("snow-agent remote staging hash verification failed");
   }
-  await writeInternalSshFile(sessionId, `${root}/current.json`, release.manifest);
-  await executeSshCommand(sessionId, `chmod 600 -- ${shellQuote(`${root}/current.json`)}`, {
-    timeoutMs: 10_000,
-  });
   return { executable, handshake: release.handshake };
+};
+
+const verifyInstalledAgent = async (
+  sessionId: string,
+  installed: InstalledSnowAgent
+): Promise<InstalledSnowAgent> => {
+  let output: string;
+  try {
+    output = await executeSshCommand(
+      sessionId,
+      `${shellQuote(installed.executable)} protocol --format=json`,
+      { timeoutMs: 10_000 }
+    );
+  } catch (error) {
+    throw new SnowAgentError(
+      "AGENT_HOME_NOEXEC",
+      `Snow Agent cannot execute from its installation directory: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+  let handshake: SnowAgentHandshake;
+  try {
+    handshake = parseSnowAgentHandshake(parseJsonResult(output, "protocol"));
+    verifySnowAgentHandshake(handshake);
+  } catch (error) {
+    throw new SnowAgentError(
+      "SIGNATURE_INVALID",
+      `Snow Agent protocol handshake could not be verified: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+  if (
+    handshake.target !== installed.handshake.target ||
+    handshake.version !== installed.handshake.version ||
+    handshake.artifactSha256 !== installed.handshake.artifactSha256
+  ) {
+    throw new SnowAgentError(
+      "SIGNATURE_INVALID",
+      "Snow Agent protocol handshake does not match the deployed artifact"
+    );
+  }
+  return { executable: installed.executable, handshake };
 };
 
 const installedAgents = new Map<string, InstalledSnowAgent>();
@@ -540,7 +667,10 @@ const ensureSnowAgent = async (
 ): Promise<InstalledSnowAgent> => {
   const target = getSnowAgentTarget(capabilities);
   if (!target) {
-    throw new Error("snow-agent is not published for this remote platform");
+    throw new SnowAgentError(
+      "UNSUPPORTED_ARCH",
+      "Snow Agent interactive jobs support Linux x86_64 and aarch64 only"
+    );
   }
   const cacheKey = agentCacheKey(sessionId);
   const cached = installedAgents.get(cacheKey);
@@ -552,25 +682,16 @@ const ensureSnowAgent = async (
     return inFlight;
   }
   const installation = (async (): Promise<InstalledSnowAgent> => {
-    const root = await remoteAgentRoot(sessionId, target);
     const desired = await fetchRelease(target);
-    const installed = await installedAgentFromManifest(sessionId, root);
+    const root = await remoteAgentRoot(sessionId);
+    const installed = await installedAgentFromManifest(sessionId, root, desired.handshake);
     if (installed) {
-      const comparison = compareSnowAgentVersions(
-        installed.handshake.version,
-        desired.handshake.version
-      );
-      if (comparison > 0) {
-        return installed;
-      }
-      if (comparison === 0) {
-        if (installed.handshake.artifactSha256 !== desired.handshake.artifactSha256) {
-          throw new Error("snow-agent release version has conflicting signed artifact hashes");
-        }
-        return installed;
-      }
+      return verifyInstalledAgent(sessionId, installed);
     }
-    return installRelease(sessionId, root, desired);
+    return verifyInstalledAgent(
+      sessionId,
+      await installRelease(sessionId, root, desired)
+    );
   })();
   installationsInFlight.set(cacheKey, installation);
   try {
@@ -693,6 +814,80 @@ export const startSnowAgentLivenessProbe = async (
     throw new Error("snow-agent did not start a disconnect-survival probe");
   }
   return { probeId: result.probeId, markerToken: result.markerToken };
+};
+
+export type SnowAgentInteractiveProbe = SnowAgentLivenessProbe & {
+  jobDirectory: string;
+};
+
+export const startSnowAgentInteractiveProbe = async (
+  sessionId: string,
+  capabilities: SshCapabilities
+): Promise<SnowAgentInteractiveProbe> => {
+  const handshake = await negotiateSnowAgent(sessionId, capabilities);
+  if (!supportsSnowAgentInteractiveAttach(handshake.capabilities)) {
+    throw new SnowAgentError(
+      "PTY_UNAVAILABLE",
+      "The deployed Snow Agent does not implement the interactive attach protocol"
+    );
+  }
+  const result = parseJsonResult(
+    await runSnowAgent(
+      sessionId,
+      capabilities,
+      ["job", "self-test", "--interactive-disconnect-survival"],
+      15_000
+    ),
+    "interactive job self-test"
+  );
+  if (
+    result.accepted !== true ||
+    !isUuid(result.probeId) ||
+    !isUuid(result.markerToken) ||
+    typeof result.jobDirectory !== "string" ||
+    !result.jobDirectory.startsWith("/")
+  ) {
+    throw new SnowAgentError(
+      "PTY_UNAVAILABLE",
+      "Snow Agent did not start an interactive PTY probe"
+    );
+  }
+  return {
+    probeId: result.probeId,
+    markerToken: result.markerToken,
+    jobDirectory: result.jobDirectory,
+  };
+};
+
+export const verifySnowAgentInteractiveProbe = async (
+  sessionId: string,
+  capabilities: SshCapabilities,
+  probe: SnowAgentInteractiveProbe
+): Promise<void> => {
+  const result = parseJsonResult(
+    await runSnowAgent(
+      sessionId,
+      capabilities,
+      [
+        "job",
+        "self-test-check",
+        "--probe-id",
+        probe.probeId,
+        "--marker-token",
+        probe.markerToken,
+        "--job-directory",
+        probe.jobDirectory,
+      ],
+      10_000
+    ),
+    "interactive job self-test check"
+  );
+  if (result.ready !== true || result.active !== true) {
+    throw new SnowAgentError(
+      "DISCONNECT_PROBE_FAILED",
+      "Snow Agent PTY broker did not survive the launching SSH connection"
+    );
+  }
 };
 
 export const inspectSnowAgentJob = async (

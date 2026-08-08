@@ -499,6 +499,13 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
     if (input.backend !== undefined && !backend) {
       throw new Error("Unknown Remote Job backend");
     }
+    const mode =
+      input.mode === "batch" || input.mode === "interactive"
+        ? input.mode
+        : undefined;
+    if (input.mode !== undefined && !mode) {
+      throw new Error("Unknown Remote Job mode");
+    }
     const optionalString = (candidate: unknown): string | undefined =>
       typeof candidate === "string" && candidate.trim()
         ? candidate.trim()
@@ -516,6 +523,7 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
       timeoutMs: input.timeoutMs as number | undefined,
       jobId: optionalString(input.jobId),
       backend,
+      mode,
       conversationId: optionalString(input.conversationId),
       toolCallId: optionalString(input.toolCallId),
     };

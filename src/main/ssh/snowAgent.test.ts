@@ -4,6 +4,7 @@ import {
   compareSnowAgentVersions,
   getSnowAgentTarget,
   parseSnowAgentHandshake,
+  supportsSnowAgentInteractiveAttach,
   verifySnowAgentHandshake,
   type SnowAgentCapabilities,
   type SnowAgentHandshake,
@@ -16,6 +17,7 @@ const capabilities: SnowAgentCapabilities = {
   outputFrames: true,
   fileCas: true,
   interactiveAttach: true,
+  interactiveAttachProtocolVersion: 1,
 };
 
 const signedHandshake = (): { handshake: SnowAgentHandshake; publicKey: string } => {
@@ -23,8 +25,8 @@ const signedHandshake = (): { handshake: SnowAgentHandshake; publicKey: string }
   const payload = JSON.stringify({
     protocolVersion: 1,
     version: "0.1.20",
-    target: "linux-x64-gnu",
-    artifactFileName: "snow-agent-linux-x64-gnu",
+    target: "linux-x64-musl",
+    artifactFileName: "snow-agent-linux-x64-musl",
     artifactSha256: "a".repeat(64),
     capabilities,
   });
@@ -32,8 +34,8 @@ const signedHandshake = (): { handshake: SnowAgentHandshake; publicKey: string }
     handshake: parseSnowAgentHandshake({
       protocolVersion: 1,
       version: "0.1.20",
-      target: "linux-x64-gnu",
-      artifactFileName: "snow-agent-linux-x64-gnu",
+      target: "linux-x64-musl",
+      artifactFileName: "snow-agent-linux-x64-musl",
       artifactSha256: "a".repeat(64),
       release: {
         keyId: "test-ed25519",
@@ -73,7 +75,7 @@ describe("snow-agent release trust", () => {
         nohup: true,
         powerShell: false,
       })
-    ).toBe("linux-x64-gnu");
+    ).toBe("linux-x64-musl");
     expect(
       getSnowAgentTarget({
         platform: "posix",
@@ -86,7 +88,17 @@ describe("snow-agent release trust", () => {
         nohup: true,
         powerShell: false,
       })
-    ).toBeNull();
+    ).toBe("linux-arm64-musl");
+  });
+
+  it("does not trust the retired boolean-only interactive declaration", () => {
+    expect(
+      supportsSnowAgentInteractiveAttach({
+        ...capabilities,
+        interactiveAttachProtocolVersion: undefined,
+      })
+    ).toBe(false);
+    expect(supportsSnowAgentInteractiveAttach(capabilities)).toBe(true);
   });
 
   it("never downgrades a newer installed release", () => {

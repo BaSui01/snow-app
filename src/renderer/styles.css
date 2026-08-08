@@ -4011,7 +4011,9 @@ input {
 
 .remote-jobs-header,
 .remote-jobs-detail-toolbar,
-.remote-jobs-actions {
+.remote-jobs-actions,
+.remote-jobs-header-actions,
+.remote-jobs-start-actions {
   display: flex;
   align-items: center;
 }
@@ -4071,6 +4073,97 @@ input {
 
 .remote-jobs-icon-button.danger:hover:not(:disabled) {
   color: var(--accent-red);
+}
+
+.remote-jobs-header-actions {
+  gap: 4px;
+}
+
+.remote-jobs-start-button,
+.remote-jobs-form-button {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.remote-jobs-start-button {
+  padding: 0 8px;
+}
+
+.remote-jobs-start-button:hover,
+.remote-jobs-form-button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.remote-jobs-start-form {
+  display: grid;
+  gap: 7px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+}
+
+.remote-jobs-start-form label {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.remote-jobs-start-form textarea {
+  width: 100%;
+  min-height: 58px;
+  box-sizing: border-box;
+  resize: vertical;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 7px 8px;
+}
+
+.remote-jobs-start-form textarea:focus {
+  outline: none;
+  border-color: var(--text-muted);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.remote-jobs-start-actions {
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.remote-jobs-form-button {
+  padding: 0 9px;
+}
+
+.remote-jobs-form-button.primary {
+  border-color: var(--accent-blue-text);
+  background: var(--accent-blue-text);
+  color: #fff;
+}
+
+.remote-jobs-form-button.primary:hover:not(:disabled) {
+  border-color: var(--accent-blue-text);
+  background: var(--accent-blue-text);
+  color: #fff;
+  filter: brightness(1.08);
+}
+
+.remote-jobs-form-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .remote-jobs-body {

@@ -163,6 +163,7 @@ export type RemoteJobBackendKind =
   | "posix-detach";
 
 export type RemoteJobCancellationPolicy = "cancel_remote" | "detach_only";
+export type RemoteJobMode = "batch" | "interactive";
 
 export type RemoteJobBinding = {
   jobId: string;
@@ -172,6 +173,7 @@ export type RemoteJobBinding = {
   commandHash: string;
   displayCommand: string;
   backend: RemoteJobBackendKind;
+  mode: RemoteJobMode;
   cancellationPolicy?: RemoteJobCancellationPolicy;
   createdAt: string;
   updatedAt: string;
@@ -189,6 +191,7 @@ export type RemoteJobState = {
   status: RemoteJobStatus;
   revision: number;
   backend?: RemoteJobBackendKind;
+  mode?: RemoteJobMode;
   runnerPid?: number;
   exitCode?: number;
   createdAt?: string;
@@ -206,6 +209,7 @@ export type RemoteJobStartRequest = {
   timeoutMs?: number;
   jobId?: string;
   backend?: RemoteJobBackendKind;
+  mode?: RemoteJobMode;
   conversationId?: string;
   toolCallId?: string;
 };

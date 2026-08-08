@@ -696,6 +696,36 @@ export const executeSshCommand = (
   });
 };
 
+/** Confirms that this SSH server permits PTY allocation before an interactive job starts. */
+export const probeSshPty = (sessionId: string): Promise<void> =>
+  new Promise((resolve, reject) => {
+    const session = getSshSession(sessionId);
+    if (!session) {
+      reject(new Error("SSH session not found. Please reconnect."));
+      return;
+    }
+    session.client.exec("true", { pty: true }, (error, stream) => {
+      if (error) {
+        reject(new Error(`SSH PTY allocation failed: ${error.message}`));
+        return;
+      }
+      stream.on("error", (streamError: Error) => {
+        reject(new Error(`SSH PTY allocation failed: ${streamError.message}`));
+      });
+      stream.on("close", (exitCode: number | null) => {
+        if (exitCode === 0) {
+          resolve();
+        } else {
+          reject(
+            new Error(
+              `SSH PTY allocation was rejected with exit code ${exitCode ?? "unknown"}`
+            )
+          );
+        }
+      });
+    });
+  });
+
 const POSIX_CAPABILITY_PROBE_COMMAND = [
   "for capability in sh systemctl tmux setsid nohup; do",
   '  if command -v "$capability" >/dev/null 2>&1; then',

@@ -1,5 +1,4 @@
 const {
-  chmodSync,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -11,72 +10,54 @@ const {
 const { join } = require("node:path");
 const { spawnSync } = require("node:child_process");
 const {
-  createHash,
   createPrivateKey,
   createPublicKey,
   generateKeyPairSync,
-  sign,
 } = require("node:crypto");
 
 const projectRoot = join(__dirname, "..");
 const nativeDir = join(projectRoot, "native");
 const resourcesDir = join(projectRoot, "resources");
 const agentResourcesDir = join(resourcesDir, "snow-agent");
-const releaseDir = join(projectRoot, "release");
 const packageVersion = JSON.parse(readFileSync(join(projectRoot, "package.json"), "utf8")).version;
 const releaseTag = (process.env.SNOW_AGENT_RELEASE_TAG || `v${packageVersion}`).trim();
 const releaseKeyId = (process.env.SNOW_AGENT_RELEASE_KEY_ID || "snow-agent-ed25519-2026").trim();
-const agentCapabilities = {
-  transactionalQueue: true,
-  processGroups: true,
-  resourceLimits: true,
-  outputFrames: true,
-  fileCas: true,
-  interactiveAttach: true,
-};
-
 const targetMap = {
   "win32-x64": {
     triple: "x86_64-pc-windows-msvc",
     artifact: "snow_native.dll",
     output: "snow_native.win32-x64-msvc.node",
     platformName: "win32-x64-msvc",
-    agentTarget: null,
   },
   "win32-arm64": {
     triple: "aarch64-pc-windows-msvc",
     artifact: "snow_native.dll",
     output: "snow_native.win32-arm64-msvc.node",
     platformName: "win32-arm64-msvc",
-    agentTarget: null,
   },
   "darwin-x64": {
     triple: "x86_64-apple-darwin",
     artifact: "libsnow_native.dylib",
     output: "snow_native.darwin-x64.node",
     platformName: "darwin-x64",
-    agentTarget: "darwin-x64",
   },
   "darwin-arm64": {
     triple: "aarch64-apple-darwin",
     artifact: "libsnow_native.dylib",
     output: "snow_native.darwin-arm64.node",
     platformName: "darwin-arm64",
-    agentTarget: "darwin-arm64",
   },
   "linux-x64": {
     triple: "x86_64-unknown-linux-gnu",
     artifact: "libsnow_native.so",
     output: "snow_native.linux-x64-gnu.node",
     platformName: "linux-x64-gnu",
-    agentTarget: "linux-x64-gnu",
   },
   "linux-arm64": {
     triple: "aarch64-unknown-linux-gnu",
     artifact: "libsnow_native.so",
     output: "snow_native.linux-arm64-gnu.node",
     platformName: "linux-arm64-gnu",
-    agentTarget: "linux-arm64-gnu",
   },
 };
 
@@ -149,16 +130,6 @@ function getArtifactPath(t) {
   return join(nativeDir, "target", t.triple, "release", t.artifact);
 }
 
-function getAgentArtifactPath(t) {
-  return join(
-    nativeDir,
-    "target",
-    t.triple,
-    "release",
-    process.platform === "win32" ? "snow-agent.exe" : "snow-agent"
-  );
-}
-
 function normalizePem(value) {
   return value.replace(/\\n/g, "\n").trim() + "\n";
 }
@@ -213,49 +184,6 @@ function writeTrustConfig() {
   );
 }
 
-function sha256File(path) {
-  return createHash("sha256").update(readFileSync(path)).digest("hex");
-}
-
-function stageSnowAgent(t) {
-  if (!t.agentTarget) return;
-  const artifactPath = getAgentArtifactPath(t);
-  if (!existsSync(artifactPath)) {
-    throw new Error(`Snow Agent artifact not found: ${artifactPath}`);
-  }
-  const artifactFileName = `snow-agent-${t.agentTarget}`;
-  const artifactSha256 = sha256File(artifactPath);
-  const payload = JSON.stringify({
-    protocolVersion: 1,
-    version: packageVersion,
-    target: t.agentTarget,
-    artifactFileName,
-    artifactSha256,
-    capabilities: agentCapabilities,
-  });
-  const manifest = {
-    protocolVersion: 1,
-    version: packageVersion,
-    target: t.agentTarget,
-    artifactFileName,
-    artifactSha256,
-    release: {
-      keyId: releaseKeyId,
-      payload,
-      signature: sign(null, Buffer.from(payload, "utf8"), releaseSigningKey).toString("base64"),
-    },
-    capabilities: agentCapabilities,
-  };
-  mkdirSync(releaseDir, { recursive: true });
-  const stagedArtifactPath = join(releaseDir, artifactFileName);
-  copyFileSync(artifactPath, stagedArtifactPath);
-  chmodSync(stagedArtifactPath, 0o755);
-  writeFileSync(join(releaseDir, `${artifactFileName}.json`), `${JSON.stringify(manifest)}\n`, {
-    mode: 0o644,
-  });
-  console.log(`Signed Snow Agent release asset written for ${t.agentTarget}`);
-}
-
 writeTrustConfig();
 
 function copyNativeBinding(artifactPath, outputPath, platformName) {
@@ -301,7 +229,6 @@ if (process.platform === "darwin" && !forcedArch) {
   for (const t of darwinTargets) {
     console.log(`Building Rust native for ${t.triple}...`);
     runCargoBuild(t.triple);
-    stageSnowAgent(t);
   }
 
   const arm64Artifact = getArtifactPath(darwinTargets[0]);
@@ -345,5 +272,4 @@ if (process.platform === "darwin" && !forcedArch) {
   }
 
   copyNativeBinding(artifactPath, outputPath, target.platformName);
-  stageSnowAgent(target);
 }

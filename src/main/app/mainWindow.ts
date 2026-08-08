@@ -220,6 +220,19 @@ export const createWindow = (): BrowserWindow => {
     applyDevToolsSnowIcon(webContents);
   });
 
+  // 防御性兜底：渲染进程主框架导航到应用页面之外的 URL 一律阻止。
+  // 链接/路径点击已在渲染进程用 auxclick/click 拦截并转交系统浏览器或
+  // 右侧面板；若仍有漏网（如第三方注入的 <a>、Ctrl/Cmd+点击未覆盖场景），
+  // 在 Electron 中会降级为当前窗口导航，直接刷新整个前端，导致进行中的
+  // 会话与生成全部中断。location.reload()（错误边界自愈）不触发本事件。
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    const devServerUrl = process.env.ELECTRON_RENDERER_URL;
+    if (devServerUrl && url.startsWith(devServerUrl)) {
+      return; // 开发模式放行 Vite dev server 同源导航（HMR 全量刷新场景）
+    }
+    event.preventDefault();
+  });
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url).catch((error) => {
       console.error("Failed to open external URL:", error);

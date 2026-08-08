@@ -977,6 +977,7 @@ const ChatContentBody = ({
         }`}
         ref={scrollRef}
         onClick={pathClickOpenProps.onClick}
+        onAuxClick={pathClickOpenProps.onAuxClick}
         onWheel={handleChatWheel}
         onTouchStart={markUserScrollIntent}
         onPointerDown={handleChatPointerDown}

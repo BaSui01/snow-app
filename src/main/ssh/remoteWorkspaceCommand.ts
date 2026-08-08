@@ -631,8 +631,7 @@ const executeBashCommand = async (
     args.backend === "snow-agent" ||
     args.backend === "systemd-user" ||
     args.backend === "tmux" ||
-    args.backend === "posix-detach" ||
-    args.backend === "windows-job"
+    args.backend === "posix-detach"
       ? (args.backend as RemoteJobBackendKind)
       : undefined;
   if (args.backend !== undefined && !backend) {

@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path/posix";
 import { createRequire } from "node:module";
 import { getSshHostKey, saveSshHostKey } from "./sshHostKeys";
-import { buildWindowsJobObjectLifecycleProbeScript } from "./windowsJobObject";
 
 const require2 = createRequire(import.meta.url);
 const ssh2 = require2("ssh2") as typeof import("ssh2");
@@ -97,7 +96,6 @@ export type SshCapabilities = {
   setsid: boolean;
   nohup: boolean;
   powerShell: boolean;
-  windowsJobObjects: boolean;
 };
 
 export type SshFileSaveGuarantee =
@@ -715,12 +713,6 @@ const WINDOWS_CAPABILITY_PROBE_SCRIPT = [
   "$ErrorActionPreference = 'Stop'",
   "[Console]::Out.WriteLine('platform=windows')",
   "[Console]::Out.WriteLine('powershell=1')",
-  "try {",
-  buildWindowsJobObjectLifecycleProbeScript(""),
-  "  [Console]::Out.WriteLine('windows_job_objects=1')",
-  "} catch {",
-  "  [Console]::Out.WriteLine('windows_job_objects=0')",
-  "}",
 ].join("\r\n");
 
 const WINDOWS_CAPABILITY_PROBE_COMMAND =
@@ -770,7 +762,6 @@ export const probeSshCapabilities = async (
     setsid: values.get("setsid") === "1",
     nohup: values.get("nohup") === "1",
     powerShell: values.get("powershell") === "1",
-    windowsJobObjects: values.get("windows_job_objects") === "1",
   };
   const session = getSshSession(sessionId);
   if (session) {

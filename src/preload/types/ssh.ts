@@ -74,7 +74,6 @@ export type SshCapabilities = {
   setsid: boolean;
   nohup: boolean;
   powerShell: boolean;
-  windowsJobObjects: boolean;
 };
 
 export type SshFileSaveGuarantee =
@@ -161,8 +160,7 @@ export type RemoteJobBackendKind =
   | "snow-agent"
   | "systemd-user"
   | "tmux"
-  | "posix-detach"
-  | "windows-job";
+  | "posix-detach";
 
 export type RemoteJobCancellationPolicy = "cancel_remote" | "detach_only";
 

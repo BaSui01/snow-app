@@ -72,7 +72,6 @@ describe("snow-agent release trust", () => {
         setsid: true,
         nohup: true,
         powerShell: false,
-        windowsJobObjects: false,
       })
     ).toBe("linux-x64-gnu");
     expect(
@@ -86,7 +85,6 @@ describe("snow-agent release trust", () => {
         setsid: true,
         nohup: true,
         powerShell: false,
-        windowsJobObjects: false,
       })
     ).toBeNull();
   });

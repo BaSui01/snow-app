@@ -23,22 +23,7 @@ import {
   shellQuote,
   withSshSession,
 } from "./remoteWorkspaceCommand";
-import {
-  buildWindowsCommandScript,
-  buildWindowsRunnerScript,
-  cancelWindowsRemoteJob,
-  createWindowsRemoteDirectory,
-  encodeWindowsPowerShell,
-  getWindowsRemoteJobTaskName,
-  getWindowsRemoteJobRoot,
-  inspectWindowsRemoteJob,
-  isWindowsRemote,
-  launchWindowsDetachedPowerShell,
-  launchWindowsRemoteJob,
-  moveWindowsRemotePath,
-  removeWindowsRemotePath,
-} from "./windowsRemoteRunner";
-import { buildWindowsJobObjectLifecycleProbeScript } from "./windowsJobObject";
+import { encodeWindowsPowerShell } from "./windowsRemoteRunner";
 import {
   canUseSnowAgent,
   cancelSnowAgentJob,
@@ -64,8 +49,17 @@ const POSIX_CANCEL_GRACE_SECONDS = 5;
 const SYSTEMD_RUNTIME_GRACE_SECONDS = 10;
 const POSIX_RUNNER_POLL_SECONDS = 0.2;
 const INACTIVE_RUNNER_SETTLE_MS = 750;
-const WINDOWS_BACKEND_PROBE_TIMEOUT_MS = 10_000;
-const WINDOWS_BACKEND_PROBE_POLL_MS = 200;
+
+export const WINDOWS_DURABLE_JOB_UNAVAILABLE_MESSAGE =
+  "Windows durable jobs require a protected remote helper running under a least-privileged service account; Snow App does not provision or transmit service credentials over SSH.";
+
+export const assertDurableJobPlatformSupported = (
+  platform: SshCapabilities["platform"]
+): void => {
+  if (platform === "windows") {
+    throw new Error(WINDOWS_DURABLE_JOB_UNAVAILABLE_MESSAGE);
+  }
+};
 
 export type RemoteJobCancellationPolicy = "cancel_remote" | "detach_only";
 
@@ -92,8 +86,7 @@ export type RemoteJobBackendKind =
   | "snow-agent"
   | "systemd-user"
   | "tmux"
-  | "posix-detach"
-  | "windows-job";
+  | "posix-detach";
 
 export type RemoteJobState = {
   schemaVersion: number;
@@ -226,8 +219,7 @@ const isBackendKind = (value: unknown): value is RemoteJobBackendKind =>
   value === "snow-agent" ||
   value === "systemd-user" ||
   value === "tmux" ||
-  value === "posix-detach" ||
-  value === "windows-job";
+  value === "posix-detach";
 
 const isCancellationPolicy = (
   value: unknown
@@ -941,34 +933,6 @@ const remoteBackends: Record<RemoteJobBackendKind, RemoteJobBackend> = {
       }
     },
   },
-  "windows-job": {
-    kind: "windows-job",
-    isAvailable: isWindowsRemote,
-    async launch(context): Promise<void> {
-      await launchWindowsRemoteJob(
-        context.sessionId,
-        `${context.jobDirectory}/runner.ps1`,
-        context.jobId,
-        context.signal
-      );
-    },
-    async inspect(context): Promise<"active" | "inactive"> {
-      const state = await readRemoteState(
-        context.sessionId,
-        context.jobDirectory,
-        context.jobId
-      );
-      return inspectWindowsRemoteJob(context.sessionId, state.runnerPid);
-    },
-    async cancel(context): Promise<void> {
-      const state = await readRemoteState(
-        context.sessionId,
-        context.jobDirectory,
-        context.jobId
-      );
-      await cancelWindowsRemoteJob(context.sessionId, state.runnerPid);
-    },
-  },
 };
 
 const buildCommandScript = (workingDirectory: string, command: string): string =>
@@ -1148,28 +1112,6 @@ const buildRunnerScript = (jobId: string, createdAt: string): string => [
 const backendProbeScript = (markerPath: string): string =>
   `sleep 1; printf ok > ${shellQuote(markerPath)}`;
 
-const windowsBackendProbeScript = (
-  startedMarkerPath: string,
-  markerPath: string,
-  taskName: string
-): string =>
-  // Avoid first-use PowerShell module loading in a probe that runs as a new
-  // scheduled-task user. The completion marker follows the same Job Object
-  // lifecycle as the runner, so selection validates both task permissions and
-  // the APIs that the runner will need after disconnecting.
-  [
-    "$ErrorActionPreference = 'Stop'",
-    "try {",
-    "  [System.Threading.Thread]::Sleep(750)",
-    `  [System.IO.File]::WriteAllText('${startedMarkerPath.replace(/'/g, "''")}', \"$PID|$env:USERNAME\", [System.Text.Encoding]::ASCII)`,
-    buildWindowsJobObjectLifecycleProbeScript(
-      `  [System.IO.File]::WriteAllText('${markerPath.replace(/'/g, "''")}', 'ok', [System.Text.Encoding]::ASCII)`
-    ),
-    "} finally {",
-    `  & schtasks.exe /Delete /TN '${taskName.replace(/'/g, "''")}' /F 2>$null | Out-Null`,
-    "}",
-  ].join("\r\n");
-
 const wait = (milliseconds: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -1224,8 +1166,6 @@ const verifyBackendLiveness = async (
     await withSshSession(workspacePath, async (sessionId) => {
       const root = await getRemoteJobRoot(sessionId, capabilities);
       const marker = `${root}/.backend-probe-${probeId}`;
-      const startedMarker = `${marker}.started`;
-      const windowsProbeScriptPath = `${marker}.ps1`;
       const probeScript = backendProbeScript(marker);
       if (backend.kind === "systemd-user") {
         await runShell(
@@ -1245,18 +1185,6 @@ const verifyBackendLiveness = async (
             `/bin/sh -lc ${shellQuote(probeScript)}`,
           ].join(" ")
         );
-      } else if (backend.kind === "windows-job") {
-        const taskName = getWindowsRemoteJobTaskName(`probe-${probeId}`);
-        await writeInternalSshFile(
-          sessionId,
-          windowsProbeScriptPath,
-          windowsBackendProbeScript(startedMarker, marker, taskName)
-        );
-        await launchWindowsDetachedPowerShell(
-          sessionId,
-          taskName,
-          windowsProbeScriptPath
-        );
       } else {
         await runShell(
           sessionId,
@@ -1269,55 +1197,19 @@ const verifyBackendLiveness = async (
     await withSshSession(workspacePath, async (sessionId) => {
       const root = await getRemoteJobRoot(sessionId, capabilities);
       const marker = `${root}/.backend-probe-${probeId}`;
-      const startedMarker = `${marker}.started`;
-      const windowsProbeScriptPath = `${marker}.ps1`;
-      const deadline =
-        Date.now() +
-        (backend.kind === "windows-job"
-          ? WINDOWS_BACKEND_PROBE_TIMEOUT_MS
-          : 1_250);
+      const deadline = Date.now() + 1_250;
       while (Date.now() < deadline) {
         if (await remotePathExists(sessionId, marker)) {
           const content = await readSshFile(sessionId, marker);
           if (content.toString("utf8") === "ok") {
-            if (capabilities.platform === "windows") {
-              await removeWindowsRemotePath(sessionId, marker);
-              await removeWindowsRemotePath(sessionId, startedMarker).catch(
-                () => undefined
-              );
-              await removeWindowsRemotePath(sessionId, windowsProbeScriptPath).catch(
-                () => undefined
-              );
-            } else {
-              await runShell(sessionId, `rm -f -- ${shellQuote(marker)}`);
-            }
+            await runShell(sessionId, `rm -f -- ${shellQuote(marker)}`);
             return;
           }
         }
-        await wait(
-          backend.kind === "windows-job" ? WINDOWS_BACKEND_PROBE_POLL_MS : 125
-        );
-      }
-      let diagnostic = "detached process did not start after the SSH disconnect";
-      if (
-        backend.kind === "windows-job" &&
-        (await remotePathExists(sessionId, startedMarker))
-      ) {
-        const started = (await readSshFile(sessionId, startedMarker))
-          .toString("utf8")
-          .trim();
-        await removeWindowsRemotePath(sessionId, startedMarker).catch(
-          () => undefined
-        );
-        diagnostic = `detached process started after disconnect (${started || "identity unavailable"}) but did not finish`;
-      }
-      if (backend.kind === "windows-job") {
-        await removeWindowsRemotePath(sessionId, windowsProbeScriptPath).catch(
-          () => undefined
-        );
+        await wait(125);
       }
       throw new Error(
-        `Remote backend did not survive the SSH disconnect: ${diagnostic}`
+        "Remote backend did not survive the SSH disconnect: detached process did not start"
       );
     });
     BACKEND_PROBE_CACHE.set(cacheKey, Date.now() + BACKEND_PROBE_CACHE_MS);
@@ -1341,16 +1233,15 @@ const selectBackend = async (
   const capabilities = await withSshSession(workspacePath, async (sessionId) =>
     probeSshCapabilities(sessionId)
   );
+  assertDurableJobPlatformSupported(capabilities.platform);
   const candidates = requested
     ? [remoteBackends[requested]]
-    : capabilities.platform === "windows"
-      ? [remoteBackends["windows-job"]]
-      : [
-          remoteBackends["snow-agent"],
-          remoteBackends["systemd-user"],
-          remoteBackends.tmux,
-          remoteBackends["posix-detach"],
-        ];
+    : [
+        remoteBackends["snow-agent"],
+        remoteBackends["systemd-user"],
+        remoteBackends.tmux,
+        remoteBackends["posix-detach"],
+      ];
   for (const backend of candidates) {
     if (await verifyBackendLiveness(workspacePath, backend, capabilities)) {
       return backend;
@@ -1537,6 +1428,7 @@ export const startRemoteJob = async (
 
   const recovered = await withSshSession(workspacePath, async (sessionId) => {
     const capabilities = await probeSshCapabilities(sessionId);
+    assertDurableJobPlatformSupported(capabilities.platform);
     const root = await getRemoteJobRoot(sessionId, capabilities);
     const jobDirectory = pathForJob(root, jobId);
     if (!(await remotePathExists(sessionId, jobDirectory))) {
@@ -1622,32 +1514,18 @@ export const startRemoteJob = async (
       const workingDirectory = normalizeRemotePath(
         workspacePath.replace(/^ssh:\/\/[^/]+/, "") || "/"
       ).replace(/^\/([A-Za-z]:\/)/, "$1");
-      const jobFiles = capabilities.platform === "windows"
-        ? [
-            writeInternalSshFile(
-              sessionId,
-              `${temporaryDirectory}/command.ps1`,
-              buildWindowsCommandScript(workingDirectory, MAX_REMOTE_JOB_LOG_BYTES)
-            ),
-            writeInternalSshFile(sessionId, `${temporaryDirectory}/command.txt`, command),
-            writeInternalSshFile(
-              sessionId,
-              `${temporaryDirectory}/runner.ps1`,
-              buildWindowsRunnerScript(jobId, createdAt)
-            ),
-          ]
-        : [
-            writeInternalSshFile(
-              sessionId,
-              `${temporaryDirectory}/command.sh`,
-              buildCommandScript(workingDirectory, command)
-            ),
-            writeInternalSshFile(
-              sessionId,
-              `${temporaryDirectory}/runner.sh`,
-              buildRunnerScript(jobId, createdAt)
-            ),
-          ];
+      const jobFiles = [
+        writeInternalSshFile(
+          sessionId,
+          `${temporaryDirectory}/command.sh`,
+          buildCommandScript(workingDirectory, command)
+        ),
+        writeInternalSshFile(
+          sessionId,
+          `${temporaryDirectory}/runner.sh`,
+          buildRunnerScript(jobId, createdAt)
+        ),
+      ];
       await Promise.all([
         ...jobFiles,
         writeInternalSshFile(
@@ -1676,19 +1554,17 @@ export const startRemoteJob = async (
         );
         throw new Error("Remote Job start was cancelled before durable submission");
       }
-      if (capabilities.platform === "posix") {
-        await runShell(
-          sessionId,
-          `chmod 700 -- ${shellQuote(
-            `${temporaryDirectory}/command.sh`
-          )} ${shellQuote(`${temporaryDirectory}/runner.sh`)} && chmod 600 -- ${shellQuote(
-            `${temporaryDirectory}/manifest.json`
-          )} ${shellQuote(`${temporaryDirectory}/agent-request.json`
-          )} ${shellQuote(`${temporaryDirectory}/state.json`)} ${shellQuote(
-            `${temporaryDirectory}/backend`
-          )} ${shellQuote(`${temporaryDirectory}/timeout-ms`)}`
-        );
-      }
+      await runShell(
+        sessionId,
+        `chmod 700 -- ${shellQuote(
+          `${temporaryDirectory}/command.sh`
+        )} ${shellQuote(`${temporaryDirectory}/runner.sh`)} && chmod 600 -- ${shellQuote(
+          `${temporaryDirectory}/manifest.json`
+        )} ${shellQuote(`${temporaryDirectory}/agent-request.json`
+        )} ${shellQuote(`${temporaryDirectory}/state.json`)} ${shellQuote(
+          `${temporaryDirectory}/backend`
+        )} ${shellQuote(`${temporaryDirectory}/timeout-ms`)}`
+      );
       if (signal?.aborted) {
         await removeRemoteJobPath(sessionId, capabilities, temporaryDirectory).catch(
           () => undefined

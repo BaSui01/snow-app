@@ -1,16 +1,9 @@
 import { Buffer } from "node:buffer";
-import {
-  executeSshCommand,
-  getSshSession,
-  type SshCapabilities,
-} from "./sshManager";
+import { executeSshCommand } from "./sshManager";
 import { WINDOWS_JOB_OBJECT_INTEROP_SCRIPT } from "./windowsJobObject";
 
 const powerShellQuote = (value: string): string =>
   `'${value.replace(/'/g, "''")}'`;
-
-const windowsCommandQuote = (value: string): string =>
-  `"${value.replace(/"/g, '\\"')}"`;
 
 const POWER_SHELL_NON_INTERACTIVE_PRELUDE =
   "$ProgressPreference = 'SilentlyContinue'\r\n";
@@ -33,74 +26,6 @@ export const runWindowsPowerShell = (
     `powershell.exe -NoProfile -NonInteractive -EncodedCommand ${encodeWindowsPowerShell(script)}`,
     { timeoutMs, signal }
   );
-
-const getWindowsTaskName = (id: string): string => `SnowAppRemoteJob-${id}`;
-
-type WindowsTaskCredentials = {
-  username: string;
-  password: string;
-};
-
-const getWindowsTaskCredentials = (sessionId: string): WindowsTaskCredentials => {
-  const params = getSshSession(sessionId)?.params;
-  if (params?.authMethod !== "password" || !params.password) {
-    throw new Error(
-      "Windows durable jobs require password authentication for detached scheduling"
-    );
-  }
-  return { username: params.username, password: params.password };
-};
-
-export const buildWindowsScheduledTaskLauncherScript = (
-  taskName: string,
-  scriptPath: string,
-  credentials: WindowsTaskCredentials
-): string => {
-  const taskCommand =
-    "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File " +
-    windowsCommandQuote(scriptPath);
-  return [
-    "$ErrorActionPreference = 'Stop'",
-    `$taskName = ${powerShellQuote(taskName)}`,
-    `$taskCommand = ${powerShellQuote(taskCommand)}`,
-    `$taskUsername = ${powerShellQuote(credentials.username)}`,
-    `$taskPassword = ${powerShellQuote(credentials.password)}`,
-    "$taskArguments = @('/Create', '/TN', $taskName, '/SC', 'ONCE', '/ST', '23:59', '/SD', '12/31/2099', '/TR', $taskCommand, '/RU', $taskUsername, '/RP', $taskPassword, '/RL', 'LIMITED', '/F')",
-    "$null = & schtasks.exe @taskArguments 2>&1",
-    "$createExitCode = $LASTEXITCODE",
-    "if ($createExitCode -ne 0) { throw \"Failed to create detached Windows task $taskName with exit code $createExitCode\" }",
-    "$null = & schtasks.exe /Run /TN $taskName 2>&1",
-    "$runExitCode = $LASTEXITCODE",
-    "if ($runExitCode -ne 0) { $null = & schtasks.exe /Delete /TN $taskName /F 2>&1; throw \"Failed to start detached Windows task $taskName with exit code $runExitCode\" }",
-    "",
-  ].join("\r\n");
-};
-
-export const launchWindowsDetachedPowerShell = (
-  sessionId: string,
-  taskName: string,
-  scriptPath: string,
-  timeoutMs = 15_000,
-  signal?: AbortSignal
-): Promise<string> =>
-  runWindowsPowerShell(
-    sessionId,
-    buildWindowsScheduledTaskLauncherScript(
-      taskName,
-      scriptPath,
-      getWindowsTaskCredentials(sessionId)
-    ),
-    timeoutMs,
-    signal
-  );
-
-export const getWindowsRemoteJobTaskName = (jobId: string): string =>
-  getWindowsTaskName(jobId);
-
-export const isWindowsRemote = (capabilities: SshCapabilities): boolean =>
-  capabilities.platform === "windows" &&
-  capabilities.powerShell &&
-  capabilities.windowsJobObjects;
 
 export const getWindowsRemoteJobRoot = async (sessionId: string): Promise<string> => {
   const root = (
@@ -195,14 +120,13 @@ export const buildWindowsRunnerScript = (jobId: string, createdAt: string): stri
     "$ErrorActionPreference = 'Stop'",
     "$jobDirectory = $PSScriptRoot",
     `$jobId = ${powerShellQuote(jobId)}`,
-    "$scheduledTaskName = 'SnowAppRemoteJob-' + $jobId",
     `$createdAt = ${powerShellQuote(createdAt)}`,
     "$statePath = Join-Path $jobDirectory 'state.json'",
     "$revisionPath = Join-Path $jobDirectory 'revision'",
     "$runnerErrorPath = Join-Path $jobDirectory 'runner-error.log'",
     "$outputTruncatedPath = Join-Path $jobDirectory 'output.truncated'",
     "$timeoutMs = [int64](Get-Content -LiteralPath (Join-Path $jobDirectory 'timeout-ms') -Raw)",
-    "$backend = 'windows-job'",
+    "$backend = 'windows-helper'",
     "$runnerPid = $PID",
     "$stateLockPath = Join-Path $jobDirectory 'state.lock'",
     "$stateLockOwnerPath = Join-Path $stateLockPath 'owner.json'",
@@ -304,24 +228,9 @@ export const buildWindowsRunnerScript = (jobId: string, createdAt: string): stri
     "  [System.IO.File]::WriteAllText($runnerErrorPath, $_.Exception.ToString(), $utf8NoBom)",
     "  try { Write-State 'launch_failed' $null $_.Exception.Message } catch {}",
     "}",
-    "finally { if ($job -and $job -ne [IntPtr]::Zero) { [SnowWindowsJob]::CloseHandle($job) | Out-Null }; & schtasks.exe /Delete /TN $scheduledTaskName /F 2>$null | Out-Null }",
+    "finally { if ($job -and $job -ne [IntPtr]::Zero) { [SnowWindowsJob]::CloseHandle($job) | Out-Null } }",
     "",
   ].join("\r\n");
-
-export const launchWindowsRemoteJob = async (
-  sessionId: string,
-  runnerPath: string,
-  jobId: string,
-  signal?: AbortSignal
-): Promise<void> => {
-  await launchWindowsDetachedPowerShell(
-    sessionId,
-    getWindowsTaskName(jobId),
-    runnerPath,
-    15_000,
-    signal
-  );
-};
 
 export const inspectWindowsRemoteJob = async (
   sessionId: string,

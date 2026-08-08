@@ -33,7 +33,7 @@ impl McpService for RemoteJobsService {
                         "workingDirectory": { "type": "string", "description": "Required SSH workspace path or a path relative to the active SSH workspace." },
                         "timeout": { "type": "number", "description": "Optional maximum duration in milliseconds, capped at 30 minutes." },
                         "jobId": { "type": "string", "description": "Optional existing UUID idempotency key. Reuse the same value only for an exact retry of the same command." },
-                        "backend": { "type": "string", "enum": ["snow-agent", "systemd-user", "tmux", "posix-detach", "windows-job"], "description": "Optional fixed backend. Omit to select a verified backend." }
+                        "backend": { "type": "string", "enum": ["snow-agent", "systemd-user", "tmux", "posix-detach"], "description": "Optional fixed backend. Omit to select a verified backend." }
                     },
                     "required": ["command", "description", "workingDirectory"]
                 }),

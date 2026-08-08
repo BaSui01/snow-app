@@ -493,8 +493,7 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
       input.backend === "snow-agent" ||
       input.backend === "systemd-user" ||
       input.backend === "tmux" ||
-      input.backend === "posix-detach" ||
-      input.backend === "windows-job"
+      input.backend === "posix-detach"
         ? (input.backend as RemoteJobBackendKind)
         : undefined;
     if (input.backend !== undefined && !backend) {

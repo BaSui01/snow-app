@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 
-import { ConfirmDialog } from "../../common/ConfirmDialog";
+import { ChatDeleteConfirmDialog } from "./ChatDeleteConfirmDialog";
 import { useI18n } from "../../../i18n";
 import { useChatConversationContext } from "../../mainContent/chatMessages";
 import { PENDING_SESSION_KEY } from "../../mainContent/chatMessages/utils/conversationTypes";
@@ -997,42 +997,17 @@ export function ChatsSection({
           )}
         </div>
       )}
-      {/* 批量删除确认：复用通用 ConfirmDialog 弹窗（与单条删除一致），
-          通过 portal 渲染到 body，不再内嵌在侧边栏内容流中 */}
-      <ConfirmDialog
-        cancelLabel={t("common.cancel", { defaultValue: "Cancel" })}
-        confirmLabel={t("sidebar.chatActionDelete", {
-          defaultValue: "Delete",
-        })}
-        message={t("sidebar.chatMultiSelectDeleteConfirm", {
-          defaultValue: "Delete {{count}} selected conversations?",
-          values: { count: selectedIds.size },
-        })}
+      {/* 单条与批量删除共用同一确认弹窗，并通过 portal 渲染到 body。 */}
+      <ChatDeleteConfirmDialog
+        conversationCount={selectedIds.size}
+        deleteImages={batchDeleteImages}
+        imagesCount={batchImagesCount}
+        isBatch
         onCancel={() => setShowBatchConfirm(false)}
         onConfirm={() => void handleBatchDelete()}
+        onDeleteImagesChange={setBatchDeleteImages}
         open={showBatchConfirm}
-        title={t("sidebar.chatDeleteConfirmTitle", {
-          defaultValue: "Confirm deletion",
-        })}
-        variant="danger"
-      >
-        {batchImagesCount !== null && batchImagesCount > 0 ? (
-          <label className="chat-item-menu-delete-images">
-            <input
-              type="checkbox"
-              checked={batchDeleteImages}
-              onChange={(event) => setBatchDeleteImages(event.target.checked)}
-            />
-            <span>
-              {t("sidebar.chatDeleteImagesOptionBatch", {
-                defaultValue:
-                  "Also delete the {{count}} image(s) generated in the selected conversations",
-                values: { count: batchImagesCount },
-              })}
-            </span>
-          </label>
-        ) : null}
-      </ConfirmDialog>
+      />
     </div>
   );
 }

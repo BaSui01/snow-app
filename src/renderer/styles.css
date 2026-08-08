@@ -1598,60 +1598,6 @@ input {
 .chat-item-menu-item.danger:hover {
   background: rgba(229, 72, 77, 0.1);
 }
-
-.chat-item-menu-confirm {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 8px;
-}
-
-.chat-item-menu-confirm-icon {
-  flex-shrink: 0;
-  color: var(--danger, #e5484d);
-  margin-top: 1px;
-}
-
-.chat-item-menu-confirm-text {
-  font-size: 11.5px;
-  color: var(--text-secondary, var(--text-primary));
-  line-height: 1.4;
-}
-
-.chat-item-menu-confirm-actions {
-  display: flex;
-  gap: 4px;
-  padding: 0 4px 4px;
-}
-
-.chat-item-menu-confirm-btn {
-  flex: 1;
-  padding: 5px 8px;
-  border: none;
-  border-radius: var(--radius-sm, 6px);
-  font-size: 11.5px;
-  cursor: pointer;
-  transition: background 0.1s ease;
-}
-
-.chat-item-menu-confirm-btn.cancel {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-}
-
-.chat-item-menu-confirm-btn.cancel:hover {
-  background: var(--bg-hover);
-}
-
-.chat-item-menu-confirm-btn.delete {
-  background: var(--danger, #e5484d);
-  color: #fff;
-}
-
-.chat-item-menu-confirm-btn.delete:hover {
-  opacity: 0.88;
-}
-
 .chat-item-menu-item.active {
   background: var(--bg-hover);
 }

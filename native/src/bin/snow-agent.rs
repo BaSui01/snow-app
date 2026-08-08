@@ -959,12 +959,23 @@ fn run_batch_job_after_handoff(directory: &Path, request: &AgentRequest) -> Resu
         max_output_bytes / 512,
         shell_quote(&request.command)
     );
-    let mut child = Command::new("setsid")
-        .args(["/bin/sh", "-lc", &wrapped])
+    let mut command = Command::new("/bin/sh");
+    command
+        .args(["-lc", &wrapped])
         .current_dir(&request.working_directory)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(unix)]
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let mut child = command
         .spawn()
         .map_err(|error| format!("failed to start job command: {error}"))?;
     let stdout = child

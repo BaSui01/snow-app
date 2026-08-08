@@ -28,7 +28,11 @@ export type SnowAgentCapabilities = {
   interactiveAttachProtocolVersion?: number;
 };
 
-export type SnowAgentTarget = "linux-x64-musl" | "linux-arm64-musl";
+export type SnowAgentTarget =
+  | "linux-x64-musl"
+  | "linux-arm64-musl"
+  | "darwin-x64"
+  | "darwin-arm64";
 
 export type SnowAgentErrorCode =
   | "UNSUPPORTED_ARCH"
@@ -107,7 +111,10 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const isSnowAgentTarget = (value: unknown): value is SnowAgentTarget =>
-  value === "linux-x64-musl" || value === "linux-arm64-musl";
+  value === "linux-x64-musl" ||
+  value === "linux-arm64-musl" ||
+  value === "darwin-x64" ||
+  value === "darwin-arm64";
 
 const isSha256 = (value: unknown): value is string =>
   typeof value === "string" && /^[0-9a-f]{64}$/i.test(value);
@@ -328,6 +335,12 @@ export const getSnowAgentTarget = (
   }
   if (capabilities.remoteOs === "linux" && capabilities.remoteArch === "aarch64") {
     return "linux-arm64-musl";
+  }
+  if (capabilities.remoteOs === "darwin" && capabilities.remoteArch === "x86_64") {
+    return "darwin-x64";
+  }
+  if (capabilities.remoteOs === "darwin" && capabilities.remoteArch === "arm64") {
+    return "darwin-arm64";
   }
   return null;
 };

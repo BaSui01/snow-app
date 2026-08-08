@@ -115,15 +115,27 @@ jobs:
           if-no-files-found: warn
 
   snow-agent:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - target: linux-x64-musl
+          - os: ubuntu-latest
+            target: linux-x64-musl
             rust_target: x86_64-unknown-linux-musl
-          - target: linux-arm64-musl
+            cargo_subcommand: zigbuild
+          - os: ubuntu-latest
+            target: linux-arm64-musl
             rust_target: aarch64-unknown-linux-musl
+            cargo_subcommand: zigbuild
+          - os: macos-15-intel
+            target: darwin-x64
+            rust_target: x86_64-apple-darwin
+            cargo_subcommand: build
+          - os: macos-latest
+            target: darwin-arm64
+            rust_target: aarch64-apple-darwin
+            cargo_subcommand: build
 
     steps:
       - name: Checkout code
@@ -142,11 +154,13 @@ jobs:
           targets: ${{ matrix.rust_target }}
 
       - name: Setup Zig and cargo-zigbuild
+        if: matrix.cargo_subcommand == 'zigbuild'
         uses: mlugg/setup-zig@v2
         with:
           version: 0.13.0
 
       - uses: taiki-e/install-action@v2
+        if: matrix.cargo_subcommand == 'zigbuild'
         with:
           tool: cargo-zigbuild
 
@@ -155,6 +169,7 @@ jobs:
           SNOW_AGENT_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
           SNOW_AGENT_RELEASE_KEY_ID: snow-agent-ed25519-2026
           SNOW_AGENT_RELEASE_SIGNING_KEY: ${{ secrets.SNOW_AGENT_RELEASE_SIGNING_KEY }}
+          SNOW_AGENT_CARGO_SUBCOMMAND: ${{ matrix.cargo_subcommand }}
         run: npm run build:snow-agent-release -- ${{ matrix.target }}
 
       - name: Verify signed Snow Agent release asset
@@ -190,9 +205,9 @@ jobs:
           path: release
           merge-multiple: true
 
-      - name: Verify both signed Snow Agent release assets
+      - name: Verify all signed Snow Agent release assets
         env:
-          SNOW_AGENT_REQUIRED_TARGETS: linux-x64-musl,linux-arm64-musl
+          SNOW_AGENT_REQUIRED_TARGETS: linux-x64-musl,linux-arm64-musl,darwin-x64,darwin-arm64
         run: |
           mkdir -p resources/snow-agent
           cp release/trust.json resources/snow-agent/trust.json

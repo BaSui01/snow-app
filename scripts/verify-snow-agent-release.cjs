@@ -47,7 +47,12 @@ for (const manifestName of manifestNames) {
   if (
     manifest.protocolVersion !== 1 ||
     manifest.version !== trust.releaseTag.slice(1) ||
-    !["linux-x64-musl", "linux-arm64-musl"].includes(manifest.target) ||
+    ![
+      "linux-x64-musl",
+      "linux-arm64-musl",
+      "darwin-x64",
+      "darwin-arm64",
+    ].includes(manifest.target) ||
     manifest.target !== payload.target ||
     manifest.artifactFileName !== `snow-agent-${manifest.target}` ||
     manifest.artifactFileName !== payload.artifactFileName ||

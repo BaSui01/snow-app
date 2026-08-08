@@ -23,10 +23,14 @@ const target = process.argv[2];
 const targets = {
   "linux-x64-musl": "x86_64-unknown-linux-musl",
   "linux-arm64-musl": "aarch64-unknown-linux-musl",
+  "darwin-x64": "x86_64-apple-darwin",
+  "darwin-arm64": "aarch64-apple-darwin",
 };
 
 if (!targets[target]) {
-  throw new Error("Expected Snow Agent target linux-x64-musl or linux-arm64-musl");
+  throw new Error(
+    "Expected Snow Agent target linux-x64-musl, linux-arm64-musl, darwin-x64, or darwin-arm64"
+  );
 }
 if (releaseTag !== `v${packageVersion}`) {
   throw new Error(`Snow Agent release tag ${releaseTag} does not match v${packageVersion}`);

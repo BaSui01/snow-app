@@ -8,6 +8,7 @@ import {
   verifySnowAgentHandshake,
   type SnowAgentCapabilities,
   type SnowAgentHandshake,
+  type SnowAgentTarget,
 } from "./snowAgent";
 
 const capabilities: SnowAgentCapabilities = {
@@ -20,13 +21,15 @@ const capabilities: SnowAgentCapabilities = {
   interactiveAttachProtocolVersion: 1,
 };
 
-const signedHandshake = (): { handshake: SnowAgentHandshake; publicKey: string } => {
+const signedHandshake = (
+  target: SnowAgentTarget = "linux-x64-musl"
+): { handshake: SnowAgentHandshake; publicKey: string } => {
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const payload = JSON.stringify({
     protocolVersion: 1,
     version: "0.1.20",
-    target: "linux-x64-musl",
-    artifactFileName: "snow-agent-linux-x64-musl",
+    target,
+    artifactFileName: `snow-agent-${target}`,
     artifactSha256: "a".repeat(64),
     capabilities,
   });
@@ -34,8 +37,8 @@ const signedHandshake = (): { handshake: SnowAgentHandshake; publicKey: string }
     handshake: parseSnowAgentHandshake({
       protocolVersion: 1,
       version: "0.1.20",
-      target: "linux-x64-musl",
-      artifactFileName: "snow-agent-linux-x64-musl",
+      target,
+      artifactFileName: `snow-agent-${target}`,
       artifactSha256: "a".repeat(64),
       release: {
         keyId: "test-ed25519",
@@ -51,6 +54,11 @@ const signedHandshake = (): { handshake: SnowAgentHandshake; publicKey: string }
 describe("snow-agent release trust", () => {
   it("accepts a matching signed release declaration", () => {
     const { handshake, publicKey } = signedHandshake();
+    expect(() => verifySnowAgentHandshake(handshake, publicKey)).not.toThrow();
+  });
+
+  it("accepts a matching signed macOS release declaration", () => {
+    const { handshake, publicKey } = signedHandshake("darwin-arm64");
     expect(() => verifySnowAgentHandshake(handshake, publicKey)).not.toThrow();
   });
 
@@ -89,6 +97,32 @@ describe("snow-agent release trust", () => {
         powerShell: false,
       })
     ).toBe("linux-arm64-musl");
+    expect(
+      getSnowAgentTarget({
+        platform: "posix",
+        remoteOs: "darwin",
+        remoteArch: "x86_64",
+        posixShell: true,
+        systemdUser: false,
+        tmux: false,
+        setsid: true,
+        nohup: true,
+        powerShell: false,
+      })
+    ).toBe("darwin-x64");
+    expect(
+      getSnowAgentTarget({
+        platform: "posix",
+        remoteOs: "darwin",
+        remoteArch: "arm64",
+        posixShell: true,
+        systemdUser: false,
+        tmux: false,
+        setsid: true,
+        nohup: true,
+        powerShell: false,
+      })
+    ).toBe("darwin-arm64");
   });
 
   it("does not trust the retired boolean-only interactive declaration", () => {

@@ -31,6 +31,8 @@ export type ApiConfigFormData = {
   thinkingValue: string;
   responsesVerbosity: string;
   responsesFastMode: boolean;
+  googleSearch: boolean;
+  visionGoogleSearch: boolean;
   configJson: string;
 };
 

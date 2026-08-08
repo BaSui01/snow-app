@@ -342,6 +342,38 @@ export function ApiSettingsFormFields({
               disabled={disabled}
             />
           </label>
+          {data.requestMethod === "gemini" && (
+            <div className="api-settings-field">
+              <span>
+                {t("settings.apiGoogleSearch", {
+                  defaultValue: "Google search",
+                })}
+              </span>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={data.googleSearch}
+                  onChange={changeField("googleSearch")}
+                  disabled={disabled}
+                  hidden
+                />
+                <span className="toggle-slider" />
+                <span>
+                  {t(
+                    data.googleSearch
+                      ? "settings.enabled"
+                      : "settings.disabled"
+                  )}
+                </span>
+              </label>
+              <small className="api-settings-hint-text">
+                {t("settings.apiGoogleSearchHint", {
+                  defaultValue:
+                    "When enabled, Gemini chat requests inject the Google Search tool for real-time web grounding.",
+                })}
+              </small>
+            </div>
+          )}
           {data.requestMethod === "responses" && (
             <>
               <label className="api-settings-field">
@@ -613,6 +645,38 @@ export function ApiSettingsFormFields({
                 disabled={disabled}
               />
             </label>
+            {data.visionRequestMethod === "gemini" && (
+              <div className="api-settings-field">
+                <span>
+                  {t("settings.apiGoogleSearch", {
+                    defaultValue: "Google search",
+                  })}
+                </span>
+                <label className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={data.visionGoogleSearch}
+                    onChange={changeField("visionGoogleSearch")}
+                    disabled={disabled}
+                    hidden
+                  />
+                  <span className="toggle-slider" />
+                  <span>
+                    {t(
+                      data.visionGoogleSearch
+                        ? "settings.enabled"
+                        : "settings.disabled"
+                    )}
+                  </span>
+                </label>
+                <small className="api-settings-hint-text">
+                  {t("settings.apiGoogleSearchHint", {
+                    defaultValue:
+                      "When enabled, Gemini requests inject the Google Search tool (native Gemini grounding) for real-time web information.",
+                  })}
+                </small>
+              </div>
+            )}
           </div>
         )}
       </div>

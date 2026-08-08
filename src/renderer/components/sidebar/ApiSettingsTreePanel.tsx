@@ -18,9 +18,11 @@ import {
 } from "./apiSettings/apiSettingsConstants";
 import {
   emptyApiConfigForm,
+  extractGoogleSearchFromConfigJson,
   extractResponsesFastModeFromConfigJson,
   extractResponsesVerbosityFromConfigJson,
   extractThinkingValueFromConfigJson,
+  extractVisionGoogleSearchFromConfigJson,
   toApiConfigPayload,
 } from "./apiSettings/apiSettingsUtils";
 import { calculateAutoCompressThresholdPercent } from "./apiSettings/autoCompressThreshold";
@@ -255,6 +257,10 @@ export function ApiSettingsTreePanel({
         config.configJson
       ),
       responsesFastMode: extractResponsesFastModeFromConfigJson(
+        config.configJson
+      ),
+      googleSearch: extractGoogleSearchFromConfigJson(config.configJson),
+      visionGoogleSearch: extractVisionGoogleSearchFromConfigJson(
         config.configJson
       ),
       configJson: config.configJson,

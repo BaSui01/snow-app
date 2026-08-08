@@ -1120,6 +1120,8 @@ export const zhTW = {
   "settings.apiResponsesVerbosityHint": "對應 text.verbosity，僅適用於 Responses API。",
   "settings.apiResponsesFastMode": "Responses Fast Mode",
   "settings.apiResponsesFastModeHint": "啟用後傳送 service_tier: priority，可在聊天輸入區即時切換。",
+  "settings.apiGoogleSearch": "谷歌搜尋聯網",
+  "settings.apiGoogleSearchHint": "開啟後 Gemini 請求（文字 / 視覺圖片模型）注入 Google Search 工具（Gemini 原生 grounding），即時獲取聯網資訊。",
   "settings.apiAdvancedModel": "進階模型",
   "settings.apiBasicModel": "基礎模型",
   "settings.apiMaxContext": "最大上下文（tokens）",

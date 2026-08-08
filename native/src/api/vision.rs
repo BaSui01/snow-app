@@ -157,6 +157,8 @@ struct VisionApiConfig {
     api_key: String,
     model: String,
     custom_headers: HashMap<String, String>,
+    /// gemini 视觉请求是否注入 google_search 工具（snowcfg.visionGoogleSearch）
+    google_search: bool,
 }
 
 impl VisionApiConfig {
@@ -176,6 +178,12 @@ impl VisionApiConfig {
             ));
         }
 
+        // 读取 snowcfg.visionGoogleSearch：gemini 视觉（图片模型）联网搜索开关
+        let google_search = serde_json::from_str::<Value>(&api_config.config_json)
+            .ok()
+            .and_then(|parsed| parsed.get("snowcfg")?.get("visionGoogleSearch")?.as_bool())
+            .unwrap_or(false);
+
         Ok(Self {
             request_method,
             base_url,
@@ -183,6 +191,7 @@ impl VisionApiConfig {
             api_key,
             model,
             custom_headers: custom_headers.clone(),
+            google_search,
         })
     }
 }
@@ -396,7 +405,7 @@ async fn describe_image_via_gemini(
 ) -> Result<String> {
     let endpoint = resolve_gemini_endpoint(vision_config, &vision_config.api_key);
     let prompt = build_vision_prompt(user_prompt);
-    let payload = json!({
+    let mut payload = json!({
         "contents": [{
             "role": "user",
             "parts": [
@@ -411,6 +420,11 @@ async fn describe_image_via_gemini(
         }],
         "generationConfig": { "maxOutputTokens": 1024 },
     });
+
+    // 谷歌搜索联网（Gemini 原生 grounding）：配置开启时注入 google_search 工具
+    if vision_config.google_search {
+        payload["tools"] = json!([{ "google_search": {} }]);
+    }
 
     let headers = build_gemini_headers(&vision_config.custom_headers)?;
     let response = send_vision_request(client, &endpoint, headers, &payload).await?;

@@ -1152,6 +1152,8 @@ export const en = {
   "settings.apiResponsesVerbosityHint": "Maps to text.verbosity and only applies to the Responses API.",
   "settings.apiResponsesFastMode": "Responses Fast Mode",
   "settings.apiResponsesFastModeHint": "Sends service_tier: priority when enabled and can be toggled from the chat input.",
+  "settings.apiGoogleSearch": "Google Search grounding",
+  "settings.apiGoogleSearchHint": "When enabled, Gemini requests (chat / vision image models) inject the Google Search tool (native Gemini grounding) for real-time web information.",
   "settings.apiAdvancedModel": "Advanced model",
   "settings.apiBasicModel": "Basic model",
   "settings.apiMaxContext": "Max context (tokens)",

@@ -51,6 +51,16 @@ export const extractResponsesFastModeFromConfigJson = (
   configJson: string
 ): boolean => readSnowcfg(configJson).responsesFastMode === true;
 
+/** 读取 gemini 渠道的谷歌搜索联网开关（snowcfg.googleSearch） */
+export const extractGoogleSearchFromConfigJson = (
+  configJson: string
+): boolean => readSnowcfg(configJson).googleSearch === true;
+
+/** 读取 gemini 视觉（图片模型）渠道的谷歌搜索联网开关（snowcfg.visionGoogleSearch） */
+export const extractVisionGoogleSearchFromConfigJson = (
+  configJson: string
+): boolean => readSnowcfg(configJson).visionGoogleSearch === true;
+
 /**
  * Validates a thinking value against the available options for the given
  * request method. Returns the value itself when it is a known option for
@@ -207,6 +217,8 @@ export const emptyApiConfigForm = (
   thinkingValue: DEFAULT_THINKING_VALUE,
   responsesVerbosity: "",
   responsesFastMode: false,
+  googleSearch: false,
+  visionGoogleSearch: false,
   configJson: "{}",
 });
 
@@ -255,6 +267,8 @@ export function toApiConfigPayload(
       autoCompressThreshold: autoCompressThresholdTokens ?? undefined,
       responsesVerbosity: data.responsesVerbosity || undefined,
       responsesFastMode: data.responsesFastMode,
+      googleSearch: data.googleSearch,
+      visionGoogleSearch: data.visionGoogleSearch,
     }
   );
 

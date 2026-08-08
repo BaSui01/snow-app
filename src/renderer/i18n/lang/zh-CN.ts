@@ -1120,6 +1120,8 @@ export const zhCN = {
   "settings.apiResponsesVerbosityHint": "映射到 text.verbosity，仅适用于 Responses API。",
   "settings.apiResponsesFastMode": "Responses Fast Mode",
   "settings.apiResponsesFastModeHint": "启用后发送 service_tier: priority，可在聊天输入区即时切换。",
+  "settings.apiGoogleSearch": "谷歌搜索联网",
+  "settings.apiGoogleSearchHint": "开启后 Gemini 请求（文本 / 视觉图片模型）注入 Google Search 工具（Gemini 原生 grounding），实时获取联网信息。",
   "settings.apiAdvancedModel": "高级模型",
   "settings.apiBasicModel": "基础模型",
   "settings.apiMaxContext": "最大上下文（tokens）",

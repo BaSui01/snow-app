@@ -276,7 +276,7 @@ async fn describe_image(
         return Ok(cached.clone());
     }
 
-    let description = match vision_config.request_method.as_str() {
+    let result = match vision_config.request_method.as_str() {
         "chat" => describe_image_via_chat(client, vision_config, image, user_prompt).await?,
         "responses" => {
             describe_image_via_responses(client, vision_config, image, user_prompt).await?
@@ -292,7 +292,16 @@ async fn describe_image(
         }
     };
 
-    let trimmed = description.trim().to_string();
+    let trimmed = result.text.trim().to_string();
+    if result.partial {
+        // 截断重试后仍只拿到部分内容：返回可用文本，但绝不写入缓存，
+        // 避免后续对话复用残缺描述（issue #58 的缓存污染风险）。
+        eprintln!(
+            "Vision image description is partial (truncated after retry); not cached: hash {}...",
+            cache_key.chars().take(16).collect::<String>()
+        );
+        return Ok(trimmed);
+    }
     global_cache()
         .write()
         .await
@@ -315,10 +324,10 @@ async fn describe_image_via_chat(
     vision_config: &VisionApiConfig,
     image: &ChatImage,
     user_prompt: &str,
-) -> Result<String> {
+) -> Result<VisionResult> {
     let endpoint = resolve_chat_endpoint(vision_config);
     let prompt = build_vision_prompt(user_prompt);
-    let payload = json!({
+    let mut payload = json!({
         "model": vision_config.model,
         "messages": [{
             "role": "user",
@@ -327,13 +336,23 @@ async fn describe_image_via_chat(
                 { "type": "image_url", "image_url": { "url": image.data_url } },
             ],
         }],
-        "max_tokens": 1024,
+        "max_tokens": 4096,
         "stream": false,
     });
 
     let headers = build_bearer_headers(&vision_config.api_key, &vision_config.custom_headers)?;
-    let response = send_vision_request(client, &endpoint, headers, &payload).await?;
-    extract_chat_content(&response)
+    vision_request_with_retry(
+        client,
+        &endpoint,
+        headers,
+        &mut payload,
+        "chat",
+        extract_chat_content,
+        |payload| {
+            payload["max_tokens"] = json!(8192);
+        },
+    )
+    .await
 }
 
 async fn describe_image_via_responses(
@@ -341,10 +360,10 @@ async fn describe_image_via_responses(
     vision_config: &VisionApiConfig,
     image: &ChatImage,
     user_prompt: &str,
-) -> Result<String> {
+) -> Result<VisionResult> {
     let endpoint = resolve_responses_endpoint(vision_config);
     let prompt = build_vision_prompt(user_prompt);
-    let payload = json!({
+    let mut payload = json!({
         "model": vision_config.model,
         "input": [{
             "type": "message",
@@ -354,14 +373,24 @@ async fn describe_image_via_responses(
                 { "type": "input_image", "image_url": image.data_url },
             ],
         }],
-        "max_output_tokens": 1024,
+        "max_output_tokens": 4096,
         "stream": false,
         "store": false,
     });
 
     let headers = build_bearer_headers(&vision_config.api_key, &vision_config.custom_headers)?;
-    let response = send_vision_request(client, &endpoint, headers, &payload).await?;
-    extract_responses_content(&response)
+    vision_request_with_retry(
+        client,
+        &endpoint,
+        headers,
+        &mut payload,
+        "responses",
+        extract_responses_content,
+        |payload| {
+            payload["max_output_tokens"] = json!(8192);
+        },
+    )
+    .await
 }
 
 async fn describe_image_via_anthropic(
@@ -369,12 +398,12 @@ async fn describe_image_via_anthropic(
     vision_config: &VisionApiConfig,
     image: &ChatImage,
     user_prompt: &str,
-) -> Result<String> {
+) -> Result<VisionResult> {
     let endpoint = resolve_anthropic_endpoint(vision_config);
     let prompt = build_vision_prompt(user_prompt);
-    let payload = json!({
+    let mut payload = json!({
         "model": vision_config.model,
-        "max_tokens": 1024,
+        "max_tokens": 4096,
         "messages": [{
             "role": "user",
             "content": [
@@ -393,8 +422,18 @@ async fn describe_image_via_anthropic(
     });
 
     let headers = build_anthropic_headers(&vision_config.api_key, &vision_config.custom_headers)?;
-    let response = send_vision_request(client, &endpoint, headers, &payload).await?;
-    extract_anthropic_content(&response)
+    vision_request_with_retry(
+        client,
+        &endpoint,
+        headers,
+        &mut payload,
+        "anthropic",
+        extract_anthropic_content,
+        |payload| {
+            payload["max_tokens"] = json!(8192);
+        },
+    )
+    .await
 }
 
 async fn describe_image_via_gemini(
@@ -402,7 +441,7 @@ async fn describe_image_via_gemini(
     vision_config: &VisionApiConfig,
     image: &ChatImage,
     user_prompt: &str,
-) -> Result<String> {
+) -> Result<VisionResult> {
     let endpoint = resolve_gemini_endpoint(vision_config, &vision_config.api_key);
     let prompt = build_vision_prompt(user_prompt);
     let mut payload = json!({
@@ -418,7 +457,7 @@ async fn describe_image_via_gemini(
                 },
             ],
         }],
-        "generationConfig": { "maxOutputTokens": 1024 },
+        "generationConfig": { "maxOutputTokens": 4096 },
     });
 
     // 谷歌搜索联网（Gemini 原生 grounding）：配置开启时注入 google_search 工具
@@ -427,8 +466,18 @@ async fn describe_image_via_gemini(
     }
 
     let headers = build_gemini_headers(&vision_config.custom_headers)?;
-    let response = send_vision_request(client, &endpoint, headers, &payload).await?;
-    extract_gemini_content(&response)
+    vision_request_with_retry(
+        client,
+        &endpoint,
+        headers,
+        &mut payload,
+        "gemini",
+        extract_gemini_content,
+        |payload| {
+            payload["generationConfig"]["maxOutputTokens"] = json!(8192);
+        },
+    )
+    .await
 }
 
 fn resolve_chat_endpoint(vision_config: &VisionApiConfig) -> String {
@@ -718,51 +767,141 @@ fn summarize_vision_payload(payload: &Value) -> String {
     summary
 }
 
-fn extract_chat_content(response: &Value) -> Result<String> {
-    response
-        .get("choices")
-        .and_then(Value::as_array)
-        .and_then(|choices| choices.first())
-        .and_then(|choice| choice.get("message"))
-        .and_then(|message| message.get("content"))
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .ok_or_else(|| {
-            Error::from_reason(format!(
-                "Vision Chat API response missing choices[0].message.content: {}",
-                serde_json::to_string(response)
+/// 一次协议响应的解析结果。
+struct VisionExtract {
+    /// 提取到的文本；无文本（null / 空）时为 None。
+    text: Option<String>,
+    /// 是否因输出 token 预算耗尽被截断
+    /// （chat `finish_reason=length` / responses `status=incomplete` /
+    /// anthropic `stop_reason=max_tokens` / gemini `finishReason=MAX_TOKENS`）。
+    truncated: bool,
+}
+
+/// 视觉调用的最终可用结果。
+struct VisionResult {
+    text: String,
+    /// true 表示输出被截断、只拿到部分内容（不写入缓存）。
+    partial: bool,
+}
+
+/// 发送视觉请求并解析；响应标记为截断时自动重试一次（max_tokens 翻倍）。
+///
+/// - 首次截断（无论是否带部分内容）→ 重试一次，`bump_max_tokens` 负责把
+///   请求体中的 token 上限翻倍（各协议字段路径不同）。
+/// - 重试后仍截断：有部分内容 → 返回部分内容（`partial = true`）；
+///   无内容 → 报可读错误。
+/// - 非截断但无内容 → 报可读错误（区分截断与非截断原因）。
+///
+/// 这是 issue #58 的核心修复：带 reasoning 的模型思考内容占满预算时，
+/// 响应为 `finish_reason=length` + `content=null`，旧代码直接抛裸错误。
+async fn vision_request_with_retry(
+    client: &reqwest::Client,
+    endpoint: &str,
+    headers: HeaderMap,
+    payload: &mut Value,
+    protocol: &str,
+    extract: impl Fn(&Value) -> Result<VisionExtract>,
+    bump_max_tokens: impl Fn(&mut Value),
+) -> Result<VisionResult> {
+    let mut attempt = 0u32;
+    loop {
+        attempt += 1;
+        let response = send_vision_request(client, endpoint, headers.clone(), payload).await?;
+        let extracted = extract(&response)?;
+
+        let Some(text) = extracted.text else {
+            if extracted.truncated && attempt == 1 {
+                eprintln!(
+                    "Vision {protocol} response truncated (no content), retrying with doubled max_tokens (attempt {attempt})"
+                );
+                bump_max_tokens(payload);
+                continue;
+            }
+            return Err(Error::from_reason(format!(
+                "Vision {protocol} API returned empty content (truncated={}): {}",
+                extracted.truncated,
+                serde_json::to_string(&response)
                     .unwrap_or_default()
                     .chars()
                     .take(300)
                     .collect::<String>()
-            ))
-        })
+            )));
+        };
+
+        if extracted.truncated {
+            if attempt == 1 {
+                eprintln!(
+                    "Vision {protocol} response truncated (partial content, {} chars), retrying with doubled max_tokens (attempt {attempt})",
+                    text.chars().count()
+                );
+                bump_max_tokens(payload);
+                continue;
+            }
+            eprintln!(
+                "Vision {protocol} response still truncated after retry; using partial content ({} chars, not cached)",
+                text.chars().count()
+            );
+            return Ok(VisionResult { text, partial: true });
+        }
+
+        return Ok(VisionResult { text, partial: false });
+    }
 }
 
-fn extract_responses_content(response: &Value) -> Result<String> {
-    if let Some(text) = response
+fn extract_chat_content(response: &Value) -> Result<VisionExtract> {
+    let choice = response
+        .get("choices")
+        .and_then(Value::as_array)
+        .and_then(|choices| choices.first());
+    let truncated = choice
+        .and_then(|choice| choice.get("finish_reason"))
+        .and_then(Value::as_str)
+        .is_some_and(|reason| reason == "length");
+    let text = choice
+        .and_then(|choice| choice.get("message"))
+        .and_then(|message| message.get("content"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(str::to_string);
+    Ok(VisionExtract { text, truncated })
+}
+
+fn extract_responses_content(response: &Value) -> Result<VisionExtract> {
+    let mut truncated = response
+        .get("status")
+        .and_then(Value::as_str)
+        .is_some_and(|status| status == "incomplete");
+
+    let mut text = response
         .get("output_text")
         .and_then(Value::as_str)
+        .map(str::trim)
         .filter(|text| !text.is_empty())
-    {
-        return Ok(text.to_string());
+        .map(str::to_string);
+
+    if text.is_none() {
+        let mut chunks = Vec::new();
+        collect_responses_output_text(response.get("output"), &mut chunks);
+        text = Some(chunks.join("\n").trim().to_string()).filter(|text| !text.is_empty());
+
+        // 无 message 文本但 output 中存在 reasoning 项：思考内容占满预算，
+        // 同样视为截断（reasoning 项可能已随输出返回，但正式回答尚未生成）。
+        if !truncated {
+            truncated = response
+                .get("output")
+                .and_then(Value::as_array)
+                .is_some_and(|output| {
+                    output.iter().any(|item| {
+                        item.get("type")
+                            .and_then(Value::as_str)
+                            .is_some_and(|kind| kind == "reasoning")
+                    })
+                });
+        }
     }
 
-    let mut chunks = Vec::new();
-    collect_responses_output_text(response.get("output"), &mut chunks);
-    let text = chunks.join("\n").trim().to_string();
-
-    if text.is_empty() {
-        return Err(Error::from_reason(format!(
-            "Vision Responses API response missing output_text: {}",
-            serde_json::to_string(response)
-                .unwrap_or_default()
-                .chars()
-                .take(300)
-                .collect::<String>()
-        )));
-    }
-    Ok(text)
+    Ok(VisionExtract { text, truncated })
 }
 
 fn collect_responses_output_text(value: Option<&Value>, chunks: &mut Vec<String>) {
@@ -793,7 +932,11 @@ fn collect_responses_output_text(value: Option<&Value>, chunks: &mut Vec<String>
     }
 }
 
-fn extract_anthropic_content(response: &Value) -> Result<String> {
+fn extract_anthropic_content(response: &Value) -> Result<VisionExtract> {
+    let truncated = response
+        .get("stop_reason")
+        .and_then(Value::as_str)
+        .is_some_and(|reason| reason == "max_tokens");
     let mut chunks = Vec::new();
     if let Some(content) = response.get("content").and_then(Value::as_array) {
         for block in content {
@@ -810,49 +953,35 @@ fn extract_anthropic_content(response: &Value) -> Result<String> {
     }
 
     let text = chunks.join("\n").trim().to_string();
-    if text.is_empty() {
-        return Err(Error::from_reason(format!(
-            "Vision Anthropic API response missing content text: {}",
-            serde_json::to_string(response)
-                .unwrap_or_default()
-                .chars()
-                .take(300)
-                .collect::<String>()
-        )));
-    }
-    Ok(text)
+    let text = if text.is_empty() { None } else { Some(text) };
+    Ok(VisionExtract { text, truncated })
 }
 
-fn extract_gemini_content(response: &Value) -> Result<String> {
+fn extract_gemini_content(response: &Value) -> Result<VisionExtract> {
+    let candidate = response
+        .get("candidates")
+        .and_then(Value::as_array)
+        .and_then(|candidates| candidates.first());
+    let truncated = candidate
+        .and_then(|candidate| candidate.get("finishReason"))
+        .and_then(Value::as_str)
+        .is_some_and(|reason| reason == "MAX_TOKENS");
     let mut chunks = Vec::new();
-    if let Some(candidates) = response.get("candidates").and_then(Value::as_array) {
-        for candidate in candidates {
-            if let Some(parts) = candidate
-                .get("content")
-                .and_then(|content| content.get("parts"))
-                .and_then(Value::as_array)
-            {
-                for part in parts {
-                    if let Some(text) = part.get("text").and_then(Value::as_str) {
-                        chunks.push(text.to_string());
-                    }
-                }
+    if let Some(parts) = candidate
+        .and_then(|candidate| candidate.get("content"))
+        .and_then(|content| content.get("parts"))
+        .and_then(Value::as_array)
+    {
+        for part in parts {
+            if let Some(text) = part.get("text").and_then(Value::as_str) {
+                chunks.push(text.to_string());
             }
         }
     }
 
     let text = chunks.join("\n").trim().to_string();
-    if text.is_empty() {
-        return Err(Error::from_reason(format!(
-            "Vision Gemini API response missing candidates text: {}",
-            serde_json::to_string(response)
-                .unwrap_or_default()
-                .chars()
-                .take(300)
-                .collect::<String>()
-        )));
-    }
-    Ok(text)
+    let text = if text.is_empty() { None } else { Some(text) };
+    Ok(VisionExtract { text, truncated })
 }
 
 /// 读取磁盘上的图片并用视觉模型分析（`image-describe` 工具入口）。
@@ -943,5 +1072,149 @@ fn guess_image_mime(path: &std::path::Path) -> String {
         "bmp" => "image/bmp".to_string(),
         "svg" => "image/svg+xml".to_string(),
         _ => "application/octet-stream".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{extract_anthropic_content, extract_chat_content, extract_gemini_content, extract_responses_content};
+    use serde_json::json;
+
+    /// issue #58 原始场景：reasoning 模型思考内容占满预算，
+    /// content=null + finish_reason=length → 标记为截断且无内容。
+    #[test]
+    fn chat_truncated_null_content_detected() {
+        let response = json!({
+            "choices": [{
+                "finish_reason": "length",
+                "index": 0,
+                "message": {
+                    "content": null,
+                    "reasoning_content": "……（很长的思考过程）",
+                },
+            }],
+        });
+
+        let extracted = extract_chat_content(&response).unwrap();
+        assert!(extracted.truncated);
+        assert!(extracted.text.is_none());
+    }
+
+    #[test]
+    fn chat_normal_content_not_truncated() {
+        let response = json!({
+            "choices": [{
+                "finish_reason": "stop",
+                "index": 0,
+                "message": { "content": "这是一张登录页截图。" },
+            }],
+        });
+
+        let extracted = extract_chat_content(&response).unwrap();
+        assert!(!extracted.truncated);
+        assert_eq!(extracted.text.as_deref(), Some("这是一张登录页截图。"));
+    }
+
+    /// content 非空但 finish_reason=length：同样应标记为截断，
+    /// 避免静默接受残缺描述（旧代码的缓存污染场景）。
+    #[test]
+    fn chat_partial_content_with_length_flagged() {
+        let response = json!({
+            "choices": [{
+                "finish_reason": "length",
+                "index": 0,
+                "message": { "content": "图片中包含登录表单，" },
+            }],
+        });
+
+        let extracted = extract_chat_content(&response).unwrap();
+        assert!(extracted.truncated);
+        assert!(extracted.text.is_some());
+    }
+
+    #[test]
+    fn responses_incomplete_status_detected() {
+        let response = json!({
+            "status": "incomplete",
+            "output": [{
+                "type": "reasoning",
+                "summary": [{ "type": "summary_text", "text": "思考中……" }],
+            }],
+        });
+
+        let extracted = extract_responses_content(&response).unwrap();
+        assert!(extracted.truncated);
+        assert!(extracted.text.is_none());
+    }
+
+    /// status 未标记 incomplete，但 output 只有 reasoning 项、无 message 文本：
+    /// 同样视为截断（reasoning 占满输出预算）。
+    #[test]
+    fn responses_reasoning_only_detected() {
+        let response = json!({
+            "status": "completed",
+            "output": [{
+                "type": "reasoning",
+                "summary": [{ "type": "summary_text", "text": "思考中……" }],
+            }],
+        });
+
+        let extracted = extract_responses_content(&response).unwrap();
+        assert!(extracted.truncated);
+        assert!(extracted.text.is_none());
+    }
+
+    #[test]
+    fn responses_normal_message_not_truncated() {
+        let response = json!({
+            "status": "completed",
+            "output": [
+                { "type": "message", "role": "assistant", "content": [{ "type": "output_text", "text": "正常描述" }] },
+            ],
+        });
+
+        let extracted = extract_responses_content(&response).unwrap();
+        assert!(!extracted.truncated);
+        assert_eq!(extracted.text.as_deref(), Some("正常描述"));
+    }
+
+    #[test]
+    fn anthropic_max_tokens_stop_reason_detected() {
+        let response = json!({
+            "stop_reason": "max_tokens",
+            "content": [{ "type": "text", "text": "" }],
+        });
+
+        let extracted = extract_anthropic_content(&response).unwrap();
+        assert!(extracted.truncated);
+        assert!(extracted.text.is_none());
+    }
+
+    #[test]
+    fn gemini_max_tokens_finish_reason_detected() {
+        let response = json!({
+            "candidates": [{
+                "finishReason": "MAX_TOKENS",
+                "content": { "parts": [{ "text": "" }] },
+            }],
+        });
+
+        let extracted = extract_gemini_content(&response).unwrap();
+        assert!(extracted.truncated);
+        assert!(extracted.text.is_none());
+    }
+
+    #[test]
+    fn gemini_normal_content_not_truncated() {
+        let response = json!({
+            "candidates": [{
+                "finishReason": "STOP",
+                "content": { "parts": [{ "text": "正常描述" }] },
+            }],
+        });
+
+        let extracted = extract_gemini_content(&response).unwrap();
+        assert!(!extracted.truncated);
+        assert_eq!(extracted.text.as_deref(), Some("正常描述"));
     }
 }

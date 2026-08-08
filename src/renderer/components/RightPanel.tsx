@@ -904,7 +904,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
 
     return (
       <aside className={panelClasses}>
-        {tabs.length > 1 && (
+        {tabs.length > 0 && (
           <div className="right-panel-tabs">
             <div
               ref={tabListRef}

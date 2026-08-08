@@ -305,6 +305,10 @@ export const TerminalPanelContent = ({
           }
         });
       } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        // 将启动失败原因直接写入终端，替代仅 console 输出——用户与智能体
+        // 都能看到"传参无效"之类的明确错误，而不是空白终端。
+        term.write(`\r\n\x1b[91m[Terminal failed to start: ${message}]\x1b[0m\r\n`);
         // eslint-disable-next-line no-console
         console.error("Failed to initialize PTY:", err);
       }

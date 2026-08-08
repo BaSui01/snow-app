@@ -192,6 +192,8 @@ export const apiConfigApi = {
     ),
   detectTerminals: (): Promise<DetectedTerminal[]> =>
     ipcRenderer.invoke("terminal:detect-terminals"),
+  validateTerminalShellPath: (shellPath: string): Promise<{ valid: boolean; reason?: string }> =>
+    ipcRenderer.invoke("terminal-settings:validate-shell-path", shellPath),
   selectTerminalExecutable: (dialogTitle?: string): Promise<string | null> =>
     ipcRenderer.invoke("terminal-settings:select-executable", dialogTitle),
   generateThemePalette: (

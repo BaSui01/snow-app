@@ -352,6 +352,27 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
     }
   );
   ipcMain.handle(
+    "terminal-settings:validate-shell-path",
+    async (_event, shellPath: unknown) => {
+      const path = typeof shellPath === "string" ? shellPath.trim() : "";
+      if (!path) {
+        return { valid: true };
+      }
+      // 纯文件名（如 wsl.exe / bash）交由运行时按 PATH 解析，此处无法确认；
+      // 含路径分隔符的路径（绝对或相对）必须真实存在。
+      const hasSeparator = path.includes("/") || path.includes("\\");
+      if (!hasSeparator) {
+        return { valid: true };
+      }
+      try {
+        await fs.access(path);
+        return { valid: true };
+      } catch {
+        return { valid: false, reason: `Shell executable not found: ${path}` };
+      }
+    }
+  );
+  ipcMain.handle(
     "terminal-settings:select-executable",
     async (event, dialogTitle: unknown) => {
       const browserWindow = BrowserWindow.fromWebContents(event.sender);

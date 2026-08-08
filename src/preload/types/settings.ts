@@ -13,7 +13,6 @@ export type TerminalSettings = {
   fontSize: number;
   fontWeight: string;
   lineHeight: number;
-  proxy: string;
 };
 
 export type PrivacyApiConfig = {

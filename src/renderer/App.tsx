@@ -177,19 +177,22 @@ export const App = (): React.JSX.Element => {
     void window.snow.hideWindowToTray();
   }, []);
 
-  const handleOpenTerminal = useCallback(() => {
-    const rawPath = activeDirectory?.path ?? "";
-    // Pass the full path (including ssh://) to ptyManager.
-    // ptyManager detects ssh:// and spawns an SSH session instead of a local shell.
-    const cwd = rawPath;
-    if (isRightPanelCollapsed) {
-      setIsRightPanelCollapsed(false);
-    }
-    // Defer to ensure panel is visible before fitting terminal
-    requestAnimationFrame(() => {
-      rightPanelRef.current?.openTerminal(cwd);
-    });
-  }, [activeDirectory, isRightPanelCollapsed]);
+  const handleOpenTerminal = useCallback(
+    (cwd?: string) => {
+      // Pass the full path (including ssh://) to ptyManager.
+      // ptyManager detects ssh:// and spawns an SSH session instead of a local shell.
+      const rawPath = cwd ?? activeDirectory?.path ?? "";
+      const targetCwd = rawPath;
+      if (isRightPanelCollapsed) {
+        setIsRightPanelCollapsed(false);
+      }
+      // Defer to ensure panel is visible before fitting terminal
+      requestAnimationFrame(() => {
+        rightPanelRef.current?.openTerminal(targetCwd);
+      });
+    },
+    [activeDirectory, isRightPanelCollapsed]
+  );
 
   const handleOpenBrowser = useCallback(() => {
     if (isRightPanelCollapsed) {
@@ -376,6 +379,7 @@ export const App = (): React.JSX.Element => {
               onActiveDirectoryChange={setActiveDirectory}
               onSelectMainView={setActiveMainView}
               onOpenSshWizard={handleOpenSshWizard}
+              onOpenTerminal={handleOpenTerminal}
               onOpenFile={handleOpenFile}
             />
             {!isSidebarCollapsed && (

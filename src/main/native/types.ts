@@ -1526,6 +1526,8 @@ export type NativeBridge = {
   renameImageAlbum: (id: string, name: string) => Promise<ImageAlbumRecord>;
   deleteImageAlbum: (id: string) => Promise<void>;
   setImageAlbum: (imageId: string, albumId: string | null) => Promise<void>;
+  /** 手动导入图片文件（复制进图库目录并写入索引），返回成功导入的记录 */
+  importImageFiles: (filePaths: string[]) => Promise<ImageLibraryRecord[]>;
   readImageLibraryFile: (relativePath: string) => Promise<string | null>;
   deleteImageLibraryImage: (id: string) => Promise<void>;
   countConversationImages: (conversationIds: string[]) => Promise<number>;

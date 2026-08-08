@@ -78,4 +78,12 @@ export const imageLibraryApi = {
   /** 将图片移入 / 移出相册（albumId 传 null 表示移出到未分类） */
   setImageAlbum: (imageId: string, albumId: string | null): Promise<void> =>
     ipcRenderer.invoke("images:album-set-image", imageId, albumId),
+
+  /** 弹出图片文件选择对话框（多选），返回选中文件路径数组或 null */
+  selectImageFiles: (dialogTitle?: string): Promise<string[] | null> =>
+    ipcRenderer.invoke("images:select-images", dialogTitle),
+
+  /** 手动导入图片文件到图库（复制 + 写索引），返回成功导入的记录 */
+  importImageFiles: (filePaths: string[]): Promise<ImageLibraryRecord[]> =>
+    ipcRenderer.invoke("images:import-images", filePaths),
 };

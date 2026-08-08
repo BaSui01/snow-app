@@ -1994,6 +1994,13 @@ pub fn set_image_album(image_id: String, album_id: Option<String>) -> Result<()>
     services::image_library::set_image_album(&database_path, &image_id, album_id.as_deref())
 }
 
+/// 手动导入图片文件（复制进图库目录并写入索引），返回成功导入的记录。
+pub fn import_image_files(file_paths: Vec<String>) -> Result<Vec<ImageLibraryRecord>> {
+    let database_path = ensure_database_file()?;
+    services::image_library::import_image_files(&database_path, &file_paths)
+        .map(|records| records.into_iter().map(ImageLibraryRecord::from).collect())
+}
+
 /// 读取图库图片并返回 data URL；路径非法或文件不存在返回 None。
 pub fn read_image_library_file(relative_path: &str) -> Result<Option<String>> {
     services::image_library::read_image_file(relative_path)

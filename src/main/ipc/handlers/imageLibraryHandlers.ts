@@ -186,4 +186,42 @@ export const registerImageLibraryHandlers = (native: NativeBridge): void => {
       await native.setImageAlbum(imageId.trim(), normalizedAlbumId);
     }
   );
+
+  ipcMain.handle(
+    "images:select-images",
+    async (event, dialogTitle: unknown): Promise<string[] | null> => {
+      const browserWindow = BrowserWindow.fromWebContents(event.sender);
+      const title =
+        typeof dialogTitle === "string" && dialogTitle.trim()
+          ? dialogTitle.trim()
+          : "Select images to import";
+      const options: Electron.OpenDialogOptions = {
+        title,
+        properties: ["openFile", "multiSelections"],
+        filters: [
+          {
+            name: "Images",
+            extensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp"],
+          },
+        ],
+      };
+      const result = browserWindow
+        ? await dialog.showOpenDialog(browserWindow, options)
+        : await dialog.showOpenDialog(options);
+      return result.canceled ? null : result.filePaths;
+    }
+  );
+
+  ipcMain.handle(
+    "images:import-images",
+    async (_event, filePaths: unknown): Promise<unknown> => {
+      if (!Array.isArray(filePaths)) {
+        throw new Error("Invalid image file paths");
+      }
+      const safePaths = filePaths.filter(
+        (path): path is string => typeof path === "string" && path.trim() !== ""
+      );
+      return native.importImageFiles(safePaths);
+    }
+  );
 };

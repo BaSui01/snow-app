@@ -29059,14 +29059,15 @@ body.ctrl-held [data-path] {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 3px 8px;
+  padding: 3px 10px;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
   background: var(--bg-tertiary);
   color: var(--text-secondary);
   font-size: 11px;
   cursor: pointer;
   max-width: 160px;
+  transition: background 0.15s, color 0.15s;
 }
 
 .image-library-album-chip:hover,
@@ -29078,7 +29079,8 @@ body.ctrl-held [data-path] {
 .image-library-album-chip.active {
   color: var(--accent-blue-text);
   background: var(--accent-blue-bg);
-  font-weight: 500;
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--accent-blue-text);
 }
 
 .image-library-album-chip-name {
@@ -29140,20 +29142,6 @@ body.ctrl-held [data-path] {
   background: var(--accent-red-bg);
 }
 
-.image-library-album-rename-input {
-  width: 140px;
-  padding: 3px 8px;
-  border: 1px solid var(--accent-blue-text);
-  border-radius: var(--radius-sm);
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  font-size: 11px;
-}
-
-.image-library-album-rename-input:focus {
-  outline: none;
-}
-
 /* 图片卡片上的「移入相册」下拉 */
 .image-library-card-album-select {
   max-width: 90px;
@@ -29183,9 +29171,9 @@ body.ctrl-held [data-path] {
 }
 
 .image-library-filter-btn {
-  padding: 3px 10px;
+  padding: 3px 12px;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
   background: transparent;
   color: var(--text-secondary);
   font-size: 11.5px;
@@ -29259,7 +29247,8 @@ body.ctrl-held [data-path] {
 
 .image-library-card:hover,
 .image-library-card:focus-visible {
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+  transform: translateY(-2px);
 }
 
 .image-library-card img {
@@ -29268,6 +29257,11 @@ body.ctrl-held [data-path] {
   aspect-ratio: 1 / 1;
   object-fit: cover;
   background: var(--bg-tertiary);
+  transition: transform 0.25s ease;
+}
+
+.image-library-card:hover img {
+  transform: scale(1.04);
 }
 
 .image-library-card-placeholder {
@@ -29284,6 +29278,7 @@ body.ctrl-held [data-path] {
   flex-direction: column;
   gap: 1px;
   padding: 6px 8px 8px;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .image-library-card-model {
@@ -29347,6 +29342,389 @@ body.ctrl-held [data-path] {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 图片库搜索框 */
+.image-library-search {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-tertiary);
+  flex: 0 1 220px;
+  min-width: 140px;
+}
+
+.image-library-search:focus-within {
+  border-color: var(--accent-blue-text);
+  box-shadow: 0 0 0 3px var(--accent-blue-bg);
+}
+
+.image-library-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 11.5px;
+}
+
+.image-library-search input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.image-library-search button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.image-library-search button:hover {
+  color: var(--text-primary);
+}
+
+/* 图片库批量操作工具栏（有选中时显示） */
+.image-library-batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid var(--accent-blue-bg);
+  border-radius: var(--radius-sm);
+  background: var(--accent-blue-bg);
+  animation: image-library-batch-in 0.2s ease;
+}
+
+@keyframes image-library-batch-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.image-library-batch-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.image-library-batch-close:hover {
+  color: var(--accent-red-text);
+  background: var(--accent-red-bg);
+}
+
+.image-library-batch-count {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.image-library-batch-select-all {
+  padding: 2px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--accent-blue-text);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.image-library-batch-select-all:hover {
+  background: var(--accent-blue-bg);
+}
+
+.image-library-batch-delete {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--accent-red-text);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.image-library-batch-delete:hover {
+  background: var(--accent-red-bg);
+}
+
+/* 图片卡片多选勾选框（hover 显示，选中常显） */
+.image-library-card-check {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.image-library-card:hover .image-library-card-check,
+.image-library-card:focus-visible .image-library-card-check,
+.image-library-card-check.checked {
+  opacity: 1;
+}
+
+.image-library-card-check:hover {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+.image-library-card-check.checked {
+  background: var(--accent-blue-text);
+  border-color: var(--accent-blue-text);
+}
+
+/* 选中卡片高亮 */
+.image-library-card.selected {
+  box-shadow: 0 0 0 2px var(--accent-blue-text), 0 6px 18px rgba(0, 0, 0, 0.3);
+}
+
+/* 相册 chip 封面缩略图 */
+.image-library-album-chip-cover {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+/* 拖拽图片悬停到相册 chip 时的高亮 */
+.image-library-album-chip.drag-over {
+  border-color: var(--accent-blue-text);
+  background: var(--accent-blue-bg);
+  box-shadow: 0 0 0 2px var(--accent-blue-text);
+}
+
+/* 灯箱详情面板（右下角） */
+.image-library-lightbox-details {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(380px, 40vw);
+  max-height: 45vh;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.72);
+  color: var(--text-primary);
+  font-size: 11px;
+  overflow-y: auto;
+  backdrop-filter: blur(4px);
+}
+
+.image-library-lightbox-detail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.image-library-lightbox-detail-label {
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  flex-shrink: 0;
+}
+
+.image-library-lightbox-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.image-library-lightbox-copy:hover {
+  color: var(--accent-blue-text);
+  border-color: var(--accent-blue-text);
+}
+
+.image-library-lightbox-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.image-library-lightbox-prompt-text {
+  margin: 0;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.image-library-lightbox-detail-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  align-items: baseline;
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.image-library-lightbox-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-library-lightbox-nav-hint {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  text-align: right;
+}
+
+/* 相册封面 hover 微放大 */
+.image-library-album-chip-cover {
+  transition: transform 0.15s ease;
+}
+
+.image-library-album-chip:hover .image-library-album-chip-cover {
+  transform: scale(1.1);
+}
+
+/* 空状态美化：圆形图标底 + 提示 + 清除筛选按钮 */
+.image-library-state-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+}
+
+.image-library-state-hint {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.image-library-state-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 14px;
+  border: none;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  color: var(--accent-blue-text);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.image-library-state-clear:hover {
+  background: var(--accent-blue-bg);
+}
+
+/* 无限滚动加载指示 */
+.image-library-load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 14px 0 6px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+/* 灯箱左右切换按钮（hover 容器时浮现） */
+.image-library-lightbox-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+  z-index: 2;
+}
+
+.image-library-lightbox-nav.prev {
+  left: 16px;
+}
+
+.image-library-lightbox-nav.next {
+  right: 16px;
+}
+
+.tool-call-imagegen-lightbox:hover .image-library-lightbox-nav {
+  opacity: 1;
+}
+
+.image-library-lightbox-nav:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+.image-library-lightbox-nav:disabled {
+  opacity: 0;
+  cursor: default;
+}
+
+/* 灯箱图片切换动画（img key 变化重放） */
+.tool-call-imagegen-lightbox img {
+  animation: image-library-lightbox-switch-in 0.18s ease;
+}
+
+@keyframes image-library-lightbox-switch-in {
+  from {
+    opacity: 0.4;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 /* 删除会话确认：是否级联删除图库图片的选项 */

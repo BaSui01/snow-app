@@ -541,6 +541,125 @@ pub fn delete_image(database_path: &Path, id: &str) -> Result<()> {
     Ok(())
 }
 
+/// 按文件头魔数探测图片 MIME 类型（PNG/JPEG/GIF/WebP），未知时按扩展名推断。
+fn detect_mime(bytes: &[u8], fallback_ext: &str) -> String {
+    if bytes.len() >= 8 && &bytes[0..8] == b"\x89PNG\r\n\x1a\n" {
+        return "image/png".to_string();
+    }
+    if bytes.len() >= 3 && &bytes[0..3] == b"GIF8" {
+        return "image/gif".to_string();
+    }
+    if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        return "image/webp".to_string();
+    }
+    if bytes.len() >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 {
+        return "image/jpeg".to_string();
+    }
+    match fallback_ext {
+        "jpg" | "jpeg" => "image/jpeg".to_string(),
+        "webp" => "image/webp".to_string(),
+        "gif" => "image/gif".to_string(),
+        _ => "image/png".to_string(),
+    }
+}
+
+/// 按 id 查询图片记录。
+fn find_image(
+    connection: &rusqlite::Connection,
+    id: &str,
+) -> rusqlite::Result<Option<ImageLibraryRecord>> {
+    connection
+        .query_row(
+            "SELECT id, relative_path, file_name, mime_type, size_bytes, width, height,
+                    prompt, model, provider, created_at, album_id
+               FROM image_library
+              WHERE id = ?1",
+            params![id],
+            map_row,
+        )
+        .optional()
+}
+
+/// 手动导入图片：将外部文件复制进图库目录（按当天日期子目录）并写入索引。
+/// 跳过不可读 / 空文件 / 复制失败的文件；返回成功导入的记录列表。
+/// 手动导入的图片无 prompt/model/provider（索引留空，前端展示文件名）。
+pub fn import_image_files(
+    database_path: &Path,
+    file_paths: &[String],
+) -> Result<Vec<ImageLibraryRecord>> {
+    let root = image_library_root()?;
+    let date_dir = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let target_dir = root.join(&date_dir);
+    fs::create_dir_all(&target_dir).map_err(|error| {
+        Error::from_reason(format!(
+            "Failed to create image library date directory '{}': {error}",
+            target_dir.display()
+        ))
+    })?;
+
+    let connection = database::open_connection(database_path)
+        .map_err(|error| database::database_error(database_path, "open for image import", error))?;
+
+    let mut imported: Vec<ImageLibraryRecord> = Vec::new();
+    for path_str in file_paths {
+        let source = PathBuf::from(path_str);
+        if !source.is_file() {
+            continue;
+        }
+        let Ok(bytes) = fs::read(&source) else {
+            continue;
+        };
+        if bytes.is_empty() {
+            continue;
+        }
+        let fallback_ext = source
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        let mime_type = detect_mime(&bytes, &fallback_ext);
+        let file_name = format!(
+            "img-{}-{}.{}",
+            chrono::Local::now().format("%Y%m%d%H%M%S"),
+            database::create_snowflake_id(),
+            ext_for_mime(&mime_type)
+        );
+        let abs_path = target_dir.join(&file_name);
+        if let Err(error) = fs::copy(&source, &abs_path) {
+            eprintln!(
+                "[image-library] failed to import '{}': {error}",
+                source.display()
+            );
+            continue;
+        }
+
+        let relative_path = format!("image/{date_dir}/{file_name}");
+        let (width, height) = probe_dimensions(&bytes, &mime_type);
+        let id = database::create_snowflake_id();
+        let insert_result = connection.execute(
+            "INSERT INTO image_library (
+               id, relative_path, file_name, mime_type, size_bytes, width, height
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![id, relative_path, file_name, mime_type, bytes.len() as i64, width, height],
+        );
+        match insert_result {
+            Ok(_) => {
+                if let Some(record) = find_image(&connection, &id).unwrap_or(None) {
+                    imported.push(record);
+                }
+            }
+            Err(error) => {
+                // 索引失败：清理已复制文件，避免孤儿文件
+                eprintln!(
+                    "[image-library] failed to index imported image '{relative_path}': {error}"
+                );
+                let _ = fs::remove_file(&abs_path);
+            }
+        }
+    }
+    Ok(imported)
+}
+
 /// 扫描并重写所有引用 `relative_path` 的消息。
 /// 返回受影响的消息条数。
 fn rewrite_messages_referencing(

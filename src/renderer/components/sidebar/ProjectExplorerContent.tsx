@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "../../i18n";
 import { getFileTypeIcon } from "../../utils/fileIcons";
+import { localizeSshError } from "../../utils/sshErrorMessages";
 import type {
   DirectoryEntry,
   FileSearchResult,
@@ -179,6 +180,18 @@ export function ProjectExplorerContent({
   explorerDirectoryId,
 }: SidebarContentProps): React.JSX.Element {
   const { t } = useI18n();
+
+  /** 本地化错误文案；SSH 错误映射为 i18n 主文案，原始原因拼入括号。 */
+  const toExplorerErrorMessage = useCallback(
+    (err: unknown): string => {
+      const localized = localizeSshError(err, t);
+      return localized.detail
+        ? `${localized.message} (${localized.detail})`
+        : localized.message;
+    },
+    [t]
+  );
+
   const [rootPath, setRootPath] = useState<string | null>(null);
   const [rootName, setRootName] = useState("");
   const [isSsh, setIsSsh] = useState(false);
@@ -328,7 +341,7 @@ export function ProjectExplorerContent({
       setIsStale(true);
       setError(
         loadError instanceof Error
-          ? loadError.message
+          ? toExplorerErrorMessage(loadError)
           : t("sidebar.explorerLoadError", {
               defaultValue: "Failed to load directory contents",
             })
@@ -562,7 +575,7 @@ export function ProjectExplorerContent({
       } catch (operationError) {
         setError(
           operationError instanceof Error
-            ? operationError.message
+            ? toExplorerErrorMessage(operationError)
             : t("sidebar.explorerRenameError", {
                 defaultValue: "Failed to rename workspace entry",
               })
@@ -608,7 +621,7 @@ export function ProjectExplorerContent({
       } catch (operationError) {
         setError(
           operationError instanceof Error
-            ? operationError.message
+            ? toExplorerErrorMessage(operationError)
             : t("sidebar.explorerDeleteError", {
                 defaultValue: "Failed to delete workspace entry",
               })

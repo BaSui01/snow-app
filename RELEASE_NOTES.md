@@ -1,5 +1,65 @@
 # Release Notes
 
+## v0.1.22
+
+## New Features
+
+- **Browser Credential Import**: Passwords and Cookies can be imported from Chrome/Edge/Chromium (macOS Keychain + PBKDF2/AES-128-CBC, Windows DPAPI + AES-256-GCM) and Firefox (SHA1 iteration + 3DES-CBC), including Chrome 133+ Cookie hash prefix stripping and SQLite WAL lock read-only fallback.
+- **Password Vault**: Passwords are stored in an AES-256-GCM encrypted vault on disk, protected by the OS keychain; autofill IPC validates the sender frame origin to prevent cross-origin reads.
+- **Webview Password Assistant**: Login forms are auto-filled and auto-saved via a dedicated preload (webview-browser entry).
+- **Webview Popup Windows**: `window.open` / `target=_blank` now open real windows preserving the opener relationship (required for Google OAuth login).
+- **Element Selector**: Select page elements to add as chips to the chat input, with notes and real-time style editing preview; elements auto-expand into readable descriptions in messages.
+- **Browser Settings Panel**: Configure the start page, manage passwords (search/show-hide/delete), and import passwords/Cookies from local browsers.
+- **Model Search**: The model dropdown now supports filtering long model lists by model id or owner.
+- **Requested Model Persistence**: The model the user requested is now persisted across Anthropic, Chat Completions, Gemini, and Responses paths — provider-echoed date-stamped or aliased model names no longer overwrite the model shown in the chat input.
+- **Dialog Close Button**: Form dialogs get a localized close button in the header; overlay click-to-close was removed to prevent accidental dismissals.
+
+## Improvements
+
+- **Chat Scrolling**: The chat stays pinned to the bottom during async rendering of historical messages and no longer auto-snaps after the session ends; chip hover detail preview added; cancelling a project add returns to the parent level.
+- **Metric Breakpoints**: Container query breakpoints recalibrated to measured widths so metrics are neither hidden early nor overflow.
+- **Cookie Restore**: Domain Cookies explicitly pass their domain so subdomains share login state; SameSite=None non-Secure cookies are downgraded to ensure they can be written.
+
+## Bug Fixes
+
+- **Stream Disconnect Retry**: When a streaming response disconnects mid-stream with zero output, the request is now automatically retried with exponential backoff (3s→30s, up to 5 times) across all four protocols (chat/anthropic/responses/gemini) with a visible retry indicator; exhausted retries return an explicit error instead of a silent empty reply. Streams with partial output stay `incomplete` to avoid duplicated content.
+- **MCP Handshake**: Added a discover probe timeout and fallback to the legacy `initialize` handshake for silent old-SDK servers.
+- **Sensitive Command Rule**: The preset `rm` rule now uses word boundaries so substrings like `arm64`, `warm`, or `--rm` are no longer flagged; existing preset rows are migrated.
+- **ImageGen Compile Fix**: Fixed missing commas in three `json!` macros in `imagegen.rs`.
+- **Native Bridge Fallback**: Missing `browserImport*` methods added to the fallback native bridge so non-Rust runtimes fail with a clear error.
+
+## v0.1.21
+
+## New Features
+
+- **AI Code Review (`/review`)**: Review selected Git changes (staged, unstaged, or commits) with a read-only prompt. The prompt is base64-tagged (`@@review:...@@`) and rendered as a chip; Rust expands it for generation and session titles. Added `git:commit-diff` IPC backed by Rust and SSH.
+- **Workspace Directory Management**: Right-click a workspace directory to rename or set it as the active directory (inline rename with Enter/Esc/on-blur commit). Directory add and project creation now use a generic FormDialog with drag-and-drop folder support.
+- **IDE Detection**: Installed IDEs are detected on Windows/Linux/macOS and offered in an "Open with" submenu with real brand icons (VS Code, Cursor, JetBrains, …) and a lucide fallback.
+- **SSH Improvements**: Connection errors are classified (network/timeout/auth/sftp/invalid/unknown) and localized; hosts can be imported from `~/.ssh/config` (with `~`/`%d` expansion) to prefill the connect wizard.
+- **Terminal Session Identity**: Local processes (one-shot commands and persistent tabs) inherit the Snow session identity via `SNOW_SESSION_ID`, `TRELLIS_CONTEXT_ID`, `SNOW_CWD`, `SNOW_PLATFORM`, without overriding inherited values.
+- **Tool Call Rendering**: Dedicated cards for skill / config / app-control / dbx tool calls; tool-name badges use stable category-based lucide icons and localized names (46 new i18n keys); DBX double-prefix normalization; ImageGen gallery drops columns in narrow containers.
+- **Markdown Image Lightbox**: Clicking an image in a markdown reply opens a zoomed lightbox with download.
+- **Database Recovery**: Corrupted SQLite databases are detected and automatically recovered at startup.
+- **MCP**: JSON draft editing refactored to single-entry `{name: {...}}` mapping with lenient parsing (container + legacy formats); external tool calls retry once via a legacy initialize handshake on "Transport closed"; stdio stderr is forwarded to app logs.
+- **Config Server**: New `personalization` scope for `~/.snow/ROLE.md`; config writes are pre-backed up and cleaned after success; `config-delete` requires explicit user confirmation.
+- **Session Isolation**: Plan/Goal mode is strictly per-session — the global mode settings chain was removed entirely.
+- **Agent Loop**: Compaction only runs when the loop will continue; `resume_after_compaction` prevents duplicate handoff after compaction; codelens refocused on symbol navigation (diagnose tool and semantic analyzers removed).
+- **Hooks**: Sub-agent lifecycle hooks are bound to the tool card; execution results fill the chat width with structured action details and localized labels.
+
+## Improvements
+
+- **ImageGen**: Remote-URL results are downloaded and persisted to the image library; `n` accepts 1-8 via internal fan-out; per-request `prompts` / `requestImages`; gallery migration is staged (prepare/chunk/commit) with crash recovery and rollback.
+- **Browser Automation**: Accessibility-tree snapshots (`action=ax`), network debugging (`networkDetails` / `networkState` / `route`), encrypted login-state save/restore, performance traces, and new interaction tools (`wait`, `press_key`, `select_option`, `hover`, `upload-file`, back/forward).
+- **Browser**: MCP tool names unified with upstream style (`press_key`, `select_option`); `browser-wait` gains `selector`/`selectorGone`; `ref` targeting auto scrolls into view; click uses a real 50 ms press interval; webview context menu; detached DevTools windows are branded with the Snow icon and lifecycle-managed.
+- Token tooltips show compact K/M/B units; Mermaid rendering recovers from import failures and retries on the next batch; conversation summaries follow the chat thinking configuration for reasoning effort; checkpoint diffs are cached to avoid repeated file reads.
+
+## Bug Fixes
+
+- `safeSend` IPC avoids renderer frame-release races; the window self-heals after a renderer crash.
+- ESC no longer accidentally cancels the session when a command/file panel is open.
+- Fixed `browser-type` selector syntax error; `openSettings` now accepts `imagegen-settings` / `image-library` pages.
+- Completed 63 missing i18n keys across all locales.
+
 ## v0.1.20
 
 ## New Features
@@ -118,9 +178,29 @@
   refuses to enable a channel that has no API key or model (with a
   localized hint) — matching the backend rule that only fully configured
   channels expose the generation tool to the agent.
+- **Composer Drag-and-Drop Images**: The input box now accepts images dragged
+  in from the file manager (single or multiple at once), inserting them as
+  image chips exactly like pasting — previously the drop handlers only
+  understood the app-internal `application/json` drag payloads (file / commit
+  / change tags) and silently ignored external files (no drop cursor, no
+  insertion).
+- **Path-Aware `@` File Mentions**: The `@` file panel now supports browsing
+  into folders like a file manager — clicking a folder entry (or `→` / `Enter`)
+  navigates into it and rewrites the `@` query to the relative path; a
+  breadcrumb bar (workspace root → path segments) lets you jump back, `←` goes
+  up one level, and typing paths directly (`src/`, `src/renderer/App`) browses
+  or filters inside the target directory.
 
 ## Bug Fixes
 
+- **Markdown Images with Local Paths**: When the model referenced generated
+  images by local relative paths (`image/...` library paths or `upload/...`
+  paths) inside the Markdown reply body, the renderer tried to load them as
+  relative URLs and showed broken-image icons. Local paths (backslash /
+  URL-encoded variants normalized, `..` traversal and absolute paths
+  rejected) are now rewritten to `img-proxy://` protocol URLs together with
+  external images, and the main process serves them straight from disk —
+  no IPC round-trips or data-URL caches in the renderer.
 - **i18n Placeholder Syntax**: `settings.imagegenChannelCount` and
   `settings.imageLibraryCount` used the single-brace `{count}` placeholder
   format, so the channel count and image-library count rendered literally

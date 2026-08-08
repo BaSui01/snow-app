@@ -1,4 +1,5 @@
 import { ipcRenderer, type IpcRendererEvent } from "electron";
+import { join } from "node:path";
 import type {
   BashStreamChunk,
   BrowserCommandRequest,
@@ -709,6 +710,7 @@ export const ptyApi = {
     cols: number;
     rows: number;
     shellPath?: string;
+    sessionId?: string;
   }): Promise<string> => ipcRenderer.invoke("pty:create", options),
   ptyWrite: (id: string, data: string): Promise<void> =>
     ipcRenderer.invoke("pty:write", id, data),
@@ -779,6 +781,8 @@ export const windowApi = {
     ipcRenderer.invoke("browser:clear-cache"),
   clearBrowserCookies: (): Promise<void> =>
     ipcRenderer.invoke("browser:clear-cookies"),
+  openBrowserDevTools: (webContentsId: number): Promise<void> =>
+    ipcRenderer.invoke("browser:open-devtools", webContentsId),
   browserNetworkRequests: (
     webContentsId: number,
     filter?: string,
@@ -792,6 +796,158 @@ export const windowApi = {
       limit,
       includeStatic
     ),
+  /** 查询单条网络请求的完整详情（请求/响应头 + 请求/响应体）。 */
+  browserNetworkDetails: (
+    webContentsId: number,
+    requestId: string,
+    maxBodyBytes?: number
+  ): Promise<unknown> =>
+    ipcRenderer.invoke(
+      "browser:network-details",
+      webContentsId,
+      requestId,
+      maxBodyBytes
+    ),
+  /** 模拟网络状态：offline=true 离线，false 恢复在线。 */
+  browserNetworkState: (
+    webContentsId: number,
+    offline: boolean
+  ): Promise<{ state: "online" | "offline" }> =>
+    ipcRenderer.invoke("browser:network-state", webContentsId, offline),
+  /** 设置路由 mock 规则（全量替换；空数组 = 恢复真实网络）。 */
+  browserRouteSet: (
+    webContentsId: number,
+    rules: {
+      pattern: string;
+      status?: number;
+      body?: string;
+      contentType?: string;
+      headers?: Record<string, string>;
+    }[]
+  ): Promise<{ active: number }> =>
+    ipcRenderer.invoke("browser:route-set", webContentsId, rules),
+  /** 清除全部路由 mock 规则。 */
+  browserRouteClear: (webContentsId: number): Promise<{ active: number }> =>
+    ipcRenderer.invoke("browser:route-clear", webContentsId),
+  /** 保存登录态（cookie + localStorage）为加密文件；返回文件路径与统计，不回显内容。 */
+  browserStorageSave: (
+    webContentsId: number,
+    fileName?: string
+  ): Promise<{
+    ok: boolean;
+    file: string;
+    cookieCount: number;
+    originCount: number;
+    capturedUrl: string;
+    capturedAt: string;
+    error?: string;
+  }> => ipcRenderer.invoke("browser:storage-save", webContentsId, fileName),
+  /** 从加密文件恢复登录态（恢复前自动加密备份当前状态）。 */
+  browserStorageRestore: (
+    webContentsId: number,
+    fileName: string
+  ): Promise<{
+    ok: boolean;
+    restoredCookies: number;
+    cookieFailures: number;
+    restoredOrigins: number;
+    originFailures: number;
+    backupFile: string | null;
+    warnings: string[];
+    error?: string;
+  }> => ipcRenderer.invoke("browser:storage-restore", webContentsId, fileName),
+  /** 列出当前会话 cookie（默认脱敏值，showValues=true 返回明文）。 */
+  browserCookies: (
+    webContentsId: number,
+    domain?: string,
+    showValues?: boolean
+  ): Promise<unknown[]> =>
+    ipcRenderer.invoke(
+      "browser:cookies-list",
+      webContentsId,
+      domain,
+      showValues
+    ),
+  /** 删除指定 cookie（name + domain）。 */
+  browserCookieDelete: (
+    webContentsId: number,
+    name: string,
+    domain: string
+  ): Promise<{ deleted: boolean }> =>
+    ipcRenderer.invoke("browser:cookie-delete", webContentsId, name, domain),
+  /** 内置浏览器 webview 密码助手 preload 的绝对路径（供 <webview preload> 使用）。 */
+  browserWebviewPreloadPath: join(__dirname, "webview-browser.mjs"),
+  /** 列出密码保险库中的全部记录（不含明文密码）。 */
+  browserPasswordsList: (): Promise<
+    {
+      id: string;
+      origin: string;
+      username: string;
+      createdAt: number;
+      updatedAt: number;
+    }[]
+  > => ipcRenderer.invoke("browser-passwords:list"),
+  /** 取单条密码记录的明文（密码管理 UI 显式查看时调用）。 */
+  browserPasswordGet: (
+    id: string
+  ): Promise<{ username: string; password: string } | null> =>
+    ipcRenderer.invoke("browser-passwords:get", id),
+  /** 保存/更新密码记录（同 origin + username 覆盖）。 */
+  browserPasswordSave: (payload: {
+    origin: string;
+    username: string;
+    password: string;
+  }): Promise<{ id: string; updated: boolean }> =>
+    ipcRenderer.invoke("browser-passwords:save", payload),
+  /** 删除一条密码记录。 */
+  browserPasswordDelete: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke("browser-passwords:delete", id),
+  /** 探测本机浏览器源（Chrome/Edge/Chromium/Firefox）及其数据量。 */
+  browserImportSources: (): Promise<
+    {
+      id: string;
+      name: string;
+      profile: string;
+      accountName: string;
+      passwordDb: string;
+      cookieDb: string;
+      passwordCount: number;
+      cookieCount: number;
+      note: string;
+    }[]
+  > => ipcRenderer.invoke("browser-import:sources"),
+  /** 从指定浏览器源导入密码到保险库。 */
+  browserImportPasswords: (
+    sourceId: string,
+    profile: string
+  ): Promise<{ total: number; imported: number; skipped: number }> =>
+    ipcRenderer.invoke("browser-import:passwords", sourceId, profile),
+  /** 从指定浏览器源导入 Cookie 到当前会话。 */
+  browserImportCookies: (
+    sourceId: string,
+    profile: string
+  ): Promise<{ total: number; imported: number; failed: number }> =>
+    ipcRenderer.invoke("browser-import:cookies", sourceId, profile),
+  /** 执行白名单内的 CDP 命令（Accessibility.getFullAXTree / DOM.resolveNode / Runtime.callFunctionOn）。 */
+  browserCdpCommand: (
+    webContentsId: number,
+    method: string,
+    params?: Record<string, unknown>
+  ): Promise<unknown> =>
+    ipcRenderer.invoke("browser:cdp-command", webContentsId, method, params),
+  /** 录制页面性能 trace（durationMs 毫秒）并返回精简统计。 */
+  browserTrace: (
+    webContentsId: number,
+    durationMs: number
+  ): Promise<{
+    ok: boolean;
+    durationMs: number;
+    eventCount: number;
+    longTasks: { count: number; totalMs: number; longestMs: number };
+    topEventTypes: { name: string; count: number }[];
+    error?: string;
+    note?: string;
+  }> => ipcRenderer.invoke("browser:trace", webContentsId, durationMs),
   browserNetworkRequest: (recordId: number): Promise<unknown | null> =>
     ipcRenderer.invoke("browser:network-request", recordId),
   browserNetworkClear: (

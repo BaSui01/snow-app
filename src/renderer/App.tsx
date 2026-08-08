@@ -385,7 +385,9 @@ export const App = (): React.JSX.Element => {
             />
             {!isSidebarCollapsed && (
               <div
-                className="panel-resizer sidebar-resizer layout-resizer"
+                className={`panel-resizer sidebar-resizer layout-resizer${
+                  activeResizeTarget === "sidebar" ? " is-active" : ""
+                }`}
                 role="separator"
                 aria-label="Resize sidebar"
                 aria-orientation="vertical"
@@ -400,7 +402,9 @@ export const App = (): React.JSX.Element => {
             />
             {!isRightPanelCollapsed && (
               <div
-                className="panel-resizer right-panel-resizer layout-resizer"
+                className={`panel-resizer right-panel-resizer layout-resizer${
+                  activeResizeTarget === "right-panel" ? " is-active" : ""
+                }`}
                 role="separator"
                 aria-label="Resize review panel"
                 aria-orientation="vertical"

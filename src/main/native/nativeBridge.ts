@@ -61,34 +61,6 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to write YOLO mode")
         ),
-      getPlanMode: () =>
-        Promise.reject(
-          new Error("Rust native bridge is required to read Plan mode")
-        ),
-      setPlanMode: () =>
-        Promise.reject(
-          new Error("Rust native bridge is required to write Plan mode")
-        ),
-      getGoalMode: () =>
-        Promise.reject(
-          new Error("Rust native bridge is required to read Goal mode")
-        ),
-      setGoalMode: () =>
-        Promise.reject(
-          new Error("Rust native bridge is required to write Goal mode")
-        ),
-      getGoalModeTokenBudget: () =>
-        Promise.reject(
-          new Error(
-            "Rust native bridge is required to read Goal mode token budget"
-          )
-        ),
-      setGoalModeTokenBudget: () =>
-        Promise.reject(
-          new Error(
-            "Rust native bridge is required to write Goal mode token budget"
-          )
-        ),
       getConversationModes: () =>
         Promise.reject(
           new Error("Rust native bridge is required to read conversation modes")
@@ -262,6 +234,16 @@ export const loadNativeBridge = (): NativeBridge => {
       deleteRemoteDraft: () =>
         Promise.reject(
           new Error("Rust native bridge is required to delete remote drafts")
+        ),
+      listInstalledIdes: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to detect installed IDEs")
+        ),
+      openInIde: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to open projects in IDEs"
+          )
         ),
       createProjectDirectory: () =>
         Promise.reject(
@@ -625,6 +607,9 @@ export const loadNativeBridge = (): NativeBridge => {
       },
       getGitCommitFiles: () => {
         throw new Error("Rust native bridge is required for git commit files");
+      },
+      getCommitDiff: () => {
+        throw new Error("Rust native bridge is required for git commit diff");
       },
       discoverGitRepos: () => {
         throw new Error(
@@ -1003,6 +988,44 @@ export const loadNativeBridge = (): NativeBridge => {
           new Error(
             "Rust native bridge is required to cascade-delete conversation images"
           )
+        ),
+      prepareImageLibraryMigration: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to migrate image library"
+          )
+        ),
+      migrateImageLibraryChunk: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to migrate image library"
+          )
+        ),
+      commitImageLibraryMigration: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to migrate image library"
+          )
+        ),
+      rollbackImageLibraryMigration: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to migrate image library"
+          )
+        ),
+      browserImportListSources: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to probe browser sources")
+        ),
+      browserImportPasswords: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to import browser passwords"
+          )
+        ),
+      browserImportCookies: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to import browser cookies")
         ),
     };
   }

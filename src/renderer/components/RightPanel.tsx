@@ -890,6 +890,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
               cwd={(tab.data as TerminalTabData).cwd}
               ptyId={(tab.data as TerminalTabData).ptyId}
               shellPath={(tab.data as TerminalTabData).shellPath}
+              sessionId={(tab.data as TerminalTabData).sessionId}
               isActive={activeTabId === tab.id}
               onTitleChange={(title) =>
                 handleTerminalTitleChange(tab.id, title)

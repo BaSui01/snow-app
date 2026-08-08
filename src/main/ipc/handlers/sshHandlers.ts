@@ -41,6 +41,8 @@ import {
   type RemoteJobStartRequest,
 } from "../../ssh/remoteJobs";
 import { createRemoteJobPtySession } from "../../pty/ptyManager";
+import { listSshConfigHosts } from "../../ssh/sshConfig";
+import { classifySshConnectError } from "../../ssh/sshErrors";
 
 const REMOTE_SEARCH_MAX_DEPTH = 15;
 const REMOTE_SEARCH_MAX_RESULTS = 200;
@@ -580,8 +582,22 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
   };
 
   ipcMain.handle("ssh:connect", async (_event, params: unknown) => {
-    const connectParams = normalizeSshConnectParams(params);
-    return connectSsh(connectParams);
+    // 连接失败不抛异常，而是返回结构化结果：渲染层拿到稳定的错误码
+    // （network/timeout/auth/sftp/invalid/unknown）做本地化展示，原始
+    // 技术消息放在 detail 中供排查，避免透传 ssh2 的英文原始错误。
+    try {
+      const connectParams = normalizeSshConnectParams(params);
+      const sessionId = await connectSsh(connectParams);
+      return { ok: true as const, sessionId };
+    } catch (err) {
+      const info = classifySshConnectError(err);
+      return {
+        ok: false as const,
+        code: info.code,
+        message: info.message,
+        detail: info.detail,
+      };
+    }
   });
 
   ipcMain.handle(
@@ -917,6 +933,9 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
   );
 
   ipcMain.handle("ssh:list-credentials", () => listSshCredentials());
+
+  // 读取本地 ~/.ssh/config 中的主机条目，供渲染层快速导入 SSH 连接。
+  ipcMain.handle("ssh:list-config-hosts", () => listSshConfigHosts());
 
   ipcMain.handle(
     "ssh:delete-credential",

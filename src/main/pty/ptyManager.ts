@@ -19,6 +19,7 @@ import {
   type SshHostKeyRecord,
 } from "../ssh/sshHostKeys";
 import { ensureConptyDll } from "./conptyDllHelper";
+import { buildPtyEnvironment } from "./ptyEnvironment";
 
 const require2 = createRequire(import.meta.url);
 
@@ -40,6 +41,7 @@ export type PtySessionOptions = {
   shellPath?: string;
   /** Internal-only validated command used to attach an existing Remote Job. */
   remoteCommand?: string;
+  sessionId?: string;
 };
 
 export type PtySession = {
@@ -137,26 +139,11 @@ const isWslShell = (shellPath: string): boolean => {
   return base === "wsl";
 };
 
-const sanitizeEnv = (): Record<string, string> => {
-  const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(process.env)) {
-    if (typeof value !== "string") {
-      continue;
-    }
-    // Remove Electron-specific env vars that break child processes
-    if (
-      key === "ELECTRON_RUN_AS_NODE" ||
-      key === "ELECTRON_NO_ATTACH_CONSOLE"
-    ) {
-      continue;
-    }
-    env[key] = value;
-  }
-  if (!env.TERM) {
-    env.TERM = "xterm-256color";
-  }
-  return env;
-};
+const sanitizeEnv = (options: PtySessionOptions): Record<string, string> =>
+  buildPtyEnvironment(process.env, {
+    sessionId: options.sessionId,
+    cwd: options.cwd,
+  });
 
 const ensureSpawnHelperExecutable = (): void => {
   if (process.platform === "win32") {
@@ -419,7 +406,7 @@ export const createPtySession = async (
       cols: options.cols,
       rows: options.rows,
       cwd: spawnCwd,
-      env: sanitizeEnv(),
+      env: sanitizeEnv(options),
       // Electron already has a console attached, so the default ConPTY kill path
       // (which forks conpty_console_list_agent.js and calls AttachConsole) throws
       // "AttachConsole failed". Setting useConptyDll routes kill() through a

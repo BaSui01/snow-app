@@ -25,6 +25,13 @@ use super::remote_workspace::{
     RemoteWorkspaceCallback,
 };
 
+fn set_inherited_env_default(process: &mut Command, key: &str, value: &str) {
+    if value.is_empty() || std::env::var_os(key).is_some() {
+        return;
+    }
+    process.env(key, value);
+}
+
 pub struct BashService;
 
 #[napi(object)]
@@ -444,14 +451,18 @@ impl BashService {
         };
 
         // Snow platform contract: expose the current session identity and
-        // workspace to child processes so Trellis scripts can track the active
-        // task per session (see .trellis/scripts/common/active_task.py).
+        // workspace to child processes so Trellis can resolve an active task.
+        // Inherited explicit values win over Snow's defaults.
         if let Some(ref session_id) = session_id {
-            process.env("SNOW_SESSION_ID", session_id);
-            process.env("TRELLIS_CONTEXT_ID", format!("snow-{session_id}"));
+            set_inherited_env_default(&mut process, "SNOW_SESSION_ID", session_id);
+            set_inherited_env_default(
+                &mut process,
+                "TRELLIS_CONTEXT_ID",
+                &format!("snow-{session_id}"),
+            );
+            set_inherited_env_default(&mut process, "SNOW_CWD", working_directory.trim());
+            set_inherited_env_default(&mut process, "SNOW_PLATFORM", "snow-app");
         }
-        process.env("SNOW_PLATFORM", "snow");
-        process.env("SNOW_CWD", &working_directory);
 
         if let Some(ref path) = login_path {
             process.env("PATH", path);

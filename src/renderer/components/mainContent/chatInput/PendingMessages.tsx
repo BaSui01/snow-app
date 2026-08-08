@@ -4,6 +4,8 @@ import {
   FileText,
   GitCommitHorizontal,
   GitCompare,
+  MousePointer2,
+  ScanSearch,
   Trash2,
 } from "lucide-react";
 import { useI18n } from "../../../i18n";
@@ -111,6 +113,45 @@ const renderSegments = (content: string): React.ReactNode => {
             style={{ color: "#6c757d" }}
           />
           <span className="user-message-file-chip-name">{tag.summary}</span>
+        </span>
+      );
+    }
+
+    if (segment.type === "review") {
+      const { tag } = segment;
+      const reviewTitle = `${tag.summary} (${tag.charCount} chars)`;
+      return (
+        <span
+          key={index}
+          className="user-message-file-chip review-chip"
+          title={reviewTitle}
+        >
+          <ScanSearch
+            size={12}
+            className="user-message-file-chip-icon"
+            style={{ color: "#2ea043" }}
+          />
+          <span className="user-message-file-chip-name">{tag.summary}</span>
+        </span>
+      );
+    }
+
+    if (segment.type === "element") {
+      const { tag } = segment;
+      const displayName = tag.note ? `${tag.label} · ${tag.note}` : tag.label;
+      const elementTitle = tag.url ? `${tag.label} (${tag.url})` : tag.label;
+      return (
+        <span
+          key={index}
+          className="user-message-file-chip element-chip"
+          title={elementTitle}
+        >
+          <MousePointer2
+            size={12}
+            className="user-message-file-chip-icon"
+            style={{ color: "#1a73e8" }}
+          />
+          <span className="user-message-file-chip-name">{displayName}</span>
         </span>
       );
     }

@@ -64,6 +64,7 @@ export const CommandPanel = forwardRef<CommandPanelHandle, CommandPanelProps>(
         handleKeyDown: (event): boolean => {
           if (event.key === "Escape") {
             event.preventDefault();
+            event.stopPropagation();
             onClose();
             return true;
           }
@@ -125,6 +126,7 @@ export const CommandPanel = forwardRef<CommandPanelHandle, CommandPanelProps>(
                 : undefined
             }
             className="chat-command-panel"
+            data-esc-panel
             exit={
               appleMotionEnabled
                 ? reducedMotion

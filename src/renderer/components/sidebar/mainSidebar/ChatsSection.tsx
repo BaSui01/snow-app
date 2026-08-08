@@ -5,7 +5,14 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { ChatDeleteConfirmDialog } from "./ChatDeleteConfirmDialog";
 import { useI18n } from "../../../i18n";
@@ -27,24 +34,24 @@ import {
 const CHAT_PAGE_SIZE = 20;
 
 /**
- * 排序会话列表：运行中的会话永远置顶，其余按 updatedAt 倒序。
+ * 排序会话列表：运行中或需关注的会话永远置顶，其余按 updatedAt 倒序。
  *
- * 运行中会话（streamingConversationIds）内部按 updatedAt 倒序，
- * 非运行中会话也按 updatedAt 倒序，两组拼接后返回。
+ * 运行中或需关注的会话（runningConversationIds）内部按 updatedAt 倒序，
+ * 其他会话也按 updatedAt 倒序，两组拼接后返回。
  *
  * 必须基于时间戳比较，不能直接用字符串 localeCompare：
  * 占位符会话的 updatedAt 是 ISO UTC 格式（带 T 与 Z），
  * 而数据库返回的是 SQLite 本地时间格式（空格分隔、无时区），
  * 两种格式的字典序与真实时间顺序不一致，会导致新会话排到旧会话下方。
  *
- * 注意：streamingConversationIds 只在会话开始/结束时变化（非每 token），
- * 因此不会导致流式过程中频繁重排序。
+ * runningConversationIds 仅在流式或待处理交互的生命周期边界变化，
+ * 不会随每个流式 token 更新，因此不会导致流式过程中频繁重排序。
  */
 const sortConversationsByUpdatedAt = (
   items: ChatConversationRecord[],
-  streamingIds?: Set<string>
+  runningConversationIds?: Set<string>
 ): ChatConversationRecord[] => {
-  if (!streamingIds || streamingIds.size === 0) {
+  if (!runningConversationIds || runningConversationIds.size === 0) {
     return [...items].sort(
       (a, b) =>
         parseDbTimestamp(b.updatedAt).getTime() -
@@ -53,11 +60,11 @@ const sortConversationsByUpdatedAt = (
     );
   }
 
-  const streaming: ChatConversationRecord[] = [];
+  const running: ChatConversationRecord[] = [];
   const rest: ChatConversationRecord[] = [];
   for (const item of items) {
-    if (streamingIds.has(item.conversationId)) {
-      streaming.push(item);
+    if (runningConversationIds.has(item.conversationId)) {
+      running.push(item);
     } else {
       rest.push(item);
     }
@@ -71,10 +78,10 @@ const sortConversationsByUpdatedAt = (
       parseDbTimestamp(a.updatedAt).getTime() ||
     b.conversationId.localeCompare(a.conversationId);
 
-  streaming.sort(compareByTime);
+  running.sort(compareByTime);
   rest.sort(compareByTime);
 
-  return [...streaming, ...rest];
+  return [...running, ...rest];
 };
 
 type ChatsSectionProps = {
@@ -100,9 +107,18 @@ export function ChatsSection({
     activeConversationId,
     abortConversation,
     streamingConversationIds,
+    attentionRequiredConversationIds,
     completedConversationIds,
     clearInputDraft,
   } = useChatConversationContext();
+  const runningConversationIds = useMemo(
+    () =>
+      new Set([
+        ...streamingConversationIds,
+        ...attentionRequiredConversationIds,
+      ]),
+    [streamingConversationIds, attentionRequiredConversationIds]
+  );
   const [conversations, setConversations] = useState<ChatConversationRecord[]>(
     []
   );
@@ -230,7 +246,7 @@ export function ChatsSection({
         const updated = prev.map((item) =>
           item.conversationId === conv.conversationId ? conv : item
         );
-        return sortConversationsByUpdatedAt(updated, streamingConversationIds);
+        return sortConversationsByUpdatedAt(updated, runningConversationIds);
       }
 
       // If the real conversation arrives, replace the pending placeholder.
@@ -241,32 +257,32 @@ export function ChatsSection({
         const replaced = prev.map((item, index) =>
           index === pendingIndex ? conv : item
         );
-        return sortConversationsByUpdatedAt(replaced, streamingConversationIds);
+        return sortConversationsByUpdatedAt(replaced, runningConversationIds);
       }
 
       isNew = true;
       // New conversation: prepend and re-sort by updatedAt
       return sortConversationsByUpdatedAt(
         [conv, ...prev],
-        streamingConversationIds
+        runningConversationIds
       );
     });
 
     if (isNew) {
       setTotal((prev) => prev + 1);
     }
-  }, [upsertedConversation, directoryId, streamingConversationIds]);
+  }, [upsertedConversation, directoryId, runningConversationIds]);
 
-  // 当流式状态变化时（会话开始/结束），重新排序使运行中会话移到顶部。
-  // streamingConversationIds 只在会话开始/结束时变化，不会在流式过程中频繁更新。
+  // 流式或待处理交互状态变化时，重新排序使相关会话保持在顶部。
+  // runningConversationIds 只在生命周期边界变化，不会随每个流式 token 更新。
   useEffect(() => {
-    if (streamingConversationIds.size === 0) {
+    if (runningConversationIds.size === 0) {
       return;
     }
     setConversations((prev) =>
-      sortConversationsByUpdatedAt(prev, streamingConversationIds)
+      sortConversationsByUpdatedAt(prev, runningConversationIds)
     );
-  }, [streamingConversationIds]);
+  }, [runningConversationIds]);
 
   const loadMore = useCallback(async (): Promise<void> => {
     if (isLoadingMore || !hasMore || !directoryId || isLoading) {
@@ -555,7 +571,7 @@ export function ChatsSection({
   const timeGroups = groupConversationsByTime(
     conversations,
     new Date(),
-    streamingConversationIds
+    runningConversationIds
   );
 
   useEffect(() => {
@@ -885,6 +901,9 @@ export function ChatsSection({
                                 conversation.conversationId ===
                                 activeConversationId
                               }
+                              isAttentionRequired={attentionRequiredConversationIds.has(
+                                conversation.conversationId
+                              )}
                               isStreaming={streamingConversationIds.has(
                                 conversation.conversationId
                               )}

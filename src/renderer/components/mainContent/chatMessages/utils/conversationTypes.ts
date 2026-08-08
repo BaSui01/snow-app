@@ -324,6 +324,7 @@ export type PendingToolAuthorization = {
 };
 
 export type PendingUserQuestion = {
+  sessionKey: string;
   interactionId: string;
   resolve: (resultJson: string) => void;
   reject: (error: Error) => void;
@@ -384,6 +385,8 @@ export type ConversationContextValue = {
   fileChangeStatsHydratedRef: RefValue<Set<string>>;
   streamingConversationIds: Set<string>;
   completedConversationIds: Set<string>;
+  pendingUserQuestionConversationIds: Set<string>;
+  attentionRequiredConversationIds: Set<string>;
   isLoadingInitialHistory: boolean;
   draftToRestore: string | null;
   rollbackPreview: RollbackPreview | null;
@@ -486,6 +489,7 @@ export type ConversationContextValue = {
   recordFileChange: (conversationId: string, record: FileChangeRecord) => void;
   setStreamingConversationIds: Dispatch<SetStateAction<Set<string>>>;
   setCompletedConversationIds: Dispatch<SetStateAction<Set<string>>>;
+  setPendingUserQuestionConversationIds: Dispatch<SetStateAction<Set<string>>>;
   setIsLoadingInitialHistory: Dispatch<SetStateAction<boolean>>;
   setDraftToRestore: Dispatch<SetStateAction<string | null>>;
   setRollbackPreview: Dispatch<SetStateAction<RollbackPreview | null>>;
@@ -571,6 +575,7 @@ export type UseChatConversationResult = {
   forkMessageCount: number | undefined;
   streamingConversationIds: Set<string>;
   completedConversationIds: Set<string>;
+  attentionRequiredConversationIds: Set<string>;
   isLoadingOlderMessages: boolean;
   hasMoreMessages: boolean;
   isInitialHistoryLoaded: boolean;

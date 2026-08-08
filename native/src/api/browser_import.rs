@@ -106,48 +106,20 @@ fn chromium_roots() -> Vec<(String, String, PathBuf)> {
     let mut roots: Vec<(String, String, PathBuf)> = Vec::new();
     if cfg!(target_os = "macos") {
         let base = home.join("Library/Application Support");
-        roots.push((
-            "chrome".into(),
-            "Google Chrome".into(),
-            base.join("Google/Chrome"),
-        ));
-        roots.push((
-            "edge".into(),
-            "Microsoft Edge".into(),
-            base.join("Microsoft Edge"),
-        ));
+        roots.push(("chrome".into(), "Google Chrome".into(), base.join("Google/Chrome")));
+        roots.push(("edge".into(), "Microsoft Edge".into(), base.join("Microsoft Edge")));
         roots.push(("chromium".into(), "Chromium".into(), base.join("Chromium")));
     } else if cfg!(target_os = "windows") {
         if let Some(local) = std::env::var_os("LOCALAPPDATA") {
             let base = PathBuf::from(local);
-            roots.push((
-                "chrome".into(),
-                "Google Chrome".into(),
-                base.join("Google/Chrome/User Data"),
-            ));
-            roots.push((
-                "edge".into(),
-                "Microsoft Edge".into(),
-                base.join("Microsoft/Edge/User Data"),
-            ));
-            roots.push((
-                "chromium".into(),
-                "Chromium".into(),
-                base.join("Chromium/User Data"),
-            ));
+            roots.push(("chrome".into(), "Google Chrome".into(), base.join("Google/Chrome/User Data")));
+            roots.push(("edge".into(), "Microsoft Edge".into(), base.join("Microsoft/Edge/User Data")));
+            roots.push(("chromium".into(), "Chromium".into(), base.join("Chromium/User Data")));
         }
     } else {
         let base = home.join(".config");
-        roots.push((
-            "chrome".into(),
-            "Google Chrome".into(),
-            base.join("google-chrome"),
-        ));
-        roots.push((
-            "edge".into(),
-            "Microsoft Edge".into(),
-            base.join("microsoft-edge"),
-        ));
+        roots.push(("chrome".into(), "Google Chrome".into(), base.join("google-chrome")));
+        roots.push(("edge".into(), "Microsoft Edge".into(), base.join("microsoft-edge")));
         roots.push(("chromium".into(), "Chromium".into(), base.join("chromium")));
     }
     roots
@@ -216,8 +188,8 @@ fn firefox_profiles() -> Vec<(String, PathBuf)> {
 ///
 /// 生成只读连接尝试序列（常规 → immutable 回退），供读取函数双尝试。
 fn readonly_attempts(path: &Path) -> Vec<(Connection, bool)> {
-    let flags =
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX;
+    let flags = rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+        | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX;
     let mut attempts = Vec::new();
     if let Ok(conn) = Connection::open_with_flags(path, flags) {
         let _ = conn.busy_timeout(std::time::Duration::from_millis(1500));
@@ -228,7 +200,8 @@ fn readonly_attempts(path: &Path) -> Vec<(Connection, bool)> {
     let display = path.display().to_string();
     let escaped = display.replace('\\', "\\\\");
     let uri = format!("file:{escaped}?mode=ro&immutable=1");
-    if let Ok(conn) = Connection::open_with_flags(uri, flags | rusqlite::OpenFlags::SQLITE_OPEN_URI)
+    if let Ok(conn) =
+        Connection::open_with_flags(uri, flags | rusqlite::OpenFlags::SQLITE_OPEN_URI)
     {
         attempts.push((conn, true));
     }
@@ -285,7 +258,7 @@ fn firefox_account_name(profile_dir: &Path) -> String {
         let mut segments = line.split('"');
         segments.next(); // user_pref(
         segments.next(); // services.sync.username
-        segments.next(); // ",
+        segments.next(); // ", 
         if let Some(value) = segments.next() {
             if !value.trim().is_empty() {
                 return value.trim().to_string();
@@ -308,9 +281,7 @@ fn aes128_cbc_decrypt(key: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
     let iv = [0x20u8; 16];
     let cipher = cbc::Decryptor::<aes::Aes128>::new_from_slices(key, &iv).ok()?;
     let mut buf = payload.to_vec();
-    let plain = cipher
-        .decrypt_padded_mut::<cipher::block_padding::Pkcs7>(&mut buf)
-        .ok()?;
+    let plain = cipher.decrypt_padded_mut::<cipher::block_padding::Pkcs7>(&mut buf).ok()?;
     Some(plain.to_vec())
 }
 
@@ -328,9 +299,7 @@ fn aes256_gcm_decrypt(key: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
 fn des3_cbc_decrypt(key: &[u8], iv: &[u8], payload: &[u8]) -> Option<Vec<u8>> {
     let cipher = cbc::Decryptor::<des::TdesEde3>::new_from_slices(key, iv).ok()?;
     let mut buf = payload.to_vec();
-    let plain = cipher
-        .decrypt_padded_mut::<cipher::block_padding::Pkcs7>(&mut buf)
-        .ok()?;
+    let plain = cipher.decrypt_padded_mut::<cipher::block_padding::Pkcs7>(&mut buf).ok()?;
     Some(plain.to_vec())
 }
 
@@ -360,12 +329,10 @@ fn chrome_master_key_macos(service: &str) -> Option<Vec<u8>> {
 /// DPAPI unprotect (Windows only).
 #[cfg(windows)]
 fn windows_dpapi_decrypt(data: &[u8]) -> Option<Vec<u8>> {
-    // windows-sys >= 0.59: DATA_BLOB 已更名为 CRYPT_INTEGER_BLOB（字段相同），
-    // LocalFree 移至 Win32::Foundation。
-    use windows_sys::Win32::Foundation::LocalFree;
     use windows_sys::Win32::Security::Cryptography::{
         CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
     };
+    use windows_sys::Win32::Foundation::LocalFree;
 
     let mut in_blob = CRYPT_INTEGER_BLOB {
         cbData: data.len() as u32,
@@ -391,8 +358,7 @@ fn windows_dpapi_decrypt(data: &[u8]) -> Option<Vec<u8>> {
         return None;
     }
     // SAFETY: out_blob is owned by DPAPI and must be released with LocalFree.
-    let out =
-        unsafe { std::slice::from_raw_parts(out_blob.pbData, out_blob.cbData as usize) }.to_vec();
+    let out = unsafe { std::slice::from_raw_parts(out_blob.pbData, out_blob.cbData as usize) }.to_vec();
     unsafe {
         LocalFree(out_blob.pbData as *mut _);
     }
@@ -444,9 +410,7 @@ fn aes_gcm_decrypt_parts(key: &[u8], iv: &[u8], ciphertext: &[u8], tag: &[u8]) -
     payload.extend_from_slice(ciphertext);
     payload.extend_from_slice(tag);
     let cipher = aes_gcm::Aes256Gcm::new(aes_gcm::Key::<aes_gcm::Aes256Gcm>::from_slice(key));
-    cipher
-        .decrypt(aes_gcm::Nonce::from_slice(iv), payload.as_slice())
-        .ok()
+    cipher.decrypt(aes_gcm::Nonce::from_slice(iv), payload.as_slice()).ok()
 }
 
 /// ChaCha20-Poly1305 显式三段解密（Chrome 133-136 elevation_service 附加层）。
@@ -479,8 +443,8 @@ fn windows_dpapi_decrypt_system(data: &[u8]) -> Option<Vec<u8>> {
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE, LUID};
     use windows_sys::Win32::Security::{
         AdjustTokenPrivileges, DuplicateToken, ImpersonateLoggedOnUser, LookupPrivilegeValueW,
-        RevertToSelf, SecurityImpersonation, LUID_AND_ATTRIBUTES, SE_PRIVILEGE_ENABLED,
-        TOKEN_ADJUST_PRIVILEGES, TOKEN_DUPLICATE, TOKEN_PRIVILEGES, TOKEN_QUERY,
+        RevertToSelf, SecurityImpersonation, SE_PRIVILEGE_ENABLED, TOKEN_ADJUST_PRIVILEGES,
+        TOKEN_DUPLICATE, TOKEN_PRIVILEGES, TOKEN_QUERY, LUID_AND_ATTRIBUTES,
     };
     use windows_sys::Win32::System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
@@ -517,14 +481,7 @@ fn windows_dpapi_decrypt_system(data: &[u8]) -> Option<Vec<u8>> {
                 Attributes: SE_PRIVILEGE_ENABLED,
             }],
         };
-        AdjustTokenPrivileges(
-            token,
-            0,
-            &mut tp,
-            0,
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-        );
+        AdjustTokenPrivileges(token, 0, &mut tp, 0, std::ptr::null_mut(), std::ptr::null_mut());
         CloseHandle(token);
 
         // 2. 定位 SYSTEM 进程：优先 lsass.exe，回退 PID 4（System）。
@@ -735,12 +692,8 @@ fn extract_app_bound_key(blob: &[u8]) -> Option<Vec<u8>> {
 fn app_bound_key_windows(root: &Path) -> Option<Vec<u8>> {
     let text = std::fs::read_to_string(root.join("Local State")).ok()?;
     let json: Value = serde_json::from_str(&text).ok()?;
-    let encrypted = json
-        .pointer("/os_crypt/app_bound_encrypted_key")?
-        .as_str()?;
-    let raw = base64::engine::general_purpose::STANDARD
-        .decode(encrypted)
-        .ok()?;
+    let encrypted = json.pointer("/os_crypt/app_bound_encrypted_key")?.as_str()?;
+    let raw = base64::engine::general_purpose::STANDARD.decode(encrypted).ok()?;
     let blob = raw.strip_prefix(b"APPB")?;
     // 外层 SYSTEM DPAPI → 内层用户 DPAPI。
     let system = windows_dpapi_decrypt_system(blob)?;
@@ -755,9 +708,7 @@ fn chrome_legacy_key_windows(root: &Path) -> Option<Vec<u8>> {
     let text = std::fs::read_to_string(root.join("Local State")).ok()?;
     let json: Value = serde_json::from_str(&text).ok()?;
     let encrypted = json.pointer("/os_crypt/encrypted_key")?.as_str()?;
-    let raw = base64::engine::general_purpose::STANDARD
-        .decode(encrypted)
-        .ok()?;
+    let raw = base64::engine::general_purpose::STANDARD.decode(encrypted).ok()?;
     let payload = raw.strip_prefix(b"DPAPI")?;
     windows_dpapi_decrypt(payload)
 }
@@ -812,7 +763,9 @@ fn chrome_keys(root: &Path, source_id: &str) -> (ChromeKeys, String) {
         // 旧版 encrypted_key（用户 DPAPI，解 v10 数据）。
         let legacy = chrome_legacy_key_windows(root);
         if legacy.is_none() {
-            notes.push("无法解密 Windows 凭据（DPAPI 调用失败或 Local State 缺失）".to_string());
+            notes.push(
+                "无法解密 Windows 凭据（DPAPI 调用失败或 Local State 缺失）".to_string(),
+            );
         }
         // App-Bound 密钥（解 v20 数据，Chrome/Edge 127+）。
         let app_bound = if has_app_bound_encryption(root) {
@@ -887,7 +840,9 @@ fn decode_chromium_value_plaintext(plain: &[u8], strip_hash_prefix: Option<bool>
     let strip = match strip_hash_prefix {
         Some(value) => value,
         None => {
-            plain.len() >= 32 && has_ascii_control(&plain[..32]) && !has_ascii_control(&plain[32..])
+            plain.len() >= 32
+                && has_ascii_control(&plain[..32])
+                && !has_ascii_control(&plain[32..])
         }
     };
     let bytes = if strip && plain.len() >= 32 {
@@ -943,9 +898,7 @@ fn decrypt_chromium_cookie_value(
 fn chromium_password_count(profile_dir: &Path) -> (i32, String) {
     let db = profile_dir.join("Login Data");
     let (count, immutable) = query_with_retry(&db, |conn| {
-        conn.query_row("SELECT COUNT(*) FROM logins", [], |row| {
-            row.get::<_, i64>(0)
-        })
+        conn.query_row("SELECT COUNT(*) FROM logins", [], |row| row.get::<_, i64>(0))
     });
     (
         count.unwrap_or(0) as i32,
@@ -1001,9 +954,7 @@ fn chromium_cookie_count(profile_dir: &Path) -> (i32, String) {
         return (0, String::new());
     };
     let (count, immutable) = query_with_retry(&db, |conn| {
-        conn.query_row("SELECT COUNT(*) FROM cookies", [], |row| {
-            row.get::<_, i64>(0)
-        })
+        conn.query_row("SELECT COUNT(*) FROM cookies", [], |row| row.get::<_, i64>(0))
     });
     (
         count.unwrap_or(0) as i32,
@@ -1055,7 +1006,10 @@ fn read_chromium_passwords_with(
     source_id: &str,
     profile_dir: &Path,
 ) -> Result<Vec<ImportedPassword>> {
-    let (keys, note) = chrome_keys(profile_dir.parent().unwrap_or(profile_dir), source_id);
+    let (keys, note) = chrome_keys(
+        profile_dir.parent().unwrap_or(profile_dir),
+        source_id,
+    );
     if keys.is_empty() {
         return Err(Error::from_reason(note));
     }
@@ -1134,7 +1088,10 @@ fn read_chromium_cookies_with(
 ) -> Result<Vec<ImportedCookie>> {
     // source_id 决定 macOS Keychain 服务名（Chrome 与 Edge 各自独立），
     // 传错会导致 Edge 的 Cookie 解密失败、值全部为空。
-    let (keys, _note) = chrome_keys(profile_dir.parent().unwrap_or(profile_dir), source_id);
+    let (keys, _note) = chrome_keys(
+        profile_dir.parent().unwrap_or(profile_dir),
+        source_id,
+    );
 
     // Chrome 133+ 的 Cookie 库 schema v24+ 会在解密明文前附加 32 字节
     // SHA-256 哈希前缀，必须剥离，否则值里全是控制字符，目标浏览器会以
@@ -1142,9 +1099,7 @@ fn read_chromium_cookies_with(
     // 浏览器运行中 meta 查询可能因 SQLITE_BUSY 失败，此时保留 None，
     // 由解码端启发式兜底判定，而不是错误地当作旧库不剥离。
     let schema_version: Option<i64> = conn
-        .query_row("SELECT value FROM meta WHERE key = 'version'", [], |row| {
-            row.get(0)
-        })
+        .query_row("SELECT value FROM meta WHERE key = 'version'", [], |row| row.get(0))
         .ok();
     let strip_hash_prefix = schema_version.map(|version| version >= 24);
 
@@ -1178,7 +1133,9 @@ fn read_chromium_cookies_with(
                     domain: row.get::<_, String>(0)?,
                     name: row.get::<_, String>(1)?,
                     value: row.get::<_, String>(2)?,
-                    encrypted: row.get::<_, Option<Vec<u8>>>(3)?.unwrap_or_default(),
+                    encrypted: row
+                        .get::<_, Option<Vec<u8>>>(3)?
+                        .unwrap_or_default(),
                     path: row.get::<_, String>(4)?,
                     expires_utc: row.get::<_, i64>(5)?,
                     is_secure: row.get::<_, i64>(6)?,
@@ -1258,11 +1215,7 @@ fn read_chromium_cookies_with(
         };
         cookies.push(ImportedCookie {
             domain,
-            path: if path.is_empty() {
-                "/".to_string()
-            } else {
-                path
-            },
+            path: if path.is_empty() { "/".to_string() } else { path },
             name,
             value,
             expires,
@@ -1292,9 +1245,7 @@ fn firefox_has_master_password(profile_dir: &Path) -> bool {
 fn firefox_3des_key(profile_dir: &Path) -> Result<Vec<u8>> {
     let key_db = profile_dir.join("key4.db");
     if !key_db.exists() {
-        return Err(Error::from_reason(
-            "未找到 key4.db，Firefox 可能未初始化".to_string(),
-        ));
+        return Err(Error::from_reason("未找到 key4.db，Firefox 可能未初始化".to_string()));
     }
     // 常规 → immutable 双尝试。
     let mut last_error: Option<Error> = None;
@@ -1319,9 +1270,7 @@ fn firefox_3des_key_with(conn: &Connection, profile_dir: &Path) -> Result<Vec<u8
         ));
     }
     let global_salt: Vec<u8> = conn
-        .query_row("SELECT item1 FROM metaData WHERE id = 1", [], |row| {
-            row.get(0)
-        })
+        .query_row("SELECT item1 FROM metaData WHERE id = 1", [], |row| row.get(0))
         .map_err(|error| Error::from_reason(format!("读取 key4.db 失败: {error}")))?;
     let a11: Vec<u8> = conn
         .query_row(
@@ -1470,11 +1419,7 @@ fn read_firefox_cookies_with(conn: &Connection) -> Result<Vec<ImportedCookie>> {
         };
         cookies.push(ImportedCookie {
             domain: host,
-            path: if path.is_empty() {
-                "/".to_string()
-            } else {
-                path
-            },
+            path: if path.is_empty() { "/".to_string() } else { path },
             name,
             value,
             expires: (expiry > 0).then_some(expiry),
@@ -1666,7 +1611,12 @@ pub async fn browser_import_passwords(
         }
     })
     .await
-    .map_err(|error| Error::new(Status::GenericFailure, format!("密码解析任务失败: {error}")))?
+    .map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("密码解析任务失败: {error}"),
+        )
+    })?
 }
 
 #[napi]

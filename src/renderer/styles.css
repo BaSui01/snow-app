@@ -18674,7 +18674,7 @@ input {
 }
 
 .toolbar-btn.model {
-  max-width: 280px;
+  max-width: 340px;
 }
 
 .model-trigger-thinking {
@@ -18692,6 +18692,22 @@ input {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 72px;
+}
+
+.model-trigger-fast {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  padding-left: 6px;
+  border-left: 1px solid var(--border-subtle);
+  color: var(--text-link, #3b82f6);
+  font-weight: 600;
+}
+
+.model-trigger-fast svg {
+  flex-shrink: 0;
+  fill: currentColor;
 }
 
 .toolbar-btn.model.model-error {
@@ -18880,6 +18896,14 @@ input {
 }
 
 .model-dropdown-item.active .thinking-option-icon {
+  color: var(--text-link, #3b82f6);
+}
+
+.model-fast-mode-toggle.active {
+  color: var(--text-link, #3b82f6);
+}
+
+.model-fast-mode-toggle.active .thinking-option-icon {
   color: var(--text-link, #3b82f6);
 }
 

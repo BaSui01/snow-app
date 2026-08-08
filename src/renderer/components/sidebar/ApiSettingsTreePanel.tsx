@@ -18,6 +18,8 @@ import {
 } from "./apiSettings/apiSettingsConstants";
 import {
   emptyApiConfigForm,
+  extractResponsesFastModeFromConfigJson,
+  extractResponsesVerbosityFromConfigJson,
   extractThinkingValueFromConfigJson,
   toApiConfigPayload,
 } from "./apiSettings/apiSettingsUtils";
@@ -249,6 +251,13 @@ export function ApiSettingsTreePanel({
         config.configJson,
         config.requestMethod || DEFAULT_REQUEST_METHOD
       ),
+      responsesVerbosity: extractResponsesVerbosityFromConfigJson(
+        config.configJson
+      ),
+      responsesFastMode: extractResponsesFastModeFromConfigJson(
+        config.configJson
+      ),
+      configJson: config.configJson,
     });
   };
 

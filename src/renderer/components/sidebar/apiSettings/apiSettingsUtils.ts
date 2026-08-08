@@ -23,6 +23,34 @@ const normalizeRequestMethod = (value: string): RequestMethod => {
   return "chat";
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const parseConfigJson = (configJson: string): Record<string, unknown> => {
+  try {
+    const parsed: unknown = JSON.parse(configJson);
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const readSnowcfg = (configJson: string): Record<string, unknown> => {
+  const parsed = parseConfigJson(configJson);
+  return isRecord(parsed.snowcfg) ? parsed.snowcfg : {};
+};
+
+export const extractResponsesVerbosityFromConfigJson = (
+  configJson: string
+): string => {
+  const value = readSnowcfg(configJson).responsesVerbosity;
+  return value === "low" || value === "medium" || value === "high" ? value : "";
+};
+
+export const extractResponsesFastModeFromConfigJson = (
+  configJson: string
+): boolean => readSnowcfg(configJson).responsesFastMode === true;
+
 /**
  * Validates a thinking value against the available options for the given
  * request method. Returns the value itself when it is a known option for
@@ -50,12 +78,19 @@ export const resolveThinkingValue = (
 const buildConfigJsonWithThinking = (
   thinkingValue: string,
   requestMethod: string,
-  snowcfgBase: Record<string, unknown>
+  configJson: string,
+  snowcfgOverrides: Record<string, unknown>
 ): string => {
   const method = normalizeRequestMethod(requestMethod);
   const isThinkingEnabled = thinkingValue !== "none";
-
-  const snowcfg: Record<string, unknown> = { ...snowcfgBase };
+  const parsedConfig = parseConfigJson(configJson);
+  const existingSnowcfg = isRecord(parsedConfig.snowcfg)
+    ? parsedConfig.snowcfg
+    : {};
+  const snowcfg: Record<string, unknown> = {
+    ...existingSnowcfg,
+    ...snowcfgOverrides,
+  };
   snowcfg.requestMethod = requestMethod || method;
 
   if (method === "anthropic") {
@@ -81,7 +116,10 @@ const buildConfigJsonWithThinking = (
     };
   }
 
-  return JSON.stringify({ snowcfg });
+  return JSON.stringify({
+    ...parsedConfig,
+    snowcfg,
+  });
 };
 
 /**
@@ -167,6 +205,9 @@ export const emptyApiConfigForm = (
   systemPromptIdsJson: "",
   customHeaderSchemeId: "",
   thinkingValue: DEFAULT_THINKING_VALUE,
+  responsesVerbosity: "",
+  responsesFastMode: false,
+  configJson: "{}",
 });
 
 export const parseOptionalInteger = (value: string): number | null => {
@@ -196,6 +237,7 @@ export function toApiConfigPayload(
   const configJson = buildConfigJsonWithThinking(
     data.thinkingValue || DEFAULT_THINKING_VALUE,
     requestMethod,
+    data.configJson,
     {
       baseUrl,
       baseUrlMode: data.baseUrlMode,
@@ -211,6 +253,8 @@ export function toApiConfigPayload(
       enableAutoCompress: data.enableAutoCompress,
       autoCompressThresholdPercent,
       autoCompressThreshold: autoCompressThresholdTokens ?? undefined,
+      responsesVerbosity: data.responsesVerbosity || undefined,
+      responsesFastMode: data.responsesFastMode,
     }
   );
 

@@ -17,9 +17,11 @@ import {
   THINKING_OPTIONS_BY_METHOD,
 } from "./constants";
 import {
+  getResponsesFastModeFromConfig,
   getThinkingValueFromConfig,
   normalizeRequestMethod,
   toConfigUpdatePayload,
+  toResponsesFastModeUpdatePayload,
 } from "./configThinking";
 import type {
   ChatInputActions,
@@ -97,6 +99,8 @@ export const useChatInputController = ({
   const [thinkingValue, setThinkingValue] = useState(DEFAULT_THINKING_VALUE);
   const [isSavingThinking, setIsSavingThinking] = useState(false);
   const [thinkingError, setThinkingError] = useState<string | null>(null);
+  const [isSavingFastMode, setIsSavingFastMode] = useState(false);
+  const [fastModeError, setFastModeError] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const labels = useMemo(
@@ -142,6 +146,7 @@ export const useChatInputController = ({
     const loadRuntimeApiConfig = async () => {
       setIsLoadingApiConfig(true);
       setThinkingError(null);
+      setFastModeError(null);
       setModelError(null);
       setModels([]);
 
@@ -243,6 +248,7 @@ export const useChatInputController = ({
         setThinkingValue(DEFAULT_THINKING_VALUE);
         setModelError(message);
         setThinkingError(message);
+        setFastModeError(message);
       } finally {
         if (!cancelled) {
           setIsLoadingApiConfig(false);
@@ -586,6 +592,7 @@ export const useChatInputController = ({
       // Reset the model picker to the new provider's default.
       setModels([]);
       setModelError(null);
+      setFastModeError(null);
       setSelectedModel(nextConfig.advancedModel || "");
       setThinkingValue(getThinkingValueFromConfig(nextConfig));
 
@@ -627,6 +634,10 @@ export const useChatInputController = ({
   }, [handleOpenApiProfileMenu]);
 
   const requestMethod = normalizeRequestMethod(runtimeApiConfig?.requestMethod);
+  const responsesFastModeEnabled =
+    requestMethod === "responses" &&
+    runtimeApiConfig !== null &&
+    getResponsesFastModeFromConfig(runtimeApiConfig);
   const thinkingOptions = THINKING_OPTIONS_BY_METHOD[requestMethod];
   const activeThinkingOption = useMemo(() => {
     const matchingOption = thinkingOptions.find(
@@ -678,6 +689,61 @@ export const useChatInputController = ({
     [runtimeApiConfig, t]
   );
 
+  const handleToggleResponsesFastMode = useCallback(async (): Promise<void> => {
+    if (
+      !runtimeApiConfig ||
+      requestMethod !== "responses" ||
+      isStreaming ||
+      isSubAgentConversation ||
+      isSavingFastMode
+    ) {
+      return;
+    }
+
+    const previousConfig = runtimeApiConfig;
+    const nextEnabled = !getResponsesFastModeFromConfig(previousConfig);
+    const optimisticConfig = toResponsesFastModeUpdatePayload(
+      previousConfig,
+      nextEnabled
+    );
+
+    setRuntimeApiConfig(optimisticConfig);
+    setIsSavingFastMode(true);
+    setFastModeError(null);
+
+    try {
+      const updatedConfigs = await window.snow.upsertApiConfig(optimisticConfig);
+      const nextRuntimeConfig =
+        updatedConfigs.find(
+          (config) => config.profileName === previousConfig.profileName
+        ) ?? optimisticConfig;
+      setApiConfigs(updatedConfigs);
+      setRuntimeApiConfig((currentConfig) =>
+        currentConfig?.profileName === previousConfig.profileName
+          ? nextRuntimeConfig
+          : currentConfig
+      );
+    } catch (error) {
+      setRuntimeApiConfig((currentConfig) =>
+        currentConfig?.profileName === previousConfig.profileName
+          ? previousConfig
+          : currentConfig
+      );
+      setFastModeError(
+        error instanceof Error ? error.message : t("chat.saveFastModeError")
+      );
+    } finally {
+      setIsSavingFastMode(false);
+    }
+  }, [
+    isSavingFastMode,
+    isStreaming,
+    isSubAgentConversation,
+    requestMethod,
+    runtimeApiConfig,
+    t,
+  ]);
+
   useLayoutEffect(() => {
     adjustHeight();
   }, [adjustHeight]);
@@ -709,6 +775,9 @@ export const useChatInputController = ({
     isLoadingApiConfig,
     isSavingThinking,
     thinkingError,
+    responsesFastModeEnabled,
+    isSavingFastMode,
+    fastModeError,
     labels,
     isStreaming,
     isAborting,
@@ -728,6 +797,7 @@ export const useChatInputController = ({
     handleOpenApiProfileMenu,
     handleSelectApiProfile,
     handleSelectThinking,
+    handleToggleResponsesFastMode,
     restoreContent,
   };
 };

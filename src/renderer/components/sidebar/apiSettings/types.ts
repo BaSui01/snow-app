@@ -29,6 +29,9 @@ export type ApiConfigFormData = {
   systemPromptIdsJson: string;
   customHeaderSchemeId: string;
   thinkingValue: string;
+  responsesVerbosity: string;
+  responsesFastMode: boolean;
+  configJson: string;
 };
 
 export type ApiConfigItem = ApiConfigRecord;

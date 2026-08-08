@@ -16,6 +16,7 @@ import {
   Search,
   Square,
   X,
+  Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -101,6 +102,9 @@ export const ChatInputView = ({
   isLoadingApiConfig,
   isSavingThinking,
   thinkingError,
+  responsesFastModeEnabled,
+  isSavingFastMode,
+  fastModeError,
   labels,
   isStreaming,
   isAborting,
@@ -141,6 +145,7 @@ export const ChatInputView = ({
   handleToggleModelMenu,
   handleSelectApiProfile,
   handleSelectThinking,
+  handleToggleResponsesFastMode,
   restoreContent,
 }: ChatInputViewProps): React.JSX.Element => {
   const { t } = useI18n();
@@ -2074,6 +2079,20 @@ export const ChatInputView = ({
                       {thinkingLabel}
                     </span>
                   </span>
+                  {requestMethod === "responses" &&
+                    responsesFastModeEnabled && (
+                      <span
+                        className="model-trigger-fast"
+                        title={fastModeError ?? t("chat.fastModeEnabled")}
+                      >
+                        {isSavingFastMode ? (
+                          <Loader2 size={12} className="spin" />
+                        ) : (
+                          <Zap size={12} />
+                        )}
+                        <span>Fast</span>
+                      </span>
+                    )}
                   <ChevronDown size={12} />
                 </button>
                 {isModelMenuOpen && (
@@ -2122,6 +2141,45 @@ export const ChatInputView = ({
                             <ChevronRight size={12} />
                           </span>
                         </button>
+                        {requestMethod === "responses" && (
+                          <button
+                            className={`model-dropdown-item model-fast-mode-toggle ${
+                              responsesFastModeEnabled ? "active" : ""
+                            }`}
+                            role="switch"
+                            aria-checked={responsesFastModeEnabled}
+                            disabled={
+                              !runtimeApiConfig ||
+                              isLoadingApiConfig ||
+                              isSavingFastMode ||
+                              isStreaming ||
+                              isSubAgentConversation
+                            }
+                            onClick={() =>
+                              void handleToggleResponsesFastMode()
+                            }
+                            type="button"
+                            title={fastModeError ?? t("chat.fastModeHint")}
+                          >
+                            <span className="model-dropdown-item-name with-icon">
+                              <Zap size={14} className="thinking-option-icon" />
+                              <span>{t("chat.fastMode")}</span>
+                            </span>
+                            <span className="model-menu-value">
+                              {isSavingFastMode ? (
+                                <Loader2 size={12} className="spin" />
+                              ) : (
+                                <span className="model-menu-value-text">
+                                  {t(
+                                    responsesFastModeEnabled
+                                      ? "chat.fastModeOn"
+                                      : "chat.fastModeOff"
+                                  )}
+                                </span>
+                              )}
+                            </span>
+                          </button>
+                        )}
                         {!isSubAgentConversation && apiConfigs.length > 0 && (
                           <button
                             className="model-dropdown-item"

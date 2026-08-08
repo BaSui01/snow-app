@@ -342,6 +342,53 @@ export function ApiSettingsFormFields({
               disabled={disabled}
             />
           </label>
+          {data.requestMethod === "responses" && (
+            <>
+              <label className="api-settings-field">
+                <span>{t("settings.apiResponsesVerbosity")}</span>
+                <CustomSelect
+                  value={data.responsesVerbosity}
+                  options={[
+                    {
+                      value: "",
+                      label: t("settings.apiResponsesVerbosityDefault"),
+                    },
+                    { value: "low", label: "Low" },
+                    { value: "medium", label: "Medium" },
+                    { value: "high", label: "High" },
+                  ]}
+                  onChange={(value) => onChange("responsesVerbosity", value)}
+                  disabled={disabled}
+                />
+                <small className="api-settings-hint-text">
+                  {t("settings.apiResponsesVerbosityHint")}
+                </small>
+              </label>
+              <div className="api-settings-field">
+                <span>{t("settings.apiResponsesFastMode")}</span>
+                <label className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={data.responsesFastMode}
+                    onChange={changeField("responsesFastMode")}
+                    disabled={disabled}
+                    hidden
+                  />
+                  <span className="toggle-slider" />
+                  <span>
+                    {t(
+                      data.responsesFastMode
+                        ? "settings.enabled"
+                        : "settings.disabled"
+                    )}
+                  </span>
+                </label>
+                <small className="api-settings-hint-text">
+                  {t("settings.apiResponsesFastModeHint")}
+                </small>
+              </div>
+            </>
+          )}
         </div>
       </div>
 

@@ -618,6 +618,7 @@ export const useChatConversation = (
     runTtftMs: activeSession?.runTtftMs ?? 0,
     baselineCheckpointId: activeSession?.baselineCheckpointId,
     streamStartedAt: activeSession?.streamStartedAt ?? 0,
+    visionAnalysis: activeSession?.visionAnalysis,
     forkedFromConversationId: activeSession?.forkedFromConversationId,
     forkMessageCount: activeSession?.forkMessageCount,
     streamingConversationIds,

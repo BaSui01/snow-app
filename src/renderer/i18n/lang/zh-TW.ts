@@ -332,6 +332,7 @@ export const zhTW = {
   "chat.fastModeOff": "關閉",
   "chat.saveFastModeError": "儲存 Fast Mode 失敗",
   "chat.thinkingProcess": "思考過程",
+  "chat.visionAnalyzing": "視覺模型正在分析圖片…",
   "chat.expandAll": "展開全部",
   "chat.collapse": "收起",
   "chat.stopping": "正在停止...",

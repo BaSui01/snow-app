@@ -332,6 +332,7 @@ export const zhCN = {
   "chat.fastModeOff": "关闭",
   "chat.saveFastModeError": "保存 Fast Mode 失败",
   "chat.thinkingProcess": "思考过程",
+  "chat.visionAnalyzing": "视觉模型正在分析图片…",
   "chat.expandAll": "展开全部",
   "chat.collapse": "收起",
   "chat.stopping": "正在停止...",

@@ -54,6 +54,8 @@ const normalizeResponseStreamChunk = (
       typeof value.streamTokenCount === "number" ? value.streamTokenCount : 0,
     elapsedMs: typeof value.elapsedMs === "number" ? value.elapsedMs : 0,
     ttftMs: typeof value.ttftMs === "number" ? value.ttftMs : 0,
+    visionStatus:
+      typeof value.visionStatus === "string" ? value.visionStatus : undefined,
   };
 };
 

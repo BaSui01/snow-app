@@ -801,6 +801,8 @@ export type ResponsesApiStreamChunk = {
   streamTokenCount: number;
   elapsedMs: number;
   ttftMs: number;
+  /** External-vision textify progress event (JSON string). See preload types. */
+  visionStatus?: string;
 };
 
 export type McpToolDefinition = {

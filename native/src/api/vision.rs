@@ -4,6 +4,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use napi::bindgen_prelude::*;
+use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 use reqwest::header::{
     HeaderMap, HeaderName, HeaderValue, ACCEPT_ENCODING, AUTHORIZATION, CONTENT_TYPE,
 };
@@ -12,6 +13,7 @@ use tokio::sync::RwLock;
 
 use crate::api::config::{normalize_base_url, resolve_sdk_api_base_url};
 use crate::api::conversation::images::{parse_chat_message_content, ChatImage};
+use crate::api::responses::{ResponsesApiStreamCallback, ResponsesApiStreamChunk};
 use crate::storage::services::chat_conversations::ChatContextMessage;
 use crate::storage::ApiConfigRecord;
 
@@ -60,12 +62,17 @@ pub fn should_textify_images(api_config: &ApiConfigRecord) -> bool {
 /// 该函数是异步的，不会阻塞 Node.js 主线程。子代理和主对话共用此入口。
 ///
 /// `custom_headers` 复用主 API 上下文已解析的自定义请求头，避免重复查询数据库。
+///
+/// `on_chunk` 为主对话的流回调（`None` 时静默跳过事件推送）：文本化每张
+/// 图片期间会通过它推送 `vision_status` 进度事件（describing / cached /
+/// done / error），让渲染进程在消息区显示"视觉模型正在分析图片"的中间状态。
 pub async fn textify_images_in_messages(
     messages: &mut [ChatContextMessage],
     database_path: &Path,
     api_config: &ApiConfigRecord,
     custom_headers: &HashMap<String, String>,
     skip_context: bool,
+    on_chunk: Option<&ResponsesApiStreamCallback>,
 ) -> Result<()> {
     if skip_context || !should_textify_images(api_config) {
         return Ok(());
@@ -95,9 +102,14 @@ pub async fn textify_images_in_messages(
                         let parsed = parse_chat_message_content(&result, database_path)?;
                         if !parsed.images.is_empty() {
                             // 工具结果（如截图）不是用户上传的参考图，不附加引用块。
-                            let textified =
-                                textify_parsed_content(&parsed, &client, &vision_config, false)
-                                    .await?;
+                            let textified = textify_parsed_content(
+                                &parsed,
+                                &client,
+                                &vision_config,
+                                false,
+                                on_chunk,
+                            )
+                            .await?;
                             updated.push((name, call_id, textified));
                             changed = true;
                             continue;
@@ -142,12 +154,62 @@ pub async fn textify_images_in_messages(
             &client,
             &vision_config,
             message.role.trim() == "user",
+            on_chunk,
         )
         .await?;
         message.content = textified;
     }
 
     Ok(())
+}
+
+/// 通过主对话流回调推送一条视觉文本化进度事件。
+///
+/// 事件体为 JSON 字符串，`phase` 取值：
+/// - `describing`：即将调用外挂视觉 API 描述第 index/total 张图片；
+/// - `cached`：命中进程内 blake3 缓存，直接复用已有描述；
+/// - `done`：单张图片文本化完成；
+/// - `error`：单张图片文本化失败（随后整个请求将失败）。
+///
+/// 渲染进程据此在消息区显示"视觉模型正在分析图片"的中间状态卡片。
+fn emit_vision_status(
+    on_chunk: Option<&ResponsesApiStreamCallback>,
+    phase: &str,
+    index: usize,
+    total: usize,
+    model: &str,
+    error: Option<&str>,
+) {
+    let Some(on_chunk) = on_chunk else {
+        return;
+    };
+    let mut payload = json!({
+        "phase": phase,
+        "index": index,
+        "total": total,
+    });
+    if !model.is_empty() {
+        payload["model"] = json!(model);
+    }
+    if let Some(error) = error {
+        payload["error"] = json!(error);
+    }
+    on_chunk.call(
+        ResponsesApiStreamChunk {
+            content_delta: String::new(),
+            thinking_delta: String::new(),
+            content: String::new(),
+            thinking: String::new(),
+            retrying: false,
+            retry_attempt: None,
+            retry_error: None,
+            stream_token_count: 0,
+            elapsed_ms: 0,
+            ttft_ms: 0,
+            vision_status: Some(payload.to_string()),
+        },
+        ThreadsafeFunctionCallMode::NonBlocking,
+    );
 }
 
 struct VisionApiConfig {
@@ -208,6 +270,7 @@ async fn textify_parsed_content(
     client: &reqwest::Client,
     vision_config: &VisionApiConfig,
     include_reference_blocks: bool,
+    on_chunk: Option<&ResponsesApiStreamCallback>,
 ) -> Result<String> {
     let mut result = String::with_capacity(parsed.text.len() + parsed.images.len() * 256);
     result.push_str(&parsed.text);
@@ -222,8 +285,40 @@ async fn textify_parsed_content(
         ));
     }
 
+    let total = parsed.images.len();
     for (index, image) in parsed.images.iter().enumerate() {
-        let description = describe_image(client, vision_config, image, &parsed.text).await?;
+        // 命中 blake3 内容缓存时直接复用已有描述（describe_image 内部仍会
+        // 二次确认，此处预查仅为让进度事件准确区分 cached / describing）。
+        let cache_key = blake3::hash(image.data.as_bytes()).to_hex().to_string();
+        let cached = global_cache().read().await.contains_key(&cache_key);
+        emit_vision_status(
+            on_chunk,
+            if cached { "cached" } else { "describing" },
+            index + 1,
+            total,
+            &vision_config.model,
+            None,
+        );
+
+        let description =
+            match describe_image(client, vision_config, image, &parsed.text).await {
+                Ok(description) => description,
+                Err(error) => {
+                    // 失败时先推送 error 事件（渲染进程据此清除状态卡），
+                    // 再向上传播错误 —— 视觉文本化失败会使整个请求失败，
+                    // 与现状行为保持一致。
+                    emit_vision_status(
+                        on_chunk,
+                        "error",
+                        index + 1,
+                        total,
+                        &vision_config.model,
+                        Some(&error.to_string()),
+                    );
+                    return Err(error);
+                }
+            };
+        emit_vision_status(on_chunk, "done", index + 1, total, &vision_config.model, None);
         if !result.is_empty() && !result.ends_with('\n') {
             result.push('\n');
         }

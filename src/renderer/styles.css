@@ -8297,6 +8297,54 @@ input {
 }
 
 
+/* Intermediate status card shown while the backend describes user images
+   with the external vision model (textify pass). Lives at the end of the
+   message list; fixed min-height keeps the scrollbar stable. */
+.chat-vision-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 6px 12px;
+  margin-top: 8px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.chat-vision-status-spinner {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  border: 2px solid var(--border-light);
+  border-top-color: var(--accent, var(--text-secondary));
+  border-radius: 50%;
+  animation: chat-vision-status-spin 0.8s linear infinite;
+}
+
+@keyframes chat-vision-status-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.chat-vision-status-progress {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+
+.chat-vision-status-model {
+  margin-left: auto;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono, monospace);
+}
+
 .chat-message-group {
   display: flex;
   flex-direction: column;

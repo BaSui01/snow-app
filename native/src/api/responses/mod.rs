@@ -152,6 +152,13 @@ pub struct ResponsesApiStreamChunk {
     /// or thinking delta arrives, then frozen at that value for the
     /// remainder of the streaming iteration.
     pub ttft_ms: i64,
+    /// External-vision textify progress event. `None` for regular chunks;
+    /// when set, the payload is a JSON string such as
+    /// `{"phase":"describing","index":1,"total":2,"model":"..."}` pushed by
+    /// `api::vision::textify_images_in_messages` while it describes user
+    /// images with the external vision model. The renderer uses it to show
+    /// an intermediate "analyzing image with vision model" status card.
+    pub vision_status: Option<String>,
 }
 
 /// ThreadsafeFunction variant of the streaming callback.
@@ -288,6 +295,7 @@ async fn create_response_async(
         &api_config,
         &effective_headers,
         skip_context,
+        Some(on_chunk),
     )
     .await?;
 

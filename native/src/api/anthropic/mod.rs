@@ -129,6 +129,7 @@ async fn create_anthropic_response_async(
         &api_config,
         &custom_headers,
         skip_context,
+        Some(on_chunk),
     )
     .await?;
 

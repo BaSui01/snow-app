@@ -176,6 +176,20 @@ export type SubAgentSessionEvent = {
   toolCallInteractionId?: string;
 };
 
+export type VisionAnalysisState = {
+  /** describing = 调用外挂视觉 API 中；cached = 命中 blake3 缓存直接复用；
+   *  done = 全部图片文本化完成；error = 文本化失败（请求将失败）。 */
+  phase: "describing" | "cached" | "done" | "error";
+  /** 当前已处理的图片序号（1 起）。 */
+  index: number;
+  /** 本次消息中需要文本化的图片总数。 */
+  total: number;
+  /** 外挂视觉模型名（配置了才带）。 */
+  model?: string;
+  /** phase === "error" 时的错误信息。 */
+  error?: string;
+};
+
 export type ConversationSessionState = {
   messages: ChatConversationMessage[];
   messageRecords: ChatMessageRecord[];
@@ -215,6 +229,11 @@ export type ConversationSessionState = {
    *  rollback). Independent of the backend's per-iteration streamElapsedMs
    *  (which resets on every new createResponseStream call). */
   streamStartedAt: number;
+  /** External-vision textify progress, driven by `ResponsesApiStreamChunk.
+   *  visionStatus` events. Set while the backend describes user images with
+   *  the external vision model; cleared when the textify pass finishes
+   *  (phase done/error) so the intermediate status card disappears. */
+  visionAnalysis?: VisionAnalysisState;
 };
 
 export type ConversationSessionRef = {
@@ -595,6 +614,9 @@ export type UseChatConversationResult = {
    *  starts. Drives the accumulating elapsed timer in StreamMetrics so it
    *  survives conversation switches between parallel streaming sessions. */
   streamStartedAt: number;
+  /** External-vision textify progress for the active conversation. Present
+   *  while the backend describes user images with the external vision model. */
+  visionAnalysis: VisionAnalysisState | undefined;
   forkedFromConversationId: string | undefined;
   forkMessageCount: number | undefined;
   streamingConversationIds: Set<string>;

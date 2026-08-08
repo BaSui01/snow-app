@@ -146,6 +146,7 @@ pub(super) async fn collect_chat_completions_stream(
                                 stream_token_count: stream_token_count as i64,
                                 elapsed_ms: stream_start.elapsed().as_millis() as i64,
                                 ttft_ms,
+                                vision_status: None,
                             },
                             ThreadsafeFunctionCallMode::NonBlocking,
                         );
@@ -178,6 +179,7 @@ pub(super) async fn collect_chat_completions_stream(
                             stream_token_count: stream_token_count as i64,
                             elapsed_ms: stream_start.elapsed().as_millis() as i64,
                             ttft_ms,
+                            vision_status: None,
                         },
                         ThreadsafeFunctionCallMode::NonBlocking,
                     );
@@ -239,6 +241,7 @@ pub(super) async fn collect_chat_completions_stream(
                             stream_token_count: stream_token_count as i64,
                             elapsed_ms: stream_start.elapsed().as_millis() as i64,
                             ttft_ms,
+                            vision_status: None,
                         },
                         ThreadsafeFunctionCallMode::NonBlocking,
                     );
@@ -384,6 +387,7 @@ pub(super) async fn collect_chat_completions_stream(
                     stream_token_count: stream_token_count as i64,
                     elapsed_ms: stream_start.elapsed().as_millis() as i64,
                     ttft_ms,
+                    vision_status: None,
                 },
                 ThreadsafeFunctionCallMode::NonBlocking,
             );
@@ -442,6 +446,7 @@ pub(super) async fn collect_chat_completions_stream(
                     stream_token_count: stream_token_count as i64,
                     elapsed_ms: stream_start.elapsed().as_millis() as i64,
                     ttft_ms,
+                    vision_status: None,
                 },
                 ThreadsafeFunctionCallMode::NonBlocking,
             );

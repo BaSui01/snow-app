@@ -347,6 +347,7 @@ export const en = {
   "chat.fastModeOff": "Off",
   "chat.saveFastModeError": "Failed to save Fast Mode",
   "chat.thinkingProcess": "Thinking process",
+  "chat.visionAnalyzing": "Analyzing images with vision model…",
   "chat.expandAll": "Expand all",
   "chat.collapse": "Collapse",
   "chat.stopping": "Stopping...",

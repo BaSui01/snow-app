@@ -11,6 +11,7 @@ import {
   formatMcpToolResultForModel,
   formatToolResultsContent,
   getErrorMessage,
+  isResponseErrorStatus,
   parseToolCalls,
   updateFirstMatchingToolCall,
 } from "../utils/conversationHelpers";
@@ -282,6 +283,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         }
 
         const subResponse = await subStreamPromise;
+        const subResponseFailed = isResponseErrorStatus(subResponse.status);
 
         const subRef = ctx.sessionsRefData.current.get(subConvId);
         if (subRef) {
@@ -306,7 +308,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
           return "Sub-agent interrupted by user";
         }
 
-        if (subResponse.tokenUsage && subResponse.status !== "error") {
+        if (subResponse.tokenUsage && !subResponseFailed) {
           ctx.updateSessionField(
             subConvId,
             "tokenUsage",
@@ -315,6 +317,28 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         }
 
         const subToolCalls = parseToolCalls(subResponse.toolCallsJson);
+
+        if (subResponseFailed) {
+          const failureContent =
+            subResponse.content || "Sub-agent request failed. Please retry.";
+          ctx.updateSessionMessages(subConvId, (currentMessages) =>
+            currentMessages.map((currentMessage) =>
+              currentMessage.id === subAssistantMessageId
+                ? {
+                    ...currentMessage,
+                    content: failureContent,
+                    thinking: subResponse.thinking || undefined,
+                    timestamp: formatMessageTime(),
+                    status: "error" as const,
+                    responseId: subResponse.id || undefined,
+                    model: subResponse.model || undefined,
+                    isRetrying: false,
+                  }
+                : currentMessage
+            )
+          );
+          return failureContent;
+        }
 
         // Auto-compaction for sub-agents: mirrors the main agent loop. When the
         // sub-agent's effective API config has enableAutoCompress=true and the
@@ -333,7 +357,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         if (
           subToolCalls.length > 0 &&
           subResponse.tokenUsage &&
-          subResponse.status !== "error"
+          !subResponseFailed
         ) {
           const subApiConfig = await ctx.getActiveApiConfig(
             subAgentConfigProfile || undefined

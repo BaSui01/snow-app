@@ -677,6 +677,85 @@ export function ApiSettingsFormFields({
                 </small>
               </div>
             )}
+            <div className="api-settings-field">
+              <span>
+                {t("settings.apiVisionThinking", {
+                  defaultValue: "Thinking",
+                })}
+              </span>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={data.visionThinkingEnabled}
+                  onChange={changeField("visionThinkingEnabled")}
+                  disabled={disabled}
+                  hidden
+                />
+                <span className="toggle-slider" />
+                <span>
+                  {t(
+                    data.visionThinkingEnabled
+                      ? "settings.enabled"
+                      : "settings.disabled"
+                  )}
+                </span>
+              </label>
+              <small className="api-settings-hint-text">
+                {t("settings.apiVisionThinkingHint", {
+                  defaultValue:
+                    "Disabled by default for speed. When disabled, Gemini requests explicitly set thinking budget to 0; Anthropic is always non-thinking.",
+                })}
+              </small>
+            </div>
+            {data.visionThinkingEnabled &&
+              (data.visionRequestMethod === "chat" ||
+                data.visionRequestMethod === "responses") && (
+                <label className="api-settings-field">
+                  <span>
+                    {t("settings.apiVisionThinkingEffort", {
+                      defaultValue: "Thinking effort",
+                    })}
+                  </span>
+                  <CustomSelect
+                    value={data.visionThinkingEffort || "medium"}
+                    options={(
+                      THINKING_OPTIONS_BY_METHOD[
+                        (data.visionRequestMethod ||
+                          "chat") as keyof typeof THINKING_OPTIONS_BY_METHOD
+                      ] || THINKING_OPTIONS_BY_METHOD.chat
+                    )
+                      .filter((option) => option.value !== "none")
+                      .map((option) => ({
+                        value: option.value,
+                        label: option.label,
+                      }))}
+                    onChange={(value) =>
+                      onChange("visionThinkingEffort", value)
+                    }
+                    disabled={disabled}
+                  />
+                </label>
+              )}
+            <label className="api-settings-field">
+              <span>
+                {t("settings.apiVisionMaxTokens", {
+                  defaultValue: "Max output tokens",
+                })}
+              </span>
+              <input
+                value={data.visionMaxTokens}
+                onChange={changeField("visionMaxTokens")}
+                placeholder="4096"
+                type="number"
+                min={256}
+                disabled={disabled}
+              />
+              <small className="api-settings-hint-text">
+                {t("settings.apiVisionMaxTokensHint", {
+                  defaultValue: "Maximum output tokens for image descriptions. Defaults to 4096 when empty.",
+                })}
+              </small>
+            </label>
           </div>
         )}
       </div>

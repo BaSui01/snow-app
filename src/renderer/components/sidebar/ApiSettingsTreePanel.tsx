@@ -23,6 +23,9 @@ import {
   extractResponsesVerbosityFromConfigJson,
   extractThinkingValueFromConfigJson,
   extractVisionGoogleSearchFromConfigJson,
+  extractVisionMaxTokensFromConfigJson,
+  extractVisionThinkingEffortFromConfigJson,
+  extractVisionThinkingEnabledFromConfigJson,
   toApiConfigPayload,
 } from "./apiSettings/apiSettingsUtils";
 import { calculateAutoCompressThresholdPercent } from "./apiSettings/autoCompressThreshold";
@@ -263,6 +266,13 @@ export function ApiSettingsTreePanel({
       visionGoogleSearch: extractVisionGoogleSearchFromConfigJson(
         config.configJson
       ),
+      visionThinkingEnabled: extractVisionThinkingEnabledFromConfigJson(
+        config.configJson
+      ),
+      visionThinkingEffort: extractVisionThinkingEffortFromConfigJson(
+        config.configJson
+      ),
+      visionMaxTokens: extractVisionMaxTokensFromConfigJson(config.configJson),
       configJson: config.configJson,
     });
   };

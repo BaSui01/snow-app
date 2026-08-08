@@ -33,6 +33,9 @@ export type ApiConfigFormData = {
   responsesFastMode: boolean;
   googleSearch: boolean;
   visionGoogleSearch: boolean;
+  visionThinkingEnabled: boolean;
+  visionThinkingEffort: string;
+  visionMaxTokens: string;
   configJson: string;
 };
 

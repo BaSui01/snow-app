@@ -61,6 +61,36 @@ export const extractVisionGoogleSearchFromConfigJson = (
   configJson: string
 ): boolean => readSnowcfg(configJson).visionGoogleSearch === true;
 
+/** 读取视觉模型的思考开关（snowcfg.visionThinking.enabled，默认关闭） */
+export const extractVisionThinkingEnabledFromConfigJson = (
+  configJson: string
+): boolean => {
+  const thinking = readSnowcfg(configJson).visionThinking;
+  return (
+    typeof thinking === "object" &&
+    thinking !== null &&
+    (thinking as { enabled?: unknown }).enabled === true
+  );
+};
+
+/** 读取视觉模型的思考强度（snowcfg.visionThinking.reasoning_effort） */
+export const extractVisionThinkingEffortFromConfigJson = (
+  configJson: string
+): string => {
+  const thinking = readSnowcfg(configJson).visionThinking;
+  if (typeof thinking !== "object" || thinking === null) return "";
+  const effort = (thinking as { reasoning_effort?: unknown }).reasoning_effort;
+  return typeof effort === "string" && effort.trim() ? effort : "";
+};
+
+/** 读取视觉模型的最大输出 tokens（snowcfg.visionMaxTokens，默认 4096） */
+export const extractVisionMaxTokensFromConfigJson = (
+  configJson: string
+): string => {
+  const value = readSnowcfg(configJson).visionMaxTokens;
+  return typeof value === "number" && value > 0 ? String(value) : "";
+};
+
 /**
  * Validates a thinking value against the available options for the given
  * request method. Returns the value itself when it is a known option for
@@ -219,6 +249,9 @@ export const emptyApiConfigForm = (
   responsesFastMode: false,
   googleSearch: false,
   visionGoogleSearch: false,
+  visionThinkingEnabled: false,
+  visionThinkingEffort: "",
+  visionMaxTokens: "",
   configJson: "{}",
 });
 
@@ -269,6 +302,13 @@ export function toApiConfigPayload(
       responsesFastMode: data.responsesFastMode,
       googleSearch: data.googleSearch,
       visionGoogleSearch: data.visionGoogleSearch,
+      visionThinking: data.visionThinkingEnabled
+        ? {
+            enabled: true,
+            reasoning_effort: data.visionThinkingEffort || undefined,
+          }
+        : { enabled: false },
+      visionMaxTokens: parseOptionalInteger(data.visionMaxTokens) ?? undefined,
     }
   );
 

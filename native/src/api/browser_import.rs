@@ -14,7 +14,7 @@
 //! - Chrome family on Windows: DPAPI-unprotect the `encrypted_key` stored in
 //!   `Local State`, then AES-256-GCM (nonce 12 + tag 16) over the payload.
 //!   Chrome/Edge 127+ 的 App-Bound Encryption（v20 密文）：对
-//!   `os_crypt.app_bound_encrypted_key` 依次做 SYSTEM DPAPI（LSASS 令牌模拟，
+//!   `os_crypt.app_bound_encrypted_key` 依次做 SYSTEM DPAPI（SYSTEM 进程令牌模拟，
 //!   需管理员权限）与用户 DPAPI 解密，再按 flag 分支恢复 32 字节
 //!   `app_bound_key`（127-132：AES-256-GCM 硬编码密钥；133-136：
 //!   ChaCha20-Poly1305 硬编码密钥；137+：CNG "Google Chromekey1" + 静态
@@ -373,7 +373,7 @@ fn windows_dpapi_decrypt(data: &[u8]) -> Option<Vec<u8>> {
 // `Local State` 的 `os_crypt.app_bound_encrypted_key`（base64，前缀 "APPB"），
 // 由 elevation_service 以 SYSTEM DPAPI 加密（外层）+ 用户 DPAPI 加密（内层）。
 // 还原 `app_bound_key` 需先以 SYSTEM 上下文做 DPAPI 解密（普通用户进程需借助
-// LSASS 令牌模拟，即要求应用以管理员权限运行），再按 flag 分支：
+// 可读取令牌的 SYSTEM 进程模拟，即要求应用以管理员权限运行），再按 flag 分支：
 //   flag 1（127-132）: AES-256-GCM，密钥硬编码在 elevation_service.exe；
 //   flag 2（133-136）: ChaCha20-Poly1305，密钥同样硬编码；
 //   flag 3（137+）   : CNG "Google Chromekey1"（SYSTEM 凭据）解密
@@ -433,18 +433,19 @@ fn chacha20_poly1305_decrypt_parts(
         .ok()
 }
 
-/// 在 SYSTEM 上下文执行 DPAPI 解密（App-Bound 外层密钥由 SYSTEM 主密钥保护）。
+/// 在 SYSTEM 上下文执行闭包。
 ///
-/// 流程：启用 SeDebugPrivilege（需管理员权限）→ 打开 lsass.exe（回退 PID 4）
-/// 的进程令牌 → 复制为模拟令牌 → `ImpersonateLoggedOnUser` 后调用
-/// `CryptUnprotectData`，随后恢复原令牌。应用未以管理员运行时返回 None。
+/// 管理员进程并不等于 SYSTEM；同时现代 Windows 上 lsass.exe / PID 4 通常受
+/// PPL 保护，即使启用了 SeDebugPrivilege 也无法读取其令牌。因此优先从
+/// winlogon.exe / services.exe / wininit.exe 等非 PPL 的 SYSTEM 进程复制模拟令牌。
+/// 枚举进程名时必须在首个 NUL 处截断，不能直接转换整个固定长度数组。
 #[cfg(windows)]
-fn windows_dpapi_decrypt_system(data: &[u8]) -> Option<Vec<u8>> {
+fn with_windows_system_impersonation<T>(operation: impl Fn() -> Option<T>) -> Option<T> {
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE, LUID};
     use windows_sys::Win32::Security::{
         AdjustTokenPrivileges, DuplicateToken, ImpersonateLoggedOnUser, LookupPrivilegeValueW,
-        RevertToSelf, SecurityImpersonation, SE_PRIVILEGE_ENABLED, TOKEN_ADJUST_PRIVILEGES,
-        TOKEN_DUPLICATE, TOKEN_PRIVILEGES, TOKEN_QUERY, LUID_AND_ATTRIBUTES,
+        RevertToSelf, SecurityImpersonation, LUID_AND_ATTRIBUTES, SE_PRIVILEGE_ENABLED,
+        TOKEN_ADJUST_PRIVILEGES, TOKEN_DUPLICATE, TOKEN_PRIVILEGES, TOKEN_QUERY,
     };
     use windows_sys::Win32::System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
@@ -452,10 +453,11 @@ fn windows_dpapi_decrypt_system(data: &[u8]) -> Option<Vec<u8>> {
     };
     use windows_sys::Win32::System::Threading::{
         GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_INFORMATION,
+        PROCESS_QUERY_LIMITED_INFORMATION,
     };
 
     unsafe {
-        // 1. 启用 SeDebugPrivilege（仅管理员进程可成功）。
+        // 1. 启用 SeDebugPrivilege（管理员令牌才可获得该权限）。
         let mut token: HANDLE = std::ptr::null_mut();
         if OpenProcessToken(
             GetCurrentProcess(),
@@ -484,67 +486,102 @@ fn windows_dpapi_decrypt_system(data: &[u8]) -> Option<Vec<u8>> {
         AdjustTokenPrivileges(token, 0, &mut tp, 0, std::ptr::null_mut(), std::ptr::null_mut());
         CloseHandle(token);
 
-        // 2. 定位 SYSTEM 进程：优先 lsass.exe，回退 PID 4（System）。
-        let mut pid: u32 = 4;
+        // 2. 枚举可读取令牌的 SYSTEM 进程。不要只使用 lsass.exe / PID 4：
+        // 它们在现代 Windows 上通常受 PPL 保护。priority 越小越优先。
         let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-        if snapshot != INVALID_HANDLE_VALUE {
-            let mut entry = PROCESSENTRY32W {
-                dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
-                ..std::mem::zeroed()
-            };
-            if Process32FirstW(snapshot, &mut entry) != 0 {
-                loop {
-                    let name = String::from_utf16_lossy(&entry.szExeFile);
-                    if name.eq_ignore_ascii_case("lsass.exe") {
-                        pid = entry.th32ProcessID;
-                        break;
-                    }
-                    if Process32NextW(snapshot, &mut entry) == 0 {
-                        break;
-                    }
+        if snapshot == INVALID_HANDLE_VALUE {
+            return None;
+        }
+        let mut candidates: Vec<(usize, u32)> = Vec::new();
+        let mut entry = PROCESSENTRY32W {
+            dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+            ..std::mem::zeroed()
+        };
+        if Process32FirstW(snapshot, &mut entry) != 0 {
+            loop {
+                let name_len = entry
+                    .szExeFile
+                    .iter()
+                    .position(|&character| character == 0)
+                    .unwrap_or(entry.szExeFile.len());
+                let name = String::from_utf16_lossy(&entry.szExeFile[..name_len]);
+                let priority = if name.eq_ignore_ascii_case("winlogon.exe") {
+                    Some(0)
+                } else if name.eq_ignore_ascii_case("services.exe") {
+                    Some(1)
+                } else if name.eq_ignore_ascii_case("wininit.exe") {
+                    Some(2)
+                } else if name.eq_ignore_ascii_case("lsass.exe") {
+                    Some(3)
+                } else {
+                    None
+                };
+                if let Some(priority) = priority {
+                    candidates.push((priority, entry.th32ProcessID));
+                }
+                if Process32NextW(snapshot, &mut entry) == 0 {
+                    break;
                 }
             }
-            CloseHandle(snapshot);
         }
+        CloseHandle(snapshot);
+        candidates.sort_unstable_by_key(|&(priority, _)| priority);
 
-        // 3. 复制 SYSTEM 令牌并模拟。
-        let process = OpenProcess(PROCESS_QUERY_INFORMATION, 0, pid);
-        if process.is_null() {
-            return None;
-        }
-        let mut system_token: HANDLE = std::ptr::null_mut();
-        let mut impersonation: HANDLE = std::ptr::null_mut();
-        if OpenProcessToken(process, TOKEN_DUPLICATE | TOKEN_QUERY, &mut system_token) == 0
-            || DuplicateToken(system_token, SecurityImpersonation, &mut impersonation) == 0
-        {
-            CloseHandle(process);
-            if !system_token.is_null() {
-                CloseHandle(system_token);
+        // 3. 依次尝试复制 SYSTEM 模拟令牌，并在该上下文执行闭包。
+        for (_, pid) in candidates {
+            let mut process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if process.is_null() {
+                process = OpenProcess(PROCESS_QUERY_INFORMATION, 0, pid);
             }
-            return None;
-        }
-        CloseHandle(process);
-        CloseHandle(system_token);
-        if ImpersonateLoggedOnUser(impersonation) == 0 {
+            if process.is_null() {
+                continue;
+            }
+            let mut system_token: HANDLE = std::ptr::null_mut();
+            let opened = OpenProcessToken(process, TOKEN_DUPLICATE | TOKEN_QUERY, &mut system_token);
+            CloseHandle(process);
+            if opened == 0 {
+                continue;
+            }
+            let mut impersonation: HANDLE = std::ptr::null_mut();
+            let duplicated = DuplicateToken(system_token, SecurityImpersonation, &mut impersonation);
+            CloseHandle(system_token);
+            if duplicated == 0 || impersonation.is_null() {
+                continue;
+            }
+            if ImpersonateLoggedOnUser(impersonation) == 0 {
+                CloseHandle(impersonation);
+                continue;
+            }
+
+            let result = operation();
+            RevertToSelf();
             CloseHandle(impersonation);
-            return None;
+            if result.is_some() {
+                return result;
+            }
         }
-
-        // 4. 在 SYSTEM 上下文执行 DPAPI 解密（CryptUnprotectData 使用线程模拟令牌）。
-        let result = windows_dpapi_decrypt(data);
-
-        RevertToSelf();
-        CloseHandle(impersonation);
-        result
+        None
     }
+}
+
+/// 在 SYSTEM 上下文执行 DPAPI 解密（App-Bound 外层密钥由 SYSTEM 主密钥保护）。
+#[cfg(windows)]
+fn windows_dpapi_decrypt_system(data: &[u8]) -> Option<Vec<u8>> {
+    with_windows_system_impersonation(|| windows_dpapi_decrypt(data))
 }
 
 /// 用 CNG（NCrypt）解密 Chrome 137+ 的 `encrypted_aes_key`。
 ///
 /// 密钥 "Google Chromekey1" 存于 "Microsoft Software Key Storage Provider"
-///（SYSTEM 凭据），必须处于 SYSTEM 上下文才能打开。
+///（SYSTEM 凭据），因此 CNG 打开和解密也必须在 SYSTEM 模拟上下文内完成，
+/// 不能在外层 DPAPI 解密结束并恢复当前用户后直接调用。
 #[cfg(windows)]
 fn windows_cng_decrypt(data: &[u8]) -> Option<Vec<u8>> {
+    with_windows_system_impersonation(|| windows_cng_decrypt_as_system(data))
+}
+
+#[cfg(windows)]
+fn windows_cng_decrypt_as_system(data: &[u8]) -> Option<Vec<u8>> {
     use windows_sys::Win32::Security::Cryptography::{
         NCryptDecrypt, NCryptFreeObject, NCryptOpenKey, NCryptOpenStorageProvider,
         NCRYPT_SILENT_FLAG,
@@ -560,7 +597,7 @@ fn windows_cng_decrypt(data: &[u8]) -> Option<Vec<u8>> {
         }
         let mut key_handle = 0usize;
         let key_name: Vec<u16> = "Google Chromekey1\0".encode_utf16().collect();
-        if NCryptOpenKey(provider, &mut key_handle, key_name.as_ptr(), 0, 0) != 0 {
+        if NCryptOpenKey(provider, &mut key_handle, key_name.as_ptr(), 0, NCRYPT_SILENT_FLAG) != 0 {
             NCryptFreeObject(provider);
             return None;
         }
@@ -576,7 +613,7 @@ fn windows_cng_decrypt(data: &[u8]) -> Option<Vec<u8>> {
             &mut result_len,
             NCRYPT_SILENT_FLAG,
         );
-        if status != 0 {
+        if status != 0 || result_len == 0 {
             NCryptFreeObject(key_handle);
             NCryptFreeObject(provider);
             return None;
@@ -632,6 +669,9 @@ fn decode_app_bound_content(content: &[u8]) -> Option<Vec<u8>> {
             let (ciphertext, tag) = rest.split_at(32);
             // CNG 解出的 AES 密钥与静态 XOR 密钥逐字节异或，得到真正的 GCM 密钥。
             let decrypted = windows_cng_decrypt(encrypted_aes_key)?;
+            if decrypted.len() != 32 {
+                return None;
+            }
             let mut xored = [0u8; 32];
             for (i, byte) in xored.iter_mut().enumerate() {
                 *byte = decrypted[i] ^ CHROME_CNG_XOR_KEY[i];
@@ -1031,6 +1071,7 @@ fn read_chromium_passwords_with(
         .map_err(|error| Error::from_reason(format!("查询登录记录失败: {error}")))?;
 
     let mut passwords: Vec<ImportedPassword> = Vec::new();
+    let mut decryption_failures = 0usize;
     let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
     for row in rows.flatten() {
         let (origin_url, username, encrypted) = row;
@@ -1041,6 +1082,7 @@ fn read_chromium_passwords_with(
             continue;
         }
         let Some(plain) = chrome_decrypt(&encrypted, &keys) else {
+            decryption_failures += 1;
             continue;
         };
         let password = String::from_utf8_lossy(&plain).into_owned();
@@ -1057,6 +1099,17 @@ fn read_chromium_passwords_with(
             username,
             password,
         });
+    }
+    if passwords.is_empty() && decryption_failures > 0 {
+        let detail = if note.is_empty() {
+            "Windows 浏览器加密密钥恢复失败，请确认应用以管理员身份运行，并关闭源浏览器后重试"
+                .to_string()
+        } else {
+            note
+        };
+        return Err(Error::from_reason(format!(
+            "检测到 {decryption_failures} 条加密密码，但全部解密失败：{detail}"
+        )));
     }
     Ok(passwords)
 }
@@ -1088,7 +1141,7 @@ fn read_chromium_cookies_with(
 ) -> Result<Vec<ImportedCookie>> {
     // source_id 决定 macOS Keychain 服务名（Chrome 与 Edge 各自独立），
     // 传错会导致 Edge 的 Cookie 解密失败、值全部为空。
-    let (keys, _note) = chrome_keys(
+    let (keys, note) = chrome_keys(
         profile_dir.parent().unwrap_or(profile_dir),
         source_id,
     );
@@ -1173,6 +1226,7 @@ fn read_chromium_cookies_with(
     const WINDOWS_EPOCH_DELTA_SECS: i64 = 11_644_473_600;
 
     let mut cookies: Vec<ImportedCookie> = Vec::new();
+    let mut decryption_failures = 0usize;
     for row in rows {
         let CookieRow {
             domain,
@@ -1190,6 +1244,9 @@ fn read_chromium_cookies_with(
         // 旧版（v10~v23）value 文本列直接存 v10 前缀密文。统一走解密入口，
         // 解密失败（如应用非管理员运行导致 ABE 密钥不可用）则跳过该条，
         // 避免把乱码/空值写入目标浏览器。
+        let encrypted_value = !encrypted.is_empty()
+            || value.starts_with("v10")
+            || value.starts_with("v20");
         let Some(value) = (if !encrypted.is_empty() {
             decrypt_chromium_cookie_value(&encrypted, &keys, strip_hash_prefix)
         } else if value.starts_with("v10") || value.starts_with("v20") {
@@ -1197,6 +1254,9 @@ fn read_chromium_cookies_with(
         } else {
             Some(value)
         }) else {
+            if encrypted_value {
+                decryption_failures += 1;
+            }
             continue;
         };
         let expires = if has_expires == Some(0) {
@@ -1223,6 +1283,17 @@ fn read_chromium_cookies_with(
             secure: is_secure != 0,
             sameSite: same_site.to_string(),
         });
+    }
+    if cookies.is_empty() && decryption_failures > 0 {
+        let detail = if note.is_empty() {
+            "Windows 浏览器加密密钥恢复失败，请确认应用以管理员身份运行，并关闭源浏览器后重试"
+                .to_string()
+        } else {
+            note
+        };
+        return Err(Error::from_reason(format!(
+            "检测到 {decryption_failures} 个加密 Cookie，但全部解密失败：{detail}"
+        )));
     }
     Ok(cookies)
 }
@@ -1444,7 +1515,7 @@ pub async fn browser_import_list_sources() -> Result<Vec<ImportSourceInfo>> {
                 continue;
             }
             // Chrome/Edge 127+ 启用 App-Bound Encryption（v20）：密码与 Cookie
-            // 密文绑定系统级密钥，需管理员权限（LSASS 令牌模拟 + SYSTEM DPAPI）
+            // 密文绑定系统级密钥，需管理员权限（SYSTEM 进程令牌模拟 + SYSTEM DPAPI）
             // 才能解密。同一根目录下所有 profile 共享同一把 key，只实际尝试
             // 解密一次：成功则静默，失败（典型为应用未以管理员运行）则提示，
             // 避免用户误以为导入功能损坏。

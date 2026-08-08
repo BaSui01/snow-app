@@ -252,10 +252,13 @@ page=image-library`):
 
 | Capability | Description |
 | --- | --- |
-| Browse and filter | Lists images newest-first with thumbnails and model/date metadata. Select **All**, **Uncategorized**, or a specific album, then combine that with aspect-ratio (landscape/square/portrait), time (today/7d/30d), provider, and model filters. Click an image to open the lightbox |
-| Album organization | Create and rename albums, then use each image's album selector to move it into an album or back to **Uncategorized**. Album deletion requires confirmation; its images are **kept** and all move to **Uncategorized** |
+| Browse and filter | The default view is an **album card wall** (one cover card per album); click into the image grid. Lists images newest-first with thumbnails and model/date metadata. Select **All**, **Uncategorized**, or a specific album, then combine that with aspect-ratio (landscape/square/portrait), time (today/7d/30d), provider, and model filters. Click an image to open the lightbox |
+| Search | The top search box does fuzzy matching over **file name / prompt / model / provider**; typing a keyword switches from the album card wall to the image grid automatically |
+| Album organization | Create and rename albums, then use each image's album selector to move it into an album or back to **Uncategorized**; you can also **drag an image directly onto an album card** to classify it. Album deletion requires confirmation; its images are **kept** and all move to **Uncategorized** |
+| Batch operations | Multi-select images to enter batch mode and reveal a batch toolbar: **move into album** (including back to Uncategorized) and **batch delete** (deleted one by one; a failure does not stop the rest) |
+| Manual import | Click **Import** and pick local image files; they are copied into the library directory and indexed, then appear in the list. Multiple selection is supported |
 | Download | Download the current image under its original file name from either the library card or the lightbox toolbar |
-| Delete an image | Requires confirmation, then **removes the disk file and index row and rewrites conversation messages that reference it** so chat does not retain a dead link |
+| Delete image | Requires confirmation; afterwards the disk file **and** index row are removed together, and conversation messages referencing the image are rewritten (references become invalid instead of dangling) |
 | Custom save directory | The panel header shows the current root. **Change** selects another directory and **Reset** restores `~/.snowapp/image/` through the `image_library_dir` setting |
 
 Albums are an organizational lifecycle over library index data, not the lifetime of image files: **deleting an album never deletes its images**, and moving an image changes only its classification. A physical file and index row are removed only by **Delete image** or when conversation deletion explicitly selects **Delete images too**.

@@ -119,6 +119,9 @@ the runtime API is flat.
 - Main-process native calls must **not** bypass `nativeBridge` (except during
   initialization — see `bootstrap.ts` comments: raw binding avoids the
   storageReady deadlock).
+- **The main process runs as ESM**: `__dirname` / `__filename` are forbidden;
+  always use `import.meta.dirname` / `import.meta.filename` (already migrated
+  in `src/main/app/`, `nativeBridge.ts`, and others).
 - New MCP tools should follow the parameter-description style of existing
   servers in `native/src/mcp/servers/` (schemas are exposed to AI models —
   describe constraints and defaults precisely).

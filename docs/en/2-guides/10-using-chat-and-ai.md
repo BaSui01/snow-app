@@ -46,7 +46,16 @@ Single and batch deletion both require confirmation. Deleting a conversation als
 - Physical image files and SQLite index rows are removed only when you explicitly select the option;
 - Deleting an individual item in the image library is a separate action that removes its file and index entry and rewrites conversation messages that reference it.
 
-### 2.2 Files and Images
+### 2.2 Cross-Project Notification Aggregation
+
+The sidebar **Conversations** section normally shows only the **current project's** conversations. When conversations in **other projects** become active, they are aggregated into a **cross-project notification** block below the list, so background session state is not lost after switching projects:
+
+- **Aggregated content**: conversations in other projects that are **streaming**, **need attention** (e.g. awaiting approval or a question), or **completed**, grouped by their project, newest update first within each group;
+- **Status badges**: streaming conversations show an in-progress animation; conversations needing attention get an **attention-required** emphasis badge (the same indicator appears on entries in the conversation list);
+- **Quick jump**: clicking a notification switches to that project and opens the conversation; it then appears in the current project's list as usual;
+- **Name fallback**: when a project display name cannot be resolved, the last segment of its directory path is used.
+
+### 2.3 Files and Images
 
 - Type `@` to search workspace files. Browse into folders, use breadcrumbs to jump to a parent, or press the left arrow to go up one level;
 - Select or drag a whole directory when the AI should inspect its contents;

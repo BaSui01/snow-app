@@ -24,7 +24,13 @@ The branch selector groups **local branches** and **remote branches** separately
 | Discard changes | Request discard for one or more unstaged files; a confirmation dialog is required before the operation runs, then status refreshes |
 | File shortcuts | Open a file in the file reader or open a terminal at its location; local paths can also be revealed in the file manager |
 
-Use the toolbar to switch between **Changes** and **Graph**. Graph pages through commit history, renders commit relationships and branch/remote/tag decorations, and can expand the files and diff associated with a commit. A manual refresh reloads both status and the graph when Graph is active.
+Use the toolbar to switch between **Changes** and **Graph**. Graph pages through commit history and renders commit relationships and branch/remote/tag decorations. Expanding a commit reveals **its file list and per-commit diff**:
+
+- **View per-commit diff**: after expanding a commit, click a file entry to show that file's diff **within this commit** in the right panel (View File Diff in This Commit); the file being viewed is highlighted in the list;
+- **Open in new tab**: the file entry's context menu supports **Open Diff in New Tab** (the tab opens in a loading state first, then fills in asynchronously) and **Copy File Path**;
+- **Remote repository support**: per-commit diff viewing works for both local repositories and `ssh://` remote repositories (remote repos run through the SSH channel).
+
+A manual refresh reloads both status and the graph when Graph is active.
 
 ### 1.4 Commits, AI Commit Messages, and Remote Sync
 
@@ -40,6 +46,7 @@ Use the toolbar to switch between **Changes** and **Graph**. Graph pages through
 Choose **Details** from a workspace's ellipsis/context menu to open that workspace in the project explorer:
 
 - **Local and SSH trees**: both expand directories on demand, refresh, open text files in the right-panel reader, and rename or delete files/directories from the context menu. SSH operations run through the current remote session;
+- **File/directory context menu**: local entries additionally support **Open in Terminal** (for a file, its containing directory), **Reveal in system file manager**, **Copy Path**, and an **Open with** submenu (open the directory with an installed IDE; detection matches the workspace-directory menu). SSH remote entries do not offer the file manager or IDE open actions;
 - **Deletion boundary**: deleting in the explorer changes the real local or remote filesystem. It is different from removing a workspace registration from the project list, so verify the target first;
 - **Local workspace search**: local workspaces show **Search files and content**, matching both file names and text contents. Click a result's file name to open the whole file, or click a matching line to open and briefly highlight that line. `Ctrl/Cmd` and `Shift` can select matching lines before dragging them into chat;
 - **SSH search difference**: an SSH workspace still supports browsing, rename, delete, and file opening, but does not show this same **Search files and content** bar.

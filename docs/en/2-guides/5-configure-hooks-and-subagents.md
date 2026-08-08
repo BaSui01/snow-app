@@ -203,7 +203,15 @@ Tool rules:
 - An external MCP tool's public server-name prefix must belong to a server enabled for the project;
 - Activation returns an error when configured tools are unavailable or disabled; it does not silently expand permissions.
 
-### 2.2 Configure in the UI
+### 2.2 Sub-agent Conversation View
+
+A sub-agent runs in its own conversation. Opening it shows:
+
+- **Header title**: displays the **stage name** (the prompt truncated to 80 characters at activation — the task stage the sub-agent was spawned for) instead of the project name; the subtitle notes **which main conversation launched it**;
+- **Info card**: above the message list, an `agentName` badge, the stage title, a **jump back to the main conversation** button, and the **full prompt** (clamped to 3 lines by default; hovering shows the whole text);
+- **Data sources**: the conversation record's `title` / `subAgentName`, the first user message (the prompt), and the parent conversation's title (fetched asynchronously).
+
+### 2.3 Configure in the UI
 
 1. Open **Settings → Sub-agent Settings**;
 2. Select Global or Project scope;
@@ -212,7 +220,7 @@ Tool rules:
 5. Keep **Follow the parent conversation (recommended)**, or select a pinned API profile. With a pinned profile, optionally select an independent model; leaving it empty uses the profile's advanced model;
 6. Save, then delegate one narrowly scoped test task from the main conversation.
 
-### 2.3 Configure through `config`
+### 2.4 Configure through `config`
 
 Valid global sub-agent:
 
@@ -246,7 +254,7 @@ config-set scope=subAgents key=agent_project_reviewer projectId=<projectId> valu
 
 Before writing, run `config-list scope=subAgents projectId=<projectId>` to obtain guidance and the current tool environment. Read back with `config-get` after writing. `config-delete` also requires explicit user confirmation.
 
-### 2.4 Sub-agent and Hooks sequence
+### 2.5 Sub-agent and Hooks sequence
 
 ```mermaid
 sequenceDiagram

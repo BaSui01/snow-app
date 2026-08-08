@@ -643,6 +643,75 @@ pub fn list_chat_conversations_paginated(
         })
 }
 
+/// 跨项目按会话 ID 查询会话记录（不按 directory_id 过滤）。
+///
+/// 供「跨项目通知」使用：渲染进程持有运行中/需关注的会话 ID 集合，
+/// 通过此函数拿到这些会话的完整记录（含所属项目）才能在侧边栏展示
+/// 其他项目的通知。子代理会话不单独作为通知条目返回（其动态归属于
+/// 父会话），与分页列表的行为保持一致。
+pub fn list_chat_conversations_by_ids(
+    database_path: &Path,
+    conversation_ids: &[String],
+) -> Result<Vec<ChatConversationRecord>> {
+    if conversation_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            let placeholders: Vec<String> = (1..=conversation_ids.len())
+                .map(|index| format!("?{index}"))
+                .collect();
+            let placeholders = placeholders.join(", ");
+            let sql = format!(
+                "SELECT conversation_id,
+                        title,
+                        summary,
+                        last_message_preview,
+                        message_count,
+                        model,
+                        status,
+                        directory_id,
+                        forked_from_conversation_id,
+                        fork_message_count,
+                        created_at,
+                        updated_at,
+                        input_tokens,
+                        output_tokens,
+                        cache_creation_input_tokens,
+                        cache_read_input_tokens,
+                       'main',
+                       '',
+                       '',
+                       '',
+                       '',
+                       '',
+                       0,
+                       COALESCE(emoji, ''),
+                       api_profile_name
+                  FROM chat_conversations AS conversation
+                 WHERE conversation_id IN ({placeholders})
+                   AND status = 'active'
+                   AND NOT EXISTS (
+                     SELECT 1
+                       FROM sub_agent_sessions AS sub_agent
+                      WHERE sub_agent.conversation_id = conversation.conversation_id
+                   )
+                 ORDER BY updated_at DESC, id DESC"
+            );
+
+            let mut statement = connection.prepare(&sql)?;
+            let rows = statement.query_map(
+                rusqlite::params_from_iter(conversation_ids.iter()),
+                map_chat_conversation_row,
+            )?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(|error| {
+            database::database_error(database_path, "list chat conversations by ids", error)
+        })
+}
+
 pub fn search_chat_conversations(
     database_path: &Path,
     query: &str,

@@ -1042,6 +1042,18 @@ pub async fn list_chat_conversations_paginated(
     .map_err(map_spawn_error)?
 }
 
+/// 跨项目按会话 ID 查询会话记录（供「跨项目通知」使用）。
+#[napi]
+pub async fn list_chat_conversations_by_ids(
+    conversation_ids: Vec<String>,
+) -> napi::Result<Vec<ChatConversationRecord>> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::list_chat_conversations_by_ids(conversation_ids)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
 #[napi]
 pub async fn list_pinned_conversations(
     directory_id: String,

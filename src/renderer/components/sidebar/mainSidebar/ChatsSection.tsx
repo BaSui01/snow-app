@@ -1,7 +1,13 @@
 import {
+  Check,
+  CheckCircle2,
   CheckSquare,
   ChevronRight,
+  CircleAlert,
+  Folder,
   Loader2,
+  MessageSquareMore,
+  Minus,
   Trash2,
   X,
 } from "lucide-react";
@@ -26,10 +32,16 @@ import { ChatItem } from "./ChatItem";
 import { ChatItemMenu, type ExportFormat } from "./ChatItemMenu";
 import { SubAgentListPanel } from "./SubAgentListPanel";
 import {
+  formatTimeLabel,
   groupConversationsByTime,
   parseDbTimestamp,
+  type TimeGroup,
   type TimeGroupKey,
 } from "./chatTimeGroup";
+import type {
+  CrossProjectNotification,
+  CrossProjectNotificationGroup,
+} from "./useCrossProjectNotifications";
 
 const CHAT_PAGE_SIZE = 20;
 
@@ -87,6 +99,8 @@ const sortConversationsByUpdatedAt = (
 type ChatsSectionProps = {
   isSwitchingDirectory: boolean;
   activeDirectory?: WorkspaceDirectoryRecord | null;
+  /** 跨项目通知（其他项目的运行中/需关注/已完成会话分组） */
+  crossProjectNotifications: CrossProjectNotificationGroup[];
 };
 
 type SubAgentMap = Record<string, ChatConversationRecord[]>;
@@ -94,6 +108,7 @@ type SubAgentMap = Record<string, ChatConversationRecord[]>;
 export function ChatsSection({
   isSwitchingDirectory,
   activeDirectory,
+  crossProjectNotifications,
 }: ChatsSectionProps): React.JSX.Element {
   const { t } = useI18n();
   const {
@@ -340,6 +355,33 @@ export function ChatsSection({
 
   const showLoading = isSwitchingDirectory || (isLoading && directoryId !== "");
 
+  // 打开其他项目的通知会话：先激活其所属项目，再打开会话。
+  // 激活成功后主进程广播 workspace-directory-list:changed，项目列表与
+  // 对话列表会自动刷新到目标项目，随后 handleSelectConversation 加载
+  // 会话历史；即使激活失败，会话记录已存在，直接打开也不受影响。
+  const handleOpenCrossProjectNotification = async (
+    group: CrossProjectNotificationGroup,
+    notification: CrossProjectNotification
+  ): Promise<void> => {
+    try {
+      await window.snow.activateWorkspaceDirectory(group.directoryId);
+    } catch {
+      // 项目切换失败不阻塞会话打开
+    }
+    await handleSelectConversation(
+      notification.conversation.conversationId,
+      notification.conversation.summary || notification.conversation.title,
+      {
+        inputTokens: notification.conversation.inputTokens,
+        outputTokens: notification.conversation.outputTokens,
+        cacheCreationInputTokens:
+          notification.conversation.cacheCreationInputTokens,
+        cacheReadInputTokens: notification.conversation.cacheReadInputTokens,
+      },
+      group.directoryId
+    );
+  };
+
   const handlePin = async (
     conversation: ChatConversationRecord
   ): Promise<void> => {
@@ -502,6 +544,31 @@ export function ChatsSection({
   };
   const handleDeselectAll = (): void => {
     setSelectedIds(new Set());
+  };
+
+  /**
+   * 分组粒度的全选/取消全选：目标分组内全部已选时取消该组，
+   * 否则选中该组全部（与顶部全局全选互不影响）。
+   */
+  const handleToggleGroupSelect = (group: TimeGroup): void => {
+    const groupIds = group.conversations
+      .filter((conv) => conv.conversationId !== PENDING_SESSION_KEY)
+      .map((conv) => conv.conversationId);
+    if (groupIds.length === 0) {
+      return;
+    }
+    const allSelected = groupIds.every((id) => selectedIds.has(id));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const id of groupIds) {
+        if (allSelected) {
+          next.delete(id);
+        } else {
+          next.add(id);
+        }
+      }
+      return next;
+    });
   };
 
   // 打开批量删除确认框：查询所选会话引用的图库图片数
@@ -853,14 +920,132 @@ export function ChatsSection({
             </span>
           ) : error ? (
             <span className="empty-text error">{error}</span>
-          ) : conversations.length === 0 ? (
+          ) : conversations.length === 0 &&
+            crossProjectNotifications.length === 0 ? (
             <span className="empty-text">
               {t("sidebar.noChats", { defaultValue: "No chats" })}
             </span>
           ) : (
             <>
+              {/* 跨项目通知：其他项目运行中/需关注/已完成的会话，
+                  点击自动切换项目并打开对应会话 */}
+              {crossProjectNotifications.length > 0 && (
+                <div className="cross-project-notifications">
+                  <div className="cross-project-notifications-header">
+                    <span>
+                      {t("sidebar.crossProjectNotificationsTitle", {
+                        defaultValue: "Other projects",
+                      })}
+                    </span>
+                  </div>
+                  {crossProjectNotifications.map((group) => (
+                    <div
+                      className="cross-project-notification-group"
+                      key={group.directoryId}
+                    >
+                      <div className="cross-project-notification-project">
+                        <Folder size={11} aria-hidden="true" />
+                        <span className="cross-project-notification-project-name">
+                          {group.directoryName}
+                        </span>
+                        <span className="cross-project-notification-project-count">
+                          {group.notifications.length}
+                        </span>
+                      </div>
+                      {group.notifications.map((notification) => {
+                        const conversation = notification.conversation;
+                        const displayName =
+                          conversation.summary ||
+                          conversation.title ||
+                          t("sidebar.untitledChat", {
+                            defaultValue: "Untitled",
+                          });
+                        const parsedDate = parseDbTimestamp(
+                          conversation.updatedAt
+                        );
+                        const timeLabel = formatTimeLabel(
+                          parsedDate,
+                          new Date(),
+                          t
+                        );
+                        return (
+                          <button
+                            type="button"
+                            className="cross-project-notification-item"
+                            key={conversation.conversationId}
+                            onClick={() =>
+                              void handleOpenCrossProjectNotification(
+                                group,
+                                notification
+                              )
+                            }
+                            title={t(
+                              "sidebar.crossProjectNotificationOpenTitle",
+                              {
+                                values: {
+                                  project: group.directoryName,
+                                  conversation: displayName,
+                                },
+                                defaultValue:
+                                  "Open {{conversation}} in {{project}}",
+                              }
+                            )}
+                          >
+                            <span
+                              className={`chat-item-icon${
+                                notification.isAttentionRequired
+                                  ? " attention-required"
+                                  : notification.isStreaming
+                                    ? " streaming"
+                                    : notification.isCompleted
+                                      ? " completed"
+                                      : ""
+                              }`}
+                            >
+                              {notification.isAttentionRequired ? (
+                                <CircleAlert size={12} aria-hidden="true" />
+                              ) : notification.isStreaming ? (
+                                <Loader2
+                                  size={11}
+                                  className="spin"
+                                  aria-hidden="true"
+                                />
+                              ) : notification.isCompleted ? (
+                                <CheckCircle2 size={12} aria-hidden="true" />
+                              ) : (
+                                <MessageSquareMore
+                                  size={11}
+                                  aria-hidden="true"
+                                />
+                              )}
+                            </span>
+                            <span className="list-label">{displayName}</span>
+                            <span className="cross-project-notification-time">
+                              {timeLabel}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              )}
               {timeGroups.map((group) => {
                 const isGroupCollapsed = collapsedGroupKeys[group.key] === true;
+                // 分组粒度的选择状态：全部已选 / 部分已选 / 未选
+                const groupSelectableIds = group.conversations
+                  .filter(
+                    (conv) => conv.conversationId !== PENDING_SESSION_KEY
+                  )
+                  .map((conv) => conv.conversationId);
+                const groupSelectedCount = groupSelectableIds.filter((id) =>
+                  selectedIds.has(id)
+                ).length;
+                const isGroupAllSelected =
+                  groupSelectableIds.length > 0 &&
+                  groupSelectedCount === groupSelectableIds.length;
+                const isGroupPartialSelected =
+                  groupSelectedCount > 0 && !isGroupAllSelected;
                 return (
                   <div key={group.key}>
                     <button
@@ -884,6 +1069,51 @@ export function ChatsSection({
                       <span className="chat-time-group-count">
                         {group.conversations.length}
                       </span>
+                      {isMultiSelectMode && groupSelectableIds.length > 0 && (
+                        <span
+                          className={`chat-time-group-select${
+                            isGroupAllSelected ? " checked" : ""
+                          }${
+                            isGroupPartialSelected ? " indeterminate" : ""
+                          }`}
+                          role="checkbox"
+                          aria-checked={
+                            isGroupAllSelected
+                              ? true
+                              : isGroupPartialSelected
+                                ? "mixed"
+                                : false
+                          }
+                          title={
+                            isGroupAllSelected
+                              ? t(
+                                  "sidebar.chatMultiSelectGroupDeselect",
+                                  { defaultValue: "Deselect this group" }
+                                )
+                              : t("sidebar.chatMultiSelectGroupSelect", {
+                                  defaultValue: "Select this group",
+                                })
+                          }
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleToggleGroupSelect(group);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              handleToggleGroupSelect(group);
+                            }
+                          }}
+                          tabIndex={0}
+                        >
+                          {isGroupAllSelected ? (
+                            <Check size={11} strokeWidth={3} />
+                          ) : isGroupPartialSelected ? (
+                            <Minus size={11} strokeWidth={3} />
+                          ) : null}
+                        </span>
+                      )}
                     </button>
                     {!isGroupCollapsed &&
                       group.conversations.map((conversation) => {

@@ -1458,6 +1458,17 @@ pub fn list_chat_conversations_paginated(
     )
 }
 
+/// 跨项目按会话 ID 查询会话记录（供「跨项目通知」使用）。
+pub fn list_chat_conversations_by_ids(
+    conversation_ids: Vec<String>,
+) -> Result<Vec<ChatConversationRecord>> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::list_chat_conversations_by_ids(
+        &database_path,
+        &conversation_ids,
+    )
+}
+
 pub fn list_pinned_conversations(directory_id: String) -> Result<Vec<ChatConversationRecord>> {
     let database_path = ensure_database_file()?;
     services::chat_conversations::list_pinned_conversations(&database_path, &directory_id)

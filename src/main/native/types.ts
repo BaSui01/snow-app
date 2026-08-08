@@ -1254,6 +1254,10 @@ export type NativeBridge = {
     limit: number,
     offset: number
   ) => Promise<ChatConversationPage>;
+  /** 跨项目按会话 ID 查询会话记录（供「跨项目通知」使用）。 */
+  listChatConversationsByIds: (
+    conversationIds: string[]
+  ) => Promise<ChatConversationRecord[]>;
   listPinnedConversations: (
     directoryId: string
   ) => Promise<ChatConversationRecord[]>;

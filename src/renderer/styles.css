@@ -1699,6 +1699,147 @@ input {
   opacity: 0.65;
 }
 
+/* ===== 跨项目通知区块（对话列表顶部） ===== */
+.cross-project-notifications {
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.cross-project-notifications-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 8px 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--warning, #f59e0b);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  user-select: none;
+}
+
+.cross-project-notification-group {
+  margin-bottom: 2px;
+}
+
+.cross-project-notification-project {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px 2px 10px;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  user-select: none;
+}
+
+.cross-project-notification-project > svg {
+  flex-shrink: 0;
+}
+
+.cross-project-notification-project-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cross-project-notification-project-count {
+  margin-left: auto;
+  flex-shrink: 0;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: color-mix(
+    in srgb,
+    var(--warning, #f59e0b) 18%,
+    var(--bg-tertiary)
+  );
+  color: var(--warning, #f59e0b);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+}
+
+.cross-project-notification-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  margin-bottom: 2px;
+  border: none;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.15s ease;
+  text-align: left;
+}
+
+.cross-project-notification-item:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+}
+
+.cross-project-notification-item .chat-item-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.cross-project-notification-item .list-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+
+.cross-project-notification-time {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 多选模式下分组粒度的全选复选框（三态：未选/全选/半选） */
+.chat-time-group-select {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-left: 6px;
+  border-radius: 4px;
+  border: 1.5px solid var(--border-color);
+  background: transparent;
+  color: var(--on-solid);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.chat-time-group-select:hover {
+  border-color: var(--accent-color);
+}
+
+.chat-time-group-select.checked {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+}
+
+.chat-time-group-select.indeterminate {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+
+.chat-time-group-select.indeterminate:hover {
+  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
+}
+
 .chat-item-time {
   flex-shrink: 0;
   font-size: 10.5px;
@@ -2022,6 +2163,26 @@ input {
   flex-shrink: 0;
   color: var(--text-tertiary);
   font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 项目条目通知徽标：该项目的跨项目通知会话数 */
+.workspace-directory-notification-badge {
+  flex-shrink: 0;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: color-mix(
+    in srgb,
+    var(--warning, #f59e0b) 18%,
+    var(--bg-tertiary)
+  );
+  color: var(--warning, #f59e0b);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
   font-variant-numeric: tabular-nums;
 }
 

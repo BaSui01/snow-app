@@ -451,6 +451,12 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to list chat conversations paginated"
           )
         ),
+      listChatConversationsByIds: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to list chat conversations by ids"
+          )
+        ),
       listPinnedConversations: () =>
         Promise.reject(
           new Error(

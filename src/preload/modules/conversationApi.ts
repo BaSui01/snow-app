@@ -24,6 +24,10 @@ export const conversationApi = {
       limit,
       offset
     ),
+  listChatConversationsByIds: (
+    conversationIds: string[]
+  ): Promise<ChatConversationRecord[]> =>
+    ipcRenderer.invoke("chat-conversations:list-by-ids", conversationIds),
   listPinnedConversations: (
     directoryId: string
   ): Promise<ChatConversationRecord[]> =>

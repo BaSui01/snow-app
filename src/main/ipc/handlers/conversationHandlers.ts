@@ -51,6 +51,21 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
     }
   );
   ipcMain.handle(
+    "chat-conversations:list-by-ids",
+    (_event, conversationIds: unknown) => {
+      if (
+        !Array.isArray(conversationIds) ||
+        conversationIds.some((id) => typeof id !== "string" || !id.trim())
+      ) {
+        throw new Error("Conversation IDs must be a non-empty string array");
+      }
+
+      return native.listChatConversationsByIds(
+        (conversationIds as string[]).map((id) => id.trim())
+      );
+    }
+  );
+  ipcMain.handle(
     "chat-conversations:list-pinned",
     (_event, directoryId: unknown) => {
       if (typeof directoryId !== "string" || !directoryId.trim()) {

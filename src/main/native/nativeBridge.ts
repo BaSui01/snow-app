@@ -1,7 +1,10 @@
 import { app } from "electron";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import type { NativeBridge } from "./types";
 import { storageReady } from "../app/storageReady";
+
+const nativeRequire = createRequire(import.meta.url);
 
 /**
  * Wraps a native binding in a Proxy that awaits `storageReady` before
@@ -28,10 +31,9 @@ let rawBinding: NativeBridge | null = null;
 export const loadNativeBridge = (): NativeBridge => {
   try {
     const nativeEntry = join(app.getAppPath(), "native", "index.cjs");
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const binding = require(nativeEntry);
+    const binding: unknown = nativeRequire(nativeEntry);
     rawBinding = binding as NativeBridge;
-    return wrapWithStorageGate(binding) as NativeBridge;
+    return wrapWithStorageGate(binding as NativeBridge);
   } catch (error) {
     console.warn(
       "Native Rust bridge is unavailable, using development fallback.",
@@ -229,9 +231,7 @@ export const loadNativeBridge = (): NativeBridge => {
         ),
       openInIde: () =>
         Promise.reject(
-          new Error(
-            "Rust native bridge is required to open projects in IDEs"
-          )
+          new Error("Rust native bridge is required to open projects in IDEs")
         ),
       createProjectDirectory: () =>
         Promise.reject(
@@ -1014,27 +1014,19 @@ export const loadNativeBridge = (): NativeBridge => {
         ),
       prepareImageLibraryMigration: () =>
         Promise.reject(
-          new Error(
-            "Rust native bridge is required to migrate image library"
-          )
+          new Error("Rust native bridge is required to migrate image library")
         ),
       migrateImageLibraryChunk: () =>
         Promise.reject(
-          new Error(
-            "Rust native bridge is required to migrate image library"
-          )
+          new Error("Rust native bridge is required to migrate image library")
         ),
       commitImageLibraryMigration: () =>
         Promise.reject(
-          new Error(
-            "Rust native bridge is required to migrate image library"
-          )
+          new Error("Rust native bridge is required to migrate image library")
         ),
       rollbackImageLibraryMigration: () =>
         Promise.reject(
-          new Error(
-            "Rust native bridge is required to migrate image library"
-          )
+          new Error("Rust native bridge is required to migrate image library")
         ),
       browserImportListSources: () =>
         Promise.reject(

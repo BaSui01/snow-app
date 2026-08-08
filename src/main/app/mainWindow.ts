@@ -1,4 +1,10 @@
-import { BrowserWindow, ipcMain, nativeTheme, shell, WebContents } from "electron";
+import {
+  BrowserWindow,
+  ipcMain,
+  nativeTheme,
+  shell,
+  WebContents,
+} from "electron";
 import { is } from "@electron-toolkit/utils";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -113,7 +119,7 @@ export const createWindow = (): BrowserWindow => {
     autoHideMenuBar: true,
     backgroundColor: getWindowBackgroundColor(),
     webPreferences: {
-      preload: join(__dirname, "../preload/index.mjs"),
+      preload: join(import.meta.dirname, "../preload/index.mjs"),
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
@@ -229,7 +235,9 @@ export const createWindow = (): BrowserWindow => {
   } else {
     mainWindow
       .loadURL(
-        pathToFileURL(join(__dirname, "../renderer/index.html")).toString()
+        pathToFileURL(
+          join(import.meta.dirname, "../renderer/index.html")
+        ).toString()
       )
       .catch((error) => {
         console.error("Failed to load packaged renderer:", error);

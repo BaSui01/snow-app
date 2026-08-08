@@ -2,8 +2,10 @@ import {
   CircleDot,
   Cloud,
   Copy,
+  ExternalLink,
   Eye,
   EyeOff,
+  FileText,
   GitBranch,
   GitCommitHorizontal,
   Hash,
@@ -12,9 +14,14 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { GitCommitFile, GitLogEntry } from "../../../../preload";
+import type {
+  GitCommitFile,
+  GitFileStatus,
+  GitLogEntry,
+} from "../../../../preload";
 import { useI18n } from "../../../i18n";
 import { ContextMenu, type ContextMenuItem } from "../../common/ContextMenu";
+import type { OpenDiffTabCallback } from "../types";
 
 type GitGraphProps = {
   repoPath: string;
@@ -25,7 +32,18 @@ type GitGraphProps = {
   /** Fired when a file in an expanded commit is clicked, requesting its
       per-commit diff to be shown in the diff viewer. */
   onCommitFileSelect?: (file: GitCommitFile, hash: string) => void;
+  /** Opens a commit file's diff in a new right-panel tab. */
+  onOpenInTab?: OpenDiffTabCallback;
 };
+
+/** 将提交文件（GitCommitFile）转换为 DiffTab 所需的 GitFileStatus 形状。 */
+const toGitFileStatus = (file: GitCommitFile): GitFileStatus => ({
+  path: file.path,
+  oldPath: null,
+  indexStatus: "",
+  workdirStatus: "",
+  status: file.status,
+});
 
 // --- Types ---
 
@@ -325,6 +343,7 @@ export const GitGraph = ({
   refreshKey,
   onLoaded,
   onCommitFileSelect,
+  onOpenInTab,
 }: GitGraphProps): React.JSX.Element => {
   const { t } = useI18n();
   const [commits, setCommits] = useState<GitLogEntry[]>([]);
@@ -545,6 +564,13 @@ export const GitGraph = ({
     y: number;
     commit: GitLogEntry;
   } | null>(null);
+  // 提交内文件右键菜单：在新标签页打开 Diff / 复制文件路径。
+  const [fileContextMenu, setFileContextMenu] = useState<{
+    x: number;
+    y: number;
+    file: GitCommitFile;
+    hash: string;
+  } | null>(null);
 
   const positionTooltip = useCallback((clientX: number, clientY: number) => {
     const node = tooltipRef.current;
@@ -642,6 +668,59 @@ export const GitGraph = ({
         },
       },
     ];
+  };
+
+  /** 提交内文件右键菜单：在新标签页打开 Diff / 复制文件路径。 */
+  const buildCommitFileMenuItems = (
+    file: GitCommitFile,
+    hash: string
+  ): ContextMenuItem[] => [
+    {
+      id: "open-diff-in-tab",
+      label: t("git.openDiffInNewTab", {
+        defaultValue: "Open Diff in New Tab",
+      }),
+      icon: <ExternalLink size={13} strokeWidth={1.8} />,
+      disabled: !repoPath || !onOpenInTab,
+      onClick: () => {
+        setFileContextMenu(null);
+        void openCommitFileDiffInTab(file, hash);
+      },
+    },
+    {
+      id: "copy-path",
+      separator: true,
+      label: t("git.copyPath", { defaultValue: "Copy Path" }),
+      icon: <FileText size={13} strokeWidth={1.8} />,
+      onClick: () => {
+        setFileContextMenu(null);
+        void window.snow.writeClipboardText(file.path).catch(() => {
+          // 剪贴板写入失败时静默忽略。
+        });
+      },
+    },
+  ];
+
+  /** 在新标签页打开提交内文件 Diff：先以加载态打开标签，再异步填充结果。 */
+  const openCommitFileDiffInTab = async (
+    file: GitCommitFile,
+    hash: string
+  ): Promise<void> => {
+    if (!repoPath || !onOpenInTab) {
+      return;
+    }
+    const fileStatus = toGitFileStatus(file);
+    onOpenInTab(fileStatus, null, true);
+    try {
+      const result = await window.snow.gitCommitFileDiff(
+        repoPath,
+        hash,
+        file.path
+      );
+      onOpenInTab(fileStatus, result, false);
+    } catch {
+      onOpenInTab(fileStatus, null, false);
+    }
   };
 
   /** Renders one ref badge (local / remote / tag) with icon and tooltip. */
@@ -871,6 +950,17 @@ export const GitGraph = ({
                             });
                             onCommitFileSelect?.(file, row.commit.hash);
                           }}
+                          onContextMenu={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            hideTooltip();
+                            setFileContextMenu({
+                              x: event.clientX,
+                              y: event.clientY,
+                              file,
+                              hash: row.commit.hash,
+                            });
+                          }}
                           title={t("git.viewCommitFileDiff", {
                             defaultValue: "View File Diff in This Commit",
                           })}
@@ -979,6 +1069,17 @@ export const GitGraph = ({
           y={contextMenu.y}
           items={buildCommitMenuItems(contextMenu.commit)}
           onClose={() => setContextMenu(null)}
+        />
+      )}
+      {fileContextMenu && (
+        <ContextMenu
+          x={fileContextMenu.x}
+          y={fileContextMenu.y}
+          items={buildCommitFileMenuItems(
+            fileContextMenu.file,
+            fileContextMenu.hash
+          )}
+          onClose={() => setFileContextMenu(null)}
         />
       )}
     </div>

@@ -1442,6 +1442,11 @@ export type NativeBridge = {
     repoPath: string,
     hash: string
   ) => Promise<GitDiffResult>;
+  gitCommitFileDiff: (
+    repoPath: string,
+    hash: string,
+    filePath: string
+  ) => Promise<GitDiffResult>;
   discoverGitRepos: (rootPath: string) => Promise<GitRepoInfo[]>;
   startGitWatch: (
     repoPath: string,

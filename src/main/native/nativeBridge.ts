@@ -605,6 +605,11 @@ export const loadNativeBridge = (): NativeBridge => {
       getCommitDiff: () => {
         throw new Error("Rust native bridge is required for git commit diff");
       },
+      gitCommitFileDiff: () => {
+        throw new Error(
+          "Rust native bridge is required for git commit file diff"
+        );
+      },
       discoverGitRepos: () => {
         throw new Error(
           "Rust native bridge is required for git repo discovery"

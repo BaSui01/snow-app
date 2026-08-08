@@ -28,6 +28,7 @@ import { BranchSelector } from "./BranchSelector";
 import { GitFileList } from "./GitFileList";
 import { GitGraph } from "./GitGraph";
 import { RepoSelector } from "./RepoSelector";
+import type { OpenDiffTabCallback } from "../types";
 
 type GitControlProps = {
   repoPath: string | undefined | null;
@@ -40,6 +41,8 @@ type GitControlProps = {
   onOpenFile?: (filePath: string, fileName: string) => void;
   /** 在文件所在目录打开终端。 */
   onOpenTerminal?: (cwd: string) => void;
+  /** 在新标签页打开提交内文件的 Diff。 */
+  onOpenInTab?: OpenDiffTabCallback;
 };
 
 const isSelectedKey = (section: "staged" | "unstaged", path: string) =>
@@ -54,6 +57,7 @@ export const GitControl = ({
   onStatusChange,
   onOpenFile,
   onOpenTerminal,
+  onOpenInTab,
 }: GitControlProps): React.JSX.Element => {
   const { t } = useI18n();
   const { status, isLoading, error, refresh } = useGitStatus(repoPath);
@@ -844,6 +848,7 @@ export const GitControl = ({
           refreshKey={graphRefreshKey}
           onLoaded={handleGraphLoaded}
           onCommitFileSelect={onCommitFileSelect}
+          onOpenInTab={onOpenInTab}
         />
       )}
 

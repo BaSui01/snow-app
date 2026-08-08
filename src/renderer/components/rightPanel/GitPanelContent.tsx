@@ -148,6 +148,7 @@ export function GitPanelContent({
           onStatusChange={setGitStatus}
           onOpenFile={onOpenFile}
           onOpenTerminal={onOpenTerminal}
+          onOpenInTab={onOpenInTab}
         />
       </div>
 

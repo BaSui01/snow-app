@@ -171,6 +171,14 @@ export function ChatsSection({
       return {};
     }
   });
+  // 「其他项目」跨项目通知区块收起状态（localStorage 持久化）
+  const [isCrossProjectCollapsed, setIsCrossProjectCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("chats-cross-project-collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const sectionListRef = useRef<HTMLDivElement | null>(null);
   // 始终持有最新 conversations，供子代理加载 effect 读取。
@@ -808,6 +816,19 @@ export function ChatsSection({
     });
   };
 
+  /** 收起/展开「其他项目」跨项目通知区块并持久化到 localStorage */
+  const toggleCrossProjectCollapsed = (): void => {
+    setIsCrossProjectCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("chats-cross-project-collapsed", String(next));
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
+  };
+
   return (
     <div
       className={`sidebar-section chats-section${
@@ -931,103 +952,121 @@ export function ChatsSection({
                   点击自动切换项目并打开对应会话 */}
               {crossProjectNotifications.length > 0 && (
                 <div className="cross-project-notifications">
-                  <div className="cross-project-notifications-header">
+                  <button
+                    type="button"
+                    className="cross-project-notifications-header"
+                    onClick={toggleCrossProjectCollapsed}
+                    aria-expanded={!isCrossProjectCollapsed}
+                    title={t("sidebar.crossProjectToggleCollapse", {
+                      defaultValue:
+                        "Collapse/expand other project notifications",
+                    })}
+                  >
+                    <ChevronRight
+                      size={12}
+                      className={
+                        isCrossProjectCollapsed
+                          ? ""
+                          : "cross-project-notifications-chevron--open"
+                      }
+                    />
                     <span>
                       {t("sidebar.crossProjectNotificationsTitle", {
                         defaultValue: "Other projects",
                       })}
                     </span>
-                  </div>
-                  {crossProjectNotifications.map((group) => (
-                    <div
-                      className="cross-project-notification-group"
-                      key={group.directoryId}
-                    >
-                      <div className="cross-project-notification-project">
-                        <Folder size={11} aria-hidden="true" />
-                        <span className="cross-project-notification-project-name">
-                          {group.directoryName}
-                        </span>
-                        <span className="cross-project-notification-project-count">
-                          {group.notifications.length}
-                        </span>
-                      </div>
-                      {group.notifications.map((notification) => {
-                        const conversation = notification.conversation;
-                        const displayName =
-                          conversation.summary ||
-                          conversation.title ||
-                          t("sidebar.untitledChat", {
-                            defaultValue: "Untitled",
-                          });
-                        const parsedDate = parseDbTimestamp(
-                          conversation.updatedAt
-                        );
-                        const timeLabel = formatTimeLabel(
-                          parsedDate,
-                          new Date(),
-                          t
-                        );
-                        return (
-                          <button
-                            type="button"
-                            className="cross-project-notification-item"
-                            key={conversation.conversationId}
-                            onClick={() =>
-                              void handleOpenCrossProjectNotification(
-                                group,
-                                notification
-                              )
-                            }
-                            title={t(
-                              "sidebar.crossProjectNotificationOpenTitle",
-                              {
-                                values: {
-                                  project: group.directoryName,
-                                  conversation: displayName,
-                                },
-                                defaultValue:
-                                  "Open {{conversation}} in {{project}}",
+                  </button>
+                  {!isCrossProjectCollapsed &&
+                    crossProjectNotifications.map((group) => (
+                      <div
+                        className="cross-project-notification-group"
+                        key={group.directoryId}
+                      >
+                        <div className="cross-project-notification-project">
+                          <Folder size={11} aria-hidden="true" />
+                          <span className="cross-project-notification-project-name">
+                            {group.directoryName}
+                          </span>
+                          <span className="cross-project-notification-project-count">
+                            {group.notifications.length}
+                          </span>
+                        </div>
+                        {group.notifications.map((notification) => {
+                          const conversation = notification.conversation;
+                          const displayName =
+                            conversation.summary ||
+                            conversation.title ||
+                            t("sidebar.untitledChat", {
+                              defaultValue: "Untitled",
+                            });
+                          const parsedDate = parseDbTimestamp(
+                            conversation.updatedAt
+                          );
+                          const timeLabel = formatTimeLabel(
+                            parsedDate,
+                            new Date(),
+                            t
+                          );
+                          return (
+                            <button
+                              type="button"
+                              className="cross-project-notification-item"
+                              key={conversation.conversationId}
+                              onClick={() =>
+                                void handleOpenCrossProjectNotification(
+                                  group,
+                                  notification
+                                )
                               }
-                            )}
-                          >
-                            <span
-                              className={`chat-item-icon${
-                                notification.isAttentionRequired
-                                  ? " attention-required"
-                                  : notification.isStreaming
-                                    ? " streaming"
-                                    : notification.isCompleted
-                                      ? " completed"
-                                      : ""
-                              }`}
-                            >
-                              {notification.isAttentionRequired ? (
-                                <CircleAlert size={12} aria-hidden="true" />
-                              ) : notification.isStreaming ? (
-                                <Loader2
-                                  size={11}
-                                  className="spin"
-                                  aria-hidden="true"
-                                />
-                              ) : notification.isCompleted ? (
-                                <CheckCircle2 size={12} aria-hidden="true" />
-                              ) : (
-                                <MessageSquareMore
-                                  size={11}
-                                  aria-hidden="true"
-                                />
+                              title={t(
+                                "sidebar.crossProjectNotificationOpenTitle",
+                                {
+                                  values: {
+                                    project: group.directoryName,
+                                    conversation: displayName,
+                                  },
+                                  defaultValue:
+                                    "Open {{conversation}} in {{project}}",
+                                }
                               )}
-                            </span>
-                            <span className="list-label">{displayName}</span>
-                            <span className="cross-project-notification-time">
-                              {timeLabel}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ))}
+                            >
+                              <span
+                                className={`chat-item-icon${
+                                  notification.isAttentionRequired
+                                    ? " attention-required"
+                                    : notification.isStreaming
+                                      ? " streaming"
+                                      : notification.isCompleted
+                                        ? " completed"
+                                        : ""
+                                }`}
+                              >
+                                {notification.isAttentionRequired ? (
+                                  <CircleAlert size={12} aria-hidden="true" />
+                                ) : notification.isStreaming ? (
+                                  <Loader2
+                                    size={11}
+                                    className="spin"
+                                    aria-hidden="true"
+                                  />
+                                ) : notification.isCompleted ? (
+                                  <CheckCircle2 size={12} aria-hidden="true" />
+                                ) : (
+                                  <MessageSquareMore
+                                    size={11}
+                                    aria-hidden="true"
+                                  />
+                                )}
+                              </span>
+                              <span className="list-label">{displayName}</span>
+                              <span className="cross-project-notification-time">
+                                {timeLabel}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ))}
                 </div>
               )}
               {timeGroups.map((group) => {

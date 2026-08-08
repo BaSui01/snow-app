@@ -6437,6 +6437,127 @@ input {
   flex-shrink: 0;
 }
 
+/* Info header at the top of a sub-agent conversation's message list: agent
+   badge + stage title (the prompt truncated at activation) + a shortcut back
+   to the launching parent conversation + the full delegated prompt. Width
+   follows the --chat-content-max gradient like every other chat-area element. */
+.sub-agent-info-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(100%, var(--chat-content-max));
+  min-width: 0;
+  margin: 0 auto;
+  padding: 14px 16px;
+  border: 1px solid var(--border-subtle, var(--border-color));
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary, transparent);
+  box-shadow: var(--shadow-sm, none);
+}
+
+.sub-agent-info-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sub-agent-info-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-family: var(--font-mono, monospace);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.sub-agent-info-agent svg {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.sub-agent-info-agent span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sub-agent-info-parent {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 8px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.sub-agent-info-parent:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.sub-agent-info-parent svg {
+  flex-shrink: 0;
+}
+
+.sub-agent-info-parent span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sub-agent-info-title {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sub-agent-info-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle, var(--border-color));
+}
+
+.sub-agent-info-prompt-label {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.sub-agent-info-prompt-text {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
 /* Read-only footer that replaces the input box in a sub-agent conversation
    whose run has ended (completed / failed / cancelled). The conversation
    stays browsable, but no further messages can be sent into it. */

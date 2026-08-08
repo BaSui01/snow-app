@@ -303,6 +303,8 @@ export const en = {
   "chat.subAgentFinished.cancelled":
     "This sub-agent was cancelled. The conversation is read-only.",
   "chat.subAgentFinished.backToParent": "Back to parent conversation",
+  "chat.subAgentInfo.launchedBy": "Launched by parent \"{{title}}\"",
+  "chat.subAgentInfo.prompt": "Prompt",
   "chat.quickActionAddProject": "Add a project",
   "chat.quickActionAddProjectDesc": "Open a local workspace directory",
   "chat.quickActionConfigApi": "Configure AI API",

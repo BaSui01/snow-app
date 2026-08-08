@@ -288,6 +288,8 @@ export const zhTW = {
   "chat.subAgentFinished.failed": "該子代理執行失敗，會話僅供檢視。",
   "chat.subAgentFinished.cancelled": "該子代理已取消，會話僅供檢視。",
   "chat.subAgentFinished.backToParent": "返回主會話",
+  "chat.subAgentInfo.launchedBy": "由主會話「{{title}}」啟動",
+  "chat.subAgentInfo.prompt": "提示詞",
   "chat.quickActionAddProject": "新增一個專案",
   "chat.quickActionAddProjectDesc": "開啟一個本機工作區目錄",
   "chat.quickActionConfigApi": "設定 AI API",

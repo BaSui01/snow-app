@@ -288,6 +288,8 @@ export const zhCN = {
   "chat.subAgentFinished.failed": "该子代理执行失败，会话仅供查看。",
   "chat.subAgentFinished.cancelled": "该子代理已取消，会话仅供查看。",
   "chat.subAgentFinished.backToParent": "返回主会话",
+  "chat.subAgentInfo.launchedBy": "由主会话「{{title}}」启动",
+  "chat.subAgentInfo.prompt": "提示词",
   "chat.quickActionAddProject": "添加一个项目",
   "chat.quickActionAddProjectDesc": "打开一个本地工作区目录",
   "chat.quickActionConfigApi": "配置 AI API",

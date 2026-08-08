@@ -213,7 +213,8 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       const executeSubAgentActivation = createSubAgentActivation({
         ctx,
         requestToolAuthorizations,
-        model: options.model,
+        parentApiProfile: options.apiProfile,
+        parentModel: options.model,
         planApprovedSessionKeysRef,
       });
 
@@ -1232,7 +1233,11 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             !isRunCancelled(finalSessionKey)
           ) {
             const sessionState = ctx.sessionsRef.current?.[finalSessionKey];
-            ctx.notifyAiComplete(sessionState?.summary || undefined);
+            ctx.notifyAiComplete({
+              conversationId: finalSessionKey,
+              directoryId: sessionState?.directoryId ?? ctx.directoryId,
+              title: sessionState?.summary || undefined,
+            });
           }
         });
     },

@@ -207,7 +207,9 @@ export const useChatConversation = (
       model?: string,
       isAuto?: boolean,
       subAgentConfigProfile?: string,
-      apiProfile?: string
+      apiProfile?: string,
+      subAgentToolsJson?: string,
+      subAgentSystemPrompt?: string
     ) => Promise<string | null>
   >(async () => null);
   const yoloModeRef = useRef(yoloMode);
@@ -454,9 +456,9 @@ export const useChatConversation = (
     saveInputDraft: () => {},
     getInputDraft: () => undefined,
     clearInputDraft: () => {},
-    notifyAiComplete: () => {},
-    notifySensitiveCommandIntercepted: () => {},
-    notifyUserInteractionRequired: () => {},
+    notifyAiComplete: (_options) => {},
+    notifySensitiveCommandIntercepted: (_options) => {},
+    notifyUserInteractionRequired: (_options) => {},
   };
 
   // --- 1. Conversation session management ---
@@ -594,7 +596,7 @@ export const useChatConversation = (
     (conversationId: string, summary: string): void => {
       ctx.updateSessionField(conversationId, "summary", summary);
     },
-    [ctx]
+    [ctx.updateSessionField]
   );
 
   return {

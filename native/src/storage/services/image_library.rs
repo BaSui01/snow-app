@@ -12,10 +12,10 @@ use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use base64::Engine;
 use super::super::database;
 use super::super::paths;
 use super::system_settings;
+use base64::Engine;
 
 /// image_library 记录（服务层结构体，napi 结构体在 storage/mod.rs 门面层）
 #[derive(Debug, Clone)]
@@ -79,9 +79,7 @@ pub fn ensure_image_library_table(connection: &rusqlite::Connection) -> rusqlite
 
     // 幂等补列：image_library.album_id（旧库升级路径）
     let has_album_id: bool = connection
-        .prepare(
-            "SELECT COUNT(*) FROM pragma_table_info('image_library') WHERE name = 'album_id'",
-        )?
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('image_library') WHERE name = 'album_id'")?
         .query_row([], |row| row.get(0))?;
     if !has_album_id {
         connection.execute_batch("ALTER TABLE image_library ADD COLUMN album_id TEXT;")?;
@@ -148,7 +146,8 @@ fn probe_dimensions(bytes: &[u8], mime_type: &str) -> (Option<i64>, Option<i64>)
                 continue;
             }
             let marker = bytes[offset + 1];
-            if (0xC0..=0xCF).contains(&marker) && marker != 0xC4 && marker != 0xC8 && marker != 0xCC {
+            if (0xC0..=0xCF).contains(&marker) && marker != 0xC4 && marker != 0xC8 && marker != 0xCC
+            {
                 let height = u16::from_be_bytes([bytes[offset + 5], bytes[offset + 6]]);
                 let width = u16::from_be_bytes([bytes[offset + 7], bytes[offset + 8]]);
                 return (Some(width as i64), Some(height as i64));
@@ -372,11 +371,8 @@ pub fn create_album(database_path: &Path, name: &str) -> Result<ImageAlbumRecord
                 "INSERT INTO image_albums (id, name) VALUES (?1, ?2)",
                 params![id, name],
             )?;
-            find_album(&connection, &id).and_then(|album| {
-                album.ok_or_else(|| {
-                    rusqlite::Error::InvalidQuery
-                })
-            })
+            find_album(&connection, &id)
+                .and_then(|album| album.ok_or_else(|| rusqlite::Error::InvalidQuery))
         })
         .map_err(|error| database::database_error(database_path, "create image album", error))
 }
@@ -398,9 +394,8 @@ pub fn rename_album(database_path: &Path, id: &str, name: &str) -> Result<ImageA
             if affected == 0 {
                 return Err(rusqlite::Error::QueryReturnedNoRows);
             }
-            find_album(&connection, id).and_then(|album| {
-                album.ok_or(rusqlite::Error::QueryReturnedNoRows)
-            })
+            find_album(&connection, id)
+                .and_then(|album| album.ok_or(rusqlite::Error::QueryReturnedNoRows))
         })
         .map_err(|error| database::database_error(database_path, "rename image album", error))
 }
@@ -421,11 +416,7 @@ pub fn delete_album(database_path: &Path, id: &str) -> Result<()> {
 
 /// 将图片移入 / 移出相册（album_id 为 None 时移出）。
 /// 相册或图片不存在时返回错误。
-pub fn set_image_album(
-    database_path: &Path,
-    image_id: &str,
-    album_id: Option<&str>,
-) -> Result<()> {
+pub fn set_image_album(database_path: &Path, image_id: &str, album_id: Option<&str>) -> Result<()> {
     database::open_connection(database_path)
         .and_then(|connection| {
             if let Some(album_id) = album_id {
@@ -522,8 +513,9 @@ pub fn delete_image(database_path: &Path, id: &str) -> Result<()> {
     };
 
     // 1) 重写引用该图的会话消息（content + raw_json）
-    let rewritten = rewrite_messages_referencing(&tx, &relative_path)
-        .map_err(|error| database::database_error(database_path, "rewrite messages for image", error))?;
+    let rewritten = rewrite_messages_referencing(&tx, &relative_path).map_err(|error| {
+        database::database_error(database_path, "rewrite messages for image", error)
+    })?;
 
     // 2) 删除索引行
     tx.execute("DELETE FROM image_library WHERE id = ?1", params![id])
@@ -634,9 +626,8 @@ fn collect_paths_for_conversations(
 ) -> rusqlite::Result<Vec<String>> {
     let mut paths: Vec<String> = Vec::new();
     for conversation_id in conversation_ids {
-        let mut statement = connection.prepare(
-            "SELECT content, raw_json FROM chat_messages WHERE conversation_id = ?1",
-        )?;
+        let mut statement = connection
+            .prepare("SELECT content, raw_json FROM chat_messages WHERE conversation_id = ?1")?;
         let rows = statement.query_map(params![conversation_id], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
         })?;
@@ -652,14 +643,13 @@ fn collect_paths_for_conversations(
 }
 
 /// 统计指定会话中引用的图库图片数量（去重后按索引存在性计数）。
-pub fn count_conversation_images(
-    database_path: &Path,
-    conversation_ids: &[String],
-) -> Result<i64> {
+pub fn count_conversation_images(database_path: &Path, conversation_ids: &[String]) -> Result<i64> {
     let connection = database::open_connection(database_path)
         .map_err(|error| database::database_error(database_path, "open for image count", error))?;
-    let paths = collect_paths_for_conversations(&connection, conversation_ids)
-        .map_err(|error| database::database_error(database_path, "scan conversation images", error))?;
+    let paths =
+        collect_paths_for_conversations(&connection, conversation_ids).map_err(|error| {
+            database::database_error(database_path, "scan conversation images", error)
+        })?;
     let mut count = 0i64;
     for path in &paths {
         let exists: bool = connection
@@ -682,14 +672,17 @@ pub fn delete_conversation_images(
     database_path: &Path,
     conversation_ids: &[String],
 ) -> Result<i64> {
-    let mut connection = database::open_connection(database_path)
-        .map_err(|error| database::database_error(database_path, "open for image cascade", error))?;
-    let paths = collect_paths_for_conversations(&connection, conversation_ids)
-        .map_err(|error| database::database_error(database_path, "scan conversation images", error))?;
+    let mut connection = database::open_connection(database_path).map_err(|error| {
+        database::database_error(database_path, "open for image cascade", error)
+    })?;
+    let paths =
+        collect_paths_for_conversations(&connection, conversation_ids).map_err(|error| {
+            database::database_error(database_path, "scan conversation images", error)
+        })?;
 
-    let tx = connection
-        .transaction()
-        .map_err(|error| database::database_error(database_path, "begin image cascade tx", error))?;
+    let tx = connection.transaction().map_err(|error| {
+        database::database_error(database_path, "begin image cascade tx", error)
+    })?;
 
     let mut removed_files: Vec<String> = Vec::new();
     for path in &paths {
@@ -700,12 +693,17 @@ pub fn delete_conversation_images(
                 |row| row.get(0),
             )
             .optional()
-            .map_err(|error| database::database_error(database_path, "query image record", error))?;
+            .map_err(|error| {
+                database::database_error(database_path, "query image record", error)
+            })?;
         if file_name.is_none() {
             continue;
         }
-        tx.execute("DELETE FROM image_library WHERE relative_path = ?1", params![path])
-            .map_err(|error| database::database_error(database_path, "delete image index", error))?;
+        tx.execute(
+            "DELETE FROM image_library WHERE relative_path = ?1",
+            params![path],
+        )
+        .map_err(|error| database::database_error(database_path, "delete image index", error))?;
         removed_files.push(path.clone());
     }
 
@@ -851,8 +849,9 @@ fn load_migration_journal() -> Result<Option<MigrationJournal>> {
     if !path.exists() {
         return Ok(None);
     }
-    let content = fs::read_to_string(&path)
-        .map_err(|error| Error::from_reason(format!("Failed to read migration journal: {error}")))?;
+    let content = fs::read_to_string(&path).map_err(|error| {
+        Error::from_reason(format!("Failed to read migration journal: {error}"))
+    })?;
     match serde_json::from_str(&content) {
         Ok(journal) => Ok(Some(journal)),
         Err(error) => {

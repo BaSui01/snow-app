@@ -188,9 +188,12 @@ A sub-agent runs through `sub-agents-activate` in an independent execution loop 
 | `description` | Tells the main Agent when to delegate. |
 | `systemPrompt` | Must be self-contained: mission, inputs, workflow, tools, safety, and output. |
 | `toolsJson` | JSON string or tool-name array. `["*"]` means all tools; `[]` means no tools. |
-| `configProfile` | Existing API profile; empty follows the current global configuration. |
+| `configProfile` | Empty inherits the API profile and current model used by the parent conversation's current run; non-empty pins the named profile. |
+| `model` | Applies only with a pinned profile; non-empty pins the model, while empty uses that profile's `advancedModel`. |
 
 Activation looks up the current project's same-ID configuration first and falls back to global only when it is absent. Built-in `agent_general` cannot be modified or deleted through config.
+
+Before creating a sub-session, Snow validates the tools, profile, and model once and creates a runtime snapshot. The normal loop, recursive tool loop, automatic compaction, and post-compaction resume all reuse that snapshot instead of following later global changes. Each request still reloads current credentials by the fixed profile name, but deleting that profile causes a strict failure rather than switching providers. The sub-session persists the profile and model actually selected at startup, so history display is not affected by later sub-agent or API configuration edits.
 
 Tool rules:
 
@@ -206,8 +209,8 @@ Tool rules:
 2. Select Global or Project scope;
 3. Enter the name, description, and a complete system prompt;
 4. Choose all/no tools for a global agent, or select explicit tools for a project agent;
-5. Select an available API profile and save;
-6. Delegate one narrowly scoped test task from the main conversation.
+5. Keep **Follow the parent conversation (recommended)**, or select a pinned API profile. With a pinned profile, optionally select an independent model; leaving it empty uses the profile's advanced model;
+6. Save, then delegate one narrowly scoped test task from the main conversation.
 
 ### 2.3 Configure through `config`
 
@@ -219,7 +222,8 @@ config-set scope=subAgents key=agent_readonly_reviewer value={
   "description": "Use for an independent review and issue list",
   "systemPrompt": "You are a read-only reviewer. Verify inputs and files first, then report issues and evidence by severity. Never modify files, run commands, or guess missing business rules. With no tools, identify what cannot be verified.",
   "toolsJson": [],
-  "configProfile": ""
+  "configProfile": "",
+  "model": ""
 }
 ```
 
@@ -235,7 +239,8 @@ config-set scope=subAgents key=agent_project_reviewer projectId=<projectId> valu
     "grep-search",
     "codelens-file_outline"
   ],
-  "configProfile": ""
+  "configProfile": "",
+  "model": ""
 }
 ```
 

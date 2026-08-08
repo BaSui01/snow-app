@@ -74,6 +74,7 @@ export type ResponsesApiRequest = {
    */
   resumeAfterCompaction?: boolean | null;
   subAgentToolsJson?: string | null;
+  subAgentSystemPrompt?: string | null;
   subAgentConfigProfile?: string | null;
   skipContext?: boolean | null;
   planMode?: boolean | null;

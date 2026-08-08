@@ -65,9 +65,7 @@ pub async fn delete_image_library_image(id: String) -> napi::Result<()> {
 
 /// 统计指定会话中引用的图库图片数量（删除会话确认框展示用）。
 #[napi]
-pub async fn count_conversation_images(
-    conversation_ids: Vec<String>,
-) -> napi::Result<i64> {
+pub async fn count_conversation_images(conversation_ids: Vec<String>) -> napi::Result<i64> {
     tokio::task::spawn_blocking(move || crate::storage::count_conversation_images(conversation_ids))
         .await
         .map_err(map_spawn_error)?
@@ -76,9 +74,7 @@ pub async fn count_conversation_images(
 /// 级联删除指定会话中引用的图库图片（物理文件 + 索引行）。
 /// 由删除会话流程调用（选择不保留图片时）。
 #[napi]
-pub async fn delete_conversation_images(
-    conversation_ids: Vec<String>,
-) -> napi::Result<i64> {
+pub async fn delete_conversation_images(conversation_ids: Vec<String>) -> napi::Result<i64> {
     tokio::task::spawn_blocking(move || {
         crate::storage::delete_conversation_images(conversation_ids)
     })
@@ -89,11 +85,9 @@ pub async fn delete_conversation_images(
 /// 准备图库迁移：校验目标目录并写入迁移日志；返回待迁移图片数量（0 表示无需迁移）。
 #[napi]
 pub async fn prepare_image_library_migration(target_dir: String) -> napi::Result<u32> {
-    tokio::task::spawn_blocking(move || {
-        crate::storage::prepare_image_library_migration(target_dir)
-    })
-    .await
-    .map_err(map_spawn_error)?
+    tokio::task::spawn_blocking(move || crate::storage::prepare_image_library_migration(target_dir))
+        .await
+        .map_err(map_spawn_error)?
 }
 
 /// 复制下一批图库文件并返回迁移进度（copied/total/done）。

@@ -393,6 +393,7 @@ pub struct SubAgentConfigInput {
     pub system_prompt: String,
     pub tools_json: String,
     pub config_profile: String,
+    pub model: String,
     pub builtin: bool,
     pub sort_order: i32,
     pub source: String,
@@ -410,6 +411,7 @@ pub struct SubAgentConfigRecord {
     pub system_prompt: String,
     pub tools_json: String,
     pub config_profile: String,
+    pub model: String,
     pub builtin: bool,
     pub sort_order: i32,
     pub source: String,
@@ -711,9 +713,7 @@ pub fn get_privacy_settings() -> Result<services::system_settings::PrivacySettin
     services::privacy_settings::get_privacy_settings(&database_path)
 }
 
-pub fn set_privacy_settings(
-    settings: services::system_settings::PrivacySettings,
-) -> Result<()> {
+pub fn set_privacy_settings(settings: services::system_settings::PrivacySettings) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::privacy_settings::set_privacy_settings(&database_path, &settings)
 }
@@ -723,9 +723,7 @@ pub fn get_theme_settings() -> Result<services::system_settings::ThemeSettings> 
     services::theme_settings::get_theme_settings(&database_path)
 }
 
-pub fn set_theme_settings(
-    settings: services::system_settings::ThemeSettings,
-) -> Result<()> {
+pub fn set_theme_settings(settings: services::system_settings::ThemeSettings) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::theme_settings::set_theme_settings(&database_path, &settings)
 }
@@ -803,9 +801,7 @@ pub fn delete_theme_background_image(image_path: String) -> Result<()> {
     let storage_dir = paths::app_storage_dir()?;
     let backgrounds_dir = storage_dir.join("backgrounds");
     let canonical_backgrounds = backgrounds_dir.canonicalize().map_err(|error| {
-        Error::from_reason(format!(
-            "Failed to resolve backgrounds directory: {error}"
-        ))
+        Error::from_reason(format!("Failed to resolve backgrounds directory: {error}"))
     })?;
     let canonical_target = path.canonicalize().map_err(|error| {
         Error::from_reason(format!("Failed to resolve target image path: {error}"))
@@ -930,18 +926,12 @@ pub fn get_codebase_project_scope_settings(
     })
 }
 
-pub fn set_codebase_project_enabled(
-    project_id: String,
-    enabled: bool,
-) -> Result<()> {
+pub fn set_codebase_project_enabled(project_id: String, enabled: bool) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::system_settings::set_codebase_project_enabled(&database_path, &project_id, enabled)
 }
 
-pub fn set_codebase_project_agent_review(
-    project_id: String,
-    enabled: bool,
-) -> Result<()> {
+pub fn set_codebase_project_agent_review(project_id: String, enabled: bool) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::system_settings::set_codebase_project_agent_review(
         &database_path,
@@ -950,10 +940,7 @@ pub fn set_codebase_project_agent_review(
     )
 }
 
-pub fn set_codebase_project_reranking(
-    project_id: String,
-    enabled: bool,
-) -> Result<()> {
+pub fn set_codebase_project_reranking(project_id: String, enabled: bool) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::system_settings::set_codebase_project_reranking(&database_path, &project_id, enabled)
 }
@@ -1098,7 +1085,9 @@ pub fn delete_workspace_directory(directory_id: String) -> Result<()> {
 pub fn create_project_directory(parent_path: String, project_name: String) -> Result<String> {
     services::workspace_directories::create_project_directory(&parent_path, &project_name)
 }
-pub fn read_directory_entries(dir_path: String) -> Result<Vec<services::fs_explorer::DirectoryEntry>> {
+pub fn read_directory_entries(
+    dir_path: String,
+) -> Result<Vec<services::fs_explorer::DirectoryEntry>> {
     services::fs_explorer::read_directory_entries(&dir_path)
 }
 
@@ -1114,7 +1103,10 @@ pub fn delete_workspace_entry(root_path: String, entry_path: String) -> Result<(
     services::fs_explorer::delete_workspace_entry(&root_path, &entry_path)
 }
 
-pub fn search_files(root_dir: String, query: String) -> Result<Vec<services::fs_explorer::FileSearchResult>> {
+pub fn search_files(
+    root_dir: String,
+    query: String,
+) -> Result<Vec<services::fs_explorer::FileSearchResult>> {
     services::fs_explorer::search_files(&root_dir, &query)
 }
 
@@ -1163,10 +1155,7 @@ pub fn upsert_project_mcp_server_config(
     )
 }
 
-pub fn delete_project_mcp_server_config(
-    project_id: String,
-    server_id: String,
-) -> Result<()> {
+pub fn delete_project_mcp_server_config(project_id: String, server_id: String) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::project_mcp_server_configs::delete_project_mcp_server_config(
         &database_path,
@@ -1424,7 +1413,10 @@ pub fn check_sensitive_command_match(
     Ok(matches)
 }
 
-pub fn list_hook_configs(scope: String, project_id: Option<String>) -> Result<Vec<HookConfigRecord>> {
+pub fn list_hook_configs(
+    scope: String,
+    project_id: Option<String>,
+) -> Result<Vec<HookConfigRecord>> {
     let database_path = ensure_database_file()?;
     services::hooks_configs::list_hook_configs(&database_path, &scope, project_id.as_deref())
 }
@@ -1476,9 +1468,7 @@ pub fn search_chat_conversations(query: String) -> Result<Vec<ConversationSearch
     services::chat_conversations::search_chat_conversations(&database_path, &query)
 }
 
-pub fn get_chat_conversation(
-    conversation_id: String,
-) -> Result<Option<ChatConversationRecord>> {
+pub fn get_chat_conversation(conversation_id: String) -> Result<Option<ChatConversationRecord>> {
     let database_path = ensure_database_file()?;
     services::chat_conversations::get_chat_conversation(&database_path, &conversation_id)
 }
@@ -1509,6 +1499,7 @@ pub fn create_sub_agent_session(
     agent_id: String,
     agent_name: String,
     directory_id: String,
+    api_profile_name: String,
     model: String,
     title: String,
 ) -> Result<()> {
@@ -1520,6 +1511,7 @@ pub fn create_sub_agent_session(
         &agent_id,
         &agent_name,
         &directory_id,
+        &api_profile_name,
         &model,
         &title,
     )
@@ -1551,10 +1543,7 @@ pub fn cancel_running_sub_agent_sessions() -> Result<u32> {
     })
 }
 
-pub fn update_conversation_status(
-    conversation_id: String,
-    status: String,
-) -> Result<()> {
+pub fn update_conversation_status(conversation_id: String, status: String) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::chat_conversations::update_conversation_status(
         &database_path,
@@ -1563,22 +1552,12 @@ pub fn update_conversation_status(
     )
 }
 
-pub fn rename_conversation(
-    conversation_id: String,
-    title: String,
-) -> Result<()> {
+pub fn rename_conversation(conversation_id: String, title: String) -> Result<()> {
     let database_path = ensure_database_file()?;
-    services::chat_conversations::rename_conversation(
-        &database_path,
-        &conversation_id,
-        &title,
-    )
+    services::chat_conversations::rename_conversation(&database_path, &conversation_id, &title)
 }
 
-pub fn update_conversation_emoji(
-    conversation_id: String,
-    emoji: String,
-) -> Result<()> {
+pub fn update_conversation_emoji(conversation_id: String, emoji: String) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::chat_conversations::update_conversation_emoji(
         &database_path,
@@ -1638,10 +1617,8 @@ pub struct UserMessageSummary {
 
 pub fn list_user_messages(conversation_id: String) -> Result<Vec<UserMessageSummary>> {
     let database_path = ensure_database_file()?;
-    let mut records = services::chat_conversations::list_user_messages(
-        &database_path,
-        &conversation_id,
-    )?;
+    let mut records =
+        services::chat_conversations::list_user_messages(&database_path, &conversation_id)?;
     for record in &mut records {
         record.content = resolve_inline_images_from_disk(&record.content, &database_path);
     }
@@ -1717,7 +1694,10 @@ pub fn list_usage_records(
     )
 }
 
-pub fn get_usage_summary(since: String, until: String) -> Result<services::usage_records::UsageSummary> {
+pub fn get_usage_summary(
+    since: String,
+    until: String,
+) -> Result<services::usage_records::UsageSummary> {
     let database_path = ensure_database_file()?;
     services::usage_records::get_usage_summary(&database_path, &since, &until)
 }
@@ -1744,7 +1724,15 @@ pub fn list_app_logs(
     offset: i32,
 ) -> Result<services::app_logs::AppLogPage> {
     let database_path = ensure_database_file()?;
-    services::app_logs::list_app_logs(&database_path, &level, &module, &since, &until, limit, offset)
+    services::app_logs::list_app_logs(
+        &database_path,
+        &level,
+        &module,
+        &since,
+        &until,
+        limit,
+        offset,
+    )
 }
 
 pub fn clear_app_logs() -> Result<u32> {
@@ -1780,9 +1768,9 @@ pub fn ensure_database_file() -> Result<PathBuf> {
     }
 
     // Slow path: acquire the init mutex so only one thread initializes.
-    let _guard = DATABASE_INIT_MUTEX.lock().map_err(|_| {
-        Error::from_reason("Snow App database initialization mutex poisoned")
-    })?;
+    let _guard = DATABASE_INIT_MUTEX
+        .lock()
+        .map_err(|_| Error::from_reason("Snow App database initialization mutex poisoned"))?;
 
     // Re-check after acquiring the lock — the thread that held the mutex
     // before us may have already populated the cache.
@@ -1953,8 +1941,7 @@ impl From<services::image_library::ImageAlbumRecord> for ImageAlbumRecord {
 
 /// 图库根目录绝对路径（优先用户自定义路径，回退 `~/.snowapp/image`）。
 pub fn get_image_library_root() -> Result<String> {
-    services::image_library::image_library_root()
-        .map(|path| path.to_string_lossy().into_owned())
+    services::image_library::image_library_root().map(|path| path.to_string_lossy().into_owned())
 }
 
 /// 读取图库自定义保存目录（空字符串表示使用默认目录）。
@@ -1972,23 +1959,15 @@ pub fn set_image_library_dir(dir: String) -> Result<()> {
 /// 列出图库全部图片（按创建时间倒序）。
 pub fn list_image_library() -> Result<Vec<ImageLibraryRecord>> {
     let database_path = ensure_database_file()?;
-    services::image_library::list_images(&database_path).map(|records| {
-        records
-            .into_iter()
-            .map(ImageLibraryRecord::from)
-            .collect()
-    })
+    services::image_library::list_images(&database_path)
+        .map(|records| records.into_iter().map(ImageLibraryRecord::from).collect())
 }
 
 /// 列出全部相册（按创建时间倒序），含封面路径与图片数量。
 pub fn list_image_albums() -> Result<Vec<ImageAlbumRecord>> {
     let database_path = ensure_database_file()?;
-    services::image_library::list_albums(&database_path).map(|records| {
-        records
-            .into_iter()
-            .map(ImageAlbumRecord::from)
-            .collect()
-    })
+    services::image_library::list_albums(&database_path)
+        .map(|records| records.into_iter().map(ImageAlbumRecord::from).collect())
 }
 
 /// 创建相册（名称去除首尾空白，不允许为空）。
@@ -2067,7 +2046,8 @@ pub struct MigrationProgress {
 /// 准备图库迁移：校验目标目录并写入迁移日志；返回待迁移图片数量（0 表示无需迁移）。
 pub fn prepare_image_library_migration(target_dir: String) -> Result<u32> {
     let database_path = ensure_database_file()?;
-    services::image_library::prepare_migration(&database_path, &target_dir).map(|count| count as u32)
+    services::image_library::prepare_migration(&database_path, &target_dir)
+        .map(|count| count as u32)
 }
 
 /// 复制下一批图库文件并返回迁移进度（每批最多 16 个，逐文件写入日志保证崩溃可恢复）。

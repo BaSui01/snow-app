@@ -7,6 +7,7 @@ import type {
   TokenUsage,
   UserQuestionRequest,
 } from "../../../../../preload";
+import type { NotificationConversationTarget } from "../../../../../shared/notification";
 import type { Dispatch, SetStateAction } from "react";
 
 export type UserQuestionState = {
@@ -345,6 +346,23 @@ export type PendingQueueItem = {
   options: ChatInputSendOptions;
 };
 
+export type ConversationNotificationContext = {
+  conversationId: NotificationConversationTarget["conversationId"] | undefined;
+  directoryId: NotificationConversationTarget["directoryId"] | undefined;
+};
+
+export type NotifyAiCompleteOptions = ConversationNotificationContext & {
+  title: string | undefined;
+};
+
+export type NotifySensitiveCommandOptions = ConversationNotificationContext & {
+  toolName: string;
+};
+
+export type NotifyUserInteractionOptions = ConversationNotificationContext & {
+  reason: string;
+};
+
 /** Ref value type compatible with React's MutableRefObject */
 export type RefValue<T> = { current: T };
 
@@ -441,7 +459,9 @@ export type ConversationContextValue = {
       model?: string,
       isAuto?: boolean,
       subAgentConfigProfile?: string,
-      apiProfile?: string
+      apiProfile?: string,
+      subAgentToolsJson?: string,
+      subAgentSystemPrompt?: string
     ) => Promise<string | null>
   >;
   yoloModeRef: RefValue<boolean>;
@@ -530,9 +550,13 @@ export type ConversationContextValue = {
   clearInputDraft: (conversationId: string | undefined) => void;
 
   // 通知系统：AI 流程结束 / 敏感命令拦截 / 用户交互确认时触发系统通知
-  notifyAiComplete: (conversationTitle?: string) => void;
-  notifySensitiveCommandIntercepted: (toolName: string) => void;
-  notifyUserInteractionRequired: (reason: string) => void;
+  notifyAiComplete: (options: NotifyAiCompleteOptions) => void;
+  notifySensitiveCommandIntercepted: (
+    options: NotifySensitiveCommandOptions
+  ) => void;
+  notifyUserInteractionRequired: (
+    options: NotifyUserInteractionOptions
+  ) => void;
 };
 
 export type UseChatConversationResult = {

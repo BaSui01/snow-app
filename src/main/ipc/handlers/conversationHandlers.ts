@@ -377,6 +377,7 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
       agentId: unknown,
       agentName: unknown,
       directoryId: unknown,
+      apiProfileName: unknown,
       model: unknown,
       title: unknown
     ) => {
@@ -402,7 +403,12 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
       if (typeof directoryId !== "string") {
         throw new Error("Directory ID is required to create sub-agent session");
       }
-      if (typeof model !== "string") {
+      if (typeof apiProfileName !== "string" || !apiProfileName.trim()) {
+        throw new Error(
+          "API profile is required to create sub-agent session"
+        );
+      }
+      if (typeof model !== "string" || !model.trim()) {
         throw new Error("Model is required to create sub-agent session");
       }
       if (typeof title !== "string" || !title.trim()) {
@@ -421,6 +427,7 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
         agentId.trim(),
         agentName.trim(),
         directoryId.trim(),
+        apiProfileName.trim(),
         model.trim(),
         title.trim()
       );

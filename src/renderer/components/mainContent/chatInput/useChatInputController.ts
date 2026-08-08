@@ -163,39 +163,18 @@ export const useChatInputController = ({
 
         setApiConfigs(configs);
 
-        // Resolve the conversation-scoped profile:
-        //   - sub-agent conversations always use their agent's configProfile
-        //   - main conversations use their persisted apiProfileName binding
-        //   - a brand-new conversation (no conversationId yet) follows the
-        //     global active profile until the user switches it in the input
-        let requestedProfile = "";
-        let subAgentConversation = false;
-        if (conversation?.conversationType === "sub_agent") {
-          subAgentConversation = true;
-          const subAgentId = conversation.subAgentId.trim();
-          if (!subAgentId) {
-            throw new Error("Sub-agent configuration is not available");
-          }
-
-          const subAgentConfig = await window.snow.getSubAgentConfig(
-            subAgentId
-          );
-          if (cancelled) {
-            return;
-          }
-          if (!subAgentConfig) {
-            throw new Error(`Sub-agent configuration not found: ${subAgentId}`);
-          }
-          requestedProfile = subAgentConfig.configProfile.trim();
-        } else {
-          requestedProfile = conversation?.apiProfileName?.trim() ?? "";
-        }
+        // Resolve the conversation-scoped profile from the persisted runtime
+        // snapshot. Sub-agent history must never consult the current agent
+        // configuration because that configuration may have changed or been
+        // deleted after the run completed.
+        const subAgentConversation =
+          conversation?.conversationType === "sub_agent";
+        const requestedProfile = conversation?.apiProfileName?.trim() ?? "";
         setIsSubAgentConversation(subAgentConversation);
 
-        // Sub-agent conversations resolve their profile from the agent's
-        // configProfile: a specified-but-missing profile fails fast (the
-        // Rust backend hard-errors the same way); an empty profile follows
-        // the global active profile just like an unbound main conversation.
+        // A persisted profile snapshot is strict for sub-agents. Legacy rows
+        // without a snapshot retain the old active-profile fallback so existing
+        // history remains readable after migration.
         let runtimeConfig: ApiConfigRecord | null = null;
         if (requestedProfile) {
           runtimeConfig =
@@ -222,16 +201,10 @@ export const useChatInputController = ({
 
         setSelectedApiProfile(runtimeConfig.profileName);
         setRuntimeApiConfig(runtimeConfig);
-        // Sub-agent conversations always run with the profile's advanced
-        // model — the Rust backend resolves the sub-agent model from its
-        // configProfile on every request, so a model inherited from the
-        // parent conversation record would be misleading.
+        // Persisted conversation model is the immutable display snapshot for
+        // completed sub-agents and the remembered selection for main chats.
         const rememberedModel = conversation?.model?.trim() ?? "";
-        setSelectedModel(
-          subAgentConversation
-            ? runtimeConfig.advancedModel || ""
-            : rememberedModel || runtimeConfig.advancedModel || ""
-        );
+        setSelectedModel(rememberedModel || runtimeConfig.advancedModel || "");
         setThinkingValue(getThinkingValueFromConfig(runtimeConfig));
       } catch (error) {
         if (cancelled) {

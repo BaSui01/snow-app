@@ -4,7 +4,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use napi::bindgen_prelude::*;
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue, ACCEPT_ENCODING, AUTHORIZATION, CONTENT_TYPE};
+use reqwest::header::{
+    HeaderMap, HeaderName, HeaderValue, ACCEPT_ENCODING, AUTHORIZATION, CONTENT_TYPE,
+};
 use serde_json::{json, Value};
 use tokio::sync::RwLock;
 
@@ -93,13 +95,9 @@ pub async fn textify_images_in_messages(
                         let parsed = parse_chat_message_content(&result, database_path)?;
                         if !parsed.images.is_empty() {
                             // 工具结果（如截图）不是用户上传的参考图，不附加引用块。
-                            let textified = textify_parsed_content(
-                                &parsed,
-                                &client,
-                                &vision_config,
-                                false,
-                            )
-                            .await?;
+                            let textified =
+                                textify_parsed_content(&parsed, &client, &vision_config, false)
+                                    .await?;
                             updated.push((name, call_id, textified));
                             changed = true;
                             continue;
@@ -271,8 +269,12 @@ async fn describe_image(
 
     let description = match vision_config.request_method.as_str() {
         "chat" => describe_image_via_chat(client, vision_config, image, user_prompt).await?,
-        "responses" => describe_image_via_responses(client, vision_config, image, user_prompt).await?,
-        "anthropic" => describe_image_via_anthropic(client, vision_config, image, user_prompt).await?,
+        "responses" => {
+            describe_image_via_responses(client, vision_config, image, user_prompt).await?
+        }
+        "anthropic" => {
+            describe_image_via_anthropic(client, vision_config, image, user_prompt).await?
+        }
         "gemini" => describe_image_via_gemini(client, vision_config, image, user_prompt).await?,
         method => {
             return Err(Error::from_reason(format!(
@@ -461,10 +463,7 @@ fn resolve_gemini_endpoint(vision_config: &VisionApiConfig, api_key: &str) -> St
         .strip_prefix("models/")
         .unwrap_or(&vision_config.model);
 
-    let mut url = format!(
-        "{}/models/{}:generateContent",
-        resolved_base, clean_model
-    );
+    let mut url = format!("{}/models/{}:generateContent", resolved_base, clean_model);
 
     if !api_key.is_empty() {
         url.push_str(&format!("?key={}", api_key));
@@ -482,7 +481,9 @@ fn build_bearer_headers(
     headers.insert(
         AUTHORIZATION,
         HeaderValue::from_str(&format!("Bearer {}", api_key)).map_err(|error| {
-            Error::from_reason(format!("Invalid vision authorization header value: {error}"))
+            Error::from_reason(format!(
+                "Invalid vision authorization header value: {error}"
+            ))
         })?,
     );
     merge_custom_headers(
@@ -509,13 +510,20 @@ fn build_anthropic_headers(
     headers.insert(
         AUTHORIZATION,
         HeaderValue::from_str(&format!("Bearer {}", api_key)).map_err(|error| {
-            Error::from_reason(format!("Invalid vision authorization header value: {error}"))
+            Error::from_reason(format!(
+                "Invalid vision authorization header value: {error}"
+            ))
         })?,
     );
     merge_custom_headers(
         &mut headers,
         custom_headers,
-        &["content-type", "accept-encoding", "authorization", "x-api-key"],
+        &[
+            "content-type",
+            "accept-encoding",
+            "authorization",
+            "x-api-key",
+        ],
     );
     Ok(headers)
 }
@@ -570,9 +578,7 @@ async fn send_vision_request(
         .json(payload)
         .send()
         .await
-        .map_err(|error| {
-            Error::from_reason(format!("Failed to call vision API: {error}"))
-        })?;
+        .map_err(|error| Error::from_reason(format!("Failed to call vision API: {error}")))?;
 
     let status = response.status();
     let body = response.text().await.unwrap_or_default();
@@ -635,10 +641,7 @@ fn summarize_vision_payload(payload: &Value) -> String {
                             .and_then(|m| m.as_str())
                             .unwrap_or("unknown");
                         let preview: String = data.chars().take(300).collect();
-                        images.push((
-                            data.len(),
-                            format!("data:{media_type};base64,{preview}"),
-                        ));
+                        images.push((data.len(), format!("data:{media_type};base64,{preview}")));
                     }
                 }
             }
@@ -674,10 +677,7 @@ fn summarize_vision_payload(payload: &Value) -> String {
                             .and_then(|m| m.as_str())
                             .unwrap_or("unknown");
                         let preview: String = data.chars().take(300).collect();
-                        images.push((
-                            data.len(),
-                            format!("data:{mime_type};base64,{preview}"),
-                        ));
+                        images.push((data.len(), format!("data:{mime_type};base64,{preview}")));
                     }
                 }
             }
@@ -888,8 +888,9 @@ pub(crate) async fn describe_image_file(path: &str, user_prompt: &str) -> Result
             MAX_IMAGE_BYTES / 1024 / 1024
         )));
     }
-    let bytes = fs::read(&file_path)
-        .map_err(|error| Error::from_reason(format!("Cannot read image file \"{path}\": {error}")))?;
+    let bytes = fs::read(&file_path).map_err(|error| {
+        Error::from_reason(format!("Cannot read image file \"{path}\": {error}"))
+    })?;
     let mime_type = guess_image_mime(&file_path);
     if !mime_type.starts_with("image/") {
         return Err(Error::from_reason(format!(

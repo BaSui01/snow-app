@@ -62,15 +62,10 @@ impl ProxyConfig {
     /// 当 `enabled` 为 false 时直接返回原 builder，由 reqwest 默认
     /// 跟随系统代理环境变量。当 `enabled` 为 true 时注入
     /// `http://{host}:{port}` 代理。
-    pub fn apply(
-        self,
-        mut builder: reqwest::ClientBuilder,
-    ) -> Result<reqwest::ClientBuilder> {
+    pub fn apply(self, mut builder: reqwest::ClientBuilder) -> Result<reqwest::ClientBuilder> {
         if self.enabled {
             let proxy = reqwest::Proxy::all(format!("http://{}:{}", self.host, self.port))
-                .map_err(|error| {
-                    Error::from_reason(format!("Invalid proxy settings: {error}"))
-                })?;
+                .map_err(|error| Error::from_reason(format!("Invalid proxy settings: {error}")))?;
             builder = builder.proxy(proxy);
         }
         Ok(builder)
@@ -123,7 +118,11 @@ fn parse_proxy_config(raw: &str) -> ProxyConfig {
         .map(|p| p as u16)
         .unwrap_or(DEFAULT_PROXY_PORT);
 
-    ProxyConfig { enabled, host, port }
+    ProxyConfig {
+        enabled,
+        host,
+        port,
+    }
 }
 
 /// 统一的应用 User-Agent（Telegram Desktop 风格）。
@@ -272,9 +271,7 @@ pub async fn build_proxied_client() -> Result<reqwest::Client> {
 /// 创建带代理设置和自定义超时的 HTTP 客户端。
 ///
 /// 客户端默认携带统一的应用 User-Agent（见 [`app_user_agent`]）。
-pub async fn build_proxied_client_with_timeout(
-    timeout: Duration,
-) -> Result<reqwest::Client> {
+pub async fn build_proxied_client_with_timeout(timeout: Duration) -> Result<reqwest::Client> {
     let config = load_proxy_config().await?;
     let builder = config.apply(
         reqwest::Client::builder()

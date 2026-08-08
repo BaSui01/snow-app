@@ -539,6 +539,7 @@ export type SubAgentConfigInput = {
   systemPrompt: string;
   toolsJson: string;
   configProfile: string;
+  model: string;
   builtin: boolean;
   sortOrder: number;
   source: string;
@@ -756,6 +757,7 @@ export type ResponsesApiRequest = {
    */
   resumeAfterCompaction?: boolean;
   subAgentToolsJson?: string;
+  subAgentSystemPrompt?: string;
   subAgentConfigProfile?: string;
   skipContext?: boolean;
   planMode?: boolean;
@@ -1273,6 +1275,7 @@ export type NativeBridge = {
     agentId: string,
     agentName: string,
     directoryId: string,
+    apiProfileName: string,
     model: string,
     title: string
   ) => Promise<void>;

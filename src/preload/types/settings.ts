@@ -344,6 +344,7 @@ export type SubAgentConfigInput = {
   systemPrompt: string;
   toolsJson: string;
   configProfile: string;
+  model: string;
   builtin: boolean;
   sortOrder: number;
   source: string;

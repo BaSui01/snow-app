@@ -146,6 +146,7 @@ export const conversationApi = {
     agentId: string,
     agentName: string,
     directoryId: string,
+    apiProfileName: string,
     model: string,
     title: string
   ): Promise<void> =>
@@ -156,6 +157,7 @@ export const conversationApi = {
       agentId,
       agentName,
       directoryId,
+      apiProfileName,
       model,
       title
     ),

@@ -11,6 +11,7 @@ import { RightPanel, type RightPanelRef } from "./components/RightPanel";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { WindowControls } from "./components/WindowControls";
+import { NotificationNavigationBridge } from "./components/NotificationNavigationBridge";
 import {
   ChatConversationProvider,
   useChatConversationContext,
@@ -350,6 +351,11 @@ export const App = (): React.JSX.Element => {
         directoryId={activeDirectory?.directoryId}
         directoryPath={activeDirectory?.path}
       >
+        <NotificationNavigationBridge
+          activeDirectory={activeDirectory}
+          onActiveDirectoryChange={setActiveDirectory}
+          onSelectMainView={setActiveMainView}
+        />
         <ShortcutHandlerBridge />
         <div className={shellClasses} style={panelSizeStyle}>
           {isWindows && <WindowControls />}

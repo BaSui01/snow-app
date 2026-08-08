@@ -295,7 +295,7 @@ export const en = {
   "chat.scrollToBottom": "Scroll to bottom",
   "chat.userMessageRail.title": "User messages",
   "chat.subAgentModelFixed":
-    "Sub-agent uses the model from its own configuration",
+    "Sub-agent uses the API profile and model resolved when it started",
   "chat.subAgentFinished.completed":
     "This sub-agent has finished. The conversation is read-only.",
   "chat.subAgentFinished.failed":
@@ -1836,16 +1836,27 @@ export const en = {
   "settings.subAgentName": "Name",
   "settings.subAgentNameRequired": "Sub-agent name is required.",
   "settings.subAgentNamePlaceholder": "e.g. Code reviewer",
-  "settings.subAgentConfigProfile": "API profile",
+  "settings.subAgentConfigProfile": "API and model",
   "settings.subAgentSelectApiProfile": "Select an API profile",
-  "settings.subAgentFollowActiveApiProfile": "Follow the enabled API profile",
+  "settings.subAgentFollowActiveApiProfile":
+    "Follow the parent conversation (recommended)",
   "settings.subAgentApiProfileEmpty":
-    "No API profiles are configured. The sub-agent will follow the profile enabled in API settings when one becomes available.",
+    "No API profiles are configured. Configure one before starting a sub-agent.",
   "settings.subAgentApiProfileHint":
-    "By default, the sub-agent follows the profile enabled in API settings. Selecting a specific profile pins its connection, system prompts, and custom headers.",
+    "By default, the sub-agent inherits the parent conversation's API profile and current model. Selecting a profile pins the API connection and lets you optionally pin a model.",
   "settings.subAgentApiProfileRequired": "Select an API profile.",
   "settings.subAgentApiProfileUnavailable":
     "The selected API profile is no longer available.",
+  "settings.subAgentModel": "Model",
+  "settings.subAgentUseProfileAdvancedModel":
+    "Use the selected profile's advanced model",
+  "settings.subAgentModelHint":
+    "Leave this unset to use the selected profile's advanced model.",
+  "settings.subAgentModelsLoading": "Loading models...",
+  "settings.subAgentModelsLoadError":
+    "Failed to load models for this API profile",
+  "settings.subAgentModelsLoadFallback":
+    "Model loading failed. The saved model and the profile's advanced model remain available.",
   "settings.subAgentDescription": "Description",
   "settings.subAgentDescriptionPlaceholder":
     "Describe when this sub-agent should be used.",
@@ -2079,8 +2090,7 @@ export const en = {
   "settings.terminalSummaryTitle": "Terminal preview",
   "settings.terminalSectionShell": "Shell",
   "settings.terminalSectionFont": "Font",
-  "settings.terminalSectionNetwork": "Network",
-  "settings.terminalSectionAppearance": "Appearance",
+    "settings.terminalSectionAppearance": "Appearance",
   "settings.terminalDetectedTerminals": "Detected terminals",
   "settings.terminalNoDetectedTerminals": "No terminals detected",
   "settings.terminalShell": "Shell",
@@ -2102,10 +2112,8 @@ export const en = {
   "settings.terminalLineHeight": "Line height",
   "settings.terminalLineHeightValidationError":
     "Line height must be between 0.5 and 3.",
-  "settings.terminalProxy": "Proxy",
-  "settings.terminalProxyNone": "None",
-  "settings.terminalProxyPlaceholder":
-    "e.g. http://127.0.0.1:7890 (leave empty for none)",
+  "settings.terminalShellPathValidationError":
+    "Shell executable does not exist. Check the path or leave it empty to auto-detect.",
   "settings.saveTerminalSettings": "Save settings",
   "settings.keyboardShortcuts": "Keyboard shortcuts",
   "settings.keyboardShortcutsInfo":

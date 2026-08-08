@@ -1091,7 +1091,6 @@ input {
   position: relative;
 }
 
-
 .chat-item-icon.attention-required {
   border-color: var(--warning, #f59e0b);
   background: color-mix(
@@ -1116,6 +1115,7 @@ input {
   );
   color: var(--accent, #3b82f6);
 }
+
 .chat-item-icon.forked {
   border-color: var(--text-muted);
   color: var(--text-muted);
@@ -1251,7 +1251,6 @@ input {
   line-height: 1;
   flex-shrink: 0;
 }
-
 .chat-item-content {
   display: flex;
   flex-direction: column;

@@ -188,9 +188,12 @@ Hook 数据库写入会创建写入期间的临时备份，成功后删除本次
 | `description` | 告诉主 Agent 何时委派。 |
 | `systemPrompt` | 必须自包含：使命、输入、流程、工具、安全边界和输出。 |
 | `toolsJson` | JSON 字符串或工具名数组。`["*"]` 表示全部，`[]` 表示无工具。 |
-| `configProfile` | 已存在的 API 配置档；空值跟随当前全局配置。 |
+| `configProfile` | 留空时继承启动它的主会话本次运行所用 API Profile 和当前模型；非空时固定使用指定 Profile。 |
+| `model` | 仅固定 Profile 时生效；非空时固定模型，留空时使用该 Profile 的 `advancedModel`。 |
 
 激活时先查当前项目的同 ID 配置，未命中才回退全局。内置 `agent_general` 不可通过 config 修改或删除。
+
+启动前会一次性校验工具、Profile 和模型，并生成运行快照。普通循环、工具递归、自动压缩和压缩后续跑都复用该快照，不会在每轮跟随全局配置变化。每次请求仍按固定 Profile 名读取最新凭证，但 Profile 被删除时会严格失败，不会切换到其他供应商。子会话会持久化启动时实际使用的 Profile 和模型，因此历史展示不受后续子代理/API 配置修改影响。
 
 工具规则：
 
@@ -206,8 +209,8 @@ Hook 数据库写入会创建写入期间的临时备份，成功后删除本次
 2. 选择全局或项目范围；
 3. 填写名称、描述和完整 system prompt；
 4. 全局代理选择全部工具或无工具；项目代理可选择具体工具；
-5. 选择可用 API 配置档并保存；
-6. 从主对话发起一个边界清晰的测试任务。
+5. 保持“跟随主会话（推荐）”，或选择固定 API 配置；固定后可再选择独立模型，留空则使用该配置的高级模型；
+6. 保存后，从主对话发起一个边界清晰的测试任务。
 
 ### 2.3 通过 `config` 配置
 
@@ -219,7 +222,8 @@ config-set scope=subAgents key=agent_readonly_reviewer value={
   "description": "需要独立审查并返回问题清单时使用",
   "systemPrompt": "你是只读审查员。先验证输入和文件，再按严重级别输出问题与证据。不得修改文件、运行命令或推测缺失业务规则。没有工具时说明无法验证的部分。",
   "toolsJson": [],
-  "configProfile": ""
+  "configProfile": "",
+  "model": ""
 }
 ```
 
@@ -235,7 +239,8 @@ config-set scope=subAgents key=agent_project_reviewer projectId=<projectId> valu
     "grep-search",
     "codelens-file_outline"
   ],
-  "configProfile": ""
+  "configProfile": "",
+  "model": ""
 }
 ```
 

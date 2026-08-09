@@ -325,7 +325,13 @@ fn recover_database(database_path: &Path) -> Result<()> {
         ))
     })?;
 
+<<<<<<< HEAD
     let _ = recovered_conn.pragma_update(None, "user_version", 27);
+||||||| parent of 09f89b0 (feat(scheduled-tasks): 定时任务 SQLite 持久化与运行配置编辑)
+    let _ = recovered_conn.pragma_update(None, "user_version", 28);
+=======
+    let _ = recovered_conn.pragma_update(None, "user_version", 29);
+>>>>>>> 09f89b0 (feat(scheduled-tasks): 定时任务 SQLite 持久化与运行配置编辑)
     drop(recovered_conn);
     drop(read_only_conn);
 
@@ -749,6 +755,39 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            ON memos(directory_id, status, created_at DESC, id DESC);
          CREATE INDEX IF NOT EXISTS idx_memos_directory_created
            ON memos(directory_id, created_at DESC, id DESC);
+
+         CREATE TABLE IF NOT EXISTS scheduled_tasks (
+           id TEXT PRIMARY KEY NOT NULL,
+           directory_id TEXT NOT NULL DEFAULT '',
+           name TEXT NOT NULL DEFAULT '',
+           prompt TEXT NOT NULL DEFAULT '',
+           schedule_json TEXT NOT NULL DEFAULT '{}',
+           api_profile TEXT,
+           basic_model TEXT,
+           model TEXT,
+           thinking_strength TEXT,
+           status TEXT NOT NULL DEFAULT 'pending',
+           paused INTEGER NOT NULL DEFAULT 0,
+           next_run_at TEXT,
+           last_run_at TEXT,
+           run_count INTEGER NOT NULL DEFAULT 0,
+           last_error TEXT,
+           created_at TEXT NOT NULL,
+           updated_at TEXT NOT NULL
+         );
+         CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_directory
+           ON scheduled_tasks(directory_id, created_at ASC, id ASC);
+
+         CREATE TABLE IF NOT EXISTS scheduled_task_runs (
+           id TEXT PRIMARY KEY NOT NULL,
+           task_id TEXT NOT NULL REFERENCES scheduled_tasks(id) ON DELETE CASCADE,
+           run_at TEXT NOT NULL,
+           status TEXT NOT NULL DEFAULT 'running',
+           duration_ms INTEGER,
+           error TEXT
+         );
+         CREATE INDEX IF NOT EXISTS idx_scheduled_task_runs_task
+           ON scheduled_task_runs(task_id, run_at ASC, id ASC);
     ",
     )?;
 
@@ -766,7 +805,13 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
     // columns and the sub-agent project_id rebuild (see migrations.rs).
     migrations::run_post_schema_migrations(connection)?;
 
+<<<<<<< HEAD
     connection.pragma_update(None, "user_version", 27)?;
+||||||| parent of 09f89b0 (feat(scheduled-tasks): 定时任务 SQLite 持久化与运行配置编辑)
+    connection.pragma_update(None, "user_version", 28)?;
+=======
+    connection.pragma_update(None, "user_version", 29)?;
+>>>>>>> 09f89b0 (feat(scheduled-tasks): 定时任务 SQLite 持久化与运行配置编辑)
 
     Ok(())
 }

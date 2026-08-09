@@ -290,12 +290,140 @@ pub(super) async fn collect_anthropic_stream(
                     let chunk = match chunk_result {
                         Ok(chunk) => chunk,
                         Err(error) => {
+<<<<<<< HEAD
                             // Network/read error mid-stream: log and break instead
                             // of returning Err. We keep whatever content and tool
                             // calls have been collected so far so the agent loop
                             // can continue with partial results.
                             eprintln!("Anthropic stream read error (keeping partial result): {error}");
                             break;
+||||||| parent of 09f89b0 (feat(scheduled-tasks): 定时任务 SQLite 持久化与运行配置编辑)
+                            // reqwest 读流错误 → 转为 napi Error 供重试判定使用
+                            let stream_error = Error::from_reason(error.to_string());
+                            // 阶段感知混合重试（方案 B）：已累积工具调用 → 必须重试
+                            // （残缺 tool_calls 不可安全使用）；纯文本少量 → 重试；
+                            // 大量纯文本 → 保留 partial（token 最优）。
+                            let partial_text_len =
+                                content_chunks.iter().map(|s| s.len()).sum::<usize>()
+                                    + thinking_chunks.iter().map(|s| s.len()).sum::<usize>();
+                            if !should_retry_mid_stream(
+                                &stream_error,
+                                attempt,
+                                retry_options,
+                                cancel_token.is_cancelled(),
+                                !tool_calls.is_empty(),
+                                partial_text_len,
+                            ) {
+                                // Network/read error mid-stream: log and break instead
+                                // of returning Err. We keep whatever content and tool
+                                // calls have been collected so far so the agent loop
+                                // can continue with partial results.
+                                eprintln!("Anthropic stream read error (keeping partial result): {error}");
+                                break;
+                            }
+
+                            // 通知前端重试（前端清空 content/thinking 显示"重试中"）
+                            on_chunk.call(
+                                ResponsesApiStreamChunk {
+                                    content_delta: String::new(),
+                                    thinking_delta: String::new(),
+                                    content: String::new(),
+                                    thinking: String::new(),
+                                    retrying: true,
+                                    retry_attempt: Some((attempt + 1) as i32),
+                                    retry_error: Some(stream_error.reason.clone()),
+                                    stream_token_count: stream_token_count as i64,
+                                    elapsed_ms: stream_start.elapsed().as_millis() as i64,
+                                    ttft_ms,
+                                    vision_status: None,
+                                },
+                                ThreadsafeFunctionCallMode::NonBlocking,
+                            );
+
+                            match wait_before_retry(retry_options, cancel_token, attempt).await {
+                                Ok(()) => {
+                                    // 清空累积状态，重发原始请求
+                                    raw_events.clear();
+                                    content_chunks.clear();
+                                    thinking_chunks.clear();
+                                    tool_calls.clear();
+                                    tool_call_positions_by_index.clear();
+                                    byte_buffer.clear();
+                                    response_id.clear();
+                                    response_model.clear();
+                                    response_status = String::from("completed");
+                                    token_usage = ChatTokenUsage::default();
+                                    stream_finished = false;
+                                    attempt += 1;
+                                    retry_reset = true;
+                                    break;
+                                }
+                                Err(e) => return Err(e),
+                            }
+=======
+                            // reqwest 读流错误 → 转为 napi Error 供重试判定使用
+                            let stream_error = Error::from_reason(error.to_string());
+                            // 阶段感知混合重试（方案 B）：已累积工具调用 → 必须重试
+                            // （残缺 tool_calls 不可安全使用）；纯文本少量 → 重试；
+                            // 大量纯文本 → 保留 partial（token 最优）。
+                            let partial_text_len =
+                                content_chunks.iter().map(|s| s.chars().count()).sum::<usize>()
+                                    + thinking_chunks.iter().map(|s| s.chars().count()).sum::<usize>();
+                            if !should_retry_mid_stream(
+                                &stream_error,
+                                attempt,
+                                retry_options,
+                                cancel_token.is_cancelled(),
+                                !tool_calls.is_empty(),
+                                partial_text_len,
+                            ) {
+                                // Network/read error mid-stream: log and break instead
+                                // of returning Err. We keep whatever content and tool
+                                // calls have been collected so far so the agent loop
+                                // can continue with partial results.
+                                eprintln!("Anthropic stream read error (keeping partial result): {error}");
+                                break;
+                            }
+
+                            // 通知前端重试（前端清空 content/thinking 显示"重试中"）
+                            on_chunk.call(
+                                ResponsesApiStreamChunk {
+                                    content_delta: String::new(),
+                                    thinking_delta: String::new(),
+                                    content: String::new(),
+                                    thinking: String::new(),
+                                    retrying: true,
+                                    retry_attempt: Some((attempt + 1) as i32),
+                                    retry_error: Some(stream_error.reason.clone()),
+                                    stream_token_count: stream_token_count as i64,
+                                    elapsed_ms: stream_start.elapsed().as_millis() as i64,
+                                    ttft_ms,
+                                    vision_status: None,
+                                },
+                                ThreadsafeFunctionCallMode::NonBlocking,
+                            );
+
+                            match wait_before_retry(retry_options, cancel_token, attempt).await {
+                                Ok(()) => {
+                                    // 清空累积状态，重发原始请求
+                                    raw_events.clear();
+                                    content_chunks.clear();
+                                    thinking_chunks.clear();
+                                    tool_calls.clear();
+                                    tool_call_positions_by_index.clear();
+                                    byte_buffer.clear();
+                                    response_id.clear();
+                                    response_model.clear();
+                                    response_status = String::from("completed");
+                                    token_usage = ChatTokenUsage::default();
+                                    stream_finished = false;
+                                    attempt += 1;
+                                    retry_reset = true;
+                                    break;
+                                }
+                                Err(e) => return Err(e),
+                            }
+>>>>>>> 09f89b0 (feat(scheduled-tasks): 定时任务 SQLite 持久化与运行配置编辑)
                         }
                     };
                     // Any data received — reset the idle timer.

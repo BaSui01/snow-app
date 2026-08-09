@@ -214,13 +214,6 @@ export const en = {
   "scheduledTask.optionDefault": "Default",
   "scheduledTask.optionDefaultWithValue": "Default ({{value}})",
   "scheduledTask.activeTag": "active",
-  "scheduledTask.thinkingNone": "None",
-  "scheduledTask.thinkingMinimal": "Minimal",
-  "scheduledTask.thinkingLow": "Low",
-  "scheduledTask.thinkingMedium": "Medium",
-  "scheduledTask.thinkingHigh": "High",
-  "scheduledTask.thinkingExtraHigh": "Extra High",
-  "scheduledTask.thinkingMax": "Max",
   "scheduledTask.everyMinutes": "Every {{minutes}}m",
   "scheduledTask.everyHours": "Every {{hours}}h",
   "scheduledTask.dailyAt": "Daily at {{time}}",
@@ -241,7 +234,7 @@ export const en = {
   "scheduledTask.executorUnavailable":
     "AI Loop unavailable — tasks will not run until the chat is ready.",
   "scheduledTask.lifetimeHint":
-    "Tasks run only while the app is open and are cleared on exit.",
+    "Tasks are saved locally and kept after restarting the app. Executions missed while the app is closed are skipped.",
   "scheduledTask.clearAll": "Clear all",
   "scheduledTask.confirmClearAll":
     "Remove all scheduled tasks? This cannot be undone.",
@@ -302,11 +295,14 @@ export const en = {
   "scheduledTask.confirmClearProject":
     "Remove all scheduled tasks in the current project? Only this project will be affected, and this cannot be undone.",
   "scheduledTask.emptyFiltered": "No tasks match this filter.",
-  "scheduledTask.thinkingXHigh": "Extra High",
   "scheduledTask.defaultWithValue": "Default ({{value}})",
   "scheduledTask.selectTask": "Select task: {{name}}",
   "scheduledTask.taskListLabel": "Scheduled task list",
   "scheduledTask.detailsEmpty": "Select a task to view its details.",
+  "scheduledTask.editConfig": "Edit",
+  "scheduledTask.saveConfig": "Save",
+  "scheduledTask.cancelEdit": "Cancel",
+  "scheduledTask.errorSaveFailed": "Failed to save changes",
   "sidebar.chatTimeRunning": "Running",
   "sidebar.chatTimeToday": "Today",
   "sidebar.chatTimeYesterday": "Yesterday",

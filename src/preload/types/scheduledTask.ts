@@ -1,10 +1,11 @@
 /**
- * Type model for in-memory scheduled tasks.
+ * Type model for scheduled tasks.
  *
- * Scheduled tasks exist ONLY while the Snow App process is alive. They are
- * never persisted to disk: when the process exits, all timers disappear. This
- * matches requirement #4 ("tasks only execute while the Snow App process
- * exists; if the process is gone, they do not execute").
+ * Tasks are persisted to the backend SQLite database: definition, status,
+ * pause state and run history all survive app restarts. The scheduler itself
+ * (timers, the tick loop) runs in the renderer process, so tasks only execute
+ * while the app is running; a task whose fire time passes while the app is
+ * closed is skipped and its schedule advances to the next plan point.
  *
  * A task wraps a user-configured prompt that is sent to the existing AI Loop
  * (via buildFromContent, which creates a new chat conversation and auto-sends,
@@ -76,6 +77,8 @@ export type ScheduledTaskRecord = {
    *  error) still proceeds to the AI Loop. Default false. */
   runOnScriptError?: boolean;
   createdAt: string;
+  /** ISO timestamp of the last modification (also touched by runs). */
+  updatedAt?: string;
   /** ISO timestamp of the last execution, if any. */
   lastRunAt?: string;
   /** ISO timestamp of the next scheduled execution, if known. */
@@ -94,8 +97,7 @@ export type ScheduledTaskRecord = {
 ||||||| parent of 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
 =======
   /** Recent execution history (ring buffer, newest last, max 20 entries).
-   *  In-memory only — like the tasks themselves, history is lost when the
-   *  process exits. */
+   *  Persisted in the backend database and restored after a restart. */
   history?: ScheduledTaskRunRecord[];
   /** Optional per-task API configuration overrides (see ScheduledTaskRunOptions). */
   apiProfile?: string;
@@ -155,4 +157,15 @@ export type PreScriptResult = {
   model?: string;
   thinkingStrength?: string;
 >>>>>>> 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
+};
+
+/** Input shape for updating an existing task's run configuration. Only the
+ *  optional per-task overrides can change after creation; name, prompt and
+ *  schedule are immutable. An omitted/empty field clears the override, falling
+ *  back to the app's current defaults (same semantics as creation). */
+export type UpdateScheduledTaskInput = {
+  apiProfile?: string;
+  basicModel?: string;
+  model?: string;
+  thinkingStrength?: string;
 };

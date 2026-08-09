@@ -1,5 +1,6 @@
 import { ipcRenderer } from "electron";
 
+<<<<<<< HEAD
 import type { PreScriptResult } from "../types";
 
 /**
@@ -22,5 +23,78 @@ export const scheduledTaskApi = {
       cwd,
       timeoutMs,
       envJson
+||||||| parent of 09f89b0 (feat(scheduled-tasks): 定时任务 SQLite 持久化与运行配置编辑)
+=======
+/**
+ * Wire shape of a scheduled task as persisted in SQLite (camelCase view of
+ * the Rust napi struct). `scheduleJson` holds the serialized
+ * `ScheduledTaskSchedule`; the renderer store converts to/from the rich
+ * `ScheduledTaskRecord` type used across the UI.
+ */
+export type ScheduledTaskWireRun = {
+  runAt: string;
+  status: string;
+  durationMs?: number;
+  error?: string;
+};
+
+export type ScheduledTaskWireRecord = {
+  id: string;
+  directoryId: string;
+  name: string;
+  prompt: string;
+  scheduleJson: string;
+  apiProfile?: string;
+  basicModel?: string;
+  model?: string;
+  thinkingStrength?: string;
+  status: string;
+  paused: boolean;
+  nextRunAt?: string;
+  lastRunAt?: string;
+  runCount: number;
+  lastError?: string;
+  createdAt: string;
+  updatedAt: string;
+  history: ScheduledTaskWireRun[];
+};
+
+/**
+ * Persistence bridge for scheduled tasks. The renderer store keeps its
+ * in-memory Map as the runtime authority and writes every mutation through
+ * these channels so tasks and their run history survive app restarts.
+ */
+export const scheduledTaskApi = {
+  listScheduledTasks: (): Promise<ScheduledTaskWireRecord[]> =>
+    ipcRenderer.invoke("scheduled-tasks:list"),
+  upsertScheduledTask: (
+    input: Omit<ScheduledTaskWireRecord, "history">
+  ): Promise<ScheduledTaskWireRecord> =>
+    ipcRenderer.invoke("scheduled-tasks:upsert", input),
+  deleteScheduledTask: (taskId: string): Promise<void> =>
+    ipcRenderer.invoke("scheduled-tasks:delete", taskId),
+  /** directoryId: null = clear all; "" = global only; other = that project. */
+  clearScheduledTasks: (directoryId: string | null): Promise<number> =>
+    ipcRenderer.invoke("scheduled-tasks:clear", directoryId),
+  appendScheduledTaskRun: (
+    taskId: string,
+    runAt: string
+  ): Promise<string> =>
+    ipcRenderer.invoke("scheduled-tasks:append-run", taskId, runAt),
+  finalizeScheduledTaskRun: (
+    taskId: string,
+    runId: string,
+    status: "completed" | "error",
+    durationMs?: number,
+    error?: string
+  ): Promise<void> =>
+    ipcRenderer.invoke(
+      "scheduled-tasks:finalize-run",
+      taskId,
+      runId,
+      status,
+      durationMs,
+      error
+>>>>>>> 09f89b0 (feat(scheduled-tasks): 定时任务 SQLite 持久化与运行配置编辑)
     ),
 };

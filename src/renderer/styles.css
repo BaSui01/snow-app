@@ -17797,7 +17797,7 @@ input {
 .scheduled-task-item.selected {
   border-color: var(--border-color);
   background: var(--bg-active);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-sm, none);
 }
 
 .scheduled-task-item.is-running {
@@ -18218,6 +18218,28 @@ input {
   flex-shrink: 0;
 }
 
+.scheduled-task-edit-btn {
+  padding: 4px 8px;
+  flex-shrink: 0;
+}
+
+/* 详情视图「运行配置」编辑模式：复用创建表单的字段控件 */
+.scheduled-task-config-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  min-width: 0;
+}
+
+.scheduled-task-config-edit-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+  padding-top: 2px;
+}
+
 .scheduled-task-prompt-content {
   max-height: 240px;
   overflow: auto;
@@ -18523,6 +18545,56 @@ input {
   white-space: normal;
 }
 
+/* 思考强度选择触发按钮（弹出 ThinkingStrengthMenu，与聊天输入区共用） */
+.thinking-menu-wrap {
+  position: relative;
+}
+
+.thinking-menu-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  outline: none;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.thinking-menu-trigger:hover {
+  border-color: var(--text-muted);
+}
+
+.thinking-menu-trigger:focus-visible {
+  border-color: var(--text-muted);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.thinking-menu-trigger > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thinking-menu-trigger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.thinking-menu-chevron {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
 .scheduled-tasks-field-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -18588,7 +18660,7 @@ input {
   padding: 11px 18px;
   border-top: 1px solid var(--border-light);
   background: var(--bg-primary);
-  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.03);
+  box-shadow: var(--shadow-sm, none);
   flex-shrink: 0;
 }
 
@@ -18661,7 +18733,7 @@ input {
 .scheduled-tasks-segmented-btn:focus-visible,
 .scheduled-tasks-cancel-btn:focus-visible,
 .scheduled-tasks-create-btn:focus-visible {
-  outline: 2px solid var(--text-muted);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -18728,7 +18800,8 @@ input {
   }
 
   .scheduled-task-details-grid,
-  .scheduled-task-config-grid {
+  .scheduled-task-config-grid,
+  .scheduled-tasks-field-row {
     grid-template-columns: minmax(0, 1fr);
   }
 }

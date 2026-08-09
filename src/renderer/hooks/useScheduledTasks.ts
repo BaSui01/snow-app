@@ -8,6 +8,7 @@ import {
 import type {
   CreateScheduledTaskInput,
   ScheduledTaskRecord,
+  UpdateScheduledTaskInput,
 } from "../../preload";
 
 /** Create input with an optional project override: omitted = the current
@@ -17,7 +18,7 @@ type CreateTaskInput = Omit<CreateScheduledTaskInput, "directoryId"> & {
 };
 
 /**
- * React bridge for the in-memory scheduled task scheduler.
+ * React bridge for the scheduled task scheduler.
  *
  * This hook does two jobs:
  *  1. Registers the AI Loop executor. When a task fires, its configured prompt
@@ -31,9 +32,10 @@ type CreateTaskInput = Omit<CreateScheduledTaskInput, "directoryId"> & {
  * singleton concern, so it should be mounted exactly once for the lifetime of
  * the app (e.g. in MainSidebarContent, which is always rendered).
  *
- * Process-lifetime guarantee (requirement #4): the store and its timers live
- * only while this renderer process is alive. Closing/ quitting the app
- * destroys everything; nothing is persisted.
+ * Persistence: the store hydrates from the backend SQLite database on startup
+ * (task definitions, pause state and run history survive restarts). Execution
+ * still requires the renderer process to be alive — a task whose fire time
+ * passes while the app is closed is skipped on the next launch.
  */
 export const useScheduledTasks = (
   directoryId: string,
@@ -41,6 +43,10 @@ export const useScheduledTasks = (
 ): {
   tasks: ScheduledTaskRecord[];
   createTask: (input: CreateTaskInput) => ScheduledTaskRecord;
+  updateTask: (
+    id: string,
+    input: UpdateScheduledTaskInput
+  ) => ScheduledTaskRecord | null;
   removeTask: (id: string) => void;
   clearTasks: () => void;
   clearGlobalTasks: () => void;
@@ -134,6 +140,13 @@ export const useScheduledTasks = (
     [directoryId]
   );
 
+  const updateTask = useCallback(
+    (id: string, input: UpdateScheduledTaskInput): ScheduledTaskRecord | null => {
+      return scheduledTasksStore.update(id, input);
+    },
+    []
+  );
+
   const removeTask = useCallback((id: string): void => {
     scheduledTasksStore.remove(id);
   }, []);
@@ -157,6 +170,7 @@ export const useScheduledTasks = (
   return {
     tasks,
     createTask,
+    updateTask,
     removeTask,
     clearTasks,
     clearGlobalTasks,

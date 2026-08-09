@@ -7,7 +7,12 @@ import {
 ||||||| parent of 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
 =======
   Check,
+<<<<<<< HEAD
 >>>>>>> 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
+||||||| parent of 09f89b0 (feat(scheduled-tasks): 定时任务 SQLite 持久化与运行配置编辑)
+=======
+  ChevronDown,
+>>>>>>> 09f89b0 (feat(scheduled-tasks): 定时任务 SQLite 持久化与运行配置编辑)
   Clock,
 <<<<<<< HEAD
   FileCode2,
@@ -19,6 +24,7 @@ import {
 >>>>>>> 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
   Loader2,
   Pause,
+  Pencil,
   Play,
   Plus,
   Repeat,
@@ -49,6 +55,7 @@ import type {
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { Modal } from "../common/Modal";
 import { THINKING_OPTIONS_BY_METHOD } from "../mainContent/chatInput/constants";
+import { ThinkingStrengthMenu } from "../mainContent/chatInput/ThinkingStrengthMenu";
 import {
   getThinkingValueFromConfig,
   normalizeRequestMethod,
@@ -76,16 +83,6 @@ type ScheduledTasksModalProps = {
 };
 
 const PREVIEW_MAX_LEN = 160;
-
-const THINKING_TRANSLATION_KEYS: Record<string, string> = {
-  none: "scheduledTask.thinkingNone",
-  minimal: "scheduledTask.thinkingMinimal",
-  low: "scheduledTask.thinkingLow",
-  medium: "scheduledTask.thinkingMedium",
-  high: "scheduledTask.thinkingHigh",
-  xhigh: "scheduledTask.thinkingXHigh",
-  max: "scheduledTask.thinkingMax",
-};
 
 const previewPrompt = (prompt: string): string => {
   const plain = prompt.replace(/\s+/g, " ").trim();
@@ -213,13 +210,16 @@ const formatSchedule = (
   });
 };
 
-const formatThinkingLabel = (
-  value: string,
-  t: Translate,
-  fallback = value
-): string => {
-  const key = THINKING_TRANSLATION_KEYS[value];
-  return key ? t(key, { defaultValue: fallback }) : value;
+/**
+ * 在所有请求方法的思考强度选项里查找某值的显示标签（与聊天输入区共用
+ * THINKING_OPTIONS_BY_METHOD，保证文案一致）；找不到时原样返回。
+ */
+const findThinkingOptionLabel = (value: string): string => {
+  for (const method of Object.values(THINKING_OPTIONS_BY_METHOD)) {
+    const option = method.find((candidate) => candidate.value === value);
+    if (option) return option.label;
+  }
+  return value;
 };
 
 const getTaskStatusKey = (task: ScheduledTaskRecord): TaskStatusKey => {
@@ -259,6 +259,7 @@ export function ScheduledTasksModal({
   const {
     tasks,
     createTask,
+    updateTask,
     removeTask,
     clearTasks,
     clearGlobalTasks,
@@ -298,6 +299,7 @@ export function ScheduledTasksModal({
   const [basicModelOverride, setBasicModelOverride] = useState("");
   const [advancedModelOverride, setAdvancedModelOverride] = useState("");
   const [thinkingStrength, setThinkingStrength] = useState("");
+  const [isThinkingMenuOpen, setIsThinkingMenuOpen] = useState(false);
   const [modelOptions, setModelOptions] = useState<Model[]>([]);
   const [isLoadingModelOptions, setIsLoadingModelOptions] = useState(false);
   const [modelOptionsError, setModelOptionsError] = useState<string | null>(null);
@@ -305,6 +307,10 @@ export function ScheduledTasksModal({
 
   const [formError, setFormError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  /** 详情视图「运行配置」编辑模式：正在编辑运行配置的任务 id（null = 只读）。 */
+  const [editingConfigTaskId, setEditingConfigTaskId] = useState<string | null>(
+    null
+  );
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [clearOpen, setClearOpen] = useState(false);
   const [clearGlobalOpen, setClearGlobalOpen] = useState(false);
@@ -314,6 +320,7 @@ export function ScheduledTasksModal({
   const modelRequestIdRef = useRef(0);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const wasOpenRef = useRef(false);
+  const thinkingMenuRef = useRef<HTMLDivElement | null>(null);
 
   const globalTasks = useMemo(
     () => tasks.filter((task) => task.directoryId === ""),
@@ -358,15 +365,18 @@ export function ScheduledTasksModal({
   );
   const profileThinkingLabel = useMemo(() => {
     if (!profileThinkingValue) return null;
-    const option = thinkingOptions.find(
-      (candidate) => candidate.value === profileThinkingValue
-    );
-    return formatThinkingLabel(
-      profileThinkingValue,
-      t,
-      option?.label ?? profileThinkingValue
-    );
-  }, [profileThinkingValue, t, thinkingOptions]);
+    return findThinkingOptionLabel(profileThinkingValue);
+  }, [profileThinkingValue]);
+
+  // "默认（继承 Profile 当前值）"选项文案，思考强度触发按钮与菜单共用
+  const inheritThinkingLabel = profileThinkingLabel
+    ? t("scheduledTask.defaultWithValue", {
+        values: { value: profileThinkingLabel },
+        defaultValue: `Default (${profileThinkingLabel})`,
+      })
+    : t("scheduledTask.optionDefault", {
+        defaultValue: "Default",
+      });
 
   const resetModelOptions = useCallback((): void => {
     modelRequestIdRef.current += 1;
@@ -395,6 +405,71 @@ export function ScheduledTasksModal({
     resetModelOptions();
   }, [directoryId, resetModelOptions]);
 
+  /** 退出运行配置编辑模式：清空与创建表单共用的草稿状态，避免残留。 */
+  const exitEditConfig = useCallback((): void => {
+    setEditingConfigTaskId(null);
+    setFormError(null);
+    setSelectedApiProfile("");
+    setBasicModelOverride("");
+    setAdvancedModelOverride("");
+    setThinkingStrength("");
+    resetModelOptions();
+  }, [resetModelOptions]);
+
+  /** 进入运行配置编辑模式：用任务当前的覆盖值填充草稿。 */
+  const startEditConfig = useCallback(
+    (task: ScheduledTaskRecord): void => {
+      setSelectedApiProfile(task.apiProfile ?? "");
+      setBasicModelOverride(task.basicModel ?? "");
+      setAdvancedModelOverride(task.model ?? "");
+      setThinkingStrength(task.thinkingStrength ?? "");
+      resetModelOptions();
+      setFormError(null);
+      setEditingConfigTaskId(task.id);
+    },
+    [resetModelOptions]
+  );
+
+  /** 保存运行配置：空字符串 = 清除覆盖（回到继承语义）。 */
+  const saveEditConfig = useCallback((): void => {
+    const taskId = editingConfigTaskId;
+    if (!taskId) return;
+    const updated = updateTask(taskId, {
+      apiProfile: selectedApiProfile.trim() || undefined,
+      basicModel: basicModelOverride.trim() || undefined,
+      model: advancedModelOverride.trim() || undefined,
+      thinkingStrength: thinkingStrength.trim() || undefined,
+    });
+    if (updated) {
+      exitEditConfig();
+    } else {
+      setFormError(
+        t("scheduledTask.errorSaveFailed", {
+          defaultValue: "Failed to save changes",
+        })
+      );
+    }
+  }, [
+    advancedModelOverride,
+    basicModelOverride,
+    editingConfigTaskId,
+    exitEditConfig,
+    selectedApiProfile,
+    t,
+    thinkingStrength,
+    updateTask,
+  ]);
+
+  // 被编辑的任务被删除/清除时自动退出编辑模式（如删除、清空项目任务）。
+  useEffect(() => {
+    if (
+      editingConfigTaskId !== null &&
+      !tasks.some((task) => task.id === editingConfigTaskId)
+    ) {
+      exitEditConfig();
+    }
+  }, [editingConfigTaskId, exitEditConfig, tasks]);
+
   useEffect(() => {
     if (!directoryId && taskScope === "project") {
       setTaskScope("global");
@@ -406,6 +481,21 @@ export function ScheduledTasksModal({
       setFilter("all");
     }
   }, [directoryId, filter]);
+
+  // 点击思考强度菜单外部时关闭
+  useEffect(() => {
+    if (!isThinkingMenuOpen) return;
+    const handleMouseDown = (event: MouseEvent): void => {
+      if (
+        thinkingMenuRef.current &&
+        !thinkingMenuRef.current.contains(event.target as Node)
+      ) {
+        setIsThinkingMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => document.removeEventListener("mousedown", handleMouseDown);
+  }, [isThinkingMenuOpen]);
 
   useEffect(() => {
     const wasOpen = wasOpenRef.current;
@@ -425,7 +515,7 @@ export function ScheduledTasksModal({
     }
 
     setSelectedTaskId(null);
-    setPanelMode(tasks.length === 0 ? "create" : "details");
+    setPanelMode("create");
   }, [open, selectedTaskId, tasks.length, visibleTasks]);
 
   useEffect(() => {
@@ -713,8 +803,9 @@ export function ScheduledTasksModal({
 
   const openCreatePanel = useCallback((): void => {
     resetFormDraft();
+    exitEditConfig();
     setPanelMode("create");
-  }, [resetFormDraft]);
+  }, [exitEditConfig, resetFormDraft]);
 
   const closeCreatePanel = useCallback((): void => {
     setFormError(null);
@@ -875,6 +966,9 @@ export function ScheduledTasksModal({
             task.status === "running" ? " is-running" : ""
           }`}
           onClick={() => {
+            if (editingConfigTaskId !== task.id) {
+              exitEditConfig();
+            }
             setSelectedTaskId(task.id);
             setPanelMode("details");
           }}
@@ -1175,7 +1269,7 @@ export function ScheduledTasksModal({
       defaultValue: "Follow the API config",
     });
     const thinkingLabel = selectedTask.thinkingStrength
-      ? formatThinkingLabel(selectedTask.thinkingStrength, t)
+      ? findThinkingOptionLabel(selectedTask.thinkingStrength)
       : inheritedProfileLabel;
     const history = selectedTask.history ?? [];
 
@@ -1308,57 +1402,107 @@ export function ScheduledTasksModal({
             aria-labelledby="scheduled-task-run-config-title"
             className="scheduled-task-details-section"
           >
-            <h3 id="scheduled-task-run-config-title">
-              {t("scheduledTask.runConfigTitle", {
-                defaultValue: "Run configuration",
-              })}
-            </h3>
-            <dl className="scheduled-task-config-grid">
-              <div>
-                <dt>
-                  {t("scheduledTask.apiProfile", {
-                    defaultValue: "API config",
+            <div className="scheduled-task-section-heading">
+              <h3 id="scheduled-task-run-config-title">
+                {t("scheduledTask.runConfigTitle", {
+                  defaultValue: "Run configuration",
+                })}
+              </h3>
+              {editingConfigTaskId !== selectedTask.id && (
+                <button
+                  aria-label={t("scheduledTask.editConfig", {
+                    defaultValue: "Edit",
                   })}
-                </dt>
-                <dd className={selectedTask.apiProfile ? "" : " inherited"}>
-                  {apiProfileLabel}
-                </dd>
-              </div>
-              <div>
-                <dt>
-                  {t("scheduledTask.basicModel", {
-                    defaultValue: "Basic model",
-                  })}
-                </dt>
-                <dd className={selectedTask.basicModel ? "" : " inherited"}>
-                  {selectedTask.basicModel || inheritedProfileLabel}
-                </dd>
-              </div>
-              <div>
-                <dt>
-                  {t("scheduledTask.advancedModel", {
-                    defaultValue: "Advanced model",
-                  })}
-                </dt>
-                <dd className={selectedTask.model ? "" : " inherited"}>
-                  {selectedTask.model || inheritedProfileLabel}
-                </dd>
-              </div>
-              <div>
-                <dt>
-                  {t("scheduledTask.thinkingStrength", {
-                    defaultValue: "Thinking strength",
-                  })}
-                </dt>
-                <dd
-                  className={
-                    selectedTask.thinkingStrength ? "" : " inherited"
-                  }
+                  className="scheduled-task-edit-btn"
+                  onClick={() => startEditConfig(selectedTask)}
+                  type="button"
                 >
-                  {thinkingLabel}
-                </dd>
+                  <Pencil size={13} strokeWidth={1.8} />
+                  {t("scheduledTask.editConfig", { defaultValue: "Edit" })}
+                </button>
+              )}
+            </div>
+            {editingConfigTaskId === selectedTask.id ? (
+              <div className="scheduled-task-config-edit">
+                {renderRunConfigFields()}
+                <div className="scheduled-task-config-edit-footer">
+                  {formError && (
+                    <div className="scheduled-tasks-form-error" role="alert">
+                      <AlertCircle size={14} strokeWidth={1.8} />
+                      <span>{formError}</span>
+                    </div>
+                  )}
+                  <div className="scheduled-tasks-form-actions">
+                    <button
+                      className="scheduled-tasks-cancel-btn"
+                      onClick={exitEditConfig}
+                      type="button"
+                    >
+                      {t("scheduledTask.cancelEdit", {
+                        defaultValue: "Cancel",
+                      })}
+                    </button>
+                    <button
+                      className="scheduled-tasks-create-btn"
+                      onClick={saveEditConfig}
+                      type="button"
+                    >
+                      <Check size={14} strokeWidth={2} />
+                      {t("scheduledTask.saveConfig", {
+                        defaultValue: "Save",
+                      })}
+                    </button>
+                  </div>
+                </div>
               </div>
-            </dl>
+            ) : (
+              <dl className="scheduled-task-config-grid">
+                <div>
+                  <dt>
+                    {t("scheduledTask.apiProfile", {
+                      defaultValue: "API config",
+                    })}
+                  </dt>
+                  <dd className={selectedTask.apiProfile ? "" : " inherited"}>
+                    {apiProfileLabel}
+                  </dd>
+                </div>
+                <div>
+                  <dt>
+                    {t("scheduledTask.basicModel", {
+                      defaultValue: "Basic model",
+                    })}
+                  </dt>
+                  <dd className={selectedTask.basicModel ? "" : " inherited"}>
+                    {selectedTask.basicModel || inheritedProfileLabel}
+                  </dd>
+                </div>
+                <div>
+                  <dt>
+                    {t("scheduledTask.advancedModel", {
+                      defaultValue: "Advanced model",
+                    })}
+                  </dt>
+                  <dd className={selectedTask.model ? "" : " inherited"}>
+                    {selectedTask.model || inheritedProfileLabel}
+                  </dd>
+                </div>
+                <div>
+                  <dt>
+                    {t("scheduledTask.thinkingStrength", {
+                      defaultValue: "Thinking strength",
+                    })}
+                  </dt>
+                  <dd
+                    className={
+                      selectedTask.thinkingStrength ? "" : " inherited"
+                    }
+                  >
+                    {thinkingLabel}
+                  </dd>
+                </div>
+              </dl>
+            )}
           </section>
 
           <section
@@ -1447,6 +1591,128 @@ export function ScheduledTasksModal({
     : t("scheduledTask.inheritApiProfile", {
         defaultValue: "Follow the API config",
       });
+
+  /** 运行配置表单控件（API 配置下拉 + 基础/高级模型 + 思考强度菜单）。
+   *  创建表单与详情视图编辑模式共用；草稿状态与创建表单共享。 */
+  const renderRunConfigFields = (): React.JSX.Element => (
+    <>
+      <label className="scheduled-tasks-field">
+        <span>
+          {t("scheduledTask.apiProfile", { defaultValue: "API config" })}
+        </span>
+        <select
+          onChange={(event) => handleApiProfileChange(event.target.value)}
+          value={selectedApiProfile}
+        >
+          <option value="">
+            {activeConfigName
+              ? t("scheduledTask.defaultWithValue", {
+                  values: { value: activeConfigName },
+                  defaultValue: `Default (${activeConfigName})`,
+                })
+              : t("scheduledTask.optionDefault", {
+                  defaultValue: "Default",
+                })}
+          </option>
+          {apiConfigs.map((config) => (
+            <option key={config.profileName} value={config.profileName}>
+              {config.displayName.trim() || config.profileName}
+              {config.isActive
+                ? ` (${t("scheduledTask.activeTag", {
+                    defaultValue: "active",
+                  })})`
+                : ""}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <div className="scheduled-tasks-field-row scheduled-tasks-model-row">
+        <ApiModelCombobox
+          disabled={false}
+          error={modelOptionsError}
+          hasLoaded={loadedModelsFor === selectedConfig?.profileName}
+          isLoading={isLoadingModelOptions}
+          label={t("scheduledTask.basicModel", {
+            defaultValue: "Basic model",
+          })}
+          loadingText={t("settings.loadingModels", {
+            defaultValue: "Loading models...",
+          })}
+          models={modelOptions}
+          noModelsText={t("chat.noModelsFound", {
+            defaultValue: "No models found",
+          })}
+          onChange={setBasicModelOverride}
+          onRequestModels={() => void loadModelOptions()}
+          onRetry={() => void loadModelOptions(true)}
+          placeholder={basicModelPlaceholder}
+          retryText={t("common.retry", { defaultValue: "Retry" })}
+          value={basicModelOverride}
+        />
+        <ApiModelCombobox
+          disabled={false}
+          error={modelOptionsError}
+          hasLoaded={loadedModelsFor === selectedConfig?.profileName}
+          isLoading={isLoadingModelOptions}
+          label={t("scheduledTask.advancedModel", {
+            defaultValue: "Advanced model",
+          })}
+          loadingText={t("settings.loadingModels", {
+            defaultValue: "Loading models...",
+          })}
+          models={modelOptions}
+          noModelsText={t("chat.noModelsFound", {
+            defaultValue: "No models found",
+          })}
+          onChange={setAdvancedModelOverride}
+          onRequestModels={() => void loadModelOptions()}
+          onRetry={() => void loadModelOptions(true)}
+          placeholder={advancedModelPlaceholder}
+          retryText={t("common.retry", { defaultValue: "Retry" })}
+          value={advancedModelOverride}
+        />
+      </div>
+
+      <label className="scheduled-tasks-field">
+        <span>
+          {t("scheduledTask.thinkingStrength", {
+            defaultValue: "Thinking strength",
+          })}
+        </span>
+        <div className="thinking-menu-wrap" ref={thinkingMenuRef}>
+          <button
+            aria-expanded={isThinkingMenuOpen}
+            className="thinking-menu-trigger"
+            onClick={() => setIsThinkingMenuOpen((value) => !value)}
+            type="button"
+          >
+            <span>
+              {thinkingStrength
+                ? findThinkingOptionLabel(thinkingStrength)
+                : inheritThinkingLabel}
+            </span>
+            <ChevronDown size={14} className="thinking-menu-chevron" />
+          </button>
+          {isThinkingMenuOpen && (
+            <div className="model-dropdown drop-down">
+              <ThinkingStrengthMenu
+                open={isThinkingMenuOpen}
+                value={thinkingStrength}
+                options={thinkingOptions}
+                inheritLabel={inheritThinkingLabel}
+                subtitle={requestMethod}
+                onSelect={(value) => {
+                  setThinkingStrength(value);
+                  setIsThinkingMenuOpen(false);
+                }}
+              />
+            </div>
+          )}
+        </div>
+      </label>
+    </>
+  );
 
   const renderCreateForm = (): React.JSX.Element => (
     <form
@@ -1742,111 +2008,7 @@ export function ScheduledTasksModal({
               defaultValue: "Run configuration",
             })}
           </h3>
-          <label className="scheduled-tasks-field">
-            <span>
-              {t("scheduledTask.apiProfile", { defaultValue: "API config" })}
-            </span>
-            <select
-              onChange={(event) => handleApiProfileChange(event.target.value)}
-              value={selectedApiProfile}
-            >
-              <option value="">
-                {activeConfigName
-                  ? t("scheduledTask.defaultWithValue", {
-                      values: { value: activeConfigName },
-                      defaultValue: `Default (${activeConfigName})`,
-                    })
-                  : t("scheduledTask.optionDefault", {
-                      defaultValue: "Default",
-                    })}
-              </option>
-              {apiConfigs.map((config) => (
-                <option key={config.profileName} value={config.profileName}>
-                  {config.displayName.trim() || config.profileName}
-                  {config.isActive
-                    ? ` (${t("scheduledTask.activeTag", {
-                        defaultValue: "active",
-                      })})`
-                    : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="scheduled-tasks-field-row scheduled-tasks-model-row">
-            <ApiModelCombobox
-              disabled={false}
-              error={modelOptionsError}
-              hasLoaded={loadedModelsFor === selectedConfig?.profileName}
-              isLoading={isLoadingModelOptions}
-              label={t("scheduledTask.basicModel", {
-                defaultValue: "Basic model",
-              })}
-              loadingText={t("settings.loadingModels", {
-                defaultValue: "Loading models...",
-              })}
-              models={modelOptions}
-              noModelsText={t("chat.noModelsFound", {
-                defaultValue: "No models found",
-              })}
-              onChange={setBasicModelOverride}
-              onRequestModels={() => void loadModelOptions()}
-              onRetry={() => void loadModelOptions(true)}
-              placeholder={basicModelPlaceholder}
-              retryText={t("common.retry", { defaultValue: "Retry" })}
-              value={basicModelOverride}
-            />
-            <ApiModelCombobox
-              disabled={false}
-              error={modelOptionsError}
-              hasLoaded={loadedModelsFor === selectedConfig?.profileName}
-              isLoading={isLoadingModelOptions}
-              label={t("scheduledTask.advancedModel", {
-                defaultValue: "Advanced model",
-              })}
-              loadingText={t("settings.loadingModels", {
-                defaultValue: "Loading models...",
-              })}
-              models={modelOptions}
-              noModelsText={t("chat.noModelsFound", {
-                defaultValue: "No models found",
-              })}
-              onChange={setAdvancedModelOverride}
-              onRequestModels={() => void loadModelOptions()}
-              onRetry={() => void loadModelOptions(true)}
-              placeholder={advancedModelPlaceholder}
-              retryText={t("common.retry", { defaultValue: "Retry" })}
-              value={advancedModelOverride}
-            />
-          </div>
-
-          <label className="scheduled-tasks-field">
-            <span>
-              {t("scheduledTask.thinkingStrength", {
-                defaultValue: "Thinking strength",
-              })}
-            </span>
-            <select
-              onChange={(event) => setThinkingStrength(event.target.value)}
-              value={thinkingStrength}
-            >
-              <option value="">
-                {profileThinkingLabel
-                  ? t("scheduledTask.defaultWithValue", {
-                      values: { value: profileThinkingLabel },
-                      defaultValue: `Default (${profileThinkingLabel})`,
-                    })
-                  : t("scheduledTask.optionDefault", {
-                      defaultValue: "Default",
-                    })}
-              </option>
-              {thinkingOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {formatThinkingLabel(option.value, t, option.label)}
-                </option>
-              ))}
-            </select>
-          </label>
+          {renderRunConfigFields()}
         </section>
       </div>
 
@@ -2307,7 +2469,7 @@ export function ScheduledTasksModal({
             <div className="scheduled-tasks-lifetime-hint">
               {t("scheduledTask.lifetimeHint", {
                 defaultValue:
-                  "Tasks run only while the app is open and are cleared on exit.",
+                  "Tasks are saved locally and kept after restarting the app. Executions missed while the app is closed are skipped.",
               })}
             </div>
           </div>

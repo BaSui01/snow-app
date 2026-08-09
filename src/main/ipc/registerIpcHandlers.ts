@@ -13,6 +13,7 @@ import { registerGitHandlers } from "./handlers/gitHandlers";
 import { registerWindowHandlers } from "./handlers/windowHandlers";
 import { registerNotificationHandlers } from "./handlers/notificationHandlers";
 import { registerMemoHandlers } from "./handlers/memoHandlers";
+import { registerScheduledTaskHandlers } from "./handlers/scheduledTaskHandlers";
 import { registerPersonalizationHandlers } from "./handlers/personalizationHandlers";
 import { registerCodexHandlers } from "./handlers/codexHandlers";
 import { registerImportConfigHandlers } from "./handlers/importConfigHandlers";
@@ -40,6 +41,7 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
   registerWindowHandlers(native);
   registerNotificationHandlers();
   registerMemoHandlers(native);
+  registerScheduledTaskHandlers(native);
   registerPersonalizationHandlers();
   registerCodexHandlers(native);
   registerImportConfigHandlers(native, pluginRuntime);

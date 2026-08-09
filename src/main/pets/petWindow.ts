@@ -246,6 +246,20 @@ const createPetWindow = (settings: PetSettings): void => {
     petWindow = null;
   });
 
+  // 屏蔽 Windows 系统窗口菜单（最大化/最小化/移动/关闭等，由非客户区
+  // 右键或 Alt+Space 触发）。后续扩展自定义右键菜单时统一在此拦截。
+  petWindow.on("system-context-menu", (event) => {
+    event.preventDefault();
+  });
+
+  // Alt+Space 走 WM_SYSCOMMAND（与右键的 WM_CONTEXTMENU 不同），
+  // 无边框窗口仍会弹出系统菜单，需在输入层一并拦截。
+  petWindow.webContents.on("before-input-event", (event, input) => {
+    if (input.type === "keyDown" && input.alt && input.key === " ") {
+      event.preventDefault();
+    }
+  });
+
   // OS 级拖拽时渲染层收不到指针事件，改由窗口 move 事件推断移动方向，
   // 驱动左/右奔跑动画；停止移动一小段时间后回落到基础状态。
   let lastDragX: number | null = null;

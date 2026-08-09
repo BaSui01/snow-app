@@ -59,4 +59,10 @@ const petBridge = {
 
 contextBridge.exposeInMainWorld("petBridge", petBridge);
 
+// 禁用系统默认右键菜单（Chromium 内置菜单）。后续扩展自定义右键菜单时，
+// 在此处拦截 contextmenu 事件并转发给主进程渲染自定义菜单即可。
+window.addEventListener("contextmenu", (event) => {
+  event.preventDefault();
+});
+
 export type PetBridge = typeof petBridge;

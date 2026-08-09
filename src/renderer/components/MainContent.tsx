@@ -1,12 +1,7 @@
 import { lazy, Suspense } from "react";
 import { Loader2 } from "lucide-react";
-import { motion } from "motion/react";
 import { ChatContent } from "./mainContent/ChatContent";
 import { useI18n } from "../i18n";
-import {
-  appleLayoutTransition,
-  useAppleThemeMotion,
-} from "../hooks/useAppleThemeMotion";
 import type { MainContentView } from "./mainContent/types";
 import type { WorkspaceDirectoryRecord } from "../../preload";
 
@@ -145,15 +140,8 @@ export const MainContent = ({
   isResizing = false,
   onSelectView,
 }: MainContentProps): React.JSX.Element => {
-  const { enabled: appleMotionEnabled, reducedMotion } = useAppleThemeMotion();
   return (
-    <motion.main
-      className="main-content"
-      layout={appleMotionEnabled && !isResizing}
-      transition={
-        appleMotionEnabled ? appleLayoutTransition(reducedMotion) : undefined
-      }
-    >
+    <main className="main-content">
       {activeView === "chat" ? (
         <ChatContent
           activeDirectory={activeDirectory}
@@ -229,6 +217,6 @@ export const MainContent = ({
           ) : null}
         </Suspense>
       )}
-    </motion.main>
+    </main>
   );
 };

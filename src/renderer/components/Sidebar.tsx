@@ -1,15 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { motion } from "motion/react";
 import { MainSidebarContent } from "./sidebar/MainSidebarContent";
 import { ProjectExplorerContent } from "./sidebar/ProjectExplorerContent";
 import { SettingsSidebarContent } from "./sidebar/SettingsSidebarContent";
 import { SETTINGS_VIEW_IDS } from "./sidebar/settingsItems";
 import { shortcutEvents } from "./shortcutEvents";
 import { APP_CONTROL_OPEN_SETTINGS_EVENT } from "../hooks/useAppControl";
-import {
-  appleLayoutTransition,
-  useAppleThemeMotion,
-} from "../hooks/useAppleThemeMotion";
 import type { MainContentView } from "./mainContent/types";
 import type { SidebarContentKey, SidebarContentProps } from "./sidebar/types";
 
@@ -44,7 +39,6 @@ export const Sidebar = ({
   onOpenTerminal,
   onOpenFile,
 }: SidebarProps): React.JSX.Element => {
-  const { enabled: appleMotionEnabled, reducedMotion } = useAppleThemeMotion();
   const [activeContent, setActiveContent] = useState<SidebarContentKey>("main");
   const [explorerDirectoryId, setExplorerDirectoryId] = useState<string | null>(
     null
@@ -110,13 +104,7 @@ export const Sidebar = ({
   };
 
   return (
-    <motion.aside
-      className={`sidebar ${isCollapsed ? "collapsed" : ""}`}
-      layout={appleMotionEnabled && !isResizing}
-      transition={
-        appleMotionEnabled ? appleLayoutTransition(reducedMotion) : undefined
-      }
-    >
+    <aside className={`sidebar ${isCollapsed ? "collapsed" : ""}`}>
       <div
         className={`sidebar-content-wrapper ${
           activeContent === "main" ? "" : "is-hidden"
@@ -138,6 +126,6 @@ export const Sidebar = ({
       >
         <ProjectExplorerContent {...sidebarProps} />
       </div>
-    </motion.aside>
+    </aside>
   );
 };

@@ -10,13 +10,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { motion } from "motion/react";
 
 import { useI18n } from "../i18n";
-import {
-  appleLayoutTransition,
-  useAppleThemeMotion,
-} from "../hooks/useAppleThemeMotion";
 import { GitPanelContent } from "./rightPanel/GitPanelContent";
 import { DiffViewer } from "./rightPanel/DiffViewer";
 import { FileDiffPreview } from "./common/FileDiffPreview";
@@ -223,8 +218,6 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     ref
   ): React.JSX.Element => {
     const { t } = useI18n();
-    const { enabled: appleMotionEnabled, reducedMotion } =
-      useAppleThemeMotion();
     const [tabs, setTabs] = useState<RightPanelTab[]>([
       { id: GIT_TAB_ID, type: "git", title: t("rightPanel.gitTab") },
     ]);
@@ -1085,13 +1078,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     };
 
     return (
-      <motion.aside
-        className={panelClasses}
-        layout={appleMotionEnabled && !isResizing}
-        transition={
-          appleMotionEnabled ? appleLayoutTransition(reducedMotion) : undefined
-        }
-      >
+      <aside className={panelClasses}>
         {tabs.length > 0 && (
           <div className="right-panel-tabs">
             <div
@@ -1204,7 +1191,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
             onClose={() => setTabContextMenu(null)}
           />
         )}
-      </motion.aside>
+      </aside>
     );
   }
 );

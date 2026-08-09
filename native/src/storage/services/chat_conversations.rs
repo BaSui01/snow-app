@@ -202,13 +202,23 @@ pub fn store_chat_exchange(
             let mut persisted_user_message_ids = Vec::new();
             let title = create_title(input.request_messages);
             let preview = create_snippet(input.response_content, 180);
-            // Context compaction also persists the real token usage so the
-            // sidebar / token ring reflects the actual context state after the
-            // handoff. Previously this used ChatTokenUsage::default() which
-            // wiped the recorded usage to zero and left the UI blind to the
-            // post-compaction context size.
-            let context_usage = if input.status == "error" {
+            let successful_context_compaction = input.context_compaction
+                && input.status == "completed"
+                && !input.response_content.trim().is_empty();
+            // The provider usage describes the API call itself and is recorded
+            // separately in usage history. This row stores the latest context
+            // snapshot: after successful compaction, only the generated handoff
+            // remains. Failed, cancelled, or empty compactions keep the previous
+            // snapshot intact.
+            let context_usage = if input.status == "error"
+                || (input.context_compaction && !successful_context_compaction)
+            {
                 None
+            } else if successful_context_compaction {
+                Some(ChatTokenUsage {
+                    input_tokens: input.token_usage.output_tokens,
+                    ..ChatTokenUsage::default()
+                })
             } else {
                 Some(input.token_usage)
             };
@@ -245,7 +255,7 @@ pub fn store_chat_exchange(
                 ],
             )?;
 
-            if input.context_compaction {
+            if successful_context_compaction {
                 // Persist the checkpoint id on the compaction boundary row so
                 // the rollback flow can restore files modified by the
                 // post-compaction agent loop. Treat the boundary as a user
@@ -267,7 +277,10 @@ pub fn store_chat_exchange(
                     0,
                 )?;
                 persisted_user_message_ids.push(message_id);
-            } else {
+            } else if !input.context_compaction {
+                // Unsuccessful compactions must not create a boundary or a
+                // replacement assistant message; the previous context remains
+                // authoritative.
                 // Resume-after-compaction requests carry a placeholder
                 // `request_messages` whose content is already persisted as the
                 // `context_compaction` boundary — skip re-inserting it as a
@@ -2299,3 +2312,245 @@ pub fn set_conversation_modes(
         .map_err(|error| database::database_error(database_path, "set conversation modes", error))
 }
 
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use rusqlite::Connection;
+
+    use super::{
+        create_sub_agent_session, store_chat_exchange, ChatTokenUsage, StoreChatExchangeInput,
+    };
+    use crate::storage::database;
+
+    #[test]
+    fn create_sub_agent_session_persists_runtime_profile_and_model_snapshot() {
+        let temporary_directory = std::env::temp_dir().join(format!(
+            "snow-chat-conversations-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&temporary_directory).expect("create temporary directory");
+        let database_path = temporary_directory.join("snow.db");
+        database::ensure_database(&database_path).expect("initialize database");
+        let connection = database::open_connection(&database_path).expect("open database");
+        connection
+            .execute(
+                "INSERT INTO chat_conversations (id, conversation_id)
+                 VALUES ('parent-row', 'parent-conversation')",
+                [],
+            )
+            .expect("insert parent conversation");
+        drop(connection);
+
+        create_sub_agent_session(
+            &database_path,
+            "sub-conversation",
+            "parent-conversation",
+            "reviewer",
+            "Code reviewer",
+            "directory-id",
+            "  fixed-profile  ",
+            "  fixed-model  ",
+            "Review task",
+        )
+        .expect("create sub-agent session");
+
+        let connection = Connection::open(&database_path).expect("reopen database");
+        let snapshot: (String, String) = connection
+            .query_row(
+                "SELECT api_profile_name, model
+                   FROM chat_conversations
+                  WHERE conversation_id = 'sub-conversation'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read persisted runtime snapshot");
+        let session: (String, String, String) = connection
+            .query_row(
+                "SELECT parent_conversation_id, agent_id, run_status
+                   FROM sub_agent_sessions
+                  WHERE conversation_id = 'sub-conversation'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("read sub-agent session");
+        drop(connection);
+        fs::remove_dir_all(&temporary_directory).expect("remove temporary directory");
+
+        assert_eq!(snapshot, ("fixed-profile".into(), "fixed-model".into()));
+        assert_eq!(
+            session,
+            (
+                "parent-conversation".into(),
+                "reviewer".into(),
+                "running".into()
+            )
+        );
+    }
+
+    #[test]
+    fn store_chat_exchange_persists_post_compaction_context_snapshot() {
+        let temporary_directory = std::env::temp_dir().join(format!(
+            "snow-storage-compaction-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&temporary_directory).expect("create temporary directory");
+        let database_path = temporary_directory.join("snow.db");
+        database::ensure_database(&database_path).expect("initialize database");
+
+        let persisted_message_ids = store_chat_exchange(
+            &database_path,
+            &StoreChatExchangeInput {
+                conversation_id: "compaction-conversation",
+                request_messages: &[],
+                response_content: "Compacted handoff",
+                response_id: "compaction-response",
+                checkpoint_id: "compaction-checkpoint",
+                model: "test-model",
+                api_profile_name: "test-profile",
+                status: "completed",
+                raw_response_json: r#"{"type":"compaction"}"#,
+                token_usage: ChatTokenUsage {
+                    input_tokens: 12_000,
+                    output_tokens: 345,
+                    cache_creation_input_tokens: 67,
+                    cache_read_input_tokens: 89,
+                },
+                response_thinking: "",
+                response_thinking_blocks_json: "[]",
+                tool_calls_json: "[]",
+                directory_id: "directory-id",
+                context_compaction: true,
+                resume_after_compaction: false,
+                total_duration_ms: 100,
+            },
+        )
+        .expect("store compaction exchange");
+
+        let connection = Connection::open(&database_path).expect("reopen database");
+        let context_snapshot: (i64, i64, i64, i64) = connection
+            .query_row(
+                "SELECT input_tokens, output_tokens,
+                        cache_creation_input_tokens, cache_read_input_tokens
+                   FROM chat_conversations
+                  WHERE conversation_id = 'compaction-conversation'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("read persisted context snapshot");
+        let boundary: (String, String, String, String, String) = connection
+            .query_row(
+                "SELECT role, content, response_id, checkpoint_id, status
+                   FROM chat_messages
+                  WHERE conversation_id = 'compaction-conversation'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .expect("read persisted compaction boundary");
+        drop(connection);
+        fs::remove_dir_all(&temporary_directory).expect("remove temporary directory");
+
+        assert_eq!(persisted_message_ids.len(), 1);
+        assert_eq!(context_snapshot, (345, 0, 0, 0));
+        assert_eq!(
+            boundary,
+            (
+                "user".into(),
+                "Compacted handoff".into(),
+                "compaction-response".into(),
+                "compaction-checkpoint".into(),
+                "context_compaction".into(),
+            )
+        );
+    }
+
+    #[test]
+    fn store_chat_exchange_ignores_unsuccessful_compactions() {
+        let temporary_directory = std::env::temp_dir().join(format!(
+            "chat-compaction-invalid-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&temporary_directory).expect("create temporary directory");
+        let database_path = temporary_directory.join("snow.db");
+        database::ensure_database(&database_path).expect("initialize database");
+        let connection = Connection::open(&database_path).expect("open database");
+        connection
+            .execute(
+                "INSERT INTO chat_conversations (
+                   id, conversation_id, input_tokens, output_tokens,
+                   cache_creation_input_tokens, cache_read_input_tokens
+                 ) VALUES ('existing-row', 'compaction-conversation', 800, 50, 20, 30)",
+                [],
+            )
+            .expect("insert existing conversation snapshot");
+        drop(connection);
+
+        for (status, response_content) in [("cancelled", "Partial handoff"), ("completed", "   ")] {
+            let persisted_message_ids = store_chat_exchange(
+                &database_path,
+                &StoreChatExchangeInput {
+                    conversation_id: "compaction-conversation",
+                    request_messages: &[],
+                    response_content,
+                    response_id: "ignored-compaction-response",
+                    checkpoint_id: "ignored-compaction-checkpoint",
+                    model: "test-model",
+                    api_profile_name: "test-profile",
+                    status,
+                    raw_response_json: r#"{"type":"compaction"}"#,
+                    token_usage: ChatTokenUsage {
+                        input_tokens: 12_000,
+                        output_tokens: 345,
+                        cache_creation_input_tokens: 67,
+                        cache_read_input_tokens: 89,
+                    },
+                    response_thinking: "",
+                    response_thinking_blocks_json: "[]",
+                    tool_calls_json: "[]",
+                    directory_id: "directory-id",
+                    context_compaction: true,
+                    resume_after_compaction: false,
+                    total_duration_ms: 100,
+                },
+            )
+            .expect("store unsuccessful compaction exchange");
+
+            assert!(persisted_message_ids.is_empty());
+        }
+
+        let connection = Connection::open(&database_path).expect("reopen database");
+        let context_snapshot: (i64, i64, i64, i64) = connection
+            .query_row(
+                "SELECT input_tokens, output_tokens,
+                        cache_creation_input_tokens, cache_read_input_tokens
+                   FROM chat_conversations
+                  WHERE conversation_id = 'compaction-conversation'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("read preserved context snapshot");
+        let boundary_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*)
+                   FROM chat_messages
+                  WHERE conversation_id = 'compaction-conversation'
+                    AND status = 'context_compaction'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count compaction boundaries");
+        drop(connection);
+        fs::remove_dir_all(&temporary_directory).expect("remove temporary directory");
+
+        assert_eq!(context_snapshot, (800, 50, 20, 30));
+        assert_eq!(boundary_count, 0);
+    }
+}

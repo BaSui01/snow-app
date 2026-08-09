@@ -4,7 +4,7 @@ This guide covers the Snow built-in browser's homepage, password vault, automati
 
 ## 1. Configure the homepage
 
-Open **Settings → Browser Settings → Homepage**:
+Open **Settings → Browser Settings → Homepage** (browser settings have no dedicated settings page id and are UI-only; agents can guide the user to **Settings → Privacy**, i.e. `privacy-settings`, for related privacy items):
 
 1. Enter the address that new browser tabs should open;
 2. press Enter or move focus out of the field to save;

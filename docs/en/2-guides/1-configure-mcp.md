@@ -6,7 +6,7 @@ MCP (Model Context Protocol) servers provide external tools to the AI. Snow App 
 
 | Entry | Storage and activation semantics |
 | --- | --- |
-| **Settings → MCP Settings** | Manages the app database directly; supports global/project servers, server toggles, and project tool toggles. |
+| **Settings → MCP Settings** (settings page id: `mcp-settings`) | Manages the app database directly; supports global/project servers, server toggles, and project tool toggles. |
 | Agent `config` service | Global `settings.mcpServers` is synchronized into the app database and written to `~/.snow/settings.json`; project scope writes directly to the app database. |
 | Manual `~/.snow/settings.json` editing | Changes only the Snow CLI shared file; run **Sync Snow CLI MCP settings** in MCP Settings afterward. |
 

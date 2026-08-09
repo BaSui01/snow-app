@@ -33,7 +33,7 @@ The Skill ID is `team/release`, not the frontmatter `name`. Directories whose na
 
 ### 2.1 Settings panel
 
-1. Open **Settings → Skills Settings**;
+1. Open **Settings → Skills Settings** (settings page id: `skills-settings`);
 2. Enter a source under **Install from GitHub**;
 3. Choose **Global** or **Project**. A project install requires an active project;
 4. After installation, verify the ID, path, and toggle in the list.
@@ -93,7 +93,7 @@ Use exact Snow App tool names in `allowed-tools`, such as `filesystem-read` and 
 
 ### 4.1 Settings panel
 
-In **Settings → Skills Settings**:
+In **Settings → Skills Settings** (settings page id: `skills-settings`):
 
 - The global view rewrites the top-level `enable` field of the effective `SKILL.md`;
 - The project view stores a project override in the app database and does not edit the Skill file;

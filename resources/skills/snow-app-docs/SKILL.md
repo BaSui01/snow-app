@@ -202,10 +202,23 @@ allowed-tools:
   注意：`imagegen` 域的 delete 是**清空全部图像生成渠道**（不是只删命名
   键）；`skills` 域 delete 卸载技能；`logs` 域 delete 删除日志文件。任何
   delete 前都先 `config-get`/`config-list` 确认现状。
-- **打开设置页**：用 `app-control-openSettings`，`page` 参数取值见文档
-  （如 `mcp-settings`、`api-settings`、`imagegen-settings`、
-  `proxy-browser-settings`、`sub-agent-settings`、`hooks-settings`、
-  `theme-settings`、`system-logs`）。
+- **打开设置页**：用 `app-control-openSettings page=<page id>`。全部 20 个
+  页面 id：`api-settings`（API 档案）、`imagegen-settings`（图像生成）、
+  `image-library`（图片库）、`proxy-browser-settings`（代理与浏览器）、
+  `codebase-settings`（代码库）、`system-prompt-settings`（系统提示词）、
+  `personalization-settings`（个性化）、`custom-headers-settings`（自定义请求头）、
+  `mcp-settings`（MCP）、`import-settings`（第三方配置导入）、`skills-settings`
+  （Skills）、`sub-agent-settings`（子代理）、`sensitive-command-settings`
+  （敏感命令）、`hooks-settings`（Hooks）、`theme-settings`（主题）、
+  `terminal-settings`（终端）、`keyboard-shortcuts-settings`（快捷键）、
+  `privacy-settings`（隐私）、`usage-settings`（用量统计）、`system-logs`
+  （系统日志）。
+  **agent 可配置 vs UI-only**：除以下页面外均可由 agent 用 config 工具直接
+  读写（见上文各域）：`import-settings`（导入）、`terminal-settings`（终端）、
+  `keyboard-shortcuts-settings`（快捷键）、`privacy-settings`（隐私，部分由
+  `permissions` 域覆盖）、`usage-settings`（用量，仅 `logs` 域只读覆盖）、
+  `image-library`（图片库，只读展示）——这些为 UI-only，agent 只能打开设置
+  页引导用户操作，不能直接改配置。
 - **编辑配置文件**：需要读写 `~/.snow/` 下的 JSON 时使用 filesystem 工具，
   注意 **Windows 路径中的反斜杠必须写成 `\\`**（JSON 转义），否则
   `\f`/`\n`/`\v` 会被解析为转义序列导致配置失效。

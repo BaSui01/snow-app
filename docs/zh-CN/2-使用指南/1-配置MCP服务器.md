@@ -6,7 +6,7 @@ MCP（Model Context Protocol）服务器向 AI 提供外部工具。Snow App 支
 
 | 入口 | 存储与生效语义 |
 | --- | --- |
-| **设置 → MCP 设置** | 直接管理应用数据库；可配置全局或项目服务器、启停服务器和项目工具。 |
+| **设置 → MCP 设置**（设置页 id：`mcp-settings`） | 直接管理应用数据库；可配置全局或项目服务器、启停服务器和项目工具。 |
 | Agent 的 `config` 服务 | 全局 `settings.mcpServers` 先同步到应用数据库并写 `~/.snow/settings.json`；项目级直接写应用数据库。 |
 | 手动编辑 `~/.snow/settings.json` | 仅修改 Snow CLI 共享文件；需要在 MCP 设置页执行“同步 Snow CLI MCP 设置”。 |
 

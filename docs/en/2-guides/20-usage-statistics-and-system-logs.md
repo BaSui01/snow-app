@@ -1,6 +1,6 @@
 # 20-Usage Statistics and System Logs
 
-> This guide explains the actual accounting rules in the Usage Statistics and System Logs settings pages, the three independent log sources, their lifecycles, and the security boundaries for troubleshooting.
+> This guide explains the actual accounting rules in the Usage Statistics (settings page id: `usage-settings`) and System Logs (`system-logs`) settings pages, the three independent log sources, their lifecycles, and the security boundaries for troubleshooting.
 
 ## Data Flow Overview
 

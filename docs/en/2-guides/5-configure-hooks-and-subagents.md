@@ -90,7 +90,7 @@ flowchart TD
 
 ### 1.5 Configure in the UI
 
-1. Open **Settings → Hooks Settings**;
+1. Open **Settings → Hooks Settings** (settings page id: `hooks-settings`);
 2. Select Global or Project scope;
 3. Choose a `hookType`, then add rules and actions;
 4. Ensure the toggle is on for every action that should run;
@@ -213,7 +213,7 @@ A sub-agent runs in its own conversation. Opening it shows:
 
 ### 2.3 Configure in the UI
 
-1. Open **Settings → Sub-agent Settings**;
+1. Open **Settings → Sub-agent Settings** (settings page id: `sub-agent-settings`);
 2. Select Global or Project scope;
 3. Enter the name, description, and a complete system prompt;
 4. Choose all/no tools for a global agent, or select explicit tools for a project agent;

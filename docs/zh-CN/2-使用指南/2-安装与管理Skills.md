@@ -33,7 +33,7 @@ Skill 是一个以 `SKILL.md` 为入口的指令包。Snow App 会扫描技能�
 
 ### 2.1 设置面板
 
-1. 打开 **设置 → Skills 设置**；
+1. 打开 **设置 → Skills 设置**（设置页 id：`skills-settings`）；
 2. 在“从 GitHub 安装”中输入来源；
 3. 选择 **全局** 或 **项目**。项目安装需要当前项目；
 4. 安装后检查列表中的 ID、路径和开关。
@@ -93,7 +93,7 @@ blocking problems before suggestions.
 
 ### 4.1 设置面板
 
-在 **设置 → Skills 设置** 中切换：
+在 **设置 → Skills 设置**（设置页 id：`skills-settings`）中切换：
 
 - 全局视图：改写实际命中的 `SKILL.md` 顶层 `enable`；
 - 项目视图：把项目覆盖写入应用数据库，不改 Skill 文件；

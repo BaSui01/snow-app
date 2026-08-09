@@ -798,6 +798,10 @@ export type ResponsesApiRequest = {
   skipContext?: boolean;
   planMode?: boolean;
   goalMode?: boolean;
+  /** Per-request thinking strength override ("none" | "low" | "medium" |
+   *  "high" | custom). Applied in-memory over the resolved profile's
+   *  config_json; never mutates the stored profile. */
+  thinkingStrength?: string;
   /**
    * Project ROLE.md content of an SSH (`ssh://`) workspace, resolved by the
    * main process via SSH (mirrors RoleEditorPanel's access path). Absent for

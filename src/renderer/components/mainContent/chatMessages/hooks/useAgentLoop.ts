@@ -88,7 +88,19 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       }
 
       const isFirstMessage = ctx.activeConversationIdRef.current === undefined;
-      const sessionDirId = existingRef?.directoryId ?? ctx.directoryId;
+      // Consume the one-shot target project set by handleNewChat(directoryId)
+      // (e.g. a scheduled task firing for its bound project) so the new
+      // PENDING session lands in the task's project instead of the currently
+      // active one. Cleared immediately — it applies to this send only.
+      const pendingDirId = ctx.pendingDirectoryIdRef.current;
+      ctx.pendingDirectoryIdRef.current = undefined;
+      const sessionDirId =
+        existingRef?.directoryId ?? pendingDirId ?? ctx.directoryId;
+      // One-shot scheduled-task name (set by buildFromContent) consumed here so
+      // the new session can show a "triggered by scheduled task" banner in the
+      // message list. Cleared immediately — it applies to this send only.
+      const pendingTaskName = ctx.pendingTaskNameRef.current;
+      ctx.pendingTaskNameRef.current = undefined;
 
       // Reset only this session's approval for the new user task. Other
       // conversations may still be executing their independently approved plan.
@@ -145,6 +157,15 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       };
 
       ctx.updateSessionField(sessionKey, "isStreaming", true);
+      // Stamp the session with the scheduled-task trigger info (if any) so the
+      // message list can render a "triggered by task" banner. Only on the
+      // first message — a task firing always starts a brand-new conversation.
+      if (isFirstMessage && pendingTaskName) {
+        ctx.updateSessionField(sessionKey, "triggeredByTask", {
+          name: pendingTaskName,
+          triggeredAt: new Date().toISOString(),
+        });
+      }
       // Reset per-run and per-iteration probes before the first model request.
       resetRunStreamMetrics(ctx, sessionKey);
       // Anchor the wall-clock start of the accumulating elapsed timer once
@@ -226,6 +247,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         requestToolAuthorizations,
         parentApiProfile: options.apiProfile,
         parentModel: options.model,
+        parentThinkingStrength: options.thinkingStrength,
         planApprovedSessionKeysRef,
       });
 
@@ -284,6 +306,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             messages: requestMessages,
             model: options.model,
             apiProfile: options.apiProfile,
+            thinkingStrength: options.thinkingStrength,
             conversationId: currentConversationId,
             directoryId: sessionDirId,
             checkpointId,
@@ -461,7 +484,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             // update_conversation_summary at the end of this promise — if it
             // races with deleteConversation, the database locks.
             const summaryPromise = window.snow
-              .generateConversationSummary(summaryConvId)
+              .generateConversationSummary(summaryConvId, options.basicModel)
               .then((generatedSummary) => {
                 if (generatedSummary) {
                   ctx.updateSessionField(

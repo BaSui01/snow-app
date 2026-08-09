@@ -10,6 +10,12 @@ import type {
   ScheduledTaskRecord,
 } from "../../preload";
 
+/** Create input with an optional project override: omitted = the current
+ *  project; "" = global task. */
+type CreateTaskInput = Omit<CreateScheduledTaskInput, "directoryId"> & {
+  directoryId?: string;
+};
+
 /**
  * React bridge for the in-memory scheduled task scheduler.
  *
@@ -34,9 +40,10 @@ export const useScheduledTasks = (
   directoryPath: string
 ): {
   tasks: ScheduledTaskRecord[];
-  createTask: (input: Omit<CreateScheduledTaskInput, "directoryId">) => ScheduledTaskRecord;
+  createTask: (input: CreateTaskInput) => ScheduledTaskRecord;
   removeTask: (id: string) => void;
   clearTasks: () => void;
+  clearGlobalTasks: () => void;
   togglePauseTask: (id: string) => void;
   runTaskNow: (id: string) => Promise<void>;
   isExecutorReady: boolean;
@@ -67,11 +74,27 @@ export const useScheduledTasks = (
 
   // Register buildFromContent as the AI Loop executor.
   useEffect(() => {
-    const unregister = scheduledTasksStore.setExecutor((prompt) => {
-      // buildFromContent creates a NEW conversation and auto-sends the prompt,
-      // which kicks off the existing AI Loop with all tools available.
-      buildFromContent(prompt);
-    });
+    const unregister = scheduledTasksStore.setExecutor(
+      (prompt, taskName, directoryId, options) => {
+        // buildFromContent creates a NEW conversation and auto-sends the prompt,
+        // which kicks off the existing AI Loop with all tools available. The
+        // task's bound project is forwarded so the new conversation lands in
+        // the task's project even when the user is viewing another one; an
+        // empty directoryId (global task) falls back to the currently active
+        // project. Per-task API overrides (apiProfile/basicModel/model/
+        // thinkingStrength) are passed along so the fired conversation runs on
+        // the configured provider while its first title can use the task's
+        // basic-model snapshot. The task name is forwarded too so the new
+        // conversation's message list can show a "triggered by scheduled task"
+        // banner.
+        buildFromContent(prompt, directoryId || undefined, {
+          apiProfile: options.apiProfile,
+          basicModel: options.basicModel,
+          model: options.model,
+          thinkingStrength: options.thinkingStrength,
+        }, taskName);
+      }
+    );
     setIsExecutorReady(true);
     return () => {
       unregister();
@@ -102,10 +125,10 @@ export const useScheduledTasks = (
   }, [directoryPath]);
 
   const createTask = useCallback(
-    (input: Omit<CreateScheduledTaskInput, "directoryId">): ScheduledTaskRecord => {
+    (input: CreateTaskInput): ScheduledTaskRecord => {
       return scheduledTasksStore.create({
         ...input,
-        directoryId,
+        directoryId: input.directoryId ?? directoryId,
       });
     },
     [directoryId]
@@ -118,6 +141,10 @@ export const useScheduledTasks = (
   const clearTasks = useCallback((): void => {
     scheduledTasksStore.clear(directoryId);
   }, [directoryId]);
+
+  const clearGlobalTasks = useCallback((): void => {
+    scheduledTasksStore.clearGlobal();
+  }, []);
 
   const togglePauseTask = useCallback((id: string): void => {
     scheduledTasksStore.togglePause(id);
@@ -132,6 +159,7 @@ export const useScheduledTasks = (
     createTask,
     removeTask,
     clearTasks,
+    clearGlobalTasks,
     togglePauseTask,
     runTaskNow,
     isExecutorReady,

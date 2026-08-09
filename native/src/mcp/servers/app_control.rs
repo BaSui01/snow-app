@@ -10,6 +10,9 @@ use super::user_interaction::{UserQuestionCallback, UserQuestionCommand};
 pub const SERVER_ID: &str = "app-control";
 
 const TOOL_CREATE_MEMO: &str = "createMemo";
+const TOOL_LIST_MEMOS: &str = "listMemos";
+const TOOL_GET_MEMO: &str = "getMemo";
+const TOOL_UPDATE_MEMO_STATUS: &str = "updateMemoStatus";
 const TOOL_SET_MODE: &str = "setMode";
 const TOOL_OPEN_SETTINGS: &str = "openSettings";
 const TOOL_CREATE_SCHEDULED_TASK: &str = "createScheduledTask";
@@ -21,7 +24,7 @@ const KEEP_PLANNING_OPTION: &str = "Keep planning";
 
 #[napi(object)]
 pub struct AppControlCommand {
-    /// Action identifier: "create_memo" | "set_mode" | "open_settings" | "create_scheduled_task" | "create_project"
+    /// Action identifier: "create_memo" | "list_memos" | "get_memo" | "update_memo_status" | "set_mode" | "open_settings" | "create_scheduled_task" | "create_project"
     pub action: String,
     /// JSON-encoded action payload
     pub payload_json: String,
@@ -50,6 +53,9 @@ impl AppControlService {
 
         let (action, payload) = match tool_name {
             TOOL_CREATE_MEMO => validate_create_memo_args(args)?,
+            TOOL_LIST_MEMOS => validate_list_memos_args(args)?,
+            TOOL_GET_MEMO => validate_get_memo_args(args)?,
+            TOOL_UPDATE_MEMO_STATUS => validate_update_memo_status_args(args)?,
             TOOL_SET_MODE => validate_set_mode_args(args)?,
             TOOL_OPEN_SETTINGS => validate_open_settings_args(args)?,
             TOOL_CREATE_SCHEDULED_TASK => validate_create_scheduled_task_args(args)?,
@@ -114,6 +120,56 @@ impl McpService for AppControlService {
                         }
                     },
                     "required": ["content"]
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: TOOL_LIST_MEMOS.to_string(),
+                description: "List memos of the CURRENT project (the project the active conversation belongs to). Returns memo records with full content, status (pending/done) and timestamps. Optionally filter by status. Memos of other projects are never exposed.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "status": {
+                            "type": "string",
+                            "enum": ["pending", "done"],
+                            "description": "Optional status filter: \\\"pending\\\" or \\\"done\\\". Omit to list all memos."
+                        }
+                    }
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: TOOL_GET_MEMO.to_string(),
+                description: "Read a single memo of the CURRENT project by memoId, returning its full content and status. Fails if the memo does not exist in the current project.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "memoId": {
+                            "type": "string",
+                            "description": "The memoId of the memo to read."
+                        }
+                    },
+                    "required": ["memoId"]
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: TOOL_UPDATE_MEMO_STATUS.to_string(),
+                description: "Update the status of a memo (pending/done) in the CURRENT project. Use \\\"done\\\" to close (complete) a memo after its content has been executed, \\\"pending\\\" to reopen it. Fails for memos of other projects.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "memoId": {
+                            "type": "string",
+                            "description": "The memoId of the memo to update."
+                        },
+                        "status": {
+                            "type": "string",
+                            "enum": ["pending", "done"],
+                            "description": "The new status: \\\"done\\\" closes the memo, \\\"pending\\\" reopens it."
+                        }
+                    },
+                    "required": ["memoId", "status"]
                 }),
             },
             McpTool {
@@ -233,6 +289,22 @@ impl McpService for AppControlService {
                         "runOnScriptError": {
                             "type": "boolean",
                             "description": "When true, a pre-script failure (exit other than 0/1, timeout, spawn error) still proceeds to the AI Loop with the failure noted in the prompt. Default false."
+                        },
+                        "apiProfile": {
+                            "type": "string",
+                            "description": "Optional API config profile name that serves this task's fired conversation. When omitted, the task uses the app's currently active profile."
+                        },
+                        "basicModel": {
+                            "type": "string",
+                            "description": "Optional base model id retained for display and configuration alignment with the selected API profile. It does not change task execution semantics; the advanced model used for execution remains the model field."
+                        },
+                        "model": {
+                            "type": "string",
+                            "description": "Optional model id used for the task's fired conversation. When omitted, the selected profile's default model is used."
+                        },
+                        "thinkingStrength": {
+                            "type": "string",
+                            "description": "Optional thinking strength override for the task's fired conversation, e.g. \\\"none\\\", \\\"low\\\", \\\"medium\\\", \\\"high\\\" (provider-dependent values accepted). Applied per-request in memory; the profile config is never mutated. When omitted, the selected profile's configured thinking strength is used."
                         }
                     },
                     "required": ["name", "prompt", "schedule"]
@@ -388,6 +460,78 @@ fn validate_create_memo_args(args: &Value) -> napi::Result<(String, Value)> {
         })?;
 
     Ok(("create_memo".to_string(), json!({ "content": content })))
+}
+
+fn validate_list_memos_args(args: &Value) -> napi::Result<(String, Value)> {
+    let status = args.get("status").and_then(Value::as_str).map(str::trim);
+    if let Some(status) = status {
+        if status != "pending" && status != "done" {
+            return Err(Error::new(
+                Status::InvalidArg,
+                format!(
+                    "status must be \"pending\" or \"done\" for listMemos, received \"{status}\""
+                ),
+            ));
+        }
+    }
+    let mut payload = serde_json::Map::new();
+    if let Some(status) = status {
+        payload.insert("status".to_string(), json!(status));
+    }
+    Ok(("list_memos".to_string(), Value::Object(payload)))
+}
+
+fn validate_get_memo_args(args: &Value) -> napi::Result<(String, Value)> {
+    let memo_id = args
+        .get("memoId")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            Error::new(
+                Status::InvalidArg,
+                "memoId is required and must be a non-empty string for getMemo".to_string(),
+            )
+        })?;
+
+    Ok(("get_memo".to_string(), json!({ "memoId": memo_id })))
+}
+
+fn validate_update_memo_status_args(args: &Value) -> napi::Result<(String, Value)> {
+    let memo_id = args
+        .get("memoId")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            Error::new(
+                Status::InvalidArg,
+                "memoId is required and must be a non-empty string for updateMemoStatus".to_string(),
+            )
+        })?;
+    let status = args
+        .get("status")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .ok_or_else(|| {
+            Error::new(
+                Status::InvalidArg,
+                "status is required for updateMemoStatus (\"pending\" or \"done\")".to_string(),
+            )
+        })?;
+    if status != "pending" && status != "done" {
+        return Err(Error::new(
+            Status::InvalidArg,
+            format!(
+                "status must be \"pending\" or \"done\" for updateMemoStatus, received \"{status}\""
+            ),
+        ));
+    }
+
+    Ok((
+        "update_memo_status".to_string(),
+        json!({ "memoId": memo_id, "status": status }),
+    ))
 }
 
 fn validate_set_mode_args(args: &Value) -> napi::Result<(String, Value)> {
@@ -648,6 +792,7 @@ fn validate_create_scheduled_task_args(args: &Value) -> napi::Result<(String, Va
         }
     }
 
+<<<<<<< HEAD
     // Optional pre-script fields (validated here for an actionable model error;
     // the renderer-side store applies the same constraints as single source
     // of truth).
@@ -683,6 +828,60 @@ fn validate_create_scheduled_task_args(args: &Value) -> napi::Result<(String, Va
         "create_scheduled_task".to_string(),
         Value::Object(payload),
     ))
+||||||| parent of 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
+    Ok((
+        "create_scheduled_task".to_string(),
+        json!({
+            "name": name,
+            "prompt": prompt,
+            "schedule": Value::Object(normalized),
+        }),
+    ))
+=======
+    // Optional per-task configuration fields. Values are trimmed here, and empty
+    // strings are omitted. basicModel is retained for display/config alignment;
+    // model remains the advanced model used by the task's fired conversation.
+    let mut payload = serde_json::Map::new();
+    payload.insert("name".to_string(), json!(name));
+    payload.insert("prompt".to_string(), json!(prompt));
+    payload.insert("schedule".to_string(), Value::Object(normalized));
+    for (key, value) in [
+        (
+            "apiProfile",
+            args.get("apiProfile")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
+        ),
+        (
+            "basicModel",
+            args.get("basicModel")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
+        ),
+        (
+            "model",
+            args.get("model")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
+        ),
+        (
+            "thinkingStrength",
+            args.get("thinkingStrength")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
+        ),
+    ] {
+        if let Some(value) = value {
+            payload.insert(key.to_string(), json!(value));
+        }
+    }
+
+    Ok(("create_scheduled_task".to_string(), Value::Object(payload)))
+>>>>>>> 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
 }
 
 fn validate_create_project_args(args: &Value) -> napi::Result<(String, Value)> {
@@ -728,4 +927,67 @@ fn unknown_tool_error(tool_name: &str) -> Error {
             "Unknown tool: \"{tool_name}\" for MCP server \"{SERVER_ID}\". Available tools: [{SERVER_ID}-{TOOL_CREATE_MEMO}, {SERVER_ID}-{TOOL_SET_MODE}, {SERVER_ID}-{TOOL_OPEN_SETTINGS}, {SERVER_ID}-{TOOL_CREATE_SCHEDULED_TASK}, {SERVER_ID}-{TOOL_CREATE_PROJECT}, {SERVER_ID}-{TOOL_REQUEST_APPROVAL}]"
         ),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn valid_create_scheduled_task_args() -> Value {
+        json!({
+            "name": "Test task",
+            "prompt": "Run the test task",
+            "schedule": {
+                "type": "once",
+                "executeAt": "2099-01-01T00:00:00Z"
+            }
+        })
+    }
+
+    #[test]
+    fn create_scheduled_task_schema_exposes_optional_configuration_fields() {
+        let tools = AppControlService::new().tools();
+        let schema = &tools
+            .iter()
+            .find(|tool| tool.name == TOOL_CREATE_SCHEDULED_TASK)
+            .expect("createScheduledTask tool should exist")
+            .input_schema;
+        let properties = schema
+            .get("properties")
+            .and_then(Value::as_object)
+            .expect("createScheduledTask schema should define properties");
+
+        for field in ["apiProfile", "basicModel", "model", "thinkingStrength"] {
+            assert!(
+                properties.contains_key(field),
+                "{field} should be defined in schema.properties"
+            );
+        }
+        assert_eq!(schema["required"], json!(["name", "prompt", "schedule"]));
+    }
+
+    #[test]
+    fn create_scheduled_task_payload_includes_trimmed_basic_model() {
+        let mut args = valid_create_scheduled_task_args();
+        args["basicModel"] = json!("  base-model-id  ");
+
+        let (_, payload) = validate_create_scheduled_task_args(&args)
+            .expect("valid scheduled task arguments should pass validation");
+
+        assert_eq!(
+            payload.get("basicModel").and_then(Value::as_str),
+            Some("base-model-id")
+        );
+    }
+
+    #[test]
+    fn create_scheduled_task_payload_omits_blank_basic_model() {
+        let mut args = valid_create_scheduled_task_args();
+        args["basicModel"] = json!(" \t\n ");
+
+        let (_, payload) = validate_create_scheduled_task_args(&args)
+            .expect("valid scheduled task arguments should pass validation");
+
+        assert!(payload.get("basicModel").is_none());
+    }
 }

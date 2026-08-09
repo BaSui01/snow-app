@@ -43,6 +43,7 @@ export type SubAgentActivationDeps = {
   ) => Promise<ToolAuthorizationDecision[]>;
   parentApiProfile: string | undefined;
   parentModel: string | undefined;
+  parentThinkingStrength: string | undefined;
   planApprovedSessionKeysRef: { current: Set<string> };
 };
 
@@ -56,6 +57,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
     requestToolAuthorizations,
     parentApiProfile,
     parentModel,
+    parentThinkingStrength,
     planApprovedSessionKeysRef,
   } = deps;
 
@@ -135,6 +137,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         apiConfigs: await window.snow.listApiConfigs(),
         parentApiProfile,
         parentModel,
+        parentThinkingStrength,
       });
       const allowedTools = parseSubAgentTools(runtimeConfig.toolsJson);
 
@@ -283,6 +286,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
             directoryId: dirId,
             apiProfile: runtimeConfig.apiProfile,
             model: runtimeConfig.model,
+            thinkingStrength: runtimeConfig.thinkingStrength,
             resumeAfterCompaction,
             subAgentToolsJson,
             subAgentSystemPrompt: runtimeConfig.systemPrompt || undefined,

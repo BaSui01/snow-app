@@ -21,16 +21,28 @@ import type {
   CreateScheduledTaskInput,
   PreScriptResult,
   ScheduledTaskRecord,
+  ScheduledTaskRunOptions,
+  ScheduledTaskRunRecord,
   ScheduledTaskSchedule,
 } from "../../preload";
 
 /** Minimum interval for interval-mode recurring tasks. */
 const MIN_INTERVAL_MS = 60_000;
+/** Bounds the per-task run-history ring buffer (newest last). */
+const MAX_RUN_HISTORY = 20;
+
+/** Appends a run-history entry, keeping the ring buffer bounded. */
+const appendRunHistory = (
+  task: ScheduledTaskRecord,
+  run: ScheduledTaskRunRecord
+): ScheduledTaskRunRecord[] =>
+  [...(task.history ?? []), run].slice(-MAX_RUN_HISTORY);
 /** Coarse tick used to wake the scheduler and check for due tasks. This keeps
  *  drift bounded and avoids one setTimeout per task (which would also leak if
  *  the renderer is throttled in the background). */
 const TICK_MS = 5_000;
 
+<<<<<<< HEAD
 /** Placeholder inside a task prompt that the pre-script's JSON "output"
  *  field is injected into (replaced with "" when the script provides none). */
 export const SCRIPT_OUTPUT_PLACEHOLDER = "{{SCRIPT_OUTPUT}}";
@@ -46,6 +58,16 @@ type ScriptRunner = (
   command: string,
   options: { timeoutMs: number; env: Record<string, string> }
 ) => Promise<PreScriptResult>;
+||||||| parent of 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
+type Executor = (prompt: string, taskName: string) => void | Promise<void>;
+=======
+type Executor = (
+  prompt: string,
+  taskName: string,
+  directoryId: string,
+  options: ScheduledTaskRunOptions
+) => void | Promise<void>;
+>>>>>>> 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
 type Listener = () => void;
 
 /** Decision produced by parsing a pre-script result. */
@@ -305,11 +327,16 @@ class ScheduledTasksStore {
     }
   };
 
+  /** Lists tasks. When a directoryId is given, returns that project's tasks
+   *  PLUS global tasks (empty directoryId) — a project panel always shows the
+   *  global section. With no argument, returns every task. */
   list = (directoryId?: string): ScheduledTaskRecord[] => {
     return Array.from(this.tasks.values())
       .filter(
         (task) =>
-          directoryId === undefined || task.directoryId === directoryId
+          directoryId === undefined ||
+          task.directoryId === directoryId ||
+          task.directoryId === ""
       )
       .sort((a, b) => {
         // Sort: running/pending first, then by nextRunAt, then createdAt
@@ -326,10 +353,8 @@ class ScheduledTasksStore {
   };
 
   create = (input: CreateScheduledTaskInput): ScheduledTaskRecord => {
+    // Empty directoryId = global task (not bound to any project).
     const directoryId = (input.directoryId ?? "").trim();
-    if (!directoryId) {
-      throw new Error("directoryId is required");
-    }
     const name = (input.name ?? "").trim();
     if (!name) {
       throw new Error("name is required");
@@ -365,6 +390,12 @@ class ScheduledTasksStore {
       name,
       prompt,
       schedule: input.schedule,
+      // Optional per-task run overrides; omitted fields stay undefined so the
+      // executor falls back to the app's current defaults.
+      apiProfile: input.apiProfile?.trim() || undefined,
+      basicModel: input.basicModel?.trim() || undefined,
+      model: input.model?.trim() || undefined,
+      thinkingStrength: input.thinkingStrength?.trim() || undefined,
       status: "pending",
       paused: false,
       preScript: preScript || undefined,
@@ -405,6 +436,25 @@ class ScheduledTasksStore {
     let cleared = false;
     for (const [id, task] of this.tasks) {
       if (task.directoryId === directoryId) {
+        this.tasks.delete(id);
+        this.runningIds.delete(id);
+        cleared = true;
+      }
+    }
+    if (cleared) {
+      if (this.tasks.size === 0) {
+        this.stopTick();
+      }
+      this.notify();
+    }
+  };
+
+  /** Removes ONLY global tasks (empty directoryId). Used by the global
+   *  section's clear button so project tasks are never touched. */
+  clearGlobal = (): void => {
+    let cleared = false;
+    for (const [id, task] of this.tasks) {
+      if (task.directoryId === "") {
         this.tasks.delete(id);
         this.runningIds.delete(id);
         cleared = true;
@@ -464,11 +514,17 @@ class ScheduledTasksStore {
     const executor = this.executor;
     this.runningIds.add(id);
 
-    // Mark running
+    // Mark running + append an in-progress history entry (finalized by
+    // advanceSchedule when the run finishes).
+    const startedAt = new Date().toISOString();
     this.tasks.set(id, {
       ...task,
       status: "running",
-      lastRunAt: new Date().toISOString(),
+      lastRunAt: startedAt,
+      history: appendRunHistory(task, {
+        runAt: startedAt,
+        status: "running",
+      }),
     });
     this.notify();
 
@@ -476,6 +532,7 @@ class ScheduledTasksStore {
       if (!executor) {
         throw new Error("No executor registered (AI Loop unavailable)");
       }
+<<<<<<< HEAD
 
       let prompt = task.prompt;
 
@@ -528,6 +585,16 @@ class ScheduledTasksStore {
       }
 
       await executor(prompt, task.name);
+||||||| parent of 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
+      await executor(task.prompt, task.name);
+=======
+      await executor(task.prompt, task.name, task.directoryId, {
+        apiProfile: task.apiProfile,
+        basicModel: task.basicModel,
+        model: task.model,
+        thinkingStrength: task.thinkingStrength,
+      });
+>>>>>>> 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
 
       const after = this.tasks.get(id);
       if (after) {
@@ -667,6 +734,20 @@ class ScheduledTasksStore {
     const runCount = task.runCount + 1;
     const lastRunAt = now;
 
+    // Finalize the in-progress history entry appended by execute(): running →
+    // completed / error, with elapsed time and error message.
+    const history = [...(task.history ?? [])];
+    const last = history[history.length - 1];
+    if (last && last.status === "running") {
+      const startedMs = Date.parse(last.runAt);
+      history[history.length - 1] = {
+        ...last,
+        status: error ? "error" : "completed",
+        durationMs: Number.isNaN(startedMs) ? undefined : Date.now() - startedMs,
+        error: error ? errorMessage : undefined,
+      };
+    }
+
     // once-task: after firing it's done regardless of success
     if (task.schedule.type === "once") {
       return {
@@ -676,6 +757,7 @@ class ScheduledTasksStore {
         lastRunAt,
         lastError: error ? errorMessage : undefined,
         nextRunAt: undefined,
+        history,
       };
     }
 
@@ -689,6 +771,7 @@ class ScheduledTasksStore {
       lastError: error ? errorMessage : undefined,
       nextRunAt:
         nextRunMs != null ? new Date(nextRunMs).toISOString() : undefined,
+      history,
     };
   };
 

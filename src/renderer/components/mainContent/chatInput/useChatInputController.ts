@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import { BrainCircuit } from "lucide-react";
-import type { ApiConfigRecord, Model } from "../../../../preload";
+import type { ApiConfigRecord, Model, ScheduledTaskRunOptions } from "../../../../preload";
 import { useI18n } from "../../../i18n";
 import { shortcutEvents } from "../../shortcutEvents";
 import {
@@ -44,6 +44,8 @@ type UseChatInputControllerParams = {
   draftToRestore?: string | null;
   autoSendToken?: number;
   onDraftRestored?: () => void;
+  autoSendOverride?: ScheduledTaskRunOptions | null;
+  onAutoSendOverrideConsumed?: () => void;
   saveInputDraft?: (conversationId: string | undefined, content: string) => void;
   getInputDraft?: (conversationId: string | undefined) => string | undefined;
   clearInputDraft?: (conversationId: string | undefined) => void;
@@ -69,6 +71,8 @@ export const useChatInputController = ({
   draftToRestore = null,
   autoSendToken = 0,
   onDraftRestored,
+  autoSendOverride = null,
+  onAutoSendOverrideConsumed,
   saveInputDraft,
   getInputDraft,
   clearInputDraft,
@@ -384,7 +388,19 @@ export const useChatInputController = ({
         if (autoSendToken > 0) {
           const message = draftToRestore.trim();
           if (message) {
-            onSend?.(message, { model: selectedModel || undefined });
+            // Scheduled-task runs may carry per-send overrides (API profile /
+            // model / thinking strength). They win over the input's current
+            // selection so the fired conversation runs on the task's
+            // configured provider; the override is consumed right after so it
+            // never leaks into later manual sends.
+            onSend?.(message, {
+              model: autoSendOverride?.model || selectedModel || undefined,
+              apiProfile:
+                autoSendOverride?.apiProfile ||
+                selectedApiProfile ||
+                undefined,
+              thinkingStrength: autoSendOverride?.thinkingStrength || undefined,
+            });
           }
           setValue("");
           // The queued content was sent; do not keep it as a per-conversation
@@ -393,12 +409,13 @@ export const useChatInputController = ({
           textarea.innerHTML = "";
           textarea.dataset.empty = "true";
           adjustHeight();
+          onAutoSendOverrideConsumed?.();
         }
       });
     }
 
     onDraftRestored?.();
-  }, [draftToRestore, onDraftRestored, adjustHeight, autoSendToken, onSend, selectedModel, conversationId, clearInputDraft]);
+  }, [draftToRestore, onDraftRestored, adjustHeight, autoSendToken, onSend, selectedModel, selectedApiProfile, autoSendOverride, onAutoSendOverrideConsumed, conversationId, clearInputDraft]);
 
   const handleChange = useCallback(
     (nextValue: string) => {

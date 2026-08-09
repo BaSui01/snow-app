@@ -38,10 +38,24 @@ export type ScheduledTaskStatus =
   | "completed" // once-task that already fired
   | "error"; // last execution failed
 
+/** One entry of the task's execution history (in-memory ring buffer). */
+export type ScheduledTaskRunRecord = {
+  /** ISO timestamp (UTC) when this run started. */
+  runAt: string;
+  /** Outcome: "running" = in progress (only the newest entry), "completed" /
+   *  "error" = finished run. */
+  status: "running" | "completed" | "error";
+  /** Elapsed milliseconds of the finished run. */
+  durationMs?: number;
+  /** Error message when status === "error". */
+  error?: string;
+};
+
 export type ScheduledTaskRecord = {
   id: string;
-  /** The workspace directory this task belongs to. Tasks are isolated per
-   *  project, mirroring the memo project-isolation model. */
+  /** The workspace directory this task belongs to. Empty string = a global
+   *  task not bound to any project (visible from every project's panel and
+   *  executed in the currently active project). */
   directoryId: string;
   name: string;
   /** The user-configured prompt sent to the AI Loop on each execution.
@@ -70,21 +84,57 @@ export type ScheduledTaskRecord = {
   lastError?: string;
   /** How many times this task has executed the AI Loop. */
   runCount: number;
+<<<<<<< HEAD
   /** How many times the pre-script skipped the AI Loop. */
   skipCount: number;
   /** ISO timestamp of the last skip, if any. */
   lastSkippedAt?: string;
   /** Reason from the last skip (script JSON "reason" or exit-code summary). */
   lastSkipReason?: string;
+||||||| parent of 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
+=======
+  /** Recent execution history (ring buffer, newest last, max 20 entries).
+   *  In-memory only — like the tasks themselves, history is lost when the
+   *  process exits. */
+  history?: ScheduledTaskRunRecord[];
+  /** Optional per-task API configuration overrides (see ScheduledTaskRunOptions). */
+  apiProfile?: string;
+  /** Basic model snapshot used only for the fired conversation's first title
+   *  generation. The conversation itself continues to run on `model`. */
+  basicModel?: string;
+  /** Advanced model id used for the task's conversation. */
+  model?: string;
+  thinkingStrength?: string;
+};
+
+/**
+ * Optional per-task run configuration. When a field is omitted/empty, the
+ * fired conversation falls back to the app's current defaults exactly like a
+ * task created before this feature existed (global active API profile,
+ * profile/model default, profile-bound thinking strength).
+ */
+export type ScheduledTaskRunOptions = {
+  /** API config profile name that serves this task's conversation. */
+  apiProfile?: string;
+  /** Basic model snapshot used only for the first conversation title. */
+  basicModel?: string;
+  /** Advanced model id used for the task's conversation. */
+  model?: string;
+  /** Thinking strength override ("none" | "low" | "medium" | "high" | custom).
+   *  Applied per-request (in-memory), never mutates the profile config. */
+  thinkingStrength?: string;
+>>>>>>> 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
 };
 
 /** Input shape for creating a scheduled task (mirrors the MCP tool schema). */
 export type CreateScheduledTaskInput = {
-  /** The workspace directory this task belongs to. */
-  directoryId: string;
+  /** The workspace directory this task belongs to. Optional: when omitted or
+   *  empty, the task is created as a GLOBAL task (not bound to any project). */
+  directoryId?: string;
   name: string;
   prompt: string;
   schedule: ScheduledTaskSchedule;
+<<<<<<< HEAD
   preScript?: string;
   preScriptTimeoutMs?: number;
   runOnScriptError?: boolean;
@@ -96,4 +146,13 @@ export type PreScriptResult = {
   stdout: string;
   stderr: string;
   timedOut: boolean;
+||||||| parent of 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
+=======
+  /** Optional per-task API configuration overrides (see ScheduledTaskRunOptions). */
+  apiProfile?: string;
+  /** Basic model snapshot used only for the fired conversation's first title. */
+  basicModel?: string;
+  model?: string;
+  thinkingStrength?: string;
+>>>>>>> 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
 };

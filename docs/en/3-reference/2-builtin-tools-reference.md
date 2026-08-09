@@ -313,6 +313,7 @@ that stay alive across multiple calls), complementary to `bash-terminal-execute`
 | `hooks-settings`              | Hooks Settings              |
 | `theme-settings`              | Theme Settings              |
 | `terminal-settings`           | Terminal Settings           |
+| `browser-settings`            | Browser Settings            |
 | `keyboard-shortcuts-settings` | Keyboard Shortcuts          |
 | `privacy-settings`            | Privacy Settings            |
 | `usage-settings`              | Usage Settings              |

@@ -58,6 +58,7 @@ allowed-tools:
 
 | 任务 | 使用指南（How-to） | 参考手册（Reference） |
 | --- | --- | --- |
+| 快速开始（安装/首次运行/基础配置） | `1-快速开始.md`（en: `1-getting-started.md`） | — |
 | 配置 MCP 服务器 | `2-使用指南/1-配置MCP服务器.md`（en: `2-guides/1-configure-mcp.md`） | `3-参考手册/1-settings.json配置参考.md` |
 | 安装与管理 Skills | `2-使用指南/2-安装与管理Skills.md`（en: `2-guides/2-install-and-manage-skills.md`） | — |
 | 创建与编写 Skills | `2-使用指南/21-创建与编写Skills.md`（en: `2-guides/21-create-and-author-skills.md`） | — |
@@ -86,7 +87,8 @@ allowed-tools:
 ## 2. 按文档执行配置（Then apply the configuration）
 
 **通用流程**：先 `config-list scope=<域>` 查看现状（DB 型域响应附 guidance
-使用规则），再按文档步骤执行；需要 `projectId` 时在 `~/.snow/projects/index.json`
+使用规则），再按文档步骤执行；查看已安装 skill 的元数据（id/path/状态）用
+`config-list scope=skills`，文档正文用 `filesystem-read` 读取 `~/.snow/docs/`；需要 `projectId` 时在 `~/.snow/projects/index.json`
 按项目路径查 `directoryId`（即 projectId）。读取文档时可用
 `filesystem-read` 的 `startLine`/`endLine` **只读相关章节**（锚点见第 1 节表格）。
 

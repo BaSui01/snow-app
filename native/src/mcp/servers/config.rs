@@ -3567,7 +3567,8 @@ fn db_path_or_error(db_path: &str) -> napi::Result<&Path> {
 
 /// 校验子代理 toolsJson 中的工具名在当前项目可用（对齐 TS validateSubAgentTools 的静态版本）：
 /// - 空数组或 ["*"] 直接通过；
-/// - 选择 MCP 工具时必须提供 projectId（全局子代理仅允许空/["*"]，与 UI 一致）；
+/// - 全局子代理（无 projectId）跳过项目工具可用性校验，运行时按当前对话项目解析
+///   （collect_allowed_mcp_tools 兜底）；
 /// - 工具全名 `{server_id}-{tool_name}`：内置服务器须命中内置工具集；
 ///   外部服务器须命中当前项目 enabled 的 MCP 服务器公开名（不实际连接服务器，
 ///   因此只校验服务器归属，具体工具名留给运行时发现）。
@@ -3594,10 +3595,9 @@ fn validate_sub_agent_tools(
         return Ok(());
     }
     let Some(project_id) = project_id.map(str::trim).filter(|value| !value.is_empty()) else {
-        return Err(Error::new(
-            Status::InvalidArg,
-            "Project id is required when sub-agent MCP tools are selected".to_string(),
-        ));
+        // 全局子代理没有项目上下文：跳过项目工具可用性校验，
+        // 运行时按当前对话项目解析（collect_allowed_mcp_tools 兜底）。
+        return Ok(());
     };
 
     let builtin_tool_names: HashSet<String> = get_builtin_tools()

@@ -14,6 +14,7 @@ type SubAgentEditorProps = {
   isModelCatalogLoading: boolean;
   modelCatalogError: string;
   modelOptions: Model[];
+  /** 当前活动项目：工具候选来自该项目已启用的 MCP 工具。 */
   projectId?: string;
   toolCatalogError: string;
   toolOptions: SubAgentToolOption[];

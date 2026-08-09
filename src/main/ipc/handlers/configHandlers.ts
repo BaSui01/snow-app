@@ -79,10 +79,10 @@ const validateSubAgentTools = async (
     return;
   }
 
+  // 全局子代理没有项目上下文：跳过项目工具可用性校验，
+  // 运行时按当前对话项目解析（Rust collect_allowed_mcp_tools 兜底）。
   if (!projectId) {
-    throw new Error(
-      "Project id is required when sub-agent MCP tools are selected"
-    );
+    return;
   }
 
   const servers = await native.listMcpProjectServers(projectId);

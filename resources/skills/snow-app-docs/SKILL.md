@@ -100,10 +100,27 @@ allowed-tools:
   传 `projectId` 全量替换项目级敏感命令（元素 `{commandId, pattern,
   description, enabled}`；commandId 匹配全局规则时为 enabled 覆盖，其余为
   项目自定义规则）；`config-get`/`config-delete` 传 `projectId` 读取/清空。
-- **API / 代理 / 主题等配置**：通过 `config` 工具读写白名单域——`snowcfg`
-  （config.json：baseUrl/apiKey/advancedModel/chatThinking 等）、`proxy`
-  （proxy-config.json）、`app`（active-profile.json）、`custom-headers`、
-  `system-prompt`、`theme`、`language`、`permissions`、`lsp-config`、`buddy`。
+- **API 密钥与模型（档案）**：多档案存在应用数据库 `api_configs` 表，
+  `active-profile.json` 的 `activeProfile` 指定**当前生效档案**；`snowcfg`
+  域读写的就是当前档案（`config.json` 的 `snowcfg` 仅为 CLI 兼容镜像）。
+  详细步骤见 `2-使用指南/3-配置API密钥与模型.md` 第 5 节。操作速查：
+  - **查看当前档案**：`config-list scope=snowcfg` + `config-list scope=app`
+    （activeProfile = 当前档案名）；
+  - **改密钥**：`config-set scope=snowcfg key=apiKey value="sk-..."`
+    （读取一律脱敏，不展示明文；密钥由用户提供后写入）；
+  - **改模型**：`config-set scope=snowcfg key=advancedModel value="..."`，
+    同理 `basicModel` / `visionModel`；多字段可一次 `config-set scope=snowcfg
+    value={...}` 写入；
+  - **切换档案**：`config-set scope=app key=activeProfile value="档案名"`
+    （档案名须已存在于 `api_configs.profile_name`；无法枚举时引导用户在
+    **设置 → API 设置** 确认可用档案名）；
+  - **新建档案**：config 工具**不能**直接新建，用
+    `app-control-openSettings page=api-settings` 打开设置页，引导用户填写
+    档案名/显示名/Base URL/API Key/请求方法/高级/基础/视觉模型等字段；
+  - 文件型配置写后**可能需要重启应用或 UI 重存生效**。
+- **代理 / 主题等配置**：通过 `config` 工具读写白名单域——`proxy`
+  （proxy-config.json）、`custom-headers`、`system-prompt`、`theme`、
+  `language`、`permissions`、`lsp-config`、`buddy`。
   文件型配置写后**可能需要重启应用或 UI 重存生效**。
 - **子代理**：先 `config-list scope=subAgents` 查看现有代理与响应中的
   **创建规则 guidance**；`config-set scope=subAgents key=<agentId> value={name,

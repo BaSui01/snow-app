@@ -9,8 +9,13 @@ Snow App 通过 **API 档案（Profile）** 管理模型服务商的接入信息
 | 入口 | 说明 |
 | --- | --- |
 | 设置 → API 设置（设置页 id：`api-settings`） | 图形界面：新建/编辑/切换 API 档案 |
-| `~/.snow/config.json` 的 `snowcfg` 字段 | 与 Snow CLI 共享的配置文件 |
-| `~/.snow/active-profile.json` 的 `activeProfile` 字段 | 记录当前生效的档案名 |
+| 应用数据库 `api_configs` 表 | **多档案的权威存储**，每行一个档案（`profile_name` 唯一标识） |
+| `~/.snow/active-profile.json` 的 `activeProfile` 字段 | 记录**当前生效的档案名**；生效配置 = `api_configs` 中该档案 |
+| `~/.snow/config.json` 的 `snowcfg` 字段 | 与 Snow CLI 共享的兼容层/快照，**不是**档案的权威来源 |
+
+> **存储机制速记**：多档案列表存在应用数据库 `api_configs` 表，当前生效档案由
+> `activeProfile` 指定。`config` 工具与 UI 读写的是**当前生效档案**；
+> `config.json` 中的 `snowcfg` 只是当前档案的 CLI 兼容镜像。
 
 ## 2. 图形界面配置（多档案）
 
@@ -56,12 +61,14 @@ Snow App 通过 **API 档案（Profile）** 管理模型服务商的接入信息
 表单会按请求方法校验字段：切换请求方法时，不适用于该方法的字段会被
 重置或跳过（如思考强度、Responses 专属选项），避免提交无效组合。
 
-以上配置统一保存于 `~/.snow/config.json` 的 `snowcfg` 字段，与 Snow CLI 共享。
+以上字段保存为该档案在应用数据库 `api_configs` 表中的一条记录；
+当前生效档案的副本同步到 `~/.snow/config.json` 的 `snowcfg` 字段，与 Snow CLI 共享。
 
 ## 3. 多档案切换
 
 在 API 设置中切换 **Enable profile** 开关即可切换当前生效档案；
 当前档案名记录在 `~/.snow/active-profile.json` 的 `activeProfile` 字段。
+Agent 也可用 config 工具直接切换（见 [5.1 ④](#51-常用操作速查agent-照着做)）。
 
 ## 4. 高级选项
 
@@ -84,16 +91,43 @@ token、流式空闲超时、重试次数与延迟），其余参数可直接编
 
 ## 5. AI / 命令行配置（config 工具）
 
-Snow App 内置 `config` 工具，AI Agent 可读写与 UI 同源的配置：
+Snow App 内置 `config` 工具，AI Agent 可读写与 UI 同源的配置——
+**`snowcfg` 域操作的就是当前生效档案**：
 
 | 工具 | 用途 |
 | --- | --- |
-| `config-list scope=snowcfg` | 查看当前 API 配置与全部键 |
+| `config-list scope=snowcfg` | 查看当前生效档案的全部配置与键 |
 | `config-get scope=snowcfg key=baseUrl` | 读取单个键（`apiKey` 自动脱敏，如 `sk-****abcd`） |
 | `config-set scope=snowcfg key=baseUrl value="..."` | 写入单个键（白名单 + 类型校验 + 自动备份 + 原子写） |
-| `config-set scope=app key=activeProfile value="openai"` | 切换生效档案（写 `active-profile.json`） |
+| `config-set scope=app key=activeProfile value="档案名"` | 切换当前生效档案（写 `active-profile.json`） |
 
-示例（一次更新多个字段）：
+### 5.1 常用操作速查（Agent 照着做）
+
+#### ① 查看当前生效档案
+
+```
+config-list scope=snowcfg   # 当前档案的完整配置（apiKey 脱敏）
+config-list scope=app       # 查看 activeProfile = 当前档案名
+```
+
+#### ② 修改密钥
+
+```
+config-set scope=snowcfg key=apiKey value="sk-新密钥"
+```
+
+注意：`apiKey`/`visionApiKey` 读取时一律脱敏，**不要向用户索要或展示明文密钥**；
+密钥由用户提供后写入，写入自动备份到 `~/.snow/.config-backups/`。
+
+#### ③ 修改模型
+
+```
+config-set scope=snowcfg key=advancedModel value="新模型"   # 高级模型
+config-set scope=snowcfg key=basicModel value="新模型"      # 基础模型
+config-set scope=snowcfg key=visionModel value="新模型"     # 视觉模型（单独配置时）
+```
+
+也可一次更新多个字段（不传 key 时按对象写入）：
 
 ```jsonc
 config-set scope=snowcfg value={
@@ -103,9 +137,34 @@ config-set scope=snowcfg value={
 }
 ```
 
-> **生效方式**：`snowcfg`/`app` 为文件型配置，写入后**需重启应用或重新保存
-> UI 设置**生效；`apiKey`/`visionApiKey` 读取一律脱敏，**不要向用户索要或
-> 展示明文密钥**；每次写入自动备份到 `~/.snow/.config-backups/`。
+#### ④ 切换档案
+
+```
+config-set scope=app key=activeProfile value="档案名"
+```
+
+- 档案名必须是已存在的 profile（应用数据库 `api_configs.profile_name`）；
+- Agent 无法枚举档案列表时，先 `config-list scope=app` 查看当前值，
+  再让用户在 **设置 → API 设置** 里确认可用的档案名；
+- 切换后为文件型配置，**重启应用或 UI 重存**后完全生效。
+
+#### ⑤ 新建档案（仅 UI，Agent 引导）
+
+config 工具目前**不能**直接新建档案；Agent 应帮用户打开设置页：
+
+```
+app-control-openSettings page=api-settings
+```
+
+引导用户填写：档案名（唯一标识）、显示名、Base URL（+ 模式）、API Key、
+请求方法、高级模型、基础模型、视觉模型（可选）等字段。保存后档案即出现在
+`api_configs` 中，可在 API 设置里用 **Enable profile** 开关切换。
+
+### 5.2 生效方式
+
+`snowcfg`/`app` 为文件型配置，写入后**可能需要重启应用或重新保存
+UI 设置**生效；`apiKey`/`visionApiKey` 读取一律脱敏，**不要向用户索要或
+展示明文密钥**；每次写入自动备份到 `~/.snow/.config-backups/`。
 
 ## 6. 常见问题
 

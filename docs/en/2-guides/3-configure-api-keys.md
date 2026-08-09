@@ -7,8 +7,14 @@ Snow App manages model provider access through **API profiles**, supporting mult
 | Entry | Description |
 | --- | --- |
 | Settings → API Settings (settings page id: `api-settings`) | GUI: create / edit / switch API profiles |
-| `snowcfg` field in `~/.snow/config.json` | Configuration file shared with Snow CLI |
-| `activeProfile` field in `~/.snow/active-profile.json` | Records the currently active profile name |
+| `api_configs` table in the app database | **Authoritative store for all profiles**; one row per profile (`profile_name` is the unique identifier) |
+| `activeProfile` field in `~/.snow/active-profile.json` | Records the **currently active profile name**; the active config = that profile's row in `api_configs` |
+| `snowcfg` field in `~/.snow/config.json` | CLI compatibility layer / snapshot shared with Snow CLI, **not** the authoritative source |
+
+> **Storage at a glance**: profiles live in the `api_configs` table of the app
+> database; the active profile is chosen via `activeProfile`. The `config` tool
+> and the UI read/write the **currently active profile**; the `snowcfg` field in
+> `config.json` is just a CLI-compatible mirror of the active profile.
 
 ## 2. GUI Configuration (multiple profiles)
 
@@ -42,11 +48,11 @@ When the main model does not support vision, turn off the **Supports vision** sw
 
 The form validates fields per request method: switching methods resets or skips fields that do not apply (such as reasoning effort or Responses-only options), preventing invalid combinations from being submitted.
 
-All of the above is saved to the `snowcfg` field of `~/.snow/config.json`, shared with Snow CLI.
+The fields above are stored as one row for the profile in the `api_configs` table of the app database; a copy of the currently active profile is synced to the `snowcfg` field of `~/.snow/config.json`, shared with Snow CLI.
 
 ## 3. Switching Profiles
 
-Toggle the **Enable profile** switch in API Settings to switch the currently active profile; the active profile name is recorded in the `activeProfile` field of `~/.snow/active-profile.json`.
+Toggle the **Enable profile** switch in API Settings to switch the currently active profile; the active profile name is recorded in the `activeProfile` field of `~/.snow/active-profile.json`. Agents can also switch directly with the config tool (see [5.1 ④](#51-quick-reference-agent-follow-along)).
 
 ## 4. Advanced Options
 
@@ -68,16 +74,44 @@ Some advanced parameters can be configured in the Runtime area of the UI (such a
 ## 5. AI / CLI Configuration (config tool)
 
 Snow App ships a built-in `config` tool; AI agents can read/write the same
-config that the UI uses:
+config that the UI uses — **the `snowcfg` scope operates on the currently
+active profile**:
 
 | Tool | Purpose |
 | --- | --- |
-| `config-list scope=snowcfg` | List the current API config and all keys |
+| `config-list scope=snowcfg` | List the full config of the currently active profile |
 | `config-get scope=snowcfg key=baseUrl` | Read a single key (`apiKey` is always masked, e.g. `sk-****abcd`) |
 | `config-set scope=snowcfg key=baseUrl value="..."` | Write a single key (whitelist + type check + auto backup + atomic write) |
-| `config-set scope=app key=activeProfile value="openai"` | Switch the active profile (writes `active-profile.json`) |
+| `config-set scope=app key=activeProfile value="profile-name"` | Switch the currently active profile (writes `active-profile.json`) |
 
-Example (update several fields at once):
+### 5.1 Quick Reference (agents, follow along)
+
+#### ① View the currently active profile
+
+```
+config-list scope=snowcfg   # full config of the active profile (apiKey masked)
+config-list scope=app       # see activeProfile = the active profile name
+```
+
+#### ② Change the API key
+
+```
+config-set scope=snowcfg key=apiKey value="sk-new-key"
+```
+
+Note: `apiKey`/`visionApiKey` are always masked when read — **never ask for or
+display plaintext keys**; the user provides the key, you write it, and every
+write is backed up automatically to `~/.snow/.config-backups/`.
+
+#### ③ Change the model
+
+```
+config-set scope=snowcfg key=advancedModel value="new-model"   # advanced model
+config-set scope=snowcfg key=basicModel value="new-model"      # basic model
+config-set scope=snowcfg key=visionModel value="new-model"     # vision model (when configured separately)
+```
+
+Or update several fields at once (omitting `key` writes the object):
 
 ```jsonc
 config-set scope=snowcfg value={
@@ -87,10 +121,37 @@ config-set scope=snowcfg value={
 }
 ```
 
-> **Effect**: `snowcfg`/`app` are file-backed — changes take effect after an
-> app restart or a UI re-save; `apiKey`/`visionApiKey` are always masked — never
-> ask for or display plaintext keys; every write is backed up automatically to
-> `~/.snow/.config-backups/`.
+#### ④ Switch the active profile
+
+```
+config-set scope=app key=activeProfile value="profile-name"
+```
+
+- The profile name must exist (`api_configs.profile_name` in the app database);
+- If the agent cannot enumerate profiles, first run `config-list scope=app` to
+  see the current value, then ask the user to confirm the available profile
+  names in **Settings → API Settings**;
+- This is file-backed — a restart or UI re-save fully applies the switch.
+
+#### ⑤ Create a new profile (UI only — agent guides the user)
+
+The config tool **cannot** create profiles directly; the agent should open the
+settings page for the user:
+
+```
+app-control-openSettings page=api-settings
+```
+
+Guide the user through: profile name (unique), display name, Base URL (+ mode),
+API Key, request method, advanced model, basic model, vision model (optional),
+etc. After saving, the profile appears in `api_configs` and can be activated
+with the **Enable profile** switch in API Settings.
+
+### 5.2 Effect of writes
+
+`snowcfg`/`app` are file-backed — changes take effect after an app restart or a
+UI re-save; `apiKey`/`visionApiKey` are always masked — never ask for or display
+plaintext keys; every write is backed up automatically to `~/.snow/.config-backups/`.
 
 ## 6. FAQ
 

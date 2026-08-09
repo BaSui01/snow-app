@@ -1425,15 +1425,17 @@ const selectBackend = async (
     ? BACKEND_PROBE_FAILURES.get(`${workspacePath}|${probedBackend}|${mode}`)
     : undefined;
   if (mode === "interactive") {
-    const code =
-      /^\[(UNSUPPORTED_ARCH|SFTP_UNAVAILABLE|AGENT_HOME_NOEXEC|PTY_UNAVAILABLE|SIGNATURE_INVALID|DISCONNECT_PROBE_FAILED)\]/.exec(
+    const recognizedCode =
+      /^\[(UNSUPPORTED_ARCH|SFTP_UNAVAILABLE|AGENT_HOME_NOEXEC|PTY_UNAVAILABLE|SIGNATURE_INVALID|RELEASE_DOWNLOAD_FAILED|CONTROLLER_BUSY|DISCONNECT_PROBE_FAILED)\]/.exec(
         probeFailure ?? ""
-      )?.[1] ?? "DISCONNECT_PROBE_FAILED";
+      );
+    const code = recognizedCode?.[1] ?? "DISCONNECT_PROBE_FAILED";
+    const detail = recognizedCode
+      ? (probeFailure ?? "").slice(recognizedCode[0].length).trimStart()
+      : probeFailure;
     throw new RemoteJobUnavailableError(
       code,
-      `Interactive Snow Agent is unavailable${
-        probeFailure ? `: ${probeFailure}` : ""
-      }`
+      `Interactive Snow Agent is unavailable${detail ? `: ${detail}` : ""}`
     );
   }
   throw new Error(

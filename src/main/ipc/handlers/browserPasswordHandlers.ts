@@ -2,6 +2,7 @@ import { ipcMain, session } from "electron";
 import type { NativeBridge } from "../../native/types";
 import {
   deletePasswordRecord,
+  deletePasswordRecords,
   findPasswordForOrigin,
   getPasswordRecord,
   listPasswordRecords,
@@ -79,6 +80,18 @@ export const registerBrowserPasswordHandlers = (native: NativeBridge): void => {
       throw new Error("Password record id is required");
     }
     return deletePasswordRecord(id);
+  });
+
+  // 批量删除：一次校验 + 一次加载/持久化，避免逐条删除的重复写盘。
+  ipcMain.handle("browser-passwords:delete-batch", (_event, ids: unknown) => {
+    if (
+      !Array.isArray(ids) ||
+      ids.length === 0 ||
+      !ids.every((id): id is string => isNonEmptyString(id))
+    ) {
+      throw new Error("Password record ids are required");
+    }
+    return deletePasswordRecords(ids);
   });
 
   // 自动填充通道：必须校验调用方（webview guest 页面）的真实 origin，

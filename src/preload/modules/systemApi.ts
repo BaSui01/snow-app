@@ -963,6 +963,9 @@ export const windowApi = {
   /** 删除一条密码记录。 */
   browserPasswordDelete: (id: string): Promise<boolean> =>
     ipcRenderer.invoke("browser-passwords:delete", id),
+  /** 批量删除密码记录，返回实际删除数量。 */
+  browserPasswordDeleteBatch: (ids: string[]): Promise<number> =>
+    ipcRenderer.invoke("browser-passwords:delete-batch", ids),
   /** 探测本机浏览器源（Chrome/Edge/Chromium/Firefox）及其数据量。 */
   browserImportSources: (): Promise<
     {

@@ -2648,6 +2648,7 @@ export const zhTW = {
   "remoteJobs.copyAnalysis": "複製任務內容供 AI 分析",
   "remoteJobs.attach": "附加互動式終端",
   "remoteJobs.startInteractive": "啟動互動任務",
+  "remoteJobs.send": "傳送",
   "remoteJobs.command": "命令",
   "remoteJobs.commandPlaceholder": "輸入要在遠端主機執行的命令",
   "rightPanel.fileViewerDiscardConfirm":

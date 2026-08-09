@@ -1,8 +1,10 @@
 import {
   AlertCircle,
+  ChevronDown,
   Clipboard,
   LoaderCircle,
   RefreshCw,
+  Send,
   SquareTerminal,
   Square,
 } from "lucide-react";
@@ -264,15 +266,23 @@ export function RemoteJobsPanelContent({
         <div className="remote-jobs-header-actions">
           <button
             type="button"
-            className="remote-jobs-start-button"
+            className={`remote-jobs-start-button${
+              startFormOpen ? " is-open" : ""
+            }`}
             onClick={() => {
               setError("");
-              setStartFormOpen(true);
+              setStartFormOpen((open) => !open);
             }}
+            aria-expanded={startFormOpen}
             title={t("remoteJobs.startInteractive")}
           >
             <SquareTerminal size={15} />
             <span>{t("remoteJobs.startInteractive")}</span>
+            <ChevronDown
+              size={13}
+              className="remote-jobs-start-chevron"
+              aria-hidden="true"
+            />
           </button>
           <button
             type="button"
@@ -318,8 +328,8 @@ export function RemoteJobsPanelContent({
               className="remote-jobs-form-button primary"
               disabled={starting || !draftCommand.trim()}
             >
-              <SquareTerminal size={14} />
-              <span>{t("remoteJobs.startInteractive")}</span>
+              <Send size={13} />
+              <span>{t("remoteJobs.send")}</span>
             </button>
           </div>
         </form>

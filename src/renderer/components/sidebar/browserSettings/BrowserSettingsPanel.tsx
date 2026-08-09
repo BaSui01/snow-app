@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useI18n } from "../../../i18n";
 import { AutoDismissNotice } from "../../AutoDismissNotice";
+import { ConfirmDialog } from "../../common/ConfirmDialog";
 import { useBrowserHomepage } from "../../rightPanel/browser/useBrowserHomepage";
 import { BROWSER_LOGO_COMPONENTS, type BrowserLogoId } from "../../icons/browserLogos";
 
@@ -81,6 +82,11 @@ export function BrowserSettingsPanel({
   const [visibleId, setVisibleId] = useState<string | null>(null);
   const [plaintext, setPlaintext] = useState<Record<string, string>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
+  const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
+  const [deletingBatch, setDeletingBatch] = useState(false);
 
   const loadRecords = useCallback(async (): Promise<void> => {
     setRecordsLoading(true);
@@ -121,10 +127,69 @@ export function BrowserSettingsPanel({
     try {
       await window.snow.browserPasswordDelete(id);
       setRecords((prev) => prev.filter((item) => item.id !== id));
+      setSelectedIds((prev) => {
+        if (!prev.has(id)) {
+          return prev;
+        }
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     } catch {
       // 删除失败静默
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const toggleSelectRecord = (id: string): void => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = (): void => {
+    setSelectedIds((prev) => {
+      const allSelected =
+        filteredRecords.length > 0 &&
+        filteredRecords.every((record) => prev.has(record.id));
+      return allSelected ? new Set() : new Set(filteredRecords.map((r) => r.id));
+    });
+  };
+
+  const handleBatchDelete = async (): Promise<void> => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) {
+      setBatchDeleteConfirm(false);
+      return;
+    }
+    setDeletingBatch(true);
+    try {
+      await window.snow.browserPasswordDeleteBatch(ids);
+      const idSet = new Set(ids);
+      setRecords((prev) => prev.filter((item) => !idSet.has(item.id)));
+      setSelectedIds(new Set());
+      setPlaintext((prev) => {
+        const next = { ...prev };
+        for (const id of ids) {
+          delete next[id];
+        }
+        return next;
+      });
+      setVisibleId((prev) =>
+        prev !== null && idSet.has(prev) ? null : prev
+      );
+    } catch {
+      // 删除失败静默
+    } finally {
+      setDeletingBatch(false);
+      setBatchDeleteConfirm(false);
     }
   };
 
@@ -551,154 +616,255 @@ export function BrowserSettingsPanel({
             {t("settings.browserPasswords", { defaultValue: "Passwords" })}
           </span>
         </div>
-        <div className="browser-settings-hint-row">
-          <ShieldCheck size={13} strokeWidth={1.8} />
-          <span>
-            {t("settings.browserPasswordsHint", {
-              defaultValue:
-                "Stored AES-256-GCM encrypted, key protected by the OS keychain",
-            })}
-          </span>
-        </div>
 
-        {recordsLoading ? (
-          <div className="browser-settings-loading">
-            <Loader2 size={16} strokeWidth={1.8} className="spin" />
+        <div className="api-settings-manual-form">
+          <div className="api-settings-manual-header">
+            <strong>
+              {t("settings.browserPasswordsManualTitle", {
+                defaultValue: "Manage saved passwords",
+              })}
+            </strong>
+            <span>
+              {t("settings.browserPasswordsHint", {
+                defaultValue:
+                  "Stored AES-256-GCM encrypted, key protected by the OS keychain",
+              })}
+            </span>
           </div>
-        ) : records.length === 0 ? (
-          <div className="browser-settings-empty">
-            {t("settings.browserPasswordsEmpty", {
-              defaultValue:
-                "No saved passwords yet. They are saved automatically when you submit a login form, or import them from another browser below.",
-            })}
-          </div>
-        ) : (
-          <>
-            <div className="browser-settings-search-row">
-              <Search size={13} strokeWidth={1.8} />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={t("settings.browserPasswordSearch", {
-                  defaultValue: "Search site or username",
-                })}
-                spellCheck={false}
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  className="browser-settings-search-clear"
-                  onClick={() => setSearchQuery("")}
-                  aria-label={t("common.clear", { defaultValue: "Clear" })}
-                  title={t("common.clear", { defaultValue: "Clear" })}
-                >
-                  <X size={13} strokeWidth={1.8} />
-                </button>
-              )}
-              {searchQuery && (
-                <span className="browser-settings-search-count">
-                  {filteredRecords.length}/{records.length}
-                </span>
-              )}
-            </div>
-            {filteredRecords.length === 0 ? (
+
+          <div className="api-settings-form-body">
+            {recordsLoading ? (
+              <div className="browser-settings-loading">
+                <Loader2 size={16} strokeWidth={1.8} className="spin" />
+              </div>
+            ) : records.length === 0 ? (
               <div className="browser-settings-empty">
-                {t("settings.browserPasswordSearchEmpty", {
-                  defaultValue: "No passwords match your search",
+                {t("settings.browserPasswordsEmpty", {
+                  defaultValue:
+                    "No saved passwords yet. They are saved automatically when you submit a login form, or import them from another browser below.",
                 })}
               </div>
             ) : (
-              <div className="browser-settings-table-wrap">
-                <table className="browser-settings-table">
-                  <thead>
-                    <tr>
-                      <th>
-                        {t("settings.browserPasswordSite", {
-                          defaultValue: "Site",
+              <>
+                <div className="browser-settings-search-row">
+                  <Search size={13} strokeWidth={1.8} />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder={t("settings.browserPasswordSearch", {
+                      defaultValue: "Search site or username",
+                    })}
+                    spellCheck={false}
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      className="browser-settings-search-clear"
+                      onClick={() => setSearchQuery("")}
+                      aria-label={t("common.clear", { defaultValue: "Clear" })}
+                      title={t("common.clear", { defaultValue: "Clear" })}
+                    >
+                      <X size={13} strokeWidth={1.8} />
+                    </button>
+                  )}
+                  {searchQuery && (
+                    <span className="browser-settings-search-count">
+                      {filteredRecords.length}/{records.length}
+                    </span>
+                  )}
+                </div>
+
+                {selectedIds.size > 0 && (
+                  <div className="browser-settings-batch-bar">
+                    <span>
+                      {t("settings.browserPasswordSelectedCount", {
+                        values: { count: selectedIds.size },
+                        defaultValue: "{{count}} selected",
+                      })}
+                    </span>
+                    <button
+                      type="button"
+                      className="browser-settings-batch-delete"
+                      onClick={() => setBatchDeleteConfirm(true)}
+                      disabled={deletingBatch}
+                    >
+                      {deletingBatch ? (
+                        <Loader2 size={13} strokeWidth={1.8} className="spin" />
+                      ) : (
+                        <Trash2 size={13} strokeWidth={1.8} />
+                      )}
+                      <span>
+                        {t("settings.browserPasswordDeleteSelected", {
+                          defaultValue: "Delete selected",
                         })}
-                      </th>
-                      <th>
-                        {t("settings.browserPasswordUser", {
-                          defaultValue: "Username",
-                        })}
-                      </th>
-                      <th>
-                        {t("settings.browserPasswordValue", {
-                          defaultValue: "Password",
-                        })}
-                      </th>
-                      <th className="browser-settings-table-actions" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredRecords.map((record) => (
-                      <tr key={record.id}>
-                        <td className="browser-settings-table-host">
-                          {displayHost(record.origin)}
-                        </td>
-                        <td className="browser-settings-table-user">
-                          {record.username || "—"}
-                        </td>
-                        <td className="browser-settings-table-secret">
-                          {visibleId === record.id
-                            ? plaintext[record.id] || "••••••"
-                            : "••••••"}
-                        </td>
-                        <td className="browser-settings-table-actions">
-                          <button
-                            type="button"
-                            className="browser-settings-icon-btn"
-                            onClick={() => void handleToggleVisible(record.id)}
-                            aria-label={t(
-                              visibleId === record.id
-                                ? "settings.browserPasswordHide"
-                                : "settings.browserPasswordShow"
-                            )}
-                            title={t(
-                              visibleId === record.id
-                                ? "settings.browserPasswordHide"
-                                : "settings.browserPasswordShow"
-                            )}
-                          >
-                            {visibleId === record.id ? (
-                              <EyeOff size={14} strokeWidth={1.8} />
-                            ) : (
-                              <Eye size={14} strokeWidth={1.8} />
-                            )}
-                          </button>
-                          <button
-                            type="button"
-                            className="browser-settings-icon-btn is-danger"
-                            onClick={() => void handleDeleteRecord(record.id)}
-                            disabled={deletingId === record.id}
-                            aria-label={t("common.delete", {
-                              defaultValue: "Delete",
+                      </span>
+                    </button>
+                  </div>
+                )}
+
+                {filteredRecords.length === 0 ? (
+                  <div className="browser-settings-empty">
+                    {t("settings.browserPasswordSearchEmpty", {
+                      defaultValue: "No passwords match your search",
+                    })}
+                  </div>
+                ) : (
+                  <div className="browser-settings-table-wrap">
+                    <table className="browser-settings-table">
+                      <thead>
+                        <tr>
+                          <th className="browser-settings-table-select">
+                            <input
+                              type="checkbox"
+                              checked={
+                                filteredRecords.length > 0 &&
+                                filteredRecords.every((record) =>
+                                  selectedIds.has(record.id)
+                                )
+                              }
+                              ref={(el) => {
+                                if (el) {
+                                  el.indeterminate =
+                                    filteredRecords.some((record) =>
+                                      selectedIds.has(record.id)
+                                    ) &&
+                                    !filteredRecords.every((record) =>
+                                      selectedIds.has(record.id)
+                                    );
+                                }
+                              }}
+                              onChange={toggleSelectAll}
+                              aria-label={t(
+                                "settings.browserPasswordSelectAll",
+                                { defaultValue: "Select all" }
+                              )}
+                              title={t("settings.browserPasswordSelectAll", {
+                                defaultValue: "Select all",
+                              })}
+                            />
+                          </th>
+                          <th>
+                            {t("settings.browserPasswordSite", {
+                              defaultValue: "Site",
                             })}
-                            title={t("common.delete", {
-                              defaultValue: "Delete",
+                          </th>
+                          <th>
+                            {t("settings.browserPasswordUser", {
+                              defaultValue: "Username",
                             })}
+                          </th>
+                          <th>
+                            {t("settings.browserPasswordValue", {
+                              defaultValue: "Password",
+                            })}
+                          </th>
+                          <th className="browser-settings-table-actions" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredRecords.map((record) => (
+                          <tr
+                            key={record.id}
+                            className={
+                              selectedIds.has(record.id) ? "is-selected" : ""
+                            }
                           >
-                            {deletingId === record.id ? (
-                              <Loader2
-                                size={14}
-                                strokeWidth={1.8}
-                                className="spin"
+                            <td className="browser-settings-table-select">
+                              <input
+                                type="checkbox"
+                                checked={selectedIds.has(record.id)}
+                                onChange={() => toggleSelectRecord(record.id)}
+                                aria-label={t(
+                                  "settings.browserPasswordSelectRecord",
+                                  { defaultValue: "Select this password" }
+                                )}
                               />
-                            ) : (
-                              <Trash2 size={14} strokeWidth={1.8} />
-                            )}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                            </td>
+                            <td className="browser-settings-table-host">
+                              {displayHost(record.origin)}
+                            </td>
+                            <td className="browser-settings-table-user">
+                              {record.username || "—"}
+                            </td>
+                            <td className="browser-settings-table-secret">
+                              {visibleId === record.id
+                                ? plaintext[record.id] || "••••••"
+                                : "••••••"}
+                            </td>
+                            <td className="browser-settings-table-actions">
+                              <button
+                                type="button"
+                                className="browser-settings-icon-btn"
+                                onClick={() => void handleToggleVisible(record.id)}
+                                aria-label={t(
+                                  visibleId === record.id
+                                    ? "settings.browserPasswordHide"
+                                    : "settings.browserPasswordShow"
+                                )}
+                                title={t(
+                                  visibleId === record.id
+                                    ? "settings.browserPasswordHide"
+                                    : "settings.browserPasswordShow"
+                                )}
+                              >
+                                {visibleId === record.id ? (
+                                  <EyeOff size={14} strokeWidth={1.8} />
+                                ) : (
+                                  <Eye size={14} strokeWidth={1.8} />
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                className="browser-settings-icon-btn is-danger"
+                                onClick={() => void handleDeleteRecord(record.id)}
+                                disabled={deletingId === record.id}
+                                aria-label={t("common.delete", {
+                                  defaultValue: "Delete",
+                                })}
+                                title={t("common.delete", {
+                                  defaultValue: "Delete",
+                                })}
+                              >
+                                {deletingId === record.id ? (
+                                  <Loader2
+                                    size={14}
+                                    strokeWidth={1.8}
+                                    className="spin"
+                                  />
+                                ) : (
+                                  <Trash2 size={14} strokeWidth={1.8} />
+                                )}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
             )}
-          </>
-        )}
+          </div>
+        </div>
       </div>
+
+      <ConfirmDialog
+        open={batchDeleteConfirm}
+        title={t("settings.browserPasswordBatchDeleteTitle", {
+          defaultValue: "Delete selected passwords",
+        })}
+        message={t("settings.browserPasswordBatchDeleteMessage", {
+          values: { count: selectedIds.size },
+          defaultValue:
+            "Delete the {{count}} selected passwords? This action cannot be undone.",
+        })}
+        confirmLabel={t("common.delete", { defaultValue: "Delete" })}
+        cancelLabel={t("common.cancel", { defaultValue: "Cancel" })}
+        variant="danger"
+        onConfirm={() => void handleBatchDelete()}
+        onCancel={() => setBatchDeleteConfirm(false)}
+      />
 
       <AutoDismissNotice
         message={error || warning || status}

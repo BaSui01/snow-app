@@ -235,6 +235,22 @@ export const deletePasswordRecord = async (id: string): Promise<boolean> => {
   return true;
 };
 
+/** 批量删除记录（一次加载、一次持久化），返回实际删除数量。 */
+export const deletePasswordRecords = async (ids: string[]): Promise<number> => {
+  if (ids.length === 0) {
+    return 0;
+  }
+  const idSet = new Set(ids);
+  const records = await loadVault();
+  const kept = records.filter((item) => !idSet.has(item.id));
+  const removed = records.length - kept.length;
+  if (removed === 0) {
+    return 0;
+  }
+  await persistVault(kept);
+  return removed;
+};
+
 /** 按 origin 查找用于自动填充的记录（取最近更新的第一条）。 */
 export const findPasswordForOrigin = async (
   origin: string

@@ -40,6 +40,7 @@ export type SnowAgentErrorCode =
   | "AGENT_HOME_NOEXEC"
   | "PTY_UNAVAILABLE"
   | "SIGNATURE_INVALID"
+  | "RELEASE_DOWNLOAD_FAILED"
   | "DISCONNECT_PROBE_FAILED"
   | "CONTROLLER_BUSY";
 
@@ -474,8 +475,9 @@ const readResponse = async (
     },
   });
   if (!response.ok) {
-    throw new Error(
-      `snow-agent release download failed: HTTP ${response.status}`
+    throw new SnowAgentError(
+      "RELEASE_DOWNLOAD_FAILED",
+      `Release download failed (HTTP ${response.status}). The Snow Agent release assets are missing or this app version is outdated - update the app or republish the release assets.`
     );
   }
   const contentLength = Number(response.headers.get("content-length"));

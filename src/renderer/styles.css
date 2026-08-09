@@ -4295,6 +4295,21 @@ input {
 
 .remote-jobs-start-button {
   padding: 0 8px;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.remote-jobs-start-button.is-open {
+  border-color: var(--border-color);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.remote-jobs-start-chevron {
+  transition: transform 0.15s;
+}
+
+.remote-jobs-start-button.is-open .remote-jobs-start-chevron {
+  transform: rotate(180deg);
 }
 
 .remote-jobs-start-button:hover,
@@ -4348,15 +4363,15 @@ input {
 }
 
 .remote-jobs-form-button.primary {
-  border-color: var(--accent-blue-text);
-  background: var(--accent-blue-text);
-  color: #fff;
+  border-color: transparent;
+  background: var(--text-primary);
+  color: var(--on-solid);
 }
 
 .remote-jobs-form-button.primary:hover:not(:disabled) {
-  border-color: var(--accent-blue-text);
-  background: var(--accent-blue-text);
-  color: #fff;
+  border-color: transparent;
+  background: var(--text-primary);
+  color: var(--on-solid);
   filter: brightness(1.08);
 }
 
@@ -25808,7 +25823,7 @@ body.ctrl-held [data-path] {
 
 .browser-settings-search-row:focus-within {
   border-color: var(--border-color);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  box-shadow: 0 0 0 1px var(--focus-ring);
 }
 
 .browser-settings-search-row > svg {
@@ -26023,6 +26038,77 @@ body.ctrl-held [data-path] {
 
 .browser-settings-icon-btn.is-danger:hover:not(:disabled) {
   color: var(--accent-red-text);
+}
+
+.browser-settings-table-select {
+  width: 1%;
+  padding-right: 4px !important;
+}
+
+.browser-settings-table-select input[type="checkbox"] {
+  display: block;
+  margin: 0;
+  accent-color: var(--text-primary);
+  cursor: pointer;
+}
+
+.browser-settings-table tbody tr.is-selected {
+  background: var(--bg-hover);
+}
+
+.browser-settings-table tbody tr.is-selected td:first-child {
+  box-shadow: inset 2px 0 0 var(--text-primary);
+}
+
+.browser-settings-batch-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+}
+
+.browser-settings-batch-bar > span {
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.browser-settings-batch-delete {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--accent-red-text);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, opacity 0.12s;
+}
+
+.browser-settings-batch-delete:hover:not(:disabled) {
+  background: var(--accent-red-bg);
+}
+
+.browser-settings-batch-delete:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.browser-settings-batch-delete > svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.browser-settings-batch-delete > span {
+  line-height: 1;
 }
 
 .browser-settings-source-list {

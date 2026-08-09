@@ -754,6 +754,68 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       setActiveTabId(GIT_TAB_ID);
     }, []);
 
+    // 批量关闭：移除 closed 中的 tab 并清理 dirty 标记；
+    // 若当前激活的 tab 也在关闭列表内，则切换到 fallbackTabId。
+    const batchCloseTabs = useCallback(
+      (closed: RightPanelTab[], fallbackTabId: string) => {
+        if (closed.length === 0) {
+          return;
+        }
+        const closedIds = new Set(closed.map((t) => t.id));
+        setTabs((prev) => prev.filter((t) => !closedIds.has(t.id)));
+        setDirtyTabs((prev) => {
+          const next = new Set(prev);
+          closed.forEach((t) => next.delete(t.id));
+          return next;
+        });
+        setActiveTabId((current) =>
+          closedIds.has(current) ? fallbackTabId : current
+        );
+      },
+      []
+    );
+
+    // 关闭除指定 tab（与 Git 固定 tab）外的所有 tab。
+    const handleCloseOthers = useCallback(
+      (tabId: string) => {
+        batchCloseTabs(
+          tabs.filter((t) => t.id !== GIT_TAB_ID && t.id !== tabId),
+          tabId
+        );
+      },
+      [tabs, batchCloseTabs]
+    );
+
+    // 关闭指定 tab 右侧的所有 tab（Git 固定 tab 始终保留）。
+    const handleCloseToRight = useCallback(
+      (tabId: string) => {
+        const idx = tabs.findIndex((t) => t.id === tabId);
+        if (idx < 0) {
+          return;
+        }
+        batchCloseTabs(
+          tabs.slice(idx + 1).filter((t) => t.id !== GIT_TAB_ID),
+          tabId
+        );
+      },
+      [tabs, batchCloseTabs]
+    );
+
+    // 关闭指定 tab 左侧的所有可关闭 tab（Git 固定 tab 始终保留）。
+    const handleCloseToLeft = useCallback(
+      (tabId: string) => {
+        const idx = tabs.findIndex((t) => t.id === tabId);
+        if (idx < 0) {
+          return;
+        }
+        batchCloseTabs(
+          tabs.slice(0, idx).filter((t) => t.id !== GIT_TAB_ID),
+          tabId
+        );
+      },
+      [tabs, batchCloseTabs]
+    );
+
     const handleCloseBrowserTab = useCallback(
       (instanceId: string): boolean => {
         const tab = tabs.find(
@@ -1023,6 +1085,33 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       );
     };
 
+    // tab 右键菜单的派生状态：目标 tab 在 tabs 中的下标（无目标或
+    // 空白区域右键时为 -1）与各关闭项是否适用（Git 固定 tab 除外）。
+    const contextMenuTargetIndex =
+      tabContextMenu !== null && tabContextMenu.tabId !== null
+        ? tabs.findIndex((t) => t.id === tabContextMenu.tabId)
+        : -1;
+    const contextMenuTargetClosable =
+      tabContextMenu !== null &&
+      tabContextMenu.tabId !== null &&
+      tabContextMenu.tabId !== GIT_TAB_ID;
+    const hasClosableTabs = tabs.some((t) => t.id !== GIT_TAB_ID);
+    const hasClosableOthers =
+      contextMenuTargetIndex >= 0 &&
+      tabs.some(
+        (t, i) => i !== contextMenuTargetIndex && t.id !== GIT_TAB_ID
+      );
+    const hasClosableRight =
+      contextMenuTargetIndex >= 0 &&
+      tabs
+        .slice(contextMenuTargetIndex + 1)
+        .some((t) => t.id !== GIT_TAB_ID);
+    const hasClosableLeft =
+      contextMenuTargetIndex >= 0 &&
+      tabs
+        .slice(0, contextMenuTargetIndex)
+        .some((t) => t.id !== GIT_TAB_ID);
+
     return (
       <aside className={panelClasses}>
         {tabs.length > 0 && (
@@ -1108,12 +1197,39 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
           <RightPanelTabContextMenu
             x={tabContextMenu.x}
             y={tabContextMenu.y}
-            isClosable={
-              tabContextMenu.tabId !== null &&
-              tabContextMenu.tabId !== GIT_TAB_ID
+            isClosable={contextMenuTargetClosable}
+            onCloseOthers={
+              contextMenuTargetClosable && hasClosableOthers
+                ? () => {
+                    setTabContextMenu(null);
+                    if (tabContextMenu.tabId !== null) {
+                      handleCloseOthers(tabContextMenu.tabId);
+                    }
+                  }
+                : undefined
+            }
+            onCloseToRight={
+              contextMenuTargetClosable && hasClosableRight
+                ? () => {
+                    setTabContextMenu(null);
+                    if (tabContextMenu.tabId !== null) {
+                      handleCloseToRight(tabContextMenu.tabId);
+                    }
+                  }
+                : undefined
+            }
+            onCloseToLeft={
+              contextMenuTargetClosable && hasClosableLeft
+                ? () => {
+                    setTabContextMenu(null);
+                    if (tabContextMenu.tabId !== null) {
+                      handleCloseToLeft(tabContextMenu.tabId);
+                    }
+                  }
+                : undefined
             }
             onCloseAllTabs={
-              tabContextMenu.tabId === null
+              hasClosableTabs
                 ? () => {
                     setTabContextMenu(null);
                     handleCloseAllTabs();

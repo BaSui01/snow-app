@@ -21,6 +21,10 @@ use crate::storage::ApiConfigRecord;
 /// 视觉文本化的默认提示词前缀，引导视觉模型输出结构化描述。
 const DEFAULT_VISION_PROMPT: &str = "Please describe this image in detail. Focus on text content, layout, visual elements, colors, and any notable features. If the image contains code, diagrams, or technical content, describe them precisely. Output in the same language as the user's prompt.";
 
+/// 视觉流式响应的空闲超时（秒）。超过此时长未收到任何数据则视为上游挂起，
+/// 中止流并报错——否则 textify 会无限阻塞整个主对话请求。
+const VISION_STREAM_IDLE_TIMEOUT_SEC: u64 = 60;
+
 /// 进程内缓存：避免同一张图片在多轮对话中重复调用视觉模型。
 /// Key 为图片 base64 数据的 blake3 哈希，Value 为文本化结果。
 type VisionCache = Arc<RwLock<HashMap<String, String>>>;
@@ -240,6 +244,8 @@ struct VisionApiConfig {
     thinking_effort: String,
     /// 最大输出 tokens（snowcfg.visionMaxTokens，默认 4096）。
     max_tokens: i64,
+    /// 并行描述图片的最大并发数（snowcfg.visionMaxConcurrency，默认 8，夹在 1..=8）。
+    max_concurrency: usize,
 }
 
 impl VisionApiConfig {
@@ -295,6 +301,14 @@ impl VisionApiConfig {
             .unwrap_or(4096)
             .clamp(256, 32768);
 
+        // 读取 snowcfg.visionMaxConcurrency：并行描述图片的最大并发数
+        // （默认 8，夹在 1..=8，避免过多并发请求触发上游限流）
+        let max_concurrency = snowcfg
+            .get("visionMaxConcurrency")
+            .and_then(Value::as_i64)
+            .unwrap_or(8)
+            .clamp(1, 8) as usize;
+
         Ok(Self {
             request_method,
             base_url,
@@ -306,6 +320,7 @@ impl VisionApiConfig {
             thinking_enabled,
             thinking_effort,
             max_tokens,
+            max_concurrency,
         })
     }
 }
@@ -344,69 +359,117 @@ async fn textify_parsed_content(
     }
 
     let total = parsed.images.len();
-    for (index, image) in parsed.images.iter().enumerate() {
-        // 用户中断：推送 cancel 事件让渲染进程立即回收状态卡，并携带
-        // 已累积的文本提前返回。主模型流随后启动时会看到已取消的令牌，
-        // 以 cancelled 状态正常收尾，不会把未文本化的图片发给主模型。
-        if cancel_token.is_some_and(|token| token.is_cancelled()) {
-            emit_vision_status(
-                on_chunk,
-                "cancel",
-                index + 1,
-                total,
-                &vision_config.model,
-                None,
-            );
-            return Ok(result.trim().to_string());
-        }
+    // 并发上限（配置已夹在 1..=8，此处再兜底一次）
+    let max_concurrency = vision_config.max_concurrency.max(1);
 
-        // 命中 blake3 内容缓存时直接复用已有描述（describe_image 内部仍会
-        // 二次确认，此处预查仅为让进度事件准确区分 cached / describing）。
-        let cache_key = blake3::hash(image.data.as_bytes()).to_hex().to_string();
-        let cached = global_cache().read().await.contains_key(&cache_key);
+    // 用户中断：推送 cancel 事件让渲染进程立即回收状态卡，并携带
+    // 已累积的文本提前返回。主模型流随后启动时会看到已取消的令牌，
+    // 以 cancelled 状态正常收尾，不会把未文本化的图片发给主模型。
+    if cancel_token.is_some_and(|token| token.is_cancelled()) {
         emit_vision_status(
             on_chunk,
-            if cached { "cached" } else { "describing" },
+            "cancel",
+            1,
+            total,
+            &vision_config.model,
+            None,
+        );
+        return Ok(result.trim().to_string());
+    }
+
+    // 先为每张图片构造请求 future（普通 Iterator::map 无 HRTB 约束，借用的
+    // 生命周期统一为当前借用期），再用 stream::iter + buffer_unordered 以
+    // 受限并发并行执行。每张图任务内按自身序号推送 describing / cached
+    // 进度事件（完成顺序不定，但事件携带的 index 是图片序号，语义依然
+    // 准确），最后按原顺序拼接输出块，保证结果顺序稳定。
+    let futures_list: Vec<_> = parsed
+        .images
+        .iter()
+        .enumerate()
+        .map(|(index, image)| {
+            // 引用块 JSON 在任务外预计算（用户消息才需要），随结果带回
+            let reference_json = if include_reference_blocks {
+                reference_image_json(image)
+            } else {
+                String::new()
+            };
+            async move {
+                // 命中 blake3 内容缓存时直接复用已有描述（describe_image 内部仍会
+                // 二次确认，此处预查仅为让进度事件准确区分 cached / describing）。
+                let cache_key = blake3::hash(image.data.as_bytes()).to_hex().to_string();
+                let cached = global_cache().read().await.contains_key(&cache_key);
+                emit_vision_status(
+                    on_chunk,
+                    if cached { "cached" } else { "describing" },
+                    index + 1,
+                    total,
+                    &vision_config.model,
+                    None,
+                );
+
+                let description = describe_image(client, vision_config, image, &parsed.text, cancel_token).await;
+                (index, reference_json, description)
+            }
+        })
+        .collect();
+
+    let outcomes: Vec<(usize, String, Result<String>)> = {
+        use futures::StreamExt;
+        futures::stream::iter(futures_list)
+            .buffer_unordered(max_concurrency)
+            .collect::<Vec<_>>()
+            .await
+    };
+
+    // 按原图片顺序收集结果：任一失败则推送 error 事件并向上传播第一个错误
+    // （与串行时"任一失败 → 整个请求失败"的语义保持一致）。
+    for (index, reference_json, description) in outcomes {
+        let description = match description {
+            Ok(description) => description,
+            Err(error) => {
+                // 取消导致的错误（describe_image 内部 select! 中断）：与上面的
+                // 取消分支一致，推送 cancel 事件并提前返回，不向上传播硬错误，
+                // 避免整个请求被当作失败处理。
+                if cancel_token.is_some_and(|token| token.is_cancelled()) {
+                    emit_vision_status(
+                        on_chunk,
+                        "cancel",
+                        index + 1,
+                        total,
+                        &vision_config.model,
+                        None,
+                    );
+                    return Ok(result.trim().to_string());
+                }
+                // 真实失败：先推送 error 事件（渲染进程据此清除状态卡），
+                // 再向上传播错误 —— 视觉文本化失败会使整个请求失败。
+                emit_vision_status(
+                    on_chunk,
+                    "error",
+                    index + 1,
+                    total,
+                    &vision_config.model,
+                    Some(&error.to_string()),
+                );
+                return Err(error);
+            }
+        };
+        emit_vision_status(
+            on_chunk,
+            "done",
             index + 1,
             total,
             &vision_config.model,
             None,
         );
-
-        let description =
-            match describe_image(client, vision_config, image, &parsed.text, cancel_token).await
-            {
-                Ok(description) => description,
-                Err(error) => {
-                    // 取消导致的错误（send_vision_stream 的 select! 中断）：
-                    // 与上面的取消分支一致，推送 cancel 事件并提前返回，
-                    // 不向上传播硬错误，避免整个请求被当作失败处理。
-                    if cancel_token.is_some_and(|token| token.is_cancelled()) {
-                        emit_vision_status(
-                            on_chunk,
-                            "cancel",
-                            index + 1,
-                            total,
-                            &vision_config.model,
-                            None,
-                        );
-                        return Ok(result.trim().to_string());
-                    }
-                    // 真实失败：先推送 error 事件（渲染进程据此清除状态卡），
-                    // 再向上传播错误 —— 视觉文本化失败会使整个请求失败，
-                    // 与现状行为保持一致。
-                    emit_vision_status(
-                        on_chunk,
-                        "error",
-                        index + 1,
-                        total,
-                        &vision_config.model,
-                        Some(&error.to_string()),
-                    );
-                    return Err(error);
-                }
-            };
-        emit_vision_status(on_chunk, "done", index + 1, total, &vision_config.model, None);
+        emit_vision_status(
+            on_chunk,
+            "done",
+            index + 1,
+            total,
+            &vision_config.model,
+            None,
+        );
         if !result.is_empty() && !result.ends_with('\n') {
             result.push('\n');
         }
@@ -414,12 +477,12 @@ async fn textify_parsed_content(
         result.push_str(&description);
         result.push(']');
 
-        if include_reference_blocks {
+        if !reference_json.is_empty() {
             result.push('\n');
             result.push_str(&format!(
                 "[Reference image #{} for imagegen-generate: {}]",
                 index + 1,
-                reference_image_json(image)
+                reference_json
             ));
         }
     }
@@ -461,29 +524,14 @@ async fn describe_image(
     }
 
     let result = match vision_config.request_method.as_str() {
-        "chat" => {
-            describe_image_via_chat(client, vision_config, image, user_prompt, cancel_token).await?
+        "chat" => describe_image_via_chat(client, vision_config, image, user_prompt, cancel_token).await?,
+        "responses" => {
+            describe_image_via_responses(client, vision_config, image, user_prompt, cancel_token).await?
         }
-        "responses" => describe_image_via_responses(
-            client,
-            vision_config,
-            image,
-            user_prompt,
-            cancel_token,
-        )
-        .await?,
-        "anthropic" => describe_image_via_anthropic(
-            client,
-            vision_config,
-            image,
-            user_prompt,
-            cancel_token,
-        )
-        .await?,
-        "gemini" => {
-            describe_image_via_gemini(client, vision_config, image, user_prompt, cancel_token)
-                .await?
+        "anthropic" => {
+            describe_image_via_anthropic(client, vision_config, image, user_prompt, cancel_token).await?
         }
+        "gemini" => describe_image_via_gemini(client, vision_config, image, user_prompt, cancel_token).await?,
         method => {
             return Err(Error::from_reason(format!(
                 "Unsupported vision request method: {method}. Supported: chat, responses, anthropic, gemini."
@@ -915,34 +963,58 @@ async fn send_vision_stream(
 
     let mut stream = response.bytes_stream();
     loop {
-        let chunk = match cancel_token {
-            Some(token) => {
-                let next = stream.next();
-                tokio::select! {
-                    biased;
-                    _ = token.cancelled() => {
-                        return Err(Error::from_reason("Vision analysis cancelled"));
+        // Idle timeout：超过 VISION_STREAM_IDLE_TIMEOUT_SEC 未收到任何数据即视为
+        // 上游挂起，中止流并报错——否则 textify 会无限阻塞整个主对话请求。
+        // 取消令牌通过 biased select! 优先响应，保证中断时快速返回。
+        let next_chunk = match tokio::time::timeout(
+            std::time::Duration::from_secs(VISION_STREAM_IDLE_TIMEOUT_SEC),
+            async {
+                match cancel_token {
+                    Some(token) => {
+                        let next = stream.next();
+                        tokio::select! {
+                            biased;
+                            _ = token.cancelled() => {
+                                Err(Error::from_reason("Vision textify aborted"))
+                            }
+                            chunk = next => match chunk {
+                                Some(Ok(bytes)) => Ok(Some(bytes)),
+                                Some(Err(error)) => Err(Error::from_reason(format!(
+                                    "Failed to read vision API stream: {error}"
+                                ))),
+                                None => Ok(None), // EOF：无结束事件时由 interrupted 标记
+                            },
+                        }
                     }
-                    chunk = next => chunk,
+                    None => match stream.next().await {
+                        Some(Ok(bytes)) => Ok(Some(bytes)),
+                        Some(Err(error)) => Err(Error::from_reason(format!(
+                            "Failed to read vision API stream: {error}"
+                        ))),
+                        None => Ok(None),
+                    },
                 }
+            },
+        )
+        .await
+        {
+            Ok(Ok(Some(chunk))) => chunk,
+            Ok(Ok(None)) => break, // EOF：无结束事件时由 interrupted 标记
+            Ok(Err(error)) => return Err(error),
+            Err(_) => {
+                return Err(Error::from_reason(format!(
+                    "Vision {protocol} stream idle timeout (no data for {VISION_STREAM_IDLE_TIMEOUT_SEC}s)"
+                )));
             }
-            None => stream.next().await,
         };
-        let Some(chunk) = chunk else {
-            break;
-        };
-        let chunk = chunk.map_err(|error| {
-            Error::from_reason(format!("Failed to read vision API stream: {error}"))
-        })?;
-        byte_buffer.extend_from_slice(&chunk);
+        byte_buffer.extend_from_slice(&next_chunk);
 
         // 逐块切出完整 SSE 事件（与主模型流共用 find_sse_separator，
         // 兼容 LF / CRLF 与多字节 UTF-8 跨 chunk 边界）。
         while let Some((separator_index, separator_len)) =
             crate::api::sse::find_sse_separator(&byte_buffer)
         {
-            let block =
-                String::from_utf8_lossy(&byte_buffer[..separator_index]).to_string();
+            let block = String::from_utf8_lossy(&byte_buffer[..separator_index]).to_string();
             byte_buffer = byte_buffer[separator_index + separator_len..].to_vec();
 
             for line in block.lines() {
@@ -969,7 +1041,9 @@ async fn send_vision_stream(
                 };
                 match parse(&event) {
                     VisionStreamEvent::Delta(delta) => text.push_str(&delta),
-                    VisionStreamEvent::End { truncated: is_truncated } => {
+                    VisionStreamEvent::End {
+                        truncated: is_truncated,
+                    } => {
                         truncated = is_truncated;
                         finished = true;
                     }
@@ -985,7 +1059,11 @@ async fn send_vision_stream(
         }
     }
 
-    Ok(VisionStreamOutcome { text, truncated })
+    Ok(VisionStreamOutcome {
+        text,
+        truncated,
+        interrupted: !finished,
+    })
 }
 
 /// 生成请求体的精简预览，用于失败时定位问题。
@@ -1106,6 +1184,9 @@ enum VisionStreamEvent {
 struct VisionStreamOutcome {
     text: String,
     truncated: bool,
+    /// 流意外结束（EOF 但未收到 [DONE]/finish 等结束事件）。调用方应将
+    /// 有内容的结果标记为 partial（不写缓存），无内容视为错误。
+    interrupted: bool,
 }
 
 /// 视觉调用的最终可用结果。
@@ -1142,10 +1223,35 @@ async fn vision_request_with_retry(
         if cancel_token.is_some_and(|token| token.is_cancelled()) {
             return Err(Error::from_reason("Vision analysis cancelled"));
         }
-        let outcome =
-            send_vision_stream(client, endpoint, headers.clone(), payload, protocol, &parse, cancel_token)
-                .await?;
+        let outcome = send_vision_stream(
+            client,
+            endpoint,
+            headers.clone(),
+            payload,
+            protocol,
+            &parse,
+            cancel_token,
+        )
+        .await?;
         let text = outcome.text.trim().to_string();
+
+        // 意外中断（EOF 无结束事件）：有内容 → 标记 partial（不写缓存），
+        // 避免残缺描述污染 blake3 缓存；无内容 → 报错。
+        if outcome.interrupted {
+            if !text.is_empty() {
+                eprintln!(
+                    "Vision {protocol} stream interrupted; using partial content ({} chars, not cached)",
+                    text.chars().count()
+                );
+                return Ok(VisionResult {
+                    text,
+                    partial: true,
+                });
+            }
+            return Err(Error::from_reason(format!(
+                "Vision {protocol} API stream ended unexpectedly (no content)"
+            )));
+        }
 
         if !outcome.truncated {
             if text.is_empty() {
@@ -1153,7 +1259,10 @@ async fn vision_request_with_retry(
                     "Vision {protocol} API returned empty content (truncated=false)"
                 )));
             }
-            return Ok(VisionResult { text, partial: false });
+            return Ok(VisionResult {
+                text,
+                partial: false,
+            });
         }
 
         // 截断：有部分内容 → 及时止损，直接采用（不重试、不缓存）
@@ -1162,7 +1271,10 @@ async fn vision_request_with_retry(
                 "Vision {protocol} response truncated; using partial content ({} chars, not cached)",
                 text.chars().count()
             );
-            return Ok(VisionResult { text, partial: true });
+            return Ok(VisionResult {
+                text,
+                partial: true,
+            });
         }
 
         // 截断且无内容 → 重试一次（翻倍 max_tokens）
@@ -1217,10 +1329,7 @@ fn parse_responses_stream_event(event: &Value) -> VisionStreamEvent {
         .unwrap_or_default()
     {
         "response.output_text.delta" => {
-            let delta = event
-                .get("delta")
-                .and_then(Value::as_str)
-                .unwrap_or("");
+            let delta = event.get("delta").and_then(Value::as_str).unwrap_or("");
             if delta.is_empty() {
                 VisionStreamEvent::Ignore
             } else {
@@ -1296,7 +1405,11 @@ fn parse_gemini_stream_event(event: &Value) -> VisionStreamEvent {
         for part in parts {
             // 思考块（thought=true）与普通文本块都带 text 字段；
             // 视觉描述只需要最终文本，思考增量直接跳过。
-            if part.get("thought").and_then(Value::as_bool).unwrap_or(false) {
+            if part
+                .get("thought")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            {
                 continue;
             }
             if let Some(delta) = part.get("text").and_then(Value::as_str) {

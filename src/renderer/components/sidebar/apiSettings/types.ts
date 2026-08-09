@@ -36,6 +36,7 @@ export type ApiConfigFormData = {
   visionThinkingEnabled: boolean;
   visionThinkingEffort: string;
   visionMaxTokens: string;
+  visionMaxConcurrency: string;
   configJson: string;
 };
 

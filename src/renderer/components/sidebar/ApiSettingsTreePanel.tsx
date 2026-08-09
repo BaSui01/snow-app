@@ -23,6 +23,7 @@ import {
   extractResponsesVerbosityFromConfigJson,
   extractThinkingValueFromConfigJson,
   extractVisionGoogleSearchFromConfigJson,
+  extractVisionMaxConcurrencyFromConfigJson,
   extractVisionMaxTokensFromConfigJson,
   extractVisionThinkingEffortFromConfigJson,
   extractVisionThinkingEnabledFromConfigJson,
@@ -273,6 +274,9 @@ export function ApiSettingsTreePanel({
         config.configJson
       ),
       visionMaxTokens: extractVisionMaxTokensFromConfigJson(config.configJson),
+      visionMaxConcurrency: extractVisionMaxConcurrencyFromConfigJson(
+        config.configJson
+      ),
       configJson: config.configJson,
     });
   };

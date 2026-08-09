@@ -350,6 +350,13 @@ export type PendingUserQuestion = {
   reject: (error: Error) => void;
 };
 
+/** 用户在提问工具卡片上未提交的交互草稿（按 questionId 索引）。卡片因会话
+ *  切换等场景重挂载时，用草稿恢复已勾选的选项与自定义回答。 */
+export type UserQuestionDraft = {
+  selectedOptions: string[];
+  customAnswers: string[];
+};
+
 export type PendingHookDecision = {
   sessionKey: string;
   resolve: (approved: boolean) => void;
@@ -695,6 +702,11 @@ export type UseChatConversationResult = {
     customAnswers: string[]
   ) => void;
   cancelUserQuestion: (questionId: string) => void;
+  /** 读取/保存/清除提问卡片未提交的交互草稿（按 questionId）。卡片因会话
+   *  切换等重挂载时据此恢复已勾选的选项与自定义回答。 */
+  getUserQuestionDraft: (questionId: string) => UserQuestionDraft | undefined;
+  saveUserQuestionDraft: (questionId: string, draft: UserQuestionDraft) => void;
+  clearUserQuestionDraft: (questionId: string) => void;
 };
 
 // Re-export preload types for convenience

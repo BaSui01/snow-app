@@ -690,5 +690,8 @@ export const useChatConversation = (
     rejectToolAuthorization,
     answerUserQuestion: userQuestionApi.answerUserQuestion,
     cancelUserQuestion: userQuestionApi.cancelUserQuestion,
+    getUserQuestionDraft: userQuestionApi.getUserQuestionDraft,
+    saveUserQuestionDraft: userQuestionApi.saveUserQuestionDraft,
+    clearUserQuestionDraft: userQuestionApi.clearUserQuestionDraft,
   };
 };

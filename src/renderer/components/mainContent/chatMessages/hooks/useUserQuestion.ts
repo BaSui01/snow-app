@@ -1,6 +1,7 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type {
   ConversationContextValue,
+  UserQuestionDraft,
   UserQuestionRequest,
 } from "../utils/conversationTypes";
 
@@ -18,6 +19,18 @@ export const useUserQuestion = (ctx: ConversationContextValue) => {
     updateSessionMessages,
     userQuestionTargetRef,
   } = ctx;
+
+  // directoryId 只用于通知的兜底目录。用 ref 读取最新值，避免目录切换时
+  // 重跑下面的注册 effect（cleanup 会 reject 所有等待中的问题并清空
+  // pendingUserQuestionRef / userQuestionTargetRef，导致 Rust 端工具调用
+  // 报错、AI 重新提问——即切换项目后提问卡片"重新渲染一次"的现象）。
+  const directoryIdRef = useRef(directoryId);
+  directoryIdRef.current = directoryId;
+
+  // 提问卡片未提交交互草稿（按 questionId）。与消息状态解耦：卡片因会话
+  // 切换（.chat-area 按 activeConversationId 作 key 而重挂载）时，本地
+  // useState 会丢失，用草稿恢复用户已勾选/已输入的内容。
+  const userQuestionDraftsRef = useRef(new Map<string, UserQuestionDraft>());
 
   const reconcilePendingUserQuestionConversationIds = useCallback((): void => {
     const conversationIds = new Set<string>();
@@ -70,7 +83,7 @@ export const useUserQuestion = (ctx: ConversationContextValue) => {
           conversationId: target.sessionKey,
           directoryId:
             sessionsRefData.current.get(target.sessionKey)?.directoryId ??
-            directoryId,
+            directoryIdRef.current,
           reason: request.question,
         });
 
@@ -96,7 +109,8 @@ export const useUserQuestion = (ctx: ConversationContextValue) => {
       userQuestionTargetRef.current.clear();
     };
   }, [
-    directoryId,
+    // 注意：不要引入 directoryId —— 切换项目会导致本 effect 重跑并 reject
+    // 所有等待中的问题。handler 是全局的，目录信息通过 directoryIdRef 读取。
     notifyUserInteractionRequired,
     pendingUserQuestionRef,
     reconcilePendingUserQuestionConversationIds,
@@ -212,6 +226,7 @@ export const useUserQuestion = (ctx: ConversationContextValue) => {
         pending.reject(new Error("User question interrupted"));
         pendingUserQuestionRef.current.delete(questionId);
         userQuestionTargetRef.current.delete(pending.interactionId);
+        userQuestionDraftsRef.current.delete(questionId);
       }
       reconcilePendingUserQuestionConversationIds();
     },
@@ -222,10 +237,30 @@ export const useUserQuestion = (ctx: ConversationContextValue) => {
     ]
   );
 
+  const getUserQuestionDraft = useCallback(
+    (questionId: string): UserQuestionDraft | undefined =>
+      userQuestionDraftsRef.current.get(questionId),
+    []
+  );
+
+  const saveUserQuestionDraft = useCallback(
+    (questionId: string, draft: UserQuestionDraft): void => {
+      userQuestionDraftsRef.current.set(questionId, draft);
+    },
+    []
+  );
+
+  const clearUserQuestionDraft = useCallback((questionId: string): void => {
+    userQuestionDraftsRef.current.delete(questionId);
+  }, []);
+
   return {
     settleUserQuestion,
     answerUserQuestion,
     cancelUserQuestion,
     rejectPendingUserQuestions,
+    getUserQuestionDraft,
+    saveUserQuestionDraft,
+    clearUserQuestionDraft,
   };
 };

@@ -63,6 +63,12 @@ const SCOPE_IMAGEGEN: &str = "imagegen";
 /// 避免占用上下文），get 返回全文；set 原子写全文（写前备份）；
 /// delete 需 confirmed，删除文件即恢复默认（应用对缺失 ROLE.md 有内置回退）。
 const SCOPE_PERSONALIZATION: &str = "personalization";
+
+/// API 档案配置域（DB-backed，应用数据库 api_configs 表，与 UI 同源、立即生效）：
+/// 让 agent 新建/读取/更新/删除 API 档案，支持"无密钥建档 → 用户后补密钥"。
+/// key = profileName；value 为可写字段（merge 语义，空 apiKey 保留旧值）；
+/// delete 需 confirmed。
+const SCOPE_API_PROFILES: &str = "apiProfiles";
 /// ROLE.md 文件名（~/.snow/ROLE.md，与 personalizationHandlers.ts 约定一致）。
 const ROLE_FILE_NAME: &str = "ROLE.md";
 /// personalization scope 的唯一定义键。
@@ -1263,6 +1269,9 @@ impl ConfigService {
             if scope_name == SCOPE_HOOKS {
                 return self.list_db_hooks(project_id);
             }
+            if scope_name == SCOPE_API_PROFILES {
+                return self.list_db_api_profiles();
+            }
 
             let scope =
                 Self::find_scope(scope_name).ok_or_else(|| invalid_scope_error(scope_name))?;
@@ -1338,6 +1347,9 @@ impl ConfigService {
         if scope_name == SCOPE_HOOKS {
             return self.get_db_hook(key_name, project_id);
         }
+        if scope_name == SCOPE_API_PROFILES {
+            return self.get_db_api_profile(key_name);
+        }
         // 项目级 settings：仅 mcpServers / sensitiveCommands 支持 projectId。
         if scope_name == "settings" {
             if let Some(pid) = &project_id {
@@ -1399,6 +1411,9 @@ impl ConfigService {
         }
         if scope_name == SCOPE_HOOKS {
             return self.set_db_hook(key_name, &value, project_id);
+        }
+        if scope_name == SCOPE_API_PROFILES {
+            return self.set_db_api_profile(key_name, &value);
         }
         // 项目级 settings：仅 mcpServers / sensitiveCommands 支持 projectId（全量替换）。
         if scope_name == "settings" {
@@ -1473,6 +1488,9 @@ impl ConfigService {
         }
         if scope_name == SCOPE_HOOKS {
             return self.delete_db_hook(key_name, project_id);
+        }
+        if scope_name == SCOPE_API_PROFILES {
+            return self.delete_db_api_profile(key_name);
         }
         // 项目级 settings：仅 mcpServers / sensitiveCommands 支持 projectId（清空）。
         if scope_name == "settings" {
@@ -2299,6 +2317,288 @@ KEY RULES: (1) hookType whitelist: onUserMessage, beforeToolCall, toolConfirmati
         Ok(json!({
             "scope": SCOPE_HOOKS,
             "key": hook_type,
+            "deleted": deleted,
+        }))
+    }
+
+    // ---------------------------------------------------------------------
+    // apiProfiles（API 档案，DB-backed，应用数据库 api_configs 表）
+    //
+    // 与 UI 完全同源、写入立即生效。key = profileName。
+    // - list：全部档案（apiKey/visionApiKey 脱敏）+ 使用引导；
+    // - get：单档案（脱敏；不存在返回 null）；
+    // - set：upsert；value 字段为 merge 语义——已存在档案的未提供字段保留
+    //   现值，新档案用默认值；apiKey/visionApiKey 未提供或为空一律保留旧值
+    //   （新建则留空 → 无密钥档案，用户后补密钥）；isActive:true 切换生效
+    //   档案；config_json 自动按 UI 规范组装，无需 agent 提供；
+    // - delete：删除档案（复用统一 confirmed 确认；storage 层自动 seed
+    //   default 并保证恰有一个 active）。
+    // ---------------------------------------------------------------------
+
+    fn list_db_api_profiles(&self) -> napi::Result<Value> {
+        let db_path = db_path_or_error(&self.db_path)?;
+        let records = crate::storage::services::api_configs::list_api_configs(db_path)?;
+        let items: Vec<Value> = records
+            .iter()
+            .map(|record| {
+                json!({
+                    "profileName": record.profile_name,
+                    "displayName": record.display_name,
+                    "isActive": record.is_active,
+                    "baseUrl": record.base_url,
+                    "baseUrlMode": record.base_url_mode,
+                    "apiKey": mask_api_key(&record.api_key),
+                    "requestMethod": record.request_method,
+                    "advancedModel": record.advanced_model,
+                    "basicModel": record.basic_model,
+                    "supportsVision": record.supports_vision,
+                    "visionBaseUrl": record.vision_base_url,
+                    "visionBaseUrlMode": record.vision_base_url_mode,
+                    "visionApiKey": mask_api_key(&record.vision_api_key),
+                    "visionRequestMethod": record.vision_request_method,
+                    "visionModel": record.vision_model,
+                    "maxContextTokens": record.max_context_tokens,
+                    "maxTokens": record.max_tokens,
+                    "source": record.source,
+                    "updatedAt": record.updated_at,
+                })
+            })
+            .collect();
+        Ok(json!({
+            "scope": SCOPE_API_PROFILES,
+            "items": items,
+            "count": items.len(),
+            "guidance": "API PROFILES - config-set scope=apiProfiles key=<profileName> value={...} creates or updates a profile in the app database (same as the UI; takes effect immediately).\n\
+KEY RULES: (1) an empty or omitted apiKey/visionApiKey ALWAYS keeps the existing key — create a keyless profile first (value={baseUrl, advancedModel, basicModel}), then ask the user for the key and fill it in with value={apiKey}; (2) switch the active profile with value={isActive:true} (the DB is the runtime source of truth and applies to NEW conversations - existing conversations keep the profile they bound at creation, and sub-agent sessions are strictly bound); unlike scope=app activeProfile which is only the CLI compatibility layer; (3) omitted fields keep current values for existing profiles and use defaults for new ones; configJson is generated automatically; (4) delete requires confirmed:true after askUserQuestion; (5) apiKey/visionApiKey are always masked in responses.\n\
+Full guide: ~/.snow/docs/zh-CN/2-使用指南/3-配置API密钥与模型.md (en: en/2-guides/3-configure-api-keys.md)",
+        }))
+    }
+
+    fn get_db_api_profile(&self, profile_name: &str) -> napi::Result<Value> {
+        let list = self.list_db_api_profiles()?;
+        let items = list
+            .get("items")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let found = items
+            .iter()
+            .find(|item| item.get("profileName").and_then(Value::as_str) == Some(profile_name))
+            .cloned();
+        Ok(json!({
+            "scope": SCOPE_API_PROFILES,
+            "key": profile_name,
+            "value": found.unwrap_or(Value::Null),
+        }))
+    }
+
+    fn set_db_api_profile(&self, profile_name: &str, value: &Value) -> napi::Result<Value> {
+        let db_path = db_path_or_error(&self.db_path)?;
+        let profile_name = profile_name.trim().to_string();
+        if profile_name.is_empty() {
+            return Err(Error::new(
+                Status::InvalidArg,
+                "Profile name (config-set key) is required for the apiProfiles scope".to_string(),
+            ));
+        }
+        if !value.is_object() {
+            return Err(Error::new(
+                Status::InvalidArg,
+                "value must be an object of writable profile fields".to_string(),
+            ));
+        }
+
+        // 现有记录作为 merge 基线（不存在的档案走默认值）。
+        let existing = crate::storage::services::api_configs::list_api_configs(db_path)?
+            .into_iter()
+            .find(|record| record.profile_name == profile_name);
+
+        // 文本字段：value 显式提供（trim 非空）→ 用之；否则保留现值；新档案用默认。
+        let text_field = |key: &str, default: &str| -> String {
+            if let Some(raw) = value.get(key).and_then(Value::as_str) {
+                let trimmed = raw.trim().to_string();
+                if !trimmed.is_empty() {
+                    return trimmed;
+                }
+            }
+            existing
+                .as_ref()
+                .map(|record| api_config_record_field(record, key))
+                .filter(|current| !current.is_empty())
+                .unwrap_or_else(|| default.to_string())
+        };
+        // 密钥字段：value 显式提供（含空串）→ 用之（空串保留旧值的语义由
+        // upsert SQL 保证）；未提供 → 保留现值；新档案 → 空（无密钥建档）。
+        let key_field = |key: &str| -> String {
+            if let Some(raw) = value.get(key).and_then(Value::as_str) {
+                return raw.trim().to_string();
+            }
+            existing
+                .as_ref()
+                .map(|record| match key {
+                    "apiKey" => record.api_key.clone(),
+                    "visionApiKey" => record.vision_api_key.clone(),
+                    _ => String::new(),
+                })
+                .unwrap_or_default()
+        };
+        // 数值字段（Option<i32>）。
+        let int_field = |key: &str| -> Option<i32> {
+            if let Some(field) = value.get(key) {
+                if let Some(number) = field.as_i64() {
+                    return Some(number as i32);
+                }
+                if let Some(number) = field.as_u64() {
+                    return Some(number as i32);
+                }
+            }
+            existing.as_ref().and_then(|record| match key {
+                "maxContextTokens" => record.max_context_tokens,
+                "maxTokens" => record.max_tokens,
+                "streamIdleTimeoutSec" => record.stream_idle_timeout_sec,
+                "autoCompressThreshold" => record.auto_compress_threshold,
+                "maxRetries" => record.max_retries,
+                "retryBaseDelayMs" => record.retry_base_delay_ms,
+                _ => None,
+            })
+        };
+        // 布尔字段。
+        let bool_field = |key: &str, default: bool| -> bool {
+            if let Some(field) = value.get(key) {
+                if let Some(flag) = field.as_bool() {
+                    return flag;
+                }
+                if let Some(text) = field.as_str() {
+                    return matches!(text.trim().to_lowercase().as_str(), "true" | "1" | "yes");
+                }
+            }
+            existing
+                .as_ref()
+                .map(|record| match key {
+                    "isActive" => record.is_active,
+                    "supportsVision" => record.supports_vision,
+                    "enableAutoCompress" => record.enable_auto_compress,
+                    _ => default,
+                })
+                .unwrap_or(default)
+        };
+
+        let base_url = text_field("baseUrl", "https://api.openai.com/v1");
+        let base_url_mode = text_field("baseUrlMode", "auto");
+        let request_method = text_field("requestMethod", "chat");
+        let advanced_model = text_field("advancedModel", "");
+        let basic_model = text_field("basicModel", "");
+        let supports_vision = bool_field("supportsVision", true);
+        let vision_base_url = text_field("visionBaseUrl", "");
+        let vision_base_url_mode = text_field("visionBaseUrlMode", "auto");
+        let vision_request_method = text_field("visionRequestMethod", &request_method);
+        let vision_model = text_field("visionModel", "");
+        let max_context_tokens = int_field("maxContextTokens");
+        let max_tokens = int_field("maxTokens");
+        let stream_idle_timeout_sec = int_field("streamIdleTimeoutSec");
+        let enable_auto_compress = bool_field("enableAutoCompress", true);
+        let auto_compress_threshold = int_field("autoCompressThreshold");
+        let max_retries = int_field("maxRetries");
+        let retry_base_delay_ms = int_field("retryBaseDelayMs");
+        let system_prompt_ids_json = text_field("systemPromptIdsJson", "");
+        let custom_header_scheme_id = text_field("customHeaderSchemeId", "");
+        let is_active = bool_field("isActive", existing.as_ref().is_some_and(|record| record.is_active));
+        let source = text_field("source", "manual");
+
+        // config_json 自动组装（与 UI normalizeApiConfigInput 的 manualConfig 规范一致）。
+        let config_json = json!({
+            "snowcfg": {
+                "baseUrl": base_url,
+                "baseUrlMode": base_url_mode,
+                "apiKey": key_field("apiKey"),
+                "requestMethod": request_method,
+                "advancedModel": advanced_model,
+                "basicModel": basic_model,
+                "supportsVision": supports_vision,
+                "visionBaseUrl": vision_base_url,
+                "visionBaseUrlMode": vision_base_url_mode,
+                "visionApiKey": key_field("visionApiKey"),
+                "visionRequestMethod": vision_request_method,
+                "visionModel": vision_model,
+                "maxContextTokens": max_context_tokens,
+                "maxTokens": max_tokens,
+                "streamIdleTimeoutSec": stream_idle_timeout_sec,
+                "enableAutoCompress": enable_auto_compress,
+                "autoCompressThreshold": auto_compress_threshold,
+                "maxRetries": max_retries,
+                "retryDelayMs": retry_base_delay_ms,
+                "systemPromptIdsJson": system_prompt_ids_json,
+                "customHeaderSchemeId": custom_header_scheme_id,
+                "source": source,
+            }
+        })
+        .to_string();
+
+        let item = crate::storage::ApiConfigInput {
+            profile_name: profile_name.clone(),
+            display_name: text_field("displayName", &profile_name),
+            is_active,
+            base_url,
+            base_url_mode,
+            api_key: key_field("apiKey"),
+            request_method,
+            advanced_model,
+            basic_model,
+            supports_vision,
+            vision_base_url,
+            vision_base_url_mode,
+            vision_api_key: key_field("visionApiKey"),
+            vision_request_method,
+            vision_model,
+            max_context_tokens,
+            max_tokens,
+            stream_idle_timeout_sec,
+            enable_auto_compress,
+            auto_compress_threshold,
+            max_retries,
+            retry_base_delay_ms,
+            system_prompt_ids_json,
+            custom_header_scheme_id,
+            config_json,
+            source,
+        };
+        // 写前备份现有 config_json（临时安全网，成功后清理）。
+        let backup = match &existing {
+            Some(record) => {
+                Self::backup_db_value(&format!("apiProfiles.{profile_name}"), &record.config_json)?
+            }
+            None => None,
+        };
+        crate::storage::services::api_configs::upsert_api_config(db_path, &item)?;
+        Self::cleanup_backup(backup);
+        // 回读保存结果（密钥脱敏）。
+        let saved = self.get_db_api_profile(&profile_name)?;
+        Ok(json!({
+            "scope": SCOPE_API_PROFILES,
+            "key": profile_name,
+            "saved": true,
+            "value": saved.get("value").cloned().unwrap_or(Value::Null),
+        }))
+    }
+
+    fn delete_db_api_profile(&self, profile_name: &str) -> napi::Result<Value> {
+        let db_path = db_path_or_error(&self.db_path)?;
+        let records = crate::storage::services::api_configs::list_api_configs(db_path)?;
+        let existing = records
+            .iter()
+            .find(|record| record.profile_name == profile_name);
+        let deleted = existing.is_some();
+        let backup = match existing {
+            Some(record) => {
+                Self::backup_db_value(&format!("apiProfiles.{profile_name}"), &record.config_json)?
+            }
+            None => None,
+        };
+        crate::storage::services::api_configs::delete_api_config(db_path, profile_name)?;
+        Self::cleanup_backup(backup);
+        Ok(json!({
+            "scope": SCOPE_API_PROFILES,
+            "key": profile_name,
             "deleted": deleted,
         }))
     }
@@ -3234,6 +3534,27 @@ fn delete_log_file(args: &Value) -> napi::Result<Value> {
     }))
 }
 
+/// apiProfiles 域 merge 语义的辅助：取 ApiConfigRecord 中某个文本字段的现值
+/// （未映射的字段返回空串，调用方回退到默认值）。
+fn api_config_record_field(record: &crate::storage::ApiConfigRecord, key: &str) -> String {
+    match key {
+        "displayName" => record.display_name.clone(),
+        "baseUrl" => record.base_url.clone(),
+        "baseUrlMode" => record.base_url_mode.clone(),
+        "requestMethod" => record.request_method.clone(),
+        "advancedModel" => record.advanced_model.clone(),
+        "basicModel" => record.basic_model.clone(),
+        "visionBaseUrl" => record.vision_base_url.clone(),
+        "visionBaseUrlMode" => record.vision_base_url_mode.clone(),
+        "visionRequestMethod" => record.vision_request_method.clone(),
+        "visionModel" => record.vision_model.clone(),
+        "systemPromptIdsJson" => record.system_prompt_ids_json.clone(),
+        "customHeaderSchemeId" => record.custom_header_scheme_id.clone(),
+        "source" => record.source.clone(),
+        _ => String::new(),
+    }
+}
+
 fn db_path_or_error(db_path: &str) -> napi::Result<&Path> {
     if db_path.is_empty() {
         return Err(Error::new(
@@ -3361,14 +3682,14 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_LIST.to_string(),
-                description: "List configuration scopes and their keys; pass `scope` to inspect one scope (returns current values; sensitive keys masked).\nSCOPE REFERENCE:\n1. settings (~/.snow/settings.json): mcpServers, codebase, sensitiveCommands, yoloMode, planMode, goal, toolSearchEnabled, ...\n2. snowcfg (~/.snow/config.json): baseUrl, apiKey, advancedModel, basicModel, maxTokens, chatThinking, ...\n3. proxy (~/.snow/proxy-config.json): enabled, host, port, searchEngine, browserPath, browserDebugPort\n4. app (~/.snow/active-profile.json): activeProfile\n5. custom-headers (~/.snow/custom-headers.json): active, schemes (sensitive)\n6. system-prompt (~/.snow/system-prompt.json): active, prompts (sensitive)\n7. theme (~/.snow/theme.json): theme, simpleMode, diffOpacity, toolIcons, customColors, ...\n8. language (~/.snow/language.json): language\n9. permissions (~/.snow/permissions.json): alwaysApprovedTools\n10. lsp-config (~/.snow/lsp-config.json): schemaVersion, servers\n11. buddy (~/.snow/buddy.json): version, companion, muted\n12. subAgents (app DB): sub-agent configs, key=agentId; list returns items + CREATING guidance\n13. hooks (app DB): lifecycle hook configs, key=hookType; list returns items + CONFIGURING guidance\n14. imagegen (app DB): image generation channels + top-level maxConcurrentImages (1-8, default 4) and timeoutSecs (60-3600, default 300); list returns keys + note\n15. skills (delegated): skillId toggles / GitHub installs\n16. logs (read-only): log files under ~/.snow/log\n17. personalization (~/.snow/ROLE.md): global role/rules file (plain markdown, non-JSON), key=role; list returns length + preview, get returns the full rules text, set writes the whole file, delete removes it (restores defaults)\nRULES: pass projectId to scope subAgents/hooks/skills listings to a specific project (omitted = auto-injects the CURRENT SESSION's projectId, so you get/configure the active project's settings; pass an empty string \"\" for global); every list response includes the current session's projectId as `currentProjectId` — read it to obtain the project id bound to the current conversation; sensitive values (apiKey, visionApiKey, custom-header schemes, system-prompt prompts, imagegen apiKey) are always masked."
+                description: "List configuration scopes and their keys; pass `scope` to inspect one scope (returns current values; sensitive keys masked).\nSCOPE REFERENCE:\n1. settings (~/.snow/settings.json): mcpServers, codebase, sensitiveCommands, yoloMode, planMode, goal, toolSearchEnabled, ...\n2. snowcfg (~/.snow/config.json): baseUrl, apiKey, advancedModel, basicModel, maxTokens, chatThinking, ...\n3. proxy (~/.snow/proxy-config.json): enabled, host, port, searchEngine, browserPath, browserDebugPort\n4. app (~/.snow/active-profile.json): activeProfile\n5. custom-headers (~/.snow/custom-headers.json): active, schemes (sensitive)\n6. system-prompt (~/.snow/system-prompt.json): active, prompts (sensitive)\n7. theme (~/.snow/theme.json): theme, simpleMode, diffOpacity, toolIcons, customColors, ...\n8. language (~/.snow/language.json): language\n9. permissions (~/.snow/permissions.json): alwaysApprovedTools\n10. lsp-config (~/.snow/lsp-config.json): schemaVersion, servers\n11. buddy (~/.snow/buddy.json): version, companion, muted\n12. subAgents (app DB): sub-agent configs, key=agentId; list returns items + CREATING guidance\n13. hooks (app DB): lifecycle hook configs, key=hookType; list returns items + CONFIGURING guidance\n14. imagegen (app DB): image generation channels + top-level maxConcurrentImages (1-8, default 4) and timeoutSecs (60-3600, default 300); list returns keys + note\n15. skills (delegated): skillId toggles / GitHub installs\n16. logs (read-only): log files under ~/.snow/log\n17. personalization (~/.snow/ROLE.md): global role/rules file (plain markdown, non-JSON), key=role; list returns length + preview, get returns the full rules text, set writes the whole file, delete removes it (restores defaults)\n18. apiProfiles (app DB): API profiles (api_configs table, same as the UI); key=profileName; list returns all profiles with masked apiKey/visionApiKey; set creates/updates a profile (empty/omitted apiKey keeps the existing key - create keyless profiles first, then fill the key; isActive:true switches the active profile; omitted fields keep current values); delete removes a profile (requires confirmed)\nRULES: pass projectId to scope subAgents/hooks/skills listings to a specific project (omitted = auto-injects the CURRENT SESSION's projectId, so you get/configure the active project's settings; pass an empty string \"\" for global); every list response includes the current session's projectId as `currentProjectId` — read it to obtain the project id bound to the current conversation; sensitive values (apiKey, visionApiKey, custom-header schemes, system-prompt prompts, imagegen apiKey) are always masked."
                     .to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "scope": {
                             "type": "string",
-"enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs", "imagegen", "personalization"],
+"enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs", "imagegen", "personalization", "apiProfiles"],
                             "description": "Optional config scope name; when omitted, lists all scopes."
                         },
                         "projectId": {
@@ -3382,13 +3703,13 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_GET.to_string(),
-                description: "Read the value of a configuration key. Sensitive keys (apiKey, visionApiKey) are always returned masked (e.g. sk-****abcd); this tool never exposes plaintext secrets. Returns null when the key is not configured. DB-backed scopes: subAgents (key=agentId) and hooks (key=hookType) read directly from the app database; pass optional `projectId` to read a project-scoped config (omitted = global). Read-only logs scope: key is a log file name (e.g. 2026-08-03-error.log) or a level shortcut (error/warn/info/debug for today's file); optional `limit` controls returned tail lines (default 200, max 2000). personalization (key=role): returns the full ~/.snow/ROLE.md rules text (null when the file does not exist). Project-scoped settings: pass `projectId` to read settings.mcpServers / settings.sensitiveCommands from the project-scoped app database (other keys reject projectId).".to_string(),
+                description: "Read the value of a configuration key. Sensitive keys (apiKey, visionApiKey) are always returned masked (e.g. sk-****abcd); this tool never exposes plaintext secrets. Returns null when the key is not configured. DB-backed scopes: subAgents (key=agentId) and hooks (key=hookType) read directly from the app database; apiProfiles (key=profileName) reads an API profile from the app database (apiKey/visionApiKey masked, null when the profile does not exist); pass optional `projectId` to read a project-scoped config (omitted = global). Read-only logs scope: key is a log file name (e.g. 2026-08-03-error.log) or a level shortcut (error/warn/info/debug for today's file); optional `limit` controls returned tail lines (default 200, max 2000). personalization (key=role): returns the full ~/.snow/ROLE.md rules text (null when the file does not exist). Project-scoped settings: pass `projectId` to read settings.mcpServers / settings.sensitiveCommands from the project-scoped app database (other keys reject projectId).".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "scope": {
                             "type": "string",
-"enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs", "imagegen", "personalization"],
+"enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs", "imagegen", "personalization", "apiProfiles"],
                             "description": "Config scope name."
                         },
                         "key": {
@@ -3413,13 +3734,13 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_SET.to_string(),
-                description: "Write a value for a configuration key (whitelisted scopes only; type-checked; auto-backup to ~/.snow/.config-backups as a temporary safety net before the write, removed after a successful write; atomic write).\nRULES:\n- settings.mcpServers: syncs into the app database on write and takes effect immediately (same diff semantics as the UI sync action).\n- Other file-backed scopes (snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy): changes may need an app restart or a UI re-save. personalization (key=role, value must be a string): replaces the whole ~/.snow/ROLE.md file (markdown text); takes effect in the next conversation.\n- DB-backed scopes (take effect immediately): subAgents (key=agentId, value={name, description?, systemPrompt?, toolsJson?, configProfile?, model?}; an explicit toolsJson tool list requires projectId, see the guidance from config-list scope=subAgents); hooks (key=hookType, value={rules:[...]}, see the guidance from config-list scope=hooks); imagegen (value={channels:[...]} full replace, {<channelId>: {...}} per-channel merge keeping omitted fields, or a global field alone: {maxConcurrentImages: N} clamped to 1-8 / {timeoutSecs: N} clamped to 60-3600).\n- Project-scoped: pass projectId for settings.mcpServers (full replace of {name: {type,url,command,args,env,headers,enabled,timeoutMs}}) or settings.sensitiveCommands (full replace of [{commandId, pattern, description, enabled}]); other scopes ignore projectId.".to_string(),
+                description: "Write a value for a configuration key (whitelisted scopes only; type-checked; auto-backup to ~/.snow/.config-backups as a temporary safety net before the write, removed after a successful write; atomic write).\nRULES:\n- settings.mcpServers: syncs into the app database on write and takes effect immediately (same diff semantics as the UI sync action).\n- Other file-backed scopes (snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy): changes may need an app restart or a UI re-save. personalization (key=role, value must be a string): replaces the whole ~/.snow/ROLE.md file (markdown text); takes effect in the next conversation.\n- DB-backed scopes (take effect immediately): subAgents (key=agentId, value={name, description?, systemPrompt?, toolsJson?, configProfile?, model?}; an explicit toolsJson tool list requires projectId, see the guidance from config-list scope=subAgents); hooks (key=hookType, value={rules:[...]}, see the guidance from config-list scope=hooks); apiProfiles (key=profileName, value={displayName?, baseUrl?, baseUrlMode?, apiKey?, requestMethod?, advancedModel?, basicModel?, supportsVision?, visionBaseUrl?, visionApiKey?, visionRequestMethod?, visionModel?, maxContextTokens?, maxTokens?, isActive?, ...} - creates or updates the profile in the app database (same as the UI); an empty or omitted apiKey/visionApiKey ALWAYS keeps the existing key, so you can create a keyless profile first and fill the key later; isActive:true switches the active profile immediately; omitted fields keep current values for existing profiles and use defaults for new ones; configJson is generated automatically); imagegen (value={channels:[...]} full replace, {<channelId>: {...}} per-channel merge keeping omitted fields, or a global field alone: {maxConcurrentImages: N} clamped to 1-8 / {timeoutSecs: N} clamped to 60-3600).\n- Project-scoped: pass projectId for settings.mcpServers (full replace of {name: {type,url,command,args,env,headers,enabled,timeoutMs}}) or settings.sensitiveCommands (full replace of [{commandId, pattern, description, enabled}]); other scopes ignore projectId.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "scope": {
                             "type": "string",
-"enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs", "imagegen", "personalization"],
+"enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs", "imagegen", "personalization", "apiProfiles"],
                             "description": "Config scope name."
                         },
                         "key": {
@@ -3441,13 +3762,13 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_DELETE.to_string(),
-                description: "Delete a configuration key (e.g. clear an apiKey). DESTRUCTIVE — REQUIRES EXPLICIT USER CONFIRMATION: before calling this tool you MUST call the `askUserQuestion` tool from the `user-interaction` server to show the user exactly which config will be deleted (scope, key, projectId) and its impact, then wait for their explicit approval; only then retry this call with `confirmed: true`. Calls without `confirmed: true` are rejected. Scope-specific semantics: `imagegen` DELETES ALL image generation channels (not just the named key — the whole image generation config is cleared); `skills` uninstalls the skill; `logs` deletes one log file; `subAgents` deletes a sub-agent (built-in agent_general cannot be deleted); `hooks` deletes the hookType config. `personalization` deletes ~/.snow/ROLE.md (restores default rules). The current value is backed up before the write (temporary safety net) and the backup is removed after a successful write. Returns deleted=false when the key was not configured. Pass optional `projectId` to delete a project-scoped config (omitted = global). Project-scoped settings: projectId + settings.mcpServers clears all project MCP servers; projectId + settings.sensitiveCommands clears all project sensitive-command overrides.".to_string(),
+                description: "Delete a configuration key (e.g. clear an apiKey). DESTRUCTIVE — REQUIRES EXPLICIT USER CONFIRMATION: before calling this tool you MUST call the `askUserQuestion` tool from the `user-interaction` server to show the user exactly which config will be deleted (scope, key, projectId) and its impact, then wait for their explicit approval; only then retry this call with `confirmed: true`. Calls without `confirmed: true` are rejected. Scope-specific semantics: `imagegen` DELETES ALL image generation channels (not just the named key — the whole image generation config is cleared); `skills` uninstalls the skill; `logs` deletes one log file; `subAgents` deletes a sub-agent (built-in agent_general cannot be deleted); `hooks` deletes the hookType config; `apiProfiles` deletes an API profile (the storage layer auto-seeds a default profile and keeps exactly one active). `personalization` deletes ~/.snow/ROLE.md (restores default rules). The current value is backed up before the write (temporary safety net) and the backup is removed after a successful write. Returns deleted=false when the key was not configured. Pass optional `projectId` to delete a project-scoped config (omitted = global). Project-scoped settings: projectId + settings.mcpServers clears all project MCP servers; projectId + settings.sensitiveCommands clears all project sensitive-command overrides.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "scope": {
                             "type": "string",
-"enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs", "imagegen", "personalization"],
+"enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs", "imagegen", "personalization", "apiProfiles"],
                             "description": "Config scope name."
                         },
                         "key": {

@@ -74,84 +74,109 @@ Some advanced parameters can be configured in the Runtime area of the UI (such a
 ## 5. AI / CLI Configuration (config tool)
 
 Snow App ships a built-in `config` tool; AI agents can read/write the same
-config that the UI uses — **the `snowcfg` scope operates on the currently
-active profile**:
+config that the UI uses. API-profile related tools:
 
 | Tool | Purpose |
 | --- | --- |
 | `config-list scope=snowcfg` | List the full config of the currently active profile |
 | `config-get scope=snowcfg key=baseUrl` | Read a single key (`apiKey` is always masked, e.g. `sk-****abcd`) |
 | `config-set scope=snowcfg key=baseUrl value="..."` | Write a single key (whitelist + type check + auto backup + atomic write) |
-| `config-set scope=app key=activeProfile value="profile-name"` | Switch the currently active profile (writes `active-profile.json`) |
+| `config-list scope=apiProfiles` | List **all profiles** (keys masked), with usage guidance |
+| `config-get scope=apiProfiles key=<profile-name>` | Read one profile (keys masked; null when missing) |
+| `config-set scope=apiProfiles key=<profile-name> value={...}` | Create/update a profile (writes the app database, same as the UI; takes effect immediately) |
+| `config-delete scope=apiProfiles key=<profile-name>` | Delete a profile (destructive — ask the user first, then call with `confirmed: true`) |
 
 ### 5.1 Quick Reference (agents, follow along)
 
-#### ① View the currently active profile
+#### ① View profiles
 
 ```
-config-list scope=snowcfg   # full config of the active profile (apiKey masked)
-config-list scope=app       # see activeProfile = the active profile name
+config-list scope=apiProfiles   # all profiles (apiKey/visionApiKey masked; isActive marks the active one)
+config-list scope=snowcfg       # full config of the active profile
+config-list scope=app           # activeProfile (profile name in the CLI compatibility layer)
 ```
 
 #### ② Change the API key
 
 ```
-config-set scope=snowcfg key=apiKey value="sk-new-key"
+config-set scope=apiProfiles key=profile-name value={"apiKey": "sk-new-key"}
 ```
 
-Note: `apiKey`/`visionApiKey` are always masked when read — **never ask for or
-display plaintext keys**; the user provides the key, you write it, and every
-write is backed up automatically to `~/.snow/.config-backups/`.
+- An empty or omitted `apiKey`/`visionApiKey` **always keeps the existing key**
+  — so you can create a keyless profile first and fill the key later without
+  losing it when updating other fields;
+- Keys are always masked when read — **never ask for or display plaintext keys**;
+  the user provides the key, you write it.
 
-#### ③ Change the model
+#### ③ Change the model / other fields
 
 ```
-config-set scope=snowcfg key=advancedModel value="new-model"   # advanced model
-config-set scope=snowcfg key=basicModel value="new-model"      # basic model
-config-set scope=snowcfg key=visionModel value="new-model"     # vision model (when configured separately)
+config-set scope=apiProfiles key=profile-name value={"advancedModel": "new-model"}
 ```
 
-Or update several fields at once (omitting `key` writes the object):
-
-```jsonc
-config-set scope=snowcfg value={
-  "advancedModel": "gpt-4o",
-  "maxTokens": 8192,
-  "showThinking": true
-}
-```
+Writable fields (all optional; omitted fields keep their current values):
+`displayName`, `baseUrl`, `baseUrlMode`, `apiKey`, `requestMethod`,
+`advancedModel`, `basicModel`, `supportsVision`, `visionBaseUrl`, `visionApiKey`,
+`visionRequestMethod`, `visionModel`, `maxContextTokens`, `maxTokens`,
+`streamIdleTimeoutSec`, `enableAutoCompress`, `autoCompressThreshold`,
+`maxRetries`, `retryBaseDelayMs`, `isActive`, etc. `configJson` is generated
+automatically.
 
 #### ④ Switch the active profile
 
 ```
-config-set scope=app key=activeProfile value="profile-name"
+config-set scope=apiProfiles key=profile-name value={"isActive": true}
 ```
 
-- The profile name must exist (`api_configs.profile_name` in the app database);
-- If the agent cannot enumerate profiles, first run `config-list scope=app` to
-  see the current value, then ask the user to confirm the available profile
-  names in **Settings → API Settings**;
-- This is file-backed — a restart or UI re-save fully applies the switch.
+- Writes `api_configs.is_active` in the app database — **takes effect
+  immediately for NEW conversations** (the runtime uses the DB as the source of truth);
+- **Conversation isolation**: conversations bind the active profile at creation
+  time (`api_profile_name`); **switching the global profile does NOT change
+  existing conversations that already bound a profile**; sub-agent sessions are
+  strictly bound to their profile name and fail (no fallback) if it is deleted;
+- The legacy `config-set scope=app key=activeProfile value="profile-name"` only
+  writes `active-profile.json` (CLI compatibility layer) and does not change the
+  runtime profile; kept for compatibility only.
 
-#### ⑤ Create a new profile (UI only — agent guides the user)
-
-The config tool **cannot** create profiles directly; the agent should open the
-settings page for the user:
+#### ⑤ Create a profile (including keyless-first workflow)
 
 ```
-app-control-openSettings page=api-settings
+# Step 1: create a keyless profile (omitting apiKey leaves it empty)
+config-set scope=apiProfiles key=my-new-profile value={
+  "baseUrl": "https://api.example.com/v1",
+  "advancedModel": "gpt-4o",
+  "basicModel": "gpt-4o"
+}
+
+# Step 2: once the user provides the key, fill it in (empty-key semantics never clears an existing key)
+config-set scope=apiProfiles key=my-new-profile value={"apiKey": "sk-..."}
+
+# Step 3 (optional): make it the active profile
+config-set scope=apiProfiles key=my-new-profile value={"isActive": true}
 ```
 
-Guide the user through: profile name (unique), display name, Base URL (+ mode),
-API Key, request method, advanced model, basic model, vision model (optional),
-etc. After saving, the profile appears in `api_configs` and can be activated
-with the **Enable profile** switch in API Settings.
+Users can also create profiles in **Settings → API Settings**
+(`app-control-openSettings page=api-settings`).
+
+#### ⑥ Delete a profile
+
+```
+# Get explicit user approval via the user-interaction askUserQuestion tool first, then:
+config-delete scope=apiProfiles key=profile-name confirmed=true
+```
+
+The storage layer automatically keeps at least one active profile (seeding the
+default one if necessary).
 
 ### 5.2 Effect of writes
 
-`snowcfg`/`app` are file-backed — changes take effect after an app restart or a
-UI re-save; `apiKey`/`visionApiKey` are always masked — never ask for or display
-plaintext keys; every write is backed up automatically to `~/.snow/.config-backups/`.
+- `apiProfiles` writes the app database — **takes effect immediately**;
+- `snowcfg`/`app` are file-backed — changes take effect after an app restart or
+  a UI re-save (`app.activeProfile` is only the CLI compatibility layer);
+- `apiKey`/`visionApiKey` are always masked — never ask for or display plaintext
+  keys;
+- every write is backed up automatically to `~/.snow/.config-backups/` (for DB
+  writes, the profile's `config_json` is backed up).
 
 ## 6. FAQ
 
@@ -160,7 +185,7 @@ plaintext keys; every write is backed up automatically to `~/.snow/.config-backu
 | Requests return 401/403 | Check whether `apiKey` and `baseUrl` are correct and whether the key has expired |
 | The model doesn't support thinking | Turn off `showThinking` or adjust `chatThinking.reasoning_effort` |
 | Vision model unavailable | Configure `visionBaseUrl`, `visionApiKey`, `visionModel` separately |
-| Profile switch has no effect | Verify the value of `activeProfile` in `active-profile.json` |
+| Profile switch has no effect | Switch with `config-set scope=apiProfiles key=profile-name value={"isActive":true}` (writes the DB, takes effect immediately); `active-profile.json` is only the CLI compatibility layer |
 
 ## 6. Reference
 

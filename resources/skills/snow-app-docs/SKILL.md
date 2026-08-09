@@ -101,23 +101,27 @@ allowed-tools:
   description, enabled}`；commandId 匹配全局规则时为 enabled 覆盖，其余为
   项目自定义规则）；`config-get`/`config-delete` 传 `projectId` 读取/清空。
 - **API 密钥与模型（档案）**：多档案存在应用数据库 `api_configs` 表，
-  `active-profile.json` 的 `activeProfile` 指定**当前生效档案**；`snowcfg`
-  域读写的就是当前档案（`config.json` 的 `snowcfg` 仅为 CLI 兼容镜像）。
-  详细步骤见 `2-使用指南/3-配置API密钥与模型.md` 第 5 节。操作速查：
-  - **查看当前档案**：`config-list scope=snowcfg` + `config-list scope=app`
-    （activeProfile = 当前档案名）；
-  - **改密钥**：`config-set scope=snowcfg key=apiKey value="sk-..."`
-    （读取一律脱敏，不展示明文；密钥由用户提供后写入）；
-  - **改模型**：`config-set scope=snowcfg key=advancedModel value="..."`，
-    同理 `basicModel` / `visionModel`；多字段可一次 `config-set scope=snowcfg
-    value={...}` 写入；
-  - **切换档案**：`config-set scope=app key=activeProfile value="档案名"`
-    （档案名须已存在于 `api_configs.profile_name`；无法枚举时引导用户在
-    **设置 → API 设置** 确认可用档案名）；
-  - **新建档案**：config 工具**不能**直接新建，用
-    `app-control-openSettings page=api-settings` 打开设置页，引导用户填写
-    档案名/显示名/Base URL/API Key/请求方法/高级/基础/视觉模型等字段；
-  - 文件型配置写后**可能需要重启应用或 UI 重存生效**。
+  `active-profile.json` 的 `activeProfile` 仅 CLI 兼容层；**运行时以 DB 的
+  `is_active` 为准**。`snowcfg` 域读写的是当前生效档案（config.json 镜像）。
+  优先用 **`apiProfiles` 域**（写 DB、与 UI 同源、立即生效），详细步骤见
+  `2-使用指南/3-配置API密钥与模型.md` 第 5 节。操作速查：
+  - **查看全部档案**：`config-list scope=apiProfiles`（apiKey/visionApiKey
+    脱敏，isActive 标出生效档案）；当前档案用 `config-list scope=snowcfg`；
+  - **新建档案（支持无密钥建档→用户后补密钥）**：`config-set scope=apiProfiles
+    key=<档案名> value={baseUrl, advancedModel, basicModel}` 先建无密钥档案，
+    用户提供密钥后再 `value={apiKey}` 补上（**空/省略 apiKey 一律保留旧值**，
+    不丢密钥）；
+  - **改密钥/模型等字段**：`config-set scope=apiProfiles key=<档案名>
+    value={apiKey|advancedModel|basicModel|...}`（未提供的字段保留现值，
+    configJson 自动组装）；
+  - **切换档案**：`config-set scope=apiProfiles key=<档案名>
+    value={isActive:true}`（写 DB，**对新会话立即生效**；已有会话绑定创建
+    时的档案、不受切换影响——会话隔离；子代理会话严格绑定、档案被删会失败）；
+    `scope=app activeProfile` 仅 CLI 兼容层，不改变运行时档案；
+  - **删除档案**：先经 `askUserQuestion` 获用户同意，再
+    `config-delete scope=apiProfiles key=<档案名> confirmed=true`
+    （存储层自动保证至少一个生效档案）；
+  - 密钥读取一律脱敏（如 `sk-****abcd`），**不要索要或展示明文密钥**。
 - **代理 / 主题等配置**：通过 `config` 工具读写白名单域——`proxy`
   （proxy-config.json）、`custom-headers`、`system-prompt`、`theme`、
   `language`、`permissions`、`lsp-config`、`buddy`。

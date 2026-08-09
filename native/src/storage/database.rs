@@ -361,7 +361,7 @@ fn recover_database(database_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn create_schema(connection: &Connection) -> rusqlite::Result<()> {
+pub(crate) fn create_schema(connection: &Connection) -> rusqlite::Result<()> {
     // Pre-schema migrations run BEFORE CREATE TABLE so that tables with
     // incompatible legacy structures (e.g. INTEGER primary keys) can be
     // dropped and recreated with the current schema.

@@ -22,8 +22,9 @@ use reqwest::header::{
 use serde_json::{json, Value};
 
 use crate::api::config::{
-    get_active_api_request_context, normalize_base_url, resolve_sdk_api_base_url,
-    DEFAULT_ANTHROPIC_BASE_URL, DEFAULT_GEMINI_BASE_URL, DEFAULT_OPENAI_BASE_URL,
+    get_active_api_request_context, normalize_base_url, resolve_basic_model,
+    resolve_sdk_api_base_url, DEFAULT_ANTHROPIC_BASE_URL, DEFAULT_GEMINI_BASE_URL,
+    DEFAULT_OPENAI_BASE_URL,
 };
 use crate::api::retry::{should_retry, RetryOptions};
 use crate::storage::services::codebase_index::SearchResult;
@@ -246,12 +247,7 @@ async fn review_results(query: &str, results: &[SearchResult]) -> Result<ReviewO
     let api_config = context.api_config;
     let custom_headers = context.custom_headers;
 
-    let model = api_config.basic_model.trim();
-    if model.is_empty() {
-        return Err(Error::from_reason(
-            "Basic model not configured. Please configure a basic model in API settings.",
-        ));
-    }
+    let model = resolve_basic_model(None, &api_config.basic_model)?;
 
     let api_key = api_config.api_key.trim();
     if api_key.is_empty() {
@@ -269,7 +265,7 @@ async fn review_results(query: &str, results: &[SearchResult]) -> Result<ReviewO
                 &api_config,
                 &api_key,
                 &custom_headers,
-                model,
+                &model,
                 query,
                 results,
                 &retry_options,
@@ -281,7 +277,7 @@ async fn review_results(query: &str, results: &[SearchResult]) -> Result<ReviewO
                 &api_config,
                 &api_key,
                 &custom_headers,
-                model,
+                &model,
                 query,
                 results,
                 &retry_options,
@@ -293,7 +289,7 @@ async fn review_results(query: &str, results: &[SearchResult]) -> Result<ReviewO
                 &api_config,
                 &api_key,
                 &custom_headers,
-                model,
+                &model,
                 query,
                 results,
                 &retry_options,
@@ -305,7 +301,7 @@ async fn review_results(query: &str, results: &[SearchResult]) -> Result<ReviewO
                 &api_config,
                 &api_key,
                 &custom_headers,
-                model,
+                &model,
                 query,
                 results,
                 &retry_options,

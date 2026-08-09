@@ -41,8 +41,8 @@ Snow CLI).
 | `baseUrlMode` | string | | `auto` / `custom` |
 | `apiKey` | string | 🔒 | Main provider key |
 | `requestMethod` | string | | Request method, e.g. `chat` |
-| `advancedModel` | string | | Model for complex tasks |
-| `basicModel` | string | | Model for lightweight tasks |
+| `advancedModel` | string | | Profile's default advanced model; ordinary conversations still use their selected model |
+| `basicModel` | string | | Model for conversation titles, AI Commit, `@?` file search, and codebase Agent Review |
 | `supportsVision` | boolean | | Whether the main model supports vision |
 | `visionBaseUrl` | string | | Vision service endpoint |
 | `visionBaseUrlMode` | string | | Vision endpoint mode |
@@ -67,6 +67,18 @@ Snow CLI).
 | `responsesVerbosity` | string | | Responses verbosity, e.g. `medium` |
 | `responsesFastMode` | boolean | | Responses fast mode |
 | `chatThinking` | object | | Thinking-strength config (`{enabled, reasoning_effort}`) |
+
+> **Model routing and profile completeness**: Snow App does not switch between
+> `basicModel` and `advancedModel` based on prompt complexity. An ordinary
+> conversation uses its selected model; `advancedModel` is only the bound profile's
+> default advanced model. `basicModel` serves conversation titles, AI Commit, `@?`
+> file search, and codebase Agent Review, and the two model classes never fall back
+> to each other. Titles use the conversation-bound profile; if it is deleted,
+> ordinary-conversation rules fall back to the active profile. An active profile
+> requires both `advancedModel` and `basicModel` to be non-empty after trim; an
+> inactive draft may leave them empty, and API-key presence is not part of this
+> model-completeness check. Vision understanding, image generation, and embedding
+> use independent configuration and channels.
 
 ## 3. proxy-config.json (scope: `proxy`)
 

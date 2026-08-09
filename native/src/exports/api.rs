@@ -151,11 +151,17 @@ pub async fn generate_theme_palette(
 /// request can be aborted via `cancel_conversation_summary`. When cancelled,
 /// the summary returns an empty string WITHOUT writing to the database,
 /// releasing the SQLite lock for a subsequent delete/truncate.
-#[napi(ts_return_type = "Promise<string>")]
-pub async fn generate_conversation_summary(conversation_id: String) -> napi::Result<String> {
+#[napi(
+    ts_args_type = "conversationId: string, basicModel?: string",
+    ts_return_type = "Promise<string>"
+)]
+pub async fn generate_conversation_summary(
+    conversation_id: String,
+    basic_model: Option<String>,
+) -> napi::Result<String> {
     let token = CancellationToken::new();
     crate::api::cancel::register_summary(&conversation_id, token.clone());
-    let result = generate_summary(conversation_id.clone(), token).await;
+    let result = generate_summary(conversation_id.clone(), basic_model, token).await;
     crate::api::cancel::unregister_summary(&conversation_id);
     result
 }

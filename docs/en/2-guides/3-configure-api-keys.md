@@ -26,13 +26,25 @@ Open **Settings → API Settings** to create multiple profiles. When creating a 
 | Display name | No | Name shown in the UI; defaults to the profile name if omitted |
 | Base URL | Yes | Service endpoint URL |
 | Base URL mode | Yes | `auto` automatic / `custom` manual |
-| API Key | Yes | Provider key, e.g. `sk-...` |
+| API Key | No (can be added later) | Provider key, e.g. `sk-...` |
 | Request method | Yes | e.g. `chat` |
-| Advanced model | Yes | Model used for complex tasks |
-| Basic model | Yes | Model used for lightweight tasks |
+| Advanced model | Active profile: yes (non-empty after trim); inactive draft: no | This profile's default advanced model; ordinary conversations still use their selected model |
+| Basic model | Active profile: yes (non-empty after trim); inactive draft: no | Model for conversation titles, AI Commit, `@?` file search, and codebase Agent Review |
 | Vision model | No | Image understanding model, can be configured separately |
 
+When a profile has `isActive: true`—whether it is saved as active or activated later—
+Snow trims `advancedModel` and `basicModel` and requires both to be non-empty. An
+inactive profile may remain a draft with either model field empty; API-key presence
+is not part of this model-completeness check.
+
 When a model input is focused, the available model list is automatically fetched from the current Base URL; you can also fill it in manually.
+
+### Basic and Advanced Model Routing
+
+- Snow App does not classify prompt complexity or automatically switch between `basicModel` and `advancedModel`;
+- An ordinary conversation uses the model selected for that conversation. `advancedModel` is only the profile's default advanced model and is used when a call supplies no non-empty explicit advanced model. The two model classes never fall back to each other: an advanced path does not use `basicModel` when `advancedModel` is missing, and a basic path does not fall back in the other direction;
+- Conversation titles, AI Commit, `@?` file search, and codebase Agent Review use `basicModel`. A title request's provider and profile follow the conversation binding; if that profile has been deleted, ordinary-conversation rules fall back to the current active profile;
+- Vision understanding, image generation, and embedding use independent channels and are not affected by these basic/advanced routing rules.
 
 ### Separate Vision Model Configuration
 

@@ -189,7 +189,7 @@ A sub-agent runs through `sub-agents-activate` in an independent execution loop 
 | `systemPrompt` | Must be self-contained: mission, inputs, workflow, tools, safety, and output. |
 | `toolsJson` | JSON string or tool-name array. `["*"]` means all tools; `[]` means no tools. |
 | `configProfile` | Empty inherits the API profile and current model used by the parent conversation's current run; non-empty pins the named profile. |
-| `model` | Applies only with a pinned profile; non-empty pins the model, while empty uses that profile's `advancedModel`. |
+| `model` | Applies only with a pinned profile. A non-empty value pins the model; an omitted, empty, or trim-empty value uses that profile's `advancedModel`. If that profile's `advancedModel` is also empty, activation fails; it never falls back to `basicModel`. |
 
 Activation looks up the current project's same-ID configuration first and falls back to global only when it is absent. Built-in `agent_general` cannot be modified or deleted through config.
 

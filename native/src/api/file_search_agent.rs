@@ -12,7 +12,8 @@ use crate::api::anthropic::payload::{
 };
 use crate::api::chat::payload::build_chat_reasoning_effort;
 use crate::api::config::{
-    get_active_api_request_context, normalize_base_url, resolve_sdk_api_base_url,
+    get_active_api_request_context, normalize_base_url, resolve_basic_model,
+    resolve_sdk_api_base_url,
 };
 use crate::api::gemini::payload::{build_gemini_thinking_config, resolve_gemini_endpoint};
 use crate::api::responses::payload::build_responses_reasoning;
@@ -98,12 +99,7 @@ pub async fn run_file_search_agent(
     let api_config = context.api_config;
     let custom_headers = context.custom_headers;
 
-    let model = api_config.basic_model.trim();
-    if model.is_empty() {
-        return Err(Error::from_reason(
-            "Basic model not configured. Please configure a basic model in API settings.",
-        ));
-    }
+    let model = resolve_basic_model(None, &api_config.basic_model)?;
 
     let api_key = api_config.api_key.trim();
     if api_key.is_empty() {
@@ -139,22 +135,22 @@ pub async fn run_file_search_agent(
             result = async {
                 match api_config.request_method.as_str() {
                     "responses" => run_responses_round(
-                        &api_config, &api_key, &custom_headers, model, &system_prompt,
+                        &api_config, &api_key, &custom_headers, &model, &system_prompt,
                         &messages, &tools, &retry_options, &workspace_root,
                         round, on_progress.as_ref(),
                     ).await,
                     "anthropic" => run_anthropic_round(
-                        &api_config, &api_key, &custom_headers, model, &system_prompt,
+                        &api_config, &api_key, &custom_headers, &model, &system_prompt,
                         &messages, &tools, &retry_options, &workspace_root,
                         round, on_progress.as_ref(),
                     ).await,
                     "gemini" => run_gemini_round(
-                        &api_config, &api_key, &custom_headers, model, &system_prompt,
+                        &api_config, &api_key, &custom_headers, &model, &system_prompt,
                         &messages, &tools, &retry_options, &workspace_root,
                         round, on_progress.as_ref(),
                     ).await,
                     _ => run_chat_round(
-                        &api_config, &api_key, &custom_headers, model, &system_prompt,
+                        &api_config, &api_key, &custom_headers, &model, &system_prompt,
                         &messages, &tools, &retry_options, &workspace_root,
                         round, on_progress.as_ref(),
                     ).await,

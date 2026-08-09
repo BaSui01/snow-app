@@ -126,9 +126,16 @@ Listed in registration order:
 | `app-control-createMemo`          | Create a memo (note)                                                  | `content`                    |
 | `app-control-setMode`             | Enable/disable Plan Mode or Goal Mode                                 | `mode`, `enabled`            |
 | `app-control-openSettings`        | Open the specified settings page                                      | `page`                       |
-| `app-control-createScheduledTask` | Create a scheduled task                                               | `name`, `prompt`, `schedule` |
+| `app-control-createScheduledTask` | Create a scheduled task                                               | `name`, `prompt`, `schedule`; optional `apiProfile`, `model`, `basicModel`, `thinkingStrength` |
 | `app-control-createProject`       | Create a project (workspace directory)                                | `name`, `parentPath`         |
 | `app-control-requestApproval`     | Request user approval of the plan summary (only exposed in Plan Mode) | `planSummary`                |
+
+The model fields of `app-control-createScheduledTask` follow these rules:
+
+- `model` pins the advanced model for the task's main requests. When `apiProfile` is specified but `model` is omitted, Snow uses only that same profile's `advancedModel`; it does not borrow the current conversation's model or a model from another profile;
+- `basicModel` overrides only the first conversation title's model. When omitted, the task conversation's bound profile supplies `basicModel`; it does not affect main requests;
+- an omitted or trim-empty `thinkingStrength` stores no snapshot, so the task inherits the selected profile's latest setting when it fires;
+- these fields are explicit overrides or profile defaults. Snow App does not switch basic/advanced models based on prompt complexity, and the two model classes do not fall back to each other.
 
 ### config
 
@@ -139,6 +146,16 @@ Listed in registration order:
 | `config-set`    | Write a key (whitelist + type check + pre-write auto backup + atomic write, **the temporary backup is removed after a successful write**); `settings.mcpServers` auto-syncs to the app database and takes effect immediately; `subAgents`/`hooks`/`imagegen`/`apiProfiles` scopes write directly to the app database and take effect immediately (same backup-then-cleanup behavior); `apiProfiles` supports the keyless-first workflow (an empty or omitted apiKey ALWAYS keeps the existing key) and `isActive:true` profile switching (applies to NEW conversations; existing conversations keep the profile they bound at creation); `personalization` with `key=role` replaces the whole ~/.snow/ROLE.md file (value must be a string, takes effect in the next conversation) | `scope`, `key`, `value`, `projectId` |
 | `config-delete` | Delete a key; **DESTRUCTIVE — requires `confirmed: true`, which may only be set after the caller has obtained explicit user approval via the `user-interaction` `askUserQuestion` tool; calls without it are rejected**; pre-write backup with cleanup after success. **`imagegen` delete clears ALL image generation channels (not just the named key)**; `skills` delete uninstalls the skill; `logs` delete removes a log file; `subAgents`/`hooks`/`apiProfiles` scopes delete database records directly (`apiProfiles` deletion keeps at least one active profile, seeding the default if needed); `personalization` delete removes ~/.snow/ROLE.md (restores default rules) | `scope`, `key`, `confirmed`, `projectId` |
 
+> **`apiProfiles` model fields and activation constraints**: `advancedModel` is a
+> profile's default advanced model (ordinary conversations still use their selected
+> model), while `basicModel` serves conversation titles, AI Commit, `@?` file search,
+> and codebase Agent Review. Snow App does not switch between them based on prompt
+> complexity, and they never fall back to each other. `config-set` uses merge
+> semantics. A merged profile with `isActive: true`—whether created active or
+> activated later—requires both `advancedModel` and `basicModel` to be non-empty
+> after trim. An inactive profile may remain an incomplete draft; API-key presence
+> is not part of this model-completeness check.
+>
 > **Safety mechanism (config-change protection)**: to prevent AI from
 > accidentally modifying/deleting user configuration, the config tool
 > enforces the following constraints —

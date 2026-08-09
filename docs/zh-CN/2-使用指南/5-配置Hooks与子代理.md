@@ -189,7 +189,7 @@ Hook 数据库写入会创建写入期间的临时备份，成功后删除本次
 | `systemPrompt` | 必须自包含：使命、输入、流程、工具、安全边界和输出。 |
 | `toolsJson` | JSON 字符串或工具名数组。`["*"]` 表示全部，`[]` 表示无工具。 |
 | `configProfile` | 留空时继承启动它的主会话本次运行所用 API Profile 和当前模型；非空时固定使用指定 Profile。 |
-| `model` | 仅固定 Profile 时生效；非空时固定模型，留空时使用该 Profile 的 `advancedModel`。 |
+| `model` | 仅固定 Profile 时生效；非空时固定模型，省略、留空或 trim 后为空时使用该 Profile 的 `advancedModel`。若该 Profile 的 `advancedModel` 也为空则激活失败，不会回退 `basicModel`。 |
 
 激活时先查当前项目的同 ID 配置，未命中才回退全局。内置 `agent_general` 不可通过 config 修改或删除。
 

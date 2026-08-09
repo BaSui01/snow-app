@@ -95,11 +95,20 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
   );
   ipcMain.handle(
     "chat-conversations:generate-summary",
-    async (_event, conversationId: unknown) => {
+    async (_event, conversationId: unknown, basicModel?: unknown) => {
       if (typeof conversationId !== "string" || !conversationId.trim()) {
         throw new Error("Conversation ID is required to generate summary");
       }
-      return native.generateConversationSummary(conversationId.trim());
+      if (basicModel !== undefined && typeof basicModel !== "string") {
+        throw new Error("Basic model must be a string when provided");
+      }
+
+      const normalizedBasicModel =
+        typeof basicModel === "string" ? basicModel.trim() || undefined : undefined;
+      return native.generateConversationSummary(
+        conversationId.trim(),
+        normalizedBasicModel
+      );
     }
   );
   ipcMain.handle(

@@ -1438,7 +1438,10 @@ export type NativeBridge = {
     sourceConversationId: string,
     upToResponseId: string
   ) => Promise<ChatConversationRecord>;
-  generateConversationSummary: (conversationId: string) => Promise<string>;
+  generateConversationSummary: (
+    conversationId: string,
+    basicModel?: string
+  ) => Promise<string>;
   cancelConversationSummary: (conversationId: string) => boolean;
   fetchAvailableModels: () => Promise<Model[]>;
   fetchAvailableModelsForConfig: (config: ApiModelsConfig) => Promise<Model[]>;

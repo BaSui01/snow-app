@@ -1,15 +1,18 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use crate::api::chat::payload::build_chat_reasoning_effort;
 use crate::api::config::{
-    get_active_api_request_context, normalize_base_url, resolve_sdk_api_base_url,
-    DEFAULT_ANTHROPIC_BASE_URL, DEFAULT_GEMINI_BASE_URL, DEFAULT_OPENAI_BASE_URL,
+    get_api_request_context_with_fallback, normalize_base_url, resolve_basic_model,
+    resolve_sdk_api_base_url, DEFAULT_ANTHROPIC_BASE_URL, DEFAULT_GEMINI_BASE_URL,
+    DEFAULT_OPENAI_BASE_URL,
 };
 use crate::api::responses::payload::build_responses_reasoning;
 use crate::api::retry::{should_retry, RetryOptions};
 use crate::storage::services::chat_conversations::{
-    load_context_messages, update_conversation_summary,
+    get_conversation_api_profile, load_context_messages, update_conversation_summary,
 };
+use crate::storage::initialize_app_storage;
 use napi::bindgen_prelude::*;
 use reqwest::header::{
     HeaderMap, HeaderName, HeaderValue, ACCEPT_ENCODING, AUTHORIZATION, CONTENT_TYPE,
@@ -29,6 +32,19 @@ fn build_structured_user_content(conversation_text: &str) -> String {
     )
 }
 
+fn resolve_summary_context_with<T, LoadProfile, ResolveContext>(
+    conversation_id: &str,
+    load_profile: LoadProfile,
+    resolve_context: ResolveContext,
+) -> Result<T>
+where
+    LoadProfile: FnOnce(&str) -> Result<Option<String>>,
+    ResolveContext: FnOnce(Option<&str>) -> Result<T>,
+{
+    let profile = load_profile(conversation_id)?;
+    resolve_context(profile.as_deref())
+}
+
 /// Generate a conversation summary (title) via the configured basic model.
 ///
 /// `cancel_token` allows the caller to abort the in-flight non-streaming
@@ -41,23 +57,24 @@ fn build_structured_user_content(conversation_text: &str) -> String {
 /// commits the UPDATE after the delete starts, the database locks.
 pub async fn generate_conversation_summary(
     conversation_id: String,
+    basic_model: Option<String>,
     cancel_token: CancellationToken,
 ) -> Result<String> {
-    let context = get_active_api_request_context()?;
+    let storage_info = initialize_app_storage()?;
+    let database_path = PathBuf::from(storage_info.database_path);
+    let context = resolve_summary_context_with(
+        &conversation_id,
+        |id| get_conversation_api_profile(&database_path, id),
+        get_api_request_context_with_fallback,
+    )?;
     let database_path = context.database_path;
     let api_config = context.api_config;
     let custom_headers = context.custom_headers;
+    let model = resolve_basic_model(basic_model.as_deref(), &api_config.basic_model)?;
 
     let messages = load_context_messages(&database_path, &conversation_id)?;
     if messages.is_empty() {
         return Ok(String::new());
-    }
-
-    let model = api_config.basic_model.trim();
-    if model.is_empty() {
-        return Err(Error::from_reason(
-            "Basic model not configured. Please configure a basic model in API settings.",
-        ));
     }
 
     let api_key = api_config.api_key.trim();
@@ -86,7 +103,7 @@ pub async fn generate_conversation_summary(
                     &api_config,
                     &api_key,
                     &custom_headers,
-                    model,
+                    &model,
                     &messages,
                     &retry_options,
                 ).await,
@@ -94,7 +111,7 @@ pub async fn generate_conversation_summary(
                     &api_config,
                     &api_key,
                     &custom_headers,
-                    model,
+                    &model,
                     &messages,
                     &retry_options,
                 ).await,
@@ -102,7 +119,7 @@ pub async fn generate_conversation_summary(
                     &api_config,
                     &api_key,
                     &custom_headers,
-                    model,
+                    &model,
                     &messages,
                     &retry_options,
                 ).await,
@@ -110,7 +127,7 @@ pub async fn generate_conversation_summary(
                     &api_config,
                     &api_key,
                     &custom_headers,
-                    model,
+                    &model,
                     &messages,
                     &retry_options,
                 ).await,
@@ -887,4 +904,103 @@ pub(crate) fn build_header_map(
     }
 
     Ok(headers)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_summary_context_with;
+    use crate::api::config::resolve_basic_model;
+
+    #[derive(Debug, PartialEq)]
+    struct TestSummaryContext {
+        profile_name: &'static str,
+        basic_model: &'static str,
+    }
+
+    #[test]
+    fn bound_profile_context_is_used_for_summary() {
+        let context = resolve_summary_context_with(
+            "conversation-42",
+            |conversation_id| {
+                assert_eq!(conversation_id, "conversation-42");
+                Ok(Some("profile-b".to_string()))
+            },
+            |profile_name| {
+                assert_eq!(profile_name, Some("profile-b"));
+                Ok(TestSummaryContext {
+                    profile_name: "profile-b",
+                    basic_model: "basic-b",
+                })
+            },
+        )
+        .expect("resolve bound summary profile");
+
+        assert_eq!(
+            context,
+            TestSummaryContext {
+                profile_name: "profile-b",
+                basic_model: "basic-b",
+            }
+        );
+    }
+
+    #[test]
+    fn deleted_bound_profile_can_fall_back_to_active_context() {
+        let context = resolve_summary_context_with(
+            "conversation-with-deleted-profile",
+            |_| Ok(Some("deleted-profile".to_string())),
+            |profile_name| {
+                assert_eq!(profile_name, Some("deleted-profile"));
+                Ok(TestSummaryContext {
+                    profile_name: "active-profile",
+                    basic_model: "active-basic",
+                })
+            },
+        )
+        .expect("resolve active fallback context");
+
+        assert_eq!(context.profile_name, "active-profile");
+        assert_eq!(context.basic_model, "active-basic");
+    }
+
+    #[test]
+    fn explicit_basic_model_snapshot_only_overrides_model() {
+        let context = resolve_summary_context_with(
+            "profile-b-conversation",
+            |_| Ok(Some("profile-b".to_string())),
+            |profile_name| {
+                assert_eq!(profile_name, Some("profile-b"));
+                Ok(TestSummaryContext {
+                    profile_name: "profile-b",
+                    basic_model: "profile-b-basic",
+                })
+            },
+        )
+        .expect("resolve profile B context");
+        let model = resolve_basic_model(Some("  snapshot-basic  "), context.basic_model)
+            .expect("resolve explicit basic model snapshot");
+
+        assert_eq!(context.profile_name, "profile-b");
+        assert_eq!(model, "snapshot-basic");
+    }
+
+    #[test]
+    fn blank_basic_model_snapshot_uses_bound_profile_model() {
+        let context = resolve_summary_context_with(
+            "profile-b-conversation",
+            |_| Ok(Some("profile-b".to_string())),
+            |_| {
+                Ok(TestSummaryContext {
+                    profile_name: "profile-b",
+                    basic_model: "  profile-b-basic  ",
+                })
+            },
+        )
+        .expect("resolve profile B context");
+        let model = resolve_basic_model(Some(" \n "), context.basic_model)
+            .expect("resolve profile basic model");
+
+        assert_eq!(context.profile_name, "profile-b");
+        assert_eq!(model, "profile-b-basic");
+    }
 }

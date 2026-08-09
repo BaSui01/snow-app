@@ -35,7 +35,7 @@ A manual refresh reloads both status and the graph when Graph is active.
 ### 1.4 Commits, AI Commit Messages, and Remote Sync
 
 - **Commit prerequisites**: at least one file must be staged and the commit message must be non-empty; otherwise the commit button is disabled;
-- **AI commit message**: staged files are also required. The sparkle button reads the **staged diff** and uses the active API configuration to stream a proposed message directly into the input. While generation runs, the button becomes a stop control. Stopping or cancelling the stream preserves text already received so you can edit it manually;
+- **AI commit message**: staged files are also required. The sparkle button reads the **staged diff** and uses the current active API profile's `basicModel` to stream a proposed message directly into the input. While generation runs, the button becomes a stop control. Stopping or cancelling the stream preserves text already received so you can edit it manually;
 - **Synchronization**: the toolbar provides pull, push, and manual status refresh. When the panel opens it also runs a background fetch immediately and repeats it every 60 seconds while the window is visible. Successful fetches refresh ahead/behind counts for both local and SSH repositories; unattended errors such as offline, authentication, or no remote are ignored;
 - **Feedback**: ahead/behind counts appear at the top and a behind badge decorates pull. Pull/push failures are shown to the user, while background fetch never interrupts the panel.
 
@@ -96,7 +96,11 @@ model; the first index may take a few minutes. Once enabled:
 
 - `/codebase` in the chat input opens the project codebase panel;
 - the AI gains the `codebase-search` tool (see
-  [7-codebase-index-and-diagnostics](7-codebase-index-and-diagnostics.md)).
+  [7-codebase-index-and-diagnostics](7-codebase-index-and-diagnostics.md));
+- when **Agent Review** is enabled in codebase settings, its review loop uses the
+  current active API profile's `basicModel`. Vector indexing continues to use the
+  separately configured embedding model and does not participate in basic/advanced
+  routing.
 
 ### 5.2 3D Similarity Sphere
 
@@ -109,7 +113,9 @@ so the UI stays responsive).
 
 Type `@?<query>` in the chat input to start a **natural-language file
 search**: the AI combines grep/filesystem tools to locate relevant files,
-showing progress and results in real time.
+showing progress and results in real time. This file-search Agent uses the current
+active API profile's `basicModel`; it does not switch to `advancedModel` based on
+query complexity.
 
 ### 5.4 Codebase Panel (next to the input)
 

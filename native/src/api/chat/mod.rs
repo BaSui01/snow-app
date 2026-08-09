@@ -15,6 +15,7 @@ use std::path::PathBuf;
 use napi::bindgen_prelude::*;
 use tokio_util::sync::CancellationToken;
 
+use crate::api::config::resolve_advanced_model;
 use crate::api::conversation::{
     prepare_context_request, resolve_sub_agent_tools, ConversationContextRequest,
 };
@@ -72,12 +73,8 @@ async fn create_chat_completion_response_async(
     // echoed back by the API response body (some providers return aliased or
     // date-stamped names, e.g. `deepseek-flash-0731`, which would otherwise
     // overwrite the chat input's displayed model).
-    let model = request
-        .model
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| api_config.advanced_model.trim());
+    let model =
+        resolve_advanced_model(request.model.as_deref(), &api_config.advanced_model)?;
 
     let endpoint = payload::resolve_chat_completions_endpoint(&api_config);
     if endpoint.is_empty() {
@@ -234,7 +231,7 @@ async fn create_chat_completion_response_async(
                 response_content: &streamed_response.content,
                 response_id: &streamed_response.id,
                 checkpoint_id: request.checkpoint_id.as_deref().unwrap_or(""),
-                model,
+                model: &model,
                 api_profile_name: &api_config.profile_name,
                 status: &streamed_response.status,
                 raw_response_json: &raw_response_json,

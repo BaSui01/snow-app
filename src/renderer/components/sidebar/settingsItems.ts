@@ -12,6 +12,7 @@ import {
   List,
   MessageSquareText,
   Palette,
+  PawPrint,
   Plug,
   Puzzle,
   ScrollText,
@@ -158,9 +159,16 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
   {
     id: "keyboard-shortcuts",
     icon: Keyboard,
-    labelKey: "settings.keyboardShortcuts",
+    labelKey: "settings.keyboardShortcutsSettings",
     defaultLabel: "Keyboard shortcuts",
     view: "keyboard-shortcuts-settings",
+  },
+  {
+    id: "pets",
+    icon: PawPrint,
+    labelKey: "settings.pets",
+    defaultLabel: "Desktop pet",
+    view: "pets-settings",
   },
   {
     id: "privacy",

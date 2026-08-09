@@ -111,6 +111,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         sessionRef.runId = currentRunId;
       }
 
+      // 宠物联动：一个 AI 回合开始（整条 agent loop 期间保持 running）。
+      window.snow.notifyPetTurnStarted();
+
       // Reset pause state for a fresh send — the previous run may have
       // been paused and aborted without cleaning up the controller.
       ctx.updateSessionField(sessionKey, "isPaused", false);
@@ -1102,8 +1105,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         }
       };
 
+      let runFailed = false;
       void initCheckpointAndRun()
         .catch((error: unknown) => {
+          runFailed = true;
           ctx.updateSessionField(finalSessionKey, "isStreaming", false);
           ctx.updateSessionField(finalSessionKey, "streamStartedAt", 0);
           const ref = ctx.sessionsRefData.current.get(finalSessionKey);
@@ -1168,6 +1173,11 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           // even though the agent loop is still active.
           const ownsSession = !!ref && ref.runId === currentRunId;
           if (ownsSession) {
+            // 宠物联动：AI 回合彻底结束。失败/中止播放 failed，否则 waving。
+            window.snow.notifyPetTurnEnded(
+              runFailed || isRunCancelled(finalSessionKey)
+            );
+
             ref.isSending = false;
             ctx.updateSessionField(finalSessionKey, "isStreaming", false);
             ctx.updateSessionField(finalSessionKey, "streamStartedAt", 0);

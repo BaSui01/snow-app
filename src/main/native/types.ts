@@ -1589,6 +1589,13 @@ export type NativeBridge = {
     sourceId: string,
     profile: string
   ) => Promise<ImportedBrowserCookie[]>;
+  // ── Codex 宠物系统 ────────────────────────────────────────────────
+  /** 安装 Codex 宠物包（zip），返回安装后的宠物清单 */
+  installPetFromZip: (zipPath: string) => Promise<PetManifestRecord>;
+  /** 列出所有可用宠物（Snow App 安装 + Codex App / Petdex 生态） */
+  listInstalledPets: () => Promise<PetManifestRecord[]>;
+  /** 卸载 Snow App 安装的宠物 */
+  uninstallPet: (petId: string) => Promise<void>;
 };
 
 /** 本机浏览器源（探测结果）。 */
@@ -1623,4 +1630,28 @@ export type ImportedBrowserCookie = {
   httpOnly: boolean;
   secure: boolean;
   sameSite: string;
+};
+
+/** Codex 宠物清单（pet.json 解析结果 + 安装位置信息）。 */
+export type PetManifestRecord = {
+  /** 宠物唯一标识 */
+  id: string;
+  /** 展示名称 */
+  displayName: string;
+  /** 宠物描述 */
+  description: string;
+  /** 精灵图文件名（相对宠物目录） */
+  spritesheetFile: string;
+  /** 宠物目录绝对路径 */
+  dirPath: string;
+  /** 精灵图绝对路径 */
+  spritesheetPath: string;
+  /** 来源："snow"（Snow App 安装）| "codex"（Codex App）| "petdex"（Petdex） */
+  source: string;
+  /** 精灵图版本：1 = 9 行标准网格，2 = 11 行（Hatch Pet v2） */
+  version: number;
+  /** 精灵图列数（标准为 8） */
+  columns: number;
+  /** 精灵图行数 */
+  rows: number;
 };

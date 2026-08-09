@@ -19,6 +19,7 @@ pub mod import_resources;
 pub mod keyboard_shortcuts;
 pub mod mcp_server_configs;
 pub mod memos;
+pub mod pets;
 pub mod plugin_marketplaces;
 pub mod plugins;
 pub mod privacy_settings;

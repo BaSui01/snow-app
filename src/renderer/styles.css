@@ -31286,3 +31286,110 @@ body.ctrl-held [data-path] {
   flex-shrink: 0;
   color: var(--accent-blue);
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   设置 —— 桌面宠物独立页（Codex 宠物包兼容）
+   ════════════════════════════════════════════════════════════════════ */
+
+.pets-empty {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+
+.pets-empty svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.pets-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pets-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: var(--bg-secondary);
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.pets-list-item:hover {
+  background: var(--bg-hover);
+}
+
+.pets-list-item.active {
+  border-color: var(--accent);
+  background: var(--bg-tertiary);
+}
+
+.pets-preview-canvas {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background:
+    linear-gradient(45deg, rgba(128, 128, 128, 0.08) 25%, transparent 25%, transparent 75%, rgba(128, 128, 128, 0.08) 75%),
+    linear-gradient(45deg, rgba(128, 128, 128, 0.08) 25%, transparent 25%, transparent 75%, rgba(128, 128, 128, 0.08) 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 4px 4px;
+}
+
+.pets-list-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.pets-list-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pets-list-source {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.pets-uninstall-btn {
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.pets-list-item:hover .pets-uninstall-btn,
+.pets-list-item:focus-within .pets-uninstall-btn {
+  opacity: 1;
+}
+
+.pets-scale-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px;
+}
+
+.pets-scale-row .settings-item-description {
+  flex-shrink: 0;
+}
+
+.pets-scale-row input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--text-primary);
+}

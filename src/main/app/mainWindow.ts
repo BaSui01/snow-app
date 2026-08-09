@@ -38,6 +38,14 @@ export const markCloseConfirmed = (): void => {
 
 export const isCloseConfirmed = (): boolean => closeConfirmed;
 
+// 模块级主窗口引用：供其他模块（如宠物窗口定位）读取主窗口位置/尺寸。
+// macOS 上主窗口关闭后重建，因此引用在 closed 时清空、重建时更新。
+let mainWindowRef: BrowserWindow | null = null;
+
+/** 获取当前主窗口（已销毁时返回 null）。 */
+export const getMainWindow = (): BrowserWindow | null =>
+  mainWindowRef && !mainWindowRef.isDestroyed() ? mainWindowRef : null;
+
 // 缓存当前主题对应的主背景色，供窗口创建和 nativeTheme 变化时使用。
 // 由渲染进程保存主题设置后通过 IPC 同步，避免每次都异步读取 Rust 后端。
 let cachedThemeBgPrimary: string | null = null;
@@ -127,6 +135,7 @@ export const createWindow = (): BrowserWindow => {
       spellcheck: false,
     },
   });
+  mainWindowRef = mainWindow;
 
   mainWindow.setMenu(null);
   mainWindow.setMenuBarVisibility(false);
@@ -191,6 +200,7 @@ export const createWindow = (): BrowserWindow => {
   // 主窗口真正关闭后清理浏览器弹出窗口：Windows/Linux 上进程即将退出，
   // macOS 上则避免关闭主窗口后残留孤儿弹出窗口。
   mainWindow.on("closed", () => {
+    mainWindowRef = null;
     closeAllBrowserPopups();
   });
 

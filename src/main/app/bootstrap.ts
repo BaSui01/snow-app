@@ -30,6 +30,7 @@ import {
 } from "../ipc/handlers/browserNetworkRecorder";
 import { installWebviewContextMenu } from "../utils/webviewContextMenu";
 import { initBrowserPopupHandler } from "../browser/browserPopupWindow";
+import { disposePetWindow, restorePetWindow } from "../pets/petWindow";
 
 export const bootstrapApplication = (): void => {
   // ─── Chromium 启动加速开关（必须在 whenReady 之前）─────────────────────
@@ -109,6 +110,12 @@ export const bootstrapApplication = (): void => {
     // 完整的 loading 动画，而非空白/黑屏过渡。
     const mainWindow = createWindow();
 
+    // 宠物窗口生命周期绑定主窗口：主窗口关闭后一并销毁宠物，
+    // 避免 Windows 下悬浮宠物窗口残留导致进程无法退出。
+    mainWindow.on("closed", () => {
+      disposePetWindow();
+    });
+
     // 初始化系统托盘（黑白脱色图标 + 悬停快速信息 + 右键菜单）。
     initTray(native);
 
@@ -149,15 +156,17 @@ export const bootstrapApplication = (): void => {
     // 用户已看到 loading 动画后再执行阻塞操作。
     mainWindow.webContents.once("did-finish-load", () => {
       // Initialise storage — use raw binding to avoid storageReady deadlock.
-      initializeApplicationServices(getRawNative()).catch((error) => {
-        console.error("Failed to initialize application storage:", error);
-        snowLog.error({
-          module: "app/bootstrap",
-          func: "initializeApplicationServices",
-          message: "Failed to initialize application storage",
-          error: error instanceof Error ? error.message : String(error),
+      initializeApplicationServices(getRawNative())
+        .then(() => restorePetWindow(native))
+        .catch((error) => {
+          console.error("Failed to initialize application storage:", error);
+          snowLog.error({
+            module: "app/bootstrap",
+            func: "initializeApplicationServices",
+            message: "Failed to initialize application storage",
+            error: error instanceof Error ? error.message : String(error),
+          });
         });
-      });
 
       // 启动时应用会话代理，使 net.fetch / electron-updater 走内置代理配置。
       void applySessionProxy(native);
@@ -201,5 +210,10 @@ export const bootstrapApplication = (): void => {
       });
       app.quit();
     }
+  });
+
+  // 退出前销毁宠物窗口，避免残留透明置顶窗口。
+  app.on("before-quit", () => {
+    disposePetWindow();
   });
 };

@@ -19,5 +19,6 @@ export type MainContentView =
   | "theme-settings"
   | "privacy-settings"
   | "keyboard-shortcuts-settings"
+  | "pets-settings"
   | "usage-settings"
   | "system-logs";

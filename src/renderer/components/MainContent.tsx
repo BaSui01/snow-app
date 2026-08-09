@@ -99,6 +99,11 @@ const KeyboardShortcutsSettingsPanel = lazy(() =>
     default: m.KeyboardShortcutsSettingsPanel,
   }))
 );
+const PetsSettingsPanel = lazy(() =>
+  import("./sidebar/PetsSettingsPanel").then((m) => ({
+    default: m.PetsSettingsPanel,
+  }))
+);
 const UsageSettingsPanel = lazy(() =>
   import("./sidebar/usageSettings/UsageSettingsPanel").then((m) => ({
     default: m.UsageSettingsPanel,
@@ -210,6 +215,8 @@ export const MainContent = ({
             <KeyboardShortcutsSettingsPanel
               onClose={() => onSelectView("chat")}
             />
+          ) : activeView === "pets-settings" ? (
+            <PetsSettingsPanel onClose={() => onSelectView("chat")} />
           ) : activeView === "usage-settings" ? (
             <UsageSettingsPanel onClose={() => onSelectView("chat")} />
           ) : activeView === "system-logs" ? (

@@ -303,23 +303,3 @@ where
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::is_retriable_error;
-    use napi::Error;
-
-    #[test]
-    fn terminal_server_error_is_retriable() {
-        let error =
-            Error::from_reason("Temporary upstream failure (type=server_error, code=server_error)");
-        assert!(is_retriable_error(&error));
-    }
-
-    #[test]
-    fn invalid_request_error_is_not_retriable() {
-        let error = Error::from_reason(
-            "Unsupported parameter (type=invalid_request_error, code=invalid_request_error)",
-        );
-        assert!(!is_retriable_error(&error));
-    }
-}

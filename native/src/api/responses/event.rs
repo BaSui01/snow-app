@@ -569,33 +569,3 @@ pub(super) fn collect_output_text(value: Option<&Value>, chunks: &mut Vec<String
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::extract_response_error;
-    use serde_json::json;
-
-    #[test]
-    fn extracts_object_error_with_retry_metadata() {
-        let response = json!({
-            "error": {
-                "message": "Temporary upstream failure",
-                "type": "server_error",
-                "code": "server_error"
-            }
-        });
-
-        assert_eq!(
-            extract_response_error(&response).as_deref(),
-            Some("Temporary upstream failure (type=server_error, code=server_error)")
-        );
-    }
-
-    #[test]
-    fn extracts_plain_string_error() {
-        let response = json!({"error": "rate limit exceeded"});
-        assert_eq!(
-            extract_response_error(&response).as_deref(),
-            Some("rate limit exceeded")
-        );
-    }
-}

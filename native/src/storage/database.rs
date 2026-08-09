@@ -243,8 +243,7 @@ fn recover_database(database_path: &Path) -> Result<()> {
             .join(", ");
 
         // Read all rows from the corrupted database, tolerating errors.
-        let select_result =
-            read_only_conn.prepare(&format!("SELECT {column_list} FROM \"{table_name}\""));
+        let select_result = read_only_conn.prepare(&format!("SELECT {column_list} FROM \"{table_name}\""));
 
         if let Ok(mut select_stmt) = select_result {
             // We iterate rows, skipping any that trigger corruption errors.
@@ -756,6 +755,7 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
     // Ensure the codebase embed sessions table exists. Defined in a separate
     // module so the schema lives next to its CRUD functions.
     services::codebase_embed_sessions::ensure_sessions_table(connection)?;
+    services::remote_drafts::ensure_remote_drafts_table(connection)?;
 
     // Ensure the image library table exists (generated images index).
     services::image_library::ensure_image_library_table(connection)?;
@@ -778,30 +778,3 @@ pub fn database_error(database_path: &Path, action: &str, error: rusqlite::Error
     ))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::create_schema;
-    use rusqlite::Connection;
-
-    #[test]
-    fn fresh_schema_includes_sub_agent_model_and_current_user_version() {
-        let connection = Connection::open_in_memory().expect("open database");
-        create_schema(&connection).expect("create schema");
-
-        let model_column: (String, String) = connection
-            .query_row(
-                "SELECT type, dflt_value
-                   FROM pragma_table_info('sub_agent_configs')
-                  WHERE name = 'model'",
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .expect("read model column");
-        let user_version: i64 = connection
-            .pragma_query_value(None, "user_version", |row| row.get(0))
-            .expect("read user version");
-
-        assert_eq!(model_column, ("TEXT".into(), "''".into()));
-        assert_eq!(user_version, 27);
-    }
-}

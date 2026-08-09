@@ -24,6 +24,7 @@ pub mod plugins;
 pub mod privacy_settings;
 pub mod project_mcp_server_configs;
 pub mod project_sensitive_command_configs;
+pub mod remote_drafts;
 pub mod request_logging_settings;
 pub mod sensitive_command_configs;
 pub mod sub_agent_configs;

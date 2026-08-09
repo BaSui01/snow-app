@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
+import { motion } from "motion/react";
 import { MainSidebarContent } from "./sidebar/MainSidebarContent";
 import { ProjectExplorerContent } from "./sidebar/ProjectExplorerContent";
 import { SettingsSidebarContent } from "./sidebar/SettingsSidebarContent";
 import { SETTINGS_VIEW_IDS } from "./sidebar/settingsItems";
 import { shortcutEvents } from "./shortcutEvents";
 import { APP_CONTROL_OPEN_SETTINGS_EVENT } from "../hooks/useAppControl";
+import {
+  appleLayoutTransition,
+  useAppleThemeMotion,
+} from "../hooks/useAppleThemeMotion";
 import type { MainContentView } from "./mainContent/types";
 import type { SidebarContentKey, SidebarContentProps } from "./sidebar/types";
 
@@ -12,6 +17,7 @@ type SidebarProps = {
   activeMainView: SidebarContentProps["activeMainView"];
   activeDirectory?: SidebarContentProps["activeDirectory"];
   isCollapsed: boolean;
+  isResizing?: boolean;
   onActiveDirectoryChange?: SidebarContentProps["onActiveDirectoryChange"];
   onSelectMainView: SidebarContentProps["onSelectMainView"];
   onOpenSshWizard?: () => void;
@@ -21,7 +27,9 @@ type SidebarProps = {
     fileName: string,
     isSsh?: boolean,
     sshSessionId?: string | null,
-    focusLine?: number
+    focusLine?: number,
+    sshWorkspaceRoot?: string,
+    sshWorkspaceId?: string
   ) => void;
 };
 
@@ -29,12 +37,14 @@ export const Sidebar = ({
   activeMainView,
   activeDirectory,
   isCollapsed,
+  isResizing = false,
   onActiveDirectoryChange,
   onSelectMainView,
   onOpenSshWizard,
   onOpenTerminal,
   onOpenFile,
 }: SidebarProps): React.JSX.Element => {
+  const { enabled: appleMotionEnabled, reducedMotion } = useAppleThemeMotion();
   const [activeContent, setActiveContent] = useState<SidebarContentKey>("main");
   const [explorerDirectoryId, setExplorerDirectoryId] = useState<string | null>(
     null
@@ -100,7 +110,13 @@ export const Sidebar = ({
   };
 
   return (
-    <aside className={`sidebar ${isCollapsed ? "collapsed" : ""}`}>
+    <motion.aside
+      className={`sidebar ${isCollapsed ? "collapsed" : ""}`}
+      layout={appleMotionEnabled && !isResizing}
+      transition={
+        appleMotionEnabled ? appleLayoutTransition(reducedMotion) : undefined
+      }
+    >
       <div
         className={`sidebar-content-wrapper ${
           activeContent === "main" ? "" : "is-hidden"
@@ -122,6 +138,6 @@ export const Sidebar = ({
       >
         <ProjectExplorerContent {...sidebarProps} />
       </div>
-    </aside>
+    </motion.aside>
   );
 };

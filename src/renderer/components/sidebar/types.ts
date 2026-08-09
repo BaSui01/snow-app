@@ -21,6 +21,8 @@ export type SidebarContentProps = {
     fileName: string,
     isSsh?: boolean,
     sshSessionId?: string | null,
-    focusLine?: number
+    focusLine?: number,
+    sshWorkspaceRoot?: string,
+    sshWorkspaceId?: string
   ) => void;
 };

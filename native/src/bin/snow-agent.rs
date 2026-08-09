@@ -26,7 +26,9 @@ use uuid::Uuid;
 
 const PROTOCOL_VERSION: u64 = 1;
 const INTERACTIVE_ATTACH_PROTOCOL_VERSION: u64 = 1;
+#[cfg(unix)]
 const CONTROLLER_MAX_PENDING_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
+#[cfg(unix)]
 const MAX_ATTACH_FRAME_BYTES: usize = 1024 * 1024;
 const TERMINAL_STATUSES: &[&str] = &[
     "succeeded",

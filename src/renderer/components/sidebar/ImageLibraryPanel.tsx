@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { useI18n } from "../../i18n";
+import { CustomSelect } from "../common/CustomSelect";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { FormDialog } from "../common/FormDialog";
 import { ContextMenu } from "../common/ContextMenu";
@@ -204,6 +205,14 @@ export const ImageLibraryPanel = ({
     let cancelled = false;
     void (async () => {
       const next: Record<string, string> = {};
+      // 先回填进程内缓存：组件重挂载后 dataUrls 已清空但缓存仍在，
+      // 若不回填，pending 为空时 setDataUrls 不会被调用，图片会一直卡在占位符
+      for (const record of items) {
+        const cached = imageDataCache.get(record.relativePath);
+        if (cached) {
+          next[record.relativePath] = cached;
+        }
+      }
       const pending = items.filter(
         (record) => !imageDataCache.has(record.relativePath)
       );
@@ -1010,16 +1019,11 @@ export const ImageLibraryPanel = ({
   return (
     <div className="api-settings-page image-library-page">
       <div className="api-settings-page-header">
-        <div className="image-library-title-row">
-          <span className="image-library-title-icon">
-            <ImageIcon size={16} strokeWidth={2} aria-hidden="true" />
+        <div className="api-settings-title-group">
+          <strong>{t("settings.imageLibrary")}</strong>
+          <span className="settings-item-description">
+            {t("settings.imageLibraryDescription")}
           </span>
-          <div className="api-settings-title-group">
-            <strong>{t("settings.imageLibrary")}</strong>
-            <span className="settings-item-description">
-              {t("settings.imageLibraryDescription")}
-            </span>
-          </div>
         </div>
         <div className="image-library-actions">
           <button
@@ -1299,26 +1303,25 @@ export const ImageLibraryPanel = ({
               ? t("settings.imageLibraryClearSelection")
               : t("settings.imageLibrarySelectAll")}
           </button>
-          <select
-            className="image-library-select"
+          <CustomSelect
             value="__move"
-            onChange={(event) => {
-              if (event.target.value !== "__move") {
-                void batchMoveToAlbum(event.target.value);
+            options={[
+              {
+                value: "__move",
+                label: `${t("settings.imageLibraryAlbumMove")}…`,
+              },
+              { value: "", label: t("settings.imageLibraryAlbumNone") },
+              ...albums.map((album) => ({
+                value: album.id,
+                label: album.name,
+              })),
+            ]}
+            onChange={(value) => {
+              if (value !== "__move") {
+                void batchMoveToAlbum(value);
               }
             }}
-            aria-label={t("settings.imageLibraryAlbumMove")}
-          >
-            <option value="__move" disabled>
-              {t("settings.imageLibraryAlbumMove")}…
-            </option>
-            <option value="">{t("settings.imageLibraryAlbumNone")}</option>
-            {albums.map((album) => (
-              <option key={album.id} value={album.id}>
-                {album.name}
-              </option>
-            ))}
-          </select>
+          />
           <button
             type="button"
             className="image-library-batch-delete"
@@ -1408,54 +1411,42 @@ export const ImageLibraryPanel = ({
           ))}
         </div>
         {providers.length > 1 ? (
-          <select
-            className="image-library-select"
+          <CustomSelect
             value={providerFilter}
-            onChange={(event) => setProviderFilter(event.target.value)}
-            aria-label={t("toolCall.imagegen.provider")}
-          >
-            <option value="all">{t("settings.imageLibraryProviderAll")}</option>
-            {providers.map((provider) => (
-              <option key={provider} value={provider}>
-                {provider}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: "all", label: t("settings.imageLibraryProviderAll") },
+              ...providers.map((provider) => ({
+                value: provider,
+                label: provider,
+              })),
+            ]}
+            onChange={setProviderFilter}
+          />
         ) : null}
         {models.length > 1 ? (
-          <select
-            className="image-library-select"
+          <CustomSelect
             value={modelFilter}
-            onChange={(event) => setModelFilter(event.target.value)}
-            aria-label={t("toolCall.imagegen.model")}
-          >
-            <option value="all">{t("settings.imageLibraryModelAll")}</option>
-            {models.map((model) => (
-              <option key={model} value={model}>
-                {model}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: "all", label: t("settings.imageLibraryModelAll") },
+              ...models.map((model) => ({ value: model, label: model })),
+            ]}
+            onChange={setModelFilter}
+          />
         ) : null}
         <span className="image-library-count">
           {t("settings.imageLibraryCount", {
             values: { count: filtered.length },
           })}
         </span>
-        <select
-          className="image-library-select"
+        <CustomSelect
           value={sortBy}
-          onChange={(event) => setSortBy(event.target.value as SortBy)}
-          aria-label={t("settings.imageLibrarySort")}
-        >
-          <option value="newest">
-            {t("settings.imageLibrarySortNewest")}
-          </option>
-          <option value="oldest">
-            {t("settings.imageLibrarySortOldest")}
-          </option>
-          <option value="name">{t("settings.imageLibrarySortName")}</option>
-        </select>
+          options={[
+            { value: "newest", label: t("settings.imageLibrarySortNewest") },
+            { value: "oldest", label: t("settings.imageLibrarySortOldest") },
+            { value: "name", label: t("settings.imageLibrarySortName") },
+          ]}
+          onChange={(value) => setSortBy(value as SortBy)}
+        />
           </>
         ) : null}
       </div>
@@ -1758,25 +1749,21 @@ export const ImageLibraryPanel = ({
                     className="image-library-card-actions"
                     onClick={(event) => event.stopPropagation()}
                   >
-                    <select
-                      className="image-library-card-album-select"
+                    <CustomSelect
                       value={record.albumId ?? ""}
-                      onChange={(event) =>
-                        void moveToAlbum(record, event.target.value)
-                      }
-                      onClick={(event) => event.stopPropagation()}
-                      title={t("settings.imageLibraryAlbumMove")}
-                      aria-label={t("settings.imageLibraryAlbumMove")}
-                    >
-                      <option value="">
-                        {t("settings.imageLibraryAlbumNone")}
-                      </option>
-                      {albums.map((album) => (
-                        <option key={album.id} value={album.id}>
-                          {album.name}
-                        </option>
-                      ))}
-                    </select>
+                      options={[
+                        {
+                          value: "",
+                          label: t("settings.imageLibraryAlbumNone"),
+                        },
+                        ...albums.map((album) => ({
+                          value: album.id,
+                          label: album.name,
+                        })),
+                      ]}
+                      onChange={(value) => void moveToAlbum(record, value)}
+                      portal
+                    />
                     <button
                       type="button"
                       className="image-library-card-btn"

@@ -29749,32 +29749,7 @@ body.ctrl-held [data-path] {
   min-height: 0;
 }
 
-/* ---- 标题区：图标徽章 + 标题 + 副标题 ---- */
-.image-library-title-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.image-library-title-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-lg);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-subtle);
-  color: var(--accent-blue-text);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-}
-
-.image-library-title-row .api-settings-title-group strong {
-  font-size: 16px;
-}
-
+/* ---- 标题区：标题 + 副标题 ---- */
 .image-library-actions {
   display: flex;
   align-items: center;
@@ -29809,7 +29784,7 @@ body.ctrl-held [data-path] {
 
 .image-library-root-bar > svg {
   flex-shrink: 0;
-  color: var(--accent-blue-text);
+  color: var(--accent-color);
 }
 
 .image-library-root-path {
@@ -29839,8 +29814,8 @@ body.ctrl-held [data-path] {
 }
 
 .image-library-root-action:hover {
-  background: var(--accent-blue-bg);
-  color: var(--accent-blue-text);
+  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
+  color: var(--accent-color);
 }
 
 .image-library-root-action:disabled {
@@ -29881,8 +29856,8 @@ body.ctrl-held [data-path] {
 }
 
 .image-library-migrate-cancel:hover {
-  background: var(--accent-blue-bg);
-  color: var(--accent-blue-text);
+  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
+  color: var(--accent-color);
 }
 
 .image-library-migrate-progress-bar {
@@ -29896,11 +29871,7 @@ body.ctrl-held [data-path] {
 .image-library-migrate-progress-fill {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(
-    90deg,
-    var(--accent-blue),
-    var(--accent-blue-text)
-  );
+  background: var(--accent-color);
   transition: width 0.3s ease;
 }
 
@@ -29934,17 +29905,18 @@ body.ctrl-held [data-path] {
 
 .image-library-album-chip:hover,
 .image-library-album-add:hover {
-  color: var(--accent-blue-text);
-  background: var(--accent-blue-bg);
+  color: var(--accent-color);
+  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent-color) 45%, transparent);
 }
 
 .image-library-album-chip.active {
-  color: var(--accent-blue-text);
-  background: var(--accent-blue-bg);
-  border-color: color-mix(in srgb, var(--accent-blue-text) 45%, transparent);
+  color: var(--accent-color);
+  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent-color) 45%, transparent);
   font-weight: 600;
   box-shadow: 0 2px 8px
-    color-mix(in srgb, var(--accent-blue-text) 18%, transparent);
+    color-mix(in srgb, var(--accent-color) 18%, transparent);
 }
 
 .image-library-album-chip-name {
@@ -29997,8 +29969,8 @@ body.ctrl-held [data-path] {
 }
 
 .image-library-album-chip-actions button:hover {
-  color: var(--accent-blue-text);
-  background: var(--accent-blue-bg);
+  color: var(--accent-color);
+  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
 }
 
 .image-library-album-chip-actions button.danger:hover {
@@ -30065,14 +30037,12 @@ body.ctrl-held [data-path] {
   overflow: hidden;
   cursor: pointer;
   text-align: left;
-  transition: box-shadow 0.18s ease, transform 0.18s ease, border-color 0.18s ease;
+  transition: box-shadow 0.18s ease, border-color 0.18s ease;
 }
 
 .image-library-album-card:hover,
 .image-library-album-card:focus-visible {
-  border-color: color-mix(in srgb, var(--accent-blue-text) 45%, var(--border-subtle));
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
-  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--accent-color) 45%, var(--border-subtle));
   outline: none;
 }
 
@@ -30102,11 +30072,6 @@ body.ctrl-held [data-path] {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.3s ease;
-}
-
-.image-library-album-card:hover .image-library-album-card-cover img {
-  transform: scale(1.06);
 }
 
 /* 无封面时的占位图标：圆形底 */
@@ -30156,7 +30121,7 @@ body.ctrl-held [data-path] {
   flex-shrink: 0;
 }
 
-/* 新建相册卡片：虚线 + 蓝色微光 */
+/* 新建相册卡片：虚线 + 主题微光 */
 .image-library-album-card.add {
   align-items: center;
   justify-content: center;
@@ -30165,7 +30130,7 @@ body.ctrl-held [data-path] {
   border: 1.5px dashed var(--border-color);
   background: radial-gradient(
     120% 100% at 50% 0%,
-    color-mix(in srgb, var(--accent-blue-bg) 42%, transparent),
+    color-mix(in srgb, var(--accent-color) 8%, transparent),
     transparent 70%
   );
   color: var(--text-tertiary);
@@ -30205,18 +30170,16 @@ body.ctrl-held [data-path] {
 
 .image-library-album-card.add:hover,
 .image-library-album-card.add:focus-visible {
-  border-color: var(--accent-blue-text);
-  background: var(--accent-blue-bg);
-  color: var(--accent-blue-text);
-  box-shadow: 0 8px 24px
-    color-mix(in srgb, var(--accent-blue-text) 22%, transparent);
-  transform: translateY(-3px);
+  border-color: var(--accent-color);
+  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
+  color: var(--accent-color);
+  outline: none;
 }
 
 .image-library-album-card.add:hover .image-library-album-card-name,
 .image-library-album-card.add:hover .image-library-album-card-cover > svg {
-  color: var(--accent-blue-text);
-  border-color: var(--accent-blue-text);
+  color: var(--accent-color);
+  border-color: var(--accent-color);
 }
 
 /* 空图库时的紧凑新建卡片（居中于空态区） */
@@ -30246,14 +30209,12 @@ body.ctrl-held [data-path] {
   display: flex;
   gap: 5px;
   opacity: 0;
-  transform: translateY(-2px);
-  transition: opacity 0.18s ease, transform 0.18s ease;
+  transition: opacity 0.18s ease;
 }
 
 .image-library-album-card-wrap:hover .image-library-album-card-actions,
 .image-library-album-card-wrap:focus-within .image-library-album-card-actions {
   opacity: 1;
-  transform: translateY(0);
 }
 
 .image-library-album-card-actions button {
@@ -30270,12 +30231,11 @@ body.ctrl-held [data-path] {
   cursor: pointer;
   backdrop-filter: blur(3px);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  transition: background 0.15s ease, transform 0.1s ease;
+  transition: background 0.15s ease;
 }
 
 .image-library-album-card-actions button:hover {
   background: rgba(0, 0, 0, 0.78);
-  transform: scale(1.08);
 }
 
 .image-library-album-card-actions button.danger:hover {
@@ -30309,9 +30269,9 @@ body.ctrl-held [data-path] {
 }
 
 .image-library-back-btn:hover {
-  background: var(--accent-blue-bg);
-  border-color: color-mix(in srgb, var(--accent-blue-text) 45%, transparent);
-  color: var(--accent-blue-text);
+  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent-color) 45%, transparent);
+  color: var(--accent-color);
 }
 
 .image-library-gallery-title {
@@ -30339,16 +30299,24 @@ body.ctrl-held [data-path] {
   font-variant-numeric: tabular-nums;
 }
 
-/* 图片卡片上的「移入相册」下拉 */
-.image-library-card-album-select {
+/* 图片卡片上的「移入相册」下拉（CustomSelect，portal 渲染） */
+.image-library-card-actions .custom-select {
+  width: auto;
   max-width: 90px;
-  padding: 2px 4px;
+}
+
+.image-library-card-actions .custom-select-trigger {
+  height: 22px;
+  padding: 0 6px;
   border: none;
   border-radius: var(--radius-sm);
   background: var(--bg-tertiary);
   color: var(--text-secondary);
   font-size: 10px;
-  cursor: pointer;
+}
+
+.image-library-card-actions .custom-select-trigger:hover:not(:disabled) {
+  border-color: var(--border-subtle);
 }
 
 .image-library-toolbar {
@@ -30393,22 +30361,25 @@ body.ctrl-held [data-path] {
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
-/* ---- 下拉选择 ---- */
-.image-library-select {
+/* ---- 下拉选择（CustomSelect） ---- */
+.image-library-toolbar .custom-select,
+.image-library-batch-bar .custom-select {
+  width: auto;
+  max-width: 180px;
+}
+
+.image-library-toolbar .custom-select-trigger,
+.image-library-batch-bar .custom-select-trigger {
   height: 27px;
   padding: 0 8px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
+  border-color: var(--border-subtle);
   background: var(--bg-secondary);
   color: var(--text-secondary);
   font-size: 11.5px;
-  max-width: 180px;
-  cursor: pointer;
-  outline: none;
-  transition: border-color 0.15s ease;
 }
 
-.image-library-select:hover {
+.image-library-toolbar .custom-select-trigger:hover:not(:disabled),
+.image-library-batch-bar .custom-select-trigger:hover:not(:disabled) {
   border-color: var(--border-color);
 }
 
@@ -30437,9 +30408,9 @@ body.ctrl-held [data-path] {
 }
 
 .image-library-search:focus-within {
-  border-color: var(--accent-blue-text);
+  border-color: var(--accent-color);
   box-shadow: 0 0 0 3px
-    color-mix(in srgb, var(--accent-blue-text) 22%, transparent);
+    color-mix(in srgb, var(--accent-color) 22%, transparent);
 }
 
 .image-library-search input {
@@ -30546,8 +30517,8 @@ body.ctrl-held [data-path] {
   padding: 0 16px;
   border: none;
   border-radius: 999px;
-  background: var(--accent-blue-bg);
-  color: var(--accent-blue-text);
+  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
+  color: var(--accent-color);
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
@@ -30555,10 +30526,9 @@ body.ctrl-held [data-path] {
 }
 
 .image-library-state-clear:hover {
-  background: var(--accent-blue-text);
-  color: var(--on-solid);
+  background: color-mix(in srgb, var(--accent-color) 20%, transparent);
   box-shadow: 0 4px 14px
-    color-mix(in srgb, var(--accent-blue-text) 30%, transparent);
+    color-mix(in srgb, var(--accent-color) 30%, transparent);
 }
 
 /* ---- 图片网格 ---- */
@@ -30578,15 +30548,12 @@ body.ctrl-held [data-path] {
   background: var(--bg-tertiary);
   cursor: zoom-in;
   outline: none;
-  transition: box-shadow 0.18s ease, transform 0.18s ease,
-    border-color 0.18s ease;
+  transition: box-shadow 0.18s ease, border-color 0.18s ease;
 }
 
 .image-library-card:hover,
 .image-library-card:focus-visible {
-  border-color: var(--border-subtle);
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.3);
-  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent-color) 45%, var(--border-subtle));
 }
 
 .image-library-card img {
@@ -30595,11 +30562,6 @@ body.ctrl-held [data-path] {
   aspect-ratio: 1 / 1;
   object-fit: cover;
   background: var(--bg-tertiary);
-  transition: transform 0.3s ease;
-}
-
-.image-library-card:hover img {
-  transform: scale(1.05);
 }
 
 .image-library-card-placeholder {
@@ -30680,9 +30642,9 @@ body.ctrl-held [data-path] {
   gap: 8px;
   padding: 6px 10px;
   border: 1px solid
-    color-mix(in srgb, var(--accent-blue-text) 35%, transparent);
+    color-mix(in srgb, var(--accent-color) 35%, transparent);
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--accent-blue-bg) 70%, var(--bg-secondary));
+  background: color-mix(in srgb, var(--accent-color) 8%, var(--bg-secondary));
   animation: image-library-batch-in 0.2s ease;
 }
 
@@ -30727,13 +30689,13 @@ body.ctrl-held [data-path] {
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--accent-blue-text);
+  color: var(--accent-color);
   font-size: 11.5px;
   cursor: pointer;
 }
 
 .image-library-batch-select-all:hover {
-  background: var(--accent-blue-bg);
+  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
 }
 
 .image-library-batch-delete {
@@ -30771,7 +30733,7 @@ body.ctrl-held [data-path] {
   cursor: pointer;
   opacity: 0;
   backdrop-filter: blur(2px);
-  transition: opacity 0.15s ease, background 0.15s ease, transform 0.1s ease;
+  transition: opacity 0.15s ease, background 0.15s ease;
 }
 
 .image-library-card:hover .image-library-card-check,
@@ -30782,18 +30744,17 @@ body.ctrl-held [data-path] {
 
 .image-library-card-check:hover {
   background: rgba(0, 0, 0, 0.7);
-  transform: scale(1.1);
 }
 
 .image-library-card-check.checked {
-  background: var(--accent-blue-text);
-  border-color: var(--accent-blue-text);
+  background: var(--accent-color);
+  border-color: var(--accent-color);
 }
 
 /* 选中卡片高亮 */
 .image-library-card.selected {
-  border-color: var(--accent-blue-text);
-  box-shadow: 0 0 0 2px var(--accent-blue-text), 0 8px 22px rgba(0, 0, 0, 0.3);
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 2px var(--accent-color);
 }
 
 /* 相册 chip 封面缩略图（圆形小图） */
@@ -30804,19 +30765,14 @@ body.ctrl-held [data-path] {
   border: 1px solid var(--border-subtle);
   object-fit: cover;
   flex-shrink: 0;
-  transition: transform 0.15s ease;
-}
-
-.image-library-album-chip:hover .image-library-album-chip-cover {
-  transform: scale(1.1);
 }
 
 /* 拖拽图片悬停到相册 chip 时的高亮 */
 .image-library-album-chip.drag-over {
-  border-color: var(--accent-blue-text);
-  background: var(--accent-blue-bg);
+  border-color: var(--accent-color);
+  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
   box-shadow: 0 0 0 3px
-    color-mix(in srgb, var(--accent-blue-text) 25%, transparent);
+    color-mix(in srgb, var(--accent-color) 25%, transparent);
 }
 
 /* 灯箱详情面板（右下角） */
@@ -30865,8 +30821,8 @@ body.ctrl-held [data-path] {
 }
 
 .image-library-lightbox-copy:hover {
-  color: var(--accent-blue-text);
-  border-color: var(--accent-blue-text);
+  color: var(--accent-color);
+  border-color: var(--accent-color);
 }
 
 .image-library-lightbox-prompt {

@@ -8,9 +8,17 @@ pub const DEFAULT_MAX_RETRIES: u32 = 5;
 pub const DEFAULT_BASE_DELAY_MS: u64 = 3000;
 pub const DEFAULT_STREAM_IDLE_TIMEOUT_SEC: u64 = 60;
 
+/// 阶段感知混合重试的纯文本保留阈值缺省值（字符数）。
+/// mid-stream 中断时 content+thinking 已收字符数 ≥ 此值 → 不再重试，
+/// 保留 partial（输出不完整但可用），避免长流重试造成 token 双倍浪费。
+/// 实际值来自 API 档案配置 `partial_retry_max_chars`，未配置时用此缺省。
+pub const DEFAULT_PARTIAL_RETRY_MAX_CHARS: usize = 1000;
+
 pub struct RetryOptions {
     pub max_retries: u32,
     pub base_delay_ms: u64,
+    /// mid-stream 中断时保留 partial 的纯文本阈值（字符数），来自 API 档案配置。
+    pub partial_retry_max_chars: usize,
 }
 
 impl Default for RetryOptions {
@@ -18,12 +26,17 @@ impl Default for RetryOptions {
         Self {
             max_retries: DEFAULT_MAX_RETRIES,
             base_delay_ms: DEFAULT_BASE_DELAY_MS,
+            partial_retry_max_chars: DEFAULT_PARTIAL_RETRY_MAX_CHARS,
         }
     }
 }
 
 impl RetryOptions {
-    pub fn from_config(max_retries: Option<i32>, retry_base_delay_ms: Option<i32>) -> Self {
+    pub fn from_config(
+        max_retries: Option<i32>,
+        retry_base_delay_ms: Option<i32>,
+        partial_retry_max_chars: Option<i32>,
+    ) -> Self {
         let max_retries = max_retries
             .filter(|&v| v > 0)
             .map(|v| v as u32)
@@ -32,9 +45,14 @@ impl RetryOptions {
             .filter(|&v| v > 0)
             .map(|v| v as u64)
             .unwrap_or(DEFAULT_BASE_DELAY_MS);
+        let partial_retry_max_chars = partial_retry_max_chars
+            .filter(|&v| v > 0)
+            .map(|v| v as usize)
+            .unwrap_or(DEFAULT_PARTIAL_RETRY_MAX_CHARS);
         Self {
             max_retries,
             base_delay_ms,
+            partial_retry_max_chars,
         }
     }
 }
@@ -170,6 +188,41 @@ pub fn should_retry(error: &Error, attempt: u32, options: &RetryOptions) -> bool
     is_retriable_error(error)
 }
 
+/// 阶段感知混合重试判定（方案 B）——用于流已收到部分内容后的 mid-stream
+/// 读流错误（网络中断 / terminated / 服务端中止）。
+///
+/// 规则：
+/// - 已累积工具调用（`has_partial_tool_calls`）→ 必须重试：残缺的 tool_calls
+///   不可安全使用（参数 JSON 未闭合），保留只会污染后续上下文。
+/// - 已收纯文本少于 `options.partial_retry_max_chars` → 重试：作废成本低。
+/// - 已收纯文本超过阈值 → 不重试：保留 partial（输出不完整但可用），
+///   避免长流重试造成已收 token 全部作废 + 重新生成的双倍浪费。
+/// - 用户取消（`user_cancelled`）→ 永不重试。
+/// - 用户未取消时的 `aborted`（服务端/中继中止，而非用户取消）→ 视为瞬时
+///   错误可重试（`is_retriable_error` 将 aborted 一律判为不可重试，此处按
+///   调用方传入的取消状态精确区分）。
+pub fn should_retry_mid_stream(
+    error: &Error,
+    attempt: u32,
+    options: &RetryOptions,
+    user_cancelled: bool,
+    has_partial_tool_calls: bool,
+    partial_text_len: usize,
+) -> bool {
+    if attempt >= options.max_retries || user_cancelled {
+        return false;
+    }
+    if !has_partial_tool_calls && partial_text_len >= options.partial_retry_max_chars {
+        return false;
+    }
+    let message = error.reason.to_lowercase();
+    if message.contains("aborted") {
+        // 已排除 user_cancelled → 非用户取消的中止，视为瞬时错误
+        return true;
+    }
+    is_retriable_error(error)
+}
+
 /// Wait for the retry delay, respecting the cancel token.
 ///
 /// The delay grows exponentially with the attempt count
@@ -224,60 +277,8 @@ pub fn non_sse_response_error(body: &str) -> Error {
     ))
 }
 
-/// Wrap an async function with retry logic.
-///
-/// Each invocation of `f` should produce a fresh future. The function is
-/// retried up to `options.max_retries` times when the error is retriable.
-pub async fn with_retry<F, Fut, T>(
-    f: F,
-    options: &RetryOptions,
-    cancel_token: Option<&CancellationToken>,
-) -> Result<T>
-where
-    F: Fn() -> Fut,
-    Fut: std::future::Future<Output = Result<T>>,
-{
-    let mut attempt: u32 = 0;
-
-    loop {
-        if let Some(token) = cancel_token {
-            if token.is_cancelled() {
-                return Err(Error::from_reason("Request aborted"));
-            }
-        }
-
-        match f().await {
-            Ok(result) => return Ok(result),
-            Err(error) => {
-                if error.reason.contains("abort") || error.reason.contains("Abort") {
-                    return Err(error);
-                }
-
-                if !should_retry(&error, attempt, options) {
-                    return Err(error);
-                }
-
-                let delay = Duration::from_millis(options.base_delay_ms);
-                if let Some(token) = cancel_token {
-                    tokio::select! {
-                        biased;
-                        _ = token.cancelled() => {
-                            return Err(Error::from_reason("Request aborted"));
-                        }
-                        _ = sleep(delay) => {}
-                    }
-                } else {
-                    sleep(delay).await;
-                }
-
-                attempt += 1;
-            }
-        }
-    }
-}
-
 /// Wrap a sync function with retry logic (for blocking code paths like
-/// `reqwest::blocking`).
+/// `reqwest::blocking` and the model-list client).
 pub fn with_retry_sync<F, T>(f: F, options: &RetryOptions) -> Result<T>
 where
     F: Fn() -> Result<T>,
@@ -303,3 +304,126 @@ where
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::{
+        is_retriable_error, should_retry_mid_stream, RetryOptions, DEFAULT_PARTIAL_RETRY_MAX_CHARS,
+    };
+    use napi::Error;
+
+    fn options() -> RetryOptions {
+        RetryOptions {
+            max_retries: 5,
+            base_delay_ms: 100,
+            partial_retry_max_chars: DEFAULT_PARTIAL_RETRY_MAX_CHARS,
+        }
+    }
+
+    #[test]
+    fn terminal_server_error_is_retriable() {
+        let error =
+            Error::from_reason("Temporary upstream failure (type=server_error, code=server_error)");
+        assert!(is_retriable_error(&error));
+    }
+
+    #[test]
+    fn invalid_request_error_is_not_retriable() {
+        let error = Error::from_reason(
+            "Unsupported parameter (type=invalid_request_error, code=invalid_request_error)",
+        );
+        assert!(!is_retriable_error(&error));
+    }
+
+    #[test]
+    fn mid_stream_terminated_with_little_text_retries() {
+        let error = Error::from_reason("stream terminated");
+        assert!(should_retry_mid_stream(
+            &error,
+            0,
+            &options(),
+            false,
+            false,
+            100,
+        ));
+    }
+
+    #[test]
+    fn mid_stream_terminated_with_much_text_keeps_partial() {
+        let error = Error::from_reason("stream terminated");
+        assert!(!should_retry_mid_stream(
+            &error,
+            0,
+            &options(),
+            false,
+            false,
+            DEFAULT_PARTIAL_RETRY_MAX_CHARS + 1,
+        ));
+    }
+
+    #[test]
+    fn mid_stream_tool_calls_always_retry_even_with_much_text() {
+        let error = Error::from_reason("stream terminated");
+        assert!(should_retry_mid_stream(
+            &error,
+            0,
+            &options(),
+            false,
+            true,
+            DEFAULT_PARTIAL_RETRY_MAX_CHARS + 1,
+        ));
+    }
+
+    #[test]
+    fn mid_stream_aborted_without_user_cancel_retries() {
+        let error = Error::from_reason("This operation was aborted");
+        assert!(should_retry_mid_stream(
+            &error,
+            0,
+            &options(),
+            false,
+            false,
+            100
+        ));
+    }
+
+    #[test]
+    fn mid_stream_aborted_with_user_cancel_does_not_retry() {
+        let error = Error::from_reason("This operation was aborted");
+        assert!(!should_retry_mid_stream(
+            &error,
+            0,
+            &options(),
+            true,
+            false,
+            100
+        ));
+    }
+
+    #[test]
+    fn mid_stream_retry_budget_exhausted_keeps_partial() {
+        let error = Error::from_reason("stream terminated");
+        assert!(!should_retry_mid_stream(
+            &error,
+            5,
+            &options(),
+            false,
+            false,
+            100,
+        ));
+    }
+
+    #[test]
+    fn mid_stream_non_retriable_error_does_not_retry() {
+        let error = Error::from_reason(
+            "Unsupported parameter (type=invalid_request_error, code=invalid_request_error)",
+        );
+        assert!(!should_retry_mid_stream(
+            &error,
+            0,
+            &options(),
+            false,
+            false,
+            100
+        ));
+    }
+}

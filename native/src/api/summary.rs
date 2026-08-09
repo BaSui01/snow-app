@@ -67,8 +67,11 @@ pub async fn generate_conversation_summary(
         ));
     }
 
-    let retry_options =
-        RetryOptions::from_config(api_config.max_retries, api_config.retry_base_delay_ms);
+    let retry_options = RetryOptions::from_config(
+        api_config.max_retries,
+        api_config.retry_base_delay_ms,
+        api_config.partial_retry_max_chars,
+    );
 
     // Race the HTTP request against the cancellation token. When the token
     // fires, we drop the in-flight request future and return an empty string

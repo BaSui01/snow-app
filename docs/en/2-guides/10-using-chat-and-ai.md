@@ -210,6 +210,7 @@ Compaction is **not absolutely irreversible**. The compaction message is a `cont
 | Earlier context disappears after compaction | The model context now uses the summary; roll back from the compaction boundary if needed |
 | Images remain after deleting a conversation | Library images are kept by default; select **Delete images too** in the deletion dialog to remove them |
 | Work stops after closing the window | Choose **Minimize** in the close dialog to hide to tray; **Quit** ends the process and clears scheduled tasks that exist only in memory |
+| The response stream stops mid-way | It retries automatically: partial tool calls or short partial text retry immediately (the message shows a "retrying" state); if a large amount of text (roughly 1000+ characters) was already received, the incomplete result is kept (marked as incomplete) and you can regenerate it manually |
 
 ## 12. References
 

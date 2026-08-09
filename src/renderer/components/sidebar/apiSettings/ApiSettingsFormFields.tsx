@@ -810,6 +810,21 @@ export function ApiSettingsFormFields({
               disabled={disabled}
             />
           </label>
+          <label className="api-settings-field">
+            <span>
+              {t("settings.apiPartialRetryMaxChars", {
+                defaultValue: "Partial keep threshold (chars)",
+              })}
+            </span>
+            <input
+              value={data.partialRetryMaxChars}
+              onChange={changeField("partialRetryMaxChars")}
+              placeholder="1000"
+              type="number"
+              min={0}
+              disabled={disabled}
+            />
+          </label>
           <div className="api-settings-field api-settings-auto-compress-field">
             <div className="api-settings-auto-compress-header">
               <span>

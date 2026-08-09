@@ -2500,9 +2500,13 @@ Full guide: ~/.snow/docs/zh-CN/2-使用指南/3-配置API密钥与模型.md (en:
         let auto_compress_threshold = int_field("autoCompressThreshold");
         let max_retries = int_field("maxRetries");
         let retry_base_delay_ms = int_field("retryBaseDelayMs");
+        let partial_retry_max_chars = int_field("partialRetryMaxChars");
         let system_prompt_ids_json = text_field("systemPromptIdsJson", "");
         let custom_header_scheme_id = text_field("customHeaderSchemeId", "");
-        let is_active = bool_field("isActive", existing.as_ref().is_some_and(|record| record.is_active));
+        let is_active = bool_field(
+            "isActive",
+            existing.as_ref().is_some_and(|record| record.is_active),
+        );
         let source = text_field("source", "manual");
 
         // config_json 自动组装（与 UI normalizeApiConfigInput 的 manualConfig 规范一致）。
@@ -2527,6 +2531,7 @@ Full guide: ~/.snow/docs/zh-CN/2-使用指南/3-配置API密钥与模型.md (en:
                 "autoCompressThreshold": auto_compress_threshold,
                 "maxRetries": max_retries,
                 "retryDelayMs": retry_base_delay_ms,
+                "partialRetryMaxChars": partial_retry_max_chars,
                 "systemPromptIdsJson": system_prompt_ids_json,
                 "customHeaderSchemeId": custom_header_scheme_id,
                 "source": source,
@@ -2557,6 +2562,7 @@ Full guide: ~/.snow/docs/zh-CN/2-使用指南/3-配置API密钥与模型.md (en:
             auto_compress_threshold,
             max_retries,
             retry_base_delay_ms,
+            partial_retry_max_chars,
             system_prompt_ids_json,
             custom_header_scheme_id,
             config_json,

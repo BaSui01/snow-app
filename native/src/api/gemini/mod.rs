@@ -153,8 +153,11 @@ async fn create_gemini_response_async(
         tools,
         &prepared_request.user_system_prompts,
     )?;
-    let retry_options =
-        RetryOptions::from_config(api_config.max_retries, api_config.retry_base_delay_ms);
+    let retry_options = RetryOptions::from_config(
+        api_config.max_retries,
+        api_config.retry_base_delay_ms,
+        api_config.partial_retry_max_chars,
+    );
     let request_payload_json = serde_json::to_string(&payload).unwrap_or_default();
     maybe_log_api_request(
         database_path.clone(),

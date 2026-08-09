@@ -260,8 +260,11 @@ async fn review_results(query: &str, results: &[SearchResult]) -> Result<ReviewO
         ));
     }
 
-    let retry_options =
-        RetryOptions::from_config(api_config.max_retries, api_config.retry_base_delay_ms);
+    let retry_options = RetryOptions::from_config(
+        api_config.max_retries,
+        api_config.retry_base_delay_ms,
+        api_config.partial_retry_max_chars,
+    );
 
     let review_text = match api_config.request_method.as_str() {
         "responses" => {

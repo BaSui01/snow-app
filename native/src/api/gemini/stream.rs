@@ -17,7 +17,9 @@ use tokio_util::sync::CancellationToken;
 
 use crate::api::common::{emit_stream_chunk, emit_tool_args_probe, inject_custom_headers};
 use crate::api::responses::{ResponsesApiStreamCallback, ResponsesApiStreamChunk};
-use crate::api::retry::{non_sse_response_error, should_retry, wait_before_retry, RetryOptions};
+use crate::api::retry::{
+    non_sse_response_error, should_retry, should_retry_mid_stream, wait_before_retry, RetryOptions,
+};
 use crate::api::sse::find_sse_separator;
 use crate::storage::services::chat_conversations::ChatTokenUsage;
 
@@ -196,6 +198,9 @@ pub(super) async fn collect_gemini_stream(
         let mut stream_completed_normally = false;
         // Set by process_gemini_sse_event_block when finishReason is received.
         let mut stream_finished = false;
+        // Set to true when the mid-stream retry path breaks the inner loop so
+        // the outer loop re-sends the request.
+        let mut retry_reset = false;
         loop {
             tokio::select! {
                 biased;
@@ -215,12 +220,61 @@ pub(super) async fn collect_gemini_stream(
                     let chunk = match chunk_result {
                         Ok(chunk) => chunk,
                         Err(error) => {
-                            // Network/read error mid-stream: log and break instead
-                            // of returning Err. We keep whatever content and tool
-                            // calls have been collected so far so the agent loop
-                            // can continue with partial results.
-                            eprintln!("Gemini stream read error (keeping partial result): {error}");
-                            break;
+                            // reqwest 读流错误 → 转为 napi Error 供重试判定使用
+                            let stream_error = Error::from_reason(error.to_string());
+                            // 阶段感知混合重试（方案 B）：已累积工具调用 → 必须重试
+                            // （残缺 tool_calls 不可安全使用）；纯文本少量 → 重试；
+                            // 大量纯文本 → 保留 partial（token 最优）。
+                            let partial_text_len =
+                                content_chunks.iter().map(|s: &String| s.len()).sum::<usize>()
+                                    + thinking_chunks
+                                        .iter()
+                                        .map(|s: &String| s.len())
+                                        .sum::<usize>();
+                            if !should_retry_mid_stream(
+                                &stream_error,
+                                attempt,
+                                retry_options,
+                                cancel_token.is_cancelled(),
+                                !tool_calls.is_empty(),
+                                partial_text_len,
+                            ) {
+                                // Network/read error mid-stream: log and break instead
+                                // of returning Err. We keep whatever content and tool
+                                // calls have been collected so far so the agent loop
+                                // can continue with partial results.
+                                eprintln!("Gemini stream read error (keeping partial result): {error}");
+                                break;
+                            }
+
+                            // 通知前端重试（前端清空 content/thinking 显示"重试中"）
+                            on_chunk.call(
+                                ResponsesApiStreamChunk {
+                                    content_delta: String::new(),
+                                    thinking_delta: String::new(),
+                                    content: String::new(),
+                                    thinking: String::new(),
+                                    retrying: true,
+                                    retry_attempt: Some((attempt + 1) as i32),
+                                    retry_error: Some(stream_error.reason.clone()),
+                                    stream_token_count: stream_token_count as i64,
+                                    elapsed_ms: stream_start.elapsed().as_millis() as i64,
+                                    ttft_ms,
+                                    vision_status: None,
+                                },
+                                ThreadsafeFunctionCallMode::NonBlocking,
+                            );
+
+                            match wait_before_retry(retry_options, cancel_token, attempt).await {
+                                Ok(()) => {
+                                    // 累积状态声明在每次 attempt 内（per-attempt），
+                                    // 直接重发原始请求即可
+                                    attempt += 1;
+                                    retry_reset = true;
+                                    break;
+                                }
+                                Err(e) => return Err(e),
+                            }
                         }
                     };
                     byte_buffer.extend_from_slice(&chunk);
@@ -276,6 +330,12 @@ pub(super) async fn collect_gemini_stream(
                     }
                 }
             }
+        }
+
+        // Mid-stream retry path: per-attempt state is declared fresh each
+        // attempt, so jump back to the outer loop to re-send the request.
+        if retry_reset {
+            continue;
         }
 
         // If the stream ended abnormally (no finishReason and no cancellation),

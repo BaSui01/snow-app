@@ -77,6 +77,7 @@ pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<(
     migrate_chat_conversations_modes(connection)?;
     migrate_sub_agent_configs_project_id(connection)?;
     migrate_sub_agent_configs_model(connection)?;
+    migrate_api_configs_partial_retry_max_chars(connection)?;
     purge_assistant_raw_json_blobs(connection)?;
     Ok(())
 }
@@ -212,6 +213,31 @@ fn migrate_plugins_desired_state(connection: &Connection) -> rusqlite::Result<()
         connection.execute(
             "UPDATE plugins
                 SET desired_state = CASE WHEN state = 'disabled' THEN 'disabled' ELSE 'enabled' END",
+            [],
+        )?;
+    }
+
+    Ok(())
+}
+
+/// Adds the `partial_retry_max_chars` column to `api_configs` for databases
+/// created by older app versions.
+///
+/// The column stores the mid-stream retry keep-partial threshold (chars),
+/// part of the unified retry policy sourced from the API profile. Idempotent:
+/// no-op when the column is already present (fresh databases get it from the
+/// `CREATE TABLE` statement in `create_schema`).
+fn migrate_api_configs_partial_retry_max_chars(connection: &Connection) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA table_info(api_configs)")?;
+    let mut columns = statement.query_map([], |row| row.get::<_, String>(1))?;
+    let has_column = columns.try_fold(false, |found, column| {
+        Ok::<bool, rusqlite::Error>(found || column? == "partial_retry_max_chars")
+    })?;
+
+    if !has_column {
+        connection.execute(
+            "ALTER TABLE api_configs
+                ADD COLUMN partial_retry_max_chars INTEGER NOT NULL DEFAULT 1000",
             [],
         )?;
     }

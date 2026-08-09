@@ -325,7 +325,7 @@ fn recover_database(database_path: &Path) -> Result<()> {
         ))
     })?;
 
-    let _ = recovered_conn.pragma_update(None, "user_version", 27);
+    let _ = recovered_conn.pragma_update(None, "user_version", 28);
     drop(recovered_conn);
     drop(read_only_conn);
 
@@ -400,6 +400,7 @@ pub(crate) fn create_schema(connection: &Connection) -> rusqlite::Result<()> {
            auto_compress_threshold INTEGER,
            max_retries INTEGER NOT NULL DEFAULT 5,
            retry_base_delay_ms INTEGER NOT NULL DEFAULT 3000,
+           partial_retry_max_chars INTEGER NOT NULL DEFAULT 1000,
            system_prompt_ids_json TEXT NOT NULL DEFAULT '',
            custom_header_scheme_id TEXT NOT NULL DEFAULT '',
            config_json TEXT NOT NULL DEFAULT '{}',
@@ -766,7 +767,7 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
     // columns and the sub-agent project_id rebuild (see migrations.rs).
     migrations::run_post_schema_migrations(connection)?;
 
-    connection.pragma_update(None, "user_version", 27)?;
+    connection.pragma_update(None, "user_version", 28)?;
 
     Ok(())
 }
@@ -778,3 +779,30 @@ pub fn database_error(database_path: &Path, action: &str, error: rusqlite::Error
     ))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::create_schema;
+    use rusqlite::Connection;
+
+    #[test]
+    fn fresh_schema_includes_sub_agent_model_and_current_user_version() {
+        let connection = Connection::open_in_memory().expect("open database");
+        create_schema(&connection).expect("create schema");
+
+        let model_column: (String, String) = connection
+            .query_row(
+                "SELECT type, dflt_value
+                   FROM pragma_table_info('sub_agent_configs')
+                  WHERE name = 'model'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read model column");
+        let user_version: i64 = connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .expect("read user version");
+
+        assert_eq!(model_column, ("TEXT".into(), "''".into()));
+        assert_eq!(user_version, 28);
+    }
+}

@@ -26,6 +26,7 @@ export type ApiConfigFormData = {
   autoCompressThreshold: string;
   maxRetries: string;
   retryBaseDelayMs: string;
+  partialRetryMaxChars: string;
   systemPromptIdsJson: string;
   customHeaderSchemeId: string;
   thinkingValue: string;

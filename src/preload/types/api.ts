@@ -21,6 +21,7 @@ export type ApiConfigInput = {
   autoCompressThreshold?: number | null;
   maxRetries?: number | null;
   retryBaseDelayMs?: number | null;
+  partialRetryMaxChars?: number | null;
   systemPromptIdsJson: string;
   customHeaderSchemeId: string;
   configJson: string;

@@ -772,6 +772,22 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to update project MCP tools"
           )
         ),
+      setMcpToolEnabled: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to update MCP tools")
+        ),
+      setMcpToolsEnabled: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to batch update MCP tools"
+          )
+        ),
+      setMcpProjectToolsEnabled: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to batch update project MCP tools"
+          )
+        ),
       authorizeSensitiveCommand: () =>
         Promise.reject(
           new Error(

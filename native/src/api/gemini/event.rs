@@ -61,10 +61,12 @@ pub(super) fn process_gemini_sse_event_block(
             tool_args_delta,
         ) {
             eprintln!(
-                "Gemini stream event processing error (skipping event): {}",
+                "Gemini stream event processing error (terminal provider error): {}",
                 process_error.reason
             );
-            continue;
+            *response_status = String::from("failed");
+            *stream_finished = true;
+            return;
         }
 
         // Detect finishReason to signal normal stream completion.
@@ -81,6 +83,9 @@ pub(super) fn process_gemini_sse_event_block(
         }
 
         raw_events.push(event);
+        if *stream_finished {
+            return;
+        }
     }
 
     // Fallback: some providers return a complete JSON response without SSE
@@ -92,7 +97,7 @@ pub(super) fn process_gemini_sse_event_block(
             return;
         }
         if let Ok(event) = serde_json::from_str::<Value>(trimmed_block) {
-            let _ = process_gemini_event(
+            if let Err(process_error) = process_gemini_event(
                 &event,
                 content_chunks,
                 thinking_chunks,
@@ -102,7 +107,15 @@ pub(super) fn process_gemini_sse_event_block(
                 response_status,
                 token_usage,
                 tool_args_delta,
-            );
+            ) {
+                eprintln!(
+                    "Gemini stream event processing error (terminal provider error): {}",
+                    process_error.reason
+                );
+                *response_status = String::from("failed");
+                *stream_finished = true;
+                return;
+            }
             // Detect finishReason in raw JSON fallback.
             if let Some(candidates) = event.get("candidates").and_then(Value::as_array) {
                 for candidate in candidates {
@@ -266,6 +279,22 @@ mod tests {
         assert_eq!(
             parse_terminal(r#"data: {"candidates":[{"finishReason":"MAX_TOKENS"}]}"#),
             ("max_tokens".to_string(), true)
+        );
+    }
+
+    #[test]
+    fn provider_error_is_failed_terminal_and_stops_event_block() {
+        assert_eq!(
+            parse_terminal("data: {not-json}"),
+            ("completed".to_string(), false)
+        );
+        assert_eq!(
+            parse_terminal(concat!(
+                r#"data: {"error":{"code":429,"message":"Resource exhausted","status":"RESOURCE_EXHAUSTED"}}"#,
+                "\n",
+                r#"data: {"candidates":[{"finishReason":"STOP"}]}"#,
+            )),
+            ("failed".to_string(), true)
         );
     }
 }

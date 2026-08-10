@@ -453,7 +453,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           if (
             isFirstMessage &&
             !summaryTriggered &&
-            !responseFailed
+            responseDisposition.kind === "complete"
           ) {
             summaryTriggered = true;
             const summaryConvId = response.conversationId;

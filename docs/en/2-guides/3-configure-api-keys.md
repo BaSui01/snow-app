@@ -86,6 +86,12 @@ config that the UI uses. API-profile related tools:
 | `config-set scope=apiProfiles key=<profile-name> value={...}` | Create/update a profile (writes the app database, same as the UI; takes effect immediately) |
 | `config-delete scope=apiProfiles key=<profile-name>` | Delete a profile (destructive — ask the user first, then call with `confirmed: true`) |
 
+```mermaid
+flowchart LR
+    A[Step 1: create a keyless profile<br/>baseUrl + advancedModel + basicModel] --> B[Step 2: fill in the key later<br/>omitted apiKey never clears a filled one]
+    B --> C[Step 3 optional: switch to active<br/>isActive: true]
+```
+
 ### 5.1 Quick Reference (agents, follow along)
 
 #### ① View profiles

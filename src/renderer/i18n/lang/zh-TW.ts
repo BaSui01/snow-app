@@ -373,6 +373,27 @@ export const zhTW = {
   "chat.expandAll": "展開全部",
   "chat.collapse": "收起",
   "chat.stopping": "正在停止...",
+  "chat.incomplete.title": "回應未完整結束",
+  "chat.incomplete.variant.partialContent":
+    "已保留收到的部分內容，以上回答可能不完整。可在輸入框中要求繼續。",
+  "chat.incomplete.variant.thinkingOnly":
+    "已保留思考內容，但未產生可用正文。可透過輸入框重新請求。",
+  "chat.incomplete.variant.toolCall":
+    "回應中的工具呼叫不完整，已捨棄且未執行。可透過輸入框繼續。",
+  "chat.incomplete.variant.empty":
+    "未收到可用內容。可透過輸入框重新請求。",
+  "chat.incomplete.reason.unexpectedEof":
+    "連線在服務商確認完成前意外關閉。",
+  "chat.incomplete.reason.readError": "接收回應資料時連線發生錯誤。",
+  "chat.incomplete.reason.idleTimeout": "等待回應資料逾時。",
+  "chat.incomplete.reason.explicitIncomplete":
+    "服務商明確回傳了未完成回應。",
+  "chat.incomplete.reason.outputLimit": "模型已達到輸出上限。",
+  "chat.incomplete.outcome.partialThreshold":
+    "已保留達到安全門檻的部分正文。",
+  "chat.incomplete.outcome.retryExhausted":
+    "後端自動恢復已達到重試上限。",
+  "chat.incomplete.outcome.nonRetriable": "此次中斷無法安全自動重試。",
   "chat.copyResponse": "複製",
   "chat.copyAsText": "複製為純文字",
   "chat.copyAsMarkdown": "複製為 Markdown",

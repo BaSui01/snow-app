@@ -372,6 +372,27 @@ export const zhCN = {
   "chat.expandAll": "展开全部",
   "chat.collapse": "收起",
   "chat.stopping": "正在停止...",
+  "chat.incomplete.title": "响应未完整结束",
+  "chat.incomplete.variant.partialContent":
+    "已保留收到的部分内容，以上回答可能不完整。可在输入框中要求继续。",
+  "chat.incomplete.variant.thinkingOnly":
+    "已保留思考内容，但未生成可用正文。可通过输入框重新请求。",
+  "chat.incomplete.variant.toolCall":
+    "响应中的工具调用不完整，已丢弃且未执行。可通过输入框继续。",
+  "chat.incomplete.variant.empty":
+    "未收到可用内容。可通过输入框重新请求。",
+  "chat.incomplete.reason.unexpectedEof":
+    "连接在服务商确认完成前意外关闭。",
+  "chat.incomplete.reason.readError": "接收响应数据时连接出错。",
+  "chat.incomplete.reason.idleTimeout": "等待响应数据超时。",
+  "chat.incomplete.reason.explicitIncomplete":
+    "服务商明确返回了未完成响应。",
+  "chat.incomplete.reason.outputLimit": "模型已达到输出上限。",
+  "chat.incomplete.outcome.partialThreshold":
+    "已保留达到安全阈值的部分正文。",
+  "chat.incomplete.outcome.retryExhausted":
+    "后端自动恢复已达到重试上限。",
+  "chat.incomplete.outcome.nonRetriable": "此次中断无法安全自动重试。",
   "chat.copyResponse": "复制",
   "chat.copyAsText": "复制为纯文本",
   "chat.copyAsMarkdown": "复制为 Markdown",

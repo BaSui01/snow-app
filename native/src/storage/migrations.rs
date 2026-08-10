@@ -80,6 +80,7 @@ pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<(
     migrate_api_configs_partial_retry_max_chars(connection)?;
     migrate_chat_messages_interruption_metadata(connection)?;
     purge_assistant_raw_json_blobs(connection)?;
+    drop_tables_referencing_sub_agent_configs_legacy(connection)?;
     Ok(())
 }
 
@@ -470,6 +471,46 @@ fn migrate_sub_agent_configs_project_id(connection: &Connection) -> rusqlite::Re
     Ok(())
 }
 
+/// Drops tables left behind by intermediate dev builds whose foreign keys
+/// reference `sub_agent_configs_legacy` — a table that no longer exists once
+/// [`migrate_sub_agent_configs_project_id`] has rebuilt `sub_agent_configs`.
+///
+/// With `PRAGMA foreign_keys = ON` (set by `database::open_connection`),
+/// SQLite validates the whole foreign-key chain when preparing DML against a
+/// related table: e.g. deleting a workspace directory cascades into the
+/// orphan table (which references `workspace_directories`), whose dangling
+/// `agent_id` FK then fails with "no such table: main.sub_agent_configs_legacy".
+/// Reads still work, which makes the failure look like a delete-only bug.
+///
+/// The affected tables are orphaned leftovers (the current schema never
+/// creates them), so dropping them is safe. Detection is generic so any
+/// future table with a dangling FK to the legacy table is cleaned too.
+///
+/// Idempotent: no-op when no such table exists.
+fn drop_tables_referencing_sub_agent_configs_legacy(
+    connection: &Connection,
+) -> rusqlite::Result<()> {
+    let tables: Vec<String> = connection
+        .prepare(
+            "SELECT name
+               FROM sqlite_master
+              WHERE type = 'table'
+                AND name != 'sub_agent_configs_legacy'
+                AND sql LIKE '%sub_agent_configs_legacy%'",
+        )?
+        .query_map([], |row| row.get(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    for table in tables {
+        connection.execute(&format!("DROP TABLE IF EXISTS \"{table}\""), [])?;
+        eprintln!(
+            "Dropped orphan table \"{table}\" with dangling foreign key to sub_agent_configs_legacy"
+        );
+    }
+
+    Ok(())
+}
+
 /// Adds the optional independent model override for sub-agents.
 ///
 /// Existing rows receive an empty string, which preserves the compatibility
@@ -536,7 +577,7 @@ fn purge_assistant_raw_json_blobs(connection: &Connection) -> rusqlite::Result<(
 
 #[cfg(test)]
 mod tests {
-    use super::migrate_chat_messages_interruption_metadata;
+    use super::{drop_tables_referencing_sub_agent_configs_legacy, migrate_chat_messages_interruption_metadata};
     use rusqlite::Connection;
 
     #[test]
@@ -601,6 +642,59 @@ mod tests {
             )
             .expect("count recovery column");
         assert_eq!(recovery_column_count, 1);
+    }
+
+    #[test]
+    fn drops_orphan_tables_with_dangling_fk_to_legacy() {
+        let connection = Connection::open_in_memory().expect("open database");
+        connection
+            .execute_batch(
+                "CREATE TABLE sub_agent_configs_legacy (agent_id TEXT PRIMARY KEY);
+                 CREATE TABLE sub_agent_project_overrides (
+                    agent_id TEXT NOT NULL,
+                    PRIMARY KEY (agent_id),
+                    FOREIGN KEY (agent_id)
+                      REFERENCES sub_agent_configs_legacy(agent_id) ON DELETE CASCADE
+                 );
+                 CREATE TABLE normal_table (id TEXT PRIMARY KEY);",
+            )
+            .expect("create fixture tables");
+
+        drop_tables_referencing_sub_agent_configs_legacy(&connection)
+            .expect("drop orphan tables");
+
+        let remaining: Vec<String> = connection
+            .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+            .expect("prepare table list")
+            .query_map([], |row| row.get(0))
+            .expect("query table list")
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .expect("collect table list");
+        assert_eq!(
+            remaining,
+            vec!["sub_agent_configs_legacy", "normal_table"],
+            "orphan table with dangling FK must be dropped, unrelated tables kept"
+        );
+    }
+
+    #[test]
+    fn orphan_cleanup_is_a_no_op_on_clean_schema() {
+        let connection = Connection::open_in_memory().expect("open database");
+        connection
+            .execute_batch("CREATE TABLE sub_agent_configs (agent_id TEXT PRIMARY KEY);")
+            .expect("create fixture table");
+
+        drop_tables_referencing_sub_agent_configs_legacy(&connection)
+            .expect("cleanup is a no-op");
+
+        let count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sub_agent_configs'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count tables");
+        assert_eq!(count, 1, "clean schema must be untouched");
     }
 }
 

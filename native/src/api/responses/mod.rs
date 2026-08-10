@@ -21,7 +21,10 @@ use tokio_util::sync::CancellationToken;
 use crate::api::conversation::{
     prepare_context_request, resolve_sub_agent_tools, ConversationContextRequest,
 };
-use crate::api::retry::{resolve_stream_idle_timeout_sec, RetryOptions};
+use crate::api::retry::{
+    classify_final_stream_warning, resolve_stream_idle_timeout_sec, FinalStreamWarningDisposition,
+    RetryOptions,
+};
 use crate::storage::services::app_logs::{log_api_error, log_api_warning, maybe_log_api_request};
 use crate::storage::services::chat_conversations::{
     store_chat_exchange, ChatContextMessage, StoreChatExchangeInput,
@@ -90,6 +93,10 @@ pub struct ResponsesApiRequest {
     /// When true, replace the built-in system prompt with the Goal Mode prompt
     /// that instructs the AI to work autonomously toward a defined objective.
     pub goal_mode: Option<bool>,
+    /// Per-request thinking strength override ("none" | "low" | "medium" |
+    /// "high" | custom). Applied in-memory over the resolved profile's
+    /// config_json; never mutates the stored profile.
+    pub thinking_strength: Option<String>,
     /// Project ROLE.md content of an SSH (`ssh://`) workspace, resolved by the
     /// Electron main process over SSH (mirrors RoleEditorPanel's access path).
     /// Absent for local workspaces — Rust reads the file itself.
@@ -385,39 +392,46 @@ async fn create_response_async(
         }
     }
 
-    if let Some(reason) = transport_interruption_reason {
-        log_api_warning(
-            &database_path,
-            "create_response_stream_with_context",
-            "AI response stream interrupted",
-            &format!(
-                "provider=openai, request_method=responses, reason={}, outcome={}, model={}, status={}, conversation_id={}, response_id={}, content_chars={}, thinking_chars={}, duration_ms={}",
-                reason.as_code(),
-                recovery_outcome.as_deref().unwrap_or(""),
-                model,
-                streamed_response.status,
-                prepared_request.conversation_id,
-                streamed_response.id,
-                streamed_response.content.chars().count(),
-                streamed_response.thinking.chars().count(),
-                streamed_response.total_duration_ms,
-            ),
-        );
-    } else if streamed_response.status != "cancelled"
-        && streamed_response.content.is_empty()
-        && streamed_response.thinking.is_empty()
-        && streamed_response.tool_calls_json == "[]"
-        && streamed_response.reasoning_items_json == "[]"
-    {
-        log_api_warning(
-            &database_path,
-            "create_response_stream_with_context",
-            "AI returned empty response",
-            &format!(
-                "model={}, status={}",
-                streamed_response.model, streamed_response.status
-            ),
-        );
+    let has_response_payload = !streamed_response.content.is_empty()
+        || !streamed_response.thinking.is_empty()
+        || streamed_response.tool_calls_json != "[]"
+        || streamed_response.reasoning_items_json != "[]";
+    match classify_final_stream_warning(
+        &streamed_response.status,
+        streamed_response.interruption_reason,
+        has_response_payload,
+    ) {
+        FinalStreamWarningDisposition::TransportInterrupted(reason) => {
+            log_api_warning(
+                &database_path,
+                "create_response_stream_with_context",
+                "AI response stream interrupted",
+                &format!(
+                    "provider=openai, request_method=responses, reason={}, outcome={}, model={}, status={}, conversation_id={}, response_id={}, content_chars={}, thinking_chars={}, duration_ms={}",
+                    reason.as_code(),
+                    recovery_outcome.as_deref().unwrap_or(""),
+                    model,
+                    streamed_response.status,
+                    prepared_request.conversation_id,
+                    streamed_response.id,
+                    streamed_response.content.chars().count(),
+                    streamed_response.thinking.chars().count(),
+                    streamed_response.total_duration_ms,
+                ),
+            );
+        }
+        FinalStreamWarningDisposition::EmptyResponse => {
+            log_api_warning(
+                &database_path,
+                "create_response_stream_with_context",
+                "AI returned empty response",
+                &format!(
+                    "model={}, status={}",
+                    streamed_response.model, streamed_response.status
+                ),
+            );
+        }
+        FinalStreamWarningDisposition::None => {}
     }
 
     let persisted_user_message_ids = if !skip_context {
@@ -429,7 +443,7 @@ async fn create_response_async(
                 response_content: &streamed_response.content,
                 response_id: &streamed_response.id,
                 checkpoint_id: request.checkpoint_id.as_deref().unwrap_or(""),
-                model,
+                model: &model,
                 api_profile_name: &api_config.profile_name,
                 status: &streamed_response.status,
                 interruption_reason: interruption_reason.as_deref(),

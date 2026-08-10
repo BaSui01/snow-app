@@ -98,6 +98,31 @@ impl StreamInterruptionReason {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FinalStreamWarningDisposition {
+    TransportInterrupted(StreamInterruptionReason),
+    EmptyResponse,
+    None,
+}
+
+pub fn classify_final_stream_warning(
+    final_status: &str,
+    interruption_reason: Option<StreamInterruptionReason>,
+    has_response_payload: bool,
+) -> FinalStreamWarningDisposition {
+    if final_status == "cancelled" {
+        return FinalStreamWarningDisposition::None;
+    }
+
+    match interruption_reason {
+        Some(reason) if reason.is_transport() => {
+            FinalStreamWarningDisposition::TransportInterrupted(reason)
+        }
+        _ if !has_response_payload => FinalStreamWarningDisposition::EmptyResponse,
+        _ => FinalStreamWarningDisposition::None,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StreamRecoveryOutcome {
     PartialThreshold,
     RetryExhausted,
@@ -466,10 +491,11 @@ mod tests {
     use tokio_util::sync::CancellationToken;
 
     use super::{
-        decide_stream_recovery, is_retriable_error, is_retriable_stream_read_error,
-        next_stream_item_with_idle, visible_content_char_count, wait_before_retry, RetryOptions,
-        StreamAttemptProgress, StreamEndCause, StreamInterruptionReason, StreamReadOutcome,
-        StreamRecoveryDecision, StreamRecoveryOutcome,
+        classify_final_stream_warning, decide_stream_recovery, is_retriable_error,
+        is_retriable_stream_read_error, next_stream_item_with_idle, visible_content_char_count,
+        wait_before_retry, FinalStreamWarningDisposition, RetryOptions, StreamAttemptProgress,
+        StreamEndCause, StreamInterruptionReason, StreamReadOutcome, StreamRecoveryDecision,
+        StreamRecoveryOutcome,
     };
 
     fn options() -> RetryOptions {
@@ -519,6 +545,119 @@ mod tests {
             ],
             ["partial_threshold", "retry_exhausted", "non_retriable"]
         );
+    }
+
+    #[test]
+    fn final_warning_transport_reason_matrix_selects_transport_once() {
+        for reason in [
+            StreamInterruptionReason::UnexpectedEof,
+            StreamInterruptionReason::ReadError,
+            StreamInterruptionReason::IdleTimeout,
+        ] {
+            assert_eq!(
+                classify_final_stream_warning("incomplete", Some(reason), true),
+                FinalStreamWarningDisposition::TransportInterrupted(reason)
+            );
+        }
+    }
+
+    #[test]
+    fn final_warning_non_transport_matrix_preserves_empty_semantics() {
+        let cases = [
+            (
+                "recovered retry or normal completion",
+                "completed",
+                None,
+                true,
+                FinalStreamWarningDisposition::None,
+            ),
+            (
+                "Responses explicit incomplete with payload",
+                "incomplete",
+                Some(StreamInterruptionReason::ExplicitIncomplete),
+                true,
+                FinalStreamWarningDisposition::None,
+            ),
+            (
+                "output limit with payload",
+                "max_tokens",
+                Some(StreamInterruptionReason::OutputLimit),
+                true,
+                FinalStreamWarningDisposition::None,
+            ),
+            (
+                "provider hard failure with payload",
+                "failed",
+                None,
+                true,
+                FinalStreamWarningDisposition::None,
+            ),
+            (
+                "ordinary empty response",
+                "completed",
+                None,
+                false,
+                FinalStreamWarningDisposition::EmptyResponse,
+            ),
+            (
+                "empty Responses explicit incomplete",
+                "incomplete",
+                Some(StreamInterruptionReason::ExplicitIncomplete),
+                false,
+                FinalStreamWarningDisposition::EmptyResponse,
+            ),
+            (
+                "empty output limit",
+                "length",
+                Some(StreamInterruptionReason::OutputLimit),
+                false,
+                FinalStreamWarningDisposition::EmptyResponse,
+            ),
+            (
+                "empty provider hard failure",
+                "error",
+                None,
+                false,
+                FinalStreamWarningDisposition::EmptyResponse,
+            ),
+        ];
+
+        for (name, status, reason, has_response_payload, expected) in cases {
+            assert_eq!(
+                classify_final_stream_warning(status, reason, has_response_payload),
+                expected,
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn final_warning_cancellation_selects_none() {
+        assert_eq!(
+            classify_final_stream_warning(
+                "cancelled",
+                Some(StreamInterruptionReason::UnexpectedEof),
+                false,
+            ),
+            FinalStreamWarningDisposition::None
+        );
+    }
+
+    #[test]
+    fn final_warning_empty_interruption_cannot_also_be_empty_response() {
+        let disposition = classify_final_stream_warning(
+            "incomplete",
+            Some(StreamInterruptionReason::ReadError),
+            false,
+        );
+
+        assert_eq!(
+            disposition,
+            FinalStreamWarningDisposition::TransportInterrupted(
+                StreamInterruptionReason::ReadError
+            )
+        );
+        assert_ne!(disposition, FinalStreamWarningDisposition::EmptyResponse);
     }
 
     #[test]
@@ -695,34 +834,22 @@ mod tests {
                 let cancel_token = CancellationToken::new();
                 let mut data_stream = stream::iter(vec![Ok::<i32, &'static str>(7)]);
                 assert_eq!(
-                    next_stream_item_with_idle(
-                        &mut data_stream,
-                        &cancel_token,
-                        Duration::ZERO,
-                    )
-                    .await,
+                    next_stream_item_with_idle(&mut data_stream, &cancel_token, Duration::ZERO,)
+                        .await,
                     StreamReadOutcome::Data(7)
                 );
 
                 let mut error_stream = stream::iter(vec![Err::<i32, &'static str>("boom")]);
                 assert_eq!(
-                    next_stream_item_with_idle(
-                        &mut error_stream,
-                        &cancel_token,
-                        Duration::ZERO,
-                    )
-                    .await,
+                    next_stream_item_with_idle(&mut error_stream, &cancel_token, Duration::ZERO,)
+                        .await,
                     StreamReadOutcome::ReadError("boom")
                 );
 
                 let mut empty_stream = stream::empty::<Result<i32, &'static str>>();
                 assert_eq!(
-                    next_stream_item_with_idle(
-                        &mut empty_stream,
-                        &cancel_token,
-                        Duration::ZERO,
-                    )
-                    .await,
+                    next_stream_item_with_idle(&mut empty_stream, &cancel_token, Duration::ZERO,)
+                        .await,
                     StreamReadOutcome::Eof
                 );
             });
@@ -738,12 +865,8 @@ mod tests {
                 let cancel_token = CancellationToken::new();
                 let mut pending_stream = stream::pending::<Result<i32, &'static str>>();
                 assert_eq!(
-                    next_stream_item_with_idle(
-                        &mut pending_stream,
-                        &cancel_token,
-                        Duration::ZERO,
-                    )
-                    .await,
+                    next_stream_item_with_idle(&mut pending_stream, &cancel_token, Duration::ZERO,)
+                        .await,
                     StreamReadOutcome::IdleTimeout
                 );
             });
@@ -760,12 +883,8 @@ mod tests {
                 cancel_token.cancel();
                 let mut pending_stream = stream::pending::<Result<i32, &'static str>>();
                 assert_eq!(
-                    next_stream_item_with_idle(
-                        &mut pending_stream,
-                        &cancel_token,
-                        Duration::ZERO,
-                    )
-                    .await,
+                    next_stream_item_with_idle(&mut pending_stream, &cancel_token, Duration::ZERO,)
+                        .await,
                     StreamReadOutcome::Cancelled
                 );
             });
@@ -809,4 +928,3 @@ mod tests {
             });
     }
 }
-

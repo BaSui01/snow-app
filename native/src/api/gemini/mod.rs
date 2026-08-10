@@ -21,7 +21,10 @@ use crate::api::conversation::{
 use crate::api::responses::{
     ResponsesApiRequest, ResponsesApiResult, ResponsesApiStreamCallback, TokenUsage,
 };
-use crate::api::retry::{resolve_stream_idle_timeout_sec, RetryOptions};
+use crate::api::retry::{
+    classify_final_stream_warning, resolve_stream_idle_timeout_sec, FinalStreamWarningDisposition,
+    RetryOptions,
+};
 use crate::storage::services::app_logs::{log_api_error, log_api_warning, maybe_log_api_request};
 use crate::storage::services::chat_conversations::{
     store_chat_exchange, ChatContextMessage, StoreChatExchangeInput,
@@ -73,12 +76,6 @@ async fn create_gemini_response_async(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| api_config.advanced_model.trim());
-
-    if model.is_empty() {
-        return Err(Error::from_reason(
-            "Model not configured. Please select or configure a model first.",
-        ));
-    }
 
     let endpoint = payload::resolve_gemini_endpoint(&api_config, &model, api_key);
     if endpoint.is_empty() {
@@ -195,9 +192,6 @@ async fn create_gemini_response_async(
     // See chat/mod.rs: assistant raw_events are not needed for replay, so we
     // skip serializing the full SSE chunk array to avoid DB bloat.
     let raw_response_json = "{}";
-    let transport_interruption_reason = streamed_response
-        .interruption_reason
-        .filter(|reason| reason.is_transport());
     let interruption_reason = streamed_response
         .interruption_reason
         .map(|reason| reason.as_code().to_string());
@@ -205,38 +199,45 @@ async fn create_gemini_response_async(
         .recovery_outcome
         .map(|outcome| outcome.as_code().to_string());
 
-    if let Some(reason) = transport_interruption_reason {
-        log_api_warning(
-            &database_path,
-            "create_gemini_response_stream",
-            "AI response stream interrupted",
-            &format!(
-                "provider=gemini, request_method=gemini, reason={}, outcome={}, model={}, status={}, conversation_id={}, response_id={}, content_chars={}, thinking_chars={}, duration_ms={}",
-                reason.as_code(),
-                recovery_outcome.as_deref().unwrap_or(""),
-                model,
-                streamed_response.status,
-                prepared_request.conversation_id,
-                streamed_response.id,
-                streamed_response.content.chars().count(),
-                streamed_response.thinking.chars().count(),
-                streamed_response.total_duration_ms,
-            ),
-        );
-    } else if streamed_response.status != "cancelled"
-        && streamed_response.content.is_empty()
-        && streamed_response.thinking.is_empty()
-        && streamed_response.tool_calls_json == "[]"
-    {
-        log_api_warning(
-            &database_path,
-            "create_gemini_response_stream",
-            "AI returned empty response",
-            &format!(
-                "model={}, status={}",
-                streamed_response.model, streamed_response.status
-            ),
-        );
+    let has_response_payload = !streamed_response.content.is_empty()
+        || !streamed_response.thinking.is_empty()
+        || streamed_response.tool_calls_json != "[]";
+    match classify_final_stream_warning(
+        &streamed_response.status,
+        streamed_response.interruption_reason,
+        has_response_payload,
+    ) {
+        FinalStreamWarningDisposition::TransportInterrupted(reason) => {
+            log_api_warning(
+                &database_path,
+                "create_gemini_response_stream",
+                "AI response stream interrupted",
+                &format!(
+                    "provider=gemini, request_method=gemini, reason={}, outcome={}, model={}, status={}, conversation_id={}, response_id={}, content_chars={}, thinking_chars={}, duration_ms={}",
+                    reason.as_code(),
+                    recovery_outcome.as_deref().unwrap_or(""),
+                    model,
+                    streamed_response.status,
+                    prepared_request.conversation_id,
+                    streamed_response.id,
+                    streamed_response.content.chars().count(),
+                    streamed_response.thinking.chars().count(),
+                    streamed_response.total_duration_ms,
+                ),
+            );
+        }
+        FinalStreamWarningDisposition::EmptyResponse => {
+            log_api_warning(
+                &database_path,
+                "create_gemini_response_stream",
+                "AI returned empty response",
+                &format!(
+                    "model={}, status={}",
+                    streamed_response.model, streamed_response.status
+                ),
+            );
+        }
+        FinalStreamWarningDisposition::None => {}
     }
 
     let persisted_user_message_ids = if !skip_context {
@@ -254,7 +255,7 @@ async fn create_gemini_response_async(
                 // different name than what was requested; trusting the response
                 // would corrupt the conversation's recorded model and the chat
                 // input's model display on the next load.
-                model,
+                model: &model,
                 api_profile_name: &api_config.profile_name,
                 status: &streamed_response.status,
                 interruption_reason: interruption_reason.as_deref(),

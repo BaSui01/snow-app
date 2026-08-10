@@ -14,7 +14,6 @@ import {
   Palette,
   PawPrint,
   Plug,
-  Puzzle,
   ScrollText,
   Sparkles,
   ShieldAlert,
@@ -22,6 +21,7 @@ import {
   Users,
 } from "lucide-react";
 
+import { McpLogo } from "../icons/mcpLogo";
 import type { MainContentView } from "../mainContent/types";
 
 export type SettingsItem = {
@@ -95,7 +95,7 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
   },
   {
     id: "mcp",
-    icon: Puzzle,
+    icon: McpLogo,
     labelKey: "settings.mcpSettings",
     defaultLabel: "MCP settings",
     view: "mcp-settings",

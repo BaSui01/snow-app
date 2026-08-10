@@ -178,8 +178,9 @@ export type SubAgentSessionEvent = {
 
 export type VisionAnalysisState = {
   /** describing = 调用外挂视觉 API 中；cached = 命中 blake3 缓存直接复用；
-   *  done = 全部图片文本化完成；error = 文本化失败（请求将失败）。 */
-  phase: "describing" | "cached" | "done" | "error";
+   *  done = 全部图片文本化完成；error = 文本化失败（请求将失败）；
+   *  cancel = 请求被用户中断，文本化提前结束（渲染进程据此清除状态卡）。 */
+  phase: "describing" | "cached" | "done" | "error" | "cancel";
   /** 当前已处理的图片序号（1 起）。 */
   index: number;
   /** 本次消息中需要文本化的图片总数。 */

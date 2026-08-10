@@ -296,6 +296,7 @@ async fn create_response_async(
         &effective_headers,
         skip_context,
         Some(on_chunk),
+        Some(&cancel_token),
     )
     .await?;
 

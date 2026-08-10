@@ -1,14 +1,7 @@
-import {
-  app,
-  BrowserWindow,
-  ipcMain,
-  Menu,
-  nativeImage,
-  nativeTheme,
-} from "electron";
+import { app, ipcMain, Menu, nativeImage, nativeTheme } from "electron";
 import { APP_ICON_PATH, APP_USER_MODEL_ID, isMacOS } from "./constants";
 import { initializeApplicationServices } from "./applicationServices";
-import { createWindow } from "./mainWindow";
+import { createWindow, getMainWindow } from "./mainWindow";
 import { initTray } from "./tray";
 import { registerIpcHandlers } from "../ipc/registerIpcHandlers";
 import { native, getRawNative } from "../native/nativeBridge";
@@ -35,7 +28,10 @@ import { disposePetWindow, restorePetWindow } from "../pets/petWindow";
 export const bootstrapApplication = (): void => {
   // ─── Chromium 启动加速开关（必须在 whenReady 之前）─────────────────────
   // 禁用不必要的 GPU 光栅化和合成特性检测，减少内核初始化耗时。
-  app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion");
+  app.commandLine.appendSwitch(
+    "disable-features",
+    "CalculateNativeWinOcclusion"
+  );
   // 跳过 GPU 沙箱预热（部分显卡驱动初始化极慢）。
   app.commandLine.appendSwitch("disable-gpu-sandbox");
   // 禁用后台节流，确保启动阶段渲染不被降频。
@@ -68,13 +64,17 @@ export const bootstrapApplication = (): void => {
       func: "second-instance",
       message: "Second instance detected, focusing existing window",
     });
-    const windows = BrowserWindow.getAllWindows();
-    if (windows.length > 0) {
-      const win = windows[0];
-      if (win.isMinimized()) {
-        win.restore();
+    // 使用 getMainWindow() 而非 getAllWindows()[0]：宠物窗口始终存在，
+    // getAllWindows()[0] 可能返回宠物窗口而非会话主窗口。
+    const existing = getMainWindow();
+    if (existing) {
+      if (existing.isMinimized()) {
+        existing.restore();
       }
-      win.focus();
+      if (!existing.isVisible()) {
+        existing.show();
+      }
+      existing.focus();
     }
   });
 
@@ -195,7 +195,20 @@ export const bootstrapApplication = (): void => {
     });
 
     app.on("activate", () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
+      // macOS：点击 Dock 图标时，优先恢复已存在的主窗口（可能是最小化或
+      // hide-to-tray 隐藏状态）；主窗口不存在时才创建新窗口。
+      // 不能使用 getAllWindows().length 判断——宠物窗口始终存在，
+      // 会导致最小化/隐藏主窗口后点击 Dock 图标无法复原。
+      const existing = getMainWindow();
+      if (existing) {
+        if (existing.isMinimized()) {
+          existing.restore();
+        }
+        if (!existing.isVisible()) {
+          existing.show();
+        }
+        existing.focus();
+      } else {
         createWindow();
       }
     });

@@ -10,6 +10,7 @@ use reqwest::header::{
 };
 use serde_json::{json, Value};
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 
 use crate::api::config::{normalize_base_url, resolve_sdk_api_base_url};
 use crate::api::conversation::images::{parse_chat_message_content, ChatImage};
@@ -65,7 +66,14 @@ pub fn should_textify_images(api_config: &ApiConfigRecord) -> bool {
 ///
 /// `on_chunk` 为主对话的流回调（`None` 时静默跳过事件推送）：文本化每张
 /// 图片期间会通过它推送 `vision_status` 进度事件（describing / cached /
-/// done / error），让渲染进程在消息区显示"视觉模型正在分析图片"的中间状态。
+/// done / error / cancel），让渲染进程在消息区显示"视觉模型正在分析图片"
+/// 的中间状态，并在全部完成、出错或用户取消时清除该状态卡。
+///
+/// `cancel_token` 为请求级取消令牌（流尚未注册时由 `create_and_register`
+/// 生成的已取消令牌）：用户在中途中断时，文本化会在下一张图片前或正在
+/// 进行的视觉 HTTP 请求中（`send_vision_stream` 的 `tokio::select!`）立即
+/// 停止，并推送一条 `cancel` 事件让渲染进程回收状态卡，而不是继续消耗
+/// 视觉 API 调用。`None` 表示不参与取消（如无请求上下文的工具入口）。
 pub async fn textify_images_in_messages(
     messages: &mut [ChatContextMessage],
     database_path: &Path,
@@ -73,6 +81,7 @@ pub async fn textify_images_in_messages(
     custom_headers: &HashMap<String, String>,
     skip_context: bool,
     on_chunk: Option<&ResponsesApiStreamCallback>,
+    cancel_token: Option<&CancellationToken>,
 ) -> Result<()> {
     if skip_context || !should_textify_images(api_config) {
         return Ok(());
@@ -108,6 +117,7 @@ pub async fn textify_images_in_messages(
                                 &vision_config,
                                 false,
                                 on_chunk,
+                                cancel_token,
                             )
                             .await?;
                             updated.push((name, call_id, textified));
@@ -155,6 +165,7 @@ pub async fn textify_images_in_messages(
             &vision_config,
             message.role.trim() == "user",
             on_chunk,
+            cancel_token,
         )
         .await?;
         message.content = textified;
@@ -169,7 +180,8 @@ pub async fn textify_images_in_messages(
 /// - `describing`：即将调用外挂视觉 API 描述第 index/total 张图片；
 /// - `cached`：命中进程内 blake3 缓存，直接复用已有描述；
 /// - `done`：单张图片文本化完成；
-/// - `error`：单张图片文本化失败（随后整个请求将失败）。
+/// - `error`：单张图片文本化失败（随后整个请求将失败）；
+/// - `cancel`：请求被用户中断，文本化提前结束（渲染进程据此清除状态卡）。
 ///
 /// 渲染进程据此在消息区显示"视觉模型正在分析图片"的中间状态卡片。
 fn emit_vision_status(
@@ -305,12 +317,18 @@ impl VisionApiConfig {
 /// 主模型在需要图生图/编辑时能把图片引用直接填进 imagegen-generate 的
 /// `images` 参数。优先使用磁盘相对路径（`path`，几十字节）；仅对未持久化
 /// 的内联 data URL 图片回退到完整 base64（`data`）。
+///
+/// 取消语义：每张图片开始前检查 `cancel_token`，已取消则推送 `cancel` 事件
+/// 并携带当前已累积的文本提前返回（不抛错——调用方随后进入主模型流，流
+/// 层会立即以 cancelled 状态结束）；正在进行的视觉 HTTP 请求由
+/// `send_vision_stream` 的 `tokio::select!` 中断，同样走此分支。
 async fn textify_parsed_content(
     parsed: &crate::api::conversation::images::ParsedChatMessageContent,
     client: &reqwest::Client,
     vision_config: &VisionApiConfig,
     include_reference_blocks: bool,
     on_chunk: Option<&ResponsesApiStreamCallback>,
+    cancel_token: Option<&CancellationToken>,
 ) -> Result<String> {
     let mut result = String::with_capacity(parsed.text.len() + parsed.images.len() * 256);
     result.push_str(&parsed.text);
@@ -327,6 +345,21 @@ async fn textify_parsed_content(
 
     let total = parsed.images.len();
     for (index, image) in parsed.images.iter().enumerate() {
+        // 用户中断：推送 cancel 事件让渲染进程立即回收状态卡，并携带
+        // 已累积的文本提前返回。主模型流随后启动时会看到已取消的令牌，
+        // 以 cancelled 状态正常收尾，不会把未文本化的图片发给主模型。
+        if cancel_token.is_some_and(|token| token.is_cancelled()) {
+            emit_vision_status(
+                on_chunk,
+                "cancel",
+                index + 1,
+                total,
+                &vision_config.model,
+                None,
+            );
+            return Ok(result.trim().to_string());
+        }
+
         // 命中 blake3 内容缓存时直接复用已有描述（describe_image 内部仍会
         // 二次确认，此处预查仅为让进度事件准确区分 cached / describing）。
         let cache_key = blake3::hash(image.data.as_bytes()).to_hex().to_string();
@@ -341,10 +374,25 @@ async fn textify_parsed_content(
         );
 
         let description =
-            match describe_image(client, vision_config, image, &parsed.text).await {
+            match describe_image(client, vision_config, image, &parsed.text, cancel_token).await
+            {
                 Ok(description) => description,
                 Err(error) => {
-                    // 失败时先推送 error 事件（渲染进程据此清除状态卡），
+                    // 取消导致的错误（send_vision_stream 的 select! 中断）：
+                    // 与上面的取消分支一致，推送 cancel 事件并提前返回，
+                    // 不向上传播硬错误，避免整个请求被当作失败处理。
+                    if cancel_token.is_some_and(|token| token.is_cancelled()) {
+                        emit_vision_status(
+                            on_chunk,
+                            "cancel",
+                            index + 1,
+                            total,
+                            &vision_config.model,
+                            None,
+                        );
+                        return Ok(result.trim().to_string());
+                    }
+                    // 真实失败：先推送 error 事件（渲染进程据此清除状态卡），
                     // 再向上传播错误 —— 视觉文本化失败会使整个请求失败，
                     // 与现状行为保持一致。
                     emit_vision_status(
@@ -404,6 +452,7 @@ async fn describe_image(
     vision_config: &VisionApiConfig,
     image: &ChatImage,
     user_prompt: &str,
+    cancel_token: Option<&CancellationToken>,
 ) -> Result<String> {
     let cache_key = blake3::hash(image.data.as_bytes()).to_hex().to_string();
 
@@ -412,14 +461,29 @@ async fn describe_image(
     }
 
     let result = match vision_config.request_method.as_str() {
-        "chat" => describe_image_via_chat(client, vision_config, image, user_prompt).await?,
-        "responses" => {
-            describe_image_via_responses(client, vision_config, image, user_prompt).await?
+        "chat" => {
+            describe_image_via_chat(client, vision_config, image, user_prompt, cancel_token).await?
         }
-        "anthropic" => {
-            describe_image_via_anthropic(client, vision_config, image, user_prompt).await?
+        "responses" => describe_image_via_responses(
+            client,
+            vision_config,
+            image,
+            user_prompt,
+            cancel_token,
+        )
+        .await?,
+        "anthropic" => describe_image_via_anthropic(
+            client,
+            vision_config,
+            image,
+            user_prompt,
+            cancel_token,
+        )
+        .await?,
+        "gemini" => {
+            describe_image_via_gemini(client, vision_config, image, user_prompt, cancel_token)
+                .await?
         }
-        "gemini" => describe_image_via_gemini(client, vision_config, image, user_prompt).await?,
         method => {
             return Err(Error::from_reason(format!(
                 "Unsupported vision request method: {method}. Supported: chat, responses, anthropic, gemini."
@@ -459,6 +523,7 @@ async fn describe_image_via_chat(
     vision_config: &VisionApiConfig,
     image: &ChatImage,
     user_prompt: &str,
+    cancel_token: Option<&CancellationToken>,
 ) -> Result<VisionResult> {
     let endpoint = resolve_chat_endpoint(vision_config);
     let prompt = build_vision_prompt(user_prompt);
@@ -487,6 +552,7 @@ async fn describe_image_via_chat(
         &mut payload,
         "chat",
         parse_chat_stream_event,
+        cancel_token,
         |payload| {
             payload["max_tokens"] = json!(vision_config.max_tokens * 2);
         },
@@ -499,6 +565,7 @@ async fn describe_image_via_responses(
     vision_config: &VisionApiConfig,
     image: &ChatImage,
     user_prompt: &str,
+    cancel_token: Option<&CancellationToken>,
 ) -> Result<VisionResult> {
     let endpoint = resolve_responses_endpoint(vision_config);
     let prompt = build_vision_prompt(user_prompt);
@@ -529,6 +596,7 @@ async fn describe_image_via_responses(
         &mut payload,
         "responses",
         parse_responses_stream_event,
+        cancel_token,
         |payload| {
             payload["max_output_tokens"] = json!(vision_config.max_tokens * 2);
         },
@@ -541,6 +609,7 @@ async fn describe_image_via_anthropic(
     vision_config: &VisionApiConfig,
     image: &ChatImage,
     user_prompt: &str,
+    cancel_token: Option<&CancellationToken>,
 ) -> Result<VisionResult> {
     let endpoint = resolve_anthropic_endpoint(vision_config);
     let prompt = build_vision_prompt(user_prompt);
@@ -572,6 +641,7 @@ async fn describe_image_via_anthropic(
         &mut payload,
         "anthropic",
         parse_anthropic_stream_event,
+        cancel_token,
         |payload| {
             payload["max_tokens"] = json!(vision_config.max_tokens * 2);
         },
@@ -584,6 +654,7 @@ async fn describe_image_via_gemini(
     vision_config: &VisionApiConfig,
     image: &ChatImage,
     user_prompt: &str,
+    cancel_token: Option<&CancellationToken>,
 ) -> Result<VisionResult> {
     let endpoint = resolve_gemini_endpoint(vision_config, &vision_config.api_key);
     let prompt = build_vision_prompt(user_prompt);
@@ -622,6 +693,7 @@ async fn describe_image_via_gemini(
         &mut payload,
         "gemini",
         parse_gemini_stream_event,
+        cancel_token,
         |payload| {
             payload["generationConfig"]["maxOutputTokens"] = json!(vision_config.max_tokens * 2);
         },
@@ -788,6 +860,10 @@ fn merge_custom_headers(
 /// 端点）。按 SSE 分隔符切块，逐 `data:` 行交给 `parse` 处理：
 /// - `Delta` → 累积文本增量；
 /// - `End { truncated }` → 记录截断标记并结束流。
+///
+/// `cancel_token` 为 `Some` 时，请求发送与响应流读取都通过
+/// `tokio::select!`（biased，取消优先）与取消令牌竞争；用户中断后立即
+/// 丢弃在途 HTTP 请求并返回取消错误，避免继续等待视觉 API 响应。
 async fn send_vision_stream(
     client: &reqwest::Client,
     endpoint: &str,
@@ -795,16 +871,28 @@ async fn send_vision_stream(
     payload: &Value,
     protocol: &str,
     parse: &impl Fn(&Value) -> VisionStreamEvent,
+    cancel_token: Option<&CancellationToken>,
 ) -> Result<VisionStreamOutcome> {
     use futures::StreamExt;
 
-    let response = client
-        .post(endpoint)
-        .headers(headers)
-        .json(payload)
-        .send()
-        .await
-        .map_err(|error| Error::from_reason(format!("Failed to call vision API: {error}")))?;
+    let response = {
+        let send_future = client
+            .post(endpoint)
+            .headers(headers)
+            .json(payload)
+            .send();
+        match cancel_token {
+            Some(token) => tokio::select! {
+                biased;
+                _ = token.cancelled() => {
+                    return Err(Error::from_reason("Vision analysis cancelled"));
+                }
+                result = send_future => result,
+            },
+            None => send_future.await,
+        }
+    }
+    .map_err(|error| Error::from_reason(format!("Failed to call vision API: {error}")))?;
 
     let status = response.status();
     if !status.is_success() {
@@ -826,7 +914,23 @@ async fn send_vision_stream(
     let mut finished = false;
 
     let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
+    loop {
+        let chunk = match cancel_token {
+            Some(token) => {
+                let next = stream.next();
+                tokio::select! {
+                    biased;
+                    _ = token.cancelled() => {
+                        return Err(Error::from_reason("Vision analysis cancelled"));
+                    }
+                    chunk = next => chunk,
+                }
+            }
+            None => stream.next().await,
+        };
+        let Some(chunk) = chunk else {
+            break;
+        };
         let chunk = chunk.map_err(|error| {
             Error::from_reason(format!("Failed to read vision API stream: {error}"))
         })?;
@@ -1018,6 +1122,10 @@ struct VisionResult {
 /// - 截断且完全无内容 → 重试一次，`bump_max_tokens` 把 token 上限翻倍
 ///   （各协议字段路径不同）；
 /// - 非截断但无内容 → 报可读错误。
+///
+/// `cancel_token` 为 `Some` 时，请求发送与流读取都会与取消令牌竞争
+/// （`send_vision_stream` 内的 `tokio::select!`），用户中断后立即返回取消
+/// 错误，不再发起重试。
 async fn vision_request_with_retry(
     client: &reqwest::Client,
     endpoint: &str,
@@ -1025,13 +1133,17 @@ async fn vision_request_with_retry(
     payload: &mut Value,
     protocol: &str,
     parse: impl Fn(&Value) -> VisionStreamEvent,
+    cancel_token: Option<&CancellationToken>,
     bump_max_tokens: impl Fn(&mut Value),
 ) -> Result<VisionResult> {
     let mut attempt = 0u32;
     loop {
         attempt += 1;
+        if cancel_token.is_some_and(|token| token.is_cancelled()) {
+            return Err(Error::from_reason("Vision analysis cancelled"));
+        }
         let outcome =
-            send_vision_stream(client, endpoint, headers.clone(), payload, protocol, &parse)
+            send_vision_stream(client, endpoint, headers.clone(), payload, protocol, &parse, cancel_token)
                 .await?;
         let text = outcome.text.trim().to_string();
 
@@ -1271,7 +1383,9 @@ pub(crate) async fn describe_image_file(path: &str, user_prompt: &str) -> Result
         data_url: String::new(),
         source: None,
     };
-    describe_image(&client, &vision_config, &image, user_prompt).await
+    // 工具入口没有请求级取消令牌（工具执行取消走独立的 tool 注册表），
+    // 因此不参与 select! 取消竞争，行为与之前一致。
+    describe_image(&client, &vision_config, &image, user_prompt, None).await
 }
 
 /// 按扩展名猜测图片 MIME；不支持的类型返回 `application/octet-stream`。

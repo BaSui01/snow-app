@@ -130,6 +130,7 @@ async fn create_anthropic_response_async(
         &custom_headers,
         skip_context,
         Some(on_chunk),
+        Some(&cancel_token),
     )
     .await?;
 

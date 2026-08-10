@@ -63,6 +63,13 @@ export const registerPetHandlers = (native: NativeBridge): void => {
     if (settings.activePetId === petId.trim()) {
       await savePetSetting(native, petSettingCodes.activeId, "");
     }
+
+    // 所有宠物都被删除时自动关闭启停开关（无宠物时不允许唤醒）。
+    const remaining = await native.listInstalledPets();
+    if (remaining.length === 0) {
+      await savePetSetting(native, petSettingCodes.enabled, "0");
+    }
+
     await refreshPetWindow(native);
   });
 

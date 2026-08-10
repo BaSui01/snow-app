@@ -143,6 +143,9 @@ export function PetsSettingsPanel({
     }, 250);
   };
 
+  const hasPets = pets.length > 0;
+  const petEnabled = hasPets && (petSettings?.enabled ?? false);
+
   const petSourceLabel = (source: string): string => {
     if (source === "codex") {
       return t("settings.petsSourceCodex", { defaultValue: "Codex App" });
@@ -209,18 +212,16 @@ export function PetsSettingsPanel({
               <label className="toggle-switch">
                 <input
                   type="checkbox"
-                  checked={petSettings?.enabled ?? false}
+                  checked={petEnabled}
                   onChange={(event) =>
                     handlePetEnabledChange(event.target.checked)
                   }
-                  disabled={
-                    !petSettings || (pets.length === 0 && !petSettings.enabled)
-                  }
+                  disabled={!petSettings || !hasPets}
                   hidden
                 />
                 <span className="toggle-slider" />
                 <span>
-                  {petSettings?.enabled
+                  {petEnabled
                     ? t("settings.petsDismiss", {
                         defaultValue: "Put pet away",
                       })
@@ -235,7 +236,7 @@ export function PetsSettingsPanel({
                 defaultValue: "Show or hide the desktop pet on your screen.",
               })}
             </span>
-            {petSettings?.enabled && (
+            {petEnabled && (
               <div className="pets-scale-row">
                 <span className="settings-item-description">
                   {t("settings.petsScale", { defaultValue: "Size" })}
@@ -245,7 +246,7 @@ export function PetsSettingsPanel({
                   min={0.5}
                   max={2}
                   step={0.05}
-                  value={petScaleDraft ?? petSettings.scale}
+                  value={petScaleDraft ?? petSettings?.scale ?? 0.75}
                   onChange={(event) =>
                     handlePetScaleChange(Number(event.target.value))
                   }

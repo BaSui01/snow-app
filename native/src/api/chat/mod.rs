@@ -126,6 +126,7 @@ async fn create_chat_completion_response_async(
         &custom_headers,
         skip_context,
         Some(on_chunk),
+        Some(&cancel_token),
     )
     .await?;
 

@@ -30,8 +30,8 @@ use super::servers::filesystem::FilesystemService;
 use super::servers::grep::GrepService;
 use super::servers::imagegen::ImageGenService;
 use super::servers::remote_workspace::{
-    execute_remote_workspace_command, is_ssh_path, resolve_remote_project_workspace,
-    resolve_remote_workspace_path, RemoteWorkspaceCallback,
+    is_ssh_path, resolve_remote_project_workspace, resolve_remote_workspace_path,
+    RemoteWorkspaceCallback,
 };
 use super::servers::skills::SkillsService;
 use super::servers::terminal::{TerminalCommandCallback, TerminalService};
@@ -586,6 +586,7 @@ fn builtin_server_name(server_id: &str) -> &str {
         "codelens" => "CodeLens",
         "terminal" => "Terminal Control",
         "config" => "Config",
+        "imagegen" => "Image Generation",
         _ => server_id,
     }
 }

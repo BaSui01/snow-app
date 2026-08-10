@@ -78,6 +78,7 @@ pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<(
     migrate_sub_agent_configs_project_id(connection)?;
     migrate_sub_agent_configs_model(connection)?;
     migrate_api_configs_partial_retry_max_chars(connection)?;
+    migrate_chat_messages_interruption_metadata(connection)?;
     purge_assistant_raw_json_blobs(connection)?;
     Ok(())
 }
@@ -238,6 +239,33 @@ fn migrate_api_configs_partial_retry_max_chars(connection: &Connection) -> rusql
         connection.execute(
             "ALTER TABLE api_configs
                 ADD COLUMN partial_retry_max_chars INTEGER NOT NULL DEFAULT 1000",
+            [],
+        )?;
+    }
+
+    Ok(())
+}
+
+/// Adds nullable final stream interruption metadata to assistant messages.
+/// Existing rows remain `NULL`, and each column is checked independently so
+/// partially migrated and repeatedly migrated databases are both safe.
+fn migrate_chat_messages_interruption_metadata(
+    connection: &Connection,
+) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA table_info(chat_messages)")?;
+    let columns: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    if !columns.iter().any(|column| column == "interruption_reason") {
+        connection.execute(
+            "ALTER TABLE chat_messages ADD COLUMN interruption_reason TEXT",
+            [],
+        )?;
+    }
+    if !columns.iter().any(|column| column == "recovery_outcome") {
+        connection.execute(
+            "ALTER TABLE chat_messages ADD COLUMN recovery_outcome TEXT",
             [],
         )?;
     }
@@ -504,5 +532,75 @@ fn purge_assistant_raw_json_blobs(connection: &Connection) -> rusqlite::Result<(
         connection.execute_batch("VACUUM")?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::migrate_chat_messages_interruption_metadata;
+    use rusqlite::Connection;
+
+    #[test]
+    fn interruption_metadata_migration_is_legacy_safe_and_repeatable() {
+        let connection = Connection::open_in_memory().expect("open database");
+        connection
+            .execute_batch(
+                "CREATE TABLE chat_messages (id TEXT PRIMARY KEY);
+                 INSERT INTO chat_messages (id) VALUES ('legacy-message');",
+            )
+            .expect("create legacy chat messages table");
+
+        migrate_chat_messages_interruption_metadata(&connection).expect("migrate legacy table");
+        migrate_chat_messages_interruption_metadata(&connection).expect("repeat migration");
+
+        let mut statement = connection
+            .prepare("PRAGMA table_info(chat_messages)")
+            .expect("prepare table info");
+        let columns: Vec<String> = statement
+            .query_map([], |row| row.get(1))
+            .expect("read table info")
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .expect("collect columns");
+        let metadata: (Option<String>, Option<String>) = connection
+            .query_row(
+                "SELECT interruption_reason, recovery_outcome
+                   FROM chat_messages
+                  WHERE id = 'legacy-message'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read legacy metadata");
+
+        assert_eq!(
+            columns,
+            vec!["id", "interruption_reason", "recovery_outcome"]
+        );
+        assert_eq!(metadata, (None, None));
+    }
+
+    #[test]
+    fn interruption_metadata_migration_repairs_a_partial_schema() {
+        let connection = Connection::open_in_memory().expect("open database");
+        connection
+            .execute_batch(
+                "CREATE TABLE chat_messages (
+                    id TEXT PRIMARY KEY,
+                    interruption_reason TEXT
+                 );",
+            )
+            .expect("create partially migrated table");
+
+        migrate_chat_messages_interruption_metadata(&connection).expect("repair partial schema");
+
+        let recovery_column_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*)
+                   FROM pragma_table_info('chat_messages')
+                  WHERE name = 'recovery_outcome'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count recovery column");
+        assert_eq!(recovery_column_count, 1);
+    }
 }
 

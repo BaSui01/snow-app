@@ -589,6 +589,8 @@ pub struct ChatMessageRecord {
     pub response_id: String,
     pub checkpoint_id: String,
     pub tool_calls_json: String,
+    pub interruption_reason: Option<String>,
+    pub recovery_outcome: Option<String>,
     pub created_at: String,
 }
 

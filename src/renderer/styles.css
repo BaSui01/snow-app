@@ -25182,6 +25182,111 @@ body.ctrl-held [data-path] {
   display: flex;
 }
 
+/* 非激活标签页的 webview 隐藏（guest 继续运行，保留页面状态） */
+.browser-webview.is-hidden {
+  display: none;
+}
+
+/* ===== Browser Tabs (标签页维度) ===== */
+.browser-tab-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+  padding: 4px 8px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--surface-island-muted);
+}
+
+.browser-tab-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.browser-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  max-width: 180px;
+  min-width: 72px;
+  height: 24px;
+  padding: 0 6px 0 8px;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.browser-tab:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.browser-tab.active {
+  background: var(--bg-secondary);
+  border-color: var(--border-light);
+  color: var(--text-primary);
+}
+
+.browser-tab-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.browser-tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.browser-tab-close:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.browser-tab-new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.browser-tab-new:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
 .spin-icon {
   animation: spin-icon-rotate 0.8s linear infinite;
 }

@@ -38,6 +38,7 @@ import type {
 const MCP_TOOL_CHUNK_CHANNEL = "mcp:call-tool:chunk";
 const BROWSER_COMMAND_CHANNEL = "browser:command";
 const BROWSER_COMMAND_RESPONSE_CHANNEL = "browser:command-response";
+const BROWSER_OPEN_TAB_CHANNEL = "browser:open-tab";
 const TERMINAL_COMMAND_CHANNEL = "terminal:command";
 const TERMINAL_COMMAND_RESPONSE_CHANNEL = "terminal:command-response";
 const USER_QUESTION_CHANNEL = "user-question:request";
@@ -96,6 +97,56 @@ ipcRenderer.on(
 
 const createMcpToolStreamId = (): string =>
   `tool-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+/**
+ * 侧边浏览器内新建标签页事件（broadcast 模型）。
+ *
+ * 主进程在 webview guest 的 window.open / target=_blank 被判定为「标签页级
+ * 打开」（非窗口级弹出）时发送。payload 携带发起请求的 guest webContents id，
+ * 由渲染端 BrowserPanelContent 依据该 id 路由到对应的浏览器实例。
+ */
+export type BrowserOpenTabEvent = {
+  guestWebContentsId: number;
+  url: string;
+  /** Electron WindowOpenDisposition，如 foreground-tab / background-tab */
+  disposition: string;
+};
+
+type BrowserOpenTabSubscriber = (event: BrowserOpenTabEvent) => void;
+
+const browserOpenTabSubscribers = new Set<BrowserOpenTabSubscriber>();
+
+const deliverBrowserOpenTab = (subscriber: BrowserOpenTabSubscriber, event: BrowserOpenTabEvent): void => {
+  try {
+    subscriber(event);
+  } catch (error) {
+    console.error("[browser] Open-tab subscriber failed", error);
+  }
+};
+
+ipcRenderer.on(
+  BROWSER_OPEN_TAB_CHANNEL,
+  (_event: IpcRendererEvent, payload: unknown): void => {
+    if (
+      !isRecord(payload) ||
+      typeof payload.guestWebContentsId !== "number" ||
+      typeof payload.url !== "string"
+    ) {
+      return;
+    }
+    const event: BrowserOpenTabEvent = {
+      guestWebContentsId: payload.guestWebContentsId,
+      url: payload.url,
+      disposition:
+        typeof payload.disposition === "string"
+          ? payload.disposition
+          : "foreground-tab",
+    };
+    for (const subscriber of browserOpenTabSubscribers) {
+      deliverBrowserOpenTab(subscriber, event);
+    }
+  }
+);
 
 const normalizeBashStreamChunk = (value: unknown): BashStreamChunk | null => {
   if (
@@ -494,6 +545,17 @@ export const systemApi = {
       toolName,
       enabled
     ),
+  /**
+   * 订阅「侧边浏览器内新建标签页」请求。返回取消订阅函数。
+   * 渲染端每个 BrowserPanelContent 实例在挂载时订阅，按 guestWebContentsId
+   * 判断事件是否属于自己的某个 webview，是则在实例内部新建标签页。
+   */
+  onBrowserOpenTab: (callback: (event: BrowserOpenTabEvent) => void): (() => void) => {
+    browserOpenTabSubscribers.add(callback);
+    return () => {
+      browserOpenTabSubscribers.delete(callback);
+    };
+  },
   registerBrowserCommandHandler: (
     handler: (request: BrowserCommandRequest) => Promise<string>
   ): (() => void) => {

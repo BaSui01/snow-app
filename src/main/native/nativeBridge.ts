@@ -1064,6 +1064,46 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to migrate image library")
         ),
+      getCheckpointDir: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to read checkpoint dir")
+        ),
+      setCheckpointDir: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to write checkpoint dir")
+        ),
+      getUploadDir: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to read upload dir")
+        ),
+      setUploadDir: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to write upload dir")
+        ),
+      getCheckpointRoot: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to read checkpoint root")
+        ),
+      getUploadRoot: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to read upload root")
+        ),
+      prepareStorageMigration: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to migrate storage dirs")
+        ),
+      migrateStorageChunk: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to migrate storage dirs")
+        ),
+      commitStorageMigration: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to migrate storage dirs")
+        ),
+      rollbackStorageMigration: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to migrate storage dirs")
+        ),
       browserImportListSources: () =>
         Promise.reject(
           new Error("Rust native bridge is required to probe browser sources")

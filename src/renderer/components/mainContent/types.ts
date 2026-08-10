@@ -21,4 +21,5 @@ export type MainContentView =
   | "keyboard-shortcuts-settings"
   | "pets-settings"
   | "usage-settings"
-  | "system-logs";
+  | "system-logs"
+  | "general-settings";

@@ -646,9 +646,13 @@ pub fn initialize_app_storage() -> Result<AppStorageInfo> {
 
     // Recover an image library migration that was interrupted by a crash:
     // roll back uncommitted copies or finish cleanup of a committed one.
+    // Also recover interrupted checkpoint / upload directory migrations.
     MIGRATION_RECOVER_INIT.call_once(|| {
         if let Err(error) = services::image_library::recover_interrupted_migration() {
             eprintln!("Failed to recover interrupted image library migration: {error}");
+        }
+        if let Err(error) = services::storage_locations::recover_interrupted_migrations() {
+            eprintln!("Failed to recover interrupted storage migrations: {error}");
         }
     });
 
@@ -2211,4 +2215,91 @@ pub fn commit_image_library_migration() -> Result<()> {
 /// 回滚迁移：删除已复制到新目录的文件并移除日志（幂等；无进行中的迁移时直接成功）。
 pub fn rollback_image_library_migration() -> Result<()> {
     services::image_library::rollback_migration()
+}
+
+// ============================================================================
+// 存储位置（checkpoint / upload 目录）
+// ============================================================================
+
+/// 读取检查点自定义保存目录（空字符串表示使用默认目录）。
+pub fn get_checkpoint_dir() -> Result<String> {
+    let database_path = ensure_database_file()?;
+    services::storage_locations::get_custom_dir(
+        &database_path,
+        &services::storage_locations::StorageLocationKind::Checkpoint,
+    )
+}
+
+/// 设置检查点自定义保存目录（传入空字符串重置为默认目录）。
+pub fn set_checkpoint_dir(dir: String) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::storage_locations::set_custom_dir(
+        &database_path,
+        &services::storage_locations::StorageLocationKind::Checkpoint,
+        &dir,
+    )
+}
+
+/// 读取上传图片自定义保存目录（空字符串表示使用默认目录）。
+pub fn get_upload_dir() -> Result<String> {
+    let database_path = ensure_database_file()?;
+    services::storage_locations::get_custom_dir(
+        &database_path,
+        &services::storage_locations::StorageLocationKind::Upload,
+    )
+}
+
+/// 设置上传图片自定义保存目录（传入空字符串重置为默认目录）。
+pub fn set_upload_dir(dir: String) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::storage_locations::set_custom_dir(
+        &database_path,
+        &services::storage_locations::StorageLocationKind::Upload,
+        &dir,
+    )
+}
+
+/// 检查点根目录绝对路径（优先用户自定义路径，回退默认）。
+pub fn get_checkpoint_root() -> Result<String> {
+    services::storage_locations::checkpoint_root()
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
+/// 上传图片根目录绝对路径（优先用户自定义路径，回退默认）。
+pub fn get_upload_root() -> Result<String> {
+    services::storage_locations::upload_root()
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
+/// 准备存储目录迁移（kind: "checkpoint" | "upload"）：校验目标目录并写入
+/// 迁移日志；返回待迁移文件数量（0 表示无需迁移）。
+pub fn prepare_storage_migration(kind: String, target_dir: String) -> Result<u32> {
+    let location_kind = services::storage_locations::StorageLocationKind::parse(&kind)?;
+    let database_path = ensure_database_file()?;
+    services::storage_locations::prepare_migration(&database_path, &location_kind, &target_dir)
+        .map(|count| count as u32)
+}
+
+/// 复制下一批存储目录文件并返回迁移进度（每批最多 16 个，逐文件写入日志保证崩溃可恢复）。
+pub fn migrate_storage_chunk(kind: String) -> Result<MigrationProgress> {
+    let location_kind = services::storage_locations::StorageLocationKind::parse(&kind)?;
+    let (copied, total, done) = services::storage_locations::migrate_chunk(&location_kind, 16)?;
+    Ok(MigrationProgress {
+        copied: copied as u32,
+        total: total as u32,
+        done,
+    })
+}
+
+/// 提交存储目录迁移：写入新目录设置（提交点）并清理旧根目录文件。
+pub fn commit_storage_migration(kind: String) -> Result<()> {
+    let location_kind = services::storage_locations::StorageLocationKind::parse(&kind)?;
+    let database_path = ensure_database_file()?;
+    services::storage_locations::commit_migration(&database_path, &location_kind)
+}
+
+/// 回滚存储目录迁移：删除已复制到新目录的文件并移除日志（幂等；无进行中的迁移时直接成功）。
+pub fn rollback_storage_migration(kind: String) -> Result<()> {
+    let location_kind = services::storage_locations::StorageLocationKind::parse(&kind)?;
+    services::storage_locations::rollback_migration(&location_kind)
 }

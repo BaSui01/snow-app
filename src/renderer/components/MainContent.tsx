@@ -119,6 +119,11 @@ const BrowserSettingsPanel = lazy(() =>
     default: m.BrowserSettingsPanel,
   }))
 );
+const GeneralSettingsPanel = lazy(() =>
+  import("./sidebar/GeneralSettingsPanel").then((m) => ({
+    default: m.GeneralSettingsPanel,
+  }))
+);
 
 type MainContentProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
@@ -221,6 +226,8 @@ export const MainContent = ({
             <UsageSettingsPanel onClose={() => onSelectView("chat")} />
           ) : activeView === "system-logs" ? (
             <SystemLogsPanel onClose={() => onSelectView("chat")} />
+          ) : activeView === "general-settings" ? (
+            <GeneralSettingsPanel onClose={() => onSelectView("chat")} />
           ) : null}
         </Suspense>
       )}

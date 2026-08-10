@@ -30,6 +30,7 @@ pub mod remote_drafts;
 pub mod request_logging_settings;
 pub mod sensitive_command_configs;
 pub mod sub_agent_configs;
+pub mod storage_locations;
 pub mod system_prompts;
 pub mod system_settings;
 pub mod theme_settings;

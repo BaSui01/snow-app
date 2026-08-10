@@ -32,6 +32,8 @@ type ChatItemProps = {
   onExport: (format: ExportFormat) => void;
   /** 归档会话（置顶会话不传入，不提供归档入口） */
   onArchive?: () => void;
+  /** 归档进行中（含 VACUUM 收缩文件阶段）：菜单按钮显示 loading，防止重复操作 */
+  isArchiving?: boolean;
   onEnterMultiSelect?: () => void;
   onToggleSelect?: () => void;
   onSelect?: () => void;
@@ -54,6 +56,7 @@ export function ChatItem({
   onDelete,
   onExport,
   onArchive,
+  isArchiving = false,
   onEnterMultiSelect,
   onToggleSelect,
   onSelect,
@@ -161,13 +164,13 @@ export function ChatItem({
   const statusLabel = showAttentionStatus
     ? t("sidebar.chatStatusNeedsAction", { defaultValue: "Needs action" })
     : showCompletedStatus
-      ? t("sidebar.chatStatusCompleted", { defaultValue: "Completed" })
-      : null;
+    ? t("sidebar.chatStatusCompleted", { defaultValue: "Completed" })
+    : null;
   const statusDescription = showAttentionStatus
     ? t("sidebar.chatStatusWaitingForReviewOrInput", {
         defaultValue: "Waiting for review or input",
       })
-    : (statusLabel ?? "");
+    : statusLabel ?? "";
 
   const now = new Date();
   const parsedDate = parseDbTimestamp(conversation.updatedAt);
@@ -252,10 +255,10 @@ export function ChatItem({
             showAttentionStatus
               ? " attention-required"
               : showStreamingStatus
-                ? " streaming"
-                : showCompletedStatus
-                  ? " completed"
-                  : ""
+              ? " streaming"
+              : showCompletedStatus
+              ? " completed"
+              : ""
           }${showDefaultIcon && isForked ? " forked" : ""}${
             showDefaultIcon && hasSubAgents ? " has-sub-agents" : ""
           }${showDefaultIcon && hasEmoji ? " has-emoji" : ""}`}
@@ -345,21 +348,31 @@ export function ChatItem({
           onClick={(event) => event.stopPropagation()}
           onKeyDown={(event) => event.stopPropagation()}
         >
-          <ChatItemMenu
-            conversationId={conversation.conversationId}
-            isPinned={isPinned}
-            emoji={conversation.emoji}
-            onPin={onPin}
-            onRename={handleRenameStart}
-            onSetEmoji={onSetEmoji}
-            onDelete={onDelete}
-            onExport={onExport}
-            onArchive={onArchive}
-            onEnterMultiSelect={onEnterMultiSelect}
-            onOpenChange={setIsMenuOpen}
-            contextMenuAnchor={contextMenuAnchor}
-            onContextMenuClose={() => setContextMenuAnchor(null)}
-          />
+          {isArchiving ? (
+            <Loader2
+              size={14}
+              className="spin"
+              aria-label={t("sidebar.chatActionArchiving", {
+                defaultValue: "Archiving...",
+              })}
+            />
+          ) : (
+            <ChatItemMenu
+              conversationId={conversation.conversationId}
+              isPinned={isPinned}
+              emoji={conversation.emoji}
+              onPin={onPin}
+              onRename={handleRenameStart}
+              onSetEmoji={onSetEmoji}
+              onDelete={onDelete}
+              onExport={onExport}
+              onArchive={onArchive}
+              onEnterMultiSelect={onEnterMultiSelect}
+              onOpenChange={setIsMenuOpen}
+              contextMenuAnchor={contextMenuAnchor}
+              onContextMenuClose={() => setContextMenuAnchor(null)}
+            />
+          )}
         </span>
       )}
     </div>

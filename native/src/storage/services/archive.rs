@@ -426,6 +426,20 @@ pub fn archive_conversations(
             database::database_error(main_database_path, "archive conversations", error)
         })?;
 
+    // ---- 收缩运行库文件 ----
+    // DELETE 只把页面标记为空闲页（auto_vacuum=NONE），物理文件大小不变，
+    // 归档后必须 VACUUM 重建数据库文件才能立即回收这些页面。
+    // VACUUM 不能在事务中、也不能在存在附加数据库时执行，故放在
+    // COMMIT 与 DETACH 之后。归档事务已提交，VACUUM 仅是空间优化，
+    // 失败（如其他连接占用导致 busy_timeout 超时）不应让上层误判归档
+    // 失败，记录日志后忽略。
+    if let Err(error) = connection.execute_batch("VACUUM") {
+        eprintln!(
+            "Snow App archive VACUUM failed (conversations already archived): {}",
+            error
+        );
+    }
+
     Ok(())
 }
 
@@ -690,9 +704,10 @@ pub fn restore_archived_conversations(
     }
 
     // ---- 清理归档库 ----
+    let mut deleted_rows: usize = 0;
     for chunk in all_target_ids.chunks(MAX_VARIABLES) {
         let placeholders = in_clause_placeholders(chunk.len());
-        transaction
+        deleted_rows += transaction
             .execute(
                 &format!("DELETE FROM archive_db.chat_messages WHERE conversation_id IN ({placeholders})"),
                 params_from_iter(chunk.iter()),
@@ -700,7 +715,7 @@ pub fn restore_archived_conversations(
             .map_err(|error| {
                 database::database_error(main_database_path, "restore archived conversations", error)
             })?;
-        transaction
+        deleted_rows += transaction
             .execute(
                 &format!("DELETE FROM archive_db.todo_items WHERE session_id IN ({placeholders})"),
                 params_from_iter(chunk.iter()),
@@ -718,7 +733,7 @@ pub fn restore_archived_conversations(
         for id in chunk {
             params.push(id);
         }
-        transaction
+        deleted_rows += transaction
             .execute(
                 &format!(
                     "DELETE FROM archive_db.sub_agent_sessions
@@ -733,7 +748,7 @@ pub fn restore_archived_conversations(
     }
     for chunk in all_target_ids.chunks(MAX_VARIABLES) {
         let placeholders = in_clause_placeholders(chunk.len());
-        transaction
+        deleted_rows += transaction
             .execute(
                 &format!("DELETE FROM archive_db.chat_conversations WHERE conversation_id IN ({placeholders})"),
                 params_from_iter(chunk.iter()),
@@ -753,6 +768,22 @@ pub fn restore_archived_conversations(
         .map_err(|error| {
             database::database_error(main_database_path, "restore archived conversations", error)
         })?;
+
+    // ---- 收缩归档库文件（与归档运行库对称）----
+    // 还原从归档库删除了数据，归档库同样不会自动回收空闲页（auto_vacuum=NONE）。
+    // VACUUM 不能在事务中、也不能在存在附加数据库时执行，故在 COMMIT+DETACH
+    // 之后单独打开归档库连接执行；仅当确实删除了行时才执行。
+    // 还原事务已提交，VACUUM 仅是空间优化，失败记录日志后忽略。
+    if deleted_rows > 0 {
+        let vacuum_result = open_archive_connection(archive_database_path)
+            .and_then(|archive_connection| archive_connection.execute_batch("VACUUM"));
+        if let Err(error) = vacuum_result {
+            eprintln!(
+                "Snow App restore VACUUM failed (conversations already restored): {}",
+                error
+            );
+        }
+    }
 
     Ok(())
 }
@@ -808,9 +839,10 @@ pub fn delete_archived_conversations(
         }
     }
 
+    let mut deleted_rows: usize = 0;
     for chunk in all_target_ids.chunks(MAX_VARIABLES) {
         let placeholders = in_clause_placeholders(chunk.len());
-        transaction
+        deleted_rows += transaction
             .execute(
                 &format!("DELETE FROM chat_messages WHERE conversation_id IN ({placeholders})"),
                 params_from_iter(chunk.iter()),
@@ -818,7 +850,7 @@ pub fn delete_archived_conversations(
             .map_err(|error| {
                 database::database_error(archive_database_path, "delete archived conversations", error)
             })?;
-        transaction
+        deleted_rows += transaction
             .execute(
                 &format!("DELETE FROM todo_items WHERE session_id IN ({placeholders})"),
                 params_from_iter(chunk.iter()),
@@ -837,7 +869,7 @@ pub fn delete_archived_conversations(
         for id in chunk {
             params.push(id);
         }
-        transaction
+        deleted_rows += transaction
             .execute(
                 &format!(
                     "DELETE FROM sub_agent_sessions
@@ -853,7 +885,7 @@ pub fn delete_archived_conversations(
 
     for chunk in all_target_ids.chunks(MAX_VARIABLES) {
         let placeholders = in_clause_placeholders(chunk.len());
-        transaction
+        deleted_rows += transaction
             .execute(
                 &format!("DELETE FROM chat_conversations WHERE conversation_id IN ({placeholders})"),
                 params_from_iter(chunk.iter()),
@@ -868,6 +900,19 @@ pub fn delete_archived_conversations(
         .map_err(|error| {
             database::database_error(archive_database_path, "delete archived conversations", error)
         })?;
+
+    // ---- 收缩归档库文件（与归档运行库对称）----
+    // 永久删除从归档库删除了数据，归档库同样不会自动回收空闲页（auto_vacuum=NONE），
+    // 需 VACUUM 重建文件才能立即回收。删除事务已提交，VACUUM 仅是空间优化，
+    // 失败记录日志后忽略；仅当确实删除了行时才执行。
+    if deleted_rows > 0 {
+        if let Err(error) = connection.execute_batch("VACUUM") {
+            eprintln!(
+                "Snow App delete archived VACUUM failed (conversations already deleted): {}",
+                error
+            );
+        }
+    }
 
     Ok(())
 }

@@ -721,6 +721,16 @@ export type ImageLibraryMigrationProgress = {
   done: boolean;
 };
 
+/** 可迁移的存储位置种类：checkpoint（检查点）| upload（上传图片） */
+export type StorageLocationKind = "checkpoint" | "upload";
+
+/** 存储位置迁移进度（与图库迁移结构一致） */
+export type StorageMigrationProgress = {
+  copied: number;
+  total: number;
+  done: boolean;
+};
+
 export type UserMessageSummary = {
   id: string;
   content: string;
@@ -1589,6 +1599,29 @@ export type NativeBridge = {
   commitImageLibraryMigration: () => Promise<void>;
   /** 回滚迁移：删除已复制到新目录的文件并移除日志（幂等） */
   rollbackImageLibraryMigration: () => Promise<void>;
+  /** 读取检查点自定义保存目录（空字符串表示使用默认目录） */
+  getCheckpointDir: () => Promise<string>;
+  /** 设置检查点自定义保存目录（传入空字符串重置为默认目录） */
+  setCheckpointDir: (dir: string) => Promise<void>;
+  /** 读取上传图片自定义保存目录（空字符串表示使用默认目录） */
+  getUploadDir: () => Promise<string>;
+  /** 设置上传图片自定义保存目录（传入空字符串重置为默认目录） */
+  setUploadDir: (dir: string) => Promise<void>;
+  /** 检查点根目录绝对路径（优先用户自定义路径，回退默认） */
+  getCheckpointRoot: () => Promise<string>;
+  /** 上传图片根目录绝对路径（优先用户自定义路径，回退默认） */
+  getUploadRoot: () => Promise<string>;
+  /** 准备存储目录迁移：校验目标目录并写入迁移日志；返回待迁移文件数量（0 表示无需迁移） */
+  prepareStorageMigration: (
+    kind: StorageLocationKind,
+    targetDir: string
+  ) => Promise<number>;
+  /** 复制下一批存储目录文件并返回迁移进度 */
+  migrateStorageChunk: (kind: StorageLocationKind) => Promise<StorageMigrationProgress>;
+  /** 提交迁移：写入新目录设置并清理旧根目录文件 */
+  commitStorageMigration: (kind: StorageLocationKind) => Promise<void>;
+  /** 回滚迁移：删除已复制到新目录的文件并移除日志（幂等） */
+  rollbackStorageMigration: (kind: StorageLocationKind) => Promise<void>;
   /** 探测本机浏览器（Chrome/Edge/Chromium/Firefox）及其配置文件与数据量 */
   browserImportListSources: () => Promise<BrowserImportSource[]>;
   /** 解密并导出指定浏览器配置文件的已保存密码（明文，仅供主进程加密落盘） */

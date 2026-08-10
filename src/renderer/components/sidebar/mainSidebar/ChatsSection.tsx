@@ -175,7 +175,17 @@ export function ChatsSection({
   const [archivedDeleteTargetIds, setArchivedDeleteTargetIds] = useState<
     string[] | null
   >(null);
-  const [isArchivedDeleting, setIsArchivedDeleting] = useState(false);
+  // 归档/还原/删除进行中（含 VACUUM 收缩文件阶段，可能耗时数秒）：
+  // 记录受影响会话 ID 集合，只给这些会话显示 loading，同时防止重复提交
+  const [archivingIds, setArchivingIds] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [restoringIds, setRestoringIds] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [deletingArchivedIds, setDeletingArchivedIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const archivedLoadMoreRef = useRef<HTMLDivElement | null>(null);
   // 会话区域收起/展开（localStorage 持久化，与项目区域一致）
   const [isCollapsed, setIsCollapsed] = useState(() => {
@@ -624,6 +634,10 @@ export function ChatsSection({
   const handleArchive = async (
     conversation: ChatConversationRecord
   ): Promise<void> => {
+    if (archivingIds.size > 0) {
+      return;
+    }
+    setArchivingIds(new Set([conversation.conversationId]));
     try {
       const targetIds = [
         conversation.conversationId,
@@ -648,6 +662,8 @@ export function ChatsSection({
       refreshConversations();
     } catch {
       // Silent fail
+    } finally {
+      setArchivingIds(new Set());
     }
   };
 
@@ -672,7 +688,7 @@ export function ChatsSection({
   };
 
   const handleExitMultiSelect = (): void => {
-    if (isBatchDeleting) {
+    if (isBatchDeleting || archivingIds.size > 0) {
       return;
     }
     setIsMultiSelectMode(false);
@@ -812,10 +828,11 @@ export function ChatsSection({
 
   /** 批量归档所选会话（置顶会话由 Rust 侧跳过，不参与归档） */
   const handleBatchArchive = async (): Promise<void> => {
-    if (selectedIds.size === 0) {
+    if (archivingIds.size > 0 || selectedIds.size === 0) {
       return;
     }
 
+    setArchivingIds(new Set(selectedIds));
     try {
       // 收集所有受影响会话 ID（含子代理级联），用于中止流/清空聊天区
       const targetIds = new Set<string>();
@@ -846,6 +863,8 @@ export function ChatsSection({
       setIsMultiSelectMode(false);
     } catch {
       // Silent fail
+    } finally {
+      setArchivingIds(new Set());
     }
   };
 
@@ -869,6 +888,10 @@ export function ChatsSection({
   const handleRestore = async (
     conversation: ChatConversationRecord
   ): Promise<void> => {
+    if (restoringIds.size > 0) {
+      return;
+    }
+    setRestoringIds(new Set([conversation.conversationId]));
     try {
       await window.snow.restoreArchivedConversations([
         conversation.conversationId,
@@ -877,29 +900,30 @@ export function ChatsSection({
       refreshConversations();
     } catch {
       // Silent fail
+    } finally {
+      setRestoringIds(new Set());
     }
   };
 
   /** 批量还原所选归档会话 */
   const handleBatchRestore = async (): Promise<void> => {
-    if (archivedSelectedIds.size === 0) {
+    if (restoringIds.size > 0 || archivedSelectedIds.size === 0) {
       return;
     }
 
+    setRestoringIds(new Set(archivedSelectedIds));
     try {
-      await window.snow.restoreArchivedConversations([
-        ...archivedSelectedIds,
-      ]);
+      await window.snow.restoreArchivedConversations([...archivedSelectedIds]);
       await loadArchivedFirstPage();
       refreshConversations();
       setArchivedSelectedIds(new Set());
       setIsArchivedMultiSelect(false);
     } catch {
       // Silent fail
+    } finally {
+      setRestoringIds(new Set());
     }
   };
-
-  /** 永久删除单个归档会话（弹出确认框） */
   const handleDeleteArchived = (conversation: ChatConversationRecord): void => {
     setArchivedDeleteTargetIds([conversation.conversationId]);
   };
@@ -914,11 +938,11 @@ export function ChatsSection({
 
   /** 确认永久删除归档会话 */
   const handleArchivedDeleteConfirm = async (): Promise<void> => {
-    if (isArchivedDeleting || !archivedDeleteTargetIds) {
+    if (deletingArchivedIds.size > 0 || !archivedDeleteTargetIds) {
       return;
     }
 
-    setIsArchivedDeleting(true);
+    setDeletingArchivedIds(new Set(archivedDeleteTargetIds));
     const targetIds = archivedDeleteTargetIds;
     setArchivedDeleteTargetIds(null);
 
@@ -930,12 +954,12 @@ export function ChatsSection({
     } catch {
       // Silent fail
     } finally {
-      setIsArchivedDeleting(false);
+      setDeletingArchivedIds(new Set());
     }
   };
 
   const handleExitArchivedMultiSelect = (): void => {
-    if (isArchivedDeleting) {
+    if (deletingArchivedIds.size > 0 || restoringIds.size > 0) {
       return;
     }
     setIsArchivedMultiSelect(false);
@@ -1162,7 +1186,7 @@ export function ChatsSection({
             type="button"
             className="chat-multi-select-exit-btn"
             onClick={handleExitMultiSelect}
-            disabled={isBatchDeleting}
+            disabled={isBatchDeleting || archivingIds.size > 0}
             title={t("sidebar.chatMultiSelectExit", { defaultValue: "Exit" })}
           >
             <X size={14} />
@@ -1185,7 +1209,7 @@ export function ChatsSection({
                   ? handleDeselectAll()
                   : handleSelectAll()
               }
-              disabled={isBatchDeleting}
+              disabled={isBatchDeleting || archivingIds.size > 0}
             >
               <CheckSquare size={13} />
               <span>
@@ -1205,23 +1229,35 @@ export function ChatsSection({
               type="button"
               className="chat-multi-select-action-btn"
               onClick={() => void handleBatchArchive()}
-              disabled={selectedIds.size === 0}
+              disabled={archivingIds.size > 0 || selectedIds.size === 0}
               title={t("sidebar.chatMultiSelectArchive", {
                 defaultValue: "Archive selected",
               })}
             >
-              <Archive size={13} />
+              {archivingIds.size > 0 ? (
+                <Loader2 size={13} className="spin" />
+              ) : (
+                <Archive size={13} />
+              )}
               <span>
-                {t("sidebar.chatMultiSelectArchive", {
-                  defaultValue: "Archive selected",
-                })}
+                {archivingIds.size > 0
+                  ? t("sidebar.chatMultiSelectArchiving", {
+                      defaultValue: "Archiving...",
+                    })
+                  : t("sidebar.chatMultiSelectArchive", {
+                      defaultValue: "Archive selected",
+                    })}
               </span>
             </button>
             <button
               type="button"
               className="chat-multi-select-action-btn danger"
               onClick={handleOpenBatchConfirm}
-              disabled={isBatchDeleting || selectedIds.size === 0}
+              disabled={
+                isBatchDeleting ||
+                archivingIds.size > 0 ||
+                selectedIds.size === 0
+              }
             >
               {isBatchDeleting ? (
                 <Loader2 size={13} className="spin" />
@@ -1311,7 +1347,9 @@ export function ChatsSection({
                     type="button"
                     className="chat-multi-select-exit-btn"
                     onClick={handleExitArchivedMultiSelect}
-                    disabled={isArchivedDeleting}
+                    disabled={
+                      deletingArchivedIds.size > 0 || restoringIds.size > 0
+                    }
                     title={t("sidebar.chatMultiSelectExit", {
                       defaultValue: "Exit",
                     })}
@@ -1334,7 +1372,9 @@ export function ChatsSection({
                           ? handleArchivedDeselectAll
                           : handleArchivedSelectAll
                       }
-                      disabled={isArchivedDeleting}
+                      disabled={
+                        deletingArchivedIds.size > 0 || restoringIds.size > 0
+                      }
                     >
                       <CheckSquare size={13} />
                       <span>
@@ -1352,25 +1392,39 @@ export function ChatsSection({
                       type="button"
                       className="chat-multi-select-action-btn"
                       onClick={() => void handleBatchRestore()}
-                      disabled={archivedSelectedIds.size === 0}
+                      disabled={
+                        restoringIds.size > 0 || archivedSelectedIds.size === 0
+                      }
                       title={t("sidebar.archivedChatMultiSelectRestore", {
                         defaultValue: "Restore selected",
                       })}
                     >
-                      <ArchiveRestore size={13} />
+                      {restoringIds.size > 0 ? (
+                        <Loader2 size={13} className="spin" />
+                      ) : (
+                        <ArchiveRestore size={13} />
+                      )}
                       <span>
-                        {t("sidebar.archivedChatMultiSelectRestore", {
-                          defaultValue: "Restore selected",
-                        })}
+                        {restoringIds.size > 0
+                          ? t("sidebar.chatMultiSelectRestoring", {
+                              defaultValue: "Restoring...",
+                            })
+                          : t("sidebar.archivedChatMultiSelectRestore", {
+                              defaultValue: "Restore selected",
+                            })}
                       </span>
                     </button>
                     <button
                       type="button"
                       className="chat-multi-select-action-btn danger"
                       onClick={handleBatchDeleteArchived}
-                      disabled={isArchivedDeleting || archivedSelectedIds.size === 0}
+                      disabled={
+                        deletingArchivedIds.size > 0 ||
+                        restoringIds.size > 0 ||
+                        archivedSelectedIds.size === 0
+                      }
                     >
-                      {isArchivedDeleting ? (
+                      {deletingArchivedIds.size > 0 ? (
                         <Loader2 size={13} className="spin" />
                       ) : (
                         <Trash2 size={13} />
@@ -1438,6 +1492,12 @@ export function ChatsSection({
                       conversation={conversation}
                       isMultiSelectMode={isArchivedMultiSelect}
                       isSelected={archivedSelectedIds.has(
+                        conversation.conversationId
+                      )}
+                      isRestoring={restoringIds.has(
+                        conversation.conversationId
+                      )}
+                      isDeleting={deletingArchivedIds.has(
                         conversation.conversationId
                       )}
                       onToggleSelect={() =>
@@ -1597,10 +1657,10 @@ export function ChatsSection({
                                   notification.isAttentionRequired
                                     ? " attention-required"
                                     : notification.isStreaming
-                                      ? " streaming"
-                                      : notification.isCompleted
-                                        ? " completed"
-                                        : ""
+                                    ? " streaming"
+                                    : notification.isCompleted
+                                    ? " completed"
+                                    : ""
                                 }`}
                               >
                                 {notification.isAttentionRequired ? (
@@ -1635,9 +1695,7 @@ export function ChatsSection({
                 const isGroupCollapsed = collapsedGroupKeys[group.key] === true;
                 // 分组粒度的选择状态：全部已选 / 部分已选 / 未选
                 const groupSelectableIds = group.conversations
-                  .filter(
-                    (conv) => conv.conversationId !== PENDING_SESSION_KEY
-                  )
+                  .filter((conv) => conv.conversationId !== PENDING_SESSION_KEY)
                   .map((conv) => conv.conversationId);
                 const groupSelectedCount = groupSelectableIds.filter((id) =>
                   selectedIds.has(id)
@@ -1674,23 +1732,20 @@ export function ChatsSection({
                         <span
                           className={`chat-time-group-select${
                             isGroupAllSelected ? " checked" : ""
-                          }${
-                            isGroupPartialSelected ? " indeterminate" : ""
-                          }`}
+                          }${isGroupPartialSelected ? " indeterminate" : ""}`}
                           role="checkbox"
                           aria-checked={
                             isGroupAllSelected
                               ? true
                               : isGroupPartialSelected
-                                ? "mixed"
-                                : false
+                              ? "mixed"
+                              : false
                           }
                           title={
                             isGroupAllSelected
-                              ? t(
-                                  "sidebar.chatMultiSelectGroupDeselect",
-                                  { defaultValue: "Deselect this group" }
-                                )
+                              ? t("sidebar.chatMultiSelectGroupDeselect", {
+                                  defaultValue: "Deselect this group",
+                                })
                               : t("sidebar.chatMultiSelectGroupSelect", {
                                   defaultValue: "Select this group",
                                 })
@@ -1769,6 +1824,9 @@ export function ChatsSection({
                               onExport={(format) =>
                                 handleExport(conversation, format)
                               }
+                              isArchiving={archivingIds.has(
+                                conversation.conversationId
+                              )}
                               onArchive={
                                 conversation.status === "pin"
                                   ? undefined
@@ -1877,8 +1935,7 @@ export function ChatsSection({
                 values: { count: archivedDeleteTargetIds?.length ?? 0 },
               })
             : t("sidebar.archivedChatDeleteConfirm", {
-                defaultValue:
-                  "Permanently delete this archived conversation?",
+                defaultValue: "Permanently delete this archived conversation?",
               })
         }
         onCancel={() => setArchivedDeleteTargetIds(null)}

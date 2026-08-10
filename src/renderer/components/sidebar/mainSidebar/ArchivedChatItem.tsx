@@ -1,6 +1,7 @@
 import {
   ArchiveRestore,
   Check,
+  Loader2,
   MessageSquareMore,
   Trash2,
 } from "lucide-react";
@@ -13,6 +14,10 @@ type ArchivedChatItemProps = {
   conversation: ChatConversationRecord;
   isMultiSelectMode?: boolean;
   isSelected?: boolean;
+  /** 还原进行中（含 VACUUM 收缩归档库阶段）：禁用操作并显示 loading */
+  isRestoring?: boolean;
+  /** 永久删除进行中（含 VACUUM 收缩归档库阶段）：禁用操作并显示 loading */
+  isDeleting?: boolean;
   onToggleSelect?: () => void;
   /** 还原归档会话回运行库 */
   onRestore: () => void;
@@ -28,6 +33,8 @@ export function ArchivedChatItem({
   conversation,
   isMultiSelectMode = false,
   isSelected = false,
+  isRestoring = false,
+  isDeleting = false,
   onToggleSelect,
   onRestore,
   onDelete,
@@ -49,6 +56,9 @@ export function ArchivedChatItem({
       : rawTimeLabel;
 
   const handleClick = (): void => {
+    if (isRestoring || isDeleting) {
+      return;
+    }
     if (isMultiSelectMode) {
       onToggleSelect?.();
     }
@@ -57,9 +67,9 @@ export function ArchivedChatItem({
 
   return (
     <div
-      className={`chat-item archived${isMultiSelectMode ? " multi-select" : ""}${
-        isSelected ? " selected" : ""
-      }`}
+      className={`chat-item archived${
+        isMultiSelectMode ? " multi-select" : ""
+      }${isSelected ? " selected" : ""}`}
       key={conversation.conversationId}
       onClick={handleClick}
       role="button"
@@ -115,6 +125,7 @@ export function ArchivedChatItem({
               event.stopPropagation();
               onRestore();
             }}
+            disabled={isRestoring || isDeleting}
             title={t("sidebar.chatActionRestore", {
               defaultValue: "Restore",
             })}
@@ -122,7 +133,11 @@ export function ArchivedChatItem({
               defaultValue: "Restore",
             })}
           >
-            <ArchiveRestore size={13} />
+            {isRestoring ? (
+              <Loader2 size={13} className="spin" />
+            ) : (
+              <ArchiveRestore size={13} />
+            )}
           </button>
           <button
             type="button"
@@ -131,12 +146,17 @@ export function ArchivedChatItem({
               event.stopPropagation();
               onDelete();
             }}
+            disabled={isRestoring || isDeleting}
             title={t("sidebar.chatActionDelete", { defaultValue: "Delete" })}
             aria-label={t("sidebar.chatActionDelete", {
               defaultValue: "Delete",
             })}
           >
-            <Trash2 size={13} />
+            {isDeleting ? (
+              <Loader2 size={13} className="spin" />
+            ) : (
+              <Trash2 size={13} />
+            )}
           </button>
         </span>
       )}

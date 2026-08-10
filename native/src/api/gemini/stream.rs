@@ -7,8 +7,8 @@
 //! failures can recover without bouncing back to the JS agent loop.
 
 use std::collections::HashMap;
+use std::time::Duration;
 
-use futures::StreamExt;
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT_ENCODING, CONTENT_TYPE};
@@ -18,7 +18,10 @@ use tokio_util::sync::CancellationToken;
 use crate::api::common::{emit_stream_chunk, emit_tool_args_probe, inject_custom_headers};
 use crate::api::responses::{ResponsesApiStreamCallback, ResponsesApiStreamChunk};
 use crate::api::retry::{
-    non_sse_response_error, should_retry, should_retry_mid_stream, wait_before_retry, RetryOptions,
+    decide_stream_recovery, is_retriable_stream_read_error, next_stream_item_with_idle,
+    should_retry, stream_idle_timeout_error, visible_content_char_count, wait_before_retry,
+    RetryOptions, StreamAttemptProgress, StreamEndCause, StreamInterruptionReason,
+    StreamReadOutcome, StreamRecoveryDecision, StreamRecoveryOutcome,
 };
 use crate::api::sse::find_sse_separator;
 use crate::storage::services::chat_conversations::ChatTokenUsage;
@@ -29,6 +32,8 @@ pub(super) struct GeminiStreamResult {
     pub thinking: String,
     pub model: String,
     pub status: String,
+    pub interruption_reason: Option<StreamInterruptionReason>,
+    pub recovery_outcome: Option<StreamRecoveryOutcome>,
     pub token_usage: ChatTokenUsage,
     pub tool_calls_json: String,
     pub total_duration_ms: i64,
@@ -43,13 +48,15 @@ pub(super) async fn collect_gemini_stream(
     on_chunk: &ResponsesApiStreamCallback,
     cancel_token: &CancellationToken,
     retry_options: &RetryOptions,
+    stream_idle_timeout_sec: u64,
 ) -> Result<GeminiStreamResult> {
     let mut attempt: u32 = 0;
     let mut stream_token_count: usize = 0;
     let stream_start = std::time::Instant::now();
     let mut ttft_ms: i64 = 0;
+    let idle_timeout = Duration::from_secs(stream_idle_timeout_sec);
 
-    loop {
+    'attempt_loop: loop {
         if cancel_token.is_cancelled() {
             return Ok(GeminiStreamResult {
                 id: String::new(),
@@ -57,6 +64,8 @@ pub(super) async fn collect_gemini_stream(
                 thinking: String::new(),
                 model: String::new(),
                 status: String::from("cancelled"),
+                interruption_reason: None,
+                recovery_outcome: None,
                 token_usage: ChatTokenUsage::default(),
                 tool_calls_json: "[]".to_string(),
                 total_duration_ms: stream_start.elapsed().as_millis() as i64,
@@ -71,6 +80,8 @@ pub(super) async fn collect_gemini_stream(
                     thinking: String::new(),
                     model: String::new(),
                     status: String::from("cancelled"),
+                    interruption_reason: None,
+                    recovery_outcome: None,
                     token_usage: ChatTokenUsage::default(),
                     tool_calls_json: "[]".to_string(),
                     total_duration_ms: stream_start.elapsed().as_millis() as i64,
@@ -92,6 +103,8 @@ pub(super) async fn collect_gemini_stream(
                         thinking: String::new(),
                         model: String::new(),
                         status: String::from("cancelled"),
+                        interruption_reason: None,
+                        recovery_outcome: None,
                         token_usage: ChatTokenUsage::default(),
                         tool_calls_json: "[]".to_string(),
                         total_duration_ms: stream_start.elapsed().as_millis() as i64,
@@ -178,8 +191,9 @@ pub(super) async fn collect_gemini_stream(
             }
         };
 
-        // ---- Phase 2: read the streaming body ----
-        // All accumulated state is declared per-attempt so a retry starts fresh.
+        // ---- Phase 2: read one complete Provider attempt ----
+        // All accumulators are local to this attempt, so retrying cannot mix
+        // content, thinking, tools, usage, or terminal state.
         let mut raw_events = Vec::new();
         let mut content_chunks = Vec::new();
         let mut thinking_chunks = Vec::new();
@@ -189,170 +203,19 @@ pub(super) async fn collect_gemini_stream(
         let mut response_status = String::from("completed");
         let mut token_usage = ChatTokenUsage::default();
         let mut byte_buffer: Vec<u8> = Vec::new();
-        let mut stream = response.bytes_stream();
-        // Track whether the stream completed normally. If the loop exits because
-        // of a read error or unexpected EOF (not via a finishReason event and
-        // not via cancellation), we mark the response as "incomplete" so the
-        // frontend can still process any collected content and tool calls.
-        #[allow(unused_assignments)]
-        let mut stream_completed_normally = false;
-        // Set by process_gemini_sse_event_block when finishReason is received.
         let mut stream_finished = false;
-        // Set to true when the mid-stream retry path breaks the inner loop so
-        // the outer loop re-sends the request.
-        let mut retry_reset = false;
-        loop {
-            tokio::select! {
-                biased;
-                _ = cancel_token.cancelled() => {
-                    response_status = String::from("cancelled");
-                    stream_completed_normally = true;
-                    break;
-                }
-                chunk_result = stream.next() => {
-                    let Some(chunk_result) = chunk_result else {
-                        // Stream ended without a finishReason. Treat as
-                        // incomplete rather than a hard error so partial content
-                        // and tool calls remain usable.
-                        break;
-                    };
+        let mut interruption_reason = None;
+        let mut recovery_outcome = None;
+        let mut stream = response.bytes_stream();
+        let mut end_cause: Option<(StreamEndCause, bool, String)> = None;
 
-                    let chunk = match chunk_result {
-                        Ok(chunk) => chunk,
-                        Err(error) => {
-                            // reqwest 读流错误 → 转为 napi Error 供重试判定使用
-                            let stream_error = Error::from_reason(error.to_string());
-                            // 阶段感知混合重试（方案 B）：已累积工具调用 → 必须重试
-                            // （残缺 tool_calls 不可安全使用）；纯文本少量 → 重试；
-                            // 大量纯文本 → 保留 partial（token 最优）。
-                            let partial_text_len =
-                                content_chunks.iter().map(|s: &String| s.len()).sum::<usize>()
-                                    + thinking_chunks
-                                        .iter()
-                                        .map(|s: &String| s.len())
-                                        .sum::<usize>();
-                            if !should_retry_mid_stream(
-                                &stream_error,
-                                attempt,
-                                retry_options,
-                                cancel_token.is_cancelled(),
-                                !tool_calls.is_empty(),
-                                partial_text_len,
-                            ) {
-                                // Network/read error mid-stream: log and break instead
-                                // of returning Err. We keep whatever content and tool
-                                // calls have been collected so far so the agent loop
-                                // can continue with partial results.
-                                eprintln!("Gemini stream read error (keeping partial result): {error}");
-                                break;
-                            }
-
-                            // 通知前端重试（前端清空 content/thinking 显示"重试中"）
-                            on_chunk.call(
-                                ResponsesApiStreamChunk {
-                                    content_delta: String::new(),
-                                    thinking_delta: String::new(),
-                                    content: String::new(),
-                                    thinking: String::new(),
-                                    retrying: true,
-                                    retry_attempt: Some((attempt + 1) as i32),
-                                    retry_error: Some(stream_error.reason.clone()),
-                                    stream_token_count: stream_token_count as i64,
-                                    elapsed_ms: stream_start.elapsed().as_millis() as i64,
-                                    ttft_ms,
-                                    vision_status: None,
-                                },
-                                ThreadsafeFunctionCallMode::NonBlocking,
-                            );
-
-                            match wait_before_retry(retry_options, cancel_token, attempt).await {
-                                Ok(()) => {
-                                    // 累积状态声明在每次 attempt 内（per-attempt），
-                                    // 直接重发原始请求即可
-                                    attempt += 1;
-                                    retry_reset = true;
-                                    break;
-                                }
-                                Err(e) => return Err(e),
-                            }
-                        }
-                    };
-                    byte_buffer.extend_from_slice(&chunk);
-
-                    while let Some((separator_index, separator_len)) =
-                        find_sse_separator(&byte_buffer)
-                    {
-                        let event_block =
-                            String::from_utf8_lossy(&byte_buffer[..separator_index]).to_string();
-                        byte_buffer = byte_buffer[separator_index + separator_len..].to_vec();
-                        let content_start_index = content_chunks.len();
-                        let thinking_start_index = thinking_chunks.len();
-                        let mut tool_args_delta = String::new();
-                        // Process each SSE event block with error tolerance: if a
-                        // single data line is malformed, skip it and continue
-                        // processing the rest of the stream.
-                        super::event::process_gemini_sse_event_block(
-                            &event_block,
-                            &mut raw_events,
-                            &mut content_chunks,
-                            &mut thinking_chunks,
-                            &mut tool_calls,
-                            &mut response_id,
-                            &mut response_model,
-                            &mut response_status,
-                            &mut token_usage,
-                            &mut tool_args_delta,
-                            &mut stream_finished,
-                        );
-                        let content_delta = content_chunks[content_start_index..].join("");
-                        let thinking_delta = thinking_chunks[thinking_start_index..].join("");
-                        if ttft_ms == 0 {
-                            ttft_ms = stream_start.elapsed().as_millis() as i64;
-                        }
-                        emit_stream_chunk(
-                            on_chunk,
-                            content_delta,
-                            thinking_delta,
-                            &mut stream_token_count,
-                            stream_start.elapsed().as_millis() as i64,
-                            ttft_ms,
-                        );
-                        // Tool-call argument deltas arrive separately from the
-                        // content stream. Emit a probe-only chunk so the
-                        // renderer reflects long tool arguments in real time.
-                        emit_tool_args_probe(
-                            on_chunk,
-                            &mut stream_token_count,
-                            &tool_args_delta,
-                            stream_start.elapsed().as_millis() as i64,
-                            ttft_ms,
-                        );
-                    }
-                }
-            }
-        }
-
-        // Mid-stream retry path: per-attempt state is declared fresh each
-        // attempt, so jump back to the outer loop to re-send the request.
-        if retry_reset {
-            continue;
-        }
-
-        // If the stream ended abnormally (no finishReason and no cancellation),
-        // mark the response as incomplete so the frontend knows the result is
-        // partial but still usable.
-        if !stream_completed_normally && !stream_finished && response_status == "completed" {
-            response_status = String::from("incomplete");
-        }
-
-        if response_status != "cancelled" && !byte_buffer.is_empty() {
-            let trailing_buffer = String::from_utf8_lossy(&byte_buffer).to_string();
-            if !trailing_buffer.trim().is_empty() {
+        macro_rules! process_event_block {
+            ($event_block:expr) => {{
                 let content_start_index = content_chunks.len();
                 let thinking_start_index = thinking_chunks.len();
                 let mut tool_args_delta = String::new();
                 super::event::process_gemini_sse_event_block(
-                    &trailing_buffer,
+                    $event_block,
                     &mut raw_events,
                     &mut content_chunks,
                     &mut thinking_chunks,
@@ -384,103 +247,153 @@ pub(super) async fn collect_gemini_stream(
                     stream_start.elapsed().as_millis() as i64,
                     ttft_ms,
                 );
+            }};
+        }
+
+        'read_loop: loop {
+            match next_stream_item_with_idle(&mut stream, cancel_token, idle_timeout).await {
+                StreamReadOutcome::Cancelled => {
+                    response_status = String::from("cancelled");
+                    break 'read_loop;
+                }
+                StreamReadOutcome::Data(chunk) => {
+                    byte_buffer.extend_from_slice(&chunk);
+                    while let Some((separator_index, separator_len)) =
+                        find_sse_separator(&byte_buffer)
+                    {
+                        let event_block =
+                            String::from_utf8_lossy(&byte_buffer[..separator_index]).to_string();
+                        byte_buffer = byte_buffer[separator_index + separator_len..].to_vec();
+                        process_event_block!(&event_block);
+                        if stream_finished {
+                            break;
+                        }
+                    }
+                    if stream_finished {
+                        break 'read_loop;
+                    }
+                }
+                StreamReadOutcome::ReadError(error) => {
+                    let stream_error = Error::from_reason(error.to_string());
+                    let retriable = is_retriable_stream_read_error(&stream_error);
+                    end_cause = Some((
+                        StreamEndCause::ReadError,
+                        retriable,
+                        stream_error.reason.clone(),
+                    ));
+                    break 'read_loop;
+                }
+                StreamReadOutcome::Eof => {
+                    let trailing_bytes = std::mem::take(&mut byte_buffer);
+                    if !trailing_bytes.is_empty() {
+                        let trailing_buffer = String::from_utf8_lossy(&trailing_bytes).to_string();
+                        if !trailing_buffer.trim().is_empty() {
+                            process_event_block!(&trailing_buffer);
+                        }
+                    }
+                    if stream_finished {
+                        break 'read_loop;
+                    }
+                    end_cause = Some((
+                        StreamEndCause::UnexpectedEof,
+                        true,
+                        "Stream ended before a Gemini terminal event".to_string(),
+                    ));
+                    break 'read_loop;
+                }
+                StreamReadOutcome::IdleTimeout => {
+                    end_cause = Some((
+                        StreamEndCause::IdleTimeout,
+                        true,
+                        stream_idle_timeout_error().reason.clone(),
+                    ));
+                    break 'read_loop;
+                }
             }
         }
 
-        // Non-SSE response detection: the stream received bytes but none of them
-        // formed a valid SSE event. This happens when a relay returns HTTP 200
-        // with a JSON error body (e.g. quota exhausted) instead of a proper SSE
-        // stream. Treat it as a retriable error so the request is re-issued with
-        // the original parameters, matching the Anthropic/Chat recovery pattern.
-        if !stream_completed_normally
-            && response_status != "cancelled"
-            && raw_events.is_empty()
-            && content_chunks.is_empty()
-            && thinking_chunks.is_empty()
-            && tool_calls.is_empty()
-            && !byte_buffer.is_empty()
-        {
-            let body = String::from_utf8_lossy(&byte_buffer).to_string();
-            let error = non_sse_response_error(&body);
-
-            if !should_retry(&error, attempt, retry_options) {
-                return Err(error);
+        if response_status == "cancelled" {
+            tool_calls.clear();
+            interruption_reason = None;
+            recovery_outcome = None;
+        } else if stream_finished {
+            // finishReason is an authoritative Provider terminal. In
+            // particular, MAX_TOKENS is output-limit metadata, not a transport
+            // retry trigger.
+            if response_status == "max_tokens" {
+                interruption_reason = Some(StreamInterruptionReason::OutputLimit);
             }
-
-            // Emit retry status to frontend
-            on_chunk.call(
-                ResponsesApiStreamChunk {
-                    content_delta: String::new(),
-                    thinking_delta: String::new(),
-                    content: String::new(),
-                    thinking: String::new(),
-                    retrying: true,
-                    retry_attempt: Some((attempt + 1) as i32),
-                    retry_error: Some(error.reason.clone()),
-                    stream_token_count: stream_token_count as i64,
-                    elapsed_ms: stream_start.elapsed().as_millis() as i64,
-                    ttft_ms,
-                    vision_status: None,
-                },
-                ThreadsafeFunctionCallMode::NonBlocking,
+            recovery_outcome = None;
+        } else {
+            let (cause, read_error_retriable, retry_error) = end_cause.unwrap_or((
+                StreamEndCause::UnexpectedEof,
+                true,
+                "Stream ended before a Gemini terminal event".to_string(),
+            ));
+            let progress = StreamAttemptProgress {
+                visible_content_chars: visible_content_char_count(&content_chunks),
+                has_tool_state: !tool_calls.is_empty(),
+                has_pending_tool_fragments: false,
+                provider_terminal: stream_finished,
+                user_cancelled: cancel_token.is_cancelled(),
+            };
+            let decision = decide_stream_recovery(
+                cause,
+                attempt,
+                retry_options,
+                read_error_retriable,
+                progress,
             );
 
-            match wait_before_retry(retry_options, cancel_token, attempt).await {
-                Ok(()) => {
-                    attempt += 1;
-                    continue;
+            match decision {
+                StreamRecoveryDecision::Cancelled => {
+                    response_status = String::from("cancelled");
+                    tool_calls.clear();
+                    interruption_reason = None;
+                    recovery_outcome = None;
                 }
-                Err(e) => return Err(e),
-            }
-        }
+                StreamRecoveryDecision::FinishProviderResult => {}
+                StreamRecoveryDecision::Retry => {
+                    on_chunk.call(
+                        ResponsesApiStreamChunk {
+                            content_delta: String::new(),
+                            thinking_delta: String::new(),
+                            content: String::new(),
+                            thinking: String::new(),
+                            retrying: true,
+                            retry_attempt: Some((attempt + 1) as i32),
+                            retry_error: Some(retry_error),
+                            stream_token_count: stream_token_count as i64,
+                            elapsed_ms: stream_start.elapsed().as_millis() as i64,
+                            ttft_ms,
+                            vision_status: None,
+                        },
+                        ThreadsafeFunctionCallMode::NonBlocking,
+                    );
 
-        // Empty-response interruption: the connection dropped (EOF or read
-        // error) before ANY content, thinking, or tool call was produced.
-        // Unlike the non-SSE case above, this covers streams that ended with
-        // no usable data at all (including zero-byte bodies). Retrying is
-        // safe — nothing was emitted to the user — and recovers transient
-        // relay/proxy disconnects that would otherwise surface as a silent
-        // empty "incomplete" response.
-        if !stream_completed_normally
-            && response_status != "cancelled"
-            && content_chunks.is_empty()
-            && thinking_chunks.is_empty()
-            && tool_calls.is_empty()
-        {
-            let error = Error::from_reason(
-                "Stream ended with empty response (connection dropped before any output)",
-            );
-
-            if !should_retry(&error, attempt, retry_options) {
-                return Err(error);
-            }
-
-            // Emit retry status to frontend
-            on_chunk.call(
-                ResponsesApiStreamChunk {
-                    content_delta: String::new(),
-                    thinking_delta: String::new(),
-                    content: String::new(),
-                    thinking: String::new(),
-                    retrying: true,
-                    retry_attempt: Some((attempt + 1) as i32),
-                    retry_error: Some(error.reason.clone()),
-                    stream_token_count: stream_token_count as i64,
-                    elapsed_ms: stream_start.elapsed().as_millis() as i64,
-                    ttft_ms,
-                    vision_status: None,
-                },
-                ThreadsafeFunctionCallMode::NonBlocking,
-            );
-
-            match wait_before_retry(retry_options, cancel_token, attempt).await {
-                Ok(()) => {
-                    // Per-attempt state is re-declared at the top of
-                    // Phase 2, so just re-issue the request.
-                    attempt += 1;
-                    continue;
+                    match wait_before_retry(retry_options, cancel_token, attempt).await {
+                        Ok(()) => {
+                            attempt += 1;
+                            continue 'attempt_loop;
+                        }
+                        Err(_wait_error) if cancel_token.is_cancelled() => {
+                            response_status = String::from("cancelled");
+                            tool_calls.clear();
+                            interruption_reason = None;
+                            recovery_outcome = None;
+                        }
+                        Err(wait_error) => return Err(wait_error),
+                    }
                 }
-                Err(e) => return Err(e),
+                StreamRecoveryDecision::KeepUsablePartial
+                | StreamRecoveryDecision::SurfaceInterrupted => {
+                    response_status = String::from("incomplete");
+                    interruption_reason = Some(cause.interruption_reason());
+                    recovery_outcome = decision.recovery_outcome(cause, read_error_retriable);
+                    if matches!(decision, StreamRecoveryDecision::SurfaceInterrupted) {
+                        tool_calls.clear();
+                    }
+                }
             }
         }
 
@@ -495,12 +408,15 @@ pub(super) async fn collect_gemini_stream(
             thinking,
             model: response_model,
             status: response_status,
+            interruption_reason,
+            recovery_outcome,
             token_usage,
             tool_calls_json,
             total_duration_ms: stream_start.elapsed().as_millis() as i64,
         });
     }
 }
+
 
 /// Build the HTTP header map for a Gemini request.
 ///

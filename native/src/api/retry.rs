@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use futures::{Stream, StreamExt};
 use napi::bindgen_prelude::*;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
@@ -8,9 +9,9 @@ pub const DEFAULT_MAX_RETRIES: u32 = 5;
 pub const DEFAULT_BASE_DELAY_MS: u64 = 3000;
 pub const DEFAULT_STREAM_IDLE_TIMEOUT_SEC: u64 = 60;
 
-/// 阶段感知混合重试的纯文本保留阈值缺省值（字符数）。
-/// mid-stream 中断时 content+thinking 已收字符数 ≥ 此值 → 不再重试，
-/// 保留 partial（输出不完整但可用），避免长流重试造成 token 双倍浪费。
+/// 阶段感知流恢复的可见正文保留阈值缺省值（Unicode 字符数）。
+/// transport 中断时仅用户可见 content 达到该阈值才可保留 partial；
+/// thinking 与任意 finalized/pending 工具状态都不参与可用正文阈值。
 /// 实际值来自 API 档案配置 `partial_retry_max_chars`，未配置时用此缺省。
 pub const DEFAULT_PARTIAL_RETRY_MAX_CHARS: usize = 1000;
 
@@ -66,6 +67,190 @@ pub fn resolve_stream_idle_timeout_sec(stream_idle_timeout_sec: Option<i32>) -> 
         .filter(|&v| v > 0)
         .map(|v| v as u64)
         .unwrap_or(DEFAULT_STREAM_IDLE_TIMEOUT_SEC)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamInterruptionReason {
+    UnexpectedEof,
+    ReadError,
+    IdleTimeout,
+    ExplicitIncomplete,
+    OutputLimit,
+}
+
+impl StreamInterruptionReason {
+    pub const fn as_code(self) -> &'static str {
+        match self {
+            Self::UnexpectedEof => "unexpected_eof",
+            Self::ReadError => "read_error",
+            Self::IdleTimeout => "idle_timeout",
+            Self::ExplicitIncomplete => "explicit_incomplete",
+            Self::OutputLimit => "output_limit",
+        }
+    }
+
+    pub const fn is_transport(self) -> bool {
+        matches!(
+            self,
+            Self::UnexpectedEof | Self::ReadError | Self::IdleTimeout
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamRecoveryOutcome {
+    PartialThreshold,
+    RetryExhausted,
+    NonRetriable,
+}
+
+impl StreamRecoveryOutcome {
+    pub const fn as_code(self) -> &'static str {
+        match self {
+            Self::PartialThreshold => "partial_threshold",
+            Self::RetryExhausted => "retry_exhausted",
+            Self::NonRetriable => "non_retriable",
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum StreamReadOutcome<T, E> {
+    Data(T),
+    ReadError(E),
+    Eof,
+    IdleTimeout,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamEndCause {
+    UnexpectedEof,
+    ReadError,
+    IdleTimeout,
+}
+
+impl StreamEndCause {
+    pub const fn interruption_reason(self) -> StreamInterruptionReason {
+        match self {
+            Self::UnexpectedEof => StreamInterruptionReason::UnexpectedEof,
+            Self::ReadError => StreamInterruptionReason::ReadError,
+            Self::IdleTimeout => StreamInterruptionReason::IdleTimeout,
+        }
+    }
+
+    const fn is_retriable(self, read_error_retriable: bool) -> bool {
+        match self {
+            Self::UnexpectedEof | Self::IdleTimeout => true,
+            Self::ReadError => read_error_retriable,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StreamAttemptProgress {
+    pub visible_content_chars: usize,
+    pub has_tool_state: bool,
+    pub has_pending_tool_fragments: bool,
+    pub provider_terminal: bool,
+    pub user_cancelled: bool,
+}
+
+impl StreamAttemptProgress {
+    const fn has_any_tool_state(self) -> bool {
+        self.has_tool_state || self.has_pending_tool_fragments
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamRecoveryDecision {
+    FinishProviderResult,
+    Cancelled,
+    Retry,
+    KeepUsablePartial,
+    SurfaceInterrupted,
+}
+
+impl StreamRecoveryDecision {
+    pub const fn recovery_outcome(
+        self,
+        cause: StreamEndCause,
+        read_error_retriable: bool,
+    ) -> Option<StreamRecoveryOutcome> {
+        match self {
+            Self::KeepUsablePartial => Some(StreamRecoveryOutcome::PartialThreshold),
+            Self::SurfaceInterrupted
+                if matches!(cause, StreamEndCause::ReadError) && !read_error_retriable =>
+            {
+                Some(StreamRecoveryOutcome::NonRetriable)
+            }
+            Self::SurfaceInterrupted => Some(StreamRecoveryOutcome::RetryExhausted),
+            Self::FinishProviderResult | Self::Cancelled | Self::Retry => None,
+        }
+    }
+}
+
+pub fn visible_content_char_count(content_chunks: &[String]) -> usize {
+    content_chunks
+        .iter()
+        .map(|chunk| chunk.chars().count())
+        .sum()
+}
+
+/// Read one stream item with a cancellation-first idle guard. Calling this
+/// helper again after `Data` creates a fresh timeout and therefore resets the
+/// idle deadline without Provider-specific timer bookkeeping.
+pub async fn next_stream_item_with_idle<S, T, E>(
+    stream: &mut S,
+    cancel_token: &CancellationToken,
+    idle_timeout: Duration,
+) -> StreamReadOutcome<T, E>
+where
+    S: Stream<Item = std::result::Result<T, E>> + Unpin,
+{
+    tokio::select! {
+        biased;
+        _ = cancel_token.cancelled() => StreamReadOutcome::Cancelled,
+        item = stream.next() => match item {
+            Some(Ok(data)) => StreamReadOutcome::Data(data),
+            Some(Err(error)) => StreamReadOutcome::ReadError(error),
+            None => StreamReadOutcome::Eof,
+        },
+        _ = sleep(idle_timeout) => StreamReadOutcome::IdleTimeout,
+    }
+}
+
+/// Preserve the legacy distinction between a user cancellation and an
+/// upstream/middleware `aborted` read error. Cancellation is represented by the
+/// typed reader outcome; an uncancelled aborted read remains transport-retriable.
+pub fn is_retriable_stream_read_error(error: &Error) -> bool {
+    error.reason.to_lowercase().contains("aborted") || is_retriable_error(error)
+}
+
+pub fn decide_stream_recovery(
+    cause: StreamEndCause,
+    attempt: u32,
+    options: &RetryOptions,
+    read_error_retriable: bool,
+    progress: StreamAttemptProgress,
+) -> StreamRecoveryDecision {
+    if progress.user_cancelled {
+        return StreamRecoveryDecision::Cancelled;
+    }
+    if progress.provider_terminal {
+        return StreamRecoveryDecision::FinishProviderResult;
+    }
+
+    let usable_partial = progress.visible_content_chars >= options.partial_retry_max_chars
+        && !progress.has_any_tool_state();
+    if usable_partial {
+        return StreamRecoveryDecision::KeepUsablePartial;
+    }
+    if cause.is_retriable(read_error_retriable) && attempt < options.max_retries {
+        return StreamRecoveryDecision::Retry;
+    }
+
+    StreamRecoveryDecision::SurfaceInterrupted
 }
 
 pub fn is_retriable_error(error: &Error) -> bool {
@@ -188,41 +373,6 @@ pub fn should_retry(error: &Error, attempt: u32, options: &RetryOptions) -> bool
     is_retriable_error(error)
 }
 
-/// 阶段感知混合重试判定（方案 B）——用于流已收到部分内容后的 mid-stream
-/// 读流错误（网络中断 / terminated / 服务端中止）。
-///
-/// 规则：
-/// - 已累积工具调用（`has_partial_tool_calls`）→ 必须重试：残缺的 tool_calls
-///   不可安全使用（参数 JSON 未闭合），保留只会污染后续上下文。
-/// - 已收纯文本少于 `options.partial_retry_max_chars` → 重试：作废成本低。
-/// - 已收纯文本超过阈值 → 不重试：保留 partial（输出不完整但可用），
-///   避免长流重试造成已收 token 全部作废 + 重新生成的双倍浪费。
-/// - 用户取消（`user_cancelled`）→ 永不重试。
-/// - 用户未取消时的 `aborted`（服务端/中继中止，而非用户取消）→ 视为瞬时
-///   错误可重试（`is_retriable_error` 将 aborted 一律判为不可重试，此处按
-///   调用方传入的取消状态精确区分）。
-pub fn should_retry_mid_stream(
-    error: &Error,
-    attempt: u32,
-    options: &RetryOptions,
-    user_cancelled: bool,
-    has_partial_tool_calls: bool,
-    partial_text_len: usize,
-) -> bool {
-    if attempt >= options.max_retries || user_cancelled {
-        return false;
-    }
-    if !has_partial_tool_calls && partial_text_len >= options.partial_retry_max_chars {
-        return false;
-    }
-    let message = error.reason.to_lowercase();
-    if message.contains("aborted") {
-        // 已排除 user_cancelled → 非用户取消的中止，视为瞬时错误
-        return true;
-    }
-    is_retriable_error(error)
-}
-
 /// Wait for the retry delay, respecting the cancel token.
 ///
 /// The delay grows exponentially with the attempt count
@@ -231,7 +381,9 @@ pub fn should_retry_mid_stream(
 /// exhausted. `attempt` is the number of failures already seen (0 = first
 /// retry).
 ///
-/// Returns `Err` if cancelled during the wait.
+/// Returns after either the delay elapses or cancellation is observed. Stream
+/// collectors immediately restart their attempt loop, whose cancellation-first
+/// entry check returns the Provider-specific `cancelled` result.
 pub async fn wait_before_retry(
     options: &RetryOptions,
     cancel_token: &CancellationToken,
@@ -243,7 +395,7 @@ pub async fn wait_before_retry(
     tokio::select! {
         biased;
         _ = cancel_token.cancelled() => {
-            Err(Error::from_reason("Request aborted"))
+            Ok(())
         }
         _ = sleep(delay) => {
             Ok(())
@@ -306,17 +458,216 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        is_retriable_error, should_retry_mid_stream, RetryOptions, DEFAULT_PARTIAL_RETRY_MAX_CHARS,
-    };
+    use std::time::Duration;
+
+    use futures::{stream, StreamExt};
     use napi::Error;
+    use tokio::runtime::Builder;
+    use tokio_util::sync::CancellationToken;
+
+    use super::{
+        decide_stream_recovery, is_retriable_error, is_retriable_stream_read_error,
+        next_stream_item_with_idle, visible_content_char_count, wait_before_retry, RetryOptions,
+        StreamAttemptProgress, StreamEndCause, StreamInterruptionReason, StreamReadOutcome,
+        StreamRecoveryDecision, StreamRecoveryOutcome,
+    };
 
     fn options() -> RetryOptions {
         RetryOptions {
-            max_retries: 5,
-            base_delay_ms: 100,
-            partial_retry_max_chars: DEFAULT_PARTIAL_RETRY_MAX_CHARS,
+            max_retries: 2,
+            base_delay_ms: 1,
+            partial_retry_max_chars: 3,
         }
+    }
+
+    fn progress(visible_content_chars: usize) -> StreamAttemptProgress {
+        StreamAttemptProgress {
+            visible_content_chars,
+            ..StreamAttemptProgress::default()
+        }
+    }
+
+    #[test]
+    fn interruption_reason_codes_are_stable() {
+        assert_eq!(
+            [
+                StreamInterruptionReason::UnexpectedEof.as_code(),
+                StreamInterruptionReason::ReadError.as_code(),
+                StreamInterruptionReason::IdleTimeout.as_code(),
+                StreamInterruptionReason::ExplicitIncomplete.as_code(),
+                StreamInterruptionReason::OutputLimit.as_code(),
+            ],
+            [
+                "unexpected_eof",
+                "read_error",
+                "idle_timeout",
+                "explicit_incomplete",
+                "output_limit",
+            ]
+        );
+        assert!(StreamInterruptionReason::UnexpectedEof.is_transport());
+        assert!(!StreamInterruptionReason::OutputLimit.is_transport());
+    }
+
+    #[test]
+    fn recovery_outcome_codes_are_stable() {
+        assert_eq!(
+            [
+                StreamRecoveryOutcome::PartialThreshold.as_code(),
+                StreamRecoveryOutcome::RetryExhausted.as_code(),
+                StreamRecoveryOutcome::NonRetriable.as_code(),
+            ],
+            ["partial_threshold", "retry_exhausted", "non_retriable"]
+        );
+    }
+
+    #[test]
+    fn cancellation_wins_over_provider_terminal() {
+        let decision = decide_stream_recovery(
+            StreamEndCause::UnexpectedEof,
+            0,
+            &options(),
+            true,
+            StreamAttemptProgress {
+                provider_terminal: true,
+                user_cancelled: true,
+                ..progress(3)
+            },
+        );
+
+        assert_eq!(decision, StreamRecoveryDecision::Cancelled);
+    }
+
+    #[test]
+    fn provider_terminal_wins_over_partial_and_tool_state() {
+        let decision = decide_stream_recovery(
+            StreamEndCause::ReadError,
+            2,
+            &options(),
+            false,
+            StreamAttemptProgress {
+                has_tool_state: true,
+                provider_terminal: true,
+                ..progress(3)
+            },
+        );
+
+        assert_eq!(decision, StreamRecoveryDecision::FinishProviderResult);
+    }
+
+    #[test]
+    fn eof_read_error_and_idle_timeout_share_retry_policy() {
+        for cause in [
+            StreamEndCause::UnexpectedEof,
+            StreamEndCause::ReadError,
+            StreamEndCause::IdleTimeout,
+        ] {
+            assert_eq!(
+                decide_stream_recovery(cause, 0, &options(), true, progress(0)),
+                StreamRecoveryDecision::Retry
+            );
+        }
+    }
+
+    #[test]
+    fn unicode_visible_content_uses_chars_and_keeps_threshold_boundary() {
+        let chunks = vec!["你".to_string(), "🙂a".to_string()];
+        let visible_chars = visible_content_char_count(&chunks);
+
+        assert_eq!(visible_chars, 3);
+        assert_eq!(
+            decide_stream_recovery(
+                StreamEndCause::UnexpectedEof,
+                0,
+                &options(),
+                true,
+                progress(visible_chars),
+            ),
+            StreamRecoveryDecision::KeepUsablePartial
+        );
+    }
+
+    #[test]
+    fn thinking_only_never_reaches_visible_partial_threshold() {
+        // Thinking is intentionally absent from StreamAttemptProgress. Even a
+        // very large thinking buffer therefore reports zero visible chars.
+        assert_eq!(
+            decide_stream_recovery(
+                StreamEndCause::UnexpectedEof,
+                0,
+                &options(),
+                true,
+                progress(0),
+            ),
+            StreamRecoveryDecision::Retry
+        );
+    }
+
+    #[test]
+    fn finalized_or_pending_tools_block_usable_partial() {
+        for tool_progress in [
+            StreamAttemptProgress {
+                has_tool_state: true,
+                ..progress(3)
+            },
+            StreamAttemptProgress {
+                has_pending_tool_fragments: true,
+                ..progress(3)
+            },
+        ] {
+            assert_eq!(
+                decide_stream_recovery(
+                    StreamEndCause::UnexpectedEof,
+                    0,
+                    &options(),
+                    true,
+                    tool_progress,
+                ),
+                StreamRecoveryDecision::Retry
+            );
+        }
+    }
+
+    #[test]
+    fn exhausted_retriable_transport_surfaces_retry_exhausted() {
+        let cause = StreamEndCause::IdleTimeout;
+        let decision = decide_stream_recovery(cause, 2, &options(), true, progress(0));
+
+        assert_eq!(decision, StreamRecoveryDecision::SurfaceInterrupted);
+        assert_eq!(
+            decision.recovery_outcome(cause, true),
+            Some(StreamRecoveryOutcome::RetryExhausted)
+        );
+    }
+
+    #[test]
+    fn non_retriable_read_error_surfaces_non_retriable() {
+        let cause = StreamEndCause::ReadError;
+        let decision = decide_stream_recovery(cause, 0, &options(), false, progress(0));
+
+        assert_eq!(decision, StreamRecoveryDecision::SurfaceInterrupted);
+        assert_eq!(
+            decision.recovery_outcome(cause, false),
+            Some(StreamRecoveryOutcome::NonRetriable)
+        );
+    }
+
+    #[test]
+    fn usable_partial_wins_even_for_non_retriable_read_error() {
+        let cause = StreamEndCause::ReadError;
+        let decision = decide_stream_recovery(cause, 0, &options(), false, progress(3));
+
+        assert_eq!(decision, StreamRecoveryDecision::KeepUsablePartial);
+        assert_eq!(
+            decision.recovery_outcome(cause, false),
+            Some(StreamRecoveryOutcome::PartialThreshold)
+        );
+    }
+
+    #[test]
+    fn uncancelled_aborted_read_error_remains_retriable() {
+        let error = Error::from_reason("This operation was aborted by an upstream relay");
+        assert!(is_retriable_stream_read_error(&error));
     }
 
     #[test]
@@ -335,95 +686,127 @@ mod tests {
     }
 
     #[test]
-    fn mid_stream_terminated_with_little_text_retries() {
-        let error = Error::from_reason("stream terminated");
-        assert!(should_retry_mid_stream(
-            &error,
-            0,
-            &options(),
-            false,
-            false,
-            100,
-        ));
+    fn typed_reader_reports_data_error_and_eof() {
+        Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("build runtime")
+            .block_on(async {
+                let cancel_token = CancellationToken::new();
+                let mut data_stream = stream::iter(vec![Ok::<i32, &'static str>(7)]);
+                assert_eq!(
+                    next_stream_item_with_idle(
+                        &mut data_stream,
+                        &cancel_token,
+                        Duration::ZERO,
+                    )
+                    .await,
+                    StreamReadOutcome::Data(7)
+                );
+
+                let mut error_stream = stream::iter(vec![Err::<i32, &'static str>("boom")]);
+                assert_eq!(
+                    next_stream_item_with_idle(
+                        &mut error_stream,
+                        &cancel_token,
+                        Duration::ZERO,
+                    )
+                    .await,
+                    StreamReadOutcome::ReadError("boom")
+                );
+
+                let mut empty_stream = stream::empty::<Result<i32, &'static str>>();
+                assert_eq!(
+                    next_stream_item_with_idle(
+                        &mut empty_stream,
+                        &cancel_token,
+                        Duration::ZERO,
+                    )
+                    .await,
+                    StreamReadOutcome::Eof
+                );
+            });
     }
 
     #[test]
-    fn mid_stream_terminated_with_much_text_keeps_partial() {
-        let error = Error::from_reason("stream terminated");
-        assert!(!should_retry_mid_stream(
-            &error,
-            0,
-            &options(),
-            false,
-            false,
-            DEFAULT_PARTIAL_RETRY_MAX_CHARS + 1,
-        ));
+    fn typed_reader_reports_idle_timeout() {
+        Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("build runtime")
+            .block_on(async {
+                let cancel_token = CancellationToken::new();
+                let mut pending_stream = stream::pending::<Result<i32, &'static str>>();
+                assert_eq!(
+                    next_stream_item_with_idle(
+                        &mut pending_stream,
+                        &cancel_token,
+                        Duration::ZERO,
+                    )
+                    .await,
+                    StreamReadOutcome::IdleTimeout
+                );
+            });
     }
 
     #[test]
-    fn mid_stream_tool_calls_always_retry_even_with_much_text() {
-        let error = Error::from_reason("stream terminated");
-        assert!(should_retry_mid_stream(
-            &error,
-            0,
-            &options(),
-            false,
-            true,
-            DEFAULT_PARTIAL_RETRY_MAX_CHARS + 1,
-        ));
+    fn cancellation_wins_when_timeout_is_also_ready() {
+        Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("build runtime")
+            .block_on(async {
+                let cancel_token = CancellationToken::new();
+                cancel_token.cancel();
+                let mut pending_stream = stream::pending::<Result<i32, &'static str>>();
+                assert_eq!(
+                    next_stream_item_with_idle(
+                        &mut pending_stream,
+                        &cancel_token,
+                        Duration::ZERO,
+                    )
+                    .await,
+                    StreamReadOutcome::Cancelled
+                );
+            });
     }
 
     #[test]
-    fn mid_stream_aborted_without_user_cancel_retries() {
-        let error = Error::from_reason("This operation was aborted");
-        assert!(should_retry_mid_stream(
-            &error,
-            0,
-            &options(),
-            false,
-            false,
-            100
-        ));
+    fn cancelled_backoff_returns_to_the_attempt_loop() {
+        Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("build runtime")
+            .block_on(async {
+                let cancel_token = CancellationToken::new();
+                cancel_token.cancel();
+
+                assert!(wait_before_retry(&options(), &cancel_token, 0)
+                    .await
+                    .is_ok());
+            });
     }
 
     #[test]
-    fn mid_stream_aborted_with_user_cancel_does_not_retry() {
-        let error = Error::from_reason("This operation was aborted");
-        assert!(!should_retry_mid_stream(
-            &error,
-            0,
-            &options(),
-            true,
-            false,
-            100
-        ));
-    }
+    fn data_then_next_read_starts_a_fresh_idle_deadline() {
+        Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("build runtime")
+            .block_on(async {
+                let cancel_token = CancellationToken::new();
+                let mut source = stream::iter(vec![Ok::<i32, &'static str>(1)])
+                    .chain(stream::pending::<Result<i32, &'static str>>());
 
-    #[test]
-    fn mid_stream_retry_budget_exhausted_keeps_partial() {
-        let error = Error::from_reason("stream terminated");
-        assert!(!should_retry_mid_stream(
-            &error,
-            5,
-            &options(),
-            false,
-            false,
-            100,
-        ));
-    }
-
-    #[test]
-    fn mid_stream_non_retriable_error_does_not_retry() {
-        let error = Error::from_reason(
-            "Unsupported parameter (type=invalid_request_error, code=invalid_request_error)",
-        );
-        assert!(!should_retry_mid_stream(
-            &error,
-            0,
-            &options(),
-            false,
-            false,
-            100
-        ));
+                assert_eq!(
+                    next_stream_item_with_idle(&mut source, &cancel_token, Duration::ZERO).await,
+                    StreamReadOutcome::Data(1)
+                );
+                assert_eq!(
+                    next_stream_item_with_idle(&mut source, &cancel_token, Duration::ZERO).await,
+                    StreamReadOutcome::IdleTimeout
+                );
+            });
     }
 }
+

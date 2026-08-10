@@ -4,7 +4,6 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use futures::StreamExt;
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 use reqwest::header::{
@@ -16,8 +15,10 @@ use tokio_util::sync::CancellationToken;
 use crate::api::common::{emit_stream_chunk, emit_tool_args_probe, inject_custom_headers};
 use crate::api::responses::{ResponsesApiStreamCallback, ResponsesApiStreamChunk};
 use crate::api::retry::{
-    non_sse_response_error, should_retry, should_retry_mid_stream, stream_idle_timeout_error,
-    wait_before_retry, RetryOptions,
+    decide_stream_recovery, is_retriable_stream_read_error, next_stream_item_with_idle,
+    should_retry, stream_idle_timeout_error, visible_content_char_count, wait_before_retry,
+    StreamAttemptProgress, StreamEndCause, StreamInterruptionReason, StreamReadOutcome,
+    StreamRecoveryDecision, StreamRecoveryOutcome, RetryOptions,
 };
 use crate::api::sse::find_sse_separator;
 use crate::storage::services::chat_conversations::ChatTokenUsage;
@@ -32,6 +33,8 @@ pub(super) struct AnthropicStreamResult {
     pub thinking_blocks_json: String,
     pub model: String,
     pub status: String,
+    pub interruption_reason: Option<StreamInterruptionReason>,
+    pub recovery_outcome: Option<StreamRecoveryOutcome>,
     pub token_usage: ChatTokenUsage,
     pub tool_calls_json: String,
     pub tool_parse_errors: Vec<String>,
@@ -74,15 +77,13 @@ pub(super) async fn collect_anthropic_stream(
     let mut byte_buffer: Vec<u8> = Vec::new();
 
     let idle_timeout = Duration::from_secs(stream_idle_timeout_sec);
-    // Track whether the stream completed normally (via [DONE], finish_reason,
-    // or cancellation). When false after the inner loop, the response is
-    // marked "incomplete".
-    #[allow(unused_assignments)]
-    let mut stream_completed_normally = false;
-    // Set by process_anthropic_sse_event_block when message_stop is received.
+    // Set by the event parser for either a non-empty stop_reason or
+    // message_stop. It is reset atomically with the rest of each attempt.
     let mut stream_finished = false;
+    let mut interruption_reason = None;
+    let mut recovery_outcome = None;
 
-    loop {
+    'attempt_loop: loop {
         // ---- Phase 1: send the request (with retry on connect errors) ----
         let response = loop {
             if cancel_token.is_cancelled() {
@@ -93,6 +94,8 @@ pub(super) async fn collect_anthropic_stream(
                     thinking_blocks_json: "[]".to_string(),
                     model: String::new(),
                     status: String::from("cancelled"),
+                    interruption_reason: None,
+                    recovery_outcome: None,
                     token_usage: ChatTokenUsage::default(),
                     tool_calls_json: "[]".to_string(),
                     tool_parse_errors: Vec::new(),
@@ -116,6 +119,8 @@ pub(super) async fn collect_anthropic_stream(
                         thinking_blocks_json: "[]".to_string(),
                         model: String::new(),
                         status: String::from("cancelled"),
+                        interruption_reason: None,
+                        recovery_outcome: None,
                         token_usage: ChatTokenUsage::default(),
                         tool_calls_json: "[]".to_string(),
                         tool_parse_errors: Vec::new(),
@@ -203,405 +208,241 @@ pub(super) async fn collect_anthropic_stream(
             }
         };
 
-        // ---- Phase 2: read the streaming body (with idle timeout) ----
+        // ---- Phase 2: read one complete Provider attempt ----
+        // Every retry returns to this reset point so thinking blocks, tool
+        // fragments, parse errors, usage, and terminal state cannot leak.
+        raw_events.clear();
+        content_chunks.clear();
+        thinking_chunks.clear();
+        thinking_blocks.clear();
+        tool_calls.clear();
+        tool_call_positions_by_index.clear();
+        tool_input_json_by_index.clear();
+        tool_parse_errors.clear();
+        response_id.clear();
+        response_model.clear();
+        response_status = String::from("completed");
+        token_usage = ChatTokenUsage::default();
+        byte_buffer.clear();
+        stream_finished = false;
+        interruption_reason = None;
+        recovery_outcome = None;
+
         let mut stream = response.bytes_stream();
-        stream_completed_normally = false;
-        // Set to true when the idle-timeout or mid-stream retry path resets
-        // state and breaks the inner loop so the outer loop re-sends the
-        // request.
-        let mut retry_reset = false;
-        // Idle timer: reset on every received chunk. If no data arrives within
-        // `stream_idle_timeout_sec`, we abandon the stalled stream and re-issue
-        // the request with the original parameters.
-        let mut idle_deadline = tokio::time::Instant::now() + idle_timeout;
+        let mut end_cause: Option<(StreamEndCause, bool, String)> = None;
 
-        loop {
-            tokio::select! {
-                biased;
-                _ = cancel_token.cancelled() => {
+        macro_rules! process_event_block {
+            ($event_block:expr) => {{
+                let content_start_index = content_chunks.len();
+                let thinking_start_index = thinking_chunks.len();
+                let mut tool_args_delta = String::new();
+                super::event::process_anthropic_sse_event_block(
+                    $event_block,
+                    &mut raw_events,
+                    &mut content_chunks,
+                    &mut thinking_chunks,
+                    &mut thinking_blocks,
+                    &mut tool_calls,
+                    &mut tool_call_positions_by_index,
+                    &mut tool_input_json_by_index,
+                    &mut response_id,
+                    &mut response_model,
+                    &mut response_status,
+                    &mut token_usage,
+                    &mut tool_args_delta,
+                    &mut tool_parse_errors,
+                    &mut stream_finished,
+                );
+                let content_delta = content_chunks[content_start_index..].join("");
+                let thinking_delta = thinking_chunks[thinking_start_index..].join("");
+                if ttft_ms == 0 {
+                    ttft_ms = stream_start.elapsed().as_millis() as i64;
+                }
+                emit_stream_chunk(
+                    on_chunk,
+                    content_delta,
+                    thinking_delta,
+                    &mut stream_token_count,
+                    stream_start.elapsed().as_millis() as i64,
+                    ttft_ms,
+                );
+                emit_tool_args_probe(
+                    on_chunk,
+                    &mut stream_token_count,
+                    &tool_args_delta,
+                    stream_start.elapsed().as_millis() as i64,
+                    ttft_ms,
+                );
+            }};
+        }
+
+        'read_loop: loop {
+            match next_stream_item_with_idle(&mut stream, cancel_token, idle_timeout).await {
+                StreamReadOutcome::Cancelled => {
                     response_status = String::from("cancelled");
-                    stream_completed_normally = true;
-                    break;
+                    break 'read_loop;
                 }
-                _ = tokio::time::sleep_until(idle_deadline) => {
-                    // Stream idle timeout: no data received for the configured
-                    // period. Treat as a retriable error so the agent loop
-                    // re-issues the request with the original parameters.
-                    let error = stream_idle_timeout_error();
-                    if !should_retry(&error, attempt, retry_options) {
-                        // Exhausted retries — return whatever we have so far
-                        // rather than discarding partial work. The response
-                        // will be marked "incomplete" since [DONE] was never
-                        // received.
-                        break;
-                    }
-
-                    // Emit retry status to frontend so the user sees the
-                    // reconnection attempt.
-                    on_chunk.call(
-                        ResponsesApiStreamChunk {
-                            content_delta: String::new(),
-                            thinking_delta: String::new(),
-                            content: String::new(),
-                            thinking: String::new(),
-                            retrying: true,
-                            retry_attempt: Some((attempt + 1) as i32),
-                            retry_error: Some(error.reason.clone()),
-                            stream_token_count: stream_token_count as i64,
-                            elapsed_ms: stream_start.elapsed().as_millis() as i64,
-                            ttft_ms,
-                            vision_status: None,
-                        },
-                        ThreadsafeFunctionCallMode::NonBlocking,
-                    );
-
-                    match wait_before_retry(retry_options, cancel_token, attempt).await {
-                        Ok(()) => {
-                            // Reset accumulated state so the retry starts fresh.
-                            raw_events.clear();
-                            content_chunks.clear();
-                            thinking_chunks.clear();
-                            thinking_blocks.clear();
-                            tool_calls.clear();
-                            tool_call_positions_by_index.clear();
-                            tool_input_json_by_index.clear();
-                            tool_parse_errors.clear();
-                            byte_buffer.clear();
-                            response_id.clear();
-                            response_model.clear();
-                            response_status = String::from("completed");
-                            token_usage = ChatTokenUsage::default();
-                            stream_finished = false;
-                            attempt += 1;
-                            // Jump back to Phase 1 to re-send the request.
-                            retry_reset = true;
-                            break;
-                        }
-                        Err(e) => return Err(e),
-                    }
-                }
-                chunk_result = stream.next() => {
-                    let Some(chunk_result) = chunk_result else {
-                        // Stream ended without message_stop. Treat as incomplete
-                        // rather than a hard error so partial content and tool
-                        // calls remain usable.
-                        break;
-                    };
-
-                    let chunk = match chunk_result {
-                        Ok(chunk) => chunk,
-                        Err(error) => {
-                            // reqwest 读流错误 → 转为 napi Error 供重试判定使用
-                            let stream_error = Error::from_reason(error.to_string());
-                            // 阶段感知混合重试（方案 B）：已累积工具调用 → 必须重试
-                            // （残缺 tool_calls 不可安全使用）；纯文本少量 → 重试；
-                            // 大量纯文本 → 保留 partial（token 最优）。
-                            let partial_text_len =
-                                content_chunks.iter().map(|s| s.len()).sum::<usize>()
-                                    + thinking_chunks.iter().map(|s| s.len()).sum::<usize>();
-                            if !should_retry_mid_stream(
-                                &stream_error,
-                                attempt,
-                                retry_options,
-                                cancel_token.is_cancelled(),
-                                !tool_calls.is_empty(),
-                                partial_text_len,
-                            ) {
-                                // Network/read error mid-stream: log and break instead
-                                // of returning Err. We keep whatever content and tool
-                                // calls have been collected so far so the agent loop
-                                // can continue with partial results.
-                                eprintln!("Anthropic stream read error (keeping partial result): {error}");
-                                break;
-                            }
-
-                            // 通知前端重试（前端清空 content/thinking 显示"重试中"）
-                            on_chunk.call(
-                                ResponsesApiStreamChunk {
-                                    content_delta: String::new(),
-                                    thinking_delta: String::new(),
-                                    content: String::new(),
-                                    thinking: String::new(),
-                                    retrying: true,
-                                    retry_attempt: Some((attempt + 1) as i32),
-                                    retry_error: Some(stream_error.reason.clone()),
-                                    stream_token_count: stream_token_count as i64,
-                                    elapsed_ms: stream_start.elapsed().as_millis() as i64,
-                                    ttft_ms,
-                                    vision_status: None,
-                                },
-                                ThreadsafeFunctionCallMode::NonBlocking,
-                            );
-
-                            match wait_before_retry(retry_options, cancel_token, attempt).await {
-                                Ok(()) => {
-                                    // 清空累积状态，重发原始请求
-                                    raw_events.clear();
-                                    content_chunks.clear();
-                                    thinking_chunks.clear();
-                                    tool_calls.clear();
-                                    tool_call_positions_by_index.clear();
-                                    byte_buffer.clear();
-                                    response_id.clear();
-                                    response_model.clear();
-                                    response_status = String::from("completed");
-                                    token_usage = ChatTokenUsage::default();
-                                    stream_finished = false;
-                                    attempt += 1;
-                                    retry_reset = true;
-                                    break;
-                                }
-                                Err(e) => return Err(e),
-                            }
-                        }
-                    };
-                    // Any data received — reset the idle timer.
-                    idle_deadline = tokio::time::Instant::now() + idle_timeout;
+                StreamReadOutcome::Data(chunk) => {
                     byte_buffer.extend_from_slice(&chunk);
-
                     while let Some((separator_index, separator_len)) =
                         find_sse_separator(&byte_buffer)
                     {
                         let event_block =
                             String::from_utf8_lossy(&byte_buffer[..separator_index]).to_string();
                         byte_buffer = byte_buffer[separator_index + separator_len..].to_vec();
-                        let content_start_index = content_chunks.len();
-                        let thinking_start_index = thinking_chunks.len();
-                        let mut tool_args_delta = String::new();
-                        // Process each SSE event block with error tolerance: if a
-                        // single data line is malformed, skip it and continue
-                        // processing the rest of the stream.
-                        super::event::process_anthropic_sse_event_block(
-                            &event_block,
-                            &mut raw_events,
-                            &mut content_chunks,
-                            &mut thinking_chunks,
-                            &mut thinking_blocks,
-                            &mut tool_calls,
-                            &mut tool_call_positions_by_index,
-                            &mut tool_input_json_by_index,
-                            &mut response_id,
-                            &mut response_model,
-                            &mut response_status,
-                            &mut token_usage,
-                            &mut tool_args_delta,
-                            &mut tool_parse_errors,
-                            &mut stream_finished,
-                        );
-                        let content_delta = content_chunks[content_start_index..].join("");
-                        let thinking_delta = thinking_chunks[thinking_start_index..].join("");
-                        if ttft_ms == 0 {
-                            ttft_ms = stream_start.elapsed().as_millis() as i64;
+                        process_event_block!(&event_block);
+                        if stream_finished {
+                            break;
                         }
-                        emit_stream_chunk(
-                            on_chunk,
-                            content_delta,
-                            thinking_delta,
-                            &mut stream_token_count,
-                            stream_start.elapsed().as_millis() as i64,
-                            ttft_ms,
-                        );
-                        // Tool-call argument deltas arrive separately from the
-                        // content stream. Emit a probe-only chunk so the
-                        // renderer reflects long tool arguments in real time.
-                        emit_tool_args_probe(
-                            on_chunk,
-                            &mut stream_token_count,
-                            &tool_args_delta,
-                            stream_start.elapsed().as_millis() as i64,
-                            ttft_ms,
-                        );
+                    }
+                    if stream_finished {
+                        break 'read_loop;
                     }
                 }
+                StreamReadOutcome::ReadError(error) => {
+                    let stream_error = Error::from_reason(error.to_string());
+                    let retriable = is_retriable_stream_read_error(&stream_error);
+                    end_cause = Some((
+                        StreamEndCause::ReadError,
+                        retriable,
+                        stream_error.reason.clone(),
+                    ));
+                    break 'read_loop;
+                }
+                StreamReadOutcome::Eof => {
+                    let trailing_bytes = std::mem::take(&mut byte_buffer);
+                    if !trailing_bytes.is_empty() {
+                        let trailing_buffer = String::from_utf8_lossy(&trailing_bytes).to_string();
+                        if !trailing_buffer.trim().is_empty() {
+                            process_event_block!(&trailing_buffer);
+                        }
+                    }
+                    if stream_finished {
+                        break 'read_loop;
+                    }
+                    end_cause = Some((
+                        StreamEndCause::UnexpectedEof,
+                        true,
+                        "Stream ended before an Anthropic terminal event".to_string(),
+                    ));
+                    break 'read_loop;
+                }
+                StreamReadOutcome::IdleTimeout => {
+                    end_cause = Some((
+                        StreamEndCause::IdleTimeout,
+                        true,
+                        stream_idle_timeout_error().reason.clone(),
+                    ));
+                    break 'read_loop;
+                }
             }
         }
 
-        // If the idle-timeout or mid-stream retry path reset state, re-send
-        // the request. Otherwise the stream is done (completed, cancelled,
-        // incomplete, or error) and we proceed to finalize.
-        if retry_reset {
-            continue;
+        if response_status == "cancelled" {
+            tool_calls.clear();
+            tool_call_positions_by_index.clear();
+            tool_input_json_by_index.clear();
+            tool_parse_errors.clear();
+            interruption_reason = None;
+            recovery_outcome = None;
+            break 'attempt_loop;
         }
 
-        // Non-SSE response detection: the stream received bytes but none of
-        // them formed a valid SSE event. This happens when a relay returns
-        // HTTP 200 with a JSON error body (e.g. quota exhausted) instead of
-        // a proper SSE stream. Treat it as a retriable error so the request
-        // is re-issued, matching the idle-timeout recovery pattern.
-        if !stream_completed_normally
-            && response_status != "cancelled"
-            && raw_events.is_empty()
-            && content_chunks.is_empty()
-            && thinking_chunks.is_empty()
-            && tool_calls.is_empty()
-            && !byte_buffer.is_empty()
-        {
-            let body = String::from_utf8_lossy(&byte_buffer).to_string();
-            let error = non_sse_response_error(&body);
-
-            if !should_retry(&error, attempt, retry_options) {
-                return Err(error);
+        // A non-empty stop_reason or message_stop is an authoritative Provider
+        // terminal and must not wait for socket EOF or enter transport retry.
+        if stream_finished {
+            tool_input_json_by_index.clear();
+            if response_status == "max_tokens" {
+                interruption_reason = Some(StreamInterruptionReason::OutputLimit);
             }
+            recovery_outcome = None;
+            break 'attempt_loop;
+        }
 
-            // Emit retry status to frontend
-            on_chunk.call(
-                ResponsesApiStreamChunk {
-                    content_delta: String::new(),
-                    thinking_delta: String::new(),
-                    content: String::new(),
-                    thinking: String::new(),
-                    retrying: true,
-                    retry_attempt: Some((attempt + 1) as i32),
-                    retry_error: Some(error.reason.clone()),
-                    stream_token_count: stream_token_count as i64,
-                    elapsed_ms: stream_start.elapsed().as_millis() as i64,
-                    ttft_ms,
-                    vision_status: None,
-                },
-                ThreadsafeFunctionCallMode::NonBlocking,
-            );
+        let (cause, read_error_retriable, retry_error) = end_cause.unwrap_or((
+            StreamEndCause::UnexpectedEof,
+            true,
+            "Stream ended before an Anthropic terminal event".to_string(),
+        ));
+        let progress = StreamAttemptProgress {
+            visible_content_chars: visible_content_char_count(&content_chunks),
+            has_tool_state: !tool_calls.is_empty(),
+            has_pending_tool_fragments: !tool_input_json_by_index.is_empty(),
+            provider_terminal: stream_finished,
+            user_cancelled: cancel_token.is_cancelled(),
+        };
+        let decision = decide_stream_recovery(
+            cause,
+            attempt,
+            retry_options,
+            read_error_retriable,
+            progress,
+        );
 
-            match wait_before_retry(retry_options, cancel_token, attempt).await {
-                Ok(()) => {
-                    raw_events.clear();
-                    content_chunks.clear();
-                    thinking_chunks.clear();
-                    thinking_blocks.clear();
+        match decision {
+            StreamRecoveryDecision::Cancelled => {
+                response_status = String::from("cancelled");
+                tool_calls.clear();
+                tool_call_positions_by_index.clear();
+                tool_input_json_by_index.clear();
+                tool_parse_errors.clear();
+                interruption_reason = None;
+                recovery_outcome = None;
+                break 'attempt_loop;
+            }
+            StreamRecoveryDecision::FinishProviderResult => break 'attempt_loop,
+            StreamRecoveryDecision::Retry => {
+                on_chunk.call(
+                    ResponsesApiStreamChunk {
+                        content_delta: String::new(),
+                        thinking_delta: String::new(),
+                        content: String::new(),
+                        thinking: String::new(),
+                        retrying: true,
+                        retry_attempt: Some((attempt + 1) as i32),
+                        retry_error: Some(retry_error),
+                        stream_token_count: stream_token_count as i64,
+                        elapsed_ms: stream_start.elapsed().as_millis() as i64,
+                        ttft_ms,
+                        vision_status: None,
+                    },
+                    ThreadsafeFunctionCallMode::NonBlocking,
+                );
+
+                match wait_before_retry(retry_options, cancel_token, attempt).await {
+                    Ok(()) => {
+                        attempt += 1;
+                        continue 'attempt_loop;
+                    }
+                    Err(_wait_error) if cancel_token.is_cancelled() => {
+                        response_status = String::from("cancelled");
+                        tool_calls.clear();
+                        tool_call_positions_by_index.clear();
+                        tool_input_json_by_index.clear();
+                        tool_parse_errors.clear();
+                        interruption_reason = None;
+                        recovery_outcome = None;
+                        break 'attempt_loop;
+                    }
+                    Err(wait_error) => return Err(wait_error),
+                }
+            }
+            StreamRecoveryDecision::KeepUsablePartial
+            | StreamRecoveryDecision::SurfaceInterrupted => {
+                response_status = String::from("incomplete");
+                interruption_reason = Some(cause.interruption_reason());
+                recovery_outcome = decision.recovery_outcome(cause, read_error_retriable);
+                tool_input_json_by_index.clear();
+                if matches!(decision, StreamRecoveryDecision::SurfaceInterrupted) {
                     tool_calls.clear();
                     tool_call_positions_by_index.clear();
-                    tool_input_json_by_index.clear();
                     tool_parse_errors.clear();
-                    byte_buffer.clear();
-                    response_id.clear();
-                    response_model.clear();
-                    response_status = String::from("completed");
-                    token_usage = ChatTokenUsage::default();
-                    stream_finished = false;
-                    attempt += 1;
-                    continue;
                 }
-                Err(e) => return Err(e),
+                break 'attempt_loop;
             }
         }
-
-        // Empty-response interruption: the connection dropped (EOF or read
-        // error) before ANY content, thinking, or tool call was produced.
-        // Unlike the non-SSE case above, this covers streams that ended with
-        // no usable data at all (including zero-byte bodies). Retrying is
-        // safe — nothing was emitted to the user — and recovers transient
-        // relay/proxy disconnects that would otherwise surface as a silent
-        // empty "incomplete" response.
-        if !stream_completed_normally
-            && response_status != "cancelled"
-            && content_chunks.is_empty()
-            && thinking_chunks.is_empty()
-            && tool_calls.is_empty()
-        {
-            let error = Error::from_reason(
-                "Stream ended with empty response (connection dropped before any output)",
-            );
-
-            if !should_retry(&error, attempt, retry_options) {
-                return Err(error);
-            }
-
-            // Emit retry status to frontend
-            on_chunk.call(
-                ResponsesApiStreamChunk {
-                    content_delta: String::new(),
-                    thinking_delta: String::new(),
-                    content: String::new(),
-                    thinking: String::new(),
-                    retrying: true,
-                    retry_attempt: Some((attempt + 1) as i32),
-                    retry_error: Some(error.reason.clone()),
-                    stream_token_count: stream_token_count as i64,
-                    elapsed_ms: stream_start.elapsed().as_millis() as i64,
-                    ttft_ms,
-                    vision_status: None,
-                },
-                ThreadsafeFunctionCallMode::NonBlocking,
-            );
-
-            match wait_before_retry(retry_options, cancel_token, attempt).await {
-                Ok(()) => {
-                    raw_events.clear();
-                    content_chunks.clear();
-                    thinking_chunks.clear();
-                    thinking_blocks.clear();
-                    tool_calls.clear();
-                    tool_call_positions_by_index.clear();
-                    tool_input_json_by_index.clear();
-                    tool_parse_errors.clear();
-                    byte_buffer.clear();
-                    response_id.clear();
-                    response_model.clear();
-                    response_status = String::from("completed");
-                    token_usage = ChatTokenUsage::default();
-                    stream_finished = false;
-                    attempt += 1;
-                    continue;
-                }
-                Err(e) => return Err(e),
-            }
-        }
-
-        // Stream finalized — exit the outer loop.
-        break;
     }
 
-    // If the stream ended abnormally (no message_stop, no stop_reason, and
-    // no cancellation), mark the response as incomplete so the frontend knows
-    // the result is partial but still usable.
-    if !stream_completed_normally && !stream_finished && response_status == "completed" {
-        response_status = String::from("incomplete");
-    }
-
-    if response_status != "cancelled" && !byte_buffer.is_empty() {
-        let trailing_buffer = String::from_utf8_lossy(&byte_buffer).to_string();
-        if !trailing_buffer.trim().is_empty() {
-            let content_start_index = content_chunks.len();
-            let thinking_start_index = thinking_chunks.len();
-            let mut tool_args_delta = String::new();
-            super::event::process_anthropic_sse_event_block(
-                &trailing_buffer,
-                &mut raw_events,
-                &mut content_chunks,
-                &mut thinking_chunks,
-                &mut thinking_blocks,
-                &mut tool_calls,
-                &mut tool_call_positions_by_index,
-                &mut tool_input_json_by_index,
-                &mut response_id,
-                &mut response_model,
-                &mut response_status,
-                &mut token_usage,
-                &mut tool_args_delta,
-                &mut tool_parse_errors,
-                &mut stream_finished,
-            );
-            let content_delta = content_chunks[content_start_index..].join("");
-            let thinking_delta = thinking_chunks[thinking_start_index..].join("");
-            if ttft_ms == 0 {
-                ttft_ms = stream_start.elapsed().as_millis() as i64;
-            }
-            emit_stream_chunk(
-                on_chunk,
-                content_delta,
-                thinking_delta,
-                &mut stream_token_count,
-                stream_start.elapsed().as_millis() as i64,
-                ttft_ms,
-            );
-            emit_tool_args_probe(
-                on_chunk,
-                &mut stream_token_count,
-                &tool_args_delta,
-                stream_start.elapsed().as_millis() as i64,
-                ttft_ms,
-            );
-        }
-    }
 
     let content = content_chunks.join("").trim().to_string();
     let thinking = thinking_chunks.join("").trim().to_string();
@@ -623,6 +464,8 @@ pub(super) async fn collect_anthropic_stream(
         thinking_blocks_json,
         model: response_model,
         status: response_status,
+        interruption_reason,
+        recovery_outcome,
         token_usage,
         tool_calls_json,
         tool_parse_errors,

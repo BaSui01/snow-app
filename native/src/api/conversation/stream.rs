@@ -354,6 +354,8 @@ pub async fn create_response_stream(
                 thinking: String::new(),
                 model: failure_model,
                 status: "error".to_string(),
+                interruption_reason: None,
+                recovery_outcome: None,
                 tool_calls_json: "[]".to_string(),
                 token_usage: crate::api::responses::TokenUsage {
                     input_tokens: 0,

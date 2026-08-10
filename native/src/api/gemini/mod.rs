@@ -21,7 +21,7 @@ use crate::api::conversation::{
 use crate::api::responses::{
     ResponsesApiRequest, ResponsesApiResult, ResponsesApiStreamCallback, TokenUsage,
 };
-use crate::api::retry::RetryOptions;
+use crate::api::retry::{resolve_stream_idle_timeout_sec, RetryOptions};
 use crate::storage::services::app_logs::{log_api_error, log_api_warning, maybe_log_api_request};
 use crate::storage::services::chat_conversations::{
     store_chat_exchange, ChatContextMessage, StoreChatExchangeInput,
@@ -158,6 +158,8 @@ async fn create_gemini_response_async(
         api_config.retry_base_delay_ms,
         api_config.partial_retry_max_chars,
     );
+    let stream_idle_timeout_sec =
+        resolve_stream_idle_timeout_sec(api_config.stream_idle_timeout_sec);
     let request_payload_json = serde_json::to_string(&payload).unwrap_or_default();
     maybe_log_api_request(
         database_path.clone(),
@@ -175,6 +177,7 @@ async fn create_gemini_response_async(
         on_chunk,
         &cancel_token,
         &retry_options,
+        stream_idle_timeout_sec,
     )
     .await
     {
@@ -192,8 +195,35 @@ async fn create_gemini_response_async(
     // See chat/mod.rs: assistant raw_events are not needed for replay, so we
     // skip serializing the full SSE chunk array to avoid DB bloat.
     let raw_response_json = "{}";
+    let transport_interruption_reason = streamed_response
+        .interruption_reason
+        .filter(|reason| reason.is_transport());
+    let interruption_reason = streamed_response
+        .interruption_reason
+        .map(|reason| reason.as_code().to_string());
+    let recovery_outcome = streamed_response
+        .recovery_outcome
+        .map(|outcome| outcome.as_code().to_string());
 
-    if streamed_response.status != "cancelled"
+    if let Some(reason) = transport_interruption_reason {
+        log_api_warning(
+            &database_path,
+            "create_gemini_response_stream",
+            "AI response stream interrupted",
+            &format!(
+                "provider=gemini, request_method=gemini, reason={}, outcome={}, model={}, status={}, conversation_id={}, response_id={}, content_chars={}, thinking_chars={}, duration_ms={}",
+                reason.as_code(),
+                recovery_outcome.as_deref().unwrap_or(""),
+                model,
+                streamed_response.status,
+                prepared_request.conversation_id,
+                streamed_response.id,
+                streamed_response.content.chars().count(),
+                streamed_response.thinking.chars().count(),
+                streamed_response.total_duration_ms,
+            ),
+        );
+    } else if streamed_response.status != "cancelled"
         && streamed_response.content.is_empty()
         && streamed_response.thinking.is_empty()
         && streamed_response.tool_calls_json == "[]"
@@ -227,6 +257,8 @@ async fn create_gemini_response_async(
                 model,
                 api_profile_name: &api_config.profile_name,
                 status: &streamed_response.status,
+                interruption_reason: interruption_reason.as_deref(),
+                recovery_outcome: recovery_outcome.as_deref(),
                 raw_response_json: &raw_response_json,
                 token_usage: streamed_response.token_usage,
                 response_thinking: &streamed_response.thinking,
@@ -252,6 +284,8 @@ async fn create_gemini_response_async(
         // unreliable across providers and may carry date-stamped aliases).
         model: model.to_string(),
         status: streamed_response.status,
+        interruption_reason,
+        recovery_outcome,
         tool_calls_json: streamed_response.tool_calls_json,
         token_usage: TokenUsage {
             input_tokens: streamed_response.token_usage.input_tokens,

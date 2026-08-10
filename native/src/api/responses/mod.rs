@@ -122,6 +122,8 @@ pub struct ResponsesApiResult {
     pub thinking: String,
     pub model: String,
     pub status: String,
+    pub interruption_reason: Option<String>,
+    pub recovery_outcome: Option<String>,
     pub tool_calls_json: String,
     pub token_usage: TokenUsage,
     pub persisted_user_message_ids: Vec<String>,
@@ -362,17 +364,46 @@ async fn create_response_async(
     // See chat/mod.rs: assistant raw_events are not needed for replay, so we
     // skip serializing the full SSE chunk array to avoid DB bloat.
     let raw_response_json = "{}";
+    let transport_interruption_reason = streamed_response
+        .interruption_reason
+        .filter(|reason| reason.is_transport());
+    let interruption_reason = streamed_response
+        .interruption_reason
+        .map(|reason| reason.as_code().to_string());
+    let recovery_outcome = streamed_response
+        .recovery_outcome
+        .map(|outcome| outcome.as_code().to_string());
 
-    for parse_error in &streamed_response.tool_parse_errors {
+    if transport_interruption_reason.is_none() {
+        for parse_error in &streamed_response.tool_parse_errors {
+            log_api_warning(
+                &database_path,
+                "create_response_stream_with_context",
+                "Tool call JSON parse failed after streaming",
+                parse_error,
+            );
+        }
+    }
+
+    if let Some(reason) = transport_interruption_reason {
         log_api_warning(
             &database_path,
             "create_response_stream_with_context",
-            "Tool call JSON parse failed after streaming",
-            parse_error,
+            "AI response stream interrupted",
+            &format!(
+                "provider=openai, request_method=responses, reason={}, outcome={}, model={}, status={}, conversation_id={}, response_id={}, content_chars={}, thinking_chars={}, duration_ms={}",
+                reason.as_code(),
+                recovery_outcome.as_deref().unwrap_or(""),
+                model,
+                streamed_response.status,
+                prepared_request.conversation_id,
+                streamed_response.id,
+                streamed_response.content.chars().count(),
+                streamed_response.thinking.chars().count(),
+                streamed_response.total_duration_ms,
+            ),
         );
-    }
-
-    if streamed_response.status != "cancelled"
+    } else if streamed_response.status != "cancelled"
         && streamed_response.content.is_empty()
         && streamed_response.thinking.is_empty()
         && streamed_response.tool_calls_json == "[]"
@@ -401,6 +432,8 @@ async fn create_response_async(
                 model,
                 api_profile_name: &api_config.profile_name,
                 status: &streamed_response.status,
+                interruption_reason: interruption_reason.as_deref(),
+                recovery_outcome: recovery_outcome.as_deref(),
                 raw_response_json: &raw_response_json,
                 token_usage: streamed_response.token_usage,
                 response_thinking: &streamed_response.thinking,
@@ -426,6 +459,8 @@ async fn create_response_async(
         // unreliable across providers and may carry date-stamped aliases).
         model: model.to_string(),
         status: streamed_response.status,
+        interruption_reason,
+        recovery_outcome,
         tool_calls_json: streamed_response.tool_calls_json,
         token_usage: TokenUsage {
             input_tokens: streamed_response.token_usage.input_tokens,

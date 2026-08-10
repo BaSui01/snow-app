@@ -174,6 +174,7 @@ async fn create_anthropic_response_async(
         &cancel_token,
         &retry_options,
         stream_idle_timeout_sec,
+        payload::has_one_m_context_marker(&model),
     )
     .await
     {

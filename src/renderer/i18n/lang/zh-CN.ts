@@ -713,6 +713,9 @@ export const zhCN = {
   "toolCall.config.saved": "已保存",
   "toolCall.config.deleted": "已删除",
   "toolCall.config.notFound": "未找到",
+  "toolCall.jsonTree.expand": "展开",
+  "toolCall.jsonTree.collapse": "收起",
+  "toolCall.jsonTree.itemCount": "{{count}} 项",
   "toolCall.appControl.created": "已创建",
   "toolCall.appControl.applied": "已生效",
   "toolCall.appControl.opened": "已打开",
@@ -1184,6 +1187,9 @@ export const zhCN = {
     "开启后 Gemini 请求（文本 / 视觉图片模型）注入 Google Search 工具（Gemini 原生 grounding），实时获取联网信息。",
   "settings.apiAdvancedModel": "高级模型",
   "settings.apiBasicModel": "基础模型",
+  "settings.apiOneMContext": "1M 上下文",
+  "settings.apiOneMContextHint":
+    "在模型名后附加 [1M] 标记声明 100 万上下文能力，请求会自动携带 context-1m beta 头（适用于 Anthropic 及兼容网关/中转）。",
   "settings.apiMaxContext": "最大上下文（tokens）",
   "settings.apiTokenPresetsHint":
     "可选择常见 token 规格，也可直接填写自定义值。",

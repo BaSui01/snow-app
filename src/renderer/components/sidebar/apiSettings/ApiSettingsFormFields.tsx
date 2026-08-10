@@ -18,7 +18,11 @@ import {
   calculateAutoCompressThresholdTokens,
   normalizeAutoCompressThresholdPercent,
 } from "./autoCompressThreshold";
-import { resolveThinkingValue } from "./apiSettingsUtils";
+import {
+  hasOneMMarker,
+  resolveThinkingValue,
+  setOneMMarker,
+} from "./apiSettingsUtils";
 import type {
   Model,
   SystemPromptItemRecord,
@@ -499,6 +503,52 @@ export function ApiSettingsFormFields({
             "basicModel",
             t("settings.apiBasicModel", { defaultValue: "Basic model" }),
             "gpt-4.1-mini"
+          )}
+          {data.requestMethod === "anthropic" && (
+            <div className="api-settings-field">
+              <span>
+                {t("settings.apiOneMContext", {
+                  defaultValue: "1M context",
+                })}
+              </span>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={
+                    hasOneMMarker(data.advancedModel) ||
+                    hasOneMMarker(data.basicModel)
+                  }
+                  onChange={(event) => {
+                    const enabled = event.target.checked;
+                    onChange(
+                      "advancedModel",
+                      setOneMMarker(data.advancedModel, enabled)
+                    );
+                    onChange(
+                      "basicModel",
+                      setOneMMarker(data.basicModel, enabled)
+                    );
+                  }}
+                  disabled={disabled}
+                  hidden
+                />
+                <span className="toggle-slider" />
+                <span>
+                  {t(
+                    hasOneMMarker(data.advancedModel) ||
+                      hasOneMMarker(data.basicModel)
+                      ? "settings.enabled"
+                      : "settings.disabled"
+                  )}
+                </span>
+              </label>
+              <small className="api-settings-hint-text">
+                {t("settings.apiOneMContextHint", {
+                  defaultValue:
+                    "Declares 1M-token context support by appending the [1M] marker to model names; requests send the context-1m beta header.",
+                })}
+              </small>
+            </div>
           )}
           <label className="api-settings-field">
             <span>

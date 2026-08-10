@@ -49,6 +49,7 @@ pub(super) async fn collect_anthropic_stream(
     cancel_token: &CancellationToken,
     retry_options: &RetryOptions,
     stream_idle_timeout_sec: u64,
+    enable_one_m_context: bool,
 ) -> Result<AnthropicStreamResult> {
     let mut attempt: u32 = 0;
     let mut stream_token_count: usize = 0;
@@ -102,7 +103,7 @@ pub(super) async fn collect_anthropic_stream(
 
             let send_future = client
                 .post(endpoint)
-                .headers(build_header_map(api_key, custom_headers)?)
+                .headers(build_header_map(api_key, custom_headers, enable_one_m_context)?)
                 .json(&payload)
                 .send();
 
@@ -579,9 +580,15 @@ pub(super) async fn collect_anthropic_stream(
 /// (the latter for compatibility with relay proxies that expect OpenAI-style
 /// auth). User-supplied custom headers are injected afterwards, except
 /// `authorization` and `x-api-key` which are reserved.
+///
+/// When `enable_one_m_context` is set (model name carries the `[1M]` marker),
+/// the `anthropic-beta: context-1m-2025-08-07` header is injected to declare
+/// 1M-token context support, merged (comma-joined) with a user-supplied
+/// `anthropic-beta` custom header so neither overwrites the other.
 pub(super) fn build_header_map(
     api_key: &str,
     custom_headers: &HashMap<String, String>,
+    enable_one_m_context: bool,
 ) -> Result<HeaderMap> {
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
@@ -599,16 +606,32 @@ pub(super) fn build_header_map(
         })?,
     );
 
-    inject_custom_headers(
-        &mut headers,
-        custom_headers,
-        &[
-            "authorization",
-            "x-api-key",
-            "content-type",
-            "accept-encoding",
-        ],
-    )?;
+    let mut reserved_keys: Vec<&str> = vec![
+        "authorization",
+        "x-api-key",
+        "content-type",
+        "accept-encoding",
+    ];
+    if enable_one_m_context {
+        reserved_keys.push("anthropic-beta");
+        let user_beta = custom_headers
+            .iter()
+            .find(|(key, _)| key.trim().eq_ignore_ascii_case("anthropic-beta"))
+            .map(|(_, value)| value.trim())
+            .filter(|value| !value.is_empty());
+        let beta_value = match user_beta {
+            Some(extra) => format!("{},{}", super::payload::ANTHROPIC_ONE_M_CONTEXT_BETA, extra),
+            None => super::payload::ANTHROPIC_ONE_M_CONTEXT_BETA.to_string(),
+        };
+        headers.insert(
+            HeaderName::from_static("anthropic-beta"),
+            HeaderValue::from_str(&beta_value).map_err(|error| {
+                Error::from_reason(format!("Invalid anthropic-beta header value: {}", error))
+            })?,
+        );
+    }
+
+    inject_custom_headers(&mut headers, custom_headers, &reserved_keys)?;
 
     Ok(headers)
 }

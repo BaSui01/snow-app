@@ -24,6 +24,37 @@ use crate::storage::ApiConfigRecord;
 /// prompt-cache routing.
 static PERSISTENT_USER_ID: OnceLock<String> = OnceLock::new();
 
+/// Anthropic beta header value that declares 1M-token context support.
+///
+/// Claude Code 生态约定：模型名带 `[1M]` 后缀（如 `claude-sonnet-4-6[1M]`）
+/// 表示该渠道/模型声明 100 万上下文能力。请求上游前需要剥离该本地标记，
+/// 并附带此 beta 头向网关（含各类中转）显式启用 1M 上下文 —— 与
+/// cc-switch 的转发行为保持一致。
+pub(crate) const ANTHROPIC_ONE_M_CONTEXT_BETA: &str = "context-1m-2025-08-07";
+
+/// 本地 1M 上下文标记（模型名后缀，大小写不敏感）。
+const ONE_M_CONTEXT_MARKER: &str = "[1m]";
+
+/// 判断模型名是否携带 `[1M]` 上下文标记（忽略尾部空格、大小写不敏感）。
+pub(crate) fn has_one_m_context_marker(model: &str) -> bool {
+    let trimmed = model.trim_end();
+    let marker = ONE_M_CONTEXT_MARKER.as_bytes();
+    let bytes = trimmed.as_bytes();
+    bytes.len() >= marker.len()
+        && bytes[bytes.len() - marker.len()..].eq_ignore_ascii_case(marker)
+}
+
+/// 剥离模型名末尾的 `[1M]` 上下文标记（上游 API 不接受该本地标记）。
+pub(crate) fn strip_one_m_context_marker(model: &str) -> String {
+    if !has_one_m_context_marker(model) {
+        return model.to_string();
+    }
+    let trimmed = model.trim_end();
+    trimmed[..trimmed.len() - ONE_M_CONTEXT_MARKER.len()]
+        .trim_end()
+        .to_string()
+}
+
 pub(crate) fn get_persistent_user_id() -> &'static str {
     PERSISTENT_USER_ID.get_or_init(|| {
         let session_id = Uuid::new_v4();
@@ -73,6 +104,10 @@ pub(super) fn build_anthropic_payload(
             "Model not configured. Please select or configure a model first.",
         ));
     }
+    // `[1M]` 后缀是 Claude Code 生态的本地上下文能力声明（见
+    // ANTHROPIC_ONE_M_CONTEXT_BETA），上游 API 不接受该标记，发送前剥离；
+    // 对应的 context-1m beta 头由调用方（api/anthropic/mod.rs）注入。
+    let model = strip_one_m_context_marker(&model);
 
     let skip_image_parsing = request.skip_context.unwrap_or(false);
     let has_user_system_prompts = !user_system_prompts.is_empty();
@@ -424,4 +459,41 @@ pub(crate) fn build_anthropic_thinking(config_json: &str) -> Option<(Value, Opti
         .map(|value| value.to_string());
 
     Some((json!({ "type": "adaptive" }), effort))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{has_one_m_context_marker, strip_one_m_context_marker};
+
+    #[test]
+    fn detects_one_m_marker() {
+        assert!(has_one_m_context_marker("claude-sonnet-4-6[1M]"));
+        assert!(has_one_m_context_marker("claude-opus-4-6 [1m]"));
+        assert!(has_one_m_context_marker("deepseek-v4-pro[1M] "));
+        assert!(!has_one_m_context_marker("claude-sonnet-4-6"));
+        assert!(!has_one_m_context_marker("claude-sonnet-4-6[2M]"));
+        assert!(!has_one_m_context_marker(""));
+    }
+
+    #[test]
+    fn strips_one_m_marker() {
+        assert_eq!(
+            strip_one_m_context_marker("claude-sonnet-4-6[1M]"),
+            "claude-sonnet-4-6"
+        );
+        assert_eq!(
+            strip_one_m_context_marker("claude-opus-4-6 [1m] "),
+            "claude-opus-4-6"
+        );
+        assert_eq!(
+            strip_one_m_context_marker("deepseek-v4-pro[1M]"),
+            "deepseek-v4-pro"
+        );
+        // 无标记时原样返回
+        assert_eq!(
+            strip_one_m_context_marker("claude-sonnet-4-6"),
+            "claude-sonnet-4-6"
+        );
+        assert_eq!(strip_one_m_context_marker(""), "");
+    }
 }

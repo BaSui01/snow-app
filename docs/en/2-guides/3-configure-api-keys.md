@@ -43,6 +43,7 @@ When the main model does not support vision, turn off the **Supports vision** sw
 - **System prompt**: choose from saved system prompts, or inherit the global profile setting;
 - **Custom header scheme**: choose a scheme defined in `custom-headers.json`, with the option to "inherit global" or "use none";
 - **Auto-compress**: when `enableAutoCompress` is on, history messages are automatically compressed when context usage reaches the threshold `autoCompressThreshold` (percentage);
+- **1M context (Anthropic)**: when the request method is `anthropic`, the **1M context** switch appends the `[1M]` marker to the advanced/basic model names to declare 1M-token context support; requests automatically strip the local marker and send the `anthropic-beta: context-1m-2025-08-07` header, recognized by the Anthropic API and gateways/proxies that require explicitly enabling 1M context (matching the Claude Code ecosystem `[1M]` convention, e.g. cc-switch);
 - **Google search (Gemini)**: when `googleSearch` is enabled, Gemini chat requests inject the Google Search tool for real-time web grounding; the separate vision-model section has its own `visionGoogleSearch` switch for vision requests;
 - **Responses Fast Mode**: when the request method is `responses`, you can enable `responsesFastMode` so the server processes Responses requests in fast mode.
 

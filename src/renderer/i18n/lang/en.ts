@@ -738,6 +738,9 @@ export const en = {
   "toolCall.config.saved": "Saved",
   "toolCall.config.deleted": "Deleted",
   "toolCall.config.notFound": "Not found",
+  "toolCall.jsonTree.expand": "Expand",
+  "toolCall.jsonTree.collapse": "Collapse",
+  "toolCall.jsonTree.itemCount": "{{count}} items",
   "toolCall.appControl.created": "Created",
   "toolCall.appControl.applied": "Applied",
   "toolCall.appControl.opened": "Opened",
@@ -1222,6 +1225,9 @@ export const en = {
     "When enabled, Gemini requests (chat / vision image models) inject the Google Search tool (native Gemini grounding) for real-time web information.",
   "settings.apiAdvancedModel": "Advanced model",
   "settings.apiBasicModel": "Basic model",
+  "settings.apiOneMContext": "1M context",
+  "settings.apiOneMContextHint":
+    "Appends the [1M] marker to model names to declare 1M-token context support; requests automatically send the context-1m beta header (for Anthropic and compatible gateways/proxies).",
   "settings.apiMaxContext": "Max context (tokens)",
   "settings.apiTokenPresetsHint":
     "Choose a common token limit or enter a custom value.",

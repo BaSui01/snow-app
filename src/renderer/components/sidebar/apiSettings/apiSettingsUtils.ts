@@ -26,6 +26,31 @@ const normalizeRequestMethod = (value: string): RequestMethod => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+// ---------------------------------------------------------------------------
+// 1M 上下文标记（Claude Code 生态约定，与 cc-switch 保持一致）
+// ---------------------------------------------------------------------------
+
+/** 本地 1M 上下文标记：模型名后缀 `[1M]`（大小写不敏感）。 */
+export const ONE_M_CONTEXT_MARKER = "[1M]";
+
+/** 模型名是否携带 `[1M]` 上下文标记（忽略尾部空格、大小写不敏感）。 */
+export const hasOneMMarker = (model: string): boolean =>
+  model.trimEnd().toLowerCase().endsWith("[1m]");
+
+/** 剥离模型名末尾的 `[1M]` 上下文标记（上游 API 不接受该本地标记）。 */
+export const stripOneMMarker = (model: string): string => {
+  const trimmedEnd = model.trimEnd();
+  if (!trimmedEnd.toLowerCase().endsWith("[1m]")) return model;
+  return trimmedEnd.slice(0, -ONE_M_CONTEXT_MARKER.length).trimEnd();
+};
+
+/** 给模型名设置/移除 `[1M]` 上下文标记。 */
+export const setOneMMarker = (model: string, enabled: boolean): string => {
+  const base = stripOneMMarker(model).trim();
+  if (!base) return "";
+  return enabled ? `${base}${ONE_M_CONTEXT_MARKER}` : base;
+};
+
 const parseConfigJson = (configJson: string): Record<string, unknown> => {
   try {
     const parsed: unknown = JSON.parse(configJson);

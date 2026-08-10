@@ -9,6 +9,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::api::anthropic::payload::{
     apply_last_user_message_cache_control, build_anthropic_thinking, get_persistent_user_id,
+    has_one_m_context_marker, strip_one_m_context_marker,
 };
 use crate::api::chat::payload::build_chat_reasoning_effort;
 use crate::api::config::{
@@ -820,6 +821,11 @@ async fn run_anthropic_round(
         ));
     }
 
+    // `[1M]` 后缀是 Claude Code 生态的本地上下文能力声明：发送前剥离，
+    // 并附带 context-1m beta 头显式启用 1M 上下文（与主流程一致）。
+    let enable_one_m_context = has_one_m_context_marker(model);
+    let model = strip_one_m_context_marker(model);
+
     let mut payload = json!({
         "model": model,
         "stream": true,
@@ -862,7 +868,7 @@ async fn run_anthropic_round(
     send_streaming_sse_request(
         &client,
         &endpoint,
-        build_anthropic_header_map(api_key, custom_headers)?,
+        build_anthropic_header_map(api_key, custom_headers, enable_one_m_context)?,
         &payload,
         retry_options,
         |event| {

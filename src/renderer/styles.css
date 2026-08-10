@@ -1294,6 +1294,116 @@ input {
 }
 
 /* ============================================================
+ * 会话归档（归档冷数据库）
+ * ============================================================ */
+
+/* 归档/返回切换按钮：激活态高亮，参考 ProjectsSection 的 Plus 按钮位置 */
+.chats-archive-toggle.active {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+/* 归档会话计数徽标 */
+.chats-archive-count {
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--bg-active);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+}
+
+/* 归档会话条目：不允许直接打开，整体弱化显示 */
+.chat-item.archived .chat-item-title {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.chat-item.archived:hover .chat-item-title {
+  color: var(--text-secondary);
+}
+
+.chat-item.archived .chat-item-icon.archived {
+  color: var(--text-tertiary);
+}
+
+/* 归档条目 hover 操作按钮（还原 / 删除） */
+.archived-chat-item-actions {
+  display: none;
+  align-items: center;
+  gap: 1px;
+  flex-shrink: 0;
+}
+
+.chat-item.archived:hover .archived-chat-item-actions {
+  display: inline-flex;
+}
+
+.archived-chat-item-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.archived-chat-item-action:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.archived-chat-item-action.danger:hover {
+  background: rgba(229, 72, 77, 0.1);
+  color: var(--danger, #e5484d);
+}
+
+/* 归档列表工具栏：提示文案 + 多选入口 */
+.archived-chat-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 8px 4px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.archived-chat-toolbar-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.archived-multi-select-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border: none;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.archived-multi-select-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ============================================================
  * 会话多选模式（批量删除）
  * ============================================================ */
 

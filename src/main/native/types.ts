@@ -1332,6 +1332,18 @@ export type NativeBridge = {
   ) => Promise<void>;
   deleteConversation: (conversationId: string) => Promise<void>;
   deleteConversations: (conversationIds: string[]) => Promise<void>;
+  /** 归档会话：从运行库搬移到独立的归档冷数据库（含子代理级联），置顶会话不参与归档。 */
+  archiveConversations: (conversationIds: string[]) => Promise<void>;
+  /** 分页列出归档会话（按归档时间倒序）。 */
+  listArchivedConversationsPaginated: (
+    directoryId: string,
+    limit: number,
+    offset: number
+  ) => Promise<ChatConversationPage>;
+  /** 还原归档会话：从归档冷数据库搬移回运行库（含子代理级联）。 */
+  restoreArchivedConversations: (conversationIds: string[]) => Promise<void>;
+  /** 永久删除归档会话（含子代理级联）。 */
+  deleteArchivedConversations: (conversationIds: string[]) => Promise<void>;
   appendToolMessage: (conversationId: string, content: string) => Promise<void>;
   listChatMessages: (conversationId: string) => Promise<ChatMessageRecord[]>;
   listUserMessages: (conversationId: string) => Promise<UserMessageSummary[]>;

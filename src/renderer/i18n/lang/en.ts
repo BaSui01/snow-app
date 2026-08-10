@@ -263,6 +263,7 @@ export const en = {
   "sidebar.chatActionUnpin": "Unpin",
   "sidebar.chatActionRename": "Rename",
   "sidebar.chatActionDelete": "Delete",
+  "sidebar.chatActionArchive": "Archive",
   "sidebar.chatActionExport": "Export",
   "sidebar.chatActionIcon": "Icon",
   "sidebar.chatDeleteConfirm":
@@ -288,6 +289,21 @@ export const en = {
   "sidebar.chatRenamePlaceholder": "Enter new name",
   "sidebar.chatActionError": "Operation failed",
   "sidebar.chatToggleCollapse": "Collapse/expand chats",
+  "sidebar.archivedChats": "Archived",
+  "sidebar.archivedChatsToggle": "View archived chats",
+  "sidebar.archivedChatsToggleBack": "Back to chats",
+  "sidebar.archivedChatsEmpty": "No archived chats",
+  "sidebar.archivedChatsHint":
+    "Restore archived chats to continue using them",
+  "sidebar.archivedChatRestoreHint": "Restore this conversation to use it",
+  "sidebar.chatActionRestore": "Restore",
+  "sidebar.chatMultiSelectArchive": "Archive selected",
+  "sidebar.archivedChatMultiSelectRestore": "Restore selected",
+  "sidebar.archivedChatMultiSelectDelete": "Delete selected",
+  "sidebar.archivedChatDeleteConfirm":
+    "Permanently delete this archived conversation? This cannot be undone.",
+  "sidebar.archivedChatMultiSelectDeleteConfirm":
+    "Permanently delete {{count}} selected archived conversations? This cannot be undone.",
   "sidebar.subAgent": "Sub-agent",
   "sidebar.emojiPickerLabel": "Select an emoji",
   "sidebar.emojiPickerTitle": "Choose icon",

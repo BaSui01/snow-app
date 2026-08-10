@@ -1,5 +1,6 @@
 pub mod api_configs;
 pub mod app_logs;
+pub mod archive;
 pub mod chat_conversations;
 pub mod checkpoint;
 pub mod code_chunker;

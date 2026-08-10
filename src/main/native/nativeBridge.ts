@@ -547,6 +547,30 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to batch delete conversations"
           )
         ),
+      archiveConversations: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to archive conversations"
+          )
+        ),
+      listArchivedConversationsPaginated: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to list archived conversations paginated"
+          )
+        ),
+      restoreArchivedConversations: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to restore archived conversations"
+          )
+        ),
+      deleteArchivedConversations: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to delete archived conversations"
+          )
+        ),
       listChatMessages: () =>
         Promise.reject(
           new Error("Rust native bridge is required to list chat messages")

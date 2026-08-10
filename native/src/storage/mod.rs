@@ -1652,6 +1652,41 @@ pub fn delete_conversations(conversation_ids: Vec<String>) -> Result<()> {
     services::chat_conversations::delete_conversations(&database_path, &conversation_ids)
 }
 
+pub fn archive_conversations(conversation_ids: Vec<String>) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    let archive_path = ensure_archive_database_file()?;
+    services::archive::archive_conversations(&database_path, &archive_path, &conversation_ids)
+}
+
+pub fn list_archived_conversations_paginated(
+    directory_id: String,
+    limit: i32,
+    offset: i32,
+) -> Result<ChatConversationPage> {
+    let archive_path = ensure_archive_database_file()?;
+    services::archive::list_archived_conversations_paginated(
+        &archive_path,
+        &directory_id,
+        limit,
+        offset,
+    )
+}
+
+pub fn restore_archived_conversations(conversation_ids: Vec<String>) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    let archive_path = ensure_archive_database_file()?;
+    services::archive::restore_archived_conversations(
+        &database_path,
+        &archive_path,
+        &conversation_ids,
+    )
+}
+
+pub fn delete_archived_conversations(conversation_ids: Vec<String>) -> Result<()> {
+    let archive_path = ensure_archive_database_file()?;
+    services::archive::delete_archived_conversations(&archive_path, &conversation_ids)
+}
+
 pub fn append_tool_message(conversation_id: String, content: String) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::chat_conversations::append_tool_message(&database_path, &conversation_id, &content)
@@ -1854,6 +1889,42 @@ pub fn ensure_database_file() -> Result<PathBuf> {
     // Store into the cache so all future calls hit the fast path.
     let _ = DATABASE_PATH_CACHE.set(database_path.clone());
     Ok(database_path)
+}
+
+/// Cached archive database path after the first successful initialization.
+static ARCHIVE_DATABASE_PATH_CACHE: OnceLock<PathBuf> = OnceLock::new();
+
+/// Serializes the first-time initialization of the archive database
+/// (double-checked locking, mirroring [ensure_database_file]).
+static ARCHIVE_DATABASE_INIT_MUTEX: Mutex<()> = Mutex::new(());
+
+/// Ensures the archive cold database (`.snowapp/archive.db`) exists with the
+/// conversation archive schema. Used by archive/restore/list operations; the
+/// archive database keeps archived conversations out of the runtime database
+/// so the runtime database stays small without losing data.
+pub fn ensure_archive_database_file() -> Result<PathBuf> {
+    // Fast path: cache hit — no lock, no I/O.
+    if let Some(cached) = ARCHIVE_DATABASE_PATH_CACHE.get() {
+        return Ok(cached.clone());
+    }
+
+    // Slow path: acquire the init mutex so only one thread initializes.
+    let _guard = ARCHIVE_DATABASE_INIT_MUTEX
+        .lock()
+        .map_err(|_| Error::from_reason("Snow App archive database init mutex poisoned"))?;
+
+    // Re-check after acquiring the lock.
+    if let Some(cached) = ARCHIVE_DATABASE_PATH_CACHE.get() {
+        return Ok(cached.clone());
+    }
+
+    let storage_dir = ensure_storage_dir()?;
+    let archive_path = paths::archive_database_file_path(&storage_dir);
+    services::archive::ensure_archive_database(&archive_path)?;
+
+    // Store into the cache so all future calls hit the fast path.
+    let _ = ARCHIVE_DATABASE_PATH_CACHE.set(archive_path.clone());
+    Ok(archive_path)
 }
 
 fn ensure_storage_dir() -> Result<PathBuf> {

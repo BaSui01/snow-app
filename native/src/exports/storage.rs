@@ -1074,6 +1074,49 @@ pub async fn list_chat_conversations_paginated(
     .map_err(map_spawn_error)?
 }
 
+/// 归档会话：从运行库搬移到独立的归档冷数据库（含子代理级联）。
+/// 置顶会话不参与归档。
+#[napi]
+pub async fn archive_conversations(conversation_ids: Vec<String>) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::archive_conversations(conversation_ids))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+/// 分页列出归档会话（按归档时间倒序）。
+#[napi]
+pub async fn list_archived_conversations_paginated(
+    directory_id: String,
+    limit: i32,
+    offset: i32,
+) -> napi::Result<ChatConversationPage> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::list_archived_conversations_paginated(directory_id, limit, offset)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+/// 还原归档会话：从归档冷数据库搬移回运行库（含子代理级联）。
+#[napi]
+pub async fn restore_archived_conversations(conversation_ids: Vec<String>) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::restore_archived_conversations(conversation_ids)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+/// 永久删除归档会话（含子代理级联）。
+#[napi]
+pub async fn delete_archived_conversations(conversation_ids: Vec<String>) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::delete_archived_conversations(conversation_ids)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
 /// 跨项目按会话 ID 查询会话记录（供「跨项目通知」使用）。
 #[napi]
 pub async fn list_chat_conversations_by_ids(

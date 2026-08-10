@@ -9,6 +9,7 @@ export const ChatInput = ({
   projectName,
   conversationId,
   onSend,
+  onNavigateToView,
   isStreaming = false,
   isAborting = false,
   onAbort,
@@ -61,6 +62,7 @@ export const ChatInput = ({
       placeholder={placeholder ?? t("chatInput.placeholder")}
       projectId={projectId}
       projectName={projectName}
+      onNavigateToView={onNavigateToView}
       {...controller}
       tokenUsage={tokenUsage}
       pendingMessages={pendingMessages}

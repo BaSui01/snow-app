@@ -137,6 +137,9 @@ export const useChatInputController = ({
       cancel: t("common.cancel", { defaultValue: "Cancel" }),
       confirm: t("common.confirm", { defaultValue: "Confirm" }),
       retry: t("common.retry", { defaultValue: "Retry" }),
+      noApiConfig: t("chat.noApiConfig", {
+        defaultValue: "No API configuration found. Please configure one in Settings first.",
+      }),
     }),
     [t]
   );
@@ -193,6 +196,10 @@ export const useChatInputController = ({
             configs.find((config) => config.isActive) ?? configs[0] ?? null;
         }
         if (!runtimeConfig) {
+          // 空配置（初次安装）走专门的友好错误，UI 据此展示引导提示。
+          if (configs.length === 0 && !subAgentConversation) {
+            throw new Error("NO_API_CONFIG");
+          }
           throw new Error(
             requestedProfile
               ? `API profile is not available: ${requestedProfile}`
@@ -214,7 +221,9 @@ export const useChatInputController = ({
 
         const message =
           error instanceof Error
-            ? error.message
+            ? error.message === "NO_API_CONFIG"
+              ? labels.noApiConfig
+              : error.message
             : "Failed to load API configuration";
         setRuntimeApiConfig(null);
         setSelectedApiProfile("");
@@ -235,7 +244,7 @@ export const useChatInputController = ({
     return () => {
       cancelled = true;
     };
-  }, [conversationId]);
+  }, [conversationId, labels]);
 
   const loadModels = useCallback(
     async (force = false) => {
@@ -452,6 +461,12 @@ export const useChatInputController = ({
       return;
     }
 
+    // 未配置任何 API（初次安装）时阻止发送，避免直接落到后端报错；
+    // 引导提示由 ChatInputView 的空配置条展示。
+    if (apiConfigs.length === 0 || !runtimeApiConfig) {
+      return;
+    }
+
     // The selected profile is conversation-scoped: for a brand-new
     // conversation it is carried on the request so the backend binds the
     // created conversation to this provider; for existing conversations the
@@ -472,7 +487,7 @@ export const useChatInputController = ({
         adjustHeight();
       });
     }
-  }, [adjustHeight, onSend, selectedModel, selectedApiProfile, value, conversationId, clearInputDraft]);
+  }, [adjustHeight, onSend, selectedModel, selectedApiProfile, value, conversationId, clearInputDraft, apiConfigs.length, runtimeApiConfig]);
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {

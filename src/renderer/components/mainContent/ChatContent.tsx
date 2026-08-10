@@ -1085,6 +1085,7 @@ const ChatContentBody = ({
             projectName={activeDirectory?.name}
             conversationId={activeConversationId}
             onSend={handleSendWithScroll}
+            onNavigateToView={onNavigateToView}
             isStreaming={isStreaming}
             isAborting={isAborting}
             onAbort={handleAbort}

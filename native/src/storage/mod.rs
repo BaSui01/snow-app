@@ -1885,7 +1885,6 @@ pub fn ensure_database_file() -> Result<PathBuf> {
     let database_path = paths::database_file_path(&storage_dir);
     database::ensure_database(&database_path)?;
     services::system_settings::seed_default_settings(&database_path)?;
-    services::api_configs::seed_default_api_config(&database_path)?;
     services::sub_agent_configs::seed_default_sub_agent_configs(&database_path)?;
     services::sensitive_command_configs::seed_default_sensitive_command_configs(&database_path)?;
     services::workspace_directories::seed_default_workspace_directory(&database_path)?;

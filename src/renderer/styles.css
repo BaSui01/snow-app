@@ -16664,6 +16664,58 @@ input {
   outline-offset: 1px;
 }
 
+/* 未配置 API 时的引导条（初次安装引导） */
+.api-config-empty-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent-amber-text) 28%, transparent);
+  border-radius: 10px;
+  background: var(--accent-amber-bg);
+  font-size: 12px;
+  color: var(--accent-amber-text);
+  position: relative;
+  z-index: 1;
+}
+
+.api-config-empty-icon {
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.api-config-empty-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 1.5;
+}
+
+.api-config-empty-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent-amber-text) 40%, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--surface-island-strong);
+  color: var(--accent-amber-text);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+
+.api-config-empty-btn:hover {
+  opacity: 0.88;
+}
+
+.api-config-empty-btn:focus-visible {
+  outline: 1px solid var(--accent-amber-text);
+  outline-offset: 1px;
+}
+
 .input-box {
   position: relative;
   z-index: 1;

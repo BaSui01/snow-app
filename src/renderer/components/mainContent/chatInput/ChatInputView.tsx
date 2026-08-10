@@ -13,10 +13,12 @@ import {
   Folder,
   Keyboard,
   Loader2,
+  Plug,
   Radio,
   RefreshCw,
   Search,
   Send,
+  Settings,
   Square,
   X,
   Zap,
@@ -96,6 +98,7 @@ export const ChatInputView = ({
   placeholder,
   projectId,
   projectName,
+  onNavigateToView,
   value,
   textareaRef,
   apiConfigs,
@@ -2084,6 +2087,26 @@ export const ChatInputView = ({
             ) : null}
           </div>
         ) : null}
+        {apiConfigs.length === 0 && !isSubAgentConversation && !isLoadingApiConfig ? (
+          <div className="api-config-empty-banner" role="status">
+            <Plug size={14} className="api-config-empty-icon" aria-hidden="true" />
+            <span className="api-config-empty-text">
+              {t("chat.noApiConfigBanner", {
+                defaultValue: "尚未配置 AI API，请先添加 API 配置后再开始对话",
+              })}
+            </span>
+            {onNavigateToView ? (
+              <button
+                type="button"
+                className="api-config-empty-btn"
+                onClick={() => onNavigateToView("api-settings")}
+              >
+                <Settings size={13} aria-hidden="true" />
+                {t("chat.configureApi", { defaultValue: "前往设置" })}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <div className="input-box">
           <div
             ref={textareaRef}
@@ -2330,11 +2353,18 @@ export const ChatInputView = ({
                   aria-label={labels.selectModel}
                   aria-expanded={isModelMenuOpen}
                   onClick={handleToggleModelMenu}
-                  disabled={isStreaming || isSubAgentConversation}
+                  disabled={
+                    isStreaming ||
+                    isSubAgentConversation ||
+                    apiConfigs.length === 0 ||
+                    !runtimeApiConfig
+                  }
                   title={
                     isSubAgentConversation
                       ? t("chat.subAgentModelFixed")
-                      : labels.selectModel
+                      : apiConfigs.length === 0 || !runtimeApiConfig
+                        ? labels.noApiConfig
+                        : labels.selectModel
                   }
                   type="button"
                 >
@@ -2861,7 +2891,12 @@ export const ChatInputView = ({
                   aria-label="Send"
                   title="Send"
                   onClick={handleSend}
-                  disabled={!value.trim() || isCompacting}
+                  disabled={
+                    !value.trim() ||
+                    isCompacting ||
+                    apiConfigs.length === 0 ||
+                    !runtimeApiConfig
+                  }
                   type="button"
                 >
                   <ArrowUp size={16} />

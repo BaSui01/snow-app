@@ -1,6 +1,7 @@
 import type { RefObject } from "react";
 import type { LucideIcon } from "lucide-react";
 import type { ApiConfigRecord, Model, TokenUsage } from "../../../../preload";
+import type { MainContentView } from "../types";
 export type ChatInputSendOptions = {
   model?: string;
   apiProfile?: string;
@@ -13,6 +14,8 @@ export type ChatInputProps = {
   projectName?: string;
   conversationId?: string;
   onSend?: (message: string, options: ChatInputSendOptions) => void;
+  /** 未配置 API 时引导跳转到 API 设置页。 */
+  onNavigateToView?: (view: MainContentView) => void;
   isStreaming?: boolean;
   isAborting?: boolean;
   onAbort?: () => void;
@@ -110,6 +113,7 @@ export type ChatInputLabels = {
   cancel: string;
   confirm: string;
   retry: string;
+  noApiConfig: string;
 };
 
 export type ChatInputActions = {
@@ -138,6 +142,8 @@ export type ChatInputViewProps = ChatInputState &
     placeholder: string;
     projectId?: string;
     projectName?: string;
+    /** 未配置 API 时引导跳转到 API 设置页。 */
+    onNavigateToView?: (view: MainContentView) => void;
     tokenUsage: TokenUsage | null;
     pendingMessages: string[];
     onWithdrawPendingMessage?: (index: number) => string | null;

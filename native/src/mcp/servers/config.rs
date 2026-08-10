@@ -2331,8 +2331,8 @@ KEY RULES: (1) hookType whitelist: onUserMessage, beforeToolCall, toolConfirmati
     //   现值，新档案用默认值；apiKey/visionApiKey 未提供或为空一律保留旧值
     //   （新建则留空 → 无密钥档案，用户后补密钥）；isActive:true 切换生效
     //   档案；config_json 自动按 UI 规范组装，无需 agent 提供；
-    // - delete：删除档案（复用统一 confirmed 确认；storage 层自动 seed
-    //   default 并保证恰有一个 active）。
+    // - delete：删除档案（复用统一 confirmed 确认；删除后如无 active 档案
+    //   会自动指定一个 active，但不自动创建默认档案）。
     // ---------------------------------------------------------------------
 
     fn list_db_api_profiles(&self) -> napi::Result<Value> {
@@ -3762,7 +3762,7 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_DELETE.to_string(),
-                description: "Delete a configuration key (e.g. clear an apiKey). DESTRUCTIVE — REQUIRES EXPLICIT USER CONFIRMATION: before calling this tool you MUST call the `askUserQuestion` tool from the `user-interaction` server to show the user exactly which config will be deleted (scope, key, projectId) and its impact, then wait for their explicit approval; only then retry this call with `confirmed: true`. Calls without `confirmed: true` are rejected. Scope-specific semantics: `imagegen` DELETES ALL image generation channels (not just the named key — the whole image generation config is cleared); `skills` uninstalls the skill; `logs` deletes one log file; `subAgents` deletes a sub-agent (built-in agent_general cannot be deleted); `hooks` deletes the hookType config; `apiProfiles` deletes an API profile (the storage layer auto-seeds a default profile and keeps exactly one active). `personalization` deletes ~/.snow/ROLE.md (restores default rules). The current value is backed up before the write (temporary safety net) and the backup is removed after a successful write. Returns deleted=false when the key was not configured. Pass optional `projectId` to delete a project-scoped config (omitted = global). Project-scoped settings: projectId + settings.mcpServers clears all project MCP servers; projectId + settings.sensitiveCommands clears all project sensitive-command overrides.".to_string(),
+                description: "Delete a configuration key (e.g. clear an apiKey). DESTRUCTIVE — REQUIRES EXPLICIT USER CONFIRMATION: before calling this tool you MUST call the `askUserQuestion` tool from the `user-interaction` server to show the user exactly which config will be deleted (scope, key, projectId) and its impact, then wait for their explicit approval; only then retry this call with `confirmed: true`. Calls without `confirmed: true` are rejected. Scope-specific semantics: `imagegen` DELETES ALL image generation channels (not just the named key — the whole image generation config is cleared); `skills` uninstalls the skill; `logs` deletes one log file; `subAgents` deletes a sub-agent (built-in agent_general cannot be deleted); `hooks` deletes the hookType config; `apiProfiles` deletes an API profile (no default profile is auto-created; if no profile is active after the deletion, one remaining profile is activated automatically). `personalization` deletes ~/.snow/ROLE.md (restores default rules). The current value is backed up before the write (temporary safety net) and the backup is removed after a successful write. Returns deleted=false when the key was not configured. Pass optional `projectId` to delete a project-scoped config (omitted = global). Project-scoped settings: projectId + settings.mcpServers clears all project MCP servers; projectId + settings.sensitiveCommands clears all project sensitive-command overrides.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {

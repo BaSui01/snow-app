@@ -14,9 +14,13 @@ import type { NativeBridge } from "../native/types";
 export type PetActivityState =
   | "idle"
   | "busy"
+  | "review"
   | "waiting"
   | "error"
   | "completed";
+
+/** AI 回合类型：普通对话 / 代码审查（review 播放专属动画行）。 */
+export type PetTurnKind = "chat" | "review";
 
 /** 桌面宠物设置。 */
 export type PetSettings = {

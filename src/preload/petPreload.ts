@@ -16,6 +16,9 @@ import type {
 const petBridge = {
   getConfig: (): Promise<PetWindowConfig | null> =>
     ipcRenderer.invoke("pets:get-config"),
+  /** 拉取当前 AI 活动状态（补偿先启动会话再唤醒宠物时丢失的广播）。 */
+  getActivity: (): Promise<PetActivityState> =>
+    ipcRenderer.invoke("pets:get-activity"),
   onConfigChanged: (
     callback: (config: PetWindowConfig) => void
   ): (() => void) => {

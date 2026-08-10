@@ -111,8 +111,16 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         sessionRef.runId = currentRunId;
       }
 
-      // 宠物联动：一个 AI 回合开始（整条 agent loop 期间保持 running）。
-      window.snow.notifyPetTurnStarted();
+      // 宠物联动：本次 run 的唯一回合 id —— start/end 按 id 一一核销。
+      // 多会话并行、中止、被新发送顶替的 run 各自核销自己的回合，
+      // 不会互相污染计数（旧实现的匿名计数在这些路径上会永久漂移）。
+      const petTurnId = `turn-${Date.now().toString(36)}-${Math.random()
+        .toString(36)
+        .slice(2, 10)}`;
+      window.snow.notifyPetTurnStarted(
+        petTurnId,
+        options.kind === "review" ? "review" : "chat"
+      );
 
       // Reset pause state for a fresh send — the previous run may have
       // been paused and aborted without cleaning up the controller.
@@ -1171,13 +1179,17 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           // isStreaming and the streaming id — cleaning them up here would
           // strip the running state from the UI (the stop button disappears)
           // even though the agent loop is still active.
+          //
+          // 宠物联动放在 ownsSession 守卫之外：本次 run 的回合必须与开始时
+          // 生成的 turnId 一一核销。被中止/顶替的 run 同样要回收自己的回合，
+          // 否则主进程计数泄漏，宠物会永久卡在 busy（多会话并行时尤其明显）。
+          window.snow.notifyPetTurnEnded(
+            petTurnId,
+            runFailed || isRunCancelled(finalSessionKey)
+          );
+
           const ownsSession = !!ref && ref.runId === currentRunId;
           if (ownsSession) {
-            // 宠物联动：AI 回合彻底结束。失败/中止播放 failed，否则 waving。
-            window.snow.notifyPetTurnEnded(
-              runFailed || isRunCancelled(finalSessionKey)
-            );
-
             ref.isSending = false;
             ctx.updateSessionField(finalSessionKey, "isStreaming", false);
             ctx.updateSessionField(finalSessionKey, "streamStartedAt", 0);

@@ -8077,7 +8077,7 @@ input {
 
 .review-select-all:hover {
   background: var(--bg-hover);
-  color: var(--accent-blue-text, #60a5fa);
+  color: var(--accent-primary-text, var(--text-primary));
 }
 
 .review-list {
@@ -8137,7 +8137,7 @@ input {
 
 .review-file-row.is-selected,
 .review-commit-row.is-selected {
-  background: var(--accent-blue-bg, rgba(96, 165, 250, 0.14));
+  background: var(--accent-primary-bg, var(--bg-active));
 }
 
 .review-check {
@@ -8155,9 +8155,9 @@ input {
 }
 
 .review-check.is-checked {
-  border-color: var(--accent-blue-text, #60a5fa);
-  background: var(--accent-blue-text, #60a5fa);
-  color: var(--bg-primary);
+  border-color: var(--accent-primary, var(--text-primary));
+  background: var(--accent-primary, var(--text-primary));
+  color: var(--on-solid);
 }
 
 .review-file-path {
@@ -8190,8 +8190,8 @@ input {
 }
 
 .review-kind.is-staged {
-  background: var(--accent-blue-bg);
-  color: var(--accent-blue-text);
+  background: var(--accent-primary-bg, var(--bg-active));
+  color: var(--accent-primary-text, var(--text-primary));
 }
 
 .review-kind.is-unstaged {
@@ -8219,7 +8219,7 @@ input {
     monospace
   );
   font-size: 11px;
-  color: var(--accent-blue-text, #60a5fa);
+  color: var(--accent-primary-text, var(--text-secondary));
   flex-shrink: 0;
 }
 
@@ -8281,7 +8281,7 @@ input {
 }
 
 .review-instructions-input:focus {
-  border-color: var(--accent-blue-text, #60a5fa);
+  border-color: var(--accent-primary, var(--text-secondary));
 }
 
 .review-footer {
@@ -8304,8 +8304,8 @@ input {
   padding: 7px 16px;
   border: none;
   border-radius: 8px;
-  background: var(--accent-blue-text, #60a5fa);
-  color: #fff;
+  background: var(--accent-primary, var(--text-primary));
+  color: var(--on-solid);
   font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;

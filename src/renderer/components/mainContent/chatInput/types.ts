@@ -4,6 +4,8 @@ import type { ApiConfigRecord, Model, TokenUsage } from "../../../../preload";
 export type ChatInputSendOptions = {
   model?: string;
   apiProfile?: string;
+  /** 回合类型：review 表示代码审查任务（桌面宠物播放 review 专属动画）。 */
+  kind?: "chat" | "review";
 };
 export type ChatInputProps = {
   placeholder?: string;

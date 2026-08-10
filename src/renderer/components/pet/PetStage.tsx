@@ -26,6 +26,7 @@ import {
 const ACTIVITY_TO_STATE: Record<PetActivityState, PetSpriteState> = {
   idle: "idle",
   busy: "running",
+  review: "review",
   waiting: "waiting",
   error: "failed",
   completed: "waving",

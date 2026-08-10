@@ -1960,6 +1960,8 @@ export const ChatInputView = ({
           handleSendMessage(prompt, {
             model: selectedModel || undefined,
             apiProfile: selectedApiProfile || undefined,
+            // review 回合：桌面宠物据此播放 review 专属动画。
+            kind: "review",
           });
         }}
         onClose={() => setIsReviewOpen(false)}

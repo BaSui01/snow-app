@@ -1,5 +1,9 @@
 import { ipcRenderer } from "electron";
-import type { PetManifest, PetSettings } from "../types/pets";
+import type {
+  PetManifest,
+  PetSettings,
+  PetTurnKind,
+} from "../types/pets";
 
 /**
  * 主窗口设置界面使用的宠物系统 API。
@@ -35,12 +39,13 @@ export const petApi = {
       ipcRenderer.removeListener("pets:changed", handler);
     };
   },
-  /** 通知宠物：一个 AI 回合（整条 agent loop）开始 */
-  notifyPetTurnStarted: (): void => {
-    ipcRenderer.send("pets:turn-start");
+  /** 通知宠物：一个 AI 回合（整条 agent loop）开始。
+   *  turnId 由渲染层生成并持有，结束时原样回传以精确核销。 */
+  notifyPetTurnStarted: (turnId: string, kind: PetTurnKind): void => {
+    ipcRenderer.send("pets:turn-start", { turnId, kind });
   },
   /** 通知宠物：一个 AI 回合彻底结束（failed=true 播放失败动画） */
-  notifyPetTurnEnded: (failed: boolean): void => {
-    ipcRenderer.send("pets:turn-end", failed);
+  notifyPetTurnEnded: (turnId: string, failed: boolean): void => {
+    ipcRenderer.send("pets:turn-end", { turnId, failed });
   },
 };

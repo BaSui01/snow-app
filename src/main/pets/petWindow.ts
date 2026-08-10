@@ -11,7 +11,7 @@
  * 主窗口不可用时回退到主显示器工作区右下角，不做跨会话位置持久化，
  * 避免宠物出现在屏幕外而"找不到"。
  */
-import { BrowserWindow, screen } from "electron";
+import { app, BrowserWindow, screen, type WebContents } from "electron";
 import { is } from "@electron-toolkit/utils";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -19,10 +19,12 @@ import type { NativeBridge, PetManifestRecord } from "../native/types";
 import { snowLog } from "../../utils/snowLogger";
 import { safeSend } from "../utils/safeSend";
 import { getMainWindow } from "../app/mainWindow";
+import { isMacOS } from "../app/constants";
 import {
   loadPetSettings,
   type PetActivityState,
   type PetSettings,
+  type PetTurnKind,
 } from "./petSettings";
 
 /** Codex 精灵图单帧宽度（像素）。 */
@@ -47,9 +49,22 @@ export type PetWindowConfig = {
 let petWindow: BrowserWindow | null = null;
 let currentConfig: PetWindowConfig | null = null;
 let currentState: PetActivityState = "idle";
-let activeStreams = 0;
+/**
+ * 进行中的 AI 回合，按渲染层生成的 turnId 精确跟踪。
+ *
+ * 早期实现是匿名的全局计数（start +1 / end -1），多会话并行时一旦
+ * start/end 不配对（中止、被新消息顶替、渲染层销毁）计数就会永久漂移，
+ * 宠物卡在 busy。改为按 turnId 记账后：重复的 end 幂等忽略，缺失的
+ * end 由发送方销毁事件兜底回收。
+ */
+const activeTurns = new Map<
+  string,
+  { senderId: number; kind: PetTurnKind }
+>();
 let waitingCount = 0;
 let settleTimer: NodeJS.Timeout | null = null;
+/** 已登记 destroyed 监听的渲染进程（turn 计数的兜底回收）。 */
+const watchedTurnSenders = new Set<number>();
 
 const computeWindowSize = (
   scale: number
@@ -98,15 +113,19 @@ const clearSettleTimer = (): void => {
   }
 };
 
-/** 根据当前计数解析应展示的活动状态。 */
+/** 根据当前回合登记解析应展示的活动状态。 */
 const resolveActivityState = (): PetActivityState => {
   if (waitingCount > 0) {
     return "waiting";
   }
-  if (activeStreams > 0) {
-    return "busy";
+  let hasTurn = false;
+  for (const turn of activeTurns.values()) {
+    if (turn.kind === "review") {
+      return "review";
+    }
+    hasTurn = true;
   }
-  return "idle";
+  return hasTurn ? "busy" : "idle";
 };
 
 const broadcastState = (): void => {
@@ -236,7 +255,36 @@ const createPetWindow = (settings: PetSettings): void => {
   });
 
   petWindow.setAlwaysOnTop(true, "screen-saver");
-  petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // macOS 上 setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  // 存在 Electron/AppKit 已知 bug（electron#26350 / #36364）：与 alwaysOnTop
+  // 组合时可能触发整个应用被系统隐藏（主窗口消失、Dock 图标消失）。
+  // 因此 macOS 上仅启用跨 Space 可见（宠物不出现在全屏 Space 上），
+  // 其它平台保留全屏可见能力。
+  if (isMacOS) {
+    petWindow.setVisibleOnAllWorkspaces(true);
+  } else {
+    petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  }
+
+  // 兜底：部分 macOS 版本上上述已知 bug 仍可能连带隐藏主窗口与宠物自身。
+  // 仅当创建宠物前主窗口可见时才检测并恢复，避免误伤用户主动隐藏到托盘。
+  const mainVisibleBefore = getMainWindow()?.isVisible() ?? false;
+  petWindow.once("show", () => {
+    if (!isMacOS || !mainVisibleBefore) {
+      return;
+    }
+    setTimeout(() => {
+      if (petWindow && !petWindow.isDestroyed() && !petWindow.isVisible()) {
+        petWindow.show();
+      }
+      const mainWindow = getMainWindow();
+      if (mainWindow && !mainWindow.isVisible()) {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+      app.dock?.show();
+    }, 200);
+  });
 
   petWindow.once("ready-to-show", () => {
     petWindow?.show();
@@ -328,21 +376,67 @@ export const restorePetWindow = async (
 /** 获取当前宠物配置（宠物窗口 preload 启动时拉取）。 */
 export const getCurrentPetConfig = (): PetWindowConfig | null => currentConfig;
 
+/**
+ * 获取当前活动状态（宠物窗口 preload 启动时拉取）。
+ * 先启动会话再唤醒宠物时，窗口创建时刻的广播页面尚未加载完成会丢失，
+ * 宠物页面挂载后主动拉取一次以对齐真实状态。
+ */
+export const getCurrentPetActivity = (): PetActivityState => currentState;
+
 // ── AI 活动状态联动 ─────────────────────────────────────────────────
 
-/** 一个 AI 回合（整条 agent loop）开始。 */
-export const reportPetTurnStarted = (): void => {
-  activeStreams += 1;
+/**
+ * 登记回合发送方的销毁监听（每个 webContents 只登记一次）。
+ * 渲染层崩溃 / 窗口关闭 / 热重载时，其名下所有回合自动回收，
+ * 防止宠物永久卡在 busy。
+ */
+const watchTurnSender = (sender: WebContents): void => {
+  if (watchedTurnSenders.has(sender.id)) {
+    return;
+  }
+  const senderId = sender.id;
+  watchedTurnSenders.add(senderId);
+  sender.once("destroyed", () => {
+    watchedTurnSenders.delete(senderId);
+    let removed = false;
+    for (const [turnId, turn] of activeTurns) {
+      if (turn.senderId === senderId) {
+        activeTurns.delete(turnId);
+        removed = true;
+      }
+    }
+    if (removed) {
+      clearSettleTimer();
+      applyState(resolveActivityState());
+    }
+  });
+};
+
+/** 一个 AI 回合（整条 agent loop）开始，turnId 由渲染层生成并全程持有。 */
+export const reportPetTurnStarted = (
+  sender: WebContents,
+  turnId: string,
+  kind: PetTurnKind
+): void => {
+  watchTurnSender(sender);
+  if (!activeTurns.has(turnId)) {
+    activeTurns.set(turnId, { senderId: sender.id, kind });
+  }
   clearSettleTimer();
   applyState(resolveActivityState());
 };
 
-/** 一个 AI 回合彻底结束。failed=true 时宠物短暂播放失败动画。 */
-export const reportPetTurnEnded = (failed: boolean): void => {
-  activeStreams = Math.max(0, activeStreams - 1);
+/**
+ * 一个 AI 回合彻底结束。failed=true 时宠物短暂播放失败动画。
+ * 按 turnId 核销：未知 / 重复的 end 幂等忽略，多会话并行互不干扰。
+ */
+export const reportPetTurnEnded = (turnId: string, failed: boolean): void => {
+  if (!activeTurns.delete(turnId)) {
+    return;
+  }
   clearSettleTimer();
 
-  if (activeStreams > 0 || waitingCount > 0) {
+  if (activeTurns.size > 0 || waitingCount > 0) {
     applyState(resolveActivityState());
     return;
   }

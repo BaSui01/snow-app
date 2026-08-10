@@ -26,15 +26,21 @@ function PetWindowApp(): React.JSX.Element | null {
       return;
     }
 
+    // 先登记广播订阅，再拉取初始值：订阅之后的状态变化必然经广播送达，
+    // 订阅之前的状态由拉取补齐。若顺序颠倒，先启动会话再唤醒宠物时，
+    // 窗口创建时刻的活动状态广播会在页面加载前发出而永久丢失。
+    const unsubscribeConfig = bridge.onConfigChanged(setConfig);
+    const unsubscribeActivity = bridge.onActivityChanged(setActivity);
+    const unsubscribeDrag = bridge.onDragStateChanged(setDragState);
+
     bridge.getConfig().then((initial) => {
       if (initial) {
         setConfig(initial);
       }
     });
-
-    const unsubscribeConfig = bridge.onConfigChanged(setConfig);
-    const unsubscribeActivity = bridge.onActivityChanged(setActivity);
-    const unsubscribeDrag = bridge.onDragStateChanged(setDragState);
+    bridge.getActivity().then((initialActivity) => {
+      setActivity(initialActivity);
+    });
 
     return () => {
       unsubscribeConfig();

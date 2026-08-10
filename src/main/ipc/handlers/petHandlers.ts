@@ -12,13 +12,33 @@ import {
   loadPetSettings,
   petSettingCodes,
   savePetSetting,
+  type PetTurnKind,
 } from "../../pets/petSettings";
 import {
+  getCurrentPetActivity,
   getCurrentPetConfig,
   refreshPetWindow,
   reportPetTurnEnded,
   reportPetTurnStarted,
 } from "../../pets/petWindow";
+
+/** 解析渲染层的回合事件载荷，非法载荷返回 null 直接丢弃。 */
+const parsePetTurnPayload = (
+  payload: unknown
+): { turnId: string; kind: PetTurnKind; failed: boolean } | null => {
+  if (typeof payload !== "object" || payload === null) {
+    return null;
+  }
+  const record = payload as Record<string, unknown>;
+  if (typeof record.turnId !== "string" || !record.turnId.trim()) {
+    return null;
+  }
+  return {
+    turnId: record.turnId.trim(),
+    kind: record.kind === "review" ? "review" : "chat",
+    failed: record.failed === true,
+  };
+};
 
 export const registerPetHandlers = (native: NativeBridge): void => {
   // ── 主窗口设置界面 ─────────────────────────────────────────────────
@@ -107,13 +127,26 @@ export const registerPetHandlers = (native: NativeBridge): void => {
   // ── 宠物窗口 ───────────────────────────────────────────────────────
 
   ipcMain.handle("pets:get-config", () => getCurrentPetConfig());
+  // 宠物页面挂载后主动拉取当前活动状态：先启动会话再唤醒宠物时，
+  // 窗口创建时刻的状态广播尚未被页面接收，需由页面自行补齐。
+  ipcMain.handle("pets:get-activity", () => getCurrentPetActivity());
 
   // AI 回合级联动：整条 agent loop 开始/彻底结束时由渲染层通知，
   // 使宠物在回合期间保持 running、仅在真正完成时 waving。
-  ipcMain.on("pets:turn-start", () => {
-    reportPetTurnStarted();
+  // 载荷携带渲染层生成的 turnId：多会话并行时按 id 精确核销，
+  // 中止 / 顶替 / 渲染层销毁等异常路径都不会污染计数。
+  ipcMain.on("pets:turn-start", (event, payload: unknown) => {
+    const parsed = parsePetTurnPayload(payload);
+    if (!parsed) {
+      return;
+    }
+    reportPetTurnStarted(event.sender, parsed.turnId, parsed.kind);
   });
-  ipcMain.on("pets:turn-end", (_event, failed: unknown) => {
-    reportPetTurnEnded(failed === true);
+  ipcMain.on("pets:turn-end", (_event, payload: unknown) => {
+    const parsed = parsePetTurnPayload(payload);
+    if (!parsed) {
+      return;
+    }
+    reportPetTurnEnded(parsed.turnId, parsed.failed);
   });
 };

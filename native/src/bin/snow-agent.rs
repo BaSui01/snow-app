@@ -1050,8 +1050,8 @@ fn open_pty() -> Result<(File, File), String> {
             &mut master,
             &mut slave,
             std::ptr::null_mut(),
-            std::ptr::null(),
-            std::ptr::null(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
         )
     };
     if result == -1 {
@@ -1109,7 +1109,7 @@ fn spawn_pty_command(command: &str, directory: &Path, slave: &File) -> Result<Ch
             if libc::setsid() == -1 {
                 return Err(io::Error::last_os_error());
             }
-            if libc::ioctl(slave_fd, libc::TIOCSCTTY, 0) == -1 {
+            if libc::ioctl(slave_fd, libc::TIOCSCTTY as _, 0) == -1 {
                 return Err(io::Error::last_os_error());
             }
             for target in [libc::STDIN_FILENO, libc::STDOUT_FILENO, libc::STDERR_FILENO] {
@@ -1586,7 +1586,7 @@ fn attach_job(directory: &Path) -> Result<(), String> {
     let stdin_fd = io::stdin().as_raw_fd();
     let _raw = RawTerminal::enter(stdin_fd)?;
     unsafe {
-        libc::signal(libc::SIGWINCH, on_sigwinch as libc::sighandler_t);
+        libc::signal(libc::SIGWINCH, on_sigwinch as *const () as libc::sighandler_t);
     }
     if let Some(size) = read_terminal_size(stdin_fd) {
         send_attach_frame(&mut stream, FRAME_RESIZE, &size)?;

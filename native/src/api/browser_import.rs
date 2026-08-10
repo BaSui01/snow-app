@@ -402,6 +402,7 @@ const CHROME_CNG_XOR_KEY: [u8; 32] = [
 ];
 
 /// AES-256-GCM 显式三段解密（iv / ciphertext / tag 分离布局）。
+#[cfg(windows)]
 fn aes_gcm_decrypt_parts(key: &[u8], iv: &[u8], ciphertext: &[u8], tag: &[u8]) -> Option<Vec<u8>> {
     if key.len() != 32 || iv.len() != 12 || tag.len() != 16 {
         return None;
@@ -414,6 +415,7 @@ fn aes_gcm_decrypt_parts(key: &[u8], iv: &[u8], ciphertext: &[u8], tag: &[u8]) -
 }
 
 /// ChaCha20-Poly1305 显式三段解密（Chrome 133-136 elevation_service 附加层）。
+#[cfg(windows)]
 fn chacha20_poly1305_decrypt_parts(
     key: &[u8],
     iv: &[u8],

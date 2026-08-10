@@ -26,36 +26,41 @@ export const sshApi = {
   /**
    * 建立 SSH 会话。主进程返回结构化结果
    * `{ ok: true, sessionId }` 或 `{ ok: false, code, message, detail }`；
-   * 失败时此处转换为 Error 抛出，对外签名保持 `Promise<string>` 不变。
+   * 成功时提取 `sessionId`，失败时转换为 Error 抛出，对外签名保持
+   * `Promise<string>` 不变；同时兼容旧版主进程直接返回字符串会话 ID
+   * 的情况，只有完全畸形的响应才抛出 Unexpected SSH connect response。
    * 注意：contextBridge 序列化 Error 只保留 message，自定义属性会被丢弃，
    * 因此原始原因（detail）拼入 message；需要完整错误码的调用方
    * 请使用 `sshConnectDetailed`。
    */
   sshConnect: async (params: SshConnectParams): Promise<string> => {
     const result: unknown = await ipcRenderer.invoke("ssh:connect", params);
-    if (
-      result !== null &&
-      typeof result === "object" &&
-      (result as { ok?: unknown }).ok === false
-    ) {
-      const failure = result as {
+    if (result !== null && typeof result === "object") {
+      const response = result as {
+        ok?: unknown;
+        sessionId?: unknown;
         message?: unknown;
         detail?: unknown;
       };
-      const message =
-        typeof failure.message === "string"
-          ? failure.message
-          : "Failed to connect to SSH server";
-      const detail =
-        typeof failure.detail === "string" && failure.detail
-          ? failure.detail
-          : undefined;
-      throw new Error(detail ? `${message} (${detail})` : message);
+      if (response.ok === true && typeof response.sessionId === "string") {
+        return response.sessionId;
+      }
+      if (response.ok === false) {
+        const message =
+          typeof response.message === "string"
+            ? response.message
+            : "Failed to connect to SSH server";
+        const detail =
+          typeof response.detail === "string" && response.detail
+            ? response.detail
+            : undefined;
+        throw new Error(detail ? `${message} (${detail})` : message);
+      }
     }
-    if (typeof result !== "string") {
-      throw new Error("Unexpected SSH connect response");
+    if (typeof result === "string") {
+      return result;
     }
-    return result;
+    throw new Error("Unexpected SSH connect response");
   },
   /**
    * 建立 SSH 会话并返回完整结构化结果（成功/失败均不抛异常）。

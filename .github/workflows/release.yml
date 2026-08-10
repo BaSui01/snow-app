@@ -39,7 +39,11 @@ jobs:
             arch: x64
             rust_targets: x86_64-apple-darwin
             build_args: "--mac dmg zip --x64"
-          - os: ubuntu-latest
+          # Linux 必须固定在 ubuntu-22.04（glibc 2.35）上构建：
+          # Rust native bridge 动态链接宿主 glibc，若用更新的 runner
+          # （如 ubuntu-latest 的 glibc 2.39），产出的 .deb 将无法在
+          # Debian 12 / Ubuntu 22.04 等最低支持基线上加载（issue #61）。
+          - os: ubuntu-22.04
             platform: linux
             rust_targets: x86_64-unknown-linux-gnu
             build_args: "--linux AppImage deb"
@@ -91,6 +95,15 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx electron-builder ${{ matrix.build_args }} --publish never
+
+      # 发布前校验：解包 .deb，确认其中的 Rust native bridge 所需的
+      # GLIBC 符号版本不超过最低支持基线（Debian 12 / Ubuntu 22.04，
+      # glibc 2.35），防止 runner 升级后再次出现 issue #61 的回归。
+      - name: Verify Linux .deb native bridge glibc compatibility
+        if: matrix.platform == 'linux'
+        env:
+          SNOW_LINUX_GLIBC_MAX: "2.35"
+        run: node scripts/verify-linux-native-glibc.cjs release
 
       - name: Rename arm64 update yml to avoid collision
         if: matrix.platform == 'darwin' && matrix.arch == 'arm64'

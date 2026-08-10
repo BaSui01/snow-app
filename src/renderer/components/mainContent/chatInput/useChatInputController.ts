@@ -31,6 +31,7 @@ import type {
 } from "./types";
 import {
   buildSegmentsHtml,
+  isEditableContentEmpty,
   parseContentSegments,
   renumberImageChips,
 } from "./fileTagUtils";
@@ -354,7 +355,9 @@ export const useChatInputController = ({
       // 固定 chip 宽度，确保 hover 显示 remove 按钮时布局不跳动、
       // 名字能正确省略。与新输入时 syncContent -> renumberImageChips 一致。
       renumberImageChips(textarea);
-      textarea.dataset.empty = draftToRestore.trim() === "" ? "true" : "false";
+      textarea.dataset.empty = isEditableContentEmpty(draftToRestore)
+        ? "true"
+        : "false";
       requestAnimationFrame(() => {
         adjustHeight();
         textarea.focus();
@@ -408,8 +411,9 @@ export const useChatInputController = ({
 
         textareaRef.current.innerHTML = html;
         renumberImageChips(textareaRef.current);
-        textareaRef.current.dataset.empty =
-          content.trim() === "" ? "true" : "false";
+        textareaRef.current.dataset.empty = isEditableContentEmpty(content)
+          ? "true"
+          : "false";
         requestAnimationFrame(() => {
           adjustHeight();
           textareaRef.current?.focus();

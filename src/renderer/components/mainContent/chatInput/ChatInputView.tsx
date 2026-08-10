@@ -43,6 +43,7 @@ import {
   createWebTagChipHtml,
   insertHtmlAtSelection,
   insertLineBreak,
+  isEditableContentEmpty,
   parseContentSegments,
   readEditableContent,
   readEditableContentAsPlainText,
@@ -467,8 +468,9 @@ export const ChatInputView = ({
       renumberImageChips();
       const content = readEditableContent(textareaRef.current);
       handleChange(content);
-      textareaRef.current.dataset.empty =
-        content.trim() === "" ? "true" : "false";
+      textareaRef.current.dataset.empty = isEditableContentEmpty(content)
+        ? "true"
+        : "false";
     }
   }, [handleChange, renumberImageChips, textareaRef]);
 

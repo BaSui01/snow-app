@@ -1,5 +1,24 @@
 # Release Notes
 
+## v0.1.24
+
+## New Features
+
+- **Session Archiving**: Conversations can be archived to a separate cold database — archive, restore, and delete sessions without bloating the main database.
+- **Custom Storage Directories**: Checkpoint and upload directories are now configurable, with migration of existing data to the new locations.
+- **Sidebar Browser Multi-Tab**: The sidebar browser panel supports multiple tabs for easier multi-page work.
+- **API Configuration Guide Bar**: When no API is configured, a guide bar appears to walk users through the setup.
+- **Image Library Lightbox Details**: The lightbox detail panel is now collapsible/expandable.
+- **Pet Review Status**: Pet turn tracking was refactored and gained a review status.
+
+## Improvements
+
+- Command search enhanced in the chat input command panel; imagegen MCP server now exposes its name; unused imports removed.
+
+## Bug Fixes
+
+- Empty-content detection in the chat input no longer misfires.
+
 ## v0.1.23
 
 ## New Features

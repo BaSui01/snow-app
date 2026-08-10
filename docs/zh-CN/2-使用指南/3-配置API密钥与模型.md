@@ -53,10 +53,10 @@ Snow App 通过 **API 档案（Profile）** 管理模型服务商的接入信息
 - **自动压缩**：开启 `enableAutoCompress` 后，当上下文用量达到阈值
   `autoCompressThreshold`（百分比）时自动压缩历史消息；
 - **1M 上下文（Anthropic）**：当请求方法为 `anthropic` 时，可开启 **1M context**
-  开关，为高级/基础模型名追加 `[1M]` 标记声明 100 万上下文能力；请求会自动
-  剥离该本地标记并携带 `anthropic-beta: context-1m-2025-08-07` 请求头，供
-  Anthropic 官方 API 及要求显式启用 1M 上下文的网关/中转识别（与 Claude Code
-  生态的 `[1M]` 约定一致，可参考 cc-switch 的同类实现）；
+  开关，开启后所有 Anthropic 请求自动携带 `anthropic-beta: context-1m-2025-08-07`
+  请求头，声明 100 万上下文能力，供 Anthropic 官方 API 及要求显式启用 1M
+  上下文的网关/中转识别；模型名无需附加任何标记（若模型名带有 Claude Code
+  生态的 `[1M]` 后缀，也会自动剥离并同样生效，兼容 cc-switch 等工具）；
 - **Google 搜索（Gemini）**：开启 `googleSearch` 后，Gemini 聊天请求会注入
   Google Search 工具实现实时联网接地（Grounding with Google Search）；
   视觉模型独立配置区另有 `visionGoogleSearch` 开关，可单独控制视觉请求；

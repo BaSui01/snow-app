@@ -1190,7 +1190,7 @@ export const zhTW = {
   "settings.apiBasicModel": "基礎模型",
   "settings.apiOneMContext": "1M 上下文",
   "settings.apiOneMContextHint":
-    "在模型名稱後附加 [1M] 標記宣告 100 萬上下文能力，請求會自動攜帶 context-1m beta 頭（適用於 Anthropic 及相容閘道/轉發）。",
+    "開啟後所有 Anthropic 請求自動攜帶 context-1m beta 頭，宣告 100 萬上下文能力（適用於 Anthropic 及要求顯式啟用 1M 上下文的閘道/轉發）。",
   "settings.apiMaxContext": "最大上下文（tokens）",
   "settings.apiTokenPresetsHint": "可選擇常見 token 規格，也可直接填寫自訂值。",
   "settings.apiMaxTokens": "最大輸出 tokens",

@@ -1189,7 +1189,7 @@ export const zhCN = {
   "settings.apiBasicModel": "基础模型",
   "settings.apiOneMContext": "1M 上下文",
   "settings.apiOneMContextHint":
-    "在模型名后附加 [1M] 标记声明 100 万上下文能力，请求会自动携带 context-1m beta 头（适用于 Anthropic 及兼容网关/中转）。",
+    "开启后所有 Anthropic 请求自动携带 context-1m beta 头，声明 100 万上下文能力（适用于 Anthropic 及要求显式启用 1M 上下文的网关/中转）。",
   "settings.apiMaxContext": "最大上下文（tokens）",
   "settings.apiTokenPresetsHint":
     "可选择常见 token 规格，也可直接填写自定义值。",

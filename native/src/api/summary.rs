@@ -251,7 +251,11 @@ async fn generate_summary_via_anthropic(
     let user_content = build_structured_user_content(&conversation_text);
     // `[1M]` 后缀是 Claude Code 生态的本地上下文能力声明：发送前剥离，
     // 并附带 context-1m beta 头显式启用 1M 上下文（与主流程一致）。
-    let enable_one_m_context = crate::api::anthropic::payload::has_one_m_context_marker(model);
+    // 生效条件：模型名带标记，或档案开关 snowcfg.enable1mContext 开启。
+    let enable_one_m_context = crate::api::anthropic::payload::has_one_m_context_marker(model)
+        || crate::api::anthropic::payload::config_json_enables_one_m_context(
+            &api_config.config_json,
+        );
     let model = crate::api::anthropic::payload::strip_one_m_context_marker(model);
     let payload = json!({
         "model": model,

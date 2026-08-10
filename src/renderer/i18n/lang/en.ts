@@ -1227,7 +1227,7 @@ export const en = {
   "settings.apiBasicModel": "Basic model",
   "settings.apiOneMContext": "1M context",
   "settings.apiOneMContextHint":
-    "Appends the [1M] marker to model names to declare 1M-token context support; requests automatically send the context-1m beta header (for Anthropic and compatible gateways/proxies).",
+    "When enabled, all Anthropic requests send the context-1m beta header to declare 1M-token context support (for Anthropic and gateways/proxies that require explicit 1M opt-in).",
   "settings.apiMaxContext": "Max context (tokens)",
   "settings.apiTokenPresetsHint":
     "Choose a common token limit or enter a custom value.",

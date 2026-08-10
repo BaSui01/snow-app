@@ -55,6 +55,22 @@ pub(crate) fn strip_one_m_context_marker(model: &str) -> String {
         .to_string()
 }
 
+/// 读取配置中的 1M 上下文开关（snowcfg.enable1mContext）。
+///
+/// 与模型名 `[1M]` 标记互为兜底：任一成立即向网关声明 1M 上下文，
+/// 这样即使会话选定的模型名没有携带标记（例如纯 `claude-opus-5`），
+/// 只要档案开关开启，请求依然会注入 context-1m beta 头。
+pub(crate) fn config_json_enables_one_m_context(config_json: &str) -> bool {
+    let Ok(parsed) = serde_json::from_str::<Value>(config_json) else {
+        return false;
+    };
+    parsed
+        .get("snowcfg")
+        .and_then(|value| value.get("enable1mContext"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
 pub(crate) fn get_persistent_user_id() -> &'static str {
     PERSISTENT_USER_ID.get_or_init(|| {
         let session_id = Uuid::new_v4();

@@ -1137,6 +1137,9 @@ export const en = {
   "settings.imageLibraryFileName": "Filename",
   "settings.imageLibraryAlbumLabel": "Album",
   "settings.imageLibraryNavHint": "switch image",
+  "settings.imageLibraryDetails": "Details",
+  "settings.imageLibraryDetailsCollapse": "Collapse details",
+  "settings.imageLibraryDetailsExpand": "Expand details",
   "settings.imageLibraryEmptyFiltered": "No matching images found",
   "settings.imageLibraryEmptyFilteredHint":
     "Try adjusting your search or filters",

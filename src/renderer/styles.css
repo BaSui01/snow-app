@@ -14242,6 +14242,12 @@ input {
   gap: 6px;
 }
 
+/* 灯箱工具栏内下载按钮与关闭按钮等高 */
+.tool-call-imagegen-lightbox-toolbar .tool-call-imagegen-download {
+  height: 26px;
+  padding: 0 8px;
+}
+
 .tool-call-imagegen-lightbox-close {
   display: inline-flex;
   align-items: center;
@@ -28913,6 +28919,7 @@ body.ctrl-held [data-path] {
   gap: 16px;
   padding: 7px 10px;
   border-bottom: 1px solid var(--border-light);
+  border-radius: 8px 8px 0 0;
   background: var(--bg-tertiary);
 }
 
@@ -30642,11 +30649,69 @@ body.ctrl-held [data-path] {
   max-height: 45vh;
   padding: 10px 12px;
   border-radius: var(--radius-md);
-  background: rgba(0, 0, 0, 0.72);
+  border: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.88);
   color: var(--text-primary);
   font-size: 11px;
   overflow-y: auto;
   backdrop-filter: blur(4px);
+}
+
+/* 深色主题下恢复深色面板背景（文字为浅色变量，对比度正常） */
+:root[data-theme="dark"] .image-library-lightbox-details {
+  background: rgba(0, 0, 0, 0.72);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* 详情面板头部（标题 + 收起/展开按钮） */
+.image-library-lightbox-details-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.image-library-lightbox-details-title {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.image-library-lightbox-details-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.image-library-lightbox-details-toggle:hover {
+  color: var(--accent-color);
+  background: var(--bg-hover);
+}
+
+/* 收起状态：仅保留头部条，不遮挡图片 */
+.image-library-lightbox-details.collapsed {
+  width: auto;
+  padding: 6px 8px;
+}
+
+.image-library-lightbox-details.collapsed .image-library-lightbox-details-title {
+  display: none;
+}
+
+.image-library-lightbox-details.collapsed .image-library-lightbox-details-toggle {
+  width: 24px;
+  height: 24px;
 }
 
 .image-library-lightbox-detail-row {

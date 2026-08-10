@@ -3,10 +3,6 @@ import type {
   FileContentResult,
   FileSearchResult,
   ParsedSshUrl,
-  RemoteJobBinding,
-  RemoteJobOutput,
-  RemoteJobPtyAttachment,
-  RemoteJobStartRequest,
   RemoteWorkspaceFileSearchOptions,
   SshCapabilities,
   SshAuthMethod,
@@ -67,14 +63,14 @@ export const sshApi = {
    * 失败信息（错误码、友好消息、原始原因）不经过 Error 序列化，
    * 供需要精细展示的调用方（如连接向导）使用。
    */
-  sshConnectDetailed: (
-    params: SshConnectParams
-  ): Promise<SshConnectResult> =>
+  sshConnectDetailed: (params: SshConnectParams): Promise<SshConnectResult> =>
     ipcRenderer.invoke("ssh:connect", params) as Promise<SshConnectResult>,
   /** 读取本地 ~/.ssh/config 中的主机条目（无文件或解析失败返回空数组）。 */
   sshListConfigHosts: (): Promise<SshConfigHost[]> =>
     ipcRenderer.invoke("ssh:list-config-hosts"),
-  sshConnectProfile: (params: SshConnectParams): Promise<SshProfileConnection> =>
+  sshConnectProfile: (
+    params: SshConnectParams
+  ): Promise<SshProfileConnection> =>
     ipcRenderer.invoke("ssh:profiles:connect", params),
   sshGetProfileConnection: (
     profileId: string
@@ -98,7 +94,10 @@ export const sshApi = {
   onSshProfileConnection: (
     callback: (connection: SshProfileConnection) => void
   ): (() => void) => {
-    const handler = (_event: IpcRendererEvent, connection: SshProfileConnection): void => {
+    const handler = (
+      _event: IpcRendererEvent,
+      connection: SshProfileConnection
+    ): void => {
       callback(connection);
     };
     ipcRenderer.on("ssh:profile-state", handler);
@@ -129,7 +128,13 @@ export const sshApi = {
     content: string,
     options: SshFileWriteOptions
   ): Promise<SshFileWriteResult> =>
-    ipcRenderer.invoke("ssh:write-file", sessionId, remotePath, content, options),
+    ipcRenderer.invoke(
+      "ssh:write-file",
+      sessionId,
+      remotePath,
+      content,
+      options
+    ),
   sshDeleteEntry: (sessionId: string, remotePath: string): Promise<void> =>
     ipcRenderer.invoke("ssh:delete-entry", sessionId, remotePath),
   sshRenameEntry: (
@@ -173,28 +178,4 @@ export const sshApi = {
     ipcRenderer.invoke("ssh:select-private-key", dialogTitle),
   sshParseUrl: (sshUrl: string): Promise<ParsedSshUrl> =>
     ipcRenderer.invoke("ssh:parse-url", sshUrl),
-  sshStartRemoteJob: (
-    request: RemoteJobStartRequest
-  ): Promise<RemoteJobBinding> => ipcRenderer.invoke("ssh:jobs:start", request),
-  sshListRemoteJobs: (workspacePath?: string): Promise<RemoteJobBinding[]> =>
-    ipcRenderer.invoke("ssh:jobs:list", workspacePath),
-  sshGetRemoteJob: (
-    jobId: string,
-    options?: { offset?: number; limit?: number }
-  ): Promise<RemoteJobOutput> =>
-    ipcRenderer.invoke("ssh:jobs:get", jobId, options),
-  sshCancelRemoteJob: (jobId: string): Promise<RemoteJobBinding> =>
-    ipcRenderer.invoke("ssh:jobs:cancel", jobId),
-  sshAttachRemoteJob: (
-    jobId: string,
-    viewport: { cols: number; rows: number }
-  ): Promise<RemoteJobPtyAttachment> =>
-    ipcRenderer.invoke("ssh:jobs:attach", jobId, viewport),
-  sshGetRemoteJobAnalysisContext: (
-    jobId: string,
-    options?: { offset?: number; limit?: number }
-  ): Promise<string> =>
-    ipcRenderer.invoke("ssh:jobs:analysis-context", jobId, options),
-  sshCleanupRemoteJobs: (): Promise<{ removed: string[] }> =>
-    ipcRenderer.invoke("ssh:jobs:cleanup"),
 };

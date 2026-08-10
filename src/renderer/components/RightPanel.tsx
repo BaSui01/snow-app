@@ -42,7 +42,6 @@ import type {
   FileDiffPreviewTabData,
   FileViewerTabData,
   OpenDiffTabCallback,
-  RemoteJobsTabData,
   RightPanelContentProps,
   RightPanelTab,
   TerminalTabData,
@@ -149,15 +148,9 @@ const CodebasePanelContent = lazy(() =>
     default: m.CodebasePanelContent,
   }))
 );
-const RemoteJobsPanelContent = lazy(() =>
-  import("./rightPanel/RemoteJobsPanelContent").then((m) => ({
-    default: m.RemoteJobsPanelContent,
-  }))
-);
 
 const GIT_TAB_ID = "git";
 const CODEBASE_TAB_ID = "codebase";
-const REMOTE_JOBS_TAB_ID = "remote-jobs";
 
 // 文件类 tab(diff / file / file-diff-preview)在标题前显示对应的文件类型图标。
 const getTabFileIcon = (tab: RightPanelTab): React.ReactNode => {
@@ -453,39 +446,6 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       }
       return handleCodebaseProjectChanged(activeDirectory.directoryId);
     }, [activeDirectory?.directoryId, handleCodebaseProjectChanged]);
-
-    useEffect(() => {
-      const workspacePath = activeDirectory?.path;
-      if (!workspacePath?.startsWith("ssh://")) {
-        setTabs((current) =>
-          current.filter((tab) => tab.id !== REMOTE_JOBS_TAB_ID)
-        );
-        setActiveTabId((current) =>
-          current === REMOTE_JOBS_TAB_ID ? GIT_TAB_ID : current
-        );
-        return;
-      }
-      setTabs((current) => {
-        const data: RemoteJobsTabData = { workspacePath };
-        const existing = current.find((tab) => tab.id === REMOTE_JOBS_TAB_ID);
-        if (existing) {
-          return current.map((tab) =>
-            tab.id === REMOTE_JOBS_TAB_ID
-              ? { ...tab, data, title: t("rightPanel.remoteJobsTab") }
-              : tab
-          );
-        }
-        return [
-          ...current,
-          {
-            id: REMOTE_JOBS_TAB_ID,
-            type: "remote-jobs",
-            title: t("rightPanel.remoteJobsTab"),
-            data,
-          },
-        ];
-      });
-    }, [activeDirectory?.path, t]);
 
     const handleOpenFileTab = useCallback(
       (
@@ -1001,20 +961,6 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
               <CodebasePanelContent
                 projectId={(tab.data as CodebaseTabData).projectId}
                 projectName={(tab.data as CodebaseTabData).projectName}
-              />
-            ) : null
-          ) : tab.type === "remote-jobs" ? (
-            (tab.data as RemoteJobsTabData) ? (
-              <RemoteJobsPanelContent
-                workspacePath={(tab.data as RemoteJobsTabData).workspacePath}
-                isActive={activeTabId === tab.id}
-                onAttach={(attachment) =>
-                  handleOpenTerminalTab(
-                    (tab.data as RemoteJobsTabData).workspacePath,
-                    `remote-job-${attachment.jobId}-${Date.now()}`,
-                    { ptyId: attachment.ptyId }
-                  )
-                }
               />
             ) : null
           ) : tab.type === "diff" ? (

@@ -4,10 +4,7 @@ import type {
   ToolCallInfo,
   ToolAuthorizationDecision,
 } from "../utils/conversationTypes";
-import {
-  appendHookExecutionToMessage,
-  runHook,
-} from "./hookOutcome";
+import { appendHookExecutionToMessage, runHook } from "./hookOutcome";
 import { directoryIdToPath } from "../utils/conversationHelpers";
 import { PENDING_SESSION_KEY } from "../utils/conversationTypes";
 import { APP_CONTROL_MODE_CHANGED_EVENT } from "../../../../hooks/useAppControl";
@@ -107,8 +104,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
         // conversations restores the target session's mode without going
         // through applyPlanMode, so it never clears approvals here — an
         // approved plan survives navigating away and back.
-        const key =
-          ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+        const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
         ctx.planApprovedSessionKeysRef.current.delete(key);
       }
     },
@@ -122,7 +118,8 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     // settings, so there is nothing global to re-read here.
     const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
     const ref = ctx.sessionsRefData.current.get(key);
-    const effective = ref?.planMode ?? ctx.globalModeDefaultsRef.current.planMode;
+    const effective =
+      ref?.planMode ?? ctx.globalModeDefaultsRef.current.planMode;
     applyPlanMode(effective);
     return effective;
   }, [
@@ -145,7 +142,8 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     // back to the neutral default (disabled).
     const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
     const ref = ctx.sessionsRefData.current.get(key);
-    const effective = ref?.goalMode ?? ctx.globalModeDefaultsRef.current.goalMode;
+    const effective =
+      ref?.goalMode ?? ctx.globalModeDefaultsRef.current.goalMode;
     applyGoalMode(effective);
     return effective;
   }, [
@@ -168,7 +166,8 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
     const ref = ctx.sessionsRefData.current.get(key);
     applyGoalModeTokenBudget(
-      ref?.goalModeTokenBudget ?? ctx.globalModeDefaultsRef.current.goalModeTokenBudget
+      ref?.goalModeTokenBudget ??
+        ctx.globalModeDefaultsRef.current.goalModeTokenBudget
     );
   }, [
     applyGoalModeTokenBudget,
@@ -254,11 +253,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     return () => {
       disposed = true;
     };
-  }, [
-    applyYoloMode,
-    ctx.directoryId,
-    ctx.alwaysApprovedToolsRef,
-  ]);
+  }, [applyYoloMode, ctx.directoryId, ctx.alwaysApprovedToolsRef]);
 
   const setYoloMode = useCallback(
     async (enabled: boolean): Promise<void> => {
@@ -470,10 +465,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       const checkSensitiveBash = async (): Promise<
         ToolAuthorizationDecision | "needs-dialog"
       > => {
-        if (
-          toolCall.name !== "bash-terminal-execute" &&
-          toolCall.name !== "remote-job-start"
-        ) {
+        if (toolCall.name !== "bash-terminal-execute") {
           return shouldAutoApprove() ? { status: "approved" } : "needs-dialog";
         }
 
@@ -691,10 +683,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
   );
 
   // 卸载时清理所有待处理授权
-  useEffect(
-    () => () => rejectToolAuthorizations(),
-    [rejectToolAuthorizations]
-  );
+  useEffect(() => () => rejectToolAuthorizations(), [rejectToolAuthorizations]);
 
   // app-control-setMode writes the global settings directly; replay it
   // through the session-aware path so the active session's ref, global
@@ -703,10 +692,12 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
   // state stale (the loop reads the session ref, not the global setting).
   useEffect(() => {
     const onModeChanged = (event: Event): void => {
-      const detail = (event as CustomEvent<{
-        mode: string;
-        enabled: boolean;
-      }>).detail;
+      const detail = (
+        event as CustomEvent<{
+          mode: string;
+          enabled: boolean;
+        }>
+      ).detail;
       if (!detail || typeof detail.enabled !== "boolean") {
         return;
       }

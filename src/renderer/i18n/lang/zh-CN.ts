@@ -23,7 +23,8 @@ export const zhCN = {
   "sidebar.createProjectNamePlaceholder": "项目名称",
   "sidebar.createProjectNameLabel": "项目名称",
   "sidebar.createProjectConfirm": "创建",
-  "sidebar.addLocalDirectoryDescription": "选择要作为工作区目录添加的本地文件夹。",
+  "sidebar.addLocalDirectoryDescription":
+    "选择要作为工作区目录添加的本地文件夹。",
   "sidebar.localDirectoryPathLabel": "文件夹路径",
   "sidebar.localDirectoryPathPlaceholder": "尚未选择文件夹",
   "sidebar.selectFolder": "选择文件夹",
@@ -71,10 +72,13 @@ export const zhCN = {
   "sidebar.sshConnectError": "连接 SSH 服务器失败",
   "sidebar.sshTrustNewHostKey": "信任新的主机密钥",
   "sidebar.sshBrowseError": "读取远程目录失败",
-  "sidebar.sshErrorNetwork": "无法连接 SSH 服务器：连接在握手完成前被关闭。请检查主机地址、端口和网络连接后重试。",
-  "sidebar.sshErrorTimeout": "连接 SSH 服务器超时。请检查主机地址、端口和网络连接后重试。",
+  "sidebar.sshErrorNetwork":
+    "无法连接 SSH 服务器：连接在握手完成前被关闭。请检查主机地址、端口和网络连接后重试。",
+  "sidebar.sshErrorTimeout":
+    "连接 SSH 服务器超时。请检查主机地址、端口和网络连接后重试。",
   "sidebar.sshErrorAuth": "SSH 认证失败。请检查用户名和密码或私钥是否正确。",
-  "sidebar.sshErrorSftp": "SSH 认证成功，但 SFTP 子系统初始化失败。服务端可能未启用 SFTP。",
+  "sidebar.sshErrorSftp":
+    "SSH 认证成功，但 SFTP 子系统初始化失败。服务端可能未启用 SFTP。",
   "sidebar.sshErrorInvalid": "认证配置无效。请填写主机、用户名和认证凭据。",
   "sidebar.sshErrorUnknown": "连接 SSH 服务器失败",
   "sidebar.sshErrorDetail": "详细原因",
@@ -240,7 +244,8 @@ export const zhCN = {
   "sidebar.chatStatusWaitingForReviewOrInput": "等待审核或输入",
   "sidebar.chatStatusCompleted": "已完成",
   "sidebar.crossProjectNotificationsTitle": "其他项目",
-  "sidebar.crossProjectNotificationOpenTitle": "在 {{project}} 中打开「{{conversation}}」",
+  "sidebar.crossProjectNotificationOpenTitle":
+    "在 {{project}} 中打开「{{conversation}}」",
   "sidebar.crossProjectToggleCollapse": "收起/展开其他项目通知",
   "sidebar.directoryNotificationBadgeTitle": "该项目有 {{count}} 条通知",
   "sidebar.chatActionPin": "置顶",
@@ -569,7 +574,8 @@ export const zhCN = {
   "toolCall.imagegen.seedCopy": "点击复制",
   "toolCall.imagegen.refEdit": "以此为参考",
   "toolCall.imagegen.refEditTitle": "以图为参考重生成",
-  "toolCall.imagegen.editPromptPlaceholder": "输入新的提示词（留空则用原提示词）",
+  "toolCall.imagegen.editPromptPlaceholder":
+    "输入新的提示词（留空则用原提示词）",
   "toolCall.imagegen.regenerate": "生成",
   "toolCall.imagegen.queued": "排队中，前面还有 {{count}} 个任务",
   "toolCall.imagegen.error.timeout": "生成超时",
@@ -967,7 +973,8 @@ export const zhCN = {
   "settings.imagegenOutputFormat": "输出格式",
   "settings.imagegenFormatDefault": "默认（png）",
   "settings.imagegenWebSearch": "谷歌搜索联网",
-  "settings.imagegenWebSearchHint": "仅 Gemini：保存到当前渠道；生图请求未显式指定时，后端会使用此开关并注入 Google Search 工具。",
+  "settings.imagegenWebSearchHint":
+    "仅 Gemini：保存到当前渠道；生图请求未显式指定时，后端会使用此开关并注入 Google Search 工具。",
   "settings.imagegenStreaming": "流式预览",
   "settings.imagegenStreamingHint":
     "流式：生成过程中实时显示中间预览图；非流式：生成完成后一次性出图（OpenAI gpt-image / Gemini Imagen）",
@@ -1079,7 +1086,8 @@ export const zhCN = {
   "settings.imageLibraryClearSelection": "取消选择",
   "settings.imageLibraryBatchDelete": "批量删除",
   "settings.imageLibraryBatchDeleteTitle": "删除所选图片",
-  "settings.imageLibraryBatchDeleteConfirm": "确定删除选中的 {{count}} 张图片吗？会话中的对应图片也会一并移除。",
+  "settings.imageLibraryBatchDeleteConfirm":
+    "确定删除选中的 {{count}} 张图片吗？会话中的对应图片也会一并移除。",
   "settings.imageLibraryCopyPrompt": "复制提示词",
   "settings.imageLibraryCopyFileName": "复制文件名",
   "settings.imageLibraryCopied": "已复制",
@@ -1128,15 +1136,19 @@ export const zhCN = {
   "settings.apiRequestMethod": "请求方式",
   "settings.apiResponsesVerbosity": "Responses 输出详细度",
   "settings.apiResponsesVerbosityDefault": "默认（不传）",
-  "settings.apiResponsesVerbosityHint": "映射到 text.verbosity，仅适用于 Responses API。",
+  "settings.apiResponsesVerbosityHint":
+    "映射到 text.verbosity，仅适用于 Responses API。",
   "settings.apiResponsesFastMode": "Responses Fast Mode",
-  "settings.apiResponsesFastModeHint": "启用后发送 service_tier: priority，可在聊天输入区即时切换。",
+  "settings.apiResponsesFastModeHint":
+    "启用后发送 service_tier: priority，可在聊天输入区即时切换。",
   "settings.apiGoogleSearch": "谷歌搜索联网",
-  "settings.apiGoogleSearchHint": "开启后 Gemini 请求（文本 / 视觉图片模型）注入 Google Search 工具（Gemini 原生 grounding），实时获取联网信息。",
+  "settings.apiGoogleSearchHint":
+    "开启后 Gemini 请求（文本 / 视觉图片模型）注入 Google Search 工具（Gemini 原生 grounding），实时获取联网信息。",
   "settings.apiAdvancedModel": "高级模型",
   "settings.apiBasicModel": "基础模型",
   "settings.apiMaxContext": "最大上下文（tokens）",
-  "settings.apiTokenPresetsHint": "可选择常见 token 规格，也可直接填写自定义值。",
+  "settings.apiTokenPresetsHint":
+    "可选择常见 token 规格，也可直接填写自定义值。",
   "settings.apiMaxTokens": "最大输出 tokens",
   "settings.apiMaxTokensHint": "留空则请求时不传该参数。",
   "settings.apiSetActive": "启用配置",
@@ -1146,10 +1158,12 @@ export const zhCN = {
   "settings.apiVisionRequestMethod": "视觉请求方式",
   "settings.apiVisionModel": "视觉模型",
   "settings.apiVisionThinking": "思考",
-  "settings.apiVisionThinkingHint": "默认关闭以提速。关闭时 Gemini 请求显式将思考预算设为 0；Anthropic 始终不思考。",
+  "settings.apiVisionThinkingHint":
+    "默认关闭以提速。关闭时 Gemini 请求显式将思考预算设为 0；Anthropic 始终不思考。",
   "settings.apiVisionThinkingEffort": "思考强度",
   "settings.apiVisionMaxTokens": "最大输出 tokens",
-  "settings.apiVisionMaxTokensHint": "图片描述的最大输出 tokens，留空默认 4096。",
+  "settings.apiVisionMaxTokensHint":
+    "图片描述的最大输出 tokens，留空默认 4096。",
   "settings.apiStreamIdleTimeout": "流式空闲超时（秒）",
   "settings.apiMaxRetries": "最大重试次数",
   "settings.apiRetryBaseDelayMs": "重试延迟（毫秒）",
@@ -1177,7 +1191,8 @@ export const zhCN = {
   "settings.apiManualAddSuccess": "已添加 API 配置 {name}。",
   "settings.apiImportSuccess": "已导入 {count} 个 Snow CLI 配置。",
   "settings.apiDeleteTitle": "删除 API 配置",
-  "settings.apiDeleteConfirm": "确定删除 API 配置「{{name}}」吗？此操作无法撤销。",
+  "settings.apiDeleteConfirm":
+    "确定删除 API 配置「{{name}}」吗？此操作无法撤销。",
   "settings.apiDeleteSuccess": "已删除 API 配置 {name}。",
   "settings.apiDuplicateSuccess": "已复制 API 配置 {name}。",
   "settings.apiDuplicateError": "复制 API 配置失败",
@@ -1724,7 +1739,7 @@ export const zhCN = {
   "settings.mcpJsonInvalid": "JSON 无效",
   "settings.mcpJsonEditorLabel": "MCP 服务器 JSON 配置",
   "settings.mcpJsonHint":
-    "以 JSON 形式编辑服务器配置，例如 {\"context7\": {\"url\": \"https://mcp.context7.com/mcp\"}}。未填写 type（http/stdio）时会根据 url 或 command 自动推断。",
+    '以 JSON 形式编辑服务器配置，例如 {"context7": {"url": "https://mcp.context7.com/mcp"}}。未填写 type（http/stdio）时会根据 url 或 command 自动推断。',
   "settings.mcpToolDetailsTitle": "服务工具",
   "settings.mcpToolDetailsCount": "已获取 {{count}} 个工具",
   "settings.mcpToolDetailsNotFetched": "尚未获取工具列表",
@@ -1925,7 +1940,8 @@ export const zhCN = {
   "settings.petsSourceCodex": "Codex App",
   "settings.petsSourcePetdex": "Petdex",
   "settings.petsManageTitle": "宠物管理",
-  "settings.petsManageInfo": "唤醒或收起宠物、调整显示大小、选择当前激活的宠物。",
+  "settings.petsManageInfo":
+    "唤醒或收起宠物、调整显示大小、选择当前激活的宠物。",
   "settings.petsActiveSection": "当前宠物",
   "settings.petsActiveInfo": "在桌面上显示或隐藏宠物。",
   "settings.petsInstalledSection": "已安装的宠物",
@@ -2071,7 +2087,7 @@ export const zhCN = {
   "settings.terminalSummaryTitle": "终端预览",
   "settings.terminalSectionShell": "Shell",
   "settings.terminalSectionFont": "字体",
-    "settings.terminalSectionAppearance": "外观",
+  "settings.terminalSectionAppearance": "外观",
   "settings.terminalDetectedTerminals": "检测到的终端",
   "settings.terminalNoDetectedTerminals": "未检测到终端",
   "settings.terminalShell": "Shell",
@@ -2090,7 +2106,8 @@ export const zhCN = {
   "settings.terminalFontSizeValidationError": "字号必须在 6 到 72 之间。",
   "settings.terminalLineHeight": "行高",
   "settings.terminalLineHeightValidationError": "行高必须在 0.5 到 3 之间。",
-  "settings.terminalShellPathValidationError": "Shell 可执行文件不存在，请检查路径或留空自动检测。",
+  "settings.terminalShellPathValidationError":
+    "Shell 可执行文件不存在，请检查路径或留空自动检测。",
   "settings.saveTerminalSettings": "保存设置",
   "settings.keyboardShortcutsSettings": "快捷键设置",
   "settings.keyboardShortcuts": "快捷键",
@@ -2492,7 +2509,8 @@ export const zhCN = {
   "chat.fileChanges.diffEmpty": "没有可显示的变更内容",
   "chat.fileChanges.selectFile": "选择文件查看变更",
   "chat.review.title": "代码审查",
-  "chat.review.description": "选择要审查的 Git 变更范围，AI 只做分析、不修改文件。",
+  "chat.review.description":
+    "选择要审查的 Git 变更范围，AI 只做分析、不修改文件。",
   "chat.review.close": "关闭",
   "chat.review.loading": "正在加载 Git 信息...",
   "chat.review.notRepo": "当前工作目录不是 Git 仓库",
@@ -2512,19 +2530,27 @@ export const zhCN = {
   "chat.review.startReview": "开始审查",
   "chat.review.tagSummary": "代码审查 · {{count}} 项",
   "chat.review.instructionsLabel": "补充审查重点（可选）",
-  "chat.review.instructionsPlaceholder": "例如：重点关注性能、并发安全、错误处理...",
-  "chat.review.promptHeader": "请对以下 Git 变更执行代码审查（Code Review）。这是一个只读分析任务。",
-  "chat.review.promptRule": "- 只做深入分析，不要修改、创建或删除任何文件；除非用户明确要求修复，否则不要改动代码。",
-  "chat.review.promptFocus": "- 重点检查：逻辑正确性、边界情况、错误处理、安全隐患、性能问题、可读性与可维护性、与项目现有风格的契合度。",
-  "chat.review.promptSeverity": "- 对每个问题标注严重程度（严重 / 一般 / 建议），并指出相关文件与大致位置。",
-  "chat.review.promptSummary": "- 最后给出总体评价，并按优先级列出改进建议清单。",
+  "chat.review.instructionsPlaceholder":
+    "例如：重点关注性能、并发安全、错误处理...",
+  "chat.review.promptHeader":
+    "请对以下 Git 变更执行代码审查（Code Review）。这是一个只读分析任务。",
+  "chat.review.promptRule":
+    "- 只做深入分析，不要修改、创建或删除任何文件；除非用户明确要求修复，否则不要改动代码。",
+  "chat.review.promptFocus":
+    "- 重点检查：逻辑正确性、边界情况、错误处理、安全隐患、性能问题、可读性与可维护性、与项目现有风格的契合度。",
+  "chat.review.promptSeverity":
+    "- 对每个问题标注严重程度（严重 / 一般 / 建议），并指出相关文件与大致位置。",
+  "chat.review.promptSummary":
+    "- 最后给出总体评价，并按优先级列出改进建议清单。",
   "chat.review.promptRepo": "仓库路径",
   "chat.review.promptBranch": "当前分支",
   "chat.review.promptUserNote": "用户补充说明",
   "chat.review.promptBinary": "（二进制文件，差异不可用）",
   "chat.review.promptDiffTruncated": "差异过大已截断",
-  "chat.review.promptDiffOmitted": "（差异因总大小限制未包含，如需请用 git 命令查看）",
-  "chat.review.promptTruncated": "部分差异因过大被截断，如需完整内容，请自行在仓库中使用 git diff / git show 命令查看。",
+  "chat.review.promptDiffOmitted":
+    "（差异因总大小限制未包含，如需请用 git 命令查看）",
+  "chat.review.promptTruncated":
+    "部分差异因过大被截断，如需完整内容，请自行在仓库中使用 git diff / git show 命令查看。",
   "chat.review.promptEnd": "请开始审查。",
   "chat.streamMetrics.pause": "暂停",
   "chat.streamMetrics.resume": "继续",
@@ -2614,8 +2640,10 @@ export const zhCN = {
   "settings.browserHomepagePlaceholder": "输入网址，留空为空白页",
   "settings.browserHomepageHint": "留空表示空白页",
   "settings.browserPasswords": "密码",
-  "settings.browserPasswordsHint": "密码以 AES-256-GCM 加密存储，密钥由系统钥匙串保护",
-  "settings.browserPasswordsEmpty": "暂无保存的密码。登录网站并提交表单后会自动保存，或从下方导入其他浏览器的密码",
+  "settings.browserPasswordsHint":
+    "密码以 AES-256-GCM 加密存储，密钥由系统钥匙串保护",
+  "settings.browserPasswordsEmpty":
+    "暂无保存的密码。登录网站并提交表单后会自动保存，或从下方导入其他浏览器的密码",
   "settings.browserPasswordSite": "站点",
   "settings.browserPasswordUser": "用户名",
   "settings.browserPasswordValue": "密码",
@@ -2629,18 +2657,24 @@ export const zhCN = {
   "settings.browserPasswordSelectedCount": "已选 {{count}} 项",
   "settings.browserPasswordDeleteSelected": "删除选中",
   "settings.browserPasswordBatchDeleteTitle": "批量删除密码",
-  "settings.browserPasswordBatchDeleteMessage": "确定删除选中的 {{count}} 条密码吗？此操作无法撤销。",
+  "settings.browserPasswordBatchDeleteMessage":
+    "确定删除选中的 {{count}} 条密码吗？此操作无法撤销。",
   "settings.browserImport": "导入",
-  "settings.browserImportHint": "导入的密码将以系统级加密存入密码保险库；Cookie 会写入当前浏览器会话",
-  "settings.browserImportNoSources": "未检测到本机浏览器数据（请先关闭对应浏览器后重试）",
+  "settings.browserImportHint":
+    "导入的密码将以系统级加密存入密码保险库；Cookie 会写入当前浏览器会话",
+  "settings.browserImportNoSources":
+    "未检测到本机浏览器数据（请先关闭对应浏览器后重试）",
   "settings.browserImportScan": "扫描本机浏览器",
   "settings.browserImportRescan": "重新扫描",
-  "settings.browserImportCounts": "密码 {{passwords}} 条 · Cookie {{cookies}} 个",
+  "settings.browserImportCounts":
+    "密码 {{passwords}} 条 · Cookie {{cookies}} 个",
   "settings.browserImportPasswordsOption": "导入密码（{{count}} 条）",
   "settings.browserImportCookiesOption": "导入 Cookie（{{count}} 个）",
   "settings.browserImportAction": "导入所选",
-  "settings.browserImportPasswordsResult": "已导入 {{imported}}/{{total}} 条密码",
-  "settings.browserImportCookiesResult": "已导入 {{imported}}/{{total}} 个 Cookie",
+  "settings.browserImportPasswordsResult":
+    "已导入 {{imported}}/{{total}} 条密码",
+  "settings.browserImportCookiesResult":
+    "已导入 {{imported}}/{{total}} 个 Cookie",
   "settings.browserImportPartialFail": "{{failed}} 项导入失败",
   "settings.browserImportDone": "导入完成",
   "common.close": "关闭",
@@ -2649,7 +2683,6 @@ export const zhCN = {
   "rightPanel.terminalTab": "终端",
   "rightPanel.browserTab": "浏览器",
   "rightPanel.codebaseTab": "代码库",
-  "rightPanel.remoteJobsTab": "远程任务",
   "rightPanel.closeTab": "关闭标签页",
   "rightPanel.closeAllTabs": "关闭所有标签页",
   "rightPanel.tabContextNewTerminal": "新建终端",
@@ -2681,24 +2714,11 @@ export const zhCN = {
   "rightPanel.fileViewerSavedStrongAtomic": "已保存（强原子）",
   "rightPanel.fileViewerSavedAtomicBestEffort": "已保存（尽力原子）",
   "rightPanel.fileViewerSavedCompatibility": "已保存（兼容模式）",
-  "rightPanel.fileViewerSaveConflict": "远程文件已变更。请重新加载后再保存修改。",
+  "rightPanel.fileViewerSaveConflict":
+    "远程文件已变更。请重新加载后再保存修改。",
   "rightPanel.fileViewerDraftPending": "草稿待同步",
   "rightPanel.fileViewerDraftConflict": "草稿冲突",
   "rightPanel.fileViewerSaveError": "保存文件失败",
-  "remoteJobs.title": "远程任务",
-  "remoteJobs.refresh": "刷新远程任务",
-  "remoteJobs.loading": "正在加载远程任务...",
-  "remoteJobs.empty": "当前远程工作区没有持久任务。",
-  "remoteJobs.jobList": "远程任务列表",
-  "remoteJobs.selectJob": "选择一个远程任务以查看状态和输出。",
-  "remoteJobs.noOutput": "任务尚未产生输出。",
-  "remoteJobs.cancel": "取消远程任务",
-  "remoteJobs.copyAnalysis": "复制任务上下文供 AI 分析",
-  "remoteJobs.attach": "附加交互式终端",
-  "remoteJobs.startInteractive": "启动交互任务",
-  "remoteJobs.send": "发送",
-  "remoteJobs.command": "命令",
-  "remoteJobs.commandPlaceholder": "输入要在远程主机执行的命令",
   "rightPanel.fileViewerDiscardConfirm":
     "存在未保存的更改，是否放弃并退出编辑模式？",
   "rightPanel.fileSearchPlaceholder": "在文件中查找",

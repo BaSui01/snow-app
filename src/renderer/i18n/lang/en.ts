@@ -76,11 +76,16 @@ export const en = {
   "sidebar.sshConnectError": "Failed to connect to SSH server",
   "sidebar.sshTrustNewHostKey": "Trust new host key",
   "sidebar.sshBrowseError": "Failed to list remote directory",
-  "sidebar.sshErrorNetwork": "Cannot reach the SSH server: the connection was closed before the handshake completed. Check the host, port and network, then retry.",
-  "sidebar.sshErrorTimeout": "Timed out while connecting to the SSH server. Check the host, port and network, then retry.",
-  "sidebar.sshErrorAuth": "SSH authentication failed. Check the username and password or private key.",
-  "sidebar.sshErrorSftp": "SSH authentication succeeded, but the SFTP subsystem could not be initialized. The server may not have SFTP enabled.",
-  "sidebar.sshErrorInvalid": "Invalid authentication settings. Fill in the host, username and credentials.",
+  "sidebar.sshErrorNetwork":
+    "Cannot reach the SSH server: the connection was closed before the handshake completed. Check the host, port and network, then retry.",
+  "sidebar.sshErrorTimeout":
+    "Timed out while connecting to the SSH server. Check the host, port and network, then retry.",
+  "sidebar.sshErrorAuth":
+    "SSH authentication failed. Check the username and password or private key.",
+  "sidebar.sshErrorSftp":
+    "SSH authentication succeeded, but the SFTP subsystem could not be initialized. The server may not have SFTP enabled.",
+  "sidebar.sshErrorInvalid":
+    "Invalid authentication settings. Fill in the host, username and credentials.",
   "sidebar.sshErrorUnknown": "Failed to connect to SSH server",
   "sidebar.sshErrorDetail": "Reason",
   "sidebar.sshErrorSessionLost": "SSH session lost. Please reconnect.",
@@ -248,9 +253,12 @@ export const en = {
   "sidebar.chatStatusWaitingForReviewOrInput": "Waiting for review or input",
   "sidebar.chatStatusCompleted": "Completed",
   "sidebar.crossProjectNotificationsTitle": "Other projects",
-  "sidebar.crossProjectNotificationOpenTitle": "Open {{conversation}} in {{project}}",
-  "sidebar.crossProjectToggleCollapse": "Collapse/expand other project notifications",
-  "sidebar.directoryNotificationBadgeTitle": "{{count}} notification(s) in this project",
+  "sidebar.crossProjectNotificationOpenTitle":
+    "Open {{conversation}} in {{project}}",
+  "sidebar.crossProjectToggleCollapse":
+    "Collapse/expand other project notifications",
+  "sidebar.directoryNotificationBadgeTitle":
+    "{{count}} notification(s) in this project",
   "sidebar.chatActionPin": "Pin",
   "sidebar.chatActionUnpin": "Unpin",
   "sidebar.chatActionRename": "Rename",
@@ -310,7 +318,7 @@ export const en = {
   "chat.subAgentFinished.cancelled":
     "This sub-agent was cancelled. The conversation is read-only.",
   "chat.subAgentFinished.backToParent": "Back to parent conversation",
-  "chat.subAgentInfo.launchedBy": "Launched by parent \"{{title}}\"",
+  "chat.subAgentInfo.launchedBy": 'Launched by parent "{{title}}"',
   "chat.subAgentInfo.prompt": "Prompt",
   "chat.quickActionAddProject": "Add a project",
   "chat.quickActionAddProjectDesc": "Open a local workspace directory",
@@ -574,7 +582,8 @@ export const en = {
   "toolCall.imagegen.close": "Close",
   "toolCall.imagegen.generatedImage": "Generated image",
   "toolCall.imagegen.remoteUrls": "Remote image links",
-  "toolCall.imagegen.remoteFailed": "Failed to load remote image (link may have expired)",
+  "toolCall.imagegen.remoteFailed":
+    "Failed to load remote image (link may have expired)",
   "toolCall.imagegen.partialFailed": "Some images failed to generate:",
   "toolCall.imagegen.retry": "Retry generation",
   "toolCall.imagegen.retrying": "Retrying...",
@@ -598,9 +607,11 @@ export const en = {
   "toolCall.imagegen.error.server": "Provider server error (5xx)",
   "toolCall.imagegen.error.network": "Network connection failed",
   "toolCall.imagegen.error.noModel": "No image model configured",
-  "toolCall.imagegen.error.modelUnsupported": "Model does not support this operation",
+  "toolCall.imagegen.error.modelUnsupported":
+    "Model does not support this operation",
   "toolCall.imagegen.error.missingPrompt": "Missing prompt argument",
-  "toolCall.imagegen.error.sizeInvalid": "Size / aspect ratio not supported by this model",
+  "toolCall.imagegen.error.sizeInvalid":
+    "Size / aspect ratio not supported by this model",
   "toolCall.imagegen.error.fallback": "Image generation failed",
   "toolCall.imagegen.result": "Result",
   "toolCall.browser.newTab": "New tab",
@@ -1070,7 +1081,7 @@ export const en = {
   "settings.imageLibraryAlbumMove": "Move to album",
   "settings.imageLibraryAlbumDeleteTitle": "Delete album",
   "settings.imageLibraryAlbumDeleteConfirm":
-    "Delete album \"{{name}}\"? Its {{count}} image(s) will be kept (moved to Uncategorized).",
+    'Delete album "{{name}}"? Its {{count}} image(s) will be kept (moved to Uncategorized).',
   "settings.imageLibraryCount": "{{count}} image(s)",
   "settings.imageLibraryFilterAll": "All",
   "settings.imageLibraryFilterLandscape": "Landscape",
@@ -1096,7 +1107,8 @@ export const en = {
   "settings.imageLibraryMigrateConfirm":
     "{{count}} existing image(s) will be moved to: {{dir}}. Original images are kept until the migration completes; cancelling or failing rolls back automatically.",
   "settings.imageLibraryMigrateStart": "Start migration",
-  "settings.imageLibraryMigrateProgress": "Migrating images {{current}}/{{total}}",
+  "settings.imageLibraryMigrateProgress":
+    "Migrating images {{current}}/{{total}}",
   "settings.imageLibraryMigrateRollingBack": "Rolling back…",
   "settings.imageLibrarySearchPlaceholder": "Search filename, prompt, model…",
   "settings.imageLibrarySearchClear": "Clear search",
@@ -1109,7 +1121,8 @@ export const en = {
   "settings.imageLibraryClearSelection": "Clear selection",
   "settings.imageLibraryBatchDelete": "Delete selected",
   "settings.imageLibraryBatchDeleteTitle": "Delete selected images",
-  "settings.imageLibraryBatchDeleteConfirm": "Delete the {{count}} selected image(s)? They will also be removed from conversations.",
+  "settings.imageLibraryBatchDeleteConfirm":
+    "Delete the {{count}} selected image(s)? They will also be removed from conversations.",
   "settings.imageLibraryCopyPrompt": "Copy prompt",
   "settings.imageLibraryCopyFileName": "Copy filename",
   "settings.imageLibraryCopied": "Copied",
@@ -1120,7 +1133,8 @@ export const en = {
   "settings.imageLibraryAlbumLabel": "Album",
   "settings.imageLibraryNavHint": "switch image",
   "settings.imageLibraryEmptyFiltered": "No matching images found",
-  "settings.imageLibraryEmptyFilteredHint": "Try adjusting your search or filters",
+  "settings.imageLibraryEmptyFilteredHint":
+    "Try adjusting your search or filters",
   "settings.imageLibraryClearFilters": "Clear filters",
   "settings.imageLibraryLoadedCount": "{{loaded}} / {{total}} loaded",
   "settings.imageLibraryAllLoaded": "All images loaded",
@@ -1160,18 +1174,22 @@ export const en = {
   "settings.apiRequestMethod": "Request method",
   "settings.apiResponsesVerbosity": "Responses verbosity",
   "settings.apiResponsesVerbosityDefault": "Default (omit)",
-  "settings.apiResponsesVerbosityHint": "Maps to text.verbosity and only applies to the Responses API.",
+  "settings.apiResponsesVerbosityHint":
+    "Maps to text.verbosity and only applies to the Responses API.",
   "settings.apiResponsesFastMode": "Responses Fast Mode",
-  "settings.apiResponsesFastModeHint": "Sends service_tier: priority when enabled and can be toggled from the chat input.",
+  "settings.apiResponsesFastModeHint":
+    "Sends service_tier: priority when enabled and can be toggled from the chat input.",
   "settings.apiGoogleSearch": "Google Search grounding",
-  "settings.apiGoogleSearchHint": "When enabled, Gemini requests (chat / vision image models) inject the Google Search tool (native Gemini grounding) for real-time web information.",
+  "settings.apiGoogleSearchHint":
+    "When enabled, Gemini requests (chat / vision image models) inject the Google Search tool (native Gemini grounding) for real-time web information.",
   "settings.apiAdvancedModel": "Advanced model",
   "settings.apiBasicModel": "Basic model",
   "settings.apiMaxContext": "Max context (tokens)",
   "settings.apiTokenPresetsHint":
     "Choose a common token limit or enter a custom value.",
   "settings.apiMaxTokens": "Max tokens",
-  "settings.apiMaxTokensHint": "Leave empty to omit this parameter from requests.",
+  "settings.apiMaxTokensHint":
+    "Leave empty to omit this parameter from requests.",
   "settings.apiSetActive": "Enable profile",
   "settings.apiSupportsVision": "Supports vision",
   "settings.apiVisionBaseUrl": "Vision Base URL",
@@ -1179,10 +1197,12 @@ export const en = {
   "settings.apiVisionRequestMethod": "Vision method",
   "settings.apiVisionModel": "Vision model",
   "settings.apiVisionThinking": "Thinking",
-  "settings.apiVisionThinkingHint": "Disabled by default for speed. When disabled, Gemini requests explicitly set the thinking budget to 0; Anthropic is always non-thinking.",
+  "settings.apiVisionThinkingHint":
+    "Disabled by default for speed. When disabled, Gemini requests explicitly set the thinking budget to 0; Anthropic is always non-thinking.",
   "settings.apiVisionThinkingEffort": "Thinking effort",
   "settings.apiVisionMaxTokens": "Max output tokens",
-  "settings.apiVisionMaxTokensHint": "Maximum output tokens for image descriptions. Defaults to 4096 when empty.",
+  "settings.apiVisionMaxTokensHint":
+    "Maximum output tokens for image descriptions. Defaults to 4096 when empty.",
   "settings.apiStreamIdleTimeout": "Stream idle timeout (s)",
   "settings.apiMaxRetries": "Max retries",
   "settings.apiRetryBaseDelayMs": "Retry delay (ms)",
@@ -1211,7 +1231,8 @@ export const en = {
   "settings.apiManualAddSuccess": "Added API profile {name}.",
   "settings.apiImportSuccess": "Imported {count} Snow CLI profiles.",
   "settings.apiDeleteTitle": "Delete API profile",
-  "settings.apiDeleteConfirm": 'Delete API profile "{{name}}"? This cannot be undone.',
+  "settings.apiDeleteConfirm":
+    'Delete API profile "{{name}}"? This cannot be undone.',
   "settings.apiDeleteSuccess": "Deleted API profile {name}.",
   "settings.apiDuplicateSuccess": "Duplicated API profile {name}.",
   "settings.apiDuplicateError": "Failed to duplicate API config",
@@ -1784,7 +1805,7 @@ export const en = {
   "settings.mcpJsonInvalid": "Invalid JSON",
   "settings.mcpJsonEditorLabel": "MCP server JSON configuration",
   "settings.mcpJsonHint":
-    "Edit the server configuration as JSON, e.g. {\"context7\": {\"url\": \"https://mcp.context7.com/mcp\"}}. type (http/stdio) is inferred from url or command when omitted.",
+    'Edit the server configuration as JSON, e.g. {"context7": {"url": "https://mcp.context7.com/mcp"}}. type (http/stdio) is inferred from url or command when omitted.',
   "settings.mcpToolDetailsTitle": "Server tools",
   "settings.mcpToolDetailsCount": "{{count}} tool(s) fetched",
   "settings.mcpToolDetailsNotFetched": "Tool list has not been fetched",
@@ -2000,10 +2021,11 @@ export const en = {
   "settings.petsDismiss": "Put pet away",
   "settings.petsInstall": "Install pet package (.zip)",
   "settings.petsInstalling": "Installing pet...",
-  "settings.petsEmpty": "No pets yet. Install a Codex pet package to get started.",
+  "settings.petsEmpty":
+    "No pets yet. Install a Codex pet package to get started.",
   "settings.petsUninstall": "Uninstall",
   "settings.petsUninstallTitle": "Uninstall pet",
-  "settings.petsUninstallConfirm": "Uninstall pet \"{{name}}\"?",
+  "settings.petsUninstallConfirm": 'Uninstall pet "{{name}}"?',
   "settings.petsScale": "Size",
   "settings.petsSourceSnow": "Snow App",
   "settings.petsSourceCodex": "Codex App",
@@ -2166,7 +2188,7 @@ export const en = {
   "settings.terminalSummaryTitle": "Terminal preview",
   "settings.terminalSectionShell": "Shell",
   "settings.terminalSectionFont": "Font",
-    "settings.terminalSectionAppearance": "Appearance",
+  "settings.terminalSectionAppearance": "Appearance",
   "settings.terminalDetectedTerminals": "Detected terminals",
   "settings.terminalNoDetectedTerminals": "No terminals detected",
   "settings.terminalShell": "Shell",
@@ -2632,7 +2654,8 @@ export const en = {
     "Pick Git changes to review. The AI only analyzes and never modifies files.",
   "chat.review.close": "Close",
   "chat.review.loading": "Loading Git information...",
-  "chat.review.notRepo": "The current working directory is not a Git repository",
+  "chat.review.notRepo":
+    "The current working directory is not a Git repository",
   "chat.review.notRepoHint":
     "Open a project inside a Git repository first, then use code review.",
   "chat.review.empty": "Nothing to review",
@@ -2752,16 +2775,20 @@ export const en = {
   "browser.browserSettings": "Browser settings",
   "settings.browserSettings": "Browser settings",
   "settings.browserSettingsTitle": "Browser settings",
-  "settings.browserSettingsInfo": "Homepage, saved passwords and importing data from other browsers",
+  "settings.browserSettingsInfo":
+    "Homepage, saved passwords and importing data from other browsers",
   "settings.closeBrowserSettings": "Close browser settings",
   "settings.browserSavedPasswords": "Saved passwords",
   "settings.browserLocalCookies": "Cookies on this device",
   "settings.browserHomepage": "Homepage",
-  "settings.browserHomepagePlaceholder": "Enter URL, leave empty for blank page",
+  "settings.browserHomepagePlaceholder":
+    "Enter URL, leave empty for blank page",
   "settings.browserHomepageHint": "Empty means a blank page",
   "settings.browserPasswords": "Passwords",
-  "settings.browserPasswordsHint": "Passwords are stored AES-256-GCM encrypted, key protected by the OS keychain",
-  "settings.browserPasswordsEmpty": "No saved passwords yet. They are saved automatically when you submit a login form, or import them from another browser below",
+  "settings.browserPasswordsHint":
+    "Passwords are stored AES-256-GCM encrypted, key protected by the OS keychain",
+  "settings.browserPasswordsEmpty":
+    "No saved passwords yet. They are saved automatically when you submit a login form, or import them from another browser below",
   "settings.browserPasswordSite": "Site",
   "settings.browserPasswordUser": "Username",
   "settings.browserPasswordValue": "Password",
@@ -2775,18 +2802,24 @@ export const en = {
   "settings.browserPasswordSelectedCount": "{{count}} selected",
   "settings.browserPasswordDeleteSelected": "Delete selected",
   "settings.browserPasswordBatchDeleteTitle": "Delete selected passwords",
-  "settings.browserPasswordBatchDeleteMessage": "Delete the {{count}} selected passwords? This action cannot be undone.",
+  "settings.browserPasswordBatchDeleteMessage":
+    "Delete the {{count}} selected passwords? This action cannot be undone.",
   "settings.browserImport": "Import",
-  "settings.browserImportHint": "Imported passwords are encrypted into the vault; cookies are written into the current browser session",
-  "settings.browserImportNoSources": "No local browser data detected (close the browser first and retry)",
+  "settings.browserImportHint":
+    "Imported passwords are encrypted into the vault; cookies are written into the current browser session",
+  "settings.browserImportNoSources":
+    "No local browser data detected (close the browser first and retry)",
   "settings.browserImportScan": "Scan local browsers",
   "settings.browserImportRescan": "Rescan",
-  "settings.browserImportCounts": "{{passwords}} passwords · {{cookies}} cookies",
+  "settings.browserImportCounts":
+    "{{passwords}} passwords · {{cookies}} cookies",
   "settings.browserImportPasswordsOption": "Import passwords ({{count}})",
   "settings.browserImportCookiesOption": "Import cookies ({{count}})",
   "settings.browserImportAction": "Import selected",
-  "settings.browserImportPasswordsResult": "Imported {{imported}}/{{total}} passwords",
-  "settings.browserImportCookiesResult": "Imported {{imported}}/{{total}} cookies",
+  "settings.browserImportPasswordsResult":
+    "Imported {{imported}}/{{total}} passwords",
+  "settings.browserImportCookiesResult":
+    "Imported {{imported}}/{{total}} cookies",
   "settings.browserImportPartialFail": "{{failed}} items failed",
   "settings.browserImportDone": "Import completed",
   "common.close": "Close",
@@ -2795,7 +2828,6 @@ export const en = {
   "rightPanel.terminalTab": "Terminal",
   "rightPanel.browserTab": "Browser",
   "rightPanel.codebaseTab": "Codebase",
-  "rightPanel.remoteJobsTab": "Remote Jobs",
   "rightPanel.closeTab": "Close tab",
   "rightPanel.closeAllTabs": "Close all tabs",
   "rightPanel.tabContextNewTerminal": "New Terminal",
@@ -2827,24 +2859,11 @@ export const en = {
   "rightPanel.fileViewerSavedStrongAtomic": "Saved (strong atomic)",
   "rightPanel.fileViewerSavedAtomicBestEffort": "Saved (atomic best effort)",
   "rightPanel.fileViewerSavedCompatibility": "Saved (compatibility mode)",
-  "rightPanel.fileViewerSaveConflict": "The remote file changed. Reload it before saving your changes.",
+  "rightPanel.fileViewerSaveConflict":
+    "The remote file changed. Reload it before saving your changes.",
   "rightPanel.fileViewerDraftPending": "Draft pending",
   "rightPanel.fileViewerDraftConflict": "Draft conflict",
   "rightPanel.fileViewerSaveError": "Failed to save file",
-  "remoteJobs.title": "Remote Jobs",
-  "remoteJobs.refresh": "Refresh remote jobs",
-  "remoteJobs.loading": "Loading remote jobs...",
-  "remoteJobs.empty": "No durable remote jobs for this workspace.",
-  "remoteJobs.jobList": "Remote job list",
-  "remoteJobs.selectJob": "Select a Remote Job to inspect its state and output.",
-  "remoteJobs.noOutput": "No output has been recorded yet.",
-  "remoteJobs.cancel": "Cancel remote job",
-  "remoteJobs.copyAnalysis": "Copy job context for AI analysis",
-  "remoteJobs.attach": "Attach interactive terminal",
-  "remoteJobs.startInteractive": "Start interactive task",
-  "remoteJobs.send": "Send",
-  "remoteJobs.command": "Command",
-  "remoteJobs.commandPlaceholder": "Enter a command to run remotely",
   "rightPanel.fileViewerDiscardConfirm":
     "You have unsaved changes. Discard them and leave edit mode?",
   "rightPanel.fileSearchPlaceholder": "Search in file",

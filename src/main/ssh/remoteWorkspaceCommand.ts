@@ -16,14 +16,6 @@ import {
   type SshFileWriteResult,
 } from "./sshManager";
 import { getDecryptedSecret, getSshCredential } from "./sshCredentials";
-import {
-  cancelRemoteJob,
-  getRemoteJob,
-  listRemoteJobs,
-  startRemoteJob,
-  type RemoteJobBackendKind,
-  type RemoteJobMode,
-} from "./remoteJobs";
 
 const REMOTE_SEARCH_MAX_DEPTH = 15;
 const REMOTE_SEARCH_MAX_RESULTS = 200;
@@ -123,7 +115,9 @@ export const buildRemoteWorkspaceUri = (
     : `${normalizedWorkspacePath}/${relativePath}`;
 };
 
-export const buildSshConnectParams = (workspacePath: string): SshConnectParams => {
+export const buildSshConnectParams = (
+  workspacePath: string
+): SshConnectParams => {
   const parsed = parseSshUrl(workspacePath);
   const credential = getSshCredential(
     parsed.host,
@@ -165,7 +159,10 @@ export const withSshSession = async <T>(
   options?: { signal?: AbortSignal }
 ): Promise<T> => {
   const parsedPath = parseSshUrl(workspacePath);
-  const sessionId = await connectSsh(buildSshConnectParams(workspacePath), options);
+  const sessionId = await connectSsh(
+    buildSshConnectParams(workspacePath),
+    options
+  );
   try {
     return await action(sessionId, parsedPath.remotePath, parsedPath);
   } finally {
@@ -179,36 +176,42 @@ const readTextFile = async (
   endLine: number | undefined,
   signal?: AbortSignal
 ): Promise<Record<string, unknown>> => {
-  return withSshSession(workspacePath, async (sessionId, remotePath) => {
-    const file = processFileContent(
-      remotePath,
-      await readSshFile(sessionId, remotePath, { signal })
-    );
-    if (file.isBinary || file.isImage) {
-      throw new Error("Remote filesystem edit operations require a text file");
-    }
+  return withSshSession(
+    workspacePath,
+    async (sessionId, remotePath) => {
+      const file = processFileContent(
+        remotePath,
+        await readSshFile(sessionId, remotePath, { signal })
+      );
+      if (file.isBinary || file.isImage) {
+        throw new Error(
+          "Remote filesystem edit operations require a text file"
+        );
+      }
 
-    const lines = file.content.split("\n");
-    const totalLines = lines.length;
-    const requestedStart = Math.max(1, Math.floor(startLine ?? 1));
-    const requestedEnd = Math.max(
-      requestedStart,
-      Math.floor(endLine ?? totalLines)
-    );
-    const selected = lines.slice(requestedStart - 1, requestedEnd);
+      const lines = file.content.split("\n");
+      const totalLines = lines.length;
+      const requestedStart = Math.max(1, Math.floor(startLine ?? 1));
+      const requestedEnd = Math.max(
+        requestedStart,
+        Math.floor(endLine ?? totalLines)
+      );
+      const selected = lines.slice(requestedStart - 1, requestedEnd);
 
-    return {
-      content: selected
-        .map(
-          (line, index) =>
-            `${String(requestedStart + index).padStart(6, " ")}: ${line}`
-        )
-        .join("\n"),
-      totalLines,
-      startLine: requestedStart,
-      endLine: Math.min(requestedEnd, totalLines),
-    };
-  }, { signal });
+      return {
+        content: selected
+          .map(
+            (line, index) =>
+              `${String(requestedStart + index).padStart(6, " ")}: ${line}`
+          )
+          .join("\n"),
+        totalLines,
+        startLine: requestedStart,
+        endLine: Math.min(requestedEnd, totalLines),
+      };
+    },
+    { signal }
+  );
 };
 
 const resolveAuthorizedWorkspaceRoot = (
@@ -223,7 +226,9 @@ const resolveAuthorizedWorkspaceRoot = (
     target.port !== authorized.port ||
     target.username !== authorized.username
   ) {
-    throw new Error("workspaceRoot must use the same SSH authority as filePath");
+    throw new Error(
+      "workspaceRoot must use the same SSH authority as filePath"
+    );
   }
   return authorized.remotePath;
 };
@@ -232,19 +237,22 @@ const readRemoteText = async (
   workspacePath: string,
   signal?: AbortSignal
 ): Promise<{ content: string; version: SshFileVersion }> =>
-  withSshSession(workspacePath, async (sessionId, remotePath) => {
-    const loaded = await readSshFileWithVersion(sessionId, remotePath, {
-      signal,
-    });
-    const file = processFileContent(
-      remotePath,
-      loaded.content
-    );
-    if (file.isBinary || file.isImage) {
-      throw new Error("Remote filesystem edit operations require a text file");
-    }
-    return { content: file.content, version: loaded.version };
-  }, { signal });
+  withSshSession(
+    workspacePath,
+    async (sessionId, remotePath) => {
+      const loaded = await readSshFileWithVersion(sessionId, remotePath, {
+        signal,
+      });
+      const file = processFileContent(remotePath, loaded.content);
+      if (file.isBinary || file.isImage) {
+        throw new Error(
+          "Remote filesystem edit operations require a text file"
+        );
+      }
+      return { content: file.content, version: loaded.version };
+    },
+    { signal }
+  );
 
 const writeRemoteText = async (
   workspacePath: string,
@@ -445,11 +453,7 @@ const parseGrepLines = (
     }
     return [
       {
-        file: buildRemoteWorkspaceUri(
-          workspacePath,
-          parsed[1],
-          remoteRootPath
-        ),
+        file: buildRemoteWorkspaceUri(workspacePath, parsed[1], remoteRootPath),
         line: lineNumber,
         content: parsed[3],
       },
@@ -464,21 +468,27 @@ const executeFilesystemRead = async (
   const startLine = ensureOptionalPositiveInteger(args.startLine);
   const endLine = ensureOptionalPositiveInteger(args.endLine);
 
-  return withSshSession(workspacePath, async (sessionId, remotePath) => {
-    try {
-      const entries = await listSshDirectory(sessionId, remotePath, { signal });
-      return {
-        content: entries
-          .map((entry) => `${entry.name}${entry.isDirectory ? "/" : ""}`)
-          .join("\n"),
-      };
-    } catch (error) {
-      if (isSshOperationError(error)) {
-        throw error;
+  return withSshSession(
+    workspacePath,
+    async (sessionId, remotePath) => {
+      try {
+        const entries = await listSshDirectory(sessionId, remotePath, {
+          signal,
+        });
+        return {
+          content: entries
+            .map((entry) => `${entry.name}${entry.isDirectory ? "/" : ""}`)
+            .join("\n"),
+        };
+      } catch (error) {
+        if (isSshOperationError(error)) {
+          throw error;
+        }
+        return readTextFile(workspacePath, startLine, endLine, signal);
       }
-      return readTextFile(workspacePath, startLine, endLine, signal);
-    }
-  }, { signal });
+    },
+    { signal }
+  );
 };
 
 const executeFilesystemReplaceEdit = async (
@@ -534,32 +544,41 @@ const executeFilesystemCreate = async (
   const content = ensureString(args.content, "content");
   const overwrite = args.overwrite === true;
 
-  const save = await withSshSession(workspacePath, async (sessionId, remotePath) => {
-    const exists = (
-      await executeSshCommand(sessionId, buildRemoteStatCommand(remotePath), {
+  const save = await withSshSession(
+    workspacePath,
+    async (sessionId, remotePath) => {
+      const exists = (
+        await executeSshCommand(sessionId, buildRemoteStatCommand(remotePath), {
+          signal,
+        })
+      ).trim();
+      if (exists && !overwrite) {
+        throw new Error(
+          "Remote file already exists. To overwrite this file, set overwrite=true."
+        );
+      }
+      const parentPath = dirname(remotePath);
+      if (parentPath && parentPath !== ".") {
+        await executeSshCommand(
+          sessionId,
+          buildRemoteMkdirCommand(parentPath),
+          {
+            signal,
+          }
+        );
+      }
+      const expectedVersion: SshFileVersion = exists
+        ? (await readSshFileWithVersion(sessionId, remotePath, { signal }))
+            .version
+        : { exists: false };
+      return writeSshFile(sessionId, remotePath, content, {
         signal,
-      })
-    ).trim();
-    if (exists && !overwrite) {
-      throw new Error(
-        "Remote file already exists. To overwrite this file, set overwrite=true."
-      );
-    }
-    const parentPath = dirname(remotePath);
-    if (parentPath && parentPath !== ".") {
-      await executeSshCommand(sessionId, buildRemoteMkdirCommand(parentPath), {
-        signal,
+        workspaceRoot,
+        expectedVersion,
       });
-    }
-    const expectedVersion: SshFileVersion = exists
-      ? (await readSshFileWithVersion(sessionId, remotePath, { signal })).version
-      : { exists: false };
-    return writeSshFile(sessionId, remotePath, content, {
-      signal,
-      workspaceRoot,
-      expectedVersion,
-    });
-  }, { signal });
+    },
+    { signal }
+  );
 
   return {
     success: true,
@@ -588,31 +607,35 @@ const executeGrepSearch = async (
       ? Math.max(1, Math.floor(args.maxResults))
       : 100;
 
-  return withSshSession(workspacePath, async (sessionId, remotePath) => {
-    const output = await executeSshCommand(
-      sessionId,
-      buildRemoteGrepCommand(
-        remotePath,
+  return withSshSession(
+    workspacePath,
+    async (sessionId, remotePath) => {
+      const output = await executeSshCommand(
+        sessionId,
+        buildRemoteGrepCommand(
+          remotePath,
+          pattern,
+          fileGlob,
+          isRegex,
+          caseSensitive,
+          maxResults
+        ),
+        { timeoutMs: REMOTE_GREP_TIMEOUT_MS, signal }
+      );
+      const matches = parseGrepLines(output, workspacePath, remotePath);
+      return {
+        backend: "remote-grep",
         pattern,
+        path: workspacePath,
         fileGlob,
-        isRegex,
-        caseSensitive,
-        maxResults
-      ),
-      { timeoutMs: REMOTE_GREP_TIMEOUT_MS, signal }
-    );
-    const matches = parseGrepLines(output, workspacePath, remotePath);
-    return {
-      backend: "remote-grep",
-      pattern,
-      path: workspacePath,
-      fileGlob,
-      matches,
-      totalMatches: matches.length,
-      truncated: matches.length >= maxResults,
-      rawOutput: output.slice(0, 50_000),
-    };
-  }, { signal });
+        matches,
+        totalMatches: matches.length,
+        truncated: matches.length >= maxResults,
+        rawOutput: output.slice(0, 50_000),
+      };
+    },
+    { signal }
+  );
 };
 
 const executeBashCommand = async (
@@ -628,192 +651,29 @@ const executeBashCommand = async (
     typeof args.timeout === "number" && Number.isFinite(args.timeout)
       ? Math.max(1, Math.floor(args.timeout))
       : 30_000;
-  const durable = args.durable === true;
-  const backend =
-    args.backend === "snow-agent" ||
-    args.backend === "systemd-user" ||
-    args.backend === "tmux" ||
-    args.backend === "posix-detach"
-      ? (args.backend as RemoteJobBackendKind)
-      : undefined;
-  if (args.backend !== undefined && !backend) {
-    throw new Error("Unsupported Remote Job backend");
-  }
 
-  if (durable) {
-    const mode = remoteJobMode(args.mode);
-    const job = await startRemoteJob({
-      workspacePath,
-      workspaceId:
-        typeof args.workspaceId === "string" ? args.workspaceId : undefined,
-      command,
-      timeoutMs: timeout,
-      backend,
-      mode,
-      jobId: typeof args.jobId === "string" ? args.jobId : undefined,
-      conversationId:
-        typeof args.conversationId === "string"
-          ? args.conversationId
-          : undefined,
-      toolCallId:
-        typeof args.toolCallId === "string" ? args.toolCallId : undefined,
-    }, { signal, cancellationPolicy: "cancel_remote" });
-    const accepted =
-      job.status === "preparing" ||
-      job.status === "launching" ||
-      job.status === "running";
-    return {
-      accepted,
-      durable: true,
-      job,
-      message:
-        accepted
-          ? "Remote Job accepted. Use remote-job-status or remote-job-read to continue analysis."
-          : "Remote Job launch is not confirmed. Use remote-job-status before retrying.",
-    };
-  }
-
-  return withSshSession(workspacePath, async (sessionId, remotePath) => {
-    const wrappedCommand = `cd -- ${shellQuote(remotePath)} && ${command}`;
-    // The timeout lives inside executeSshCommand so a timed-out command also
-    // closes the exec channel and signals the remote process instead of
-    // merely racing the promise and leaking the underlying process.
-    const output = await executeSshCommand(sessionId, wrappedCommand, {
-      timeoutMs: timeout,
-      signal,
-    });
-
-    return {
-      stdout: output,
-      stderr: "",
-      exitCode: 0,
-      command,
-      executedAt: new Date().toISOString(),
-    };
-  }, { signal });
-};
-
-const ensureRemoteJobId = (value: unknown): string => {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new Error("jobId is required");
-  }
-  return value.trim();
-};
-
-const remoteJobMode = (value: unknown): RemoteJobMode | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (value === "batch" || value === "interactive") {
-    return value;
-  }
-  throw new Error("Unsupported Remote Job mode");
-};
-
-const remoteJobReadOptions = (
-  args: RemoteWorkspaceCommandArgs
-): { offset?: number; limit?: number } => {
-  const normalize = (value: unknown, name: string): number | undefined => {
-    if (value === undefined) {
-      return undefined;
-    }
-    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-      throw new Error(`${name} must be a non-negative number`);
-    }
-    return Math.floor(value);
-  };
-  return {
-    offset: normalize(args.offset, "offset"),
-    limit: normalize(args.limit, "limit"),
-  };
-};
-
-const executeRemoteJobStart = async (
-  args: RemoteWorkspaceCommandArgs,
-  signal?: AbortSignal
-): Promise<Record<string, unknown>> => {
-  const workspacePath = validateSshWorkspacePath(
-    args.workingDirectory,
-    "workingDirectory"
-  );
-  const command = ensureString(args.command, "command");
-  const timeout =
-    typeof args.timeout === "number" && Number.isFinite(args.timeout)
-      ? Math.max(1, Math.floor(args.timeout))
-      : undefined;
-  const backend =
-    args.backend === "systemd-user" ||
-    args.backend === "tmux" ||
-    args.backend === "posix-detach"
-      ? (args.backend as RemoteJobBackendKind)
-      : undefined;
-  if (args.backend !== undefined && !backend) {
-    throw new Error("Unsupported Remote Job backend");
-  }
-  const mode = remoteJobMode(args.mode);
-  const job = await startRemoteJob({
+  return withSshSession(
     workspacePath,
-    workspaceId:
-      typeof args.workspaceId === "string" ? args.workspaceId : undefined,
-    command,
-    timeoutMs: timeout,
-    backend,
-    mode,
-    jobId: typeof args.jobId === "string" ? args.jobId : undefined,
-    conversationId:
-      typeof args.conversationId === "string" ? args.conversationId : undefined,
-    toolCallId: typeof args.toolCallId === "string" ? args.toolCallId : undefined,
-  }, { signal, cancellationPolicy: "cancel_remote" });
-  return {
-    accepted:
-      job.status === "preparing" ||
-      job.status === "launching" ||
-      job.status === "running",
-    job,
-  };
-};
+    async (sessionId, remotePath) => {
+      const wrappedCommand = `cd -- ${shellQuote(remotePath)} && ${command}`;
+      // The timeout lives inside executeSshCommand so a timed-out command also
+      // closes the exec channel and signals the remote process instead of
+      // merely racing the promise and leaking the underlying process.
+      const output = await executeSshCommand(sessionId, wrappedCommand, {
+        timeoutMs: timeout,
+        signal,
+      });
 
-const executeRemoteJobStatus = async (
-  args: RemoteWorkspaceCommandArgs
-): Promise<Record<string, unknown>> => {
-  const job = await getRemoteJob(ensureRemoteJobId(args.jobId), {
-    offset: 0,
-    limit: 1,
-  });
-  return { job: job.job, state: job.state };
-};
-
-const executeRemoteJobRead = async (
-  args: RemoteWorkspaceCommandArgs
-): Promise<Record<string, unknown>> => {
-  const result = await getRemoteJob(
-    ensureRemoteJobId(args.jobId),
-    remoteJobReadOptions(args)
+      return {
+        stdout: output,
+        stderr: "",
+        exitCode: 0,
+        command,
+        executedAt: new Date().toISOString(),
+      };
+    },
+    { signal }
   );
-  return {
-    job: result.job,
-    state: result.state,
-    output: result.output,
-    offset: result.offset,
-    nextOffset: result.nextOffset,
-    eof: result.eof,
-  };
-};
-
-const executeRemoteJobCancel = async (
-  args: RemoteWorkspaceCommandArgs
-): Promise<Record<string, unknown>> => ({
-  job: await cancelRemoteJob(ensureRemoteJobId(args.jobId)),
-});
-
-const executeRemoteJobList = async (
-  args: RemoteWorkspaceCommandArgs
-): Promise<Record<string, unknown>> => {
-  const workspacePath =
-    typeof args.workingDirectory === "string" && args.workingDirectory.trim()
-      ? validateSshWorkspacePath(args.workingDirectory, "workingDirectory")
-      : undefined;
-  return { jobs: await listRemoteJobs(workspacePath) };
 };
 
 export const dispatchRemoteWorkspaceCommand = async (
@@ -845,21 +705,6 @@ export const dispatchRemoteWorkspaceCommand = async (
         break;
       case "bash-terminal-execute":
         result = await executeBashCommand(args, signal);
-        break;
-      case "remote-job-start":
-        result = await executeRemoteJobStart(args, signal);
-        break;
-      case "remote-job-status":
-        result = await executeRemoteJobStatus(args);
-        break;
-      case "remote-job-read":
-        result = await executeRemoteJobRead(args);
-        break;
-      case "remote-job-cancel":
-        result = await executeRemoteJobCancel(args);
-        break;
-      case "remote-job-list":
-        result = await executeRemoteJobList(args);
         break;
       default:
         throw new Error(

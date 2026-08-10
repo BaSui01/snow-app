@@ -120,8 +120,8 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
     try {
       // 项目级子代理优先：先查当前项目（dirId）下的配置，未命中再回退全局。
       config = dirId
-        ? ((await window.snow.getSubAgentConfig(agentId, dirId)) ??
-          (await window.snow.getSubAgentConfig(agentId)))
+        ? (await window.snow.getSubAgentConfig(agentId, dirId)) ??
+          (await window.snow.getSubAgentConfig(agentId))
         : await window.snow.getSubAgentConfig(agentId);
       if (!config) {
         return JSON.stringify({
@@ -590,8 +590,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
           );
           let subSensitiveAuthorizationToken: string | undefined;
           if (
-            (subToolCall.name === "bash-terminal-execute" ||
-              subToolCall.name === "remote-job-start") &&
+            subToolCall.name === "bash-terminal-execute" &&
             subAuthorizationDecision.status === "approved" &&
             subAuthorizationDecision.sensitiveCommandConfirmed === true
           ) {

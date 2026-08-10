@@ -1,6 +1,12 @@
 import { type WebContents } from "electron";
 import { createRequire } from "node:module";
-import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { delimiter, dirname, isAbsolute, join } from "node:path";
 import { tmpdir } from "node:os";
 import type { IPty } from "node-pty";
@@ -256,7 +262,9 @@ const resolveVerifiedSshHostKey = async (params: {
   throw new Error("SSH terminal blocked: verified host key is unavailable");
 };
 
-const createKnownHostsFile = (record: SshHostKeyRecord): {
+const createKnownHostsFile = (
+  record: SshHostKeyRecord
+): {
   path: string;
   dispose: () => void;
 } => {
@@ -495,25 +503,6 @@ export const createPtySession = async (
 
   return id;
 };
-
-/**
- * Opens a renderer-owned terminal attached to a validated Remote Job. This
- * stays separate from the public pty:create IPC so a renderer cannot turn a
- * saved SSH credential into arbitrary background command execution.
- */
-export const createRemoteJobPtySession = (
-  webContents: WebContents,
-  workspacePath: string,
-  remoteCommand: string,
-  cols: number,
-  rows: number
-): Promise<string> =>
-  createPtySession(webContents, {
-    cwd: workspacePath,
-    cols,
-    rows,
-    remoteCommand,
-  });
 
 export const writePtyInput = (id: string, data: string): void => {
   const session = sessions.get(id);

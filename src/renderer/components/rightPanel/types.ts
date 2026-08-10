@@ -11,8 +11,7 @@ export type RightPanelContentKey =
   | "browser"
   | "file"
   | "file-diff-preview"
-  | "codebase"
-  | "remote-jobs";
+  | "codebase";
 
 export type RightPanelContentProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
@@ -67,10 +66,6 @@ export type CodebaseTabData = {
   projectName: string;
 };
 
-export type RemoteJobsTabData = {
-  workspacePath: string;
-};
-
 export type RightPanelTab = {
   id: string;
   type:
@@ -80,8 +75,7 @@ export type RightPanelTab = {
     | "browser"
     | "file"
     | "file-diff-preview"
-    | "codebase"
-    | "remote-jobs";
+    | "codebase";
   title: string;
   data?:
     | DiffTabData
@@ -89,8 +83,7 @@ export type RightPanelTab = {
     | BrowserTabData
     | FileViewerTabData
     | FileDiffPreviewTabData
-    | CodebaseTabData
-    | RemoteJobsTabData;
+    | CodebaseTabData;
 };
 
 export type OpenDiffTabCallback = (
@@ -99,7 +92,9 @@ export type OpenDiffTabCallback = (
   diffLoading: boolean
 ) => void;
 
-export type OpenFileDiffPreviewTabCallback = (data: FileDiffPreviewTabData) => void;
+export type OpenFileDiffPreviewTabCallback = (
+  data: FileDiffPreviewTabData
+) => void;
 
 export type OpenFileTabCallback = (
   filePath: string,

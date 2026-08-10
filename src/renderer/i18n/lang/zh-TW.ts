@@ -23,7 +23,8 @@ export const zhTW = {
   "sidebar.createProjectNamePlaceholder": "專案名稱",
   "sidebar.createProjectNameLabel": "專案名稱",
   "sidebar.createProjectConfirm": "建立",
-  "sidebar.addLocalDirectoryDescription": "選擇要作為工作區目錄新增的本機資料夾。",
+  "sidebar.addLocalDirectoryDescription":
+    "選擇要作為工作區目錄新增的本機資料夾。",
   "sidebar.localDirectoryPathLabel": "資料夾路徑",
   "sidebar.localDirectoryPathPlaceholder": "尚未選擇資料夾",
   "sidebar.selectFolder": "選擇資料夾",
@@ -71,10 +72,14 @@ export const zhTW = {
   "sidebar.sshConnectError": "連線 SSH 伺服器失敗",
   "sidebar.sshTrustNewHostKey": "信任新的主機金鑰",
   "sidebar.sshBrowseError": "讀取遠端目錄失敗",
-  "sidebar.sshErrorNetwork": "無法連線 SSH 伺服器：連線在握手完成前被關閉。請檢查主機位址、連接埠和網路連線後重試。",
-  "sidebar.sshErrorTimeout": "連線 SSH 伺服器逾時。請檢查主機位址、連接埠和網路連線後重試。",
-  "sidebar.sshErrorAuth": "SSH 認證失敗。請檢查使用者名稱和密碼或私鑰是否正確。",
-  "sidebar.sshErrorSftp": "SSH 認證成功，但 SFTP 子系統初始化失敗。伺服器端可能未啟用 SFTP。",
+  "sidebar.sshErrorNetwork":
+    "無法連線 SSH 伺服器：連線在握手完成前被關閉。請檢查主機位址、連接埠和網路連線後重試。",
+  "sidebar.sshErrorTimeout":
+    "連線 SSH 伺服器逾時。請檢查主機位址、連接埠和網路連線後重試。",
+  "sidebar.sshErrorAuth":
+    "SSH 認證失敗。請檢查使用者名稱和密碼或私鑰是否正確。",
+  "sidebar.sshErrorSftp":
+    "SSH 認證成功，但 SFTP 子系統初始化失敗。伺服器端可能未啟用 SFTP。",
   "sidebar.sshErrorInvalid": "認證設定無效。請填寫主機、使用者名稱和認證憑證。",
   "sidebar.sshErrorUnknown": "連線 SSH 伺服器失敗",
   "sidebar.sshErrorDetail": "詳細原因",
@@ -240,7 +245,8 @@ export const zhTW = {
   "sidebar.chatStatusWaitingForReviewOrInput": "等待審核或輸入",
   "sidebar.chatStatusCompleted": "已完成",
   "sidebar.crossProjectNotificationsTitle": "其他專案",
-  "sidebar.crossProjectNotificationOpenTitle": "在 {{project}} 中開啟「{{conversation}}」",
+  "sidebar.crossProjectNotificationOpenTitle":
+    "在 {{project}} 中開啟「{{conversation}}」",
   "sidebar.crossProjectToggleCollapse": "收起/展開其他專案通知",
   "sidebar.directoryNotificationBadgeTitle": "該專案有 {{count}} 條通知",
   "sidebar.chatActionPin": "置頂",
@@ -569,7 +575,8 @@ export const zhTW = {
   "toolCall.imagegen.seedCopy": "點擊複製",
   "toolCall.imagegen.refEdit": "以此為參考",
   "toolCall.imagegen.refEditTitle": "以圖為參考重新生成",
-  "toolCall.imagegen.editPromptPlaceholder": "輸入新的提示詞（留空則沿用原提示詞）",
+  "toolCall.imagegen.editPromptPlaceholder":
+    "輸入新的提示詞（留空則沿用原提示詞）",
   "toolCall.imagegen.regenerate": "生成",
   "toolCall.imagegen.queued": "排隊中，前面還有 {{count}} 個任務",
   "toolCall.imagegen.error.timeout": "生成逾時",
@@ -967,7 +974,8 @@ export const zhTW = {
   "settings.imagegenOutputFormat": "輸出格式",
   "settings.imagegenFormatDefault": "預設（png）",
   "settings.imagegenWebSearch": "Google 搜尋聯網",
-  "settings.imagegenWebSearchHint": "僅 Gemini：儲存到目前渠道；生圖請求未明確指定時，後端會使用此開關並注入 Google Search 工具。",
+  "settings.imagegenWebSearchHint":
+    "僅 Gemini：儲存到目前渠道；生圖請求未明確指定時，後端會使用此開關並注入 Google Search 工具。",
   "settings.imagegenStreaming": "串流預覽",
   "settings.imagegenStreamingHint":
     "串流：生成過程中即時顯示中間預覽圖；非串流：生成完成後一次顯示（OpenAI gpt-image / Gemini Imagen）",
@@ -1079,7 +1087,8 @@ export const zhTW = {
   "settings.imageLibraryClearSelection": "取消選擇",
   "settings.imageLibraryBatchDelete": "批次刪除",
   "settings.imageLibraryBatchDeleteTitle": "刪除所選圖片",
-  "settings.imageLibraryBatchDeleteConfirm": "確定刪除選中的 {{count}} 張圖片嗎？會話中的對應圖片也會一併移除。",
+  "settings.imageLibraryBatchDeleteConfirm":
+    "確定刪除選中的 {{count}} 張圖片嗎？會話中的對應圖片也會一併移除。",
   "settings.imageLibraryCopyPrompt": "複製提示詞",
   "settings.imageLibraryCopyFileName": "複製檔案名稱",
   "settings.imageLibraryCopied": "已複製",
@@ -1128,11 +1137,14 @@ export const zhTW = {
   "settings.apiRequestMethod": "請求方式",
   "settings.apiResponsesVerbosity": "Responses 輸出詳細度",
   "settings.apiResponsesVerbosityDefault": "預設（不傳）",
-  "settings.apiResponsesVerbosityHint": "對應 text.verbosity，僅適用於 Responses API。",
+  "settings.apiResponsesVerbosityHint":
+    "對應 text.verbosity，僅適用於 Responses API。",
   "settings.apiResponsesFastMode": "Responses Fast Mode",
-  "settings.apiResponsesFastModeHint": "啟用後傳送 service_tier: priority，可在聊天輸入區即時切換。",
+  "settings.apiResponsesFastModeHint":
+    "啟用後傳送 service_tier: priority，可在聊天輸入區即時切換。",
   "settings.apiGoogleSearch": "谷歌搜尋聯網",
-  "settings.apiGoogleSearchHint": "開啟後 Gemini 請求（文字 / 視覺圖片模型）注入 Google Search 工具（Gemini 原生 grounding），即時獲取聯網資訊。",
+  "settings.apiGoogleSearchHint":
+    "開啟後 Gemini 請求（文字 / 視覺圖片模型）注入 Google Search 工具（Gemini 原生 grounding），即時獲取聯網資訊。",
   "settings.apiAdvancedModel": "進階模型",
   "settings.apiBasicModel": "基礎模型",
   "settings.apiMaxContext": "最大上下文（tokens）",
@@ -1146,10 +1158,12 @@ export const zhTW = {
   "settings.apiVisionRequestMethod": "視覺請求方式",
   "settings.apiVisionModel": "視覺模型",
   "settings.apiVisionThinking": "思考",
-  "settings.apiVisionThinkingHint": "預設關閉以提速。關閉時 Gemini 請求會將思考預算設為 0；Anthropic 始終不思考。",
+  "settings.apiVisionThinkingHint":
+    "預設關閉以提速。關閉時 Gemini 請求會將思考預算設為 0；Anthropic 始終不思考。",
   "settings.apiVisionThinkingEffort": "思考強度",
   "settings.apiVisionMaxTokens": "最大輸出 tokens",
-  "settings.apiVisionMaxTokensHint": "圖片描述的最大輸出 tokens，留空預設 4096。",
+  "settings.apiVisionMaxTokensHint":
+    "圖片描述的最大輸出 tokens，留空預設 4096。",
   "settings.apiStreamIdleTimeout": "串流閒置逾時（秒）",
   "settings.apiMaxRetries": "最大重試次數",
   "settings.apiRetryBaseDelayMs": "重試延遲（毫秒）",
@@ -1177,7 +1191,8 @@ export const zhTW = {
   "settings.apiManualAddSuccess": "已新增 API 配置 {name}。",
   "settings.apiImportSuccess": "已匯入 {count} 個 Snow CLI 配置。",
   "settings.apiDeleteTitle": "刪除 API 配置",
-  "settings.apiDeleteConfirm": "確定刪除 API 配置「{{name}}」嗎？此操作無法復原。",
+  "settings.apiDeleteConfirm":
+    "確定刪除 API 配置「{{name}}」嗎？此操作無法復原。",
   "settings.apiDeleteSuccess": "已刪除 API 配置 {name}。",
   "settings.apiDuplicateSuccess": "已複製 API 配置 {name}。",
   "settings.apiDuplicateError": "複製 API 配置失敗",
@@ -1725,7 +1740,7 @@ export const zhTW = {
   "settings.mcpJsonInvalid": "JSON 無效",
   "settings.mcpJsonEditorLabel": "MCP 伺服器 JSON 設定",
   "settings.mcpJsonHint":
-    "以 JSON 形式編輯伺服器設定，例如 {\"context7\": {\"url\": \"https://mcp.context7.com/mcp\"}}。未填寫 type（http/stdio）時會根據 url 或 command 自動推斷。",
+    '以 JSON 形式編輯伺服器設定，例如 {"context7": {"url": "https://mcp.context7.com/mcp"}}。未填寫 type（http/stdio）時會根據 url 或 command 自動推斷。',
   "settings.mcpToolDetailsTitle": "服務工具",
   "settings.mcpToolDetailsCount": "已取得 {{count}} 個工具",
   "settings.mcpToolDetailsNotFetched": "尚未取得工具清單",
@@ -1927,7 +1942,8 @@ export const zhTW = {
   "settings.petsSourceCodex": "Codex App",
   "settings.petsSourcePetdex": "Petdex",
   "settings.petsManageTitle": "寵物管理",
-  "settings.petsManageInfo": "喚醒或收起寵物、調整顯示大小、選擇目前啟用的寵物。",
+  "settings.petsManageInfo":
+    "喚醒或收起寵物、調整顯示大小、選擇目前啟用的寵物。",
   "settings.petsActiveSection": "目前寵物",
   "settings.petsActiveInfo": "在桌面上顯示或隱藏寵物。",
   "settings.petsInstalledSection": "已安裝的寵物",
@@ -2073,7 +2089,7 @@ export const zhTW = {
   "settings.terminalSummaryTitle": "終端預覽",
   "settings.terminalSectionShell": "Shell",
   "settings.terminalSectionFont": "字型",
-    "settings.terminalSectionAppearance": "外觀",
+  "settings.terminalSectionAppearance": "外觀",
   "settings.terminalDetectedTerminals": "偵測到的終端",
   "settings.terminalNoDetectedTerminals": "未偵測到終端",
   "settings.terminalShell": "Shell",
@@ -2092,7 +2108,8 @@ export const zhTW = {
   "settings.terminalFontSizeValidationError": "字型大小必須在 6 到 72 之間。",
   "settings.terminalLineHeight": "行高",
   "settings.terminalLineHeightValidationError": "行高必須在 0.5 到 3 之間。",
-  "settings.terminalShellPathValidationError": "Shell 可執行檔不存在，請檢查路徑或留空自動偵測。",
+  "settings.terminalShellPathValidationError":
+    "Shell 可執行檔不存在，請檢查路徑或留空自動偵測。",
   "settings.saveTerminalSettings": "儲存設定",
   "settings.privacySettings": "隱私設定",
   "settings.privacySettingsInfo": "對工具結果進行脫敏處理。",
@@ -2473,7 +2490,8 @@ export const zhTW = {
   "chat.fileChanges.diffEmpty": "沒有可顯示的變更內容",
   "chat.fileChanges.selectFile": "選擇檔案檢視變更",
   "chat.review.title": "程式碼審查",
-  "chat.review.description": "選擇要審查的 Git 變更範圍，AI 只做分析、不修改檔案。",
+  "chat.review.description":
+    "選擇要審查的 Git 變更範圍，AI 只做分析、不修改檔案。",
   "chat.review.close": "關閉",
   "chat.review.loading": "正在載入 Git 資訊...",
   "chat.review.notRepo": "目前工作目錄不是 Git 倉庫",
@@ -2493,19 +2511,27 @@ export const zhTW = {
   "chat.review.startReview": "開始審查",
   "chat.review.tagSummary": "程式碼審查 · {{count}} 項",
   "chat.review.instructionsLabel": "補充審查重點（選填）",
-  "chat.review.instructionsPlaceholder": "例如：著重效能、並發安全、錯誤處理...",
-  "chat.review.promptHeader": "請對以下 Git 變更執行程式碼審查（Code Review）。這是一個唯讀分析任務。",
-  "chat.review.promptRule": "- 只做深入分析，不要修改、建立或刪除任何檔案；除非使用者明確要求修復，否則不要更動程式碼。",
-  "chat.review.promptFocus": "- 重點檢查：邏輯正確性、邊界情況、錯誤處理、安全隱患、效能問題、可讀性與可維護性、與專案現有風格的契合度。",
-  "chat.review.promptSeverity": "- 對每個問題標註嚴重程度（嚴重 / 一般 / 建議），並指出相關檔案與大致位置。",
-  "chat.review.promptSummary": "- 最後給出總體評價，並依優先順序列出改進建議清單。",
+  "chat.review.instructionsPlaceholder":
+    "例如：著重效能、並發安全、錯誤處理...",
+  "chat.review.promptHeader":
+    "請對以下 Git 變更執行程式碼審查（Code Review）。這是一個唯讀分析任務。",
+  "chat.review.promptRule":
+    "- 只做深入分析，不要修改、建立或刪除任何檔案；除非使用者明確要求修復，否則不要更動程式碼。",
+  "chat.review.promptFocus":
+    "- 重點檢查：邏輯正確性、邊界情況、錯誤處理、安全隱患、效能問題、可讀性與可維護性、與專案現有風格的契合度。",
+  "chat.review.promptSeverity":
+    "- 對每個問題標註嚴重程度（嚴重 / 一般 / 建議），並指出相關檔案與大致位置。",
+  "chat.review.promptSummary":
+    "- 最後給出總體評價，並依優先順序列出改進建議清單。",
   "chat.review.promptRepo": "倉庫路徑",
   "chat.review.promptBranch": "目前分支",
   "chat.review.promptUserNote": "使用者補充說明",
   "chat.review.promptBinary": "（二進位檔案，差異不可用）",
   "chat.review.promptDiffTruncated": "差異過大已截斷",
-  "chat.review.promptDiffOmitted": "（差異因總大小限制未包含，如需請用 git 指令檢視）",
-  "chat.review.promptTruncated": "部分差異因過大被截斷，如需完整內容，請自行在倉庫中使用 git diff / git show 指令檢視。",
+  "chat.review.promptDiffOmitted":
+    "（差異因總大小限制未包含，如需請用 git 指令檢視）",
+  "chat.review.promptTruncated":
+    "部分差異因過大被截斷，如需完整內容，請自行在倉庫中使用 git diff / git show 指令檢視。",
   "chat.review.promptEnd": "請開始審查。",
   "chat.streamMetrics.pause": "暫停",
   "chat.streamMetrics.resume": "繼續",
@@ -2595,8 +2621,10 @@ export const zhTW = {
   "settings.browserHomepagePlaceholder": "輸入網址，留空為空白頁",
   "settings.browserHomepageHint": "留空表示空白頁",
   "settings.browserPasswords": "密碼",
-  "settings.browserPasswordsHint": "密碼以 AES-256-GCM 加密儲存，金鑰由系統鑰匙圈保護",
-  "settings.browserPasswordsEmpty": "尚無已儲存的密碼。登入網站並送出表單後會自動儲存，或從下方匯入其他瀏覽器的密碼",
+  "settings.browserPasswordsHint":
+    "密碼以 AES-256-GCM 加密儲存，金鑰由系統鑰匙圈保護",
+  "settings.browserPasswordsEmpty":
+    "尚無已儲存的密碼。登入網站並送出表單後會自動儲存，或從下方匯入其他瀏覽器的密碼",
   "settings.browserPasswordSite": "網站",
   "settings.browserPasswordUser": "使用者名稱",
   "settings.browserPasswordValue": "密碼",
@@ -2605,16 +2633,21 @@ export const zhTW = {
   "settings.browserPasswordSearch": "搜尋網站或使用者名稱",
   "settings.browserPasswordSearchEmpty": "沒有相符的密碼",
   "settings.browserImport": "匯入",
-  "settings.browserImportHint": "匯入的密碼將以系統級加密存入密碼保險庫；Cookie 會寫入目前瀏覽器工作階段",
-  "settings.browserImportNoSources": "未偵測到本機瀏覽器資料（請先關閉對應瀏覽器後重試）",
+  "settings.browserImportHint":
+    "匯入的密碼將以系統級加密存入密碼保險庫；Cookie 會寫入目前瀏覽器工作階段",
+  "settings.browserImportNoSources":
+    "未偵測到本機瀏覽器資料（請先關閉對應瀏覽器後重試）",
   "settings.browserImportScan": "掃描本機瀏覽器",
   "settings.browserImportRescan": "重新掃描",
-  "settings.browserImportCounts": "密碼 {{passwords}} 筆 · Cookie {{cookies}} 個",
+  "settings.browserImportCounts":
+    "密碼 {{passwords}} 筆 · Cookie {{cookies}} 個",
   "settings.browserImportPasswordsOption": "匯入密碼（{{count}} 筆）",
   "settings.browserImportCookiesOption": "匯入 Cookie（{{count}} 個）",
   "settings.browserImportAction": "匯入所選",
-  "settings.browserImportPasswordsResult": "已匯入 {{imported}}/{{total}} 筆密碼",
-  "settings.browserImportCookiesResult": "已匯入 {{imported}}/{{total}} 個 Cookie",
+  "settings.browserImportPasswordsResult":
+    "已匯入 {{imported}}/{{total}} 筆密碼",
+  "settings.browserImportCookiesResult":
+    "已匯入 {{imported}}/{{total}} 個 Cookie",
   "settings.browserImportPartialFail": "{{failed}} 項匯入失敗",
   "settings.browserImportDone": "匯入完成",
   "common.close": "關閉",
@@ -2622,7 +2655,6 @@ export const zhTW = {
   "rightPanel.gitTab": "Git",
   "rightPanel.browserTab": "瀏覽器",
   "rightPanel.codebaseTab": "程式碼庫",
-  "rightPanel.remoteJobsTab": "遠端任務",
   "rightPanel.closeTab": "關閉標籤頁",
   "rightPanel.closeAllTabs": "關閉所有標籤頁",
   "rightPanel.tabContextNewTerminal": "新增終端",
@@ -2654,24 +2686,11 @@ export const zhTW = {
   "rightPanel.fileViewerSavedStrongAtomic": "已儲存（強原子）",
   "rightPanel.fileViewerSavedAtomicBestEffort": "已儲存（盡力原子）",
   "rightPanel.fileViewerSavedCompatibility": "已儲存（相容模式）",
-  "rightPanel.fileViewerSaveConflict": "遠端檔案已變更。請重新載入後再儲存修改。",
+  "rightPanel.fileViewerSaveConflict":
+    "遠端檔案已變更。請重新載入後再儲存修改。",
   "rightPanel.fileViewerDraftPending": "草稿待同步",
   "rightPanel.fileViewerDraftConflict": "草稿衝突",
   "rightPanel.fileViewerSaveError": "儲存檔案失敗",
-  "remoteJobs.title": "遠端任務",
-  "remoteJobs.refresh": "重新整理遠端任務",
-  "remoteJobs.loading": "正在載入遠端任務...",
-  "remoteJobs.empty": "目前遠端工作區沒有持久任務。",
-  "remoteJobs.jobList": "遠端任務清單",
-  "remoteJobs.selectJob": "選擇一個遠端任務以檢視狀態和輸出。",
-  "remoteJobs.noOutput": "任務尚未產生輸出。",
-  "remoteJobs.cancel": "取消遠端任務",
-  "remoteJobs.copyAnalysis": "複製任務內容供 AI 分析",
-  "remoteJobs.attach": "附加互動式終端",
-  "remoteJobs.startInteractive": "啟動互動任務",
-  "remoteJobs.send": "傳送",
-  "remoteJobs.command": "命令",
-  "remoteJobs.commandPlaceholder": "輸入要在遠端主機執行的命令",
   "rightPanel.fileViewerDiscardConfirm":
     "存在未儲存的變更，是否放棄並退出編輯模式？",
   "rightPanel.fileSearchPlaceholder": "在檔案中尋找",
@@ -2879,7 +2898,8 @@ export const zhTW = {
   "settings.usageRefresh": "重新整理用量資料",
   "settings.keyboardShortcutsSettings": "快捷鍵設定",
   "settings.keyboardShortcuts": "快捷鍵",
-  "settings.keyboardShortcutsInfo": "配置快捷鍵。每個快捷鍵可獨立啟用，並可設定僅在應用程式聚焦時生效。",
+  "settings.keyboardShortcutsInfo":
+    "配置快捷鍵。每個快捷鍵可獨立啟用，並可設定僅在應用程式聚焦時生效。",
   "settings.shortcutCancelSession": "中斷目前對話",
   "settings.shortcutClickToRebind": "點擊重新綁定",
   "settings.shortcutConflict": "與以下快捷鍵衝突：{{actions}}",
@@ -2887,7 +2907,8 @@ export const zhTW = {
   "settings.shortcutCycleProject": "循環切換專案",
   "settings.shortcutEnabled": "啟用",
   "settings.shortcutForegroundOnly": "僅台前生效",
-  "settings.shortcutForegroundOnlyNote": '開啟"僅台前生效"時，快捷鍵僅在應用程式視窗聚焦時生效；關閉後只要程序未退出即生效（目前實作受限於應用程式聚焦場景）。',
+  "settings.shortcutForegroundOnlyNote":
+    '開啟"僅台前生效"時，快捷鍵僅在應用程式視窗聚焦時生效；關閉後只要程序未退出即生效（目前實作受限於應用程式聚焦場景）。',
   "settings.shortcutListInfo": "可獨立啟停每個快捷鍵，點擊按鍵可重新綁定。",
   "settings.shortcutListTitle": "快捷鍵列表",
   "settings.shortcutOpenExplorer": "開啟目前專案明細",

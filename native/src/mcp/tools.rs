@@ -92,7 +92,6 @@ const REQUEST_APPROVAL_FULL_NAME: &str = "app-control-requestApproval";
 pub const BUILTIN_SERVER_IDS: &[&str] = &[
     "user-interaction",
     "app-control",
-    "remote-job",
     "filesystem",
     "sub-agents",
     "websearch",
@@ -888,40 +887,7 @@ pub async fn call_mcp_tool(
 
     let returns_plain_text = tool_full_name == "skills-skill-execute";
     let masking_tool_name = tool_full_name.clone();
-    let result = if tool_full_name == "remote-job-start" {
-        if !uses_remote_workspace {
-            return Err(Error::new(
-                Status::InvalidArg,
-                "remote-job-start requires an SSH workspace".to_string(),
-            ));
-        }
-        let mut durable_args = args.clone();
-        durable_args["durable"] = Value::Bool(true);
-        BashService::new()
-            .execute_terminal_stream(
-                &durable_args,
-                project_id.as_deref(),
-                sensitive_authorization_token.as_deref(),
-                on_chunk,
-                &on_remote_workspace_command,
-            )
-            .await?
-    } else if let Some(remote_job_tool) = tool_full_name.strip_prefix("remote-job-") {
-        let operation = match remote_job_tool {
-            "status" => "remote-job-status",
-            "read" => "remote-job-read",
-            "cancel" => "remote-job-cancel",
-            "list" => "remote-job-list",
-            _ => {
-                return Err(Error::new(
-                    Status::InvalidArg,
-                    format!("Unknown Remote Job tool: {remote_job_tool}"),
-                ));
-            }
-        };
-        execute_remote_workspace_command(&on_remote_workspace_command, operation, &args, None)
-            .await?
-    } else if tool_full_name == "bash-terminal-execute" {
+    let result = if tool_full_name == "bash-terminal-execute" {
         let terminal_result = BashService::new()
             .execute_terminal_stream(
                 &args,
@@ -1324,7 +1290,7 @@ fn remote_workspace_path_field(tool_full_name: &str) -> Option<&'static str> {
     match tool_full_name {
         "filesystem-read" | "filesystem-replace_edit" | "filesystem-create" => Some("filePath"),
         "grep-search" => Some("path"),
-        "bash-terminal-execute" | "remote-job-start" | "remote-job-list" => {
+        "bash-terminal-execute" => {
             Some("workingDirectory")
         }
         _ => None,

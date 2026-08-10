@@ -18,11 +18,7 @@ type SensitiveCommandConfirmDialogProps = {
     userProvidedReason?: boolean
   ) => void;
 };
-
-const COMMAND_TOOL_NAMES = new Set([
-  "bash-terminal-execute",
-  "remote-job-start",
-]);
+const COMMAND_TOOL_NAMES = new Set(["bash-terminal-execute"]);
 
 const parseBashArgument = (
   toolCall: ToolCallInfo,
@@ -145,8 +141,7 @@ const SensitiveCommandItem = ({
             const trimmedReason = rejectionReason.trim();
             onReject(
               toolCall,
-              trimmedReason ||
-                t("toolAuthorization.defaultRejectionReason"),
+              trimmedReason || t("toolAuthorization.defaultRejectionReason"),
               trimmedReason.length > 0
             );
           }}

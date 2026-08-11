@@ -79,6 +79,12 @@ export type WebTag = {
   url: string;
   /** 页面标题（可选，缺失时 chip 仅显示域名） */
   title?: string;
+  /** 清洗后的整页正文快照（≤8000 字符，随消息发送给 AI，AI 无需再开浏览器） */
+  text?: string;
+  /** 元素区域文本摘要（可选，来自浏览器元素选择器 picked） */
+  elementText?: string;
+  /** 元素选择器（可选，供 AI 复现定位） */
+  elementSelector?: string;
 };
 
 /**
@@ -263,12 +269,17 @@ export const encodeElementTag = (tag: ElementTag): string =>
 /**
  * 将网页引用编码为 web 标签。
  * url / title 为结构化字段（标题可能含引号等字符，由 JSON 序列化承载），
- * 发送给 AI 时保留完整 URL 便于其使用浏览器工具打开该页面。
+ * 发送给 AI 时保留完整 URL 便于其使用浏览器工具打开该页面；text /
+ * elementText / elementSelector 为 F4 网页快照字段（正文 / 元素区域），
+ * 携带后 AI 无需再开浏览器即可基于页面内容工作。
  */
 export const encodeWebTag = (tag: WebTag): string =>
   `@@web:${JSON.stringify({
     url: tag.url,
     title: tag.title,
+    text: tag.text,
+    elementText: tag.elementText,
+    elementSelector: tag.elementSelector,
   })}@@`;
 
 /**
@@ -404,6 +415,15 @@ export const parseContentSegments = (content: string): ContentSegment[] => {
             tag: {
               url,
               title: typeof data.title === "string" ? data.title : undefined,
+              text: typeof data.text === "string" ? data.text : undefined,
+              elementText:
+                typeof data.elementText === "string"
+                  ? data.elementText
+                  : undefined,
+              elementSelector:
+                typeof data.elementSelector === "string"
+                  ? data.elementSelector
+                  : undefined,
             },
           });
         }
@@ -621,13 +641,17 @@ export const createElementChipHtml = (tag: ElementTag): string => {
 
 /**
  * 生成网页引用 chip HTML。显示「标题 · 域名」，标题缺失时仅显示域名；
- * 完整 URL 存放在 data-web-data 中，供序列化与点击打开浏览器使用。
+ * 完整 URL 与 F4 快照字段（text/elementText/elementSelector）存放在
+ * data-web-data 中，供序列化（发送给 AI）与点击打开浏览器使用。
  */
 export const createWebTagChipHtml = (tag: WebTag): string => {
   const webData = escapeHtml(
     JSON.stringify({
       url: tag.url,
       title: tag.title,
+      text: tag.text,
+      elementText: tag.elementText,
+      elementSelector: tag.elementSelector,
     })
   );
   const host = extractUrlHost(tag.url);
@@ -803,6 +827,15 @@ const readEditableContentWith = (
               url,
               title:
                 typeof data.title === "string" ? data.title : undefined,
+              text: typeof data.text === "string" ? data.text : undefined,
+              elementText:
+                typeof data.elementText === "string"
+                  ? data.elementText
+                  : undefined,
+              elementSelector:
+                typeof data.elementSelector === "string"
+                  ? data.elementSelector
+                  : undefined,
             });
           }
         } catch {

@@ -8,7 +8,8 @@ import {
   ChevronRight,
   ClipboardList,
   Command,
-  Target,
+  Copy,
+  ExternalLink,
   File,
   Folder,
   Keyboard,
@@ -20,6 +21,8 @@ import {
   Send,
   Settings,
   Square,
+  Target,
+  Trash2,
   X,
   Zap,
 } from "lucide-react";
@@ -27,6 +30,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "../../../i18n";
 import { Modal } from "../../common/Modal";
+import { ContextMenu } from "../../common/ContextMenu";
 import type { ChatInputViewProps } from "./types";
 import { TEXT_SNIPPET_THRESHOLD } from "./constants";
 import { ThinkingStrengthMenu } from "./ThinkingStrengthMenu";
@@ -86,6 +90,14 @@ import {
   type TerminalInsertTextPayload,
 } from "../../rightPanel/terminal/terminalMonitor";
 import { rightPanelEvents } from "../../rightPanel/rightPanelEvents";
+import {
+  WEB_SNAPSHOT_REQUEST_EVENT,
+  WEB_SNAPSHOT_RESULT_EVENT,
+  WEB_SNAPSHOT_TIMEOUT_MS,
+  nextSnapshotRequestId,
+  type WebSnapshotRequest,
+  type WebSnapshotResult,
+} from "../../rightPanel/browserSnapshotEvents";
 import { CommandPanel, type CommandPanelHandle } from "./commands/CommandPanel";
 import { createChatCommands } from "./commands/commandRegistry";
 import { FileChangesPanel } from "./commands/FileChangesPanel";
@@ -94,6 +106,36 @@ import type { ChatCommand } from "./commands/types";
 
 /** 终端监控日志预览保留的最大行数 */
 const MAX_MONITORED_LINES = 1000;
+
+/**
+ * 在编辑区中定位与（url, title）匹配的 web chip，用于快照结果回填。
+ * 同一 URL 可能被拖入多次（chip 多个），优先精确匹配 url+title 的，
+ * 否则取最后插入的 url 匹配项（最近一次拖入的 chip）。
+ */
+const findWebChipByUrl = (
+  root: HTMLElement,
+  url: string,
+  title?: string
+): HTMLElement | null => {
+  const chips = root.querySelectorAll<HTMLElement>("[data-web-tag='true']");
+  let fallback: HTMLElement | null = null;
+  let exact: HTMLElement | null = null;
+  for (const chip of chips) {
+    try {
+      const data = JSON.parse(chip.dataset.webData || "{}") as Partial<WebTag>;
+      if (data.url !== url) {
+        continue;
+      }
+      fallback = chip;
+      if (title && data.title === title) {
+        exact = chip;
+      }
+    } catch {
+      // 忽略损坏的 chip 数据
+    }
+  }
+  return exact ?? fallback;
+};
 
 export const ChatInputView = ({
   placeholder,
@@ -206,6 +248,13 @@ export const ChatInputView = ({
     fallbackChanges: fallbackFileChanges,
   });
   const isDraggingOverRef = useRef(false);
+  // F4 网页快照：待处理请求表（requestId → web chip 定位信息）。拖入标签页
+  // 后登记，快照结果按 requestId 匹配取出定位信息，再在编辑区 DOM 中按
+  // URL/标题找到对应 web chip 回填（chip 可能已被删除/消息已发送，找不到
+  // 则静默丢弃）；5s 超时未收到结果也在此移除（chip 保持纯 URL 引用）。
+  const pendingWebSnapshotRef = useRef<
+    Map<number, { url: string; title?: string }>
+  >(new Map());
   const [isMentionOpen, setIsMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
   const mentionAnchorRef = useRef<HTMLDivElement>(null);
@@ -383,6 +432,14 @@ export const ChatInputView = ({
     summary: string;
   } | null>(null);
 
+  // web chip 右键菜单：记录触发位置与目标 chip（url 用于打开/复制，chip 用于移除）
+  const [webChipMenu, setWebChipMenu] = useState<{
+    x: number;
+    y: number;
+    chip: HTMLElement;
+    url: string;
+  } | null>(null);
+
   // ------------------------------------------------------------------
   // 终端监控模式：拖拽终端到输入框后，实时订阅该终端的日志流
   // ------------------------------------------------------------------
@@ -534,6 +591,74 @@ export const ChatInputView = ({
     window.addEventListener(INSERT_ELEMENT_TAG_EVENT, handleInsertElementTag);
     return () => {
       window.removeEventListener(INSERT_ELEMENT_TAG_EVENT, handleInsertElementTag);
+    };
+  }, [syncContent, textareaRef]);
+
+  // F4 网页快照结果回填：按 requestId 匹配 pending 表，更新对应 web chip
+  // 的快照字段（发送时 encodeWebTag 序列化携带，AI 无需再开浏览器），
+  // 并把截图作为 image chip 紧随 web chip 插入编辑区。任一环节缺失
+  // （结果超时 / 快照失败 / chip 已删除）都静默跳过，不打断现有流程。
+  useEffect(() => {
+    const handleSnapshotResult = (event: Event): void => {
+      const detail = (event as CustomEvent<WebSnapshotResult>).detail;
+      if (!detail || typeof detail.requestId !== "number") {
+        return;
+      }
+      const pending = pendingWebSnapshotRef.current.get(detail.requestId);
+      if (!pending) {
+        return; // 已超时 / 已被处理过
+      }
+      pendingWebSnapshotRef.current.delete(detail.requestId);
+      const snapshot = detail.snapshot;
+      if (!snapshot) {
+        return; // 抓取失败：chip 保持纯 URL 引用
+      }
+      const el = textareaRef.current;
+      if (!el) {
+        return;
+      }
+      const webChip = findWebChipByUrl(el, pending.url, pending.title);
+      if (!webChip) {
+        return; // chip 已被删除 / 消息已发送
+      }
+
+      // ① 回填快照字段到 web chip 数据（data-web-data），发送时
+      //    encodeWebTag 从 dataset 读取并序列化进 @@web:...@@ 标签。
+      try {
+        const prev = JSON.parse(
+          webChip.dataset.webData || "{}"
+        ) as Partial<WebTag>;
+        webChip.dataset.webData = JSON.stringify({
+          url: typeof prev.url === "string" ? prev.url : pending.url,
+          title: typeof prev.title === "string" ? prev.title : pending.title,
+          text: snapshot.text || undefined,
+          elementText: snapshot.elementText,
+          elementSelector: snapshot.elementSelector,
+        });
+      } catch {
+        // data-web-data 损坏：跳过回填（chip 保持纯 URL 引用）
+      }
+
+      // ② 截图 → image chip 紧随 web chip 插入（复用 createImageChipHtml）。
+      //    用 DOM 定位插入而非光标处，避免结果到达时用户已移动光标/失焦
+      //    导致截图插到错误位置或插入到编辑区之外。
+      if (snapshot.screenshotDataUrl) {
+        const imageTag: ImageTag = {
+          name: "page-snapshot.png",
+          dataUrl: snapshot.screenshotDataUrl,
+        };
+        webChip.insertAdjacentHTML("afterend", createImageChipHtml(imageTag));
+        const inserted = webChip.nextElementSibling;
+        if (inserted) {
+          // chip 后补空格，保证光标可定位到 chip 之后（对齐 insertHtmlAtSelection 行为）。
+          inserted.after(document.createTextNode(" "));
+        }
+      }
+      syncContent();
+    };
+    window.addEventListener(WEB_SNAPSHOT_RESULT_EVENT, handleSnapshotResult);
+    return () => {
+      window.removeEventListener(WEB_SNAPSHOT_RESULT_EVENT, handleSnapshotResult);
     };
   }, [syncContent, textareaRef]);
 
@@ -780,6 +905,36 @@ export const ChatInputView = ({
     [syncContent, textareaRef]
   );
 
+  /**
+   * 页面文本拖入（方案 A）：浏览器 webview 页选中文字直接拖到输入框时，
+   * 将 text/plain 内容插入编辑区。短文本直插（浏览器原生 insertText，
+   * 不经 HTML 解析、无 XSS 风险，配合 .input-field-editable 的
+   * white-space: pre-wrap 保留原文换行与缩进，并接入浏览器撤销栈）；
+   * 超阈值长文本折叠为 text-snippet chip（与粘贴逻辑一致，避免
+   * contenteditable 渲染海量文本节点导致应用卡死）。
+   */
+  const insertDroppedPlainText = useCallback(
+    (text: string) => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+      }
+      if (text.length > TEXT_SNIPPET_THRESHOLD) {
+        const summary = buildTextSnippetSummary(text);
+        const tag: TextSnippetTag = {
+          content: text,
+          summary,
+          charCount: text.length,
+        };
+        insertHtmlAtSelection(createTextSnippetChipHtml(tag));
+        syncContent();
+        return;
+      }
+      document.execCommand("insertText", false, text);
+      syncContent();
+    },
+    [syncContent, textareaRef]
+  );
+
   const handleDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
       event.preventDefault();
@@ -828,6 +983,8 @@ export const ChatInputView = ({
         // contextIsolation 下渲染进程无法直接读取真实路径，由 preload 的
         // resolveDroppedFiles 解析路径并查询是否为目录。图片文件走 image
         // chip（读取 dataUrl），其余文件/文件夹走 file chip（携带路径）。
+        // Files 分支优先于 text/plain：文件拖拽时 text/plain 通常只是
+        // 文件名列表，不应作为页面文本插入。
         const droppedFiles = event.dataTransfer.files;
         if (droppedFiles && droppedFiles.length > 0) {
           const files: File[] = [];
@@ -838,6 +995,16 @@ export const ChatInputView = ({
             }
           }
           insertExternalFiles(files);
+          return;
+        }
+
+        // 页面文本拖入（方案 A）：浏览器 webview 页选中文字直接拖到输入框。
+        // 拖出 guest 后为 OS 级拖拽会话，dataTransfer 仅携带 text/plain
+        // （无 application/json、无文件）；非空（trim 后）即作为纯文本插入，
+        // 短文本直插、超阈值折叠为 text-snippet chip（见 insertDroppedPlainText）。
+        const plainText = event.dataTransfer.getData("text/plain");
+        if (plainText && plainText.trim().length > 0) {
+          insertDroppedPlainText(plainText);
         }
         return;
       }
@@ -845,7 +1012,9 @@ export const ChatInputView = ({
       try {
         const parsed = JSON.parse(jsonData) as Record<string, unknown>;
 
-        // 浏览器 tab 拖拽：{ type: "web-tag", url, title } → 插入网页引用 chip
+        // 浏览器 tab 拖拽：{ type: "web-tag", url, title, instanceId?, tabId? }
+        // → 插入网页引用 chip；若携带实例定位信息则异步请求三层网页快照
+        // （正文 / 元素区域 / 截图），结果到达后回填 chip 数据并插入截图。
         if (
           parsed.type === "web-tag" &&
           typeof parsed.url === "string" &&
@@ -865,6 +1034,38 @@ export const ChatInputView = ({
 
           insertHtmlAtSelection(createWebTagChipHtml(tag));
           syncContent();
+
+          // F4 网页快照：仅内层标签页 / 外层浏览器 tab（携带 instanceId）
+          // 触发请求；纯外部 URL 拖入（无 instanceId）保持纯 URL chip。
+          const instanceId =
+            typeof parsed.instanceId === "string" && parsed.instanceId.length > 0
+              ? parsed.instanceId
+              : undefined;
+          if (instanceId) {
+            const requestId = nextSnapshotRequestId();
+            pendingWebSnapshotRef.current.set(requestId, {
+              url: tag.url,
+              title: tag.title,
+            });
+            // 全链路 5s 超时：未收到结果则放弃，chip 保持纯 URL 引用。
+            window.setTimeout(() => {
+              pendingWebSnapshotRef.current.delete(requestId);
+            }, WEB_SNAPSHOT_TIMEOUT_MS);
+            window.dispatchEvent(
+              new CustomEvent<WebSnapshotRequest>(
+                WEB_SNAPSHOT_REQUEST_EVENT,
+                {
+                  detail: {
+                    requestId,
+                    instanceId,
+                    tabId:
+                      typeof parsed.tabId === "string" ? parsed.tabId : "",
+                    url: tag.url,
+                  },
+                }
+              )
+            );
+          }
           return;
         }
 
@@ -980,7 +1181,7 @@ export const ChatInputView = ({
         // Ignore invalid drag data
       }
     },
-    [insertExternalFiles, insertFileTags, syncContent, textareaRef]
+    [insertDroppedPlainText, insertExternalFiles, insertFileTags, syncContent, textareaRef]
   );
 
   const handleDragOver = useCallback(
@@ -988,12 +1189,15 @@ export const ChatInputView = ({
       const types = event.dataTransfer.types;
       // 应用内拖拽（文件/commit/change 标签）走 application/json；
       // 终端监控拖拽走 application/x-snow-terminal（dropEffect: link）；
-      // 从文件管理器拖入的外部文件走 Files。三者均需 preventDefault
-      // 才能允许 drop，否则浏览器默认拒绝（显示禁止光标）。
+      // 从文件管理器拖入的外部文件走 Files；
+      // 浏览器 webview 页面选中文字拖入走 text/plain（方案 A）。
+      // 四者均需 preventDefault 才能允许 drop，否则浏览器默认拒绝
+      // （显示禁止光标）。
       const hasTerminal = types.includes(TERMINAL_DRAG_MIME);
       const allowed =
         types.includes("application/json") ||
         types.includes("Files") ||
+        types.includes("text/plain") ||
         hasTerminal;
       if (!allowed) {
         return;
@@ -1567,6 +1771,45 @@ export const ChatInputView = ({
     [textareaRef]
   );
 
+  // 右键 web chip → 弹出右键菜单（打开页面 / 复制链接 / 移除引用）。
+  // contextmenu 与 click 是独立事件（click 仅主键触发），不会干扰 C3 的点击打开。
+  const handleWebChipContextMenu = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement;
+      // 右键关闭按钮不弹菜单（保留其关闭语义）
+      if (target.closest("[data-chip-remove='true']")) {
+        return;
+      }
+      const chip = target.closest(
+        "[data-web-tag='true']"
+      ) as HTMLElement | null;
+      if (!chip || !textareaRef.current?.contains(chip)) {
+        return;
+      }
+      const rawData = chip.dataset.webData;
+      if (!rawData) {
+        return;
+      }
+      try {
+        const parsed = JSON.parse(rawData) as { url?: string };
+        if (!parsed.url) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        setWebChipMenu({
+          x: event.clientX,
+          y: event.clientY,
+          chip,
+          url: parsed.url,
+        });
+      } catch {
+        // Ignore malformed data
+      }
+    },
+    [textareaRef]
+  );
+
   const handleTextSnippetEditorSave = useCallback(() => {
     if (!textSnippetEditor) {
       return;
@@ -2093,6 +2336,7 @@ export const ChatInputView = ({
               scheduleHideTextSnippetPreview();
               scheduleHideChipDetails();
             }}
+            onContextMenu={handleWebChipContextMenu}
             onClick={(event) => {
               handleChipRemove(event);
               handleTextSnippetClick(event);
@@ -2233,6 +2477,54 @@ export const ChatInputView = ({
               </Modal>,
               document.body
             )}
+          {webChipMenu && (
+            <ContextMenu
+              x={webChipMenu.x}
+              y={webChipMenu.y}
+              items={[
+                {
+                  id: "web-chip-open",
+                  label: t("chatInput.webChipOpen", {
+                    defaultValue: "打开页面",
+                  }),
+                  icon: <ExternalLink size={13} strokeWidth={1.8} />,
+                  onClick: () => {
+                    rightPanelEvents.emit("open-browser-tab", {
+                      url: webChipMenu.url,
+                    });
+                    setWebChipMenu(null);
+                  },
+                },
+                {
+                  id: "web-chip-copy-link",
+                  label: t("chatInput.webChipCopyLink", {
+                    defaultValue: "复制链接",
+                  }),
+                  icon: <Copy size={13} strokeWidth={1.8} />,
+                  onClick: () => {
+                    // 与项目内其它调用一致：静默失败，避免未处理的 Promise rejection。
+                    void window.snow.writeClipboardText(webChipMenu.url).catch(
+                      () => {}
+                    );
+                    setWebChipMenu(null);
+                  },
+                },
+                {
+                  id: "web-chip-remove",
+                  label: t("chatInput.webChipRemove", {
+                    defaultValue: "移除引用",
+                  }),
+                  icon: <Trash2 size={13} strokeWidth={1.8} />,
+                  onClick: () => {
+                    webChipMenu.chip.remove();
+                    setWebChipMenu(null);
+                    syncContent();
+                  },
+                },
+              ]}
+              onClose={() => setWebChipMenu(null)}
+            />
+          )}
           <div className="input-toolbar">
             <div className="toolbar-left">
               <PlusMenu

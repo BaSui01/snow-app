@@ -8,7 +8,8 @@ import {
   ChevronRight,
   ClipboardList,
   Command,
-  Target,
+  Copy,
+  ExternalLink,
   File,
   Folder,
   Keyboard,
@@ -20,6 +21,8 @@ import {
   Send,
   Settings,
   Square,
+  Target,
+  Trash2,
   X,
   Zap,
 } from "lucide-react";
@@ -27,6 +30,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "../../../i18n";
 import { Modal } from "../../common/Modal";
+import { ContextMenu } from "../../common/ContextMenu";
 import type { ChatInputViewProps } from "./types";
 import { TEXT_SNIPPET_THRESHOLD } from "./constants";
 import { ThinkingStrengthMenu } from "./ThinkingStrengthMenu";
@@ -426,6 +430,14 @@ export const ChatInputView = ({
     chip: HTMLElement;
     content: string;
     summary: string;
+  } | null>(null);
+
+  // web chip 右键菜单：记录触发位置与目标 chip（url 用于打开/复制，chip 用于移除）
+  const [webChipMenu, setWebChipMenu] = useState<{
+    x: number;
+    y: number;
+    chip: HTMLElement;
+    url: string;
   } | null>(null);
 
   // ------------------------------------------------------------------
@@ -1714,6 +1726,45 @@ export const ChatInputView = ({
     [textareaRef]
   );
 
+  // 右键 web chip → 弹出右键菜单（打开页面 / 复制链接 / 移除引用）。
+  // contextmenu 与 click 是独立事件（click 仅主键触发），不会干扰 C3 的点击打开。
+  const handleWebChipContextMenu = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement;
+      // 右键关闭按钮不弹菜单（保留其关闭语义）
+      if (target.closest("[data-chip-remove='true']")) {
+        return;
+      }
+      const chip = target.closest(
+        "[data-web-tag='true']"
+      ) as HTMLElement | null;
+      if (!chip || !textareaRef.current?.contains(chip)) {
+        return;
+      }
+      const rawData = chip.dataset.webData;
+      if (!rawData) {
+        return;
+      }
+      try {
+        const parsed = JSON.parse(rawData) as { url?: string };
+        if (!parsed.url) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        setWebChipMenu({
+          x: event.clientX,
+          y: event.clientY,
+          chip,
+          url: parsed.url,
+        });
+      } catch {
+        // Ignore malformed data
+      }
+    },
+    [textareaRef]
+  );
+
   const handleTextSnippetEditorSave = useCallback(() => {
     if (!textSnippetEditor) {
       return;
@@ -2240,6 +2291,7 @@ export const ChatInputView = ({
               scheduleHideTextSnippetPreview();
               scheduleHideChipDetails();
             }}
+            onContextMenu={handleWebChipContextMenu}
             onClick={(event) => {
               handleChipRemove(event);
               handleTextSnippetClick(event);
@@ -2380,6 +2432,54 @@ export const ChatInputView = ({
               </Modal>,
               document.body
             )}
+          {webChipMenu && (
+            <ContextMenu
+              x={webChipMenu.x}
+              y={webChipMenu.y}
+              items={[
+                {
+                  id: "web-chip-open",
+                  label: t("chatInput.webChipOpen", {
+                    defaultValue: "打开页面",
+                  }),
+                  icon: <ExternalLink size={13} strokeWidth={1.8} />,
+                  onClick: () => {
+                    rightPanelEvents.emit("open-browser-tab", {
+                      url: webChipMenu.url,
+                    });
+                    setWebChipMenu(null);
+                  },
+                },
+                {
+                  id: "web-chip-copy-link",
+                  label: t("chatInput.webChipCopyLink", {
+                    defaultValue: "复制链接",
+                  }),
+                  icon: <Copy size={13} strokeWidth={1.8} />,
+                  onClick: () => {
+                    // 与项目内其它调用一致：静默失败，避免未处理的 Promise rejection。
+                    void window.snow.writeClipboardText(webChipMenu.url).catch(
+                      () => {}
+                    );
+                    setWebChipMenu(null);
+                  },
+                },
+                {
+                  id: "web-chip-remove",
+                  label: t("chatInput.webChipRemove", {
+                    defaultValue: "移除引用",
+                  }),
+                  icon: <Trash2 size={13} strokeWidth={1.8} />,
+                  onClick: () => {
+                    webChipMenu.chip.remove();
+                    setWebChipMenu(null);
+                    syncContent();
+                  },
+                },
+              ]}
+              onClose={() => setWebChipMenu(null)}
+            />
+          )}
           <div className="input-toolbar">
             <div className="toolbar-left">
               <PlusMenu

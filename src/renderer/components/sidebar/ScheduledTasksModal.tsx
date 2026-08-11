@@ -1,27 +1,14 @@
 import {
   AlertCircle,
   CalendarClock,
-<<<<<<< HEAD
+  Check,
   ChevronDown,
   ChevronRight,
-||||||| parent of 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
-=======
-  Check,
-<<<<<<< HEAD
->>>>>>> 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
-||||||| parent of 09f89b0 (feat(scheduled-tasks): 定时任务 SQLite 持久化与运行配置编辑)
-=======
-  ChevronDown,
->>>>>>> 09f89b0 (feat(scheduled-tasks): 定时任务 SQLite 持久化与运行配置编辑)
   Clock,
-<<<<<<< HEAD
-  FileCode2,
-||||||| parent of 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
-=======
   Copy,
+  FileCode2,
   FolderKanban,
   Globe,
->>>>>>> 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
   Loader2,
   Pause,
   Pencil,
@@ -88,6 +75,28 @@ const previewPrompt = (prompt: string): string => {
   const plain = prompt.replace(/\s+/g, " ").trim();
   if (plain.length <= PREVIEW_MAX_LEN) return plain;
   return `${plain.slice(0, PREVIEW_MAX_LEN)}…`;
+};
+
+/** Formats an ISO timestamp (or epoch ms) into a localized relative/absolute label. */
+const formatRunTime = (iso: string | undefined): string => {
+  if (!iso) return "";
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return "";
+  const date = new Date(ms);
+  const now = Date.now();
+  const diffMs = ms - now;
+  const absMin = Math.abs(Math.round(diffMs / 60000));
+  if (absMin < 1) return date.toLocaleTimeString();
+  if (absMin < 60) {
+    return diffMs >= 0
+      ? `in ${absMin}m`
+      : `${absMin}m ago`;
+  }
+  const absHr = Math.round(absMin / 60);
+  if (absHr < 24) {
+    return diffMs >= 0 ? `in ${absHr}h` : `${absHr}h ago`;
+  }
+  return date.toLocaleString();
 };
 
 const parseTimestamp = (value: string | undefined): Date | null => {
@@ -423,6 +432,14 @@ export function ScheduledTasksModal({
       setBasicModelOverride(task.basicModel ?? "");
       setAdvancedModelOverride(task.model ?? "");
       setThinkingStrength(task.thinkingStrength ?? "");
+      setPreScript(task.preScript ?? "");
+      setPreScriptTimeout(
+        task.preScriptTimeoutMs
+          ? String(Math.round(task.preScriptTimeoutMs / 1000))
+          : "60"
+      );
+      setRunOnScriptError(task.runOnScriptError ?? false);
+      setPreScriptOpen(Boolean(task.preScript));
       resetModelOptions();
       setFormError(null);
       setEditingConfigTaskId(task.id);
@@ -434,11 +451,26 @@ export function ScheduledTasksModal({
   const saveEditConfig = useCallback((): void => {
     const taskId = editingConfigTaskId;
     if (!taskId) return;
+    const trimmedPreScript = preScript.trim();
+    const timeoutValue = Number.parseFloat(preScriptTimeout);
+    if (trimmedPreScript && !Number.isFinite(timeoutValue)) {
+      setFormError(
+        t("scheduledTask.errorInvalidTimeout", {
+          defaultValue: "Pre-script timeout must be a number",
+        })
+      );
+      return;
+    }
     const updated = updateTask(taskId, {
       apiProfile: selectedApiProfile.trim() || undefined,
       basicModel: basicModelOverride.trim() || undefined,
       model: advancedModelOverride.trim() || undefined,
       thinkingStrength: thinkingStrength.trim() || undefined,
+      preScript: trimmedPreScript || undefined,
+      preScriptTimeoutMs: trimmedPreScript
+        ? Math.round(timeoutValue * 1000)
+        : undefined,
+      runOnScriptError: trimmedPreScript ? runOnScriptError : undefined,
     });
     if (updated) {
       exitEditConfig();
@@ -454,6 +486,9 @@ export function ScheduledTasksModal({
     basicModelOverride,
     editingConfigTaskId,
     exitEditConfig,
+    preScript,
+    preScriptTimeout,
+    runOnScriptError,
     selectedApiProfile,
     t,
     thinkingStrength,
@@ -686,19 +721,6 @@ export function ScheduledTasksModal({
       );
       return;
     }
-<<<<<<< HEAD
-    const trimmedPreScript = preScript.trim();
-    const timeoutValue = Number.parseFloat(preScriptTimeout);
-    if (trimmedPreScript && !Number.isFinite(timeoutValue)) {
-      setFormError(
-        t("scheduledTask.errorInvalidTimeout", {
-          defaultValue: "Pre-script timeout must be a number",
-        })
-      );
-      return;
-    }
-||||||| parent of 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
-=======
 
     const trimmedName = name.trim();
     const trimmedPrompt = prompt.trim();
@@ -731,37 +753,18 @@ export function ScheduledTasksModal({
       return;
     }
 
->>>>>>> 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
+    const trimmedPreScript = preScript.trim();
+    const timeoutValue = Number.parseFloat(preScriptTimeout);
+    if (trimmedPreScript && !Number.isFinite(timeoutValue)) {
+      setFormError(
+        t("scheduledTask.errorInvalidTimeout", {
+          defaultValue: "Pre-script timeout must be a number",
+        })
+      );
+      return;
+    }
     setIsCreating(true);
     try {
-<<<<<<< HEAD
-      createTask({
-        name: trimmedName,
-        prompt: trimmedPrompt,
-        schedule,
-        preScript: trimmedPreScript || undefined,
-        preScriptTimeoutMs: trimmedPreScript
-          ? Math.round(timeoutValue * 1000)
-          : undefined,
-        runOnScriptError: trimmedPreScript ? runOnScriptError : undefined,
-      });
-      // Reset form for next entry
-      setName("");
-      setPrompt("");
-      setPreScript("");
-      setPreScriptTimeout("60");
-      setRunOnScriptError(false);
-      setPreScriptOpen(false);
-      setFormError(null);
-    } catch (error) {
-||||||| parent of 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
-      createTask({ name: trimmedName, prompt: trimmedPrompt, schedule });
-      // Reset form for next entry
-      setName("");
-      setPrompt("");
-      setFormError(null);
-    } catch (error) {
-=======
       const created = createTask({
         name: trimmedName,
         prompt: trimmedPrompt,
@@ -771,13 +774,17 @@ export function ScheduledTasksModal({
         basicModel: basicModelOverride.trim() || undefined,
         model: advancedModelOverride.trim() || undefined,
         thinkingStrength: thinkingStrength || undefined,
+        preScript: trimmedPreScript || undefined,
+        preScriptTimeoutMs: trimmedPreScript
+          ? Math.round(timeoutValue * 1000)
+          : undefined,
+        runOnScriptError: trimmedPreScript ? runOnScriptError : undefined,
       });
       setFilter("all");
       setSelectedTaskId(created.id);
       setPanelMode("details");
       resetFormDraft();
-    } catch {
->>>>>>> 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
+    } catch (error) {
       setFormError(
         t("scheduledTask.errorCreateFailed", {
           defaultValue: "Failed to create task",
@@ -981,8 +988,7 @@ export function ScheduledTasksModal({
             >
               {statusLabel}
             </span>
-<<<<<<< HEAD
-          </div>
+          </span>
           <div className="scheduled-task-item-prompt">
             {previewPrompt(task.prompt)}
           </div>
@@ -995,17 +1001,6 @@ export function ScheduledTasksModal({
               {previewPrompt(task.preScript)}
             </div>
           )}
-          <div className="scheduled-task-item-meta">
-            <span className="scheduled-task-item-schedule" title={formatSchedule(task.schedule, t)}>
-||||||| parent of 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
-          </div>
-          <div className="scheduled-task-item-prompt">
-            {previewPrompt(task.prompt)}
-          </div>
-          <div className="scheduled-task-item-meta">
-            <span className="scheduled-task-item-schedule" title={formatSchedule(task.schedule, t)}>
-=======
-          </span>
           <span className="scheduled-task-item-meta">
             <span className="scheduled-task-item-scope">
               {task.directoryId ? (
@@ -1016,7 +1011,6 @@ export function ScheduledTasksModal({
               {scopeLabel}
             </span>
             <span className="scheduled-task-item-schedule" title={scheduleLabel}>
->>>>>>> 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
               {task.schedule.type === "once" ? (
                 <CalendarClock size={12} strokeWidth={1.8} />
               ) : task.schedule.mode === "daily" ? (
@@ -1026,16 +1020,17 @@ export function ScheduledTasksModal({
               )}
               {scheduleLabel}
             </span>
-<<<<<<< HEAD
-            {task.nextRunAt && (
-              <span className="scheduled-task-item-next">
-                <Zap size={12} strokeWidth={1.8} />
-                {t("scheduledTask.nextRun")}: {formatRunTime(task.nextRunAt)}
-              </span>
-            )}
-          </div>
-          {(task.lastRunAt || task.runCount > 0 || task.lastError || task.skipCount > 0) && (
-            <div className="scheduled-task-item-meta sub">
+          </span>
+          <span className="scheduled-task-item-next" title={absoluteNextRun}>
+            <Zap size={12} strokeWidth={1.8} />
+            <span>{t("scheduledTask.nextRun", { defaultValue: "Next" })}:</span>
+            {nextRunLabel}
+          </span>
+          {(task.lastRunAt ||
+            task.runCount > 0 ||
+            task.lastError ||
+            task.skipCount > 0) && (
+            <span className="scheduled-task-item-meta sub">
               {task.lastRunAt && (
                 <span className="scheduled-task-item-last">
                   {t("scheduledTask.lastRun")}: {formatRunTime(task.lastRunAt)}
@@ -1073,152 +1068,9 @@ export function ScheduledTasksModal({
                   {task.lastError}
                 </span>
               )}
-            </div>
+            </span>
           )}
-        </div>
-        <div className="scheduled-task-item-actions">
-          <button
-            aria-label={t("scheduledTask.runNow", { defaultValue: "Run now" })}
-            className="scheduled-task-icon-btn"
-            disabled={task.status === "running" || task.status === "completed"}
-            onClick={() => void runTaskNow(task.id)}
-            title={t("scheduledTask.runNow", { defaultValue: "Run now" })}
-            type="button"
-          >
-            {task.status === "running" ? (
-              <Loader2 className="spin" size={14} strokeWidth={2} />
-            ) : (
-              <RotateCw size={14} strokeWidth={1.8} />
-            )}
-          </button>
-          {task.schedule.type === "recurring" && (
-            <button
-              aria-label={
-                task.paused
-                  ? t("scheduledTask.resume", { defaultValue: "Resume" })
-                  : t("scheduledTask.pause", { defaultValue: "Pause" })
-              }
-              className="scheduled-task-icon-btn"
-              onClick={() => togglePauseTask(task.id)}
-              title={
-                task.paused
-                  ? t("scheduledTask.resume", { defaultValue: "Resume" })
-                  : t("scheduledTask.pause", { defaultValue: "Pause" })
-              }
-              type="button"
-            >
-              {task.paused ? (
-                <Play size={14} strokeWidth={1.8} />
-              ) : (
-                <Pause size={14} strokeWidth={1.8} />
-              )}
-            </button>
-          )}
-          <button
-            aria-label={t("scheduledTask.delete", { defaultValue: "Delete" })}
-            className="scheduled-task-icon-btn danger"
-            onClick={() => setDeleteTarget(task)}
-            title={t("scheduledTask.delete", { defaultValue: "Delete" })}
-            type="button"
-          >
-            <Trash2 size={14} strokeWidth={1.8} />
-          </button>
-        </div>
-||||||| parent of 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
-            {task.nextRunAt && (
-              <span className="scheduled-task-item-next">
-                <Zap size={12} strokeWidth={1.8} />
-                {t("scheduledTask.nextRun")}: {formatRunTime(task.nextRunAt)}
-              </span>
-            )}
-          </div>
-          {(task.lastRunAt || task.runCount > 0 || task.lastError) && (
-            <div className="scheduled-task-item-meta sub">
-              {task.lastRunAt && (
-                <span className="scheduled-task-item-last">
-                  {t("scheduledTask.lastRun")}: {formatRunTime(task.lastRunAt)}
-                </span>
-              )}
-              {task.runCount > 0 && (
-                <span className="scheduled-task-item-runs">
-                  {t("scheduledTask.runCount", {
-                    values: { count: task.runCount },
-                    defaultValue: `${task.runCount} runs`,
-                  })}
-                </span>
-              )}
-              {task.lastError && (
-                <span
-                  className="scheduled-task-item-error"
-                  title={task.lastError}
-                >
-                  <AlertCircle size={12} strokeWidth={1.8} />
-                  {task.lastError}
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-        <div className="scheduled-task-item-actions">
-          <button
-            aria-label={t("scheduledTask.runNow", { defaultValue: "Run now" })}
-            className="scheduled-task-icon-btn"
-            disabled={task.status === "running" || task.status === "completed"}
-            onClick={() => void runTaskNow(task.id)}
-            title={t("scheduledTask.runNow", { defaultValue: "Run now" })}
-            type="button"
-          >
-            {task.status === "running" ? (
-              <Loader2 className="spin" size={14} strokeWidth={2} />
-            ) : (
-              <RotateCw size={14} strokeWidth={1.8} />
-            )}
-          </button>
-          {task.schedule.type === "recurring" && (
-            <button
-              aria-label={
-                task.paused
-                  ? t("scheduledTask.resume", { defaultValue: "Resume" })
-                  : t("scheduledTask.pause", { defaultValue: "Pause" })
-              }
-              className="scheduled-task-icon-btn"
-              onClick={() => togglePauseTask(task.id)}
-              title={
-                task.paused
-                  ? t("scheduledTask.resume", { defaultValue: "Resume" })
-                  : t("scheduledTask.pause", { defaultValue: "Pause" })
-              }
-              type="button"
-            >
-              {task.paused ? (
-                <Play size={14} strokeWidth={1.8} />
-              ) : (
-                <Pause size={14} strokeWidth={1.8} />
-              )}
-            </button>
-          )}
-          <button
-            aria-label={t("scheduledTask.delete", { defaultValue: "Delete" })}
-            className="scheduled-task-icon-btn danger"
-            onClick={() => setDeleteTarget(task)}
-            title={t("scheduledTask.delete", { defaultValue: "Delete" })}
-            type="button"
-          >
-            <Trash2 size={14} strokeWidth={1.8} />
-          </button>
-        </div>
-=======
-          </span>
-          <span className="scheduled-task-item-next" title={absoluteNextRun}>
-            <Zap size={12} strokeWidth={1.8} />
-            <span>{t("scheduledTask.nextRun", { defaultValue: "Next" })}:</span>
-            {nextRunLabel}
-          </span>
-          <span className="scheduled-task-item-prompt">
-            {previewPrompt(task.prompt)}
-          </span>
         </button>
->>>>>>> 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
       </div>
     );
   };
@@ -1542,6 +1394,34 @@ export function ScheduledTasksModal({
             >
               {selectedTask.prompt}
             </div>
+            {selectedTask.preScript && (
+              <div className="scheduled-task-details-pre-script">
+                <span className="scheduled-task-details-eyebrow">
+                  {t("scheduledTask.preScriptCommand", {
+                    defaultValue: "Shell command",
+                  })}
+                </span>
+                <div
+                  aria-label={t("scheduledTask.preScriptCommand", {
+                    defaultValue: "Shell command",
+                  })}
+                  className="scheduled-task-prompt-content"
+                  tabIndex={0}
+                >
+                  {selectedTask.preScript}
+                </div>
+                {selectedTask.runOnScriptError && (
+                  <div className="scheduled-tasks-warning">
+                    <AlertCircle size={13} strokeWidth={1.8} />
+                    <span>
+                      {t("scheduledTask.runOnScriptError", {
+                        defaultValue: "Run AI even if the script fails",
+                      })}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
           </section>
 
           <section
@@ -1711,6 +1591,80 @@ export function ScheduledTasksModal({
           )}
         </div>
       </label>
+      <div className="scheduled-tasks-pre-script">
+        <button
+          className="scheduled-tasks-pre-script-toggle"
+          onClick={() => setPreScriptOpen((open) => !open)}
+          type="button"
+        >
+          {preScriptOpen ? (
+            <ChevronDown size={13} strokeWidth={1.9} />
+          ) : (
+            <ChevronRight size={13} strokeWidth={1.9} />
+          )}
+          <FileCode2 size={13} strokeWidth={1.9} />
+          <span>
+            {t("scheduledTask.preScript", {
+              defaultValue: "Pre-script (optional)",
+            })}
+          </span>
+        </button>
+        {preScriptOpen && (
+          <div className="scheduled-tasks-pre-script-body">
+            <label className="scheduled-tasks-field">
+              <span>
+                {t("scheduledTask.preScriptCommand", {
+                  defaultValue: "Shell command",
+                })}
+              </span>
+              <textarea
+                className="scheduled-tasks-script-textarea"
+                onChange={(event) => setPreScript(event.target.value)}
+                placeholder={t("scheduledTask.preScriptPlaceholder", {
+                  defaultValue: "e.g. git diff --quiet || exit 1",
+                })}
+                rows={3}
+                value={preScript}
+              />
+            </label>
+            <div className="scheduled-tasks-pre-script-hint">
+              {t("scheduledTask.preScriptHint", {
+                defaultValue:
+                  "Exit 0 = run AI, exit 1 = skip. Or print a JSON line: {\"run\":false,\"reason\":\"...\",\"output\":\"...\"} — \"output\" fills the {{SCRIPT_OUTPUT}} placeholder in the prompt.",
+              })}
+            </div>
+            <div className="scheduled-tasks-field-row">
+              <label className="scheduled-tasks-field">
+                <span>
+                  {t("scheduledTask.preScriptTimeout", {
+                    defaultValue: "Timeout (s)",
+                  })}
+                </span>
+                <input
+                  min="1"
+                  max="300"
+                  onChange={(event) => setPreScriptTimeout(event.target.value)}
+                  type="number"
+                  value={preScriptTimeout}
+                />
+              </label>
+              <label className="toggle-switch scheduled-tasks-switch-field">
+                <input
+                  checked={runOnScriptError}
+                  onChange={(event) => setRunOnScriptError(event.target.checked)}
+                  type="checkbox"
+                />
+                <span className="toggle-slider" />
+                <span>
+                  {t("scheduledTask.runOnScriptError", {
+                    defaultValue: "Run AI even if the script fails",
+                  })}
+                </span>
+              </label>
+            </div>
+          </div>
+        )}
+      </div>
     </>
   );
 
@@ -1777,6 +1731,81 @@ export function ScheduledTasksModal({
               value={prompt}
             />
           </label>
+
+          <div className="scheduled-tasks-pre-script">
+            <button
+              className="scheduled-tasks-pre-script-toggle"
+              onClick={() => setPreScriptOpen((open) => !open)}
+              type="button"
+            >
+              {preScriptOpen ? (
+                <ChevronDown size={13} strokeWidth={1.9} />
+              ) : (
+                <ChevronRight size={13} strokeWidth={1.9} />
+              )}
+              <FileCode2 size={13} strokeWidth={1.9} />
+              <span>
+                {t("scheduledTask.preScript", {
+                  defaultValue: "Pre-script (optional)",
+                })}
+              </span>
+            </button>
+            {preScriptOpen && (
+              <div className="scheduled-tasks-pre-script-body">
+                <label className="scheduled-tasks-field">
+                  <span>
+                    {t("scheduledTask.preScriptCommand", {
+                      defaultValue: "Shell command",
+                    })}
+                  </span>
+                  <textarea
+                    className="scheduled-tasks-script-textarea"
+                    onChange={(event) => setPreScript(event.target.value)}
+                    placeholder={t("scheduledTask.preScriptPlaceholder", {
+                      defaultValue: "e.g. git diff --quiet || exit 1",
+                    })}
+                    rows={3}
+                    value={preScript}
+                  />
+                </label>
+                <div className="scheduled-tasks-pre-script-hint">
+                  {t("scheduledTask.preScriptHint", {
+                    defaultValue:
+                      "Exit 0 = run AI, exit 1 = skip. Or print a JSON line: {\"run\":false,\"reason\":\"...\",\"output\":\"...\"} — \"output\" fills the {{SCRIPT_OUTPUT}} placeholder in the prompt.",
+                  })}
+                </div>
+                <div className="scheduled-tasks-field-row">
+                  <label className="scheduled-tasks-field">
+                    <span>
+                      {t("scheduledTask.preScriptTimeout", {
+                        defaultValue: "Timeout (s)",
+                      })}
+                    </span>
+                    <input
+                      min="1"
+                      max="300"
+                      onChange={(event) => setPreScriptTimeout(event.target.value)}
+                      type="number"
+                      value={preScriptTimeout}
+                    />
+                  </label>
+                  <label className="toggle-switch scheduled-tasks-switch-field">
+                    <input
+                      checked={runOnScriptError}
+                      onChange={(event) => setRunOnScriptError(event.target.checked)}
+                      type="checkbox"
+                    />
+                    <span className="toggle-slider" />
+                    <span>
+                      {t("scheduledTask.runOnScriptError", {
+                        defaultValue: "Run AI even if the script fails",
+                      })}
+                    </span>
+                  </label>
+                </div>
+              </div>
+            )}
+          </div>
 
           <div className="scheduled-tasks-field">
             <span>{t("scheduledTask.scope", { defaultValue: "Scope" })}</span>
@@ -2167,271 +2196,6 @@ export function ScheduledTasksModal({
                 </span>
               </div>
             )}
-<<<<<<< HEAD
-          </div>
-          {!isExecutorReady && (
-            <div className="scheduled-tasks-warning">
-              <AlertCircle size={13} strokeWidth={1.8} />
-              <span>
-                {t("scheduledTask.executorUnavailable", {
-                  defaultValue:
-                    "AI Loop unavailable — tasks will not run until the chat is ready.",
-                })}
-              </span>
-            </div>
-          )}
-          <div className="scheduled-tasks-lifetime-hint">
-            {t("scheduledTask.lifetimeHint", {
-              defaultValue:
-                "Tasks run only while the app is open and are cleared on exit.",
-            })}
-          </div>
-        </div>
-
-        {/* Right: create form */}
-        <div className="scheduled-tasks-content">
-          <div className="scheduled-tasks-form">
-            <div className="scheduled-tasks-form-header">
-              <Plus size={16} strokeWidth={2} />
-              <span>{t("scheduledTask.createNew", { defaultValue: "New scheduled task" })}</span>
-            </div>
-
-            <label className="scheduled-tasks-field">
-              <span>{t("scheduledTask.name", { defaultValue: "Name" })}</span>
-              <input
-                onChange={(e) => setName(e.target.value)}
-                placeholder={t("scheduledTask.namePlaceholder", {
-                  defaultValue: "e.g. Daily code review reminder",
-                })}
-                type="text"
-                value={name}
-              />
-            </label>
-
-            <div className="scheduled-tasks-pre-script">
-              <button
-                className="scheduled-tasks-pre-script-toggle"
-                onClick={() => setPreScriptOpen((open) => !open)}
-                type="button"
-              >
-                {preScriptOpen ? (
-                  <ChevronDown size={13} strokeWidth={1.9} />
-                ) : (
-                  <ChevronRight size={13} strokeWidth={1.9} />
-                )}
-                <FileCode2 size={13} strokeWidth={1.9} />
-                <span>
-                  {t("scheduledTask.preScript", {
-                    defaultValue: "Pre-script (optional)",
-                  })}
-                </span>
-              </button>
-              {preScriptOpen && (
-                <div className="scheduled-tasks-pre-script-body">
-                  <label className="scheduled-tasks-field">
-                    <span>
-                      {t("scheduledTask.preScriptCommand", {
-                        defaultValue: "Shell command",
-                      })}
-                    </span>
-                    <textarea
-                      className="scheduled-tasks-script-textarea"
-                      onChange={(e) => setPreScript(e.target.value)}
-                      placeholder={t("scheduledTask.preScriptPlaceholder", {
-                        defaultValue:
-                          "e.g. git diff --quiet || exit 1",
-                      })}
-                      rows={3}
-                      value={preScript}
-                    />
-                  </label>
-                  <div className="scheduled-tasks-pre-script-hint">
-                    {t("scheduledTask.preScriptHint", {
-                      defaultValue:
-                        "Exit 0 = run AI, exit 1 = skip. Or print a JSON line: {\\\"run\\\":false,\\\"reason\\\":\\\"...\\\",\\\"output\\\":\\\"...\\\"} — \\\"output\\\" fills the {{SCRIPT_OUTPUT}} placeholder in the prompt.",
-                    })}
-                  </div>
-                  <div className="scheduled-tasks-field-row">
-                    <label className="scheduled-tasks-field">
-                      <span>
-                        {t("scheduledTask.preScriptTimeout", {
-                          defaultValue: "Timeout (s)",
-                        })}
-                      </span>
-                      <input
-                        min="1"
-                        max="300"
-                        onChange={(e) => setPreScriptTimeout(e.target.value)}
-                        type="number"
-                        value={preScriptTimeout}
-                      />
-                    </label>
-                    <label className="toggle-switch scheduled-tasks-switch-field">
-                      <input
-                        checked={runOnScriptError}
-                        onChange={(e) => setRunOnScriptError(e.target.checked)}
-                        type="checkbox"
-                      />
-                      <span className="toggle-slider" />
-                      <span>
-                        {t("scheduledTask.runOnScriptError", {
-                          defaultValue: "Run AI even if the script fails",
-                        })}
-                      </span>
-                    </label>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <label className="scheduled-tasks-field">
-              <span>{t("scheduledTask.prompt", { defaultValue: "Prompt" })}</span>
-              <textarea
-                className="scheduled-tasks-prompt-textarea"
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder={t("scheduledTask.promptPlaceholder", {
-                  defaultValue:
-                    "Prompt sent to the AI Loop on each run. The task has access to all tools.",
-                })}
-                rows={5}
-                value={prompt}
-              />
-            </label>
-
-            <div className="scheduled-tasks-field">
-              <span>{t("scheduledTask.taskType", { defaultValue: "Task type" })}</span>
-              <div className="scheduled-tasks-segmented">
-                <button
-                  className={`scheduled-tasks-segmented-btn${taskType === "once" ? " active" : ""}`}
-                  onClick={() => setTaskType("once")}
-                  type="button"
-                >
-                  <CalendarClock size={13} strokeWidth={1.9} />
-                  {t("scheduledTask.typeOnce", { defaultValue: "Once" })}
-                </button>
-                <button
-                  className={`scheduled-tasks-segmented-btn${taskType === "recurring" ? " active" : ""}`}
-                  onClick={() => setTaskType("recurring")}
-                  type="button"
-                >
-                  <Repeat size={13} strokeWidth={1.9} />
-                  {t("scheduledTask.typeRecurring", { defaultValue: "Recurring" })}
-                </button>
-              </div>
-            </div>
-
-            {taskType === "once" ? (
-              <label className="scheduled-tasks-field">
-                <span>
-                  {t("scheduledTask.startTime", { defaultValue: "Start time" })}
-                </span>
-                <input
-                  onChange={(e) => setExecuteAtLocal(e.target.value)}
-                  type="datetime-local"
-                  value={executeAtLocal}
-                />
-              </label>
-            ) : (
-              <>
-                <div className="scheduled-tasks-field">
-                  <span>
-                    {t("scheduledTask.recurringMode", {
-                      defaultValue: "Repeat mode",
-||||||| parent of 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
-          </div>
-          {!isExecutorReady && (
-            <div className="scheduled-tasks-warning">
-              <AlertCircle size={13} strokeWidth={1.8} />
-              <span>
-                {t("scheduledTask.executorUnavailable", {
-                  defaultValue:
-                    "AI Loop unavailable — tasks will not run until the chat is ready.",
-                })}
-              </span>
-            </div>
-          )}
-          <div className="scheduled-tasks-lifetime-hint">
-            {t("scheduledTask.lifetimeHint", {
-              defaultValue:
-                "Tasks run only while the app is open and are cleared on exit.",
-            })}
-          </div>
-        </div>
-
-        {/* Right: create form */}
-        <div className="scheduled-tasks-content">
-          <div className="scheduled-tasks-form">
-            <div className="scheduled-tasks-form-header">
-              <Plus size={16} strokeWidth={2} />
-              <span>{t("scheduledTask.createNew", { defaultValue: "New scheduled task" })}</span>
-            </div>
-
-            <label className="scheduled-tasks-field">
-              <span>{t("scheduledTask.name", { defaultValue: "Name" })}</span>
-              <input
-                onChange={(e) => setName(e.target.value)}
-                placeholder={t("scheduledTask.namePlaceholder", {
-                  defaultValue: "e.g. Daily code review reminder",
-                })}
-                type="text"
-                value={name}
-              />
-            </label>
-
-            <label className="scheduled-tasks-field">
-              <span>{t("scheduledTask.prompt", { defaultValue: "Prompt" })}</span>
-              <textarea
-                className="scheduled-tasks-prompt-textarea"
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder={t("scheduledTask.promptPlaceholder", {
-                  defaultValue:
-                    "Prompt sent to the AI Loop on each run. The task has access to all tools.",
-                })}
-                rows={5}
-                value={prompt}
-              />
-            </label>
-
-            <div className="scheduled-tasks-field">
-              <span>{t("scheduledTask.taskType", { defaultValue: "Task type" })}</span>
-              <div className="scheduled-tasks-segmented">
-                <button
-                  className={`scheduled-tasks-segmented-btn${taskType === "once" ? " active" : ""}`}
-                  onClick={() => setTaskType("once")}
-                  type="button"
-                >
-                  <CalendarClock size={13} strokeWidth={1.9} />
-                  {t("scheduledTask.typeOnce", { defaultValue: "Once" })}
-                </button>
-                <button
-                  className={`scheduled-tasks-segmented-btn${taskType === "recurring" ? " active" : ""}`}
-                  onClick={() => setTaskType("recurring")}
-                  type="button"
-                >
-                  <Repeat size={13} strokeWidth={1.9} />
-                  {t("scheduledTask.typeRecurring", { defaultValue: "Recurring" })}
-                </button>
-              </div>
-            </div>
-
-            {taskType === "once" ? (
-              <label className="scheduled-tasks-field">
-                <span>
-                  {t("scheduledTask.startTime", { defaultValue: "Start time" })}
-                </span>
-                <input
-                  onChange={(e) => setExecuteAtLocal(e.target.value)}
-                  type="datetime-local"
-                  value={executeAtLocal}
-                />
-              </label>
-            ) : (
-              <>
-                <div className="scheduled-tasks-field">
-                  <span>
-                    {t("scheduledTask.recurringMode", {
-                      defaultValue: "Repeat mode",
-=======
             {(filter !== "global" &&
               directoryId &&
               projectTasks.length > 0) ||
@@ -2460,7 +2224,6 @@ export function ScheduledTasksModal({
                     <Trash2 size={13} strokeWidth={1.8} />
                     {t("scheduledTask.clearGlobal", {
                       defaultValue: "Clear global tasks",
->>>>>>> 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
                     })}
                   </button>
                 )}

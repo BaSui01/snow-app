@@ -11,12 +11,6 @@ use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
 use crate::api::embedding::{self, EmbeddingConfig};
-<<<<<<< HEAD
-||||||| parent of 09f89b0 (feat(scheduled-tasks): 定时任务 SQLite 持久化与运行配置编辑)
-use crate::api::retry::{is_retriable_error, RetryOptions};
-=======
-use crate::api::retry::{is_retriable_error, RetryOptions, DEFAULT_PARTIAL_RETRY_MAX_CHARS};
->>>>>>> 09f89b0 (feat(scheduled-tasks): 定时任务 SQLite 持久化与运行配置编辑)
 use crate::storage::services::code_chunker::{chunk_content, ChunkingConfig};
 use crate::storage::services::codebase_embed_sessions::{self, EmbedSessionRecord};
 use crate::storage::services::codebase_index::{
@@ -961,20 +955,6 @@ async fn embed_with_retry(
     session_id: &str,
     max_retries: u32,
 ) -> Result<Vec<Vec<f64>>> {
-<<<<<<< HEAD
-||||||| parent of 09f89b0 (feat(scheduled-tasks): 定时任务 SQLite 持久化与运行配置编辑)
-    // 统一重试策略：判定与退避与 LLM 请求一致（is_retriable_error + 指数退避）
-    let options = RetryOptions::default();
-=======
-    // 统一判定与退避算法（is_retriable_error + 指数退避），但预算贴合 embedding
-    // 场景：embedding 是后台批量任务，3 次重试 + 1s 起指数退避（最坏约 7s），
-    // 避免持续故障时按 LLM 默认 5 次 × 3s 起（最坏 75s）拖垮整个索引任务。
-    let options = RetryOptions {
-        max_retries: 3,
-        base_delay_ms: 1000,
-        partial_retry_max_chars: DEFAULT_PARTIAL_RETRY_MAX_CHARS,
-    };
->>>>>>> 09f89b0 (feat(scheduled-tasks): 定时任务 SQLite 持久化与运行配置编辑)
     let mut attempt = 0u32;
     loop {
         if is_cancelled(session_id) {

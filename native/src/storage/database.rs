@@ -325,13 +325,7 @@ fn recover_database(database_path: &Path) -> Result<()> {
         ))
     })?;
 
-<<<<<<< HEAD
-    let _ = recovered_conn.pragma_update(None, "user_version", 27);
-||||||| parent of 09f89b0 (feat(scheduled-tasks): 定时任务 SQLite 持久化与运行配置编辑)
-    let _ = recovered_conn.pragma_update(None, "user_version", 28);
-=======
     let _ = recovered_conn.pragma_update(None, "user_version", 29);
->>>>>>> 09f89b0 (feat(scheduled-tasks): 定时任务 SQLite 持久化与运行配置编辑)
     drop(recovered_conn);
     drop(read_only_conn);
 
@@ -805,13 +799,7 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
     // columns and the sub-agent project_id rebuild (see migrations.rs).
     migrations::run_post_schema_migrations(connection)?;
 
-<<<<<<< HEAD
-    connection.pragma_update(None, "user_version", 27)?;
-||||||| parent of 09f89b0 (feat(scheduled-tasks): 定时任务 SQLite 持久化与运行配置编辑)
-    connection.pragma_update(None, "user_version", 28)?;
-=======
     connection.pragma_update(None, "user_version", 29)?;
->>>>>>> 09f89b0 (feat(scheduled-tasks): 定时任务 SQLite 持久化与运行配置编辑)
 
     Ok(())
 }

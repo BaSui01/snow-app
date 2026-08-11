@@ -59,7 +59,12 @@ const appendRunHistory = (
  *  the renderer is throttled in the background). */
 const TICK_MS = 5_000;
 
-<<<<<<< HEAD
+type Executor = (
+  prompt: string,
+  taskName: string,
+  directoryId: string,
+  options: ScheduledTaskRunOptions
+) => void | Promise<void>;
 /** Placeholder inside a task prompt that the pre-script's JSON "output"
  *  field is injected into (replaced with "" when the script provides none). */
 export const SCRIPT_OUTPUT_PLACEHOLDER = "{{SCRIPT_OUTPUT}}";
@@ -68,23 +73,12 @@ export const PRE_SCRIPT_DEFAULT_TIMEOUT_MS = 60_000;
 export const PRE_SCRIPT_MIN_TIMEOUT_MS = 1_000;
 export const PRE_SCRIPT_MAX_TIMEOUT_MS = 300_000;
 
-type Executor = (prompt: string, taskName: string) => void | Promise<void>;
 /** Executes the task's pre-script. Registered by the React hook, which binds
  *  the project directory (cwd) and calls the Rust backend asynchronously. */
 type ScriptRunner = (
   command: string,
   options: { timeoutMs: number; env: Record<string, string> }
 ) => Promise<PreScriptResult>;
-||||||| parent of 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
-type Executor = (prompt: string, taskName: string) => void | Promise<void>;
-=======
-type Executor = (
-  prompt: string,
-  taskName: string,
-  directoryId: string,
-  options: ScheduledTaskRunOptions
-) => void | Promise<void>;
->>>>>>> 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
 type Listener = () => void;
 
 /** Decision produced by parsing a pre-script result. */
@@ -189,7 +183,112 @@ const computeNextRunMs = (
   return target;
 };
 
-<<<<<<< HEAD
+/** Converts a wire record (SQLite shape) into the rich UI record. Returns null
+ *  when the stored schedule JSON is unreadable (the task is skipped). */
+export const fromWire = (
+  wire: Omit<ScheduledTaskWireRecord, "history"> & {
+    history?: ScheduledTaskWireRun[];
+  }
+): ScheduledTaskRecord | null => {
+  let schedule: ScheduledTaskSchedule;
+  try {
+    schedule = JSON.parse(wire.scheduleJson) as ScheduledTaskSchedule;
+  } catch {
+    console.warn(
+      `[scheduledTasks] Skipping task "${wire.id}" with unreadable schedule:`,
+      wire.scheduleJson
+    );
+    return null;
+  }
+  return {
+    id: wire.id,
+    directoryId: wire.directoryId,
+    name: wire.name,
+    prompt: wire.prompt,
+    schedule,
+    status: wire.status as ScheduledTaskRecord["status"],
+    paused: wire.paused,
+    createdAt: wire.createdAt,
+    lastRunAt: wire.lastRunAt,
+    nextRunAt: wire.nextRunAt,
+    lastError: wire.lastError,
+    runCount: wire.runCount,
+    history: (wire.history ?? []).map(
+      (run): ScheduledTaskRunRecord => ({
+        runAt: run.runAt,
+        status: run.status as ScheduledTaskRunRecord["status"],
+        durationMs: run.durationMs,
+        error: run.error,
+      })
+    ),
+    apiProfile: wire.apiProfile,
+    basicModel: wire.basicModel,
+    model: wire.model,
+    thinkingStrength: wire.thinkingStrength,
+    skipCount: wire.skipCount ?? 0,
+    lastSkippedAt: wire.lastSkippedAt,
+    lastSkipReason: wire.lastSkipReason,
+  };
+};
+
+/** Converts a rich record into the wire shape for upsert (history lives in
+ *  the separate runs table and is excluded from the write). */
+export const toWire = (
+  record: ScheduledTaskRecord
+): Omit<ScheduledTaskWireRecord, "history"> => ({
+  id: record.id,
+  directoryId: record.directoryId,
+  name: record.name,
+  prompt: record.prompt,
+  scheduleJson: JSON.stringify(record.schedule),
+  apiProfile: record.apiProfile,
+  basicModel: record.basicModel,
+  model: record.model,
+  thinkingStrength: record.thinkingStrength,
+  status: record.status,
+  paused: record.paused,
+  nextRunAt: record.nextRunAt,
+  lastRunAt: record.lastRunAt,
+  runCount: record.runCount,
+  lastError: record.lastError,
+  createdAt: record.createdAt,
+  updatedAt: record.updatedAt ?? record.createdAt,
+});
+
+/** Best-effort persistence adapter over the preload bridge. Returns null when
+ *  the native bridge is unavailable (tests, degraded mode) — the store then
+ *  behaves exactly like the old in-memory implementation. */
+const createPersistence = (): PersistenceAdapter | null => {
+  if (typeof window === "undefined" || !window.snow) return null;
+  const api = window.snow;
+  if (typeof api.listScheduledTasks !== "function") return null;
+  return {
+    list: () => api.listScheduledTasks(),
+    upsert: (input) =>
+      api.upsertScheduledTask(input).then(() => undefined),
+    remove: (id) => api.deleteScheduledTask(id),
+    clear: (directoryId) => api.clearScheduledTasks(directoryId).then(() => undefined),
+    appendRun: (taskId, runAt) => api.appendScheduledTaskRun(taskId, runAt),
+    finalizeRun: (taskId, runId, status, durationMs, error) =>
+      api.finalizeScheduledTaskRun(taskId, runId, status, durationMs, error),
+  };
+};
+
+type PersistenceAdapter = {
+  list(): Promise<ScheduledTaskWireRecord[]>;
+  upsert(input: Omit<ScheduledTaskWireRecord, "history">): Promise<void>;
+  remove(id: string): Promise<void>;
+  clear(directoryId: string | null): Promise<void>;
+  appendRun(taskId: string, runAt: string): Promise<string>;
+  finalizeRun(
+    taskId: string,
+    runId: string,
+    status: "completed" | "error",
+    durationMs?: number,
+    error?: string
+  ): Promise<void>;
+};
+
 /**
  * Pre-script output protocol:
  *  - The last stdout line, when it starts with "{", is parsed as JSON:
@@ -279,115 +378,7 @@ const tryParseLastLineJson = (
 const truncateText = (text: string, max: number): string =>
   text.length <= max ? text : `${text.slice(0, max)}...`;
 
-class ScheduledTasksStore {
-||||||| parent of 09f89b0 (feat(scheduled-tasks): 定时任务 SQLite 持久化与运行配置编辑)
-class ScheduledTasksStore {
-=======
-/** Converts a wire record (SQLite shape) into the rich UI record. Returns null
- *  when the stored schedule JSON is unreadable (the task is skipped). */
-export const fromWire = (
-  wire: Omit<ScheduledTaskWireRecord, "history"> & {
-    history?: ScheduledTaskWireRun[];
-  }
-): ScheduledTaskRecord | null => {
-  let schedule: ScheduledTaskSchedule;
-  try {
-    schedule = JSON.parse(wire.scheduleJson) as ScheduledTaskSchedule;
-  } catch {
-    console.warn(
-      `[scheduledTasks] Skipping task "${wire.id}" with unreadable schedule:`,
-      wire.scheduleJson
-    );
-    return null;
-  }
-  return {
-    id: wire.id,
-    directoryId: wire.directoryId,
-    name: wire.name,
-    prompt: wire.prompt,
-    schedule,
-    status: wire.status as ScheduledTaskRecord["status"],
-    paused: wire.paused,
-    createdAt: wire.createdAt,
-    lastRunAt: wire.lastRunAt,
-    nextRunAt: wire.nextRunAt,
-    lastError: wire.lastError,
-    runCount: wire.runCount,
-    history: (wire.history ?? []).map(
-      (run): ScheduledTaskRunRecord => ({
-        runAt: run.runAt,
-        status: run.status as ScheduledTaskRunRecord["status"],
-        durationMs: run.durationMs,
-        error: run.error,
-      })
-    ),
-    apiProfile: wire.apiProfile,
-    basicModel: wire.basicModel,
-    model: wire.model,
-    thinkingStrength: wire.thinkingStrength,
-  };
-};
-
-/** Converts a rich record into the wire shape for upsert (history lives in
- *  the separate runs table and is excluded from the write). */
-export const toWire = (
-  record: ScheduledTaskRecord
-): Omit<ScheduledTaskWireRecord, "history"> => ({
-  id: record.id,
-  directoryId: record.directoryId,
-  name: record.name,
-  prompt: record.prompt,
-  scheduleJson: JSON.stringify(record.schedule),
-  apiProfile: record.apiProfile,
-  basicModel: record.basicModel,
-  model: record.model,
-  thinkingStrength: record.thinkingStrength,
-  status: record.status,
-  paused: record.paused,
-  nextRunAt: record.nextRunAt,
-  lastRunAt: record.lastRunAt,
-  runCount: record.runCount,
-  lastError: record.lastError,
-  createdAt: record.createdAt,
-  updatedAt: record.updatedAt ?? record.createdAt,
-});
-
-/** Best-effort persistence adapter over the preload bridge. Returns null when
- *  the native bridge is unavailable (tests, degraded mode) — the store then
- *  behaves exactly like the old in-memory implementation. */
-const createPersistence = (): PersistenceAdapter | null => {
-  if (typeof window === "undefined" || !window.snow) return null;
-  const api = window.snow;
-  if (typeof api.listScheduledTasks !== "function") return null;
-  return {
-    list: () => api.listScheduledTasks(),
-    upsert: (input) =>
-      api.upsertScheduledTask(input).then(() => undefined),
-    remove: (id) => api.deleteScheduledTask(id),
-    clear: (directoryId) => api.clearScheduledTasks(directoryId).then(() => undefined),
-    appendRun: (taskId, runAt) => api.appendScheduledTaskRun(taskId, runAt),
-    finalizeRun: (taskId, runId, status, durationMs, error) =>
-      api.finalizeScheduledTaskRun(taskId, runId, status, durationMs, error),
-  };
-};
-
-type PersistenceAdapter = {
-  list(): Promise<ScheduledTaskWireRecord[]>;
-  upsert(input: Omit<ScheduledTaskWireRecord, "history">): Promise<void>;
-  remove(id: string): Promise<void>;
-  clear(directoryId: string | null): Promise<void>;
-  appendRun(taskId: string, runAt: string): Promise<string>;
-  finalizeRun(
-    taskId: string,
-    runId: string,
-    status: "completed" | "error",
-    durationMs?: number,
-    error?: string
-  ): Promise<void>;
-};
-
 export class ScheduledTasksStore {
->>>>>>> 09f89b0 (feat(scheduled-tasks): 定时任务 SQLite 持久化与运行配置编辑)
   private tasks = new Map<string, ScheduledTaskRecord>();
   private listeners = new Set<Listener>();
   private executor: Executor | null = null;
@@ -678,6 +669,15 @@ export class ScheduledTasksStore {
       basicModel: input.basicModel?.trim() || undefined,
       model: input.model?.trim() || undefined,
       thinkingStrength: input.thinkingStrength?.trim() || undefined,
+      preScript: input.preScript?.trim() || undefined,
+      preScriptTimeoutMs:
+        input.preScript && input.preScript.trim()
+          ? input.preScriptTimeoutMs ?? PRE_SCRIPT_DEFAULT_TIMEOUT_MS
+          : undefined,
+      runOnScriptError:
+        input.preScript && input.preScript.trim()
+          ? (input.runOnScriptError ?? false)
+          : undefined,
       updatedAt: new Date().toISOString(),
     };
     this.tasks.set(id, updated);
@@ -766,8 +766,6 @@ export class ScheduledTasksStore {
       if (!executor) {
         throw new Error("No executor registered (AI Loop unavailable)");
       }
-<<<<<<< HEAD
-
       let prompt = task.prompt;
 
       if (task.preScript) {
@@ -818,17 +816,12 @@ export class ScheduledTasksStore {
         }
       }
 
-      await executor(prompt, task.name);
-||||||| parent of 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
-      await executor(task.prompt, task.name);
-=======
-      await executor(task.prompt, task.name, task.directoryId, {
+      await executor(prompt, task.name, task.directoryId, {
         apiProfile: task.apiProfile,
         basicModel: task.basicModel,
         model: task.model,
         thinkingStrength: task.thinkingStrength,
       });
->>>>>>> 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
 
       const after = this.tasks.get(id);
       if (after) {

@@ -1,18 +1,8 @@
 import type { RefObject } from "react";
 import type { LucideIcon } from "lucide-react";
-<<<<<<< HEAD
 import type { ApiConfigRecord, Model, TokenUsage } from "../../../../preload";
 import type { MainContentView } from "../types";
-||||||| parent of 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
-import type { ApiConfigRecord, Model, TokenUsage } from "../../../../preload";
-=======
-import type {
-  ApiConfigRecord,
-  Model,
-  ScheduledTaskRunOptions,
-  TokenUsage,
-} from "../../../../preload";
->>>>>>> 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
+import type { ScheduledTaskRunOptions } from "../../../../preload";
 export type ChatInputSendOptions = {
   model?: string;
   apiProfile?: string;

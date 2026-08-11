@@ -1,30 +1,7 @@
 import { ipcRenderer } from "electron";
 
-<<<<<<< HEAD
 import type { PreScriptResult } from "../types";
 
-/**
- * Scheduled-task bridge: executes the task's pre-script in the Rust backend.
- * The script runs as a shell command in the task's project directory and
- * decides whether the AI Loop should fire this round.
- */
-export const scheduledTaskApi = {
-  /** Runs a pre-script shell command in the given cwd. Never blocks: the
-   *  Rust backend spawns the process on the tokio runtime. */
-  runPreScript: (
-    command: string,
-    cwd: string,
-    timeoutMs: number,
-    envJson: string
-  ): Promise<PreScriptResult> =>
-    ipcRenderer.invoke(
-      "scheduled-task:run-pre-script",
-      command,
-      cwd,
-      timeoutMs,
-      envJson
-||||||| parent of 09f89b0 (feat(scheduled-tasks): 定时任务 SQLite 持久化与运行配置编辑)
-=======
 /**
  * Wire shape of a scheduled task as persisted in SQLite (camelCase view of
  * the Rust napi struct). `scheduleJson` holds the serialized
@@ -95,6 +72,20 @@ export const scheduledTaskApi = {
       status,
       durationMs,
       error
->>>>>>> 09f89b0 (feat(scheduled-tasks): 定时任务 SQLite 持久化与运行配置编辑)
+    ),
+  /** Runs a pre-script shell command in the given cwd. Never blocks: the
+   *  Rust backend spawns the process on the tokio runtime. */
+  runPreScript: (
+    command: string,
+    cwd: string,
+    timeoutMs: number,
+    envJson: string
+  ): Promise<PreScriptResult> =>
+    ipcRenderer.invoke(
+      "scheduled-task:run-pre-script",
+      command,
+      cwd,
+      timeoutMs,
+      envJson
     ),
 };

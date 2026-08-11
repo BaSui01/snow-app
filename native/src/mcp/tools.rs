@@ -30,8 +30,8 @@ use super::servers::filesystem::FilesystemService;
 use super::servers::grep::GrepService;
 use super::servers::imagegen::ImageGenService;
 use super::servers::remote_workspace::{
-    is_ssh_path, resolve_remote_project_workspace, resolve_remote_workspace_path,
-    RemoteWorkspaceCallback,
+    is_ssh_path, is_windows_absolute_path, resolve_remote_project_workspace,
+    resolve_remote_workspace_path, RemoteWorkspaceCallback,
 };
 use super::servers::skills::SkillsService;
 use super::servers::terminal::{TerminalCommandCallback, TerminalService};
@@ -1278,6 +1278,11 @@ async fn prepare_remote_workspace_args(
     let Some(path) = args.get(path_field).and_then(Value::as_str) else {
         return Ok((args, false));
     };
+    // Windows 盘符与 UNC 路径属于 App Host（本机）路径，不能拼入 SSH
+    // 工作区；直接走本机通道，由 Electron 在本机读取。
+    if is_windows_absolute_path(path) {
+        return Ok((args, false));
+    }
     let remote_project_workspace = resolve_remote_project_workspace(project_id).await?;
     if is_ssh_path(path) {
         if let Some(workspace_path) = remote_project_workspace.as_deref() {

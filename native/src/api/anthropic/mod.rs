@@ -180,6 +180,10 @@ async fn create_anthropic_response_async(
         &cancel_token,
         &retry_options,
         stream_idle_timeout_sec,
+        // 1M 上下文：模型名带 [1M] 标记，或档案开关 snowcfg.enable1mContext
+        // 开启，任一成立即注入 context-1m beta 头（开关兜底模型名标记）。
+        payload::has_one_m_context_marker(&model)
+            || payload::config_json_enables_one_m_context(&api_config.config_json),
     )
     .await
     {

@@ -15219,6 +15219,112 @@ input {
   user-select: text;
 }
 
+/* JSON 树查看器（config 等结构化结果） */
+.json-tree {
+  max-height: 320px;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: var(--text-secondary);
+  user-select: text;
+  word-break: break-all;
+}
+
+.json-tree-node {
+  min-width: 0;
+}
+
+.json-tree-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
+  border-radius: 3px;
+}
+
+.json-tree-row-toggle {
+  cursor: pointer;
+}
+
+.json-tree-row-toggle:hover {
+  background: var(--bg-active);
+}
+
+.json-tree-children {
+  padding-left: 16px;
+  margin-left: 4px;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.json-tree-arrow {
+  flex-shrink: 0;
+  width: 0;
+  height: 0;
+  margin-top: 6px;
+  border-left: 4px solid var(--text-tertiary);
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+  transition: transform 0.12s ease;
+}
+
+.json-tree-arrow-open {
+  transform: rotate(90deg);
+}
+
+.json-tree-key {
+  color: var(--accent-blue-text);
+}
+
+.json-tree-punct {
+  color: var(--text-tertiary);
+}
+
+.json-tree-string {
+  color: var(--accent-green-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.json-tree-string-collapsed,
+.json-tree-string-expanded {
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.json-tree-string-collapsed:hover,
+.json-tree-string-expanded:hover {
+  background: var(--bg-active);
+}
+
+.json-tree-string-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-primary);
+  color: var(--text-tertiary);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.json-tree-number {
+  color: var(--accent-amber-text);
+}
+
+.json-tree-bool {
+  color: var(--accent-blue-text);
+}
+
+.json-tree-null {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 /* app-control：应用控制工具卡片 */
 .tool-call-app-detail {
   display: flex;

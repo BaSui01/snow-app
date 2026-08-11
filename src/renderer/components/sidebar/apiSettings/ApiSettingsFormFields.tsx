@@ -252,6 +252,8 @@ export function ApiSettingsFormFields({
         defaultValue: "No models found",
       })}
       retryText={t("common.retry", { defaultValue: "Retry" })}
+      // 模型名自由编辑：不自动补/剥 [1M] 标记（请求是否启用 1M 上下文
+      // 由独立开关 snowcfg.enable1mContext 决定，不依赖模型名后缀）。
       onChange={(value) => onChange(field, value)}
       onRequestModels={handleModelInputFocus}
       onRetry={handleRetryModelOptions}
@@ -541,6 +543,40 @@ export function ApiSettingsFormFields({
             "basicModel",
             t("settings.apiBasicModel", { defaultValue: "Basic model" }),
             "gpt-4.1-mini"
+          )}
+          {data.requestMethod === "anthropic" && (
+            <div className="api-settings-field">
+              <span>
+                {t("settings.apiOneMContext", {
+                  defaultValue: "1M context",
+                })}
+              </span>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={data.oneMContext}
+                  onChange={(event) =>
+                    onChange("oneMContext", event.target.checked)
+                  }
+                  disabled={disabled}
+                  hidden
+                />
+                <span className="toggle-slider" />
+                <span>
+                  {t(
+                    data.oneMContext
+                      ? "settings.enabled"
+                      : "settings.disabled"
+                  )}
+                </span>
+              </label>
+              <small className="api-settings-hint-text">
+                {t("settings.apiOneMContextHint", {
+                  defaultValue:
+                    "When enabled, all Anthropic requests send the context-1m beta header to declare 1M-token context support (for Anthropic and compatible gateways/proxies).",
+                })}
+              </small>
+            </div>
           )}
           <label className="api-settings-field">
             <span>

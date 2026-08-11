@@ -18470,6 +18470,13 @@ input {
 }
 
 /* Pre-script (optional) collapsible section */
+.scheduled-task-details-pre-script {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
 .scheduled-tasks-pre-script {
   display: flex;
   flex-direction: column;

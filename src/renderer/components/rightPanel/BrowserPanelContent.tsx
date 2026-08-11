@@ -15,8 +15,11 @@ import {
   registerBrowserMcpInstance,
 } from "./browser/browserMcpController";
 import {
+  clearBrowserNavigationState,
   clearBrowserRouteRulesForInstance,
   executeBrowserMcpOperation,
+  recordMainFrameNavigationFailure,
+  recordMainFrameNavigationSuccess,
 } from "./browser/browserMcpOperations";
 import { APP_CONTROL_OPEN_SETTINGS_EVENT } from "../../hooks/useAppControl";
 import { useI18n } from "../../i18n";
@@ -255,6 +258,9 @@ export const BrowserPanelContent = ({
     // fresh loadURL via the webview attribute observer, re-triggering the
     // redirect and creating an infinite loop (e.g. Cloudflare challenges).
     const handleDidNavigate = (e: Electron.DidNavigateEvent): void => {
+      // 导航成功（含重定向目标、页面内 pushState）后清除失败状态，
+      // 使 screenshot 等 MCP 操作恢复正常执行。
+      recordMainFrameNavigationSuccess(tabId, e.url);
       updateWebviewTab(tabId, (tab) => ({ ...tab, addressInput: e.url }));
       handleNavigationStateUpdate();
       // 仅激活标签页驱动工具栏状态与上层（RightPanel tab 标题/URL）同步。
@@ -289,13 +295,31 @@ export const BrowserPanelContent = ({
     // (e.g. Cloudflare managed challenge, Google -> localized). Chromium aborts
     // the original request, which fires did-fail-load. Suppress these so the
     // console stays clean; the redirect target loads normally afterward.
-    const handleDidFailLoad = (e: Event & { errorCode?: number }): void => {
+    const handleDidFailLoad = (
+      e: Event & {
+        errorCode?: number;
+        errorDescription?: string;
+        validatedURL?: string;
+        isMainFrame?: boolean;
+      }
+    ): void => {
       if (
         e.errorCode !== undefined &&
         SUPPRESSED_ERROR_CODES.has(e.errorCode)
       ) {
         return;
       }
+      // 仅主 Frame 失败才记录导航失败状态（子资源失败不影响页面截图）。
+      if (e.isMainFrame === false) {
+        return;
+      }
+      recordMainFrameNavigationFailure(
+        tabId,
+        e.validatedURL || "",
+        e.errorCode,
+        e.errorDescription ||
+          `Navigation failed with code ${e.errorCode ?? "unknown"}`
+      );
     };
 
     const handleFoundInPage = (e: Electron.FoundInPageEvent): void => {
@@ -517,8 +541,12 @@ export const BrowserPanelContent = ({
     );
     return () => {
       unregister();
-      // 实例卸载时清理其累积的路由 mock 规则,避免残留规则影响其他实例。
+      // 实例卸载时清理其累积的路由规则,避免残留规则影响其他实例。
       clearBrowserRouteRulesForInstance(instanceId);
+      // 同时清理本实例所有标签页的导航状态。
+      for (const tabId of webviewElementsRef.current.keys()) {
+        clearBrowserNavigationState(tabId);
+      }
     };
   }, [instanceId]);
 
@@ -566,6 +594,7 @@ export const BrowserPanelContent = ({
       }
     }
     webviewElementsRef.current.delete(tabId);
+    clearBrowserNavigationState(tabId);
 
     const tabsBefore = webviewTabsRef.current;
     const index = tabsBefore.findIndex((tab) => tab.id === tabId);

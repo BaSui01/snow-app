@@ -663,6 +663,71 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       );
     }
   );
+  ipcMain.handle(
+    "mcp:set-tool-enabled",
+    (_event, toolName: unknown, enabled: unknown) => {
+      if (typeof toolName !== "string" || !toolName.trim()) {
+        throw new Error("MCP tool name is required");
+      }
+      if (typeof enabled !== "boolean") {
+        throw new Error("MCP tool enabled state must be a boolean");
+      }
+
+      return native.setMcpToolEnabled(toolName.trim(), enabled);
+    }
+  );
+  ipcMain.handle(
+    "mcp:set-tools-enabled",
+    (_event, toolNames: unknown, enabled: unknown) => {
+      if (
+        !Array.isArray(toolNames) ||
+        toolNames.length === 0 ||
+        toolNames.some(
+          (name) => typeof name !== "string" || !name.trim()
+        )
+      ) {
+        throw new Error(
+          "MCP tool names must be a non-empty array of strings"
+        );
+      }
+      if (typeof enabled !== "boolean") {
+        throw new Error("MCP tool enabled state must be a boolean");
+      }
+
+      return native.setMcpToolsEnabled(
+        toolNames.map((name) => name.trim()),
+        enabled
+      );
+    }
+  );
+  ipcMain.handle(
+    "mcp:set-project-tools-enabled",
+    (_event, projectId: unknown, toolNames: unknown, enabled: unknown) => {
+      if (typeof projectId !== "string" || !projectId.trim()) {
+        throw new Error("Project id is required");
+      }
+      if (
+        !Array.isArray(toolNames) ||
+        toolNames.length === 0 ||
+        toolNames.some(
+          (name) => typeof name !== "string" || !name.trim()
+        )
+      ) {
+        throw new Error(
+          "MCP tool names must be a non-empty array of strings"
+        );
+      }
+      if (typeof enabled !== "boolean") {
+        throw new Error("MCP tool enabled state must be a boolean");
+      }
+
+      return native.setMcpProjectToolsEnabled(
+        projectId.trim(),
+        toolNames.map((name) => name.trim()),
+        enabled
+      );
+    }
+  );
   ipcMain.handle("browser:renderer-register", (event) => {
     registerBrowserRenderer(event.sender);
   });

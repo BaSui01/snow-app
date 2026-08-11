@@ -63,6 +63,8 @@ pub struct StoreChatExchangeInput<'a> {
     /// global active profile" (legacy behaviour).
     pub api_profile_name: &'a str,
     pub status: &'a str,
+    pub interruption_reason: Option<&'a str>,
+    pub recovery_outcome: Option<&'a str>,
     pub raw_response_json: &'a str,
     pub token_usage: ChatTokenUsage,
     pub response_thinking: &'a str,
@@ -270,6 +272,8 @@ pub fn store_chat_exchange(
                     input.checkpoint_id,
                     input.model,
                     "context_compaction",
+                    None,
+                    None,
                     input.raw_response_json,
                     "",
                     "[]",
@@ -313,6 +317,8 @@ pub fn store_chat_exchange(
                             checkpoint_id,
                             input.model,
                             "sent",
+                            None,
+                            None,
                             raw_json,
                             "",
                             "[]",
@@ -334,6 +340,8 @@ pub fn store_chat_exchange(
                     "",
                     input.model,
                     input.status,
+                    input.interruption_reason,
+                    input.recovery_outcome,
                     input.raw_response_json,
                     input.response_thinking,
                     input.response_thinking_blocks_json,
@@ -446,6 +454,8 @@ pub fn store_failed_chat_exchange(
             model,
             api_profile_name,
             status: "error",
+            interruption_reason: None,
+            recovery_outcome: None,
             raw_response_json: "{}",
             token_usage: ChatTokenUsage::default(),
             response_thinking: "",
@@ -483,6 +493,8 @@ pub fn append_tool_message(
                 "",
                 "",
                 "sent",
+                None,
+                None,
                 "{}",
                 "",
                 "[]",
@@ -1448,6 +1460,8 @@ pub fn list_chat_messages(
                         response_id,
                         checkpoint_id,
                         tool_calls_json,
+                        interruption_reason,
+                        recovery_outcome,
                         created_at
                    FROM chat_messages
                   WHERE conversation_id = ?1
@@ -1465,7 +1479,9 @@ pub fn list_chat_messages(
                     response_id: row.get(6)?,
                     checkpoint_id: row.get(7)?,
                     tool_calls_json: row.get(8)?,
-                    created_at: row.get(9)?,
+                    interruption_reason: row.get(9)?,
+                    recovery_outcome: row.get(10)?,
+                    created_at: row.get(11)?,
                 })
             })?;
 
@@ -1537,6 +1553,8 @@ pub fn list_chat_messages_paginated(
                         response_id,
                         checkpoint_id,
                         tool_calls_json,
+                        interruption_reason,
+                        recovery_outcome,
                         created_at
                    FROM chat_messages
                   WHERE conversation_id = ?1
@@ -1558,7 +1576,9 @@ pub fn list_chat_messages_paginated(
                         response_id: row.get(6)?,
                         checkpoint_id: row.get(7)?,
                         tool_calls_json: row.get(8)?,
-                        created_at: row.get(9)?,
+                        interruption_reason: row.get(9)?,
+                        recovery_outcome: row.get(10)?,
+                        created_at: row.get(11)?,
                     })
                 },
             )?;
@@ -1728,10 +1748,13 @@ pub fn fork_conversation(
         String,
         String,
         String,
+        Option<String>,
+        Option<String>,
     )> = {
         let mut stmt = transaction
             .prepare(
-                "SELECT message_id, role, content, model, response_id, status, raw_json, thinking, tool_calls_json
+                "SELECT message_id, role, content, model, response_id, status, raw_json, thinking, tool_calls_json,
+                        interruption_reason, recovery_outcome
                    FROM chat_messages
                   WHERE conversation_id = ?1
                     AND (?2 = '' OR id <= COALESCE(
@@ -1754,6 +1777,8 @@ pub fn fork_conversation(
                     row.get(6)?,
                     row.get(7)?,
                     row.get(8)?,
+                    row.get(9)?,
+                    row.get(10)?,
                 ))
             })
             .map_err(|error| database::database_error(database_path, "fork conversation", error))?;
@@ -1777,22 +1802,26 @@ pub fn fork_conversation(
                raw_json,
                thinking,
                tool_calls_json,
+               interruption_reason,
+               recovery_outcome,
                created_at
              ) VALUES (
-               ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, datetime('now', 'localtime')
+               ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, datetime('now', 'localtime')
              )",
                 params![
                     database::create_snowflake_id(),
                     create_chat_id(&format!("msg{index}")),
                     new_conversation_id,
-                    &msg.1, // role
-                    &msg.2, // content
-                    &msg.3, // model
-                    &msg.4, // response_id
-                    &msg.5, // status
-                    &msg.6, // raw_json
-                    &msg.7, // thinking
-                    &msg.8, // tool_calls_json
+                    &msg.1,  // role
+                    &msg.2,  // content
+                    &msg.3,  // model
+                    &msg.4,  // response_id
+                    &msg.5,  // status
+                    &msg.6,  // raw_json
+                    &msg.7,  // thinking
+                    &msg.8,  // tool_calls_json
+                    &msg.9,  // interruption_reason
+                    &msg.10, // recovery_outcome
                 ],
             )
             .map_err(|error| database::database_error(database_path, "fork conversation", error))?;
@@ -1992,6 +2021,8 @@ fn insert_message(
     checkpoint_id: &str,
     model: &str,
     status: &str,
+    interruption_reason: Option<&str>,
+    recovery_outcome: Option<&str>,
     raw_json: &str,
     thinking: &str,
     thinking_blocks_json: &str,
@@ -2010,13 +2041,15 @@ fn insert_message(
            response_id,
            checkpoint_id,
            status,
+           interruption_reason,
+           recovery_outcome,
            raw_json,
            thinking,
            thinking_blocks_json,
            tool_calls_json,
            created_at
          ) VALUES (
-           ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, datetime('now', 'localtime')
+           ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, datetime('now', 'localtime')
          )",
         params![
             id,
@@ -2028,6 +2061,8 @@ fn insert_message(
             response_id,
             checkpoint_id,
             status,
+            interruption_reason,
+            recovery_outcome,
             raw_json,
             thinking.trim(),
             thinking_blocks_json,
@@ -2319,7 +2354,9 @@ mod tests {
     use rusqlite::Connection;
 
     use super::{
-        create_sub_agent_session, store_chat_exchange, ChatTokenUsage, StoreChatExchangeInput,
+        append_tool_message, create_sub_agent_session, fork_conversation, list_chat_messages,
+        list_chat_messages_paginated, store_chat_exchange, store_failed_chat_exchange,
+        ChatContextMessage, ChatTokenUsage, StoreChatExchangeInput,
     };
     use crate::storage::database;
 
@@ -2389,6 +2426,221 @@ mod tests {
     }
 
     #[test]
+    fn interruption_metadata_round_trips_through_lists_and_fork() {
+        let temporary_directory = std::env::temp_dir().join(format!(
+            "chat-interruption-round-trip-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&temporary_directory).expect("create temporary directory");
+        let database_path = temporary_directory.join("snow.db");
+        database::ensure_database(&database_path).expect("initialize database");
+        let request_messages = [ChatContextMessage {
+            role: "user".into(),
+            content: "Continue the answer".into(),
+            tool_calls_json: None,
+            tool_results_json: None,
+            thinking: None,
+            thinking_blocks_json: None,
+        }];
+
+        store_chat_exchange(
+            &database_path,
+            &StoreChatExchangeInput {
+                conversation_id: "interrupted-conversation",
+                request_messages: &request_messages,
+                response_content: "Partial answer",
+                response_id: "interrupted-response",
+                checkpoint_id: "checkpoint-id",
+                model: "test-model",
+                api_profile_name: "test-profile",
+                status: "incomplete",
+                interruption_reason: Some("unexpected_eof"),
+                recovery_outcome: Some("retry_exhausted"),
+                raw_response_json: "{}",
+                token_usage: ChatTokenUsage::default(),
+                response_thinking: "Partial thinking",
+                response_thinking_blocks_json: "[]",
+                tool_calls_json: "[]",
+                directory_id: "directory-id",
+                context_compaction: false,
+                resume_after_compaction: false,
+                total_duration_ms: 100,
+            },
+        )
+        .expect("store interrupted exchange");
+
+        let full_messages = list_chat_messages(&database_path, "interrupted-conversation")
+            .expect("list full messages");
+        let user_message = full_messages
+            .iter()
+            .find(|message| message.role == "user")
+            .expect("find user message");
+        assert_eq!(user_message.interruption_reason, None);
+        assert_eq!(user_message.recovery_outcome, None);
+        let assistant_message = full_messages
+            .iter()
+            .find(|message| message.response_id == "interrupted-response")
+            .expect("find interrupted assistant message");
+        assert_eq!(
+            assistant_message.interruption_reason.as_deref(),
+            Some("unexpected_eof")
+        );
+        assert_eq!(
+            assistant_message.recovery_outcome.as_deref(),
+            Some("retry_exhausted")
+        );
+
+        let page = list_chat_messages_paginated(
+            &database_path,
+            "interrupted-conversation",
+            "",
+            10,
+        )
+        .expect("list paginated messages");
+        let paginated_assistant = page
+            .items
+            .iter()
+            .find(|message| message.response_id == "interrupted-response")
+            .expect("find paginated interrupted assistant message");
+        assert_eq!(
+            paginated_assistant.interruption_reason.as_deref(),
+            Some("unexpected_eof")
+        );
+        assert_eq!(
+            paginated_assistant.recovery_outcome.as_deref(),
+            Some("retry_exhausted")
+        );
+
+        let fork = fork_conversation(
+            &database_path,
+            "interrupted-conversation",
+            "interrupted-response",
+        )
+        .expect("fork interrupted conversation");
+        let forked_messages = list_chat_messages(&database_path, &fork.conversation_id)
+            .expect("list forked messages");
+        let forked_assistant = forked_messages
+            .iter()
+            .find(|message| message.response_id == "interrupted-response")
+            .expect("find forked interrupted assistant message");
+        assert_eq!(
+            forked_assistant.interruption_reason.as_deref(),
+            Some("unexpected_eof")
+        );
+        assert_eq!(
+            forked_assistant.recovery_outcome.as_deref(),
+            Some("retry_exhausted")
+        );
+
+        let connection = Connection::open(&database_path).expect("open database for legacy row");
+        connection
+            .execute(
+                "INSERT INTO chat_messages (
+                   id, message_id, conversation_id, role, content, response_id, status
+                 ) VALUES (
+                   'legacy-message-row', 'legacy-message-id', 'interrupted-conversation',
+                   'assistant', 'Legacy answer', 'legacy-response', 'completed'
+                 )",
+                [],
+            )
+            .expect("insert legacy row without interruption metadata");
+        drop(connection);
+        let legacy_messages = list_chat_messages(&database_path, "interrupted-conversation")
+            .expect("list messages containing legacy row");
+        let legacy_message = legacy_messages
+            .iter()
+            .find(|message| message.response_id == "legacy-response")
+            .expect("find legacy message");
+        assert_eq!(legacy_message.interruption_reason, None);
+        assert_eq!(legacy_message.recovery_outcome, None);
+
+        fs::remove_dir_all(&temporary_directory).expect("remove temporary directory");
+    }
+
+    #[test]
+    fn tool_and_hard_error_rows_keep_interruption_metadata_null() {
+        let temporary_directory = std::env::temp_dir().join(format!(
+            "chat-interruption-role-null-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&temporary_directory).expect("create temporary directory");
+        let database_path = temporary_directory.join("snow.db");
+        database::ensure_database(&database_path).expect("initialize database");
+        let request_messages = [ChatContextMessage {
+            role: "user".into(),
+            content: "Run the tool".into(),
+            tool_calls_json: None,
+            tool_results_json: None,
+            thinking: None,
+            thinking_blocks_json: None,
+        }];
+
+        store_chat_exchange(
+            &database_path,
+            &StoreChatExchangeInput {
+                conversation_id: "tool-conversation",
+                request_messages: &request_messages,
+                response_content: "Tool request completed",
+                response_id: "tool-response",
+                checkpoint_id: "checkpoint-id",
+                model: "test-model",
+                api_profile_name: "test-profile",
+                status: "completed",
+                interruption_reason: None,
+                recovery_outcome: None,
+                raw_response_json: "{}",
+                token_usage: ChatTokenUsage::default(),
+                response_thinking: "",
+                response_thinking_blocks_json: "[]",
+                tool_calls_json: "[]",
+                directory_id: "directory-id",
+                context_compaction: false,
+                resume_after_compaction: false,
+                total_duration_ms: 100,
+            },
+        )
+        .expect("store tool conversation");
+        append_tool_message(
+            &database_path,
+            "tool-conversation",
+            "[Tool: sample] successful",
+        )
+        .expect("append tool message");
+        let tool_messages = list_chat_messages(&database_path, "tool-conversation")
+            .expect("list tool conversation messages");
+        let tool_message = tool_messages
+            .iter()
+            .find(|message| message.role == "tool")
+            .expect("find tool message");
+        assert_eq!(tool_message.interruption_reason, None);
+        assert_eq!(tool_message.recovery_outcome, None);
+
+        let error_conversation_id = store_failed_chat_exchange(
+            &database_path,
+            Some("error-conversation"),
+            None,
+            &request_messages,
+            "error-checkpoint",
+            "test-model",
+            "test-profile",
+            "directory-id",
+            false,
+            "Provider hard failure",
+        )
+        .expect("store hard error exchange");
+        let error_messages = list_chat_messages(&database_path, &error_conversation_id)
+            .expect("list hard error messages");
+        let error_message = error_messages
+            .iter()
+            .find(|message| message.role == "assistant" && message.status == "error")
+            .expect("find hard error assistant message");
+        assert_eq!(error_message.interruption_reason, None);
+        assert_eq!(error_message.recovery_outcome, None);
+
+        fs::remove_dir_all(&temporary_directory).expect("remove temporary directory");
+    }
+
+    #[test]
     fn store_chat_exchange_persists_post_compaction_context_snapshot() {
         let temporary_directory = std::env::temp_dir().join(format!(
             "snow-storage-compaction-test-{}",
@@ -2409,7 +2661,9 @@ mod tests {
                 model: "test-model",
                 api_profile_name: "test-profile",
                 status: "completed",
-                raw_response_json: r#"{"type":"compaction"}"#,
+                interruption_reason: None,
+                recovery_outcome: None,
+                raw_response_json: r#"{\"type\":\"compaction\"}"#,
                 token_usage: ChatTokenUsage {
                     input_tokens: 12_000,
                     output_tokens: 345,
@@ -2438,9 +2692,18 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .expect("read persisted context snapshot");
-        let boundary: (String, String, String, String, String) = connection
+        let boundary: (
+            String,
+            String,
+            String,
+            String,
+            String,
+            Option<String>,
+            Option<String>,
+        ) = connection
             .query_row(
-                "SELECT role, content, response_id, checkpoint_id, status
+                "SELECT role, content, response_id, checkpoint_id, status,
+                        interruption_reason, recovery_outcome
                    FROM chat_messages
                   WHERE conversation_id = 'compaction-conversation'",
                 [],
@@ -2451,6 +2714,8 @@ mod tests {
                         row.get(2)?,
                         row.get(3)?,
                         row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
                     ))
                 },
             )
@@ -2468,6 +2733,8 @@ mod tests {
                 "compaction-response".into(),
                 "compaction-checkpoint".into(),
                 "context_compaction".into(),
+                None,
+                None,
             )
         );
     }
@@ -2505,6 +2772,8 @@ mod tests {
                     model: "test-model",
                     api_profile_name: "test-profile",
                     status,
+                    interruption_reason: None,
+                    recovery_outcome: None,
                     raw_response_json: r#"{"type":"compaction"}"#,
                     token_usage: ChatTokenUsage {
                         input_tokens: 12_000,

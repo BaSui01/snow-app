@@ -195,6 +195,55 @@ export const AppControlToolCall = ({
       ) : null;
       break;
     }
+    case "listMemos": {
+      const count =
+        parsedResult.type === "success"
+          ? parsedResult.data.total
+          : undefined;
+      const countNumber = typeof count === "number" ? count : 0;
+      displayName = t("toolCall.appControl.memoListed", {
+        values: { count: countNumber },
+      });
+      meta = parsedResult.type === "success" ? (
+        <span className="tool-call-app-meta tool-call-app-meta-ok">
+          <CheckCircle2 size={10} aria-hidden="true" />
+          {t("toolCall.appControl.memoListed", {
+            values: { count: countNumber },
+          })}
+        </span>
+      ) : null;
+      break;
+    }
+    case "getMemo": {
+      const memoId = asString(parsedArgs?.memoId);
+      displayName = memoId ? truncate(memoId) : undefined;
+      meta = parsedResult.type === "success" ? (
+        <span className="tool-call-app-meta tool-call-app-meta-ok">
+          <CheckCircle2 size={10} aria-hidden="true" />
+          {t("toolCall.appControl.memoRead")}
+        </span>
+      ) : null;
+      break;
+    }
+    case "updateMemoStatus": {
+      const memoId = asString(parsedArgs?.memoId);
+      const status = asString(parsedArgs?.status);
+      displayName = memoId ? truncate(memoId) : undefined;
+      meta = parsedResult.type === "success" ? (
+        <span className="tool-call-app-meta tool-call-app-meta-ok">
+          <CheckCircle2 size={10} aria-hidden="true" />
+          {t("toolCall.appControl.memoStatusUpdated", {
+            values: {
+              status:
+                status === "done"
+                  ? t("toolCall.appControl.memoStatusDone")
+                  : t("toolCall.appControl.memoStatusPending"),
+            },
+          })}
+        </span>
+      ) : null;
+      break;
+    }
   }
 
   const resultText =
@@ -292,6 +341,35 @@ export const AppControlToolCall = ({
                 <code>{path}</code>
               </div>
             ) : null}
+          </div>
+        );
+      }
+      case "listMemos": {
+        const status = asString(parsedArgs?.status);
+        return status ? (
+          <div className="tool-call-app-detail">
+            <StickyNote size={12} aria-hidden="true" />
+            <code>{status}</code>
+          </div>
+        ) : null;
+      }
+      case "getMemo": {
+        const memoId = asString(parsedArgs?.memoId);
+        return memoId ? (
+          <div className="tool-call-app-detail">
+            <StickyNote size={12} aria-hidden="true" />
+            <code>{memoId}</code>
+          </div>
+        ) : null;
+      }
+      case "updateMemoStatus": {
+        const memoId = asString(parsedArgs?.memoId);
+        const status = asString(parsedArgs?.status);
+        return (
+          <div className="tool-call-app-detail">
+            <StickyNote size={12} aria-hidden="true" />
+            <code>{memoId ?? ""}</code>
+            {status ? <span>→ {status}</span> : null}
           </div>
         );
       }

@@ -1,10 +1,22 @@
 /**
- * In-memory scheduled task scheduler (renderer singleton).
+ * Scheduled task scheduler with SQLite persistence (renderer singleton).
  *
- * This is a process-lifetime store: tasks and their timers live only while the
- * Snow App process is alive. Nothing is persisted to disk. When the process
- * exits, all timers are destroyed and the tasks vanish — matching requirement
- * #4 ("tasks only execute while the Snow App process exists").
+ * The in-memory Map is the runtime authority: timers, the coarse tick and the
+ * synchronous pub/sub API all work exactly as before. Every mutation is
+ * additionally written back to the backend SQLite database (task definition,
+ * status, pause state and run history), so tasks survive app restarts.
+ *
+ * On startup the store hydrates from the database and reconciles stale state:
+ *   - a task left "running" by a crashed session is reset to "pending"
+ *   - an expired once-task is marked "completed" (it never fires again)
+ *   - an expired recurring task has its nextRunAt advanced to the next plan
+ *     point ("missed runs are skipped", cron-style)
+ *   - an in-flight history entry from a crashed session is marked "error"
+ *
+ * Persistence is best-effort: if the native bridge is unavailable (tests,
+ * degraded mode) the store falls back to pure in-memory behavior, and a
+ * failed write never blocks scheduling — it is logged and the in-process
+ * task remains valid.
  *
  * Execution is delegated to a registered "executor" callback. The renderer
  * (which lives inside the ChatConversationProvider) registers buildFromContent
@@ -21,16 +33,38 @@ import type {
   CreateScheduledTaskInput,
   PreScriptResult,
   ScheduledTaskRecord,
+  ScheduledTaskRunOptions,
+  ScheduledTaskRunRecord,
   ScheduledTaskSchedule,
+  UpdateScheduledTaskInput,
 } from "../../preload";
+import type {
+  ScheduledTaskWireRecord,
+  ScheduledTaskWireRun,
+} from "../../preload/modules/scheduledTaskApi";
 
 /** Minimum interval for interval-mode recurring tasks. */
 const MIN_INTERVAL_MS = 60_000;
+/** Bounds the per-task run-history ring buffer (newest last). */
+const MAX_RUN_HISTORY = 20;
+
+/** Appends a run-history entry, keeping the ring buffer bounded. */
+const appendRunHistory = (
+  task: ScheduledTaskRecord,
+  run: ScheduledTaskRunRecord
+): ScheduledTaskRunRecord[] =>
+  [...(task.history ?? []), run].slice(-MAX_RUN_HISTORY);
 /** Coarse tick used to wake the scheduler and check for due tasks. This keeps
  *  drift bounded and avoids one setTimeout per task (which would also leak if
  *  the renderer is throttled in the background). */
 const TICK_MS = 5_000;
 
+type Executor = (
+  prompt: string,
+  taskName: string,
+  directoryId: string,
+  options: ScheduledTaskRunOptions
+) => void | Promise<void>;
 /** Placeholder inside a task prompt that the pre-script's JSON "output"
  *  field is injected into (replaced with "" when the script provides none). */
 export const SCRIPT_OUTPUT_PLACEHOLDER = "{{SCRIPT_OUTPUT}}";
@@ -39,7 +73,6 @@ export const PRE_SCRIPT_DEFAULT_TIMEOUT_MS = 60_000;
 export const PRE_SCRIPT_MIN_TIMEOUT_MS = 1_000;
 export const PRE_SCRIPT_MAX_TIMEOUT_MS = 300_000;
 
-type Executor = (prompt: string, taskName: string) => void | Promise<void>;
 /** Executes the task's pre-script. Registered by the React hook, which binds
  *  the project directory (cwd) and calls the Rust backend asynchronously. */
 type ScriptRunner = (
@@ -150,6 +183,121 @@ const computeNextRunMs = (
   return target;
 };
 
+/** Converts a wire record (SQLite shape) into the rich UI record. Returns null
+ *  when the stored schedule JSON is unreadable (the task is skipped). */
+export const fromWire = (
+  wire: Omit<ScheduledTaskWireRecord, "history"> & {
+    history?: ScheduledTaskWireRun[];
+  }
+): ScheduledTaskRecord | null => {
+  let schedule: ScheduledTaskSchedule;
+  try {
+    schedule = JSON.parse(wire.scheduleJson) as ScheduledTaskSchedule;
+  } catch {
+    console.warn(
+      `[scheduledTasks] Skipping task "${wire.id}" with unreadable schedule:`,
+      wire.scheduleJson
+    );
+    return null;
+  }
+  return {
+    id: wire.id,
+    directoryId: wire.directoryId,
+    name: wire.name,
+    prompt: wire.prompt,
+    schedule,
+    status: wire.status as ScheduledTaskRecord["status"],
+    paused: wire.paused,
+    createdAt: wire.createdAt,
+    lastRunAt: wire.lastRunAt,
+    nextRunAt: wire.nextRunAt,
+    lastError: wire.lastError,
+    runCount: wire.runCount,
+    history: (wire.history ?? []).map(
+      (run): ScheduledTaskRunRecord => ({
+        runAt: run.runAt,
+        status: run.status as ScheduledTaskRunRecord["status"],
+        durationMs: run.durationMs,
+        error: run.error,
+      })
+    ),
+    apiProfile: wire.apiProfile,
+    basicModel: wire.basicModel,
+    model: wire.model,
+    thinkingStrength: wire.thinkingStrength,
+    preScript: wire.preScript,
+    preScriptTimeoutMs: wire.preScriptTimeoutMs,
+    runOnScriptError: wire.runOnScriptError,
+    skipCount: wire.skipCount ?? 0,
+    lastSkippedAt: wire.lastSkippedAt,
+    lastSkipReason: wire.lastSkipReason,
+  };
+};
+
+/** Converts a rich record into the wire shape for upsert (history lives in
+ *  the separate runs table and is excluded from the write). */
+export const toWire = (
+  record: ScheduledTaskRecord
+): Omit<ScheduledTaskWireRecord, "history"> => ({
+  id: record.id,
+  directoryId: record.directoryId,
+  name: record.name,
+  prompt: record.prompt,
+  scheduleJson: JSON.stringify(record.schedule),
+  apiProfile: record.apiProfile,
+  basicModel: record.basicModel,
+  model: record.model,
+  thinkingStrength: record.thinkingStrength,
+  preScript: record.preScript,
+  preScriptTimeoutMs: record.preScriptTimeoutMs,
+  runOnScriptError: record.runOnScriptError,
+  skipCount: record.skipCount,
+  lastSkippedAt: record.lastSkippedAt,
+  lastSkipReason: record.lastSkipReason,
+  status: record.status,
+  paused: record.paused,
+  nextRunAt: record.nextRunAt,
+  lastRunAt: record.lastRunAt,
+  runCount: record.runCount,
+  lastError: record.lastError,
+  createdAt: record.createdAt,
+  updatedAt: record.updatedAt ?? record.createdAt,
+});
+
+/** Best-effort persistence adapter over the preload bridge. Returns null when
+ *  the native bridge is unavailable (tests, degraded mode) — the store then
+ *  behaves exactly like the old in-memory implementation. */
+const createPersistence = (): PersistenceAdapter | null => {
+  if (typeof window === "undefined" || !window.snow) return null;
+  const api = window.snow;
+  if (typeof api.listScheduledTasks !== "function") return null;
+  return {
+    list: () => api.listScheduledTasks(),
+    upsert: (input) =>
+      api.upsertScheduledTask(input).then(() => undefined),
+    remove: (id) => api.deleteScheduledTask(id),
+    clear: (directoryId) => api.clearScheduledTasks(directoryId).then(() => undefined),
+    appendRun: (taskId, runAt) => api.appendScheduledTaskRun(taskId, runAt),
+    finalizeRun: (taskId, runId, status, durationMs, error) =>
+      api.finalizeScheduledTaskRun(taskId, runId, status, durationMs, error),
+  };
+};
+
+type PersistenceAdapter = {
+  list(): Promise<ScheduledTaskWireRecord[]>;
+  upsert(input: Omit<ScheduledTaskWireRecord, "history">): Promise<void>;
+  remove(id: string): Promise<void>;
+  clear(directoryId: string | null): Promise<void>;
+  appendRun(taskId: string, runAt: string): Promise<string>;
+  finalizeRun(
+    taskId: string,
+    runId: string,
+    status: "completed" | "error",
+    durationMs?: number,
+    error?: string
+  ): Promise<void>;
+};
+
 /**
  * Pre-script output protocol:
  *  - The last stdout line, when it starts with "{", is parsed as JSON:
@@ -239,7 +387,7 @@ const tryParseLastLineJson = (
 const truncateText = (text: string, max: number): string =>
   text.length <= max ? text : `${text.slice(0, max)}...`;
 
-class ScheduledTasksStore {
+export class ScheduledTasksStore {
   private tasks = new Map<string, ScheduledTaskRecord>();
   private listeners = new Set<Listener>();
   private executor: Executor | null = null;
@@ -248,6 +396,11 @@ class ScheduledTasksStore {
   private tickTimer: ReturnType<typeof setInterval> | null = null;
   /** Currently in-flight execution task ids, to prevent overlapping runs. */
   private runningIds = new Set<string>();
+
+  /** Persistence layer (null = in-memory only). Resolved lazily on first use
+   *  so tests without the preload bridge keep the legacy behavior. */
+  private persistence: PersistenceAdapter | null = null;
+  private hydratePromise: Promise<void> | null = null;
 
   /** Starts the coarse tick loop. Safe to call multiple times. */
   private ensureTick = (): void => {
@@ -305,11 +458,63 @@ class ScheduledTasksStore {
     }
   };
 
+  /** Loads persisted tasks once. Safe to call multiple times; concurrent
+   *  callers share the same in-flight promise. */
+  ensureHydrated = (): Promise<void> => {
+    if (this.hydratePromise) return this.hydratePromise;
+    if (!this.persistence) {
+      this.persistence = createPersistence();
+    }
+    if (!this.persistence) {
+      this.hydratePromise = Promise.resolve();
+      return this.hydratePromise;
+    }
+    this.hydratePromise = this.hydrate(this.persistence).catch((error) => {
+      console.warn("[scheduledTasks] Failed to hydrate from database:", error);
+    });
+    return this.hydratePromise;
+  };
+
+  private hydrate = async (persistence: PersistenceAdapter): Promise<void> => {
+    const stored = await persistence.list();
+    const now = Date.now();
+    const dirty: ScheduledTaskRecord[] = [];
+
+    for (const wire of stored) {
+      const record = fromWire(wire);
+      if (!record) continue;
+      // A task created while hydration was in flight is already live in the
+      // map (with newer state) — never clobber it with the DB snapshot.
+      if (this.tasks.has(record.id)) continue;
+      const { task, changed } = reconcileAfterRestart(record, now);
+      this.tasks.set(task.id, task);
+      if (changed) dirty.push(task);
+    }
+
+    if (dirty.length > 0) {
+      this.notify();
+      for (const task of dirty) {
+        void persistence
+          .upsert(toWire(task))
+          .catch((error) =>
+            console.warn("[scheduledTasks] Failed to persist reconciliation:", error)
+          );
+      }
+    } else {
+      this.notify();
+    }
+  };
+
+  /** Lists tasks. When a directoryId is given, returns that project's tasks
+   *  PLUS global tasks (empty directoryId) — a project panel always shows the
+   *  global section. With no argument, returns every task. */
   list = (directoryId?: string): ScheduledTaskRecord[] => {
     return Array.from(this.tasks.values())
       .filter(
         (task) =>
-          directoryId === undefined || task.directoryId === directoryId
+          directoryId === undefined ||
+          task.directoryId === directoryId ||
+          task.directoryId === ""
       )
       .sort((a, b) => {
         // Sort: running/pending first, then by nextRunAt, then createdAt
@@ -326,10 +531,9 @@ class ScheduledTasksStore {
   };
 
   create = (input: CreateScheduledTaskInput): ScheduledTaskRecord => {
+    void this.ensureHydrated();
+    // Empty directoryId = global task (not bound to any project).
     const directoryId = (input.directoryId ?? "").trim();
-    if (!directoryId) {
-      throw new Error("directoryId is required");
-    }
     const name = (input.name ?? "").trim();
     if (!name) {
       throw new Error("name is required");
@@ -365,12 +569,19 @@ class ScheduledTasksStore {
       name,
       prompt,
       schedule: input.schedule,
+      // Optional per-task run overrides; omitted fields stay undefined so the
+      // executor falls back to the app's current defaults.
+      apiProfile: input.apiProfile?.trim() || undefined,
+      basicModel: input.basicModel?.trim() || undefined,
+      model: input.model?.trim() || undefined,
+      thinkingStrength: input.thinkingStrength?.trim() || undefined,
       status: "pending",
       paused: false,
       preScript: preScript || undefined,
       preScriptTimeoutMs,
       runOnScriptError,
       createdAt: new Date(now).toISOString(),
+      updatedAt: new Date(now).toISOString(),
       nextRunAt:
         nextRunMs != null ? new Date(nextRunMs).toISOString() : undefined,
       runCount: 0,
@@ -378,6 +589,7 @@ class ScheduledTasksStore {
     };
     this.tasks.set(record.id, record);
     this.ensureTick();
+    this.persistUpsert(record);
     this.notify();
     return record;
   };
@@ -388,6 +600,9 @@ class ScheduledTasksStore {
       if (this.tasks.size === 0) {
         this.stopTick();
       }
+      void this.persistence?.remove(id).catch((error) => {
+        console.warn("[scheduledTasks] Failed to delete task:", error);
+      });
       this.notify();
     }
   };
@@ -398,6 +613,9 @@ class ScheduledTasksStore {
       this.tasks.clear();
       this.runningIds.clear();
       this.stopTick();
+      void this.persistence?.clear(null).catch((error) => {
+        console.warn("[scheduledTasks] Failed to clear tasks:", error);
+      });
       this.notify();
       return;
     }
@@ -414,8 +632,67 @@ class ScheduledTasksStore {
       if (this.tasks.size === 0) {
         this.stopTick();
       }
+      void this.persistence?.clear(directoryId).catch((error) => {
+        console.warn("[scheduledTasks] Failed to clear tasks:", error);
+      });
       this.notify();
     }
+  };
+
+  /** Removes ONLY global tasks (empty directoryId). Used by the global
+   *  section's clear button so project tasks are never touched. */
+  clearGlobal = (): void => {
+    let cleared = false;
+    for (const [id, task] of this.tasks) {
+      if (task.directoryId === "") {
+        this.tasks.delete(id);
+        this.runningIds.delete(id);
+        cleared = true;
+      }
+    }
+    if (cleared) {
+      if (this.tasks.size === 0) {
+        this.stopTick();
+      }
+      void this.persistence?.clear("").catch((error) => {
+        console.warn("[scheduledTasks] Failed to clear global tasks:", error);
+      });
+      this.notify();
+    }
+  };
+
+  /** Updates a task's run-configuration overrides (API profile, models,
+   *  thinking strength). Everything else (name, prompt, schedule, history,
+   *  status) is preserved. Omitted/empty fields clear the override, falling
+   *  back to the app's current defaults — same semantics as creation.
+   *  Returns the updated record, or null when the task does not exist. */
+  update = (
+    id: string,
+    input: UpdateScheduledTaskInput
+  ): ScheduledTaskRecord | null => {
+    const task = this.tasks.get(id);
+    if (!task) return null;
+    const updated: ScheduledTaskRecord = {
+      ...task,
+      apiProfile: input.apiProfile?.trim() || undefined,
+      basicModel: input.basicModel?.trim() || undefined,
+      model: input.model?.trim() || undefined,
+      thinkingStrength: input.thinkingStrength?.trim() || undefined,
+      preScript: input.preScript?.trim() || undefined,
+      preScriptTimeoutMs:
+        input.preScript && input.preScript.trim()
+          ? input.preScriptTimeoutMs ?? PRE_SCRIPT_DEFAULT_TIMEOUT_MS
+          : undefined,
+      runOnScriptError:
+        input.preScript && input.preScript.trim()
+          ? (input.runOnScriptError ?? false)
+          : undefined,
+      updatedAt: new Date().toISOString(),
+    };
+    this.tasks.set(id, updated);
+    this.persistUpsert(updated);
+    this.notify();
+    return updated;
   };
 
   togglePause = (id: string): ScheduledTaskRecord | null => {
@@ -430,8 +707,10 @@ class ScheduledTasksStore {
             computeNextRunMs(task.schedule, Date.now()) ?? Date.now()
           ).toISOString()
         : undefined,
+      updatedAt: new Date().toISOString(),
     };
     this.tasks.set(id, updated);
+    this.persistUpsert(updated);
     this.notify();
     return updated;
   };
@@ -464,19 +743,38 @@ class ScheduledTasksStore {
     const executor = this.executor;
     this.runningIds.add(id);
 
-    // Mark running
-    this.tasks.set(id, {
+    // Mark running + append an in-progress history entry (finalized by
+    // advanceSchedule when the run finishes).
+    const startedAt = new Date().toISOString();
+    const runningRecord: ScheduledTaskRecord = {
       ...task,
       status: "running",
-      lastRunAt: new Date().toISOString(),
-    });
+      lastRunAt: startedAt,
+      updatedAt: startedAt,
+      history: appendRunHistory(task, {
+        runAt: startedAt,
+        status: "running",
+      }),
+    };
+    this.tasks.set(id, runningRecord);
+    this.persistUpsert(runningRecord);
     this.notify();
+
+    // Record the run in the persisted history table. The run id is awaited so
+    // the finalize write can target the exact row.
+    let runId: string | undefined;
+    if (this.persistence) {
+      try {
+        runId = await this.persistence.appendRun(task.id, startedAt);
+      } catch (error) {
+        console.warn("[scheduledTasks] Failed to record task run:", error);
+      }
+    }
 
     try {
       if (!executor) {
         throw new Error("No executor registered (AI Loop unavailable)");
       }
-
       let prompt = task.prompt;
 
       if (task.preScript) {
@@ -498,7 +796,11 @@ class ScheduledTasksStore {
           this.logSkip(task, decision);
           const after = this.tasks.get(id);
           if (after) {
-            this.tasks.set(id, this.advanceSchedule(after, undefined, decision));
+            const next = this.advanceSchedule(after, undefined, decision);
+            this.tasks.set(id, next);
+            // Persist skip counters / reason so they survive restarts (they
+            // previously lived only in memory and were silently lost).
+            this.persistUpsert(next);
           }
           return;
         }
@@ -507,10 +809,13 @@ class ScheduledTasksStore {
           this.logScriptError(task, decision);
           const after = this.tasks.get(id);
           if (after) {
-            this.tasks.set(
-              id,
-              this.advanceSchedule(after, new Error(decision.errorMessage))
+            const next = this.advanceSchedule(
+              after,
+              new Error(decision.errorMessage)
             );
+            this.tasks.set(id, next);
+            // Persist lastError so the failure is visible after a restart.
+            this.persistUpsert(next);
           }
           return;
         }
@@ -527,21 +832,53 @@ class ScheduledTasksStore {
         }
       }
 
-      await executor(prompt, task.name);
+      await executor(prompt, task.name, task.directoryId, {
+        apiProfile: task.apiProfile,
+        basicModel: task.basicModel,
+        model: task.model,
+        thinkingStrength: task.thinkingStrength,
+      });
 
       const after = this.tasks.get(id);
       if (after) {
         const next = this.advanceSchedule(after);
         this.tasks.set(id, next);
+        this.persistUpsert(next);
       }
     } catch (error) {
       const after = this.tasks.get(id);
       if (after) {
         const next = this.advanceSchedule(after, error);
         this.tasks.set(id, next);
+        this.persistUpsert(next);
       }
     } finally {
       this.runningIds.delete(id);
+
+      // Finalize the persisted run entry (best-effort).
+      if (runId && this.persistence) {
+        const after = this.tasks.get(id);
+        const last = after?.history?.[after.history.length - 1];
+        const status: "completed" | "error" =
+          last?.status === "error" ? "error" : "completed";
+        const durationMs =
+          last?.durationMs ??
+          (Number.isNaN(Date.parse(startedAt))
+            ? undefined
+            : Date.now() - Date.parse(startedAt));
+        void this.persistence
+          .finalizeRun(
+            id,
+            runId,
+            status,
+            durationMs,
+            last?.error
+          )
+          .catch((error) =>
+            console.warn("[scheduledTasks] Failed to finalize task run:", error)
+          );
+      }
+
       this.notify();
     }
   };
@@ -633,6 +970,21 @@ class ScheduledTasksStore {
     // advance to the next occurrence. runCount is NOT incremented.
     if (skip) {
       const skipCount = task.skipCount + 1;
+      // Finalize the in-progress history entry appended by execute(): the
+      // pre-script ran to completion and decided to skip — the entry is marked
+      // completed (not an error) with elapsed time, so the UI never shows a
+      // dangling "running" row and the persisted run row finalizes correctly.
+      const history = [...(task.history ?? [])];
+      const last = history[history.length - 1];
+      if (last && last.status === "running") {
+        const startedMs = Date.parse(last.runAt);
+        history[history.length - 1] = {
+          ...last,
+          status: "completed",
+          durationMs: Number.isNaN(startedMs) ? undefined : Date.now() - startedMs,
+          error: undefined,
+        };
+      }
       if (task.schedule.type === "once") {
         return {
           ...task,
@@ -642,6 +994,8 @@ class ScheduledTasksStore {
           lastSkipReason: skip.reason,
           lastError: undefined,
           nextRunAt: undefined,
+          updatedAt: now,
+          history,
         };
       }
       const nextRunMs = computeNextRunMs(task.schedule, Date.now());
@@ -654,6 +1008,8 @@ class ScheduledTasksStore {
         lastError: undefined,
         nextRunAt:
           nextRunMs != null ? new Date(nextRunMs).toISOString() : undefined,
+        updatedAt: now,
+        history,
       };
     }
 
@@ -667,6 +1023,20 @@ class ScheduledTasksStore {
     const runCount = task.runCount + 1;
     const lastRunAt = now;
 
+    // Finalize the in-progress history entry appended by execute(): running →
+    // completed / error, with elapsed time and error message.
+    const history = [...(task.history ?? [])];
+    const last = history[history.length - 1];
+    if (last && last.status === "running") {
+      const startedMs = Date.parse(last.runAt);
+      history[history.length - 1] = {
+        ...last,
+        status: error ? "error" : "completed",
+        durationMs: Number.isNaN(startedMs) ? undefined : Date.now() - startedMs,
+        error: error ? errorMessage : undefined,
+      };
+    }
+
     // once-task: after firing it's done regardless of success
     if (task.schedule.type === "once") {
       return {
@@ -676,6 +1046,8 @@ class ScheduledTasksStore {
         lastRunAt,
         lastError: error ? errorMessage : undefined,
         nextRunAt: undefined,
+        updatedAt: lastRunAt,
+        history,
       };
     }
 
@@ -689,6 +1061,8 @@ class ScheduledTasksStore {
       lastError: error ? errorMessage : undefined,
       nextRunAt:
         nextRunMs != null ? new Date(nextRunMs).toISOString() : undefined,
+      updatedAt: lastRunAt,
+      history,
     };
   };
 
@@ -696,11 +1070,73 @@ class ScheduledTasksStore {
   runNow = (id: string): Promise<void> => {
     return this.execute(id);
   };
+
+  /** Writes the task row back to SQLite (best-effort, never blocks). */
+  private persistUpsert = (record: ScheduledTaskRecord): void => {
+    if (!this.persistence) return;
+    void this.persistence.upsert(toWire(record)).catch((error) => {
+      console.warn("[scheduledTasks] Failed to persist task:", error);
+    });
+  };
 }
 
+/** Applies "missed runs are skipped" semantics to a task loaded from the
+ *  database after a restart. Returns the reconciled task and whether anything
+ *  changed (changed tasks are written back). */
+export const reconcileAfterRestart = (
+  record: ScheduledTaskRecord,
+  now: number
+): { task: ScheduledTaskRecord; changed: boolean } => {
+  let task = record;
+  let changed = false;
+
+  // A run interrupted by the previous shutdown: reset the task itself and
+  // mark the dangling in-flight history entry as errored.
+  if (task.status === "running") {
+    task = { ...task, status: "pending" };
+    changed = true;
+  }
+  const history = [...(task.history ?? [])];
+  const last = history[history.length - 1];
+  if (last && last.status === "running") {
+    history[history.length - 1] = {
+      ...last,
+      status: "error",
+      error: "Interrupted by app shutdown",
+    };
+    task = { ...task, history };
+    changed = true;
+  }
+
+  // Expired schedules: once-tasks are done (they never fire again); recurring
+  // tasks advance to the next plan point.
+  if (!task.paused && task.nextRunAt) {
+    const nextMs = Date.parse(task.nextRunAt);
+    if (!Number.isNaN(nextMs) && nextMs <= now) {
+      if (task.schedule.type === "once") {
+        task = { ...task, status: "completed", nextRunAt: undefined };
+      } else {
+        const next = computeNextRunMs(task.schedule, now);
+        task = {
+          ...task,
+          status: "pending",
+          nextRunAt:
+            next != null ? new Date(next).toISOString() : undefined,
+        };
+      }
+      changed = true;
+    }
+  }
+
+  return { task, changed };
+};
+
 /**
- * Process-wide singleton. Because the store is module-level and holds timers,
- * it dies with the renderer process — satisfying requirement #4. We expose a
- * single instance to both the React hook layer and the app-control bridge.
+ * Process-wide singleton. The store is module-level and owns the timers; we
+ * expose a single instance to both the React hook layer and the app-control
+ * bridge. Hydration starts immediately so persisted tasks appear as soon as
+ * the UI subscribes.
  */
 export const scheduledTasksStore = new ScheduledTasksStore();
+
+void scheduledTasksStore.ensureHydrated();

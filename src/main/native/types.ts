@@ -52,6 +52,7 @@ export type ApiConfigInput = {
   autoCompressThreshold?: number;
   maxRetries?: number;
   retryBaseDelayMs?: number;
+  partialRetryMaxChars?: number;
   systemPromptIdsJson: string;
   customHeaderSchemeId: string;
   configJson: string;
@@ -677,6 +678,18 @@ export type ConversationSearchResult = {
   matchedContent: string;
 };
 
+export type StreamInterruptionReason =
+  | "unexpected_eof"
+  | "read_error"
+  | "idle_timeout"
+  | "explicit_incomplete"
+  | "output_limit";
+
+export type StreamRecoveryOutcome =
+  | "partial_threshold"
+  | "retry_exhausted"
+  | "non_retriable";
+
 export type ChatMessageRecord = {
   id: string;
   role: string;
@@ -687,6 +700,8 @@ export type ChatMessageRecord = {
   responseId: string;
   checkpointId: string;
   toolCallsJson: string;
+  interruptionReason?: StreamInterruptionReason | null;
+  recoveryOutcome?: StreamRecoveryOutcome | null;
   createdAt: string;
 };
 
@@ -770,6 +785,55 @@ export type MemoCountSummary = {
   done: number;
 };
 
+export type ScheduledTaskRunRecord = {
+  /** ISO timestamp (UTC) when this run started. */
+  runAt: string;
+  /** "running" | "completed" | "error". */
+  status: string;
+  /** Elapsed milliseconds of the finished run. */
+  durationMs?: number;
+  /** Error message when status === "error". */
+  error?: string;
+};
+
+/** Full task record persisted in SQLite (camelCase view of the napi struct). */
+export type ScheduledTaskRecord = {
+  id: string;
+  directoryId: string;
+  name: string;
+  prompt: string;
+  /** Serialized ScheduledTaskSchedule JSON. */
+  scheduleJson: string;
+  apiProfile?: string;
+  basicModel?: string;
+  model?: string;
+  thinkingStrength?: string;
+  status: string;
+  paused: boolean;
+  nextRunAt?: string;
+  lastRunAt?: string;
+  runCount: number;
+  lastError?: string;
+  /** Optional pre-script shell command executed before the AI Loop. */
+  preScript?: string;
+  /** Pre-script timeout in ms (default 60000, range 1000-300000). */
+  preScriptTimeoutMs?: number;
+  /** When true, a pre-script failure still proceeds to the AI Loop. */
+  runOnScriptError?: boolean;
+  /** How many times the pre-script skipped the AI Loop. */
+  skipCount: number;
+  /** ISO timestamp of the last skip, if any. */
+  lastSkippedAt?: string;
+  /** Reason from the last skip. */
+  lastSkipReason?: string;
+  createdAt: string;
+  updatedAt: string;
+  history: ScheduledTaskRunRecord[];
+};
+
+/** Write-side shape (same as ScheduledTaskRecord minus history). */
+export type ScheduledTaskRecordInput = Omit<ScheduledTaskRecord, "history">;
+
 export type ResponsesApiMessage = {
   role: "user" | "assistant" | "system" | "developer" | "tool";
   content: string;
@@ -798,6 +862,10 @@ export type ResponsesApiRequest = {
   skipContext?: boolean;
   planMode?: boolean;
   goalMode?: boolean;
+  /** Per-request thinking strength override ("none" | "low" | "medium" |
+   *  "high" | custom). Applied in-memory over the resolved profile's
+   *  config_json; never mutates the stored profile. */
+  thinkingStrength?: string;
   /**
    * Project ROLE.md content of an SSH (`ssh://`) workspace, resolved by the
    * main process via SSH (mirrors RoleEditorPanel's access path). Absent for
@@ -824,6 +892,8 @@ export type ResponsesApiResult = {
   toolCallsJson: string;
   tokenUsage: TokenUsage;
   persistedUserMessageIds: string[];
+  interruptionReason?: StreamInterruptionReason | null;
+  recoveryOutcome?: StreamRecoveryOutcome | null;
 };
 
 export type ResponsesApiStreamChunk = {
@@ -845,6 +915,10 @@ export type McpToolDefinition = {
   name: string;
   description: string;
   inputSchemaJson: string;
+};
+
+export type McpToolStatus = McpToolDefinition & {
+  enabled: boolean;
 };
 
 export type SkillDefinition = {
@@ -1419,7 +1493,7 @@ export type NativeBridge = {
     projectId?: string
   ) => Promise<SkillUninstallResult>;
   listGithubSkills: () => Promise<GithubSkillRecord[]>;
-  listMcpServerTools: (configServerId: string) => Promise<McpToolDefinition[]>;
+  listMcpServerTools: (configServerId: string) => Promise<McpToolStatus[]>;
   listMcpProjectServers: (
     projectId: string
   ) => Promise<McpProjectServerStatus[]>;
@@ -1435,6 +1509,13 @@ export type NativeBridge = {
   setMcpProjectToolEnabled: (
     projectId: string,
     toolName: string,
+    enabled: boolean
+  ) => Promise<void>;
+  setMcpToolEnabled: (toolName: string, enabled: boolean) => Promise<void>;
+  setMcpToolsEnabled: (toolNames: string[], enabled: boolean) => Promise<void>;
+  setMcpProjectToolsEnabled: (
+    projectId: string,
+    toolNames: string[],
     enabled: boolean
   ) => Promise<void>;
   authorizeSensitiveCommand: (command: string, token: string) => Promise<void>;
@@ -1597,6 +1678,20 @@ export type NativeBridge = {
   updateMemoStatus: (memoId: string, status: string) => Promise<MemoRecord>;
   deleteMemo: (memoId: string) => Promise<void>;
   getMemoCountSummary: (directoryId: string) => Promise<MemoCountSummary>;
+  listScheduledTasks: () => Promise<ScheduledTaskRecord[]>;
+  upsertScheduledTask: (
+    input: ScheduledTaskRecordInput
+  ) => Promise<ScheduledTaskRecord>;
+  deleteScheduledTask: (taskId: string) => Promise<void>;
+  clearScheduledTasks: (directoryId: string | null) => Promise<number>;
+  appendScheduledTaskRun: (taskId: string, runAt: string) => Promise<string>;
+  finalizeScheduledTaskRun: (
+    taskId: string,
+    runId: string,
+    status: string,
+    durationMs?: number,
+    error?: string
+  ) => Promise<void>;
   sha256File: (filePath: string) => Promise<string>;
   getImageLibraryRoot: () => Promise<string>;
   getImageLibraryDir: () => Promise<string>;

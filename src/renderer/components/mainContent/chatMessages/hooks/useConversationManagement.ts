@@ -832,14 +832,26 @@ export const useConversationManagement = (
         return;
       }
 
-      // A sub-agent conversation stops accepting messages once its run ends
-      // (the abort above finishes it), so the message must not start a new
-      // loop there. Carry it to the parent conversation's pending queue —
-      // the parent loop resumes right after the interrupted sub-agent tool
-      // call and picks it up at its next iteration boundary — and follow
-      // the user to the parent view so the queued message stays visible.
+      // 子代理会话的"立即发送"必须发给子代理本身（强行发送给谁就是
+      // 谁）：abort 当前回合，消息暂存到会话 ref，子代理循环退出收尾
+      // 时会复用自动发送路径、直接在本会话启动新回合处理它（见
+      // subAgentActivation 的 forceSendMessages 处理），而不是停掉
+      // 子代理后把消息转交父会话。绝不能走 handleSendMessage —— 那是
+      // 主流程路径，会把子代理会话当成主会话发送（工具集/系统提示
+      // 不对，还会被侧边栏 upsert 成"新主会话"）。仅当子代理已终止
+      // （只读、无法再启动回合）时才把消息转交父会话队列。
       const subAgentEvent = ctx.subAgentSessionEvents[sessionKey];
       if (subAgentEvent?.parentConversationId) {
+        const subRef = ctx.sessionsRefData.current.get(sessionKey);
+        if (subRef && !subRef.subAgentTerminated) {
+          subRef.forceSendMessages = [
+            ...(subRef.forceSendMessages ?? []),
+            { text: removed.text, options: removed.options ?? {} },
+          ];
+          handleAbort();
+          ctx.setActivePendingMessages(queue.map((item) => item.text));
+          return;
+        }
         const parentId = subAgentEvent.parentConversationId;
         const parentQueue = ctx.pendingQueueRef.current.get(parentId) ?? [];
         parentQueue.push({

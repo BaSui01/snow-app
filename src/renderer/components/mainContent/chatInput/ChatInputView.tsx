@@ -576,23 +576,44 @@ export const ChatInputView = ({
 
   // 监听浏览器面板元素选择器派发的 element 标签事件，将选取的页面元素
   // 以 element chip 形式插入编辑区（与 @ 文件 / 拖拽标签同一套编码体系）。
+  const insertElementTag = useCallback(
+    (tag: ElementTag) => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+      }
+      insertHtmlAtSelection(createElementChipHtml(tag));
+      syncContent();
+    },
+    [syncContent, textareaRef]
+  );
+
   useEffect(() => {
     const handleInsertElementTag = (event: Event) => {
       const tag = (event as CustomEvent<ElementTag>).detail;
       if (!tag) {
         return;
       }
-      if (textareaRef.current) {
-        textareaRef.current.focus();
-      }
-      insertHtmlAtSelection(createElementChipHtml(tag));
-      syncContent();
+      insertElementTag(tag);
     };
     window.addEventListener(INSERT_ELEMENT_TAG_EVENT, handleInsertElementTag);
     return () => {
       window.removeEventListener(INSERT_ELEMENT_TAG_EVENT, handleInsertElementTag);
     };
-  }, [syncContent, textareaRef]);
+  }, [insertElementTag]);
+
+  // 独立浏览器窗口确认的元素选择结果：经主进程转发到本窗口后同样插入
+  // element chip（INSERT_ELEMENT_TAG_EVENT 无法跨渲染进程传播）。
+  useEffect(() => {
+    return window.snow.onElementTagInserted((tag) => {
+      insertElementTag({
+        url: tag.url,
+        tag: tag.tag,
+        label: tag.label,
+        text: tag.text,
+        note: tag.note,
+      });
+    });
+  }, [insertElementTag]);
 
   // F4 网页快照结果回填：按 requestId 匹配 pending 表，更新对应 web chip
   // 的快照字段（发送时 encodeWebTag 序列化携带，AI 无需再开浏览器），

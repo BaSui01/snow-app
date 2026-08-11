@@ -240,7 +240,43 @@ pub fn get_sub_agent_config(
         .map_err(|error| database::database_error(database_path, "get sub-agent config", error))
 }
 
+/// 子代理的工具列表必须满足的最低能力约束：不能为空，且必须至少包含
+/// 一个读取类工具（或通配符 `*`）。
+fn validate_sub_agent_tools(tools_json: &str) -> Result<()> {
+    let tools: Vec<String> =
+        serde_json::from_str(tools_json).map_err(|error| {
+            Error::from_reason(format!(
+                "Sub-agent toolsJson must be a valid JSON string array: {error}"
+            ))
+        })?;
+    let tools = tools
+        .into_iter()
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+        .collect::<std::collections::HashSet<_>>();
+    if tools.is_empty() {
+        return Err(Error::from_reason(
+            "Sub-agent toolsJson must not be empty: at least one read tool (e.g. filesystem-read) is required",
+        ));
+    }
+    if tools.contains("*") {
+        return Ok(());
+    }
+    const READ_TOOLS: &[&str] = &[
+        "filesystem-read",
+        "grep-search",
+    ];
+    if !tools.iter().any(|tool| READ_TOOLS.contains(&tool.as_str())) {
+        return Err(Error::from_reason(format!(
+            "Sub-agent toolsJson must include at least one read tool (e.g. filesystem-read); got: {}",
+            tools.into_iter().collect::<Vec<_>>().join(", ")
+        )));
+    }
+    Ok(())
+}
+
 pub fn upsert_sub_agent_config(database_path: &Path, item: &SubAgentConfigInput) -> Result<()> {
+    validate_sub_agent_tools(&item.tools_json)?;
     database::open_connection(database_path)
         .and_then(|connection| upsert_sub_agent_config_with_connection(&connection, item))
         .map_err(|error| database::database_error(database_path, "upsert sub-agent config", error))

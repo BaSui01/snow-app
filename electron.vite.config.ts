@@ -43,6 +43,8 @@ export default defineConfig({
           index: resolve(__dirname, "src/renderer/index.html"),
           // 桌面宠物窗口页面（独立入口，输出 pet.html）。
           pet: resolve(__dirname, "src/renderer/pet.html"),
+          // 独立浏览器窗口页面（「在新窗口中打开」的浏览器 tab，输出 browserWindow.html）。
+          browserWindow: resolve(__dirname, "src/renderer/browserWindow.html"),
         },
         output: {
           manualChunks: {

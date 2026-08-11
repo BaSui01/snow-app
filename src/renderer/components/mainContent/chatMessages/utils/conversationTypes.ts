@@ -301,6 +301,11 @@ export type ConversationSessionRef = {
    *  box is hidden and handleSendMessage refuses to start a new loop in it.
    *  Only meaningful for sub-agent sessions; absent for main conversations. */
   subAgentTerminated?: boolean;
+  /** 用户在子代理运行中点击"立即发送"暂存的消息。子代理循环被
+   *  handleAbort 中断退出时（见 subAgentActivation 收尾）若检测到该数组
+   *  非空，则跳过终止收尾，直接在子代理会话启动新回合处理这些消息
+   *  （"强行发送给谁就是谁"），而不是转交父会话。 */
+  forceSendMessages?: { text: string; options: ChatInputSendOptions }[];
 };
 
 /** Global Plan/Goal Mode defaults loaded from persisted settings. These are

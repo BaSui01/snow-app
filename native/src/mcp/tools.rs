@@ -672,6 +672,11 @@ pub async fn collect_allowed_mcp_tools(
         return Ok(all_tools);
     }
 
+    // 部分工具不可用（被项目 scope 禁用、默认禁用未启用、条件工具如
+    // codebase/imagegen 未就绪、外部 MCP 服务器禁用或连接失败）时，跳过
+    // 不可用工具、保留可用工具，而不是整体失败。整体失败会让 provider
+    // 层把子代理请求静默降级为无工具（tools=None），模型只能把工具调用
+    // 输出为纯文本（表现为"输出奇怪的 tool_call 文本后立即结束"）。
     let available_names = all_tools
         .iter()
         .map(McpTool::full_name)
@@ -681,13 +686,10 @@ pub async fn collect_allowed_mcp_tools(
         .cloned()
         .collect::<Vec<_>>();
     if !unavailable_names.is_empty() {
-        return Err(Error::new(
-            Status::GenericFailure,
-            format!(
-                "Sub-agent configured tools are unavailable or disabled for the current project: {}",
-                unavailable_names.join(", ")
-            ),
-        ));
+        eprintln!(
+            "Sub-agent configured tools are unavailable or disabled for the current project (skipped): {}",
+            unavailable_names.join(", ")
+        );
     }
 
     Ok(all_tools

@@ -826,6 +826,28 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       [tabs, handleCloseTab]
     );
 
+    // 浏览器 tab「在新窗口中打开」：主进程创建独立 BrowserWindow 承载
+    // 同一实例（继承 instanceId，browser.rs 工具仍可继续操作），
+    // 成功后关闭原 tab 完成迁移。
+    const handleOpenBrowserInNewWindow = useCallback(
+      (tabId: string): void => {
+        const tab = tabs.find((t) => t.id === tabId && t.type === "browser");
+        if (!tab) {
+          return;
+        }
+        const browserTab = tab.data as BrowserTabData;
+        void window.snow
+          .openDetachedBrowserWindow(browserTab.instanceId, browserTab.url)
+          .then(() => {
+            handleCloseTab(tabId);
+          })
+          .catch((error) => {
+            console.error("Failed to open browser in new window", error);
+          });
+      },
+      [tabs, handleCloseTab]
+    );
+
     const handleFocusBrowserTab = useCallback(
       (instanceId: string): boolean => {
         const tab = tabs.find(
@@ -1091,6 +1113,13 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       tabContextMenu !== null &&
       tabContextMenu.tabId !== null &&
       tabContextMenu.tabId !== GIT_TAB_ID;
+    // 目标 tab 是否为浏览器 tab：决定是否提供「在新窗口中打开」。
+    const contextMenuTargetIsBrowser =
+      tabContextMenu !== null && tabContextMenu.tabId !== null
+        ? tabs.some(
+            (t) => t.id === tabContextMenu.tabId && t.type === "browser"
+          )
+        : false;
     const hasClosableTabs = tabs.some((t) => t.id !== GIT_TAB_ID);
     const hasClosableOthers =
       contextMenuTargetIndex >= 0 &&
@@ -1240,6 +1269,16 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
               setTabContextMenu(null);
               handleOpenBrowserTab();
             }}
+            onOpenInNewWindow={
+              contextMenuTargetIsBrowser
+                ? () => {
+                    setTabContextMenu(null);
+                    if (tabContextMenu.tabId !== null) {
+                      handleOpenBrowserInNewWindow(tabContextMenu.tabId);
+                    }
+                  }
+                : undefined
+            }
             onCloseTab={() => {
               setTabContextMenu(null);
               if (tabContextMenu.tabId !== null) {

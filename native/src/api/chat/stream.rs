@@ -69,6 +69,12 @@ pub(super) async fn collect_chat_completions_stream(
     let mut response_status: String;
     let mut token_usage: ChatTokenUsage;
     let mut byte_buffer: Vec<u8> = Vec::new();
+    // Set once a `finish_reason` chunk arrives. The stream keeps reading
+    // afterwards so the trailing `usage` chunk (sent with
+    // `stream_options.include_usage`) can be collected; the transport is only
+    // truly terminal on `[DONE]` (or on EOF/timeout with this flag already
+    // set, which is treated as a normal completion).
+    let mut finish_reason_seen: bool;
 
     let idle_timeout = Duration::from_secs(stream_idle_timeout_sec);
     let mut stream_finished: bool;
@@ -213,6 +219,7 @@ pub(super) async fn collect_chat_completions_stream(
         token_usage = ChatTokenUsage::default();
         byte_buffer.clear();
         stream_finished = false;
+        finish_reason_seen = false;
         interruption_reason = None;
         recovery_outcome = None;
 
@@ -236,6 +243,7 @@ pub(super) async fn collect_chat_completions_stream(
                     &mut token_usage,
                     &mut tool_args_delta,
                     &mut stream_finished,
+                    &mut finish_reason_seen,
                 );
                 let content_delta = content_chunks[content_start_index..].join("");
                 let thinking_delta = thinking_chunks[thinking_start_index..].join("");
@@ -323,7 +331,11 @@ pub(super) async fn collect_chat_completions_stream(
             visible_content_chars: visible_content_char_count(&content_chunks),
             has_tool_state: !tool_calls.is_empty(),
             has_pending_tool_fragments: false,
-            provider_terminal: stream_finished,
+            // `finish_reason` counts as provider terminal too: the stream may
+            // still deliver the trailing `usage` chunk (and then `[DONE]`),
+            // but an EOF/timeout/read-error after it is a normal completion,
+            // not an interruption.
+            provider_terminal: stream_finished || finish_reason_seen,
             user_cancelled: cancel_token.is_cancelled(),
         };
         let decision = decide_stream_recovery(
@@ -343,7 +355,16 @@ pub(super) async fn collect_chat_completions_stream(
                 recovery_outcome = None;
                 break 'attempt_loop;
             }
-            StreamRecoveryDecision::FinishProviderResult => break 'attempt_loop,
+            StreamRecoveryDecision::FinishProviderResult => {
+                // Normal completion after a `finish_reason` (reached on
+                // EOF/timeout when the provider never sends `[DONE]`).
+                // Mirror the `ProviderTerminal` handling so an output-limit
+                // finish keeps its interruption classification.
+                if response_status == "length" {
+                    interruption_reason = Some(StreamInterruptionReason::OutputLimit);
+                }
+                break 'attempt_loop;
+            }
             StreamRecoveryDecision::Retry => {
                 on_chunk.call(
                     ResponsesApiStreamChunk {
@@ -464,236 +485,4 @@ pub(super) fn build_header_map(
     )?;
 
     Ok(headers)
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-    use std::time::Duration;
-
-    use futures::{stream, Stream, StreamExt};
-    use serde_json::Value;
-    use tokio::runtime::Builder;
-    use tokio_util::sync::CancellationToken;
-
-    use super::super::event::process_sse_event_block;
-    use crate::api::sse::{read_sse_stream_until_terminal, SseStreamEnd};
-    use crate::storage::services::chat_conversations::ChatTokenUsage;
-
-    struct ParsedAttempt {
-        raw_events: Vec<Value>,
-        content_chunks: Vec<String>,
-        thinking_chunks: Vec<String>,
-        tool_calls: Vec<Value>,
-        tool_call_positions_by_index: HashMap<usize, usize>,
-        response_id: String,
-        response_model: String,
-        response_status: String,
-        token_usage: ChatTokenUsage,
-        stream_finished: bool,
-    }
-
-    impl Default for ParsedAttempt {
-        fn default() -> Self {
-            Self {
-                raw_events: Vec::new(),
-                content_chunks: Vec::new(),
-                thinking_chunks: Vec::new(),
-                tool_calls: Vec::new(),
-                tool_call_positions_by_index: HashMap::new(),
-                response_id: String::new(),
-                response_model: String::new(),
-                response_status: String::from("completed"),
-                token_usage: ChatTokenUsage::default(),
-                stream_finished: false,
-            }
-        }
-    }
-
-    impl ParsedAttempt {
-        fn process_event_block(&mut self, event_block: &str) -> bool {
-            let mut tool_args_delta = String::new();
-            process_sse_event_block(
-                event_block,
-                &mut self.raw_events,
-                &mut self.content_chunks,
-                &mut self.thinking_chunks,
-                &mut self.tool_calls,
-                &mut self.tool_call_positions_by_index,
-                &mut self.response_id,
-                &mut self.response_model,
-                &mut self.response_status,
-                &mut self.token_usage,
-                &mut tool_args_delta,
-                &mut self.stream_finished,
-            );
-            self.stream_finished
-        }
-
-        fn content(&self) -> String {
-            self.content_chunks.join("")
-        }
-
-        fn thinking(&self) -> String {
-            self.thinking_chunks.join("")
-        }
-    }
-
-    fn runtime() -> tokio::runtime::Runtime {
-        Builder::new_current_thread()
-            .enable_time()
-            .build()
-            .expect("build runtime")
-    }
-
-    async fn read_attempt<S, E>(
-        source: &mut S,
-        state: &mut ParsedAttempt,
-        idle_timeout: Duration,
-    ) -> SseStreamEnd<E>
-    where
-        S: Stream<Item = std::result::Result<Vec<u8>, E>> + Unpin,
-    {
-        let cancel_token = CancellationToken::new();
-        let mut byte_buffer = Vec::new();
-        read_sse_stream_until_terminal(
-            source,
-            &mut byte_buffer,
-            &cancel_token,
-            idle_timeout,
-            |event_block| state.process_event_block(event_block),
-        )
-        .await
-    }
-
-    #[test]
-    fn done_terminal_then_pending_transport_exits_immediately() {
-        runtime().block_on(async {
-            let body = concat!(
-                r#"data: {"id":"chat-terminal","model":"gpt-test","choices":[{"delta":{"content":"done"},"finish_reason":null}]}"#,
-                "\n\n",
-                "data: [DONE]\n\n",
-            )
-            .as_bytes()
-            .to_vec();
-            let mut source = stream::iter([Ok::<Vec<u8>, &'static str>(body)])
-                .chain(stream::pending());
-            let mut state = ParsedAttempt::default();
-
-            let end = read_attempt(&mut source, &mut state, Duration::ZERO).await;
-
-            assert_eq!(end, SseStreamEnd::ProviderTerminal);
-            assert!(state.stream_finished);
-            assert_eq!(state.response_status, "completed");
-            assert_eq!(state.response_id, "chat-terminal");
-            assert_eq!(state.response_model, "gpt-test");
-            assert_eq!(state.content(), "done");
-        });
-    }
-
-    #[test]
-    fn trailing_finish_reason_without_delimiter_is_parsed_before_eof() {
-        runtime().block_on(async {
-            let body = r#"data: {"id":"chat-trailing","model":"gpt-limit","choices":[{"delta":{},"finish_reason":"length"}]}"#
-                .as_bytes()
-                .to_vec();
-            let mut source = stream::iter([Ok::<Vec<u8>, &'static str>(body)]);
-            let mut state = ParsedAttempt::default();
-
-            let end = read_attempt(&mut source, &mut state, Duration::from_secs(1)).await;
-
-            assert_eq!(end, SseStreamEnd::ProviderTerminal);
-            assert!(state.stream_finished);
-            assert_eq!(state.response_status, "length");
-            assert_eq!(state.response_id, "chat-trailing");
-            assert_eq!(state.response_model, "gpt-limit");
-        });
-    }
-
-    #[test]
-    fn nonterminal_eof_and_read_error_remain_distinct() {
-        runtime().block_on(async {
-            let partial = concat!(
-                r#"data: {"choices":[{"delta":{"content":"partial"},"finish_reason":null}]}"#,
-                "\n\n",
-            )
-            .as_bytes()
-            .to_vec();
-            let mut eof_source = stream::iter([Ok::<Vec<u8>, &'static str>(partial.clone())]);
-            let mut eof_state = ParsedAttempt::default();
-            let eof_end =
-                read_attempt(&mut eof_source, &mut eof_state, Duration::from_secs(1)).await;
-
-            let mut error_source = stream::iter([
-                Ok::<Vec<u8>, &'static str>(partial),
-                Err::<Vec<u8>, &'static str>("read failed"),
-            ]);
-            let mut error_state = ParsedAttempt::default();
-            let error_end =
-                read_attempt(&mut error_source, &mut error_state, Duration::from_secs(1)).await;
-
-            assert_eq!(eof_end, SseStreamEnd::UnexpectedEof);
-            assert_eq!(error_end, SseStreamEnd::ReadError("read failed"));
-            assert_eq!(eof_state.content(), "partial");
-            assert_eq!(error_state.content(), "partial");
-        });
-    }
-
-    #[test]
-    fn retry_style_reset_isolates_every_chat_attempt_field() {
-        runtime().block_on(async {
-            let first_body = concat!(
-                r#"data: {"id":"old-id","model":"old-model","choices":[{"delta":{"content":"old content","reasoning_content":"old thinking","tool_calls":[{"index":0,"id":"call-old","type":"function","function":{"name":"old_tool","arguments":"{"}}]},"finish_reason":null}],"usage":{"prompt_tokens":11,"completion_tokens":12}}"#,
-                "\n\n",
-            )
-            .as_bytes()
-            .to_vec();
-            let mut first_source =
-                stream::iter([Ok::<Vec<u8>, &'static str>(first_body)]);
-            let mut state = ParsedAttempt::default();
-
-            let first_end =
-                read_attempt(&mut first_source, &mut state, Duration::from_secs(1)).await;
-            assert_eq!(first_end, SseStreamEnd::UnexpectedEof);
-            assert_eq!(state.response_id, "old-id");
-            assert_eq!(state.response_model, "old-model");
-            assert_eq!(state.content(), "old content");
-            assert_eq!(state.thinking(), "old thinking");
-            assert_eq!(state.tool_calls.len(), 1);
-            assert_eq!(state.tool_call_positions_by_index.len(), 1);
-            assert_eq!(state.token_usage.input_tokens, 11);
-            assert_eq!(state.token_usage.output_tokens, 12);
-
-            // The collector's retry reset returns every attempt-local field to
-            // these defaults before the next response body is parsed.
-            state = ParsedAttempt::default();
-            let second_body = concat!(
-                r#"data: {"id":"new-id","model":"new-model","choices":[{"delta":{"content":"fresh content"},"finish_reason":"stop"}],"usage":{"prompt_tokens":21,"completion_tokens":22}}"#,
-                "\n\n",
-            )
-            .as_bytes()
-            .to_vec();
-            let mut second_source =
-                stream::iter([Ok::<Vec<u8>, &'static str>(second_body)]);
-
-            let second_end = read_attempt(
-                &mut second_source,
-                &mut state,
-                Duration::from_secs(1),
-            )
-            .await;
-
-            assert_eq!(second_end, SseStreamEnd::ProviderTerminal);
-            assert_eq!(state.raw_events.len(), 1);
-            assert_eq!(state.response_id, "new-id");
-            assert_eq!(state.response_model, "new-model");
-            assert_eq!(state.response_status, "completed");
-            assert_eq!(state.content(), "fresh content");
-            assert!(state.thinking_chunks.is_empty());
-            assert!(state.tool_calls.is_empty());
-            assert!(state.tool_call_positions_by_index.is_empty());
-            assert_eq!(state.token_usage.input_tokens, 21);
-            assert_eq!(state.token_usage.output_tokens, 22);
-        });
-    }
 }

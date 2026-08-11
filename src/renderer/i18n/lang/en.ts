@@ -3016,6 +3016,7 @@ export const en = {
   "rightPanel.closeTabsToLeft": "Close Tabs to the Left",
   "rightPanel.tabContextNewTerminal": "New Terminal",
   "rightPanel.tabContextNewBrowser": "New Browser",
+  "rightPanel.openInNewWindow": "Open in new window",
   "rightPanel.closeDiff": "Close diff",
   "rightPanel.selectFileToViewDiff": "Select a file to view its diff",
   "rightPanel.noRepositorySelected": "No repository selected",

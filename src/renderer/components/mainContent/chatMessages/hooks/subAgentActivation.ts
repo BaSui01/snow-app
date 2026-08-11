@@ -96,6 +96,64 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
     let config: Awaited<ReturnType<typeof window.snow.getSubAgentConfig>> =
       null;
 
+    // 子代理回合循环。try 块内赋值（依赖运行时解析的配置），catch
+    // 路径（第一轮失败/被中断）也需要它来继续处理用户强行发送的消息。
+    let subAgentRunLoop: (
+      subMessages: {
+        role: "user" | "assistant" | "system" | "developer" | "tool";
+        content: string;
+      }[],
+      resumeAfterCompaction?: boolean
+    ) => Promise<string> = async () => "";
+
+    // 用户强行发送的循环处理（sendPendingMessageNow 已 handleAbort
+    // 中断当前回合并把消息暂存到会话的 forceSendMessages）：复用自动
+    // 发送路径 —— 暂存消息作为新回合继续在本子代理会话处理，保持
+    // 子代理的模型/API 配置/工具集/系统提示，绝不转交父会话、也绝不
+    // 走主流程 handleSendMessage（那会把子代理当成主会话发送，还会
+    // 被侧边栏 upsert 成"新主会话"）。直到没有新的强行发送为止。
+    const runForceSendLoop = async (): Promise<void> => {
+      const activeSubConvId = subConversationId;
+      if (!activeSubConvId) {
+        return;
+      }
+      while (true) {
+        const ref = ctx.sessionsRefData.current.get(activeSubConvId);
+        const forceSends = ref?.forceSendMessages;
+        if (!forceSends || forceSends.length === 0) {
+          return;
+        }
+        ref!.forceSendMessages = undefined;
+        const forceSendText = forceSends
+          .map((item) => item.text)
+          .join("\n\n");
+        const forceUserMsg: ChatConversationMessage = {
+          id: createMessageId("user"),
+          role: "user",
+          content: forceSendText,
+          timestamp: formatMessageTime(),
+          status: "sent",
+        };
+        ctx.updateSessionMessages(activeSubConvId, (currentMessages) => [
+          ...currentMessages,
+          forceUserMsg,
+        ]);
+        // handleAbort 已复位运行状态：新一轮回合必须恢复
+        // isSending/isAbortRequested/流式标记（与子代理激活时的
+        // 初始化一致），handleAbort 与暂停检查才能正常工作。
+        const runRef = ctx.sessionsRefData.current.get(activeSubConvId);
+        if (runRef) {
+          runRef.isSending = true;
+          runRef.isAbortRequested = false;
+        }
+        ctx.updateSessionField(activeSubConvId, "isStreaming", true);
+        resetRunStreamMetrics(ctx, activeSubConvId);
+        ctx.updateSessionField(activeSubConvId, "streamStartedAt", Date.now());
+        ctx.addStreamingId(activeSubConvId);
+        await subAgentRunLoop([{ role: "user", content: forceSendText }]);
+      }
+    };
+
     // Carry queued user insertions from a sub-agent conversation over to the
     // parent conversation's pending queue. Called when a sub-agent run ends
     // (normally or with a failure): the sub conversation becomes read-only,
@@ -253,7 +311,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
       const isSubCancelled = (): boolean =>
         !!ctx.sessionsRefData.current.get(subConvId)?.isAbortRequested;
 
-      const subAgentRunLoop = async (
+      subAgentRunLoop = async (
         subMessages: {
           role: "user" | "assistant" | "system" | "developer" | "tool";
           content: string;
@@ -928,6 +986,16 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
       ]);
 
       const subFinalRef = ctx.sessionsRefData.current.get(subConvId);
+      // 用户在子代理运行中点击"立即发送"：先消费暂存消息继续回合，
+      // 再统一走终止收尾（terminated + cancelled 广播 + 队列转交
+      // 父会话）。
+      if (subFinalRef?.forceSendMessages?.length) {
+        try {
+          await runForceSendLoop();
+        } catch {
+          // 强行发送回合异常：继续统一收尾（失败路径）
+        }
+      }
       if (subFinalRef) {
         // Mark the sub-agent conversation read-only before clearing isSending:
         // once the run ends no new agent loop may start in it, and this
@@ -1016,6 +1084,15 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
     } catch (err) {
       if (subConversationId) {
         const subCatchRef = ctx.sessionsRefData.current.get(subConversationId);
+        // 与正常路径相同的强行发送处理：先消费暂存消息继续回合，
+        // 再统一走失败收尾。
+        if (subCatchRef?.forceSendMessages?.length) {
+          try {
+            await runForceSendLoop();
+          } catch {
+            // 强行发送回合也失败：照常走失败收尾
+          }
+        }
         if (subCatchRef) {
           // A failed sub-agent conversation is read-only as well.
           subCatchRef.subAgentTerminated = true;

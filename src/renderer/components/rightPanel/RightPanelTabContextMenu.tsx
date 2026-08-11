@@ -2,6 +2,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   CopyX,
+  ExternalLink,
   Globe,
   Terminal,
   X,
@@ -27,6 +28,8 @@ type RightPanelTabContextMenuProps = {
   onCloseToLeft?: () => void;
   /** 关闭所有标签页（tab 栏空白处右键，或存在可关闭 tab 时提供）。 */
   onCloseAllTabs?: () => void;
+  /** 浏览器 tab 专属：在新窗口中打开该浏览器实例（打开后原 tab 关闭）。 */
+  onOpenInNewWindow?: () => void;
   onNewTerminal: () => void;
   onNewBrowser: () => void;
   onCloseTab: () => void;
@@ -46,6 +49,7 @@ export function RightPanelTabContextMenu({
   onCloseToRight,
   onCloseToLeft,
   onCloseAllTabs,
+  onOpenInNewWindow,
   onNewTerminal,
   onNewBrowser,
   onCloseTab,
@@ -71,6 +75,19 @@ export function RightPanelTabContextMenu({
       onClick: onNewBrowser,
     },
   ];
+
+  // 浏览器 tab 专属：把当前实例弹出到独立浏览器窗口（继承实例 id，
+  // 原 tab 在打开成功后关闭）。
+  if (onOpenInNewWindow) {
+    items.push({
+      id: "open-in-new-window",
+      label: t("rightPanel.openInNewWindow", {
+        defaultValue: "Open in new window",
+      }),
+      icon: <ExternalLink size={13} strokeWidth={1.8} />,
+      onClick: onOpenInNewWindow,
+    });
+  }
 
   // 分隔线下方按 VS Code 习惯组织关闭类菜单项：
   // 关闭标签页 → 关闭其他 → 关闭右侧 → 关闭左侧 → 关闭所有。

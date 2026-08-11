@@ -2832,6 +2832,7 @@ export const zhTW = {
   "rightPanel.closeTabsToLeft": "關閉左側標籤頁",
   "rightPanel.tabContextNewTerminal": "新增終端",
   "rightPanel.tabContextNewBrowser": "新增瀏覽器",
+  "rightPanel.openInNewWindow": "在新視窗中開啟",
   "rightPanel.closeDiff": "關閉差異",
   "rightPanel.selectFileToViewDiff": "選擇檔案以檢視差異",
   "rightPanel.noRepositorySelected": "未選擇儲存庫",

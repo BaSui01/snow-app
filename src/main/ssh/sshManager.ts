@@ -120,8 +120,8 @@ export type SshFileWriteOptions = {
 };
 
 /**
- * Internal writes are limited to Snow-managed remote-job files. They bypass
- * user-file CAS because the job service owns those paths and their lifecycle.
+ * Internal writes are limited to Snow-managed SSH helper files. They bypass
+ * user-file CAS because Snow owns those paths and their lifecycle.
  */
 export type SshInternalFileWriteOptions = {
   signal?: AbortSignal;

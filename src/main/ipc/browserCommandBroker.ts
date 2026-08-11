@@ -12,6 +12,10 @@ const BROWSER_COMMAND_RESPONSE_CHANNEL = "browser:command-response";
 const BROWSER_COMMAND_TIMEOUT_MS = 125_000;
 
 const browserRenderers = new Map<number, WebContents>();
+// instanceId -> 持有该实例的渲染进程。浏览器 tab「在新窗口中打开」后实例
+// 随窗口迁移到新渲染进程，命令须按 instanceId 精确路由到持有者，避免广播
+// 导致多窗口重复执行（如 navigate 被两次触发）。
+const browserInstanceRenderers = new Map<string, WebContents>();
 const pendingCommands = new Map<
   string,
   {
@@ -20,6 +24,14 @@ const pendingCommands = new Map<
     timer: NodeJS.Timeout;
   }
 >();
+
+const cleanupRendererInstances = (renderer: WebContents): void => {
+  for (const [instanceId, owner] of browserInstanceRenderers) {
+    if (owner === renderer) {
+      browserInstanceRenderers.delete(instanceId);
+    }
+  }
+};
 
 const failPendingCommandsForRenderer = (rendererId: number): void => {
   for (const [commandId, pending] of pendingCommands) {
@@ -37,20 +49,69 @@ export const registerBrowserRenderer = (webContents: WebContents): void => {
   browserRenderers.set(rendererId, webContents);
   webContents.once("destroyed", () => {
     browserRenderers.delete(rendererId);
+    // 渲染进程销毁（窗口关闭/崩溃）时清理其上报的全部实例路由。
+    cleanupRendererInstances(webContents);
     failPendingCommandsForRenderer(rendererId);
   });
 };
 
 export const unregisterBrowserRenderer = (webContents: WebContents): void => {
   browserRenderers.delete(webContents.id);
+  cleanupRendererInstances(webContents);
   failPendingCommandsForRenderer(webContents.id);
+};
+
+/**
+ * 记录浏览器实例与其宿主渲染进程的归属关系（渲染端 registerBrowserMcpInstance
+ * 时上报）。实例在窗口间迁移（如独立窗口打开）时以最新上报为准。
+ */
+export const registerBrowserInstanceRenderer = (
+  instanceId: string,
+  webContents: WebContents
+): void => {
+  browserInstanceRenderers.set(instanceId, webContents);
+};
+
+/** 移除实例路由（仅当实例仍归属该渲染进程时删除，避免覆盖迁移后的新归属）。 */
+export const unregisterBrowserInstanceRenderer = (
+  instanceId: string,
+  webContents: WebContents
+): void => {
+  if (browserInstanceRenderers.get(instanceId) === webContents) {
+    browserInstanceRenderers.delete(instanceId);
+  }
+};
+
+/**
+ * 解析命令目标渲染进程：命令显式携带 instanceId 时按实例路由（实例可能
+ * 已迁移到独立浏览器窗口）；否则回退到发起方渲染进程（原行为）。
+ */
+const resolveCommandRenderer = (
+  source: WebContents,
+  command: BrowserCommand
+): WebContents | undefined => {
+  let renderer = browserRenderers.get(source.id);
+  try {
+    const args = JSON.parse(command.argsJson) as { instanceId?: unknown };
+    const requested =
+      typeof args.instanceId === "string" ? args.instanceId.trim() : "";
+    if (requested && requested.toLowerCase() !== "current") {
+      const targeted = browserInstanceRenderers.get(requested);
+      if (targeted && !targeted.isDestroyed()) {
+        renderer = targeted;
+      }
+    }
+  } catch {
+    // argsJson 解析失败：回退到发起方渲染进程。
+  }
+  return renderer;
 };
 
 export const dispatchBrowserCommand = async (
   source: WebContents,
   command: BrowserCommand
 ): Promise<string> => {
-  const renderer = browserRenderers.get(source.id);
+  const renderer = resolveCommandRenderer(source, command);
   if (!renderer || renderer.isDestroyed()) {
     throw new Error("Browser renderer is not available");
   }

@@ -47,6 +47,9 @@ export const registerBrowserMcpInstance = (
 ): (() => void) => {
   instances.set(instanceId, handler);
   focusedInstanceId = instanceId;
+  // 上报实例归属到主进程：命令按 instanceId 路由时能定位到本渲染进程
+  // （实例弹出到独立浏览器窗口后归属随窗口迁移）。
+  window.snow.notifyBrowserInstanceRegistered(instanceId);
   const waiters = instanceWaiters.get(instanceId);
   if (waiters) {
     for (const waiter of waiters) {
@@ -59,6 +62,7 @@ export const registerBrowserMcpInstance = (
   return () => {
     if (instances.get(instanceId) === handler) {
       instances.delete(instanceId);
+      window.snow.notifyBrowserInstanceUnregistered(instanceId);
       if (focusedInstanceId === instanceId) {
         focusedInstanceId = getFallbackInstanceId();
       }

@@ -40,6 +40,9 @@ const MCP_TOOL_CHUNK_CHANNEL = "mcp:call-tool:chunk";
 const BROWSER_COMMAND_CHANNEL = "browser:command";
 const BROWSER_COMMAND_RESPONSE_CHANNEL = "browser:command-response";
 const BROWSER_OPEN_TAB_CHANNEL = "browser:open-tab";
+// 独立浏览器窗口确认元素选择后转发到主窗口聊天输入框。
+const ELEMENT_TAG_FORWARD_CHANNEL = "element-tag:forward";
+const ELEMENT_TAG_INSERT_CHANNEL = "element-tag:insert";
 const TERMINAL_COMMAND_CHANNEL = "terminal:command";
 const TERMINAL_COMMAND_RESPONSE_CHANNEL = "terminal:command-response";
 const USER_QUESTION_CHANNEL = "user-question:request";
@@ -145,6 +148,56 @@ ipcRenderer.on(
     };
     for (const subscriber of browserOpenTabSubscribers) {
       deliverBrowserOpenTab(subscriber, event);
+    }
+  }
+);
+
+/** 浏览器元素选择结果（与渲染端 ElementTag 同构，preload 独立定义避免跨端 import）。 */
+export type ElementTagPayload = {
+  url: string;
+  tag: string;
+  label: string;
+  text: string;
+  note: string;
+};
+
+type ElementTagInsertSubscriber = (tag: ElementTagPayload) => void;
+
+const elementTagInsertSubscribers = new Set<ElementTagInsertSubscriber>();
+
+const isElementTagPayload = (value: unknown): value is ElementTagPayload => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.url === "string" &&
+    typeof value.tag === "string" &&
+    typeof value.label === "string" &&
+    typeof value.text === "string" &&
+    typeof value.note === "string"
+  );
+};
+
+const deliverElementTagInsert = (
+  subscriber: ElementTagInsertSubscriber,
+  tag: ElementTagPayload
+): void => {
+  try {
+    subscriber(tag);
+  } catch (error) {
+    console.error("[element-tag] Insert subscriber failed", error);
+  }
+};
+
+// 主进程转发独立浏览器窗口确认的元素选择结果。
+ipcRenderer.on(
+  ELEMENT_TAG_INSERT_CHANNEL,
+  (_event: IpcRendererEvent, payload: unknown): void => {
+    if (!isElementTagPayload(payload)) {
+      return;
+    }
+    for (const subscriber of elementTagInsertSubscribers) {
+      deliverElementTagInsert(subscriber, payload);
     }
   }
 );
@@ -557,6 +610,26 @@ export const systemApi = {
       browserOpenTabSubscribers.delete(callback);
     };
   },
+  /**
+   * 将元素选择结果转发给主窗口聊天输入框（独立浏览器窗口专用：
+   * 该窗口内没有 ChatInputView，INSERT_ELEMENT_TAG_EVENT 事件无法跨
+   * 渲染进程到达主窗口，须经主进程转发）。
+   */
+  forwardElementTagToChat: (tag: ElementTagPayload): void => {
+    ipcRenderer.send(ELEMENT_TAG_FORWARD_CHANNEL, tag);
+  },
+  /**
+   * 订阅主进程转发过来的元素选择结果（主窗口 ChatInputView 使用），
+   * 插入为 element chip。返回取消订阅函数。
+   */
+  onElementTagInserted: (
+    callback: (tag: ElementTagPayload) => void
+  ): (() => void) => {
+    elementTagInsertSubscribers.add(callback);
+    return () => {
+      elementTagInsertSubscribers.delete(callback);
+    };
+  },
   setMcpToolEnabled: (toolName: string, enabled: boolean): Promise<void> =>
     ipcRenderer.invoke("mcp:set-tool-enabled", toolName, enabled),
   setMcpToolsEnabled: (toolNames: string[], enabled: boolean): Promise<void> =>
@@ -611,6 +684,22 @@ export const systemApi = {
       ipcRenderer.removeListener(BROWSER_COMMAND_CHANNEL, listener);
       void ipcRenderer.invoke("browser:renderer-unregister");
     };
+  },
+  /**
+   * 右侧面板浏览器 tab「在新窗口中打开」：主进程创建独立 BrowserWindow
+   * 承载同一实例（继承 instanceId），返回后原 tab 由渲染端关闭。
+   */
+  openDetachedBrowserWindow: (
+    instanceId: string,
+    url: string
+  ): Promise<void> =>
+    ipcRenderer.invoke("browser:open-detached-window", instanceId, url),
+  /** 上报 MCP 浏览器实例归属（供主进程按 instanceId 路由命令）。 */
+  notifyBrowserInstanceRegistered: (instanceId: string): void => {
+    ipcRenderer.send("browser:instance-registered", instanceId);
+  },
+  notifyBrowserInstanceUnregistered: (instanceId: string): void => {
+    ipcRenderer.send("browser:instance-unregistered", instanceId);
   },
   registerTerminalCommandHandler: (
     handler: (request: TerminalCommandRequest) => Promise<string>

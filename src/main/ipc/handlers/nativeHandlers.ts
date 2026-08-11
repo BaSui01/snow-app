@@ -16,8 +16,10 @@ import type {
 import {
   BROWSER_COMMAND_RESPONSE_CHANNEL,
   dispatchBrowserCommand,
+  registerBrowserInstanceRenderer,
   registerBrowserRenderer,
   resolveBrowserCommand,
+  unregisterBrowserInstanceRenderer,
   unregisterBrowserRenderer,
 } from "../browserCommandBroker";
 import {
@@ -733,6 +735,18 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   });
   ipcMain.handle("browser:renderer-unregister", (event) => {
     unregisterBrowserRenderer(event.sender);
+  });
+  // 渲染端注册/注销 MCP 浏览器实例时上报归属，供命令按 instanceId 路由
+  // （浏览器 tab 弹出到独立窗口后，命令须转发给持有该实例的新窗口）。
+  ipcMain.on("browser:instance-registered", (event, instanceId: unknown) => {
+    if (typeof instanceId === "string" && instanceId.trim()) {
+      registerBrowserInstanceRenderer(instanceId.trim(), event.sender);
+    }
+  });
+  ipcMain.on("browser:instance-unregistered", (event, instanceId: unknown) => {
+    if (typeof instanceId === "string" && instanceId.trim()) {
+      unregisterBrowserInstanceRenderer(instanceId.trim(), event.sender);
+    }
   });
   ipcMain.on(
     BROWSER_COMMAND_RESPONSE_CHANNEL,

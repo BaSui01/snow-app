@@ -15,7 +15,7 @@ import {
   APP_WINDOW_ICON_PATH,
   isMacOS,
 } from "../../app/constants";
-import { markCloseConfirmed } from "../../app/mainWindow";
+import { markCloseConfirmed, getMainWindow } from "../../app/mainWindow";
 import { refreshTrayStats } from "../../app/tray";
 import { registerToggleWindowShortcut } from "../../app/globalShortcuts";
 import { clearWindowState } from "../../app/windowState";
@@ -40,6 +40,7 @@ import {
   saveBrowserStorageState,
 } from "./browserStorageState";
 import { runBrowserTrace } from "./browserTrace";
+import { createDetachedBrowserWindow } from "../../browser/browserWindow";
 
 const browserDevToolsWindows = new Map<number, BrowserWindow>();
 
@@ -320,6 +321,43 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
 
   ipcMain.handle("browser:clear-cookies", async () => {
     await session.defaultSession.clearStorageData({ storages: ["cookies"] });
+  });
+
+  // 右侧面板浏览器 tab「在新窗口中打开」：创建独立 BrowserWindow 承载
+  // 同一实例（继承 instanceId），原 tab 由渲染端在成功后关闭。
+  ipcMain.handle(
+    "browser:open-detached-window",
+    (_event, instanceId: unknown, url: unknown) => {
+      if (typeof instanceId !== "string" || !instanceId.trim()) {
+        throw new Error("A valid browser instanceId is required");
+      }
+      if (typeof url !== "string") {
+        throw new Error("A valid browser URL is required");
+      }
+      createDetachedBrowserWindow(instanceId.trim(), url.trim());
+    }
+  );
+
+  // 独立浏览器窗口确认元素选择后，把结果转发给主窗口聊天输入框
+  // （INSERT_ELEMENT_TAG_EVENT 是渲染进程内事件，跨窗口必须经主进程中转）。
+  ipcMain.on("element-tag:forward", (event, tag: unknown) => {
+    if (
+      !tag ||
+      typeof tag !== "object" ||
+      Array.isArray(tag) ||
+      typeof (tag as Record<string, unknown>).url !== "string" ||
+      typeof (tag as Record<string, unknown>).tag !== "string" ||
+      typeof (tag as Record<string, unknown>).label !== "string" ||
+      typeof (tag as Record<string, unknown>).text !== "string" ||
+      typeof (tag as Record<string, unknown>).note !== "string"
+    ) {
+      return;
+    }
+    // 仅转发到主窗口（ChatInputView 所在）；主窗口自身的元素选择走本地事件。
+    const mainWindow = getMainWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("element-tag:insert", tag);
+    }
   });
 
   ipcMain.handle("browser:open-devtools", (_event, webContentsId: unknown) => {

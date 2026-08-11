@@ -2862,6 +2862,7 @@ export const zhCN = {
   "rightPanel.closeTabsToLeft": "关闭左侧标签页",
   "rightPanel.tabContextNewTerminal": "新建终端",
   "rightPanel.tabContextNewBrowser": "新建浏览器",
+  "rightPanel.openInNewWindow": "在新窗口中打开",
   "rightPanel.closeDiff": "关闭差异",
   "rightPanel.selectFileToViewDiff": "选择文件以查看差异",
   "rightPanel.noRepositorySelected": "未选择仓库",

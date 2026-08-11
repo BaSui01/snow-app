@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: theme-bg: img-proxy:; font-src 'self' data:; connect-src 'self' ws://localhost:* http://localhost:* img-proxy:;"
+    />
+    <title>Snow Browser</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+      }
+      #browser-window-root {
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="browser-window-root"></div>
+    <script type="module" src="./browserWindowMain.tsx"></script>
+  </body>
+</html>

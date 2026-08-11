@@ -8672,6 +8672,7 @@ input {
   font-weight: 400;
   line-height: 1.5;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 :root[data-theme="dark"] .user-message-bubble {
@@ -11324,6 +11325,12 @@ input {
   color: var(--accent-red-text);
   font-size: 12px;
   line-height: 1.4;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.tool-call-error > span {
+  min-width: 0;
 }
 
 .tool-call-error svg {

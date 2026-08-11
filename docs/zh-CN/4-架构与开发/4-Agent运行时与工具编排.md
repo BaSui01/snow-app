@@ -223,6 +223,8 @@ sequenceDiagram
 
 模型调用 `sub-agents-activate` 后，Renderer 先运行 `beforeSubAgentStart`，再创建独立 conversation/session 并持久化 `running`。子代理读取自身系统提示词、`tools_json` 和 API profile，在独立 Renderer loop 中流式运行。
 
+主会话构建系统提示词时，会从 `sub_agent_configs` 查询并**动态注入可用子代理清单**（`agentId`、名称、用途描述）与选择规则——主 Agent 据此挑选最匹配的 `agentId`，而不是默认使用内置 `agent_general`。清单解析与激活一致：**当前项目（`directory_id`）的项目级子代理优先**，同 `agentId` 覆盖全局；其他项目的子代理不注入。
+
 子代理继承父会话 checkpoint IDs，使文件改动纳入父会话回滚范围；Rust 同时限制 allowed-tools，并在父 Plan 尚未批准时阻止写入。子代理不能调用或授予 Plan approval。完成后会话标记 `completed` 或 `failed`，执行 `onSubAgentComplete`，随后变为只读；其后续排队输入转发父会话。父 abort 会传播到活动子代理，应用启动会把遗留 `running` 状态取消。
 
 激活与主代理并行执行（渲染进程预启动），结束时以结构化 JSON 作为工具结果回传主代理，主代理不做自动重试，由模型根据结果决定下一步：正常完成返回 `{success: true, conversationId, agentName, summary}`（`onSubAgentComplete` 可 pass 追加上下文、warn 追加警告或 abort 替换 summary）；API 流失败时把失败内容作为最终输出并标记消息为 error；异常时返回 `{success: false, error}`，会话持久化 `failed` 并广播失败事件，子会话中用户排队插入的消息转发父会话；用户中断返回 "Sub-agent interrupted by user"；父会话 Plan 未批准时立即停止并把控制权交还主循环。子代理没有独立的全局超时（只有单工具层超时）；停止主代理会通过 `childSubAgentIds` 递归级联取消全部后代子代理（中止流、拒绝挂起授权、杀掉 bash 子进程），应用启动时清理遗留 `running` 会话。

@@ -101,9 +101,11 @@ Listed in registration order:
 
 ### sub-agents
 
-| Full tool name        | Purpose                                          | Key parameters      |
-| --------------------- | ------------------------------------------------ | ------------------- |
-| `sub-agents-activate` | Activate a sub-agent to run a task independently | `agentId`, `prompt` |
+| Tool name                | Purpose                                | Key parameters      |
+| ------------------------ | -------------------------------------- | ------------------- |
+| `sub-agents-activate`    | Activate a sub-agent to run a task independently | `agentId`, `prompt` |
+
+`agentId` must be chosen from the sub-agent list injected into the main session's system prompt (the built-in `agent_general` is a generic fallback); when in doubt, query `config-list` (scope=`subAgents`) first.
 
 ### codebase
 

@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import { Plus, X } from "lucide-react";
 import {
   BrowserElementPicker,
@@ -26,6 +33,7 @@ import {
 import { APP_CONTROL_OPEN_SETTINGS_EVENT } from "../../hooks/useAppControl";
 import { useI18n } from "../../i18n";
 import { setWebTagDragData } from "./browserDrag";
+import { extractUrlHost } from "../mainContent/chatInput/fileTagUtils";
 import {
   WEB_SNAPSHOT_REQUEST_EVENT,
   WEB_SNAPSHOT_RESULT_EVENT,
@@ -231,6 +239,55 @@ const createWebviewTab = (url: string): BrowserWebviewTab => ({
  *    窗口级弹出（new-popup / 带 width=height= 等 features）仍由主进程
  *    创建真实 BrowserWindow（OAuth 登录依赖 window.opener）。
  */
+
+// ---------------------------------------------------------------------------
+// C1 拖拽预览卡片（单例）：拖动浏览器标签页时以「🌐 标题 + 域名」小卡片
+// 替代浏览器默认的整 tab 拖影。卡片经 setDragImage 截取为拖影位图，
+// 元素以 position: fixed 定位在视口外（见 .drag-preview-card 样式），
+// 不可见但仍参与渲染，可被正常截取。
+// ---------------------------------------------------------------------------
+
+const getDragPreviewCard = (
+  ref: RefObject<HTMLDivElement | null>,
+  title: string,
+  url: string
+): HTMLDivElement | null => {
+  let el = ref.current;
+  if (!el) {
+    el = document.createElement("div");
+    el.className = "drag-preview-card";
+    const icon = document.createElement("span");
+    icon.className = "drag-preview-icon";
+    icon.textContent = "🌐";
+    const titleEl = document.createElement("span");
+    titleEl.className = "drag-preview-title";
+    const urlEl = document.createElement("span");
+    urlEl.className = "drag-preview-url";
+    el.append(icon, titleEl, urlEl);
+    document.body.appendChild(el);
+    ref.current = el;
+  }
+  const titleEl = el.querySelector<HTMLElement>(".drag-preview-title");
+  const urlEl = el.querySelector<HTMLElement>(".drag-preview-url");
+  if (titleEl) {
+    titleEl.textContent = title;
+  }
+  if (urlEl) {
+    urlEl.textContent = extractUrlHost(url);
+  }
+  return el;
+};
+
+/** 拖拽结束清理预览卡片文本（元素保持挂载复用，避免残留旧数据）。 */
+const clearDragPreviewCard = (ref: RefObject<HTMLDivElement | null>): void => {
+  const el = ref.current;
+  if (!el) {
+    return;
+  }
+  el.querySelector<HTMLElement>(".drag-preview-title")?.replaceChildren();
+  el.querySelector<HTMLElement>(".drag-preview-url")?.replaceChildren();
+};
+
 export const BrowserPanelContent = ({
   instanceId,
   initialUrl,
@@ -291,6 +348,15 @@ export const BrowserPanelContent = ({
   const [findText, setFindText] = useState("");
   const [findResult, setFindResult] = useState<BrowserFindResult | null>(null);
   const browserContentRef = useRef<HTMLDivElement>(null);
+  // C1 拖拽预览卡片单例（挂载于 document.body，跨拖拽复用，卸载时移除）。
+  const dragPreviewRef = useRef<HTMLDivElement | null>(null);
+  // 卸载时移除拖拽预览卡片，避免残留到 document.body。
+  useEffect(() => {
+    return () => {
+      dragPreviewRef.current?.remove();
+      dragPreviewRef.current = null;
+    };
+  }, []);
   const { isCapturing, feedback, captureScreenshot } =
     useWebviewScreenshot(webviewRef);
   const {
@@ -1136,7 +1202,18 @@ export const BrowserPanelContent = ({
                 })
               ) {
                 event.preventDefault();
+                return;
               }
+              // C1 自定义拖影：以「🌐 标题 + 域名」预览卡片替代默认整 tab 快照
+              // （偏移到卡片左边缘，跟随鼠标）。
+              const preview = getDragPreviewCard(dragPreviewRef, tab.title, url);
+              if (preview) {
+                event.dataTransfer.setDragImage(preview, 12, 12);
+              }
+            }}
+            onDragEnd={() => {
+              // C1：拖拽结束清理预览卡片文本（元素保持挂载复用，由卸载 effect 移除）。
+              clearDragPreviewCard(dragPreviewRef);
             }}
             title={tab.title || tab.addressInput || t("rightPanel.browserNewTab")}
           >

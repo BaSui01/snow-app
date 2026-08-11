@@ -15,12 +15,6 @@ const DEFAULT_BASIC_MODEL: &str = "deepseek-v4-flash";
 const DEFAULT_MAX_CONTEXT_TOKENS: i32 = 256000;
 const DEFAULT_CONFIG_JSON: &str = "{\"snowcfg\":{\"baseUrl\":\"https://api.deepseek.com/v1\",\"baseUrlMode\":\"auto\",\"requestMethod\":\"chat\",\"advancedModel\":\"deepseek-v4-pro\",\"basicModel\":\"deepseek-v4-flash\",\"supportsVision\":false,\"chatThinking\":{\"enabled\":true,\"reasoning_effort\":\"high\"},\"responsesReasoning\":{\"enabled\":true,\"effort\":\"high\"},\"geminiThinking\":{\"enabled\":true,\"thinkingLevel\":\"high\"},\"thinking\":{\"enabled\":true,\"effort\":\"high\"}}}";
 
-pub fn seed_default_api_config(database_path: &Path) -> Result<()> {
-    database::open_connection(database_path)
-        .and_then(|connection| seed_default_api_config_with_connection(&connection))
-        .map_err(|error| database::database_error(database_path, "seed default API config", error))
-}
-
 pub fn list_api_configs(database_path: &Path) -> Result<Vec<ApiConfigRecord>> {
     database::open_connection(database_path)
         .and_then(|connection| {

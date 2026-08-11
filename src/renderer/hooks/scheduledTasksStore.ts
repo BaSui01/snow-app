@@ -796,7 +796,11 @@ export class ScheduledTasksStore {
           this.logSkip(task, decision);
           const after = this.tasks.get(id);
           if (after) {
-            this.tasks.set(id, this.advanceSchedule(after, undefined, decision));
+            const next = this.advanceSchedule(after, undefined, decision);
+            this.tasks.set(id, next);
+            // Persist skip counters / reason so they survive restarts (they
+            // previously lived only in memory and were silently lost).
+            this.persistUpsert(next);
           }
           return;
         }
@@ -805,10 +809,13 @@ export class ScheduledTasksStore {
           this.logScriptError(task, decision);
           const after = this.tasks.get(id);
           if (after) {
-            this.tasks.set(
-              id,
-              this.advanceSchedule(after, new Error(decision.errorMessage))
+            const next = this.advanceSchedule(
+              after,
+              new Error(decision.errorMessage)
             );
+            this.tasks.set(id, next);
+            // Persist lastError so the failure is visible after a restart.
+            this.persistUpsert(next);
           }
           return;
         }
@@ -963,6 +970,21 @@ export class ScheduledTasksStore {
     // advance to the next occurrence. runCount is NOT incremented.
     if (skip) {
       const skipCount = task.skipCount + 1;
+      // Finalize the in-progress history entry appended by execute(): the
+      // pre-script ran to completion and decided to skip — the entry is marked
+      // completed (not an error) with elapsed time, so the UI never shows a
+      // dangling "running" row and the persisted run row finalizes correctly.
+      const history = [...(task.history ?? [])];
+      const last = history[history.length - 1];
+      if (last && last.status === "running") {
+        const startedMs = Date.parse(last.runAt);
+        history[history.length - 1] = {
+          ...last,
+          status: "completed",
+          durationMs: Number.isNaN(startedMs) ? undefined : Date.now() - startedMs,
+          error: undefined,
+        };
+      }
       if (task.schedule.type === "once") {
         return {
           ...task,
@@ -972,6 +994,8 @@ export class ScheduledTasksStore {
           lastSkipReason: skip.reason,
           lastError: undefined,
           nextRunAt: undefined,
+          updatedAt: now,
+          history,
         };
       }
       const nextRunMs = computeNextRunMs(task.schedule, Date.now());
@@ -984,6 +1008,8 @@ export class ScheduledTasksStore {
         lastError: undefined,
         nextRunAt:
           nextRunMs != null ? new Date(nextRunMs).toISOString() : undefined,
+        updatedAt: now,
+        history,
       };
     }
 

@@ -27,13 +27,24 @@ Snow App 通过 **API 档案（Profile）** 管理模型服务商的接入信息
 | 显示名（Display name） | 否 | 界面中展示的名称，缺省取档案名 |
 | Base URL | 是 | 服务端点地址 |
 | Base URL 模式 | 是 | `auto` 自动 / `custom` 手动 |
-| API Key | 是 | 服务商密钥，如 `sk-...` |
+| API Key | 否（可后补） | 服务商密钥，如 `sk-...` |
 | 请求方法（Request method） | 是 | 如 `chat` |
-| 高级模型（Advanced model） | 是 | 复杂任务使用的模型 |
-| 基础模型（Basic model） | 是 | 轻量任务使用的模型 |
+| 高级模型（Advanced model） | 生效档案是（trim 后非空）；inactive 草稿否 | 该 Profile 的默认高级模型；普通会话仍使用会话选定模型 |
+| 基础模型（Basic model） | 生效档案是（trim 后非空）；inactive 草稿否 | 会话标题、AI Commit、`@?` 文件搜索和代码库 Agent Review 使用的模型 |
 | 视觉模型（Vision model） | 否 | 图像理解模型，可单独配置 |
 
+当档案的 `isActive` 为 `true`（包括保存为生效档案或之后激活）时，
+`advancedModel` 和 `basicModel` 在 trim 后必须都非空。inactive 档案可作为草稿保存，
+两个模型字段均可留空；API Key 是否为空不属于这项模型完整性校验。
+
 模型输入框聚焦时会自动从当前 Base URL 拉取可用模型列表，也可手动填写。
+
+### 基础/高级模型路由
+
+- Snow App 不会分析提示词复杂度，也不会在 `basicModel` 与 `advancedModel` 之间自动切换；
+- 普通会话使用该会话选定的模型；`advancedModel` 只是所属 Profile 的默认高级模型，在调用没有提供非空高级模型时使用。两类模型互不回退：高级入口缺少 `advancedModel` 时不会改用 `basicModel`，基础入口也不会反向兜底；
+- 会话标题、AI Commit、`@?` 文件搜索和代码库 Agent Review 使用 `basicModel`。标题请求的供应商与 Profile 跟随会话绑定；绑定档案已删除时，按普通会话规则回退当前 active Profile；
+- 视觉理解、图像生成和 embedding 使用各自的独立通道，不受上述 basic/advanced 路由规则影响。
 
 ### 视觉模型独立配置
 

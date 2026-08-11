@@ -112,11 +112,11 @@ stateDiagram-v2
 
 `collect_all_mcp_tools` 的过滤与合并顺序：
 
-1. 解析项目 scope。
+1. 解析全局 scope 与项目 scope。
 2. 仅当项目存在、启用 codebase 且已有向量 chunk 时暴露 codebase 工具。
 3. 仅当至少一个 imagegen channel 启用时暴露 imagegen。
 4. 按固定顺序读取 14 个内置服务；Plan approval 只在 Plan Mode 请求中出现。
-5. 应用项目级 server/tool enable 状态；terminal 默认禁用，须项目显式开启。
+5. 应用全局与项目级 server/tool enable 状态（全局禁用优先）；terminal 默认禁用，须项目显式开启。
 6. 动态加入 Skills 工具。
 7. 并行发现外部 MCP 的 stdio/HTTP 工具；单个服务失败只记录错误，不使全部发现失败。
 
@@ -134,11 +134,11 @@ flowchart TD
     H --> I[并行发现外部 MCP stdio/HTTP 工具<br/>单服务失败只记录错误]
 ```
 
-子代理使用 `collect_allowed_mcp_tools`。其 `tools_json` 必须是字符串数组；仅内置子代理可使用 `*`。项目禁用或不存在的工具会被拒绝，而不是静默扩大权限。外部 MCP 支持 `server/discover`，并保留 legacy initialize fallback。
+子代理使用 `collect_allowed_mcp_tools`。其 `tools_json` 必须是字符串数组；仅内置子代理可使用 `*`。全局或项目禁用的工具会被拒绝，而不是静默扩大权限。外部 MCP 支持 `server/discover`，并保留 legacy initialize fallback。
 
 ## 6. 工具调用与 checkpoint
 
-`call_mcp_tool` 依次执行：清洗污染工具名、校验 Plan 特殊工具、阻止未批准 Plan 的写入、校验项目 enable 状态、校验子代理白名单、解析本地/SSH workspace、把本地相对路径落到项目根、补充工具前 checkpoint、按工具类型路由、隐私掩码输出、更新工具后 checkpoint。
+`call_mcp_tool` 依次执行：清洗污染工具名、校验 Plan 特殊工具、阻止未批准 Plan 的写入、校验全局与项目 enable 状态、校验子代理白名单、解析本地/SSH workspace、把本地相对路径落到项目根、补充工具前 checkpoint、按工具类型路由、隐私掩码输出、更新工具后 checkpoint。
 
 ```mermaid
 flowchart TD

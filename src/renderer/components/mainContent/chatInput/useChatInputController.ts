@@ -23,6 +23,7 @@ import {
   toConfigUpdatePayload,
   toResponsesFastModeUpdatePayload,
 } from "./configThinking";
+import { resolveAutoSendOptions } from "./autoSendOptions";
 import type {
   ChatInputActions,
   ChatInputSendOptions,
@@ -388,19 +389,19 @@ export const useChatInputController = ({
         if (autoSendToken > 0) {
           const message = draftToRestore.trim();
           if (message) {
-            // Scheduled-task runs may carry per-send overrides (API profile /
-            // model / thinking strength). They win over the input's current
-            // selection so the fired conversation runs on the task's
-            // configured provider; the override is consumed right after so it
-            // never leaks into later manual sends.
-            onSend?.(message, {
-              model: autoSendOverride?.model || selectedModel || undefined,
-              apiProfile:
-                autoSendOverride?.apiProfile ||
-                selectedApiProfile ||
-                undefined,
-              thinkingStrength: autoSendOverride?.thinkingStrength || undefined,
-            });
+            // Scheduled-task runs may carry one-shot profile/model/title-model
+            // overrides. The resolver never borrows selectedModel when a task
+            // names a profile, and this existing callback remains the sole
+            // consumption point so snapshots cannot leak into manual sends.
+            onSend?.(
+              message,
+              resolveAutoSendOptions({
+                autoSendOverride,
+                apiConfigs,
+                selectedModel,
+                selectedApiProfile,
+              })
+            );
           }
           setValue("");
           // The queued content was sent; do not keep it as a per-conversation
@@ -415,7 +416,7 @@ export const useChatInputController = ({
     }
 
     onDraftRestored?.();
-  }, [draftToRestore, onDraftRestored, adjustHeight, autoSendToken, onSend, selectedModel, selectedApiProfile, autoSendOverride, onAutoSendOverrideConsumed, conversationId, clearInputDraft]);
+  }, [draftToRestore, onDraftRestored, adjustHeight, autoSendToken, onSend, apiConfigs, selectedModel, selectedApiProfile, autoSendOverride, onAutoSendOverrideConsumed, conversationId, clearInputDraft]);
 
   const handleChange = useCallback(
     (nextValue: string) => {

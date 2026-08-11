@@ -65,6 +65,15 @@ export const normalizeApiConfigInput = (value: unknown): ApiConfigInput => {
   const requestMethod = toText(value.requestMethod, "chat").trim() || "chat";
   const advancedModel = toText(value.advancedModel).trim();
   const basicModel = toText(value.basicModel).trim();
+  const isActive = toBoolean(value.isActive, false);
+
+  if (isActive && !advancedModel) {
+    throw new Error("Advanced model is required for an active API profile");
+  }
+  if (isActive && !basicModel) {
+    throw new Error("Basic model is required for an active API profile");
+  }
+
   const supportsVision = toBoolean(value.supportsVision, true);
   const visionBaseUrl = toText(value.visionBaseUrl).trim();
   const visionModel = toText(value.visionModel).trim();
@@ -97,7 +106,7 @@ export const normalizeApiConfigInput = (value: unknown): ApiConfigInput => {
   return {
     profileName,
     displayName,
-    isActive: toBoolean(value.isActive, false),
+    isActive,
     baseUrl,
     baseUrlMode: toText(value.baseUrlMode, "custom"),
     apiKey: toText(value.apiKey),

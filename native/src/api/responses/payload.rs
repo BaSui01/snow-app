@@ -8,7 +8,7 @@ use reqwest::header::{HeaderMap, HeaderValue, ACCEPT_ENCODING, AUTHORIZATION, CO
 use serde_json::{json, Value};
 
 use crate::api::common::inject_custom_headers;
-use crate::api::config::{normalize_base_url, resolve_sdk_api_base_url};
+use crate::api::config::{normalize_base_url, resolve_advanced_model, resolve_sdk_api_base_url};
 use crate::api::conversation::parse_chat_message_content;
 use crate::api::responses::ResponsesApiRequest;
 use crate::storage::services::chat_conversations::ChatContextMessage;
@@ -44,18 +44,8 @@ pub(super) fn build_responses_payload(
     tools: Option<Value>,
     user_system_prompts: &[String],
 ) -> Result<Value> {
-    let model = request
-        .model
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| api_config.advanced_model.trim());
-
-    if model.is_empty() {
-        return Err(Error::from_reason(
-            "Model not configured. Please select or configure a model first.",
-        ));
-    }
+    let model =
+        resolve_advanced_model(request.model.as_deref(), &api_config.advanced_model)?;
 
     let skip_image_parsing = request.skip_context.unwrap_or(false);
     let mut builtin_system_parts = Vec::new();

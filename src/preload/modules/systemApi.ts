@@ -22,6 +22,7 @@ import type {
   McpProjectServerStatus,
   McpProjectToolStatus,
   McpToolDefinition,
+  McpToolStatus,
   GithubSkillRecord,
   ProjectSkillDefinition,
   ResumableCodebaseSession,
@@ -512,7 +513,7 @@ export const systemApi = {
     ipcRenderer.invoke("skills:uninstall-github", skillId, projectId),
   listGithubSkills: (): Promise<GithubSkillRecord[]> =>
     ipcRenderer.invoke("skills:list-github"),
-  listMcpServerTools: (configServerId: string): Promise<McpToolDefinition[]> =>
+  listMcpServerTools: (configServerId: string): Promise<McpToolStatus[]> =>
     ipcRenderer.invoke("mcp:list-server-tools", configServerId),
   listMcpProjectServers: (
     projectId: string
@@ -556,6 +557,21 @@ export const systemApi = {
       browserOpenTabSubscribers.delete(callback);
     };
   },
+  setMcpToolEnabled: (toolName: string, enabled: boolean): Promise<void> =>
+    ipcRenderer.invoke("mcp:set-tool-enabled", toolName, enabled),
+  setMcpToolsEnabled: (toolNames: string[], enabled: boolean): Promise<void> =>
+    ipcRenderer.invoke("mcp:set-tools-enabled", toolNames, enabled),
+  setMcpProjectToolsEnabled: (
+    projectId: string,
+    toolNames: string[],
+    enabled: boolean
+  ): Promise<void> =>
+    ipcRenderer.invoke(
+      "mcp:set-project-tools-enabled",
+      projectId,
+      toolNames,
+      enabled
+    ),
   registerBrowserCommandHandler: (
     handler: (request: BrowserCommandRequest) => Promise<string>
   ): (() => void) => {

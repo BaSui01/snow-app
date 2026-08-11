@@ -98,6 +98,14 @@ export const extractVisionMaxTokensFromConfigJson = (
   return typeof value === "number" && value > 0 ? String(value) : "";
 };
 
+/** 读取视觉文本化的最大并发数（snowcfg.visionMaxConcurrency，默认 8） */
+export const extractVisionMaxConcurrencyFromConfigJson = (
+  configJson: string
+): string => {
+  const value = readSnowcfg(configJson).visionMaxConcurrency;
+  return typeof value === "number" && value > 0 ? String(value) : "";
+};
+
 /**
  * Validates a thinking value against the available options for the given
  * request method. Returns the value itself when it is a known option for
@@ -261,6 +269,7 @@ export const emptyApiConfigForm = (
   visionThinkingEnabled: false,
   visionThinkingEffort: "",
   visionMaxTokens: "",
+  visionMaxConcurrency: "",
   configJson: "{}",
 });
 
@@ -319,6 +328,8 @@ export function toApiConfigPayload(
           }
         : { enabled: false },
       visionMaxTokens: parseOptionalInteger(data.visionMaxTokens) ?? undefined,
+      visionMaxConcurrency:
+        parseOptionalInteger(data.visionMaxConcurrency) ?? undefined,
     }
   );
 

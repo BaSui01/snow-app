@@ -2442,14 +2442,17 @@ Full guide: ~/.snow/docs/zh-CN/2-使用指南/3-配置API密钥与模型.md (en:
                 })
                 .unwrap_or_default()
         };
-        // 数值字段（Option<i32>）。
+        // 数值字段（Option<i32>）。i64/u64 超出 i32 范围时收敛到边界，
+        // 避免静默截断成负数写入损坏配置。
         let int_field = |key: &str| -> Option<i32> {
             if let Some(field) = value.get(key) {
                 if let Some(number) = field.as_i64() {
-                    return Some(number as i32);
+                    return Some(
+                        number.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32,
+                    );
                 }
                 if let Some(number) = field.as_u64() {
-                    return Some(number as i32);
+                    return Some(number.min(i32::MAX as u64) as i32);
                 }
             }
             existing.as_ref().and_then(|record| match key {
@@ -3688,7 +3691,7 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_LIST.to_string(),
-                description: "List configuration scopes and their keys; pass `scope` to inspect one scope (returns current values; sensitive keys masked).\nSCOPE REFERENCE:\n1. settings (~/.snow/settings.json): mcpServers, codebase, sensitiveCommands, yoloMode, planMode, goal, toolSearchEnabled, ...\n2. snowcfg (~/.snow/config.json): baseUrl, apiKey, advancedModel, basicModel, maxTokens, chatThinking, ...\n3. proxy (~/.snow/proxy-config.json): enabled, host, port, searchEngine, browserPath, browserDebugPort\n4. app (~/.snow/active-profile.json): activeProfile\n5. custom-headers (~/.snow/custom-headers.json): active, schemes (sensitive)\n6. system-prompt (~/.snow/system-prompt.json): active, prompts (sensitive)\n7. theme (~/.snow/theme.json): theme, simpleMode, diffOpacity, toolIcons, customColors, ...\n8. language (~/.snow/language.json): language\n9. permissions (~/.snow/permissions.json): alwaysApprovedTools\n10. lsp-config (~/.snow/lsp-config.json): schemaVersion, servers\n11. buddy (~/.snow/buddy.json): version, companion, muted\n12. subAgents (app DB): sub-agent configs, key=agentId; list returns items + CREATING guidance\n13. hooks (app DB): lifecycle hook configs, key=hookType; list returns items + CONFIGURING guidance\n14. imagegen (app DB): image generation channels + top-level maxConcurrentImages (1-8, default 4) and timeoutSecs (60-3600, default 300); list returns keys + note\n15. skills (delegated): skillId toggles / GitHub installs\n16. logs (read-only): log files under ~/.snow/log\n17. personalization (~/.snow/ROLE.md): global role/rules file (plain markdown, non-JSON), key=role; list returns length + preview, get returns the full rules text, set writes the whole file, delete removes it (restores defaults)\n18. apiProfiles (app DB): API profiles (api_configs table, same as the UI); key=profileName; list returns all profiles with masked apiKey/visionApiKey; set creates/updates a profile (empty/omitted apiKey keeps the existing key - create keyless profiles first, then fill the key; isActive:true switches the active profile; omitted fields keep current values); delete removes a profile (requires confirmed)\nRULES: pass projectId to scope subAgents/hooks/skills listings to a specific project (omitted = auto-injects the CURRENT SESSION's projectId, so you get/configure the active project's settings; pass an empty string \"\" for global); every list response includes the current session's projectId as `currentProjectId` — read it to obtain the project id bound to the current conversation; sensitive values (apiKey, visionApiKey, custom-header schemes, system-prompt prompts, imagegen apiKey) are always masked."
+                description: "List configuration scopes and their keys; pass `scope` to inspect one scope (returns current values; sensitive keys masked).\nSCOPE REFERENCE:\n1. settings (~/.snow/settings.json): mcpServers, codebase, sensitiveCommands, yoloMode, planMode, goal, toolSearchEnabled, ...; MCP tool-level enable/disable (global/project) is managed in the MCP Settings panel (app database), not in settings.json.\n2. snowcfg (~/.snow/config.json): baseUrl, apiKey, advancedModel, basicModel, maxTokens, chatThinking, ...\n3. proxy (~/.snow/proxy-config.json): enabled, host, port, searchEngine, browserPath, browserDebugPort\n4. app (~/.snow/active-profile.json): activeProfile\n5. custom-headers (~/.snow/custom-headers.json): active, schemes (sensitive)\n6. system-prompt (~/.snow/system-prompt.json): active, prompts (sensitive)\n7. theme (~/.snow/theme.json): theme, simpleMode, diffOpacity, toolIcons, customColors, ...\n8. language (~/.snow/language.json): language\n9. permissions (~/.snow/permissions.json): alwaysApprovedTools\n10. lsp-config (~/.snow/lsp-config.json): schemaVersion, servers\n11. buddy (~/.snow/buddy.json): version, companion, muted\n12. subAgents (app DB): sub-agent configs, key=agentId; list returns items + CREATING guidance\n13. hooks (app DB): lifecycle hook configs, key=hookType; list returns items + CONFIGURING guidance\n14. imagegen (app DB): image generation channels + top-level maxConcurrentImages (1-8, default 4) and timeoutSecs (60-3600, default 300); list returns keys + note\n15. skills (delegated): skillId toggles / GitHub installs\n16. logs (read-only): log files under ~/.snow/log\n17. personalization (~/.snow/ROLE.md): global role/rules file (plain markdown, non-JSON), key=role; list returns length + preview, get returns the full rules text, set writes the whole file, delete removes it (restores defaults)\n18. apiProfiles (app DB): API profiles (api_configs table, same as the UI); key=profileName; list returns all profiles with masked apiKey/visionApiKey; set creates/updates a profile (empty/omitted apiKey keeps the existing key - create keyless profiles first, then fill the key; isActive:true switches the active profile; omitted fields keep current values); delete removes a profile (requires confirmed)\nRULES: pass projectId to scope subAgents/hooks/skills listings to a specific project (omitted = auto-injects the CURRENT SESSION's projectId, so you get/configure the active project's settings; pass an empty string \"\" for global); every list response includes the current session's projectId as `currentProjectId` — read it to obtain the project id bound to the current conversation; sensitive values (apiKey, visionApiKey, custom-header schemes, system-prompt prompts, imagegen apiKey) are always masked."
                     .to_string(),
                 input_schema: json!({
                     "type": "object",
@@ -3740,7 +3743,7 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_SET.to_string(),
-                description: "Write a value for a configuration key (whitelisted scopes only; type-checked; auto-backup to ~/.snow/.config-backups as a temporary safety net before the write, removed after a successful write; atomic write).\nRULES:\n- settings.mcpServers: syncs into the app database on write and takes effect immediately (same diff semantics as the UI sync action).\n- Other file-backed scopes (snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy): changes may need an app restart or a UI re-save. personalization (key=role, value must be a string): replaces the whole ~/.snow/ROLE.md file (markdown text); takes effect in the next conversation.\n- DB-backed scopes (take effect immediately): subAgents (key=agentId, value={name, description?, systemPrompt?, toolsJson?, configProfile?, model?}; an explicit toolsJson tool list requires projectId, see the guidance from config-list scope=subAgents); hooks (key=hookType, value={rules:[...]}, see the guidance from config-list scope=hooks); apiProfiles (key=profileName, value={displayName?, baseUrl?, baseUrlMode?, apiKey?, requestMethod?, advancedModel?, basicModel?, supportsVision?, visionBaseUrl?, visionApiKey?, visionRequestMethod?, visionModel?, maxContextTokens?, maxTokens?, isActive?, ...} - creates or updates the profile in the app database (same as the UI); an empty or omitted apiKey/visionApiKey ALWAYS keeps the existing key, so you can create a keyless profile first and fill the key later; isActive:true switches the active profile immediately; omitted fields keep current values for existing profiles and use defaults for new ones; configJson is generated automatically); imagegen (value={channels:[...]} full replace, {<channelId>: {...}} per-channel merge keeping omitted fields, or a global field alone: {maxConcurrentImages: N} clamped to 1-8 / {timeoutSecs: N} clamped to 60-3600).\n- Project-scoped: pass projectId for settings.mcpServers (full replace of {name: {type,url,command,args,env,headers,enabled,timeoutMs}}) or settings.sensitiveCommands (full replace of [{commandId, pattern, description, enabled}]); other scopes ignore projectId.".to_string(),
+                description: "Write a value for a configuration key (whitelisted scopes only; type-checked; auto-backup to ~/.snow/.config-backups as a temporary safety net before the write, removed after a successful write; atomic write).\nRULES:\n- settings.mcpServers: syncs into the app database on write and takes effect immediately (same diff semantics as the UI sync action). MCP tool-level enable/disable (global/project) is managed in the MCP Settings panel (app database), not in settings.json.\n- Other file-backed scopes (snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy): changes may need an app restart or a UI re-save. personalization (key=role, value must be a string): replaces the whole ~/.snow/ROLE.md file (markdown text); takes effect in the next conversation.\n- DB-backed scopes (take effect immediately): subAgents (key=agentId, value={name, description?, systemPrompt?, toolsJson?, configProfile?, model?}; an explicit toolsJson tool list requires projectId, see the guidance from config-list scope=subAgents); hooks (key=hookType, value={rules:[...]}, see the guidance from config-list scope=hooks); apiProfiles (key=profileName, value={displayName?, baseUrl?, baseUrlMode?, apiKey?, requestMethod?, advancedModel?, basicModel?, supportsVision?, visionBaseUrl?, visionApiKey?, visionRequestMethod?, visionModel?, maxContextTokens?, maxTokens?, isActive?, ...} - creates or updates the profile in the app database (same as the UI); an empty or omitted apiKey/visionApiKey ALWAYS keeps the existing key, so you can create a keyless profile first and fill the key later; isActive:true switches the active profile immediately; omitted fields keep current values for existing profiles and use defaults for new ones; configJson is generated automatically); imagegen (value={channels:[...]} full replace, {<channelId>: {...}} per-channel merge keeping omitted fields, or a global field alone: {maxConcurrentImages: N} clamped to 1-8 / {timeoutSecs: N} clamped to 60-3600).\n- Project-scoped: pass projectId for settings.mcpServers (full replace of {name: {type,url,command,args,env,headers,enabled,timeoutMs}}) or settings.sensitiveCommands (full replace of [{commandId, pattern, description, enabled}]); other scopes ignore projectId.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -3878,4 +3881,102 @@ fn required_string<'a>(args: &'a Value, key: &str) -> napi::Result<&'a str> {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .ok_or_else(|| Error::new(Status::InvalidArg, format!("{key} is required")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ConfigService;
+    use crate::storage::database;
+    use serde_json::json;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_db_path() -> PathBuf {
+        let unique = format!(
+            "snow-mcp-api-profiles-test-{}-{}.db",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        );
+        std::env::temp_dir().join(unique)
+    }
+
+    fn init_service(path: &Path) -> ConfigService {
+        let connection = database::open_connection(path).expect("open database");
+        database::create_schema(&connection).expect("create schema");
+        ConfigService {
+            db_path: path.to_string_lossy().into_owned(),
+        }
+    }
+
+    #[test]
+    fn api_profile_activation_uses_storage_validation_after_merge() {
+        let db_path = temp_db_path();
+        let service = init_service(&db_path);
+
+        let created = service
+            .set_db_api_profile("draft", &json!({ "isActive": false }))
+            .expect("create incomplete inactive profile");
+        assert_eq!(created["value"]["isActive"].as_bool(), Some(false));
+        assert_eq!(created["value"]["advancedModel"].as_str(), Some(""));
+        assert_eq!(created["value"]["basicModel"].as_str(), Some(""));
+
+        // Avoid writing a temporary backup into the real home directory during this unit test.
+        database::open_connection(&db_path)
+            .expect("open database")
+            .execute(
+                "UPDATE api_configs SET config_json = '' WHERE profile_name = 'draft'",
+                [],
+            )
+            .expect("clear test config json");
+
+        let error = service
+            .set_db_api_profile("draft", &json!({ "isActive": true }))
+            .expect_err("activating an incomplete merged profile must fail");
+        assert!(
+            error
+                .reason
+                .contains("Advanced model is required for an active API profile"),
+            "unexpected error: {}",
+            error.reason
+        );
+
+        let saved = service
+            .set_db_api_profile(
+                "draft",
+                &json!({
+                    "isActive": true,
+                    "advancedModel": "  advanced-model  ",
+                    "basicModel": "  basic-model  "
+                }),
+            )
+            .expect("complete and activate merged profile");
+        assert_eq!(saved["value"]["isActive"].as_bool(), Some(true));
+        assert_eq!(
+            saved["value"]["advancedModel"].as_str(),
+            Some("advanced-model")
+        );
+        assert_eq!(
+            saved["value"]["basicModel"].as_str(),
+            Some("basic-model")
+        );
+
+        let records = crate::storage::services::api_configs::list_api_configs(&db_path)
+            .expect("list profiles");
+        assert_eq!(
+            records.iter().filter(|record| record.is_active).count(),
+            1
+        );
+        let draft = records
+            .iter()
+            .find(|record| record.profile_name == "draft")
+            .expect("draft profile");
+        assert!(draft.is_active);
+        assert_eq!(draft.advanced_model, "advanced-model");
+        assert_eq!(draft.basic_model, "basic-model");
+
+        let _ = std::fs::remove_file(&db_path);
+    }
 }

@@ -112,11 +112,11 @@ A round streams the model, parses `toolCallsJson`, creates an executor from the 
 
 `collect_all_mcp_tools` filters and merges tools in this order:
 
-1. Resolve project scope.
+1. Resolve global and project scope.
 2. Expose codebase tools only when a project exists, codebase is enabled, and vector chunks exist.
 3. Expose imagegen only when at least one channel is enabled.
 4. Read 14 built-in services in fixed order; Plan approval appears only in Plan Mode requests.
-5. Apply project server/tool enable states; terminal is disabled by default and requires explicit project enablement.
+5. Apply global and project server/tool enable states (global disable wins); terminal is disabled by default and requires explicit project enablement.
 6. Inject the Skills tool dynamically.
 7. Discover external stdio/HTTP MCP tools in parallel; one server failure is logged without failing all discovery.
 
@@ -134,11 +134,11 @@ flowchart TD
     H --> I[Discover external MCP stdio/HTTP tools in parallel<br/>one failure is logged, not fatal]
 ```
 
-Sub-agents use `collect_allowed_mcp_tools`. Their `tools_json` must be a string array; only built-in sub-agents may use `*`. Missing or project-disabled tools are rejected rather than silently expanding authority. External MCP supports `server/discover` with a legacy initialize fallback.
+Sub-agents use `collect_allowed_mcp_tools`. Their `tools_json` must be a string array; only built-in sub-agents may use `*`. Missing or globally/project-disabled tools are rejected rather than silently expanding authority. External MCP supports `server/discover` with a legacy initialize fallback.
 
 ## 6. Tool Calls and Checkpoints
 
-`call_mcp_tool` sanitizes polluted names, validates Plan special tools, blocks writes before Plan approval, checks project enable state, checks the sub-agent allowlist, resolves local/SSH workspace context, anchors local relative paths to the project root, augments pre-tool checkpoint capture, routes by tool type, privacy-masks output, and updates the post-tool checkpoint.
+`call_mcp_tool` sanitizes polluted names, validates Plan special tools, blocks writes before Plan approval, checks global and project enable state, checks the sub-agent allowlist, resolves local/SSH workspace context, anchors local relative paths to the project root, augments pre-tool checkpoint capture, routes by tool type, privacy-masks output, and updates the post-tool checkpoint.
 
 ```mermaid
 flowchart TD

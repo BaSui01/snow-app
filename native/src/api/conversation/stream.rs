@@ -6,6 +6,7 @@ use crate::api::anthropic::create_anthropic_response_stream;
 use crate::api::chat::create_chat_completion_response_stream;
 use crate::api::config::{
     get_api_request_context_for_profile, get_api_request_context_with_fallback,
+    resolve_advanced_model,
 };
 use crate::api::gemini::create_gemini_response_stream;
 use crate::api::responses::{
@@ -106,13 +107,6 @@ fn resolve_sub_agent_profile(
         })
 }
 
-fn resolve_sub_agent_model(requested_model: Option<&str>, advanced_model: &str) -> Result<String> {
-    normalize_non_empty(requested_model)
-        .or_else(|| normalize_non_empty(Some(advanced_model)))
-        .map(str::to_owned)
-        .ok_or_else(|| Error::from_reason("Sub-agent model snapshot is not available"))
-}
-
 pub async fn create_response_stream(
     mut request: ResponsesApiRequest,
     on_chunk: ResponsesApiStreamCallback,
@@ -175,12 +169,9 @@ pub async fn create_response_stream(
     .map_err(|join_error| {
         Error::from_reason(format!("Failed to resolve API configuration: {join_error}"))
     })??;
-    if is_sub_agent {
-        request.model = Some(resolve_sub_agent_model(
-            request.model.as_deref(),
-            &context.api_config.advanced_model,
-        )?);
-    }
+    let resolved_model =
+        resolve_advanced_model(request.model.as_deref(), &context.api_config.advanced_model)?;
+    request.model = Some(resolved_model.clone());
 
     let failure_messages = request
         .messages
@@ -197,10 +188,7 @@ pub async fn create_response_stream(
     let failure_conversation_id = request.conversation_id.clone();
     let failure_previous_response_id = request.previous_response_id.clone();
     let failure_checkpoint_id = request.checkpoint_id.clone().unwrap_or_default();
-    let failure_model = request
-        .model
-        .clone()
-        .unwrap_or_else(|| context.api_config.advanced_model.clone());
+    let failure_model = resolved_model;
     let failure_directory_id = request.directory_id.clone().unwrap_or_default();
     let failure_context_compaction = request.context_compaction.unwrap_or(false);
     let failure_resume_after_compaction = request.resume_after_compaction.unwrap_or(false);
@@ -451,3 +439,61 @@ pub async fn create_response_stream(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::resolve_sub_agent_profile;
+    use crate::api::config::resolve_advanced_model;
+
+    #[test]
+    fn explicit_sub_agent_profile_is_trimmed_and_preferred() {
+        let profile =
+            resolve_sub_agent_profile(Some("  pinned-profile  "), Some("deprecated-profile"))
+                .expect("resolve explicit profile");
+
+        assert_eq!(profile, "pinned-profile");
+    }
+
+    #[test]
+    fn deprecated_sub_agent_profile_remains_a_legacy_fallback() {
+        let profile = resolve_sub_agent_profile(Some("  "), Some(" legacy-profile "))
+            .expect("resolve deprecated profile");
+
+        assert_eq!(profile, "legacy-profile");
+    }
+
+    #[test]
+    fn blank_sub_agent_profiles_fail_instead_of_using_global_active_profile() {
+        let error = resolve_sub_agent_profile(Some(" \n "), Some("\t"))
+            .expect_err("blank snapshots must fail");
+
+        assert!(error
+            .to_string()
+            .contains("refusing to fall back to the global active profile"));
+    }
+
+    #[test]
+    fn explicit_sub_agent_model_is_trimmed_and_preferred() {
+        let model = resolve_advanced_model(Some("  pinned-model  "), "advanced-model")
+            .expect("resolve explicit model");
+
+        assert_eq!(model, "pinned-model");
+    }
+
+    #[test]
+    fn blank_sub_agent_model_uses_profile_advanced_model() {
+        let model = resolve_advanced_model(Some("  "), "  advanced-model  ")
+            .expect("resolve advanced model");
+
+        assert_eq!(model, "advanced-model");
+    }
+
+    #[test]
+    fn missing_sub_agent_model_snapshot_fails() {
+        let error =
+            resolve_advanced_model(None, " \n ").expect_err("missing model snapshots must fail");
+
+        assert!(error
+            .to_string()
+            .contains("Advanced model not configured"));
+    }
+}

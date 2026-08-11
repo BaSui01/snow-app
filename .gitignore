@@ -43,6 +43,7 @@ ROLE.md
 # Local scratch / investigation files
 .issue-body-cn-v2.md
 scripts/investigate_abort.py
+docs/code-review/
 
 # Local-only regression helper (never track in git)
 scripts/e2e-verify-config.cjs

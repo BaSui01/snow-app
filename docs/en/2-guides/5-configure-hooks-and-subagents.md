@@ -189,7 +189,7 @@ A sub-agent runs through `sub-agents-activate` in an independent execution loop 
 | `systemPrompt` | Must be self-contained: mission, inputs, workflow, tools, safety, and output. |
 | `toolsJson` | JSON string or tool-name array. `["*"]` means all tools; `[]` means no tools. |
 | `configProfile` | Empty inherits the API profile and current model used by the parent conversation's current run; non-empty pins the named profile. |
-| `model` | Applies only with a pinned profile; non-empty pins the model, while empty uses that profile's `advancedModel`. |
+| `model` | Applies only with a pinned profile. A non-empty value pins the model; an omitted, empty, or trim-empty value uses that profile's `advancedModel`. If that profile's `advancedModel` is also empty, activation fails; it never falls back to `basicModel`. |
 
 Activation looks up the current project's same-ID configuration first and falls back to global only when it is absent. Built-in `agent_general` cannot be modified or deleted through config.
 
@@ -300,6 +300,6 @@ If `beforeSubAgentStart` Hook execution itself throws, the current caller contin
 | Prompt action has no effect | The current native executor does not execute prompt model calls; use command or supported context. |
 | Context does not reach the child prompt | `beforeSubAgentStart` currently records context but does not append it to the child prompt; put required content in `systemPrompt`. |
 | Global sub-agent explicit list is rejected | Explicit lists require `projectId`; make it project-scoped or use global `["*"]`/`[]`. |
-| Sub-agent cannot find a tool | Use the exact project-enabled full tool name and inspect MCP server/project tool toggles. |
+| Sub-agent cannot find a tool | Use the exact project-enabled full tool name and inspect MCP server and tool toggles (global + project). |
 | Sub-agent depends on main conversation | It has no main history; place context in the task prompt or self-contained `systemPrompt`. |
 | Wrong same-ID config activates | Project scope wins over global; query both scopes and verify `projectId`. |

@@ -834,6 +834,28 @@ export function ApiSettingsFormFields({
                 })}
               </small>
             </label>
+            <label className="api-settings-field">
+              <span>
+                {t("settings.apiVisionMaxConcurrency", {
+                  defaultValue: "Max concurrent analyses",
+                })}
+              </span>
+              <input
+                value={data.visionMaxConcurrency}
+                onChange={changeField("visionMaxConcurrency")}
+                placeholder="8"
+                type="number"
+                min={1}
+                max={8}
+                disabled={disabled}
+              />
+              <small className="api-settings-hint-text">
+                {t("settings.apiVisionMaxConcurrencyHint", {
+                  defaultValue:
+                    "Maximum number of images analyzed in parallel when describing attachments. Defaults to 8 when empty (1-8).",
+                })}
+              </small>
+            </label>
           </div>
         )}
       </div>

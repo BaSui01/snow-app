@@ -8,6 +8,9 @@ export type ChatInputSendOptions = {
   apiProfile?: string;
   /** 回合类型：review 表示代码审查任务（桌面宠物播放 review 专属动画）。 */
   kind?: "chat" | "review";
+  /** Optional one-shot basic-model snapshot used only for the first title
+   *  generation. It is never forwarded to the main Provider request. */
+  basicModel?: string;
   /** Per-request thinking strength override ("none" | "low" | "medium" |
    *  "high" | custom). Applied in-memory; never mutates the profile config. */
   thinkingStrength?: string;

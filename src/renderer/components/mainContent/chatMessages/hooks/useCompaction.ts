@@ -164,21 +164,25 @@ export const useCompaction = (ctx: ConversationContextValue) => {
           sessionRef.streamPromise = null;
         }
 
+        if (response.status !== "completed") {
+          throw new Error(`Context compaction ${response.status}`);
+        }
         const content = response.content.trim();
         if (!content) {
           throw new Error("Context handoff is empty");
         }
 
-        // Mirror the real token usage from the compaction response into the
-        // session so the TokenUsageRing reflects the post-compaction context
-        // size. Previously this was reset to null, leaving the UI blind to
-        // the actual context state after the handoff.
+        // response.tokenUsage is the compaction call usage: its inputTokens
+        // describe the old full context, while outputTokens describe the handoff.
+        // Keep that response untouched for backend usage history, and store a
+        // separate post-compaction context snapshot for the next request/UI.
         if (response.tokenUsage) {
-          ctx.updateSessionField(
-            conversationId,
-            "tokenUsage",
-            response.tokenUsage
-          );
+          ctx.updateSessionField(conversationId, "tokenUsage", {
+            inputTokens: response.tokenUsage.outputTokens,
+            outputTokens: 0,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+          });
         }
 
         const compactionMessage: ChatConversationMessage = {

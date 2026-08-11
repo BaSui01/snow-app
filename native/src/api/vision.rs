@@ -462,14 +462,6 @@ async fn textify_parsed_content(
             &vision_config.model,
             None,
         );
-        emit_vision_status(
-            on_chunk,
-            "done",
-            index + 1,
-            total,
-            &vision_config.model,
-            None,
-        );
         if !result.is_empty() && !result.ends_with('\n') {
             result.push('\n');
         }

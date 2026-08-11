@@ -9872,7 +9872,7 @@ input {
 
 /* ===== Thinking Block ===== */
 .thinking-block {
-  margin: 0 0 14px;
+  margin: 0 0 14px 4px;
   padding-left: 14px;
   border-left: 4px solid var(--border-color);
   color: var(--text-tertiary);
@@ -10103,7 +10103,7 @@ input {
 /* Status dot on the vertical line */
 .tcn-dot {
   position: absolute;
-  left: -16.5px;
+  left: -17.5px;
   top: 50%;
   transform: translateY(-50%);
   width: 7px;

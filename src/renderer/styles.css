@@ -8678,6 +8678,40 @@ input {
   cursor: help;
 }
 
+.response-incomplete-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--accent-amber-bg);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--accent-amber-bg) 55%, transparent);
+  color: var(--accent-amber-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.response-incomplete-notice-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.response-incomplete-notice-content {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.response-incomplete-notice-title {
+  font-weight: 600;
+}
+
+.response-incomplete-notice-detail {
+  opacity: 0.85;
+}
+
 .chat-message-group.is-error .ai-message {
   color: var(--accent-red-text);
 }

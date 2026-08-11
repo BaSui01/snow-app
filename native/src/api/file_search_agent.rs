@@ -112,8 +112,11 @@ pub async fn run_file_search_agent(
         ));
     }
 
-    let retry_options =
-        RetryOptions::from_config(api_config.max_retries, api_config.retry_base_delay_ms);
+    let retry_options = RetryOptions::from_config(
+        api_config.max_retries,
+        api_config.retry_base_delay_ms,
+        api_config.partial_retry_max_chars,
+    );
     let tools = build_agent_tools();
     let system_prompt = build_system_prompt(workspace_path.trim());
     let user_prompt = format!("Find files matching this description: {trimmed_query}");

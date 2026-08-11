@@ -250,6 +250,8 @@ export function ApiSettingsTreePanel({
       maxRetries: config.maxRetries != null ? String(config.maxRetries) : "",
       retryBaseDelayMs:
         config.retryBaseDelayMs != null ? String(config.retryBaseDelayMs) : "",
+      partialRetryMaxChars:
+        config.partialRetryMaxChars != null ? String(config.partialRetryMaxChars) : "",
       systemPromptIdsJson: config.systemPromptIdsJson ?? "",
       customHeaderSchemeId: config.customHeaderSchemeId ?? "",
       thinkingValue: extractThinkingValueFromConfigJson(
@@ -354,6 +356,7 @@ export function ApiSettingsTreePanel({
         autoCompressThreshold: config.autoCompressThreshold,
         maxRetries: config.maxRetries,
         retryBaseDelayMs: config.retryBaseDelayMs,
+        partialRetryMaxChars: config.partialRetryMaxChars,
         systemPromptIdsJson: config.systemPromptIdsJson ?? "",
         customHeaderSchemeId: config.customHeaderSchemeId ?? "",
         configJson: config.configJson,
@@ -408,6 +411,7 @@ export function ApiSettingsTreePanel({
         autoCompressThreshold: config.autoCompressThreshold,
         maxRetries: config.maxRetries,
         retryBaseDelayMs: config.retryBaseDelayMs,
+        partialRetryMaxChars: config.partialRetryMaxChars,
         systemPromptIdsJson: config.systemPromptIdsJson ?? "",
         customHeaderSchemeId: config.customHeaderSchemeId ?? "",
         configJson: config.configJson,

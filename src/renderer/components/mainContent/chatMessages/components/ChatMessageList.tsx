@@ -222,6 +222,9 @@ export const ChatMessageList = ({
             }
             summary={message.content}
             thinking={message.thinking}
+            incompleteVariant={message.incompleteVariant}
+            interruptionReason={message.interruptionReason}
+            recoveryOutcome={message.recoveryOutcome}
             showActions={showActions}
             toolCalls={message.toolCalls}
             hookExecutions={message.hookExecutions}

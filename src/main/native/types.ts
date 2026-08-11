@@ -52,6 +52,7 @@ export type ApiConfigInput = {
   autoCompressThreshold?: number;
   maxRetries?: number;
   retryBaseDelayMs?: number;
+  partialRetryMaxChars?: number;
   systemPromptIdsJson: string;
   customHeaderSchemeId: string;
   configJson: string;
@@ -677,6 +678,18 @@ export type ConversationSearchResult = {
   matchedContent: string;
 };
 
+export type StreamInterruptionReason =
+  | "unexpected_eof"
+  | "read_error"
+  | "idle_timeout"
+  | "explicit_incomplete"
+  | "output_limit";
+
+export type StreamRecoveryOutcome =
+  | "partial_threshold"
+  | "retry_exhausted"
+  | "non_retriable";
+
 export type ChatMessageRecord = {
   id: string;
   role: string;
@@ -687,6 +700,8 @@ export type ChatMessageRecord = {
   responseId: string;
   checkpointId: string;
   toolCallsJson: string;
+  interruptionReason?: StreamInterruptionReason | null;
+  recoveryOutcome?: StreamRecoveryOutcome | null;
   createdAt: string;
 };
 
@@ -877,6 +892,8 @@ export type ResponsesApiResult = {
   toolCallsJson: string;
   tokenUsage: TokenUsage;
   persistedUserMessageIds: string[];
+  interruptionReason?: StreamInterruptionReason | null;
+  recoveryOutcome?: StreamRecoveryOutcome | null;
 };
 
 export type ResponsesApiStreamChunk = {

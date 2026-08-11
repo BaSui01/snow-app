@@ -48,6 +48,7 @@ pub struct ApiConfigInput {
     pub auto_compress_threshold: Option<i32>,
     pub max_retries: Option<i32>,
     pub retry_base_delay_ms: Option<i32>,
+    pub partial_retry_max_chars: Option<i32>,
     pub system_prompt_ids_json: String,
     pub custom_header_scheme_id: String,
     pub config_json: String,
@@ -79,6 +80,7 @@ pub struct ApiConfigRecord {
     pub auto_compress_threshold: Option<i32>,
     pub max_retries: Option<i32>,
     pub retry_base_delay_ms: Option<i32>,
+    pub partial_retry_max_chars: Option<i32>,
     pub system_prompt_ids_json: String,
     pub custom_header_scheme_id: String,
     pub config_json: String,
@@ -587,6 +589,8 @@ pub struct ChatMessageRecord {
     pub response_id: String,
     pub checkpoint_id: String,
     pub tool_calls_json: String,
+    pub interruption_reason: Option<String>,
+    pub recovery_outcome: Option<String>,
     pub created_at: String,
 }
 

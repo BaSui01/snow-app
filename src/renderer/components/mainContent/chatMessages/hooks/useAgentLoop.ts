@@ -13,9 +13,9 @@ import {
   formatMessageTime,
   formatToolResultsContent,
   getErrorMessage,
-  isResponseErrorStatus,
   parseToolCalls,
 } from "../utils/conversationHelpers";
+import { resolveResponseDisposition } from "../utils/responseDisposition";
 import {
   appendHookExecutionToMessage,
   buildHookExecRecord,
@@ -330,7 +330,8 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         }
 
         const response = await streamPromise;
-        const responseFailed = isResponseErrorStatus(response.status);
+        const responseDisposition = resolveResponseDisposition(response);
+        const responseFailed = responseDisposition.kind === "error";
 
         const ref = ctx.sessionsRefData.current.get(effectiveKey);
         if (ref) {
@@ -475,7 +476,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           if (
             isFirstMessage &&
             !summaryTriggered &&
-            !responseFailed
+            responseDisposition.kind === "complete"
           ) {
             summaryTriggered = true;
             const summaryConvId = response.conversationId;
@@ -538,11 +539,45 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           );
         }
 
-        // Parse tool calls early: the auto-compaction gate below must know
-        // whether the agent loop will actually continue before compacting.
-        // (Marking the first call as running happens later in the tool
-        // executor; parsing itself is side-effect free.)
-        const toolCalls = parseToolCalls(response.toolCallsJson);
+        // A final incomplete-like response is terminal for this model
+        // iteration. Rust owns transport retries, so the renderer only keeps
+        // safe display data and must not parse tools, compact, or recurse.
+        if (responseDisposition.kind === "incomplete") {
+          ctx.updateSessionMessages(effectiveKey, (currentMessages) =>
+            currentMessages.map((currentMessage) =>
+              currentMessage.id === currentAssistantMessageId
+                ? {
+                    ...currentMessage,
+                    content:
+                      response.content || currentMessage.content || "",
+                    thinking:
+                      response.thinking ||
+                      currentMessage.thinking ||
+                      undefined,
+                    timestamp: formatMessageTime(),
+                    status: "incomplete" as const,
+                    incompleteVariant: responseDisposition.variant,
+                    interruptionReason: responseDisposition.reason,
+                    recoveryOutcome: responseDisposition.recoveryOutcome,
+                    responseId: response.id || undefined,
+                    model: response.model || options.model,
+                    toolCalls: undefined,
+                    isRetrying: false,
+                    retryAttempt: undefined,
+                    retryError: undefined,
+                  }
+                : currentMessage
+            )
+          );
+          return;
+        }
+
+        // Only complete responses may expose executable tool calls. Error
+        // responses keep their existing terminal path with an empty tool list.
+        const toolCalls =
+          responseDisposition.kind === "complete"
+            ? parseToolCalls(response.toolCallsJson)
+            : [];
         const visibleToolCalls = toolCalls;
 
         // Auto-compaction check: when the active API config has
@@ -684,7 +719,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         }
 
         // Failed responses still migrate the session, but remain visible
-        // locally as an error. "incomplete" responses are partial but usable.
+        // locally as an error. Complete responses are finalized as sent.
         ctx.updateSessionMessages(effectiveKey, (currentMessages) =>
           currentMessages.map((currentMessage) => {
             if (currentMessage.id !== currentAssistantMessageId) {

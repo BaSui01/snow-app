@@ -21,6 +21,7 @@ export type ApiConfigInput = {
   autoCompressThreshold?: number | null;
   maxRetries?: number | null;
   retryBaseDelayMs?: number | null;
+  partialRetryMaxChars?: number | null;
   systemPromptIdsJson: string;
   customHeaderSchemeId: string;
   configJson: string;
@@ -85,6 +86,18 @@ export type ResponsesApiRequest = {
   thinkingStrength?: string | null;
 };
 
+export type StreamInterruptionReason =
+  | "unexpected_eof"
+  | "read_error"
+  | "idle_timeout"
+  | "explicit_incomplete"
+  | "output_limit";
+
+export type StreamRecoveryOutcome =
+  | "partial_threshold"
+  | "retry_exhausted"
+  | "non_retriable";
+
 export type TokenUsage = {
   inputTokens: number;
   outputTokens: number;
@@ -102,6 +115,8 @@ export type ResponsesApiResult = {
   toolCallsJson: string;
   tokenUsage: TokenUsage;
   persistedUserMessageIds: string[];
+  interruptionReason?: StreamInterruptionReason | null;
+  recoveryOutcome?: StreamRecoveryOutcome | null;
 };
 
 export type ResponsesApiStreamChunk = {

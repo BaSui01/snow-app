@@ -13,8 +13,9 @@ use super::{migrations, services};
 
 /// Bumped whenever the schema changes; written to `PRAGMA user_version` after
 /// a successful `create_schema` so the app can detect stale databases.
-const CURRENT_SCHEMA_VERSION: i64 = 30;
-
+/// 31: main's scheduled-tasks pre-script migration (30) + PR #65's three
+/// stream-interruption migrations (29 baseline + 4 total additions).
+const CURRENT_SCHEMA_VERSION: i64 = 31;
 const SNOWFLAKE_EPOCH_MS: u64 = 1_704_067_200_000;
 const SNOWFLAKE_WORKER_ID_BITS: u64 = 10;
 const SNOWFLAKE_SEQUENCE_BITS: u64 = 12;
@@ -404,6 +405,7 @@ pub(crate) fn create_schema(connection: &Connection) -> rusqlite::Result<()> {
            auto_compress_threshold INTEGER,
            max_retries INTEGER NOT NULL DEFAULT 5,
            retry_base_delay_ms INTEGER NOT NULL DEFAULT 3000,
+           partial_retry_max_chars INTEGER NOT NULL DEFAULT 1000,
            system_prompt_ids_json TEXT NOT NULL DEFAULT '',
            custom_header_scheme_id TEXT NOT NULL DEFAULT '',
            config_json TEXT NOT NULL DEFAULT '{}',
@@ -667,6 +669,8 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            response_id TEXT NOT NULL DEFAULT '',
            checkpoint_id TEXT NOT NULL DEFAULT '',
            status TEXT NOT NULL DEFAULT 'sent',
+           interruption_reason TEXT,
+           recovery_outcome TEXT,
            raw_json TEXT NOT NULL DEFAULT '{}',
            thinking TEXT NOT NULL DEFAULT '',
            thinking_blocks_json TEXT NOT NULL DEFAULT '[]',
@@ -821,3 +825,50 @@ pub fn database_error(database_path: &Path, action: &str, error: rusqlite::Error
     ))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::{create_schema, CURRENT_SCHEMA_VERSION};
+    use rusqlite::Connection;
+
+    #[test]
+    fn fresh_schema_includes_stream_metadata_and_current_user_version() {
+        let connection = Connection::open_in_memory().expect("open database");
+        create_schema(&connection).expect("create schema");
+
+        let model_column: (String, String) = connection
+            .query_row(
+                "SELECT type, dflt_value
+                   FROM pragma_table_info('sub_agent_configs')
+                  WHERE name = 'model'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read model column");
+        let mut statement = connection
+            .prepare(
+                "SELECT name, \"notnull\"
+                   FROM pragma_table_info('chat_messages')
+                  WHERE name IN ('interruption_reason', 'recovery_outcome')
+                  ORDER BY cid",
+            )
+            .expect("prepare chat message columns");
+        let metadata_columns: Vec<(String, i32)> = statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .expect("read chat message columns")
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .expect("collect chat message columns");
+        let user_version: i64 = connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .expect("read user version");
+
+        assert_eq!(model_column, ("TEXT".into(), "''".into()));
+        assert_eq!(
+            metadata_columns,
+            vec![
+                ("interruption_reason".into(), 0),
+                ("recovery_outcome".into(), 0),
+            ]
+        );
+        assert_eq!(user_version, CURRENT_SCHEMA_VERSION);
+    }
+}

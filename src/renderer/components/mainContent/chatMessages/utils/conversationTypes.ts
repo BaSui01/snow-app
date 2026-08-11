@@ -10,6 +10,11 @@ import type {
 } from "../../../../../preload";
 import type { NotificationConversationTarget } from "../../../../../shared/notification";
 import type { Dispatch, SetStateAction } from "react";
+import type {
+  IncompleteVariant,
+  NormalizedInterruptionReason,
+  NormalizedRecoveryOutcome,
+} from "./responseDisposition";
 
 export type UserQuestionState = {
   questionId: string;
@@ -111,7 +116,10 @@ export type ChatConversationMessage = {
   content: string;
   thinking?: string;
   timestamp: string;
-  status?: "sending" | "sent" | "error";
+  status?: "sending" | "sent" | "incomplete" | "error";
+  incompleteVariant?: IncompleteVariant;
+  interruptionReason?: NormalizedInterruptionReason;
+  recoveryOutcome?: NormalizedRecoveryOutcome;
   responseId?: string;
   model?: string;
   toolCalls?: ToolCallInfo[];

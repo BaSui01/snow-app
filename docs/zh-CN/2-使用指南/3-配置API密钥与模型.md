@@ -103,6 +103,12 @@ Snow App 内置 `config` 工具，AI Agent 可读写与 UI 同源的配置。API
 | `config-set scope=apiProfiles key=<档案名> value={...}` | 新建/更新档案（写应用数据库，与 UI 同源、立即生效） |
 | `config-delete scope=apiProfiles key=<档案名>` | 删除档案（破坏性操作，须先经用户确认再带 `confirmed: true`） |
 
+```mermaid
+flowchart LR
+    A[第一步: 建无密钥档案<br/>baseUrl + advancedModel + basicModel] --> B[第二步: 用户提供密钥后补上<br/>apiKey 省略即留空, 不会清掉已填密钥]
+    B --> C[第三步（可选）: 切换为生效档案<br/>isActive: true]
+```
+
 ### 5.1 常用操作速查（Agent 照着做）
 
 #### ① 查看档案

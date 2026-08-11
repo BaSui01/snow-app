@@ -44,6 +44,7 @@
 - Ctrl/Cmd+click on a message link no longer navigates the current window (frontend reload) and stops streaming/generation previews; links now open in the app browser panel.
 - ImageGen settings toggles were invisible due to a slider class-name mismatch; the class names are aligned.
 - Responses API failed terminal events are handled correctly (event/stream/retry paths).
+- **Mid-stream retry**: Streaming responses interrupted mid-stream (network `terminated` / non-user-cancel `aborted`) now retry automatically based on what was already received — partial tool calls always retry (a truncated tool call is unusable), short partial text retries, and long partial text (≥ 1000 chars) is kept as an incomplete-but-usable result to avoid double token cost. User cancellation and retry-budget exhaustion keep the previous keep-partial behavior. Covers Chat Completions / Anthropic / Responses / Gemini streams.
 - The Git tab stays visible when it is the only open tab.
 - Chat deletion confirmation dialog is reused consistently (single/batch).
 

@@ -450,6 +450,31 @@ export const en = {
   "chat.expandAll": "Expand all",
   "chat.collapse": "Collapse",
   "chat.stopping": "Stopping...",
+  "chat.incomplete.title": "Response ended before completion",
+  "chat.incomplete.variant.partialContent":
+    "The partial response was kept and may be incomplete. Use the input box to ask it to continue.",
+  "chat.incomplete.variant.thinkingOnly":
+    "The thinking trace was kept, but no usable answer was produced. Use the input box to try again.",
+  "chat.incomplete.variant.toolCall":
+    "An incomplete tool call was discarded and was not run. Use the input box to continue.",
+  "chat.incomplete.variant.empty":
+    "No usable response content was received. Use the input box to try again.",
+  "chat.incomplete.reason.unexpectedEof":
+    "The connection closed before the provider confirmed completion.",
+  "chat.incomplete.reason.readError":
+    "The connection failed while receiving response data.",
+  "chat.incomplete.reason.idleTimeout":
+    "Timed out while waiting for response data.",
+  "chat.incomplete.reason.explicitIncomplete":
+    "The provider explicitly marked the response as incomplete.",
+  "chat.incomplete.reason.outputLimit":
+    "The model reached its output limit.",
+  "chat.incomplete.outcome.partialThreshold":
+    "The visible partial response met the safe retention threshold.",
+  "chat.incomplete.outcome.retryExhausted":
+    "Automatic transport recovery exhausted its retry budget.",
+  "chat.incomplete.outcome.nonRetriable":
+    "This interruption could not be retried safely.",
   "chat.copyResponse": "Copy",
   "chat.copyAsText": "Copy as text",
   "chat.copyAsMarkdown": "Copy as Markdown",

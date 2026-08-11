@@ -87,15 +87,12 @@ export type ScheduledTaskRecord = {
   lastError?: string;
   /** How many times this task has executed the AI Loop. */
   runCount: number;
-<<<<<<< HEAD
   /** How many times the pre-script skipped the AI Loop. */
   skipCount: number;
   /** ISO timestamp of the last skip, if any. */
   lastSkippedAt?: string;
   /** Reason from the last skip (script JSON "reason" or exit-code summary). */
   lastSkipReason?: string;
-||||||| parent of 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
-=======
   /** Recent execution history (ring buffer, newest last, max 20 entries).
    *  Persisted in the backend database and restored after a restart. */
   history?: ScheduledTaskRunRecord[];
@@ -125,7 +122,6 @@ export type ScheduledTaskRunOptions = {
   /** Thinking strength override ("none" | "low" | "medium" | "high" | custom).
    *  Applied per-request (in-memory), never mutates the profile config. */
   thinkingStrength?: string;
->>>>>>> 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
 };
 
 /** Input shape for creating a scheduled task (mirrors the MCP tool schema). */
@@ -136,7 +132,12 @@ export type CreateScheduledTaskInput = {
   name: string;
   prompt: string;
   schedule: ScheduledTaskSchedule;
-<<<<<<< HEAD
+  /** Optional per-task API configuration overrides (see ScheduledTaskRunOptions). */
+  apiProfile?: string;
+  /** Basic model snapshot used only for the fired conversation's first title. */
+  basicModel?: string;
+  model?: string;
+  thinkingStrength?: string;
   preScript?: string;
   preScriptTimeoutMs?: number;
   runOnScriptError?: boolean;
@@ -148,15 +149,6 @@ export type PreScriptResult = {
   stdout: string;
   stderr: string;
   timedOut: boolean;
-||||||| parent of 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
-=======
-  /** Optional per-task API configuration overrides (see ScheduledTaskRunOptions). */
-  apiProfile?: string;
-  /** Basic model snapshot used only for the fired conversation's first title. */
-  basicModel?: string;
-  model?: string;
-  thinkingStrength?: string;
->>>>>>> 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
 };
 
 /** Input shape for updating an existing task's run configuration. Only the

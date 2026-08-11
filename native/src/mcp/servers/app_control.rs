@@ -792,52 +792,6 @@ fn validate_create_scheduled_task_args(args: &Value) -> napi::Result<(String, Va
         }
     }
 
-<<<<<<< HEAD
-    // Optional pre-script fields (validated here for an actionable model error;
-    // the renderer-side store applies the same constraints as single source
-    // of truth).
-    let mut payload = serde_json::Map::new();
-    payload.insert("name".to_string(), json!(name));
-    payload.insert("prompt".to_string(), json!(prompt));
-    payload.insert("schedule".to_string(), Value::Object(normalized));
-
-    if let Some(pre_script) = args
-        .get("preScript")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        payload.insert("preScript".to_string(), json!(pre_script));
-
-        if let Some(timeout_ms) = args.get("preScriptTimeoutMs").and_then(Value::as_i64) {
-            if !(1000..=300_000).contains(&timeout_ms) {
-                return Err(Error::new(
-                    Status::InvalidArg,
-                    format!("preScriptTimeoutMs must be 1000-300000 ms, received {timeout_ms}"),
-                ));
-            }
-            payload.insert("preScriptTimeoutMs".to_string(), json!(timeout_ms));
-        }
-
-        if let Some(run_on_error) = args.get("runOnScriptError").and_then(Value::as_bool) {
-            payload.insert("runOnScriptError".to_string(), json!(run_on_error));
-        }
-    }
-
-    Ok((
-        "create_scheduled_task".to_string(),
-        Value::Object(payload),
-    ))
-||||||| parent of 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
-    Ok((
-        "create_scheduled_task".to_string(),
-        json!({
-            "name": name,
-            "prompt": prompt,
-            "schedule": Value::Object(normalized),
-        }),
-    ))
-=======
     // Optional per-task configuration fields. Values are trimmed here, and empty
     // strings are omitted. basicModel is retained for display/config alignment;
     // model remains the advanced model used by the task's fired conversation.
@@ -880,8 +834,33 @@ fn validate_create_scheduled_task_args(args: &Value) -> napi::Result<(String, Va
         }
     }
 
+    // Optional pre-script fields (validated here for an actionable model error;
+    // the renderer-side store applies the same constraints as single source
+    // of truth).
+    if let Some(pre_script) = args
+        .get("preScript")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        payload.insert("preScript".to_string(), json!(pre_script));
+
+        if let Some(timeout_ms) = args.get("preScriptTimeoutMs").and_then(Value::as_i64) {
+            if !(1000..=300_000).contains(&timeout_ms) {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    format!("preScriptTimeoutMs must be 1000-300000 ms, received {timeout_ms}"),
+                ));
+            }
+            payload.insert("preScriptTimeoutMs".to_string(), json!(timeout_ms));
+        }
+
+        if let Some(run_on_error) = args.get("runOnScriptError").and_then(Value::as_bool) {
+            payload.insert("runOnScriptError".to_string(), json!(run_on_error));
+        }
+    }
+
     Ok(("create_scheduled_task".to_string(), Value::Object(payload)))
->>>>>>> 01b746a (feat(scheduled-tasks): 任务管理增强——全局任务/备忘录联动/per-task 覆盖/管理优化)
 }
 
 fn validate_create_project_args(args: &Value) -> napi::Result<(String, Value)> {

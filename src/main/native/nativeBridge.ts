@@ -423,6 +423,12 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to delete sensitive command configs"
           )
         ),
+      resetSensitiveCommandConfigs: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to reset sensitive command configs"
+          )
+        ),
       listProjectSensitiveCommandConfigs: () =>
         Promise.reject(
           new Error(
@@ -947,6 +953,10 @@ export const loadNativeBridge = (): NativeBridge => {
       writeAppLog: () =>
         Promise.reject(
           new Error("Rust native bridge is required to write app logs")
+        ),
+      runPreScript: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to run pre-scripts")
         ),
       listAppLogs: () =>
         Promise.reject(

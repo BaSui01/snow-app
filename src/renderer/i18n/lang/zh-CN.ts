@@ -226,6 +226,15 @@ export const zhCN = {
   "scheduledTask.errorPromptRequired": "请填写提示词",
   "scheduledTask.errorInvalidSchedule": "计划无效",
   "scheduledTask.errorCreateFailed": "创建任务失败",
+  "scheduledTask.errorInvalidTimeout": "前置脚本超时必须为数字",
+  "scheduledTask.preScript": "前置脚本（可选）",
+  "scheduledTask.preScriptCommand": "Shell 命令",
+  "scheduledTask.preScriptPlaceholder": "例如：git diff --quiet || exit 1",
+  "scheduledTask.preScriptHint":
+    "退出码 0 = 运行 AI，1 = 跳过。或输出一行 JSON：{\"run\":false,\"reason\":\"...\",\"output\":\"...\"}——\"output\" 会填充 prompt 中的 {{SCRIPT_OUTPUT}} 占位符。",
+  "scheduledTask.preScriptTimeout": "超时（秒）",
+  "scheduledTask.runOnScriptError": "脚本出错时仍运行 AI",
+  "scheduledTask.skipCount": "跳过 {{count}} 次",
   "sidebar.chatTimeRunning": "运行中",
   "sidebar.chatTimeToday": "今天",
   "sidebar.chatTimeYesterday": "昨天",
@@ -1793,6 +1802,12 @@ export const zhCN = {
   "settings.sensitiveCommandPresetDeleteBlocked": "预置规则不能删除。",
   "settings.sensitiveCommandDeleteSuccess": "已删除敏感命令规则。",
   "settings.sensitiveCommandDeleteError": "删除敏感命令规则失败",
+  "settings.sensitiveCommandReset": "复位为系统默认",
+  "settings.sensitiveCommandResetConfirmTitle": "复位敏感命令规则",
+  "settings.sensitiveCommandResetConfirm":
+    "确定将所有敏感命令规则复位为系统默认吗？自定义规则将被移除，预置规则将恢复为默认值。",
+  "settings.sensitiveCommandResetSuccess": "已复位敏感命令规则为系统默认。",
+  "settings.sensitiveCommandResetError": "复位敏感命令规则失败",
   "settings.sensitiveCommandDeleteTitle": "删除敏感命令规则",
   "settings.sensitiveCommandDeleteConfirm":
     "确定删除敏感命令规则“{{pattern}}”吗？此操作无法撤销。",

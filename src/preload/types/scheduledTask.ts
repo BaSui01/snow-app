@@ -44,12 +44,23 @@ export type ScheduledTaskRecord = {
    *  project, mirroring the memo project-isolation model. */
   directoryId: string;
   name: string;
-  /** The user-configured prompt sent to the AI Loop on each execution. */
+  /** The user-configured prompt sent to the AI Loop on each execution.
+   *  May contain the {{SCRIPT_OUTPUT}} placeholder, replaced with the
+   *  pre-script's JSON "output" field (or empty) before sending. */
   prompt: string;
   schedule: ScheduledTaskSchedule;
   status: ScheduledTaskStatus;
   /** Whether the task is paused (timers cleared, not firing). */
   paused: boolean;
+  /** Optional shell command executed before the AI Loop. The script decides
+   *  whether the prompt is sent: exit 0 = run, exit 1 = skip; or the last
+   *  stdout line may be a JSON object {"run":bool,"reason":string,"output":string}. */
+  preScript?: string;
+  /** Timeout for the pre-script in ms (default 60000, range 1000-300000). */
+  preScriptTimeoutMs?: number;
+  /** When true, a pre-script failure (non-zero/other exit, timeout, spawn
+   *  error) still proceeds to the AI Loop. Default false. */
+  runOnScriptError?: boolean;
   createdAt: string;
   /** ISO timestamp of the last execution, if any. */
   lastRunAt?: string;
@@ -57,8 +68,14 @@ export type ScheduledTaskRecord = {
   nextRunAt?: string;
   /** Error message from the last execution, if status === "error". */
   lastError?: string;
-  /** How many times this task has executed. */
+  /** How many times this task has executed the AI Loop. */
   runCount: number;
+  /** How many times the pre-script skipped the AI Loop. */
+  skipCount: number;
+  /** ISO timestamp of the last skip, if any. */
+  lastSkippedAt?: string;
+  /** Reason from the last skip (script JSON "reason" or exit-code summary). */
+  lastSkipReason?: string;
 };
 
 /** Input shape for creating a scheduled task (mirrors the MCP tool schema). */
@@ -68,4 +85,15 @@ export type CreateScheduledTaskInput = {
   name: string;
   prompt: string;
   schedule: ScheduledTaskSchedule;
+  preScript?: string;
+  preScriptTimeoutMs?: number;
+  runOnScriptError?: boolean;
+};
+
+/** Result of running a scheduled-task pre-script in the Rust backend. */
+export type PreScriptResult = {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
 };

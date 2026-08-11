@@ -1,13 +1,17 @@
 import {
   AlertCircle,
   CalendarClock,
+  ChevronDown,
+  ChevronRight,
   Clock,
+  FileCode2,
   Loader2,
   Pause,
   Play,
   Plus,
   Repeat,
   RotateCw,
+  SkipForward,
   Trash2,
   Zap,
 } from "lucide-react";
@@ -34,6 +38,7 @@ type RecurringMode = "interval" | "daily";
 type ScheduledTasksModalProps = {
   open: boolean;
   directoryId: string;
+  directoryPath: string;
   onClose: () => void;
 };
 
@@ -114,6 +119,7 @@ const toLocalDateTimeInput = (ms: number): string => {
 export function ScheduledTasksModal({
   open,
   directoryId,
+  directoryPath,
   onClose,
 }: ScheduledTasksModalProps): React.JSX.Element {
   const { t } = useI18n();
@@ -125,7 +131,7 @@ export function ScheduledTasksModal({
     togglePauseTask,
     runTaskNow,
     isExecutorReady,
-  } = useScheduledTasks(directoryId);
+  } = useScheduledTasks(directoryId, directoryPath);
 
   // Form state
   const [name, setName] = useState("");
@@ -144,6 +150,11 @@ export function ScheduledTasksModal({
   // daily: hour/minute
   const [dailyHour, setDailyHour] = useState("9");
   const [dailyMinute, setDailyMinute] = useState("0");
+  // pre-script (optional)
+  const [preScriptOpen, setPreScriptOpen] = useState(false);
+  const [preScript, setPreScript] = useState("");
+  const [preScriptTimeout, setPreScriptTimeout] = useState("60");
+  const [runOnScriptError, setRunOnScriptError] = useState(false);
 
   const [formError, setFormError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -223,12 +234,35 @@ export function ScheduledTasksModal({
       );
       return;
     }
+    const trimmedPreScript = preScript.trim();
+    const timeoutValue = Number.parseFloat(preScriptTimeout);
+    if (trimmedPreScript && !Number.isFinite(timeoutValue)) {
+      setFormError(
+        t("scheduledTask.errorInvalidTimeout", {
+          defaultValue: "Pre-script timeout must be a number",
+        })
+      );
+      return;
+    }
     setIsCreating(true);
     try {
-      createTask({ name: trimmedName, prompt: trimmedPrompt, schedule });
+      createTask({
+        name: trimmedName,
+        prompt: trimmedPrompt,
+        schedule,
+        preScript: trimmedPreScript || undefined,
+        preScriptTimeoutMs: trimmedPreScript
+          ? Math.round(timeoutValue * 1000)
+          : undefined,
+        runOnScriptError: trimmedPreScript ? runOnScriptError : undefined,
+      });
       // Reset form for next entry
       setName("");
       setPrompt("");
+      setPreScript("");
+      setPreScriptTimeout("60");
+      setRunOnScriptError(false);
+      setPreScriptOpen(false);
       setFormError(null);
     } catch (error) {
       setFormError(
@@ -286,6 +320,15 @@ export function ScheduledTasksModal({
           <div className="scheduled-task-item-prompt">
             {previewPrompt(task.prompt)}
           </div>
+          {task.preScript && (
+            <div
+              className="scheduled-task-item-script"
+              title={task.preScript}
+            >
+              <FileCode2 size={12} strokeWidth={1.8} />
+              {previewPrompt(task.preScript)}
+            </div>
+          )}
           <div className="scheduled-task-item-meta">
             <span className="scheduled-task-item-schedule" title={formatSchedule(task.schedule, t)}>
               {task.schedule.type === "once" ? (
@@ -304,7 +347,7 @@ export function ScheduledTasksModal({
               </span>
             )}
           </div>
-          {(task.lastRunAt || task.runCount > 0 || task.lastError) && (
+          {(task.lastRunAt || task.runCount > 0 || task.lastError || task.skipCount > 0) && (
             <div className="scheduled-task-item-meta sub">
               {task.lastRunAt && (
                 <span className="scheduled-task-item-last">
@@ -317,6 +360,21 @@ export function ScheduledTasksModal({
                     values: { count: task.runCount },
                     defaultValue: `${task.runCount} runs`,
                   })}
+                </span>
+              )}
+              {task.skipCount > 0 && (
+                <span
+                  className="scheduled-task-item-skipped"
+                  title={task.lastSkipReason}
+                >
+                  <SkipForward size={12} strokeWidth={1.8} />
+                  {t("scheduledTask.skipCount", {
+                    values: { count: task.skipCount },
+                    defaultValue: `${task.skipCount} skipped`,
+                  })}
+                  {task.lastSkipReason
+                    ? ` · ${previewPrompt(task.lastSkipReason)}`
+                    : ""}
                 </span>
               )}
               {task.lastError && (
@@ -466,6 +524,82 @@ export function ScheduledTasksModal({
                 value={name}
               />
             </label>
+
+            <div className="scheduled-tasks-pre-script">
+              <button
+                className="scheduled-tasks-pre-script-toggle"
+                onClick={() => setPreScriptOpen((open) => !open)}
+                type="button"
+              >
+                {preScriptOpen ? (
+                  <ChevronDown size={13} strokeWidth={1.9} />
+                ) : (
+                  <ChevronRight size={13} strokeWidth={1.9} />
+                )}
+                <FileCode2 size={13} strokeWidth={1.9} />
+                <span>
+                  {t("scheduledTask.preScript", {
+                    defaultValue: "Pre-script (optional)",
+                  })}
+                </span>
+              </button>
+              {preScriptOpen && (
+                <div className="scheduled-tasks-pre-script-body">
+                  <label className="scheduled-tasks-field">
+                    <span>
+                      {t("scheduledTask.preScriptCommand", {
+                        defaultValue: "Shell command",
+                      })}
+                    </span>
+                    <textarea
+                      className="scheduled-tasks-script-textarea"
+                      onChange={(e) => setPreScript(e.target.value)}
+                      placeholder={t("scheduledTask.preScriptPlaceholder", {
+                        defaultValue:
+                          "e.g. git diff --quiet || exit 1",
+                      })}
+                      rows={3}
+                      value={preScript}
+                    />
+                  </label>
+                  <div className="scheduled-tasks-pre-script-hint">
+                    {t("scheduledTask.preScriptHint", {
+                      defaultValue:
+                        "Exit 0 = run AI, exit 1 = skip. Or print a JSON line: {\\\"run\\\":false,\\\"reason\\\":\\\"...\\\",\\\"output\\\":\\\"...\\\"} — \\\"output\\\" fills the {{SCRIPT_OUTPUT}} placeholder in the prompt.",
+                    })}
+                  </div>
+                  <div className="scheduled-tasks-field-row">
+                    <label className="scheduled-tasks-field">
+                      <span>
+                        {t("scheduledTask.preScriptTimeout", {
+                          defaultValue: "Timeout (s)",
+                        })}
+                      </span>
+                      <input
+                        min="1"
+                        max="300"
+                        onChange={(e) => setPreScriptTimeout(e.target.value)}
+                        type="number"
+                        value={preScriptTimeout}
+                      />
+                    </label>
+                    <label className="toggle-switch scheduled-tasks-switch-field">
+                      <input
+                        checked={runOnScriptError}
+                        onChange={(e) => setRunOnScriptError(e.target.checked)}
+                        type="checkbox"
+                      />
+                      <span className="toggle-slider" />
+                      <span>
+                        {t("scheduledTask.runOnScriptError", {
+                          defaultValue: "Run AI even if the script fails",
+                        })}
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              )}
+            </div>
 
             <label className="scheduled-tasks-field">
               <span>{t("scheduledTask.prompt", { defaultValue: "Prompt" })}</span>

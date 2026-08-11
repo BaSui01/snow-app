@@ -1360,6 +1360,11 @@ pub fn delete_sensitive_command_config(command_id: String) -> Result<()> {
     )
 }
 
+pub fn reset_sensitive_command_configs() -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::sensitive_command_configs::reset_sensitive_command_configs(&database_path)
+}
+
 pub fn list_project_sensitive_command_configs(
     project_id: String,
 ) -> Result<Vec<ProjectSensitiveCommandConfigRecord>> {

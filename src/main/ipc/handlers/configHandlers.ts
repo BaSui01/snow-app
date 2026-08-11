@@ -324,6 +324,10 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
   ipcMain.handle("sensitive-command-configs:import-snow-cli", () =>
     readSnowCliSensitiveCommandConfig(native)
   );
+  ipcMain.handle("sensitive-command-configs:reset", async () => {
+    await native.resetSensitiveCommandConfigs();
+    return native.listSensitiveCommandConfigs();
+  });
 
   ipcMain.handle(
     "project-sensitive-command-configs:list",

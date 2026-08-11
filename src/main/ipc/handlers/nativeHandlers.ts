@@ -466,6 +466,31 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
     }
   );
 
+  ipcMain.handle(
+    "scheduled-task:run-pre-script",
+    (
+      _event,
+      command: unknown,
+      cwd: unknown,
+      timeoutMs: unknown,
+      envJson: unknown
+    ) => {
+      if (typeof command !== "string" || !command.trim()) {
+        throw new Error("Pre-script command is required");
+      }
+      if (typeof cwd !== "string" || !cwd.trim()) {
+        throw new Error("Pre-script cwd is required");
+      }
+      const timeout =
+        typeof timeoutMs === "number" && Number.isFinite(timeoutMs)
+          ? Math.round(timeoutMs)
+          : 60_000;
+      const env =
+        typeof envJson === "string" ? envJson : "{}";
+      return native.runPreScript(command.trim(), cwd.trim(), timeout, env);
+    }
+  );
+
   ipcMain.handle("mcp:list-tools", () => native.listMcpTools());
   ipcMain.handle("skills:list", (_event, projectId: unknown) => {
     if (

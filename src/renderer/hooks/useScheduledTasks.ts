@@ -29,7 +29,10 @@ import type {
  * only while this renderer process is alive. Closing/ quitting the app
  * destroys everything; nothing is persisted.
  */
-export const useScheduledTasks = (directoryId: string): {
+export const useScheduledTasks = (
+  directoryId: string,
+  directoryPath: string
+): {
   tasks: ScheduledTaskRecord[];
   createTask: (input: Omit<CreateScheduledTaskInput, "directoryId">) => ScheduledTaskRecord;
   removeTask: (id: string) => void;
@@ -75,6 +78,28 @@ export const useScheduledTasks = (directoryId: string): {
       setIsExecutorReady(false);
     };
   }, [buildFromContent]);
+
+  // Register the pre-script runner: binds the project directory as cwd and
+  // delegates to the Rust backend via the preload bridge (fully async, the
+  // tokio runtime spawns the shell process — never blocks the renderer).
+  useEffect(() => {
+    if (!directoryPath) return;
+    const unregister = scheduledTasksStore.setScriptRunner(
+      (command, options) => {
+        const envJson = JSON.stringify({
+          SNOW_DIRECTORY: directoryPath,
+          ...options.env,
+        });
+        return window.snow.runPreScript(
+          command,
+          directoryPath,
+          options.timeoutMs,
+          envJson
+        );
+      }
+    );
+    return unregister;
+  }, [directoryPath]);
 
   const createTask = useCallback(
     (input: Omit<CreateScheduledTaskInput, "directoryId">): ScheduledTaskRecord => {

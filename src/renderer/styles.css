@@ -4779,6 +4779,23 @@ input {
   margin-bottom: 10px;
 }
 
+/* 敏感命令面板：操作按钮始终在一行等宽显示（同步/复位/添加） */
+.api-settings-actions.sensitive-commands-actions {
+  display: flex;
+  flex-wrap: nowrap;
+}
+
+.api-settings-actions.sensitive-commands-actions .api-settings-action-btn {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.api-settings-actions.sensitive-commands-actions .api-settings-action-btn > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .api-settings-action-btn,
 .api-settings-form-btn {
   display: inline-flex;
@@ -17761,11 +17778,30 @@ input {
 .scheduled-task-item-schedule,
 .scheduled-task-item-next,
 .scheduled-task-item-last,
-.scheduled-task-item-runs {
+.scheduled-task-item-runs,
+.scheduled-task-item-skipped,
+.scheduled-task-item-script {
   display: inline-flex;
   align-items: center;
   gap: 3px;
   white-space: nowrap;
+}
+
+.scheduled-task-item-script {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.scheduled-task-item-skipped {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 .scheduled-task-item-error {
@@ -17903,6 +17939,82 @@ input {
 .scheduled-tasks-prompt-textarea:focus {
   border-color: var(--text-muted);
   box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+/* Pre-script (optional) collapsible section */
+.scheduled-tasks-pre-script {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.scheduled-tasks-pre-script-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  align-self: flex-start;
+  transition: background 0.12s, color 0.12s;
+}
+
+.scheduled-tasks-pre-script-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.scheduled-tasks-pre-script-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-subtle, var(--border-color));
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.scheduled-tasks-script-textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  outline: none;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.scheduled-tasks-script-textarea:focus {
+  border-color: var(--text-muted);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.scheduled-tasks-pre-script-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+/* Run-on-script-error switch (reuses the themed .toggle-switch) */
+.scheduled-tasks-switch-field {
+  align-self: center;
+  line-height: 1.4;
+}
+
+.scheduled-tasks-switch-field > span:last-child {
+  white-space: normal;
 }
 
 .scheduled-tasks-field-row {

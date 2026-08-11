@@ -227,6 +227,15 @@ export const zhTW = {
   "scheduledTask.errorPromptRequired": "請填寫提示詞",
   "scheduledTask.errorInvalidSchedule": "計劃無效",
   "scheduledTask.errorCreateFailed": "建立任務失敗",
+  "scheduledTask.errorInvalidTimeout": "前置腳本逾時必須為數字",
+  "scheduledTask.preScript": "前置腳本（選用）",
+  "scheduledTask.preScriptCommand": "Shell 命令",
+  "scheduledTask.preScriptPlaceholder": "例如：git diff --quiet || exit 1",
+  "scheduledTask.preScriptHint":
+    "退出碼 0 = 執行 AI，1 = 跳過。或輸出一行 JSON：{\"run\":false,\"reason\":\"...\",\"output\":\"...\"}——\"output\" 會填入 prompt 中的 {{SCRIPT_OUTPUT}} 佔位符。",
+  "scheduledTask.preScriptTimeout": "逾時（秒）",
+  "scheduledTask.runOnScriptError": "腳本出錯時仍執行 AI",
+  "scheduledTask.skipCount": "跳過 {{count}} 次",
   "sidebar.chatTimeRunning": "執行中",
   "sidebar.chatTimeToday": "今天",
   "sidebar.chatTimeYesterday": "昨天",
@@ -1794,6 +1803,12 @@ export const zhTW = {
   "settings.sensitiveCommandPresetDeleteBlocked": "預置規則不能刪除。",
   "settings.sensitiveCommandDeleteSuccess": "已刪除敏感命令規則。",
   "settings.sensitiveCommandDeleteError": "刪除敏感命令規則失敗",
+  "settings.sensitiveCommandReset": "重設為系統預設",
+  "settings.sensitiveCommandResetConfirmTitle": "重設敏感命令規則",
+  "settings.sensitiveCommandResetConfirm":
+    "確定將所有敏感命令規則重設為系統預設嗎？自訂規則將被移除，預置規則將恢復為預設值。",
+  "settings.sensitiveCommandResetSuccess": "已重設敏感命令規則為系統預設。",
+  "settings.sensitiveCommandResetError": "重設敏感命令規則失敗",
   "settings.sensitiveCommandDeleteTitle": "刪除敏感命令規則",
   "settings.sensitiveCommandDeleteConfirm":
     "確定刪除敏感命令規則「{{pattern}}」嗎？此操作無法復原。",

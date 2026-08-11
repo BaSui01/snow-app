@@ -993,6 +993,13 @@ pub async fn delete_sensitive_command_config(command_id: String) -> napi::Result
 }
 
 #[napi]
+pub async fn reset_sensitive_command_configs() -> napi::Result<()> {
+    tokio::task::spawn_blocking(crate::storage::reset_sensitive_command_configs)
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
 pub async fn list_project_sensitive_command_configs(
     project_id: String,
 ) -> napi::Result<Vec<ProjectSensitiveCommandConfigRecord>> {

@@ -3,6 +3,7 @@ import {
   AlertCircle,
   CalendarClock,
   CheckCircle2,
+  FileCode2,
   FolderPlus,
   Settings,
   StickyNote,
@@ -244,6 +245,7 @@ export const AppControlToolCall = ({
           isRecord(parsedArgs?.schedule) ? parsedArgs.schedule : null,
           t
         );
+        const preScript = asString(parsedArgs?.preScript);
         return (
           <div className="tool-call-app-detail tool-call-app-detail-col">
             {name ? (
@@ -258,6 +260,12 @@ export const AppControlToolCall = ({
                   {t("toolCall.appControl.scheduleLabel")}
                 </span>
                 <span>{scheduleText}</span>
+              </div>
+            ) : null}
+            {preScript ? (
+              <div className="tool-call-app-detail">
+                <FileCode2 size={12} aria-hidden="true" />
+                <span>{truncate(preScript, 120)}</span>
               </div>
             ) : null}
           </div>

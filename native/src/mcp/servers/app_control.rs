@@ -177,7 +177,7 @@ impl McpService for AppControlService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_CREATE_SCHEDULED_TASK.to_string(),
-                description: "Create a new scheduled task in the Snow App. Tasks only exist while the Snow App process is running and are cleared on exit. When a task fires, its prompt is sent to the AI Loop (a new chat conversation is created and auto-sent), giving the task access to all tools. A task is either \"once\" (executes a single time at a chosen start time) or \"recurring\" (repeats either at a fixed interval or every day at a fixed time).".to_string(),
+                description: "Create a new scheduled task in the Snow App. Tasks only exist while the Snow App process is running and are cleared on exit. When a task fires, its prompt is sent to the AI Loop (a new chat conversation is created and auto-sent), giving the task access to all tools. A task is either \\\"once\\\" (executes a single time at a chosen start time) or \\\"recurring\\\" (repeats either at a fixed interval or every day at a fixed time). Optionally a preScript (shell command, run in the project directory) decides whether the AI Loop fires: exit code 0 = run, 1 = skip; or the last stdout line may be a JSON object {\\\"run\\\":bool,\\\"reason\\\":string,\\\"output\\\":string,\\\"prompt\\\":string} — \\\"output\\\" is injected into the {{SCRIPT_OUTPUT}} placeholder in the prompt, \\\"prompt\\\" fully overrides it, and \\\"reason\\\" is recorded when skipped (also written to app logs). Non-zero/non-1 exit, timeout or spawn failure counts as a script error: by default the AI Loop does not run (task recorded as error); set runOnScriptError=true to run anyway.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -196,31 +196,43 @@ impl McpService for AppControlService {
                                 "type": {
                                     "type": "string",
                                     "enum": ["once", "recurring"],
-                                    "description": "\"once\" = execute a single time at executeAt; \"recurring\" = repeat."
+                                    "description": "\\\"once\\\" = execute a single time at executeAt; \\\"recurring\\\" = repeat."
                                 },
                                 "executeAt": {
                                     "type": "string",
-                                    "description": "ISO 8601 timestamp (UTC) for the single execution. Required when type is \"once\"."
+                                    "description": "ISO 8601 timestamp (UTC) for the single execution. Required when type is \\\"once\\\"."
                                 },
                                 "mode": {
                                     "type": "string",
                                     "enum": ["interval", "daily"],
-                                    "description": "Recurring mode: \"interval\" = every intervalMs; \"daily\" = every day at hour:minute. Required when type is \"recurring\"."
+                                    "description": "Recurring mode: \\\"interval\\\" = every intervalMs; \\\"daily\\\" = every day at hour:minute. Required when type is \\\"recurring\\\"."
                                 },
                                 "intervalMs": {
                                     "type": "number",
-                                    "description": "Milliseconds between executions. Required when mode is \"interval\". Minimum 60000 (1 minute)."
+                                    "description": "Milliseconds between executions. Required when mode is \\\"interval\\\". Minimum 60000 (1 minute)."
                                 },
                                 "hour": {
                                     "type": "integer",
-                                    "description": "Hour of day (0-23) for a daily schedule. Required when mode is \"daily\"."
+                                    "description": "Hour of day (0-23) for a daily schedule. Required when mode is \\\"daily\\\"."
                                 },
                                 "minute": {
                                     "type": "integer",
-                                    "description": "Minute of hour (0-59) for a daily schedule. Required when mode is \"daily\"."
+                                    "description": "Minute of hour (0-59) for a daily schedule. Required when mode is \\\"daily\\\"."
                                 }
                             },
                             "required": ["type"]
+                        },
+                        "preScript": {
+                            "type": "string",
+                            "description": "Optional shell command run in the project directory before the AI Loop. Exit 0 = run the AI Loop, exit 1 = skip this round. The last stdout line may instead be a JSON object: {\\\"run\\\":false,\\\"reason\\\":\\\"...\\\"} skips and records the reason; {\\\"run\\\":true,\\\"output\\\":\\\"...\\\"} injects output into the {{SCRIPT_OUTPUT}} placeholder in the prompt; {\\\"prompt\\\":\\\"...\\\"} fully overrides the prompt. Skipped runs and their script output are recorded in the app logs."
+                        },
+                        "preScriptTimeoutMs": {
+                            "type": "integer",
+                            "description": "Pre-script timeout in ms (1000-300000, default 60000). On timeout the process is killed and the run is treated as a script error."
+                        },
+                        "runOnScriptError": {
+                            "type": "boolean",
+                            "description": "When true, a pre-script failure (exit other than 0/1, timeout, spawn error) still proceeds to the AI Loop with the failure noted in the prompt. Default false."
                         }
                     },
                     "required": ["name", "prompt", "schedule"]
@@ -636,13 +648,40 @@ fn validate_create_scheduled_task_args(args: &Value) -> napi::Result<(String, Va
         }
     }
 
+    // Optional pre-script fields (validated here for an actionable model error;
+    // the renderer-side store applies the same constraints as single source
+    // of truth).
+    let mut payload = serde_json::Map::new();
+    payload.insert("name".to_string(), json!(name));
+    payload.insert("prompt".to_string(), json!(prompt));
+    payload.insert("schedule".to_string(), Value::Object(normalized));
+
+    if let Some(pre_script) = args
+        .get("preScript")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        payload.insert("preScript".to_string(), json!(pre_script));
+
+        if let Some(timeout_ms) = args.get("preScriptTimeoutMs").and_then(Value::as_i64) {
+            if !(1000..=300_000).contains(&timeout_ms) {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    format!("preScriptTimeoutMs must be 1000-300000 ms, received {timeout_ms}"),
+                ));
+            }
+            payload.insert("preScriptTimeoutMs".to_string(), json!(timeout_ms));
+        }
+
+        if let Some(run_on_error) = args.get("runOnScriptError").and_then(Value::as_bool) {
+            payload.insert("runOnScriptError".to_string(), json!(run_on_error));
+        }
+    }
+
     Ok((
         "create_scheduled_task".to_string(),
-        json!({
-            "name": name,
-            "prompt": prompt,
-            "schedule": Value::Object(normalized),
-        }),
+        Value::Object(payload),
     ))
 }
 

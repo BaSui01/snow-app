@@ -119,6 +119,18 @@ export const useAppControl = ({
               name,
               prompt,
               schedule,
+              preScript:
+                typeof payload.preScript === "string"
+                  ? payload.preScript.trim() || undefined
+                  : undefined,
+              preScriptTimeoutMs:
+                typeof payload.preScriptTimeoutMs === "number"
+                  ? payload.preScriptTimeoutMs
+                  : undefined,
+              runOnScriptError:
+                typeof payload.runOnScriptError === "boolean"
+                  ? payload.runOnScriptError
+                  : undefined,
             };
             const created = scheduledTasksStore.create(input);
             window.dispatchEvent(

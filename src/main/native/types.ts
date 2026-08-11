@@ -155,6 +155,14 @@ export type AppLogInput = {
   source: string;
 };
 
+/** Result of running a scheduled-task pre-script in the Rust backend. */
+export type PreScriptResult = {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+};
+
 export type AppLogRecord = {
   id: string;
   level: string;
@@ -1258,6 +1266,7 @@ export type NativeBridge = {
     item: SensitiveCommandConfigInput
   ) => Promise<void>;
   deleteSensitiveCommandConfig: (commandId: string) => Promise<void>;
+  resetSensitiveCommandConfigs: () => Promise<void>;
   listProjectSensitiveCommandConfigs: (
     projectId: string
   ) => Promise<ProjectSensitiveCommandConfigRecord[]>;
@@ -1551,6 +1560,13 @@ export type NativeBridge = {
     until: string
   ) => Promise<DailyUsageBreakdown[]>;
   writeAppLog: (input: AppLogInput) => Promise<void>;
+  /** Executes a scheduled-task pre-script (shell command) in the project cwd. */
+  runPreScript: (
+    command: string,
+    cwd: string,
+    timeoutMs: number,
+    envJson: string
+  ) => Promise<PreScriptResult>;
   listAppLogs: (
     level: string,
     module: string,

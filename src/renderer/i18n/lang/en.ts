@@ -235,6 +235,15 @@ export const en = {
   "scheduledTask.errorPromptRequired": "Prompt is required",
   "scheduledTask.errorInvalidSchedule": "Invalid schedule",
   "scheduledTask.errorCreateFailed": "Failed to create task",
+  "scheduledTask.errorInvalidTimeout": "Pre-script timeout must be a number",
+  "scheduledTask.preScript": "Pre-script (optional)",
+  "scheduledTask.preScriptCommand": "Shell command",
+  "scheduledTask.preScriptPlaceholder": "e.g. git diff --quiet || exit 1",
+  "scheduledTask.preScriptHint":
+    "Exit 0 = run AI, exit 1 = skip. Or print a JSON line: {\"run\":false,\"reason\":\"...\",\"output\":\"...\"} — \"output\" fills the {{SCRIPT_OUTPUT}} placeholder in the prompt.",
+  "scheduledTask.preScriptTimeout": "Timeout (s)",
+  "scheduledTask.runOnScriptError": "Run AI even if the script fails",
+  "scheduledTask.skipCount": "{{count}} skipped",
   "sidebar.chatTimeRunning": "Running",
   "sidebar.chatTimeToday": "Today",
   "sidebar.chatTimeYesterday": "Yesterday",
@@ -1865,6 +1874,14 @@ export const en = {
   "settings.sensitiveCommandDeleteSuccess": "Deleted sensitive command rule.",
   "settings.sensitiveCommandDeleteError":
     "Failed to delete sensitive command rule",
+  "settings.sensitiveCommandReset": "Reset to system defaults",
+  "settings.sensitiveCommandResetConfirmTitle": "Reset sensitive command rules",
+  "settings.sensitiveCommandResetConfirm":
+    "Reset all sensitive command rules to system defaults? Custom rules will be removed and preset rules will be restored.",
+  "settings.sensitiveCommandResetSuccess":
+    "Reset sensitive command rules to system defaults.",
+  "settings.sensitiveCommandResetError":
+    "Failed to reset sensitive command rules",
   "settings.sensitiveCommandDeleteTitle": "Delete sensitive command rule",
   "settings.sensitiveCommandDeleteConfirm":
     'Delete sensitive command rule "{{pattern}}"? This action cannot be undone.',

@@ -233,7 +233,7 @@ impl McpService for AppControlService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_CREATE_SCHEDULED_TASK.to_string(),
-                description: "Create a new scheduled task in the Snow App. Tasks are saved in the local database and kept after restarting the app; executions missed while the app is closed are skipped. When a task fires, its prompt is sent to the AI Loop (a new chat conversation is created and auto-sent), giving the task access to all tools. A task is either \\\"once\\\" (executes a single time at a chosen start time) or \\\"recurring\\\" (repeats either at a fixed interval or every day at a fixed time). Optionally a preScript (shell command, run in the project directory) decides whether the AI Loop fires: exit code 0 = run, 1 = skip; or the last stdout line may be a JSON object {\\\"run\\\":bool,\\\"reason\\\":string,\\\"output\\\":string,\\\"prompt\\\":string} — \\\"output\\\" is injected into the {{SCRIPT_OUTPUT}} placeholder in the prompt, \\\"prompt\\\" fully overrides it, and \\\"reason\\\" is recorded when skipped (also written to app logs). Non-zero/non-1 exit, timeout or spawn failure counts as a script error: by default the AI Loop does not run (task recorded as error); set runOnScriptError=true to run anyway.\".to_string(),
+                description: "Create a new scheduled task in the Snow App. Tasks are saved in the local database and kept after restarting the app; executions missed while the app is closed are skipped. When a task fires, its prompt is sent to the AI Loop (a new chat conversation is created and auto-sent), giving the task access to all tools. A task is either \"once\" (executes a single time at a chosen start time) or \"recurring\" (repeats either at a fixed interval or every day at a fixed time). Optionally a preScript (shell command, run in the project directory) decides whether the AI Loop fires: exit code 0 = run, 1 = skip; or the last stdout line may be a JSON object {\"run\":bool,\"reason\":string,\"output\":string,\"prompt\":string} — \"output\" is injected into the {{SCRIPT_OUTPUT}} placeholder in the prompt, \"prompt\" fully overrides it, and \"reason\" is recorded when skipped (also written to app logs). Non-zero/non-1 exit, timeout or spawn failure counts as a script error: by default the AI Loop does not run (task recorded as error); set runOnScriptError=true to run anyway.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -278,18 +278,6 @@ impl McpService for AppControlService {
                             },
                             "required": ["type"]
                         },
-                        "preScript": {
-                            "type": "string",
-                            "description": "Optional shell command run in the project directory before the AI Loop. Exit 0 = run the AI Loop, exit 1 = skip this round. The last stdout line may instead be a JSON object: {\\\"run\\\":false,\\\"reason\\\":\\\"...\\\"} skips and records the reason; {\\\"run\\\":true,\\\"output\\\":\\\"...\\\"} injects output into the {{SCRIPT_OUTPUT}} placeholder in the prompt; {\\\"prompt\\\":\\\"...\\\"} fully overrides the prompt. Skipped runs and their script output are recorded in the app logs."
-                        },
-                        "preScriptTimeoutMs": {
-                            "type": "integer",
-                            "description": "Pre-script timeout in ms (1000-300000, default 60000). On timeout the process is killed and the run is treated as a script error."
-                        },
-                        "runOnScriptError": {
-                            "type": "boolean",
-                            "description": "When true, a pre-script failure (exit other than 0/1, timeout, spawn error) still proceeds to the AI Loop with the failure noted in the prompt. Default false."
-                        },
                         "apiProfile": {
                             "type": "string",
                             "description": "Optional API config profile name that serves this task's fired conversation. When omitted, the task uses the app's currently active profile."
@@ -304,7 +292,19 @@ impl McpService for AppControlService {
                         },
                         "thinkingStrength": {
                             "type": "string",
-                            "description": "Optional thinking strength override for the task's fired conversation, e.g. \\\"none\\\", \\\"low\\\", \\\"medium\\\", \\\"high\\\" (provider-dependent values accepted). Applied per-request in memory; the profile config is never mutated. When omitted, the selected profile's configured thinking strength is used."
+                            "description": "Optional thinking strength override for the task's fired conversation, e.g. \"none\", \"low\", \"medium\", \"high\" (provider-dependent values accepted). Applied per-request in memory; the profile config is never mutated. When omitted, the selected profile's configured thinking strength is used."
+                        },
+                        "preScript": {
+                            "type": "string",
+                            "description": "Optional shell command run in the project directory before the AI Loop. Exit 0 = run the AI Loop, exit 1 = skip this round. The last stdout line may instead be a JSON object: {\"run\":false,\"reason\":\"...\"} skips and records the reason; {\"run\":true,\"output\":\"...\"} injects output into the {{SCRIPT_OUTPUT}} placeholder in the prompt; {\"prompt\":\"...\"} fully overrides the prompt. Skipped runs and their script output are recorded in the app logs."
+                        },
+                        "preScriptTimeoutMs": {
+                            "type": "integer",
+                            "description": "Pre-script timeout in ms (1000-300000, default 60000). On timeout the process is killed and the run is treated as a script error."
+                        },
+                        "runOnScriptError": {
+                            "type": "boolean",
+                            "description": "When true, a pre-script failure (exit other than 0/1, timeout, spawn error) still proceeds to the AI Loop with the failure noted in the prompt. Default false."
                         }
                     },
                     "required": ["name", "prompt", "schedule"]
@@ -860,7 +860,10 @@ fn validate_create_scheduled_task_args(args: &Value) -> napi::Result<(String, Va
         }
     }
 
-    Ok(("create_scheduled_task".to_string(), Value::Object(payload)))
+    Ok((
+        "create_scheduled_task".to_string(),
+        Value::Object(payload),
+    ))
 }
 
 fn validate_create_project_args(args: &Value) -> napi::Result<(String, Value)> {

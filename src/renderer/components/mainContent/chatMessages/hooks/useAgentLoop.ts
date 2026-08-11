@@ -484,7 +484,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             // update_conversation_summary at the end of this promise — if it
             // races with deleteConversation, the database locks.
             const summaryPromise = window.snow
-              .generateConversationSummary(summaryConvId, options.basicModel)
+              .generateConversationSummary(summaryConvId)
               .then((generatedSummary) => {
                 if (generatedSummary) {
                   ctx.updateSessionField(

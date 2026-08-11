@@ -13,7 +13,6 @@ import { codexApi } from "./modules/codexApi";
 import { importConfigApi } from "./modules/importConfigApi";
 import { pluginsApi } from "./modules/pluginsApi";
 import { imageLibraryApi } from "./modules/imageLibraryApi";
-import { scheduledTaskApi } from "./modules/scheduledTaskApi";
 import { storageApi } from "./modules/storageApi";
 import { ideApi } from "./modules/ideApi";
 import { petApi } from "./modules/petApi";
@@ -38,7 +37,6 @@ const api = {
   ...pluginsApi,
   ...imageLibraryApi,
   ...storageApi,
-  ...scheduledTaskApi,
   ...ideApi,
   ...petApi,
 };

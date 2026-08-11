@@ -160,4 +160,7 @@ export type UpdateScheduledTaskInput = {
   basicModel?: string;
   model?: string;
   thinkingStrength?: string;
+  preScript?: string;
+  preScriptTimeoutMs?: number;
+  runOnScriptError?: boolean;
 };

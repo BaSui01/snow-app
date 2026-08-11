@@ -116,6 +116,7 @@ test("toWire/fromWire round-trip preserves the schedule and strips history", () 
     schedule: { type: "recurring", mode: "interval", intervalMs: 600000 },
     status: "pending",
     paused: false,
+    skipCount: 0,
     createdAt: "2026-08-09T00:00:00.000Z",
     updatedAt: "2026-08-09T00:00:00.000Z",
     nextRunAt: "2026-08-09T00:10:00.000Z",

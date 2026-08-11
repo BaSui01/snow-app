@@ -21,15 +21,23 @@ use super::common::{
 /// resolved by the Electron main process over SSH (Rust cannot perform SSH I/O,
 /// mirroring RoleEditorPanel's access path). `None` for local workspaces, where
 /// the project file is read directly.
+///
+/// `sub_agents_section` is a pre-rendered markdown list of the currently
+/// configured sub-agents (built-in + global, from the `subAgents` config).
+/// It is injected into the Sub-Agents chapter so the model can pick a real
+/// `agentId` instead of defaulting to `agent_general`. Pass an empty string to
+/// omit the list (the template then keeps only the selection rule).
 pub fn build_system_prompt(
     working_directory: &str,
     shell_type: &str,
     remote_role_content: Option<&str>,
     remote_include_global_rules: Option<bool>,
+    sub_agents_section: &str,
 ) -> String {
     let time_info = get_current_time_info();
     let working_dir_section = get_working_directory_section(working_directory);
     let platform_section = get_platform_section(shell_type);
+    let template = SYSTEM_PROMPT_TEMPLATE.replace(SUB_AGENTS_LIST_MARKER, sub_agents_section.trim());
 
     match read_active_role(
         working_directory,
@@ -43,16 +51,18 @@ pub fn build_system_prompt(
 
         // Normal mode: role content replaces the default role text.
         Some((role_content, false)) => {
-            let prompt = apply_role_override(SYSTEM_PROMPT_TEMPLATE, &role_content);
+            let prompt = apply_role_override(&template, &role_content);
             format!("{prompt}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}")
         }
 
         // No ROLE.md found — use the default template as-is.
-        None => format!(
-            "{SYSTEM_PROMPT_TEMPLATE}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}"
-        ),
+        None => format!("{template}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}"),
     }
 }
+
+/// Placeholder inside `SYSTEM_PROMPT_TEMPLATE` replaced with the dynamic
+/// sub-agents list by `build_system_prompt`.
+const SUB_AGENTS_LIST_MARKER: &str = "__SUB_AGENTS_LIST__";
 
 const SYSTEM_PROMPT_TEMPLATE: &str = r#"You are Snow AI, an intelligent desktop assistant.
 
@@ -154,8 +164,10 @@ The `todo-todo-manage` tool is the standard workflow for multi-step work — it 
 
 Sub-agents are independent AI execution loops that run with their own tool set and return a final summary. They are useful for isolating complex, multi-step work so the main conversation stays focused.
 
-**Built-in agent:**
-- `agent_general` — General Purpose Agent with full tool access (code search, file modification, command execution, web search, browser automation, TODO management). Best for complex tasks requiring actual operations across multiple files.
+**Available sub-agents (from the current subAgents config):**
+__SUB_AGENTS_LIST__
+
+**Selection rule:** pick the `agentId` that best matches the task from the list above — NEVER default to a generic agent when a more specific one is configured. If the list is empty, only the built-in `agent_general` is available and may be used directly.
 
 **When to delegate to a sub-agent:**
 - Large-scale changes touching 5+ files with similar or systematic modifications
@@ -168,7 +180,7 @@ Sub-agents are independent AI execution loops that run with their own tool set a
 - Most bug fixes touching only 1-2 files
 
 **How to use:** Call the `sub-agents-activate` tool with:
-- `agentId`: the sub-agent identifier (e.g. `"agent_general"`)
+- `agentId`: the sub-agent identifier, chosen from the available sub-agents list above
 - `prompt`: a **fully self-contained** task description
 
 **Critical: sub-agents have NO access to the main conversation history.** The `prompt` must include everything the sub-agent needs:

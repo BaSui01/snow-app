@@ -16,34 +16,57 @@ use super::common::{
 /// resolved by the Electron main process over SSH (mirroring RoleEditorPanel's
 /// access path). `None` for local workspaces, where the project file is read
 /// directly.
+///
+/// `sub_agents_section` is a pre-rendered markdown list of the currently
+/// configured sub-agents (built-in + global). When non-empty it is appended as
+/// a Sub-Agents chapter so the coordinator picks a real `agentId` instead of
+/// defaulting to `agent_general`.
 pub fn build_plan_mode_system_prompt(
     working_directory: &str,
     shell_type: &str,
     remote_role_content: Option<&str>,
     remote_include_global_rules: Option<bool>,
+    sub_agents_section: &str,
 ) -> String {
     let time_info = get_current_time_info();
     let working_dir_section = get_working_directory_section(working_directory);
     let platform_section = get_platform_section(shell_type);
+    let sub_agents_block = build_sub_agents_block(sub_agents_section);
 
-    match read_active_role(working_directory, remote_role_content, remote_include_global_rules) {
-        // Override mode: role content replaces the entire template.
-        Some((role_content, true)) => format!(
-            "{role_content}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}"
-        ),
+    let prompt =
+        match read_active_role(working_directory, remote_role_content, remote_include_global_rules) {
+            // Override mode: role content replaces the entire template.
+            Some((role_content, true)) => format!(
+                "{role_content}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}"
+            ),
 
-        // Normal mode: role content replaces the default role text.
-        Some((role_content, false)) => {
-            let prompt = apply_role_override(PLAN_MODE_SYSTEM_PROMPT_TEMPLATE, &role_content);
-            format!(
-                "{prompt}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}"
-            )
-        }
+            // Normal mode: role content replaces the default role text.
+            Some((role_content, false)) => {
+                let prompt = apply_role_override(PLAN_MODE_SYSTEM_PROMPT_TEMPLATE, &role_content);
+                format!(
+                    "{prompt}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}"
+                )
+            }
 
-        // No ROLE.md found — use the plan mode template as-is.
-        None => format!(
-            "{PLAN_MODE_SYSTEM_PROMPT_TEMPLATE}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}"
-        ),
+            // No ROLE.md found — use the plan mode template as-is.
+            None => format!(
+                "{PLAN_MODE_SYSTEM_PROMPT_TEMPLATE}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}"
+            ),
+        };
+    format!("{prompt}{sub_agents_block}")
+}
+
+/// Appends the Sub-Agents chapter to the Plan Mode prompt. Returns an empty
+/// string when no usable sub-agent list is available, keeping the prompt
+/// unchanged.
+fn build_sub_agents_block(sub_agents_section: &str) -> String {
+    let trimmed = sub_agents_section.trim();
+    if trimmed.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\n\n## Sub-Agents\n\n**Available sub-agents (from the current subAgents config):**\n{trimmed}\n\n**Selection rule:** pick the `agentId` that best matches the task — NEVER default to a generic agent when a more specific one is configured."
+        )
     }
 }
 
@@ -142,7 +165,7 @@ This dedicated tool is the **only action that can unlock Plan Mode writes**. Ord
 
 **Once the user confirms the plan, execute ALL phases continuously until completion.** Do NOT pause between phases to ask for user approval.
 
-**You are a coordinator — delegate implementation to sub-agents.** Use the `sub-agents-activate` tool with `agentId: "agent_general"` to execute each phase. The sub-agent runs its own AI loop with full tool access and returns a summary.
+**You are a coordinator — delegate implementation to sub-agents.** Use the `sub-agents-activate` tool with the `agentId` that best matches each phase, chosen from the available sub-agents listed in the Sub-Agents section (NEVER default to `agent_general` when a more specific agent is configured). The sub-agent runs its own AI loop with full tool access and returns a summary.
 
 **Critical: sub-agents have NO access to your conversation history.** Every `sub-agents-activate` call must include a fully self-contained `prompt` with:
 - The specific phase goal and steps from the plan file

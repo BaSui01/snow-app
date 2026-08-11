@@ -31,7 +31,7 @@ impl McpService for SubAgentsService {
                 "properties": {
                     "agentId": {
                         "type": "string",
-                        "description": "The sub-agent configuration identifier (e.g. 'agent_general')."
+                        "description": "The sub-agent configuration identifier, chosen from the available sub-agents listed in the system prompt's Sub-Agents section (query config-list scope=subAgents if uncertain). The built-in 'agent_general' is a generic fallback - prefer a task-specific agent when one is configured."
                     },
                     "prompt": {
                         "type": "string",

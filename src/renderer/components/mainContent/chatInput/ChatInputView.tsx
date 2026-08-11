@@ -905,6 +905,36 @@ export const ChatInputView = ({
     [syncContent, textareaRef]
   );
 
+  /**
+   * 页面文本拖入（方案 A）：浏览器 webview 页选中文字直接拖到输入框时，
+   * 将 text/plain 内容插入编辑区。短文本直插（浏览器原生 insertText，
+   * 不经 HTML 解析、无 XSS 风险，配合 .input-field-editable 的
+   * white-space: pre-wrap 保留原文换行与缩进，并接入浏览器撤销栈）；
+   * 超阈值长文本折叠为 text-snippet chip（与粘贴逻辑一致，避免
+   * contenteditable 渲染海量文本节点导致应用卡死）。
+   */
+  const insertDroppedPlainText = useCallback(
+    (text: string) => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+      }
+      if (text.length > TEXT_SNIPPET_THRESHOLD) {
+        const summary = buildTextSnippetSummary(text);
+        const tag: TextSnippetTag = {
+          content: text,
+          summary,
+          charCount: text.length,
+        };
+        insertHtmlAtSelection(createTextSnippetChipHtml(tag));
+        syncContent();
+        return;
+      }
+      document.execCommand("insertText", false, text);
+      syncContent();
+    },
+    [syncContent, textareaRef]
+  );
+
   const handleDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
       event.preventDefault();
@@ -953,6 +983,8 @@ export const ChatInputView = ({
         // contextIsolation 下渲染进程无法直接读取真实路径，由 preload 的
         // resolveDroppedFiles 解析路径并查询是否为目录。图片文件走 image
         // chip（读取 dataUrl），其余文件/文件夹走 file chip（携带路径）。
+        // Files 分支优先于 text/plain：文件拖拽时 text/plain 通常只是
+        // 文件名列表，不应作为页面文本插入。
         const droppedFiles = event.dataTransfer.files;
         if (droppedFiles && droppedFiles.length > 0) {
           const files: File[] = [];
@@ -963,6 +995,16 @@ export const ChatInputView = ({
             }
           }
           insertExternalFiles(files);
+          return;
+        }
+
+        // 页面文本拖入（方案 A）：浏览器 webview 页选中文字直接拖到输入框。
+        // 拖出 guest 后为 OS 级拖拽会话，dataTransfer 仅携带 text/plain
+        // （无 application/json、无文件）；非空（trim 后）即作为纯文本插入，
+        // 短文本直插、超阈值折叠为 text-snippet chip（见 insertDroppedPlainText）。
+        const plainText = event.dataTransfer.getData("text/plain");
+        if (plainText && plainText.trim().length > 0) {
+          insertDroppedPlainText(plainText);
         }
         return;
       }
@@ -1139,7 +1181,7 @@ export const ChatInputView = ({
         // Ignore invalid drag data
       }
     },
-    [insertExternalFiles, insertFileTags, syncContent, textareaRef]
+    [insertDroppedPlainText, insertExternalFiles, insertFileTags, syncContent, textareaRef]
   );
 
   const handleDragOver = useCallback(
@@ -1147,12 +1189,15 @@ export const ChatInputView = ({
       const types = event.dataTransfer.types;
       // 应用内拖拽（文件/commit/change 标签）走 application/json；
       // 终端监控拖拽走 application/x-snow-terminal（dropEffect: link）；
-      // 从文件管理器拖入的外部文件走 Files。三者均需 preventDefault
-      // 才能允许 drop，否则浏览器默认拒绝（显示禁止光标）。
+      // 从文件管理器拖入的外部文件走 Files；
+      // 浏览器 webview 页面选中文字拖入走 text/plain（方案 A）。
+      // 四者均需 preventDefault 才能允许 drop，否则浏览器默认拒绝
+      // （显示禁止光标）。
       const hasTerminal = types.includes(TERMINAL_DRAG_MIME);
       const allowed =
         types.includes("application/json") ||
         types.includes("Files") ||
+        types.includes("text/plain") ||
         hasTerminal;
       if (!allowed) {
         return;

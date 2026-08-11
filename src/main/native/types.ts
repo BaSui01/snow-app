@@ -917,6 +917,10 @@ export type McpToolDefinition = {
   inputSchemaJson: string;
 };
 
+export type McpToolStatus = McpToolDefinition & {
+  enabled: boolean;
+};
+
 export type SkillDefinition = {
   id: string;
   name: string;
@@ -1489,7 +1493,7 @@ export type NativeBridge = {
     projectId?: string
   ) => Promise<SkillUninstallResult>;
   listGithubSkills: () => Promise<GithubSkillRecord[]>;
-  listMcpServerTools: (configServerId: string) => Promise<McpToolDefinition[]>;
+  listMcpServerTools: (configServerId: string) => Promise<McpToolStatus[]>;
   listMcpProjectServers: (
     projectId: string
   ) => Promise<McpProjectServerStatus[]>;
@@ -1505,6 +1509,13 @@ export type NativeBridge = {
   setMcpProjectToolEnabled: (
     projectId: string,
     toolName: string,
+    enabled: boolean
+  ) => Promise<void>;
+  setMcpToolEnabled: (toolName: string, enabled: boolean) => Promise<void>;
+  setMcpToolsEnabled: (toolNames: string[], enabled: boolean) => Promise<void>;
+  setMcpProjectToolsEnabled: (
+    projectId: string,
+    toolNames: string[],
     enabled: boolean
   ) => Promise<void>;
   authorizeSensitiveCommand: (command: string, token: string) => Promise<void>;

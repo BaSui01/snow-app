@@ -3018,6 +3018,7 @@ export const en = {
   "git.graphTooltipHash": "Commit",
   "git.graphTooltipAuthor": "Author",
   "git.graphTooltipDate": "Date",
+  "git.graphTooltipStats": "Changes",
   "git.graphTooltipRefs": "Refs",
   "git.graphTooltipParents": "Parents",
   "git.graphCurrentBranch": "Current branch",

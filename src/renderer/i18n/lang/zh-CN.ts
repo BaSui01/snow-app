@@ -2867,6 +2867,7 @@ export const zhCN = {
   "git.graphTooltipHash": "提交",
   "git.graphTooltipAuthor": "作者",
   "git.graphTooltipDate": "日期",
+  "git.graphTooltipStats": "变更行数",
   "git.graphTooltipRefs": "引用",
   "git.graphTooltipParents": "父提交",
   "git.graphCurrentBranch": "当前分支",

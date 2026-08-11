@@ -24326,6 +24326,24 @@ input {
   white-space: nowrap;
 }
 
+/* 提交行上的变更行数统计（+N 新增 / -N 删除）。 */
+.git-graph-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+}
+
+.git-graph-stats-add {
+  color: var(--accent-green-text);
+}
+
+.git-graph-stats-del {
+  color: var(--accent-red-text);
+}
+
 .git-graph-date {
   font-size: 11px;
   color: var(--text-muted);

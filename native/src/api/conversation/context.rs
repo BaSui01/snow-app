@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::path::Path;
 
 use napi::bindgen_prelude::*;
 
@@ -8,6 +9,7 @@ use crate::prompt::system_prompt::build_system_prompt;
 use crate::storage::services::chat_conversations::{
     get_conversation_modes, load_context_messages, resolve_conversation_id, ChatContextMessage,
 };
+use crate::storage::services::sub_agent_configs::list_sub_agent_configs;
 use crate::storage::services::system_prompts::resolve_active_system_prompt_contents;
 use crate::storage::services::system_settings::get_system_setting_value;
 use crate::storage::services::workspace_directories::get_workspace_directory_path;
@@ -48,6 +50,41 @@ pub(crate) fn compose_sub_agent_system_prompts(
             }
         })
         .collect()
+}
+
+/// Renders the markdown list of currently usable sub-agents (built-in + global)
+/// for injection into the system prompt, so the model picks a real `agentId`
+/// from the `subAgents` config instead of defaulting to `agent_general`.
+///
+/// Project-scoped sub-agents are intentionally excluded: the conversation
+/// context does not carry the current project id, so they cannot be resolved
+/// reliably here. Returns an empty string when the list is empty or the
+/// database query fails (the caller then keeps the built-in fallback rules).
+fn build_sub_agents_section(database_path: &Path) -> String {
+    match list_sub_agent_configs(database_path, None) {
+        Ok(configs) => {
+            let lines: Vec<String> = configs
+                .iter()
+                .filter(|config| config.project_id.is_empty())
+                .map(|config| {
+                    let mut line = format!(
+                        "- `{}` — {}",
+                        config.agent_id.trim(),
+                        config.name.trim()
+                    );
+                    if !config.description.trim().is_empty() {
+                        line.push_str(&format!(": {}", config.description.trim()));
+                    }
+                    if config.builtin {
+                        line.push_str(" (built-in)");
+                    }
+                    line
+                })
+                .collect();
+            lines.join("\n")
+        }
+        Err(_) => String::new(),
+    }
 }
 
 pub fn prepare_context_request(
@@ -131,12 +168,14 @@ pub fn prepare_context_request(
     // that instructs the AI to analyze, plan, and get user approval before
     // executing any changes.
     let shell_type = resolve_default_shell(request.database_path);
+    let sub_agents_section = build_sub_agents_section(request.database_path);
     let system_prompt = if request.plan_mode {
         build_plan_mode_system_prompt(
             &working_directory,
             &shell_type,
             request.remote_role_content,
             request.remote_include_global_rules,
+            &sub_agents_section,
         )
     } else if request.goal_mode {
         // Per-conversation budget isolation: the conversation's own override
@@ -165,6 +204,7 @@ pub fn prepare_context_request(
             &shell_type,
             request.remote_role_content,
             request.remote_include_global_rules,
+            &sub_agents_section,
         )
     };
     let user_system_prompts = if request.is_sub_agent {

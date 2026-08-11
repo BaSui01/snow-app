@@ -10143,6 +10143,8 @@ input {
   margin-left: 6px;
   padding-left: 12px;
   border-left: 1.5px solid var(--border-light);
+  --tcn-line-width: 1.5px;
+  --tcn-pad-left: 12px;
 }
 
 /* ============================================================
@@ -10169,16 +10171,16 @@ input {
   display: none;
 }
 
-/* Status dot on the vertical line */
 .tcn-dot {
   position: absolute;
-  left: -17.5px;
+  left: calc(
+    var(--tcn-pad-left, 12px) * -1 - var(--tcn-line-width, 1.5px) / 2
+  );
   top: 50%;
-  transform: translateY(-50%);
+  transform: translate(-50%, -50%);
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  flex-shrink: 0;
   border: 1.5px solid var(--bg-primary, #fff);
   box-sizing: content-box;
 }
@@ -16089,22 +16091,26 @@ input {
   flex-shrink: 0;
 }
 
-.sidebar-search-btn {
+.sidebar-search-btn,
+.sidebar-new-chat-btn {
   width: 100%;
   color: var(--text-secondary);
   font-size: 13px;
   cursor: pointer;
 }
 
-.sidebar-search-btn:hover {
+.sidebar-search-btn:hover,
+.sidebar-new-chat-btn:hover {
   color: var(--text-primary);
 }
 
-.sidebar-search-btn svg {
+.sidebar-search-btn svg,
+.sidebar-new-chat-btn svg {
   color: var(--text-tertiary);
 }
 
-.sidebar-search-btn:hover svg {
+.sidebar-search-btn:hover svg,
+.sidebar-new-chat-btn:hover svg {
   color: var(--text-secondary);
 }
 

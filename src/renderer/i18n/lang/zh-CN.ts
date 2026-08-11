@@ -1039,6 +1039,7 @@ export const zhCN = {
   "common.errorDescription": "应用遇到了意外错误，重新加载通常可以解决。",
   "common.reload": "重新加载",
   "sidebar.search": "搜索",
+  "sidebar.newChat": "新建会话",
   "sidebar.settings": "设置",
   "sidebar.untitledChat": "未命名对话",
   "sidebar.loadChatsError": "加载对话失败",

@@ -5,6 +5,7 @@ import {
   NotebookText,
   Search,
   Settings,
+  SquarePen,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
@@ -46,7 +47,8 @@ export function MainSidebarContent({
   onOpenSshWizard,
 }: SidebarContentProps): React.JSX.Element {
   const { t } = useI18n();
-  const { handleSelectConversation } = useChatConversationContext();
+  const { handleSelectConversation, handleNewChat } =
+    useChatConversationContext();
   const [isSwitchingDirectory, setIsSwitchingDirectory] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isMemoOpen, setIsMemoOpen] = useState(false);
@@ -187,6 +189,15 @@ export function MainSidebarContent({
               defaultValue: "Search",
             })}
           </span>
+        </button>
+        <button
+          className="nav-item sidebar-new-chat-btn"
+          onClick={() => handleNewChat()}
+          title={t("sidebar.newChat", { defaultValue: "New Chat" })}
+          type="button"
+        >
+          <SquarePen size={16} strokeWidth={1.8} />
+          <span>{t("sidebar.newChat", { defaultValue: "New Chat" })}</span>
         </button>
         <button
           className="nav-item sidebar-memo-btn"

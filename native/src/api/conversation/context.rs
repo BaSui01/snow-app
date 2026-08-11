@@ -10,6 +10,7 @@ use crate::storage::services::chat_conversations::{
     get_conversation_modes, load_context_messages, resolve_conversation_id, ChatContextMessage,
 };
 use crate::storage::services::sub_agent_configs::list_sub_agent_configs;
+use crate::storage::SubAgentConfigRecord;
 use crate::storage::services::system_prompts::resolve_active_system_prompt_contents;
 use crate::storage::services::system_settings::get_system_setting_value;
 use crate::storage::services::workspace_directories::get_workspace_directory_path;
@@ -52,36 +53,56 @@ pub(crate) fn compose_sub_agent_system_prompts(
         .collect()
 }
 
-/// Renders the markdown list of currently usable sub-agents (built-in + global)
-/// for injection into the system prompt, so the model picks a real `agentId`
-/// from the `subAgents` config instead of defaulting to `agent_general`.
+/// Renders the markdown list of currently usable sub-agents for injection into
+/// the system prompt, so the model picks a real `agentId` from the `subAgents`
+/// config instead of defaulting to `agent_general`.
 ///
-/// Project-scoped sub-agents are intentionally excluded: the conversation
-/// context does not carry the current project id, so they cannot be resolved
-/// reliably here. Returns an empty string when the list is empty or the
+/// Scope resolution mirrors activation: project-scoped sub-agents whose
+/// `project_id` equals the conversation's `directory_id` come first and, on a
+/// same `agentId`, override the global one (fallback chain: project → global).
+/// Built-in + global agents are always included; sub-agents of other projects
+/// are excluded. Returns an empty string when the list is empty or the
 /// database query fails (the caller then keeps the built-in fallback rules).
-fn build_sub_agents_section(database_path: &Path) -> String {
+fn build_sub_agents_section(database_path: &Path, directory_id: Option<&str>) -> String {
+    let current_project = directory_id.map(str::trim).unwrap_or("").to_string();
     match list_sub_agent_configs(database_path, None) {
         Ok(configs) => {
-            let lines: Vec<String> = configs
-                .iter()
-                .filter(|config| config.project_id.is_empty())
-                .map(|config| {
-                    let mut line = format!(
-                        "- `{}` — {}",
-                        config.agent_id.trim(),
-                        config.name.trim()
-                    );
-                    if !config.description.trim().is_empty() {
-                        line.push_str(&format!(": {}", config.description.trim()));
-                    }
-                    if config.builtin {
-                        line.push_str(" (built-in)");
-                    }
-                    line
-                })
-                .collect();
-            lines.join("\n")
+            // 项目级优先、全局兜底：同 agentId 时项目级覆盖全局（与激活时一致）。
+            let mut project_agents: Vec<&SubAgentConfigRecord> = Vec::new();
+            let mut global_agents: Vec<&SubAgentConfigRecord> = Vec::new();
+            for config in configs.iter() {
+                if config.project_id.is_empty() {
+                    global_agents.push(config);
+                } else if !current_project.is_empty() && config.project_id == current_project {
+                    project_agents.push(config);
+                }
+            }
+
+            let mut rendered: Vec<String> = Vec::new();
+            let mut seen: HashSet<&str> = HashSet::new();
+            for config in project_agents.iter().chain(global_agents.iter()) {
+                if !seen.insert(config.agent_id.as_str()) {
+                    continue;
+                }
+                let mut line = format!(
+                    "- `{}` — {}",
+                    config.agent_id.trim(),
+                    config.name.trim()
+                );
+                if !config.description.trim().is_empty() {
+                    line.push_str(&format!(": {}", config.description.trim()));
+                }
+                let scope_tag = if config.builtin {
+                    " (built-in)"
+                } else if config.project_id.is_empty() {
+                    " (global)"
+                } else {
+                    " (project)"
+                };
+                line.push_str(scope_tag);
+                rendered.push(line);
+            }
+            rendered.join("\n")
         }
         Err(_) => String::new(),
     }
@@ -168,7 +189,7 @@ pub fn prepare_context_request(
     // that instructs the AI to analyze, plan, and get user approval before
     // executing any changes.
     let shell_type = resolve_default_shell(request.database_path);
-    let sub_agents_section = build_sub_agents_section(request.database_path);
+    let sub_agents_section = build_sub_agents_section(request.database_path, request.directory_id);
     let system_prompt = if request.plan_mode {
         build_plan_mode_system_prompt(
             &working_directory,

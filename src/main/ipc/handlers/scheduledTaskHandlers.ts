@@ -81,6 +81,18 @@ const requireTaskInput = (value: unknown): ScheduledTaskRecordInput => {
         ? Math.floor(record.runCount)
         : 0,
     lastError: requireOptionalString(record.lastError),
+    preScript: requireOptionalString(record.preScript),
+    preScriptTimeoutMs: requireOptionalInt(record.preScriptTimeoutMs),
+    runOnScriptError:
+      typeof record.runOnScriptError === "boolean"
+        ? record.runOnScriptError
+        : undefined,
+    skipCount:
+      typeof record.skipCount === "number" && Number.isFinite(record.skipCount)
+        ? Math.floor(record.skipCount)
+        : 0,
+    lastSkippedAt: requireOptionalString(record.lastSkippedAt),
+    lastSkipReason: requireOptionalString(record.lastSkipReason),
     createdAt: (record.createdAt as string).trim(),
     updatedAt: (record.updatedAt as string).trim(),
   };

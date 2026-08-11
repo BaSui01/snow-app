@@ -655,6 +655,18 @@ pub struct ScheduledTaskRecord {
     pub last_run_at: Option<String>,
     pub run_count: i32,
     pub last_error: Option<String>,
+    /// Optional pre-script shell command executed before the AI Loop.
+    pub pre_script: Option<String>,
+    /// Pre-script timeout in ms (default 60000, range 1000-300000).
+    pub pre_script_timeout_ms: Option<i64>,
+    /// When true, a pre-script failure still proceeds to the AI Loop.
+    pub run_on_script_error: Option<bool>,
+    /// How many times the pre-script skipped the AI Loop.
+    pub skip_count: i32,
+    /// ISO timestamp of the last skip, if any.
+    pub last_skipped_at: Option<String>,
+    /// Reason from the last skip.
+    pub last_skip_reason: Option<String>,
     pub created_at: String,
     pub updated_at: String,
     /// Latest run history entries (newest last, max 20), populated when read
@@ -681,6 +693,18 @@ pub struct ScheduledTaskRecordInput {
     pub last_run_at: Option<String>,
     pub run_count: i32,
     pub last_error: Option<String>,
+    /// Optional pre-script shell command executed before the AI Loop.
+    pub pre_script: Option<String>,
+    /// Pre-script timeout in ms (default 60000, range 1000-300000).
+    pub pre_script_timeout_ms: Option<i64>,
+    /// When true, a pre-script failure still proceeds to the AI Loop.
+    pub run_on_script_error: Option<bool>,
+    /// How many times the pre-script skipped the AI Loop.
+    pub skip_count: i32,
+    /// ISO timestamp of the last skip, if any.
+    pub last_skipped_at: Option<String>,
+    /// Reason from the last skip.
+    pub last_skip_reason: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }

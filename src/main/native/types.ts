@@ -799,6 +799,18 @@ export type ScheduledTaskRecord = {
   lastRunAt?: string;
   runCount: number;
   lastError?: string;
+  /** Optional pre-script shell command executed before the AI Loop. */
+  preScript?: string;
+  /** Pre-script timeout in ms (default 60000, range 1000-300000). */
+  preScriptTimeoutMs?: number;
+  /** When true, a pre-script failure still proceeds to the AI Loop. */
+  runOnScriptError?: boolean;
+  /** How many times the pre-script skipped the AI Loop. */
+  skipCount: number;
+  /** ISO timestamp of the last skip, if any. */
+  lastSkippedAt?: string;
+  /** Reason from the last skip. */
+  lastSkipReason?: string;
   createdAt: string;
   updatedAt: string;
   history: ScheduledTaskRunRecord[];

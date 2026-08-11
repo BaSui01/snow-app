@@ -102,6 +102,8 @@ fn list_with_connection(connection: &Connection) -> rusqlite::Result<Vec<Schedul
         "SELECT id, directory_id, name, prompt, schedule_json,
                 api_profile, basic_model, model, thinking_strength,
                 status, paused, next_run_at, last_run_at, run_count, last_error,
+                pre_script, pre_script_timeout_ms, run_on_script_error,
+                skip_count, last_skipped_at, last_skip_reason,
                 created_at, updated_at
            FROM scheduled_tasks
           ORDER BY created_at ASC, id ASC",
@@ -152,12 +154,15 @@ fn upsert_with_connection(
              id, directory_id, name, prompt, schedule_json,
              api_profile, basic_model, model, thinking_strength,
              status, paused, next_run_at, last_run_at, run_count, last_error,
+             pre_script, pre_script_timeout_ms, run_on_script_error,
+             skip_count, last_skipped_at, last_skip_reason,
              created_at, updated_at
          ) VALUES (
              ?1, ?2, ?3, ?4, ?5,
              ?6, ?7, ?8, ?9,
              ?10, ?11, ?12, ?13, ?14, ?15,
-             ?16, ?17
+             ?16, ?17, ?18, ?19, ?20, ?21,
+             ?22, ?23
          )
          ON CONFLICT(id) DO UPDATE SET
              directory_id = excluded.directory_id,
@@ -174,6 +179,12 @@ fn upsert_with_connection(
              last_run_at = excluded.last_run_at,
              run_count = excluded.run_count,
              last_error = excluded.last_error,
+             pre_script = excluded.pre_script,
+             pre_script_timeout_ms = excluded.pre_script_timeout_ms,
+             run_on_script_error = excluded.run_on_script_error,
+             skip_count = excluded.skip_count,
+             last_skipped_at = excluded.last_skipped_at,
+             last_skip_reason = excluded.last_skip_reason,
              updated_at = excluded.updated_at",
         params![
             input.id,
@@ -191,6 +202,12 @@ fn upsert_with_connection(
             input.last_run_at,
             input.run_count,
             input.last_error,
+            input.pre_script,
+            input.pre_script_timeout_ms,
+            input.run_on_script_error,
+            input.skip_count,
+            input.last_skipped_at,
+            input.last_skip_reason,
             input.created_at,
             input.updated_at,
         ],
@@ -247,6 +264,8 @@ fn fetch_task_by_id(
         "SELECT id, directory_id, name, prompt, schedule_json,
                 api_profile, basic_model, model, thinking_strength,
                 status, paused, next_run_at, last_run_at, run_count, last_error,
+                pre_script, pre_script_timeout_ms, run_on_script_error,
+                skip_count, last_skipped_at, last_skip_reason,
                 created_at, updated_at
            FROM scheduled_tasks
           WHERE id = ?1",
@@ -298,8 +317,14 @@ fn map_task_row(row: &Row) -> rusqlite::Result<ScheduledTaskRecord> {
         last_run_at: row.get(12)?,
         run_count: row.get(13)?,
         last_error: row.get(14)?,
-        created_at: row.get(15)?,
-        updated_at: row.get(16)?,
+        pre_script: row.get(15)?,
+        pre_script_timeout_ms: row.get(16)?,
+        run_on_script_error: row.get(17)?,
+        skip_count: row.get(18)?,
+        last_skipped_at: row.get(19)?,
+        last_skip_reason: row.get(20)?,
+        created_at: row.get(21)?,
+        updated_at: row.get(22)?,
         history: Vec::new(),
     })
 }

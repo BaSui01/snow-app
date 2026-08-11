@@ -124,6 +124,9 @@ test("toWire/fromWire round-trip preserves the schedule and strips history", () 
     basicModel: "basic-x",
     model: "model-x",
     thinkingStrength: "high",
+    preScript: "git diff --quiet || exit 1",
+    preScriptTimeoutMs: 120000,
+    runOnScriptError: true,
     lastRunAt: "2026-08-08T10:00:00.000Z",
     lastError: undefined,
     history: [
@@ -135,6 +138,10 @@ test("toWire/fromWire round-trip preserves the schedule and strips history", () 
   assert.equal(wire.scheduleJson, JSON.stringify(record.schedule));
   assert.equal(wire.apiProfile, "profile-x");
   assert.equal(wire.runCount, 3);
+  // pre-script config and skip state are persisted alongside the task
+  assert.equal(wire.preScript, "git diff --quiet || exit 1");
+  assert.equal(wire.preScriptTimeoutMs, 120000);
+  assert.equal(wire.runOnScriptError, true);
   // history lives in the separate runs table — excluded from the write shape
   assert.ok(!("history" in wire));
 
@@ -142,6 +149,9 @@ test("toWire/fromWire round-trip preserves the schedule and strips history", () 
   assert.deepEqual(back.schedule, record.schedule);
   assert.equal(back.id, "t9");
   assert.equal(back.directoryId, "proj-a");
+  assert.equal(back.preScript, "git diff --quiet || exit 1");
+  assert.equal(back.preScriptTimeoutMs, 120000);
+  assert.equal(back.runOnScriptError, true);
   assert.equal(back.history?.length, 0);
 });
 

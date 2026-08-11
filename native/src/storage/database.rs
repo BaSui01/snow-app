@@ -11,6 +11,10 @@ use rusqlite::Connection;
 
 use super::{migrations, services};
 
+/// Bumped whenever the schema changes; written to `PRAGMA user_version` after
+/// a successful `create_schema` so the app can detect stale databases.
+const CURRENT_SCHEMA_VERSION: i64 = 30;
+
 const SNOWFLAKE_EPOCH_MS: u64 = 1_704_067_200_000;
 const SNOWFLAKE_WORKER_ID_BITS: u64 = 10;
 const SNOWFLAKE_SEQUENCE_BITS: u64 = 12;
@@ -325,7 +329,7 @@ fn recover_database(database_path: &Path) -> Result<()> {
         ))
     })?;
 
-    let _ = recovered_conn.pragma_update(None, "user_version", 29);
+    let _ = recovered_conn.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION);
     drop(recovered_conn);
     drop(read_only_conn);
 
@@ -766,6 +770,12 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            last_run_at TEXT,
            run_count INTEGER NOT NULL DEFAULT 0,
            last_error TEXT,
+           pre_script TEXT,
+           pre_script_timeout_ms INTEGER,
+           run_on_script_error INTEGER NOT NULL DEFAULT 0,
+           skip_count INTEGER NOT NULL DEFAULT 0,
+           last_skipped_at TEXT,
+           last_skip_reason TEXT,
            created_at TEXT NOT NULL,
            updated_at TEXT NOT NULL
          );
@@ -799,7 +809,7 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
     // columns and the sub-agent project_id rebuild (see migrations.rs).
     migrations::run_post_schema_migrations(connection)?;
 
-    connection.pragma_update(None, "user_version", 29)?;
+    connection.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)?;
 
     Ok(())
 }

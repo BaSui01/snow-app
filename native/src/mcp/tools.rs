@@ -1487,7 +1487,8 @@ fn capture_checkpoint_after_tool(capture: ToolCheckpointCapture) -> napi::Result
 /// 返回 `true` 表示可安全跳过 checkpoint 工作区快照。
 ///
 /// 保守策略：只有明确命中的只读模式才返回 `true`；包含文件重定向、
-/// 写操作命令或任何不确定情况一律返回 `false`（保留快照，保证回滚安全）。
+/// 命令链/控制流/命令替换、写操作命令或任何不确定情况一律返回
+/// `false`（保留快照，保证回滚安全）。
 fn is_readonly_bash_command(command: &str) -> bool {
     let trimmed = command.trim();
     if trimmed.is_empty() || trimmed.starts_with('#') {
@@ -1499,15 +1500,23 @@ fn is_readonly_bash_command(command: &str) -> bool {
         return false;
     }
 
-    // 命令链的首个命令段（按 ; & | 分割后的第一段）
-    let first_cmd = trimmed
-        .split(|c: char| c == ';' || c == '&' || c == '|')
-        .next()
-        .map(str::trim)
-        .unwrap_or("");
+    // 命令链 / 控制流 / 命令替换 / 子 shell / 输入重定向无法静态判定读写性：
+    // `cd x && rm -rf y`、`echo hi | tee f`、`echo "$(rm -rf x)"`、
+    // `for ...; do ...; done`、`{ rm x; }` 等一律保留 checkpoint。
+    if trimmed.contains([';', '&', '|', '`', '<', '(', '{', '\n']) {
+        return false;
+    }
+
+    // curl -o/-O/--output、wget --output-file 等会把响应写入文件：
+    // 命中白名单后对剩余参数做写标志兜底（误伤仅损失优化，方向安全）。
+    if trimmed.contains(" -o") || trimmed.contains(" -O") || trimmed.contains("--output") {
+        return false;
+    }
 
     // 只读命令模式白名单。注意：sed/awk 未列入（sed -i / awk 重定向会写文件），
-    // node/python/curl/wget/git 写类子命令未列入，均保守保留 checkpoint。
+    // node/python/curl/wget/git 写类子命令未列入；time/for/while/if/source 等
+    // 控制流/包裹关键字未列入（可包裹任意命令，无法静态判定），均保守保留
+    // checkpoint。
     const READONLY_PATTERNS: &[&str] = &[
         // 纯读命令（可带参数）
         "echo", "ls", "pwd", "grep", "rg", "cat", "head", "tail", "wc",
@@ -1515,8 +1524,7 @@ fn is_readonly_bash_command(command: &str) -> bool {
         "dirname", "basename", "readlink", "realpath", "stat", "file",
         "tree", "du", "df", "nproc", "uname", "hostname", "ps", "top",
         "ping", "nslookup", "dig", "history", "jobs", "true", "false",
-        "sleep", "time", "for", "while", "if", "test", "[", "exit", "cd",
-        "export", "unset", "source",
+        "sleep", "test", "[", "exit", "cd", "export", "unset",
         // git 只读子命令（写类子命令 add/commit/push/pull/checkout 等不在列）
         "git status", "git log", "git diff", "git branch", "git rev-parse",
         "git remote", "git show", "git ls-files", "git tag", "git blame",
@@ -1528,10 +1536,10 @@ fn is_readonly_bash_command(command: &str) -> bool {
 
     READONLY_PATTERNS.iter().any(|pattern| {
         let p = pattern.trim_end();
-        first_cmd == p
-            || (first_cmd.len() > p.len()
-                && first_cmd.starts_with(p)
-                && first_cmd.as_bytes()[p.len()].is_ascii_whitespace())
+        trimmed == p
+            || (trimmed.len() > p.len()
+                && trimmed.starts_with(p)
+                && trimmed.as_bytes()[p.len()].is_ascii_whitespace())
     })
 }
 

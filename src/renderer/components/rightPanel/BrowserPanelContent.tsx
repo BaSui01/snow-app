@@ -23,6 +23,14 @@ import {
 } from "./browser/browserMcpOperations";
 import { APP_CONTROL_OPEN_SETTINGS_EVENT } from "../../hooks/useAppControl";
 import { useI18n } from "../../i18n";
+import { setWebTagDragData } from "./browserDrag";
+import {
+  WEB_SNAPSHOT_REQUEST_EVENT,
+  WEB_SNAPSHOT_RESULT_EVENT,
+  type WebPageSnapshot,
+  type WebSnapshotRequest,
+  type WebSnapshotResult,
+} from "./browserSnapshotEvents";
 
 export type BrowserPanelContentProps = {
   instanceId: string;
@@ -865,6 +873,23 @@ export const BrowserPanelContent = ({
               tab.id === activeWebviewTabId ? "active" : ""
             }`}
             onClick={() => handleActivateWebviewTab(tab.id)}
+            draggable={!!(tab.addressInput || tab.src)}
+            onDragStart={(event) => {
+              // 冒泡防护：内层标签页拖拽不得触发外层 right-panel-tab-item 的
+              // onDragStart（外层会用同步 URL 覆盖内层实时 URL，导致引用错页）。
+              event.stopPropagation();
+              const url = tab.addressInput || tab.src;
+              // 携带 instanceId + tabId：输入框 drop 后可请求本标签页的三层网页快照。
+              if (
+                !url ||
+                !setWebTagDragData(event, url, tab.title, {
+                  instanceId,
+                  tabId: tab.id,
+                })
+              ) {
+                event.preventDefault();
+              }
+            }}
             title={tab.title || tab.addressInput || t("rightPanel.browserNewTab")}
           >
             <span className="browser-tab-title">

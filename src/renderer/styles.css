@@ -26493,6 +26493,15 @@ body.ctrl-held [data-path] {
   color: var(--text-primary);
 }
 
+/* 可拖拽标签页（已导航、有 URL）显示抓取光标，提示可拖入聊天输入框 */
+.browser-tab[draggable="true"] {
+  cursor: grab;
+}
+
+.browser-tab[draggable="true"]:active {
+  cursor: grabbing;
+}
+
 .browser-tab.active {
   background: var(--bg-secondary);
   border-color: var(--border-light);

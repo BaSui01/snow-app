@@ -408,8 +408,12 @@ pub async fn collect_all_mcp_tools(
     // Image generation tool is only exposed when at least one channel
     // (OpenAI / Gemini) is configured and enabled in Settings -> Image
     // generation; when both are unconfigured the tool disappears entirely.
-    let imagegen_configured =
-        tokio::task::spawn_blocking(|| crate::mcp::servers::imagegen::is_imagegen_configured())
+    // The non-sensitive summary of the current default channel is also
+    // loaded here (single blocking read) and injected into the tool
+    // definition so the agent sees the real model/provider instead of
+    // guessing from static text (issue #63).
+    let imagegen_context =
+        tokio::task::spawn_blocking(|| crate::mcp::servers::imagegen::default_channel_context())
             .await
             .map_err(|error| {
                 Error::new(
@@ -417,6 +421,7 @@ pub async fn collect_all_mcp_tools(
                     format!("Failed to check image generation configuration: {error}"),
                 )
             })??;
+    let imagegen_configured = imagegen_context.is_some();
 
     let mut tools = get_builtin_tools()
         .into_iter()
@@ -438,6 +443,18 @@ pub async fn collect_all_mcp_tools(
             tool_is_enabled(tool, scope.as_ref())
         })
         .collect::<Vec<_>>();
+
+    // Inject the current default image channel summary (non-sensitive, no
+    // API key) into the imagegen-generate description so the agent can see
+    // the actual configured channel/provider/model/size/quality.
+    if let Some(context) = imagegen_context {
+        if let Some(tool) = tools.iter_mut().find(|tool| {
+            tool.server_id == "imagegen" && tool.name == super::servers::imagegen::TOOL_GENERATE
+        }) {
+            tool.description =
+                format!("{}\n\nCurrent configuration:\n{}", tool.description, context);
+        }
+    }
 
     if let Some(skill_tool) = SkillsService::new().tool(project_id).await? {
         if tool_is_enabled(&skill_tool, scope.as_ref()) {

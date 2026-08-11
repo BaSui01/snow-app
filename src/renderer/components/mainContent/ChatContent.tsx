@@ -96,6 +96,8 @@ const ChatContentBody = ({
     tokenUsage,
     draftToRestore,
     autoSendToken,
+    pendingAutoSendOverride,
+    setPendingAutoSendOverride,
     clearDraftToRestore,
     saveInputDraft,
     getInputDraft,
@@ -1093,6 +1095,8 @@ const ChatContentBody = ({
             draftToRestore={draftToRestore}
             autoSendToken={autoSendToken}
             onDraftRestored={clearDraftToRestore}
+            autoSendOverride={pendingAutoSendOverride}
+            onAutoSendOverrideConsumed={() => setPendingAutoSendOverride(null)}
             saveInputDraft={saveInputDraft}
             getInputDraft={getInputDraft}
             clearInputDraft={clearInputDraft}

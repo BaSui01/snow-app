@@ -994,6 +994,32 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to count memos")
         ),
+      listScheduledTasks: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to list scheduled tasks")
+        ),
+      upsertScheduledTask: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to save scheduled tasks"
+          )
+        ),
+      deleteScheduledTask: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to delete scheduled tasks")
+        ),
+      clearScheduledTasks: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to clear scheduled tasks")
+        ),
+      appendScheduledTaskRun: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to record task runs")
+        ),
+      finalizeScheduledTaskRun: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to finalize task runs")
+        ),
       sha256File: () =>
         Promise.reject(
           new Error("Rust native bridge is required to compute sha256")

@@ -77,6 +77,7 @@ pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<(
     migrate_chat_conversations_modes(connection)?;
     migrate_sub_agent_configs_project_id(connection)?;
     migrate_sub_agent_configs_model(connection)?;
+    migrate_scheduled_tasks_pre_script(connection)?;
     purge_assistant_raw_json_blobs(connection)?;
     Ok(())
 }
@@ -438,9 +439,58 @@ fn migrate_sub_agent_configs_model(connection: &Connection) -> rusqlite::Result<
     Ok(())
 }
 
-/// Clears the `raw_json` column for assistant messages that still hold the full
-/// SSE chunk array persisted by older app versions.
+/// Adds the pre-script configuration and skip-state columns to
+/// `scheduled_tasks` for databases created by older app versions.
 ///
+/// Without these columns, a task's pre-script (and its timeout / run-on-error
+/// flag, plus skip counters) only lived in the renderer's memory and was
+/// silently lost on restart. Idempotent: each column is checked independently
+/// via `PRAGMA table_info`, so partially migrated and repeatedly migrated
+/// databases are both safe (fresh databases get the columns from `CREATE
+/// TABLE`).
+fn migrate_scheduled_tasks_pre_script(connection: &Connection) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA table_info(scheduled_tasks)")?;
+    let columns: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    if !columns.iter().any(|column| column == "pre_script") {
+        connection.execute("ALTER TABLE scheduled_tasks ADD COLUMN pre_script TEXT", [])?;
+    }
+    if !columns.iter().any(|column| column == "pre_script_timeout_ms") {
+        connection.execute(
+            "ALTER TABLE scheduled_tasks ADD COLUMN pre_script_timeout_ms INTEGER",
+            [],
+        )?;
+    }
+    if !columns.iter().any(|column| column == "run_on_script_error") {
+        connection.execute(
+            "ALTER TABLE scheduled_tasks ADD COLUMN run_on_script_error INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+    if !columns.iter().any(|column| column == "skip_count") {
+        connection.execute(
+            "ALTER TABLE scheduled_tasks ADD COLUMN skip_count INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+    if !columns.iter().any(|column| column == "last_skipped_at") {
+        connection.execute(
+            "ALTER TABLE scheduled_tasks ADD COLUMN last_skipped_at TEXT",
+            [],
+        )?;
+    }
+    if !columns.iter().any(|column| column == "last_skip_reason") {
+        connection.execute(
+            "ALTER TABLE scheduled_tasks ADD COLUMN last_skip_reason TEXT",
+            [],
+        )?;
+    }
+
+    Ok(())
+}
+
 /// Historically every assistant response stored `serde_json::to_string(raw_events)`
 /// — the complete streaming chunk array — into `chat_messages.raw_json`. Each
 /// token produced a chunk repeating `id` / `model` / `system_fingerprint`,

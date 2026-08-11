@@ -79,6 +79,10 @@ export type ResponsesApiRequest = {
   skipContext?: boolean | null;
   planMode?: boolean | null;
   goalMode?: boolean | null;
+  /** Per-request thinking strength override ("none" | "low" | "medium" |
+   *  "high" | custom). Applied in-memory over the resolved profile's
+   *  config_json; never mutates the stored profile. */
+  thinkingStrength?: string | null;
 };
 
 export type TokenUsage = {

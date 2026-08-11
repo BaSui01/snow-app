@@ -7,12 +7,12 @@ import { sshApi } from "./modules/sshApi";
 import { gitApi } from "./modules/gitApi";
 import { systemApi, ptyApi, windowApi } from "./modules/systemApi";
 import { memoApi } from "./modules/memoApi";
+import { scheduledTaskApi } from "./modules/scheduledTaskApi";
 import { personalizationApi } from "./modules/personalizationApi";
 import { codexApi } from "./modules/codexApi";
 import { importConfigApi } from "./modules/importConfigApi";
 import { pluginsApi } from "./modules/pluginsApi";
 import { imageLibraryApi } from "./modules/imageLibraryApi";
-import { scheduledTaskApi } from "./modules/scheduledTaskApi";
 import { storageApi } from "./modules/storageApi";
 import { ideApi } from "./modules/ideApi";
 import { petApi } from "./modules/petApi";
@@ -30,13 +30,13 @@ const api = {
   ...ptyApi,
   ...windowApi,
   ...memoApi,
+  ...scheduledTaskApi,
   ...personalizationApi,
   ...codexApi,
   ...importConfigApi,
   ...pluginsApi,
   ...imageLibraryApi,
   ...storageApi,
-  ...scheduledTaskApi,
   ...ideApi,
   ...petApi,
 };

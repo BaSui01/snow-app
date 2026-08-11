@@ -2,11 +2,15 @@ import type { RefObject } from "react";
 import type { LucideIcon } from "lucide-react";
 import type { ApiConfigRecord, Model, TokenUsage } from "../../../../preload";
 import type { MainContentView } from "../types";
+import type { ScheduledTaskRunOptions } from "../../../../preload";
 export type ChatInputSendOptions = {
   model?: string;
   apiProfile?: string;
   /** 回合类型：review 表示代码审查任务（桌面宠物播放 review 专属动画）。 */
   kind?: "chat" | "review";
+  /** Per-request thinking strength override ("none" | "low" | "medium" |
+   *  "high" | custom). Applied in-memory; never mutates the profile config. */
+  thinkingStrength?: string;
 };
 export type ChatInputProps = {
   placeholder?: string;
@@ -23,6 +27,11 @@ export type ChatInputProps = {
   draftToRestore?: string | null;
   autoSendToken?: number;
   onDraftRestored?: () => void;
+  /** One-shot per-send overrides queued by buildFromContent (scheduled task
+   *  runs). The auto-send effect merges them into the send options, then calls
+   *  onAutoSendOverrideConsumed so they never leak into later manual sends. */
+  autoSendOverride?: ScheduledTaskRunOptions | null;
+  onAutoSendOverrideConsumed?: () => void;
   /** 按会话持久化输入草稿（文本+图片 chip），切换会话/新建会话时
    *  ChatInput 会卸载，草稿由调用方（ConversationContext）保存，
    *  重新挂载后通过 getInputDraft 恢复、发送后 clearInputDraft。 */

@@ -57,7 +57,16 @@ const SKIP_DIRS: &[&str] = &[
 ];
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
-static CHECKPOINT_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+/// 全局兜底锁：当 checkpoint 无法解析出工作目录（manifest 缺失/损坏、
+/// 目录已被删除）时使用。正常路径走 per-directory 锁。
+static CHECKPOINT_GLOBAL_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+/// per-directory 检查点锁表：同一目录的 checkpoint 操作串行（保证 git
+/// 基线/快照/回滚时序一致），不同目录并行——消除跨项目并发时的全局锁
+/// 排队。目录数量有限（工作区数），`&'static Mutex` 由 Box::leak 持有，
+/// 生命周期与进程一致，无内存回收负担。
+static CHECKPOINT_LOCKS: OnceLock<Mutex<HashMap<PathBuf, &'static Mutex<()>>>> = OnceLock::new();
 
 /// 进程内 diff 缓存上限：超过后整体清空（LRU 之外的简单防膨胀手段，
 /// diff 成本远低于全量重算，清空后逐次重建即可）。
@@ -177,8 +186,22 @@ fn checkpoint_root() -> Result<PathBuf> {
     super::storage_locations::checkpoint_root()
 }
 
-fn checkpoint_guard() -> Result<MutexGuard<'static, ()>> {
-    CHECKPOINT_LOCK
+fn checkpoint_guard(work_dir: Option<&Path>) -> Result<MutexGuard<'static, ()>> {
+    if let Some(dir) = work_dir {
+        let locks = CHECKPOINT_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
+        let static_lock = {
+            let mut map = locks
+                .lock()
+                .map_err(|_| Error::from_reason("Checkpoint lock registry is poisoned"))?;
+            *map.entry(dir.to_path_buf())
+                .or_insert_with(|| Box::leak(Box::new(Mutex::new(()))))
+        };
+        return static_lock
+            .lock()
+            .map_err(|_| Error::from_reason("Checkpoint state lock is poisoned"));
+    }
+
+    CHECKPOINT_GLOBAL_LOCK
         .get_or_init(|| Mutex::new(()))
         .lock()
         .map_err(|_| Error::from_reason("Checkpoint state lock is poisoned"))
@@ -745,8 +768,8 @@ fn validate_capture_work_dir(manifest: &CheckpointManifest, work_dir: &str) -> O
 /// Create an incremental checkpoint without copying the working directory.
 /// File content is captured lazily, immediately before a tool first changes it.
 pub fn create_checkpoint(work_dir: String) -> Result<String> {
-    let _guard = checkpoint_guard()?;
     let root = canonical_work_dir(&work_dir)?;
+    let _guard = checkpoint_guard(Some(&root))?;
     let checkpoint_id = generate_checkpoint_id();
     let manifest = CheckpointManifest {
         version: MANIFEST_VERSION,
@@ -775,7 +798,7 @@ pub fn record_checkpoint_file(
     if checkpoint_ids.is_empty() {
         return Ok(());
     }
-    let _guard = checkpoint_guard()?;
+    let _guard = checkpoint_guard(canonical_work_dir(&work_dir).ok().as_deref())?;
     let root = canonical_work_dir(&work_dir)?;
     let (absolute, path) = resolve_checkpoint_path(&root, &file_path)?;
     if path.is_empty() || should_skip_manifest_path(&path) {
@@ -810,7 +833,7 @@ pub fn record_checkpoint_file_after(
     if checkpoint_ids.is_empty() {
         return Ok(());
     }
-    let _guard = checkpoint_guard()?;
+    let _guard = checkpoint_guard(canonical_work_dir(&work_dir).ok().as_deref())?;
     let root = canonical_work_dir(&work_dir)?;
     let (absolute, path) = resolve_checkpoint_path(&root, &file_path)?;
     if path.is_empty() || should_skip_manifest_path(&path) {
@@ -1054,8 +1077,8 @@ pub fn capture_checkpoint_worktree_before(
     if checkpoint_ids.is_empty() {
         return Ok(None);
     }
-    let _guard = checkpoint_guard()?;
     let root = canonical_work_dir(&work_dir)?;
+    let _guard = checkpoint_guard(Some(&root))?;
 
     // 所有 checkpoint 都与当前目录不匹配:没有任何可捕获目标,
     // 不做无意义的全目录快照。顺带收集可复用的 git 基线
@@ -1212,7 +1235,7 @@ fn capture_worktree_before_git(
 /// files) blowup that made concurrent terminal commands progressively slower
 /// as a conversation accumulated checkpoints.
 pub fn record_checkpoint_worktree_after(capture: CheckpointWorktreeCapture) -> Result<()> {
-    let _guard = checkpoint_guard()?;
+    let _guard = checkpoint_guard(canonical_work_dir(&capture.work_dir).ok().as_deref())?;
 
     // 先解析所有仍有效的 checkpoint（manifest 存在 + work_dir 匹配）。
     let mut effective: Vec<(String, CheckpointManifest, PathBuf)> = Vec::new();
@@ -1307,7 +1330,7 @@ pub fn record_checkpoint_worktree_after(capture: CheckpointWorktreeCapture) -> R
 
 /// Restore only paths that were recorded by mutating tools after this checkpoint.
 pub fn restore_checkpoint(checkpoint_id: String, work_dir: String) -> Result<()> {
-    let _guard = checkpoint_guard()?;
+    let _guard = checkpoint_guard(canonical_work_dir(&work_dir).ok().as_deref())?;
     // If the manifest no longer exists (checkpoint was deleted or corrupted),
     // there is nothing to restore. Return Ok so the rollback flow continues
     // to delete messages without being blocked by a missing checkpoint.
@@ -1452,7 +1475,18 @@ fn prune_empty_parent_directories(root: &Path, entries: &[CheckpointEntry]) {
 /// Delete a checkpoint and release its Git reference. Shared objects are
 /// garbage-collected once no remaining manifest references them.
 pub fn delete_checkpoint(checkpoint_id: String) -> Result<()> {
-    let _guard = checkpoint_guard()?;
+    // 先读取 manifest 定位工作目录，取对应目录锁；manifest 缺失/损坏时
+    // 走全局兜底锁。manifest 通过临时文件 + rename 原子发布，锁外读取
+    // 只会看到完整旧版或完整新版，不会读到半写状态。
+    let work_dir = read_manifest(&checkpoint_id)
+        .map(|manifest| manifest.work_dir)
+        .unwrap_or_default();
+    let work_dir_key = if work_dir.is_empty() {
+        None
+    } else {
+        canonical_work_dir(&work_dir).ok()
+    };
+    let _guard = checkpoint_guard(work_dir_key.as_deref())?;
     let directory = checkpoint_dir(&checkpoint_id)?;
     if !directory.exists() {
         return Ok(());
@@ -1550,7 +1584,7 @@ pub fn list_checkpoint_changes(
     checkpoint_id: String,
     work_dir: String,
 ) -> Result<Vec<CheckpointFileChange>> {
-    let _guard = checkpoint_guard()?;
+    let _guard = checkpoint_guard(canonical_work_dir(&work_dir).ok().as_deref())?;
     if !checkpoint_manifest_exists(&checkpoint_id) {
         return Ok(Vec::new());
     }
@@ -1603,7 +1637,7 @@ pub fn list_checkpoint_diffs(
     work_dir: String,
     include_all: bool,
 ) -> Result<Vec<CheckpointFileDiff>> {
-    let _guard = checkpoint_guard()?;
+    let _guard = checkpoint_guard(canonical_work_dir(&work_dir).ok().as_deref())?;
     if !checkpoint_manifest_exists(&checkpoint_id) {
         return Ok(Vec::new());
     }

@@ -14,7 +14,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::api::anthropic::create_anthropic_response_stream;
 use crate::api::chat::create_chat_completion_response_stream;
-use crate::api::config::get_active_api_request_context;
+use crate::api::config::{get_active_api_request_context, resolve_basic_model};
 use crate::api::gemini::create_gemini_response_stream;
 use crate::api::responses::{
     create_response_stream_with_context, ResponsesApiRequest, ResponsesApiResult,
@@ -99,16 +99,11 @@ pub async fn generate_commit_message_stream(
         ));
     }
 
-    let basic_model = api_config.basic_model.trim();
-    if basic_model.is_empty() {
-        return Err(Error::from_reason(
-            "Basic model not configured. Please configure API settings first.",
-        ));
-    }
+    let basic_model = resolve_basic_model(None, &api_config.basic_model)?;
 
     // --- 3. Build request with basic model ---
     let mut request = build_request(&staged_diff);
-    request.model = Some(basic_model.to_string());
+    request.model = Some(basic_model);
 
     // --- 4. Dispatch to the correct provider ---
     // We reuse the four provider stream functions directly.  Each one calls

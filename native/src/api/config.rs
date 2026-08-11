@@ -11,6 +11,31 @@ pub const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 pub const DEFAULT_GEMINI_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
 pub const DEFAULT_ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com/v1";
 
+const ADVANCED_MODEL_REQUIRED_ERROR: &str =
+    "Advanced model not configured. Please select or configure an advanced model in API settings.";
+const BASIC_MODEL_REQUIRED_ERROR: &str =
+    "Basic model not configured. Please configure a basic model in API settings.";
+
+pub fn resolve_advanced_model(requested: Option<&str>, configured: &str) -> Result<String> {
+    resolve_model(requested, configured, ADVANCED_MODEL_REQUIRED_ERROR)
+}
+
+pub fn resolve_basic_model(requested: Option<&str>, configured: &str) -> Result<String> {
+    resolve_model(requested, configured, BASIC_MODEL_REQUIRED_ERROR)
+}
+
+fn resolve_model(requested: Option<&str>, configured: &str, empty_error: &str) -> Result<String> {
+    requested
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            let configured = configured.trim();
+            (!configured.is_empty()).then_some(configured)
+        })
+        .map(str::to_owned)
+        .ok_or_else(|| Error::from_reason(empty_error))
+}
+
 pub struct ActiveApiRequestContext {
     pub database_path: PathBuf,
     pub api_config: ApiConfigRecord,
@@ -256,5 +281,60 @@ fn normalize_pathname(pathname: &str) -> String {
         "/".to_string()
     } else {
         trimmed.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{resolve_advanced_model, resolve_basic_model};
+
+    #[test]
+    fn explicit_models_are_trimmed_and_preferred() {
+        assert_eq!(
+            resolve_advanced_model(Some("  requested-advanced  "), "configured-advanced")
+                .expect("resolve explicit advanced model"),
+            "requested-advanced"
+        );
+        assert_eq!(
+            resolve_basic_model(Some("  requested-basic  "), "configured-basic")
+                .expect("resolve explicit basic model"),
+            "requested-basic"
+        );
+    }
+
+    #[test]
+    fn blank_explicit_models_fall_back_to_trimmed_profile_models() {
+        assert_eq!(
+            resolve_advanced_model(Some(" \n "), "  configured-advanced  ")
+                .expect("resolve configured advanced model"),
+            "configured-advanced"
+        );
+        assert_eq!(
+            resolve_basic_model(Some("\t"), "  configured-basic  ")
+                .expect("resolve configured basic model"),
+            "configured-basic"
+        );
+    }
+
+    #[test]
+    fn missing_advanced_model_returns_a_clear_error() {
+        let error = resolve_advanced_model(Some(" \n "), "\t")
+            .expect_err("blank advanced models must fail");
+
+        assert_eq!(
+            error.reason,
+            "Advanced model not configured. Please select or configure an advanced model in API settings."
+        );
+    }
+
+    #[test]
+    fn missing_basic_model_returns_a_clear_error() {
+        let error =
+            resolve_basic_model(Some(" \n "), "\t").expect_err("blank basic models must fail");
+
+        assert_eq!(
+            error.reason,
+            "Basic model not configured. Please configure a basic model in API settings."
+        );
     }
 }

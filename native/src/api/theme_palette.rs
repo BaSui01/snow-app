@@ -24,7 +24,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::api::anthropic::create_anthropic_response_stream;
 use crate::api::chat::create_chat_completion_response_stream;
-use crate::api::config::get_api_request_context_for_profile;
+use crate::api::config::{get_api_request_context_for_profile, resolve_advanced_model};
 use crate::api::gemini::create_gemini_response_stream;
 use crate::api::responses::{
     create_response_stream_with_context, ResponsesApiMessage, ResponsesApiRequest,
@@ -172,12 +172,7 @@ pub async fn generate_theme_palette_stream(
         ));
     }
 
-    let advanced_model = api_config.advanced_model.trim();
-    if advanced_model.is_empty() {
-        return Err(Error::from_reason(
-            "Advanced model not configured. Please configure API settings first.",
-        ));
-    }
+    let advanced_model = resolve_advanced_model(None, &api_config.advanced_model)?;
 
     if !api_config.supports_vision {
         return Err(Error::from_reason(
@@ -188,7 +183,7 @@ pub async fn generate_theme_palette_stream(
 
     // --- 4. Build request with advanced model ---
     let mut request = build_request(&image_data_url);
-    request.model = Some(advanced_model.to_string());
+    request.model = Some(advanced_model);
 
     // --- 5. Dispatch to the correct provider ---
     // We reuse the four provider stream functions directly. Each one calls

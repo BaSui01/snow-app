@@ -8,8 +8,8 @@ use std::sync::OnceLock;
 use uuid::Uuid;
 
 use crate::api::config::{
-    normalize_base_url, resolve_sdk_api_base_url, DEFAULT_ANTHROPIC_BASE_URL,
-    DEFAULT_OPENAI_BASE_URL,
+    normalize_base_url, resolve_advanced_model, resolve_sdk_api_base_url,
+    DEFAULT_ANTHROPIC_BASE_URL, DEFAULT_OPENAI_BASE_URL,
 };
 use crate::api::conversation::parse_chat_message_content;
 use crate::api::responses::ResponsesApiRequest;
@@ -108,18 +108,8 @@ pub(super) fn build_anthropic_payload(
     tools: Option<Value>,
     user_system_prompts: &[String],
 ) -> Result<Value> {
-    let model = request
-        .model
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| api_config.advanced_model.trim());
-
-    if model.is_empty() {
-        return Err(Error::from_reason(
-            "Model not configured. Please select or configure a model first.",
-        ));
-    }
+    let model =
+        resolve_advanced_model(request.model.as_deref(), &api_config.advanced_model)?;
     // `[1M]` 后缀是 Claude Code 生态的本地上下文能力声明（见
     // ANTHROPIC_ONE_M_CONTEXT_BETA），上游 API 不接受该标记，发送前剥离；
     // 对应的 context-1m beta 头由调用方（api/anthropic/mod.rs）注入。

@@ -2442,14 +2442,17 @@ Full guide: ~/.snow/docs/zh-CN/2-使用指南/3-配置API密钥与模型.md (en:
                 })
                 .unwrap_or_default()
         };
-        // 数值字段（Option<i32>）。
+        // 数值字段（Option<i32>）。i64/u64 超出 i32 范围时收敛到边界，
+        // 避免静默截断成负数写入损坏配置。
         let int_field = |key: &str| -> Option<i32> {
             if let Some(field) = value.get(key) {
                 if let Some(number) = field.as_i64() {
-                    return Some(number as i32);
+                    return Some(
+                        number.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32,
+                    );
                 }
                 if let Some(number) = field.as_u64() {
-                    return Some(number as i32);
+                    return Some(number.min(i32::MAX as u64) as i32);
                 }
             }
             existing.as_ref().and_then(|record| match key {
@@ -3878,4 +3881,102 @@ fn required_string<'a>(args: &'a Value, key: &str) -> napi::Result<&'a str> {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .ok_or_else(|| Error::new(Status::InvalidArg, format!("{key} is required")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ConfigService;
+    use crate::storage::database;
+    use serde_json::json;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_db_path() -> PathBuf {
+        let unique = format!(
+            "snow-mcp-api-profiles-test-{}-{}.db",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        );
+        std::env::temp_dir().join(unique)
+    }
+
+    fn init_service(path: &Path) -> ConfigService {
+        let connection = database::open_connection(path).expect("open database");
+        database::create_schema(&connection).expect("create schema");
+        ConfigService {
+            db_path: path.to_string_lossy().into_owned(),
+        }
+    }
+
+    #[test]
+    fn api_profile_activation_uses_storage_validation_after_merge() {
+        let db_path = temp_db_path();
+        let service = init_service(&db_path);
+
+        let created = service
+            .set_db_api_profile("draft", &json!({ "isActive": false }))
+            .expect("create incomplete inactive profile");
+        assert_eq!(created["value"]["isActive"].as_bool(), Some(false));
+        assert_eq!(created["value"]["advancedModel"].as_str(), Some(""));
+        assert_eq!(created["value"]["basicModel"].as_str(), Some(""));
+
+        // Avoid writing a temporary backup into the real home directory during this unit test.
+        database::open_connection(&db_path)
+            .expect("open database")
+            .execute(
+                "UPDATE api_configs SET config_json = '' WHERE profile_name = 'draft'",
+                [],
+            )
+            .expect("clear test config json");
+
+        let error = service
+            .set_db_api_profile("draft", &json!({ "isActive": true }))
+            .expect_err("activating an incomplete merged profile must fail");
+        assert!(
+            error
+                .reason
+                .contains("Advanced model is required for an active API profile"),
+            "unexpected error: {}",
+            error.reason
+        );
+
+        let saved = service
+            .set_db_api_profile(
+                "draft",
+                &json!({
+                    "isActive": true,
+                    "advancedModel": "  advanced-model  ",
+                    "basicModel": "  basic-model  "
+                }),
+            )
+            .expect("complete and activate merged profile");
+        assert_eq!(saved["value"]["isActive"].as_bool(), Some(true));
+        assert_eq!(
+            saved["value"]["advancedModel"].as_str(),
+            Some("advanced-model")
+        );
+        assert_eq!(
+            saved["value"]["basicModel"].as_str(),
+            Some("basic-model")
+        );
+
+        let records = crate::storage::services::api_configs::list_api_configs(&db_path)
+            .expect("list profiles");
+        assert_eq!(
+            records.iter().filter(|record| record.is_active).count(),
+            1
+        );
+        let draft = records
+            .iter()
+            .find(|record| record.profile_name == "draft")
+            .expect("draft profile");
+        assert!(draft.is_active);
+        assert_eq!(draft.advanced_model, "advanced-model");
+        assert_eq!(draft.basic_model, "basic-model");
+
+        let _ = std::fs::remove_file(&db_path);
+    }
 }

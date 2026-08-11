@@ -22,6 +22,10 @@ Find the Python files in this project, inspect the key entry points, and summari
 
 See [Configure API Keys and Models](3-configure-api-keys.md) for profile and model setup.
 
+**Conversation model routing**: an ordinary conversation uses the model selected for that conversation. Snow App does not automatically switch between basic and advanced models based on prompt complexity. `advancedModel` is only the conversation profile's default advanced model, and `advancedModel` and `basicModel` never fall back to each other.
+
+**Title routing**: the first generated conversation title uses `basicModel`; its provider, credentials, and profile follow the profile bound to that conversation. If the bound profile has been deleted, ordinary-conversation rules fall back to the current active profile.
+
 ### 1.1 Manage Local Projects and Workspaces
 
 The **Projects** area in the left sidebar can either create a new directory on disk or register an existing one. These operations have different boundaries:

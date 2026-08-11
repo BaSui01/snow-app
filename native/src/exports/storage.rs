@@ -1516,7 +1516,7 @@ fn map_spawn_error(e: tokio::task::JoinError) -> Error {
 }
 
 // ============================================================================
-// Keyboard shortcuts — 快捷键设置，6 个快捷键各自 enabled + foregroundOnly。
+// Keyboard shortcuts — 快捷键设置，9 个快捷键各自 enabled + foregroundOnly。
 // ============================================================================
 
 #[napi(object)]
@@ -1559,6 +1559,8 @@ pub struct KeyboardShortcutsSettingsNapi {
     pub cycle_project: KeyboardShortcutConfigNapi,
     pub open_project_explorer: KeyboardShortcutConfigNapi,
     pub cycle_api_profile: KeyboardShortcutConfigNapi,
+    pub toggle_window: KeyboardShortcutConfigNapi,
+    pub toggle_pet: KeyboardShortcutConfigNapi,
 }
 
 impl From<crate::storage::services::keyboard_shortcuts::KeyboardShortcutsSettings>
@@ -1573,6 +1575,8 @@ impl From<crate::storage::services::keyboard_shortcuts::KeyboardShortcutsSetting
             cycle_project: s.cycle_project.into(),
             open_project_explorer: s.open_project_explorer.into(),
             cycle_api_profile: s.cycle_api_profile.into(),
+            toggle_window: s.toggle_window.into(),
+            toggle_pet: s.toggle_pet.into(),
         }
     }
 }
@@ -1589,6 +1593,8 @@ impl From<KeyboardShortcutsSettingsNapi>
             cycle_project: s.cycle_project.into(),
             open_project_explorer: s.open_project_explorer.into(),
             cycle_api_profile: s.cycle_api_profile.into(),
+            toggle_window: s.toggle_window.into(),
+            toggle_pet: s.toggle_pet.into(),
         }
     }
 }

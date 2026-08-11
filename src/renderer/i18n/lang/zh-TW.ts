@@ -2971,6 +2971,8 @@ export const zhTW = {
   "settings.shortcutClickToRebind": "點擊重新綁定",
   "settings.shortcutConflict": "與以下快捷鍵衝突：{{actions}}",
   "settings.shortcutCycleApiProfile": "開啟 API 提供商選擇器",
+  "settings.shortcutToggleWindow": "顯示/隱藏對話視窗",
+  "settings.shortcutTogglePet": "切換寵物啟停",
   "settings.shortcutCycleProject": "循環切換專案",
   "settings.shortcutEnabled": "啟用",
   "settings.shortcutForegroundOnly": "僅台前生效",

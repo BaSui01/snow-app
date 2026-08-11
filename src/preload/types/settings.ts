@@ -398,7 +398,9 @@ export type KeyboardShortcutAction =
   | "openTodo"
   | "cycleProject"
   | "openProjectExplorer"
-  | "cycleApiProfile";
+  | "cycleApiProfile"
+  | "toggleWindow"
+  | "togglePet";
 
 export type KeyboardShortcutConfig = {
   /**
@@ -419,4 +421,6 @@ export type KeyboardShortcutsSettings = {
   cycleProject: KeyboardShortcutConfig;
   openProjectExplorer: KeyboardShortcutConfig;
   cycleApiProfile: KeyboardShortcutConfig;
+  toggleWindow: KeyboardShortcutConfig;
+  togglePet: KeyboardShortcutConfig;
 };

@@ -2184,6 +2184,8 @@ export const zhCN = {
   "settings.shortcutCycleProject": "循环切换项目",
   "settings.shortcutOpenExplorer": "打开当前项目明细",
   "settings.shortcutCycleApiProfile": "打开 API 提供商选择器",
+  "settings.shortcutToggleWindow": "显示/隐藏对话窗口",
+  "settings.shortcutTogglePet": "切换宠物启停",
   "settings.shortcutEnabled": "启用",
   "settings.shortcutForegroundOnly": "仅台前生效",
   "settings.shortcutForegroundOnlyNote":

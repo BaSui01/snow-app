@@ -2292,6 +2292,8 @@ export const en = {
   "settings.shortcutCycleProject": "Cycle through projects",
   "settings.shortcutOpenExplorer": "Open current project explorer",
   "settings.shortcutCycleApiProfile": "Open API provider picker",
+  "settings.shortcutToggleWindow": "Show/hide main window",
+  "settings.shortcutTogglePet": "Show/hide desktop pet",
   "settings.shortcutEnabled": "Enabled",
   "settings.shortcutForegroundOnly": "Foreground only",
   "settings.shortcutForegroundOnlyNote":

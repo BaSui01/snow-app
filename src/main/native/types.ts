@@ -272,6 +272,8 @@ export type KeyboardShortcutsSettings = {
   openTodo: KeyboardShortcutConfig;
   cycleProject: KeyboardShortcutConfig;
   openProjectExplorer: KeyboardShortcutConfig;
+  toggleWindow: KeyboardShortcutConfig;
+  togglePet: KeyboardShortcutConfig;
 };
 
 export type CodebaseEmbedProgress = {

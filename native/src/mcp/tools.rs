@@ -881,6 +881,20 @@ pub async fn call_mcp_tool(
         resolve_local_filesystem_args(&tool_full_name, args, project_id.as_deref()).await?
     };
 
+    // 只读 bash 命令跳过 checkpoint 工作区快照：git 快照（rev-parse/diff/
+    // ls-files + 文件复制）只对可能修改工作区的命令有意义。保守策略——
+    // 只有明确命中的只读模式才跳过，任何不确定情况保留 checkpoint。
+    let checkpoint_ids = if tool_full_name == "bash-terminal-execute"
+        && args
+            .get("command")
+            .and_then(Value::as_str)
+            .is_some_and(is_readonly_bash_command)
+    {
+        Vec::new()
+    } else {
+        checkpoint_ids
+    };
+
     let checkpoint_capture = if uses_remote_workspace {
         ToolCheckpointCapture::None
     } else {
@@ -1467,4 +1481,78 @@ fn capture_checkpoint_after_tool(capture: ToolCheckpointCapture) -> napi::Result
         }
         ToolCheckpointCapture::None | ToolCheckpointCapture::Worktree(None) => Ok(()),
     }
+}
+
+/// 判断 bash 命令是否只读（不会修改工作区文件）。
+/// 返回 `true` 表示可安全跳过 checkpoint 工作区快照。
+///
+/// 保守策略：只有明确命中的只读模式才返回 `true`；包含文件重定向、
+/// 写操作命令或任何不确定情况一律返回 `false`（保留快照，保证回滚安全）。
+fn is_readonly_bash_command(command: &str) -> bool {
+    let trimmed = command.trim();
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return true;
+    }
+
+    // 重定向到文件（> file / >> file）会修改工作区；排除 >/dev/null 与 >& 形式
+    if has_file_redirect(trimmed) {
+        return false;
+    }
+
+    // 命令链的首个命令段（按 ; & | 分割后的第一段）
+    let first_cmd = trimmed
+        .split(|c: char| c == ';' || c == '&' || c == '|')
+        .next()
+        .map(str::trim)
+        .unwrap_or("");
+
+    // 只读命令模式白名单。注意：sed/awk 未列入（sed -i / awk 重定向会写文件），
+    // node/python/curl/wget/git 写类子命令未列入，均保守保留 checkpoint。
+    const READONLY_PATTERNS: &[&str] = &[
+        // 纯读命令（可带参数）
+        "echo", "ls", "pwd", "grep", "rg", "cat", "head", "tail", "wc",
+        "sort", "uniq", "find", "which", "type", "date", "printf",
+        "dirname", "basename", "readlink", "realpath", "stat", "file",
+        "tree", "du", "df", "nproc", "uname", "hostname", "ps", "top",
+        "ping", "nslookup", "dig", "history", "jobs", "true", "false",
+        "sleep", "time", "for", "while", "if", "test", "[", "exit", "cd",
+        "export", "unset", "source",
+        // git 只读子命令（写类子命令 add/commit/push/pull/checkout 等不在列）
+        "git status", "git log", "git diff", "git branch", "git rev-parse",
+        "git remote", "git show", "git ls-files", "git tag", "git blame",
+        "git reflog", "git describe", "git shortlog", "git config --get",
+        "git help",
+        // 只读网络探测
+        "curl -I", "curl -i", "curl -sI", "wget --spider",
+    ];
+
+    READONLY_PATTERNS.iter().any(|pattern| {
+        let p = pattern.trim_end();
+        first_cmd == p
+            || (first_cmd.len() > p.len()
+                && first_cmd.starts_with(p)
+                && first_cmd.as_bytes()[p.len()].is_ascii_whitespace())
+    })
+}
+
+/// 检测命令字符串中的文件重定向（`>` / `>>`），排除 `>/dev/null` 与 `>&` / `2>&1`。
+fn has_file_redirect(command: &str) -> bool {
+    let bytes = command.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'>' {
+            let mut j = i + 1;
+            while j < bytes.len() && bytes[j] == b'>' {
+                j += 1;
+            }
+            let after = command[j..].trim_start();
+            if !after.starts_with("/dev/null") && !after.starts_with('&') {
+                return true;
+            }
+            i = j;
+        } else {
+            i += 1;
+        }
+    }
+    false
 }

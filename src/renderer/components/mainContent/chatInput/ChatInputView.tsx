@@ -86,6 +86,14 @@ import {
   type TerminalInsertTextPayload,
 } from "../../rightPanel/terminal/terminalMonitor";
 import { rightPanelEvents } from "../../rightPanel/rightPanelEvents";
+import {
+  WEB_SNAPSHOT_REQUEST_EVENT,
+  WEB_SNAPSHOT_RESULT_EVENT,
+  WEB_SNAPSHOT_TIMEOUT_MS,
+  nextSnapshotRequestId,
+  type WebSnapshotRequest,
+  type WebSnapshotResult,
+} from "../../rightPanel/browserSnapshotEvents";
 import { CommandPanel, type CommandPanelHandle } from "./commands/CommandPanel";
 import { createChatCommands } from "./commands/commandRegistry";
 import { FileChangesPanel } from "./commands/FileChangesPanel";
@@ -94,6 +102,36 @@ import type { ChatCommand } from "./commands/types";
 
 /** 终端监控日志预览保留的最大行数 */
 const MAX_MONITORED_LINES = 1000;
+
+/**
+ * 在编辑区中定位与（url, title）匹配的 web chip，用于快照结果回填。
+ * 同一 URL 可能被拖入多次（chip 多个），优先精确匹配 url+title 的，
+ * 否则取最后插入的 url 匹配项（最近一次拖入的 chip）。
+ */
+const findWebChipByUrl = (
+  root: HTMLElement,
+  url: string,
+  title?: string
+): HTMLElement | null => {
+  const chips = root.querySelectorAll<HTMLElement>("[data-web-tag='true']");
+  let fallback: HTMLElement | null = null;
+  let exact: HTMLElement | null = null;
+  for (const chip of chips) {
+    try {
+      const data = JSON.parse(chip.dataset.webData || "{}") as Partial<WebTag>;
+      if (data.url !== url) {
+        continue;
+      }
+      fallback = chip;
+      if (title && data.title === title) {
+        exact = chip;
+      }
+    } catch {
+      // 忽略损坏的 chip 数据
+    }
+  }
+  return exact ?? fallback;
+};
 
 export const ChatInputView = ({
   placeholder,
@@ -206,6 +244,13 @@ export const ChatInputView = ({
     fallbackChanges: fallbackFileChanges,
   });
   const isDraggingOverRef = useRef(false);
+  // F4 网页快照：待处理请求表（requestId → web chip 定位信息）。拖入标签页
+  // 后登记，快照结果按 requestId 匹配取出定位信息，再在编辑区 DOM 中按
+  // URL/标题找到对应 web chip 回填（chip 可能已被删除/消息已发送，找不到
+  // 则静默丢弃）；5s 超时未收到结果也在此移除（chip 保持纯 URL 引用）。
+  const pendingWebSnapshotRef = useRef<
+    Map<number, { url: string; title?: string }>
+  >(new Map());
   const [isMentionOpen, setIsMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
   const mentionAnchorRef = useRef<HTMLDivElement>(null);
@@ -537,6 +582,74 @@ export const ChatInputView = ({
     };
   }, [syncContent, textareaRef]);
 
+  // F4 网页快照结果回填：按 requestId 匹配 pending 表，更新对应 web chip
+  // 的快照字段（发送时 encodeWebTag 序列化携带，AI 无需再开浏览器），
+  // 并把截图作为 image chip 紧随 web chip 插入编辑区。任一环节缺失
+  // （结果超时 / 快照失败 / chip 已删除）都静默跳过，不打断现有流程。
+  useEffect(() => {
+    const handleSnapshotResult = (event: Event): void => {
+      const detail = (event as CustomEvent<WebSnapshotResult>).detail;
+      if (!detail || typeof detail.requestId !== "number") {
+        return;
+      }
+      const pending = pendingWebSnapshotRef.current.get(detail.requestId);
+      if (!pending) {
+        return; // 已超时 / 已被处理过
+      }
+      pendingWebSnapshotRef.current.delete(detail.requestId);
+      const snapshot = detail.snapshot;
+      if (!snapshot) {
+        return; // 抓取失败：chip 保持纯 URL 引用
+      }
+      const el = textareaRef.current;
+      if (!el) {
+        return;
+      }
+      const webChip = findWebChipByUrl(el, pending.url, pending.title);
+      if (!webChip) {
+        return; // chip 已被删除 / 消息已发送
+      }
+
+      // ① 回填快照字段到 web chip 数据（data-web-data），发送时
+      //    encodeWebTag 从 dataset 读取并序列化进 @@web:...@@ 标签。
+      try {
+        const prev = JSON.parse(
+          webChip.dataset.webData || "{}"
+        ) as Partial<WebTag>;
+        webChip.dataset.webData = JSON.stringify({
+          url: typeof prev.url === "string" ? prev.url : pending.url,
+          title: typeof prev.title === "string" ? prev.title : pending.title,
+          text: snapshot.text || undefined,
+          elementText: snapshot.elementText,
+          elementSelector: snapshot.elementSelector,
+        });
+      } catch {
+        // data-web-data 损坏：跳过回填（chip 保持纯 URL 引用）
+      }
+
+      // ② 截图 → image chip 紧随 web chip 插入（复用 createImageChipHtml）。
+      //    用 DOM 定位插入而非光标处，避免结果到达时用户已移动光标/失焦
+      //    导致截图插到错误位置或插入到编辑区之外。
+      if (snapshot.screenshotDataUrl) {
+        const imageTag: ImageTag = {
+          name: "page-snapshot.png",
+          dataUrl: snapshot.screenshotDataUrl,
+        };
+        webChip.insertAdjacentHTML("afterend", createImageChipHtml(imageTag));
+        const inserted = webChip.nextElementSibling;
+        if (inserted) {
+          // chip 后补空格，保证光标可定位到 chip 之后（对齐 insertHtmlAtSelection 行为）。
+          inserted.after(document.createTextNode(" "));
+        }
+      }
+      syncContent();
+    };
+    window.addEventListener(WEB_SNAPSHOT_RESULT_EVENT, handleSnapshotResult);
+    return () => {
+      window.removeEventListener(WEB_SNAPSHOT_RESULT_EVENT, handleSnapshotResult);
+    };
+  }, [syncContent, textareaRef]);
+
   const deleteMentionQuery = useCallback(() => {
     const el = textareaRef.current;
     if (!el || mentionStartOffsetRef.current < 0) {
@@ -845,7 +958,9 @@ export const ChatInputView = ({
       try {
         const parsed = JSON.parse(jsonData) as Record<string, unknown>;
 
-        // 浏览器 tab 拖拽：{ type: "web-tag", url, title } → 插入网页引用 chip
+        // 浏览器 tab 拖拽：{ type: "web-tag", url, title, instanceId?, tabId? }
+        // → 插入网页引用 chip；若携带实例定位信息则异步请求三层网页快照
+        // （正文 / 元素区域 / 截图），结果到达后回填 chip 数据并插入截图。
         if (
           parsed.type === "web-tag" &&
           typeof parsed.url === "string" &&
@@ -865,6 +980,38 @@ export const ChatInputView = ({
 
           insertHtmlAtSelection(createWebTagChipHtml(tag));
           syncContent();
+
+          // F4 网页快照：仅内层标签页 / 外层浏览器 tab（携带 instanceId）
+          // 触发请求；纯外部 URL 拖入（无 instanceId）保持纯 URL chip。
+          const instanceId =
+            typeof parsed.instanceId === "string" && parsed.instanceId.length > 0
+              ? parsed.instanceId
+              : undefined;
+          if (instanceId) {
+            const requestId = nextSnapshotRequestId();
+            pendingWebSnapshotRef.current.set(requestId, {
+              url: tag.url,
+              title: tag.title,
+            });
+            // 全链路 5s 超时：未收到结果则放弃，chip 保持纯 URL 引用。
+            window.setTimeout(() => {
+              pendingWebSnapshotRef.current.delete(requestId);
+            }, WEB_SNAPSHOT_TIMEOUT_MS);
+            window.dispatchEvent(
+              new CustomEvent<WebSnapshotRequest>(
+                WEB_SNAPSHOT_REQUEST_EVENT,
+                {
+                  detail: {
+                    requestId,
+                    instanceId,
+                    tabId:
+                      typeof parsed.tabId === "string" ? parsed.tabId : "",
+                    url: tag.url,
+                  },
+                }
+              )
+            );
+          }
           return;
         }
 

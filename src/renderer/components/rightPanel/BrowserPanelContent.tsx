@@ -5,9 +5,11 @@ import {
   BrowserFindBar,
   type BrowserFindResult,
   BrowserToolbar,
+  captureWebviewPage,
   useBrowserHomepage,
   useWebviewElementPicker,
   useWebviewScreenshot,
+  type PickedElement,
 } from "./browser";
 import { DEFAULT_BROWSER_HOMEPAGE } from "./browser/browserHomepageConstants";
 import {
@@ -69,6 +71,125 @@ const normalizeUrl = (input: string, homepage: string): string => {
  * main-process `GUEST_VIEW_MANAGER_CALL` IPC handler promise rejection.
  */
 const SUPPRESSED_ERROR_CODES = new Set([-3, -2]);
+
+// ---------------------------------------------------------------------------
+// F4 网页快照（三层）：正文提取脚本 + 渲染进程清洗 + 单层超时工具。
+// 快照失败一律静默降级（返回空/undefined），不抛异常、不打断拖入流程。
+// ---------------------------------------------------------------------------
+
+/** 快照正文的硬上限（字符数），超长按段落边界截断 */
+const MAX_SNAPSHOT_TEXT_LENGTH = 8000;
+/** 元素区域摘要的长度上限 */
+const MAX_ELEMENT_TEXT_LENGTH = 2000;
+/** 截图 dataURL 的硬上限（字符数，约 3MB，防消息 payload 过大） */
+const MAX_SNAPSHOT_DATA_URL_LENGTH = 3 * 1024 * 1024;
+/** 单层快照采集的超时（毫秒），输入框侧另有 5s 全链路超时兜底 */
+const SNAPSHOT_LAYER_TIMEOUT_MS = 3000;
+
+/**
+ * webview 内执行的整页正文提取脚本（IIFE）：
+ * `article` 优先，克隆 root 后移除脚本/样式/导航/表单等噪声节点，
+ * 返回 `{ text }`（innerText，可能为空串）。executeJavaScript 走
+ * webview 宿主侧注入，不受页面 CSP 限制（与现有 MCP 操作一致）。
+ */
+const EXTRACT_PAGE_TEXT_SCRIPT = `(() => {
+  const root = document.querySelector('article') || document.body;
+  if (!root) return { text: '' };
+  const clone = root.cloneNode(true);
+  clone.querySelectorAll(
+    'script, style, noscript, nav, footer, header, form, svg, canvas, button, iframe, [hidden], [aria-hidden="true"]'
+  ).forEach((el) => el.remove());
+  return { text: clone.innerText || '' };
+})();`;
+
+/** 截断标记：追加在正文末尾，提示内容已截断（随快照文本发送给 AI） */
+const TRUNCATION_MARKER = "\n…（内容已截断）";
+
+/**
+ * 渲染进程侧的正文清洗：折叠连续空白与空行（段落间最多保留一个空行）、
+ * 去除纯符号/装饰行（如 `----`、`...`）、连续重复行去重（广告/固定文案）。
+ */
+const cleanSnapshotText = (raw: string): string => {
+  const lines = raw.replace(/\r\n?/g, "\n").split("\n");
+  const out: string[] = [];
+  let prevLine = "";
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\s+/g, " ").trim();
+    if (!line) {
+      // 段落分隔：最多保留一个空行
+      if (out.length > 0 && out[out.length - 1] !== "") {
+        out.push("");
+      }
+      prevLine = "";
+      continue;
+    }
+    // 纯符号/装饰行（无任何字母/数字，含 CJK 判断）丢弃
+    if (!/[\p{L}\p{N}]/u.test(line)) {
+      continue;
+    }
+    // 与上一行完全相同（连续重复）去重
+    if (prevLine === line) {
+      continue;
+    }
+    prevLine = line;
+    out.push(line);
+  }
+  // 去除首尾空行
+  while (out[0] === "") {
+    out.shift();
+  }
+  while (out[out.length - 1] === "") {
+    out.pop();
+  }
+  return truncateSnapshotText(out.join("\n"));
+};
+
+/** 按段落边界（最后一个 \n\n）截断到 ≤8000 字符，末尾追加截断标记。 */
+const truncateSnapshotText = (text: string): string => {
+  if (text.length <= MAX_SNAPSHOT_TEXT_LENGTH) {
+    return text;
+  }
+  const slice = text.slice(0, MAX_SNAPSHOT_TEXT_LENGTH);
+  const paraBreak = slice.lastIndexOf("\n\n");
+  const cutAt =
+    paraBreak > 0 ? paraBreak : Math.max(1, MAX_SNAPSHOT_TEXT_LENGTH - TRUNCATION_MARKER.length);
+  return `${text.slice(0, cutAt).replace(/\n+$/, "")}${TRUNCATION_MARKER}`;
+};
+
+/** webview 内执行正文提取脚本，返回清洗后的文本（失败/为空 → ""）。 */
+const extractPageText = async (
+  webview: Electron.WebviewTag
+): Promise<string> => {
+  const result = (await webview.executeJavaScript(
+    EXTRACT_PAGE_TEXT_SCRIPT
+  )) as { text?: string } | null;
+  return cleanSnapshotText(result?.text ?? "");
+};
+
+/**
+ * 给单层采集加超时：超时返回 undefined（该层静默降级）。底层 Promise
+ * 无法取消，但超时后其结果已被忽略，不影响整体链路。
+ */
+const withLayerTimeout = <T,>(
+  promise: Promise<T>,
+  timeoutMs: number
+): Promise<T | undefined> =>
+  new Promise<T | undefined>((resolve) => {
+    const timer = window.setTimeout(() => resolve(undefined), timeoutMs);
+    promise.then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        window.clearTimeout(timer);
+        resolve(undefined);
+      }
+    );
+  });
+
+/** 拖拽时记录的 URL 与 webview 实时 URL 的宽松比较（忽略结尾斜杠差异）。 */
+const normalizeUrlForCompare = (url: string): string => url.replace(/\/+$/, "");
 
 /** 浏览器实例内部的标签页状态（每个标签页对应一个独立 <webview>）。 */
 type BrowserWebviewTab = {
@@ -180,6 +301,10 @@ export const BrowserPanelContent = ({
     confirmPicker,
     applyElementStyle,
   } = useWebviewElementPicker(webviewRef);
+  // picked 状态的 ref 镜像：快照请求监听器只绑定一次，经 ref 读取最新值，
+  // 避免闭包捕获到旧的 picked（参考 webviewTabsRef 的 ref 模式）。
+  const pickedRef = useRef<PickedElement | null>(null);
+  pickedRef.current = picked;
 
   const activeTab =
     webviewTabs.find((tab) => tab.id === activeWebviewTabId) ?? webviewTabs[0];
@@ -563,6 +688,129 @@ export const BrowserPanelContent = ({
       focusBrowserMcpInstance(instanceId);
     }
   }, [instanceId, isActive]);
+
+  // F4 网页快照提供方：接收输入框拖入标签页后的快照请求，对目标 webview
+  // 完成三层提取（整页正文 / 元素区域 / 可视区截图）后回发结果事件。
+  // 请求-响应均走全局 CustomEvent：多浏览器实例按 instanceId 分流，
+  // 标签页按 tabId 定位（外层 RightPanel tab 拖入无 tabId → 激活标签页兜底）。
+  // 监听器只绑定一次，状态一律经 ref 读取（webviewElementsRef /
+  // activeWebviewTabIdRef / pickedRef），避免闭包过期。任一环节失败都
+  // 静默降级（回发 snapshot=undefined），不抛异常、不打断拖入流程。
+  useEffect(() => {
+    const dispatchSnapshotResult = (
+      requestId: number,
+      snapshot?: WebPageSnapshot
+    ): void => {
+      window.dispatchEvent(
+        new CustomEvent<WebSnapshotResult>(WEB_SNAPSHOT_RESULT_EVENT, {
+          detail: { requestId, snapshot },
+        })
+      );
+    };
+
+    const collectWebSnapshot = async (
+      webview: Electron.WebviewTag,
+      requestedUrl: string,
+      tabId: string
+    ): Promise<WebPageSnapshot | undefined> => {
+      // URL 兜底校验：页面已导航到其他地址则视为过期引用，直接降级，
+      // 避免快照内容与 chip 上的 URL 不一致。
+      let currentUrl = "";
+      try {
+        currentUrl = webview.getURL();
+      } catch {
+        return undefined;
+      }
+      if (!currentUrl) {
+        return undefined;
+      }
+      if (
+        normalizeUrlForCompare(currentUrl) !==
+        normalizeUrlForCompare(requestedUrl)
+      ) {
+        return undefined;
+      }
+
+      // ① 整页正文：webview 内 JS 提取 + 渲染进程清洗（≤8000 字符）。
+      const text = await withLayerTimeout(
+        extractPageText(webview),
+        SNAPSHOT_LAYER_TIMEOUT_MS
+      );
+
+      // ② 元素区域：picked 由激活标签页的 webview 产生（webviewRef 指向它），
+      // 仅当请求的正是激活标签页时才附带，避免快照错串到其他标签页。
+      let elementText: string | undefined;
+      let elementSelector: string | undefined;
+      const picked = pickedRef.current;
+      if (picked && tabId === activeWebviewTabIdRef.current) {
+        const sliced = picked.text.slice(0, MAX_ELEMENT_TEXT_LENGTH);
+        elementText = sliced || undefined;
+        elementSelector = picked.selector;
+      }
+
+      // ③ 可视区截图：复用 captureWebviewPage；dataURL 过大（>~3MB）省略。
+      // 截图独立成层——正文/区域失败时截图仍可附。
+      let screenshotDataUrl: string | undefined;
+      try {
+        const dataUrl = await withLayerTimeout(
+          captureWebviewPage(webview),
+          SNAPSHOT_LAYER_TIMEOUT_MS
+        );
+        if (dataUrl && dataUrl.length <= MAX_SNAPSHOT_DATA_URL_LENGTH) {
+          screenshotDataUrl = dataUrl;
+        }
+      } catch {
+        // 截图失败：仅返回文本层。
+      }
+
+      if (!text && !elementText && !screenshotDataUrl) {
+        // 三层全部失败：视为抓取失败，输入框侧降级为纯 URL 引用。
+        return undefined;
+      }
+      const snapshot: WebPageSnapshot = { text: text || "" };
+      if (elementText) {
+        snapshot.elementText = elementText;
+      }
+      if (elementSelector) {
+        snapshot.elementSelector = elementSelector;
+      }
+      if (screenshotDataUrl) {
+        snapshot.screenshotDataUrl = screenshotDataUrl;
+      }
+      return snapshot;
+    };
+
+    const handleSnapshotRequest = (event: Event): void => {
+      const detail = (event as CustomEvent<WebSnapshotRequest>).detail;
+      if (!detail || typeof detail.requestId !== "number") {
+        return;
+      }
+      // 多浏览器实例并存：只响应属于本实例的快照请求。
+      if (detail.instanceId !== instanceId) {
+        return;
+      }
+      // 外层 RightPanel tab 拖入时无 tabId → 以本实例激活标签页兜底。
+      const tabId = detail.tabId || activeWebviewTabIdRef.current;
+      const webview = webviewElementsRef.current.get(tabId) ?? null;
+      if (!webview) {
+        // 标签页已关闭 / webview 不可用：降级纯 URL 引用（不抛错）。
+        dispatchSnapshotResult(detail.requestId, undefined);
+        return;
+      }
+      void collectWebSnapshot(webview, detail.url, tabId).then(
+        (snapshot) => dispatchSnapshotResult(detail.requestId, snapshot),
+        () => dispatchSnapshotResult(detail.requestId, undefined)
+      );
+    };
+
+    window.addEventListener(WEB_SNAPSHOT_REQUEST_EVENT, handleSnapshotRequest);
+    return () => {
+      window.removeEventListener(
+        WEB_SNAPSHOT_REQUEST_EVENT,
+        handleSnapshotRequest
+      );
+    };
+  }, [instanceId]);
 
   // 非激活 tab 的 webview 静音,避免多个浏览器实例时后台页面持续播放
   // 音频/占用音频设备(对齐 Chrome 后台标签页行为);激活时恢复声音。

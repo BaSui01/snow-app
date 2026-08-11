@@ -12,6 +12,7 @@ import {
 } from "react";
 
 import { useI18n } from "../i18n";
+import { setWebTagDragData } from "./rightPanel/browserDrag";
 import { GitPanelContent } from "./rightPanel/GitPanelContent";
 import { DiffViewer } from "./rightPanel/DiffViewer";
 import { FileDiffPreview } from "./common/FileDiffPreview";
@@ -89,20 +90,15 @@ const handleTabDragStart = (
   }
   if (tab.type === "browser") {
     // 浏览器 tab：携带实时 URL（页面内导航后由 onUrlChange 同步到 data.url）
+    // 与实例 id（无内层 tabId → 输入框 drop 后快照请求以该实例激活标签页兜底）。
     const browserTab = tab.data as BrowserTabData | undefined;
     const url = browserTab?.url;
     if (!url) {
       return;
     }
-    event.dataTransfer.setData(
-      "application/json",
-      JSON.stringify({
-        type: "web-tag",
-        url,
-        title: tab.title,
-      })
-    );
-    event.dataTransfer.effectAllowed = "copy";
+    setWebTagDragData(event, url, tab.title, {
+      instanceId: browserTab.instanceId,
+    });
     return;
   }
   // 文件类 tab：统一取出 filePath + 名称，作为 file-tags 拖入输入框

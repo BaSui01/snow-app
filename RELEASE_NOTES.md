@@ -1,5 +1,30 @@
 # Release Notes
 
+## v0.2.25
+
+## New Features
+
+- **Browser Tab Drag & Drop**: Drag tabs from the right panel into the chat input — three-layer page snapshot (cleaned body text / picked element / viewport screenshot), web chips with a context menu (open page / copy link / remove), custom drag preview, and plain-text drops.
+- **Detached Tab Window**: Browser tabs can be opened in a new detached window.
+- **MCP Tool Toggles**: Per-tool enable/disable in the MCP settings panel (global + project), with batch/search/detail support.
+- **Stream Interruption Recovery**: Mid-stream interruption detection with auto-recovery and a unified retry policy.
+- **Scheduled Tasks**: SQLite persistence, per-task overrides, and pre-script support.
+- **API Settings Enhancements**: Panel upgrades, JSON tree view, and Anthropic 1M context support.
+- **Sub-Agent List Injection**: The system prompt dynamically injects the subAgents config (project-level priority); the default sub-agent now correctly resolves to agent_general.
+- **Vision Textification**: Parallel multi-image analysis with idle-timeout / cancel-token passthrough.
+- **Misc**: Sidebar New Chat button; right-panel tab context menu (close others/right/left); legacy .doc/.ppt extraction; toggleWindow/togglePet shortcuts; per-commit diff stats in the git graph tooltip.
+
+## Improvements
+
+- Unified basic/advanced model routing — session titles follow the bound profile.
+- Read-only bash commands skip checkpoints with per-directory locks (lower latency under concurrent sessions); read-only detection hardened against command chains/control-flow/substitution.
+
+## Bug Fixes
+
+- Duplicate context compaction after profile switch.
+- Duplicated 'done' status events in the vision pipeline.
+- Windows absolute path resolution and browser navigation failure screenshots.
+
 ## v0.1.24
 
 ## New Features

@@ -6,7 +6,9 @@ use std::os::windows::process::CommandExt;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::sync::{
+    Arc, Mutex, MutexGuard, OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak,
+};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use napi::bindgen_prelude::*;
@@ -59,15 +61,17 @@ const SKIP_DIRS: &[&str] = &[
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// 全局兜底锁：当 checkpoint 无法解析出工作目录（manifest 缺失/损坏、
-/// 目录已被删除）时使用。正常路径走 per-directory 锁。
-static CHECKPOINT_GLOBAL_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+/// 工作目录读写锁表：常规捕获与 diff 查询持有共享读锁，仅回滚持有
+/// 独占写锁。同项目多个会话可并行捕获和展示文件变更，回滚仍与这些操作
+/// 互斥。Weak 让长期不再使用的目录锁可自动回收。
+static CHECKPOINT_WORK_DIR_LOCKS: OnceLock<Mutex<HashMap<PathBuf, Weak<RwLock<()>>>>> =
+    OnceLock::new();
 
-/// per-directory 检查点锁表：同一目录的 checkpoint 操作串行（保证 git
-/// 基线/快照/回滚时序一致），不同目录并行——消除跨项目并发时的全局锁
-/// 排队。目录数量有限（工作区数），`&'static Mutex` 由 Box::leak 持有，
-/// 生命周期与进程一致，无内存回收负担。
-static CHECKPOINT_LOCKS: OnceLock<Mutex<HashMap<PathBuf, &'static Mutex<()>>>> = OnceLock::new();
+/// manifest 级锁表：每个 checkpoint 独立串行 read-modify-write。
+/// 同项目的不同会话拥有不同 checkpoint，因此文件编辑仅锁自己的
+/// manifest，不再锁住整个工作目录。Weak 避免删除会话后残留锁对象。
+static CHECKPOINT_MANIFEST_LOCKS: OnceLock<Mutex<HashMap<String, Weak<Mutex<()>>>>> =
+    OnceLock::new();
 
 /// 进程内 diff 缓存上限：超过后整体清空（LRU 之外的简单防膨胀手段，
 /// diff 成本远低于全量重算，清空后逐次重建即可）。
@@ -187,25 +191,55 @@ fn checkpoint_root() -> Result<PathBuf> {
     super::storage_locations::checkpoint_root()
 }
 
-fn checkpoint_guard(work_dir: Option<&Path>) -> Result<MutexGuard<'static, ()>> {
-    if let Some(dir) = work_dir {
-        let locks = CHECKPOINT_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
-        let static_lock = {
-            let mut map = locks
-                .lock()
-                .map_err(|_| Error::from_reason("Checkpoint lock registry is poisoned"))?;
-            *map.entry(dir.to_path_buf())
-                .or_insert_with(|| Box::leak(Box::new(Mutex::new(()))))
-        };
-        return static_lock
-            .lock()
-            .map_err(|_| Error::from_reason("Checkpoint state lock is poisoned"));
+fn work_dir_lock(work_dir: &Path) -> Result<Arc<RwLock<()>>> {
+    let locks = CHECKPOINT_WORK_DIR_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut locks = locks
+        .lock()
+        .map_err(|_| Error::from_reason("Checkpoint work directory lock registry is poisoned"))?;
+    if let Some(lock) = locks.get(work_dir).and_then(Weak::upgrade) {
+        return Ok(lock);
     }
 
-    CHECKPOINT_GLOBAL_LOCK
-        .get_or_init(|| Mutex::new(()))
+    locks.retain(|_, lock| lock.strong_count() > 0);
+    let lock = Arc::new(RwLock::new(()));
+    locks.insert(work_dir.to_path_buf(), Arc::downgrade(&lock));
+    Ok(lock)
+}
+
+fn work_dir_read_guard(lock: &RwLock<()>) -> Result<RwLockReadGuard<'_, ()>> {
+    lock.read()
+        .map_err(|_| Error::from_reason("Checkpoint work directory lock is poisoned"))
+}
+
+fn work_dir_write_guard(lock: &RwLock<()>) -> Result<RwLockWriteGuard<'_, ()>> {
+    lock.write()
+        .map_err(|_| Error::from_reason("Checkpoint work directory lock is poisoned"))
+}
+
+fn manifest_lock(checkpoint_id: &str) -> Result<Arc<Mutex<()>>> {
+    let locks = CHECKPOINT_MANIFEST_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut locks = locks
         .lock()
-        .map_err(|_| Error::from_reason("Checkpoint state lock is poisoned"))
+        .map_err(|_| Error::from_reason("Checkpoint manifest lock registry is poisoned"))?;
+    if let Some(lock) = locks.get(checkpoint_id).and_then(Weak::upgrade) {
+        return Ok(lock);
+    }
+
+    locks.retain(|_, lock| lock.strong_count() > 0);
+    let lock = Arc::new(Mutex::new(()));
+    locks.insert(checkpoint_id.to_string(), Arc::downgrade(&lock));
+    Ok(lock)
+}
+
+fn with_manifest_lock<T>(
+    checkpoint_id: &str,
+    operation: impl FnOnce() -> Result<T>,
+) -> Result<T> {
+    let lock = manifest_lock(checkpoint_id)?;
+    let _guard = lock
+        .lock()
+        .map_err(|_| Error::from_reason("Checkpoint manifest lock is poisoned"))?;
+    operation()
 }
 
 fn should_skip_relative(path: &Path) -> bool {
@@ -671,11 +705,17 @@ fn store_object(path: &Path) -> Result<String> {
     let final_path = object_dir.join(&object_id);
     if final_path.exists() {
         let _ = fs::remove_file(&temporary);
-    } else {
-        fs::rename(&temporary, &final_path).map_err(|error| {
+    } else if let Err(error) = fs::rename(&temporary, &final_path) {
+        // Another session may have published the same content-addressed object
+        // after our exists check. Treat that as a successful deduplicated write.
+        if final_path.exists() {
             let _ = fs::remove_file(&temporary);
-            Error::from_reason(format!("Failed to publish checkpoint object: {error}"))
-        })?;
+        } else {
+            let _ = fs::remove_file(&temporary);
+            return Err(Error::from_reason(format!(
+                "Failed to publish checkpoint object: {error}"
+            )));
+        }
     }
     Ok(object_id)
 }
@@ -767,26 +807,29 @@ fn validate_capture_work_dir(manifest: &CheckpointManifest, work_dir: &str) -> O
 }
 
 /// Create an incremental checkpoint without copying the working directory.
-/// File content is captured lazily, immediately before a tool first changes it.
+/// File content is captured lazily immediately before a tool first changes it.
+/// Creation only publishes a new manifest and Git ref, so it does not take the
+/// shared work-directory lock used by active tool captures.
 pub fn create_checkpoint(work_dir: String) -> Result<String> {
     let root = canonical_work_dir(&work_dir)?;
-    let _guard = checkpoint_guard(Some(&root))?;
     let checkpoint_id = generate_checkpoint_id();
-    let manifest = CheckpointManifest {
-        version: MANIFEST_VERSION,
-        work_dir: root.to_string_lossy().to_string(),
-        git: detect_git_baseline(&root),
-        entries: Vec::new(),
-    };
+    with_manifest_lock(&checkpoint_id, || {
+        let manifest = CheckpointManifest {
+            version: MANIFEST_VERSION,
+            work_dir: root.to_string_lossy().to_string(),
+            git: detect_git_baseline(&root),
+            entries: Vec::new(),
+        };
 
-    write_manifest(&checkpoint_id, &manifest)?;
-    if let Some(baseline) = manifest.git.as_ref() {
-        if let Err(error) = update_checkpoint_git_ref(&checkpoint_id, baseline, false) {
-            let _ = fs::remove_dir_all(checkpoint_dir(&checkpoint_id)?);
-            return Err(error);
+        write_manifest(&checkpoint_id, &manifest)?;
+        if let Some(baseline) = manifest.git.as_ref() {
+            if let Err(error) = update_checkpoint_git_ref(&checkpoint_id, baseline, false) {
+                let _ = fs::remove_dir_all(checkpoint_dir(&checkpoint_id)?);
+                return Err(error);
+            }
         }
-    }
-    Ok(checkpoint_id)
+        Ok(checkpoint_id.clone())
+    })
 }
 
 /// Capture the original state of one file before a filesystem tool changes it.
@@ -799,27 +842,30 @@ pub fn record_checkpoint_file(
     if checkpoint_ids.is_empty() {
         return Ok(());
     }
-    let _guard = checkpoint_guard(canonical_work_dir(&work_dir).ok().as_deref())?;
     let root = canonical_work_dir(&work_dir)?;
+    let work_dir_lock = work_dir_lock(&root)?;
+    let _work_dir_guard = work_dir_read_guard(&work_dir_lock)?;
     let (absolute, path) = resolve_checkpoint_path(&root, &file_path)?;
     if path.is_empty() || should_skip_manifest_path(&path) {
         return Ok(());
     }
 
     for checkpoint_id in checkpoint_ids {
-        let mut manifest = read_manifest(&checkpoint_id)?;
-        let Some(_root) = validate_capture_work_dir(&manifest, &work_dir) else {
-            continue;
-        };
-        if manifest.entries.iter().any(|entry| entry.path == path) {
-            continue;
-        }
-        manifest.entries.push(CheckpointEntry {
-            path: path.clone(),
-            original: current_state(&absolute)?,
-            expected: None,
-        });
-        write_manifest(&checkpoint_id, &manifest)?;
+        with_manifest_lock(&checkpoint_id, || {
+            let mut manifest = read_manifest(&checkpoint_id)?;
+            let Some(_root) = validate_capture_work_dir(&manifest, &work_dir) else {
+                return Ok(());
+            };
+            if manifest.entries.iter().any(|entry| entry.path == path) {
+                return Ok(());
+            }
+            manifest.entries.push(CheckpointEntry {
+                path: path.clone(),
+                original: current_state(&absolute)?,
+                expected: None,
+            });
+            write_manifest(&checkpoint_id, &manifest)
+        })?;
     }
     Ok(())
 }
@@ -834,21 +880,25 @@ pub fn record_checkpoint_file_after(
     if checkpoint_ids.is_empty() {
         return Ok(());
     }
-    let _guard = checkpoint_guard(canonical_work_dir(&work_dir).ok().as_deref())?;
     let root = canonical_work_dir(&work_dir)?;
+    let work_dir_lock = work_dir_lock(&root)?;
+    let _work_dir_guard = work_dir_read_guard(&work_dir_lock)?;
     let (absolute, path) = resolve_checkpoint_path(&root, &file_path)?;
     if path.is_empty() || should_skip_manifest_path(&path) {
         return Ok(());
     }
 
     for checkpoint_id in checkpoint_ids {
-        let mut manifest = read_manifest(&checkpoint_id)?;
-        let Some(_root) = validate_capture_work_dir(&manifest, &work_dir) else {
-            continue;
-        };
-        if update_expected_state(&mut manifest, &absolute, &path)? {
-            write_manifest(&checkpoint_id, &manifest)?;
-        }
+        with_manifest_lock(&checkpoint_id, || {
+            let mut manifest = read_manifest(&checkpoint_id)?;
+            let Some(_root) = validate_capture_work_dir(&manifest, &work_dir) else {
+                return Ok(());
+            };
+            if update_expected_state(&mut manifest, &absolute, &path)? {
+                write_manifest(&checkpoint_id, &manifest)?;
+            }
+            Ok(())
+        })?;
     }
     Ok(())
 }
@@ -1094,7 +1144,8 @@ pub fn capture_checkpoint_worktree_before(
         return Ok(None);
     }
     let root = canonical_work_dir(&work_dir)?;
-    let _guard = checkpoint_guard(Some(&root))?;
+    let work_dir_lock = work_dir_lock(&root)?;
+    let _work_dir_guard = work_dir_read_guard(&work_dir_lock)?;
 
     // 所有 checkpoint 都与当前目录不匹配:没有任何可捕获目标,
     // 不做无意义的全目录快照。顺带收集可复用的 git 基线
@@ -1102,6 +1153,13 @@ pub fn capture_checkpoint_worktree_before(
     let mut matched_any = false;
     let mut manifest_baseline = None;
     for checkpoint_id in &checkpoint_ids {
+        let lock = manifest_lock(checkpoint_id)?;
+        let _guard = lock
+            .lock()
+            .map_err(|_| Error::from_reason("Checkpoint manifest lock is poisoned"))?;
+        if !checkpoint_manifest_exists(checkpoint_id) {
+            continue;
+        }
         let manifest = read_manifest(checkpoint_id)?;
         if validate_capture_work_dir(&manifest, &work_dir).is_some() {
             matched_any = true;
@@ -1266,25 +1324,31 @@ fn capture_worktree_before_git(
 /// files) blowup that made concurrent terminal commands progressively slower
 /// as a conversation accumulated checkpoints.
 pub fn record_checkpoint_worktree_after(capture: CheckpointWorktreeCapture) -> Result<()> {
-    let _guard = checkpoint_guard(canonical_work_dir(&capture.work_dir).ok().as_deref())?;
-
-    // 先解析所有仍有效的 checkpoint（manifest 存在 + work_dir 匹配）。
-    let mut effective: Vec<(String, CheckpointManifest, PathBuf)> = Vec::new();
+    let root = canonical_work_dir(&capture.work_dir)?;
+    let work_dir_lock = work_dir_lock(&root)?;
+    let _work_dir_guard = work_dir_read_guard(&work_dir_lock)?;
+    // 先筛出仍有效且属于当前 work_dir 的 checkpoint。这里只读取工作目录
+    // 与 git 基线，真正写入前会在各自 manifest 锁内重新读取，避免覆盖
+    // 同项目其他并行工具刚记录的条目。
+    let mut effective_ids = Vec::new();
+    let mut root = None;
     for checkpoint_id in &capture.checkpoint_ids {
+        let lock = manifest_lock(checkpoint_id)?;
+        let _guard = lock
+            .lock()
+            .map_err(|_| Error::from_reason("Checkpoint manifest lock is poisoned"))?;
         if !checkpoint_manifest_exists(checkpoint_id) {
             continue;
         }
         let manifest = read_manifest(checkpoint_id)?;
-        if let Some(root) = validate_capture_work_dir(&manifest, &capture.work_dir) {
-            effective.push((checkpoint_id.clone(), manifest, root));
+        if let Some(matched_root) = validate_capture_work_dir(&manifest, &capture.work_dir) {
+            effective_ids.push(checkpoint_id.clone());
+            root.get_or_insert(matched_root);
         }
     }
-    if effective.is_empty() {
+    let Some(root) = root else {
         return Ok(());
-    }
-
-    // 所有有效 checkpoint 共享同一 work_dir。
-    let root = effective[0].2.clone();
+    };
 
     // git 驱动路径:diff(相对命令前基线,含命令期间已提交的变更)+
     // 未跟踪文件现况。候选 = 快照文件 ∪ diff ∪ 未跟踪;不再遍历工作区。
@@ -1301,69 +1365,93 @@ pub fn record_checkpoint_worktree_after(capture: CheckpointWorktreeCapture) -> R
         candidates.extend(after_paths);
     }
 
-    for (checkpoint_id, mut manifest, root) in effective {
-        let mut changed = false;
-
-        for relative_path in &candidates {
-            let relative = from_forward_slashes(relative_path);
-            if should_skip_relative(&relative) {
-                continue;
+    for checkpoint_id in effective_ids {
+        with_manifest_lock(&checkpoint_id, || {
+            if !checkpoint_manifest_exists(&checkpoint_id) {
+                return Ok(());
             }
-            let absolute = root.join(&relative);
-            let before_state = capture.before_states.get(relative_path);
-
-            // 变更检测 + 原始状态物化:
-            // - git 驱动路径:有快照的文件(脏 tracked / 未跟踪)直接做
-            //   快照内容级对比,original 为 Object(恢复命令前内容,保留
-            //   会话外编辑与先前命令的修改);无快照的 diff 候选(干净
-            //   tracked 在命令期间变更/删除/提交)走基线内容确认,original
-            //   为 Git(固定 SHA,回滚安全);其余候选为命令新增的未跟踪
-            //   文件 → Missing。
-            // - 回退路径:git 跟踪文件元数据快速过滤 → git 内容级确认;
-            //   未跟踪文件与 pending 快照内容级对比;新增文件 → Missing。
-            let change = match before_state {
-                // 快照被跳过：无法恢复命令前内容，不记录变更
-                Some(state) if state.skipped => None,
-                Some(state) if capture.baseline.is_some() => {
-                    if pending_state_matches_current(state, &absolute) {
-                        None
-                    } else {
-                        Some(pending_state_to_original(state)?)
-                    }
-                }
-                Some(state) if state.tracked => {
-                    tracked_file_change(&manifest, relative_path, &absolute, state)?
-                }
-                Some(state) => {
-                    if pending_state_matches_current(state, &absolute) {
-                        None
-                    } else {
-                        Some(pending_state_to_original(state)?)
-                    }
-                }
-                None if diff_now.contains(relative_path) => {
-                    tracked_file_content_change(&manifest, relative_path, &absolute)?
-                }
-                None => absolute.is_file().then_some(OriginalState::Missing),
+            let mut manifest = read_manifest(&checkpoint_id)?;
+            let Some(root) = validate_capture_work_dir(&manifest, &capture.work_dir) else {
+                return Ok(());
             };
-            let Some(original) = change else {
-                continue;
-            };
+            let mut changed = false;
 
-            capture_entry(&mut manifest, &absolute, &relative, original)?;
-            changed = true;
-        }
+            for relative_path in &candidates {
+                let relative = from_forward_slashes(relative_path);
+                if should_skip_relative(&relative) {
+                    continue;
+                }
+                let absolute = root.join(&relative);
+                let before_state = capture.before_states.get(relative_path);
 
-        if changed {
-            write_manifest(&checkpoint_id, &manifest)?;
-        }
+                // 变更检测 + 原始状态物化:
+                // - git 驱动路径:有快照的文件(脏 tracked / 未跟踪)直接做
+                //   快照内容级对比,original 为 Object(恢复命令前内容,保留
+                //   会话外编辑与先前命令的修改);无快照的 diff 候选(干净
+                //   tracked 在命令期间变更/删除/提交)走基线内容确认,original
+                //   为 Git(固定 SHA,回滚安全);其余候选为命令新增的未跟踪
+                //   文件 → Missing。
+                // - 回退路径:git 跟踪文件元数据快速过滤 → git 内容级确认;
+                //   未跟踪文件与 pending 快照内容级对比;新增文件 → Missing。
+                let change = match before_state {
+                    // 快照被跳过：无法恢复命令前内容，不记录变更
+                    Some(state) if state.skipped => None,
+                    Some(state) if capture.baseline.is_some() => {
+                        if pending_state_matches_current(state, &absolute) {
+                            None
+                        } else {
+                            Some(pending_state_to_original(state)?)
+                        }
+                    }
+                    Some(state) if state.tracked => {
+                        tracked_file_change(&manifest, relative_path, &absolute, state)?
+                    }
+                    Some(state) => {
+                        if pending_state_matches_current(state, &absolute) {
+                            None
+                        } else {
+                            Some(pending_state_to_original(state)?)
+                        }
+                    }
+                    None if diff_now.contains(relative_path) => {
+                        tracked_file_content_change(&manifest, relative_path, &absolute)?
+                    }
+                    None => absolute.is_file().then_some(OriginalState::Missing),
+                };
+                let Some(original) = change else {
+                    continue;
+                };
+
+                capture_entry(&mut manifest, &absolute, &relative, original)?;
+                changed = true;
+            }
+
+            if changed {
+                write_manifest(&checkpoint_id, &manifest)?;
+            }
+            Ok(())
+        })?;
+    }
+    if let Some(mut cache) = DIFF_CACHE.get().and_then(|cache| cache.lock().ok()) {
+        cache.retain(|key, _| {
+            !capture
+                .checkpoint_ids
+                .iter()
+                .any(|checkpoint_id| key.starts_with(&format!("{checkpoint_id}:")))
+        });
     }
     Ok(())
 }
 
 /// Restore only paths that were recorded by mutating tools after this checkpoint.
 pub fn restore_checkpoint(checkpoint_id: String, work_dir: String) -> Result<()> {
-    let _guard = checkpoint_guard(canonical_work_dir(&work_dir).ok().as_deref())?;
+    let root = canonical_work_dir(&work_dir)?;
+    let work_dir_lock = work_dir_lock(&root)?;
+    let _work_dir_guard = work_dir_write_guard(&work_dir_lock)?;
+    let manifest_lock = manifest_lock(&checkpoint_id)?;
+    let _manifest_guard = manifest_lock
+        .lock()
+        .map_err(|_| Error::from_reason("Checkpoint manifest lock is poisoned"))?;
     // If the manifest no longer exists (checkpoint was deleted or corrupted),
     // there is nothing to restore. Return Ok so the rollback flow continues
     // to delete messages without being blocked by a missing checkpoint.
@@ -1371,7 +1459,7 @@ pub fn restore_checkpoint(checkpoint_id: String, work_dir: String) -> Result<()>
         return Ok(());
     }
     let manifest = read_manifest(&checkpoint_id)?;
-    let root = validate_manifest_work_dir(&manifest, &work_dir)?;
+    validate_manifest_work_dir(&manifest, &work_dir)?;
 
     let mut restored_entries = Vec::new();
     for entry in &manifest.entries {
@@ -1505,21 +1593,16 @@ fn prune_empty_parent_directories(root: &Path, entries: &[CheckpointEntry]) {
     }
 }
 
-/// Delete a checkpoint and release its Git reference. Shared objects are
-/// garbage-collected once no remaining manifest references them.
+/// Delete a checkpoint and release its Git reference. Content-addressed
+/// objects are intentionally retained: eager global garbage collection scanned
+/// every checkpoint after each best-effort delete and raced concurrent writers.
+/// Existing objects are deduplicated by BLAKE3, so retaining them keeps deletes
+/// constant-time and avoids re-copying identical file contents later.
 pub fn delete_checkpoint(checkpoint_id: String) -> Result<()> {
-    // 先读取 manifest 定位工作目录，取对应目录锁；manifest 缺失/损坏时
-    // 走全局兜底锁。manifest 通过临时文件 + rename 原子发布，锁外读取
-    // 只会看到完整旧版或完整新版，不会读到半写状态。
-    let work_dir = read_manifest(&checkpoint_id)
-        .map(|manifest| manifest.work_dir)
-        .unwrap_or_default();
-    let work_dir_key = if work_dir.is_empty() {
-        None
-    } else {
-        canonical_work_dir(&work_dir).ok()
-    };
-    let _guard = checkpoint_guard(work_dir_key.as_deref())?;
+    let manifest_lock = manifest_lock(&checkpoint_id)?;
+    let _manifest_guard = manifest_lock
+        .lock()
+        .map_err(|_| Error::from_reason("Checkpoint manifest lock is poisoned"))?;
     let directory = checkpoint_dir(&checkpoint_id)?;
     if !directory.exists() {
         return Ok(());
@@ -1535,56 +1618,7 @@ pub fn delete_checkpoint(checkpoint_id: String) -> Result<()> {
             "Failed to delete checkpoint '{}': {error}",
             checkpoint_id
         ))
-    })?;
-    collect_unused_objects()
-}
-
-fn collect_unused_objects() -> Result<()> {
-    let root = checkpoint_root()?;
-    let object_dir = root.join(OBJECT_DIR_NAME);
-    if !object_dir.is_dir() {
-        return Ok(());
-    }
-
-    let mut referenced = HashSet::new();
-    if let Ok(entries) = fs::read_dir(&root) {
-        for entry in entries.flatten() {
-            if !entry.path().is_dir()
-                || entry.file_name() == OBJECT_DIR_NAME
-                || entry.file_name() == PENDING_DIR_NAME
-            {
-                continue;
-            }
-            let checkpoint_id = entry.file_name().to_string_lossy().to_string();
-            if let Ok(manifest) = read_manifest(&checkpoint_id) {
-                for item in manifest.entries {
-                    if let OriginalState::Object { object_id } = item.original {
-                        referenced.insert(object_id);
-                    }
-                    if let Some(OriginalState::Object { object_id }) = item.expected {
-                        referenced.insert(object_id);
-                    }
-                }
-            }
-        }
-    }
-
-    for entry in fs::read_dir(&object_dir).map_err(|error| {
-        Error::from_reason(format!("Failed to scan checkpoint objects: {error}"))
-    })? {
-        let entry = entry.map_err(|error| {
-            Error::from_reason(format!("Failed to read checkpoint object entry: {error}"))
-        })?;
-        let name = entry.file_name().to_string_lossy().to_string();
-        if entry.path().is_file() && !referenced.contains(&name) {
-            fs::remove_file(entry.path()).map_err(|error| {
-                Error::from_reason(format!(
-                    "Failed to remove unused checkpoint object: {error}"
-                ))
-            })?;
-        }
-    }
-    Ok(())
+    })
 }
 
 /// A single file change between the checkpoint snapshot and the current
@@ -1617,12 +1651,18 @@ pub fn list_checkpoint_changes(
     checkpoint_id: String,
     work_dir: String,
 ) -> Result<Vec<CheckpointFileChange>> {
-    let _guard = checkpoint_guard(canonical_work_dir(&work_dir).ok().as_deref())?;
+    let root = canonical_work_dir(&work_dir)?;
+    let work_dir_lock = work_dir_lock(&root)?;
+    let _work_dir_guard = work_dir_read_guard(&work_dir_lock)?;
+    let manifest_lock = manifest_lock(&checkpoint_id)?;
+    let _manifest_guard = manifest_lock
+        .lock()
+        .map_err(|_| Error::from_reason("Checkpoint manifest lock is poisoned"))?;
     if !checkpoint_manifest_exists(&checkpoint_id) {
         return Ok(Vec::new());
     }
     let manifest = read_manifest(&checkpoint_id)?;
-    let root = validate_manifest_work_dir(&manifest, &work_dir)?;
+    validate_manifest_work_dir(&manifest, &work_dir)?;
     let tracked = collect_tracked_entries(&manifest);
 
     let mut changes = Vec::new();
@@ -1670,12 +1710,18 @@ pub fn list_checkpoint_diffs(
     work_dir: String,
     include_all: bool,
 ) -> Result<Vec<CheckpointFileDiff>> {
-    let _guard = checkpoint_guard(canonical_work_dir(&work_dir).ok().as_deref())?;
+    let root = canonical_work_dir(&work_dir)?;
+    let work_dir_lock = work_dir_lock(&root)?;
+    let _work_dir_guard = work_dir_read_guard(&work_dir_lock)?;
+    let manifest_lock = manifest_lock(&checkpoint_id)?;
+    let _manifest_guard = manifest_lock
+        .lock()
+        .map_err(|_| Error::from_reason("Checkpoint manifest lock is poisoned"))?;
     if !checkpoint_manifest_exists(&checkpoint_id) {
         return Ok(Vec::new());
     }
     let manifest = read_manifest(&checkpoint_id)?;
-    let root = validate_manifest_work_dir(&manifest, &work_dir)?;
+    validate_manifest_work_dir(&manifest, &work_dir)?;
     let tracked = collect_tracked_entries(&manifest);
 
     let mut diffs = Vec::new();

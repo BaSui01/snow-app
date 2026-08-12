@@ -1142,9 +1142,11 @@ export type DetectedTerminal = {
   family: string;
 };
 
+export type CheckpointChangeType = "added" | "modified" | "deleted";
+
 export type CheckpointFileChange = {
   path: string;
-  changeType: string;
+  changeType: CheckpointChangeType;
 };
 
 export type CheckpointFileDiff = CheckpointFileChange & {

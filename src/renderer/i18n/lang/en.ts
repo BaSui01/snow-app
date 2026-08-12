@@ -2574,6 +2574,12 @@ export const en = {
   "chatCommand.reviewNoProject":
     "Select a project before reviewing Git changes",
   "chatCommand.reviewNewChatOnly": "Only available in a new chat",
+  "chatCommand.permissionsDescription":
+    "Manage approved tool permissions for this project",
+  "chatCommand.permissionsNoProject":
+    "Select a project before managing tool permissions",
+  "chatCommand.permissionsYoloDisabled":
+    "Unavailable in YOLO mode",
   "chatCommand.empty": "No matching commands",
   "chatCommand.trigger": "Open command panel",
   "projectSensitiveCommands.title": "Project sensitive commands",
@@ -2644,6 +2650,22 @@ export const en = {
   "projectSensitiveCommands.deleteTitle": "Delete project sensitive command",
   "projectSensitiveCommands.deleteConfirm":
     'Delete project sensitive command rule "{{commandId}}"?',
+  "projectPermissions.title": "Project tool permissions",
+  "projectPermissions.description": "Tools approved for {{project}}",
+  "projectPermissions.noProject":
+    "Select a project before opening tool permission management.",
+  "projectPermissions.loading": "Loading approved tools...",
+  "projectPermissions.close": "Close tool permission management",
+  "projectPermissions.refresh": "Refresh",
+  "projectPermissions.scopeNote":
+    "Approved tools execute without asking for confirmation.",
+  "projectPermissions.count": "{{count}} approved tools",
+  "projectPermissions.empty": "No tools are approved for this project",
+  "projectPermissions.approved": "Approved — no confirmation required",
+  "projectPermissions.delete": "Remove approval",
+  "projectPermissions.deleteTitle": "Remove tool approval",
+  "projectPermissions.deleteConfirm":
+    "Remove the approval for {{toolName}}? It will ask for confirmation again on the next execution.",
   "projectSkills.title": "Project Skills",
   "projectSkills.description": "Skills available to {{project}}",
   "projectSkills.noProject":

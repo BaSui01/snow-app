@@ -73,6 +73,7 @@ import { PlusMenu, type PlusMenuSection } from "./PlusMenu";
 import { PendingMessages } from "./PendingMessages";
 import { ProjectMcpPanel } from "./ProjectMcpPanel";
 import { ProjectCodebasePanel } from "./ProjectCodebasePanel";
+import { ProjectPermissionsPanel } from "./ProjectPermissionsPanel";
 import { ProjectSensitiveCommandsPanel } from "./ProjectSensitiveCommandsPanel";
 import { ProjectSkillsPanel } from "./ProjectSkillsPanel";
 import { RoleEditorPanel } from "./RoleEditorPanel";
@@ -267,6 +268,8 @@ export const ChatInputView = ({
   const [isProjectMcpOpen, setIsProjectMcpOpen] = useState(false);
   const [isProjectSensitiveCommandsOpen, setIsProjectSensitiveCommandsOpen] =
     useState(false);
+  const [isProjectPermissionsOpen, setIsProjectPermissionsOpen] =
+    useState(false);
   const [isProjectSkillsOpen, setIsProjectSkillsOpen] = useState(false);
   const [isProjectCodebaseOpen, setIsProjectCodebaseOpen] = useState(false);
   const [isRoleEditorOpen, setIsRoleEditorOpen] = useState(false);
@@ -300,6 +303,7 @@ export const ChatInputView = ({
         onOpenFileChangesPanel: () => {
           setIsProjectMcpOpen(false);
           setIsProjectSensitiveCommandsOpen(false);
+          setIsProjectPermissionsOpen(false);
           setIsProjectSkillsOpen(false);
           setIsProjectCodebaseOpen(false);
           setIsRoleEditorOpen(false);
@@ -307,6 +311,7 @@ export const ChatInputView = ({
         },
         onOpenMcpPanel: () => {
           setIsProjectSensitiveCommandsOpen(false);
+          setIsProjectPermissionsOpen(false);
           setIsProjectSkillsOpen(false);
           setIsProjectCodebaseOpen(false);
           setIsRoleEditorOpen(false);
@@ -316,13 +321,24 @@ export const ChatInputView = ({
         onOpenRolePanel: () => {
           setIsProjectMcpOpen(false);
           setIsProjectSensitiveCommandsOpen(false);
+          setIsProjectPermissionsOpen(false);
           setIsProjectSkillsOpen(false);
           setIsProjectCodebaseOpen(false);
           setIsFileChangesOpen(false);
           setIsRoleEditorOpen(true);
         },
+        onOpenPermissionsPanel: () => {
+          setIsProjectMcpOpen(false);
+          setIsProjectSensitiveCommandsOpen(false);
+          setIsProjectSkillsOpen(false);
+          setIsProjectCodebaseOpen(false);
+          setIsRoleEditorOpen(false);
+          setIsFileChangesOpen(false);
+          setIsProjectPermissionsOpen(true);
+        },
         onOpenSensitiveCommandsPanel: () => {
           setIsProjectMcpOpen(false);
+          setIsProjectPermissionsOpen(false);
           setIsProjectSkillsOpen(false);
           setIsProjectCodebaseOpen(false);
           setIsRoleEditorOpen(false);
@@ -332,6 +348,7 @@ export const ChatInputView = ({
         onOpenSkillsPanel: () => {
           setIsProjectMcpOpen(false);
           setIsProjectSensitiveCommandsOpen(false);
+          setIsProjectPermissionsOpen(false);
           setIsProjectCodebaseOpen(false);
           setIsRoleEditorOpen(false);
           setIsFileChangesOpen(false);
@@ -340,6 +357,7 @@ export const ChatInputView = ({
         onOpenCodebasePanel: () => {
           setIsProjectMcpOpen(false);
           setIsProjectSensitiveCommandsOpen(false);
+          setIsProjectPermissionsOpen(false);
           setIsProjectSkillsOpen(false);
           setIsRoleEditorOpen(false);
           setIsFileChangesOpen(false);
@@ -348,6 +366,7 @@ export const ChatInputView = ({
         onOpenReviewPanel: () => {
           setIsProjectMcpOpen(false);
           setIsProjectSensitiveCommandsOpen(false);
+          setIsProjectPermissionsOpen(false);
           setIsProjectSkillsOpen(false);
           setIsProjectCodebaseOpen(false);
           setIsRoleEditorOpen(false);
@@ -359,6 +378,8 @@ export const ChatInputView = ({
         compactDisabled: messages.length === 0 || isCompacting,
         fileChangesDisabled: !activeConversationId,
         mcpDisabled: !projectId,
+        // YOLO 模式下工具自动授权，无需（也不允许）管理授权列表。
+        permissionsDisabled: !projectId || yoloMode,
         reviewDisabled: !isNewChat || !reviewWorkDir,
         roleDisabled: !projectId,
         sensitiveCommandsDisabled: !projectId,
@@ -374,6 +395,12 @@ export const ChatInputView = ({
             : t("chatCommand.mcpNoProject"),
           roleDescription: t("chatCommand.roleDescription"),
           roleNoProject: t("chatCommand.roleNoProject"),
+          // permissions 的禁用描述按原因区分：无项目 / YOLO 模式。
+          permissionsDescription: !projectId
+            ? t("chatCommand.permissionsNoProject")
+            : yoloMode
+              ? t("chatCommand.permissionsYoloDisabled")
+              : t("chatCommand.permissionsDescription"),
           sensitiveCommandsDescription: projectId
             ? t("chatCommand.sensitiveCommandsDescription")
             : t("chatCommand.sensitiveCommandsNoProject"),
@@ -403,6 +430,7 @@ export const ChatInputView = ({
       selectedApiProfile,
       selectedModel,
       t,
+      yoloMode,
     ]
   );
 
@@ -2156,6 +2184,12 @@ export const ChatInputView = ({
         projectId={projectId}
         projectName={projectName}
         onClose={() => setIsProjectSensitiveCommandsOpen(false)}
+      />
+      <ProjectPermissionsPanel
+        open={isProjectPermissionsOpen}
+        projectId={projectId}
+        projectName={projectName}
+        onClose={() => setIsProjectPermissionsOpen(false)}
       />
       <ProjectSkillsPanel
         open={isProjectSkillsOpen}

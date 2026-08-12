@@ -3,6 +3,7 @@ import { createCodebaseCommand } from "./CodebaseCommand";
 import { createCompactCommand } from "./CompactCommand";
 import { createFileChangesCommand } from "./FileChangesCommand";
 import { createMcpCommand } from "./McpCommand";
+import { createPermissionsCommand } from "./PermissionsCommand";
 import { createReviewCommand } from "./ReviewCommand";
 import { createRoleCommand } from "./RoleCommand";
 import { createSensitiveCommandsCommand } from "./SensitiveCommandsCommand";
@@ -23,6 +24,7 @@ export const RUNNING_DISABLED_COMMAND_IDS: ReadonlySet<string> = new Set([
   "codebase",
   "mcp",
   "review",
+  "permissions",
 ]);
 
 /**
@@ -34,6 +36,11 @@ const COMMAND_DESCRIPTION_KEYS: Record<string, string[]> = {
   clear: ["chatCommand.clearDescription"],
   changes: ["chatCommand.fileChangesDescription"],
   mcp: ["chatCommand.mcpDescription", "chatCommand.mcpNoProject"],
+  permissions: [
+    "chatCommand.permissionsDescription",
+    "chatCommand.permissionsNoProject",
+    "chatCommand.permissionsYoloDisabled",
+  ],
   role: ["chatCommand.roleDescription", "chatCommand.roleNoProject"],
   "sensitive-commands": [
     "chatCommand.sensitiveCommandsDescription",
@@ -70,6 +77,7 @@ type ChatCommandLabels = {
   compactDescription: string;
   fileChangesDescription: string;
   mcpDescription: string;
+  permissionsDescription: string;
   reviewDescription: string;
   reviewNoProject: string;
   roleDescription: string;
@@ -86,6 +94,7 @@ type CreateChatCommandsOptions = {
   ) => void | Promise<void>;
   onOpenFileChangesPanel: () => void;
   onOpenMcpPanel: () => void;
+  onOpenPermissionsPanel: () => void;
   onOpenRolePanel: () => void;
   onOpenReviewPanel: () => void;
   onOpenSensitiveCommandsPanel: () => void;
@@ -96,6 +105,7 @@ type CreateChatCommandsOptions = {
   compactDisabled: boolean;
   fileChangesDisabled: boolean;
   mcpDisabled: boolean;
+  permissionsDisabled: boolean;
   reviewDisabled: boolean;
   roleDisabled: boolean;
   sensitiveCommandsDisabled: boolean;
@@ -110,6 +120,7 @@ export const createChatCommands = ({
   onCompactConversation,
   onOpenFileChangesPanel,
   onOpenMcpPanel,
+  onOpenPermissionsPanel,
   onOpenRolePanel,
   onOpenReviewPanel,
   onOpenSensitiveCommandsPanel,
@@ -120,6 +131,7 @@ export const createChatCommands = ({
   compactDisabled,
   fileChangesDisabled,
   mcpDisabled,
+  permissionsDisabled,
   reviewDisabled,
   roleDisabled,
   sensitiveCommandsDisabled,
@@ -144,6 +156,15 @@ export const createChatCommands = ({
     {
       ...createMcpCommand(onOpenMcpPanel, labels.mcpDescription, mcpDisabled),
       disabled: mcpDisabled || isRunningDisabled("mcp"),
+    },
+    {
+      // permissions 的描述由调用方根据禁用原因预先计算（无项目 / YOLO 模式）。
+      ...createPermissionsCommand(
+        onOpenPermissionsPanel,
+        labels.permissionsDescription,
+        permissionsDisabled
+      ),
+      disabled: permissionsDisabled || isRunningDisabled("permissions"),
     },
     {
       ...createRoleCommand(

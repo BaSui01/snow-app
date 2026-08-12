@@ -12,3 +12,12 @@ export const getSettingsPath = (): string =>
 
 export const getCredentialsPath = (): string =>
   join(getDataManagementDirectory(), "credentials.json");
+
+export const getBackupDirectory = (): string =>
+  join(getDataManagementDirectory(), "backups");
+
+export const getPendingRestorePath = (): string =>
+  join(getDataManagementDirectory(), "pending-restore.json");
+
+export const getSyncStatePath = (): string =>
+  join(getDataManagementDirectory(), "sync-state.json");

@@ -2,7 +2,10 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import type {
   DataManagementSettings,
   DataManagementSettingsPatch,
+  DataManagementBackupFrequency,
+  DataManagementBackupSettings,
   DataManagementSyncIntervalMinutes,
+  DataManagementSyncMode,
   DataManagementWebDavSettings,
 } from "../../preload/types/dataManagement";
 import { getOrCreateDeviceIdentity, setDeviceName } from "./deviceIdentity";
@@ -10,6 +13,7 @@ import { getDataManagementDirectory, getSettingsPath } from "./paths";
 
 type StoredSettings = {
   webdav?: Partial<DataManagementWebDavSettings>;
+  backup?: Partial<DataManagementBackupSettings>;
 };
 
 const DEFAULT_WEBDAV_SETTINGS: DataManagementWebDavSettings = {
@@ -18,6 +22,19 @@ const DEFAULT_WEBDAV_SETTINGS: DataManagementWebDavSettings = {
   username: "",
   syncEnabled: false,
   syncIntervalMinutes: 0,
+  syncMode: "config",
+  allowInsecureHttp: false,
+};
+
+const DEFAULT_BACKUP_SETTINGS: DataManagementBackupSettings = {
+  enabled: false,
+  frequency: "daily",
+  retentionCount: 7,
+  directory: "",
+  includeArchive: true,
+  includeAttachments: false,
+  beforeImport: true,
+  beforeRestore: true,
 };
 
 const VALID_INTERVALS = new Set<DataManagementSyncIntervalMinutes>([
@@ -26,6 +43,13 @@ const VALID_INTERVALS = new Set<DataManagementSyncIntervalMinutes>([
   30,
   60,
 ]);
+const VALID_FREQUENCIES = new Set<DataManagementBackupFrequency>([
+  "6h",
+  "12h",
+  "daily",
+  "weekly",
+]);
+const VALID_SYNC_MODES = new Set<DataManagementSyncMode>(["config", "mirror"]);
 
 const ensureDirectory = (): void => {
   const directory = getDataManagementDirectory();
@@ -49,9 +73,15 @@ const readStoredSettings = (): StoredSettings => {
       return {};
     }
     const webdav = (value as Record<string, unknown>).webdav;
-    return webdav && typeof webdav === "object"
-      ? { webdav: webdav as Partial<DataManagementWebDavSettings> }
-      : {};
+    const backup = (value as Record<string, unknown>).backup;
+    return {
+      ...(webdav && typeof webdav === "object"
+        ? { webdav: webdav as Partial<DataManagementWebDavSettings> }
+        : {}),
+      ...(backup && typeof backup === "object"
+        ? { backup: backup as Partial<DataManagementBackupSettings> }
+        : {}),
+    };
   } catch {
     return {};
   }
@@ -89,6 +119,9 @@ const normalizeWebDavSettings = (
   )
     ? (interval as DataManagementSyncIntervalMinutes)
     : DEFAULT_WEBDAV_SETTINGS.syncIntervalMinutes;
+  const syncMode = VALID_SYNC_MODES.has(value?.syncMode as DataManagementSyncMode)
+    ? (value?.syncMode as DataManagementSyncMode)
+    : DEFAULT_WEBDAV_SETTINGS.syncMode;
 
   return {
     endpoint,
@@ -96,14 +129,40 @@ const normalizeWebDavSettings = (
     username,
     syncEnabled,
     syncIntervalMinutes,
+    syncMode,
+    allowInsecureHttp: value?.allowInsecureHttp === true,
+  };
+};
+
+const normalizeBackupSettings = (
+  value: Partial<DataManagementBackupSettings> | undefined
+): DataManagementBackupSettings => {
+  const frequency = VALID_FREQUENCIES.has(value?.frequency as DataManagementBackupFrequency)
+    ? (value?.frequency as DataManagementBackupFrequency)
+    : DEFAULT_BACKUP_SETTINGS.frequency;
+  const retentionCount =
+    typeof value?.retentionCount === "number" && Number.isInteger(value.retentionCount)
+      ? Math.min(100, Math.max(3, value.retentionCount))
+      : DEFAULT_BACKUP_SETTINGS.retentionCount;
+  return {
+    enabled: value?.enabled === true,
+    frequency,
+    retentionCount,
+    directory: typeof value?.directory === "string" ? value.directory.trim() : "",
+    includeArchive: value?.includeArchive !== false,
+    includeAttachments: value?.includeAttachments === true,
+    beforeImport: value?.beforeImport !== false,
+    beforeRestore: value?.beforeRestore !== false,
   };
 };
 
 export const getDataManagementSettings = (): DataManagementSettings => {
   const identity = getOrCreateDeviceIdentity();
+  const stored = readStoredSettings();
   return {
     deviceName: identity.deviceName,
-    webdav: normalizeWebDavSettings(readStoredSettings().webdav),
+    webdav: normalizeWebDavSettings(stored.webdav),
+    backup: normalizeBackupSettings(stored.backup),
   };
 };
 
@@ -119,10 +178,15 @@ export const updateDataManagementSettings = (
     ...current.webdav,
     ...(patch.webdav ?? {}),
   });
+  const nextBackup = normalizeBackupSettings({
+    ...current.backup,
+    ...(patch.backup ?? {}),
+  });
 
-  writeStoredSettings({ webdav: nextWebdav });
+  writeStoredSettings({ webdav: nextWebdav, backup: nextBackup });
   return {
     deviceName: getOrCreateDeviceIdentity().deviceName,
     webdav: nextWebdav,
+    backup: nextBackup,
   };
 };

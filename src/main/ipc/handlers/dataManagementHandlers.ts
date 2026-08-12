@@ -1,10 +1,35 @@
-import { ipcMain } from "electron";
+import { app, dialog, ipcMain } from "electron";
+import { join, resolve } from "node:path";
 import type {
+  DataManagementExportRequest,
+  DataManagementImportRequest,
+  DataSection,
   DataManagementCredentialKind,
   DataManagementCredentialUpdate,
   DataManagementSettingsPatch,
 } from "../../../preload/types/dataManagement";
 import { dataManagementCoordinator } from "../../dataManagement/dataManagementCoordinator";
+import type { NativeBridge } from "../../native/types";
+import {
+  createDatabaseBackup,
+  deleteDatabaseBackup,
+  listBackupRecords,
+  stageDatabaseRestore,
+} from "../../dataManagement/backupService";
+import {
+  applyConfigPackage,
+  exportConfigPackage,
+  inspectConfigPackage,
+} from "../../dataManagement/configService";
+import {
+  recordWebDavSyncError,
+  resolveWebDavConflict,
+  runWebDavSync,
+  testWebDavConnection,
+} from "../../dataManagement/syncService";
+import { getDataManagementSettings } from "../../dataManagement/settingsStore";
+
+let pendingImportPath: string | null = null;
 
 const CREDENTIAL_KINDS: readonly DataManagementCredentialKind[] = [
   "webdav-password",
@@ -66,7 +91,54 @@ const requireSettingsPatch = (value: unknown): DataManagementSettingsPatch => {
       }
       next.syncIntervalMinutes = webdav.syncIntervalMinutes as 0 | 15 | 30 | 60;
     }
+    if (webdav.syncMode !== undefined) {
+      if (webdav.syncMode !== "config" && webdav.syncMode !== "mirror") {
+        throw new Error("WebDAV sync mode is invalid");
+      }
+      next.syncMode = webdav.syncMode;
+    }
+    if (webdav.allowInsecureHttp !== undefined) {
+      if (typeof webdav.allowInsecureHttp !== "boolean") {
+        throw new Error("WebDAV insecure HTTP option is invalid");
+      }
+      next.allowInsecureHttp = webdav.allowInsecureHttp;
+    }
     patch.webdav = next;
+  }
+
+  if (value.backup !== undefined) {
+    if (!isRecord(value.backup)) throw new Error("Backup settings must be an object");
+    const backup = value.backup;
+    const next: NonNullable<DataManagementSettingsPatch["backup"]> = {};
+    if (backup.enabled !== undefined) {
+      if (typeof backup.enabled !== "boolean") throw new Error("Backup enabled must be a boolean");
+      next.enabled = backup.enabled;
+    }
+    if (backup.frequency !== undefined) {
+      if (!["6h", "12h", "daily", "weekly"].includes(backup.frequency as string)) {
+        throw new Error("Backup frequency is invalid");
+      }
+      next.frequency = backup.frequency as "6h" | "12h" | "daily" | "weekly";
+    }
+    if (backup.retentionCount !== undefined) {
+      if (typeof backup.retentionCount !== "number" || !Number.isInteger(backup.retentionCount)) {
+        throw new Error("Backup retention count is invalid");
+      }
+      next.retentionCount = backup.retentionCount;
+    }
+    if (backup.directory !== undefined) {
+      if (typeof backup.directory !== "string" || backup.directory.length > 4096) {
+        throw new Error("Backup directory is invalid");
+      }
+      next.directory = backup.directory.trim();
+    }
+    for (const key of ["includeArchive", "includeAttachments", "beforeImport", "beforeRestore"] as const) {
+      if (backup[key] !== undefined) {
+        if (typeof backup[key] !== "boolean") throw new Error(`Backup ${key} must be a boolean`);
+        next[key] = backup[key];
+      }
+    }
+    patch.backup = next;
   }
 
   return patch;
@@ -106,7 +178,45 @@ const requireCredentialKind = (value: unknown): DataManagementCredentialKind => 
   return value as DataManagementCredentialKind;
 };
 
-export const registerDataManagementHandlers = (): void => {
+const requireSections = (value: unknown): DataSection[] => {
+  if (!Array.isArray(value) || value.length === 0 || value.some((section) => typeof section !== "string")) {
+    throw new Error("At least one data-management section is required");
+  }
+  return value as DataSection[];
+};
+
+const requireExportRequest = (value: unknown): DataManagementExportRequest => {
+  if (!isRecord(value)) throw new Error("Export request is required");
+  const sections = requireSections(value.sections);
+  const includeSecrets = value.includeSecrets === true;
+  if (includeSecrets && (typeof value.password !== "string" || !value.password)) {
+    throw new Error("An export password is required for sensitive configuration");
+  }
+  return {
+    sections,
+    includeSecrets,
+    password: typeof value.password === "string" ? value.password : undefined,
+  };
+};
+
+const requireImportRequest = (value: unknown): DataManagementImportRequest => {
+  if (!isRecord(value)) throw new Error("Import request is required");
+  return {
+    sections: requireSections(value.sections),
+    password: typeof value.password === "string" ? value.password : undefined,
+    replaceSelected: value.replaceSelected === true,
+  };
+};
+
+const openConfigFile = async (): Promise<string | null> => {
+  const result = await dialog.showOpenDialog({
+    properties: ["openFile"],
+    filters: [{ name: "Snow configuration", extensions: ["snow-config"] }],
+  });
+  return result.canceled ? null : result.filePaths[0] ?? null;
+};
+
+export const registerDataManagementHandlers = (native: NativeBridge): void => {
   ipcMain.handle("data-management:get-state", () =>
     dataManagementCoordinator.getState()
   );
@@ -138,5 +248,129 @@ export const registerDataManagementHandlers = (): void => {
       throw new Error("Task ID must be a string");
     }
     return dataManagementCoordinator.cancel(taskId as string | undefined);
+  });
+
+  ipcMain.handle("data:export-config", async (_event, value: unknown) => {
+    const request = requireExportRequest(value);
+    const result = await dialog.showSaveDialog({
+      defaultPath: join(app.getPath("documents"), "snow-app-config.snow-config"),
+      filters: [{ name: "Snow configuration", extensions: ["snow-config"] }],
+    });
+    if (result.canceled || !result.filePath) return null;
+    return dataManagementCoordinator.run("config-export", async ({ report }) => {
+      report({ phase: "exporting configuration", total: 3, completed: 1 });
+      const preview = await exportConfigPackage(
+        native,
+        result.filePath as string,
+        request.sections,
+        request.includeSecrets,
+        request.password
+      );
+      report({ phase: "configuration package written", total: 3, completed: 3 });
+      return preview;
+    });
+  });
+
+  ipcMain.handle("data:preview-import", async () => {
+    pendingImportPath = null;
+    const path = await openConfigFile();
+    if (!path) return null;
+    const preview = await inspectConfigPackage(path);
+    pendingImportPath = path;
+    return preview;
+  });
+
+  ipcMain.handle("data:apply-import", async (_event, value: unknown) => {
+    const request = requireImportRequest(value);
+    const path = pendingImportPath ?? (await openConfigFile());
+    pendingImportPath = null;
+    if (!path) return null;
+    return dataManagementCoordinator.run("config-import", async ({ report }) => {
+      report({ phase: "validating configuration package", total: 3, completed: 1 });
+      const preview = await applyConfigPackage(
+        native,
+        path,
+        request.sections,
+        request.password,
+        request.replaceSelected,
+        getDataManagementSettings().backup.beforeImport
+      );
+      report({ phase: "configuration imported", total: 3, completed: 3 });
+      return preview;
+    });
+  });
+
+  ipcMain.handle("backup:create", async (_event, reason: unknown) =>
+    dataManagementCoordinator.run("backup-create", async ({ report }) => {
+      report({ phase: "creating SQLite online backup", total: 3, completed: 1 });
+      const record = await createDatabaseBackup(
+        native,
+        typeof reason === "string" ? reason : "manual"
+      );
+      report({ phase: "backup validated", total: 3, completed: 3, currentItem: record.path });
+      return record;
+    })
+  );
+
+  ipcMain.handle("backup:delete", (_event, value: unknown) => {
+    if (typeof value !== "string" || !value) throw new Error("Backup path is required");
+    deleteDatabaseBackup(value);
+    return true;
+  });
+
+  ipcMain.handle("backup:restore", async (_event, value: unknown) => {
+    if (typeof value !== "string" || !value) throw new Error("Backup path is required");
+    const selected = listBackupRecords().find(
+      (record) => record.integrity === "valid" && record.path === resolve(value)
+    );
+    if (!selected) {
+      throw new Error("Only a validated backup from the configured backup directory can be restored");
+    }
+    await dataManagementCoordinator.run("backup-restore", async ({ report }) => {
+      report({ phase: "validating restore snapshot", total: 3, completed: 1 });
+      if (getDataManagementSettings().backup.beforeRestore) {
+        await createDatabaseBackup(native, "pre-restore");
+      }
+      stageDatabaseRestore(value);
+      report({ phase: "restore staged; restarting application", total: 3, completed: 3 });
+    });
+    app.relaunch();
+    app.exit(0);
+    return true;
+  });
+
+  ipcMain.handle("sync:test-connection", () => testWebDavConnection());
+
+  ipcMain.handle("sync:run", async () =>
+    dataManagementCoordinator.run("sync", async ({ report }) => {
+      report({ phase: "pulling remote sync state", total: 4, completed: 1 });
+      let result;
+      try {
+        result = await runWebDavSync(native, true);
+      } catch (error) {
+        recordWebDavSyncError(error);
+        throw error;
+      }
+      report({ phase: "sync completed", total: 4, completed: 4 });
+      return result;
+    })
+  );
+
+  ipcMain.handle("sync:resolve-conflict", async (_event, value: unknown) => {
+    if (value !== "local" && value !== "remote" && value !== "keep-both") {
+      throw new Error("Sync conflict choice is invalid");
+    }
+    return dataManagementCoordinator.run("sync", async ({ report }) => {
+      report({ phase: "resolving sync conflict", total: 3, completed: 1 });
+      let result;
+      try {
+        result = await resolveWebDavConflict(native, value, true);
+      } catch (error) {
+        recordWebDavSyncError(error);
+        throw error;
+      }
+      report({ phase: "sync conflict resolved", total: 3, completed: 3 });
+      return result;
+    });
   });
 };

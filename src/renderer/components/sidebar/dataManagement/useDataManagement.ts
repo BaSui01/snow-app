@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import type {
   DataManagementProgress,
+  DataManagementExportRequest,
+  DataManagementImportRequest,
+  DataManagementImportPreview,
   DataManagementSettings,
   DataManagementSettingsPatch,
   DataManagementState,
@@ -15,6 +18,15 @@ export type UseDataManagementResult = {
   error: string;
   refresh: () => Promise<void>;
   updateSettings: (patch: DataManagementSettingsPatch) => Promise<void>;
+  previewImport: () => Promise<DataManagementImportPreview | null>;
+  exportConfig: (request: DataManagementExportRequest) => Promise<DataManagementImportPreview | null>;
+  importConfig: (request: DataManagementImportRequest) => Promise<DataManagementImportPreview | null>;
+  createBackup: (reason?: string) => Promise<unknown | null>;
+  restoreBackup: (path: string) => Promise<boolean>;
+  deleteBackup: (path: string) => Promise<boolean>;
+  testSync: () => Promise<{ weakConflictProtection: boolean }>;
+  runSync: () => Promise<unknown | null>;
+  resolveConflict: (choice: "local" | "remote" | "keep-both") => Promise<unknown | null>;
 };
 
 export const useDataManagement = (): UseDataManagementResult => {
@@ -69,11 +81,24 @@ export const useDataManagement = (): UseDataManagementResult => {
         setError(message);
         throw cause;
       } finally {
-        setIsSaving(false);
+    setIsSaving(false);
       }
     },
     []
   );
+
+  const action = useCallback(async <T,>(work: () => Promise<T>): Promise<T> => {
+    try {
+      const result = await work();
+      await refresh();
+      setError("");
+      return result;
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      setError(message);
+      throw cause;
+    }
+  }, [refresh]);
 
   return {
     state,
@@ -84,5 +109,14 @@ export const useDataManagement = (): UseDataManagementResult => {
     error,
     refresh,
     updateSettings,
+    previewImport: () => action(() => window.snow.previewDataManagementImport()),
+    exportConfig: (request) => action(() => window.snow.exportDataManagementConfig(request)),
+    importConfig: (request) => action(() => window.snow.importDataManagementConfig(request)),
+    createBackup: (reason) => action(() => window.snow.createDataManagementBackup(reason)),
+    restoreBackup: (path) => action(() => window.snow.restoreDataManagementBackup(path)),
+    deleteBackup: (path) => action(() => window.snow.deleteDataManagementBackup(path)),
+    testSync: () => action(() => window.snow.testDataManagementSyncConnection()),
+    runSync: () => action(() => window.snow.runDataManagementSync()),
+    resolveConflict: (choice) => action(() => window.snow.resolveDataManagementConflict(choice)),
   };
 };

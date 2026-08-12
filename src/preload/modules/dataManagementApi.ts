@@ -2,6 +2,10 @@ import { ipcRenderer } from "electron";
 import type {
   DataManagementCredentialStatus,
   DataManagementCredentialUpdate,
+  DataManagementExportRequest,
+  DataManagementImportRequest,
+  DataManagementImportPreview,
+  DataManagementConflictChoice,
   DataManagementProgress,
   DataManagementSettings,
   DataManagementSettingsPatch,
@@ -33,6 +37,38 @@ export const dataManagementApi = {
 
   cancelDataManagementTask: (taskId?: string): Promise<boolean> =>
     ipcRenderer.invoke("data-management:cancel", taskId),
+
+  exportDataManagementConfig: (
+    request: DataManagementExportRequest
+  ): Promise<DataManagementImportPreview | null> =>
+    ipcRenderer.invoke("data:export-config", request),
+
+  previewDataManagementImport: (): Promise<DataManagementImportPreview | null> =>
+    ipcRenderer.invoke("data:preview-import"),
+
+  importDataManagementConfig: (
+    request: DataManagementImportRequest
+  ): Promise<DataManagementImportPreview | null> =>
+    ipcRenderer.invoke("data:apply-import", request),
+
+  createDataManagementBackup: (reason?: string): Promise<unknown | null> =>
+    ipcRenderer.invoke("backup:create", reason),
+
+  deleteDataManagementBackup: (path: string): Promise<boolean> =>
+    ipcRenderer.invoke("backup:delete", path),
+
+  restoreDataManagementBackup: (path: string): Promise<boolean> =>
+    ipcRenderer.invoke("backup:restore", path),
+
+  testDataManagementSyncConnection: (): Promise<{ weakConflictProtection: boolean }> =>
+    ipcRenderer.invoke("sync:test-connection"),
+
+  runDataManagementSync: (): Promise<unknown | null> =>
+    ipcRenderer.invoke("sync:run"),
+
+  resolveDataManagementConflict: (
+    choice: DataManagementConflictChoice
+  ): Promise<unknown | null> => ipcRenderer.invoke("sync:resolve-conflict", choice),
 
   onDataManagementProgress: (
     listener: (progress: DataManagementProgress) => void

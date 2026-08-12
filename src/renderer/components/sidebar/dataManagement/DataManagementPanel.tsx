@@ -49,6 +49,15 @@ export function DataManagementPanel({
     isSaving,
     error,
     updateSettings,
+    previewImport,
+    exportConfig,
+    importConfig,
+    createBackup,
+    restoreBackup,
+    deleteBackup,
+    testSync,
+    runSync,
+    resolveConflict,
   } = useDataManagement();
 
   const tabs: Array<{
@@ -161,15 +170,31 @@ export function DataManagementPanel({
       {error && <div className="data-management-error" role="alert">{error}</div>}
 
       {activeTab === "import-export" ? (
-        <ImportExportTab state={state} />
+        <ImportExportTab
+          state={state}
+          onPreviewImport={previewImport}
+          onExport={exportConfig}
+          onImport={importConfig}
+        />
       ) : activeTab === "backup-restore" ? (
-        <BackupRestoreTab state={state} />
+        <BackupRestoreTab
+          state={state}
+          settings={settings}
+          isSaving={isSaving}
+          onUpdateSettings={updateSettings}
+          onCreate={createBackup}
+          onRestore={restoreBackup}
+          onDelete={deleteBackup}
+        />
       ) : (
         <CloudSyncTab
           state={state}
           settings={settings}
           isSaving={isSaving}
           onUpdateSettings={updateSettings}
+          onTestConnection={testSync}
+          onSync={runSync}
+          onResolveConflict={resolveConflict}
         />
       )}
     </div>

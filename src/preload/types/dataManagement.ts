@@ -63,6 +63,21 @@ export type DataManagementProgress = {
 
 export type DataManagementSyncIntervalMinutes = 0 | 15 | 30 | 60;
 
+export type DataManagementSyncMode = "config" | "mirror";
+
+export type DataManagementBackupFrequency = "6h" | "12h" | "daily" | "weekly";
+
+export type DataManagementBackupSettings = {
+  enabled: boolean;
+  frequency: DataManagementBackupFrequency;
+  retentionCount: number;
+  directory: string;
+  includeArchive: boolean;
+  includeAttachments: boolean;
+  beforeImport: boolean;
+  beforeRestore: boolean;
+};
+
 /** Non-secret WebDAV settings. Passwords and encryption keys are never here. */
 export type DataManagementWebDavSettings = {
   endpoint: string;
@@ -70,16 +85,20 @@ export type DataManagementWebDavSettings = {
   username: string;
   syncEnabled: boolean;
   syncIntervalMinutes: DataManagementSyncIntervalMinutes;
+  syncMode: DataManagementSyncMode;
+  allowInsecureHttp: boolean;
 };
 
 export type DataManagementSettings = {
   deviceName: string;
   webdav: DataManagementWebDavSettings;
+  backup: DataManagementBackupSettings;
 };
 
 export type DataManagementSettingsPatch = {
   deviceName?: string;
   webdav?: Partial<DataManagementWebDavSettings>;
+  backup?: Partial<DataManagementBackupSettings>;
 };
 
 export type DataManagementCredentialKind =
@@ -97,6 +116,61 @@ export type DataManagementCredentialStatus = {
   syncMasterKeyConfigured: boolean;
 };
 
+export type DataManagementBackupRecord = {
+  id: string;
+  path: string;
+  createdAt: string;
+  reason: string;
+  appVersion: string;
+  schemaVersion: number;
+  sizeBytes: number;
+  includesArchive: boolean;
+  includesAttachments: boolean;
+  encrypted: boolean;
+  integrity: "unchecked" | "valid" | "invalid";
+};
+
+export type DataManagementImportPreview = {
+  path: string;
+  encrypted: boolean;
+  containsSecrets: boolean;
+  formatVersion: number;
+  schemaVersion: number;
+  sections: DataSection[];
+  rows: number;
+  estimatedBytes: number;
+  deviceSpecificItems: number;
+};
+
+export type DataManagementExportRequest = {
+  sections: DataSection[];
+  includeSecrets: boolean;
+  password?: string;
+};
+
+export type DataManagementImportRequest = {
+  sections: DataSection[];
+  password?: string;
+  replaceSelected: boolean;
+};
+
+export type DataManagementConflictChoice = "local" | "remote" | "keep-both";
+
+export type DataManagementSyncState = {
+  status: "idle" | "running" | "offline" | "auth-error" | "conflict" | "quota-error" | "error";
+  mode: DataManagementSyncMode;
+  lastSuccessAt: string | null;
+  baseRevision: number;
+  pendingUploadBytes: number;
+  weakConflictProtection: boolean;
+  conflict: {
+    localRevision: number;
+    remoteRevision: number;
+    remoteDeviceName: string;
+  } | null;
+  lastError: string | null;
+};
+
 export type DataManagementState = {
   deviceId: string;
   deviceName: string;
@@ -105,4 +179,6 @@ export type DataManagementState = {
   safeStorageAvailable: boolean;
   credentialStatus: DataManagementCredentialStatus;
   activeTask: DataManagementProgress | null;
+  backups: DataManagementBackupRecord[];
+  sync: DataManagementSyncState;
 };

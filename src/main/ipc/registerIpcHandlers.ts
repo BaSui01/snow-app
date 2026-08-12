@@ -51,5 +51,5 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
   registerStorageHandlers(native);
   registerBrowserPasswordHandlers(native);
   registerPetHandlers(native);
-  registerDataManagementHandlers();
+  registerDataManagementHandlers(native);
 };

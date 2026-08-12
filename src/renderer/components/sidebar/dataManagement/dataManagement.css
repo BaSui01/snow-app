@@ -223,6 +223,74 @@
   opacity: 0.68;
 }
 
+.data-management-checkbox-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.data-management-form-grid select,
+.data-management-form-grid input[type="password"] {
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 11px;
+}
+
+.data-management-backup-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.data-management-backup-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+}
+
+.data-management-backup-row > div:first-child {
+  min-width: 0;
+}
+
+.data-management-backup-row strong,
+.data-management-backup-row span {
+  display: block;
+}
+
+.data-management-backup-row strong {
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+.data-management-backup-row span {
+  margin-top: 3px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+
+.data-management-backup-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 5px;
+}
+
+.data-management-backup-actions .data-management-secondary-button {
+  margin-top: 0;
+}
+
 .data-management-primary-button {
   margin-top: 0;
   border-color: var(--accent-color);
@@ -402,6 +470,11 @@
 .data-management-status-card span {
   color: var(--text-tertiary);
   font-size: 11px;
+}
+
+.data-management-status-card .data-management-error-inline {
+  color: var(--color-error, #d95c5c);
+  overflow-wrap: anywhere;
 }
 
 .data-management-status-card.is-ready > svg,

@@ -8,6 +8,7 @@ import type {
   DataManagementState,
   DataManagementTaskOperation,
 } from "../../preload/types/dataManagement";
+import { createDatabaseBackup, listBackupRecords } from "./backupService";
 import {
   deleteDataManagementCredential,
   getDataManagementCredentialStatus,
@@ -19,19 +20,31 @@ import {
   getDataManagementSettings,
   updateDataManagementSettings,
 } from "./settingsStore";
-import { DataManagementTaskCoordinator } from "./taskCoordinator";
+import {
+  DataManagementTaskBusyError,
+  DataManagementTaskCoordinator,
+} from "./taskCoordinator";
+import {
+  getDataManagementSyncState,
+  recordWebDavSyncError,
+  runWebDavSync,
+} from "./syncService";
+import type { NativeBridge } from "../native/types";
 
 const PROGRESS_CHANNEL = "data-management:progress";
 
 /**
  * Main-process coordinator for all data management work.
  *
- * Phase 0 only exposes the contract and task boundary. Later phases can add
- * snapshot, import and WebDAV implementations without creating a second
- * IPC surface or allowing overlapping database operations.
+ * Owns the single task boundary for configuration packages, database
+ * snapshots and WebDAV synchronization. The coordinator also owns the
+ * process-lifetime automatic work timers so database operations cannot overlap.
  */
 export class DataManagementCoordinator {
   private readonly tasks = new DataManagementTaskCoordinator();
+  private native: NativeBridge | null = null;
+  private backupTimer: NodeJS.Timeout | null = null;
+  private syncTimer: NodeJS.Timeout | null = null;
 
   constructor() {
     this.tasks.subscribe((progress) => this.broadcastProgress(progress));
@@ -47,6 +60,8 @@ export class DataManagementCoordinator {
       safeStorageAvailable: isDataManagementSafeStorageAvailable(),
       credentialStatus: getDataManagementCredentialStatus(),
       activeTask: this.tasks.getActiveTask(),
+      backups: listBackupRecords(),
+      sync: getDataManagementSyncState(),
     };
   }
 
@@ -55,7 +70,9 @@ export class DataManagementCoordinator {
   }
 
   setSettings(patch: DataManagementSettingsPatch): DataManagementSettings {
-    return updateDataManagementSettings(patch);
+    const settings = updateDataManagementSettings(patch);
+    this.scheduleAutomaticWork();
+    return settings;
   }
 
   setCredential(update: DataManagementCredentialUpdate): DataManagementCredentialStatus {
@@ -75,6 +92,65 @@ export class DataManagementCoordinator {
     work: Parameters<DataManagementTaskCoordinator["run"]>[1]
   ): Promise<T> {
     return this.tasks.run(operation, work) as Promise<T>;
+  }
+
+  start(native: NativeBridge): void {
+    this.native = native;
+    this.scheduleAutomaticWork(true);
+  }
+
+  stop(): void {
+    if (this.backupTimer) clearTimeout(this.backupTimer);
+    if (this.syncTimer) clearInterval(this.syncTimer);
+    this.backupTimer = null;
+    this.syncTimer = null;
+    this.native = null;
+  }
+
+  private scheduleAutomaticWork(startup = false): void {
+    if (this.backupTimer) clearTimeout(this.backupTimer);
+    if (this.syncTimer) clearInterval(this.syncTimer);
+    this.backupTimer = null;
+    this.syncTimer = null;
+    if (!this.native) return;
+
+    const native = this.native;
+    const settings = getDataManagementSettings();
+    const frequencyMs: Record<string, number> = {
+      "6h": 6 * 60 * 60 * 1000,
+      "12h": 12 * 60 * 60 * 1000,
+      daily: 24 * 60 * 60 * 1000,
+      weekly: 7 * 24 * 60 * 60 * 1000,
+    };
+    if (settings.backup.enabled) {
+      const interval = frequencyMs[settings.backup.frequency] ?? frequencyMs.daily;
+      const latest = listBackupRecords().find((record) => record.integrity === "valid");
+      const due = !latest || Date.now() - Date.parse(latest.createdAt) >= interval;
+      const delay = startup && due ? 5_000 : Math.max(5_000, due ? 5_000 : interval);
+      this.backupTimer = setTimeout(() => {
+        void this.run("backup-create", async ({ report }) => {
+          report({ phase: "automatic backup", total: 2, completed: 1 });
+          const record = await createDatabaseBackup(native, "automatic");
+          report({ phase: "automatic backup complete", total: 2, completed: 2, currentItem: record.path });
+          return record;
+        }).catch(() => undefined).finally(() => this.scheduleAutomaticWork());
+      }, delay);
+    }
+    if (settings.webdav.syncEnabled && settings.webdav.syncIntervalMinutes > 0) {
+      const interval = settings.webdav.syncIntervalMinutes * 60 * 1000;
+      this.syncTimer = setInterval(() => {
+        void this.run("sync", async ({ report }) => {
+          report({ phase: "automatic WebDAV sync", total: 2, completed: 1 });
+          const result = await runWebDavSync(native, false);
+          report({ phase: "automatic WebDAV sync complete", total: 2, completed: 2 });
+          return result;
+        }).catch((error) => {
+          if (!(error instanceof DataManagementTaskBusyError)) {
+            recordWebDavSyncError(error);
+          }
+        });
+      }, startup ? Math.min(interval, 5_000) : interval);
+    }
   }
 
   private broadcastProgress(progress: DataManagementProgress): void {

@@ -1,6 +1,8 @@
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
+  Check,
+  ChevronDown,
   Copy,
   Diff,
   FolderOpen,
@@ -70,6 +72,31 @@ export const GitControl = ({
   // badge reflects the latest remote state.
   useRemotePolling(repoPath, refresh);
   const [commitMessage, setCommitMessage] = useState("");
+  // 提交按钮模式：仅提交，或提交并推送。选择持久化在 localStorage，
+  // 下次启动应用时自动复原。
+  const [commitMode, setCommitMode] = useState<"commit" | "commitAndPush">(
+    () =>
+      localStorage.getItem("git-commit-mode") === "commitAndPush"
+        ? "commitAndPush"
+        : "commit"
+  );
+  const handleSelectCommitMode = useCallback(
+    (mode: "commit" | "commitAndPush") => {
+      setCommitModeMenu(null);
+      setCommitMode(mode);
+      try {
+        localStorage.setItem("git-commit-mode", mode);
+      } catch {
+        // localStorage 不可用时静默忽略，模式仅本次会话生效。
+      }
+    },
+    []
+  );
+  // 提交按钮右侧下拉菜单的弹出位置（viewport 坐标）。
+  const [commitModeMenu, setCommitModeMenu] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const [actionInProgress, setActionInProgress] = useState<
     | "commit"
     | "push"
@@ -399,15 +426,43 @@ export const GitControl = ({
       return;
     }
     setActionInProgress("commit");
+    const shouldPush = commitMode === "commitAndPush";
     window.snow
       .gitCommit(repoPath, commitMessage)
-      .then(() => {
+      .then((result) => {
+        if (!result.success) {
+          return;
+        }
         setCommitMessage("");
         commitPendingRef.current = true;
-        refresh();
+        // 提交并推送模式下，提交成功后紧接着推送。
+        if (shouldPush) {
+          return window.snow.gitPush(repoPath);
+        }
+        return null;
+      })
+      .then((pushResult) => {
+        if (pushResult) {
+          if (pushResult.success) {
+            refresh();
+          } else {
+            setOperationError({
+              title: t("git.pushFailed"),
+              message: pushResult.message,
+            });
+          }
+        } else {
+          refresh();
+        }
+      })
+      .catch((err: unknown) => {
+        setOperationError({
+          title: t("git.pushFailed"),
+          message: err instanceof Error ? err.message : String(err),
+        });
       })
       .finally(() => setActionInProgress(null));
-  }, [repoPath, commitMessage, refresh]);
+  }, [repoPath, commitMessage, commitMode, refresh, t]);
 
   const handlePush = useCallback(() => {
     if (!repoPath) {
@@ -827,24 +882,42 @@ export const GitControl = ({
               </div>
             </div>
             <div className="git-commit-actions">
-              <button
-                type="button"
-                className="git-commit-btn"
-                onClick={handleCommit}
-                disabled={
-                  actionInProgress !== null ||
-                  isGeneratingCommitMsg ||
-                  !commitMessage.trim() ||
-                  stagedFiles.length === 0
-                }
-              >
-                {actionInProgress === "commit" ? (
-                  <Loader2 size={14} strokeWidth={1.8} className="spin" />
-                ) : (
-                  <GitCommitHorizontal size={14} strokeWidth={1.8} />
-                )}
-                <span>{t("git.commit")}</span>
-              </button>
+              <div className="git-commit-split-btn">
+                <button
+                  type="button"
+                  className="git-commit-btn"
+                  onClick={handleCommit}
+                  disabled={
+                    actionInProgress !== null ||
+                    isGeneratingCommitMsg ||
+                    !commitMessage.trim() ||
+                    stagedFiles.length === 0
+                  }
+                >
+                  {actionInProgress === "commit" ? (
+                    <Loader2 size={14} strokeWidth={1.8} className="spin" />
+                  ) : (
+                    <GitCommitHorizontal size={14} strokeWidth={1.8} />
+                  )}
+                  <span>
+                    {commitMode === "commitAndPush"
+                      ? t("git.commitAndPush")
+                      : t("git.commit")}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="git-commit-mode-toggle"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCommitModeMenu({ x: e.clientX, y: e.clientY });
+                  }}
+                  disabled={actionInProgress !== null || isGeneratingCommitMsg}
+                  title={t("git.commitMode")}
+                >
+                  <ChevronDown size={14} strokeWidth={1.8} />
+                </button>
+              </div>
             </div>
           </div>
         </>
@@ -878,6 +951,48 @@ export const GitControl = ({
           y={actionsContextMenu.y}
           items={buildActionsMenuItems()}
           onClose={() => setActionsContextMenu(null)}
+        />
+      )}
+
+      {commitModeMenu && (
+        <ContextMenu
+          x={commitModeMenu.x}
+          y={commitModeMenu.y}
+          items={[
+            {
+              id: "mode-commit",
+              label: t("git.commit"),
+              icon: (
+                <Check
+                  size={13}
+                  strokeWidth={1.8}
+                  style={
+                    commitMode === "commit"
+                      ? undefined
+                      : { visibility: "hidden" }
+                  }
+                />
+              ),
+              onClick: () => handleSelectCommitMode("commit"),
+            },
+            {
+              id: "mode-commit-and-push",
+              label: t("git.commitAndPush"),
+              icon: (
+                <Check
+                  size={13}
+                  strokeWidth={1.8}
+                  style={
+                    commitMode === "commitAndPush"
+                      ? undefined
+                      : { visibility: "hidden" }
+                  }
+                />
+              ),
+              onClick: () => handleSelectCommitMode("commitAndPush"),
+            },
+          ]}
+          onClose={() => setCommitModeMenu(null)}
         />
       )}
 

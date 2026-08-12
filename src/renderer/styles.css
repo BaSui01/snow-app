@@ -25781,6 +25781,48 @@ input {
   flex: 1;
 }
 
+/* 提交按钮与模式切换下拉按钮合体：整体一个圆角胶囊，
+   左半执行提交，右半弹出模式选择菜单。 */
+.git-commit-split-btn {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  border-radius: var(--radius-md);
+  background: var(--text-primary);
+  color: var(--on-solid);
+  overflow: hidden;
+}
+
+.git-commit-split-btn .git-commit-btn {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  color: inherit;
+  border: none;
+  border-radius: 0;
+}
+
+.git-commit-split-btn .git-commit-btn:hover:not(:disabled),
+.git-commit-split-btn .git-commit-mode-toggle:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--on-solid) 12%, transparent);
+}
+
+.git-commit-split-btn .git-commit-mode-toggle {
+  flex: 0 0 auto;
+  width: 26px;
+  padding: 6px 0;
+  background: transparent;
+  color: inherit;
+  border: none;
+  border-left: 1px solid color-mix(in srgb, var(--on-solid) 25%, transparent);
+  border-radius: 0;
+}
+
+.git-commit-split-btn .git-commit-mode-toggle:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .git-ai-commit-btn {
   background: transparent;
   color: var(--text-tertiary);

@@ -3127,6 +3127,8 @@ export const en = {
   "git.behind": "{{count}} behind",
   "git.commitMessagePlaceholder": "Commit message",
   "git.commit": "Commit",
+  "git.commitAndPush": "Commit and Push",
+  "git.commitMode": "Commit Mode",
   "git.stagedChanges": "Staged Changes",
   "git.changes": "Changes",
   "git.unstageAll": "Unstage all",

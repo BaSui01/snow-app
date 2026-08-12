@@ -2971,6 +2971,8 @@ export const zhCN = {
   "git.behind": "落后 {{count}}",
   "git.commitMessagePlaceholder": "提交信息",
   "git.commit": "提交",
+  "git.commitAndPush": "提交并推送",
+  "git.commitMode": "切换提交模式",
   "git.stagedChanges": "已暂存的变更",
   "git.changes": "变更",
   "git.unstageAll": "全部取消暂存",

@@ -2942,6 +2942,8 @@ export const zhTW = {
   "git.behind": "落後 {{count}}",
   "git.commitMessagePlaceholder": "提交訊息",
   "git.commit": "提交",
+  "git.commitAndPush": "提交並推送",
+  "git.commitMode": "切換提交模式",
   "git.stagedChanges": "已暫存的變更",
   "git.changes": "變更",
   "git.unstageAll": "全部取消暫存",

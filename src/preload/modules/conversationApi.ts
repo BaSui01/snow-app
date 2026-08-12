@@ -156,6 +156,15 @@ export const conversationApi = {
       conversationId,
       responseId
     ),
+  truncateConversationFromMessage: (
+    conversationId: string,
+    messageId: string
+  ): Promise<void> =>
+    ipcRenderer.invoke(
+      "chat-conversations:truncate-from-message",
+      conversationId,
+      messageId
+    ),
   generateConversationSummary: (
     conversationId: string,
     basicModel?: string

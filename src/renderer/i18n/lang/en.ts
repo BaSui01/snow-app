@@ -3010,6 +3010,8 @@ export const en = {
   "rightPanel.browserCloseTab": "Close tab",
   "rightPanel.codebaseTab": "Codebase",
   "rightPanel.closeTab": "Close tab",
+  "rightPanel.confirmCloseTerminal": "Close terminal?",
+  "rightPanel.confirmCloseBrowser": "Close browser?",
   "rightPanel.closeAllTabs": "Close all tabs",
   "rightPanel.closeOtherTabs": "Close Other Tabs",
   "rightPanel.closeTabsToRight": "Close Tabs to the Right",

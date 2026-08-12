@@ -1132,6 +1132,7 @@ const ChatContentBody = ({
           workDir={rollbackPreview.workDir}
           isFirstMessage={rollbackPreview.isFirstMessage}
           todoItems={rollbackPreview.todoItems}
+          error={rollbackPreview.error}
           onConfirm={handleConfirmRollback}
           onCancel={cancelRollback}
         />

@@ -2826,6 +2826,8 @@ export const zhTW = {
   "rightPanel.browserCloseTab": "關閉分頁",
   "rightPanel.codebaseTab": "程式碼庫",
   "rightPanel.closeTab": "關閉標籤頁",
+  "rightPanel.confirmCloseTerminal": "關閉終端？",
+  "rightPanel.confirmCloseBrowser": "關閉瀏覽器？",
   "rightPanel.closeAllTabs": "關閉所有標籤頁",
   "rightPanel.closeOtherTabs": "關閉其他標籤頁",
   "rightPanel.closeTabsToRight": "關閉右側標籤頁",

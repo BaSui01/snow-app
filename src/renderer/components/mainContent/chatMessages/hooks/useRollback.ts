@@ -9,6 +9,7 @@ import { PENDING_SESSION_KEY } from "../utils/conversationTypes";
 import {
   deleteCheckpoints,
   directoryIdToPath,
+  getErrorMessage,
   killRunningToolExecutions,
 } from "../utils/conversationHelpers";
 
@@ -91,10 +92,26 @@ export const useRollback = (ctx: ConversationContextValue) => {
       // Normal user messages roll back from their following assistant response.
       // A compaction boundary is persisted as a user message with its own response id,
       // so rolling back that boundary must target the boundary row itself.
+      //
+      // 失败/中断轮次的 assistant 消息没有 provider responseId（持久化时
+      // response_id 为空），无法用 responseId 定位截断边界。因此优先使用
+      // 用户消息自身的持久化 DB ID（snowflake 数字 id，消息持久化后前端
+      // id 会被替换为数据库 id）作为边界：truncateConversationFromMessage
+      // 从该行开始删除该轮及之后的所有消息。找不到持久化 id（消息尚未
+      // 落库）时才回退到向后寻找非空 responseId 的旧逻辑。
       let responseId = targetMessage.isContextCompaction
         ? targetMessage.responseId
         : undefined;
-      if (!responseId) {
+      let persistedMessageId: string | undefined;
+      if (!targetMessage.isContextCompaction && targetMessage.id) {
+        // snowflake id 是 64 位大整数（可能超过 Number.MAX_SAFE_INTEGER），
+        // 这里只区分"数字 id"与前端临时 id（"user-{ts}-{rand}"），不参与
+        // 数值运算，用 isInteger 即可。
+        if (Number.isInteger(Number(targetMessage.id))) {
+          persistedMessageId = targetMessage.id;
+        }
+      }
+      if (!responseId && !persistedMessageId) {
         for (let i = targetIndex + 1; i < messages.length; i++) {
           if (messages[i].role === "assistant" && messages[i].responseId) {
             responseId = messages[i].responseId;
@@ -158,6 +175,7 @@ export const useRollback = (ctx: ConversationContextValue) => {
           workDir: sessionWorkDir,
           convId,
           responseId,
+          persistedMessageId,
           isFirstMessage,
           isContextCompaction: targetMessage.isContextCompaction === true,
           todoItems,
@@ -195,6 +213,7 @@ export const useRollback = (ctx: ConversationContextValue) => {
         checkpointId,
         convId,
         responseId,
+        persistedMessageId,
         isFirstMessage,
         isContextCompaction,
       } = preview;
@@ -216,6 +235,33 @@ export const useRollback = (ctx: ConversationContextValue) => {
         await Promise.allSettled(pending);
       }
 
+      // 回退是事务性的：必须先成功删除/截断持久化会话，再更新界面。
+      // 持久化失败时界面消息保持原样，预览重新打开并显示错误，用户可
+      // 以重试或取消，不会出现"界面已撤销但重启后消息复活"的不一致。
+      try {
+        if (isFirstMessage && !isContextCompaction && convId) {
+          await window.snow.deleteConversation(convId);
+        } else if (convId && persistedMessageId) {
+          // 失败/中断轮次没有 responseId，用持久化用户消息 ID 作为边界，
+          // 从该行开始删除该轮及之后的所有消息。
+          ctx.updateSessionField(key, "tokenUsage", null);
+          await window.snow.truncateConversationFromMessage(
+            convId,
+            persistedMessageId
+          );
+        } else if (convId && responseId) {
+          ctx.updateSessionField(key, "tokenUsage", null);
+          await window.snow.truncateConversation(convId, responseId);
+        }
+      } catch (error) {
+        ctx.setRollbackPreview({
+          ...preview,
+          error: getErrorMessage(error),
+        });
+        return;
+      }
+
+      // Persistence succeeded — now update the UI.
       ctx.updateSessionMessages(key, (currentMessages) => {
         const targetIndex = currentMessages.findIndex(
           (message) => message.id === messageId
@@ -260,15 +306,8 @@ export const useRollback = (ctx: ConversationContextValue) => {
       }
 
       if (isFirstMessage && !isContextCompaction && convId) {
-        void window.snow
-          .deleteConversation(convId)
-          .then(() => {
-            // 会话已被删除：刷新侧边栏列表，移除该会话
-            ctx.setConversationListVersion((version) => version + 1);
-          })
-          .catch(() => {
-            // Best effort
-          });
+        // 会话已被删除：刷新侧边栏列表，移除该会话
+        ctx.setConversationListVersion((version) => version + 1);
         ctx.sessionsRefData.current.delete(key);
         ctx.setSessions((prev) => {
           const next = { ...prev };
@@ -276,17 +315,12 @@ export const useRollback = (ctx: ConversationContextValue) => {
           return next;
         });
         ctx.setActiveId(undefined);
-      } else if (convId && responseId) {
-        ctx.updateSessionField(key, "tokenUsage", null);
-        void window.snow.truncateConversation(convId, responseId).then(() => {
-          // Bump version so dependent components (user-message rail) re-fetch
-          // the updated message list after truncation.
-          ctx.setConversationVersion((version) => version + 1);
-          // 截断会改变会话记录（消息数/预览/更新时间）：同步侧边栏列表
-          ctx.setConversationListVersion((version) => version + 1);
-        }).catch(() => {
-          // Best effort — database persistence must not block the UI refresh.
-        });
+      } else {
+        // Bump version so dependent components (user-message rail) re-fetch
+        // the updated message list after truncation.
+        ctx.setConversationVersion((version) => version + 1);
+        // 截断会改变会话记录（消息数/预览/更新时间）：同步侧边栏列表
+        ctx.setConversationListVersion((version) => version + 1);
       }
 
       if (!isContextCompaction) {

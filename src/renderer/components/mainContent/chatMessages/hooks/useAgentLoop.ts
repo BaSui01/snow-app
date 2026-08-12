@@ -9,6 +9,7 @@ import type {
 import { PENDING_SESSION_KEY } from "../utils/conversationTypes";
 import {
   createMessageId,
+  deleteCheckpoints,
   directoryIdToPath,
   formatMessageTime,
   formatToolResultsContent,
@@ -1034,9 +1035,25 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         const sessionDirPath = directoryIdToPath(sessionDirId) ?? ctx.directoryPath;
         if (sessionDirPath && !sessionDirPath.startsWith("ssh://")) {
           try {
+            // createCheckpoint 是异步的：await 期间本 run 可能已被取消或被
+            // 更新的 run 取代（停止按钮、PendingMessages 强制发送会先
+            // handleAbort 再立即启动新 run）。两个 run 的 checkpoint 若按
+            // 完成顺序 push 进 checkpointIds，顺序会与消息顺序错位，导致
+            // 回滚时按 checkpointId 定位的删除/恢复范围错误。因此创建完成
+            // 后必须校验 runId：已被取代的 checkpoint 直接删除、不绑定。
+            // 被取代的 run 从未开始执行工具（checkpoint 是工具执行的前置
+            // 步骤），其文件状态已由后一个 run 的 checkpoint 覆盖捕获，
+            // 删除是安全的。
             checkpointId = await window.snow.createCheckpoint(
               sessionDirPath
             );
+            if (isRunCancelled(sessionKey)) {
+              if (checkpointId) {
+                deleteCheckpoints([checkpointId]);
+              }
+              checkpointId = undefined;
+              return;
+            }
             const ref = ctx.sessionsRefData.current.get(sessionKey);
             if (ref) {
               ref.checkpointIds = [...ref.checkpointIds, checkpointId];

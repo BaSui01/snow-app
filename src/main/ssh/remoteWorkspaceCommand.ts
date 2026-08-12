@@ -412,20 +412,30 @@ const buildRemoteGrepCommand = (
   if (!caseSensitive) {
     flags.push("-i");
   }
-  flags.push(
-    "--exclude-dir=.git",
-    "--exclude-dir=node_modules",
-    "--exclude-dir=target"
-  );
   const glob = shellGlobExpression(fileGlob);
+  // Normalize the remote path so a trailing slash cannot turn the find
+  // `-path` pattern into a double-slash glob (e.g. `/src//*.tsx`) that
+  // matches nothing. grep then receives no file arguments and falls back to
+  // reading the never-ending SSH exec channel stdin until the 30s timeout.
+  const root = normalizeRemotePath(remotePath);
   const script = [
-    `root=${shellQuote(remotePath)}`,
+    `root=${shellQuote(root)}`,
     `pattern=${shellQuote(pattern)}`,
     `glob=${shellQuote(glob)}`,
     `limit=${Math.max(1, maxResults)}`,
-    `grep ${flags.map(shellQuote).join(" ")} -- ${shellQuote(
-      pattern
-    )} $(find "$root" -type f -path "$root/$glob" -print) 2>/dev/null | head -n "$limit" || true`,
+    // Build the find `-path` pattern so `root=/` stays a single slash.
+    `if [ "$root" = "/" ]; then pathpat="/$glob"; else pathpat="$root/$glob"; fi`,
+    // `-exec grep ... {} +` never runs grep without file arguments (unlike
+    // `$(find ...)` command substitution), so a zero-match glob returns
+    // immediately instead of blocking on stdin. Excluded directories move
+    // from grep (where they never applied, since grep only receives file
+    // arguments) to the find `-prune` stage. `< /dev/null` guards grep's
+    // stdin as a last resort, and `2>/dev/null` silences find/grep noise
+    // (also inherited by grep via fork). `head` still truncates the output
+    // and `|| true` absorbs the resulting SIGPIPE exit code.
+    `find "$root" \\( -type d -name .git -o -type d -name node_modules -o -type d -name target \\) -prune -o -type f -path "$pathpat" -exec grep ${flags
+      .map(shellQuote)
+      .join(" ")} -- "$pattern" {} + < /dev/null 2>/dev/null | head -n "$limit" || true`,
   ].join("\n");
 
   return `sh -lc ${shellQuote(script)}`;

@@ -361,27 +361,28 @@ pub async fn create_response_stream(
             let failure_dir_id = failure_directory_id.clone();
             let persisted_failure_api_profile = failure_api_profile.clone();
             let persisted_failure_resume = failure_resume_after_compaction;
-            let conversation_id = tokio::task::spawn_blocking(move || {
-                store_failed_chat_exchange(
-                    &failure_database_path,
-                    failure_conversation_id.as_deref(),
-                    failure_previous_response_id.as_deref(),
-                    &failure_messages,
-                    &failure_checkpoint_id,
-                    &persisted_failure_model,
-                    &persisted_failure_api_profile,
-                    &failure_directory_id,
-                    persisted_failure_resume,
-                    &persisted_error_message,
-                )
-            })
-            .await
-            .map_err(|join_error| {
-                Error::from_reason(format!(
-                    "Failed to persist chat request error: {}",
-                    join_error
-                ))
-            })??;
+            let (conversation_id, persisted_user_message_ids) =
+                tokio::task::spawn_blocking(move || {
+                    store_failed_chat_exchange(
+                        &failure_database_path,
+                        failure_conversation_id.as_deref(),
+                        failure_previous_response_id.as_deref(),
+                        &failure_messages,
+                        &failure_checkpoint_id,
+                        &persisted_failure_model,
+                        &persisted_failure_api_profile,
+                        &failure_directory_id,
+                        persisted_failure_resume,
+                        &persisted_error_message,
+                    )
+                })
+                .await
+                .map_err(|join_error| {
+                    Error::from_reason(format!(
+                        "Failed to persist chat request error: {}",
+                        join_error
+                    ))
+                })??;
 
             // Record the failed API call with zero token usage so the usage
             // history reflects every attempt, not just successful ones.
@@ -433,7 +434,7 @@ pub async fn create_response_stream(
                     cache_creation_input_tokens: 0,
                     cache_read_input_tokens: 0,
                 },
-                persisted_user_message_ids: Vec::new(),
+                persisted_user_message_ids,
             })
         }
     }

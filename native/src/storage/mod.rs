@@ -1877,6 +1877,18 @@ pub fn truncate_conversation_from_response(
     )
 }
 
+pub fn truncate_conversation_from_message(
+    conversation_id: String,
+    message_id: String,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::truncate_conversation_from_message(
+        &database_path,
+        &conversation_id,
+        &message_id,
+    )
+}
+
 pub fn list_usage_records(
     conversation_id: String,
     directory_id: String,

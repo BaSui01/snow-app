@@ -34,6 +34,8 @@ type RollbackConfirmDialogProps = {
   workDir?: string;
   isFirstMessage: boolean;
   todoItems: RollbackTodoItem[];
+  /** 持久化截断失败时的错误信息，显示在对话框顶部提醒用户重试。 */
+  error?: string;
   onConfirm: (mode: RollbackMode) => void;
   onCancel: () => void;
 };
@@ -52,6 +54,7 @@ export const RollbackConfirmDialog = ({
   workDir,
   isFirstMessage,
   todoItems,
+  error,
   onConfirm,
   onCancel,
 }: RollbackConfirmDialogProps): React.JSX.Element | null => {
@@ -164,6 +167,12 @@ export const RollbackConfirmDialog = ({
           />
         ) : (
           <div className="confirm-dialog-body">
+            {error && (
+              <div className="rollback-error-notice" role="alert">
+                <AlertTriangle size={14} />
+                <span>{error}</span>
+              </div>
+            )}
             {isFirstMessage && <p>{t("chat.rollbackFirstMessageNotice")}</p>}
             {changes.length > 0 ? (
               <>

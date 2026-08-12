@@ -19,6 +19,7 @@ import { useTheme } from "./hooks/useTheme";
 import { applyThemeCacheToDocument } from "./components/sidebar/themeSettings/themeSettingsUtils";
 import { INSERT_ELEMENT_TAG_EVENT } from "./components/mainContent/chatInput/fileTagUtils";
 import type { ElementTag } from "./components/mainContent/chatInput/fileTagUtils";
+import { APP_CONTROL_OPEN_SETTINGS_EVENT } from "./hooks/useAppControl";
 import { BrowserPanelContent } from "./components/rightPanel/BrowserPanelContent";
 import {
   useBrowserMcpCommandBridge,
@@ -99,6 +100,25 @@ function DetachedBrowserWindowApp(): React.JSX.Element {
     window.addEventListener(INSERT_ELEMENT_TAG_EVENT, handleElementTag);
     return () => {
       window.removeEventListener(INSERT_ELEMENT_TAG_EVENT, handleElementTag);
+    };
+  }, []);
+
+  // 「浏览器设置」菜单项：BrowserPanelContent 在窗口内派发
+  // APP_CONTROL_OPEN_SETTINGS_EVENT，但本窗口没有 Sidebar 监听该事件，
+  // 因此拦截并转发给主窗口（主进程聚焦主窗口后由 Sidebar 打开设置）。
+  useEffect(() => {
+    const handleOpenSettings = (event: Event): void => {
+      const detail = (event as CustomEvent<{ view?: string }>).detail;
+      window.snow.forwardOpenSettingsToMain(
+        detail?.view ?? "browser-settings"
+      );
+    };
+    window.addEventListener(APP_CONTROL_OPEN_SETTINGS_EVENT, handleOpenSettings);
+    return () => {
+      window.removeEventListener(
+        APP_CONTROL_OPEN_SETTINGS_EVENT,
+        handleOpenSettings
+      );
     };
   }, []);
 

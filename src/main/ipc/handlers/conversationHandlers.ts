@@ -240,6 +240,28 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
     }
   );
   ipcMain.handle(
+    "chat-conversations:truncate-from-message",
+    async (_event, conversationId: unknown, messageId: unknown) => {
+      if (typeof conversationId !== "string" || !conversationId.trim()) {
+        throw new Error("Conversation ID is required to truncate");
+      }
+      if (typeof messageId !== "string" || !messageId.trim()) {
+        throw new Error("Message ID is required to truncate conversation");
+      }
+
+      snowLog.info({
+        module: "ipc/conversation",
+        func: "truncateFromMessage",
+        message: "Conversation truncated from message",
+        context: `conversation=${conversationId.trim()} message=${messageId.trim()}`,
+      });
+      await native.truncateConversationFromMessage(
+        conversationId.trim(),
+        messageId.trim()
+      );
+    }
+  );
+  ipcMain.handle(
     "chat-conversations:count-todos",
     async (_event, sessionId: unknown, responseId: unknown) => {
       if (typeof sessionId !== "string" || !sessionId.trim()) {

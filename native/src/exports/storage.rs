@@ -1361,6 +1361,21 @@ pub async fn truncate_conversation_from_response(
     .map_err(map_spawn_error)?
 }
 
+/// Truncate a conversation starting from a persisted message id. Used as the
+/// rollback boundary for exchanges without a provider response id (failed or
+/// cancelled turns), where the persisted user message id is the only anchor.
+#[napi]
+pub async fn truncate_conversation_from_message(
+    conversation_id: String,
+    message_id: String,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::truncate_conversation_from_message(conversation_id, message_id)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
 /// List TODO items that will be deleted when rolling back to the given
 /// response_id within a conversation.  Returns a JSON string.
 #[napi]

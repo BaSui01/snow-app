@@ -224,6 +224,14 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       y: number;
       tabId: string | null;
     } | null>(null);
+    // 关闭二次确认 tooltip：terminal / browser tab 点 X 后先弹出确认浮层，
+    // 定位在关闭按钮下方（相对 tab-list 的坐标），避免误关。
+    const [closeConfirm, setCloseConfirm] = useState<{
+      tabId: string;
+      x: number;
+      y: number;
+      maxX: number;
+    } | null>(null);
 
     const handleOpenDiffTab = useCallback<OpenDiffTabCallback>(
       (file, diffResult, diffLoading) => {
@@ -985,6 +993,55 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       return () => el.removeEventListener("wheel", onWheel);
     }, [tabs.length]);
 
+    // tab 关闭按钮点击：terminal / browser 需要二次确认（tooltip 浮层），
+    // 其余类型（file / diff 等）直接关闭。浮层坐标基于关闭按钮相对
+    // tab-list 的位置计算，maxX 用于防止浮层超出 tab 栏右边界。
+    const handleTabCloseClick = useCallback(
+      (event: React.MouseEvent<HTMLButtonElement>, tab: RightPanelTab) => {
+        if (tab.type !== "terminal" && tab.type !== "browser") {
+          handleCloseTab(tab.id);
+          return;
+        }
+        const listRect = tabListRef.current?.getBoundingClientRect();
+        if (!listRect) {
+          handleCloseTab(tab.id);
+          return;
+        }
+        const rect = event.currentTarget.getBoundingClientRect();
+        setCloseConfirm({
+          tabId: tab.id,
+          x: rect.left - listRect.left,
+          y: rect.bottom - listRect.top,
+          maxX: listRect.width - 4,
+        });
+      },
+      [handleCloseTab]
+    );
+
+    // 确认关闭：执行关闭并收起浮层。
+    const confirmCloseTab = useCallback((): void => {
+      if (closeConfirm) {
+        handleCloseTab(closeConfirm.tabId);
+      }
+      setCloseConfirm(null);
+    }, [closeConfirm, handleCloseTab]);
+
+    // 点击浮层以外的任意位置时收起确认浮层（捕获阶段，浮层内已阻止冒泡）。
+    useEffect(() => {
+      if (!closeConfirm) {
+        return;
+      }
+      const handlePointerDown = (event: MouseEvent): void => {
+        const target = event.target as Element | null;
+        if (target && !target.closest(".right-panel-close-confirm")) {
+          setCloseConfirm(null);
+        }
+      };
+      document.addEventListener("mousedown", handlePointerDown, true);
+      return () =>
+        document.removeEventListener("mousedown", handlePointerDown, true);
+    }, [closeConfirm]);
+
     const panelClasses = [
       "right-panel",
       isCollapsed ? "collapsed" : "",
@@ -1144,6 +1201,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
             <div
               ref={tabListRef}
               className="right-panel-tab-list"
+              onScroll={() => setCloseConfirm(null)}
               onContextMenu={(event) => {
                 // 仅空白区域触发：tab 项上已有各自的右键菜单。
                 if (
@@ -1152,6 +1210,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
                   return;
                 }
                 event.preventDefault();
+                setCloseConfirm(null);
                 setTabContextMenu({
                   x: event.clientX,
                   y: event.clientY,
@@ -1165,11 +1224,15 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
                   className={`right-panel-tab-item ${
                     activeTabId === tab.id ? "active" : ""
                   }`}
-                  onClick={() => setActiveTabId(tab.id)}
+                  onClick={() => {
+                    setCloseConfirm(null);
+                    setActiveTabId(tab.id);
+                  }}
                   draggable={DRAGGABLE_TAB_TYPES.has(tab.type)}
                   onDragStart={(event) => handleTabDragStart(event, tab)}
                   onContextMenu={(event) => {
                     event.preventDefault();
+                    setCloseConfirm(null);
                     setActiveTabId(tab.id);
                     setTabContextMenu({
                       x: event.clientX,
@@ -1194,7 +1257,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
                       className="right-panel-tab-close"
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleCloseTab(tab.id);
+                        handleTabCloseClick(e, tab);
                       }}
                       aria-label={t("rightPanel.closeTab")}
                     >
@@ -1204,6 +1267,67 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
                 </div>
               ))}
             </div>
+            {closeConfirm && (
+              <div
+                className="right-panel-close-confirm"
+                style={{
+                  left: Math.max(
+                    4,
+                    Math.min(closeConfirm.x, closeConfirm.maxX - 168)
+                  ),
+                  top: closeConfirm.y + 5,
+                }}
+                role="tooltip"
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <span
+                  className="right-panel-close-confirm-arrow"
+                  style={{
+                    left: Math.max(
+                      10,
+                      Math.min(
+                        closeConfirm.x + 8 -
+                          Math.max(
+                            4,
+                            Math.min(
+                              closeConfirm.x,
+                              closeConfirm.maxX - 168
+                            )
+                          ),
+                        148
+                      )
+                    ),
+                  }}
+                  aria-hidden="true"
+                />
+                <span className="right-panel-close-confirm-text">
+                  {tabs.find((t) => t.id === closeConfirm.tabId)?.type ===
+                  "terminal"
+                    ? t("rightPanel.confirmCloseTerminal", {
+                        defaultValue: "关闭终端？",
+                      })
+                    : t("rightPanel.confirmCloseBrowser", {
+                        defaultValue: "关闭浏览器？",
+                      })}
+                </span>
+                <div className="right-panel-close-confirm-actions">
+                  <button
+                    type="button"
+                    className="right-panel-close-confirm-btn danger"
+                    onClick={confirmCloseTab}
+                  >
+                    {t("common.close")}
+                  </button>
+                  <button
+                    type="button"
+                    className="right-panel-close-confirm-btn"
+                    onClick={() => setCloseConfirm(null)}
+                  >
+                    {t("common.cancel")}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
         <div className="right-panel-content-wrapper">

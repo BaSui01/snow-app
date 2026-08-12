@@ -360,6 +360,24 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
     }
   });
 
+  // 独立浏览器窗口点击「浏览器设置」：聚焦并显示主窗口，再把请求转发给
+  // 主窗口（Sidebar 监听 APP_CONTROL_OPEN_SETTINGS_EVENT 打开设置面板；
+  // 该事件是渲染进程内事件，跨窗口必须经主进程中转）。
+  ipcMain.on("app-control:open-settings-forward", (event, view: unknown) => {
+    if (typeof view !== "string" || !view.trim()) {
+      return;
+    }
+    const mainWindow = getMainWindow();
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return;
+    }
+    if (!mainWindow.isVisible()) {
+      mainWindow.show();
+    }
+    mainWindow.focus();
+    mainWindow.webContents.send("app-control:open-settings-broadcast", view);
+  });
+
   ipcMain.handle("browser:open-devtools", (_event, webContentsId: unknown) => {
     if (typeof webContentsId !== "number") {
       throw new Error("webContentsId must be a number");

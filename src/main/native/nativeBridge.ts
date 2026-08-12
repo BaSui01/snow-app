@@ -830,6 +830,12 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to truncate conversation")
         ),
+      truncateConversationFromMessage: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to truncate conversation from message"
+          )
+        ),
       listTodosForRollback: () =>
         Promise.reject(
           new Error("Rust native bridge is required to list todos")

@@ -103,6 +103,7 @@ export const TerminalPanelContent = ({
   const settings = useTerminalSettings();
   const shellPath = shellPathProp?.trim() || settings.shellPath;
   const containerRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const ptyIdRef = useRef<string | null>(null);
@@ -249,9 +250,12 @@ export const TerminalPanelContent = ({
 
     // Cursor 式交互：选中文本后浮动显示「添加到输入框」按钮；
     // 选区变化（选择/清除/点击）都会触发，布尔 state 重复值自动跳过渲染。
+    // 空缓冲区全选时 hasSelection() 可能为 true 但无实际文本，需过滤。
     term.onSelectionChange(() => {
       if (!disposed) {
-        setHasSelection(term.hasSelection());
+        setHasSelection(
+          term.hasSelection() && term.getSelection().length > 0
+        );
       }
     });
 
@@ -433,6 +437,23 @@ export const TerminalPanelContent = ({
     return () => container.removeEventListener("contextmenu", handleContextMenu);
   }, []);
 
+  // 点击终端面板以外的任意位置时隐藏「添加到输入框」浮动按钮：
+  // 与终端是否持有焦点无关，只要鼠标落在面板外就收起，避免按钮残留。
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) {
+      return;
+    }
+    const handlePointerDown = (event: MouseEvent): void => {
+      if (!panel.contains(event.target as Node)) {
+        setHasSelection(false);
+      }
+    };
+    document.addEventListener("mousedown", handlePointerDown, true);
+    return () =>
+      document.removeEventListener("mousedown", handlePointerDown, true);
+  }, []);
+
   const buildMenuItems = (): ContextMenuItem[] => {
     const term = termRef.current;
     const items: ContextMenuItem[] = [];
@@ -496,7 +517,7 @@ export const TerminalPanelContent = ({
   }, [cwd]);
 
   return (
-    <div className="terminal-panel">
+    <div ref={panelRef} className="terminal-panel">
       {/* Cursor 式：选中终端文本后浮动「添加到输入框」按钮 */}
       {hasSelection ? (
         <button

@@ -135,6 +135,21 @@ pub fn load_context_messages(
                       OR (role = 'assistant' AND thinking <> '')
                     )
                     AND NOT (role = 'assistant' AND status = 'error')
+                    AND NOT (
+                      role = 'user'
+                      AND EXISTS (
+                        SELECT 1 FROM chat_messages nxt
+                         WHERE nxt.conversation_id = chat_messages.conversation_id
+                           AND nxt.id > chat_messages.id
+                           AND nxt.id = (
+                             SELECT MIN(id) FROM chat_messages
+                              WHERE conversation_id = chat_messages.conversation_id
+                                AND id > chat_messages.id
+                           )
+                           AND nxt.role = 'assistant'
+                           AND nxt.status = 'error'
+                      )
+                    )
                   ORDER BY id ASC",
             )?;
 
@@ -401,6 +416,12 @@ pub fn store_chat_exchange(
         .map_err(|error| database::database_error(database_path, "store chat exchange", error))
 }
 
+/// Persist a failed exchange (user messages + error assistant message) and
+/// return the resolved conversation id together with the persisted user
+/// message ids. The ids are the rollback boundary for failed turns: the
+/// failed assistant row carries an empty `response_id`, so the renderer
+/// cannot locate the exchange via `truncate_conversation_from_response` and
+/// must truncate from the persisted user message id instead.
 pub fn store_failed_chat_exchange(
     database_path: &Path,
     conversation_id: Option<&str>,
@@ -412,7 +433,7 @@ pub fn store_failed_chat_exchange(
     directory_id: &str,
     resume_after_compaction: bool,
     error_message: &str,
-) -> Result<String> {
+) -> Result<(String, Vec<String>)> {
     let request_messages = request_messages
         .iter()
         .filter_map(|message| {
@@ -443,7 +464,7 @@ pub fn store_failed_chat_exchange(
         error_message
     };
 
-    store_chat_exchange(
+    let persisted_user_message_ids = store_chat_exchange(
         database_path,
         &StoreChatExchangeInput {
             conversation_id: &conversation_id,
@@ -468,7 +489,7 @@ pub fn store_failed_chat_exchange(
         },
     )?;
 
-    Ok(conversation_id)
+    Ok((conversation_id, persisted_user_message_ids))
 }
 
 pub fn append_tool_message(
@@ -1898,22 +1919,107 @@ pub fn truncate_conversation_from_response(
     } else {
         // Each normal exchange inserts request messages immediately before the
         // assistant response. Include that request when truncating the exchange.
-        let request_id: Option<String> = transaction
-            .query_row(
-                "SELECT id FROM chat_messages
-                  WHERE conversation_id = ?1 AND id < ?2 AND response_id = ''
-                  ORDER BY id DESC
-                  LIMIT 1",
-                params![conversation_id, target_id],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(|error| {
-                database::database_error(database_path, "truncate conversation", error)
-            })?;
-        request_id.unwrap_or_else(|| target_id.clone())
+        preceding_request_id(database_path, &transaction, conversation_id, &target_id)?
+            .unwrap_or_else(|| target_id.clone())
     };
 
+    truncate_conversation_from_id(database_path, &transaction, conversation_id, &delete_from)?;
+
+    transaction
+        .commit()
+        .map_err(|error| database::database_error(database_path, "truncate conversation", error))?;
+
+    Ok(())
+}
+
+/// Truncate a conversation starting from a persisted message id. This is the
+/// rollback boundary for exchanges whose assistant row carries no usable
+/// `response_id` — most importantly failed turns, where the persisted user
+/// message id is the only reliable anchor for the exchange (the failed
+/// assistant row stores an empty response_id).
+///
+/// When the referenced row is a normal assistant message, its preceding
+/// request row is included in the truncation (mirroring
+/// `truncate_conversation_from_response`); otherwise (user message, failed
+/// exchange user row, or context-compaction boundary) the row itself and
+/// everything after it is deleted. No-op when the id does not exist in the
+/// conversation (idempotent).
+pub fn truncate_conversation_from_message(
+    database_path: &Path,
+    conversation_id: &str,
+    message_id: &str,
+) -> Result<()> {
+    let mut connection = database::open_connection(database_path)
+        .map_err(|error| database::database_error(database_path, "truncate conversation", error))?;
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|error| database::database_error(database_path, "truncate conversation", error))?;
+
+    let target: Option<(String, String, String)> = transaction
+        .query_row(
+            "SELECT id, role, status FROM chat_messages
+              WHERE conversation_id = ?1 AND id = ?2
+              LIMIT 1",
+            params![conversation_id, message_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
+        .map_err(|error| database::database_error(database_path, "truncate conversation", error))?;
+
+    let (target_id, target_role, target_status) = match target {
+        Some(target) => target,
+        None => return Ok(()),
+    };
+
+    let delete_from = if target_role == "assistant" && target_status != "context_compaction" {
+        // An assistant row (only reachable when the caller passed an assistant
+        // id) must include its preceding request row.
+        preceding_request_id(database_path, &transaction, conversation_id, &target_id)?
+            .unwrap_or_else(|| target_id.clone())
+    } else {
+        // User rows — including failed-exchange user messages — and
+        // context-compaction boundaries are deleted from their own id.
+        target_id.clone()
+    };
+
+    truncate_conversation_from_id(database_path, &transaction, conversation_id, &delete_from)?;
+
+    transaction
+        .commit()
+        .map_err(|error| database::database_error(database_path, "truncate conversation", error))?;
+
+    Ok(())
+}
+
+/// Locate the request row (response_id = '') immediately before the given
+/// message id. Returns `None` when no such row exists.
+fn preceding_request_id(
+    database_path: &Path,
+    transaction: &rusqlite::Transaction<'_>,
+    conversation_id: &str,
+    target_id: &str,
+) -> Result<Option<String>> {
+    transaction
+        .query_row(
+            "SELECT id FROM chat_messages
+              WHERE conversation_id = ?1 AND id < ?2 AND response_id = ''
+              ORDER BY id DESC
+              LIMIT 1",
+            params![conversation_id, target_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| database::database_error(database_path, "truncate conversation", error))
+}
+
+/// Delete the exchange starting at `delete_from` (todo items, messages, and
+/// conversation metadata refresh). Runs inside the caller's write transaction.
+fn truncate_conversation_from_id(
+    database_path: &Path,
+    transaction: &rusqlite::Transaction<'_>,
+    conversation_id: &str,
+    delete_from: &str,
+) -> Result<()> {
     // Delete linked TODO items before deleting their response rows, otherwise the
     // response-id subquery would no longer be able to locate the affected items.
     transaction
@@ -1966,10 +2072,6 @@ pub fn truncate_conversation_from_response(
               WHERE conversation_id = ?1",
             params![conversation_id],
         )
-        .map_err(|error| database::database_error(database_path, "truncate conversation", error))?;
-
-    transaction
-        .commit()
         .map_err(|error| database::database_error(database_path, "truncate conversation", error))?;
 
     Ok(())

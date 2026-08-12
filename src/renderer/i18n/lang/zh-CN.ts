@@ -2856,6 +2856,8 @@ export const zhCN = {
   "rightPanel.browserCloseTab": "关闭标签页",
   "rightPanel.codebaseTab": "代码库",
   "rightPanel.closeTab": "关闭标签页",
+  "rightPanel.confirmCloseTerminal": "关闭终端？",
+  "rightPanel.confirmCloseBrowser": "关闭浏览器？",
   "rightPanel.closeAllTabs": "关闭所有标签页",
   "rightPanel.closeOtherTabs": "关闭其他标签页",
   "rightPanel.closeTabsToRight": "关闭右侧标签页",

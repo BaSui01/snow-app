@@ -72,20 +72,27 @@ export const Sidebar = ({
   }, [activeDirectory, handleSwitchToExplorer]);
 
   useEffect(() => {
-    const handler = (event: Event) => {
+    const openSettings = (view?: string): void => {
       setActiveContent("settings");
       // The event may carry a target settings view (e.g. opened from the
       // project codebase panel when the embedding configuration is missing),
       // so the sidebar can navigate directly to the right settings page.
-      const detail = (event as CustomEvent<{ view?: string }>).detail;
-      const view = detail?.view as MainContentView | undefined;
-      if (view && SETTINGS_VIEW_IDS.has(view)) {
-        onSelectMainView(view);
+      const target = view as MainContentView | undefined;
+      if (target && SETTINGS_VIEW_IDS.has(target)) {
+        onSelectMainView(target);
       }
     };
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ view?: string }>).detail;
+      openSettings(detail?.view);
+    };
     window.addEventListener(APP_CONTROL_OPEN_SETTINGS_EVENT, handler);
+    // 独立浏览器窗口点击「浏览器设置」时，请求经主进程转发到主窗口，
+    // 与本地事件走同一打开设置逻辑。
+    const unsubscribe = window.snow.onOpenSettingsRequest(openSettings);
     return () => {
       window.removeEventListener(APP_CONTROL_OPEN_SETTINGS_EVENT, handler);
+      unsubscribe();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

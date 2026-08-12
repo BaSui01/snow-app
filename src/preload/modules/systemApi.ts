@@ -43,6 +43,9 @@ const BROWSER_OPEN_TAB_CHANNEL = "browser:open-tab";
 // 独立浏览器窗口确认元素选择后转发到主窗口聊天输入框。
 const ELEMENT_TAG_FORWARD_CHANNEL = "element-tag:forward";
 const ELEMENT_TAG_INSERT_CHANNEL = "element-tag:insert";
+// 独立浏览器窗口点击「浏览器设置」后经主进程转发到主窗口（Sidebar 打开设置）。
+const APP_CONTROL_OPEN_SETTINGS_FORWARD_CHANNEL = "app-control:open-settings-forward";
+const APP_CONTROL_OPEN_SETTINGS_BROADCAST_CHANNEL = "app-control:open-settings-broadcast";
 const TERMINAL_COMMAND_CHANNEL = "terminal:command";
 const TERMINAL_COMMAND_RESPONSE_CHANNEL = "terminal:command-response";
 const USER_QUESTION_CHANNEL = "user-question:request";
@@ -198,6 +201,35 @@ ipcRenderer.on(
     }
     for (const subscriber of elementTagInsertSubscribers) {
       deliverElementTagInsert(subscriber, payload);
+    }
+  }
+);
+
+/** 主窗口打开设置的请求（view 为目标设置视图 id，如 browser-settings）。 */
+type OpenSettingsRequestSubscriber = (view: string) => void;
+
+const openSettingsRequestSubscribers = new Set<OpenSettingsRequestSubscriber>();
+
+const deliverOpenSettingsRequest = (
+  subscriber: OpenSettingsRequestSubscriber,
+  view: string
+): void => {
+  try {
+    subscriber(view);
+  } catch (error) {
+    console.error("[app-control] Open settings subscriber failed", error);
+  }
+};
+
+// 主进程转发独立浏览器窗口的「打开设置」请求。
+ipcRenderer.on(
+  APP_CONTROL_OPEN_SETTINGS_BROADCAST_CHANNEL,
+  (_event: IpcRendererEvent, view: unknown): void => {
+    if (typeof view !== "string" || !view.trim()) {
+      return;
+    }
+    for (const subscriber of openSettingsRequestSubscribers) {
+      deliverOpenSettingsRequest(subscriber, view);
     }
   }
 );
@@ -628,6 +660,26 @@ export const systemApi = {
     elementTagInsertSubscribers.add(callback);
     return () => {
       elementTagInsertSubscribers.delete(callback);
+    };
+  },
+  /**
+   * 请求主窗口打开设置面板（独立浏览器窗口专用：该窗口内没有 Sidebar，
+   * APP_CONTROL_OPEN_SETTINGS_EVENT 事件无法跨渲染进程到达主窗口，
+   * 须经主进程转发并聚焦主窗口）。
+   */
+  forwardOpenSettingsToMain: (view: string): void => {
+    ipcRenderer.send(APP_CONTROL_OPEN_SETTINGS_FORWARD_CHANNEL, view);
+  },
+  /**
+   * 订阅主进程转发过来的「打开设置」请求（主窗口 Sidebar 使用）。
+   * 返回取消订阅函数。
+   */
+  onOpenSettingsRequest: (
+    callback: (view: string) => void
+  ): (() => void) => {
+    openSettingsRequestSubscribers.add(callback);
+    return () => {
+      openSettingsRequestSubscribers.delete(callback);
     };
   },
   setMcpToolEnabled: (toolName: string, enabled: boolean): Promise<void> =>

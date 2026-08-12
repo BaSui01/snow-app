@@ -1634,6 +1634,10 @@ export type NativeBridge = {
     conversationId: string,
     responseId: string
   ) => Promise<void>;
+  truncateConversationFromMessage: (
+    conversationId: string,
+    messageId: string
+  ) => Promise<void>;
   listTodosForRollback: (
     sessionId: string,
     responseId: string

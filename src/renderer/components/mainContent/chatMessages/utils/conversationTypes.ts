@@ -342,9 +342,17 @@ export type RollbackPreview = {
   workDir?: string;
   convId?: string;
   responseId?: string;
+  /**
+   * 持久化用户消息 ID（数据库 snowflake id）作为截断边界。失败/中断轮次的
+   * assistant 消息没有 provider responseId，只能用它自己的用户消息 ID 从
+   * 数据库中删除该轮及之后的消息。
+   */
+  persistedMessageId?: string;
   isFirstMessage: boolean;
   isContextCompaction: boolean;
   todoItems: RollbackTodoItem[];
+  /** 持久化截断失败时的错误信息（界面消息保持原样并重新显示预览）。 */
+  error?: string;
   /** Captured at handleRollback time so confirmRollback can await it. */
   streamPromise: Promise<unknown> | null;
   /** Captured at handleRollback time so confirmRollback can await it. */

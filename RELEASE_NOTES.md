@@ -1,5 +1,17 @@
 # Release Notes
 
+## v0.1.26
+
+## New Features
+
+- **Truncate Conversations by Message ID**: Conversations can be truncated from a specific message onward; rollback for failed rounds and related UI issues are fixed.
+- **Shift Modifier Key**: Keyboard shortcuts now support the Shift modifier.
+- **Storage Usage Display**: Settings show storage usage, and checkpoint snapshots were optimized.
+
+## Bug Fixes
+
+- Git diff selection in the Git panel.
+
 ## v0.2.25
 
 ## New Features

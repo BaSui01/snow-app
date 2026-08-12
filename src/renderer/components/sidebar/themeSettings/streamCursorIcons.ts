@@ -47,7 +47,7 @@ export const STREAM_CURSOR_LUCIDE_ICONS: StreamCursorLucideIcon[] = [
 
 /**
  * 根据持久化的 lucide 图标名称查找对应组件。
- * 找不到时返回 null，调用方应回退到默认脉动圆点。
+ * 找不到时返回 null，调用方应回退到默认脉冲圆点。
  */
 export const findStreamCursorLucideIcon = (name: string): LucideIcon | null => {
   const trimmed = name.trim();

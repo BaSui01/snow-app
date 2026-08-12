@@ -6,7 +6,7 @@ import { findStreamCursorLucideIcon } from "../../../sidebar/themeSettings/strea
  * Pulsing indicator that marks the AI response as actively streaming.
  *
  * 根据主题配置渲染三种形态：
- * - dot（默认）：脉动圆点
+ * - dot（默认）：脉冲圆点
  * - lucide：内置 lucide 图标，带旋转动画
  * - custom：用户上传的自定义 SVG 图标
  */

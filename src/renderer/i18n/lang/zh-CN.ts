@@ -2203,7 +2203,7 @@ export const zhCN = {
   "settings.themeFontSystemDefault": "系统默认",
   "settings.themeStreamCursorTitle": "流式指示器",
   "settings.themeStreamCursorInfo": "自定义 AI 生成回复时显示的指示器。",
-  "settings.themeStreamCursorTypeDot": "脉动圆点",
+  "settings.themeStreamCursorTypeDot": "脉冲圆点",
   "settings.themeStreamCursorTypeLucide": "内置图标",
   "settings.themeStreamCursorTypeCustom": "自定义 SVG",
   "settings.themeStreamCursorSelectSvg": "选择 SVG",

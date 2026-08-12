@@ -39,6 +39,13 @@ export type SettingsItem = {
 
 export const SETTINGS_ITEMS: SettingsItem[] = [
   {
+    id: "general",
+    icon: Settings2,
+    labelKey: "settings.generalSettings",
+    defaultLabel: "General settings",
+    view: "general-settings",
+  },
+  {
     id: "api",
     icon: Plug,
     labelKey: "settings.apiSettings",
@@ -191,13 +198,6 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
     labelKey: "settings.systemLogs",
     defaultLabel: "System logs",
     view: "system-logs",
-  },
-  {
-    id: "general",
-    icon: Settings2,
-    labelKey: "settings.generalSettings",
-    defaultLabel: "General settings",
-    view: "general-settings",
   },
 ];
 

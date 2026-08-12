@@ -562,7 +562,7 @@ impl ThemeBackground {
 }
 
 /// 流式光标配置。icon_type 决定渲染形态：
-/// - "dot"：默认脉动圆点
+/// - "dot"：默认脉冲圆点
 /// - "lucide"：使用内置 lucide 图标，由 lucide_name 指定
 /// - "custom"：使用用户上传的 SVG，由 svg_path 指定文件路径
 /// icon_type 为 "lucide" 时 svg_path 应为空；为 "custom" 时 lucide_name 应为空。
@@ -598,7 +598,7 @@ impl ThemeStreamCursor {
             "lucide" => {
                 self.svg_path.clear();
                 if self.lucide_name.is_empty() {
-                    // 退化到默认脉动圆点。
+                    // 退化到默认脉冲圆点。
                     self.icon_type = "dot".to_string();
                 }
             }

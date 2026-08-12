@@ -44,7 +44,7 @@ export type ThemeBackground = {
 
 /**
  * 流式光标配置。iconType 决定渲染形态：
- * - "dot"：默认脉动圆点
+ * - "dot"：默认脉冲圆点
  * - "lucide"：使用内置 lucide 图标，由 lucideName 指定
  * - "custom"：使用用户上传的 SVG，由 svgPath 指定文件路径
  */

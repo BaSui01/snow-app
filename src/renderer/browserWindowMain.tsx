@@ -40,6 +40,34 @@ function DetachedBrowserWindowApp(): React.JSX.Element {
   const params = new URLSearchParams(window.location.search);
   const instanceId = params.get("instanceId") ?? "";
   const initialUrl = params.get("url") ?? "";
+  // 主窗口「在新窗口中打开」时携带的实例内部标签页快照（激活页置首），
+  // 解析失败或缺失时退化为单标签页（initialUrl）。
+  const initialTabs = useMemo<{ url: string; title: string }[] | undefined>(
+    () => {
+      const raw = params.get("tabs");
+      if (!raw) {
+        return undefined;
+      }
+      try {
+        const parsed: unknown = JSON.parse(raw);
+        if (!Array.isArray(parsed)) {
+          return undefined;
+        }
+        const tabs = parsed.filter(
+          (tab): tab is { url: string; title: string } =>
+            !!tab &&
+            typeof tab === "object" &&
+            typeof (tab as Record<string, unknown>).url === "string" &&
+            typeof (tab as Record<string, unknown>).title === "string"
+        );
+        return tabs.length > 0 ? tabs : undefined;
+      } catch {
+        return undefined;
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
   const [title, setTitle] = useState("");
 
   // 页面标题（onTitleChange 来自 webview）同步到窗口标题栏。
@@ -129,7 +157,9 @@ function DetachedBrowserWindowApp(): React.JSX.Element {
       <BrowserPanelContent
         instanceId={instanceId}
         initialUrl={initialUrl}
+        initialTabs={initialTabs}
         isActive
+        detached
         onTitleChange={setTitle}
       />
     </I18nProvider>

@@ -40,6 +40,11 @@ export type TerminalTabData = {
 export type BrowserTabData = {
   instanceId: string;
   url: string;
+  /**
+   * 实例内部的标签页快照（独立浏览器窗口「还原为标签页」时携带，
+   * BrowserPanelContent 据此初始化多个内部标签页）。
+   */
+  tabs?: { url: string; title: string }[];
 };
 
 export type FileViewerTabData = {

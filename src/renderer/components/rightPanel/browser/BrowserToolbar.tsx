@@ -42,6 +42,8 @@ export type BrowserToolbarProps = {
   onFindInPage: () => void;
   onOpenDevTools: () => void;
   onSetHomepage: (url: string) => Promise<void>;
+  /** 独立窗口专属：还原为右侧面板标签页（undefined 时菜单不显示该项） */
+  onRestoreToTabs?: () => void;
 };
 
 const buildScreenshotClassName = (feedback: ScreenshotFeedback): string => {
@@ -103,6 +105,7 @@ export const BrowserToolbar = ({
   onFindInPage,
   onOpenDevTools,
   onSetHomepage,
+  onRestoreToTabs,
 }: BrowserToolbarProps): React.JSX.Element => {
   const { t } = useI18n();
   return (
@@ -189,6 +192,7 @@ export const BrowserToolbar = ({
         onFindInPage={onFindInPage}
         onOpenDevTools={onOpenDevTools}
         onSetHomepage={onSetHomepage}
+        onRestoreToTabs={onRestoreToTabs}
       />
     </div>
   );

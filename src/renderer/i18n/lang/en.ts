@@ -2913,6 +2913,7 @@ export const en = {
   "chatInput.webChipCopyLink": "Copy link",
   "chatInput.webChipRemove": "Remove",
   "browser.moreActions": "More actions",
+  "browser.restoreToTabs": "Restore to tabs",
   "browser.clearBrowsingData": "Clear browsing data",
   "browser.clearCache": "Clear cache",
   "browser.clearCookies": "Clear cookies",

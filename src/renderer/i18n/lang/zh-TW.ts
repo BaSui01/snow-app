@@ -2740,6 +2740,7 @@ export const zhTW = {
   "chatInput.webChipCopyLink": "複製連結",
   "chatInput.webChipRemove": "移除引用",
   "browser.moreActions": "更多操作",
+  "browser.restoreToTabs": "還原為標籤頁",
   "browser.clearBrowsingData": "清除瀏覽資料",
   "browser.clearCache": "清除快取",
   "browser.clearCookies": "清除 Cookie",

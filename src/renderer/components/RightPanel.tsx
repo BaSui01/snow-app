@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { BrowserRestorePayload } from "../../preload";
 
 import { useI18n } from "../i18n";
 import { setWebTagDragData } from "./rightPanel/browserDrag";
@@ -17,6 +18,10 @@ import { GitPanelContent } from "./rightPanel/GitPanelContent";
 import { DiffViewer } from "./rightPanel/DiffViewer";
 import { FileDiffPreview } from "./common/FileDiffPreview";
 import { RightPanelTabContextMenu } from "./rightPanel/RightPanelTabContextMenu";
+// 浏览器面板静态导入（非 lazy）：模块（含 homepage 缓存）随应用启动加载并
+// 预取起始页，避免首次创建浏览器实例时异步拉取 chunk 造成「不进预设起始页」
+// 与时序类问题（useBrowserHomepage 的模块级状态在 lazy 加载前不存在）。
+import { BrowserPanelContent } from "./rightPanel/BrowserPanelContent";
 import {
   useBrowserMcpCommandBridge,
   type BrowserMcpTabCallbacks,
@@ -132,11 +137,6 @@ const FileViewerContent = lazy(() =>
 const TerminalPanelContent = lazy(() =>
   import("./rightPanel/TerminalPanelContent").then((m) => ({
     default: m.TerminalPanelContent,
-  }))
-);
-const BrowserPanelContent = lazy(() =>
-  import("./rightPanel/BrowserPanelContent").then((m) => ({
-    default: m.BrowserPanelContent,
   }))
 );
 const CodebasePanelContent = lazy(() =>
@@ -353,6 +353,25 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         )
       );
     }, []);
+
+    // 实例内部全部标签页快照同步（BrowserPanelContent 的 onTabsChange 回调，
+    // 激活页置首）。写入 BrowserTabData.tabs，供「在新窗口中打开」/
+    // 「还原为标签页」迁移时完整携带。
+    const handleBrowserTabsChange = useCallback(
+      (tabId: string, tabs: { url: string; title: string }[]) => {
+        setTabs((prev) =>
+          prev.map((tab) =>
+            tab.id === tabId && tab.type === "browser"
+              ? {
+                  ...tab,
+                  data: { ...(tab.data as BrowserTabData), tabs },
+                }
+              : tab
+          )
+        );
+      },
+      []
+    );
 
     // 打开（或切换到已存在的）代码库数据 tab。tab id 固定，避免同一时间
     // 存在多个代码库 tab；切换项目时通过更新 data 复用同一个 tab。
@@ -835,7 +854,8 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     );
 
     // 浏览器 tab「在新窗口中打开」：主进程创建独立 BrowserWindow 承载
-    // 同一实例（继承 instanceId，browser.rs 工具仍可继续操作），
+    // 同一实例（继承 instanceId，browser.rs 工具仍可继续操作），并把
+    // 实例内部的全部标签页快照（tabs）一并携带，独立窗口重建完整标签页，
     // 成功后关闭原 tab 完成迁移。
     const handleOpenBrowserInNewWindow = useCallback(
       (tabId: string): void => {
@@ -845,7 +865,11 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         }
         const browserTab = tab.data as BrowserTabData;
         void window.snow
-          .openDetachedBrowserWindow(browserTab.instanceId, browserTab.url)
+          .openDetachedBrowserWindow(
+            browserTab.instanceId,
+            browserTab.url,
+            browserTab.tabs
+          )
           .then(() => {
             handleCloseTab(tabId);
           })
@@ -855,6 +879,69 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       },
       [tabs, handleCloseTab]
     );
+
+    // 独立浏览器窗口「还原为标签页」：主进程转发还原请求后，把该实例恢复
+    // 为右侧面板浏览器 tab。保持原 instanceId（MCP 浏览器工具按实例路由，
+    // 新 tab 挂载上报后自动接管）；携带的全部内部标签页快照经
+    // initialTabs 初始化，第一个为激活页。
+    const handleRestoreBrowserFromDetachedWindow = useCallback(
+      (payload: BrowserRestorePayload): void => {
+        const instanceId = payload.instanceId.trim();
+        if (!instanceId) {
+          return;
+        }
+        const restoredTabs = (payload.tabs ?? [])
+          .map((tab) => ({ url: tab.url, title: tab.title }))
+          .filter((tab) => tab.url.trim());
+        const firstUrl = restoredTabs[0]?.url ?? "";
+        setTabs((prev) => {
+          const existing = prev.find(
+            (t) => t.id === instanceId && t.type === "browser"
+          );
+          if (existing) {
+            // 同实例 tab 已存在（极端竞态）：刷新快照并激活，不重复创建。
+            const existingData = existing.data as BrowserTabData;
+            return prev.map((t) =>
+              t.id === instanceId && t.type === "browser"
+                ? {
+                    ...t,
+                    title:
+                      restoredTabs[0]?.title || existing.title,
+                    data: {
+                      ...existingData,
+                      url: firstUrl || existingData.url,
+                      tabs: restoredTabs,
+                    },
+                  }
+                : t
+            );
+          }
+          return [
+            ...prev,
+            {
+              id: instanceId,
+              type: "browser",
+              title:
+                restoredTabs[0]?.title || t("rightPanel.browserTab"),
+              data: {
+                instanceId,
+                url: firstUrl,
+                tabs: restoredTabs,
+              },
+            },
+          ];
+        });
+        setActiveTabId(instanceId);
+        rightPanelEvents.emit("request-expand");
+      },
+      [t]
+    );
+
+    useEffect(() => {
+      return window.snow.onRestoreBrowserToMain(
+        handleRestoreBrowserFromDetachedWindow
+      );
+    }, [handleRestoreBrowserFromDetachedWindow]);
 
     const handleFocusBrowserTab = useCallback(
       (instanceId: string): boolean => {
@@ -1089,9 +1176,11 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
             <BrowserPanelContent
               instanceId={(tab.data as BrowserTabData).instanceId}
               initialUrl={(tab.data as BrowserTabData).url}
+              initialTabs={(tab.data as BrowserTabData).tabs}
               isActive={activeTabId === tab.id}
               onTitleChange={(title) => handleBrowserTitleChange(tab.id, title)}
               onUrlChange={(url) => handleBrowserUrlChange(tab.id, url)}
+              onTabsChange={(tabs) => handleBrowserTabsChange(tab.id, tabs)}
             />
           ) : tab.type === "codebase" ? (
             (tab.data as CodebaseTabData) ? (

@@ -710,6 +710,7 @@ export type ChatMessagePage = {
   items: ChatMessageRecord[];
   total: number;
   hasMore: boolean;
+  checkpointIds: string[];
 };
 
 /** 图像管理系统（生成图片图库）记录 */

@@ -157,15 +157,7 @@ export const useConversationManagement = (
               window.snow.getConversationModes(trimmedId).catch(() => null),
             ]);
 
-            const checkpointIds = Array.from(
-              new Set(
-                page.items
-                  .filter(
-                    (record) => record.role === "user" && record.checkpointId
-                  )
-                  .map((record) => record.checkpointId)
-              )
-            );
+            const checkpointIds = page.checkpointIds;
             let baselineCheckpointId = checkpointIds[0];
 
             // Resolve the effective modes for this conversation: DB override
@@ -488,13 +480,7 @@ export const useConversationManagement = (
 
       const refData = ctx.sessionsRefData.current.get(conversationId);
       if (refData) {
-        refData.checkpointIds = Array.from(
-          new Set(
-            combinedRecords
-              .filter((record) => record.role === "user" && record.checkpointId)
-              .map((record) => record.checkpointId)
-          )
-        );
+        refData.checkpointIds = page.checkpointIds;
       }
     } catch {
       ctx.updateSessionField(conversationId, "isLoadingOlderMessages", false);

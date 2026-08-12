@@ -1,4 +1,5 @@
 export type * from "./api";
+export type * from "./browser";
 export type * from "./hooks";
 export type * from "./mcp";
 export type * from "./settings";

@@ -2761,6 +2761,7 @@ export const zhCN = {
   "chatInput.webChipCopyLink": "复制链接",
   "chatInput.webChipRemove": "移除引用",
   "browser.moreActions": "更多操作",
+  "browser.restoreToTabs": "还原为标签页",
   "browser.clearBrowsingData": "清除浏览数据",
   "browser.clearCache": "清除缓存",
   "browser.clearCookies": "清除 Cookie",

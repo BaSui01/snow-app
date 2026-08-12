@@ -600,6 +600,7 @@ pub struct ChatMessagePage {
     pub items: Vec<ChatMessageRecord>,
     pub total: i32,
     pub has_more: bool,
+    pub checkpoint_ids: Vec<String>,
 }
 
 #[napi(object)]

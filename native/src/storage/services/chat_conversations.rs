@@ -1611,10 +1611,30 @@ pub fn list_chat_messages_paginated(
             }
             items.reverse();
 
+            let checkpoint_ids = {
+                let mut checkpoint_statement = connection.prepare(
+                    "SELECT checkpoint_id
+                       FROM chat_messages
+                      WHERE conversation_id = ?1
+                        AND role = 'user'
+                        AND checkpoint_id != ''
+                      ORDER BY id ASC",
+                )?;
+                let rows = checkpoint_statement.query_map(params![conversation_id], |row| {
+                    row.get::<_, String>(0)
+                })?;
+                let mut seen = HashSet::new();
+                rows.collect::<rusqlite::Result<Vec<_>>>()?
+                    .into_iter()
+                    .filter(|checkpoint_id| seen.insert(checkpoint_id.clone()))
+                    .collect()
+            };
+
             Ok(ChatMessagePage {
                 items,
                 total,
                 has_more,
+                checkpoint_ids,
             })
         })
         .map_err(|error| {

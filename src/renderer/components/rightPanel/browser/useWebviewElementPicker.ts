@@ -382,10 +382,20 @@ export const useWebviewElementPicker = (
     setPicked(null);
     pickedRef.current = null;
 
-    // 选择过程中页面开始导航时自动退出选择模式（注入的脚本已随页面销毁）。
+    // 选择过程中页面「主 frame」开始导航时自动退出选择模式（注入的脚本
+    // 已随页面销毁）。注意不能用 did-start-loading：它对子 frame（iframe）
+    // 的加载同样触发，google 等页面 iframe 持续加载/刷新会偶发误取消
+    // 选择状态（呼吸灯消失、选取结果被代数机制丢弃），baidu 无此类
+    // iframe 行为所以不复现。did-start-navigation + isMainFrame 只认
+    // 真正销毁页面的主 frame 导航。
     // 同时递增代数使进行中的 executeJavaScript 结果作废，避免旧页面的
     // 元素被当作新页面的选取结果。
-    const handleStartLoading = (): void => {
+    const handleStartNavigation = (
+      event: Electron.DidStartNavigationEvent
+    ): void => {
+      if (!event.isMainFrame) {
+        return;
+      }
       if (generationRef.current === generation) {
         generationRef.current += 1;
         pickingRef.current = false;
@@ -394,9 +404,12 @@ export const useWebviewElementPicker = (
         pickedRef.current = null;
       }
     };
-    webview.addEventListener("did-start-loading", handleStartLoading);
+    webview.addEventListener("did-start-navigation", handleStartNavigation);
     const settle = (): void => {
-      webview.removeEventListener("did-start-loading", handleStartLoading);
+      webview.removeEventListener(
+        "did-start-navigation",
+        handleStartNavigation
+      );
     };
 
     webview

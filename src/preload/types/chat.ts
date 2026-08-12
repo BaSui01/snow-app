@@ -75,6 +75,7 @@ export type ChatMessagePage = {
   items: ChatMessageRecord[];
   total: number;
   hasMore: boolean;
+  checkpointIds: string[];
 };
 
 export type UserMessageSummary = {

@@ -50,6 +50,12 @@ const ensureHomepageLoaded = (): void => {
   }
 };
 
+// 模块加载即开始预读 homepage 并挂全局监听（RightPanel 静态导入
+// BrowserPanelContent 后随应用启动执行；独立浏览器窗口入口同样静态导入）。
+// 这样首次创建浏览器实例时起始页缓存大概率已就绪，webview 首帧即导航到
+// 预设起始页，不再依赖组件挂载后的异步读库 + effect 补导航链路。
+ensureHomepageLoaded();
+
 /**
  * Loads the browser homepage from the system settings store and keeps
  * it in sync when settings are changed elsewhere. 状态在模块级共享：

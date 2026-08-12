@@ -14,6 +14,7 @@ import {
   Eraser,
   Globe,
   Minus,
+  PanelLeft,
   Plus,
   RefreshCw,
   Search,
@@ -36,6 +37,8 @@ export type BrowserMenuProps = {
   onFindInPage: () => void;
   onOpenDevTools: () => void;
   onSetHomepage: (url: string) => Promise<void>;
+  /** 独立窗口专属：还原为右侧面板标签页（undefined 时菜单不显示该项） */
+  onRestoreToTabs?: () => void;
 };
 
 type MenuPosition = {
@@ -48,6 +51,8 @@ const ZOOM_MAX = 5;
 const MENU_WIDTH = 200;
 const MENU_GAP = 4;
 const ESTIMATED_MENU_HEIGHT = 268;
+/** 「还原为标签页」菜单项（独立窗口专属）的高度估算增量 */
+const RESTORE_ITEM_HEIGHT = 36;
 
 const formatZoomPercent = (factor: number): string =>
   `${Math.round(factor * 100)}%`;
@@ -81,6 +86,7 @@ export const BrowserMenu = ({
   onFindInPage,
   onOpenDevTools,
   onSetHomepage,
+  onRestoreToTabs,
 }: BrowserMenuProps): React.JSX.Element => {
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
@@ -146,16 +152,18 @@ export const BrowserMenu = ({
       return;
     }
     const rect = triggerRef.current.getBoundingClientRect();
+    const estimatedHeight =
+      ESTIMATED_MENU_HEIGHT + (onRestoreToTabs ? RESTORE_ITEM_HEIGHT : 0);
     let left = rect.right - MENU_WIDTH;
     let top = rect.bottom + MENU_GAP;
     if (left < 8) {
       left = 8;
     }
-    if (top + ESTIMATED_MENU_HEIGHT > window.innerHeight) {
-      top = Math.max(8, rect.top - MENU_GAP - ESTIMATED_MENU_HEIGHT);
+    if (top + estimatedHeight > window.innerHeight) {
+      top = Math.max(8, rect.top - MENU_GAP - estimatedHeight);
     }
     setMenuPosition({ top, left });
-  }, [isOpen]);
+  }, [isOpen, onRestoreToTabs]);
 
   const close = useCallback((): void => {
     setIsOpen(false);
@@ -224,6 +232,22 @@ export const BrowserMenu = ({
               style={{ top: menuPosition.top, left: menuPosition.left }}
               role="menu"
             >
+              {/* 独立窗口专属：把本实例（含全部内部标签页）还原回主窗口
+                  右侧面板的浏览器 tab（保持实例 id），随后窗口关闭。 */}
+              {onRestoreToTabs && (
+                <button
+                  type="button"
+                  className="browser-menu-item"
+                  role="menuitem"
+                  onClick={() => runAction(onRestoreToTabs)}
+                >
+                  <PanelLeft size={14} strokeWidth={1.8} />
+                  <span className="browser-menu-label">
+                    {t("browser.restoreToTabs")}
+                  </span>
+                </button>
+              )}
+
               <div
                 className="browser-menu-submenu"
                 onMouseEnter={() => setIsClearDataSubOpen(true)}

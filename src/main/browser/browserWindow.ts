@@ -13,6 +13,8 @@ import { snowLog } from "../../utils/snowLogger";
  * - 实例 id 从主窗口迁移过来（继承），MCP 浏览器工具（browser.rs）按
  *   instanceId 路由命令时由主进程转发到持有该实例的渲染进程，因此
  *   弹出到独立窗口后工具仍可继续操作该实例。
+ * - 实例内部标签页快照（tabs，激活页置首）经 query 传入，独立窗口
+ *   据此重建全部标签页，保证「在新窗口中打开」不丢失内部标签页。
  * - 窗口使用系统边框（frame 默认 true），不参与主窗口的自定义标题栏。
  */
 
@@ -27,8 +29,15 @@ const detachedWindows = new Map<string, BrowserWindow>();
 const getWindowBackgroundColor = (): string =>
   nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#ffffff";
 
-const buildPageUrl = (instanceId: string, url: string): string => {
+const buildPageUrl = (
+  instanceId: string,
+  url: string,
+  tabs?: { url: string; title: string }[]
+): string => {
   const query = new URLSearchParams({ instanceId, url });
+  if (tabs && tabs.length > 0) {
+    query.set("tabs", JSON.stringify(tabs));
+  }
   if (is.dev && process.env.ELECTRON_RENDERER_URL) {
     return `${process.env.ELECTRON_RENDERER_URL}/browserWindow.html?${query.toString()}`;
   }
@@ -42,11 +51,13 @@ const buildPageUrl = (instanceId: string, url: string): string => {
  * 打开（或聚焦）承载指定浏览器实例的独立窗口。
  *
  * 同实例已有窗口时仅聚焦并返回；否则创建新窗口并加载渲染端入口，
- * instanceId / 当前 URL 经 query 传递，渲染端据此恢复浏览器状态。
+ * instanceId / 当前 URL / 全部内部标签页快照（tabs）经 query 传递，
+ * 渲染端据此恢复浏览器状态（含完整标签页）。
  */
 export const createDetachedBrowserWindow = (
   instanceId: string,
-  url: string
+  url: string,
+  tabs?: { url: string; title: string }[]
 ): void => {
   const existing = detachedWindows.get(instanceId);
   if (existing && !existing.isDestroyed()) {
@@ -113,7 +124,7 @@ export const createDetachedBrowserWindow = (
   });
 
   void win
-    .loadURL(buildPageUrl(instanceId, url))
+    .loadURL(buildPageUrl(instanceId, url, tabs))
     .catch((error) => {
       console.error("Failed to load detached browser window:", error);
     });

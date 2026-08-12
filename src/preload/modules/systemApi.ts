@@ -9,6 +9,8 @@ import type {
   BashStreamChunk,
   BrowserCommandRequest,
   BrowserCommandResponse,
+  BrowserRestorePayload,
+  BrowserRestoreTab,
   CheckpointFileChange,
   CheckpointFileDiff,
   CodebaseEmbedProgress,
@@ -40,6 +42,9 @@ const MCP_TOOL_CHUNK_CHANNEL = "mcp:call-tool:chunk";
 const BROWSER_COMMAND_CHANNEL = "browser:command";
 const BROWSER_COMMAND_RESPONSE_CHANNEL = "browser:command-response";
 const BROWSER_OPEN_TAB_CHANNEL = "browser:open-tab";
+// 独立浏览器窗口「还原为标签页」：窗口 → 主进程 → 主窗口（broadcast）。
+const BROWSER_RESTORE_TO_MAIN_CHANNEL = "browser:restore-to-main";
+const BROWSER_RESTORE_TO_MAIN_BROADCAST_CHANNEL = "browser:restore-to-main-broadcast";
 // 独立浏览器窗口确认元素选择后转发到主窗口聊天输入框。
 const ELEMENT_TAG_FORWARD_CHANNEL = "element-tag:forward";
 const ELEMENT_TAG_INSERT_CHANNEL = "element-tag:insert";
@@ -151,6 +156,49 @@ ipcRenderer.on(
     };
     for (const subscriber of browserOpenTabSubscribers) {
       deliverBrowserOpenTab(subscriber, event);
+    }
+  }
+);
+
+type BrowserRestoreSubscriber = (payload: BrowserRestorePayload) => void;
+
+const browserRestoreSubscribers = new Set<BrowserRestoreSubscriber>();
+
+const deliverBrowserRestore = (
+  subscriber: BrowserRestoreSubscriber,
+  payload: BrowserRestorePayload
+): void => {
+  try {
+    subscriber(payload);
+  } catch (error) {
+    console.error("[browser] Restore subscriber failed", error);
+  }
+};
+
+const isBrowserRestorePayload = (value: unknown): value is BrowserRestorePayload => {
+  if (!isRecord(value) || typeof value.instanceId !== "string") {
+    return false;
+  }
+  if (!Array.isArray(value.tabs)) {
+    return false;
+  }
+  return value.tabs.every(
+    (tab) =>
+      isRecord(tab) &&
+      typeof tab.url === "string" &&
+      typeof tab.title === "string"
+  );
+};
+
+// 主进程转发独立浏览器窗口「还原为标签页」请求（仅发送到主窗口）。
+ipcRenderer.on(
+  BROWSER_RESTORE_TO_MAIN_BROADCAST_CHANNEL,
+  (_event: IpcRendererEvent, payload: unknown): void => {
+    if (!isBrowserRestorePayload(payload)) {
+      return;
+    }
+    for (const subscriber of browserRestoreSubscribers) {
+      deliverBrowserRestore(subscriber, payload);
     }
   }
 );
@@ -739,13 +787,40 @@ export const systemApi = {
   },
   /**
    * 右侧面板浏览器 tab「在新窗口中打开」：主进程创建独立 BrowserWindow
-   * 承载同一实例（继承 instanceId），返回后原 tab 由渲染端关闭。
+   * 承载同一实例（继承 instanceId），tabs 为实例内部全部标签页快照
+   * （激活页置首），独立窗口据此重建完整标签页。返回后原 tab 由渲染端关闭。
    */
   openDetachedBrowserWindow: (
     instanceId: string,
-    url: string
+    url: string,
+    tabs?: BrowserRestoreTab[]
   ): Promise<void> =>
-    ipcRenderer.invoke("browser:open-detached-window", instanceId, url),
+    ipcRenderer.invoke(
+      "browser:open-detached-window",
+      instanceId,
+      url,
+      tabs
+    ),
+  /**
+   * 独立浏览器窗口「还原为标签页」：把当前实例（含全部内部标签页）
+   * 经主进程转发给主窗口，由 RightPanel 恢复为右侧面板浏览器 tab，
+   * 随后主进程关闭本窗口。保持原 instanceId，MCP 工具路由不受影响。
+   */
+  restoreBrowserToMainWindow: (payload: BrowserRestorePayload): void => {
+    ipcRenderer.send(BROWSER_RESTORE_TO_MAIN_CHANNEL, payload);
+  },
+  /**
+   * 订阅主进程转发过来的「还原为标签页」请求（主窗口 RightPanel 使用）。
+   * 返回取消订阅函数。
+   */
+  onRestoreBrowserToMain: (
+    callback: (payload: BrowserRestorePayload) => void
+  ): (() => void) => {
+    browserRestoreSubscribers.add(callback);
+    return () => {
+      browserRestoreSubscribers.delete(callback);
+    };
+  },
   /** 上报 MCP 浏览器实例归属（供主进程按 instanceId 路由命令）。 */
   notifyBrowserInstanceRegistered: (instanceId: string): void => {
     ipcRenderer.send("browser:instance-registered", instanceId);

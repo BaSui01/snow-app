@@ -49,6 +49,19 @@ export type BrowserPanelContentProps = {
   onTitleChange?: (title: string) => void;
   /** 页面每次导航（含页面内跳转）后的最新 URL 回调，用于上层同步 tab 数据 */
   onUrlChange?: (url: string) => void;
+  /**
+   * 实例内部全部标签页快照回调（标签页增删 / 导航 / 切换激活页时触发，
+   * 激活页置首）。上层（RightPanel）据此同步 BrowserTabData.tabs，
+   * 供「在新窗口中打开」与「还原为标签页」迁移时完整携带。
+   */
+  onTabsChange?: (tabs: { url: string; title: string }[]) => void;
+  /** 独立浏览器窗口模式：工具栏菜单显示「还原为标签页」（主面板 tab 内为 false/缺省） */
+  detached?: boolean;
+  /**
+   * 实例内部标签页快照（独立窗口「还原为标签页」时携带，用于初始化多个
+   * 内部标签页）。提供时优先于 initialUrl，第一个标签页为激活页。
+   */
+  initialTabs?: { url: string; title: string }[];
 };
 
 const normalizeUrl = (input: string, homepage: string): string => {
@@ -294,6 +307,9 @@ export const BrowserPanelContent = ({
   isActive,
   onTitleChange,
   onUrlChange,
+  onTabsChange,
+  detached = false,
+  initialTabs,
 }: BrowserPanelContentProps): React.JSX.Element => {
   const { t } = useI18n();
   // onTitleChange 由 RightPanel 内联传入,每次父组件 render 都是新引用。
@@ -309,23 +325,54 @@ export const BrowserPanelContent = ({
   homepageRef.current = homepage;
   const isActiveRef = useRef(isActive);
   isActiveRef.current = isActive;
+  // onTabsChange 同因（父组件内联回调，引用每次 render 变化），经 ref 持有，
+  // 快照同步 effect 无需依赖它，避免每次父组件重渲染都重新绑定。
+  const onTabsChangeRef = useRef(onTabsChange);
+  onTabsChangeRef.current = onTabsChange;
 
-  // 初始标签页：显式 initialUrl 立即使用；否则 src 留空，等 homepage 从
-  // 数据库加载完成后填充（避免在真实首页到达前先用 google 兜底）。
+  // 初始标签页：显式 initialUrl 立即使用；否则 homepage 已就绪（模块启动
+  // 时预读）则直接以其填充首个标签页，webview 首帧即加载预设起始页；
+  // 尚未就绪时 src 留空，等 homepage 加载完成后的 effect 补导航兜底。
+  // 独立窗口「还原为标签页」时携带 initialTabs（实例内全部标签页快照），
+  // 优先于 initialUrl，逐个重建内部标签页，第一个为激活页。
   const initialTabIdRef = useRef<string>(
     `browser-tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   );
-  const [webviewTabs, setWebviewTabs] = useState<BrowserWebviewTab[]>(() => [
-    {
-      id: initialTabIdRef.current,
-      src: initialUrl ? normalizeUrl(initialUrl, homepage) : "",
-      addressInput: initialUrl ? normalizeUrl(initialUrl, homepage) : "",
-      title: "",
-      canGoBack: false,
-      canGoForward: false,
-      isLoading: !!initialUrl,
-    },
-  ]);
+  const [webviewTabs, setWebviewTabs] = useState<BrowserWebviewTab[]>(() => {
+    const snapshotTabs = initialTabs?.filter((tab) => tab.url.trim());
+    if (snapshotTabs && snapshotTabs.length > 0) {
+      return snapshotTabs.map((tab, index) => ({
+        id:
+          index === 0
+            ? initialTabIdRef.current
+            : `browser-tab-${Date.now()}-${index}-${Math.random()
+                .toString(36)
+                .slice(2, 8)}`,
+        src: tab.url,
+        addressInput: tab.url,
+        title: tab.title ?? "",
+        canGoBack: false,
+        canGoForward: false,
+        isLoading: true,
+      }));
+    }
+    const startUrl = initialUrl
+      ? normalizeUrl(initialUrl, homepage)
+      : loaded && homepage
+        ? homepage
+        : "";
+    return [
+      {
+        id: initialTabIdRef.current,
+        src: startUrl,
+        addressInput: startUrl,
+        title: "",
+        canGoBack: false,
+        canGoForward: false,
+        isLoading: !!startUrl,
+      },
+    ];
+  });
   const [activeWebviewTabId, setActiveWebviewTabId] = useState<string>(
     initialTabIdRef.current
   );
@@ -599,10 +646,11 @@ export const BrowserPanelContent = ({
     [attachWebviewListeners]
   );
 
-  // homepage 加载完成后（且没有显式 initialUrl），让第一个标签页导航到
-  // 真实首页。useState 只评估一次初始值，迟到的 homepage 必须在此补上。
+  // homepage 加载完成后（且没有显式 initialUrl / initialTabs），让第一个
+  // 标签页导航到真实首页。useState 只评估一次初始值，迟到的 homepage 必须
+  // 在此补上。还原场景已携带显式标签页，无需补导航。
   useEffect(() => {
-    if (!loaded || initialUrl) {
+    if (!loaded || initialUrl || (initialTabs && initialTabs.length > 0)) {
       return;
     }
     const url = normalizeUrl(homepage || DEFAULT_BROWSER_HOMEPAGE, homepage);
@@ -613,7 +661,7 @@ export const BrowserPanelContent = ({
       }
       return [{ ...first, src: url, addressInput: url, isLoading: true }];
     });
-  }, [loaded, initialUrl, homepage]);
+  }, [loaded, initialUrl, homepage, initialTabs]);
 
   // 新增标签页。activate=false 时在后台打开（background-tab，如 Ctrl+点击）。
   const addWebviewTab = (url: string, activate: boolean): string => {
@@ -1056,6 +1104,40 @@ export const BrowserPanelContent = ({
     );
   };
 
+  // 实例内部全部标签页的快照（激活页置首，其余保持原有顺序）。
+  // 供「在新窗口中打开」与「还原为标签页」迁移时完整携带标签页状态，
+  // 上层还原/重建时第一个标签页即激活页。
+  const buildTabsSnapshot = useCallback(
+    (): { url: string; title: string }[] => {
+      const activeId = activeWebviewTabIdRef.current;
+      const tabs = webviewTabsRef.current;
+      const active = tabs.find((tab) => tab.id === activeId);
+      const rest = tabs.filter((tab) => tab.id !== activeId);
+      return [...(active ? [active] : []), ...rest].map((tab) => ({
+        url: tab.src || tab.addressInput,
+        title: tab.title,
+      }));
+    },
+    []
+  );
+
+  // 标签页增删 / 导航 / 切换激活页时向上层同步快照（父组件经
+  // BrowserTabData.tabs 持久化，供窗口迁移时携带）。
+  useEffect(() => {
+    onTabsChangeRef.current?.(buildTabsSnapshot());
+  }, [webviewTabs, activeWebviewTabId, buildTabsSnapshot]);
+
+  // 独立窗口「还原为标签页」：把当前实例的全部内部标签页快照
+  // （含激活页），连同 instanceId 经主进程转发给主窗口 RightPanel，
+  // 恢复为右侧面板浏览器 tab（保持实例 id，MCP 路由不受影响），
+  // 随后主进程关闭本独立窗口。
+  const handleRestoreToTabs = useCallback((): void => {
+    window.snow.restoreBrowserToMainWindow({
+      instanceId,
+      tabs: buildTabsSnapshot(),
+    });
+  }, [instanceId, buildTabsSnapshot]);
+
   const applyZoom = (next: number): void => {
     setZoomFactor(next);
     webviewRef.current?.setZoomFactor(next);
@@ -1176,6 +1258,7 @@ export const BrowserPanelContent = ({
         onFindInPage={handleOpenFind}
         onOpenDevTools={handleOpenDevTools}
         onSetHomepage={setHomepage}
+        onRestoreToTabs={detached ? handleRestoreToTabs : undefined}
       />
       <div className="browser-tab-bar" role="tablist">
         {webviewTabs.map((tab) => (

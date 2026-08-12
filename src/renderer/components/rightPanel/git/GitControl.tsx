@@ -34,7 +34,11 @@ type GitControlProps = {
   repoPath: string | undefined | null;
   repos?: GitRepoInfo[];
   onRepoSelect?: (path: string) => void;
-  onFileSelect: (file: GitFileStatus | null) => void;
+  /** 点击变更区/暂存区文件：回调携带点击来源，供上层区分 diff 类型。 */
+  onFileSelect: (
+    file: GitFileStatus | null,
+    section?: "staged" | "unstaged"
+  ) => void;
   /** 提交树中点击提交内文件，请求查看该提交中该文件的差异。 */
   onCommitFileSelect?: (file: GitCommitFile, hash: string) => void;
   onStatusChange?: (status: GitStatusResult | null) => void;
@@ -301,8 +305,10 @@ export const GitControl = ({
         return next;
       });
 
-      // Notify parent for diff display - send the clicked file
-      onFileSelect(file);
+      // Notify parent for diff display - send the clicked file and the
+      // section it was clicked in, so the parent can pick the right diff
+      // (staged vs worktree) even when the same path exists in both lists.
+      onFileSelect(file, section);
     },
     [status, onFileSelect]
   );

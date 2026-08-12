@@ -22,6 +22,7 @@ use crate::api::conversation::images::resolve_inline_images_from_disk;
 pub struct AppStorageInfo {
     pub directory_path: String,
     pub database_path: String,
+    pub archive_database_path: String,
 }
 
 #[napi(object)]
@@ -750,6 +751,9 @@ pub fn initialize_app_storage() -> Result<AppStorageInfo> {
     Ok(AppStorageInfo {
         directory_path: storage_dir.to_string_lossy().into_owned(),
         database_path: database_path.to_string_lossy().into_owned(),
+        archive_database_path: paths::archive_database_file_path(&storage_dir)
+            .to_string_lossy()
+            .into_owned(),
     })
 }
 
@@ -2421,6 +2425,44 @@ pub fn get_checkpoint_root() -> Result<String> {
 pub fn get_upload_root() -> Result<String> {
     services::storage_locations::upload_root()
         .map(|path| path.to_string_lossy().into_owned())
+}
+
+/// 计算文件或目录的占用字节数（目录递归统计文件大小，不跟随符号链接）。
+/// 用于设置页展示数据库 / 检查点 / 上传图片的存储占用。
+pub fn get_path_size(path: String) -> Result<i64> {
+    let path_buf = PathBuf::from(&path);
+    let metadata = fs::metadata(&path_buf).map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to read path size: {error}"),
+        )
+    })?;
+    if metadata.is_file() {
+        return Ok(metadata.len() as i64);
+    }
+    let mut total: i64 = 0;
+    let mut pending: Vec<PathBuf> = vec![path_buf];
+    while let Some(dir) = pending.pop() {
+        let entries = match fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            // 无权限 / 已被删除的目录跳过，不阻断统计
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let entry_type = match entry.file_type() {
+                Ok(entry_type) => entry_type,
+                Err(_) => continue,
+            };
+            if entry_type.is_dir() {
+                pending.push(entry.path());
+            } else if entry_type.is_file() {
+                if let Ok(file_metadata) = entry.metadata() {
+                    total = total.saturating_add(file_metadata.len() as i64);
+                }
+            }
+        }
+    }
+    Ok(total)
 }
 
 /// 准备存储目录迁移（kind: "checkpoint" | "upload"）：校验目标目录并写入

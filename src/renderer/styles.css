@@ -818,6 +818,8 @@ input {
   box-shadow: var(--island-shadow);
   backdrop-filter: var(--backdrop-blur-lg);
   overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
   transition: width 0.18s ease, min-width 0.18s ease, opacity 0.12s ease;
 }
 .sidebar.collapsed {
@@ -3412,7 +3414,7 @@ input {
 .settings-about-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 8px;
 }
 
@@ -16722,6 +16724,8 @@ input {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .stream-metrics::-webkit-scrollbar {
@@ -19484,6 +19488,8 @@ input {
   align-items: center;
   justify-content: space-between;
   padding: 0 2px;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .toolbar-left,
@@ -31362,6 +31368,12 @@ body.ctrl-held [data-path] {
   font-family: var(--font-mono);
   font-size: 10.5px;
   color: var(--text-tertiary);
+}
+
+.general-storage-size {
+  font-size: 10.5px;
+  color: var(--accent-color);
+  opacity: 0.85;
 }
 
 .general-storage-actions {

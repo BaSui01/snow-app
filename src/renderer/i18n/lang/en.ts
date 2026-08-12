@@ -2168,6 +2168,8 @@ export const en = {
   "settings.storageLocationsInfo":
     "Where Snow App stores its database, checkpoints and uploaded images.",
   "settings.storageDatabase": "Database",
+  "settings.storageRuntimeDatabase": "Runtime database",
+  "settings.storageArchiveDatabase": "Archive database",
   "settings.storageCheckpoint": "Checkpoints",
   "settings.storageUpload": "Uploaded images",
   "settings.storageOpenDir": "Open folder",
@@ -2182,6 +2184,7 @@ export const en = {
   "settings.storageMigrateConfirmBtn": "Migrate",
   "settings.storageMigrateProgress": "Migrating {{current}}/{{total}}",
   "settings.storageMigrateRollingBack": "Rolling back...",
+  "settings.storageSize": "Used: {{size}}",
   "settings.generalSettings": "General settings",
   "settings.generalSettingsInfo": "Language, version and update management.",
   "settings.generalSettingsClosePanel": "Close general settings",

@@ -1,6 +1,7 @@
 import {
   Archive,
   Database,
+  DatabaseBackup,
   Download,
   FolderCog,
   FolderOpen,
@@ -56,7 +57,23 @@ type GeneralSettingsPanelProps = {
 
 /** 取文件路径的父目录（跨平台字符串处理，避免在渲染层引入 node:path）。 */
 const parentDirOf = (filePath: string): string =>
-  filePath.replace(/[\\/][^\\/]*$/, "") || filePath;
+  filePath.replace(/[\\\\/][^\\\\/]*$/, "") || filePath;
+
+/** 将字节数格式化为可读大小（B / KB / MB / GB / TB）。 */
+const formatBytes = (bytes: number): string => {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 B";
+  }
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  const digits = value >= 100 ? 0 : value >= 10 ? 1 : 2;
+  return `${value.toFixed(digits)} ${units[unitIndex]}`;
+};
 
 export function GeneralSettingsPanel({
   onClose,
@@ -72,6 +89,8 @@ export function GeneralSettingsPanel({
 
   // 存储位置
   const [locations, setLocations] = useState<StorageLocations | null>(null);
+  /** 各存储路径的占用字节数（按路径索引；-1 表示读取失败） */
+  const [pathSizes, setPathSizes] = useState<Record<string, number>>({});
   const [storageBusy, setStorageBusy] = useState<StorageLocationKind | null>(
     null
   );
@@ -159,16 +178,41 @@ export function GeneralSettingsPanel({
     void window.snow.installUpdate();
   };
 
+  /** 统计数据库文件与检查点 / 上传根目录的占用大小。 */
+  const refreshPathSizes = useCallback(
+    async (value: StorageLocations): Promise<void> => {
+      const targets = [
+        value.databasePath,
+        value.archiveDbPath,
+        value.checkpointRoot,
+        value.uploadRoot,
+      ];
+      const entries = await Promise.all(
+        targets.map(async (target) => {
+          try {
+            const bytes = await window.snow.getStoragePathSize(target);
+            return [target, bytes] as const;
+          } catch {
+            return [target, -1] as const;
+          }
+        })
+      );
+      setPathSizes(Object.fromEntries(entries));
+    },
+    []
+  );
+
   const loadLocations = useCallback(async (): Promise<void> => {
     try {
       const value = await window.snow.getStorageLocations();
       setLocations(value);
+      void refreshPathSizes(value);
     } catch (error) {
       setStorageError(
         error instanceof Error ? error.message : String(error)
       );
     }
-  }, []);
+  }, [refreshPathSizes]);
 
   useEffect(() => {
     void loadLocations();
@@ -293,6 +337,25 @@ export function GeneralSettingsPanel({
     migrationCancelledRef.current = true;
   };
 
+  /** 渲染某存储路径的占用大小（未加载或读取失败时不显示）。 */
+  const renderSize = (path: string | undefined): React.JSX.Element | null => {
+    if (!path) {
+      return null;
+    }
+    const size = pathSizes[path] ?? -1;
+    if (size < 0) {
+      return null;
+    }
+    return (
+      <span className="general-storage-size">
+        {t("settings.storageSize", {
+          values: { size: formatBytes(size) },
+          defaultValue: "Used: {{size}}",
+        })}
+      </span>
+    );
+  };
+
   return (
     <div className="api-settings-page" role="region">
       <div className="api-settings-page-header">
@@ -375,7 +438,7 @@ export function GeneralSettingsPanel({
             <span className="settings-update-error">{storageError}</span>
           )}
 
-          {/* 数据库位置 */}
+          {/* 运行数据库位置 */}
           <div className="general-storage-row">
             <div className="general-storage-info">
               <Database
@@ -386,8 +449,8 @@ export function GeneralSettingsPanel({
               />
               <div className="general-storage-text">
                 <span className="general-storage-label">
-                  {t("settings.storageDatabase", {
-                    defaultValue: "Database",
+                  {t("settings.storageRuntimeDatabase", {
+                    defaultValue: "Runtime database",
                   })}
                 </span>
                 <span
@@ -396,6 +459,7 @@ export function GeneralSettingsPanel({
                 >
                   {locations?.databasePath ?? "—"}
                 </span>
+                {renderSize(locations?.databasePath)}
               </div>
             </div>
             <button
@@ -404,6 +468,51 @@ export function GeneralSettingsPanel({
               onClick={() =>
                 locations &&
                 void handleOpenDir(parentDirOf(locations.databasePath))
+              }
+              disabled={!locations || isMigrating}
+              title={t("settings.storageOpenDir", {
+                defaultValue: "Open folder",
+              })}
+            >
+              <FolderOpen size={11} aria-hidden="true" />
+              <span>
+                {t("settings.storageOpenDir", {
+                  defaultValue: "Open folder",
+                })}
+              </span>
+            </button>
+          </div>
+
+          {/* 归档数据库位置（archive.db，存放归档会话） */}
+          <div className="general-storage-row">
+            <div className="general-storage-info">
+              <DatabaseBackup
+                size={14}
+                strokeWidth={1.8}
+                className="general-storage-icon"
+                aria-hidden="true"
+              />
+              <div className="general-storage-text">
+                <span className="general-storage-label">
+                  {t("settings.storageArchiveDatabase", {
+                    defaultValue: "Archive database",
+                  })}
+                </span>
+                <span
+                  className="general-storage-path"
+                  title={locations?.archiveDbPath}
+                >
+                  {locations?.archiveDbPath ?? "—"}
+                </span>
+                {renderSize(locations?.archiveDbPath)}
+              </div>
+            </div>
+            <button
+              type="button"
+              className="general-storage-action"
+              onClick={() =>
+                locations &&
+                void handleOpenDir(parentDirOf(locations.archiveDbPath))
               }
               disabled={!locations || isMigrating}
               title={t("settings.storageOpenDir", {
@@ -461,6 +570,7 @@ export function GeneralSettingsPanel({
                     <span className="general-storage-path" title={root}>
                       {root ?? "—"}
                     </span>
+                    {renderSize(root)}
                   </div>
                 </div>
                 <div className="general-storage-actions">

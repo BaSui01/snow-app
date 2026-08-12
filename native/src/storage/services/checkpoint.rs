@@ -14,6 +14,7 @@ use napi_derive::napi;
 use serde::{Deserialize, Serialize};
 use similar::TextDiff;
 
+use super::checkpoint_skip::should_skip_pending_copy;
 use super::gitignore::GitignoreMatcher;
 
 const OBJECT_DIR_NAME: &str = "objects";
@@ -145,11 +146,11 @@ enum OriginalState {
 }
 struct PendingFileState {
     /// Snapshot copy of an untracked file (its only pre-command content
-    /// source). `None` for git-tracked files, whose pre-command content is
-    /// recovered from the git object database at capture time — copying every
-    /// tracked file on every tool execution was the main performance killer
-    /// under concurrent terminal commands.
+    /// source). `None` for git-tracked files or skipped snapshots (see `skipped`).
     snapshot: Option<PathBuf>,
+    /// Snapshot skipped (too large / binary ext, COW unavailable): change
+    /// cannot be recovered, after-pass skips it.
+    skipped: bool,
     /// Pre-command mtime (ms) and size used as a cheap first-pass change
     /// detector for tracked files; a match skips the content read entirely.
     mtime_ms: u64,
@@ -852,7 +853,9 @@ pub fn record_checkpoint_file_after(
     Ok(())
 }
 
-fn copy_pending_file(source: &Path, destination: &Path) -> Result<()> {
+/// 快照文件到 pending，返回是否已建立。COW 克隆优先（APFS/reflink），失败
+/// 回退普通复制；回退时大文件/二进制文件跳过，避免非 git 项目全量复制。
+fn copy_pending_file(source: &Path, destination: &Path) -> Result<bool> {
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent).map_err(|error| {
             Error::from_reason(format!(
@@ -861,13 +864,19 @@ fn copy_pending_file(source: &Path, destination: &Path) -> Result<()> {
             ))
         })?;
     }
+    if reflink::reflink(source, destination).is_ok() {
+        return Ok(true);
+    }
+    if should_skip_pending_copy(source) {
+        return Ok(false);
+    }
     fs::copy(source, destination).map_err(|error| {
         Error::from_reason(format!(
             "Failed to capture pending checkpoint file '{}': {error}",
             source.display()
         ))
     })?;
-    Ok(())
+    Ok(true)
 }
 
 fn pending_state_matches_current(state: &PendingFileState, current: &Path) -> bool {
@@ -876,6 +885,13 @@ fn pending_state_matches_current(state: &PendingFileState, current: &Path) -> bo
         // the git object at capture time, not against a pending copy.
         return false;
     };
+    // 快速路径：mtime+size 未变 → 未修改（工具写文件必更新 mtime），
+    // 避免逐字节对比整个工作树；内容对比兜底。
+    if let Ok(meta) = fs::metadata(current) {
+        if meta.len() == state.size && mtime_ms(&meta) == state.mtime_ms {
+            return true;
+        }
+    }
     current.is_file() && !files_are_different(current, snapshot)
 }
 
@@ -1138,19 +1154,28 @@ pub fn capture_checkpoint_worktree_before(
             None
         } else {
             let snapshot = pending_dir.join(from_forward_slashes(relative_path));
-            if let Err(error) = copy_pending_file(&absolute, &snapshot) {
-                // 文件在遍历后被删除:跳过该文件,不阻塞整个工具执行。
-                if !absolute.exists() {
-                    continue;
+            let copied = match copy_pending_file(&absolute, &snapshot) {
+                Ok(copied) => copied,
+                Err(error) => {
+                    // 文件在遍历后被删除:跳过该文件,不阻塞整个工具执行。
+                    if !absolute.exists() {
+                        continue;
+                    }
+                    return Err(error);
                 }
-                return Err(error);
+            };
+            if copied {
+                Some(snapshot)
+            } else {
+                None
             }
-            Some(snapshot)
         };
+        let skipped = !is_tracked && snapshot.is_none();
         before_states.insert(
             relative_path.clone(),
             PendingFileState {
                 snapshot,
+                skipped,
                 mtime_ms: meta.as_ref().map(mtime_ms).unwrap_or(0),
                 size: meta.as_ref().map(|meta| meta.len()).unwrap_or(0),
                 tracked: is_tracked,
@@ -1190,18 +1215,24 @@ fn capture_worktree_before_git(
     for relative_path in dirty.iter().chain(untracked.iter()) {
         let absolute = root.join(from_forward_slashes(relative_path));
         let snapshot = pending_dir.join(from_forward_slashes(relative_path));
-        if let Err(error) = copy_pending_file(&absolute, &snapshot) {
-            // 文件在列出后被删除:跳过该文件,不阻塞整个工具执行。
-            if !absolute.exists() {
-                continue;
+        let copied = match copy_pending_file(&absolute, &snapshot) {
+            Ok(copied) => copied,
+            Err(error) => {
+                // 文件在列出后被删除:跳过该文件,不阻塞整个工具执行。
+                if !absolute.exists() {
+                    continue;
+                }
+                return Err(error);
             }
-            return Err(error);
-        }
+        };
+        let snapshot = if copied { Some(snapshot) } else { None };
+        let skipped = snapshot.is_none();
         before_paths.insert(relative_path.clone());
         before_states.insert(
             relative_path.clone(),
             PendingFileState {
-                snapshot: Some(snapshot),
+                snapshot,
+                skipped,
                 mtime_ms: 0,
                 size: 0,
                 tracked: dirty_set.contains(relative_path),
@@ -1291,6 +1322,8 @@ pub fn record_checkpoint_worktree_after(capture: CheckpointWorktreeCapture) -> R
             // - 回退路径:git 跟踪文件元数据快速过滤 → git 内容级确认;
             //   未跟踪文件与 pending 快照内容级对比;新增文件 → Missing。
             let change = match before_state {
+                // 快照被跳过：无法恢复命令前内容，不记录变更
+                Some(state) if state.skipped => None,
                 Some(state) if capture.baseline.is_some() => {
                     if pending_state_matches_current(state, &absolute) {
                         None

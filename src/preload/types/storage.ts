@@ -3,8 +3,10 @@ export type StorageLocationKind = "checkpoint" | "upload";
 
 /** 各存储位置路径信息 */
 export type StorageLocations = {
-  /** 数据库文件绝对路径（~/.snowapp/snowapp.db 或自定义） */
+  /** 运行数据库文件绝对路径（~/.snowapp/snowapp.db 或自定义） */
   databasePath: string;
+  /** 归档数据库文件绝对路径（~/.snowapp/archive.db，存放归档会话） */
+  archiveDbPath: string;
   /** 检查点自定义保存目录（空字符串表示使用默认目录） */
   checkpointDir: string;
   /** 上传图片自定义保存目录（空字符串表示使用默认目录） */

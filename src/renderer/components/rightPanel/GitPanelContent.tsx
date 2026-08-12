@@ -41,6 +41,12 @@ export function GitPanelContent({
 }): React.JSX.Element {
   const { t } = useI18n();
   const [selectedFile, setSelectedFile] = useState<GitFileStatus | null>(null);
+  // 选中文件来自变更区还是暂存区。同一路径可能同时出现在两个区域，
+  // 必须用点击来源决定 diff 类型（工作区 diff vs `--cached` 暂存区 diff），
+  // 而不能靠 indexStatus 推断。
+  const [selectedSection, setSelectedSection] = useState<
+    "staged" | "unstaged" | null
+  >(null);
   // 当 diff 来自提交树（GitGraph）时记录提交 hash，diff 加载走
   // gitCommitFileDiff 而不是工作区 diff。
   const [commitFileSelection, setCommitFileSelection] = useState<{
@@ -68,10 +74,10 @@ export function GitPanelContent({
     }
 
     setDiffLoading(true);
-    const isStaged =
-      selectedFile.indexStatus !== " " &&
-      selectedFile.indexStatus !== "?" &&
-      selectedFile.indexStatus !== "";
+    // 点击来源优先：变更区 -> 工作区 diff；暂存区 -> `--cached` diff。
+    // 同一文件同时存在于两个区域时，indexStatus 无法区分点击位置，
+    // 必须以 selectedSection 为准。
+    const isStaged = selectedSection === "staged";
 
     const diffPromise = commitFileSelection
       ? window.snow.gitCommitFileDiff(
@@ -91,12 +97,22 @@ export function GitPanelContent({
       .finally(() => {
         setDiffLoading(false);
       });
-  }, [repoPath, selectedFile, commitFileSelection]);
+  }, [repoPath, selectedFile, commitFileSelection, selectedSection]);
+
+  /** 变更区/暂存区点击文件：记录文件与其来源区域。 */
+  const handleFileSelect = useCallback(
+    (file: GitFileStatus | null, section?: "staged" | "unstaged") => {
+      setSelectedFile(file);
+      setSelectedSection(section ?? null);
+    },
+    []
+  );
 
   /** 提交树中点击提交内文件：显示该提交中该文件的差异。 */
   const handleCommitFileSelect = useCallback(
     (file: GitCommitFile, hash: string) => {
       setSelectedFile(toGitFileStatus(file));
+      setSelectedSection(null);
       setCommitFileSelection({ hash, file });
     },
     []
@@ -143,7 +159,7 @@ export function GitPanelContent({
           repoPath={repoPath}
           repos={repos}
           onRepoSelect={setSelectedRepoPath}
-          onFileSelect={setSelectedFile}
+          onFileSelect={handleFileSelect}
           onCommitFileSelect={handleCommitFileSelect}
           onStatusChange={setGitStatus}
           onOpenFile={onOpenFile}

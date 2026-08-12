@@ -22,16 +22,17 @@ const isStorageLocationKind = (value: unknown): value is StorageLocationKind =>
  */
 export const registerStorageHandlers = (native: NativeBridge): void => {
   ipcMain.handle("storage:get-locations", async (): Promise<unknown> => {
-    const [databasePath, checkpointDir, uploadDir, checkpointRoot, uploadRoot] =
+    const [storageInfo, checkpointDir, uploadDir, checkpointRoot, uploadRoot] =
       await Promise.all([
-        native.initializeAppStorage().then((info) => info.databasePath),
+        native.initializeAppStorage(),
         native.getCheckpointDir(),
         native.getUploadDir(),
         native.getCheckpointRoot(),
         native.getUploadRoot(),
       ]);
     return {
-      databasePath,
+      databasePath: storageInfo.databasePath,
+      archiveDbPath: storageInfo.archiveDatabasePath,
       checkpointDir,
       uploadDir,
       checkpointRoot,
@@ -128,6 +129,16 @@ export const registerStorageHandlers = (native: NativeBridge): void => {
         throw new Error("Invalid storage location kind");
       }
       await native.rollbackStorageMigration(kind);
+    }
+  );
+
+  ipcMain.handle(
+    "storage:path-size",
+    async (_event, path: unknown): Promise<number> => {
+      if (typeof path !== "string" || path.trim() === "") {
+        throw new Error("Path is required");
+      }
+      return native.getPathSize(path.trim());
     }
   );
 };

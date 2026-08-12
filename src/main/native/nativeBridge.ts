@@ -1162,6 +1162,10 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to migrate storage dirs")
         ),
+      getPathSize: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to compute path size")
+        ),
       browserImportListSources: () =>
         Promise.reject(
           new Error("Rust native bridge is required to probe browser sources")

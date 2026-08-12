@@ -1771,3 +1771,11 @@ pub async fn rollback_storage_migration(kind: String) -> napi::Result<()> {
         .await
         .map_err(map_spawn_error)?
 }
+
+/// 计算文件或目录的占用字节数（目录递归统计；用于设置页展示存储占用）。
+#[napi]
+pub async fn get_path_size(path: String) -> napi::Result<i64> {
+    tokio::task::spawn_blocking(move || crate::storage::get_path_size(path))
+        .await
+        .map_err(map_spawn_error)?
+}

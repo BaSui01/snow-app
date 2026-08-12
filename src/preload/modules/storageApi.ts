@@ -42,4 +42,8 @@ export const storageApi = {
   /** 回滚存储目录迁移：删除已复制到新目录的文件并移除日志（幂等） */
   rollbackStorageMigration: (kind: StorageLocationKind): Promise<void> =>
     ipcRenderer.invoke("storage:migrate-rollback", kind),
+
+  /** 计算文件或目录的占用字节数（目录递归统计，用于展示存储占用） */
+  getStoragePathSize: (path: string): Promise<number> =>
+    ipcRenderer.invoke("storage:path-size", path),
 };

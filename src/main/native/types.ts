@@ -27,6 +27,7 @@ export type {
 export type AppStorageInfo = {
   directoryPath: string;
   databasePath: string;
+  archiveDatabasePath: string;
 };
 
 export type ApiConfigInput = {
@@ -1746,6 +1747,8 @@ export type NativeBridge = {
   commitStorageMigration: (kind: StorageLocationKind) => Promise<void>;
   /** 回滚迁移：删除已复制到新目录的文件并移除日志（幂等） */
   rollbackStorageMigration: (kind: StorageLocationKind) => Promise<void>;
+  /** 计算文件或目录的占用字节数（目录递归统计，用于展示存储占用） */
+  getPathSize: (path: string) => Promise<number>;
   /** 探测本机浏览器（Chrome/Edge/Chromium/Firefox）及其配置文件与数据量 */
   browserImportListSources: () => Promise<BrowserImportSource[]>;
   /** 解密并导出指定浏览器配置文件的已保存密码（明文，仅供主进程加密落盘） */

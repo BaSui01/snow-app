@@ -26,6 +26,98 @@ import { safeSend } from "../../utils/safeSend";
 
 const GIT_COMMIT_MSG_CHUNK_CHANNEL = "git:commit-msg:chunk";
 
+// ===== Git repo scan settings (stored in the app database via system settings) =====
+// Mirrors VSCode's `git.repositoryScanMaxDepth` / `git.repositoryScanIgnoredFolders`:
+// the default scan depth is 1 (only direct children of the workspace root),
+// a negative value means unlimited. `ignoredFolders` are directory names
+// (case-insensitive) that are never traversed during discovery.
+const GIT_SETTINGS_NAME = "Git settings";
+const GIT_SETTINGS_CODE = "git_settings";
+
+type GitScanSettings = {
+  maxDepth: number;
+  ignoredFolders: string[];
+  /** 文件变更监测防抖（毫秒），默认 400 */
+  changeDebounceMs: number;
+  /** 远程（ssh://）仓库状态轮询间隔（毫秒），默认 10000 */
+  remotePollIntervalMs: number;
+  /** 变更列表数量上限（0 = 不限制），默认 10000 */
+  statusLimit: number;
+  /** 文件变化时自动刷新 git status，默认 true */
+  autoRefresh: boolean;
+};
+
+const DEFAULT_GIT_SCAN_SETTINGS: GitScanSettings = {
+  maxDepth: 1,
+  ignoredFolders: [],
+  changeDebounceMs: 400,
+  remotePollIntervalMs: 10000,
+  statusLimit: 10000,
+  autoRefresh: true,
+};
+
+const toPositiveInteger = (
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number
+): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(Math.max(Math.round(value), min), max);
+};
+
+const readGitScanSettings = async (
+  native: NativeBridge
+): Promise<GitScanSettings> => {
+  try {
+    const raw = await native.getSystemSettingValue(GIT_SETTINGS_CODE);
+    if (!raw) {
+      return DEFAULT_GIT_SCAN_SETTINGS;
+    }
+    const parsed = JSON.parse(raw) as Partial<GitScanSettings>;
+    const maxDepth =
+      typeof parsed.maxDepth === "number" && Number.isInteger(parsed.maxDepth)
+        ? parsed.maxDepth
+        : DEFAULT_GIT_SCAN_SETTINGS.maxDepth;
+    const ignoredFolders = Array.isArray(parsed.ignoredFolders)
+      ? parsed.ignoredFolders.filter(
+          (folder): folder is string =>
+            typeof folder === "string" && folder.trim().length > 0
+        )
+      : [];
+    return {
+      maxDepth,
+      ignoredFolders,
+      changeDebounceMs: toPositiveInteger(
+        parsed.changeDebounceMs,
+        DEFAULT_GIT_SCAN_SETTINGS.changeDebounceMs,
+        50,
+        60000
+      ),
+      remotePollIntervalMs: toPositiveInteger(
+        parsed.remotePollIntervalMs,
+        DEFAULT_GIT_SCAN_SETTINGS.remotePollIntervalMs,
+        1000,
+        600000
+      ),
+      statusLimit: toPositiveInteger(
+        parsed.statusLimit,
+        DEFAULT_GIT_SCAN_SETTINGS.statusLimit,
+        0,
+        1000000
+      ),
+      autoRefresh:
+        typeof parsed.autoRefresh === "boolean"
+          ? parsed.autoRefresh
+          : DEFAULT_GIT_SCAN_SETTINGS.autoRefresh,
+    };
+  } catch {
+    return DEFAULT_GIT_SCAN_SETTINGS;
+  }
+};
+
 // `ssh://` workspace paths cannot be handled by the local Rust backend;
 // they are dispatched to the SSH-backed implementation instead, which
 // runs git on the remote host.
@@ -33,7 +125,7 @@ const isSshPath = (path: string): boolean => path.startsWith("ssh://");
 
 export const registerGitHandlers = (native: NativeBridge): void => {
   // ===== Git file watcher handlers =====
-  ipcMain.handle("git:start-watch", (event, repoPath: unknown) => {
+  ipcMain.handle("git:start-watch", async (event, repoPath: unknown) => {
     if (typeof repoPath !== "string" || !repoPath.trim()) {
       throw new Error("Repository path is required");
     }
@@ -43,11 +135,16 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       // `git:status` instead (see useGitStatus).
       return;
     }
-    native.startGitWatch(trimmed, (changedRepoPath: string) => {
-      if (!event.sender.isDestroyed()) {
-        event.sender.send("git:status-changed", changedRepoPath);
+    const settings = await readGitScanSettings(native);
+    native.startGitWatch(
+      trimmed,
+      settings.changeDebounceMs,
+      (changedRepoPath: string) => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send("git:status-changed", changedRepoPath);
+        }
       }
-    });
+    );
   });
 
   ipcMain.handle("git:stop-watch", (_event, repoPath: unknown) => {
@@ -67,9 +164,11 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       throw new Error("Repository path is required");
     }
     const trimmed = repoPath.trim();
-    return isSshPath(trimmed)
-      ? remoteGetGitStatus(trimmed)
-      : native.getGitStatus(trimmed);
+    if (isSshPath(trimmed)) {
+      return remoteGetGitStatus(trimmed);
+    }
+    const settings = await readGitScanSettings(native);
+    return native.getGitStatus(trimmed, settings.statusLimit);
   });
 
   ipcMain.handle("git:branches", async (_event, repoPath: unknown) => {
@@ -316,9 +415,64 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       throw new Error("Root path is required");
     }
     const trimmed = rootPath.trim();
-    return isSshPath(trimmed)
-      ? remoteDiscoverGitRepos(trimmed)
-      : native.discoverGitRepos(trimmed);
+    if (isSshPath(trimmed)) {
+      return remoteDiscoverGitRepos(trimmed);
+    }
+    const settings = await readGitScanSettings(native);
+    return native.discoverGitRepos(
+      trimmed,
+      settings.maxDepth,
+      settings.ignoredFolders
+    );
+  });
+
+  // ===== Git repo scan settings =====
+  ipcMain.handle("git-settings:get", async () => readGitScanSettings(native));
+
+  ipcMain.handle("git-settings:set", async (_event, value: unknown) => {
+    const source = (value ?? {}) as Partial<GitScanSettings>;
+    const maxDepth =
+      typeof source.maxDepth === "number" && Number.isInteger(source.maxDepth)
+        ? source.maxDepth
+        : DEFAULT_GIT_SCAN_SETTINGS.maxDepth;
+    const ignoredFolders = Array.isArray(source.ignoredFolders)
+      ? source.ignoredFolders.filter(
+          (folder): folder is string =>
+            typeof folder === "string" && folder.trim().length > 0
+        )
+      : [];
+    const normalized: GitScanSettings = {
+      maxDepth,
+      ignoredFolders,
+      changeDebounceMs: toPositiveInteger(
+        source.changeDebounceMs,
+        DEFAULT_GIT_SCAN_SETTINGS.changeDebounceMs,
+        50,
+        60000
+      ),
+      remotePollIntervalMs: toPositiveInteger(
+        source.remotePollIntervalMs,
+        DEFAULT_GIT_SCAN_SETTINGS.remotePollIntervalMs,
+        1000,
+        600000
+      ),
+      statusLimit: toPositiveInteger(
+        source.statusLimit,
+        DEFAULT_GIT_SCAN_SETTINGS.statusLimit,
+        0,
+        1000000
+      ),
+      autoRefresh:
+        typeof source.autoRefresh === "boolean"
+          ? source.autoRefresh
+          : DEFAULT_GIT_SCAN_SETTINGS.autoRefresh,
+    };
+    await native.setSystemSetting(
+      GIT_SETTINGS_NAME,
+      GIT_SETTINGS_CODE,
+      JSON.stringify(normalized)
+    );
+    return normalized;
   });
 
   // ===== AI commit message generation =====

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MoveVertical } from "lucide-react";
+import { AlertTriangle, MoveVertical } from "lucide-react";
 
 import { useI18n } from "../../i18n";
 import { DiffViewer } from "./DiffViewer";
@@ -155,6 +155,17 @@ export function GitPanelContent({
         className="git-panel-changes"
         style={{ flexGrow: splitRatio, flexBasis: 0, flexShrink: 0 }}
       >
+        {gitStatus?.statusLimitHit ? (
+          <div className="git-status-limit-hint">
+            <AlertTriangle size={13} strokeWidth={1.9} />
+            <span>
+              {t("git.statusLimitHit", {
+                defaultValue:
+                  "Too many changes to display, only part of them are shown.",
+              })}
+            </span>
+          </div>
+        ) : null}
         <GitControl
           repoPath={repoPath}
           repos={repos}

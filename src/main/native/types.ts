@@ -1074,6 +1074,8 @@ export type GitStatusResult = {
   stagedCount: number;
   unstagedCount: number;
   untrackedCount: number;
+  /** True when the change list was truncated by the configured status limit. */
+  statusLimitHit: boolean;
 };
 
 export type GitBranch = {
@@ -1547,7 +1549,10 @@ export type NativeBridge = {
   engineInfo: () => string;
   sum: (a: number, b: number) => number;
   detectTerminals: () => Promise<DetectedTerminal[]>;
-  getGitStatus: (repoPath: string) => Promise<GitStatusResult>;
+  getGitStatus: (
+    repoPath: string,
+    statusLimit: number
+  ) => Promise<GitStatusResult>;
   getGitBranches: (repoPath: string) => Promise<GitBranch[]>;
   gitStageFiles: (
     repoPath: string,
@@ -1598,9 +1603,14 @@ export type NativeBridge = {
     hash: string,
     filePath: string
   ) => Promise<GitDiffResult>;
-  discoverGitRepos: (rootPath: string) => Promise<GitRepoInfo[]>;
+  discoverGitRepos: (
+    rootPath: string,
+    maxDepth: number,
+    ignoredFolders: string[]
+  ) => Promise<GitRepoInfo[]>;
   startGitWatch: (
     repoPath: string,
+    debounceMs: number,
     onChange: (repoPath: string) => void
   ) => void;
   stopGitWatch: (repoPath: string) => void;

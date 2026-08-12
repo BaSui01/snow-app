@@ -1,9 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GitStatusResult } from "../../../../preload";
 
-// Remote (ssh://) repos have no local file watcher, so the status is
-// refreshed by polling instead.
-const REMOTE_POLL_INTERVAL_MS = 10_000;
+// Fallbacks used until the persisted settings load (a few ms).
+const DEFAULT_REMOTE_POLL_INTERVAL_MS = 10_000;
+const DEFAULT_CHANGE_DEBOUNCE_MS = 400;
+
+type GitScanSettings = {
+  maxDepth: number;
+  ignoredFolders: string[];
+  changeDebounceMs: number;
+  remotePollIntervalMs: number;
+  statusLimit: number;
+  autoRefresh: boolean;
+};
 
 type UseGitStatusResult = {
   status: GitStatusResult | null;
@@ -27,6 +36,8 @@ export const useGitStatus = (
   // almost always caused by our own git operations (stage/unstage/commit)
   // and the explicit refresh already fetched the correct status.
   const lastExplicitRefreshRef = useRef(0);
+  // Git scan settings, loaded once from the backend.
+  const settingsRef = useRef<GitScanSettings | null>(null);
 
   const isSshPath = (path: string): boolean => path.startsWith("ssh://");
 
@@ -66,6 +77,16 @@ export const useGitStatus = (
 
     void fetchStatus();
 
+    // Load git scan settings (debounce / poll interval / auto-refresh).
+    void window.snow
+      .getGitScanSettings()
+      .then((settings) => {
+        settingsRef.current = settings;
+      })
+      .catch(() => {
+        settingsRef.current = null;
+      });
+
     const isRemote = !!repoPath && isSshPath(repoPath);
 
     // Remote repos have no local file watcher — poll instead.
@@ -74,15 +95,24 @@ export const useGitStatus = (
           if (!document.hidden) {
             void fetchStatus();
           }
-        }, REMOTE_POLL_INTERVAL_MS)
+        }, settingsRef.current?.remotePollIntervalMs ?? DEFAULT_REMOTE_POLL_INTERVAL_MS)
       : null;
 
-    if (repoPath && !isRemote) {
+    const autoRefresh = settingsRef.current?.autoRefresh ?? true;
+    const debounceMs =
+      settingsRef.current?.changeDebounceMs ?? DEFAULT_CHANGE_DEBOUNCE_MS;
+
+    if (repoPath && !isRemote && autoRefresh) {
       void window.snow.startGitWatch(repoPath);
     }
 
     const unsubscribe = window.snow.onGitStatusChanged((changedRepoPath) => {
-      if (!cancelledRef.current && repoPath && changedRepoPath === repoPath) {
+      if (
+        !cancelledRef.current &&
+        repoPath &&
+        changedRepoPath === repoPath &&
+        (settingsRef.current?.autoRefresh ?? true)
+      ) {
         // If an explicit refresh happened recently, skip watcher events
         // during a short cooldown window. The explicit refresh (triggered
         // after our own stage/unstage/commit) already fetched the correct
@@ -104,7 +134,7 @@ export const useGitStatus = (
         watcherDebounceRef.current = setTimeout(() => {
           watcherDebounceRef.current = null;
           void fetchStatus();
-        }, 400);
+        }, debounceMs);
       }
     });
 
@@ -119,7 +149,7 @@ export const useGitStatus = (
         clearTimeout(watcherDebounceRef.current);
         watcherDebounceRef.current = null;
       }
-      if (repoPath && !isRemote) {
+      if (repoPath && !isRemote && autoRefresh) {
         void window.snow.stopGitWatch(repoPath);
       }
     };

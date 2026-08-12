@@ -46,19 +46,29 @@ fn watchers() -> &'static Mutex<HashMap<String, WatchState>> {
     WATCHERS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-const DEBOUNCE_MS: u64 = 300;
+const DEBOUNCE_MS_DEFAULT: u64 = 300;
 
 /// Start watching a git repository for file changes.
 ///
 /// Uses the `notify` crate (ReadDirectoryChangesW on Windows, inotify on Linux, FSEvents on macOS).
-/// Events are debounced (300ms) and filtered (excludes *.lock, node_modules, build output, .git/logs, .git/hooks).
+/// Events are debounced (`debounce_ms`, default 300) and filtered (excludes *.lock, node_modules, build output, .git/logs, .git/hooks).
 /// When a valid change is detected, the JS callback is invoked with the repo_path string.
 #[napi(
-    ts_args_type = "repoPath: string, onChange: (repoPath: string) => void",
+    ts_args_type = "repoPath: string, debounceMs: number, onChange: (repoPath: string) => void",
     ts_return_type = "void"
 )]
-pub fn start_git_watch(repo_path: String, on_change: GitChangeCallback) -> napi::Result<()> {
+pub fn start_git_watch(
+    repo_path: String,
+    debounce_ms: f64,
+    on_change: GitChangeCallback,
+) -> napi::Result<()> {
     use notify::Watcher;
+
+    let debounce_ms = if debounce_ms.is_finite() && debounce_ms > 0.0 {
+        debounce_ms as u64
+    } else {
+        DEBOUNCE_MS_DEFAULT
+    };
 
     // Already watching this repo
     {
@@ -87,7 +97,7 @@ pub fn start_git_watch(repo_path: String, on_change: GitChangeCallback) -> napi:
                 let now = Instant::now();
                 if let Ok(mut last) = debounce_state.lock() {
                     let fire = match *last {
-                        Some(t) => now.duration_since(t) > Duration::from_millis(DEBOUNCE_MS),
+                        Some(t) => now.duration_since(t) > Duration::from_millis(debounce_ms),
                         None => true,
                     };
                     if fire {

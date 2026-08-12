@@ -19647,6 +19647,27 @@ input {
   box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
+.plus-menu-goal-budget-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.plus-menu-goal-unlimited-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.plus-menu-goal-unlimited-row input {
+  accent-color: var(--text-primary);
+  cursor: pointer;
+}
+
 .plus-menu-goal-budget-unit {
   font-size: 11px;
   color: var(--text-tertiary);
@@ -22374,6 +22395,20 @@ input {
   min-height: 0;
   overflow: hidden;
   padding: 10px 5px;
+}
+
+.git-status-limit-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 6px 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--warning, #d97706);
+  background: color-mix(in srgb, var(--warning, #d97706) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning, #d97706) 25%, transparent);
+  border-radius: 6px;
 }
 
 .git-panel-diff {

@@ -5,6 +5,7 @@ import {
   Download,
   EyeOff,
   FishingHook,
+  GitBranch,
   Globe,
   Image as ImageIcon,
   Images,
@@ -79,6 +80,13 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
     labelKey: "settings.codebaseSettings",
     defaultLabel: "Codebase settings",
     view: "codebase-settings",
+  },
+  {
+    id: "git",
+    icon: GitBranch,
+    labelKey: "settings.gitSettings",
+    defaultLabel: "Git settings",
+    view: "git-settings",
   },
   {
     id: "systemprompt",

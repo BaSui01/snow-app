@@ -16,6 +16,8 @@ export type GitStatusResult = {
   stagedCount: number;
   unstagedCount: number;
   untrackedCount: number;
+  /** True when the change list was truncated by the configured status limit. */
+  statusLimitHit: boolean;
 };
 
 export type GitBranch = {

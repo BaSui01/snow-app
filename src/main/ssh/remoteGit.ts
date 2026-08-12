@@ -174,6 +174,7 @@ export const remoteGetGitStatus = async (
     stagedCount: 0,
     unstagedCount: 0,
     untrackedCount: 0,
+    statusLimitHit: false,
   });
 
   let statusOut: string;
@@ -302,6 +303,7 @@ export const remoteGetGitStatus = async (
     stagedCount,
     unstagedCount,
     untrackedCount,
+    statusLimitHit: false,
   };
 };
 

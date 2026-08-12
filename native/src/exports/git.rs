@@ -9,12 +9,14 @@ use crate::storage::services::git::{
 use crate::storage::services::git_watcher::GitChangeCallback;
 
 #[napi]
-pub async fn get_git_status(repo_path: String) -> napi::Result<GitStatusResult> {
-    tokio::task::spawn_blocking(move || crate::storage::services::git::get_git_status(&repo_path))
-        .await
-        .map_err(|join_error| {
-            napi::Error::from_reason(format!("Failed to get git status: {join_error}"))
-        })?
+pub async fn get_git_status(repo_path: String, status_limit: i32) -> napi::Result<GitStatusResult> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::git::get_git_status(&repo_path, status_limit)
+    })
+    .await
+    .map_err(|join_error| {
+        napi::Error::from_reason(format!("Failed to get git status: {join_error}"))
+    })?
 }
 
 #[napi]
@@ -236,14 +238,20 @@ pub async fn git_commit_file_diff(
 
 /// Discover all git repositories within a directory tree.
 ///
-/// Recursively scans `root_path` for subdirectories containing a `.git`
-/// entry. When a repo is found, its contents are not recursed into.
+/// Walks `root_path` breadth-first up to `max_depth` levels deep (default 1,
+/// matching VSCode's `git.repositoryScanMaxDepth`; negative = unlimited).
+/// Directories listed in `ignored_folders` (matched against the folder name,
+/// case-insensitive) are never traversed.
 /// Runs on the blocking thread pool because filesystem traversal and
 /// `git rev-parse` calls may be slow on large directory trees.
 #[napi]
-pub async fn discover_git_repos(root_path: String) -> napi::Result<Vec<GitRepoInfo>> {
+pub async fn discover_git_repos(
+    root_path: String,
+    max_depth: i32,
+    ignored_folders: Vec<String>,
+) -> napi::Result<Vec<GitRepoInfo>> {
     tokio::task::spawn_blocking(move || {
-        crate::storage::services::git::discover_git_repos(&root_path)
+        crate::storage::services::git::discover_git_repos(&root_path, max_depth, &ignored_folders)
     })
     .await
     .map_err(|join_error| {
@@ -252,11 +260,15 @@ pub async fn discover_git_repos(root_path: String) -> napi::Result<Vec<GitRepoIn
 }
 
 #[napi(
-    ts_args_type = "repoPath: string, onChange: (repoPath: string) => void",
+    ts_args_type = "repoPath: string, debounceMs: number, onChange: (repoPath: string) => void",
     ts_return_type = "void"
 )]
-pub fn start_git_watch(repo_path: String, on_change: GitChangeCallback) -> napi::Result<()> {
-    crate::storage::services::git_watcher::start_git_watch(repo_path, on_change)
+pub fn start_git_watch(
+    repo_path: String,
+    debounce_ms: f64,
+    on_change: GitChangeCallback,
+) -> napi::Result<()> {
+    crate::storage::services::git_watcher::start_git_watch(repo_path, debounce_ms, on_change)
 }
 #[napi]
 pub fn stop_git_watch(repo_path: String) -> napi::Result<()> {

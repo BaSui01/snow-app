@@ -124,6 +124,11 @@ const GeneralSettingsPanel = lazy(() =>
     default: m.GeneralSettingsPanel,
   }))
 );
+const GitSettingsPanel = lazy(() =>
+  import("./sidebar/GitSettingsPanel").then((m) => ({
+    default: m.GitSettingsPanel,
+  }))
+);
 
 type MainContentProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
@@ -171,6 +176,8 @@ export const MainContent = ({
             <ProxyBrowserSettingsPanel onClose={() => onSelectView("chat")} />
           ) : activeView === "codebase-settings" ? (
             <CodebaseSettingsPanel onClose={() => onSelectView("chat")} />
+          ) : activeView === "git-settings" ? (
+            <GitSettingsPanel onClose={() => onSelectView("chat")} />
           ) : activeView === "system-prompt-settings" ? (
             <SystemPromptSettingsPanel onClose={() => onSelectView("chat")} />
           ) : activeView === "personalization-settings" ? (

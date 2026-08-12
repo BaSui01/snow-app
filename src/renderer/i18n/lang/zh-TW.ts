@@ -1382,6 +1382,32 @@ export const zhTW = {
   "settings.browserLaunchMode": "瀏覽器路徑",
   "settings.reset": "重設",
   "settings.codebaseSettings": "程式碼庫設定",
+  "settings.gitSettings": "Git 設定",
+  "settings.gitSettingsInfo": "控制在工作區目錄內如何發現 Git 儲存庫。",
+  "settings.gitScanDepthLabel": "儲存庫掃描深度",
+  "settings.gitScanDepthHint":
+    "在工作區根目錄下掃描 .git 資料夾的層級深度（預設 1）。輸入 -1 表示不限制深度。在大目錄上使用更大的深度會顯著消耗資源。",
+  "settings.gitIgnoredFoldersLabel": "忽略的資料夾",
+  "settings.gitIgnoredFoldersHint":
+    "以逗號分隔的資料夾名稱清單，儲存庫發現時永不遍歷這些目錄（不區分大小寫）。",
+  "settings.gitSave": "儲存",
+  "settings.gitSaveSuccess": "Git 設定已儲存。",
+  "settings.gitLoadError": "載入 Git 設定失敗",
+  "settings.gitSaveError": "儲存 Git 設定失敗",
+  "settings.gitChangeDebounceLabel": "變更監測防抖（毫秒）",
+  "settings.gitChangeDebounceHint":
+    "檔案變更收集多久後才重新整理 git 狀態。數值越大，在繁忙儲存庫上磁碟/CPU 消耗越低。",
+  "settings.gitRemotePollLabel": "遠端儲存庫輪詢間隔（毫秒）",
+  "settings.gitRemotePollHint":
+    "SSH（ssh://）儲存庫沒有本機檔案監聽器，狀態透過輪詢重新整理，此值控制輪詢頻率。",
+  "settings.gitStatusLimitLabel": "變更清單數量上限",
+  "settings.gitStatusLimitHint":
+    "Git 面板最多顯示的變更數量，0 表示不限制。達到上限時巨型儲存庫也能保持流暢。",
+  "settings.gitAutoRefreshLabel": "檔案變更時自動重新整理",
+  "settings.gitAutoRefreshOn": "開",
+  "settings.gitAutoRefreshOff": "關",
+  "settings.gitAutoRefreshHint":
+    "啟用後檔案變更會自動重新整理 git 狀態；關閉則僅手動重新整理，在超大儲存庫上更省資源。",
   "settings.codebaseSettingsInfo": "管理索引和工作區程式碼搜尋。",
   "settings.codebaseLoadError": "載入程式碼庫設定失敗",
   "settings.codebaseSaveSuccess": "已儲存程式碼庫設定。",
@@ -2350,6 +2376,7 @@ export const zhTW = {
   "plusMenu.goalMode": "Goal 模式",
   "plusMenu.goalModeDescription": "持續目標驅動的自主循環",
   "plusMenu.goalBudgetTitle": "Token 預算",
+  "plusMenu.goalBudgetUnlimited": "無上限",
   "plusMenu.goalModeActive": "Goal 模式已啟用",
   "toolAuthorization.title": "允許工具執行",
   "toolAuthorization.message": "此工具即將執行。請確認是否允許繼續。",
@@ -2968,6 +2995,7 @@ export const zhTW = {
   "git.copyAbsolutePath": "複製絕對路徑",
   "git.copyBranchName": "複製分支名稱",
   "git.copyRepoPath": "複製儲存庫路徑",
+  "git.statusLimitHit": "變更過多，僅顯示部分內容。可在 Git 設定中調整變更清單數量上限。",
   "git.revealInExplorer": "在檔案總管中顯示",
   "git.openInTerminal": "在終端機中開啟",
   "git.refreshBranches": "重新整理分支",

@@ -294,7 +294,9 @@ export type ConversationSessionRef = {
   /** Whether Goal Mode was active when this session was last used. */
   goalMode: boolean;
   /** Goal Mode token budget in effect for this session (per-conversation
-   *  override when set, otherwise the global default at session creation). */
+   *  override when set, otherwise the global default at session creation).
+   *  A value <= 0 means unlimited (no budget section is injected into the
+   *  Goal Mode system prompt). */
   goalModeTokenBudget: number;
   /** Set once a sub-agent conversation's run has ended (completed, failed or
    *  cancelled). A terminated sub-agent conversation is read-only: the input

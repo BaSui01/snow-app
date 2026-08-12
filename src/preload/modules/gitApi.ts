@@ -125,6 +125,29 @@ export const gitApi = {
     ipcRenderer.invoke("git:commit-file-diff", repoPath, hash, filePath),
   discoverGitRepos: (rootPath: string): Promise<GitRepoInfo[]> =>
     ipcRenderer.invoke("git:discover-repos", rootPath),
+  getGitScanSettings: (): Promise<{
+    maxDepth: number;
+    ignoredFolders: string[];
+    changeDebounceMs: number;
+    remotePollIntervalMs: number;
+    statusLimit: number;
+    autoRefresh: boolean;
+  }> => ipcRenderer.invoke("git-settings:get"),
+  setGitScanSettings: (value: {
+    maxDepth: number;
+    ignoredFolders: string[];
+    changeDebounceMs: number;
+    remotePollIntervalMs: number;
+    statusLimit: number;
+    autoRefresh: boolean;
+  }): Promise<{
+    maxDepth: number;
+    ignoredFolders: string[];
+    changeDebounceMs: number;
+    remotePollIntervalMs: number;
+    statusLimit: number;
+    autoRefresh: boolean;
+  }> => ipcRenderer.invoke("git-settings:set", value),
   generateCommitMessage: (
     repoPath: string,
     onChunk?: (chunk: ResponsesApiStreamChunk) => void,

@@ -1432,6 +1432,33 @@ export const en = {
   "settings.browserLaunchMode": "Browser path",
   "settings.reset": "Reset",
   "settings.codebaseSettings": "Codebase settings",
+  "settings.gitSettings": "Git settings",
+  "settings.gitSettingsInfo":
+    "Controls how git repositories are discovered inside a workspace directory.",
+  "settings.gitScanDepthLabel": "Repository scan depth",
+  "settings.gitScanDepthHint":
+    "How many levels below the workspace root are scanned for .git folders (default 1). Enter -1 for unlimited depth. Deeper scans can consume significant resources on large directories.",
+  "settings.gitIgnoredFoldersLabel": "Ignored folders",
+  "settings.gitIgnoredFoldersHint":
+    "Comma-separated folder names that are never traversed during repository discovery (matched case-insensitively).",
+  "settings.gitSave": "Save",
+  "settings.gitSaveSuccess": "Git settings saved.",
+  "settings.gitLoadError": "Failed to load Git settings",
+  "settings.gitSaveError": "Failed to save Git settings",
+  "settings.gitChangeDebounceLabel": "Change detection debounce (ms)",
+  "settings.gitChangeDebounceHint":
+    "How long file changes are collected before refreshing git status. Higher values reduce disk/CPU usage on busy repositories.",
+  "settings.gitRemotePollLabel": "Remote repo poll interval (ms)",
+  "settings.gitRemotePollHint":
+    "SSH (ssh://) repositories have no local file watcher, so their status is refreshed by polling; this controls the poll frequency.",
+  "settings.gitStatusLimitLabel": "Change list limit",
+  "settings.gitStatusLimitHint":
+    "Maximum number of changes shown in the git panel. 0 disables the limit. Hitting the limit keeps huge repositories responsive.",
+  "settings.gitAutoRefreshLabel": "Auto refresh on file changes",
+  "settings.gitAutoRefreshOn": "On",
+  "settings.gitAutoRefreshOff": "Off",
+  "settings.gitAutoRefreshHint":
+    "When enabled, git status refreshes automatically when files change. Disable to only refresh manually, saving resources on very large repositories.",
   "settings.codebaseSettingsInfo": "Manage indexing and workspace code search.",
   "settings.codebaseLoadError": "Failed to load codebase settings",
   "settings.codebaseSaveSuccess": "Saved codebase settings.",
@@ -2489,6 +2516,7 @@ export const en = {
   "plusMenu.goalMode": "Goal Mode",
   "plusMenu.goalModeDescription": "Persistent objective-driven autonomous loop",
   "plusMenu.goalBudgetTitle": "Token Budget",
+  "plusMenu.goalBudgetUnlimited": "Unlimited",
   "plusMenu.goalModeActive": "Goal Mode active",
   "toolAuthorization.title": "Allow tool execution",
   "toolAuthorization.message":
@@ -3153,6 +3181,8 @@ export const en = {
   "git.copyAbsolutePath": "Copy Absolute Path",
   "git.copyBranchName": "Copy Branch Name",
   "git.copyRepoPath": "Copy Repository Path",
+  "git.statusLimitHit":
+    "Too many changes to display, only part of them are shown. Adjust the change list limit in Git settings.",
   "git.revealInExplorer": "Show in Explorer",
   "git.openInTerminal": "Open in Terminal",
   "git.refreshBranches": "Refresh Branches",

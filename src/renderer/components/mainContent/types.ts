@@ -6,6 +6,7 @@ export type MainContentView =
   | "browser-settings"
   | "proxy-browser-settings"
   | "codebase-settings"
+  | "git-settings"
   | "system-prompt-settings"
   | "personalization-settings"
   | "custom-headers-settings"

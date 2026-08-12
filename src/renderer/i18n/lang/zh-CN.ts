@@ -1384,6 +1384,32 @@ export const zhCN = {
   "settings.browserLaunchMode": "浏览器路径",
   "settings.reset": "重置",
   "settings.codebaseSettings": "代码库设置",
+  "settings.gitSettings": "Git 设置",
+  "settings.gitSettingsInfo": "控制在工作区目录内如何发现 Git 仓库。",
+  "settings.gitScanDepthLabel": "仓库扫描深度",
+  "settings.gitScanDepthHint":
+    "在工作区根目录下扫描 .git 文件夹的层级深度（默认 1）。输入 -1 表示不限制深度。在大目录上使用更大的深度会显著消耗资源。",
+  "settings.gitIgnoredFoldersLabel": "忽略的文件夹",
+  "settings.gitIgnoredFoldersHint":
+    "逗号分隔的文件夹名称列表，仓库发现时永不遍历这些目录（不区分大小写）。",
+  "settings.gitSave": "保存",
+  "settings.gitSaveSuccess": "Git 设置已保存。",
+  "settings.gitLoadError": "加载 Git 设置失败",
+  "settings.gitSaveError": "保存 Git 设置失败",
+  "settings.gitChangeDebounceLabel": "变更监测防抖（毫秒）",
+  "settings.gitChangeDebounceHint":
+    "文件变更收集多久后才刷新 git 状态。值越大，在繁忙仓库上磁盘/CPU 消耗越低。",
+  "settings.gitRemotePollLabel": "远程仓库轮询间隔（毫秒）",
+  "settings.gitRemotePollHint":
+    "SSH（ssh://）仓库没有本地文件监听器，状态通过轮询刷新，此值控制轮询频率。",
+  "settings.gitStatusLimitLabel": "变更列表数量上限",
+  "settings.gitStatusLimitHint":
+    "Git 面板最多显示的变更数量，0 表示不限制。达到上限时巨型仓库也能保持流畅。",
+  "settings.gitAutoRefreshLabel": "文件变化时自动刷新",
+  "settings.gitAutoRefreshOn": "开",
+  "settings.gitAutoRefreshOff": "关",
+  "settings.gitAutoRefreshHint":
+    "启用后文件变化会自动刷新 git 状态；关闭则仅手动刷新，在超大仓库上更省资源。",
   "settings.codebaseSettingsInfo": "管理索引和工作区代码搜索。",
   "settings.codebaseLoadError": "加载代码库设置失败",
   "settings.codebaseSaveSuccess": "已保存代码库设置。",
@@ -2372,6 +2398,7 @@ export const zhCN = {
   "plusMenu.goalMode": "Goal 模式",
   "plusMenu.goalModeDescription": "持续目标驱动的自主循环",
   "plusMenu.goalBudgetTitle": "Token 预算",
+  "plusMenu.goalBudgetUnlimited": "无上限",
   "plusMenu.goalModeActive": "Goal 模式已启用",
   "toolAuthorization.title": "允许工具执行",
   "toolAuthorization.message": "此工具即将执行。请确认是否允许继续。",
@@ -2997,6 +3024,7 @@ export const zhCN = {
   "git.copyAbsolutePath": "复制绝对路径",
   "git.copyBranchName": "复制分支名",
   "git.copyRepoPath": "复制仓库路径",
+  "git.statusLimitHit": "变更过多，仅显示部分内容。可在 Git 设置中调整变更列表数量上限。",
   "git.revealInExplorer": "在文件管理器中显示",
   "git.openInTerminal": "在终端中打开",
   "git.refreshBranches": "刷新分支",

@@ -271,6 +271,7 @@ export const PlusMenu = ({
                     min={10000}
                     step={100000}
                     value={goalModeTokenBudget}
+                    disabled={goalModeTokenBudget <= 0}
                     onChange={(e) => {
                       const value = parseInt(e.target.value, 10);
                       if (!Number.isNaN(value) && value > 0) {
@@ -281,6 +282,20 @@ export const PlusMenu = ({
                   />
                   <span className="plus-menu-goal-budget-unit">tokens</span>
                 </div>
+                <label className="plus-menu-goal-unlimited-row">
+                  <input
+                    type="checkbox"
+                    checked={goalModeTokenBudget <= 0}
+                    onChange={(e) => {
+                      // 0 = unlimited (no budget section is injected into the
+                      // Goal Mode system prompt); unchecking restores the
+                      // built-in default budget.
+                      onGoalModeTokenBudgetChange?.(e.target.checked ? 0 : 2000000);
+                    }}
+                    aria-label={t("plusMenu.goalBudgetUnlimited")}
+                  />
+                  <span>{t("plusMenu.goalBudgetUnlimited")}</span>
+                </label>
               </div>
             )}
           </div>

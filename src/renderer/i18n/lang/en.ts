@@ -1227,13 +1227,9 @@ export const en = {
   "settings.imageLibraryDeleteTitle": "Delete image",
   "settings.imageLibraryDeleteConfirm":
     "Delete this image? It will also be removed from the conversation.",
-  "settings.imageLibrarySelectDir": "Select image library directory",
-  "settings.imageLibraryChangeDir": "Change save directory",
-  "settings.imageLibraryResetDir": "Reset to default directory",
-  "settings.imageLibraryDefaultDir": "Default directory",
   "settings.imageLibraryMigrateTitle": "Migrate images",
   "settings.imageLibraryMigrateConfirm":
-    "{{count}} existing image(s) will be moved to: {{dir}}. Original images are kept until the migration completes; cancelling or failing rolls back automatically.",
+    "Images in the library will be moved to: {{dir}}. Original images are kept until the migration completes; cancelling or failing rolls back automatically.",
   "settings.imageLibraryMigrateStart": "Start migration",
   "settings.imageLibraryMigrateProgress":
     "Migrating images {{current}}/{{total}}",
@@ -2166,18 +2162,20 @@ export const en = {
   "settings.hooksDocsExamples": "Examples",
   "settings.storageLocations": "Storage locations",
   "settings.storageLocationsInfo":
-    "Where Snow App stores its database, checkpoints and uploaded images.",
+    "Where Snow App stores its database, checkpoints, uploaded images and the image library.",
   "settings.storageDatabase": "Database",
   "settings.storageRuntimeDatabase": "Runtime database",
   "settings.storageArchiveDatabase": "Archive database",
   "settings.storageCheckpoint": "Checkpoints",
   "settings.storageUpload": "Uploaded images",
+  "settings.storageImageLibrary": "Image library",
   "settings.storageOpenDir": "Open folder",
   "settings.storageChangeDir": "Change folder",
   "settings.storageResetDir": "Use default",
   "settings.storageDefaultDir": "Default location",
   "settings.storageSelectCheckpointDir": "Select checkpoint folder",
   "settings.storageSelectUploadDir": "Select upload folder",
+  "settings.storageSelectImageLibraryDir": "Select image library folder",
   "settings.storageMigrateTitle": "Migrate data",
   "settings.storageMigrateConfirm":
     "Existing files will be moved to:\n{{dir}}\n\nContinue?",

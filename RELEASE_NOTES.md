@@ -12,7 +12,7 @@
 
 - Git diff selection in the Git panel.
 
-## v0.2.25
+## v0.1.25
 
 ## New Features
 

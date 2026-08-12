@@ -6,6 +6,7 @@ import {
   FolderCog,
   FolderOpen,
   Image as ImageIcon,
+  Images,
   LoaderCircle,
   RefreshCw,
   X,
@@ -47,6 +48,18 @@ type PendingMigration = {
 /** 迁移进度状态 */
 type MigrationState = {
   kind: StorageLocationKind;
+  copied: number;
+  total: number;
+};
+
+/** 待确认的图库目录迁移目标 */
+type ImageLibraryPendingMigration = {
+  target: string;
+  dirLabel: string;
+};
+
+/** 图库目录迁移进度状态 */
+type ImageLibraryMigrationState = {
   copied: number;
   total: number;
 };
@@ -104,6 +117,26 @@ export function GeneralSettingsPanel({
   /** 组件卸载时若迁移仍进行中，触发回滚 */
   const migrationActiveRef = useRef(false);
   const pendingMigrationRef = useRef<PendingMigration | null>(null);
+
+  // 图片库存储位置（独立于 checkpoint / upload 的迁移流程）
+  const [imageLibraryRoot, setImageLibraryRoot] = useState("");
+  /** 图库自定义保存目录（非空表示已自定义） */
+  const [imageLibraryCustomDir, setImageLibraryCustomDir] = useState("");
+  const [imageLibraryBusy, setImageLibraryBusy] = useState(false);
+  /** 待确认的图库目录迁移目标（null 表示无） */
+  const [imageLibraryPendingMigration, setImageLibraryPendingMigration] =
+    useState<ImageLibraryPendingMigration | null>(null);
+  /** 图库目录迁移进度（null 表示未在迁移） */
+  const [imageLibraryMigration, setImageLibraryMigration] =
+    useState<ImageLibraryMigrationState | null>(null);
+  const [imageLibraryRollingBack, setImageLibraryRollingBack] =
+    useState(false);
+  /** 用户请求取消图库迁移（chunk 循环之间检查） */
+  const imageLibraryCancelledRef = useRef(false);
+  /** 组件卸载时若图库迁移仍进行中，触发回滚 */
+  const imageLibraryActiveRef = useRef(false);
+  const imageLibraryPendingMigrationRef =
+    useRef<ImageLibraryPendingMigration | null>(null);
 
   useEffect(() => {
     window.snow
@@ -178,15 +211,16 @@ export function GeneralSettingsPanel({
     void window.snow.installUpdate();
   };
 
-  /** 统计数据库文件与检查点 / 上传根目录的占用大小。 */
+  /** 统计数据库文件与检查点 / 上传根目录 / 图库根目录的占用大小。 */
   const refreshPathSizes = useCallback(
-    async (value: StorageLocations): Promise<void> => {
+    async (value: StorageLocations, libRoot: string): Promise<void> => {
       const targets = [
         value.databasePath,
         value.archiveDbPath,
         value.checkpointRoot,
         value.uploadRoot,
-      ];
+        libRoot,
+      ].filter(Boolean);
       const entries = await Promise.all(
         targets.map(async (target) => {
           try {
@@ -204,9 +238,15 @@ export function GeneralSettingsPanel({
 
   const loadLocations = useCallback(async (): Promise<void> => {
     try {
-      const value = await window.snow.getStorageLocations();
+      const [value, libRoot, libDir] = await Promise.all([
+        window.snow.getStorageLocations(),
+        window.snow.getImageLibraryRoot().catch(() => ""),
+        window.snow.getImageLibraryDir().catch(() => ""),
+      ]);
       setLocations(value);
-      void refreshPathSizes(value);
+      setImageLibraryRoot(libRoot);
+      setImageLibraryCustomDir(libDir);
+      void refreshPathSizes(value, libRoot);
     } catch (error) {
       setStorageError(
         error instanceof Error ? error.message : String(error)
@@ -229,10 +269,15 @@ export function GeneralSettingsPanel({
             .catch(() => undefined);
         }
       }
+      if (imageLibraryActiveRef.current) {
+        void window.snow.rollbackImageLibraryMigration().catch(() => undefined);
+      }
     };
   }, []);
 
   const isMigrating = migration !== null || rollingBack;
+  const isImageLibraryBusy =
+    imageLibraryMigration !== null || imageLibraryRollingBack || imageLibraryBusy;
 
   const handleOpenDir = async (dirPath: string): Promise<void> => {
     const errorMessage = await window.snow.openStorageDirectory(dirPath);
@@ -335,6 +380,97 @@ export function GeneralSettingsPanel({
 
   const cancelMigration = (): void => {
     migrationCancelledRef.current = true;
+  };
+
+  /** 选择图库新目录（确认后统一走迁移流程，无需迁移时直接切换） */
+  const handleImageLibraryChangeDir = async (): Promise<void> => {
+    const selected = await window.snow.selectImageDirectory(
+      t("settings.storageSelectImageLibraryDir", {
+        defaultValue: "Select image library folder",
+      })
+    );
+    if (!selected) {
+      return;
+    }
+    setImageLibraryPendingMigration({ target: selected, dirLabel: selected });
+  };
+
+  /** 重置图库为默认目录（确认后统一走迁移流程） */
+  const handleImageLibraryResetDir = (): void => {
+    setImageLibraryPendingMigration({
+      target: "",
+      dirLabel: t("settings.storageDefaultDir", {
+        defaultValue: "Default location",
+      }),
+    });
+  };
+
+  /** 确认图库迁移：prepare → 分批复制 → commit；取消则回滚。 */
+  const confirmImageLibraryMigration = async (): Promise<void> => {
+    const pending = imageLibraryPendingMigration;
+    if (!pending) {
+      return;
+    }
+    setImageLibraryPendingMigration(null);
+    imageLibraryPendingMigrationRef.current = pending;
+    imageLibraryCancelledRef.current = false;
+    imageLibraryActiveRef.current = true;
+    setImageLibraryBusy(true);
+    setStorageError("");
+    try {
+      const total = await window.snow.prepareImageLibraryMigration(
+        pending.target
+      );
+      if (total === 0) {
+        // 无需迁移（目标与当前相同或图库为空）：直接切换
+        await window.snow.setImageLibraryDir(pending.target);
+        await loadLocations();
+        return;
+      }
+      setImageLibraryMigration({ total, copied: 0 });
+      let done = false;
+      while (!done) {
+        if (imageLibraryCancelledRef.current) {
+          break;
+        }
+        const progress = await window.snow.migrateImageLibraryChunk();
+        setImageLibraryMigration({
+          total: progress.total,
+          copied: progress.copied,
+        });
+        done = progress.done;
+      }
+      if (imageLibraryCancelledRef.current) {
+        // 用户取消：删除已复制文件，保持旧目录
+        setImageLibraryRollingBack(true);
+        await window.snow.rollbackImageLibraryMigration();
+        return;
+      }
+      await window.snow.commitImageLibraryMigration();
+      await loadLocations();
+    } catch (migrationError) {
+      // 出错自动回滚，保持旧目录
+      try {
+        await window.snow.rollbackImageLibraryMigration();
+      } catch {
+        // 回滚失败不阻断错误提示
+      }
+      setStorageError(
+        migrationError instanceof Error
+          ? migrationError.message
+          : String(migrationError)
+      );
+    } finally {
+      setImageLibraryRollingBack(false);
+      setImageLibraryMigration(null);
+      imageLibraryActiveRef.current = false;
+      imageLibraryPendingMigrationRef.current = null;
+      setImageLibraryBusy(false);
+    }
+  };
+
+  const cancelImageLibraryMigration = (): void => {
+    imageLibraryCancelledRef.current = true;
   };
 
   /** 渲染某存储路径的占用大小（未加载或读取失败时不显示）。 */
@@ -681,6 +817,139 @@ export function GeneralSettingsPanel({
               </div>
             </div>
           )}
+
+          {/* 图片库存储位置 */}
+          <div className="general-storage-row">
+            <div className="general-storage-info">
+              <Images
+                size={14}
+                strokeWidth={1.8}
+                className="general-storage-icon"
+                aria-hidden="true"
+              />
+              <div className="general-storage-text">
+                <span className="general-storage-label">
+                  {t("settings.storageImageLibrary", {
+                    defaultValue: "Image library",
+                  })}
+                </span>
+                <span
+                  className="general-storage-path"
+                  title={imageLibraryRoot}
+                >
+                  {imageLibraryRoot || "—"}
+                </span>
+                {renderSize(imageLibraryRoot)}
+              </div>
+            </div>
+            <div className="general-storage-actions">
+              <button
+                type="button"
+                className="general-storage-action"
+                onClick={() =>
+                  imageLibraryRoot &&
+                  void handleOpenDir(imageLibraryRoot)
+                }
+                disabled={!imageLibraryRoot || isImageLibraryBusy}
+                title={t("settings.storageOpenDir", {
+                  defaultValue: "Open folder",
+                })}
+              >
+                <FolderOpen size={11} aria-hidden="true" />
+                <span>
+                  {t("settings.storageOpenDir", {
+                    defaultValue: "Open folder",
+                  })}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="general-storage-action"
+                onClick={() => void handleImageLibraryChangeDir()}
+                disabled={!imageLibraryRoot || isImageLibraryBusy}
+                title={t("settings.storageChangeDir", {
+                  defaultValue: "Change folder",
+                })}
+              >
+                <FolderCog size={11} aria-hidden="true" />
+                <span>
+                  {t("settings.storageChangeDir", {
+                    defaultValue: "Change folder",
+                  })}
+                </span>
+              </button>
+              {imageLibraryCustomDir && (
+                <button
+                  type="button"
+                  className="general-storage-action"
+                  onClick={handleImageLibraryResetDir}
+                  disabled={isImageLibraryBusy}
+                  title={t("settings.storageResetDir", {
+                    defaultValue: "Use default",
+                  })}
+                >
+                  <X size={11} aria-hidden="true" />
+                  <span>
+                    {t("settings.storageResetDir", {
+                      defaultValue: "Use default",
+                    })}
+                  </span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 图库迁移进度 */}
+          {imageLibraryMigration && (
+            <div className="general-storage-migrate-bar" role="status">
+              <div className="general-storage-migrate-info">
+                <LoaderCircle
+                  size={12}
+                  strokeWidth={1.8}
+                  className="tool-call-icon-spinning"
+                  aria-hidden="true"
+                />
+                <span>
+                  {imageLibraryRollingBack
+                    ? t("settings.imageLibraryMigrateRollingBack")
+                    : t("settings.imageLibraryMigrateProgress", {
+                        values: {
+                          current: imageLibraryMigration.copied,
+                          total: imageLibraryMigration.total,
+                        },
+                      })}
+                </span>
+                {!imageLibraryRollingBack && (
+                  <button
+                    type="button"
+                    className="general-storage-migrate-cancel"
+                    onClick={cancelImageLibraryMigration}
+                  >
+                    {t("settings.cancel", { defaultValue: "Cancel" })}
+                  </button>
+                )}
+              </div>
+              <div className="general-storage-migrate-progress-bar">
+                <div
+                  className="general-storage-migrate-progress-fill"
+                  style={{
+                    width: `${
+                      imageLibraryMigration.total > 0
+                        ? Math.min(
+                            100,
+                            Math.round(
+                              (imageLibraryMigration.copied /
+                                imageLibraryMigration.total) *
+                                100
+                            )
+                          )
+                        : 0
+                    }%`,
+                  }}
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -813,6 +1082,24 @@ export function GeneralSettingsPanel({
         cancelLabel={t("settings.cancel", { defaultValue: "Cancel" })}
         onConfirm={() => void confirmMigration()}
         onCancel={() => setPendingMigration(null)}
+      />
+
+      <ConfirmDialog
+        open={imageLibraryPendingMigration !== null}
+        title={t("settings.imageLibraryMigrateTitle", {
+          defaultValue: "Migrate images",
+        })}
+        message={t("settings.imageLibraryMigrateConfirm", {
+          values: { dir: imageLibraryPendingMigration?.dirLabel ?? "" },
+          defaultValue:
+            "Images in the library will be moved to:\n{{dir}}\n\nContinue?",
+        })}
+        confirmLabel={t("settings.imageLibraryMigrateStart", {
+          defaultValue: "Start migration",
+        })}
+        cancelLabel={t("settings.cancel", { defaultValue: "Cancel" })}
+        onConfirm={() => void confirmImageLibraryMigration()}
+        onCancel={() => setImageLibraryPendingMigration(null)}
       />
     </div>
   );

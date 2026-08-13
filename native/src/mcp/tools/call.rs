@@ -111,7 +111,9 @@ pub async fn call_mcp_tool(
 
     if let Some(ref allowed_tools) = sub_agent_allowed_tools {
         let wildcard_enabled = allowed_tools.iter().any(|name| name == "*");
-        if !wildcard_enabled && !allowed_tools.iter().any(|name| name == &tool_full_name) {
+        let comms_allowed = SUB_AGENT_COMMS_TOOL_FULL_NAMES.contains(&tool_full_name.as_str());
+        if !wildcard_enabled && !comms_allowed && !allowed_tools.iter().any(|name| name == &tool_full_name)
+        {
             return Err(Error::new(
                 Status::GenericFailure,
                 format!("Sub-agent tool is not in the allowed whitelist: {tool_full_name}"),

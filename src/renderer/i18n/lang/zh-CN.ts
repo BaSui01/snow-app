@@ -899,6 +899,8 @@ export const zhCN = {
   "toolNames.filesystem-replace_edit": "编辑文件",
   "toolNames.filesystem-create": "新建文件",
   "toolNames.sub-agents-activate": "子代理",
+  "toolNames.sub-agents-listTeammates": "查询队友",
+  "toolNames.sub-agents-sendMessage": "发送消息",
   "toolNames.websearch-websearch-search": "搜索网页",
   "toolNames.websearch-websearch-fetch": "抓取网页",
   "toolNames.imagegen-generate": "生图",

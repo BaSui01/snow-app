@@ -444,6 +444,10 @@ export type ConversationContextValue = {
    *  parallel sub-agents each keep their own entry so the UI can match every
    *  SubAgentToolCall to the correct live session. */
   subAgentSessionEvents: Record<string, SubAgentSessionEvent>;
+  /** Live ref mirror of subAgentSessionEvents for async closures (agent
+   *  loops, sub-agent teammate communication) that must read the freshest
+   *  sub-agent status without React state staleness. */
+  subAgentSessionEventsRef: RefValue<Record<string, SubAgentSessionEvent>>;
   /** File changes recorded during this renderer session, keyed by
    *  conversationId. The main conversation collects both its own changes
    *  (agent: "main") and — via childSubAgentIds — every sub-agent's changes

@@ -37,6 +37,7 @@ pub use serialize::{
     tools_as_anthropic_json, tools_as_gemini_json, tools_as_openai_chat_json,
     tools_as_openai_responses_json,
 };
+pub use super::servers::sub_agents::SUB_AGENT_COMMS_TOOL_FULL_NAMES;
 pub(crate) use collect::{
     builtin_scope_server_id, builtin_server_name, load_global_scope, load_project_scope,
     server_id_from_tool_name, with_database_path,

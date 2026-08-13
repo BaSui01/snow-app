@@ -930,6 +930,8 @@ export const en = {
   "toolNames.filesystem-replace_edit": "Edit file",
   "toolNames.filesystem-create": "Create file",
   "toolNames.sub-agents-activate": "Sub-agent",
+  "toolNames.sub-agents-listTeammates": "List teammates",
+  "toolNames.sub-agents-sendMessage": "Send message",
   "toolNames.websearch-websearch-search": "Search web",
   "toolNames.websearch-websearch-fetch": "Fetch page",
   "toolNames.imagegen-generate": "Generate image",

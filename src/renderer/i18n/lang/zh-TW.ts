@@ -900,6 +900,8 @@ export const zhTW = {
   "toolNames.filesystem-replace_edit": "編輯檔案",
   "toolNames.filesystem-create": "新增檔案",
   "toolNames.sub-agents-activate": "子代理",
+  "toolNames.sub-agents-listTeammates": "查詢隊友",
+  "toolNames.sub-agents-sendMessage": "發送訊息",
   "toolNames.websearch-websearch-search": "搜尋網頁",
   "toolNames.websearch-websearch-fetch": "擷取網頁",
   "toolNames.imagegen-generate": "生圖",

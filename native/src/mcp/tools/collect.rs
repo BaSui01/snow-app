@@ -6,6 +6,7 @@ use napi::bindgen_prelude::*;
 
 use super::super::builtin::{get_builtin_servers_with_tools, get_builtin_tools};
 use super::super::servers::skills::SkillsService;
+use super::super::servers::sub_agents::{sub_agent_comms_tools, SUB_AGENT_COMMS_TOOL_FULL_NAMES};
 use crate::storage::services::system_settings::{McpGlobalScopeSettings, McpProjectScopeSettings};
 
 pub async fn collect_all_mcp_tools(
@@ -45,6 +46,12 @@ pub async fn collect_all_mcp_tools(
             // exposed to the model while the current request is in Plan Mode.
             if tool.full_name() == REQUEST_APPROVAL_FULL_NAME {
                 return include_plan_mode_tool;
+            }
+            // Sub-agent teammate communication tools are only exposed inside
+            // sub-agent contexts (collect_allowed_mcp_tools appends them);
+            // the main conversation never sees them.
+            if SUB_AGENT_COMMS_TOOL_FULL_NAMES.contains(&tool.full_name().as_str()) {
+                return false;
             }
             // Exclude codebase search tool unless the project has codebase
             // enabled and an existing index.
@@ -150,7 +157,11 @@ pub async fn collect_allowed_mcp_tools(
 
     let all_tools = collect_all_mcp_tools(project_id, false).await?;
     if wildcard_enabled {
-        return Ok(all_tools);
+        // Every sub-agent carries the teammate communication tools by default,
+        // even with the wildcard configuration.
+        let mut result = all_tools;
+        result.extend(sub_agent_comms_tools());
+        return Ok(result);
     }
 
     // 部分工具不可用（被项目 scope 禁用、默认禁用未启用、条件工具如
@@ -164,6 +175,7 @@ pub async fn collect_allowed_mcp_tools(
         .collect::<std::collections::HashSet<_>>();
     let unavailable_names = configured_names
         .difference(&available_names)
+        .filter(|name| !SUB_AGENT_COMMS_TOOL_FULL_NAMES.contains(&name.as_str()))
         .cloned()
         .collect::<Vec<_>>();
     if !unavailable_names.is_empty() {
@@ -173,10 +185,14 @@ pub async fn collect_allowed_mcp_tools(
         );
     }
 
-    Ok(all_tools
+    let mut result = all_tools
         .into_iter()
         .filter(|tool| configured_names.contains(&tool.full_name()))
-        .collect())
+        .collect::<Vec<_>>();
+    // Teammate communication tools are always available to every sub-agent,
+    // regardless of its configured tool whitelist.
+    result.extend(sub_agent_comms_tools());
+    Ok(result)
 }
 
 /// Built-in server ids that are disabled by default and must be explicitly

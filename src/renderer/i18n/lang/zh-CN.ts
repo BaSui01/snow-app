@@ -2393,6 +2393,7 @@ export const zhCN = {
   "plusMenu.yoloModeDescription": "启用后工具执行无需逐次授权",
   "plusMenu.yoloModeEnabled": "已启用，无需逐次授权",
   "plusMenu.yoloModeDisabled": "已关闭，每次工具执行前确认",
+  "plusMenu.yoloModeActive": "YOLO 模式已启用，工具执行无需逐次授权",
   "plusMenu.planMode": "Plan 模式",
   "plusMenu.planModeDescription": "先分析并制定计划，再执行变更",
   "plusMenu.planModeActive": "Plan 模式已启用",

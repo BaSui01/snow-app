@@ -2511,6 +2511,7 @@ export const en = {
   "plusMenu.yoloModeDescription": "Skip per-tool approval when enabled",
   "plusMenu.yoloModeEnabled": "Enabled, no per-tool approval required",
   "plusMenu.yoloModeDisabled": "Disabled, approve each tool execution",
+  "plusMenu.yoloModeActive": "YOLO Mode active, no per-tool approval required",
   "plusMenu.planMode": "Plan Mode",
   "plusMenu.planModeDescription": "Analyze and plan before executing changes",
   "plusMenu.planModeActive": "Plan Mode active",

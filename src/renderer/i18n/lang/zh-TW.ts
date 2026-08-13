@@ -2371,6 +2371,7 @@ export const zhTW = {
   "plusMenu.yoloModeDescription": "啟用後工具執行不需逐次授權",
   "plusMenu.yoloModeEnabled": "已啟用，不需逐次授權",
   "plusMenu.yoloModeDisabled": "已關閉，每次工具執行前確認",
+  "plusMenu.yoloModeActive": "YOLO 模式已啟用，工具執行不需逐次授權",
   "plusMenu.planMode": "Plan 模式",
   "plusMenu.planModeDescription": "先分析並制定計畫，再執行變更",
   "plusMenu.planModeActive": "Plan 模式已啟用",

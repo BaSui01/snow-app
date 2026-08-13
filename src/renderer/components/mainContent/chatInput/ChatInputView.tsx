@@ -20,6 +20,7 @@ import {
   Search,
   Send,
   Settings,
+  ShieldAlert,
   Square,
   Target,
   Trash2,
@@ -31,6 +32,7 @@ import { createPortal } from "react-dom";
 import { useI18n } from "../../../i18n";
 import { Modal } from "../../common/Modal";
 import { ContextMenu } from "../../common/ContextMenu";
+import { Tooltip } from "../../common/Tooltip";
 import type { ChatInputViewProps } from "./types";
 import { TEXT_SNIPPET_THRESHOLD } from "./constants";
 import { ThinkingStrengthMenu } from "./ThinkingStrengthMenu";
@@ -2747,6 +2749,19 @@ export const ChatInputView = ({
                   >
                     <Target size={14} />
                   </span>
+                </>
+              )}
+              {yoloMode && (
+                <>
+                  <span className="toolbar-divider" aria-hidden="true" />
+                  <Tooltip content={t("plusMenu.yoloModeActive")}>
+                    <span
+                      className="plan-mode-badge yolo-mode-badge"
+                      aria-label={t("plusMenu.yoloModeActive")}
+                    >
+                      <ShieldAlert size={14} />
+                    </span>
+                  </Tooltip>
                 </>
               )}
             </div>

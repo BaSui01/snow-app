@@ -20,6 +20,7 @@ pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 /// Windows 下自动携带 `CREATE_NO_WINDOW`；其它平台该标志无意义，
 /// 行为与 `Command::new` 一致。
 pub fn cmd(program: impl AsRef<OsStr>) -> std::process::Command {
+    #[cfg_attr(not(target_os = "windows"), allow(unused_mut))]
     let mut command = std::process::Command::new(program);
     #[cfg(target_os = "windows")]
     {
@@ -31,6 +32,7 @@ pub fn cmd(program: impl AsRef<OsStr>) -> std::process::Command {
 
 /// 创建隐藏控制台窗口的异步子进程命令（tokio 版）。
 pub fn cmd_async(program: impl AsRef<OsStr>) -> tokio::process::Command {
+    #[cfg_attr(not(target_os = "windows"), allow(unused_mut))]
     let mut command = tokio::process::Command::new(program);
     #[cfg(target_os = "windows")]
     {

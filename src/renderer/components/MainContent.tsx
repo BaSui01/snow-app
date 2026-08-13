@@ -124,11 +124,6 @@ const GeneralSettingsPanel = lazy(() =>
     default: m.GeneralSettingsPanel,
   }))
 );
-const DataManagementPanel = lazy(() =>
-  import("./sidebar/dataManagement/DataManagementPanel").then((m) => ({
-    default: m.DataManagementPanel,
-  }))
-);
 const GitSettingsPanel = lazy(() =>
   import("./sidebar/GitSettingsPanel").then((m) => ({
     default: m.GitSettingsPanel,
@@ -240,8 +235,6 @@ export const MainContent = ({
             <SystemLogsPanel onClose={() => onSelectView("chat")} />
           ) : activeView === "general-settings" ? (
             <GeneralSettingsPanel onClose={() => onSelectView("chat")} />
-          ) : activeView === "data-management-settings" ? (
-            <DataManagementPanel onClose={() => onSelectView("chat")} />
           ) : null}
         </Suspense>
       )}

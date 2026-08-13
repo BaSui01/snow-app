@@ -22,12 +22,16 @@ type SubAgentToolCallProps = {
    *  toolCallInteractionId). beforeSubAgentStart renders as a "pre" step,
    *  onSubAgentComplete as a "post" step inside the card. */
   hookExecutions?: HookExecutionRecord[];
+  /** "activate" = 新建子代理（sub-agents-activate）；
+   *  "continue" = 继续已结束/运行中的子代理（sub-agents-continue）。
+   *  重新激活与激活没有本质区别——都是收集子代理的运行结果，因此
+   *  continue 复用同一套展示（参数解析与事件匹配按模式切换）。 */
+  mode?: "activate" | "continue";
 };
 
-type ParsedSubAgentArgs = {
-  agentId: string;
-  prompt: string;
-};
+type ParsedSubAgentArgs =
+  | { mode: "activate"; agentId: string; prompt: string }
+  | { mode: "continue"; conversationId: string; message: string };
 
 type ParsedSubAgentResult =
   | {
@@ -36,6 +40,7 @@ type ParsedSubAgentResult =
       agentName: string;
       summary: string;
     }
+  | { type: "queued"; note: string }
   | { type: "error"; message: string }
   | { type: "raw"; text: string }
   | { type: "empty" };
@@ -43,18 +48,33 @@ type ParsedSubAgentResult =
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-const parseArgs = (args: string): ParsedSubAgentArgs | null => {
+const parseArgs = (
+  args: string,
+  mode: "activate" | "continue"
+): ParsedSubAgentArgs | null => {
   try {
     const parsed: unknown = JSON.parse(args);
     if (!isRecord(parsed)) {
       return null;
+    }
+    if (mode === "continue") {
+      const conversationId =
+        typeof parsed.conversationId === "string"
+          ? parsed.conversationId
+          : "";
+      const message =
+        typeof parsed.message === "string" ? parsed.message : "";
+      if (!conversationId || !message) {
+        return null;
+      }
+      return { mode: "continue", conversationId, message };
     }
     const agentId = typeof parsed.agentId === "string" ? parsed.agentId : "";
     const prompt = typeof parsed.prompt === "string" ? parsed.prompt : "";
     if (!agentId || !prompt) {
       return null;
     }
-    return { agentId, prompt };
+    return { mode: "activate", agentId, prompt };
   } catch {
     return null;
   }
@@ -73,6 +93,15 @@ const parseResult = (result: string | undefined): ParsedSubAgentResult => {
 
     if (typeof parsed.error === "string") {
       return { type: "error", message: parsed.error };
+    }
+
+    // continue 的目标子代理仍在运行：消息已进入 Pending 队列，
+    // 没有 conversationId/summary，只展示排队提示。
+    if (parsed.success === true && parsed.queued === true) {
+      return {
+        type: "queued",
+        note: typeof parsed.note === "string" ? parsed.note : "",
+      };
     }
 
     if (
@@ -174,6 +203,7 @@ const extractSubAgentToolCalls = (
 export const SubAgentToolCall = ({
   toolCall,
   hookExecutions,
+  mode = "activate",
 }: SubAgentToolCallProps): React.JSX.Element => {
   const { t } = useI18n();
   const {
@@ -184,8 +214,8 @@ export const SubAgentToolCall = ({
   } = useChatConversationContext();
 
   const parsedArgs = useMemo(
-    () => parseArgs(toolCall.arguments),
-    [toolCall.arguments]
+    () => parseArgs(toolCall.arguments, mode),
+    [toolCall.arguments, mode]
   );
   const parsedResult = useMemo(
     () => parseResult(toolCall.result),
@@ -194,14 +224,26 @@ export const SubAgentToolCall = ({
 
   // Match the sub-agent session event to this tool call so the sub-agent
   // conversation id is available while the tool is still running (before the
-  // result is available). Multiple sub-agents can run in parallel with the
-  // same agentId, so the unique toolCallInteractionId is the primary key; the
-  // agentId match only serves as a fallback for legacy events.
+  // result is available).
+  // - activate：多个子代理可以并行激活同一个 agentId，toolCallInteractionId
+  //   是主键（agentId 匹配仅作旧事件兜底）。
+  // - continue：resume 不绑定 toolCallInteractionId（重新激活不是新的
+  //   激活流程），按目标 conversationId 精确匹配。
   const matchedEvent = useMemo(() => {
     if (!parsedArgs) {
       return null;
     }
     const events = Object.values(subAgentSessionEvents);
+
+    if (parsedArgs.mode === "continue") {
+      return (
+        events.find(
+          (event) =>
+            event.conversationId === parsedArgs.conversationId &&
+            event.parentConversationId === activeConversationId
+        ) ?? null
+      );
+    }
 
     const byInteractionId = events.find(
       (event) =>
@@ -277,12 +319,20 @@ export const SubAgentToolCall = ({
 
   const effectiveStatus = isError ? "error" : toolCall.status;
 
+  // continue 模式没有 agentId（参数是 conversationId + message），
+  // 身份名只能来自结果或会话事件。
+  const argIdentityId =
+    parsedArgs?.mode === "activate" ? parsedArgs.agentId : "";
   const agentName =
     parsedResult.type === "success"
       ? parsedResult.agentName
-      : matchedEvent?.agentName ?? parsedArgs?.agentId ?? "";
+      : matchedEvent?.agentName ?? argIdentityId;
 
-  const promptPreview = parsedArgs ? getPromptPreview(parsedArgs.prompt) : "";
+  const promptPreview = parsedArgs
+    ? getPromptPreview(
+        parsedArgs.mode === "continue" ? parsedArgs.message : parsedArgs.prompt
+      )
+    : "";
 
   const displayAgentName =
     agentName ||
@@ -324,7 +374,11 @@ export const SubAgentToolCall = ({
   return (
     <ToolCallNode
       toolName={toolCall.name}
-      badgeName={t("toolCall.subAgent.name")}
+      badgeName={
+        parsedArgs?.mode === "continue"
+          ? t("toolCall.subAgentContinue.name")
+          : t("toolCall.subAgent.name")
+      }
       category="agent"
       displayName={displayAgentName}
       status={effectiveStatus}
@@ -359,16 +413,20 @@ export const SubAgentToolCall = ({
           </span>
           {parsedArgs ? (
             <span className="tool-call-sub-agent-agent-id">
-              {parsedArgs.agentId}
+              {parsedArgs.mode === "continue"
+                ? parsedArgs.conversationId
+                : parsedArgs.agentId}
             </span>
           ) : null}
         </div>
 
-        {/* Prompt preview */}
+        {/* Prompt / message preview */}
         {promptPreview ? (
           <div className="tool-call-sub-agent-prompt">
             <span className="tool-call-sub-agent-prompt-label">
-              {t("toolCall.subAgent.prompt")}
+              {parsedArgs?.mode === "continue"
+                ? t("toolCall.subAgentContinue.message")
+                : t("toolCall.subAgent.prompt")}
             </span>
             <pre className="tool-call-sub-agent-prompt-value">
               {promptPreview}
@@ -429,9 +487,19 @@ export const SubAgentToolCall = ({
             )}
             <span>
               {isRunning
-                ? t("toolCall.subAgent.activating")
+                ? parsedArgs?.mode === "continue"
+                  ? t("toolCall.subAgent.resuming")
+                  : t("toolCall.subAgent.activating")
                 : t("toolCall.subAgent.waiting")}
             </span>
+          </div>
+        ) : null}
+
+        {/* Queued notice (continue 目标仍在运行：消息已进入 Pending 队列） */}
+        {parsedResult.type === "queued" ? (
+          <div className="tool-call-sub-agent-queued">
+            <CheckCircle2 size={12} aria-hidden="true" />
+            <span>{t("toolCall.subAgent.queued")}</span>
           </div>
         ) : null}
 

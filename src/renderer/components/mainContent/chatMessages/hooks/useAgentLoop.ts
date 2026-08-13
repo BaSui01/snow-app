@@ -298,8 +298,12 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         planApprovedSessionKeysRef,
       });
       // 主会话子代理管理工具（listSubAgents / continue）执行器：会话隔离
-      // 在内部强制，只允许操作当前会话自己的子代理。
-      const executeSubAgentMainTool = createSubAgentMainToolExecutor(ctx);
+      // 在内部强制，只允许操作当前会话自己的子代理；continue 在内存无
+      // 恢复器时（应用重启后）自动从 DB 重建。
+      const executeSubAgentMainTool = createSubAgentMainToolExecutor(ctx, {
+        requestToolAuthorizations,
+        planApprovedSessionKeysRef,
+      });
 
       const runAgentLoop = async (
         currentAssistantMessageId: string,

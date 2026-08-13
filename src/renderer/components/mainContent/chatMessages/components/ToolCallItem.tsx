@@ -11,6 +11,8 @@ import {
   TodoToolCall,
   GrepToolCall,
   SubAgentToolCall,
+  SubAgentContinueToolCall,
+  SubAgentListToolCall,
   CodebaseToolCall,
   CodeLensToolCall,
   WebSearchToolCall,
@@ -300,6 +302,19 @@ export const ToolCallItem = memo(
           hookExecutions={hookExecutions}
         />
       );
+    }
+
+    if (toolCall.name === "sub-agents-continue") {
+      return (
+        <SubAgentContinueToolCall
+          toolCall={toolCall}
+          hookExecutions={hookExecutions}
+        />
+      );
+    }
+
+    if (toolCall.name === "sub-agents-listSubAgents") {
+      return <SubAgentListToolCall toolCall={toolCall} />;
     }
 
     if (toolCall.name === "codebase-search") {

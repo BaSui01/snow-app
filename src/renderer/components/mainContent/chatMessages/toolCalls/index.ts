@@ -7,6 +7,8 @@ export { FilesystemCreateToolCall } from "./FilesystemCreateToolCall";
 export { TodoToolCall } from "./TodoToolCall";
 export { GrepToolCall } from "./GrepToolCall";
 export { SubAgentToolCall } from "./SubAgentToolCall";
+export { SubAgentContinueToolCall } from "./SubAgentContinueToolCall";
+export { SubAgentListToolCall } from "./SubAgentListToolCall";
 export { CodebaseToolCall } from "./CodebaseToolCall";
 export { CodeLensToolCall } from "./CodeLensToolCall";
 export { WebSearchToolCall } from "./WebSearchToolCall";

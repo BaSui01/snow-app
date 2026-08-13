@@ -455,7 +455,9 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       if (
         toolCall.name === "user-interaction-askUserQuestion" ||
         toolCall.name === "sub-agents-listTeammates" ||
-        toolCall.name === "sub-agents-sendMessage"
+        toolCall.name === "sub-agents-sendMessage" ||
+        toolCall.name === "sub-agents-listSubAgents" ||
+        toolCall.name === "sub-agents-continue"
       ) {
         // Internal sub-agent communication tools are always auto-approved:
         // they are pure message-passing between teammates of the same

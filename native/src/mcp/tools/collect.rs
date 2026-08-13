@@ -6,7 +6,9 @@ use napi::bindgen_prelude::*;
 
 use super::super::builtin::{get_builtin_servers_with_tools, get_builtin_tools};
 use super::super::servers::skills::SkillsService;
-use super::super::servers::sub_agents::{sub_agent_comms_tools, SUB_AGENT_COMMS_TOOL_FULL_NAMES};
+use super::super::servers::sub_agents::{
+    sub_agent_comms_tools, SUB_AGENT_COMMS_TOOL_FULL_NAMES, SUB_AGENT_MAIN_TOOL_FULL_NAMES,
+};
 use crate::storage::services::system_settings::{McpGlobalScopeSettings, McpProjectScopeSettings};
 
 pub async fn collect_all_mcp_tools(
@@ -158,8 +160,11 @@ pub async fn collect_allowed_mcp_tools(
     let all_tools = collect_all_mcp_tools(project_id, false).await?;
     if wildcard_enabled {
         // Every sub-agent carries the teammate communication tools by default,
-        // even with the wildcard configuration.
+        // even with the wildcard configuration. The main-session management
+        // tools (listSubAgents/continue) stay hidden from sub-agents: resuming
+        // a finished sub-agent is the parent conversation's privilege.
         let mut result = all_tools;
+        result.retain(|tool| !SUB_AGENT_MAIN_TOOL_FULL_NAMES.contains(&tool.full_name().as_str()));
         result.extend(sub_agent_comms_tools());
         return Ok(result);
     }
@@ -187,7 +192,13 @@ pub async fn collect_allowed_mcp_tools(
 
     let mut result = all_tools
         .into_iter()
-        .filter(|tool| configured_names.contains(&tool.full_name()))
+        .filter(|tool| {
+            configured_names.contains(&tool.full_name())
+                // 主会话专用的子代理管理工具（listSubAgents/continue）不进入
+                // 子代理工具集：重新激活已结束的子代理是父会话的职权，
+                // 子代理配置中显式写入也会被忽略，避免其误用。
+                && !SUB_AGENT_MAIN_TOOL_FULL_NAMES.contains(&tool.full_name().as_str())
+        })
         .collect::<Vec<_>>();
     // Teammate communication tools are always available to every sub-agent,
     // regardless of its configured tool whitelist.

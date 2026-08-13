@@ -12,6 +12,7 @@ import {
 } from "./agentLoopHelpers";
 import { appendHookExecutionToMessage, runHook } from "./hookOutcome";
 import { extractFileChangeFromTool } from "./fileChangeTracking";
+import { SUB_AGENT_MAIN_TOOL_NAMES } from "./subAgentActivation";
 import { PENDING_SESSION_KEY } from "../utils/conversationTypes";
 import { injectSessionIdIntoToolArgs } from "../utils/toolSessionMetadata";
 import type {
@@ -54,6 +55,11 @@ export type ToolExecutorDeps = {
     dirId: string,
     toolCallInteractionId?: string
   ) => Promise<string>;
+  executeSubAgentMainTool: (
+    toolName: string,
+    argsJson: string,
+    parentConversationId: string
+  ) => Promise<string>;
   planApprovedSessionKeysRef: { current: Set<string> };
   planModeRef: { current: boolean };
 };
@@ -74,6 +80,7 @@ export function createToolExecutor(
     isRunCancelled,
     awaitHookDecision,
     executeSubAgentActivation,
+    executeSubAgentMainTool,
     planApprovedSessionKeysRef,
     planModeRef,
   } = deps;
@@ -879,6 +886,19 @@ export function createToolExecutor(
                   effectiveKey,
                   sessionDirId ?? ctx.directoryId ?? "",
                   toolCall.interactionId
+                );
+              } else if (
+                SUB_AGENT_MAIN_TOOL_NAMES.has(toolCall.name) &&
+                effectiveKey !== PENDING_SESSION_KEY
+              ) {
+                // 主会话子代理管理工具（listSubAgents/continue）由渲染进程
+                // 直接执行：子代理运行时状态与会话隔离都在渲染进程，
+                // 不走 Rust callMcpTool。PENDING 会话没有真实会话 id，
+                // 无法关联子代理，直接拒绝。
+                result = await executeSubAgentMainTool(
+                  toolCall.name,
+                  toolArgs,
+                  effectiveKey
                 );
               } else if (result === undefined) {
                 result = await window.snow.callMcpTool(

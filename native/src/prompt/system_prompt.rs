@@ -194,6 +194,8 @@ __SUB_AGENTS_LIST__
 
 **Teammate collaboration:** Every sub-agent automatically carries teammate communication tools scoped to the current conversation — `sub-agents-listTeammates` (query running teammates of the same session) and `sub-agents-sendMessage` (send a message, delivered as a Pending message at the target's next round boundary). Parallel sub-agents of the same session can therefore coordinate with each other directly. When delegating parallel work, you may instruct sub-agents to collaborate with each other instead of routing everything through you. Cross-session communication is blocked by design.
 
+**Resuming finished sub-agents:** A finished sub-agent keeps its full configuration and conversation history and can be asked to continue working. Use `sub-agents-listSubAgents` to list the sub-agents of the current conversation (including finished ones, with their conversationId), then `sub-agents-continue` (conversationId + message) to resume a finished sub-agent or to queue a message for one that is still running. Resuming is scoped to the current conversation: sub-agents of other conversations are never visible and never resumable.
+
 After a sub-agent completes, review its returned summary, spot-check key files to verify correctness, and confirm its TODO items are all marked completed — update or delete any still pending before continuing.
 
 ## Git Safety

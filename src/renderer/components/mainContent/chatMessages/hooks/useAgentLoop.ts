@@ -32,7 +32,7 @@ import {
   createStreamIdHandler,
   resetRunStreamMetrics,
 } from "./agentLoopHelpers";
-import { createSubAgentActivation } from "./subAgentActivation";
+import { createSubAgentActivation, createSubAgentMainToolExecutor } from "./subAgentActivation";
 import { createToolExecutor } from "./toolExecution";
 
 export type UseAgentLoopParams = {
@@ -297,6 +297,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         parentThinkingStrength: options.thinkingStrength,
         planApprovedSessionKeysRef,
       });
+      // 主会话子代理管理工具（listSubAgents / continue）执行器：会话隔离
+      // 在内部强制，只允许操作当前会话自己的子代理。
+      const executeSubAgentMainTool = createSubAgentMainToolExecutor(ctx);
 
       const runAgentLoop = async (
         currentAssistantMessageId: string,
@@ -895,6 +898,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           isRunCancelled,
           awaitHookDecision,
           executeSubAgentActivation,
+          executeSubAgentMainTool,
           planApprovedSessionKeysRef,
           planModeRef: ctx.planModeRef,
         });

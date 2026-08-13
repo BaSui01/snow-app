@@ -41,6 +41,28 @@ export const SUB_AGENT_COMMS_TOOL_NAMES = new Set([
   "sub-agents-sendMessage",
 ]);
 
+/** 主会话专用的子代理管理工具：仅主会话工具集可见（Rust collect_allowed_
+ *  mcp_tools 对子代理显式过滤），用于查询当前会话子代理并继续其运行。 */
+export const SUB_AGENT_MAIN_TOOL_NAMES = new Set([
+  "sub-agents-listSubAgents",
+  "sub-agents-continue",
+]);
+
+/** 子代理恢复器：主会话 sub-agents-continue 重新激活已结束子代理的入口。
+ * resume 返回 JSON 字符串（success/queued/summary），与工具结果格式一致。 */
+export type SubAgentResumer = {
+  parentConversationId: string;
+  agentId: string;
+  agentName: string;
+  resume: (messages: { role: "user"; content: string }[]) => Promise<string>;
+};
+
+/** 本次应用运行期间激活的子代理恢复器注册表（key = 子代理会话 id）。
+ * 子代理运行结束后保留注册，主会话可凭它重新激活；应用重启后清空，
+ * 因此只有本运行期激活的子代理可被继续（listSubAgents 的 resumable 标记
+ * 与之保持一致）。 */
+const subAgentResumers = new Map<string, SubAgentResumer>();
+
 export type SubAgentActivationDeps = {
   ctx: ConversationContextValue;
   requestToolAuthorizations: (
@@ -182,6 +204,117 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
           ? parentQueue.map((item) => item.text)
           : []
       );
+    };
+
+    // 子代理回合统一收尾：标记只读、清理运行状态、广播终止事件、持久化
+    // 状态、转交 Pending 队列，最后执行 onSubAgentComplete hooks。激活与
+    // 重新激活（sub-agents-continue）两条路径共用，保证收尾行为完全一致。
+    const finalizeSubAgentSession = async (
+      convId: string,
+      summary: string,
+      status: "completed" | "failed"
+    ): Promise<string> => {
+      const finalRef = ctx.sessionsRefData.current.get(convId);
+      // 用户在子代理运行中点击"立即发送"：先消费暂存消息继续回合，
+      // 再统一走终止收尾（terminated + 状态广播 + 队列转交父会话）。
+      if (finalRef?.forceSendMessages?.length) {
+        try {
+          await runForceSendLoop();
+        } catch {
+          // 强行发送回合异常：继续统一收尾（失败路径）
+        }
+      }
+      if (finalRef) {
+        // Mark the sub-agent conversation read-only before clearing isSending:
+        // once the run ends no new agent loop may start in it, and this
+        // synchronous flag closes the race window before the UI hides the
+        // input box.
+        finalRef.subAgentTerminated = true;
+        finalRef.isSending = false;
+      }
+      ctx.updateSessionField(convId, "isStreaming", false);
+      ctx.updateSessionField(convId, "streamStartedAt", 0);
+      ctx.updateSessionField(convId, "isAborting", false);
+      ctx.removeStreamingId(convId);
+
+      // Broadcast the terminal status FIRST — immediately after the flag, so
+      // the UI hides the input box as soon as possible. Persisting to the DB
+      // and running the (possibly slow) completion hook happen afterwards.
+      ctx.setSubAgentSessionEvent({
+        parentConversationId,
+        conversationId: convId,
+        agentId,
+        agentName: subAgentName ?? agentId,
+        status,
+        timestamp: Date.now(),
+        toolCallInteractionId,
+      });
+
+      // Persist the terminal status so it survives an app restart.
+      await window.snow.updateSubAgentSessionStatus(convId, status, "").catch(
+        () => {}
+      );
+
+      // Flush user messages queued while the sub-agent was busy (inserting
+      // messages mid-run is allowed). A finished sub-agent conversation no
+      // longer accepts messages, so carry them to the parent conversation.
+      // This also covers aborted runs: with the sub-conversation input
+      // hidden, the queue would otherwise be orphaned and silently lost.
+      forwardSubPendingQueue(convId);
+
+      if (status === "failed") {
+        return JSON.stringify({ success: false, error: summary });
+      }
+
+      // Execute onSubAgentComplete hooks. The hook context includes the
+      // sub-agent's summary so prompt-type hooks can inspect the result.
+      // If blocked, the error message replaces the summary returned to
+      // the parent AI loop.
+      let effectiveSummary = summary;
+      try {
+        const onCompleteContext = JSON.stringify({
+          agentId,
+          agentName: subAgentName ?? agentId,
+          prompt,
+          summary,
+          parentConversationId,
+          cwd: directoryIdToPath(dirId) ?? ctx.directoryPath ?? "",
+        });
+        const onCompleteResult = await runHook(
+          "onSubAgentComplete",
+          dirId || undefined,
+          onCompleteContext
+        );
+        if (onCompleteResult) {
+          ctx.updateSessionMessages(parentConversationId, (currentMessages) =>
+            appendHookExecutionToMessage(currentMessages, {
+              ...onCompleteResult.record,
+              // Bind to the sub-agent tool call so the hook renders attached
+              // to the sub-agent card ("完成" step), not the message footer.
+              toolCallInteractionId,
+            })
+          );
+          if (onCompleteResult.outcome.kind === "abort") {
+            effectiveSummary = onCompleteResult.outcome.message;
+          } else if (
+            onCompleteResult.outcome.kind === "pass" &&
+            onCompleteResult.outcome.context
+          ) {
+            effectiveSummary = `${summary}\n\n[Hook Context]\n${onCompleteResult.outcome.context}`;
+          } else if (onCompleteResult.outcome.kind === "warn") {
+            effectiveSummary = `${summary}\n\n[Hook Warning]\n${onCompleteResult.outcome.message}`;
+          }
+        }
+      } catch {
+        // Hook execution failed -- use original summary
+      }
+
+      return JSON.stringify({
+        success: true,
+        conversationId: convId,
+        agentName: subAgentName,
+        summary: effectiveSummary,
+      });
     };
 
     try {
@@ -1114,147 +1247,104 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         return subAgentRunLoop(subNextMessages);
       };
 
+      // 重新激活入口（sub-agents-continue）：运行中 → Pending 队列排队
+      // （目标回合边界自动消费）；已结束 → 恢复运行状态并启动新回合，
+      // 完成后走与激活完全相同的统一收尾。会话隔离在调用方
+      // （createSubAgentMainToolExecutor）强制校验，此处只负责运行。
+      const resumeSubAgent = async (
+        messages: { role: "user"; content: string }[]
+      ): Promise<string> => {
+        const resumeConvId = subConversationId;
+        if (!resumeConvId) {
+          return JSON.stringify({
+            success: false,
+            error: "Sub-agent session is not ready yet",
+          });
+        }
+        const resumeRef = ctx.sessionsRefData.current.get(resumeConvId);
+        if (!resumeRef) {
+          return JSON.stringify({
+            success: false,
+            error: "Sub-agent session no longer exists",
+          });
+        }
+        // 运行中：消息进入 Pending 队列，目标回合结束时自动切入。
+        if (resumeRef.isSending && !resumeRef.subAgentTerminated) {
+          const queue =
+            ctx.pendingQueueRef.current.get(resumeConvId) ?? [];
+          queue.push(
+            ...messages.map((m) => ({ text: m.content, options: {} }))
+          );
+          ctx.pendingQueueRef.current.set(resumeConvId, queue);
+          if (ctx.activeConversationIdRef.current === resumeConvId) {
+            ctx.setActivePendingMessages(queue.map((item) => item.text));
+          }
+          return JSON.stringify({
+            success: true,
+            queued: true,
+            note: "The target sub-agent is still running; the message was queued as a Pending message and will be delivered at the end of its current round.",
+          });
+        }
+
+        // 已结束：重新激活。恢复运行状态与流式标记（与激活时初始化
+        // 一致），handleAbort 与暂停检查才能正常工作；广播 running 事件
+        // 让 UI 立即恢复实时状态。
+        resumeRef.subAgentTerminated = false;
+        resumeRef.isSending = true;
+        resumeRef.isAbortRequested = false;
+        ctx.updateSessionField(resumeConvId, "isStreaming", true);
+        resetRunStreamMetrics(ctx, resumeConvId);
+        ctx.updateSessionField(resumeConvId, "streamStartedAt", Date.now());
+        ctx.addStreamingId(resumeConvId);
+        ctx.setSubAgentSessionEvent({
+          parentConversationId,
+          conversationId: resumeConvId,
+          agentId,
+          agentName: subAgentName ?? agentId,
+          status: "running",
+          timestamp: Date.now(),
+        });
+
+        const resumeUserMsg: ChatConversationMessage = {
+          id: createMessageId("user"),
+          role: "user",
+          content: messages.map((m) => m.content).join("\n\n"),
+          timestamp: formatMessageTime(),
+          status: "sent",
+        };
+        ctx.updateSessionMessages(resumeConvId, (currentMessages) => [
+          ...currentMessages,
+          resumeUserMsg,
+        ]);
+
+        const resumeSummary = await subAgentRunLoop(messages);
+        return finalizeSubAgentSession(resumeConvId, resumeSummary, "completed");
+      };
+
+      // 注册恢复器：主会话 sub-agents-continue 可凭它重新激活本子代理
+      // （保持原配置、工具集与完整会话历史）。子代理结束后注册保留，
+      // 直到应用重启或会话被删除。
+      subAgentResumers.set(subConversationId, {
+        parentConversationId,
+        agentId,
+        agentName: subAgentName ?? agentId,
+        resume: resumeSubAgent,
+      });
+
       const summary = await subAgentRunLoop([
         { role: "user", content: prompt },
       ]);
 
-      const subFinalRef = ctx.sessionsRefData.current.get(subConvId);
-      // 用户在子代理运行中点击"立即发送"：先消费暂存消息继续回合，
-      // 再统一走终止收尾（terminated + cancelled 广播 + 队列转交
-      // 父会话）。
-      if (subFinalRef?.forceSendMessages?.length) {
-        try {
-          await runForceSendLoop();
-        } catch {
-          // 强行发送回合异常：继续统一收尾（失败路径）
-        }
-      }
-      if (subFinalRef) {
-        // Mark the sub-agent conversation read-only before clearing isSending:
-        // once the run ends no new agent loop may start in it, and this
-        // synchronous flag closes the race window before the UI hides the
-        // input box.
-        subFinalRef.subAgentTerminated = true;
-        subFinalRef.isSending = false;
-      }
-      ctx.updateSessionField(subConvId, "isStreaming", false);
-      ctx.updateSessionField(subConvId, "streamStartedAt", 0);
-      ctx.updateSessionField(subConvId, "isAborting", false);
-      ctx.removeStreamingId(subConvId);
-
-      // Broadcast the terminal status FIRST — immediately after the flag, so
-      // the UI hides the input box as soon as possible. Persisting to the DB
-      // and running the (possibly slow) completion hook happen afterwards.
-      ctx.setSubAgentSessionEvent({
-        parentConversationId,
-        conversationId: subConversationId,
-        agentId,
-        agentName: subAgentName,
-        status: "completed",
-        timestamp: Date.now(),
-        toolCallInteractionId,
-      });
-
-      // Persist the terminal status so it survives an app restart.
-      await window.snow.updateSubAgentSessionStatus(subConvId, "completed", "");
-
-      // Flush user messages queued while the sub-agent was busy (inserting
-      // messages mid-run is allowed). A finished sub-agent conversation no
-      // longer accepts messages, so carry them to the parent conversation.
-      // This also covers aborted runs: with the sub-conversation input
-      // hidden, the queue would otherwise be orphaned and silently lost.
-      forwardSubPendingQueue(subConvId);
-
-      // Execute onSubAgentComplete hooks. The hook context includes the
-      // sub-agent's summary so prompt-type hooks can inspect the result.
-      // If blocked, the error message replaces the summary returned to
-      // the parent AI loop.
-      let effectiveSummary = summary;
-      try {
-        const onCompleteContext = JSON.stringify({
-          agentId,
-          agentName: subAgentName ?? agentId,
-          prompt,
-          summary,
-          parentConversationId,
-          cwd: directoryIdToPath(dirId) ?? ctx.directoryPath ?? "",
-        });
-        const onCompleteResult = await runHook(
-          "onSubAgentComplete",
-          dirId || undefined,
-          onCompleteContext
-        );
-        if (onCompleteResult) {
-          ctx.updateSessionMessages(parentConversationId, (currentMessages) =>
-            appendHookExecutionToMessage(currentMessages, {
-              ...onCompleteResult.record,
-              // Bind to the sub-agent tool call so the hook renders attached
-              // to the sub-agent card ("完成" step), not the message footer.
-              toolCallInteractionId,
-            })
-          );
-          if (onCompleteResult.outcome.kind === "abort") {
-            effectiveSummary = onCompleteResult.outcome.message;
-          } else if (
-            onCompleteResult.outcome.kind === "pass" &&
-            onCompleteResult.outcome.context
-          ) {
-            effectiveSummary = `${summary}\n\n[Hook Context]\n${onCompleteResult.outcome.context}`;
-          } else if (onCompleteResult.outcome.kind === "warn") {
-            effectiveSummary = `${summary}\n\n[Hook Warning]\n${onCompleteResult.outcome.message}`;
-          }
-        }
-      } catch {
-        // Hook execution failed -- use original summary
-      }
-
-      return JSON.stringify({
-        success: true,
-        conversationId: subConversationId,
-        agentName: subAgentName,
-        summary: effectiveSummary,
-      });
+      return finalizeSubAgentSession(subConversationId, summary, "completed");
     } catch (err) {
       if (subConversationId) {
-        const subCatchRef = ctx.sessionsRefData.current.get(subConversationId);
-        // 与正常路径相同的强行发送处理：先消费暂存消息继续回合，
-        // 再统一走失败收尾。
-        if (subCatchRef?.forceSendMessages?.length) {
-          try {
-            await runForceSendLoop();
-          } catch {
-            // 强行发送回合也失败：照常走失败收尾
-          }
-        }
-        if (subCatchRef) {
-          // A failed sub-agent conversation is read-only as well.
-          subCatchRef.subAgentTerminated = true;
-          subCatchRef.isSending = false;
-        }
-        ctx.updateSessionField(subConversationId, "isStreaming", false);
-        ctx.updateSessionField(subConversationId, "streamStartedAt", 0);
-        ctx.updateSessionField(subConversationId, "isAborting", false);
-        ctx.removeStreamingId(subConversationId);
-
-        // Same ordering as the success path: broadcast the failed status
-        // first so the UI hides the input box immediately.
-        ctx.setSubAgentSessionEvent({
-          parentConversationId,
-          conversationId: subConversationId,
-          agentId,
-          agentName: subAgentName ?? agentId,
-          status: "failed",
-          timestamp: Date.now(),
-          toolCallInteractionId,
-        });
-
-        await window.snow
-          .updateSubAgentSessionStatus(subConversationId, "failed", "")
-          .catch(() => {});
-
-        // Same rationale as the success path: queued insertions must not be
-        // lost when the failed sub-agent conversation becomes read-only.
-        forwardSubPendingQueue(subConversationId);
+        // 失败收尾与正常收尾完全一致（只读标记、状态清理、failed 广播、
+        // DB 持久化、队列转交），错误信息作为 summary 返回。
+        return finalizeSubAgentSession(
+          subConversationId,
+          getErrorMessage(err),
+          "failed"
+        );
       }
 
       return JSON.stringify({
@@ -1262,5 +1352,94 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         error: getErrorMessage(err),
       });
     }
+  };
+};
+
+// ---------------------------------------------------------------------------
+// 主会话子代理管理工具（sub-agents-listSubAgents / sub-agents-continue）
+// ---------------------------------------------------------------------------
+
+/** 主会话专用的子代理管理工具执行器。会话隔离在此强制：查询与继续都只
+ *  允许当前父会话（parentConversationId）自己的子代理，跨会话一律拒绝。 */
+export const createSubAgentMainToolExecutor = (
+  ctx: ConversationContextValue
+) => {
+  return async (
+    toolName: string,
+    argsJson: string,
+    parentConversationId: string
+  ): Promise<string> => {
+    if (toolName === "sub-agents-listSubAgents") {
+      const eventMap = ctx.subAgentSessionEventsRef.current;
+      const subAgents = Object.values(eventMap)
+        .filter(
+          (event) => event.parentConversationId === parentConversationId
+        )
+        .map((event) => ({
+          conversationId: event.conversationId,
+          agentId: event.agentId,
+          agentName: event.agentName,
+          status: event.status,
+          // 只有本运行期激活且注册表仍在的子代理可被 continue 重新激活。
+          resumable: subAgentResumers.has(event.conversationId),
+        }));
+      return JSON.stringify({ success: true, subAgents });
+    }
+
+    if (toolName === "sub-agents-continue") {
+      let args: Record<string, unknown>;
+      try {
+        args = JSON.parse(argsJson) as Record<string, unknown>;
+      } catch {
+        return JSON.stringify({
+          success: false,
+          error: "Invalid JSON arguments",
+        });
+      }
+      const targetConvId =
+        typeof args.conversationId === "string"
+          ? args.conversationId.trim()
+          : "";
+      const message =
+        typeof args.message === "string" ? args.message.trim() : "";
+      if (!targetConvId || !message) {
+        return JSON.stringify({
+          success: false,
+          error: "conversationId and message are required",
+        });
+      }
+
+      // 会话隔离：目标必须是当前父会话下的子代理（运行期事件 + resumer
+      // 双校验），不允许激活不属于当前会话的子代理。
+      const eventMap = ctx.subAgentSessionEventsRef.current;
+      const targetEvent = eventMap[targetConvId];
+      if (
+        !targetEvent ||
+        targetEvent.parentConversationId !== parentConversationId
+      ) {
+        return JSON.stringify({
+          success: false,
+          error:
+            "Target sub-agent does not exist or belongs to another conversation (session isolation: only sub-agents of the current conversation can be resumed)",
+        });
+      }
+      const resumer = subAgentResumers.get(targetConvId);
+      if (!resumer || resumer.parentConversationId !== parentConversationId) {
+        return JSON.stringify({
+          success: false,
+          error:
+            "The target sub-agent was not activated in this app run and cannot be resumed",
+        });
+      }
+
+      // 消息自带发送方标识，子代理收到后可知来源。
+      const queuedText = `[来自主会话]\n${message}`;
+      return resumer.resume([{ role: "user", content: queuedText }]);
+    }
+
+    return JSON.stringify({
+      success: false,
+      error: `Unknown sub-agents tool: ${toolName}`,
+    });
   };
 };

@@ -932,6 +932,8 @@ export const en = {
   "toolNames.sub-agents-activate": "Sub-agent",
   "toolNames.sub-agents-listTeammates": "List teammates",
   "toolNames.sub-agents-sendMessage": "Send message",
+  "toolNames.sub-agents-listSubAgents": "List sub-agents",
+  "toolNames.sub-agents-continue": "Continue sub-agent",
   "toolNames.websearch-websearch-search": "Search web",
   "toolNames.websearch-websearch-fetch": "Fetch page",
   "toolNames.imagegen-generate": "Generate image",

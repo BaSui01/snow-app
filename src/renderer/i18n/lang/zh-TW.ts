@@ -902,6 +902,8 @@ export const zhTW = {
   "toolNames.sub-agents-activate": "子代理",
   "toolNames.sub-agents-listTeammates": "查詢隊友",
   "toolNames.sub-agents-sendMessage": "發送訊息",
+  "toolNames.sub-agents-listSubAgents": "查詢子代理",
+  "toolNames.sub-agents-continue": "繼續子代理",
   "toolNames.websearch-websearch-search": "搜尋網頁",
   "toolNames.websearch-websearch-fetch": "擷取網頁",
   "toolNames.imagegen-generate": "生圖",

@@ -901,6 +901,8 @@ export const zhCN = {
   "toolNames.sub-agents-activate": "子代理",
   "toolNames.sub-agents-listTeammates": "查询队友",
   "toolNames.sub-agents-sendMessage": "发送消息",
+  "toolNames.sub-agents-listSubAgents": "查询子代理",
+  "toolNames.sub-agents-continue": "继续子代理",
   "toolNames.websearch-websearch-search": "搜索网页",
   "toolNames.websearch-websearch-fetch": "抓取网页",
   "toolNames.imagegen-generate": "生图",

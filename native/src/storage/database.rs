@@ -9,7 +9,7 @@ use std::{
 use napi::bindgen_prelude::*;
 use rusqlite::Connection;
 
-use super::{migrations, services};
+use super::{migrations, models::DatabaseRepairResult, services};
 
 /// Bumped whenever the schema changes; written to `PRAGMA user_version` after
 /// a successful `create_schema` so the app can detect stale databases.
@@ -116,7 +116,7 @@ pub fn ensure_database(database_path: &Path) -> Result<()> {
                     "Snow App database corruption detected ({}). Attempting recovery...",
                     first_error
                 );
-                match recover_database(database_path) {
+                match recover_database(database_path, create_schema) {
                     Ok(()) => {
                         eprintln!("Snow App database recovered successfully.");
                         Ok(())
@@ -156,7 +156,14 @@ fn is_corruption_error(error: &rusqlite::Error) -> bool {
 /// Attempts to recover data from a corrupted SQLite database by dumping all
 /// recoverable rows into a new database file, then atomically replacing the
 /// corrupted file. The old file is preserved with a `.corrupt.bak` suffix.
-fn recover_database(database_path: &Path) -> Result<()> {
+///
+/// `schema_builder` decides which table structure the recovered database gets:
+/// the runtime database uses the full app schema, the archive database uses
+/// the archive-only schema. It must be idempotent (`CREATE TABLE IF NOT EXISTS`).
+pub(crate) fn recover_database(
+    database_path: &Path,
+    schema_builder: fn(&Connection) -> rusqlite::Result<()>,
+) -> Result<()> {
     let parent = database_path
         .parent()
         .ok_or_else(|| Error::from_reason("Cannot determine database parent directory"))?;
@@ -203,9 +210,9 @@ fn recover_database(database_path: &Path) -> Result<()> {
     // Set a busy timeout so we don't fail if another connection holds a lock.
     let _ = read_only_conn.busy_timeout(Duration::from_secs(5));
 
-    // Build the schema in the recovered database first (using our own
-    // create_schema, which is idempotent with CREATE TABLE IF NOT EXISTS).
-    create_schema(&recovered_conn).map_err(|e| {
+    // Build the schema in the recovered database first (using the caller's
+    // schema builder, which is idempotent with CREATE TABLE IF NOT EXISTS).
+    schema_builder(&recovered_conn).map_err(|e| {
         Error::from_reason(format!(
             "Failed to create schema in recovered database: {e}"
         ))
@@ -322,15 +329,9 @@ fn recover_database(database_path: &Path) -> Result<()> {
         }
     }
 
-    // Run post-schema migrations on the recovered database to ensure it has
-    // all columns/indexes the current schema expects.
-    migrations::run_post_schema_migrations(&recovered_conn).map_err(|e| {
-        Error::from_reason(format!(
-            "Failed to run migrations on recovered database: {e}"
-        ))
-    })?;
-
-    let _ = recovered_conn.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION);
+    // user_version is set by the schema builder itself (create_schema writes
+    // CURRENT_SCHEMA_VERSION; the archive builder leaves it unset, which the
+    // archive service tolerates).
     drop(recovered_conn);
     drop(read_only_conn);
 
@@ -816,6 +817,66 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
     connection.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)?;
 
     Ok(())
+}
+
+/// 对数据库执行「修复」：先做 `PRAGMA integrity_check` 完整性检查；完好则
+/// 执行 `VACUUM` 压缩优化，发现损坏则调用 [recover_database] 恢复数据。
+/// 返回修复结果（是否实际执行了数据恢复）。
+///
+/// 注意：这里刻意不切换 journal_mode（`open_connection` 会强制 WAL）——
+/// 归档库必须保持 rollback journal 模式，所以仅设置外键与 busy timeout。
+pub(crate) fn repair_database(
+    database_path: &Path,
+    schema_builder: fn(&Connection) -> rusqlite::Result<()>,
+) -> Result<DatabaseRepairResult> {
+    let connection = Connection::open(database_path)
+        .map_err(|error| database_error(database_path, "repair", error))?;
+    connection
+        .pragma_update(None, "foreign_keys", "ON")
+        .map_err(|error| database_error(database_path, "repair", error))?;
+    connection
+        .busy_timeout(Duration::from_secs(5))
+        .map_err(|error| database_error(database_path, "repair", error))?;
+
+    // 1) 完整性检查：所有输出行均为 "ok" 才视为健康。
+    let integrity_lines: Vec<String> = {
+        let mut stmt = connection.prepare("PRAGMA integrity_check").map_err(|error| {
+            database_error(database_path, "integrity check during repair", error)
+        })?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|error| {
+                database_error(database_path, "integrity check during repair", error)
+            })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|error| {
+            database_error(database_path, "integrity check during repair", error)
+        })?
+    };
+
+    if integrity_lines.iter().all(|line| line.trim() == "ok") {
+        // 2a) 完好 → VACUUM 压缩优化（重组文件、回收空闲页）。
+        connection
+            .execute_batch("VACUUM")
+            .map_err(|error| database_error(database_path, "vacuum during repair", error))?;
+        return Ok(DatabaseRepairResult {
+            repaired: false,
+            message: "Integrity check passed; database optimized via VACUUM.".to_string(),
+        });
+    }
+
+    // 2b) 发现损坏 → 先释放检查连接，再走数据恢复流程。
+    drop(connection);
+    let detail = integrity_lines.join("; ");
+    eprintln!(
+        "Snow App database integrity check failed at '{}' ({}). Attempting recovery...",
+        database_path.display(),
+        detail
+    );
+    recover_database(database_path, schema_builder)?;
+    Ok(DatabaseRepairResult {
+        repaired: true,
+        message: format!("Database was damaged and has been recovered. Detected issues: {detail}"),
+    })
 }
 
 pub fn database_error(database_path: &Path, action: &str, error: rusqlite::Error) -> Error {

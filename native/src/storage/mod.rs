@@ -1792,6 +1792,26 @@ pub fn get_path_size(path: String) -> Result<i64> {
     Ok(total)
 }
 
+/// 修复数据库（kind: "runtime" = 运行数据库 | "archive" = 归档数据库）：
+/// 完整性检查 → 损坏则恢复数据（原文件保留 `.corrupt.*.bak` 备份），
+/// 完好则 VACUUM 压缩优化。所有文件 I/O 均在调用方的 spawn_blocking 中执行。
+pub fn repair_database(kind: String) -> Result<DatabaseRepairResult> {
+    match kind.trim() {
+        "runtime" => {
+            let database_path = ensure_database_file()?;
+            database::repair_database(&database_path, database::create_schema)
+        }
+        "archive" => {
+            let archive_path = ensure_archive_database_file()?;
+            database::repair_database(&archive_path, services::archive::create_archive_schema)
+        }
+        other => Err(Error::new(
+            Status::InvalidArg,
+            format!("Unknown database kind: {other}"),
+        )),
+    }
+}
+
 /// 准备存储目录迁移（kind: "checkpoint" | "upload"）：校验目标目录并写入
 /// 迁移日志；返回待迁移文件数量（0 表示无需迁移）。
 pub fn prepare_storage_migration(kind: String, target_dir: String) -> Result<u32> {

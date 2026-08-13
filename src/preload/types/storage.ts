@@ -23,3 +23,14 @@ export type StorageMigrationProgress = {
   total: number;
   done: boolean;
 };
+
+/** 可修复的数据库种类：runtime（运行库）| archive（归档库） */
+export type DatabaseKind = "runtime" | "archive";
+
+/** 数据库修复结果 */
+export type DatabaseRepairResult = {
+  /** 是否实际执行了数据恢复（true=检测到损坏并已恢复；false=数据库完好，仅完成压缩） */
+  repaired: boolean;
+  /** 修复过程描述（英文，供日志与诊断） */
+  message: string;
+};

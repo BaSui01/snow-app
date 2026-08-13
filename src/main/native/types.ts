@@ -758,6 +758,17 @@ export type StorageMigrationProgress = {
   done: boolean;
 };
 
+/** 可修复的数据库种类：runtime（运行库）| archive（归档库） */
+export type DatabaseKind = "runtime" | "archive";
+
+/** 数据库修复结果 */
+export type DatabaseRepairResult = {
+  /** 是否实际执行了数据恢复（true=检测到损坏并已恢复；false=数据库完好，仅完成压缩） */
+  repaired: boolean;
+  /** 修复过程描述（英文，供日志与诊断） */
+  message: string;
+};
+
 export type UserMessageSummary = {
   id: string;
   content: string;
@@ -1766,6 +1777,8 @@ export type NativeBridge = {
   rollbackStorageMigration: (kind: StorageLocationKind) => Promise<void>;
   /** 计算文件或目录的占用字节数（目录递归统计，用于展示存储占用） */
   getPathSize: (path: string) => Promise<number>;
+  /** 修复数据库（runtime=运行库 / archive=归档库）：完整性检查、损坏恢复与压缩 */
+  repairDatabase: (kind: DatabaseKind) => Promise<DatabaseRepairResult>;
   /** 探测本机浏览器（Chrome/Edge/Chromium/Firefox）及其配置文件与数据量 */
   browserImportListSources: () => Promise<BrowserImportSource[]>;
   /** 解密并导出指定浏览器配置文件的已保存密码（明文，仅供主进程加密落盘） */

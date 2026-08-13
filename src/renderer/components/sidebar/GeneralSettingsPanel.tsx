@@ -9,13 +9,16 @@ import {
   Images,
   LoaderCircle,
   RefreshCw,
+  Wrench,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { localeLabels, useI18n, type Locale } from "../../i18n";
+import { AutoDismissNotice } from "../AutoDismissNotice";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import type { UpdateStatus } from "../../../preload";
 import type {
+  DatabaseKind,
   StorageLocationKind,
   StorageLocations,
 } from "../../../preload";
@@ -31,9 +34,6 @@ const INITIAL_UPDATE_STATUS: UpdateStatus = {
 
 // 手动检查后的提示类型
 type CheckHint = "up-to-date" | "error" | null;
-
-// 提示自动隐藏时长（毫秒）
-const HINT_AUTO_HIDE_MS = 3000;
 
 // 可迁移的存储位置（checkpoint / upload）
 const STORAGE_KINDS: StorageLocationKind[] = ["checkpoint", "upload"];
@@ -98,7 +98,6 @@ export function GeneralSettingsPanel({
     INITIAL_UPDATE_STATUS
   );
   const [checkHint, setCheckHint] = useState<CheckHint>(null);
-  const hintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 存储位置
   const [locations, setLocations] = useState<StorageLocations | null>(null);
@@ -112,6 +111,12 @@ export function GeneralSettingsPanel({
   const [migration, setMigration] = useState<MigrationState | null>(null);
   const [rollingBack, setRollingBack] = useState(false);
   const [storageError, setStorageError] = useState("");
+  /** 待确认修复的数据库（null 表示无） */
+  const [pendingRepair, setPendingRepair] = useState<DatabaseKind | null>(null);
+  /** 正在修复的数据库（非 null 表示修复进行中） */
+  const [repairingDb, setRepairingDb] = useState<DatabaseKind | null>(null);
+  /** 最近一次修复成功的提示（空字符串表示无） */
+  const [repairHint, setRepairHint] = useState("");
   /** 用户请求取消迁移（chunk 循环之间检查） */
   const migrationCancelledRef = useRef(false);
   /** 组件卸载时若迁移仍进行中，触发回滚 */
@@ -152,35 +157,14 @@ export function GeneralSettingsPanel({
     });
     return () => {
       unsubscribe();
-      if (hintTimerRef.current) {
-        clearTimeout(hintTimerRef.current);
-        hintTimerRef.current = null;
-      }
     };
   }, []);
-
-  const clearHintTimer = (): void => {
-    if (hintTimerRef.current) {
-      clearTimeout(hintTimerRef.current);
-      hintTimerRef.current = null;
-    }
-  };
-
-  const showHint = (hint: Exclude<CheckHint, null>): void => {
-    clearHintTimer();
-    setCheckHint(hint);
-    hintTimerRef.current = setTimeout(() => {
-      setCheckHint(null);
-      hintTimerRef.current = null;
-    }, HINT_AUTO_HIDE_MS);
-  };
 
   const handleCheckForUpdates = (): void => {
     if (isChecking || updateStatus.downloading) {
       return;
     }
     setIsChecking(true);
-    clearHintTimer();
     setCheckHint(null);
     window.snow
       .checkForUpdates()
@@ -189,14 +173,10 @@ export function GeneralSettingsPanel({
           // 发现新版本，更新按钮会自动出现，无需额外提示
           return;
         }
-        if (result.error) {
-          showHint("error");
-        } else {
-          showHint("up-to-date");
-        }
+        setCheckHint(result.error ? "error" : "up-to-date");
       })
       .catch(() => {
-        showHint("error");
+        setCheckHint("error");
       })
       .finally(() => {
         setIsChecking(false);
@@ -473,6 +453,70 @@ export function GeneralSettingsPanel({
     imageLibraryCancelledRef.current = true;
   };
 
+  /** 执行数据库修复：完整性检查 → 损坏则恢复，完好则压缩优化。 */
+  const handleRepairDatabase = async (kind: DatabaseKind): Promise<void> => {
+    if (repairingDb) {
+      return;
+    }
+    setRepairingDb(kind);
+    setStorageError("");
+    setRepairHint("");
+    try {
+      const result = await window.snow.repairDatabase(kind);
+      setRepairHint(
+        result.repaired
+          ? t("settings.storageRepairRecovered", {
+              defaultValue: "Database was damaged and has been repaired.",
+            })
+          : t("settings.storageRepairOk", {
+              defaultValue: "Database is healthy and has been optimized.",
+            })
+      );
+      // 修复可能改变数据库文件大小，刷新占用统计
+      if (locations) {
+        void refreshPathSizes(locations, imageLibraryRoot);
+      }
+    } catch (error) {
+      setStorageError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRepairingDb(null);
+    }
+  };
+
+  /** 渲染某个数据库的「修复」按钮（kind 区分运行库 / 归档库）。 */
+  const renderRepairButton = (kind: DatabaseKind): React.JSX.Element => {
+    const isRepairing = repairingDb === kind;
+    return (
+      <button
+        type="button"
+        className="general-storage-action"
+        onClick={() => setPendingRepair(kind)}
+        disabled={!locations || isMigrating || repairingDb !== null}
+        title={t("settings.storageRepairDb", {
+          defaultValue: "Repair database",
+        })}
+      >
+        {isRepairing ? (
+          <LoaderCircle
+            size={11}
+            strokeWidth={1.8}
+            className="tool-call-icon-spinning"
+            aria-hidden="true"
+          />
+        ) : (
+          <Wrench size={11} strokeWidth={1.8} aria-hidden="true" />
+        )}
+        <span>
+          {isRepairing
+            ? t("settings.storageRepairing", { defaultValue: "Repairing..." })
+            : t("settings.storageRepairDb", {
+                defaultValue: "Repair database",
+              })}
+        </span>
+      </button>
+    );
+  };
+
   /** 渲染某存储路径的占用大小（未加载或读取失败时不显示）。 */
   const renderSize = (path: string | undefined): React.JSX.Element | null => {
     if (!path) {
@@ -524,6 +568,26 @@ export function GeneralSettingsPanel({
         )}
       </div>
 
+      <AutoDismissNotice
+        message={
+          storageError ||
+          repairHint ||
+          (checkHint === "up-to-date"
+            ? t("settings.upToDate", { defaultValue: "You're up to date" })
+            : checkHint === "error"
+              ? t("settings.updateCheckFailed", {
+                  defaultValue: "Update check failed",
+                })
+              : "")
+        }
+        tone={storageError || checkHint === "error" ? "error" : "success"}
+        onDismiss={() => {
+          setStorageError("");
+          setRepairHint("");
+          setCheckHint(null);
+        }}
+      />
+
       <div className="api-settings-manual-form">
         <div className="api-settings-manual-header">
           <strong>
@@ -570,10 +634,6 @@ export function GeneralSettingsPanel({
         </div>
 
         <div className="api-settings-form-body">
-          {storageError && (
-            <span className="settings-update-error">{storageError}</span>
-          )}
-
           {/* 运行数据库位置 */}
           <div className="general-storage-row">
             <div className="general-storage-info">
@@ -598,25 +658,28 @@ export function GeneralSettingsPanel({
                 {renderSize(locations?.databasePath)}
               </div>
             </div>
-            <button
-              type="button"
-              className="general-storage-action"
-              onClick={() =>
-                locations &&
-                void handleOpenDir(parentDirOf(locations.databasePath))
-              }
-              disabled={!locations || isMigrating}
-              title={t("settings.storageOpenDir", {
-                defaultValue: "Open folder",
-              })}
-            >
-              <FolderOpen size={11} aria-hidden="true" />
-              <span>
-                {t("settings.storageOpenDir", {
+            <div className="general-storage-actions">
+              <button
+                type="button"
+                className="general-storage-action"
+                onClick={() =>
+                  locations &&
+                  void handleOpenDir(parentDirOf(locations.databasePath))
+                }
+                disabled={!locations || isMigrating}
+                title={t("settings.storageOpenDir", {
                   defaultValue: "Open folder",
                 })}
-              </span>
-            </button>
+              >
+                <FolderOpen size={11} aria-hidden="true" />
+                <span>
+                  {t("settings.storageOpenDir", {
+                    defaultValue: "Open folder",
+                  })}
+                </span>
+              </button>
+              {renderRepairButton("runtime")}
+            </div>
           </div>
 
           {/* 归档数据库位置（archive.db，存放归档会话） */}
@@ -643,25 +706,28 @@ export function GeneralSettingsPanel({
                 {renderSize(locations?.archiveDbPath)}
               </div>
             </div>
-            <button
-              type="button"
-              className="general-storage-action"
-              onClick={() =>
-                locations &&
-                void handleOpenDir(parentDirOf(locations.archiveDbPath))
-              }
-              disabled={!locations || isMigrating}
-              title={t("settings.storageOpenDir", {
-                defaultValue: "Open folder",
-              })}
-            >
-              <FolderOpen size={11} aria-hidden="true" />
-              <span>
-                {t("settings.storageOpenDir", {
+            <div className="general-storage-actions">
+              <button
+                type="button"
+                className="general-storage-action"
+                onClick={() =>
+                  locations &&
+                  void handleOpenDir(parentDirOf(locations.archiveDbPath))
+                }
+                disabled={!locations || isMigrating}
+                title={t("settings.storageOpenDir", {
                   defaultValue: "Open folder",
                 })}
-              </span>
-            </button>
+              >
+                <FolderOpen size={11} aria-hidden="true" />
+                <span>
+                  {t("settings.storageOpenDir", {
+                    defaultValue: "Open folder",
+                  })}
+                </span>
+              </button>
+              {renderRepairButton("archive")}
+            </div>
           </div>
 
           {/* 检查点 / 上传图片位置 */}
@@ -1044,24 +1110,6 @@ export function GeneralSettingsPanel({
                 </span>
               </button>
             )}
-
-            {/* 已是最新版本 - 自动隐藏 */}
-            {checkHint === "up-to-date" && !updateStatus.available && (
-              <span className="settings-update-hint">
-                {t("settings.upToDate", {
-                  defaultValue: "You're up to date",
-                })}
-              </span>
-            )}
-
-            {/* 检查失败提示 - 自动隐藏 */}
-            {checkHint === "error" && (
-              <span className="settings-update-error">
-                {t("settings.updateCheckFailed", {
-                  defaultValue: "Update check failed",
-                })}
-              </span>
-            )}
           </div>
         </div>
       </div>
@@ -1100,6 +1148,29 @@ export function GeneralSettingsPanel({
         cancelLabel={t("settings.cancel", { defaultValue: "Cancel" })}
         onConfirm={() => void confirmImageLibraryMigration()}
         onCancel={() => setImageLibraryPendingMigration(null)}
+      />
+
+      <ConfirmDialog
+        open={pendingRepair !== null}
+        title={t("settings.storageRepairTitle", {
+          defaultValue: "Repair database",
+        })}
+        message={t("settings.storageRepairConfirm", {
+          defaultValue:
+            "Run an integrity check on the database and repair it automatically if damaged. A backup of a damaged database is kept automatically. It is recommended to finish active conversations first. Continue?",
+        })}
+        confirmLabel={t("settings.storageRepairConfirmBtn", {
+          defaultValue: "Repair",
+        })}
+        cancelLabel={t("settings.cancel", { defaultValue: "Cancel" })}
+        onConfirm={() => {
+          const kind = pendingRepair;
+          setPendingRepair(null);
+          if (kind) {
+            void handleRepairDatabase(kind);
+          }
+        }}
+        onCancel={() => setPendingRepair(null)}
       />
     </div>
   );

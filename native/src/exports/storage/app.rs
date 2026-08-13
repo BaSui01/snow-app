@@ -9,6 +9,16 @@ pub async fn initialize_app_storage() -> napi::Result<AppStorageInfo> {
         .map_err(map_spawn_error)?
 }
 
+/// 修复数据库（"runtime" = 运行库 | "archive" = 归档库）：
+/// 完整性检查 + 损坏恢复 + VACUUM 压缩。全程在 spawn_blocking 中执行，
+/// 不阻塞 Node.js 主线程。
+#[napi]
+pub async fn repair_database(kind: String) -> napi::Result<DatabaseRepairResult> {
+    tokio::task::spawn_blocking(move || crate::storage::repair_database(kind))
+        .await
+        .map_err(map_spawn_error)?
+}
+
 #[napi]
 pub async fn get_system_setting_value(setting_code: String) -> napi::Result<Option<String>> {
     tokio::task::spawn_blocking(move || crate::storage::get_system_setting_value(setting_code))

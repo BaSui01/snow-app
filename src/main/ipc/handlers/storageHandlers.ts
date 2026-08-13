@@ -1,5 +1,7 @@
 import { BrowserWindow, dialog, ipcMain, shell } from "electron";
 import type {
+  DatabaseKind,
+  DatabaseRepairResult,
   NativeBridge,
   StorageLocationKind,
   StorageMigrationProgress,
@@ -139,6 +141,18 @@ export const registerStorageHandlers = (native: NativeBridge): void => {
         throw new Error("Path is required");
       }
       return native.getPathSize(path.trim());
+    }
+  );
+
+  ipcMain.handle(
+    "storage:repair-database",
+    async (_event, kind: unknown): Promise<DatabaseRepairResult> => {
+      if (kind !== "runtime" && kind !== "archive") {
+        throw new Error("Invalid database kind");
+      }
+      // Rust 端在 spawn_blocking 中执行完整性检查 / 恢复 / 压缩，
+      // 不会阻塞主进程；参数校验后直接转发。
+      return native.repairDatabase(kind as DatabaseKind);
     }
   );
 };

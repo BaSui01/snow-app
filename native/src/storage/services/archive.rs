@@ -73,7 +73,9 @@ fn unique_conversation_ids(conversation_ids: &[String]) -> Vec<String> {
 
 /// 创建归档库表结构（幂等）。与运行库会话相关表结构一致，
 /// chat_conversations 额外带 archived_at 归档时间列。
-fn create_archive_schema(connection: &Connection) -> rusqlite::Result<()> {
+///
+/// 供数据库修复流程复用：归档库损坏恢复时用它重建表结构。
+pub(crate) fn create_archive_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS chat_conversations (
            id TEXT PRIMARY KEY NOT NULL,

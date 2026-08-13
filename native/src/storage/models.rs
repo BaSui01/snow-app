@@ -8,6 +8,15 @@ pub struct AppStorageInfo {
     pub archive_database_path: String,
 }
 
+/// 数据库修复结果（由「设置 → 存储位置」的修复按钮触发）。
+#[napi(object)]
+pub struct DatabaseRepairResult {
+    /// 是否实际执行了数据恢复（true=检测到损坏并已恢复；false=数据库完好，仅完成压缩）
+    pub repaired: bool,
+    /// 修复过程描述（英文，供日志与诊断）
+    pub message: String,
+}
+
 #[napi(object)]
 pub struct ApiConfigInput {
     pub profile_name: String,

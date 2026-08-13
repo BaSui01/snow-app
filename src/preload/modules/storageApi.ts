@@ -1,5 +1,7 @@
 import { ipcRenderer } from "electron";
 import type {
+  DatabaseKind,
+  DatabaseRepairResult,
   StorageLocationKind,
   StorageLocations,
   StorageMigrationProgress,
@@ -46,4 +48,8 @@ export const storageApi = {
   /** 计算文件或目录的占用字节数（目录递归统计，用于展示存储占用） */
   getStoragePathSize: (path: string): Promise<number> =>
     ipcRenderer.invoke("storage:path-size", path),
+
+  /** 修复数据库（runtime=运行库 / archive=归档库）：完整性检查、损坏恢复与压缩 */
+  repairDatabase: (kind: DatabaseKind): Promise<DatabaseRepairResult> =>
+    ipcRenderer.invoke("storage:repair-database", kind),
 };

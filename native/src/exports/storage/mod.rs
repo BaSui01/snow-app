@@ -12,8 +12,8 @@ pub(crate) use crate::storage::services::theme_settings::{
 pub(crate) use crate::storage::{
     ApiConfigInput, ApiConfigRecord, AppStorageInfo, ChatConversationPage, ChatConversationRecord,
     ChatMessagePage, ChatMessageRecord, CodebaseProjectScopeSettings, ConversationSearchResult,
-    CustomHeaderSchemeInput, CustomHeaderSchemeRecord, HookConfigInput, HookConfigRecord,
-    ImportDatabaseTransactionInput, ImportResourceInput, ImportResourceRecord,
+    CustomHeaderSchemeInput, CustomHeaderSchemeRecord, DatabaseRepairResult, HookConfigInput,
+    HookConfigRecord, ImportDatabaseTransactionInput, ImportResourceInput, ImportResourceRecord,
     ImportResourceRelease, ImportResourceReleaseInput, McpServerConfigInput, McpServerConfigRecord,
     MemoCountSummary, MemoPage, MemoRecord, PluginInput, PluginMarketplaceInput,
     PluginMarketplaceRecord, PluginRecord, ProjectMcpServerConfigRecord,

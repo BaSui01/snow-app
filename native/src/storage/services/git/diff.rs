@@ -92,6 +92,9 @@ pub fn get_git_log(repo_path: &str, skip: i32, limit: i32) -> Result<Vec<GitLogE
     // `--decorate=full` emits unambiguous ref names (refs/heads/…,
     // refs/remotes/…, refs/tags/…) so the renderer can tell local branches,
     // remote-tracking branches and tags apart.
+    // `--decorate-refs-exclude=refs/remotes/*/HEAD` drops the origin/HEAD
+    // symbolic ref, which is redundant with the default branch badge
+    // (origin/main) it points to.
     // `--shortstat` appends a diffstat line (e.g. "1 file changed,
     // 5 insertions(+), 2 deletions(-)") after each commit's pretty line so
     // the renderer can show per-commit added/removed line counts. Merge
@@ -104,6 +107,7 @@ pub fn get_git_log(repo_path: &str, skip: i32, limit: i32) -> Result<Vec<GitLogE
             "log",
             "--all",
             "--decorate=full",
+            "--decorate-refs-exclude=refs/remotes/*/HEAD",
             "--shortstat",
             format_arg,
             "--date=iso",
@@ -172,6 +176,15 @@ fn parse_shortstat_count(line: &str, keyword: &str) -> i32 {
     result
 }
 
+/// Lists the files changed by one commit.
+///
+/// `git log -m --first-parent` is used instead of `git diff-tree` because
+/// diff-tree outputs NOTHING for merge commits by default (it needs `-m`),
+/// which made merge-pull commits show an empty file list. `-m --first-parent`
+/// shows the diff against the first parent only, matching what GitHub shows
+/// for a merge commit ("files changed by this merge"), while staying
+/// byte-identical to diff-tree for ordinary commits and full creation for the
+/// root commit.
 pub fn get_commit_files(repo_path: &str, hash: &str) -> Result<Vec<GitCommitFile>> {
     if !is_git_repo(repo_path) {
         return Ok(Vec::new());
@@ -179,7 +192,15 @@ pub fn get_commit_files(repo_path: &str, hash: &str) -> Result<Vec<GitCommitFile
 
     let output = run_git_raw(
         repo_path,
-        &["diff-tree", "--no-commit-id", "--name-status", "-r", hash],
+        &[
+            "log",
+            "-m",
+            "--first-parent",
+            "--format=",
+            "--name-status",
+            "-1",
+            hash,
+        ],
     )?;
 
     let mut files: Vec<GitCommitFile> = Vec::new();
@@ -250,11 +271,14 @@ pub fn get_commit_diff(repo_path: &str, hash: &str) -> Result<GitDiffResult> {
 }
 
 /// Get the diff of a single file within a single commit
-/// (`git show <hash> -- <path>`).
+/// (`git log -m --first-parent -1 <hash> -- <path>`).
 ///
-/// `git show` is used instead of `git diff <hash>^ <hash>` because it also
-/// works for the root commit (compares against the empty tree) and for
-/// merge commits it shows the combined diff against the first parent.
+/// `git log -m --first-parent` is used instead of `git show` because `git show`
+/// renders merge commits in combined format, which only lists files that
+/// differ from ALL parents and is therefore empty for typical merge-pull
+/// commits. `-m --first-parent` diffs against the first parent only, matching
+/// the file list from `get_commit_files`. It still works for the root commit
+/// (compares against the empty tree).
 /// Binary files are detected the same way as `get_file_diff` / `get_commit_diff`.
 pub fn get_commit_file_diff(repo_path: &str, hash: &str, file_path: &str) -> Result<GitDiffResult> {
     if !is_git_repo(repo_path) {
@@ -265,10 +289,14 @@ pub fn get_commit_file_diff(repo_path: &str, hash: &str, file_path: &str) -> Res
     }
 
     let args = vec![
-        "show",
+        "log",
+        "-m",
+        "--first-parent",
         "--format=",
         "--find-renames",
         "--no-ext-diff",
+        "-p",
+        "-1",
         hash,
         "--",
         file_path,
@@ -278,10 +306,14 @@ pub fn get_commit_file_diff(repo_path: &str, hash: &str, file_path: &str) -> Res
         Ok(stdout) => {
             if stdout.contains("Binary files") {
                 let text_args = vec![
-                    "show",
+                    "log",
+                    "-m",
+                    "--first-parent",
                     "--format=",
                     "--text",
                     "--no-ext-diff",
+                    "-p",
+                    "-1",
                     hash,
                     "--",
                     file_path,

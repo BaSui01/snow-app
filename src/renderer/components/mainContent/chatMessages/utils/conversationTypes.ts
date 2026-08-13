@@ -744,6 +744,8 @@ export type UseChatConversationResult = {
     options: ScheduledTaskRunOptions | null
   ) => void;
   handleRollback: (messageId: string) => void;
+  /** 回滚变更计算中（弹窗弹出前）的消息 id，入口按钮据此显示 loading。 */
+  rollbackPreparingMessageId: string | null;
   rollbackPreview: RollbackPreview | null;
   confirmRollback: (mode: RollbackMode) => Promise<void>;
   cancelRollback: () => void;

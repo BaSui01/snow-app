@@ -3,15 +3,14 @@ use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{
-    Arc, Mutex, MutexGuard, OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak,
-};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, Weak};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use serde::{Deserialize, Serialize};
 use similar::TextDiff;
+use tokio::sync::{Mutex as AsyncMutex, RwLock as AsyncRwLock};
 
 use super::checkpoint_skip::should_skip_pending_copy;
 use super::gitignore::GitignoreMatcher;
@@ -19,6 +18,7 @@ use super::gitignore::GitignoreMatcher;
 mod git;
 mod manifest;
 mod paths;
+pub(crate) mod remote;
 
 use self::git::{read_git_object, update_checkpoint_git_ref};
 use self::manifest::{read_manifest, write_manifest};
@@ -71,14 +71,18 @@ static COUNTER: AtomicU64 = AtomicU64::new(0);
 /// 工作目录读写锁表：常规捕获与 diff 查询持有共享读锁，仅回滚持有
 /// 独占写锁。同项目多个会话可并行捕获和展示文件变更，回滚仍与这些操作
 /// 互斥。Weak 让长期不再使用的目录锁可自动回收。
-static CHECKPOINT_WORK_DIR_LOCKS: OnceLock<Mutex<HashMap<PathBuf, Weak<RwLock<()>>>>> =
-    OnceLock::new();
+/// 使用 tokio 锁：本地同步流程（spawn_blocking 内）走 blocking_*，
+/// 远程 SSH 流程（async）跨 await 持锁，两种 guard 均可跨线程安全传递。
+static CHECKPOINT_WORK_DIR_LOCKS: OnceLock<
+    Mutex<HashMap<PathBuf, Weak<AsyncRwLock<()>>>>,
+> = OnceLock::new();
 
 /// manifest 级锁表：每个 checkpoint 独立串行 read-modify-write。
 /// 同项目的不同会话拥有不同 checkpoint，因此文件编辑仅锁自己的
 /// manifest，不再锁住整个工作目录。Weak 避免删除会话后残留锁对象。
-static CHECKPOINT_MANIFEST_LOCKS: OnceLock<Mutex<HashMap<String, Weak<Mutex<()>>>>> =
-    OnceLock::new();
+static CHECKPOINT_MANIFEST_LOCKS: OnceLock<
+    Mutex<HashMap<String, Weak<AsyncMutex<()>>>>,
+> = OnceLock::new();
 
 /// 进程内 diff 缓存上限：超过后整体清空（LRU 之外的简单防膨胀手段，
 /// diff 成本远低于全量重算，清空后逐次重建即可）。
@@ -228,7 +232,7 @@ fn checkpoint_root() -> Result<PathBuf> {
     super::storage_locations::checkpoint_root()
 }
 
-fn work_dir_lock(work_dir: &Path) -> Result<Arc<RwLock<()>>> {
+fn work_dir_lock(work_dir: &Path) -> Result<Arc<AsyncRwLock<()>>> {
     let locks = CHECKPOINT_WORK_DIR_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
     let mut locks = locks
         .lock()
@@ -238,22 +242,36 @@ fn work_dir_lock(work_dir: &Path) -> Result<Arc<RwLock<()>>> {
     }
 
     locks.retain(|_, lock| lock.strong_count() > 0);
-    let lock = Arc::new(RwLock::new(()));
+    let lock = Arc::new(AsyncRwLock::new(()));
     locks.insert(work_dir.to_path_buf(), Arc::downgrade(&lock));
     Ok(lock)
 }
 
-fn work_dir_read_guard(lock: &RwLock<()>) -> Result<RwLockReadGuard<'_, ()>> {
-    lock.read()
-        .map_err(|_| Error::from_reason("Checkpoint work directory lock is poisoned"))
+fn work_dir_read_guard(lock: &AsyncRwLock<()>) -> Result<tokio::sync::RwLockReadGuard<'_, ()>> {
+    Ok(lock.blocking_read())
 }
 
-fn work_dir_write_guard(lock: &RwLock<()>) -> Result<RwLockWriteGuard<'_, ()>> {
-    lock.write()
-        .map_err(|_| Error::from_reason("Checkpoint work directory lock is poisoned"))
+fn work_dir_write_guard(lock: &AsyncRwLock<()>) -> Result<tokio::sync::RwLockWriteGuard<'_, ()>> {
+    Ok(lock.blocking_write())
 }
 
-fn manifest_lock(checkpoint_id: &str) -> Result<Arc<Mutex<()>>> {
+/// 远程（SSH）async 流程的读锁：blocking_read 在 tokio worker 线程上会
+/// panic（"while the thread is being used to drive asynchronous tasks"），
+/// 远程流程必须用异步等待版本。
+pub(crate) async fn work_dir_read_guard_async(
+    lock: &AsyncRwLock<()>,
+) -> tokio::sync::RwLockReadGuard<'_, ()> {
+    lock.read().await
+}
+
+/// 远程（SSH）async 流程的写锁（仅回滚使用）。
+pub(crate) async fn work_dir_write_guard_async(
+    lock: &AsyncRwLock<()>,
+) -> tokio::sync::RwLockWriteGuard<'_, ()> {
+    lock.write().await
+}
+
+fn manifest_lock(checkpoint_id: &str) -> Result<Arc<AsyncMutex<()>>> {
     let locks = CHECKPOINT_MANIFEST_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
     let mut locks = locks
         .lock()
@@ -263,7 +281,7 @@ fn manifest_lock(checkpoint_id: &str) -> Result<Arc<Mutex<()>>> {
     }
 
     locks.retain(|_, lock| lock.strong_count() > 0);
-    let lock = Arc::new(Mutex::new(()));
+    let lock = Arc::new(AsyncMutex::new(()));
     locks.insert(checkpoint_id.to_string(), Arc::downgrade(&lock));
     Ok(lock)
 }
@@ -273,9 +291,7 @@ fn with_manifest_lock<T>(
     operation: impl FnOnce() -> Result<T>,
 ) -> Result<T> {
     let lock = manifest_lock(checkpoint_id)?;
-    let _guard = lock
-        .lock()
-        .map_err(|_| Error::from_reason("Checkpoint manifest lock is poisoned"))?;
+    let _guard = lock.blocking_lock();
     operation()
 }
 
@@ -411,6 +427,50 @@ fn store_object(path: &Path) -> Result<String> {
     }
     let temporary = object_dir.join(format!("{}.tmp", generate_checkpoint_id()));
     fs::copy(path, &temporary).map_err(|error| {
+        Error::from_reason(format!(
+            "Failed to create checkpoint object '{}': {error}",
+            temporary.display()
+        ))
+    })?;
+    if final_path.exists() {
+        let _ = fs::remove_file(&temporary);
+    } else if let Err(error) = fs::rename(&temporary, &final_path) {
+        // Another session may have published the same content-addressed object
+        // after our exists check. Treat that as a successful deduplicated write.
+        if final_path.exists() {
+            let _ = fs::remove_file(&temporary);
+        } else {
+            let _ = fs::remove_file(&temporary);
+            return Err(Error::from_reason(format!(
+                "Failed to publish checkpoint object: {error}"
+            )));
+        }
+    }
+    Ok(object_id)
+}
+
+/// Publish in-memory bytes into the content-addressed object store.
+/// Used by the remote (SSH) checkpoint flows: file content arrives from
+/// Electron via SFTP and is stored with the same BLAKE3 deduplication as
+/// locally captured files.
+fn store_object_bytes(content: &[u8]) -> Result<String> {
+    let object_dir = checkpoint_root()?.join(OBJECT_DIR_NAME);
+    fs::create_dir_all(&object_dir).map_err(|error| {
+        Error::from_reason(format!(
+            "Failed to create checkpoint object directory: {error}"
+        ))
+    })?;
+    let object_id = blake3::Hasher::new()
+        .update(content)
+        .finalize()
+        .to_hex()
+        .to_string();
+    let final_path = object_dir.join(&object_id);
+    if final_path.exists() {
+        return Ok(object_id);
+    }
+    let temporary = object_dir.join(format!("{}.tmp", generate_checkpoint_id()));
+    fs::write(&temporary, content).map_err(|error| {
         Error::from_reason(format!(
             "Failed to create checkpoint object '{}': {error}",
             temporary.display()
@@ -673,9 +733,7 @@ pub fn capture_checkpoint_worktree_before(
     let mut matched_any = false;
     for checkpoint_id in &checkpoint_ids {
         let lock = manifest_lock(checkpoint_id)?;
-        let _guard = lock
-            .lock()
-            .map_err(|_| Error::from_reason("Checkpoint manifest lock is poisoned"))?;
+        let _guard = lock.blocking_lock();
         if !checkpoint_manifest_exists(checkpoint_id) {
             continue;
         }
@@ -753,9 +811,7 @@ pub fn record_checkpoint_worktree_after(capture: CheckpointWorktreeCapture) -> R
     let mut root = None;
     for checkpoint_id in &capture.checkpoint_ids {
         let lock = manifest_lock(checkpoint_id)?;
-        let _guard = lock
-            .lock()
-            .map_err(|_| Error::from_reason("Checkpoint manifest lock is poisoned"))?;
+        let _guard = lock.blocking_lock();
         if !checkpoint_manifest_exists(checkpoint_id) {
             continue;
         }
@@ -842,9 +898,7 @@ pub fn restore_checkpoint(checkpoint_id: String, work_dir: String) -> Result<()>
     let work_dir_lock = work_dir_lock(&root)?;
     let _work_dir_guard = work_dir_write_guard(&work_dir_lock)?;
     let manifest_lock = manifest_lock(&checkpoint_id)?;
-    let _manifest_guard = manifest_lock
-        .lock()
-        .map_err(|_| Error::from_reason("Checkpoint manifest lock is poisoned"))?;
+    let _manifest_guard = manifest_lock.blocking_lock();
     // If the manifest no longer exists (checkpoint was deleted or corrupted),
     // there is nothing to restore. Return Ok so the rollback flow continues
     // to delete messages without being blocked by a missing checkpoint.
@@ -993,9 +1047,7 @@ fn prune_empty_parent_directories(root: &Path, entries: &[CheckpointEntry]) {
 /// constant-time and avoids re-copying identical file contents later.
 pub fn delete_checkpoint(checkpoint_id: String) -> Result<()> {
     let manifest_lock = manifest_lock(&checkpoint_id)?;
-    let _manifest_guard = manifest_lock
-        .lock()
-        .map_err(|_| Error::from_reason("Checkpoint manifest lock is poisoned"))?;
+    let _manifest_guard = manifest_lock.blocking_lock();
     let directory = checkpoint_dir(&checkpoint_id)?;
     if !directory.exists() {
         return Ok(());
@@ -1048,9 +1100,7 @@ pub fn list_checkpoint_changes(
     let work_dir_lock = work_dir_lock(&root)?;
     let _work_dir_guard = work_dir_read_guard(&work_dir_lock)?;
     let manifest_lock = manifest_lock(&checkpoint_id)?;
-    let _manifest_guard = manifest_lock
-        .lock()
-        .map_err(|_| Error::from_reason("Checkpoint manifest lock is poisoned"))?;
+    let _manifest_guard = manifest_lock.blocking_lock();
     if !checkpoint_manifest_exists(&checkpoint_id) {
         return Ok(Vec::new());
     }
@@ -1107,9 +1157,7 @@ pub fn list_checkpoint_diffs(
     let work_dir_lock = work_dir_lock(&root)?;
     let _work_dir_guard = work_dir_read_guard(&work_dir_lock)?;
     let manifest_lock = manifest_lock(&checkpoint_id)?;
-    let _manifest_guard = manifest_lock
-        .lock()
-        .map_err(|_| Error::from_reason("Checkpoint manifest lock is poisoned"))?;
+    let _manifest_guard = manifest_lock.blocking_lock();
     if !checkpoint_manifest_exists(&checkpoint_id) {
         return Ok(Vec::new());
     }

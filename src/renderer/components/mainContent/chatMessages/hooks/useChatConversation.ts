@@ -691,6 +691,7 @@ export const useChatConversation = (
     pendingAutoSendOverride,
     setPendingAutoSendOverride,
     handleRollback: rollbackApi.handleRollback,
+    rollbackPreparingMessageId: rollbackApi.preparingMessageId,
     rollbackPreview,
     confirmRollback: rollbackApi.confirmRollback,
     cancelRollback: rollbackApi.cancelRollback,

@@ -4,6 +4,7 @@ use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use serde_json::Value;
 
+use crate::storage::services::checkpoint::remote::RemoteCheckpointClient;
 use crate::storage::services::checkpoint::CheckpointWorktreeCapture;
 use crate::storage::services::system_settings::{
     McpGlobalScopeSettings, McpProjectScopeSettings,
@@ -21,7 +22,7 @@ enum ToolCheckpointCapture {
 
 use super::builtin::{get_builtin_servers_with_tools, get_builtin_tools};
 use super::servers::remote_workspace::{
-    is_ssh_path, is_windows_absolute_path, resolve_remote_project_workspace,
+    is_ssh_path, is_windows_absolute_path, RemoteWorkspaceCallback, resolve_remote_project_workspace,
     resolve_remote_workspace_path,
 };
 
@@ -724,6 +725,92 @@ fn capture_checkpoint_before_tool(
             )?,
         )),
         _ => Ok(ToolCheckpointCapture::None),
+    }
+}
+
+/// 远程（SSH）工具的 checkpoint before 捕获：文件 IO 经 Electron SFTP 完成，
+/// 与本地版本行为一致（filesystem 工具记录单文件，bash 记录整个工作区）。
+async fn capture_checkpoint_before_tool_remote(
+    tool_full_name: &str,
+    args: &Value,
+    checkpoint_ids: Vec<String>,
+    checkpoint_work_dir: Option<String>,
+    on_remote_workspace_command: &RemoteWorkspaceCallback,
+) -> napi::Result<ToolCheckpointCapture> {
+    if checkpoint_ids.is_empty() {
+        return Ok(ToolCheckpointCapture::None);
+    }
+    let work_dir = checkpoint_work_dir.ok_or_else(|| {
+        Error::new(
+            Status::InvalidArg,
+            "Checkpoint working directory is required".to_string(),
+        )
+    })?;
+    let client = RemoteCheckpointClient::new(on_remote_workspace_command);
+    match tool_full_name {
+        "filesystem-replace_edit" | "filesystem-create" => {
+            let file_path = args
+                .get("filePath")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    Error::new(
+                        Status::InvalidArg,
+                        "filePath is required for checkpoint capture".to_string(),
+                    )
+                })?
+                .to_string();
+            crate::storage::services::checkpoint::remote::record_checkpoint_file_remote(
+                &client,
+                checkpoint_ids.clone(),
+                work_dir.clone(),
+                file_path.clone(),
+            )
+            .await?;
+            Ok(ToolCheckpointCapture::File {
+                checkpoint_ids,
+                work_dir,
+                file_path,
+            })
+        }
+        "bash-terminal-execute" => Ok(ToolCheckpointCapture::Worktree(
+            crate::storage::services::checkpoint::remote::capture_checkpoint_worktree_before_remote(
+                &client,
+                checkpoint_ids,
+                work_dir,
+            )
+            .await?,
+        )),
+        _ => Ok(ToolCheckpointCapture::None),
+    }
+}
+
+/// 远程（SSH）工具的 checkpoint after 捕获。
+async fn capture_checkpoint_after_tool_remote(
+    capture: ToolCheckpointCapture,
+    on_remote_workspace_command: &RemoteWorkspaceCallback,
+) -> napi::Result<()> {
+    let client = RemoteCheckpointClient::new(on_remote_workspace_command);
+    match capture {
+        ToolCheckpointCapture::File {
+            checkpoint_ids,
+            work_dir,
+            file_path,
+        } => {
+            crate::storage::services::checkpoint::remote::record_checkpoint_file_after_remote(
+                &client,
+                checkpoint_ids,
+                work_dir,
+                file_path,
+            )
+            .await
+        }
+        ToolCheckpointCapture::Worktree(Some(capture)) => {
+            crate::storage::services::checkpoint::remote::record_checkpoint_worktree_after_remote(
+                &client, capture,
+            )
+            .await
+        }
+        ToolCheckpointCapture::None | ToolCheckpointCapture::Worktree(None) => Ok(()),
     }
 }
 

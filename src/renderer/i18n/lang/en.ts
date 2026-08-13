@@ -501,6 +501,7 @@ export const en = {
   "chat.rollbackPreviewEmpty": "No changes to preview",
   "chat.rollbackPreviewSelectFile": "Select a file to view its changes",
   "chat.rollbackConfirmAction": "Confirm rollback",
+  "chat.rollbackInProgress": "Rolling back…",
   "chat.rollbackConversationOnlyAction": "Rollback conversation only",
   "chat.rollbackConversationAndFilesAction": "Rollback conversation and files",
   "chat.rollbackTodoNotice": "Rollback will delete {{count}} TODO item(s)",

@@ -478,6 +478,7 @@ export const zhTW = {
   "chat.rollbackPreviewEmpty": "沒有可預覽的變更",
   "chat.rollbackPreviewSelectFile": "選擇檔案以檢視變更",
   "chat.rollbackConfirmAction": "確認回滾",
+  "chat.rollbackInProgress": "正在回滾…",
   "chat.rollbackConversationOnlyAction": "僅回滾對話",
   "chat.rollbackConversationAndFilesAction": "回滾對話和檔案",
   "chat.rollbackTodoNotice": "回滾將刪除 {{count}} 個 TODO 項",

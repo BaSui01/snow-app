@@ -145,7 +145,15 @@ pub async fn call_mcp_tool(
     };
 
     let checkpoint_capture = if uses_remote_workspace {
-        ToolCheckpointCapture::None
+        // SSH 工具：checkpoint 捕获经 Electron SFTP 完成（异步）。
+        capture_checkpoint_before_tool_remote(
+            &tool_full_name,
+            &args,
+            checkpoint_ids,
+            checkpoint_work_dir,
+            &on_remote_workspace_command,
+        )
+        .await?
     } else {
         let checkpoint_tool_name = tool_full_name.clone();
         let checkpoint_args = args.clone();
@@ -179,16 +187,24 @@ pub async fn call_mcp_tool(
             )
             .await;
         if let ToolCheckpointCapture::Worktree(Some(capture)) = checkpoint_capture {
-            tokio::task::spawn_blocking(move || {
-                crate::storage::services::checkpoint::record_checkpoint_worktree_after(capture)
-            })
-            .await
-            .map_err(|error| {
-                Error::new(
-                    Status::GenericFailure,
-                    format!("Failed to capture checkpoint after tool execution: {error}"),
+            if uses_remote_workspace {
+                capture_checkpoint_after_tool_remote(
+                    ToolCheckpointCapture::Worktree(Some(capture)),
+                    &on_remote_workspace_command,
                 )
-            })??;
+                .await?;
+            } else {
+                tokio::task::spawn_blocking(move || {
+                    crate::storage::services::checkpoint::record_checkpoint_worktree_after(capture)
+                })
+                .await
+                .map_err(|error| {
+                    Error::new(
+                        Status::GenericFailure,
+                        format!("Failed to capture checkpoint after tool execution: {error}"),
+                    )
+                })??;
+            }
         }
         terminal_result?
     } else if tool_full_name == "grep-search" {
@@ -232,6 +248,10 @@ pub async fn call_mcp_tool(
             )
             .await;
         crate::api::cancel::unregister_tool_execution(&tool_execution_id);
+        // 无论工具成败都执行 after 捕获（与本地 builtin 分支一致）；
+        // after 失败优先于工具错误上报。
+        capture_checkpoint_after_tool_remote(checkpoint_capture, &on_remote_workspace_command)
+            .await?;
         fs_result?
     } else if tool_full_name == "todo-todo-manage" {
         TodoService::new().execute_async(&args).await?

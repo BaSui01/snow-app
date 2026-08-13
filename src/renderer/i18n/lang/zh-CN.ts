@@ -477,6 +477,7 @@ export const zhCN = {
   "chat.rollbackPreviewEmpty": "没有可预览的变更",
   "chat.rollbackPreviewSelectFile": "选择文件以查看变更",
   "chat.rollbackConfirmAction": "确认回滚",
+  "chat.rollbackInProgress": "正在回滚…",
   "chat.rollbackConversationOnlyAction": "仅回滚会话",
   "chat.rollbackConversationAndFilesAction": "回滚会话和文件",
   "chat.rollbackTodoNotice": "回滚将删除 {{count}} 个 TODO 项",

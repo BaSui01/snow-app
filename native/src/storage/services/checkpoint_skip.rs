@@ -73,3 +73,20 @@ pub fn should_skip_pending_copy(path: &Path) -> bool {
         })
         .unwrap_or(false)
 }
+
+/// 按已知大小与路径判断是否跳过内容抓取。SSH 工作区已通过远程 stat
+/// 拿到 size，无需再访问本地文件系统（与 should_skip_pending_copy 一致）。
+pub fn should_skip_pending_copy_size(size: u64, path: &str) -> bool {
+    if size > PENDING_COPY_SIZE_LIMIT {
+        return true;
+    }
+    let set = SKIP_EXTENSIONS_SET.get_or_init(|| SKIP_BINARY_EXTENSIONS.iter().copied().collect());
+    Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| {
+            let lower = ext.to_ascii_lowercase();
+            set.contains(lower.as_str())
+        })
+        .unwrap_or(false)
+}

@@ -1224,7 +1224,22 @@ input {
   color: var(--accent-green, #22c55e);
 }
 
+/* 优先级高于 .sub-agent-list-icon svg[stroke="currentColor"] 的灰色覆盖 */
+.sub-agent-list-item .sub-agent-list-icon svg.sub-agent-attention {
+  color: var(--warning, #f59e0b);
+}
+
+.sub-agent-list-name-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
 .sub-agent-list-name {
+  flex: 1;
+  min-width: 0;
   font-size: 11.5px;
   color: var(--text-secondary);
   white-space: nowrap;
@@ -1252,6 +1267,10 @@ input {
   line-height: 1;
   flex-shrink: 0;
 }
+.chat-item-sub-agent-count.attention {
+  background: var(--warning, #f59e0b);
+}
+
 .chat-item-content {
   display: flex;
   flex-direction: column;
@@ -25811,6 +25830,9 @@ input {
   flex: 0 0 auto;
   width: 26px;
   padding: 6px 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: transparent;
   color: inherit;
   border: none;

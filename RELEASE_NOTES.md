@@ -1,5 +1,20 @@
 # Release Notes
 
+## v0.2.0
+
+## New Features
+
+- **Teammate Communication Tools**: Sub-agents can now communicate with teammates in the same session via `listTeammates` / `sendMessage` tools.
+- **YOLO Mode Active Badge**: The chat input shows a badge with tooltip when YOLO mode is active.
+
+## Improvements
+
+- Shortcut key settings panel optimized; error boundary refresh mechanism enhanced.
+
+## Bug Fixes
+
+- Fixed optional chaining access in multiple places; cleaned up old local bindings.
+
 ## v0.1.28
 
 ## New Features

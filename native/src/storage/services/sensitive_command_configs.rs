@@ -37,7 +37,7 @@ const PRESET_SENSITIVE_COMMANDS: &[PresetSensitiveCommand] = &[
     },
     PresetSensitiveCommand {
         command_id: "mv-to-trash",
-        pattern: "mv * /tmp",
+        pattern: "mv .* /tmp",
         description: "Move files to trash/tmp (potential data loss)",
         enabled: false,
     },
@@ -112,7 +112,7 @@ const PRESET_SENSITIVE_COMMANDS: &[PresetSensitiveCommand] = &[
     },
     PresetSensitiveCommand {
         command_id: "curl-post",
-        pattern: "curl*-X POST",
+        pattern: "curl.*-X POST",
         description: "HTTP POST requests (potential data transmission)",
         enabled: false,
     },
@@ -130,25 +130,25 @@ const PRESET_SENSITIVE_COMMANDS: &[PresetSensitiveCommand] = &[
     },
     PresetSensitiveCommand {
         command_id: "git-force-push",
-        pattern: "git push*--force",
+        pattern: "git push.*--force",
         description: "Force push to remote repository (destructive)",
         enabled: true,
     },
     PresetSensitiveCommand {
         command_id: "git-force-push-short",
-        pattern: "git push*-f ",
+        pattern: "git push.*-f",
         description: "Force push to remote repository with -f flag (destructive)",
         enabled: true,
     },
     PresetSensitiveCommand {
         command_id: "git-reset-hard",
-        pattern: "git reset*--hard",
+        pattern: "git reset.*--hard",
         description: "Hard reset git repository (destructive)",
         enabled: true,
     },
     PresetSensitiveCommand {
         command_id: "git-clean",
-        pattern: "git clean*-f",
+        pattern: "git clean.*-f",
         description: "Remove untracked files from git repository",
         enabled: true,
     },
@@ -184,14 +184,35 @@ const PRESET_SENSITIVE_COMMANDS: &[PresetSensitiveCommand] = &[
     },
     PresetSensitiveCommand {
         command_id: "powershell-remove-item",
-        pattern: "Remove-Item ",
+        pattern: "Remove-Item",
         description: "PowerShell delete files or directories",
         enabled: true,
     },
     PresetSensitiveCommand {
         command_id: "powershell-remove-item-recurse",
-        pattern: "Remove-Item*-Recurse",
+        pattern: "Remove-Item.*Recurse",
         description: "PowerShell recursive delete (destructive)",
+        enabled: true,
+    },
+    // CMD/PowerShell 内置别名：del/rd/erase 与 Remove-Item/rmdir 等价，
+    // 但规则表无法覆盖（大小写不敏感由匹配层保证）。带词边界防止
+    // 误伤 cancel、model、third 等含 "del "/"rd " 子串的普通词。
+    PresetSensitiveCommand {
+        command_id: "cmd-del",
+        pattern: r"(?:^|[^\w])del\s+\S",
+        description: "Delete files using del (CMD/PowerShell alias for Remove-Item)",
+        enabled: true,
+    },
+    PresetSensitiveCommand {
+        command_id: "cmd-rd",
+        pattern: r"(?:^|[^\w])rd\s+\S",
+        description: "Remove directories using rd (CMD/PowerShell alias for rmdir)",
+        enabled: true,
+    },
+    PresetSensitiveCommand {
+        command_id: "cmd-erase",
+        pattern: r"(?:^|[^\w])erase\s+\S",
+        description: "Delete files using erase (CMD alias for del)",
         enabled: true,
     },
     PresetSensitiveCommand {

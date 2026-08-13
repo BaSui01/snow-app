@@ -232,13 +232,11 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
     await clearWindowState();
   });
 
-  // 错误边界"重新加载"按钮：由主进程强制刷新渲染进程。
-  // 渲染进程自身状态可能已异常（如 React 渲染错误），此时
-  // location.reload() 可能无效，主进程 webContents.reload() 始终可靠。
+  // 错误边界"重新加载"按钮：主进程强制刷新（绕开缓存）。
   ipcMain.handle("window:reload", (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (win && !win.isDestroyed()) {
-      win.webContents.reload();
+      win.webContents.reloadIgnoringCache();
     }
   });
 

@@ -2,18 +2,8 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 import { useI18n } from "../../i18n";
 
 // ---------------------------------------------------------------------------
-// 动态分包（React.lazy / import()）加载失败的自愈机制
-//
-// 背景：Vite 按内容哈希命名分包文件（如 SystemPromptSettingsPanel-KQ0g6MFy.js）。
-// 当应用以 file:// 加载 out/renderer 产物运行期间，磁盘上的 out/ 被新的构建
-// 替换（旧哈希文件被删除）后，运行中的页面仍引用旧哈希名，动态 import 会以
-// ERR_FILE_NOT_FOUND 失败。若不处理，React.lazy 在渲染期抛错且无 ErrorBoundary
-// 兜底，React 会卸载整棵组件树导致全应用白屏。
-//
-// 策略：检测到分包加载失败时自动 location.reload() 自愈 —— reload 会重新读取
-// 磁盘上最新的 index.html 与入口 bundle，引用关系随即恢复一致。为防止产物
-// 确实缺失时无限刷新，用 sessionStorage 记录 5 秒窗口内的自动刷新次数，
-// 超过上限后停止自动刷新，改为展示可手动重载的错误界面。
+// 动态分包加载失败的自愈机制：自动 reload 恢复，5 秒内超 2 次则停止，
+// 展示可手动重载的错误界面（sessionStorage 记录计数）。
 // ---------------------------------------------------------------------------
 
 const RECOVERY_STORAGE_KEY = "snow.chunk-reload-state";

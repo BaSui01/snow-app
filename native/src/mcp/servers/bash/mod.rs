@@ -364,8 +364,9 @@ impl BashService {
 
         // When isInteractive is true the command expects to receive user
         // input at runtime (password prompts, y/n confirmations, etc.).
-        // Interactive commands bypass the sensitive-command gate because the
-        // user is already expected to confirm each input manually in the UI.
+        // The flag only controls how the terminal session is presented
+        // (input box, no timeout) — it never bypasses the sensitive-command
+        // gate, which is enforced below for interactive commands too.
         let is_interactive = args
             .get("isInteractive")
             .and_then(Value::as_bool)
@@ -414,16 +415,13 @@ impl BashService {
         // outside the model-controlled tool arguments and is bound to this
         // exact command.
         //
-        // Interactive commands skip the sensitive-command gate entirely
-        // because the user is expected to confirm every input in the
-        // interactive terminal UI — a separate confirmation dialog would be
-        // redundant.
+        // Interactive commands are checked the same way: the isInteractive
+        // flag is model-controlled and must not be allowed to bypass the
+        // sensitive-command gate. Legitimate interactive commands (npm init,
+        // git add -i, ...) do not match any rule and are unaffected.
         let sensitive_check_started = Instant::now();
-        let sensitive_matches = if is_interactive {
-            Vec::new()
-        } else {
-            safety::check_sensitive_commands(&command, Some(&working_directory), project_id).await
-        };
+        let sensitive_matches =
+            safety::check_sensitive_commands(&command, Some(&working_directory), project_id).await;
         let sensitive_authorized = sensitive_matches.is_empty()
             || consume_sensitive_command_authorization(&command, sensitive_authorization_token)
                 .await;

@@ -14,7 +14,7 @@ use std::{
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use regex::Regex;
+use regex::RegexBuilder;
 use serde_json::Value;
 
 use crate::api::conversation::images::resolve_inline_images_from_disk;
@@ -864,7 +864,15 @@ pub fn check_sensitive_command_match(
             // Sensitive command patterns are user-provided regular expressions.
             // Skip a malformed rule so one invalid configuration cannot disable
             // all remaining checks.
-            let Ok(regex) = Regex::new(pattern) else {
+            //
+            // Matching is case-insensitive: PowerShell/CMD are case-insensitive
+            // (remove-item, Remove-Item, REMOVE-ITEM all execute identically),
+            // so a case-sensitive rule can be trivially bypassed with a
+            // different casing. A rule may still opt out with (?-i).
+            let Ok(regex) = RegexBuilder::new(pattern)
+                .case_insensitive(true)
+                .build()
+            else {
                 continue;
             };
             if !regex.is_match(&text) {

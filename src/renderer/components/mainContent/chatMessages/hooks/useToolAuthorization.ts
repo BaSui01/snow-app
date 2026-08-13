@@ -479,27 +479,19 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
         }
 
         let command = "";
-        let isInteractive = false;
         try {
           const parsed = JSON.parse(toolCall.arguments || "{}");
           if (typeof parsed?.command === "string") {
             command = parsed.command;
           }
-          if (typeof parsed?.isInteractive === "boolean") {
-            isInteractive = parsed.isInteractive;
-          }
         } catch {
           // ignore parse error
         }
 
-        // Interactive commands skip the sensitive-command gate entirely
-        // because the user is expected to confirm every input in the
-        // interactive terminal UI — a separate confirmation dialog would
-        // be redundant.
-        if (isInteractive) {
-          return { status: "approved" };
-        }
-
+        // Interactive commands are checked the same way as regular ones: the
+        // isInteractive flag is model-controlled and must not be allowed to
+        // bypass the sensitive-command gate (the Rust side enforces this too).
+        // The flag only changes how the terminal session is presented.
         if (!command) {
           return shouldAutoApprove() ? { status: "approved" } : "needs-dialog";
         }

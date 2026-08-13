@@ -37,6 +37,13 @@ export default defineConfig({
       },
     },
     plugins: [react()],
+    worker: {
+      rollupOptions: {
+        output: {
+          entryFileNames: "assets/[name].js",
+        },
+      },
+    },
     build: {
       rollupOptions: {
         input: {
@@ -47,6 +54,7 @@ export default defineConfig({
           browserWindow: resolve(__dirname, "src/renderer/browserWindow.html"),
         },
         output: {
+          chunkFileNames: "assets/[name].js",
           manualChunks: {
             // React 核心 — 首屏必需，独立 chunk 利于缓存
             "vendor-react": ["react", "react-dom"],

@@ -43,8 +43,10 @@ export const dataManagementApi = {
   ): Promise<DataManagementImportPreview | null> =>
     ipcRenderer.invoke("data:export-config", request),
 
-  previewDataManagementImport: (): Promise<DataManagementImportPreview | null> =>
-    ipcRenderer.invoke("data:preview-import"),
+  previewDataManagementImport: (
+    password?: string
+  ): Promise<DataManagementImportPreview | null> =>
+    ipcRenderer.invoke("data:preview-import", password),
 
   importDataManagementConfig: (
     request: DataManagementImportRequest

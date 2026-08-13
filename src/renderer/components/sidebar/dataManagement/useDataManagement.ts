@@ -18,7 +18,7 @@ export type UseDataManagementResult = {
   error: string;
   refresh: () => Promise<void>;
   updateSettings: (patch: DataManagementSettingsPatch) => Promise<void>;
-  previewImport: () => Promise<DataManagementImportPreview | null>;
+  previewImport: (password?: string) => Promise<DataManagementImportPreview | null>;
   exportConfig: (request: DataManagementExportRequest) => Promise<DataManagementImportPreview | null>;
   importConfig: (request: DataManagementImportRequest) => Promise<DataManagementImportPreview | null>;
   createBackup: (reason?: string) => Promise<unknown | null>;
@@ -81,7 +81,7 @@ export const useDataManagement = (): UseDataManagementResult => {
         setError(message);
         throw cause;
       } finally {
-    setIsSaving(false);
+        setIsSaving(false);
       }
     },
     []
@@ -109,7 +109,7 @@ export const useDataManagement = (): UseDataManagementResult => {
     error,
     refresh,
     updateSettings,
-    previewImport: () => action(() => window.snow.previewDataManagementImport()),
+    previewImport: (password) => action(() => window.snow.previewDataManagementImport(password)),
     exportConfig: (request) => action(() => window.snow.exportDataManagementConfig(request)),
     importConfig: (request) => action(() => window.snow.importDataManagementConfig(request)),
     createBackup: (reason) => action(() => window.snow.createDataManagementBackup(reason)),

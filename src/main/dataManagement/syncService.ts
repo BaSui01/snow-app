@@ -19,7 +19,11 @@ import { getOrCreateDeviceIdentity } from "./deviceIdentity";
 import { createDatabaseBackup, stageDatabaseRestore } from "./backupService";
 import { encryptBundlePayload, sha256Buffer, decryptBundlePayload } from "./cryptoBundle";
 import { getDataManagementDirectory } from "./paths";
-import { getDataManagementSettings } from "./settingsStore";
+import {
+  getDataManagementSettings,
+  updateDataManagementSettings,
+} from "./settingsStore";
+import { decideSyncAction } from "./syncDecision";
 import {
   readPersistedSyncState,
   type PersistedSyncState,
@@ -205,6 +209,15 @@ const uploadStateWithCas = async (
   } catch (error) {
     if (error instanceof WebDavError && error.status === 412) {
       const latest = await fetchRemoteState(client, root);
+      if (
+        latest.state?.revision === next.revision &&
+        latest.state.objectHash === next.objectHash &&
+        latest.state.contentHash === next.contentHash &&
+        latest.state.mode === next.mode &&
+        latest.state.deviceId === next.deviceId
+      ) {
+        return;
+      }
       if (latest.state) throw new SyncConflictError(latest.state);
     }
     throw error;
@@ -334,9 +347,33 @@ export const runWebDavSync = async (
     return { status: "idle", revision: created.revision, changed: "uploaded", weakConflictProtection, restartRequired: false };
   }
 
-  const localChanged = persisted.baseRevision === 0 ? false : local.contentHash !== persisted.baseLocalHash;
-  const remoteChanged = persisted.baseRevision === 0 || remote.revision !== persisted.baseRevision;
-  if (!localChanged && remoteChanged) {
+  const decision = decideSyncAction({
+    localContentHash: local.contentHash,
+    localMode: mode,
+    baseRevision: persisted.baseRevision,
+    baseLocalHash: persisted.baseLocalHash,
+    baseRemoteHash: persisted.baseRemoteHash,
+    remoteRevision: remote.revision,
+    remoteContentHash: remote.contentHash,
+    remoteMode: remote.mode,
+  });
+
+  if (decision === "conflict") {
+    saveSyncState({
+      mode,
+      weakConflictProtection,
+      conflict: {
+        localRevision: persisted.baseRevision,
+        remoteRevision: remote.revision,
+        remoteDeviceName: remote.deviceName,
+      },
+      lastError: "Conflict requires an explicit choice",
+      lastStatus: "conflict",
+    });
+    throw new SyncConflictError(remote);
+  }
+
+  if (decision === "download") {
     const object = await client.get(objectUrl(client, root, remote.objectHash));
     if (!object) throw new Error("Remote WebDAV object is missing");
     assertRemoteObjectHash(object.body, remote.objectHash);
@@ -372,7 +409,7 @@ export const runWebDavSync = async (
     return { status: "idle", revision: remote.revision, changed: "downloaded", weakConflictProtection, restartRequired: false };
   }
 
-  if (localChanged && !remoteChanged) {
+  if (decision === "upload") {
     await uploadObject(client, root, localObjectHash, local.payload);
     const next = makeRemoteState(remote, localObjectHash, local.contentHash, mode);
     await uploadStateWithCas(client, root, remote, remoteRead.etag, next);
@@ -387,20 +424,6 @@ export const runWebDavSync = async (
       lastError: null,
     });
     return { status: "idle", revision: next.revision, changed: "uploaded", weakConflictProtection, restartRequired: false };
-  }
-
-  if (localChanged && remoteChanged && local.contentHash !== remote.contentHash) {
-    saveSyncState({
-      mode,
-      weakConflictProtection,
-      conflict: {
-        localRevision: persisted.baseRevision,
-        remoteRevision: remote.revision,
-        remoteDeviceName: remote.deviceName,
-      },
-      lastError: "Conflict requires an explicit choice",
-    });
-    throw new SyncConflictError(remote);
   }
 
   saveSyncState({
@@ -429,28 +452,27 @@ export const resolveWebDavConflict = async (
   const current = await fetchRemoteState(client, root);
   if (!current.state) throw new Error("The remote conflict state no longer exists");
   const remote = current.state;
-  const local = await buildLocalPayload(native, mode, password);
-  const localHash = sha256Buffer(local.payload);
+  let restartRequired = false;
   if (choice === "remote") {
     const object = await client.get(objectUrl(client, root, remote.objectHash));
     if (!object) throw new Error("Remote conflict object is missing");
     assertRemoteObjectHash(object.body, remote.objectHash);
-    if (mode === "mirror") {
+    if (remote.mode === "mirror") {
       await applyRemoteMirror(object.body, password);
-      if (restartOnMirror) {
-        app.relaunch();
-        app.exit(0);
-      }
+      restartRequired = true;
     } else {
       await applyRemoteConfig(native, object.body, password, true);
     }
-  } else if (choice === "keep-both") {
-    const object = await client.get(objectUrl(client, root, remote.objectHash));
-    if (!object) throw new Error("Remote conflict object is missing");
-    assertRemoteObjectHash(object.body, remote.objectHash);
-    writeFileSync(join(getDataManagementDirectory(), `conflict-${remote.revision}-${randomUUID()}.snow-sync-object`), object.body, { mode: 0o600 });
-  }
-  if (choice !== "remote") {
+    updateDataManagementSettings({ webdav: { syncMode: remote.mode } });
+  } else {
+    if (choice === "keep-both") {
+      const object = await client.get(objectUrl(client, root, remote.objectHash));
+      if (!object) throw new Error("Remote conflict object is missing");
+      assertRemoteObjectHash(object.body, remote.objectHash);
+      writeFileSync(join(getDataManagementDirectory(), `conflict-${remote.revision}-${randomUUID()}.snow-sync-object`), object.body, { mode: 0o600 });
+    }
+    const local = await buildLocalPayload(native, mode, password);
+    const localHash = sha256Buffer(local.payload);
     await uploadObject(client, root, localHash, local.payload);
     const next = makeRemoteState(remote, localHash, local.contentHash, mode);
     await uploadStateWithCas(client, root, remote, current.etag, next);
@@ -471,12 +493,22 @@ export const resolveWebDavConflict = async (
     baseLocalHash: remote.contentHash,
     baseRemoteHash: remote.contentHash,
     lastSuccessAt: new Date().toISOString(),
-    mode,
+    mode: remote.mode,
     weakConflictProtection: current.etag === null,
     conflict: null,
     lastError: null,
   });
-  return { status: "idle", revision: remote.revision, changed: "downloaded", weakConflictProtection: current.etag === null, restartRequired: mode === "mirror" };
+  if (restartRequired && restartOnMirror) {
+    app.relaunch();
+    app.exit(0);
+  }
+  return {
+    status: "idle",
+    revision: remote.revision,
+    changed: restartRequired ? "staged-mirror" : "downloaded",
+    weakConflictProtection: current.etag === null,
+    restartRequired,
+  };
 };
 
 export const syncErrorState = (error: unknown): DataManagementSyncState["status"] => {

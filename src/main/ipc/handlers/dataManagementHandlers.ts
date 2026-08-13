@@ -29,7 +29,8 @@ import {
 } from "../../dataManagement/syncService";
 import { getDataManagementSettings } from "../../dataManagement/settingsStore";
 
-let pendingImportPath: string | null = null;
+const pendingImportPaths = new Map<number, string>();
+const pendingImportCleanupSenders = new Set<number>();
 
 const CREDENTIAL_KINDS: readonly DataManagementCredentialKind[] = [
   "webdav-password",
@@ -208,6 +209,28 @@ const requireImportRequest = (value: unknown): DataManagementImportRequest => {
   };
 };
 
+const optionalPassword = (value: unknown): string | undefined => {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string" || value.length > 4_096) {
+    throw new Error("Import password is invalid");
+  }
+  return value || undefined;
+};
+
+const rememberPendingImport = (
+  sender: Electron.WebContents,
+  path: string
+): void => {
+  const senderId = sender.id;
+  pendingImportPaths.set(senderId, path);
+  if (pendingImportCleanupSenders.has(senderId)) return;
+  pendingImportCleanupSenders.add(senderId);
+  sender.once("destroyed", () => {
+    pendingImportPaths.delete(senderId);
+    pendingImportCleanupSenders.delete(senderId);
+  });
+};
+
 const openConfigFile = async (): Promise<string | null> => {
   const result = await dialog.showOpenDialog({
     properties: ["openFile"],
@@ -271,19 +294,24 @@ export const registerDataManagementHandlers = (native: NativeBridge): void => {
     });
   });
 
-  ipcMain.handle("data:preview-import", async () => {
-    pendingImportPath = null;
-    const path = await openConfigFile();
+  ipcMain.handle("data:preview-import", async (event, value: unknown) => {
+    const password = optionalPassword(value);
+    const senderId = event.sender.id;
+    let path = password ? pendingImportPaths.get(senderId) ?? null : null;
+    if (!path) {
+      pendingImportPaths.delete(senderId);
+      path = await openConfigFile();
+    }
     if (!path) return null;
-    const preview = await inspectConfigPackage(path);
-    pendingImportPath = path;
+    const preview = await inspectConfigPackage(path, password);
+    rememberPendingImport(event.sender, path);
     return preview;
   });
 
-  ipcMain.handle("data:apply-import", async (_event, value: unknown) => {
+  ipcMain.handle("data:apply-import", async (event, value: unknown) => {
     const request = requireImportRequest(value);
-    const path = pendingImportPath ?? (await openConfigFile());
-    pendingImportPath = null;
+    const path = pendingImportPaths.get(event.sender.id) ?? (await openConfigFile());
+    pendingImportPaths.delete(event.sender.id);
     if (!path) return null;
     return dataManagementCoordinator.run("config-import", async ({ report }) => {
       report({ phase: "validating configuration package", total: 3, completed: 1 });

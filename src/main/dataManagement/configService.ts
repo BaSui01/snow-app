@@ -19,6 +19,7 @@ const MANIFEST_ENTRY = "manifest.json";
 const CONFIG_ENTRY = "config.json";
 const ENCRYPTED_ENTRY = "payload.bin";
 const MAX_CONFIG_PACKAGE_BYTES = 2 * 1024 * 1024 * 1024;
+const MAX_MANIFEST_BYTES = 1024 * 1024;
 const REDACTED_MARKER = "__SNOWAPP_REDACTED__";
 
 type ConfigPackageManifest = DataManifest & {
@@ -30,6 +31,11 @@ type ReadConfigPackage = {
   manifest: ConfigPackageManifest;
   configJson: string;
   preview: DataManagementImportPreview;
+};
+
+type ConfigPackageContainer = {
+  manifest: ConfigPackageManifest;
+  payload: Buffer;
 };
 
 const sha256 = (value: Buffer): string =>
@@ -45,7 +51,15 @@ const assertSections = (sections: DataSection[]): void => {
   }
 };
 
-const parseBundleMetadata = (configJson: string): { schemaVersion: number; rows: number; redactions: number } => {
+type ConfigBundleMetadata = {
+  schemaVersion: number;
+  sections: DataSection[];
+  containsSecrets: boolean;
+  rows: number;
+  redactions: number;
+};
+
+const parseBundleMetadata = (configJson: string): ConfigBundleMetadata => {
   let value: unknown;
   try {
     value = JSON.parse(configJson);
@@ -56,6 +70,24 @@ const parseBundleMetadata = (configJson: string): { schemaVersion: number; rows:
     throw new Error("Configuration payload is invalid");
   }
   const record = value as Record<string, unknown>;
+  if (record.formatVersion !== DATA_MANAGEMENT_FORMAT_VERSION) {
+    throw new Error("Configuration payload format is unsupported");
+  }
+  if (
+    typeof record.schemaVersion !== "number" ||
+    !Number.isSafeInteger(record.schemaVersion) ||
+    record.schemaVersion < 0
+  ) {
+    throw new Error("Configuration payload schema version is invalid");
+  }
+  if (!Array.isArray(record.sections)) {
+    throw new Error("Configuration payload has no section list");
+  }
+  const sections = record.sections as DataSection[];
+  assertSections(sections);
+  if (typeof record.containsSecrets !== "boolean") {
+    throw new Error("Configuration payload sensitivity marker is invalid");
+  }
   const tables = record.tables;
   if (!tables || typeof tables !== "object") {
     throw new Error("Configuration payload has no tables");
@@ -76,7 +108,9 @@ const parseBundleMetadata = (configJson: string): { schemaVersion: number; rows:
     count(table);
   }
   return {
-    schemaVersion: typeof record.schemaVersion === "number" ? record.schemaVersion : 0,
+    schemaVersion: record.schemaVersion,
+    sections,
+    containsSecrets: record.containsSecrets,
     rows,
     redactions,
   };
@@ -85,6 +119,7 @@ const parseBundleMetadata = (configJson: string): { schemaVersion: number; rows:
 const readManifest = (entries: Map<string, Buffer>): ConfigPackageManifest => {
   const raw = entries.get(MANIFEST_ENTRY);
   if (!raw) throw new Error("Configuration manifest is missing");
+  if (raw.length > MAX_MANIFEST_BYTES) throw new Error("Configuration manifest is too large");
   let value: unknown;
   try {
     value = JSON.parse(raw.toString("utf8"));
@@ -95,15 +130,34 @@ const readManifest = (entries: Map<string, Buffer>): ConfigPackageManifest => {
   const manifest = value as Partial<ConfigPackageManifest>;
   if (
     manifest.formatVersion !== DATA_MANAGEMENT_FORMAT_VERSION ||
-    typeof manifest.packageId !== "string" ||
+    typeof manifest.packageId !== "string" || !manifest.packageId || manifest.packageId.length > 1_024 ||
+    typeof manifest.appVersion !== "string" || !manifest.appVersion || manifest.appVersion.length > 1_024 ||
+    typeof manifest.deviceId !== "string" || !manifest.deviceId || manifest.deviceId.length > 1_024 ||
+    typeof manifest.createdAt !== "string" || !Number.isFinite(Date.parse(manifest.createdAt)) ||
     typeof manifest.schemaVersion !== "number" ||
+    !Number.isSafeInteger(manifest.schemaVersion) ||
+    manifest.schemaVersion < 0 ||
     !Array.isArray(manifest.sections) ||
     !Array.isArray(manifest.files) ||
-    typeof manifest.encrypted !== "boolean"
+    manifest.files.length !== 1 ||
+    typeof manifest.containsSecrets !== "boolean" ||
+    typeof manifest.encrypted !== "boolean" ||
+    (manifest.containsSecrets && !manifest.encrypted)
   ) {
     throw new Error("Unsupported or incomplete configuration manifest");
   }
   assertSections(manifest.sections as DataSection[]);
+  const file = manifest.files[0];
+  if (
+    !file ||
+    typeof file.path !== "string" ||
+    !/^[a-f0-9]{64}$/.test(file.sha256) ||
+    !Number.isSafeInteger(file.sizeBytes) ||
+    file.sizeBytes < 0 ||
+    file.sizeBytes > MAX_CONFIG_PACKAGE_BYTES
+  ) {
+    throw new Error("Configuration manifest file metadata is invalid");
+  }
   return manifest as ConfigPackageManifest;
 };
 
@@ -119,7 +173,7 @@ const verifyManifestFiles = (
   }
 };
 
-const readConfigPackage = async (path: string, password?: string): Promise<ReadConfigPackage> => {
+const readConfigPackageContainer = (path: string): ConfigPackageContainer => {
   if (!existsSync(path) || !path.endsWith(CONFIG_EXTENSION)) {
     throw new Error("A .snow-config package is required");
   }
@@ -131,15 +185,39 @@ const readConfigPackage = async (path: string, password?: string): Promise<ReadC
     maxTotalBytes: MAX_CONFIG_PACKAGE_BYTES,
   });
   const manifest = readManifest(entries);
-  verifyManifestFiles(manifest, entries);
   const payloadEntry = manifest.encrypted ? ENCRYPTED_ENTRY : CONFIG_ENTRY;
+  if (
+    manifest.files[0]?.path !== payloadEntry ||
+    entries.size !== 2 ||
+    [...entries.keys()].some((entry) => entry !== MANIFEST_ENTRY && entry !== payloadEntry)
+  ) {
+    throw new Error("Configuration package entries do not match the manifest");
+  }
+  verifyManifestFiles(manifest, entries);
   const payload = entries.get(payloadEntry);
   if (!payload) throw new Error(`Configuration package is missing ${payloadEntry}`);
+  return { manifest, payload };
+};
+
+const decodeConfigPackage = async (
+  path: string,
+  container: ConfigPackageContainer,
+  password?: string
+): Promise<ReadConfigPackage> => {
+  const { manifest, payload } = container;
   const config = manifest.encrypted
     ? await decryptBundlePayload(payload, password ?? "")
     : payload;
   const configJson = config.toString("utf8");
   const metadata = parseBundleMetadata(configJson);
+  if (
+    metadata.schemaVersion !== manifest.schemaVersion ||
+    metadata.containsSecrets !== manifest.containsSecrets ||
+    metadata.sections.length !== manifest.sections.length ||
+    metadata.sections.some((section) => !manifest.sections.includes(section))
+  ) {
+    throw new Error("Configuration payload metadata does not match the manifest");
+  }
   return {
     manifest,
     configJson,
@@ -156,6 +234,9 @@ const readConfigPackage = async (path: string, password?: string): Promise<ReadC
     },
   };
 };
+
+const readConfigPackage = async (path: string, password?: string): Promise<ReadConfigPackage> =>
+  decodeConfigPackage(path, readConfigPackageContainer(path), password);
 
 export const previewConfigPackage = (
   path: string,
@@ -238,8 +319,26 @@ export const applyConfigPackage = async (
   return packageData.preview;
 };
 
-export const inspectConfigPackage = (path: string): Promise<DataManagementImportPreview> =>
-  readConfigPackage(path).then((value) => value.preview);
+export const inspectConfigPackage = async (
+  path: string,
+  password?: string
+): Promise<DataManagementImportPreview> => {
+  const container = readConfigPackageContainer(path);
+  if (!container.manifest.encrypted || password) {
+    return (await decodeConfigPackage(path, container, password)).preview;
+  }
+  return {
+    path,
+    encrypted: true,
+    containsSecrets: container.manifest.containsSecrets,
+    formatVersion: container.manifest.formatVersion,
+    schemaVersion: container.manifest.schemaVersion,
+    sections: container.manifest.sections as DataSection[],
+    rows: 0,
+    estimatedBytes: container.payload.length,
+    deviceSpecificItems: 0,
+  };
+};
 
 export const configPackageHash = async (path: string, password?: string): Promise<string> =>
   sha256Buffer((await readConfigPackage(path, password)).configJson);

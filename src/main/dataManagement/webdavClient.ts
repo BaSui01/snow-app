@@ -1,15 +1,22 @@
 import { net } from "electron";
 import { randomUUID } from "node:crypto";
+import {
+  isRetryableWebDavRequest,
+  isRetryableWebDavStatus,
+  webDavRetryDelayMs,
+} from "./webdavRetry";
 
 export class WebDavError extends Error {
   readonly status: number;
   readonly retryable: boolean;
+  readonly retryAfterMs: number | null;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, retryAfterMs: number | null = null) {
     super(message);
     this.name = "WebDavError";
     this.status = status;
-    this.retryable = status === 408 || status === 409 || status === 423 || status === 429 || status >= 500;
+    this.retryable = isRetryableWebDavStatus(status);
+    this.retryAfterMs = retryAfterMs;
   }
 }
 
@@ -20,6 +27,19 @@ export type WebDavResponse = {
 };
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024 * 1024;
+const MAX_REQUEST_ATTEMPTS = 3;
+
+const parseRetryAfterMs = (value: string | null): number | null => {
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1_000;
+  const date = Date.parse(value);
+  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : null;
+};
+
+const wait = async (delayMs: number): Promise<void> => {
+  await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+};
 
 const normalizeEndpoint = (endpoint: string, allowInsecureHttp: boolean): URL => {
   let url: URL;
@@ -72,6 +92,30 @@ export class WebDavClient {
     body?: Buffer,
     headers: Record<string, string> = {}
   ): Promise<WebDavResponse> {
+    let failedAttempt = 0;
+    while (true) {
+      try {
+        return await this.requestOnce(method, url, body, headers);
+      } catch (error) {
+        failedAttempt += 1;
+        if (
+          failedAttempt >= MAX_REQUEST_ATTEMPTS ||
+          !isRetryableWebDavRequest(method, error)
+        ) {
+          throw error;
+        }
+        const retryAfterMs = error instanceof WebDavError ? error.retryAfterMs : null;
+        await wait(webDavRetryDelayMs(failedAttempt, retryAfterMs));
+      }
+    }
+  }
+
+  private async requestOnce(
+    method: string,
+    url: string,
+    body?: Buffer,
+    headers: Record<string, string> = {}
+  ): Promise<WebDavResponse> {
     const response = await net.fetch(url, {
       method,
       headers: {
@@ -91,7 +135,11 @@ export class WebDavClient {
         : response.status === 401 || response.status === 403
           ? "WebDAV authentication or permission failed"
           : `WebDAV request failed (${response.status})`;
-      throw new WebDavError(response.status, message);
+      throw new WebDavError(
+        response.status,
+        message,
+        parseRetryAfterMs(response.headers.get("retry-after"))
+      );
     }
     return {
       status: response.status,

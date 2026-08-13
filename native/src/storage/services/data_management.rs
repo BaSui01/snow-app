@@ -461,9 +461,9 @@ pub fn export_config_data(sections_json: String, include_secrets: bool) -> Resul
         let mut tables = BTreeMap::new();
         for table in table_names(&sections) {
             let rows = read_table_rows(&connection, table, &sections, include_secrets)?;
-            if !rows.is_empty() {
-                tables.insert(table.to_string(), rows);
-            }
+            // Empty tables are part of the contract: replacement imports need
+            // to distinguish "selected and empty" from "not exported".
+            tables.insert(table.to_string(), rows);
         }
         let bundle = ConfigBundle {
             format_version: CONFIG_FORMAT_VERSION,
@@ -510,7 +510,7 @@ fn table_columns(connection: &Connection, table: &str) -> Result<(Vec<String>, S
     Ok((columns, primary))
 }
 
-fn conflict_column(table: &str, primary: &str) -> &str {
+fn conflict_column<'a>(table: &str, primary: &'a str) -> &'a str {
     match table {
         "system_settings" => "setting_code",
         "api_configs" => "profile_name",
@@ -681,8 +681,15 @@ pub fn apply_config_data(
         }
         let bundle_sections = bundle.sections.iter().cloned().collect::<BTreeSet<_>>();
         for section in &bundle_sections {
-            if !KNOWN_SECTIONS.contains(&section.as_str()) || !requested_sections.contains(section) {
-                return Err(invalid_data(format!("Configuration section is not selected: {section}")));
+            if !KNOWN_SECTIONS.contains(&section.as_str()) {
+                return Err(invalid_data(format!("Unknown configuration section: {section}")));
+            }
+        }
+        for section in &requested_sections {
+            if !bundle_sections.contains(section) {
+                return Err(invalid_data(format!(
+                    "Configuration package does not contain selected section: {section}"
+                )));
             }
         }
         let total_rows = bundle.tables.values().map(Vec::len).sum::<usize>();
@@ -693,13 +700,25 @@ pub fn apply_config_data(
         let database_path = super::super::ensure_database_file()?;
         let mut connection = database::open_connection(&database_path)
             .map_err(|error| data_error(format!("Failed to open configuration database: {error}")))?;
+        let current_schema = schema_version(&connection)?;
+        if bundle.schema_version > current_schema {
+            return Err(invalid_data(format!(
+                "Configuration package schema {} is newer than supported schema {current_schema}",
+                bundle.schema_version
+            )));
+        }
         let transaction = connection
             .transaction()
             .map_err(|error| data_error(format!("Failed to start configuration transaction: {error}")))?;
 
         for (table, rows) in &bundle.tables {
+            if !table_allowed(table, &bundle_sections) {
+                return Err(invalid_data(format!(
+                    "Configuration table is outside the package sections: {table}"
+                )));
+            }
             if !table_allowed(table, &requested_sections) {
-                return Err(invalid_data(format!("Configuration table is not selected: {table}")));
+                continue;
             }
             let (columns, primary) = table_columns(&transaction, table)?;
             let key_column = conflict_column(table, &primary);
@@ -712,7 +731,13 @@ pub fn apply_config_data(
                         .get("setting_code")
                         .and_then(Value::as_str)
                         .unwrap_or_default();
-                    if !requested_sections.contains(setting_section(setting_code)) {
+                    let section = setting_section(setting_code);
+                    if !bundle_sections.contains(section) {
+                        return Err(invalid_data(format!(
+                            "System setting is outside the package sections: {setting_code}"
+                        )));
+                    }
+                    if !requested_sections.contains(section) {
                         continue;
                     }
                 }
@@ -804,7 +829,7 @@ pub fn apply_config_data(
                     .collect::<Vec<_>>()
                     .join(", ");
                 let sql = format!(
-                    "INSERT INTO \"{table}\" ({names}) VALUES ({placeholders}) ON CONFLICT DO UPDATE SET {updates}"
+                    "INSERT INTO \"{table}\" ({names}) VALUES ({placeholders}) ON CONFLICT(\"{key_column}\") DO UPDATE SET {updates}"
                 );
                 let values = row_values.into_iter().map(|(_, value)| value).collect::<Vec<_>>();
                 transaction

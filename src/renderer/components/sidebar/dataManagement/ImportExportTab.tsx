@@ -14,7 +14,7 @@ import type {
 
 type ImportExportTabProps = {
   state: DataManagementState | null;
-  onPreviewImport: () => Promise<DataManagementImportPreview | null>;
+  onPreviewImport: (password?: string) => Promise<DataManagementImportPreview | null>;
   onExport: (request: DataManagementExportRequest) => Promise<DataManagementImportPreview | null>;
   onImport: (request: DataManagementImportRequest) => Promise<DataManagementImportPreview | null>;
 };
@@ -69,15 +69,20 @@ export function ImportExportTab({
   const handleImport = async (): Promise<void> => {
     setBusy(true);
     try {
-      const nextPreview = await onPreviewImport();
+      let nextPreview = await onPreviewImport();
       if (!nextPreview) return;
-      setPreview(nextPreview);
-      const description = `${nextPreview.rows} rows, ${nextPreview.sections.length} sections`;
-      if (!window.confirm(`Import this configuration package (${description})?`)) return;
       const password = nextPreview.encrypted
         ? window.prompt("Enter the package encryption password") ?? ""
         : undefined;
       if (nextPreview.encrypted && !password) return;
+      if (password) {
+        const decryptedPreview = await onPreviewImport(password);
+        if (!decryptedPreview) return;
+        nextPreview = decryptedPreview;
+      }
+      setPreview(nextPreview);
+      const description = `${nextPreview.rows} rows, ${nextPreview.sections.length} sections`;
+      if (!window.confirm(`Import this configuration package (${description})?`)) return;
       const result = await onImport({
         sections: [...DATA_SECTIONS],
         password,

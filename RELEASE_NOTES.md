@@ -1,5 +1,18 @@
 # Release Notes
 
+## v0.2.1
+
+## New Features
+
+- **Database Repair**: A repair function in the storage settings detects and fixes corrupted SQLite databases.
+- **Sub-Agent Session Resume**: Sub-agent sessions can be resumed and continued after an application restart.
+- **Sub-Agent List & Resume Tools**: New main-session-only `sub-agents-listSubAgents` / `sub-agents-continue` tools for listing and resuming sub-agents with their original configuration and history.
+
+## Improvements
+
+- Sensitive command checks now also apply to interactive commands.
+- Removed the data management (backup / WebDAV sync) feature.
+
 ## v0.2.0
 
 ## New Features

@@ -7,6 +7,7 @@ use rmcp::service::{ClientLifecycleMode, ClientServiceExt, RunningService};
 
 use crate::exports::terminal::{detect_shell_family, resolve_login_path};
 use crate::storage::McpServerConfigRecord;
+use crate::utils::process_tree::ProcessTreeGuard;
 
 use super::super::protocol::RemoteMcpTool;
 
@@ -14,6 +15,8 @@ pub(super) type StdioRunningClient = RunningService<rmcp::RoleClient, ClientInfo
 
 pub(super) struct StdioMcpClient {
     client: StdioRunningClient,
+    /// 进程树回收句柄（Job Object / 进程组），避免 gopls 等后代残留（issue #88）
+    guard: Option<ProcessTreeGuard>,
 }
 
 impl StdioMcpClient {
@@ -42,19 +45,23 @@ impl StdioMcpClient {
         // 关闭连接，导致 Auto 协商无限挂起。加超时：超时视为服务器不支持
         // 2026-07-28 无状态协议，回退 legacy initialize 握手重连。
         const DISCOVER_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+        let (transport, guard) = spawn_transport(config).await?;
         let auto_result = tokio::time::timeout(
             DISCOVER_PROBE_TIMEOUT,
             client_info
                 .clone()
-                .serve_with_lifecycle(spawn_transport(config).await?, auto_lifecycle),
+                .serve_with_lifecycle(transport, auto_lifecycle),
         )
         .await;
 
         match auto_result {
-            Ok(Ok(running)) => Ok(Self { client: running }),
+            Ok(Ok(running)) => Ok(Self {
+                client: running,
+                guard: Some(guard),
+            }),
             Ok(Err(error)) if super::should_retry_with_legacy_handshake(&error) => {
-                // 旧子进程的管道已随 transport 关闭，重新 spawn 一个，
-                // 改用 legacy 握手重连一次。
+                // 先清理第一次启动的进程树，再 spawn 重试（issue #88）
+                drop(guard);
                 match Self::connect_legacy(config).await {
                     Ok(client) => Ok(client),
                     // 重试失败时保留原始 Auto 错误（含版本协商诊断信息）
@@ -69,9 +76,8 @@ impl StdioMcpClient {
                 config.name
             ))),
             Err(_elapsed) => {
-                // server/discover 探测超时：服务器静默不响应（如 fastmcp 构建的
-                // firecrawl-mcp）。超时的 future 被 drop 时子进程随之终止，
-                // connect_legacy 会重新 spawn 一个进程。
+                // 探测超时：guard 回收已启动的进程树后，connect_legacy 重新 spawn
+                drop(guard);
                 match Self::connect_legacy(config).await {
                     Ok(client) => Ok(client),
                     Err(_) => Err(Error::from_reason(format!(
@@ -96,11 +102,9 @@ impl StdioMcpClient {
         }
 
         let client_info = ClientInfo::default();
+        let (transport, guard) = spawn_transport(config).await?;
         let running = client_info
-            .serve_with_lifecycle(
-                spawn_transport(config).await?,
-                ClientLifecycleMode::Initialize,
-            )
+            .serve_with_lifecycle(transport, ClientLifecycleMode::Initialize)
             .await
             .map_err(|error| {
                 Error::from_reason(format!(
@@ -109,7 +113,10 @@ impl StdioMcpClient {
                 ))
             })?;
 
-        Ok(Self { client: running })
+        Ok(Self {
+            client: running,
+            guard: Some(guard),
+        })
     }
 
     pub(super) async fn list_all_tools(&self) -> Result<Vec<RemoteMcpTool>> {
@@ -139,16 +146,20 @@ impl StdioMcpClient {
     }
 
     pub(super) async fn close(mut self) {
+        // 先优雅关闭 transport，再兜底回收整棵进程树（含 gopls 等后代，issue #88）
         let _ = self.client.close().await;
+        if let Some(mut guard) = self.guard.take() {
+            guard.terminate();
+        }
     }
 }
 
-/// Spawns the stdio subprocess for an external MCP server. Extracted so a
-/// failed protocol negotiation can re-spawn a fresh child for the legacy
-/// `initialize` handshake retry.
+/// Spawns the stdio subprocess for an external MCP server, together with a
+/// [`ProcessTreeGuard`] that reaps the whole process tree on close /
+/// timeout / retry (issue #88).
 async fn spawn_transport(
     config: &McpServerConfigRecord,
-) -> Result<rmcp::transport::TokioChildProcess> {
+) -> Result<(rmcp::transport::TokioChildProcess, ProcessTreeGuard)> {
     let command_name = config.command.trim();
     let args = parse_string_array(&config.args_json, "args")?;
     let environment = parse_string_map(&config.env_json, "environment")?;
@@ -182,6 +193,12 @@ async fn spawn_transport(
     command.args(&prefix_args);
     command.args(args);
 
+    // Unix：子进程设为独立进程组组长（pgid == pid），guard 用 kill(-pgid) 回收整棵树
+    #[cfg(unix)]
+    {
+        command.process_group(0);
+    }
+
     if let Some(path) = login_path {
         command.env("PATH", path);
     }
@@ -200,6 +217,14 @@ async fn spawn_transport(
                 config.name
             ))
         })?;
+
+    // spawn 成功后立即登记 PID 并建立进程树回收句柄（issue #88），
+    // guard 随 transport 一起析构，任何失败/超时/退出路径都会回收整棵树
+    let pid = transport.id().unwrap_or(0);
+    let guard = ProcessTreeGuard::new(&config.name, pid);
+    if pid != 0 {
+        eprintln!("[External MCP {}] spawned pid={pid}", config.name);
+    }
 
     // 排空子进程 stderr：不读取的话，管道缓冲（约 64KB）写满后子进程会
     // 阻塞，且服务器启动/调用失败的诊断日志会丢失。这里把 stderr 转发
@@ -222,7 +247,7 @@ async fn spawn_transport(
         });
     }
 
-    Ok(transport)
+    Ok((transport, guard))
 }
 
 fn rmcp_tool_to_remote(tool: rmcp::model::Tool) -> RemoteMcpTool {

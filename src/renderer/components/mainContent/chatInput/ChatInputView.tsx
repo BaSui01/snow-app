@@ -298,11 +298,15 @@ export const ChatInputView = ({
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   // 模型列表搜索关键词，仅 model 视图生效
   const [modelSearchQuery, setModelSearchQuery] = useState("");
+  const [apiProfileSearchQuery, setApiProfileSearchQuery] = useState("");
 
-  // 关闭菜单或离开模型列表视图时清空搜索词
+  // 关闭菜单或离开对应视图时清空搜索词
   useEffect(() => {
     if (!isModelMenuOpen || modelMenuView !== "model") {
       setModelSearchQuery("");
+    }
+    if (!isModelMenuOpen || modelMenuView !== "apiProfile") {
+      setApiProfileSearchQuery("");
     }
   }, [isModelMenuOpen, modelMenuView]);
 
@@ -548,6 +552,21 @@ export const ChatInputView = ({
         model.ownedBy.toLowerCase().includes(query)
     );
   }, [models, modelSearchQuery]);
+
+  // 供应商列表模糊过滤：关键词对显示名 / 配置名 / 模型名做包含匹配
+  const filteredApiConfigs = useMemo(() => {
+    const query = apiProfileSearchQuery.trim().toLowerCase();
+    if (!query) {
+      return apiConfigs;
+    }
+    return apiConfigs.filter(
+      (config) =>
+        config.displayName.toLowerCase().includes(query) ||
+        config.profileName.toLowerCase().includes(query) ||
+        (config.advancedModel || "").toLowerCase().includes(query) ||
+        (config.basicModel || "").toLowerCase().includes(query)
+    );
+  }, [apiConfigs, apiProfileSearchQuery]);
 
   const renumberImageChips = useCallback(() => {
     const el = textareaRef.current;
@@ -2960,8 +2979,45 @@ export const ChatInputView = ({
                           </button>
                           <span>{labels.selectApiProfile}</span>
                         </div>
+                        <div className="model-dropdown-search">
+                          <Search
+                            size={13}
+                            className="model-dropdown-search-icon"
+                          />
+                          <input
+                            autoFocus
+                            className="model-dropdown-search-input"
+                            type="text"
+                            value={apiProfileSearchQuery}
+                            onChange={(event) =>
+                              setApiProfileSearchQuery(event.target.value)
+                            }
+                            onKeyDown={(event) => {
+                              if (event.key === "Escape") {
+                                setApiProfileSearchQuery("");
+                              }
+                            }}
+                            placeholder={labels.searchApiProfiles}
+                          />
+                          {apiProfileSearchQuery && (
+                            <button
+                              className="model-dropdown-search-clear"
+                              type="button"
+                              aria-label={labels.searchApiProfiles}
+                              onClick={() => setApiProfileSearchQuery("")}
+                            >
+                              <X size={12} />
+                            </button>
+                          )}
+                        </div>
                         <div className="model-dropdown-list">
-                          {apiConfigs.map((config) => (
+                          {apiConfigs.length > 0 &&
+                            filteredApiConfigs.length === 0 && (
+                              <div className="model-dropdown-empty">
+                                {labels.noMatchingApiProfiles}
+                              </div>
+                            )}
+                          {filteredApiConfigs.map((config) => (
                             <button
                               key={config.profileName}
                               className={`model-dropdown-item ${
@@ -3080,6 +3136,7 @@ export const ChatInputView = ({
                               className="model-dropdown-search-icon"
                             />
                             <input
+                              autoFocus
                               className="model-dropdown-search-input"
                               type="text"
                               value={modelSearchQuery}

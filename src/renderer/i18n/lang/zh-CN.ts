@@ -405,6 +405,8 @@ export const zhCN = {
   "chat.noModelsFound": "未找到模型",
   "chat.searchModels": "搜索模型",
   "chat.noMatchingModels": "无匹配模型",
+  "chat.searchApiProfiles": "搜索 API 提供商",
+  "chat.noMatchingApiProfiles": "无匹配提供商",
   "chat.loadModelsError": "加载模型失败",
   "chat.loadingModels": "正在加载模型...",
   "chat.refreshModels": "重新获取模型",

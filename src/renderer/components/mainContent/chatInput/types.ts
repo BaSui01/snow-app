@@ -122,6 +122,8 @@ export type ChatInputLabels = {
   noModelsFound: string;
   searchModels: string;
   noMatchingModels: string;
+  searchApiProfiles: string;
+  noMatchingApiProfiles: string;
   cancel: string;
   confirm: string;
   retry: string;

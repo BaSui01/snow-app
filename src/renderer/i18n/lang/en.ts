@@ -425,6 +425,8 @@ export const en = {
   "chat.noModelsFound": "No models found",
   "chat.searchModels": "Search models",
   "chat.noMatchingModels": "No matching models",
+  "chat.searchApiProfiles": "Search API providers",
+  "chat.noMatchingApiProfiles": "No matching providers",
   "chat.loadModelsError": "Failed to load models",
   "chat.loadingModels": "Loading models...",
   "chat.refreshModels": "Refresh models",

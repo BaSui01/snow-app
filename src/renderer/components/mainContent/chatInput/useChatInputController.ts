@@ -139,6 +139,12 @@ export const useChatInputController = ({
       noMatchingModels: t("chat.noMatchingModels", {
         defaultValue: "No matching models",
       }),
+      searchApiProfiles: t("chat.searchApiProfiles", {
+        defaultValue: "Search providers",
+      }),
+      noMatchingApiProfiles: t("chat.noMatchingApiProfiles", {
+        defaultValue: "No matching providers",
+      }),
       cancel: t("common.cancel", { defaultValue: "Cancel" }),
       confirm: t("common.confirm", { defaultValue: "Confirm" }),
       retry: t("common.retry", { defaultValue: "Retry" }),

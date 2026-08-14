@@ -2784,6 +2784,7 @@ export const zhTW = {
   "chatInput.tokenUsage.output": "輸出",
   "chatInput.tokenUsage.cacheWrite": "快取寫入",
   "chatInput.tokenUsage.cacheHit": "快取命中",
+  "chatInput.tokenUsage.cacheHitRate": "快取命中率",
   "chatInput.tokenUsage.total": "合計",
   "chatInput.tokenUsage.context": "上下文",
   "chatInput.textSnippetEditorTitle": "文字片段編輯",

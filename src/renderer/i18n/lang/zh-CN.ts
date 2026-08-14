@@ -2805,6 +2805,7 @@ export const zhCN = {
   "chatInput.tokenUsage.output": "输出",
   "chatInput.tokenUsage.cacheWrite": "缓存写入",
   "chatInput.tokenUsage.cacheHit": "缓存命中",
+  "chatInput.tokenUsage.cacheHitRate": "缓存命中率",
   "chatInput.tokenUsage.total": "合计",
   "chatInput.tokenUsage.context": "上下文",
   "chatInput.textSnippetEditorTitle": "文本片段编辑",

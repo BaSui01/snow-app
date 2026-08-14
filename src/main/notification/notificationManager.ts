@@ -4,6 +4,7 @@ import type {
   NotificationConversationTarget,
 } from "../../shared/notification";
 import { APP_ICON_PATH, isMacOS } from "../app/constants";
+import { createWindow, getMainWindow } from "../app/mainWindow";
 import { safeSend } from "../utils/safeSend";
 
 /**
@@ -64,6 +65,65 @@ const releaseNotification = (notification: Notification): void => {
   }
 };
 
+// 通知点击时暂存的激活目标：原窗口已销毁（macOS 关闭窗口后点击通知中心
+// 历史通知）或渲染 frame 正在刷新导致消息无法送达时，待新窗口/页面加载完成
+// 后补发，保证「打开窗口 + 跳转到对应会话」仍能完成。
+let pendingActivationTarget: NotificationConversationTarget | null = null;
+
+const showAndFocusWindow = (window: BrowserWindow): void => {
+  if (window.isDestroyed()) {
+    return;
+  }
+  if (!window.isVisible()) {
+    window.show();
+  }
+  if (window.isMinimized()) {
+    window.restore();
+  }
+  window.focus();
+};
+
+const deliverPendingActivation = (window: BrowserWindow): void => {
+  if (!pendingActivationTarget) {
+    return;
+  }
+  const target = pendingActivationTarget;
+  pendingActivationTarget = null;
+  if (window.isDestroyed() || window.webContents.isDestroyed()) {
+    return;
+  }
+  safeSend(window.webContents, "notification:activated", target);
+};
+
+// 统一发送入口：目标 webContents 尚未加载完成或发送失败（frame 刷新中）
+// 时暂存激活目标，待 did-finish-load 后补发，避免激活目标静默丢失。
+const sendOrDeferActivation = (
+  window: BrowserWindow,
+  target: NotificationConversationTarget
+): void => {
+  if (window.isDestroyed()) {
+    return;
+  }
+  if (window.webContents.isLoading()) {
+    pendingActivationTarget = target;
+    window.webContents.once("did-finish-load", () => {
+      deliverPendingActivation(window);
+    });
+    return;
+  }
+  const sent = safeSend(
+    window.webContents,
+    "notification:activated",
+    target
+  );
+  if (!sent) {
+    pendingActivationTarget = target;
+    window.webContents.once("did-finish-load", () => {
+      deliverPendingActivation(window);
+    });
+  }
+};
+
 const activateSourceWindow = async (
   sourceWindow: BrowserWindow,
   target: NotificationConversationTarget | undefined
@@ -76,19 +136,41 @@ const activateSourceWindow = async (
     }
   }
 
+  // 原窗口已销毁（macOS 关闭窗口后进程仍存活，通知中心历史通知仍可点击）：
+  // 优先复用当前主窗口；没有则重建，并在渲染进程加载完成后补发激活目标。
   if (sourceWindow.isDestroyed()) {
+    const current = getMainWindow();
+    if (current) {
+      showAndFocusWindow(current);
+      if (target) {
+        sendOrDeferActivation(current, target);
+      }
+      return;
+    }
+
+    let rebuilt: BrowserWindow;
+    try {
+      rebuilt = createWindow();
+    } catch (error) {
+      console.error(
+        "[notification] Failed to recreate the main window",
+        error
+      );
+      return;
+    }
+    if (target) {
+      sendOrDeferActivation(rebuilt, target);
+      rebuilt.once("closed", () => {
+        pendingActivationTarget = null;
+      });
+    }
     return;
   }
-  if (!sourceWindow.isVisible()) {
-    sourceWindow.show();
-  }
-  if (sourceWindow.isMinimized()) {
-    sourceWindow.restore();
-  }
-  sourceWindow.focus();
+
+  showAndFocusWindow(sourceWindow);
 
   if (target) {
-    safeSend(sourceWindow.webContents, "notification:activated", target);
+    sendOrDeferActivation(sourceWindow, target);
   }
 };
 

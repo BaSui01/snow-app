@@ -2963,6 +2963,7 @@ export const en = {
   "chatInput.tokenUsage.output": "Output",
   "chatInput.tokenUsage.cacheWrite": "Cache write",
   "chatInput.tokenUsage.cacheHit": "Cache hit",
+  "chatInput.tokenUsage.cacheHitRate": "Cache hit rate",
   "chatInput.tokenUsage.total": "Total",
   "chatInput.tokenUsage.context": "Context",
   "chatInput.textSnippetEditorTitle": "Text Snippet Editor",

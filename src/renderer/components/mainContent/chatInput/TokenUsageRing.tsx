@@ -128,6 +128,13 @@ export const TokenUsageRing = ({
     }
     return value.toLocaleString(locale);
   };
+  // 缓存命中率保留一位小数，整数值不带小数位
+  const formatPercent = (value: number): string => {
+    const rounded = Math.round(value * 10) / 10;
+    return `${rounded.toLocaleString(locale, {
+      maximumFractionDigits: 1,
+    })}%`;
+  };
   const percent = Math.round(segments.ratio * 100);
   const tooltipContent = (
     <div className="token-usage-tooltip">
@@ -180,6 +187,16 @@ export const TokenUsageRing = ({
           {formatTokens(segments.total)}
         </span>
       </div>
+      {segments.cacheRead > 0 && (
+        <div className="token-usage-tooltip-row">
+          <span className="token-usage-label">
+            {t("chatInput.tokenUsage.cacheHitRate")}
+          </span>
+          <span className="token-usage-value">
+            {formatPercent((segments.cacheRead / segments.input) * 100)}
+          </span>
+        </div>
+      )}
       {maxContextTokens && maxContextTokens > 0 && (
         <div className="token-usage-tooltip-row">
           <span className="token-usage-label">

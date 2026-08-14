@@ -8,6 +8,17 @@ pub struct ProcessTreeGuard {
     job: Option<windows_sys::Win32::Foundation::HANDLE>,
 }
 
+// Windows 的 HANDLE（Job Object）是进程级内核句柄表索引，微软保证句柄值
+// 可在进程内任意线程使用（CloseHandle/TerminateJobObject 均线程安全），
+// 跨线程传递安全。手动标记 Send+Sync，使持有 guard 的 StdioMcpClient 满足
+// ClientHandle: Send + Sync 约束（否则 Windows 上整个 napi 异步层无法编译，
+// 而 Unix 分支只有 String+u32 字段天然满足，故仅 Windows 需要）。
+#[cfg(target_os = "windows")]
+unsafe impl Send for ProcessTreeGuard {}
+
+#[cfg(target_os = "windows")]
+unsafe impl Sync for ProcessTreeGuard {}
+
 impl ProcessTreeGuard {
     /// 为已 spawn 的子进程建立进程树回收句柄。
     /// Windows 上创建独立 Job Object 并分配子进程；失败时降级为日志告警。
@@ -76,7 +87,7 @@ impl Drop for ProcessTreeGuard {
 
 #[cfg(target_os = "windows")]
 fn attach_to_job(pid: u32) -> Option<windows_sys::Win32::Foundation::HANDLE> {
-    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
         SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,

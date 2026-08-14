@@ -20,6 +20,9 @@ pub struct DatabaseRepairResult {
 #[napi(object)]
 pub struct ApiConfigInput {
     pub profile_name: String,
+    /// 重命名支持:编辑时传原配置名(仅改名时传入,新建/未改名时为 None)。
+    /// 若与原配置名不同,upsert 会在同一事务内先改名再更新数据,保证原子性。
+    pub previous_profile_name: Option<String>,
     pub display_name: String,
     pub is_active: bool,
     pub base_url: String,

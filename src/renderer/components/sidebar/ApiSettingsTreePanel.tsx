@@ -293,13 +293,32 @@ export function ApiSettingsTreePanel({
   const handleSaveEdit = async () => {
     if (!editForm) return;
 
+    const profileName = editForm.profileName.trim();
+    if (!profileName) {
+      setError(
+        t("settings.apiManualProfileRequired", {
+          defaultValue: "Profile name is required.",
+        })
+      );
+      return;
+    }
+
     setIsSaving(true);
     setError("");
     setStatus("");
 
     try {
+      const payload = toApiConfigPayload(
+        editForm,
+        editForm.isActive,
+        configs.length
+      );
+      // 配置名变化时携带原配置名,由后端在同一事务内完成原子重命名
+      const previousProfileName = editingProfileName;
       const list = await window.snow.upsertApiConfig(
-        toApiConfigPayload(editForm, editForm.isActive, configs.length)
+        previousProfileName && previousProfileName !== profileName
+          ? { ...payload, previousProfileName }
+          : payload
       );
       setConfigs(list);
       setEditingProfileName(null);
@@ -307,7 +326,7 @@ export function ApiSettingsTreePanel({
       setStatus(
         t("settings.apiEditSuccess", {
           defaultValue: "Updated API profile {name}.",
-        }).replace("{name}", editForm.profileName)
+        }).replace("{name}", profileName)
       );
     } catch (e) {
       setError(
@@ -532,7 +551,6 @@ export function ApiSettingsTreePanel({
         <ApiSettingsFormPanel
           data={addForm}
           isSaving={isSaving}
-          isNew
           onChange={onFieldChange("add")}
           onCancel={toggleAddForm}
           onSave={() => void handleAddSubmit()}
@@ -573,7 +591,6 @@ export function ApiSettingsTreePanel({
           <ApiSettingsFormPanel
             data={editForm}
             isSaving={isSaving}
-            isNew={false}
             onChange={onFieldChange("edit")}
             onCancel={handleCancelEdit}
             onSave={() => void handleSaveEdit()}

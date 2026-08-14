@@ -32,6 +32,8 @@ export type AppStorageInfo = {
 
 export type ApiConfigInput = {
   profileName: string;
+  /** 编辑重命名时传原配置名;新建/未改名时不传。 */
+  previousProfileName?: string;
   displayName: string;
   isActive: boolean;
   baseUrl: string;

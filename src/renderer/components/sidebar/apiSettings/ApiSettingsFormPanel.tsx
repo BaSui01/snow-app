@@ -6,7 +6,6 @@ import type { ApiConfigFormData } from "./types";
 type ApiSettingsFormPanelProps = {
   data: ApiConfigFormData;
   isSaving: boolean;
-  isNew: boolean;
   onChange: (field: keyof ApiConfigFormData, value: string | boolean) => void;
   onCancel: () => void;
   onSave: () => void;
@@ -17,7 +16,6 @@ type ApiSettingsFormPanelProps = {
 export function ApiSettingsFormPanel({
   data,
   isSaving,
-  isNew,
   onChange,
   onCancel,
   onSave,
@@ -30,7 +28,6 @@ export function ApiSettingsFormPanel({
       data={data}
       onChange={onChange}
       disabled={isSaving}
-      isNew={isNew}
     />
   );
 

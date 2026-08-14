@@ -4,6 +4,7 @@ import { useI18n } from "../../../i18n";
 import { ApiModelCombobox } from "./ApiModelCombobox";
 import { CustomSelect } from "../../common/CustomSelect";
 import { SystemPromptSelect } from "./SystemPromptSelect";
+import { TokenPresetInput, type TokenPreset } from "./TokenPresetInput";
 import {
   DEFAULT_API_BASE_URL,
   DISABLED_STATUS_LABEL,
@@ -28,11 +29,6 @@ import type {
 import type { ApiConfigFormData } from "./types";
 
 type ModelField = "advancedModel" | "basicModel";
-
-type TokenPreset = {
-  value: string;
-  label: string;
-};
 
 // 基于 2026 年主流模型能力整理的数值档位；仅展示规格，不绑定模型名称。
 const CONTEXT_TOKEN_PRESETS: TokenPreset[] = [
@@ -61,14 +57,12 @@ type ApiSettingsFormFieldsProps = {
   data: ApiConfigFormData;
   onChange: (field: keyof ApiConfigFormData, value: string | boolean) => void;
   disabled: boolean;
-  isNew: boolean;
 };
 
 export function ApiSettingsFormFields({
   data,
   onChange,
   disabled,
-  isNew,
 }: ApiSettingsFormFieldsProps): React.JSX.Element {
   const { t } = useI18n();
   const [showApiKey, setShowApiKey] = useState(false);
@@ -267,20 +261,18 @@ export function ApiSettingsFormFields({
           {t("settings.formBasic", { defaultValue: "Basic" })}
         </strong>
         <div className="api-settings-form-grid">
-          {isNew && (
-            <label className="api-settings-field">
-              <span>
-                {t("settings.apiProfileName", { defaultValue: "Profile name" })}
-              </span>
-              <input
-                value={data.profileName}
-                onChange={changeField("profileName")}
-                placeholder="openai"
-                required
-                disabled={disabled}
-              />
-            </label>
-          )}
+          <label className="api-settings-field">
+            <span>
+              {t("settings.apiProfileName", { defaultValue: "Profile name" })}
+            </span>
+            <input
+              value={data.profileName}
+              onChange={changeField("profileName")}
+              placeholder="openai"
+              required
+              disabled={disabled}
+            />
+          </label>
           <label className="api-settings-field">
             <span>
               {t("settings.apiDisplayName", { defaultValue: "Display name" })}
@@ -584,22 +576,16 @@ export function ApiSettingsFormFields({
                 defaultValue: "Max context (tokens)",
               })}
             </span>
-            <input
+            <TokenPresetInput
               value={data.maxContextTokens}
-              onChange={changeField("maxContextTokens")}
+              presets={CONTEXT_TOKEN_PRESETS}
               placeholder="e.g. 128000"
-              type="number"
-              min={0}
-              list="api-context-token-presets"
               disabled={disabled}
+              noMatchText={t("settings.noTokenPresetMatch", {
+                defaultValue: "No matching presets",
+              })}
+              onChange={(value) => onChange("maxContextTokens", value)}
             />
-            <datalist id="api-context-token-presets">
-              {CONTEXT_TOKEN_PRESETS.map((preset) => (
-                <option key={preset.value} value={preset.value}>
-                  {preset.label}
-                </option>
-              ))}
-            </datalist>
             <small className="api-settings-hint-text">
               {t("settings.apiTokenPresetsHint", {
                 defaultValue:
@@ -611,22 +597,16 @@ export function ApiSettingsFormFields({
             <span>
               {t("settings.apiMaxTokens", { defaultValue: "Max tokens" })}
             </span>
-            <input
+            <TokenPresetInput
               value={data.maxTokens}
-              onChange={changeField("maxTokens")}
+              presets={OUTPUT_TOKEN_PRESETS}
               placeholder="e.g. 4096"
-              type="number"
-              min={0}
-              list="api-output-token-presets"
               disabled={disabled}
+              noMatchText={t("settings.noTokenPresetMatch", {
+                defaultValue: "No matching presets",
+              })}
+              onChange={(value) => onChange("maxTokens", value)}
             />
-            <datalist id="api-output-token-presets">
-              {OUTPUT_TOKEN_PRESETS.map((preset) => (
-                <option key={preset.value} value={preset.value}>
-                  {preset.label}
-                </option>
-              ))}
-            </datalist>
             <small className="api-settings-hint-text">
               {t("settings.apiMaxTokensHint", {
                 defaultValue: "Leave empty to omit this parameter from requests.",

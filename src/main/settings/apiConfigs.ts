@@ -105,6 +105,7 @@ export const normalizeApiConfigInput = (value: unknown): ApiConfigInput => {
 
   return {
     profileName,
+    previousProfileName: toText(value.previousProfileName).trim() || undefined,
     displayName,
     isActive,
     baseUrl,

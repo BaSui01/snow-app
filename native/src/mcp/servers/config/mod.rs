@@ -2548,6 +2548,7 @@ Full guide: ~/.snow/docs/zh-CN/2-使用指南/3-配置API密钥与模型.md (en:
 
         let item = crate::storage::ApiConfigInput {
             profile_name: profile_name.clone(),
+            previous_profile_name: None,
             display_name: text_field("displayName", &profile_name),
             is_active,
             base_url,

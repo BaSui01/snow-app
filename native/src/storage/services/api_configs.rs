@@ -116,6 +116,32 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
         .and_then(|mut connection| {
             let transaction = connection.transaction()?;
 
+            // 重命名支持:编辑时若配置名发生变化,先在同一事务内把旧行改名为
+            // 新名(保持 id 不变),再按新名执行 upsert 更新数据。改名与更新
+            // 原子提交,失败即整体回滚,不会产生"复制 + 残留旧配置"。
+            if let Some(previous_profile_name) = config.previous_profile_name.as_deref() {
+                let previous = previous_profile_name.trim();
+                if !previous.is_empty() && previous != config.profile_name {
+                    let renamed = transaction.execute(
+                        "UPDATE api_configs
+                            SET profile_name = ?1,
+                                updated_at = datetime('now', 'localtime')
+                          WHERE profile_name = ?2",
+                        params![config.profile_name, previous],
+                    )?;
+                    if renamed == 0 {
+                        return Err(rusqlite::Error::SqliteFailure(
+                            rusqlite::ffi::Error::new(
+                                rusqlite::ffi::ErrorCode::NotFound as i32,
+                            ),
+                            Some(format!(
+                                "API profile \"{previous}\" does not exist (rename failed)"
+                            )),
+                        ));
+                    }
+                }
+            }
+
             if config.is_active {
                 transaction.execute(
                     "UPDATE api_configs

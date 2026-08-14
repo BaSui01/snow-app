@@ -22,7 +22,7 @@ use super::super::servers::skills::SkillsService;
 use super::super::servers::terminal::{TerminalCommandCallback, TerminalService};
 use super::super::servers::todo::TodoService;
 use super::super::servers::user_interaction::{UserInteractionService, UserQuestionCallback};
-use super::super::servers::websearch::WebSearchService;
+use super::super::servers::websearch::{WebSearchCommandCallback, WebSearchService};
 
 /// Register a cancellation token for a remote (SSH) tool execution and emit
 /// its id as a `tool_execution` stream chunk so the frontend can abort the
@@ -54,6 +54,7 @@ pub async fn call_mcp_tool(
     sensitive_authorization_token: Option<String>,
     on_chunk: BashStreamCallback,
     on_browser_command: BrowserCommandCallback,
+    on_websearch_command: WebSearchCommandCallback,
     on_user_question: UserQuestionCallback,
     on_app_control: AppControlCallback,
     on_remote_workspace_command: RemoteWorkspaceCallback,
@@ -261,7 +262,9 @@ pub async fn call_mcp_tool(
     } else if tool_full_name == "todo-todo-manage" {
         TodoService::new().execute_async(&args).await?
     } else if tool_full_name == "websearch-websearch-search" {
-        WebSearchService::new().execute_search(&args).await?
+        WebSearchService::new()
+            .execute_async("websearch-search", &args, &on_websearch_command)
+            .await?
     } else if tool_full_name == "websearch-websearch-fetch" {
         WebSearchService::new().execute_fetch(&args).await?
     } else if tool_full_name == "imagegen-generate" {

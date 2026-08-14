@@ -2,68 +2,80 @@ use std::time::Duration;
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use napi::bindgen_prelude::*;
+use napi::threadsafe_function::ThreadsafeFunction;
+use napi_derive::napi;
 use regex::Regex;
 use reqwest::{Client, Url};
-use serde::Deserialize;
 use serde_json::{json, Value};
 
 use super::super::service::McpService;
 use super::super::tools::McpTool;
 
 const SERVER_ID: &str = "websearch";
-const PROXY_BROWSER_SETTING_CODE: &str = "proxy_browser_settings";
-const DEFAULT_SEARCH_ENGINE: &str = "duckduckgo";
 const REQUEST_TIMEOUT_SECS: u64 = 30;
-const DEFAULT_MAX_RESULTS: usize = 10;
-const MAX_MAX_RESULTS: usize = 20;
 const DEFAULT_MAX_CONTENT_LENGTH: usize = 50_000;
 const MIN_MAX_CONTENT_LENGTH: usize = 1_000;
 const MAX_MAX_CONTENT_LENGTH: usize = 100_000;
 const MAX_IMAGE_BYTES: usize = 20 * 1024 * 1024;
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
+/// 转发给 Electron 主进程执行的 Web 搜索命令。
+#[napi(object)]
+pub struct WebSearchCommand {
+    pub operation: String,
+    pub args_json: String,
+}
+
+pub type WebSearchCommandCallback =
+    ThreadsafeFunction<WebSearchCommand, Promise<String>, WebSearchCommand, Status, false>;
+
 pub struct WebSearchService;
-
-/// Web search 引擎选择（代理设置由 `http_client` 统一管理）。
-#[derive(Debug, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
-struct ProxyBrowserSettings {
-    search_engine: String,
-}
-
-impl Default for ProxyBrowserSettings {
-    fn default() -> Self {
-        Self {
-            search_engine: DEFAULT_SEARCH_ENGINE.to_string(),
-        }
-    }
-}
 
 impl WebSearchService {
     pub fn new() -> Self {
         WebSearchService
     }
 
-    pub async fn execute_search(&self, args: &Value) -> napi::Result<Value> {
-        let query = required_string(args, "query", "websearch-websearch-search")?;
-        let max_results = bounded_usize(
-            args.get("maxResults").and_then(Value::as_u64),
-            DEFAULT_MAX_RESULTS,
-            1,
-            MAX_MAX_RESULTS,
-        );
-        let settings = load_search_engine_settings().await?;
-        let proxy_config = crate::api::http_client::load_proxy_config().await?;
-        let client = build_http_client(&proxy_config)?;
-        let results =
-            search_with_engine(&client, &settings.search_engine, query, max_results).await?;
-        let total_results = results.len();
+    /// 通过异步执行器执行搜索工具：把命令转发给 Electron 主进程，
+    /// 由主进程的 puppeteer 服务驱动真实浏览器搜索（可绕过 JS 反爬）。
+    pub async fn execute_async(
+        &self,
+        tool_name: &str,
+        args: &Value,
+        on_command: &WebSearchCommandCallback,
+    ) -> napi::Result<Value> {
+        let command = WebSearchCommand {
+            operation: tool_name.to_string(),
+            args_json: serde_json::to_string(args).map_err(|error| {
+                Error::new(
+                    Status::GenericFailure,
+                    format!("Failed to serialize web search command: {error}"),
+                )
+            })?,
+        };
 
-        Ok(json!({
-            "query": query,
-            "results": results,
-            "totalResults": total_results,
-        }))
+        let promise = on_command
+            .call_async_catch(command)
+            .await
+            .map_err(|error| {
+                Error::new(
+                    Status::GenericFailure,
+                    format!("Failed to dispatch web search command to Electron: {error}"),
+                )
+            })?;
+        let result_json = promise.await.map_err(|error| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Web search command failed: {error}"),
+            )
+        })?;
+
+        serde_json::from_str(&result_json).map_err(|error| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Web search command returned invalid JSON: {error}"),
+            )
+        })
     }
 
     pub async fn execute_fetch(&self, args: &Value) -> napi::Result<Value> {
@@ -218,35 +230,19 @@ impl McpService for WebSearchService {
 
     fn execute(&self, tool_name: &str, _args: &Value) -> napi::Result<Value> {
         match tool_name {
-            "websearch-search" | "websearch-fetch" => Err(generic_error(
-                "The WebSearch tool must be executed through the asynchronous executor".to_string(),
+            "websearch-search" => Err(generic_error(
+                "The WebSearch tool must be executed through the asynchronous executor"
+                    .to_string(),
+            )),
+            "websearch-fetch" => Err(generic_error(
+                "The WebSearch tool must be executed through the asynchronous executor"
+                    .to_string(),
             )),
             _ => Err(generic_error(format!(
                 "Unknown tool: \"{tool_name}\" for MCP server \"websearch\". Available tools: [websearch-websearch-search, websearch-websearch-fetch]"
             ))),
         }
     }
-}
-
-/// 从数据库加载 Web 搜索引擎配置（代理设置由 `http_client` 统一管理）。
-///
-/// 仅解析 `search_engine` 字段，代理相关字段已交由
-/// `crate::api::http_client` 统一处理。
-async fn load_search_engine_settings() -> napi::Result<ProxyBrowserSettings> {
-    let setting_value = tokio::task::spawn_blocking(|| {
-        let storage_info = crate::storage::initialize_app_storage()?;
-        let database_path = std::path::PathBuf::from(storage_info.database_path);
-        crate::storage::services::system_settings::get_system_setting_value(
-            &database_path,
-            PROXY_BROWSER_SETTING_CODE,
-        )
-    })
-    .await
-    .map_err(|error| generic_error(format!("Failed to load search engine settings: {error}")))??;
-
-    Ok(setting_value
-        .and_then(|value| serde_json::from_str(&value).ok())
-        .unwrap_or_default())
 }
 
 /// 构建带代理和超时设置的 HTTP 客户端。
@@ -263,129 +259,6 @@ fn build_http_client(proxy_config: &crate::api::http_client::ProxyConfig) -> nap
     builder
         .build()
         .map_err(|error| generic_error(format!("Failed to create HTTP client: {error}")))
-}
-
-async fn search_with_engine(
-    client: &Client,
-    configured_engine: &str,
-    query: &str,
-    max_results: usize,
-) -> napi::Result<Vec<Value>> {
-    let engine = configured_engine.trim().to_ascii_lowercase();
-    let (search_url, is_bing) = if engine == "bing" {
-        ("https://www.bing.com/search", true)
-    } else {
-        ("https://html.duckduckgo.com/html/", false)
-    };
-    let result_count = max_results.to_string();
-    let mut query_params = vec![("q", query), ("count", result_count.as_str())];
-    if is_bing {
-        query_params.push(("format", "rss"));
-    }
-    let response = client
-        .get(search_url)
-        .header(
-            reqwest::header::ACCEPT,
-            "application/rss+xml, application/xml, text/xml, */*",
-        )
-        .query(&query_params)
-        .send()
-        .await
-        .map_err(|error| generic_error(format!("Web search failed: {error}")))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(generic_error(format!(
-            "Web search failed: {} {}",
-            status.as_u16(),
-            status.canonical_reason().unwrap_or("Unknown status")
-        )));
-    }
-    let content = response
-        .text()
-        .await
-        .map_err(|error| generic_error(format!("Web search failed: {error}")))?;
-
-    Ok(if is_bing {
-        parse_bing_results(&content, max_results)
-    } else {
-        parse_duckduckgo_results(&content, max_results)
-    })
-}
-
-fn parse_duckduckgo_results(html: &str, max_results: usize) -> Vec<Value> {
-    let link_regex = Regex::new(r#"(?is)<a[^>]*class=["'][^"']*result__a[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>(.*?)</a>"#)
-        .expect("DuckDuckGo result link regex must compile");
-    let snippet_regex =
-        Regex::new(r#"(?is)<[^>]*class=["'][^"']*result__snippet[^"']*["'][^>]*>(.*?)</[^>]+>"#)
-            .expect("DuckDuckGo snippet regex must compile");
-    let snippets: Vec<String> = snippet_regex
-        .captures_iter(html)
-        .map(|capture| clean_html_text(capture.get(1).map_or("", |value| value.as_str())))
-        .collect();
-
-    link_regex
-        .captures_iter(html)
-        .take(max_results)
-        .enumerate()
-        .filter_map(|(index, capture)| {
-            let url = decode_duckduckgo_url(capture.get(1)?.as_str());
-            let title = clean_html_text(capture.get(2)?.as_str());
-            if url.is_empty() || title.is_empty() {
-                return None;
-            }
-            Some(search_result_json(
-                title,
-                url,
-                snippets.get(index).cloned().unwrap_or_default(),
-            ))
-        })
-        .collect()
-}
-
-fn parse_bing_results(xml: &str, max_results: usize) -> Vec<Value> {
-    let item_regex = Regex::new(
-        r"(?is)<item>\s*<title>(.*?)</title>\s*<link>(.*?)</link>\s*<description>(.*?)</description>.*?</item>",
-    )
-    .expect("Bing RSS item regex must compile");
-
-    item_regex
-        .captures_iter(xml)
-        .take(max_results)
-        .filter_map(|capture| {
-            let title = clean_html_text(capture.get(1)?.as_str());
-            let url = decode_html_entities(capture.get(2)?.as_str().trim());
-            let snippet = clean_html_text(capture.get(3)?.as_str());
-            if !is_http_url(&url) || title.is_empty() {
-                return None;
-            }
-            Some(search_result_json(title, url, snippet))
-        })
-        .collect()
-}
-
-fn search_result_json(title: String, url: String, snippet: String) -> Value {
-    let display_url = Url::parse(&url)
-        .ok()
-        .and_then(|parsed| parsed.host_str().map(str::to_string))
-        .unwrap_or_default();
-    json!({
-        "title": title,
-        "url": url,
-        "snippet": snippet,
-        "displayUrl": display_url,
-    })
-}
-
-fn decode_duckduckgo_url(raw_url: &str) -> String {
-    let decoded = decode_html_entities(raw_url);
-    Url::parse(&decoded)
-        .ok()
-        .and_then(|url| {
-            url.query_pairs()
-                .find(|(key, _)| key == "uddg")
-                .map(|(_, value)| value.into_owned())
-        })
-        .unwrap_or(decoded)
 }
 
 fn extract_title(html: &str) -> String {

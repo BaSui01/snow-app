@@ -26,6 +26,7 @@ use crate::mcp::servers::remote_workspace::RemoteWorkspaceCallback;
 use crate::mcp::servers::skills::{ProjectSkillDefinition, SkillDefinition, SkillsService};
 use crate::mcp::servers::terminal::TerminalCommandCallback;
 use crate::mcp::servers::user_interaction::UserQuestionCallback;
+use crate::mcp::servers::websearch::WebSearchCommandCallback;
 use crate::mcp::tools::{
     call_mcp_tool as call_tool, list_mcp_project_server_tools as list_project_server_tools,
     list_mcp_project_servers as list_project_servers, list_mcp_server_tools as list_server_tools,
@@ -311,7 +312,7 @@ pub async fn write_interactive_stdin(session_id: String, input: String) -> napi:
 }
 
 #[napi(
-    ts_args_type = "toolFullName: string, argsJson: string, projectId: string | undefined, checkpointIds: string[] | undefined, checkpointWorkDir: string | undefined, sensitiveAuthorizationToken: string | undefined, onChunk: (chunk: BashStreamChunk) => void, onBrowserCommand: (command: BrowserCommand) => Promise<string>, onUserQuestion: (question: UserQuestionCommand) => Promise<string>, onAppControl: (command: AppControlCommand) => Promise<string>, onRemoteWorkspaceCommand: (command: RemoteWorkspaceCommand) => Promise<string>, onTerminalCommand: (command: TerminalCommand) => Promise<string>, subAgentAllowedTools: string[] | undefined, planMode: boolean | undefined, planApproved: boolean | undefined",
+    ts_args_type = "toolFullName: string, argsJson: string, projectId: string | undefined, checkpointIds: string[] | undefined, checkpointWorkDir: string | undefined, sensitiveAuthorizationToken: string | undefined, onChunk: (chunk: BashStreamChunk) => void, onBrowserCommand: (command: BrowserCommand) => Promise<string>, onWebSearchCommand: (command: WebSearchCommand) => Promise<string>, onUserQuestion: (question: UserQuestionCommand) => Promise<string>, onAppControl: (command: AppControlCommand) => Promise<string>, onRemoteWorkspaceCommand: (command: RemoteWorkspaceCommand) => Promise<string>, onTerminalCommand: (command: TerminalCommand) => Promise<string>, subAgentAllowedTools: string[] | undefined, planMode: boolean | undefined, planApproved: boolean | undefined",
     ts_return_type = "Promise<string>"
 )]
 pub async fn call_mcp_tool(
@@ -323,6 +324,7 @@ pub async fn call_mcp_tool(
     sensitive_authorization_token: Option<String>,
     on_chunk: BashStreamCallback,
     on_browser_command: BrowserCommandCallback,
+    on_websearch_command: WebSearchCommandCallback,
     on_user_question: UserQuestionCallback,
     on_app_control: AppControlCallback,
     on_remote_workspace_command: RemoteWorkspaceCallback,
@@ -340,6 +342,7 @@ pub async fn call_mcp_tool(
         sensitive_authorization_token,
         on_chunk,
         on_browser_command,
+        on_websearch_command,
         on_user_question,
         on_app_control,
         on_remote_workspace_command,

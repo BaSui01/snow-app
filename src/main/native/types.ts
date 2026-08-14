@@ -1016,6 +1016,11 @@ export type BrowserCommand = {
   argsJson: string;
 };
 
+export type WebSearchCommand = {
+  operation: string;
+  argsJson: string;
+};
+
 export type RemoteWorkspaceCommand = {
   operation: string;
   argsJson: string;
@@ -1553,6 +1558,7 @@ export type NativeBridge = {
     sensitiveAuthorizationToken: string | undefined,
     onChunk: (chunk: BashStreamChunk) => void,
     onBrowserCommand: (command: BrowserCommand) => Promise<string>,
+    onWebSearchCommand: (command: WebSearchCommand) => Promise<string>,
     onUserQuestion: (question: UserQuestionCommand) => Promise<string>,
     onAppControl: (command: AppControlCommand) => Promise<string>,
     onRemoteWorkspaceCommand: (

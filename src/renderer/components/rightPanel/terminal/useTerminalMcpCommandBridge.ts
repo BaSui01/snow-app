@@ -74,24 +74,30 @@ export const useTerminalMcpCommandBridge = (
               requestedCwd ||
               activeDir?.path ||
               "";
+            // SSH 终端由系统 ssh 启动远端 $SHELL -l，本地 shellPath 不参与
+            const isSshCwd = cwd.trimStart().startsWith("ssh://");
             const tabId = createTerminalTabId();
-            cb.openTab(cwd, tabId, { shellPath, sessionId });
+            cb.openTab(cwd, tabId, {
+              shellPath: isSshCwd ? undefined : shellPath,
+              sessionId,
+            });
             await waitForTerminalTab(tabId);
 
             // 反馈实际生效的 shell（而非仅回显调用参数）：显式传参优先，
-            // 其次终端设置 shellPath，最后是系统检测默认——保证智能体拿到的
-            // shellPath 与终端里真实运行的 shell 一致。
+            // 其次终端设置 shellPath，最后是系统检测默认。SSH 终端始终使用
+            // 远端默认 $SHELL，无法确认时返回 null 而非错误回显。
             const [settingsValue, detectedTerminals] = await Promise.all([
               window.snow.getSystemSettingValue(TERMINAL_SETTING_CODE),
               window.snow.detectTerminals(),
             ]);
             const configuredShell =
               readTerminalSettingsJson(settingsValue).shellPath;
-            const effectiveShell =
-              shellPath ||
-              configuredShell ||
-              detectedTerminals[0]?.path ||
-              "";
+            const effectiveShell = isSshCwd
+              ? ""
+              : shellPath ||
+                configuredShell ||
+                detectedTerminals[0]?.path ||
+                "";
 
             return JSON.stringify({
               tabId,

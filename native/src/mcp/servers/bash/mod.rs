@@ -26,7 +26,7 @@ use super::remote_workspace::{
 
 mod platform;
 mod safety;
-mod stream_io;
+pub(crate) mod stream_io;
 
 fn set_inherited_env_default(process: &mut tokio::process::Command, key: &str, value: &str) {
     if value.is_empty() || std::env::var_os(key).is_some() {

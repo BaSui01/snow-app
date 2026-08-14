@@ -1,9 +1,12 @@
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use serde_json::Value;
 
+use crate::mcp::servers::bash::stream_io::emit_stream_chunk;
+use crate::mcp::servers::bash::BashStreamCallback;
 use crate::storage::services::checkpoint::remote::RemoteCheckpointClient;
 use crate::storage::services::checkpoint::CheckpointWorktreeCapture;
 use crate::storage::services::system_settings::{
@@ -729,6 +732,10 @@ fn capture_checkpoint_before_tool(
     }
 }
 
+/// 远程 checkpoint 阶段软超时上限（毫秒），超时跳过快照/变更记录，
+/// 避免工具调用卡死（快照仅用于回滚保护，跳过只损失回滚能力）。
+const REMOTE_CHECKPOINT_TIMEOUT_MS: u64 = 30_000;
+
 /// 远程（SSH）工具的 checkpoint before 捕获：文件 IO 经 Electron SFTP 完成，
 /// 与本地版本行为一致（filesystem 工具记录单文件，bash 记录整个工作区）。
 async fn capture_checkpoint_before_tool_remote(
@@ -737,6 +744,7 @@ async fn capture_checkpoint_before_tool_remote(
     checkpoint_ids: Vec<String>,
     checkpoint_work_dir: Option<String>,
     on_remote_workspace_command: &RemoteWorkspaceCallback,
+    on_chunk: &BashStreamCallback,
 ) -> napi::Result<ToolCheckpointCapture> {
     if checkpoint_ids.is_empty() {
         return Ok(ToolCheckpointCapture::None);
@@ -773,22 +781,63 @@ async fn capture_checkpoint_before_tool_remote(
                 file_path,
             })
         }
-        "bash-terminal-execute" => Ok(ToolCheckpointCapture::Worktree(
-            crate::storage::services::checkpoint::remote::capture_checkpoint_worktree_before_remote(
-                &client,
-                checkpoint_ids,
-                work_dir,
+        "bash-terminal-execute" => {
+            // SFTP 逐目录遍历可能很慢：先给阶段提示，再以命令 timeout
+            // 为上限软超时——超时跳过快照（放弃回滚保护），避免看起来卡死。
+            let timeout_ms = args
+                .get("timeout")
+                .and_then(Value::as_u64)
+                .unwrap_or(REMOTE_CHECKPOINT_TIMEOUT_MS);
+            let started = Instant::now();
+            emit_stream_chunk(
+                on_chunk,
+                "stdout",
+                "[checkpoint] 正在创建远程执行前快照...".to_string(),
+            );
+            let captured = tokio::time::timeout(
+                Duration::from_millis(timeout_ms),
+                crate::storage::services::checkpoint::remote::capture_checkpoint_worktree_before_remote(
+                    &client,
+                    checkpoint_ids,
+                    work_dir,
+                ),
             )
-            .await?,
-        )),
+            .await;
+            match captured {
+                Ok(Ok(capture)) => {
+                    emit_stream_chunk(
+                        on_chunk,
+                        "stdout",
+                        format!(
+                            "[checkpoint] 执行前快照完成（{}ms）",
+                            started.elapsed().as_millis()
+                        ),
+                    );
+                    Ok(ToolCheckpointCapture::Worktree(capture))
+                }
+                Ok(Err(error)) => Err(error),
+                Err(_) => {
+                    emit_stream_chunk(
+                        on_chunk,
+                        "stdout",
+                        format!(
+                            "[checkpoint] 远程扫描超时（{timeout_ms}ms），已跳过执行前快照，本次调用无回滚保护"
+                        ),
+                    );
+                    Ok(ToolCheckpointCapture::Worktree(None))
+                }
+            }
+        }
         _ => Ok(ToolCheckpointCapture::None),
     }
 }
 
-/// 远程（SSH）工具的 checkpoint after 捕获。
+/// 远程（SSH）工具的 checkpoint after 捕获。`on_chunk` 可选：bash 分支的
+/// 流式回调已被执行器按值占用，传 None 仅失去提示（超时保护仍生效）。
 async fn capture_checkpoint_after_tool_remote(
     capture: ToolCheckpointCapture,
     on_remote_workspace_command: &RemoteWorkspaceCallback,
+    on_chunk: Option<&BashStreamCallback>,
 ) -> napi::Result<()> {
     let client = RemoteCheckpointClient::new(on_remote_workspace_command);
     match capture {
@@ -806,10 +855,52 @@ async fn capture_checkpoint_after_tool_remote(
             .await
         }
         ToolCheckpointCapture::Worktree(Some(capture)) => {
-            crate::storage::services::checkpoint::remote::record_checkpoint_worktree_after_remote(
-                &client, capture,
+            // 命令已成功执行，这里超时只意味着变更记录不完整（回滚保护
+            // 可能不完整），不能让工具调用再次长时间无响应。
+            let started = Instant::now();
+            if let Some(chunk) = on_chunk {
+                emit_stream_chunk(
+                    chunk,
+                    "stdout",
+                    "[checkpoint] 正在比较执行后变更...".to_string(),
+                );
+            }
+            let recorded = tokio::time::timeout(
+                Duration::from_millis(REMOTE_CHECKPOINT_TIMEOUT_MS),
+                crate::storage::services::checkpoint::remote::record_checkpoint_worktree_after_remote(
+                    &client, capture,
+                ),
             )
-            .await
+            .await;
+            match recorded {
+                Ok(Ok(())) => {
+                    if let Some(chunk) = on_chunk {
+                        emit_stream_chunk(
+                            chunk,
+                            "stdout",
+                            format!(
+                                "[checkpoint] 执行后变更已记录（{}ms）",
+                                started.elapsed().as_millis()
+                            ),
+                        );
+                    }
+                    Ok(())
+                }
+                Ok(Err(error)) => Err(error),
+                Err(_) => {
+                    if let Some(chunk) = on_chunk {
+                        emit_stream_chunk(
+                            chunk,
+                            "stdout",
+                            format!(
+                                "[checkpoint] 远程扫描超时（{}ms），执行后快照未完成，回滚保护可能不完整",
+                                REMOTE_CHECKPOINT_TIMEOUT_MS
+                            ),
+                        );
+                    }
+                    Ok(())
+                }
+            }
         }
         ToolCheckpointCapture::None | ToolCheckpointCapture::Worktree(None) => Ok(()),
     }
@@ -850,6 +941,14 @@ fn is_readonly_bash_command(command: &str) -> bool {
         return false;
     }
 
+    // `set -euo pipefail; cmd`、`set -x && cmd`、`set -o pipefail\ncmd`
+    // 这类 Shell 状态前缀本身不修改工作区文件（非交互 SSH exec 不写
+    // history），剥离后继续按只读规则分析剩余命令——避免仅因包含 `set`
+    // 或分号就触发全工作区 checkpoint 快照。
+    if let Some(rest) = strip_shell_state_prefix(trimmed) {
+        return is_readonly_bash_command(rest);
+    }
+
     // 命令链 / 控制流 / 命令替换 / 子 shell / 输入重定向无法静态判定读写性：
     // `cd x && rm -rf y`、`echo hi | tee f`、`echo "$(rm -rf x)"`、
     // `for ...; do ...; done`、`{ rm x; }` 等一律保留 checkpoint。
@@ -874,7 +973,7 @@ fn is_readonly_bash_command(command: &str) -> bool {
         "dirname", "basename", "readlink", "realpath", "stat", "file",
         "tree", "du", "df", "nproc", "uname", "hostname", "ps", "top",
         "ping", "nslookup", "dig", "history", "jobs", "true", "false",
-        "sleep", "test", "[", "exit", "cd", "export", "unset",
+        "sleep", "test", "[", "exit", "cd", "export", "unset", "set",
         // git 只读子命令（写类子命令 add/commit/push/pull/checkout 等不在列）
         "git status", "git log", "git diff", "git branch", "git rev-parse",
         "git remote", "git show", "git ls-files", "git tag", "git blame",
@@ -891,6 +990,76 @@ fn is_readonly_bash_command(command: &str) -> bool {
                 && trimmed.starts_with(p)
                 && trimmed.as_bytes()[p.len()].is_ascii_whitespace())
     })
+}
+
+/// 剥离 `set` 开头的 Shell 状态语句前缀（如 `set -euo pipefail; cmd`、
+/// `set -x && cmd`、`set -o pipefail\ncmd`）。`set` 只修改 shell 选项与
+/// 位置参数，不写工作区文件（非交互 SSH exec 不写 history），剥离后由
+/// 调用方继续分析剩余命令。当第一个语句无法确认是纯 `set` 调用（含命令
+/// 替换、子 shell、重定向等副作用构造）时返回 None，保守保留 checkpoint。
+fn strip_shell_state_prefix(command: &str) -> Option<&str> {
+    let rest = command.strip_prefix("set")?;
+    // set 后必须是空白、-、+ 或直接结束；`setx ...` 等非 set 命令不剥离。
+    match rest.chars().next() {
+        None => return Some(""),
+        Some(c) if c.is_whitespace() || c == '-' || c == '+' => {}
+        Some(_) => return None,
+    }
+
+    let bytes = command.as_bytes();
+    let mut i = "set".len();
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut suspicious = false;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if in_single {
+            if c == b'\'' {
+                in_single = false;
+            }
+            i += 1;
+            continue;
+        }
+        if in_double {
+            if c == b'\\' {
+                i += 2; // 双引号内转义：跳过下一个字符
+                continue;
+            }
+            if c == b'"' {
+                in_double = false;
+            } else if c == b'$' && bytes.get(i + 1) == Some(&b'(') {
+                suspicious = true; // "$(cmd)" 在双引号内仍执行命令替换
+            }
+            i += 1;
+            continue;
+        }
+        match c {
+            b'\'' => in_single = true,
+            b'"' => in_double = true,
+            // 语句分隔符：`;`、换行、`&&`、`||`
+            b';' | b'\n' => {
+                return if suspicious {
+                    None
+                } else {
+                    Some(command[i + 1..].trim_start())
+                }
+            }
+            b'&' | b'|' if bytes.get(i + 1) == Some(&c) => {
+                return if suspicious {
+                    None
+                } else {
+                    Some(command[i + 2..].trim_start())
+                }
+            }
+            // 命令替换 / 子 shell / 重定向等副作用构造 → 不剥离
+            b'`' | b'(' | b'{' | b'<' | b'>' => suspicious = true,
+            b'$' if bytes.get(i + 1) == Some(&b'(') => suspicious = true,
+            _ => {}
+        }
+        i += 1;
+    }
+    // 无分隔符：整条命令就是 set 语句，交由白名单匹配。
+    None
 }
 
 /// 检测命令字符串中的文件重定向（`>` / `>>`），排除 `>/dev/null` 与 `>&` / `2>&1`。

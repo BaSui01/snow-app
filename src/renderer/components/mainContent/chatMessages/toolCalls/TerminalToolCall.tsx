@@ -535,8 +535,13 @@ const TerminalResultDisplay = ({
     }
 
     case "wait": {
-      const afterText =
-        typeof data.afterText === "string" ? data.afterText : "";
+      // 优先使用增量 text 字段；兼容旧返回中的 afterText。
+      const text =
+        typeof data.text === "string"
+          ? data.text
+          : typeof data.afterText === "string"
+            ? data.afterText
+            : "";
       const idle = data.idle === true;
       const elapsedMs =
         typeof data.elapsedMs === "number" ? data.elapsedMs : 0;
@@ -560,8 +565,8 @@ const TerminalResultDisplay = ({
               })}
             </span>
           </div>
-          {afterText ? (
-            <pre className="tool-call-terminal-output-pre">{afterText}</pre>
+          {text ? (
+            <pre className="tool-call-terminal-output-pre">{text}</pre>
           ) : null}
         </div>
       );

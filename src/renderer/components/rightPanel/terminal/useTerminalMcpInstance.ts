@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { Terminal } from "@xterm/xterm";
+import type { IMarker, Terminal } from "@xterm/xterm";
 import {
   focusTerminalTab,
   registerTerminalMcpInstance,
@@ -15,7 +15,8 @@ import {
  * - send: writes input to the PTY via the IPC bridge
  * - read: serializes the xterm buffer (visible screen) to plain text
  * - resize: resizes both the xterm display and the PTY process
- * - wait: polls for output quiescence and returns text produced during wait
+ * - wait: polls for output quiescence and returns only the text produced
+ *   since the last delivered checkpoint (incremental, not the full buffer)
  */
 export const useTerminalMcpInstance = (
   tabId: string,
@@ -26,6 +27,9 @@ export const useTerminalMcpInstance = (
 ): void => {
   const isActiveRef = useRef(isActive);
   isActiveRef.current = isActive;
+
+  // 已交付内容检查点：wait 只返回此标记之后的新增行，避免重复历史
+  const checkpointMarkerRef = useRef<IMarker | null>(null);
 
   useEffect(() => {
     const unregister = registerTerminalMcpInstance(
@@ -41,6 +45,10 @@ export const useTerminalMcpInstance = (
             }
             const input =
               typeof args.input === "string" ? args.input : "";
+            // 写入前推进检查点，避免快速命令的输出在 wait 开始前被漏掉
+            if (term) {
+              advanceCheckpoint(term, checkpointMarkerRef);
+            }
             await window.snow.ptyWrite(ptyId, input);
             return { sent: true, length: input.length };
           }
@@ -94,14 +102,20 @@ export const useTerminalMcpInstance = (
                 ? Math.min(Math.max(args.idleMs, 100), 5000)
                 : 500;
 
-            const beforeText = serializeTerminalBuffer(term);
+            // 只返回检查点之后的新增内容；marker 失效时退化为读全量
+            const marker = checkpointMarkerRef.current;
+            const startLine =
+              marker && marker.line >= 0 ? marker.line : 0;
             const result = await waitForTerminalIdle(term, timeoutMs, idleMs);
-            const afterText = serializeTerminalBuffer(term);
+            const text = serializeTerminalBufferFrom(term, startLine);
+            advanceCheckpoint(term, checkpointMarkerRef);
             return {
               idle: result.idle,
               elapsedMs: result.elapsedMs,
-              beforeText,
-              afterText,
+              // 本轮新增文本（增量，不重复历史）
+              text,
+              // 兼容保留，与 text 相同
+              afterText: text,
             };
           }
 
@@ -113,6 +127,8 @@ export const useTerminalMcpInstance = (
     );
 
     return () => {
+      checkpointMarkerRef.current?.dispose();
+      checkpointMarkerRef.current = null;
       unregister();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -134,11 +150,22 @@ export const useTerminalMcpInstance = (
  * buffer API output (they are processed during rendering), so the
  * result is clean text.
  */
-const serializeTerminalBuffer = (term: Terminal): string => {
+const serializeTerminalBuffer = (term: Terminal): string =>
+  serializeTerminalBufferFrom(term, 0);
+
+/**
+ * Serialize the xterm.js buffer from an absolute buffer line (inclusive)
+ * to the end, skipping already-delivered history.
+ */
+const serializeTerminalBufferFrom = (
+  term: Terminal,
+  startLine: number
+): string => {
   const buffer = term.buffer.active;
-  const lines: string[] = [];
   const length = buffer.length;
-  for (let i = 0; i < length; i++) {
+  const start = Math.max(0, Math.min(startLine, length));
+  const lines: string[] = [];
+  for (let i = start; i < length; i++) {
     const line = buffer.getLine(i);
     if (line) {
       lines.push(line.translateToString(true));
@@ -149,6 +176,21 @@ const serializeTerminalBuffer = (term: Terminal): string => {
     lines.pop();
   }
   return lines.join("\n");
+};
+
+/**
+ * 推进检查点到当前光标行：dispose 旧 marker，在当前光标行新建。
+ * send 写入前与 wait 读取完成后调用。
+ */
+const advanceCheckpoint = (
+  term: Terminal,
+  checkpointMarkerRef: React.RefObject<IMarker | null>
+): void => {
+  const previous = checkpointMarkerRef.current;
+  if (previous) {
+    previous.dispose();
+  }
+  checkpointMarkerRef.current = term.registerMarker(0) ?? null;
 };
 
 /**

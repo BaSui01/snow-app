@@ -164,7 +164,7 @@ impl McpService for TerminalService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "wait".to_string(),
-                description: "Wait for a terminal tab to become idle (no new output) for a specified quiet period. Useful for detecting when a long-running command has finished producing output. Returns the text that was produced during the wait period. Omit tabId to wait on the most recently focused terminal tab.".to_string(),
+                description: "Wait for a terminal tab to become idle (no new output) for a specified quiet period. Useful for detecting when a long-running command has finished producing output. Returns only the newly produced terminal text since the last delivered checkpoint (incremental: previously returned history is not repeated; use terminal-read to capture the full current screen). Omit tabId to wait on the most recently focused terminal tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -255,8 +255,33 @@ fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi::Result<Va
     match tool_name {
         "open" => {
             optional_non_empty_string(args, "cwd")?;
-            if let Some(path) = optional_non_empty_string(args, "shellPath")? {
-                validate_shell_path(path)?;
+            // SSH 工作区的 shellPath 是远端路径，不能用 App Host 本地文件
+            // 系统校验（SSH PTY 实际启动远端 $SHELL）；本地仍严格校验。
+            let is_ssh_cwd = args
+                .get("cwd")
+                .and_then(Value::as_str)
+                .is_some_and(|cwd| cwd.trim_start().starts_with("ssh://"));
+            match args.get("shellPath") {
+                None | Some(Value::Null) => {}
+                Some(Value::String(value)) => {
+                    let trimmed = value.trim();
+                    if trimmed.is_empty() {
+                        // 空白字符串按“未指定”规范化（shellPath 可选）
+                        normalized.insert("shellPath".to_string(), Value::Null);
+                    } else {
+                        if !is_ssh_cwd {
+                            validate_shell_path(trimmed)?;
+                        }
+                        normalized
+                            .insert("shellPath".to_string(), Value::String(trimmed.to_string()));
+                    }
+                }
+                Some(_) => {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        "shellPath must be a string when provided".to_string(),
+                    ));
+                }
             }
         }
         "send" => {

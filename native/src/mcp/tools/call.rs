@@ -154,6 +154,7 @@ pub async fn call_mcp_tool(
             checkpoint_ids,
             checkpoint_work_dir,
             &on_remote_workspace_command,
+            &on_chunk,
         )
         .await?
     } else {
@@ -190,9 +191,11 @@ pub async fn call_mcp_tool(
             .await;
         if let ToolCheckpointCapture::Worktree(Some(capture)) = checkpoint_capture {
             if uses_remote_workspace {
+                // on_chunk 已被流式执行器占用，after 阶段不发提示
                 capture_checkpoint_after_tool_remote(
                     ToolCheckpointCapture::Worktree(Some(capture)),
                     &on_remote_workspace_command,
+                    None,
                 )
                 .await?;
             } else {
@@ -252,7 +255,7 @@ pub async fn call_mcp_tool(
         crate::api::cancel::unregister_tool_execution(&tool_execution_id);
         // 无论工具成败都执行 after 捕获（与本地 builtin 分支一致）；
         // after 失败优先于工具错误上报。
-        capture_checkpoint_after_tool_remote(checkpoint_capture, &on_remote_workspace_command)
+        capture_checkpoint_after_tool_remote(checkpoint_capture, &on_remote_workspace_command, Some(&on_chunk))
             .await?;
         fs_result?
     } else if tool_full_name == "todo-todo-manage" {

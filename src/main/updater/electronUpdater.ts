@@ -12,6 +12,7 @@ import {
   setUpdateStatus,
   subscribeUpdateStatus,
 } from "./updateStatus";
+import { loadZhReleaseNotes } from "./releaseNotesZh";
 
 const { autoUpdater } = electronUpdater;
 
@@ -48,6 +49,36 @@ const checkForUpdatesAction = async (): Promise<void> => {
       error: error instanceof Error ? error.message : String(error),
     });
   }
+};
+
+// 将 electron-updater 的 releaseNotes 归一化为纯 markdown 字符串：
+// - string：直接使用；
+// - ReleaseNoteInfo[]（fullChangelog 开启时）：按版本号降序合并，带版本标题；
+// - null / 空：返回 null。
+const normalizeReleaseNotes = (
+  releaseNotes:
+    | string
+    | Array<{ version: string; note: string | null }>
+    | null
+    | undefined
+): string | null => {
+  if (typeof releaseNotes === "string") {
+    return releaseNotes.trim() || null;
+  }
+  if (!Array.isArray(releaseNotes)) {
+    return null;
+  }
+  const parts = releaseNotes
+    .slice()
+    .sort((a, b) =>
+      b.version.localeCompare(a.version, undefined, { numeric: true })
+    )
+    .map((item) => {
+      const note = item.note?.trim();
+      return note ? `## ${item.version}\n\n${note}` : null;
+    })
+    .filter((part): part is string => part !== null);
+  return parts.length > 0 ? parts.join("\n\n---\n\n") : null;
 };
 
 export const initElectronUpdater = (mainWindow: BrowserWindow): void => {
@@ -87,7 +118,11 @@ export const initElectronUpdater = (mainWindow: BrowserWindow): void => {
       downloading: false,
       downloaded: false,
       error: null,
+      releaseNotes: normalizeReleaseNotes(info.releaseNotes),
+      releaseNotesZh: null,
     });
+    // 异步拉取中文发行说明（失败时保持 null，UI 回退英文）
+    void loadZhReleaseNotes(info.version);
   });
 
   autoUpdater.on("update-not-available", (info) => {
@@ -103,6 +138,8 @@ export const initElectronUpdater = (mainWindow: BrowserWindow): void => {
       progress: 0,
       downloaded: false,
       error: null,
+      releaseNotes: null,
+      releaseNotesZh: null,
     });
   });
 

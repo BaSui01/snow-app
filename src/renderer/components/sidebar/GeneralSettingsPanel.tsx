@@ -16,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { localeLabels, useI18n, type Locale } from "../../i18n";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { ConfirmDialog } from "../common/ConfirmDialog";
+import { OPEN_UPDATE_DIALOG_EVENT } from "./UpdateDialog";
 import type { UpdateStatus } from "../../../preload";
 import type {
   DatabaseKind,
@@ -30,6 +31,8 @@ const INITIAL_UPDATE_STATUS: UpdateStatus = {
   progress: 0,
   downloaded: false,
   error: null,
+  releaseNotes: null,
+  releaseNotesZh: null,
 };
 
 // 手动检查后的提示类型
@@ -183,12 +186,9 @@ export function GeneralSettingsPanel({
       });
   };
 
-  const handleDownloadUpdate = (): void => {
-    void window.snow.downloadUpdate();
-  };
-
-  const handleInstallUpdate = (): void => {
-    void window.snow.installUpdate();
+  /** 打开更新弹窗：弹窗实例常驻侧边栏，此处仅派发打开事件。 */
+  const handleOpenUpdateDialog = (): void => {
+    window.dispatchEvent(new CustomEvent(OPEN_UPDATE_DIALOG_EVENT));
   };
 
   /** 统计数据库文件与检查点 / 上传根目录 / 图库根目录的占用大小。 */
@@ -1063,13 +1063,13 @@ export function GeneralSettingsPanel({
               </span>
             </button>
 
-            {/* 发现新版本 → 下载按钮 */}
+            {/* 发现新版本 → 打开更新弹窗（展示发行说明与下载进度） */}
             {updateStatus.available &&
               !updateStatus.downloading &&
               !updateStatus.downloaded && (
                 <button
                   className="nav-item update-ready-btn"
-                  onClick={handleDownloadUpdate}
+                  onClick={handleOpenUpdateDialog}
                   type="button"
                 >
                   <Download size={16} strokeWidth={1.8} />
@@ -1082,9 +1082,13 @@ export function GeneralSettingsPanel({
                 </button>
               )}
 
-            {/* 下载中 */}
+            {/* 下载中：点击重新打开弹窗查看进度 */}
             {updateStatus.available && updateStatus.downloading && (
-              <div className="nav-item update-downloading">
+              <button
+                className="nav-item update-downloading"
+                onClick={handleOpenUpdateDialog}
+                type="button"
+              >
                 <LoaderCircle size={16} strokeWidth={1.8} />
                 <span>
                   {t("settings.updateDownloading", {
@@ -1092,14 +1096,14 @@ export function GeneralSettingsPanel({
                     defaultValue: `Downloading ${updateStatus.progress}%`,
                   })}
                 </span>
-              </div>
+              </button>
             )}
 
-            {/* 下载完成 → 重启更新 */}
+            {/* 下载完成 → 直接重启安装（无需再确认） */}
             {updateStatus.downloaded && (
               <button
                 className="nav-item update-ready-btn"
-                onClick={handleInstallUpdate}
+                onClick={() => void window.snow.installUpdate()}
                 type="button"
               >
                 <Download size={16} strokeWidth={1.8} />

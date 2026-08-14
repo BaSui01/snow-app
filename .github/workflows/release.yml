@@ -170,3 +170,4 @@ jobs:
             release/*.deb
             release/latest*.yml
             release/latest-mac.json
+            release/latest-zh.json

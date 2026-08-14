@@ -1,5 +1,20 @@
 # Release Notes
 
+## v0.2.2
+
+## New Features
+
+- **Atomic API Profile Renaming**: Editing the profile name now renames and updates the data in a single transaction with full rollback on failure.
+- **Main-Process Web Search**: Web search now runs in the Electron main process, executed by a puppeteer-driven browser (DuckDuckGo/Bing) that bypasses the JS anti-crawling challenges pure HTTP clients cannot handle.
+
+## Improvements
+
+- API settings use a new `TokenPresetInput` component with unified dropdown styling and keyboard support.
+
+## Bug Fixes
+
+- External MCP subprocess trees are now fully reclaimed on exit (Job Object on Windows, process groups on Unix), fixing residual descendant processes like gopls after an MCP session closes.
+
 ## v0.2.1
 
 ## New Features

@@ -22,6 +22,7 @@ import { useCrossProjectNotifications } from "./mainSidebar/useCrossProjectNotif
 import { GlobalSearchModal } from "./GlobalSearchModal";
 import { MemoModal } from "./MemoModal";
 import { ScheduledTasksModal } from "./ScheduledTasksModal";
+import { UpdateDialog, OPEN_UPDATE_DIALOG_EVENT } from "./UpdateDialog";
 import type { SidebarContentProps } from "./types";
 import type {
   ConversationSearchResult,
@@ -36,6 +37,8 @@ const INITIAL_UPDATE_STATUS: UpdateStatus = {
   progress: 0,
   downloaded: false,
   error: null,
+  releaseNotes: null,
+  releaseNotesZh: null,
 };
 
 export function MainSidebarContent({
@@ -53,6 +56,7 @@ export function MainSidebarContent({
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isMemoOpen, setIsMemoOpen] = useState(false);
   const [isScheduledTasksOpen, setIsScheduledTasksOpen] = useState(false);
+  const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
   const [pendingMemoCount, setPendingMemoCount] = useState(0);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>(
     INITIAL_UPDATE_STATUS
@@ -120,12 +124,15 @@ export function MainSidebarContent({
     };
   }, []);
 
-  const handleDownloadUpdate = useCallback((): void => {
-    void window.snow.downloadUpdate();
-  }, []);
-
-  const handleInstallUpdate = useCallback((): void => {
-    void window.snow.installUpdate();
+  // 订阅更新弹窗打开请求：设置面板等入口 dispatch 事件后此处打开弹窗
+  useEffect(() => {
+    const handler = () => {
+      setIsUpdateDialogOpen(true);
+    };
+    window.addEventListener(OPEN_UPDATE_DIALOG_EVENT, handler);
+    return () => {
+      window.removeEventListener(OPEN_UPDATE_DIALOG_EVENT, handler);
+    };
   }, []);
 
   // 订阅快捷键事件：Ctrl/Cmd+F 切换搜索 modal，Ctrl/Cmd+B 切换备忘录 modal。
@@ -257,13 +264,13 @@ export function MainSidebarContent({
             <span>{t("sidebar.settings", { defaultValue: "Settings" })}</span>
           </button>
 
-          {/* 自动检测到新版本时显示更新入口 */}
+          {/* 自动检测到新版本时显示更新入口，点击打开更新弹窗 */}
           {updateStatus.available &&
             !updateStatus.downloading &&
             !updateStatus.downloaded && (
               <button
                 className="nav-item update-ready-btn"
-                onClick={handleDownloadUpdate}
+                onClick={() => setIsUpdateDialogOpen(true)}
                 type="button"
                 title={t("settings.newVersionAvailable", {
                   values: { version: updateStatus.version ?? "" },
@@ -279,10 +286,12 @@ export function MainSidebarContent({
               </button>
             )}
 
-          {/* 下载中 */}
+          {/* 下载中：点击可重新打开弹窗查看进度 */}
           {updateStatus.available && updateStatus.downloading && (
-            <div
+            <button
               className="nav-item update-downloading"
+              type="button"
+              onClick={() => setIsUpdateDialogOpen(true)}
               title={t("settings.updateDownloading", {
                 values: { percent: updateStatus.progress },
                 defaultValue: `Downloading ${updateStatus.progress}%`,
@@ -290,14 +299,14 @@ export function MainSidebarContent({
             >
               <LoaderCircle size={16} strokeWidth={1.8} />
               <span>{updateStatus.progress}%</span>
-            </div>
+            </button>
           )}
 
-          {/* 下载完成 → 重启更新 */}
+          {/* 下载完成 → 直接重启安装（无需再确认） */}
           {updateStatus.downloaded && (
             <button
               className="nav-item update-ready-btn"
-              onClick={handleInstallUpdate}
+              onClick={() => void window.snow.installUpdate()}
               type="button"
               title={t("settings.updateReady", {
                 defaultValue: "Restart to update",
@@ -334,6 +343,10 @@ export function MainSidebarContent({
         directoryPath={activeDirectory?.path ?? ""}
         open={isScheduledTasksOpen}
         onClose={() => setIsScheduledTasksOpen(false)}
+      />
+      <UpdateDialog
+        open={isUpdateDialogOpen}
+        onClose={() => setIsUpdateDialogOpen(false)}
       />
     </>
   );

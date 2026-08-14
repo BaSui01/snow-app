@@ -8,6 +8,10 @@ export interface UpdateStatus {
   progress: number;
   downloaded: boolean;
   error: string | null;
+  /** 新版本的发行说明（markdown 文本；无说明时为 null） */
+  releaseNotes: string | null;
+  /** 新版本的中文发行说明（markdown 文本；未提供翻译时为 null） */
+  releaseNotesZh: string | null;
 }
 
 const INITIAL_STATUS: UpdateStatus = {
@@ -17,6 +21,8 @@ const INITIAL_STATUS: UpdateStatus = {
   progress: 0,
   downloaded: false,
   error: null,
+  releaseNotes: null,
+  releaseNotesZh: null,
 };
 
 let status: UpdateStatus = { ...INITIAL_STATUS };

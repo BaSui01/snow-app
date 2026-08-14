@@ -16,10 +16,15 @@
 // }
 //
 // 应用主进程请求该清单比对版本、下载 zip 并校验 SHA-256 后静默替换。
+//
+// 同时从 RELEASE_NOTES_ZH.md 提取当前 tag 的中文发行说明，生成
+// latest-zh.json（{ version, releaseNotesZh }）并随 Release 上传，
+// 供应用内更新弹窗展示中文翻译（GitHub 发行页保持英文原文）。
 
 const { createHash } = require("node:crypto");
 const { existsSync, readFileSync, writeFileSync } = require("node:fs");
 const { join } = require("node:path");
+const { extractReleaseNotes } = require("./extract-release-notes.cjs");
 
 const OWNER = "MayDay-wpf";
 const REPO = "snow-app";
@@ -73,3 +78,21 @@ const manifest = {
 const outputPath = join(releaseDir, "latest-mac.json");
 writeFileSync(outputPath, `${JSON.stringify(manifest, null, 2)}\n`);
 console.log(`[generate-latest-json] Written ${outputPath}`);
+
+// 中文发行说明：从 RELEASE_NOTES_ZH.md 提取当前 tag 的段落。
+// 未提供翻译时 releaseNotesZh 为 null，应用内自动回退显示英文。
+const zhNotes = extractReleaseNotes(
+  join(__dirname, "..", "RELEASE_NOTES_ZH.md"),
+  tag
+);
+const zhManifest = {
+  version,
+  releaseNotesZh: zhNotes || null,
+};
+const zhOutputPath = join(releaseDir, "latest-zh.json");
+writeFileSync(zhOutputPath, `${JSON.stringify(zhManifest, null, 2)}\n`);
+console.log(
+  `[generate-latest-json] Written ${zhOutputPath} (zh notes: ${
+    zhNotes ? `${zhNotes.length} chars` : "none"
+  })`
+);

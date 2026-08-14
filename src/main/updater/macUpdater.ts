@@ -23,6 +23,7 @@ import {
   setUpdateStatus,
   subscribeUpdateStatus,
 } from "./updateStatus";
+import { loadZhReleaseNotes } from "./releaseNotesZh";
 
 const UPDATE_CHANNEL = "updater:status-changed";
 
@@ -72,6 +73,8 @@ interface MacUpdateFileInfo {
 interface MacUpdateManifest {
   version: string;
   publishedAt?: string;
+  /** 发行说明（markdown 文本，可选） */
+  releaseNotes?: string;
   files: Record<string, MacUpdateFileInfo>;
 }
 
@@ -157,6 +160,10 @@ const fetchManifest = async (): Promise<MacUpdateManifest> => {
     return {
       version: raw.version.trim(),
       publishedAt: typeof raw.publishedAt === "string" ? raw.publishedAt : undefined,
+      releaseNotes:
+        typeof raw.releaseNotes === "string" && raw.releaseNotes.trim()
+          ? raw.releaseNotes.trim()
+          : undefined,
       files: raw.files as MacUpdateManifest["files"],
     };
   } finally {
@@ -291,6 +298,8 @@ const checkForUpdatesAction = async (): Promise<void> => {
         progress: 0,
         downloaded: false,
         error: null,
+        releaseNotes: null,
+        releaseNotesZh: null,
       });
       downloadedZipPath = null;
       downloadedVersion = null;
@@ -315,7 +324,11 @@ const checkForUpdatesAction = async (): Promise<void> => {
         progress: 100,
         downloaded: true,
         error: null,
+        releaseNotes: manifest.releaseNotes ?? null,
+        releaseNotesZh: null,
       });
+      // 异步拉取中文发行说明（失败时保持 null，UI 回退英文）
+      void loadZhReleaseNotes(manifest.version);
       return;
     }
 
@@ -328,7 +341,11 @@ const checkForUpdatesAction = async (): Promise<void> => {
       progress: 0,
       downloaded: false,
       error: null,
+      releaseNotes: manifest.releaseNotes ?? null,
+      releaseNotesZh: null,
     });
+    // 异步拉取中文发行说明（失败时保持 null，UI 回退英文）
+    void loadZhReleaseNotes(manifest.version);
   } catch (error) {
     snowLog.error({
       module: "updater/mac",
@@ -379,6 +396,8 @@ const downloadUpdateAction = async (): Promise<void> => {
         available: false,
         version: null,
         error: null,
+        releaseNotes: null,
+        releaseNotesZh: null,
       });
       return;
     }

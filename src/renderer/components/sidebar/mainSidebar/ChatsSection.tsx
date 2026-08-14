@@ -25,6 +25,7 @@ import {
 
 import { ChatDeleteConfirmDialog } from "./ChatDeleteConfirmDialog";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
+import { Tooltip } from "../../common/Tooltip";
 import { useI18n } from "../../../i18n";
 import { useChatConversationContext } from "../../mainContent/chatMessages";
 import { PENDING_SESSION_KEY } from "../../mainContent/chatMessages/utils/conversationTypes";
@@ -1216,22 +1217,9 @@ export function ChatsSection({
             })}
           </span>
           <div className="chat-multi-select-actions">
-            <button
-              type="button"
-              className="chat-multi-select-action-btn"
-              onClick={() =>
+            <Tooltip
+              content={
                 selectedIds.size ===
-                conversations.filter(
-                  (conv) => conv.conversationId !== PENDING_SESSION_KEY
-                ).length
-                  ? handleDeselectAll()
-                  : handleSelectAll()
-              }
-              disabled={isBatchDeleting || archivingIds.size > 0}
-            >
-              <CheckSquare size={13} />
-              <span>
-                {selectedIds.size ===
                 conversations.filter(
                   (conv) => conv.conversationId !== PENDING_SESSION_KEY
                 ).length
@@ -1240,58 +1228,110 @@ export function ChatsSection({
                     })
                   : t("sidebar.chatMultiSelectAll", {
                       defaultValue: "Select all",
-                    })}
-              </span>
-            </button>
-            <button
-              type="button"
-              className="chat-multi-select-action-btn"
-              onClick={() => void handleBatchArchive()}
-              disabled={archivingIds.size > 0 || selectedIds.size === 0}
-              title={t("sidebar.chatMultiSelectArchive", {
-                defaultValue: "Archive selected",
-              })}
+                    })
+              }
+              placement="bottom"
             >
-              {archivingIds.size > 0 ? (
-                <Loader2 size={13} className="spin" />
-              ) : (
-                <Archive size={13} />
-              )}
-              <span>
-                {archivingIds.size > 0
+              <button
+                type="button"
+                className="chat-multi-select-action-btn"
+                onClick={() =>
+                  selectedIds.size ===
+                  conversations.filter(
+                    (conv) => conv.conversationId !== PENDING_SESSION_KEY
+                  ).length
+                    ? handleDeselectAll()
+                    : handleSelectAll()
+                }
+                disabled={isBatchDeleting || archivingIds.size > 0}
+              >
+                <CheckSquare size={13} />
+                <span>
+                  {selectedIds.size ===
+                  conversations.filter(
+                    (conv) => conv.conversationId !== PENDING_SESSION_KEY
+                  ).length
+                    ? t("sidebar.chatMultiSelectDeselectAll", {
+                        defaultValue: "Deselect all",
+                      })
+                    : t("sidebar.chatMultiSelectAll", {
+                        defaultValue: "Select all",
+                      })}
+                </span>
+              </button>
+            </Tooltip>
+            <Tooltip
+              content={
+                archivingIds.size > 0
                   ? t("sidebar.chatMultiSelectArchiving", {
                       defaultValue: "Archiving...",
                     })
                   : t("sidebar.chatMultiSelectArchive", {
                       defaultValue: "Archive selected",
-                    })}
-              </span>
-            </button>
-            <button
-              type="button"
-              className="chat-multi-select-action-btn danger"
-              onClick={handleOpenBatchConfirm}
-              disabled={
-                isBatchDeleting ||
-                archivingIds.size > 0 ||
-                selectedIds.size === 0
+                    })
               }
+              placement="bottom"
             >
-              {isBatchDeleting ? (
-                <Loader2 size={13} className="spin" />
-              ) : (
-                <Trash2 size={13} />
-              )}
-              <span>
-                {isBatchDeleting
+              <button
+                type="button"
+                className="chat-multi-select-action-btn"
+                onClick={() => void handleBatchArchive()}
+                disabled={archivingIds.size > 0 || selectedIds.size === 0}
+              >
+                {archivingIds.size > 0 ? (
+                  <Loader2 size={13} className="spin" />
+                ) : (
+                  <Archive size={13} />
+                )}
+                <span>
+                  {archivingIds.size > 0
+                    ? t("sidebar.chatMultiSelectArchiving", {
+                        defaultValue: "Archiving...",
+                      })
+                    : t("sidebar.chatMultiSelectArchive", {
+                        defaultValue: "Archive selected",
+                      })}
+                </span>
+              </button>
+            </Tooltip>
+            <Tooltip
+              content={
+                isBatchDeleting
                   ? t("sidebar.chatMultiSelectDeleting", {
                       defaultValue: "Deleting...",
                     })
                   : t("sidebar.chatMultiSelectDelete", {
                       defaultValue: "Delete selected",
-                    })}
-              </span>
-            </button>
+                    })
+              }
+              placement="bottom"
+            >
+              <button
+                type="button"
+                className="chat-multi-select-action-btn danger"
+                onClick={handleOpenBatchConfirm}
+                disabled={
+                  isBatchDeleting ||
+                  archivingIds.size > 0 ||
+                  selectedIds.size === 0
+                }
+              >
+                {isBatchDeleting ? (
+                  <Loader2 size={13} className="spin" />
+                ) : (
+                  <Trash2 size={13} />
+                )}
+                <span>
+                  {isBatchDeleting
+                    ? t("sidebar.chatMultiSelectDeleting", {
+                        defaultValue: "Deleting...",
+                      })
+                    : t("sidebar.chatMultiSelectDelete", {
+                        defaultValue: "Delete selected",
+                      })}
+                </span>
+              </button>
+            </Tooltip>
           </div>
         </div>
       ) : (
@@ -1381,78 +1421,110 @@ export function ChatsSection({
                     })}
                   </span>
                   <div className="chat-multi-select-actions">
-                    <button
-                      type="button"
-                      className="chat-multi-select-action-btn"
-                      onClick={
+                    <Tooltip
+                      content={
                         archivedSelectedIds.size ===
-                        archivedConversations.length
-                          ? handleArchivedDeselectAll
-                          : handleArchivedSelectAll
-                      }
-                      disabled={
-                        deletingArchivedIds.size > 0 || restoringIds.size > 0
-                      }
-                    >
-                      <CheckSquare size={13} />
-                      <span>
-                        {archivedSelectedIds.size ===
                         archivedConversations.length
                           ? t("sidebar.chatMultiSelectDeselectAll", {
                               defaultValue: "Deselect all",
                             })
                           : t("sidebar.chatMultiSelectAll", {
                               defaultValue: "Select all",
-                            })}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      className="chat-multi-select-action-btn"
-                      onClick={() => void handleBatchRestore()}
-                      disabled={
-                        restoringIds.size > 0 || archivedSelectedIds.size === 0
+                            })
                       }
-                      title={t("sidebar.archivedChatMultiSelectRestore", {
-                        defaultValue: "Restore selected",
-                      })}
+                      placement="bottom"
                     >
-                      {restoringIds.size > 0 ? (
-                        <Loader2 size={13} className="spin" />
-                      ) : (
-                        <ArchiveRestore size={13} />
-                      )}
-                      <span>
-                        {restoringIds.size > 0
+                      <button
+                        type="button"
+                        className="chat-multi-select-action-btn"
+                        onClick={
+                          archivedSelectedIds.size ===
+                          archivedConversations.length
+                            ? handleArchivedDeselectAll
+                            : handleArchivedSelectAll
+                        }
+                        disabled={
+                          deletingArchivedIds.size > 0 || restoringIds.size > 0
+                        }
+                      >
+                        <CheckSquare size={13} />
+                        <span>
+                          {archivedSelectedIds.size ===
+                          archivedConversations.length
+                            ? t("sidebar.chatMultiSelectDeselectAll", {
+                                defaultValue: "Deselect all",
+                              })
+                            : t("sidebar.chatMultiSelectAll", {
+                                defaultValue: "Select all",
+                              })}
+                        </span>
+                      </button>
+                    </Tooltip>
+                    <Tooltip
+                      content={
+                        restoringIds.size > 0
                           ? t("sidebar.chatMultiSelectRestoring", {
                               defaultValue: "Restoring...",
                             })
                           : t("sidebar.archivedChatMultiSelectRestore", {
                               defaultValue: "Restore selected",
-                            })}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      className="chat-multi-select-action-btn danger"
-                      onClick={handleBatchDeleteArchived}
-                      disabled={
-                        deletingArchivedIds.size > 0 ||
-                        restoringIds.size > 0 ||
-                        archivedSelectedIds.size === 0
+                            })
                       }
+                      placement="bottom"
                     >
-                      {deletingArchivedIds.size > 0 ? (
-                        <Loader2 size={13} className="spin" />
-                      ) : (
-                        <Trash2 size={13} />
-                      )}
-                      <span>
-                        {t("sidebar.archivedChatMultiSelectDelete", {
-                          defaultValue: "Delete selected",
-                        })}
-                      </span>
-                    </button>
+                      <button
+                        type="button"
+                        className="chat-multi-select-action-btn"
+                        onClick={() => void handleBatchRestore()}
+                        disabled={
+                          restoringIds.size > 0 ||
+                          archivedSelectedIds.size === 0
+                        }
+                      >
+                        {restoringIds.size > 0 ? (
+                          <Loader2 size={13} className="spin" />
+                        ) : (
+                          <ArchiveRestore size={13} />
+                        )}
+                        <span>
+                          {restoringIds.size > 0
+                            ? t("sidebar.chatMultiSelectRestoring", {
+                                defaultValue: "Restoring...",
+                              })
+                            : t("sidebar.archivedChatMultiSelectRestore", {
+                                defaultValue: "Restore selected",
+                              })}
+                        </span>
+                      </button>
+                    </Tooltip>
+                    <Tooltip
+                      content={t("sidebar.archivedChatMultiSelectDelete", {
+                        defaultValue: "Delete selected",
+                      })}
+                      placement="bottom"
+                    >
+                      <button
+                        type="button"
+                        className="chat-multi-select-action-btn danger"
+                        onClick={handleBatchDeleteArchived}
+                        disabled={
+                          deletingArchivedIds.size > 0 ||
+                          restoringIds.size > 0 ||
+                          archivedSelectedIds.size === 0
+                        }
+                      >
+                        {deletingArchivedIds.size > 0 ? (
+                          <Loader2 size={13} className="spin" />
+                        ) : (
+                          <Trash2 size={13} />
+                        )}
+                        <span>
+                          {t("sidebar.archivedChatMultiSelectDelete", {
+                            defaultValue: "Delete selected",
+                          })}
+                        </span>
+                      </button>
+                    </Tooltip>
                   </div>
                 </div>
               ) : null}

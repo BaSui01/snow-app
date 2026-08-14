@@ -2063,6 +2063,8 @@ input {
 
 /* ===== Chat multi-select ===== */
 .chat-multi-select-bar {
+  /* 容器查询：按多选栏自身宽度决定是否显示按钮文字 */
+  container-type: inline-size;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -2124,6 +2126,10 @@ input {
   transition: background 0.12s, color 0.12s;
 }
 
+.chat-multi-select-action-btn span {
+  white-space: nowrap;
+}
+
 .chat-multi-select-action-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
@@ -2140,6 +2146,33 @@ input {
 
 .chat-multi-select-action-btn.danger:hover {
   background: rgba(229, 72, 77, 0.1);
+}
+
+/* 多选栏容器查询：侧边栏可调宽度 180-420px，窄宽度下放不下
+   操作按钮的完整文字（含计数约需 400px+），此时隐藏按钮文字、
+   只保留图标，hover 由 Tooltip 展示完整文案；宽度充足（≥400px）
+   时恢复文字显示并隐藏冗余 Tooltip。
+   Electron 37 (Chromium 130+) 支持 @container。 */
+@container (max-width: 399px) {
+  .chat-multi-select-action-btn {
+    flex-shrink: 0;
+    padding: 3px 4px;
+  }
+  .chat-multi-select-action-btn span {
+    display: none;
+  }
+  .chat-multi-select-count {
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+@container (min-width: 400px) {
+  .chat-multi-select-bar .tooltip {
+    display: none;
+  }
 }
 
 .chat-item-checkbox {

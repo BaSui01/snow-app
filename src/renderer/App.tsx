@@ -134,6 +134,9 @@ const ShortcutHandlerBridge = (): null => {
 
 export const App = (): React.JSX.Element => {
   const rightPanelRef = useRef<RightPanelRef>(null);
+  // 布局外壳 DOM 引用：拖动面板宽度时直接操作其上的 CSS 变量，
+  // 避免高频 setState 触发整棵组件树（含 GitDiffView 等重组件）重渲染。
+  const appShellRef = useRef<HTMLDivElement | null>(null);
   const [activeMainView, setActiveMainView] = useState<MainContentView>("chat");
   const [activeDirectory, setActiveDirectory] =
     useState<WorkspaceDirectoryRecord | null>(null);
@@ -330,6 +333,8 @@ export const App = (): React.JSX.Element => {
 
     const startX = event.clientX;
     const startWidth = target === "sidebar" ? sidebarWidth : rightPanelWidth;
+    // 拖动期间的最新宽度，结束后一次性提交到 React state。
+    let latestWidth = startWidth;
 
     setActiveResizeTarget(target);
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -342,16 +347,28 @@ export const App = (): React.JSX.Element => {
         target === "sidebar" ? SIDEBAR_MIN_WIDTH : RIGHT_PANEL_MIN_WIDTH;
       const maxWidth = getMaxPanelWidth(target);
       const clampedWidth = Math.round(clamp(nextWidth, minWidth, maxWidth));
+      latestWidth = clampedWidth;
 
-      if (target === "sidebar") {
-        setSidebarWidth(clampedWidth);
-      } else {
-        setRightPanelWidth(clampedWidth);
+      // 拖动期间直接更新 app-shell 上的 CSS 变量，浏览器原生完成布局，
+      // 不经过 React 状态 → 右侧面板（含 GitDiffView 等高开销组件）不重渲染，
+      // 避免拖动卡顿。最终宽度在 pointerup 时再同步回 React state。
+      const shellElement = appShellRef.current;
+      if (shellElement) {
+        shellElement.style.setProperty(
+          target === "sidebar" ? "--sidebar-width" : "--right-panel-width",
+          `${clampedWidth}px`
+        );
       }
     };
 
     const stopResize = (): void => {
       setActiveResizeTarget(null);
+      // 提交最终宽度：与拖动期间手动写入的 CSS 变量值一致，React 渲染后无缝接管。
+      if (target === "sidebar") {
+        setSidebarWidth(latestWidth);
+      } else {
+        setRightPanelWidth(latestWidth);
+      }
       document.removeEventListener("pointermove", handlePointerMove);
       document.removeEventListener("pointerup", stopResize);
       document.removeEventListener("pointercancel", stopResize);
@@ -374,7 +391,7 @@ export const App = (): React.JSX.Element => {
           onSelectMainView={setActiveMainView}
         />
         <ShortcutHandlerBridge />
-        <div className={shellClasses} style={panelSizeStyle}>
+        <div ref={appShellRef} className={shellClasses} style={panelSizeStyle}>
           {isWindows && <WindowControls />}
           <TopBar
             isSidebarCollapsed={isSidebarCollapsed}

@@ -162,8 +162,10 @@ const ChatContentBody = ({
   } | null>(null);
 
   useEffect(() => {
+    // 切换会话时立即清空元数据：上一会话的子代理状态不得在目标会话
+    // 的历史加载期间泄漏（否则输入框区会短暂显示错误的 Notice/状态）。
+    setActiveConversationMeta(null);
     if (!activeConversationId) {
-      setActiveConversationMeta(null);
       return;
     }
 
@@ -1077,14 +1079,18 @@ const ChatContentBody = ({
             <ArrowDown size={20} strokeWidth={2} aria-hidden="true" />
           </button>
         ) : null}
-        {isLoadingInitialHistory ? null : isSubAgentFinished ? (
+        {isSubAgentFinished ? (
           <SubAgentFinishedNotice
             status={subAgentRunStatus}
             parentConversationId={subAgentParentConversationId}
             onBackToParent={handleSelectConversation}
           />
         ) : (
+          // key 让 ChatInput 实例随会话切换而重建（草稿由 per-conversation
+          // 草稿池恢复），但不再随历史加载被卸载——输入框区域保持稳定，
+          // 切换会话时只有模型/配置区短暂进入 loading，而不是整体消失。
           <ChatInput
+            key={activeConversationId ?? "new-chat"}
             projectId={activeDirectory?.directoryId}
             projectName={activeDirectory?.name}
             conversationId={activeConversationId}

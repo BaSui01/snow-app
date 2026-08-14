@@ -145,13 +145,27 @@ export const useRollback = (ctx: ConversationContextValue) => {
             }
           }
 
+        // TODO 检测需要边界后的第一条 assistant responseId：todo_items 按
+        // response_id 关联创建它的响应。截断边界优先使用持久化消息 id
+        // （失败轮次没有 responseId），此时 responseId 为空，这里为 TODO
+        // 检测单独向前寻找 —— 与截断删除的 id 范围语义一致。
+        let todoBoundaryResponseId = responseId;
+        if (!todoBoundaryResponseId) {
+          for (let i = targetIndex + 1; i < messages.length; i++) {
+            if (messages[i].role === "assistant" && messages[i].responseId) {
+              todoBoundaryResponseId = messages[i].responseId;
+              break;
+            }
+          }
+        }
+
         // Fetch TODO items that will be deleted alongside the rollback.
         let todoItems: RollbackTodoItem[] = [];
-        if (convId && responseId) {
+        if (convId && todoBoundaryResponseId) {
           try {
             const todoJson = await window.snow.listTodosForRollback(
               convId,
-              responseId
+              todoBoundaryResponseId
             );
             const parsed = JSON.parse(todoJson) as unknown;
             if (Array.isArray(parsed)) {

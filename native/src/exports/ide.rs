@@ -33,6 +33,9 @@ const KNOWN_IDES: &[(&str, &str, &[&str])] = &[
     ("rubymine", "RubyMine", &["rubymine"]),
     ("rider", "Rider", &["rider"]),
     ("datagrip", "DataGrip", &["datagrip"]),
+    ("rustrover", "RustRover", &["rustrover"]),
+    ("aqua", "Aqua", &["aqua"]),
+    ("dataspell", "DataSpell", &["dataspell"]),
     ("android-studio", "Android Studio", &["android studio"]),
     ("xcode", "Xcode", &["xcode"]),
     ("fleet", "Fleet", &["fleet"]),
@@ -266,6 +269,21 @@ mod windows {
             &[r"%PROGRAMFILES%\JetBrains\DataGrip\bin\datagrip64.exe"],
         ),
         (
+            "rustrover",
+            "RustRover",
+            &[r"%PROGRAMFILES%\JetBrains\RustRover\bin\rustrover64.exe"],
+        ),
+        (
+            "aqua",
+            "Aqua",
+            &[r"%PROGRAMFILES%\JetBrains\Aqua\bin\aqua64.exe"],
+        ),
+        (
+            "dataspell",
+            "DataSpell",
+            &[r"%PROGRAMFILES%\JetBrains\DataSpell\bin\dataspell64.exe"],
+        ),
+        (
             "android-studio",
             "Android Studio",
             &[r"%PROGRAMFILES%\Android\Android Studio\bin\studio64.exe"],
@@ -299,6 +317,9 @@ mod windows {
         ("rubymine", "RubyMine", &["rubymine64.exe", "rubymine.exe"]),
         ("rider", "Rider", &["rider64.exe", "rider.exe"]),
         ("datagrip", "DataGrip", &["datagrip64.exe", "datagrip.exe"]),
+        ("rustrover", "RustRover", &["rustrover64.exe", "rustrover.exe"]),
+        ("aqua", "Aqua", &["aqua64.exe", "aqua.exe"]),
+        ("dataspell", "DataSpell", &["dataspell64.exe", "dataspell.exe"]),
         (
             "android-studio",
             "Android Studio",
@@ -535,6 +556,9 @@ mod linux {
         ("rubymine", "RubyMine", &["rubymine"]),
         ("rider", "Rider", &["rider"]),
         ("datagrip", "DataGrip", &["datagrip"]),
+        ("rustrover", "RustRover", &["rustrover"]),
+        ("aqua", "Aqua", &["aqua"]),
+        ("dataspell", "DataSpell", &["dataspell"]),
         (
             "android-studio",
             "Android Studio",
@@ -553,6 +577,9 @@ mod linux {
         ("rubymine", "RubyMine", &["rubymine.sh"]),
         ("rider", "Rider", &["rider.sh"]),
         ("datagrip", "DataGrip", &["datagrip.sh"]),
+        ("rustrover", "RustRover", &["rustrover.sh"]),
+        ("aqua", "Aqua", &["aqua.sh"]),
+        ("dataspell", "DataSpell", &["dataspell.sh"]),
         ("android-studio", "Android Studio", &["studio.sh"]),
     ];
 

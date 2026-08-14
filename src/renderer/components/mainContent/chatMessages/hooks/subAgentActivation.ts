@@ -299,21 +299,77 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       subRef.streamPromise = null;
     }
 
+    // Replace the frontend-generated temporary user message ids with the real
+    // database ids returned by createResponseStream (same as the main agent
+    // loop). The backend persists user messages in order and returns their
+    // snowflake ids in persistedUserMessageIds. Without this remap the
+    // in-memory sub-agent messages keep "user-{ts}-{rand}" ids while the DB
+    // (queried by the user-message rail) stores snowflake ids, and the rail
+    // cannot locate the DOM message by id.
+    if (
+      subResponse.persistedUserMessageIds &&
+      subResponse.persistedUserMessageIds.length > 0
+    ) {
+      // Collect all pending (non-persisted) user message ids in order so
+      // we can map them 1:1 to the returned DB ids.
+      const pendingSubUserIds: string[] = [];
+      const currentSubMessages =
+        ctx.sessionsRef.current?.[subConvId]?.messages ?? [];
+      for (const m of currentSubMessages) {
+        if (m.role === "user" && !m.isContextCompaction) {
+          // A user message is "pending" (needs id replacement) if its id
+          // does not look like a DB snowflake id. Frontend ids use the
+          // pattern "user-{timestamp}-{random}"; DB ids are numeric
+          // snowflake strings.
+          const isFrontendId = isNaN(Number(m.id));
+          if (isFrontendId) {
+            pendingSubUserIds.push(m.id);
+          }
+        }
+      }
+
+      // Build a mapping from old frontend id -> new DB id. The backend
+      // returns ids in the same order as the user messages in the request.
+      const subIdRemap = new Map<string, string>();
+      const subRemapCount = Math.min(
+        pendingSubUserIds.length,
+        subResponse.persistedUserMessageIds.length
+      );
+      for (let i = 0; i < subRemapCount; i++) {
+        subIdRemap.set(
+          pendingSubUserIds[i],
+          subResponse.persistedUserMessageIds[i]
+        );
+      }
+
+      if (subIdRemap.size > 0) {
+        ctx.updateSessionMessages(subConvId, (msgs) =>
+          msgs.map((m) => {
+            const newId = subIdRemap.get(m.id);
+            return newId ? { ...m, id: newId } : m;
+          })
+        );
+      }
+    }
+
     if (ctx.sessionsRefData.current.get(subConvId)?.isAbortRequested) {
+      const forceSendAbort = !!ctx.sessionsRefData.current.get(subConvId)
+        ?.forceSendAbort;
       ctx.updateSessionMessages(subConvId, (currentMessages) =>
         currentMessages.map((currentMessage) =>
           currentMessage.id === subAssistantMessageId
             ? {
                 ...currentMessage,
                 status: "sent" as const,
-                content:
-                  currentMessage.content || "Sub-agent interrupted by user",
+                content: forceSendAbort
+                  ? currentMessage.content || ""
+                  : currentMessage.content || "Sub-agent interrupted by user",
                 isRetrying: false,
               }
             : currentMessage
         )
       );
-      return "Sub-agent interrupted by user";
+      return forceSendAbort ? "" : "Sub-agent interrupted by user";
     }
 
     if (subResponse.tokenUsage && !subResponseFailed) {
@@ -933,13 +989,14 @@ const createRunForceSendLoop = (
   ctx: ConversationContextValue,
   subConvId: string,
   subAgentRunLoop: SubAgentRunLoop
-): (() => Promise<void>) => {
-  return async (): Promise<void> => {
+): (() => Promise<string>) => {
+  return async (): Promise<string> => {
+    let lastSummary = "";
     while (true) {
       const ref = ctx.sessionsRefData.current.get(subConvId);
       const forceSends = ref?.forceSendMessages;
       if (!forceSends || forceSends.length === 0) {
-        return;
+        return lastSummary;
       }
       ref!.forceSendMessages = undefined;
       const forceSendText = forceSends.map((item) => item.text).join("\n\n");
@@ -961,12 +1018,15 @@ const createRunForceSendLoop = (
       if (runRef) {
         runRef.isSending = true;
         runRef.isAbortRequested = false;
+        runRef.forceSendAbort = false;
       }
       ctx.updateSessionField(subConvId, "isStreaming", true);
       resetRunStreamMetrics(ctx, subConvId);
       ctx.updateSessionField(subConvId, "streamStartedAt", Date.now());
       ctx.addStreamingId(subConvId);
-      await subAgentRunLoop([{ role: "user", content: forceSendText }]);
+      lastSummary = await subAgentRunLoop([
+        { role: "user", content: forceSendText },
+      ]);
     }
   };
 };
@@ -1004,7 +1064,7 @@ type SubAgentFinalizerDeps = {
   dirId: string;
   prompt: string;
   toolCallInteractionId?: string;
-  runForceSendLoop: () => Promise<void>;
+  runForceSendLoop: () => Promise<string>;
   forwardSubPendingQueue: (convId: string) => void;
 };
 
@@ -1038,7 +1098,10 @@ const createSubAgentFinalizer = (
     // 再统一走终止收尾（terminated + 状态广播 + 队列转交父会话）。
     if (finalRef?.forceSendMessages?.length) {
       try {
-        await runForceSendLoop();
+        const forceSendSummary = await runForceSendLoop();
+        if (forceSendSummary) {
+          summary = forceSendSummary;
+        }
       } catch {
         // 强行发送回合异常：继续统一收尾（失败路径）
       }
@@ -1278,7 +1341,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
     // 声明：catch 路径（第一轮失败/被中断）也需要 finalize 来完成失败收尾
     // （finalize 内部会消费用户强行发送的消息）。
     let subAgentRunLoop: SubAgentRunLoop = async () => "";
-    let runForceSendLoop: () => Promise<void> = async () => {};
+    let runForceSendLoop: () => Promise<string> = async () => "";
     let forwardSubPendingQueue: (finishedSubConvId: string) => void = () => {};
     let finalizeSubAgentSession: SubAgentFinalizeFn = async () => "";
 

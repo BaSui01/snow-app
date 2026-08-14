@@ -834,6 +834,7 @@ export const useConversationManagement = (
             ...(subRef.forceSendMessages ?? []),
             { text: removed.text, options: removed.options ?? {} },
           ];
+          subRef.forceSendAbort = true;
           handleAbort();
           ctx.setActivePendingMessages(queue.map((item) => item.text));
           return;

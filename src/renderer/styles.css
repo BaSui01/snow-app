@@ -27330,6 +27330,15 @@ body.ctrl-held [data-path] {
   animation: spin-icon-rotate 0.8s linear infinite;
 }
 
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @keyframes spin-icon-rotate {
   from {
     transform: rotate(0deg);

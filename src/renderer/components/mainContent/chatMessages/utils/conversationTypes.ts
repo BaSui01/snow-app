@@ -308,6 +308,7 @@ export type ConversationSessionRef = {
    *  非空，则跳过终止收尾，直接在子代理会话启动新回合处理这些消息
    *  （"强行发送给谁就是谁"），而不是转交父会话。 */
   forceSendMessages?: { text: string; options: ChatInputSendOptions }[];
+  forceSendAbort?: boolean;
 };
 
 /** Global Plan/Goal Mode defaults loaded from persisted settings. These are

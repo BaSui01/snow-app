@@ -71,19 +71,26 @@ export const RollbackConfirmDialog = ({
   const [confirmingMode, setConfirmingMode] = useState<RollbackMode | null>(
     null
   );
+  /** 防重入标志：confirmingMode 是异步 setState，同帧内双击/Enter+点击
+   *  连点会穿透 state 检查并发执行两次 confirmRollback，第二次在第一次
+   *  完成后的重复截断/删除会失败并弹回错误弹窗（表现为回滚异常）。 */
+  const confirmingRef = useRef(false);
 
   useEffect(() => {
     dialogRef.current?.focus();
   }, []);
 
   const handleConfirm = async (mode: RollbackMode): Promise<void> => {
-    if (confirmingMode) {
+    // ref 防重入：state 更新是异步的，同帧连点会穿透 confirmingMode 检查。
+    if (confirmingRef.current || confirmingMode) {
       return;
     }
+    confirmingRef.current = true;
     setConfirmingMode(mode);
     try {
       await onConfirm(mode);
     } finally {
+      confirmingRef.current = false;
       setConfirmingMode(null);
     }
   };

@@ -17,6 +17,12 @@ type ChatMessageListProps = {
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
 };
 
+// 初始可见窗口大小:挂载时(切换会话)只渲染「顶部几条 + 底部窗口」的
+// 真实内容,避免首帧同步全量渲染大会话阻塞主线程。窗口按可见消息计数
+// (跳过 tool 消息),数值取小足够覆盖首屏 + 初始定位到底部后的视口。
+const INITIAL_VIRTUAL_HEAD_COUNT = 3;
+const INITIAL_VIRTUAL_WINDOW_SIZE = 24;
+
 export const ChatMessageList = ({
   messages,
   isStreaming,
@@ -136,9 +142,48 @@ export const ChatMessageList = ({
     return pinned;
   }, [activeConversationId, lastAssistantMessageId, messages]);
 
+  // 挂载时的初始可见窗口(仅当列表大到窗口无法覆盖全部时才起作用):
+  // 切换会话后 chat-area 整体重建,新 ChatMessageList 挂载时若以
+  // visibleIds === null 起步,首次提交会同步全量渲染整个消息列表
+  // (运行中的大会话可达数百毫秒),阻塞渲染进程主线程,期间 loading
+  // 旋转与骨架屏脉冲等 CSS 动画全部冻结。这里直接以「顶部几条 + 底部
+  // 窗口 + 固定消息」作为起始可见集,其余消息首帧即为占位符;
+  // IntersectionObserver 的首次报告会把估算集合替换为真实相交集合。
+  const initialVisibleIds = useMemo(() => {
+    if (messages.length === 0) {
+      return null;
+    }
+    const ids = new Set<string>();
+    let headCount = 0;
+    for (
+      let i = 0;
+      i < messages.length && headCount < INITIAL_VIRTUAL_HEAD_COUNT;
+      i++
+    ) {
+      if (messages[i].role === "tool") continue;
+      headCount++;
+      ids.add(messages[i].id);
+    }
+    let tailCount = 0;
+    for (
+      let i = messages.length - 1;
+      i >= 0 && tailCount < INITIAL_VIRTUAL_WINDOW_SIZE;
+      i--
+    ) {
+      if (messages[i].role === "tool") continue;
+      tailCount++;
+      ids.add(messages[i].id);
+    }
+    for (const id of pinnedIds) {
+      ids.add(id);
+    }
+    return ids;
+  }, [messages, pinnedIds]);
+
   const virtualization = useViewportVirtualization(
     scrollContainerRef,
-    pinnedIds
+    pinnedIds,
+    initialVisibleIds
   );
 
   const renderMessageContent = useCallback(

@@ -82,17 +82,34 @@ export const VIRTUAL_PLACEHOLDER_DEFAULT_HEIGHT = DEFAULT_PLACEHOLDER_HEIGHT;
  *   element). The IntersectionObserver uses it as its `root`.
  * @param pinnedIds Message ids that must always be treated as visible
  *   regardless of intersection (streaming message, pending authorizations).
+ * @param initialVisibleIds Optional starting visible set used instead of the
+ *   "not yet initialized" null state. Lets the caller skip the synchronous
+ *   full-list first render for large conversations: the initial commit only
+ *   renders this window, and the first IntersectionObserver report replaces
+ *   it with the real intersection set.
  * @returns Virtualization API: `visibleIds`, `heights`, `register`.
  */
 export const useViewportVirtualization = (
   scrollContainerRef: React.RefObject<HTMLDivElement | null>,
-  pinnedIds: ReadonlySet<string>
+  pinnedIds: ReadonlySet<string>,
+  initialVisibleIds?: ReadonlySet<string> | null
 ): ViewportVirtualization => {
   // null = "not yet initialized". While null, every message renders its real
   // content so the first paint is not a wall of empty placeholders. As soon
   // as the IntersectionObserver reports the initial intersection state, this
   // becomes a real set and off-screen messages virtualize out.
-  const [visibleIds, setVisibleIds] = useState<ReadonlySet<string> | null>(null);
+  //
+  // When the caller supplies `initialVisibleIds` (a rough estimate of the
+  // messages visible at mount time), it becomes the starting set instead of
+  // null: the first commit then renders only that window (plus pinned ids),
+  // avoiding the synchronous full-list render of huge conversations — which
+  // blocks the renderer's main thread for hundreds of ms and freezes CSS
+  // animations (loading spinners, skeleton pulses) during conversation
+  // switches. The observer's first report replaces the estimate with the
+  // real intersection set.
+  const [visibleIds, setVisibleIds] = useState<ReadonlySet<string> | null>(
+    () => initialVisibleIds ?? null
+  );
   const [heights, setHeights] = useState<ReadonlyMap<string, number>>(
     () => new Map<string, number>()
   );

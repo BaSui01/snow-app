@@ -70,7 +70,11 @@ export function ApiSettingsFormFields({
   const [isThinkingMenuOpen, setIsThinkingMenuOpen] = useState(false);
   const thinkingMenuRef = useRef<HTMLDivElement | null>(null);
   const [modelOptions, setModelOptions] = useState<Model[]>([]);
-  const [isLoadingModelOptions, setIsLoadingModelOptions] = useState(false);
+  // 记录哪些模型下拉框正在等待加载结果（两个下拉框共享同一份数据源，
+  // 只保留一个在途请求，但只有被点击的字段才显示 loading）。
+  const [loadingModelFields, setLoadingModelFields] = useState<ModelField[]>(
+    []
+  );
   const [modelOptionsError, setModelOptionsError] = useState<string | null>(
     null
   );
@@ -142,7 +146,7 @@ export function ApiSettingsFormFields({
       ?.label ?? data.thinkingValue;
 
   const loadModelOptions = useCallback(
-    async (force = false) => {
+    async (field: ModelField, force = false) => {
       const configKey = [
         data.baseUrl.trim(),
         data.baseUrlMode.trim(),
@@ -151,15 +155,20 @@ export function ApiSettingsFormFields({
         data.customHeaderSchemeId.trim(),
       ].join("\n");
 
-      if (
-        isLoadingModelOptions ||
-        (!force && loadedModelOptionsKey === configKey)
-      ) {
+      if (!force && loadedModelOptionsKey === configKey) {
         return;
       }
 
-      setIsLoadingModelOptions(true);
+      setLoadingModelFields((fields) =>
+        fields.includes(field) ? fields : [...fields, field]
+      );
       setModelOptionsError(null);
+
+      // 同一份数据源只保留一个在途请求：后点击的字段仅标记 loading，
+      // 等待已在途的请求返回后共用结果。
+      if (loadingModelFields.length > 0) {
+        return;
+      }
 
       try {
         const availableModels = await window.snow.fetchAvailableModelsForConfig(
@@ -183,7 +192,7 @@ export function ApiSettingsFormFields({
         );
         setLoadedModelOptionsKey(null);
       } finally {
-        setIsLoadingModelOptions(false);
+        setLoadingModelFields([]);
       }
     },
     [
@@ -192,19 +201,25 @@ export function ApiSettingsFormFields({
       data.baseUrlMode,
       data.customHeaderSchemeId,
       data.requestMethod,
-      isLoadingModelOptions,
       loadedModelOptionsKey,
+      loadingModelFields,
       t,
     ]
   );
 
-  const handleModelInputFocus = useCallback(() => {
-    void loadModelOptions();
-  }, [loadModelOptions]);
+  const handleModelInputFocus = useCallback(
+    (field: ModelField) => {
+      void loadModelOptions(field);
+    },
+    [loadModelOptions]
+  );
 
-  const handleRetryModelOptions = useCallback(() => {
-    void loadModelOptions(true);
-  }, [loadModelOptions]);
+  const handleRetryModelOptions = useCallback(
+    (field: ModelField) => {
+      void loadModelOptions(field, true);
+    },
+    [loadModelOptions]
+  );
 
   const changeField =
     (field: keyof ApiConfigFormData) =>
@@ -236,7 +251,7 @@ export function ApiSettingsFormFields({
       placeholder={placeholder}
       disabled={disabled}
       models={modelOptions}
-      isLoading={isLoadingModelOptions}
+      isLoading={loadingModelFields.includes(field)}
       error={modelOptionsError}
       hasLoaded={Boolean(loadedModelOptionsKey)}
       loadingText={t("settings.loadingModels", {
@@ -249,8 +264,8 @@ export function ApiSettingsFormFields({
       // 模型名自由编辑：不自动补/剥 [1M] 标记（请求是否启用 1M 上下文
       // 由独立开关 snowcfg.enable1mContext 决定，不依赖模型名后缀）。
       onChange={(value) => onChange(field, value)}
-      onRequestModels={handleModelInputFocus}
-      onRetry={handleRetryModelOptions}
+      onRequestModels={() => handleModelInputFocus(field)}
+      onRetry={() => handleRetryModelOptions(field)}
     />
   );
 

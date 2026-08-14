@@ -372,6 +372,10 @@ export const useChatInputController = ({
       textarea.dataset.empty = isEditableContentEmpty(draftToRestore)
         ? "true"
         : "false";
+      // 回滚消息已回写：同步清除该会话的旧草稿。否则 onDraftRestored 把
+      // draftToRestore 置回 null 后，草稿恢复 effect 会用回滚前的输入内容
+      // 覆盖刚回写的消息（输入框非空时回滚即触发，表现为"消息有概率无法回写"）。
+      clearInputDraft?.(conversationId);
       requestAnimationFrame(() => {
         adjustHeight();
         textarea.focus();
@@ -421,8 +425,8 @@ export const useChatInputController = ({
   const handleChange = useCallback(
     (nextValue: string) => {
       setValue(nextValue);
-      // Persist the draft so it survives ChatInput unmounts caused by
-      // conversation switches / new-chat (isLoadingInitialHistory).
+      // Persist the draft so it survives ChatInput instance rebuilds on
+      // conversation switches / new-chat.
       saveInputDraft?.(conversationId, nextValue);
       adjustHeight();
     },
@@ -451,10 +455,10 @@ export const useChatInputController = ({
   );
 
   // --- Per-conversation draft persistence ---
-  // ChatInput unmounts while initial history loads (conversation switch /
-  // new chat). On (re)mount — or when the conversation prop changes without
-  // unmounting — restore the target conversation's saved draft. Rollback
-  // drafts (draftToRestore) take precedence and are handled above.
+  // ChatInput 实例随会话切换（key 变化）而重建，卸载时草稿存入
+  // per-conversation 草稿池；新实例挂载后——或 conversationId prop 变化
+  // 而实例未重建时——恢复目标会话的草稿。Rollback 草稿（draftToRestore）
+  // 优先，由上面的 effect 处理。
   useEffect(() => {
     if (draftToRestore !== null) {
       return;

@@ -1,5 +1,24 @@
 # Release Notes
 
+## v0.2.3
+
+## New Features
+
+- **More IDE Support**: RustRover, Aqua, and DataSpell are now detected and offered in the "Open with" menu for project directories.
+- **API Provider Search**: The provider list in API settings supports search filtering.
+- **Large Token Units**: Token quantity display now supports T/Q/Qi units.
+
+## Improvements
+
+- **Checkpoint Enhancements**: Checkpoint operations gain atomicity and localization; remote checkpoints are faster with batched remote IO and SSH session reuse.
+- **Performance**: Optimized panel dragging and conversation switching (viewport virtualization).
+- Multi-select action buttons now have tooltips and adapt to narrow widths.
+
+## Bug Fixes
+
+- Fixed cross-session race conditions in checkpoint rollback.
+- Fixed WSL working directory handling when hosted on Windows.
+
 ## v0.2.2
 
 ## New Features

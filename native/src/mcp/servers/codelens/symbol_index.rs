@@ -2,8 +2,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use oxc::allocator::Allocator;
-use oxc::ast::ast;
-use oxc::ast_visit::Visit;
 use oxc::parser::ParseOptions;
 use oxc::semantic::SemanticBuilder;
 use oxc::span::SourceType;
@@ -13,14 +11,11 @@ use super::types::{ReferenceInfo, SymbolInfo, SymbolLocation};
 #[derive(Clone, Debug)]
 pub struct IndexEntry {
     pub symbol: SymbolInfo,
-    pub file_path: String,
-    pub export_paths: Vec<String>,
 }
 
 pub struct SymbolIndex {
     symbols_by_name: HashMap<String, Vec<IndexEntry>>,
     exports_by_file: HashMap<String, Vec<IndexEntry>>,
-    imports_by_file: HashMap<String, Vec<(String, String)>>,
 }
 
 impl SymbolIndex {
@@ -28,14 +23,13 @@ impl SymbolIndex {
         SymbolIndex {
             symbols_by_name: HashMap::new(),
             exports_by_file: HashMap::new(),
-            imports_by_file: HashMap::new(),
         }
     }
 
     pub fn index_file(&mut self, file_path: &str, source_text: &str) {
         if super::is_js_ts(file_path) {
             // JS/TS: use oxc deep semantic analysis
-            let (exports, imports) = parse_file_for_index(file_path, source_text);
+            let exports = parse_file_for_index(file_path, source_text);
             for entry in &exports {
                 self.symbols_by_name
                     .entry(entry.symbol.name.clone())
@@ -43,7 +37,6 @@ impl SymbolIndex {
                     .push(entry.clone());
             }
             self.exports_by_file.insert(file_path.to_string(), exports);
-            self.imports_by_file.insert(file_path.to_string(), imports);
         } else {
             // Other languages: use tree-sitter outline for definitions
             let outline = super::tree_sitter_analyzer::build_file_outline(file_path, source_text);
@@ -64,8 +57,6 @@ impl SymbolIndex {
                 };
                 let index_entry = IndexEntry {
                     symbol: symbol.clone(),
-                    file_path: file_path.to_string(),
-                    export_paths: vec![file_path.to_string()],
                 };
                 self.symbols_by_name
                     .entry(symbol.name.clone())
@@ -74,14 +65,11 @@ impl SymbolIndex {
                 exports.push(index_entry);
             }
             self.exports_by_file.insert(file_path.to_string(), exports);
-            // Tree-sitter files don't have JS-style imports
-            self.imports_by_file
-                .insert(file_path.to_string(), Vec::new());
         }
     }
 
     /// Index a file from its path on disk, auto-detecting the language.
-    pub fn index_file_from_disk(&mut self, file_path: &str) {
+    fn index_file_from_disk(&mut self, file_path: &str) {
         let source_text = match std::fs::read_to_string(file_path) {
             Ok(s) => s,
             Err(_) => return,
@@ -159,55 +147,9 @@ impl SymbolIndex {
 
         None
     }
-
-    pub fn index_files(&mut self, files: &[(String, String)]) {
-        for (path, source) in files {
-            self.index_file(path, source);
-        }
-    }
-
-    pub fn resolve_symbol(&self, name: &str, from_file: Option<&str>) -> Option<&IndexEntry> {
-        if let Some(from) = from_file {
-            if let Some(imports) = self.imports_by_file.get(from) {
-                for (imported_name, _source) in imports {
-                    if imported_name == name {
-                        if let Some(entries) = self.symbols_by_name.get(name) {
-                            return entries.first();
-                        }
-                    }
-                }
-            }
-        }
-        self.symbols_by_name
-            .get(name)
-            .and_then(|entries| entries.first())
-    }
-
-    pub fn find_cross_file_references(&self, name: &str) -> Vec<(String, ReferenceInfo)> {
-        let mut results = Vec::new();
-        if let Some(entries) = self.symbols_by_name.get(name) {
-            for entry in entries {
-                results.push((
-                    entry.file_path.clone(),
-                    ReferenceInfo {
-                        location: entry.symbol.location.clone(),
-                        access: "definition".to_string(),
-                    },
-                ));
-            }
-        }
-        results
-    }
-
-    pub fn get_file_exports(&self, file_path: &str) -> Option<&Vec<IndexEntry>> {
-        self.exports_by_file.get(file_path)
-    }
 }
 
-fn parse_file_for_index(
-    file_path: &str,
-    source_text: &str,
-) -> (Vec<IndexEntry>, Vec<(String, String)>) {
+fn parse_file_for_index(file_path: &str, source_text: &str) -> Vec<IndexEntry> {
     let path = Path::new(file_path);
     let source_type = SourceType::from_path(path).unwrap_or_default();
 
@@ -248,68 +190,14 @@ fn parse_file_for_index(
                     container_name: None,
                     is_exported: true,
                 },
-                file_path: file_path.to_string(),
-                export_paths: vec![file_path.to_string()],
             });
         }
     }
 
-    let mut imports: Vec<(String, String)> = Vec::new();
-    let mut import_visitor = ImportVisitor {
-        imports: &mut imports,
-    };
-    import_visitor.visit_program(&program);
-
-    (exports, imports)
+    exports
 }
 
-struct ImportVisitor<'a> {
-    imports: &'a mut Vec<(String, String)>,
-}
-
-impl<'a> Visit<'a> for ImportVisitor<'a> {
-    fn visit_import_declaration(&mut self, it: &ast::ImportDeclaration<'_>) {
-        let source = it.source.value.as_str().to_string();
-        if let Some(specifiers) = &it.specifiers {
-            for spec in specifiers.iter() {
-                match &spec {
-                    ast::ImportDeclarationSpecifier::ImportDefaultSpecifier(default) => {
-                        self.imports
-                            .push((default.local.name.as_str().to_string(), source.clone()));
-                    }
-                    ast::ImportDeclarationSpecifier::ImportSpecifier(named) => {
-                        let name = module_export_name_to_string(&named.imported);
-                        self.imports.push((name, source.clone()));
-                    }
-                    ast::ImportDeclarationSpecifier::ImportNamespaceSpecifier(ns) => {
-                        self.imports
-                            .push((ns.local.name.as_str().to_string(), source.clone()));
-                    }
-                }
-            }
-        }
-    }
-
-    fn visit_export_named_declaration(&mut self, it: &ast::ExportNamedDeclaration<'_>) {
-        if let Some(source) = &it.source {
-            let source_str = source.value.as_str().to_string();
-            for spec in it.specifiers.iter() {
-                let name = module_export_name_to_string(&spec.local);
-                self.imports.push((name, source_str.clone()));
-            }
-        }
-    }
-}
-
-fn module_export_name_to_string(name: &ast::ModuleExportName<'_>) -> String {
-    match name {
-        ast::ModuleExportName::IdentifierName(id) => id.name.as_str().to_string(),
-        ast::ModuleExportName::IdentifierReference(id) => id.name.as_str().to_string(),
-        ast::ModuleExportName::StringLiteral(lit) => lit.value.as_str().to_string(),
-    }
-}
-
-pub fn discover_source_files(root: &Path) -> Vec<PathBuf> {
+fn discover_source_files(root: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
     walk_source_dir(root, &mut files);
     files.sort();

@@ -258,6 +258,20 @@ impl GrepService {
         })?;
 
         let search_path = args.get("path").and_then(Value::as_str).unwrap_or(".");
+        let metadata = tokio::fs::metadata(search_path).await.map_err(|error| {
+            Error::new(
+                Status::InvalidArg,
+                format!(
+                    "Search path does not exist or is inaccessible: {search_path} ({error})"
+                ),
+            )
+        })?;
+        if !metadata.is_file() && !metadata.is_dir() {
+            return Err(Error::new(
+                Status::InvalidArg,
+                format!("Search path is not a file or directory: {search_path}"),
+            ));
+        }
 
         let file_glob = args
             .get("fileGlob")

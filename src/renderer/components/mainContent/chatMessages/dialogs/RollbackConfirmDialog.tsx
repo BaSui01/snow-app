@@ -22,6 +22,8 @@ import {
   FileDiffPreview,
   getFileChangeClassName,
 } from "../../../common/FileDiffPreview";
+import { getFileTypeIcon } from "../../../../utils/fileIcons";
+import { getFileName } from "../toolCalls/shared/formatters";
 
 type RollbackTodoItem = {
   id: string;
@@ -243,7 +245,13 @@ export const RollbackConfirmDialog = ({
                           className="rollback-change-path"
                           title={change.path}
                         >
-                          {change.path}
+                          {getFileTypeIcon(getFileName(change.path), false, false, {
+                            size: 13,
+                            "aria-hidden": true,
+                          })}
+                          <span className="rollback-change-path-text">
+                            {change.path}
+                          </span>
                         </span>
                       </li>
                     );

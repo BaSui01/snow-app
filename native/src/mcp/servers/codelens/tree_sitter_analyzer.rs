@@ -16,7 +16,7 @@ use super::types::{OutlineEntry, ReferenceInfo, SymbolInfo, SymbolLocation};
 
 /// Supported tree-sitter languages.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum TsLang {
+enum TsLang {
     Python,
     Rust,
     Go,
@@ -34,7 +34,7 @@ pub enum TsLang {
 }
 
 impl TsLang {
-    pub fn from_extension(ext: &str) -> Option<Self> {
+    fn from_extension(ext: &str) -> Option<Self> {
         match ext.to_lowercase().as_str() {
             "py" | "pyw" | "pyi" => Some(TsLang::Python),
             "rs" => Some(TsLang::Rust),
@@ -55,7 +55,7 @@ impl TsLang {
         }
     }
 
-    pub fn language(self) -> Language {
+    fn language(self) -> Language {
         match self {
             TsLang::Python => tree_sitter_python::LANGUAGE.into(),
             TsLang::Rust => tree_sitter_rust::LANGUAGE.into(),
@@ -73,38 +73,10 @@ impl TsLang {
             TsLang::Lua => tree_sitter_lua::LANGUAGE.into(),
         }
     }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            TsLang::Python => "python",
-            TsLang::Rust => "rust",
-            TsLang::Go => "go",
-            TsLang::C => "c",
-            TsLang::Java => "java",
-            TsLang::CSharp => "csharp",
-            TsLang::Ruby => "ruby",
-            TsLang::Php => "php",
-            TsLang::Css => "css",
-            TsLang::Html => "html",
-            TsLang::Json => "json",
-            TsLang::Yaml => "yaml",
-            TsLang::Bash => "bash",
-            TsLang::Lua => "lua",
-        }
-    }
-}
-
-/// Return true if the file extension is a tree-sitter-supported language.
-pub fn is_supported(file_path: &str) -> bool {
-    let ext = Path::new(file_path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
-    TsLang::from_extension(ext).is_some()
 }
 
 /// Determine the TsLang from a file path (handles extensionless files too).
-pub fn lang_from_path(file_path: &str) -> Option<TsLang> {
+fn lang_from_path(file_path: &str) -> Option<TsLang> {
     let ext = Path::new(file_path).extension().and_then(|e| e.to_str())?;
     TsLang::from_extension(ext)
 }
@@ -184,7 +156,6 @@ pub fn build_file_outline(file_path: &str, source_text: &str) -> Vec<OutlineEntr
             end_column: end_col,
             container_name: None,
             is_exported: false,
-            children: Vec::new(),
         });
     });
 

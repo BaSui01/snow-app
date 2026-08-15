@@ -158,8 +158,6 @@ pub fn analyze_file(file_path: &str, source_text: &str) -> AnalyzedFile {
     }
 
     AnalyzedFile {
-        file_path: file_path.to_string(),
-        source_text: source_text.to_string(),
         symbols,
         references,
         unresolved_references,
@@ -239,7 +237,6 @@ impl<'a> Visit<'a> for OutlineVisitor<'a> {
                 end_column: end_col,
                 container_name: None,
                 is_exported: false,
-                children: Vec::new(),
             });
         }
     }
@@ -258,7 +255,6 @@ impl<'a> Visit<'a> for OutlineVisitor<'a> {
                 end_column: end_col,
                 container_name: None,
                 is_exported: false,
-                children: Vec::new(),
             });
         }
     }
@@ -277,7 +273,6 @@ impl<'a> Visit<'a> for OutlineVisitor<'a> {
                 end_column: end_col,
                 container_name: None,
                 is_exported: false,
-                children: Vec::new(),
             });
         }
     }
@@ -301,7 +296,6 @@ impl<'a> Visit<'a> for OutlineVisitor<'a> {
                 end_column: end_col,
                 container_name: None,
                 is_exported: false,
-                children: Vec::new(),
             });
         }
     }
@@ -319,7 +313,6 @@ impl<'a> Visit<'a> for OutlineVisitor<'a> {
             end_column: end_col,
             container_name: None,
             is_exported: it.declare,
-            children: Vec::new(),
         });
     }
 
@@ -336,7 +329,6 @@ impl<'a> Visit<'a> for OutlineVisitor<'a> {
             end_column: end_col,
             container_name: None,
             is_exported: it.declare,
-            children: Vec::new(),
         });
     }
 
@@ -353,7 +345,6 @@ impl<'a> Visit<'a> for OutlineVisitor<'a> {
             end_column: end_col,
             container_name: None,
             is_exported: it.declare,
-            children: Vec::new(),
         });
     }
 

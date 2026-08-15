@@ -33,6 +33,7 @@ const REMOTE_SEARCH_MAX_RESULTS = 200;
 // Mirrors the local ripgrep timeout in native/src/mcp/servers/grep.rs so the
 // SSH branch cannot hang the tool card forever when the remote side stalls.
 const REMOTE_GREP_TIMEOUT_MS = 30_000;
+const CODELENS_MAX_SOURCE_BYTES = 512 * 1024;
 
 export type RemoteWorkspaceCommand = {
   operation: string;
@@ -605,6 +606,42 @@ const executeFilesystemRead = async (
         }
         return readTextFile(workspacePath, startLine, endLine, signal);
       }
+    },
+    { signal }
+  );
+};
+
+const executeCodeLensReadSource = async (
+  args: RemoteWorkspaceCommandArgs,
+  signal?: AbortSignal
+): Promise<Record<string, unknown>> => {
+  const workspacePath = validateSshWorkspacePath(args.filePath, "filePath");
+  // Rust performs the workspace containment check before dispatch. Electron
+  // independently verifies the SSH authority so this operation cannot switch
+  // hosts if malformed arguments reach the bridge.
+  resolveAuthorizedWorkspaceRoot(workspacePath, args.workspaceRoot);
+
+  return withSshSession(
+    workspacePath,
+    async (sessionId, remotePath) => {
+      const buffer = await readSshFile(sessionId, remotePath, { signal });
+      if (buffer.length > CODELENS_MAX_SOURCE_BYTES) {
+        throw new Error(
+          `CodeLens source file is too large (${buffer.length} bytes, max ${CODELENS_MAX_SOURCE_BYTES} bytes)`
+        );
+      }
+
+      const file = processFileContent(remotePath, buffer);
+      const isValidUtf8 = Buffer.from(file.content, "utf8").equals(buffer);
+      if (file.isBinary || file.isImage || !isValidUtf8) {
+        throw new Error("CodeLens requires a UTF-8 text source file");
+      }
+
+      return {
+        filePath: workspacePath,
+        content: file.content,
+        bytes: buffer.length,
+      };
     },
     { signal }
   );
@@ -1336,6 +1373,8 @@ const dispatchRemoteWorkspaceOperation = async (
   switch (operation) {
     case "filesystem-read":
       return executeFilesystemRead(args, signal);
+    case "codelens-read-source":
+      return executeCodeLensReadSource(args, signal);
     case "filesystem-replace_edit":
       return executeFilesystemReplaceEdit(args, signal);
     case "filesystem-create":

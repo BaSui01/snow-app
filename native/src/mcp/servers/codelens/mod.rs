@@ -15,8 +15,6 @@
 //! - `codelens-find_references`: Find all references to a symbol at a position
 //! - `codelens-file_outline`: Get the symbol outline of a file
 
-#![allow(dead_code)]
-
 mod analyzer;
 mod symbol_index;
 mod tree_sitter_analyzer;
@@ -26,14 +24,20 @@ use std::path::{Path, PathBuf};
 
 use napi::bindgen_prelude::*;
 use serde_json::{json, Value};
+use tokio_util::sync::CancellationToken;
 
 use super::super::service::McpService;
 use super::super::tools::McpTool;
+use super::remote_workspace::{
+    execute_remote_workspace_command, RemoteWorkspaceCallback,
+};
 
 const SERVER_ID: &str = "codelens";
 
 /// Maximum source file size we will analyze (512 KB).
-const MAX_FILE_SIZE: u64 = 512 * 1024;
+const MAX_FILE_SIZE: usize = 512 * 1024;
+const REMOTE_SCOPE_LIMITATION: &str =
+    "Remote SSH CodeLens currently analyzes the requested file only; project-wide indexing is unavailable.";
 
 /// All file extensions CodeLens can handle (oxc + tree-sitter combined).
 const SUPPORTED_EXTENSIONS: &[&str] = &[
@@ -169,88 +173,29 @@ impl CodeLensService {
         let file_path = require_string_arg(args, "filePath")?;
         let line = require_u32_arg(args, "line")?;
         let column = require_u32_arg(args, "column")?;
+        let project_id = project_id.map(str::to_string);
 
-        let project_id_owned = project_id.map(|s| s.to_string());
-
-        let result = tokio::task::spawn_blocking(move || -> napi::Result<Value> {
+        tokio::task::spawn_blocking(move || {
             let (path_str, source_text) = read_source_file(&file_path)?;
-
-            // Step 1: find the symbol name at the cursor position in the current file
-            let found = if is_js_ts(&path_str) {
-                analyzer::find_symbol_at_position(&path_str, &source_text, line, column)
-            } else {
-                tree_sitter_analyzer::find_symbol_at_position(&path_str, &source_text, line, column)
+            let project_root = match project_id.as_deref() {
+                Some(project_id) => resolve_project_root(project_id)?,
+                None => None,
             };
-
-            let symbol_name = match &found {
-                Some((name, _)) => name.clone(),
-                None => {
-                    return Ok(json!({
-                        "found": false,
-                        "message": "No symbol found at the given position. The position may be on whitespace, a string literal, or a keyword."
-                    }));
-                }
-            };
-
-            // Step 2: if we have a project root, search across all files
-            if let Some(ref pid) = project_id_owned {
-                if let Some(project_root) = resolve_project_root(pid)? {
-                    let mut index = symbol_index::SymbolIndex::new();
-                    index.index_project(&project_root);
-
-                    if let Some(symbol) = index.find_definition_across_project(&symbol_name) {
-                        return Ok(json!({
-                            "found": true,
-                            "name": symbol.name,
-                            "kind": symbol.kind,
-                            "location": {
-                                "filePath": symbol.location.file_path,
-                                "line": symbol.location.line,
-                                "column": symbol.location.column,
-                                "endLine": symbol.location.end_line,
-                                "endColumn": symbol.location.end_column,
-                            },
-                            "containerName": symbol.container_name,
-                            "isExported": symbol.is_exported,
-                            "searchScope": "project"
-                        }));
-                    }
-                }
-            }
-
-            // Fallback: single-file result
-            if let Some((name, symbol)) = found {
-                Ok(json!({
-                    "found": true,
-                    "name": name,
-                    "kind": symbol.kind,
-                    "location": {
-                        "filePath": symbol.location.file_path,
-                        "line": symbol.location.line,
-                        "column": symbol.location.column,
-                        "endLine": symbol.location.end_line,
-                        "endColumn": symbol.location.end_column,
-                    },
-                    "containerName": symbol.container_name,
-                    "isExported": symbol.is_exported,
-                    "searchScope": "file"
-                }))
-            } else {
-                Ok(json!({
-                    "found": false,
-                    "message": "No symbol definition found for the symbol at the given position."
-                }))
-            }
+            Ok(analyze_definition_from_source(
+                &path_str,
+                &source_text,
+                line,
+                column,
+                project_root.as_deref(),
+            ))
         })
         .await
-        .map_err(|e| {
+        .map_err(|error| {
             Error::new(
                 Status::GenericFailure,
-                format!("Find definition task failed: {e}"),
+                format!("Find definition task failed: {error}"),
             )
-        })??;
-
-        Ok(result)
+        })?
     }
 
     /// Execute the find_references tool asynchronously.
@@ -266,161 +211,122 @@ impl CodeLensService {
         let file_path = require_string_arg(args, "filePath")?;
         let line = require_u32_arg(args, "line")?;
         let column = require_u32_arg(args, "column")?;
+        let project_id = project_id.map(str::to_string);
 
-        let project_id_owned = project_id.map(|s| s.to_string());
-
-        let result = tokio::task::spawn_blocking(move || -> napi::Result<Value> {
+        tokio::task::spawn_blocking(move || {
             let (path_str, source_text) = read_source_file(&file_path)?;
-
-            // Step 1: find the symbol name at the cursor position in the current file
-            let found = if is_js_ts(&path_str) {
-                analyzer::find_references_at_position(&path_str, &source_text, line, column)
-            } else {
-                tree_sitter_analyzer::find_references_at_position(&path_str, &source_text, line, column)
+            let project_root = match project_id.as_deref() {
+                Some(project_id) => resolve_project_root(project_id)?,
+                None => None,
             };
-
-            let (name, local_definition, local_references) = match found {
-                Some(t) => t,
-                None => {
-                    return Ok(json!({
-                        "found": false,
-                        "message": "No symbol found at the given position. The position may be on whitespace, a string literal, or a keyword."
-                    }));
-                }
-            };
-
-            // Step 2: if we have a project root, search across all files
-            if let Some(ref pid) = project_id_owned {
-                if let Some(project_root) = resolve_project_root(pid)? {
-                    let mut index = symbol_index::SymbolIndex::new();
-                    index.index_project(&project_root);
-
-                    let references = index.find_references_across_project(&name);
-                    let definition = index
-                        .find_definition_across_project(&name)
-                        .map(|s| {
-                            json!({
-                                "filePath": s.location.file_path,
-                                "line": s.location.line,
-                                "column": s.location.column,
-                                "endLine": s.location.end_line,
-                                "endColumn": s.location.end_column,
-                            })
-                        });
-
-                    let refs_json: Vec<Value> = references
-                        .iter()
-                        .map(|r| {
-                            json!({
-                                "filePath": r.location.file_path,
-                                "line": r.location.line,
-                                "column": r.location.column,
-                                "endLine": r.location.end_line,
-                                "endColumn": r.location.end_column,
-                                "access": r.access,
-                            })
-                        })
-                        .collect();
-
-                    return Ok(json!({
-                        "found": true,
-                        "name": name,
-                        "definition": definition,
-                        "references": refs_json,
-                        "totalReferences": references.len(),
-                        "searchScope": "project"
-                    }));
-                }
-            }
-
-            // Fallback: single-file result
-            let definition_json = local_definition.map(|d| {
-                json!({
-                    "filePath": d.file_path,
-                    "line": d.line,
-                    "column": d.column,
-                    "endLine": d.end_line,
-                    "endColumn": d.end_column,
-                })
-            });
-
-            let refs_json: Vec<Value> = local_references
-                .iter()
-                .map(|r| {
-                    json!({
-                        "filePath": r.location.file_path,
-                        "line": r.location.line,
-                        "column": r.location.column,
-                        "endLine": r.location.end_line,
-                        "endColumn": r.location.end_column,
-                        "access": r.access,
-                    })
-                })
-                .collect();
-
-            Ok(json!({
-                "found": true,
-                "name": name,
-                "definition": definition_json,
-                "references": refs_json,
-                "totalReferences": local_references.len(),
-                "searchScope": "file"
-            }))
+            Ok(analyze_references_from_source(
+                &path_str,
+                &source_text,
+                line,
+                column,
+                project_root.as_deref(),
+            ))
         })
         .await
-        .map_err(|e| {
+        .map_err(|error| {
             Error::new(
                 Status::GenericFailure,
-                format!("Find references task failed: {e}"),
+                format!("Find references task failed: {error}"),
             )
-        })??;
-
-        Ok(result)
+        })?
     }
 
     /// Execute the file_outline tool asynchronously.
     pub async fn execute_file_outline(&self, args: &Value) -> napi::Result<Value> {
         let file_path = require_string_arg(args, "filePath")?;
 
-        let result = tokio::task::spawn_blocking(move || -> napi::Result<Value> {
+        tokio::task::spawn_blocking(move || {
             let (path_str, source_text) = read_source_file(&file_path)?;
-
-            let outline = if is_js_ts(&path_str) {
-                analyzer::build_file_outline(&path_str, &source_text)
-            } else {
-                tree_sitter_analyzer::build_file_outline(&path_str, &source_text)
-            };
-
-            let entries: Vec<Value> = outline
-                .iter()
-                .map(|e| {
-                    json!({
-                        "name": e.name,
-                        "kind": e.kind,
-                        "line": e.line,
-                        "column": e.column,
-                        "endLine": e.end_line,
-                        "endColumn": e.end_column,
-                        "containerName": e.container_name,
-                        "isExported": e.is_exported,
-                    })
-                })
-                .collect();
-
-            Ok(json!({
-                "filePath": path_str,
-                "outline": entries,
-                "totalSymbols": entries.len(),
-            }))
+            Ok(analyze_outline_from_source(&path_str, &source_text))
         })
         .await
-        .map_err(|e| {
+        .map_err(|error| {
             Error::new(
                 Status::GenericFailure,
-                format!("File outline task failed: {e}"),
+                format!("File outline task failed: {error}"),
             )
-        })??;
+        })?
+    }
 
+    /// Read source through Electron's cancellable SSH bridge, then perform the
+    /// CPU-bound analysis on Tokio's blocking pool. Definition/reference
+    /// searches intentionally remain file-scoped until a bounded remote index
+    /// protocol is available.
+    pub async fn execute_remote(
+        &self,
+        tool_name: &str,
+        args: &Value,
+        on_remote_workspace_command: &RemoteWorkspaceCallback,
+        cancel_token: Option<&CancellationToken>,
+    ) -> napi::Result<Value> {
+        if !matches!(
+            tool_name,
+            "find_definition" | "find_references" | "file_outline"
+        ) {
+            return Err(unknown_tool_error(tool_name));
+        }
+
+        let requested_path = require_string_arg(args, "filePath")?;
+        let position = match tool_name {
+            "find_definition" | "find_references" => Some((
+                require_u32_arg(args, "line")?,
+                require_u32_arg(args, "column")?,
+            )),
+            "file_outline" => None,
+            _ => unreachable!("tool name validated above"),
+        };
+
+        let response = execute_remote_workspace_command(
+            on_remote_workspace_command,
+            "codelens-read-source",
+            args,
+            cancel_token,
+        )
+        .await?;
+        let (path_str, source_text) = parse_remote_source_response(response, &requested_path)?;
+        let adds_scope_metadata = matches!(tool_name, "find_definition" | "find_references");
+        let tool_name = tool_name.to_string();
+
+        let mut result = tokio::task::spawn_blocking(move || match tool_name.as_str() {
+            "find_definition" => {
+                let (line, column) = position.expect("position validated above");
+                analyze_definition_from_source(
+                    &path_str,
+                    &source_text,
+                    line,
+                    column,
+                    None,
+                )
+            }
+            "find_references" => {
+                let (line, column) = position.expect("position validated above");
+                analyze_references_from_source(
+                    &path_str,
+                    &source_text,
+                    line,
+                    column,
+                    None,
+                )
+            }
+            "file_outline" => analyze_outline_from_source(&path_str, &source_text),
+            _ => unreachable!("tool name validated above"),
+        })
+        .await
+        .map_err(|error| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Remote CodeLens analysis task failed: {error}"),
+            )
+        })?;
+
+        if adds_scope_metadata {
+            add_remote_scope_metadata(&mut result);
+        }
         Ok(result)
     }
 }
@@ -428,6 +334,293 @@ impl CodeLensService {
 // ---------------------------------------------------------------------------
 // Helper functions
 // ---------------------------------------------------------------------------
+
+fn analyze_definition_from_source(
+    path_str: &str,
+    source_text: &str,
+    line: u32,
+    column: u32,
+    project_root: Option<&Path>,
+) -> Value {
+    let found = if is_js_ts(path_str) {
+        analyzer::find_symbol_at_position(path_str, source_text, line, column)
+    } else {
+        tree_sitter_analyzer::find_symbol_at_position(path_str, source_text, line, column)
+    };
+
+    let symbol_name = match &found {
+        Some((name, _)) => name.clone(),
+        None => {
+            return json!({
+                "found": false,
+                "message": "No symbol found at the given position. The position may be on whitespace, a string literal, or a keyword."
+            });
+        }
+    };
+
+    if let Some(project_root) = project_root {
+        let mut index = symbol_index::SymbolIndex::new();
+        index.index_project(project_root);
+        if let Some(symbol) = index.find_definition_across_project(&symbol_name) {
+            return json!({
+                "found": true,
+                "name": symbol.name,
+                "kind": symbol.kind,
+                "location": {
+                    "filePath": symbol.location.file_path,
+                    "line": symbol.location.line,
+                    "column": symbol.location.column,
+                    "endLine": symbol.location.end_line,
+                    "endColumn": symbol.location.end_column,
+                },
+                "containerName": symbol.container_name,
+                "isExported": symbol.is_exported,
+                "searchScope": "project"
+            });
+        }
+    }
+
+    let (name, symbol) = found.expect("symbol presence checked above");
+    json!({
+        "found": true,
+        "name": name,
+        "kind": symbol.kind,
+        "location": {
+            "filePath": symbol.location.file_path,
+            "line": symbol.location.line,
+            "column": symbol.location.column,
+            "endLine": symbol.location.end_line,
+            "endColumn": symbol.location.end_column,
+        },
+        "containerName": symbol.container_name,
+        "isExported": symbol.is_exported,
+        "searchScope": "file"
+    })
+}
+
+fn analyze_references_from_source(
+    path_str: &str,
+    source_text: &str,
+    line: u32,
+    column: u32,
+    project_root: Option<&Path>,
+) -> Value {
+    let found = if is_js_ts(path_str) {
+        analyzer::find_references_at_position(path_str, source_text, line, column)
+    } else {
+        tree_sitter_analyzer::find_references_at_position(path_str, source_text, line, column)
+    };
+
+    let (name, local_definition, local_references) = match found {
+        Some(found) => found,
+        None => {
+            return json!({
+                "found": false,
+                "message": "No symbol found at the given position. The position may be on whitespace, a string literal, or a keyword."
+            });
+        }
+    };
+
+    if let Some(project_root) = project_root {
+        let mut index = symbol_index::SymbolIndex::new();
+        index.index_project(project_root);
+        let references = index.find_references_across_project(&name);
+        let definition = index.find_definition_across_project(&name).map(|symbol| {
+            json!({
+                "filePath": symbol.location.file_path,
+                "line": symbol.location.line,
+                "column": symbol.location.column,
+                "endLine": symbol.location.end_line,
+                "endColumn": symbol.location.end_column,
+            })
+        });
+        let references_json: Vec<Value> = references
+            .iter()
+            .map(|reference| {
+                json!({
+                    "filePath": reference.location.file_path,
+                    "line": reference.location.line,
+                    "column": reference.location.column,
+                    "endLine": reference.location.end_line,
+                    "endColumn": reference.location.end_column,
+                    "access": reference.access,
+                })
+            })
+            .collect();
+
+        return json!({
+            "found": true,
+            "name": name,
+            "definition": definition,
+            "references": references_json,
+            "totalReferences": references.len(),
+            "searchScope": "project"
+        });
+    }
+
+    let definition = local_definition.map(|location| {
+        json!({
+            "filePath": location.file_path,
+            "line": location.line,
+            "column": location.column,
+            "endLine": location.end_line,
+            "endColumn": location.end_column,
+        })
+    });
+    let references_json: Vec<Value> = local_references
+        .iter()
+        .map(|reference| {
+            json!({
+                "filePath": reference.location.file_path,
+                "line": reference.location.line,
+                "column": reference.location.column,
+                "endLine": reference.location.end_line,
+                "endColumn": reference.location.end_column,
+                "access": reference.access,
+            })
+        })
+        .collect();
+
+    json!({
+        "found": true,
+        "name": name,
+        "definition": definition,
+        "references": references_json,
+        "totalReferences": local_references.len(),
+        "searchScope": "file"
+    })
+}
+
+fn analyze_outline_from_source(path_str: &str, source_text: &str) -> Value {
+    let outline = if is_js_ts(path_str) {
+        analyzer::build_file_outline(path_str, source_text)
+    } else {
+        tree_sitter_analyzer::build_file_outline(path_str, source_text)
+    };
+    let entries: Vec<Value> = outline
+        .iter()
+        .map(|entry| {
+            json!({
+                "name": entry.name,
+                "kind": entry.kind,
+                "line": entry.line,
+                "column": entry.column,
+                "endLine": entry.end_line,
+                "endColumn": entry.end_column,
+                "containerName": entry.container_name,
+                "isExported": entry.is_exported,
+            })
+        })
+        .collect();
+
+    json!({
+        "filePath": path_str,
+        "outline": entries,
+        "totalSymbols": entries.len(),
+    })
+}
+
+fn parse_remote_source_response(
+    response: Value,
+    requested_path: &str,
+) -> napi::Result<(String, String)> {
+    if response.get("success").and_then(Value::as_bool) == Some(false) {
+        let message = response
+            .get("error")
+            .map(remote_error_message)
+            .unwrap_or_else(|| "Unknown remote SSH error".to_string());
+        return Err(Error::new(
+            Status::GenericFailure,
+            format!("Failed to read remote CodeLens source: {message}"),
+        ));
+    }
+
+    let file_path = response
+        .get("filePath")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            Error::new(
+                Status::GenericFailure,
+                "Remote CodeLens source response is missing filePath".to_string(),
+            )
+        })?;
+    if file_path != requested_path {
+        return Err(Error::new(
+            Status::GenericFailure,
+            format!(
+                "Remote CodeLens source path mismatch: requested {requested_path}, received {file_path}"
+            ),
+        ));
+    }
+    validate_supported_extension(file_path)?;
+
+    let source_text = response
+        .get("content")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            Error::new(
+                Status::GenericFailure,
+                "Remote CodeLens source response is missing raw text content".to_string(),
+            )
+        })?;
+    let reported_bytes = response
+        .get("bytes")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| {
+            Error::new(
+                Status::GenericFailure,
+                "Remote CodeLens source response is missing byte length".to_string(),
+            )
+        })?;
+    let actual_bytes = source_text.len() as u64;
+    if reported_bytes > MAX_FILE_SIZE as u64 || actual_bytes > MAX_FILE_SIZE as u64 {
+        return Err(Error::new(
+            Status::GenericFailure,
+            format!(
+                "Remote file is too large to analyze ({} bytes, max {} bytes): {file_path}",
+                reported_bytes.max(actual_bytes),
+                MAX_FILE_SIZE
+            ),
+        ));
+    }
+    if reported_bytes != actual_bytes {
+        return Err(Error::new(
+            Status::GenericFailure,
+            format!(
+                "Remote CodeLens source byte length mismatch: reported {reported_bytes}, decoded {actual_bytes}"
+            ),
+        ));
+    }
+
+    Ok((file_path.to_string(), source_text.to_string()))
+}
+
+fn remote_error_message(error: &Value) -> String {
+    error
+        .as_str()
+        .or_else(|| error.get("message").and_then(Value::as_str))
+        .map(str::to_string)
+        .unwrap_or_else(|| error.to_string())
+}
+
+fn add_remote_scope_metadata(result: &mut Value) {
+    if let Some(object) = result.as_object_mut() {
+        object.insert("searchScope".to_string(), Value::String("file".to_string()));
+        object.insert(
+            "scopeLimitation".to_string(),
+            Value::String(REMOTE_SCOPE_LIMITATION.to_string()),
+        );
+    }
+}
+
+fn unknown_tool_error(tool_name: &str) -> Error {
+    Error::new(
+        Status::GenericFailure,
+        format!(
+            "Unknown codelens tool: \"{tool_name}\". Available tools: [find_definition, find_references, file_outline]"
+        ),
+    )
+}
 
 fn require_string_arg(args: &Value, key: &str) -> napi::Result<String> {
     args.get(key)
@@ -444,14 +637,36 @@ fn require_string_arg(args: &Value, key: &str) -> napi::Result<String> {
 
 fn require_u32_arg(args: &Value, key: &str) -> napi::Result<u32> {
     args.get(key)
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
+        .and_then(Value::as_u64)
+        .filter(|value| (1..=u32::MAX as u64).contains(value))
+        .map(|value| value as u32)
         .ok_or_else(|| {
             Error::new(
                 Status::InvalidArg,
-                format!("{key} is required and must be a positive number"),
+                format!("{key} is required and must be a positive 32-bit integer"),
             )
         })
+}
+
+fn validate_supported_extension(file_path: &str) -> napi::Result<()> {
+    let extension = Path::new(file_path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_lowercase);
+    if extension
+        .as_deref()
+        .is_some_and(|extension| SUPPORTED_EXTENSIONS.contains(&extension))
+    {
+        return Ok(());
+    }
+
+    Err(Error::new(
+        Status::InvalidArg,
+        format!(
+            "Unsupported file extension '.{}'. CodeLens supports: TypeScript, JavaScript, Python, Rust, Go, C, Java, C#, Ruby, PHP, CSS, HTML, JSON, YAML, Bash, Lua.",
+            extension.as_deref().unwrap_or("(none)")
+        ),
+    ))
 }
 
 /// Read a source file and return (normalized_path, source_text).
@@ -481,7 +696,7 @@ fn read_source_file(file_path: &str) -> napi::Result<(String, String)> {
         )
     })?;
 
-    if metadata.len() > MAX_FILE_SIZE {
+    if metadata.len() > MAX_FILE_SIZE as u64 {
         return Err(Error::new(
             Status::GenericFailure,
             format!(
@@ -492,26 +707,7 @@ fn read_source_file(file_path: &str) -> napi::Result<(String, String)> {
         ));
     }
 
-    // Check file extension
-    let is_supported = if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        let ext_lower = ext.to_lowercase();
-        SUPPORTED_EXTENSIONS.contains(&ext_lower.as_str())
-    } else {
-        false
-    };
-
-    if !is_supported {
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("(none)");
-        return Err(Error::new(
-            Status::InvalidArg,
-            format!(
-                "Unsupported file extension '.{ext}'. CodeLens supports: TypeScript, JavaScript, Python, Rust, Go, C, Java, C#, Ruby, PHP, CSS, HTML, JSON, YAML, Bash, Lua."
-            ),
-        ));
-    }
+    validate_supported_extension(file_path)?;
 
     let source_text = std::fs::read_to_string(path)
         .map_err(|e| Error::new(Status::GenericFailure, format!("Failed to read file: {e}")))?;

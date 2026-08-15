@@ -125,12 +125,12 @@ pub async fn call_mcp_tool(
     let (args, uses_remote_workspace) =
         prepare_remote_workspace_args(&tool_full_name, args, project_id.as_deref()).await?;
 
-    // 本地（非 SSH）filesystem 工具：将 filePath 的相对路径（如 "."）解析到
-    // 当前项目根目录，避免其被解析为 Electron 进程的工作目录。
+    // 本地（非 SSH）filesystem / grep / codelens 工具：将相对路径（如 "."）
+    // 解析到当前项目根目录，避免其被解析为 Electron 进程的工作目录。
     let args = if uses_remote_workspace {
         args
     } else {
-        resolve_local_filesystem_args(&tool_full_name, args, project_id.as_deref()).await?
+        resolve_local_workspace_args(&tool_full_name, args, project_id.as_deref()).await?
     };
 
     // 先定 checkpoint 影响范围再捕获：None/Unknown 的工具不校验
@@ -269,6 +269,21 @@ pub async fn call_mcp_tool(
             crate::api::cancel::unregister_tool_execution(&tool_execution_id);
         }
         search_result?
+    } else if uses_remote_workspace && tool_full_name.starts_with("codelens-") {
+        let codelens_tool = tool_full_name
+            .strip_prefix("codelens-")
+            .expect("codelens prefix checked above");
+        let (tool_execution_id, cancel_token) = register_remote_tool_execution(&on_chunk);
+        let codelens_result = CodeLensService::new()
+            .execute_remote(
+                codelens_tool,
+                &args,
+                &on_remote_workspace_command,
+                Some(&cancel_token),
+            )
+            .await;
+        crate::api::cancel::unregister_tool_execution(&tool_execution_id);
+        codelens_result?
     } else if uses_remote_workspace {
         let filesystem_tool = tool_full_name.strip_prefix("filesystem-").ok_or_else(|| {
             Error::new(

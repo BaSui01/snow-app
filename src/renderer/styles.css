@@ -25561,11 +25561,23 @@ input {
 }
 
 .rollback-change-path {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-mono, monospace);
+}
+
+.rollback-change-path svg {
+  flex-shrink: 0;
+}
+
+.rollback-change-path-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text-secondary);
-  font-family: var(--font-mono, monospace);
+  min-width: 0;
 }
 
 .rollback-change-more {

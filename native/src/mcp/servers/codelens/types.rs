@@ -41,7 +41,6 @@ pub struct OutlineEntry {
     pub end_column: u32,
     pub container_name: Option<String>,
     pub is_exported: bool,
-    pub children: Vec<OutlineEntry>,
 }
 
 /// The kind of a symbol, mapped to a human-readable string.
@@ -49,17 +48,12 @@ pub struct OutlineEntry {
 pub enum SymbolKind {
     Function,
     Class,
-    Method,
-    Property,
     Variable,
     Constant,
     Interface,
     Type,
     Enum,
     EnumMember,
-    Module,
-    Constructor,
-    Parameter,
     Import,
 }
 
@@ -68,17 +62,12 @@ impl SymbolKind {
         match self {
             SymbolKind::Function => "function",
             SymbolKind::Class => "class",
-            SymbolKind::Method => "method",
-            SymbolKind::Property => "property",
             SymbolKind::Variable => "variable",
             SymbolKind::Constant => "constant",
             SymbolKind::Interface => "interface",
             SymbolKind::Type => "type",
             SymbolKind::Enum => "enum",
             SymbolKind::EnumMember => "enum-member",
-            SymbolKind::Module => "module",
-            SymbolKind::Constructor => "constructor",
-            SymbolKind::Parameter => "parameter",
             SymbolKind::Import => "import",
         }
     }
@@ -86,8 +75,6 @@ impl SymbolKind {
 
 /// Result of analyzing a single file.
 pub struct AnalyzedFile {
-    pub file_path: String,
-    pub source_text: String,
     pub symbols: Vec<SymbolInfo>,
     pub references: Vec<(String, ReferenceInfo)>,
     pub unresolved_references: Vec<(String, ReferenceInfo)>,

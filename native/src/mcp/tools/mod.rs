@@ -607,6 +607,7 @@ async fn prepare_remote_workspace_args(
 fn remote_workspace_path_field(tool_full_name: &str) -> Option<&'static str> {
     match tool_full_name {
         "filesystem-read" | "filesystem-replace_edit" | "filesystem-create" => Some("filePath"),
+        name if name.starts_with("codelens-") => Some("filePath"),
         "grep-search" => Some("path"),
         "bash-terminal-execute" => {
             Some("workingDirectory")
@@ -644,38 +645,48 @@ async fn resolve_local_project_root(project_id: Option<&str>) -> napi::Result<Op
     Ok(workspace_path.filter(|path| !is_ssh_path(path)))
 }
 
-/// 将本地 filesystem 工具的 filePath 相对路径解析到当前项目根目录。
-/// 当 AI 以 "."、"./src"、"src/main.ts" 等相对路径调用 filesystem 工具时，
-/// 避免它们被 Rust 解析为 Electron 进程的工作目录（通常并非项目根目录）。
-/// 绝对路径、空路径、SSH 路径或无法解析出项目根目录时保持原样。
-async fn resolve_local_filesystem_args(
+/// 将本地 filesystem / grep / codelens 工具的相对路径解析到当前项目根目录。
+/// 当 AI 以 "."、"./src"、"src/main.ts" 等相对路径调用工具时，避免路径被
+/// Rust 解析为 Electron 进程的工作目录（通常并非项目根目录）。grep 未提供 path
+/// 时也应默认搜索项目根目录，而不是 Electron 进程目录。
+/// 绝对路径、SSH 路径或无法解析出项目根目录时保持原样。
+async fn resolve_local_workspace_args(
     tool_full_name: &str,
     mut args: Value,
     project_id: Option<&str>,
 ) -> napi::Result<Value> {
-    if !tool_full_name.starts_with("filesystem-") {
-        return Ok(args);
-    }
-    let Some(file_path) = args.get("filePath").and_then(Value::as_str) else {
+    let (path_field, default_to_workspace) = match tool_full_name {
+        "grep-search" => ("path", true),
+        name if name.starts_with("filesystem-") || name.starts_with("codelens-") => {
+            ("filePath", false)
+        }
+        _ => return Ok(args),
+    };
+
+    let requested_path = args
+        .get(path_field)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|path| !path.is_empty());
+    let Some(requested_path) = requested_path.or(default_to_workspace.then_some(".")) else {
         return Ok(args);
     };
-    let trimmed = file_path.trim();
-    if trimmed.is_empty() || is_ssh_path(trimmed) {
+    if is_ssh_path(requested_path) || Path::new(requested_path).is_absolute() {
         return Ok(args);
     }
-    let path = Path::new(trimmed);
-    if path.is_absolute() {
-        return Ok(args);
-    }
+
     let Some(project_root) = resolve_local_project_root(project_id).await? else {
         return Ok(args);
     };
-
-    let resolved = Path::new(&project_root)
-        .join(path)
-        .to_string_lossy()
-        .to_string();
-    args["filePath"] = Value::String(resolved);
+    let resolved = if requested_path == "." {
+        project_root
+    } else {
+        Path::new(&project_root)
+            .join(requested_path)
+            .to_string_lossy()
+            .to_string()
+    };
+    args[path_field] = Value::String(resolved);
     Ok(args)
 }
 

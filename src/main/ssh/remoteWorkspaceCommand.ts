@@ -5,6 +5,8 @@ import {
   deleteSshFile,
   disconnectSsh,
   executeSshCommand,
+  getSshProfileKey,
+  getSshSession,
   listSshDirectory,
   parseSshUrl,
   readSshFile,
@@ -61,6 +63,7 @@ type RemoteWorkspaceCommandArgs = {
   toolCallId?: unknown;
   workspaceRoot?: unknown;
   contentBase64?: unknown;
+  paths?: unknown;
 };
 
 type RemoteWorkspaceSearchMatch = {
@@ -154,6 +157,80 @@ export const buildSshConnectParams = (
   return connectParams;
 };
 
+// ============================================================================
+// 命令会话连接池：远程工作区命令（工具 IO、checkpoint 快照等）频率高且
+// 多为短操作，逐命令新建 SSH 连接（TCP + 密钥交换 + 认证 + SFTP 子系统）
+// 是 SSH 工作区最大的性能瓶颈。池按 host:port:user 复用会话，引用计数归
+// 零后保留一段空闲时间再断开；传输层意外断开时下一次 acquire 自动重连。
+// ============================================================================
+
+type PooledCommandSession = {
+  sessionId?: string;
+  refs: number;
+  idleTimer?: NodeJS.Timeout;
+  connectPromise?: Promise<string>;
+};
+
+const COMMAND_SESSION_IDLE_TIMEOUT_MS = 60_000;
+const commandSessionPool = new Map<string, PooledCommandSession>();
+
+const releaseCommandSession = (profileKey: string): void => {
+  const entry = commandSessionPool.get(profileKey);
+  if (!entry) {
+    return;
+  }
+  entry.refs = Math.max(0, entry.refs - 1);
+  if (entry.refs > 0 || entry.idleTimer) {
+    return;
+  }
+  entry.idleTimer = setTimeout(() => {
+    entry.idleTimer = undefined;
+    if (entry.refs > 0) {
+      return;
+    }
+    if (entry.sessionId) {
+      disconnectSsh(entry.sessionId);
+    }
+    commandSessionPool.delete(profileKey);
+  }, COMMAND_SESSION_IDLE_TIMEOUT_MS);
+};
+
+const acquireCommandSession = async (
+  params: SshConnectParams,
+  options?: { signal?: AbortSignal }
+): Promise<{ profileKey: string; sessionId: string }> => {
+  const profileKey = getSshProfileKey(params);
+  let entry = commandSessionPool.get(profileKey);
+  if (!entry) {
+    entry = { refs: 0 };
+    commandSessionPool.set(profileKey, entry);
+  }
+  if (entry.idleTimer) {
+    clearTimeout(entry.idleTimer);
+    entry.idleTimer = undefined;
+  }
+  entry.refs += 1;
+  const poolEntry = entry;
+  try {
+    if (poolEntry.sessionId && getSshSession(poolEntry.sessionId)) {
+      return { profileKey, sessionId: poolEntry.sessionId };
+    }
+    // 会话不存在或传输层已断开：（并发安全地）发起一次重连。
+    poolEntry.sessionId = undefined;
+    if (!poolEntry.connectPromise) {
+      poolEntry.connectPromise = connectSsh(params, options).finally(() => {
+        poolEntry.connectPromise = undefined;
+      });
+    }
+    const sessionId = await poolEntry.connectPromise;
+    poolEntry.sessionId = sessionId;
+    return { profileKey, sessionId };
+  } catch (error) {
+    releaseCommandSession(profileKey);
+    throw error;
+  }
+};
+
 export const withSshSession = async <T>(
   workspacePath: string,
   action: (
@@ -164,15 +241,36 @@ export const withSshSession = async <T>(
   options?: { signal?: AbortSignal }
 ): Promise<T> => {
   const parsedPath = parseSshUrl(workspacePath);
-  const sessionId = await connectSsh(
+  const { profileKey, sessionId } = await acquireCommandSession(
     buildSshConnectParams(workspacePath),
     options
   );
   try {
     return await action(sessionId, parsedPath.remotePath, parsedPath);
   } finally {
-    disconnectSsh(sessionId);
+    releaseCommandSession(profileKey);
   }
+};
+
+// 有界并发映射：SFTP 请求在同一通道上多路复用，限制并发数即可在
+// 批量操作中同时压满带宽又不挤爆远程 sftp-server。
+const mapWithConcurrency = async <T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> => {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  const workerCount = Math.max(1, Math.min(limit, items.length));
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await fn(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
 };
 
 const readTextFile = async (
@@ -745,6 +843,211 @@ const executeCheckpointStat = async (
   );
 };
 
+type CheckpointTreeEntry = {
+  path: string;
+  isDirectory: boolean;
+  size: number;
+  mtimeMs: number;
+};
+
+type CheckpointTreeResult = {
+  entries: CheckpointTreeEntry[];
+  gitignores: Array<{ dir: string; content: string }>;
+};
+
+const CHECKPOINT_TREE_TIMEOUT_MS = 120_000;
+const CHECKPOINT_GITIGNORE_MARKER = "---SNOW-CHECKPOINT-GITIGNORES---";
+const CHECKPOINT_GITIGNORE_START = "--SNOW-GITIGNORE-START-- ";
+const CHECKPOINT_GITIGNORE_END = "--SNOW-GITIGNORE-END--";
+
+// find 的 SKIP_DIRS 剪枝表达式：仅剪目录（与本地扫描语义一致，同名普通
+// 文件保留）。括号必须转义后才能作为 find 的参数传给远程 shell。
+const CHECKPOINT_SKIP_DIR_PRUNE = (() => {
+  const names = [...CHECKPOINT_SKIP_DIRS]
+    .map((name) => `-name ${shellQuote(name)}`)
+    .join(" -o ");
+  return `\\( -type d \\( ${names} \\) -prune \\)`;
+})();
+
+// 单个 .gitignore 内容转储脚本（POSIX sh，经 find -exec 调用）：
+// 每个文件输出 START 行（含相对路径）+ 原始内容 + END 行。
+const CHECKPOINT_GITIGNORE_DUMP_EXEC =
+  `-exec sh -c 'for f in "$@"; do ` +
+  `printf -- "${CHECKPOINT_GITIGNORE_START}%s\\n" "$f"; ` +
+  `cat -- "$f"; ` +
+  `printf -- "\\n${CHECKPOINT_GITIGNORE_END}\\n"; ` +
+  `done' sh {} +`;
+
+// 通过 exec 通道一次性拉取整棵文件树（含 mtime/size）与各目录 .gitignore
+// 内容：一次网络往返完成原本每目录一次 SFTP readdir 的遍历。
+// gnu 变体用 find -printf（NUL 分隔，文件名换行安全，mtime 纳秒级）；
+// bsd 变体（macOS 等）用 stat -f，换行分隔且 mtime 为整秒。
+const buildCheckpointTreeFindCommand = (
+  remotePath: string,
+  variant: "gnu" | "bsd"
+): string => {
+  const listFiles =
+    variant === "gnu"
+      ? `find . ${CHECKPOINT_SKIP_DIR_PRUNE} -o \\( -type f -printf '%T@\\t%s\\t%P\\0' \\)`
+      : `find . ${CHECKPOINT_SKIP_DIR_PRUNE} -o \\( -type f -exec stat -f '%m\\t%z\\t%N' {} + \\)`;
+  return [
+    `cd -- ${shellQuote(remotePath)}`,
+    `&& ${listFiles}`,
+    `&& printf '\\n${CHECKPOINT_GITIGNORE_MARKER}\\n'`,
+    `&& find . ${CHECKPOINT_SKIP_DIR_PRUNE} -o \\( -type f -name .gitignore ${CHECKPOINT_GITIGNORE_DUMP_EXEC} \\)`,
+  ].join(" ");
+};
+
+const stripDotSlash = (path: string): string =>
+  path.startsWith("./") ? path.slice(2) : path;
+
+const tryParseCheckpointTreeRecord = (
+  record: string
+): CheckpointTreeEntry | undefined => {
+  const firstTab = record.indexOf("\t");
+  const secondTab =
+    firstTab >= 0 ? record.indexOf("\t", firstTab + 1) : -1;
+  if (firstTab < 0 || secondTab < 0) {
+    return undefined;
+  }
+  const mtime = Number(record.slice(0, firstTab));
+  const size = Number(record.slice(firstTab + 1, secondTab));
+  const path = stripDotSlash(record.slice(secondTab + 1));
+  if (!path || !Number.isFinite(mtime) || !Number.isFinite(size)) {
+    // 文件名含制表符/换行等极端情况：记录无法解析，跳过该文件
+    // （等同内容抓取跳过，仅损失该文件的回滚能力）。
+    return undefined;
+  }
+  return {
+    path,
+    isDirectory: false,
+    size,
+    mtimeMs: Math.floor(mtime * 1000),
+  };
+};
+
+const parseCheckpointTreeGitignores = (
+  section: string
+): Array<{ dir: string; content: string }> => {
+  const gitignores: Array<{ dir: string; content: string }> = [];
+  let current: { dir: string; lines: string[] } | undefined;
+  for (const rawLine of section.split("\n")) {
+    const line = rawLine.replace(/\r$/, "");
+    if (line.startsWith(CHECKPOINT_GITIGNORE_START)) {
+      const path = stripDotSlash(
+        line.slice(CHECKPOINT_GITIGNORE_START.length).trim()
+      );
+      const lastSlash = path.lastIndexOf("/");
+      current = {
+        dir: lastSlash >= 0 ? path.slice(0, lastSlash) : "",
+        lines: [],
+      };
+      continue;
+    }
+    if (line === CHECKPOINT_GITIGNORE_END) {
+      if (current) {
+        gitignores.push({
+          dir: current.dir,
+          content: current.lines.join("\n"),
+        });
+        current = undefined;
+      }
+      continue;
+    }
+    current?.lines.push(rawLine);
+  }
+  return gitignores;
+};
+
+const parseCheckpointTreeOutput = (
+  output: string,
+  mtimeIsFloat: boolean
+): CheckpointTreeResult => {
+  const markerIndex = output.indexOf(CHECKPOINT_GITIGNORE_MARKER);
+  const fileSection =
+    markerIndex >= 0 ? output.slice(0, markerIndex) : output;
+  const gitignoreSection =
+    markerIndex >= 0
+      ? output.slice(markerIndex + CHECKPOINT_GITIGNORE_MARKER.length)
+      : "";
+
+  const entries: CheckpointTreeEntry[] = [];
+  // gnu：NUL 分隔记录 "mtime秒.小数\tsize\t相对路径"；bsd：换行分隔。
+  const records = mtimeIsFloat
+    ? fileSection.split("\0")
+    : fileSection.split("\n");
+  for (const rawRecord of records) {
+    const record = rawRecord.replace(/^\n+/, "");
+    if (!record) {
+      continue;
+    }
+    const entry = tryParseCheckpointTreeRecord(record);
+    if (entry) {
+      entries.push(entry);
+    }
+  }
+  entries.sort((a, b) => a.path.localeCompare(b.path));
+  return { entries, gitignores: parseCheckpointTreeGitignores(gitignoreSection) };
+};
+
+// 兜底遍历（远程 shell 不支持 find/stat，如 Windows OpenSSH 默认 shell）：
+// SFTP 逐目录 readdir，语义与 find 变体一致。
+const listCheckpointTreeViaSftpWalk = async (
+  sessionId: string,
+  remotePath: string,
+  signal?: AbortSignal
+): Promise<CheckpointTreeResult> => {
+  const entries: CheckpointTreeEntry[] = [];
+  // 每个目录的 .gitignore 内容（dir 为相对根目录的 POSIX 路径，
+  // 根目录为 ""）。Rust 侧复用与本地相同的 GitignoreMatcher 语义。
+  const gitignores: Array<{ dir: string; content: string }> = [];
+  const directories: Array<{ absolute: string; relative: string }> = [
+    { absolute: remotePath, relative: "" },
+  ];
+  while (directories.length > 0) {
+    const { absolute, relative } = directories.pop() as {
+      absolute: string;
+      relative: string;
+    };
+    const list = await listSshDirectory(sessionId, absolute, { signal });
+    for (const entry of list) {
+      // Symlinks are never captured (local scans skip them too).
+      if (entry.isSymbolicLink) {
+        continue;
+      }
+      const entryRelative = relative
+        ? `${relative}/${entry.name}`
+        : entry.name;
+      if (entry.isDirectory) {
+        if (!CHECKPOINT_SKIP_DIRS.has(entry.name)) {
+          directories.push({ absolute: entry.path, relative: entryRelative });
+        }
+        continue;
+      }
+      if (entry.name === ".gitignore") {
+        // 收集规则内容供 Rust 侧过滤；读取失败只丢规则不中断扫描。
+        try {
+          const buf = await readSshFile(sessionId, entry.path, { signal });
+          gitignores.push({
+            dir: relative,
+            content: buf.toString("utf-8"),
+          });
+        } catch {
+          // Best effort — the file tree scan continues without these rules.
+        }
+      }
+      entries.push({
+        path: entryRelative,
+        isDirectory: false,
+        size: entry.size,
+        mtimeMs: entry.mtime * 1000,
+      });
+    }
+  }
+  entries.sort((a, b) => a.path.localeCompare(b.path));
+  return { entries, gitignores };
+};
+
 const executeCheckpointListTree = async (
   args: RemoteWorkspaceCommandArgs,
   signal?: AbortSignal
@@ -753,66 +1056,41 @@ const executeCheckpointListTree = async (
   return withSshSession(
     workspacePath,
     async (sessionId, remotePath) => {
-      const entries: Array<{
-        path: string;
-        isDirectory: boolean;
-        size: number;
-        mtimeMs: number;
-      }> = [];
-      // 每个目录的 .gitignore 内容（dir 为相对根目录的 POSIX 路径，
-      // 根目录为 ""）。Rust 侧复用与本地相同的 GitignoreMatcher 语义。
-      const gitignores: Array<{ dir: string; content: string }> = [];
-      const directories: Array<{ absolute: string; relative: string }> = [
-        { absolute: remotePath, relative: "" },
+      // 优先 exec 通道 find 单命令拉全树（一次网络往返）；GNU find 不可用
+      // （BSD/macOS 等）则换 stat -f 变体，均失败再退回 SFTP 逐目录遍历。
+      const attempts: Array<{ command: string; mtimeIsFloat: boolean }> = [
+        {
+          command: buildCheckpointTreeFindCommand(remotePath, "gnu"),
+          mtimeIsFloat: true,
+        },
+        {
+          command: buildCheckpointTreeFindCommand(remotePath, "bsd"),
+          mtimeIsFloat: false,
+        },
       ];
-      while (directories.length > 0) {
-        const { absolute, relative } = directories.pop() as {
-          absolute: string;
-          relative: string;
-        };
-        const list = await listSshDirectory(sessionId, absolute, { signal });
-        for (const entry of list) {
-          // Symlinks are never captured (local scans skip them too).
-          if (entry.isSymbolicLink) {
-            continue;
-          }
-          const entryRelative = relative
-            ? `${relative}/${entry.name}`
-            : entry.name;
-          if (entry.isDirectory) {
-            if (!CHECKPOINT_SKIP_DIRS.has(entry.name)) {
-              directories.push({ absolute: entry.path, relative: entryRelative });
-            }
-            continue;
-          }
-          if (entry.name === ".gitignore") {
-            // 收集规则内容供 Rust 侧过滤；读取失败只丢规则不中断扫描。
-            try {
-              const buf = await readSshFile(sessionId, entry.path, { signal });
-              gitignores.push({
-                dir: relative,
-                content: buf.toString("utf-8"),
-              });
-            } catch {
-              // Best effort — the file tree scan continues without these rules.
-            }
-          }
-          entries.push({
-            path: entryRelative,
-            isDirectory: false,
-            size: entry.size,
-            mtimeMs: entry.mtime * 1000,
+      for (const attempt of attempts) {
+        try {
+          const output = await executeSshCommand(sessionId, attempt.command, {
+            signal,
+            timeoutMs: CHECKPOINT_TREE_TIMEOUT_MS,
           });
+          return parseCheckpointTreeOutput(output, attempt.mtimeIsFloat);
+        } catch (error) {
+          // 连接级失败（断开/取消）直接上抛：回退变体共用同一传输层。
+          if (isSshOperationError(error)) {
+            throw error;
+          }
         }
       }
-      entries.sort((a, b) => a.path.localeCompare(b.path));
-      return { entries, gitignores };
+      return listCheckpointTreeViaSftpWalk(sessionId, remotePath, signal);
     },
     { signal }
   );
 };
 
-const executeCheckpointReadFile = async (
+// 单文件 stat+read 合并操作：checkpoint 单文件记录（before/after）原本需要
+// 两次往返（stat 判存在性/目录、read 取内容），合并后一次往返完成。
+const executeCheckpointReadFileWithStat = async (
   args: RemoteWorkspaceCommandArgs,
   signal?: AbortSignal
 ): Promise<Record<string, unknown>> => {
@@ -820,6 +1098,25 @@ const executeCheckpointReadFile = async (
   return withSshSession(
     workspacePath,
     async (sessionId, remotePath) => {
+      const stats = await statSshEntry(sessionId, remotePath);
+      if (!stats) {
+        return {
+          exists: false,
+          isDirectory: false,
+          size: 0,
+          mtimeMs: 0,
+          content: null,
+        };
+      }
+      if (stats.isDirectory()) {
+        return {
+          exists: true,
+          isDirectory: true,
+          size: 0,
+          mtimeMs: stats.mtime * 1000,
+          content: null,
+        };
+      }
       let content: Buffer;
       try {
         content = await readSshFile(sessionId, remotePath, { signal });
@@ -828,12 +1125,124 @@ const executeCheckpointReadFile = async (
           throw error;
         }
         // The file may have been removed between stat and read.
-        return { content: null };
+        return { exists: false, isDirectory: false, size: 0, mtimeMs: 0, content: null };
       }
-      return { content: content.toString("base64") };
+      return {
+        exists: true,
+        isDirectory: false,
+        size: stats.size,
+        mtimeMs: stats.mtime * 1000,
+        content: content.toString("base64"),
+      };
     },
     { signal }
   );
+};
+
+// 校验批量操作的路径参数（一组 ssh:// URI）。
+const ensureSshPathList = (value: unknown, fieldName: string): string[] => {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(`${fieldName} must be a non-empty array of SSH paths`);
+  }
+  return value.map((item, index) =>
+    validateSshWorkspacePath(item, `${fieldName}[${index}]`)
+  );
+};
+
+// 按 SSH authority 分组路径：checkpoint 条目可能经绝对路径标记指向工作区根
+// 之外的位置，每个 authority 独立走连接池会话。
+const groupSshPathsByAuthority = (
+  paths: readonly string[]
+): Map<string, Array<{ original: string; remotePath: string }>> => {
+  const groups = new Map<
+    string,
+    Array<{ original: string; remotePath: string }>
+  >();
+  for (const path of paths) {
+    const parsed = parseSshUrl(path);
+    const key = `${parsed.username}@${parsed.host}:${parsed.port}`;
+    const group = groups.get(key);
+    if (group) {
+      group.push({ original: path, remotePath: parsed.remotePath });
+    } else {
+      groups.set(key, [{ original: path, remotePath: parsed.remotePath }]);
+    }
+  }
+  return groups;
+};
+
+const CHECKPOINT_STAT_CONCURRENCY = 32;
+const CHECKPOINT_READ_CONCURRENCY = 8;
+
+// 批量 stat：一次命令往返取回全部路径的元数据（连接池会话内 SFTP 并发），
+// 替代逐文件 checkpoint-stat 的 N 次往返。
+const executeCheckpointStatPaths = async (
+  args: RemoteWorkspaceCommandArgs,
+  signal?: AbortSignal
+): Promise<Record<string, unknown>> => {
+  const paths = ensureSshPathList(args.paths, "paths");
+  const stats: Record<string, unknown> = {};
+  for (const [authority, group] of groupSshPathsByAuthority(paths)) {
+    await withSshSession(
+      `ssh://${authority}`,
+      async (sessionId) => {
+        await mapWithConcurrency(
+          group,
+          CHECKPOINT_STAT_CONCURRENCY,
+          async (item) => {
+            const entry = await statSshEntry(sessionId, item.remotePath);
+            stats[item.original] = entry
+              ? {
+                  exists: true,
+                  isDirectory: entry.isDirectory(),
+                  size: entry.size,
+                  mtimeMs: entry.mtime * 1000,
+                }
+              : { exists: false, isDirectory: false, size: 0, mtimeMs: 0 };
+          }
+        );
+      },
+      { signal }
+    );
+  }
+  return { stats };
+};
+
+// 批量读取文件内容（base64）：一次命令往返读回一批文件，替代逐文件
+// checkpoint-read-file 的 N 次往返；stat 后消失的文件返回 null。
+const executeCheckpointReadFiles = async (
+  args: RemoteWorkspaceCommandArgs,
+  signal?: AbortSignal
+): Promise<Record<string, unknown>> => {
+  const paths = ensureSshPathList(args.paths, "paths");
+  const contents: Record<string, string | null> = {};
+  for (const [authority, group] of groupSshPathsByAuthority(paths)) {
+    await withSshSession(
+      `ssh://${authority}`,
+      async (sessionId) => {
+        await mapWithConcurrency(
+          group,
+          CHECKPOINT_READ_CONCURRENCY,
+          async (item) => {
+            try {
+              const buffer = await readSshFile(sessionId, item.remotePath, {
+                signal,
+              });
+              contents[item.original] = buffer.toString("base64");
+            } catch (error) {
+              if (isSshOperationError(error)) {
+                throw error;
+              }
+              // The file may have been removed between stat and read.
+              contents[item.original] = null;
+            }
+          }
+        );
+      },
+      { signal }
+    );
+  }
+  return { contents };
 };
 
 const executeCheckpointWriteFile = async (
@@ -930,11 +1339,17 @@ export const dispatchRemoteWorkspaceCommand = async (
       case "checkpoint-stat":
         result = await executeCheckpointStat(args, signal);
         break;
+      case "checkpoint-stat-paths":
+        result = await executeCheckpointStatPaths(args, signal);
+        break;
       case "checkpoint-list-tree":
         result = await executeCheckpointListTree(args, signal);
         break;
-      case "checkpoint-read-file":
-        result = await executeCheckpointReadFile(args, signal);
+      case "checkpoint-read-file-with-stat":
+        result = await executeCheckpointReadFileWithStat(args, signal);
+        break;
+      case "checkpoint-read-files":
+        result = await executeCheckpointReadFiles(args, signal);
         break;
       case "checkpoint-write-file":
         result = await executeCheckpointWriteFile(args, signal);

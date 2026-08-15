@@ -31971,8 +31971,7 @@ body.ctrl-held [data-path] {
   font-size: 11.5px;
   cursor: pointer;
   max-width: 170px;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease,
-    box-shadow 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 .image-library-album-chip:hover,
@@ -31987,7 +31986,6 @@ body.ctrl-held [data-path] {
   background: color-mix(in srgb, var(--accent-color) 12%, transparent);
   border-color: color-mix(in srgb, var(--accent-color) 45%, transparent);
   font-weight: 600;
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent-color) 18%, transparent);
 }
 
 .image-library-album-chip-name {
@@ -32108,7 +32106,7 @@ body.ctrl-held [data-path] {
   overflow: hidden;
   cursor: pointer;
   text-align: left;
-  transition: box-shadow 0.18s ease, border-color 0.18s ease;
+  transition: border-color 0.18s ease;
 }
 
 .image-library-album-card:hover,
@@ -32421,7 +32419,7 @@ body.ctrl-held [data-path] {
   color: var(--text-tertiary);
   font-size: 11px;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 .image-library-filter-btn:hover {
@@ -32432,8 +32430,6 @@ body.ctrl-held [data-path] {
   background: var(--bg-primary);
   color: var(--text-primary);
   font-weight: 600;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 /* ---- 下拉选择（CustomSelect） ---- */
@@ -32573,7 +32569,6 @@ body.ctrl-held [data-path] {
   background: var(--bg-tertiary);
   border: 1px solid var(--border-subtle);
   color: var(--text-tertiary);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
 }
 
 .image-library-state-hint {
@@ -32596,13 +32591,11 @@ body.ctrl-held [data-path] {
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 .image-library-state-clear:hover {
   background: color-mix(in srgb, var(--accent-color) 20%, transparent);
-  box-shadow: 0 4px 14px
-    color-mix(in srgb, var(--accent-color) 30%, transparent);
 }
 
 /* ---- 图片网格 ---- */
@@ -32622,7 +32615,7 @@ body.ctrl-held [data-path] {
   background: var(--bg-tertiary);
   cursor: zoom-in;
   outline: none;
-  transition: box-shadow 0.18s ease, border-color 0.18s ease;
+  transition: border-color 0.18s ease;
 }
 
 .image-library-card:hover,

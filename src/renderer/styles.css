@@ -29481,20 +29481,6 @@ body.ctrl-held [data-path] {
   user-select: text;
 }
 
-.file-viewer-draft-status {
-  flex-shrink: 0;
-  padding: 2px 6px;
-  border-radius: var(--radius-sm);
-  color: var(--accent-amber-text, #b45309);
-  background: var(--accent-amber-bg, rgba(217, 119, 6, 0.12));
-  font-size: 10px;
-}
-
-.file-viewer-draft-status.conflict {
-  color: var(--accent-red-text, #b91c1c);
-  background: var(--accent-red-bg, rgba(220, 38, 38, 0.12));
-}
-
 .tool-call-codebase-no-results,
 .tool-call-codebase-pending {
   display: flex;

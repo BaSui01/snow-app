@@ -171,6 +171,10 @@ The Rust native module (`snow_native`) is compiled to a Node addon (`.node`) via
 - **HTTP client** - Full-featured HTTP client via reqwest with compression support
 - **MCP protocol** - Model Context Protocol implementation
 
+## Friendly links
+
+* [Linux DO](https://linux.do)
+
 ## License
 
 [MIT](./LICENSE) - Copyright (c) 2026 MayMay

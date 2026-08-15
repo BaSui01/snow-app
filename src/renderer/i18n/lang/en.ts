@@ -3142,8 +3142,6 @@ export const en = {
   "rightPanel.fileViewerSavedCompatibility": "Saved (compatibility mode)",
   "rightPanel.fileViewerSaveConflict":
     "The remote file changed. Reload it before saving your changes.",
-  "rightPanel.fileViewerDraftPending": "Draft pending",
-  "rightPanel.fileViewerDraftConflict": "Draft conflict",
   "rightPanel.fileViewerSaveError": "Failed to save file",
   "rightPanel.fileViewerDiscardConfirm":
     "You have unsaved changes. Discard them and leave edit mode?",

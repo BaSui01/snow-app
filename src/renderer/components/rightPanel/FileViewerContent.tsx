@@ -1382,28 +1382,6 @@ export function FileViewerContent({
                 })}
           </span>
         ) : null}
-        {editMode && draftStatus ? (
-          <span
-            className={`file-viewer-draft-status ${draftStatus}`}
-            title={
-              draftStatus === "conflict"
-                ? t("rightPanel.fileViewerDraftConflict", {
-                    defaultValue: "Remote changes require review before saving",
-                  })
-                : t("rightPanel.fileViewerDraftPending", {
-                    defaultValue: "Draft pending remote sync",
-                  })
-            }
-          >
-            {draftStatus === "conflict"
-              ? t("rightPanel.fileViewerDraftConflict", {
-                  defaultValue: "Draft conflict",
-                })
-              : t("rightPanel.fileViewerDraftPending", {
-                  defaultValue: "Draft pending",
-                })}
-          </span>
-        ) : null}
         {isSvg && (
           <div className="file-viewer-svg-toggle">
             <button

@@ -170,6 +170,10 @@ Rust 原生模块（`snow_native`）通过 napi-rs 编译为 Node 插件（`.nod
 - **HTTP 客户端** - 通过 reqwest 实现全功能 HTTP 客户端，支持压缩
 - **MCP 协议** - 模型上下文协议实现
 
+## 友情链接
+
+* [Linux DO](https://linux.do)
+
 ## 开源协议
 
 [MIT](./LICENSE) - Copyright (c) 2026 MayMay

@@ -2952,8 +2952,6 @@ export const zhTW = {
   "rightPanel.fileViewerSavedCompatibility": "已儲存（相容模式）",
   "rightPanel.fileViewerSaveConflict":
     "遠端檔案已變更。請重新載入後再儲存修改。",
-  "rightPanel.fileViewerDraftPending": "草稿待同步",
-  "rightPanel.fileViewerDraftConflict": "草稿衝突",
   "rightPanel.fileViewerSaveError": "儲存檔案失敗",
   "rightPanel.fileViewerDiscardConfirm":
     "存在未儲存的變更，是否放棄並退出編輯模式？",

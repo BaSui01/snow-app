@@ -2982,8 +2982,6 @@ export const zhCN = {
   "rightPanel.fileViewerSavedCompatibility": "已保存（兼容模式）",
   "rightPanel.fileViewerSaveConflict":
     "远程文件已变更。请重新加载后再保存修改。",
-  "rightPanel.fileViewerDraftPending": "草稿待同步",
-  "rightPanel.fileViewerDraftConflict": "草稿冲突",
   "rightPanel.fileViewerSaveError": "保存文件失败",
   "rightPanel.fileViewerDiscardConfirm":
     "存在未保存的更改，是否放弃并退出编辑模式？",

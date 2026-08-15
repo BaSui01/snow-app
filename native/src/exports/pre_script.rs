@@ -7,7 +7,8 @@ use serde_json::Value;
 use tokio::time::timeout;
 
 use super::terminal::{
-    detect_shell_family, load_terminal_shell_path, resolve_login_path, resolve_shell_and_args,
+    detect_shell_family, is_windows_wsl_shell, load_terminal_shell_path, resolve_login_path,
+    resolve_shell_and_args,
 };
 
 /// 前置脚本 stdout/stderr 单通道截断上限（按字符），防止脚本洪水输出撑爆内存。
@@ -41,9 +42,11 @@ pub async fn run_pre_script(
     let shell_path = load_terminal_shell_path().await?;
     let (shell, shell_args) = resolve_shell_and_args(&shell_path, &command, Some(&cwd)).await?;
 
+    let shell_family = detect_shell_family(&shell);
+
     // login PATH 对 Windows 注入注册表 PATH（powershell/cmd 需要）；WSL 跳过，
     // 由 `bash -lc` 自行从 .profile 加载 Linux PATH（冒号分隔，注入会破坏）。
-    let login_path = if detect_shell_family(&shell) == "wsl" {
+    let login_path = if shell_family == "wsl" {
         None
     } else {
         resolve_login_path().await
@@ -54,13 +57,19 @@ pub async fn run_pre_script(
     let mut process = crate::utils::process::cmd_async(&shell);
     process
         .args(&shell_args)
-        .current_dir(&cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .env("LANG", "en_US.UTF-8")
         .env("LC_ALL", "en_US.UTF-8");
+    // Windows 宿主 + WSL shell 时，工作目录只能通过 `--cd` 参数传递：
+    // 把 Linux 路径（/home/...）或 WSL UNC 路径设置为 Windows 子进程的
+    // current_dir，会在启动 wsl.exe 前被 Windows 拒绝（os error 267）。
+    // 与 bash MCP 工具、集成终端 ptyManager.ts 的处理保持一致。
+    if !is_windows_wsl_shell(&shell_family) {
+        process.current_dir(&cwd);
+    }
     if let Some(path) = login_path {
         process.env("PATH", path);
     }

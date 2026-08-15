@@ -9,7 +9,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::io::AsyncWriteExt;
 
-use crate::exports::terminal::{load_terminal_shell_path, resolve_shell_and_args};
+use crate::exports::terminal::{
+    detect_shell_family, is_windows_wsl_shell, load_terminal_shell_path, resolve_shell_and_args,
+};
 use crate::storage::services::app_logs;
 use crate::storage::services::hooks_configs;
 
@@ -398,8 +400,14 @@ async fn execute_command_action(
         .env("LANG", "en_US.UTF-8")
         .env("LC_ALL", "en_US.UTF-8");
 
+    // Windows 宿主 + WSL shell 时，工作目录已通过 shell_args 中的 `--cd` 传递；
+    // 把 Linux 路径或 WSL UNC 路径设置为 current_dir 会在启动 wsl.exe 前被
+    // Windows 拒绝（os error 267）。与 bash MCP 工具、集成终端 ptyManager.ts
+    // 的处理保持一致。
     if let Some(ref dir) = cwd {
-        shell_command.current_dir(dir);
+        if !is_windows_wsl_shell(&detect_shell_family(&shell)) {
+            shell_command.current_dir(dir);
+        }
     }
 
     let mut child = shell_command.spawn().map_err(|error| {

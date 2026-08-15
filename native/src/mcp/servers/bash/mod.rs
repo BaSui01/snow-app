@@ -7,7 +7,8 @@ use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 use crate::exports::terminal::{
-    detect_shell_family, load_terminal_shell_path, resolve_login_path, resolve_shell_and_args,
+    detect_shell_family, is_windows_wsl_shell, load_terminal_shell_path, resolve_login_path,
+    resolve_shell_and_args,
 };
 use crate::storage::services::app_logs::{insert_app_log, AppLogInput};
 
@@ -532,12 +533,21 @@ impl BashService {
             resolve_shell_and_args(&shell_path, &command, Some(&working_directory)).await?;
         let shell_resolve_ms = shell_resolve_started.elapsed().as_millis() as u64;
 
+        let shell_family = detect_shell_family(&shell);
+        // Windows 宿主上 WSL 的工作目录只能通过 `--cd` 参数传递（见 build_shell_args）：
+        // 把 Linux 路径（/home/...）或 WSL UNC 路径设置为 Windows 子进程的
+        // current_dir，会在 Windows 启动 wsl.exe 前校验目录时失败
+        // （ERROR_DIRECTORY，os error 267），命令根本没有进入 WSL。
+        // 与集成终端 ptyManager.ts 对 WSL 的处理保持一致
+        //（cwd 仅通过 --cd 传递，spawnCwd = undefined）。
+        let host_cwd_supported = !is_windows_wsl_shell(&shell_family);
+
         // resolve_login_path 在 Windows 上返回注册表中的 Windows PATH（分号分隔的
         // Windows 路径）。这对 powershell/cmd 有用，但注入给 WSL 会破坏 Linux 的 PATH
         //（Linux 用冒号分隔）。WSL 通过 `bash -lc` 自行从 .profile 加载 Linux PATH，
         // 因此跳过注入。
         let login_path_started = Instant::now();
-        let login_path = if detect_shell_family(&shell) == "wsl" {
+        let login_path = if shell_family == "wsl" {
             None
         } else {
             resolve_login_path().await
@@ -547,7 +557,6 @@ impl BashService {
         let mut process = crate::utils::process::cmd_async(&shell);
         process
             .args(&shell_args)
-            .current_dir(&working_directory)
             .stdin(if is_interactive {
                 Stdio::piped()
             } else {
@@ -556,6 +565,9 @@ impl BashService {
             .kill_on_drop(!detach)
             .env("LANG", "en_US.UTF-8")
             .env("LC_ALL", "en_US.UTF-8");
+        if host_cwd_supported {
+            process.current_dir(&working_directory);
+        }
 
         // detach 模式：stdout/stderr 直接重定向到 .snow/logs/ 下的日志文件，
         // 进程孤儿化后由子进程持有的句柄继续写入；前台模式用管道供流式

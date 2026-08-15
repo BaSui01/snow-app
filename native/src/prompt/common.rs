@@ -201,13 +201,33 @@ pub(crate) fn get_current_time_info() -> String {
 }
 
 pub(crate) fn get_working_directory_section(working_directory: &str) -> String {
-    if working_directory.trim().is_empty() {
+    let trimmed = working_directory.trim();
+    if trimmed.is_empty() {
         return String::new();
     }
 
-    format!(
+    let mut section = format!(
         "## Working Directory\n\nThe user's current working directory is:\n`{working_directory}`\n\nAll file operations should be relative to this directory unless explicitly specified otherwise."
-    )
+    );
+
+    // Windows 本地 WSL UNC 工作区（\\wsl$\... 或 \\wsl.localhost\...）：终端命令
+    // 运行在 WSL 内、输出 Linux 路径（/home/...），而内置文件工具运行在 Windows
+    // 宿主、必须继续使用 UNC 路径。若不显式声明路径边界，模型容易把终端输出中的
+    // Linux 路径（如 pwd 结果）原样改写进文件系统工具参数，导致 "File does not
+    // exist"。仅按 UNC 前缀条件注入，避免影响 SSH 工作区与普通本地工作区。
+    if is_wsl_unc_path(trimmed) {
+        section.push_str(
+            "\n\nPATH BOUNDARY: this is a Windows-local WSL UNC workspace. Terminal commands run inside WSL and use Linux paths (e.g. `/home/...`), but the built-in filesystem tools run on the Windows host and MUST keep using the UNC path shown above — never rewrite a Linux path from terminal output into a filesystem tool argument.",
+        );
+    }
+
+    section
+}
+
+/// 判断路径是否为 Windows WSL UNC 路径（`\\wsl$\...` 或 `\\wsl.localhost\...`）。
+fn is_wsl_unc_path(path: &str) -> bool {
+    let normalized = path.replace('/', "\\").to_ascii_lowercase();
+    normalized.starts_with(r"\\wsl$\") || normalized.starts_with(r"\\wsl.localhost\")
 }
 
 /// Build the platform-specific command requirements section based on the

@@ -272,6 +272,8 @@ pub(crate) async fn load_terminal_shell_path() -> napi::Result<String> {
 /// shellPath 为空时自动检测默认终端；检测失败时使用平台回退（cmd / sh）。
 /// `cwd` 为工作目录；WSL 等需要通过参数传递目录的 shell 会使用它构造
 /// `--cd` 参数，而 powershell/cmd/posix 仍由调用方通过 `current_dir` 设置。
+/// 注意：Windows 宿主 + WSL shell 组合下调用方必须跳过 `current_dir`，
+/// 见 `is_windows_wsl_shell`。
 pub(crate) async fn resolve_shell_and_args(
     shell_path: &str,
     command: &str,
@@ -314,6 +316,18 @@ pub(crate) fn detect_shell_family(shell_path: &str) -> String {
     } else {
         "posix".to_string()
     }
+}
+
+/// 判断当前是否为「Windows 宿主 + WSL shell」组合。
+///
+/// 该组合下工作目录只能通过 `--cd` 参数传给 wsl.exe（见 `build_shell_args`），
+/// 不能设置为 Windows 宿主子进程的 `current_dir`：Linux 路径（/home/...）或
+/// WSL UNC 路径无法作为 Windows 进程的 cwd，Windows 会在启动 wsl.exe 之前
+/// 校验目录并返回 ERROR_DIRECTORY（os error 267），命令根本没有进入 WSL。
+/// 与集成终端 ptyManager.ts 对 WSL 的处理保持一致（cwd 仅通过 --cd 传递，
+/// spawnCwd = undefined）。
+pub(crate) fn is_windows_wsl_shell(shell_family: &str) -> bool {
+    cfg!(target_os = "windows") && shell_family == "wsl"
 }
 
 pub(crate) fn build_shell_args(

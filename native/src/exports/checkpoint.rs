@@ -71,6 +71,11 @@ pub async fn create_checkpoint(work_dir: String) -> napi::Result<String> {
 /// workspaces are restored through the remote SFTP channel.
 #[napi]
 pub async fn restore_checkpoint(checkpoint_id: String, work_dir: String) -> napi::Result<()> {
+    // 与 checkpoint 捕获使用同一把执行级目录锁：等待同项目所有并行文件工具
+    // 的 after 阶段结束，并阻止新工具在恢复过程中写入。
+    let operation_lock =
+        crate::storage::services::checkpoint::checkpoint_operation_lock(&work_dir)?;
+    let _operation_guard = operation_lock.write_owned().await;
     if is_ssh_path(&work_dir) {
         let callback = checkpoint_remote_callback()?;
         let client = RemoteCheckpointClient::new(&callback);
@@ -100,6 +105,11 @@ pub async fn list_checkpoint_changes(
     checkpoint_id: String,
     work_dir: String,
 ) -> napi::Result<Vec<CheckpointFileChange>> {
+    // 预览必须建立在一个稳定的工具执行边界上：独占锁会等待当前所有并行
+    // 文件工具完成，避免读取到 before 已记录、after 尚未提交的中间状态。
+    let operation_lock =
+        crate::storage::services::checkpoint::checkpoint_operation_lock(&work_dir)?;
+    let _operation_guard = operation_lock.write_owned().await;
     if is_ssh_path(&work_dir) {
         let callback = checkpoint_remote_callback()?;
         let client = RemoteCheckpointClient::new(&callback);
@@ -127,6 +137,9 @@ pub async fn list_checkpoint_diffs(
     include_all: Option<bool>,
 ) -> napi::Result<Vec<CheckpointFileDiff>> {
     let include_all = include_all.unwrap_or(false);
+    let operation_lock =
+        crate::storage::services::checkpoint::checkpoint_operation_lock(&work_dir)?;
+    let _operation_guard = operation_lock.write_owned().await;
     if is_ssh_path(&work_dir) {
         let callback = checkpoint_remote_callback()?;
         let client = RemoteCheckpointClient::new(&callback);

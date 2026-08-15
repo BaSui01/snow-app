@@ -23,6 +23,20 @@ enum ToolCheckpointCapture {
     Worktree(Option<CheckpointWorktreeCapture>),
 }
 
+/// 持有完整 before → 工具执行 → after 周期的异步锁。单文件工具共享目录
+/// 读锁并按文件串行；整树工具独占目录锁。字段只用于 RAII，离开调用作用域
+/// 时自动释放。
+enum ToolCheckpointOperationGuard {
+    None,
+    File {
+        _work_dir_guard: tokio::sync::OwnedRwLockReadGuard<()>,
+        _file_guard: tokio::sync::OwnedMutexGuard<()>,
+    },
+    Worktree {
+        _work_dir_guard: tokio::sync::OwnedRwLockWriteGuard<()>,
+    },
+}
+
 use super::builtin::{get_builtin_servers_with_tools, get_builtin_tools};
 use super::servers::remote_workspace::{
     is_ssh_path, is_windows_absolute_path, RemoteWorkspaceCallback, resolve_remote_project_workspace,
@@ -683,6 +697,89 @@ fn parse_tool_args(tool_full_name: &str, args_json: &str) -> napi::Result<Value>
     })
 }
 
+#[derive(Clone, Copy)]
+enum ToolCheckpointScope {
+    None,
+    File,
+    Worktree,
+    Unknown,
+}
+
+fn tool_checkpoint_scope(tool_full_name: &str) -> ToolCheckpointScope {
+    match tool_full_name {
+        "filesystem-replace_edit" | "filesystem-create" => ToolCheckpointScope::File,
+        "bash-terminal-execute" => ToolCheckpointScope::Worktree,
+        _ => {
+            // 内置 server 其余工具不修改工作区；外部 MCP 影响范围未知。
+            let builtin = split_tool_full_name(tool_full_name)
+                .is_some_and(|(server_id, _)| BUILTIN_SERVER_IDS.contains(&server_id));
+            if builtin {
+                ToolCheckpointScope::None
+            } else {
+                ToolCheckpointScope::Unknown
+            }
+        }
+    }
+}
+
+async fn acquire_tool_checkpoint_operation_guard(
+    scope: ToolCheckpointScope,
+    args: &Value,
+    checkpoint_work_dir: Option<&str>,
+) -> napi::Result<ToolCheckpointOperationGuard> {
+    let Some(work_dir) = checkpoint_work_dir else {
+        return Ok(ToolCheckpointOperationGuard::None);
+    };
+
+    match scope {
+        ToolCheckpointScope::File => {
+            let file_path = args
+                .get("filePath")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    Error::new(
+                        Status::InvalidArg,
+                        "filePath is required for checkpoint operation locking".to_string(),
+                    )
+                })?;
+            // 先等同文件锁，再进入目录共享锁：等待同文件的调用不会长期占住
+            // 目录读锁，bash/回滚可在两次文件编辑之间公平取得独占锁。
+            let file_lock =
+                crate::storage::services::checkpoint::checkpoint_file_operation_lock(
+                    work_dir, file_path,
+                )?;
+            let file_guard = file_lock.lock_owned().await;
+            let work_dir_lock =
+                crate::storage::services::checkpoint::checkpoint_operation_lock(work_dir)?;
+            let work_dir_guard = work_dir_lock.read_owned().await;
+            Ok(ToolCheckpointOperationGuard::File {
+                _work_dir_guard: work_dir_guard,
+                _file_guard: file_guard,
+            })
+        }
+        ToolCheckpointScope::Worktree | ToolCheckpointScope::Unknown => {
+            // 外部 MCP 的影响范围未知：虽然无法生成可靠 checkpoint，仍按整树
+            // 写操作隔离，避免它与可捕获工具并行时污染后者的 before/after。
+            let work_dir_lock =
+                crate::storage::services::checkpoint::checkpoint_operation_lock(work_dir)?;
+            let work_dir_guard = work_dir_lock.write_owned().await;
+            Ok(ToolCheckpointOperationGuard::Worktree {
+                _work_dir_guard: work_dir_guard,
+            })
+        }
+        ToolCheckpointScope::None => Ok(ToolCheckpointOperationGuard::None),
+    }
+}
+
+fn require_checkpoint_work_dir(checkpoint_work_dir: Option<String>) -> napi::Result<String> {
+    checkpoint_work_dir.ok_or_else(|| {
+        Error::new(
+            Status::InvalidArg,
+            "Checkpoint working directory is required".to_string(),
+        )
+    })
+}
+
 fn capture_checkpoint_before_tool(
     tool_full_name: &str,
     args: &Value,
@@ -692,15 +789,13 @@ fn capture_checkpoint_before_tool(
     if checkpoint_ids.is_empty() {
         return Ok(ToolCheckpointCapture::None);
     }
-    let work_dir = checkpoint_work_dir.ok_or_else(|| {
-        Error::new(
-            Status::InvalidArg,
-            "Checkpoint working directory is required".to_string(),
-        )
-    })?;
-
-    match tool_full_name {
-        "filesystem-replace_edit" | "filesystem-create" => {
+    // 先定范围再校验 work_dir，Skill / 外部 MCP 不被前置阶段阻断。
+    match tool_checkpoint_scope(tool_full_name) {
+        ToolCheckpointScope::None | ToolCheckpointScope::Unknown => {
+            Ok(ToolCheckpointCapture::None)
+        }
+        ToolCheckpointScope::File => {
+            let work_dir = require_checkpoint_work_dir(checkpoint_work_dir)?;
             let file_path = args
                 .get("filePath")
                 .and_then(Value::as_str)
@@ -722,13 +817,36 @@ fn capture_checkpoint_before_tool(
                 file_path,
             })
         }
-        "bash-terminal-execute" => Ok(ToolCheckpointCapture::Worktree(
-            crate::storage::services::checkpoint::capture_checkpoint_worktree_before(
+        ToolCheckpointScope::Worktree => {
+            // 软失败：快照失败降级为无回滚保护，不阻断命令。
+            let locale = crate::i18n::app_locale_blocking();
+            let Some(work_dir) = checkpoint_work_dir else {
+                eprintln!(
+                    "{}",
+                    crate::i18n::fill(
+                        locale.checkpoint_text(crate::i18n::CheckpointText::MissingWorkDir),
+                        &[],
+                    )
+                );
+                return Ok(ToolCheckpointCapture::Worktree(None));
+            };
+            match crate::storage::services::checkpoint::capture_checkpoint_worktree_before(
                 checkpoint_ids,
                 work_dir,
-            )?,
-        )),
-        _ => Ok(ToolCheckpointCapture::None),
+            ) {
+                Ok(capture) => Ok(ToolCheckpointCapture::Worktree(capture)),
+                Err(error) => {
+                    eprintln!(
+                        "{}",
+                        crate::i18n::fill(
+                            locale.checkpoint_text(crate::i18n::CheckpointText::BeforeFailed),
+                            &[&error],
+                        )
+                    );
+                    Ok(ToolCheckpointCapture::Worktree(None))
+                }
+            }
+        }
     }
 }
 
@@ -749,15 +867,14 @@ async fn capture_checkpoint_before_tool_remote(
     if checkpoint_ids.is_empty() {
         return Ok(ToolCheckpointCapture::None);
     }
-    let work_dir = checkpoint_work_dir.ok_or_else(|| {
-        Error::new(
-            Status::InvalidArg,
-            "Checkpoint working directory is required".to_string(),
-        )
-    })?;
-    let client = RemoteCheckpointClient::new(on_remote_workspace_command);
-    match tool_full_name {
-        "filesystem-replace_edit" | "filesystem-create" => {
+    // 先定范围再校验 work_dir（与本地版本一致），Skill / 外部 MCP 不阻断。
+    match tool_checkpoint_scope(tool_full_name) {
+        ToolCheckpointScope::None | ToolCheckpointScope::Unknown => {
+            Ok(ToolCheckpointCapture::None)
+        }
+        ToolCheckpointScope::File => {
+            // 单文件回滚语义保持不变：记录失败按工具错误上抛。
+            let work_dir = require_checkpoint_work_dir(checkpoint_work_dir)?;
             let file_path = args
                 .get("filePath")
                 .and_then(Value::as_str)
@@ -768,6 +885,7 @@ async fn capture_checkpoint_before_tool_remote(
                     )
                 })?
                 .to_string();
+            let client = RemoteCheckpointClient::new(on_remote_workspace_command);
             crate::storage::services::checkpoint::remote::record_checkpoint_file_remote(
                 &client,
                 checkpoint_ids.clone(),
@@ -781,21 +899,52 @@ async fn capture_checkpoint_before_tool_remote(
                 file_path,
             })
         }
-        "bash-terminal-execute" => {
-            // SFTP 逐目录遍历可能很慢：先给阶段提示，再以命令 timeout
-            // 为上限软超时——超时跳过快照（放弃回滚保护），避免看起来卡死。
-            let timeout_ms = args
-                .get("timeout")
-                .and_then(Value::as_u64)
-                .unwrap_or(REMOTE_CHECKPOINT_TIMEOUT_MS);
+        ToolCheckpointScope::Worktree => {
+            // 跨项目时命令作用范围在会话项目之外，扫描会话项目无意义，
+            // 降级并明确提示，不套用当前项目的 checkpoint。
+            let locale = crate::i18n::app_locale().await;
+            if let Some(work_dir) = checkpoint_work_dir.as_deref() {
+                if let Some(reason) = remote_bash_checkpoint_skip_reason(args, work_dir) {
+                    let reason_text = locale.checkpoint_skip_reason(&reason);
+                    emit_stream_chunk(
+                        on_chunk,
+                        "stdout",
+                        crate::i18n::fill(
+                            locale
+                                .checkpoint_text(crate::i18n::CheckpointText::SkipOutsideWorkspace),
+                            &[&reason_text],
+                        ),
+                    );
+                    return Ok(ToolCheckpointCapture::Worktree(None));
+                }
+            }
+            let Some(work_dir) = checkpoint_work_dir else {
+                emit_stream_chunk(
+                    on_chunk,
+                    "stdout",
+                    crate::i18n::fill(
+                        locale.checkpoint_text(crate::i18n::CheckpointText::MissingWorkDir),
+                        &[],
+                    ),
+                );
+                return Ok(ToolCheckpointCapture::Worktree(None));
+            };
+            // SFTP 遍历可能很慢：使用独立超时上限（不与命令 timeout 挂钩），
+            // 超时/失败软失败降级，并通知 Electron 中止仍在进行的扫描。
+            let scan_id = uuid::Uuid::new_v4().to_string();
+            let client =
+                RemoteCheckpointClient::with_scan_id(on_remote_workspace_command, scan_id);
             let started = Instant::now();
             emit_stream_chunk(
                 on_chunk,
                 "stdout",
-                "[checkpoint] 正在创建远程执行前快照...".to_string(),
+                crate::i18n::fill(
+                    locale.checkpoint_text(crate::i18n::CheckpointText::ScanStarted),
+                    &[],
+                ),
             );
             let captured = tokio::time::timeout(
-                Duration::from_millis(timeout_ms),
+                Duration::from_millis(REMOTE_CHECKPOINT_TIMEOUT_MS),
                 crate::storage::services::checkpoint::remote::capture_checkpoint_worktree_before_remote(
                     &client,
                     checkpoint_ids,
@@ -808,27 +957,39 @@ async fn capture_checkpoint_before_tool_remote(
                     emit_stream_chunk(
                         on_chunk,
                         "stdout",
-                        format!(
-                            "[checkpoint] 执行前快照完成（{}ms）",
-                            started.elapsed().as_millis()
+                        crate::i18n::fill(
+                            locale.checkpoint_text(crate::i18n::CheckpointText::ScanCompleted),
+                            &[&started.elapsed().as_millis()],
                         ),
                     );
                     Ok(ToolCheckpointCapture::Worktree(capture))
                 }
-                Ok(Err(error)) => Err(error),
-                Err(_) => {
+                Ok(Err(error)) => {
                     emit_stream_chunk(
                         on_chunk,
                         "stdout",
-                        format!(
-                            "[checkpoint] 远程扫描超时（{timeout_ms}ms），已跳过执行前快照，本次调用无回滚保护"
+                        crate::i18n::fill(
+                            locale.checkpoint_text(crate::i18n::CheckpointText::BeforeFailed),
+                            &[&error],
+                        ),
+                    );
+                    Ok(ToolCheckpointCapture::Worktree(None))
+                }
+                Err(_) => {
+                    // 超时后真正取消 Electron/SFTP 侧仍在运行的扫描。
+                    client.abort_scan().await;
+                    emit_stream_chunk(
+                        on_chunk,
+                        "stdout",
+                        crate::i18n::fill(
+                            locale.checkpoint_text(crate::i18n::CheckpointText::BeforeTimeout),
+                            &[&REMOTE_CHECKPOINT_TIMEOUT_MS],
                         ),
                     );
                     Ok(ToolCheckpointCapture::Worktree(None))
                 }
             }
         }
-        _ => Ok(ToolCheckpointCapture::None),
     }
 }
 
@@ -839,13 +1000,23 @@ async fn capture_checkpoint_after_tool_remote(
     on_remote_workspace_command: &RemoteWorkspaceCallback,
     on_chunk: Option<&BashStreamCallback>,
 ) -> napi::Result<()> {
-    let client = RemoteCheckpointClient::new(on_remote_workspace_command);
+    // 流式提示按界面语言本地化（bash 分支 on_chunk 被占用时走日志）。
+    let locale = crate::i18n::app_locale().await;
+    let warn = |message: String| {
+        if let Some(chunk) = on_chunk {
+            emit_stream_chunk(chunk, "stdout", message);
+        } else {
+            eprintln!("{message}");
+        }
+    };
     match capture {
         ToolCheckpointCapture::File {
             checkpoint_ids,
             work_dir,
             file_path,
         } => {
+            // 单文件回滚语义保持不变：记录失败仍按工具错误上抛。
+            let client = RemoteCheckpointClient::new(on_remote_workspace_command);
             crate::storage::services::checkpoint::remote::record_checkpoint_file_after_remote(
                 &client,
                 checkpoint_ids,
@@ -855,15 +1026,17 @@ async fn capture_checkpoint_after_tool_remote(
             .await
         }
         ToolCheckpointCapture::Worktree(Some(capture)) => {
-            // 命令已成功执行，这里超时只意味着变更记录不完整（回滚保护
-            // 可能不完整），不能让工具调用再次长时间无响应。
+            // 命令已结束：after 失败只意味着变更记录不完整，软失败降级，
+            // 不能把已成功的命令结果覆盖为失败（避免模型重试）。
+            let scan_id = uuid::Uuid::new_v4().to_string();
+            let client =
+                RemoteCheckpointClient::with_scan_id(on_remote_workspace_command, scan_id);
             let started = Instant::now();
-            if let Some(chunk) = on_chunk {
-                emit_stream_chunk(
-                    chunk,
-                    "stdout",
-                    "[checkpoint] 正在比较执行后变更...".to_string(),
-                );
+            if on_chunk.is_some() {
+                warn(crate::i18n::fill(
+                    locale.checkpoint_text(crate::i18n::CheckpointText::AfterStarted),
+                    &[],
+                ));
             }
             let recorded = tokio::time::timeout(
                 Duration::from_millis(REMOTE_CHECKPOINT_TIMEOUT_MS),
@@ -874,30 +1047,26 @@ async fn capture_checkpoint_after_tool_remote(
             .await;
             match recorded {
                 Ok(Ok(())) => {
-                    if let Some(chunk) = on_chunk {
-                        emit_stream_chunk(
-                            chunk,
-                            "stdout",
-                            format!(
-                                "[checkpoint] 执行后变更已记录（{}ms）",
-                                started.elapsed().as_millis()
-                            ),
-                        );
-                    }
+                    warn(crate::i18n::fill(
+                        locale.checkpoint_text(crate::i18n::CheckpointText::AfterCompleted),
+                        &[&started.elapsed().as_millis()],
+                    ));
                     Ok(())
                 }
-                Ok(Err(error)) => Err(error),
+                Ok(Err(error)) => {
+                    warn(crate::i18n::fill(
+                        locale.checkpoint_text(crate::i18n::CheckpointText::AfterFailed),
+                        &[&error],
+                    ));
+                    Ok(())
+                }
                 Err(_) => {
-                    if let Some(chunk) = on_chunk {
-                        emit_stream_chunk(
-                            chunk,
-                            "stdout",
-                            format!(
-                                "[checkpoint] 远程扫描超时（{}ms），执行后快照未完成，回滚保护可能不完整",
-                                REMOTE_CHECKPOINT_TIMEOUT_MS
-                            ),
-                        );
-                    }
+                    // 超时后真正取消 Electron/SFTP 侧仍在运行的扫描。
+                    client.abort_scan().await;
+                    warn(crate::i18n::fill(
+                        locale.checkpoint_text(crate::i18n::CheckpointText::AfterTimeout),
+                        &[&REMOTE_CHECKPOINT_TIMEOUT_MS],
+                    ));
                     Ok(())
                 }
             }
@@ -918,18 +1087,31 @@ fn capture_checkpoint_after_tool(capture: ToolCheckpointCapture) -> napi::Result
             file_path,
         ),
         ToolCheckpointCapture::Worktree(Some(capture)) => {
-            crate::storage::services::checkpoint::record_checkpoint_worktree_after(capture)
+            // 软失败：after 记录失败只意味着回滚保护可能不完整，不能把
+            // 已经成功的工具结果覆盖为失败（避免模型重试已执行的命令）。
+            match crate::storage::services::checkpoint::record_checkpoint_worktree_after(capture)
+            {
+                Ok(()) => Ok(()),
+                Err(error) => {
+                    eprintln!(
+                        "{}",
+                        crate::i18n::fill(
+                            crate::i18n::app_locale_blocking()
+                                .checkpoint_text(crate::i18n::CheckpointText::AfterFailed),
+                            &[&error],
+                        )
+                    );
+                    Ok(())
+                }
+            }
         }
         ToolCheckpointCapture::None | ToolCheckpointCapture::Worktree(None) => Ok(()),
     }
 }
 
-/// 判断 bash 命令是否只读（不会修改工作区文件）。
-/// 返回 `true` 表示可安全跳过 checkpoint 工作区快照。
-///
-/// 保守策略：只有明确命中的只读模式才返回 `true`；包含文件重定向、
-/// 命令链/控制流/命令替换、写操作命令或任何不确定情况一律返回
-/// `false`（保留快照，保证回滚安全）。
+/// 判断 bash 命令是否只读（可安全跳过 checkpoint 工作区快照）。
+/// 保守策略：只有明确命中的只读模式才返回 true；命令链逐语句判定
+/// （`cd /b && sed -n '1,200p' f` 读取项目外文件不需要当前项目保护）。
 fn is_readonly_bash_command(command: &str) -> bool {
     let trimmed = command.trim();
     if trimmed.is_empty() || trimmed.starts_with('#') {
@@ -949,23 +1131,48 @@ fn is_readonly_bash_command(command: &str) -> bool {
         return is_readonly_bash_command(rest);
     }
 
-    // 命令链 / 控制流 / 命令替换 / 子 shell / 输入重定向无法静态判定读写性：
-    // `cd x && rm -rf y`、`echo hi | tee f`、`echo "$(rm -rf x)"`、
-    // `for ...; do ...; done`、`{ rm x; }` 等一律保留 checkpoint。
-    if trimmed.contains([';', '&', '|', '`', '<', '(', '{', '\n']) {
+    // 命令链：按语句分隔符拆分后逐条判定；无法可靠拆分时保守保留快照。
+    if trimmed.contains([';', '&', '\n']) || trimmed.contains("||") {
+        let Some(statements) = split_shell_statements(trimmed) else {
+            return false;
+        };
+        return statements
+            .iter()
+            .all(|statement| is_readonly_single_statement(statement));
+    }
+
+    is_readonly_single_statement(trimmed)
+}
+
+/// 单条语句（不含语句分隔符）的只读判定。
+fn is_readonly_single_statement(statement: &str) -> bool {
+    let trimmed = statement.trim();
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return true;
+    }
+    if has_file_redirect(trimmed) {
         return false;
     }
 
-    // curl -o/-O/--output、wget --output-file 等会把响应写入文件：
-    // 命中白名单后对剩余参数做写标志兜底（误伤仅损失优化，方向安全）。
+    // 管道 / 命令替换 / 子 shell / 输入重定向无法静态判定读写性，保守保留。
+    if trimmed.contains(['|', '`', '<', '(', '{', ';', '&', '\n']) {
+        return false;
+    }
+
+    // curl -o/-O/--output、wget --output-file 等会把响应写入文件。
     if trimmed.contains(" -o") || trimmed.contains(" -O") || trimmed.contains("--output") {
         return false;
     }
 
-    // 只读命令模式白名单。注意：sed/awk 未列入（sed -i / awk 重定向会写文件），
-    // node/python/curl/wget/git 写类子命令未列入；time/for/while/if/source 等
-    // 控制流/包裹关键字未列入（可包裹任意命令，无法静态判定），均保守保留
-    // checkpoint。
+    // sed 的严格纯打印形式（如 `sed -n '1,200p' file`）只输出不写文件。
+    if is_readonly_sed_print(trimmed) {
+        return true;
+    }
+
+    // 只读命令模式白名单。注意：sed/awk 未列入（sed -i / awk 重定向会写
+    // 文件，仅上面的纯打印形式例外），node/python/curl/wget/git 写类子命令
+    // 未列入；time/for/while/if/source 等控制流/包裹关键字未列入（可包裹
+    // 任意命令，无法静态判定），均保守保留 checkpoint。
     const READONLY_PATTERNS: &[&str] = &[
         // 纯读命令（可带参数）
         "echo", "ls", "pwd", "grep", "rg", "cat", "head", "tail", "wc",
@@ -990,6 +1197,373 @@ fn is_readonly_bash_command(command: &str) -> bool {
                 && trimmed.starts_with(p)
                 && trimmed.as_bytes()[p.len()].is_ascii_whitespace())
     })
+}
+
+/// 按 shell 词法拆分语句为 token（去引号、处理反斜杠转义）；引号不闭合
+/// 返回 None，调用方保守处理。
+fn tokenize_shell_tokens(statement: &str) -> Option<Vec<String>> {
+    let mut tokens: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut has_current = false;
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut chars = statement.chars().peekable();
+    while let Some(c) = chars.next() {
+        if in_single {
+            if c == '\'' {
+                in_single = false;
+            } else {
+                current.push(c);
+            }
+            continue;
+        }
+        if in_double {
+            match c {
+                '\\' => {
+                    // 双引号内仅 \" \\ \$ \` 保留转义语义，其余情况反斜杠
+                    // 按字面保留（此处只需 token 文本，不做展开）。
+                    match chars.peek() {
+                        Some(&next @ ('"' | '\\' | '$' | '`')) => {
+                            chars.next();
+                            current.push(next);
+                        }
+                        _ => current.push('\\'),
+                    }
+                }
+                '"' => in_double = false,
+                _ => current.push(c),
+            }
+            continue;
+        }
+        match c {
+            c if c.is_whitespace() => {
+                if has_current {
+                    tokens.push(std::mem::take(&mut current));
+                    has_current = false;
+                }
+            }
+            '\'' => {
+                in_single = true;
+                has_current = true;
+            }
+            '"' => {
+                in_double = true;
+                has_current = true;
+            }
+            '\\' => {
+                if let Some(next) = chars.next() {
+                    current.push(next);
+                    has_current = true;
+                }
+            }
+            _ => {
+                current.push(c);
+                has_current = true;
+            }
+        }
+    }
+    if in_single || in_double {
+        return None;
+    }
+    if has_current {
+        tokens.push(current);
+    }
+    Some(tokens)
+}
+
+/// 按语句分隔符（`;`、`&`、`&&`、`||`、换行）拆分 shell 命令，忽略引号内
+/// 分隔符；管道 `|` 不拆分（属语句内部结构）。引号不闭合返回 None。
+fn split_shell_statements(command: &str) -> Option<Vec<&str>> {
+    let bytes = command.as_bytes();
+    let mut statements: Vec<&str> = Vec::new();
+    let mut start = 0usize;
+    let mut i = 0usize;
+    let mut in_single = false;
+    let mut in_double = false;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if in_single {
+            if c == b'\'' {
+                in_single = false;
+            }
+            i += 1;
+            continue;
+        }
+        if in_double {
+            match c {
+                b'\\' => i += 1, // 跳过被转义的字符
+                b'"' => in_double = false,
+                _ => {}
+            }
+            i += 1;
+            continue;
+        }
+        match c {
+            b'\'' => in_single = true,
+            b'"' => in_double = true,
+            b'\\' => i += 1, // 跳过被转义的字符（含转义的换行/分号）
+            b';' | b'\n' => {
+                statements.push(&command[start..i]);
+                start = i + 1;
+            }
+            b'&' => {
+                let sep_len = if bytes.get(i + 1) == Some(&b'&') { 2 } else { 1 };
+                statements.push(&command[start..i]);
+                start = i + sep_len;
+                i += sep_len - 1;
+            }
+            b'|' if bytes.get(i + 1) == Some(&b'|') => {
+                statements.push(&command[start..i]);
+                start = i + 2;
+                i += 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    if in_single || in_double {
+        return None;
+    }
+    statements.push(&command[start..]);
+    Some(statements)
+}
+
+/// 严格识别 sed 的纯打印形式（如 `sed -n '1,200p' file`）：脚本仅允许
+/// 数字/$ 行地址 + `p` 命令，禁止 -i（原地写）与 -f（脚本文件），其余
+/// 形式（正则地址、w/e 命令等）保守保留 checkpoint。
+fn is_readonly_sed_print(statement: &str) -> bool {
+    let Some(tokens) = tokenize_shell_tokens(statement) else {
+        return false;
+    };
+    let mut iter = tokens.iter().map(String::as_str);
+    if iter.next() != Some("sed") {
+        return false;
+    }
+    let mut scripts: Vec<&str> = Vec::new();
+    let mut expect_script = false;
+    for token in iter {
+        if expect_script {
+            scripts.push(token);
+            expect_script = false;
+            continue;
+        }
+        if let Some(long_flag) = token.strip_prefix("--") {
+            // 仅放行与写行为无关的长选项；--in-place / --file 等一律保守。
+            if long_flag == "silent" || long_flag == "quiet" || long_flag == "posix" {
+                continue;
+            }
+            return false;
+        }
+        if let Some(flags) = token.strip_prefix('-') {
+            if flags.is_empty() {
+                return false;
+            }
+            // -i 原地写、-f 从文件读脚本（内容无法静态校验）→ 保守。
+            if flags.contains('i') || flags.contains('f') {
+                return false;
+            }
+            if flags.contains('e') {
+                expect_script = true;
+            }
+            continue;
+        }
+        if scripts.is_empty() {
+            // 无 -e 时第一个非选项参数即脚本，其余为输入文件（只读）。
+            scripts.push(token);
+        }
+    }
+    !scripts.is_empty()
+        && scripts.iter().all(|script| {
+            script
+                .split(';')
+                .all(|expression| is_line_address_print(expression))
+        })
+}
+
+/// 行地址区间 + `p` 打印表达式：`p`、`1p`、`1,200p`、`1,$p` 等。
+fn is_line_address_print(expression: &str) -> bool {
+    let Some(address) = expression.trim().strip_suffix('p') else {
+        return false;
+    };
+    let address = address.trim();
+    if address.is_empty() {
+        return true;
+    }
+    address.split(',').all(|part| {
+        let part = part.trim();
+        part == "$" || (!part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
+    })
+}
+
+/// 判断远程 bash 命令是否应跳过当前会话项目的 checkpoint 扫描。
+/// Some(原因) = 命令作用范围在会话项目之外（扫描会话项目无意义，
+/// 不能把当前项目的 checkpoint 当作有效保护）；None = 保守保留扫描。
+fn remote_bash_checkpoint_skip_reason(
+    args: &Value,
+    work_dir: &str,
+) -> Option<crate::i18n::CheckpointSkipReason> {
+    let Some((workspace_authority, workspace_segments)) = plan_write::normalize_ssh_path(work_dir)
+    else {
+        return None; // 工作区无法解析时保守保留扫描
+    };
+
+    // 1. workingDirectory（已解析为 ssh:// URI）不在会话项目工作区内。
+    let mut cwd_segments = workspace_segments.clone();
+    if let Some(working_directory) = args
+        .get("workingDirectory")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if !is_ssh_path(working_directory) {
+            return Some(crate::i18n::CheckpointSkipReason::NotSshWorkingDir {
+                dir: working_directory.to_string(),
+            });
+        }
+        let Some((authority, segments)) = plan_write::normalize_ssh_path(working_directory)
+        else {
+            return None; // 无法解析时保守保留扫描
+        };
+        if authority != workspace_authority
+            || !plan_write::remote_segments_start_with(&segments, &workspace_segments)
+        {
+            return Some(crate::i18n::CheckpointSkipReason::WorkingDirOutside {
+                dir: working_directory.to_string(),
+            });
+        }
+        cwd_segments = segments;
+    }
+
+    // 2. 命令体：仅当能静态确认所有可能的写入都在工作区之外时跳过扫描。
+    let command = args.get("command").and_then(Value::as_str)?;
+    command_targets_outside_workspace(command, &cwd_segments, &workspace_segments)
+        .then_some(crate::i18n::CheckpointSkipReason::WritesOutside)
+}
+
+/// 沿命令链追踪实际执行目录（cd 语句）与路径证据，判断是否所有可能的
+/// 写入都在项目工作区之外；任何不确定情况返回 false（保守保留扫描）。
+fn command_targets_outside_workspace(
+    command: &str,
+    initial_cwd: &[String],
+    workspace_segments: &[String],
+) -> bool {
+    let Some(statements) = split_shell_statements(command) else {
+        return false;
+    };
+    let mut cwd: Option<Vec<String>> = Some(initial_cwd.to_vec());
+    let mut writes_inside_or_uncertain = false;
+    let mut writes_outside = false;
+    for raw_statement in statements {
+        let statement = raw_statement.trim();
+        if statement.is_empty() || statement.starts_with('#') {
+            continue;
+        }
+        // cd 语句：更新 cwd；目标无法静态确定时记为不确定。
+        if let Some(target) = pure_cd_target(statement) {
+            cwd = match (cwd.take(), target) {
+                (_, None) | (None, _) => None,
+                (Some(base), Some(target)) => Some(resolve_cd_target(&base, &target)),
+            };
+            continue;
+        }
+        if is_shell_state_statement(statement) {
+            continue;
+        }
+        if is_readonly_single_statement(statement) {
+            continue;
+        }
+
+        // 可能写入的语句：按 cwd 位置与绝对路径证据判断写入位置。
+        let cwd_inside_or_uncertain = match &cwd {
+            None => true,
+            Some(segments) => {
+                plan_write::remote_segments_start_with(segments, workspace_segments)
+            }
+        };
+        let Some(tokens) = tokenize_shell_tokens(statement) else {
+            return false; // 无法解析 → 保守保留扫描
+        };
+        let mut absolute_inside = false;
+        let mut absolute_outside = false;
+        for token in &tokens {
+            if token.starts_with('/') {
+                let segments = resolve_cd_target(&[], token);
+                if plan_write::remote_segments_start_with(&segments, workspace_segments) {
+                    absolute_inside = true;
+                } else {
+                    absolute_outside = true;
+                }
+            }
+        }
+        if cwd_inside_or_uncertain || absolute_inside {
+            writes_inside_or_uncertain = true;
+        }
+        if !cwd_inside_or_uncertain || absolute_outside {
+            writes_outside = true;
+        }
+    }
+    writes_outside && !writes_inside_or_uncertain
+}
+
+/// 识别纯 `cd` 语句的目标：外层 None = 非纯 cd；Some(None) = 目标无法
+/// 静态确定；Some(Some(target)) = 字面目标路径。
+fn pure_cd_target(statement: &str) -> Option<Option<String>> {
+    let tokens = tokenize_shell_tokens(statement)?;
+    let mut iter = tokens.iter().map(String::as_str);
+    if iter.next() != Some("cd") {
+        return None;
+    }
+    let mut target: Option<String> = None;
+    for token in iter {
+        if let Some(stripped) = token.strip_prefix('-') {
+            // cd -P / -L 等选项；`cd -`（上一目录）同样无法静态确定。
+            if stripped.is_empty() {
+                return Some(None);
+            }
+            continue;
+        }
+        if target.is_some() {
+            return None; // 多个位置参数 → 非纯 cd，按普通语句保守处理
+        }
+        target = Some(token.to_string());
+    }
+    Some(target.and_then(|value| {
+        if value.contains(['~', '$', '`']) {
+            None // 依赖运行时展开，无法静态确定
+        } else {
+            Some(value)
+        }
+    }))
+}
+
+/// 解析 cd 目标为目录段序列（词法归一化 `.` / `..`，不做 IO）。
+fn resolve_cd_target(base: &[String], target: &str) -> Vec<String> {
+    let mut segments = if target.starts_with('/') {
+        Vec::new()
+    } else {
+        base.to_vec()
+    };
+    for segment in target.split('/') {
+        match segment {
+            "" | "." => {}
+            ".." => {
+                segments.pop();
+            }
+            value => segments.push(value.to_string()),
+        }
+    }
+    segments
+}
+
+/// 判断语句是否为纯 shell 状态语句（set/export/unset 等，不写工作区）。
+fn is_shell_state_statement(statement: &str) -> bool {
+    let Some(tokens) = tokenize_shell_tokens(statement) else {
+        return false;
+    };
+    matches!(
+        tokens.first().map(String::as_str),
+        Some("set" | "export" | "unset" | "readonly" | "shopt" | ":")
+    )
 }
 
 /// 剥离 `set` 开头的 Shell 状态语句前缀（如 `set -euo pipefail; cmd`、

@@ -338,6 +338,10 @@ export type RollbackTodoItem = {
 export type RollbackMode = "conversation-only" | "conversation-and-files";
 
 export type RollbackPreview = {
+  /** 单调递增的回滚请求号，用于丢弃跨会话切换后迟到的异步预览。 */
+  requestId: number;
+  /** 发起回滚时的会话键；确认阶段禁止重新读取当前活动会话。 */
+  sessionKey: string;
   messageId: string;
   messageContent: string;
   changes: CheckpointFileChange[];

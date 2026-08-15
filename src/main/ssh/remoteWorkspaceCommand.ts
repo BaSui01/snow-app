@@ -22,6 +22,11 @@ import {
   type SshFileWriteResult,
 } from "./sshManager";
 import { getDecryptedSecret, getSshCredential } from "./sshCredentials";
+import {
+  abortCheckpointScan,
+  registerCheckpointScanAbort,
+  unregisterCheckpointScanAbort,
+} from "./sshCommandRegistry";
 
 const REMOTE_SEARCH_MAX_DEPTH = 15;
 const REMOTE_SEARCH_MAX_RESULTS = 200;
@@ -64,6 +69,7 @@ type RemoteWorkspaceCommandArgs = {
   workspaceRoot?: unknown;
   contentBase64?: unknown;
   paths?: unknown;
+  scanId?: unknown;
 };
 
 type RemoteWorkspaceSearchMatch = {
@@ -1306,11 +1312,66 @@ const executeCheckpointRemoveDir = async (
   );
 };
 
+// 中止一轮 checkpoint 扫描：Rust 侧 checkpoint 预算超时后发起本操作，
+// 通过 scanId 找到仍在进行的 SFTP/exec 遍历并真正终止它（仅靠 Rust 侧
+// 丢弃 future 无法停掉 Electron 侧仍在运行的扫描）。
+const executeCheckpointAbortScan = (
+  args: RemoteWorkspaceCommandArgs
+): Record<string, unknown> => {
+  const scanId =
+    typeof args.scanId === "string" && args.scanId.trim()
+      ? args.scanId.trim()
+      : "";
+  if (!scanId) {
+    return { aborted: false };
+  }
+  return { aborted: abortCheckpointScan(scanId) };
+};
+
+const dispatchRemoteWorkspaceOperation = async (
+  operation: string,
+  args: RemoteWorkspaceCommandArgs,
+  signal?: AbortSignal
+): Promise<Record<string, unknown>> => {
+  switch (operation) {
+    case "filesystem-read":
+      return executeFilesystemRead(args, signal);
+    case "filesystem-replace_edit":
+      return executeFilesystemReplaceEdit(args, signal);
+    case "filesystem-create":
+      return executeFilesystemCreate(args, signal);
+    case "grep-search":
+      return executeGrepSearch(args, signal);
+    case "bash-terminal-execute":
+      return executeBashCommand(args, signal);
+    case "checkpoint-stat":
+      return executeCheckpointStat(args, signal);
+    case "checkpoint-stat-paths":
+      return executeCheckpointStatPaths(args, signal);
+    case "checkpoint-list-tree":
+      return executeCheckpointListTree(args, signal);
+    case "checkpoint-read-file-with-stat":
+      return executeCheckpointReadFileWithStat(args, signal);
+    case "checkpoint-read-files":
+      return executeCheckpointReadFiles(args, signal);
+    case "checkpoint-write-file":
+      return executeCheckpointWriteFile(args, signal);
+    case "checkpoint-delete-file":
+      return executeCheckpointDeleteFile(args, signal);
+    case "checkpoint-remove-dir":
+      return executeCheckpointRemoveDir(args, signal);
+    case "checkpoint-abort-scan":
+      return executeCheckpointAbortScan(args);
+    default:
+      throw new Error(`Unsupported remote workspace operation: ${operation}`);
+  }
+};
+
 export const dispatchRemoteWorkspaceCommand = async (
   command: RemoteWorkspaceCommand,
   options?: { signal?: AbortSignal }
 ): Promise<string> => {
-  const signal = options?.signal;
+  const outerSignal = options?.signal;
   let args: RemoteWorkspaceCommandArgs;
   try {
     args = JSON.parse(command.argsJson) as RemoteWorkspaceCommandArgs;
@@ -1318,53 +1379,47 @@ export const dispatchRemoteWorkspaceCommand = async (
     throw new Error("Remote workspace command arguments must be valid JSON");
   }
 
+  // 携带 scanId 的 checkpoint 命令属于同一轮扫描：为其注册独立的
+  // AbortController（与工具调用级 signal 合并），Rust 超时后可通过
+  // checkpoint-abort-scan 真正终止扫描；checkpoint-abort-scan 自身
+  // 的 scanId 是中止目标，不再包裹。
+  const scanId =
+    typeof args.scanId === "string" && args.scanId.trim()
+      ? args.scanId.trim()
+      : undefined;
+  const runOperation = (signal?: AbortSignal) =>
+    runRemoteWorkspaceOperationWithSshErrorHandling(
+      command.operation,
+      args,
+      signal
+    );
+  if (!scanId || command.operation === "checkpoint-abort-scan") {
+    return runOperation(outerSignal);
+  }
+
+  const scanController = new AbortController();
+  const signal = outerSignal
+    ? AbortSignal.any([scanController.signal, outerSignal])
+    : scanController.signal;
+  registerCheckpointScanAbort(scanId, scanController);
   try {
-    let result: Record<string, unknown>;
-    switch (command.operation) {
-      case "filesystem-read":
-        result = await executeFilesystemRead(args, signal);
-        break;
-      case "filesystem-replace_edit":
-        result = await executeFilesystemReplaceEdit(args, signal);
-        break;
-      case "filesystem-create":
-        result = await executeFilesystemCreate(args, signal);
-        break;
-      case "grep-search":
-        result = await executeGrepSearch(args, signal);
-        break;
-      case "bash-terminal-execute":
-        result = await executeBashCommand(args, signal);
-        break;
-      case "checkpoint-stat":
-        result = await executeCheckpointStat(args, signal);
-        break;
-      case "checkpoint-stat-paths":
-        result = await executeCheckpointStatPaths(args, signal);
-        break;
-      case "checkpoint-list-tree":
-        result = await executeCheckpointListTree(args, signal);
-        break;
-      case "checkpoint-read-file-with-stat":
-        result = await executeCheckpointReadFileWithStat(args, signal);
-        break;
-      case "checkpoint-read-files":
-        result = await executeCheckpointReadFiles(args, signal);
-        break;
-      case "checkpoint-write-file":
-        result = await executeCheckpointWriteFile(args, signal);
-        break;
-      case "checkpoint-delete-file":
-        result = await executeCheckpointDeleteFile(args, signal);
-        break;
-      case "checkpoint-remove-dir":
-        result = await executeCheckpointRemoveDir(args, signal);
-        break;
-      default:
-        throw new Error(
-          `Unsupported remote workspace operation: ${command.operation}`
-        );
-    }
+    return await runOperation(signal);
+  } finally {
+    unregisterCheckpointScanAbort(scanId, scanController);
+  }
+};
+
+const runRemoteWorkspaceOperationWithSshErrorHandling = async (
+  operation: string,
+  args: RemoteWorkspaceCommandArgs,
+  signal?: AbortSignal
+): Promise<string> => {
+  try {
+    const result = await dispatchRemoteWorkspaceOperation(
+      operation,
+      args,
+      signal
+    );
     return JSON.stringify(result);
   } catch (error) {
     if (isSshOperationError(error)) {

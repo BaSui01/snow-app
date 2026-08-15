@@ -82,13 +82,39 @@ const READ_BATCH_MAX_BYTES: u64 = 8 * 1024 * 1024;
 /// SSH 工作区 checkpoint 的远程文件访问客户端。每个方法发起一次
 /// checkpoint-* 远程命令并等待 Electron 侧 SFTP 完成。持有 callback
 /// 的借用（napi ThreadsafeFunction 不支持 Clone）。
+///
+/// `scan_id` 标识一轮 checkpoint 扫描（before/after 各一个）：随命令传给
+/// Electron 后，Rust 侧超时/失败时可通过 `abort_scan` 真正终止仍在进行
+/// 的 SFTP 遍历，而不是仅在本端丢弃 future。
 pub struct RemoteCheckpointClient<'a> {
     on_command: &'a RemoteWorkspaceCallback,
+    scan_id: Option<String>,
 }
 
 impl<'a> RemoteCheckpointClient<'a> {
     pub fn new(on_command: &'a RemoteWorkspaceCallback) -> Self {
-        Self { on_command }
+        Self {
+            on_command,
+            scan_id: None,
+        }
+    }
+
+    pub fn with_scan_id(on_command: &'a RemoteWorkspaceCallback, scan_id: String) -> Self {
+        Self {
+            on_command,
+            scan_id: Some(scan_id),
+        }
+    }
+
+    /// 通知 Electron 中止本次扫描仍在进行的远程遍历（尽力而为，失败仅
+    /// 意味着扫描已自行结束）。
+    pub async fn abort_scan(&self) {
+        let Some(scan_id) = self.scan_id.as_deref() else {
+            return;
+        };
+        let _ = self
+            .run("checkpoint-abort-scan", json!({ "scanId": scan_id }))
+            .await;
     }
 
     /// 远程 stat：路径不存在时返回 Ok(None)。
@@ -321,7 +347,15 @@ impl<'a> RemoteCheckpointClient<'a> {
             .unwrap_or(false))
     }
 
-    async fn run(&self, operation: &str, args: Value) -> Result<Value> {
+    async fn run(&self, operation: &str, mut args: Value) -> Result<Value> {
+        // 携带 scanId 的命令会在 Electron 侧注册独立的 AbortController：
+        // Rust 超时后通过 checkpoint-abort-scan 真正终止仍在进行的扫描。
+        // checkpoint-abort-scan 自身不包裹（它的 scanId 是中止目标）。
+        if let Some(scan_id) = self.scan_id.as_deref() {
+            if operation != "checkpoint-abort-scan" {
+                args["scanId"] = Value::String(scan_id.to_string());
+            }
+        }
         let result = execute_remote_workspace_command(self.on_command, operation, &args, None)
             .await
             .map_err(|error| {

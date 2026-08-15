@@ -69,12 +69,25 @@ const SKIP_DIRS: &[&str] = &[
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// 工作目录读写锁表：常规捕获与 diff 查询持有共享读锁，仅回滚持有
-/// 独占写锁。同项目多个会话可并行捕获和展示文件变更，回滚仍与这些操作
-/// 互斥。Weak 让长期不再使用的目录锁可自动回收。
+/// 独占写锁。它保护单次 checkpoint IO；跨工具调用的 before → 执行 → after
+/// 原子边界由 CHECKPOINT_OPERATION_LOCKS 负责。
 /// 使用 tokio 锁：本地同步流程（spawn_blocking 内）走 blocking_*，
 /// 远程 SSH 流程（async）跨 await 持锁，两种 guard 均可跨线程安全传递。
 static CHECKPOINT_WORK_DIR_LOCKS: OnceLock<
     Mutex<HashMap<PathBuf, Weak<AsyncRwLock<()>>>>,
+> = OnceLock::new();
+
+/// 工具执行级工作目录锁：文件工具持有共享读锁，整树工具（bash）与回滚/
+/// 预览持有独占写锁。锁覆盖完整的 before → 工具执行 → after 区间，避免同一
+/// 项目多个会话并行时把另一个会话落盘的内容误记到当前 checkpoint。
+static CHECKPOINT_OPERATION_LOCKS: OnceLock<
+    Mutex<HashMap<String, Weak<AsyncRwLock<()>>>>,
+> = OnceLock::new();
+
+/// 单文件工具执行锁：同一工作目录内不同文件仍可并行；同一路径的编辑严格
+/// 串行，防止两个会话在各自 before/after 之间交叉写入而混淆 original/expected。
+static CHECKPOINT_FILE_OPERATION_LOCKS: OnceLock<
+    Mutex<HashMap<String, Weak<AsyncMutex<()>>>>,
 > = OnceLock::new();
 
 /// manifest 级锁表：每个 checkpoint 独立串行 read-modify-write。
@@ -244,6 +257,61 @@ fn work_dir_lock(work_dir: &Path) -> Result<Arc<AsyncRwLock<()>>> {
     locks.retain(|_, lock| lock.strong_count() > 0);
     let lock = Arc::new(AsyncRwLock::new(()));
     locks.insert(work_dir.to_path_buf(), Arc::downgrade(&lock));
+    Ok(lock)
+}
+
+fn normalize_operation_key(value: &str) -> String {
+    let mut key = value.trim().replace('\\', "/");
+    while key.len() > 1 && key.ends_with('/') {
+        key.pop();
+    }
+    #[cfg(windows)]
+    if !key.contains("://") {
+        key.make_ascii_lowercase();
+    }
+    key
+}
+
+/// 返回跨完整工具执行周期持有的工作目录锁。这里只规范化字符串作为锁键，
+/// 不执行文件系统 IO，因此可直接从 async N-API / MCP 路径调用而不阻塞。
+pub(crate) fn checkpoint_operation_lock(work_dir: &str) -> Result<Arc<AsyncRwLock<()>>> {
+    let key = normalize_operation_key(work_dir);
+    let locks = CHECKPOINT_OPERATION_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut locks = locks
+        .lock()
+        .map_err(|_| Error::from_reason("Checkpoint operation lock registry is poisoned"))?;
+    if let Some(lock) = locks.get(&key).and_then(Weak::upgrade) {
+        return Ok(lock);
+    }
+
+    locks.retain(|_, lock| lock.strong_count() > 0);
+    let lock = Arc::new(AsyncRwLock::new(()));
+    locks.insert(key, Arc::downgrade(&lock));
+    Ok(lock)
+}
+
+/// 返回同一工作目录下某个文件的执行锁。工作目录锁负责与 bash/回滚互斥，
+/// 文件锁只串行化相同路径，保留不同文件之间的并行能力。
+pub(crate) fn checkpoint_file_operation_lock(
+    work_dir: &str,
+    file_path: &str,
+) -> Result<Arc<AsyncMutex<()>>> {
+    let key = format!(
+        "{}\0{}",
+        normalize_operation_key(work_dir),
+        normalize_operation_key(file_path)
+    );
+    let locks = CHECKPOINT_FILE_OPERATION_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut locks = locks
+        .lock()
+        .map_err(|_| Error::from_reason("Checkpoint file operation lock registry is poisoned"))?;
+    if let Some(lock) = locks.get(&key).and_then(Weak::upgrade) {
+        return Ok(lock);
+    }
+
+    locks.retain(|_, lock| lock.strong_count() > 0);
+    let lock = Arc::new(AsyncMutex::new(()));
+    locks.insert(key, Arc::downgrade(&lock));
     Ok(lock)
 }
 

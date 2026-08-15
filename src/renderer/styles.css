@@ -7355,6 +7355,10 @@ input {
   justify-content: flex-start;
 }
 
+.chat-content.is-empty .chat-input-region {
+  margin-top: 32px;
+}
+
 /* Keep the composer in the viewport on short windows. The greeting remains
    reachable by scrolling in the upper area instead of pushing the composer
    below the window. */
@@ -7377,11 +7381,15 @@ input {
 
   .chat-empty-quick-actions {
     gap: 8px;
-    margin-top: 28px;
+    margin-top: 48px;
   }
 
   .chat-empty-quick-card {
     padding: 12px 14px;
+  }
+
+  .chat-content.is-empty .chat-input-region {
+    margin-top: 16px;
   }
 }
 
@@ -7815,7 +7823,7 @@ input {
   align-items: stretch;
   justify-content: center;
   gap: 12px;
-  margin-top: 56px;
+  margin-top: 96px;
 }
 
 .chat-empty-quick-card {

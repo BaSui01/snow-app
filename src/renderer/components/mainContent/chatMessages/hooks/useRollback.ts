@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type {
   ConversationContextValue,
   CheckpointFileChange,
@@ -28,10 +28,13 @@ export const useRollback = (ctx: ConversationContextValue) => {
   const [preparingMessageId, setPreparingMessageId] = useState<string | null>(
     null
   );
+  /** 每次打开/取消回滚都会推进序号，异步变更/TODO 查询只能提交自己的结果。 */
+  const rollbackRequestIdRef = useRef(0);
 
   const handleRollback = useCallback(
     (messageId: string): void => {
       const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+      const requestId = ++rollbackRequestIdRef.current;
 
       // Abort any in-flight stream before rolling back.
       const ref = ctx.sessionsRefData.current.get(key);
@@ -145,67 +148,81 @@ export const useRollback = (ctx: ConversationContextValue) => {
             }
           }
 
-        // TODO 检测需要边界后的第一条 assistant responseId：todo_items 按
-        // response_id 关联创建它的响应。截断边界优先使用持久化消息 id
-        // （失败轮次没有 responseId），此时 responseId 为空，这里为 TODO
-        // 检测单独向前寻找 —— 与截断删除的 id 范围语义一致。
-        let todoBoundaryResponseId = responseId;
-        if (!todoBoundaryResponseId) {
-          for (let i = targetIndex + 1; i < messages.length; i++) {
-            if (messages[i].role === "assistant" && messages[i].responseId) {
-              todoBoundaryResponseId = messages[i].responseId;
-              break;
+          // TODO 检测需要边界后的第一条 assistant responseId：todo_items 按
+          // response_id 关联创建它的响应。截断边界优先使用持久化消息 id
+          // （失败轮次没有 responseId），此时 responseId 为空，这里为 TODO
+          // 检测单独向前寻找 —— 与截断删除的 id 范围语义一致。
+          let todoBoundaryResponseId = responseId;
+          if (!todoBoundaryResponseId) {
+            for (let i = targetIndex + 1; i < messages.length; i++) {
+              if (messages[i].role === "assistant" && messages[i].responseId) {
+                todoBoundaryResponseId = messages[i].responseId;
+                break;
+              }
             }
           }
-        }
 
-        // Fetch TODO items that will be deleted alongside the rollback.
-        let todoItems: RollbackTodoItem[] = [];
-        if (convId && todoBoundaryResponseId) {
-          try {
-            const todoJson = await window.snow.listTodosForRollback(
-              convId,
-              todoBoundaryResponseId
-            );
-            const parsed = JSON.parse(todoJson) as unknown;
-            if (Array.isArray(parsed)) {
-              todoItems = parsed
-                .filter(
-                  (item): item is Record<string, unknown> =>
-                    typeof item === "object" && item !== null
-                )
-                .map((item) => ({
-                  id: typeof item.id === "string" ? item.id : "",
-                  content: typeof item.content === "string" ? item.content : "",
-                  status:
-                    typeof item.status === "string" ? item.status : "pending",
-                }))
-                .filter((item) => item.id);
+          // Fetch TODO items that will be deleted alongside the rollback.
+          let todoItems: RollbackTodoItem[] = [];
+          if (convId && todoBoundaryResponseId) {
+            try {
+              const todoJson = await window.snow.listTodosForRollback(
+                convId,
+                todoBoundaryResponseId
+              );
+              const parsed = JSON.parse(todoJson) as unknown;
+              if (Array.isArray(parsed)) {
+                todoItems = parsed
+                  .filter(
+                    (item): item is Record<string, unknown> =>
+                      typeof item === "object" && item !== null
+                  )
+                  .map((item) => ({
+                    id: typeof item.id === "string" ? item.id : "",
+                    content:
+                      typeof item.content === "string" ? item.content : "",
+                    status:
+                      typeof item.status === "string" ? item.status : "pending",
+                  }))
+                  .filter((item) => item.id);
+              }
+            } catch {
+              // Best effort — show empty on error
             }
-          } catch {
-            // Best effort — show empty on error
           }
-        }
 
-        ctx.setRollbackPreview({
-          messageId,
-          messageContent,
-          changes,
-          checkpointId,
-          workDir: sessionWorkDir,
-          convId,
-          responseId,
-          persistedMessageId,
-          isFirstMessage,
-          isContextCompaction: targetMessage.isContextCompaction === true,
-          todoItems,
-          streamPromise:
-            ctx.sessionsRefData.current.get(key)?.streamPromise ?? null,
-          summaryPromise:
-            ctx.sessionsRefData.current.get(key)?.summaryPromise ?? null,
-        });
+          // 异步查询完成时用户可能已切换到同项目的另一个会话，或又发起了
+          // 一次回滚。只允许仍属于当前活动会话的最新请求打开弹窗。
+          if (
+            rollbackRequestIdRef.current !== requestId ||
+            (ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY) !== key
+          ) {
+            return;
+          }
+
+          ctx.setRollbackPreview({
+            requestId,
+            sessionKey: key,
+            messageId,
+            messageContent,
+            changes,
+            checkpointId,
+            workDir: sessionWorkDir,
+            convId,
+            responseId,
+            persistedMessageId,
+            isFirstMessage,
+            isContextCompaction: targetMessage.isContextCompaction === true,
+            todoItems,
+            streamPromise:
+              ctx.sessionsRefData.current.get(key)?.streamPromise ?? null,
+            summaryPromise:
+              ctx.sessionsRefData.current.get(key)?.summaryPromise ?? null,
+          });
         } finally {
-          setPreparingMessageId(null);
+          if (rollbackRequestIdRef.current === requestId) {
+            setPreparingMessageId(null);
+          }
         }
       };
 
@@ -225,11 +242,16 @@ export const useRollback = (ctx: ConversationContextValue) => {
   const confirmRollback = useCallback(
     async (mode: RollbackMode): Promise<void> => {
       const preview = ctx.rollbackPreview;
-      if (!preview) {
+      if (
+        !preview ||
+        rollbackRequestIdRef.current !== preview.requestId
+      ) {
         return;
       }
 
-      const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+      // 确认必须使用打开弹窗时冻结的会话键，不能重新读取当前活动会话；
+      // 同项目会话共享 workDir，仅靠目录无法发现串线。
+      const key = preview.sessionKey;
       const {
         messageId,
         messageContent,
@@ -256,6 +278,9 @@ export const useRollback = (ctx: ConversationContextValue) => {
       }
       if (pending.length > 0) {
         await Promise.allSettled(pending);
+      }
+      if (rollbackRequestIdRef.current !== preview.requestId) {
+        return;
       }
 
       // 回退是事务性的：必须先成功删除/截断持久化会话，再更新界面。
@@ -336,8 +361,11 @@ export const useRollback = (ctx: ConversationContextValue) => {
           : currentMessages.slice(0, targetIndex);
       });
 
+      const targetWasActive =
+        (ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY) === key;
       if (isFirstMessage && !isContextCompaction && convId) {
-        // 会话已被删除：刷新侧边栏列表，移除该会话
+        // 会话已被删除：刷新侧边栏列表，移除该会话。只有目标仍是活动会话
+        // 时才清空 activeId，不能影响用户已切换到的另一个并行会话。
         ctx.setConversationListVersion((version) => version + 1);
         ctx.sessionsRefData.current.delete(key);
         ctx.setSessions((prev) => {
@@ -345,7 +373,9 @@ export const useRollback = (ctx: ConversationContextValue) => {
           delete next[key];
           return next;
         });
-        ctx.setActiveId(undefined);
+        if (targetWasActive) {
+          ctx.setActiveId(undefined);
+        }
       } else {
         // Bump version so dependent components (user-message rail) re-fetch
         // the updated message list after truncation.
@@ -354,10 +384,12 @@ export const useRollback = (ctx: ConversationContextValue) => {
         ctx.setConversationListVersion((version) => version + 1);
       }
 
-      if (!isContextCompaction) {
+      if (!isContextCompaction && targetWasActive) {
         ctx.setDraftToRestore(messageContent);
       }
-      ctx.setRollbackPreview(null);
+      ctx.setRollbackPreview((current) =>
+        current?.requestId === preview.requestId ? null : current
+      );
     },
     [
       ctx.rollbackPreview,
@@ -376,6 +408,8 @@ export const useRollback = (ctx: ConversationContextValue) => {
   );
 
   const cancelRollback = useCallback((): void => {
+    rollbackRequestIdRef.current += 1;
+    setPreparingMessageId(null);
     ctx.setRollbackPreview(null);
   }, [ctx.setRollbackPreview]);
 

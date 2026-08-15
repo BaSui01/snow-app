@@ -133,18 +133,49 @@ pub async fn call_mcp_tool(
         resolve_local_filesystem_args(&tool_full_name, args, project_id.as_deref()).await?
     };
 
-    // 只读 bash 命令跳过 checkpoint 工作区快照：git 快照（rev-parse/diff/
-    // ls-files + 文件复制）只对可能修改工作区的命令有意义。保守策略——
-    // 只有明确命中的只读模式才跳过，任何不确定情况保留 checkpoint。
-    let checkpoint_ids = if tool_full_name == "bash-terminal-execute"
+    // 先定 checkpoint 影响范围再捕获：None/Unknown 的工具不校验
+    // checkpointWorkDir，Skill / 外部 MCP 等不因缺失上下文被阻断。
+    let checkpoint_scope = tool_checkpoint_scope(&tool_full_name);
+    if matches!(checkpoint_scope, ToolCheckpointScope::Unknown)
+        && !checkpoint_ids.is_empty()
+    {
+        let locale = crate::i18n::app_locale().await;
+        emit_stream_chunk(
+            &on_chunk,
+            "stdout",
+            crate::i18n::fill(
+                locale.checkpoint_text(crate::i18n::CheckpointText::UnknownToolScope),
+                &[&tool_full_name],
+            ),
+        );
+    }
+    let skip_checkpoint_capture = tool_full_name == "bash-terminal-execute"
         && args
             .get("command")
             .and_then(Value::as_str)
-            .is_some_and(is_readonly_bash_command)
-    {
-        Vec::new()
+            .is_some_and(is_readonly_bash_command);
+
+    // 锁覆盖 before、真实工具执行和 after，不能只锁两次扫描本身；否则同项目
+    // 的另一个会话可在中间落盘，其结果会被当前会话误认为自己的变更。
+    let checkpoint_operation_guard = if skip_checkpoint_capture {
+        ToolCheckpointOperationGuard::None
     } else {
-        checkpoint_ids
+        acquire_tool_checkpoint_operation_guard(
+            checkpoint_scope,
+            &args,
+            checkpoint_work_dir.as_deref(),
+        )
+        .await?
+    };
+    let checkpoint_ids = match checkpoint_scope {
+        ToolCheckpointScope::File | ToolCheckpointScope::Worktree => {
+            if skip_checkpoint_capture {
+                Vec::new()
+            } else {
+                checkpoint_ids
+            }
+        }
+        ToolCheckpointScope::None | ToolCheckpointScope::Unknown => Vec::new(),
     };
 
     let checkpoint_capture = if uses_remote_workspace {
@@ -200,8 +231,9 @@ pub async fn call_mcp_tool(
                 )
                 .await?;
             } else {
+                // Worktree 的 after 软失败：记录失败不覆盖已完成的命令结果。
                 tokio::task::spawn_blocking(move || {
-                    crate::storage::services::checkpoint::record_checkpoint_worktree_after(capture)
+                    capture_checkpoint_after_tool(ToolCheckpointCapture::Worktree(Some(capture)))
                 })
                 .await
                 .map_err(|error| {
@@ -346,6 +378,10 @@ pub async fn call_mcp_tool(
             )
         })??
     };
+
+    // result 已包含 after 捕获结果；现在才释放执行级锁。隐私遮罩和序列化不再
+    // 访问工作区，无需继续阻塞同项目的其他并行工具。
+    drop(checkpoint_operation_guard);
 
     if returns_plain_text {
         let plain_text = result.as_str().map(str::to_string).ok_or_else(|| {

@@ -1,5 +1,22 @@
 # Release Notes
 
+## v0.2.4
+
+## New Features
+
+- **Conversation Drag & Drop Pinning**: Conversations can now be dragged between the pinned area and the regular list to toggle their pinned status, with drop-highlight feedback while hovering.
+- **CodeLens over Remote SSH**: `find_definition`, `find_references`, and `file_outline` now work on ssh:// workspaces — source files are read over SSH and analyzed on Rust's blocking pool.
+
+## Improvements
+
+- Relative paths for filesystem / grep / codelens tools are now resolved against the project root; grep defaults to the project root when no path is given.
+- Rollback entries now show file type icons.
+- Removed the draft status indicator from the file viewer; cleaned up dead code in the symbol index and styles.
+
+## Bug Fixes
+
+- grep no longer fails silently on a bad search path — a non-existent path, or one that is neither a file nor a directory, now returns a clear error.
+
 ## v0.2.3
 
 ## New Features

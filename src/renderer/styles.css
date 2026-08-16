@@ -994,15 +994,6 @@ input {
   outline-offset: -1px;
 }
 
-/* 可拖拽的会话项显示抓手光标 */
-.chat-item[draggable="true"] {
-  cursor: grab;
-}
-
-.chat-item[draggable="true"]:active {
-  cursor: grabbing;
-}
-
 /* Chats section: scrollable list with stable scrollbar gutter */
 .sidebar-section.chats-section {
   flex: 1;

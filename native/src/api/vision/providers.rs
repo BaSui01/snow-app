@@ -122,6 +122,7 @@ async fn describe_image_via_chat(
         "chat",
         parse_chat_stream_event,
         cancel_token,
+        &vision_config.retry_options,
         |payload| {
             payload["max_tokens"] = json!(vision_config.max_tokens * 2);
         },
@@ -166,6 +167,7 @@ async fn describe_image_via_responses(
         "responses",
         parse_responses_stream_event,
         cancel_token,
+        &vision_config.retry_options,
         |payload| {
             payload["max_output_tokens"] = json!(vision_config.max_tokens * 2);
         },
@@ -211,6 +213,7 @@ async fn describe_image_via_anthropic(
         "anthropic",
         parse_anthropic_stream_event,
         cancel_token,
+        &vision_config.retry_options,
         |payload| {
             payload["max_tokens"] = json!(vision_config.max_tokens * 2);
         },
@@ -263,6 +266,7 @@ async fn describe_image_via_gemini(
         "gemini",
         parse_gemini_stream_event,
         cancel_token,
+        &vision_config.retry_options,
         |payload| {
             payload["generationConfig"]["maxOutputTokens"] = json!(vision_config.max_tokens * 2);
         },
@@ -688,17 +692,23 @@ fn summarize_vision_payload(payload: &Value) -> String {
     summary
 }
 
-/// 发送流式视觉请求；截断时按内容止损：
+/// 发送流式视觉请求；失败与截断分别复用重试机制：
 ///
-/// - **有部分内容 → 直接采用**（`partial = true`，不写缓存），**不再翻倍重试**。
-///   流式下已实时收到文本，重试一轮只会让等待翻倍（旧实现的双倍等待主因）；
+/// - **请求失败**（网络中断 / 429 / 5xx / 流空闲超时等可重试错误）：
+///   复用 `retry::should_retry` + `retry::wait_before_retry`，按主 API 档案的
+///   `RetryOptions`（max_retries / 指数退避）重试；不可重试错误（4xx 参数
+///   错误、取消等）立即向上传播；
+/// - **截断时有部分内容 → 直接采用**（`partial = true`，不写缓存），**不再
+///   翻倍重试**。流式下已实时收到文本，重试一轮只会让等待翻倍（旧实现的
+///   双倍等待主因）；
 /// - 截断且完全无内容 → 重试一次，`bump_max_tokens` 把 token 上限翻倍
 ///   （各协议字段路径不同）；
 /// - 非截断但无内容 → 报可读错误。
 ///
 /// `cancel_token` 为 `Some` 时，请求发送与流读取都会与取消令牌竞争
 /// （`send_vision_stream` 内的 `tokio::select!`），用户中断后立即返回取消
-/// 错误，不再发起重试。
+/// 错误，不再发起重试。`None`（如 `describe_image_file` 工具入口）不参与
+/// 取消，退避等待用本地永不取消的令牌适配。
 async fn vision_request_with_retry(
     client: &reqwest::Client,
     endpoint: &str,
@@ -707,15 +717,17 @@ async fn vision_request_with_retry(
     protocol: &str,
     parse: impl Fn(&Value) -> VisionStreamEvent,
     cancel_token: Option<&CancellationToken>,
+    retry_options: &RetryOptions,
     bump_max_tokens: impl Fn(&mut Value),
 ) -> Result<VisionResult> {
-    let mut attempt = 0u32;
+    let mut transport_attempt = 0u32;
+    let mut max_tokens_bumped = false;
+    let fallback_token = CancellationToken::new();
     loop {
-        attempt += 1;
         if cancel_token.is_some_and(|token| token.is_cancelled()) {
             return Err(Error::from_reason("Vision analysis cancelled"));
         }
-        let outcome = send_vision_stream(
+        let outcome = match send_vision_stream(
             client,
             endpoint,
             headers.clone(),
@@ -724,7 +736,31 @@ async fn vision_request_with_retry(
             &parse,
             cancel_token,
         )
-        .await?;
+        .await
+        {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                // 复用主请求的重试分类：网络中断 / 429 / 5xx / 流空闲超时等
+                // 可重试错误按指数退避重试；不可重试（4xx 参数错误、取消等）
+                // 立即向上传播。
+                if !should_retry(&error, transport_attempt, retry_options) {
+                    return Err(error);
+                }
+                eprintln!(
+                    "Vision {protocol} request failed ({}), retrying (attempt {})",
+                    error.reason,
+                    transport_attempt + 1
+                );
+                wait_before_retry(
+                    retry_options,
+                    cancel_token.unwrap_or(&fallback_token),
+                    transport_attempt,
+                )
+                .await?;
+                transport_attempt += 1;
+                continue;
+            }
+        };
         let text = outcome.text.trim().to_string();
 
         // 意外中断（EOF 无结束事件）：有内容 → 标记 partial（不写缓存），
@@ -770,9 +806,10 @@ async fn vision_request_with_retry(
         }
 
         // 截断且无内容 → 重试一次（翻倍 max_tokens）
-        if attempt == 1 {
+        if !max_tokens_bumped {
+            max_tokens_bumped = true;
             eprintln!(
-                "Vision {protocol} response truncated (no content), retrying with doubled max_tokens (attempt {attempt})"
+                "Vision {protocol} response truncated (no content), retrying with doubled max_tokens"
             );
             bump_max_tokens(payload);
             continue;

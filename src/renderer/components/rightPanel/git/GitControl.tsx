@@ -54,6 +54,34 @@ type GitControlProps = {
 const isSelectedKey = (section: "staged" | "unstaged", path: string) =>
   `${section}:${path}`;
 
+// ===== 提交信息草稿缓存（模块级，按仓库路径隔离） =====
+// 提交信息跟随项目：切换项目或折叠右面板时 GitControl 可能重新挂载，
+// 草稿统一存放在模块级 Map 中，切换项目后只显示目标仓库自己的草稿，
+// 切回时从缓存回显；空草稿直接从缓存移除，避免 Map 无限增长。
+const commitMessageDrafts = new Map<string, string>();
+
+// 正在生成提交消息的仓库 → 流 ID。生成状态同样放在模块级：用户切换
+// 项目后旧仓库的 AI 生成在后台继续，迟到的流式分片写入旧仓库缓存，
+// 切回时能看到完整结果；并发流（切走后新仓库再生成）互不干扰。
+const commitMsgGenerations = new Map<string, string>();
+
+type CommitMsgGenerationListener = () => void;
+const commitMsgGenerationListeners = new Set<CommitMsgGenerationListener>();
+
+const startCommitMsgGeneration = (repo: string): void => {
+  commitMsgGenerations.set(repo, "");
+  for (const listener of commitMsgGenerationListeners) {
+    listener();
+  }
+};
+
+const endCommitMsgGeneration = (repo: string): void => {
+  commitMsgGenerations.delete(repo);
+  for (const listener of commitMsgGenerationListeners) {
+    listener();
+  }
+};
+
 export const GitControl = ({
   repoPath,
   repos,
@@ -71,7 +99,13 @@ export const GitControl = ({
   // remote; a successful fetch refreshes the status so the pull button
   // badge reflects the latest remote state.
   useRemotePolling(repoPath, refresh);
-  const [commitMessage, setCommitMessage] = useState("");
+  // 提交信息草稿：state 只表达“当前显示值”，权威存储是模块级
+  // commitMessageDrafts 缓存（按仓库路径隔离）。挂载时回显缓存，
+  // 折叠右面板后重新展开草稿也不丢失。
+  const [commitMessage, setCommitMessage] = useState<string>(() => {
+    const initialRepo = repoPath ?? null;
+    return initialRepo ? (commitMessageDrafts.get(initialRepo) ?? "") : "";
+  });
   // 提交按钮模式：仅提交，或提交并推送。选择持久化在 localStorage，
   // 下次启动应用时自动复原。
   const [commitMode, setCommitMode] = useState<"commit" | "commitAndPush">(
@@ -108,8 +142,12 @@ export const GitControl = ({
     | "discard"
     | null
   >(null);
-  const [isGeneratingCommitMsg, setIsGeneratingCommitMsg] = useState(false);
-  const commitMsgStreamIdRef = useRef<string | null>(null);
+  // “当前仓库是否正在生成提交消息”。权威状态在模块级
+  // commitMsgGenerations，本 state 通过下方的订阅 effect 同步，
+  // 后台生成（切走后仍在跑的流）结束或开始时 UI 都能正确恢复。
+  const [isGeneratingCommitMsg, setIsGeneratingCommitMsg] = useState(
+    () => repoPath != null && commitMsgGenerations.has(repoPath)
+  );
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [discardTarget, setDiscardTarget] = useState<GitFileStatus[]>([]);
   const [operationError, setOperationError] = useState<{
@@ -137,6 +175,62 @@ export const GitControl = ({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [graphRefreshKey, setGraphRefreshKey] = useState(0);
   const graphLoadedResolveRef = useRef<(() => void) | null>(null);
+
+  // 渲染期间同步“当前显示的仓库”。repoPath 变化的那一次渲染里
+  // currentRepoRef 先指向旧仓库、随即更新为新仓库；配合
+  // displayedCommitMessage 派生值，切换瞬间直接显示目标仓库的缓存
+  // 草稿，避免旧项目消息在新项目输入框闪现一帧。
+  const currentRepoRef = useRef<string | null>(repoPath ?? null);
+  const repoSwitched = currentRepoRef.current !== (repoPath ?? null);
+  currentRepoRef.current = repoPath ?? null;
+  const displayedCommitMessage =
+    repoSwitched && repoPath
+      ? (commitMessageDrafts.get(repoPath) ?? "")
+      : commitMessage;
+
+  // 跟随项目切换：把显示值同步为当前仓库的缓存草稿（无缓存则清空），
+  // 并同步该仓库的 AI 生成状态（切回时可能仍在后台生成）。
+  useEffect(() => {
+    setCommitMessage(
+      repoPath ? (commitMessageDrafts.get(repoPath) ?? "") : ""
+    );
+    setIsGeneratingCommitMsg(
+      repoPath != null && commitMsgGenerations.has(repoPath)
+    );
+  }, [repoPath]);
+
+  // 订阅模块级生成状态广播：任意仓库的生成开始/结束都会通知，
+  // isGeneratingCommitMsg 始终反映“当前仓库”的实时状态（包括切走后
+  // 在后台继续的流）。
+  useEffect(() => {
+    const listener = (): void => {
+      const repo = currentRepoRef.current;
+      setIsGeneratingCommitMsg(
+        repo != null && commitMsgGenerations.has(repo)
+      );
+    };
+    commitMsgGenerationListeners.add(listener);
+    return () => {
+      commitMsgGenerationListeners.delete(listener);
+    };
+  }, []);
+
+  // 统一写入草稿：先写模块级缓存（按仓库路径隔离），仅当目标仓库
+  // 仍是当前显示的仓库时才同步 UI。切换项目后，旧项目迟到的 AI
+  // 流式分片只会进入旧项目的缓存，不会污染新项目的输入框。
+  const applyCommitMessage = useCallback(
+    (repo: string, value: string): void => {
+      if (value) {
+        commitMessageDrafts.set(repo, value);
+      } else {
+        commitMessageDrafts.delete(repo);
+      }
+      if (repo === currentRepoRef.current) {
+        setCommitMessage(value);
+      }
+    },
+    []
+  );
 
   // Propagate status changes upward via ref to avoid render-cycle side effects
   useEffect(() => {
@@ -422,18 +516,19 @@ export const GitControl = ({
   }, [repoPath, refresh]);
 
   const handleCommit = useCallback(() => {
-    if (!repoPath || !commitMessage.trim()) {
+    if (!repoPath || !displayedCommitMessage.trim()) {
       return;
     }
     setActionInProgress("commit");
     const shouldPush = commitMode === "commitAndPush";
     window.snow
-      .gitCommit(repoPath, commitMessage)
+      .gitCommit(repoPath, displayedCommitMessage)
       .then((result) => {
         if (!result.success) {
           return;
         }
-        setCommitMessage("");
+        // 清空的是“该仓库”的草稿：若提交期间已切换项目，UI 不受影响。
+        applyCommitMessage(repoPath, "");
         commitPendingRef.current = true;
         // 提交并推送模式下，提交成功后紧接着推送。
         if (shouldPush) {
@@ -462,7 +557,7 @@ export const GitControl = ({
         });
       })
       .finally(() => setActionInProgress(null));
-  }, [repoPath, commitMessage, commitMode, refresh, t]);
+  }, [repoPath, displayedCommitMessage, commitMode, refresh, t, applyCommitMessage]);
 
   const handlePush = useCallback(() => {
     if (!repoPath) {
@@ -631,43 +726,52 @@ export const GitControl = ({
   };
 
   const handleGenerateCommitMessage = useCallback(() => {
-    if (!repoPath || isGeneratingCommitMsg) {
+    // 生成绑定到发起时的仓库：同一仓库不重复生成；切换项目后旧仓库
+    // 的生成在后台继续，结果只写入旧仓库的缓存。
+    const targetRepo = repoPath;
+    if (!targetRepo || commitMsgGenerations.has(targetRepo)) {
       return;
     }
 
-    setIsGeneratingCommitMsg(true);
-    setCommitMessage("");
+    startCommitMsgGeneration(targetRepo);
+    applyCommitMessage(targetRepo, "");
 
     window.snow
       .generateCommitMessage(
-        repoPath,
+        targetRepo,
         (chunk) => {
           if (chunk.contentDelta) {
-            setCommitMessage((prev) => prev + chunk.contentDelta);
+            const next =
+              (commitMessageDrafts.get(targetRepo) ?? "") +
+              chunk.contentDelta;
+            applyCommitMessage(targetRepo, next);
           }
         },
         (streamId) => {
-          commitMsgStreamIdRef.current = streamId;
+          commitMsgGenerations.set(targetRepo, streamId);
         }
       )
       .then((result) => {
         if (result.status === "error") {
-          setCommitMessage("");
+          applyCommitMessage(targetRepo, "");
         } else if (result.content) {
-          setCommitMessage(result.content);
+          applyCommitMessage(targetRepo, result.content);
         }
       })
       .catch(() => {
-        // Error or cancelled — keep whatever was streamed so far
+        // 出错或取消：保留已流式生成的内容（已写入缓存），切回时可回显。
       })
       .finally(() => {
-        setIsGeneratingCommitMsg(false);
-        commitMsgStreamIdRef.current = null;
+        endCommitMsgGeneration(targetRepo);
       });
-  }, [repoPath, isGeneratingCommitMsg]);
+  }, [repoPath, applyCommitMessage]);
 
   const handleAbortCommitMessage = useCallback(() => {
-    const streamId = commitMsgStreamIdRef.current;
+    const repo = currentRepoRef.current;
+    if (!repo) {
+      return;
+    }
+    const streamId = commitMsgGenerations.get(repo);
     if (streamId) {
       void window.snow.abortCommitMessage(streamId);
     }
@@ -855,8 +959,8 @@ export const GitControl = ({
               <textarea
                 className="git-commit-input"
                 placeholder={t("git.commitMessagePlaceholder")}
-                value={commitMessage}
-                onChange={(e) => setCommitMessage(e.target.value)}
+                value={displayedCommitMessage}
+                onChange={(e) => applyCommitMessage(repoPath, e.target.value)}
                 rows={2}
               />
               <div className="git-commit-input-actions">
@@ -890,7 +994,7 @@ export const GitControl = ({
                   disabled={
                     actionInProgress !== null ||
                     isGeneratingCommitMsg ||
-                    !commitMessage.trim() ||
+                    !displayedCommitMessage.trim() ||
                     stagedFiles.length === 0
                   }
                 >

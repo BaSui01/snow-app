@@ -15,6 +15,7 @@ pub(crate) use tokio_util::sync::CancellationToken;
 pub(crate) use crate::api::config::{normalize_base_url, resolve_sdk_api_base_url};
 pub(crate) use crate::api::conversation::images::{parse_chat_message_content, ChatImage};
 pub(crate) use crate::api::responses::{ResponsesApiStreamCallback, ResponsesApiStreamChunk};
+pub(crate) use crate::api::retry::{should_retry, wait_before_retry, RetryOptions};
 pub(crate) use crate::storage::services::chat_conversations::ChatContextMessage;
 pub(crate) use crate::storage::ApiConfigRecord;
 
@@ -199,6 +200,10 @@ pub(crate) struct VisionApiConfig {
     max_tokens: i64,
     /// 并行描述图片的最大并发数（snowcfg.visionMaxConcurrency，默认 8，夹在 1..=8）。
     max_concurrency: usize,
+    /// 视觉请求失败重试配置：复用主 API 档案的 max_retries /
+    /// retry_base_delay_ms / partial_retry_max_chars（retry::RetryOptions），
+    /// 与主请求共用同一套重试分类与指数退避策略。
+    retry_options: RetryOptions,
 }
 
 impl VisionApiConfig {
@@ -262,6 +267,14 @@ impl VisionApiConfig {
             .unwrap_or(8)
             .clamp(1, 8) as usize;
 
+        // 复用主 API 档案的重试配置：视觉请求失败与主请求共用同一套
+        // retry::RetryOptions（max_retries / 退避基数 / partial 阈值）。
+        let retry_options = RetryOptions::from_config(
+            api_config.max_retries,
+            api_config.retry_base_delay_ms,
+            api_config.partial_retry_max_chars,
+        );
+
         Ok(Self {
             request_method,
             base_url,
@@ -274,6 +287,7 @@ impl VisionApiConfig {
             thinking_effort,
             max_tokens,
             max_concurrency,
+            retry_options,
         })
     }
 }

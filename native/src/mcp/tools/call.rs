@@ -155,8 +155,12 @@ pub async fn call_mcp_tool(
             .and_then(Value::as_str)
             .is_some_and(is_readonly_bash_command);
 
-    // 锁覆盖 before、真实工具执行和 after，不能只锁两次扫描本身；否则同项目
-    // 的另一个会话可在中间落盘，其结果会被当前会话误认为自己的变更。
+    // 执行级锁覆盖 before、真实工具执行和 after（文件工具共享读锁、外部
+    // MCP 独占锁），不能只锁两次扫描本身；否则同项目的另一个会话可在
+    // 中间落盘，其结果会被当前会话误认为自己的变更。bash 命令例外：
+    // 执行期间不持锁——跨会话命令并行运行，回滚/预览也不再被长时间命令
+    // 阻塞；bash 的 before/after 扫描内部的短时共享读锁 + 回滚纪元保证
+    // 变更记录不与回滚混淆。
     let checkpoint_operation_guard = if skip_checkpoint_capture {
         ToolCheckpointOperationGuard::None
     } else {

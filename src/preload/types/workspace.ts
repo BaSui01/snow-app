@@ -41,6 +41,12 @@ export type FileSearchAgentProgress = {
   resultPreview: string;
 };
 
+/** `git clone` 的实时进度：一条 stderr 进度行 + 解析出的百分比。 */
+export type GitCloneProgress = {
+  line: string;
+  percent: number | null;
+};
+
 export type FileContentResult = {
   content: string;
   isBinary: boolean;

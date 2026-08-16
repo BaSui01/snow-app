@@ -6,6 +6,7 @@ import {
   GitFork,
   Loader2,
   MessageSquareMore,
+  Pause,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -20,6 +21,8 @@ type ChatItemProps = {
   isActive?: boolean;
   isAttentionRequired?: boolean;
   isStreaming?: boolean;
+  /** 流式会话被用户暂停（agent loop 阻塞等待恢复），图标切换为静态暂停态 */
+  isPaused?: boolean;
   isCompleted?: boolean;
   subAgentConversations?: ChatConversationRecord[];
   /** 子代理中待用户确认（提问/工具授权）的会话 id 集合 */
@@ -50,6 +53,7 @@ export function ChatItem({
   isActive = false,
   isAttentionRequired = false,
   isStreaming = false,
+  isPaused = false,
   isCompleted = false,
   subAgentConversations = [],
   subAgentAttentionRequiredIds = new Set<string>(),
@@ -287,7 +291,9 @@ export function ChatItem({
             showAttentionStatus
               ? " attention-required"
               : showStreamingStatus
-              ? " streaming"
+              ? isPaused
+                ? " streaming paused"
+                : " streaming"
               : showCompletedStatus
               ? " completed"
               : ""
@@ -302,7 +308,11 @@ export function ChatItem({
           {showAttentionStatus ? (
             <CircleAlert size={12} aria-hidden="true" />
           ) : showStreamingStatus ? (
-            <Loader2 size={11} className="spin" aria-hidden="true" />
+            isPaused ? (
+              <Pause size={11} aria-hidden="true" />
+            ) : (
+              <Loader2 size={11} className="spin" aria-hidden="true" />
+            )
           ) : showCompletedStatus ? (
             <CheckCircle2 size={12} aria-hidden="true" />
           ) : hasEmoji ? (

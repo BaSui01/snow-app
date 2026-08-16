@@ -251,6 +251,12 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to create project directories"
           )
         ),
+      cloneGitRepository: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to clone git repositories"
+          )
+        ),
       readDirectoryEntries: () =>
         Promise.reject(
           new Error("Rust native bridge is required to read directory entries")

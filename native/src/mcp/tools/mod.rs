@@ -24,15 +24,19 @@ enum ToolCheckpointCapture {
 }
 
 /// 持有完整 before → 工具执行 → after 周期的异步锁。单文件工具共享目录
-/// 读锁并按文件串行；整树工具独占目录锁。字段只用于 RAII，离开调用作用域
-/// 时自动释放。
+/// 读锁并按文件串行；影响范围未知的外部 MCP 独占目录锁。bash 命令执行
+/// 期间不持任何执行级锁——跨会话命令并行运行，回滚/预览也不会被长时间
+/// 命令阻塞（bash 的 before/after 扫描内部另有短时共享读锁 + 回滚纪元）。
+/// 字段只用于 RAII，离开调用作用域时自动释放。
 enum ToolCheckpointOperationGuard {
     None,
     File {
         _work_dir_guard: tokio::sync::OwnedRwLockReadGuard<()>,
         _file_guard: tokio::sync::OwnedMutexGuard<()>,
     },
-    Worktree {
+    /// 影响范围未知的外部 MCP 工具：整树独占锁，避免污染可捕获工具
+    /// （bash / 文件工具）的 before/after 记录。
+    Exclusive {
         _work_dir_guard: tokio::sync::OwnedRwLockWriteGuard<()>,
     },
 }
@@ -754,7 +758,7 @@ async fn acquire_tool_checkpoint_operation_guard(
                     )
                 })?;
             // 先等同文件锁，再进入目录共享锁：等待同文件的调用不会长期占住
-            // 目录读锁，bash/回滚可在两次文件编辑之间公平取得独占锁。
+            // 目录读锁，回滚可在两次文件编辑之间公平取得独占锁。
             let file_lock =
                 crate::storage::services::checkpoint::checkpoint_file_operation_lock(
                     work_dir, file_path,
@@ -768,13 +772,20 @@ async fn acquire_tool_checkpoint_operation_guard(
                 _file_guard: file_guard,
             })
         }
-        ToolCheckpointScope::Worktree | ToolCheckpointScope::Unknown => {
+        ToolCheckpointScope::Worktree => {
+            // bash 命令执行期间不持有执行级锁：跨会话命令并行运行，回滚/
+            // 预览也不再被长时间运行的命令阻塞。变更捕获由 before/after
+            // 扫描内部的短时共享读锁与回滚纪元（见 checkpoint 模块）保证
+            // 不与回滚混淆。
+            Ok(ToolCheckpointOperationGuard::None)
+        }
+        ToolCheckpointScope::Unknown => {
             // 外部 MCP 的影响范围未知：虽然无法生成可靠 checkpoint，仍按整树
-            // 写操作隔离，避免它与可捕获工具并行时污染后者的 before/after。
+            // 独占锁隔离，避免它与可捕获工具并行时污染后者的 before/after。
             let work_dir_lock =
                 crate::storage::services::checkpoint::checkpoint_operation_lock(work_dir)?;
             let work_dir_guard = work_dir_lock.write_owned().await;
-            Ok(ToolCheckpointOperationGuard::Worktree {
+            Ok(ToolCheckpointOperationGuard::Exclusive {
                 _work_dir_guard: work_dir_guard,
             })
         }

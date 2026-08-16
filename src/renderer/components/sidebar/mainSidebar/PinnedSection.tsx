@@ -30,6 +30,7 @@ export function PinnedSection({
     handleNewChat,
     activeConversationId,
     abortConversation,
+    sessions,
     streamingConversationIds,
     attentionRequiredConversationIds,
     completedConversationIds,
@@ -349,6 +350,7 @@ export function PinnedSection({
               isStreaming={streamingConversationIds.has(
                 conversation.conversationId
               )}
+              isPaused={sessions[conversation.conversationId]?.isPaused === true}
               isCompleted={completedConversationIds.has(
                 conversation.conversationId
               )}

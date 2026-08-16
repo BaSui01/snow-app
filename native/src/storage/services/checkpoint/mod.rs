@@ -77,9 +77,14 @@ static CHECKPOINT_WORK_DIR_LOCKS: OnceLock<
     Mutex<HashMap<PathBuf, Weak<AsyncRwLock<()>>>>,
 > = OnceLock::new();
 
-/// 工具执行级工作目录锁：文件工具持有共享读锁，整树工具（bash）与回滚/
-/// 预览持有独占写锁。锁覆盖完整的 before → 工具执行 → after 区间，避免同一
-/// 项目多个会话并行时把另一个会话落盘的内容误记到当前 checkpoint。
+/// 工具执行级工作目录锁：
+/// - 文件工具：共享读锁，覆盖完整的 before → 执行 → after 区间；
+/// - 回滚/预览：独占写锁；
+/// - bash 命令：执行期间**不持锁**（跨会话命令并行，回滚不再被长命令
+///   阻塞），仅 before/after 扫描期间短暂持有共享读锁与回滚互斥，
+///   扫描之间发生的回滚由 CHECKPOINT_RESTORE_EPOCHS 纪元检测并跳过
+///   after 记录，避免把另一个会话回滚恢复的内容误记到当前 checkpoint；
+/// - 外部 MCP（影响范围未知）：独占写锁覆盖整个执行区间（无捕获可跳过）。
 static CHECKPOINT_OPERATION_LOCKS: OnceLock<
     Mutex<HashMap<String, Weak<AsyncRwLock<()>>>>,
 > = OnceLock::new();
@@ -96,6 +101,13 @@ static CHECKPOINT_FILE_OPERATION_LOCKS: OnceLock<
 static CHECKPOINT_MANIFEST_LOCKS: OnceLock<
     Mutex<HashMap<String, Weak<AsyncMutex<()>>>>,
 > = OnceLock::new();
+
+/// 回滚纪元表：每工作目录一个单调递增计数，键与执行级锁共用同一规范化。
+/// bash 命令执行期间不再持有执行级锁（会话间互不阻塞），若此期间另一个
+/// 会话的回滚改写了工作树，bash 的 after 捕获会检测到纪元变化并跳过变更
+/// 记录——避免把回滚恢复的文件误记到本会话的 checkpoint（回滚不混淆）。
+static CHECKPOINT_RESTORE_EPOCHS: OnceLock<Mutex<HashMap<String, Weak<AtomicU64>>>> =
+    OnceLock::new();
 
 /// 进程内 diff 缓存上限：超过后整体清空（LRU 之外的简单防膨胀手段，
 /// diff 成本远低于全量重算，清空后逐次重建即可）。
@@ -240,6 +252,9 @@ pub struct CheckpointWorktreeCapture {
     /// addressed object store (BLAKE3); no git state is involved.
     before_paths: HashSet<String>,
     before_states: HashMap<String, PendingFileState>,
+    /// 捕获时的回滚纪元：命令执行期间若有回滚改写了工作树，after 捕获
+    /// 据此跳过变更记录，避免把其他会话回滚的内容误记到本会话。
+    restore_epoch: u64,
 }
 fn checkpoint_root() -> Result<PathBuf> {
     super::storage_locations::checkpoint_root()
@@ -272,8 +287,17 @@ fn normalize_operation_key(value: &str) -> String {
     key
 }
 
-/// 返回跨完整工具执行周期持有的工作目录锁。这里只规范化字符串作为锁键，
-/// 不执行文件系统 IO，因此可直接从 async N-API / MCP 路径调用而不阻塞。
+/// 返回工具执行级工作目录锁。这里只规范化字符串作为锁键，不执行文件
+/// 系统 IO，因此可直接从 async N-API / MCP 路径调用而不阻塞。
+///
+/// 持有语义（会话间互不阻塞是首要目标）：
+/// - 文件工具：整个编辑周期持有共享读锁（before → 执行 → after）。
+/// - bash 命令：执行期间不持有任何执行级锁，跨会话命令并行运行；
+///   仅在 before/after 扫描期间短暂持共享读锁，与回滚互斥即可。
+/// - 外部 MCP（影响范围未知）：仍按整树独占锁隔离（无 before/after
+///   捕获可跳过，无法用回滚纪元保护）。
+/// - 回滚 / 预览：独占写锁，仅需等待进行中的文件工具（秒级），
+///   不会再被长时间运行的 bash 命令阻塞。
 pub(crate) fn checkpoint_operation_lock(work_dir: &str) -> Result<Arc<AsyncRwLock<()>>> {
     let key = normalize_operation_key(work_dir);
     let locks = CHECKPOINT_OPERATION_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
@@ -288,6 +312,36 @@ pub(crate) fn checkpoint_operation_lock(work_dir: &str) -> Result<Arc<AsyncRwLoc
     let lock = Arc::new(AsyncRwLock::new(()));
     locks.insert(key, Arc::downgrade(&lock));
     Ok(lock)
+}
+
+/// 取（或创建）某工作目录的回滚纪元计数器。键规范化与执行级锁一致，
+/// 保证同一目录的捕获/恢复读写同一计数。Weak 避免目录废弃后残留对象。
+fn restore_epoch_counter(work_dir: &str) -> Result<Arc<AtomicU64>> {
+    let key = normalize_operation_key(work_dir);
+    let counters = CHECKPOINT_RESTORE_EPOCHS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut counters = counters
+        .lock()
+        .map_err(|_| Error::from_reason("Checkpoint restore epoch registry is poisoned"))?;
+    if let Some(counter) = counters.get(&key).and_then(Weak::upgrade) {
+        return Ok(counter);
+    }
+
+    counters.retain(|_, counter| counter.strong_count() > 0);
+    let counter = Arc::new(AtomicU64::new(0));
+    counters.insert(key, Arc::downgrade(&counter));
+    Ok(counter)
+}
+
+/// 读取当前回滚纪元。无锁读取，任意线程（含 async 上下文）可调用。
+pub(crate) fn current_restore_epoch(work_dir: &str) -> Result<u64> {
+    Ok(restore_epoch_counter(work_dir)?.load(Ordering::SeqCst))
+}
+
+/// 回滚执行时递增纪元：正在运行的 bash 命令由此感知工作树被回滚改写，
+/// after 捕获据此跳过，防止跨会话误记变更。
+pub(crate) fn bump_restore_epoch(work_dir: &str) -> Result<()> {
+    restore_epoch_counter(work_dir)?.fetch_add(1, Ordering::SeqCst);
+    Ok(())
 }
 
 /// 返回同一工作目录下某个文件的执行锁。工作目录锁负责与 bash/回滚互斥，
@@ -793,11 +847,12 @@ pub fn capture_checkpoint_worktree_before(
         return Ok(None);
     }
     let root = canonical_work_dir(&work_dir)?;
+    // 扫描期间短暂持有执行级共享读锁：与回滚（独占写锁）互斥，保证快照
+    // 不与正在进行的回滚交错；bash 执行期间不持锁，跨会话命令并行。
+    let operation_lock = checkpoint_operation_lock(&work_dir)?;
+    let _operation_guard = operation_lock.blocking_read();
     let work_dir_lock = work_dir_lock(&root)?;
     let _work_dir_guard = work_dir_read_guard(&work_dir_lock)?;
-
-    // 所有 checkpoint 都与当前目录不匹配:没有任何可捕获目标,
-    // 不做无意义的全目录扫描。
     let mut matched_any = false;
     for checkpoint_id in &checkpoint_ids {
         let lock = manifest_lock(checkpoint_id)?;
@@ -854,6 +909,8 @@ pub fn capture_checkpoint_worktree_before(
     }
 
     Ok(Some(CheckpointWorktreeCapture {
+        // 先求值再移动 work_dir 字段。
+        restore_epoch: current_restore_epoch(&work_dir)?,
         checkpoint_ids,
         work_dir,
         before_paths,
@@ -871,6 +928,19 @@ pub fn capture_checkpoint_worktree_before(
 /// the before-fingerprint are recorded; every other file is left untouched.
 pub fn record_checkpoint_worktree_after(capture: CheckpointWorktreeCapture) -> Result<()> {
     let root = canonical_work_dir(&capture.work_dir)?;
+    // after 扫描同样短暂持有执行级共享读锁：与回滚（独占写锁）互斥。
+    // 若在取得锁之前回滚已改写工作树，纪元已递增，这里跳过变更记录，
+    // 避免把其他会话回滚恢复的文件误记到本会话 checkpoint。
+    let operation_lock = checkpoint_operation_lock(&capture.work_dir)?;
+    let _operation_guard = operation_lock.blocking_read();
+    if current_restore_epoch(&capture.work_dir)? != capture.restore_epoch {
+        eprintln!(
+            "[checkpoint] worktree was restored by a rollback while the command ran; \
+             skipping change capture for checkpoint(s) {}",
+            capture.checkpoint_ids.join(", ")
+        );
+        return Ok(());
+    }
     let work_dir_lock = work_dir_lock(&root)?;
     let _work_dir_guard = work_dir_read_guard(&work_dir_lock)?;
     // 先筛出仍有效且属于当前 work_dir 的 checkpoint。真正写入前会在各自
@@ -975,6 +1045,9 @@ pub fn restore_checkpoint(checkpoint_id: String, work_dir: String) -> Result<()>
     }
     let manifest = read_manifest(&checkpoint_id)?;
     validate_manifest_work_dir(&manifest, &work_dir)?;
+    // 递增回滚纪元：此刻起该目录上正在运行的 bash 命令的 after 捕获
+    // 会检测到工作树被回滚改写并跳过变更记录，防止跨会话误记。
+    bump_restore_epoch(&work_dir)?;
 
     let mut restored_entries = Vec::new();
     for entry in &manifest.entries {

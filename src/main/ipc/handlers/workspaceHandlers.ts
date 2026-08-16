@@ -2,6 +2,7 @@ import { BrowserWindow, dialog, ipcMain } from "electron";
 import { promises as fs } from "fs";
 import type {
   FileSearchAgentProgress,
+  GitCloneProgress,
   NativeBridge,
 } from "../../native/types";
 import {
@@ -14,6 +15,9 @@ import { safeSend } from "../../utils/safeSend";
 
 const AGENT_SEARCH_PROGRESS_CHANNEL =
   "workspace-directories:search-files-by-agent:progress";
+
+const CLONE_PROGRESS_CHANNEL =
+  "workspace-directories:clone-repository:progress";
 
 const broadcastDirectoryListChanged = (): void => {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -121,6 +125,43 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
       const existingCount = (await native.listWorkspaceDirectories()).length;
       await native.upsertWorkspaceDirectory(
         createWorkspaceDirectoryInput(createdPath, "local", existingCount)
+      );
+      const directories = await native.listWorkspaceDirectories();
+      broadcastDirectoryListChanged();
+      return directories;
+    }
+  );
+  ipcMain.handle(
+    "workspace-directories:clone-repository",
+    async (event, repoUrl: unknown, parentPath: unknown, streamId: unknown) => {
+      if (typeof repoUrl !== "string" || !repoUrl.trim()) {
+        throw new Error("Repository URL is required");
+      }
+      if (typeof parentPath !== "string" || !parentPath.trim()) {
+        throw new Error("Parent directory is required");
+      }
+      if (typeof streamId !== "string" || !streamId.trim()) {
+        throw new Error("Clone progress stream ID is required");
+      }
+
+      const normalizedStreamId = streamId.trim();
+      // 克隆由 Rust 后端以 tokio 异步子进程执行（不阻塞主进程），
+      // 按 git 惯例在所选目录下以项目名新建子目录进行克隆，进度行
+      // 通过广播通道实时推送给发起窗口。克隆成功后把实际克隆目录
+      // 登记为活动本地工作区目录。
+      const clonedPath = await native.cloneGitRepository(
+        repoUrl.trim(),
+        parentPath.trim(),
+        (chunk: GitCloneProgress) => {
+          safeSend(event.sender, CLONE_PROGRESS_CHANNEL, {
+            streamId: normalizedStreamId,
+            chunk,
+          });
+        }
+      );
+      const existingCount = (await native.listWorkspaceDirectories()).length;
+      await native.upsertWorkspaceDirectory(
+        createWorkspaceDirectoryInput(clonedPath, "local", existingCount)
       );
       const directories = await native.listWorkspaceDirectories();
       broadcastDirectoryListChanged();

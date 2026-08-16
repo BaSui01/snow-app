@@ -1013,6 +1013,12 @@ export type FileSearchAgentProgress = {
   resultPreview: string;
 };
 
+/** `git clone` 的实时进度：一条 stderr 进度行 + 解析出的百分比。 */
+export type GitCloneProgress = {
+  line: string;
+  percent: number | null;
+};
+
 export type BrowserCommand = {
   operation: string;
   argsJson: string;
@@ -1299,6 +1305,11 @@ export type NativeBridge = {
   createProjectDirectory: (
     parentPath: string,
     projectName: string
+  ) => Promise<string>;
+  cloneGitRepository: (
+    repoUrl: string,
+    parentPath: string,
+    onProgress: ((chunk: GitCloneProgress) => void) | undefined
   ) => Promise<string>;
   readDirectoryEntries: (dirPath: string) => Promise<DirectoryEntry[]>;
   renameWorkspaceEntry: (

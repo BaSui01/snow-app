@@ -1,4 +1,10 @@
+use std::path::Path;
+use std::process::Stdio;
+
+use napi::bindgen_prelude::{Status, Unknown};
+use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
+use tokio::io::AsyncReadExt;
 
 use crate::api::commit_message::generate_commit_message_stream;
 use crate::api::responses::{ResponsesApiResult, ResponsesApiStreamCallback};
@@ -346,4 +352,217 @@ pub async fn generate_commit_message_from_diff(
     crate::api::cancel::unregister_stream(&stream_id);
 
     result
+}
+
+// ===== Clone repository =====
+
+/// `git clone` 的实时进度：一条 stderr 进度行 + 解析出的百分比。
+#[napi(object)]
+pub struct GitCloneProgress {
+    /// git 输出的一条原始进度行（已去除行尾控制符）。
+    pub line: String,
+    /// 从进度行解析出的百分比（0-100），无法解析时为 None。
+    pub percent: Option<f64>,
+}
+
+type GitCloneProgressCallback = ThreadsafeFunction<
+    GitCloneProgress,
+    Unknown<'static>,
+    GitCloneProgress,
+    Status,
+    false,
+>;
+
+/// 克隆 Git 仓库到本地目录。
+///
+/// `parent_path` 为保存位置：按 git 的默认命名规则从仓库地址推导
+/// 项目名，并在其下新建 `<项目名>` 子目录进行克隆（与 `git clone`
+/// 不带目标目录时的行为一致）。全程使用 tokio 异步子进程执行
+/// `git clone --progress`，不经过 spawn_blocking、不阻塞 Node.js
+/// 主线程。stderr 按字节流读取并按 `\r` / `\n` 分行（git 的进度
+/// 更新以 `\r` 结尾），每条进度行通过 `onProgress` 回调实时推送
+/// 给渲染层。克隆成功返回实际克隆目录的完整路径。
+#[napi(
+    ts_args_type = "repoUrl: string, parentPath: string, onProgress: ((chunk: GitCloneProgress) => void) | undefined",
+    ts_return_type = "Promise<string>"
+)]
+pub async fn clone_git_repository(
+    repo_url: String,
+    parent_path: String,
+    on_progress: Option<GitCloneProgressCallback>,
+) -> napi::Result<String> {
+    let url = repo_url.trim().to_string();
+    if url.is_empty() {
+        return Err(napi::Error::from_reason(
+            "Repository URL is required and must be non-empty",
+        ));
+    }
+
+    let parent = parent_path.trim().to_string();
+    if parent.is_empty() {
+        return Err(napi::Error::from_reason(
+            "Parent directory is required and must be non-empty",
+        ));
+    }
+
+    let parent_obj = Path::new(&parent);
+    if !parent_obj.is_dir() {
+        return Err(napi::Error::from_reason(format!(
+            "Parent directory does not exist or is not a directory: '{parent}'"
+        )));
+    }
+
+    // 与 git 默认命名一致：去掉 .git 后缀后取最后一段作为项目名，
+    // 在所选目录下新建同名子目录，避免直接占用所选目录本身。
+    let repo_name = derive_repo_name(&url).ok_or_else(|| {
+        napi::Error::from_reason(format!(
+            "Unable to derive repository name from URL: '{url}'"
+        ))
+    })?;
+    let target_obj = parent_obj.join(&repo_name);
+    let target = target_obj.to_string_lossy().to_string();
+
+    // 子目录已存在时仅允许空目录（可直接克隆进入）；非空则报错，
+    // 通常是上一次克隆残留的目录。
+    if target_obj.exists() {
+        if !target_obj.is_dir() {
+            return Err(napi::Error::from_reason(format!(
+                "Target path is not a directory: '{target}'"
+            )));
+        }
+        let has_entries = std::fs::read_dir(&target_obj)
+            .map_err(|error| {
+                napi::Error::from_reason(format!(
+                    "Failed to inspect target directory '{target}': {error}"
+                ))
+            })?
+            .next()
+            .is_some();
+        if has_entries {
+            return Err(napi::Error::from_reason(format!(
+                "Target directory is not empty: '{target}'"
+            )));
+        }
+    }
+
+    // GIT_TERMINAL_PROMPT=0 避免无凭证助手时 git 在终端上挂起等待输入，
+    // 认证失败快速报错；Windows 下 Git Credential Manager 仍可弹窗交互。
+    let mut child = crate::utils::process::cmd_async("git")
+        .args(["clone", "--progress", &url, &target])
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                napi::Error::from_reason(
+                    "git executable not found in PATH — install Git before cloning repositories",
+                )
+            } else {
+                napi::Error::from_reason(format!("Failed to start git clone: {error}"))
+            }
+        })?;
+
+    let mut stderr = child.stderr.take().ok_or_else(|| {
+        napi::Error::from_reason("Failed to capture git clone progress output")
+    })?;
+    let mut last_line = String::new();
+    let mut read_buffer = [0u8; 4096];
+    let mut line_buffer: Vec<u8> = Vec::new();
+
+    loop {
+        let bytes_read = stderr.read(&mut read_buffer).await.map_err(|error| {
+            napi::Error::from_reason(format!("Failed to read git clone progress: {error}"))
+        })?;
+        if bytes_read == 0 {
+            break;
+        }
+        for &byte in &read_buffer[..bytes_read] {
+            // git 的进度更新以 \r 结尾（不换行覆盖刷新），普通信息行
+            // 以 \n 结尾，两者都视为一行边界。
+            if byte == b'\n' || byte == b'\r' {
+                if !line_buffer.is_empty() {
+                    last_line = emit_clone_progress(&on_progress, &line_buffer);
+                    line_buffer.clear();
+                }
+            } else {
+                line_buffer.push(byte);
+            }
+        }
+    }
+    if !line_buffer.is_empty() {
+        last_line = emit_clone_progress(&on_progress, &line_buffer);
+    }
+
+    let status = child.wait().await.map_err(|error| {
+        napi::Error::from_reason(format!("Failed to wait for git clone: {error}"))
+    })?;
+    if !status.success() {
+        let detail = last_line.trim();
+        let message = if detail.is_empty() {
+            format!(
+                "git clone exited with code {}",
+                status.code().unwrap_or(-1)
+            )
+        } else {
+            detail.to_string()
+        };
+        return Err(napi::Error::from_reason(format!(
+            "Failed to clone repository: {message}"
+        )));
+    }
+
+    Ok(target)
+}
+
+/// 推送一条克隆进度，并返回该行文本（用于失败时展示最后一条信息）。
+fn emit_clone_progress(
+    on_progress: &Option<GitCloneProgressCallback>,
+    line_bytes: &[u8],
+) -> String {
+    let line = String::from_utf8_lossy(line_bytes).trim().to_string();
+    if let Some(callback) = on_progress {
+        let chunk = GitCloneProgress {
+            percent: parse_progress_percent(&line),
+            line: line.clone(),
+        };
+        let _ = callback.call(chunk, ThreadsafeFunctionCallMode::NonBlocking);
+    }
+    line
+}
+
+/// 从 git 进度行中解析百分比，如
+/// "Receiving objects:  42% (420/1000)" → `Some(42.0)`。
+fn parse_progress_percent(line: &str) -> Option<f64> {
+    let percent_index = line.find('%')?;
+    let before = &line[..percent_index];
+    let start = before
+        .char_indices()
+        .rev()
+        .take_while(|(_, ch)| ch.is_ascii_digit() || *ch == '.')
+        .last()
+        .map(|(index, _)| index)?;
+    let digits: String = before[start..]
+        .chars()
+        .filter(|ch| ch.is_ascii_digit() || *ch == '.')
+        .collect();
+    digits
+        .parse::<f64>()
+        .ok()
+        .filter(|value| (0.0..=100.0).contains(value))
+}
+
+/// 按 git 的默认命名规则从仓库地址推导项目目录名：去掉末尾 `.git`
+/// 后缀与斜杠后，取最后一个路径段。同时支持 https/ssh 形式
+/// （`https://github.com/user/repo.git`）与 scp 形式
+/// （`git@host:user/repo.git`），两者都得到 `repo`。
+fn derive_repo_name(repo_url: &str) -> Option<String> {
+    let trimmed = repo_url.trim().trim_end_matches('/');
+    let without_suffix = trimmed.strip_suffix(".git").unwrap_or(trimmed);
+    without_suffix
+        .rsplit(['/', ':', '\\'])
+        .next()
+        .filter(|segment| !segment.is_empty())
+        .map(str::to_string)
 }

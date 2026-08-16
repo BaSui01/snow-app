@@ -129,6 +129,7 @@ export function ChatsSection({
     handleNewChat,
     activeConversationId,
     abortConversation,
+    sessions,
     streamingConversationIds,
     attentionRequiredConversationIds,
     completedConversationIds,
@@ -141,6 +142,16 @@ export function ChatsSection({
         ...attentionRequiredConversationIds,
       ]),
     [streamingConversationIds, attentionRequiredConversationIds]
+  );
+  // 被用户暂停的流式会话（agent loop 阻塞等待恢复），图标切换为暂停态
+  const pausedConversationIds = useMemo(
+    () =>
+      new Set(
+        Object.entries(sessions)
+          .filter(([, session]) => session.isPaused)
+          .map(([id]) => id)
+      ),
+    [sessions]
   );
   const [conversations, setConversations] = useState<ChatConversationRecord[]>(
     []
@@ -1931,6 +1942,9 @@ export function ChatsSection({
                                 conversation.conversationId
                               )}
                               isStreaming={streamingConversationIds.has(
+                                conversation.conversationId
+                              )}
+                              isPaused={pausedConversationIds.has(
                                 conversation.conversationId
                               )}
                               isCompleted={completedConversationIds.has(

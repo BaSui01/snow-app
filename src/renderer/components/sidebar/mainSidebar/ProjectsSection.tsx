@@ -2,6 +2,7 @@ import {
   ChevronRight,
   Folder,
   FolderPlus,
+  GitFork,
   Loader2,
   Plus,
   Server,
@@ -11,6 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../../../i18n";
 import { shortcutEvents } from "../../shortcutEvents";
 import type {
+  GitCloneProgress,
   WorkspaceDirectoryInput,
   WorkspaceDirectoryKind,
   WorkspaceDirectoryRecord,
@@ -84,6 +86,26 @@ const toPersistableDirectoryInput = (
   source: directory.source,
 });
 
+/**
+ * 按 git 的默认命名规则从仓库地址推导项目目录名：去掉末尾 `.git`
+ * 后缀与斜杠后取最后一段，与 Rust 端 clone_git_repository 的命名
+ * 逻辑保持一致（仅用于对话框中的最终路径预览）。
+ */
+const deriveRepoNameFromUrl = (repoUrl: string): string => {
+  const trimmed = repoUrl.trim().replace(/[\\/]+$/, "");
+  const withoutSuffix = trimmed.endsWith(".git")
+    ? trimmed.slice(0, -".git".length)
+    : trimmed;
+  const segments = withoutSuffix.split(/[/:\\]/).filter(Boolean);
+  return segments[segments.length - 1] ?? "";
+};
+
+/** 拼接克隆的最终目录路径（分隔符跟随所选父目录的风格）。 */
+const joinCloneTargetPath = (parentPath: string, repoName: string): string => {
+  const separator = parentPath.includes("\\") ? "\\" : "/";
+  return `${parentPath.replace(/[\\/]+$/, "")}${separator}${repoName}`;
+};
+
 export function ProjectsSection({
   activeDirectory: externalActiveDirectory,
   notificationGroups,
@@ -121,6 +143,23 @@ export function ProjectsSection({
   const [selectedLocalPath, setSelectedLocalPath] = useState("");
   const [isDraggingLocalDirectory, setIsDraggingLocalDirectory] = useState(false);
   const localPathInputRef = useRef<HTMLInputElement | null>(null);
+  const [isCloneRepoOpen, setIsCloneRepoOpen] = useState(false);
+  const [cloneRepoUrl, setCloneRepoUrl] = useState("");
+  const [cloneParentPath, setCloneParentPath] = useState("");
+  const [cloneProgress, setCloneProgress] = useState<GitCloneProgress | null>(
+    null
+  );
+  const cloneRepoInputRef = useRef<HTMLInputElement | null>(null);
+
+  // 克隆的最终目录预览：所选保存位置 + 从仓库地址推导出的项目名。
+  const cloneTargetPreview = useMemo(() => {
+    const parentPath = cloneParentPath.trim();
+    const repoName = deriveRepoNameFromUrl(cloneRepoUrl);
+    if (!parentPath || !repoName) {
+      return "";
+    }
+    return joinCloneTargetPath(parentPath, repoName);
+  }, [cloneParentPath, cloneRepoUrl]);
 
   const [isProjectsCollapsed, setIsProjectsCollapsed] = useState(() => {
     try {
@@ -515,6 +554,92 @@ export function ProjectsSection({
     }
   };
 
+  const handleCloneRepoModeOpen = (): void => {
+    setDirectoryError(null);
+    setAddDirectoryMode("");
+    setIsAddMenuOpen(false);
+    setCloneRepoUrl("");
+    setCloneParentPath("");
+    setCloneProgress(null);
+    setIsCloneRepoOpen(true);
+    // 表单渲染后聚焦 URL 输入框
+    requestAnimationFrame(() => {
+      cloneRepoInputRef.current?.focus();
+    });
+  };
+
+  const handleCloneRepoCancel = (): void => {
+    if (isSavingDirectory) return;
+    // 取消时返回上一级（选择添加方式），而不是直接关闭整个模态框
+    setIsCloneRepoOpen(false);
+    setCloneRepoUrl("");
+    setCloneParentPath("");
+    setCloneProgress(null);
+    setDirectoryError(null);
+    setIsAddMenuOpen(true);
+  };
+
+  const handleSelectCloneDirectory = async (): Promise<void> => {
+    if (isSavingDirectory) return;
+
+    setDirectoryError(null);
+    try {
+      const selectedPath = await window.snow.selectWorkspaceDirectory(
+        t("sidebar.selectCloneDirectoryTitle", {
+          defaultValue: "Choose a folder to save the repository",
+        })
+      );
+      if (selectedPath) setCloneParentPath(selectedPath);
+    } catch (error) {
+      setDirectoryError(
+        error instanceof Error
+          ? error.message
+          : t("sidebar.selectLocalDirectoryError", {
+              defaultValue: "Failed to select local directory",
+            })
+      );
+    }
+  };
+
+  // 克隆仓库：URL 与保存位置就绪后，由 Rust 后端以异步子进程执行
+  // git clone（不阻塞主进程），按 git 惯例在所选目录下以项目名新建
+  // 子目录，进度实时展示；成功后主进程把实际克隆目录登记为活动
+  // 本地工作区目录并返回最新目录列表。
+  const handleCloneRepoConfirm = async (): Promise<void> => {
+    const repoUrl = cloneRepoUrl.trim();
+    const parentPath = cloneParentPath.trim();
+    if (!repoUrl || !parentPath || isSavingDirectory) {
+      return;
+    }
+
+    setIsSavingDirectory(true);
+    setDirectoryError(null);
+    setCloneProgress(null);
+
+    try {
+      const directories = await window.snow.cloneWorkspaceRepository(
+        repoUrl,
+        parentPath,
+        setCloneProgress
+      );
+      setWorkspaceDirectories(directories);
+      setIsCloneRepoOpen(false);
+      setCloneRepoUrl("");
+      setCloneParentPath("");
+    } catch (error) {
+      setDirectoryError(
+        error instanceof Error
+          ? error.message
+          : t("sidebar.cloneRepositoryError", {
+              defaultValue: "Failed to clone repository",
+            })
+      );
+    } finally {
+      setIsSavingDirectory(false);
+      setCloneProgress(null);
+    }
+  };
+
   const handleActivateDirectory = async (
     directoryId: string
   ): Promise<void> => {
@@ -828,6 +953,28 @@ export function ProjectsSection({
           </button>
           <button
             className="project-action-card"
+            onClick={handleCloneRepoModeOpen}
+            type="button"
+          >
+            <span className="project-action-card-icon">
+              <GitFork size={20} />
+            </span>
+            <span className="project-action-card-content">
+              <strong>
+                {t("sidebar.cloneGitRepository", {
+                  defaultValue: "Clone git repository",
+                })}
+              </strong>
+              <span>
+                {t("sidebar.cloneGitRepositoryDescription", {
+                  defaultValue:
+                    "Clone a remote repository into a local folder",
+                })}
+              </span>
+            </span>
+          </button>
+          <button
+            className="project-action-card"
             onClick={() => handleAddDirectoryModeSelect("ssh")}
             type="button"
           >
@@ -973,6 +1120,97 @@ export function ProjectsSection({
           <span className="form-dialog-error">{directoryError}</span>
         ) : null}
       </FormDialog>
+      <FormDialog
+        cancelLabel={t("common.cancel", { defaultValue: "Cancel" })}
+        closeLabel={t("sidebar.close", { defaultValue: "Close" })}
+        confirmDisabled={!cloneRepoUrl.trim() || !cloneParentPath.trim()}
+        confirmLabel={t("sidebar.cloneRepositoryConfirm", {
+          defaultValue: "Clone",
+        })}
+        initialFocusRef={cloneRepoInputRef}
+        isSubmitting={isSavingDirectory}
+        onCancel={handleCloneRepoCancel}
+        onConfirm={() => void handleCloneRepoConfirm()}
+        open={isCloneRepoOpen}
+        title={t("sidebar.cloneRepositoryTitle", {
+          defaultValue: "Clone git repository",
+        })}
+      >
+        <p className="form-dialog-description">
+          {t("sidebar.cloneRepositoryDialogDescription", {
+            defaultValue:
+              "Enter the repository URL and choose a save location. A new folder named after the repository will be created automatically.",
+          })}
+        </p>
+        <label className="form-dialog-field">
+          <span className="form-dialog-label">
+            {t("sidebar.cloneRepositoryUrlLabel", {
+              defaultValue: "Repository URL",
+            })}
+          </span>
+          <input
+            ref={cloneRepoInputRef}
+            className="form-dialog-input"
+            disabled={isSavingDirectory}
+            maxLength={400}
+            onChange={(event) => setCloneRepoUrl(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void handleCloneRepoConfirm();
+              }
+            }}
+            placeholder={t("sidebar.cloneRepositoryUrlPlaceholder", {
+              defaultValue: "https://github.com/user/repo.git",
+            })}
+            value={cloneRepoUrl}
+          />
+        </label>
+        <label className="form-dialog-field">
+          <span className="form-dialog-label">
+            {t("sidebar.cloneSaveLocationLabel", {
+              defaultValue: "Save location",
+            })}
+          </span>
+          <div className="form-dialog-input-row">
+            <input
+              className="form-dialog-input"
+              placeholder={t("sidebar.cloneDirectoryPlaceholder", {
+                defaultValue: "No folder selected",
+              })}
+              readOnly
+              value={cloneParentPath}
+            />
+            <button
+              className="form-dialog-button cancel form-dialog-browse-button"
+              disabled={isSavingDirectory}
+              onClick={() => void handleSelectCloneDirectory()}
+              type="button"
+            >
+              {t("sidebar.selectFolder", { defaultValue: "Select folder" })}
+            </button>
+          </div>
+        </label>
+        {cloneTargetPreview ? (
+          <span className="form-dialog-description clone-progress-text">
+            {t("sidebar.cloneTargetPreview", {
+              defaultValue: "Will clone to",
+              values: { path: cloneTargetPreview },
+            })}
+          </span>
+        ) : null}
+        {cloneProgress ? (
+          <span className="form-dialog-description clone-progress-text">
+            {cloneProgress.percent !== null &&
+            cloneProgress.percent !== undefined
+              ? `${cloneProgress.percent.toFixed(0)}% · ${cloneProgress.line}`
+              : cloneProgress.line}
+          </span>
+        ) : null}
+        {directoryError ? (
+          <span className="form-dialog-error">{directoryError}</span>
+        ) : null}
+      </FormDialog>
 
       {!isProjectsCollapsed ? (
         <div className="workspace-directory-card">
@@ -1007,7 +1245,10 @@ export function ProjectsSection({
             visibleDirectories={visibleDirectories}
             workspaceDirectories={workspaceDirectories}
           />
-          {directoryError && !isCreateProjectOpen && !isAddLocalDialogOpen ? (
+          {directoryError &&
+          !isCreateProjectOpen &&
+          !isAddLocalDialogOpen &&
+          !isCloneRepoOpen ? (
             <span className="workspace-directory-error">{directoryError}</span>
           ) : null}
         </div>

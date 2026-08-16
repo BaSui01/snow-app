@@ -37,6 +37,20 @@ export const en = {
   "sidebar.createProjectError": "Failed to create project",
   "sidebar.selectCreateProjectParentTitle":
     "Choose a folder to save the new project",
+  "sidebar.cloneGitRepository": "Clone git repository",
+  "sidebar.cloneGitRepositoryDescription":
+    "Clone a remote repository into a local folder",
+  "sidebar.cloneRepositoryTitle": "Clone git repository",
+  "sidebar.cloneRepositoryDialogDescription":
+    "Enter the repository URL and choose a save location. A new folder named after the repository will be created automatically.",
+  "sidebar.cloneRepositoryUrlLabel": "Repository URL",
+  "sidebar.cloneRepositoryUrlPlaceholder": "https://github.com/user/repo.git",
+  "sidebar.cloneSaveLocationLabel": "Save location",
+  "sidebar.cloneDirectoryPlaceholder": "No folder selected",
+  "sidebar.cloneRepositoryConfirm": "Clone",
+  "sidebar.selectCloneDirectoryTitle": "Choose a folder to save the repository",
+  "sidebar.cloneTargetPreview": "Will clone to: {{path}}",
+  "sidebar.cloneRepositoryError": "Failed to clone repository",
   "sidebar.sshDirectory": "SSH directory",
   "sidebar.sshDirectoryPlaceholder": "ssh://user@host:22/path",
   "sidebar.add": "Add",

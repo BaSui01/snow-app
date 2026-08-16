@@ -508,13 +508,13 @@ pub async fn canonical_work_dir_remote(
 // ============================================================================
 
 use super::{
-    checkpoint_manifest_exists, checkpoint_root, filter_existing_checkpoints, fingerprint_lookup,
-    fingerprint_store, manifest_lock, pending_state_to_original, read_manifest,
-    should_skip_manifest_path, should_skip_relative, store_object_bytes, work_dir_lock,
-    work_dir_read_guard_async, work_dir_write_guard_async, write_manifest, CachedCheckpointDiff,
-    CheckpointEntry, CheckpointFileChange, CheckpointFileDiff, CheckpointManifest,
-    CheckpointWorktreeCapture, OriginalState, PendingFileState, DIFF_CACHE_MAX_ENTRIES,
-    OBJECT_DIR_NAME,
+    bump_restore_epoch, checkpoint_manifest_exists, checkpoint_operation_lock, checkpoint_root,
+    current_restore_epoch, filter_existing_checkpoints, fingerprint_lookup, fingerprint_store,
+    manifest_lock, pending_state_to_original, read_manifest, should_skip_manifest_path,
+    should_skip_relative, store_object_bytes, work_dir_lock, work_dir_read_guard_async,
+    work_dir_write_guard_async, write_manifest, CachedCheckpointDiff, CheckpointEntry,
+    CheckpointFileChange, CheckpointFileDiff, CheckpointManifest, CheckpointWorktreeCapture,
+    OriginalState, PendingFileState, DIFF_CACHE_MAX_ENTRIES, OBJECT_DIR_NAME,
 };
 
 use crate::storage::services::checkpoint_skip::should_skip_pending_copy_size;
@@ -868,6 +868,10 @@ pub(crate) async fn capture_checkpoint_worktree_before_remote(
     }
     let root = canonical_work_dir_remote(client, &work_dir).await?;
     let root_path = PathBuf::from(&root);
+    // 扫描期间短暂持有执行级共享读锁：与回滚（独占写锁）互斥，保证快照
+    // 不与正在进行的回滚交错；bash 执行期间不持锁，跨会话命令并行。
+    let operation_lock = checkpoint_operation_lock(&work_dir)?;
+    let _operation_guard = operation_lock.read_owned().await;
     let work_dir_lock = work_dir_lock(&root_path)?;
     let _work_dir_guard = work_dir_read_guard_async(&work_dir_lock).await;
 
@@ -965,6 +969,8 @@ pub(crate) async fn capture_checkpoint_worktree_before_remote(
     }
 
     Ok(Some(CheckpointWorktreeCapture {
+        // 先求值再移动 work_dir 字段。
+        restore_epoch: current_restore_epoch(&work_dir)?,
         checkpoint_ids,
         work_dir,
         before_paths,
@@ -982,6 +988,19 @@ pub(crate) async fn record_checkpoint_worktree_after_remote(
 ) -> Result<()> {
     let root = canonical_work_dir_remote(client, &capture.work_dir).await?;
     let root_path = PathBuf::from(&root);
+    // after 扫描同样短暂持有执行级共享读锁：与回滚（独占写锁）互斥。
+    // 若在取得锁之前回滚已改写工作树，纪元已递增，这里跳过变更记录，
+    // 避免把其他会话回滚恢复的文件误记到本会话 checkpoint。
+    let operation_lock = checkpoint_operation_lock(&capture.work_dir)?;
+    let _operation_guard = operation_lock.read_owned().await;
+    if current_restore_epoch(&capture.work_dir)? != capture.restore_epoch {
+        eprintln!(
+            "[checkpoint] remote worktree was restored by a rollback while the command ran; \
+             skipping change capture for checkpoint(s) {}",
+            capture.checkpoint_ids.join(", ")
+        );
+        return Ok(());
+    }
     let work_dir_lock = work_dir_lock(&root_path)?;
     let _work_dir_guard = work_dir_read_guard_async(&work_dir_lock).await;
 
@@ -1476,6 +1495,9 @@ pub(crate) async fn restore_checkpoint_remote(
     }
     let manifest = read_manifest(&checkpoint_id)?;
     validate_manifest_work_dir_remote(&manifest, &work_dir)?;
+    // 递增回滚纪元：此刻起该远程目录上正在运行的 bash 命令的 after 捕获
+    // 会检测到工作树被回滚改写并跳过变更记录，防止跨会话误记。
+    bump_restore_epoch(&work_dir)?;
 
     // 当前树 stat：只恢复仍处于 expected 状态的文件（与本地一致）。
     let tracked: Vec<CheckpointEntry> = manifest

@@ -5,12 +5,16 @@ import type {
   FileContentResult,
   FileSearchAgentProgress,
   FileSearchResult,
+  GitCloneProgress,
   WorkspaceDirectoryInput,
   WorkspaceDirectoryRecord,
 } from "../types";
 
 const AGENT_SEARCH_PROGRESS_CHANNEL =
   "workspace-directories:search-files-by-agent:progress";
+
+const CLONE_PROGRESS_CHANNEL =
+  "workspace-directories:clone-repository:progress";
 
 const agentSearchProgressCallbacks = new Map<
   string,
@@ -37,8 +41,33 @@ const ensureAgentSearchProgressListener = (): void => {
   );
 };
 
+const cloneProgressCallbacks = new Map<
+  string,
+  (chunk: GitCloneProgress) => void
+>();
+let cloneProgressListenerRegistered = false;
+
+const ensureCloneProgressListener = (): void => {
+  if (cloneProgressListenerRegistered) {
+    return;
+  }
+  cloneProgressListenerRegistered = true;
+  ipcRenderer.on(CLONE_PROGRESS_CHANNEL, (_event, payload: unknown) => {
+    const record = payload as Record<string, unknown> | null;
+    const streamId = record?.streamId;
+    const chunk = record?.chunk as GitCloneProgress | undefined;
+    if (typeof streamId !== "string" || !chunk) {
+      return;
+    }
+    cloneProgressCallbacks.get(streamId)?.(chunk);
+  });
+};
+
 const createAgentSearchStreamId = (): string =>
   `agent-search-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+const createCloneStreamId = (): string =>
+  `clone-repo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 export const workspaceApi = {
   listWorkspaceDirectories: (): Promise<WorkspaceDirectoryRecord[]> =>
@@ -68,6 +97,34 @@ export const workspaceApi = {
       parentPath,
       projectName
     ),
+  /**
+   * 克隆 Git 仓库：在 `parentPath` 下按 git 惯例以项目名新建子目录
+   * 进行克隆，完成后由主进程登记为活动工作区目录。
+   * `onProgress` 接收 git stderr 解析出的实时进度（行文本 + 百分比）。
+   */
+  cloneWorkspaceRepository: (
+    repoUrl: string,
+    parentPath: string,
+    onProgress?: (chunk: GitCloneProgress) => void
+  ): Promise<WorkspaceDirectoryRecord[]> => {
+    const streamId = createCloneStreamId();
+    ensureCloneProgressListener();
+
+    if (onProgress) {
+      cloneProgressCallbacks.set(streamId, onProgress);
+    }
+
+    return ipcRenderer
+      .invoke(
+        "workspace-directories:clone-repository",
+        repoUrl,
+        parentPath,
+        streamId
+      )
+      .finally(() => {
+        cloneProgressCallbacks.delete(streamId);
+      });
+  },
   selectWorkspaceDirectory: (dialogTitle?: string): Promise<string | null> =>
     ipcRenderer.invoke(
       "workspace-directories:select-local-directory",

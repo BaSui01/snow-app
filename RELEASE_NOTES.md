@@ -1,5 +1,18 @@
 # Release Notes
 
+## v0.2.5
+
+## New Features
+
+- **Git Clone Repository**: A new clone dialog (URL / save location / target path preview / real-time progress) runs `git clone` via a Rust async subprocess; the cloned repo is auto-registered as a workspace directory.
+- **Session Pause Indicator**: User-paused streaming sessions show a pause icon with a warning color in the sidebar.
+
+## Improvements
+
+- Visual requests now reuse the main request's retry configuration (exponential backoff); truncated content-less responses double `max_tokens` and retry.
+- Commit drafts and AI generation status are promoted to module level, isolated per repository path, and restored after switching or collapsing.
+- **Checkpoint Concurrency Rework**: Execution-level locks are no longer held during bash execution, so cross-session commands run in parallel and rollback is not blocked by long commands; a new rollback epoch skips change records when a rollback overwrites the working tree, avoiding cross-session misrecording. External MCP tools still use the whole-tree exclusive lock.
+
 ## v0.2.4
 
 ## New Features

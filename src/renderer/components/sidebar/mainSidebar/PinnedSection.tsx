@@ -9,6 +9,7 @@ import type {
 } from "../../../../preload";
 import { ChatItem } from "./ChatItem";
 import type { ExportFormat } from "./ChatItemMenu";
+import { isChatDrag, readChatDragData } from "./chatDrag";
 
 type PinnedSectionProps = {
   isSwitchingDirectory: boolean;
@@ -46,6 +47,8 @@ export function PinnedSection({
       return false;
     }
   });
+  // 会话拖拽悬停中：高亮提示可放置
+  const [isChatDragOver, setIsChatDragOver] = useState(false);
 
   const directoryId = activeDirectory?.directoryId ?? "";
 
@@ -249,9 +252,51 @@ export function PinnedSection({
     });
   };
 
+  /** 会话拖拽悬停：允许放置并高亮提示 */
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>): void => {
+    if (!isChatDrag(event)) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setIsChatDragOver(true);
+  };
+
+  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>): void => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      return;
+    }
+    setIsChatDragOver(false);
+  };
+
+  /** 拖入置顶区域：将拖拽的会话置顶 */
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>): void => {
+    setIsChatDragOver(false);
+    if (!isChatDrag(event)) {
+      return;
+    }
+    event.preventDefault();
+    const payload = readChatDragData(event);
+    // 非会话拖拽或来源已是置顶会话时无需变更
+    if (!payload || payload.status === "pin") {
+      return;
+    }
+    void window.snow
+      .updateConversationStatus(payload.conversationId, "pin")
+      .then(() => refreshConversations())
+      .catch(() => {
+        // 静默失败
+      });
+  };
+
   return (
     <div
-      className={`sidebar-section${isCollapsed ? " collapsed" : ""}`}
+      className={`sidebar-section${isCollapsed ? " collapsed" : ""}${
+        isChatDragOver ? " chat-drag-over" : ""
+      }`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
       <div className="section-header">
         <button
@@ -296,6 +341,7 @@ export function PinnedSection({
             <ChatItem
               key={conversation.conversationId}
               conversation={conversation}
+              isDraggable
               isActive={conversation.conversationId === activeConversationId}
               isAttentionRequired={attentionRequiredConversationIds.has(
                 conversation.conversationId

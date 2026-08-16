@@ -28,17 +28,20 @@ export const CommandPanel = forwardRef<CommandPanelHandle, CommandPanelProps>(
 
     const filteredCommands = useMemo(() => {
       const normalizedQuery = query.trim().toLowerCase();
-      if (!normalizedQuery) {
-        return commands;
-      }
+      const matched = !normalizedQuery
+        ? commands
+        : commands.filter(
+            (command) =>
+              command.label.toLowerCase().includes(normalizedQuery) ||
+              command.description.toLowerCase().includes(normalizedQuery) ||
+              command.searchKeywords?.some((keyword) =>
+                keyword.toLowerCase().includes(normalizedQuery)
+              )
+          );
 
-      return commands.filter(
-        (command) =>
-          command.label.toLowerCase().includes(normalizedQuery) ||
-          command.description.toLowerCase().includes(normalizedQuery) ||
-          command.searchKeywords?.some((keyword) =>
-            keyword.toLowerCase().includes(normalizedQuery)
-          )
+      // 可用的命令排在前面，不可用的统一移到后面集中显示（保持原有相对顺序）
+      return [...matched].sort(
+        (a, b) => Number(a.disabled) - Number(b.disabled)
       );
     }, [commands, query]);
 

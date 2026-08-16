@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../../../i18n";
 import type { ChatConversationRecord } from "../../../../preload";
 import { ChatItemMenu, type ExportFormat } from "./ChatItemMenu";
+import { setChatDragData } from "./chatDrag";
 import { formatTimeLabel, parseDbTimestamp } from "./chatTimeGroup";
 
 type ChatItemProps = {
@@ -26,6 +27,8 @@ type ChatItemProps = {
   isSubAgentExpanded?: boolean;
   isMultiSelectMode?: boolean;
   isSelected?: boolean;
+  /** 允许作为拖拽源（拖到置顶区/普通列表区切换置顶状态） */
+  isDraggable?: boolean;
   onPin: () => void;
   onRename: (newTitle: string) => Promise<void>;
   onSetEmoji: (emoji: string) => Promise<void>;
@@ -53,6 +56,7 @@ export function ChatItem({
   isSubAgentExpanded = false,
   isMultiSelectMode = false,
   isSelected = false,
+  isDraggable = false,
   onPin,
   onRename,
   onSetEmoji,
@@ -215,6 +219,18 @@ export function ChatItem({
     onToggleSubAgentPanel?.();
   };
 
+  // 编辑/多选/运行中的会话不可拖拽，避免与重命名、勾选及运行状态冲突
+  const canDrag = isDraggable && !isEditing && !isMultiSelectMode && !isRunning;
+
+  const handleDragStart = (
+    event: React.DragEvent<HTMLDivElement>
+  ): void => {
+    setChatDragData(event, {
+      conversationId: conversation.conversationId,
+      status: conversation.status,
+    });
+  };
+
   const attentionRequiredSubAgentCount = subAgentConversations.filter((sub) =>
     subAgentAttentionRequiredIds.has(sub.conversationId)
   ).length;
@@ -232,6 +248,8 @@ export function ChatItem({
         isSelected ? " selected" : ""
       }`}
       key={conversation.conversationId}
+      draggable={canDrag}
+      onDragStart={canDrag ? handleDragStart : undefined}
       onClick={handleSelectClick}
       onContextMenu={handleContextMenu}
       role="button"

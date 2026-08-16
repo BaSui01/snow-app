@@ -36,6 +36,7 @@ import type {
 import { ArchivedChatItem } from "./ArchivedChatItem";
 import { ChatItem } from "./ChatItem";
 import { ChatItemMenu, type ExportFormat } from "./ChatItemMenu";
+import { isChatDrag, readChatDragData } from "./chatDrag";
 import { SubAgentListPanel } from "./SubAgentListPanel";
 import {
   formatTimeLabel,
@@ -214,6 +215,8 @@ export function ChatsSection({
       return false;
     }
   });
+  // 会话拖拽悬停中：高亮提示可放置
+  const [isChatDragOver, setIsChatDragOver] = useState(false);
   // 时间分组（运行中/今天/昨天/近7天/更早）收起状态（localStorage 持久化）
   const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<
     Record<string, boolean>
@@ -564,6 +567,43 @@ export function ChatsSection({
     } catch {
       // Silent fail
     }
+  };
+
+  /** 会话拖拽悬停：允许放置并高亮提示（归档视图不可放置） */
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>): void => {
+    if (isArchiveMode || !isChatDrag(event)) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setIsChatDragOver(true);
+  };
+
+  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>): void => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      return;
+    }
+    setIsChatDragOver(false);
+  };
+
+  /** 拖入普通会话列表：取消拖拽会话的置顶 */
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>): void => {
+    setIsChatDragOver(false);
+    if (isArchiveMode || !isChatDrag(event)) {
+      return;
+    }
+    event.preventDefault();
+    const payload = readChatDragData(event);
+    // 非会话拖拽或来源已是普通会话时无需变更
+    if (!payload || payload.status === "active") {
+      return;
+    }
+    void window.snow
+      .updateConversationStatus(payload.conversationId, "active")
+      .then(() => refreshConversations())
+      .catch(() => {
+        // Silent fail
+      });
   };
 
   const handleRename = async (
@@ -1395,7 +1435,13 @@ export function ChatsSection({
         </div>
       )}
       {!isCollapsed && (
-        <div className="section-list" ref={sectionListRef}>
+        <div
+          className={`section-list${isChatDragOver ? " chat-drag-over" : ""}`}
+          ref={sectionListRef}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
           {isArchiveMode ? (
             <>
               {/* 归档模式：归档会话不允许直接打开使用，必须还原后才能继续对话 */}
@@ -1873,6 +1919,10 @@ export function ChatsSection({
                           <Fragment key={conversation.conversationId}>
                             <ChatItem
                               conversation={conversation}
+                              isDraggable={
+                                conversation.conversationId !==
+                                PENDING_SESSION_KEY
+                              }
                               isActive={
                                 conversation.conversationId ===
                                 activeConversationId

@@ -1,5 +1,24 @@
 # Release Notes
 
+## v0.2.6
+
+## New Features
+
+- **WorkTree Mode**: A new conversation mode for isolated Git workflows — prompts guide branch/worktree-based changes, mutually exclusive with Plan/Goal modes, and sub-agents are isolated from mode prompts.
+- **Site Blocking**: Regex-based blocking rules (`blockedPatterns`) filter search results and reject blocked sites during crawling, returning the block reason to the AI; global rules are also exposed via app-control tools and proxy settings.
+- **Source Badges**: Markdown links with summaries now render as site badges — hover shows the summary, click opens the source in the app's browser.
+- **Scheduled Task Mentions**: Scheduled task prompts now support file and image mentions.
+
+## Improvements
+
+- The side panel automatically collapses when the window narrows.
+- Pet settings are consolidated into a single JSON storage.
+- File tools can now run alongside checkpoint previews (parallelism fix).
+
+## Bug Fixes
+
+- Fixed checkpoint preview and sub-agent change ownership.
+
 ## v0.2.5
 
 ## New Features

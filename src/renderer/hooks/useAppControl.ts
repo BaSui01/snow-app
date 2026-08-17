@@ -3,12 +3,19 @@ import type { MainContentView } from "../components/mainContent/types";
 import type {
   MemoRecord,
   MemoStatus,
+  ProxyBrowserSettings,
   WorkspaceDirectoryRecord,
 } from "../../preload";
 import type {
   CreateScheduledTaskInput,
   ScheduledTaskSchedule,
 } from "../../preload";
+import {
+  PROXY_BROWSER_SETTING_CODE,
+  PROXY_BROWSER_SETTING_NAME,
+  PROXY_BROWSER_SETTINGS_CHANGED_EVENT,
+} from "../components/sidebar/proxyBrowserSettings/proxyBrowserSettingsConstants";
+import { readProxyBrowserSettingsJson } from "../components/sidebar/proxyBrowserSettings/proxyBrowserSettingsUtils";
 import { scheduledTasksStore } from "./scheduledTasksStore";
 
 /** Fetches every memo of a project (paginated, with a hard page cap). */
@@ -162,6 +169,91 @@ export const useAppControl = ({
               status
             );
             return JSON.stringify({ success: true, memo: updated });
+          }
+
+          case "get_blocked_patterns": {
+            const raw = await window.snow.getSystemSettingValue(
+              PROXY_BROWSER_SETTING_CODE
+            );
+            const settings = readProxyBrowserSettingsJson(raw);
+            return JSON.stringify({
+              success: true,
+              blockedPatterns: settings.blockedPatterns,
+              count: settings.blockedPatterns.length,
+            });
+          }
+
+          case "update_blocked_patterns": {
+            const operation = payload.operation as string;
+            const rawPatterns = payload.patterns;
+            if (
+              operation !== "add" &&
+              operation !== "remove" &&
+              operation !== "replace"
+            ) {
+              throw new Error(
+                `operation must be "add", "remove", or "replace", received "${operation}"`
+              );
+            }
+            if (!Array.isArray(rawPatterns)) {
+              throw new Error("patterns must be an array");
+            }
+
+            const patterns = rawPatterns.map((value) => {
+              if (typeof value !== "string" || !value.trim()) {
+                throw new Error("patterns must contain non-empty strings");
+              }
+              const pattern = value.trim();
+              try {
+                new RegExp(pattern);
+              } catch {
+                throw new Error(`Invalid regex: ${pattern}`);
+              }
+              return pattern;
+            });
+
+            const raw = await window.snow.getSystemSettingValue(
+              PROXY_BROWSER_SETTING_CODE
+            );
+            const settings = readProxyBrowserSettingsJson(raw);
+            let blockedPatterns: string[];
+
+            if (operation === "add") {
+              blockedPatterns = [...settings.blockedPatterns];
+              for (const pattern of patterns) {
+                if (!blockedPatterns.includes(pattern)) {
+                  blockedPatterns.push(pattern);
+                }
+              }
+            } else if (operation === "remove") {
+              blockedPatterns = settings.blockedPatterns.filter(
+                (pattern) => !patterns.includes(pattern)
+              );
+            } else {
+              blockedPatterns = patterns;
+            }
+
+            const nextSettings: ProxyBrowserSettings = {
+              ...settings,
+              blockedPatterns,
+            };
+            await window.snow.setSystemSetting(
+              PROXY_BROWSER_SETTING_NAME,
+              PROXY_BROWSER_SETTING_CODE,
+              JSON.stringify(nextSettings)
+            );
+            await window.snow.applyProxySettings();
+            window.dispatchEvent(
+              new CustomEvent(PROXY_BROWSER_SETTINGS_CHANGED_EVENT, {
+                detail: { blockedPatterns },
+              })
+            );
+            return JSON.stringify({
+              success: true,
+              operation,
+              blockedPatterns,
+              count: blockedPatterns.length,
+            });
           }
 
           case "set_mode": {

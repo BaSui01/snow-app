@@ -19297,8 +19297,20 @@ input {
 
 .scheduled-tasks-prompt-textarea {
   min-height: 96px;
+  max-height: 260px;
+  overflow-y: auto;
   line-height: 1.5;
-  resize: vertical;
+  resize: none;
+  box-sizing: border-box;
+}
+
+.scheduled-tasks-prompt-editor {
+  position: relative;
+}
+
+.scheduled-tasks-prompt-textarea.input-field-editable[contenteditable][data-empty="true"]::before {
+  top: 7px;
+  left: 8px;
 }
 
 .scheduled-tasks-prompt-textarea:focus {

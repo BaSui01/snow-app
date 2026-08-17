@@ -13,6 +13,8 @@ const TOOL_CREATE_MEMO: &str = "createMemo";
 const TOOL_LIST_MEMOS: &str = "listMemos";
 const TOOL_GET_MEMO: &str = "getMemo";
 const TOOL_UPDATE_MEMO_STATUS: &str = "updateMemoStatus";
+const TOOL_GET_BLOCKED_PATTERNS: &str = "getBlockedPatterns";
+const TOOL_UPDATE_BLOCKED_PATTERNS: &str = "updateBlockedPatterns";
 const TOOL_SET_MODE: &str = "setMode";
 const TOOL_OPEN_SETTINGS: &str = "openSettings";
 const TOOL_CREATE_SCHEDULED_TASK: &str = "createScheduledTask";
@@ -24,7 +26,7 @@ const KEEP_PLANNING_OPTION: &str = "Keep planning";
 
 #[napi(object)]
 pub struct AppControlCommand {
-    /// Action identifier: "create_memo" | "list_memos" | "get_memo" | "update_memo_status" | "set_mode" | "open_settings" | "create_scheduled_task" | "create_project"
+    /// Action identifier: "create_memo" | "list_memos" | "get_memo" | "update_memo_status" | "get_blocked_patterns" | "update_blocked_patterns" | "set_mode" | "open_settings" | "create_scheduled_task" | "create_project"
     pub action: String,
     /// JSON-encoded action payload
     pub payload_json: String,
@@ -56,6 +58,8 @@ impl AppControlService {
             TOOL_LIST_MEMOS => validate_list_memos_args(args)?,
             TOOL_GET_MEMO => validate_get_memo_args(args)?,
             TOOL_UPDATE_MEMO_STATUS => validate_update_memo_status_args(args)?,
+            TOOL_GET_BLOCKED_PATTERNS => validate_get_blocked_patterns_args(args)?,
+            TOOL_UPDATE_BLOCKED_PATTERNS => validate_update_blocked_patterns_args(args)?,
             TOOL_SET_MODE => validate_set_mode_args(args)?,
             TOOL_OPEN_SETTINGS => validate_open_settings_args(args)?,
             TOOL_CREATE_SCHEDULED_TASK => validate_create_scheduled_task_args(args)?,
@@ -170,6 +174,39 @@ impl McpService for AppControlService {
                         }
                     },
                     "required": ["memoId", "status"]
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: TOOL_GET_BLOCKED_PATTERNS.to_string(),
+                description: "Read the global site-blocking regex rules used by web search and page fetching. Returns the current JavaScript-style regex strings and their count. This setting is global to the Snow App, not project-scoped.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {}
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: TOOL_UPDATE_BLOCKED_PATTERNS.to_string(),
+                description: "Update the global site-blocking regex rules used by web search and page fetching. Use operation add, remove, or replace. Rules are JavaScript regular-expression strings; add removes empty values and exact duplicates, remove deletes exact strings, and replace writes the supplied list. The setting is global to the Snow App, not project-scoped.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "operation": {
+                            "type": "string",
+                            "enum": ["add", "remove", "replace"],
+                            "description": "How to change the current rules."
+                        },
+                        "patterns": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "minLength": 1
+                            },
+                            "description": "Regex strings to add, remove, or use as the complete replacement list."
+                        }
+                    },
+                    "required": ["operation", "patterns"]
                 }),
             },
             McpTool {
@@ -358,7 +395,16 @@ impl McpService for AppControlService {
                     "{SERVER_ID}-{TOOL_REQUEST_APPROVAL} must be executed through the asynchronous Electron interaction bridge"
                 ),
             )),
-            TOOL_CREATE_MEMO | TOOL_SET_MODE | TOOL_OPEN_SETTINGS | TOOL_CREATE_SCHEDULED_TASK | TOOL_CREATE_PROJECT => Err(Error::new(
+            TOOL_CREATE_MEMO
+            | TOOL_LIST_MEMOS
+            | TOOL_GET_MEMO
+            | TOOL_UPDATE_MEMO_STATUS
+            | TOOL_GET_BLOCKED_PATTERNS
+            | TOOL_UPDATE_BLOCKED_PATTERNS
+            | TOOL_SET_MODE
+            | TOOL_OPEN_SETTINGS
+            | TOOL_CREATE_SCHEDULED_TASK
+            | TOOL_CREATE_PROJECT => Err(Error::new(
                 Status::GenericFailure,
                 format!(
                     "{SERVER_ID}-{tool_name} must be executed through the asynchronous Electron app control bridge"
@@ -531,6 +577,53 @@ fn validate_update_memo_status_args(args: &Value) -> napi::Result<(String, Value
     Ok((
         "update_memo_status".to_string(),
         json!({ "memoId": memo_id, "status": status }),
+    ))
+}
+
+fn validate_get_blocked_patterns_args(_args: &Value) -> napi::Result<(String, Value)> {
+    Ok(("get_blocked_patterns".to_string(), json!({})))
+}
+
+fn validate_update_blocked_patterns_args(args: &Value) -> napi::Result<(String, Value)> {
+    let operation = args
+        .get("operation")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| matches!(*value, "add" | "remove" | "replace"))
+        .ok_or_else(|| {
+            Error::new(
+                Status::InvalidArg,
+                "operation is required for updateBlockedPatterns (\"add\", \"remove\", or \"replace\")".to_string(),
+            )
+        })?;
+    let patterns = args
+        .get("patterns")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            Error::new(
+                Status::InvalidArg,
+                "patterns is required and must be an array of strings for updateBlockedPatterns".to_string(),
+            )
+        })?;
+
+    let mut normalized = Vec::with_capacity(patterns.len());
+    for pattern in patterns {
+        let pattern = pattern
+            .as_str()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                Error::new(
+                    Status::InvalidArg,
+                    "patterns must contain only non-empty strings for updateBlockedPatterns".to_string(),
+                )
+            })?;
+        normalized.push(pattern.to_string());
+    }
+
+    Ok((
+        "update_blocked_patterns".to_string(),
+        json!({ "operation": operation, "patterns": normalized }),
     ))
 }
 
@@ -906,7 +999,7 @@ fn unknown_tool_error(tool_name: &str) -> Error {
     Error::new(
         Status::GenericFailure,
         format!(
-            "Unknown tool: \"{tool_name}\" for MCP server \"{SERVER_ID}\". Available tools: [{SERVER_ID}-{TOOL_CREATE_MEMO}, {SERVER_ID}-{TOOL_SET_MODE}, {SERVER_ID}-{TOOL_OPEN_SETTINGS}, {SERVER_ID}-{TOOL_CREATE_SCHEDULED_TASK}, {SERVER_ID}-{TOOL_CREATE_PROJECT}, {SERVER_ID}-{TOOL_REQUEST_APPROVAL}]"
+            "Unknown tool: \"{tool_name}\" for MCP server \"{SERVER_ID}\". Available tools: [{SERVER_ID}-{TOOL_CREATE_MEMO}, {SERVER_ID}-{TOOL_LIST_MEMOS}, {SERVER_ID}-{TOOL_GET_MEMO}, {SERVER_ID}-{TOOL_UPDATE_MEMO_STATUS}, {SERVER_ID}-{TOOL_GET_BLOCKED_PATTERNS}, {SERVER_ID}-{TOOL_UPDATE_BLOCKED_PATTERNS}, {SERVER_ID}-{TOOL_SET_MODE}, {SERVER_ID}-{TOOL_OPEN_SETTINGS}, {SERVER_ID}-{TOOL_CREATE_SCHEDULED_TASK}, {SERVER_ID}-{TOOL_CREATE_PROJECT}, {SERVER_ID}-{TOOL_REQUEST_APPROVAL}]"
         ),
     )
 }

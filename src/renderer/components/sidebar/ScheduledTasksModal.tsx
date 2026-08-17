@@ -42,6 +42,20 @@ import type {
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { Modal } from "../common/Modal";
 import { THINKING_OPTIONS_BY_METHOD } from "../mainContent/chatInput/constants";
+import {
+  createChipHtml,
+  createImageChipHtml,
+  insertHtmlAtSelection,
+  isEditableContentEmpty,
+  readEditableContent,
+  renumberImageChips,
+  type FileTag,
+  type ImageTag,
+} from "../mainContent/chatInput/fileTagUtils";
+import {
+  FileMentionPopup,
+  type FileMentionPopupHandle,
+} from "../mainContent/chatInput/FileMentionPopup";
 import { ThinkingStrengthMenu } from "../mainContent/chatInput/ThinkingStrengthMenu";
 import {
   getThinkingValueFromConfig,
@@ -283,6 +297,11 @@ export function ScheduledTasksModal({
 
   const [name, setName] = useState("");
   const [prompt, setPrompt] = useState("");
+  const [isMentionOpen, setIsMentionOpen] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState("");
+  const [mentionPopupStyle, setMentionPopupStyle] = useState<React.CSSProperties>(
+    {}
+  );
   const [taskType, setTaskType] = useState<ScheduledTaskType>("once");
   const [taskScope, setTaskScope] = useState<"project" | "global">(
     directoryId ? "project" : "global"
@@ -328,6 +347,10 @@ export function ScheduledTasksModal({
   const copyPromptTimerRef = useRef<number | null>(null);
   const modelRequestIdRef = useRef(0);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
+  const promptInputRef = useRef<HTMLDivElement | null>(null);
+  const mentionPopupRef = useRef<FileMentionPopupHandle>(null);
+  const mentionStartOffsetRef = useRef<number>(-1);
+  const promptDraggingRef = useRef(false);
   const wasOpenRef = useRef(false);
   const thinkingMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -398,6 +421,14 @@ export function ScheduledTasksModal({
   const resetFormDraft = useCallback((): void => {
     setName("");
     setPrompt("");
+    const promptEditor = promptInputRef.current;
+    if (promptEditor) {
+      promptEditor.innerHTML = "";
+      promptEditor.dataset.empty = "true";
+    }
+    setIsMentionOpen(false);
+    setMentionQuery("");
+    mentionStartOffsetRef.current = -1;
     setTaskType("once");
     setTaskScope(directoryId ? "project" : "global");
     setRecurringMode("interval");
@@ -580,6 +611,44 @@ export function ScheduledTasksModal({
   }, [open, panelMode]);
 
   useEffect(() => {
+    if (!isMentionOpen) {
+      return;
+    }
+
+    const updateMentionPopupPosition = (): void => {
+      const editor = promptInputRef.current;
+      if (!editor) {
+        return;
+      }
+      const rect = editor.getBoundingClientRect();
+      setMentionPopupStyle({
+        position: "fixed",
+        left: rect.left,
+        right: "auto",
+        bottom: window.innerHeight - rect.top + 4,
+        width: rect.width,
+        marginBottom: 0,
+        zIndex: 10000,
+      });
+    };
+
+    updateMentionPopupPosition();
+    window.addEventListener("resize", updateMentionPopupPosition);
+    const scrollContainer = promptInputRef.current?.closest(
+      ".scheduled-tasks-form-scroll"
+    );
+    scrollContainer?.addEventListener("scroll", updateMentionPopupPosition, true);
+    return () => {
+      window.removeEventListener("resize", updateMentionPopupPosition);
+      scrollContainer?.removeEventListener(
+        "scroll",
+        updateMentionPopupPosition,
+        true
+      );
+    };
+  }, [isMentionOpen]);
+
+  useEffect(() => {
     if (!open) return;
     let cancelled = false;
     window.snow
@@ -618,6 +687,363 @@ export function ScheduledTasksModal({
       }, 1_500);
     },
     []
+  );
+
+  const handleCloseMention = useCallback((): void => {
+    setIsMentionOpen(false);
+    setMentionQuery("");
+    mentionStartOffsetRef.current = -1;
+  }, []);
+
+  const deleteMentionQuery = useCallback((): void => {
+    const editor = promptInputRef.current;
+    if (!editor || mentionStartOffsetRef.current < 0) {
+      return;
+    }
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      return;
+    }
+    const range = selection.getRangeAt(0);
+    if (range.startContainer.nodeType !== Node.TEXT_NODE) {
+      return;
+    }
+    const textNode = range.startContainer as Text;
+    const currentOffset = range.startOffset;
+    const start = mentionStartOffsetRef.current - 1;
+    if (start < 0 || currentOffset <= start) {
+      return;
+    }
+    range.setStart(textNode, start);
+    range.setEnd(textNode, currentOffset);
+    range.deleteContents();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    mentionStartOffsetRef.current = -1;
+  }, []);
+
+  const checkPromptInputTriggers = useCallback((): void => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      handleCloseMention();
+      return;
+    }
+    const range = selection.getRangeAt(0);
+    const node = range.startContainer;
+    if (node.nodeType !== Node.TEXT_NODE) {
+      handleCloseMention();
+      return;
+    }
+    const offset = range.startOffset;
+    const textBefore = (node.textContent ?? "").slice(0, offset);
+    const mentionMatch = textBefore.match(/(?:^|\s)@([^\s]*)$/);
+    if (!mentionMatch) {
+      handleCloseMention();
+      return;
+    }
+    const queryText = mentionMatch[1];
+    const atOffset = offset - queryText.length - 1;
+    setIsMentionOpen(true);
+    setMentionQuery(queryText);
+    mentionStartOffsetRef.current = atOffset + 1;
+  }, [handleCloseMention]);
+
+  const syncPromptContent = useCallback((): void => {
+    const editor = promptInputRef.current;
+    if (!editor) {
+      return;
+    }
+    renumberImageChips(editor);
+    const content = readEditableContent(editor);
+    setPrompt(content);
+    editor.dataset.empty = isEditableContentEmpty(content) ? "true" : "false";
+  }, []);
+
+  const insertPromptFileTag = useCallback(
+    (tag: FileTag): void => {
+      promptInputRef.current?.focus();
+      insertHtmlAtSelection(createChipHtml(tag));
+      syncPromptContent();
+    },
+    [syncPromptContent]
+  );
+
+  const insertPromptImageFile = useCallback(
+    (file: File): void => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = typeof reader.result === "string" ? reader.result : "";
+        if (!dataUrl) {
+          return;
+        }
+        const mimeMatch = file.type.match(/^image\/([a-z0-9+.-]+)$/i);
+        const extension = mimeMatch
+          ? mimeMatch[1].split("+")[0]
+          : "png";
+        const imageTag: ImageTag = {
+          name: `image.${extension}`,
+          dataUrl,
+        };
+        promptInputRef.current?.focus();
+        insertHtmlAtSelection(createImageChipHtml(imageTag));
+        syncPromptContent();
+      };
+      reader.readAsDataURL(file);
+    },
+    [syncPromptContent]
+  );
+
+  const handlePromptPaste = useCallback(
+    (event: React.ClipboardEvent<HTMLDivElement>): void => {
+      event.preventDefault();
+      const imageFiles: File[] = [];
+      for (const item of event.clipboardData.items) {
+        if (item.kind === "file" && item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) {
+            imageFiles.push(file);
+          }
+        }
+      }
+      if (imageFiles.length > 0) {
+        promptInputRef.current?.focus();
+        imageFiles.forEach(insertPromptImageFile);
+        return;
+      }
+      const text = event.clipboardData.getData("text/plain");
+      if (!text) {
+        return;
+      }
+      document.execCommand("insertText", false, text);
+      syncPromptContent();
+      checkPromptInputTriggers();
+    },
+    [checkPromptInputTriggers, insertPromptImageFile, syncPromptContent]
+  );
+
+  const insertPromptExternalFiles = useCallback(
+    (files: File[]): void => {
+      if (files.length === 0) {
+        return;
+      }
+      void window.snow
+        .resolveDroppedFiles(files)
+        .then((entries) => {
+          if (entries.length === 0) {
+            return;
+          }
+          const imageFiles: File[] = [];
+          const fileTags: FileTag[] = [];
+          entries.forEach((entry, index) => {
+            const matchedFile = files[index];
+            const isImage =
+              !entry.isDirectory &&
+              ((matchedFile?.type.startsWith("image/") ?? false) ||
+                /\.(png|jpe?g|gif|webp|bmp|svg|avif|ico)$/i.test(entry.path));
+            if (isImage && matchedFile) {
+              imageFiles.push(matchedFile);
+              return;
+            }
+            const name =
+              entry.path.split(/[\\/]/).filter(Boolean).pop() || entry.path;
+            fileTags.push({
+              path: entry.path,
+              name,
+              isDirectory: entry.isDirectory,
+            });
+          });
+          imageFiles.forEach(insertPromptImageFile);
+          fileTags.forEach(insertPromptFileTag);
+        })
+        .catch(() => {
+          // 解析失败时静默处理
+        });
+    },
+    [insertPromptFileTag, insertPromptImageFile]
+  );
+
+  const handlePromptDrop = useCallback(
+    (event: React.DragEvent<HTMLDivElement>): void => {
+      event.preventDefault();
+      promptDraggingRef.current = false;
+      promptInputRef.current?.classList.remove("drag-over");
+
+      const droppedFiles = Array.from(event.dataTransfer.files);
+      if (droppedFiles.length > 0) {
+        insertPromptExternalFiles(droppedFiles);
+        return;
+      }
+
+      const jsonData = event.dataTransfer.getData("application/json");
+      if (jsonData) {
+        try {
+          const parsed = JSON.parse(jsonData) as Record<string, unknown>;
+          const createFileTag = (value: unknown): FileTag | null => {
+            if (!value || typeof value !== "object") {
+              return null;
+            }
+            const raw = value as Record<string, unknown>;
+            if (
+              typeof raw.path !== "string" ||
+              typeof raw.name !== "string"
+            ) {
+              return null;
+            }
+            const rawLines = raw.lines;
+            const lines = Array.isArray(rawLines)
+              ? rawLines
+                  .map((line) =>
+                    typeof line === "number"
+                      ? line
+                      : Number.parseInt(String(line), 10)
+                  )
+                  .filter((line) => Number.isFinite(line) && line > 0)
+              : undefined;
+            return {
+              path: raw.path,
+              name: raw.name,
+              isDirectory: raw.isDirectory === true,
+              lines: raw.isDirectory === true ? undefined : lines,
+            };
+          };
+
+          if (parsed.type === "file-tags" && Array.isArray(parsed.tags)) {
+            const tags = parsed.tags
+              .map(createFileTag)
+              .filter((tag): tag is FileTag => tag !== null);
+            tags.forEach(insertPromptFileTag);
+          } else {
+            const tag = createFileTag(parsed);
+            if (tag) {
+              insertPromptFileTag(tag);
+            }
+          }
+        } catch {
+          // 忽略无效拖拽数据
+        }
+        return;
+      }
+
+      const plainText = event.dataTransfer.getData("text/plain");
+      if (plainText.trim().length > 0) {
+        promptInputRef.current?.focus();
+        document.execCommand("insertText", false, plainText);
+        syncPromptContent();
+      }
+    },
+    [insertPromptExternalFiles, insertPromptFileTag, syncPromptContent]
+  );
+
+  const handlePromptDragOver = useCallback(
+    (event: React.DragEvent<HTMLDivElement>): void => {
+      const types = event.dataTransfer.types;
+      const allowed =
+        types.includes("application/json") ||
+        types.includes("Files") ||
+        types.includes("text/plain");
+      if (!allowed) {
+        return;
+      }
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+      if (!promptDraggingRef.current) {
+        promptDraggingRef.current = true;
+        promptInputRef.current?.classList.add("drag-over");
+      }
+    },
+    []
+  );
+
+  const handlePromptDragLeave = useCallback(
+    (event: React.DragEvent<HTMLDivElement>): void => {
+      if (event.currentTarget !== event.target) {
+        return;
+      }
+      promptDraggingRef.current = false;
+      promptInputRef.current?.classList.remove("drag-over");
+    },
+    []
+  );
+
+  const handleMentionSelect = useCallback(
+    (tag: FileTag): void => {
+      deleteMentionQuery();
+      insertPromptFileTag(tag);
+    },
+    [deleteMentionQuery, insertPromptFileTag]
+  );
+
+  const handleMentionSelectBatch = useCallback(
+    (tags: FileTag[]): void => {
+      deleteMentionQuery();
+      tags.forEach(insertPromptFileTag);
+    },
+    [deleteMentionQuery, insertPromptFileTag]
+  );
+
+  const replaceMentionQuery = useCallback(
+    (relativePath: string): void => {
+      const editor = promptInputRef.current;
+      if (!editor || mentionStartOffsetRef.current < 0) {
+        return;
+      }
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) {
+        return;
+      }
+      const range = selection.getRangeAt(0);
+      if (range.startContainer.nodeType !== Node.TEXT_NODE) {
+        return;
+      }
+      const textNode = range.startContainer as Text;
+      const currentOffset = range.startOffset;
+      const start = mentionStartOffsetRef.current;
+      if (currentOffset < start) {
+        return;
+      }
+      range.setStart(textNode, start);
+      range.setEnd(textNode, currentOffset);
+      range.deleteContents();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      if (relativePath) {
+        document.execCommand("insertText", false, `${relativePath}/`);
+      }
+      checkPromptInputTriggers();
+    },
+    [checkPromptInputTriggers]
+  );
+
+  const handlePromptInput = useCallback((): void => {
+    syncPromptContent();
+    checkPromptInputTriggers();
+  }, [checkPromptInputTriggers, syncPromptContent]);
+
+  const handlePromptKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>): void => {
+      if (isMentionOpen && mentionPopupRef.current?.handleKeyDown(event)) {
+        return;
+      }
+    },
+    [isMentionOpen]
+  );
+
+  const handlePromptClick = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>): void => {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+      const removeButton = target.closest<HTMLElement>(
+        "[data-chip-remove='true']"
+      );
+      if (!removeButton) {
+        return;
+      }
+      removeButton.parentElement?.remove();
+      syncPromptContent();
+    },
+    [syncPromptContent]
   );
 
   const loadModelOptions = useCallback(
@@ -1718,19 +2144,44 @@ export function ScheduledTasksModal({
             />
           </label>
 
-          <label className="scheduled-tasks-field">
+          <div className="scheduled-tasks-field">
             <span>{t("scheduledTask.prompt", { defaultValue: "Prompt" })}</span>
-            <textarea
-              className="scheduled-tasks-prompt-textarea"
-              onChange={(event) => setPrompt(event.target.value)}
-              placeholder={t("scheduledTask.promptPlaceholder", {
-                defaultValue:
-                  "Prompt sent to the AI Loop on each run. The task has access to all tools.",
-              })}
-              rows={5}
-              value={prompt}
-            />
-          </label>
+            <div className="scheduled-tasks-prompt-editor">
+              <FileMentionPopup
+                ref={mentionPopupRef}
+                visible={isMentionOpen}
+                query={mentionQuery}
+                onClose={handleCloseMention}
+                onSelect={handleMentionSelect}
+                onSelectBatch={handleMentionSelectBatch}
+                textareaRef={promptInputRef}
+                onNavigateTo={replaceMentionQuery}
+                style={mentionPopupStyle}
+                portal
+              />
+              <div
+                aria-label={t("scheduledTask.prompt", { defaultValue: "Prompt" })}
+                aria-multiline="true"
+                className="scheduled-tasks-prompt-textarea input-field-editable"
+                contentEditable
+                data-empty="true"
+                data-placeholder={t("scheduledTask.promptPlaceholder", {
+                  defaultValue:
+                    "Prompt sent to the AI Loop on each run. The task has access to all tools.",
+                })}
+                onClick={handlePromptClick}
+                onDragLeave={handlePromptDragLeave}
+                onDragOver={handlePromptDragOver}
+                onDrop={handlePromptDrop}
+                onInput={handlePromptInput}
+                onKeyDown={handlePromptKeyDown}
+                onPaste={handlePromptPaste}
+                ref={promptInputRef}
+                role="textbox"
+                suppressContentEditableWarning
+              />
+            </div>
+          </div>
 
           <div className="scheduled-tasks-field">
             <span>{t("scheduledTask.scope", { defaultValue: "Scope" })}</span>

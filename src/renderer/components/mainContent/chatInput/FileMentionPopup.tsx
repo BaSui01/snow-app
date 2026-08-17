@@ -18,6 +18,7 @@ import {
   useState,
   type RefObject,
 } from "react";
+import { createPortal } from "react-dom";
 import type {
   FileSearchAgentProgress,
   FileSearchResult,
@@ -44,6 +45,8 @@ export type FileMentionPopupProps = {
    * 传空字符串表示回到工作区根目录。
    */
   onNavigateTo: (relPath: string) => void;
+  style?: React.CSSProperties;
+  portal?: boolean;
 };
 
 const isSshPath = (path: string): boolean => path.startsWith("ssh://");
@@ -132,6 +135,8 @@ export const FileMentionPopup = forwardRef<
     textareaRef,
     onDragStart,
     onNavigateTo,
+    style,
+    portal,
   },
   ref
 ): React.JSX.Element | null {
@@ -650,10 +655,11 @@ export const FileMentionPopup = forwardRef<
     t,
   ]);
 
-  return visible ? (
+  const popup = visible ? (
     <div
       className="file-mention-popup"
       ref={popupRef}
+      style={style}
       data-esc-panel
     >
       {pathSegments.length > 0 && (
@@ -834,4 +840,6 @@ export const FileMentionPopup = forwardRef<
       </div>
     </div>
   ) : null;
+
+  return portal && popup ? createPortal(popup, document.body) : popup;
 });

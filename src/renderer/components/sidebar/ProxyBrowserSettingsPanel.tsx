@@ -15,6 +15,7 @@ import {
   DEFAULT_PROXY_BROWSER_SETTINGS,
   PROXY_BROWSER_SETTING_CODE,
   PROXY_BROWSER_SETTING_NAME,
+  PROXY_BROWSER_SETTINGS_CHANGED_EVENT,
   RECOMMENDED_BLOCKED_PATTERNS,
 } from "./proxyBrowserSettings/proxyBrowserSettingsConstants";
 import {
@@ -79,6 +80,22 @@ export function ProxyBrowserSettingsPanel({
 
   useEffect(() => {
     void load();
+  }, [load]);
+
+  useEffect(() => {
+    const handleSettingsChanged = (): void => {
+      void load();
+    };
+    window.addEventListener(
+      PROXY_BROWSER_SETTINGS_CHANGED_EVENT,
+      handleSettingsChanged
+    );
+    return () => {
+      window.removeEventListener(
+        PROXY_BROWSER_SETTINGS_CHANGED_EVENT,
+        handleSettingsChanged
+      );
+    };
   }, [load]);
 
   const isBusy = isLoading || isSaving || isSelectingBrowser;

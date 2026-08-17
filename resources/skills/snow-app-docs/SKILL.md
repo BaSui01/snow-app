@@ -2,7 +2,7 @@
 name: snow-app-docs
 description: >-
   Snow App 配置与排查向导（中文/English）——配置/管理 API 密钥、模型与档案、
-  MCP 服务器、Skills、子代理、Hooks、图像生成、代理与网络、第三方配置导入、
+  MCP 服务器、Skills、子代理、Hooks、图像生成、代理与网络、全局站点拦截规则、第三方配置导入、
   安全隐私与工具授权、个性化/系统提示词/自定义请求头/主题/快捷键、用量统计与
   系统日志、数据存储位置、settings.json 字段、内置工具等。
   Guides the agent to read the built-in Snow App documentation (~/.snow/docs)
@@ -29,6 +29,8 @@ allowed-tools:
   - config-delete
   - user-interaction-askUserQuestion
   - app-control-openSettings
+  - app-control-getBlockedPatterns
+  - app-control-updateBlockedPatterns
   - bash-terminal-execute
   - filesystem-read
   - filesystem-replace_edit
@@ -67,7 +69,7 @@ allowed-tools:
 | 使用聊天与 AI 助手（界面/对话/命令/回滚/压缩） | `2-使用指南/10-使用聊天与AI助手.md`（en: `2-guides/10-using-chat-and-ai.md`） | — |
 | 终端与 SSH 远程管理 | `2-使用指南/11-终端与SSH远程管理.md`（en: `2-guides/11-terminal-and-ssh.md`） | — |
 | Git 面板与代码浏览 | `2-使用指南/12-Git面板与代码浏览.md`（en: `2-guides/12-git-and-code-browsing.md`） | — |
-| 配置代理与网络 | `2-使用指南/4-配置代理与网络.md`（en: `2-guides/4-configure-proxy.md`） | — |
+| 配置代理与网络、站点拦截规则 | `2-使用指南/4-配置代理与网络.md`（en: `2-guides/4-configure-proxy.md`） | `3-参考手册/2-内置工具参考.md`、`3-参考手册/3-配置文件字段参考.md` |
 | 配置 Hooks 与子代理 | `2-使用指南/5-配置Hooks与子代理.md`（en: `2-guides/5-configure-hooks-and-subagents.md`） | — |
 | 浏览器自动化 | `2-使用指南/6-浏览器自动化.md`（en: `2-guides/6-browser-automation.md`） | — |
 | 代码库索引与代码诊断 | `2-使用指南/7-代码库索引与代码诊断.md`（en: `2-guides/7-codebase-index-and-diagnostics.md`） | — |
@@ -128,6 +130,13 @@ allowed-tools:
 - **代理/主题等文件域**：`proxy`/`custom-headers`/`system-prompt`/`theme`/
   `language`/`permissions`/`lsp-config`/`buddy`，写后**可能需重启或 UI 重存生效**。
   → `3-参考手册/3-配置文件字段参考.md`
+- **站点拦截规则**：`blockedPatterns` 是应用全局数组，实际存储在应用数据库系统设置
+  `proxy_browser_settings`，影响 `websearch` 结果过滤和 `websearch-fetch` 抓取拒绝，
+  不是项目级配置。优先使用 `app-control-getBlockedPatterns` 读取，使用
+  `app-control-updateBlockedPatterns` 按 `add`/`remove`/`replace` 维护；工具和设置面板
+  按 JavaScript `RegExp` 校验规则。`config` 的 `proxy` scope 不支持该字段，不要直接
+  编辑 `proxy-config.json` 维护运行时拦截规则。→ `4-配置代理与网络.md`、
+  `3-参考手册/2-内置工具参考.md`
 - **日志（只读）**：`logs` 域（list 列文件、get 读尾部 `limit` 默认 200 最大
   2000、delete 仅接受精确文件名）。→ `20-用量统计与系统日志.md`
 

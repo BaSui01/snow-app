@@ -2,6 +2,8 @@ import type { ProxyBrowserSettings } from "../../../../preload";
 
 export const PROXY_BROWSER_SETTING_NAME = "Proxy and browser settings";
 export const PROXY_BROWSER_SETTING_CODE = "proxy_browser_settings";
+export const PROXY_BROWSER_SETTINGS_CHANGED_EVENT =
+  "proxy-browser-settings:changed";
 
 export const DEFAULT_PROXY_HOST = "127.0.0.1";
 

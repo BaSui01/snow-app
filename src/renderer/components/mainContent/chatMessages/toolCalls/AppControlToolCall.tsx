@@ -6,6 +6,7 @@ import {
   FileCode2,
   FolderPlus,
   Settings,
+  ShieldBan,
   StickyNote,
   ToggleRight,
 } from "lucide-react";
@@ -142,6 +143,38 @@ export const AppControlToolCall = ({
       ) : null;
       break;
     }
+    case "getBlockedPatterns": {
+      const count =
+        parsedResult.type === "success"
+          ? parsedResult.data.count
+          : undefined;
+      const countNumber = typeof count === "number" ? count : 0;
+      displayName = t("toolCall.appControl.blockedPatternsCount", {
+        values: { count: countNumber },
+      });
+      meta = parsedResult.type === "success" ? (
+        <span className="tool-call-app-meta tool-call-app-meta-ok">
+          <CheckCircle2 size={10} aria-hidden="true" />
+          {t("toolCall.appControl.blockedPatternsRead")}
+        </span>
+      ) : null;
+      break;
+    }
+    case "updateBlockedPatterns": {
+      const operationName = asString(parsedArgs?.operation);
+      displayName = operationName
+        ? t(`toolCall.appControl.blockedPatternsOperation.${operationName}`, {
+            defaultValue: operationName,
+          })
+        : undefined;
+      meta = parsedResult.type === "success" ? (
+        <span className="tool-call-app-meta tool-call-app-meta-ok">
+          <CheckCircle2 size={10} aria-hidden="true" />
+          {t("toolCall.appControl.blockedPatternsUpdated")}
+        </span>
+      ) : null;
+      break;
+    }
     case "setMode": {
       const mode = asString(parsedArgs?.mode);
       const enabled = parsedArgs?.enabled === true;
@@ -265,7 +298,52 @@ export const AppControlToolCall = ({
           </div>
         ) : null;
       }
-      case "setMode": {
+      case "getBlockedPatterns": {
+        const count =
+          parsedResult.type === "success"
+            ? parsedResult.data.count
+            : undefined;
+        const countNumber = typeof count === "number" ? count : 0;
+        return (
+          <div className="tool-call-app-detail">
+            <ShieldBan size={12} aria-hidden="true" />
+            <span>
+              {t("toolCall.appControl.blockedPatternsCount", {
+                values: { count: countNumber },
+              })}
+            </span>
+          </div>
+        );
+      }
+      case "updateBlockedPatterns": {
+        const operationName = asString(parsedArgs?.operation);
+        const patterns = Array.isArray(parsedArgs?.patterns)
+          ? parsedArgs.patterns.filter(
+              (value): value is string => typeof value === "string"
+            )
+          : [];
+        return (
+          <div className="tool-call-app-detail tool-call-app-detail-col">
+            {operationName ? (
+              <div className="tool-call-app-detail">
+                <ShieldBan size={12} aria-hidden="true" />
+                <span>
+                  {t(
+                    `toolCall.appControl.blockedPatternsOperation.${operationName}`,
+                    { defaultValue: operationName }
+                  )}
+                </span>
+              </div>
+            ) : null}
+            {patterns.length > 0 ? (
+              <div className="tool-call-app-detail">
+                <code>{truncate(patterns.join(", "), 160)}</code>
+              </div>
+            ) : null}
+          </div>
+        );
+      }
+    case "setMode": {
         const mode = asString(parsedArgs?.mode);
         const enabled = parsedArgs?.enabled === true;
         return mode ? (

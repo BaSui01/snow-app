@@ -126,11 +126,20 @@ Listed in registration order:
 | Full tool name                    | Purpose                                                               | Key parameters               |
 | --------------------------------- | --------------------------------------------------------------------- | ---------------------------- |
 | `app-control-createMemo`          | Create a memo (note)                                                  | `content`                    |
+| `app-control-listMemos`           | List memos in the current project                                    | optional `status`            |
+| `app-control-getMemo`             | Read one memo in the current project                                 | `memoId`                    |
+| `app-control-updateMemoStatus`    | Update a current-project memo status                                  | `memoId`, `status`           |
+| `app-control-getBlockedPatterns`  | Read global site-blocking regex rules                                 | none                         |
+| `app-control-updateBlockedPatterns` | Add, remove, or replace global site-blocking rules                  | `operation`, `patterns`      |
 | `app-control-setMode`             | Enable/disable Plan Mode or Goal Mode                                 | `mode`, `enabled`            |
 | `app-control-openSettings`        | Open the specified settings page                                      | `page`                       |
 | `app-control-createScheduledTask` | Create a scheduled task                                               | `name`, `prompt`, `schedule`; optional `apiProfile`, `model`, `basicModel`, `thinkingStrength` |
 | `app-control-createProject`       | Create a project (workspace directory)                                | `name`, `parentPath`         |
 | `app-control-requestApproval`     | Request user approval of the plan summary (only exposed in Plan Mode) | `planSummary`                |
+
+Memo tools only access memos belonging to the current conversation's project: `listMemos` can filter by `pending` or `done`, `getMemo` reads the complete record, and `updateMemoStatus` validates ownership before changing the status.
+
+Site-blocking tools access the app-global `proxy_browser_settings.blockedPatterns`, not project configuration. `getBlockedPatterns` returns the rule array and count. `updateBlockedPatterns` accepts `add`, `remove`, or `replace` in `operation` and an array of rule strings in `patterns`. The Renderer validates rules with JavaScript `RegExp`; `add` removes exact duplicates while preserving order, `remove` deletes exact strings, and `replace` fully replaces the list. Matching rules filter `websearch` results and cause `websearch-fetch` to refuse a fetch.
 
 The model fields of `app-control-createScheduledTask` follow these rules:
 
@@ -203,6 +212,8 @@ File-backed scopes:
 | `lsp-config`     | `~/.snow/lsp-config.json`                | `schemaVersion`, `servers`                                                                                                      |
 | `buddy`          | `~/.snow/buddy.json`                     | `version`, `companion`, `muted`                                                                                                 |
 | `personalization` | `~/.snow/ROLE.md` (plain markdown, non-JSON) | `role` (global rules text; list returns length + preview, get returns the full text, set replaces the whole file, delete removes it to restore defaults) |
+
+> The `proxy` scope does not support `blockedPatterns`. Site-blocking rules are stored in the app database system setting `proxy_browser_settings`; maintain them through the Proxy & Browser settings panel or the dedicated `app-control-getBlockedPatterns` / `app-control-updateBlockedPatterns` tools.
 
 Database-backed scopes (write to the app SQLite database, same source as the UI settings panels, take effect immediately):
 

@@ -107,6 +107,7 @@ pub fn set_conversation_modes(
     conversation_id: &str,
     plan_mode: Option<bool>,
     goal_mode: Option<bool>,
+    worktree_mode: Option<bool>,
     goal_mode_token_budget: Option<i64>,
 ) -> Result<()> {
     let database_path = ensure_database_file()?;
@@ -115,6 +116,7 @@ pub fn set_conversation_modes(
         conversation_id,
         plan_mode,
         goal_mode,
+        worktree_mode,
         goal_mode_token_budget,
     )
 }

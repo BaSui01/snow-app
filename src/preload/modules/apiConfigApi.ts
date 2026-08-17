@@ -84,6 +84,7 @@ export const apiConfigApi = {
     conversationId: string,
     planMode: boolean | null,
     goalMode: boolean | null,
+    worktreeMode: boolean | null,
     goalModeTokenBudget: number | null
   ): Promise<void> =>
     ipcRenderer.invoke(
@@ -91,6 +92,7 @@ export const apiConfigApi = {
       conversationId,
       planMode,
       goalMode,
+      worktreeMode,
       goalModeTokenBudget
     ),
   getRequestLogging: (): Promise<boolean> =>

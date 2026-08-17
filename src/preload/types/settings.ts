@@ -39,6 +39,7 @@ export type PrivacySettings = {
 export type ConversationModesResult = {
   planMode: boolean | null;
   goalMode: boolean | null;
+  worktreeMode: boolean | null;
   goalModeTokenBudget: number | null;
 };
 

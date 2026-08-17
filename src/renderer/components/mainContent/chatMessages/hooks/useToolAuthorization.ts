@@ -18,6 +18,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
   ctx.yoloModeRef.current = ctx.yoloMode;
   ctx.planModeRef.current = ctx.planMode;
   ctx.goalModeRef.current = ctx.goalMode;
+  ctx.worktreeModeRef.current = ctx.worktreeMode;
 
   const approveAllPendingToolAuthorizations = useCallback((): void => {
     const pendingEntries = ctx.pendingToolAuthorizationRef.current;
@@ -86,6 +87,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
         key,
         ref.planMode,
         ref.goalMode,
+        ref.worktreeMode,
         ref.goalModeTokenBudget
       );
     },
@@ -148,6 +150,28 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     return effective;
   }, [
     applyGoalMode,
+    ctx.globalModeDefaultsRef,
+    ctx.activeConversationIdRef,
+    ctx.sessionsRefData,
+  ]);
+
+  const applyWorktreeMode = useCallback(
+    (enabled: boolean): void => {
+      ctx.worktreeModeRef.current = enabled;
+      ctx.setWorktreeModeState(enabled);
+    },
+    [ctx.worktreeModeRef, ctx.setWorktreeModeState]
+  );
+
+  const refreshWorktreeMode = useCallback(async (): Promise<boolean> => {
+    const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+    const ref = ctx.sessionsRefData.current.get(key);
+    const effective =
+      ref?.worktreeMode ?? ctx.globalModeDefaultsRef.current.worktreeMode;
+    applyWorktreeMode(effective);
+    return effective;
+  }, [
+    applyWorktreeMode,
     ctx.globalModeDefaultsRef,
     ctx.activeConversationIdRef,
     ctx.sessionsRefData,
@@ -280,33 +304,22 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
 
       ctx.setIsUpdatingPlanMode(true);
       try {
-        // Strict per-conversation isolation: a toggle affects ONLY the
-        // current conversation. The persisted global settings are never
-        // written or mutated, so other (and new) conversations keep their
-        // own modes instead of inheriting this one.
         applyPlanMode(enabled);
         const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
         let ref = ctx.sessionsRefData.current.get(key);
         if (!ref) {
-          // A fresh new chat has no session ref yet; create one so the mode
-          // survives the first send (migration to a real id).
           ctx.ensureSession(key, ctx.directoryId);
           ref = ctx.sessionsRefData.current.get(key);
         }
         if (ref) {
           ref.planMode = enabled;
-          if (enabled) ref.goalMode = false;
-          persistSessionModes(key);
-        }
-        // Mutual exclusion scoped to the current session: enabling Plan Mode
-        // disables Goal Mode for THIS conversation only — never for other
-        // conversations' stored modes, and never globally.
-        if (enabled && ctx.goalModeRef.current) {
-          applyGoalMode(false);
-          if (ref) {
+          if (enabled) {
             ref.goalMode = false;
-            persistSessionModes(key);
+            ref.worktreeMode = false;
+            applyGoalMode(false);
+            applyWorktreeMode(false);
           }
+          persistSessionModes(key);
         }
       } finally {
         ctx.setIsUpdatingPlanMode(false);
@@ -315,11 +328,11 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     [
       applyPlanMode,
       applyGoalMode,
+      applyWorktreeMode,
       ctx.isUpdatingPlanMode,
       ctx.setIsUpdatingPlanMode,
       ctx.ensureSession,
       ctx.directoryId,
-      ctx.goalModeRef,
       ctx.activeConversationIdRef,
       ctx.sessionsRefData,
       persistSessionModes,
@@ -334,30 +347,22 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
 
       ctx.setIsUpdatingGoalMode(true);
       try {
-        // Strict per-conversation isolation: see setPlanMode. The persisted
-        // global settings are never written or mutated.
         applyGoalMode(enabled);
         const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
         let ref = ctx.sessionsRefData.current.get(key);
         if (!ref) {
-          // A fresh new chat has no session ref yet; create one so the mode
-          // survives the first send (migration to a real id).
           ctx.ensureSession(key, ctx.directoryId);
           ref = ctx.sessionsRefData.current.get(key);
         }
         if (ref) {
           ref.goalMode = enabled;
-          if (enabled) ref.planMode = false;
-          persistSessionModes(key);
-        }
-        // Mutual exclusion scoped to the current session: enabling Goal Mode
-        // disables Plan Mode for THIS conversation only.
-        if (enabled && ctx.planModeRef.current) {
-          applyPlanMode(false);
-          if (ref) {
+          if (enabled) {
             ref.planMode = false;
-            persistSessionModes(key);
+            ref.worktreeMode = false;
+            applyPlanMode(false);
+            applyWorktreeMode(false);
           }
+          persistSessionModes(key);
         }
       } finally {
         ctx.setIsUpdatingGoalMode(false);
@@ -366,11 +371,54 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     [
       applyGoalMode,
       applyPlanMode,
+      applyWorktreeMode,
       ctx.isUpdatingGoalMode,
       ctx.setIsUpdatingGoalMode,
       ctx.ensureSession,
       ctx.directoryId,
-      ctx.planModeRef,
+      ctx.activeConversationIdRef,
+      ctx.sessionsRefData,
+      persistSessionModes,
+    ]
+  );
+
+  const setWorktreeMode = useCallback(
+    async (enabled: boolean): Promise<void> => {
+      if (ctx.isUpdatingWorktreeMode) {
+        return;
+      }
+
+      ctx.setIsUpdatingWorktreeMode(true);
+      try {
+        applyWorktreeMode(enabled);
+        const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+        let ref = ctx.sessionsRefData.current.get(key);
+        if (!ref) {
+          ctx.ensureSession(key, ctx.directoryId);
+          ref = ctx.sessionsRefData.current.get(key);
+        }
+        if (ref) {
+          ref.worktreeMode = enabled;
+          if (enabled) {
+            ref.planMode = false;
+            ref.goalMode = false;
+            applyPlanMode(false);
+            applyGoalMode(false);
+          }
+          persistSessionModes(key);
+        }
+      } finally {
+        ctx.setIsUpdatingWorktreeMode(false);
+      }
+    },
+    [
+      applyWorktreeMode,
+      applyPlanMode,
+      applyGoalMode,
+      ctx.isUpdatingWorktreeMode,
+      ctx.setIsUpdatingWorktreeMode,
+      ctx.ensureSession,
+      ctx.directoryId,
       ctx.activeConversationIdRef,
       ctx.sessionsRefData,
       persistSessionModes,
@@ -706,13 +754,15 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
         void setPlanMode(detail.enabled);
       } else if (detail.mode === "goal") {
         void setGoalMode(detail.enabled);
+      } else if (detail.mode === "worktree") {
+        void setWorktreeMode(detail.enabled);
       }
     };
     window.addEventListener(APP_CONTROL_MODE_CHANGED_EVENT, onModeChanged);
     return () => {
       window.removeEventListener(APP_CONTROL_MODE_CHANGED_EVENT, onModeChanged);
     };
-  }, [setPlanMode, setGoalMode]);
+  }, [setPlanMode, setGoalMode, setWorktreeMode]);
 
   return {
     approveAllPendingToolAuthorizations,
@@ -725,6 +775,9 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     applyGoalMode,
     refreshGoalMode,
     setGoalMode,
+    applyWorktreeMode,
+    refreshWorktreeMode,
+    setWorktreeMode,
     applyGoalModeTokenBudget,
     refreshGoalModeTokenBudget,
     setGoalModeTokenBudget,

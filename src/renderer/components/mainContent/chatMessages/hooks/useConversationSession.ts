@@ -72,6 +72,7 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
           checkpointIds: [],
           childSubAgentIds: new Set(),
           planMode: defaults.planMode,
+          worktreeMode: defaults.worktreeMode,
           goalMode: defaults.goalMode,
           goalModeTokenBudget: defaults.goalModeTokenBudget,
         });

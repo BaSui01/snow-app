@@ -145,6 +145,8 @@ export const useChatConversation = (
   const [isUpdatingPlanMode, setIsUpdatingPlanMode] = useState(false);
   const [goalMode, setGoalModeState] = useState(false);
   const [isUpdatingGoalMode, setIsUpdatingGoalMode] = useState(false);
+  const [worktreeMode, setWorktreeModeState] = useState(false);
+  const [isUpdatingWorktreeMode, setIsUpdatingWorktreeMode] = useState(false);
   const [goalModeTokenBudget, setGoalModeTokenBudgetState] = useState(2000000);
   const [pendingToolAuthorizations, setPendingToolAuthorizations] = useState<
     ConversationContextValue["pendingToolAuthorizations"]
@@ -233,6 +235,7 @@ export const useChatConversation = (
   const yoloModeRef = useRef(yoloMode);
   const planModeRef = useRef(planMode);
   const goalModeRef = useRef(goalMode);
+  const worktreeModeRef = useRef(worktreeMode);
   // Neutral Plan/Goal Mode defaults for cold (never-toggled) conversations.
   // Plan/Goal Mode is strictly per-conversation: toggles write only the
   // active session's ref and its per-conversation DB record, never this
@@ -241,6 +244,7 @@ export const useChatConversation = (
   const globalModeDefaultsRef = useRef<GlobalModeDefaults>({
     planMode: false,
     goalMode: false,
+    worktreeMode: false,
     goalModeTokenBudget: 2000000,
   });
 
@@ -278,6 +282,8 @@ export const useChatConversation = (
       setPlanModeState(false);
       goalModeRef.current = false;
       setGoalModeState(false);
+      worktreeModeRef.current = false;
+      setWorktreeModeState(false);
       setGoalModeTokenBudgetState(2000000);
     }
   }, [
@@ -289,6 +295,8 @@ export const useChatConversation = (
     setPlanModeState,
     goalModeRef,
     setGoalModeState,
+    worktreeModeRef,
+    setWorktreeModeState,
     setGoalModeTokenBudgetState,
   ]);
   const alwaysApprovedToolsRef = useRef(new Set<string>());
@@ -339,6 +347,7 @@ export const useChatConversation = (
   yoloModeRef.current = yoloMode;
   planModeRef.current = planMode;
   goalModeRef.current = goalMode;
+  worktreeModeRef.current = worktreeMode;
 
   // --- Pause controller ---
   // Per-session pause flags. When paused, the agent loop awaits the
@@ -405,6 +414,8 @@ export const useChatConversation = (
     isUpdatingPlanMode,
     goalMode,
     isUpdatingGoalMode,
+    worktreeMode,
+    isUpdatingWorktreeMode,
     goalModeTokenBudget,
     pendingToolAuthorizations,
     activePendingMessages,
@@ -429,6 +440,7 @@ export const useChatConversation = (
     yoloModeRef,
     planModeRef,
     goalModeRef,
+    worktreeModeRef,
     globalModeDefaultsRef,
     alwaysApprovedToolsRef,
     planApprovedSessionKeysRef,
@@ -458,6 +470,8 @@ export const useChatConversation = (
     setIsUpdatingPlanMode,
     setGoalModeState,
     setIsUpdatingGoalMode,
+    setWorktreeModeState,
+    setIsUpdatingWorktreeMode,
     setGoalModeTokenBudgetState,
     setPendingToolAuthorizations,
     setActivePendingMessages,
@@ -717,6 +731,10 @@ export const useChatConversation = (
     isUpdatingGoalMode,
     setGoalMode: toolAuthApi.setGoalMode,
     refreshGoalMode: toolAuthApi.refreshGoalMode,
+    worktreeMode,
+    isUpdatingWorktreeMode,
+    setWorktreeMode: toolAuthApi.setWorktreeMode,
+    refreshWorktreeMode: toolAuthApi.refreshWorktreeMode,
     goalModeTokenBudget,
     setGoalModeTokenBudget: toolAuthApi.setGoalModeTokenBudget,
     refreshGoalModeTokenBudget: toolAuthApi.refreshGoalModeTokenBudget,

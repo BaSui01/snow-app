@@ -291,6 +291,8 @@ export type ConversationSessionRef = {
   childSubAgentIds: Set<string>;
   /** Whether Plan Mode was active when this session was last used. */
   planMode: boolean;
+  /** Whether WorkTree Mode was active when this session was last used. */
+  worktreeMode: boolean;
   /** Whether Goal Mode was active when this session was last used. */
   goalMode: boolean;
   /** Goal Mode token budget in effect for this session (per-conversation
@@ -318,6 +320,7 @@ export type ConversationSessionRef = {
 export type GlobalModeDefaults = {
   planMode: boolean;
   goalMode: boolean;
+  worktreeMode: boolean;
   goalModeTokenBudget: number;
 };
 
@@ -488,6 +491,8 @@ export type ConversationContextValue = {
   isUpdatingPlanMode: boolean;
   goalMode: boolean;
   isUpdatingGoalMode: boolean;
+  worktreeMode: boolean;
+  isUpdatingWorktreeMode: boolean;
   goalModeTokenBudget: number;
   pendingToolAuthorizations: ToolCallInfo[];
   activePendingMessages: string[];
@@ -546,6 +551,7 @@ export type ConversationContextValue = {
   yoloModeRef: RefValue<boolean>;
   planModeRef: RefValue<boolean>;
   goalModeRef: RefValue<boolean>;
+  worktreeModeRef: RefValue<boolean>;
   /** Global Plan/Goal Mode defaults (persisted settings). New and
    *  never-configured conversations inherit these; switches never write them. */
   globalModeDefaultsRef: RefValue<GlobalModeDefaults>;
@@ -599,6 +605,8 @@ export type ConversationContextValue = {
   setIsUpdatingPlanMode: Dispatch<SetStateAction<boolean>>;
   setGoalModeState: Dispatch<SetStateAction<boolean>>;
   setIsUpdatingGoalMode: Dispatch<SetStateAction<boolean>>;
+  setWorktreeModeState: Dispatch<SetStateAction<boolean>>;
+  setIsUpdatingWorktreeMode: Dispatch<SetStateAction<boolean>>;
   setGoalModeTokenBudgetState: Dispatch<SetStateAction<number>>;
   setPendingToolAuthorizations: Dispatch<SetStateAction<ToolCallInfo[]>>;
   setActivePendingMessages: Dispatch<SetStateAction<string[]>>;
@@ -770,6 +778,10 @@ export type UseChatConversationResult = {
   isUpdatingGoalMode: boolean;
   setGoalMode: (enabled: boolean) => Promise<void>;
   refreshGoalMode: () => Promise<boolean>;
+  worktreeMode: boolean;
+  isUpdatingWorktreeMode: boolean;
+  setWorktreeMode: (enabled: boolean) => Promise<void>;
+  refreshWorktreeMode: () => Promise<boolean>;
   goalModeTokenBudget: number;
   setGoalModeTokenBudget: (budget: number) => Promise<void>;
   refreshGoalModeTokenBudget: () => Promise<void>;

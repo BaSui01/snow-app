@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardList,
+  GitBranch,
   Command,
   Copy,
   ExternalLink,
@@ -192,6 +193,10 @@ export const ChatInputView = ({
   isUpdatingGoalMode,
   onGoalModeChange,
   onRefreshGoalMode,
+  worktreeMode,
+  isUpdatingWorktreeMode,
+  onWorktreeModeChange,
+  onRefreshWorktreeMode,
   goalModeTokenBudget,
   onGoalModeTokenBudgetChange,
   autoScrollEnabled,
@@ -2724,6 +2729,12 @@ export const ChatInputView = ({
                   isSubAgentConversation ? undefined : onGoalModeChange
                 }
                 onRefreshGoalMode={onRefreshGoalMode}
+                worktreeMode={worktreeMode}
+                isUpdatingWorktreeMode={isUpdatingWorktreeMode}
+                onWorktreeModeChange={
+                  isSubAgentConversation ? undefined : onWorktreeModeChange
+                }
+                onRefreshWorktreeMode={onRefreshWorktreeMode}
                 goalModeTokenBudget={goalModeTokenBudget}
                 onGoalModeTokenBudgetChange={
                   isSubAgentConversation
@@ -2767,6 +2778,17 @@ export const ChatInputView = ({
                     title={t("plusMenu.goalModeActive")}
                   >
                     <Target size={14} />
+                  </span>
+                </>
+              )}
+              {worktreeMode && (
+                <>
+                  <span className="toolbar-divider" aria-hidden="true" />
+                  <span
+                    className="plan-mode-badge"
+                    title={t("plusMenu.worktreeModeActive")}
+                  >
+                    <GitBranch size={14} />
                   </span>
                 </>
               )}

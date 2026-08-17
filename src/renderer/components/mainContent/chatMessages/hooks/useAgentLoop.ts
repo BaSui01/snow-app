@@ -367,6 +367,8 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             resumeAfterCompaction,
             planMode: iterRef?.planMode ?? ctx.planModeRef.current,
             goalMode: iterRef?.goalMode ?? ctx.goalModeRef.current,
+            worktreeMode:
+              iterRef?.worktreeMode ?? ctx.worktreeModeRef.current,
           },
           createStreamChunkHandler(
             ctx,
@@ -475,6 +477,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                 response.conversationId,
                 migratedRef.planMode,
                 migratedRef.goalMode,
+                migratedRef.worktreeMode,
                 migratedRef.goalModeTokenBudget
               );
             }

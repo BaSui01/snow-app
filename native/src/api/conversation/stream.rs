@@ -114,12 +114,13 @@ pub async fn create_response_stream(
 ) -> Result<ResponsesApiResult> {
     let is_sub_agent = request.is_sub_agent_request();
     if is_sub_agent {
-        // Plan Mode and Goal Mode belong exclusively to the main conversation.
+        // Plan Mode, Goal Mode, and WorkTree Mode belong exclusively to the main conversation.
         // Keep the provider prompt and request-scoped tool injection in normal
         // mode for every sub-agent, even if a caller accidentally forwards
-        // plan_mode or goal_mode.
+        // any mode flag.
         request.plan_mode = Some(false);
         request.goal_mode = Some(false);
+        request.worktree_mode = Some(false);
     }
     let deprecated_sub_agent_profile =
         normalize_non_empty(request.sub_agent_config_profile.as_deref()).map(str::to_owned);

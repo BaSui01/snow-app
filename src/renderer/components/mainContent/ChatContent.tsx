@@ -125,6 +125,10 @@ const ChatContentBody = ({
     isUpdatingGoalMode,
     setGoalMode,
     refreshGoalMode,
+    worktreeMode,
+    isUpdatingWorktreeMode,
+    setWorktreeMode,
+    refreshWorktreeMode,
     goalModeTokenBudget,
     setGoalModeTokenBudget,
     pendingToolAuthorizations,
@@ -1124,6 +1128,10 @@ const ChatContentBody = ({
             isUpdatingGoalMode={isUpdatingGoalMode}
             onGoalModeChange={setGoalMode}
             onRefreshGoalMode={refreshGoalMode}
+            worktreeMode={worktreeMode}
+            isUpdatingWorktreeMode={isUpdatingWorktreeMode}
+            onWorktreeModeChange={setWorktreeMode}
+            onRefreshWorktreeMode={refreshWorktreeMode}
             goalModeTokenBudget={goalModeTokenBudget}
             onGoalModeTokenBudgetChange={setGoalModeTokenBudget}
             autoScrollEnabled={autoScrollEnabled}

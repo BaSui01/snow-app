@@ -210,6 +210,7 @@ export type PrivacySettings = {
 export type ConversationModesResult = {
   planMode: boolean | null;
   goalMode: boolean | null;
+  worktreeMode: boolean | null;
   goalModeTokenBudget: number | null;
 };
 
@@ -877,6 +878,7 @@ export type ResponsesApiRequest = {
   skipContext?: boolean;
   planMode?: boolean;
   goalMode?: boolean;
+  worktreeMode?: boolean;
   /** Per-request thinking strength override ("none" | "low" | "medium" |
    *  "high" | custom). Applied in-memory over the resolved profile's
    *  config_json; never mutates the stored profile. */
@@ -1197,6 +1199,7 @@ getSystemSettingValue: (settingCode: string) => Promise<string | null>;
     conversationId: string,
     planMode: boolean | null,
     goalMode: boolean | null,
+    worktreeMode: boolean | null,
     goalModeTokenBudget: number | null
   ) => Promise<void>;
   getRequestLogging: () => Promise<boolean>;

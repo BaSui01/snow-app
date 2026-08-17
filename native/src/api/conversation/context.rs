@@ -5,6 +5,7 @@ use napi::bindgen_prelude::*;
 
 use crate::prompt::goal_mode_system_prompt::build_goal_mode_system_prompt;
 use crate::prompt::plan_mode_system_prompt::build_plan_mode_system_prompt;
+use crate::prompt::worktree_mode_system_prompt::build_worktree_mode_system_prompt;
 use crate::prompt::system_prompt::build_system_prompt;
 use crate::storage::services::chat_conversations::{
     get_conversation_modes, load_context_messages, resolve_conversation_id, ChatContextMessage,
@@ -137,7 +138,9 @@ pub fn prepare_context_request(
         // `store_chat_exchange`.
         Vec::new()
     } else if request.context_compaction {
-        let handoff_prompt = if request.goal_mode {
+        let handoff_prompt = if request.worktree_mode {
+            "Create a durable context handoff for the next assistant. You are in WorkTree Mode and the context window was exceeded. Preserve the original request branch, the confirmed repository status, the selected development branch or worktree, completed file changes, pending changes, build status, commit status, and the exact next Git-safe steps. Output ONLY the handoff document in Markdown. Do not call tools, address the user, or declare the work complete."
+        } else if request.goal_mode {
             "Create a durable context handoff for the next assistant. You are in Goal Mode and the context window was exceeded, so this handoff MUST preserve the goal so work continues seamlessly.\n\nOutput ONLY the handoff document in Markdown. It MUST include ALL of the following sections:\n\n## Original Goal\nReproduce the user's original goal verbatim. This is the single most important piece of information — do not paraphrase or abbreviate it.\n\n## Success Criteria\nList every success criterion that defines goal completion. Mark each as [MET], [UNMET], or [UNCERTAIN] with brief evidence.\n\n## Completed Work\nBullet list of changes made so far, with exact file paths and function/symbol names.\n\n## Current State\nWhat the codebase looks like right now after your changes. What builds, what does not, what tests pass or fail.\n\n## Pending Tasks\nWhat remains to be done to achieve the goal, ordered by priority.\n\n## Key Decisions & Constraints\nArchitecture choices, constraints discovered, non-regression boundaries that must be respected.\n\n## Token Budget Status\nHow much of the token budget has been consumed (estimate), and how much remains.\n\n## Next Steps\nThe concrete next 1-3 actions the next assistant should take to continue toward the goal.\n\nRules:\n- Do NOT call tools.\n- Do NOT address the user conversationally.\n- Do NOT declare the goal complete — only the next assistant can do that after verifying.\n- Be concise but never omit information required to continue the work correctly."
         } else {
             "Create a durable context handoff for the next assistant. Output only the handoff document in Markdown. Preserve concrete objectives, user requirements, decisions, architecture constraints, relevant files and symbols, completed changes, current state, pending tasks, exact commands or errors, edge cases, and the next recommended steps. Be concise but do not omit information required to continue the work correctly. Do not call tools and do not address the user conversationally."
@@ -206,7 +209,15 @@ pub fn prepare_context_request(
     // executing any changes.
     let shell_type = resolve_default_shell(request.database_path);
     let sub_agents_section = build_sub_agents_section(request.database_path, request.directory_id);
-    let system_prompt = if request.plan_mode {
+    let system_prompt = if request.worktree_mode {
+        build_worktree_mode_system_prompt(
+            &working_directory,
+            &shell_type,
+            request.remote_role_content,
+            request.remote_include_global_rules,
+            &sub_agents_section,
+        )
+    } else if request.plan_mode {
         build_plan_mode_system_prompt(
             &working_directory,
             &shell_type,
@@ -216,10 +227,7 @@ pub fn prepare_context_request(
         )
     } else if request.goal_mode {
         // Per-conversation budget isolation: the conversation's own override
-        // wins; conversations without one use the built-in default. The
-        // formerly-global budget setting is no longer written by the UI
-        // (Plan/Goal Mode toggles are strictly per-conversation), so it must
-        // not leak into conversations that never set a budget of their own.
+        // wins; conversations without one use the built-in default.
         let goal_token_budget = if !conversation_id.is_empty() {
             get_conversation_modes(request.database_path, &conversation_id)
                 .ok()

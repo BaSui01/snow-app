@@ -1,6 +1,7 @@
 import {
   ArrowDownToLine,
   ClipboardList,
+  GitBranch,
   Plus,
   ShieldAlert,
   Target,
@@ -38,6 +39,10 @@ export type PlusMenuProps = {
   isUpdatingGoalMode: boolean;
   onGoalModeChange?: (enabled: boolean) => void;
   onRefreshGoalMode?: () => void | Promise<boolean | void>;
+  worktreeMode: boolean;
+  isUpdatingWorktreeMode: boolean;
+  onWorktreeModeChange?: (enabled: boolean) => void;
+  onRefreshWorktreeMode?: () => void | Promise<boolean | void>;
   goalModeTokenBudget: number;
   onGoalModeTokenBudgetChange?: (budget: number) => void;
   autoScrollEnabled: boolean;
@@ -58,6 +63,10 @@ export const PlusMenu = ({
   isUpdatingGoalMode,
   onGoalModeChange,
   onRefreshGoalMode,
+  worktreeMode,
+  isUpdatingWorktreeMode,
+  onWorktreeModeChange,
+  onRefreshWorktreeMode,
   goalModeTokenBudget,
   onGoalModeTokenBudgetChange,
   autoScrollEnabled,
@@ -87,10 +96,16 @@ export const PlusMenu = ({
         void onRefreshYoloMode?.();
         void onRefreshPlanMode?.();
         void onRefreshGoalMode?.();
+        void onRefreshWorktreeMode?.();
       }
       return next;
     });
-  }, [onRefreshYoloMode, onRefreshPlanMode, onRefreshGoalMode]);
+  }, [
+    onRefreshYoloMode,
+    onRefreshPlanMode,
+    onRefreshGoalMode,
+    onRefreshWorktreeMode,
+  ]);
 
   const handleItemClick = useCallback(
     (item: PlusMenuItem) => {
@@ -230,6 +245,31 @@ export const PlusMenu = ({
                   disabled={isUpdatingPlanMode || !onPlanModeChange}
                   onChange={() => {
                     void onPlanModeChange?.(!planMode);
+                  }}
+                  type="checkbox"
+                />
+                <span className="toggle-slider" />
+              </label>
+            </div>
+            <div className="plus-menu-item plus-menu-yolo-item">
+              <GitBranch size={14} className="plus-menu-item-icon" />
+              <div className="plus-menu-item-content">
+                <span className="plus-menu-item-label">
+                  {t("plusMenu.worktreeMode")}
+                </span>
+                <span className="plus-menu-item-description">
+                  {t("plusMenu.worktreeModeDescription")}
+                </span>
+              </div>
+              <label className="toggle-switch plus-menu-yolo-switch">
+                <input
+                  aria-label={t("plusMenu.worktreeMode")}
+                  checked={worktreeMode}
+                  disabled={
+                    isUpdatingWorktreeMode || !onWorktreeModeChange
+                  }
+                  onChange={() => {
+                    void onWorktreeModeChange?.(!worktreeMode);
                   }}
                   type="checkbox"
                 />

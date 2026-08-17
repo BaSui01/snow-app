@@ -30,7 +30,7 @@ use super::super::{ChatConversationPage, ChatConversationRecord};
 const MAX_VARIABLES: usize = 400;
 
 /// 与运行库 chat_conversations 完全一致的列（不含归档时间列）。
-const CONVERSATION_COLUMNS: &str = "id, conversation_id, title, summary, last_message_preview, message_count, model, api_profile_name, last_response_id, status, input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, total_duration_ms, directory_id, forked_from_conversation_id, fork_message_count, emoji, plan_mode, goal_mode, goal_mode_token_budget, created_at, updated_at";
+const CONVERSATION_COLUMNS: &str = "id, conversation_id, title, summary, last_message_preview, message_count, model, api_profile_name, last_response_id, status, input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, total_duration_ms, directory_id, forked_from_conversation_id, fork_message_count, emoji, plan_mode, goal_mode, worktree_mode, goal_mode_token_budget, created_at, updated_at";
 
 const MESSAGE_COLUMNS: &str = "id, message_id, conversation_id, role, content, model, response_id, checkpoint_id, status, raw_json, thinking, thinking_blocks_json, tool_calls_json, created_at";
 
@@ -99,6 +99,7 @@ pub(crate) fn create_archive_schema(connection: &Connection) -> rusqlite::Result
            emoji TEXT NOT NULL DEFAULT '',
            plan_mode INTEGER,
            goal_mode INTEGER,
+           worktree_mode INTEGER,
            goal_mode_token_budget INTEGER,
            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
            updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
@@ -640,7 +641,7 @@ pub fn restore_archived_conversations(
                             input_tokens, output_tokens, cache_creation_input_tokens,
                             cache_read_input_tokens, total_duration_ms, directory_id,
                             forked_from_conversation_id, fork_message_count, emoji,
-                            plan_mode, goal_mode, goal_mode_token_budget, created_at,
+                            plan_mode, goal_mode, worktree_mode, goal_mode_token_budget, created_at,
                             datetime('now', 'localtime')
                        FROM archive_db.chat_conversations
                       WHERE conversation_id IN ({placeholders})"

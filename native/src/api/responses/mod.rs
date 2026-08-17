@@ -94,6 +94,9 @@ pub struct ResponsesApiRequest {
     /// When true, replace the built-in system prompt with the Goal Mode prompt
     /// that instructs the AI to work autonomously toward a defined objective.
     pub goal_mode: Option<bool>,
+    /// When true, replace the built-in system prompt with the WorkTree prompt
+    /// that instructs the AI to work on an isolated Git branch or worktree.
+    pub worktree_mode: Option<bool>,
     /// Per-request thinking strength override ("none" | "low" | "medium" |
     /// "high" | custom). Applied in-memory over the resolved profile's
     /// config_json; never mutates the stored profile.
@@ -271,6 +274,7 @@ async fn create_response_async(
         skip_context: request.skip_context.unwrap_or(false),
         plan_mode: request.plan_mode.unwrap_or(false),
         goal_mode: request.goal_mode.unwrap_or(false),
+        worktree_mode: request.worktree_mode.unwrap_or(false),
         is_sub_agent: request.is_sub_agent_request(),
         sub_agent_system_prompt: request.sub_agent_system_prompt.as_deref(),
         system_prompt_ids_json: &api_config.system_prompt_ids_json,

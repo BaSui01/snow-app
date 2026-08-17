@@ -111,6 +111,8 @@ const normalizeResponsesApiRequest = (value: unknown): ResponsesApiRequest => {
       typeof source.planMode === "boolean" ? source.planMode : undefined,
     goalMode:
       typeof source.goalMode === "boolean" ? source.goalMode : undefined,
+    worktreeMode:
+      typeof source.worktreeMode === "boolean" ? source.worktreeMode : undefined,
     thinkingStrength:
       typeof source.thinkingStrength === "string" &&
       source.thinkingStrength.trim()

@@ -212,14 +212,14 @@ impl McpService for AppControlService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_SET_MODE.to_string(),
-                description: "Enable or disable Plan Mode or Goal Mode in the Snow App. Plan Mode makes the agent plan before executing. Goal Mode enables autonomous long-running execution with a token budget. The two modes are mutually exclusive.".to_string(),
+                description: "Enable or disable WorkTree Mode, Plan Mode, or Goal Mode in the Snow App. WorkTree Mode isolates implementation on a local Git branch or worktree. Plan Mode makes the agent plan before executing. Goal Mode enables autonomous long-running execution with a token budget. The three modes are mutually exclusive.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "mode": {
                             "type": "string",
-                            "enum": ["plan", "goal"],
-                            "description": "Which mode to toggle: \"plan\" for Plan Mode, \"goal\" for Goal Mode."
+                            "enum": ["plan", "goal", "worktree"],
+                            "description": "Which mode to toggle: \"plan\" for Plan Mode, \"goal\" for Goal Mode, or \"worktree\" for WorkTree Mode. The three modes are mutually exclusive."
                         },
                         "enabled": {
                             "type": "boolean",
@@ -635,14 +635,14 @@ fn validate_set_mode_args(args: &Value) -> napi::Result<(String, Value)> {
         .ok_or_else(|| {
             Error::new(
                 Status::InvalidArg,
-                "mode is required for setMode (\"plan\" or \"goal\")".to_string(),
+                "mode is required for setMode (\"plan\", \"goal\", or \"worktree\")".to_string(),
             )
         })?;
 
-    if mode != "plan" && mode != "goal" {
+    if mode != "plan" && mode != "goal" && mode != "worktree" {
         return Err(Error::new(
             Status::InvalidArg,
-            format!("mode must be \"plan\" or \"goal\", received \"{mode}\""),
+            format!("mode must be \"plan\", \"goal\", or \"worktree\", received \"{mode}\""),
         ));
     }
 

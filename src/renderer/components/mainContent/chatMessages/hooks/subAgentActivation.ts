@@ -273,8 +273,9 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         subAgentToolsJson,
         subAgentSystemPrompt: runtimeConfig.systemPrompt || undefined,
         // Sub-agents always use their own normal-mode prompt and tool set.
-        // Parent Plan Mode is enforced separately at Rust tool execution.
         planMode: false,
+        goalMode: false,
+        worktreeMode: false,
       },
       createStreamChunkHandler(
         ctx,
@@ -1499,6 +1500,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         // stays truthful for any future reader.
         subSessionRef.planMode = false;
         subSessionRef.goalMode = false;
+        subSessionRef.worktreeMode = false;
       }
       // Register this sub-agent on the parent session so aborting the main
       // flow can cascade the cancellation down to it (and its children).
@@ -1658,6 +1660,7 @@ const restoreSubAgentResumer = async (
     restoredRef.isSending = false;
     restoredRef.planMode = false;
     restoredRef.goalMode = false;
+    restoredRef.worktreeMode = false;
   }
   const parentSessionRef =
     ctx.sessionsRefData.current.get(parentConversationId);

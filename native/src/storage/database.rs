@@ -631,9 +631,10 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
               -- legacy/unset rows and are read as disabled (synonymous
               -- with 0); a NULL goal_mode_token_budget falls back to the
               -- global default budget.
-              plan_mode INTEGER,
-             goal_mode INTEGER,
-             goal_mode_token_budget INTEGER,
+               plan_mode INTEGER,
+              goal_mode INTEGER,
+              worktree_mode INTEGER,
+              goal_mode_token_budget INTEGER,
             created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
           );

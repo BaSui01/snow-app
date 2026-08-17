@@ -85,6 +85,8 @@ export const useCompaction = (ctx: ConversationContextValue) => {
         goalMode:
           ctx.sessionsRefData.current.get(conversationId)?.goalMode ??
           ctx.goalModeRef.current,
+        worktreeMode:
+          sessionRef?.worktreeMode ?? false,
         // Conversation-scoped profile isolation: the handoff must resolve the
         // same API config the conversation's messages use. For sub-agent
         // conversations, carry the configured profile so Rust resolves the

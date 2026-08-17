@@ -87,6 +87,7 @@ fn build_request(image_data_url: &str) -> ResponsesApiRequest {
         skip_context: None,
         plan_mode: None,
         goal_mode: None,
+        worktree_mode: None,
         thinking_strength: None,
         remote_role_content: None,
         remote_include_global_rules: None,

@@ -14,6 +14,8 @@ pub struct ConversationModesResult {
     /// null is only returned when the conversation row does not exist
     /// (follow the global default).
     pub goal_mode: Option<bool>,
+    /// Whether WorkTree Mode is enabled for this conversation.
+    pub worktree_mode: Option<bool>,
     /// Per-conversation Goal Mode token budget override (null → follow the
     /// global default budget).
     pub goal_mode_token_budget: Option<i64>,
@@ -28,6 +30,7 @@ pub async fn get_conversation_modes(
             ConversationModesResult {
                 plan_mode: modes.plan_mode,
                 goal_mode: modes.goal_mode,
+                worktree_mode: modes.worktree_mode,
                 goal_mode_token_budget: modes.goal_mode_token_budget,
             }
         })
@@ -41,6 +44,7 @@ pub async fn set_conversation_modes(
     conversation_id: String,
     plan_mode: Option<bool>,
     goal_mode: Option<bool>,
+    worktree_mode: Option<bool>,
     goal_mode_token_budget: Option<i64>,
 ) -> napi::Result<()> {
     tokio::task::spawn_blocking(move || {
@@ -48,6 +52,7 @@ pub async fn set_conversation_modes(
             &conversation_id,
             plan_mode,
             goal_mode,
+            worktree_mode,
             goal_mode_token_budget,
         )
     })

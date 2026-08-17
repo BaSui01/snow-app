@@ -111,6 +111,7 @@ async fn create_anthropic_response_async(
         skip_context: request.skip_context.unwrap_or(false),
         plan_mode: request.plan_mode.unwrap_or(false),
         goal_mode: request.goal_mode.unwrap_or(false),
+        worktree_mode: request.worktree_mode.unwrap_or(false),
         is_sub_agent: request.is_sub_agent_request(),
         sub_agent_system_prompt: request.sub_agent_system_prompt.as_deref(),
         system_prompt_ids_json: &api_config.system_prompt_ids_json,

@@ -60,6 +60,10 @@ export type ChatInputProps = {
   isUpdatingGoalMode?: boolean;
   onGoalModeChange?: (enabled: boolean) => void;
   onRefreshGoalMode?: () => Promise<boolean | void>;
+  worktreeMode?: boolean;
+  isUpdatingWorktreeMode?: boolean;
+  onWorktreeModeChange?: (enabled: boolean) => void;
+  onRefreshWorktreeMode?: () => Promise<boolean | void>;
   goalModeTokenBudget?: number;
   onGoalModeTokenBudgetChange?: (budget: number) => void;
   autoScrollEnabled?: boolean;
@@ -178,6 +182,10 @@ export type ChatInputViewProps = ChatInputState &
     isUpdatingGoalMode: boolean;
     onGoalModeChange?: (enabled: boolean) => void;
     onRefreshGoalMode?: () => Promise<boolean | void>;
+    worktreeMode: boolean;
+    isUpdatingWorktreeMode: boolean;
+    onWorktreeModeChange?: (enabled: boolean) => void;
+    onRefreshWorktreeMode?: () => Promise<boolean | void>;
     goalModeTokenBudget: number;
     onGoalModeTokenBudgetChange?: (budget: number) => void;
     autoScrollEnabled: boolean;

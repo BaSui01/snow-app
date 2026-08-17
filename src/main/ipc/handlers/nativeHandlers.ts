@@ -91,12 +91,14 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       conversationId: string,
       planMode: boolean | null,
       goalMode: boolean | null,
+      worktreeMode: boolean | null,
       goalModeTokenBudget: number | null
     ) =>
       native.setConversationModes(
         conversationId,
         planMode,
         goalMode,
+        worktreeMode,
         goalModeTokenBudget
       )
   );

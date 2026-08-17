@@ -92,18 +92,30 @@ export const useConversationManagement = (
         targetPendingQueue ? targetPendingQueue.map((item) => item.text) : []
       );
 
-      // Restore Plan/Goal Mode from the target session's stored state.
-      // Per-conversation isolation: this NEVER writes the global persisted
-      // defaults — the global settings are only mutated by explicit user
-      // toggles. A cold conversation (no in-memory session yet) falls back
-      // to the global defaults; its DB overrides are applied once the
-      // history load resolves below.
+      // Restore per-conversation mode state from the target session.
       const cachedRef = ctx.sessionsRefData.current.get(trimmedId);
       const defaults = ctx.globalModeDefaultsRef.current;
-      const targetPlanMode = cachedRef?.planMode ?? defaults.planMode;
-      const targetGoalMode = cachedRef?.goalMode ?? defaults.goalMode;
+      let targetWorktreeMode =
+        cachedRef?.worktreeMode ?? defaults.worktreeMode;
+      let targetPlanMode = cachedRef?.planMode ?? defaults.planMode;
+      let targetGoalMode = cachedRef?.goalMode ?? defaults.goalMode;
       const targetBudget =
         cachedRef?.goalModeTokenBudget ?? defaults.goalModeTokenBudget;
+      if (targetWorktreeMode) {
+        targetPlanMode = false;
+        targetGoalMode = false;
+      } else if (targetPlanMode) {
+        targetGoalMode = false;
+      }
+      if (cachedRef) {
+        cachedRef.worktreeMode = targetWorktreeMode;
+        cachedRef.planMode = targetPlanMode;
+        cachedRef.goalMode = targetGoalMode;
+      }
+      if (ctx.worktreeModeRef.current !== targetWorktreeMode) {
+        ctx.worktreeModeRef.current = targetWorktreeMode;
+        ctx.setWorktreeModeState(targetWorktreeMode);
+      }
       if (ctx.planModeRef.current !== targetPlanMode) {
         ctx.planModeRef.current = targetPlanMode;
         ctx.setPlanModeState(targetPlanMode);
@@ -160,20 +172,30 @@ export const useConversationManagement = (
             const checkpointIds = page.checkpointIds;
             let baselineCheckpointId = checkpointIds[0];
 
-            // Resolve the effective modes for this conversation: DB override
-            // wins, then the global defaults. Defensive mutual exclusion: a
-            // corrupt record with both modes set resolves to Plan Mode and is
-            // repaired asynchronously.
+            // Resolve effective modes with stable conflict priority:
+            // WorkTree > Plan > Goal. Repair a conflicting database row
+            // asynchronously after choosing the effective state.
+            let storedWorktreeMode =
+              storedModes?.worktreeMode ?? defaults.worktreeMode;
             let storedPlanMode = storedModes?.planMode ?? defaults.planMode;
             let storedGoalMode = storedModes?.goalMode ?? defaults.goalMode;
             let storedBudget =
               storedModes?.goalModeTokenBudget ?? defaults.goalModeTokenBudget;
-            if (storedPlanMode && storedGoalMode) {
+            const hasModeConflict =
+              (storedWorktreeMode && (storedPlanMode || storedGoalMode)) ||
+              (storedPlanMode && storedGoalMode);
+            if (storedWorktreeMode) {
+              storedPlanMode = false;
               storedGoalMode = false;
+            } else if (storedPlanMode) {
+              storedGoalMode = false;
+            }
+            if (hasModeConflict) {
               void window.snow.setConversationModes(
                 trimmedId,
                 storedPlanMode,
-                false,
+                storedGoalMode,
+                storedWorktreeMode,
                 storedBudget
               );
             }
@@ -283,6 +305,7 @@ export const useConversationManagement = (
                   checkpointIds,
                   childSubAgentIds: new Set(),
                   planMode: storedPlanMode,
+                  worktreeMode: storedWorktreeMode,
                   goalMode: storedGoalMode,
                   goalModeTokenBudget: storedBudget,
                   subAgentTerminated: isTerminatedSubAgent || undefined,
@@ -347,6 +370,10 @@ export const useConversationManagement = (
       if (selectionRequestId === ctx.selectionRequestIdRef.current) {
         const settledRef = ctx.sessionsRefData.current.get(trimmedId);
         if (settledRef) {
+          if (ctx.worktreeModeRef.current !== settledRef.worktreeMode) {
+            ctx.worktreeModeRef.current = settledRef.worktreeMode;
+            ctx.setWorktreeModeState(settledRef.worktreeMode);
+          }
           if (ctx.planModeRef.current !== settledRef.planMode) {
             ctx.planModeRef.current = settledRef.planMode;
             ctx.setPlanModeState(settledRef.planMode);
@@ -397,6 +424,8 @@ export const useConversationManagement = (
       ctx.updateSessionField,
       ctx.setNewChatRequested,
       ctx.sessionsRefData,
+      ctx.worktreeModeRef,
+      ctx.setWorktreeModeState,
       ctx.planModeRef,
       ctx.setPlanModeState,
       ctx.goalModeRef,
@@ -509,6 +538,12 @@ export const useConversationManagement = (
       ctx.setPlanModeState(defaults.planMode);
     }
 
+    // Reset WorkTree Mode so a new chat starts with the global default.
+    if (ctx.worktreeModeRef.current !== defaults.worktreeMode) {
+      ctx.worktreeModeRef.current = defaults.worktreeMode;
+      ctx.setWorktreeModeState(defaults.worktreeMode);
+    }
+
     // A new chat starts a brand-new task. The pending session's approval is
     // cleared ONLY when that pending session is not running in the
     // background — a streaming pending conversation keeps its approved plan
@@ -563,6 +598,8 @@ export const useConversationManagement = (
     ctx.setNewChatRequested,
     ctx.planModeRef,
     ctx.setPlanModeState,
+    ctx.worktreeModeRef,
+    ctx.setWorktreeModeState,
     ctx.goalModeRef,
     ctx.setGoalModeState,
     ctx.planApprovedSessionKeysRef,
@@ -753,6 +790,10 @@ export const useConversationManagement = (
       // UI (the DB row is gone with the conversation, so nothing to restore).
       if (ctx.activeConversationIdRef.current === conversationId) {
         const defaults = ctx.globalModeDefaultsRef.current;
+        if (ctx.worktreeModeRef.current !== defaults.worktreeMode) {
+          ctx.worktreeModeRef.current = defaults.worktreeMode;
+          ctx.setWorktreeModeState(defaults.worktreeMode);
+        }
         if (ctx.planModeRef.current !== defaults.planMode) {
           ctx.planModeRef.current = defaults.planMode;
           ctx.setPlanModeState(defaults.planMode);
@@ -778,6 +819,8 @@ export const useConversationManagement = (
       rejectPendingUserQuestions,
       ctx.updateSessionField,
       ctx.globalModeDefaultsRef,
+      ctx.worktreeModeRef,
+      ctx.setWorktreeModeState,
       ctx.goalModeTokenBudget,
       ctx.setGoalModeTokenBudgetState,
     ]

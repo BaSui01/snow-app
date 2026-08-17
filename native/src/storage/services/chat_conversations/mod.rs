@@ -736,6 +736,7 @@ pub(crate) fn create_chat_id(prefix: &str) -> String {
 pub struct ConversationModes {
     pub plan_mode: Option<bool>,
     pub goal_mode: Option<bool>,
+    pub worktree_mode: Option<bool>,
     pub goal_mode_token_budget: Option<i64>,
 }
 
@@ -755,7 +756,7 @@ pub fn get_conversation_modes(
         .and_then(|connection| {
             connection
                 .query_row(
-                    "SELECT plan_mode, goal_mode, goal_mode_token_budget
+                    "SELECT plan_mode, goal_mode, worktree_mode, goal_mode_token_budget
                        FROM chat_conversations
                       WHERE conversation_id = ?1
                       LIMIT 1",
@@ -772,7 +773,12 @@ pub fn get_conversation_modes(
                                     .map(|v| v != 0)
                                     .unwrap_or(false),
                             ),
-                            goal_mode_token_budget: row.get::<_, Option<i64>>(2)?,
+                            worktree_mode: Some(
+                                row.get::<_, Option<i64>>(2)?
+                                    .map(|v| v != 0)
+                                    .unwrap_or(false),
+                            ),
+                            goal_mode_token_budget: row.get::<_, Option<i64>>(3)?,
                         })
                     },
                 )
@@ -796,24 +802,27 @@ pub fn set_conversation_modes(
     conversation_id: &str,
     plan_mode: Option<bool>,
     goal_mode: Option<bool>,
+    worktree_mode: Option<bool>,
     goal_mode_token_budget: Option<i64>,
 ) -> Result<()> {
     database::open_connection(database_path)
         .and_then(|connection| {
             connection.execute(
                 "INSERT INTO chat_conversations (
-                   id, conversation_id, plan_mode, goal_mode, goal_mode_token_budget
+                   id, conversation_id, plan_mode, goal_mode, worktree_mode, goal_mode_token_budget
                  )
-                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
                  ON CONFLICT(conversation_id) DO UPDATE SET
                    plan_mode = COALESCE(excluded.plan_mode, chat_conversations.plan_mode),
                    goal_mode = COALESCE(excluded.goal_mode, chat_conversations.goal_mode),
+                   worktree_mode = COALESCE(excluded.worktree_mode, chat_conversations.worktree_mode),
                    goal_mode_token_budget = COALESCE(excluded.goal_mode_token_budget, chat_conversations.goal_mode_token_budget)",
                 params![
                     database::create_snowflake_id(),
                     conversation_id,
                     plan_mode.map(|v| if v { 1 } else { 0 }),
                     goal_mode.map(|v| if v { 1 } else { 0 }),
+                    worktree_mode.map(|v| if v { 1 } else { 0 }),
                     goal_mode_token_budget,
                 ],
             )?;

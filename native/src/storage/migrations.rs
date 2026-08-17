@@ -390,6 +390,7 @@ fn migrate_chat_conversations_modes(connection: &Connection) -> rusqlite::Result
     let missing: Vec<(&str, &str)> = [
         ("plan_mode", "INTEGER"),
         ("goal_mode", "INTEGER"),
+        ("worktree_mode", "INTEGER"),
         ("goal_mode_token_budget", "INTEGER"),
     ]
     .into_iter()

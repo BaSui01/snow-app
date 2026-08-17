@@ -1005,6 +1005,37 @@
   background: var(--selection-bg);
 }
 
+/* 提交按钮的分割操作区与 Google 主色保持一致，同时让模式下拉按钮
+   使用同一套前景色与分隔线，避免落回默认深色按钮样式。 */
+:root[data-theme-preset="google"] .git-commit-split-btn {
+  border: 1px solid var(--google-blue);
+  border-radius: 18px;
+  background: var(--google-blue);
+  color: var(--google-on-primary);
+  box-shadow: 0 1px 2px rgba(11, 87, 208, 0.2);
+}
+
+:root[data-theme-preset="google"] .git-commit-split-btn .git-commit-btn {
+  border-color: transparent;
+  background: transparent;
+  color: inherit;
+}
+
+:root[data-theme-preset="google"] .git-commit-split-btn .git-commit-mode-toggle {
+  border-left-color: color-mix(
+    in srgb,
+    var(--google-on-primary) 28%,
+    transparent
+  );
+  color: inherit;
+}
+
+:root[data-theme-preset="google"]
+  :is(.git-commit-split-btn .git-commit-btn,
+    .git-commit-split-btn .git-commit-mode-toggle):hover:not(:disabled) {
+  background: color-mix(in srgb, var(--google-on-primary) 12%, transparent);
+}
+
 @media (prefers-reduced-motion: reduce) {
   :root[data-theme-preset="google"] .chat-empty-quick-card {
     transition: none;

@@ -533,6 +533,13 @@ export const TerminalPanelContent = ({
       <div
         ref={containerRef}
         className="terminal-container"
+        onMouseDown={(event) => {
+          // xterm 在点击空白区域清除选区时不一定触发 onSelectionChange，
+          // 先清理按钮状态，拖拽选择后再由 onSelectionChange 显示按钮。
+          if (event.button === 0) {
+            setHasSelection(false);
+          }
+        }}
         style={{
           width: "100%",
           height: "100%",

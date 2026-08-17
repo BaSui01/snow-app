@@ -454,6 +454,31 @@
   background: var(--selection-bg);
 }
 
+/* 提交按钮的分割操作区与主题主色保持一致，模式下拉按钮不能沿用默认黑色外壳。 */
+:root[data-theme-preset="cream"] .git-commit-split-btn {
+  border: 1px solid var(--accent-orange);
+  background: var(--accent-orange);
+  color: #fffaf5;
+  box-shadow: var(--shadow-sm);
+}
+
+:root[data-theme-preset="cream"] .git-commit-split-btn .git-commit-btn {
+  border-color: transparent;
+  background: transparent;
+  color: inherit;
+}
+
+:root[data-theme-preset="cream"] .git-commit-split-btn .git-commit-mode-toggle {
+  border-left-color: color-mix(in srgb, #fffaf5 28%, transparent);
+  color: inherit;
+}
+
+:root[data-theme-preset="cream"]
+  :is(.git-commit-split-btn .git-commit-btn,
+    .git-commit-split-btn .git-commit-mode-toggle):hover:not(:disabled) {
+  background: color-mix(in srgb, #fffaf5 12%, transparent);
+}
+
 @media (prefers-reduced-motion: reduce) {
   :root[data-theme-preset="cream"] * {
     transition-duration: 0.01ms !important;

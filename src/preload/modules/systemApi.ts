@@ -1360,4 +1360,27 @@ export const windowApi = {
       ipcRenderer.removeListener("window:close-requested", handler);
     };
   },
+  /** 主进程推送窗口缩窄方向：edge 为被拖动的边缘，contentWidth 为内容区宽度。 */
+  onWindowResizeEdgeChanged: (
+    callback: (info: { edge: "left" | "right"; contentWidth: number }) => void
+  ): (() => void) => {
+    const handler = (_event: IpcRendererEvent, info: unknown): void => {
+      if (!info || typeof info !== "object") {
+        return;
+      }
+      const record = info as Record<string, unknown>;
+      if (
+        (record.edge === "left" || record.edge === "right") &&
+        typeof record.contentWidth === "number"
+      ) {
+        callback({ edge: record.edge, contentWidth: record.contentWidth });
+      }
+    };
+
+    ipcRenderer.on("window:resize-edge-changed", handler);
+
+    return () => {
+      ipcRenderer.removeListener("window:resize-edge-changed", handler);
+    };
+  },
 };

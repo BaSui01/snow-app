@@ -38,6 +38,12 @@ const RIGHT_PANEL_MIN_WIDTH = 280;
 const RIGHT_PANEL_MAX_WIDTH = 640;
 const RIGHT_PANEL_DEFAULT_WIDTH = 380;
 const MAIN_CONTENT_MIN_WIDTH = 420;
+// 窗口内容宽度 ≤ 此值时视为手机尺寸：自动收起两侧面板，聊天区独占窗口。
+const MOBILE_BREAKPOINT = 720;
+const PANEL_RESIZER_WIDTH = 10;
+// 自动展开的滞回余量：拉宽到收起阈值以上再多出此宽度才恢复展开，
+// 避免用户在阈值附近来回拖动时面板反复收起/展开。
+const AUTO_EXPAND_MARGIN = 80;
 const APP_LAYOUT_HORIZONTAL_PADDING = 20;
 const APP_LAYOUT_GAP_TOTAL = 20;
 
@@ -168,15 +174,139 @@ export const App = (): React.JSX.Element => {
     };
   }, []);
 
+  // autoCollapsedRef 记录被自动收起的面板（此前处于展开状态），拉宽后据此恢复；
+  // 用户手动收起/展开会清除标记，手动收起的面板不会被自动展开。
+  const lastContentWidthRef = useRef(window.innerWidth);
+  const autoCollapsedRef = useRef({ sidebar: false, rightPanel: false });
+  const clearAutoCollapsed = useCallback(
+    (target: "sidebar" | "rightPanel") => {
+      autoCollapsedRef.current[target] = false;
+    },
+    []
+  );
+
   // 监听右侧面板的展开请求：工具调用组件打开 diff 预览时，
   // 若面板处于折叠状态则自动展开，保证用户能看到新 tab。
   useEffect(() => {
     return rightPanelEvents.on("request-expand", () => {
       if (isRightPanelCollapsed) {
+        clearAutoCollapsed("rightPanel");
         setIsRightPanelCollapsed(false);
       }
     });
-  }, [isRightPanelCollapsed]);
+  }, [isRightPanelCollapsed, clearAutoCollapsed]);
+
+  // 窗口缩窄时按缩窄方向自动收起对应侧面板，拉宽到足够宽度时自动恢复：
+  // 从左边缩窄 → 收起侧栏；从右边缩窄 → 收起右面板。
+  // 宽度 ≤ MOBILE_BREAKPOINT 视为手机尺寸，两侧面板全部收起，聊天区独占窗口。
+  useEffect(() => {
+    return window.snow.onWindowResizeEdgeChanged(({ edge, contentWidth }) => {
+      const prevWidth = lastContentWidthRef.current;
+      lastContentWidthRef.current = contentWidth;
+      if (contentWidth === prevWidth) {
+        return; // 纯移动窗口，宽度未变
+      }
+      // 当前可见的水平方向固定开销：窗口内边距 + 可见面板间的分隔条。
+      const chrome =
+        APP_LAYOUT_HORIZONTAL_PADDING +
+        (isSidebarCollapsed ? 0 : PANEL_RESIZER_WIDTH) +
+        (isRightPanelCollapsed ? 0 : PANEL_RESIZER_WIDTH);
+
+      if (contentWidth > prevWidth) {
+        // 拉宽：宽度足够时恢复此前被自动收起的面板。
+        // 顺序判定（先侧栏后右面板），右面板判定时计入侧栏即将展开的宽度，
+        // 避免两个面板同时恢复后超出窗口宽度。
+        const auto = autoCollapsedRef.current;
+        let nextSidebarCollapsed = isSidebarCollapsed;
+        let nextRightCollapsed = isRightPanelCollapsed;
+        if (auto.sidebar && isSidebarCollapsed) {
+          const otherPanelWidth = isRightPanelCollapsed ? 0 : rightPanelWidth;
+          const need =
+            SIDEBAR_MIN_WIDTH +
+            MAIN_CONTENT_MIN_WIDTH +
+            otherPanelWidth +
+            chrome +
+            AUTO_EXPAND_MARGIN;
+          if (contentWidth >= need) {
+            nextSidebarCollapsed = false;
+          }
+        }
+        if (auto.rightPanel && isRightPanelCollapsed) {
+          const otherPanelWidth = nextSidebarCollapsed ? 0 : sidebarWidth;
+          const need =
+            RIGHT_PANEL_MIN_WIDTH +
+            MAIN_CONTENT_MIN_WIDTH +
+            otherPanelWidth +
+            chrome +
+            AUTO_EXPAND_MARGIN;
+          if (contentWidth >= need) {
+            nextRightCollapsed = false;
+          }
+        }
+        if (!nextSidebarCollapsed) {
+          auto.sidebar = false;
+        }
+        if (!nextRightCollapsed) {
+          auto.rightPanel = false;
+        }
+        if (nextSidebarCollapsed !== isSidebarCollapsed) {
+          setIsSidebarCollapsed(nextSidebarCollapsed);
+        }
+        if (nextRightCollapsed !== isRightPanelCollapsed) {
+          setIsRightPanelCollapsed(nextRightCollapsed);
+        }
+        return;
+      }
+
+      // 缩窄：按方向自动收起对应面板，并记录为"可自动恢复"。
+      if (contentWidth <= MOBILE_BREAKPOINT) {
+        if (!isSidebarCollapsed) {
+          autoCollapsedRef.current.sidebar = true;
+          setIsSidebarCollapsed(true);
+        }
+        if (!isRightPanelCollapsed) {
+          autoCollapsedRef.current.rightPanel = true;
+          setIsRightPanelCollapsed(true);
+        }
+        return;
+      }
+      if (edge === "left" && !isSidebarCollapsed) {
+        const otherPanelWidth = isRightPanelCollapsed ? 0 : rightPanelWidth;
+        if (
+          contentWidth <
+          SIDEBAR_MIN_WIDTH + MAIN_CONTENT_MIN_WIDTH + otherPanelWidth + chrome
+        ) {
+          autoCollapsedRef.current.sidebar = true;
+          setIsSidebarCollapsed(true);
+        }
+      } else if (edge === "right" && !isRightPanelCollapsed) {
+        const otherPanelWidth = isSidebarCollapsed ? 0 : sidebarWidth;
+        if (
+          contentWidth <
+          RIGHT_PANEL_MIN_WIDTH + MAIN_CONTENT_MIN_WIDTH + otherPanelWidth + chrome
+        ) {
+          autoCollapsedRef.current.rightPanel = true;
+          setIsRightPanelCollapsed(true);
+        }
+      }
+    });
+  }, [
+    isSidebarCollapsed,
+    isRightPanelCollapsed,
+    sidebarWidth,
+    rightPanelWidth,
+  ]);
+
+  // 启动时若窗口已是手机宽度，直接以两侧收起布局呈现，避免初始布局溢出；
+  // 收起属自动行为，记录标记以便拉宽后恢复默认布局。
+  useEffect(() => {
+    if (window.innerWidth <= MOBILE_BREAKPOINT) {
+      autoCollapsedRef.current.sidebar = true;
+      autoCollapsedRef.current.rightPanel = true;
+      setIsSidebarCollapsed(true);
+      setIsRightPanelCollapsed(true);
+    }
+  }, []);
 
   const handleConfirmClose = useCallback((): void => {
     setShowCloseConfirm(false);
@@ -201,6 +331,7 @@ export const App = (): React.JSX.Element => {
       const rawPath = cwd ?? activeDirectory?.path ?? "";
       const targetCwd = rawPath;
       if (isRightPanelCollapsed) {
+        clearAutoCollapsed("rightPanel");
         setIsRightPanelCollapsed(false);
       }
       // Defer to ensure panel is visible before fitting terminal
@@ -208,28 +339,30 @@ export const App = (): React.JSX.Element => {
         rightPanelRef.current?.openTerminal(targetCwd);
       });
     },
-    [activeDirectory, isRightPanelCollapsed]
+    [activeDirectory, isRightPanelCollapsed, clearAutoCollapsed]
   );
 
   const handleOpenBrowser = useCallback(() => {
     if (isRightPanelCollapsed) {
+      clearAutoCollapsed("rightPanel");
       setIsRightPanelCollapsed(false);
     }
     requestAnimationFrame(() => {
       rightPanelRef.current?.openBrowser();
     });
-  }, [isRightPanelCollapsed]);
+  }, [isRightPanelCollapsed, clearAutoCollapsed]);
 
   const handleOpenCodebase = useCallback(
     (projectId: string, projectName: string) => {
       if (isRightPanelCollapsed) {
+        clearAutoCollapsed("rightPanel");
         setIsRightPanelCollapsed(false);
       }
       requestAnimationFrame(() => {
         rightPanelRef.current?.openCodebase(projectId, projectName);
       });
     },
-    [isRightPanelCollapsed]
+    [isRightPanelCollapsed, clearAutoCollapsed]
   );
 
   const handleOpenFile = useCallback(
@@ -243,6 +376,7 @@ export const App = (): React.JSX.Element => {
       sshWorkspaceId?: string
     ) => {
       if (isRightPanelCollapsed) {
+        clearAutoCollapsed("rightPanel");
         setIsRightPanelCollapsed(false);
       }
       requestAnimationFrame(() => {
@@ -257,7 +391,7 @@ export const App = (): React.JSX.Element => {
         );
       });
     },
-    [isRightPanelCollapsed]
+    [isRightPanelCollapsed, clearAutoCollapsed]
   );
 
   const handleOpenSshWizard = useCallback((): void => {
@@ -397,12 +531,15 @@ export const App = (): React.JSX.Element => {
             isSidebarCollapsed={isSidebarCollapsed}
             isRightPanelCollapsed={isRightPanelCollapsed}
             activeDirectory={activeDirectory}
-            onToggleSidebar={() =>
-              setIsSidebarCollapsed((isCollapsed) => !isCollapsed)
-            }
-            onToggleRightPanel={() =>
-              setIsRightPanelCollapsed((isCollapsed) => !isCollapsed)
-            }
+            onToggleSidebar={() => {
+              // 手动切换视为用户接管，清除自动恢复标记（手动收起的不再自动展开）
+              clearAutoCollapsed("sidebar");
+              setIsSidebarCollapsed((isCollapsed) => !isCollapsed);
+            }}
+            onToggleRightPanel={() => {
+              clearAutoCollapsed("rightPanel");
+              setIsRightPanelCollapsed((isCollapsed) => !isCollapsed);
+            }}
             isRightPanelFullscreen={isRightPanelFullscreen}
             onToggleRightPanelFullscreen={() =>
               setIsRightPanelFullscreen((isFullscreen) => !isFullscreen)

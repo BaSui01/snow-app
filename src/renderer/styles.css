@@ -280,6 +280,17 @@ input {
     gap: 6px;
     padding: 0 10px;
   }
+  /* 手机尺寸下两侧面板已自动收起：侧栏折叠时不再为其保留整列宽度，
+     把空间让给聊天区（top-bar 网格与下方 .app-layout 保持一致）。 */
+  .app-shell.sidebar-collapsed .top-bar {
+    grid-template-columns: auto minmax(0, 1fr) var(--right-panel-width);
+  }
+  .app-shell.sidebar-collapsed.right-panel-collapsed .top-bar {
+    grid-template-columns: auto minmax(0, 1fr) 49px;
+  }
+  .app-shell.sidebar-collapsed.right-panel-fullscreen .top-bar {
+    grid-template-columns: auto 0px minmax(0, 1fr);
+  }
 }
 
 .top-bar-plus-menu {

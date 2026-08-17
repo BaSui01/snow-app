@@ -43,6 +43,52 @@ export const isCloseConfirmed = (): boolean => closeConfirmed;
 // macOS 上主窗口关闭后重建，因此引用在 closed 时清空、重建时更新。
 let mainWindowRef: BrowserWindow | null = null;
 
+// ===== 缩窄方向检测 =====
+// 记录上一次窗口 bounds，比较 x 与右边缘（x+width）的变化来判定用户拖的是
+// 哪条边：左边缘拖动 → x 变化而右边缘不动；右边缘拖动 → x 不动而右边缘变化。
+// 渲染进程据此在窗口缩窄时自动收起对应侧面板，聊天区可缩窄到手机尺寸。
+let lastResizeBounds: { x: number; width: number } | null = null;
+
+const bindResizeEdgeDetection = (win: BrowserWindow): void => {
+  const resetResizeBaseline = (): void => {
+    lastResizeBounds = null;
+  };
+
+  win.on("resize", () => {
+    // 最大化/全屏切换时 x/width 会整体跳变，无法判定方向，重置基线后忽略。
+    if (win.isDestroyed() || win.isMaximized() || win.isFullScreen()) {
+      resetResizeBaseline();
+      return;
+    }
+    const bounds = win.getBounds();
+    const prev = lastResizeBounds;
+    lastResizeBounds = { x: bounds.x, width: bounds.width };
+    if (!prev) {
+      return;
+    }
+    const xDelta = bounds.x - prev.x;
+    const rightEdgeDelta = bounds.x + bounds.width - (prev.x + prev.width);
+    let edge: "left" | "right" | null = null;
+    if (xDelta !== 0 && rightEdgeDelta === 0) {
+      edge = "left";
+    } else if (xDelta === 0 && rightEdgeDelta !== 0) {
+      edge = "right";
+    } else {
+      // 移动窗口（x 变而宽度不变）或程序化调整等无法判定方向的场景，忽略。
+      return;
+    }
+    safeSend(win.webContents, "window:resize-edge-changed", {
+      edge,
+      contentWidth: win.getContentBounds().width,
+    });
+  });
+
+  win.on("maximize", resetResizeBaseline);
+  win.on("unmaximize", resetResizeBaseline);
+  win.on("enter-full-screen", resetResizeBaseline);
+  win.on("leave-full-screen", resetResizeBaseline);
+};
+
 /** 获取当前主窗口（已销毁时返回 null）。 */
 export const getMainWindow = (): BrowserWindow | null =>
   mainWindowRef && !mainWindowRef.isDestroyed() ? mainWindowRef : null;
@@ -118,7 +164,7 @@ export const createWindow = (): BrowserWindow => {
     width: savedState?.width ?? DEFAULT_WINDOW_WIDTH,
     height: savedState?.height ?? DEFAULT_WINDOW_HEIGHT,
     ...restoredPosition,
-    minWidth: 960,
+    minWidth: 360,
     minHeight: 600,
     title: "Snow App",
     icon: APP_ICON_PATH,
@@ -152,6 +198,10 @@ export const createWindow = (): BrowserWindow => {
 
   // 监听尺寸/位置/最大化状态变化，防抖后持久化到 userData。
   bindWindowStatePersistence(mainWindow);
+
+  // 监听缩窄方向（左/右边缘），推送 window:resize-edge-changed 供渲染层
+  // 自动收起对应侧面板；聊天区可缩窄到手机尺寸。
+  bindResizeEdgeDetection(mainWindow);
 
   mainWindow.webContents.on("before-input-event", (event, input) => {
     if (is.dev && input.key === "F12") {

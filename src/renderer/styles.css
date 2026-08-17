@@ -4867,7 +4867,7 @@ input {
 }
 
 .proxy-browser-settings-summary-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .api-settings-actions {
@@ -5114,6 +5114,32 @@ input {
 
 .api-settings-field input:not([type="checkbox"]):not([type="range"]):disabled,
 .api-settings-field select:disabled {
+  cursor: default;
+  opacity: 0.68;
+}
+
+.api-settings-field textarea.api-settings-field-textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  outline: none;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Consolas, monospace);
+}
+
+.api-settings-field textarea.api-settings-field-textarea:focus {
+  border-color: var(--text-muted);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.api-settings-field textarea.api-settings-field-textarea:disabled {
   cursor: default;
   opacity: 0.68;
 }
@@ -9636,6 +9662,134 @@ input {
   text-decoration: underline;
 }
 
+/* ===== 网络来源徽章 =====
+   模型按提示词在正文中用 `[来源:标题](url "摘要")` 内联标注来源，
+   markdownWorker 将其渲染为 .md-source-badge（favicon + 缩略标题）；
+   React 层负责悬停 Tooltip 摘要与点击打开来源页。
+   颜色跟随主题色（--accent-color），不写死品牌蓝。 */
+.md-source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 220px;
+  margin: 0 2px;
+  padding: 1px 8px 1px 4px;
+  border: 1px solid color-mix(in srgb, var(--accent-color) 30%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-color) 8%, transparent);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  line-height: 1.6;
+  vertical-align: middle;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.md-source-badge:hover {
+  border-color: color-mix(in srgb, var(--accent-color) 60%, transparent);
+  background: color-mix(in srgb, var(--accent-color) 14%, transparent);
+}
+
+/* favicon 默认隐藏，加载成功（.favicon-ok）才显示；失败/缺失/无 favicon
+   站点稳定回退到内置地球占位图标（向后兼容，不出现破图） */
+.md-source-badge-favicon {
+  display: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.md-source-badge-fallback {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--accent-color);
+}
+
+.md-source-badge.favicon-ok .md-source-badge-favicon {
+  display: block;
+}
+
+.md-source-badge.favicon-ok .md-source-badge-fallback {
+  display: none;
+}
+
+.md-source-badge-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 覆盖全局 markdown 图片规则：徽章 favicon 保持小尺寸、不触发灯箱 */
+:is(.ai-message, .context-compaction-markdown)
+  .md-source-badge
+  img.md-source-badge-favicon {
+  display: block;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  cursor: default;
+}
+
+/* Tooltip 定位宿主：fixed 于徽章顶部中心，Tooltip 在宿主上方弹出 */
+.md-source-tooltip-host {
+  position: fixed;
+  width: 0;
+  height: 0;
+  z-index: 1000;
+}
+
+/* 悬停锚点：0 尺寸纯占位（Tooltip 为受控显示，不拦截徽章鼠标事件，
+   避免覆盖导致徽章 :hover 丢失造成图标闪烁） */
+.md-source-badge-anchor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+}
+
+/* Tooltip 摘要详情：固定宽度多行布局，覆盖默认 nowrap（fit-content 会让
+   长文本把 tooltip 撑成窄条，固定宽度才能正确换行截断） */
+.md-source-tooltip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 280px;
+  white-space: normal;
+  text-align: left;
+}
+
+.md-source-tooltip-title {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.md-source-tooltip-summary {
+  font-size: 11.5px;
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.md-source-tooltip-url {
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  word-break: break-all;
+}
+
 /* Markdown 内联图片：
    - 图片限高居中展示（复用生图工具卡的相框观感）：过大图片不再撑满消息，
      点击可在灯箱中查看原图（cursor: zoom-in 提示）。 */
@@ -12853,6 +13007,99 @@ input {
 .tool-call-websearch-count-image {
   color: var(--accent-amber-text);
   background: var(--accent-amber-bg);
+}
+
+.tool-call-websearch-meta-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.tool-call-websearch-count-blocked {
+  color: var(--accent-red-text);
+  background: var(--accent-red-bg);
+}
+
+.tool-call-websearch-blocked {
+  border: 1px solid var(--accent-red-bg, var(--border-color));
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+
+.tool-call-websearch-blocked > summary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--accent-red-text);
+  background: var(--accent-red-bg);
+  list-style: none;
+}
+
+.tool-call-websearch-blocked > summary::-webkit-details-marker {
+  display: none;
+}
+
+.tool-call-websearch-blocked-rules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 8px 0;
+}
+
+.tool-call-websearch-blocked-rules code {
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  font-size: 10.5px;
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Consolas, monospace);
+}
+
+.tool-call-websearch-blocked-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  padding: 8px;
+  list-style: none;
+}
+
+.tool-call-websearch-blocked-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tool-call-websearch-blocked-index {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--accent-red-text);
+  font-weight: 700;
+}
+
+.tool-call-websearch-blocked-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.tool-call-websearch-blocked-url {
+  flex-shrink: 0;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--text-muted);
 }
 
 .tool-call-websearch-params {

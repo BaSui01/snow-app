@@ -81,6 +81,11 @@ pub fn set_system_setting(
     )
 }
 
+pub fn delete_system_setting(setting_code: String) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::system_settings::delete_system_setting(&database_path, &setting_code)
+}
+
 pub fn get_yolo_mode() -> Result<bool> {
     let database_path = ensure_database_file()?;
     services::yolo_settings::get_yolo_mode(&database_path)

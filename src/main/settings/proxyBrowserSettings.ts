@@ -11,6 +11,7 @@ export type ProxyBrowserSettings = {
   browserPath: string;
   browserDebugPort: number;
   searchEngine: string;
+  blockedPatterns: string[];
 };
 
 const PROXY_BROWSER_SETTING_NAME = "Proxy and browser settings";
@@ -23,6 +24,7 @@ const DEFAULT_PROXY_BROWSER_SETTINGS: ProxyBrowserSettings = {
   browserPath: "",
   browserDebugPort: 9222,
   searchEngine: "duckduckgo",
+  blockedPatterns: [],
 };
 
 export const sanitizeProxyHost = (host: string | undefined): string => {
@@ -60,6 +62,12 @@ const normalizeProxyBrowserSettings = (
         source.searchEngine,
         DEFAULT_PROXY_BROWSER_SETTINGS.searchEngine
       ).trim() || DEFAULT_PROXY_BROWSER_SETTINGS.searchEngine,
+    blockedPatterns: Array.isArray(source.blockedPatterns)
+      ? source.blockedPatterns
+          .filter((item): item is string => typeof item === "string")
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0)
+      : [],
   };
 };
 

@@ -24,6 +24,10 @@ import type { SearchEngine, SearchResponse, SearchResult } from "./types";
 const PROXY_BROWSER_SETTING_CODE = "proxy_browser_settings";
 const DEFAULT_SEARCH_ENGINE = "duckduckgo";
 const DEFAULT_MAX_RESULTS = 10;
+/** 屏蔽比例达到该阈值时，把被屏蔽结果与规则回传给 AI 供其选择性补充。 */
+const BLOCKED_REPORT_THRESHOLD = 0.5;
+/** 回传的被屏蔽结果上限，避免 token 膨胀。 */
+const MAX_BLOCKED_REPORT = 10;
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
@@ -33,6 +37,7 @@ type ProxyBrowserSettingsJson = {
   port?: number;
   browserPath?: string;
   searchEngine?: string;
+  blockedPatterns?: string[];
 };
 
 const BUILT_IN_ENGINES: SearchEngine[] = [
@@ -284,7 +289,7 @@ export class WebSearchService {
     return engine ?? BUILT_IN_ENGINES.find((e) => e.id === DEFAULT_SEARCH_ENGINE)!;
   }
 
-  /** 执行搜索并返回结构化结果。 */
+  /** 执行搜索并返回结构化结果（自动过滤命中屏蔽规则的结果）。 */
   async search(query: string, maxResults?: number): Promise<SearchResponse> {
     const limit = Math.min(Math.max(maxResults ?? DEFAULT_MAX_RESULTS, 1), 20);
     let page: Page | null = null;
@@ -297,18 +302,110 @@ export class WebSearchService {
       page = await browser.newPage();
       await page.setUserAgent(USER_AGENT);
 
-      const results = await engine.search(page, query, limit);
+const results = await engine.search(page, query, limit);
+      const {
+        filtered,
+        blockedCount,
+        blockedResults,
+        blockedPatterns,
+      } = this.applyBlockedRules(results, settings.blockedPatterns ?? []);
 
-      return {
+      const response: SearchResponse = {
         query,
-        results,
-        totalResults: results.length,
+        results: filtered,
+        totalResults: filtered.length,
+        ...(blockedCount > 0 ? { blockedCount } : {}),
       };
+
+      // 屏蔽比例达到阈值时，把被屏蔽结果与规则回传给 AI，
+      // 并明确提示这些站点当前不可抓取，AI 可据此判断是否需要针对性补充。
+      if (blockedResults && blockedPatterns && blockedResults.length > 0) {
+        response.blockedResults = blockedResults;
+        response.blockedPatterns = blockedPatterns;
+        response.blockNote =
+          `${blockedCount} of ${results.length} search results were filtered ` +
+          `out by your site blocking rules (${blockedPatterns.join(", ")}). ` +
+          `These sites are NOT fetchable while the rules are active. ` +
+          `If one of them is truly relevant despite the rule, tell the user ` +
+          `which rule should be removed in Settings, or rephrase the query ` +
+          `to find the information on non-blocked sites.`;
+      }
+
+      return response;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`Web search failed: ${message}`);
     } finally {
       await this.closePage(page);
     }
+  }
+
+/** 按屏蔽规则（正则列表）过滤搜索结果，返回过滤后的结果与屏蔽数量。 */
+  private applyBlockedRules(
+    results: SearchResult[],
+    patterns: string[]
+  ): {
+    filtered: SearchResult[];
+    blockedCount: number;
+    blockedResults?: SearchResult[];
+    blockedPatterns?: string[];
+  } {
+    if (patterns.length === 0) {
+      return { filtered: results, blockedCount: 0 };
+    }
+
+    const compiled: RegExp[] = [];
+    for (const pattern of patterns) {
+      try {
+        compiled.push(new RegExp(pattern, "i"));
+      } catch {
+        snowLog.error({
+          module: "websearch",
+          func: "applyBlockedRules",
+          message: "Invalid blocked pattern, skipped",
+          error: pattern,
+        });
+      }
+    }
+
+    if (compiled.length === 0) {
+      return { filtered: results, blockedCount: 0 };
+    }
+
+    const isBlocked = (url: string): boolean => {
+      const candidates = [url];
+      try {
+        candidates.push(new URL(url).host);
+      } catch {
+        // 非标准 URL 直接匹配原文
+      }
+      return compiled.some((regex) =>
+        candidates.some((candidate) => regex.test(candidate))
+      );
+    };
+
+    const blocked = results.filter((result) => isBlocked(result.url));
+    const filtered = results.filter((result) => !isBlocked(result.url));
+
+    const result: {
+      filtered: SearchResult[];
+      blockedCount: number;
+      blockedResults?: SearchResult[];
+      blockedPatterns?: string[];
+    } = {
+      filtered,
+      blockedCount: blocked.length,
+    };
+
+    // 屏蔽比例达到阈值时附带被屏蔽结果与规则，供 AI 判断是否需要补充。
+    if (
+      results.length > 0 &&
+      blocked.length / results.length >= BLOCKED_REPORT_THRESHOLD
+    ) {
+      result.blockedResults = blocked.slice(0, MAX_BLOCKED_REPORT);
+      result.blockedPatterns = compiled.map((regex) => regex.source);
+    }
+
+    return result;
   }
 }

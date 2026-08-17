@@ -90,6 +90,16 @@ const serveLocalImage = async (
   return new Response(bytes, { status: 200, headers });
 };
 
+/** 是否为站点 favicon 请求（`<origin>/favicon.ico`）；favicon 变化频率极低，
+ *  允许缓存，避免徽章 DOM 重建时重复请求上游导致图标闪烁。 */
+const isFaviconUrl = (url: string): boolean => {
+  try {
+    return new URL(url).pathname.endsWith("/favicon.ico");
+  } catch {
+    return false;
+  }
+};
+
 /**
  * 注册 img-proxy:// 自定义协议，代理外部 HTTP/HTTPS 图片与本地图片文件。
  *
@@ -160,8 +170,11 @@ export const registerImageProxyProtocol = (native: NativeBridge): void => {
 
       const headers = new Headers();
       headers.set("Content-Type", contentType);
-      // 不允许客户端缓存代理结果，避免改图后不刷新；如需缓存可在主进程做 LRU。
-      headers.set("Cache-Control", "no-store");
+      // 普通图片 no-store 避免改图不刷新；favicon 允许缓存（站点图标基本不变）。
+      headers.set(
+        "Cache-Control",
+        isFaviconUrl(originalUrl) ? "public, max-age=86400" : "no-store"
+      );
 
       return new Response(buffer, {
         status: 200,

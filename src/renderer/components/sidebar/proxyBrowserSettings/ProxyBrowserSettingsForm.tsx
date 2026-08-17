@@ -1,4 +1,4 @@
-import { FolderOpen, Loader2, RotateCcw } from "lucide-react";
+import { FolderOpen, ListPlus, Loader2, RotateCcw } from "lucide-react";
 import { type ChangeEvent } from "react";
 import { useI18n } from "../../../i18n";
 import { CustomSelect } from "../../common/CustomSelect";
@@ -11,7 +11,11 @@ type ProxyBrowserSettingsFormProps = {
   isSelectingBrowser: boolean;
   onUpdateField: (
     field: keyof ProxyBrowserSettingsFormValue
-  ) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
+  ) => (
+    event: ChangeEvent<
+      HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+    >
+  ) => void;
   onSetValue: (
     field: keyof ProxyBrowserSettingsFormValue,
     value: string
@@ -19,6 +23,7 @@ type ProxyBrowserSettingsFormProps = {
   onBlurSave: () => void;
   onReset: () => void;
   onSelectBrowserExecutable: () => void;
+  onApplyRecommended: () => void;
 };
 
 export function ProxyBrowserSettingsForm({
@@ -30,6 +35,7 @@ export function ProxyBrowserSettingsForm({
   onBlurSave,
   onReset,
   onSelectBrowserExecutable,
+  onApplyRecommended,
 }: ProxyBrowserSettingsFormProps): React.JSX.Element {
   const { t } = useI18n();
 
@@ -184,6 +190,59 @@ export function ProxyBrowserSettingsForm({
               />
             </label>
           </div>
+        </div>
+
+        <div className="api-settings-form-section">
+          <div className="api-settings-form-section-header">
+            <strong className="api-settings-form-section-title">
+              {t("settings.formBlockedSites", {
+                defaultValue: "Blocked sites",
+              })}
+            </strong>
+            <button
+              className="api-settings-inline-btn"
+              onClick={onApplyRecommended}
+              type="button"
+              disabled={isBusy}
+              title={t("settings.recommendedTemplateInfo", {
+                defaultValue:
+                  "Fill in recommended patterns for Tencent Cloud, Baidu Wenku, Baidu AI Cloud, Baidu Developer Center and CSDN (including all subdomains)",
+              })}
+            >
+              <ListPlus size={13} strokeWidth={1.9} />
+              <span>
+                {t("settings.recommendedTemplate", {
+                  defaultValue: "Recommended template",
+                })}
+              </span>
+            </button>
+          </div>
+          <label className="api-settings-field wide">
+            <span>
+              {t("settings.blockedPatterns", {
+                defaultValue: "Regex blocking rules",
+              })}
+            </span>
+            <textarea
+              className="api-settings-field-textarea"
+              value={form.blockedPatternsText}
+              onChange={onUpdateField("blockedPatternsText")}
+              onBlur={() => onBlurSave()}
+              placeholder={t("settings.blockedPatternsPlaceholder", {
+                defaultValue:
+                  "One regex per line, e.g. example\\.com or \\.seo\\-\\d+\\.xyz",
+              })}
+              rows={5}
+              spellCheck={false}
+              disabled={isBusy}
+            />
+            <span>
+              {t("settings.blockedPatternsInfo", {
+                defaultValue:
+                  "Matching sites are filtered from search results and cannot be fetched.",
+              })}
+            </span>
+          </label>
         </div>
       </div>
 

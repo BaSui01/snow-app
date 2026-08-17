@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import {
   AlertCircle,
+  Ban,
   ExternalLink,
   FileText,
   Globe,
@@ -41,6 +42,10 @@ type ParsedSearchResult =
       query: string;
       results: SearchResultItem[];
       totalResults: number;
+      blockedCount?: number;
+      blockedResults?: SearchResultItem[];
+      blockedPatterns?: string[];
+      blockNote?: string;
     }
   | { type: "error"; message: string }
   | { type: "raw"; text: string }
@@ -137,7 +142,7 @@ const parseSearchResult = (result: string | undefined): ParsedSearchResult => {
             typeof r.displayUrl === "string" ? (r.displayUrl as string) : "",
         }));
 
-      return {
+return {
         type: "success",
         query: typeof parsed.query === "string" ? parsed.query : "",
         results,
@@ -145,6 +150,32 @@ const parseSearchResult = (result: string | undefined): ParsedSearchResult => {
           typeof parsed.totalResults === "number"
             ? parsed.totalResults
             : results.length,
+        blockedCount:
+          typeof parsed.blockedCount === "number" ? parsed.blockedCount : 0,
+        blockedResults: Array.isArray(parsed.blockedResults)
+          ? parsed.blockedResults
+              .filter(isRecord)
+              .filter(
+                (r) => typeof r.title === "string" && typeof r.url === "string"
+              )
+              .map((r) => ({
+                title: r.title as string,
+                url: r.url as string,
+                snippet:
+                  typeof r.snippet === "string" ? (r.snippet as string) : "",
+                displayUrl:
+                  typeof r.displayUrl === "string"
+                    ? (r.displayUrl as string)
+                    : "",
+              }))
+          : undefined,
+        blockedPatterns: Array.isArray(parsed.blockedPatterns)
+          ? parsed.blockedPatterns.filter(
+              (p): p is string => typeof p === "string"
+            )
+          : undefined,
+        blockNote:
+          typeof parsed.blockNote === "string" ? parsed.blockNote : undefined,
       };
     }
 
@@ -273,14 +304,23 @@ const SearchToolCall = ({
       status={effectiveStatus}
       meta={
         parsedResult.type === "success" ? (
-          <span
-            className={`tool-call-websearch-count ${
-              hasResults ? "tool-call-websearch-count-active" : ""
-            }`}
-          >
-            {t("toolCall.websearch.resultCount", {
-              values: { count: resultCount },
-            })}
+          <span className="tool-call-websearch-meta-group">
+            {parsedResult.blockedCount && parsedResult.blockedCount > 0 ? (
+              <span className="tool-call-websearch-count tool-call-websearch-count-blocked">
+                {t("toolCall.websearch.blockedCount", {
+                  values: { count: parsedResult.blockedCount },
+                })}
+              </span>
+            ) : null}
+            <span
+              className={`tool-call-websearch-count ${
+                hasResults ? "tool-call-websearch-count-active" : ""
+              }`}
+            >
+              {t("toolCall.websearch.resultCount", {
+                values: { count: resultCount },
+              })}
+            </span>
           </span>
         ) : null
       }
@@ -369,12 +409,51 @@ const SearchToolCall = ({
           </div>
         ) : null}
 
-        {/* 无结果 */}
+{/* 无结果 */}
         {parsedResult.type === "success" && !hasResults ? (
           <div className="tool-call-websearch-empty">
             <Search size={14} aria-hidden="true" />
             <span>{t("toolCall.websearch.noResults")}</span>
           </div>
+        ) : null}
+
+        {/* 被屏蔽结果明细（屏蔽比例 >= 50% 时由主进程回传） */}
+        {parsedResult.type === "success" &&
+        parsedResult.blockedResults &&
+        parsedResult.blockedResults.length > 0 ? (
+          <details className="tool-call-websearch-blocked">
+            <summary>
+              <Ban size={11} aria-hidden="true" />
+              <span>
+                {t("toolCall.websearch.blockedResultsTitle", {
+                  values: { count: parsedResult.blockedResults.length },
+                })}
+              </span>
+            </summary>
+            {parsedResult.blockedPatterns &&
+            parsedResult.blockedPatterns.length > 0 ? (
+              <div className="tool-call-websearch-blocked-rules">
+                {parsedResult.blockedPatterns.map((pattern) => (
+                  <code key={pattern}>{pattern}</code>
+                ))}
+              </div>
+            ) : null}
+            <ul className="tool-call-websearch-blocked-list">
+              {parsedResult.blockedResults.map((item, index) => (
+                <li key={`${item.url}-${index}`}>
+                  <span className="tool-call-websearch-blocked-index">
+                    {index + 1}
+                  </span>
+                  <span className="tool-call-websearch-blocked-title">
+                    {item.title}
+                  </span>
+                  <span className="tool-call-websearch-blocked-url">
+                    {item.displayUrl || getHost(item.url)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </details>
         ) : null}
 
         {/* 原始结果兜底 */}

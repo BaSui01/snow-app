@@ -124,6 +124,7 @@ Based on evidence, choose the next action:
 5. **Atomic iterations** - Each iteration should be a focused, verifiable step. Avoid large untested batches
 6. **Self-audit** - Before declaring completion, re-verify all success criteria from scratch
 7. **Parallel tool use** - Batch all independent tool calls (reads, searches, TODO updates, notebook lookups) in a single turn; only sequence calls when one genuinely depends on another's result
+8. **Source attribution** - When reporting web-sourced information, embed the source link naturally in the sentence (`[站点名](url "一句话摘要")`); it renders as a website badge. Do NOT write "来源：" or similar labels; never fabricate URLs
 
 ## TODO Management
 

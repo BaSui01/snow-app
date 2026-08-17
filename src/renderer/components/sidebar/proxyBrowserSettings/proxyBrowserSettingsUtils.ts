@@ -27,6 +27,14 @@ const toText = (value: unknown, fallback = ""): string =>
 const toBoolean = (value: unknown, fallback: boolean): boolean =>
   typeof value === "boolean" ? value : fallback;
 
+const toTextArray = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? value
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0)
+    : [];
+
 export const normalizeProxyBrowserSettings = (
   value: unknown
 ): ProxyBrowserSettings => {
@@ -49,6 +57,7 @@ export const normalizeProxyBrowserSettings = (
         source.searchEngine,
         DEFAULT_PROXY_BROWSER_SETTINGS.searchEngine
       ).trim() || DEFAULT_PROXY_BROWSER_SETTINGS.searchEngine,
+    blockedPatterns: toTextArray(source.blockedPatterns),
   };
 };
 
@@ -75,6 +84,7 @@ export const toProxyBrowserForm = (
   browserPath: settings.browserPath,
   browserDebugPort: String(settings.browserDebugPort),
   searchEngine: settings.searchEngine,
+  blockedPatternsText: settings.blockedPatterns.join("\n"),
 });
 
 export const toProxyBrowserSettings = (
@@ -90,4 +100,8 @@ export const toProxyBrowserSettings = (
   ),
   searchEngine:
     form.searchEngine.trim() || DEFAULT_PROXY_BROWSER_SETTINGS.searchEngine,
+  blockedPatterns: form.blockedPatternsText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0),
 });

@@ -1181,12 +1181,13 @@ export type CheckpointFileDiff = CheckpointFileChange & {
 export type NativeBridge = {
   initializeAppStorage: () => Promise<AppStorageInfo>;
 
-  getSystemSettingValue: (settingCode: string) => Promise<string | null>;
+getSystemSettingValue: (settingCode: string) => Promise<string | null>;
   setSystemSetting: (
     settingName: string,
     settingCode: string,
     settingValue: string
   ) => Promise<void>;
+  deleteSystemSetting: (settingCode: string) => Promise<void>;
   getYoloMode: () => Promise<boolean>;
   setYoloMode: (enabled: boolean) => Promise<void>;
   getConversationModes: (

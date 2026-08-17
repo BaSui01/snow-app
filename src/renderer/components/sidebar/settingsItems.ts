@@ -71,7 +71,7 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
     id: "proxy",
     icon: Globe,
     labelKey: "settings.proxySettings",
-    defaultLabel: "Proxy settings",
+    defaultLabel: "Proxy and search engine",
     view: "proxy-browser-settings",
   },
   {

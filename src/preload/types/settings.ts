@@ -5,6 +5,8 @@ export type ProxyBrowserSettings = {
   browserPath: string;
   browserDebugPort: number;
   searchEngine: string;
+  /** 正则表达式列表，匹配的站点从联网搜索结果中过滤且禁止抓取。 */
+  blockedPatterns: string[];
 };
 
 export type TerminalSettings = {

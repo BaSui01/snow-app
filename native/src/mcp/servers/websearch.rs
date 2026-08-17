@@ -12,6 +12,7 @@ use super::super::service::McpService;
 use super::super::tools::McpTool;
 
 const SERVER_ID: &str = "websearch";
+const PROXY_BROWSER_SETTING_CODE: &str = "proxy_browser_settings";
 const REQUEST_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_MAX_CONTENT_LENGTH: usize = 50_000;
 const MIN_MAX_CONTENT_LENGTH: usize = 1_000;
@@ -81,6 +82,19 @@ impl WebSearchService {
     pub async fn execute_fetch(&self, args: &Value) -> napi::Result<Value> {
         let url = required_string(args, "url", "websearch-websearch-fetch")?;
         validate_web_url(url)?;
+
+        // 站点屏蔽规则：命中用户配置的正则时直接拒绝抓取。
+        let blocked_patterns = load_blocked_patterns().await;
+        if let Some(pattern) = blocked_patterns.iter().find(|pattern| {
+            Regex::new(pattern)
+                .map(|regex| regex.is_match(url))
+                .unwrap_or(false)
+        }) {
+            return Err(generic_error(format!(
+                "URL blocked by user rule (matched regex: {pattern})"
+            )));
+        }
+
         let max_length = bounded_usize(
             args.get("maxLength").and_then(Value::as_u64),
             DEFAULT_MAX_CONTENT_LENGTH,
@@ -243,6 +257,50 @@ impl McpService for WebSearchService {
             ))),
         }
     }
+}
+
+/// 从数据库异步加载站点屏蔽正则列表。
+///
+/// 使用 `spawn_blocking` 读取数据库，不会阻塞 Node.js 主线程；
+/// 与 `crate::api::http_client::load_proxy_config` 使用相同的存储路径。
+async fn load_blocked_patterns() -> Vec<String> {
+    tokio::task::spawn_blocking(|| {
+        let storage_info = crate::storage::initialize_app_storage().ok()?;
+        let database_path = std::path::PathBuf::from(storage_info.database_path);
+
+        let raw = crate::storage::services::system_settings::get_system_setting_value(
+            &database_path,
+            PROXY_BROWSER_SETTING_CODE,
+        )
+        .ok()?
+        .unwrap_or_default();
+
+        Some(parse_blocked_patterns(&raw))
+    })
+    .await
+    .unwrap_or_default()
+    .unwrap_or_default()
+}
+
+/// 解析 `proxy_browser_settings` JSON 中的 `blockedPatterns` 字段。
+fn parse_blocked_patterns(raw: &str) -> Vec<String> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return Vec::new();
+    };
+
+    value
+        .get("blockedPatterns")
+        .and_then(serde_json::Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|pattern| !pattern.is_empty())
+                .map(ToOwned::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// 构建带代理和超时设置的 HTTP 客户端。

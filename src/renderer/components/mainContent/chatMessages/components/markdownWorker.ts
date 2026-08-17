@@ -14,6 +14,7 @@
 import hljs from "highlight.js";
 import katex from "katex";
 import MarkdownIt from "markdown-it";
+import type Token from "markdown-it/lib/token.mjs";
 import texmath from "markdown-it-texmath";
 import {
   imageProxyUrl,
@@ -196,6 +197,106 @@ markdown.core.ruler.after("linkify", "de-linkify-fake-links", (state) => {
     }
   }
 });
+
+/** 来源徽章：带 title 摘要的 http(s) 链接替换为徽章（favicon + 缩略标题），
+ *  悬停摘要/点击跳转由 React 层从 data-* 读取；无 title 链接保持原样。 */
+type SourceEntry = {
+  title: string;
+  url: string;
+  summary: string;
+  favicon: string;
+};
+
+/** 属性值转义，防模型输出注入引号/尖括号破坏 HTML 结构。 */
+const attrEscape = (str: string): string =>
+  str
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+/** 徽章缺 favicon 时的占位图标（lucide Globe）。 */
+const SOURCE_BADGE_FALLBACK_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>';
+
+markdown.core.ruler.push("annotate-source-badges", (state) => {
+  for (const token of state.tokens) {
+    if (token.type !== "inline" || !token.children) {
+      continue;
+    }
+    const children = token.children;
+    const out: Token[] = [];
+    for (let i = 0; i < children.length; i += 1) {
+      const child = children[i];
+      if (child.type !== "link_open") {
+        out.push(child);
+        continue;
+      }
+      // 定位对应 link_close，拼接链接文本
+      let close = i + 1;
+      while (
+        close < children.length &&
+        children[close].type !== "link_close"
+      ) {
+        close += 1;
+      }
+      if (close >= children.length) {
+        out.push(child);
+        continue;
+      }
+      const label = children
+        .slice(i + 1, close)
+        .filter((c) => c.type === "text")
+        .map((c) => c.content ?? "")
+        .join("")
+        .trim();
+      const href = child.attrGet("href") ?? "";
+      const summary = (child.attrGet("title") ?? "").trim();
+      // 仅带 title 摘要的 http(s) 链接视为徽章
+      if (!/^https?:\/\//i.test(href) || !summary) {
+        out.push(child);
+        continue;
+      }
+      const title = label;
+      if (!title) {
+        out.push(child);
+        continue;
+      }
+      let favicon = "";
+      try {
+        favicon = imageProxyUrl(`${new URL(href).origin}/favicon.ico`);
+      } catch {
+        // 保留空 favicon，徽章显示占位图标
+      }
+      const badge = new state.Token("md_source_badge", "span", 0);
+      badge.meta = { title, url: href, summary, favicon };
+      out.push(badge);
+      i = close;
+    }
+    children.splice(0, children.length, ...out);
+  }
+});
+
+// 正文来源徽章：favicon + 缩略标题，悬停详情由 React 层从 data-* 读取。
+markdown.renderer.rules.md_source_badge = (tokens, idx): string => {
+  const meta = tokens[idx].meta as SourceEntry;
+  const favicon = meta.favicon
+    ? `<img class="md-source-badge-favicon" src="${attrEscape(
+        meta.favicon
+      )}" alt="" decoding="async">`
+    : "";
+  return (
+    `<span class="md-source-badge" data-title="${attrEscape(
+      meta.title
+    )}" data-url="${attrEscape(meta.url)}" data-summary="${attrEscape(
+      meta.summary
+    )}">` +
+    favicon +
+    `<span class="md-source-badge-fallback" aria-hidden="true">${SOURCE_BADGE_FALLBACK_SVG}</span>` +
+    `<span class="md-source-badge-title">${escapeHtml(meta.title)}</span>` +
+    `</span>`
+  );
+};
 
 /**
  * 判断是否为本地图片相对路径：图库落盘引用（image/...，安装目录旁图库目录）

@@ -239,4 +239,5 @@ The `todo-todo-manage` tool complements the plan file: the plan file is the sour
 7. **Keep the plan file updated** — it's the source of truth
 8. **Be specific** — exact file paths, function names, concrete criteria
 9. **Write plans in user's language** — match the language of their request
-10. **Parallel tool use** — batch all independent tool calls (reads, searches, TODO updates, notebook lookups) in one turn; only sequence calls when one genuinely depends on another's result"#;
+10. **Parallel tool use** — batch all independent tool calls (reads, searches, TODO updates, notebook lookups) in one turn; only sequence calls when one genuinely depends on another's result
+11. **Source attribution** — when the plan or analysis cites web information, embed the source link naturally in the sentence (`[站点名](url "一句话摘要")`); it renders as a website badge. Do NOT write "来源：" or similar labels; never fabricate URLs"#;

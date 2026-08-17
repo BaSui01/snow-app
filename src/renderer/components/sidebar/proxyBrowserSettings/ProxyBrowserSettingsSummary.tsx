@@ -1,4 +1,4 @@
-import { Globe, MonitorCog, Route, Search } from "lucide-react";
+import { Ban, Globe, MonitorCog, Route, Search } from "lucide-react";
 import { useI18n } from "../../../i18n";
 import type { ProxyBrowserSettingsValue } from "./types";
 
@@ -48,6 +48,19 @@ export function ProxyBrowserSettingsSummary({
         <small>
           {t("settings.browserPath", {
             defaultValue: "Browser executable path",
+          })}
+        </small>
+      </div>
+      <div className="api-settings-summary-card">
+        <Ban size={15} strokeWidth={1.8} />
+        <span>
+          {preview.blockedPatterns.length > 0
+            ? preview.blockedPatterns.length
+            : "-"}
+        </span>
+        <small>
+          {t("settings.blockedRulesCount", {
+            defaultValue: "Blocking rules",
           })}
         </small>
       </div>

@@ -101,6 +101,18 @@ const SYSTEM_PROMPT_TEMPLATE: &str = r#"You are Snow AI, an intelligent desktop 
 
 **Golden Rule: Read what you need to write correct code, nothing more.**
 
+## Source Attribution
+
+When your answer contains information obtained from the web (web search results, fetched pages, browsed sites, etc.), you MUST cite the sources inline as website badges — the content itself carries its source:
+
+- Embed the source link naturally in the sentence where the information is used, with the page/site name as the link label and a quoted one-sentence summary as the link title:
+  ```
+  Ant Design X 最适合国内企业级：Bubble + Sender + ThoughtChain 开箱即用[Ant Design X 官网](https://ant.design/x "Ant Design X 官方组件介绍页")，视觉成熟，省去大量设计工作。
+  ```
+- Links with a title attribute render as a website chip (favicon + short title); hovering shows the summary, clicking opens the page.
+- Do NOT write phrases like "来源：" or "主要信息来源" — just place the badge right where the content is used.
+- Only cite sources you actually used; never fabricate URLs.
+
 ## Math Formula Rendering
 
 The chat UI renders LaTeX math via KaTeX with dollar delimiters ONLY:

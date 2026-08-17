@@ -48,6 +48,13 @@ export const useCrossProjectNotifications = (
     streamingConversationIds,
     attentionRequiredConversationIds,
     completedConversationIds,
+    // 会话记录更新广播（LLM 摘要生成、fork 等）：项目内列表依赖它刷新，
+    // 跨项目通知的缓存同样需要跟进，否则摘要生成后这里仍显示旧记录
+    // （运行中会话的 summary 初始是第一条用户消息，生成摘要后才变成标题）。
+    upsertedConversation,
+    // 列表版本（重命名/置顶/删除等递增）：同步触发按 id 重查，
+    // 保证跨项目通知与项目内列表显示的标题始终一致。
+    conversationListVersion,
   } = useChatConversationContext();
 
   // 通知会话记录缓存：conversationId → 会话记录（含所属项目 directoryId）。
@@ -105,6 +112,8 @@ export const useCrossProjectNotifications = (
   ]);
 
   // 跨项目按 id 查询会话记录；状态集合清空时同步清空缓存。
+  // conversationListVersion 变化（重命名/置顶/删除等）时也重查，
+  // 让跨项目通知的标题与项目内列表保持一致。
   useEffect(() => {
     let cancelled = false;
     if (!notificationIdsKey) {
@@ -113,6 +122,7 @@ export const useCrossProjectNotifications = (
     }
 
     const ids = notificationIdsKey.split("\u0000");
+    const activeIds = new Set(ids);
     void window.snow
       .listChatConversationsByIds(ids)
       .then((records) => {
@@ -120,18 +130,28 @@ export const useCrossProjectNotifications = (
           return;
         }
         setConversationsById((prev) => {
-          const activeIds = new Set(ids);
+          // 内容未变化时保持原引用，避免无意义的缓存替换与列表重渲染
+          let changed = prev.size !== activeIds.size;
           const next = new Map(prev);
-          // 清理已不在通知集合中的过期记录
           for (const key of next.keys()) {
             if (!activeIds.has(key)) {
               next.delete(key);
+              changed = true;
             }
           }
           for (const record of records) {
-            next.set(record.conversationId, record);
+            const existing = next.get(record.conversationId);
+            if (
+              !existing ||
+              existing.title !== record.title ||
+              existing.summary !== record.summary ||
+              existing.updatedAt !== record.updatedAt
+            ) {
+              next.set(record.conversationId, record);
+              changed = true;
+            }
           }
-          return next;
+          return changed ? next : prev;
         });
       })
       .catch(() => undefined);
@@ -139,7 +159,33 @@ export const useCrossProjectNotifications = (
     return () => {
       cancelled = true;
     };
-  }, [notificationIdsKey]);
+  }, [notificationIdsKey, conversationListVersion]);
+
+  // 会话记录更新广播（如 LLM 摘要生成后 upsert 新记录）时，同步更新
+  // 缓存中对应记录：运行中会话的 summary 初始为第一条用户消息，
+  // 摘要生成后项目内列表已显示标题，这里必须跟进以免表现不统一。
+  useEffect(() => {
+    if (!upsertedConversation) {
+      return;
+    }
+    const { record } = upsertedConversation;
+    setConversationsById((prev) => {
+      const existing = prev.get(record.conversationId);
+      if (!existing) {
+        return prev;
+      }
+      if (
+        existing.title === record.title &&
+        existing.summary === record.summary &&
+        existing.updatedAt === record.updatedAt
+      ) {
+        return prev;
+      }
+      const next = new Map(prev);
+      next.set(record.conversationId, record);
+      return next;
+    });
+  }, [upsertedConversation]);
 
   return useMemo(() => {
     const groups = new Map<string, CrossProjectNotificationGroup>();

@@ -40,6 +40,13 @@ pub async fn set_system_setting(
 }
 
 #[napi]
+pub async fn delete_system_setting(setting_code: String) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::delete_system_setting(setting_code))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
 pub async fn get_yolo_mode() -> napi::Result<bool> {
     tokio::task::spawn_blocking(crate::storage::get_yolo_mode)
         .await

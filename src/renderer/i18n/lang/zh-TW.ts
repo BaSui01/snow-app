@@ -658,6 +658,8 @@ export const zhTW = {
   "toolCall.websearch.maxResults": "結果上限",
   "toolCall.websearch.maxLength": "長度上限",
   "toolCall.websearch.resultCount": "{{count}} 筆結果",
+  "toolCall.websearch.blockedCount": "已封鎖 {{count}} 筆",
+  "toolCall.websearch.blockedResultsTitle": "被封鎖的結果（{{count}}）",
   "toolCall.websearch.noResults": "找不到相關結果",
   "toolCall.websearch.charCount": "{{count}} 字元",
   "toolCall.websearch.image": "圖片",
@@ -1380,9 +1382,9 @@ export const zhTW = {
   "settings.apiSearchPlaceholder": "搜尋配置名稱、模型或 Base URL",
   "settings.noApiSearchResults": "沒有符合搜尋條件的 API 配置。",
   "settings.apiSearchResultCount": "已找到 {count} 個配置",
-  "settings.proxySettings": "代理設定",
+  "settings.proxySettings": "代理和搜索引擎",
   "settings.proxySettingsInfo": "配置 HTTP 代理和網路存取。",
-  "settings.proxyBrowserTitle": "代理與瀏覽器設定",
+  "settings.proxyBrowserTitle": "代理和搜索引擎",
   "settings.closeProxyBrowserSettings": "關閉代理與瀏覽器設定",
   "settings.proxyBrowserLoadError": "載入代理與瀏覽器設定失敗",
   "settings.proxyBrowserSaveSuccess": "已儲存代理與瀏覽器設定。",
@@ -1414,6 +1416,17 @@ export const zhTW = {
   "settings.browserDebugPort": "瀏覽器偵錯連接埠",
   "settings.browserDebugPortValidationError":
     "瀏覽器偵錯連接埠必須介於 1 到 65535 之間。",
+  "settings.formBlockedSites": "封鎖網站",
+  "settings.blockedPatterns": "正則攔截規則",
+  "settings.blockedPatternsPlaceholder":
+    "每行一條正則，例如 example\\.com 或 \\.seo\\-\\d+\\.xyz",
+  "settings.blockedPatternsInfo":
+    "符合條件的網站將從搜尋結果中過濾，且無法被抓取。",
+  "settings.blockedPatternsValidationError": "無效的正則表達式：{{pattern}}",
+  "settings.blockedRulesCount": "攔截規則",
+  "settings.recommendedTemplate": "推薦模板",
+  "settings.recommendedTemplateInfo":
+    "一鍵填入推薦規則：騰訊雲端運算、百度文庫、百度智能雲、百度開發者中心、CSDN（含全部二級網域）",
   "settings.browserLaunchMode": "瀏覽器路徑",
   "settings.reset": "重設",
   "settings.codebaseSettings": "程式碼庫設定",

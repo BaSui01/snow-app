@@ -657,6 +657,8 @@ export const zhCN = {
   "toolCall.websearch.maxResults": "结果上限",
   "toolCall.websearch.maxLength": "长度上限",
   "toolCall.websearch.resultCount": "{{count}} 条结果",
+  "toolCall.websearch.blockedCount": "已屏蔽 {{count}} 条",
+  "toolCall.websearch.blockedResultsTitle": "被屏蔽的结果（{{count}}）",
   "toolCall.websearch.noResults": "未找到相关结果",
   "toolCall.websearch.charCount": "{{count}} 字符",
   "toolCall.websearch.image": "图片",
@@ -1382,9 +1384,9 @@ export const zhCN = {
   "settings.apiSearchPlaceholder": "搜索配置名称、模型或 Base URL",
   "settings.noApiSearchResults": "没有符合搜索条件的 API 配置。",
   "settings.apiSearchResultCount": "已找到 {count} 个配置",
-  "settings.proxySettings": "代理设置",
+  "settings.proxySettings": "代理和搜索引擎",
   "settings.proxySettingsInfo": "配置 HTTP 代理和网络访问。",
-  "settings.proxyBrowserTitle": "代理与浏览器设置",
+  "settings.proxyBrowserTitle": "代理和搜索引擎",
   "settings.closeProxyBrowserSettings": "关闭代理与浏览器设置",
   "settings.proxyBrowserLoadError": "加载代理与浏览器设置失败",
   "settings.proxyBrowserSaveSuccess": "已保存代理与浏览器设置。",
@@ -1416,6 +1418,17 @@ export const zhCN = {
   "settings.browserDebugPort": "浏览器调试端口",
   "settings.browserDebugPortValidationError":
     "浏览器调试端口必须在 1 到 65535 之间。",
+  "settings.formBlockedSites": "屏蔽站点",
+  "settings.blockedPatterns": "正则拦截规则",
+  "settings.blockedPatternsPlaceholder":
+    "每行一条正则，例如 example\\.com 或 \\.seo\\-\\d+\\.xyz",
+  "settings.blockedPatternsInfo":
+    "匹配的站点将从搜索结果中过滤，且无法被抓取。",
+  "settings.blockedPatternsValidationError": "无效的正则表达式：{{pattern}}",
+  "settings.blockedRulesCount": "拦截规则",
+  "settings.recommendedTemplate": "推荐模板",
+  "settings.recommendedTemplateInfo":
+    "一键填入推荐规则：腾讯云计算、百度文库、百度智能云、百度开发者中心、CSDN（含全部二级域名）",
   "settings.browserLaunchMode": "浏览器路径",
   "settings.reset": "重置",
   "settings.codebaseSettings": "代码库设置",

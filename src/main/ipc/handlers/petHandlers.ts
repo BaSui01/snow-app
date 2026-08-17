@@ -10,8 +10,7 @@ import {
   PET_SCALE_MAX,
   PET_SCALE_MIN,
   loadPetSettings,
-  petSettingCodes,
-  savePetSetting,
+  savePetSettings,
   type PetTurnKind,
 } from "../../pets/petSettings";
 import {
@@ -59,10 +58,10 @@ export const registerPetHandlers = (native: NativeBridge): void => {
     const zipPath = selection.filePaths[0];
     const manifest = await native.installPetFromZip(zipPath);
 
-    // 若尚未选择宠物，新安装的宠物自动设为激活。
+// 若尚未选择宠物，新安装的宠物自动设为激活。
     const settings = await loadPetSettings(native);
     if (!settings.activePetId) {
-      await savePetSetting(native, petSettingCodes.activeId, manifest.id);
+      await savePetSettings(native, { ...settings, activePetId: manifest.id });
     }
 
     await refreshPetWindow(native);
@@ -78,16 +77,17 @@ export const registerPetHandlers = (native: NativeBridge): void => {
 
     await native.uninstallPet(petId.trim());
 
-    // 卸载的是当前激活宠物时清空激活项并收起窗口。
+// 卸载的是当前激活宠物时清空激活项并收起窗口。
     const settings = await loadPetSettings(native);
     if (settings.activePetId === petId.trim()) {
-      await savePetSetting(native, petSettingCodes.activeId, "");
+      await savePetSettings(native, { ...settings, activePetId: null });
     }
 
     // 所有宠物都被删除时自动关闭启停开关（无宠物时不允许唤醒）。
     const remaining = await native.listInstalledPets();
     if (remaining.length === 0) {
-      await savePetSetting(native, petSettingCodes.enabled, "0");
+      const latest = await loadPetSettings(native);
+      await savePetSettings(native, { ...latest, enabled: false });
     }
 
     await refreshPetWindow(native);
@@ -95,22 +95,27 @@ export const registerPetHandlers = (native: NativeBridge): void => {
 
   ipcMain.handle("pets:get-settings", () => loadPetSettings(native));
 
-  ipcMain.handle("pets:set-enabled", async (_event, enabled: unknown) => {
+ipcMain.handle("pets:set-enabled", async (_event, enabled: unknown) => {
     if (typeof enabled !== "boolean") {
       throw new Error("Enabled flag must be a boolean");
     }
-    await savePetSetting(native, petSettingCodes.enabled, enabled ? "1" : "0");
+    const settings = await loadPetSettings(native);
+    const saved = await savePetSettings(native, { ...settings, enabled });
     await refreshPetWindow(native);
-    return loadPetSettings(native);
+    return saved;
   });
 
   ipcMain.handle("pets:set-active", async (_event, petId: unknown) => {
     if (typeof petId !== "string") {
       throw new Error("Pet id must be a string");
     }
-    await savePetSetting(native, petSettingCodes.activeId, petId.trim());
+    const settings = await loadPetSettings(native);
+    const saved = await savePetSettings(native, {
+      ...settings,
+      activePetId: petId.trim(),
+    });
     await refreshPetWindow(native);
-    return loadPetSettings(native);
+    return saved;
   });
 
   ipcMain.handle("pets:set-scale", async (_event, scale: unknown) => {
@@ -119,9 +124,10 @@ export const registerPetHandlers = (native: NativeBridge): void => {
       throw new Error("Scale must be a number");
     }
     const clamped = Math.min(PET_SCALE_MAX, Math.max(PET_SCALE_MIN, value));
-    await savePetSetting(native, petSettingCodes.scale, String(clamped));
+    const settings = await loadPetSettings(native);
+    const saved = await savePetSettings(native, { ...settings, scale: clamped });
     await refreshPetWindow(native);
-    return loadPetSettings(native);
+    return saved;
   });
 
   // ── 宠物窗口 ───────────────────────────────────────────────────────

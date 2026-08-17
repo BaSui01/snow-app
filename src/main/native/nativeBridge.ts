@@ -51,9 +51,13 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to read system settings")
         ),
-      setSystemSetting: () =>
+setSystemSetting: () =>
         Promise.reject(
           new Error("Rust native bridge is required to write system settings")
+        ),
+      deleteSystemSetting: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to delete system settings")
         ),
       getYoloMode: () =>
         Promise.reject(

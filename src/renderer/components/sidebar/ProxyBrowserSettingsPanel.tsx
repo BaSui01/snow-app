@@ -15,6 +15,7 @@ import {
   DEFAULT_PROXY_BROWSER_SETTINGS,
   PROXY_BROWSER_SETTING_CODE,
   PROXY_BROWSER_SETTING_NAME,
+  RECOMMENDED_BLOCKED_PATTERNS,
 } from "./proxyBrowserSettings/proxyBrowserSettingsConstants";
 import {
   normalizeProxyBrowserSettings,
@@ -85,7 +86,11 @@ export function ProxyBrowserSettingsPanel({
 
   const updateField =
     (field: keyof ProxyBrowserSettingsFormValue) =>
-    (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    (
+      event: ChangeEvent<
+        HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+      >
+    ) => {
       const value =
         event.target instanceof HTMLInputElement &&
         event.target.type === "checkbox"
@@ -123,6 +128,26 @@ export function ProxyBrowserSettingsPanel({
       ) {
         return t("settings.browserDebugPortValidationError", {
           defaultValue: "Browser debug port must be between 1 and 65535.",
+        });
+      }
+
+      const invalidPattern = currentForm.blockedPatternsText
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .find((line) => {
+          try {
+            new RegExp(line);
+            return false;
+          } catch {
+            return true;
+          }
+        });
+
+      if (invalidPattern) {
+        return t("settings.blockedPatternsValidationError", {
+          defaultValue: "Invalid regex: {{pattern}}",
+          values: { pattern: invalidPattern },
         });
       }
 
@@ -208,6 +233,15 @@ export function ProxyBrowserSettingsPanel({
     }
   };
 
+  const handleApplyRecommended = () => {
+    const nextForm: ProxyBrowserSettingsFormValue = {
+      ...form,
+      blockedPatternsText: RECOMMENDED_BLOCKED_PATTERNS.join("\n"),
+    };
+    setForm(nextForm);
+    commitSave(nextForm);
+  };
+
   const handleSelectBrowserExecutable = async () => {
     setIsSelectingBrowser(true);
     setError("");
@@ -242,7 +276,7 @@ export function ProxyBrowserSettingsPanel({
         <div className="api-settings-title-group">
           <strong>
             {t("settings.proxyBrowserTitle", {
-              defaultValue: "Proxy and browser settings",
+              defaultValue: "Proxy and search engine",
             })}
           </strong>
           <span className="settings-item-description">
@@ -312,6 +346,7 @@ export function ProxyBrowserSettingsPanel({
           void saveSettings(DEFAULT_PROXY_BROWSER_SETTINGS);
         }}
         onSelectBrowserExecutable={() => void handleSelectBrowserExecutable()}
+        onApplyRecommended={handleApplyRecommended}
       />
     </div>
   );

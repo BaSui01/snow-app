@@ -276,6 +276,18 @@ pub fn set_system_setting(
         .map_err(|error| database::database_error(database_path, "write system setting", error))
 }
 
+pub fn delete_system_setting(database_path: &Path, setting_code: &str) -> Result<()> {
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            connection.execute(
+                "DELETE FROM system_settings WHERE setting_code = ?1",
+                [setting_code],
+            )
+        })
+        .map(|_| ())
+        .map_err(|error| database::database_error(database_path, "delete system setting", error))
+}
+
 pub fn get_yolo_mode(database_path: &Path) -> Result<bool> {
     let Some(value) = get_system_setting_value(database_path, DEFAULT_YOLO_MODE_SETTING_CODE)?
     else {

@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Download } from "lucide-react";
 import "katex/dist/katex.min.css";
@@ -17,6 +17,7 @@ import {
 } from "./mermaidRenderer";
 import { rightPanelEvents } from "../../../rightPanel/rightPanelEvents";
 import { downloadImageSrc } from "../../../../utils/imageDownload";
+import { Tooltip } from "../../../common/Tooltip";
 
 /**
  * Singleton Web Worker that performs markdown-it + highlight.js rendering off
@@ -213,6 +214,63 @@ const useMarkdownRender = (content: string): string => {
   return html;
 };
 
+/** 来源徽章悬停信息（fixed 坐标系 + 摘要数据）。 */
+type BadgeHoverInfo = {
+  x: number;
+  top: number;
+  width: number;
+  height: number;
+  title: string;
+  url: string;
+  summary: string;
+  host: string;
+};
+
+/** favicon 加载结果缓存（按 img-proxy URL），会话内不重复探测。 */
+const faviconStatusCache = new Map<string, "ok" | "fail">();
+
+/** 默认显示地球占位图标，真实 favicon 加载成功才加 favicon-ok 切换显示；
+ *  失败/缺失稳定回退默认图标。须在 useLayoutEffect 中调用（paint 前判定，
+ *  缓存命中时 complete=true 同步确定，避免首帧闪烁）。 */
+const bindFaviconFallback = (root: HTMLElement): void => {
+  root
+    .querySelectorAll<HTMLImageElement>("img.md-source-badge-favicon")
+    .forEach((img) => {
+      const badge = img.closest(".md-source-badge");
+      if (!badge) {
+        return;
+      }
+      const cached = faviconStatusCache.get(img.src);
+      if (cached === "ok") {
+        badge.classList.add("favicon-ok");
+        return;
+      }
+      if (cached === "fail") {
+        return;
+      }
+      const markLoaded = (): void => {
+        faviconStatusCache.set(img.src, "ok");
+        badge.classList.add("favicon-ok");
+      };
+      if (img.complete) {
+        if (img.naturalWidth > 0) {
+          markLoaded();
+        } else {
+          faviconStatusCache.set(img.src, "fail");
+        }
+        return;
+      }
+      img.addEventListener("load", markLoaded, { once: true });
+      img.addEventListener(
+        "error",
+        () => {
+          faviconStatusCache.set(img.src, "fail");
+        },
+        { once: true }
+      );
+    });
+};
+
 /** 判断非 http(s) href 是否像本地文件链接（相对路径/绝对路径/带扩展名文件名）。 */
 const isFileLinkHref = (href: string): boolean => {
   if (!href || href.length > 512 || /\s/.test(href)) {
@@ -246,10 +304,61 @@ export const MarkdownBlock = memo(
   }): React.JSX.Element => {
     const html = useMarkdownRender(content);
 
+    // 稳定 dangerouslySetInnerHTML 对象引用：React 按引用比较该 prop，
+    // 每次渲染都新建对象会让 hover 等重渲染重设 innerHTML 重建整个 DOM
+    // （img 重新加载 → 来源徽章图标闪烁）。html 不变则引用不变。
+    const htmlContent = useMemo(() => ({ __html: html }), [html]);
+
     const containerRef = useRef<HTMLDivElement | null>(null);
 
     // Markdown 图片灯箱：点击图片在放大视图中查看（复用生图工具灯箱样式）。
     const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+
+    // 来源徽章悬停 Tooltip 状态。
+    const [hoverBadge, setHoverBadge] = useState<BadgeHoverInfo | null>(null);
+
+    // 徽章悬停：收集位置与数据，渲染 Tooltip。
+    const handleBadgeMouseOver = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        const badge = (e.target as HTMLElement).closest(
+          ".md-source-badge"
+        ) as HTMLElement | null;
+        if (!badge) {
+          return;
+        }
+        const rect = badge.getBoundingClientRect();
+        const url = badge.dataset.url ?? "";
+        let host = "";
+        try {
+          host = url ? new URL(url).host : "";
+        } catch {
+          host = "";
+        }
+        setHoverBadge({
+          x: rect.left + rect.width / 2,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+          title: badge.dataset.title ?? "",
+          url,
+          summary: badge.dataset.summary ?? "",
+          host,
+        });
+      },
+      []
+    );
+
+    // 离开徽章（含徽章内部移动）时关闭。
+    const handleBadgeMouseOut = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        const related = e.relatedTarget as HTMLElement | null;
+        if (related?.closest?.(".md-source-badge")) {
+          return;
+        }
+        setHoverBadge(null);
+      },
+      []
+    );
 
     // Esc 关闭灯箱
     useEffect(() => {
@@ -296,8 +405,27 @@ export const MarkdownBlock = memo(
     // diagrams re-render when the user switches between light/dark.
     useEffect(() => watchThemeForMermaid(), []);
 
+    // favicon 状态在 paint 前确定，缓存命中同步判定，避免首帧闪烁。
+    useLayoutEffect(() => {
+      const node = containerRef.current;
+      if (node && html) {
+        bindFaviconFallback(node);
+      }
+    }, [html]);
+
     const handleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
       const target = e.target as HTMLElement;
+
+      // --- 来源徽章点击：在右侧面板的应用内浏览器打开来源页面 ---
+      const badge = target.closest(".md-source-badge") as HTMLElement | null;
+      if (badge) {
+        const url = badge.dataset.url ?? "";
+        if (/^https?:\/\//i.test(url)) {
+          e.preventDefault();
+          rightPanelEvents.emit("open-browser-tab", { url });
+        }
+        return;
+      }
 
       // --- 普通链接拦截 ---
       // markdown-it 默认渲染出的 <a> 没有 target，点击会走 Electron 默认行为
@@ -410,9 +538,11 @@ export const MarkdownBlock = memo(
       <>
         <div
           className={className}
-          dangerouslySetInnerHTML={{ __html: html }}
+          dangerouslySetInnerHTML={htmlContent}
           onClick={handleClick}
           onAuxClick={handleClick}
+          onMouseOver={handleBadgeMouseOver}
+          onMouseOut={handleBadgeMouseOut}
           ref={containerRef}
         />
         {lightboxSrc
@@ -456,6 +586,38 @@ export const MarkdownBlock = memo(
                   </button>
                 </div>
               </div>,
+              document.body
+            )
+          : null}
+
+        {/* 来源徽章悬停 Tooltip（受控 visible，anchor 为 0 尺寸占位）。 */}
+        {hoverBadge
+          ? createPortal(
+              <span
+                className="md-source-tooltip-host"
+                style={{ left: hoverBadge.x, top: hoverBadge.top }}
+              >
+                <Tooltip
+                  visible
+                  content={
+                    <span className="md-source-tooltip">
+                      <strong className="md-source-tooltip-title">
+                        {hoverBadge.title}
+                      </strong>
+                      {hoverBadge.summary ? (
+                        <span className="md-source-tooltip-summary">
+                          {hoverBadge.summary}
+                        </span>
+                      ) : null}
+                      <span className="md-source-tooltip-url">
+                        {hoverBadge.host}
+                      </span>
+                    </span>
+                  }
+                >
+                  <span className="md-source-badge-anchor" aria-hidden="true" />
+                </Tooltip>
+              </span>,
               document.body
             )
           : null}

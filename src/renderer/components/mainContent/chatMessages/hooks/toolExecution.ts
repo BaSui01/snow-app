@@ -40,6 +40,7 @@ export type ToolExecutorDeps = {
   ctx: ConversationContextValue;
   effectiveKey: string;
   currentAssistantMessageId: string;
+  checkpointIds: string[];
   sessionDirId: string | undefined;
   directoryPath: string | undefined;
   responseId: string | undefined;
@@ -53,12 +54,14 @@ export type ToolExecutorDeps = {
     argsJson: string,
     parentConversationId: string,
     dirId: string,
-    toolCallInteractionId?: string
+    toolCallInteractionId: string | undefined,
+    checkpointIds: string[]
   ) => Promise<string>;
   executeSubAgentMainTool: (
     toolName: string,
     argsJson: string,
-    parentConversationId: string
+    parentConversationId: string,
+    checkpointIds: string[]
   ) => Promise<string>;
   planApprovedSessionKeysRef: { current: Set<string> };
   planModeRef: { current: boolean };
@@ -74,6 +77,7 @@ export function createToolExecutor(
     ctx,
     effectiveKey,
     currentAssistantMessageId,
+    checkpointIds,
     sessionDirId,
     directoryPath,
     responseId,
@@ -261,12 +265,11 @@ export function createToolExecutor(
     // 压力。子代理激活不受此限制（保持原有行为）。
     const pendingImageGenQueue: number[] = [];
     let activeImageGenCount = 0;
-    const preStartCheckpointIds =
-      ctx.sessionsRefData.current.get(effectiveKey)?.checkpointIds ?? [];
-
     // 启动一个并行工具：置为 running、执行生图 beforeToolCall hook、
     // 立即发起请求（不 await）。返回是否成功启动（hook 中止返回 false，
     // 调用方应停止继续启动）。
+    // 同一回合内的所有文件工具（包括子代理工具）只绑定到当前用户消息
+    // 的 checkpoint，不能把后续工具结果写回更早消息的 expected 状态。
     const startParallelTool = async (idx: number): Promise<boolean> => {
       const parallelToolCall = toolCalls[idx];
       const isSubAgent = parallelToolCall.name === "sub-agents-activate";
@@ -399,15 +402,16 @@ export function createToolExecutor(
                 parallelToolCall.arguments,
                 effectiveKey,
                 sessionDirId ?? ctx.directoryId ?? "",
-                parallelToolCall.interactionId
+                parallelToolCall.interactionId,
+                checkpointIds
               );
             } else {
               parallelResult = await window.snow.callMcpTool(
                 parallelToolCall.name,
                 parallelToolCall.arguments,
                 sessionDirId,
-                preStartCheckpointIds,
-                preStartCheckpointIds.length > 0 ? sessionDirPath : undefined,
+                checkpointIds,
+                checkpointIds.length > 0 ? sessionDirPath : undefined,
                 undefined,
                 buildToolChunkHandler(parallelToolCall),
                 parallelToolCall.interactionId,
@@ -675,10 +679,6 @@ export function createToolExecutor(
           result = validationError;
         } else {
           try {
-            const checkpointIds =
-              ctx.sessionsRefData.current.get(effectiveKey)?.checkpointIds ??
-              [];
-
             // Force-override sessionId for todo-manage. Only add actions
             // receive responseId, because rollback tracking applies solely
             // to TODO items created by that action.
@@ -885,7 +885,8 @@ export function createToolExecutor(
                   toolArgs,
                   effectiveKey,
                   sessionDirId ?? ctx.directoryId ?? "",
-                  toolCall.interactionId
+                  toolCall.interactionId,
+                  checkpointIds
                 );
               } else if (
                 SUB_AGENT_MAIN_TOOL_NAMES.has(toolCall.name) &&
@@ -898,7 +899,8 @@ export function createToolExecutor(
                 result = await executeSubAgentMainTool(
                   toolCall.name,
                   toolArgs,
-                  effectiveKey
+                  effectiveKey,
+                  checkpointIds
                 );
               } else if (result === undefined) {
                 result = await window.snow.callMcpTool(

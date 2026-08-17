@@ -761,7 +761,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                     postCompactionAssistantId,
                     [{ role: "user", content: compactionSummary }],
                     response.conversationId,
-                    undefined,
+                    checkpointId,
                     true
                   );
                   return;
@@ -899,6 +899,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           ctx,
           effectiveKey,
           currentAssistantMessageId,
+          checkpointIds: checkpointId ? [checkpointId] : [],
           sessionDirId,
           directoryPath: ctx.directoryPath,
           responseId: response.id,
@@ -1070,7 +1071,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           newAssistantMessageId,
           nextMessages,
           response.conversationId,
-          pendingFlushCheckpointId
+          pendingFlushCheckpointId ?? checkpointId
         );
       };
 

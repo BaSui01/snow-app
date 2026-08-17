@@ -58,13 +58,18 @@ export type SubAgentResumer = {
   parentConversationId: string;
   agentId: string;
   agentName: string;
-  resume: (messages: { role: "user"; content: string }[]) => Promise<string>;
+  resume: (
+    messages: { role: "user"; content: string }[],
+    checkpointIds?: string[]
+  ) => Promise<string>;
 };
 
 /** 本次应用运行期间激活（或从 DB 恢复）的子代理恢复器注册表
  * （key = 子代理会话 id）。子代理运行结束后注册保留，主会话可凭它
  * 重新激活；应用重启后注册表清空，continue 时按需从 DB 重建。 */
 const subAgentResumers = new Map<string, SubAgentResumer>();
+
+type CheckpointIdsRef = { current: string[] };
 
 export type SubAgentActivationDeps = {
   ctx: ConversationContextValue;
@@ -97,7 +102,7 @@ type SubAgentRunLoopDeps = {
   dirId: string;
   runtimeConfig: SubAgentRuntimeConfig;
   parentConversationId: string;
-  parentCheckpointIds: string[];
+  parentCheckpointIdsRef: CheckpointIdsRef;
   subCheckpointWorkDir: string | undefined;
   requestToolAuthorizations: SubAgentActivationDeps["requestToolAuthorizations"];
   planApprovedSessionKeysRef: { current: Set<string> };
@@ -113,7 +118,7 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
     dirId,
     runtimeConfig,
     parentConversationId,
-    parentCheckpointIds,
+    parentCheckpointIdsRef,
     subCheckpointWorkDir,
     requestToolAuthorizations,
     planApprovedSessionKeysRef,
@@ -731,7 +736,7 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
             subToolCall.name,
             subToolArgs,
             dirId,
-            parentCheckpointIds,
+            parentCheckpointIdsRef.current,
             subCheckpointWorkDir,
             subSensitiveAuthorizationToken,
             (chunk) => {
@@ -1209,6 +1214,7 @@ type SubAgentResumeDeps = {
   getAgentName: () => string;
   subAgentRunLoop: SubAgentRunLoop;
   finalizeSubAgentSession: SubAgentFinalizeFn;
+  parentCheckpointIdsRef: CheckpointIdsRef;
 };
 
 /** 重新激活入口工厂（sub-agents-continue）：运行中 → Pending 队列排队
@@ -1226,11 +1232,16 @@ const createSubAgentResume = (
     getAgentName,
     subAgentRunLoop,
     finalizeSubAgentSession,
+    parentCheckpointIdsRef,
   } = deps;
 
   return async (
-    messages: { role: "user"; content: string }[]
+    messages: { role: "user"; content: string }[],
+    checkpointIds?: string[]
   ): Promise<string> => {
+    if (checkpointIds) {
+      parentCheckpointIdsRef.current = checkpointIds;
+    }
     const resumeRef = ctx.sessionsRefData.current.get(subConvId);
     if (!resumeRef) {
       return JSON.stringify({
@@ -1307,17 +1318,16 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
     argsJson: string,
     parentConversationId: string,
     dirId: string,
-    toolCallInteractionId?: string
+    toolCallInteractionId: string | undefined,
+    activeCheckpointIds: string[]
   ): Promise<string> => {
-    // Inherit checkpoint ids from the parent session so that file changes
-    // made by sub-agent tools are recorded into the same checkpoint
-    // manifest.  This allows the main conversation rollback to detect and
-    // restore sub-agent modifications alongside the parent's own changes.
-    const parentCheckpointIds =
-      ctx.sessionsRefData.current.get(parentConversationId)?.checkpointIds ??
-      [];
+    // 当前主会话回合的所有子代理文件工具共享同一个 active checkpoint，
+    // 但不会触碰更早消息的 checkpoint expected 状态。
+    const parentCheckpointIdsRef: CheckpointIdsRef = {
+      current: activeCheckpointIds,
+    };
     const subCheckpointWorkDir =
-      parentCheckpointIds.length > 0
+      activeCheckpointIds.length > 0
         ? directoryIdToPath(dirId) ?? ctx.directoryPath
         : undefined;
 
@@ -1448,7 +1458,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         dirId,
         runtimeConfig,
         parentConversationId,
-        parentCheckpointIds,
+        parentCheckpointIdsRef,
         subCheckpointWorkDir,
         requestToolAuthorizations,
         planApprovedSessionKeysRef,
@@ -1487,6 +1497,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
           getAgentName: () => subAgentName ?? agentId,
           subAgentRunLoop,
           finalizeSubAgentSession,
+          parentCheckpointIdsRef,
         }),
       });
 
@@ -1570,7 +1581,8 @@ const restoreSubAgentResumer = async (
   requestToolAuthorizations: SubAgentActivationDeps["requestToolAuthorizations"],
   planApprovedSessionKeysRef: { current: Set<string> },
   parentConversationId: string,
-  targetConvId: string
+  targetConvId: string,
+  activeCheckpointIds: string[]
 ): Promise<SubAgentResumer | null> => {
   // 1. DB 查询：仅当前父会话下的子代理可见（会话隔离）。
   let grouped: Record<string, ChatConversationRecord[]>;
@@ -1669,10 +1681,11 @@ const restoreSubAgentResumer = async (
   }
 
   // 6. 构建运行环境（与激活路径共用同一批工厂）。
-  const parentCheckpointIds =
-    ctx.sessionsRefData.current.get(parentConversationId)?.checkpointIds ?? [];
+  const parentCheckpointIdsRef: CheckpointIdsRef = {
+    current: activeCheckpointIds,
+  };
   const subCheckpointWorkDir =
-    parentCheckpointIds.length > 0
+    activeCheckpointIds.length > 0
       ? directoryIdToPath(dirId) ?? ctx.directoryPath
       : undefined;
   const subAgentRunLoop = createSubAgentRunLoop({
@@ -1681,7 +1694,7 @@ const restoreSubAgentResumer = async (
     dirId,
     runtimeConfig,
     parentConversationId,
-    parentCheckpointIds,
+    parentCheckpointIdsRef,
     subCheckpointWorkDir,
     requestToolAuthorizations,
     planApprovedSessionKeysRef,
@@ -1720,6 +1733,7 @@ const restoreSubAgentResumer = async (
       getAgentName: () => agentName || agentId,
       subAgentRunLoop,
       finalizeSubAgentSession,
+      parentCheckpointIdsRef,
     }),
   };
   subAgentResumers.set(targetConvId, resumer);
@@ -1741,7 +1755,8 @@ export const createSubAgentMainToolExecutor = (
   return async (
     toolName: string,
     argsJson: string,
-    parentConversationId: string
+    parentConversationId: string,
+    checkpointIds: string[]
   ): Promise<string> => {
     if (toolName === "sub-agents-listSubAgents") {
       const eventMap = ctx.subAgentSessionEventsRef.current;
@@ -1831,7 +1846,8 @@ export const createSubAgentMainToolExecutor = (
           requestToolAuthorizations,
           planApprovedSessionKeysRef,
           parentConversationId,
-          targetConvId
+          targetConvId,
+          checkpointIds
         );
       }
       if (!resumer || resumer.parentConversationId !== parentConversationId) {
@@ -1842,7 +1858,10 @@ export const createSubAgentMainToolExecutor = (
         });
       }
 
-      return resumer.resume([{ role: "user", content: queuedText }]);
+      return resumer.resume(
+        [{ role: "user", content: queuedText }],
+        checkpointIds
+      );
     }
 
     return JSON.stringify({

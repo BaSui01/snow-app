@@ -105,12 +105,11 @@ pub async fn list_checkpoint_changes(
     checkpoint_id: String,
     work_dir: String,
 ) -> napi::Result<Vec<CheckpointFileChange>> {
-    // 预览只读地建立在当前工作区状态上：共享锁允许它与文件工具并行，
-    // 不会让多会话的文件编辑因为 diff/变更列表扫描而长时间等待；回滚仍
-    // 使用独占锁，因此预览不会与实际恢复交错。
+    // 预览必须在完整文件工具 before→执行→after 周期完成后再读取，避免观察到
+    // 工具执行中的中间状态；文件工具仍可在等待期间继续使用更细粒度的同文件锁。
     let operation_lock =
         crate::storage::services::checkpoint::checkpoint_operation_lock(&work_dir)?;
-    let _operation_guard = operation_lock.read_owned().await;
+    let _operation_guard = operation_lock.write_owned().await;
     if is_ssh_path(&work_dir) {
         let callback = checkpoint_remote_callback()?;
         let client = RemoteCheckpointClient::new(&callback);
@@ -138,11 +137,11 @@ pub async fn list_checkpoint_diffs(
     include_all: Option<bool>,
 ) -> napi::Result<Vec<CheckpointFileDiff>> {
     let include_all = include_all.unwrap_or(false);
-    // diff 只读地观察工作区：共享锁允许它与文件工具并行，避免多会话的编辑
-    // 被长时间的本地/SSH diff 计算卡住；实际 restore 仍由独占锁保护。
+    // diff 必须在完整文件工具 before→执行→after 周期完成后再读取，避免观察到
+    // 工具执行中的中间状态；实际 restore 同样由独占锁保护。
     let operation_lock =
         crate::storage::services::checkpoint::checkpoint_operation_lock(&work_dir)?;
-    let _operation_guard = operation_lock.read_owned().await;
+    let _operation_guard = operation_lock.write_owned().await;
     if is_ssh_path(&work_dir) {
         let callback = checkpoint_remote_callback()?;
         let client = RemoteCheckpointClient::new(&callback);

@@ -73,13 +73,17 @@ static COUNTER: AtomicU64 = AtomicU64::new(0);
 /// 原子边界由 CHECKPOINT_OPERATION_LOCKS 负责。
 /// 使用 tokio 锁：本地同步流程（spawn_blocking 内）走 blocking_*，
 /// 远程 SSH 流程（async）跨 await 持锁，两种 guard 均可跨线程安全传递。
+///
+/// operation lock 的只读查询同样使用共享读锁，因此 diff/变更列表计算不会
+/// 阻塞并行文件编辑；只有 restore 之类会修改工作区的操作使用独占写锁。
 static CHECKPOINT_WORK_DIR_LOCKS: OnceLock<
     Mutex<HashMap<PathBuf, Weak<AsyncRwLock<()>>>>,
 > = OnceLock::new();
 
 /// 工具执行级工作目录锁：
 /// - 文件工具：共享读锁，覆盖完整的 before → 执行 → after 区间；
-/// - 回滚/预览：独占写锁；
+/// - 只读 checkpoint 查询（变更列表 / diff）：共享读锁，可与文件工具并行；
+/// - 回滚/预览中的实际恢复：独占写锁；
 /// - bash 命令：执行期间**不持锁**（跨会话命令并行，回滚不再被长命令
 ///   阻塞），仅 before/after 扫描期间短暂持有共享读锁与回滚互斥，
 ///   扫描之间发生的回滚由 CHECKPOINT_RESTORE_EPOCHS 纪元检测并跳过
@@ -292,11 +296,12 @@ fn normalize_operation_key(value: &str) -> String {
 ///
 /// 持有语义（会话间互不阻塞是首要目标）：
 /// - 文件工具：整个编辑周期持有共享读锁（before → 执行 → after）。
+/// - 只读 checkpoint 查询（变更列表 / diff）：持有共享读锁，可与文件工具并行；
 /// - bash 命令：执行期间不持有任何执行级锁，跨会话命令并行运行；
 ///   仅在 before/after 扫描期间短暂持共享读锁，与回滚互斥即可。
 /// - 外部 MCP（影响范围未知）：仍按整树独占锁隔离（无 before/after
 ///   捕获可跳过，无法用回滚纪元保护）。
-/// - 回滚 / 预览：独占写锁，仅需等待进行中的文件工具（秒级），
+/// - 回滚 / 实际恢复：独占写锁，仅需等待进行中的文件工具（秒级），
 ///   不会再被长时间运行的 bash 命令阻塞。
 pub(crate) fn checkpoint_operation_lock(work_dir: &str) -> Result<Arc<AsyncRwLock<()>>> {
     let key = normalize_operation_key(work_dir);

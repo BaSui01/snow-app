@@ -102,6 +102,32 @@ export const ToolCallNode = ({
               {displayName}
             </span>
           </>
+        ) : isRunning ? (
+          // 参数还在流式到达（半截 JSON 解析失败）或没有可摘要字段时，
+          // header 至少告知用户该工具正在执行，避免只见徽章不知道在调什么。
+          <>
+            <span className="tcn-sep" aria-hidden="true">
+              /
+            </span>
+            <span className="tcn-name tcn-name--running">
+              {t("toolCall.common.status.running", {
+                defaultValue: "Running",
+              })}
+            </span>
+          </>
+        ) : status === "pending" ? (
+          // pending（尚未开始执行）且没有可摘要字段时同样给占位文案，
+          // 避免 header 只剩徽章光秃秃的（参数流式到达后会被真实摘要替换）。
+          <>
+            <span className="tcn-sep" aria-hidden="true">
+              /
+            </span>
+            <span className="tcn-name tcn-name--running">
+              {t("toolCall.common.status.pending", {
+                defaultValue: "Pending",
+              })}
+            </span>
+          </>
         ) : null}
         {isRunning ? (
           <Loader2

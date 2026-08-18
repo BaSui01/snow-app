@@ -1318,6 +1318,9 @@ export const zhTW = {
   "settings.apiTokenPresetsHint": "可選擇常見 token 規格，也可直接填寫自訂值。",
   "settings.apiMaxTokens": "最大輸出 tokens",
   "settings.apiMaxTokensHint": "留空則請求時不傳該參數。",
+  "settings.apiToolResultTokenLimit": "工具回傳結果限制",
+  "settings.apiToolResultTokenLimitHint":
+    "限制每個文字工具結果最多佔模型上下文的此百分比。圖片回傳和圖片讀取不受限制。",
   "settings.apiSetActive": "啟用配置",
   "settings.apiSupportsVision": "支援視覺",
   "settings.apiVisionBaseUrl": "視覺 Base URL",

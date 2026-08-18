@@ -8,6 +8,7 @@ use uuid::Uuid;
 use super::super::builtin::{execute_builtin_tool, sanitize_tool_full_name};
 use super::collect::ensure_project_tool_enabled;
 use super::plan_write::is_allowed_plan_document_write;
+use super::result_limit::limit_tool_result;
 use super::super::servers::app_control::{AppControlCallback, AppControlService};
 use super::super::servers::bash::{BashService, BashStreamCallback, BashStreamChunk};
 use super::super::servers::browser::{BrowserCommandCallback, BrowserService};
@@ -412,7 +413,7 @@ pub async fn call_mcp_tool(
         let masked =
             super::super::privacy_mask::mask_tool_result_if_needed(&masking_tool_name, &plain_text)
                 .await?;
-        return Ok(masked);
+        return Ok(limit_tool_result(&masking_tool_name, &masked).await);
     }
 
     let serialized = serde_json::to_string(&result).map_err(|error| {
@@ -421,5 +422,8 @@ pub async fn call_mcp_tool(
             format!("Failed to serialize result: {error}"),
         )
     })?;
-    super::super::privacy_mask::mask_tool_result_if_needed(&masking_tool_name, &serialized).await
+    let masked =
+        super::super::privacy_mask::mask_tool_result_if_needed(&masking_tool_name, &serialized)
+            .await?;
+    Ok(limit_tool_result(&masking_tool_name, &masked).await)
 }

@@ -80,7 +80,7 @@ Some advanced parameters can be configured in the Runtime area of the UI (such a
 | `retryDelayMs` | Retry interval (milliseconds) |
 | `showThinking` | Whether to show the thinking process |
 | `chatThinking.reasoning_effort` | Reasoning effort (e.g. `max`) |
-| `toolResultTokenLimit` | Token limit for tool results written into the context |
+| `toolResultTokenLimit` | Maximum percentage of the model context available to each tool result |
 
 > **Tip**: after editing `config.json` directly, restart the app for the changes to take effect.
 

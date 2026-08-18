@@ -10,6 +10,7 @@ import {
   Plus,
   Search,
   SearchX,
+  Save,
   Trash2,
   X,
 } from "lucide-react";
@@ -1660,7 +1661,7 @@ export function ImageGenSettingsPanel({
                   aria-hidden="true"
                 />
               ) : (
-                <Plus size={13} strokeWidth={2} aria-hidden="true" />
+                <Save size={13} strokeWidth={2} aria-hidden="true" />
               )}
               {isNewChannel
                 ? t("settings.imagegenAddChannel", {

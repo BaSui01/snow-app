@@ -57,7 +57,7 @@ Snow CLI).
 | `retryDelayMs` | integer | | Retry delay (ms) |
 | `enableAutoCompress` | boolean | | Auto-compress toggle |
 | `autoCompressThreshold` | integer | | Auto-compress threshold (percent) |
-| `toolResultTokenLimit` | integer | | Token limit for tool results in context |
+| `toolResultTokenLimit` | integer | | Maximum percentage of the model context available to each tool result |
 | `anthropicBeta` | boolean | | Anthropic Beta header toggle |
 | `streamingDisplay` | boolean | | Streaming display toggle |
 | `systemPromptId` | string | | Active system prompt id |

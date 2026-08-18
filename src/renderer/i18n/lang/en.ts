@@ -1364,6 +1364,9 @@ export const en = {
   "settings.apiMaxTokens": "Max tokens",
   "settings.apiMaxTokensHint":
     "Leave empty to omit this parameter from requests.",
+  "settings.apiToolResultTokenLimit": "Tool result limit",
+  "settings.apiToolResultTokenLimitHint":
+    "Limits each text tool result to this percentage of the model context. Image results and image reads are not limited.",
   "settings.apiSetActive": "Enable profile",
   "settings.apiSupportsVision": "Supports vision",
   "settings.apiVisionBaseUrl": "Vision Base URL",

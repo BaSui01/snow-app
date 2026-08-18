@@ -9,6 +9,10 @@ import {
   normalizeAutoCompressThresholdPercent,
 } from "./autoCompressThreshold";
 import {
+  DEFAULT_TOOL_RESULT_LIMIT_PERCENT,
+  normalizeToolResultLimitPercent,
+} from "./toolResultLimit";
+import {
   DEFAULT_THINKING_VALUE,
   THINKING_OPTIONS_BY_METHOD,
 } from "../../mainContent/chatInput/constants";
@@ -38,6 +42,17 @@ const parseConfigJson = (configJson: string): Record<string, unknown> => {
 const readSnowcfg = (configJson: string): Record<string, unknown> => {
   const parsed = parseConfigJson(configJson);
   return isRecord(parsed.snowcfg) ? parsed.snowcfg : {};
+};
+
+export const extractToolResultTokenLimitFromConfigJson = (
+  configJson: string
+): string => {
+  const value = readSnowcfg(configJson).toolResultTokenLimit;
+  return String(
+    normalizeToolResultLimitPercent(
+      typeof value === "string" || typeof value === "number" ? value : undefined
+    )
+  );
 };
 
 export const extractResponsesVerbosityFromConfigJson = (
@@ -255,6 +270,7 @@ export const emptyApiConfigForm = (
   streamIdleTimeoutSec: "",
   enableAutoCompress: true,
   autoCompressThreshold: String(DEFAULT_AUTO_COMPRESS_THRESHOLD_PERCENT),
+  toolResultTokenLimit: String(DEFAULT_TOOL_RESULT_LIMIT_PERCENT),
   maxRetries: "5",
   retryBaseDelayMs: "3000",
   partialRetryMaxChars: "1000",
@@ -316,6 +332,9 @@ export function toApiConfigPayload(
       enableAutoCompress: data.enableAutoCompress,
       autoCompressThresholdPercent,
       autoCompressThreshold: autoCompressThresholdTokens ?? undefined,
+      toolResultTokenLimit: normalizeToolResultLimitPercent(
+        data.toolResultTokenLimit
+      ),
       responsesVerbosity: data.responsesVerbosity || undefined,
       responsesFastMode: data.responsesFastMode,
       googleSearch: data.googleSearch,

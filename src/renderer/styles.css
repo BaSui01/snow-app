@@ -30157,11 +30157,13 @@ body.ctrl-held [data-path] {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
+  min-width: 18px;
   height: 18px;
+  padding: 0 4px;
   border-radius: var(--radius-sm);
   background: var(--bg-tertiary);
   color: var(--text-tertiary);
+  white-space: nowrap;
 }
 
 .tool-call-codelens-outline-name {

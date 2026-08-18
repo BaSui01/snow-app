@@ -99,6 +99,23 @@ pub(crate) fn adapt_line_endings(text: &str, file_content: &str) -> String {
     }
 }
 
+/// 空替换表示删除匹配内容，不保留空行。
+pub(crate) fn split_replacement_lines(content: &str) -> Vec<String> {
+    if content.is_empty() {
+        Vec::new()
+    } else {
+        content.split('\n').map(str::to_owned).collect()
+    }
+}
+
+pub(crate) fn replacement_line_count(content: &str) -> usize {
+    if content.is_empty() {
+        0
+    } else {
+        content.split('\n').count()
+    }
+}
+
 /// 如果 searchContent 的每一行都以行号前缀开头（如 "42: " 或 "  10| "），
 /// 则剥离所有行号前缀，返回纯内容。否则返回 None。
 /// 这处理 AI 从 read 输出中复制了行号前缀的情况。
@@ -338,11 +355,12 @@ pub(crate) fn find_best_line_match_v2(
 /// 构建编辑成功后的复核上下文：返回编辑区域前后各 EDIT_REVIEW_CONTEXT_LINES 行
 /// 的带行号代码块（编辑行以 ">>>" 标记），供 AI 复核编辑结果是否正确。
 ///
-/// edit_start_line / edit_end_line 是 0-indexed 的行号（闭区间）。
+/// edit_start_line 是 0-indexed 的编辑起始行。
+/// edit_end_line 为 None 时表示删除，没有编辑后的标记行。
 pub(crate) fn build_edit_review_context_lines(
     new_content: &str,
     edit_start_line: usize,
-    edit_end_line: usize,
+    edit_end_line: Option<usize>,
 ) -> Value {
     let lines: Vec<&str> = new_content.split('\n').collect();
     let total_lines = lines.len();
@@ -357,14 +375,17 @@ pub(crate) fn build_edit_review_context_lines(
         });
     }
 
-    let edit_end = edit_end_line.min(total_lines.saturating_sub(1));
+    let has_edited_lines = edit_end_line.is_some();
+    let edit_end = edit_end_line
+        .unwrap_or(edit_start_line)
+        .min(total_lines.saturating_sub(1));
 
     let context_start = edit_start_line.saturating_sub(EDIT_REVIEW_CONTEXT_LINES);
     let context_end = (edit_end + 1 + EDIT_REVIEW_CONTEXT_LINES).min(total_lines);
 
     let block: Vec<String> = (context_start..context_end)
         .map(|i| {
-            let marker = if i >= edit_start_line && i <= edit_end {
+            let marker = if has_edited_lines && i >= edit_start_line && i <= edit_end {
                 ">>>"
             } else {
                 "   "
@@ -376,8 +397,8 @@ pub(crate) fn build_edit_review_context_lines(
     json!({
         "startLine": context_start + 1,
         "endLine": context_end,
-        "editedLineStart": edit_start_line + 1,
-        "editedLineEnd": edit_end + 1,
+        "editedLineStart": edit_end_line.map(|_| edit_start_line + 1).unwrap_or(0),
+        "editedLineEnd": edit_end_line.map(|line| line.min(total_lines.saturating_sub(1)) + 1).unwrap_or(0),
         "totalLines": total_lines,
         "content": block.join("\n")
     })

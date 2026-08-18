@@ -1,5 +1,18 @@
 # Release Notes
 
+## v0.2.7
+
+## New Features
+
+- **Batch Checkpoint Operations**: Added batch creation, deletion, and restoration of checkpoints.
+- **Chat Input Refactor**: Reworked the input area to support empty-message replacement and improve file, chip, and model-selector interactions.
+
+## Improvements
+
+- Route all Responses requests through resolved cache keys.
+- Migrate archive data structures and stabilize the empty-chat layout.
+- Fixed terminal selection state and unified theme submit-button styling.
+
 ## v0.2.6
 
 ## New Features

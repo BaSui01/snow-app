@@ -87,6 +87,8 @@
 
 ## New Features
 
+- **LSP Call & Type Hierarchy Tools**: New `lsp-call-hierarchy` (LSP 3.16 two-way call chain — incoming callers + outgoing callees in one call, with call-site line context) and `lsp-type-hierarchy` (LSP 3.17 parent chain + all subtypes) tools give agents complete impact analysis without recursive reference queries. Exposed per server capability (call-hierarchy: TypeScript/Go/Rust/Java/Swift; type-hierarchy: Go/Java, project-stack-aware); capability matrix re-verified against server sources.
+- **LSP Code Action & Execute Command**: `lsp-code-action` restored (quick fixes / refactor menu — the server supplies exact edits for diagnostics, more reliable than LLM-typed fixes) plus new `lsp-execute-command` (workspace/executeCommand: rust-analyzer.applySourceChange, gopls.add_import etc.; WorkspaceEdit results preview with dryRun or apply to disk). Workflow: list actions → copy command + arguments → execute.
 - **Database Repair**: A repair function in the storage settings detects and fixes corrupted SQLite databases.
 - **Sub-Agent Session Resume**: Sub-agent sessions can be resumed and continued after an application restart.
 - **Sub-Agent List & Resume Tools**: New main-session-only `sub-agents-listSubAgents` / `sub-agents-continue` tools for listing and resuming sub-agents with their original configuration and history.

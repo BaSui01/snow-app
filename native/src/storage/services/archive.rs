@@ -30,7 +30,7 @@ use super::super::{ChatConversationPage, ChatConversationRecord};
 const MAX_VARIABLES: usize = 400;
 
 /// 与运行库 chat_conversations 完全一致的列（不含归档时间列）。
-const CONVERSATION_COLUMNS: &str = "id, conversation_id, title, summary, last_message_preview, message_count, model, api_profile_name, last_response_id, status, input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, total_duration_ms, directory_id, forked_from_conversation_id, fork_message_count, emoji, plan_mode, goal_mode, worktree_mode, goal_mode_token_budget, created_at, updated_at";
+const CONVERSATION_COLUMNS: &str = "id, conversation_id, title, summary, last_message_preview, message_count, model, api_profile_name, thinking_strength, responses_fast_mode, last_response_id, status, input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, total_duration_ms, directory_id, forked_from_conversation_id, fork_message_count, emoji, plan_mode, goal_mode, worktree_mode, goal_mode_token_budget, created_at, updated_at";
 
 const MESSAGE_COLUMNS: &str = "id, message_id, conversation_id, role, content, model, response_id, checkpoint_id, status, raw_json, thinking, thinking_blocks_json, tool_calls_json, created_at";
 
@@ -86,6 +86,8 @@ pub(crate) fn create_archive_schema(connection: &Connection) -> rusqlite::Result
            message_count INTEGER NOT NULL DEFAULT 0,
            model TEXT NOT NULL DEFAULT '',
            api_profile_name TEXT NOT NULL DEFAULT '',
+           thinking_strength TEXT,
+           responses_fast_mode INTEGER,
            last_response_id TEXT NOT NULL DEFAULT '',
            status TEXT NOT NULL DEFAULT 'active',
            input_tokens INTEGER NOT NULL DEFAULT 0,
@@ -164,12 +166,115 @@ pub(crate) fn create_archive_schema(connection: &Connection) -> rusqlite::Result
     )
 }
 
+/// Add nullable runtime override columns to archive databases created before
+/// conversation thinking/Fast Mode persistence existed. Existing archived rows
+/// remain NULL and therefore continue to inherit their restored profile default.
+fn migrate_archive_runtime_config(connection: &Connection) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA table_info(chat_conversations)")?;
+    let columns: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    if !columns.iter().any(|column| column == "thinking_strength") {
+        connection.execute(
+            "ALTER TABLE chat_conversations ADD COLUMN thinking_strength TEXT",
+            [],
+        )?;
+    }
+    if !columns.iter().any(|column| column == "responses_fast_mode") {
+        connection.execute(
+            "ALTER TABLE chat_conversations ADD COLUMN responses_fast_mode INTEGER",
+            [],
+        )?;
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temporary_database_path(prefix: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "snow-archive-runtime-{prefix}-{}-{}.db",
+            std::process::id(),
+            database::create_snowflake_id()
+        ))
+    }
+
+    fn remove_database(path: &std::path::Path) {
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(format!("{}-wal", path.display()));
+        let _ = std::fs::remove_file(format!("{}-shm", path.display()));
+    }
+
+    #[test]
+    fn archive_restore_preserves_nullable_runtime_config() {
+        let main_path = temporary_database_path("main");
+        let archive_path = temporary_database_path("archive");
+        let conversation_id = "archive-runtime-conversation";
+
+        let connection = database::open_connection(&main_path).unwrap();
+        crate::storage::database::create_schema(&connection).unwrap();
+        connection
+            .execute(
+                "INSERT INTO chat_conversations (
+                   id, conversation_id, title, model, api_profile_name,
+                   thinking_strength, responses_fast_mode, directory_id
+                 ) VALUES (?1, ?2, 'Runtime archive', 'model-a', 'profile-a', ?3, ?4, 'project-a')",
+                params![
+                    database::create_snowflake_id(),
+                    conversation_id,
+                    "high",
+                    0_i64,
+                ],
+            )
+            .unwrap();
+        drop(connection);
+
+        archive_conversations(&main_path, &archive_path, &[conversation_id.to_string()]).unwrap();
+        let archive_connection = open_archive_connection(&archive_path).unwrap();
+        let archived_values: (Option<String>, Option<i64>) = archive_connection
+            .query_row(
+                "SELECT thinking_strength, responses_fast_mode
+                   FROM chat_conversations
+                  WHERE conversation_id = ?1",
+                params![conversation_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(archived_values, (Some("high".to_string()), Some(0)));
+        drop(archive_connection);
+
+        restore_archived_conversations(&main_path, &archive_path, &[conversation_id.to_string()])
+            .unwrap();
+        let connection = database::open_connection(&main_path).unwrap();
+        let restored_values: (Option<String>, Option<i64>) = connection
+            .query_row(
+                "SELECT thinking_strength, responses_fast_mode
+                   FROM chat_conversations
+                  WHERE conversation_id = ?1",
+                params![conversation_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(restored_values, (Some("high".to_string()), Some(0)));
+        drop(connection);
+
+        remove_database(&main_path);
+        remove_database(&archive_path);
+    }
+}
+
 /// 确保归档冷数据库存在且结构就绪。
 pub fn ensure_archive_database(archive_path: &Path) -> Result<()> {
     let connection = open_archive_connection(archive_path).map_err(|error| {
         database::database_error(archive_path, "initialize archive database", error)
     })?;
     create_archive_schema(&connection)
+        .map_err(|error| database::database_error(archive_path, "initialize archive database", error))?;
+    migrate_archive_runtime_config(&connection)
         .map_err(|error| database::database_error(archive_path, "initialize archive database", error))?;
     connection
         .pragma_update(None, "user_version", 1)
@@ -637,7 +742,8 @@ pub fn restore_archived_conversations(
                 &format!(
                     "INSERT INTO chat_conversations ({CONVERSATION_COLUMNS})
                      SELECT id, conversation_id, title, summary, last_message_preview,
-                            message_count, model, api_profile_name, last_response_id, status,
+                            message_count, model, api_profile_name, thinking_strength,
+                            responses_fast_mode, last_response_id, status,
                             input_tokens, output_tokens, cache_creation_input_tokens,
                             cache_read_input_tokens, total_duration_ms, directory_id,
                             forked_from_conversation_id, fork_message_count, emoji,

@@ -13,7 +13,7 @@ pub fn fork_conversation(
     up_to_response_id: &str,
 ) -> Result<ChatConversationRecord> {
     let mut connection = database::open_connection(database_path)
-        .map_err(|error| database::database_error(database_path, "fork conversation", error))?;
+    .map_err(|error| database::database_error(database_path, "fork conversation", error))?;
 
     let transaction = connection
         .transaction()
@@ -22,7 +22,8 @@ pub fn fork_conversation(
     // Load source conversation metadata
     let source = transaction
         .query_row(
-            "SELECT conversation_id, title, summary, directory_id, model, last_message_preview, api_profile_name
+            "SELECT conversation_id, title, summary, directory_id, model, last_message_preview, api_profile_name,
+                    thinking_strength, responses_fast_mode
                FROM chat_conversations
               WHERE conversation_id = ?1
               LIMIT 1",
@@ -36,6 +37,8 @@ pub fn fork_conversation(
                     row.get::<_, String>(4)?,
                     row.get::<_, String>(5)?,
                     row.get::<_, String>(6)?,
+                    row.get::<_, Option<String>>(7)?,
+                    row.get::<_, Option<i64>>(8)?.map(|value| value != 0),
                 ))
             },
         )
@@ -57,6 +60,8 @@ pub fn fork_conversation(
            message_count,
            model,
            api_profile_name,
+           thinking_strength,
+           responses_fast_mode,
            last_response_id,
            status,
            directory_id,
@@ -65,18 +70,20 @@ pub fn fork_conversation(
            created_at,
            updated_at
          ) VALUES (
-           ?1, ?2, ?3, ?4, ?8, 0, ?5, ?9, '', 'active', ?6, ?7, 0, datetime('now', 'localtime'), datetime('now', 'localtime')
+           ?1, ?2, ?3, ?4, ?5, 0, ?6, ?7, ?8, ?9, '', 'active', ?10, ?11, 0, datetime('now', 'localtime'), datetime('now', 'localtime')
          )",
         params![
             new_id,
             new_conversation_id,
             source.1,  // title
             source.2,  // summary
+            source.5,  // last_message_preview
             source.4,  // model
+            source.6,  // api_profile_name
+            source.7,  // thinking_strength
+            source.8,  // responses_fast_mode
             source.3,  // directory_id
             source_conversation_id,
-            source.5,  // last_message_preview
-            source.6,  // api_profile_name
         ],
     )
     .map_err(|error| database::database_error(database_path, "fork conversation", error))?;
@@ -438,4 +445,68 @@ pub(crate) fn conversation_exists(database_path: &Path, conversation_id: &str) -
                 .map(|value| value.is_some())
         })
         .map_err(|error| database::database_error(database_path, "check chat conversation", error))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temporary_database_path() -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "snow-fork-runtime-{}-{}.db",
+            std::process::id(),
+            database::create_snowflake_id()
+        ))
+    }
+
+    fn remove_database(path: &std::path::Path) {
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(format!("{}-wal", path.display()));
+        let _ = std::fs::remove_file(format!("{}-shm", path.display()));
+    }
+
+    #[test]
+    fn fork_copies_nullable_runtime_snapshot() {
+        let database_path = temporary_database_path();
+        let connection = database::open_connection(&database_path).unwrap();
+        crate::storage::database::create_schema(&connection).unwrap();
+        connection
+            .execute(
+                "INSERT INTO chat_conversations (
+                   id, conversation_id, title, summary, last_message_preview,
+                   model, api_profile_name, thinking_strength, responses_fast_mode,
+                   directory_id
+                 ) VALUES (?1, 'fork-source', 'Source', 'Summary', 'Preview',
+                           'model-a', 'profile-a', 'medium', 0, 'project-a')",
+                params![database::create_snowflake_id()],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO chat_messages (
+                   id, message_id, conversation_id, role, content, model,
+                   response_id, status
+                 ) VALUES ('message-row', 'message-1', 'fork-source', 'user',
+                           'Hello', 'model-a', '', 'sent')",
+                [],
+            )
+            .unwrap();
+        drop(connection);
+
+        let forked = fork_conversation(&database_path, "fork-source", "").unwrap();
+        let connection = database::open_connection(&database_path).unwrap();
+        let values: (Option<String>, Option<i64>) = connection
+            .query_row(
+                "SELECT thinking_strength, responses_fast_mode
+                   FROM chat_conversations
+                  WHERE conversation_id = ?1",
+                params![forked.conversation_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(values, (Some("medium".to_string()), Some(0)));
+        drop(connection);
+
+        remove_database(&database_path);
+    }
 }

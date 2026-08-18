@@ -32,6 +32,11 @@ const McpSettingsPanel = lazy(() =>
     default: m.McpSettingsPanel,
   }))
 );
+const LspSettingsPanel = lazy(() =>
+  import("./sidebar/LspSettingsPanel").then((m) => ({
+    default: m.LspSettingsPanel,
+  }))
+);
 const ImportSettingsPanel = lazy(() =>
   import("./sidebar/ImportSettingsPanel").then((m) => ({
     default: m.ImportSettingsPanel,
@@ -189,6 +194,11 @@ export const MainContent = ({
             <CustomHeadersSettingsPanel onClose={() => onSelectView("chat")} />
           ) : activeView === "mcp-settings" ? (
             <McpSettingsPanel
+              activeDirectory={activeDirectory}
+              onClose={() => onSelectView("chat")}
+            />
+          ) : activeView === "lsp-settings" ? (
+            <LspSettingsPanel
               activeDirectory={activeDirectory}
               onClose={() => onSelectView("chat")}
             />

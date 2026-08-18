@@ -57,6 +57,7 @@ import {
   TERMINAL_DRAG_MIME,
   type TerminalDragPayload,
 } from "./rightPanel/terminal/terminalMonitor";
+import type { MainContentView } from "./mainContent/types";
 
 /** 可拖拽到聊天输入框的 tab 类型（git / codebase 为固定面板，不参与） */
 const DRAGGABLE_TAB_TYPES = new Set([
@@ -144,6 +145,11 @@ const CodebasePanelContent = lazy(() =>
     default: m.CodebasePanelContent,
   }))
 );
+const DrawingPanelContent = lazy(() =>
+  import("./rightPanel/DrawingPanelContent").then((m) => ({
+    default: m.DrawingPanelContent,
+  }))
+);
 
 const GIT_TAB_ID = "git";
 const CODEBASE_TAB_ID = "codebase";
@@ -184,6 +190,7 @@ export type RightPanelRef = {
   openTerminal: (cwd: string) => void;
   openBrowser: (url?: string) => void;
   openCodebase: (projectId: string, projectName: string) => void;
+  openDrawing: () => void;
   openFile: (
     filePath: string,
     fileName: string,
@@ -199,11 +206,19 @@ type RightPanelProps = RightPanelContentProps & {
   isCollapsed: boolean;
   isFullscreen: boolean;
   isResizing?: boolean;
+  /** 切换主内容视图（绘图工作台错误卡片跳转设置用）。 */
+  onSelectMainView?: (view: MainContentView) => void;
 };
 
 export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
   (
-    { isCollapsed, isFullscreen, isResizing = false, activeDirectory },
+    {
+      isCollapsed,
+      isFullscreen,
+      isResizing = false,
+      activeDirectory,
+      onSelectMainView,
+    },
     ref
   ): React.JSX.Element => {
     const { t } = useI18n();
@@ -234,7 +249,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     } | null>(null);
 
     const handleOpenDiffTab = useCallback<OpenDiffTabCallback>(
-      (file, diffResult, diffLoading) => {
+      (file, diffResult, diffLoading, imageDiff) => {
         const tabId = `diff:${file.path}`;
         setTabs((prev) => {
           const existing = prev.find((t) => t.id === tabId);
@@ -248,6 +263,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
                       selectedFile: file,
                       diffResult,
                       diffLoading,
+                      imageDiff,
                     },
                   }
                 : t
@@ -262,6 +278,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
               selectedFile: file,
               diffResult,
               diffLoading,
+              imageDiff,
             },
           };
           return [...prev, newTab];
@@ -404,6 +421,21 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       },
       [t]
     );
+
+    // 新建绘图工作台 tab：每次新建独立画布，可开多个并行绘图。
+    const handleOpenDrawingTab = useCallback((): string => {
+      const tabId = `drawing-${Date.now()}`;
+      setTabs((prev) => [
+        ...prev,
+        {
+          id: tabId,
+          type: "drawing",
+          title: t("rightPanel.drawingTab"),
+        },
+      ]);
+      setActiveTabId(tabId);
+      return tabId;
+    }, [t]);
 
     // 项目切换后重新判断代码库 tab：
     // - 新项目有索引（totalChunks > 0）：更新 tab 数据，触发列表重新加载。
@@ -704,6 +736,9 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         openCodebase: (projectId: string, projectName: string) => {
           handleOpenCodebaseTab(projectId, projectName);
         },
+        openDrawing: () => {
+          handleOpenDrawingTab();
+        },
         openFile: (
           filePath: string,
           fileName: string,
@@ -728,6 +763,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         handleOpenTerminalTab,
         handleOpenBrowserTab,
         handleOpenCodebaseTab,
+        handleOpenDrawingTab,
         handleOpenFileTab,
       ]
     );
@@ -1191,12 +1227,22 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
                 projectName={(tab.data as CodebaseTabData).projectName}
               />
             ) : null
+          ) : tab.type === "drawing" ? (
+            <DrawingPanelContent
+              isActive={activeTabId === tab.id}
+              onOpenImageGenSettings={
+                onSelectMainView
+                  ? () => onSelectMainView("imagegen-settings")
+                  : undefined
+              }
+            />
           ) : tab.type === "diff" ? (
             (tab.data as DiffTabData) ? (
               <DiffViewer
                 selectedFile={(tab.data as DiffTabData).selectedFile}
                 diffResult={(tab.data as DiffTabData).diffResult}
                 diffLoading={(tab.data as DiffTabData).diffLoading}
+                imageDiff={(tab.data as DiffTabData).imageDiff ?? null}
               />
             ) : null
           ) : tab.type === "file" ? (
@@ -1483,6 +1529,10 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
             onNewBrowser={() => {
               setTabContextMenu(null);
               handleOpenBrowserTab();
+            }}
+            onNewDrawing={() => {
+              setTabContextMenu(null);
+              handleOpenDrawingTab();
             }}
             onOpenInNewWindow={
               contextMenuTargetIsBrowser

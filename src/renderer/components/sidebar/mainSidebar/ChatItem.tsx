@@ -13,6 +13,11 @@ import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../../../i18n";
 import type { ChatConversationRecord } from "../../../../preload";
 import { ChatItemMenu, type ExportFormat } from "./ChatItemMenu";
+import {
+  beginConversationDrag,
+  endConversationDrag,
+  type ConversationDragPayload,
+} from "./conversationContextEvents";
 import { setChatDragData } from "./chatDrag";
 import { formatTimeLabel, parseDbTimestamp } from "./chatTimeGroup";
 
@@ -84,6 +89,7 @@ export function ChatItem({
   const editInputRef = useRef<HTMLInputElement>(null);
   const isSubmittingRef = useRef(false);
   const cancelledRef = useRef(false);
+  const [isDragSource, setIsDragSource] = useState(false);
 
   useEffect(() => {
     if (isEditing && editInputRef.current) {
@@ -218,21 +224,41 @@ export function ChatItem({
     setContextMenuAnchor({ x: event.clientX, y: event.clientY });
   };
 
-  const handleToggleExpand = (event: React.MouseEvent): void => {
-    event.stopPropagation();
-    onToggleSubAgentPanel?.();
-  };
-
+  // ===== 会话拖拽源（双协议）：拖到聊天输入框 = 注入为目标会话的开头上下文；
+  // 拖到置顶区/普通列表区 = 切换置顶状态（上游 chatDrag 协议）=====
   // 编辑/多选/运行中的会话不可拖拽，避免与重命名、勾选及运行状态冲突
+  //（isDraggable 由调用方控制：PENDING 会话等不作为拖拽源）
   const canDrag = isDraggable && !isEditing && !isMultiSelectMode && !isRunning;
 
-  const handleDragStart = (
-    event: React.DragEvent<HTMLDivElement>
-  ): void => {
+  const handleDragStart = (event: React.DragEvent<HTMLDivElement>): void => {
+    if (!canDrag) {
+      event.preventDefault();
+      return;
+    }
+    // 同时写入两种 MIME 协议，两个 drop 端（输入框 / 列表区）都能识别；
+    // effectAllowed 最终为 move（setChatDragData 后写），drop 端不依赖该值。
+    const payload: ConversationDragPayload = {
+      conversationId: conversation.conversationId,
+      directoryId: conversation.directoryId,
+      title: displayName,
+      emoji: conversation.emoji,
+    };
+    beginConversationDrag(event.dataTransfer, payload);
     setChatDragData(event, {
       conversationId: conversation.conversationId,
       status: conversation.status,
     });
+    setIsDragSource(true);
+  };
+
+  const handleDragEnd = (): void => {
+    endConversationDrag();
+    setIsDragSource(false);
+  };
+
+  const handleToggleExpand = (event: React.MouseEvent): void => {
+    event.stopPropagation();
+    onToggleSubAgentPanel?.();
   };
 
   const attentionRequiredSubAgentCount = subAgentConversations.filter((sub) =>
@@ -250,10 +276,11 @@ export function ChatItem({
         isActive ? " active" : ""
       }${isMultiSelectMode ? " multi-select" : ""}${
         isSelected ? " selected" : ""
-      }`}
+      }${isDragSource ? " dragging" : ""}`}
       key={conversation.conversationId}
       draggable={canDrag}
       onDragStart={canDrag ? handleDragStart : undefined}
+      onDragEnd={handleDragEnd}
       onClick={handleSelectClick}
       onContextMenu={handleContextMenu}
       role="button"

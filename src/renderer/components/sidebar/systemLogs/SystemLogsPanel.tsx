@@ -102,6 +102,9 @@ const getPresetRange = (
         until: getMonthEnd(lastMonthDate),
       };
     }
+    case "all":
+      // 全部日期：不设边界，由调用方将 since/until 置空。
+      return { since: now, until: now };
     case "custom":
     default:
       return { since: now, until: now };
@@ -187,7 +190,11 @@ export function SystemLogsPanel({
 
   const handlePresetChange = useCallback((preset: UsageDatePreset) => {
     setDatePreset(preset);
-    if (preset !== "custom") {
+    if (preset === "all") {
+      // 全部日期：清空日期边界，Rust 端空字符串跳过过滤。
+      setSinceDate("");
+      setUntilDate("");
+    } else if (preset !== "custom") {
       const range = getPresetRange(preset, new Date());
       setSinceDate(formatDateForInput(range.since));
       setUntilDate(formatDateForInput(range.until));

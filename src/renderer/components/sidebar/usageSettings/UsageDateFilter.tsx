@@ -16,6 +16,7 @@ const PRESET_OPTIONS: PresetOption[] = [
   { value: "last30days", labelKey: "settings.usagePresetLast30Days", defaultValue: "Last 30 days" },
   { value: "thisMonth", labelKey: "settings.usagePresetThisMonth", defaultValue: "This month" },
   { value: "lastMonth", labelKey: "settings.usagePresetLastMonth", defaultValue: "Last month" },
+  { value: "all", labelKey: "settings.usagePresetAll", defaultValue: "All time" },
   { value: "custom", labelKey: "settings.usagePresetCustom", defaultValue: "Custom" },
 ];
 
@@ -127,6 +128,7 @@ export function UsageDateFilter({
         type="date"
         value={sinceDate}
         onChange={handleSinceChange}
+        disabled={preset === "all"}
         className="usage-date-input"
         aria-label={t("settings.usageSinceDate", { defaultValue: "Start date" })}
       />
@@ -135,6 +137,7 @@ export function UsageDateFilter({
         type="date"
         value={untilDate}
         onChange={handleUntilChange}
+        disabled={preset === "all"}
         className="usage-date-input"
         aria-label={t("settings.usageUntilDate", { defaultValue: "End date" })}
       />

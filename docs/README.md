@@ -43,10 +43,11 @@
 | [4-架构与开发/4-Agent 运行时与工具编排](zh-CN/4-架构与开发/4-Agent运行时与工具编排.md) | [4-architecture-and-development/4-agent-runtime-and-tool-orchestration](en/4-architecture-and-development/4-agent-runtime-and-tool-orchestration.md) | Agent 运行时 / Agent runtime                         |
 | [4-架构与开发/5-存储迁移备份与恢复](zh-CN/4-架构与开发/5-存储迁移备份与恢复.md)    | [4-architecture-and-development/5-storage-migration-backup-and-recovery](en/4-architecture-and-development/5-storage-migration-backup-and-recovery.md) | 存储可靠性 / Storage reliability                     |
 | [4-架构与开发/6-功能模块架构与数据流图集](zh-CN/4-架构与开发/6-功能模块架构与数据流图集.md) | [4-architecture-and-development/6-feature-module-architecture-and-data-flow-diagrams](en/4-architecture-and-development/6-feature-module-architecture-and-data-flow-diagrams.md) | Mermaid 架构与数据流图 / Mermaid diagram atlas      |
+| [4-架构与开发/7-LSP外部语言服务器接入设计](zh-CN/4-架构与开发/7-LSP外部语言服务器接入设计.md) | [4-architecture-and-development/7-lsp-external-language-server-design](en/4-architecture-and-development/7-lsp-external-language-server-design.md) | LSP 接入设计 / LSP integration design                |
 
 ## 文档覆盖与维护 / Coverage & Maintenance
 
-- [功能文档覆盖审计 / Feature Documentation Coverage Audit](FEATURE_COVERAGE.md)：功能、21 个设置页、工具域、平台能力到代码和双语文档的覆盖矩阵。
+- [功能文档覆盖审计 / Feature Documentation Coverage Audit](FEATURE_COVERAGE.md)：功能、24 个设置页、工具域、平台能力到代码和双语文档的覆盖矩阵。
 - [文档治理指南 / Documentation Governance Guide](DOCUMENTATION_GUIDE.md)：信息架构、双语同步、代码锚点、Mermaid 规范与功能变更完成标准。
 - 任何产品功能变更都必须同步更新对应中英文文档、覆盖矩阵与本索引，并运行 `npm run check:docs`。
 

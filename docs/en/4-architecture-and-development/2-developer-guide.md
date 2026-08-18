@@ -29,7 +29,73 @@ npm run build:win           # Windows installers (nsis + portable)
 > **restart the app** (`.node` modules cannot be hot-swapped). Changes under
 > `src/` are picked up by hot reload.
 
-## 3. Directory Responsibilities
+## 3. Packaging & Installation
+
+> For contributors: building the source into distributable installers and installing
+> them locally. If an installed build won't start, see
+> [Packaging & Installation Troubleshooting](3-packaging-troubleshooting.md).
+
+### 3.1 Quick verification without packaging
+
+- `src/` changes (renderer / main / preload): `npm run dev` hot reload is enough;
+- `native/src/` (Rust) changes: run `npm run build:rust` first, then **restart the app**
+  (`.node` modules cannot be hot-swapped, see the note in Section 2).
+
+### 3.2 Packaging
+
+```bash
+npm run build:win      # Windows: NSIS installer + portable (preferred for distribution)
+npm run build:app      # Full package for the current platform (electron-builder default target)
+npm run build:mac      # macOS: dmg + zip
+npm run build:linux    # Linux: AppImage + deb
+```
+
+Artifacts go to `release/`:
+
+| Artifact | Description |
+| --- | --- |
+| `Snow App Setup <version>.exe` | NSIS installer (recommended for distribution and installation) |
+| `Snow App <version>.exe` | Portable build (no install; double-click to run) |
+| `win-unpacked/` | Unpacked directory; run `Snow App.exe` directly (debugging) |
+
+Time estimate: the native release build takes ~2-4 min; a full first-time package
+(including electron-builder downloading electron / nsis dependencies) usually takes
+5-10 min. `.npmrc` is configured with the npmmirror registry to speed up downloads.
+
+### 3.3 Install / Update / Uninstall
+
+- **Install**: run `Snow App Setup <version>.exe`; the default install location is
+  `%LOCALAPPDATA%\Programs\snow-app`, with Start Menu and desktop shortcuts created;
+- **Portable**: double-click `Snow App <version>.exe`; data still goes to
+  `~/.snow` (config) and `~/.snowapp` (database / images);
+- **Update**: run the new installer over the existing installation; `~/.snow` and
+  `~/.snowapp` data are preserved;
+- **Uninstall**: Settings → Apps → Snow App → Uninstall (or run
+  `Uninstall Snow App.exe` in the install directory).
+
+### 3.4 Verifying the installed build contains your changes
+
+An installed build uses the code and native artifacts from **packaging time**:
+
+1. **Version**: `release\win-unpacked\Snow App.exe --version` prints the version;
+2. **Native artifact**: confirm `npm run build:rust` ran before packaging
+   (check the `native/snow_native.win32-x64-msvc.node` timestamp);
+3. **New UI**: Settings → LSP settings → Project tab shows the "Detect stack" button
+   (`src/renderer/components/sidebar/LspSettingsPanel.tsx`);
+4. **New capability**: running `lsp-diagnostics` on a `.tsx` file returns real
+   diagnostics from typescript-language-server (npm-installed shim servers start
+   correctly on Windows, see
+   [LSP External Language Server Design](7-lsp-external-language-server-design.md)).
+
+### 3.5 Common issues
+
+| Issue | Resolution |
+| --- | --- |
+| Installed build won't open (dev works) | `out/` was concurrently written during packaging, corrupting the asar: stop all dev processes → delete `out/` → re-package (see [Troubleshooting](3-packaging-troubleshooting.md)) |
+| Changed `native/src/` but the installed build behaves the same | Make sure `build:rust` ran and `out/` was clean before re-packaging |
+| electron-builder downloads are slow / fail | The npmmirror registry is configured; retry or set the `ELECTRON_MIRROR` env var |
+
+## 4. Directory Responsibilities
 
 ```
 snow-app/
@@ -67,7 +133,7 @@ snow-app/
 └── docs/                   # Docs (guides + reference + architecture & development)
 ```
 
-## 4. Full Chain for Adding a Feature
+## 5. Full Chain for Adding a Feature
 
 Using "add a settings item" as an example — the cross-layer change pattern:
 
@@ -109,7 +175,7 @@ flowchart TD
 auto-waits) → rusqlite. `src/preload/index.ts` spreads each `*Api` object, so
 the runtime API is flat.
 
-## 5. Coding Conventions
+## 6. Coding Conventions
 
 ### Mandatory
 
@@ -145,7 +211,7 @@ the runtime API is flat.
   panels; duplicate definitions make one copy silently win). Full conventions
   and the CSS-specificity trap: `.trellis/spec/frontend/component-guidelines.md`.
 
-## 6. Common Pitfalls
+## 7. Common Pitfalls
 
 | Issue                                                                                      | Notes                                                                                                                                                                                                                                                                             |
 | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -221,12 +287,12 @@ const result = await native.callMcpTool(
 > (`nativeBridge`) always passes 6 real callbacks, so it is unaffected; only
 > hand-written standalone scripts need to be careful.
 
-## 7. Commit Conventions
+## 8. Commit Conventions
 
 Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/),
 keeping the same style as the repository history: `type(scope): summary - extra detail`.
 
-### 7.1 Message Format
+### 8.1 Message Format
 
 A commit message consists of a **header** and an optional **body**:
 
@@ -243,7 +309,7 @@ A commit message consists of a **header** and an optional **body**:
   use `-` bullets when needed. Write a body only for complex changes or breaking
   behavior — simple changes need just the header.
 
-### 7.2 Types
+### 8.2 Types
 
 | type | Purpose | Example |
 | --- | --- | --- |
@@ -256,20 +322,20 @@ A commit message consists of a **header** and an optional **body**:
 | `test` | Tests | `test(storage): cover cascading deletion in batch operations` |
 | `style` | Styling/formatting (no logic change) | `style: normalize import ordering` |
 
-### 7.3 Scope (optional)
+### 8.3 Scope (optional)
 
 `scope` names the affected module, lowercase and short, e.g. `chat`, `sidebar`,
 `imagegen`, `storage`, `ipc`, `native`, `docs`. Omit it when the change is not
 module-specific.
 
-### 7.4 Summary Style
+### 8.4 Summary Style
 
 - Start with a verb describing *what was done*, not *what it is*;
 - One commit does one thing — keep the summary aligned with the diff, no mixed changes;
 - Append motivation with ` - ` when needed, e.g.
   `feat(chat): persist drafts per conversation - preserve input when switching`.
 
-### 7.5 Body Example
+### 8.5 Body Example
 
 ```text
 fix(sidebar): keep the conversation context menu open
@@ -285,7 +351,7 @@ Right-clicking the same row no longer closes the menu, while right-clicking
 another area still switches it correctly.
 ```
 
-### 7.6 Before Committing
+### 8.6 Before Committing
 
 - `npm run check:ts` (`tsc --noEmit`) must pass;
 - Never commit: `out/`, `release/`, `node_modules/`, `.tmp-*.cjs`, user data dirs;

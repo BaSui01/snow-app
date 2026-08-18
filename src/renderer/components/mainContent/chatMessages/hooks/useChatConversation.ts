@@ -14,6 +14,7 @@ import type {
   UseChatConversationResult,
 } from "../utils/conversationTypes";
 import { PENDING_SESSION_KEY } from "../utils/conversationTypes";
+import { clearPendingContextAttachments } from "../../../sidebar/mainSidebar/conversationContextEvents";
 
 import { useConversationSession } from "./useConversationSession";
 import { useToolAuthorization } from "./useToolAuthorization";
@@ -140,6 +141,10 @@ export const useChatConversation = (
   const [rollbackPreview, setRollbackPreview] =
     useState<ConversationContextValue["rollbackPreview"]>(null);
   const [newChatRequested, setNewChatRequested] = useState(false);
+  // Renderer-only lifecycle marker. It must never be reset when the active
+  // conversation changes: every new-chat request gets a fresh generation even
+  // when the pending session key is reused.
+  const [newChatGeneration, setNewChatGeneration] = useState(0);
   const [yoloMode, setYoloModeState] = useState(false);
   const [isUpdatingYoloMode, setIsUpdatingYoloMode] = useState(false);
   const [planMode, setPlanModeState] = useState(false);
@@ -230,9 +235,11 @@ export const useChatConversation = (
       subAgentConfigProfile?: string,
       apiProfile?: string,
       subAgentToolsJson?: string,
-      subAgentSystemPrompt?: string
-     ) => Promise<CompactionResult | null>
-   >(async () => null);
+      subAgentSystemPrompt?: string,
+      thinkingStrength?: string,
+      responsesFastMode?: boolean | null
+    ) => Promise<CompactionResult | null>
+  >(async () => null);
   const yoloModeRef = useRef(yoloMode);
   const planModeRef = useRef(planMode);
   const goalModeRef = useRef(goalMode);
@@ -260,6 +267,10 @@ export const useChatConversation = (
   useEffect(() => {
     if (lastDirectoryIdRef.current === directoryId) return;
     lastDirectoryIdRef.current = directoryId;
+
+    // 跨项目切换：丢弃未发送的「待附带」会话附件意图（属于旧项目，
+    // 迁移挂载时的目录校验会拒绝，这里提前清理避免 UI 残留提示条）。
+    clearPendingContextAttachments();
 
     const pendingRef = sessionsRefData.current.get(PENDING_SESSION_KEY);
     const pendingStreaming = pendingRef?.isSending === true;
@@ -409,6 +420,7 @@ export const useChatConversation = (
     draftToRestore,
     rollbackPreview,
     newChatRequested,
+    newChatGeneration,
     yoloMode,
     isUpdatingYoloMode,
     planMode,
@@ -465,6 +477,7 @@ export const useChatConversation = (
     setDraftToRestore,
     setRollbackPreview,
     setNewChatRequested,
+    setNewChatGeneration,
     setYoloModeState,
     setIsUpdatingYoloMode,
     setPlanModeState,
@@ -646,6 +659,7 @@ export const useChatConversation = (
     recordFileChange,
     sessions,
     activeConversationId,
+    newChatGeneration,
     conversationDirectoryId: activeSession?.directoryId,
     tokenUsage: activeSession?.tokenUsage ?? null,
     streamTokenCount: activeSession?.streamTokenCount ?? 0,

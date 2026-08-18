@@ -13,9 +13,10 @@ use super::{migrations, models::DatabaseRepairResult, services};
 
 /// Bumped whenever the schema changes; written to `PRAGMA user_version` after
 /// a successful `create_schema` so the app can detect stale databases.
+/// 32: conversation runtime config nullable overrides (thinking/Fast Mode)
 /// 31: main's scheduled-tasks pre-script migration (30) + PR #65's three
 /// stream-interruption migrations (29 baseline + 4 total additions).
-const CURRENT_SCHEMA_VERSION: i64 = 31;
+const CURRENT_SCHEMA_VERSION: i64 = 32;
 const SNOWFLAKE_EPOCH_MS: u64 = 1_704_067_200_000;
 const SNOWFLAKE_WORKER_ID_BITS: u64 = 10;
 const SNOWFLAKE_SEQUENCE_BITS: u64 = 12;
@@ -487,6 +488,35 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
          CREATE INDEX IF NOT EXISTS idx_mcp_server_configs_source
            ON mcp_server_configs(source);
 
+         CREATE TABLE IF NOT EXISTS lsp_server_configs (
+           id TEXT PRIMARY KEY NOT NULL,
+           lang TEXT NOT NULL UNIQUE,
+           command TEXT NOT NULL DEFAULT '',
+           args_json TEXT NOT NULL DEFAULT '[]',
+           file_extensions_json TEXT NOT NULL DEFAULT '[]',
+           install_command TEXT NOT NULL DEFAULT '',
+           initialization_options_json TEXT NOT NULL DEFAULT '{}',
+           enabled INTEGER NOT NULL DEFAULT 1,
+           sort_order INTEGER NOT NULL DEFAULT 0,
+           source TEXT NOT NULL DEFAULT 'manual',
+           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+           updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+         );
+         CREATE INDEX IF NOT EXISTS idx_lsp_server_configs_enabled
+           ON lsp_server_configs(enabled);
+         CREATE INDEX IF NOT EXISTS idx_lsp_server_configs_source
+           ON lsp_server_configs(source);
+
+         CREATE TABLE IF NOT EXISTS lsp_diagnostic_cache (
+           file_path   TEXT PRIMARY KEY NOT NULL,
+           mtime_ms    INTEGER NOT NULL,
+           size        INTEGER NOT NULL,
+           result_json TEXT NOT NULL,
+           updated_at  INTEGER NOT NULL
+         );
+         CREATE INDEX IF NOT EXISTS idx_lsp_diagnostic_cache_updated_at
+           ON lsp_diagnostic_cache(updated_at);
+
          CREATE TABLE IF NOT EXISTS import_resources (
            resource_id TEXT PRIMARY KEY NOT NULL,
            resource_type TEXT NOT NULL,
@@ -616,6 +646,8 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
             message_count INTEGER NOT NULL DEFAULT 0,
             model TEXT NOT NULL DEFAULT '',
             api_profile_name TEXT NOT NULL DEFAULT '',
+            thinking_strength TEXT,
+            responses_fast_mode INTEGER,
             last_response_id TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'active',
             input_tokens INTEGER NOT NULL DEFAULT 0,
@@ -808,6 +840,10 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
 
     // Ensure the image library table exists (generated images index).
     services::image_library::ensure_image_library_table(connection)?;
+
+    // Ensure the conversation context attachments table exists (conversation
+    // drag-to-attach as prefix context).
+    services::context_attachments::ensure_context_attachments_table(connection)?;
 
     // Post-schema migrations run AFTER CREATE TABLE to add columns that
     // older databases lack but fresh databases already have. Each migration

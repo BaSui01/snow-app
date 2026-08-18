@@ -209,6 +209,34 @@ pub struct McpServerConfigRecord {
 }
 
 #[napi(object)]
+pub struct LspServerConfigInput {
+    pub lang: String,
+    pub command: String,
+    pub args_json: String,
+    pub file_extensions_json: String,
+    pub install_command: Option<String>,
+    pub initialization_options_json: Option<String>,
+    pub enabled: bool,
+    pub sort_order: i32,
+    pub source: String,
+}
+
+#[napi(object)]
+pub struct LspServerConfigRecord {
+    pub id: String,
+    pub lang: String,
+    pub command: String,
+    pub args_json: String,
+    pub file_extensions_json: String,
+    pub install_command: Option<String>,
+    pub initialization_options_json: Option<String>,
+    pub enabled: bool,
+    pub sort_order: i32,
+    pub source: String,
+    pub updated_at: String,
+}
+
+#[napi(object)]
 pub struct ProjectMcpServerConfigRecord {
     pub server_id: String,
     pub name: String,

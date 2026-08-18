@@ -1,6 +1,7 @@
 import {
   Copy,
   ExternalLink,
+  Loader2,
   Trash2,
 } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
@@ -42,6 +43,17 @@ export type ChipDetailsState = {
   y: number;
 };
 
+export type ConversationPreviewState = {
+  emoji?: string;
+  title: string;
+  /** null = 加载中；字符串 = 发送时实际注入的渲染内容 */
+  content: string | null;
+  /** 加载失败标记 */
+  failed?: boolean;
+  x: number;
+  y: number;
+};
+
 type InputOverlayLayerProps = {
   imagePreview: ImagePreviewState | null;
   setImagePreview: Dispatch<SetStateAction<ImagePreviewState | null>>;
@@ -55,12 +67,15 @@ type InputOverlayLayerProps = {
   webChipMenu: WebChipMenuState | null;
   setWebChipMenu: Dispatch<SetStateAction<WebChipMenuState | null>>;
   chipDetails: ChipDetailsState | null;
+  conversationPreview: ConversationPreviewState | null;
   cancelHideImagePreview: () => void;
   scheduleHideImagePreview: () => void;
   cancelHideTextSnippetPreview: () => void;
   scheduleHideTextSnippetPreview: () => void;
   cancelHideChipDetails: () => void;
   scheduleHideChipDetails: () => void;
+  cancelHideConversationPreview: () => void;
+  scheduleHideConversationPreview: () => void;
   handleTextSnippetEditorDelete: () => void;
   handleTextSnippetEditorSave: () => void;
   syncContent: () => void;
@@ -78,12 +93,15 @@ export const InputOverlayLayer = ({
   webChipMenu,
   setWebChipMenu,
   chipDetails,
+  conversationPreview,
   cancelHideImagePreview,
   scheduleHideImagePreview,
   cancelHideTextSnippetPreview,
   scheduleHideTextSnippetPreview,
   cancelHideChipDetails,
   scheduleHideChipDetails,
+  cancelHideConversationPreview,
+  scheduleHideConversationPreview,
   handleTextSnippetEditorDelete,
   handleTextSnippetEditorSave,
   syncContent,
@@ -170,6 +188,75 @@ export const InputOverlayLayer = ({
                 {chipDetails.content}
               </pre>
             )}
+          </div>,
+          document.body
+        )}
+      {conversationPreview &&
+        createPortal(
+          <div
+            className="conversation-chip-preview"
+            style={{
+              left: conversationPreview.x,
+              top: conversationPreview.y,
+              transform: "translate(-50%, calc(-100% - 8px))",
+            }}
+            onMouseEnter={cancelHideConversationPreview}
+            onMouseLeave={scheduleHideConversationPreview}
+          >
+            <div className="conversation-chip-preview-header">
+              <span className="conversation-chip-preview-title">
+                {conversationPreview.emoji ? (
+                  <span className="conversation-chip-preview-emoji">
+                    {conversationPreview.emoji}
+                  </span>
+                ) : null}
+                <span className="conversation-chip-preview-name">
+                  {conversationPreview.title ||
+                    t("chatInput.conversationPreviewUntitled", {
+                      defaultValue: "未命名会话",
+                    })}
+                </span>
+              </span>
+              <span className="conversation-chip-preview-badge">
+                {t("chatInput.conversationPreviewBadge", {
+                  defaultValue: "引用上下文",
+                })}
+              </span>
+            </div>
+            {conversationPreview.content === null ? (
+              <div className="conversation-chip-preview-status">
+                <Loader2
+                  size={13}
+                  className="conversation-chip-preview-spinner"
+                  aria-hidden="true"
+                />
+                {t("chatInput.conversationPreviewLoading", {
+                  defaultValue: "正在加载会话内容…",
+                })}
+              </div>
+            ) : conversationPreview.failed ? (
+              <div className="conversation-chip-preview-status error">
+                {t("chatInput.conversationPreviewFailed", {
+                  defaultValue: "会话内容加载失败",
+                })}
+              </div>
+            ) : conversationPreview.content.trim() ? (
+              <pre className="conversation-chip-preview-content">
+                {conversationPreview.content}
+              </pre>
+            ) : (
+              <div className="conversation-chip-preview-status">
+                {t("chatInput.conversationPreviewEmpty", {
+                  defaultValue: "该会话暂无可注入的内容",
+                })}
+              </div>
+            )}
+            <div className="conversation-chip-preview-footer">
+              {t("chatInput.conversationPreviewHint", {
+                defaultValue:
+                  "发送时实际注入的上下文（已清洗思考与工具细节，并按预算裁剪）",
+              })}
+            </div>
           </div>,
           document.body
         )}

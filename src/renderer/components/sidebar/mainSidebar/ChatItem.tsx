@@ -17,7 +17,7 @@ import {
   beginConversationDrag,
   endConversationDrag,
   type ConversationDragPayload,
-} from "./conversationContextEvents";
+} from "./conversationDrag";
 import { setChatDragData } from "./chatDrag";
 import { formatTimeLabel, parseDbTimestamp } from "./chatTimeGroup";
 

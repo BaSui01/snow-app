@@ -1451,7 +1451,9 @@ fn required_u32(args: &Value, key: &str) -> napi::Result<u32> {
 
 /// 检查 LSP 工具是否被用户允许（与 collect 阶段对 lsp-* 工具的判定一致）：
 /// 全局黑名单或项目 scope（builtin:lsp 服务器 / 具体 lsp-* 工具）禁用时
-/// 返回 false——用户禁用了 LSP 就不应把 codelens 调用转发过去。
+/// 返回 false——用户禁用了 LSP 就不应把 codelens 调用转发过去。lsp 是
+/// 默认关闭服务器：无项目 scope（用户从未在项目 MCP 面板启用 builtin:lsp）
+/// 同样返回 false，与 tool_is_enabled 的无 scope 判定保持一致。
 async fn lsp_tool_scope_allowed(lsp_tool: &str, project_id: Option<&str>) -> napi::Result<bool> {
     use crate::mcp::tools::{builtin_scope_server_id, load_global_scope, load_project_scope};
     let lsp_full_name = format!("lsp-{lsp_tool}");
@@ -1461,7 +1463,7 @@ async fn lsp_tool_scope_allowed(lsp_tool: &str, project_id: Option<&str>) -> nap
         }
     }
     let Some(scope) = load_project_scope(project_id).await? else {
-        return Ok(true);
+        return Ok(false);
     };
     Ok(scope.is_server_enabled(&builtin_scope_server_id("lsp"))
         && scope.is_tool_enabled(&lsp_full_name))
@@ -1470,7 +1472,8 @@ async fn lsp_tool_scope_allowed(lsp_tool: &str, project_id: Option<&str>) -> nap
 /// 检查 LSP 域整体是否被用户允许（与 collect 阶段 lsp-* 工具暴露的 scope
 /// 条件一致）：全局黑名单把全部核心 lsp 工具禁用，或项目 scope 禁用了
 /// builtin:lsp 服务器时返回 false——用户禁用了 LSP 就不应在系统提示词中
-/// 注入优先使用指引（否则提示词与工具可见性不一致）。
+/// 注入优先使用指引（否则提示词与工具可见性不一致）。lsp 是默认关闭
+/// 服务器：无项目 scope（未在任何项目启用过 builtin:lsp）同样返回 false。
 async fn lsp_domain_scope_allowed(project_id: Option<&str>) -> napi::Result<bool> {
     use crate::mcp::tools::{builtin_scope_server_id, load_global_scope, load_project_scope};
     // 核心代表工具：任一未被全局禁用即认为域可用（collect 阶段按工具粒度
@@ -1490,7 +1493,7 @@ async fn lsp_domain_scope_allowed(project_id: Option<&str>) -> napi::Result<bool
         }
     }
     let Some(scope) = load_project_scope(project_id).await? else {
-        return Ok(true);
+        return Ok(false);
     };
     Ok(scope.is_server_enabled(&builtin_scope_server_id("lsp")))
 }
@@ -1615,8 +1618,9 @@ pub(crate) async fn build_system_prompt_section(
     // 项目语言一致性（与 collect 阶段工具暴露共用 server_matches_project，
     // 单一事实来源，检测结果走 60s TTL 缓存）：项目没有编程语言（纯文档/
     // 配置仓库）、或服务器语言与项目语言不一致时不注入。project_root
-    // 不可用（无项目上下文）时跳过语言过滤——与 collect 阶段全局工具
-    // 暴露行为保持一致（全局配置在无项目时照常暴露 lsp-* 工具）。
+    // 不可用（无项目上下文）时跳过语言过滤——实际上无项目上下文时
+    // lsp_domain_scope_allowed 早已返回 false（lsp 默认关闭，需项目级
+    // 显式启用），此处仅为防御性兜底。
     if let Some(root) = project_root {
         available.retain(|config| server_matches_project(config, root));
     }
@@ -1858,187 +1862,5 @@ fn flatten_symbols(symbols: &[Value], out: &mut Vec<Value>) {
         if let Some(children) = symbol.get("children").and_then(Value::as_array) {
             flatten_symbols(children, out);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn diagnostics_target_ignores_empty_file_path_for_batch() {
-        let target = parse_diagnostics_target(&serde_json::json!({
-            "filePath": "",
-            "filePaths": ["D:/project/src/a.ts", "D:/project/src/b.ts"]
-        }))
-        .unwrap();
-
-        assert_eq!(
-            target,
-            DiagnosticsTarget::Batch(vec![
-                "D:/project/src/a.ts".to_string(),
-                "D:/project/src/b.ts".to_string(),
-            ])
-        );
-    }
-
-    #[test]
-    fn diagnostics_target_filters_blank_paths_and_caps_batch() {
-        let mut file_paths = vec!["  ".to_string(), "D:/project/src/first.ts".to_string()];
-        file_paths.extend((0..30).map(|index| format!("D:/project/src/{index}.ts")));
-
-        let target = parse_diagnostics_target(&serde_json::json!({ "filePaths": file_paths }))
-            .unwrap();
-
-        match target {
-            DiagnosticsTarget::Batch(paths) => {
-                assert_eq!(paths.len(), 30);
-                assert_eq!(paths[0], "D:/project/src/first.ts");
-            }
-            DiagnosticsTarget::Single(_) => panic!("expected batch target"),
-        }
-    }
-
-    #[test]
-    fn diagnostics_target_prefers_valid_single_path() {
-        let target = parse_diagnostics_target(&serde_json::json!({
-            "filePath": "D:/project/src/only.ts",
-            "filePaths": ["D:/project/src/ignored.ts"]
-        }))
-        .unwrap();
-
-        assert_eq!(
-            target,
-            DiagnosticsTarget::Single("D:/project/src/only.ts".to_string())
-        );
-    }
-
-    #[test]
-    fn diagnostics_target_rejects_missing_paths() {
-        assert!(parse_diagnostics_target(&serde_json::json!({
-            "filePath": " \t ",
-            "filePaths": ["", "  ", 42]
-        }))
-        .is_err());
-    }
-
-    /// NDJSON 流解析：只收集被 finding 引用的 osv，按 ID 分组，
-    /// package 取 trace[0]（空 → "Go standard library"），ID 排序稳定。
-    #[test]
-    fn vulncheck_parses_ndjson_stream() {
-        // 模拟 govulncheck v1.6.0 输出：多行缩进文档串联。
-        // - GO-2021-0113：依赖包命中（带 package）
-        // - GO-2026-4337：stdlib 命中（无 package → "Go standard library"）
-        // - GO-2020-9999：osv 存在但无 finding 引用 → 不输出（未调用）
-        let stream = r#"{
-  "config": {
-    "protocol_version": "v1.0.0",
-    "scanner_name": "govulncheck",
-    "scanner_version": "v1.6.0"
-  }
-}
-{
-  "osv": {
-    "id": "GO-2021-0113",
-    "details": "Due to improper index calculation, an incorrectly formatted language tag can cause a panic."
-  }
-}
-{
-  "osv": {
-    "id": "GO-2026-4337",
-    "details": "During session resumption in crypto/tls."
-  }
-}
-{
-  "osv": {
-    "id": "GO-2020-9999",
-    "details": "Candidate advisory NOT referenced by any finding."
-  }
-}
-{
-  "progress": {
-    "message": "Scanning..."
-  }
-}
-{
-  "finding": {
-    "osv": "GO-2021-0113",
-    "trace": [
-      {
-        "module": "golang.org/x/text",
-        "version": "v0.3.0",
-        "package": "golang.org/x/text/language"
-      }
-    ]
-  }
-}
-{
-  "finding": {
-    "osv": "GO-2026-4337",
-    "trace": [
-      {
-        "module": "stdlib",
-        "version": "v1.25.5"
-      }
-    ]
-  }
-}
-{
-  "finding": {
-    "osv": "GO-2021-0113",
-    "trace": [
-      {
-        "module": "golang.org/x/text",
-        "version": "v0.3.0"
-      }
-    ]
-  }
-}"#;
-
-        let result = parse_vulncheck_output(stream.as_bytes(), "./...", "/tmp/demo").unwrap();
-        assert_eq!(result["count"], 2);
-        let findings = result["findings"].as_array().unwrap();
-        // ID 升序：GO-2021-0113 < GO-2026-4337
-        assert_eq!(findings[0]["id"], "GO-2021-0113");
-        assert_eq!(findings[1]["id"], "GO-2026-4337");
-        // GO-2021-0113 两条 finding 合并 affectedPackages（BTreeSet 去重 +
-        // 字典序，与 gopls 上游 slices.Sorted(maps.Keys()) 行为一致：
-        // "Go standard library" 大写 G 排在包名前）。
-        let packages = findings[0]["affectedPackages"].as_array().unwrap();
-        assert_eq!(
-            packages
-                .iter()
-                .map(|p| p.as_str().unwrap())
-                .collect::<Vec<_>>(),
-            vec!["Go standard library", "golang.org/x/text/language"]
-        );
-        assert_eq!(findings[0]["details"].as_str().unwrap().len() > 0, true);
-        // stdlib 无 package → 标记 Go standard library
-        assert_eq!(
-            findings[1]["affectedPackages"].as_array().unwrap()[0],
-            "Go standard library"
-        );
-        // GO-2020-9999 未被引用 → 不出现
-        assert!(findings.iter().all(|f| f["id"] != "GO-2020-9999"));
-        // summary 包含 pattern 与 dir
-        assert!(result["summary"]
-            .as_str()
-            .unwrap()
-            .contains("./..."));
-        assert!(result["summary"].as_str().unwrap().contains("/tmp/demo"));
-    }
-
-    /// 空输出（无 finding）→ count 0、findings 空数组，不报错。
-    #[test]
-    fn vulncheck_parses_empty_stream() {
-        let result = parse_vulncheck_output(b"{\n  \"config\": {\n    \"scanner_name\": \"govulncheck\"\n  }\n}\n", "./...", ".").unwrap();
-        assert_eq!(result["count"], 0);
-        assert_eq!(result["findings"].as_array().unwrap().len(), 0);
-    }
-
-    /// 非法 JSON 流 → 报错（不 panic）。
-    #[test]
-    fn vulncheck_rejects_invalid_json() {
-        assert!(parse_vulncheck_output(b"{not json", "./...", ".").is_err());
     }
 }

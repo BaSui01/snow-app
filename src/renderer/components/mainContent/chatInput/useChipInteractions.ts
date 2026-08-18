@@ -7,6 +7,7 @@ import type {
 import { useI18n } from "../../../i18n";
 import {
   type ChipDetailsState,
+  type ConversationPreviewState,
   type ImagePreviewState,
   type TextSnippetEditorState,
   type TextSnippetPreviewState,
@@ -21,6 +22,36 @@ import {
   type TextSnippetTag,
 } from "./fileTagUtils";
 import { rightPanelEvents } from "../../rightPanel/rightPanelEvents";
+
+/**
+ * 会话 chip 悬停预览缓存：避免短时间内反复悬停重复查库渲染。
+ * TTL 较短，保证被引用会话新增消息后预览能较快刷新。
+ */
+type ConversationPreviewCacheEntry = { content: string; at: number };
+const conversationPreviewCache = new Map<string, ConversationPreviewCacheEntry>();
+const CONVERSATION_PREVIEW_CACHE_TTL_MS = 30_000;
+/** 悬停防抖：停留片刻才发起加载，鼠标快速掠过不触发。 */
+const CONVERSATION_PREVIEW_HOVER_DELAY_MS = 120;
+/** 预览浮层宽度（与 styles.css 的 .conversation-chip-preview width 一致），用于水平定位钳制。 */
+const CONVERSATION_PREVIEW_WIDTH = 460;
+
+/** 读取会话 chip 的 conversationId；非会话 chip 或数据非法返回 null。 */
+const readConversationChipId = (chip: HTMLElement): string | null => {
+  if (chip.dataset.conversationTag !== "true") {
+    return null;
+  }
+  try {
+    const data = JSON.parse(chip.dataset.conversationData ?? "{}") as {
+      conversationId?: string;
+    };
+    return typeof data.conversationId === "string" &&
+      data.conversationId.trim().length > 0
+      ? data.conversationId.trim()
+      : null;
+  } catch {
+    return null;
+  }
+};
 
 type UseChipInteractionsOptions = {
   textareaRef: RefObject<HTMLDivElement | null>;
@@ -38,6 +69,7 @@ export type ChipInteractionsResult = {
   webChipMenu: WebChipMenuState | null;
   setWebChipMenu: Dispatch<SetStateAction<WebChipMenuState | null>>;
   chipDetails: ChipDetailsState | null;
+  conversationPreview: ConversationPreviewState | null;
   showImagePreview: (event: React.MouseEvent<HTMLDivElement>) => void;
   scheduleHideImagePreview: () => void;
   cancelHideImagePreview: () => void;
@@ -47,6 +79,9 @@ export type ChipInteractionsResult = {
   showChipDetails: (event: React.MouseEvent<HTMLDivElement>) => void;
   scheduleHideChipDetails: () => void;
   cancelHideChipDetails: () => void;
+  showConversationPreview: (event: React.MouseEvent<HTMLDivElement>) => void;
+  scheduleHideConversationPreview: () => void;
+  cancelHideConversationPreview: () => void;
   handleChipRemove: (event: React.MouseEvent<HTMLDivElement>) => void;
   handleTextSnippetClick: (event: React.MouseEvent<HTMLDivElement>) => void;
   handleWebChipClick: (event: React.MouseEvent<HTMLDivElement>) => void;
@@ -80,6 +115,29 @@ export const useChipInteractions = ({
   const [chipDetails, setChipDetails] = useState<ChipDetailsState | null>(null);
   const chipDetailsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
+  );
+  const [conversationPreview, setConversationPreview] =
+    useState<ConversationPreviewState | null>(null);
+  /** 隐藏延迟计时器（与其他浮层一致，给鼠标移入浮层留缓冲）。 */
+  const conversationPreviewHideTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  /** 悬停防抖计时器：停留足够时间才展示加载态并发起请求。 */
+  const conversationPreviewShowTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  /** 当前悬停的会话 chip；异步请求返回时用它校验结果是否仍应展示。 */
+  const conversationPreviewChipRef = useRef<HTMLElement | null>(null);
+  /** 当前展示中的预览所属 conversationId（chip 被删除时据此精确匹配并立即隐藏）。 */
+  const conversationPreviewShownIdRef = useRef<string | null>(null);
+
+  /** 展示预览并记录其所属会话 id，与 setConversationPreview 配套使用。 */
+  const applyConversationPreview = useCallback(
+    (conversationId: string, state: ConversationPreviewState) => {
+      conversationPreviewShownIdRef.current = conversationId;
+      setConversationPreview(state);
+    },
+    []
   );
 
   const showImagePreview = useCallback(
@@ -118,22 +176,6 @@ export const useChipInteractions = ({
       setImagePreview({ url: dataUrl, x: clampedX, y: rect.top });
     },
     []
-  );
-
-  const handleChipRemove = useCallback(
-    (event: React.MouseEvent<HTMLDivElement>) => {
-      const target = event.target as HTMLElement;
-      const removeBtn = target.closest("[data-chip-remove='true']");
-      if (!removeBtn) {
-        return;
-      }
-      const chip = removeBtn.closest(".file-chip");
-      if (chip && textareaRef.current?.contains(chip)) {
-        chip.remove();
-        syncContent();
-      }
-    },
-    [syncContent, textareaRef]
   );
 
   const scheduleHideImagePreview = useCallback(() => {
@@ -498,6 +540,219 @@ export const useChipInteractions = ({
     }
   }, []);
 
+  const hideConversationPreview = useCallback(() => {
+    if (conversationPreviewHideTimerRef.current) {
+      clearTimeout(conversationPreviewHideTimerRef.current);
+      conversationPreviewHideTimerRef.current = null;
+    }
+    if (conversationPreviewShowTimerRef.current) {
+      clearTimeout(conversationPreviewShowTimerRef.current);
+      conversationPreviewShowTimerRef.current = null;
+    }
+    conversationPreviewChipRef.current = null;
+    conversationPreviewShownIdRef.current = null;
+    setConversationPreview(null);
+  }, []);
+
+  const handleChipRemove = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement;
+      const removeBtn = target.closest("[data-chip-remove='true']");
+      if (!removeBtn) {
+        return;
+      }
+      const chip = removeBtn.closest(".file-chip") as HTMLElement | null;
+      if (!chip || !textareaRef.current?.contains(chip)) {
+        return;
+      }
+      // 被删除的 chip 若正在悬停预览（或其预览浮层仍在展示），
+      // 删除后必须立即隐藏浮层，而不是走 200ms 延迟隐藏。
+      const removedConversationId = readConversationChipId(chip);
+      const previewBelongsToChip =
+        chip === conversationPreviewChipRef.current ||
+        (removedConversationId !== null &&
+          conversationPreviewShownIdRef.current === removedConversationId);
+      chip.remove();
+      syncContent();
+      if (previewBelongsToChip) {
+        hideConversationPreview();
+      }
+    },
+    [hideConversationPreview, syncContent, textareaRef]
+  );
+
+  const scheduleHideConversationPreview = useCallback(() => {
+    if (conversationPreviewHideTimerRef.current) {
+      return;
+    }
+    conversationPreviewHideTimerRef.current = setTimeout(() => {
+      conversationPreviewHideTimerRef.current = null;
+      hideConversationPreview();
+    }, 200);
+  }, [hideConversationPreview]);
+
+  const cancelHideConversationPreview = useCallback(() => {
+    if (conversationPreviewHideTimerRef.current) {
+      clearTimeout(conversationPreviewHideTimerRef.current);
+      conversationPreviewHideTimerRef.current = null;
+    }
+  }, []);
+
+  /**
+   * 悬停会话 chip 时预览「发送时实际注入的上下文内容」。
+   *
+   * 内容由 Rust 后端 previewConversationAttachment 渲染（与请求组装共用
+   * 清洗与预算逻辑，所见即所得）。因内容需查库渲染，展示是异步的：
+   * 悬停防抖 -> 加载态浮层 -> 填充内容；结果按 conversationId 缓存 30s。
+   */
+  const showConversationPreview = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement;
+      const chip = target.closest(
+        "[data-conversation-tag='true']"
+      ) as HTMLElement | null;
+      if (!chip) {
+        // 悬停点不在会话 chip 上：取消尚未开始的加载；已显示的浮层给
+        // 200ms 缓冲（允许鼠标移入浮层继续阅读），到期自动隐藏。
+        if (conversationPreviewShowTimerRef.current) {
+          clearTimeout(conversationPreviewShowTimerRef.current);
+          conversationPreviewShowTimerRef.current = null;
+        }
+        if (conversationPreviewChipRef.current) {
+          conversationPreviewChipRef.current = null;
+          scheduleHideConversationPreview();
+        }
+        return;
+      }
+      if (chip === conversationPreviewChipRef.current) {
+        // 同一 chip 内移动：保持浮层与进行中的加载。
+        cancelHideConversationPreview();
+        return;
+      }
+
+      // 切换到新 chip：放弃上一个 chip 未完成的状态。
+      cancelHideConversationPreview();
+      if (conversationPreviewShowTimerRef.current) {
+        clearTimeout(conversationPreviewShowTimerRef.current);
+        conversationPreviewShowTimerRef.current = null;
+      }
+      conversationPreviewChipRef.current = chip;
+
+      const rawData = chip.dataset.conversationData;
+      if (!rawData) {
+        hideConversationPreview();
+        return;
+      }
+      let parsed: { conversationId?: string; title?: string; emoji?: string };
+      try {
+        parsed = JSON.parse(rawData) as typeof parsed;
+      } catch {
+        hideConversationPreview();
+        return;
+      }
+      const conversationId =
+        typeof parsed.conversationId === "string"
+          ? parsed.conversationId.trim()
+          : "";
+      if (!conversationId) {
+        hideConversationPreview();
+        return;
+      }
+      let title = "";
+      if (typeof parsed.title === "string" && parsed.title.length > 0) {
+        try {
+          title = base64ToUtf8(parsed.title);
+        } catch {
+          title = "";
+        }
+      }
+      const emoji =
+        typeof parsed.emoji === "string" && parsed.emoji.length > 0
+          ? parsed.emoji
+          : undefined;
+
+      const anchor = (): { x: number; y: number } => {
+        const rect = chip.getBoundingClientRect();
+        const halfW = CONVERSATION_PREVIEW_WIDTH / 2;
+        const clampedX = Math.max(
+          halfW + 4,
+          Math.min(rect.left + rect.width / 2, window.innerWidth - halfW - 4)
+        );
+        return { x: clampedX, y: rect.top };
+      };
+
+      const cached = conversationPreviewCache.get(conversationId);
+      if (
+        cached &&
+        Date.now() - cached.at < CONVERSATION_PREVIEW_CACHE_TTL_MS
+      ) {
+        const { x, y } = anchor();
+        applyConversationPreview(conversationId, {
+          emoji,
+          title,
+          content: cached.content,
+          x,
+          y,
+        });
+        return;
+      }
+
+      const targetChip = chip;
+      conversationPreviewShowTimerRef.current = setTimeout(() => {
+        conversationPreviewShowTimerRef.current = null;
+        if (conversationPreviewChipRef.current !== targetChip) {
+          return;
+        }
+        const { x, y } = anchor();
+        applyConversationPreview(conversationId, {
+          emoji,
+          title,
+          content: null,
+          x,
+          y,
+        });
+        window.snow
+          .previewConversationAttachment(conversationId)
+          .then((content) => {
+            conversationPreviewCache.set(conversationId, {
+              content,
+              at: Date.now(),
+            });
+            if (conversationPreviewChipRef.current !== targetChip) {
+              return;
+            }
+            const pos = anchor();
+            applyConversationPreview(conversationId, {
+              emoji,
+              title,
+              content,
+              x: pos.x,
+              y: pos.y,
+            });
+          })
+          .catch(() => {
+            if (conversationPreviewChipRef.current !== targetChip) {
+              return;
+            }
+            const pos = anchor();
+            applyConversationPreview(conversationId, {
+              emoji,
+              title,
+              content: "",
+              failed: true,
+              x: pos.x,
+              y: pos.y,
+            });
+          });
+      }, CONVERSATION_PREVIEW_HOVER_DELAY_MS);
+    },
+    [
+      cancelHideConversationPreview,
+      hideConversationPreview,
+      scheduleHideConversationPreview,
+    ]
+  );
+
   return {
     imagePreview,
     setImagePreview,
@@ -509,6 +764,7 @@ export const useChipInteractions = ({
     webChipMenu,
     setWebChipMenu,
     chipDetails,
+    conversationPreview,
     showImagePreview,
     scheduleHideImagePreview,
     cancelHideImagePreview,
@@ -518,6 +774,9 @@ export const useChipInteractions = ({
     showChipDetails,
     scheduleHideChipDetails,
     cancelHideChipDetails,
+    showConversationPreview,
+    scheduleHideConversationPreview,
+    cancelHideConversationPreview,
     handleChipRemove,
     handleTextSnippetClick,
     handleWebChipClick,

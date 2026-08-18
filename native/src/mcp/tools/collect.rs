@@ -41,12 +41,15 @@ pub async fn collect_all_mcp_tools(
             })??;
     let imagegen_configured = imagegen_context.is_some();
 
-    // LSP tools are off by default: only exposed when at least one
-    // *enabled and installed* language server exists (§8.0/§8.6 — enabled
-    // alone is not enough: a command missing from PATH can never start).
-    // Tool-level filtering follows §8.7: only the tools supported by the
-    // union of enabled servers' capabilities are exposed (e.g. enabling
-    // only csharp-ls hides lsp-rename / lsp-code-action / lsp-signature-help).
+    // LSP tools are off by default in two senses: (1) the lsp server is a
+    // default-disabled server (same as terminal) — it must be explicitly
+    // enabled per project via the MCP panel (checked by tool_is_enabled
+    // below); (2) they are only exposed when at least one *enabled and
+    // installed* language server exists (§8.0/§8.6 — enabled alone is not
+    // enough: a command missing from PATH can never start). Tool-level
+    // filtering follows §8.7: only the tools supported by the union of
+    // enabled servers' capabilities are exposed (e.g. enabling only
+    // csharp-ls hides lsp-rename / lsp-code-action / lsp-signature-help).
     // Project-scoped: evaluated against the project's effective configs
     // (project overrides global for the same lang, §8.5), matching the
     // invocation stage — project-only servers expose tools, and project
@@ -56,7 +59,18 @@ pub async fn collect_all_mcp_tools(
     let lsp_exposure = super::super::servers::lsp::tool_exposure(project_id).await?;
     let lsp_available_tools = lsp_exposure.tools;
 
-    let mut tools = get_builtin_tools()
+    let builtin_tools = get_builtin_tools();
+    // 预计算「LSP 是否实际暴露」（可用能力集合 + scope 双重判定通过），供
+    // codelens 互斥判定使用。lsp 是默认关闭服务器：仅凭「配置了可用服务器」
+    // 就隐藏 codelens，会在用户尚未手动启用 builtin:lsp 时让两套工具同时
+    // 消失，模型失去全部代码语义分析能力。
+    let lsp_active = builtin_tools.iter().any(|tool| {
+        tool.server_id == "lsp"
+            && lsp_available_tools.contains(&tool.full_name())
+            && tool_is_enabled(tool, global_scope.as_ref(), scope.as_ref())
+    });
+
+    let mut tools = builtin_tools
         .into_iter()
         .filter(|tool| {
             // The dedicated approval tool is request-scoped: it must only be
@@ -81,15 +95,18 @@ pub async fn collect_all_mcp_tools(
             }
             // LSP tools are off by default (§8.0): excluded unless at least
             // one enabled language server is configured, and further filtered
-            // by the union of enabled servers' capabilities (§8.7).
+            // by the union of enabled servers' capabilities (§8.7). The
+            // default-disabled server gate (project opt-in) is applied by
+            // tool_is_enabled below.
             if tool.server_id == "lsp" && !lsp_available_tools.contains(&tool.full_name()) {
                 return false;
             }
-            // codelens 与 lsp-* 互斥（2026-08-16）：LSP 可用（至少一个 enabled
-            // + installed 服务器）时隐藏 codelens（语义分析更优）；LSP 未配置/
-            // 不可用（含 SSH 远程）时暴露 codelens 作为 tree-sitter 静态分析
-            // 兜底——两个工具集永远只有其一出现在模型面前，互补不冗余。
-            if tool.server_id == "codelens" && !lsp_available_tools.is_empty() {
+            // codelens 与 lsp-* 互斥（2026-08-16）：仅当 lsp-* 实际暴露
+            //（可用能力 + 项目 scope 已启用 builtin:lsp）时隐藏 codelens
+            //（语义分析更优）；LSP 未配置/不可用/未手动启用（含 SSH 远程）
+            // 时暴露 codelens 作为 tree-sitter 静态分析兜底——两个工具集
+            // 永远只有其一出现在模型面前，互补不冗余。
+            if tool.server_id == "codelens" && lsp_active {
                 return false;
             }
             tool_is_enabled(tool, global_scope.as_ref(), scope.as_ref())
@@ -251,7 +268,7 @@ pub async fn collect_allowed_mcp_tools(
 /// Built-in server ids that are disabled by default and must be explicitly
 /// enabled per project. This keeps their tools out of the model context
 /// (saving tokens) until the user opts in.
-const DEFAULT_DISABLED_SERVER_IDS: &[&str] = &["terminal"];
+const DEFAULT_DISABLED_SERVER_IDS: &[&str] = &["terminal", "lsp"];
 
 fn tool_is_enabled(
     tool: &McpTool,
@@ -323,14 +340,42 @@ pub(crate) async fn ensure_project_tool_enabled(
             format!("MCP tool is disabled globally: {tool_name}"),
         ));
     }
-    let Some(scope) = load_project_scope(project_id).await? else {
-        return Ok(());
-    };
     let Some(server_id) = server_id_from_tool_name(tool_name) else {
         return Err(Error::new(
             Status::InvalidArg,
             format!("Invalid MCP tool name: {tool_name}"),
         ));
+    };
+    let scope = load_project_scope(project_id).await?;
+    // 默认关闭的内置服务器（terminal/lsp）：必须在项目 scope 中显式启用
+    // 才可调用。无项目 scope（无项目上下文）= 用户从未启用，直接拒绝——
+    // 与 collect 阶段 tool_is_enabled 的无 scope 判定保持一致，防止绕过
+    // 工具列表的调用仍被执行。
+    if DEFAULT_DISABLED_SERVER_IDS.contains(&server_id) {
+        let Some(scope) = scope else {
+            return Err(Error::new(
+                Status::GenericFailure,
+                format!(
+                    "MCP server \"{server_id}\" is disabled by default and requires explicit per-project enablement: {tool_name}"
+                ),
+            ));
+        };
+        if !scope.is_server_enabled(&builtin_scope_server_id(server_id)) {
+            return Err(Error::new(
+                Status::GenericFailure,
+                format!("MCP server is disabled for the current project: builtin:{server_id}"),
+            ));
+        }
+        if !scope.is_tool_enabled(tool_name) {
+            return Err(Error::new(
+                Status::GenericFailure,
+                format!("MCP tool is disabled for the current project: {tool_name}"),
+            ));
+        }
+        return Ok(());
+    }
+    let Some(scope) = scope else {
+        return Ok(());
     };
     let (server_scope_id, project_owned) = if server_id == "skills"
         || get_builtin_servers_with_tools()

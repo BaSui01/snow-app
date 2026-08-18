@@ -1,4 +1,4 @@
-import { Plug, Settings, XCircle } from "lucide-react";
+import { Plug, Settings } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../../../i18n";
 import type { ChatInputViewProps } from "./types";
@@ -20,13 +20,6 @@ import { createChatCommands } from "./commands/commandRegistry";
 import { useChipInteractions } from "./useChipInteractions";
 import { useContentEditableInteractions } from "./useContentEditableInteractions";
 import { useInputFileOperations } from "./useInputFileOperations";
-import { ConversationAttachmentBar } from "../conversationContext/ConversationAttachmentBar";
-import {
-  getPendingContextAttachments,
-  onPendingContextAttachmentChange,
-  removePendingContextAttachment,
-  type ConversationDragPayload,
-} from "../../sidebar/mainSidebar/conversationContextEvents";
 
 /** 终端监控日志预览保留的最大行数 */
 const MAX_MONITORED_LINES = 1000;
@@ -37,7 +30,6 @@ export const ChatInputView = ({
   projectId,
   projectName,
   onNavigateToView,
-  onOpenConversation,
   value,
   textareaRef,
   apiConfigs,
@@ -162,69 +154,6 @@ export const ChatInputView = ({
     conversationVersion,
     fallbackChanges: fallbackFileChanges,
   });
-  const [dragFeedback, setDragFeedback] = useState<{ text: string } | null>(
-    null
-  );
-  const dragFeedbackTimerRef = useRef<number | null>(null);
-  const showDragFeedback = useCallback((text: string): void => {
-    setDragFeedback({ text });
-    if (dragFeedbackTimerRef.current !== null) {
-      window.clearTimeout(dragFeedbackTimerRef.current);
-    }
-    dragFeedbackTimerRef.current = window.setTimeout(() => {
-      setDragFeedback(null);
-      dragFeedbackTimerRef.current = null;
-    }, 3000);
-  }, []);
-  const [pendingAttachments, setPendingAttachments] = useState<
-    ConversationDragPayload[]
-  >(() => getPendingContextAttachments());
-  const pendingAttachmentsRef = useRef<ConversationDragPayload[]>(
-    pendingAttachments
-  );
-  const [pendingCharsById, setPendingCharsById] = useState<
-    Record<string, number>
-  >({});
-  useEffect(() => {
-    const syncPendingAttachments = (
-      payloads: ConversationDragPayload[]
-    ): void => {
-      pendingAttachmentsRef.current = payloads;
-      setPendingAttachments(payloads);
-      setPendingCharsById((previous) => {
-        const next: Record<string, number> = {};
-        for (const id of Object.keys(previous)) {
-          if (payloads.some((item) => item.conversationId === id)) {
-            next[id] = previous[id];
-          }
-        }
-        return next;
-      });
-      for (const payload of payloads) {
-        void window.snow
-          .renderAttachmentContext(payload.conversationId)
-          .then((rendered) => {
-            if (
-              pendingAttachmentsRef.current.some(
-                (item) => item.conversationId === payload.conversationId
-              )
-            ) {
-              setPendingCharsById((previous) => ({
-                ...previous,
-                [payload.conversationId]: rendered.length,
-              }));
-            }
-          })
-          .catch(() => {});
-      }
-    };
-
-    const unsubscribe = onPendingContextAttachmentChange(
-      syncPendingAttachments
-    );
-    syncPendingAttachments(getPendingContextAttachments());
-    return unsubscribe;
-  }, []);
   const [isProjectMcpOpen, setIsProjectMcpOpen] = useState(false);
   const [isProjectSensitiveCommandsOpen, setIsProjectSensitiveCommandsOpen] =
     useState(false);
@@ -465,7 +394,6 @@ export const ChatInputView = ({
     isSubAgentConversation,
     commands,
     onStartTerminalMonitor: handleStartTerminalMonitor,
-    onConversationDropError: showDragFeedback,
     fileOperations: inputFileOperations,
   });
   const {
@@ -509,6 +437,7 @@ export const ChatInputView = ({
     webChipMenu,
     setWebChipMenu,
     chipDetails,
+    conversationPreview,
     showImagePreview,
     scheduleHideImagePreview,
     cancelHideImagePreview,
@@ -518,6 +447,9 @@ export const ChatInputView = ({
     showChipDetails,
     scheduleHideChipDetails,
     cancelHideChipDetails,
+    showConversationPreview,
+    scheduleHideConversationPreview,
+    cancelHideConversationPreview,
     handleChipRemove,
     handleTextSnippetClick,
     handleWebChipClick,
@@ -642,13 +574,6 @@ export const ChatInputView = ({
             ) : null}
           </div>
         ) : null}
-        <ConversationAttachmentBar
-          conversationId={activeConversationId ?? null}
-          pendingAttachments={pendingAttachments}
-          pendingCharsById={pendingCharsById}
-          onRemovePending={removePendingContextAttachment}
-          onOpenConversation={onOpenConversation ?? (() => undefined)}
-        />
         <div className="input-box">
           <div
             ref={textareaRef}
@@ -671,11 +596,13 @@ export const ChatInputView = ({
               showImagePreview(event);
               showTextSnippetPreview(event);
               showChipDetails(event);
+              showConversationPreview(event);
             }}
             onMouseLeave={() => {
               scheduleHideImagePreview();
               scheduleHideTextSnippetPreview();
               scheduleHideChipDetails();
+              scheduleHideConversationPreview();
             }}
             onContextMenu={handleWebChipContextMenu}
             onClick={(event) => {
@@ -684,18 +611,6 @@ export const ChatInputView = ({
               handleWebChipClick(event);
             }}
           />
-          {dragFeedback && (
-            <span
-              className="chat-input-drag-feedback error"
-              role="status"
-              aria-live="polite"
-            >
-              <XCircle size={12} aria-hidden="true" />
-              <span className="chat-input-drag-feedback-text">
-                {dragFeedback.text}
-              </span>
-            </span>
-          )}
           <InputOverlayLayer
             imagePreview={imagePreview}
             setImagePreview={setImagePreview}
@@ -707,12 +622,15 @@ export const ChatInputView = ({
             webChipMenu={webChipMenu}
             setWebChipMenu={setWebChipMenu}
             chipDetails={chipDetails}
+            conversationPreview={conversationPreview}
             cancelHideImagePreview={cancelHideImagePreview}
             scheduleHideImagePreview={scheduleHideImagePreview}
             cancelHideTextSnippetPreview={cancelHideTextSnippetPreview}
             scheduleHideTextSnippetPreview={scheduleHideTextSnippetPreview}
             cancelHideChipDetails={cancelHideChipDetails}
             scheduleHideChipDetails={scheduleHideChipDetails}
+            cancelHideConversationPreview={cancelHideConversationPreview}
+            scheduleHideConversationPreview={scheduleHideConversationPreview}
             handleTextSnippetEditorDelete={handleTextSnippetEditorDelete}
             handleTextSnippetEditorSave={handleTextSnippetEditorSave}
             syncContent={syncContent}

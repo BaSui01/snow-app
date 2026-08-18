@@ -13,6 +13,7 @@ import {
   createChangeChipHtml,
   createChipHtml,
   createCommitChipHtml,
+  createConversationChipHtml,
   createTextSnippetChipHtml,
   insertHtmlAtSelection,
   insertLineBreak,
@@ -22,6 +23,7 @@ import {
   type ChangeTag,
   type CommitTag,
   type ContentSegment,
+  type ConversationTag,
   type FileTag,
   type TextSnippetTag,
   type WebTag,
@@ -35,12 +37,9 @@ import {
 } from "../../rightPanel/terminal/terminalMonitor";
 import {
   CONVERSATION_DRAG_MIME,
-  addPendingContextAttachment,
-  conversationContextEvents,
   endConversationDrag,
   readConversationDragPayload,
-  type ConversationDragPayload,
-} from "../../sidebar/mainSidebar/conversationContextEvents";
+} from "../../sidebar/mainSidebar/conversationDrag";
 import type { InputFileOperationsResult } from "./useInputFileOperations";
 
 type HistoryMessage = {
@@ -59,7 +58,6 @@ type UseContentEditableInteractionsOptions = {
   isSubAgentConversation: boolean;
   commands: ChatCommand[];
   onStartTerminalMonitor: (payload: TerminalDragPayload) => void;
-  onConversationDropError?: (message: string) => void;
   fileOperations: Pick<
     InputFileOperationsResult,
     | "syncContent"
@@ -115,7 +113,6 @@ export const useContentEditableInteractions = ({
   isSubAgentConversation,
   commands,
   onStartTerminalMonitor,
-  onConversationDropError,
   fileOperations,
 }: UseContentEditableInteractionsOptions): ContentEditableInteractionsResult => {
   const {
@@ -271,26 +268,17 @@ export const useContentEditableInteractions = ({
       const conversationPayload = readConversationDragPayload(event.dataTransfer);
       if (conversationPayload) {
         endConversationDrag();
-        if (activeConversationId) {
-          void window.snow
-            .addContextAttachment(
-              activeConversationId,
-              conversationPayload.conversationId
-            )
-            .then(() => {
-              conversationContextEvents.emit(
-                "attachments-changed",
-                activeConversationId
-              );
-            })
-            .catch((error: unknown) => {
-              onConversationDropError?.(
-                error instanceof Error ? error.message : String(error)
-              );
-            });
-        } else {
-          addPendingContextAttachment(conversationPayload);
-        }
+        // 会话引用统一作为 chip 插入编辑区（与文件/提交等标签同一套机制），
+        // 发送时由 useAgentLoop 提取并转为真实的上下文附件。
+        const conversationTag: ConversationTag = {
+          conversationId: conversationPayload.conversationId,
+          directoryId: conversationPayload.directoryId,
+          title: conversationPayload.title,
+          emoji: conversationPayload.emoji,
+        };
+        textareaRef.current?.focus();
+        insertHtmlAtSelection(createConversationChipHtml(conversationTag));
+        syncContent();
         return;
       }
 
@@ -450,16 +438,12 @@ export const useContentEditableInteractions = ({
       }
     },
     [
-      activeConversationId,
-      addPendingContextAttachment,
-      conversationContextEvents,
       endConversationDrag,
       insertDroppedPlainText,
       insertExternalFiles,
       insertFileTags,
       insertImageFiles,
       insertWebTag,
-      onConversationDropError,
       onStartTerminalMonitor,
       readConversationDragPayload,
       syncContent,

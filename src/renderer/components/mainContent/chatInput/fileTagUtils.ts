@@ -87,6 +87,17 @@ export type WebTag = {
   elementSelector?: string;
 };
 
+export type ConversationTag = {
+  /** 被引用的历史会话 conversationId */
+  conversationId: string;
+  /** 会话所属工作区目录（同项目校验用） */
+  directoryId: string;
+  /** 会话显示名（chip 显示） */
+  title: string;
+  /** 会话 emoji（可选，chip 显示） */
+  emoji?: string;
+};
+
 /**
  * 浏览器面板元素选择器完成选取后，通过该全局事件将 ElementTag 派发给
  * 聊天输入框（ChatInputView）插入为 element chip。
@@ -109,7 +120,8 @@ export type ContentSegment =
   | { type: "text-snippet"; tag: TextSnippetTag }
   | { type: "review"; tag: ReviewTag }
   | { type: "element"; tag: ElementTag }
-  | { type: "web"; tag: WebTag };
+  | { type: "web"; tag: WebTag }
+  | { type: "conversation"; tag: ConversationTag };
 
 /**
  * 将行号数组格式化为紧凑的字符串表示，连续区间合并为范围。
@@ -253,6 +265,19 @@ export const encodeReviewTag = (tag: ReviewTag): string =>
   })}@@`;
 
 /**
+ * 将历史会话引用编码为 conversation 标签。
+ * title 为用户自由文本（可能含 `@@`），以 base64 承载避免破坏标签终止符；
+ * conversationId / directoryId 为结构化 id，直接 JSON 内嵌。
+ */
+export const encodeConversationTag = (tag: ConversationTag): string =>
+  `@@conversation:${JSON.stringify({
+    conversationId: tag.conversationId,
+    directoryId: tag.directoryId,
+    title: utf8ToBase64(tag.title),
+    emoji: tag.emoji,
+  })}@@`;
+
+/**
  * 将浏览器元素选择器选取的元素编码为 element 标签。
  * text / note 为用户或页面自由文本（可能含 `@@`），以 base64 承载，
  * 避免破坏标签终止符；url / tag / label 为结构化字段，直接 JSON 内嵌。
@@ -338,7 +363,7 @@ export const buildTextSnippetSummary = (text: string, maxLen = 30): string => {
 
 export const parseContentSegments = (content: string): ContentSegment[] => {
   const segments: ContentSegment[] = [];
-  const regex = /@@(file|dir|image|commit|change|text-snippet|review|element|web):(.+?)@@/g;
+  const regex = /@@(file|dir|image|commit|change|text-snippet|review|element|web|conversation):(.+?)@@/g;
   let lastIndex = 0;
   let imageCounter = 0;
   let match: RegExpExecArray | null;
@@ -423,6 +448,32 @@ export const parseContentSegments = (content: string): ContentSegment[] => {
               elementSelector:
                 typeof data.elementSelector === "string"
                   ? data.elementSelector
+                  : undefined,
+            },
+          });
+        }
+      } catch {
+        segments.push({ type: "text", content: match[0] });
+      }
+    } else if (kind === "conversation") {
+      try {
+        const data = JSON.parse(value) as Partial<ConversationTag>;
+        if (
+          typeof data.conversationId !== "string" ||
+          data.conversationId.trim().length === 0
+        ) {
+          segments.push({ type: "text", content: match[0] });
+        } else {
+          segments.push({
+            type: "conversation",
+            tag: {
+              conversationId: data.conversationId,
+              directoryId:
+                typeof data.directoryId === "string" ? data.directoryId : "",
+              title: data.title ? base64ToUtf8(data.title) : "",
+              emoji:
+                typeof data.emoji === "string" && data.emoji.length > 0
+                  ? data.emoji
                   : undefined,
             },
           });
@@ -664,6 +715,29 @@ export const createWebTagChipHtml = (tag: WebTag): string => {
 };
 
 /**
+ * 生成历史会话引用 chip HTML。显示 emoji（可选）+ 会话标题；
+ * 完整会话信息存放在 data-conversation-data 中，供序列化（发送时转为
+ * 上下文附件）与剪贴板复制/粘贴还原使用。悬停时由 useChipInteractions
+ * 异步加载并预览实际注入的上下文内容，故不再设置原生 title 提示。
+ */
+export const createConversationChipHtml = (tag: ConversationTag): string => {
+  const conversationData = escapeHtml(
+    JSON.stringify({
+      conversationId: tag.conversationId,
+      directoryId: tag.directoryId,
+      title: utf8ToBase64(tag.title),
+      emoji: tag.emoji,
+    })
+  );
+  const icon = tag.emoji
+    ? `<span class="conversation-chip-emoji">${escapeHtml(tag.emoji)}</span>`
+    : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg>';
+  return `<span class="file-chip conversation-chip" contenteditable="false" data-conversation-tag="true" data-conversation-data="${conversationData}"><span class="file-chip-icon">${icon}</span><span class="file-chip-name">${escapeHtml(
+    tag.title
+  )}</span><span class="file-chip-remove" data-chip-remove="true">${CLOSE_ICON_SVG}</span></span>`;
+};
+
+/**
  * 将内容片段列表渲染为可插入编辑区的 HTML：纯文本做 HTML 转义
  * （换行转为 <br>），各类标签转换为对应 chip。用于剪贴板粘贴、
  * 草稿还原等场景重建 chip。
@@ -695,6 +769,9 @@ export const buildSegmentsHtml = (segments: ContentSegment[]): string =>
       if (segment.type === "web") {
         return createWebTagChipHtml(segment.tag);
       }
+      if (segment.type === "conversation") {
+        return createConversationChipHtml(segment.tag);
+      }
       return createChipHtml(segment.tag);
     })
     .join("");
@@ -708,6 +785,7 @@ type ChipSerializers = {
   review: (tag: ReviewTag) => string;
   element: (tag: ElementTag) => string;
   web: (tag: WebTag) => string;
+  conversation: (tag: ConversationTag) => string;
 };
 
 const readEditableContentWith = (
@@ -841,6 +919,29 @@ const readEditableContentWith = (
         } catch {
           // Ignore malformed web data
         }
+      } else if (elem.dataset.conversationTag === "true") {
+        try {
+          const data = JSON.parse(
+            elem.dataset.conversationData || "{}"
+          ) as Partial<ConversationTag>;
+          if (
+            typeof data.conversationId === "string" &&
+            data.conversationId.trim().length > 0
+          ) {
+            result += serializers.conversation({
+              conversationId: data.conversationId,
+              directoryId:
+                typeof data.directoryId === "string" ? data.directoryId : "",
+              title: data.title ? base64ToUtf8(data.title) : "",
+              emoji:
+                typeof data.emoji === "string" && data.emoji.length > 0
+                  ? data.emoji
+                  : undefined,
+            });
+          }
+        } catch {
+          // Ignore malformed conversation data
+        }
       } else if (elem.tagName === "BR") {
         result += "\n";
       } else {
@@ -870,6 +971,7 @@ export const readEditableContent = (el: HTMLElement): string =>
     review: encodeReviewTag,
     element: encodeElementTag,
     web: encodeWebTag,
+    conversation: encodeConversationTag,
   });
 
 /**
@@ -908,6 +1010,7 @@ export const readEditableContentAsPlainText = (el: HTMLElement): string =>
     element: (tag) => (tag.note ? `${tag.label}: ${tag.note}` : tag.label),
     // 复制到应用外时输出「标题 URL」，保留可读性与可点击性
     web: (tag) => (tag.title ? `${tag.title} ${tag.url}` : tag.url),
+    conversation: (tag) => tag.title,
   });
 
 export const insertHtmlAtSelection = (html: string): void => {

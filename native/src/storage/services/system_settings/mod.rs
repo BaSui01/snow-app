@@ -77,8 +77,10 @@ const PROJECT_TOOL_APPROVAL_SETTING_CODE_PREFIX: &str = "project_tool_approval_s
 /// Built-in MCP servers that are **disabled by default** — they are only
 /// exposed to the model when a project scope explicitly enables them via
 /// the `enabled_server_ids` whitelist. This saves request context tokens
-/// for tools that are only useful on demand (e.g. terminal control).
-const DEFAULT_DISABLED_BUILTIN_SERVERS: &[&str] = &["terminal"];
+/// for tools that are only useful on demand (e.g. terminal control, LSP
+/// semantic analysis — the latter requires user opt-in because it spawns
+/// external language-server processes).
+const DEFAULT_DISABLED_BUILTIN_SERVERS: &[&str] = &["terminal", "lsp"];
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]

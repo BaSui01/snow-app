@@ -41,15 +41,14 @@ const requiredExports = [
   'probeLspServerCommands',
   'detectProjectStack',
   'listLspSessionStatuses',
-  // 上下文附件 / 工作区条目 / 用量统计 / 计划任务
-  'addContextAttachment',
-  'removeContextAttachment',
-  'listContextAttachments',
-  'renderAttachmentContext',
+  // 工作区条目 / 用量统计 / 计划任务
+  // （历史会话引用已改为 @@conversation: 内联标签，不再需要附件表导出）
   'deleteWorkspaceEntries',
   'gitFileContent',
   'getUsageModelBreakdown',
-  'reconcileScheduledTaskRuns'
+  'reconcileScheduledTaskRuns',
+  // 历史会话引用 chip 悬停预览（@@conversation: 标签注入内容预览）
+  'previewConversationAttachment'
 ]
 
 const platformName = platformMap[`${process.platform}-${process.arch}`]

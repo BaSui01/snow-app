@@ -10,7 +10,6 @@ export const ChatInput = ({
   conversationId,
   onSend,
   onNavigateToView,
-  onOpenConversation,
   isStreaming = false,
   isAborting = false,
   onAbort,
@@ -73,7 +72,6 @@ export const ChatInput = ({
       projectId={projectId}
       projectName={projectName}
       onNavigateToView={onNavigateToView}
-      onOpenConversation={onOpenConversation}
       {...controller}
       tokenUsage={tokenUsage}
       pendingMessages={pendingMessages}

@@ -11,7 +11,7 @@ pub(crate) use crate::storage::services::theme_settings::{
 };
 pub(crate) use crate::storage::{
     ApiConfigInput, ApiConfigRecord, AppStorageInfo, ChatConversationPage, ChatConversationRecord,
-    ChatMessagePage, ChatMessageRecord, CodebaseProjectScopeSettings, ContextAttachmentRecord,
+    ChatMessagePage, ChatMessageRecord, CodebaseProjectScopeSettings,
     ConversationSearchResult, CustomHeaderSchemeInput, CustomHeaderSchemeRecord, DatabaseRepairResult,
     HookConfigInput, HookConfigRecord, ImportDatabaseTransactionInput, ImportResourceInput, ImportResourceRecord,
     ImportResourceRelease, ImportResourceReleaseInput, LspServerConfigInput, LspServerConfigRecord,

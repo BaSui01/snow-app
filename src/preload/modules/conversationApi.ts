@@ -4,7 +4,6 @@ import type {
   ChatConversationRecord,
   ChatMessagePage,
   ChatMessageRecord,
-  ContextAttachmentRecord,
   ConversationSearchResult,
   UserMessageSummary,
 } from "../types";
@@ -41,6 +40,11 @@ export const conversationApi = {
     conversationId: string
   ): Promise<ChatConversationRecord | null> =>
     ipcRenderer.invoke("chat-conversations:get", conversationId),
+  previewConversationAttachment: (conversationId: string): Promise<string> =>
+    ipcRenderer.invoke(
+      "chat-conversations:preview-attachment",
+      conversationId
+    ),
   updateConversationStatus: (
     conversationId: string,
     status: string
@@ -239,32 +243,5 @@ export const conversationApi = {
       conversationId,
       format,
       defaultFileName
-    ),
-  listContextAttachments: (
-    conversationId: string
-  ): Promise<ContextAttachmentRecord[]> =>
-    ipcRenderer.invoke("chat-conversations:context-attachments-list", conversationId),
-  addContextAttachment: (
-    targetId: string,
-    sourceId: string
-  ): Promise<ContextAttachmentRecord> =>
-    ipcRenderer.invoke(
-      "chat-conversations:context-attachments-add",
-      targetId,
-      sourceId
-    ),
-  removeContextAttachment: (
-    targetId: string,
-    sourceId: string
-  ): Promise<void> =>
-    ipcRenderer.invoke(
-      "chat-conversations:context-attachments-remove",
-      targetId,
-      sourceId
-    ),
-  renderAttachmentContext: (sourceId: string): Promise<string> =>
-    ipcRenderer.invoke(
-      "chat-conversations:context-attachments-preview",
-      sourceId
     ),
 };

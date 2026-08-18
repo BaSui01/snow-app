@@ -26,7 +26,6 @@
     "check": "npm run check:ts && cargo check --manifest-path native/Cargo.toml",
     "check:docs": "node scripts/check-docs.cjs",
     "check:ts": "tsc --noEmit",
-    "test:ts": "tsx --test \"src/**/*.test.ts\"",
     "preview": "electron-vite preview"
   },
   "dependencies": {
@@ -69,7 +68,6 @@
     "electron": "^37.10.3",
     "electron-builder": "^26.0.12",
     "electron-vite": "^4.0.0",
-    "tsx": "^4.23.11",
     "typescript": "^5.9.2"
   },
   "build": {

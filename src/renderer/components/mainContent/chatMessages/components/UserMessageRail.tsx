@@ -5,6 +5,7 @@ import {
   GitCommitHorizontal,
   GitCompare,
   Globe,
+  Link2,
   MessageSquare,
   MousePointer2,
   ScanSearch,
@@ -94,6 +95,8 @@ const buildPlainTextSummary = (content: string): string => {
           ? `${segment.tag.title} ${segment.tag.url}`
           : segment.tag.url
       );
+    } else if (segment.type === "conversation") {
+      parts.push(segment.tag.title);
     } else {
       const { tag } = segment;
       const linesStr =
@@ -265,6 +268,33 @@ const renderRailSegments = (content: string): React.ReactNode => {
             style={{ color: "#0f766e" }}
           />
           <span className="user-message-file-chip-name">{displayName}</span>
+        </span>
+      );
+    }
+
+    if (segment.type === "conversation") {
+      const { tag } = segment;
+      return (
+        <span
+          key={index}
+          className="user-message-file-chip conversation-chip"
+          title={tag.title}
+        >
+          {tag.emoji ? (
+            <span
+              className="user-message-file-chip-icon"
+              style={{ fontSize: 12, lineHeight: 1 }}
+            >
+              {tag.emoji}
+            </span>
+          ) : (
+            <Link2
+              size={12}
+              className="user-message-file-chip-icon"
+              style={{ color: "var(--accent-color, #4a9eff)" }}
+            />
+          )}
+          <span className="user-message-file-chip-name">{tag.title}</span>
         </span>
       );
     }
@@ -689,7 +719,9 @@ export const UserMessageRail = memo(
                     msg.content.includes("@@change:") ||
                     msg.content.includes("@@text-snippet:") ||
                     msg.content.includes("@@review:") ||
-                    msg.content.includes("@@element:");
+                    msg.content.includes("@@element:") ||
+                    msg.content.includes("@@web:") ||
+                    msg.content.includes("@@conversation:");
                   const isVisible = visibleUserIndices.has(index);
                   return (
                     <button

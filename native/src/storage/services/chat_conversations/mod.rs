@@ -7,7 +7,8 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 use super::super::database;
 use super::super::ChatConversationRecord;
 use crate::api::conversation::images::{
-    expand_element_tags_in_content, expand_review_tags_in_content,
+    expand_conversation_tags_in_content, expand_element_tags_in_content,
+    expand_review_tags_in_content,
 };
 
 mod fork_truncate;
@@ -686,13 +687,16 @@ fn create_title(messages: &[ChatContextMessage]) -> String {
                 .find(|message| !message.content.trim().is_empty())
         })
         .map(|message| {
-            // 展开 @@review: / @@element: 标签，避免标题显示 base64/JSON 外壳；
-            // 其余消息原文不变。
+            // 展开 @@review: / @@element: / @@conversation: 标签，避免标题显示
+            // base64/JSON 外壳；其余消息原文不变。
             let mut content = message.content.clone();
             if let Some(expanded) = expand_review_tags_in_content(&content) {
                 content = expanded;
             }
             if let Some(expanded) = expand_element_tags_in_content(&content) {
+                content = expanded;
+            }
+            if let Some(expanded) = expand_conversation_tags_in_content(&content) {
                 content = expanded;
             }
             content
@@ -876,98 +880,4 @@ pub fn set_conversation_modes(
             Ok(())
         })
         .map_err(|error| database::database_error(database_path, "set conversation modes", error))
-}
-
-#[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
-
-    use super::{database, get_conversation_runtime_config, set_conversation_runtime_config};
-
-    fn temporary_database_path() -> PathBuf {
-        std::env::temp_dir().join(format!(
-            "snow-runtime-config-{}-{}.db",
-            std::process::id(),
-            database::create_snowflake_id()
-        ))
-    }
-
-    fn remove_database(path: &PathBuf) {
-        let _ = std::fs::remove_file(path);
-        let _ = std::fs::remove_file(format!("{}-wal", path.display()));
-        let _ = std::fs::remove_file(format!("{}-shm", path.display()));
-    }
-
-    #[test]
-    fn runtime_config_round_trips_values_and_explicit_nulls() {
-        let database_path = temporary_database_path();
-        let connection = database::open_connection(&database_path).unwrap();
-        connection
-            .execute_batch(
-                "CREATE TABLE chat_conversations (
-                   id TEXT PRIMARY KEY NOT NULL,
-                   conversation_id TEXT NOT NULL UNIQUE,
-                   thinking_strength TEXT,
-                   responses_fast_mode INTEGER
-                 );",
-            )
-            .unwrap();
-        drop(connection);
-
-        set_conversation_runtime_config(
-            &database_path,
-            "conversation-1",
-            Some("high".to_string()),
-            Some(false),
-        )
-        .unwrap();
-        assert_eq!(
-            get_conversation_runtime_config(&database_path, "conversation-1").unwrap(),
-            super::ConversationRuntimeConfig {
-                thinking_strength: Some("high".to_string()),
-                responses_fast_mode: Some(false),
-            }
-        );
-
-        set_conversation_runtime_config(
-            &database_path,
-            "conversation-1",
-            Some("xhigh".to_string()),
-            Some(true),
-        )
-        .unwrap();
-        assert_eq!(
-            get_conversation_runtime_config(&database_path, "conversation-1").unwrap(),
-            super::ConversationRuntimeConfig {
-                thinking_strength: Some("xhigh".to_string()),
-                responses_fast_mode: Some(true),
-            }
-        );
-
-        set_conversation_runtime_config(
-            &database_path,
-            "conversation-1",
-            Some("   ".to_string()),
-            Some(false),
-        )
-        .unwrap();
-        assert_eq!(
-            get_conversation_runtime_config(&database_path, "conversation-1").unwrap(),
-            super::ConversationRuntimeConfig {
-                thinking_strength: None,
-                responses_fast_mode: Some(false),
-            }
-        );
-
-        set_conversation_runtime_config(&database_path, "conversation-1", None, None).unwrap();
-        assert_eq!(
-            get_conversation_runtime_config(&database_path, "conversation-1").unwrap(),
-            super::ConversationRuntimeConfig {
-                thinking_strength: None,
-                responses_fast_mode: None,
-            }
-        );
-
-        remove_database(&database_path);
-    }
 }

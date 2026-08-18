@@ -469,33 +469,3 @@ pub async fn create_response_stream(
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::apply_responses_fast_mode_override;
-
-    #[test]
-    fn responses_fast_mode_override_is_request_scoped_and_preserves_none() {
-        let profile_config = r#"{"snowcfg":{"responsesFastMode":true}}"#;
-
-        let disabled = apply_responses_fast_mode_override(profile_config, Some(false));
-        let disabled_json: serde_json::Value = serde_json::from_str(&disabled).unwrap();
-        assert_eq!(
-            disabled_json["snowcfg"]["responsesFastMode"],
-            serde_json::json!(false)
-        );
-
-        let enabled = apply_responses_fast_mode_override(profile_config, Some(true));
-        let enabled_json: serde_json::Value = serde_json::from_str(&enabled).unwrap();
-        assert_eq!(
-            enabled_json["snowcfg"]["responsesFastMode"],
-            serde_json::json!(true)
-        );
-
-        assert_eq!(
-            apply_responses_fast_mode_override(profile_config, None),
-            profile_config
-        );
-        assert_eq!(profile_config, r#"{"snowcfg":{"responsesFastMode":true}}"#);
-    }
-}

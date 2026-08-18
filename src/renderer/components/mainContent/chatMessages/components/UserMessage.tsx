@@ -7,6 +7,7 @@ import {
   GitCommitHorizontal,
   GitCompare,
   Globe,
+  Link2,
   MousePointer2,
   ScanSearch,
 } from "lucide-react";
@@ -368,6 +369,35 @@ export const UserMessage = memo(
                     />
                     <span className="user-message-file-chip-name">
                       {displayName}
+                    </span>
+                  </span>
+                );
+              }
+
+              if (segment.type === "conversation") {
+                const { tag } = segment;
+                return (
+                  <span
+                    className="user-message-file-chip conversation-chip"
+                    key={index}
+                    title={tag.title}
+                  >
+                    {tag.emoji ? (
+                      <span
+                        className="user-message-file-chip-icon"
+                        style={{ fontSize: 12, lineHeight: 1 }}
+                      >
+                        {tag.emoji}
+                      </span>
+                    ) : (
+                      <Link2
+                        size={12}
+                        className="user-message-file-chip-icon"
+                        style={{ color: "var(--accent-color, #4a9eff)" }}
+                      />
+                    )}
+                    <span className="user-message-file-chip-name">
+                      {tag.title}
                     </span>
                   </span>
                 );

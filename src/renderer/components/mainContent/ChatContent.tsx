@@ -19,7 +19,6 @@ import { useI18n } from "../../i18n";
 import { ChatInput } from "./ChatInput";
 import { EmptyChatGreeting } from "./EmptyChatGreeting";
 import { ChatMessageList, useChatConversationContext } from "./chatMessages";
-import { ConversationContextFold } from "./conversationContext/ConversationContextFold";
 import { RollbackConfirmDialog } from "./chatMessages/dialogs/RollbackConfirmDialog";
 import { CompactionStream } from "./chatMessages/components/CompactionStream";
 import { UserMessageRail } from "./chatMessages/components/UserMessageRail";
@@ -1044,9 +1043,6 @@ const ChatContentBody = ({
                 <div className="chat-history-skeleton-line" />
               </div>
             ) : null}
-            <ConversationContextFold
-              conversationId={activeConversationId ?? null}
-            />
             <ChatMessageList
               messages={messages}
               isStreaming={isStreaming}
@@ -1112,7 +1108,6 @@ const ChatContentBody = ({
             conversationId={activeConversationId}
             onSend={handleSendWithScroll}
             onNavigateToView={onNavigateToView}
-            onOpenConversation={handleSelectConversation}
             isStreaming={isStreaming}
             isAborting={isAborting}
             onAbort={handleAbort}

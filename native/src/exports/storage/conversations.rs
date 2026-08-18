@@ -203,6 +203,17 @@ pub async fn get_chat_conversation(
         .map_err(map_spawn_error)?
 }
 
+/// 预览历史会话引用 chip 发送时实际注入的上下文内容（与请求组装共用
+/// 渲染与预算逻辑），供输入框悬停「所见即所得」预览。
+#[napi]
+pub async fn preview_conversation_attachment(conversation_id: String) -> napi::Result<String> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::preview_conversation_attachment(conversation_id)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
 #[napi]
 pub async fn list_sub_agent_conversations(
     parent_conversation_id: String,
@@ -442,43 +453,3 @@ pub async fn export_conversation(conversation_id: String, format: String) -> nap
     .map_err(map_spawn_error)?
 }
 
-// ============================================================================
-// Conversation context attachments — 会话上下文附件（拖拽会话到另一会话开头）
-// ============================================================================
-
-#[napi]
-pub async fn list_context_attachments(
-    conversation_id: String,
-) -> napi::Result<Vec<ContextAttachmentRecord>> {
-    tokio::task::spawn_blocking(move || crate::storage::list_context_attachments(conversation_id))
-        .await
-        .map_err(map_spawn_error)?
-}
-
-#[napi]
-pub async fn add_context_attachment(
-    target_id: String,
-    source_id: String,
-) -> napi::Result<ContextAttachmentRecord> {
-    tokio::task::spawn_blocking(move || {
-        crate::storage::add_context_attachment(target_id, source_id)
-    })
-    .await
-    .map_err(map_spawn_error)?
-}
-
-#[napi]
-pub async fn remove_context_attachment(target_id: String, source_id: String) -> napi::Result<()> {
-    tokio::task::spawn_blocking(move || {
-        crate::storage::remove_context_attachment(target_id, source_id)
-    })
-    .await
-    .map_err(map_spawn_error)?
-}
-
-#[napi]
-pub async fn render_attachment_context(source_id: String) -> napi::Result<String> {
-    tokio::task::spawn_blocking(move || crate::storage::render_attachment_context(source_id))
-        .await
-        .map_err(map_spawn_error)?
-}

@@ -230,11 +230,6 @@ pub(super) fn build_responses_payload(
             continue;
         }
 
-        let has_images = !skip_image_parsing
-            && parse_chat_message_content(content, database_path)
-                .map(|p| !p.images.is_empty())
-                .unwrap_or(false);
-
         // Emit persisted reasoning items as independent top-level items
         // before the assistant message (store:false requires manual
         // round-trip of encrypted_content).
@@ -248,7 +243,7 @@ pub(super) fn build_responses_payload(
         let mut content_blocks = Vec::new();
 
         if !content.is_empty() {
-            if skip_image_parsing || !has_images {
+            if skip_image_parsing {
                 let block_type = if role == "assistant" {
                     "output_text"
                 } else {
@@ -256,6 +251,11 @@ pub(super) fn build_responses_payload(
                 };
                 content_blocks.push(json!({"type": block_type, "text": content}));
             } else {
+                // 统一解析消息内容：@@image: 拆分为图片块，
+                // @@review: / @@element: / @@conversation: 标签展开为文本
+                // （conversation 标签展开为被引用会话的精简对话记录）。
+                // 不能像旧实现那样仅在含图片时解析——否则无图消息里的
+                // 标签会原样进入请求。
                 let parsed_content = parse_chat_message_content(content, database_path)?;
                 if !parsed_content.text.is_empty() {
                     let block_type = if role == "assistant" {
@@ -272,6 +272,12 @@ pub(super) fn build_responses_payload(
                     }));
                 }
             }
+        }
+
+        // 解析后无任何内容块（如整条消息只有一个渲染为空的引用会话标签）：
+        // 跳过该消息，避免向 API 推送空内容块。
+        if content_blocks.is_empty() && !content.is_empty() {
+            continue;
         }
 
         input.push(json!({

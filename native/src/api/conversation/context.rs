@@ -319,66 +319,9 @@ pub async fn prepare_context_request(
         }
     }
 
-    // --- Conversation context attachments: inject attached conversations
-    //     as prefix context blocks (after the system prompt, before the
-    //     conversation's own history). Non-recursive: only the attached
-    //     conversation's own messages are rendered; its own attachments are
-    //     not followed (prevents context explosion / cycles). ---
-    let attached =
-        crate::storage::services::context_attachments::list_context_attachments(
-            request.database_path,
-            &conversation_id,
-        )?;
-    if !attached.is_empty() {
-        // 预算控制（可配置，见 read_attach_context_budgets）：每个附件按
-        // 单附件预算渲染，但所有附件合计不得超过总预算 —— 累计实际注入
-        // 长度，剩余预算耗尽后不再注入后续附件。
-        let (single_budget, total_budget) =
-            crate::storage::services::context_attachments::read_attach_context_budgets(
-                request.database_path,
-            );
-        let mut used_chars: usize = 0;
-        let mut injected: Vec<ChatContextMessage> = Vec::with_capacity(attached.len());
-        for attachment in attached {
-            let remaining = total_budget.saturating_sub(used_chars);
-            if remaining == 0 {
-                break;
-            }
-            let rendered = crate::storage::services::context_attachments::
-                render_attachment_context_with_budget(
-                    request.database_path,
-                    &attachment.source_conversation_id,
-                    single_budget.min(remaining),
-                )?;
-            let content = rendered.trim();
-            if content.is_empty() {
-                continue;
-            }
-            used_chars += content.len();
-            injected.push(ChatContextMessage {
-                role: "user".to_string(),
-                content: content.to_string(),
-                tool_calls_json: None,
-                tool_results_json: None,
-                thinking: None,
-                thinking_blocks_json: None,
-            });
-        }
-        if !injected.is_empty() {
-            // Main-conversation path: the system prompt sits at messages[0],
-            // so injected blocks go at index 1. Sub-agent / skip_context paths
-            // keep the system prompt out of `messages` — inject at the front.
-            let insert_at = if messages
-                .first()
-                .is_some_and(|msg| msg.role.trim() == "system" || msg.role.trim() == "developer")
-            {
-                1
-            } else {
-                0
-            };
-            messages.splice(insert_at..insert_at, injected);
-        }
-    }
+    // --- Conversation context attachments: 历史会话引用以 `@@conversation:`
+    //     标签随用户消息内容进入请求，由各 provider 的 payload 构建层经
+    //     parse_chat_message_content 展开为渲染后的上下文块（见 images.rs）。 ---
 
     messages.extend(current_messages.iter().cloned());
 

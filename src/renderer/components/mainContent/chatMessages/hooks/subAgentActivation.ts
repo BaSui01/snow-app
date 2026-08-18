@@ -26,6 +26,10 @@ import {
   resolveSubAgentRuntimeConfig,
 } from "./subAgentRuntimeConfig";
 import {
+  getResponsesFastModeFromConfig,
+  getThinkingValueFromConfig,
+} from "../../chatInput/configThinking";
+import {
   PARENT_PLAN_APPROVAL_REQUIRED,
   beginStreamMetricsIteration,
   createStreamChunkHandler,
@@ -81,6 +85,8 @@ export type SubAgentActivationDeps = {
   parentApiProfile: string | undefined;
   parentModel: string | undefined;
   parentThinkingStrength: string | undefined;
+  /** Effective Fast Mode captured by the parent run; explicit false is valid. */
+  parentResponsesFastMode?: boolean | null;
   planApprovedSessionKeysRef: { current: Set<string> };
 };
 
@@ -273,7 +279,10 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         directoryId: dirId,
         apiProfile: runtimeConfig.apiProfile,
         model: runtimeConfig.model,
-        thinkingStrength: runtimeConfig.thinkingStrength,
+        // Use the resolved per-run snapshot so restore/compaction cannot
+        // re-read a changed Profile default mid-run.
+        thinkingStrength: runtimeConfig.effectiveThinkingStrength,
+        responsesFastMode: runtimeConfig.responsesFastMode,
         resumeAfterCompaction,
         subAgentToolsJson,
         subAgentSystemPrompt: runtimeConfig.systemPrompt || undefined,
@@ -520,7 +529,9 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
                 undefined,
                 runtimeConfig.apiProfile,
                 runtimeConfig.toolsJson,
-                runtimeConfig.systemPrompt || undefined
+                runtimeConfig.systemPrompt || undefined,
+                runtimeConfig.effectiveThinkingStrength,
+                runtimeConfig.responsesFastMode
               );
 
             if (subCompactionResult) {
@@ -1311,6 +1322,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
     parentApiProfile,
     parentModel,
     parentThinkingStrength,
+    parentResponsesFastMode,
     planApprovedSessionKeysRef,
   } = deps;
 
@@ -1375,6 +1387,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         parentApiProfile,
         parentModel,
         parentThinkingStrength,
+        parentResponsesFastMode,
       });
       const allowedTools = parseSubAgentTools(runtimeConfig.toolsJson);
 
@@ -1426,7 +1439,9 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         dirId,
         runtimeConfig.apiProfile,
         runtimeConfig.model,
-        title
+        title,
+        runtimeConfig.effectiveThinkingStrength || null,
+        runtimeConfig.effectiveResponsesFastMode
       );
 
       await window.snow.updateSubAgentSessionStatus(
@@ -1580,6 +1595,8 @@ const restoreSubAgentResumer = async (
   ctx: ConversationContextValue,
   requestToolAuthorizations: SubAgentActivationDeps["requestToolAuthorizations"],
   planApprovedSessionKeysRef: { current: Set<string> },
+  parentThinkingStrength: string | undefined,
+  parentResponsesFastMode: boolean | null | undefined,
   parentConversationId: string,
   targetConvId: string,
   activeCheckpointIds: string[]
@@ -1633,11 +1650,38 @@ const restoreSubAgentResumer = async (
   //（父会话参数漂移不影响已运行过的子代理）；profile 已删除时保留解析结果。
   let runtimeConfig: SubAgentRuntimeConfig;
   try {
+    const apiConfigs = await window.snow.listApiConfigs();
+    const persistedRuntimeConfig = await window.snow
+      .getConversationRuntimeConfig(targetConvId)
+      .catch(() => null);
+    // The parent run wins, then the child row's persisted effective snapshot,
+    // and only then the Profile config used by that persisted conversation.
+    const fallbackProfileName =
+      record.apiProfileName.trim() || parentRecord?.apiProfileName.trim();
+    const fallbackApiConfig = fallbackProfileName
+      ? apiConfigs.find(
+          (item) => item.profileName.trim() === fallbackProfileName
+        )
+      : undefined;
+    const restoredThinkingStrength =
+      parentThinkingStrength?.trim() ||
+      persistedRuntimeConfig?.thinkingStrength?.trim() ||
+      (fallbackApiConfig
+        ? getThinkingValueFromConfig(fallbackApiConfig)
+        : undefined);
+    const restoredFastMode =
+      parentResponsesFastMode ??
+      persistedRuntimeConfig?.responsesFastMode ??
+      (fallbackApiConfig
+        ? getResponsesFastModeFromConfig(fallbackApiConfig)
+        : undefined);
     runtimeConfig = resolveSubAgentRuntimeConfig({
       config,
-      apiConfigs: await window.snow.listApiConfigs(),
+      apiConfigs,
       parentApiProfile: parentRecord?.apiProfileName || undefined,
       parentModel: parentRecord?.model || undefined,
+      parentThinkingStrength: restoredThinkingStrength,
+      parentResponsesFastMode: restoredFastMode,
     });
     if (
       record.apiProfileName &&
@@ -1748,9 +1792,17 @@ export const createSubAgentMainToolExecutor = (
   deps: Pick<
     SubAgentActivationDeps,
     "requestToolAuthorizations" | "planApprovedSessionKeysRef"
-  >
+  > & {
+    parentThinkingStrength?: string;
+    parentResponsesFastMode?: boolean | null;
+  }
 ) => {
-  const { requestToolAuthorizations, planApprovedSessionKeysRef } = deps;
+  const {
+    requestToolAuthorizations,
+    planApprovedSessionKeysRef,
+    parentThinkingStrength,
+    parentResponsesFastMode,
+  } = deps;
 
   return async (
     toolName: string,
@@ -1845,6 +1897,8 @@ export const createSubAgentMainToolExecutor = (
           ctx,
           requestToolAuthorizations,
           planApprovedSessionKeysRef,
+          parentThinkingStrength,
+          parentResponsesFastMode,
           parentConversationId,
           targetConvId,
           checkpointIds

@@ -26,7 +26,9 @@ export const useCompaction = (ctx: ConversationContextValue) => {
       subAgentConfigProfile?: string,
       apiProfile?: string,
       subAgentToolsJson?: string,
-      subAgentSystemPrompt?: string
+      subAgentSystemPrompt?: string,
+      thinkingStrength?: string,
+      responsesFastMode?: boolean | null
     ): Promise<CompactionResult | null> => {
       const sessionRef = ctx.sessionsRefData.current.get(conversationId);
       if (sessionRef) {
@@ -94,6 +96,8 @@ export const useCompaction = (ctx: ConversationContextValue) => {
         // conversations, carry the configured profile so Rust resolves the
         // same API config the sub-agent uses for the handoff.
         apiProfile,
+        thinkingStrength,
+        responsesFastMode,
         subAgentToolsJson,
         subAgentSystemPrompt,
         subAgentConfigProfile,

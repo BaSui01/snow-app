@@ -28,7 +28,8 @@ type ThinkingStrengthMenuProps = {
 /**
  * 思考强度选择菜单（带图标选项 + 自定义值输入）。
  * 由聊天输入区的模型菜单（子视图）与定时任务"运行配置"表单共用：
- * - 聊天：showBack 返回模型菜单 root，选择后写入 Profile（保存由调用方负责）；
+ * - 聊天：showBack 返回模型菜单 root，选择后写入当前会话 runtime override；
+ *   保存由调用方负责；
  * - 运行配置：可传 inheritLabel 渲染"默认（继承 Profile）"项，"" 即继承语义。
  */
 export function ThinkingStrengthMenu({

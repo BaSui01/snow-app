@@ -20,8 +20,6 @@ import {
   getResponsesFastModeFromConfig,
   getThinkingValueFromConfig,
   normalizeRequestMethod,
-  toConfigUpdatePayload,
-  toResponsesFastModeUpdatePayload,
 } from "./configThinking";
 import { resolveAutoSendOptions } from "./autoSendOptions";
 import type {
@@ -37,6 +35,7 @@ import {
   renumberImageChips,
 } from "./fileTagUtils";
 type UseChatInputControllerParams = {
+  projectId?: string;
   conversationId?: string;
   onSend?: (message: string, options: ChatInputSendOptions) => void;
   isStreaming?: boolean;
@@ -64,6 +63,7 @@ const isComposingKeyboardEvent = (
 };
 
 export const useChatInputController = ({
+  projectId,
   conversationId,
   onSend,
   isStreaming = false,
@@ -102,12 +102,66 @@ export const useChatInputController = ({
   const [modelMenuView, setModelMenuView] = useState<ModelMenuView>("root");
   const [isSubAgentConversation, setIsSubAgentConversation] = useState(false);
   const [isLoadingApiConfig, setIsLoadingApiConfig] = useState(true);
-  const [thinkingValue, setThinkingValue] = useState(DEFAULT_THINKING_VALUE);
+  // `thinkingOverride` is the nullable conversation-level value represented
+  // by an empty string in the menu; effectiveThinkingValue is derived below
+  // from the selected profile when this is empty.
+  const [thinkingOverride, setThinkingOverride] = useState("");
   const [isSavingThinking, setIsSavingThinking] = useState(false);
   const [thinkingError, setThinkingError] = useState<string | null>(null);
+  const [responsesFastModeOverride, setResponsesFastModeOverride] =
+    useState<boolean | null>(null);
   const [isSavingFastMode, setIsSavingFastMode] = useState(false);
   const [fastModeError, setFastModeError] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  // Hydration/model requests are scoped to the current project + conversation.
+  // A token is stronger than a cancelled flag when the same mounted instance
+  // receives a new target before an older model request resolves.
+  const hydrationRequestTokenRef = useRef(0);
+  const runtimeMutationTokenRef = useRef(0);
+  // Serialize writes that target the same conversation. Mutation tokens keep
+  // stale results out of the UI, while this queue also prevents an older
+  // request-level setter from completing after a profile-switch clear and
+  // reintroducing the old override in storage.
+  const runtimeWriteChainRef = useRef<Promise<void>>(Promise.resolve());
+
+  const enqueueRuntimeConfigWrite = useCallback(
+    (
+      targetConversationId: string,
+      thinkingStrength: string | null,
+      responsesFastMode: boolean | null
+    ): Promise<void> => {
+      const write = runtimeWriteChainRef.current
+        .catch(() => {})
+        .then(() =>
+          window.snow.setConversationRuntimeConfig(
+            targetConversationId,
+            thinkingStrength,
+            responsesFastMode
+          )
+        );
+      runtimeWriteChainRef.current = write.catch(() => {});
+      return write;
+    },
+    []
+  );
+  // Profile binding writes are serialized separately from runtime snapshot
+  // writes so two rapid profile selections cannot restore an older binding.
+  const profileWriteChainRef = useRef<Promise<void>>(Promise.resolve());
+  const enqueueConversationProfileWrite = useCallback(
+    (targetConversationId: string, profileName: string): Promise<void> => {
+      const write = profileWriteChainRef.current
+        .catch(() => {})
+        .then(() =>
+          window.snow.updateConversationApiProfile(
+            targetConversationId,
+            profileName
+          )
+        );
+      profileWriteChainRef.current = write.catch(() => {});
+      return write;
+    },
+    []
+  );
 
   const labels = useMemo(
     () => ({
@@ -156,40 +210,57 @@ export const useChatInputController = ({
   );
 
   useEffect(() => {
+    const requestToken = ++hydrationRequestTokenRef.current;
+    // A target change also invalidates a pending runtime-config mutation from
+    // the previous conversation. Its result must not write into this target.
+    runtimeMutationTokenRef.current += 1;
     let cancelled = false;
+    const isCurrentRequest = (): boolean =>
+      !cancelled && hydrationRequestTokenRef.current === requestToken;
 
-    const loadRuntimeApiConfig = async () => {
-      setIsLoadingApiConfig(true);
-      setThinkingError(null);
-      setFastModeError(null);
-      setModelError(null);
-      setModels([]);
+    // Clear every conversation-bound value before starting asynchronous work.
+    // This prevents the previous target from being displayed during hydration.
+    setApiConfigs([]);
+    setSelectedApiProfile("");
+    setRuntimeApiConfig(null);
+    setSelectedModel("");
+    setModels([]);
+    setIsLoadingModels(false);
+    setModelError(null);
+    setThinkingOverride("");
+    setResponsesFastModeOverride(null);
+    setThinkingError(null);
+    setFastModeError(null);
+    setIsSavingThinking(false);
+    setIsSavingFastMode(false);
+    setIsModelMenuOpen(false);
+    setIsManualMode(false);
+    setManualValue("");
+    setModelMenuView("root");
+    setIsSubAgentConversation(false);
+    setIsLoadingApiConfig(true);
 
+    const loadRuntimeApiConfig = async (): Promise<void> => {
       try {
-        const [configs, conversation] = await Promise.all([
+        const [configs, conversation, runtimeOverride] = await Promise.all([
           window.snow.listApiConfigs(),
           conversationId
             ? window.snow.getChatConversation(conversationId)
             : Promise.resolve(null),
+          conversationId
+            ? window.snow.getConversationRuntimeConfig(conversationId)
+            : Promise.resolve(null),
         ]);
-        if (cancelled) {
+        if (!isCurrentRequest()) {
           return;
         }
 
-        setApiConfigs(configs);
-
-        // Resolve the conversation-scoped profile from the persisted runtime
-        // snapshot. Sub-agent history must never consult the current agent
-        // configuration because that configuration may have changed or been
-        // deleted after the run completed.
+        // Resolve the conversation-scoped profile from its persisted binding.
+        // Sub-agent history is strict; main chats retain the active-profile
+        // fallback for legacy rows without a binding.
         const subAgentConversation =
           conversation?.conversationType === "sub_agent";
         const requestedProfile = conversation?.apiProfileName?.trim() ?? "";
-        setIsSubAgentConversation(subAgentConversation);
-
-        // A persisted profile snapshot is strict for sub-agents. Legacy rows
-        // without a snapshot retain the old active-profile fallback so existing
-        // history remains readable after migration.
         let runtimeConfig: ApiConfigRecord | null = null;
         if (requestedProfile) {
           runtimeConfig =
@@ -198,16 +269,14 @@ export const useChatInputController = ({
             ) ?? null;
           if (!runtimeConfig && !subAgentConversation) {
             runtimeConfig =
-              configs.find((config) => config.isActive) ??
-              configs[0] ??
-              null;
+              configs.find((config) => config.isActive) ?? configs[0] ?? null;
           }
         } else {
           runtimeConfig =
             configs.find((config) => config.isActive) ?? configs[0] ?? null;
         }
+
         if (!runtimeConfig) {
-          // 空配置（初次安装）走专门的友好错误，UI 据此展示引导提示。
           if (configs.length === 0 && !subAgentConversation) {
             throw new Error("NO_API_CONFIG");
           }
@@ -218,15 +287,21 @@ export const useChatInputController = ({
           );
         }
 
+        const rememberedModel = conversation?.model?.trim() ?? "";
+        const persistedThinkingOverride =
+          runtimeOverride?.thinkingStrength ?? null;
+        const persistedFastModeOverride =
+          runtimeOverride?.responsesFastMode ?? null;
+
+        setApiConfigs(configs);
+        setIsSubAgentConversation(subAgentConversation);
         setSelectedApiProfile(runtimeConfig.profileName);
         setRuntimeApiConfig(runtimeConfig);
-        // Persisted conversation model is the immutable display snapshot for
-        // completed sub-agents and the remembered selection for main chats.
-        const rememberedModel = conversation?.model?.trim() ?? "";
         setSelectedModel(rememberedModel || runtimeConfig.advancedModel || "");
-        setThinkingValue(getThinkingValueFromConfig(runtimeConfig));
+        setThinkingOverride(persistedThinkingOverride ?? "");
+        setResponsesFastModeOverride(persistedFastModeOverride);
       } catch (error) {
-        if (cancelled) {
+        if (!isCurrentRequest()) {
           return;
         }
 
@@ -236,15 +311,18 @@ export const useChatInputController = ({
               ? labels.noApiConfig
               : error.message
             : "Failed to load API configuration";
+        setApiConfigs([]);
         setRuntimeApiConfig(null);
         setSelectedApiProfile("");
         setSelectedModel("");
-        setThinkingValue(DEFAULT_THINKING_VALUE);
+        setModels([]);
+        setThinkingOverride("");
+        setResponsesFastModeOverride(null);
         setModelError(message);
         setThinkingError(message);
         setFastModeError(message);
       } finally {
-        if (!cancelled) {
+        if (isCurrentRequest()) {
           setIsLoadingApiConfig(false);
         }
       }
@@ -254,8 +332,12 @@ export const useChatInputController = ({
 
     return () => {
       cancelled = true;
+      if (hydrationRequestTokenRef.current === requestToken) {
+        hydrationRequestTokenRef.current += 1;
+      }
+      runtimeMutationTokenRef.current += 1;
     };
-  }, [conversationId, labels]);
+  }, [conversationId, projectId, labels]);
 
   const loadModels = useCallback(
     async (force = false) => {
@@ -263,39 +345,44 @@ export const useChatInputController = ({
         return;
       }
 
+      const requestToken = hydrationRequestTokenRef.current;
+      const configAtRequest = runtimeApiConfig;
       setIsLoadingModels(true);
       setModelError(null);
 
       try {
-        if (!runtimeApiConfig) {
+        if (!configAtRequest) {
           throw new Error("API configuration is not available");
         }
 
-        const availableModels = await window.snow.fetchAvailableModelsForConfig(
-          {
-            baseUrl: runtimeApiConfig.baseUrl,
-            baseUrlMode: runtimeApiConfig.baseUrlMode,
-            apiKey: runtimeApiConfig.apiKey,
-            requestMethod: runtimeApiConfig.requestMethod,
-            customHeaderSchemeId: runtimeApiConfig.customHeaderSchemeId,
-          }
-        );
-        setModels(availableModels);
+        const availableModels = await window.snow.fetchAvailableModelsForConfig({
+          baseUrl: configAtRequest.baseUrl,
+          baseUrlMode: configAtRequest.baseUrlMode,
+          apiKey: configAtRequest.apiKey,
+          requestMethod: configAtRequest.requestMethod,
+          customHeaderSchemeId: configAtRequest.customHeaderSchemeId,
+        });
+        if (hydrationRequestTokenRef.current !== requestToken) {
+          return;
+        }
 
+        setModels(availableModels);
         if (availableModels.length > 0) {
-          setSelectedModel(
-            (currentModel) =>
-              currentModel ||
-              runtimeApiConfig.advancedModel ||
-              availableModels[0].id
+          setSelectedModel((currentModel) =>
+            currentModel || configAtRequest.advancedModel || availableModels[0].id
           );
         }
       } catch (error) {
+        if (hydrationRequestTokenRef.current !== requestToken) {
+          return;
+        }
         setModelError(
           error instanceof Error ? error.message : labels.loadModelsError
         );
       } finally {
-        setIsLoadingModels(false);
+        if (hydrationRequestTokenRef.current === requestToken) {
+          setIsLoadingModels(false);
+        }
       }
     },
     [
@@ -483,6 +570,28 @@ export const useChatInputController = ({
     };
   }, [conversationId, saveInputDraft]);
 
+  const requestMethod = normalizeRequestMethod(runtimeApiConfig?.requestMethod);
+  const thinkingOptions = THINKING_OPTIONS_BY_METHOD[requestMethod];
+  const profileThinkingValue = runtimeApiConfig
+    ? getThinkingValueFromConfig(runtimeApiConfig)
+    : DEFAULT_THINKING_VALUE;
+  const effectiveThinkingValue =
+    thinkingOverride === "" ? profileThinkingValue : thinkingOverride;
+  const profileThinkingOption = thinkingOptions.find(
+    (option) => option.value === profileThinkingValue
+  );
+  const thinkingDefaultLabel =
+    profileThinkingOption?.label ?? profileThinkingValue;
+  const profileFastModeEnabled = runtimeApiConfig
+    ? getResponsesFastModeFromConfig(runtimeApiConfig)
+    : false;
+  // Do not use truthy fallback here: `false` is an explicit conversation
+  // override and must remain distinct from `null` (inherit profile default).
+  const responsesFastModeEnabled =
+    responsesFastModeOverride !== null
+      ? responsesFastModeOverride
+      : profileFastModeEnabled;
+
   const handleSend = useCallback(() => {
     const trimmed = value.trim();
     if (!trimmed) {
@@ -502,6 +611,17 @@ export const useChatInputController = ({
     onSend?.(trimmed, {
       model: selectedModel || undefined,
       apiProfile: selectedApiProfile || undefined,
+      // Manual sends carry effective values so the agent loop captures the
+      // exact settings used by this turn. The snapshot is separate: null means
+      // the conversation follows the current profile default.
+      thinkingStrength: effectiveThinkingValue,
+      responsesFastMode:
+        requestMethod === "responses" ? responsesFastModeEnabled : null,
+      conversationRuntimeConfigOverride: {
+        thinkingStrength:
+          thinkingOverride === "" ? null : thinkingOverride,
+        responsesFastMode: responsesFastModeOverride,
+      },
     });
     setValue("");
     // The message was handed off to the agent loop; the draft must not be
@@ -515,7 +635,21 @@ export const useChatInputController = ({
         adjustHeight();
       });
     }
-  }, [adjustHeight, onSend, selectedModel, selectedApiProfile, value, conversationId, clearInputDraft, apiConfigs.length, runtimeApiConfig]);
+  }, [
+    adjustHeight,
+    apiConfigs.length,
+    clearInputDraft,
+    conversationId,
+    effectiveThinkingValue,
+    onSend,
+    requestMethod,
+    responsesFastModeEnabled,
+    responsesFastModeOverride,
+    selectedApiProfile,
+    selectedModel,
+    thinkingOverride,
+    value,
+  ]);
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -593,9 +727,8 @@ export const useChatInputController = ({
     });
   }, [loadModels]);
 
-  // Switch the conversation-scoped API profile. Persists the binding on the
-  // conversation row so it survives reloads; for a brand-new conversation the
-  // choice is kept locally and carried on the first request instead.
+  // Switch the conversation-scoped API profile. A profile switch starts a new
+  // runtime snapshot: old thinking/Fast overrides are never migrated.
   const handleSelectApiProfile = useCallback(
     async (profileName: string) => {
       const nextConfig = apiConfigs.find(
@@ -604,25 +737,88 @@ export const useChatInputController = ({
       if (!nextConfig) {
         return;
       }
+      if (profileName === selectedApiProfile) {
+        setIsModelMenuOpen(false);
+        setModelMenuView("root");
+        return;
+      }
+
+      const previousState = {
+        apiProfile: selectedApiProfile,
+        model: selectedModel,
+        runtimeConfig: runtimeApiConfig,
+        thinkingOverride,
+        responsesFastModeOverride,
+      };
+      const mutationToken = ++runtimeMutationTokenRef.current;
+      // Invalidate an in-flight model request for the previous profile.
+      hydrationRequestTokenRef.current += 1;
+      let profileUpdated = false;
 
       setSelectedApiProfile(profileName);
       setIsModelMenuOpen(false);
       setModelMenuView("root");
       setRuntimeApiConfig(nextConfig);
-      // Reset the model picker to the new provider's default.
       setModels([]);
+      setIsLoadingModels(false);
       setModelError(null);
+      setThinkingError(null);
       setFastModeError(null);
       setSelectedModel(nextConfig.advancedModel || "");
-      setThinkingValue(getThinkingValueFromConfig(nextConfig));
+      setThinkingOverride("");
+      setResponsesFastModeOverride(null);
 
       if (conversationId && !isSubAgentConversation) {
         try {
-          await window.snow.updateConversationApiProfile(
+          await enqueueConversationProfileWrite(
             conversationId,
             profileName
           );
+          profileUpdated = true;
+          await enqueueRuntimeConfigWrite(
+            conversationId,
+            null,
+            null
+          );
+          if (runtimeMutationTokenRef.current !== mutationToken) {
+            return;
+          }
         } catch (error) {
+          if (runtimeMutationTokenRef.current !== mutationToken) {
+            return;
+          }
+          // Best-effort rollback keeps the UI and storage honest if the
+          // complete runtime snapshot could not be persisted after changing
+          // the binding.
+          if (profileUpdated) {
+            try {
+              await enqueueConversationProfileWrite(
+                conversationId,
+                previousState.apiProfile
+              );
+            } catch {
+              // The original error remains the actionable message.
+            }
+            try {
+              await enqueueRuntimeConfigWrite(
+                conversationId,
+                previousState.thinkingOverride === ""
+                  ? null
+                  : previousState.thinkingOverride,
+                previousState.responsesFastModeOverride
+              );
+            } catch {
+              // The original error remains the actionable message.
+            }
+          }
+          if (runtimeMutationTokenRef.current !== mutationToken) {
+            return;
+          }
+          setSelectedApiProfile(previousState.apiProfile);
+          setSelectedModel(previousState.model);
+          setRuntimeApiConfig(previousState.runtimeConfig);
+          setThinkingOverride(previousState.thinkingOverride);
+          setResponsesFastModeOverride(previousState.responsesFastModeOverride);
           setModelError(
             error instanceof Error
               ? error.message
@@ -631,7 +827,18 @@ export const useChatInputController = ({
         }
       }
     },
-    [apiConfigs, conversationId, isSubAgentConversation]
+    [
+      apiConfigs,
+      conversationId,
+      enqueueConversationProfileWrite,
+      enqueueRuntimeConfigWrite,
+      isSubAgentConversation,
+      responsesFastModeOverride,
+      runtimeApiConfig,
+      selectedApiProfile,
+      selectedModel,
+      thinkingOverride,
+    ]
   );
 
   // Open the API profile picker (a sub-view of the model menu). Driven by the
@@ -653,22 +860,16 @@ export const useChatInputController = ({
     );
   }, [handleOpenApiProfileMenu]);
 
-  const requestMethod = normalizeRequestMethod(runtimeApiConfig?.requestMethod);
-  const responsesFastModeEnabled =
-    requestMethod === "responses" &&
-    runtimeApiConfig !== null &&
-    getResponsesFastModeFromConfig(runtimeApiConfig);
-  const thinkingOptions = THINKING_OPTIONS_BY_METHOD[requestMethod];
   const activeThinkingOption = useMemo(() => {
     const matchingOption = thinkingOptions.find(
-      (option) => option.value === thinkingValue
+      (option) => option.value === effectiveThinkingValue
     );
 
     return {
-      label: matchingOption?.label ?? thinkingValue,
+      label: matchingOption?.label ?? effectiveThinkingValue,
       icon: matchingOption?.icon ?? BrainCircuit,
     };
-  }, [thinkingOptions, thinkingValue]);
+  }, [effectiveThinkingValue, thinkingOptions]);
 
   const handleSelectThinking = useCallback(
     async (nextValue: string) => {
@@ -676,37 +877,54 @@ export const useChatInputController = ({
         return;
       }
 
-      setThinkingValue(nextValue);
+      const previousThinkingOverride = thinkingOverride;
+      const previousFastModeOverride = responsesFastModeOverride;
+      const mutationToken = ++runtimeMutationTokenRef.current;
+      const persistedThinkingValue = nextValue === "" ? null : nextValue;
+      setThinkingOverride(nextValue);
       setIsModelMenuOpen(false);
       setIsSavingThinking(true);
       setThinkingError(null);
 
+      if (!conversationId) {
+        setIsSavingThinking(false);
+        return;
+      }
+
       try {
-        const updatedConfigs = await window.snow.upsertApiConfig(
-          toConfigUpdatePayload(runtimeApiConfig, nextValue)
+        await enqueueRuntimeConfigWrite(
+          conversationId,
+          persistedThinkingValue,
+          previousFastModeOverride
         );
-        const nextRuntimeConfig =
-          updatedConfigs.find(
-            (config) => config.profileName === runtimeApiConfig.profileName
-          ) ?? null;
-        setRuntimeApiConfig(nextRuntimeConfig);
-        setThinkingValue(
-          nextRuntimeConfig
-            ? getThinkingValueFromConfig(nextRuntimeConfig)
-            : nextValue
-        );
+        if (runtimeMutationTokenRef.current !== mutationToken) {
+          return;
+        }
       } catch (error) {
-        setThinkingValue(getThinkingValueFromConfig(runtimeApiConfig));
+        if (runtimeMutationTokenRef.current !== mutationToken) {
+          return;
+        }
+        setThinkingOverride(previousThinkingOverride);
+        setResponsesFastModeOverride(previousFastModeOverride);
         setThinkingError(
           error instanceof Error
             ? error.message
             : t("chat.saveThinkingStrengthError")
         );
       } finally {
-        setIsSavingThinking(false);
+        if (runtimeMutationTokenRef.current === mutationToken) {
+          setIsSavingThinking(false);
+        }
       }
     },
-    [runtimeApiConfig, t]
+    [
+      conversationId,
+      enqueueRuntimeConfigWrite,
+      responsesFastModeOverride,
+      runtimeApiConfig,
+      t,
+      thinkingOverride,
+    ]
   );
 
   const handleToggleResponsesFastMode = useCallback(async (): Promise<void> => {
@@ -720,49 +938,116 @@ export const useChatInputController = ({
       return;
     }
 
-    const previousConfig = runtimeApiConfig;
-    const nextEnabled = !getResponsesFastModeFromConfig(previousConfig);
-    const optimisticConfig = toResponsesFastModeUpdatePayload(
-      previousConfig,
-      nextEnabled
-    );
-
-    setRuntimeApiConfig(optimisticConfig);
+    const previousThinkingOverride = thinkingOverride;
+    const previousFastModeOverride = responsesFastModeOverride;
+    const mutationToken = ++runtimeMutationTokenRef.current;
+    // Toggle from the effective value, then persist an explicit boolean. In
+    // particular, turning Fast Mode off must persist `false`, not inherit.
+    const nextEnabled = !responsesFastModeEnabled;
+    setResponsesFastModeOverride(nextEnabled);
     setIsSavingFastMode(true);
     setFastModeError(null);
 
+    if (!conversationId) {
+      setIsSavingFastMode(false);
+      return;
+    }
+
     try {
-      const updatedConfigs = await window.snow.upsertApiConfig(optimisticConfig);
-      const nextRuntimeConfig =
-        updatedConfigs.find(
-          (config) => config.profileName === previousConfig.profileName
-        ) ?? optimisticConfig;
-      setApiConfigs(updatedConfigs);
-      setRuntimeApiConfig((currentConfig) =>
-        currentConfig?.profileName === previousConfig.profileName
-          ? nextRuntimeConfig
-          : currentConfig
+      await enqueueRuntimeConfigWrite(
+        conversationId,
+        previousThinkingOverride === "" ? null : previousThinkingOverride,
+        nextEnabled
       );
+      if (runtimeMutationTokenRef.current !== mutationToken) {
+        return;
+      }
     } catch (error) {
-      setRuntimeApiConfig((currentConfig) =>
-        currentConfig?.profileName === previousConfig.profileName
-          ? previousConfig
-          : currentConfig
-      );
+      if (runtimeMutationTokenRef.current !== mutationToken) {
+        return;
+      }
+      setResponsesFastModeOverride(previousFastModeOverride);
       setFastModeError(
         error instanceof Error ? error.message : t("chat.saveFastModeError")
       );
     } finally {
-      setIsSavingFastMode(false);
+      if (runtimeMutationTokenRef.current === mutationToken) {
+        setIsSavingFastMode(false);
+      }
     }
   }, [
+    conversationId,
+    enqueueRuntimeConfigWrite,
     isSavingFastMode,
     isStreaming,
     isSubAgentConversation,
     requestMethod,
+    responsesFastModeEnabled,
+    responsesFastModeOverride,
     runtimeApiConfig,
     t,
+    thinkingOverride,
   ]);
+
+  const handleResetResponsesFastMode = useCallback(async (): Promise<void> => {
+    if (
+      !runtimeApiConfig ||
+      requestMethod !== "responses" ||
+      isStreaming ||
+      isSubAgentConversation ||
+      isSavingFastMode ||
+      responsesFastModeOverride === null
+    ) {
+      return;
+    }
+
+    const previousFastModeOverride = responsesFastModeOverride;
+    const previousThinkingOverride = thinkingOverride;
+    const mutationToken = ++runtimeMutationTokenRef.current;
+    setResponsesFastModeOverride(null);
+    setIsSavingFastMode(true);
+    setFastModeError(null);
+
+    if (!conversationId) {
+      setIsSavingFastMode(false);
+      return;
+    }
+
+    try {
+      await enqueueRuntimeConfigWrite(
+        conversationId,
+        previousThinkingOverride === "" ? null : previousThinkingOverride,
+        null
+      );
+      if (runtimeMutationTokenRef.current !== mutationToken) {
+        return;
+      }
+    } catch (error) {
+      if (runtimeMutationTokenRef.current !== mutationToken) {
+        return;
+      }
+      setResponsesFastModeOverride(previousFastModeOverride);
+      setFastModeError(
+        error instanceof Error ? error.message : t("chat.saveFastModeError")
+      );
+    } finally {
+      if (runtimeMutationTokenRef.current === mutationToken) {
+        setIsSavingFastMode(false);
+      }
+    }
+  }, [
+    conversationId,
+    enqueueRuntimeConfigWrite,
+    isSavingFastMode,
+    isStreaming,
+    isSubAgentConversation,
+    requestMethod,
+    responsesFastModeOverride,
+    runtimeApiConfig,
+    t,
+    thinkingOverride,
+  ]);
+
 
   useLayoutEffect(() => {
     adjustHeight();
@@ -789,13 +1074,15 @@ export const useChatInputController = ({
     runtimeApiConfig,
     requestMethod,
     thinkingOptions,
-    thinkingValue,
+    thinkingValue: thinkingOverride,
     thinkingLabel: activeThinkingOption.label,
+    thinkingDefaultLabel,
     ActiveThinkingIcon: activeThinkingOption.icon,
     isLoadingApiConfig,
     isSavingThinking,
     thinkingError,
     responsesFastModeEnabled,
+    responsesFastModeOverride,
     isSavingFastMode,
     fastModeError,
     labels,
@@ -818,6 +1105,7 @@ export const useChatInputController = ({
     handleSelectApiProfile,
     handleSelectThinking,
     handleToggleResponsesFastMode,
+    handleResetResponsesFastMode,
     restoreContent,
   };
 };

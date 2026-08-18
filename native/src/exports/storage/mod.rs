@@ -11,10 +11,11 @@ pub(crate) use crate::storage::services::theme_settings::{
 };
 pub(crate) use crate::storage::{
     ApiConfigInput, ApiConfigRecord, AppStorageInfo, ChatConversationPage, ChatConversationRecord,
-    ChatMessagePage, ChatMessageRecord, CodebaseProjectScopeSettings, ConversationSearchResult,
-    CustomHeaderSchemeInput, CustomHeaderSchemeRecord, DatabaseRepairResult, HookConfigInput,
-    HookConfigRecord, ImportDatabaseTransactionInput, ImportResourceInput, ImportResourceRecord,
-    ImportResourceRelease, ImportResourceReleaseInput, McpServerConfigInput, McpServerConfigRecord,
+    ChatMessagePage, ChatMessageRecord, CodebaseProjectScopeSettings, ContextAttachmentRecord,
+    ConversationSearchResult, CustomHeaderSchemeInput, CustomHeaderSchemeRecord, DatabaseRepairResult,
+    HookConfigInput, HookConfigRecord, ImportDatabaseTransactionInput, ImportResourceInput, ImportResourceRecord,
+    ImportResourceRelease, ImportResourceReleaseInput, LspServerConfigInput, LspServerConfigRecord,
+    McpServerConfigInput, McpServerConfigRecord,
     MemoCountSummary, MemoPage, MemoRecord, PluginInput, PluginMarketplaceInput,
     PluginMarketplaceRecord, PluginRecord, ProjectMcpServerConfigRecord,
     ProjectSensitiveCommandConfigInput, ProjectSensitiveCommandConfigRecord,
@@ -32,6 +33,7 @@ mod conversations;
 mod hooks;
 mod imports;
 mod logs;
+mod lsp;
 mod mcp;
 mod memos;
 mod plugins;
@@ -45,7 +47,8 @@ mod theme;
 // 保留 crate::exports::storage::* 原有公共路径的重导出
 #[allow(unused_imports)]
 pub use {
-    agents::*, api_configs::*, app::*, conversations::*, hooks::*, imports::*, logs::*, mcp::*,
+    agents::*, api_configs::*, app::*, conversations::*, hooks::*, imports::*, logs::*, lsp::*,
+    mcp::*,
     memos::*, plugins::*, privacy::*, projects::*, scheduled_tasks::*, shortcuts::*,
     storage_locations::*, theme::*,
 };

@@ -69,6 +69,7 @@ fn build_request(staged_diff: &str) -> ResponsesApiRequest {
         goal_mode: None,
         worktree_mode: None,
         thinking_strength: None,
+        responses_fast_mode: None,
         remote_role_content: None,
         remote_include_global_rules: None,
     }

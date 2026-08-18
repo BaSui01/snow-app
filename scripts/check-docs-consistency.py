@@ -20,7 +20,9 @@ import re
 import sys
 from pathlib import Path
 
-# 21 个设置页 id（与 src/renderer/components/sidebar/settingsItems.ts 对齐）
+# 21 个 openSettings 页面 id（与 native/src/mcp/servers/app_control.rs 的
+# VALID_SETTINGS_PAGES 对齐；settingsItems.ts 的 UI 设置项现为 25 个，
+# 其中 data-management/general/git/pets 未暴露给 app-control-openSettings）
 SETTINGS_PAGES = [
     "api-settings", "imagegen-settings", "image-library", "proxy-browser-settings",
     "codebase-settings", "system-prompt-settings", "personalization-settings",
@@ -62,6 +64,7 @@ NAME_MAP = {
     ("2-使用指南", 19): "19-personalization-theme-and-shortcuts.md",
     ("2-使用指南", 20): "20-usage-statistics-and-system-logs.md",
     ("2-使用指南", 21): "21-create-and-author-skills.md",
+    ("2-使用指南", 22): "22-data-management-backup-and-webdav-sync.md",
     ("3-参考手册", 1): "1-settings-json-reference.md",
     ("3-参考手册", 2): "2-builtin-tools-reference.md",
     ("3-参考手册", 3): "3-config-file-field-reference.md",
@@ -73,6 +76,7 @@ NAME_MAP = {
     ("4-架构与开发", 4): "4-agent-runtime-and-tool-orchestration.md",
     ("4-架构与开发", 5): "5-storage-migration-backup-and-recovery.md",
     ("4-架构与开发", 6): "6-feature-module-architecture-and-data-flow-diagrams.md",
+    ("4-架构与开发", 7): "7-lsp-external-language-server-design.md",
 }
 
 

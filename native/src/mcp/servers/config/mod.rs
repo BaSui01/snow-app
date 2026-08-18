@@ -29,6 +29,7 @@ use super::super::service::McpService;
 use super::super::tools::McpTool;
 
 mod imagegen_scope;
+mod lsp_config_scope;
 mod logs_scope;
 mod personalization_scope;
 
@@ -73,6 +74,10 @@ const SCOPE_PERSONALIZATION: &str = "personalization";
 /// key = profileName；value 为可写字段（merge 语义，空 apiKey 保留旧值）；
 /// delete 需 confirmed。
 const SCOPE_API_PROFILES: &str = "apiProfiles";
+
+/// DB-backed 配置域：LSP 语言服务器配置（lsp_server_configs 表，与 UI 同源、
+/// 立即生效）：agent 用现有 config-set scope=lsp-config 即可配置。
+const SCOPE_LSP_CONFIG: &str = "lsp-config";
 /// ROLE.md 文件名（~/.snow/ROLE.md，与 personalizationHandlers.ts 约定一致）。
 const ROLE_FILE_NAME: &str = "ROLE.md";
 /// personalization scope 的唯一定义键。
@@ -632,6 +637,8 @@ impl ConfigService {
             logs_scope::execute_logs_scope(&tool_name, &args)?
         } else if args.get("scope").and_then(Value::as_str) == Some(SCOPE_IMAGEGEN) {
             imagegen_scope::execute_imagegen_scope(&tool_name, &args)?
+        } else if args.get("scope").and_then(Value::as_str) == Some(SCOPE_LSP_CONFIG) {
+            lsp_config_scope::execute_lsp_config_scope(&tool_name, &args)?
         } else if args.get("scope").and_then(Value::as_str) == Some(SCOPE_PERSONALIZATION) {
             personalization_scope::execute_personalization_scope(&tool_name, &args)?
         } else {
@@ -983,7 +990,7 @@ impl ConfigService {
     }
 
     /// lsp-config.servers 对象结构校验（每个语言服务器配置）。
-    fn validate_lsp_servers(value: &Value) -> napi::Result<()> {
+    pub(crate) fn validate_lsp_servers(value: &Value) -> napi::Result<()> {
         let servers = value
             .as_object()
             .ok_or_else(|| invalid_nested_field_error("lsp-config.servers", "object"))?;
@@ -2865,7 +2872,7 @@ fn config_scope_supports_project_id(args: &Value) -> bool {
         return false;
     };
     match scope {
-        SCOPE_SUB_AGENTS | SCOPE_HOOKS | SCOPE_SKILLS => true,
+        SCOPE_SUB_AGENTS | SCOPE_HOOKS | SCOPE_SKILLS | SCOPE_LSP_CONFIG => true,
         "settings" => {
             let key = args.get("key").and_then(Value::as_str).unwrap_or("");
             key == "mcpServers" || key == "sensitiveCommands"

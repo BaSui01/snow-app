@@ -728,6 +728,53 @@ pub(crate) fn create_chat_id(prefix: &str) -> String {
     format!("{prefix}-{timestamp}-{}", std::process::id())
 }
 
+/// Nullable per-conversation runtime configuration overrides. A `None` value
+/// means the conversation follows its bound API profile default; it must not be
+/// collapsed into an empty string or `false` at the storage boundary.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ConversationRuntimeConfig {
+    pub thinking_strength: Option<String>,
+    pub responses_fast_mode: Option<bool>,
+}
+
+/// Replace both nullable runtime override columns as one complete snapshot.
+/// `None` is intentionally bound as SQL NULL, so callers can explicitly clear
+/// either override without inheriting the COALESCE semantics of ConversationModes.
+pub fn set_conversation_runtime_config(
+    database_path: &Path,
+    conversation_id: &str,
+    thinking_strength: Option<String>,
+    responses_fast_mode: Option<bool>,
+) -> Result<()> {
+    let normalized_thinking_strength = thinking_strength.and_then(|value| {
+        let trimmed = value.trim().to_string();
+        (!trimmed.is_empty()).then_some(trimmed)
+    });
+
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            connection.execute(
+                "INSERT INTO chat_conversations (
+                   id, conversation_id, thinking_strength, responses_fast_mode
+                 )
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(conversation_id) DO UPDATE SET
+                   thinking_strength = excluded.thinking_strength,
+                   responses_fast_mode = excluded.responses_fast_mode",
+                params![
+                    database::create_snowflake_id(),
+                    conversation_id,
+                    normalized_thinking_strength,
+                    responses_fast_mode.map(|value| if value { 1_i64 } else { 0_i64 }),
+                ],
+            )?;
+            Ok(())
+        })
+        .map_err(|error| {
+            database::database_error(database_path, "set conversation runtime config", error)
+        })
+}
+
 /// Per-conversation Plan/Goal Mode overrides. `None` means the conversation
 /// row does not exist and the caller follows the global default. Rows whose
 /// stored flags are NULL (legacy data) are read as `Some(false)` — NULL is
@@ -829,4 +876,98 @@ pub fn set_conversation_modes(
             Ok(())
         })
         .map_err(|error| database::database_error(database_path, "set conversation modes", error))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::{database, get_conversation_runtime_config, set_conversation_runtime_config};
+
+    fn temporary_database_path() -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "snow-runtime-config-{}-{}.db",
+            std::process::id(),
+            database::create_snowflake_id()
+        ))
+    }
+
+    fn remove_database(path: &PathBuf) {
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(format!("{}-wal", path.display()));
+        let _ = std::fs::remove_file(format!("{}-shm", path.display()));
+    }
+
+    #[test]
+    fn runtime_config_round_trips_values_and_explicit_nulls() {
+        let database_path = temporary_database_path();
+        let connection = database::open_connection(&database_path).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE chat_conversations (
+                   id TEXT PRIMARY KEY NOT NULL,
+                   conversation_id TEXT NOT NULL UNIQUE,
+                   thinking_strength TEXT,
+                   responses_fast_mode INTEGER
+                 );",
+            )
+            .unwrap();
+        drop(connection);
+
+        set_conversation_runtime_config(
+            &database_path,
+            "conversation-1",
+            Some("high".to_string()),
+            Some(false),
+        )
+        .unwrap();
+        assert_eq!(
+            get_conversation_runtime_config(&database_path, "conversation-1").unwrap(),
+            super::ConversationRuntimeConfig {
+                thinking_strength: Some("high".to_string()),
+                responses_fast_mode: Some(false),
+            }
+        );
+
+        set_conversation_runtime_config(
+            &database_path,
+            "conversation-1",
+            Some("xhigh".to_string()),
+            Some(true),
+        )
+        .unwrap();
+        assert_eq!(
+            get_conversation_runtime_config(&database_path, "conversation-1").unwrap(),
+            super::ConversationRuntimeConfig {
+                thinking_strength: Some("xhigh".to_string()),
+                responses_fast_mode: Some(true),
+            }
+        );
+
+        set_conversation_runtime_config(
+            &database_path,
+            "conversation-1",
+            Some("   ".to_string()),
+            Some(false),
+        )
+        .unwrap();
+        assert_eq!(
+            get_conversation_runtime_config(&database_path, "conversation-1").unwrap(),
+            super::ConversationRuntimeConfig {
+                thinking_strength: None,
+                responses_fast_mode: Some(false),
+            }
+        );
+
+        set_conversation_runtime_config(&database_path, "conversation-1", None, None).unwrap();
+        assert_eq!(
+            get_conversation_runtime_config(&database_path, "conversation-1").unwrap(),
+            super::ConversationRuntimeConfig {
+                thinking_strength: None,
+                responses_fast_mode: None,
+            }
+        );
+
+        remove_database(&database_path);
+    }
 }

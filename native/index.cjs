@@ -12,7 +12,12 @@ const platformMap = {
   'linux-arm64': 'linux-arm64-gnu'
 }
 
+// 当前主进程代码实际调用的 native 导出（最小必需集）。
+// 缺任意一个即视为绑定过旧/损坏，必须跳过换下一个候选，否则运行期
+// 会以 "xxx is not a function" 崩溃（例如 2026-08 LSP 会话状态徽章事故：
+// 旧绑定缺 listLspSessionStatuses 却通过校验被加载）。
 const requiredExports = [
+  // 核心存储与会话
   'initializeAppStorage',
   'listCustomHeaderSchemes',
   'upsertCustomHeaderScheme',
@@ -24,7 +29,27 @@ const requiredExports = [
   'listCheckpointChangesBatch',
   'listCheckpointDiffsBatch',
   'listChatMessagesPaginated',
-  'cancelRunningSubAgentSessions'
+  'cancelRunningSubAgentSessions',
+  // LSP 服务器配置与会话状态（配置中心 / 状态徽章轮询）
+  'listLspServerConfigs',
+  'upsertLspServerConfig',
+  'deleteLspServerConfig',
+  'listProjectLspServerConfigs',
+  'upsertProjectLspServerConfig',
+  'deleteProjectLspServerConfig',
+  'listEffectiveLspServerConfigs',
+  'probeLspServerCommands',
+  'detectProjectStack',
+  'listLspSessionStatuses',
+  // 上下文附件 / 工作区条目 / 用量统计 / 计划任务
+  'addContextAttachment',
+  'removeContextAttachment',
+  'listContextAttachments',
+  'renderAttachmentContext',
+  'deleteWorkspaceEntries',
+  'gitFileContent',
+  'getUsageModelBreakdown',
+  'reconcileScheduledTaskRuns'
 ]
 
 const platformName = platformMap[`${process.platform}-${process.arch}`]

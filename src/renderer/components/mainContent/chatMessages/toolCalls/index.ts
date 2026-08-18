@@ -11,6 +11,7 @@ export { SubAgentContinueToolCall } from "./SubAgentContinueToolCall";
 export { SubAgentListToolCall } from "./SubAgentListToolCall";
 export { CodebaseToolCall } from "./CodebaseToolCall";
 export { CodeLensToolCall } from "./CodeLensToolCall";
+export { LspToolCall } from "./LspToolCall";
 export { WebSearchToolCall } from "./WebSearchToolCall";
 export { ImageGenToolCall } from "./ImageGenToolCall";
 export { ImageGenGallery } from "./ImageGenGallery";

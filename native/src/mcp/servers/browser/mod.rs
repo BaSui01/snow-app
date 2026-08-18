@@ -414,34 +414,6 @@ impl McpService for BrowserService {
             },
             McpTool {
                 server_id: SERVER_ID.to_string(),
-                name: "navigate_back".to_string(),
-                description: "Go back to the previous page in the browser history. Omit instanceId to use the most recently focused browser tab.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "instanceId": {
-                            "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
-                        }
-                    }
-                }),
-            },
-            McpTool {
-                server_id: SERVER_ID.to_string(),
-                name: "navigate_forward".to_string(),
-                description: "Go forward to the next page in the browser history. Omit instanceId to use the most recently focused browser tab.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "instanceId": {
-                            "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
-                        }
-                    }
-                }),
-            },
-            McpTool {
-                server_id: SERVER_ID.to_string(),
                 name: "select_option".to_string(),
                 description: "Select option(s) in a dropdown (<select>) element. Target the element with a CSS selector or visible text. Omit instanceId to use the most recently focused browser tab.".to_string(),
                 input_schema: json!({
@@ -747,7 +719,7 @@ impl McpService for BrowserService {
             "create" | "navigate" | "click" | "screenshot" | "devtools" | "close" | "focus"
             | "list" | "evaluate" | "type" | "wait" | "press_key"
             | "select_option" | "hover" | "upload-file" | "back"
-            | "forward" | "navigate_back" | "navigate_forward" | "open_tab"
+            | "forward" | "open_tab"
             | "list_tabs" | "close_tab" | "focus_tab" | "get_tab_content" => Err(Error::new(
                 Status::GenericFailure,
                 "Browser tools must be executed through the asynchronous Electron command bridge"

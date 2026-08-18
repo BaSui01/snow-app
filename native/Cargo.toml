@@ -25,7 +25,7 @@ serde = { version = "1.0.204", features = ["derive"] }
 serde_json = "1.0.120"
 serde_yaml = "0.9"
 tokio = { version = "1.39.2", features = ["io-util", "process", "rt", "rt-multi-thread", "sync", "time"] }
-tokio-util = "0.7"
+tokio-util = { version = "0.7", features = ["compat"] }
 notify = "6"
 regex = "1"
 similar = "2"
@@ -73,6 +73,11 @@ rmcp = { version = "3.0.1", default-features = false, features = [
     "transport-child-process",
     "transport-streamable-http-client-reqwest",
 ] }
+# LSP client framework: stdio transport + MainLoop + LanguageClient omnitrait.
+# default-features off to drop client-monitor (server-side) / tracing (unused).
+async-lsp = { version = "0.2", default-features = false, features = ["tokio", "stdio", "omni-trait"] }
+# LSP 3.17 full types (async-lsp re-exports the same version; declared explicitly for direct use).
+lsp-types = { version = "0.95" }
 # The `http` crate provides HeaderName / HeaderValue types used by rmcp's
 # StreamableHttpClientTransportConfig::custom_headers API. It is already pulled
 # in transitively by rmcp + reqwest, but we declare it explicitly so we can

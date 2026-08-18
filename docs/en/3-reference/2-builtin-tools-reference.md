@@ -22,8 +22,9 @@ Listed in registration order:
 | `sub-agents`       | Activate sub-agents to run tasks independently                                                                                                                                                                                                     |
 | `codebase`         | Codebase semantic search (embedding index; **only exposed when the project has codebase indexing enabled and an index has been built**)                                                                                                             |
 | `codelens`         | Code diagnostics and symbol location                                                                                                                                                                                                               |
-| `app-control`      | App control (memos / modes / settings pages / scheduled tasks / projects)                                                                                                                                                                          |
-| `config`           | Read/write global config (files: settings/snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy/personalization; database: subAgents/hooks/imagegen/apiProfiles; delegated: skills; read-only: logs)                     |
+| `lsp`              | External language-server diagnostics & hover (**exposed only when an enabled AND installed server exists — enabled alone is not enough**)                                                                                                                                         |
+| `app-control`      | App control (memos / mode / settings pages / scheduled tasks / projects)                                                                                                                                                                           |
+| `config`           | Global config read/write (files: settings/snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/buddy/personalization; DB: subAgents/hooks/imagegen/apiProfiles/lsp-config; delegated: skills; read-only: logs)                  |
 | `terminal`         | Terminal automation (persistent PTY session tabs, unlike bash's one-shot commands)                                                                                                                                                                 |
 | `imagegen`         | AI image generation & editing (OpenAI / Gemini multiple channels; **hidden on demand when no channel is configured**)                                                                                                                              |
 | `skills`           | Skill loading and execution (**dynamically registered**: hidden from the tool list when no enabled skill exists)                                                                                                                                   |
@@ -101,11 +102,17 @@ Listed in registration order:
 
 ### sub-agents
 
-| Tool name                | Purpose                                | Key parameters      |
-| ------------------------ | -------------------------------------- | ------------------- |
-| `sub-agents-activate`    | Activate a sub-agent to run a task independently | `agentId`, `prompt` |
+| Tool name | Purpose | Key parameters |
+| --- | --- | --- |
+| `sub-agents-activate` | Activate a sub-agent to run a task independently | `agentId`, `prompt` |
+| `sub-agents-listTeammates` | Query the sub-agents **currently running** in the same conversation session (only teammates of the same session are visible) | — |
+| `sub-agents-sendMessage` | Send a message to a teammate sub-agent still running in the same session; delivered as a Pending message at the end of the target's current round, prefixed with the sender's identity | `conversationId`, `message` |
+| `sub-agents-listSubAgents` | List the current session's sub-agents (including those already finished during this app run), returning `status` (running/completed/failed/cancelled) and `resumable` | — |
+| `sub-agents-continue` | Send a message to a sub-agent of the current session and resume it: finished targets are reactivated with their original configuration (model/tools/system prompt) and full history; still-running targets get a queued Pending message | `conversationId`, `message` |
 
 `agentId` must be chosen from the sub-agent list injected into the main session's system prompt (the built-in `agent_general` is a generic fallback); when in doubt, query `config-list` (scope=`subAgents`) first.
+
+Same-session communication is bounded by **session isolation**: `listTeammates` never exposes sub-agents of other conversations, and cross-session `sendMessage` / `continue` calls are rejected. After an app restart, sub-agent sessions can be resumed and continued (see [5-configure-hooks-and-subagents](../2-guides/5-configure-hooks-and-subagents.md)).
 
 ### codebase
 
@@ -120,6 +127,31 @@ Listed in registration order:
 | `codelens-find_definition` | Find a symbol's definition location                  | `filePath`, `line`, `column` |
 | `codelens-find_references` | Find a symbol's reference locations                  | `filePath`, `line`, `column` |
 | `codelens-file_outline`    | Get a file's symbol outline                          | `filePath`                   |
+
+### lsp
+
+Diagnostics & hover driven by external language servers (rust-analyzer /
+gopls / pyright ...); **exposed only when the `lsp_server_configs` table has
+at least one enabled AND installed server** (off by default — enabled only
+expresses intent; a command missing from PATH is treated as unavailable).
+Local projects only (SSH/remote not supported).
+
+| Full tool name       | Purpose                                            | Key parameters               |
+| -------------------- | -------------------------------------------------- | ---------------------------- |
+| `lsp-diagnostics`    | File diagnostics (errors/warnings/hints with exact positions & messages) | `filePath` (or `filePaths` batch) |
+| `lsp-hover`          | Symbol hover info (type signature / docs, Markdown) | `filePath`, `line`, `column` |
+| `lsp-definition`     | Symbol definition location (cross-file semantic jump) | `filePath`, `line`, `column` |
+| `lsp-references`     | All reference locations + one-line code context (cap 100) | `filePath`, `line`, `column`; optional `includeDeclaration` |
+| `lsp-symbols`        | File symbol outline (nested name/kind/detail/range/children) | `filePath` |
+| `lsp-rename`         | Semantic rename (dryRun default true returns multi-file edits; false writes + syncs) | `filePath`, `line`, `column`, `newName`; optional `dryRun` |
+| `lsp-type-definition`| Jump to the definition of a symbol's type (e.g. variable x → class SomeClass) | `filePath`, `line`, `column` |
+| `lsp-implementation` | All implementations of an interface / abstract class / trait | `filePath`, `line`, `column` |
+| `lsp-code-action`     | Code actions (quick-fix / refactor menu; apply=true applies edit-based actions, command actions listed for execution) | `filePath`, `line`, `column`; optional `only`, `apply` |
+| `lsp-execute-command` | Execute a server command (e.g. rust-analyzer.applySourceChange; WorkspaceEdit results → dryRun preview / apply) | `command`; optional `arguments`, `filePath`, `dryRun` |
+| `lsp-call-hierarchy` | Two-way call chain (incoming callers + outgoing callees with call-site context, cap 100 each) | `filePath`, `line`, `column` |
+| `lsp-type-hierarchy` | Type hierarchy (supertypes parent chain + subtypes children; exposed only for Go/Java projects) | `filePath`, `line`, `column` |
+| `lsp-workspace-symbols` | Cross-project fuzzy symbol search (semantic, cap 50, merged across enabled languages) | `query` |
+| `lsp-workspace-diagnostics` | Project-wide diagnostics (LSP 3.17 pull, grouped by file, cap 100 files × 200 entries) | optional `maxFiles` |
 
 ### app-control
 

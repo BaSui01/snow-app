@@ -102,6 +102,23 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         goalModeTokenBudget
       )
   );
+  ipcMain.handle("settings:get-conversation-runtime-config", (_event, conversationId: string) =>
+    native.getConversationRuntimeConfig(conversationId)
+  );
+  ipcMain.handle(
+    "settings:set-conversation-runtime-config",
+    (
+      _event,
+      conversationId: string,
+      thinkingStrength: string | null,
+      responsesFastMode: boolean | null
+    ) =>
+      native.setConversationRuntimeConfig(
+        conversationId,
+        thinkingStrength,
+        responsesFastMode
+      )
+  );
   ipcMain.handle("settings:get-request-logging", () =>
     native.getRequestLogging()
   );
@@ -1143,6 +1160,15 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       const sinceStr = typeof since === "string" ? since.trim() : "";
       const untilStr = typeof until === "string" ? until.trim() : "";
       return native.getUsageDailyBreakdown(sinceStr, untilStr);
+    }
+  );
+
+  ipcMain.handle(
+    "usage:get-model-breakdown",
+    (_event, since: unknown, until: unknown) => {
+      const sinceStr = typeof since === "string" ? since.trim() : "";
+      const untilStr = typeof until === "string" ? until.trim() : "";
+      return native.getUsageModelBreakdown(sinceStr, untilStr);
     }
   );
 

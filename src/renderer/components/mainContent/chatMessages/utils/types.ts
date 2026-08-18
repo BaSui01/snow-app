@@ -24,22 +24,9 @@ export type AiResponseProps = {
   sections?: AiResponseSection[];
   isStreaming?: boolean;
   isAborting?: boolean;
-  isRetrying?: boolean;
-  retryAttempt?: number;
-  retryError?: string;
   incompleteVariant?: IncompleteVariant;
   interruptionReason?: NormalizedInterruptionReason;
   recoveryOutcome?: NormalizedRecoveryOutcome;
-  /**
-   * Cumulative token count produced by the Rust backend for the current
-   * streaming iteration. Forwarded to {@link StreamCursor} so the progress
-   * is visible at the tail of the streaming AI response.
-   */
-  streamTokenCount?: number;
-  /** Elapsed milliseconds since the streaming request started. */
-  streamElapsedMs?: number;
-  /** Time to first token in milliseconds. */
-  streamTtftMs?: number;
   showActions?: boolean;
   toolCalls?: ToolCallInfo[];
   /** Hook execution records bound to tool calls in this message (via

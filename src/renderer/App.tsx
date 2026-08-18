@@ -352,6 +352,15 @@ export const App = (): React.JSX.Element => {
     });
   }, [isRightPanelCollapsed, clearAutoCollapsed]);
 
+  const handleOpenDrawing = useCallback(() => {
+    if (isRightPanelCollapsed) {
+      setIsRightPanelCollapsed(false);
+    }
+    requestAnimationFrame(() => {
+      rightPanelRef.current?.openDrawing();
+    });
+  }, [isRightPanelCollapsed]);
+
   const handleOpenCodebase = useCallback(
     (projectId: string, projectName: string) => {
       if (isRightPanelCollapsed) {
@@ -547,6 +556,7 @@ export const App = (): React.JSX.Element => {
             onOpenTerminal={handleOpenTerminal}
             onOpenBrowser={handleOpenBrowser}
             onOpenCodebase={handleOpenCodebase}
+            onOpenDrawing={handleOpenDrawing}
           />
           <div className="app-layout">
             <Sidebar
@@ -596,6 +606,7 @@ export const App = (): React.JSX.Element => {
               isFullscreen={isRightPanelFullscreen}
               isResizing={activeResizeTarget !== null}
               activeDirectory={activeDirectory}
+              onSelectMainView={setActiveMainView}
             />
           </div>
           {showSshWizard ? (

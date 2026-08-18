@@ -10,6 +10,7 @@ export const ChatInput = ({
   conversationId,
   onSend,
   onNavigateToView,
+  onOpenConversation,
   isStreaming = false,
   isAborting = false,
   onAbort,
@@ -50,6 +51,7 @@ export const ChatInput = ({
 }: ChatInputProps): React.JSX.Element => {
   const { t } = useI18n();
   const controller = useChatInputController({
+    projectId,
     conversationId,
     onSend,
     isStreaming,
@@ -71,6 +73,7 @@ export const ChatInput = ({
       projectId={projectId}
       projectName={projectName}
       onNavigateToView={onNavigateToView}
+      onOpenConversation={onOpenConversation}
       {...controller}
       tokenUsage={tokenUsage}
       pendingMessages={pendingMessages}

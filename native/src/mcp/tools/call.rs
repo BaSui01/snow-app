@@ -18,6 +18,7 @@ use super::super::servers::config::ConfigService;
 use super::super::servers::filesystem::FilesystemService;
 use super::super::servers::grep::GrepService;
 use super::super::servers::imagegen::ImageGenService;
+use super::super::servers::lsp::LspService;
 use super::super::servers::remote_workspace::{is_ssh_path, RemoteWorkspaceCallback};
 use super::super::servers::skills::SkillsService;
 use super::super::servers::terminal::{TerminalCommandCallback, TerminalService};
@@ -358,28 +359,56 @@ pub async fn call_mcp_tool(
             .execute_search(&args, project_id.as_deref(), &on_chunk)
             .await?
     } else if let Some(codelens_tool) = tool_full_name.strip_prefix("codelens-") {
-        let service = CodeLensService::new();
-        match codelens_tool {
-            "find_definition" => {
-                service
-                    .execute_find_definition(&args, project_id.as_deref())
-                    .await?
+        // LSP 优先（2026-08-15）：项目启用了匹配文件语言的 LSP 服务器且
+        // 可用时，优先通过外部 LSP 语义分析执行（结果归一化为 codelens
+        // 输出格式，附加 "engine": "lsp" 标记）；LSP 不可用/失败时回退到
+        // tree-sitter 静态分析——LSP 只是更优路径，不应阻断代码定位。
+        let lsp_service = LspService::new();
+        if let Some(lsp_result) = lsp_service
+            .execute_codelens_preferred(codelens_tool, &args, project_id.as_deref())
+            .await?
+        {
+            lsp_result
+        } else {
+            let service = CodeLensService::new();
+            let mut fallback = match codelens_tool {
+                "find_definition" => {
+                    service
+                        .execute_find_definition(&args, project_id.as_deref())
+                        .await?
+                }
+                "find_references" => {
+                    service
+                        .execute_find_references(&args, project_id.as_deref())
+                        .await?
+                }
+                "file_outline" => service.execute_file_outline(&args).await?,
+                _ => {
+                    return Err(Error::new(
+                        Status::GenericFailure,
+                        format!(
+                            "Unknown codelens tool: \"{codelens_tool}\". Available tools: [find_definition, find_references, file_outline]"
+                        ),
+                    ));
+                }
+            };
+            // 回退可见性（2026-08-15）：LSP 不可用/失败时结果来自静态分析，
+            // 附加标记让 agent 明确感知（前端 CodeLensToolCall 忽略额外字段，
+            // 渲染无感）。需要 LSP 语义结果时 agent 应改调 lsp-* 工具——其
+            // 错误信息会给出可行动的配置指引。
+            if let serde_json::Value::Object(map) = &mut fallback {
+                map.insert(
+                    "lspFallback".to_string(),
+                    serde_json::json!(true),
+                );
             }
-            "find_references" => {
-                service
-                    .execute_find_references(&args, project_id.as_deref())
-                    .await?
-            }
-            "file_outline" => service.execute_file_outline(&args).await?,
-            _ => {
-                return Err(Error::new(
-                    Status::GenericFailure,
-                    format!(
-                        "Unknown codelens tool: \"{codelens_tool}\". Available tools: [find_definition, find_references, file_outline]"
-                    ),
-                ));
-            }
+            fallback
         }
+    } else if let Some(lsp_tool) = tool_full_name.strip_prefix("lsp-") {
+        let service = LspService::new();
+        service
+            .execute_lsp_tool(lsp_tool, &args, project_id.as_deref())
+            .await?
     } else if let Some(result) =
         super::super::external::call_tool(project_id.as_deref(), &tool_full_name, &args).await?
     {

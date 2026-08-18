@@ -112,14 +112,26 @@ const normalizeResponsesApiRequest = (value: unknown): ResponsesApiRequest => {
     goalMode:
       typeof source.goalMode === "boolean" ? source.goalMode : undefined,
     worktreeMode:
-      typeof source.worktreeMode === "boolean" ? source.worktreeMode : undefined,
+      typeof source.worktreeMode === "boolean"
+        ? source.worktreeMode
+        : undefined,
     thinkingStrength:
       typeof source.thinkingStrength === "string" &&
       source.thinkingStrength.trim()
         ? source.thinkingStrength
         : undefined,
+    // napi-rs reads #[napi(object)] Option fields via Object::get, which
+    // only treats `undefined` as absent; an explicit `null` reaches
+    // `bool::from_napi_value` and throws BooleanExpected. Chat requests
+    // (requestMethod != "responses") carry `responsesFastMode: null`, so
+    // collapse null to undefined — Rust maps both to None ("follow the
+    // profile default").
+    responsesFastMode:
+      typeof source.responsesFastMode === "boolean"
+        ? source.responsesFastMode
+        : undefined,
   };
-}
+};
 
 /**
  * Resolve the project ROLE.md content for an SSH workspace so the Rust prompt

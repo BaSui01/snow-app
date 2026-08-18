@@ -15,6 +15,7 @@ import {
   SubAgentListToolCall,
   CodebaseToolCall,
   CodeLensToolCall,
+  LspToolCall,
   WebSearchToolCall,
   ImageGenToolCall,
   BrowserToolCall,
@@ -327,6 +328,10 @@ export const ToolCallItem = memo(
       toolCall.name === "codelens-file_outline"
     ) {
       return <CodeLensToolCall toolCall={toolCall} />;
+    }
+
+    if (toolCall.name.startsWith("lsp-")) {
+      return <LspToolCall toolCall={toolCall} />;
     }
 
     if (

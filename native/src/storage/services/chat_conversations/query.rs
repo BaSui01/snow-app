@@ -5,7 +5,7 @@ use rusqlite::{params, OptionalExtension};
 
 use super::super::super::database;
 use super::super::super::{ChatConversationPage, ChatConversationRecord, ConversationSearchResult};
-use super::map_chat_conversation_row;
+use super::{map_chat_conversation_row, ConversationRuntimeConfig};
 
 pub fn list_chat_conversations(
     database_path: &Path,
@@ -426,4 +426,41 @@ fn create_search_snippet(content: &str, query: &str) -> String {
         snippet.insert(0, '…');
     }
     snippet
+}
+
+/// Read a conversation's nullable runtime overrides without applying API
+/// profile defaults. A missing conversation and a conversation with two NULL
+/// columns both return an all-`None` snapshot.
+pub fn get_conversation_runtime_config(
+    database_path: &Path,
+    conversation_id: &str,
+) -> Result<ConversationRuntimeConfig> {
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            connection
+                .query_row(
+                    "SELECT thinking_strength, responses_fast_mode
+                       FROM chat_conversations
+                      WHERE conversation_id = ?1
+                      LIMIT 1",
+                    params![conversation_id],
+                    |row| {
+                        Ok(ConversationRuntimeConfig {
+                            thinking_strength: row.get::<_, Option<String>>(0)?,
+                            responses_fast_mode: row
+                                .get::<_, Option<i64>>(1)?
+                                .map(|value| value != 0),
+                        })
+                    },
+                )
+                .optional()
+        })
+        .map(|record| record.unwrap_or_default())
+        .map_err(|error| {
+            database::database_error(
+                database_path,
+                "get conversation runtime config",
+                error,
+            )
+        })
 }

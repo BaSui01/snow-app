@@ -1,6 +1,6 @@
 # 19-Personalization, Theme, and Shortcuts
 
-> This guide explains Snow App's rule composition, request configuration, theme, language, and keyboard-shortcut behavior. The Settings sidebar currently contains 21 settings pages; this guide covers System Prompt (settings page id: `system-prompt-settings`), Personalization (`personalization-settings`), Custom Headers (`custom-headers-settings`), Theme Settings (`theme-settings`), and Keyboard Shortcuts (`keyboard-shortcuts-settings`). The language selector is a separate area below the settings list, not a twenty-second page.
+> This guide explains Snow App's rule composition, request configuration, theme, language, and keyboard-shortcut behavior. The Settings sidebar currently contains 24 settings pages; this guide covers System Prompt (settings page id: `system-prompt-settings`), Personalization (`personalization-settings`), Custom Headers (`custom-headers-settings`), Theme Settings (`theme-settings`), and Keyboard Shortcuts (`keyboard-shortcuts-settings`). The language selector is a separate area below the settings list, not a twenty-fifth page.
 
 ## Configuration Flow and Effective Boundaries
 
@@ -125,7 +125,15 @@ Snow App supports `en`, `zh-CN`, and `zh-TW`. The language selector is a separat
 - without a localStorage cache, the app first reads the database;
 - without a valid database value, it matches the browser language and falls back to English when no match exists.
 
-`~/.snow/language.json` belongs to the Snow CLI/config-tool configuration domain and is not the sole source of truth for the current UI language.
+`~/.snow/language.json` belongs to the Snow CLI/config tool configuration domain and is not the single source of truth for the current UI language.
+
+## Desktop Pet
+
+The "Desktop pet" page in the settings sidebar manages your desktop pet:
+install pet packages (`.zip`) from Codex App, Petdex, or Snow App, pick the
+active pet, and toggle between waking (showing on your desktop) and dismissing
+(hiding) it. While awake, a slider adjusts the display size (0.5–2x, default
+0.75). The pet reacts to your AI work in real time.
 
 ## Keyboard Shortcuts
 
@@ -147,7 +155,7 @@ All seven shortcuts are enabled by default with `foregroundOnly=true`. Their JSO
 
 ### Rebinding, Conflicts, and Scope
 
-Each shortcut can be enabled independently, rebound, and reset. The page can also restore all default keys. While recording a normal action, `Esc` cancels recording; while recording “Cancel the current session,” `Esc` is a valid binding.
+Each shortcut can be enabled independently, rebound, and reset. The page can also restore all default keys. While recording a normal action, `Esc` cancels recording; while recording “Cancel the current session,” `Esc` is a valid binding. Recording supports the **Shift modifier key** (for example `Cmd/Ctrl+Shift+P`), which is recognized and saved through event conversion, display, and matching logic.
 
 The page reports binding conflicts but does not choose a resolution for you. At runtime, only the first matching action in action order is triggered. A local component may intercept an action—for example, a focused file viewer can use the search shortcut for in-file search.
 

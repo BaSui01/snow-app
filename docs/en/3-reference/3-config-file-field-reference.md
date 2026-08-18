@@ -142,7 +142,7 @@ UI language.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `language` | string | Language code, e.g. `zh` / `en` |
+| `language` | string | Language code; supports `en` / `zh-CN` / `zh-TW`. Older installs may store the legacy value `zh` (equivalent to Simplified Chinese) |
 
 ## 9. permissions.json (scope: `permissions`)
 
@@ -152,14 +152,67 @@ Tool authorization config.
 | --- | --- | --- |
 | `alwaysApprovedTools` | array | Always-approved tool names (e.g. `["terminal-execute", "filesystem-read"]`) |
 
-## 10. lsp-config.json (scope: `lsp-config`)
+## 10. lsp-config (scope: `lsp-config`)
 
-LSP server config.
+LSP (Language Server Protocol) server configuration: declares the external
+language servers Snow App can launch per language, with their launch
+arguments.
+
+> **Current status: DB-backed config scope (app database `lsp_server_configs`
+> table).** There is no `~/.snow/lsp-config.json` file anymore; the `config`
+> tools hit the table directly (effective immediately, no restart). The legacy
+> file is imported once on first start (source=legacy). `config-set` is
+> full-replacement (same semantics as the old file) with deep validation.
+> Servers are consumed by the `lsp` MCP service (`lsp-diagnostics` /
+> `lsp-hover`, see
+> [2-guides/7-codebase-index-and-diagnostics](../2-guides/7-codebase-index-and-diagnostics.md)).
 
 | Field | Type | Description |
 | --- | --- | --- |
 | `schemaVersion` | integer | Schema version |
-| `servers` | object | Language-server map, keyed by language (e.g. `typescript`), value: `{command, args, fileExtensions, installCommand, initializationOptions}` |
+| `servers` | object | Language-server map, keyed by language (e.g. `typescript`); value structure below |
+
+`servers.<language>` value structure (deeply validated on write per the rules
+below; unknown fields are allowed for forward compatibility):
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `command` | string | Executable that launches the language server (e.g. `typescript-language-server`) |
+| `args` | array\<string\> | Launch arguments (e.g. `["--stdio"]`) |
+| `fileExtensions` | array\<string\> | File extensions this server handles (e.g. `[".ts", ".tsx"]`) |
+| `installCommand` | string | Install command used when the server is missing (e.g. `npm install -g typescript-language-server`) |
+| `initializationOptions` | object | Initialization options sent with the LSP `initialize` request |
+
+Example:
+
+```json
+{
+  "schemaVersion": 1,
+  "servers": {
+    "typescript": {
+      "command": "typescript-language-server",
+      "args": ["--stdio"],
+      "fileExtensions": [".ts", ".tsx", ".js", ".jsx"],
+      "installCommand": "npm install -g typescript-language-server typescript",
+      "initializationOptions": {}
+    }
+  }
+}
+```
+
+Read/write via the `config` tools (key-level replace, deep validation before
+write, automatic backup and atomic write):
+
+```text
+config-get  scope="lsp-config" key="servers"              # read current config
+config-list scope="lsp-config"                             # list keys and current values
+config-set  scope="lsp-config" key="servers" value={...}   # write (field types validated)
+config-delete scope="lsp-config" key="servers"             # delete (requires confirmation)
+```
+
+> As with other file-backed scopes, changes may need an app restart or a UI
+> re-save to take effect (see the note at the top of this document);
+> `lsp-config` is not project-scoped (no `projectId` semantics).
 
 ## 11. buddy.json (scope: `buddy`)
 

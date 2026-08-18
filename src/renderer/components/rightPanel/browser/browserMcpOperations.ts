@@ -1067,48 +1067,6 @@ const hover = async (
   };
 };
 
-const navigateHistory = async (
-  webview: Electron.WebviewTag,
-  instanceId: string,
-  direction: "back" | "forward"
-): Promise<unknown> => {
-  const canGo =
-    direction === "back" ? webview.canGoBack() : webview.canGoForward();
-  if (!canGo) {
-    const metadata = await currentPageMetadata(webview, instanceId);
-    return {
-      ...metadata,
-      success: false,
-      error: `Cannot go ${direction}: no ${direction} history available`,
-    };
-  }
-  if (direction === "back") {
-    webview.goBack();
-  } else {
-    webview.goForward();
-  }
-  // 等待导航或 3 秒兜底
-  await new Promise<void>((resolve) => {
-    let settled = false;
-    const finish = (): void => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      clearTimeout(timer);
-      webview.removeEventListener(
-        "did-stop-loading",
-        finish as EventListener
-      );
-      resolve();
-    };
-    const timer = setTimeout(finish, 3000);
-    webview.addEventListener("did-stop-loading", finish as EventListener);
-  });
-  const metadata = await currentPageMetadata(webview, instanceId);
-  return { ...metadata, success: true, direction };
-};
-
 const selectOption = async (
   webview: Electron.WebviewTag,
   instanceId: string,
@@ -1526,10 +1484,6 @@ export const executeBrowserMcpOperation = async (
       return pressKey(webview, instanceId, args);
     case "hover":
       return hover(webview, instanceId, args);
-    case "navigate_back":
-      return navigateHistory(webview, instanceId, "back");
-    case "navigate_forward":
-      return navigateHistory(webview, instanceId, "forward");
     case "select_option":
       return selectOption(webview, instanceId, args);
     case "devtools":

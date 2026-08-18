@@ -76,6 +76,7 @@ pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<(
     migrate_plugins_desired_state(connection)?;
     migrate_system_prompt_scope(connection)?;
     migrate_chat_conversations_modes(connection)?;
+    migrate_chat_conversations_runtime_config(connection)?;
     migrate_sub_agent_configs_project_id(connection)?;
     migrate_sub_agent_configs_model(connection)?;
     migrate_scheduled_tasks_pre_script(connection)?;
@@ -582,6 +583,35 @@ fn migrate_chat_conversations_modes(connection: &Connection) -> rusqlite::Result
     Ok(())
 }
 
+/// Adds nullable per-conversation runtime configuration overrides for databases
+/// created before thinking strength and Responses Fast Mode were persisted.
+///
+/// Existing conversations intentionally remain NULL in both columns so they
+/// continue to inherit the bound API profile defaults. The migration is
+/// idempotent and checks each column independently for partially migrated
+/// databases.
+fn migrate_chat_conversations_runtime_config(connection: &Connection) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA table_info(chat_conversations)")?;
+    let columns: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    if !columns.iter().any(|column| column == "thinking_strength") {
+        connection.execute(
+            "ALTER TABLE chat_conversations ADD COLUMN thinking_strength TEXT",
+            [],
+        )?;
+    }
+    if !columns.iter().any(|column| column == "responses_fast_mode") {
+        connection.execute(
+            "ALTER TABLE chat_conversations ADD COLUMN responses_fast_mode INTEGER",
+            [],
+        )?;
+    }
+
+    Ok(())
+}
+
 /// Adds sub-agent project scoping to databases created before it existed.
 ///
 /// Older databases have `sub_agent_configs` with a single-column
@@ -799,4 +829,52 @@ fn purge_assistant_raw_json_blobs(connection: &Connection) -> rusqlite::Result<(
         connection.execute_batch("VACUUM")?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use rusqlite::Connection;
+
+    use super::migrate_chat_conversations_runtime_config;
+
+    #[test]
+    fn runtime_config_migration_adds_nullable_columns_without_backfilling() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE chat_conversations (
+                   id TEXT PRIMARY KEY NOT NULL,
+                   conversation_id TEXT NOT NULL UNIQUE,
+                   model TEXT NOT NULL DEFAULT '',
+                   api_profile_name TEXT NOT NULL DEFAULT ''
+                 );
+                 INSERT INTO chat_conversations (id, conversation_id)
+                 VALUES ('legacy-id', 'legacy-conversation');",
+            )
+            .unwrap();
+
+        migrate_chat_conversations_runtime_config(&connection).unwrap();
+        migrate_chat_conversations_runtime_config(&connection).unwrap();
+
+        let columns: Vec<String> = connection
+            .prepare("PRAGMA table_info(chat_conversations)")
+            .unwrap()
+            .query_map([], |row| row.get(1))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        assert!(columns.iter().any(|column| column == "thinking_strength"));
+        assert!(columns.iter().any(|column| column == "responses_fast_mode"));
+
+        let values: (Option<String>, Option<i64>) = connection
+            .query_row(
+                "SELECT thinking_strength, responses_fast_mode
+                   FROM chat_conversations
+                  WHERE conversation_id = 'legacy-conversation'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(values, (None, None));
+    }
 }

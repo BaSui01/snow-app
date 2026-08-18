@@ -101,6 +101,9 @@ pub struct ResponsesApiRequest {
     /// "high" | custom). Applied in-memory over the resolved profile's
     /// config_json; never mutates the stored profile.
     pub thinking_strength: Option<String>,
+    /// Per-request Responses Fast Mode override. Applied in-memory over the
+    /// resolved profile's config_json; never mutates the stored profile.
+    pub responses_fast_mode: Option<bool>,
     /// Project ROLE.md content of an SSH (`ssh://`) workspace, resolved by the
     /// Electron main process over SSH (mirrors RoleEditorPanel's access path).
     /// Absent for local workspaces — Rust reads the file itself.
@@ -280,7 +283,7 @@ async fn create_response_async(
         system_prompt_ids_json: &api_config.system_prompt_ids_json,
         remote_role_content: request.remote_role_content.as_deref(),
         remote_include_global_rules: request.remote_include_global_rules,
-    })?;
+    }).await?;
 
     // Use the resolved ID so every normal Responses request is cache-routed.
     let cache_key = prepared_request.conversation_id.trim();
@@ -344,6 +347,7 @@ async fn create_response_async(
 
     let streamed_response = match stream::collect_streaming_response(
         &client,
+        database_path.clone(),
         &endpoint,
         api_key,
         &effective_headers,

@@ -1,4 +1,5 @@
 import { ipcMain } from "electron";
+import { spawn } from "node:child_process";
 import type { NativeBridge } from "../../native/types";
 import {
   normalizeSystemPromptItem,
@@ -15,6 +16,7 @@ import {
   normalizeProjectMcpServerConfig,
   readSnowCliMcpConfig,
 } from "../../settings/mcpSettings";
+import { normalizeLspServerConfig } from "../../settings/lspSettings";
 import {
   normalizeProjectSensitiveCommandConfig,
   normalizeSensitiveCommandConfig,
@@ -182,6 +184,130 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
   );
   ipcMain.handle("mcp-server-configs:import-snow-cli", () =>
     readSnowCliMcpConfig(native)
+  );
+
+  // ===== LSP Server Configs =====
+  ipcMain.handle("lsp-server-configs:list", () =>
+    native.listLspServerConfigs()
+  );
+  ipcMain.handle("lsp-server-configs:upsert", async (_event, item: unknown) => {
+    await native.upsertLspServerConfig(normalizeLspServerConfig(item));
+    return native.listLspServerConfigs();
+  });
+  ipcMain.handle(
+    "lsp-server-configs:delete",
+    async (_event, lang: unknown) => {
+      if (typeof lang !== "string" || !lang.trim()) {
+        throw new Error("Language is required");
+      }
+      await native.deleteLspServerConfig(lang.trim());
+      return native.listLspServerConfigs();
+    }
+  );
+  ipcMain.handle(
+    "project-lsp-server-configs:list",
+    (_event, projectId: unknown) => {
+      const normalizedProjectId = requireProjectId(projectId);
+      return native.listProjectLspServerConfigs(normalizedProjectId);
+    }
+  );
+  ipcMain.handle(
+    "project-lsp-server-configs:upsert",
+    async (_event, projectId: unknown, item: unknown) => {
+      const normalizedProjectId = requireProjectId(projectId);
+      await native.upsertProjectLspServerConfig(
+        normalizedProjectId,
+        normalizeLspServerConfig(item)
+      );
+      // 返回 effective 合并视图（全局 + 项目覆盖），UI 直接刷新为项目生效配置。
+      return native.listEffectiveLspServerConfigs(normalizedProjectId);
+    }
+  );
+  ipcMain.handle(
+    "project-lsp-server-configs:delete",
+    async (_event, projectId: unknown, lang: unknown) => {
+      const normalizedProjectId = requireProjectId(projectId);
+      if (typeof lang !== "string" || !lang.trim()) {
+        throw new Error("Language is required");
+      }
+      await native.deleteProjectLspServerConfig(normalizedProjectId, lang.trim());
+      // 返回 effective 合并视图（全局 + 项目覆盖），UI 直接刷新为项目生效配置。
+      return native.listEffectiveLspServerConfigs(normalizedProjectId);
+    }
+  );
+  ipcMain.handle(
+    "lsp-server-configs:effective:list",
+    (_event, projectId: unknown) =>
+      native.listEffectiveLspServerConfigs(
+        typeof projectId === "string" && projectId.trim()
+          ? projectId.trim()
+          : undefined
+      )
+  );
+  ipcMain.handle("lsp-server-configs:probe", (_event, projectId: unknown) =>
+    native.probeLspServerCommands(
+      typeof projectId === "string" && projectId.trim()
+        ? projectId.trim()
+        : undefined
+    )
+  );
+  // 技术栈检测：扫描项目根目录（纯文件系统，无副作用）。
+  ipcMain.handle("lsp-project-stack:detect", (_event, projectRoot: unknown) => {
+    if (typeof projectRoot !== "string" || !projectRoot.trim()) {
+      throw new Error("Project root is required");
+    }
+    return native.detectProjectStack(projectRoot.trim());
+  });
+  // 会话运行时状态快照：前端状态徽章轮询用（不触发会话创建/回收）。
+  // 可选 projectId：传入时只返回该项目根下的会话（徽章按当前项目过滤）。
+  ipcMain.handle("lsp-session-statuses:list", (_event, projectId: unknown) =>
+    native.listLspSessionStatuses(
+      typeof projectId === "string" && projectId.trim() ? projectId.trim() : undefined
+    )
+  );
+  // 安装语言服务器：执行配置表中的 installCommand。命令来源 = 用户主动配置
+  // 的表（与 bash 工具同级信任），渲染进程必须先经确认对话框展示确切命令；
+  // 输出截断（32KB）防长安装日志撑爆内存。不设超时（全局安装可能耗时数分钟）。
+  ipcMain.handle(
+    "lsp-server-configs:install",
+    async (_event, projectId: unknown, lang: unknown) => {
+      if (typeof lang !== "string" || !lang.trim()) {
+        throw new Error("Language is required");
+      }
+      const normalizedLang = lang.trim();
+      const hasProjectId =
+        typeof projectId === "string" && projectId.trim().length > 0;
+      const records = hasProjectId
+        ? await native.listProjectLspServerConfigs(
+            (projectId as string).trim()
+          )
+        : await native.listLspServerConfigs();
+      const record = records.find((item) => item.lang === normalizedLang);
+      const installCommand = record?.installCommand?.trim();
+      if (!installCommand) {
+        throw new Error(
+          `No install command configured for language "${normalizedLang}"`
+        );
+      }
+      return await new Promise<{
+        command: string;
+        output: string;
+        exitCode: number | null;
+      }>((resolve, reject) => {
+        const child = spawn(installCommand, { shell: true, windowsHide: true });
+        let output = "";
+        const append = (chunk: Buffer): void => {
+          output += chunk.toString();
+          if (output.length > 32 * 1024) {
+            output = output.slice(-32 * 1024);
+          }
+        };
+        child.stdout?.on("data", append);
+        child.stderr?.on("data", append);
+        child.on("error", (error) => reject(error));
+        child.on("close", (code) => resolve({ command: installCommand, output, exitCode: code }));
+      });
+    }
   );
   ipcMain.handle("project-mcp-server-configs:list", (_event, projectId) => {
     const normalizedProjectId = requireProjectId(projectId);

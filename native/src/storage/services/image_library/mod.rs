@@ -93,6 +93,24 @@ pub fn ensure_image_library_table(connection: &rusqlite::Connection) -> rusqlite
         "CREATE INDEX IF NOT EXISTS idx_image_library_album ON image_library(album_id);",
     )?;
 
+    // 幂等补列：image_albums.cover_image_id（手动封面）与 sort_order（拖拽排序）
+    let has_cover_col: bool = connection
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('image_albums') WHERE name = 'cover_image_id'")?
+        .query_row([], |row| row.get(0))?;
+    if !has_cover_col {
+        connection.execute_batch(
+            "ALTER TABLE image_albums ADD COLUMN cover_image_id TEXT;",
+        )?;
+    }
+    let has_sort_col: bool = connection
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('image_albums') WHERE name = 'sort_order'")?
+        .query_row([], |row| row.get(0))?;
+    if !has_sort_col {
+        connection.execute_batch(
+            "ALTER TABLE image_albums ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;",
+        )?;
+    }
+
     Ok(())
 }
 

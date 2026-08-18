@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::api::chat::payload::build_chat_reasoning_effort;
 use crate::api::config::{
@@ -9,6 +9,7 @@ use crate::api::config::{
 };
 use crate::api::responses::payload::build_responses_reasoning;
 use crate::api::retry::{should_retry, RetryOptions};
+use crate::storage::services::app_logs::maybe_log_api_request;
 use crate::storage::services::chat_conversations::{
     get_conversation_api_profile, load_context_messages, update_conversation_summary,
 };
@@ -103,6 +104,7 @@ pub async fn generate_conversation_summary(
         result = async {
             match api_config.request_method.as_str() {
                 "responses" => generate_summary_via_responses(
+                    &database_path,
                     &api_config,
                     &api_key,
                     &custom_headers,
@@ -111,6 +113,7 @@ pub async fn generate_conversation_summary(
                     &retry_options,
                 ).await,
                 "anthropic" => generate_summary_via_anthropic(
+                    &database_path,
                     &api_config,
                     &api_key,
                     &custom_headers,
@@ -119,6 +122,7 @@ pub async fn generate_conversation_summary(
                     &retry_options,
                 ).await,
                 "gemini" => generate_summary_via_gemini(
+                    &database_path,
                     &api_config,
                     &api_key,
                     &custom_headers,
@@ -127,6 +131,7 @@ pub async fn generate_conversation_summary(
                     &retry_options,
                 ).await,
                 _ => generate_summary_via_chat(
+                    &database_path,
                     &api_config,
                     &api_key,
                     &custom_headers,
@@ -160,6 +165,7 @@ pub async fn generate_conversation_summary(
 }
 
 async fn generate_summary_via_chat(
+    database_path: &Path,
     api_config: &crate::storage::ApiConfigRecord,
     api_key: &str,
     custom_headers: &HashMap<String, String>,
@@ -191,6 +197,15 @@ async fn generate_summary_via_chat(
 
     let client = crate::api::http_client::build_proxied_client().await?;
 
+    // 请求日志开启时记录标题生成请求（此前完全无痕，无法与上游对账）。
+    maybe_log_api_request(
+        database_path.to_path_buf(),
+        "summary".to_string(),
+        endpoint.clone(),
+        serde_json::to_string(&payload).unwrap_or_default(),
+    )
+    .await;
+
     let body: Value = send_api_request_with_retry(
         &client,
         &endpoint,
@@ -206,6 +221,7 @@ async fn generate_summary_via_chat(
 }
 
 async fn generate_summary_via_responses(
+    database_path: &Path,
     api_config: &crate::storage::ApiConfigRecord,
     api_key: &str,
     custom_headers: &HashMap<String, String>,
@@ -236,6 +252,15 @@ async fn generate_summary_via_responses(
         payload["reasoning"] = reasoning;
     }
 
+    // 请求日志开启时记录标题生成请求（此前完全无痕，无法与上游对账）。
+    maybe_log_api_request(
+        database_path.to_path_buf(),
+        "summary".to_string(),
+        endpoint.clone(),
+        serde_json::to_string(&payload).unwrap_or_default(),
+    )
+    .await;
+
     let client = crate::api::http_client::build_proxied_client().await?;
 
     let body: Value = send_api_request_with_retry(
@@ -253,6 +278,7 @@ async fn generate_summary_via_responses(
 }
 
 async fn generate_summary_via_anthropic(
+    database_path: &Path,
     api_config: &crate::storage::ApiConfigRecord,
     api_key: &str,
     custom_headers: &HashMap<String, String>,
@@ -285,6 +311,15 @@ async fn generate_summary_via_anthropic(
         "thinking": {"type": "disabled"},
     });
 
+    // 请求日志开启时记录标题生成请求（此前完全无痕，无法与上游对账）。
+    maybe_log_api_request(
+        database_path.to_path_buf(),
+        "summary".to_string(),
+        endpoint.clone(),
+        serde_json::to_string(&payload).unwrap_or_default(),
+    )
+    .await;
+
     let client = crate::api::http_client::build_proxied_client().await?;
 
     let body: Value = send_api_request_with_retry(
@@ -302,6 +337,7 @@ async fn generate_summary_via_anthropic(
 }
 
 async fn generate_summary_via_gemini(
+    database_path: &Path,
     api_config: &crate::storage::ApiConfigRecord,
     api_key: &str,
     custom_headers: &HashMap<String, String>,
@@ -328,6 +364,15 @@ async fn generate_summary_via_gemini(
             "thinkingConfig": {"thinkingBudget": 0}
         }
     });
+
+    // 请求日志开启时记录标题生成请求（此前完全无痕，无法与上游对账）。
+    maybe_log_api_request(
+        database_path.to_path_buf(),
+        "summary".to_string(),
+        endpoint.clone(),
+        serde_json::to_string(&payload).unwrap_or_default(),
+    )
+    .await;
 
     let client = crate::api::http_client::build_proxied_client().await?;
 

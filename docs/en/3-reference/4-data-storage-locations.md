@@ -43,6 +43,7 @@ Representative tables include:
 | `custom_header_schemes` | Custom request-header schemes that may contain tokens |
 | `workspace_directories` | Workspace list |
 | `mcp_server_configs` | Global MCP configuration |
+| `lsp_server_configs` | LSP language-server configuration (DB-backed `lsp-config` scope; legacy `~/.snow/lsp-config.json` merged in) |
 | `plugins` / `plugin_marketplaces` / `plugin_components` | Plugin metadata, marketplaces, and component registry |
 | `chat_conversations` / `chat_messages` | Conversations and messages, including resource references |
 | `sub_agent_sessions` / `sub_agent_configs` | Sub-agent sessions and configuration |
@@ -79,6 +80,8 @@ When errors such as `DatabaseCorrupt`, `NotADatabase`, or `malformed` are detect
 
 Automatic recovery does not guarantee that every row can be recovered. If a `.corrupt.*.bak` file appears, preserve it and verify critical conversations, credentials, and settings before cleanup.
 
+In addition to automatic recovery, **Settings → General Settings** provides **Repair database** buttons (one for the runtime database and one for the archive database) that trigger the same table-by-table recovery flow manually; make sure no important writes are in flight before repairing.
+
 ### 1.4 App Resource Directories
 
 | Path | Contents | Lifecycle and boundary |
@@ -90,6 +93,8 @@ Automatic recovery does not guarantee that every row can be recovered. If a `.co
 | `~/.snowapp/image/` | Default image-library root | May be replaced by a custom root; files and database index must be backed up together |
 | `~/.snowapp/workspace/` | Built-in default workspace | Used to mount conversations when no user workspace is configured |
 | `~/.snowapp/browser-passwords/` | Browser password vault | OS-bound encryption; see below |
+
+**Storage usage display**: the storage-location section of **Settings → General Settings** shows the occupied size of each path (runtime database, archive database, checkpoints, uploads, image library, etc., computed via `get_path_size`); entries are hidden when the path does not exist or the size cannot be read.
 
 ## 2. Browser Passwords and Login State
 
@@ -128,6 +133,8 @@ Before restoration, existing cookies/localStorage are backed up in the same encr
 ## 3. Image Library and Custom Root
 
 The default image-library root is `~/.snowapp/image/`. A custom root is stored in SQLite as `system_settings.image_library_dir`. Physical paths use `<root>/<YYYY-MM-DD>/<file>`, while `image_library.relative_path` always retains the logical `image/...` prefix even when the physical root is custom.
+
+Switching, resetting, and migrating the image-library root is done from the storage-location section of **Settings → General Settings** (alongside the checkpoint/upload directories, each showing its occupied size); the image-library panel itself keeps only browsing and album features.
 
 If a custom directory cannot be created, path resolution falls back to the default root. Changing the root uses a recoverable migration:
 

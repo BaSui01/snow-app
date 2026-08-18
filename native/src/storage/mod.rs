@@ -21,6 +21,9 @@ use crate::api::conversation::images::resolve_inline_images_from_disk;
 
 static INTERRUPT_MARK_INIT: Once = Once::new();
 static MIGRATION_RECOVER_INIT: Once = Once::new();
+static LSP_CONFIG_SEED_INIT: Once = Once::new();
+static LSP_CONFIG_RECONCILE_INIT: Once = Once::new();
+static LSP_CONFIG_NORMALIZE_INIT: Once = Once::new();
 
 pub fn initialize_app_storage() -> Result<AppStorageInfo> {
     let database_path = ensure_database_file()?;
@@ -50,6 +53,53 @@ pub fn initialize_app_storage() -> Result<AppStorageInfo> {
         }
         if let Err(error) = services::storage_locations::recover_interrupted_migrations() {
             eprintln!("Failed to recover interrupted storage migrations: {error}");
+        }
+    });
+
+    // Seed LSP server configs once per process: migrate the legacy
+    // ~/.snow/lsp-config.json (config domain lives under ~/.snow, NOT the
+    // app storage dir) into the lsp_server_configs table, then insert
+    // platform-aware defaults. Both steps only run when the table is empty
+    // and are idempotent; errors are non-fatal.
+    LSP_CONFIG_SEED_INIT.call_once(|| {
+        let snow_dir = dirs_next::home_dir().map(|home| home.join(".snow"));
+        let db_path = database_path.clone();
+        let Ok(true) = services::lsp_server_configs::is_empty(&db_path) else {
+            return;
+        };
+        if let Some(snow) = snow_dir {
+            if let Err(error) = services::lsp_server_configs::migrate_legacy_file(&db_path, &snow) {
+                eprintln!("Failed to migrate legacy LSP configs: {error}");
+            }
+        }
+        if let Err(error) = services::lsp_server_configs::seed_defaults(&db_path) {
+            eprintln!("Failed to seed LSP server configs: {error}");
+        }
+    });
+
+    // Reconcile seed/legacy LSP configs against the real environment once
+    // per process: records that are enabled but whose command is not found
+    // on PATH are silently disabled (source=manual records are never
+    // touched). Probe is side-effect free and idempotent, so this also
+    // covers pre-existing databases seeded before §8.6 install probing.
+    LSP_CONFIG_RECONCILE_INIT.call_once(|| {
+        let db_path = database_path.clone();
+        if let Err(error) = services::lsp_server_configs::reconcile_enabled_by_probe(&db_path) {
+            eprintln!("Failed to reconcile LSP server install state: {error}");
+        }
+    });
+
+    // Normalize legacy sort_order values once per process: earlier legacy
+    // migrations assigned sort_order in legacy-file alphabetical order,
+    // making tailwindcss (which declares .tsx/.jsx/.html/.css) match before
+    // typescript for .tsx files. Known langs are re-mapped to their seed
+    // order; unknown langs follow after the seeds in their current relative
+    // order. Idempotent; source=manual records are never touched. Errors are
+    // non-fatal.
+    LSP_CONFIG_NORMALIZE_INIT.call_once(|| {
+        let db_path = database_path.clone();
+        if let Err(error) = services::lsp_server_configs::normalize_legacy_sort_orders(&db_path) {
+            eprintln!("Failed to normalize LSP server sort orders: {error}");
         }
     });
 
@@ -118,6 +168,30 @@ pub fn set_conversation_modes(
         goal_mode,
         worktree_mode,
         goal_mode_token_budget,
+    )
+}
+
+pub fn get_conversation_runtime_config(
+    conversation_id: &str,
+) -> Result<services::chat_conversations::ConversationRuntimeConfig> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::get_conversation_runtime_config(
+        &database_path,
+        conversation_id,
+    )
+}
+
+pub fn set_conversation_runtime_config(
+    conversation_id: &str,
+    thinking_strength: Option<String>,
+    responses_fast_mode: Option<bool>,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::set_conversation_runtime_config(
+        &database_path,
+        conversation_id,
+        thinking_strength,
+        responses_fast_mode,
     )
 }
 
@@ -567,6 +641,13 @@ pub fn delete_workspace_entry(root_path: String, entry_path: String) -> Result<(
     services::fs_explorer::delete_workspace_entry(&root_path, &entry_path)
 }
 
+pub fn delete_workspace_entries(
+    root_path: String,
+    entry_paths: Vec<String>,
+) -> Result<services::fs_explorer::BatchWorkspaceDeleteResult> {
+    services::fs_explorer::delete_workspace_entries(&root_path, entry_paths)
+}
+
 pub fn search_files(
     root_dir: String,
     query: String,
@@ -589,12 +670,101 @@ pub fn list_mcp_server_configs() -> Result<Vec<McpServerConfigRecord>> {
 
 pub fn upsert_mcp_server_config(item: McpServerConfigInput) -> Result<()> {
     let database_path = ensure_database_file()?;
-    services::mcp_server_configs::upsert_mcp_server_config(&database_path, &item)
+    let result =
+        services::mcp_server_configs::upsert_mcp_server_config(&database_path, &item);
+    if result.is_ok() {
+        crate::mcp::external::invalidate_discovery_cache();
+    }
+    result
 }
 
 pub fn delete_mcp_server_config(server_id: String) -> Result<()> {
     let database_path = ensure_database_file()?;
-    services::mcp_server_configs::delete_mcp_server_config(&database_path, &server_id)
+    let result =
+        services::mcp_server_configs::delete_mcp_server_config(&database_path, &server_id);
+    if result.is_ok() {
+        crate::mcp::external::invalidate_discovery_cache();
+    }
+    result
+}
+
+pub fn list_lsp_server_configs() -> Result<Vec<LspServerConfigRecord>> {
+    // 必须走 initialize_app_storage：触发 LSP_CONFIG_SEED_INIT（迁移 + 种子 Once）。
+    let storage_info = initialize_app_storage()?;
+    let database_path = PathBuf::from(storage_info.database_path);
+    services::lsp_server_configs::list_lsp_server_configs(&database_path)
+}
+
+pub fn upsert_lsp_server_config(item: LspServerConfigInput) -> Result<()> {
+    let storage_info = initialize_app_storage()?;
+    let database_path = PathBuf::from(storage_info.database_path);
+    services::lsp_server_configs::upsert_lsp_server_config(&database_path, &item)
+}
+
+pub fn delete_lsp_server_config(lang: String) -> Result<()> {
+    let storage_info = initialize_app_storage()?;
+    let database_path = PathBuf::from(storage_info.database_path);
+    services::lsp_server_configs::delete_lsp_server_config(&database_path, &lang)
+}
+
+pub fn clear_lsp_server_configs() -> Result<()> {
+    let storage_info = initialize_app_storage()?;
+    let database_path = PathBuf::from(storage_info.database_path);
+    services::lsp_server_configs::clear_lsp_server_configs(&database_path)
+}
+
+pub fn list_project_lsp_server_configs(
+    project_id: String,
+) -> Result<Vec<LspServerConfigRecord>> {
+    let storage_info = initialize_app_storage()?;
+    let database_path = PathBuf::from(storage_info.database_path);
+    services::project_lsp_server_configs::list_project_lsp_server_configs(
+        &database_path,
+        &project_id,
+    )
+}
+
+pub fn list_effective_lsp_server_configs(
+    project_id: Option<String>,
+) -> Result<Vec<LspServerConfigRecord>> {
+    let storage_info = initialize_app_storage()?;
+    let database_path = PathBuf::from(storage_info.database_path);
+    services::project_lsp_server_configs::list_effective_lsp_server_configs(
+        &database_path,
+        project_id.as_deref(),
+    )
+}
+
+pub fn upsert_project_lsp_server_config(
+    project_id: String,
+    item: LspServerConfigInput,
+) -> Result<()> {
+    let storage_info = initialize_app_storage()?;
+    let database_path = PathBuf::from(storage_info.database_path);
+    services::project_lsp_server_configs::upsert_project_lsp_server_config(
+        &database_path,
+        &project_id,
+        &item,
+    )
+}
+
+pub fn delete_project_lsp_server_config(project_id: String, lang: String) -> Result<()> {
+    let storage_info = initialize_app_storage()?;
+    let database_path = PathBuf::from(storage_info.database_path);
+    services::project_lsp_server_configs::delete_project_lsp_server_config(
+        &database_path,
+        &project_id,
+        &lang,
+    )
+}
+
+pub fn clear_project_lsp_server_configs(project_id: String) -> Result<()> {
+    let storage_info = initialize_app_storage()?;
+    let database_path = PathBuf::from(storage_info.database_path);
+    services::project_lsp_server_configs::clear_project_lsp_server_configs(
+        &database_path,
+        &project_id,
+    )
 }
 
 pub fn list_project_mcp_server_configs(
@@ -612,20 +782,28 @@ pub fn upsert_project_mcp_server_config(
     item: McpServerConfigInput,
 ) -> Result<()> {
     let database_path = ensure_database_file()?;
-    services::project_mcp_server_configs::upsert_project_mcp_server_config(
+    let result = services::project_mcp_server_configs::upsert_project_mcp_server_config(
         &database_path,
         &project_id,
         &item,
-    )
+    );
+    if result.is_ok() {
+        crate::mcp::external::invalidate_discovery_cache();
+    }
+    result
 }
 
 pub fn delete_project_mcp_server_config(project_id: String, server_id: String) -> Result<()> {
     let database_path = ensure_database_file()?;
-    services::project_mcp_server_configs::delete_project_mcp_server_config(
+    let result = services::project_mcp_server_configs::delete_project_mcp_server_config(
         &database_path,
         &project_id,
         &server_id,
-    )
+    );
+    if result.is_ok() {
+        crate::mcp::external::invalidate_discovery_cache();
+    }
+    result
 }
 
 pub fn list_import_resources() -> Result<Vec<ImportResourceRecord>> {
@@ -1004,6 +1182,8 @@ pub fn create_sub_agent_session(
     api_profile_name: String,
     model: String,
     title: String,
+    thinking_strength: Option<String>,
+    responses_fast_mode: Option<bool>,
 ) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::chat_conversations::create_sub_agent_session(
@@ -1016,6 +1196,8 @@ pub fn create_sub_agent_session(
         &api_profile_name,
         &model,
         &title,
+        thinking_strength,
+        responses_fast_mode,
     )
 }
 
@@ -1259,6 +1441,14 @@ pub fn get_usage_daily_breakdown(
     services::usage_records::get_usage_daily_breakdown(&database_path, &since, &until)
 }
 
+pub fn get_usage_model_breakdown(
+    since: String,
+    until: String,
+) -> Result<Vec<services::usage_records::ModelUsageBreakdown>> {
+    let database_path = ensure_database_file()?;
+    services::usage_records::get_usage_model_breakdown(&database_path, &since, &until)
+}
+
 pub fn write_app_log(input: services::app_logs::AppLogInput) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::app_logs::insert_app_log(&database_path, &input)
@@ -1489,6 +1679,13 @@ pub fn finalize_scheduled_task_run(
     )
 }
 
+/// Marks run rows left "running" by a crashed session as errored. See
+/// `services::scheduled_tasks::reconcile_interrupted_runs`.
+pub fn reconcile_scheduled_task_runs() -> Result<u32> {
+    let database_path = ensure_database_file()?;
+    services::scheduled_tasks::reconcile_interrupted_runs(&database_path)
+}
+
 // ===== Keyboard shortcuts =====
 
 pub fn get_keyboard_shortcuts_settings(
@@ -1502,6 +1699,63 @@ pub fn set_keyboard_shortcuts_settings(
 ) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::keyboard_shortcuts::set_keyboard_shortcuts_settings(&database_path, &settings)
+}
+
+// ============================================================================
+// 会话上下文附件（Context Attachments）
+// ============================================================================
+
+/// 会话上下文附件记录（napi 结构体）：B 附带 A，A 作为 B 的开头上下文。
+#[napi(object)]
+pub struct ContextAttachmentRecord {
+    pub conversation_id: String,
+    pub source_conversation_id: String,
+    pub title: String,
+    pub emoji: String,
+    pub sort_order: i64,
+    pub created_at: String,
+}
+
+impl From<services::context_attachments::ContextAttachmentRecord> for ContextAttachmentRecord {
+    fn from(record: services::context_attachments::ContextAttachmentRecord) -> Self {
+        ContextAttachmentRecord {
+            conversation_id: record.conversation_id,
+            source_conversation_id: record.source_conversation_id,
+            title: record.title,
+            emoji: record.emoji,
+            sort_order: record.sort_order,
+            created_at: record.created_at,
+        }
+    }
+}
+
+/// 列出 B 挂载的附带会话（按注入顺序：先注入在前）。
+pub fn list_context_attachments(conversation_id: String) -> Result<Vec<ContextAttachmentRecord>> {
+    let database_path = ensure_database_file()?;
+    services::context_attachments::list_context_attachments(&database_path, &conversation_id)
+        .map(|records| records.into_iter().map(ContextAttachmentRecord::from).collect())
+}
+
+/// 建立「B 附带 A」引用（校验：同目录 / 非自引用 / 非子代理 / 幂等去重）。
+pub fn add_context_attachment(
+    target_id: String,
+    source_id: String,
+) -> Result<ContextAttachmentRecord> {
+    let database_path = ensure_database_file()?;
+    services::context_attachments::add_context_attachment(&database_path, &target_id, &source_id)
+        .map(ContextAttachmentRecord::from)
+}
+
+/// 移除「B 附带 A」引用（纯关系删除）。
+pub fn remove_context_attachment(target_id: String, source_id: String) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::context_attachments::remove_context_attachment(&database_path, &target_id, &source_id)
+}
+
+/// 智能精简渲染「会话 A」为上下文块文本（注入与 UI 预览共用）。
+pub fn render_attachment_context(source_id: String) -> Result<String> {
+    let database_path = ensure_database_file()?;
+    services::context_attachments::render_attachment_context(&database_path, &source_id)
 }
 
 // ============================================================================
@@ -1621,6 +1875,22 @@ pub fn delete_image_album(id: String) -> Result<()> {
 pub fn set_image_album(image_id: String, album_id: Option<String>) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::image_library::set_image_album(&database_path, &image_id, album_id.as_deref())
+}
+
+/// 设置相册手动封面（image_id 传 null 清除，回退最新一张图）。
+pub fn set_image_album_cover(
+    album_id: String,
+    image_id: Option<String>,
+) -> Result<ImageAlbumRecord> {
+    let database_path = ensure_database_file()?;
+    services::image_library::set_album_cover(&database_path, &album_id, image_id.as_deref())
+        .map(ImageAlbumRecord::from)
+}
+
+/// 相册拖拽排序：按给定顺序写入 sort_order。
+pub fn reorder_image_albums(ordered_ids: Vec<String>) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::image_library::reorder_albums(&database_path, &ordered_ids)
 }
 
 /// 手动导入图片文件（复制进图库目录并写入索引），返回成功导入的记录。

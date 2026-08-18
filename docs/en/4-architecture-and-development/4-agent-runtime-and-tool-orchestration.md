@@ -136,6 +136,12 @@ flowchart TD
 
 Sub-agents use `collect_allowed_mcp_tools`. Their `tools_json` must be a string array; only built-in sub-agents may use `*`. Missing or globally/project-disabled tools are rejected rather than silently expanding authority. External MCP supports `server/discover` with a legacy initialize fallback.
 
+**Tool-domain system-prompt injection**: beyond tool visibility, system-prompt construction (`native/src/api/conversation/context.rs`) dynamically appends per-domain guidance sections, with **injection conditions kept consistent with tool visibility** — a disabled domain is never injected, so the prompt never steers the model toward invisible tools:
+
+- **`## Language Servers`** (LSP domain, `build_system_prompt_section` in `native/src/mcp/servers/lsp/mod.rs`): injected when the project has usable external language servers (config enabled + command installed + language match) and the domain scope allows it. It lists the servers with their runtime state (running / crashed / not started), groups the preferred `lsp-*` tools by capability, and mandates that semantic queries MUST use `lsp-*` (grep stays for literal patterns only); it also prewarms not-yet-running servers in the background to remove first-call cold starts.
+- **`## Image Generation`** (imagegen domain, `build_system_prompt_section` in `native/src/mcp/servers/imagegen/mod.rs`): injected when at least one usable image-generation channel is configured and the domain scope allows it. It lists the usable channels (id / name / protocol, non-sensitive summary) and mandates that multiple images MUST be produced by parallel `imagegen-generate` calls (one call per image; legacy `prompts` / `n>1` are NOT the multi-image path); ≥2 consecutive parallel calls are merged into a single `ImageGenGallery` grid by the UI.
+- Both sections are appended at the **end** of the prompt (state changes only affect the tail, minimizing prompt-cache prefix invalidation); any query failure silently degrades to an empty string (never breaks the request); normal / Plan / Goal modes all inject them, and sub-agent prompts carry them too.
+
 ## 6. Tool Calls and Checkpoints
 
 `call_mcp_tool` sanitizes polluted names, validates Plan special tools, blocks writes before Plan approval, checks global and project enable state, checks the sub-agent allowlist, resolves local/SSH workspace context, anchors local relative paths to the project root, augments pre-tool checkpoint capture, routes by tool type, privacy-masks output, and updates the post-tool checkpoint.

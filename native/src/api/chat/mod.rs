@@ -116,7 +116,7 @@ async fn create_chat_completion_response_async(
         system_prompt_ids_json: &api_config.system_prompt_ids_json,
         remote_role_content: request.remote_role_content.as_deref(),
         remote_include_global_rules: request.remote_include_global_rules,
-    })?;
+    }).await?;
 
     let skip_context = request.skip_context.unwrap_or(false);
     let mut prepared_messages = prepared_request.messages;

@@ -14,6 +14,11 @@
 //! - `codelens-find_definition`: Find the definition of a symbol at a position
 //! - `codelens-find_references`: Find all references to a symbol at a position
 //! - `codelens-file_outline`: Get the symbol outline of a file
+//!
+//! LSP 优先（2026-08-15）：当项目启用了匹配文件语言的 LSP 服务器且外部
+//! 命令可用时，call.rs 会先把这些工具转发给 `lsp-` 域执行（语义分析更准），
+//! 结果归一化为 codelens 输出形状（附加 `"engine": "lsp"`）；LSP 不可用或
+//! 失败时回退到本服务的静态分析。
 
 mod analyzer;
 mod symbol_index;
@@ -66,7 +71,7 @@ impl McpService for CodeLensService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "find_definition".to_string(),
-                description: "Find the definition of a symbol at a given line and column in a source file. Supports TypeScript, JavaScript, Python, Rust, Go, C, C++, Java, C#, Ruby, PHP, Lua, and more. Returns the symbol name, kind, and location of its declaration.".to_string(),
+                description: "Find the definition of a symbol at a given line and column in a source file. Supports TypeScript, JavaScript, Python, Rust, Go, C, C++, Java, C#, Ruby, PHP, Lua, and more. Returns the symbol name, kind, and location of its declaration. When the project has an enabled & available LSP server for the file's language, execution runs through the LSP server (semantic, more accurate) and the result keeps this shape with an extra \"engine\": \"lsp\" field (plus language / count / full definitions list); otherwise it falls back to the built-in tree-sitter/oxc static analysis.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -89,7 +94,7 @@ impl McpService for CodeLensService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "find_references".to_string(),
-                description: "Find all references to a symbol at a given line and column in a source file. Supports TypeScript, JavaScript, Python, Rust, Go, C, C++, Java, C#, Ruby, PHP, Lua, and more. Returns the symbol name, its definition location, and all usage sites within the same file.".to_string(),
+                description: "Find all references to a symbol at a given line and column in a source file. Supports TypeScript, JavaScript, Python, Rust, Go, C, C++, Java, C#, Ruby, PHP, Lua, and more. Returns the symbol name, its definition location, and all usage sites within the same file. When the project has an enabled & available LSP server for the file's language, execution runs through the LSP server (semantic, more accurate, cross-file with code context per reference) and the result keeps this shape with an extra \"engine\": \"lsp\" field (plus language); otherwise it falls back to the built-in tree-sitter/oxc static analysis.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -112,7 +117,7 @@ impl McpService for CodeLensService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "file_outline".to_string(),
-                description: "Get the symbol outline of a source file. Supports TypeScript, JavaScript, Python, Rust, Go, C, C++, Java, C#, Ruby, PHP, Lua, and more. Returns a flat list of top-level symbols (functions, classes, methods, variables, interfaces, types, enums) with their names, kinds, and locations. Useful for quickly understanding the structure of a file.".to_string(),
+                description: "Get the symbol outline of a source file. Supports TypeScript, JavaScript, Python, Rust, Go, C, C++, Java, C#, Ruby, PHP, Lua, and more. Returns a flat list of top-level symbols (functions, classes, methods, variables, interfaces, types, enums) with their names, kinds, and locations. Useful for quickly understanding the structure of a file. When the project has an enabled & available LSP server for the file's language, execution runs through the LSP server (semantic — includes nested children flattened parent-first, plus detail) and the result keeps this shape with an extra \"engine\": \"lsp\" field (plus language); otherwise it falls back to the built-in tree-sitter/oxc static analysis.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {

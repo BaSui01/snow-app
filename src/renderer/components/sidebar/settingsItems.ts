@@ -1,4 +1,5 @@
 import {
+  Braces,
   ChartColumn,
   Compass,
   Database,
@@ -115,6 +116,13 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
     labelKey: "settings.mcpSettings",
     defaultLabel: "MCP settings",
     view: "mcp-settings",
+  },
+  {
+    id: "lsp",
+    icon: Braces,
+    labelKey: "settings.lspSettings",
+    defaultLabel: "LSP settings",
+    view: "lsp-settings",
   },
   {
     id: "skills",

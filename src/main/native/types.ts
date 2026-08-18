@@ -145,6 +145,17 @@ export type DailyUsageBreakdown = {
   totalTokens: number;
 };
 
+export type ModelUsageBreakdown = {
+  model: string;
+  totalRequests: number;
+  errorRequests: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCacheCreationInputTokens: number;
+  totalCacheReadInputTokens: number;
+  totalTokens: number;
+};
+
 export type AppLogInput = {
   level: string;
   module: string;
@@ -212,6 +223,11 @@ export type ConversationModesResult = {
   goalMode: boolean | null;
   worktreeMode: boolean | null;
   goalModeTokenBudget: number | null;
+};
+
+export type ConversationRuntimeConfig = {
+  thinkingStrength: string | null;
+  responsesFastMode: boolean | null;
 };
 
 export type ThemeMode = "system" | "light" | "dark";
@@ -478,6 +494,16 @@ export type FileContentResult = {
   size: number;
 };
 
+export type FailedWorkspaceDelete = {
+  path: string;
+  error: string;
+};
+
+export type BatchWorkspaceDeleteResult = {
+  deleted: string[];
+  failed: FailedWorkspaceDelete[];
+};
+
 export type McpServerConfigInput = {
   serverId: string;
   name: string;
@@ -491,6 +517,63 @@ export type McpServerConfigInput = {
   timeoutMs?: number;
   sortOrder: number;
   source: string;
+};
+
+export type LspServerConfigInput = {
+  /** 语言标识（唯一键，如 rust / python / go） */
+  lang: string;
+  /** 启动命令，如 rust-analyzer */
+  command: string;
+  /** 命令参数 JSON 数组字符串，如 ["--stdio"] */
+  argsJson: string;
+  /** 关联文件扩展名 JSON 数组字符串，如 [".rs"] */
+  fileExtensionsJson: string;
+  /** 安装提示命令；空值省略（napi Option<String> 不接受 null） */
+  installCommand?: string | null;
+  /** 初始化选项 JSON 对象字符串；空值省略（napi Option<String> 不接受 null） */
+  initializationOptionsJson?: string | null;
+  enabled: boolean;
+  sortOrder: number;
+  /** 来源：seed / legacy / manual / config-set 等 */
+  source: string;
+};
+
+export type LspServerConfigRecord = LspServerConfigInput & {
+  id: string;
+  updatedAt: string;
+};
+
+/** LSP 命令安装探测结果（PATH 扫描，无副作用）。 */
+export type LspCommandProbeResult = {
+  command: string;
+  installed: boolean;
+  path: string | null;
+};
+
+/** 项目技术栈检测结果（native 扫描项目根目录，纯文件系统、无副作用）。 */
+export type ProjectStackDetection = {
+  /** 相对项目根的目录（"" = 根目录，如 "frontend"、"packages/web"） */
+  path: string;
+  /** 语言标识：typescript / rust / go / python / java / csharp / php / ruby / lua / kotlin */
+  lang: string;
+  /** 命中的标志文件名（package.json / Cargo.toml / go.mod 等） */
+  marker: string;
+};
+
+/** 语言服务器会话运行时状态（native ServerManager 内存态快照，实时轮询用）。 */
+export type LspSessionStatus = {
+  /** 语言标识（rust / typescript / python ...） */
+  lang: string;
+  /** 会话项目根目录（绝对路径） */
+  projectRoot: string;
+  /** running | dead | exited（进程已退出但会话未标记） */
+  status: "running" | "dead" | "exited";
+  /** 会话重启次数 */
+  restartCount: number;
+  /** 最近使用时间（unix 毫秒） */
+  lastUsedMs: number;
+  /** 异常状态说明（running 时为 null） */
+  error: string | null;
 };
 
 export type ProjectMcpServerImportInput = {
@@ -716,6 +799,16 @@ export type ChatMessagePage = {
   checkpointIds: string[];
 };
 
+/** 会话上下文附件：B 在开头附带 A 作为背景上下文（按 sortOrder 升序注入）。 */
+export type ContextAttachmentRecord = {
+  conversationId: string;
+  sourceConversationId: string;
+  title: string;
+  emoji: string;
+  sortOrder: number;
+  createdAt: string;
+};
+
 /** 图像管理系统（生成图片图库）记录 */
 export type ImageLibraryRecord = {
   id: string;
@@ -883,6 +976,10 @@ export type ResponsesApiRequest = {
    *  "high" | custom). Applied in-memory over the resolved profile's
    *  config_json; never mutates the stored profile. */
   thinkingStrength?: string;
+  /** Per-request Responses Fast Mode override; omitted follows the profile
+   *  default. Must never be `null`: napi-rs object fields only treat
+   *  `undefined` as absent — an explicit `null` throws BooleanExpected. */
+  responsesFastMode?: boolean;
   /**
    * Project ROLE.md content of an SSH (`ssh://`) workspace, resolved by the
    * main process via SSH (mirrors RoleEditorPanel's access path). Absent for
@@ -1183,7 +1280,7 @@ export type CheckpointFileDiff = CheckpointFileChange & {
 export type NativeBridge = {
   initializeAppStorage: () => Promise<AppStorageInfo>;
 
-getSystemSettingValue: (settingCode: string) => Promise<string | null>;
+  getSystemSettingValue: (settingCode: string) => Promise<string | null>;
   setSystemSetting: (
     settingName: string,
     settingCode: string,
@@ -1201,6 +1298,14 @@ getSystemSettingValue: (settingCode: string) => Promise<string | null>;
     goalMode: boolean | null,
     worktreeMode: boolean | null,
     goalModeTokenBudget: number | null
+  ) => Promise<void>;
+  getConversationRuntimeConfig: (
+    conversationId: string
+  ) => Promise<ConversationRuntimeConfig>;
+  setConversationRuntimeConfig: (
+    conversationId: string,
+    thinkingStrength: string | null,
+    responsesFastMode: boolean | null
   ) => Promise<void>;
   getRequestLogging: () => Promise<boolean>;
   setRequestLogging: (enabled: boolean) => Promise<void>;
@@ -1322,6 +1427,11 @@ getSystemSettingValue: (settingCode: string) => Promise<string | null>;
     newName: string
   ) => Promise<void>;
   deleteWorkspaceEntry: (rootPath: string, entryPath: string) => Promise<void>;
+  /** 批量删除工作区条目：单次调用，返回每个条目的删除结果（部分失败不中断）。 */
+  deleteWorkspaceEntries: (
+    rootPath: string,
+    entryPaths: string[]
+  ) => Promise<BatchWorkspaceDeleteResult>;
   readFileContent: (filePath: string) => Promise<FileContentResult>;
   writeFileContent: (filePath: string, content: string) => Promise<void>;
   searchFiles: (rootDir: string, query: string) => Promise<FileSearchResult[]>;
@@ -1344,6 +1454,30 @@ getSystemSettingValue: (settingCode: string) => Promise<string | null>;
     projectId: string,
     serverId: string
   ) => Promise<void>;
+  listLspServerConfigs: () => Promise<LspServerConfigRecord[]>;
+  upsertLspServerConfig: (item: LspServerConfigInput) => Promise<void>;
+  deleteLspServerConfig: (lang: string) => Promise<void>;
+  listProjectLspServerConfigs: (
+    projectId: string
+  ) => Promise<LspServerConfigRecord[]>;
+  upsertProjectLspServerConfig: (
+    projectId: string,
+    item: LspServerConfigInput
+  ) => Promise<void>;
+  deleteProjectLspServerConfig: (
+    projectId: string,
+    lang: string
+  ) => Promise<void>;
+  /** 项目生效配置合并视图：全局记录 + 项目覆盖（同 lang 覆盖替换全局）。 */
+  listEffectiveLspServerConfigs: (
+    projectId?: string
+  ) => Promise<LspServerConfigRecord[]>;
+  probeLspServerCommands: (
+    projectId?: string
+  ) => Promise<LspCommandProbeResult[]>;
+  detectProjectStack: (projectRoot: string) => Promise<ProjectStackDetection[]>;
+  /** 语言服务器会话运行时状态快照（不触发任何会话创建/回收）。 */
+  listLspSessionStatuses: (projectId?: string) => Promise<LspSessionStatus[]>;
   listImportResources: () => Promise<ImportResourceRecord[]>;
   upsertImportResources: (items: ImportResourceInput[]) => Promise<void>;
   commitImportTransaction: (
@@ -1447,7 +1581,9 @@ getSystemSettingValue: (settingCode: string) => Promise<string | null>;
     directoryId: string,
     apiProfileName: string,
     model: string,
-    title: string
+    title: string,
+    thinkingStrength?: string | null,
+    responsesFastMode?: boolean | null
   ) => Promise<void>;
   updateSubAgentSessionStatus: (
     conversationId: string,
@@ -1494,6 +1630,22 @@ getSystemSettingValue: (settingCode: string) => Promise<string | null>;
     conversationId: string,
     toolName: string
   ) => Promise<string | null>;
+  /** 列出会话 B 挂载的附带会话（上下文附件）。 */
+  listContextAttachments: (
+    conversationId: string
+  ) => Promise<ContextAttachmentRecord[]>;
+  /** 建立「B 附带 A」引用（校验：同目录 / 非自引用 / 非子代理 / 幂等）。 */
+  addContextAttachment: (
+    targetId: string,
+    sourceId: string
+  ) => Promise<ContextAttachmentRecord>;
+  /** 移除「B 附带 A」引用（纯关系删除）。 */
+  removeContextAttachment: (
+    targetId: string,
+    sourceId: string
+  ) => Promise<void>;
+  /** 智能精简渲染会话为上下文块文本（注入与预览共用）。 */
+  renderAttachmentContext: (sourceId: string) => Promise<string>;
   forkConversation: (
     sourceConversationId: string,
     upToResponseId: string
@@ -1621,6 +1773,11 @@ getSystemSettingValue: (settingCode: string) => Promise<string | null>;
     filePath: string,
     staged: boolean
   ) => Promise<GitDiffResult>;
+  gitFileContent: (
+    repoPath: string,
+    filePath: string,
+    revision: string | null
+  ) => Promise<FileContentResult>;
   gitDiscardChanges: (
     repoPath: string,
     filePaths: string[]
@@ -1634,10 +1791,7 @@ getSystemSettingValue: (settingCode: string) => Promise<string | null>;
     repoPath: string,
     hash: string
   ) => Promise<GitCommitFile[]>;
-  getCommitDiff: (
-    repoPath: string,
-    hash: string
-  ) => Promise<GitDiffResult>;
+  getCommitDiff: (repoPath: string, hash: string) => Promise<GitDiffResult>;
   gitCommitFileDiff: (
     repoPath: string,
     hash: string,
@@ -1672,7 +1826,10 @@ getSystemSettingValue: (settingCode: string) => Promise<string | null>;
   ) => Promise<ResponsesApiResult>;
   createCheckpoint: (workDir: string) => Promise<string>;
   restoreCheckpoint: (checkpointId: string, workDir: string) => Promise<void>;
-  restoreCheckpoints: (checkpointIds: string[], workDir: string) => Promise<void>;
+  restoreCheckpoints: (
+    checkpointIds: string[],
+    workDir: string
+  ) => Promise<void>;
   deleteCheckpoint: (checkpointId: string) => Promise<void>;
   listCheckpointChanges: (
     checkpointId: string,
@@ -1715,6 +1872,10 @@ getSystemSettingValue: (settingCode: string) => Promise<string | null>;
     since: string,
     until: string
   ) => Promise<DailyUsageBreakdown[]>;
+  getUsageModelBreakdown: (
+    since: string,
+    until: string
+  ) => Promise<ModelUsageBreakdown[]>;
   writeAppLog: (input: AppLogInput) => Promise<void>;
   /** Executes a scheduled-task pre-script (shell command) in the project cwd. */
   runPreScript: (
@@ -1761,6 +1922,8 @@ getSystemSettingValue: (settingCode: string) => Promise<string | null>;
     durationMs?: number,
     error?: string
   ) => Promise<void>;
+  /** Marks run rows left "running" by a crashed session as errored. */
+  reconcileScheduledTaskRuns: () => Promise<number>;
   sha256File: (filePath: string) => Promise<string>;
   getImageLibraryRoot: () => Promise<string>;
   getImageLibraryDir: () => Promise<string>;
@@ -1771,6 +1934,13 @@ getSystemSettingValue: (settingCode: string) => Promise<string | null>;
   renameImageAlbum: (id: string, name: string) => Promise<ImageAlbumRecord>;
   deleteImageAlbum: (id: string) => Promise<void>;
   setImageAlbum: (imageId: string, albumId: string | null) => Promise<void>;
+  /** 设置相册手动封面（imageId 传 null 清除，回退最新一张图） */
+  setImageAlbumCover: (
+    albumId: string,
+    imageId: string | null
+  ) => Promise<ImageAlbumRecord>;
+  /** 相册拖拽排序：按给定顺序持久化 sort_order */
+  reorderImageAlbums: (orderedIds: string[]) => Promise<void>;
   /** 手动导入图片文件（复制进图库目录并写入索引），返回成功导入的记录 */
   importImageFiles: (filePaths: string[]) => Promise<ImageLibraryRecord[]>;
   readImageLibraryFile: (relativePath: string) => Promise<string | null>;
@@ -1803,7 +1973,9 @@ getSystemSettingValue: (settingCode: string) => Promise<string | null>;
     targetDir: string
   ) => Promise<number>;
   /** 复制下一批存储目录文件并返回迁移进度 */
-  migrateStorageChunk: (kind: StorageLocationKind) => Promise<StorageMigrationProgress>;
+  migrateStorageChunk: (
+    kind: StorageLocationKind
+  ) => Promise<StorageMigrationProgress>;
   /** 提交迁移：写入新目录设置并清理旧根目录文件 */
   commitStorageMigration: (kind: StorageLocationKind) => Promise<void>;
   /** 回滚迁移：删除已复制到新目录的文件并移除日志（幂等） */

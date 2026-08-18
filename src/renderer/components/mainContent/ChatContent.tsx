@@ -19,6 +19,7 @@ import { useI18n } from "../../i18n";
 import { ChatInput } from "./ChatInput";
 import { EmptyChatGreeting } from "./EmptyChatGreeting";
 import { ChatMessageList, useChatConversationContext } from "./chatMessages";
+import { ConversationContextFold } from "./conversationContext/ConversationContextFold";
 import { RollbackConfirmDialog } from "./chatMessages/dialogs/RollbackConfirmDialog";
 import { CompactionStream } from "./chatMessages/components/CompactionStream";
 import { UserMessageRail } from "./chatMessages/components/UserMessageRail";
@@ -83,6 +84,7 @@ const ChatContentBody = ({
   const {
     messages,
     activeConversationId,
+    newChatGeneration,
     conversationDirectoryId,
     isLoadingOlderMessages,
     hasMoreMessages,
@@ -140,7 +142,10 @@ const ChatContentBody = ({
   const { autoScrollEnabled, setAutoScrollEnabled } = useAutoScrollPreference();
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const hasMessages = messages.length > 0;
-  const hasHistoryContent = hasMessages || isLoadingInitialHistory;
+  // History loading renders a skeleton, not conversation content. Keep the
+  // empty-state layout while it is loading so the input region stays visible
+  // instead of letting the message-area flex layout push it out of view.
+  const hasHistoryContent = hasMessages;
   // Compaction state is global, but the preview/error UI must only appear in
   // the conversation that is actually compacting — otherwise it bleeds into
   // other conversations after a switch.
@@ -975,6 +980,10 @@ const ChatContentBody = ({
     };
   }, []);
 
+  const chatRenderKey = `${activeDirectory?.directoryId ?? "no-project"}:${
+    activeConversationId ?? "new-chat"
+  }:${newChatGeneration}`;
+
   return (
     <div
       className={`chat-content ${
@@ -982,7 +991,7 @@ const ChatContentBody = ({
       }`}
     >
       <div
-        key={activeConversationId ?? "new-chat"}
+        key={chatRenderKey}
         className={`chat-area ${
           isLoadingInitialHistory ? "is-loading-history" : ""
         }`}
@@ -1035,6 +1044,9 @@ const ChatContentBody = ({
                 <div className="chat-history-skeleton-line" />
               </div>
             ) : null}
+            <ConversationContextFold
+              conversationId={activeConversationId ?? null}
+            />
             <ChatMessageList
               messages={messages}
               isStreaming={isStreaming}
@@ -1094,12 +1106,13 @@ const ChatContentBody = ({
           // 草稿池恢复），但不再随历史加载被卸载——输入框区域保持稳定，
           // 切换会话时只有模型/配置区短暂进入 loading，而不是整体消失。
           <ChatInput
-            key={activeConversationId ?? "new-chat"}
+            key={chatRenderKey}
             projectId={activeDirectory?.directoryId}
             projectName={activeDirectory?.name}
             conversationId={activeConversationId}
             onSend={handleSendWithScroll}
             onNavigateToView={onNavigateToView}
+            onOpenConversation={handleSelectConversation}
             isStreaming={isStreaming}
             isAborting={isAborting}
             onAbort={handleAbort}

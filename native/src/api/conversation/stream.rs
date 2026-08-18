@@ -93,6 +93,33 @@ fn apply_thinking_strength_override(
     serde_json::to_string(&parsed).unwrap_or_else(|_| config_json.to_string())
 }
 
+/// Applies a per-request Responses Fast Mode override onto a profile's
+/// config_json (in-memory only — the stored profile is never mutated).
+/// `None` preserves the resolved profile configuration unchanged.
+fn apply_responses_fast_mode_override(config_json: &str, fast_mode: Option<bool>) -> String {
+    let Some(fast_mode) = fast_mode else {
+        return config_json.to_string();
+    };
+
+    let mut parsed: serde_json::Value =
+        serde_json::from_str(config_json).unwrap_or_else(|_| serde_json::json!({}));
+    if !parsed
+        .get("snowcfg")
+        .is_some_and(serde_json::Value::is_object)
+    {
+        parsed["snowcfg"] = serde_json::json!({});
+    }
+
+    if let Some(snowcfg) = parsed["snowcfg"].as_object_mut() {
+        snowcfg.insert(
+            "responsesFastMode".to_string(),
+            serde_json::Value::Bool(fast_mode),
+        );
+    }
+
+    serde_json::to_string(&parsed).unwrap_or_else(|_| config_json.to_string())
+}
+
 fn resolve_sub_agent_profile(
     explicit_api_profile: Option<&str>,
     deprecated_config_profile: Option<&str>,
@@ -209,10 +236,12 @@ pub async fn create_response_stream(
 
     let cancel_token = crate::api::cancel::create_and_register(&stream_id);
 
-    // Per-request thinking strength override (e.g. scheduled-task runs):
-    // overlay it onto the resolved profile's config_json in memory so the
-    // provider payload builders pick it up. The stored profile is untouched.
+    // Per-request runtime overrides (thinking strength / Responses Fast Mode):
+    // overlay them onto the resolved profile's config_json in memory so the
+    // provider payload builders pick them up. The stored profile is untouched.
     let mut api_config = context.api_config;
+    api_config.config_json =
+        apply_responses_fast_mode_override(&api_config.config_json, request.responses_fast_mode);
     if let Some(strength) = normalize_non_empty(request.thinking_strength.as_deref()) {
         api_config.config_json = apply_thinking_strength_override(
             &api_config.config_json,
@@ -438,5 +467,35 @@ pub async fn create_response_stream(
                 persisted_user_message_ids,
             })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_responses_fast_mode_override;
+
+    #[test]
+    fn responses_fast_mode_override_is_request_scoped_and_preserves_none() {
+        let profile_config = r#"{"snowcfg":{"responsesFastMode":true}}"#;
+
+        let disabled = apply_responses_fast_mode_override(profile_config, Some(false));
+        let disabled_json: serde_json::Value = serde_json::from_str(&disabled).unwrap();
+        assert_eq!(
+            disabled_json["snowcfg"]["responsesFastMode"],
+            serde_json::json!(false)
+        );
+
+        let enabled = apply_responses_fast_mode_override(profile_config, Some(true));
+        let enabled_json: serde_json::Value = serde_json::from_str(&enabled).unwrap();
+        assert_eq!(
+            enabled_json["snowcfg"]["responsesFastMode"],
+            serde_json::json!(true)
+        );
+
+        assert_eq!(
+            apply_responses_fast_mode_override(profile_config, None),
+            profile_config
+        );
+        assert_eq!(profile_config, r#"{"snowcfg":{"responsesFastMode":true}}"#);
     }
 }

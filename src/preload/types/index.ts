@@ -2,6 +2,7 @@ export type * from "./api";
 export type * from "./browser";
 export type * from "./hooks";
 export type * from "./mcp";
+export type * from "./lsp";
 export type * from "./settings";
 export type * from "./workspace";
 export type * from "./ssh";

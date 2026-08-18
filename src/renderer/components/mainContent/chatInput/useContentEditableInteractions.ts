@@ -33,6 +33,14 @@ import {
   TERMINAL_DRAG_MIME,
   type TerminalDragPayload,
 } from "../../rightPanel/terminal/terminalMonitor";
+import {
+  CONVERSATION_DRAG_MIME,
+  addPendingContextAttachment,
+  conversationContextEvents,
+  endConversationDrag,
+  readConversationDragPayload,
+  type ConversationDragPayload,
+} from "../../sidebar/mainSidebar/conversationContextEvents";
 import type { InputFileOperationsResult } from "./useInputFileOperations";
 
 type HistoryMessage = {
@@ -46,8 +54,12 @@ type UseContentEditableInteractionsOptions = {
   handleKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void;
   userHistoryMessages: HistoryMessage[];
   activeConversationId?: string | null;
+  conversationDirectoryId?: string | null;
+  projectId?: string;
+  isSubAgentConversation: boolean;
   commands: ChatCommand[];
   onStartTerminalMonitor: (payload: TerminalDragPayload) => void;
+  onConversationDropError?: (message: string) => void;
   fileOperations: Pick<
     InputFileOperationsResult,
     | "syncContent"
@@ -98,8 +110,12 @@ export const useContentEditableInteractions = ({
   handleKeyDown,
   userHistoryMessages,
   activeConversationId,
+  conversationDirectoryId,
+  projectId,
+  isSubAgentConversation,
   commands,
   onStartTerminalMonitor,
+  onConversationDropError,
   fileOperations,
 }: UseContentEditableInteractionsOptions): ContentEditableInteractionsResult => {
   const {
@@ -248,6 +264,32 @@ export const useContentEditableInteractions = ({
           }
         } catch {
           // Ignore malformed terminal drag data
+        }
+        return;
+      }
+
+      const conversationPayload = readConversationDragPayload(event.dataTransfer);
+      if (conversationPayload) {
+        endConversationDrag();
+        if (activeConversationId) {
+          void window.snow
+            .addContextAttachment(
+              activeConversationId,
+              conversationPayload.conversationId
+            )
+            .then(() => {
+              conversationContextEvents.emit(
+                "attachments-changed",
+                activeConversationId
+              );
+            })
+            .catch((error: unknown) => {
+              onConversationDropError?.(
+                error instanceof Error ? error.message : String(error)
+              );
+            });
+        } else {
+          addPendingContextAttachment(conversationPayload);
         }
         return;
       }
@@ -408,12 +450,18 @@ export const useContentEditableInteractions = ({
       }
     },
     [
+      activeConversationId,
+      addPendingContextAttachment,
+      conversationContextEvents,
+      endConversationDrag,
       insertDroppedPlainText,
       insertExternalFiles,
       insertFileTags,
       insertImageFiles,
       insertWebTag,
+      onConversationDropError,
       onStartTerminalMonitor,
+      readConversationDragPayload,
       syncContent,
       textareaRef,
     ]
@@ -422,12 +470,28 @@ export const useContentEditableInteractions = ({
   const handleDragOver = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
       const types = event.dataTransfer.types;
+      const hasConversationDrag = types.includes(CONVERSATION_DRAG_MIME);
+      if (hasConversationDrag) {
+        const payload = readConversationDragPayload(event.dataTransfer);
+        const effectiveDirectoryId = conversationDirectoryId || projectId;
+        const hasTarget = !!activeConversationId;
+        const conversationAllowed =
+          !!payload &&
+          !isSubAgentConversation &&
+          payload.directoryId === effectiveDirectoryId &&
+          (!hasTarget || payload.conversationId !== activeConversationId);
+        if (!conversationAllowed) {
+          return;
+        }
+      }
+
       const hasTerminal = types.includes(TERMINAL_DRAG_MIME);
       const allowed =
         types.includes("application/json") ||
         types.includes("Files") ||
         types.includes("text/plain") ||
-        hasTerminal;
+        hasTerminal ||
+        hasConversationDrag;
       if (!allowed) {
         return;
       }
@@ -438,7 +502,13 @@ export const useContentEditableInteractions = ({
         textareaRef.current.classList.add("drag-over");
       }
     },
-    [textareaRef]
+    [
+      activeConversationId,
+      conversationDirectoryId,
+      isSubAgentConversation,
+      projectId,
+      textareaRef,
+    ]
   );
 
   const handleDragLeave = useCallback(

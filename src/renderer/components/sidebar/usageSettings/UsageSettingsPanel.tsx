@@ -6,6 +6,7 @@ import { UsageDateFilter } from "./UsageDateFilter";
 import { useI18n } from "../../../i18n";
 import type {
   DailyUsageBreakdown,
+  ModelUsageBreakdown,
   UsageRecord,
   UsageRecordPage,
   UsageSummary,
@@ -75,6 +76,9 @@ const getPresetRange = (
         until: getMonthEnd(lastMonthDate),
       };
     }
+    case "all":
+      // 全部日期：不设边界，由调用方将 since/until 置空。
+      return { since: now, until: now };
     case "custom":
     default:
       return { since: now, until: now };
@@ -130,6 +134,9 @@ export function UsageSettingsPanel({
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [summary, setSummary] = useState<UsageSummary | null>(null);
+  const [modelBreakdown, setModelBreakdown] = useState<ModelUsageBreakdown[]>(
+    []
+  );
   const [dailyData, setDailyData] = useState<DailyUsageBreakdown[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
@@ -147,7 +154,11 @@ export function UsageSettingsPanel({
 
   const handlePresetChange = useCallback((preset: UsageDatePreset) => {
     setDatePreset(preset);
-    if (preset !== "custom") {
+    if (preset === "all") {
+      // 全部日期：清空日期边界，Rust 端空字符串跳过过滤。
+      setSinceDate("");
+      setUntilDate("");
+    } else if (preset !== "custom") {
       const range = getPresetRange(preset, new Date());
       setSinceDate(formatDateForInput(range.since));
       setUntilDate(formatDateForInput(range.until));
@@ -208,12 +219,14 @@ export function UsageSettingsPanel({
         new Date(now.getTime() - ONE_YEAR_MS)
       );
       const heatmapUntil = formatDateForInput(now);
-      const [summaryResult, dailyResult] = await Promise.all([
+      const [summaryResult, dailyResult, modelResult] = await Promise.all([
         window.snow.getUsageSummary(sinceDateTime, untilDateTime),
         window.snow.getUsageDailyBreakdown(heatmapSince, heatmapUntil),
+        window.snow.getUsageModelBreakdown(sinceDateTime, untilDateTime),
       ]);
       setSummary(summaryResult);
       setDailyData(dailyResult ?? []);
+      setModelBreakdown(modelResult ?? []);
     } catch (e) {
       setError(
         e instanceof Error
@@ -362,6 +375,30 @@ export function UsageSettingsPanel({
   };
 
   const formatTokensLocale = (value: number): string => formatTokens(value);
+
+  // 状态值 → 国际化文案。未知状态原样返回，保证兼容新厂商的 finish_reason。
+  const translateStatus = (status: string): string => {
+    if (!status) return "-";
+    const keyByStatus: Record<string, string> = {
+      completed: "settings.usageStatusCompleted",
+      error: "settings.usageStatusError",
+      cancelled: "settings.usageStatusCancelled",
+      incomplete: "settings.usageStatusIncomplete",
+      failed: "settings.usageStatusFailed",
+      tool_calls: "settings.usageStatusToolCalls",
+      tool_use: "settings.usageStatusToolCalls",
+      length: "settings.usageStatusLength",
+      max_tokens: "settings.usageStatusMaxTokens",
+      content_filter: "settings.usageStatusContentFilter",
+      stop_sequence: "settings.usageStatusStopSequence",
+    };
+    const key = keyByStatus[status];
+    if (!key) return status;
+    return t(key, {
+      defaultValue: status,
+      values: { status },
+    });
+  };
 
   // Floating tooltip that follows the cursor. Position is applied directly to
   // the DOM node via a ref so high-frequency mousemove events do not trigger
@@ -559,7 +596,7 @@ export function UsageSettingsPanel({
           {t("settings.usageColStatus", { defaultValue: "Status" })}
         </span>
         <span className="usage-floating-tooltip-value">
-          {record.status || "-"}
+          {translateStatus(record.status)}
         </span>
       </div>
     </div>
@@ -712,6 +749,83 @@ export function UsageSettingsPanel({
             <span className="usage-summary-card-value">
               {summary.errorRequests.toLocaleString()}
             </span>
+          </div>
+        </div>
+      )}
+
+      {modelBreakdown.length > 0 && (
+        <div className="usage-model-breakdown-section">
+          <div className="usage-table-header">
+            <strong>
+              {t("settings.usageModelBreakdownTitle", {
+                defaultValue: "Model usage",
+              })}
+            </strong>
+            <span className="settings-item-description">
+              {t("settings.usageModelBreakdownInfo", {
+                defaultValue: "Token consumption grouped by model.",
+              })}
+            </span>
+          </div>
+          <div className="usage-table-wrapper">
+            <table className="usage-table">
+              <thead>
+                <tr>
+                  <th>
+                    {t("settings.usageColModel", { defaultValue: "Model" })}
+                  </th>
+                  <th>
+                    {t("settings.usageColRequests", {
+                      defaultValue: "Requests",
+                    })}
+                  </th>
+                  <th>
+                    {t("settings.usageColInput", { defaultValue: "Input" })}
+                  </th>
+                  <th>
+                    {t("settings.usageColOutput", { defaultValue: "Output" })}
+                  </th>
+                  <th>
+                    {t("settings.usageColCacheWrite", {
+                      defaultValue: "Cache W",
+                    })}
+                  </th>
+                  <th>
+                    {t("settings.usageColCacheRead", {
+                      defaultValue: "Cache R",
+                    })}
+                  </th>
+                  <th>
+                    {t("settings.usageColTotal", { defaultValue: "Total" })}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {modelBreakdown.map((item) => (
+                  <tr key={item.model}>
+                    <td className="usage-cell-model">{item.model || "-"}</td>
+                    <td className="usage-cell-number">
+                      {item.totalRequests.toLocaleString()}
+                    </td>
+                    <td className="usage-cell-number">
+                      {formatTokens(item.totalInputTokens)}
+                    </td>
+                    <td className="usage-cell-number">
+                      {formatTokens(item.totalOutputTokens)}
+                    </td>
+                    <td className="usage-cell-number">
+                      {formatTokens(item.totalCacheCreationInputTokens)}
+                    </td>
+                    <td className="usage-cell-number">
+                      {formatTokens(item.totalCacheReadInputTokens)}
+                    </td>
+                    <td className="usage-cell-number usage-cell-total">
+                      {formatTokens(item.totalTokens)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -935,12 +1049,14 @@ export function UsageSettingsPanel({
                           record.status === "error"
                             ? "error"
                             : record.status === "cancelled" ||
-                              record.status === "incomplete"
+                              record.status === "incomplete" ||
+                              record.status === "failed"
                             ? "warning"
                             : "success"
                         }`}
+                        title={record.status || undefined}
                       >
-                        {record.status || "-"}
+                        {translateStatus(record.status)}
                       </span>
                     </td>
                   </tr>

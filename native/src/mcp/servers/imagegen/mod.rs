@@ -52,10 +52,11 @@ const REQUEST_TIMEOUT_SECS: u64 = 300;
 const MIN_TIMEOUT_SECS: u64 = 60;
 const MAX_TIMEOUT_SECS: u64 = 3600;
 const DEFAULT_N: usize = 1;
-/// 单次工具调用内并发生成图片的最大数量（1-8，与设置面板
-/// maxConcurrentImages 上限一致）。中转/上游不支持单请求多图（n>1），
-/// 实现上把一次调用拆成 n 个并发子请求（每个子请求 n=1）绕开该限制。
-const MAX_PARALLEL_IMAGES: usize = 8;
+/// 单次工具调用内并发生成图片的最大数量（1-10，grok-imagine-image-2.0
+/// 官方支持一次最多 10 张；其余模型由前端按能力裁剪）。中转/上游不支持
+/// 单请求多图（n>1），实现上把一次调用拆成 n 个并发子请求（每个子请求
+/// n=1）绕开该限制。
+const MAX_PARALLEL_IMAGES: usize = 10;
 /// 远程图片（预签名 URL 等）下载上限（50 MB，与主进程 img-proxy 协议一致），
 /// 防止上游 URL 指向超大文件耗尽内存。
 const MAX_REMOTE_IMAGE_BYTES: usize = 50 * 1024 * 1024;
@@ -169,7 +170,7 @@ impl ImageGenService {
         on_chunk: &BashStreamCallback,
     ) -> napi::Result<Value> {
         let prompt = required_string(args, "prompt", TOOL_GENERATE)?;
-        // n 支持 1-8：一次调用生成多张时，内部拆成 n 个并发子请求
+        // n 支持 1-10：一次调用生成多张时，内部拆成 n 个并发子请求
         // （每个子请求 n=1——中转/上游不支持单请求多图，实测 n>1 会触发
         // 连接中断）。并发数由本工具内部管理，多调用间的并发仍由应用侧
         // maxConcurrentImages 自动管理。
@@ -276,6 +277,20 @@ impl ImageGenService {
                 "Model \"{model}\" does not support image-to-image (reference images). {hint}"
             )));
         }
+        // Gemini 参考图数量上限（官方文档）：3 系列 14 张，2.5 Flash Image 3 张。
+        if provider == "gemini" && !images.is_empty() {
+            let max_ref = if model_lower.contains("gemini-2.5-flash-image") {
+                3
+            } else {
+                14
+            };
+            if images.len() > max_ref {
+                return Err(Error::from_reason(format!(
+                    "Model \"{model}\" supports at most {max_ref} reference images, got {}. Reduce the number of reference images.",
+                    images.len()
+                )));
+            }
+        }
         // dall-e-3 每次只能生成 1 张：n>1 自动收敛为 1，避免 400。
         let n = if is_dall_e_3 { n.min(1) } else { n };
 
@@ -366,6 +381,15 @@ impl ImageGenService {
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string);
+        // 反向提示词（negativePrompt）：仅 Gemini Imagen 系生效（写入
+        // generationConfig.negativePrompt）；Nano Banana / OpenAI 不支持，
+        // 在 generate_gemini 内按模型判断丢弃。
+        let negative_prompt = args
+            .get("negativePrompt")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
         let image_search = args
             .get("imageSearch")
             .and_then(Value::as_bool)
@@ -388,6 +412,7 @@ impl ImageGenService {
                     per_request_images.as_slice(),
                     seed,
                     thinking_level.as_deref(),
+                    negative_prompt.as_deref(),
                     image_search,
                     &channel_label,
                     timeout_secs,
@@ -447,6 +472,10 @@ impl ImageGenService {
         let mime_type = mime_for_format(output_format.as_deref().unwrap_or("png"));
         let is_dall_e = model.to_ascii_lowercase().starts_with("dall-e");
         let is_gpt_image_2 = model.to_ascii_lowercase().contains("gpt-image-2");
+        // xAI Grok Imagine：OpenAI 兼容端点，但尺寸用 aspect_ratio + resolution
+        // （不走 size），图生图走 JSON body（非 multipart），不支持 SSE 流式。
+        let is_grok = model.to_ascii_lowercase().contains("grok-imagine")
+            || model.to_ascii_lowercase().contains("grok-image");
 
         // 单次调用内并发 n 个子请求（每个子请求 n=1）：中转/上游不支持
         // 单请求多图，拆成并发请求绕开限制。n>1 时禁用流式——多路
@@ -455,6 +484,7 @@ impl ImageGenService {
         let allow_stream = stream_enabled
             && requests == 1
             && !is_dall_e
+            && !is_grok
             && images.iter().all(|set| set.is_empty());
         let client = build_client(timeout_secs).await?;
 
@@ -471,8 +501,53 @@ impl ImageGenService {
                     // 用户显式指定 seed 且并发多张时逐张递增，避免生成完全相同的图
                     let request_seed = seed.map(|value| value.wrapping_add(request_index as u64));
 
-                    // --- Image-to-image: POST /images/edits (multipart) ---
+                    // --- Image-to-image: POST /images/edits ---
                     if !request_images.is_empty() {
+                        // xAI Grok Imagine：edits 走 application/json（非 multipart），
+                        // 参考图以 data URI 形式放入 image.url；暂取第一张。
+                        if is_grok {
+                            let body = json!({
+                                "model": model,
+                                "prompt": prompt,
+                                "image": {
+                                    "url": format!(
+                                        "data:{};base64,{}",
+                                        request_images[0].mime_type, request_images[0].data
+                                    )
+                                }
+                            });
+                            let response = client
+                                .post(&edits_endpoint)
+                                .bearer_auth(api_key)
+                                .json(&body)
+                                .send()
+                                .await
+                                .map_err(|error| {
+                                    generic_error(format!("Grok image edit request failed: {error}"))
+                                })?;
+                            let status = response.status();
+                            let response_body: Value = response.json().await.unwrap_or_else(|_| json!({}));
+                            if !status.is_success() {
+                                return Err(api_error(
+                                    "Grok image edit failed",
+                                    status.as_u16(),
+                                    &response_body,
+                                ));
+                            }
+                            let Some(data) = response_body.get("data").and_then(Value::as_array) else {
+                                return Err(generic_error(
+                                    "Grok image edit response is missing the data array".to_string(),
+                                ));
+                            };
+                            return openai_stream::collect_openai_result(
+                                prompt,
+                                model,
+                                channel_label,
+                                data.iter().cloned().collect(),
+                                mime_type,
+                            )
+                            .await;
+                        }
                         let build_form =
                             |background: Option<&str>| -> napi::Result<reqwest::multipart::Form> {
                                 let mut form = reqwest::multipart::Form::new()
@@ -593,6 +668,28 @@ impl ImageGenService {
                         "prompt": prompt,
                         "n": 1,
                     });
+                    if is_grok {
+                        // xAI Grok Imagine：尺寸 = aspect_ratio + resolution（1k/2k），
+                        // 不走 OpenAI 的 size；quality 仅 low/medium（2.0 支持）；
+                        // 不支持 output_format / output_compression / seed /
+                        // background / moderation，一律不发送。
+                        if let Some(value) = args.get("aspectRatio").and_then(Value::as_str) {
+                            if !value.is_empty() {
+                                body["aspect_ratio"] = json!(value);
+                            }
+                        }
+                        if let Some(value) = args.get("resolution").and_then(Value::as_str) {
+                            if !value.is_empty() {
+                                body["resolution"] = json!(value);
+                            }
+                        }
+                        if let Some(value) = quality {
+                            if matches!(value.as_str(), "low" | "medium") {
+                                body["quality"] = json!(value);
+                            }
+                        }
+                        body["response_format"] = json!("b64_json");
+                    } else {
                     if let Some(value) = size {
                         body["size"] = json!(value);
                     }
@@ -637,6 +734,7 @@ impl ImageGenService {
                             map.remove("background");
                             map.remove("moderation");
                         }
+                    }
                     }
 
                     // 部分模型/代理不支持透明背景（400 "Transparent background is not
@@ -764,6 +862,7 @@ impl ImageGenService {
         images: &[&[ReferenceImage]],
         seed: Option<u64>,
         thinking_level: Option<&str>,
+        negative_prompt: Option<&str>,
         image_search: bool,
         channel_label: &str,
         timeout_secs: Option<u64>,
@@ -826,6 +925,18 @@ impl ImageGenService {
         if let Some(quality) = quality {
             if matches!(quality.as_str(), "low" | "medium" | "high") {
                 interactions_response_format["image_quality"] = json!(quality);
+            }
+        }
+        // 输出格式（Gemini 3 系列 response_format mime_type：png / jpeg）
+        if let Some(output_format) = args.get("outputFormat").and_then(Value::as_str) {
+            match output_format.trim().to_ascii_lowercase().as_str() {
+                "png" => {
+                    interactions_response_format["mime_type"] = json!("image/png");
+                }
+                "jpeg" | "jpg" => {
+                    interactions_response_format["mime_type"] = json!("image/jpeg");
+                }
+                _ => {}
             }
         }
         let mut interactions_generation_config = json!({});
@@ -893,6 +1004,14 @@ impl ImageGenService {
                 "dont_allow" | "allow_all" | "allow_adult"
             ) {
                 legacy_generation_config["personGeneration"] = json!(person_generation);
+            }
+        }
+        // 反向提示词：仅 Imagen 系（generateContent 官方支持
+        // generationConfig.negativePrompt）；Nano Banana 2.5 / 3 系列忽略
+        // （官方建议用语义化正向描述，无独立 negative prompt 概念）。
+        if let Some(value) = negative_prompt {
+            if model.to_ascii_lowercase().starts_with("imagen") {
+                legacy_generation_config["negativePrompt"] = json!(value);
             }
         }
 
@@ -1183,6 +1302,10 @@ impl McpService for ImageGenService {
                     "imageSearch": {
                         "type": "boolean",
                         "description": "Gemini 3.1 Flash Image only: enable Google Image Search grounding so the model can use real web images as visual context (search_types: [\"web_search\", \"image_search\"]). Requires displaying search suggestions. Other models ignore it."
+                    },
+                    "negativePrompt": {
+                        "type": "string",
+                        "description": "Gemini Imagen only: negative prompt — comma-separated visual attributes to avoid (e.g. \"blurry, low quality, distorted hands\"). Written into generationConfig.negativePrompt of the Imagen generateContent request. Nano Banana (gemini 2.5 / 3 image models) and OpenAI do NOT support negative prompts (their guidance is to describe the desired result positively) — the value is ignored for those models."
                     }
                 },
                 "required": ["prompt"]
@@ -1738,4 +1861,86 @@ fn is_transparent_unsupported_error(response_body: &Value) -> bool {
 
 fn generic_error(message: String) -> Error {
     Error::new(Status::GenericFailure, message)
+}
+
+/// 检查 imagegen 域整体是否被用户允许（与 collect 阶段 imagegen-* 工具暴露
+/// 的 scope 条件一致）：全局黑名单把核心 imagegen 工具全部禁用，或项目 scope
+/// 禁用了 builtin:imagegen 服务器时返回 false——用户禁用了生图就不应在系统
+/// 提示词中注入使用指引（否则提示词与工具可见性不一致）。
+async fn imagegen_domain_scope_allowed(project_id: Option<&str>) -> napi::Result<bool> {
+    use crate::mcp::tools::{builtin_scope_server_id, load_global_scope, load_project_scope};
+    // 核心代表工具：任一未被全局禁用即认为域可用（collect 阶段按工具粒度
+    // 过滤，工具级个别禁用不影响域级注入）。
+    const CORE_IMAGEGEN_TOOLS: [&str; 2] = ["imagegen-generate", "imagegen-image-describe"];
+    if let Some(global) = load_global_scope().await? {
+        if CORE_IMAGEGEN_TOOLS
+            .iter()
+            .all(|tool| global.disabled_tool_names.contains(*tool))
+        {
+            return Ok(false);
+        }
+    }
+    let Some(scope) = load_project_scope(project_id).await? else {
+        return Ok(true);
+    };
+    Ok(scope.is_server_enabled(&builtin_scope_server_id("imagegen")))
+}
+
+/// 构建系统提示词注入的「Image Generation」章节（2026-08-16，仿 LSP 的
+/// `build_system_prompt_section` 方案：注入条件与工具可见性一致 + 追加在
+/// 提示词末尾最小化 prompt cache 前缀失效 + 失败静默降级）。
+///
+/// 配置了至少一个可用生图渠道（与 collect 阶段 `is_imagegen_configured`
+/// 判定一致）时，返回一段 Markdown 指引：
+/// - 列出可用渠道（id / 名称 / 协议，非敏感摘要，复用
+///   `available_channels_summary`）；
+/// - 多图规则：一次调用生成一张图，多图 MUST 并行多次调用（一次一图），
+///   legacy 的 `prompts` / `n>1` 不是多图路径；
+/// - 渲染事实：连续 ≥2 个并行调用由 UI 自动合并为 `ImageGenGallery` 统一
+///   网格（并行调用是唯一多图路径），生成后图片自动展示，不得用 Markdown
+///   图片语法或回显文件路径。
+///
+/// 无可用渠道、域 scope 禁用或任何查询失败时返回空字符串（静默降级——
+/// 提示词构建不能因 imagegen 状态查询失败而打挂整个请求）。
+pub(crate) async fn build_system_prompt_section(project_id: Option<&str>) -> String {
+    // 与 collect 阶段 imagegen-* 工具暴露的 scope 条件一致：域被禁用时不
+    // 注入——提示词指引必须与工具可见性保持一致，避免诱导调用不可见工具。
+    match imagegen_domain_scope_allowed(project_id).await {
+        Ok(true) => {}
+        Ok(false) => return String::new(),
+        Err(_) => return String::new(),
+    }
+    // 与 collect 阶段一致：无可用渠道时工具不暴露，指引也不注入。
+    // load_imagegen_settings 是同步 DB 读取，放 spawn_blocking 避免阻塞
+    // 异步运行时线程。
+    let settings = match tokio::task::spawn_blocking(load_imagegen_settings).await {
+        Ok(Ok(settings)) => settings,
+        _ => return String::new(),
+    };
+    if !settings.has_enabled_channel() {
+        return String::new();
+    }
+
+    let mut lines: Vec<String> = Vec::new();
+    lines.push("## Image Generation".to_string());
+    lines.push(String::new());
+    lines.push(format!(
+        "Image generation is configured ({}).",
+        available_channels_summary(&settings)
+    ));
+    lines.push(String::new());
+    lines.push("Rules (MUST follow):".to_string());
+    lines.push(
+        "- ONE `imagegen-generate` call produces ONE image. To generate several images, call the tool MULTIPLE TIMES in parallel — one call per image with its own single `prompt` (and its own `images` group when editing). Do NOT pass multiple prompts, a batch of styles, or `n` > 1 in a single call: those legacy parameters are NOT the multi-image path."
+            .to_string(),
+    );
+    lines.push(
+        "- Consecutive parallel `imagegen-generate` calls (≥2) are automatically merged by the chat UI into a single `ImageGenGallery` grid — parallel calls are the only multi-image path, so prefer them over sequential single-image calls."
+            .to_string(),
+    );
+    lines.push(
+        "- After the tool returns, generated images are shown automatically in the dedicated image UI: do NOT use Markdown image syntax (`![...](path)`) and do NOT echo file paths back to the user; reply with a short natural text instead."
+            .to_string(),
+    );
+    lines.join("\n")
 }

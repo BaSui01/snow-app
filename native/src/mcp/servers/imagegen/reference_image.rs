@@ -115,7 +115,7 @@ pub(crate) fn parse_reference_images(
 
 /// 解析 `requestImages` 参数（每个请求独立的参考图）：
 /// `Array<Array<{data|path, mimeType}>>`，第 i 项是第 i 个请求的参考图组。
-/// 组数即请求数（1-8），每组最多 MAX_IMAGES 张。
+/// 组数即请求数（1-10），每组最多 MAX_IMAGES 张。
 pub(crate) fn parse_request_images(
     args: &Value,
     database_path: &Path,

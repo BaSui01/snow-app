@@ -5,6 +5,7 @@ export type UsageDatePreset =
   | "last30days"
   | "thisMonth"
   | "lastMonth"
+  | "all"
   | "custom";
 
 export type UsageDateFilterProps = {

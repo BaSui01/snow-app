@@ -493,6 +493,10 @@ export type ConversationContextValue = {
    *  greeting instead of falling back to the pending session, and the
    *  agent loop must NOT auto-switch back to the migrated conversation. */
   newChatRequested: boolean;
+  /** Monotonically increasing renderer lifecycle generation. Incremented on
+   *  every handleNewChat so a fresh ChatInput instance is created even when
+   *  multiple new chats share the same pending conversation key. */
+  newChatGeneration: number;
   yoloMode: boolean;
   isUpdatingYoloMode: boolean;
   planMode: boolean;
@@ -553,9 +557,11 @@ export type ConversationContextValue = {
       subAgentConfigProfile?: string,
       apiProfile?: string,
       subAgentToolsJson?: string,
-      subAgentSystemPrompt?: string
-     ) => Promise<CompactionResult | null>
-   >;
+      subAgentSystemPrompt?: string,
+      thinkingStrength?: string,
+      responsesFastMode?: boolean | null
+    ) => Promise<CompactionResult | null>
+  >;
   yoloModeRef: RefValue<boolean>;
   planModeRef: RefValue<boolean>;
   goalModeRef: RefValue<boolean>;
@@ -607,6 +613,7 @@ export type ConversationContextValue = {
   setDraftToRestore: Dispatch<SetStateAction<string | null>>;
   setRollbackPreview: Dispatch<SetStateAction<RollbackPreview | null>>;
   setNewChatRequested: Dispatch<SetStateAction<boolean>>;
+  setNewChatGeneration: Dispatch<SetStateAction<number>>;
   setYoloModeState: Dispatch<SetStateAction<boolean>>;
   setIsUpdatingYoloMode: Dispatch<SetStateAction<boolean>>;
   setPlanModeState: Dispatch<SetStateAction<boolean>>;
@@ -672,6 +679,8 @@ export type UseChatConversationResult = {
    *  sessions such as streaming sub-agent conversations. */
   sessions: Record<string, ConversationSessionState>;
   activeConversationId: string | undefined;
+  /** Renderer-only generation incremented for every new-chat lifecycle. */
+  newChatGeneration: number;
   conversationDirectoryId: string | undefined;
   tokenUsage: TokenUsage | null;
   /** Real-time token probe for the current agent-loop iteration.

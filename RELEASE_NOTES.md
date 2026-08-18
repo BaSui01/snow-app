@@ -1,5 +1,23 @@
 # Release Notes
 
+## v0.2.8
+
+## New Features
+
+- **Conversation Context Drag & Drop**: Drag a conversation from the sidebar into the chat input to attach it as a reference chip; hovering the chip previews the exact context injected on send (thinking and tool details stripped, trimmed by budget).
+- **Drawing Workspace**: A new right-panel tab for direct image generation — prompt editor with examples, model-capability-linked options (size, format, thinking level), reference images, streaming previews, and a history gallery with lightbox.
+- **LSP Settings Panel**: A graphical settings panel for managing LSP server configurations.
+
+## Improvements
+
+- **MCP Tool Result Limit**: Tool results are capped at a percentage of the model context (`toolResultTokenLimit`, default 30%), with a truncation notice guiding the agent to narrow the scope; image results are exempt. Adjustable in API settings.
+- API config JSON is canonicalized on write, with a migration reconciling diverged configs.
+
+## Bug Fixes
+
+- Fixed a `BooleanExpected` error when `responsesFastMode` is null in the native bridge.
+- Restored chat input drag-and-drop handling and the initial input layout.
+
 ## v0.2.7
 
 ## New Features

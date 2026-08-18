@@ -4,6 +4,7 @@ import type {
   ChatConversationRecord,
   ChatMessagePage,
   ChatMessageRecord,
+  ContextAttachmentRecord,
   ConversationSearchResult,
   UserMessageSummary,
 } from "../types";
@@ -191,7 +192,9 @@ export const conversationApi = {
     directoryId: string,
     apiProfileName: string,
     model: string,
-    title: string
+    title: string,
+    thinkingStrength?: string | null,
+    responsesFastMode?: boolean | null
   ): Promise<void> =>
     ipcRenderer.invoke(
       "chat-conversations:create-sub-agent-session",
@@ -202,7 +205,9 @@ export const conversationApi = {
       directoryId,
       apiProfileName,
       model,
-      title
+      title,
+      thinkingStrength,
+      responsesFastMode
     ),
   updateSubAgentSessionStatus: (
     conversationId: string,
@@ -234,5 +239,32 @@ export const conversationApi = {
       conversationId,
       format,
       defaultFileName
+    ),
+  listContextAttachments: (
+    conversationId: string
+  ): Promise<ContextAttachmentRecord[]> =>
+    ipcRenderer.invoke("chat-conversations:context-attachments-list", conversationId),
+  addContextAttachment: (
+    targetId: string,
+    sourceId: string
+  ): Promise<ContextAttachmentRecord> =>
+    ipcRenderer.invoke(
+      "chat-conversations:context-attachments-add",
+      targetId,
+      sourceId
+    ),
+  removeContextAttachment: (
+    targetId: string,
+    sourceId: string
+  ): Promise<void> =>
+    ipcRenderer.invoke(
+      "chat-conversations:context-attachments-remove",
+      targetId,
+      sourceId
+    ),
+  renderAttachmentContext: (sourceId: string): Promise<string> =>
+    ipcRenderer.invoke(
+      "chat-conversations:context-attachments-preview",
+      sourceId
     ),
 };

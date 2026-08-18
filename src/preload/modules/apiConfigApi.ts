@@ -6,11 +6,13 @@ import type {
   AppLogPage,
   CodebaseSettingsInput,
   ConversationModesResult,
+  ConversationRuntimeConfig,
   DailyUsageBreakdown,
   DetectedTerminal,
   ImportSnowCliApiConfigsResult,
   KeyboardShortcutsSettings,
   Model,
+  ModelUsageBreakdown,
   PrivacySettings,
   ProxyBrowserSettings,
   ResponsesApiRequest,
@@ -94,6 +96,24 @@ export const apiConfigApi = {
       goalMode,
       worktreeMode,
       goalModeTokenBudget
+    ),
+  getConversationRuntimeConfig: (
+    conversationId: string
+  ): Promise<ConversationRuntimeConfig> =>
+    ipcRenderer.invoke(
+      "settings:get-conversation-runtime-config",
+      conversationId
+    ),
+  setConversationRuntimeConfig: (
+    conversationId: string,
+    thinkingStrength: string | null,
+    responsesFastMode: boolean | null
+  ): Promise<void> =>
+    ipcRenderer.invoke(
+      "settings:set-conversation-runtime-config",
+      conversationId,
+      thinkingStrength,
+      responsesFastMode
     ),
   getRequestLogging: (): Promise<boolean> =>
     ipcRenderer.invoke("settings:get-request-logging"),
@@ -250,6 +270,11 @@ export const apiConfigApi = {
     until: string
   ): Promise<DailyUsageBreakdown[]> =>
     ipcRenderer.invoke("usage:get-daily-breakdown", since, until),
+  getUsageModelBreakdown: (
+    since: string,
+    until: string
+  ): Promise<ModelUsageBreakdown[]> =>
+    ipcRenderer.invoke("usage:get-model-breakdown", since, until),
   listAppLogs: (
     level: string,
     module: string,

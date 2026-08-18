@@ -7,11 +7,17 @@ import type {
   HookExecuteInput,
   HookExecuteResult,
   HookScope,
+  LspCommandProbeResult,
+  LspInstallResult,
+  LspServerConfigInput,
+  LspServerConfigRecord,
+  LspSessionStatus,
   McpServerConfigInput,
   McpServerConfigRecord,
   ProjectMcpServerConfigRecord,
   ProjectSensitiveCommandConfigInput,
   ProjectSensitiveCommandConfigRecord,
+  ProjectStackDetection,
   SensitiveCommandConfigInput,
   SensitiveCommandConfigRecord,
   SubAgentConfigInput,
@@ -51,6 +57,49 @@ export const configApi = {
     ipcRenderer.invoke("mcp-server-configs:delete", serverId),
   importSnowCliMcpConfig: (): Promise<McpServerConfigRecord[]> =>
     ipcRenderer.invoke("mcp-server-configs:import-snow-cli"),
+  listLspServerConfigs: (): Promise<LspServerConfigRecord[]> =>
+    ipcRenderer.invoke("lsp-server-configs:list"),
+  upsertLspServerConfig: (
+    item: LspServerConfigInput
+  ): Promise<LspServerConfigRecord[]> =>
+    ipcRenderer.invoke("lsp-server-configs:upsert", item),
+  deleteLspServerConfig: (lang: string): Promise<LspServerConfigRecord[]> =>
+    ipcRenderer.invoke("lsp-server-configs:delete", lang),
+  listProjectLspServerConfigs: (
+    projectId: string
+  ): Promise<LspServerConfigRecord[]> =>
+    ipcRenderer.invoke("project-lsp-server-configs:list", projectId),
+  upsertProjectLspServerConfig: (
+    projectId: string,
+    item: LspServerConfigInput
+  ): Promise<LspServerConfigRecord[]> =>
+    ipcRenderer.invoke("project-lsp-server-configs:upsert", projectId, item),
+  deleteProjectLspServerConfig: (
+    projectId: string,
+    lang: string
+  ): Promise<LspServerConfigRecord[]> =>
+    ipcRenderer.invoke("project-lsp-server-configs:delete", projectId, lang),
+  /** 项目生效配置合并视图：全局记录 + 项目覆盖（同 lang 覆盖替换全局）。 */
+  listEffectiveLspServerConfigs: (
+    projectId?: string
+  ): Promise<LspServerConfigRecord[]> =>
+    ipcRenderer.invoke("lsp-server-configs:effective:list", projectId),
+  probeLspServerCommands: (
+    projectId?: string
+  ): Promise<LspCommandProbeResult[]> =>
+    ipcRenderer.invoke("lsp-server-configs:probe", projectId),
+  /** 扫描项目根目录检测技术栈（纯文件系统，无副作用）。 */
+  detectProjectStack: (projectRoot: string): Promise<ProjectStackDetection[]> =>
+    ipcRenderer.invoke("lsp-project-stack:detect", projectRoot),
+  /** 语言服务器会话运行时状态快照（不触发任何会话创建/回收，前端徽章轮询用）。
+   *  传入 projectId 时只返回该项目根下的会话（徽章按当前项目过滤）。 */
+  listLspSessionStatuses: (projectId?: string): Promise<LspSessionStatus[]> =>
+    ipcRenderer.invoke("lsp-session-statuses:list", projectId),
+  installLspServer: (
+    lang: string,
+    projectId?: string
+  ): Promise<LspInstallResult> =>
+    ipcRenderer.invoke("lsp-server-configs:install", projectId, lang),
   listProjectMcpServerConfigs: (
     projectId: string
   ): Promise<ProjectMcpServerConfigRecord[]> =>

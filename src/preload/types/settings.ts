@@ -43,6 +43,11 @@ export type ConversationModesResult = {
   goalModeTokenBudget: number | null;
 };
 
+export type ConversationRuntimeConfig = {
+  thinkingStrength: string | null;
+  responsesFastMode: boolean | null;
+};
+
 export type ThemeMode = "system" | "light" | "dark";
 
 export type ThemePalette = {
@@ -178,6 +183,17 @@ export type UsageSummary = {
 
 export type DailyUsageBreakdown = {
   date: string;
+  totalRequests: number;
+  errorRequests: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCacheCreationInputTokens: number;
+  totalCacheReadInputTokens: number;
+  totalTokens: number;
+};
+
+export type ModelUsageBreakdown = {
+  model: string;
   totalRequests: number;
   errorRequests: number;
   totalInputTokens: number;

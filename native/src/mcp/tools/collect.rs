@@ -41,6 +41,21 @@ pub async fn collect_all_mcp_tools(
             })??;
     let imagegen_configured = imagegen_context.is_some();
 
+    // LSP tools are off by default: only exposed when at least one
+    // *enabled and installed* language server exists (§8.0/§8.6 — enabled
+    // alone is not enough: a command missing from PATH can never start).
+    // Tool-level filtering follows §8.7: only the tools supported by the
+    // union of enabled servers' capabilities are exposed (e.g. enabling
+    // only csharp-ls hides lsp-rename / lsp-code-action / lsp-signature-help).
+    // Project-scoped: evaluated against the project's effective configs
+    // (project overrides global for the same lang, §8.5), matching the
+    // invocation stage — project-only servers expose tools, and project
+    // overrides that disable a server hide its tools. Single pass: one
+    // config read + one TTL-cached PATH probe (performance: this runs on
+    // every tool-list refresh).
+    let lsp_exposure = super::super::servers::lsp::tool_exposure(project_id).await?;
+    let lsp_available_tools = lsp_exposure.tools;
+
     let mut tools = get_builtin_tools()
         .into_iter()
         .filter(|tool| {
@@ -64,6 +79,19 @@ pub async fn collect_all_mcp_tools(
             if tool.server_id == "imagegen" && !imagegen_configured {
                 return false;
             }
+            // LSP tools are off by default (§8.0): excluded unless at least
+            // one enabled language server is configured, and further filtered
+            // by the union of enabled servers' capabilities (§8.7).
+            if tool.server_id == "lsp" && !lsp_available_tools.contains(&tool.full_name()) {
+                return false;
+            }
+            // codelens 与 lsp-* 互斥（2026-08-16）：LSP 可用（至少一个 enabled
+            // + installed 服务器）时隐藏 codelens（语义分析更优）；LSP 未配置/
+            // 不可用（含 SSH 远程）时暴露 codelens 作为 tree-sitter 静态分析
+            // 兜底——两个工具集永远只有其一出现在模型面前，互补不冗余。
+            if tool.server_id == "codelens" && !lsp_available_tools.is_empty() {
+                return false;
+            }
             tool_is_enabled(tool, global_scope.as_ref(), scope.as_ref())
         })
         .collect::<Vec<_>>();
@@ -77,6 +105,20 @@ pub async fn collect_all_mcp_tools(
         }) {
             tool.description =
                 format!("{}\n\nCurrent configuration:\n{}", tool.description, context);
+        }
+    }
+
+    // Inject the current enabled-and-installed language-server summary into
+    // every exposed lsp-* tool description (mirroring the imagegen pattern
+    // above, §8.0/§8.6), so the agent sees which language servers are
+    // actually active instead of guessing from static text. None when no
+    // server is available — at which point no lsp-* tool is exposed anyway.
+    // Project-scoped like the exposure filter above (§8.5); summary comes
+    // from the same single pass (no second config read / probe).
+    if let Some(summary) = lsp_exposure.summary {
+        for tool in tools.iter_mut().filter(|tool| tool.server_id == "lsp") {
+            tool.description =
+                format!("{}\n\nCurrent configuration:\n{}", tool.description, summary);
         }
     }
 
@@ -265,6 +307,7 @@ pub(crate) fn builtin_server_name(server_id: &str) -> &str {
         "terminal" => "Terminal Control",
         "config" => "Config",
         "imagegen" => "Image Generation",
+        "lsp" => "LSP",
         _ => server_id,
     }
 }

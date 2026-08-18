@@ -1,8 +1,69 @@
+use std::path::Path;
+
 use napi::bindgen_prelude::*;
 
 use super::{
-    is_git_repo, run_git, run_git_raw, GitCommitFile, GitDiffResult, GitLogEntry,
+    is_git_repo, run_git, run_git_bytes, run_git_raw, GitCommitFile, GitDiffResult, GitLogEntry,
 };
+
+/// 已知图片扩展名。对这些文件不做 `--text` 强制文本 diff：
+/// 二进制内容按文本输出会产生巨大乱码 patch，渲染端解析会卡死。
+const IMAGE_EXTENSIONS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "bmp", "webp", "ico", "svg", "tif", "tiff", "avif",
+];
+
+/// `--text` 重试 diff 的最大字节数。超过则视为真正的二进制文件
+/// （即使扩展名不是图片），避免巨大乱码 diff 传输/渲染卡死。
+const MAX_TEXT_DIFF_BYTES: usize = 256 * 1024;
+
+/// 按扩展名判断是否为图片文件（不区分大小写）。
+fn is_image_path(file_path: &str) -> bool {
+    Path::new(file_path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| IMAGE_EXTENSIONS.contains(&s.to_lowercase().as_str()))
+        .unwrap_or(false)
+}
+
+/// 单个文件内容的最大字节数（图片预览传输用）。超出时拒绝读取，
+/// 避免超大 base64 经过 IPC 传输导致 UI 卡顿。
+const MAX_FILE_CONTENT_BYTES: usize = 20 * 1024 * 1024;
+
+/// Read a file's raw content either from the working tree (`revision` is
+/// None/empty) or from a git revision (`git show <revision>:<path>`).
+///
+/// The content is processed through `process_file_content` so images come
+/// back as base64 with a MIME type, ready for direct `<img>` rendering.
+pub fn get_file_content(
+    repo_path: &str,
+    file_path: &str,
+    revision: Option<&str>,
+) -> Result<crate::storage::services::fs_explorer::FileContentResult> {
+    let bytes: Vec<u8> = match revision {
+        Some(rev) if !rev.trim().is_empty() => {
+            let rev_path = format!("{rev}:{file_path}");
+            let args = vec!["show", &rev_path];
+            run_git_bytes(repo_path, &args)?
+        }
+        _ => {
+            let full_path = Path::new(repo_path).join(file_path);
+            std::fs::read(&full_path).map_err(|e| {
+                Error::from_reason(format!("Failed to read file {}: {e}", full_path.display()))
+            })?
+        }
+    };
+
+    if bytes.len() > MAX_FILE_CONTENT_BYTES {
+        return Err(Error::from_reason(format!(
+            "File too large to preview ({:.1} MB)",
+            bytes.len() as f64 / (1024.0 * 1024.0)
+        )));
+    }
+
+    Ok(crate::storage::services::fs_explorer::process_file_content(
+        file_path, bytes,
+    ))
+}
 
 /// Returns the full staged diff (`git diff --cached`).
 ///
@@ -22,16 +83,28 @@ pub fn get_file_diff(repo_path: &str, file_path: &str, staged: bool) -> Result<G
     match run_git(repo_path, &args) {
         Ok(stdout) => {
             if stdout.contains("Binary files") {
+                // 已知图片（或常见二进制）扩展名：直接判定为二进制。
+                // 绝不能对图片重试 `--text`——二进制内容按文本输出会
+                // 产生几 MB 乱码 patch，渲染端解析会卡死。
+                if is_image_path(file_path) {
+                    return Ok(GitDiffResult {
+                        content: "Binary file - diff not available".to_string(),
+                        is_binary: true,
+                    });
+                }
                 // Git's heuristic may falsely flag text files as binary
                 // (e.g. files containing NUL bytes). Retry with --text
-                // to force a text-mode diff.
+                // to force a text-mode diff, but bound the result size —
+                // a huge text dump means the file is really binary.
                 let text_args: Vec<&str> = if staged {
                     vec!["diff", "--cached", "--text", "--", file_path]
                 } else {
                     vec!["diff", "--text", "--", file_path]
                 };
                 match run_git(repo_path, &text_args) {
-                    Ok(text_diff) if !text_diff.is_empty() => {
+                    Ok(text_diff)
+                        if !text_diff.is_empty() && text_diff.len() <= MAX_TEXT_DIFF_BYTES =>
+                    {
                         return Ok(GitDiffResult {
                             content: text_diff,
                             is_binary: false,
@@ -52,9 +125,15 @@ pub fn get_file_diff(repo_path: &str, file_path: &str, staged: bool) -> Result<G
             // files differ (the normal case), so we must use `run_git_raw`
             // which ignores the exit code and returns stdout.
             if !staged && stdout.is_empty() {
+                if is_image_path(file_path) {
+                    return Ok(GitDiffResult {
+                        content: "Binary file - diff not available".to_string(),
+                        is_binary: true,
+                    });
+                }
                 let no_index_args = vec!["diff", "--no-index", "--text", "/dev/null", file_path];
                 let full_diff = run_git_raw(repo_path, &no_index_args).unwrap_or_default();
-                if !full_diff.is_empty() {
+                if !full_diff.is_empty() && full_diff.len() <= MAX_TEXT_DIFF_BYTES {
                     return Ok(GitDiffResult {
                         content: full_diff,
                         is_binary: false,
@@ -241,9 +320,14 @@ pub fn get_commit_diff(repo_path: &str, hash: &str) -> Result<GitDiffResult> {
     match run_git(repo_path, &args) {
         Ok(stdout) => {
             if stdout.contains("Binary files") {
+                // `--text` 重试仅用于 git 误判文本为二进制的场景；结果
+                // 有大小上限，真正的二进制文件（如图片）会 dump 出巨大
+                // 乱码文本，超过上限即判定为二进制，避免渲染端卡死。
                 let text_args = vec!["show", "--format=", "--text", "--no-ext-diff", hash];
                 match run_git(repo_path, &text_args) {
-                    Ok(text_diff) if !text_diff.is_empty() => {
+                    Ok(text_diff)
+                        if !text_diff.is_empty() && text_diff.len() <= MAX_TEXT_DIFF_BYTES =>
+                    {
                         return Ok(GitDiffResult {
                             content: text_diff,
                             is_binary: false,
@@ -305,6 +389,14 @@ pub fn get_commit_file_diff(repo_path: &str, hash: &str, file_path: &str) -> Res
     match run_git(repo_path, &args) {
         Ok(stdout) => {
             if stdout.contains("Binary files") {
+                // 已知图片扩展名：直接判定为二进制，绝不 `--text` 重试
+                // （会 dump 出巨大乱码 patch，渲染端解析卡死）。
+                if is_image_path(file_path) {
+                    return Ok(GitDiffResult {
+                        content: "Binary file - diff not available".to_string(),
+                        is_binary: true,
+                    });
+                }
                 let text_args = vec![
                     "log",
                     "-m",
@@ -319,7 +411,9 @@ pub fn get_commit_file_diff(repo_path: &str, hash: &str, file_path: &str) -> Res
                     file_path,
                 ];
                 match run_git(repo_path, &text_args) {
-                    Ok(text_diff) if !text_diff.is_empty() => {
+                    Ok(text_diff)
+                        if !text_diff.is_empty() && text_diff.len() <= MAX_TEXT_DIFF_BYTES =>
+                    {
                         return Ok(GitDiffResult {
                             content: text_diff,
                             is_binary: false,

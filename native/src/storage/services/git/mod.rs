@@ -220,6 +220,34 @@ pub(crate) fn run_git_raw(repo_path: &str, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+/// Like `run_git_raw` but returns the raw stdout bytes without lossy
+/// UTF-8 conversion. Used to read file contents (e.g. images) from a
+/// revision via `git show <rev>:<path>`, where the bytes must survive
+/// intact for base64 encoding.
+pub(crate) fn run_git_bytes(repo_path: &str, args: &[&str]) -> Result<Vec<u8>> {
+    let mut cmd = build_git_command(repo_path, args);
+    // Same `safe.directory=*` bypass as `run_git` — see its comment.
+    // `build_git_command` 内部已通过 `utils::process::cmd` 统一带上
+    // CREATE_NO_WINDOW（Windows），无需重复设置。
+
+    let output = cmd.output().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            Error::from_reason(GIT_NOT_FOUND_MESSAGE)
+        } else {
+            Error::from_reason(format!("Failed to execute git: {e}"))
+        }
+    })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let err_msg = if stderr.is_empty() { stdout } else { stderr };
+        return Err(Error::from_reason(err_msg));
+    }
+
+    Ok(output.stdout)
+}
+
 pub(crate) fn is_git_repo(repo_path: &str) -> bool {
     Path::new(repo_path).join(".git").exists()
 }

@@ -7,6 +7,7 @@
 //! providers.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use napi::bindgen_prelude::*;
@@ -17,17 +18,17 @@ use tokio_util::sync::CancellationToken;
 use crate::api::common::emit_stream_chunk;
 use crate::api::responses::{ResponsesApiStreamCallback, ResponsesApiStreamChunk};
 use crate::api::retry::{
-    decide_stream_recovery, is_retriable_stream_read_error, should_retry,
-    stream_idle_timeout_error, visible_content_char_count, wait_before_retry, RetryOptions,
-    StreamAttemptProgress, StreamEndCause, StreamInterruptionReason, StreamRecoveryDecision,
-    StreamRecoveryOutcome,
+    decide_stream_recovery, should_retry, stream_idle_timeout_error, visible_content_char_count,
+    wait_before_retry, RetryOptions, StreamAttemptProgress, StreamEndCause,
+    StreamInterruptionReason, StreamRecoveryDecision, StreamRecoveryOutcome,
 };
 use crate::api::sse::{read_sse_stream_until_terminal, SseStreamEnd};
+use crate::storage::services::app_logs::log_api_warning;
 use crate::storage::services::chat_conversations::ChatTokenUsage;
 
 use super::event::{
-    collect_reasoning_items, collect_tool_calls, extract_output_text, extract_response_error,
-    extract_response_thinking, process_responses_sse_event_block,
+    collect_reasoning_items, collect_tool_calls, extract_output_text, extract_response_thinking,
+    process_responses_sse_event_block,
 };
 
 pub(super) struct StreamingResponseResult {
@@ -172,7 +173,6 @@ fn finalize_transport_interruption(
     state: &mut ResponsesAttemptState,
     decision: StreamRecoveryDecision,
     cause: StreamEndCause,
-    read_error_retriable: bool,
 ) -> (
     Option<StreamInterruptionReason>,
     Option<StreamRecoveryOutcome>,
@@ -188,13 +188,14 @@ fn finalize_transport_interruption(
 
     (
         Some(cause.interruption_reason()),
-        decision.recovery_outcome(cause, read_error_retriable),
+        decision.recovery_outcome(),
     )
 }
 
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn collect_streaming_response(
     client: &reqwest::Client,
+    database_path: PathBuf,
     endpoint: &str,
     api_key: &str,
     custom_headers: &HashMap<String, String>,
@@ -306,6 +307,25 @@ pub(super) async fn collect_streaming_response(
                             ThreadsafeFunctionCallMode::NonBlocking,
                         );
 
+                        // 记录重试到本地日志（复用 log_api_warning）：即使后续
+                        // 重试成功也留痕，便于排查上游出现重复请求时无法对账。
+                        {
+                            let db_path = database_path.clone();
+                            let endpoint_info = endpoint.to_string();
+                            let error_info = error.reason.clone();
+                            tokio::task::spawn_blocking(move || {
+                                log_api_warning(
+                                    &db_path,
+                                    "create_response_stream_with_context",
+                                    "Responses API request retrying",
+                                    &format!(
+                                        "attempt={} cause=http_status endpoint={endpoint_info} error={error_info}",
+                                        attempt + 1,
+                                    ),
+                                );
+                            });
+                        }
+
                         match wait_before_retry(retry_options, cancel_token, attempt).await {
                             Ok(()) => {
                                 attempt += 1;
@@ -338,6 +358,25 @@ pub(super) async fn collect_streaming_response(
                         },
                         ThreadsafeFunctionCallMode::NonBlocking,
                     );
+
+                    // 记录重试到本地日志（复用 log_api_warning）：即使后续
+                    // 重试成功也留痕，便于排查上游出现重复请求时无法对账。
+                    {
+                        let db_path = database_path.clone();
+                        let endpoint_info = endpoint.to_string();
+                        let error_info = error.reason.clone();
+                        tokio::task::spawn_blocking(move || {
+                            log_api_warning(
+                                &db_path,
+                                "create_response_stream_with_context",
+                                "Responses API request retrying",
+                                &format!(
+                                    "attempt={} cause=connect_error endpoint={endpoint_info} error={error_info}",
+                                    attempt + 1,
+                                ),
+                            );
+                        });
+                    }
 
                     match wait_before_retry(retry_options, cancel_token, attempt).await {
                         Ok(()) => {
@@ -391,65 +430,12 @@ pub(super) async fn collect_streaming_response(
             break 'attempt_loop (attempt_state, None, None);
         }
 
-        // Provider terminal wins over transport recovery. Completed payloads
-        // may supply trusted fallback output, while pending streaming tool
-        // fragments are always discarded.
+        // Provider terminal wins over transport recovery. All terminal variants
+        // preserve their Provider result after pending streaming tool fragments
+        // are discarded.
         if let SseStreamEnd::ProviderTerminal = &stream_end {
             let (terminal_interruption_reason, terminal_recovery_outcome) =
                 attempt_state.finalize_provider_terminal();
-
-            // Preserve the existing Provider-level retry for terminal transient
-            // failures. It is separate from transport recovery and never leaves
-            // interruption metadata on a later successful response.
-            if attempt_state.response_status == "failed"
-                && attempt_state.content_chunks.is_empty()
-                && attempt_state.thinking_chunks.is_empty()
-                && attempt_state.tool_calls.is_empty()
-                && attempt_state.reasoning_items.is_empty()
-            {
-                let error_message = attempt_state
-                    .completed_response
-                    .as_ref()
-                    .and_then(extract_response_error)
-                    .unwrap_or_else(|| {
-                        "Responses API returned failed status without error details".to_string()
-                    });
-                let error = Error::from_reason(error_message);
-
-                if !should_retry(&error, attempt, retry_options) {
-                    return Err(error);
-                }
-
-                on_chunk.call(
-                    ResponsesApiStreamChunk {
-                        content_delta: String::new(),
-                        thinking_delta: String::new(),
-                        content: String::new(),
-                        thinking: String::new(),
-                        retrying: true,
-                        retry_attempt: Some((attempt + 1) as i32),
-                        retry_error: Some(error.reason.clone()),
-                        stream_token_count: stream_token_count as i64,
-                        elapsed_ms: stream_start.elapsed().as_millis() as i64,
-                        ttft_ms,
-                        vision_status: None,
-                    },
-                    ThreadsafeFunctionCallMode::NonBlocking,
-                );
-
-                match wait_before_retry(retry_options, cancel_token, attempt).await {
-                    Ok(()) => {
-                        attempt += 1;
-                        continue 'attempt_loop;
-                    }
-                    Err(_wait_error) if cancel_token.is_cancelled() => {
-                        attempt_state.finish_cancelled();
-                        break 'attempt_loop (attempt_state, None, None);
-                    }
-                    Err(wait_error) => return Err(wait_error),
-                }
-            }
-
             break 'attempt_loop (
                 attempt_state,
                 terminal_interruption_reason,
@@ -457,24 +443,14 @@ pub(super) async fn collect_streaming_response(
             );
         }
 
-        let (cause, read_error_retriable, retry_error) = match stream_end {
-            SseStreamEnd::ReadError(error) => {
-                let stream_error = Error::from_reason(error.to_string());
-                let retriable = is_retriable_stream_read_error(&stream_error);
-                (
-                    StreamEndCause::ReadError,
-                    retriable,
-                    stream_error.reason.clone(),
-                )
-            }
+        let (cause, retry_error) = match stream_end {
+            SseStreamEnd::ReadError(error) => (StreamEndCause::ReadError, error.to_string()),
             SseStreamEnd::UnexpectedEof => (
                 StreamEndCause::UnexpectedEof,
-                true,
                 "Stream ended before a Responses terminal event".to_string(),
             ),
             SseStreamEnd::IdleTimeout => (
                 StreamEndCause::IdleTimeout,
-                true,
                 stream_idle_timeout_error().reason.clone(),
             ),
             SseStreamEnd::ProviderTerminal | SseStreamEnd::Cancelled => {
@@ -482,13 +458,7 @@ pub(super) async fn collect_streaming_response(
             }
         };
         let progress = attempt_state.progress(cancel_token.is_cancelled());
-        let decision = decide_stream_recovery(
-            cause,
-            attempt,
-            retry_options,
-            read_error_retriable,
-            progress,
-        );
+        let decision = decide_stream_recovery(cause, attempt, retry_options, progress);
 
         match decision {
             StreamRecoveryDecision::Cancelled => {
@@ -501,6 +471,27 @@ pub(super) async fn collect_streaming_response(
                 break 'attempt_loop (attempt_state, provider_reason, provider_outcome);
             }
             StreamRecoveryDecision::Retry => {
+                // 记录流中断恢复重试到本地日志（复用 log_api_warning）：
+                // 重试成功时中断原因不会写 interruption_reason，此前完全无痕。
+                {
+                    let db_path = database_path.clone();
+                    let endpoint_info = endpoint.to_string();
+                    let error_info = retry_error.clone();
+                    let partial_chars = progress.visible_content_chars;
+                    tokio::task::spawn_blocking(move || {
+                        log_api_warning(
+                            &db_path,
+                            "create_response_stream_with_context",
+                            "Responses API request retrying",
+                            &format!(
+                                "attempt={} cause={:?} partial_chars={partial_chars} endpoint={endpoint_info} error={error_info}",
+                                attempt + 1,
+                                cause,
+                            ),
+                        );
+                    });
+                }
+
                 on_chunk.call(
                     ResponsesApiStreamChunk {
                         content_delta: String::new(),
@@ -532,12 +523,8 @@ pub(super) async fn collect_streaming_response(
             }
             StreamRecoveryDecision::KeepUsablePartial
             | StreamRecoveryDecision::SurfaceInterrupted => {
-                let (transport_reason, transport_outcome) = finalize_transport_interruption(
-                    &mut attempt_state,
-                    decision,
-                    cause,
-                    read_error_retriable,
-                );
+                let (transport_reason, transport_outcome) =
+                    finalize_transport_interruption(&mut attempt_state, decision, cause);
                 break 'attempt_loop (attempt_state, transport_reason, transport_outcome);
             }
         }

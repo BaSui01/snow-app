@@ -125,7 +125,7 @@ fn build_sub_agents_section(database_path: &Path, directory_id: Option<&str>) ->
     }
 }
 
-pub fn prepare_context_request(
+pub async fn prepare_context_request(
     request: ConversationContextRequest<'_>,
 ) -> Result<PreparedConversationRequest> {
     let mut current_messages = if request.resume_after_compaction {
@@ -252,6 +252,39 @@ pub fn prepare_context_request(
             &sub_agents_section,
         )
     };
+    // LSP 优先指引（2026-08-15，方案 B）：项目启用了可用的外部 LSP 服务器
+    // 时，在系统提示词末尾注入「Language Servers」章节（列出服务器及其
+    // 会话运行状态，按合并能力分组指引优先使用 lsp-* 工具分析/搜索代码）。
+    // 查询失败返回空字符串（静默降级，不打断请求）。追加在末尾：会话状态
+    // 变化（installed → running）只影响提示词尾部，最小化 prompt cache
+    // 前缀失效范围。普通 / Plan / Goal 三种模式统一注入。
+    let lsp_section = crate::mcp::servers::lsp::build_system_prompt_section(
+        request.directory_id,
+        if working_directory.trim().is_empty() {
+            None
+        } else {
+            Some(std::path::Path::new(&working_directory))
+        },
+    )
+    .await;
+    let system_prompt = if lsp_section.is_empty() {
+        system_prompt
+    } else {
+        format!("{system_prompt}\n\n{lsp_section}")
+    };
+    // Image Generation 指引（2026-08-16，仿 LSP 方案 B）：配置了生图渠道且
+    // 域 scope 允许时，在系统提示词末尾追加「Image Generation」章节，引导
+    // 并行多次调用是唯一多图路径（≥2 个并行调用由 UI 自动合并为
+    // ImageGenGallery 统一网格）。查询失败返回空字符串（静默降级，不打断
+    // 请求）。追加在末尾：与 LSP 章节同理，最小化 prompt cache 前缀失效
+    // 范围。普通 / Plan / Goal 三种模式统一注入。
+    let imagegen_section =
+        crate::mcp::servers::imagegen::build_system_prompt_section(request.directory_id).await;
+    let system_prompt = if imagegen_section.is_empty() {
+        system_prompt
+    } else {
+        format!("{system_prompt}\n\n{imagegen_section}")
+    };
     let user_system_prompts = if request.is_sub_agent {
         compose_sub_agent_system_prompts(
             &system_prompt,
@@ -283,6 +316,67 @@ pub fn prepare_context_request(
                     thinking_blocks_json: None,
                 },
             );
+        }
+    }
+
+    // --- Conversation context attachments: inject attached conversations
+    //     as prefix context blocks (after the system prompt, before the
+    //     conversation's own history). Non-recursive: only the attached
+    //     conversation's own messages are rendered; its own attachments are
+    //     not followed (prevents context explosion / cycles). ---
+    let attached =
+        crate::storage::services::context_attachments::list_context_attachments(
+            request.database_path,
+            &conversation_id,
+        )?;
+    if !attached.is_empty() {
+        // 预算控制（可配置，见 read_attach_context_budgets）：每个附件按
+        // 单附件预算渲染，但所有附件合计不得超过总预算 —— 累计实际注入
+        // 长度，剩余预算耗尽后不再注入后续附件。
+        let (single_budget, total_budget) =
+            crate::storage::services::context_attachments::read_attach_context_budgets(
+                request.database_path,
+            );
+        let mut used_chars: usize = 0;
+        let mut injected: Vec<ChatContextMessage> = Vec::with_capacity(attached.len());
+        for attachment in attached {
+            let remaining = total_budget.saturating_sub(used_chars);
+            if remaining == 0 {
+                break;
+            }
+            let rendered = crate::storage::services::context_attachments::
+                render_attachment_context_with_budget(
+                    request.database_path,
+                    &attachment.source_conversation_id,
+                    single_budget.min(remaining),
+                )?;
+            let content = rendered.trim();
+            if content.is_empty() {
+                continue;
+            }
+            used_chars += content.len();
+            injected.push(ChatContextMessage {
+                role: "user".to_string(),
+                content: content.to_string(),
+                tool_calls_json: None,
+                tool_results_json: None,
+                thinking: None,
+                thinking_blocks_json: None,
+            });
+        }
+        if !injected.is_empty() {
+            // Main-conversation path: the system prompt sits at messages[0],
+            // so injected blocks go at index 1. Sub-agent / skip_context paths
+            // keep the system prompt out of `messages` — inject at the front.
+            let insert_at = if messages
+                .first()
+                .is_some_and(|msg| msg.role.trim() == "system" || msg.role.trim() == "developer")
+            {
+                1
+            } else {
+                0
+            };
+            messages.splice(insert_at..insert_at, injected);
         }
     }
 

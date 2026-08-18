@@ -5,8 +5,9 @@ use napi_derive::napi;
 
 use crate::mcp::servers::remote_workspace::{is_ssh_path, RemoteWorkspaceCallback};
 use crate::storage::services::checkpoint::remote::{
-    create_checkpoint_remote, list_checkpoint_changes_remote, list_checkpoint_diffs_remote,
-    restore_checkpoint_remote, RemoteCheckpointClient,
+    create_checkpoint_remote, list_checkpoint_changes_batch_remote, list_checkpoint_changes_remote,
+    list_checkpoint_diffs_batch_remote, list_checkpoint_diffs_remote, restore_checkpoint_remote,
+    restore_checkpoints_remote, RemoteCheckpointClient,
 };
 use crate::storage::services::checkpoint::{CheckpointFileChange, CheckpointFileDiff};
 
@@ -88,6 +89,26 @@ pub async fn restore_checkpoint(checkpoint_id: String, work_dir: String) -> napi
     .map_err(map_spawn_error)?
 }
 
+#[napi]
+pub async fn restore_checkpoints(
+    checkpoint_ids: Vec<String>,
+    work_dir: String,
+) -> napi::Result<()> {
+    let operation_lock =
+        crate::storage::services::checkpoint::checkpoint_operation_lock(&work_dir)?;
+    let _operation_guard = operation_lock.write_owned().await;
+    if is_ssh_path(&work_dir) {
+        let callback = checkpoint_remote_callback()?;
+        let client = RemoteCheckpointClient::new(&callback);
+        return restore_checkpoints_remote(&client, checkpoint_ids, work_dir).await;
+    }
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::checkpoint::restore_checkpoints(checkpoint_ids, work_dir)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
 /// Delete a checkpoint and all its stored files.
 #[napi]
 pub async fn delete_checkpoint(checkpoint_id: String) -> napi::Result<()> {
@@ -122,6 +143,29 @@ pub async fn list_checkpoint_changes(
     .map_err(map_spawn_error)?
 }
 
+#[napi]
+pub async fn list_checkpoint_changes_batch(
+    checkpoint_ids: Vec<String>,
+    work_dir: String,
+) -> napi::Result<Vec<CheckpointFileChange>> {
+    let operation_lock =
+        crate::storage::services::checkpoint::checkpoint_operation_lock(&work_dir)?;
+    let _operation_guard = operation_lock.write_owned().await;
+    if is_ssh_path(&work_dir) {
+        let callback = checkpoint_remote_callback()?;
+        let client = RemoteCheckpointClient::new(&callback);
+        return list_checkpoint_changes_batch_remote(&client, checkpoint_ids, work_dir).await;
+    }
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::checkpoint::list_checkpoint_changes_batch(
+            checkpoint_ids,
+            work_dir,
+        )
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
 /// Return unified diffs for all files that would be affected by rollback.
 ///
 /// `includeAll` (optional, default false):
@@ -150,6 +194,38 @@ pub async fn list_checkpoint_diffs(
     tokio::task::spawn_blocking(move || {
         crate::storage::services::checkpoint::list_checkpoint_diffs(
             checkpoint_id,
+            work_dir,
+            include_all,
+        )
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn list_checkpoint_diffs_batch(
+    checkpoint_ids: Vec<String>,
+    work_dir: String,
+    include_all: Option<bool>,
+) -> napi::Result<Vec<CheckpointFileDiff>> {
+    let include_all = include_all.unwrap_or(false);
+    let operation_lock =
+        crate::storage::services::checkpoint::checkpoint_operation_lock(&work_dir)?;
+    let _operation_guard = operation_lock.write_owned().await;
+    if is_ssh_path(&work_dir) {
+        let callback = checkpoint_remote_callback()?;
+        let client = RemoteCheckpointClient::new(&callback);
+        return list_checkpoint_diffs_batch_remote(
+            &client,
+            checkpoint_ids,
+            work_dir,
+            include_all,
+        )
+        .await;
+    }
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::checkpoint::list_checkpoint_diffs_batch(
+            checkpoint_ids,
             work_dir,
             include_all,
         )

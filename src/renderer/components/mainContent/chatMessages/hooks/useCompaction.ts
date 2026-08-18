@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import type {
   ConversationContextValue,
   ChatConversationMessage,
+  CompactionResult,
 } from "../utils/conversationTypes";
 import {
   createMessageId,
@@ -26,7 +27,7 @@ export const useCompaction = (ctx: ConversationContextValue) => {
       apiProfile?: string,
       subAgentToolsJson?: string,
       subAgentSystemPrompt?: string
-    ): Promise<string | null> => {
+    ): Promise<CompactionResult | null> => {
       const sessionRef = ctx.sessionsRefData.current.get(conversationId);
       if (sessionRef) {
         sessionRef.isSending = true;
@@ -61,6 +62,7 @@ export const useCompaction = (ctx: ConversationContextValue) => {
         try {
           checkpointId = await window.snow.createCheckpoint(sessionDirPath);
           if (sessionRef) {
+            // 仅用于临时清理，不代表消息顺序。
             sessionRef.checkpointIds = [
               ...sessionRef.checkpointIds,
               checkpointId,
@@ -220,7 +222,7 @@ export const useCompaction = (ctx: ConversationContextValue) => {
             outputTokens: response.tokenUsage?.outputTokens ?? null,
           }),
         });
-        return content;
+        return { content, checkpointId };
       } catch (error) {
         // Log failures for BOTH auto and manual compaction. Auto-compaction
         // errors are otherwise suppressed in the UI (isAuto), which made a

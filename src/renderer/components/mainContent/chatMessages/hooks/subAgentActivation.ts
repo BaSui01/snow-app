@@ -512,7 +512,7 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
               )
             );
 
-            const subCompactionSummary =
+            const subCompactionResult =
               await ctx.performCompactionRef.current(
                 subConvId,
                 runtimeConfig.model,
@@ -523,7 +523,7 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
                 runtimeConfig.systemPrompt || undefined
               );
 
-            if (subCompactionSummary) {
+            if (subCompactionResult) {
               if (isSubCancelled()) {
                 return "Sub-agent interrupted by user";
               }
@@ -542,7 +542,7 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
               // Rust backend rebuilds context from the compaction boundary
               // stored in the database for this sub-conversation.
               return subAgentRunLoop(
-                [{ role: "user", content: subCompactionSummary }],
+                [{ role: "user", content: subCompactionResult.content }],
                 true
               );
             }

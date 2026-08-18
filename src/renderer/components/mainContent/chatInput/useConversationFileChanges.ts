@@ -5,6 +5,8 @@ import type {
 } from "../chatMessages/utils/conversationTypes";
 
 type UseConversationFileChangesParams = {
+  conversationId?: string;
+  checkpointIds?: string[];
   baselineCheckpointId?: string;
   workDir?: string;
   messages: ChatConversationMessage[];
@@ -13,7 +15,7 @@ type UseConversationFileChangesParams = {
 };
 
 type CheckpointDiffs = Awaited<
-  ReturnType<typeof window.snow.listCheckpointDiffs>
+  ReturnType<typeof window.snow.listCheckpointDiffsBatch>
 >;
 
 type CheckpointDiffState = {
@@ -63,6 +65,8 @@ const toFileChangeKind = (
  * continue to work.
  */
 export const useConversationFileChanges = ({
+  conversationId,
+  checkpointIds,
   baselineCheckpointId,
   workDir,
   messages,
@@ -82,8 +86,16 @@ export const useConversationFileChanges = ({
     [messages]
   );
 
-  const canUseCheckpoint = Boolean(baselineCheckpointId && workDir);
+  const orderedCheckpointIds = useMemo(
+    () => [...new Set(checkpointIds ?? [])],
+    [checkpointIds]
+  );
+  const canUseCheckpoint = Boolean(
+    workDir && (orderedCheckpointIds.length > 0 || baselineCheckpointId)
+  );
   const requestKey = JSON.stringify([
+    conversationId ?? "",
+    orderedCheckpointIds,
     baselineCheckpointId ?? "",
     workDir ?? "",
     completedToolSignature,
@@ -93,27 +105,55 @@ export const useConversationFileChanges = ({
     useState<CheckpointDiffState>({ requestKey: "", diffs: null });
 
   useEffect(() => {
-    if (!canUseCheckpoint || !baselineCheckpointId || !workDir) {
+    if (!canUseCheckpoint || !workDir) {
       return;
     }
 
     let cancelled = false;
-    // includeAll=true: report every captured entry, including files whose
-    // current state drifted from the checkpoint's post-change state (later
-    // runs in a shared working tree). Without it, listCheckpointDiffs drops
-    // those files and the panel loses this conversation's modifications.
-    void window.snow
-      .listCheckpointDiffs(baselineCheckpointId, workDir, true)
-      .then((diffs) => {
-        if (!cancelled) {
-          setCheckpointState({ requestKey, diffs });
+    const loadCheckpointDiffs = async (): Promise<void> => {
+      let ids = orderedCheckpointIds;
+      if (conversationId) {
+        try {
+          const fullHistory = await window.snow.listChatMessages(conversationId);
+          const persistedIds = fullHistory
+            .filter((record) => record.role === "user" && record.checkpointId)
+            .map((record) => record.checkpointId as string);
+          if (persistedIds.length > 0) {
+            ids = [...new Set(persistedIds)];
+          }
+        } catch {
+          // 使用已缓存的消息顺序，避免历史读取失败时隐藏面板内容。
         }
-      })
-      .catch(() => {
+      }
+      if (ids.length === 0 && baselineCheckpointId) {
+        ids = [baselineCheckpointId];
+      }
+      if (ids.length === 0) {
         if (!cancelled) {
           setCheckpointState({ requestKey, diffs: null });
         }
-      });
+        return;
+      }
+
+      try {
+        // includeAll=true: 后续会话在共享工作区中的修改不会隐藏较早会话
+        // 的变更，批量 API 还会覆盖每个消息检查点记录的文件。
+        const diffs = await window.snow.listCheckpointDiffsBatch(
+          ids,
+          workDir,
+          true
+        );
+        if (!cancelled) {
+          setCheckpointState({ requestKey, diffs });
+        }
+      } catch {
+        if (!cancelled) {
+          setCheckpointState({ requestKey, diffs: null });
+        }
+      }
+    };
+
+    void loadCheckpointDiffs();
 
     return () => {
       cancelled = true;
@@ -122,7 +162,9 @@ export const useConversationFileChanges = ({
     baselineCheckpointId,
     canUseCheckpoint,
     completedToolSignature,
+    conversationId,
     conversationVersion,
+    orderedCheckpointIds,
     requestKey,
     workDir,
   ]);

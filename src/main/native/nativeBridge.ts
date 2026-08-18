@@ -823,6 +823,10 @@ setSystemSetting: () =>
         Promise.reject(
           new Error("Rust native bridge is required to restore checkpoint")
         ),
+      restoreCheckpoints: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to restore checkpoints")
+        ),
       deleteCheckpoint: () =>
         Promise.reject(
           new Error("Rust native bridge is required to delete checkpoint")
@@ -831,9 +835,21 @@ setSystemSetting: () =>
         Promise.reject(
           new Error("Rust native bridge is required to list checkpoint changes")
         ),
+      listCheckpointChangesBatch: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to list checkpoint changes in batch"
+          )
+        ),
       listCheckpointDiffs: () =>
         Promise.reject(
           new Error("Rust native bridge is required to list checkpoint diffs")
+        ),
+      listCheckpointDiffsBatch: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to list checkpoint diffs in batch"
+          )
         ),
       appendToolMessage: () =>
         Promise.reject(

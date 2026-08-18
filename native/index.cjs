@@ -20,6 +20,9 @@ const requiredExports = [
   'reorderWorkspaceDirectories',
   'deleteWorkspaceDirectory',
   'listCheckpointDiffs',
+  'restoreCheckpoints',
+  'listCheckpointChangesBatch',
+  'listCheckpointDiffsBatch',
   'listChatMessagesPaginated',
   'cancelRunningSubAgentSessions'
 ]

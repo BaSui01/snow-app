@@ -71,6 +71,15 @@ export function ThinkingStrengthMenu({
     setIsCustomMode(false);
   };
 
+  const handleSelect = (
+    event: React.MouseEvent<HTMLButtonElement>,
+    nextValue: string
+  ): void => {
+    event.preventDefault();
+    event.stopPropagation();
+    onSelect(nextValue);
+  };
+
   const handleCustomKeyDown = (
     event: React.KeyboardEvent<HTMLInputElement>
   ): void => {
@@ -93,7 +102,11 @@ export function ThinkingStrengthMenu({
             <button
               aria-label={t("common.back")}
               className="model-menu-back"
-              onClick={onBack}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onBack?.();
+              }}
               type="button"
             >
               <ChevronLeft size={14} />
@@ -114,14 +127,22 @@ export function ThinkingStrengthMenu({
           <div className="model-manual-actions thinking-custom-actions">
             <button
               className="model-manual-btn thinking-custom-btn secondary"
-              onClick={() => setIsCustomMode(false)}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setIsCustomMode(false);
+              }}
               type="button"
             >
               {t("common.cancel")}
             </button>
             <button
               className="model-manual-btn thinking-custom-btn primary"
-              onClick={handleConfirmCustom}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                handleConfirmCustom();
+              }}
               disabled={!customValue.trim() || saving}
               type="button"
             >
@@ -140,7 +161,11 @@ export function ThinkingStrengthMenu({
           <button
             aria-label={t("common.back")}
             className="model-menu-back"
-            onClick={onBack}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onBack?.();
+            }}
             type="button"
           >
             <ChevronLeft size={14} />
@@ -153,7 +178,7 @@ export function ThinkingStrengthMenu({
         {inheritLabel && (
           <button
             className={`model-dropdown-item ${value === "" ? "active" : ""}`}
-            onClick={() => onSelect("")}
+            onClick={(event) => handleSelect(event, "")}
             type="button"
           >
             <span className="model-dropdown-item-name with-icon">
@@ -172,7 +197,7 @@ export function ThinkingStrengthMenu({
               className={`model-dropdown-item ${
                 value === option.value ? "active" : ""
               }`}
-              onClick={() => onSelect(option.value)}
+              onClick={(event) => handleSelect(event, option.value)}
               type="button"
             >
               <span className="model-dropdown-item-name with-icon">
@@ -192,7 +217,11 @@ export function ThinkingStrengthMenu({
       <div className="model-dropdown-footer">
         <button
           className={`model-dropdown-action ${isCustomValue ? "active" : ""}`}
-          onClick={handleOpenCustom}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            handleOpenCustom();
+          }}
           type="button"
         >
           <Keyboard size={14} />

@@ -88,6 +88,10 @@ export const useRollback = (ctx: ConversationContextValue) => {
       const targetMessage = messages[targetIndex];
       const messageContent = targetMessage.content;
       const checkpointId = targetMessage.checkpointId;
+      const initialCheckpointIds = messages
+        .slice(targetIndex)
+        .filter((message) => message.role === "user" && message.checkpointId)
+        .map((message) => message.checkpointId as string);
       const convId = key !== PENDING_SESSION_KEY ? key : undefined;
 
       // Delete the entire conversation only when this is the true first user
@@ -136,11 +140,32 @@ export const useRollback = (ctx: ConversationContextValue) => {
       // we set the preview state once the diff is ready.
       const computeAndPreview = async (): Promise<void> => {
         try {
-          let changes: CheckpointFileChange[] = [];
-          if (checkpointId && sessionWorkDir) {
+          let checkpointIds = initialCheckpointIds;
+          if (convId) {
             try {
-              changes = await window.snow.listCheckpointChanges(
-                checkpointId,
+              const fullHistory = await window.snow.listChatMessages(convId);
+              const fullTargetIndex = fullHistory.findIndex(
+                (record) => record.id === messageId
+              );
+              if (fullTargetIndex >= 0) {
+                checkpointIds = fullHistory
+                  .slice(fullTargetIndex)
+                  .filter(
+                    (record) => record.role === "user" && record.checkpointId
+                  )
+                  .map((record) => record.checkpointId as string);
+              }
+            } catch {
+              // 使用当前已加载消息作为回退，仍保持消息数组顺序。
+            }
+          }
+          checkpointIds = [...new Set(checkpointIds)];
+
+          let changes: CheckpointFileChange[] = [];
+          if (checkpointIds.length > 0 && sessionWorkDir) {
+            try {
+              changes = await window.snow.listCheckpointChangesBatch(
+                checkpointIds,
                 sessionWorkDir
               );
             } catch {
@@ -206,7 +231,8 @@ export const useRollback = (ctx: ConversationContextValue) => {
             messageId,
             messageContent,
             changes,
-            checkpointId,
+            checkpointIds,
+            checkpointId: checkpointIds[0],
             workDir: sessionWorkDir,
             convId,
             responseId,
@@ -255,7 +281,7 @@ export const useRollback = (ctx: ConversationContextValue) => {
       const {
         messageId,
         messageContent,
-        checkpointId,
+        checkpointIds,
         convId,
         responseId,
         persistedMessageId,
@@ -316,18 +342,14 @@ export const useRollback = (ctx: ConversationContextValue) => {
       // here would show the rolled-back conversation while the dialog is still
       // waiting, which feels broken. DB persistence already happened above, so
       // the UI state below cannot diverge from disk.
-      if (checkpointId) {
+      // 文件检查点只作为临时清理集合使用，回滚顺序以预览阶段按消息
+      // 持久化顺序收集的 checkpointIds 为准。
+      if (checkpointIds.length > 0) {
         const sessionRef = ctx.sessionsRefData.current.get(key);
-        const checkpointIndex =
-          sessionRef?.checkpointIds.indexOf(checkpointId) ?? -1;
-        const discardedCheckpointIds =
-          sessionRef && checkpointIndex >= 0
-            ? sessionRef.checkpointIds.slice(checkpointIndex)
-            : [checkpointId];
-        if (sessionRef && checkpointIndex >= 0) {
-          sessionRef.checkpointIds = sessionRef.checkpointIds.slice(
-            0,
-            checkpointIndex
+        if (sessionRef) {
+          const discarded = new Set(checkpointIds);
+          sessionRef.checkpointIds = sessionRef.checkpointIds.filter(
+            (id) => !discarded.has(id)
           );
         }
 
@@ -338,15 +360,18 @@ export const useRollback = (ctx: ConversationContextValue) => {
           // 可能较慢，对话框确认按钮在此期间显示 loading。恢复失败不
           // 阻塞消息清理（best effort，与旧行为一致）。
           try {
-            await window.snow.restoreCheckpoint(checkpointId, preview.workDir);
+            await window.snow.restoreCheckpoints(
+              checkpointIds,
+              preview.workDir
+            );
           } catch {
             // Best effort — file restore failure must not block rollback cleanup.
           } finally {
             ctx.setConversationVersion((version) => version + 1);
-            deleteCheckpoints(discardedCheckpointIds);
+            deleteCheckpoints(checkpointIds);
           }
         } else {
-          deleteCheckpoints(discardedCheckpointIds);
+          deleteCheckpoints(checkpointIds);
         }
       }
 

@@ -232,8 +232,9 @@ export const ChatInputView = ({
     streamTokenCount,
     streamElapsedMs,
     streamTtftMs,
-    baselineCheckpointId,
-    streamStartedAt,
+     baselineCheckpointId,
+     checkpointIds,
+     streamStartedAt,
     isPaused,
     handlePause,
     handleResume,
@@ -263,6 +264,8 @@ export const ChatInputView = ({
   }, [activeConversationId, fileChangeStats]);
   const conversationWorkDir = directoryIdToPath(conversationDirectoryId);
   const conversationFileChanges = useConversationFileChanges({
+    conversationId: activeConversationId,
+    checkpointIds,
     baselineCheckpointId,
     workDir: conversationWorkDir,
     messages,

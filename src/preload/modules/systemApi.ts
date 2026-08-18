@@ -1005,6 +1005,8 @@ export const systemApi = {
     ipcRenderer.invoke("checkpoint:create", workDir),
   restoreCheckpoint: (checkpointId: string, workDir: string): Promise<void> =>
     ipcRenderer.invoke("checkpoint:restore", checkpointId, workDir),
+  restoreCheckpoints: (checkpointIds: string[], workDir: string): Promise<void> =>
+    ipcRenderer.invoke("checkpoint:restore-batch", checkpointIds, workDir),
   deleteCheckpoint: (checkpointId: string): Promise<void> =>
     ipcRenderer.invoke("checkpoint:delete", checkpointId),
   listCheckpointChanges: (
@@ -1012,6 +1014,11 @@ export const systemApi = {
     workDir: string
   ): Promise<CheckpointFileChange[]> =>
     ipcRenderer.invoke("checkpoint:list-changes", checkpointId, workDir),
+  listCheckpointChangesBatch: (
+    checkpointIds: string[],
+    workDir: string
+  ): Promise<CheckpointFileChange[]> =>
+    ipcRenderer.invoke("checkpoint:list-changes-batch", checkpointIds, workDir),
   listCheckpointDiffs: (
     checkpointId: string,
     workDir: string,
@@ -1020,6 +1027,17 @@ export const systemApi = {
     ipcRenderer.invoke(
       "checkpoint:list-diffs",
       checkpointId,
+      workDir,
+      includeAll ?? false
+    ),
+  listCheckpointDiffsBatch: (
+    checkpointIds: string[],
+    workDir: string,
+    includeAll?: boolean
+  ): Promise<CheckpointFileDiff[]> =>
+    ipcRenderer.invoke(
+      "checkpoint:list-diffs-batch",
+      checkpointIds,
       workDir,
       includeAll ?? false
     ),

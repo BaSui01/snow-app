@@ -1145,7 +1145,7 @@ const ChatContentBody = ({
         <RollbackConfirmDialog
           key={rollbackPreview.requestId}
           changes={rollbackPreview.changes}
-          checkpointId={rollbackPreview.checkpointId}
+          checkpointIds={rollbackPreview.checkpointIds}
           workDir={rollbackPreview.workDir}
           isFirstMessage={rollbackPreview.isFirstMessage}
           todoItems={rollbackPreview.todoItems}

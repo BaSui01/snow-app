@@ -385,8 +385,8 @@ export function ApiSettingsFormFields({
                     options={thinkingOptions}
                     subtitle={data.requestMethod}
                     onSelect={(value) => {
-                      onChange("thinkingValue", value);
                       setIsThinkingMenuOpen(false);
+                      onChange("thinkingValue", value);
                     }}
                   />
                 </div>

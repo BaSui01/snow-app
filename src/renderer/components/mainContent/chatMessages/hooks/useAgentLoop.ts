@@ -268,6 +268,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           }
           const flushRef = ctx.sessionsRefData.current.get(flushKey);
           if (flushRef) {
+            // 仅用于临时清理，不代表消息顺序。
             flushRef.checkpointIds = [
               ...flushRef.checkpointIds,
               flushCheckpointId,
@@ -708,16 +709,16 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                   )
                 );
 
-                const compactionSummary =
-                  await ctx.performCompactionRef.current(
-                    effectiveKey,
-                    options.model,
-                    true,
-                    undefined,
-                    options.apiProfile
-                  );
+                 const compactionResult =
+                   await ctx.performCompactionRef.current(
+                     effectiveKey,
+                     options.model,
+                     true,
+                     undefined,
+                     options.apiProfile
+                   );
 
-                if (compactionSummary) {
+                 if (compactionResult) {
                   if (isRunCancelled(effectiveKey)) {
                     return;
                   }
@@ -759,10 +760,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                   ]);
                   await runAgentLoop(
                     postCompactionAssistantId,
-                    [{ role: "user", content: compactionSummary }],
-                    response.conversationId,
-                    checkpointId,
-                    true
+                     [{ role: "user", content: compactionResult.content }],
+                     response.conversationId,
+                     compactionResult.checkpointId,
+                     true
                   );
                   return;
                 }
@@ -1103,13 +1104,13 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                   currentTokenUsage.inputTokens +
                   currentTokenUsage.outputTokens;
                 if (totalTokens >= thresholdTokens) {
-                  await ctx.performCompactionRef.current(
-                    sessionKey,
-                    options.model,
-                    true,
-                    undefined,
-                    options.apiProfile
-                  );
+                   await ctx.performCompactionRef.current(
+                     sessionKey,
+                     options.model,
+                     true,
+                     undefined,
+                     options.apiProfile
+                   );
 
                   // performCompaction resets sessionRef.isSending to false in
                   // its finally block, but we are still mid-send — restore it

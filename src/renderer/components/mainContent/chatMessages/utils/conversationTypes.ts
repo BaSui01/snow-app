@@ -340,6 +340,11 @@ export type RollbackTodoItem = {
 
 export type RollbackMode = "conversation-only" | "conversation-and-files";
 
+export type CompactionResult = {
+  content: string;
+  checkpointId?: string;
+};
+
 export type RollbackPreview = {
   /** 单调递增的回滚请求号，用于丢弃跨会话切换后迟到的异步预览。 */
   requestId: number;
@@ -347,7 +352,10 @@ export type RollbackPreview = {
   sessionKey: string;
   messageId: string;
   messageContent: string;
+  /** 回滚目标及其后续用户消息的文件变更。 */
   changes: CheckpointFileChange[];
+  /** 回滚目标及其后续用户消息按持久化顺序排列的检查点。 */
+  checkpointIds: string[];
   checkpointId?: string;
   workDir?: string;
   convId?: string;
@@ -546,8 +554,8 @@ export type ConversationContextValue = {
       apiProfile?: string,
       subAgentToolsJson?: string,
       subAgentSystemPrompt?: string
-    ) => Promise<string | null>
-  >;
+     ) => Promise<CompactionResult | null>
+   >;
   yoloModeRef: RefValue<boolean>;
   planModeRef: RefValue<boolean>;
   goalModeRef: RefValue<boolean>;
@@ -678,6 +686,8 @@ export type UseChatConversationResult = {
   runTtftMs: number;
   /** First checkpoint in the active conversation. */
   baselineCheckpointId: string | undefined;
+  /** Checkpoints in message persistence order. */
+  checkpointIds: string[];
   /** Wall-clock timestamp (Date.now()) captured once when an agent loop
    *  starts. Drives the accumulating elapsed timer in StreamMetrics so it
    *  survives conversation switches between parallel streaming sessions. */

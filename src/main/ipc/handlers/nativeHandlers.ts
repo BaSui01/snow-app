@@ -998,6 +998,27 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       return native.restoreCheckpoint(checkpointId.trim(), workDir);
     }
   );
+  ipcMain.handle(
+    "checkpoint:restore-batch",
+    (_event, checkpointIds: unknown, workDir: unknown) => {
+      if (
+        !Array.isArray(checkpointIds) ||
+        checkpointIds.length === 0 ||
+        checkpointIds.some((id) => typeof id !== "string" || !id.trim())
+      ) {
+        throw new Error("Checkpoint ids must be a non-empty string array");
+      }
+      if (typeof workDir !== "string" || !workDir.trim()) {
+        throw new Error(
+          "Working directory path is required to restore checkpoints"
+        );
+      }
+      return native.restoreCheckpoints(
+        checkpointIds.map((id) => id.trim()),
+        workDir.trim()
+      );
+    }
+  );
   ipcMain.handle("checkpoint:delete", (_event, checkpointId: unknown) => {
     if (typeof checkpointId !== "string" || !checkpointId.trim()) {
       throw new Error("Checkpoint id is required to delete checkpoint");
@@ -1019,6 +1040,27 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
     }
   );
   ipcMain.handle(
+    "checkpoint:list-changes-batch",
+    (_event, checkpointIds: unknown, workDir: unknown) => {
+      if (
+        !Array.isArray(checkpointIds) ||
+        checkpointIds.length === 0 ||
+        checkpointIds.some((id) => typeof id !== "string" || !id.trim())
+      ) {
+        throw new Error("Checkpoint ids must be a non-empty string array");
+      }
+      if (typeof workDir !== "string" || !workDir.trim()) {
+        throw new Error(
+          "Working directory path is required to list checkpoint changes"
+        );
+      }
+      return native.listCheckpointChangesBatch(
+        checkpointIds.map((id) => id.trim()),
+        workDir.trim()
+      );
+    }
+  );
+  ipcMain.handle(
     "checkpoint:list-diffs",
     (_event, checkpointId: unknown, workDir: unknown, includeAll: unknown) => {
       if (typeof checkpointId !== "string" || !checkpointId.trim()) {
@@ -1032,6 +1074,37 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       return native.listCheckpointDiffs(
         checkpointId.trim(),
         workDir,
+        includeAll === true
+      );
+    }
+  );
+
+  ipcMain.handle(
+    "checkpoint:list-diffs-batch",
+    (
+      _event,
+      checkpointIds: unknown,
+      workDir: unknown,
+      includeAll: unknown
+    ) => {
+      if (
+        !Array.isArray(checkpointIds) ||
+        checkpointIds.length === 0 ||
+        checkpointIds.some((id) => typeof id !== "string" || !id.trim())
+      ) {
+        throw new Error("Checkpoint ids must be a non-empty string array");
+      }
+      if (typeof workDir !== "string" || !workDir.trim()) {
+        throw new Error(
+          "Working directory path is required to list checkpoint diffs"
+        );
+      }
+      if (includeAll !== undefined && typeof includeAll !== "boolean") {
+        throw new Error("includeAll must be a boolean when provided");
+      }
+      return native.listCheckpointDiffsBatch(
+        checkpointIds.map((id) => id.trim()),
+        workDir.trim(),
         includeAll === true
       );
     }

@@ -33,7 +33,7 @@ type RollbackTodoItem = {
 
 type RollbackConfirmDialogProps = {
   changes: CheckpointFileChange[];
-  checkpointId?: string;
+  checkpointIds: string[];
   workDir?: string;
   isFirstMessage: boolean;
   todoItems: RollbackTodoItem[];
@@ -53,7 +53,7 @@ const CHANGE_LABEL_KEY = {
 
 export const RollbackConfirmDialog = ({
   changes,
-  checkpointId,
+  checkpointIds,
   workDir,
   isFirstMessage,
   todoItems,
@@ -111,7 +111,7 @@ export const RollbackConfirmDialog = ({
   const hiddenCount = changes.length - visibleChanges.length;
 
   const openPreview = (): void => {
-    if (!checkpointId || !workDir) {
+    if (checkpointIds.length === 0 || !workDir) {
       return;
     }
     setIsPreviewOpen(true);
@@ -121,7 +121,7 @@ export const RollbackConfirmDialog = ({
     setPreviewLoading(true);
     setPreviewError(false);
     void window.snow
-      .listCheckpointDiffs(checkpointId, workDir)
+      .listCheckpointDiffsBatch(checkpointIds, workDir, true)
       .then((result) => {
         setDiffs(result);
       })
@@ -309,7 +309,7 @@ export const RollbackConfirmDialog = ({
           </div>
         )}
         <div className="confirm-dialog-actions">
-          {!isPreviewOpen && changes.length > 0 && checkpointId && workDir && (
+          {!isPreviewOpen && changes.length > 0 && checkpointIds.length > 0 && workDir && (
             <button
               type="button"
               className="confirm-dialog-btn preview"

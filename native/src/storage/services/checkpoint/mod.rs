@@ -1082,6 +1082,40 @@ pub fn restore_checkpoint(checkpoint_id: String, work_dir: String) -> Result<()>
     Ok(())
 }
 
+pub fn restore_checkpoints(checkpoint_ids: Vec<String>, work_dir: String) -> Result<()> {
+    let root = canonical_work_dir(&work_dir)?;
+    let work_dir_lock = work_dir_lock(&root)?;
+    let _work_dir_guard = work_dir_write_guard(&work_dir_lock)?;
+    bump_restore_epoch(&work_dir)?;
+
+    let mut restored_entries = Vec::new();
+    for checkpoint_id in checkpoint_ids.into_iter().rev() {
+        let manifest_lock = manifest_lock(&checkpoint_id)?;
+        let _manifest_guard = manifest_lock.blocking_lock();
+        if !checkpoint_manifest_exists(&checkpoint_id) {
+            continue;
+        }
+        let manifest = read_manifest(&checkpoint_id)?;
+        validate_manifest_work_dir(&manifest, &work_dir)?;
+        for entry in &manifest.entries {
+            if should_skip_manifest_path(&entry.path) {
+                continue;
+            }
+            let destination = resolve_manifest_path(&root, &entry.path);
+            let Some(expected) = entry.expected.as_ref() else {
+                continue;
+            };
+            if !states_match(&destination, expected, manifest.git.as_ref(), &entry.path)? {
+                continue;
+            }
+            restore_entry(&root, &manifest, entry)?;
+            restored_entries.push(entry.clone());
+        }
+    }
+    prune_empty_parent_directories(&root, &restored_entries);
+    Ok(())
+}
+
 fn restore_entry(
     root: &Path,
     manifest: &CheckpointManifest,
@@ -1387,6 +1421,39 @@ pub fn list_checkpoint_diffs(
     }
     diffs.sort_by(|left, right| left.path.cmp(&right.path));
     Ok(diffs)
+}
+
+pub fn list_checkpoint_diffs_batch(
+    checkpoint_ids: Vec<String>,
+    work_dir: String,
+    include_all: bool,
+) -> Result<Vec<CheckpointFileDiff>> {
+    let mut seen_paths = HashSet::new();
+    let mut diffs = Vec::new();
+    for checkpoint_id in checkpoint_ids {
+        if !checkpoint_manifest_exists(&checkpoint_id) {
+            continue;
+        }
+        for diff in list_checkpoint_diffs(checkpoint_id, work_dir.clone(), include_all)? {
+            if seen_paths.insert(diff.path.clone()) {
+                diffs.push(diff);
+            }
+        }
+    }
+    Ok(diffs)
+}
+
+pub fn list_checkpoint_changes_batch(
+    checkpoint_ids: Vec<String>,
+    work_dir: String,
+) -> Result<Vec<CheckpointFileChange>> {
+    Ok(list_checkpoint_diffs_batch(checkpoint_ids, work_dir, true)?
+        .into_iter()
+        .map(|diff| CheckpointFileChange {
+            path: diff.path,
+            change_type: diff.change_type,
+        })
+        .collect())
 }
 
 fn read_original_content(

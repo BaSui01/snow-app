@@ -1477,7 +1477,47 @@ pub(crate) async fn list_checkpoint_diffs_remote(
     Ok(diffs)
 }
 
-/// 远程版回滚：把工作区恢复到 checkpoint 记录的 pre-change 状态。
+pub(crate) async fn list_checkpoint_diffs_batch_remote(
+    client: &RemoteCheckpointClient<'_>,
+    checkpoint_ids: Vec<String>,
+    work_dir: String,
+    include_all: bool,
+) -> Result<Vec<CheckpointFileDiff>> {
+    let mut seen_paths = HashSet::new();
+    let mut diffs = Vec::new();
+    for checkpoint_id in checkpoint_ids {
+        if !checkpoint_manifest_exists(&checkpoint_id) {
+            continue;
+        }
+        for diff in
+            list_checkpoint_diffs_remote(client, checkpoint_id, work_dir.clone(), include_all).await?
+        {
+            if seen_paths.insert(diff.path.clone()) {
+                diffs.push(diff);
+            }
+        }
+    }
+    Ok(diffs)
+}
+
+pub(crate) async fn list_checkpoint_changes_batch_remote(
+    client: &RemoteCheckpointClient<'_>,
+    checkpoint_ids: Vec<String>,
+    work_dir: String,
+) -> Result<Vec<CheckpointFileChange>> {
+    Ok(
+        list_checkpoint_diffs_batch_remote(client, checkpoint_ids, work_dir, true)
+            .await?
+            .into_iter()
+            .map(|diff| CheckpointFileChange {
+                path: diff.path,
+                change_type: diff.change_type,
+            })
+            .collect(),
+    )
+}
+
+/// 远程版回滚：把工作区恢复到 checkpoint 记录的 pre-change 状态.
 /// 只探测追踪条目（批量 stat + 共享内容读取），不再全树扫描。
 pub(crate) async fn restore_checkpoint_remote(
     client: &RemoteCheckpointClient<'_>,
@@ -1538,6 +1578,66 @@ pub(crate) async fn restore_checkpoint_remote(
     }
     prune_empty_parent_directories_remote(client, &root, &restored_entries).await?;
     Ok(())
+}
+
+pub(crate) async fn restore_checkpoints_remote(
+    client: &RemoteCheckpointClient<'_>,
+    checkpoint_ids: Vec<String>,
+    work_dir: String,
+) -> Result<()> {
+    let root = canonical_work_dir_remote(client, &work_dir).await?;
+    let root_path = PathBuf::from(&root);
+    let work_dir_lock = work_dir_lock(&root_path)?;
+    let _work_dir_guard = work_dir_write_guard_async(&work_dir_lock).await;
+    bump_restore_epoch(&work_dir)?;
+
+    let mut restored_entries = Vec::new();
+    for checkpoint_id in checkpoint_ids.into_iter().rev() {
+        let manifest_lock = manifest_lock(&checkpoint_id)?;
+        let _manifest_guard = manifest_lock.lock().await;
+        if !checkpoint_manifest_exists(&checkpoint_id) {
+            continue;
+        }
+        let manifest = read_manifest(&checkpoint_id)?;
+        validate_manifest_work_dir_remote(&manifest, &work_dir)?;
+        let tracked: Vec<CheckpointEntry> = manifest
+            .entries
+            .iter()
+            .filter(|entry| !should_skip_manifest_path(&entry.path) && entry.expected.is_some())
+            .cloned()
+            .collect();
+        if tracked.is_empty() {
+            continue;
+        }
+        let compare_states: Vec<(usize, OriginalState)> = tracked
+            .iter()
+            .enumerate()
+            .filter_map(|(index, entry)| {
+                entry.expected.as_ref().map(|expected| (index, expected.clone()))
+            })
+            .collect();
+        let probed = probe_tracked_entries(client, &root, tracked, &compare_states, false).await?;
+        for probe in &probed.items {
+            let expected = probe.entry.expected.as_ref().ok_or_else(|| {
+                Error::from_reason("Checkpoint entry lost its expected state during probe")
+            })?;
+            let expected_differs = classify_remote_state(
+                probe.stat.as_ref(),
+                probe.content.as_ref().map(|content| content.as_deref()),
+                expected,
+                &probed.objects,
+                &probe.entry.path,
+            )?
+            .is_some();
+            if expected_differs {
+                continue;
+            }
+            let destination = resolve_remote_manifest_path(&root, &probe.entry.path);
+            restore_entry_remote(client, &probe.entry, &destination).await?;
+            restored_entries.push(probe.entry.path.clone());
+        }
+    }
+    prune_empty_parent_directories_remote(client, &root, &restored_entries).await
 }
 
 async fn restore_entry_remote(

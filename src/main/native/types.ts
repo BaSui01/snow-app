@@ -1672,13 +1672,23 @@ getSystemSettingValue: (settingCode: string) => Promise<string | null>;
   ) => Promise<ResponsesApiResult>;
   createCheckpoint: (workDir: string) => Promise<string>;
   restoreCheckpoint: (checkpointId: string, workDir: string) => Promise<void>;
+  restoreCheckpoints: (checkpointIds: string[], workDir: string) => Promise<void>;
   deleteCheckpoint: (checkpointId: string) => Promise<void>;
   listCheckpointChanges: (
     checkpointId: string,
     workDir: string
   ) => Promise<CheckpointFileChange[]>;
+  listCheckpointChangesBatch: (
+    checkpointIds: string[],
+    workDir: string
+  ) => Promise<CheckpointFileChange[]>;
   listCheckpointDiffs: (
     checkpointId: string,
+    workDir: string,
+    includeAll?: boolean
+  ) => Promise<CheckpointFileDiff[]>;
+  listCheckpointDiffsBatch: (
+    checkpointIds: string[],
     workDir: string,
     includeAll?: boolean
   ) => Promise<CheckpointFileDiff[]>;

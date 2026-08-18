@@ -7,6 +7,7 @@ import type {
 
 import type {
   ConversationContextValue,
+  CompactionResult,
   GlobalModeDefaults,
   FileChangeRecord,
   PauseController,
@@ -230,8 +231,8 @@ export const useChatConversation = (
       apiProfile?: string,
       subAgentToolsJson?: string,
       subAgentSystemPrompt?: string
-    ) => Promise<string | null>
-  >(async () => null);
+     ) => Promise<CompactionResult | null>
+   >(async () => null);
   const yoloModeRef = useRef(yoloMode);
   const planModeRef = useRef(planMode);
   const goalModeRef = useRef(goalMode);
@@ -652,6 +653,9 @@ export const useChatConversation = (
     streamTtftMs: activeSession?.streamTtftMs ?? 0,
     runTtftMs: activeSession?.runTtftMs ?? 0,
     baselineCheckpointId: activeSession?.baselineCheckpointId,
+    checkpointIds: activeKey
+      ? sessionsRefData.current.get(activeKey)?.checkpointIds ?? []
+      : [],
     streamStartedAt: activeSession?.streamStartedAt ?? 0,
     visionAnalysis: activeSession?.visionAnalysis,
     triggeredByTask: activeSession?.triggeredByTask,

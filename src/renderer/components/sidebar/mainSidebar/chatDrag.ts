@@ -16,7 +16,7 @@ export function setChatDragData(
   payload: ChatDragPayload
 ): void {
   event.dataTransfer.setData(CHAT_DRAG_MIME, JSON.stringify(payload));
-  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.effectAllowed = "copyMove";
 }
 
 /** 判断本次拖拽是否为会话拖拽（dragover 时检查 types） */

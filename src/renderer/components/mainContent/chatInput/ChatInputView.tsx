@@ -105,6 +105,7 @@ import {
   addPendingContextAttachment,
   conversationContextEvents,
   endConversationDrag,
+  getPendingContextAttachments,
   onPendingContextAttachmentChange,
   readConversationDragPayload,
   removePendingContextAttachment,
@@ -315,17 +316,21 @@ export const ChatInputView = ({
   // 自动挂载为开头上下文。期间输入框上方显示可见提示条，可逐个取消。
   const [pendingAttachments, setPendingAttachments] = useState<
     ConversationDragPayload[]
-  >([]);
+  >(() => getPendingContextAttachments());
   // 同步 ref：renderAttachmentContext 异步返回后校验附件是否仍存在，
   // 避免拖拽期间被取消/覆盖时旧请求的结果污染新附件的字符数。
-  const pendingAttachmentsRef = useRef<ConversationDragPayload[]>([]);
+  const pendingAttachmentsRef = useRef<ConversationDragPayload[]>(
+    pendingAttachments
+  );
   // 各待挂载会话的注入字符数（清洗思考链/工具细节 + 预算裁剪后的实际注入
   // 长度，与消息流折叠块预览一致）；异步获取，未就绪缺省。
   const [pendingCharsById, setPendingCharsById] = useState<
     Record<string, number>
   >({});
   useEffect(() => {
-    return onPendingContextAttachmentChange((payloads) => {
+    const syncPendingAttachments = (
+      payloads: ConversationDragPayload[]
+    ): void => {
       pendingAttachmentsRef.current = payloads;
       setPendingAttachments(payloads);
       setPendingCharsById((prev) => {
@@ -369,7 +374,15 @@ export const ChatInputView = ({
             }
           });
       }
-    });
+    };
+
+    const unsubscribe = onPendingContextAttachmentChange(
+      syncPendingAttachments
+    );
+    // The pending attachment bus outlives ChatInput remounts. Reconcile once
+    // after subscribing so a new-chat input cannot miss an existing pending item.
+    syncPendingAttachments(getPendingContextAttachments());
+    return unsubscribe;
   }, []);
   // F4 网页快照：待处理请求表（requestId → web chip 定位信息）。拖入标签页
   // 后登记，快照结果按 requestId 匹配取出定位信息，再在编辑区 DOM 中按
@@ -1514,7 +1527,7 @@ export const ChatInputView = ({
         const payload = readConversationDragPayload(event.dataTransfer);
         // 新会话没有会话记录，目录取当前项目目录兜底（发送时新会话同样
         // 落入当前目录，见 handleSendMessage 的 sessionDirId 计算）。
-        const effectiveDirectoryId = conversationDirectoryId ?? projectId;
+        const effectiveDirectoryId = conversationDirectoryId || projectId;
         const hasTarget = !!activeConversationId;
         const conversationAllowed =
           !!payload &&

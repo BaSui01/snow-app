@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  addPendingContextAttachment,
   beginConversationDrag,
+  clearPendingContextAttachments,
   CONVERSATION_DRAG_MIME,
   endConversationDrag,
+  getPendingContextAttachments,
   readConversationDragPayload,
+  removePendingContextAttachment,
   type ConversationDragPayload,
 } from "./conversationContextEvents";
 
@@ -35,12 +39,12 @@ const createDataTransfer = (
 };
 
 test("conversation drag payload survives Chromium protected dragover mode", async (t) => {
-  await t.test("writes the drag payload and copy effect at dragstart", () => {
+  await t.test("writes the drag payload and copy/move effect at dragstart", () => {
     const transfer = createDataTransfer();
 
     beginConversationDrag(transfer, payload);
 
-    assert.equal(transfer.effectAllowed, "copy");
+    assert.equal(transfer.effectAllowed, "copyMove");
     assert.deepEqual(readConversationDragPayload(transfer), payload);
     endConversationDrag();
   });
@@ -77,5 +81,17 @@ test("conversation drag payload survives Chromium protected dragover mode", asyn
 
     assert.equal(readConversationDragPayload(malformedTransfer), null);
     endConversationDrag();
+  });
+
+  await t.test("restores pending attachments for a remounted input", () => {
+    clearPendingContextAttachments();
+
+    addPendingContextAttachment(payload);
+    addPendingContextAttachment(payload);
+
+    assert.deepEqual(getPendingContextAttachments(), [payload]);
+
+    removePendingContextAttachment(payload.conversationId);
+    assert.deepEqual(getPendingContextAttachments(), []);
   });
 });

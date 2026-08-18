@@ -236,7 +236,7 @@ export function ChatItem({
       return;
     }
     // 同时写入两种 MIME 协议，两个 drop 端（输入框 / 列表区）都能识别；
-    // effectAllowed 最终为 move（setChatDragData 后写），drop 端不依赖该值。
+    // copyMove 同时兼容输入框的 copy 和侧边栏分组的 move。
     const payload: ConversationDragPayload = {
       conversationId: conversation.conversationId,
       directoryId: conversation.directoryId,

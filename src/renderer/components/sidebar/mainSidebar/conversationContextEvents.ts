@@ -55,7 +55,7 @@ export const beginConversationDrag = (
 ): void => {
   activeConversationDragPayload = payload;
   dataTransfer.setData(CONVERSATION_DRAG_MIME, JSON.stringify(payload));
-  dataTransfer.effectAllowed = "copy";
+  dataTransfer.effectAllowed = "copyMove";
 };
 
 /** 结束应用内会话拖拽，避免下一次拖拽误用旧 payload。 */

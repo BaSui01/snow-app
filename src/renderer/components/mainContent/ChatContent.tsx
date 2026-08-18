@@ -142,7 +142,10 @@ const ChatContentBody = ({
   const { autoScrollEnabled, setAutoScrollEnabled } = useAutoScrollPreference();
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const hasMessages = messages.length > 0;
-  const hasHistoryContent = hasMessages || isLoadingInitialHistory;
+  // History loading renders a skeleton, not conversation content. Keep the
+  // empty-state layout while it is loading so the input region stays visible
+  // instead of letting the message-area flex layout push it out of view.
+  const hasHistoryContent = hasMessages;
   // Compaction state is global, but the preview/error UI must only appear in
   // the conversation that is actually compacting — otherwise it bleeds into
   // other conversations after a switch.

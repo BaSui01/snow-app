@@ -26,7 +26,7 @@ pub fn count_tokens(text: &str) -> usize {
     }
 
     let bpe = o200k_base_singleton();
-    // `o200k_base_singleton()` returns an `Arc<Mutex<CoreBPE>>`. Lock the
+    // `o200k_base_singleton()` returns an `Arc<Mutex<CoreBPE>`. Lock the
     // mutex to access the underlying encoder. The lock is held only for the
     // duration of the encode call, so concurrent streams can still make
     // progress.
@@ -35,4 +35,23 @@ pub fn count_tokens(text: &str) -> usize {
     // matching how the JS `tiktoken` `encode_ordinary` method behaves and
     // avoiding spurious special-token splits in tool-call JSON deltas.
     bpe_guard.encode_ordinary(text).len()
+}
+
+/// Keep the first `max_tokens` tokens and decode them back to UTF-8 text.
+pub fn truncate_to_tokens(text: &str, max_tokens: usize) -> String {
+    if text.is_empty() || max_tokens == 0 {
+        return String::new();
+    }
+
+    let bpe = o200k_base_singleton();
+    let bpe_guard = bpe.lock();
+    let tokens = bpe_guard.encode_ordinary(text);
+
+    if tokens.len() <= max_tokens {
+        return text.to_string();
+    }
+
+    bpe_guard
+        .decode(tokens.into_iter().take(max_tokens).collect())
+        .unwrap_or_default()
 }

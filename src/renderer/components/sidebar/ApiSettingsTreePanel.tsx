@@ -23,6 +23,7 @@ import {
   extractResponsesFastModeFromConfigJson,
   extractResponsesVerbosityFromConfigJson,
   extractThinkingValueFromConfigJson,
+  extractToolResultTokenLimitFromConfigJson,
   extractVisionGoogleSearchFromConfigJson,
   extractVisionMaxConcurrencyFromConfigJson,
   extractVisionMaxTokensFromConfigJson,
@@ -249,11 +250,14 @@ export function ApiSettingsTreePanel({
         config.streamIdleTimeoutSec != null
           ? String(config.streamIdleTimeoutSec)
           : "",
-      enableAutoCompress: config.enableAutoCompress ?? true,
-      autoCompressThreshold: calculateAutoCompressThresholdPercent(
-        config.maxContextTokens,
-        config.autoCompressThreshold
-      ),
+       enableAutoCompress: config.enableAutoCompress ?? true,
+       autoCompressThreshold: calculateAutoCompressThresholdPercent(
+         config.maxContextTokens,
+         config.autoCompressThreshold
+       ),
+       toolResultTokenLimit: extractToolResultTokenLimitFromConfigJson(
+         config.configJson
+       ),
       maxRetries: config.maxRetries != null ? String(config.maxRetries) : "",
       retryBaseDelayMs:
         config.retryBaseDelayMs != null ? String(config.retryBaseDelayMs) : "",

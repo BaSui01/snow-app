@@ -285,16 +285,12 @@ async fn create_response_async(
         remote_include_global_rules: request.remote_include_global_rules,
     }).await?;
 
-    // Inject conversation_id and session_id as request headers for prompt
-    // caching.  OpenAI's Responses API uses these headers (along with
-    // prompt_cache_key in the payload) to route requests to the same cache
-    // shard.  Matches snow-cli's header injection behavior.
+    // Use the resolved ID so every normal Responses request is cache-routed.
+    let cache_key = prepared_request.conversation_id.trim();
     let mut effective_headers = custom_headers;
-    if let Some(ref conv_id) = request.conversation_id {
-        if !conv_id.is_empty() {
-            effective_headers.insert("conversation_id".to_string(), conv_id.clone());
-            effective_headers.insert("session_id".to_string(), conv_id.clone());
-        }
+    if !cache_key.is_empty() {
+        effective_headers.insert("conversation_id".to_string(), cache_key.to_string());
+        effective_headers.insert("session_id".to_string(), cache_key.to_string());
     }
 
     let client = crate::api::http_client::build_proxied_client()
@@ -331,6 +327,7 @@ async fn create_response_async(
         &api_config,
         tools,
         &prepared_request.user_system_prompts,
+        cache_key,
     )?;
     let retry_options = RetryOptions::from_config(
         api_config.max_retries,

@@ -222,6 +222,13 @@ impl FilesystemService {
                 )
             })?;
 
+        if search_content.is_empty() {
+            return Err(Error::new(
+                Status::InvalidArg,
+                "searchContent must be a non-empty string for tool \"filesystem-replace_edit\".".to_string(),
+            ));
+        }
+
         let replace_content = args
             .get("replaceContent")
             .and_then(|v| v.as_str())
@@ -301,9 +308,8 @@ impl FilesystemService {
             if let Some(&target_start) = match_positions.get(occurrence.saturating_sub(1)) {
                 let end_line = target_start + search_line_count;
 
-                // 行级替换：用 splice 替换目标行范围
-                let replacement_lines: Vec<String> =
-                    replace_content.split('\n').map(str::to_owned).collect();
+                let replacement_lines = fuzzy_edit::split_replacement_lines(&replace_content);
+                let replacement_line_count = replacement_lines.len();
                 let mut new_lines: Vec<String> = file_lines.iter().map(|s| s.to_string()).collect();
                 new_lines.splice(target_start..end_line, replacement_lines);
                 let new_content = new_lines.join("\n");
@@ -328,7 +334,8 @@ impl FilesystemService {
                 let review = fuzzy_edit::build_edit_review_context_lines(
                     &new_content,
                     target_start,
-                    target_start + replace_content.split('\n').count().saturating_sub(1),
+                    (replacement_line_count > 0)
+                        .then_some(target_start + replacement_line_count - 1),
                 );
 
                 return Ok(json!({
@@ -366,8 +373,13 @@ impl FilesystemService {
                 )
             })?;
 
-            let review =
-                fuzzy_edit::build_edit_review_context_lines(&new_content, edit_start_line, edit_end_line);
+            let replacement_line_count = fuzzy_edit::replacement_line_count(&replace_content);
+            let review = fuzzy_edit::build_edit_review_context_lines(
+                &new_content,
+                edit_start_line,
+                (replacement_line_count > 0)
+                    .then_some(edit_start_line + replacement_line_count - 1),
+            );
 
             return Ok(json!({
                 "success": true,
@@ -385,8 +397,8 @@ impl FilesystemService {
             fuzzy_edit::find_best_line_match_v2(search_content, &file_lines)
         {
             if similarity >= FUZZY_MATCH_THRESHOLD {
-                let replacement_lines: Vec<String> =
-                    replace_content.split('\n').map(str::to_owned).collect();
+                let replacement_lines = fuzzy_edit::split_replacement_lines(&replace_content);
+                let replacement_line_count = replacement_lines.len();
                 let mut new_lines: Vec<String> = file_lines.iter().map(|s| s.to_string()).collect();
                 new_lines.splice(start_line..end_line, replacement_lines);
                 let new_content = new_lines.join("\n");
@@ -411,7 +423,8 @@ impl FilesystemService {
                 let review = fuzzy_edit::build_edit_review_context_lines(
                     &new_content,
                     start_line,
-                    start_line + replace_content.split('\n').count().saturating_sub(1),
+                    (replacement_line_count > 0)
+                        .then_some(start_line + replacement_line_count - 1),
                 );
 
                 return Ok(json!({

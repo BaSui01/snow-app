@@ -101,7 +101,7 @@ token、流式空闲超时、重试次数与延迟），其余参数可直接编
 | `retryDelayMs` | 重试间隔（毫秒） |
 | `showThinking` | 是否展示思考过程 |
 | `chatThinking.reasoning_effort` | 思考强度（如 `max`） |
-| `toolResultTokenLimit` | 工具结果写入上下文的 token 上限 |
+| `toolResultTokenLimit` | 工具结果最多占模型上下文的百分比 |
 
 > **提示**：直接编辑 `config.json` 后需重启应用使改动生效。
 

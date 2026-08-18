@@ -43,6 +43,7 @@ pub(super) fn build_responses_payload(
     api_config: &ApiConfigRecord,
     tools: Option<Value>,
     user_system_prompts: &[String],
+    cache_key: &str,
 ) -> Result<Value> {
     let model =
         resolve_advanced_model(request.model.as_deref(), &api_config.advanced_model)?;
@@ -341,13 +342,9 @@ pub(super) fn build_responses_payload(
         }
     }
 
-    // Add prompt_cache_key using conversation_id so the Responses API can
-    // reuse cached prompt prefixes across turns within the same conversation.
-    // Matches snow-cli's behavior of passing prompt_cache_key in the payload.
-    if let Some(ref conv_id) = request.conversation_id {
-        if !conv_id.is_empty() {
-            payload["prompt_cache_key"] = json!(conv_id);
-        }
+    // Use the resolved conversation ID so the first main request is cacheable too.
+    if !cache_key.is_empty() {
+        payload["prompt_cache_key"] = json!(cache_key);
     }
 
     Ok(payload)

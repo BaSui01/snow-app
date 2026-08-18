@@ -25,7 +25,8 @@
 //! 4. Each migration function MUST be idempotent — running it on a database
 //!    that has already been migrated must be a safe no-op.
 
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
+use serde_json::{json, Map, Value};
 
 /// Tables whose legacy schema used `INTEGER PRIMARY KEY`. When detected, the
 /// table is dropped so `CREATE TABLE` can recreate it with a `TEXT PRIMARY KEY`
@@ -34,9 +35,9 @@ use rusqlite::Connection;
 /// This list is frozen — it only covers tables that existed before the
 /// snowflake-ID migration. Tables added after that migration always use
 /// `TEXT PRIMARY KEY` from creation and never need to appear here.
+/// `api_configs` is intentionally excluded: its legacy columns must survive.
 const LEGACY_INTEGER_PRIMARY_KEY_TABLES: &[&str] = &[
     "system_settings",
-    "api_configs",
     "codebase_settings",
     "system_prompts",
     "custom_header_schemes",
@@ -80,6 +81,7 @@ pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<(
     migrate_sub_agent_configs_model(connection)?;
     migrate_scheduled_tasks_pre_script(connection)?;
     migrate_api_configs_partial_retry_max_chars(connection)?;
+    migrate_api_configs_config_json(connection)?;
     migrate_chat_messages_interruption_metadata(connection)?;
     purge_assistant_raw_json_blobs(connection)?;
     drop_tables_referencing_sub_agent_configs_legacy(connection)?;
@@ -249,7 +251,180 @@ fn migrate_api_configs_partial_retry_max_chars(connection: &Connection) -> rusql
     Ok(())
 }
 
-/// Adds nullable final stream interruption metadata to assistant messages.
+/// Adds the `config_json` canonical document to API profiles and folds legacy
+/// scalar columns into its `snowcfg` object. Legacy columns remain shadow data.
+fn migrate_api_configs_config_json(connection: &Connection) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA table_info(api_configs)")?;
+    let columns: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    if !columns.iter().any(|column| column == "config_json") {
+        connection.execute(
+            "ALTER TABLE api_configs ADD COLUMN config_json TEXT NOT NULL DEFAULT '{}'",
+            [],
+        )?;
+    }
+
+    let mut statement = connection.prepare(
+        "SELECT CAST(id AS TEXT), config_json, base_url, base_url_mode, api_key,
+                request_method, advanced_model, basic_model, supports_vision,
+                vision_base_url, vision_base_url_mode, vision_api_key,
+                vision_request_method, vision_model, max_context_tokens, max_tokens,
+                stream_idle_timeout_sec, enable_auto_compress, auto_compress_threshold,
+                max_retries, retry_base_delay_ms, partial_retry_max_chars,
+                system_prompt_ids_json, custom_header_scheme_id, source
+           FROM api_configs",
+    )?;
+    let rows: Vec<(
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        i64,
+        String,
+        String,
+        String,
+        String,
+        String,
+        Option<i64>,
+        Option<i64>,
+        Option<i64>,
+        i64,
+        Option<i64>,
+        i64,
+        i64,
+        i64,
+        String,
+        String,
+        String,
+    )> = statement
+        .query_map([], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+                row.get(6)?,
+                row.get(7)?,
+                row.get(8)?,
+                row.get(9)?,
+                row.get(10)?,
+                row.get(11)?,
+                row.get(12)?,
+                row.get(13)?,
+                row.get(14)?,
+                row.get(15)?,
+                row.get(16)?,
+                row.get(17)?,
+                row.get(18)?,
+                row.get(19)?,
+                row.get(20)?,
+                row.get(21)?,
+                row.get(22)?,
+                row.get(23)?,
+                row.get(24)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(statement);
+
+    for (
+        id,
+        raw_config_json,
+        base_url,
+        base_url_mode,
+        api_key,
+        request_method,
+        advanced_model,
+        basic_model,
+        supports_vision,
+        vision_base_url,
+        vision_base_url_mode,
+        vision_api_key,
+        vision_request_method,
+        vision_model,
+        max_context_tokens,
+        max_tokens,
+        stream_idle_timeout_sec,
+        enable_auto_compress,
+        auto_compress_threshold,
+        max_retries,
+        retry_base_delay_ms,
+        partial_retry_max_chars,
+        system_prompt_ids_json,
+        custom_header_scheme_id,
+        source,
+    ) in rows
+    {
+        let mut root = match serde_json::from_str::<Value>(&raw_config_json) {
+            Ok(Value::Object(object)) => Value::Object(object),
+            _ => json!({}),
+        };
+        let object = root.as_object_mut().expect("JSON root must be an object");
+        if !matches!(object.get("snowcfg"), Some(Value::Object(_))) {
+            object.insert("snowcfg".to_string(), json!({}));
+        }
+        let snowcfg = object
+            .get_mut("snowcfg")
+            .and_then(Value::as_object_mut)
+            .expect("snowcfg must be an object");
+        let set_text = |snowcfg: &mut Map<String, Value>, key: &str, value: &str| {
+            if !value.trim().is_empty() || !snowcfg.contains_key(key) {
+                snowcfg.insert(key.to_string(), Value::String(value.to_string()));
+            }
+        };
+        set_text(snowcfg, "baseUrl", &base_url);
+        set_text(snowcfg, "baseUrlMode", &base_url_mode);
+        set_text(snowcfg, "apiKey", &api_key);
+        set_text(snowcfg, "requestMethod", &request_method);
+        set_text(snowcfg, "advancedModel", &advanced_model);
+        set_text(snowcfg, "basicModel", &basic_model);
+        snowcfg.insert("supportsVision".to_string(), json!(supports_vision != 0));
+        set_text(snowcfg, "visionBaseUrl", &vision_base_url);
+        set_text(snowcfg, "visionBaseUrlMode", &vision_base_url_mode);
+        set_text(snowcfg, "visionApiKey", &vision_api_key);
+        set_text(snowcfg, "visionRequestMethod", &vision_request_method);
+        set_text(snowcfg, "visionModel", &vision_model);
+        let set_optional = |snowcfg: &mut Map<String, Value>, key: &str, value: Option<i64>| {
+            if let Some(value) = value {
+                snowcfg.insert(key.to_string(), json!(value));
+            } else {
+                snowcfg.entry(key.to_string()).or_insert(Value::Null);
+            }
+        };
+        set_optional(snowcfg, "maxContextTokens", max_context_tokens);
+        set_optional(snowcfg, "maxTokens", max_tokens);
+        set_optional(snowcfg, "streamIdleTimeoutSec", stream_idle_timeout_sec);
+        snowcfg.insert(
+            "enableAutoCompress".to_string(),
+            json!(enable_auto_compress != 0),
+        );
+        set_optional(snowcfg, "autoCompressThreshold", auto_compress_threshold);
+        snowcfg.insert("maxRetries".to_string(), json!(max_retries));
+        snowcfg.insert("retryDelayMs".to_string(), json!(retry_base_delay_ms));
+        snowcfg.insert(
+            "partialRetryMaxChars".to_string(),
+            json!(partial_retry_max_chars),
+        );
+        set_text(snowcfg, "systemPromptIdsJson", &system_prompt_ids_json);
+        set_text(snowcfg, "customHeaderSchemeId", &custom_header_scheme_id);
+        set_text(snowcfg, "source", &source);
+        let canonical_json = serde_json::to_string(&root).unwrap_or_else(|_| "{\"snowcfg\":{}}".to_string());
+        connection.execute(
+            "UPDATE api_configs SET config_json = ?1 WHERE CAST(id AS TEXT) = ?2",
+            params![canonical_json, id],
+        )?;
+    }
+    Ok(())
+}
+
+
 /// Existing rows remain `NULL`, and each column is checked independently so
 /// partially migrated and repeatedly migrated databases are both safe.
 fn migrate_chat_messages_interruption_metadata(

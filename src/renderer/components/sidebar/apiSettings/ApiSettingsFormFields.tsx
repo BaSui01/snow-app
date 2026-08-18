@@ -20,6 +20,12 @@ import {
   calculateAutoCompressThresholdTokens,
   normalizeAutoCompressThresholdPercent,
 } from "./autoCompressThreshold";
+import {
+  TOOL_RESULT_LIMIT_MAX_PERCENT,
+  TOOL_RESULT_LIMIT_MIN_PERCENT,
+  TOOL_RESULT_LIMIT_STEP_PERCENT,
+  normalizeToolResultLimitPercent,
+} from "./toolResultLimit";
 import { resolveThinkingValue } from "./apiSettingsUtils";
 import type {
   Model,
@@ -238,6 +244,10 @@ export function ApiSettingsFormFields({
   const autoCompressThresholdTokens = calculateAutoCompressThresholdTokens(
     data.maxContextTokens,
     autoCompressThresholdPercent
+  );
+
+  const toolResultLimitPercent = normalizeToolResultLimitPercent(
+    data.toolResultTokenLimit
   );
 
   const renderModelField = (
@@ -920,6 +930,31 @@ export function ApiSettingsFormFields({
               disabled={disabled}
             />
           </label>
+          <div className="api-settings-field api-settings-auto-compress-field">
+            <span>
+              {t("settings.apiToolResultTokenLimit", {
+                defaultValue: "Tool result limit",
+              })}
+            </span>
+            <div className="api-settings-threshold-slider-row">
+              <input
+                value={toolResultLimitPercent}
+                onChange={changeField("toolResultTokenLimit")}
+                type="range"
+                min={TOOL_RESULT_LIMIT_MIN_PERCENT}
+                max={TOOL_RESULT_LIMIT_MAX_PERCENT}
+                step={TOOL_RESULT_LIMIT_STEP_PERCENT}
+                disabled={disabled}
+              />
+              <strong>{toolResultLimitPercent}%</strong>
+            </div>
+            <small className="api-settings-threshold-hint">
+              {t("settings.apiToolResultTokenLimitHint", {
+                defaultValue:
+                  "Limits each text tool result to this percentage of the model context. Image results and image reads are not limited.",
+              })}
+            </small>
+          </div>
           <div className="api-settings-field api-settings-auto-compress-field">
             <div className="api-settings-auto-compress-header">
               <span>

@@ -1411,6 +1411,9 @@ export const zhCN = {
     "可选择常见 token 规格，也可直接填写自定义值。",
   "settings.apiMaxTokens": "最大输出 tokens",
   "settings.apiMaxTokensHint": "留空则请求时不传该参数。",
+  "settings.apiToolResultTokenLimit": "工具返回结果限制",
+  "settings.apiToolResultTokenLimitHint":
+    "限制每个文本工具结果最多占模型上下文的此百分比。图片返回和图片读取不受限制。",
   "settings.apiSetActive": "启用配置",
   "settings.apiSupportsVision": "支持视觉",
   "settings.apiVisionBaseUrl": "视觉 Base URL",

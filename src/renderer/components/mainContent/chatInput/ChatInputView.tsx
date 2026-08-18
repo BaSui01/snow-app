@@ -26,6 +26,7 @@ import {
   Target,
   Trash2,
   X,
+  XCircle,
   Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -36,6 +37,9 @@ import { ContextMenu } from "../../common/ContextMenu";
 import { Tooltip } from "../../common/Tooltip";
 import type { ChatInputViewProps } from "./types";
 import { TEXT_SNIPPET_THRESHOLD } from "./constants";
+import {
+  getThinkingValueFromConfig,
+} from "./configThinking";
 import { ThinkingStrengthMenu } from "./ThinkingStrengthMenu";
 import { TokenUsageRing } from "./TokenUsageRing";
 import {
@@ -73,6 +77,7 @@ import {
 } from "./FileMentionPopup";
 import { useDropdownDirection } from "./useDropdownDirection";
 import { PlusMenu, type PlusMenuSection } from "./PlusMenu";
+import { LspStatusBadge } from "./LspStatusBadge";
 import { PendingMessages } from "./PendingMessages";
 import { ProjectMcpPanel } from "./ProjectMcpPanel";
 import { ProjectCodebasePanel } from "./ProjectCodebasePanel";
@@ -81,6 +86,7 @@ import { ProjectSensitiveCommandsPanel } from "./ProjectSensitiveCommandsPanel";
 import { ProjectSkillsPanel } from "./ProjectSkillsPanel";
 import { RoleEditorPanel } from "./RoleEditorPanel";
 import { StreamMetrics } from "./StreamMetrics";
+import { ConversationAttachmentBar } from "../conversationContext/ConversationAttachmentBar";
 import { useChatConversationContext } from "../chatMessages";
 import { directoryIdToPath } from "../chatMessages/utils/conversationHelpers";
 import { collectConversationFileChanges } from "../chatMessages/hooks/fileChangeTracking";
@@ -94,6 +100,16 @@ import {
   type TerminalInsertTextPayload,
 } from "../../rightPanel/terminal/terminalMonitor";
 import { rightPanelEvents } from "../../rightPanel/rightPanelEvents";
+import {
+  CONVERSATION_DRAG_MIME,
+  addPendingContextAttachment,
+  conversationContextEvents,
+  endConversationDrag,
+  onPendingContextAttachmentChange,
+  readConversationDragPayload,
+  removePendingContextAttachment,
+  type ConversationDragPayload,
+} from "../../sidebar/mainSidebar/conversationContextEvents";
 import {
   WEB_SNAPSHOT_REQUEST_EVENT,
   WEB_SNAPSHOT_RESULT_EVENT,
@@ -146,6 +162,7 @@ export const ChatInputView = ({
   projectId,
   projectName,
   onNavigateToView,
+  onOpenConversation,
   value,
   textareaRef,
   apiConfigs,
@@ -166,11 +183,13 @@ export const ChatInputView = ({
   thinkingOptions,
   thinkingValue,
   thinkingLabel,
+  thinkingDefaultLabel,
   ActiveThinkingIcon,
   isLoadingApiConfig,
   isSavingThinking,
   thinkingError,
   responsesFastModeEnabled,
+  responsesFastModeOverride,
   isSavingFastMode,
   fastModeError,
   labels,
@@ -218,6 +237,7 @@ export const ChatInputView = ({
   handleSelectApiProfile,
   handleSelectThinking,
   handleToggleResponsesFastMode,
+  handleResetResponsesFastMode,
   restoreContent,
 }: ChatInputViewProps): React.JSX.Element => {
   const { t } = useI18n();
@@ -273,6 +293,84 @@ export const ChatInputView = ({
     fallbackChanges: fallbackFileChanges,
   });
   const isDraggingOverRef = useRef(false);
+  // 会话拖拽到输入框的失败反馈徽标，3 秒后自动消失
+  const [dragFeedback, setDragFeedback] = useState<{ text: string } | null>(
+    null
+  );
+  const dragFeedbackTimerRef = useRef<number | null>(null);
+  const showDragFeedback = useCallback(
+    (text: string): void => {
+      setDragFeedback({ text });
+      if (dragFeedbackTimerRef.current !== null) {
+        window.clearTimeout(dragFeedbackTimerRef.current);
+      }
+      dragFeedbackTimerRef.current = window.setTimeout(() => {
+        setDragFeedback(null);
+        dragFeedbackTimerRef.current = null;
+      }, 3000);
+    },
+    []
+  );
+  // 新会话拖入的「待挂载」会话附件（支持多个）：首条消息发送、会话创建后
+  // 自动挂载为开头上下文。期间输入框上方显示可见提示条，可逐个取消。
+  const [pendingAttachments, setPendingAttachments] = useState<
+    ConversationDragPayload[]
+  >([]);
+  // 同步 ref：renderAttachmentContext 异步返回后校验附件是否仍存在，
+  // 避免拖拽期间被取消/覆盖时旧请求的结果污染新附件的字符数。
+  const pendingAttachmentsRef = useRef<ConversationDragPayload[]>([]);
+  // 各待挂载会话的注入字符数（清洗思考链/工具细节 + 预算裁剪后的实际注入
+  // 长度，与消息流折叠块预览一致）；异步获取，未就绪缺省。
+  const [pendingCharsById, setPendingCharsById] = useState<
+    Record<string, number>
+  >({});
+  useEffect(() => {
+    return onPendingContextAttachmentChange((payloads) => {
+      pendingAttachmentsRef.current = payloads;
+      setPendingAttachments(payloads);
+      setPendingCharsById((prev) => {
+        const next: Record<string, number> = {};
+        for (const id of Object.keys(prev)) {
+          if (payloads.some((item) => item.conversationId === id)) {
+            next[id] = prev[id];
+          }
+        }
+        return next;
+      });
+      for (const payload of payloads) {
+        void window.snow
+          .renderAttachmentContext(payload.conversationId)
+          .then((rendered) => {
+            if (
+              pendingAttachmentsRef.current.some(
+                (item) => item.conversationId === payload.conversationId
+              )
+            ) {
+              setPendingCharsById((prev) => ({
+                ...prev,
+                [payload.conversationId]: rendered.length,
+              }));
+            }
+          })
+          .catch(() => {
+            if (
+              pendingAttachmentsRef.current.some(
+                (item) => item.conversationId === payload.conversationId
+              )
+            ) {
+              setPendingCharsById((prev) => {
+                if (!(payload.conversationId in prev)) {
+                  return prev;
+                }
+                const next = { ...prev };
+                delete next[payload.conversationId];
+                return next;
+              });
+            }
+          });
+      }
+    });
+  }, []);
   // F4 网页快照：待处理请求表（requestId → web chip 定位信息）。拖入标签页
   // 后登记，快照结果按 requestId 匹配取出定位信息，再在编辑区 DOM 中按
   // URL/标题找到对应 web chip 回填（chip 可能已被删除/消息已发送，找不到
@@ -593,6 +691,39 @@ export const ChatInputView = ({
         : "false";
     }
   }, [handleChange, renumberImageChips, textareaRef]);
+
+  // 图库面板「发送到聊天框」事件（跨组件联动，如设置页图片库灯箱）。
+  useEffect(() => {
+    const handleInsertImages = (event: Event): void => {
+      const detail = (
+        event as CustomEvent<{
+          images?: { name?: unknown; dataUrl?: unknown }[];
+        }>
+      ).detail;
+      const images = Array.isArray(detail?.images) ? detail.images : [];
+      for (const image of images) {
+        if (typeof image?.dataUrl !== "string" || !image.dataUrl) {
+          continue;
+        }
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+        }
+        insertHtmlAtSelection(
+          createImageChipHtml({
+            name:
+              typeof image.name === "string" && image.name.length > 0
+                ? image.name
+                : "image.png",
+            dataUrl: image.dataUrl,
+          })
+        );
+        syncContent();
+      }
+    };
+    window.addEventListener("chat-input:insert-images", handleInsertImages);
+    return () =>
+      window.removeEventListener("chat-input:insert-images", handleInsertImages);
+  }, [syncContent]);
 
   const insertFileTag = useCallback(
     (tag: FileTag) => {
@@ -1059,6 +1190,37 @@ export const ChatInputView = ({
         return;
       }
 
+      // 会话上下文注入：拖拽侧边栏会话到输入框 = 附加为当前会话的开头上下文。
+      // drop 阶段 DataTransfer 可重新读取；若上游环境仍返回空，则回退 dragstart 缓存。
+      const conversationPayload = readConversationDragPayload(event.dataTransfer);
+      if (conversationPayload) {
+        endConversationDrag();
+        if (activeConversationId) {
+          void (async () => {
+            try {
+              await window.snow.addContextAttachment(
+                activeConversationId,
+                conversationPayload.conversationId
+              );
+              conversationContextEvents.emit(
+                "attachments-changed",
+                activeConversationId
+              );
+            } catch (error) {
+              const message =
+                error instanceof Error ? error.message : String(error);
+              showDragFeedback(message);
+            }
+          })();
+        } else {
+          // 新会话：会话记录尚未创建，先暂存待挂载附件（输入框上方显示
+          // 可见提示条）；首条消息发送、PENDING 迁移到真实会话 id 后由
+          // useAgentLoop 自动挂载为开头上下文。支持连续拖入多个会话。
+          addPendingContextAttachment(conversationPayload);
+        }
+        return;
+      }
+
       // 支持从文件管理器拖入图片（单张或多张），与粘贴图片行为保持一致
       const droppedFiles = Array.from(event.dataTransfer.files);
       const imageFiles = droppedFiles.filter((file) =>
@@ -1103,6 +1265,60 @@ export const ChatInputView = ({
 
       try {
         const parsed = JSON.parse(jsonData) as Record<string, unknown>;
+
+        // 图库图片拖拽：{ type: "library-image", path, mimeType?, name? }
+        // 或批量：{ type: "library-images", images: [{ path, mimeType?, name? }] }
+        // → 异步解析为 data URL 并逐个插入图片 chip（与粘贴/拖入图片一致）。
+        const libraryImages: { path: string; name: string }[] = [];
+        if (parsed.type === "library-image" && typeof parsed.path === "string") {
+          libraryImages.push({
+            path: parsed.path,
+            name:
+              typeof parsed.name === "string" && parsed.name.length > 0
+                ? parsed.name
+                : parsed.path.split("/").pop() ?? "image.png",
+          });
+        } else if (
+          parsed.type === "library-images" &&
+          Array.isArray(parsed.images)
+        ) {
+          for (const raw of parsed.images) {
+            const image = raw as { path?: unknown; name?: unknown };
+            if (typeof image.path === "string") {
+              libraryImages.push({
+                path: image.path,
+                name:
+                  typeof image.name === "string" && image.name.length > 0
+                    ? image.name
+                    : image.path.split("/").pop() ?? "image.png",
+              });
+            }
+          }
+        }
+        if (libraryImages.length > 0) {
+          void (async () => {
+            for (const image of libraryImages) {
+              try {
+                const dataUrl = await window.snow.resolveLibraryImage(
+                  image.path
+                );
+                if (!dataUrl) {
+                  continue;
+                }
+                if (textareaRef.current) {
+                  textareaRef.current.focus();
+                }
+                insertHtmlAtSelection(
+                  createImageChipHtml({ name: image.name, dataUrl })
+                );
+                syncContent();
+              } catch {
+                // 单张解析失败：跳过继续
+              }
+            }
+          })();
+          return;
+        }
 
         // 浏览器 tab 拖拽：{ type: "web-tag", url, title, instanceId?, tabId? }
         // → 插入网页引用 chip；若携带实例定位信息则异步请求三层网页快照
@@ -1273,24 +1489,55 @@ export const ChatInputView = ({
         // Ignore invalid drag data
       }
     },
-    [insertDroppedPlainText, insertExternalFiles, insertFileTags, syncContent, textareaRef]
+    [
+      insertDroppedPlainText,
+      insertExternalFiles,
+      insertFileTags,
+      syncContent,
+      textareaRef,
+      activeConversationId,
+      showDragFeedback,
+      t,
+    ]
   );
 
   const handleDragOver = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
       const types = event.dataTransfer.types;
+      // 会话上下文注入：拖拽侧边栏会话到输入框（CONVERSATION_DRAG_MIME）。
+      // 前置校验：同工作区目录、当前会话非子代理会话；已有会话时另需
+      // 非自引用。新会话（activeConversationId 为空）同样允许拖入——附件
+      // 先暂存为 pending，待首条消息发送、会话创建后自动挂载。
+      // 不满足则保持禁止光标（不 preventDefault），由 native 侧幂等兜底。
+      const hasConversationDrag = types.includes(CONVERSATION_DRAG_MIME);
+      if (hasConversationDrag) {
+        const payload = readConversationDragPayload(event.dataTransfer);
+        // 新会话没有会话记录，目录取当前项目目录兜底（发送时新会话同样
+        // 落入当前目录，见 handleSendMessage 的 sessionDirId 计算）。
+        const effectiveDirectoryId = conversationDirectoryId ?? projectId;
+        const hasTarget = !!activeConversationId;
+        const conversationAllowed =
+          !!payload &&
+          !isSubAgentConversation &&
+          payload.directoryId === effectiveDirectoryId &&
+          (!hasTarget || payload.conversationId !== activeConversationId);
+        if (!conversationAllowed) {
+          return;
+        }
+      }
       // 应用内拖拽（文件/commit/change 标签）走 application/json；
       // 终端监控拖拽走 application/x-snow-terminal（dropEffect: link）；
       // 从文件管理器拖入的外部文件走 Files；
       // 浏览器 webview 页面选中文字拖入走 text/plain（方案 A）。
-      // 四者均需 preventDefault 才能允许 drop，否则浏览器默认拒绝
+      // 以上均需 preventDefault 才能允许 drop，否则浏览器默认拒绝
       // （显示禁止光标）。
       const hasTerminal = types.includes(TERMINAL_DRAG_MIME);
       const allowed =
         types.includes("application/json") ||
         types.includes("Files") ||
         types.includes("text/plain") ||
-        hasTerminal;
+        hasTerminal ||
+        hasConversationDrag;
       if (!allowed) {
         return;
       }
@@ -1301,7 +1548,13 @@ export const ChatInputView = ({
         textareaRef.current.classList.add("drag-over");
       }
     },
-    [textareaRef]
+    [
+      textareaRef,
+      activeConversationId,
+      conversationDirectoryId,
+      isSubAgentConversation,
+      projectId,
+    ]
   );
 
   const handleDragLeave = useCallback(
@@ -2353,6 +2606,19 @@ export const ChatInputView = ({
           handleSendMessage(prompt, {
             model: selectedModel || undefined,
             apiProfile: selectedApiProfile || undefined,
+            // Review is another first-message entry point, so it must use the
+            // same effective runtime snapshot as a normal send. In particular,
+            // an explicit false Fast Mode override must not fall back to the
+            // profile default.
+            thinkingStrength: runtimeApiConfig
+              ? thinkingValue || getThinkingValueFromConfig(runtimeApiConfig)
+              : undefined,
+            responsesFastMode:
+              requestMethod === "responses" ? responsesFastModeEnabled : null,
+            conversationRuntimeConfigOverride: {
+              thinkingStrength: thinkingValue === "" ? null : thinkingValue,
+              responsesFastMode: responsesFastModeOverride,
+            },
             // review 回合：桌面宠物据此播放 review 专属动画。
             kind: "review",
           });
@@ -2495,6 +2761,17 @@ export const ChatInputView = ({
             ) : null}
           </div>
         ) : null}
+        {/* 附加的历史会话提示条(统一组件):已有会话显示已挂载附件,
+            空会话显示待挂载附件(pending),同一视觉风格 */}
+        <ConversationAttachmentBar
+          conversationId={activeConversationId ?? null}
+          pendingAttachments={pendingAttachments}
+          pendingCharsById={pendingCharsById}
+          onRemovePending={(conversationId) =>
+            removePendingContextAttachment(conversationId)
+          }
+          onOpenConversation={onOpenConversation ?? (() => undefined)}
+        />
         <div className="input-box">
           <div
             ref={textareaRef}
@@ -2530,6 +2807,18 @@ export const ChatInputView = ({
               handleWebChipClick(event);
             }}
           />
+          {dragFeedback && (
+            <span
+              className="chat-input-drag-feedback error"
+              role="status"
+              aria-live="polite"
+            >
+              <XCircle size={12} aria-hidden="true" />
+              <span className="chat-input-drag-feedback-text">
+                {dragFeedback.text}
+              </span>
+            </span>
+          )}
           {imagePreview &&
             createPortal(
               <div
@@ -2808,6 +3097,7 @@ export const ChatInputView = ({
                   </Tooltip>
                 </>
               )}
+              <LspStatusBadge projectId={projectId} />
             </div>
             <div className="toolbar-right">
               <div className="model-selector" ref={dropdownRef}>
@@ -2930,43 +3220,80 @@ export const ChatInputView = ({
                           </span>
                         </button>
                         {requestMethod === "responses" && (
-                          <button
-                            className={`model-dropdown-item model-fast-mode-toggle ${
-                              responsesFastModeEnabled ? "active" : ""
-                            }`}
-                            role="switch"
-                            aria-checked={responsesFastModeEnabled}
-                            disabled={
-                              !runtimeApiConfig ||
-                              isLoadingApiConfig ||
-                              isSavingFastMode ||
-                              isStreaming ||
-                              isSubAgentConversation
-                            }
-                            onClick={() =>
-                              void handleToggleResponsesFastMode()
-                            }
-                            type="button"
-                            title={fastModeError ?? t("chat.fastModeHint")}
-                          >
-                            <span className="model-dropdown-item-name with-icon">
-                              <Zap size={14} className="thinking-option-icon" />
-                              <span>{t("chat.fastMode")}</span>
-                            </span>
-                            <span className="model-menu-value">
-                              {isSavingFastMode ? (
-                                <Loader2 size={12} className="spin" />
-                              ) : (
-                                <span className="model-menu-value-text">
-                                  {t(
-                                    responsesFastModeEnabled
-                                      ? "chat.fastModeOn"
-                                      : "chat.fastModeOff"
-                                  )}
-                                </span>
-                              )}
-                            </span>
-                          </button>
+                          <>
+                            <button
+                              className={`model-dropdown-item model-fast-mode-toggle ${
+                                responsesFastModeEnabled ? "active" : ""
+                              }`}
+                              role="switch"
+                              aria-checked={responsesFastModeEnabled}
+                              disabled={
+                                !runtimeApiConfig ||
+                                isLoadingApiConfig ||
+                                isSavingFastMode ||
+                                isStreaming ||
+                                isSubAgentConversation
+                              }
+                              onClick={() =>
+                                void handleToggleResponsesFastMode()
+                              }
+                              type="button"
+                              title={
+                                fastModeError ??
+                                t("chat.fastModeHint")
+                              }
+                            >
+                              <span className="model-dropdown-item-name with-icon">
+                                <Zap size={14} className="thinking-option-icon" />
+                                <span>{t("chat.fastMode")}</span>
+                              </span>
+                              <span className="model-menu-value">
+                                {isSavingFastMode ? (
+                                  <Loader2 size={12} className="spin" />
+                                ) : (
+                                  <span className="model-menu-value-text">
+                                    {t(
+                                      responsesFastModeEnabled
+                                        ? "chat.fastModeOn"
+                                        : "chat.fastModeOff"
+                                    )}
+                                  </span>
+                                )}
+                              </span>
+                            </button>
+                            <button
+                              className={`model-dropdown-item ${
+                                responsesFastModeOverride === null ? "active" : ""
+                              }`}
+                              disabled={
+                                !runtimeApiConfig ||
+                                isLoadingApiConfig ||
+                                isSavingFastMode ||
+                                isStreaming ||
+                                isSubAgentConversation ||
+                                responsesFastModeOverride === null
+                              }
+                              onClick={() =>
+                                void handleResetResponsesFastMode()
+                              }
+                              type="button"
+                              title={t("chat.fastModeFollowProfile")}
+                            >
+                              <span className="model-dropdown-item-name with-icon">
+                                <RefreshCw size={14} className="thinking-option-icon" />
+                                <span>{t("chat.fastModeFollowProfile")}</span>
+                              </span>
+                              <span className="model-menu-value">
+                                {responsesFastModeOverride === null ? (
+                                  <Check size={14} className="model-dropdown-check" />
+                                ) : (
+                                  <span className="model-menu-value-text">
+                                    {t("settings.reset")}
+                                  </span>
+                                )}
+                              </span>
+                            </button>
+                          </>
                         )}
                         {!isSubAgentConversation && apiConfigs.length > 0 && (
                           <button
@@ -3249,6 +3576,9 @@ export const ChatInputView = ({
                         open={isModelMenuOpen}
                         value={thinkingValue}
                         options={thinkingOptions}
+                        inheritLabel={t("chat.thinkingFollowProfile", {
+                          values: { value: thinkingDefaultLabel },
+                        })}
                         subtitle={requestMethod}
                         showBack
                         onBack={() => setModelMenuView("root")}

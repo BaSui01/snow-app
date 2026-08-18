@@ -11,6 +11,7 @@ export type MainContentView =
   | "personalization-settings"
   | "custom-headers-settings"
   | "mcp-settings"
+  | "lsp-settings"
   | "import-settings"
   | "skills-settings"
   | "sub-agent-settings"

@@ -19,6 +19,7 @@ import { useI18n } from "../../i18n";
 import { ChatInput } from "./ChatInput";
 import { EmptyChatGreeting } from "./EmptyChatGreeting";
 import { ChatMessageList, useChatConversationContext } from "./chatMessages";
+import { ConversationContextFold } from "./conversationContext/ConversationContextFold";
 import { RollbackConfirmDialog } from "./chatMessages/dialogs/RollbackConfirmDialog";
 import { CompactionStream } from "./chatMessages/components/CompactionStream";
 import { UserMessageRail } from "./chatMessages/components/UserMessageRail";
@@ -83,6 +84,7 @@ const ChatContentBody = ({
   const {
     messages,
     activeConversationId,
+    newChatGeneration,
     conversationDirectoryId,
     isLoadingOlderMessages,
     hasMoreMessages,
@@ -975,6 +977,10 @@ const ChatContentBody = ({
     };
   }, []);
 
+  const chatRenderKey = `${activeDirectory?.directoryId ?? "no-project"}:${
+    activeConversationId ?? "new-chat"
+  }:${newChatGeneration}`;
+
   return (
     <div
       className={`chat-content ${
@@ -982,7 +988,7 @@ const ChatContentBody = ({
       }`}
     >
       <div
-        key={activeConversationId ?? "new-chat"}
+        key={chatRenderKey}
         className={`chat-area ${
           isLoadingInitialHistory ? "is-loading-history" : ""
         }`}
@@ -1035,6 +1041,9 @@ const ChatContentBody = ({
                 <div className="chat-history-skeleton-line" />
               </div>
             ) : null}
+            <ConversationContextFold
+              conversationId={activeConversationId ?? null}
+            />
             <ChatMessageList
               messages={messages}
               isStreaming={isStreaming}
@@ -1094,12 +1103,13 @@ const ChatContentBody = ({
           // 草稿池恢复），但不再随历史加载被卸载——输入框区域保持稳定，
           // 切换会话时只有模型/配置区短暂进入 loading，而不是整体消失。
           <ChatInput
-            key={activeConversationId ?? "new-chat"}
+            key={chatRenderKey}
             projectId={activeDirectory?.directoryId}
             projectName={activeDirectory?.name}
             conversationId={activeConversationId}
             onSend={handleSendWithScroll}
             onNavigateToView={onNavigateToView}
+            onOpenConversation={handleSelectConversation}
             isStreaming={isStreaming}
             isAborting={isAborting}
             onAbort={handleAbort}

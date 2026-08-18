@@ -2,12 +2,24 @@ import type {
   ApiConfigRecord,
   ScheduledTaskRunOptions,
 } from "../../../../preload";
+import { getResponsesFastModeFromConfig } from "./configThinking";
 import type { ChatInputSendOptions } from "./types";
+
+type AutoSendChatInputSendOptions = ChatInputSendOptions & {
+  /** One-shot effective Fast Mode resolved from the scheduled profile. */
+  responsesFastMode?: boolean | null;
+};
+
+type AutoSendRunOverride = ScheduledTaskRunOptions & {
+  /** Optional future/bridge-provided one-shot Fast Mode override. */
+  responsesFastMode?: boolean | null;
+};
 
 type AutoSendApiConfig = Pick<
   ApiConfigRecord,
   "profileName" | "advancedModel"
->;
+> &
+  Partial<Pick<ApiConfigRecord, "requestMethod" | "configJson" | "isActive">>;
 
 export type ResolveAutoSendOptionsInput = {
   autoSendOverride?: ScheduledTaskRunOptions | null;
@@ -46,14 +58,34 @@ export const resolveAutoSendOptions = ({
   }
 
   const apiProfile = taskApiProfile ?? nonEmpty(selectedApiProfile);
+  const selectedProfileConfig = apiProfile
+    ? apiConfigs.find((config) => config.profileName.trim() === apiProfile)
+    : apiConfigs.find((config) => config.isActive) ?? apiConfigs[0];
+  const explicitFastMode = (autoSendOverride as AutoSendRunOverride | null)
+    ?.responsesFastMode;
+  // Scheduled sends keep an empty thinkingStrength as "follow this profile".
+  // Fast Mode follows the same one-shot rule: resolve an explicit task value
+  // when present, otherwise read the selected profile's current config now;
+  // neither path creates a durable conversation override.
+  const responsesFastMode =
+    typeof explicitFastMode === "boolean"
+      ? explicitFastMode
+      : typeof selectedProfileConfig?.configJson === "string"
+        ? getResponsesFastModeFromConfig(
+            selectedProfileConfig as ApiConfigRecord
+          )
+        : undefined;
   const basicModel = nonEmpty(autoSendOverride?.basicModel);
   const thinkingStrength = nonEmpty(autoSendOverride?.thinkingStrength);
-  const options: ChatInputSendOptions = {};
+  const options: AutoSendChatInputSendOptions = {};
 
   if (model) options.model = model;
   if (apiProfile) options.apiProfile = apiProfile;
   if (basicModel) options.basicModel = basicModel;
   if (thinkingStrength) options.thinkingStrength = thinkingStrength;
+  if (responsesFastMode !== undefined) {
+    options.responsesFastMode = responsesFastMode;
+  }
 
   return options;
 };

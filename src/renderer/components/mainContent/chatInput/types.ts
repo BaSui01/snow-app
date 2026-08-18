@@ -3,6 +3,12 @@ import type { LucideIcon } from "lucide-react";
 import type { ApiConfigRecord, Model, TokenUsage } from "../../../../preload";
 import type { MainContentView } from "../types";
 import type { ScheduledTaskRunOptions } from "../../../../preload";
+
+export type ConversationRuntimeConfigOverride = {
+  thinkingStrength: string | null;
+  responsesFastMode: boolean | null;
+};
+
 export type ChatInputSendOptions = {
   model?: string;
   apiProfile?: string;
@@ -11,9 +17,16 @@ export type ChatInputSendOptions = {
   /** Optional one-shot basic-model snapshot used only for the first title
    *  generation. It is never forwarded to the main Provider request. */
   basicModel?: string;
-  /** Per-request thinking strength override ("none" | "low" | "medium" |
+  /** Effective thinking strength for this request ("none" | "low" | "medium" |
    *  "high" | custom). Applied in-memory; never mutates the profile config. */
   thinkingStrength?: string;
+  /** Per-request Responses Fast Mode value. `null` means use the profile
+   *  default and is ignored by non-Responses request methods. */
+  responsesFastMode?: boolean | null;
+  /** Snapshot of the conversation-level overrides to persist after a pending
+   *  session receives its first real conversation id. `null` means inherit the
+   *  selected profile default for that field. */
+  conversationRuntimeConfigOverride?: ConversationRuntimeConfigOverride;
 };
 export type ChatInputProps = {
   placeholder?: string;
@@ -23,6 +36,8 @@ export type ChatInputProps = {
   onSend?: (message: string, options: ChatInputSendOptions) => void;
   /** 未配置 API 时引导跳转到 API 设置页。 */
   onNavigateToView?: (view: MainContentView) => void;
+  /** 跳转到被附加的历史会话(输入框上方附件提示条点击)。 */
+  onOpenConversation?: (conversationId: string) => void;
   isStreaming?: boolean;
   isAborting?: boolean;
   onAbort?: () => void;
@@ -103,11 +118,13 @@ export type ChatInputState = {
   thinkingOptions: ThinkingOption[];
   thinkingValue: string;
   thinkingLabel: string;
+  thinkingDefaultLabel: string;
   ActiveThinkingIcon: LucideIcon;
   isLoadingApiConfig: boolean;
   isSavingThinking: boolean;
   thinkingError: string | null;
   responsesFastModeEnabled: boolean;
+  responsesFastModeOverride: boolean | null;
   isSavingFastMode: boolean;
   fastModeError: string | null;
   labels: ChatInputLabels;
@@ -152,6 +169,7 @@ export type ChatInputActions = {
   handleSelectApiProfile: (profileName: string) => Promise<void>;
   handleSelectThinking: (nextValue: string) => Promise<void>;
   handleToggleResponsesFastMode: () => Promise<void>;
+  handleResetResponsesFastMode: () => Promise<void>;
   restoreContent: (content: string) => void;
 };
 
@@ -162,6 +180,8 @@ export type ChatInputViewProps = ChatInputState &
     projectName?: string;
     /** 未配置 API 时引导跳转到 API 设置页。 */
     onNavigateToView?: (view: MainContentView) => void;
+    /** 跳转到被附加的历史会话(输入框上方附件提示条点击)。 */
+    onOpenConversation?: (conversationId: string) => void;
     tokenUsage: TokenUsage | null;
     pendingMessages: string[];
     onWithdrawPendingMessage?: (index: number) => string | null;

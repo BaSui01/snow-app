@@ -976,8 +976,10 @@ export type ResponsesApiRequest = {
    *  "high" | custom). Applied in-memory over the resolved profile's
    *  config_json; never mutates the stored profile. */
   thinkingStrength?: string;
-  /** Per-request Responses Fast Mode override; null/omitted follows the profile default. */
-  responsesFastMode?: boolean | null;
+  /** Per-request Responses Fast Mode override; omitted follows the profile
+   *  default. Must never be `null`: napi-rs object fields only treat
+   *  `undefined` as absent — an explicit `null` throws BooleanExpected. */
+  responsesFastMode?: boolean;
   /**
    * Project ROLE.md content of an SSH (`ssh://`) workspace, resolved by the
    * main process via SSH (mirrors RoleEditorPanel's access path). Absent for
@@ -1278,7 +1280,7 @@ export type CheckpointFileDiff = CheckpointFileChange & {
 export type NativeBridge = {
   initializeAppStorage: () => Promise<AppStorageInfo>;
 
-getSystemSettingValue: (settingCode: string) => Promise<string | null>;
+  getSystemSettingValue: (settingCode: string) => Promise<string | null>;
   setSystemSetting: (
     settingName: string,
     settingCode: string,
@@ -1638,7 +1640,10 @@ getSystemSettingValue: (settingCode: string) => Promise<string | null>;
     sourceId: string
   ) => Promise<ContextAttachmentRecord>;
   /** 移除「B 附带 A」引用（纯关系删除）。 */
-  removeContextAttachment: (targetId: string, sourceId: string) => Promise<void>;
+  removeContextAttachment: (
+    targetId: string,
+    sourceId: string
+  ) => Promise<void>;
   /** 智能精简渲染会话为上下文块文本（注入与预览共用）。 */
   renderAttachmentContext: (sourceId: string) => Promise<string>;
   forkConversation: (
@@ -1786,10 +1791,7 @@ getSystemSettingValue: (settingCode: string) => Promise<string | null>;
     repoPath: string,
     hash: string
   ) => Promise<GitCommitFile[]>;
-  getCommitDiff: (
-    repoPath: string,
-    hash: string
-  ) => Promise<GitDiffResult>;
+  getCommitDiff: (repoPath: string, hash: string) => Promise<GitDiffResult>;
   gitCommitFileDiff: (
     repoPath: string,
     hash: string,
@@ -1824,7 +1826,10 @@ getSystemSettingValue: (settingCode: string) => Promise<string | null>;
   ) => Promise<ResponsesApiResult>;
   createCheckpoint: (workDir: string) => Promise<string>;
   restoreCheckpoint: (checkpointId: string, workDir: string) => Promise<void>;
-  restoreCheckpoints: (checkpointIds: string[], workDir: string) => Promise<void>;
+  restoreCheckpoints: (
+    checkpointIds: string[],
+    workDir: string
+  ) => Promise<void>;
   deleteCheckpoint: (checkpointId: string) => Promise<void>;
   listCheckpointChanges: (
     checkpointId: string,
@@ -1968,7 +1973,9 @@ getSystemSettingValue: (settingCode: string) => Promise<string | null>;
     targetDir: string
   ) => Promise<number>;
   /** 复制下一批存储目录文件并返回迁移进度 */
-  migrateStorageChunk: (kind: StorageLocationKind) => Promise<StorageMigrationProgress>;
+  migrateStorageChunk: (
+    kind: StorageLocationKind
+  ) => Promise<StorageMigrationProgress>;
   /** 提交迁移：写入新目录设置并清理旧根目录文件 */
   commitStorageMigration: (kind: StorageLocationKind) => Promise<void>;
   /** 回滚迁移：删除已复制到新目录的文件并移除日志（幂等） */

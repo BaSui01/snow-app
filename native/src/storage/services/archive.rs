@@ -161,7 +161,32 @@ pub(crate) fn create_archive_schema(connection: &Connection) -> rusqlite::Result
          CREATE INDEX IF NOT EXISTS idx_archive_sub_agent_sessions_parent
            ON sub_agent_sessions(parent_conversation_id, created_at ASC, id ASC);
     ",
-    )
+    )?;
+    migrate_archive_chat_conversations(connection)
+}
+
+fn migrate_archive_chat_conversations(connection: &Connection) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA table_info(chat_conversations)")?;
+    let columns: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    for (name, definition) in [
+        ("api_profile_name", "TEXT NOT NULL DEFAULT ''"),
+        ("plan_mode", "INTEGER"),
+        ("goal_mode", "INTEGER"),
+        ("worktree_mode", "INTEGER"),
+        ("goal_mode_token_budget", "INTEGER"),
+    ] {
+        if !columns.iter().any(|column| column == name) {
+            connection.execute(
+                &format!("ALTER TABLE chat_conversations ADD COLUMN {name} {definition}"),
+                [],
+            )?;
+        }
+    }
+
+    Ok(())
 }
 
 /// 确保归档冷数据库存在且结构就绪。

@@ -7411,36 +7411,40 @@ input {
   }
 }
 
-/* Empty state: chat-area shrinks to content, centered as a group with input */
+/* Empty state keeps the composer at the bottom and centers the greeting above it. */
 .chat-content.is-empty {
   justify-content: flex-start;
-  padding-top: 12vh;
-  padding-bottom: 10vh;
+  padding: 0;
 }
 
 .chat-content.is-empty .chat-area {
-  overflow: visible;
-  justify-content: flex-start;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  justify-content: safe center;
+  padding-bottom: 24px;
+}
+
+.chat-content.is-empty .chat-empty-greeting {
+  margin-top: 0;
 }
 
 .chat-content.is-empty .chat-input-region {
-  margin-top: 32px;
+  margin-top: 0;
 }
 
-/* Keep the composer in the viewport on short windows. The greeting remains
-   reachable by scrolling in the upper area instead of pushing the composer
-   below the window. */
 @media (max-height: 800px) {
   .chat-content.is-empty {
     overflow: hidden;
-    padding-top: clamp(12px, 6vh, 48px);
-    padding-bottom: 0;
+    padding: 0;
   }
 
   .chat-content.is-empty .chat-area {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
+    justify-content: flex-start;
+    padding-bottom: 0;
   }
 
   .chat-empty-greeting-title {
@@ -7457,7 +7461,7 @@ input {
   }
 
   .chat-content.is-empty .chat-input-region {
-    margin-top: 16px;
+    margin-top: 0;
   }
 }
 

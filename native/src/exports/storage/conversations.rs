@@ -21,6 +21,12 @@ pub struct ConversationModesResult {
     pub goal_mode_token_budget: Option<i64>,
 }
 
+#[napi(object)]
+pub struct ConversationRuntimeConfigResult {
+    pub thinking_strength: Option<String>,
+    pub responses_fast_mode: Option<bool>,
+}
+
 #[napi]
 pub async fn get_conversation_modes(
     conversation_id: String,
@@ -54,6 +60,39 @@ pub async fn set_conversation_modes(
             goal_mode,
             worktree_mode,
             goal_mode_token_budget,
+        )
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn get_conversation_runtime_config(
+    conversation_id: String,
+) -> napi::Result<ConversationRuntimeConfigResult> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::get_conversation_runtime_config(&conversation_id).map(|config| {
+            ConversationRuntimeConfigResult {
+                thinking_strength: config.thinking_strength,
+                responses_fast_mode: config.responses_fast_mode,
+            }
+        })
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn set_conversation_runtime_config(
+    conversation_id: String,
+    thinking_strength: Option<String>,
+    responses_fast_mode: Option<bool>,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::set_conversation_runtime_config(
+            &conversation_id,
+            thinking_strength,
+            responses_fast_mode,
         )
     })
     .await
@@ -196,6 +235,8 @@ pub async fn create_sub_agent_session(
     api_profile_name: String,
     model: String,
     title: String,
+    thinking_strength: Option<String>,
+    responses_fast_mode: Option<bool>,
 ) -> napi::Result<()> {
     tokio::task::spawn_blocking(move || {
         crate::storage::create_sub_agent_session(
@@ -207,6 +248,8 @@ pub async fn create_sub_agent_session(
             api_profile_name,
             model,
             title,
+            thinking_strength,
+            responses_fast_mode,
         )
     })
     .await
@@ -397,4 +440,45 @@ pub async fn export_conversation(conversation_id: String, format: String) -> nap
     })
     .await
     .map_err(map_spawn_error)?
+}
+
+// ============================================================================
+// Conversation context attachments — 会话上下文附件（拖拽会话到另一会话开头）
+// ============================================================================
+
+#[napi]
+pub async fn list_context_attachments(
+    conversation_id: String,
+) -> napi::Result<Vec<ContextAttachmentRecord>> {
+    tokio::task::spawn_blocking(move || crate::storage::list_context_attachments(conversation_id))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn add_context_attachment(
+    target_id: String,
+    source_id: String,
+) -> napi::Result<ContextAttachmentRecord> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::add_context_attachment(target_id, source_id)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn remove_context_attachment(target_id: String, source_id: String) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::remove_context_attachment(target_id, source_id)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn render_attachment_context(source_id: String) -> napi::Result<String> {
+    tokio::task::spawn_blocking(move || crate::storage::render_attachment_context(source_id))
+        .await
+        .map_err(map_spawn_error)?
 }

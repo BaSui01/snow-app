@@ -38,6 +38,16 @@ pub async fn get_usage_daily_breakdown(
         .map_err(map_spawn_error)?
 }
 
+#[napi]
+pub async fn get_usage_model_breakdown(
+    since: String,
+    until: String,
+) -> napi::Result<Vec<crate::storage::services::usage_records::ModelUsageBreakdown>> {
+    tokio::task::spawn_blocking(move || crate::storage::get_usage_model_breakdown(since, until))
+        .await
+        .map_err(map_spawn_error)?
+}
+
 // ===== App logs NAPI 导出 =====
 
 #[napi]

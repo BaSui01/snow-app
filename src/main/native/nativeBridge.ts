@@ -77,6 +77,18 @@ setSystemSetting: () =>
             "Rust native bridge is required to write conversation modes"
           )
         ),
+      getConversationRuntimeConfig: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to read conversation runtime config"
+          )
+        ),
+      setConversationRuntimeConfig: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to write conversation runtime config"
+          )
+        ),
       getRequestLogging: () =>
         Promise.reject(
           new Error("Rust native bridge is required to read Request logging")
@@ -277,6 +289,12 @@ setSystemSetting: () =>
             "Rust native bridge is required to delete workspace entries"
           )
         ),
+      deleteWorkspaceEntries: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to batch delete workspace entries"
+          )
+        ),
       readFileContent: () =>
         Promise.reject(
           new Error("Rust native bridge is required to read file content")
@@ -325,6 +343,60 @@ setSystemSetting: () =>
         Promise.reject(
           new Error(
             "Rust native bridge is required to delete project MCP server configs"
+          )
+        ),
+      listLspServerConfigs: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to list LSP server configs")
+        ),
+      upsertLspServerConfig: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to write LSP server configs")
+        ),
+      deleteLspServerConfig: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to delete LSP server configs"
+          )
+        ),
+      listProjectLspServerConfigs: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to list project LSP server configs"
+          )
+        ),
+      upsertProjectLspServerConfig: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to write project LSP server configs"
+          )
+        ),
+      deleteProjectLspServerConfig: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to delete project LSP server configs"
+          )
+        ),
+      listEffectiveLspServerConfigs: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to list effective LSP server configs"
+          )
+        ),
+      probeLspServerCommands: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to probe LSP server commands"
+          )
+        ),
+      detectProjectStack: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to detect project stack")
+        ),
+      listLspSessionStatuses: (_projectId?: string) =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to list LSP session statuses"
           )
         ),
       listImportResources: () =>
@@ -605,6 +677,28 @@ setSystemSetting: () =>
         Promise.reject(
           new Error("Rust native bridge is required to find latest tool result")
         ),
+      listContextAttachments: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to list context attachments"
+          )
+        ),
+      addContextAttachment: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to add context attachment")
+        ),
+      removeContextAttachment: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to remove context attachment"
+          )
+        ),
+      renderAttachmentContext: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to render attachment context"
+          )
+        ),
       forkConversation: () =>
         Promise.reject(
           new Error("Rust native bridge is required to fork conversation")
@@ -715,6 +809,9 @@ setSystemSetting: () =>
       },
       gitFileDiff: () => {
         throw new Error("Rust native bridge is required for git file diff");
+      },
+      gitFileContent: () => {
+        throw new Error("Rust native bridge is required for git file content");
       },
       startGitWatch: () => {
         throw new Error("Rust native bridge is required for git watch");
@@ -1001,6 +1098,12 @@ setSystemSetting: () =>
             "Rust native bridge is required to get usage daily breakdown"
           )
         ),
+      getUsageModelBreakdown: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to get usage model breakdown"
+          )
+        ),
       writeAppLog: () =>
         Promise.reject(
           new Error("Rust native bridge is required to write app logs")
@@ -1071,6 +1174,10 @@ setSystemSetting: () =>
         Promise.reject(
           new Error("Rust native bridge is required to finalize task runs")
         ),
+      reconcileScheduledTaskRuns: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to reconcile task runs")
+        ),
       sha256File: () =>
         Promise.reject(
           new Error("Rust native bridge is required to compute sha256")
@@ -1110,6 +1217,14 @@ setSystemSetting: () =>
       setImageAlbum: () =>
         Promise.reject(
           new Error("Rust native bridge is required to manage image albums")
+        ),
+      setImageAlbumCover: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to set album covers")
+        ),
+      reorderImageAlbums: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to reorder image albums")
         ),
       importImageFiles: () =>
         Promise.reject(

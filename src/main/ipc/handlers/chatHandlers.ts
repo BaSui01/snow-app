@@ -118,6 +118,12 @@ const normalizeResponsesApiRequest = (value: unknown): ResponsesApiRequest => {
       source.thinkingStrength.trim()
         ? source.thinkingStrength
         : undefined,
+    responsesFastMode:
+      source.responsesFastMode === null
+        ? null
+        : typeof source.responsesFastMode === "boolean"
+          ? source.responsesFastMode
+          : undefined,
   };
 }
 

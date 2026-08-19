@@ -1651,6 +1651,7 @@ export const en = {
   "settings.codebaseChunkingMinLinesPerChunk": "Min lines per chunk",
   "settings.codebaseChunkingMinCharsPerChunk": "Min chars per chunk",
   "settings.codebaseChunkingOverlapLines": "Overlap lines",
+  "settings.codebaseModelContextLength": "Model context length (tokens)",
   "settings.saveCodebaseSettings": "Save settings",
   "settings.codebaseValidationModelNameRequired":
     "Embedding model name is required when codebase is enabled.",
@@ -1664,6 +1665,8 @@ export const en = {
     "Batch concurrency must be greater than 0.",
   "settings.codebaseValidationMaxLinesPerChunkPositive":
     "Max lines per chunk must be greater than 0.",
+  "settings.codebaseValidationModelContextLengthPositive":
+    "Model context length must be greater than 0.",
   "settings.codebaseValidationMinLinesPerChunkPositive":
     "Min lines per chunk must be greater than 0.",
   "settings.codebaseValidationMinCharsPerChunkPositive":

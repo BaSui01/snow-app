@@ -1599,6 +1599,7 @@ export const zhCN = {
   "settings.codebaseChunkingMinLinesPerChunk": "每块最小行数",
   "settings.codebaseChunkingMinCharsPerChunk": "每块最小字符数",
   "settings.codebaseChunkingOverlapLines": "重叠行数",
+  "settings.codebaseModelContextLength": "模型上下文长度（tokens）",
   "settings.saveCodebaseSettings": "保存设置",
   "settings.codebaseValidationModelNameRequired":
     "启用代码库时必须填写嵌入模型名称。",
@@ -1609,6 +1610,8 @@ export const zhCN = {
   "settings.codebaseValidationConcurrencyPositive": "批处理并发数必须大于 0。",
   "settings.codebaseValidationMaxLinesPerChunkPositive":
     "每块最大行数必须大于 0。",
+  "settings.codebaseValidationModelContextLengthPositive":
+    "模型上下文长度必须大于 0。",
   "settings.codebaseValidationMinLinesPerChunkPositive":
     "每块最小行数必须大于 0。",
   "settings.codebaseValidationMinCharsPerChunkPositive":

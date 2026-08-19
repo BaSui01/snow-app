@@ -155,13 +155,13 @@ export function CodebaseSettingsPanel({
             defaultValue: "Min lines per chunk must be greater than 0.",
           }),
         ],
-        [
-          currentForm.chunkingMinCharsPerChunk,
-          t("settings.codebaseValidationMinCharsPerChunkPositive", {
-            defaultValue: "Min chars per chunk must be greater than 0.",
-          }),
-        ],
-      ];
+         [
+           currentForm.modelContextLength,
+           t("settings.codebaseValidationModelContextLengthPositive", {
+             defaultValue: "Model context length must be greater than 0.",
+           }),
+         ],
+       ];
 
       for (const [value, message] of numericChecks) {
         const validationError = validatePositiveInteger(value, message);

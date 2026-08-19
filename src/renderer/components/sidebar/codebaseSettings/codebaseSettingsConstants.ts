@@ -16,6 +16,7 @@ export const DEFAULT_CODEBASE_SETTINGS: CodebaseSettingsInput = {
   chunkingMinLinesPerChunk: 10,
   chunkingMinCharsPerChunk: 20,
   chunkingOverlapLines: 20,
+  modelContextLength: 8192,
   rerankingModelName: "",
   rerankingBaseUrl: "",
   rerankingApiKey: "",

@@ -17,6 +17,7 @@ export type CodebaseSettingsForm = {
   chunkingMinLinesPerChunk: string;
   chunkingMinCharsPerChunk: string;
   chunkingOverlapLines: string;
+  modelContextLength: string;
   rerankingModelName: string;
   rerankingBaseUrl: string;
   rerankingApiKey: string;

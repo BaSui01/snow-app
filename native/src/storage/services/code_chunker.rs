@@ -15,6 +15,7 @@ pub struct ChunkingConfig {
     pub min_lines_per_chunk: usize,
     pub min_chars_per_chunk: usize,
     pub overlap_lines: usize,
+    pub model_context_length: usize,
 }
 
 impl Default for ChunkingConfig {
@@ -24,12 +25,19 @@ impl Default for ChunkingConfig {
             min_lines_per_chunk: 10,
             min_chars_per_chunk: 20,
             overlap_lines: 20,
+            model_context_length: 8192,
         }
     }
 }
 
 impl ChunkingConfig {
-    pub fn from_settings(max_lines: i32, min_lines: i32, min_chars: i32, overlap: i32) -> Self {
+    pub fn from_settings(
+        max_lines: i32,
+        min_lines: i32,
+        min_chars: i32,
+        overlap: i32,
+        model_context_length: i32,
+    ) -> Self {
         let max_lines_per_chunk = if max_lines > 0 {
             max_lines as usize
         } else {
@@ -52,11 +60,18 @@ impl ChunkingConfig {
             0
         };
 
+        let model_context_length = if model_context_length > 0 {
+            model_context_length as usize
+        } else {
+            8192
+        };
+
         Self {
             max_lines_per_chunk,
             min_lines_per_chunk: min_lines_per_chunk.min(max_lines_per_chunk),
             min_chars_per_chunk,
             overlap_lines,
+            model_context_length,
         }
     }
 }
@@ -152,5 +167,21 @@ pub fn chunk_content(content: &str, config: &ChunkingConfig) -> Vec<CodeChunk> {
         chunk.chunk_index = i;
     }
 
-    chunks
+    let token_limit = ((config.model_context_length as f64) * 0.8).floor() as usize;
+    let token_limit = token_limit.max(1);
+    let mut token_bounded_chunks = Vec::new();
+
+    for chunk in chunks {
+        let pieces = crate::api::token_counter::split_to_token_chunks(&chunk.content, token_limit);
+        for content in pieces {
+            token_bounded_chunks.push(CodeChunk {
+                chunk_index: token_bounded_chunks.len(),
+                start_line: chunk.start_line,
+                end_line: chunk.end_line,
+                content,
+            });
+        }
+    }
+
+    token_bounded_chunks
 }

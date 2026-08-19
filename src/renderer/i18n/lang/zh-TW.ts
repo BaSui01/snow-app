@@ -1598,6 +1598,7 @@ export const zhTW = {
   "settings.codebaseChunkingMinLinesPerChunk": "每塊最小行數",
   "settings.codebaseChunkingMinCharsPerChunk": "每塊最小字元數",
   "settings.codebaseChunkingOverlapLines": "重疊行數",
+  "settings.codebaseModelContextLength": "模型上下文長度（tokens）",
   "settings.saveCodebaseSettings": "儲存設定",
   "settings.codebaseValidationModelNameRequired":
     "啟用程式碼庫時必須填寫嵌入模型名稱。",
@@ -1609,6 +1610,8 @@ export const zhTW = {
     "批次處理並發數必須大於 0。",
   "settings.codebaseValidationMaxLinesPerChunkPositive":
     "每塊最大行數必須大於 0。",
+  "settings.codebaseValidationModelContextLengthPositive":
+    "模型上下文長度必須大於 0。",
   "settings.codebaseValidationMinLinesPerChunkPositive":
     "每塊最小行數必須大於 0。",
   "settings.codebaseValidationMinCharsPerChunkPositive":

@@ -70,6 +70,7 @@ pub async fn preview_codebase_scan(project_id: String) -> Result<CodebaseScanPre
         settings.chunking_min_lines_per_chunk,
         settings.chunking_min_chars_per_chunk,
         settings.chunking_overlap_lines,
+        settings.model_context_length,
     );
 
     let (estimated_chunks, total_size_bytes) = {

@@ -221,6 +221,7 @@ pub async fn sync_codebase_changes(
         settings.chunking_min_lines_per_chunk,
         settings.chunking_min_chars_per_chunk,
         settings.chunking_overlap_lines,
+        settings.model_context_length,
     );
 
     for file in &scanned_files {

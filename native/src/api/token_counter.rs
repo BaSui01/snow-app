@@ -55,3 +55,26 @@ pub fn truncate_to_tokens(text: &str, max_tokens: usize) -> String {
         .decode(tokens.into_iter().take(max_tokens).collect())
         .unwrap_or_default()
 }
+
+/// Split text into token-bounded pieces using the same tokenizer as the counter.
+pub fn split_to_token_chunks(text: &str, max_tokens: usize) -> Vec<String> {
+    if text.is_empty() {
+        return Vec::new();
+    }
+    if max_tokens == 0 {
+        return vec![text.to_string()];
+    }
+
+    let bpe = o200k_base_singleton();
+    let bpe_guard = bpe.lock();
+    let tokens = bpe_guard.encode_ordinary(text);
+    if tokens.len() <= max_tokens {
+        return vec![text.to_string()];
+    }
+
+    tokens
+        .chunks(max_tokens)
+        .filter_map(|part| bpe_guard.decode(part.to_vec()).ok())
+        .filter(|part| !part.is_empty())
+        .collect()
+}

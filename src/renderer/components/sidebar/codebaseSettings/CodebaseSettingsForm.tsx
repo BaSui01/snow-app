@@ -119,6 +119,15 @@ export function CodebaseSettingsForm({
               maskSecret(form.embeddingApiKey),
               "password"
             )}
+            {renderTextInput(
+              "modelContextLength",
+              t("settings.codebaseModelContextLength", {
+                defaultValue: "Model context length (tokens)",
+              }),
+              "8192",
+              "number",
+              1
+            )}
           </div>
         </div>
 

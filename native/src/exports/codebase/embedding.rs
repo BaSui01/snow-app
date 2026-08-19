@@ -169,6 +169,7 @@ pub(crate) struct CodebaseSettings {
     pub(crate) chunking_min_lines_per_chunk: i32,
     pub(crate) chunking_min_chars_per_chunk: i32,
     pub(crate) chunking_overlap_lines: i32,
+    pub(crate) model_context_length: i32,
 }
 
 pub(crate) fn load_codebase_settings(database_path: &Path) -> Result<CodebaseSettings> {
@@ -414,6 +415,7 @@ pub async fn start_codebase_embedding(
         settings.chunking_min_lines_per_chunk,
         settings.chunking_min_chars_per_chunk,
         settings.chunking_overlap_lines,
+        settings.model_context_length,
     );
 
     let embedding_config = EmbeddingConfig::from_settings(

@@ -127,6 +127,7 @@ export type CodebaseSettingsInput = {
   chunkingMinLinesPerChunk: number;
   chunkingMinCharsPerChunk: number;
   chunkingOverlapLines: number;
+  modelContextLength: number;
   rerankingModelName: string;
   rerankingBaseUrl: string;
   rerankingApiKey: string;

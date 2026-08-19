@@ -22,6 +22,7 @@ const DEFAULT_CODEBASE_SETTINGS: CodebaseSettingsInput = {
   chunkingMinLinesPerChunk: 10,
   chunkingMinCharsPerChunk: 20,
   chunkingOverlapLines: 20,
+  modelContextLength: 8192,
   rerankingModelName: "",
   rerankingBaseUrl: "",
   rerankingApiKey: "",
@@ -98,6 +99,10 @@ export const normalizeCodebaseSettings = (
       source.chunkingOverlapLines,
       DEFAULT_CODEBASE_SETTINGS.chunkingOverlapLines
     ),
+    modelContextLength: toPositiveInteger(
+      source.modelContextLength,
+      DEFAULT_CODEBASE_SETTINGS.modelContextLength
+    ),
     rerankingModelName: toText(source.rerankingModelName).trim(),
     rerankingBaseUrl: toText(source.rerankingBaseUrl).trim(),
     rerankingApiKey: toText(source.rerankingApiKey),
@@ -157,6 +162,7 @@ export const readSnowCliCodebaseSettings = async (
     chunkingMinLinesPerChunk: chunking.minLinesPerChunk,
     chunkingMinCharsPerChunk: chunking.minCharsPerChunk,
     chunkingOverlapLines: chunking.overlapLines,
+    modelContextLength: chunking.modelContextLength,
     rerankingModelName: reranking.modelName,
     rerankingBaseUrl: reranking.baseUrl,
     rerankingApiKey: reranking.apiKey,

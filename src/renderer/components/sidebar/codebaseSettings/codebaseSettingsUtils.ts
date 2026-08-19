@@ -103,6 +103,10 @@ export const normalizeCodebaseSettings = (
       source.chunkingOverlapLines,
       DEFAULT_CODEBASE_SETTINGS.chunkingOverlapLines
     ),
+    modelContextLength: toPositiveInteger(
+      source.modelContextLength,
+      DEFAULT_CODEBASE_SETTINGS.modelContextLength
+    ),
     rerankingModelName: toText(source.rerankingModelName).trim(),
     rerankingBaseUrl: toText(source.rerankingBaseUrl).trim(),
     rerankingApiKey: toText(source.rerankingApiKey),
@@ -134,6 +138,7 @@ export const toCodebaseForm = (
   chunkingMinLinesPerChunk: String(settings.chunkingMinLinesPerChunk),
   chunkingMinCharsPerChunk: String(settings.chunkingMinCharsPerChunk),
   chunkingOverlapLines: String(settings.chunkingOverlapLines),
+  modelContextLength: String(settings.modelContextLength),
   rerankingModelName: settings.rerankingModelName,
   rerankingBaseUrl: settings.rerankingBaseUrl,
   rerankingApiKey: settings.rerankingApiKey,
@@ -162,6 +167,7 @@ export const toSnowCliCodebaseConfigJson = (
         minLinesPerChunk: settings.chunkingMinLinesPerChunk,
         minCharsPerChunk: settings.chunkingMinCharsPerChunk,
         overlapLines: settings.chunkingOverlapLines,
+        modelContextLength: settings.modelContextLength,
       },
       reranking: {
         modelName: settings.rerankingModelName,

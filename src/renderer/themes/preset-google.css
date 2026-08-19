@@ -210,7 +210,12 @@
   :is(.top-bar-plus-dropdown-item, .top-bar-todo-item, .plus-menu-item,
     .model-dropdown-item, .custom-select-item, .browser-menu-item,
     .branch-dropdown-item, .chat-command-item, .mention-entry,
-    .explorer-entry-context-menu-item):hover {
+    .explorer-entry-context-menu-item):hover,
+:root[data-theme-preset="google"]
+  :is(.top-bar-plus-dropdown-item, .top-bar-todo-item, .plus-menu-item,
+    .model-dropdown-item, .custom-select-item, .browser-menu-item,
+    .branch-dropdown-item, .chat-command-item, .mention-entry,
+    .explorer-entry-context-menu-item).highlighted {
   background: var(--accent-blue-bg);
   color: var(--text-primary);
 }
@@ -801,7 +806,12 @@
   :is(.top-bar-plus-dropdown-item, .top-bar-todo-item, .plus-menu-item,
     .model-dropdown-item, .custom-select-item, .browser-menu-item,
     .branch-dropdown-item, .chat-command-item, .mention-entry,
-    .explorer-entry-context-menu-item):hover {
+    .explorer-entry-context-menu-item):hover,
+:root[data-theme-preset="google"]
+  :is(.top-bar-plus-dropdown-item, .top-bar-todo-item, .plus-menu-item,
+    .model-dropdown-item, .custom-select-item, .browser-menu-item,
+    .branch-dropdown-item, .chat-command-item, .mention-entry,
+    .explorer-entry-context-menu-item).highlighted {
   border-radius: var(--radius-md);
   background: var(--accent-blue-bg);
   color: var(--text-primary);

@@ -314,6 +314,19 @@ impl FilesystemService {
                 new_lines.splice(target_start..end_line, replacement_lines);
                 let new_content = new_lines.join("\n");
 
+                // 0 修改检测：替换后的内容与原文完全一致时拒绝写盘并给出缩进调整指引，
+                // 避免 AI 因 searchContent/replaceContent 内容等价（如调整缩进失败）而静默"成功0修改"。
+                if new_content == content {
+                    let error_msg = fuzzy_edit::build_noop_edit_error(
+                        &file_path,
+                        search_content,
+                        &replace_content,
+                        &file_lines,
+                        total_lines,
+                    );
+                    return Err(Error::new(Status::GenericFailure, error_msg));
+                }
+
                 let new_bytes =
                     encode_text_back(&new_content, original_encoding, had_bom).map_err(|e| {
                         Error::new(
@@ -356,6 +369,18 @@ impl FilesystemService {
         if let Some((new_content, edit_start_line, edit_end_line, total_matches)) =
             fuzzy_edit::try_substring_replace(&content, search_content, &replace_content, occurrence)
         {
+            // 0 修改检测：子串替换后内容与原文一致同样拒绝写盘。
+            if new_content == content {
+                let error_msg = fuzzy_edit::build_noop_edit_error(
+                    &file_path,
+                    search_content,
+                    &replace_content,
+                    &file_lines,
+                    total_lines,
+                );
+                return Err(Error::new(Status::GenericFailure, error_msg));
+            }
+
             let new_bytes =
                 encode_text_back(&new_content, original_encoding, had_bom).map_err(|e| {
                     Error::new(
@@ -402,6 +427,18 @@ impl FilesystemService {
                 let mut new_lines: Vec<String> = file_lines.iter().map(|s| s.to_string()).collect();
                 new_lines.splice(start_line..end_line, replacement_lines);
                 let new_content = new_lines.join("\n");
+
+                // 0 修改检测：模糊匹配替换后内容与原文一致同样拒绝写盘。
+                if new_content == content {
+                    let error_msg = fuzzy_edit::build_noop_edit_error(
+                        &file_path,
+                        search_content,
+                        &replace_content,
+                        &file_lines,
+                        total_lines,
+                    );
+                    return Err(Error::new(Status::GenericFailure, error_msg));
+                }
 
                 let new_bytes =
                     encode_text_back(&new_content, original_encoding, had_bom).map_err(|e| {

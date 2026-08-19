@@ -471,3 +471,78 @@ pub(crate) fn build_search_not_found_error_v2(
         search_preview
     )
 }
+
+/// 构造"编辑会产生 0 修改"的详细错误信息。
+///
+/// 当替换后的完整文件内容与原文完全一致时调用：此时无论如何写盘都不会改变任何字节。
+/// 典型原因是 searchContent 与 replaceContent 内容等价（完全相同，或仅空白/缩进差异，
+/// 而模糊匹配会忽略空白差异），例如 AI 想调整缩进却把两个字段写成了相同文本。
+/// 错误信息中包含最相似区间的上下文及缩进调整指引，帮助 AI 下次给出真正不同的 replaceContent。
+pub(crate) fn build_noop_edit_error(
+    file_path: &str,
+    search_content: &str,
+    replace_content: &str,
+    file_lines: &[&str],
+    total_lines: usize,
+) -> String {
+    let search_preview: String = search_content
+        .chars()
+        .take(200)
+        .collect::<String>()
+        .replace('\n', "\\n");
+    let replace_preview: String = replace_content
+        .chars()
+        .take(200)
+        .collect::<String>()
+        .replace('\n', "\\n");
+
+    let mut message = format!(
+        "Edit rejected: replacement would produce zero changes (no-op). The matched region in the \
+         file is already byte-identical to replaceContent, so writing it would modify nothing.\n\n\
+         File: {} ({} lines total)\n\
+         searchContent preview: \"{}\"\n\
+         replaceContent preview: \"{}\"",
+        file_path, total_lines, search_preview, replace_preview,
+    );
+
+    if let Some((start_line, end_line, similarity)) =
+        find_best_line_match_v2(search_content, file_lines)
+    {
+        let context_start = start_line.saturating_sub(2);
+        let context_end = (end_line + 2).min(file_lines.len());
+
+        let context: Vec<String> = (context_start..context_end)
+            .map(|i| {
+                let marker = if i >= start_line && i < end_line {
+                    ">>>"
+                } else {
+                    "   "
+                };
+                format!("{} {:>6}: {}", marker, i + 1, file_lines[i])
+            })
+            .collect();
+
+        let similarity_percent = (similarity * 100.0) as u32;
+        message.push_str(&format!(
+            "\n\nMatched region (similarity: {}%, lines {}-{}):\n{}",
+            similarity_percent,
+            start_line + 1,
+            end_line,
+            context.join("\n")
+        ));
+    }
+
+    message.push_str(
+        "\n\nCommon cause: searchContent and replaceContent are content-identical - the same \
+         characters, or differing only in whitespace/indentation (which fuzzy matching ignores). \
+         This usually happens when trying to adjust indentation but emitting the same text for both \
+         fields.\n\
+         If your intent was to change indentation/whitespace:\n\
+           1. Re-read the file with filesystem-read and copy the CURRENT indentation verbatim as searchContent.\n\
+           2. Provide replaceContent with NEW indentation that actually differs from the current text.\n\
+         If this edit is genuinely already applied (the target text already has the desired content \
+         and indentation), skip it instead of re-emitting an identical replace.\n",
+    );
+
+    message
+}

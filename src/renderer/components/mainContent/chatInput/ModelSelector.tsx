@@ -12,7 +12,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { useI18n } from "../../../i18n";
 import { ThinkingStrengthMenu } from "./ThinkingStrengthMenu";
@@ -110,16 +110,112 @@ export const ModelSelector = ({
   const { t } = useI18n();
   const [modelSearchQuery, setModelSearchQuery] = useState("");
   const [apiProfileSearchQuery, setApiProfileSearchQuery] = useState("");
+  // 键盘导航高亮索引（-1 = 未高亮）
+  const [modelActiveIndex, setModelActiveIndex] = useState(-1);
+  const [apiProfileActiveIndex, setApiProfileActiveIndex] = useState(-1);
+  const modelListRef = useRef<HTMLDivElement | null>(null);
+  const apiProfileListRef = useRef<HTMLDivElement | null>(null);
   const modelDropdownDir = useDropdownDirection(dropdownRef, isModelMenuOpen);
 
   useEffect(() => {
     if (!isModelMenuOpen || modelMenuView !== "model") {
       setModelSearchQuery("");
+      setModelActiveIndex(-1);
     }
     if (!isModelMenuOpen || modelMenuView !== "apiProfile") {
       setApiProfileSearchQuery("");
+      setApiProfileActiveIndex(-1);
     }
   }, [isModelMenuOpen, modelMenuView]);
+
+  // 进入模型/渠道视图时，把键盘高亮定位到当前选中项
+  useEffect(() => {
+    if (!isModelMenuOpen || modelMenuView !== "model" || isManualMode) {
+      return;
+    }
+    const index = models.findIndex((model) => model.id === selectedModel);
+    setModelActiveIndex(index >= 0 ? index : 0);
+  }, [isModelMenuOpen, modelMenuView, isManualMode, models, selectedModel]);
+
+  useEffect(() => {
+    if (!isModelMenuOpen || modelMenuView !== "apiProfile") {
+      return;
+    }
+    const index = apiConfigs.findIndex(
+      (config) => config.profileName === selectedApiProfile
+    );
+    setApiProfileActiveIndex(index >= 0 ? index : 0);
+  }, [isModelMenuOpen, modelMenuView, apiConfigs, selectedApiProfile]);
+
+  // 键盘导航：↑↓/Home/End 移动高亮，Enter 选中高亮项
+  const handleDropdownKeyDown = (
+    event: React.KeyboardEvent<HTMLDivElement>
+  ): void => {
+    if (event.nativeEvent.isComposing) {
+      return;
+    }
+    const isModelList = modelMenuView === "model" && !isManualMode;
+    const isProfileList = modelMenuView === "apiProfile";
+    if (!isModelList && !isProfileList) {
+      return;
+    }
+
+    const list = isModelList ? filteredModels : filteredApiConfigs;
+    const activeIndex = isModelList
+      ? modelActiveIndex
+      : apiProfileActiveIndex;
+    const setActiveIndex = isModelList
+      ? setModelActiveIndex
+      : setApiProfileActiveIndex;
+    if (list.length === 0) {
+      return;
+    }
+
+    // 焦点在返回/刷新/手动输入等操作按钮上时，Enter 交给原生按钮行为
+    const isActionButton = !!(
+      event.target as HTMLElement
+    ).closest(".model-menu-back, .model-dropdown-action, .model-dropdown-retry");
+
+    switch (event.key) {
+      case "ArrowDown":
+        event.preventDefault();
+        setActiveIndex((index) => (index + 1) % list.length);
+        break;
+      case "ArrowUp":
+        event.preventDefault();
+        setActiveIndex((index) =>
+          index < 0 ? list.length - 1 : (index - 1 + list.length) % list.length
+        );
+        break;
+      case "Home":
+        event.preventDefault();
+        setActiveIndex(0);
+        break;
+      case "End":
+        event.preventDefault();
+        setActiveIndex(list.length - 1);
+        break;
+      case "Enter": {
+        if (isActionButton) {
+          return;
+        }
+        const index = activeIndex >= 0 ? activeIndex : 0;
+        const item = list[index];
+        if (!item) {
+          return;
+        }
+        event.preventDefault();
+        if (isModelList) {
+          void handleSelectModel(item.id);
+        } else {
+          void handleSelectApiProfile(
+            "profileName" in item ? item.profileName : ""
+          );
+        }
+        break;
+      }
+    }
+  };
 
   const filteredModels = useMemo(() => {
     const query = modelSearchQuery.trim().toLowerCase();
@@ -146,6 +242,45 @@ export const ModelSelector = ({
         (config.basicModel || "").toLowerCase().includes(query)
     );
   }, [apiConfigs, apiProfileSearchQuery]);
+
+  // 过滤结果变化时收敛索引，避免越界
+  useEffect(() => {
+    setModelActiveIndex((index) =>
+      filteredModels.length === 0
+        ? -1
+        : Math.min(index, filteredModels.length - 1)
+    );
+  }, [filteredModels]);
+
+  useEffect(() => {
+    setApiProfileActiveIndex((index) =>
+      filteredApiConfigs.length === 0
+        ? -1
+        : Math.min(index, filteredApiConfigs.length - 1)
+    );
+  }, [filteredApiConfigs]);
+
+  // 高亮项滚动进入可视区域
+  useEffect(() => {
+    if (modelMenuView === "model" && modelActiveIndex >= 0) {
+      const items = modelListRef.current?.querySelectorAll<HTMLElement>(
+        ".model-dropdown-item"
+      );
+      items?.[modelActiveIndex]?.scrollIntoView({ block: "nearest" });
+    }
+    if (modelMenuView === "apiProfile" && apiProfileActiveIndex >= 0) {
+      const items = apiProfileListRef.current?.querySelectorAll<HTMLElement>(
+        ".model-dropdown-item"
+      );
+      items?.[apiProfileActiveIndex]?.scrollIntoView({ block: "nearest" });
+    }
+  }, [
+    modelActiveIndex,
+    apiProfileActiveIndex,
+    modelMenuView,
+    filteredModels,
+    filteredApiConfigs,
+  ]);
 
   return (
     <div className="model-selector" ref={dropdownRef}>
@@ -214,8 +349,11 @@ export const ModelSelector = ({
         )}
         <ChevronDown size={12} />
       </button>
-      {isModelMenuOpen && (
-        <div className={`model-dropdown drop-${modelDropdownDir}`}>
+{isModelMenuOpen && (
+        <div
+          className={`model-dropdown drop-${modelDropdownDir}`}
+          onKeyDown={handleDropdownKeyDown}
+        >
           {modelMenuView === "root" && (
             <div className="model-dropdown-list">
               <button
@@ -358,21 +496,22 @@ export const ModelSelector = ({
                   </button>
                 )}
               </div>
-              <div className="model-dropdown-list">
+<div className="model-dropdown-list" ref={apiProfileListRef}>
                 {apiConfigs.length > 0 && filteredApiConfigs.length === 0 && (
                   <div className="model-dropdown-empty">
                     {labels.noMatchingApiProfiles}
                   </div>
                 )}
-                {filteredApiConfigs.map((config) => (
+                {filteredApiConfigs.map((config, index) => (
                   <button
                     key={config.profileName}
                     className={`model-dropdown-item ${
                       config.profileName === selectedApiProfile ? "active" : ""
-                    }`}
+                    } ${apiProfileActiveIndex === index ? "highlighted" : ""}`}
                     onClick={() => {
                       void handleSelectApiProfile(config.profileName);
                     }}
+                    onMouseEnter={() => setApiProfileActiveIndex(index)}
                     type="button"
                     title={config.displayName}
                   >
@@ -491,7 +630,7 @@ export const ModelSelector = ({
                     </button>
                   )}
                 </div>
-                <div className="model-dropdown-list">
+<div className="model-dropdown-list" ref={modelListRef}>
                   {models.length === 0 &&
                     !modelError &&
                     !isLoadingModels && (
@@ -504,13 +643,14 @@ export const ModelSelector = ({
                       {labels.noMatchingModels}
                     </div>
                   )}
-                  {filteredModels.map((model) => (
+                  {filteredModels.map((model, index) => (
                     <button
                       key={model.id}
                       className={`model-dropdown-item ${
                         selectedModel === model.id ? "active" : ""
-                      }`}
+                      } ${modelActiveIndex === index ? "highlighted" : ""}`}
                       onClick={() => void handleSelectModel(model.id)}
+                      onMouseEnter={() => setModelActiveIndex(index)}
                       type="button"
                       title={model.id}
                     >

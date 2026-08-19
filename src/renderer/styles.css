@@ -21620,7 +21620,8 @@ input {
 }
 
 .model-dropdown-item:hover,
-.model-dropdown-item.active {
+.model-dropdown-item.active,
+.model-dropdown-item.highlighted {
   background: var(--bg-hover);
 }
 

@@ -137,9 +137,17 @@ fn url_query_pattern() -> Regex {
 
 fn china_id_pattern() -> Regex {
     Regex::new(
-        r"(?i)\b[1-9]\d{5}(?:18|19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dX]\b",
+        r"(?i)\b(?:[1-9]\d{5}\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}|[1-9]\d{5}(?:18|19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dX])\b",
     )
     .unwrap()
+}
+
+fn china_mobile_pattern() -> Regex {
+    Regex::new(r"\b1[3-9]\d{9}\b").unwrap()
+}
+
+fn global_phone_pattern() -> Regex {
+    Regex::new(r"(?x)(?:\+\d{1,3}|00\s*\d{1,3})(?:[\s().-]*\d){7,14}\b").unwrap()
 }
 
 fn payment_card_pattern() -> Regex {
@@ -371,14 +379,26 @@ fn collect_context_matches_multi(
 
 fn is_valid_chinese_id(value: &str) -> bool {
     let normalized = value.to_uppercase();
-    if normalized.len() != 18 {
+    let (year, month, day) = if normalized.len() == 15 {
+        (
+            1900 + normalized[6..8].parse::<i32>().unwrap_or(-1),
+            normalized[8..10].parse::<u32>().unwrap_or(0),
+            normalized[10..12].parse::<u32>().unwrap_or(0),
+        )
+    } else if normalized.len() == 18 {
+        (
+            normalized[6..10].parse::<i32>().unwrap_or(-1),
+            normalized[10..12].parse::<u32>().unwrap_or(0),
+            normalized[12..14].parse::<u32>().unwrap_or(0),
+        )
+    } else {
         return false;
-    }
-    let year: i32 = normalized[6..10].parse().unwrap_or(-1);
-    let month: u32 = normalized[10..12].parse().unwrap_or(0);
-    let day: u32 = normalized[12..14].parse().unwrap_or(0);
+    };
     if !(1900..=2100).contains(&year) || !(1..=12).contains(&month) || !(1..=31).contains(&day) {
         return false;
+    }
+    if normalized.len() == 15 {
+        return true;
     }
     let weights = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2];
     let checksums = ['1', '0', 'X', '9', '8', '7', '6', '5', '4', '3', '2'];
@@ -417,11 +437,35 @@ fn is_valid_payment_card(value: &str) -> bool {
     sum % 10 == 0
 }
 
+fn is_valid_phone_number(value: &str) -> bool {
+    let digits: String = value.chars().filter(|c| c.is_ascii_digit()).collect();
+    if !(7..=15).contains(&digits.len()) {
+        return false;
+    }
+    if digits
+        .chars()
+        .all(|c| c == digits.chars().next().unwrap_or('0'))
+    {
+        return false;
+    }
+    true
+}
+
 fn collect_validated_matches(text: &str, matches: &mut Vec<SensitiveMatch>) {
     let china_id_re = china_id_pattern();
     for m in china_id_re.find_iter(text) {
         if is_valid_chinese_id(m.as_str()) {
             add_match(matches, m.start(), m.end(), "china_id", 0.95);
+        }
+    }
+    let mobile_re = china_mobile_pattern();
+    for m in mobile_re.find_iter(text) {
+        add_match(matches, m.start(), m.end(), "phone", 0.9);
+    }
+    let global_phone_re = global_phone_pattern();
+    for m in global_phone_re.find_iter(text) {
+        if is_valid_phone_number(m.as_str()) {
+            add_match(matches, m.start(), m.end(), "phone", 0.9);
         }
     }
     let card_re = payment_card_pattern();
@@ -562,6 +606,30 @@ fn mask_value_by_type(match_type: &str, value: &str) -> String {
     }
     if match_type == "payment_card" {
         return mask_payment_card(value);
+    }
+    if match_type == "phone" {
+        let digits: String = value.chars().filter(|c| c.is_ascii_digit()).collect();
+        if digits.len() >= 7 {
+            let prefix_len = digits.len().min(3);
+            let suffix_len = digits.len().min(4);
+            let masked_len = digits.len().saturating_sub(prefix_len + suffix_len);
+            let mut digit_index = 0;
+            return value
+                .chars()
+                .map(|c| {
+                    if c.is_ascii_digit() {
+                        digit_index += 1;
+                        if digit_index > prefix_len && digit_index <= prefix_len + masked_len {
+                            '*'
+                        } else {
+                            c
+                        }
+                    } else {
+                        c
+                    }
+                })
+                .collect();
+        }
     }
     if match_type == "china_id" {
         let len = value.chars().count();

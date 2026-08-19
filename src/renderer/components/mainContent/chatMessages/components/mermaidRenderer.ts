@@ -106,11 +106,14 @@ const ensureTheme = async (
 
 let renderIdCounter = 0;
 
-/**
- * Token used to cancel stale render batches. When a new batch starts, the
- * token is incremented; in-flight batches check the token and abort if stale.
- */
-let currentRenderToken = 0;
+/** Serialize Mermaid renders so separate Markdown blocks do not cancel each other. */
+let mermaidRenderQueue: Promise<void> = Promise.resolve();
+
+const enqueueMermaidRender = (task: () => Promise<void>): Promise<void> => {
+  const next = mermaidRenderQueue.then(task, task);
+  mermaidRenderQueue = next.catch(() => undefined);
+  return next;
+};
 
 /**
  * Apply the cached SVG (if any) to a single block and set the view mode.
@@ -159,86 +162,86 @@ export const injectCachedDiagrams = (root: ParentNode): void => {
  * is silently ignored — no error state is shown, no DOM is replaced. The code
  * view remains visible and the render is retried when content changes.
  */
-export const renderMermaidBlocks = async (root: ParentNode): Promise<void> => {
-  const blocks = root.querySelectorAll<HTMLElement>(MERMAID_SELECTOR);
-  if (blocks.length === 0) return;
+const renderMermaidWithRetry = async (
+  mermaid: typeof import("mermaid").default,
+  source: string
+): Promise<{ svg: string; id: string }> => {
+  let lastError: unknown;
 
-  const themeKey = currentThemeKey();
-  const token = ++currentRenderToken;
-
-  const pending: { block: HTMLElement; source: string }[] = [];
-
-  blocks.forEach((block) => {
-    // Skip blocks already rendered for this theme (cache-injected or
-    // previously rendered by an earlier async batch).
-    if (block.getAttribute(RENDERED_ATTR) === themeKey) return;
-
-    const source = decodeURIComponent(block.getAttribute("data-mermaid") ?? "");
-
-    // Late cache hit (e.g. another instance rendered the same source).
-    if (applyCache(block, source, themeKey)) return;
-
-    pending.push({ block, source });
-  });
-
-  if (pending.length === 0) return;
-
-  let mermaid: typeof import("mermaid").default;
-  try {
-    mermaid = await getMermaid();
-    await ensureTheme(mermaid);
-  } catch {
-    // Mermaid import or initialization failed. Reset the cached promise so
-    // the next render batch can retry from scratch instead of being stuck
-    // with a permanently rejected promise (cache poisoning).
-    mermaidPromise = null;
-    initializedTheme = null;
-    return;
-  }
-
-  for (const { block, source } of pending) {
-    // Abort if a newer render batch started.
-    if (token !== currentRenderToken) return;
-    if (!block.isConnected) continue;
-
+  for (let attempt = 0; attempt < 2; attempt += 1) {
     const id = `mmd-${renderIdCounter++}`;
     try {
-      const { svg } = await mermaid.render(id, source);
-
-      // Stale / detached checks after async.
-      if (token !== currentRenderToken) return;
-      if (!block.isConnected) {
-        document.getElementById(id)?.remove();
-        continue;
-      }
-
-      // Cache the successful result.
-      cacheSet(source, { svg, theme: themeKey });
-
-      // Inject into diagram view.
-      const diagramView = block.querySelector<HTMLElement>(
-        ".mermaid-view-diagram"
-      );
-      if (diagramView) {
-        diagramView.innerHTML = svg;
-      }
-      block.setAttribute(RENDERED_ATTR, themeKey);
-
-      // Auto-switch to diagram view (unless user prefers code).
-      const pref = viewPreferences.get(source);
-      if (pref !== "code") {
-        block.setAttribute(VIEW_ATTR, "diagram");
-      }
-    } catch {
-      // Render failed — likely incomplete mermaid code during streaming.
-      // Do NOT cache, do NOT replace DOM, do NOT show error.
-      // The code view remains visible. We'll retry on the next content
-      // update when the source changes.
-      // Clean up any stray elements mermaid may have created on failure.
+      const result = await mermaid.render(id, source);
+      return { svg: result.svg, id };
+    } catch (error) {
       document.getElementById(id)?.remove();
+      lastError = error;
+      if (attempt === 0) {
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => resolve())
+        );
+      }
     }
   }
+
+  throw lastError;
 };
+
+/** Render Mermaid blocks one at a time to avoid shared runtime state conflicts. */
+export const renderMermaidBlocks = (root: ParentNode): Promise<void> =>
+  enqueueMermaidRender(async () => {
+    const blocks = root.querySelectorAll<HTMLElement>(MERMAID_SELECTOR);
+    if (blocks.length === 0) return;
+
+    let mermaid: typeof import("mermaid").default;
+    try {
+      mermaid = await getMermaid();
+      await ensureTheme(mermaid);
+    } catch {
+      mermaidPromise = null;
+      initializedTheme = null;
+      return;
+    }
+
+    const themeKey = currentThemeKey();
+    const pending: { block: HTMLElement; source: string }[] = [];
+
+    blocks.forEach((block) => {
+      if (block.getAttribute(RENDERED_ATTR) === themeKey) return;
+
+      const source = decodeURIComponent(block.getAttribute("data-mermaid") ?? "");
+      if (applyCache(block, source, themeKey)) return;
+      pending.push({ block, source });
+    });
+
+    for (const { block, source } of pending) {
+      if (!block.isConnected) continue;
+
+      try {
+        const { svg, id } = await renderMermaidWithRetry(mermaid, source);
+
+        if (!block.isConnected) {
+          document.getElementById(id)?.remove();
+          continue;
+        }
+
+        cacheSet(source, { svg, theme: themeKey });
+        const diagramView = block.querySelector<HTMLElement>(
+          ".mermaid-view-diagram"
+        );
+        if (diagramView) {
+          diagramView.innerHTML = svg;
+        }
+        block.setAttribute(RENDERED_ATTR, themeKey);
+
+        if (viewPreferences.get(source) !== "code") {
+          block.setAttribute(VIEW_ATTR, "diagram");
+        }
+      } catch {
+        // Keep the source view visible when Mermaid rejects incomplete or invalid syntax.
+      }
+    }
+  });
 
 // ---------------------------------------------------------------------------
 // View toggle

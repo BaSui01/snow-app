@@ -1,4 +1,4 @@
-import type { ChatInputSendOptions } from "../../chatInput/types";
+import type { ChatInputSendOptions, ConversationInputRuntimeState } from "../../chatInput/types";
 import type {
   ApiConfigRecord,
   ChatConversationRecord,
@@ -340,6 +340,13 @@ export type RollbackTodoItem = {
 
 export type RollbackMode = "conversation-only" | "conversation-and-files";
 
+export type RollbackConversationState = ConversationInputRuntimeState & {
+  planMode: boolean;
+  goalMode: boolean;
+  worktreeMode: boolean;
+  goalModeTokenBudget: number;
+};
+
 export type CompactionResult = {
   content: string;
   checkpointId?: string;
@@ -358,6 +365,8 @@ export type RollbackPreview = {
   checkpointIds: string[];
   checkpointId?: string;
   workDir?: string;
+  /** 回滚首条消息后恢复到 pending 会话的项目目录。 */
+  directoryId?: string;
   convId?: string;
   responseId?: string;
   /**
@@ -366,6 +375,8 @@ export type RollbackPreview = {
    * 数据库中删除该轮及之后的消息。
    */
   persistedMessageId?: string;
+  /** 回滚删除首条消息后，新会话需要继承的会话级配置。 */
+  rollbackConversationState: RollbackConversationState;
   isFirstMessage: boolean;
   isContextCompaction: boolean;
   todoItems: RollbackTodoItem[];
@@ -488,6 +499,8 @@ export type ConversationContextValue = {
   isLoadingInitialHistory: boolean;
   draftToRestore: string | null;
   rollbackPreview: RollbackPreview | null;
+  /** 首条消息回滚删除后创建新会话时的一次性状态标识。 */
+  rollbackNewChatState: RollbackConversationState | null;
   /** True when the user explicitly clicked "New chat" while a pending or
    *  active session was still streaming. The UI should show the empty
    *  greeting instead of falling back to the pending session, and the
@@ -546,6 +559,8 @@ export type ConversationContextValue = {
    *  避免每次输入触发全局重渲染。key 归一化：conversationId 为空时使用
    *  PENDING_SESSION_KEY（新会话草稿，发送成功后清除）。 */
   inputDraftsRef: RefValue<Record<string, string>>;
+  /** 当前会话输入区的模型、配置文件和运行时覆盖值，用于回滚首条消息时冻结状态。 */
+  runtimeInputStateRef: RefValue<Record<string, ConversationInputRuntimeState>>;
   handleSendMessageRef: RefValue<
     (message: string, options: ChatInputSendOptions) => void
   >;
@@ -612,6 +627,9 @@ export type ConversationContextValue = {
   setIsLoadingInitialHistory: Dispatch<SetStateAction<boolean>>;
   setDraftToRestore: Dispatch<SetStateAction<string | null>>;
   setRollbackPreview: Dispatch<SetStateAction<RollbackPreview | null>>;
+  setRollbackNewChatState: Dispatch<
+    SetStateAction<RollbackConversationState | null>
+  >;
   setNewChatRequested: Dispatch<SetStateAction<boolean>>;
   setNewChatGeneration: Dispatch<SetStateAction<number>>;
   setYoloModeState: Dispatch<SetStateAction<boolean>>;
@@ -650,6 +668,10 @@ export type ConversationContextValue = {
   saveInputDraft: (conversationId: string | undefined, content: string) => void;
   getInputDraft: (conversationId: string | undefined) => string | undefined;
   clearInputDraft: (conversationId: string | undefined) => void;
+  updateRuntimeInputState: (
+    conversationId: string | undefined,
+    state: ConversationInputRuntimeState
+  ) => void;
 
   // 通知系统：AI 流程结束 / 敏感命令拦截 / 用户交互确认时触发系统通知
   notifyAiComplete: (options: NotifyAiCompleteOptions) => void;
@@ -741,6 +763,10 @@ export type UseChatConversationResult = {
   refreshConversations: () => void;
   /** 同步更新内存中某会话的 summary（如重命名会话后让 TopBar 标题即时刷新）。 */
   updateConversationSummary: (conversationId: string, summary: string) => void;
+  updateRuntimeInputState: (
+    conversationId: string | undefined,
+    state: ConversationInputRuntimeState
+  ) => void;
   isStreaming: boolean;
   isAborting: boolean;
   isPaused: boolean;
@@ -783,6 +809,7 @@ export type UseChatConversationResult = {
   /** 回滚变更计算中（弹窗弹出前）的消息 id，入口按钮据此显示 loading。 */
   rollbackPreparingMessageId: string | null;
   rollbackPreview: RollbackPreview | null;
+  rollbackNewChatState: RollbackConversationState | null;
   confirmRollback: (mode: RollbackMode) => Promise<void>;
   cancelRollback: () => void;
   yoloMode: boolean;

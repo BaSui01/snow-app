@@ -3,6 +3,7 @@ import type {
   ConversationContextValue,
   CheckpointFileChange,
   RollbackMode,
+  RollbackConversationState,
   RollbackTodoItem,
 } from "../utils/conversationTypes";
 import { PENDING_SESSION_KEY } from "../utils/conversationTypes";
@@ -93,6 +94,25 @@ export const useRollback = (ctx: ConversationContextValue) => {
         .filter((message) => message.role === "user" && message.checkpointId)
         .map((message) => message.checkpointId as string);
       const convId = key !== PENDING_SESSION_KEY ? key : undefined;
+      const capturedInputState = ctx.runtimeInputStateRef.current[key]
+        ? { ...ctx.runtimeInputStateRef.current[key] }
+        : undefined;
+      const capturedSessionRef = ctx.sessionsRefData.current.get(key);
+      const defaults = ctx.globalModeDefaultsRef.current;
+      let capturedWorktreeMode =
+        capturedSessionRef?.worktreeMode ?? defaults.worktreeMode;
+      let capturedPlanMode =
+        capturedSessionRef?.planMode ?? defaults.planMode;
+      let capturedGoalMode =
+        capturedSessionRef?.goalMode ?? defaults.goalMode;
+      const capturedGoalModeTokenBudget =
+        capturedSessionRef?.goalModeTokenBudget ?? defaults.goalModeTokenBudget;
+      if (capturedWorktreeMode) {
+        capturedPlanMode = false;
+        capturedGoalMode = false;
+      } else if (capturedPlanMode) {
+        capturedGoalMode = false;
+      }
 
       // Delete the entire conversation only when this is the true first user
       // message in the complete history. A compaction boundary and the first item
@@ -140,6 +160,42 @@ export const useRollback = (ctx: ConversationContextValue) => {
       // we set the preview state once the diff is ready.
       const computeAndPreview = async (): Promise<void> => {
         try {
+          let conversationRecord: Awaited<
+            ReturnType<typeof window.snow.getChatConversation>
+          > = null;
+          let runtimeConfig: Awaited<
+            ReturnType<typeof window.snow.getConversationRuntimeConfig>
+          > | null = null;
+          if (convId) {
+            const [recordResult, runtimeResult] = await Promise.allSettled([
+              window.snow.getChatConversation(convId),
+              window.snow.getConversationRuntimeConfig(convId),
+            ]);
+            if (recordResult.status === "fulfilled") {
+              conversationRecord = recordResult.value;
+            }
+            if (runtimeResult.status === "fulfilled") {
+              runtimeConfig = runtimeResult.value;
+            }
+          }
+          const rollbackConversationState: RollbackConversationState = {
+            model:
+              capturedInputState?.model || conversationRecord?.model?.trim() || "",
+            apiProfile:
+              capturedInputState?.apiProfile ||
+              conversationRecord?.apiProfileName?.trim() ||
+              "",
+            thinkingStrength: capturedInputState
+              ? capturedInputState.thinkingStrength
+              : runtimeConfig?.thinkingStrength ?? null,
+            responsesFastMode: capturedInputState
+              ? capturedInputState.responsesFastMode
+              : runtimeConfig?.responsesFastMode ?? null,
+            planMode: capturedPlanMode,
+            goalMode: capturedGoalMode,
+            worktreeMode: capturedWorktreeMode,
+            goalModeTokenBudget: capturedGoalModeTokenBudget,
+          };
           let checkpointIds = initialCheckpointIds;
           if (convId) {
             try {
@@ -234,9 +290,11 @@ export const useRollback = (ctx: ConversationContextValue) => {
             checkpointIds,
             checkpointId: checkpointIds[0],
             workDir: sessionWorkDir,
+            directoryId: capturedSessionRef?.directoryId,
             convId,
             responseId,
             persistedMessageId,
+            rollbackConversationState,
             isFirstMessage,
             isContextCompaction: targetMessage.isContextCompaction === true,
             todoItems,
@@ -261,6 +319,8 @@ export const useRollback = (ctx: ConversationContextValue) => {
       ctx.activeConversationIdRef,
       ctx.sessionsRefData,
       ctx.sessionsRef,
+      ctx.runtimeInputStateRef,
+      ctx.globalModeDefaultsRef,
       ctx.setRollbackPreview,
     ]
   );
@@ -285,7 +345,9 @@ export const useRollback = (ctx: ConversationContextValue) => {
         convId,
         responseId,
         persistedMessageId,
-        isFirstMessage,
+         rollbackConversationState,
+         directoryId,
+         isFirstMessage,
         isContextCompaction,
       } = preview;
 
@@ -399,6 +461,34 @@ export const useRollback = (ctx: ConversationContextValue) => {
           return next;
         });
         if (targetWasActive) {
+          const rollbackState = rollbackConversationState;
+          ctx.ensureSession(
+            PENDING_SESSION_KEY,
+            directoryId ?? ctx.directoryId
+          );
+          const pendingRef = ctx.sessionsRefData.current.get(
+            PENDING_SESSION_KEY
+          );
+          if (pendingRef) {
+            pendingRef.planMode = rollbackState.planMode;
+            pendingRef.goalMode = rollbackState.goalMode;
+            pendingRef.worktreeMode = rollbackState.worktreeMode;
+            pendingRef.goalModeTokenBudget = rollbackState.goalModeTokenBudget;
+          }
+          ctx.runtimeInputStateRef.current[PENDING_SESSION_KEY] = {
+            model: rollbackState.model,
+            apiProfile: rollbackState.apiProfile,
+            thinkingStrength: rollbackState.thinkingStrength,
+            responsesFastMode: rollbackState.responsesFastMode,
+          };
+          ctx.planModeRef.current = rollbackState.planMode;
+          ctx.goalModeRef.current = rollbackState.goalMode;
+          ctx.worktreeModeRef.current = rollbackState.worktreeMode;
+          ctx.setPlanModeState(rollbackState.planMode);
+          ctx.setGoalModeState(rollbackState.goalMode);
+          ctx.setWorktreeModeState(rollbackState.worktreeMode);
+          ctx.setGoalModeTokenBudgetState(rollbackState.goalModeTokenBudget);
+          ctx.setRollbackNewChatState(rollbackState);
           ctx.setActiveId(undefined);
         }
       } else {
@@ -426,6 +516,16 @@ export const useRollback = (ctx: ConversationContextValue) => {
       ctx.setActiveId,
       ctx.setDraftToRestore,
       ctx.setRollbackPreview,
+      ctx.setRollbackNewChatState,
+      ctx.ensureSession,
+      ctx.setPlanModeState,
+      ctx.setGoalModeState,
+      ctx.setWorktreeModeState,
+      ctx.setGoalModeTokenBudgetState,
+      ctx.runtimeInputStateRef,
+      ctx.planModeRef,
+      ctx.goalModeRef,
+      ctx.worktreeModeRef,
       ctx.sessionsRefData,
       ctx.setSessions,
       ctx.activeConversationIdRef,

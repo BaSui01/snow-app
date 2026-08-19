@@ -4,6 +4,13 @@ import type { ApiConfigRecord, Model, TokenUsage } from "../../../../preload";
 import type { MainContentView } from "../types";
 import type { ScheduledTaskRunOptions } from "../../../../preload";
 
+export type ConversationInputRuntimeState = {
+  model: string;
+  apiProfile: string;
+  thinkingStrength: string | null;
+  responsesFastMode: boolean | null;
+};
+
 export type ConversationRuntimeConfigOverride = {
   thinkingStrength: string | null;
   responsesFastMode: boolean | null;
@@ -48,12 +55,16 @@ export type ChatInputProps = {
    *  onAutoSendOverrideConsumed so they never leak into later manual sends. */
   autoSendOverride?: ScheduledTaskRunOptions | null;
   onAutoSendOverrideConsumed?: () => void;
-  /** 按会话持久化输入草稿（文本+图片 chip），切换会话/新建会话时
-   *  ChatInput 会卸载，草稿由调用方（ConversationContext）保存，
-   *  重新挂载后通过 getInputDraft 恢复、发送后 clearInputDraft。 */
+  /** 按会话持久化输入草稿（文本+图片 chip）。 */
   saveInputDraft?: (conversationId: string | undefined, content: string) => void;
   getInputDraft?: (conversationId: string | undefined) => string | undefined;
   clearInputDraft?: (conversationId: string | undefined) => void;
+  /** 回滚首条消息后新会话暂存的输入区配置。 */
+  rollbackInputState?: ConversationInputRuntimeState | null;
+  /** 记录当前输入区配置，覆盖未发送前尚未写入会话记录的模型选择。 */
+  onRuntimeInputStateChange?: (
+    state: ConversationInputRuntimeState
+  ) => void;
   pendingMessages?: string[];
   onWithdrawPendingMessage?: (index: number) => string | null;
   onSendPendingMessageNow?: (index: number) => void;

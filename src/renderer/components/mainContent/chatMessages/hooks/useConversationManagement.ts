@@ -79,6 +79,7 @@ export const useConversationManagement = (
       // Selecting an existing conversation cancels any prior "new chat"
       // intent so the UI follows the active conversation normally.
       ctx.setNewChatRequested(false);
+      ctx.setRollbackNewChatState(null);
 
       // The pending-messages panel mirrors the *active* conversation's
       // pending queue. When switching sessions the displayed queue must be
@@ -422,6 +423,7 @@ export const useConversationManagement = (
       ctx.setActiveId,
       ctx.updateSessionField,
       ctx.setNewChatRequested,
+      ctx.setRollbackNewChatState,
       ctx.sessionsRefData,
       ctx.worktreeModeRef,
       ctx.setWorktreeModeState,
@@ -526,6 +528,7 @@ export const useConversationManagement = (
     // streaming in the background) and prevents the agent loop from
     // auto-switching back to the migrated conversation once it finishes.
     ctx.setNewChatRequested(true);
+    ctx.setRollbackNewChatState(null);
     // Increment independently from the legacy boolean: the same pending key can
     // be reused for consecutive new chats, including across project switches.
     ctx.setNewChatGeneration((generation) => generation + 1);
@@ -598,6 +601,7 @@ export const useConversationManagement = (
   }, [
     ctx.setActiveId,
     ctx.setNewChatRequested,
+    ctx.setRollbackNewChatState,
     ctx.setNewChatGeneration,
     ctx.planModeRef,
     ctx.setPlanModeState,

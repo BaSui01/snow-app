@@ -104,6 +104,8 @@ const ChatContentBody = ({
     getInputDraft,
     clearInputDraft,
     rollbackPreview,
+    rollbackNewChatState,
+    updateRuntimeInputState,
     confirmRollback,
     cancelRollback,
     pendingMessages,
@@ -138,6 +140,12 @@ const ChatContentBody = ({
     handleSelectConversation,
   } = useChatConversationContext();
   const { t } = useI18n();
+  const handleRuntimeInputStateChange = useCallback(
+    (state: import("./chatInput/types").ConversationInputRuntimeState): void => {
+      updateRuntimeInputState(activeConversationId, state);
+    },
+    [activeConversationId, updateRuntimeInputState]
+  );
   const { autoScrollEnabled, setAutoScrollEnabled } = useAutoScrollPreference();
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const hasMessages = messages.length > 0;
@@ -1120,6 +1128,8 @@ const ChatContentBody = ({
             saveInputDraft={saveInputDraft}
             getInputDraft={getInputDraft}
             clearInputDraft={clearInputDraft}
+            rollbackInputState={rollbackNewChatState}
+            onRuntimeInputStateChange={handleRuntimeInputStateChange}
             pendingMessages={pendingMessages}
             onWithdrawPendingMessage={withdrawPendingMessage}
             onSendPendingMessageNow={sendPendingMessageNow}

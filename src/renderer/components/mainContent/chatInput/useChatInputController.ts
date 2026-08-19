@@ -26,6 +26,7 @@ import type {
   ChatInputActions,
   ChatInputSendOptions,
   ChatInputState,
+  ConversationInputRuntimeState,
   ModelMenuView,
 } from "./types";
 import {
@@ -49,6 +50,10 @@ type UseChatInputControllerParams = {
   saveInputDraft?: (conversationId: string | undefined, content: string) => void;
   getInputDraft?: (conversationId: string | undefined) => string | undefined;
   clearInputDraft?: (conversationId: string | undefined) => void;
+  rollbackInputState?: ConversationInputRuntimeState | null;
+  onRuntimeInputStateChange?: (
+    state: ConversationInputRuntimeState
+  ) => void;
 };
 
 type UseChatInputControllerResult = ChatInputState & ChatInputActions;
@@ -77,6 +82,8 @@ export const useChatInputController = ({
   saveInputDraft,
   getInputDraft,
   clearInputDraft,
+  rollbackInputState,
+  onRuntimeInputStateChange,
 }: UseChatInputControllerParams): UseChatInputControllerResult => {
   const { t } = useI18n();
   const [value, setValue] = useState("");
@@ -260,7 +267,11 @@ export const useChatInputController = ({
         // fallback for legacy rows without a binding.
         const subAgentConversation =
           conversation?.conversationType === "sub_agent";
-        const requestedProfile = conversation?.apiProfileName?.trim() ?? "";
+        const rollbackState = !conversationId ? rollbackInputState : null;
+        const requestedProfile =
+          rollbackState?.apiProfile?.trim() ||
+          conversation?.apiProfileName?.trim() ||
+          "";
         let runtimeConfig: ApiConfigRecord | null = null;
         if (requestedProfile) {
           runtimeConfig =
@@ -287,11 +298,14 @@ export const useChatInputController = ({
           );
         }
 
-        const rememberedModel = conversation?.model?.trim() ?? "";
-        const persistedThinkingOverride =
-          runtimeOverride?.thinkingStrength ?? null;
-        const persistedFastModeOverride =
-          runtimeOverride?.responsesFastMode ?? null;
+        const rememberedModel =
+          rollbackState?.model?.trim() || conversation?.model?.trim() || "";
+        const persistedThinkingOverride = rollbackState
+          ? rollbackState.thinkingStrength
+          : runtimeOverride?.thinkingStrength ?? null;
+        const persistedFastModeOverride = rollbackState
+          ? rollbackState.responsesFastMode
+          : runtimeOverride?.responsesFastMode ?? null;
 
         setApiConfigs(configs);
         setIsSubAgentConversation(subAgentConversation);
@@ -337,7 +351,26 @@ export const useChatInputController = ({
       }
       runtimeMutationTokenRef.current += 1;
     };
-  }, [conversationId, projectId, labels]);
+  }, [conversationId, projectId, labels, rollbackInputState]);
+
+  useEffect(() => {
+    if (isLoadingApiConfig || !onRuntimeInputStateChange) {
+      return;
+    }
+    onRuntimeInputStateChange({
+      model: selectedModel,
+      apiProfile: selectedApiProfile,
+      thinkingStrength: thinkingOverride === "" ? null : thinkingOverride,
+      responsesFastMode: responsesFastModeOverride,
+    });
+  }, [
+    isLoadingApiConfig,
+    onRuntimeInputStateChange,
+    responsesFastModeOverride,
+    selectedApiProfile,
+    selectedModel,
+    thinkingOverride,
+  ]);
 
   const loadModels = useCallback(
     async (force = false) => {

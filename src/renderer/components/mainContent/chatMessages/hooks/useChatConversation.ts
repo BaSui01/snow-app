@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChatInputSendOptions } from "../../chatInput/types";
+import type { ConversationInputRuntimeState } from "../../chatInput/types";
 import type {
   ApiConfigRecord,
   ScheduledTaskRunOptions,
@@ -138,6 +139,9 @@ export const useChatConversation = (
     useState<ScheduledTaskRunOptions | null>(null);
   const [rollbackPreview, setRollbackPreview] =
     useState<ConversationContextValue["rollbackPreview"]>(null);
+  const [rollbackNewChatState, setRollbackNewChatState] = useState<
+    ConversationContextValue["rollbackNewChatState"]
+  >(null);
   const [newChatRequested, setNewChatRequested] = useState(false);
   // Renderer-only lifecycle marker. It must never be reset when the active
   // conversation changes: every new-chat request gets a fresh generation even
@@ -200,6 +204,18 @@ export const useChatConversation = (
   // and clears after a successful send. New-chat drafts (conversationId
   // undefined) live under PENDING_SESSION_KEY and are cleared on send.
   const inputDraftsRef = useRef<Record<string, string>>({});
+  const runtimeInputStateRef = useRef<
+    Record<string, ConversationInputRuntimeState>
+  >({});
+  const updateRuntimeInputState = useCallback(
+    (
+      conversationId: string | undefined,
+      state: ConversationContextValue["runtimeInputStateRef"]["current"][string]
+    ): void => {
+      runtimeInputStateRef.current[conversationId ?? PENDING_SESSION_KEY] = state;
+    },
+    []
+  );
   const inputDraftKeyFor = useCallback(
     (conversationId: string | undefined): string =>
       conversationId ?? PENDING_SESSION_KEY,
@@ -413,6 +429,7 @@ export const useChatConversation = (
     isLoadingInitialHistory,
     draftToRestore,
     rollbackPreview,
+    rollbackNewChatState,
     newChatRequested,
     newChatGeneration,
     yoloMode,
@@ -442,6 +459,7 @@ export const useChatConversation = (
     newChatRequestedRef,
     pendingQueueRef,
     inputDraftsRef,
+    runtimeInputStateRef,
     handleSendMessageRef,
     performCompactionRef,
     yoloModeRef,
@@ -470,6 +488,7 @@ export const useChatConversation = (
     setIsLoadingInitialHistory,
     setDraftToRestore,
     setRollbackPreview,
+    setRollbackNewChatState,
     setNewChatRequested,
     setNewChatGeneration,
     setYoloModeState,
@@ -499,6 +518,7 @@ export const useChatConversation = (
     saveInputDraft: () => {},
     getInputDraft: () => undefined,
     clearInputDraft: () => {},
+    updateRuntimeInputState: () => {},
     notifyAiComplete: (_options) => {},
     notifySensitiveCommandIntercepted: (_options) => {},
     notifyUserInteractionRequired: (_options) => {},
@@ -516,6 +536,7 @@ export const useChatConversation = (
   ctx.saveInputDraft = saveInputDraft;
   ctx.getInputDraft = getInputDraft;
   ctx.clearInputDraft = clearInputDraft;
+  ctx.updateRuntimeInputState = updateRuntimeInputState;
   ctx.notifyAiComplete = sessionApi.notifyAiComplete;
   ctx.notifySensitiveCommandIntercepted =
     sessionApi.notifySensitiveCommandIntercepted;
@@ -708,6 +729,7 @@ export const useChatConversation = (
     saveInputDraft,
     getInputDraft,
     clearInputDraft,
+    updateRuntimeInputState,
     buildFromContent: (
       content: string,
       directoryId?: string,
@@ -729,6 +751,7 @@ export const useChatConversation = (
     handleRollback: rollbackApi.handleRollback,
     rollbackPreparingMessageId: rollbackApi.preparingMessageId,
     rollbackPreview,
+    rollbackNewChatState,
     confirmRollback: rollbackApi.confirmRollback,
     cancelRollback: rollbackApi.cancelRollback,
     yoloMode,

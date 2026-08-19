@@ -124,7 +124,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         return;
       }
 
-      const capturedOptions = captureChatInputSendOptions(options);
+      let capturedOptions = captureChatInputSendOptions(options);
       const sessionKey =
         ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
       const existingRef = ctx.sessionsRefData.current.get(sessionKey);
@@ -145,6 +145,26 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       }
 
       const isFirstMessage = ctx.activeConversationIdRef.current === undefined;
+      const rollbackState = isFirstMessage ? ctx.rollbackNewChatState : null;
+      if (rollbackState) {
+        capturedOptions = {
+          ...capturedOptions,
+          model: capturedOptions.model || rollbackState.model || undefined,
+          apiProfile:
+            capturedOptions.apiProfile || rollbackState.apiProfile || undefined,
+          thinkingStrength:
+            capturedOptions.thinkingStrength ??
+            rollbackState.thinkingStrength ??
+            undefined,
+          responsesFastMode:
+            capturedOptions.responsesFastMode ?? rollbackState.responsesFastMode,
+          conversationRuntimeConfigOverride:
+            capturedOptions.conversationRuntimeConfigOverride ?? {
+              thinkingStrength: rollbackState.thinkingStrength,
+              responsesFastMode: rollbackState.responsesFastMode,
+            },
+        };
+      }
       // Consume the one-shot target project set by handleNewChat(directoryId)
       // (e.g. a scheduled task firing for its bound project) so the new
       // PENDING session lands in the task's project instead of the currently
@@ -525,6 +545,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               planApprovedSessionKeysRef.current.add(response.conversationId);
             }
             ctx.migrateSession(PENDING_SESSION_KEY, response.conversationId);
+            ctx.setRollbackNewChatState(null);
             // Persist only the explicit pending-session snapshot. Request-level
             // thinking/Fast Mode values (including scheduled one-shot values)
             // intentionally stay separate from this durable conversation state.
@@ -1513,6 +1534,8 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       ctx.removeStreamingId,
       ctx.setActiveId,
       ctx.setNewChatRequested,
+      ctx.rollbackNewChatState,
+      ctx.setRollbackNewChatState,
       ctx.notifyAiComplete,
       requestToolAuthorizations,
     ]

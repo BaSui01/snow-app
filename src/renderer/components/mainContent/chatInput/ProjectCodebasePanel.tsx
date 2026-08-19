@@ -1,5 +1,6 @@
 import {
   AlertCircle,
+  ArrowUpDown,
   BrainCircuit,
   Database,
   FileWarning,
@@ -9,12 +10,12 @@ import {
   Play,
   RefreshCw,
   RotateCcw,
-  SearchCode,
   Settings,
   Square,
   Trash2,
   X,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CodebaseProjectScopeSettings } from "../../../../preload";
 import type {
@@ -370,7 +371,8 @@ export const ProjectCodebasePanel = ({
   const renderToggle = (
     key: ToggleKey,
     label: string,
-    description: string
+    description: string,
+    Icon: LucideIcon
   ): React.JSX.Element => {
     const checked = scope?.[key] ?? false;
     const isPending = pendingKey === key;
@@ -381,7 +383,7 @@ export const ProjectCodebasePanel = ({
           checked ? " is-enabled" : ""
         }`}
       >
-        <SearchCode size={15} />
+        <Icon size={15} />
         <div className="project-sensitive-command-content">
           <div>
             <code>{label}</code>
@@ -511,17 +513,20 @@ export const ProjectCodebasePanel = ({
               {renderToggle(
                 "enabled",
                 t("projectCodebase.toggleEnabled"),
-                t("projectCodebase.toggleEnabledDescription")
+                t("projectCodebase.toggleEnabledDescription"),
+                Database
               )}
               {renderToggle(
                 "enableAgentReview",
                 t("projectCodebase.toggleAgentReview"),
-                t("projectCodebase.toggleAgentReviewDescription")
+                t("projectCodebase.toggleAgentReviewDescription"),
+                BrainCircuit
               )}
               {renderToggle(
                 "enableReranking",
                 t("projectCodebase.toggleReranking"),
-                t("projectCodebase.toggleRerankingDescription")
+                t("projectCodebase.toggleRerankingDescription"),
+                ArrowUpDown
               )}
             </div>
 

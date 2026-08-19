@@ -1,5 +1,22 @@
 # Release Notes
 
+## v0.2.9
+
+## New Features
+
+- **Token-Bounded Codebase Chunking**: Added configurable token limit for codebase chunking, preventing oversized context from overwhelming the model.
+
+## Improvements
+
+- **Privacy Masking & Mermaid Serialization**: Enhanced privacy masking to cover sensitive data more reliably; Mermaid diagrams are now serialized properly for consistent rendering.
+- **Distinct Codebase Toggle Icons**: The codebase settings toggles now use differentiated icons for clearer visual distinction.
+- **Drawing Parameter Dropdown**: Moved the drawing parameter dropdown box into the custom popup layer for better UX and layout consistency.
+
+## Bug Fixes
+
+- **Sub-Agent Rollback Prevention**: Fixed a bug where rollback operations could be triggered in sub-agent conversations, preventing unintended state changes.
+- **First Message Rollback Recovery**: Fixed the rollback of the first message to properly restore the session input configuration.
+
 ## v0.2.8
 
 ## New Features

@@ -11,6 +11,7 @@ import { createPortal } from "react-dom";
 export type CustomSelectOption = {
   value: string;
   label: string;
+  disabled?: boolean;
 };
 
 type CustomSelectProps = {
@@ -18,6 +19,7 @@ type CustomSelectProps = {
   options: CustomSelectOption[];
   onChange: (value: string) => void;
   disabled?: boolean;
+  title?: string;
   /**
    * When true, the dropdown is rendered into `document.body` via a portal and
    * positioned absolutely relative to the trigger button. Use this when the
@@ -47,6 +49,7 @@ export function CustomSelect({
   options,
   onChange,
   disabled = false,
+  title,
   portal = false,
   renderOption,
 }: CustomSelectProps): React.JSX.Element {
@@ -113,11 +116,15 @@ export function CustomSelect({
   const displayLabel = selectedOption?.label ?? value;
 
   const handleSelect = useCallback(
-    (event: React.MouseEvent<HTMLButtonElement>, val: string) => {
+    (
+      event: React.MouseEvent<HTMLButtonElement>,
+      option: CustomSelectOption
+    ) => {
       event.preventDefault();
       event.stopPropagation();
+      if (option.disabled) return;
       setIsOpen(false);
-      onChange(val);
+      onChange(option.value);
     },
     [onChange]
   );
@@ -133,8 +140,9 @@ export function CustomSelect({
         <button
           key={opt.value}
           type="button"
-          className="custom-select-item"
-          onClick={(event) => handleSelect(event, opt.value)}
+          className={`custom-select-item${opt.disabled ? " disabled" : ""}`}
+          onClick={(event) => handleSelect(event, opt)}
+          disabled={opt.disabled}
         >
           <span>{renderOption ? renderOption(opt) : opt.label}</span>
           {opt.value === value && (
@@ -159,6 +167,7 @@ export function CustomSelect({
         className="custom-select-trigger"
         onClick={handleTriggerClick}
         disabled={disabled}
+        title={title}
       >
         <span className="custom-select-label" title={displayLabel}>
           {displayLabel}

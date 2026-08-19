@@ -5284,6 +5284,11 @@ input {
   background: var(--bg-hover);
 }
 
+.custom-select-item:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
 .custom-select-item > span:first-child {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -27636,41 +27641,37 @@ input {
   white-space: nowrap;
 }
 
-.ai-drawing-param select {
-  height: 28px;
+.ai-drawing-param .custom-select {
+  width: auto;
   max-width: 190px;
-  border: 1px solid var(--border-color);
+  min-width: 0;
+}
+
+.ai-drawing-param .custom-select-trigger {
+  height: 28px;
+  max-width: 100%;
+  padding: 0 8px;
   border-radius: 7px;
   background: var(--bg-tertiary);
   color: var(--text-secondary);
   font-size: 11.5px;
-  padding: 0 8px;
-  outline: none;
-  cursor: pointer;
   transition: border-color 0.12s, color 0.12s;
 }
 
-.ai-drawing-param select:hover:not(:disabled) {
+.ai-drawing-param .custom-select-trigger:hover:not(:disabled) {
   color: var(--text-primary);
   border-color: color-mix(in srgb, var(--accent-color) 40%, var(--border-color));
 }
 
-.ai-drawing-param select:focus-visible {
+.ai-drawing-param .custom-select-trigger:focus-visible {
   border-color: var(--accent-color);
 }
 
-.ai-drawing-param select:disabled {
+.ai-drawing-param .custom-select-trigger:disabled {
   opacity: 0.45;
-  cursor: default;
 }
 
-.ai-drawing-param select option {
-  background: var(--bg-primary);
-  color: var(--text-secondary);
-}
-
-/* 模型下拉（聚合模型列表，模型 ID 较长） */
-.ai-drawing-param-model select {
+.ai-drawing-param-model .custom-select {
   max-width: 280px;
 }
 
@@ -27799,21 +27800,22 @@ input {
   z-index: 39;
 }
 
-/* 弹层面板（绝对定位于触发按钮下方） */
+/* 尺寸弹层 */
 .ai-drawing-size-popover {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
+  position: fixed;
   z-index: 40;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  width: 272px;
+  width: min(272px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
+  max-height: min(420px, calc(100vh - 24px));
   padding: 10px;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
   background: var(--bg-primary);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  overflow-y: auto;
 }
 
 .ai-drawing-size-row {
@@ -27828,18 +27830,21 @@ input {
 }
 
 .ai-drawing-size-grid {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
   gap: 6px;
+  min-width: 0;
 }
 
 .ai-drawing-size-option {
   display: inline-flex;
+  min-width: 0;
+  width: 100%;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 2px;
-  min-width: 44px;
+  min-width: 0;
   height: 28px;
   padding: 0 8px;
   border: 1px solid var(--border-color);
@@ -28917,7 +28922,7 @@ input {
     grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
   }
 
-  .ai-drawing-param select {
+  .ai-drawing-param .custom-select-trigger {
     max-width: 150px;
   }
 
@@ -28925,7 +28930,7 @@ input {
     max-width: 160px;
   }
 
-  .ai-drawing-param-model select {
+  .ai-drawing-param-model .custom-select {
     max-width: 180px;
   }
 }

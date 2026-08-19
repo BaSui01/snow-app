@@ -2,10 +2,12 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   AlertCircle,
   AtSign,
@@ -38,6 +40,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useI18n } from "../../i18n";
+import { CustomSelect } from "../common/CustomSelect";
 import {
   filterImageModels,
   inferModelCapabilities,
@@ -1094,6 +1097,71 @@ export function DrawingPanelContent({
 
   /** 三位一体尺寸控件弹层开关（比例 × 尺寸 × 质量）。 */
   const [sizePanelOpen, setSizePanelOpen] = useState(false);
+  const [sizePopoverRect, setSizePopoverRect] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+  } | null>(null);
+  const sizeTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const updateSizePopoverPosition = useCallback((): void => {
+    const trigger = sizeTriggerRef.current;
+    if (!trigger) return;
+    const triggerRect = trigger.getBoundingClientRect();
+    const viewportPadding = 12;
+    const preferredWidth = 272;
+    const width = Math.min(
+      preferredWidth,
+      Math.max(0, window.innerWidth - viewportPadding * 2)
+    );
+    const maxLeft = Math.max(
+      viewportPadding,
+      window.innerWidth - width - viewportPadding
+    );
+    const left = Math.min(
+      Math.max(triggerRect.left, viewportPadding),
+      maxLeft
+    );
+    const estimatedHeight = 420;
+    const spaceBelow = window.innerHeight - triggerRect.bottom - viewportPadding;
+    const spaceAbove = triggerRect.top - viewportPadding;
+    const openAbove = spaceBelow < estimatedHeight && spaceAbove > spaceBelow;
+    const availableHeight = Math.max(
+      80,
+      Math.min(estimatedHeight, (openAbove ? spaceAbove : spaceBelow) - 6)
+    );
+    const top = openAbove
+      ? Math.max(viewportPadding, triggerRect.top - availableHeight - 6)
+      : triggerRect.bottom + 6;
+    setSizePopoverRect({
+      top,
+      left,
+      width,
+      maxHeight: availableHeight,
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!sizePanelOpen) {
+      setSizePopoverRect(null);
+      return;
+    }
+    updateSizePopoverPosition();
+    window.addEventListener("resize", updateSizePopoverPosition);
+    window.addEventListener("scroll", updateSizePopoverPosition, true);
+    const triggerParent = sizeTriggerRef.current?.parentElement;
+    const resizeObserver = typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(updateSizePopoverPosition);
+    if (triggerParent && resizeObserver) {
+      resizeObserver.observe(triggerParent);
+    }
+    return () => {
+      window.removeEventListener("resize", updateSizePopoverPosition);
+      window.removeEventListener("scroll", updateSizePopoverPosition, true);
+      resizeObserver?.disconnect();
+    };
+  }, [sizePanelOpen, updateSizePopoverPosition]);
 
   /** 当前模型是否支持「档位」（1K/2K/4K；OpenAI 仅 gpt-image-2 系，Gemini 全系）。 */
   const showTier = selectedChannel
@@ -2635,28 +2703,37 @@ export function DrawingPanelContent({
               </span>
             ) : (
               <>
-                <select
-                  value={model}
+                <CustomSelect
+                  value={
+                    modelsLoading || modelsLoadFailed || modelList.length === 0
+                      ? ""
+                      : model
+                  }
+                  options={
+                    modelsLoading
+                      ? [
+                          {
+                            value: "",
+                            label: t("rightPanel.aiDrawing.modelsLoading"),
+                          },
+                        ]
+                      : modelsLoadFailed || modelList.length === 0
+                        ? [
+                            {
+                              value: "",
+                              label: t("rightPanel.aiDrawing.modelsLoadFailed"),
+                            },
+                          ]
+                        : modelList.map((item) => ({
+                            value: item.id,
+                            label: item.id,
+                          }))
+                  }
                   disabled={modelsLoading || modelsLoadFailed}
                   title={t("rightPanel.aiDrawing.modelHint")}
-                  onChange={(event) => handleModelChange(event.target.value)}
-                >
-                  {modelsLoading ? (
-                    <option value="">
-                      {t("rightPanel.aiDrawing.modelsLoading")}
-                    </option>
-                  ) : modelsLoadFailed || modelList.length === 0 ? (
-                    <option value="">
-                      {t("rightPanel.aiDrawing.modelsLoadFailed")}
-                    </option>
-                  ) : (
-                    modelList.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.id}
-                      </option>
-                    ))
-                  )}
-                </select>
+                  onChange={handleModelChange}
+                  portal
+                />
                 {modelsLoadFailed && (
                   <button
                     type="button"
@@ -2679,6 +2756,7 @@ export function DrawingPanelContent({
               </span>
               <div className="ai-drawing-size-trigger-wrap">
                 <button
+                  ref={sizeTriggerRef}
                   type="button"
                   className={`ai-drawing-size-trigger${
                     sizePanelOpen ? " open" : ""
@@ -2693,14 +2771,22 @@ export function DrawingPanelContent({
                     className={sizePanelOpen ? "rotate-180" : ""}
                   />
                 </button>
-                {sizePanelOpen && (
+                {sizePanelOpen && sizePopoverRect && createPortal(
                   <>
                     {/* 点击外部关闭弹层（透明 backdrop 优先捕获） */}
                     <div
                       className="ai-drawing-size-backdrop"
                       onClick={() => setSizePanelOpen(false)}
                     />
-                    <div className="ai-drawing-size-popover">
+                    <div
+                      className="ai-drawing-size-popover"
+                      style={{
+                        top: `${sizePopoverRect.top}px`,
+                        left: `${sizePopoverRect.left}px`,
+                        width: `${sizePopoverRect.width}px`,
+                        maxHeight: `${sizePopoverRect.maxHeight}px`,
+                      }}
+                    >
                       {/* 比例 */}
                       <div className="ai-drawing-size-row">
                         <span className="ai-drawing-size-row-title">
@@ -2798,7 +2884,8 @@ export function DrawingPanelContent({
                         </div>
                       )}
                     </div>
-                  </>
+                  </>,
+                  document.body
                 )}
               </div>
             </div>
@@ -2808,25 +2895,24 @@ export function DrawingPanelContent({
             <span className="ai-drawing-param-label">
               {t("rightPanel.aiDrawing.count")}
             </span>
-            <select
-              value={count}
+            <CustomSelect
+              value={String(count)}
+              options={countOptions.map((value) => ({
+                value: String(value),
+                label: t("toolCall.imagegen.countParam", {
+                  defaultValue: "{{count}} images",
+                  values: { count: value },
+                }),
+              }))}
               disabled={capabilities ? !capabilities.supportsMultiCount : false}
               title={
                 capabilities && !capabilities.supportsMultiCount
                   ? t("rightPanel.aiDrawing.modelSingleCount")
                   : undefined
               }
-              onChange={(event) => setCount(Number(event.target.value))}
-            >
-              {countOptions.map((value) => (
-                <option key={value} value={value}>
-                  {t("toolCall.imagegen.countParam", {
-                    defaultValue: "{{count}} images",
-                    values: { count: value },
-                  })}
-                </option>
-              ))}
-            </select>
+              onChange={(value) => setCount(Number(value))}
+              portal
+            />
           </label>
   
           {/* 流式预览：模型不支持时隐藏（如 xAI Grok） */}
@@ -2877,32 +2963,30 @@ export function DrawingPanelContent({
                     <span className="ai-drawing-param-label">
                       {t("rightPanel.aiDrawing.thinkingLevel")}
                     </span>
-                    <select
+                    <CustomSelect
                       value={thinkingLevel}
-                      onChange={(event) => setThinkingLevel(event.target.value)}
-                    >
-                      {THINKING_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {t(option.labelKey)}
-                        </option>
-                      ))}
-                    </select>
+                      options={THINKING_OPTIONS.map((option) => ({
+                        value: option.value,
+                        label: t(option.labelKey),
+                      }))}
+                      onChange={setThinkingLevel}
+                      portal
+                    />
                   </label>
                 ) : null}
                 <label className="ai-drawing-param">
                   <span className="ai-drawing-param-label">
                     {t("rightPanel.aiDrawing.personGeneration")}
                   </span>
-                  <select
+                  <CustomSelect
                     value={personGeneration}
-                    onChange={(event) => setPersonGeneration(event.target.value)}
-                  >
-                    {PERSON_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {t(option.labelKey)}
-                      </option>
-                    ))}
-                  </select>
+                    options={PERSON_OPTIONS.map((option) => ({
+                      value: option.value,
+                      label: t(option.labelKey),
+                    }))}
+                    onChange={setPersonGeneration}
+                    portal
+                  />
                 </label>
                 {/* Google 搜索 grounding：仅 3.1 Flash + 3 Pro 支持（Lite / 2.5 隐藏） */}
                 {capabilities?.supportsWebSearch !== false ? (
@@ -2923,20 +3007,25 @@ export function DrawingPanelContent({
                     <span className="ai-drawing-param-label">
                       {t("rightPanel.aiDrawing.outputFormat")}
                     </span>
-                    <select
+                    <CustomSelect
                       value={outputFormat}
-                      onChange={(event) => setOutputFormat(event.target.value)}
-                    >
-                      <option value="">
-                        {t("rightPanel.aiDrawing.formatDefault")}
-                      </option>
-                      <option value="png">
-                        {t("rightPanel.aiDrawing.formatPng")}
-                      </option>
-                      <option value="jpeg">
-                        {t("rightPanel.aiDrawing.formatJpeg")}
-                      </option>
-                    </select>
+                      options={[
+                        {
+                          value: "",
+                          label: t("rightPanel.aiDrawing.formatDefault"),
+                        },
+                        {
+                          value: "png",
+                          label: t("rightPanel.aiDrawing.formatPng"),
+                        },
+                        {
+                          value: "jpeg",
+                          label: t("rightPanel.aiDrawing.formatJpeg"),
+                        },
+                      ]}
+                      onChange={setOutputFormat}
+                      portal
+                    />
                   </label>
                 ) : null}
                 {capabilities?.supportsImageSearch ? (
@@ -2960,16 +3049,15 @@ export function DrawingPanelContent({
                     <span className="ai-drawing-param-label">
                       {t("rightPanel.aiDrawing.outputFormat")}
                     </span>
-                    <select
+                    <CustomSelect
                       value={outputFormat}
-                      onChange={(event) => setOutputFormat(event.target.value)}
-                    >
-                      {OPENAI_FORMAT_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {t(option.labelKey)}
-                        </option>
-                      ))}
-                    </select>
+                      options={OPENAI_FORMAT_OPTIONS.map((option) => ({
+                        value: option.value,
+                        label: t(option.labelKey),
+                      }))}
+                      onChange={setOutputFormat}
+                      portal
+                    />
                   </label>
                 ) : null}
                 {capabilities?.supportsCompression !== false ? (
@@ -2977,18 +3065,15 @@ export function DrawingPanelContent({
                     <span className="ai-drawing-param-label">
                       {t("rightPanel.aiDrawing.compression")}
                     </span>
-                    <select
+                    <CustomSelect
                       value={outputCompression}
-                      onChange={(event) =>
-                        setOutputCompression(event.target.value)
-                      }
-                    >
-                      {COMPRESSION_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {t(option.labelKey)}
-                        </option>
-                      ))}
-                    </select>
+                      options={COMPRESSION_OPTIONS.map((option) => ({
+                        value: option.value,
+                        label: t(option.labelKey),
+                      }))}
+                      onChange={setOutputCompression}
+                      portal
+                    />
                   </label>
                 ) : null}
                 {capabilities?.supportsBackground !== false ? (
@@ -2996,25 +3081,18 @@ export function DrawingPanelContent({
                     <span className="ai-drawing-param-label">
                       {t("rightPanel.aiDrawing.background")}
                     </span>
-                    <select
+                    <CustomSelect
                       value={background}
-                      onChange={(event) => setBackground(event.target.value)}
-                    >
-                      {BACKGROUND_OPTIONS.map((option) => (
-                        <option
-                          key={option.value}
-                          value={option.value}
-                          disabled={
-                            option.value === "transparent" &&
-                            (capabilities
-                              ? !capabilities.supportsTransparent
-                              : false)
-                          }
-                        >
-                          {t(option.labelKey)}
-                        </option>
-                      ))}
-                    </select>
+                      options={BACKGROUND_OPTIONS.map((option) => ({
+                        value: option.value,
+                        label: t(option.labelKey),
+                        disabled:
+                          option.value === "transparent" &&
+                          (capabilities ? !capabilities.supportsTransparent : false),
+                      }))}
+                      onChange={setBackground}
+                      portal
+                    />
                   </label>
                 ) : null}
                 {capabilities?.supportsFidelity !== false ? (
@@ -3022,16 +3100,15 @@ export function DrawingPanelContent({
                     <span className="ai-drawing-param-label">
                       {t("rightPanel.aiDrawing.fidelity")}
                     </span>
-                    <select
+                    <CustomSelect
                       value={inputFidelity}
-                      onChange={(event) => setInputFidelity(event.target.value)}
-                    >
-                      {FIDELITY_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {t(option.labelKey)}
-                        </option>
-                      ))}
-                    </select>
+                      options={FIDELITY_OPTIONS.map((option) => ({
+                        value: option.value,
+                        label: t(option.labelKey),
+                      }))}
+                      onChange={setInputFidelity}
+                      portal
+                    />
                   </label>
                 ) : null}
               </>

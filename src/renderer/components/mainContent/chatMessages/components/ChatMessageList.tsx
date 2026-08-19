@@ -16,6 +16,7 @@ type MessageContentProps = {
   isAborting: boolean;
   lastAssistantMessageId: string | undefined;
   activeConversationId: string | undefined;
+  canRollback: boolean;
   rollbackPreparingMessageId: string | null;
   pendingToolAuthorizations: ToolCallInfo[];
   onRollback: (messageId: string) => void;
@@ -48,6 +49,7 @@ const MessageContent = memo(
     isAborting,
     lastAssistantMessageId,
     activeConversationId,
+    canRollback,
     rollbackPreparingMessageId,
     pendingToolAuthorizations,
     onRollback,
@@ -63,6 +65,7 @@ const MessageContent = memo(
             <CompactionMessage
               content={message.content}
               isStreaming={isStreaming}
+              canRollback={canRollback}
               isRollbackPreparing={rollbackPreparingMessageId === message.id}
               onRollback={() => onRollback(message.id)}
             />
@@ -77,6 +80,7 @@ const MessageContent = memo(
         <UserMessage
           content={message.content}
           isStreaming={isStreaming}
+          canRollback={canRollback}
           isRollbackPreparing={rollbackPreparingMessageId === message.id}
           onRollback={() => onRollback(message.id)}
           hookExecutions={message.hookExecutions}
@@ -162,6 +166,7 @@ type ChatMessageListProps = {
   messages: ChatConversationMessage[];
   isStreaming: boolean;
   isAborting: boolean;
+  canRollback: boolean;
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
 };
 
@@ -175,6 +180,7 @@ export const ChatMessageList = ({
   messages,
   isStreaming,
   isAborting,
+  canRollback,
   scrollContainerRef,
 }: ChatMessageListProps): React.JSX.Element => {
   const { t } = useI18n();
@@ -425,6 +431,7 @@ export const ChatMessageList = ({
             isAborting={isAborting}
             lastAssistantMessageId={lastAssistantMessageId}
             activeConversationId={activeConversationId}
+            canRollback={canRollback}
             rollbackPreparingMessageId={rollbackPreparingMessageId}
             pendingToolAuthorizations={pendingToolAuthorizations}
             onRollback={handleRollback}

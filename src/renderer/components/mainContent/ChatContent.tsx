@@ -1055,6 +1055,7 @@ const ChatContentBody = ({
               messages={messages}
               isStreaming={isStreaming}
               isAborting={isAborting}
+              canRollback={!isSubAgentConversation}
               scrollContainerRef={scrollRef}
             />
             <CompactionStream

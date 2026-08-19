@@ -7,6 +7,7 @@ import type {
 export type UserMessageProps = {
   content: string;
   isStreaming: boolean;
+  canRollback?: boolean;
   isRollbackPreparing?: boolean;
   onRollback: () => void;
   hookExecutions?: HookExecutionRecord[];

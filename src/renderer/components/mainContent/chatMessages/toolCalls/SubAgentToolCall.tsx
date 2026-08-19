@@ -283,6 +283,29 @@ export const SubAgentToolCall = ({
   const isRunning = toolCall.status === "running";
   const isError = parsedResult.type === "error" || toolCall.status === "error";
 
+  // 首次响应开始后，激活卡片不再显示“正在激活”。流式指标能覆盖
+  // 仅输出工具调用或思考内容的响应，消息状态则覆盖首轮结束后的间隔。
+  const hasSubAgentResponseStarted = useMemo(() => {
+    if (!subSession) {
+      return false;
+    }
+    if (subSession.streamTtftMs > 0 || subSession.streamTokenCount > 0) {
+      return true;
+    }
+    return subSession.messages.some(
+      (message) =>
+        message.role === "assistant" &&
+        (message.content.trim().length > 0 ||
+          Boolean(message.thinking?.trim()) ||
+          (message.toolCalls?.length ?? 0) > 0 ||
+          message.status === "sent" ||
+          message.status === "incomplete" ||
+          message.status === "error")
+    );
+  }, [subSession]);
+
+  const isActivationPending = isRunning && !hasSubAgentResponseStarted;
+
   const toolCallEntries = useMemo(
     () => extractSubAgentToolCalls(subSession?.messages),
     [subSession?.messages]
@@ -473,10 +496,10 @@ export const SubAgentToolCall = ({
         {parsedResult.type === "empty" && toolCallEntries.length === 0 ? (
           <div
             className={`tool-call-sub-agent-pending ${
-              isRunning ? "tool-call-sub-agent-pending-running" : ""
+              isActivationPending ? "tool-call-sub-agent-pending-running" : ""
             }`}
           >
-            {isRunning ? (
+            {isActivationPending ? (
               <Loader2
                 className="tool-call-icon-spinning"
                 size={14}
@@ -486,10 +509,12 @@ export const SubAgentToolCall = ({
               <Wrench size={14} aria-hidden="true" />
             )}
             <span>
-              {isRunning
+              {isActivationPending
                 ? parsedArgs?.mode === "continue"
                   ? t("toolCall.subAgent.resuming")
                   : t("toolCall.subAgent.activating")
+                : isRunning
+                ? t("toolCall.subAgent.status.running")
                 : t("toolCall.subAgent.waiting")}
             </span>
           </div>

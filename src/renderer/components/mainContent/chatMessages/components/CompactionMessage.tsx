@@ -6,6 +6,7 @@ import { MarkdownBlock } from "./markdownRenderer";
 type CompactionMessageProps = {
   content: string;
   isStreaming: boolean;
+  canRollback?: boolean;
   isRollbackPreparing?: boolean;
   onRollback: () => void;
 };
@@ -14,6 +15,7 @@ export const CompactionMessage = memo(
   ({
     content,
     isStreaming,
+    canRollback = true,
     isRollbackPreparing,
     onRollback,
   }: CompactionMessageProps): React.JSX.Element => {
@@ -62,7 +64,7 @@ export const CompactionMessage = memo(
               />
             </span>
           </button>
-          {!isStreaming ? (
+          {canRollback && !isStreaming ? (
             <button
               className="context-compaction-message-rollback"
               type="button"

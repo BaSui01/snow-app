@@ -3,6 +3,7 @@ import { Check, Copy, Loader2, Undo2 } from "lucide-react";
 type UserMessageActionsProps = {
   content: string;
   isStreaming: boolean;
+  canRollback?: boolean;
   isRollbackPreparing?: boolean;
   onRollback: () => void;
 };
@@ -10,6 +11,7 @@ type UserMessageActionsProps = {
 export const UserMessageActions = ({
   content,
   isStreaming,
+  canRollback = true,
   isRollbackPreparing,
   onRollback,
 }: UserMessageActionsProps): React.JSX.Element => {
@@ -36,7 +38,7 @@ export const UserMessageActions = ({
           <Copy size={15} strokeWidth={1.8} />
         )}
       </button>
-      {!isStreaming ? (
+      {canRollback && !isStreaming ? (
         <button
           className="user-message-action-btn"
           type="button"

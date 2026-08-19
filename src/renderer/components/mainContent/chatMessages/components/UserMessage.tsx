@@ -1,4 +1,11 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import {
   ChevronDown,
@@ -27,6 +34,7 @@ export const UserMessage = memo(
   ({
     content,
     isStreaming,
+    canRollback,
     isRollbackPreparing,
     onRollback,
     hookExecutions,
@@ -161,7 +169,7 @@ export const UserMessage = memo(
       };
     }, []);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
       const el = pRef.current;
       if (!el) {
         return;
@@ -172,7 +180,21 @@ export const UserMessage = memo(
           Number.isFinite(computedLineHeight) && computedLineHeight > 0
             ? computedLineHeight
             : 21;
-        setCollapsible(el.scrollHeight > COLLAPSE_LINES * lineH + 2);
+        const wasCollapsed = el.classList.contains(
+          "user-message-text-collapsed"
+        );
+        if (wasCollapsed) {
+          el.classList.remove("user-message-text-collapsed");
+        }
+        const fullHeight = el.scrollHeight;
+        if (wasCollapsed) {
+          el.classList.add("user-message-text-collapsed");
+        }
+        const nextCollapsible = fullHeight > COLLAPSE_LINES * lineH + 2;
+        setCollapsible(nextCollapsible);
+        if (!nextCollapsible) {
+          setExpanded(false);
+        }
       };
       measure();
       const ro = new ResizeObserver(measure);
@@ -182,7 +204,8 @@ export const UserMessage = memo(
       };
     }, [content]);
 
-    const collapsed = collapsible && !expanded;
+    const isExpanded = collapsible && expanded;
+    const collapsed = collapsible && !isExpanded;
 
     return (
       <div className="user-message-row">
@@ -435,10 +458,11 @@ export const UserMessage = memo(
             <button
               type="button"
               className="user-message-toggle"
+              aria-expanded={isExpanded}
               onClick={() => setExpanded((prev) => !prev)}
             >
-              {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-              {expanded ? "收起" : "展开"}
+              {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              {isExpanded ? "收起" : "展开"}
             </button>
           )}
         </article>
@@ -448,6 +472,7 @@ export const UserMessage = memo(
         <UserMessageActions
           content={content}
           isStreaming={isStreaming}
+          canRollback={canRollback}
           isRollbackPreparing={isRollbackPreparing}
           onRollback={onRollback}
         />

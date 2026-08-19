@@ -147,6 +147,18 @@ const ChatContentBody = ({
     [activeConversationId, updateRuntimeInputState]
   );
   const { autoScrollEnabled, setAutoScrollEnabled } = useAutoScrollPreference();
+  // 「编辑后自动格式化」开关持久化在 Rust 侧设置（默认开启），
+  // 打开 Plus 菜单时通过 onRefreshAutoFormat 重新读取。
+  const [autoFormatEnabled, setAutoFormatEnabled] = useState(false);
+  const refreshAutoFormat = useCallback(async (): Promise<boolean> => {
+    try {
+      const enabled = await window.snow.getAutoFormat();
+      setAutoFormatEnabled(enabled);
+      return enabled;
+    } catch {
+      return false;
+    }
+  }, []);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const hasMessages = messages.length > 0;
   // History loading renders a skeleton, not conversation content. Keep the
@@ -963,6 +975,17 @@ const ChatContentBody = ({
     [setAutoScrollEnabled, handleScrollToBottom]
   );
 
+  // 切换自动格式化：乐观更新 UI，写入失败时回读真实状态。
+  const handleAutoFormatChange = useCallback(
+    (enabled: boolean): void => {
+      setAutoFormatEnabled(enabled);
+      void window.snow.setAutoFormat(enabled).catch(() => {
+        void refreshAutoFormat();
+      });
+    },
+    [refreshAutoFormat]
+  );
+
   const handleConfirmRollback = useCallback(
     async (mode: RollbackMode): Promise<void> => {
       // 返回真实 Promise：RollbackConfirmDialog 的确认按钮据此在整个
@@ -1155,6 +1178,9 @@ const ChatContentBody = ({
             onGoalModeTokenBudgetChange={setGoalModeTokenBudget}
             autoScrollEnabled={autoScrollEnabled}
             onAutoScrollChange={handleAutoScrollChange}
+            autoFormatEnabled={autoFormatEnabled}
+            onAutoFormatChange={handleAutoFormatChange}
+            onRefreshAutoFormat={refreshAutoFormat}
             isCompacting={isCompactingActive}
           />
         )}

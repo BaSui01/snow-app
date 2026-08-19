@@ -5,6 +5,7 @@ import {
   Plus,
   ShieldAlert,
   Target,
+  Wand2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -47,6 +48,9 @@ export type PlusMenuProps = {
   onGoalModeTokenBudgetChange?: (budget: number) => void;
   autoScrollEnabled: boolean;
   onAutoScrollChange?: (enabled: boolean) => void;
+  autoFormatEnabled: boolean;
+  onAutoFormatChange?: (enabled: boolean) => void;
+  onRefreshAutoFormat?: () => void | Promise<boolean | void>;
 };
 
 export const PlusMenu = ({
@@ -71,6 +75,9 @@ export const PlusMenu = ({
   onGoalModeTokenBudgetChange,
   autoScrollEnabled,
   onAutoScrollChange,
+  autoFormatEnabled,
+  onAutoFormatChange,
+  onRefreshAutoFormat,
 }: PlusMenuProps): React.JSX.Element => {
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
@@ -97,6 +104,7 @@ export const PlusMenu = ({
         void onRefreshPlanMode?.();
         void onRefreshGoalMode?.();
         void onRefreshWorktreeMode?.();
+        void onRefreshAutoFormat?.();
       }
       return next;
     });
@@ -105,6 +113,7 @@ export const PlusMenu = ({
     onRefreshPlanMode,
     onRefreshGoalMode,
     onRefreshWorktreeMode,
+    onRefreshAutoFormat,
   ]);
 
   const handleItemClick = useCallback(
@@ -199,6 +208,29 @@ export const PlusMenu = ({
                   disabled={!onAutoScrollChange}
                   onChange={() => {
                     onAutoScrollChange?.(!autoScrollEnabled);
+                  }}
+                  type="checkbox"
+                />
+                <span className="toggle-slider" />
+              </label>
+            </div>
+            <div className="plus-menu-item plus-menu-yolo-item">
+              <Wand2 size={14} className="plus-menu-item-icon" />
+              <div className="plus-menu-item-content">
+                <span className="plus-menu-item-label">
+                  {t("plusMenu.autoFormat")}
+                </span>
+                <span className="plus-menu-item-description">
+                  {t("plusMenu.autoFormatDescription")}
+                </span>
+              </div>
+              <label className="toggle-switch plus-menu-yolo-switch">
+                <input
+                  aria-label={t("plusMenu.autoFormat")}
+                  checked={autoFormatEnabled}
+                  disabled={!onAutoFormatChange}
+                  onChange={() => {
+                    onAutoFormatChange?.(!autoFormatEnabled);
                   }}
                   type="checkbox"
                 />

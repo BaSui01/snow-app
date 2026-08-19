@@ -35,6 +35,11 @@ const DEFAULT_YOLO_MODE_SETTING_NAME: &str = "YOLO mode";
 const DEFAULT_YOLO_MODE_SETTING_CODE: &str = "yolo_mode";
 const DEFAULT_YOLO_MODE_SETTING_VALUE: &str = "false";
 
+// 编辑文件后是否自动用 Prettier 格式化（默认开启）。
+const DEFAULT_AUTO_FORMAT_SETTING_NAME: &str = "Auto format";
+const DEFAULT_AUTO_FORMAT_SETTING_CODE: &str = "auto_format";
+const DEFAULT_AUTO_FORMAT_SETTING_VALUE: &str = "true";
+
 const DEFAULT_REQUEST_LOGGING_SETTING_NAME: &str = "Request logging";
 const DEFAULT_REQUEST_LOGGING_SETTING_CODE: &str = "request_logging";
 const DEFAULT_REQUEST_LOGGING_SETTING_VALUE: &str = "false";
@@ -313,6 +318,31 @@ pub fn set_yolo_mode(database_path: &Path, enabled: bool) -> Result<()> {
     )
 }
 
+/// 读取「编辑后自动格式化」开关，未配置时默认开启。
+pub fn get_auto_format(database_path: &Path) -> Result<bool> {
+    let Some(value) =
+        get_system_setting_value(database_path, DEFAULT_AUTO_FORMAT_SETTING_CODE)?
+    else {
+        return Ok(true);
+    };
+
+    value.parse::<bool>().map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to parse Auto format setting: {error}"),
+        )
+    })
+}
+
+pub fn set_auto_format(database_path: &Path, enabled: bool) -> Result<()> {
+    set_system_setting(
+        database_path,
+        DEFAULT_AUTO_FORMAT_SETTING_NAME,
+        DEFAULT_AUTO_FORMAT_SETTING_CODE,
+        if enabled { "true" } else { "false" },
+    )
+}
+
 pub fn get_request_logging(database_path: &Path) -> Result<bool> {
     let Some(value) =
         get_system_setting_value(database_path, DEFAULT_REQUEST_LOGGING_SETTING_CODE)?
@@ -484,6 +514,12 @@ fn seed_default_settings_with_connection(connection: &Connection) -> rusqlite::R
         DEFAULT_YOLO_MODE_SETTING_NAME,
         DEFAULT_YOLO_MODE_SETTING_CODE,
         DEFAULT_YOLO_MODE_SETTING_VALUE,
+    )?;
+    insert_default_setting(
+        connection,
+        DEFAULT_AUTO_FORMAT_SETTING_NAME,
+        DEFAULT_AUTO_FORMAT_SETTING_CODE,
+        DEFAULT_AUTO_FORMAT_SETTING_VALUE,
     )?;
     insert_default_setting(
         connection,

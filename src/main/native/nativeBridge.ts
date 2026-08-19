@@ -67,6 +67,14 @@ setSystemSetting: () =>
         Promise.reject(
           new Error("Rust native bridge is required to write YOLO mode")
         ),
+      getAutoFormat: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to read Auto format")
+        ),
+      setAutoFormat: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to write Auto format")
+        ),
       getConversationModes: () =>
         Promise.reject(
           new Error("Rust native bridge is required to read conversation modes")

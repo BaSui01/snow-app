@@ -85,6 +85,9 @@ export const ChatInputView = ({
   onGoalModeTokenBudgetChange,
   autoScrollEnabled,
   onAutoScrollChange,
+  autoFormatEnabled,
+  onAutoFormatChange,
+  onRefreshAutoFormat,
   isCompacting,
   setManualValue,
   setIsManualMode,
@@ -667,6 +670,9 @@ export const ChatInputView = ({
             onGoalModeTokenBudgetChange={onGoalModeTokenBudgetChange}
             autoScrollEnabled={autoScrollEnabled}
             onAutoScrollChange={onAutoScrollChange}
+            autoFormatEnabled={autoFormatEnabled}
+            onAutoFormatChange={onAutoFormatChange}
+            onRefreshAutoFormat={onRefreshAutoFormat}
             handleAbort={handleAbort}
             handleSend={handleSend}
             apiConfigs={apiConfigs}

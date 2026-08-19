@@ -43,6 +43,9 @@ type ChatInputToolbarProps = ComponentProps<typeof ModelSelector> &
     | "onGoalModeTokenBudgetChange"
     | "autoScrollEnabled"
     | "onAutoScrollChange"
+    | "autoFormatEnabled"
+    | "onAutoFormatChange"
+    | "onRefreshAutoFormat"
   > & {
     plusMenuSections: PlusMenuSection[];
     commandTriggerRef: RefObject<HTMLButtonElement | null>;
@@ -85,6 +88,9 @@ export const ChatInputToolbar = ({
     onGoalModeTokenBudgetChange,
     autoScrollEnabled,
     onAutoScrollChange,
+    autoFormatEnabled,
+    onAutoFormatChange,
+    onRefreshAutoFormat,
     isSubAgentConversation,
     isStreaming,
     runtimeApiConfig,
@@ -124,6 +130,9 @@ export const ChatInputToolbar = ({
           }
           autoScrollEnabled={autoScrollEnabled}
           onAutoScrollChange={onAutoScrollChange}
+          autoFormatEnabled={autoFormatEnabled}
+          onAutoFormatChange={onAutoFormatChange}
+          onRefreshAutoFormat={onRefreshAutoFormat}
         />
         {value.trim() === "" && (
           <button

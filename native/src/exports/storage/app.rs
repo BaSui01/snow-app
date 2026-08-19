@@ -61,6 +61,20 @@ pub async fn set_yolo_mode(enabled: bool) -> napi::Result<()> {
 }
 
 #[napi]
+pub async fn get_auto_format() -> napi::Result<bool> {
+    tokio::task::spawn_blocking(crate::storage::get_auto_format)
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn set_auto_format(enabled: bool) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::set_auto_format(enabled))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
 pub async fn get_request_logging() -> napi::Result<bool> {
     tokio::task::spawn_blocking(crate::storage::get_request_logging)
         .await

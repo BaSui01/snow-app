@@ -2641,6 +2641,8 @@ export const zhCN = {
   "plusMenu.sectionMode": "模式",
   "plusMenu.autoScroll": "自动滚动",
   "plusMenu.autoScrollDescription": "AI 响应时自动滚动到底部",
+  "plusMenu.autoFormat": "自动格式化",
+  "plusMenu.autoFormatDescription": "编辑文件后自动使用 Prettier 格式化",
   "plusMenu.yoloMode": "YOLO 模式",
   "plusMenu.yoloModeDescription": "启用后工具执行无需逐次授权",
   "plusMenu.yoloModeEnabled": "已启用，无需逐次授权",

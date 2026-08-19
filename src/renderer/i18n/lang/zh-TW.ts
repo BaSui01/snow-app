@@ -2620,6 +2620,8 @@ export const zhTW = {
   "plusMenu.sectionMode": "模式",
   "plusMenu.autoScroll": "自動捲動",
   "plusMenu.autoScrollDescription": "AI 回應時自動捲動到底部",
+  "plusMenu.autoFormat": "自動格式化",
+  "plusMenu.autoFormatDescription": "編輯檔案後自動使用 Prettier 格式化",
   "plusMenu.yoloMode": "YOLO 模式",
   "plusMenu.yoloModeDescription": "啟用後工具執行不需逐次授權",
   "plusMenu.yoloModeEnabled": "已啟用，不需逐次授權",

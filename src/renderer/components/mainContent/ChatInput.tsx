@@ -48,6 +48,9 @@ export const ChatInput = ({
   onGoalModeTokenBudgetChange,
   autoScrollEnabled = false,
   onAutoScrollChange,
+  autoFormatEnabled = false,
+  onAutoFormatChange,
+  onRefreshAutoFormat,
   isCompacting = false,
 }: ChatInputProps): React.JSX.Element => {
   const { t } = useI18n();
@@ -102,6 +105,9 @@ export const ChatInput = ({
       onGoalModeTokenBudgetChange={onGoalModeTokenBudgetChange}
       autoScrollEnabled={autoScrollEnabled}
       onAutoScrollChange={onAutoScrollChange}
+      autoFormatEnabled={autoFormatEnabled}
+      onAutoFormatChange={onAutoFormatChange}
+      onRefreshAutoFormat={onRefreshAutoFormat}
       isCompacting={isCompacting}
     />
   );

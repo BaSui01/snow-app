@@ -146,6 +146,16 @@ pub fn set_yolo_mode(enabled: bool) -> Result<()> {
     services::yolo_settings::set_yolo_mode(&database_path, enabled)
 }
 
+pub fn get_auto_format() -> Result<bool> {
+    let database_path = ensure_database_file()?;
+    services::system_settings::get_auto_format(&database_path)
+}
+
+pub fn set_auto_format(enabled: bool) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::system_settings::set_auto_format(&database_path, enabled)
+}
+
 pub fn get_conversation_modes(
     conversation_id: &str,
 ) -> Result<services::chat_conversations::ConversationModes> {

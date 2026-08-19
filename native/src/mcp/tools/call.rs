@@ -409,6 +409,30 @@ pub async fn call_mcp_tool(
         service
             .execute_lsp_tool(lsp_tool, &args, project_id.as_deref())
             .await?
+    } else if let Some(filesystem_tool) = tool_full_name.strip_prefix("filesystem-") {
+        // 本地文件系统工具走异步执行路径：编辑成功后（auto-format 开启时）
+        // 需要异步调用 Prettier 格式化，同步 execute_builtin_tool 无法完成。
+        // 远程工作区（SSH）已在 uses_remote_workspace 分支处理，此处不重复；
+        // execute_async 内部对 ssh:// 路径仍会转发，保持行为一致。
+        let filesystem_result = FilesystemService::new()
+            .execute_async(
+                filesystem_tool,
+                &args,
+                &on_remote_workspace_command,
+                None,
+            )
+            .await;
+        // 工具执行后（含自动格式化）捕获检查点，与同步默认分支语义一致；
+        // 无论工具成功与否都先完成 after 捕获再传播结果。
+        tokio::task::spawn_blocking(move || capture_checkpoint_after_tool(checkpoint_capture))
+            .await
+            .map_err(|error| {
+                Error::new(
+                    Status::GenericFailure,
+                    format!("Failed to capture checkpoint after tool execution: {error}"),
+                )
+            })??;
+        filesystem_result?
     } else if let Some(result) =
         super::super::external::call_tool(project_id.as_deref(), &tool_full_name, &args).await?
     {

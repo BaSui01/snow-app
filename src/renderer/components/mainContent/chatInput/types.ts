@@ -92,6 +92,9 @@ export type ChatInputProps = {
   onGoalModeTokenBudgetChange?: (budget: number) => void;
   autoScrollEnabled?: boolean;
   onAutoScrollChange?: (enabled: boolean) => void;
+  autoFormatEnabled?: boolean;
+  onAutoFormatChange?: (enabled: boolean) => void;
+  onRefreshAutoFormat?: () => void | Promise<boolean | void>;
   isCompacting?: boolean;
 };
 
@@ -217,5 +220,8 @@ export type ChatInputViewProps = ChatInputState &
     onGoalModeTokenBudgetChange?: (budget: number) => void;
     autoScrollEnabled: boolean;
     onAutoScrollChange?: (enabled: boolean) => void;
+    autoFormatEnabled: boolean;
+    onAutoFormatChange?: (enabled: boolean) => void;
+    onRefreshAutoFormat?: () => void | Promise<boolean | void>;
     isCompacting: boolean;
   };

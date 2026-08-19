@@ -2764,6 +2764,8 @@ export const en = {
   "plusMenu.sectionMode": "Mode",
   "plusMenu.autoScroll": "Auto scroll",
   "plusMenu.autoScrollDescription": "Scroll to bottom while AI is responding",
+  "plusMenu.autoFormat": "Auto format",
+  "plusMenu.autoFormatDescription": "Format edited files with Prettier after each edit",
   "plusMenu.yoloMode": "YOLO Mode",
   "plusMenu.yoloModeDescription": "Skip per-tool approval when enabled",
   "plusMenu.yoloModeEnabled": "Enabled, no per-tool approval required",

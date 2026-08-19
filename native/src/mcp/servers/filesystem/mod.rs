@@ -74,7 +74,7 @@ impl McpService for FilesystemService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "replace_edit".to_string(),
-                description: "Fuzzy search-and-replace editing. Finds searchContent in the file and replaces it with replaceContent. The file's original text encoding is auto-detected and preserved on write-back (the edited file keeps its original encoding and BOM). IMPORTANT: searchContent must be COPIED EXACTLY from the file - do NOT include line number prefixes (like \"42:\") that appear in read output, do NOT retype or paraphrase. Copy the raw source text verbatim. If the exact text is not found, a fuzzy match is attempted; on failure the error includes the closest matching region to help you correct your searchContent. On success the response includes a \"review\" field with the edited region plus surrounding context lines (edited lines marked with \">>>\") - always verify the edit landed correctly. ESCAPE SEQUENCES: text inside string literals (e.g. Rust/Python/JSON source) stores escapes like \\n, \\t, \\\", \\\\ as literal backslash + character pairs in the file. When searchContent or replaceContent touches such text, keep the escapes in their literal form exactly as shown by filesystem-read output - never convert a literal backslash-n into a real newline, and never convert a real newline into a literal \\n. Use a real newline only when the file actually contains one; use a literal escape sequence only when the file text shows that escape.".to_string(),
+                description: "Fuzzy search-and-replace editing. Finds searchContent in the file and replaces it with replaceContent. The file's original text encoding is auto-detected and preserved on write-back (the edited file keeps its original encoding and BOM). IMPORTANT: searchContent must be COPIED EXACTLY from the file - do NOT include line number prefixes (like \\\"42:\\\") that appear in read output, do NOT retype or paraphrase. Copy the raw source text verbatim. If the exact text is not found, a fuzzy match is attempted; on failure the error includes the closest matching region to help you correct your searchContent. On success the response includes a \\\"review\\\" field with the edited region plus surrounding context lines (edited lines marked with \\\">>>\\\") - always verify the edit landed correctly. When the auto-format setting is enabled (default), the edited file is automatically formatted with Prettier afterwards and the response marks \\\"formatted\\\": true. ESCAPE SEQUENCES: text inside string literals (e.g. Rust/Python/JSON source) stores escapes like \\\\n, \\\\t, \\\\\\\", \\\\\\\\ as literal backslash + character pairs in the file. When searchContent or replaceContent touches such text, keep the escapes in their literal form exactly as shown by filesystem-read output - never convert a literal backslash-n into a real newline, and never convert a real newline into a literal \\\\n. Use a real newline only when the file actually contains one; use a literal escape sequence only when the file text shows that escape.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -165,7 +165,44 @@ impl FilesystemService {
 
         match tool_name {
             "read" => self.execute_read(args),
-            "replace_edit" => self.execute_replace_edit(args),
+            "replace_edit" => {
+                let mut result = self.execute_replace_edit(args)?;
+
+                // 编辑成功后按全局开关（默认开启）自动用 Prettier 格式化。
+                // 格式化失败（未安装 prettier / 无 node / 不支持的类型等）静默
+                // 跳过，绝不回退已成功的编辑结果。SSH 远程路径无法本地格式化。
+                if let Some(file_path) = file_path {
+                    let auto_format = tokio::task::spawn_blocking(crate::storage::get_auto_format)
+                        .await
+                        .ok()
+                        .and_then(|result| result.ok())
+                        .unwrap_or(true);
+                    if auto_format {
+                        if let Some(formatted_content) =
+                            format_file_with_prettier(Path::new(file_path)).await
+                        {
+                            // 用格式化后的文件内容重建编辑复核上下文（编辑行号
+                            // 沿用编辑结果，格式化后行号可能轻微漂移，可接受）。
+                            if let (Some(start), Some(end)) = (
+                                result.get("matchedLineStart").and_then(Value::as_u64),
+                                result.get("matchedLineEnd").and_then(Value::as_u64),
+                            ) {
+                                let review = fuzzy_edit::build_edit_review_context_lines(
+                                    &formatted_content,
+                                    start.saturating_sub(1) as usize,
+                                    Some(end.saturating_sub(1) as usize),
+                                );
+                                if let Some(object) = result.as_object_mut() {
+                                    object.insert("review".to_string(), review);
+                                    object.insert("formatted".to_string(), json!(true));
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Ok(result)
+            }
             "create" => self.execute_create(args),
             _ => self.execute(tool_name, args),
         }
@@ -592,4 +629,74 @@ impl FilesystemService {
             "lines": line_count
         }))
     }
+}
+
+/// Prettier 3 内置支持（无需额外插件）的文件扩展名。
+fn is_prettier_supported_extension(file_path: &Path) -> bool {
+    let Some(extension) = file_path.extension().and_then(|e| e.to_str()) else {
+        return false;
+    };
+    matches!(
+        extension.to_ascii_lowercase().as_str(),
+        "js" | "jsx" | "mjs" | "cjs" | "ts" | "tsx" | "mts" | "cts"
+            | "json" | "jsonc" | "css" | "scss" | "less" | "html"
+            | "md" | "markdown" | "yaml" | "yml" | "graphql" | "gql"
+    )
+}
+
+/// 从被编辑文件所在目录向上逐级查找 node_modules/prettier/bin/prettier.cjs。
+/// 找到后用 `node <该入口> --write <file>` 调用，不依赖 shell 与 PATH 上的
+/// npx。目标项目未安装 prettier 时返回 None（调用方静默跳过格式化）。
+fn find_prettier_bin(file_path: &Path) -> Option<std::path::PathBuf> {
+    let mut dir = file_path.parent()?.to_path_buf();
+    loop {
+        let candidate = dir
+            .join("node_modules")
+            .join("prettier")
+            .join("bin")
+            .join("prettier.cjs");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        if !dir.pop() {
+            return None;
+        }
+    }
+}
+
+/// 对已编辑写入的文件执行 Prettier 格式化，成功后返回格式化后的内容
+/// （用于重建编辑复核上下文）。整个子进程调用放在 spawn_blocking 中，
+/// 不会阻塞 Node.js 主线程；任何一步失败都返回 None，不影响编辑结果。
+async fn format_file_with_prettier(file_path: &Path) -> Option<String> {
+    if !is_prettier_supported_extension(file_path) {
+        return None;
+    }
+    let prettier_bin = find_prettier_bin(file_path)?;
+    let file_path_owned = file_path.to_path_buf();
+
+    tokio::task::spawn_blocking(move || {
+        let mut command = std::process::Command::new("node");
+        command
+            .arg(&prettier_bin)
+            .arg("--write")
+            .arg(&file_path_owned);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            // CREATE_NO_WINDOW：避免格式化时控制台窗口一闪而过。
+            command.creation_flags(0x0800_0000);
+        }
+        let output = command.output().ok()?;
+        if !output.status.success() {
+            return None;
+        }
+
+        // 重新读取格式化后的内容（保持与原编辑路径一致的编码检测）。
+        let bytes = fs::read(&file_path_owned).ok()?;
+        let decoded = decode_text_bytes(&bytes).ok()?;
+        Some(decoded.text)
+    })
+    .await
+    .ok()
+    .flatten()
 }

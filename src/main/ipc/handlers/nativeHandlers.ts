@@ -81,6 +81,10 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   ipcMain.handle("settings:set-yolo-mode", (_event, enabled: boolean) =>
     native.setYoloMode(enabled)
   );
+  ipcMain.handle("settings:get-auto-format", () => native.getAutoFormat());
+  ipcMain.handle("settings:set-auto-format", (_event, enabled: boolean) =>
+    native.setAutoFormat(enabled)
+  );
   ipcMain.handle("settings:get-conversation-modes", (_event, conversationId: string) =>
     native.getConversationModes(conversationId)
   );

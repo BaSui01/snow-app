@@ -781,7 +781,11 @@ impl BashService {
         let wait_result = tokio::select! {
             // Cancellation and timeout are safety-critical. Prefer them over a
             // process that becomes ready at the same time, so a stop request
-            // can never be lost to a successful child.wait() branch.
+            // can never be lost to a successful exit-detection branch.
+            // (Exit detection polls `try_wait`, never `Child::wait()`: on
+            // Windows the latter depends on a shared OS wait-thread pool whose
+            // callbacks can be delayed, and dropping a mid-wait future can
+            // block a tokio worker — which would stall even this timeout.)
             biased;
             _ = cancel_token.cancelled() => {
                 stream_io::kill_process_tree(&mut child).await;
@@ -791,7 +795,7 @@ impl BashService {
                 stream_io::kill_process_tree(&mut child).await;
                 ProcessWaitResult::TimedOut
             }
-            status = child.wait() => match status {
+            status = stream_io::poll_child_exit(&mut child) => match status {
                 Ok(status) => ProcessWaitResult::Completed(status.code().unwrap_or(1)),
                 Err(error) => {
                     stream_io::kill_process_tree(&mut child).await;

@@ -1,5 +1,24 @@
 # Release Notes
 
+## v0.2.10
+
+## New Features
+
+- **Branch Sessions**: The sidebar session menu gains a "Fork" entry, letting you copy an entire session into a new branch without opening it.
+- **Run Summary Bar**: A new run summary bar shows persistent cumulative token and duration statistics.
+- **Global No-Approval Tools**: Global no-approval tool rules are now supported and merged with project-level authorization.
+- **Auto-Format on Edit**: Edited files can optionally be auto-formatted with Prettier, toggleable in settings.
+
+## Improvements
+
+- **No-Op Edit Detection**: Edits that change nothing are detected and skipped, avoiding pointless writes.
+- **Model Selector Keyboard Navigation**: The model selector now supports keyboard navigation.
+- **User Task Message Preserved**: The user task message survives context-compaction resume.
+
+## Bug Fixes
+
+- **Concurrent Lock False Positive**: Fork transactions now use `BEGIN IMMEDIATE`, fixing `SQLITE_BUSY_SNAPSHOT` being misreported as a database lock under concurrent writes.
+
 ## v0.2.9
 
 ## New Features

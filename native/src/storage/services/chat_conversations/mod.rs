@@ -77,11 +77,6 @@ pub struct StoreChatExchangeInput<'a> {
     pub tool_calls_json: &'a str,
     pub directory_id: &'a str,
     pub context_compaction: bool,
-    /// Internal auto-compaction resume mode: `request_messages` is a
-    /// placeholder that must NOT be persisted as normal user messages — the
-    /// handoff is already stored as the latest `context_compaction` boundary.
-    /// The assistant response is still persisted as usual.
-    pub resume_after_compaction: bool,
     pub total_duration_ms: i64,
 }
 
@@ -505,7 +500,6 @@ pub fn store_failed_chat_exchange(
             tool_calls_json: "[]",
             directory_id,
             context_compaction: false,
-            resume_after_compaction,
             total_duration_ms: 0,
         },
     )?;

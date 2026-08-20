@@ -24,9 +24,13 @@ pub struct ConversationContextRequest<'a> {
     /// Internal auto-compaction resume mode: the latest `context_compaction`
     /// boundary message already persisted in the database is the current
     /// context (loaded by `load_context_messages`), so the caller-supplied
-    /// `messages` are treated as a placeholder and never sent to the API nor
-    /// persisted as normal user messages. Prevents the compaction handoff
-    /// from being injected twice into the resume request.
+    /// FIRST `messages` entry is a handoff placeholder and is never sent to
+    /// the API nor persisted as a normal user message. Entries after the
+    /// placeholder are protected messages (the last user task message
+    /// captured before compaction): they are injected into the request and
+    /// persisted as normal user messages so the AI never forgets the task.
+    /// Prevents the compaction handoff from being injected twice into the
+    /// resume request.
     pub resume_after_compaction: bool,
     /// When true, skip loading conversation history and injecting the built-in
     /// system prompt. Used by lightweight single-shot completions such as the

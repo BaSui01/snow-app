@@ -305,13 +305,14 @@ pub fn store_chat_exchange(
                 // Unsuccessful compactions must not create a boundary or a
                 // replacement assistant message; the previous context remains
                 // authoritative.
-                // Resume-after-compaction requests carry a placeholder
-                // `request_messages` whose content is already persisted as the
-                // `context_compaction` boundary — skip re-inserting it as a
-                // normal user message. The assistant response is still
-                // persisted below.
-                if !input.resume_after_compaction {
-                    for (index, message) in input.request_messages.iter().enumerate() {
+                // Successful-path callers pass `prepared_request.current_messages`,
+                // which already exclude the resume handoff placeholder (it is
+                // persisted as the `context_compaction` boundary). The failed
+                // path filters the placeholder in `store_failed_chat_exchange`
+                // before forwarding. Everything received here is persisted as a
+                // normal message — the assistant response is always persisted
+                // below.
+                for (index, message) in input.request_messages.iter().enumerate() {
                         // 所有 user 消息都绑定本次请求的 checkpoint。工具迭代
                         // 中途刷新的待发消息以 [tool, user] 结构进入请求，
                         // 若只绑定首条 user，该消息的 checkpoint 无法落库，
@@ -354,7 +355,6 @@ pub fn store_chat_exchange(
                             persisted_user_message_ids.push(message_id);
                         }
                     }
-                }
 
                 insert_message(
                     &transaction,
@@ -458,9 +458,20 @@ pub fn store_failed_chat_exchange(
             })
         })
         .collect::<Vec<_>>();
-    // Resume-after-compaction requests carry a placeholder message that is
-    // already persisted as the `context_compaction` boundary — it must not be
-    // re-inserted as a normal user message, so allow it through empty.
+    // Resume-after-compaction requests carry the handoff placeholder as their
+    // FIRST message — it is already persisted as the `context_compaction`
+    // boundary and must not be re-inserted as a normal user message. Entries
+    // after the placeholder are protected messages (the last user task message
+    // captured before compaction) and ARE persisted so the task survives later
+    // compactions too.
+    let request_messages = if resume_after_compaction {
+        request_messages.into_iter().skip(1).collect::<Vec<_>>()
+    } else {
+        request_messages
+    };
+    // Resume-after-compaction requests may be left with only the skipped
+    // placeholder (no protected messages), which is fine — allow it through
+    // empty. All other empty requests are rejected.
     if request_messages.is_empty() && !resume_after_compaction {
         return Err(Error::from_reason("Chat message content is required"));
     }

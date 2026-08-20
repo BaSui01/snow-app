@@ -350,6 +350,11 @@ export type RollbackConversationState = ConversationInputRuntimeState & {
 export type CompactionResult = {
   content: string;
   checkpointId?: string;
+  /**
+   * 压缩前最后一条非压缩用户消息（任务原文）。自动压缩后与 handoff
+   * 一起在恢复请求中重新注入，防止 AI 因摘要丢失任务/TODO 状态而忘记任务。
+   */
+  protectedMessages?: { role: "user"; content: string }[];
 };
 
 export type RollbackPreview = {

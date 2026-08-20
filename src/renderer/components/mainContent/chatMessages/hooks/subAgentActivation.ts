@@ -551,9 +551,16 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
 
               // Continue the sub-agent loop from the compacted context. The
               // Rust backend rebuilds context from the compaction boundary
-              // stored in the database for this sub-conversation.
+              // stored in the database for this sub-conversation. The first
+              // message is the handoff placeholder (already persisted as the
+              // context_compaction boundary); protectedMessages（压缩前最后
+              // 一条用户任务原文）紧随其后，由 Rust 注入并持久化，防止子
+              // 代理因摘要丢失任务/TODO 状态而忘记任务。
               return subAgentRunLoop(
-                [{ role: "user", content: subCompactionResult.content }],
+                [
+                  { role: "user", content: subCompactionResult.content },
+                  ...(subCompactionResult.protectedMessages ?? []),
+                ],
                 true
               );
             }

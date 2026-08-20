@@ -226,7 +226,23 @@ export const useCompaction = (ctx: ConversationContextValue) => {
             outputTokens: response.tokenUsage?.outputTokens ?? null,
           }),
         });
-        return { content, checkpointId };
+        // 保护消息：压缩边界会吞掉边界之前的全部历史（含最新任务指令），
+        // handoff 摘要由 AI 自由生成、可能丢失任务原文。提取压缩前最后一
+        // 条非压缩用户消息，随恢复请求重新注入，保证 AI 压缩后不忘记任务
+        // 与 TODO 状态。仅自动压缩注入（手动压缩后用户自己决定下一条消息）。
+        const protectedMessages = isAuto
+          ? (ctx.sessionsRef.current?.[conversationId]?.messages ?? [])
+              .filter(
+                (message) =>
+                  message.role === "user" && !message.isContextCompaction
+              )
+              .slice(-1)
+              .map((message) => ({
+                role: "user" as const,
+                content: message.content,
+              }))
+          : undefined;
+        return { content, checkpointId, protectedMessages };
       } catch (error) {
         // Log failures for BOTH auto and manual compaction. Auto-compaction
         // errors are otherwise suppressed in the UI (isAuto), which made a

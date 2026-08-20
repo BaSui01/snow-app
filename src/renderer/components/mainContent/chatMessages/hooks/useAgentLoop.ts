@@ -835,7 +835,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                   // passed below as a placeholder: the handoff is already
                   // persisted as the context_compaction boundary, so it is
                   // neither sent twice nor re-persisted as a normal user
-                  // message.
+                  // message. protectedMessages（压缩前最后一条用户任务原文）
+                  // 紧随占位之后传入，Rust 会注入请求并持久化，确保 AI
+                  // 压缩后仍记得任务与 TODO 状态。
                   const postCompactionAssistantId =
                     createMessageId("assistant");
                   const postCompactionAssistant: ChatConversationMessage = {
@@ -852,10 +854,13 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                   ]);
                   await runAgentLoop(
                     postCompactionAssistantId,
-                     [{ role: "user", content: compactionResult.content }],
-                     response.conversationId,
-                     compactionResult.checkpointId,
-                     true
+                    [
+                      { role: "user", content: compactionResult.content },
+                      ...(compactionResult.protectedMessages ?? []),
+                    ],
+                    response.conversationId,
+                    compactionResult.checkpointId,
+                    true
                   );
                   return;
                 }

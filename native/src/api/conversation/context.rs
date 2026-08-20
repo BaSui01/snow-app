@@ -131,12 +131,18 @@ pub async fn prepare_context_request(
     let mut current_messages = if request.resume_after_compaction {
         // Resume after auto-compaction: the handoff is already persisted as
         // the latest `context_compaction` boundary message and will be loaded
-        // by `load_context_messages` below. The caller's placeholder message
-        // must NOT be injected here — re-adding the same summary would
-        // duplicate the handoff in the request payload and cause a redundant
-        // copy to be persisted as a normal user message by
-        // `store_chat_exchange`.
-        Vec::new()
+        // by `load_context_messages` below. The caller's FIRST message is the
+        // handoff placeholder and must NOT be injected here — re-adding the
+        // same summary would duplicate the handoff in the request payload and
+        // cause a redundant copy to be persisted as a normal user message by
+        // `store_chat_exchange`. Messages after the placeholder are protected
+        // messages (the last user task message captured before compaction):
+        // they are injected into the request and persisted as normal user
+        // messages so the AI never forgets the task after compaction.
+        normalize_messages(request.messages)
+            .into_iter()
+            .skip(1)
+            .collect()
     } else if request.context_compaction {
         let handoff_prompt = if request.worktree_mode {
             "Create a durable context handoff for the next assistant. You are in WorkTree Mode and the context window was exceeded. Preserve the original request branch, the confirmed repository status, the selected development branch or worktree, completed file changes, pending changes, build status, commit status, and the exact next Git-safe steps. Output ONLY the handoff document in Markdown. Do not call tools, address the user, or declare the work complete."

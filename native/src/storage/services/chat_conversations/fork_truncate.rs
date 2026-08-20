@@ -15,8 +15,15 @@ pub fn fork_conversation(
     let mut connection = database::open_connection(database_path)
     .map_err(|error| database::database_error(database_path, "fork conversation", error))?;
 
+    // Reserve the write transaction before reading the source conversation.
+    // A deferred transaction would first establish a read snapshot and then
+    // upgrade on the first INSERT. If a concurrent writer commits between
+    // those steps (e.g. a cancelled stream finishing its persist), WAL reports
+    // SQLITE_BUSY_SNAPSHOT as "database is locked" even though that writer has
+    // already committed. BEGIN IMMEDIATE waits at transaction start and
+    // guarantees all following reads and inserts share one writable snapshot.
     let transaction = connection
-        .transaction()
+        .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|error| database::database_error(database_path, "fork conversation", error))?;
 
     // Load source conversation metadata

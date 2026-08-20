@@ -27,6 +27,7 @@ export function PinnedSection({
     refreshConversations,
     updateConversationSummary,
     handleSelectConversation,
+    handleForkConversation,
     handleNewChat,
     activeConversationId,
     abortConversation,
@@ -359,6 +360,9 @@ export function PinnedSection({
               onSetEmoji={(emoji) => handleSetEmoji(conversation, emoji)}
               onDelete={() => void handleDelete(conversation)}
               onExport={(format) => handleExport(conversation, format)}
+              onFork={() =>
+                void handleForkConversation(conversation.conversationId, "")
+              }
               onSelect={() =>
                 void handleSelectConversation(
                   conversation.conversationId,

@@ -126,6 +126,7 @@ export function ChatsSection({
     refreshConversations,
     updateConversationSummary,
     handleSelectConversation,
+    handleForkConversation,
     handleNewChat,
     activeConversationId,
     abortConversation,
@@ -750,6 +751,11 @@ export function ChatsSection({
       format,
       fileName
     );
+  };
+
+  /** 从侧边栏直接创建分支（复制整个会话），无需先打开会话 */
+  const handleFork = (conversation: ChatConversationRecord): void => {
+    void handleForkConversation(conversation.conversationId, "");
   };
 
   const handleEnterMultiSelect = (): void => {
@@ -1986,6 +1992,7 @@ export function ChatsSection({
                               onExport={(format) =>
                                 handleExport(conversation, format)
                               }
+                              onFork={() => handleFork(conversation)}
                               isArchiving={archivingIds.has(
                                 conversation.conversationId
                               )}

@@ -10,6 +10,7 @@ import {
   SmilePlus,
   ListChecks,
   Archive,
+  GitFork,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -31,6 +32,8 @@ type ChatItemMenuProps = {
   /** 确认删除；deleteImages=true 表示同时级联删除图库图片 */
   onDelete: (deleteImages: boolean) => void;
   onExport: (format: ExportFormat) => void;
+  /** 创建分支会话（复制整个会话到新的分支） */
+  onFork?: () => void;
   /** 归档会话（置顶会话不提供归档入口，由父组件控制不传入） */
   onArchive?: () => void;
   onEnterMultiSelect?: () => void;
@@ -50,6 +53,7 @@ export function ChatItemMenu({
   onSetEmoji,
   onDelete,
   onExport,
+  onFork,
   onArchive,
   onEnterMultiSelect,
   onOpenChange,
@@ -246,6 +250,12 @@ export function ChatItemMenu({
     setShowConfirm(false);
   };
 
+  const handleFork = (): void => {
+    onFork?.();
+    setIsButtonOpen(false);
+    onContextMenuCloseRef.current?.();
+  };
+
   const handleExportClick = (): void => {
     setShowExport((prev) => !prev);
     setShowConfirm(false);
@@ -365,6 +375,19 @@ export function ChatItemMenu({
                       className="chat-item-menu-sub-arrow"
                     />
                   </button>
+                  {onFork ? (
+                    <button
+                      type="button"
+                      className="chat-item-menu-item"
+                      onClick={handleFork}
+                      role="menuitem"
+                    >
+                      <GitFork size={13} />
+                      <span>
+                        {t("chat.forkConversation", { defaultValue: "Fork" })}
+                      </span>
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     ref={exportTriggerRef}

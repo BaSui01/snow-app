@@ -43,6 +43,8 @@ type ChatItemProps = {
   /** 确认删除；deleteImages=true 表示同时级联删除图库图片 */
   onDelete: (deleteImages: boolean) => void;
   onExport: (format: ExportFormat) => void;
+  /** 创建分支会话（复制整个会话到新的分支） */
+  onFork?: () => void;
   /** 归档会话（置顶会话不传入，不提供归档入口） */
   onArchive?: () => void;
   /** 归档进行中（含 VACUUM 收缩文件阶段）：菜单按钮显示 loading，防止重复操作 */
@@ -71,6 +73,7 @@ export function ChatItem({
   onSetEmoji,
   onDelete,
   onExport,
+  onFork,
   onArchive,
   isArchiving = false,
   onEnterMultiSelect,
@@ -444,6 +447,7 @@ export function ChatItem({
               onSetEmoji={onSetEmoji}
               onDelete={onDelete}
               onExport={onExport}
+              onFork={onFork}
               onArchive={onArchive}
               onEnterMultiSelect={onEnterMultiSelect}
               onOpenChange={setIsMenuOpen}

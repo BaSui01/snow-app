@@ -38,7 +38,12 @@ pub fn list_chat_conversations(
                        '',
                        0,
                        COALESCE(emoji, ''),
-                       api_profile_name
+                       api_profile_name,
+                       conversation.run_input_tokens,
+                       conversation.run_output_tokens,
+                       conversation.run_cache_creation_input_tokens,
+                       conversation.run_cache_read_input_tokens,
+                       COALESCE(conversation.last_run_duration_ms, 0)
                   FROM chat_conversations AS conversation
                  WHERE directory_id = ?1
                    AND status = 'active'
@@ -106,7 +111,12 @@ pub fn list_chat_conversations_paginated(
                        '',
                        0,
                        COALESCE(emoji, ''),
-                       api_profile_name
+                       api_profile_name,
+                       conversation.run_input_tokens,
+                       conversation.run_output_tokens,
+                       conversation.run_cache_creation_input_tokens,
+                       conversation.run_cache_read_input_tokens,
+                       COALESCE(conversation.last_run_duration_ms, 0)
                   FROM chat_conversations AS conversation
                  WHERE directory_id = ?1
                    AND status = 'active'
@@ -177,7 +187,12 @@ pub fn list_chat_conversations_by_ids(
                        '',
                        0,
                        COALESCE(emoji, ''),
-                       api_profile_name
+                       api_profile_name,
+                       conversation.run_input_tokens,
+                       conversation.run_output_tokens,
+                       conversation.run_cache_creation_input_tokens,
+                       conversation.run_cache_read_input_tokens,
+                       COALESCE(conversation.last_run_duration_ms, 0)
                   FROM chat_conversations AS conversation
                  WHERE conversation_id IN ({placeholders})
                    AND status = 'active'
@@ -322,7 +337,12 @@ pub fn list_pinned_conversations(
                        '',
                        0,
                        COALESCE(emoji, ''),
-                       api_profile_name
+                       api_profile_name,
+                       conversation.run_input_tokens,
+                       conversation.run_output_tokens,
+                       conversation.run_cache_creation_input_tokens,
+                       conversation.run_cache_read_input_tokens,
+                       COALESCE(conversation.last_run_duration_ms, 0)
                   FROM chat_conversations AS conversation
                  WHERE directory_id = ?1
                    AND status = 'pin'
@@ -374,7 +394,12 @@ pub fn get_chat_conversation(
                             COALESCE(sub_agent.error_message, ''),
                             COALESCE(conversation.total_duration_ms, 0),
                             COALESCE(conversation.emoji, ''),
-                            COALESCE(conversation.api_profile_name, '')
+                            COALESCE(conversation.api_profile_name, ''),
+                            COALESCE(conversation.run_input_tokens, 0),
+                            COALESCE(conversation.run_output_tokens, 0),
+                            COALESCE(conversation.run_cache_creation_input_tokens, 0),
+                            COALESCE(conversation.run_cache_read_input_tokens, 0),
+                            COALESCE(conversation.last_run_duration_ms, 0)
                        FROM chat_conversations AS conversation
                        LEFT JOIN sub_agent_sessions AS sub_agent
                          ON sub_agent.conversation_id = conversation.conversation_id

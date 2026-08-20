@@ -1138,6 +1138,11 @@ export function ChatsSection({
           cacheCreationInputTokens: 0,
           cacheReadInputTokens: 0,
           totalDurationMs: 0,
+          runInputTokens: 0,
+          runOutputTokens: 0,
+          runCacheCreationInputTokens: 0,
+          runCacheReadInputTokens: 0,
+          lastRunDurationMs: 0,
           emoji: "",
         };
 

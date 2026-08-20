@@ -205,6 +205,34 @@ pub fn set_conversation_runtime_config(
     )
 }
 
+pub fn set_conversation_run_stats(
+    conversation_id: &str,
+    run_input_tokens: i64,
+    run_output_tokens: i64,
+    run_cache_creation_input_tokens: i64,
+    run_cache_read_input_tokens: i64,
+    last_run_duration_ms: i64,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::set_conversation_run_stats(
+        &database_path,
+        conversation_id,
+        run_input_tokens,
+        run_output_tokens,
+        run_cache_creation_input_tokens,
+        run_cache_read_input_tokens,
+        last_run_duration_ms,
+    )
+}
+
+pub fn reset_conversation_run_stats(conversation_id: &str) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::reset_conversation_run_stats(
+        &database_path,
+        conversation_id,
+    )
+}
+
 pub fn get_request_logging() -> Result<bool> {
     let database_path = ensure_database_file()?;
     services::request_logging_settings::get_request_logging(&database_path)

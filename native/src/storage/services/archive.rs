@@ -30,7 +30,7 @@ use super::super::{ChatConversationPage, ChatConversationRecord};
 const MAX_VARIABLES: usize = 400;
 
 /// 与运行库 chat_conversations 完全一致的列（不含归档时间列）。
-const CONVERSATION_COLUMNS: &str = "id, conversation_id, title, summary, last_message_preview, message_count, model, api_profile_name, thinking_strength, responses_fast_mode, last_response_id, status, input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, total_duration_ms, directory_id, forked_from_conversation_id, fork_message_count, emoji, plan_mode, goal_mode, worktree_mode, goal_mode_token_budget, created_at, updated_at";
+const CONVERSATION_COLUMNS: &str = "id, conversation_id, title, summary, last_message_preview, message_count, model, api_profile_name, thinking_strength, responses_fast_mode, last_response_id, status, input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, total_duration_ms, run_input_tokens, run_output_tokens, run_cache_creation_input_tokens, run_cache_read_input_tokens, last_run_duration_ms, directory_id, forked_from_conversation_id, fork_message_count, emoji, plan_mode, goal_mode, worktree_mode, goal_mode_token_budget, created_at, updated_at";
 
 const MESSAGE_COLUMNS: &str = "id, message_id, conversation_id, role, content, model, response_id, checkpoint_id, status, raw_json, thinking, thinking_blocks_json, tool_calls_json, created_at";
 
@@ -95,6 +95,11 @@ pub(crate) fn create_archive_schema(connection: &Connection) -> rusqlite::Result
            cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
            cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
            total_duration_ms INTEGER NOT NULL DEFAULT 0,
+           run_input_tokens INTEGER NOT NULL DEFAULT 0,
+           run_output_tokens INTEGER NOT NULL DEFAULT 0,
+           run_cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
+           run_cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
+           last_run_duration_ms INTEGER NOT NULL DEFAULT 0,
            directory_id TEXT NOT NULL DEFAULT '',
            forked_from_conversation_id TEXT NOT NULL DEFAULT '',
            fork_message_count INTEGER NOT NULL DEFAULT 0,
@@ -179,6 +184,14 @@ fn migrate_archive_chat_conversations(connection: &Connection) -> rusqlite::Resu
         ("goal_mode", "INTEGER"),
         ("worktree_mode", "INTEGER"),
         ("goal_mode_token_budget", "INTEGER"),
+        ("run_input_tokens", "INTEGER NOT NULL DEFAULT 0"),
+        ("run_output_tokens", "INTEGER NOT NULL DEFAULT 0"),
+        (
+            "run_cache_creation_input_tokens",
+            "INTEGER NOT NULL DEFAULT 0",
+        ),
+        ("run_cache_read_input_tokens", "INTEGER NOT NULL DEFAULT 0"),
+        ("last_run_duration_ms", "INTEGER NOT NULL DEFAULT 0"),
     ] {
         if !columns.iter().any(|column| column == name) {
             connection.execute(
@@ -552,7 +565,12 @@ pub fn list_archived_conversations_paginated(
                        '',
                        0,
                        COALESCE(emoji, ''),
-                       api_profile_name
+                       api_profile_name,
+                       conversation.run_input_tokens,
+                       conversation.run_output_tokens,
+                       conversation.run_cache_creation_input_tokens,
+                       conversation.run_cache_read_input_tokens,
+                       COALESCE(conversation.last_run_duration_ms, 0)
                   FROM chat_conversations AS conversation
                  WHERE directory_id = ?1
                    AND status = 'active'
@@ -608,6 +626,11 @@ fn map_archived_conversation_row(
         sub_agent_error: row.get(21)?,
         total_duration_ms: row.get(22)?,
         emoji: row.get(23)?,
+        run_input_tokens: row.get(25)?,
+        run_output_tokens: row.get(26)?,
+        run_cache_creation_input_tokens: row.get(27)?,
+        run_cache_read_input_tokens: row.get(28)?,
+        last_run_duration_ms: row.get(29)?,
     })
 }
 

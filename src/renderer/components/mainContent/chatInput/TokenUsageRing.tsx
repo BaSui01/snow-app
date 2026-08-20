@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useI18n } from "../../../i18n";
+import { formatTokens } from "../../../utils/formatTokens";
 import type { TokenUsage } from "../../../../preload";
 
 type TokenUsageRingProps = {
@@ -109,29 +110,8 @@ export const TokenUsageRing = ({
     return null;
   }
 
-  // tooltip 中的 token 数值用 K / M / B / T / Q / Qi 紧凑单位显示，便于快速阅读
-  const formatTokens = (value: number): string => {
-    if (value < 1000) {
-      return value.toLocaleString(locale);
-    }
-    const units: Array<[number, string]> = [
-      [1_000_000_000_000_000_000, "Qi"],
-      [1_000_000_000_000_000, "Q"],
-      [1_000_000_000_000, "T"],
-      [1_000_000_000, "B"],
-      [1_000_000, "M"],
-      [1_000, "K"],
-    ];
-    for (const [threshold, suffix] of units) {
-      if (value >= threshold) {
-        const scaled = value / threshold;
-        const decimals = scaled >= 100 ? 0 : scaled >= 10 ? 1 : 2;
-        return `${scaled.toFixed(decimals)}${suffix}`;
-      }
-    }
-    return value.toLocaleString(locale);
-  };
-  // 缓存命中率保留一位小数，整数值不带小数位
+  // tooltip 中的 token 数值用 K / M / B / T / Q / Qi 紧凑单位显示（共享
+  // formatTokens 实现，见 utils/formatTokens.ts），便于快速阅读
   const formatPercent = (value: number): string => {
     const rounded = Math.round(value * 10) / 10;
     return `${rounded.toLocaleString(locale, {
@@ -147,7 +127,7 @@ export const TokenUsageRing = ({
           {t("chatInput.tokenUsage.input")}
         </span>
         <span className="token-usage-value">
-          {formatTokens(segments.nonCachedInput)}
+          {formatTokens(segments.nonCachedInput, locale)}
         </span>
       </div>
       <div className="token-usage-tooltip-row">
@@ -156,7 +136,7 @@ export const TokenUsageRing = ({
           {t("chatInput.tokenUsage.output")}
         </span>
         <span className="token-usage-value">
-          {formatTokens(segments.output)}
+          {formatTokens(segments.output, locale)}
         </span>
       </div>
       {segments.cacheCreation > 0 && (
@@ -166,7 +146,7 @@ export const TokenUsageRing = ({
             {t("chatInput.tokenUsage.cacheWrite")}
           </span>
           <span className="token-usage-value">
-            {formatTokens(segments.cacheCreation)}
+            {formatTokens(segments.cacheCreation, locale)}
           </span>
         </div>
       )}
@@ -177,7 +157,7 @@ export const TokenUsageRing = ({
             {t("chatInput.tokenUsage.cacheHit")}
           </span>
           <span className="token-usage-value">
-            {formatTokens(segments.cacheRead)}
+            {formatTokens(segments.cacheRead, locale)}
           </span>
         </div>
       )}
@@ -187,7 +167,7 @@ export const TokenUsageRing = ({
           {t("chatInput.tokenUsage.total")}
         </span>
         <span className="token-usage-value">
-          {formatTokens(segments.total)}
+          {formatTokens(segments.total, locale)}
         </span>
       </div>
       {segments.cacheRead > 0 && (
@@ -206,7 +186,7 @@ export const TokenUsageRing = ({
             {t("chatInput.tokenUsage.context")}
           </span>
           <span className="token-usage-value">
-            {formatTokens(segments.max)}
+            {formatTokens(segments.max, locale)}
           </span>
         </div>
       )}

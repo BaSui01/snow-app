@@ -381,13 +381,32 @@ export const useRollback = (ctx: ConversationContextValue) => {
           // 失败/中断轮次没有 responseId，用持久化用户消息 ID 作为边界，
           // 从该行开始删除该轮及之后的所有消息。
           ctx.updateSessionField(key, "tokenUsage", null);
+          ctx.updateSessionField(key, "runTokenUsage", null);
+          ctx.updateSessionField(key, "conversationTokenUsage", null);
+          ctx.updateSessionField(key, "lastRunDurationMs", 0);
           await window.snow.truncateConversationFromMessage(
             convId,
             persistedMessageId
           );
+          // 回滚后累计统计已无对应消息：清零 DB（覆盖而非累加），
+          // 避免重启后摘要条回显与截断后的消息列表不一致。
+          void window.snow
+            .resetConversationRunStats(convId)
+            .catch(() => {
+              // 清零失败不阻塞回滚
+            });
         } else if (convId && responseId) {
           ctx.updateSessionField(key, "tokenUsage", null);
+          ctx.updateSessionField(key, "runTokenUsage", null);
+          ctx.updateSessionField(key, "conversationTokenUsage", null);
+          ctx.updateSessionField(key, "lastRunDurationMs", 0);
           await window.snow.truncateConversation(convId, responseId);
+          // 回滚后累计统计已无对应消息：清零 DB（覆盖而非累加）。
+          void window.snow
+            .resetConversationRunStats(convId)
+            .catch(() => {
+              // 清零失败不阻塞回滚
+            });
         }
       } catch (error) {
         ctx.setRollbackPreview({

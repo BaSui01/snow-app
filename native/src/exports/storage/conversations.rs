@@ -99,6 +99,42 @@ pub async fn set_conversation_runtime_config(
     .map_err(map_spawn_error)?
 }
 
+/// 持久化最近一次 AI run 的累计用量与墙钟总耗时（run 摘要条回显用）。
+#[napi]
+pub async fn set_conversation_run_stats(
+    conversation_id: String,
+    run_input_tokens: i64,
+    run_output_tokens: i64,
+    run_cache_creation_input_tokens: i64,
+    run_cache_read_input_tokens: i64,
+    last_run_duration_ms: i64,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::set_conversation_run_stats(
+            &conversation_id,
+            run_input_tokens,
+            run_output_tokens,
+            run_cache_creation_input_tokens,
+            run_cache_read_input_tokens,
+            last_run_duration_ms,
+        )
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+/// 清零会话的累计 run 统计（回滚截断消息后调用）。
+#[napi]
+pub async fn reset_conversation_run_stats(
+    conversation_id: String,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::reset_conversation_run_stats(&conversation_id)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
 #[napi]
 pub async fn list_chat_conversations(
     directory_id: String,

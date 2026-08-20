@@ -28,6 +28,12 @@ export type ChatConversationRecord = {
   cacheCreationInputTokens: number;
   cacheReadInputTokens: number;
   totalDurationMs: number;
+  /** 最近一次 AI run 的累计用量与墙钟总耗时（run 摘要条回显用）。 */
+  runInputTokens: number;
+  runOutputTokens: number;
+  runCacheCreationInputTokens: number;
+  runCacheReadInputTokens: number;
+  lastRunDurationMs: number;
   emoji: string;
 };
 

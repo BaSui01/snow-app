@@ -77,6 +77,7 @@ pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<(
     migrate_system_prompt_scope(connection)?;
     migrate_chat_conversations_modes(connection)?;
     migrate_chat_conversations_runtime_config(connection)?;
+    migrate_chat_conversations_run_stats(connection)?;
     migrate_sub_agent_configs_project_id(connection)?;
     migrate_sub_agent_configs_model(connection)?;
     migrate_scheduled_tasks_pre_script(connection)?;
@@ -607,6 +608,40 @@ fn migrate_chat_conversations_runtime_config(connection: &Connection) -> rusqlit
             "ALTER TABLE chat_conversations ADD COLUMN responses_fast_mode INTEGER",
             [],
         )?;
+    }
+
+    Ok(())
+}
+
+/// Adds the run-level summary columns (cumulative token usage of the latest
+/// AI run and its wall-clock duration) to databases created before the run
+/// summary bar existed. Older rows keep the NOT NULL DEFAULT 0 values, so
+/// they simply render without duration/token summary data until the next
+/// completed run writes fresh stats.
+fn migrate_chat_conversations_run_stats(connection: &Connection) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA table_info(chat_conversations)")?;
+    let columns: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    for (name, definition) in [
+        ("run_input_tokens", "INTEGER NOT NULL DEFAULT 0"),
+        ("run_output_tokens", "INTEGER NOT NULL DEFAULT 0"),
+        (
+            "run_cache_creation_input_tokens",
+            "INTEGER NOT NULL DEFAULT 0",
+        ),
+        ("run_cache_read_input_tokens", "INTEGER NOT NULL DEFAULT 0"),
+        ("last_run_duration_ms", "INTEGER NOT NULL DEFAULT 0"),
+    ] {
+        if !columns.iter().any(|column| column == name) {
+            connection.execute(
+                &format!(
+                    "ALTER TABLE chat_conversations ADD COLUMN {name} {definition}"
+                ),
+                [],
+            )?;
+        }
     }
 
     Ok(())

@@ -739,6 +739,12 @@ export type ChatConversationRecord = {
   cacheCreationInputTokens: number;
   cacheReadInputTokens: number;
   totalDurationMs: number;
+  /** 最近一次 AI run 的累计用量与墙钟总耗时（run 摘要条回显用）。 */
+  runInputTokens: number;
+  runOutputTokens: number;
+  runCacheCreationInputTokens: number;
+  runCacheReadInputTokens: number;
+  lastRunDurationMs: number;
 };
 
 export type ChatConversationPage = {
@@ -1300,6 +1306,15 @@ export type NativeBridge = {
     thinkingStrength: string | null,
     responsesFastMode: boolean | null
   ) => Promise<void>;
+  setConversationRunStats: (
+    conversationId: string,
+    runInputTokens: number,
+    runOutputTokens: number,
+    runCacheCreationInputTokens: number,
+    runCacheReadInputTokens: number,
+    lastRunDurationMs: number
+  ) => Promise<void>;
+  resetConversationRunStats: (conversationId: string) => Promise<void>;
   getRequestLogging: () => Promise<boolean>;
   setRequestLogging: (enabled: boolean) => Promise<void>;
   getRequestLoggingExpiry: () => Promise<number>;

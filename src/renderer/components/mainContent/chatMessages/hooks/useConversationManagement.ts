@@ -309,6 +309,8 @@ export const useConversationManagement = (
                   goalMode: storedGoalMode,
                   goalModeTokenBudget: storedBudget,
                   subAgentTerminated: isTerminatedSubAgent || undefined,
+                  runTokenUsage: null,
+                  lastRunDurationMs: 0,
                 });
               }
               ctx.setSessions((prev) => {
@@ -338,6 +340,18 @@ export const useConversationManagement = (
                     runTtftMs: 0,
                     baselineCheckpointId,
                     streamStartedAt: 0,
+                    // 历史会话回显 DB 持久化的会话累计（token + 耗时）。
+                    runTokenUsage: null,
+                    conversationTokenUsage: {
+                      inputTokens: conversationRecord?.runInputTokens ?? 0,
+                      outputTokens: conversationRecord?.runOutputTokens ?? 0,
+                      cacheCreationInputTokens:
+                        conversationRecord?.runCacheCreationInputTokens ?? 0,
+                      cacheReadInputTokens:
+                        conversationRecord?.runCacheReadInputTokens ?? 0,
+                    },
+                    lastRunDurationMs:
+                      conversationRecord?.lastRunDurationMs ?? 0,
                   },
                 };
               });

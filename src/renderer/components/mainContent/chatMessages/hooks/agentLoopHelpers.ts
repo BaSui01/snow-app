@@ -1,4 +1,4 @@
-import type { ResponsesApiStreamChunk } from "../../../../../preload/types/api";
+import type { ResponsesApiStreamChunk, TokenUsage } from "../../../../../preload/types/api";
 import type {
   ConversationContextValue,
   ChatConversationMessage,
@@ -129,7 +129,9 @@ export const createAwaitHookDecision = (ctx: ConversationContextValue) => {
 // Streaming run metrics
 // ---------------------------------------------------------------------------
 
-/** Reset all cumulative metrics when a new user-triggered run starts. */
+/** Reset all cumulative metrics when a new user-triggered run starts.
+ *  `conversationTokenUsage` / `lastRunDurationMs` are intentionally NOT
+ *  reset: they accumulate across every run of the conversation. */
 export const resetRunStreamMetrics = (
   ctx: ConversationContextValue,
   sessionKey: string
@@ -138,6 +140,11 @@ export const resetRunStreamMetrics = (
   ctx.updateSessionField(sessionKey, "streamElapsedMs", 0);
   ctx.updateSessionField(sessionKey, "streamTtftMs", 0);
   ctx.updateSessionField(sessionKey, "runTtftMs", 0);
+  ctx.updateSessionField(sessionKey, "runTokenUsage", null);
+  const refSession = ctx.sessionsRefData.current.get(sessionKey);
+  if (refSession) {
+    refSession.runTokenUsage = null;
+  }
 };
 
 /** Finalize the previous iteration and prepare counters for the next request. */
@@ -148,6 +155,68 @@ export const beginStreamMetricsIteration = (
   ctx.updateSessionField(sessionKey, "streamTokenCount", 0);
   ctx.updateSessionField(sessionKey, "streamElapsedMs", 0);
   ctx.updateSessionField(sessionKey, "streamTtftMs", 0);
+};
+
+/** Accumulate a single-request usage into the run-level totals. Each
+ *  response.tokenUsage covers one request only, so the run summary needs
+ *  the sum across every iteration of the agent loop. */
+export const accumulateRunTokenUsage = (
+  ctx: ConversationContextValue,
+  sessionKey: string,
+  usage: TokenUsage | null | undefined
+): void => {
+  if (!usage) {
+    return;
+  }
+  const current = ctx.sessionsRef.current?.[sessionKey]?.runTokenUsage;
+  const next: TokenUsage = {
+    inputTokens: (current?.inputTokens ?? 0) + (usage.inputTokens ?? 0),
+    outputTokens: (current?.outputTokens ?? 0) + (usage.outputTokens ?? 0),
+    cacheCreationInputTokens:
+      (current?.cacheCreationInputTokens ?? 0) +
+      (usage.cacheCreationInputTokens ?? 0),
+    cacheReadInputTokens:
+      (current?.cacheReadInputTokens ?? 0) + (usage.cacheReadInputTokens ?? 0),
+  };
+  ctx.updateSessionField(sessionKey, "runTokenUsage", next);
+  // 同步写 ref 镜像：state 的 setState 异步，收尾（finally）同步读取时
+  // 可能滞后一个渲染周期，ref 版本保证持久化拿到完整累计值。
+  const refSession = ctx.sessionsRefData.current.get(sessionKey);
+  if (refSession) {
+    refSession.runTokenUsage = next;
+  }
+};
+
+/** Fold a finished run's usage + wall-clock duration into the conversation's
+ *  cumulative totals (in-memory mirror of the persisted run_* columns).
+ *  Called once when the agent loop ends; `runUsage` must be the run-level
+ *  ref mirror so it is complete even when the state update lags. */
+export const accumulateConversationRunStats = (
+  ctx: ConversationContextValue,
+  sessionKey: string,
+  runUsage: TokenUsage | null | undefined,
+  runDurationMs: number
+): void => {
+  const current = ctx.sessionsRef.current?.[sessionKey]?.conversationTokenUsage;
+  ctx.updateSessionField(sessionKey, "conversationTokenUsage", {
+    inputTokens:
+      (current?.inputTokens ?? 0) + (runUsage?.inputTokens ?? 0),
+    outputTokens:
+      (current?.outputTokens ?? 0) + (runUsage?.outputTokens ?? 0),
+    cacheCreationInputTokens:
+      (current?.cacheCreationInputTokens ?? 0) +
+      (runUsage?.cacheCreationInputTokens ?? 0),
+    cacheReadInputTokens:
+      (current?.cacheReadInputTokens ?? 0) +
+      (runUsage?.cacheReadInputTokens ?? 0),
+  });
+  const currentDuration =
+    ctx.sessionsRef.current?.[sessionKey]?.lastRunDurationMs ?? 0;
+  ctx.updateSessionField(
+    sessionKey,
+    "lastRunDurationMs",
+    currentDuration + Math.max(0, runDurationMs)
+  );
 };
 
 // ---------------------------------------------------------------------------

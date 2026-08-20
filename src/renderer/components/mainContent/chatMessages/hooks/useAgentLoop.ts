@@ -25,6 +25,8 @@ import {
   toNonBlockingRecord,
 } from "./hookOutcome";
 import {
+  accumulateConversationRunStats,
+  accumulateRunTokenUsage,
   beginStreamMetricsIteration,
   createAwaitHookDecision,
   createIsRunCancelled,
@@ -250,7 +252,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       // timestamp instead of the backend's per-iteration streamElapsedMs
       // (which resets on every createResponseStream call), so the timer
       // keeps ticking across iterations and survives conversation switches.
-      ctx.updateSessionField(sessionKey, "streamStartedAt", Date.now());
+      // runStartedAt mirrors it locally so the finally block can compute the
+      // finished run's duration even after the field is reset to 0.
+      const runStartedAt = Date.now();
+      ctx.updateSessionField(sessionKey, "streamStartedAt", runStartedAt);
       ctx.addStreamingId(sessionKey);
       ctx.updateSessionMessages(sessionKey, (currentMessages) => [
         ...currentMessages,
@@ -290,6 +295,11 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             cacheCreationInputTokens: 0,
             cacheReadInputTokens: 0,
             totalDurationMs: 0,
+            runInputTokens: 0,
+            runOutputTokens: 0,
+            runCacheCreationInputTokens: 0,
+            runCacheReadInputTokens: 0,
+            lastRunDurationMs: 0,
             emoji: "",
           },
           timestamp: Date.now(),
@@ -683,6 +693,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             "tokenUsage",
             response.tokenUsage
           );
+          // response.tokenUsage covers this request only; keep a run-level
+          // sum so the summary bar can show the whole loop's consumption.
+          accumulateRunTokenUsage(ctx, effectiveKey, response.tokenUsage);
         }
 
         // A final incomplete-like response is terminal for this model
@@ -1400,6 +1413,36 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         })
         .finally(() => {
           const ref = ctx.sessionsRefData.current.get(finalSessionKey);
+
+          // AI 流程完全结束：把本次 run 的耗时与累计 token 累加进会话
+          // 统计（内存 + DB 双向，展示的是整个会话的累计值）。耗时用
+          // 本地 runStartedAt 计算，不受 catch 分支提前清零的影响。
+          const runDurationMs = Math.max(0, Date.now() - runStartedAt);
+          const runUsage =
+            ctx.sessionsRefData.current.get(finalSessionKey)?.runTokenUsage;
+          accumulateConversationRunStats(
+            ctx,
+            finalSessionKey,
+            runUsage,
+            runDurationMs
+          );
+          // 持久化（Rust 端累加）：重启后打开会话仍可完整回显。
+          // 读取 ref 镜像的累计值（setState 异步可能滞后一拍）。
+          // PENDING 会话尚未迁移出真实 id，跳过持久化。
+          if (finalSessionKey !== PENDING_SESSION_KEY) {
+            void window.snow
+              .setConversationRunStats(
+                finalSessionKey,
+                runUsage?.inputTokens ?? 0,
+                runUsage?.outputTokens ?? 0,
+                runUsage?.cacheCreationInputTokens ?? 0,
+                runUsage?.cacheReadInputTokens ?? 0,
+                runDurationMs
+              )
+              .catch(() => {
+                // 持久化失败不阻塞收尾
+              });
+          }
 
           // Execute onStop hooks (fire-and-forget). This is the single
           // convergence point for ALL stop scenarios: natural completion,

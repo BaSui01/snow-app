@@ -239,6 +239,18 @@ export type ConversationSessionState = {
    *  rollback). Independent of the backend's per-iteration streamElapsedMs
    *  (which resets on every new createResponseStream call). */
   streamStartedAt: number;
+  /** Cumulative token usage across every model iteration of the current run
+   *  (each response.tokenUsage covers a single request). Reset to null when
+   *  a new run starts; accumulated into `conversationTokenUsage` at run end. */
+  runTokenUsage: TokenUsage | null;
+  /** Whole-conversation cumulative token usage: every finished run's
+   *  runTokenUsage is added here (mirrors the persisted run_* columns).
+   *  Used by the run summary bar after the loop ends. */
+  conversationTokenUsage: TokenUsage | null;
+  /** Whole-conversation cumulative wall-clock duration (ms): every finished
+   *  run's duration is added here (mirrors the persisted last_run_duration_ms
+   *  column). 0 until the first run has completed. */
+  lastRunDurationMs: number;
   /** External-vision textify progress, driven by `ResponsesApiStreamChunk.
    *  visionStatus` events. Set while the backend describes user images with
    *  the external vision model; cleared when the textify pass finishes
@@ -291,6 +303,11 @@ export type ConversationSessionRef = {
   childSubAgentIds: Set<string>;
   /** Whether Plan Mode was active when this session was last used. */
   planMode: boolean;
+  /** 本次 run 的累计 token 用量（ref 同步镜像，供收尾持久化读取；
+   *  state 的 runTokenUsage 因 setState 异步可能滞后一个渲染周期）。 */
+  runTokenUsage: TokenUsage | null;
+  /** 本次 run 的墙钟总耗时 ms（ref 同步镜像）。 */
+  lastRunDurationMs: number;
   /** Whether WorkTree Mode was active when this session was last used. */
   worktreeMode: boolean;
   /** Whether Goal Mode was active when this session was last used. */
@@ -728,6 +745,13 @@ export type UseChatConversationResult = {
    *  starts. Drives the accumulating elapsed timer in StreamMetrics so it
    *  survives conversation switches between parallel streaming sessions. */
   streamStartedAt: number;
+  /** Cumulative token usage across every model iteration of the finished run
+   *  (fall back to `tokenUsage` for sessions loaded from the DB). */
+  runTokenUsage: TokenUsage | null;
+  /** Whole-conversation cumulative token usage (every finished run summed). */
+  conversationTokenUsage: TokenUsage | null;
+  /** Whole-conversation cumulative wall-clock duration (ms). */
+  lastRunDurationMs: number;
   /** External-vision textify progress for the active conversation. Present
    *  while the backend describes user images with the external vision model. */
   visionAnalysis: VisionAnalysisState | undefined;

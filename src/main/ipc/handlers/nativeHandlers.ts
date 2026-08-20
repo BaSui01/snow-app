@@ -123,6 +123,29 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         responsesFastMode
       )
   );
+  ipcMain.handle(
+    "settings:set-conversation-run-stats",
+    (
+      _event,
+      conversationId: string,
+      runInputTokens: number,
+      runOutputTokens: number,
+      runCacheCreationInputTokens: number,
+      runCacheReadInputTokens: number,
+      lastRunDurationMs: number
+    ) =>
+      native.setConversationRunStats(
+        conversationId,
+        runInputTokens,
+        runOutputTokens,
+        runCacheCreationInputTokens,
+        runCacheReadInputTokens,
+        lastRunDurationMs
+      )
+  );
+  ipcMain.handle("settings:reset-conversation-run-stats", (_event, conversationId: string) =>
+    native.resetConversationRunStats(conversationId)
+  );
   ipcMain.handle("settings:get-request-logging", () =>
     native.getRequestLogging()
   );

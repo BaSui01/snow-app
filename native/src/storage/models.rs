@@ -572,6 +572,12 @@ pub struct ChatConversationRecord {
     pub cache_creation_input_tokens: i64,
     pub cache_read_input_tokens: i64,
     pub total_duration_ms: i64,
+    /// 最近一次 AI run 的累计用量与墙钟总耗时（run 摘要条回显用）。
+    pub run_input_tokens: i64,
+    pub run_output_tokens: i64,
+    pub run_cache_creation_input_tokens: i64,
+    pub run_cache_read_input_tokens: i64,
+    pub last_run_duration_ms: i64,
     pub emoji: String,
 }
 

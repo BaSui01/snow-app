@@ -75,6 +75,8 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
           worktreeMode: defaults.worktreeMode,
           goalMode: defaults.goalMode,
           goalModeTokenBudget: defaults.goalModeTokenBudget,
+          runTokenUsage: null,
+          lastRunDurationMs: 0,
         });
       }
       ctx.setSessions((prev) => {
@@ -99,6 +101,9 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
             streamTtftMs: 0,
             runTtftMs: 0,
             streamStartedAt: 0,
+            runTokenUsage: null,
+            conversationTokenUsage: null,
+            lastRunDurationMs: 0,
           },
         };
       });

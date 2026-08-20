@@ -683,6 +683,11 @@ pub(crate) fn map_chat_conversation_row(row: &Row<'_>) -> rusqlite::Result<ChatC
         sub_agent_error: row.get(21)?,
         total_duration_ms: row.get(22)?,
         emoji: row.get(23)?,
+        run_input_tokens: row.get(25)?,
+        run_output_tokens: row.get(26)?,
+        run_cache_creation_input_tokens: row.get(27)?,
+        run_cache_read_input_tokens: row.get(28)?,
+        last_run_duration_ms: row.get(29)?,
     })
 }
 
@@ -891,4 +896,80 @@ pub fn set_conversation_modes(
             Ok(())
         })
         .map_err(|error| database::database_error(database_path, "set conversation modes", error))
+}
+
+/// 把最近一次 AI run 的累计用量与墙钟总耗时**累加**进会话的累计统计
+/// （run 摘要条回显用）。每个 run 结束时调用一次：token 与耗时随每次
+/// loop 增长，展示的是「整个会话」的累计值而非单次 run。
+///
+/// 与 `store_chat_exchange` 覆盖式写入的「最后一次请求快照」列
+/// （input_tokens 等）语义不同：run_* 列由渲染进程在 agent loop 完全
+/// 结束时增量写入，重启后打开会话仍可完整回显。
+pub fn set_conversation_run_stats(
+    database_path: &Path,
+    conversation_id: &str,
+    run_input_tokens: i64,
+    run_output_tokens: i64,
+    run_cache_creation_input_tokens: i64,
+    run_cache_read_input_tokens: i64,
+    last_run_duration_ms: i64,
+) -> Result<()> {
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            connection.execute(
+                "INSERT INTO chat_conversations (
+                   id, conversation_id,
+                   run_input_tokens, run_output_tokens,
+                   run_cache_creation_input_tokens, run_cache_read_input_tokens,
+                   last_run_duration_ms
+                 )
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                 ON CONFLICT(conversation_id) DO UPDATE SET
+                   run_input_tokens = chat_conversations.run_input_tokens + excluded.run_input_tokens,
+                   run_output_tokens = chat_conversations.run_output_tokens + excluded.run_output_tokens,
+                   run_cache_creation_input_tokens = chat_conversations.run_cache_creation_input_tokens + excluded.run_cache_creation_input_tokens,
+                   run_cache_read_input_tokens = chat_conversations.run_cache_read_input_tokens + excluded.run_cache_read_input_tokens,
+                   last_run_duration_ms = chat_conversations.last_run_duration_ms + excluded.last_run_duration_ms,
+                   updated_at = datetime('now', 'localtime')",
+                params![
+                    database::create_snowflake_id(),
+                    conversation_id,
+                    run_input_tokens,
+                    run_output_tokens,
+                    run_cache_creation_input_tokens,
+                    run_cache_read_input_tokens,
+                    last_run_duration_ms,
+                ],
+            )?;
+            Ok(())
+        })
+        .map_err(|error| {
+            database::database_error(database_path, "set conversation run stats", error)
+        })
+}
+
+/// 清零会话的累计 run 统计（回滚截断消息后调用，避免摘要回显与
+/// 截断后的消息列表不一致）。
+pub fn reset_conversation_run_stats(
+    database_path: &Path,
+    conversation_id: &str,
+) -> Result<()> {
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            connection.execute(
+                "UPDATE chat_conversations
+                    SET run_input_tokens = 0,
+                        run_output_tokens = 0,
+                        run_cache_creation_input_tokens = 0,
+                        run_cache_read_input_tokens = 0,
+                        last_run_duration_ms = 0,
+                        updated_at = datetime('now', 'localtime')
+                  WHERE conversation_id = ?1",
+                params![conversation_id],
+            )?;
+            Ok(())
+        })
+        .map_err(|error| {
+            database::database_error(database_path, "reset conversation run stats", error)
+        })
 }

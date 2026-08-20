@@ -31,6 +31,8 @@ import {
 } from "../../chatInput/configThinking";
 import {
   PARENT_PLAN_APPROVAL_REQUIRED,
+  accumulateConversationRunStats,
+  accumulateRunTokenUsage,
   beginStreamMetricsIteration,
   createStreamChunkHandler,
   createStreamIdHandler,
@@ -393,6 +395,7 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         "tokenUsage",
         subResponse.tokenUsage
       );
+      accumulateRunTokenUsage(ctx, subConvId, subResponse.tokenUsage);
     }
 
     // A final incomplete-like result terminates the sub-agent's internal
@@ -1139,6 +1142,36 @@ const createSubAgentFinalizer = (
       finalRef.isSending = false;
     }
     ctx.updateSessionField(convId, "isStreaming", false);
+    // 固化本次 run 总耗时（置 0 前读取），累加进会话统计（内存 + DB）。
+    const finalizeStartedAt =
+      ctx.sessionsRef.current?.[convId]?.streamStartedAt ?? 0;
+    if (finalizeStartedAt > 0) {
+      const finalizeDurationMs = Math.max(
+        0,
+        Date.now() - finalizeStartedAt
+      );
+      const runUsage =
+        ctx.sessionsRefData.current.get(convId)?.runTokenUsage;
+      accumulateConversationRunStats(
+        ctx,
+        convId,
+        runUsage,
+        finalizeDurationMs
+      );
+      // 持久化（Rust 端累加），重启后打开子代理会话仍可完整回显。
+      void window.snow
+        .setConversationRunStats(
+          convId,
+          runUsage?.inputTokens ?? 0,
+          runUsage?.outputTokens ?? 0,
+          runUsage?.cacheCreationInputTokens ?? 0,
+          runUsage?.cacheReadInputTokens ?? 0,
+          finalizeDurationMs
+        )
+        .catch(() => {
+          // 持久化失败不阻塞收尾
+        });
+    }
     ctx.updateSessionField(convId, "streamStartedAt", 0);
     ctx.updateSessionField(convId, "isAborting", false);
     ctx.removeStreamingId(convId);

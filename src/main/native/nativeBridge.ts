@@ -97,6 +97,18 @@ setSystemSetting: () =>
             "Rust native bridge is required to write conversation runtime config"
           )
         ),
+      setConversationRunStats: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to write conversation run stats"
+          )
+        ),
+      resetConversationRunStats: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to reset conversation run stats"
+          )
+        ),
       getRequestLogging: () =>
         Promise.reject(
           new Error("Rust native bridge is required to read Request logging")

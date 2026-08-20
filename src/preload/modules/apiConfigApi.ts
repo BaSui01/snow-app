@@ -119,6 +119,25 @@ export const apiConfigApi = {
       thinkingStrength,
       responsesFastMode
     ),
+  setConversationRunStats: (
+    conversationId: string,
+    runInputTokens: number,
+    runOutputTokens: number,
+    runCacheCreationInputTokens: number,
+    runCacheReadInputTokens: number,
+    lastRunDurationMs: number
+  ): Promise<void> =>
+    ipcRenderer.invoke(
+      "settings:set-conversation-run-stats",
+      conversationId,
+      runInputTokens,
+      runOutputTokens,
+      runCacheCreationInputTokens,
+      runCacheReadInputTokens,
+      lastRunDurationMs
+    ),
+  resetConversationRunStats: (conversationId: string): Promise<void> =>
+    ipcRenderer.invoke("settings:reset-conversation-run-stats", conversationId),
   getRequestLogging: (): Promise<boolean> =>
     ipcRenderer.invoke("settings:get-request-logging"),
   setRequestLogging: (enabled: boolean): Promise<void> =>

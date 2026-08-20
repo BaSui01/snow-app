@@ -1,6 +1,8 @@
 import { memo, useCallback, useMemo } from "react";
-import { GitFork, Zap } from "lucide-react";
+import { Bot, Database, GitFork, Repeat, Sigma, Timer, Zap } from "lucide-react";
+import { Tooltip } from "../../../common/Tooltip";
 import { useI18n } from "../../../../i18n";
+import { formatTokens } from "../../../../utils/formatTokens";
 import { AiResponse } from "./AiResponse";
 import { CompactionMessage } from "./CompactionMessage";
 import { UserMessage } from "./UserMessage";
@@ -9,6 +11,14 @@ import { HookExecutionUI } from "../toolCalls/HookExecutionUI";
 import type { ChatConversationMessage, ToolCallInfo } from "../utils/conversationTypes";
 import { useViewportVirtualization } from "../hooks/useViewportVirtualization";
 import { useChatConversationContext } from "./ChatConversationContext";
+
+const formatDuration = (ms: number): string => {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes}m${remainingSeconds}s`;
+};
 
 type MessageContentProps = {
   message: ChatConversationMessage;
@@ -198,6 +208,8 @@ export const ChatMessageList = ({
     rejectToolAuthorization,
     visionAnalysis,
     triggeredByTask,
+    conversationTokenUsage,
+    lastRunDurationMs,
   } = useChatConversationContext();
 
   const lastAssistantMessageId = useMemo(() => {
@@ -275,6 +287,145 @@ export const ChatMessageList = ({
       <span className="chat-fork-divider-line" />
     </div>
   );
+
+  // 最后一条 assistant 消息使用的模型：AI 流程结束后摘要条展示用。
+  const lastModel = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "assistant" && messages[i].model) {
+        return messages[i].model;
+      }
+    }
+    return undefined;
+  }, [messages]);
+
+  // AI 流程完全结束后，在消息列表底部以 fork-divider 同款分隔条展示本次
+  // 任务的汇总信息：总耗时、总 Token 消耗、缓存命中情况、模型。
+  const renderRunSummary = (): React.JSX.Element | null => {
+    if (isStreaming || isAborting) {
+      return null;
+    }
+    const hasAssistant = messages.some((m) => m.role === "assistant");
+    if (!hasAssistant) {
+      return null;
+    }
+    // 整个会话的累计统计（每次 run 结束累加，历史会话从 DB 回显）。
+    // 旧版本会话没有这些数据，不显示，避免展示不完整数据造成误解。
+    const usage = conversationTokenUsage;
+    const totalTokens =
+      (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0);
+    const cacheRead = usage?.cacheReadInputTokens ?? 0;
+    const cacheWrite = usage?.cacheCreationInputTokens ?? 0;
+    // 没有任何累计统计（旧版本会话没有这些数据）就不显示整条摘要，
+    // 避免展示不完整数据造成误解。
+    const hasStats =
+      lastRunDurationMs > 0 || totalTokens > 0 || cacheRead > 0 || cacheWrite > 0;
+    if (!hasStats) {
+      return null;
+    }
+
+    const items: React.JSX.Element[] = [];
+    if (lastRunDurationMs > 0) {
+      items.push(
+        <Tooltip
+          key="duration"
+          content={t("chat.runSummary.duration", {
+            defaultValue: "当前会话累计耗时",
+          })}
+        >
+          <span className="chat-run-summary-item">
+            <Timer size={12} strokeWidth={1.8} aria-hidden="true" />
+            <span>{formatDuration(lastRunDurationMs)}</span>
+          </span>
+        </Tooltip>
+      );
+    }
+    if (totalTokens > 0) {
+      items.push(
+        <Tooltip
+          key="tokens"
+          content={t("chat.runSummary.tokens", {
+            defaultValue: "当前会话总 Token 消耗",
+          })}
+        >
+          <span className="chat-run-summary-item">
+            <Sigma size={12} strokeWidth={1.8} aria-hidden="true" />
+            <span>{formatTokens(totalTokens)}</span>
+          </span>
+        </Tooltip>
+      );
+    }
+    if (cacheWrite > 0) {
+      items.push(
+        <Tooltip
+          key="cacheWrite"
+          content={t("chat.runSummary.cacheWrite", {
+            defaultValue: "当前会话缓存写入",
+          })}
+        >
+          <span className="chat-run-summary-item">
+            <Database size={12} strokeWidth={1.8} aria-hidden="true" />
+            <span>{formatTokens(cacheWrite)}</span>
+          </span>
+        </Tooltip>
+      );
+    }
+    if (cacheRead > 0) {
+      items.push(
+        <Tooltip
+          key="cacheRead"
+          content={t("chat.runSummary.cacheRead", {
+            defaultValue: "当前会话缓存命中",
+          })}
+        >
+          <span className="chat-run-summary-item">
+            <Repeat size={12} strokeWidth={1.8} aria-hidden="true" />
+            <span>{formatTokens(cacheRead)}</span>
+          </span>
+        </Tooltip>
+      );
+    }
+    if (lastModel) {
+      items.push(
+        <Tooltip
+          key="model"
+          content={t("chat.runSummary.model", {
+            defaultValue: "当前会话模型",
+          })}
+        >
+          <span className="chat-run-summary-item chat-run-summary-model">
+            <Bot size={12} strokeWidth={1.8} aria-hidden="true" />
+            <span>{lastModel}</span>
+          </span>
+        </Tooltip>
+      );
+    }
+    if (items.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="chat-run-summary" role="note">
+        <span className="chat-fork-divider-line" />
+        <span className="chat-run-summary-content">
+          {items.flatMap((item, index) =>
+            index === 0
+              ? [item]
+              : [
+                  <span
+                    key={`sep-${item.key}`}
+                    className="chat-run-summary-sep"
+                    aria-hidden="true"
+                  >
+                    ·
+                  </span>,
+                  item,
+                ]
+          )}
+        </span>
+        <span className="chat-fork-divider-line" />
+      </div>
+    );
+  };
 
   // Pinned message ids: the streaming (last assistant) message must always be
   // rendered so the live output is never unmounted, and any message carrying a
@@ -455,6 +606,7 @@ export const ChatMessageList = ({
           ? renderForkDivider()
           : null}
         {renderVisionStatusCard()}
+        {renderRunSummary()}
       </div>
     );
   }
@@ -472,6 +624,7 @@ export const ChatMessageList = ({
         renderItem(message, forkDividerIndex + index)
       )}
       {renderVisionStatusCard()}
+      {renderRunSummary()}
     </div>
   );
 };

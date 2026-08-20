@@ -167,7 +167,7 @@ Routes include bash, grep, remote filesystem, browser, user interaction, app con
 Renderer `useToolAuthorization.ts` composes these policies:
 
 - YOLO Mode can auto-approve ordinary tools.
-- Project `alwaysApprovedTools` can skip ordinary confirmation; choosing “always allow” persists project approval.
+- The global `permissions.alwaysApprovedTools` (`~/.snow/permissions.json`) is merged with project-level approvals into the no-confirmation list; choosing “always allow” persists a project approval. The Project tool permissions panel can add/remove project-level approvals and shows the global list read-only.
 - Bash checks sensitive-command patterns first; sensitive commands cannot be bypassed by “approve all.”
 - Interactive bash relies on the interactive terminal UI and does not show a duplicate sensitive-command dialog.
 - The `toolConfirmation` Hook may approve or deny before ordinary user confirmation.

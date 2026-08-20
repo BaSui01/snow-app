@@ -2930,6 +2930,21 @@ export const en = {
   "projectPermissions.deleteTitle": "Remove tool approval",
   "projectPermissions.deleteConfirm":
     "Remove the approval for {{toolName}}? It will ask for confirmation again on the next execution.",
+  "projectPermissions.globalTitle": "Globally approved tools",
+  "projectPermissions.globalNote":
+    "From the global config permissions.alwaysApprovedTools (~/.snow/permissions.json), applies to all projects.",
+  "projectPermissions.globalApproved":
+    "Globally approved — runs without confirmation in every project",
+  "projectPermissions.projectTitle": "Project-approved tools",
+  "projectPermissions.projectNote":
+    "Applies to the current project only; read-only tools are auto-approved by default.",
+  "projectPermissions.addTool": "Add tool",
+  "projectPermissions.selectTool": "Select tools to add",
+  "projectPermissions.selectedCount": "{{count}} tools selected",
+  "projectPermissions.filterPlaceholder": "Type to filter tools",
+  "projectPermissions.noMatch": "No matching tools",
+  "projectPermissions.allApproved": "All available tools are already approved",
+  "projectPermissions.noTools": "No tools available to add",
   "projectSkills.title": "Project Skills",
   "projectSkills.description": "Skills available to {{project}}",
   "projectSkills.noProject":

@@ -167,7 +167,7 @@ flowchart TD
 Renderer `useToolAuthorization.ts` 组合以下策略：
 
 - YOLO Mode 可自动放行普通工具。
-- 项目 `alwaysApprovedTools` 可跳过普通确认；用户选择“始终允许”时持久化到项目授权设置。
+- 全局 `permissions.alwaysApprovedTools`（`~/.snow/permissions.json`）与项目级授权合并为免审批列表；用户选择“始终允许”时持久化到项目授权设置，「项目工具授权」面板可添加/删除项目级授权，并只读展示全局列表。
 - bash 先匹配敏感命令；敏感命令不能被“全部批准”绕过。
 - interactive bash 由交互终端 UI 承担确认，不重复弹单独敏感命令框。
 - `toolConfirmation` Hook 可在普通用户确认之前放行或拒绝。

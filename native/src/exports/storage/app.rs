@@ -61,6 +61,37 @@ pub async fn set_yolo_mode(enabled: bool) -> napi::Result<()> {
 }
 
 #[napi]
+pub async fn get_always_approved_tools() -> napi::Result<Vec<String>> {
+    tokio::task::spawn_blocking(crate::storage::get_always_approved_tools)
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn set_always_approved_tools(tools: Vec<String>) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::set_always_approved_tools(tools))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn set_tool_approval_project_tools_approved(
+    project_id: String,
+    tool_names: Vec<String>,
+    approved: bool,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::set_tool_approval_project_tools_approved(
+            project_id,
+            tool_names,
+            approved,
+        )
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
 pub async fn get_auto_format() -> napi::Result<bool> {
     tokio::task::spawn_blocking(crate::storage::get_auto_format)
         .await

@@ -69,6 +69,39 @@ pub fn get_builtin_servers_with_tools() -> Vec<(String, Vec<McpTool>)> {
         .collect()
 }
 
+/// 只读工具全名（无副作用的查询类内置工具）。UI 权限面板将它们默认
+/// 添加为项目级免审批授权；新增只读工具时在此追加即可，无需改前端。
+pub const READONLY_TOOL_NAMES: &[&str] = &[
+    "filesystem-read",
+    "grep-search",
+    "websearch-websearch-search",
+    "websearch-websearch-fetch",
+    "codelens-find_definition",
+    "codelens-find_references",
+    "codelens-file_outline",
+    "config-get",
+    "config-list",
+    "app-control-listMemos",
+    "app-control-getMemo",
+    "app-control-getBlockedPatterns",
+    "imagegen-imagegen-image-describe",
+    "codebase-search",
+    "todo-todo-manage",
+];
+
+/// 返回仍注册在案的只读工具全名（过滤掉已删除/改名工具的过期条目）。
+pub fn list_readonly_tools() -> Vec<String> {
+    let available: std::collections::HashSet<String> = get_builtin_tools()
+        .into_iter()
+        .map(|tool| tool.full_name())
+        .collect();
+    READONLY_TOOL_NAMES
+        .iter()
+        .filter(|name| available.contains(**name))
+        .map(|name| name.to_string())
+        .collect()
+}
+
 /// 返回所有内置服务的工具定义，保持与注册列表一致的固定顺序。
 pub fn get_builtin_tools() -> Vec<McpTool> {
     get_builtin_servers_with_tools()

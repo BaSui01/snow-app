@@ -256,6 +256,12 @@ pub async fn list_mcp_project_servers(
     list_project_servers(project_id).await
 }
 
+/// 返回仍注册在案的只读内置工具全名（UI 权限面板默认授权用）。
+#[napi]
+pub fn list_readonly_tools() -> Vec<String> {
+    crate::mcp::builtin::list_readonly_tools()
+}
+
 #[napi]
 pub async fn list_mcp_project_server_tools(
     project_id: String,

@@ -150,7 +150,7 @@ Tool authorization config.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `alwaysApprovedTools` | array | Always-approved tool names (e.g. `["terminal-execute", "filesystem-read"]`) |
+| `alwaysApprovedTools` | array | Always-approved tool names (e.g. `["terminal-execute", "filesystem-read"]`). Applies to all projects; the UI authorization flow reads this list and merges it with project-level approvals. It is also shown (read-only) in the Project tool permissions panel. Bash commands matching sensitive-command rules still force confirmation regardless of this list |
 
 ## 10. lsp-config (scope: `lsp-config`)
 

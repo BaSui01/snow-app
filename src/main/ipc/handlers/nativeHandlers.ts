@@ -471,6 +471,51 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       );
     }
   );
+  ipcMain.handle("permissions:get-always-approved-tools", () =>
+    native.getAlwaysApprovedTools()
+  );
+  ipcMain.handle(
+    "permissions:set-tool-approvals",
+    (
+      _event,
+      projectId: unknown,
+      toolNames: unknown,
+      approved: unknown
+    ) => {
+      if (typeof projectId !== "string" || !projectId.trim()) {
+        throw new Error("Project id is required");
+      }
+      if (
+        !Array.isArray(toolNames) ||
+        toolNames.some((name) => typeof name !== "string")
+      ) {
+        throw new Error("Tool names must be an array of strings");
+      }
+      if (typeof approved !== "boolean") {
+        throw new Error("Tool approval state must be a boolean");
+      }
+      return native.setToolApprovalProjectToolsApproved(
+        projectId.trim(),
+        toolNames as string[],
+        approved
+      );
+    }
+  );
+  ipcMain.handle(
+    "permissions:set-always-approved-tools",
+    (_event, tools: unknown) => {
+      if (
+        !Array.isArray(tools) ||
+        tools.some((tool) => typeof tool !== "string")
+      ) {
+        throw new Error("Tools must be an array of strings");
+      }
+      return native.setAlwaysApprovedTools(tools as string[]);
+    }
+  );
+  ipcMain.handle("permissions:list-readonly-tools", () =>
+    native.listReadonlyTools()
+  );
 
   ipcMain.handle("native:sum", (_event, a: number, b: number) =>
     native.sum(a, b)

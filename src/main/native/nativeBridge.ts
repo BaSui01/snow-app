@@ -177,6 +177,30 @@ setSystemSetting: () =>
         Promise.reject(
           new Error("Rust native bridge is required to write tool approvals")
         ),
+      setToolApprovalProjectToolsApproved: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to write tool approvals in batch"
+          )
+        ),
+      getAlwaysApprovedTools: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to read always-approved tools"
+          )
+        ),
+      setAlwaysApprovedTools: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to write always-approved tools"
+          )
+        ),
+      listReadonlyTools: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to list read-only tools"
+          )
+        ),
       listApiConfigs: () =>
         Promise.reject(
           new Error("Rust native bridge is required to list API configs")

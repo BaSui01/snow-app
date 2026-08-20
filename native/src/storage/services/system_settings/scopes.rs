@@ -392,6 +392,24 @@ pub fn set_tool_approval_project_tool_approved(
     write_tool_approval_project_scope_settings(database_path, &settings)
 }
 
+/// 批量设置项目级工具授权。一次读-改-写完成全部工具，避免逐条调用
+/// 时并发读-改-写互相覆盖（丢失更新）。
+pub fn set_tool_approval_project_tools_approved(
+    database_path: &Path,
+    project_id: &str,
+    tool_names: &[String],
+    approved: bool,
+) -> Result<()> {
+    let mut settings = get_tool_approval_project_scope_settings(database_path, project_id)?;
+    for tool_name in tool_names {
+        let normalized = tool_name.trim();
+        if !normalized.is_empty() {
+            settings.set_tool_approved(normalized, approved);
+        }
+    }
+    write_tool_approval_project_scope_settings(database_path, &settings)
+}
+
 fn write_tool_approval_project_scope_settings(
     database_path: &Path,
     settings: &ToolApprovalProjectScopeSettings,

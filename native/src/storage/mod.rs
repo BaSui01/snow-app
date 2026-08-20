@@ -484,6 +484,122 @@ pub fn set_tool_approval_project_tool_approved(
     )
 }
 
+pub fn set_tool_approval_project_tools_approved(
+    project_id: String,
+    tool_names: Vec<String>,
+    approved: bool,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::system_settings::set_tool_approval_project_tools_approved(
+        &database_path,
+        &project_id,
+        &tool_names,
+        approved,
+    )
+}
+
+/// 读取全局免审批工具列表（`~/.snow/permissions.json` 的 `alwaysApprovedTools`）。
+/// 文件不存在或字段缺失时返回空列表。
+pub fn get_always_approved_tools() -> Result<Vec<String>> {
+    let Some(file_path) = dirs_next::home_dir().map(|home| home.join(".snow").join("permissions.json"))
+    else {
+        return Ok(Vec::new());
+    };
+    let content = match fs::read_to_string(&file_path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => {
+            return Err(Error::new(
+                Status::GenericFailure,
+                format!("Failed to read {}: {error}", file_path.display()),
+            ));
+        }
+    };
+    let root = match serde_json::from_str::<Value>(&content) {
+        Ok(root) => root,
+        Err(error) => {
+            return Err(Error::new(
+                Status::GenericFailure,
+                format!("Invalid JSON in {}: {error}", file_path.display()),
+            ));
+        }
+    };
+    match root.get("alwaysApprovedTools") {
+        Some(Value::Array(items)) => Ok(items
+            .iter()
+            .filter_map(|item| item.as_str().map(str::to_string))
+            .collect()),
+        _ => Ok(Vec::new()),
+    }
+}
+
+/// 写入全局免审批工具列表（`~/.snow/permissions.json` 的 `alwaysApprovedTools`）。
+/// 保留文件中其它字段，原子写入（tmp + rename），避免崩溃损坏配置。
+pub fn set_always_approved_tools(tools: Vec<String>) -> Result<()> {
+    let Some(file_path) = dirs_next::home_dir().map(|home| home.join(".snow").join("permissions.json"))
+    else {
+        return Err(Error::new(
+            Status::GenericFailure,
+            "Cannot resolve home directory".to_string(),
+        ));
+    };
+
+    let mut root = match fs::read_to_string(&file_path) {
+        Ok(content) => serde_json::from_str::<Value>(&content).unwrap_or_else(|_| {
+            Value::Object(serde_json::Map::new())
+        }),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Value::Object(serde_json::Map::new())
+        }
+        Err(error) => {
+            return Err(Error::new(
+                Status::GenericFailure,
+                format!("Failed to read {}: {error}", file_path.display()),
+            ));
+        }
+    };
+    if !root.is_object() {
+        root = Value::Object(serde_json::Map::new());
+    }
+    root["alwaysApprovedTools"] = Value::Array(
+        tools.into_iter().map(Value::String).collect(),
+    );
+
+    let content = serde_json::to_string_pretty(&root).map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to serialize {}: {error}", file_path.display()),
+        )
+    })?;
+
+    if let Some(parent) = file_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            Error::new(
+                Status::GenericFailure,
+                format!(
+                    "Failed to create directory '{}': {error}",
+                    parent.display()
+                ),
+            )
+        })?;
+    }
+    let tmp_path = file_path.with_extension("json.tmp");
+    fs::write(&tmp_path, &content).map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to write {}: {error}", tmp_path.display()),
+        )
+    })?;
+    fs::rename(&tmp_path, &file_path).map_err(|error| {
+        let _ = fs::remove_file(&tmp_path);
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to replace {}: {error}", file_path.display()),
+        )
+    })?;
+    Ok(())
+}
+
 pub fn check_project_has_gitignore(project_id: String) -> Result<bool> {
     let database_path = ensure_database_file()?;
     let normalized_project_id = project_id.trim().to_string();

@@ -14,10 +14,8 @@ export type CustomSelectOption = {
   disabled?: boolean;
 };
 
-type CustomSelectProps = {
-  value: string;
+type CustomSelectBaseProps = {
   options: CustomSelectOption[];
-  onChange: (value: string) => void;
   disabled?: boolean;
   title?: string;
   /**
@@ -36,7 +34,36 @@ type CustomSelectProps = {
    * omitted.
    */
   renderOption?: (option: CustomSelectOption) => React.ReactNode;
+  /**
+   * When true, a filter input is shown at the top of the dropdown; typing
+   * narrows the visible options by label/value (case-insensitive). The
+   * filter resets every time the dropdown opens.
+   */
+  filterable?: boolean;
+  /** Placeholder for the filter input (only used when `filterable`). */
+  filterPlaceholder?: string;
+  /** Empty-state text shown when the filter matches no options. */
+  noMatchText?: string;
+  /** Trigger label when `multiple` is set and nothing is selected yet. */
+  multipleEmptyLabel?: string;
+  /**
+   * Trigger label for the selected count in `multiple` mode, e.g.
+   * `(count) => \`${count} selected\``. Ignored when `multiple` is unset.
+   */
+  multipleCountLabel?: (count: number) => string;
 };
+
+export type CustomSelectProps =
+  | (CustomSelectBaseProps & {
+      multiple?: false;
+      value: string;
+      onChange: (value: string) => void;
+    })
+  | (CustomSelectBaseProps & {
+      multiple: true;
+      value: string[];
+      onChange: (values: string[]) => void;
+    });
 
 type DropdownRect = {
   top: number;
@@ -48,16 +75,31 @@ export function CustomSelect({
   value,
   options,
   onChange,
+  multiple = false,
   disabled = false,
   title,
   portal = false,
   renderOption,
+  filterable = false,
+  filterPlaceholder = "Filter...",
+  noMatchText = "No matching options",
+  multipleEmptyLabel = "",
+  multipleCountLabel,
 }: CustomSelectProps): React.JSX.Element {
   const [isOpen, setIsOpen] = useState(false);
+  const [filterText, setFilterText] = useState("");
   const [dropdownRect, setDropdownRect] = useState<DropdownRect | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const filterInputRef = useRef<HTMLInputElement>(null);
+
+  // Reset the filter and focus the input every time the dropdown opens.
+  useEffect(() => {
+    if (!isOpen || !filterable) return;
+    setFilterText("");
+    filterInputRef.current?.focus();
+  }, [filterable, isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -112,8 +154,20 @@ export function CustomSelect({
     });
   }, [isOpen, portal]);
 
-  const selectedOption = options.find((opt) => opt.value === value);
-  const displayLabel = selectedOption?.label ?? value;
+  const selectedValues = multiple
+    ? Array.isArray(value)
+      ? value
+      : []
+    : null;
+  const selectedOption = multiple
+    ? null
+    : options.find((opt) => opt.value === value);
+  const displayLabel: string = multiple
+    ? (selectedValues?.length ?? 0) > 0
+      ? (multipleCountLabel?.(selectedValues?.length ?? 0) ??
+        `${selectedValues?.length ?? 0} selected`)
+      : multipleEmptyLabel
+    : (selectedOption?.label ?? String(value));
 
   const handleSelect = useCallback(
     (
@@ -123,10 +177,19 @@ export function CustomSelect({
       event.preventDefault();
       event.stopPropagation();
       if (option.disabled) return;
-      setIsOpen(false);
-      onChange(option.value);
+      if (multiple) {
+        if (option.value === "") return;
+        const current = Array.isArray(value) ? value : [];
+        const next = current.includes(option.value)
+          ? current.filter((item) => item !== option.value)
+          : [...current, option.value];
+        (onChange as (values: string[]) => void)(next);
+      } else {
+        setIsOpen(false);
+        (onChange as (value: string) => void)(option.value);
+      }
     },
-    [onChange]
+    [multiple, onChange, value]
   );
 
   const handleTriggerClick = (): void => {
@@ -134,9 +197,28 @@ export function CustomSelect({
     setIsOpen((v) => !v);
   };
 
+  const normalizedFilter = filterText.trim().toLowerCase();
+  const visibleOptions =
+    filterable && normalizedFilter
+      ? options.filter(
+          (opt) =>
+            opt.label.toLowerCase().includes(normalizedFilter) ||
+            opt.value.toLowerCase().includes(normalizedFilter)
+        )
+      : options;
+
   const dropdownItems = (
     <>
-      {options.map((opt) => (
+      {filterable ? (
+        <input
+          ref={filterInputRef}
+          className="custom-select-filter"
+          onChange={(event) => setFilterText(event.target.value)}
+          placeholder={filterPlaceholder}
+          value={filterText}
+        />
+      ) : null}
+      {visibleOptions.map((opt) => (
         <button
           key={opt.value}
           type="button"
@@ -145,11 +227,16 @@ export function CustomSelect({
           disabled={opt.disabled}
         >
           <span>{renderOption ? renderOption(opt) : opt.label}</span>
-          {opt.value === value && (
+          {(multiple
+            ? selectedValues?.includes(opt.value)
+            : opt.value === value) && (
             <Check size={14} className="custom-select-check" />
           )}
         </button>
       ))}
+      {visibleOptions.length === 0 ? (
+        <div className="custom-select-empty">{noMatchText}</div>
+      ) : null}
     </>
   );
 

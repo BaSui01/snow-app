@@ -164,6 +164,23 @@ export const apiConfigApi = {
       toolName,
       approved
     ),
+  setToolApprovalProjectToolsApproved: (
+    projectId: string,
+    toolNames: string[],
+    approved: boolean
+  ): Promise<void> =>
+    ipcRenderer.invoke(
+      "permissions:set-tool-approvals",
+      projectId,
+      toolNames,
+      approved
+    ),
+  getAlwaysApprovedTools: (): Promise<string[]> =>
+    ipcRenderer.invoke("permissions:get-always-approved-tools"),
+  setAlwaysApprovedTools: (tools: string[]): Promise<void> =>
+    ipcRenderer.invoke("permissions:set-always-approved-tools", tools),
+  listReadonlyTools: (): Promise<string[]> =>
+    ipcRenderer.invoke("permissions:list-readonly-tools"),
   listApiConfigs: (): Promise<ApiConfigRecord[]> =>
     ipcRenderer.invoke("api-configs:list"),
   upsertApiConfig: (config: ApiConfigInput): Promise<ApiConfigRecord[]> =>

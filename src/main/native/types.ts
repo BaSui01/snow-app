@@ -1376,6 +1376,14 @@ export type NativeBridge = {
     toolName: string,
     approved: boolean
   ) => Promise<void>;
+  setToolApprovalProjectToolsApproved: (
+    projectId: string,
+    toolNames: string[],
+    approved: boolean
+  ) => Promise<void>;
+  getAlwaysApprovedTools: () => Promise<string[]>;
+  setAlwaysApprovedTools: (tools: string[]) => Promise<void>;
+  listReadonlyTools: () => Promise<string[]>;
   listApiConfigs: () => Promise<ApiConfigRecord[]>;
   upsertApiConfig: (config: ApiConfigInput) => Promise<void>;
   deleteApiConfig: (profileName: string) => Promise<void>;

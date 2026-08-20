@@ -5309,6 +5309,24 @@ input {
   text-align: center;
 }
 
+.custom-select-filter {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.custom-select-filter:focus {
+  border-color: var(--text-muted);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
 .api-settings-hint-text {
   color: var(--text-muted);
   font-size: 10.5px;
@@ -24523,6 +24541,18 @@ input {
   color: var(--text-muted);
   font-size: 11.5px;
   text-align: center;
+}
+
+.project-sensitive-command-add {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+  padding: 0 3px;
+}
+
+.project-sensitive-command-add .custom-select {
+  flex: 1;
+  min-width: 0;
 }
 
 .project-skills-list {

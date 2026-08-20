@@ -1,3 +1,9 @@
+## v0.2.11
+
+### 修复
+
+- **子代理会话查询修复**：子代理会话列表查询（`list_sub_agent_conversations` / `list_sub_agent_conversations_by_parents`）缺少 v0.2.10 新增的运行 token 统计列，导致行映射器越界读取、查询直接失败。现已补上缺失的 `run_input_tokens`、`run_output_tokens`、`run_cache_creation_input_tokens`、`run_cache_read_input_tokens`、`last_run_duration_ms` 五列，子代理会话列表恢复正常并携带运行统计。
+
 ## v0.2.10
 
 ### 新功能

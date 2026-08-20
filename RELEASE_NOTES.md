@@ -1,5 +1,11 @@
 # Release Notes
 
+## v0.2.11
+
+## Bug Fixes
+
+- **Sub-Agent Session Query Fix**: The sub-agent conversation list queries (`list_sub_agent_conversations` / `list_sub_agent_conversations_by_parents`) were missing the run token statistics columns introduced in v0.2.10, so the row mapper read out of range and the queries failed. The missing `run_input_tokens`, `run_output_tokens`, `run_cache_creation_input_tokens`, `run_cache_read_input_tokens`, and `last_run_duration_ms` columns are now selected, restoring sub-agent session listing with their run statistics.
+
 ## v0.2.10
 
 ## New Features

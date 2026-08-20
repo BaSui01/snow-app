@@ -39,11 +39,16 @@ pub fn list_sub_agent_conversations(
                         sub_agent.error_message,
                         COALESCE(conversation.total_duration_ms, 0),
                         COALESCE(conversation.emoji, ''),
-                        COALESCE(conversation.api_profile_name, '')
+                        COALESCE(conversation.api_profile_name, ''),
+                        COALESCE(conversation.run_input_tokens, 0),
+                        COALESCE(conversation.run_output_tokens, 0),
+                        COALESCE(conversation.run_cache_creation_input_tokens, 0),
+                        COALESCE(conversation.run_cache_read_input_tokens, 0),
+                        COALESCE(conversation.last_run_duration_ms, 0)
                    FROM sub_agent_sessions AS sub_agent
                    JOIN chat_conversations AS conversation
                      ON conversation.conversation_id = sub_agent.conversation_id
-                  WHERE sub_agent.parent_conversation_id = ?1
+                   WHERE sub_agent.parent_conversation_id = ?1
                   ORDER BY sub_agent.created_at ASC, sub_agent.id ASC",
             )?;
 
@@ -93,11 +98,16 @@ pub fn list_sub_agent_conversations_by_parents(
                         sub_agent.error_message,
                         COALESCE(conversation.total_duration_ms, 0),
                         COALESCE(conversation.emoji, ''),
-                        COALESCE(conversation.api_profile_name, '')
+                        COALESCE(conversation.api_profile_name, ''),
+                        COALESCE(conversation.run_input_tokens, 0),
+                        COALESCE(conversation.run_output_tokens, 0),
+                        COALESCE(conversation.run_cache_creation_input_tokens, 0),
+                        COALESCE(conversation.run_cache_read_input_tokens, 0),
+                        COALESCE(conversation.last_run_duration_ms, 0)
                    FROM sub_agent_sessions AS sub_agent
                    JOIN chat_conversations AS conversation
                      ON conversation.conversation_id = sub_agent.conversation_id
-                  WHERE sub_agent.parent_conversation_id IN ({placeholders})
+                   WHERE sub_agent.parent_conversation_id IN ({placeholders})
                   ORDER BY sub_agent.created_at ASC, sub_agent.id ASC"
             ))?;
 

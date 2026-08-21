@@ -13,7 +13,11 @@ import { useChatConversationContext } from "../chatMessages";
 import { directoryIdToPath } from "../chatMessages/utils/conversationHelpers";
 import { collectConversationFileChanges } from "../chatMessages/hooks/fileChangeTracking";
 import { useConversationFileChanges } from "./useConversationFileChanges";
-import { startTerminalMonitor, stopTerminalMonitor, type TerminalDragPayload } from "../../rightPanel/terminal/terminalMonitor";
+import {
+  startTerminalMonitor,
+  stopTerminalMonitor,
+  type TerminalDragPayload,
+} from "../../rightPanel/terminal/terminalMonitor";
 import { rightPanelEvents } from "../../rightPanel/rightPanelEvents";
 import { CommandPanel } from "./commands/CommandPanel";
 import { createChatCommands } from "./commands/commandRegistry";
@@ -23,7 +27,6 @@ import { useInputFileOperations } from "./useInputFileOperations";
 
 /** 终端监控日志预览保留的最大行数 */
 const MAX_MONITORED_LINES = 1000;
-
 
 export const ChatInputView = ({
   placeholder,
@@ -119,9 +122,9 @@ export const ChatInputView = ({
     streamTokenCount,
     streamElapsedMs,
     streamTtftMs,
-     baselineCheckpointId,
-     checkpointIds,
-     streamStartedAt,
+    baselineCheckpointId,
+    checkpointIds,
+    streamStartedAt,
     isPaused,
     handlePause,
     handleResume,
@@ -134,9 +137,9 @@ export const ChatInputView = ({
         (message) =>
           message.role === "user" &&
           !message.isContextCompaction &&
-          message.content.trim().length > 0
+          message.content.trim().length > 0,
       ),
-    [messages]
+    [messages],
   );
   const fallbackFileChanges = useMemo(() => {
     if (!activeConversationId) {
@@ -144,7 +147,7 @@ export const ChatInputView = ({
     }
     return collectConversationFileChanges(
       fileChangeStats,
-      activeConversationId
+      activeConversationId,
     );
   }, [activeConversationId, fileChangeStats]);
   const conversationWorkDir = directoryIdToPath(conversationDirectoryId);
@@ -171,7 +174,7 @@ export const ChatInputView = ({
   const handleOpenFileChanges = useCallback(() => {
     setIsFileChangesOpen(true);
   }, []);
-   const [isReviewOpen, setIsReviewOpen] = useState(false);
+  const [isReviewOpen, setIsReviewOpen] = useState(false);
 
   // review 指令只在新建会话（尚未绑定历史会话）时开放，审查对象是
   // 当前项目目录的 Git 状态，而不是某个历史会话绑定的目录。
@@ -314,9 +317,8 @@ export const ChatInputView = ({
       selectedModel,
       t,
       yoloMode,
-    ]
+    ],
   );
-
 
   // ------------------------------------------------------------------
   // 终端监控模式：拖拽终端到输入框后，实时订阅该终端的日志流
@@ -357,14 +359,11 @@ export const ChatInputView = ({
     }
   }, [monitoredLines.length, monitorExpanded]);
 
-
-
-
   const handleStartTerminalMonitor = useCallback(
     (payload: TerminalDragPayload) => {
       startTerminalMonitor(payload.tabId, (lines) => {
         setMonitoredLines((prev) =>
-          [...prev, ...lines].slice(-MAX_MONITORED_LINES)
+          [...prev, ...lines].slice(-MAX_MONITORED_LINES),
         );
       });
       setMonitoredTerminal({
@@ -374,7 +373,7 @@ export const ChatInputView = ({
       setMonitoredLines([]);
       setMonitorExpanded(true);
     },
-    []
+    [],
   );
 
   const inputFileOperations = useInputFileOperations({
@@ -399,10 +398,7 @@ export const ChatInputView = ({
     onStartTerminalMonitor: handleStartTerminalMonitor,
     fileOperations: inputFileOperations,
   });
-  const {
-    syncContent,
-    plusMenuSections,
-  } = inputFileOperations;
+  const { syncContent, plusMenuSections } = inputFileOperations;
   const {
     mentionAnchorRef,
     mentionPopupRef,
@@ -469,14 +465,14 @@ export const ChatInputView = ({
       }
       return restored ?? null;
     },
-    [onWithdrawPendingMessage, restoreContent]
+    [onWithdrawPendingMessage, restoreContent],
   );
 
   const handleSendPendingNow = useCallback(
     (index: number): void => {
       onSendPendingMessageNow?.(index);
     },
-    [onSendPendingMessageNow]
+    [onSendPendingMessageNow],
   );
 
   return (
@@ -503,7 +499,9 @@ export const ChatInputView = ({
           });
         }}
         onCloseProjectMcp={() => setIsProjectMcpOpen(false)}
-        onCloseSensitiveCommands={() => setIsProjectSensitiveCommandsOpen(false)}
+        onCloseSensitiveCommands={() =>
+          setIsProjectSensitiveCommandsOpen(false)
+        }
         onClosePermissions={() => setIsProjectPermissionsOpen(false)}
         onCloseSkills={() => setIsProjectSkillsOpen(false)}
         onCloseCodebase={() => setIsProjectCodebaseOpen(false)}
@@ -557,9 +555,15 @@ export const ChatInputView = ({
           handleStopMonitor={handleStopMonitor}
           setMonitorExpanded={setMonitorExpanded}
         />
-        {apiConfigs.length === 0 && !isSubAgentConversation && !isLoadingApiConfig ? (
+        {apiConfigs.length === 0 &&
+        !isSubAgentConversation &&
+        !isLoadingApiConfig ? (
           <div className="api-config-empty-banner" role="status">
-            <Plug size={14} className="api-config-empty-icon" aria-hidden="true" />
+            <Plug
+              size={14}
+              className="api-config-empty-icon"
+              aria-hidden="true"
+            />
             <span className="api-config-empty-text">
               {t("chat.noApiConfigBanner", {
                 defaultValue: "尚未配置 AI API，请先添加 API 配置后再开始对话",
@@ -646,6 +650,7 @@ export const ChatInputView = ({
             commandTriggerRef={commandTriggerRef}
             isCommandOpen={isCommandOpen}
             handleToggleCommand={handleToggleCommand}
+            onNavigateToView={onNavigateToView}
             value={value}
             tokenUsage={tokenUsage}
             isAborting={isAborting}

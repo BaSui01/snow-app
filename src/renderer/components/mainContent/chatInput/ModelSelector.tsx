@@ -9,6 +9,7 @@ import {
   Loader2,
   RefreshCw,
   Search,
+  Settings,
   X,
   Zap,
 } from "lucide-react";
@@ -17,6 +18,7 @@ import type { RefObject } from "react";
 import { useI18n } from "../../../i18n";
 import { ThinkingStrengthMenu } from "./ThinkingStrengthMenu";
 import { useDropdownDirection } from "./useDropdownDirection";
+import type { MainContentView } from "../types";
 import type { ChatInputActions, ChatInputState } from "./types";
 
 type ModelSelectorProps = Pick<
@@ -64,6 +66,7 @@ type ModelSelectorProps = Pick<
     | "handleToggleResponsesFastMode"
   > & {
     dropdownRef: RefObject<HTMLDivElement | null>;
+    onNavigateToView?: (view: MainContentView) => void;
   };
 
 export const ModelSelector = ({
@@ -106,6 +109,7 @@ export const ModelSelector = ({
   handleSelectApiProfile,
   handleSelectThinking,
   handleToggleResponsesFastMode,
+  onNavigateToView,
 }: ModelSelectorProps): React.JSX.Element => {
   const { t } = useI18n();
   const [modelSearchQuery, setModelSearchQuery] = useState("");
@@ -142,14 +146,14 @@ export const ModelSelector = ({
       return;
     }
     const index = apiConfigs.findIndex(
-      (config) => config.profileName === selectedApiProfile
+      (config) => config.profileName === selectedApiProfile,
     );
     setApiProfileActiveIndex(index >= 0 ? index : 0);
   }, [isModelMenuOpen, modelMenuView, apiConfigs, selectedApiProfile]);
 
   // 键盘导航：↑↓/Home/End 移动高亮，Enter 选中高亮项
   const handleDropdownKeyDown = (
-    event: React.KeyboardEvent<HTMLDivElement>
+    event: React.KeyboardEvent<HTMLDivElement>,
   ): void => {
     if (event.nativeEvent.isComposing) {
       return;
@@ -161,9 +165,7 @@ export const ModelSelector = ({
     }
 
     const list = isModelList ? filteredModels : filteredApiConfigs;
-    const activeIndex = isModelList
-      ? modelActiveIndex
-      : apiProfileActiveIndex;
+    const activeIndex = isModelList ? modelActiveIndex : apiProfileActiveIndex;
     const setActiveIndex = isModelList
       ? setModelActiveIndex
       : setApiProfileActiveIndex;
@@ -172,9 +174,9 @@ export const ModelSelector = ({
     }
 
     // 焦点在返回/刷新/手动输入等操作按钮上时，Enter 交给原生按钮行为
-    const isActionButton = !!(
-      event.target as HTMLElement
-    ).closest(".model-menu-back, .model-dropdown-action, .model-dropdown-retry");
+    const isActionButton = !!(event.target as HTMLElement).closest(
+      ".model-menu-back, .model-dropdown-action, .model-dropdown-retry",
+    );
 
     switch (event.key) {
       case "ArrowDown":
@@ -184,7 +186,7 @@ export const ModelSelector = ({
       case "ArrowUp":
         event.preventDefault();
         setActiveIndex((index) =>
-          index < 0 ? list.length - 1 : (index - 1 + list.length) % list.length
+          index < 0 ? list.length - 1 : (index - 1 + list.length) % list.length,
         );
         break;
       case "Home":
@@ -209,7 +211,7 @@ export const ModelSelector = ({
           void handleSelectModel(item.id);
         } else {
           void handleSelectApiProfile(
-            "profileName" in item ? item.profileName : ""
+            "profileName" in item ? item.profileName : "",
           );
         }
         break;
@@ -225,7 +227,7 @@ export const ModelSelector = ({
     return models.filter(
       (model) =>
         model.id.toLowerCase().includes(query) ||
-        model.ownedBy.toLowerCase().includes(query)
+        model.ownedBy.toLowerCase().includes(query),
     );
   }, [models, modelSearchQuery]);
 
@@ -239,7 +241,7 @@ export const ModelSelector = ({
         config.displayName.toLowerCase().includes(query) ||
         config.profileName.toLowerCase().includes(query) ||
         (config.advancedModel || "").toLowerCase().includes(query) ||
-        (config.basicModel || "").toLowerCase().includes(query)
+        (config.basicModel || "").toLowerCase().includes(query),
     );
   }, [apiConfigs, apiProfileSearchQuery]);
 
@@ -248,7 +250,7 @@ export const ModelSelector = ({
     setModelActiveIndex((index) =>
       filteredModels.length === 0
         ? -1
-        : Math.min(index, filteredModels.length - 1)
+        : Math.min(index, filteredModels.length - 1),
     );
   }, [filteredModels]);
 
@@ -256,7 +258,7 @@ export const ModelSelector = ({
     setApiProfileActiveIndex((index) =>
       filteredApiConfigs.length === 0
         ? -1
-        : Math.min(index, filteredApiConfigs.length - 1)
+        : Math.min(index, filteredApiConfigs.length - 1),
     );
   }, [filteredApiConfigs]);
 
@@ -264,13 +266,13 @@ export const ModelSelector = ({
   useEffect(() => {
     if (modelMenuView === "model" && modelActiveIndex >= 0) {
       const items = modelListRef.current?.querySelectorAll<HTMLElement>(
-        ".model-dropdown-item"
+        ".model-dropdown-item",
       );
       items?.[modelActiveIndex]?.scrollIntoView({ block: "nearest" });
     }
     if (modelMenuView === "apiProfile" && apiProfileActiveIndex >= 0) {
       const items = apiProfileListRef.current?.querySelectorAll<HTMLElement>(
-        ".model-dropdown-item"
+        ".model-dropdown-item",
       );
       items?.[apiProfileActiveIndex]?.scrollIntoView({ block: "nearest" });
     }
@@ -349,7 +351,7 @@ export const ModelSelector = ({
         )}
         <ChevronDown size={12} />
       </button>
-{isModelMenuOpen && (
+      {isModelMenuOpen && (
         <div
           className={`model-dropdown drop-${modelDropdownDir}`}
           onKeyDown={handleDropdownKeyDown}
@@ -365,10 +367,7 @@ export const ModelSelector = ({
                   {t("chat.model")}
                 </span>
                 <span className="model-menu-value">
-                  <span
-                    className="model-menu-value-text"
-                    title={displayModel}
-                  >
+                  <span className="model-menu-value-text" title={displayModel}>
                     {displayModel}
                   </span>
                   <ChevronRight size={12} />
@@ -426,7 +425,7 @@ export const ModelSelector = ({
                         {t(
                           responsesFastModeEnabled
                             ? "chat.fastModeOn"
-                            : "chat.fastModeOff"
+                            : "chat.fastModeOff",
                         )}
                       </span>
                     )}
@@ -496,7 +495,7 @@ export const ModelSelector = ({
                   </button>
                 )}
               </div>
-<div className="model-dropdown-list" ref={apiProfileListRef}>
+              <div className="model-dropdown-list" ref={apiProfileListRef}>
                 {apiConfigs.length > 0 && filteredApiConfigs.length === 0 && (
                   <div className="model-dropdown-empty">
                     {labels.noMatchingApiProfiles}
@@ -526,6 +525,20 @@ export const ModelSelector = ({
                     )}
                   </button>
                 ))}
+              </div>
+              <div className="model-dropdown-footer">
+                <button
+                  className="model-dropdown-action"
+                  disabled={!onNavigateToView}
+                  onClick={() => {
+                    onNavigateToView?.("api-settings");
+                    handleToggleModelMenu();
+                  }}
+                  type="button"
+                >
+                  <Settings size={14} />
+                  <span>{t("settings.apiSettings")}</span>
+                </button>
               </div>
             </>
           )}
@@ -611,7 +624,9 @@ export const ModelSelector = ({
                     className="model-dropdown-search-input"
                     type="text"
                     value={modelSearchQuery}
-                    onChange={(event) => setModelSearchQuery(event.target.value)}
+                    onChange={(event) =>
+                      setModelSearchQuery(event.target.value)
+                    }
                     onKeyDown={(event) => {
                       if (event.key === "Escape") {
                         setModelSearchQuery("");
@@ -630,14 +645,12 @@ export const ModelSelector = ({
                     </button>
                   )}
                 </div>
-<div className="model-dropdown-list" ref={modelListRef}>
-                  {models.length === 0 &&
-                    !modelError &&
-                    !isLoadingModels && (
-                      <div className="model-dropdown-empty">
-                        {labels.noModelsFound}
-                      </div>
-                    )}
+                <div className="model-dropdown-list" ref={modelListRef}>
+                  {models.length === 0 && !modelError && !isLoadingModels && (
+                    <div className="model-dropdown-empty">
+                      {labels.noModelsFound}
+                    </div>
+                  )}
                   {models.length > 0 && filteredModels.length === 0 && (
                     <div className="model-dropdown-empty">
                       {labels.noMatchingModels}

@@ -121,6 +121,10 @@ export const zhTW = {
   "sidebar.openWithLoading": "正在偵測已安裝的 IDE...",
   "sidebar.openWithEmpty": "未偵測到已安裝的 IDE",
   "sidebar.openWithError": "偵測已安裝的 IDE 失敗",
+  "sidebar.openWithFinder": "在 Finder 中開啟",
+  "sidebar.openWithExplorer": "在檔案總管中開啟",
+  "sidebar.openWithFileManager": "在檔案管理員中開啟",
+  "sidebar.openInFileManagerError": "在檔案管理員中開啟失敗",
   "sidebar.openInIdeError": "在 IDE 中開啟專案失敗",
   "sidebar.directoryKindLocal": "本機",
   "sidebar.directoryKindSsh": "遠端",
@@ -147,7 +151,8 @@ export const zhTW = {
   "sidebar.explorerMultiSelectCount": "已選 {{count}} 項",
   "sidebar.explorerMultiSelectCopyPaths": "複製 {{count}} 個路徑",
   "sidebar.explorerMultiSelectDelete": "刪除 {{count}} 項",
-  "sidebar.explorerMultiSelectDeleteConfirm": "確定要刪除選取的 {{count}} 項嗎？此操作無法復原。",
+  "sidebar.explorerMultiSelectDeleteConfirm":
+    "確定要刪除選取的 {{count}} 項嗎？此操作無法復原。",
   "sidebar.explorerBatchDeleteError": "有 {{count}} 項刪除失敗，請查看明細",
   "sidebar.chats": "對話",
   "sidebar.noChats": "暫無對話",
@@ -219,9 +224,11 @@ export const zhTW = {
   "scheduledTask.apiProfile": "API 配置",
   "scheduledTask.model": "模型",
   "scheduledTask.basicModel": "基礎模型",
-  "scheduledTask.basicModelPlaceholder": "如 gpt-4.1-mini（預設填入所選配置的基礎模型）",
+  "scheduledTask.basicModelPlaceholder":
+    "如 gpt-4.1-mini（預設填入所選配置的基礎模型）",
   "scheduledTask.advancedModel": "進階模型",
-  "scheduledTask.advancedModelPlaceholder": "如 gpt-4.1（預設填入所選配置的進階模型）",
+  "scheduledTask.advancedModelPlaceholder":
+    "如 gpt-4.1（預設填入所選配置的進階模型）",
   "scheduledTask.thinkingStrength": "思考強度",
   "scheduledTask.optionDefault": "預設",
   "scheduledTask.optionDefaultWithValue": "預設（{{value}}）",
@@ -237,14 +244,16 @@ export const zhTW = {
   "scheduledTask.scopeGlobal": "全域",
   "scheduledTask.scopeProjectDisabled": "無活躍項目",
   "scheduledTask.clearGlobal": "清除全域任務",
-  "scheduledTask.confirmClearGlobal": "確定清除所有全域定時任務？此操作不可撤銷。",
+  "scheduledTask.confirmClearGlobal":
+    "確定清除所有全域定時任務？此操作不可撤銷。",
   "scheduledTask.emptyGlobalHint": "尚無全域任務。",
   "scheduledTask.emptyProjectHint": "當前項目尚無任務。",
   "scheduledTask.taskCount": "{{count}} 個任務",
   "scheduledTask.emptyHint": "還沒有定時任務，在右側建立一個吧。",
   "scheduledTask.executorUnavailable":
     "AI Loop 不可用 — 在聊天就緒前任務不會執行。",
-  "scheduledTask.lifetimeHint": "任務保存在本地，重新啟動應用後仍會保留並繼續執行；應用未執行時錯過的執行會被跳過。",
+  "scheduledTask.lifetimeHint":
+    "任務保存在本地，重新啟動應用後仍會保留並繼續執行；應用未執行時錯過的執行會被跳過。",
   "scheduledTask.clearAll": "全部清除",
   "scheduledTask.confirmClearAll": "確定清除所有定時任務？此操作不可撤銷。",
   "scheduledTask.runNow": "立即執行",
@@ -277,7 +286,7 @@ export const zhTW = {
   "scheduledTask.preScriptCommand": "Shell 命令",
   "scheduledTask.preScriptPlaceholder": "例如：git diff --quiet || exit 1",
   "scheduledTask.preScriptHint":
-    "退出碼 0 = 執行 AI，1 = 跳過。或輸出一行 JSON：{\"run\":false,\"reason\":\"...\",\"output\":\"...\"}——\"output\" 會填入 prompt 中的 {{SCRIPT_OUTPUT}} 佔位符。",
+    '退出碼 0 = 執行 AI，1 = 跳過。或輸出一行 JSON：{"run":false,"reason":"...","output":"..."}——"output" 會填入 prompt 中的 {{SCRIPT_OUTPUT}} 佔位符。',
   "scheduledTask.preScriptTimeout": "逾時（秒）",
   "scheduledTask.runOnScriptError": "腳本出錯時仍執行 AI",
   "scheduledTask.skipCount": "跳過 {{count}} 次",
@@ -301,7 +310,8 @@ export const zhTW = {
   "scheduledTask.scheduleSettingsTitle": "排程設定",
   "scheduledTask.runConfigSettingsTitle": "執行設定",
   "scheduledTask.clearProject": "清除當前項目任務",
-  "scheduledTask.confirmClearProject": "確定僅清除當前項目的所有定時任務？此操作不可撤銷。",
+  "scheduledTask.confirmClearProject":
+    "確定僅清除當前項目的所有定時任務？此操作不可撤銷。",
   "scheduledTask.emptyFiltered": "目前的篩選條件下尚無任務。",
   "scheduledTask.defaultWithValue": "預設（{{value}}）",
   "scheduledTask.selectTask": "選擇任務：{{name}}",
@@ -460,19 +470,14 @@ export const zhTW = {
     "已保留思考內容，但未產生可用正文。可透過輸入框重新請求。",
   "chat.incomplete.variant.toolCall":
     "回應中的工具呼叫不完整，已捨棄且未執行。可透過輸入框繼續。",
-  "chat.incomplete.variant.empty":
-    "未收到可用內容。可透過輸入框重新請求。",
-  "chat.incomplete.reason.unexpectedEof":
-    "連線在服務商確認完成前意外關閉。",
+  "chat.incomplete.variant.empty": "未收到可用內容。可透過輸入框重新請求。",
+  "chat.incomplete.reason.unexpectedEof": "連線在服務商確認完成前意外關閉。",
   "chat.incomplete.reason.readError": "接收回應資料時連線發生錯誤。",
   "chat.incomplete.reason.idleTimeout": "等待回應資料逾時。",
-  "chat.incomplete.reason.explicitIncomplete":
-    "服務商明確回傳了未完成回應。",
+  "chat.incomplete.reason.explicitIncomplete": "服務商明確回傳了未完成回應。",
   "chat.incomplete.reason.outputLimit": "模型已達到輸出上限。",
-  "chat.incomplete.outcome.partialThreshold":
-    "已保留達到安全門檻的部分正文。",
-  "chat.incomplete.outcome.retryExhausted":
-    "後端自動恢復已達到重試上限。",
+  "chat.incomplete.outcome.partialThreshold": "已保留達到安全門檻的部分正文。",
+  "chat.incomplete.outcome.retryExhausted": "後端自動恢復已達到重試上限。",
   "chat.incomplete.outcome.nonRetriable": "此次中斷無法安全自動重試。",
   "chat.copyResponse": "複製",
   "chat.copyAsText": "複製為純文字",
@@ -1430,9 +1435,11 @@ export const zhTW = {
     "預設關閉以提速。關閉時 Gemini 請求會將思考預算設為 0；Anthropic 始終不思考。",
   "settings.apiVisionThinkingEffort": "思考強度",
   "settings.apiVisionMaxTokens": "最大輸出 tokens",
-  "settings.apiVisionMaxTokensHint": "圖片描述的最大輸出 tokens，留空預設 4096。",
+  "settings.apiVisionMaxTokensHint":
+    "圖片描述的最大輸出 tokens，留空預設 4096。",
   "settings.apiVisionMaxConcurrency": "最大並發分析數",
-  "settings.apiVisionMaxConcurrencyHint": "描述附件圖片時最多並行分析的圖片數，留空預設 8（1-8）。",
+  "settings.apiVisionMaxConcurrencyHint":
+    "描述附件圖片時最多並行分析的圖片數，留空預設 8（1-8）。",
   "settings.apiStreamIdleTimeout": "串流閒置逾時（秒）",
   "settings.apiMaxRetries": "最大重試次數",
   "settings.apiRetryBaseDelayMs": "重試延遲（毫秒）",
@@ -2050,7 +2057,7 @@ export const zhTW = {
   "settings.mcpJsonInvalid": "JSON 無效",
   "settings.mcpJsonEditorLabel": "MCP 伺服器 JSON 設定",
   "settings.mcpJsonHint":
-    "以 JSON 形式編輯伺服器設定，例如 {\"context7\": {\"url\": \"https://mcp.context7.com/mcp\"}}。未填寫 type（http/stdio）時會根據 url 或 command 自動推斷。",
+    '以 JSON 形式編輯伺服器設定，例如 {"context7": {"url": "https://mcp.context7.com/mcp"}}。未填寫 type（http/stdio）時會根據 url 或 command 自動推斷。',
   "settings.mcpToolDetailsCollapse": "收起詳情",
   "settings.mcpToolDetailsExpand": "檢視工具詳情",
   "settings.mcpToolDetailsTitle": "服務工具",
@@ -2115,8 +2122,7 @@ export const zhTW = {
   "settings.lspLoadError": "載入 LSP 伺服器設定失敗",
   "settings.lspLangRequired": "請填寫語言識別。",
   "settings.lspCommandRequired": "請填寫啟動命令。",
-  "settings.lspDuplicateLang":
-    "語言 {{lang}} 已設定，請編輯既有項目。",
+  "settings.lspDuplicateLang": "語言 {{lang}} 已設定，請編輯既有項目。",
   "settings.lspSaveSuccess": "已儲存語言伺服器。",
   "settings.lspAddSuccess": "已新增語言伺服器。",
   "settings.lspSaveError": "儲存語言伺服器失敗",
@@ -2324,7 +2330,8 @@ export const zhTW = {
   "settings.hooksDocsExitCodes": "退出碼",
   "settings.hooksDocsExamples": "範例",
   "settings.storageLocations": "儲存位置",
-  "settings.storageLocationsInfo": "資料庫、檢查點、上傳圖片與圖片庫的儲存位置。",
+  "settings.storageLocationsInfo":
+    "資料庫、檢查點、上傳圖片與圖片庫的儲存位置。",
   "settings.storageDatabase": "資料庫",
   "settings.storageRuntimeDatabase": "運行資料庫",
   "settings.storageArchiveDatabase": "歸檔資料庫",
@@ -3062,13 +3069,15 @@ export const zhTW = {
   "chatInput.conversationPreviewLoading": "正在載入會話內容…",
   "chatInput.conversationPreviewFailed": "會話內容載入失敗",
   "chatInput.conversationPreviewEmpty": "該會話暫無可注入的內容",
-  "chatInput.conversationPreviewHint": "傳送時實際注入的上下文（已清理思考與工具細節，並依預算裁剪）",
+  "chatInput.conversationPreviewHint":
+    "傳送時實際注入的上下文（已清理思考與工具細節，並依預算裁剪）",
   "chatInput.webChipOpen": "開啟頁面",
   "chatInput.webChipCopyLink": "複製連結",
   "chatInput.webChipRemove": "移除引用",
   "chatInput.lspBadgeTitle": "LSP 語言伺服器",
   "chatInput.lspBadgeRunning": "{{running}}/{{total}} 執行中",
-  "chatInput.lspBadgeEmpty": "目前沒有執行中的工作階段 — 首次工具呼叫時自動啟動",
+  "chatInput.lspBadgeEmpty":
+    "目前沒有執行中的工作階段 — 首次工具呼叫時自動啟動",
   "chatInput.lspBadgeStatusRunning": "執行中",
   "chatInput.lspBadgeStatusDead": "已停止",
   "chatInput.lspBadgeStatusExited": "程序已退出",
@@ -3186,18 +3195,21 @@ export const zhTW = {
   "rightPanel.tabContextNewTerminal": "新增終端",
   "rightPanel.tabContextNewBrowser": "新增瀏覽器",
   "rightPanel.tabContextNewDrawing": "新增繪圖工作台",
-  "rightPanel.aiDrawing.promptPlaceholder": "描述你想生成的畫面，支援中文；例如：賽博龐克風格的雨夜城市，霓虹燈倒影…",
+  "rightPanel.aiDrawing.promptPlaceholder":
+    "描述你想生成的畫面，支援中文；例如：賽博龐克風格的雨夜城市，霓虹燈倒影…",
   "rightPanel.aiDrawing.promptHint": "Ctrl + Enter 快速生成",
   "rightPanel.aiDrawing.generate": "生成",
   "rightPanel.aiDrawing.channelAuto": "自動（預設渠道）",
   "rightPanel.aiDrawing.model": "模型",
   "rightPanel.aiDrawing.modelPlaceholder": "渠道預設模型",
-  "rightPanel.aiDrawing.modelHint": "模型清單來自已設定渠道的模型 API（自動聚合）；選擇模型自動匹配對應服務商",
+  "rightPanel.aiDrawing.modelHint":
+    "模型清單來自已設定渠道的模型 API（自動聚合）；選擇模型自動匹配對應服務商",
   "rightPanel.aiDrawing.modelsLoading": "載入模型中…",
   "rightPanel.aiDrawing.modelsLoadFailed": "取得模型清單失敗",
   "rightPanel.aiDrawing.ratio": "寬高比",
   "rightPanel.aiDrawing.tier": "尺寸",
-  "rightPanel.aiDrawing.sizeControlHint": "設定比例、尺寸與品質（選項依模型能力自動裁切）",
+  "rightPanel.aiDrawing.sizeControlHint":
+    "設定比例、尺寸與品質（選項依模型能力自動裁切）",
   "rightPanel.aiDrawing.resolution": "解析度",
   "rightPanel.aiDrawing.sizeDefault": "渠道預設",
   "rightPanel.aiDrawing.advanced": "進階參數",
@@ -3253,7 +3265,8 @@ export const zhTW = {
   "rightPanel.aiDrawing.loadMore": "載入更多",
   "rightPanel.aiDrawing.delete": "刪除",
   "rightPanel.aiDrawing.deleteDialogTitle": "刪除圖片",
-  "rightPanel.aiDrawing.deleteDialogBody": "確定要刪除這張圖片嗎？檔案將從圖庫中移除，無法復原。",
+  "rightPanel.aiDrawing.deleteDialogBody":
+    "確定要刪除這張圖片嗎？檔案將從圖庫中移除，無法復原。",
   "rightPanel.aiDrawing.deleteDialogCancel": "取消",
   "rightPanel.aiDrawing.deleteDialogConfirm": "確認刪除",
   "rightPanel.aiDrawing.deleted": "圖片已刪除",
@@ -3264,13 +3277,16 @@ export const zhTW = {
   "rightPanel.aiDrawing.modelSingleCount": "目前模型固定產生 1 張",
   "rightPanel.aiDrawing.modelNoThinking": "目前模型不支援思考層級",
   "rightPanel.aiDrawing.modelNoImageSearch": "目前模型不支援圖片搜尋",
-  "rightPanel.aiDrawing.modelUnsupportedRef": "目前模型不支援圖生圖，參考圖將在產生時忽略",
+  "rightPanel.aiDrawing.modelUnsupportedRef":
+    "目前模型不支援圖生圖，參考圖將在產生時忽略",
   "rightPanel.aiDrawing.uploadImage": "上傳參考圖",
-  "rightPanel.aiDrawing.uploadHint": "上傳本機圖片作為參考圖（圖生圖），不會進入圖庫",
+  "rightPanel.aiDrawing.uploadHint":
+    "上傳本機圖片作為參考圖（圖生圖），不會進入圖庫",
   "rightPanel.aiDrawing.uploadDialogTitle": "選擇參考圖",
   "rightPanel.aiDrawing.uploadRefDone": "已設為參考圖",
   "rightPanel.aiDrawing.refSetDone": "已設為參考圖",
-  "rightPanel.aiDrawing.libraryDragHint": "拖曳：圖片拖到聊天框可傳送；拖到畫布區設為參考圖；本機圖片拖入此處匯入圖庫",
+  "rightPanel.aiDrawing.libraryDragHint":
+    "拖曳：圖片拖到聊天框可傳送；拖到畫布區設為參考圖；本機圖片拖入此處匯入圖庫",
   "rightPanel.aiDrawing.importDone": "已匯入 {{count}} 張圖片到圖庫",
   "rightPanel.aiDrawing.importFailed": "圖片匯入失敗",
   "rightPanel.aiDrawing.retry": "重試",
@@ -3279,30 +3295,49 @@ export const zhTW = {
   "rightPanel.aiDrawing.generatingDetail": "正在生成圖片，請稍候…",
   "rightPanel.aiDrawing.resultCount": "本次生成 {{count}} 張",
   "rightPanel.aiDrawing.lightboxCounter": "{{index}} / {{total}}",
-  "rightPanel.aiDrawing.errorHint.timeout": "生成耗時過長，可稍後重試，或關閉串流預覽後重試。",
-  "rightPanel.aiDrawing.errorHint.auth": "API 金鑰無效或無權限，請檢查「設定 → 影像生成」中的渠道設定與額度。",
-  "rightPanel.aiDrawing.errorHint.rateLimit": "請求頻率過高或額度已用盡，請稍等片刻再試，或檢查帳戶額度。",
-  "rightPanel.aiDrawing.errorHint.contentFiltered": "提示詞或參考圖觸發了服務商的安全審核，請調整內容後重試。",
-  "rightPanel.aiDrawing.errorHint.server": "服務商服務暫時異常，可稍後重試，或切換到其他渠道。",
-  "rightPanel.aiDrawing.errorHint.network": "網路連線失敗，請檢查網路/代理設定後重試。",
-  "rightPanel.aiDrawing.errorHint.noModel": "目前沒有可用的生圖渠道，請先到「設定 → 影像生成」設定渠道與模型。",
-  "rightPanel.aiDrawing.errorHint.modelNotFound": "模型不存在或不可用，請檢查模型名稱是否正確，或到「設定 → 影像生成」更換模型。",
-  "rightPanel.aiDrawing.errorHint.modelUnsupported": "目前模型不支援此操作（如圖生圖/透明背景），請更換模型或調整參數。",
-  "rightPanel.aiDrawing.errorHint.missingPrompt": "生成參數缺少提示詞，請填寫提示詞後重試。",
-  "rightPanel.aiDrawing.errorHint.sizeInvalid": "尺寸或寬高比不受該模型支援，請調整「寬高比 / 尺寸」後重試。",
-  "rightPanel.aiDrawing.errorHint.invalidParams": "請求參數無效，請檢查進階參數（格式/壓縮率/背景等）後重試。",
-  "rightPanel.aiDrawing.errorHint.inputTooLarge": "參考圖片過大或數量超限，請換用更小/更少的圖片後重試。",
-  "rightPanel.aiDrawing.errorHint.fallback": "生成失敗，可調整提示詞或參數後重試；若持續失敗請查看下方錯誤詳情。",
+  "rightPanel.aiDrawing.errorHint.timeout":
+    "生成耗時過長，可稍後重試，或關閉串流預覽後重試。",
+  "rightPanel.aiDrawing.errorHint.auth":
+    "API 金鑰無效或無權限，請檢查「設定 → 影像生成」中的渠道設定與額度。",
+  "rightPanel.aiDrawing.errorHint.rateLimit":
+    "請求頻率過高或額度已用盡，請稍等片刻再試，或檢查帳戶額度。",
+  "rightPanel.aiDrawing.errorHint.contentFiltered":
+    "提示詞或參考圖觸發了服務商的安全審核，請調整內容後重試。",
+  "rightPanel.aiDrawing.errorHint.server":
+    "服務商服務暫時異常，可稍後重試，或切換到其他渠道。",
+  "rightPanel.aiDrawing.errorHint.network":
+    "網路連線失敗，請檢查網路/代理設定後重試。",
+  "rightPanel.aiDrawing.errorHint.noModel":
+    "目前沒有可用的生圖渠道，請先到「設定 → 影像生成」設定渠道與模型。",
+  "rightPanel.aiDrawing.errorHint.modelNotFound":
+    "模型不存在或不可用，請檢查模型名稱是否正確，或到「設定 → 影像生成」更換模型。",
+  "rightPanel.aiDrawing.errorHint.modelUnsupported":
+    "目前模型不支援此操作（如圖生圖/透明背景），請更換模型或調整參數。",
+  "rightPanel.aiDrawing.errorHint.missingPrompt":
+    "生成參數缺少提示詞，請填寫提示詞後重試。",
+  "rightPanel.aiDrawing.errorHint.sizeInvalid":
+    "尺寸或寬高比不受該模型支援，請調整「寬高比 / 尺寸」後重試。",
+  "rightPanel.aiDrawing.errorHint.invalidParams":
+    "請求參數無效，請檢查進階參數（格式/壓縮率/背景等）後重試。",
+  "rightPanel.aiDrawing.errorHint.inputTooLarge":
+    "參考圖片過大或數量超限，請換用更小/更少的圖片後重試。",
+  "rightPanel.aiDrawing.errorHint.fallback":
+    "生成失敗，可調整提示詞或參數後重試；若持續失敗請查看下方錯誤詳情。",
   "rightPanel.aiDrawing.cancel": "取消",
-  "rightPanel.aiDrawing.cancelHint": "放棄等待並丟棄本次結果（後台請求會繼續完成，但結果將被忽略）",
+  "rightPanel.aiDrawing.cancelHint":
+    "放棄等待並丟棄本次結果（後台請求會繼續完成，但結果將被忽略）",
   "rightPanel.aiDrawing.streamOffCount": "數量大於 1 時不支援串流預覽",
   "rightPanel.aiDrawing.streamOffRef": "圖生圖不支援串流預覽",
   "rightPanel.aiDrawing.retryModels": "重試模型清單",
   "rightPanel.aiDrawing.examplesTitle": "試試這些",
-  "rightPanel.aiDrawing.example1": "賽博龐克風格的雨夜城市，霓虹燈倒影，電影感構圖",
-  "rightPanel.aiDrawing.example2": "一隻坐在窗邊的橘貓，晨光灑落，水彩風格，柔和色調",
-  "rightPanel.aiDrawing.example3": "漂浮在雲端的浮空島嶼，瀑布傾瀉而下，奇幻插畫風",
-  "rightPanel.aiDrawing.example4": "復古膠片質感的肖像照，暖色調，淺景深，背景虛化",
+  "rightPanel.aiDrawing.example1":
+    "賽博龐克風格的雨夜城市，霓虹燈倒影，電影感構圖",
+  "rightPanel.aiDrawing.example2":
+    "一隻坐在窗邊的橘貓，晨光灑落，水彩風格，柔和色調",
+  "rightPanel.aiDrawing.example3":
+    "漂浮在雲端的浮空島嶼，瀑布傾瀉而下，奇幻插畫風",
+  "rightPanel.aiDrawing.example4":
+    "復古膠片質感的肖像照，暖色調，淺景深，背景虛化",
   "rightPanel.aiDrawing.collapse": "收合圖庫歷史",
   "rightPanel.aiDrawing.expand": "展開圖庫歷史",
   "rightPanel.aiDrawing.duration": "生成完成 · {{seconds}}s",
@@ -3311,15 +3346,19 @@ export const zhTW = {
   "rightPanel.aiDrawing.refSkippedDuplicate": "該參考圖已在清單中，跳過",
   "rightPanel.aiDrawing.searchHistory": "搜尋歷史提示詞",
   "rightPanel.aiDrawing.historyNoMatch": "沒有符合的歷史記錄",
-  "rightPanel.aiDrawing.refPlaceholderHint": "提示詞中用 {{Image N}} 引用第 N 張參考圖（點擊縮圖可插入）",
-  "rightPanel.aiDrawing.refPlaceholderOutOfRange": "{{refs}} 引用了不存在的參考圖（目前共 {{count}} 張）",
+  "rightPanel.aiDrawing.refPlaceholderHint":
+    "提示詞中用 {{Image N}} 引用第 N 張參考圖（點擊縮圖可插入）",
+  "rightPanel.aiDrawing.refPlaceholderOutOfRange":
+    "{{refs}} 引用了不存在的參考圖（目前共 {{count}} 張）",
   "rightPanel.aiDrawing.refOpenImage": "點擊查看參考圖",
   "rightPanel.aiDrawing.refChipLabel": "圖片 {{n}}",
   "rightPanel.aiDrawing.refPickerTitle": "插入參考圖引用",
   "rightPanel.aiDrawing.refPickerEmpty": "請先新增參考圖（拖曳或上傳）",
   "rightPanel.aiDrawing.refInsert": "點擊在提示詞中插入 {{Image {{n}}}}",
-  "rightPanel.aiDrawing.negativePromptPlaceholder": "輸入需要避免的內容，逗號分隔（留空停用）",
-  "rightPanel.aiDrawing.negativePromptHint": "反向提示詞 · 僅 Gemini Imagen 生效",
+  "rightPanel.aiDrawing.negativePromptPlaceholder":
+    "輸入需要避免的內容，逗號分隔（留空停用）",
+  "rightPanel.aiDrawing.negativePromptHint":
+    "反向提示詞 · 僅 Gemini Imagen 生效",
   "rightPanel.aiDrawing.negativePromptClear": "清空",
   "rightPanel.openInNewWindow": "在新視窗中開啟",
   "rightPanel.closeDiff": "關閉差異",
@@ -3455,7 +3494,8 @@ export const zhTW = {
   "git.copyAbsolutePath": "複製絕對路徑",
   "git.copyBranchName": "複製分支名稱",
   "git.copyRepoPath": "複製儲存庫路徑",
-  "git.statusLimitHit": "變更過多，僅顯示部分內容。可在 Git 設定中調整變更清單數量上限。",
+  "git.statusLimitHit":
+    "變更過多，僅顯示部分內容。可在 Git 設定中調整變更清單數量上限。",
   "git.revealInExplorer": "在檔案總管中顯示",
   "git.openInTerminal": "在終端機中開啟",
   "git.refreshBranches": "重新整理分支",

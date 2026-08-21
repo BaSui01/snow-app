@@ -120,6 +120,10 @@ export const zhCN = {
   "sidebar.openWithLoading": "正在检测已安装的 IDE...",
   "sidebar.openWithEmpty": "未检测到已安装的 IDE",
   "sidebar.openWithError": "检测已安装的 IDE 失败",
+  "sidebar.openWithFinder": "在访达中打开",
+  "sidebar.openWithExplorer": "在资源管理器中打开",
+  "sidebar.openWithFileManager": "在文件管理器中打开",
+  "sidebar.openInFileManagerError": "在文件管理器中打开失败",
   "sidebar.openInIdeError": "在 IDE 中打开项目失败",
   "sidebar.directoryKindLocal": "本地",
   "sidebar.directoryKindSsh": "远程",
@@ -146,7 +150,8 @@ export const zhCN = {
   "sidebar.explorerMultiSelectCount": "已选 {{count}} 项",
   "sidebar.explorerMultiSelectCopyPaths": "复制 {{count}} 个路径",
   "sidebar.explorerMultiSelectDelete": "删除 {{count}} 项",
-  "sidebar.explorerMultiSelectDeleteConfirm": "确定要删除选中的 {{count}} 项吗？此操作无法撤销。",
+  "sidebar.explorerMultiSelectDeleteConfirm":
+    "确定要删除选中的 {{count}} 项吗？此操作无法撤销。",
   "sidebar.explorerBatchDeleteError": "有 {{count}} 项删除失败，请查看明细",
   "sidebar.chats": "对话",
   "sidebar.noChats": "暂无会话",
@@ -218,9 +223,11 @@ export const zhCN = {
   "scheduledTask.apiProfile": "API 配置",
   "scheduledTask.model": "模型",
   "scheduledTask.basicModel": "基础模型",
-  "scheduledTask.basicModelPlaceholder": "如 gpt-4.1-mini（默认填充所选配置的基础模型）",
+  "scheduledTask.basicModelPlaceholder":
+    "如 gpt-4.1-mini（默认填充所选配置的基础模型）",
   "scheduledTask.advancedModel": "高级模型",
-  "scheduledTask.advancedModelPlaceholder": "如 gpt-4.1（默认填充所选配置的高级模型）",
+  "scheduledTask.advancedModelPlaceholder":
+    "如 gpt-4.1（默认填充所选配置的高级模型）",
   "scheduledTask.thinkingStrength": "思考强度",
   "scheduledTask.optionDefault": "默认",
   "scheduledTask.optionDefaultWithValue": "默认（{{value}}）",
@@ -236,14 +243,16 @@ export const zhCN = {
   "scheduledTask.scopeGlobal": "全局",
   "scheduledTask.scopeProjectDisabled": "无活跃项目",
   "scheduledTask.clearGlobal": "清除全局任务",
-  "scheduledTask.confirmClearGlobal": "确定清除所有全局定时任务？此操作不可撤销。",
+  "scheduledTask.confirmClearGlobal":
+    "确定清除所有全局定时任务？此操作不可撤销。",
   "scheduledTask.emptyGlobalHint": "暂无全局任务。",
   "scheduledTask.emptyProjectHint": "当前项目暂无任务。",
   "scheduledTask.taskCount": "{{count}} 个任务",
   "scheduledTask.emptyHint": "还没有定时任务，在右侧创建一个吧。",
   "scheduledTask.executorUnavailable":
     "AI Loop 不可用 — 在聊天就绪前任务不会执行。",
-  "scheduledTask.lifetimeHint": "任务保存在本地，重启应用后仍会保留并继续执行；应用未运行时错过的执行会被跳过。",
+  "scheduledTask.lifetimeHint":
+    "任务保存在本地，重启应用后仍会保留并继续执行；应用未运行时错过的执行会被跳过。",
   "scheduledTask.clearAll": "全部清除",
   "scheduledTask.confirmClearAll": "确定清除所有定时任务？此操作不可撤销。",
   "scheduledTask.runNow": "立即运行",
@@ -276,7 +285,7 @@ export const zhCN = {
   "scheduledTask.preScriptCommand": "Shell 命令",
   "scheduledTask.preScriptPlaceholder": "例如：git diff --quiet || exit 1",
   "scheduledTask.preScriptHint":
-    "退出码 0 = 运行 AI，1 = 跳过。或输出一行 JSON：{\"run\":false,\"reason\":\"...\",\"output\":\"...\"}——\"output\" 会填充 prompt 中的 {{SCRIPT_OUTPUT}} 占位符。",
+    '退出码 0 = 运行 AI，1 = 跳过。或输出一行 JSON：{"run":false,"reason":"...","output":"..."}——"output" 会填充 prompt 中的 {{SCRIPT_OUTPUT}} 占位符。',
   "scheduledTask.preScriptTimeout": "超时（秒）",
   "scheduledTask.runOnScriptError": "脚本出错时仍运行 AI",
   "scheduledTask.skipCount": "跳过 {{count}} 次",
@@ -300,7 +309,8 @@ export const zhCN = {
   "scheduledTask.scheduleSettingsTitle": "调度设置",
   "scheduledTask.runConfigSettingsTitle": "运行配置",
   "scheduledTask.clearProject": "清除当前项目任务",
-  "scheduledTask.confirmClearProject": "确定仅清除当前项目的所有定时任务？此操作不可撤销。",
+  "scheduledTask.confirmClearProject":
+    "确定仅清除当前项目的所有定时任务？此操作不可撤销。",
   "scheduledTask.emptyFiltered": "当前筛选下暂无任务。",
   "scheduledTask.defaultWithValue": "默认（{{value}}）",
   "scheduledTask.selectTask": "选择任务：{{name}}",
@@ -459,19 +469,14 @@ export const zhCN = {
     "已保留思考内容，但未生成可用正文。可通过输入框重新请求。",
   "chat.incomplete.variant.toolCall":
     "响应中的工具调用不完整，已丢弃且未执行。可通过输入框继续。",
-  "chat.incomplete.variant.empty":
-    "未收到可用内容。可通过输入框重新请求。",
-  "chat.incomplete.reason.unexpectedEof":
-    "连接在服务商确认完成前意外关闭。",
+  "chat.incomplete.variant.empty": "未收到可用内容。可通过输入框重新请求。",
+  "chat.incomplete.reason.unexpectedEof": "连接在服务商确认完成前意外关闭。",
   "chat.incomplete.reason.readError": "接收响应数据时连接出错。",
   "chat.incomplete.reason.idleTimeout": "等待响应数据超时。",
-  "chat.incomplete.reason.explicitIncomplete":
-    "服务商明确返回了未完成响应。",
+  "chat.incomplete.reason.explicitIncomplete": "服务商明确返回了未完成响应。",
   "chat.incomplete.reason.outputLimit": "模型已达到输出上限。",
-  "chat.incomplete.outcome.partialThreshold":
-    "已保留达到安全阈值的部分正文。",
-  "chat.incomplete.outcome.retryExhausted":
-    "后端自动恢复已达到重试上限。",
+  "chat.incomplete.outcome.partialThreshold": "已保留达到安全阈值的部分正文。",
+  "chat.incomplete.outcome.retryExhausted": "后端自动恢复已达到重试上限。",
   "chat.incomplete.outcome.nonRetriable": "此次中断无法安全自动重试。",
   "chat.copyResponse": "复制",
   "chat.copyAsText": "复制为纯文本",
@@ -1430,9 +1435,11 @@ export const zhCN = {
     "默认关闭以提速。关闭时 Gemini 请求显式将思考预算设为 0；Anthropic 始终不思考。",
   "settings.apiVisionThinkingEffort": "思考强度",
   "settings.apiVisionMaxTokens": "最大输出 tokens",
-  "settings.apiVisionMaxTokensHint": "图片描述的最大输出 tokens，留空默认 4096。",
+  "settings.apiVisionMaxTokensHint":
+    "图片描述的最大输出 tokens，留空默认 4096。",
   "settings.apiVisionMaxConcurrency": "最大并发分析数",
-  "settings.apiVisionMaxConcurrencyHint": "描述附件图片时最多并行分析的图片数，留空默认 8（1-8）。",
+  "settings.apiVisionMaxConcurrencyHint":
+    "描述附件图片时最多并行分析的图片数，留空默认 8（1-8）。",
   "settings.apiStreamIdleTimeout": "流式空闲超时（秒）",
   "settings.apiMaxRetries": "最大重试次数",
   "settings.apiRetryBaseDelayMs": "重试延迟（毫秒）",
@@ -2049,7 +2056,7 @@ export const zhCN = {
   "settings.mcpJsonInvalid": "JSON 无效",
   "settings.mcpJsonEditorLabel": "MCP 服务器 JSON 配置",
   "settings.mcpJsonHint":
-    "以 JSON 形式编辑服务器配置，例如 {\"context7\": {\"url\": \"https://mcp.context7.com/mcp\"}}。未填写 type（http/stdio）时会根据 url 或 command 自动推断。",
+    '以 JSON 形式编辑服务器配置，例如 {"context7": {"url": "https://mcp.context7.com/mcp"}}。未填写 type（http/stdio）时会根据 url 或 command 自动推断。',
   "settings.mcpToolDetailsCollapse": "收起详情",
   "settings.mcpToolDetailsExpand": "查看工具详情",
   "settings.mcpToolDetailsTitle": "服务工具",
@@ -2114,8 +2121,7 @@ export const zhCN = {
   "settings.lspLoadError": "加载 LSP 服务器配置失败",
   "settings.lspLangRequired": "请填写语言标识。",
   "settings.lspCommandRequired": "请填写启动命令。",
-  "settings.lspDuplicateLang":
-    "语言 {{lang}} 已配置，请编辑已有条目。",
+  "settings.lspDuplicateLang": "语言 {{lang}} 已配置，请编辑已有条目。",
   "settings.lspSaveSuccess": "已保存语言服务器。",
   "settings.lspAddSuccess": "已添加语言服务器。",
   "settings.lspSaveError": "保存语言服务器失败",
@@ -2322,7 +2328,8 @@ export const zhCN = {
   "settings.hooksDocsExitCodes": "退出码",
   "settings.hooksDocsExamples": "示例",
   "settings.storageLocations": "存储位置",
-  "settings.storageLocationsInfo": "数据库、检查点、上传图片与图片库的保存位置。",
+  "settings.storageLocationsInfo":
+    "数据库、检查点、上传图片与图片库的保存位置。",
   "settings.storageDatabase": "数据库",
   "settings.storageRuntimeDatabase": "运行数据库",
   "settings.storageArchiveDatabase": "归档数据库",
@@ -3082,7 +3089,8 @@ export const zhCN = {
   "chatInput.conversationPreviewLoading": "正在加载会话内容…",
   "chatInput.conversationPreviewFailed": "会话内容加载失败",
   "chatInput.conversationPreviewEmpty": "该会话暂无可注入的内容",
-  "chatInput.conversationPreviewHint": "发送时实际注入的上下文（已清洗思考与工具细节，并按预算裁剪）",
+  "chatInput.conversationPreviewHint":
+    "发送时实际注入的上下文（已清洗思考与工具细节，并按预算裁剪）",
   "chatInput.webChipOpen": "打开页面",
   "chatInput.webChipCopyLink": "复制链接",
   "chatInput.webChipRemove": "移除引用",
@@ -3248,18 +3256,21 @@ export const zhCN = {
   "rightPanel.fileSearchPrevious": "上一个匹配（Shift+Enter）",
   "rightPanel.fileSearchNext": "下一个匹配（Enter）",
   "rightPanel.fileSearchClose": "关闭查找（Esc）",
-  "rightPanel.aiDrawing.promptPlaceholder": "描述你想生成的画面，支持中文；例如：赛博朋克风格的雨夜城市，霓虹灯倒影…",
+  "rightPanel.aiDrawing.promptPlaceholder":
+    "描述你想生成的画面，支持中文；例如：赛博朋克风格的雨夜城市，霓虹灯倒影…",
   "rightPanel.aiDrawing.promptHint": "Ctrl + Enter 快速生成",
   "rightPanel.aiDrawing.generate": "生成",
   "rightPanel.aiDrawing.channelAuto": "自动（默认渠道）",
   "rightPanel.aiDrawing.model": "模型",
   "rightPanel.aiDrawing.modelPlaceholder": "渠道默认模型",
-  "rightPanel.aiDrawing.modelHint": "模型列表来自已设置渠道的模型 API（自动聚合）；选择模型自动匹配对应服务商",
+  "rightPanel.aiDrawing.modelHint":
+    "模型列表来自已设置渠道的模型 API（自动聚合）；选择模型自动匹配对应服务商",
   "rightPanel.aiDrawing.modelsLoading": "加载模型中…",
   "rightPanel.aiDrawing.modelsLoadFailed": "获取模型列表失败",
   "rightPanel.aiDrawing.ratio": "宽高比",
   "rightPanel.aiDrawing.tier": "尺寸",
-  "rightPanel.aiDrawing.sizeControlHint": "设置比例、尺寸与质量（选项按模型能力自动裁剪）",
+  "rightPanel.aiDrawing.sizeControlHint":
+    "设置比例、尺寸与质量（选项按模型能力自动裁剪）",
   "rightPanel.aiDrawing.resolution": "分辨率",
   "rightPanel.aiDrawing.sizeDefault": "渠道默认",
   "rightPanel.aiDrawing.advanced": "高级参数",
@@ -3315,7 +3326,8 @@ export const zhCN = {
   "rightPanel.aiDrawing.loadMore": "加载更多",
   "rightPanel.aiDrawing.delete": "删除",
   "rightPanel.aiDrawing.deleteDialogTitle": "删除图片",
-  "rightPanel.aiDrawing.deleteDialogBody": "确定要删除这张图片吗？文件将从图库中移除，无法恢复。",
+  "rightPanel.aiDrawing.deleteDialogBody":
+    "确定要删除这张图片吗？文件将从图库中移除，无法恢复。",
   "rightPanel.aiDrawing.deleteDialogCancel": "取消",
   "rightPanel.aiDrawing.deleteDialogConfirm": "确认删除",
   "rightPanel.aiDrawing.deleted": "图片已删除",
@@ -3326,13 +3338,16 @@ export const zhCN = {
   "rightPanel.aiDrawing.modelSingleCount": "当前模型固定生成 1 张",
   "rightPanel.aiDrawing.modelNoThinking": "当前模型不支持思考等级",
   "rightPanel.aiDrawing.modelNoImageSearch": "当前模型不支持图片搜索",
-  "rightPanel.aiDrawing.modelUnsupportedRef": "当前模型不支持图生图，参考图将在生成时忽略",
+  "rightPanel.aiDrawing.modelUnsupportedRef":
+    "当前模型不支持图生图，参考图将在生成时忽略",
   "rightPanel.aiDrawing.uploadImage": "上传参考图",
-  "rightPanel.aiDrawing.uploadHint": "上传本地图片作为参考图（图生图），不会进入图库",
+  "rightPanel.aiDrawing.uploadHint":
+    "上传本地图片作为参考图（图生图），不会进入图库",
   "rightPanel.aiDrawing.uploadDialogTitle": "选择参考图",
   "rightPanel.aiDrawing.uploadRefDone": "已设为参考图",
   "rightPanel.aiDrawing.refSetDone": "已设为参考图",
-  "rightPanel.aiDrawing.libraryDragHint": "拖拽：图片拖到聊天框可发送；拖到画布区设为参考图；本地图片拖入此处导入图库",
+  "rightPanel.aiDrawing.libraryDragHint":
+    "拖拽：图片拖到聊天框可发送；拖到画布区设为参考图；本地图片拖入此处导入图库",
   "rightPanel.aiDrawing.importDone": "已导入 {{count}} 张图片到图库",
   "rightPanel.aiDrawing.importFailed": "图片导入失败",
   "rightPanel.aiDrawing.retry": "重试",
@@ -3341,30 +3356,49 @@ export const zhCN = {
   "rightPanel.aiDrawing.generatingDetail": "正在生成图片，请稍候…",
   "rightPanel.aiDrawing.resultCount": "本次生成 {{count}} 张",
   "rightPanel.aiDrawing.lightboxCounter": "{{index}} / {{total}}",
-  "rightPanel.aiDrawing.errorHint.timeout": "生成耗时过长，可稍后重试，或关闭流式预览后重试。",
-  "rightPanel.aiDrawing.errorHint.auth": "API 密钥无效或无权限，请检查「设置 → 图像生成」中的渠道设置与额度。",
-  "rightPanel.aiDrawing.errorHint.rateLimit": "请求频率过高或额度已用尽，请稍等片刻再试，或检查账户额度。",
-  "rightPanel.aiDrawing.errorHint.contentFiltered": "提示词或参考图触发了服务商的安全审核，请调整内容后重试。",
-  "rightPanel.aiDrawing.errorHint.server": "服务商服务暂时异常，可稍后重试，或切换到其他渠道。",
-  "rightPanel.aiDrawing.errorHint.network": "网络连接失败，请检查网络/代理设置后重试。",
-  "rightPanel.aiDrawing.errorHint.noModel": "当前没有可用的生图渠道，请先到「设置 → 图像生成」设置渠道与模型。",
-  "rightPanel.aiDrawing.errorHint.modelNotFound": "模型不存在或不可用，请检查模型名称是否正确，或到「设置 → 图像生成」更换模型。",
-  "rightPanel.aiDrawing.errorHint.modelUnsupported": "当前模型不支持此操作（如图生图/透明背景），请更换模型或调整参数。",
-  "rightPanel.aiDrawing.errorHint.missingPrompt": "生成参数缺少提示词，请填写提示词后重试。",
-  "rightPanel.aiDrawing.errorHint.sizeInvalid": "尺寸或宽高比不受该模型支持，请调整「宽高比 / 尺寸」后重试。",
-  "rightPanel.aiDrawing.errorHint.invalidParams": "请求参数无效，请检查高级参数（格式/压缩率/背景等）后重试。",
-  "rightPanel.aiDrawing.errorHint.inputTooLarge": "参考图片过大或数量超限，请换用更小/更少的图片后重试。",
-  "rightPanel.aiDrawing.errorHint.fallback": "生成失败，可调整提示词或参数后重试；若持续失败请查看下方错误详情。",
+  "rightPanel.aiDrawing.errorHint.timeout":
+    "生成耗时过长，可稍后重试，或关闭流式预览后重试。",
+  "rightPanel.aiDrawing.errorHint.auth":
+    "API 密钥无效或无权限，请检查「设置 → 图像生成」中的渠道设置与额度。",
+  "rightPanel.aiDrawing.errorHint.rateLimit":
+    "请求频率过高或额度已用尽，请稍等片刻再试，或检查账户额度。",
+  "rightPanel.aiDrawing.errorHint.contentFiltered":
+    "提示词或参考图触发了服务商的安全审核，请调整内容后重试。",
+  "rightPanel.aiDrawing.errorHint.server":
+    "服务商服务暂时异常，可稍后重试，或切换到其他渠道。",
+  "rightPanel.aiDrawing.errorHint.network":
+    "网络连接失败，请检查网络/代理设置后重试。",
+  "rightPanel.aiDrawing.errorHint.noModel":
+    "当前没有可用的生图渠道，请先到「设置 → 图像生成」设置渠道与模型。",
+  "rightPanel.aiDrawing.errorHint.modelNotFound":
+    "模型不存在或不可用，请检查模型名称是否正确，或到「设置 → 图像生成」更换模型。",
+  "rightPanel.aiDrawing.errorHint.modelUnsupported":
+    "当前模型不支持此操作（如图生图/透明背景），请更换模型或调整参数。",
+  "rightPanel.aiDrawing.errorHint.missingPrompt":
+    "生成参数缺少提示词，请填写提示词后重试。",
+  "rightPanel.aiDrawing.errorHint.sizeInvalid":
+    "尺寸或宽高比不受该模型支持，请调整「宽高比 / 尺寸」后重试。",
+  "rightPanel.aiDrawing.errorHint.invalidParams":
+    "请求参数无效，请检查高级参数（格式/压缩率/背景等）后重试。",
+  "rightPanel.aiDrawing.errorHint.inputTooLarge":
+    "参考图片过大或数量超限，请换用更小/更少的图片后重试。",
+  "rightPanel.aiDrawing.errorHint.fallback":
+    "生成失败，可调整提示词或参数后重试；若持续失败请查看下方错误详情。",
   "rightPanel.aiDrawing.cancel": "取消",
-  "rightPanel.aiDrawing.cancelHint": "放弃等待并丢弃本次结果（后台请求会继续完成，但结果将被忽略）",
+  "rightPanel.aiDrawing.cancelHint":
+    "放弃等待并丢弃本次结果（后台请求会继续完成，但结果将被忽略）",
   "rightPanel.aiDrawing.streamOffCount": "数量大于 1 时不支持流式预览",
   "rightPanel.aiDrawing.streamOffRef": "图生图不支持流式预览",
   "rightPanel.aiDrawing.retryModels": "重试模型列表",
   "rightPanel.aiDrawing.examplesTitle": "试试这些",
-  "rightPanel.aiDrawing.example1": "赛博朋克风格的雨夜城市，霓虹灯倒影，电影感构图",
-  "rightPanel.aiDrawing.example2": "一只坐在窗边的橘猫，晨光洒落，水彩风格，柔和色调",
-  "rightPanel.aiDrawing.example3": "漂浮在云端的浮空岛屿，瀑布倾泻而下，奇幻插画风",
-  "rightPanel.aiDrawing.example4": "复古胶片质感的肖像照，暖色调，浅景深，背景虚化",
+  "rightPanel.aiDrawing.example1":
+    "赛博朋克风格的雨夜城市，霓虹灯倒影，电影感构图",
+  "rightPanel.aiDrawing.example2":
+    "一只坐在窗边的橘猫，晨光洒落，水彩风格，柔和色调",
+  "rightPanel.aiDrawing.example3":
+    "漂浮在云端的浮空岛屿，瀑布倾泻而下，奇幻插画风",
+  "rightPanel.aiDrawing.example4":
+    "复古胶片质感的肖像照，暖色调，浅景深，背景虚化",
   "rightPanel.aiDrawing.collapse": "收起图库历史",
   "rightPanel.aiDrawing.expand": "展开图库历史",
   "rightPanel.aiDrawing.duration": "生成完成 · {{seconds}}s",
@@ -3373,15 +3407,19 @@ export const zhCN = {
   "rightPanel.aiDrawing.refSkippedDuplicate": "该参考图已在列表中，跳过",
   "rightPanel.aiDrawing.searchHistory": "搜索历史提示词",
   "rightPanel.aiDrawing.historyNoMatch": "没有符合的历史记录",
-  "rightPanel.aiDrawing.refPlaceholderHint": "提示词中用 {{Image N}} 引用第 N 张参考图（点击缩略图可插入）",
-  "rightPanel.aiDrawing.refPlaceholderOutOfRange": "{{refs}} 引用了不存在的参考图（当前共 {{count}} 张）",
+  "rightPanel.aiDrawing.refPlaceholderHint":
+    "提示词中用 {{Image N}} 引用第 N 张参考图（点击缩略图可插入）",
+  "rightPanel.aiDrawing.refPlaceholderOutOfRange":
+    "{{refs}} 引用了不存在的参考图（当前共 {{count}} 张）",
   "rightPanel.aiDrawing.refOpenImage": "点击查看参考图",
   "rightPanel.aiDrawing.refChipLabel": "图片 {{n}}",
   "rightPanel.aiDrawing.refPickerTitle": "插入参考图引用",
   "rightPanel.aiDrawing.refPickerEmpty": "请先添加参考图（拖拽或上传）",
   "rightPanel.aiDrawing.refInsert": "点击在提示词中插入 {{Image {{n}}}}",
-  "rightPanel.aiDrawing.negativePromptPlaceholder": "输入需要避免的内容，逗号分隔（留空禁用）",
-  "rightPanel.aiDrawing.negativePromptHint": "反向提示词 · 仅 Gemini Imagen 生效",
+  "rightPanel.aiDrawing.negativePromptPlaceholder":
+    "输入需要避免的内容，逗号分隔（留空禁用）",
+  "rightPanel.aiDrawing.negativePromptHint":
+    "反向提示词 · 仅 Gemini Imagen 生效",
   "rightPanel.aiDrawing.negativePromptClear": "清空",
   "codebase.panel.fileCount": "共 {{count}} 个文件",
   "codebase.panel.colPath": "文件路径",
@@ -3475,7 +3513,8 @@ export const zhCN = {
   "git.copyAbsolutePath": "复制绝对路径",
   "git.copyBranchName": "复制分支名",
   "git.copyRepoPath": "复制仓库路径",
-  "git.statusLimitHit": "变更过多，仅显示部分内容。可在 Git 设置中调整变更列表数量上限。",
+  "git.statusLimitHit":
+    "变更过多，仅显示部分内容。可在 Git 设置中调整变更列表数量上限。",
   "git.revealInExplorer": "在文件管理器中显示",
   "git.openInTerminal": "在终端中打开",
   "git.refreshBranches": "刷新分支",

@@ -14,7 +14,9 @@ import { createPortal } from "react-dom";
 import { useI18n } from "../../../i18n";
 import type { IdeInfo, WorkspaceDirectoryKind } from "../../../../preload";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
+import { FileManagerIcon } from "../../icons/fileManagerIcons";
 import { IdeIcon } from "../../icons/ideIcons";
+import { isMacOS } from "../../../utils/shortcutUtils";
 import { useMenuPosition } from "./useMenuPosition";
 
 type WorkspaceDirectoryMenuProps = {
@@ -99,7 +101,7 @@ export function WorkspaceDirectoryMenu({
         window.clearTimeout(openWithCloseTimerRef.current);
       }
     },
-    []
+    [],
   );
 
   const { position: menuPosition } = useMenuPosition({
@@ -139,7 +141,7 @@ export function WorkspaceDirectoryMenu({
             ? error.message
             : t("sidebar.openWithError", {
                 defaultValue: "Failed to detect installed IDEs",
-              })
+              }),
         );
       })
       .finally(() => setIsLoadingIdes(false));
@@ -287,7 +289,34 @@ export function WorkspaceDirectoryMenu({
           ? error.message
           : t("sidebar.openInIdeError", {
               defaultValue: "Failed to open project in IDE",
-            })
+            }),
+      );
+      setIsOpenWithOpen(true);
+    });
+    setIsButtonOpen(false);
+    onContextMenuCloseRef.current?.();
+    setShowConfirm(false);
+    setIsOpenWithOpen(false);
+  };
+
+  // macOS 显示“访达”，Windows 显示“资源管理器”，其余平台显示“文件管理器”
+  const fileManagerLabelKey = isMacOS()
+    ? "sidebar.openWithFinder"
+    : navigator.userAgent.includes("Windows")
+      ? "sidebar.openWithExplorer"
+      : "sidebar.openWithFileManager";
+
+  const handleOpenInFileManager = (): void => {
+    if (!directoryPath) {
+      return;
+    }
+    void window.snow.showItemInFolder(directoryPath).catch((error) => {
+      setIdeError(
+        error instanceof Error
+          ? error.message
+          : t("sidebar.openInFileManagerError", {
+              defaultValue: "Failed to open in file manager",
+            }),
       );
       setIsOpenWithOpen(true);
     });
@@ -299,6 +328,19 @@ export function WorkspaceDirectoryMenu({
 
   const renderOpenWithItems = (): React.JSX.Element => (
     <>
+      <button
+        type="button"
+        className="workspace-directory-menu-item"
+        onClick={handleOpenInFileManager}
+        role="menuitem"
+      >
+        <FileManagerIcon size={13} />
+        <span>
+          {t(fileManagerLabelKey, {
+            defaultValue: "Open in Explorer",
+          })}
+        </span>
+      </button>
       {isLoadingIdes ? (
         <div className="workspace-directory-menu-submenu-status">
           <Loader2 className="spin" size={12} />
@@ -414,7 +456,10 @@ export function WorkspaceDirectoryMenu({
                           defaultValue: "Open with",
                         })}
                       </span>
-                      <ChevronRight size={12} className="workspace-directory-menu-item-chevron" />
+                      <ChevronRight
+                        size={12}
+                        className="workspace-directory-menu-item-chevron"
+                      />
                     </button>
                     {isOpenWithOpen
                       ? createPortal(
@@ -438,7 +483,7 @@ export function WorkspaceDirectoryMenu({
                           >
                             {renderOpenWithItems()}
                           </div>,
-                          document.body
+                          document.body,
                         )
                       : null}
                   </span>
@@ -488,7 +533,7 @@ export function WorkspaceDirectoryMenu({
                   </button>
                 ) : null}
               </div>,
-              document.body
+              document.body,
             )
           : null}
       </span>

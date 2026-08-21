@@ -127,6 +127,10 @@ export const en = {
   "sidebar.openWithLoading": "Detecting installed IDEs...",
   "sidebar.openWithEmpty": "No installed IDEs detected",
   "sidebar.openWithError": "Failed to detect installed IDEs",
+  "sidebar.openWithFinder": "Open in Finder",
+  "sidebar.openWithExplorer": "Open in Explorer",
+  "sidebar.openWithFileManager": "Open in File Manager",
+  "sidebar.openInFileManagerError": "Failed to open in file manager",
   "sidebar.openInIdeError": "Failed to open project in IDE",
   "sidebar.directoryKindLocal": "Local",
   "sidebar.directoryKindSsh": "SSH",
@@ -227,9 +231,11 @@ export const en = {
   "scheduledTask.apiProfile": "API config",
   "scheduledTask.model": "Model",
   "scheduledTask.basicModel": "Basic model",
-  "scheduledTask.basicModelPlaceholder": "e.g. gpt-4.1-mini (pre-filled with the selected config's basic model)",
+  "scheduledTask.basicModelPlaceholder":
+    "e.g. gpt-4.1-mini (pre-filled with the selected config's basic model)",
   "scheduledTask.advancedModel": "Advanced model",
-  "scheduledTask.advancedModelPlaceholder": "e.g. gpt-4.1 (pre-filled with the selected config's advanced model)",
+  "scheduledTask.advancedModelPlaceholder":
+    "e.g. gpt-4.1 (pre-filled with the selected config's advanced model)",
   "scheduledTask.thinkingStrength": "Thinking strength",
   "scheduledTask.optionDefault": "Default",
   "scheduledTask.optionDefaultWithValue": "Default ({{value}})",
@@ -288,7 +294,7 @@ export const en = {
   "scheduledTask.preScriptCommand": "Shell command",
   "scheduledTask.preScriptPlaceholder": "e.g. git diff --quiet || exit 1",
   "scheduledTask.preScriptHint":
-    "Exit 0 = run AI, exit 1 = skip. Or print a JSON line: {\"run\":false,\"reason\":\"...\",\"output\":\"...\"} — \"output\" fills the {{SCRIPT_OUTPUT}} placeholder in the prompt.",
+    'Exit 0 = run AI, exit 1 = skip. Or print a JSON line: {"run":false,"reason":"...","output":"..."} — "output" fills the {{SCRIPT_OUTPUT}} placeholder in the prompt.',
   "scheduledTask.preScriptTimeout": "Timeout (s)",
   "scheduledTask.runOnScriptError": "Run AI even if the script fails",
   "scheduledTask.skipCount": "{{count}} skipped",
@@ -306,7 +312,8 @@ export const en = {
   "scheduledTask.noNextRun": "No upcoming run",
   "scheduledTask.neverRun": "Never run",
   "scheduledTask.noRunHistory": "No run history yet",
-  "scheduledTask.inheritActiveProfile": "Follow the currently active API config",
+  "scheduledTask.inheritActiveProfile":
+    "Follow the currently active API config",
   "scheduledTask.inheritApiProfile": "Follow the API config",
   "scheduledTask.basicInfoTitle": "Basic information",
   "scheduledTask.scheduleSettingsTitle": "Schedule settings",
@@ -454,8 +461,10 @@ export const en = {
   "chat.thinkingStrengthWithValue": "Thinking strength: {{value}}",
   "chat.thinkingFollowProfile": "Follow current Profile default ({{value}})",
   "chat.loadingApiConfig": "Loading API configuration",
-  "chat.noApiConfig": "No AI API configured. Please add an API configuration in Settings first.",
-  "chat.noApiConfigBanner": "No AI API configured yet. Add an API configuration to start chatting",
+  "chat.noApiConfig":
+    "No AI API configured. Please add an API configuration in Settings first.",
+  "chat.noApiConfigBanner":
+    "No AI API configured yet. Add an API configuration to start chatting",
   "chat.configureApi": "Open Settings",
   "chat.customThinkingStrength": "Custom thinking strength",
   "chat.customThinkingPlaceholder": "e.g. ultra",
@@ -491,8 +500,7 @@ export const en = {
     "Timed out while waiting for response data.",
   "chat.incomplete.reason.explicitIncomplete":
     "The provider explicitly marked the response as incomplete.",
-  "chat.incomplete.reason.outputLimit":
-    "The model reached its output limit.",
+  "chat.incomplete.reason.outputLimit": "The model reached its output limit.",
   "chat.incomplete.outcome.partialThreshold":
     "The visible partial response met the safe retention threshold.",
   "chat.incomplete.outcome.retryExhausted":
@@ -621,7 +629,8 @@ export const en = {
   "toolCall.subAgent.status.completed": "Completed",
   "toolCall.subAgent.status.error": "Failed",
   "toolCall.subAgent.resuming": "Resuming sub-agent...",
-  "toolCall.subAgent.queued": "Message queued; it will be delivered when the sub-agent finishes its current round",
+  "toolCall.subAgent.queued":
+    "Message queued; it will be delivered when the sub-agent finishes its current round",
   "toolCall.subAgentContinue.name": "Continue sub-agent",
   "toolCall.subAgentContinue.message": "Message",
   "toolCall.subAgentList.name": "Sub-agents",
@@ -705,7 +714,7 @@ export const en = {
   "toolCall.websearch.charCount": "{{count}} chars",
   "toolCall.websearch.image": "Image",
   "toolCall.websearch.preview": "Content preview",
-"toolCall.websearch.fullContent": "Full content",
+  "toolCall.websearch.fullContent": "Full content",
   "toolCall.websearch.truncated": "Truncated",
   "toolCall.websearch.result": "Result",
   "toolCall.websearch.searching": "Searching the web...",
@@ -777,7 +786,8 @@ export const en = {
   "toolCall.imagegen.error.sizeInvalid":
     "Size / aspect ratio not supported by this model",
   "toolCall.imagegen.error.invalidParams": "Invalid request parameters",
-  "toolCall.imagegen.error.inputTooLarge": "Reference image too large or too many images",
+  "toolCall.imagegen.error.inputTooLarge":
+    "Reference image too large or too many images",
   "toolCall.imagegen.error.fallback": "Image generation failed",
   "toolCall.imagegen.result": "Result",
   "toolCall.browser.newTab": "New tab",
@@ -1358,7 +1368,8 @@ export const en = {
   "settings.imageLibraryModelAll": "All models",
   "settings.imageLibraryEmpty":
     "No images yet — generated images will appear here automatically",
-  "settings.imageLibraryDragImportHint": "You can also drop local images onto this page to import them into the gallery",
+  "settings.imageLibraryDragImportHint":
+    "You can also drop local images onto this page to import them into the gallery",
   "settings.imageLibraryDelete": "Delete",
   "settings.imageLibraryDeleteTitle": "Delete image",
   "settings.imageLibraryDeleteConfirm":
@@ -1477,9 +1488,11 @@ export const en = {
     "Disabled by default for speed. When disabled, Gemini requests explicitly set the thinking budget to 0; Anthropic is always non-thinking.",
   "settings.apiVisionThinkingEffort": "Thinking effort",
   "settings.apiVisionMaxTokens": "Max output tokens",
-  "settings.apiVisionMaxTokensHint": "Maximum output tokens for image descriptions. Defaults to 4096 when empty.",
+  "settings.apiVisionMaxTokensHint":
+    "Maximum output tokens for image descriptions. Defaults to 4096 when empty.",
   "settings.apiVisionMaxConcurrency": "Max concurrent analyses",
-  "settings.apiVisionMaxConcurrencyHint": "Maximum number of images analyzed in parallel when describing attachments. Defaults to 8 when empty (1-8).",
+  "settings.apiVisionMaxConcurrencyHint":
+    "Maximum number of images analyzed in parallel when describing attachments. Defaults to 8 when empty (1-8).",
   "settings.apiStreamIdleTimeout": "Stream idle timeout (s)",
   "settings.apiMaxRetries": "Max retries",
   "settings.apiRetryBaseDelayMs": "Retry delay (ms)",
@@ -2124,7 +2137,7 @@ export const en = {
   "settings.mcpJsonInvalid": "Invalid JSON",
   "settings.mcpJsonEditorLabel": "MCP server JSON configuration",
   "settings.mcpJsonHint":
-    "Edit the server configuration as JSON, e.g. {\"context7\": {\"url\": \"https://mcp.context7.com/mcp\"}}. type (http/stdio) is inferred from url or command when omitted.",
+    'Edit the server configuration as JSON, e.g. {"context7": {"url": "https://mcp.context7.com/mcp"}}. type (http/stdio) is inferred from url or command when omitted.',
   "settings.mcpToolDetailsCollapse": "Collapse details",
   "settings.mcpToolDetailsExpand": "View tool details",
   "settings.mcpToolDetailsTitle": "Server tools",
@@ -2149,7 +2162,8 @@ export const en = {
   "settings.lspScopeTabs": "LSP scope",
   "settings.lspTabGlobal": "Global",
   "settings.lspTabProject": "Project",
-  "settings.lspGlobalTabInfo": "Manage language servers shared by all projects.",
+  "settings.lspGlobalTabInfo":
+    "Manage language servers shared by all projects.",
   "settings.lspProjectTabInfo":
     "Manage project-specific language servers for {{name}}. Project configs override the global ones for the same language.",
   "settings.lspProjectRequired":
@@ -2454,7 +2468,8 @@ export const en = {
     "Run an integrity check on the database and repair it automatically if damaged. A backup of a damaged database is kept automatically. It is recommended to finish active conversations first. Continue?",
   "settings.storageRepairConfirmBtn": "Repair",
   "settings.storageRepairOk": "Database is healthy and has been optimized.",
-  "settings.storageRepairRecovered": "Database was damaged and has been repaired.",
+  "settings.storageRepairRecovered":
+    "Database was damaged and has been repaired.",
   "settings.generalSettings": "General settings",
   "settings.generalSettingsInfo": "Language, version and update management.",
   "settings.generalSettingsClosePanel": "Close general settings",
@@ -2462,10 +2477,12 @@ export const en = {
   "settings.attachContextInfo":
     "Drag a past conversation into the input box to inject it as the opening context of the current conversation. It is cleaned automatically before injection (thinking chains and tool execution details removed) and trimmed to fit the budget to protect the context window.",
   "settings.attachContextSingleBudget": "Budget per attachment (characters)",
-  "settings.attachContextTotalBudget": "Total budget for all attachments (characters)",
+  "settings.attachContextTotalBudget":
+    "Total budget for all attachments (characters)",
   "settings.attachContextReset": "Restore defaults",
   "settings.attachContextSaved": "Saved",
-  "settings.attachContextBudgetHint": "Range 1000-200000; overflow is truncated automatically.",
+  "settings.attachContextBudgetHint":
+    "Range 1000-200000; overflow is truncated automatically.",
   "settings.aboutInfo": "Version and update management for Snow App.",
   "settings.languageSettings": "Language",
   "settings.languageSettingsInfo": "Choose the display language for Snow App.",
@@ -2510,7 +2527,8 @@ export const en = {
   "settings.updateDialogRetry": "Retry download",
   "settings.updateDialogRestart": "Restart to update",
   "settings.updateDialogDownloading": "Downloading {{percent}}%",
-  "settings.updateDialogDownloadingHint": "Downloading continues in the background. You can close this window.",
+  "settings.updateDialogDownloadingHint":
+    "Downloading continues in the background. You can close this window.",
   "settings.updateDialogNotesTitle": "Release notes",
   "settings.updateDialogNoNotes": "No release notes for this version.",
   "settings.themeSettings": "Theme settings",
@@ -2770,7 +2788,8 @@ export const en = {
   "plusMenu.autoScroll": "Auto scroll",
   "plusMenu.autoScrollDescription": "Scroll to bottom while AI is responding",
   "plusMenu.autoFormat": "Auto format",
-  "plusMenu.autoFormatDescription": "Format edited files with Prettier after each edit",
+  "plusMenu.autoFormatDescription":
+    "Format edited files with Prettier after each edit",
   "plusMenu.yoloMode": "YOLO Mode",
   "plusMenu.yoloModeDescription": "Skip per-tool approval when enabled",
   "plusMenu.yoloModeEnabled": "Enabled, no per-tool approval required",
@@ -2780,7 +2799,8 @@ export const en = {
   "plusMenu.planModeDescription": "Analyze and plan before executing changes",
   "plusMenu.planModeActive": "Plan Mode active",
   "plusMenu.worktreeMode": "WorkTree Mode",
-  "plusMenu.worktreeModeDescription": "Develop in an isolated Git branch or worktree",
+  "plusMenu.worktreeModeDescription":
+    "Develop in an isolated Git branch or worktree",
   "plusMenu.worktreeModeActive": "WorkTree Mode active",
   "plusMenu.goalMode": "Goal Mode",
   "plusMenu.goalModeDescription": "Persistent objective-driven autonomous loop",
@@ -2847,8 +2867,7 @@ export const en = {
     "Manage approved tool permissions for this project",
   "chatCommand.permissionsNoProject":
     "Select a project before managing tool permissions",
-  "chatCommand.permissionsYoloDisabled":
-    "Unavailable in YOLO mode",
+  "chatCommand.permissionsYoloDisabled": "Unavailable in YOLO mode",
   "chatCommand.empty": "No matching commands",
   "chatCommand.trigger": "Open command panel",
   "projectSensitiveCommands.title": "Project sensitive commands",
@@ -3246,14 +3265,17 @@ export const en = {
   "chatInput.conversationPreviewUntitled": "Untitled conversation",
   "chatInput.conversationPreviewLoading": "Loading conversation content…",
   "chatInput.conversationPreviewFailed": "Failed to load conversation content",
-  "chatInput.conversationPreviewEmpty": "No injectable content in this conversation",
-  "chatInput.conversationPreviewHint": "Context actually injected on send (thinking & tool details removed, trimmed by budget)",
+  "chatInput.conversationPreviewEmpty":
+    "No injectable content in this conversation",
+  "chatInput.conversationPreviewHint":
+    "Context actually injected on send (thinking & tool details removed, trimmed by budget)",
   "chatInput.webChipOpen": "Open page",
   "chatInput.webChipCopyLink": "Copy link",
   "chatInput.webChipRemove": "Remove",
   "chatInput.lspBadgeTitle": "LSP language servers",
   "chatInput.lspBadgeRunning": "{{running}}/{{total}} running",
-  "chatInput.lspBadgeEmpty": "No sessions yet — servers auto-start on first tool call.",
+  "chatInput.lspBadgeEmpty":
+    "No sessions yet — servers auto-start on first tool call.",
   "chatInput.lspBadgeStatusRunning": "Running",
   "chatInput.lspBadgeStatusDead": "Stopped",
   "chatInput.lspBadgeStatusExited": "Process exited",
@@ -3415,18 +3437,21 @@ export const en = {
   "rightPanel.fileSearchPrevious": "Previous match (Shift+Enter)",
   "rightPanel.fileSearchNext": "Next match (Enter)",
   "rightPanel.fileSearchClose": "Close search (Esc)",
-  "rightPanel.aiDrawing.promptPlaceholder": "Describe the image you want to generate, Chinese supported; e.g. cyberpunk rainy city at night, neon reflections…",
+  "rightPanel.aiDrawing.promptPlaceholder":
+    "Describe the image you want to generate, Chinese supported; e.g. cyberpunk rainy city at night, neon reflections…",
   "rightPanel.aiDrawing.promptHint": "Ctrl + Enter to generate",
   "rightPanel.aiDrawing.generate": "Generate",
   "rightPanel.aiDrawing.channelAuto": "Auto (default channel)",
   "rightPanel.aiDrawing.model": "Model",
   "rightPanel.aiDrawing.modelPlaceholder": "Channel default model",
-  "rightPanel.aiDrawing.modelHint": "Model list is aggregated from the model APIs of configured channels; selecting a model automatically matches its provider",
+  "rightPanel.aiDrawing.modelHint":
+    "Model list is aggregated from the model APIs of configured channels; selecting a model automatically matches its provider",
   "rightPanel.aiDrawing.modelsLoading": "Loading models…",
   "rightPanel.aiDrawing.modelsLoadFailed": "Failed to load model list",
   "rightPanel.aiDrawing.ratio": "Aspect ratio",
   "rightPanel.aiDrawing.tier": "Size",
-  "rightPanel.aiDrawing.sizeControlHint": "Set ratio, size and quality (options adapt to the model's capabilities)",
+  "rightPanel.aiDrawing.sizeControlHint":
+    "Set ratio, size and quality (options adapt to the model's capabilities)",
   "rightPanel.aiDrawing.resolution": "Resolution",
   "rightPanel.aiDrawing.sizeDefault": "Channel default",
   "rightPanel.aiDrawing.advanced": "Advanced options",
@@ -3476,13 +3501,16 @@ export const en = {
   "rightPanel.aiDrawing.noChannel": "No image generation channel configured",
   "rightPanel.aiDrawing.reference": "Reference",
   "rightPanel.aiDrawing.removeReference": "Remove reference",
-  "rightPanel.aiDrawing.emptyHint": "Enter a prompt and click Generate to start AI drawing",
+  "rightPanel.aiDrawing.emptyHint":
+    "Enter a prompt and click Generate to start AI drawing",
   "rightPanel.aiDrawing.history": "Gallery history",
-  "rightPanel.aiDrawing.historyEmpty": "No generation records yet — generated images are saved to the gallery automatically",
+  "rightPanel.aiDrawing.historyEmpty":
+    "No generation records yet — generated images are saved to the gallery automatically",
   "rightPanel.aiDrawing.loadMore": "Load more",
   "rightPanel.aiDrawing.delete": "Delete",
   "rightPanel.aiDrawing.deleteDialogTitle": "Delete image",
-  "rightPanel.aiDrawing.deleteDialogBody": "Delete this image? The file will be removed from the gallery and cannot be restored.",
+  "rightPanel.aiDrawing.deleteDialogBody":
+    "Delete this image? The file will be removed from the gallery and cannot be restored.",
   "rightPanel.aiDrawing.deleteDialogCancel": "Cancel",
   "rightPanel.aiDrawing.deleteDialogConfirm": "Delete",
   "rightPanel.aiDrawing.deleted": "Image deleted",
@@ -3490,65 +3518,102 @@ export const en = {
   "rightPanel.aiDrawing.refresh": "Refresh gallery",
   "rightPanel.aiDrawing.modelReset": "Reset to channel default model",
   "rightPanel.aiDrawing.modelOverridden": "Overridden",
-  "rightPanel.aiDrawing.modelSingleCount": "This model always generates 1 image",
-  "rightPanel.aiDrawing.modelNoThinking": "This model does not support thinking level",
-  "rightPanel.aiDrawing.modelNoImageSearch": "This model does not support image search",
-  "rightPanel.aiDrawing.modelUnsupportedRef": "This model does not support image-to-image; references will be ignored when generating",
+  "rightPanel.aiDrawing.modelSingleCount":
+    "This model always generates 1 image",
+  "rightPanel.aiDrawing.modelNoThinking":
+    "This model does not support thinking level",
+  "rightPanel.aiDrawing.modelNoImageSearch":
+    "This model does not support image search",
+  "rightPanel.aiDrawing.modelUnsupportedRef":
+    "This model does not support image-to-image; references will be ignored when generating",
   "rightPanel.aiDrawing.uploadImage": "Upload reference",
-  "rightPanel.aiDrawing.uploadHint": "Upload a local image as reference (image-to-image); it won't be saved to the gallery",
+  "rightPanel.aiDrawing.uploadHint":
+    "Upload a local image as reference (image-to-image); it won't be saved to the gallery",
   "rightPanel.aiDrawing.uploadDialogTitle": "Select reference image",
   "rightPanel.aiDrawing.uploadRefDone": "Set as reference",
   "rightPanel.aiDrawing.refSetDone": "Set as reference",
-  "rightPanel.aiDrawing.libraryDragHint": "Drag: drop an image on the chat to send it; on the canvas to use it as reference; drop local images here to import them into the gallery",
-  "rightPanel.aiDrawing.importDone": "Imported {{count}} images into the gallery",
+  "rightPanel.aiDrawing.libraryDragHint":
+    "Drag: drop an image on the chat to send it; on the canvas to use it as reference; drop local images here to import them into the gallery",
+  "rightPanel.aiDrawing.importDone":
+    "Imported {{count}} images into the gallery",
   "rightPanel.aiDrawing.importFailed": "Failed to import images",
   "rightPanel.aiDrawing.retry": "Retry",
   "rightPanel.aiDrawing.openSettings": "Open image generation settings",
-  "rightPanel.aiDrawing.emptyHintSub": "Describe your idea and AI turns it into an image",
+  "rightPanel.aiDrawing.emptyHintSub":
+    "Describe your idea and AI turns it into an image",
   "rightPanel.aiDrawing.generatingDetail": "Generating image, please wait…",
   "rightPanel.aiDrawing.resultCount": "Generated {{count}} image(s)",
   "rightPanel.aiDrawing.lightboxCounter": "{{index}} / {{total}}",
-  "rightPanel.aiDrawing.errorHint.timeout": "Generation took too long; retry later, or turn off stream preview and retry.",
-  "rightPanel.aiDrawing.errorHint.auth": "Invalid API key or insufficient permissions. Check the channel settings and quota in Settings → Image generation.",
-  "rightPanel.aiDrawing.errorHint.rateLimit": "Too many requests or quota exhausted. Wait a moment and retry, or check your account quota.",
-  "rightPanel.aiDrawing.errorHint.contentFiltered": "The prompt or reference image triggered the provider's safety review. Adjust the content and retry.",
-  "rightPanel.aiDrawing.errorHint.server": "The provider service is temporarily unavailable. Retry later or switch to another channel.",
-  "rightPanel.aiDrawing.errorHint.network": "Network connection failed. Check your network/proxy settings and retry.",
-  "rightPanel.aiDrawing.errorHint.noModel": "No image generation channel available. Configure a channel and model in Settings → Image generation.",
-  "rightPanel.aiDrawing.errorHint.modelNotFound": "Model not found or unavailable. Check the model name, or change the model in Settings → Image generation.",
-  "rightPanel.aiDrawing.errorHint.modelUnsupported": "This model does not support this operation (e.g. image-to-image / transparent background). Switch models or adjust parameters.",
-  "rightPanel.aiDrawing.errorHint.missingPrompt": "The prompt is missing from generation parameters. Fill in the prompt and retry.",
-  "rightPanel.aiDrawing.errorHint.sizeInvalid": "The size or aspect ratio is not supported by this model. Adjust Aspect ratio / Size and retry.",
-  "rightPanel.aiDrawing.errorHint.invalidParams": "Invalid request parameters. Check advanced options (format/compression/background, etc.) and retry.",
-  "rightPanel.aiDrawing.errorHint.inputTooLarge": "Reference image too large or too many images. Use smaller/fewer images and retry.",
-  "rightPanel.aiDrawing.errorHint.fallback": "Generation failed. Adjust the prompt or parameters and retry; if it keeps failing, see the error details below.",
+  "rightPanel.aiDrawing.errorHint.timeout":
+    "Generation took too long; retry later, or turn off stream preview and retry.",
+  "rightPanel.aiDrawing.errorHint.auth":
+    "Invalid API key or insufficient permissions. Check the channel settings and quota in Settings → Image generation.",
+  "rightPanel.aiDrawing.errorHint.rateLimit":
+    "Too many requests or quota exhausted. Wait a moment and retry, or check your account quota.",
+  "rightPanel.aiDrawing.errorHint.contentFiltered":
+    "The prompt or reference image triggered the provider's safety review. Adjust the content and retry.",
+  "rightPanel.aiDrawing.errorHint.server":
+    "The provider service is temporarily unavailable. Retry later or switch to another channel.",
+  "rightPanel.aiDrawing.errorHint.network":
+    "Network connection failed. Check your network/proxy settings and retry.",
+  "rightPanel.aiDrawing.errorHint.noModel":
+    "No image generation channel available. Configure a channel and model in Settings → Image generation.",
+  "rightPanel.aiDrawing.errorHint.modelNotFound":
+    "Model not found or unavailable. Check the model name, or change the model in Settings → Image generation.",
+  "rightPanel.aiDrawing.errorHint.modelUnsupported":
+    "This model does not support this operation (e.g. image-to-image / transparent background). Switch models or adjust parameters.",
+  "rightPanel.aiDrawing.errorHint.missingPrompt":
+    "The prompt is missing from generation parameters. Fill in the prompt and retry.",
+  "rightPanel.aiDrawing.errorHint.sizeInvalid":
+    "The size or aspect ratio is not supported by this model. Adjust Aspect ratio / Size and retry.",
+  "rightPanel.aiDrawing.errorHint.invalidParams":
+    "Invalid request parameters. Check advanced options (format/compression/background, etc.) and retry.",
+  "rightPanel.aiDrawing.errorHint.inputTooLarge":
+    "Reference image too large or too many images. Use smaller/fewer images and retry.",
+  "rightPanel.aiDrawing.errorHint.fallback":
+    "Generation failed. Adjust the prompt or parameters and retry; if it keeps failing, see the error details below.",
   "rightPanel.aiDrawing.cancel": "Cancel",
-  "rightPanel.aiDrawing.cancelHint": "Stop waiting and discard this result (the background request continues, but the result is ignored)",
-  "rightPanel.aiDrawing.streamOffCount": "Stream preview is not supported when count is greater than 1",
-  "rightPanel.aiDrawing.streamOffRef": "Stream preview is not supported for image-to-image",
+  "rightPanel.aiDrawing.cancelHint":
+    "Stop waiting and discard this result (the background request continues, but the result is ignored)",
+  "rightPanel.aiDrawing.streamOffCount":
+    "Stream preview is not supported when count is greater than 1",
+  "rightPanel.aiDrawing.streamOffRef":
+    "Stream preview is not supported for image-to-image",
   "rightPanel.aiDrawing.retryModels": "Retry model list",
   "rightPanel.aiDrawing.examplesTitle": "Try these",
-  "rightPanel.aiDrawing.example1": "Cyberpunk rainy city at night, neon reflections, cinematic composition",
-  "rightPanel.aiDrawing.example2": "An orange cat sitting by the window, morning light, watercolor style, soft tones",
-  "rightPanel.aiDrawing.example3": "A floating island in the clouds with a waterfall, fantasy illustration style",
-  "rightPanel.aiDrawing.example4": "Retro film-grain portrait, warm tones, shallow depth of field, blurred background",
+  "rightPanel.aiDrawing.example1":
+    "Cyberpunk rainy city at night, neon reflections, cinematic composition",
+  "rightPanel.aiDrawing.example2":
+    "An orange cat sitting by the window, morning light, watercolor style, soft tones",
+  "rightPanel.aiDrawing.example3":
+    "A floating island in the clouds with a waterfall, fantasy illustration style",
+  "rightPanel.aiDrawing.example4":
+    "Retro film-grain portrait, warm tones, shallow depth of field, blurred background",
   "rightPanel.aiDrawing.collapse": "Collapse gallery history",
   "rightPanel.aiDrawing.expand": "Expand gallery history",
   "rightPanel.aiDrawing.duration": "Done · {{seconds}}s",
-  "rightPanel.aiDrawing.refLimit": "Maximum {{count}} reference images; extra images ignored",
+  "rightPanel.aiDrawing.refLimit":
+    "Maximum {{count}} reference images; extra images ignored",
   "rightPanel.aiDrawing.refAdded": "Reference added",
-  "rightPanel.aiDrawing.refSkippedDuplicate": "This reference is already in the list; skipped",
+  "rightPanel.aiDrawing.refSkippedDuplicate":
+    "This reference is already in the list; skipped",
   "rightPanel.aiDrawing.searchHistory": "Search history prompts",
   "rightPanel.aiDrawing.historyNoMatch": "No matching history",
-  "rightPanel.aiDrawing.refPlaceholderHint": "Reference images: use {{Image N}} in the prompt to reference image N (click a thumbnail to insert)",
-  "rightPanel.aiDrawing.refPlaceholderOutOfRange": "{{refs}} references a non-existent reference image ({{count}} uploaded)",
+  "rightPanel.aiDrawing.refPlaceholderHint":
+    "Reference images: use {{Image N}} in the prompt to reference image N (click a thumbnail to insert)",
+  "rightPanel.aiDrawing.refPlaceholderOutOfRange":
+    "{{refs}} references a non-existent reference image ({{count}} uploaded)",
   "rightPanel.aiDrawing.refOpenImage": "Open reference image",
   "rightPanel.aiDrawing.refChipLabel": "Image {{n}}",
   "rightPanel.aiDrawing.refPickerTitle": "Insert reference image",
-  "rightPanel.aiDrawing.refPickerEmpty": "Add reference images first (drag & drop or upload)",
-  "rightPanel.aiDrawing.refInsert": "Click to insert {{Image {{n}}}} into the prompt",
-  "rightPanel.aiDrawing.negativePromptPlaceholder": "Visual attributes to avoid, comma-separated (leave empty to disable)",
-  "rightPanel.aiDrawing.negativePromptHint": "Negative prompt · Gemini Imagen only",
+  "rightPanel.aiDrawing.refPickerEmpty":
+    "Add reference images first (drag & drop or upload)",
+  "rightPanel.aiDrawing.refInsert":
+    "Click to insert {{Image {{n}}}} into the prompt",
+  "rightPanel.aiDrawing.negativePromptPlaceholder":
+    "Visual attributes to avoid, comma-separated (leave empty to disable)",
+  "rightPanel.aiDrawing.negativePromptHint":
+    "Negative prompt · Gemini Imagen only",
   "rightPanel.aiDrawing.negativePromptClear": "Clear",
   "codebase.panel.fileCount": "{{count}} files",
   "codebase.panel.colPath": "Path",

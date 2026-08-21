@@ -211,7 +211,13 @@ fn process_gemini_event(
                             if let Ok(json) = serde_json::to_string(function_call) {
                                 tool_args_delta.push_str(&json);
                             }
-                            tool_calls.push(function_call.clone());
+                            // 流式 relay（如 Antigravity）可能把单个
+                            // functionCall 拆成多个 SSE chunk：先返回带
+                            // name 的空 args 调用，再返回无 name 的 args
+                            // 增量。若每个 chunk 独立入库，工具执行会拿到
+                            // 空参数（"Received keys: []"）。原生 Gemini
+                            // 一次返回完整对象，合并逻辑无副作用。
+                            merge_function_call(tool_calls, function_call);
                         }
                     }
                 }
@@ -232,4 +238,60 @@ fn process_gemini_event(
     }
 
     Ok(())
+}
+
+/// 将一条 functionCall 合并进工具调用列表，兼容流式 relay 的增量返回：
+/// - 有 name 且已存在同名调用 → 合并 args（增量续传，name 以首个为准）
+/// - 有 name 且无同名调用 → 作为新调用追加
+/// - 无 name（纯增量 chunk）→ 合并进最后一个调用
+fn merge_function_call(tool_calls: &mut Vec<Value>, incoming: &Value) {
+    let incoming_name = incoming.get("name").and_then(Value::as_str);
+    if let Some(name) = incoming_name {
+        if let Some(existing) = tool_calls
+            .iter_mut()
+            .rev()
+            .find(|call| call.get("name").and_then(Value::as_str) == Some(name))
+        {
+            merge_function_call_args(existing, incoming);
+            return;
+        }
+        tool_calls.push(incoming.clone());
+        return;
+    }
+    if let Some(last) = tool_calls.last_mut() {
+        merge_function_call_args(last, incoming);
+    } else {
+        tool_calls.push(incoming.clone());
+    }
+}
+
+/// 将 incoming 的 args 深合并进 target（后者覆盖前者），并补齐 target
+/// 缺失的其他字段（如 thoughtSignature）。
+fn merge_function_call_args(target: &mut Value, incoming: &Value) {
+    if let Some(incoming_args) = incoming.get("args").filter(|args| args.is_object()) {
+        let incoming_map = incoming_args.as_object().cloned().unwrap_or_default();
+        if !incoming_map.is_empty() {
+            match target.get_mut("args") {
+                Some(existing) if existing.is_object() => {
+                    if let Some(target_map) = existing.as_object_mut() {
+                        for (key, value) in incoming_map {
+                            target_map.insert(key, value);
+                        }
+                    }
+                }
+                _ => {
+                    target["args"] = Value::Object(incoming_map);
+                }
+            }
+        }
+    }
+    if let Some(incoming_map) = incoming.as_object() {
+        if let Some(target_map) = target.as_object_mut() {
+            for (key, value) in incoming_map {
+                if key != "args" && !target_map.contains_key(key) {
+                    target_map.insert(key.clone(), value.clone());
+                }
+            }
+        }
+    }
 }

@@ -258,7 +258,11 @@ fn normalize_tool_calls(tool_calls_json: &str) -> Vec<NormalizedToolCall> {
 
 /// Extract (id, name) entries from a serialized tool_calls JSON array.
 /// Supports all provider formats via [`normalize_tool_calls`].
-fn extract_tool_call_entries(tool_calls_json: &str) -> Vec<(String, String)> {
+///
+/// Gemini function calls carry no id, so their entries come back with an
+/// empty id and the raw functionCall name — callers pairing tool results
+/// with calls must fall back to order-based matching for those entries.
+pub fn extract_tool_call_entries(tool_calls_json: &str) -> Vec<(String, String)> {
     normalize_tool_calls(tool_calls_json)
         .into_iter()
         .map(|entry| (entry.id, entry.name))

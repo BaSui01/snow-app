@@ -84,7 +84,11 @@ pub fn tools_as_gemini_json(tools: &[McpTool]) -> Value {
         })
         .collect();
 
-    json!({
+    // Gemini API 的 tools 字段是数组，每个元素是一个 Tool 对象：
+    // `"tools": [{"functionDeclarations": [...]}]`（与 Snow CLI 的
+    // convertToolsToGemini 一致）。调用方（build_gemini_payload 等）用
+    // as_array() 判断是否注入，必须保持数组形态。
+    json!([{
         "functionDeclarations": function_declarations
-    })
+    }])
 }

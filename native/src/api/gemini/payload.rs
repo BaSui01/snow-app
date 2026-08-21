@@ -1,5 +1,6 @@
 //! Gemini payload construction and endpoint resolution.
 
+use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 
 use napi::bindgen_prelude::*;
@@ -9,6 +10,9 @@ use crate::api::config::{
     normalize_base_url, resolve_sdk_api_base_url, DEFAULT_GEMINI_BASE_URL, DEFAULT_OPENAI_BASE_URL,
 };
 use crate::api::conversation::parse_chat_message_content;
+use crate::api::conversation::tool_messages::{
+    extract_tool_call_entries, parse_tool_results_with_images, ParsedToolResult,
+};
 use crate::api::responses::ResponsesApiRequest;
 use crate::storage::services::chat_conversations::ChatContextMessage;
 use crate::storage::ApiConfigRecord;
@@ -62,6 +66,19 @@ pub(super) fn build_gemini_payload(
     let mut builtin_system_parts = Vec::new();
     let mut contents = Vec::new();
 
+    // Gemini relays reject histories whose functionResponse.name does not
+    // exactly match the corresponding functionCall.name. The stored tool
+    // result name can drift from the model-echoed call name (e.g. frontend
+    // name normalization truncating relay formats like "server:tool"), so
+    // functionResponse names are resolved from the conversation's own
+    // functionCall names instead — mirroring Snow CLI's
+    // `toolCallIdToFunctionName` map (see snow-cli/source/api/gemini.ts).
+    // Calls carrying an id match by id; Gemini calls have no id, so their
+    // names are queued and consumed in order (the renderer pushes exactly
+    // one result per call, in call order).
+    let mut call_id_to_name: HashMap<String, String> = HashMap::new();
+    let mut pending_call_names: VecDeque<String> = VecDeque::new();
+
     for message in messages {
         let content = message.content.trim();
         let role = message.role.trim();
@@ -73,11 +90,7 @@ pub(super) fn build_gemini_payload(
             }
             let results = match message.tool_results_json {
                 Some(ref raw) => {
-                    crate::api::conversation::tool_messages::parse_tool_results_with_images(
-                        raw,
-                        database_path,
-                        skip_image_parsing,
-                    )
+                    parse_tool_results_with_images(raw, database_path, skip_image_parsing)
                 }
                 None => Vec::new(),
             };
@@ -93,11 +106,8 @@ pub(super) fn build_gemini_payload(
                 } else {
                     serde_json::json!({"result": text})
                 };
-                let tool_name = if tool_result.name.is_empty() {
-                    "unknown_tool".to_string()
-                } else {
-                    tool_result.name.clone()
-                };
+                let tool_name =
+                    resolve_function_response_name(tool_result, &mut call_id_to_name, &mut pending_call_names);
                 contents.push(json!({
                     "role": "function",
                     "parts": [{
@@ -143,6 +153,15 @@ pub(super) fn build_gemini_payload(
                     crate::api::conversation::tool_messages::tool_calls_as_gemini_parts(
                         tool_calls_raw,
                     );
+                // 收集本消息 functionCall 的名称，供后续 functionResponse
+                // 配对：有 id 的进映射，无 id 的（Gemini 原生格式）入队列。
+                for (call_id, call_name) in extract_tool_call_entries(tool_calls_raw) {
+                    if call_id.is_empty() {
+                        pending_call_names.push_back(call_name);
+                    } else {
+                        call_id_to_name.insert(call_id, call_name);
+                    }
+                }
                 if !function_call_parts.is_empty() {
                     let mut parts = Vec::new();
                     // Round-trip thinking as a thought text part so Gemini
@@ -292,6 +311,34 @@ fn normalize_gemini_role(role: &str) -> &str {
     match role.trim() {
         "assistant" => "model",
         _ => "user",
+    }
+}
+
+/// Resolve the functionResponse name for a tool result so it exactly
+/// matches the functionCall name the model emitted (Gemini relays reject
+/// mismatched histories with a 400).
+///
+/// Priority: the call's own id mapping (OpenAI/Anthropic histories) → the
+/// next unmatched id-less functionCall name in conversation order (Gemini
+/// calls carry no id; the renderer pushes exactly one result per call in
+/// call order) → the stored result name as a final fallback.
+fn resolve_function_response_name(
+    tool_result: &ParsedToolResult,
+    call_id_to_name: &HashMap<String, String>,
+    pending_call_names: &mut VecDeque<String>,
+) -> String {
+    if !tool_result.call_id.is_empty() {
+        if let Some(name) = call_id_to_name.get(&tool_result.call_id) {
+            return name.clone();
+        }
+    }
+    if let Some(name) = pending_call_names.pop_front() {
+        return name;
+    }
+    if tool_result.name.is_empty() {
+        "unknown_tool".to_string()
+    } else {
+        tool_result.name.clone()
     }
 }
 

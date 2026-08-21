@@ -187,6 +187,8 @@ export const isValidToolName = (name: string): boolean => {
   return toolName.length > 0;
 };
 
+const POLLUTION_CHARS = /[<>[\]#\s"'`]/;
+
 const normalizeToolCallName = (tc: Record<string, unknown>): string => {
   const directName = typeof tc.name === "string" ? tc.name.trim() : "";
   let name = directName;
@@ -201,13 +203,18 @@ const normalizeToolCallName = (tc: Record<string, unknown>): string => {
     return "";
   }
 
-  // Sanitize: AI may copy the "[Tool: name#callId]" format from conversation
-  // history (used by useAgentLoop to label tool results) or leak internal XML
-  // tags (e.g. ``) into the tool name. Extract a valid
-  // {server}-{tool} pattern if one is buried in the polluted string.
-  const mcpMatch = name.match(/[A-Za-z0-9_-]+-[A-Za-z0-9_-]+/);
-  if (mcpMatch) {
-    return mcpMatch[0];
+  // Only extract a valid {server}-{tool} fragment when the name is actually
+  // polluted (the AI copied "[Tool: name#callId]" from conversation history
+  // or leaked internal XML tags). Clean names are preserved verbatim —
+  // including provider-specific formats such as Gemini relays' "server:tool"
+  // names, which the extraction regex would otherwise truncate (e.g.
+  // "file-directory-list:file-directory-list" -> "file-directory-list"),
+  // breaking functionResponse/functionCall name matching on the next request.
+  if (POLLUTION_CHARS.test(name)) {
+    const mcpMatch = name.match(/[A-Za-z0-9_-]+-[A-Za-z0-9_-]+/);
+    if (mcpMatch) {
+      return mcpMatch[0];
+    }
   }
 
   return name;

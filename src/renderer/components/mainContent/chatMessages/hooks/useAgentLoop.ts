@@ -30,7 +30,6 @@ import {
 import {
   accumulateConversationRunStats,
   accumulateRunTokenUsage,
-  beginStreamMetricsIteration,
   createAwaitHookDecision,
   createIsRunCancelled,
   createStreamChunkHandler,
@@ -451,10 +450,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             return;
           }
         }
-
-        // Carry the completed iteration into the run totals, then reset the
-        // per-request probes before starting the next model stream.
-        beginStreamMetricsIteration(ctx, effectiveKey);
 
         // Capture the stream promise so rollback can await it before issuing
         // delete/truncate. Without this, the Rust store_chat_exchange write

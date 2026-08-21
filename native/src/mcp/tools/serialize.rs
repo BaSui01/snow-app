@@ -21,21 +21,54 @@ pub fn tools_as_openai_chat_json(tools: &[McpTool]) -> Value {
     Value::Array(functions)
 }
 
-/// Tool APIs require the root input schema to describe an object. Some
-/// compatible gateways reject root `oneOf`/`anyOf`/`allOf` combinators when a
-/// branch does not explicitly declare an object, even if the root has
-/// `type: "object"`. Keep nested constraints intact, but remove root
-/// combinators and always emit an object schema. Runtime tool validation still
-/// enforces cross-field requirements that cannot be represented at the root.
+/// Tool APIs require input schemas to describe an object. Some gateways (e.g.
+/// Google Gemini API, OpenAI, Claude) strictly enforce that any schema node with
+/// `properties` or `required` MUST declare `"type": "object"`, any node with
+/// `items` MUST declare `"type": "array"`, and `type` cannot be a union array.
+/// Remove root combinators (`oneOf`/`anyOf`/`allOf`) and recursively ensure all
+/// nested schema nodes are compliant.
 fn sanitize_tool_input_schema(schema: &Value) -> Value {
-    let mut result = schema.as_object().cloned().unwrap_or_default();
+    let mut root = schema.clone();
+    sanitize_schema_node(&mut root, true);
+    root
+}
 
-    result.remove("oneOf");
-    result.remove("anyOf");
-    result.remove("allOf");
-    result.insert("type".to_string(), Value::String("object".to_string()));
+fn sanitize_schema_node(node: &mut Value, is_root: bool) {
+    if let Value::Object(map) = node {
+        if is_root {
+            map.remove("oneOf");
+            map.remove("anyOf");
+            map.remove("allOf");
+            map.insert("type".to_string(), Value::String("object".to_string()));
+        } else if let Some(type_val) = map.get("type") {
+            if let Some(arr) = type_val.as_array() {
+                let first_scalar = arr
+                    .iter()
+                    .find_map(|item| item.as_str())
+                    .unwrap_or("string");
+                map.insert(
+                    "type".to_string(),
+                    Value::String(first_scalar.to_string()),
+                );
+            }
+        } else if map.contains_key("properties") || map.contains_key("required") {
+            map.insert("type".to_string(), Value::String("object".to_string()));
+        } else if map.contains_key("items") {
+            map.insert("type".to_string(), Value::String("array".to_string()));
+        }
 
-    Value::Object(result)
+        if let Some(properties) = map.get_mut("properties") {
+            if let Value::Object(props_map) = properties {
+                for (_, prop_val) in props_map.iter_mut() {
+                    sanitize_schema_node(prop_val, false);
+                }
+            }
+        }
+
+        if let Some(items) = map.get_mut("items") {
+            sanitize_schema_node(items, false);
+        }
+    }
 }
 
 pub fn tools_as_anthropic_json(tools: &[McpTool]) -> Value {
@@ -91,4 +124,59 @@ pub fn tools_as_gemini_json(tools: &[McpTool]) -> Value {
     json!([{
         "functionDeclarations": function_declarations
     }])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitizes_nested_schemas_and_fixes_missing_types_for_gemini() {
+        let raw_schema = json!({
+            "oneOf": [{"type": "object"}],
+            "properties": {
+                "dialogResponse": {
+                    "description": "A dialog response object without explicit type",
+                    "properties": {
+                        "accept": { "type": "boolean" },
+                        "promptText": { "type": "string" }
+                    },
+                    "required": ["accept"]
+                },
+                "requestId": {
+                    "type": ["string", "number"],
+                    "description": "Union type"
+                },
+                "itemsList": {
+                    "items": {
+                        "properties": {
+                            "name": { "type": "string" }
+                        }
+                    }
+                }
+            }
+        });
+
+        let sanitized = sanitize_tool_input_schema(&raw_schema);
+
+        assert_eq!(sanitized["type"], "object");
+        assert!(sanitized.get("oneOf").is_none());
+
+        // dialogResponse has properties, so type: "object" must be injected
+        assert_eq!(sanitized["properties"]["dialogResponse"]["type"], "object");
+        assert_eq!(
+            sanitized["properties"]["dialogResponse"]["properties"]["accept"]["type"],
+            "boolean"
+        );
+
+        // requestId array type collapsed to single scalar string
+        assert_eq!(sanitized["properties"]["requestId"]["type"], "string");
+
+        // itemsList items object has properties, so type: "object" injected into item, and itemsList has type: "array"
+        assert_eq!(sanitized["properties"]["itemsList"]["type"], "array");
+        assert_eq!(
+            sanitized["properties"]["itemsList"]["items"]["type"],
+            "object"
+        );
+    }
 }

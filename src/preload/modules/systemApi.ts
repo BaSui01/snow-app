@@ -68,7 +68,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 type NotificationActivationSubscriber = (
-  target: NotificationConversationTarget
+  target: NotificationConversationTarget,
 ) => void;
 
 const notificationActivationSubscribers =
@@ -77,7 +77,7 @@ const notificationActivationBuffer: NotificationConversationTarget[] = [];
 
 const deliverNotificationActivation = (
   subscriber: NotificationActivationSubscriber,
-  target: NotificationConversationTarget
+  target: NotificationConversationTarget,
 ): void => {
   try {
     subscriber(target);
@@ -107,7 +107,7 @@ ipcRenderer.on(
     for (const subscriber of notificationActivationSubscribers) {
       deliverNotificationActivation(subscriber, target);
     }
-  }
+  },
 );
 
 const createMcpToolStreamId = (): string =>
@@ -133,7 +133,7 @@ const browserOpenTabSubscribers = new Set<BrowserOpenTabSubscriber>();
 
 const deliverBrowserOpenTab = (
   subscriber: BrowserOpenTabSubscriber,
-  event: BrowserOpenTabEvent
+  event: BrowserOpenTabEvent,
 ): void => {
   try {
     subscriber(event);
@@ -163,7 +163,7 @@ ipcRenderer.on(
     for (const subscriber of browserOpenTabSubscribers) {
       deliverBrowserOpenTab(subscriber, event);
     }
-  }
+  },
 );
 
 type BrowserRestoreSubscriber = (payload: BrowserRestorePayload) => void;
@@ -172,7 +172,7 @@ const browserRestoreSubscribers = new Set<BrowserRestoreSubscriber>();
 
 const deliverBrowserRestore = (
   subscriber: BrowserRestoreSubscriber,
-  payload: BrowserRestorePayload
+  payload: BrowserRestorePayload,
 ): void => {
   try {
     subscriber(payload);
@@ -182,7 +182,7 @@ const deliverBrowserRestore = (
 };
 
 const isBrowserRestorePayload = (
-  value: unknown
+  value: unknown,
 ): value is BrowserRestorePayload => {
   if (!isRecord(value) || typeof value.instanceId !== "string") {
     return false;
@@ -194,7 +194,7 @@ const isBrowserRestorePayload = (
     (tab) =>
       isRecord(tab) &&
       typeof tab.url === "string" &&
-      typeof tab.title === "string"
+      typeof tab.title === "string",
   );
 };
 
@@ -208,7 +208,7 @@ ipcRenderer.on(
     for (const subscriber of browserRestoreSubscribers) {
       deliverBrowserRestore(subscriber, payload);
     }
-  }
+  },
 );
 
 /** 浏览器元素选择结果（与渲染端 ElementTag 同构，preload 独立定义避免跨端 import）。 */
@@ -239,7 +239,7 @@ const isElementTagPayload = (value: unknown): value is ElementTagPayload => {
 
 const deliverElementTagInsert = (
   subscriber: ElementTagInsertSubscriber,
-  tag: ElementTagPayload
+  tag: ElementTagPayload,
 ): void => {
   try {
     subscriber(tag);
@@ -258,7 +258,7 @@ ipcRenderer.on(
     for (const subscriber of elementTagInsertSubscribers) {
       deliverElementTagInsert(subscriber, payload);
     }
-  }
+  },
 );
 
 /** 主窗口打开设置的请求（view 为目标设置视图 id，如 browser-settings）。 */
@@ -268,7 +268,7 @@ const openSettingsRequestSubscribers = new Set<OpenSettingsRequestSubscriber>();
 
 const deliverOpenSettingsRequest = (
   subscriber: OpenSettingsRequestSubscriber,
-  view: string
+  view: string,
 ): void => {
   try {
     subscriber(view);
@@ -287,7 +287,7 @@ ipcRenderer.on(
     for (const subscriber of openSettingsRequestSubscribers) {
       deliverOpenSettingsRequest(subscriber, view);
     }
-  }
+  },
 );
 
 const normalizeBashStreamChunk = (value: unknown): BashStreamChunk | null => {
@@ -345,7 +345,7 @@ const ensureMcpToolChunkListener = (): void => {
 type EmbedProgressSubscriber = (
   progress: CodebaseEmbedProgress,
   projectId: string,
-  sessionId: string
+  sessionId: string,
 ) => void;
 
 const codebaseEmbedProgressSubscribers = new Set<EmbedProgressSubscriber>();
@@ -395,28 +395,28 @@ const ensureCodebaseEmbedProgressListener = (): void => {
       for (const subscriber of codebaseEmbedProgressSubscribers) {
         subscriber(normalized, projectId, sessionId);
       }
-    }
+    },
   );
 };
 
 export const systemApi = {
   getCodebaseProjectScopeSettings: (
-    projectId: string
+    projectId: string,
   ): Promise<CodebaseProjectScopeSettings> =>
     ipcRenderer.invoke("codebase:get-project-scope", projectId),
   setCodebaseProjectEnabled: (
     projectId: string,
-    enabled: boolean
+    enabled: boolean,
   ): Promise<void> =>
     ipcRenderer.invoke("codebase:set-project-enabled", projectId, enabled),
   setCodebaseProjectAgentReview: (
     projectId: string,
-    enabled: boolean
+    enabled: boolean,
   ): Promise<void> =>
     ipcRenderer.invoke("codebase:set-project-agent-review", projectId, enabled),
   setCodebaseProjectReranking: (
     projectId: string,
-    enabled: boolean
+    enabled: boolean,
   ): Promise<void> =>
     ipcRenderer.invoke("codebase:set-project-reranking", projectId, enabled),
   checkProjectHasGitignore: (projectId: string): Promise<boolean> =>
@@ -425,7 +425,7 @@ export const systemApi = {
     ipcRenderer.invoke("codebase:check-project-remote", projectId),
   startCodebaseEmbedding: (
     projectId: string,
-    sessionId: string
+    sessionId: string,
   ): Promise<void> => {
     ensureCodebaseEmbedProgressListener();
     return ipcRenderer.invoke("codebase:start-embedding", projectId, sessionId);
@@ -442,8 +442,8 @@ export const systemApi = {
     callback: (
       progress: CodebaseEmbedProgress,
       projectId: string,
-      sessionId: string
-    ) => void
+      sessionId: string,
+    ) => void,
   ): (() => void) => {
     ensureCodebaseEmbedProgressListener();
     codebaseEmbedProgressSubscribers.add(callback);
@@ -456,17 +456,17 @@ export const systemApi = {
   listCodebaseIndexedFiles: (
     projectId: string,
     page: number,
-    pageSize: number
+    pageSize: number,
   ): Promise<CodebaseIndexedFilePage> =>
     ipcRenderer.invoke(
       "codebase:list-indexed-files",
       projectId,
       page,
-      pageSize
+      pageSize,
     ),
   getCodebaseSphereLayout: (
     projectId: string,
-    limit: number
+    limit: number,
   ): Promise<CodebaseSphereLayout> =>
     ipcRenderer.invoke("codebase:get-sphere-layout", projectId, limit),
   clearCodebaseIndex: (projectId: string): Promise<void> =>
@@ -477,7 +477,7 @@ export const systemApi = {
     ipcRenderer.invoke("codebase:stop-watch", projectId),
   syncCodebaseChanges: (
     projectId: string,
-    onProgress?: (progress: CodebaseSyncProgress) => void
+    onProgress?: (progress: CodebaseSyncProgress) => void,
   ): Promise<CodebaseSyncResult> => {
     if (onProgress) {
       const handler = (_event: IpcRendererEvent, payload: unknown) => {
@@ -523,7 +523,7 @@ export const systemApi = {
     return ipcRenderer.invoke("codebase:sync-changes", projectId);
   },
   onCodebaseFilesChanged: (
-    callback: (projectId: string) => void
+    callback: (projectId: string) => void,
   ): (() => void) => {
     const handler = (_event: IpcRendererEvent, projectId: string): void => {
       callback(projectId);
@@ -536,7 +536,7 @@ export const systemApi = {
     };
   },
   onCodebaseSyncProgress: (
-    callback: (progress: CodebaseSyncProgress, projectId: string) => void
+    callback: (progress: CodebaseSyncProgress, projectId: string) => void,
   ): (() => void) => {
     const handler = (_event: IpcRendererEvent, payload: unknown): void => {
       if (!isRecord(payload)) {
@@ -573,7 +573,7 @@ export const systemApi = {
               : "",
           error: typeof progress.error === "string" ? progress.error : "",
         },
-        projectId
+        projectId,
       );
     };
 
@@ -588,7 +588,7 @@ export const systemApi = {
       projectId: string;
       key: "enabled" | "enableAgentReview" | "enableReranking";
       enabled: boolean;
-    }) => void
+    }) => void,
   ): (() => void) => {
     const handler = (_event: IpcRendererEvent, payload: unknown): void => {
       if (!isRecord(payload)) {
@@ -618,7 +618,7 @@ export const systemApi = {
   previewCodebaseScan: (projectId: string): Promise<CodebaseScanPreview> =>
     ipcRenderer.invoke("codebase:preview-scan", projectId),
   getResumableCodebaseSessions: (
-    projectId: string
+    projectId: string,
   ): Promise<ResumableCodebaseSession[]> =>
     ipcRenderer.invoke("codebase:get-resumable-sessions", projectId),
   discardResumableCodebaseSession: (sessionId: string): Promise<void> =>
@@ -630,7 +630,7 @@ export const systemApi = {
   setSkillEnabled: (
     projectId: string | undefined,
     skillId: string,
-    enabled: boolean
+    enabled: boolean,
   ): Promise<void> =>
     ipcRenderer.invoke("skills:set-enabled", projectId, skillId, enabled),
   listProjectSkills: (projectId: string): Promise<ProjectSkillDefinition[]> =>
@@ -638,23 +638,23 @@ export const systemApi = {
   setProjectSkillEnabled: (
     projectId: string,
     skillId: string,
-    enabled: boolean
+    enabled: boolean,
   ): Promise<void> =>
     ipcRenderer.invoke(
       "skills:set-project-enabled",
       projectId,
       skillId,
-      enabled
+      enabled,
     ),
   installSkillFromGithub: (
     url: string,
     location: "global" | "project",
-    projectId?: string
+    projectId?: string,
   ): Promise<SkillBatchInstallResult> =>
     ipcRenderer.invoke("skills:install-github", url, location, projectId),
   uninstallGithubSkill: (
     skillId: string,
-    projectId?: string
+    projectId?: string,
   ): Promise<SkillUninstallResult> =>
     ipcRenderer.invoke("skills:uninstall-github", skillId, projectId),
   listGithubSkills: (): Promise<GithubSkillRecord[]> =>
@@ -662,35 +662,35 @@ export const systemApi = {
   listMcpServerTools: (configServerId: string): Promise<McpToolStatus[]> =>
     ipcRenderer.invoke("mcp:list-server-tools", configServerId),
   listMcpProjectServers: (
-    projectId: string
+    projectId: string,
   ): Promise<McpProjectServerStatus[]> =>
     ipcRenderer.invoke("mcp:list-project-servers", projectId),
   listMcpProjectServerTools: (
     projectId: string,
-    serverId: string
+    serverId: string,
   ): Promise<McpProjectToolStatus[]> =>
     ipcRenderer.invoke("mcp:list-project-server-tools", projectId, serverId),
   setMcpProjectServerEnabled: (
     projectId: string,
     serverId: string,
-    enabled: boolean
+    enabled: boolean,
   ): Promise<void> =>
     ipcRenderer.invoke(
       "mcp:set-project-server-enabled",
       projectId,
       serverId,
-      enabled
+      enabled,
     ),
   setMcpProjectToolEnabled: (
     projectId: string,
     toolName: string,
-    enabled: boolean
+    enabled: boolean,
   ): Promise<void> =>
     ipcRenderer.invoke(
       "mcp:set-project-tool-enabled",
       projectId,
       toolName,
-      enabled
+      enabled,
     ),
   /**
    * 订阅「侧边浏览器内新建标签页」请求。返回取消订阅函数。
@@ -698,7 +698,7 @@ export const systemApi = {
    * 判断事件是否属于自己的某个 webview，是则在实例内部新建标签页。
    */
   onBrowserOpenTab: (
-    callback: (event: BrowserOpenTabEvent) => void
+    callback: (event: BrowserOpenTabEvent) => void,
   ): (() => void) => {
     browserOpenTabSubscribers.add(callback);
     return () => {
@@ -718,7 +718,7 @@ export const systemApi = {
    * 插入为 element chip。返回取消订阅函数。
    */
   onElementTagInserted: (
-    callback: (tag: ElementTagPayload) => void
+    callback: (tag: ElementTagPayload) => void,
   ): (() => void) => {
     elementTagInsertSubscribers.add(callback);
     return () => {
@@ -750,20 +750,20 @@ export const systemApi = {
   setMcpProjectToolsEnabled: (
     projectId: string,
     toolNames: string[],
-    enabled: boolean
+    enabled: boolean,
   ): Promise<void> =>
     ipcRenderer.invoke(
       "mcp:set-project-tools-enabled",
       projectId,
       toolNames,
-      enabled
+      enabled,
     ),
   registerBrowserCommandHandler: (
-    handler: (request: BrowserCommandRequest) => Promise<string>
+    handler: (request: BrowserCommandRequest) => Promise<string>,
   ): (() => void) => {
     const listener = (
       _event: IpcRendererEvent,
-      request: BrowserCommandRequest
+      request: BrowserCommandRequest,
     ): void => {
       if (
         !request ||
@@ -806,7 +806,7 @@ export const systemApi = {
   openDetachedBrowserWindow: (
     instanceId: string,
     url: string,
-    tabs?: BrowserRestoreTab[]
+    tabs?: BrowserRestoreTab[],
   ): Promise<void> =>
     ipcRenderer.invoke("browser:open-detached-window", instanceId, url, tabs),
   /**
@@ -822,7 +822,7 @@ export const systemApi = {
    * 返回取消订阅函数。
    */
   onRestoreBrowserToMain: (
-    callback: (payload: BrowserRestorePayload) => void
+    callback: (payload: BrowserRestorePayload) => void,
   ): (() => void) => {
     browserRestoreSubscribers.add(callback);
     return () => {
@@ -837,11 +837,11 @@ export const systemApi = {
     ipcRenderer.send("browser:instance-unregistered", instanceId);
   },
   registerTerminalCommandHandler: (
-    handler: (request: TerminalCommandRequest) => Promise<string>
+    handler: (request: TerminalCommandRequest) => Promise<string>,
   ): (() => void) => {
     const listener = (
       _event: IpcRendererEvent,
-      request: TerminalCommandRequest
+      request: TerminalCommandRequest,
     ): void => {
       if (
         !request ||
@@ -877,11 +877,11 @@ export const systemApi = {
     };
   },
   registerUserQuestionHandler: (
-    handler: (request: UserQuestionRequest) => Promise<string>
+    handler: (request: UserQuestionRequest) => Promise<string>,
   ): (() => void) => {
     const listener = (
       _event: IpcRendererEvent,
-      request: UserQuestionRequest
+      request: UserQuestionRequest,
     ): void => {
       if (
         !request ||
@@ -921,11 +921,11 @@ export const systemApi = {
       requestId: string;
       action: string;
       payloadJson: string;
-    }) => Promise<string>
+    }) => Promise<string>,
   ): (() => void) => {
     const listener = (
       _event: IpcRendererEvent,
-      request: { requestId: string; action: string; payloadJson: string }
+      request: { requestId: string; action: string; payloadJson: string },
     ): void => {
       if (
         !request ||
@@ -960,8 +960,11 @@ export const systemApi = {
     ipcRenderer.invoke("mcp:authorize-sensitive-command", command),
   writeInteractiveStdin: (sessionId: string, input: string): Promise<void> =>
     ipcRenderer.invoke("mcp:write-interactive-stdin", sessionId, input),
-  abortToolExecution: (toolExecutionId: string): Promise<boolean> =>
-    ipcRenderer.invoke("mcp:abort-tool-execution", toolExecutionId),
+  abortToolExecution: (
+    toolExecutionId: string,
+    reason?: string,
+  ): Promise<boolean> =>
+    ipcRenderer.invoke("mcp:abort-tool-execution", toolExecutionId, reason),
   callMcpTool: (
     toolFullName: string,
     argsJson: string,
@@ -973,7 +976,7 @@ export const systemApi = {
     interactionId?: string,
     subAgentAllowedTools?: string[],
     planMode?: boolean,
-    planApproved?: boolean
+    planApproved?: boolean,
   ): Promise<string> => {
     const streamId = createMcpToolStreamId();
     ensureMcpToolChunkListener();
@@ -995,7 +998,7 @@ export const systemApi = {
         interactionId ?? streamId,
         subAgentAllowedTools,
         planMode,
-        planApproved
+        planApproved,
       )
       .finally(() => {
         mcpToolChunkCallbacks.delete(streamId);
@@ -1005,41 +1008,44 @@ export const systemApi = {
     ipcRenderer.invoke("checkpoint:create", workDir),
   restoreCheckpoint: (checkpointId: string, workDir: string): Promise<void> =>
     ipcRenderer.invoke("checkpoint:restore", checkpointId, workDir),
-  restoreCheckpoints: (checkpointIds: string[], workDir: string): Promise<void> =>
+  restoreCheckpoints: (
+    checkpointIds: string[],
+    workDir: string,
+  ): Promise<void> =>
     ipcRenderer.invoke("checkpoint:restore-batch", checkpointIds, workDir),
   deleteCheckpoint: (checkpointId: string): Promise<void> =>
     ipcRenderer.invoke("checkpoint:delete", checkpointId),
   listCheckpointChanges: (
     checkpointId: string,
-    workDir: string
+    workDir: string,
   ): Promise<CheckpointFileChange[]> =>
     ipcRenderer.invoke("checkpoint:list-changes", checkpointId, workDir),
   listCheckpointChangesBatch: (
     checkpointIds: string[],
-    workDir: string
+    workDir: string,
   ): Promise<CheckpointFileChange[]> =>
     ipcRenderer.invoke("checkpoint:list-changes-batch", checkpointIds, workDir),
   listCheckpointDiffs: (
     checkpointId: string,
     workDir: string,
-    includeAll?: boolean
+    includeAll?: boolean,
   ): Promise<CheckpointFileDiff[]> =>
     ipcRenderer.invoke(
       "checkpoint:list-diffs",
       checkpointId,
       workDir,
-      includeAll ?? false
+      includeAll ?? false,
     ),
   listCheckpointDiffsBatch: (
     checkpointIds: string[],
     workDir: string,
-    includeAll?: boolean
+    includeAll?: boolean,
   ): Promise<CheckpointFileDiff[]> =>
     ipcRenderer.invoke(
       "checkpoint:list-diffs-batch",
       checkpointIds,
       workDir,
-      includeAll ?? false
+      includeAll ?? false,
     ),
   writeLog: (level: string, entry: unknown): Promise<void> =>
     ipcRenderer.invoke("debug:write-log", level, entry),
@@ -1048,7 +1054,7 @@ export const systemApi = {
   showNotification: (options: AppNotificationOptions): Promise<void> =>
     ipcRenderer.invoke("notification:show", options),
   onNotificationActivated: (
-    callback: (target: NotificationConversationTarget) => void
+    callback: (target: NotificationConversationTarget) => void,
   ): (() => void) => {
     notificationActivationSubscribers.add(callback);
 
@@ -1071,7 +1077,7 @@ export const systemApi = {
   checkForUpdates: (): Promise<UpdateStatus> =>
     ipcRenderer.invoke("updater:check-for-updates"),
   onUpdateStatusChanged: (
-    callback: (status: UpdateStatus) => void
+    callback: (status: UpdateStatus) => void,
   ): (() => void) => {
     const handler = (_event: IpcRendererEvent, status: UpdateStatus): void => {
       callback(status);
@@ -1099,11 +1105,11 @@ export const ptyApi = {
     ipcRenderer.invoke("pty:resize", id, cols, rows),
   ptyKill: (id: string): Promise<void> => ipcRenderer.invoke("pty:kill", id),
   onPtyOutput: (
-    callback: (data: { id: string; data: string }) => void
+    callback: (data: { id: string; data: string }) => void,
   ): (() => void) => {
     const handler = (
       _event: IpcRendererEvent,
-      payload: { id: string; data: string }
+      payload: { id: string; data: string },
     ): void => {
       callback(payload);
     };
@@ -1115,11 +1121,11 @@ export const ptyApi = {
     };
   },
   onPtyExit: (
-    callback: (data: { id: string; exitCode: number }) => void
+    callback: (data: { id: string; exitCode: number }) => void,
   ): (() => void) => {
     const handler = (
       _event: IpcRendererEvent,
-      payload: { id: string; exitCode: number }
+      payload: { id: string; exitCode: number },
     ): void => {
       callback(payload);
     };
@@ -1173,31 +1179,31 @@ export const windowApi = {
     webContentsId: number,
     filter?: string,
     limit?: number,
-    includeStatic?: boolean
+    includeStatic?: boolean,
   ): Promise<unknown[]> =>
     ipcRenderer.invoke(
       "browser:network-requests",
       webContentsId,
       filter,
       limit,
-      includeStatic
+      includeStatic,
     ),
   /** 查询单条网络请求的完整详情（请求/响应头 + 请求/响应体）。 */
   browserNetworkDetails: (
     webContentsId: number,
     requestId: string,
-    maxBodyBytes?: number
+    maxBodyBytes?: number,
   ): Promise<unknown> =>
     ipcRenderer.invoke(
       "browser:network-details",
       webContentsId,
       requestId,
-      maxBodyBytes
+      maxBodyBytes,
     ),
   /** 模拟网络状态：offline=true 离线，false 恢复在线。 */
   browserNetworkState: (
     webContentsId: number,
-    offline: boolean
+    offline: boolean,
   ): Promise<{ state: "online" | "offline" }> =>
     ipcRenderer.invoke("browser:network-state", webContentsId, offline),
   /** 设置路由 mock 规则（全量替换；空数组 = 恢复真实网络）。 */
@@ -1209,7 +1215,7 @@ export const windowApi = {
       body?: string;
       contentType?: string;
       headers?: Record<string, string>;
-    }[]
+    }[],
   ): Promise<{ active: number }> =>
     ipcRenderer.invoke("browser:route-set", webContentsId, rules),
   /** 清除全部路由 mock 规则。 */
@@ -1218,7 +1224,7 @@ export const windowApi = {
   /** 保存登录态（cookie + localStorage）为加密文件；返回文件路径与统计，不回显内容。 */
   browserStorageSave: (
     webContentsId: number,
-    fileName?: string
+    fileName?: string,
   ): Promise<{
     ok: boolean;
     file: string;
@@ -1231,7 +1237,7 @@ export const windowApi = {
   /** 从加密文件恢复登录态（恢复前自动加密备份当前状态）。 */
   browserStorageRestore: (
     webContentsId: number,
-    fileName: string
+    fileName: string,
   ): Promise<{
     ok: boolean;
     restoredCookies: number;
@@ -1246,19 +1252,19 @@ export const windowApi = {
   browserCookies: (
     webContentsId: number,
     domain?: string,
-    showValues?: boolean
+    showValues?: boolean,
   ): Promise<unknown[]> =>
     ipcRenderer.invoke(
       "browser:cookies-list",
       webContentsId,
       domain,
-      showValues
+      showValues,
     ),
   /** 删除指定 cookie（name + domain）。 */
   browserCookieDelete: (
     webContentsId: number,
     name: string,
-    domain: string
+    domain: string,
   ): Promise<{ deleted: boolean }> =>
     ipcRenderer.invoke("browser:cookie-delete", webContentsId, name, domain),
   /** 内置浏览器 webview 密码助手 preload 的绝对路径（供 <webview preload> 使用）。 */
@@ -1275,7 +1281,7 @@ export const windowApi = {
   > => ipcRenderer.invoke("browser-passwords:list"),
   /** 取单条密码记录的明文（密码管理 UI 显式查看时调用）。 */
   browserPasswordGet: (
-    id: string
+    id: string,
   ): Promise<{ username: string; password: string } | null> =>
     ipcRenderer.invoke("browser-passwords:get", id),
   /** 保存/更新密码记录（同 origin + username 覆盖）。 */
@@ -1308,26 +1314,26 @@ export const windowApi = {
   /** 从指定浏览器源导入密码到保险库。 */
   browserImportPasswords: (
     sourceId: string,
-    profile: string
+    profile: string,
   ): Promise<{ total: number; imported: number; skipped: number }> =>
     ipcRenderer.invoke("browser-import:passwords", sourceId, profile),
   /** 从指定浏览器源导入 Cookie 到当前会话。 */
   browserImportCookies: (
     sourceId: string,
-    profile: string
+    profile: string,
   ): Promise<{ total: number; imported: number; failed: number }> =>
     ipcRenderer.invoke("browser-import:cookies", sourceId, profile),
   /** 执行白名单内的 CDP 命令（Accessibility.getFullAXTree / DOM.resolveNode / Runtime.callFunctionOn）。 */
   browserCdpCommand: (
     webContentsId: number,
     method: string,
-    params?: Record<string, unknown>
+    params?: Record<string, unknown>,
   ): Promise<unknown> =>
     ipcRenderer.invoke("browser:cdp-command", webContentsId, method, params),
   /** 录制页面性能 trace（durationMs 毫秒）并返回精简统计。 */
   browserTrace: (
     webContentsId: number,
-    durationMs: number
+    durationMs: number,
   ): Promise<{
     ok: boolean;
     durationMs: number;
@@ -1346,16 +1352,16 @@ export const windowApi = {
   browserDialogRespond: (
     webContentsId: number,
     accept: boolean,
-    promptText?: string
+    promptText?: string,
   ): Promise<{ responded: boolean; remaining: number; error?: string }> =>
     ipcRenderer.invoke(
       "browser:dialog-respond",
       webContentsId,
       accept,
-      promptText
+      promptText,
     ),
   onWindowMaximizeStateChanged: (
-    callback: (isMaximized: boolean) => void
+    callback: (isMaximized: boolean) => void,
   ): (() => void) => {
     const handler = (_event: IpcRendererEvent, isMaximized: boolean): void => {
       callback(isMaximized);
@@ -1380,7 +1386,7 @@ export const windowApi = {
   },
   /** 主进程推送窗口缩窄方向：edge 为被拖动的边缘，contentWidth 为内容区宽度。 */
   onWindowResizeEdgeChanged: (
-    callback: (info: { edge: "left" | "right"; contentWidth: number }) => void
+    callback: (info: { edge: "left" | "right"; contentWidth: number }) => void,
   ): (() => void) => {
     const handler = (_event: IpcRendererEvent, info: unknown): void => {
       if (!info || typeof info !== "object") {

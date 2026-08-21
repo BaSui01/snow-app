@@ -780,9 +780,7 @@ export type StreamInterruptionReason =
   | "output_limit";
 
 export type StreamRecoveryOutcome =
-  | "partial_threshold"
-  | "retry_exhausted"
-  | "non_retriable";
+  "partial_threshold" | "retry_exhausted" | "non_retriable";
 
 export type ChatMessageRecord = {
   id: string;
@@ -1281,7 +1279,7 @@ export type NativeBridge = {
   setSystemSetting: (
     settingName: string,
     settingCode: string,
-    settingValue: string
+    settingValue: string,
   ) => Promise<void>;
   deleteSystemSetting: (settingCode: string) => Promise<void>;
   getYoloMode: () => Promise<boolean>;
@@ -1289,22 +1287,22 @@ export type NativeBridge = {
   getAutoFormat: () => Promise<boolean>;
   setAutoFormat: (enabled: boolean) => Promise<void>;
   getConversationModes: (
-    conversationId: string
+    conversationId: string,
   ) => Promise<ConversationModesResult>;
   setConversationModes: (
     conversationId: string,
     planMode: boolean | null,
     goalMode: boolean | null,
     worktreeMode: boolean | null,
-    goalModeTokenBudget: number | null
+    goalModeTokenBudget: number | null,
   ) => Promise<void>;
   getConversationRuntimeConfig: (
-    conversationId: string
+    conversationId: string,
   ) => Promise<ConversationRuntimeConfig>;
   setConversationRuntimeConfig: (
     conversationId: string,
     thinkingStrength: string | null,
-    responsesFastMode: boolean | null
+    responsesFastMode: boolean | null,
   ) => Promise<void>;
   setConversationRunStats: (
     conversationId: string,
@@ -1312,7 +1310,7 @@ export type NativeBridge = {
     runOutputTokens: number,
     runCacheCreationInputTokens: number,
     runCacheReadInputTokens: number,
-    lastRunDurationMs: number
+    lastRunDurationMs: number,
   ) => Promise<void>;
   resetConversationRunStats: (conversationId: string) => Promise<void>;
   getRequestLogging: () => Promise<boolean>;
@@ -1325,33 +1323,33 @@ export type NativeBridge = {
   setThemeSettings: (settings: ThemeSettings) => Promise<void>;
   getKeyboardShortcutsSettings: () => Promise<KeyboardShortcutsSettings>;
   setKeyboardShortcutsSettings: (
-    settings: KeyboardShortcutsSettings
+    settings: KeyboardShortcutsSettings,
   ) => Promise<void>;
   saveThemeBackgroundImage: (sourcePath: string) => Promise<string>;
   deleteThemeBackgroundImage: (imagePath: string) => Promise<void>;
   saveThemeStreamCursorSvg: (sourcePath: string) => Promise<string>;
   deleteThemeStreamCursorSvg: (svgPath: string) => Promise<void>;
   getCodebaseProjectScopeSettings: (
-    projectId: string
+    projectId: string,
   ) => Promise<CodebaseProjectScopeSettings>;
   setCodebaseProjectEnabled: (
     projectId: string,
-    enabled: boolean
+    enabled: boolean,
   ) => Promise<void>;
   setCodebaseProjectAgentReview: (
     projectId: string,
-    enabled: boolean
+    enabled: boolean,
   ) => Promise<void>;
   setCodebaseProjectReranking: (
     projectId: string,
-    enabled: boolean
+    enabled: boolean,
   ) => Promise<void>;
   checkProjectHasGitignore: (projectId: string) => Promise<boolean>;
   checkProjectIsRemote: (projectId: string) => Promise<boolean>;
   startCodebaseEmbedding: (
     projectId: string,
     sessionId: string,
-    onProgress: (progress: CodebaseEmbedProgress) => void
+    onProgress: (progress: CodebaseEmbedProgress) => void,
   ) => Promise<void>;
   pauseCodebaseEmbedding: (sessionId: string) => Promise<boolean>;
   resumeCodebaseEmbedding: (sessionId: string) => Promise<boolean>;
@@ -1361,40 +1359,40 @@ export type NativeBridge = {
   listCodebaseIndexedFiles: (
     projectId: string,
     page: number,
-    pageSize: number
+    pageSize: number,
   ) => Promise<CodebaseIndexedFilePage>;
   getCodebaseSphereLayout: (
     projectId: string,
-    limit: number
+    limit: number,
   ) => Promise<CodebaseSphereLayout>;
   clearCodebaseIndex: (projectId: string) => Promise<void>;
   startCodebaseWatch: (
     projectId: string,
     projectPath: string,
-    onChange: (projectId: string) => void
+    onChange: (projectId: string) => void,
   ) => void;
   stopCodebaseWatch: (projectId: string) => void;
   syncCodebaseChanges: (
     projectId: string,
-    onProgress: (progress: CodebaseSyncProgress) => void
+    onProgress: (progress: CodebaseSyncProgress) => void,
   ) => Promise<CodebaseSyncResult>;
   previewCodebaseScan: (projectId: string) => Promise<CodebaseScanPreview>;
   getResumableCodebaseSessions: (
-    projectId: string
+    projectId: string,
   ) => Promise<ResumableCodebaseSession[]>;
   discardResumableCodebaseSession: (sessionId: string) => Promise<void>;
   listToolApprovalProjectApprovedTools: (
-    projectId: string
+    projectId: string,
   ) => Promise<string[]>;
   setToolApprovalProjectToolApproved: (
     projectId: string,
     toolName: string,
-    approved: boolean
+    approved: boolean,
   ) => Promise<void>;
   setToolApprovalProjectToolsApproved: (
     projectId: string,
     toolNames: string[],
-    approved: boolean
+    approved: boolean,
   ) => Promise<void>;
   getAlwaysApprovedTools: () => Promise<string[]>;
   setAlwaysApprovedTools: (tools: string[]) => Promise<void>;
@@ -1414,39 +1412,39 @@ export type NativeBridge = {
   listInstalledIdes: () => Promise<IdeInfo[]>;
   openInIde: (ideId: string, projectPath: string) => Promise<void>;
   reorderWorkspaceDirectories: (
-    items: WorkspaceDirectoryInput[]
+    items: WorkspaceDirectoryInput[],
   ) => Promise<void>;
   deleteWorkspaceDirectory: (directoryId: string) => Promise<void>;
   listRemoteDrafts: (
     workspaceId: string,
-    profileId?: string
+    profileId?: string,
   ) => Promise<RemoteDraftRecord[]>;
   upsertRemoteDraft: (item: RemoteDraftInput) => Promise<RemoteDraftRecord>;
   deleteRemoteDraft: (
     profileId: string,
     workspaceId: string,
-    remotePath: string
+    remotePath: string,
   ) => Promise<void>;
   createProjectDirectory: (
     parentPath: string,
-    projectName: string
+    projectName: string,
   ) => Promise<string>;
   cloneGitRepository: (
     repoUrl: string,
     parentPath: string,
-    onProgress: ((chunk: GitCloneProgress) => void) | undefined
+    onProgress: ((chunk: GitCloneProgress) => void) | undefined,
   ) => Promise<string>;
   readDirectoryEntries: (dirPath: string) => Promise<DirectoryEntry[]>;
   renameWorkspaceEntry: (
     rootPath: string,
     entryPath: string,
-    newName: string
+    newName: string,
   ) => Promise<void>;
   deleteWorkspaceEntry: (rootPath: string, entryPath: string) => Promise<void>;
   /** 批量删除工作区条目：单次调用，返回每个条目的删除结果（部分失败不中断）。 */
   deleteWorkspaceEntries: (
     rootPath: string,
-    entryPaths: string[]
+    entryPaths: string[],
   ) => Promise<BatchWorkspaceDeleteResult>;
   readFileContent: (filePath: string) => Promise<FileContentResult>;
   writeFileContent: (filePath: string, content: string) => Promise<void>;
@@ -1454,42 +1452,42 @@ export type NativeBridge = {
   searchFilesByAgent: (
     query: string,
     workspacePath: string,
-    onProgress: ((chunk: FileSearchAgentProgress) => void) | undefined
+    onProgress: ((chunk: FileSearchAgentProgress) => void) | undefined,
   ) => Promise<FileSearchResult[]>;
   listMcpServerConfigs: () => Promise<McpServerConfigRecord[]>;
   upsertMcpServerConfig: (item: McpServerConfigInput) => Promise<void>;
   deleteMcpServerConfig: (serverId: string) => Promise<void>;
   listProjectMcpServerConfigs: (
-    projectId: string
+    projectId: string,
   ) => Promise<ProjectMcpServerConfigRecord[]>;
   upsertProjectMcpServerConfig: (
     projectId: string,
-    item: McpServerConfigInput
+    item: McpServerConfigInput,
   ) => Promise<void>;
   deleteProjectMcpServerConfig: (
     projectId: string,
-    serverId: string
+    serverId: string,
   ) => Promise<void>;
   listLspServerConfigs: () => Promise<LspServerConfigRecord[]>;
   upsertLspServerConfig: (item: LspServerConfigInput) => Promise<void>;
   deleteLspServerConfig: (lang: string) => Promise<void>;
   listProjectLspServerConfigs: (
-    projectId: string
+    projectId: string,
   ) => Promise<LspServerConfigRecord[]>;
   upsertProjectLspServerConfig: (
     projectId: string,
-    item: LspServerConfigInput
+    item: LspServerConfigInput,
   ) => Promise<void>;
   deleteProjectLspServerConfig: (
     projectId: string,
-    lang: string
+    lang: string,
   ) => Promise<void>;
   /** 项目生效配置合并视图：全局记录 + 项目覆盖（同 lang 覆盖替换全局）。 */
   listEffectiveLspServerConfigs: (
-    projectId?: string
+    projectId?: string,
   ) => Promise<LspServerConfigRecord[]>;
   probeLspServerCommands: (
-    projectId?: string
+    projectId?: string,
   ) => Promise<LspCommandProbeResult[]>;
   detectProjectStack: (projectRoot: string) => Promise<ProjectStackDetection[]>;
   /** 语言服务器会话运行时状态快照（不触发任何会话创建/回收）。 */
@@ -1497,16 +1495,16 @@ export type NativeBridge = {
   listImportResources: () => Promise<ImportResourceRecord[]>;
   upsertImportResources: (items: ImportResourceInput[]) => Promise<void>;
   commitImportTransaction: (
-    input: ImportDatabaseTransactionInput
+    input: ImportDatabaseTransactionInput,
   ) => Promise<void>;
   releaseImportResource: (
-    input: ImportResourceReleaseInput
+    input: ImportResourceReleaseInput,
   ) => Promise<ImportResourceRelease>;
   listPlugins: () => Promise<PluginRecord[]>;
   upsertPlugins: (items: PluginInput[]) => Promise<void>;
   setPluginState: (
     pluginId: string,
-    state: PluginInput["state"]
+    state: PluginInput["state"],
   ) => Promise<void>;
   deletePlugin: (pluginId: string) => Promise<void>;
   listPluginMarketplaces: () => Promise<PluginMarketplaceRecord[]>;
@@ -1514,47 +1512,47 @@ export type NativeBridge = {
   deletePluginMarketplace: (marketplaceId: string) => Promise<void>;
   listHookConfigs: (
     scope: HookScope,
-    projectId?: string
+    projectId?: string,
   ) => Promise<HookConfigRecord[]>;
   upsertHookConfig: (item: HookConfigInput) => Promise<void>;
   deleteHookConfig: (
     hookType: string,
     scope: HookScope,
-    projectId?: string
+    projectId?: string,
   ) => Promise<void>;
   executeHooks: (input: HookExecuteInput) => Promise<HookExecuteResult>;
   listSubAgentConfigs: (projectId?: string) => Promise<SubAgentConfigRecord[]>;
   getSubAgentConfig: (
     agentId: string,
-    projectId?: string
+    projectId?: string,
   ) => Promise<SubAgentConfigRecord | null>;
   upsertSubAgentConfig: (item: SubAgentConfigInput) => Promise<void>;
   deleteSubAgentConfig: (agentId: string, projectId?: string) => Promise<void>;
   listSensitiveCommandConfigs: () => Promise<SensitiveCommandConfigRecord[]>;
   upsertSensitiveCommandConfig: (
-    item: SensitiveCommandConfigInput
+    item: SensitiveCommandConfigInput,
   ) => Promise<void>;
   deleteSensitiveCommandConfig: (commandId: string) => Promise<void>;
   resetSensitiveCommandConfigs: () => Promise<void>;
   listProjectSensitiveCommandConfigs: (
-    projectId: string
+    projectId: string,
   ) => Promise<ProjectSensitiveCommandConfigRecord[]>;
   setProjectSensitiveCommandEnabled: (
     projectId: string,
     commandId: string,
-    enabled: boolean
+    enabled: boolean,
   ) => Promise<void>;
   upsertProjectSensitiveCommandConfig: (
     projectId: string,
-    item: ProjectSensitiveCommandConfigInput
+    item: ProjectSensitiveCommandConfigInput,
   ) => Promise<void>;
   deleteProjectSensitiveCommandConfig: (
     projectId: string,
-    commandId: string
+    commandId: string,
   ) => Promise<void>;
   checkSensitiveCommandMatch: (
     command: string,
-    projectId?: string
+    projectId?: string,
   ) => Promise<
     Array<{
       commandId: string;
@@ -1563,33 +1561,33 @@ export type NativeBridge = {
     }>
   >;
   listChatConversations: (
-    directoryId: string
+    directoryId: string,
   ) => Promise<ChatConversationRecord[]>;
   listChatConversationsPaginated: (
     directoryId: string,
     limit: number,
-    offset: number
+    offset: number,
   ) => Promise<ChatConversationPage>;
   /** 跨项目按会话 ID 查询会话记录（供「跨项目通知」使用）。 */
   listChatConversationsByIds: (
-    conversationIds: string[]
+    conversationIds: string[],
   ) => Promise<ChatConversationRecord[]>;
   listPinnedConversations: (
-    directoryId: string
+    directoryId: string,
   ) => Promise<ChatConversationRecord[]>;
   searchChatConversations: (
-    query: string
+    query: string,
   ) => Promise<ConversationSearchResult[]>;
   getChatConversation: (
-    conversationId: string
+    conversationId: string,
   ) => Promise<ChatConversationRecord | null>;
   /** 预览历史会话引用 chip 发送时实际注入的上下文内容（与请求组装共用渲染与预算）。 */
   previewConversationAttachment: (conversationId: string) => Promise<string>;
   listSubAgentConversations: (
-    parentConversationId: string
+    parentConversationId: string,
   ) => Promise<ChatConversationRecord[]>;
   listSubAgentConversationsByParents: (
-    parentConversationIds: string[]
+    parentConversationIds: string[],
   ) => Promise<Record<string, ChatConversationRecord[]>>;
   createSubAgentSession: (
     conversationId: string,
@@ -1601,26 +1599,26 @@ export type NativeBridge = {
     model: string,
     title: string,
     thinkingStrength?: string | null,
-    responsesFastMode?: boolean | null
+    responsesFastMode?: boolean | null,
   ) => Promise<void>;
   updateSubAgentSessionStatus: (
     conversationId: string,
     runStatus: string,
-    errorMessage: string
+    errorMessage: string,
   ) => Promise<void>;
   cancelRunningSubAgentSessions: () => Promise<number>;
   updateConversationStatus: (
     conversationId: string,
-    status: string
+    status: string,
   ) => Promise<void>;
   renameConversation: (conversationId: string, title: string) => Promise<void>;
   updateConversationEmoji: (
     conversationId: string,
-    emoji: string
+    emoji: string,
   ) => Promise<void>;
   updateConversationApiProfile: (
     conversationId: string,
-    profileName: string
+    profileName: string,
   ) => Promise<void>;
   deleteConversation: (conversationId: string) => Promise<void>;
   deleteConversations: (conversationIds: string[]) => Promise<void>;
@@ -1630,7 +1628,7 @@ export type NativeBridge = {
   listArchivedConversationsPaginated: (
     directoryId: string,
     limit: number,
-    offset: number
+    offset: number,
   ) => Promise<ChatConversationPage>;
   /** 还原归档会话：从归档冷数据库搬移回运行库（含子代理级联）。 */
   restoreArchivedConversations: (conversationIds: string[]) => Promise<void>;
@@ -1642,19 +1640,19 @@ export type NativeBridge = {
   listChatMessagesPaginated: (
     conversationId: string,
     beforeMessageId: string,
-    limit: number
+    limit: number,
   ) => Promise<ChatMessagePage>;
   findLatestToolResult: (
     conversationId: string,
-    toolName: string
+    toolName: string,
   ) => Promise<string | null>;
   forkConversation: (
     sourceConversationId: string,
-    upToResponseId: string
+    upToResponseId: string,
   ) => Promise<ChatConversationRecord>;
   generateConversationSummary: (
     conversationId: string,
-    basicModel?: string
+    basicModel?: string,
   ) => Promise<string>;
   cancelConversationSummary: (conversationId: string) => boolean;
   fetchAvailableModels: () => Promise<Model[]>;
@@ -1662,63 +1660,63 @@ export type NativeBridge = {
   createResponseStream: (
     request: ResponsesApiRequest,
     onChunk: (chunk: ResponsesApiStreamChunk) => void,
-    streamId: string
+    streamId: string,
   ) => Promise<ResponsesApiResult>;
   abortResponseStream: (streamId: string) => boolean;
-  abortToolExecution: (toolExecutionId: string) => boolean;
+  abortToolExecution: (toolExecutionId: string, reason?: string) => boolean;
   listMcpTools: () => Promise<McpToolDefinition[]>;
   listAvailableSkills: (projectId?: string) => Promise<SkillDefinition[]>;
   setSkillEnabled: (
     projectId: string | undefined,
     skillId: string,
-    enabled: boolean
+    enabled: boolean,
   ) => Promise<void>;
   listProjectSkills: (projectId: string) => Promise<ProjectSkillDefinition[]>;
   setProjectSkillEnabled: (
     projectId: string,
     skillId: string,
-    enabled: boolean
+    enabled: boolean,
   ) => Promise<void>;
   installSkillFromGithub: (
     url: string,
     location: "global" | "project",
-    projectId?: string
+    projectId?: string,
   ) => Promise<SkillBatchInstallResult>;
   uninstallGithubSkill: (
     skillId: string,
-    projectId?: string
+    projectId?: string,
   ) => Promise<SkillUninstallResult>;
   listGithubSkills: () => Promise<GithubSkillRecord[]>;
   listMcpServerTools: (configServerId: string) => Promise<McpToolStatus[]>;
   listMcpProjectServers: (
-    projectId: string
+    projectId: string,
   ) => Promise<McpProjectServerStatus[]>;
   listMcpProjectServerTools: (
     projectId: string,
-    serverId: string
+    serverId: string,
   ) => Promise<McpProjectToolStatus[]>;
   setMcpProjectServerEnabled: (
     projectId: string,
     serverId: string,
-    enabled: boolean
+    enabled: boolean,
   ) => Promise<void>;
   setMcpProjectToolEnabled: (
     projectId: string,
     toolName: string,
-    enabled: boolean
+    enabled: boolean,
   ) => Promise<void>;
   setMcpToolEnabled: (toolName: string, enabled: boolean) => Promise<void>;
   setMcpToolsEnabled: (toolNames: string[], enabled: boolean) => Promise<void>;
   setMcpProjectToolsEnabled: (
     projectId: string,
     toolNames: string[],
-    enabled: boolean
+    enabled: boolean,
   ) => Promise<void>;
   authorizeSensitiveCommand: (command: string, token: string) => Promise<void>;
   writeInteractiveStdin: (sessionId: string, input: string) => Promise<void>;
   /** Registers the SSH remote-command dispatcher used by checkpoint APIs. */
   setCheckpointRemoteCallback: (
-    callback: ((command: RemoteWorkspaceCommand) => Promise<string>) | null
+    callback: ((command: RemoteWorkspaceCommand) => Promise<string>) | null,
   ) => void;
   callMcpTool: (
     toolFullName: string,
@@ -1733,28 +1731,28 @@ export type NativeBridge = {
     onUserQuestion: (question: UserQuestionCommand) => Promise<string>,
     onAppControl: (command: AppControlCommand) => Promise<string>,
     onRemoteWorkspaceCommand: (
-      command: RemoteWorkspaceCommand
+      command: RemoteWorkspaceCommand,
     ) => Promise<string>,
     onTerminalCommand: (command: TerminalCommand) => Promise<string>,
     subAgentAllowedTools: string[] | undefined,
     planMode: boolean | undefined,
-    planApproved: boolean | undefined
+    planApproved: boolean | undefined,
   ) => Promise<string>;
   engineInfo: () => string;
   sum: (a: number, b: number) => number;
   detectTerminals: () => Promise<DetectedTerminal[]>;
   getGitStatus: (
     repoPath: string,
-    statusLimit: number
+    statusLimit: number,
   ) => Promise<GitStatusResult>;
   getGitBranches: (repoPath: string) => Promise<GitBranch[]>;
   gitStageFiles: (
     repoPath: string,
-    filePaths: string[]
+    filePaths: string[],
   ) => Promise<GitStageResult>;
   gitUnstageFiles: (
     repoPath: string,
-    filePaths: string[]
+    filePaths: string[],
   ) => Promise<GitStageResult>;
   gitStageAll: (repoPath: string) => Promise<GitStageResult>;
   gitUnstageAll: (repoPath: string) => Promise<GitStageResult>;
@@ -1764,119 +1762,119 @@ export type NativeBridge = {
   gitFetch: (repoPath: string) => Promise<GitPushPullResult>;
   gitCheckout: (
     repoPath: string,
-    branchName: string
+    branchName: string,
   ) => Promise<GitCheckoutResult>;
   gitCreateBranch: (
     repoPath: string,
-    branchName: string
+    branchName: string,
   ) => Promise<GitCheckoutResult>;
   gitFileDiff: (
     repoPath: string,
     filePath: string,
-    staged: boolean
+    staged: boolean,
   ) => Promise<GitDiffResult>;
   gitFileContent: (
     repoPath: string,
     filePath: string,
-    revision: string | null
+    revision: string | null,
   ) => Promise<FileContentResult>;
   gitDiscardChanges: (
     repoPath: string,
-    filePaths: string[]
+    filePaths: string[],
   ) => Promise<GitStageResult>;
   getGitLog: (
     repoPath: string,
     skip: number,
-    limit: number
+    limit: number,
   ) => Promise<GitLogEntry[]>;
   getGitCommitFiles: (
     repoPath: string,
-    hash: string
+    hash: string,
   ) => Promise<GitCommitFile[]>;
   getCommitDiff: (repoPath: string, hash: string) => Promise<GitDiffResult>;
   gitCommitFileDiff: (
     repoPath: string,
     hash: string,
-    filePath: string
+    filePath: string,
   ) => Promise<GitDiffResult>;
   discoverGitRepos: (
     rootPath: string,
     maxDepth: number,
-    ignoredFolders: string[]
+    ignoredFolders: string[],
   ) => Promise<GitRepoInfo[]>;
   startGitWatch: (
     repoPath: string,
     debounceMs: number,
-    onChange: (repoPath: string) => void
+    onChange: (repoPath: string) => void,
   ) => void;
   stopGitWatch: (repoPath: string) => void;
   generateCommitMessage: (
     repoPath: string,
     onChunk: (chunk: ResponsesApiStreamChunk) => void,
-    streamId: string
+    streamId: string,
   ) => Promise<ResponsesApiResult>;
   generateCommitMessageFromDiff: (
     diff: string,
     onChunk: (chunk: ResponsesApiStreamChunk) => void,
-    streamId: string
+    streamId: string,
   ) => Promise<ResponsesApiResult>;
   generateThemePalette: (
     imagePath: string,
     profileName: string,
     onChunk: (chunk: ResponsesApiStreamChunk) => void,
-    streamId: string
+    streamId: string,
   ) => Promise<ResponsesApiResult>;
   createCheckpoint: (workDir: string) => Promise<string>;
   restoreCheckpoint: (checkpointId: string, workDir: string) => Promise<void>;
   restoreCheckpoints: (
     checkpointIds: string[],
-    workDir: string
+    workDir: string,
   ) => Promise<void>;
   deleteCheckpoint: (checkpointId: string) => Promise<void>;
   listCheckpointChanges: (
     checkpointId: string,
-    workDir: string
+    workDir: string,
   ) => Promise<CheckpointFileChange[]>;
   listCheckpointChangesBatch: (
     checkpointIds: string[],
-    workDir: string
+    workDir: string,
   ) => Promise<CheckpointFileChange[]>;
   listCheckpointDiffs: (
     checkpointId: string,
     workDir: string,
-    includeAll?: boolean
+    includeAll?: boolean,
   ) => Promise<CheckpointFileDiff[]>;
   listCheckpointDiffsBatch: (
     checkpointIds: string[],
     workDir: string,
-    includeAll?: boolean
+    includeAll?: boolean,
   ) => Promise<CheckpointFileDiff[]>;
   truncateConversationFromResponse: (
     conversationId: string,
-    responseId: string
+    responseId: string,
   ) => Promise<void>;
   truncateConversationFromMessage: (
     conversationId: string,
-    messageId: string
+    messageId: string,
   ) => Promise<void>;
   listTodosForRollback: (
     sessionId: string,
-    responseId: string
+    responseId: string,
   ) => Promise<string>;
   listUsageRecords: (
     conversationId: string,
     directoryId: string,
     limit: number,
-    offset: number
+    offset: number,
   ) => Promise<UsageRecordPage>;
   getUsageSummary: (since: string, until: string) => Promise<UsageSummary>;
   getUsageDailyBreakdown: (
     since: string,
-    until: string
+    until: string,
   ) => Promise<DailyUsageBreakdown[]>;
   getUsageModelBreakdown: (
     since: string,
-    until: string
+    until: string,
   ) => Promise<ModelUsageBreakdown[]>;
   writeAppLog: (input: AppLogInput) => Promise<void>;
   /** Executes a scheduled-task pre-script (shell command) in the project cwd. */
@@ -1884,7 +1882,7 @@ export type NativeBridge = {
     command: string,
     cwd: string,
     timeoutMs: number,
-    envJson: string
+    envJson: string,
   ) => Promise<PreScriptResult>;
   listAppLogs: (
     level: string,
@@ -1892,18 +1890,18 @@ export type NativeBridge = {
     since: string,
     until: string,
     limit: number,
-    offset: number
+    offset: number,
   ) => Promise<AppLogPage>;
   clearAppLogs: () => Promise<number>;
   exportConversation: (
     conversationId: string,
-    format: string
+    format: string,
   ) => Promise<string>;
   listMemos: (
     directoryId: string,
     limit: number,
     offset: number,
-    status?: string
+    status?: string,
   ) => Promise<MemoPage>;
   createMemo: (directoryId: string, content: string) => Promise<MemoRecord>;
   updateMemoContent: (memoId: string, content: string) => Promise<MemoRecord>;
@@ -1912,7 +1910,7 @@ export type NativeBridge = {
   getMemoCountSummary: (directoryId: string) => Promise<MemoCountSummary>;
   listScheduledTasks: () => Promise<ScheduledTaskRecord[]>;
   upsertScheduledTask: (
-    input: ScheduledTaskRecordInput
+    input: ScheduledTaskRecordInput,
   ) => Promise<ScheduledTaskRecord>;
   deleteScheduledTask: (taskId: string) => Promise<void>;
   clearScheduledTasks: (directoryId: string | null) => Promise<number>;
@@ -1922,7 +1920,7 @@ export type NativeBridge = {
     runId: string,
     status: string,
     durationMs?: number,
-    error?: string
+    error?: string,
   ) => Promise<void>;
   /** Marks run rows left "running" by a crashed session as errored. */
   reconcileScheduledTaskRuns: () => Promise<number>;
@@ -1939,7 +1937,7 @@ export type NativeBridge = {
   /** 设置相册手动封面（imageId 传 null 清除，回退最新一张图） */
   setImageAlbumCover: (
     albumId: string,
-    imageId: string | null
+    imageId: string | null,
   ) => Promise<ImageAlbumRecord>;
   /** 相册拖拽排序：按给定顺序持久化 sort_order */
   reorderImageAlbums: (orderedIds: string[]) => Promise<void>;
@@ -1972,11 +1970,11 @@ export type NativeBridge = {
   /** 准备存储目录迁移：校验目标目录并写入迁移日志；返回待迁移文件数量（0 表示无需迁移） */
   prepareStorageMigration: (
     kind: StorageLocationKind,
-    targetDir: string
+    targetDir: string,
   ) => Promise<number>;
   /** 复制下一批存储目录文件并返回迁移进度 */
   migrateStorageChunk: (
-    kind: StorageLocationKind
+    kind: StorageLocationKind,
   ) => Promise<StorageMigrationProgress>;
   /** 提交迁移：写入新目录设置并清理旧根目录文件 */
   commitStorageMigration: (kind: StorageLocationKind) => Promise<void>;
@@ -1991,12 +1989,12 @@ export type NativeBridge = {
   /** 解密并导出指定浏览器配置文件的已保存密码（明文，仅供主进程加密落盘） */
   browserImportPasswords: (
     sourceId: string,
-    profile: string
+    profile: string,
   ) => Promise<ImportedBrowserPassword[]>;
   /** 解析指定浏览器配置文件的 Cookie（Chrome 系已解密） */
   browserImportCookies: (
     sourceId: string,
-    profile: string
+    profile: string,
   ) => Promise<ImportedBrowserCookie[]>;
   // ── Codex 宠物系统 ────────────────────────────────────────────────
   /** 安装 Codex 宠物包（zip），返回安装后的宠物清单 */

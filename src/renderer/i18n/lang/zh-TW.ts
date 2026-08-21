@@ -525,6 +525,7 @@ export const zhTW = {
   "toolCall.bash.detached": "背景執行 · PID {{pid}}",
   "toolCall.bash.logPath": "日誌：{{path}}",
   "toolCall.bash.timeout": "逾時",
+  "toolCall.bash.cancelled": "已停止",
   "toolCall.bash.countdown": "{{seconds}}秒",
   "toolCall.bash.interactive": "互動式",
   "toolCall.bash.interactivePlaceholder": "輸入內容並按 Enter 鍵...",

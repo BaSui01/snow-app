@@ -655,10 +655,20 @@ impl BashService {
                         ..BashExecutionTimings::default()
                     },
                 });
-                return Err(Error::new(
-                    Status::GenericFailure,
-                    format!("Failed to spawn process: {error}"),
-                ));
+                return Ok(json!({
+                    "status": "spawn_failed",
+                    "reason": "spawn_error",
+                    "elapsedMs": execution_started.elapsed().as_millis() as u64,
+                    "timeoutMs": timeout,
+                    "exitCode": null,
+                    "stdout": "",
+                    "stderr": "",
+                    "outputComplete": true,
+                    "command": command,
+                    "workingDirectory": working_directory,
+                    "executedAt": executed_at,
+                    "error": format!("Failed to spawn process: {error}")
+                }));
             }
         };
         let spawn_ms = spawn_started.elapsed().as_millis() as u64;
@@ -750,6 +760,11 @@ impl BashService {
         };
 
         let first_output_ms = Arc::new(OnceLock::new());
+        // Shared accumulation buffers mirror everything the readers consume
+        // so a partial stdout/stderr survives even when a reader task must
+        // be aborted before EOF (stop / timeout with a surviving grandchild).
+        let stdout_accumulated = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let stderr_accumulated = Arc::new(std::sync::Mutex::new(Vec::new()));
         let stdout_task = child.stdout.take().map(|stdout| {
             tokio::spawn(stream_io::read_stream(
                 stdout,
@@ -757,6 +772,7 @@ impl BashService {
                 Arc::clone(&callback),
                 Arc::clone(&first_output_ms),
                 execution_started,
+                Arc::clone(&stdout_accumulated),
             ))
         });
         let stderr_task = child.stderr.take().map(|stderr| {
@@ -766,6 +782,7 @@ impl BashService {
                 Arc::clone(&callback),
                 Arc::clone(&first_output_ms),
                 execution_started,
+                Arc::clone(&stderr_accumulated),
             ))
         });
 
@@ -789,11 +806,22 @@ impl BashService {
             biased;
             _ = cancel_token.cancelled() => {
                 stream_io::kill_process_tree(&mut child).await;
-                ProcessWaitResult::Cancelled
+                // The renderer countdown watchdog aborts with reason
+                // "timeout" when the deadline elapses; only an explicit stop
+                // button / session abort ("user", "shutdown") is reported as
+                // a user cancellation, so an automatic timeout is never
+                // misreported as "stopped by the user".
+                let cancel_reason = crate::api::cancel::take_tool_cancel_reason(&tool_execution_id)
+                    .unwrap_or_else(|| "user".to_string());
+                if cancel_reason == "timeout" {
+                    ProcessWaitResult::TimedOut { watchdog: true }
+                } else {
+                    ProcessWaitResult::Cancelled(cancel_reason)
+                }
             }
             _ = tokio::time::sleep(effective_timeout) => {
                 stream_io::kill_process_tree(&mut child).await;
-                ProcessWaitResult::TimedOut
+                ProcessWaitResult::TimedOut { watchdog: false }
             }
             status = stream_io::poll_child_exit(&mut child) => match status {
                 Ok(status) => ProcessWaitResult::Completed(status.code().unwrap_or(1)),
@@ -822,12 +850,13 @@ impl BashService {
         // the drain into a bounded wait and lets the call complete with
         // whatever was captured.
         //
-        // A user-initiated cancellation returns **immediately** instead of
-        // draining the pipes: the frontend has already streamed the partial
-        // output live, so waiting for the remaining bytes (up to 3s when a
-        // grandchild survives and holds a pipe open) would only delay the
-        // confirmation the UI shows.  The reader tasks are aborted so they
-        // cannot linger in the background either.
+        // After a stop/timeout the process tree is already killed, so the
+        // pipes normally reach EOF almost immediately: a short drain
+        // deadline recovers the stdout/stderr produced before termination
+        // (the structured result carries it for the model and the UI). If a
+        // surviving grandchild still holds a pipe open, the deadline aborts
+        // the readers and the shared accumulation buffers provide whatever
+        // was captured — output is never silently discarded.
         //
         // The cancellation token stays registered until the drain finishes:
         // once the shell exits while a grandchild still holds the pipes open,
@@ -835,29 +864,25 @@ impl BashService {
         // so the stop button keeps targeting the execution (even though the
         // wait itself is bounded) instead of silently no-oping.
         let pipe_drain_started = Instant::now();
-        let (stdout, stderr) = if matches!(
+        let drain_deadline = if matches!(
             wait_result,
-            ProcessWaitResult::Cancelled | ProcessWaitResult::TimedOut
+            ProcessWaitResult::Cancelled(_) | ProcessWaitResult::TimedOut { .. }
         ) {
-            // A stop or timeout must not wait for inherited pipe handles.
-            // The live stream already delivered the useful partial output;
-            // abort both readers immediately after the process-tree kill.
-            if let Some(task) = stdout_task {
-                task.abort();
-            }
-            if let Some(task) = stderr_task {
-                task.abort();
-            }
-            (String::new(), String::new())
+            // Stop/timeout: the tree kill already closed the write ends, so
+            // EOF arrives quickly; keep the wait short to settle the call.
+            Some(Duration::from_millis(1000))
         } else {
-            // Drain stdout and stderr concurrently. A grandchild that keeps
-            // one pipe open can therefore delay completion by at most the
-            // single bounded safety timeout, never twice that timeout.
-            tokio::join!(
-                await_stream_task(stdout_task, Some(Duration::from_secs(3))),
-                await_stream_task(stderr_task, Some(Duration::from_secs(3))),
-            )
+            // Normal exit: tolerate a grandchild holding one pipe open.
+            Some(Duration::from_secs(3))
         };
+        // Drain stdout and stderr concurrently. A grandchild that keeps one
+        // pipe open can therefore delay completion by at most the single
+        // bounded drain deadline, never twice that deadline.
+        let ((stdout, stdout_complete), (stderr, stderr_complete)) = tokio::join!(
+            await_stream_task(stdout_task, drain_deadline, &stdout_accumulated),
+            await_stream_task(stderr_task, drain_deadline, &stderr_accumulated),
+        );
+        let output_complete = stdout_complete && stderr_complete;
         let pipe_drain_ms = pipe_drain_started.elapsed().as_millis() as u64;
 
         // No further cancellation can target this execution once the
@@ -874,8 +899,17 @@ impl BashService {
                 "Terminal command exited with a non-zero status",
                 Some(*code),
             ),
-            ProcessWaitResult::TimedOut => ("WARN", "timeout", "Terminal command timed out", None),
-            ProcessWaitResult::Cancelled => {
+            ProcessWaitResult::TimedOut { watchdog } => (
+                "WARN",
+                "timeout",
+                if *watchdog {
+                    "Terminal command timed out (renderer watchdog)"
+                } else {
+                    "Terminal command timed out"
+                },
+                None,
+            ),
+            ProcessWaitResult::Cancelled(_) => {
                 ("INFO", "cancelled", "Terminal command was cancelled", None)
             }
             ProcessWaitResult::Failed(_) => {
@@ -911,46 +945,93 @@ impl BashService {
             },
         });
 
+        // Structured result for every terminal state (completed / timed_out /
+        // cancelled / failed): the status and reason fields let the model and
+        // the UI distinguish an automatic timeout from a user stop, and the
+        // partial stdout/stderr captured before termination is preserved
+        // instead of being thrown away with an opaque error.
+        let elapsed_ms = execution_started.elapsed().as_millis() as u64;
+        let effective_timeout_ms = effective_timeout.as_millis() as u64;
         match wait_result {
             ProcessWaitResult::Completed(exit_code) => Ok(json!({
+                "status": "completed",
                 "stdout": stdout,
                 "stderr": stderr,
                 "exitCode": exit_code,
                 "command": command,
                 "executedAt": executed_at,
-                "interactive": is_interactive
+                "interactive": is_interactive,
+                "elapsedMs": elapsed_ms,
+                "timeoutMs": effective_timeout_ms,
+                "outputComplete": output_complete
             })),
-            ProcessWaitResult::TimedOut => Err(Error::new(
-                Status::GenericFailure,
-                format!("Command timed out after {timeout}ms: {command}"),
-            )),
-            ProcessWaitResult::Cancelled => Err(Error::new(
-                Status::GenericFailure,
-                format!("Command was stopped by the user: {command}"),
-            )),
-            ProcessWaitResult::Failed(error) => Err(Error::new(
-                Status::GenericFailure,
-                format!("Failed to wait for process: {error}"),
-            )),
+            ProcessWaitResult::TimedOut { watchdog } => Ok(json!({
+                "status": "timed_out",
+                "reason": if watchdog { "watchdog_timeout" } else { "timeout" },
+                "elapsedMs": elapsed_ms,
+                "timeoutMs": effective_timeout_ms,
+                "exitCode": null,
+                "stdout": stdout,
+                "stderr": stderr,
+                "outputComplete": output_complete,
+                "command": command,
+                "executedAt": executed_at,
+                "interactive": is_interactive,
+                "error": format!("Command timed out after {timeout}ms: {command}")
+            })),
+            ProcessWaitResult::Cancelled(reason) => Ok(json!({
+                "status": "cancelled",
+                "reason": reason,
+                "elapsedMs": elapsed_ms,
+                "timeoutMs": effective_timeout_ms,
+                "exitCode": null,
+                "stdout": stdout,
+                "stderr": stderr,
+                "outputComplete": output_complete,
+                "command": command,
+                "executedAt": executed_at,
+                "interactive": is_interactive,
+                "error": format!("Command was stopped by the user: {command}")
+            })),
+            ProcessWaitResult::Failed(error) => Ok(json!({
+                "status": "failed",
+                "reason": "process_wait_failed",
+                "elapsedMs": elapsed_ms,
+                "timeoutMs": effective_timeout_ms,
+                "exitCode": null,
+                "stdout": stdout,
+                "stderr": stderr,
+                "outputComplete": output_complete,
+                "command": command,
+                "executedAt": executed_at,
+                "interactive": is_interactive,
+                "error": format!("Failed to wait for process: {error}")
+            })),
         }
     }
 }
 
 enum ProcessWaitResult {
     Completed(i32),
-    TimedOut,
-    Cancelled,
+    /// The execution deadline elapsed. `watchdog` is true when the renderer
+    /// countdown fired the abort (reason "timeout") slightly before the
+    /// backend's own deadline, false for the backend deadline itself.
+    TimedOut { watchdog: bool },
+    /// Cancelled by an explicit user/shutdown abort; carries the reason.
+    Cancelled(String),
     Failed(String),
 }
 
-/// Await a stream reader task.  When `safety_timeout` is provided
-/// (used after a process-tree kill), the wait is bounded so we never
-/// block indefinitely if a grandchild somehow survives and keeps a
-/// pipe open.
+/// Await a stream reader task.  When `safety_timeout` is provided, the wait
+/// is bounded so we never block indefinitely if a grandchild somehow survives
+/// and keeps a pipe open.  Returns the captured output plus whether the
+/// reader drained to EOF (false = the output may be partial).  On abort or
+/// drain timeout the shared accumulation buffer provides whatever was read.
 async fn await_stream_task(
     task: Option<tokio::task::JoinHandle<String>>,
     safety_timeout: Option<Duration>,
-) -> String {
+    accumulated: &std::sync::Mutex<Vec<u8>>,
+) -> (String, bool) {
     match task {
         Some(mut handle) => match safety_timeout {
             Some(dur) => {
@@ -958,18 +1039,22 @@ async fn await_stream_task(
                 // be aborted afterwards. JoinHandle is Unpin, and `&mut F`
                 // implements Future when F does, so `&mut handle` works here.
                 match tokio::time::timeout(dur, &mut handle).await {
-                    Ok(Ok(output)) => output,
+                    Ok(Ok(output)) => (output, true),
                     // The drain timed out (a grandchild keeps a pipe write
-                    // handle open and EOF never arrives). Abort the reader so
-                    // the background task cannot linger forever.
+                    // handle open and EOF never arrives) or the reader
+                    // failed. Abort it and recover the captured bytes from
+                    // the shared buffer so no output is lost.
                     _ => {
                         handle.abort();
-                        String::new()
+                        (stream_io::finalize_accumulated_output(accumulated), false)
                     }
                 }
             }
-            None => handle.await.unwrap_or_default(),
+            None => match handle.await {
+                Ok(output) => (output, true),
+                Err(_) => (stream_io::finalize_accumulated_output(accumulated), false),
+            },
         },
-        None => String::new(),
+        None => (String::new(), true),
     }
 }

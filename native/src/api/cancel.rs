@@ -169,6 +169,23 @@ pub fn unregister_summary(conversation_id: &str) {
 
 const TOOL_EXECUTION_PREFIX: &str = "tool:";
 
+/// Why a tool execution was cancelled: "user" (stop button / session abort),
+/// "timeout" (renderer countdown watchdog) or "shutdown". Recorded per id so
+/// the executing service can report the real termination reason instead of
+/// treating every cancel as a user stop.
+static TOOL_CANCEL_REASONS: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
+
+fn with_tool_cancel_reasons<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut HashMap<String, String>) -> R,
+{
+    let mut guard = TOOL_CANCEL_REASONS
+        .lock()
+        .expect("Tool cancel reason mutex poisoned");
+    let map = guard.get_or_insert_with(HashMap::new);
+    f(map)
+}
+
 /// Register a fresh cancellation token for a tool execution.  If a cancel
 /// was already requested before registration (pre-cancelled), the returned
 /// token is created already-cancelled so the execution aborts immediately.
@@ -179,11 +196,28 @@ pub fn register_tool_execution(tool_execution_id: &str) -> CancellationToken {
 /// Trigger cancellation for a tool execution and remove its token from the
 /// registry.  Returns `true` if a token was found and cancelled.
 pub fn cancel_tool_execution(tool_execution_id: &str) -> bool {
+    cancel_tool_execution_with_reason(tool_execution_id, "user")
+}
+
+/// Like `cancel_tool_execution`, but records why the execution was cancelled
+/// so the executor can distinguish a user stop from an automatic timeout.
+pub fn cancel_tool_execution_with_reason(tool_execution_id: &str, reason: &str) -> bool {
+    with_tool_cancel_reasons(|map| {
+        map.insert(tool_execution_id.to_string(), reason.to_string());
+    });
     cancel_stream(&format!("{TOOL_EXECUTION_PREFIX}{tool_execution_id}"))
+}
+
+/// Take (read + remove) the recorded cancel reason for a tool execution.
+pub fn take_tool_cancel_reason(tool_execution_id: &str) -> Option<String> {
+    with_tool_cancel_reasons(|map| map.remove(tool_execution_id))
 }
 
 /// Remove the tool-execution token without cancelling it.  Called when the
 /// execution finishes normally (success, timeout or error).
 pub fn unregister_tool_execution(tool_execution_id: &str) {
     unregister_stream(&format!("{TOOL_EXECUTION_PREFIX}{tool_execution_id}"));
+    with_tool_cancel_reasons(|map| {
+        map.remove(tool_execution_id);
+    });
 }

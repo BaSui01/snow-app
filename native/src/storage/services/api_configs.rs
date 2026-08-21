@@ -469,7 +469,13 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
                 "maxContextTokens",
                 effective_max_context_tokens,
             );
-            set_input_optional(&mut *snowcfg, "maxTokens", effective_max_tokens);
+            // maxTokens 允许清空：None 时显式写 null 覆盖 config_json 残留旧值，
+            // 否则请求/回显（均从 config_json 读取）仍会命中已删除的 max_tokens。
+            if let Some(max_tokens) = effective_max_tokens {
+                snowcfg.insert("maxTokens".to_string(), json!(max_tokens));
+            } else {
+                snowcfg.insert("maxTokens".to_string(), Value::Null);
+            }
             set_input_optional(
                 &mut *snowcfg,
                 "streamIdleTimeoutSec",

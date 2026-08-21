@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Activity, AlertCircle, FileText, Info, Send, Square, Timer } from "lucide-react";
+import {
+  Activity,
+  AlertCircle,
+  FileText,
+  Info,
+  Send,
+  Square,
+  Timer,
+} from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
@@ -24,6 +32,7 @@ type ParsedBashResult =
       exitCode: number;
     }
   | { type: "timeout"; message: string; output: string }
+  | { type: "cancelled"; message: string; output: string }
   | { type: "error"; message: string; output: string }
   | { type: "detached"; pid: number; logPath: string }
   | { type: "raw"; text: string }
@@ -91,32 +100,73 @@ const parseResult = (result: string | undefined): ParsedBashResult => {
       return { type: "raw", text: result };
     }
 
-    const stdout =
-      typeof parsed.stdout === "string" ? (parsed.stdout as string) : "";
-    const stderr =
-      typeof parsed.stderr === "string" ? (parsed.stderr as string) : "";
-    const partialOutput = joinOutput(stdout, stderr);
-
-    if (typeof parsed.error === "string") {
-      if (isTimeoutMessage(parsed.error)) {
-        return {
-          type: "timeout",
-          message: parsed.error,
-          output: partialOutput,
-        };
-      }
-      return { type: "error", message: parsed.error, output: partialOutput };
-    }
-
     // Detached (background) execution: the call returned immediately with
     // { detached: true, pid, logPath } and the process keeps running.
     if (parsed.detached === true) {
       return {
         type: "detached",
         pid: typeof parsed.pid === "number" ? parsed.pid : 0,
-        logPath:
-          typeof parsed.logPath === "string" ? parsed.logPath : "",
+        logPath: typeof parsed.logPath === "string" ? parsed.logPath : "",
       };
+    }
+
+    const stdout =
+      typeof parsed.stdout === "string" ? (parsed.stdout as string) : "";
+    const stderr =
+      typeof parsed.stderr === "string" ? (parsed.stderr as string) : "";
+    const partialOutput = joinOutput(stdout, stderr);
+    const errorMessage =
+      typeof parsed.error === "string" ? parsed.error : undefined;
+
+    // Structured terminal statuses from the backend: completed / timed_out /
+    // cancelled / failed / spawn_failed. timed_out covers both the backend
+    // deadline (reason "timeout") and the renderer countdown watchdog
+    // (reason "watchdog_timeout") — neither is a user cancellation.
+    if (typeof parsed.status === "string") {
+      switch (parsed.status) {
+        case "completed":
+          if (typeof parsed.exitCode === "number") {
+            return {
+              type: "success",
+              output: partialOutput,
+              exitCode: parsed.exitCode,
+            };
+          }
+          break;
+        case "timed_out":
+          return {
+            type: "timeout",
+            message: errorMessage ?? "Command timed out",
+            output: partialOutput,
+          };
+        case "cancelled":
+          return {
+            type: "cancelled",
+            message: errorMessage ?? "Command was stopped",
+            output: partialOutput,
+          };
+        case "failed":
+        case "spawn_failed":
+          return {
+            type: "error",
+            message: errorMessage ?? "Command failed",
+            output: partialOutput,
+          };
+        default:
+          break;
+      }
+    }
+
+    // Legacy results persisted before structured statuses existed.
+    if (errorMessage !== undefined) {
+      if (isTimeoutMessage(errorMessage)) {
+        return {
+          type: "timeout",
+          message: errorMessage,
+          output: partialOutput,
+        };
+      }
+      return { type: "error", message: errorMessage, output: partialOutput };
     }
 
     if (
@@ -137,7 +187,6 @@ const parseResult = (result: string | undefined): ParsedBashResult => {
     return { type: "raw", text: result };
   }
 };
-
 const getCommandSummary = (command: string): string =>
   command.trim().split(/\r?\n/, 1)[0] ?? "";
 
@@ -147,11 +196,11 @@ export const BashToolCall = ({
   const { t } = useI18n();
   const parsedArgs = useMemo(
     () => parseArgs(toolCall.arguments),
-    [toolCall.arguments]
+    [toolCall.arguments],
   );
   const parsedResult = useMemo(
     () => parseResult(toolCall.result),
-    [toolCall.result]
+    [toolCall.result],
   );
 
   const command = parsedArgs?.command ?? "terminal-execute";
@@ -159,6 +208,7 @@ export const BashToolCall = ({
   const hasFailed =
     parsedResult.type === "error" ||
     parsedResult.type === "timeout" ||
+    parsedResult.type === "cancelled" ||
     (parsedResult.type === "success" && parsedResult.exitCode !== 0);
   const effectiveStatus = hasFailed ? "error" : toolCall.status;
 
@@ -216,7 +266,7 @@ export const BashToolCall = ({
     try {
       await window.snow.writeInteractiveStdin(
         interactiveSessionId,
-        `${inputValue}\n`
+        `${inputValue}\n`,
       );
       setInputValue("");
     } catch (err) {
@@ -239,7 +289,7 @@ export const BashToolCall = ({
         void handleSendInput();
       }
     },
-    [handleSendInput]
+    [handleSendInput],
   );
 
   // Manual and automatic termination share one guarded path. The backend
@@ -255,33 +305,41 @@ export const BashToolCall = ({
     }
   }, [isRunning]);
 
-  const handleKill = useCallback(async () => {
-    if (!toolExecutionId || isKillRequestedRef.current) {
-      return;
-    }
-    isKillRequestedRef.current = true;
-    setIsKilling(true);
-    try {
-      const accepted = await window.snow.abortToolExecution(toolExecutionId);
-      if (!accepted) {
-        // The execution may have completed between render and the click. Do
-        // not leave the UI permanently stuck in "Stopping…" when there is no
-        // longer a cancellation token to signal.
+  const handleKill = useCallback(
+    async (reason: "user" | "timeout" = "user") => {
+      if (!toolExecutionId || isKillRequestedRef.current) {
+        return;
+      }
+      isKillRequestedRef.current = true;
+      setIsKilling(true);
+      try {
+        const accepted = await window.snow.abortToolExecution(
+          toolExecutionId,
+          reason,
+        );
+        if (!accepted) {
+          // The execution may have completed between render and the click. Do
+          // not leave the UI permanently stuck in "Stopping…" when there is no
+          // longer a cancellation token to signal.
+          isKillRequestedRef.current = false;
+          setIsKilling(false);
+        }
+      } catch {
+        // IPC failure is retryable. The agent loop will still surface the actual
+        // tool result if the process finished concurrently.
         isKillRequestedRef.current = false;
         setIsKilling(false);
       }
-    } catch {
-      // IPC failure is retryable. The agent loop will still surface the actual
-      // tool result if the process finished concurrently.
-      isKillRequestedRef.current = false;
-      setIsKilling(false);
-    }
-  }, [toolExecutionId]);
+    },
+    [toolExecutionId],
+  );
 
   // Renderer-side watchdog: the Rust timeout remains authoritative, but this
-  // fail-safe sends the same highest-priority kill request when the countdown
-  // reaches zero. It covers a delayed/stalled backend timeout path without
-  // creating a second termination implementation.
+  // fail-safe sends a kill request with the explicit "timeout" reason when
+  // the countdown reaches zero. The backend records the reason, so a
+  // watchdog-triggered abort is reported as a timeout — never as a user
+  // cancellation — while covering a delayed/stalled backend timeout path
+  // without creating a second termination implementation.
   useEffect(() => {
     if (
       !isRunning ||
@@ -293,7 +351,7 @@ export const BashToolCall = ({
     ) {
       return;
     }
-    void handleKill();
+    void handleKill("timeout");
   }, [
     handleKill,
     isInteractive,
@@ -307,7 +365,11 @@ export const BashToolCall = ({
     if (parsedResult.type === "success") {
       return parsedResult.output;
     }
-    if (parsedResult.type === "timeout" || parsedResult.type === "error") {
+    if (
+      parsedResult.type === "timeout" ||
+      parsedResult.type === "cancelled" ||
+      parsedResult.type === "error"
+    ) {
       return parsedResult.output;
     }
     if (parsedResult.type === "raw") {
@@ -315,7 +377,7 @@ export const BashToolCall = ({
     }
     return joinOutput(
       toolCall.streamingStdout ?? "",
-      toolCall.streamingStderr ?? ""
+      toolCall.streamingStderr ?? "",
     );
   }, [parsedResult, toolCall.streamingStdout, toolCall.streamingStderr]);
 
@@ -329,8 +391,8 @@ export const BashToolCall = ({
     isRunning
       ? "toolCall.bash.running"
       : toolCall.status === "error"
-      ? "toolCall.bash.errorWithoutDetails"
-      : "toolCall.bash.waiting"
+        ? "toolCall.bash.errorWithoutDetails"
+        : "toolCall.bash.waiting",
   );
 
   return (
@@ -374,6 +436,11 @@ export const BashToolCall = ({
               {t("toolCall.bash.timeout")}
             </span>
           ) : null}
+          {parsedResult.type === "cancelled" ? (
+            <span className="tool-call-bash-timeout-badge">
+              {t("toolCall.bash.cancelled")}
+            </span>
+          ) : null}
           {isRunning && countdownSeconds !== null ? (
             <span
               className={`tool-call-bash-countdown ${
@@ -390,14 +457,12 @@ export const BashToolCall = ({
             <button
               className="tool-call-bash-kill"
               disabled={isKilling}
-              onClick={() => void handleKill()}
+              onClick={() => void handleKill("user")}
               title={t("toolCall.bash.killTitle")}
               type="button"
             >
               <Square size={11} aria-hidden="true" />
-              {isKilling
-                ? t("toolCall.bash.killing")
-                : t("toolCall.bash.kill")}
+              {isKilling ? t("toolCall.bash.killing") : t("toolCall.bash.kill")}
             </button>
           ) : null}
         </>
@@ -406,6 +471,12 @@ export const BashToolCall = ({
     >
       <div className="tool-call-body tool-call-bash-body">
         {parsedResult.type === "timeout" ? (
+          <div className="tool-call-error tool-call-bash-timeout-notice">
+            <AlertCircle size={12} aria-hidden="true" />
+            <span>{parsedResult.message}</span>
+          </div>
+        ) : null}
+        {parsedResult.type === "cancelled" ? (
           <div className="tool-call-error tool-call-bash-timeout-notice">
             <AlertCircle size={12} aria-hidden="true" />
             <span>{parsedResult.message}</span>

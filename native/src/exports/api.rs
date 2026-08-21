@@ -100,10 +100,16 @@ pub fn abort_response_stream(stream_id: String) -> napi::Result<bool> {
 /// Abort an in-flight tool execution (e.g. a bash subprocess) by the
 /// execution id that was streamed to the frontend as a `tool_execution`
 /// chunk.  The executing service races its wait against this cancellation
-/// and kills the process tree.  Returns `true` if a running execution was
-/// found and cancelled.
-#[napi]
-pub fn abort_tool_execution(tool_execution_id: String) -> napi::Result<bool> {
+/// and kills the process tree.  `reason` records why the abort happened
+/// ("user" stop button / session abort, "timeout" renderer countdown
+/// watchdog, or "shutdown") so the executor can report the real
+/// termination reason; unknown values fall back to "user".
+/// Returns `true` if a running execution was found and cancelled.
+#[napi(ts_args_type = "toolExecutionId: string, reason?: string")]
+pub fn abort_tool_execution(
+    tool_execution_id: String,
+    reason: Option<String>,
+) -> napi::Result<bool> {
     let trimmed = tool_execution_id.trim();
     if trimmed.is_empty() {
         return Err(Error::new(
@@ -111,7 +117,15 @@ pub fn abort_tool_execution(tool_execution_id: String) -> napi::Result<bool> {
             "Tool execution ID is required".to_string(),
         ));
     }
-    Ok(crate::api::cancel::cancel_tool_execution(trimmed))
+    let normalized_reason = match reason.as_deref() {
+        Some("timeout") => "timeout",
+        Some("shutdown") => "shutdown",
+        _ => "user",
+    };
+    Ok(crate::api::cancel::cancel_tool_execution_with_reason(
+        trimmed,
+        normalized_reason,
+    ))
 }
 
 /// Generate a theme palette JSON from a background image using the selected

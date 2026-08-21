@@ -553,6 +553,7 @@ export const en = {
   "toolCall.bash.detached": "background · PID {{pid}}",
   "toolCall.bash.logPath": "Log: {{path}}",
   "toolCall.bash.timeout": "timeout",
+  "toolCall.bash.cancelled": "stopped",
   "toolCall.bash.countdown": "{{seconds}}s",
   "toolCall.bash.interactive": "interactive",
   "toolCall.bash.interactivePlaceholder": "Type input and press Enter...",

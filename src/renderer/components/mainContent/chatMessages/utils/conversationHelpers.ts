@@ -20,7 +20,7 @@ export const deleteCheckpoints = (checkpointIds: string[]): void => {
  * 否则切换项目后 checkpoint 目录不匹配,所有工具都会被后端拦截。
  */
 export const directoryIdToPath = (
-  directoryId: string | undefined
+  directoryId: string | undefined,
 ): string | undefined => {
   if (!directoryId) return undefined;
   if (directoryId.startsWith("local:")) {
@@ -43,7 +43,7 @@ export const directoryIdToPath = (
  * Fire-and-forget: an execution that just finished naturally is a no-op.
  */
 export const killRunningToolExecutions = (
-  messages: ChatConversationMessage[]
+  messages: ChatConversationMessage[],
 ): void => {
   const executionIds = new Set<string>();
   for (const message of messages) {
@@ -70,11 +70,23 @@ export const formatMessageTime = (): string =>
   });
 
 export const createMessageId = (
-  role: ChatConversationMessage["role"]
+  role: ChatConversationMessage["role"],
 ): string => `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-export const getErrorMessage = (error: unknown): string =>
-  error instanceof Error ? error.message : "AI 响应失败，请稍后重试。";
+/**
+ * Extract a user-facing message from an unknown error. Electron wraps every
+ * rejected ipcMain.handle as "Error invoking remote method '<channel>': ..."
+ * which leaks internal IPC names (e.g. mcp:call-tool); strip that wrapper so
+ * only the underlying reason reaches the UI / model.
+ */
+export const getErrorMessage = (error: unknown): string => {
+  const message =
+    error instanceof Error ? error.message : "AI 响应失败，请稍后重试。";
+  return message.replace(
+    /^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/,
+    "",
+  );
+};
 
 /** Treat provider terminal failures and locally persisted errors identically. */
 export const isResponseErrorStatus = (status: string): boolean =>
@@ -87,7 +99,7 @@ type McpImageContentBlock = {
 };
 
 const isMcpImageContentBlock = (
-  value: unknown
+  value: unknown,
 ): value is McpImageContentBlock => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return false;
@@ -124,10 +136,10 @@ export const formatMcpToolResultForModel = (result: string): string => {
             mimeType: block.mimeType,
             data: "[attached as multimodal image]",
           }
-        : block
+        : block,
     );
     const imageTags = images.map(
-      (image) => `@@image:data:${image.mimeType};base64,${image.data}@@`
+      (image) => `@@image:data:${image.mimeType};base64,${image.data}@@`,
     );
     return `${JSON.stringify({
       ...record,
@@ -149,7 +161,7 @@ export const normalizeToolCallArguments = (args: unknown): string => {
 };
 
 export const isUserQuestionCancellationResult = (
-  resultJson: string
+  resultJson: string,
 ): boolean => {
   try {
     const parsed: unknown = JSON.parse(resultJson);
@@ -202,7 +214,7 @@ const normalizeToolCallName = (tc: Record<string, unknown>): string => {
 };
 
 const normalizeToolCallArgumentsFromTc = (
-  tc: Record<string, unknown>
+  tc: Record<string, unknown>,
 ): string => {
   // OpenAI Chat Completions: arguments in tc.function.arguments (string)
   // OpenAI Responses API: arguments in tc.arguments (object)
@@ -226,7 +238,7 @@ const normalizeToolCallArgumentsFromTc = (
 };
 
 const normalizeToolCallId = (
-  tc: Record<string, unknown>
+  tc: Record<string, unknown>,
 ): string | undefined => {
   if (typeof tc.call_id === "string") {
     return tc.call_id;
@@ -256,7 +268,7 @@ export const formatToolResultsContent = (
     name: string;
     callId: string;
     result: string;
-  }>
+  }>,
 ): string =>
   structuredResults
     .map((entry) => {
@@ -268,7 +280,7 @@ export const formatToolResultsContent = (
     .join("\n\n");
 
 export const parseToolCalls = (
-  toolCallsJson: string | undefined
+  toolCallsJson: string | undefined,
 ): ToolCallInfo[] => {
   if (!toolCallsJson) {
     return [];
@@ -318,7 +330,7 @@ const stripHookSections = (content: string): string =>
   content.replace(/\n\n\[Hook (?:Warning|Context)\]\n[\s\S]*$/, "");
 
 export const buildConversationMessages = (
-  records: ChatMessageRecord[]
+  records: ChatMessageRecord[],
 ): ChatConversationMessage[] => {
   const toolResultQueues = new Map<string, string[]>();
   for (const record of records) {
@@ -410,7 +422,7 @@ export const buildConversationMessages = (
 
 export const isSameToolCall = (
   candidate: ToolCallInfo,
-  target: ToolCallInfo
+  target: ToolCallInfo,
 ): boolean =>
   target.callId
     ? candidate.callId === target.callId
@@ -421,9 +433,8 @@ export const updateFirstMatchingToolCall = (
   toolCalls: ToolCallInfo[] | undefined,
   target: ToolCallInfo,
   expectedStatus:
-    | ToolCallInfo["status"]
-    | ReadonlyArray<ToolCallInfo["status"]>,
-  update: (toolCall: ToolCallInfo) => ToolCallInfo
+    ToolCallInfo["status"] | ReadonlyArray<ToolCallInfo["status"]>,
+  update: (toolCall: ToolCallInfo) => ToolCallInfo,
 ): ToolCallInfo[] | undefined => {
   if (!toolCalls) {
     return undefined;
@@ -472,7 +483,7 @@ export const validateToolCall = (toolCall: ToolCallInfo): string | null => {
           toolCall.name
         }" is not valid JSON: ${toolCall.arguments.slice(
           0,
-          200
+          200,
         )}. Please provide arguments as a valid JSON object.`,
       });
     }

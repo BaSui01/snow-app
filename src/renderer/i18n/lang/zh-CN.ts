@@ -524,6 +524,7 @@ export const zhCN = {
   "toolCall.bash.detached": "后台运行 · PID {{pid}}",
   "toolCall.bash.logPath": "日志：{{path}}",
   "toolCall.bash.timeout": "超时",
+  "toolCall.bash.cancelled": "已停止",
   "toolCall.bash.countdown": "{{seconds}}s",
   "toolCall.bash.interactive": "交互式",
   "toolCall.bash.interactivePlaceholder": "输入内容并按回车键...",

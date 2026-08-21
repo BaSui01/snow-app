@@ -60,13 +60,13 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   // onRemoteWorkspaceCommand 传入 Rust。这里注册一次全局回调，复用与
   // callMcpTool 相同的 dispatchRemoteWorkspaceCommand（含 SFTP 会话建立）。
   native.setCheckpointRemoteCallback?.((command) =>
-    dispatchRemoteWorkspaceCommand(command)
+    dispatchRemoteWorkspaceCommand(command),
   );
   ipcMain.handle("native:engine-info", () => native.engineInfo());
   ipcMain.handle(
     "settings:get-system-setting-value",
     async (_event, settingCode: string) =>
-      native.getSystemSettingValue(settingCode)
+      native.getSystemSettingValue(settingCode),
   );
   ipcMain.handle(
     "settings:set-system-setting",
@@ -74,19 +74,21 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       _event,
       settingName: string,
       settingCode: string,
-      settingValue: string
-    ) => native.setSystemSetting(settingName, settingCode, settingValue)
+      settingValue: string,
+    ) => native.setSystemSetting(settingName, settingCode, settingValue),
   );
   ipcMain.handle("settings:get-yolo-mode", () => native.getYoloMode());
   ipcMain.handle("settings:set-yolo-mode", (_event, enabled: boolean) =>
-    native.setYoloMode(enabled)
+    native.setYoloMode(enabled),
   );
   ipcMain.handle("settings:get-auto-format", () => native.getAutoFormat());
   ipcMain.handle("settings:set-auto-format", (_event, enabled: boolean) =>
-    native.setAutoFormat(enabled)
+    native.setAutoFormat(enabled),
   );
-  ipcMain.handle("settings:get-conversation-modes", (_event, conversationId: string) =>
-    native.getConversationModes(conversationId)
+  ipcMain.handle(
+    "settings:get-conversation-modes",
+    (_event, conversationId: string) =>
+      native.getConversationModes(conversationId),
   );
   ipcMain.handle(
     "settings:set-conversation-modes",
@@ -96,18 +98,20 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       planMode: boolean | null,
       goalMode: boolean | null,
       worktreeMode: boolean | null,
-      goalModeTokenBudget: number | null
+      goalModeTokenBudget: number | null,
     ) =>
       native.setConversationModes(
         conversationId,
         planMode,
         goalMode,
         worktreeMode,
-        goalModeTokenBudget
-      )
+        goalModeTokenBudget,
+      ),
   );
-  ipcMain.handle("settings:get-conversation-runtime-config", (_event, conversationId: string) =>
-    native.getConversationRuntimeConfig(conversationId)
+  ipcMain.handle(
+    "settings:get-conversation-runtime-config",
+    (_event, conversationId: string) =>
+      native.getConversationRuntimeConfig(conversationId),
   );
   ipcMain.handle(
     "settings:set-conversation-runtime-config",
@@ -115,13 +119,13 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       _event,
       conversationId: string,
       thinkingStrength: string | null,
-      responsesFastMode: boolean | null
+      responsesFastMode: boolean | null,
     ) =>
       native.setConversationRuntimeConfig(
         conversationId,
         thinkingStrength,
-        responsesFastMode
-      )
+        responsesFastMode,
+      ),
   );
   ipcMain.handle(
     "settings:set-conversation-run-stats",
@@ -132,7 +136,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       runOutputTokens: number,
       runCacheCreationInputTokens: number,
       runCacheReadInputTokens: number,
-      lastRunDurationMs: number
+      lastRunDurationMs: number,
     ) =>
       native.setConversationRunStats(
         conversationId,
@@ -140,27 +144,30 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         runOutputTokens,
         runCacheCreationInputTokens,
         runCacheReadInputTokens,
-        lastRunDurationMs
-      )
+        lastRunDurationMs,
+      ),
   );
-  ipcMain.handle("settings:reset-conversation-run-stats", (_event, conversationId: string) =>
-    native.resetConversationRunStats(conversationId)
+  ipcMain.handle(
+    "settings:reset-conversation-run-stats",
+    (_event, conversationId: string) =>
+      native.resetConversationRunStats(conversationId),
   );
   ipcMain.handle("settings:get-request-logging", () =>
-    native.getRequestLogging()
+    native.getRequestLogging(),
   );
   ipcMain.handle("settings:set-request-logging", (_event, enabled: boolean) =>
-    native.setRequestLogging(enabled)
+    native.setRequestLogging(enabled),
   );
   ipcMain.handle("settings:get-request-logging-expiry", () =>
-    native.getRequestLoggingExpiry()
+    native.getRequestLoggingExpiry(),
   );
   ipcMain.handle(
     "settings:set-request-logging-expiry",
-    (_event, expiresAtMs: number) => native.setRequestLoggingExpiry(expiresAtMs)
+    (_event, expiresAtMs: number) =>
+      native.setRequestLoggingExpiry(expiresAtMs),
   );
   ipcMain.handle("settings:get-privacy-settings", () =>
-    native.getPrivacySettings()
+    native.getPrivacySettings(),
   );
   ipcMain.handle(
     "settings:set-privacy-settings",
@@ -169,10 +176,10 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         throw new Error("Privacy settings must be an object");
       }
       return native.setPrivacySettings(settings as never);
-    }
+    },
   );
   ipcMain.handle("settings:get-theme-settings", () =>
-    native.getThemeSettings()
+    native.getThemeSettings(),
   );
   ipcMain.handle("settings:set-theme-settings", (_event, settings: unknown) => {
     if (!settings || typeof settings !== "object") {
@@ -188,7 +195,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
     return native.setThemeSettings(settings as never);
   });
   ipcMain.handle("settings:get-keyboard-shortcuts", () =>
-    native.getKeyboardShortcutsSettings()
+    native.getKeyboardShortcutsSettings(),
   );
   ipcMain.handle(
     "settings:set-keyboard-shortcuts",
@@ -197,7 +204,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         throw new Error("Keyboard shortcuts settings must be an object");
       }
       return native.setKeyboardShortcutsSettings(settings as never);
-    }
+    },
   );
   ipcMain.handle(
     "theme:save-background-image",
@@ -206,7 +213,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         throw new Error("Background image source path is required");
       }
       return native.saveThemeBackgroundImage(sourcePath);
-    }
+    },
   );
   ipcMain.handle(
     "theme:delete-background-image",
@@ -215,7 +222,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         throw new Error("Background image path must be a string");
       }
       return native.deleteThemeBackgroundImage(imagePath);
-    }
+    },
   );
   ipcMain.handle(
     "theme:save-stream-cursor-svg",
@@ -224,7 +231,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         throw new Error("Stream cursor SVG source path is required");
       }
       return native.saveThemeStreamCursorSvg(sourcePath);
-    }
+    },
   );
   ipcMain.handle(
     "theme:delete-stream-cursor-svg",
@@ -233,7 +240,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         throw new Error("Stream cursor SVG path must be a string");
       }
       return native.deleteThemeStreamCursorSvg(svgPath);
-    }
+    },
   );
   ipcMain.handle("codebase:get-project-scope", (_event, projectId: unknown) => {
     if (typeof projectId !== "string" || !projectId.trim()) {
@@ -260,7 +267,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
             enabled,
           });
         });
-    }
+    },
   );
   ipcMain.handle(
     "codebase:set-project-agent-review",
@@ -272,7 +279,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         throw new Error("Codebase agent review state must be a boolean");
       }
       return native.setCodebaseProjectAgentReview(projectId.trim(), enabled);
-    }
+    },
   );
   ipcMain.handle(
     "codebase:set-project-reranking",
@@ -284,7 +291,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         throw new Error("Codebase reranking state must be a boolean");
       }
       return native.setCodebaseProjectReranking(projectId.trim(), enabled);
-    }
+    },
   );
   ipcMain.handle(
     "codebase:check-project-gitignore",
@@ -293,7 +300,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         throw new Error("Project id is required");
       }
       return native.checkProjectHasGitignore(projectId.trim());
-    }
+    },
   );
   ipcMain.handle(
     "codebase:check-project-remote",
@@ -302,7 +309,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         throw new Error("Project id is required");
       }
       return native.checkProjectIsRemote(projectId.trim());
-    }
+    },
   );
   ipcMain.handle(
     "codebase:start-embedding",
@@ -324,9 +331,9 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
             projectId: normalizedProjectId,
             progress,
           });
-        }
+        },
       );
-    }
+    },
   );
   ipcMain.handle("codebase:pause-embedding", (_event, sessionId: unknown) => {
     if (typeof sessionId !== "string" || !sessionId.trim()) {
@@ -353,7 +360,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         throw new Error("Project id is required");
       }
       return native.isCodebaseEmbeddingActive(projectId.trim());
-    }
+    },
   );
   ipcMain.handle("codebase:get-index-stats", (_event, projectId: unknown) => {
     if (typeof projectId !== "string" || !projectId.trim()) {
@@ -379,7 +386,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         throw new Error("Page size must be an integer between 1 and 100");
       }
       return native.listCodebaseIndexedFiles(projectId.trim(), page, pageSize);
-    }
+    },
   );
   ipcMain.handle(
     "codebase:get-sphere-layout",
@@ -396,7 +403,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         throw new Error("Limit must be an integer between 1 and 2000");
       }
       return native.getCodebaseSphereLayout(projectId.trim(), limit);
-    }
+    },
   );
   ipcMain.handle("codebase:clear-index", (_event, projectId: unknown) => {
     if (typeof projectId !== "string" || !projectId.trim()) {
@@ -420,9 +427,9 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         normalizedProjectPath,
         (changedProjectId: string) => {
           safeSend(event.sender, "codebase:files-changed", changedProjectId);
-        }
+        },
       );
-    }
+    },
   );
   ipcMain.handle("codebase:stop-watch", (_event, projectId: unknown) => {
     if (typeof projectId !== "string" || !projectId.trim()) {
@@ -455,7 +462,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         throw new Error("Project id is required");
       }
       return native.getResumableCodebaseSessions(projectId.trim());
-    }
+    },
   );
   ipcMain.handle(
     "codebase:discard-resumable-session",
@@ -464,7 +471,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         throw new Error("Session id is required");
       }
       return native.discardResumableCodebaseSession(sessionId.trim());
-    }
+    },
   );
   ipcMain.handle(
     "permissions:list-tool-approvals",
@@ -473,7 +480,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         throw new Error("Project id is required");
       }
       return native.listToolApprovalProjectApprovedTools(projectId.trim());
-    }
+    },
   );
   ipcMain.handle(
     "permissions:set-tool-approval",
@@ -490,21 +497,16 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       return native.setToolApprovalProjectToolApproved(
         projectId.trim(),
         toolName.trim(),
-        approved
+        approved,
       );
-    }
+    },
   );
   ipcMain.handle("permissions:get-always-approved-tools", () =>
-    native.getAlwaysApprovedTools()
+    native.getAlwaysApprovedTools(),
   );
   ipcMain.handle(
     "permissions:set-tool-approvals",
-    (
-      _event,
-      projectId: unknown,
-      toolNames: unknown,
-      approved: unknown
-    ) => {
+    (_event, projectId: unknown, toolNames: unknown, approved: unknown) => {
       if (typeof projectId !== "string" || !projectId.trim()) {
         throw new Error("Project id is required");
       }
@@ -520,9 +522,9 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       return native.setToolApprovalProjectToolsApproved(
         projectId.trim(),
         toolNames as string[],
-        approved
+        approved,
       );
-    }
+    },
   );
   ipcMain.handle(
     "permissions:set-always-approved-tools",
@@ -534,14 +536,14 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         throw new Error("Tools must be an array of strings");
       }
       return native.setAlwaysApprovedTools(tools as string[]);
-    }
+    },
   );
   ipcMain.handle("permissions:list-readonly-tools", () =>
-    native.listReadonlyTools()
+    native.listReadonlyTools(),
   );
 
   ipcMain.handle("native:sum", (_event, a: number, b: number) =>
-    native.sum(a, b)
+    native.sum(a, b),
   );
   ipcMain.handle("terminal:detect-terminals", () => native.detectTerminals());
 
@@ -568,7 +570,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         source: "renderer",
       };
       return native.writeAppLog(input);
-    }
+    },
   );
 
   ipcMain.handle(
@@ -578,7 +580,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       command: unknown,
       cwd: unknown,
       timeoutMs: unknown,
-      envJson: unknown
+      envJson: unknown,
     ) => {
       if (typeof command !== "string" || !command.trim()) {
         throw new Error("Pre-script command is required");
@@ -590,10 +592,9 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         typeof timeoutMs === "number" && Number.isFinite(timeoutMs)
           ? Math.round(timeoutMs)
           : 60_000;
-      const env =
-        typeof envJson === "string" ? envJson : "{}";
+      const env = typeof envJson === "string" ? envJson : "{}";
       return native.runPreScript(command.trim(), cwd.trim(), timeout, env);
-    }
+    },
   );
 
   ipcMain.handle("mcp:list-tools", () => native.listMcpTools());
@@ -606,7 +607,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
     }
 
     return native.listAvailableSkills(
-      typeof projectId === "string" ? projectId.trim() : undefined
+      typeof projectId === "string" ? projectId.trim() : undefined,
     );
   });
   ipcMain.handle(
@@ -628,9 +629,9 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       return native.setSkillEnabled(
         typeof projectId === "string" ? projectId.trim() : undefined,
         skillId.trim(),
-        enabled
+        enabled,
       );
-    }
+    },
   );
   ipcMain.handle("skills:list-project", (_event, projectId: unknown) => {
     if (typeof projectId !== "string" || !projectId.trim()) {
@@ -653,9 +654,9 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       return native.setProjectSkillEnabled(
         projectId.trim(),
         skillId.trim(),
-        enabled
+        enabled,
       );
-    }
+    },
   );
   ipcMain.handle(
     "skills:install-github",
@@ -675,9 +676,9 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       return native.installSkillFromGithub(
         url.trim(),
         location,
-        typeof projectId === "string" ? projectId.trim() : undefined
+        typeof projectId === "string" ? projectId.trim() : undefined,
       );
-    }
+    },
   );
   ipcMain.handle(
     "skills:uninstall-github",
@@ -693,9 +694,9 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       }
       return native.uninstallGithubSkill(
         skillId.trim(),
-        typeof projectId === "string" ? projectId.trim() : undefined
+        typeof projectId === "string" ? projectId.trim() : undefined,
       );
-    }
+    },
   );
   ipcMain.handle("skills:list-github", () => native.listGithubSkills());
   ipcMain.handle("mcp:list-server-tools", (_event, configServerId: unknown) => {
@@ -724,9 +725,9 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
 
       return native.listMcpProjectServerTools(
         projectId.trim(),
-        serverId.trim()
+        serverId.trim(),
       );
-    }
+    },
   );
   ipcMain.handle(
     "mcp:set-project-server-enabled",
@@ -744,9 +745,9 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       return native.setMcpProjectServerEnabled(
         projectId.trim(),
         serverId.trim(),
-        enabled
+        enabled,
       );
-    }
+    },
   );
   ipcMain.handle(
     "mcp:set-project-tool-enabled",
@@ -764,9 +765,9 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       return native.setMcpProjectToolEnabled(
         projectId.trim(),
         toolName.trim(),
-        enabled
+        enabled,
       );
-    }
+    },
   );
   ipcMain.handle(
     "mcp:set-tool-enabled",
@@ -779,7 +780,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       }
 
       return native.setMcpToolEnabled(toolName.trim(), enabled);
-    }
+    },
   );
   ipcMain.handle(
     "mcp:set-tools-enabled",
@@ -787,13 +788,9 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       if (
         !Array.isArray(toolNames) ||
         toolNames.length === 0 ||
-        toolNames.some(
-          (name) => typeof name !== "string" || !name.trim()
-        )
+        toolNames.some((name) => typeof name !== "string" || !name.trim())
       ) {
-        throw new Error(
-          "MCP tool names must be a non-empty array of strings"
-        );
+        throw new Error("MCP tool names must be a non-empty array of strings");
       }
       if (typeof enabled !== "boolean") {
         throw new Error("MCP tool enabled state must be a boolean");
@@ -801,9 +798,9 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
 
       return native.setMcpToolsEnabled(
         toolNames.map((name) => name.trim()),
-        enabled
+        enabled,
       );
-    }
+    },
   );
   ipcMain.handle(
     "mcp:set-project-tools-enabled",
@@ -814,13 +811,9 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       if (
         !Array.isArray(toolNames) ||
         toolNames.length === 0 ||
-        toolNames.some(
-          (name) => typeof name !== "string" || !name.trim()
-        )
+        toolNames.some((name) => typeof name !== "string" || !name.trim())
       ) {
-        throw new Error(
-          "MCP tool names must be a non-empty array of strings"
-        );
+        throw new Error("MCP tool names must be a non-empty array of strings");
       }
       if (typeof enabled !== "boolean") {
         throw new Error("MCP tool enabled state must be a boolean");
@@ -829,9 +822,9 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       return native.setMcpProjectToolsEnabled(
         projectId.trim(),
         toolNames.map((name) => name.trim()),
-        enabled
+        enabled,
       );
-    }
+    },
   );
   ipcMain.handle("browser:renderer-register", (event) => {
     registerBrowserRenderer(event.sender);
@@ -858,7 +851,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         return;
       }
       resolveBrowserCommand(event.sender, response);
-    }
+    },
   );
   ipcMain.handle("terminal:renderer-register", (event) => {
     registerTerminalRenderer(event.sender);
@@ -873,7 +866,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         return;
       }
       resolveTerminalCommand(event.sender, response);
-    }
+    },
   );
   ipcMain.on(
     USER_QUESTION_RESPONSE_CHANNEL,
@@ -882,19 +875,19 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         return;
       }
       resolveUserQuestion(event.sender, response);
-    }
+    },
   );
   ipcMain.on(
     APP_CONTROL_RESPONSE_CHANNEL,
     (
       event,
-      response: { requestId: string; resultJson?: string; error?: string }
+      response: { requestId: string; resultJson?: string; error?: string },
     ) => {
       if (!response || typeof response.requestId !== "string") {
         return;
       }
       resolveAppControl(event.sender, response);
-    }
+    },
   );
   ipcMain.handle(
     "mcp:authorize-sensitive-command",
@@ -906,7 +899,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       const token = randomUUID();
       await native.authorizeSensitiveCommand(command, token);
       return token;
-    }
+    },
   );
   ipcMain.handle(
     "mcp:write-interactive-stdin",
@@ -919,21 +912,30 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       }
 
       await native.writeInteractiveStdin(sessionId.trim(), input);
-    }
+    },
   );
   ipcMain.handle(
     "mcp:abort-tool-execution",
-    (_event, toolExecutionId: unknown) => {
+    (_event, toolExecutionId: unknown, reason: unknown) => {
       if (typeof toolExecutionId !== "string" || !toolExecutionId.trim()) {
         throw new Error("Tool execution ID is required");
       }
       const normalizedToolExecutionId = toolExecutionId.trim();
+      // Why the abort happened: "timeout" (renderer countdown watchdog) or
+      // "shutdown" vs the default "user" (stop button / session abort). The
+      // Rust executor records it so an automatic timeout is never reported
+      // as a user cancellation.
+      const normalizedReason =
+        reason === "timeout" || reason === "shutdown" ? reason : "user";
       // Cancel any in-flight SSH command for this execution first so the
       // Electron-side promise settles (exec channel closed) instead of
       // waiting forever; the Rust-side token is cancelled right after.
       abortSshCommand(normalizedToolExecutionId);
-      return native.abortToolExecution(normalizedToolExecutionId);
-    }
+      return native.abortToolExecution(
+        normalizedToolExecutionId,
+        normalizedReason,
+      );
+    },
   );
   ipcMain.handle(
     "mcp:call-tool",
@@ -949,7 +951,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       interactionId: unknown,
       subAgentAllowedTools: unknown,
       planMode: unknown,
-      planApproved: unknown
+      planApproved: unknown,
     ) => {
       if (typeof toolFullName !== "string" || !toolFullName.trim()) {
         throw new Error("Tool full name is required");
@@ -982,7 +984,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
           !sensitiveAuthorizationToken.trim())
       ) {
         throw new Error(
-          "Sensitive command authorization token must be a string"
+          "Sensitive command authorization token must be a string",
         );
       }
       if (typeof streamId !== "string" || !streamId.trim()) {
@@ -1003,7 +1005,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       const normalizedSubAgentAllowedTools =
         Array.isArray(subAgentAllowedTools) &&
         subAgentAllowedTools.every(
-          (tool) => typeof tool === "string" && tool.trim()
+          (tool) => typeof tool === "string" && tool.trim(),
         )
           ? (subAgentAllowedTools as string[])
           : undefined;
@@ -1052,7 +1054,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
           dispatchTerminalCommand(event.sender, command),
         normalizedSubAgentAllowedTools,
         planMode as boolean | undefined,
-        planApproved as boolean | undefined
+        planApproved as boolean | undefined,
       );
 
       try {
@@ -1062,13 +1064,13 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
           unregisterSshCommandAbort(executionId);
         }
       }
-    }
+    },
   );
 
   ipcMain.handle("checkpoint:create", (_event, workDir: unknown) => {
     if (typeof workDir !== "string" || !workDir.trim()) {
       throw new Error(
-        "Working directory path is required to create checkpoint"
+        "Working directory path is required to create checkpoint",
       );
     }
     return native.createCheckpoint(workDir);
@@ -1081,11 +1083,11 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       }
       if (typeof workDir !== "string" || !workDir.trim()) {
         throw new Error(
-          "Working directory path is required to restore checkpoint"
+          "Working directory path is required to restore checkpoint",
         );
       }
       return native.restoreCheckpoint(checkpointId.trim(), workDir);
-    }
+    },
   );
   ipcMain.handle(
     "checkpoint:restore-batch",
@@ -1099,14 +1101,14 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       }
       if (typeof workDir !== "string" || !workDir.trim()) {
         throw new Error(
-          "Working directory path is required to restore checkpoints"
+          "Working directory path is required to restore checkpoints",
         );
       }
       return native.restoreCheckpoints(
         checkpointIds.map((id) => id.trim()),
-        workDir.trim()
+        workDir.trim(),
       );
-    }
+    },
   );
   ipcMain.handle("checkpoint:delete", (_event, checkpointId: unknown) => {
     if (typeof checkpointId !== "string" || !checkpointId.trim()) {
@@ -1122,11 +1124,11 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       }
       if (typeof workDir !== "string" || !workDir.trim()) {
         throw new Error(
-          "Working directory path is required to list checkpoint changes"
+          "Working directory path is required to list checkpoint changes",
         );
       }
       return native.listCheckpointChanges(checkpointId.trim(), workDir);
-    }
+    },
   );
   ipcMain.handle(
     "checkpoint:list-changes-batch",
@@ -1140,14 +1142,14 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       }
       if (typeof workDir !== "string" || !workDir.trim()) {
         throw new Error(
-          "Working directory path is required to list checkpoint changes"
+          "Working directory path is required to list checkpoint changes",
         );
       }
       return native.listCheckpointChangesBatch(
         checkpointIds.map((id) => id.trim()),
-        workDir.trim()
+        workDir.trim(),
       );
-    }
+    },
   );
   ipcMain.handle(
     "checkpoint:list-diffs",
@@ -1157,25 +1159,20 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       }
       if (typeof workDir !== "string" || !workDir.trim()) {
         throw new Error(
-          "Working directory path is required to list checkpoint diffs"
+          "Working directory path is required to list checkpoint diffs",
         );
       }
       return native.listCheckpointDiffs(
         checkpointId.trim(),
         workDir,
-        includeAll === true
+        includeAll === true,
       );
-    }
+    },
   );
 
   ipcMain.handle(
     "checkpoint:list-diffs-batch",
-    (
-      _event,
-      checkpointIds: unknown,
-      workDir: unknown,
-      includeAll: unknown
-    ) => {
+    (_event, checkpointIds: unknown, workDir: unknown, includeAll: unknown) => {
       if (
         !Array.isArray(checkpointIds) ||
         checkpointIds.length === 0 ||
@@ -1185,7 +1182,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       }
       if (typeof workDir !== "string" || !workDir.trim()) {
         throw new Error(
-          "Working directory path is required to list checkpoint diffs"
+          "Working directory path is required to list checkpoint diffs",
         );
       }
       if (includeAll !== undefined && typeof includeAll !== "boolean") {
@@ -1194,9 +1191,9 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       return native.listCheckpointDiffsBatch(
         checkpointIds.map((id) => id.trim()),
         workDir.trim(),
-        includeAll === true
+        includeAll === true,
       );
-    }
+    },
   );
 
   ipcMain.handle(
@@ -1206,7 +1203,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       conversationId: unknown,
       directoryId: unknown,
       limit: unknown,
-      offset: unknown
+      offset: unknown,
     ) => {
       const convId =
         typeof conversationId === "string" ? conversationId.trim() : "";
@@ -1214,7 +1211,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       const safeLimit = typeof limit === "number" && limit > 0 ? limit : 50;
       const safeOffset = typeof offset === "number" && offset > 0 ? offset : 0;
       return native.listUsageRecords(convId, dirId, safeLimit, safeOffset);
-    }
+    },
   );
 
   ipcMain.handle(
@@ -1223,7 +1220,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       const sinceStr = typeof since === "string" ? since.trim() : "";
       const untilStr = typeof until === "string" ? until.trim() : "";
       return native.getUsageSummary(sinceStr, untilStr);
-    }
+    },
   );
 
   ipcMain.handle(
@@ -1232,7 +1229,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       const sinceStr = typeof since === "string" ? since.trim() : "";
       const untilStr = typeof until === "string" ? until.trim() : "";
       return native.getUsageDailyBreakdown(sinceStr, untilStr);
-    }
+    },
   );
 
   ipcMain.handle(
@@ -1241,7 +1238,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       const sinceStr = typeof since === "string" ? since.trim() : "";
       const untilStr = typeof until === "string" ? until.trim() : "";
       return native.getUsageModelBreakdown(sinceStr, untilStr);
-    }
+    },
   );
 
   ipcMain.handle(
@@ -1253,7 +1250,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       since: unknown,
       until: unknown,
       limit: unknown,
-      offset: unknown
+      offset: unknown,
     ) => {
       const levelStr = typeof level === "string" ? level.trim() : "";
       const moduleStr = typeof module === "string" ? module.trim() : "";
@@ -1267,9 +1264,9 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         sinceStr,
         untilStr,
         safeLimit,
-        safeOffset
+        safeOffset,
       );
-    }
+    },
   );
 
   ipcMain.handle("logs:clear", () => native.clearAppLogs());
@@ -1281,7 +1278,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
  */
 const dispatchWebSearchCommand = async (
   service: WebSearchService,
-  command: WebSearchCommand
+  command: WebSearchCommand,
 ): Promise<string> => {
   const args = JSON.parse(command.argsJson) as {
     query?: unknown;
@@ -1291,7 +1288,7 @@ const dispatchWebSearchCommand = async (
     throw new Error(`Unknown web search operation: ${command.operation}`);
   }
   if (typeof args.query !== "string" || !args.query.trim()) {
-    throw new Error("query is required for tool \"websearch-search\"");
+    throw new Error('query is required for tool "websearch-search"');
   }
   const maxResults =
     typeof args.maxResults === "number" ? args.maxResults : undefined;

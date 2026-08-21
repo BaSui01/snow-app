@@ -101,6 +101,7 @@ pub(crate) async fn read_stream<R>(
     on_chunk: Arc<BashStreamCallback>,
     first_output_ms: Arc<OnceLock<u64>>,
     execution_started: Instant,
+    accumulated: Arc<std::sync::Mutex<Vec<u8>>>,
 ) -> String
 where
     R: AsyncRead + Unpin,
@@ -117,6 +118,11 @@ where
 
         let _ = first_output_ms.set(execution_started.elapsed().as_millis() as u64);
         output.extend_from_slice(&buffer[..read]);
+        // Mirror the bytes into the shared buffer so a partial output
+        // survives even if this reader task is aborted before EOF.
+        if let Ok(mut guard) = accumulated.lock() {
+            guard.extend_from_slice(&buffer[..read]);
+        }
         pending_utf8.extend_from_slice(&buffer[..read]);
         emit_complete_utf8_chunks(&on_chunk, stream, &mut pending_utf8);
     }
@@ -130,6 +136,17 @@ where
     }
 
     strip_ansi_codes(&String::from_utf8_lossy(&output))
+}
+
+/// Finalize whatever bytes a reader captured so far (used when the reader
+/// task had to be aborted before reaching EOF, e.g. a surviving grandchild
+/// keeps the pipe open after the process-tree kill).
+pub(crate) fn finalize_accumulated_output(accumulated: &std::sync::Mutex<Vec<u8>>) -> String {
+    let bytes = match accumulated.lock() {
+        Ok(guard) => guard.clone(),
+        Err(_) => Vec::new(),
+    };
+    strip_ansi_codes(&String::from_utf8_lossy(&bytes))
 }
 
 fn emit_complete_utf8_chunks(on_chunk: &BashStreamCallback, stream: &str, pending: &mut Vec<u8>) {

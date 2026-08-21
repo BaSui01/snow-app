@@ -1876,6 +1876,7 @@ export type NativeBridge = {
     since: string,
     until: string,
   ) => Promise<ModelUsageBreakdown[]>;
+  deleteUsageRecords: (since: string, until: string) => Promise<number>;
   writeAppLog: (input: AppLogInput) => Promise<void>;
   /** Executes a scheduled-task pre-script (shell command) in the project cwd. */
   runPreScript: (

@@ -1242,6 +1242,15 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   );
 
   ipcMain.handle(
+    "usage:delete-records",
+    (_event, since: unknown, until: unknown) => {
+      const sinceStr = typeof since === "string" ? since.trim() : "";
+      const untilStr = typeof until === "string" ? until.trim() : "";
+      return native.deleteUsageRecords(sinceStr, untilStr);
+    },
+  );
+
+  ipcMain.handle(
     "logs:list",
     (
       _event,

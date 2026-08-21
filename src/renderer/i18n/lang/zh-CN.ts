@@ -3593,6 +3593,20 @@ export const zhCN = {
   "settings.usagePrevPage": "上一页",
   "settings.usageNextPage": "下一页",
   "settings.usagePageInfo": "第 {{current}} 页，共 {{total}} 页",
+  "settings.usageClearTitle": "清理用量数据",
+  "settings.usageClearInfo": "按日期范围删除用量记录，避免数据无限增长。",
+  "settings.usageClearEmptyHint": "留空表示全部日期。",
+  "settings.usageClearBtn": "删除记录",
+  "settings.usageClearConfirmTitle": "删除用量记录？",
+  "settings.usageClearConfirmAll": "将永久删除全部用量记录，此操作不可撤销。",
+  "settings.usageClearConfirmRange":
+    "将永久删除 {{since}} 至 {{until}} 的用量记录，此操作不可撤销。",
+  "settings.usageClearConfirmSince":
+    "将永久删除 {{since}} 起的用量记录，此操作不可撤销。",
+  "settings.usageClearConfirmUntil":
+    "将永久删除 {{until}} 之前的用量记录，此操作不可撤销。",
+  "settings.usageClearDone": "已删除 {{count}} 条用量记录。",
+  "settings.usageClearError": "删除用量记录失败。",
   "settings.systemLogs": "系统日志",
   "settings.systemLogsTitle": "系统日志",
   "settings.systemLogsInfo": "由主进程和渲染进程统一写入的诊断日志。",

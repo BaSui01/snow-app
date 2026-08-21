@@ -48,6 +48,13 @@ pub async fn get_usage_model_breakdown(
         .map_err(map_spawn_error)?
 }
 
+#[napi]
+pub async fn delete_usage_records(since: String, until: String) -> napi::Result<u32> {
+    tokio::task::spawn_blocking(move || crate::storage::delete_usage_records(since, until))
+        .await
+        .map_err(map_spawn_error)?
+}
+
 // ===== App logs NAPI 导出 =====
 
 #[napi]

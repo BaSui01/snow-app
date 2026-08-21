@@ -3574,6 +3574,20 @@ export const zhTW = {
   "settings.usagePrevPage": "上一頁",
   "settings.usageNextPage": "下一頁",
   "settings.usagePageInfo": "第 {{current}} 頁，共 {{total}} 頁",
+  "settings.usageClearTitle": "清理用量資料",
+  "settings.usageClearInfo": "依日期範圍刪除用量記錄，避免資料無限增長。",
+  "settings.usageClearEmptyHint": "留空表示全部日期。",
+  "settings.usageClearBtn": "刪除記錄",
+  "settings.usageClearConfirmTitle": "刪除用量記錄？",
+  "settings.usageClearConfirmAll": "將永久刪除全部用量記錄，此操作無法復原。",
+  "settings.usageClearConfirmRange":
+    "將永久刪除 {{since}} 至 {{until}} 的用量記錄，此操作無法復原。",
+  "settings.usageClearConfirmSince":
+    "將永久刪除 {{since}} 起的用量記錄，此操作無法復原。",
+  "settings.usageClearConfirmUntil":
+    "將永久刪除 {{until}} 之前的用量記錄，此操作無法復原。",
+  "settings.usageClearDone": "已刪除 {{count}} 筆用量記錄。",
+  "settings.usageClearError": "刪除用量記錄失敗。",
   "settings.systemLogs": "系統日誌",
   "settings.systemLogsTitle": "系統日誌",
   "settings.systemLogsInfo": "由主程序和渲染程序統一寫入的診斷日誌。",

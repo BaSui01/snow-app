@@ -479,6 +479,44 @@ pub fn get_usage_model_breakdown(
         })
 }
 
+/// Delete usage records within an optional time range, mirroring the
+/// `created_at` filters used by the read queries. `since` and `until` are
+/// SQLite datetime strings; empty strings skip the corresponding bound.
+/// Returns the number of deleted rows.
+pub fn delete_usage_records(database_path: &Path, since: &str, until: &str) -> Result<u32> {
+    let filter_since = !since.trim().is_empty();
+    let filter_until = !until.trim().is_empty();
+
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            let mut where_clauses: Vec<String> = Vec::new();
+            if filter_since {
+                where_clauses.push("created_at >= ?1".to_string());
+            }
+            if filter_until {
+                let idx = if filter_since { 2 } else { 1 };
+                where_clauses.push(format!("created_at <= ?{idx}"));
+            }
+            let where_sql = if where_clauses.is_empty() {
+                String::new()
+            } else {
+                format!(" WHERE {}", where_clauses.join(" AND "))
+            };
+            let sql = format!("DELETE FROM usage_records{where_sql}");
+            let deleted = if filter_since && filter_until {
+                connection.execute(&sql, params![since.trim(), until.trim()])?
+            } else if filter_since {
+                connection.execute(&sql, params![since.trim()])?
+            } else if filter_until {
+                connection.execute(&sql, params![until.trim()])?
+            } else {
+                connection.execute(&sql, [])?
+            };
+            Ok(deleted as u32)
+        })
+        .map_err(|error| database::database_error(database_path, "delete usage records", error))
+}
+
 fn map_daily_row(row: &Row<'_>) -> rusqlite::Result<DailyUsageBreakdown> {
     let input: i64 = row.get(3)?;
     let output: i64 = row.get(4)?;

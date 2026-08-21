@@ -35,7 +35,7 @@ const createThemePaletteStreamId = (): string =>
   `theme-palette-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const normalizeResponseStreamChunk = (
-  value: unknown
+  value: unknown,
 ): ResponsesApiStreamChunk | null => {
   if (!isRecord(value)) {
     return null;
@@ -68,13 +68,13 @@ export const apiConfigApi = {
   setSystemSetting: (
     settingName: string,
     settingCode: string,
-    settingValue: string
+    settingValue: string,
   ): Promise<void> =>
     ipcRenderer.invoke(
       "settings:set-system-setting",
       settingName,
       settingCode,
-      settingValue
+      settingValue,
     ),
   getYoloMode: (): Promise<boolean> =>
     ipcRenderer.invoke("settings:get-yolo-mode"),
@@ -84,14 +84,16 @@ export const apiConfigApi = {
     ipcRenderer.invoke("settings:get-auto-format"),
   setAutoFormat: (enabled: boolean): Promise<void> =>
     ipcRenderer.invoke("settings:set-auto-format", enabled),
-  getConversationModes: (conversationId: string): Promise<ConversationModesResult> =>
+  getConversationModes: (
+    conversationId: string,
+  ): Promise<ConversationModesResult> =>
     ipcRenderer.invoke("settings:get-conversation-modes", conversationId),
   setConversationModes: (
     conversationId: string,
     planMode: boolean | null,
     goalMode: boolean | null,
     worktreeMode: boolean | null,
-    goalModeTokenBudget: number | null
+    goalModeTokenBudget: number | null,
   ): Promise<void> =>
     ipcRenderer.invoke(
       "settings:set-conversation-modes",
@@ -99,25 +101,25 @@ export const apiConfigApi = {
       planMode,
       goalMode,
       worktreeMode,
-      goalModeTokenBudget
+      goalModeTokenBudget,
     ),
   getConversationRuntimeConfig: (
-    conversationId: string
+    conversationId: string,
   ): Promise<ConversationRuntimeConfig> =>
     ipcRenderer.invoke(
       "settings:get-conversation-runtime-config",
-      conversationId
+      conversationId,
     ),
   setConversationRuntimeConfig: (
     conversationId: string,
     thinkingStrength: string | null,
-    responsesFastMode: boolean | null
+    responsesFastMode: boolean | null,
   ): Promise<void> =>
     ipcRenderer.invoke(
       "settings:set-conversation-runtime-config",
       conversationId,
       thinkingStrength,
-      responsesFastMode
+      responsesFastMode,
     ),
   setConversationRunStats: (
     conversationId: string,
@@ -125,7 +127,7 @@ export const apiConfigApi = {
     runOutputTokens: number,
     runCacheCreationInputTokens: number,
     runCacheReadInputTokens: number,
-    lastRunDurationMs: number
+    lastRunDurationMs: number,
   ): Promise<void> =>
     ipcRenderer.invoke(
       "settings:set-conversation-run-stats",
@@ -134,7 +136,7 @@ export const apiConfigApi = {
       runOutputTokens,
       runCacheCreationInputTokens,
       runCacheReadInputTokens,
-      lastRunDurationMs
+      lastRunDurationMs,
     ),
   resetConversationRunStats: (conversationId: string): Promise<void> =>
     ipcRenderer.invoke("settings:reset-conversation-run-stats", conversationId),
@@ -169,30 +171,30 @@ export const apiConfigApi = {
   setThemeBackgroundColor: (color: string): Promise<void> =>
     ipcRenderer.invoke("theme:set-background-color", color),
   listToolApprovalProjectApprovedTools: (
-    projectId: string
+    projectId: string,
   ): Promise<string[]> =>
     ipcRenderer.invoke("permissions:list-tool-approvals", projectId),
   setToolApprovalProjectToolApproved: (
     projectId: string,
     toolName: string,
-    approved: boolean
+    approved: boolean,
   ): Promise<void> =>
     ipcRenderer.invoke(
       "permissions:set-tool-approval",
       projectId,
       toolName,
-      approved
+      approved,
     ),
   setToolApprovalProjectToolsApproved: (
     projectId: string,
     toolNames: string[],
-    approved: boolean
+    approved: boolean,
   ): Promise<void> =>
     ipcRenderer.invoke(
       "permissions:set-tool-approvals",
       projectId,
       toolNames,
-      approved
+      approved,
     ),
   getAlwaysApprovedTools: (): Promise<string[]> =>
     ipcRenderer.invoke("permissions:get-always-approved-tools"),
@@ -213,7 +215,7 @@ export const apiConfigApi = {
   createResponseStream: (
     request: ResponsesApiRequest,
     onChunk?: (chunk: ResponsesApiStreamChunk) => void,
-    onStreamId?: (streamId: string) => void
+    onStreamId?: (streamId: string) => void,
   ): Promise<ResponsesApiResult> => {
     const streamId = createResponseStreamId();
     onStreamId?.(streamId);
@@ -235,7 +237,7 @@ export const apiConfigApi = {
       .finally(() => {
         ipcRenderer.removeListener(
           CHAT_CREATE_RESPONSE_CHUNK_CHANNEL,
-          handleChunk
+          handleChunk,
         );
       });
   },
@@ -252,11 +254,13 @@ export const apiConfigApi = {
   selectBrowserExecutable: (dialogTitle?: string): Promise<string | null> =>
     ipcRenderer.invoke(
       "proxy-browser-settings:select-browser-executable",
-      dialogTitle
+      dialogTitle,
     ),
   detectTerminals: (): Promise<DetectedTerminal[]> =>
     ipcRenderer.invoke("terminal:detect-terminals"),
-  validateTerminalShellPath: (shellPath: string): Promise<{ valid: boolean; reason?: string }> =>
+  validateTerminalShellPath: (
+    shellPath: string,
+  ): Promise<{ valid: boolean; reason?: string }> =>
     ipcRenderer.invoke("terminal-settings:validate-shell-path", shellPath),
   selectTerminalExecutable: (dialogTitle?: string): Promise<string | null> =>
     ipcRenderer.invoke("terminal-settings:select-executable", dialogTitle),
@@ -264,7 +268,7 @@ export const apiConfigApi = {
     imagePath: string,
     profileName: string,
     onChunk?: (chunk: ResponsesApiStreamChunk) => void,
-    onStreamId?: (streamId: string) => void
+    onStreamId?: (streamId: string) => void,
   ): Promise<ResponsesApiResult> => {
     const streamId = createThemePaletteStreamId();
     onStreamId?.(streamId);
@@ -294,34 +298,37 @@ export const apiConfigApi = {
     conversationId: string,
     directoryId: string,
     limit: number,
-    offset: number
+    offset: number,
   ): Promise<UsageRecordPage> =>
     ipcRenderer.invoke(
       "usage:list-records",
       conversationId,
       directoryId,
       limit,
-      offset
+      offset,
     ),
   getUsageSummary: (since: string, until: string): Promise<UsageSummary> =>
     ipcRenderer.invoke("usage:get-summary", since, until),
   getUsageDailyBreakdown: (
     since: string,
-    until: string
+    until: string,
   ): Promise<DailyUsageBreakdown[]> =>
     ipcRenderer.invoke("usage:get-daily-breakdown", since, until),
   getUsageModelBreakdown: (
     since: string,
-    until: string
+    until: string,
   ): Promise<ModelUsageBreakdown[]> =>
     ipcRenderer.invoke("usage:get-model-breakdown", since, until),
+  /** 按日期范围删除用量记录（空字符串跳过对应边界），返回删除条数。 */
+  deleteUsageRecords: (since: string, until: string): Promise<number> =>
+    ipcRenderer.invoke("usage:delete-records", since, until),
   listAppLogs: (
     level: string,
     module: string,
     since: string,
     until: string,
     limit: number,
-    offset: number
+    offset: number,
   ): Promise<AppLogPage> =>
     ipcRenderer.invoke("logs:list", level, module, since, until, limit, offset),
   clearAppLogs: (): Promise<number> => ipcRenderer.invoke("logs:clear"),
@@ -329,7 +336,7 @@ export const apiConfigApi = {
   getKeyboardShortcutsSettings: (): Promise<KeyboardShortcutsSettings> =>
     ipcRenderer.invoke("settings:get-keyboard-shortcuts"),
   setKeyboardShortcutsSettings: (
-    settings: KeyboardShortcutsSettings
+    settings: KeyboardShortcutsSettings,
   ): Promise<void> =>
     ipcRenderer.invoke("settings:set-keyboard-shortcuts", settings),
 

@@ -1620,6 +1620,11 @@ pub fn get_usage_model_breakdown(
     services::usage_records::get_usage_model_breakdown(&database_path, &since, &until)
 }
 
+pub fn delete_usage_records(since: String, until: String) -> Result<u32> {
+    let database_path = ensure_database_file()?;
+    services::usage_records::delete_usage_records(&database_path, &since, &until)
+}
+
 pub fn write_app_log(input: services::app_logs::AppLogInput) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::app_logs::insert_app_log(&database_path, &input)

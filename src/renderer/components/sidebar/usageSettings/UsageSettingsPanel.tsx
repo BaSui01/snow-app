@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, ChevronRight, RefreshCw, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, RefreshCw, Trash2, X } from "lucide-react";
 import { AutoDismissNotice } from "../../AutoDismissNotice";
+import { ConfirmDialog } from "../../common/ConfirmDialog";
 import { UsageDateFilter } from "./UsageDateFilter";
 import { useI18n } from "../../../i18n";
 import type {
@@ -34,12 +35,12 @@ const getMonthEnd = (date: Date): Date => {
 
 const getPresetRange = (
   preset: UsageDatePreset,
-  now: Date
+  now: Date,
 ): { since: Date; until: Date } => {
   const startOfToday = new Date(
     now.getFullYear(),
     now.getMonth(),
-    now.getDate()
+    now.getDate(),
   );
   switch (preset) {
     case "today":
@@ -53,7 +54,7 @@ const getPresetRange = (
         23,
         59,
         59,
-        999
+        999,
       );
       return { since: yesterday, until: yesterdayEnd };
     }
@@ -135,7 +136,7 @@ export function UsageSettingsPanel({
   const [offset, setOffset] = useState(0);
   const [summary, setSummary] = useState<UsageSummary | null>(null);
   const [modelBreakdown, setModelBreakdown] = useState<ModelUsageBreakdown[]>(
-    []
+    [],
   );
   const [dailyData, setDailyData] = useState<DailyUsageBreakdown[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -151,6 +152,13 @@ export function UsageSettingsPanel({
     const range = getPresetRange("last7days", new Date());
     return formatDateForInput(range.until);
   });
+
+  // 清理用量数据：独立起止日期，留空表示全部日期。
+  const [clearSinceDate, setClearSinceDate] = useState("");
+  const [clearUntilDate, setClearUntilDate] = useState("");
+  const [isClearing, setIsClearing] = useState(false);
+  const [pendingClear, setPendingClear] = useState(false);
+  const [clearNotice, setClearNotice] = useState("");
 
   const handlePresetChange = useCallback((preset: UsageDatePreset) => {
     setDatePreset(preset);
@@ -177,11 +185,11 @@ export function UsageSettingsPanel({
 
   const sinceDateTime = useMemo(
     () => (sinceDate ? `${sinceDate} 00:00:00` : ""),
-    [sinceDate]
+    [sinceDate],
   );
   const untilDateTime = useMemo(
     () => (untilDate ? `${untilDate} 23:59:59` : ""),
-    [untilDate]
+    [untilDate],
   );
 
   const loadRecords = useCallback(
@@ -193,7 +201,7 @@ export function UsageSettingsPanel({
           "",
           "",
           PAGE_SIZE,
-          pageOffset
+          pageOffset,
         );
         setRecords(page.items ?? []);
         setTotal(page.total ?? 0);
@@ -204,19 +212,19 @@ export function UsageSettingsPanel({
             ? e.message
             : t("settings.usageLoadError", {
                 defaultValue: "Failed to load usage records.",
-              })
+              }),
         );
       } finally {
         setIsLoading(false);
       }
     },
-    [t]
+    [t],
   );
 
   const loadSummaryAndHeatmap = useCallback(async () => {
     try {
       const heatmapSince = formatDateForInput(
-        new Date(now.getTime() - ONE_YEAR_MS)
+        new Date(now.getTime() - ONE_YEAR_MS),
       );
       const heatmapUntil = formatDateForInput(now);
       const [summaryResult, dailyResult, modelResult] = await Promise.all([
@@ -233,7 +241,7 @@ export function UsageSettingsPanel({
           ? e.message
           : t("settings.usageLoadError", {
               defaultValue: "Failed to load usage statistics.",
-            })
+            }),
       );
     }
   }, [sinceDateTime, untilDateTime, now, t]);
@@ -242,6 +250,73 @@ export function UsageSettingsPanel({
     void loadRecords(offset);
     void loadSummaryAndHeatmap();
   }, [loadRecords, loadSummaryAndHeatmap, offset]);
+
+  const clearSinceDateTime = clearSinceDate ? `${clearSinceDate} 00:00:00` : "";
+  const clearUntilDateTime = clearUntilDate ? `${clearUntilDate} 23:59:59` : "";
+
+  const clearConfirmMessage = useMemo(() => {
+    if (clearSinceDate && clearUntilDate) {
+      return t("settings.usageClearConfirmRange", {
+        defaultValue:
+          "Usage records from {{since}} to {{until}} will be permanently deleted. This cannot be undone.",
+        values: { since: clearSinceDate, until: clearUntilDate },
+      });
+    }
+    if (clearSinceDate) {
+      return t("settings.usageClearConfirmSince", {
+        defaultValue:
+          "Usage records since {{since}} will be permanently deleted. This cannot be undone.",
+        values: { since: clearSinceDate },
+      });
+    }
+    if (clearUntilDate) {
+      return t("settings.usageClearConfirmUntil", {
+        defaultValue:
+          "Usage records before {{until}} will be permanently deleted. This cannot be undone.",
+        values: { until: clearUntilDate },
+      });
+    }
+    return t("settings.usageClearConfirmAll", {
+      defaultValue:
+        "All usage records will be permanently deleted. This cannot be undone.",
+    });
+  }, [clearSinceDate, clearUntilDate, t]);
+
+  const handleClearRecords = useCallback(async () => {
+    setIsClearing(true);
+    setClearNotice("");
+    setError("");
+    try {
+      const deleted = await window.snow.deleteUsageRecords(
+        clearSinceDateTime,
+        clearUntilDateTime,
+      );
+      setClearNotice(
+        t("settings.usageClearDone", {
+          defaultValue: "{{count}} usage records deleted.",
+          values: { count: String(deleted) },
+        }),
+      );
+      setPendingClear(false);
+      await Promise.all([loadRecords(0), loadSummaryAndHeatmap()]);
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : t("settings.usageClearError", {
+              defaultValue: "Failed to delete usage records.",
+            }),
+      );
+    } finally {
+      setIsClearing(false);
+    }
+  }, [
+    clearSinceDateTime,
+    clearUntilDateTime,
+    loadRecords,
+    loadSummaryAndHeatmap,
+    t,
+  ]);
 
   useEffect(() => {
     void loadRecords(0);
@@ -428,7 +503,11 @@ export function UsageSettingsPanel({
     node.style.top = `${top}px`;
   };
 
-  const showTooltip = (content: React.ReactNode, clientX: number, clientY: number) => {
+  const showTooltip = (
+    content: React.ReactNode,
+    clientX: number,
+    clientY: number,
+  ) => {
     setTooltipContent(content);
     setTooltipVisible(true);
     // Position after the node becomes visible. requestAnimationFrame ensures
@@ -512,7 +591,9 @@ export function UsageSettingsPanel({
         <div className="usage-floating-tooltip-divider" />
         <div className="usage-floating-tooltip-row">
           <span className="usage-floating-tooltip-label">
-            {t("settings.usageTotalRequests", { defaultValue: "Total requests" })}
+            {t("settings.usageTotalRequests", {
+              defaultValue: "Total requests",
+            })}
           </span>
           <span className="usage-floating-tooltip-value">
             {d.totalRequests.toLocaleString()}
@@ -520,7 +601,9 @@ export function UsageSettingsPanel({
         </div>
         <div className="usage-floating-tooltip-row">
           <span className="usage-floating-tooltip-label">
-            {t("settings.usageErrorRequests", { defaultValue: "Error requests" })}
+            {t("settings.usageErrorRequests", {
+              defaultValue: "Error requests",
+            })}
           </span>
           <span className="usage-floating-tooltip-value">
             {d.errorRequests.toLocaleString()} ({errorRate})
@@ -657,6 +740,12 @@ export function UsageSettingsPanel({
         message={error}
         tone="error"
         onDismiss={() => setError("")}
+      />
+
+      <AutoDismissNotice
+        message={clearNotice}
+        tone="success"
+        onDismiss={() => setClearNotice("")}
       />
 
       <UsageDateFilter
@@ -887,10 +976,12 @@ export function UsageSettingsPanel({
                           showTooltip(
                             renderHeatmapTooltip(cell),
                             e.clientX,
-                            e.clientY
+                            e.clientY,
                           )
                         }
-                        onMouseMove={(e) => positionTooltip(e.clientX, e.clientY)}
+                        onMouseMove={(e) =>
+                          positionTooltip(e.clientX, e.clientY)
+                        }
                         onMouseLeave={hideTooltip}
                       />
                     ) : (
@@ -898,7 +989,7 @@ export function UsageSettingsPanel({
                         key={`${colIndex}-${rowIndex}`}
                         className="usage-heatmap-cell empty"
                       />
-                    )
+                    ),
                   )}
                 </div>
               ))}
@@ -954,6 +1045,58 @@ export function UsageSettingsPanel({
               defaultValue: "Detailed log of each API call.",
             })}
           </span>
+        </div>
+        <div className="usage-clear-section">
+          <div className="usage-table-header">
+            <strong>
+              {t("settings.usageClearTitle", {
+                defaultValue: "Clear usage data",
+              })}
+            </strong>
+            <span className="settings-item-description">
+              {t("settings.usageClearInfo", {
+                defaultValue:
+                  "Delete usage records by date range to prevent unlimited growth.",
+              })}
+            </span>
+          </div>
+          <div className="usage-clear-bar">
+            <input
+              type="date"
+              value={clearSinceDate}
+              onChange={(e) => setClearSinceDate(e.target.value)}
+              className="usage-date-input"
+              aria-label={t("settings.usageSinceDate", {
+                defaultValue: "Start date",
+              })}
+            />
+            <span className="usage-date-separator">-</span>
+            <input
+              type="date"
+              value={clearUntilDate}
+              onChange={(e) => setClearUntilDate(e.target.value)}
+              className="usage-date-input"
+              aria-label={t("settings.usageUntilDate", {
+                defaultValue: "End date",
+              })}
+            />
+            <span className="usage-clear-hint">
+              {t("settings.usageClearEmptyHint", {
+                defaultValue: "Leave blank for all dates.",
+              })}
+            </span>
+            <button
+              className="usage-clear-btn"
+              onClick={() => setPendingClear(true)}
+              disabled={isClearing}
+              type="button"
+            >
+              <Trash2 size={13} strokeWidth={1.8} />
+              {t("settings.usageClearBtn", {
+                defaultValue: "Delete records",
+              })}
+            </button>
+          </div>
         </div>
         <div className="usage-table-wrapper">
           <table className="usage-table">
@@ -1013,7 +1156,7 @@ export function UsageSettingsPanel({
                       showTooltip(
                         renderRecordTooltip(record),
                         e.clientX,
-                        e.clientY
+                        e.clientY,
                       )
                     }
                     onMouseMove={(e) => positionTooltip(e.clientX, e.clientY)}
@@ -1022,9 +1165,7 @@ export function UsageSettingsPanel({
                     <td className="usage-cell-time">
                       {formatDateTime(record.createdAt)}
                     </td>
-                    <td className="usage-cell-model">
-                      {record.model || "-"}
-                    </td>
+                    <td className="usage-cell-model">{record.model || "-"}</td>
                     <td className="usage-cell-profile">
                       {record.apiProfileName || "-"}
                     </td>
@@ -1049,10 +1190,10 @@ export function UsageSettingsPanel({
                           record.status === "error"
                             ? "error"
                             : record.status === "cancelled" ||
-                              record.status === "incomplete" ||
-                              record.status === "failed"
-                            ? "warning"
-                            : "success"
+                                record.status === "incomplete" ||
+                                record.status === "failed"
+                              ? "warning"
+                              : "success"
                         }`}
                         title={record.status || undefined}
                       >
@@ -1089,7 +1230,7 @@ export function UsageSettingsPanel({
               className="usage-pagination-btn"
               onClick={() =>
                 void loadRecords(
-                  Math.min((totalPages - 1) * PAGE_SIZE, offset + PAGE_SIZE)
+                  Math.min((totalPages - 1) * PAGE_SIZE, offset + PAGE_SIZE),
                 )
               }
               disabled={currentPage >= totalPages || isLoading}
@@ -1104,6 +1245,21 @@ export function UsageSettingsPanel({
         )}
       </div>
 
+      <ConfirmDialog
+        open={pendingClear}
+        title={t("settings.usageClearConfirmTitle", {
+          defaultValue: "Delete usage records?",
+        })}
+        message={clearConfirmMessage}
+        confirmLabel={t("settings.usageClearBtn", {
+          defaultValue: "Delete records",
+        })}
+        cancelLabel={t("common.cancel", { defaultValue: "Cancel" })}
+        variant="danger"
+        onConfirm={() => void handleClearRecords()}
+        onCancel={() => setPendingClear(false)}
+      />
+
       {createPortal(
         <div
           ref={tooltipRef}
@@ -1114,7 +1270,7 @@ export function UsageSettingsPanel({
         >
           {tooltipContent}
         </div>,
-        document.body
+        document.body,
       )}
     </div>
   );

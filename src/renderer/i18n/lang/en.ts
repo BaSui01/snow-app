@@ -3789,6 +3789,22 @@ export const en = {
   "settings.usagePrevPage": "Previous page",
   "settings.usageNextPage": "Next page",
   "settings.usagePageInfo": "Page {{current}} of {{total}}",
+  "settings.usageClearTitle": "Clear usage data",
+  "settings.usageClearInfo":
+    "Delete usage records by date range to prevent unlimited growth.",
+  "settings.usageClearEmptyHint": "Leave blank for all dates.",
+  "settings.usageClearBtn": "Delete records",
+  "settings.usageClearConfirmTitle": "Delete usage records?",
+  "settings.usageClearConfirmAll":
+    "All usage records will be permanently deleted. This cannot be undone.",
+  "settings.usageClearConfirmRange":
+    "Usage records from {{since}} to {{until}} will be permanently deleted. This cannot be undone.",
+  "settings.usageClearConfirmSince":
+    "Usage records since {{since}} will be permanently deleted. This cannot be undone.",
+  "settings.usageClearConfirmUntil":
+    "Usage records before {{until}} will be permanently deleted. This cannot be undone.",
+  "settings.usageClearDone": "{{count}} usage records deleted.",
+  "settings.usageClearError": "Failed to delete usage records.",
   "settings.systemLogs": "System logs",
   "settings.systemLogsTitle": "System logs",
   "settings.systemLogsInfo":

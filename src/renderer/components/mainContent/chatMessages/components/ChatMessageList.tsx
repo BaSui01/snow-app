@@ -1,5 +1,14 @@
 import { memo, useCallback, useMemo } from "react";
-import { Bot, Database, GitFork, Repeat, Sigma, Timer, Zap } from "lucide-react";
+import {
+  Bot,
+  Database,
+  Gauge,
+  GitFork,
+  Repeat,
+  Sigma,
+  Timer,
+  Zap,
+} from "lucide-react";
 import { Tooltip } from "../../../common/Tooltip";
 import { useI18n } from "../../../../i18n";
 import { formatTokens } from "../../../../utils/formatTokens";
@@ -8,7 +17,10 @@ import { CompactionMessage } from "./CompactionMessage";
 import { UserMessage } from "./UserMessage";
 import { VirtualizedMessage } from "./VirtualizedMessage";
 import { HookExecutionUI } from "../toolCalls/HookExecutionUI";
-import type { ChatConversationMessage, ToolCallInfo } from "../utils/conversationTypes";
+import type {
+  ChatConversationMessage,
+  ToolCallInfo,
+} from "../utils/conversationTypes";
 import { useViewportVirtualization } from "../hooks/useViewportVirtualization";
 import { useChatConversationContext } from "./ChatConversationContext";
 
@@ -36,7 +48,7 @@ type MessageContentProps = {
   onRejectToolAuthorization: (
     toolCall: ToolCallInfo,
     reason: string,
-    userProvidedReason?: boolean
+    userProvidedReason?: boolean,
   ) => void;
 };
 
@@ -113,12 +125,12 @@ const MessageContent = memo(
     // Only unbound records — or bound records whose card is not in this
     // message (should not happen) — stay in the message footer.
     const boundInteractionIds = new Set(
-      (message.toolCalls ?? []).map((tc) => tc.interactionId)
+      (message.toolCalls ?? []).map((tc) => tc.interactionId),
     );
     const footerHookExecutions = (message.hookExecutions ?? []).filter(
       (record) =>
         !record.toolCallInteractionId ||
-        !boundInteractionIds.has(record.toolCallInteractionId)
+        !boundInteractionIds.has(record.toolCallInteractionId),
     );
 
     // - All assistant messages without tool calls (1-on-1 conversations)
@@ -129,9 +141,7 @@ const MessageContent = memo(
     //   but precedes a tool-call round would briefly show actions that
     //   vanish when the next assistant turn starts — causing a flash.
     const showActions =
-      !isStreaming &&
-      !isMessageStreaming &&
-      (!hasToolCalls || isLastAssistant);
+      !isStreaming && !isMessageStreaming && (!hasToolCalls || isLastAssistant);
 
     return (
       <div className="chat-message-hook-container">
@@ -151,7 +161,7 @@ const MessageContent = memo(
               ? pendingToolAuthorizations.filter(
                   (toolCall) =>
                     toolCall.authorizationConversationId ===
-                    activeConversationId
+                    activeConversationId,
                 )
               : undefined
           }
@@ -167,7 +177,7 @@ const MessageContent = memo(
         ) : null}
       </div>
     );
-  }
+  },
 );
 
 MessageContent.displayName = "MessageContent";
@@ -260,7 +270,7 @@ export const ChatMessageList = ({
     (conversationId: string, upToResponseId: string): void => {
       void handleForkConversation(conversationId, upToResponseId);
     },
-    [handleForkConversation]
+    [handleForkConversation],
   );
 
   const handleForkLinkClick = (): void => {
@@ -311,14 +321,16 @@ export const ChatMessageList = ({
     // 整个会话的累计统计（每次 run 结束累加，历史会话从 DB 回显）。
     // 旧版本会话没有这些数据，不显示，避免展示不完整数据造成误解。
     const usage = conversationTokenUsage;
-    const totalTokens =
-      (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0);
+    const totalTokens = (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0);
     const cacheRead = usage?.cacheReadInputTokens ?? 0;
     const cacheWrite = usage?.cacheCreationInputTokens ?? 0;
     // 没有任何累计统计（旧版本会话没有这些数据）就不显示整条摘要，
     // 避免展示不完整数据造成误解。
     const hasStats =
-      lastRunDurationMs > 0 || totalTokens > 0 || cacheRead > 0 || cacheWrite > 0;
+      lastRunDurationMs > 0 ||
+      totalTokens > 0 ||
+      cacheRead > 0 ||
+      cacheWrite > 0;
     if (!hasStats) {
       return null;
     }
@@ -336,7 +348,7 @@ export const ChatMessageList = ({
             <Timer size={12} strokeWidth={1.8} aria-hidden="true" />
             <span>{formatDuration(lastRunDurationMs)}</span>
           </span>
-        </Tooltip>
+        </Tooltip>,
       );
     }
     if (totalTokens > 0) {
@@ -351,7 +363,28 @@ export const ChatMessageList = ({
             <Sigma size={12} strokeWidth={1.8} aria-hidden="true" />
             <span>{formatTokens(totalTokens)}</span>
           </span>
-        </Tooltip>
+        </Tooltip>,
+      );
+    }
+    if (lastRunDurationMs > 0 && (usage?.outputTokens ?? 0) > 0) {
+      // 平均输出吞吐 = 累计输出 Token / 累计耗时（秒）。分子只用
+      // outputTokens：input 含每次工具调用重发的上下文（占大头），
+      // 混入会把数值虚高到几千。耗时含工具执行等待，因此该值是
+      // 实际生成速度的保守下界。
+      const tokensPerSecond =
+        (usage?.outputTokens ?? 0) / (lastRunDurationMs / 1000);
+      items.push(
+        <Tooltip
+          key="speed"
+          content={t("chat.runSummary.speed", {
+            defaultValue: "当前会话平均输出速度",
+          })}
+        >
+          <span className="chat-run-summary-item">
+            <Gauge size={12} strokeWidth={1.8} aria-hidden="true" />
+            <span>{tokensPerSecond.toFixed(1)} tok/s</span>
+          </span>
+        </Tooltip>,
       );
     }
     if (cacheWrite > 0) {
@@ -366,7 +399,7 @@ export const ChatMessageList = ({
             <Database size={12} strokeWidth={1.8} aria-hidden="true" />
             <span>{formatTokens(cacheWrite)}</span>
           </span>
-        </Tooltip>
+        </Tooltip>,
       );
     }
     if (cacheRead > 0) {
@@ -381,7 +414,7 @@ export const ChatMessageList = ({
             <Repeat size={12} strokeWidth={1.8} aria-hidden="true" />
             <span>{formatTokens(cacheRead)}</span>
           </span>
-        </Tooltip>
+        </Tooltip>,
       );
     }
     if (lastModel) {
@@ -396,7 +429,7 @@ export const ChatMessageList = ({
             <Bot size={12} strokeWidth={1.8} aria-hidden="true" />
             <span>{lastModel}</span>
           </span>
-        </Tooltip>
+        </Tooltip>,
       );
     }
     if (items.length === 0) {
@@ -419,7 +452,7 @@ export const ChatMessageList = ({
                     ·
                   </span>,
                   item,
-                ]
+                ],
           )}
         </span>
         <span className="chat-fork-divider-line" />
@@ -440,7 +473,7 @@ export const ChatMessageList = ({
       const hasPendingAuth =
         msg.role === "assistant" &&
         msg.toolCalls?.some(
-          (tc) => tc.authorizationConversationId === activeConversationId
+          (tc) => tc.authorizationConversationId === activeConversationId,
         );
       if (hasPendingAuth) {
         pinned.add(msg.id);
@@ -490,7 +523,7 @@ export const ChatMessageList = ({
   const virtualization = useViewportVirtualization(
     scrollContainerRef,
     pinnedIds,
-    initialVisibleIds
+    initialVisibleIds,
   );
 
   // Intermediate status card shown while the backend describes user images
@@ -517,7 +550,10 @@ export const ChatMessageList = ({
           {visionAnalysis.index}/{visionAnalysis.total}
         </span>
         {visionAnalysis.model ? (
-          <span className="chat-vision-status-model" title={visionAnalysis.model}>
+          <span
+            className="chat-vision-status-model"
+            title={visionAnalysis.model}
+          >
             {visionAnalysis.model}
           </span>
         ) : null}
@@ -557,7 +593,7 @@ export const ChatMessageList = ({
   // visible (it is a single small node and never needs height preservation).
   const renderItem = (
     message: ChatConversationMessage,
-    index: number
+    index: number,
   ): React.JSX.Element => {
     // Tool messages return null; render an empty keyed placeholder so React
     // keeps stable keys across renders.
@@ -621,7 +657,7 @@ export const ChatMessageList = ({
       {beforeFork.map((message, index) => renderItem(message, index))}
       {renderForkDivider()}
       {afterFork.map((message, index) =>
-        renderItem(message, forkDividerIndex + index)
+        renderItem(message, forkDividerIndex + index),
       )}
       {renderVisionStatusCard()}
       {renderRunSummary()}

@@ -513,6 +513,7 @@ export const zhCN = {
   "chat.forkedFromConversation": "从对话中派生",
   "chat.runSummary.duration": "当前会话累计耗时",
   "chat.runSummary.tokens": "当前会话总 Token 消耗",
+  "chat.runSummary.speed": "当前会话平均输出速度",
   "chat.runSummary.cacheWrite": "当前会话缓存写入",
   "chat.runSummary.cacheRead": "当前会话缓存命中",
   "chat.runSummary.model": "当前会话模型",

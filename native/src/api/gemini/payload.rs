@@ -106,8 +106,11 @@ pub(super) fn build_gemini_payload(
                 } else {
                     serde_json::json!({"result": text})
                 };
-                let tool_name =
-                    resolve_function_response_name(tool_result, &mut call_id_to_name, &mut pending_call_names);
+                let tool_name = resolve_function_response_name(
+                    tool_result,
+                    &mut call_id_to_name,
+                    &mut pending_call_names,
+                );
                 contents.push(json!({
                     "role": "function",
                     "parts": [{
@@ -288,20 +291,24 @@ pub(super) fn build_gemini_payload(
     }
 
     // Google Search grounding（Gemini 原生联网搜索）：
-    // 配置 snowcfg.googleSearch 开启时，向 tools 数组注入 google_search 工具。
-    // 与 MCP function tools 可共存，Gemini 允许 tools 中混合声明与内置工具。
+    // 配置 snowcfg.googleSearch 开启时，合并注入 google_search。
+    // 与 MCP function tools 共存时，放入同一个 Tool 对象并配置 tool_config.include_server_side_tool_invocations。
     if build_gemini_google_search_enabled(&api_config.config_json) {
-        let has_tools = payload
-            .get("tools")
-            .and_then(Value::as_array)
-            .is_some_and(|items| !items.is_empty());
-        if !has_tools {
-            payload["tools"] = json!([]);
+        if let Some(tools_arr) = payload.get_mut("tools").and_then(Value::as_array_mut) {
+            if let Some(first_tool) = tools_arr.first_mut().and_then(Value::as_object_mut) {
+                first_tool.insert("google_search".to_string(), json!({}));
+                payload["tool_config"] = json!({
+                    "include_server_side_tool_invocations": true
+                });
+                payload["toolConfig"] = json!({
+                    "includeServerSideToolInvocations": true
+                });
+            } else {
+                tools_arr.push(json!({ "google_search": {} }));
+            }
+        } else {
+            payload["tools"] = json!([{ "google_search": {} }]);
         }
-        payload["tools"]
-            .as_array_mut()
-            .expect("tools is an array")
-            .push(json!({ "google_search": {} }));
     }
 
     Ok(payload)

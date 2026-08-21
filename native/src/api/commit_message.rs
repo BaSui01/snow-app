@@ -188,8 +188,19 @@ pub async fn generate_commit_message_stream(
             )
             .await
         }
+        "interactions" => {
+            crate::api::interactions::create_interactions_response_stream(
+                request,
+                database_path,
+                api_config,
+                custom_headers,
+                on_chunk,
+                cancel_token,
+            )
+            .await
+        }
         request_method => Err(Error::from_reason(format!(
-            "Unsupported request method '{}'. Please switch the active API request method to Chat, Responses, Anthropic or Gemini.",
+            "Unsupported request method '{}'. Please switch the active API request method to Chat, Responses, Anthropic, Gemini, or Interactions.",
             request_method
         ))),
     };

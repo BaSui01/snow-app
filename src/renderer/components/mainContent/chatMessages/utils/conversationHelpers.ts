@@ -223,24 +223,36 @@ const normalizeToolCallName = (tc: Record<string, unknown>): string => {
 const normalizeToolCallArgumentsFromTc = (
   tc: Record<string, unknown>,
 ): string => {
-  // OpenAI Chat Completions: arguments in tc.function.arguments (string)
-  // OpenAI Responses API: arguments in tc.arguments (object)
-  // Anthropic: input in tc.input (object)
-  // Gemini: args in tc.args (object)
-  if (typeof tc.arguments === "string" || typeof tc.arguments === "object") {
-    return normalizeToolCallArguments(tc.arguments);
+  const candidates = [
+    tc.arguments,
+    tc.args,
+    tc.input,
+    (tc.function as Record<string, unknown> | undefined)?.arguments,
+    (tc.function as Record<string, unknown> | undefined)?.args,
+    (tc.functionCall as Record<string, unknown> | undefined)?.args,
+    (tc.functionCall as Record<string, unknown> | undefined)?.arguments,
+    (tc.function_call as Record<string, unknown> | undefined)?.args,
+    (tc.function_call as Record<string, unknown> | undefined)?.arguments,
+  ];
+
+  for (const cand of candidates) {
+    if (typeof cand === "string") {
+      const trimmed = cand.trim();
+      if (trimmed.length > 0 && trimmed !== "{}") {
+        return trimmed;
+      }
+    } else if (typeof cand === "object" && cand !== null && !Array.isArray(cand)) {
+      if (Object.keys(cand).length > 0) {
+        return JSON.stringify(cand);
+      }
+    }
   }
-  if (typeof tc.input === "string" || typeof tc.input === "object") {
-    return normalizeToolCallArguments(tc.input);
+
+  for (const cand of candidates) {
+    if (typeof cand === "string") return cand;
+    if (typeof cand === "object" && cand !== null) return JSON.stringify(cand);
   }
-  if (typeof tc.args === "string" || typeof tc.args === "object") {
-    return normalizeToolCallArguments(tc.args);
-  }
-  const func = tc.function;
-  if (typeof func === "object" && func !== null && !Array.isArray(func)) {
-    const funcRecord = func as Record<string, unknown>;
-    return normalizeToolCallArguments(funcRecord.arguments);
-  }
+
   return "{}";
 };
 

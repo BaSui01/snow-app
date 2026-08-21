@@ -78,26 +78,35 @@ pub fn tool_calls_as_chat_completions(tool_calls_json: &str) -> Vec<Value> {
 
 /// Parse tool_results_json into (name, callId, result) tuples.
 pub fn parse_tool_results_json(raw: &str) -> Vec<(String, String, String)> {
+    parse_tool_result_records(raw)
+        .into_iter()
+        .map(|record| (record.name, record.call_id, record.result))
+        .collect()
+}
+
+struct ToolResultRecord {
+    name: String,
+    call_id: String,
+    result: String,
+    has_valid_shape: bool,
+}
+
+fn parse_tool_result_records(raw: &str) -> Vec<ToolResultRecord> {
     serde_json::from_str::<Vec<Value>>(raw)
         .unwrap_or_default()
         .into_iter()
         .map(|v| {
-            let name = v
-                .get("name")
-                .and_then(|x| x.as_str())
-                .unwrap_or("")
-                .to_string();
-            let call_id = v
-                .get("callId")
-                .and_then(|x| x.as_str())
-                .unwrap_or("")
-                .to_string();
-            let result = v
-                .get("result")
-                .and_then(|x| x.as_str())
-                .unwrap_or("")
-                .to_string();
-            (name, call_id, result)
+            let parsed_name = v.get("name").and_then(|x| x.as_str());
+            let parsed_call_id = v.get("callId").and_then(|x| x.as_str());
+            let parsed_result = v.get("result").and_then(|x| x.as_str());
+            ToolResultRecord {
+                name: parsed_name.unwrap_or("").to_string(),
+                call_id: parsed_call_id.unwrap_or("").to_string(),
+                result: parsed_result.unwrap_or("").to_string(),
+                has_valid_shape: parsed_name.is_some_and(|name| !name.trim().is_empty())
+                    && parsed_call_id.is_some_and(|call_id| !call_id.trim().is_empty())
+                    && parsed_result.is_some(),
+            }
         })
         .collect()
 }
@@ -116,6 +125,7 @@ pub struct ParsedToolResult {
     pub call_id: String,
     pub text: String,
     pub images: Vec<ChatImage>,
+    pub(crate) has_valid_shape: bool,
 }
 
 /// Parse tool_results_json and split `@@image:...@@` tags out of each result
@@ -128,15 +138,22 @@ pub fn parse_tool_results_with_images(
     database_path: &Path,
     skip_image_parsing: bool,
 ) -> Vec<ParsedToolResult> {
-    parse_tool_results_json(raw)
+    parse_tool_result_records(raw)
         .into_iter()
-        .map(|(name, call_id, result)| {
+        .map(|record| {
+            let ToolResultRecord {
+                name,
+                call_id,
+                result,
+                has_valid_shape,
+            } = record;
             if skip_image_parsing || !result.contains("@@image:") {
                 return ParsedToolResult {
                     name,
                     call_id,
                     text: result,
                     images: Vec::new(),
+                    has_valid_shape,
                 };
             }
             match parse_chat_message_content(&result, database_path) {
@@ -145,12 +162,14 @@ pub fn parse_tool_results_with_images(
                     call_id,
                     text: parsed.text,
                     images: parsed.images,
+                    has_valid_shape,
                 },
                 Err(_) => ParsedToolResult {
                     name,
                     call_id,
                     text: result,
                     images: Vec::new(),
+                    has_valid_shape,
                 },
             }
         })
@@ -160,10 +179,12 @@ pub fn parse_tool_results_with_images(
 /// A provider-agnostic representation of a single tool call extracted from
 /// the stored `tool_calls_json`. All conversion functions go through this
 /// intermediate type so they automatically support every provider format.
-struct NormalizedToolCall {
-    id: String,
-    name: String,
-    input: Value,
+pub(crate) struct NormalizedToolCall {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) input: Value,
+    pub(crate) has_valid_name: bool,
+    pub(crate) has_valid_input: bool,
 }
 
 /// Normalize a serialized tool_calls JSON array into [`NormalizedToolCall`]
@@ -172,7 +193,7 @@ struct NormalizedToolCall {
 /// - **OpenAI Responses**: `{"type":"function_call","call_id":"...","name":"...","arguments":"..."}`
 /// - **Anthropic**: `{"type":"tool_use","id":"...","name":"...","input":{...}}`
 /// - **Gemini**: `{"functionCall":{"name":"...","args":{...}}}`
-fn normalize_tool_calls(tool_calls_json: &str) -> Vec<NormalizedToolCall> {
+pub(crate) fn normalize_tool_calls(tool_calls_json: &str) -> Vec<NormalizedToolCall> {
     let Ok(parsed) = serde_json::from_str::<Value>(tool_calls_json) else {
         return Vec::new();
     };
@@ -201,7 +222,7 @@ fn normalize_tool_calls(tool_calls_json: &str) -> Vec<NormalizedToolCall> {
             // OpenAI Chat nests under "function.name"; the other providers
             // use a top-level "name". Gemini nests under
             // "functionCall.name".
-            let name = call
+            let parsed_name = call
                 .get("name")
                 .and_then(Value::as_str)
                 .or_else(|| {
@@ -214,21 +235,25 @@ fn normalize_tool_calls(tool_calls_json: &str) -> Vec<NormalizedToolCall> {
                         .and_then(|f| f.get("name"))
                         .and_then(Value::as_str)
                 })
-                .unwrap_or("unknown_tool")
-                .to_string();
+                .filter(|name| !name.trim().is_empty());
+            let has_valid_name = parsed_name.is_some();
+            let name = parsed_name.unwrap_or("unknown_tool").to_string();
 
             // --- input ---
             // Anthropic stores an object under "input". OpenAI Chat nests a
             // JSON string under "function.arguments"; OpenAI Responses uses a
             // top-level "arguments". Gemini stores an object under
             // "functionCall.args".
-            let input = if let Some(input_val) = call.get("input") {
+            let (input, has_valid_input) = if let Some(input_val) = call.get("input") {
                 if input_val.is_object() {
-                    input_val.clone()
+                    (input_val.clone(), true)
                 } else if let Some(s) = input_val.as_str() {
-                    serde_json::from_str(s).unwrap_or_else(|_| serde_json::json!({}))
+                    match serde_json::from_str::<Value>(s) {
+                        Ok(value) if value.is_object() => (value, true),
+                        _ => (serde_json::json!({}), false),
+                    }
                 } else {
-                    serde_json::json!({})
+                    (serde_json::json!({}), false)
                 }
             } else if let Some(arguments) = call
                 .get("function")
@@ -239,19 +264,32 @@ fn normalize_tool_calls(tool_calls_json: &str) -> Vec<NormalizedToolCall> {
                 // OpenAI Responses uses a top-level "arguments" that is
                 // sometimes a parsed object instead of a string.
                 if arguments.is_object() {
-                    arguments.clone()
+                    (arguments.clone(), true)
                 } else if let Some(s) = arguments.as_str() {
-                    serde_json::from_str(s).unwrap_or_else(|_| serde_json::json!({}))
+                    match serde_json::from_str::<Value>(s) {
+                        Ok(value) if value.is_object() => (value, true),
+                        _ => (serde_json::json!({}), false),
+                    }
                 } else {
-                    serde_json::json!({})
+                    (serde_json::json!({}), false)
                 }
             } else if let Some(args) = call.get("functionCall").and_then(|f| f.get("args")) {
-                args.clone()
+                if args.is_object() {
+                    (args.clone(), true)
+                } else {
+                    (serde_json::json!({}), false)
+                }
             } else {
-                serde_json::json!({})
+                (serde_json::json!({}), false)
             };
 
-            Some(NormalizedToolCall { id, name, input })
+            Some(NormalizedToolCall {
+                id,
+                name,
+                input,
+                has_valid_name,
+                has_valid_input,
+            })
         })
         .collect()
 }

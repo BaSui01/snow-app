@@ -46,10 +46,7 @@ fn sanitize_schema_node(node: &mut Value, is_root: bool) {
                     .iter()
                     .find_map(|item| item.as_str())
                     .unwrap_or("string");
-                map.insert(
-                    "type".to_string(),
-                    Value::String(first_scalar.to_string()),
-                );
+                map.insert("type".to_string(), Value::String(first_scalar.to_string()));
             }
         } else if map.contains_key("properties") || map.contains_key("required") {
             map.insert("type".to_string(), Value::String("object".to_string()));
@@ -126,9 +123,41 @@ pub fn tools_as_gemini_json(tools: &[McpTool]) -> Value {
     }])
 }
 
+pub fn tools_as_interactions_json(tools: &[McpTool]) -> Value {
+    let function_declarations: Vec<Value> = tools
+        .iter()
+        .map(|tool| {
+            let sanitized_schema = sanitize_tool_input_schema(&tool.input_schema);
+            json!({
+                "name": tool.full_name(),
+                "description": tool.description,
+                "parameters": sanitized_schema,
+            })
+        })
+        .collect();
+
+    json!([{
+        "function_declarations": function_declarations
+    }])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_tool(server_id: &str, name: &str, required_field: &str) -> McpTool {
+        McpTool {
+            server_id: server_id.to_string(),
+            name: name.to_string(),
+            description: format!("Tool requiring {required_field}"),
+            input_schema: json!({
+                "properties": {
+                    required_field: { "type": "string" }
+                },
+                "required": [required_field]
+            }),
+        }
+    }
 
     #[test]
     fn sanitizes_nested_schemas_and_fixes_missing_types_for_gemini() {
@@ -178,5 +207,57 @@ mod tests {
             sanitized["properties"]["itemsList"]["items"]["type"],
             "object"
         );
+    }
+
+    #[test]
+    fn serializes_interactions_tools_as_one_grouped_compatibility_object() {
+        let tools = vec![
+            test_tool("todo", "todo-manage", "action"),
+            test_tool("filesystem", "read", "filePath"),
+        ];
+
+        let serialized = tools_as_interactions_json(&tools);
+        let entries = serialized.as_array().expect("Interactions tools array");
+        let declarations = entries[0]["function_declarations"]
+            .as_array()
+            .expect("Interactions function declarations");
+
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].get("type").is_none());
+        assert_eq!(declarations.len(), 2);
+        assert_eq!(declarations[0]["name"], "todo-todo-manage");
+        assert_eq!(declarations[0]["parameters"]["type"], "object");
+        assert_eq!(declarations[0]["parameters"]["required"], json!(["action"]));
+        assert_eq!(
+            declarations[0]["parameters"]["properties"]["action"]["type"],
+            "string"
+        );
+        assert_eq!(declarations[1]["name"], "filesystem-read");
+        assert_eq!(
+            declarations[1]["parameters"]["required"],
+            json!(["filePath"])
+        );
+        assert!(declarations
+            .iter()
+            .all(|declaration| declaration.get("type").is_none()));
+        assert!(entries[0].get("functionDeclarations").is_none());
+    }
+
+    #[test]
+    fn keeps_native_gemini_tools_grouped() {
+        let serialized = tools_as_gemini_json(&[test_tool("filesystem", "read", "filePath")]);
+        let entries = serialized.as_array().expect("Gemini tools array");
+        let declarations = entries[0]["functionDeclarations"]
+            .as_array()
+            .expect("Gemini function declarations");
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(declarations.len(), 1);
+        assert_eq!(declarations[0]["name"], "filesystem-read");
+        assert_eq!(
+            declarations[0]["parameters"]["required"],
+            json!(["filePath"])
+        );
+        assert!(entries[0].get("type").is_none());
     }
 }

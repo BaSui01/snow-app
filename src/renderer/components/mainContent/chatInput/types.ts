@@ -34,6 +34,9 @@ export type ChatInputSendOptions = {
    *  session receives its first real conversation id. `null` means inherit the
    *  selected profile default for that field. */
   conversationRuntimeConfigOverride?: ConversationRuntimeConfigOverride;
+  /** 内部字段：程序化发送（pending 队列自动冲刷）显式指定目标会话 key，
+   *  覆盖当前视图会话。仅渲染进程内部使用，用户发送路径不设置。 */
+  targetSessionKey?: string;
 };
 export type ChatInputProps = {
   placeholder?: string;
@@ -56,21 +59,22 @@ export type ChatInputProps = {
   autoSendOverride?: ScheduledTaskRunOptions | null;
   onAutoSendOverrideConsumed?: () => void;
   /** 按会话持久化输入草稿（文本+图片 chip）。 */
-  saveInputDraft?: (conversationId: string | undefined, content: string) => void;
+  saveInputDraft?: (
+    conversationId: string | undefined,
+    content: string,
+  ) => void;
   getInputDraft?: (conversationId: string | undefined) => string | undefined;
   clearInputDraft?: (conversationId: string | undefined) => void;
   /** 回滚首条消息后新会话暂存的输入区配置。 */
   rollbackInputState?: ConversationInputRuntimeState | null;
   /** 记录当前输入区配置，覆盖未发送前尚未写入会话记录的模型选择。 */
-  onRuntimeInputStateChange?: (
-    state: ConversationInputRuntimeState
-  ) => void;
+  onRuntimeInputStateChange?: (state: ConversationInputRuntimeState) => void;
   pendingMessages?: string[];
   onWithdrawPendingMessage?: (index: number) => string | null;
   onSendPendingMessageNow?: (index: number) => void;
   onCompactConversation?: (
     model?: string,
-    apiProfile?: string
+    apiProfile?: string,
   ) => void | Promise<void>;
   yoloMode?: boolean;
   isUpdatingYoloMode?: boolean;
@@ -198,7 +202,7 @@ export type ChatInputViewProps = ChatInputState &
     onSendPendingMessageNow?: (index: number) => void;
     onCompactConversation?: (
       model?: string,
-      apiProfile?: string
+      apiProfile?: string,
     ) => void | Promise<void>;
     yoloMode: boolean;
     isUpdatingYoloMode: boolean;

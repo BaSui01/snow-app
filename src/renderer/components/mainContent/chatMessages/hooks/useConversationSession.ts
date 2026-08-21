@@ -12,6 +12,10 @@ import type {
   NotifySensitiveCommandOptions,
   NotifyUserInteractionOptions,
 } from "../utils/conversationTypes";
+import {
+  getPendingSessionKey,
+  isPendingSessionKey,
+} from "../utils/conversationTypes";
 
 type ConversationNotificationOptions = Omit<AppNotificationOptions, "target"> &
   ConversationNotificationContext;
@@ -47,8 +51,17 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
     (id: string | undefined): void => {
       ctx.activeConversationIdRef.current = id;
       ctx.setActiveConversationId(id);
+      // 视图会话 key 同步：新会话视图（id 为空）映射到当前序号的
+      // pending 槽位 key，所有异步闭包读取它定位当前视图的会话。
+      ctx.activeSessionKeyRef.current =
+        id ?? getPendingSessionKey(ctx.pendingSessionSeqRef.current);
     },
-    [ctx.activeConversationIdRef, ctx.setActiveConversationId]
+    [
+      ctx.activeConversationIdRef,
+      ctx.setActiveConversationId,
+      ctx.activeSessionKeyRef,
+      ctx.pendingSessionSeqRef,
+    ],
   );
 
   const ensureSession = useCallback(
@@ -108,15 +121,15 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
         };
       });
     },
-    [ctx.sessionsRefData, ctx.setSessions, ctx.globalModeDefaultsRef]
+    [ctx.sessionsRefData, ctx.setSessions, ctx.globalModeDefaultsRef],
   );
 
   const updateSessionMessages = useCallback(
     (
       key: string,
       updater: (
-        messages: ChatConversationMessage[]
-      ) => ChatConversationMessage[]
+        messages: ChatConversationMessage[],
+      ) => ChatConversationMessage[],
     ): void => {
       ctx.setSessions((prev) => {
         const session = prev[key];
@@ -127,14 +140,14 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
         };
       });
     },
-    [ctx.setSessions]
+    [ctx.setSessions],
   );
 
   const updateSessionField = useCallback(
     <K extends keyof ConversationSessionState>(
       key: string,
       field: K,
-      value: ConversationSessionState[K]
+      value: ConversationSessionState[K],
     ): void => {
       ctx.setSessions((prev) => {
         const session = prev[key];
@@ -142,7 +155,7 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
         return { ...prev, [key]: { ...session, [field]: value } };
       });
     },
-    [ctx.setSessions]
+    [ctx.setSessions],
   );
 
   const migrateSession = useCallback(
@@ -151,6 +164,12 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
       if (oldRef) {
         ctx.sessionsRefData.current.set(newKey, { ...oldRef });
         ctx.sessionsRefData.current.delete(oldKey);
+      }
+
+      // 记录 pending 槽位 -> 真实 conversationId 的对应关系，侧边栏据此
+      // 把新会话的真实记录替换到它自己的占位项上。
+      if (isPendingSessionKey(oldKey)) {
+        ctx.pendingToRealConversationIdRef.current.set(oldKey, newKey);
       }
 
       const pendingQueue = ctx.pendingQueueRef.current.get(oldKey);
@@ -185,7 +204,7 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
       ctx.pendingQueueRef,
       ctx.setSessions,
       ctx.setStreamingConversationIds,
-    ]
+    ],
   );
 
   const addStreamingId = useCallback(
@@ -197,7 +216,7 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
         return next;
       });
     },
-    [ctx.setStreamingConversationIds]
+    [ctx.setStreamingConversationIds],
   );
 
   const removeStreamingId = useCallback(
@@ -209,7 +228,7 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
         return next;
       });
     },
-    [ctx.setStreamingConversationIds]
+    [ctx.setStreamingConversationIds],
   );
 
   /**
@@ -240,7 +259,7 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
         directoryId,
       });
     },
-    []
+    [],
   );
 
   const notifySensitiveCommandIntercepted = useCallback(
@@ -256,7 +275,7 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
         directoryId,
       });
     },
-    []
+    [],
   );
 
   const notifyUserInteractionRequired = useCallback(
@@ -273,7 +292,7 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
         directoryId,
       });
     },
-    []
+    [],
   );
 
   return {

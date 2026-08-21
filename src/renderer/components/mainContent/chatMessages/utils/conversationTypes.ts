@@ -1,4 +1,7 @@
-import type { ChatInputSendOptions, ConversationInputRuntimeState } from "../../chatInput/types";
+import type {
+  ChatInputSendOptions,
+  ConversationInputRuntimeState,
+} from "../../chatInput/types";
 import type {
   ApiConfigRecord,
   ChatConversationRecord,
@@ -26,11 +29,7 @@ export type UserQuestionState = {
 };
 
 export type HookExecutionStatus =
-  | "pass"
-  | "warn"
-  | "abort"
-  | "error"
-  | "needsDecision";
+  "pass" | "warn" | "abort" | "error" | "needsDecision";
 
 export type HookExecutionRecord = {
   /** The hook type that was triggered (e.g. "onUserMessage", "beforeToolCall"). */
@@ -508,7 +507,7 @@ export type ConversationContextValue = {
    *  persisted history after a restart or when reopening a conversation. */
   mergeFileChangeStats: (
     conversationId: string,
-    records: FileChangeRecord[]
+    records: FileChangeRecord[],
   ) => void;
   /** Conversation ids whose file-change stats have already been re-hydrated
    *  from persisted history during this renderer session. Guards against
@@ -574,7 +573,17 @@ export type ConversationContextValue = {
   /** Ref mirror of newChatRequested for use inside async agent-loop closures
    *  that cannot read the latest React state directly. */
   newChatRequestedRef: RefValue<boolean>;
+  /** 新会话槽位序号：每次显式新建会话递增，分配独立的 __pending__:N key。
+   *  上一个新会话的流式 run 仍占用旧槽位时，新会话发送立即获得新槽位并行运行。 */
+  pendingSessionSeqRef: RefValue<number>;
+  /** 当前视图的会话 key：真实 conversationId，或当前 pending 槽位 key
+   *  （activeConversationId 为 undefined 时）。由 setActiveId 同步维护，
+   *  供异步闭包（abort/pause/withdraw/rollback/授权等）读取最新视图会话。 */
+  activeSessionKeyRef: RefValue<string | undefined>;
   pendingQueueRef: RefValue<Map<string, PendingQueueItem[]>>;
+  /** pending 槽位 -> 迁移后的真实 conversationId。侧边栏据此把新会话的
+   *  真实记录替换到它自己的占位项上（而非任意第一个 pending 占位）。 */
+  pendingToRealConversationIdRef: RefValue<Map<string, string>>;
   /** 按会话保存的输入草稿（conversationId -> 序列化 segments 字符串，含
    *  文本/图片 chip 等）。切换会话或新建会话时 ChatInput 会因
    *  isLoadingInitialHistory 卸载，草稿存这里避免输入丢失；用 ref 存储
@@ -596,7 +605,7 @@ export type ConversationContextValue = {
       subAgentToolsJson?: string,
       subAgentSystemPrompt?: string,
       thinkingStrength?: string,
-      responsesFastMode?: boolean | null
+      responsesFastMode?: boolean | null,
     ) => Promise<CompactionResult | null>
   >;
   yoloModeRef: RefValue<boolean>;
@@ -675,12 +684,12 @@ export type ConversationContextValue = {
   ensureSession: (key: string, dirId?: string) => void;
   updateSessionMessages: (
     key: string,
-    updater: (messages: ChatConversationMessage[]) => ChatConversationMessage[]
+    updater: (messages: ChatConversationMessage[]) => ChatConversationMessage[],
   ) => void;
   updateSessionField: <K extends keyof ConversationSessionState>(
     key: string,
     field: K,
-    value: ConversationSessionState[K]
+    value: ConversationSessionState[K],
   ) => void;
   migrateSession: (oldKey: string, newKey: string) => void;
   addStreamingId: (id: string) => void;
@@ -692,16 +701,16 @@ export type ConversationContextValue = {
   clearInputDraft: (conversationId: string | undefined) => void;
   updateRuntimeInputState: (
     conversationId: string | undefined,
-    state: ConversationInputRuntimeState
+    state: ConversationInputRuntimeState,
   ) => void;
 
   // 通知系统：AI 流程结束 / 敏感命令拦截 / 用户交互确认时触发系统通知
   notifyAiComplete: (options: NotifyAiCompleteOptions) => void;
   notifySensitiveCommandIntercepted: (
-    options: NotifySensitiveCommandOptions
+    options: NotifySensitiveCommandOptions,
   ) => void;
   notifyUserInteractionRequired: (
-    options: NotifyUserInteractionOptions
+    options: NotifyUserInteractionOptions,
   ) => void;
 };
 
@@ -711,6 +720,8 @@ export type UseChatConversationResult = {
   conversationVersion: number;
   conversationListVersion: number;
   upsertedConversation: UpsertedConversation | null;
+  /** pending 槽位 -> 迁移后的真实 conversationId（侧边栏占位替换用）。 */
+  pendingToRealConversationIdRef: RefValue<Map<string, string>>;
   /** All sub-agent session events keyed by sub-agent conversationId. */
   subAgentSessionEvents: Record<string, SubAgentSessionEvent>;
   /** File changes recorded during this renderer session, keyed by
@@ -757,9 +768,7 @@ export type UseChatConversationResult = {
   visionAnalysis: VisionAnalysisState | undefined;
   /** Scheduled-task trigger info for the active conversation (present when
    *  the conversation was created by a scheduled task firing). */
-  triggeredByTask:
-    | { name: string; triggeredAt: string }
-    | undefined;
+  triggeredByTask: { name: string; triggeredAt: string } | undefined;
   forkedFromConversationId: string | undefined;
   forkMessageCount: number | undefined;
   streamingConversationIds: Set<string>;
@@ -783,7 +792,7 @@ export type UseChatConversationResult = {
     conversationId: string,
     title?: string,
     tokenUsage?: TokenUsage | null,
-    directoryId?: string
+    directoryId?: string,
   ) => Promise<void>;
   /** directoryId: optional target project for the new conversation (used by
    *  scheduled tasks so the fired conversation lands in the task's bound
@@ -794,7 +803,7 @@ export type UseChatConversationResult = {
   updateConversationSummary: (conversationId: string, summary: string) => void;
   updateRuntimeInputState: (
     conversationId: string | undefined,
-    state: ConversationInputRuntimeState
+    state: ConversationInputRuntimeState,
   ) => void;
   isStreaming: boolean;
   isAborting: boolean;
@@ -805,7 +814,7 @@ export type UseChatConversationResult = {
   abortConversation: (conversationId: string) => void;
   handleForkConversation: (
     conversationId: string,
-    upToResponseId: string
+    upToResponseId: string,
   ) => Promise<void>;
   draftToRestore: string | null;
   autoSendToken: number;
@@ -826,14 +835,12 @@ export type UseChatConversationResult = {
     content: string,
     directoryId?: string,
     options?: ScheduledTaskRunOptions,
-    taskName?: string
+    taskName?: string,
   ) => void;
   /** One-shot per-send override queued by buildFromContent for the ChatInput's
    *  auto-send. Cleared once consumed (onAutoSendOverrideConsumed). */
   pendingAutoSendOverride: ScheduledTaskRunOptions | null;
-  setPendingAutoSendOverride: (
-    options: ScheduledTaskRunOptions | null
-  ) => void;
+  setPendingAutoSendOverride: (options: ScheduledTaskRunOptions | null) => void;
   handleRollback: (messageId: string) => void;
   /** 回滚变更计算中（弹窗弹出前）的消息 id，入口按钮据此显示 loading。 */
   rollbackPreparingMessageId: string | null;
@@ -867,7 +874,7 @@ export type UseChatConversationResult = {
   answerUserQuestion: (
     questionId: string,
     selectedOptions: string[],
-    customAnswers: string[]
+    customAnswers: string[],
   ) => void;
   cancelUserQuestion: (questionId: string) => void;
   /** 读取/保存/清除提问卡片未提交的交互草稿（按 questionId）。卡片因会话
@@ -888,4 +895,16 @@ export type {
 };
 
 export const PENDING_SESSION_KEY = "__pending__";
+/**
+ * 新会话（尚未获得真实 conversationId）的会话 key 前缀。每个显式新建的
+ * 会话视图分配一个独立序号槽位（__pending__:N）：上一个新会话的流式 run
+ * 仍占用自己的槽位时，新会话的发送立即获得空闲槽位并行运行，互不阻塞。
+ */
+export const PENDING_SESSION_KEY_PREFIX = "__pending__:";
+export const getPendingSessionKey = (seq: number): string =>
+  `${PENDING_SESSION_KEY_PREFIX}${seq}`;
+/** 判断 key 是否属于"新会话"（未迁移到真实 conversationId 的会话）。 */
+export const isPendingSessionKey = (key: string | undefined | null): boolean =>
+  !!key &&
+  (key === PENDING_SESSION_KEY || key.startsWith(PENDING_SESSION_KEY_PREFIX));
 export const CHAT_MESSAGE_PAGE_SIZE = 10;

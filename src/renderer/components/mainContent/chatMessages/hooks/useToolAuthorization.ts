@@ -6,7 +6,10 @@ import type {
 } from "../utils/conversationTypes";
 import { appendHookExecutionToMessage, runHook } from "./hookOutcome";
 import { directoryIdToPath } from "../utils/conversationHelpers";
-import { PENDING_SESSION_KEY } from "../utils/conversationTypes";
+import {
+  PENDING_SESSION_KEY,
+  isPendingSessionKey,
+} from "../utils/conversationTypes";
 import { APP_CONTROL_MODE_CHANGED_EVENT } from "../../../../hooks/useAppControl";
 
 /** 权限面板增删项目级免审批工具后派发，授权流程据此重新加载合并列表。 */
@@ -39,14 +42,14 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       approvedAuthorizationIds.push(authorizationId);
     });
     approvedAuthorizationIds.forEach((authorizationId) =>
-      pendingEntries.delete(authorizationId)
+      pendingEntries.delete(authorizationId),
     );
     ctx.setPendingToolAuthorizations((current) =>
       current.filter(
         (toolCall) =>
           !toolCall.authorizationId ||
-          !approvedAuthorizationIds.includes(toolCall.authorizationId)
-      )
+          !approvedAuthorizationIds.includes(toolCall.authorizationId),
+      ),
     );
   }, [ctx.pendingToolAuthorizationRef, ctx.setPendingToolAuthorizations]);
 
@@ -58,7 +61,11 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
         approveAllPendingToolAuthorizations();
       }
     },
-    [ctx.yoloModeRef, ctx.setYoloModeState, approveAllPendingToolAuthorizations]
+    [
+      ctx.yoloModeRef,
+      ctx.setYoloModeState,
+      approveAllPendingToolAuthorizations,
+    ],
   );
 
   const refreshYoloMode = useCallback(async (): Promise<boolean> => {
@@ -79,7 +86,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
   // follows the session through migrateSession and is written afterwards.
   const persistSessionModes = useCallback(
     (key: string): void => {
-      if (key === PENDING_SESSION_KEY) {
+      if (isPendingSessionKey(key)) {
         return;
       }
       const ref = ctx.sessionsRefData.current.get(key);
@@ -91,10 +98,10 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
         ref.planMode,
         ref.goalMode,
         ref.worktreeMode,
-        ref.goalModeTokenBudget
+        ref.goalModeTokenBudget,
       );
     },
-    [ctx.sessionsRefData]
+    [ctx.sessionsRefData],
   );
 
   const applyPlanMode = useCallback(
@@ -109,11 +116,11 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
         // conversations restores the target session's mode without going
         // through applyPlanMode, so it never clears approvals here — an
         // approved plan survives navigating away and back.
-        const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+        const key = ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY;
         ctx.planApprovedSessionKeysRef.current.delete(key);
       }
     },
-    [ctx.planModeRef, ctx.setPlanModeState, ctx.planApprovedSessionKeysRef]
+    [ctx.planModeRef, ctx.setPlanModeState, ctx.planApprovedSessionKeysRef],
   );
 
   const refreshPlanMode = useCallback(async (): Promise<boolean> => {
@@ -121,7 +128,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     // authority, falling back to the neutral default (disabled) for cold
     // sessions. Plan/Goal Mode toggles never touch the persisted global
     // settings, so there is nothing global to re-read here.
-    const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+    const key = ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY;
     const ref = ctx.sessionsRefData.current.get(key);
     const effective =
       ref?.planMode ?? ctx.globalModeDefaultsRef.current.planMode;
@@ -139,13 +146,13 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       ctx.goalModeRef.current = enabled;
       ctx.setGoalModeState(enabled);
     },
-    [ctx.goalModeRef, ctx.setGoalModeState]
+    [ctx.goalModeRef, ctx.setGoalModeState],
   );
 
   const refreshGoalMode = useCallback(async (): Promise<boolean> => {
     // Per-conversation isolation: see refreshPlanMode. Cold sessions fall
     // back to the neutral default (disabled).
-    const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+    const key = ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY;
     const ref = ctx.sessionsRefData.current.get(key);
     const effective =
       ref?.goalMode ?? ctx.globalModeDefaultsRef.current.goalMode;
@@ -163,11 +170,11 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       ctx.worktreeModeRef.current = enabled;
       ctx.setWorktreeModeState(enabled);
     },
-    [ctx.worktreeModeRef, ctx.setWorktreeModeState]
+    [ctx.worktreeModeRef, ctx.setWorktreeModeState],
   );
 
   const refreshWorktreeMode = useCallback(async (): Promise<boolean> => {
-    const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+    const key = ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY;
     const ref = ctx.sessionsRefData.current.get(key);
     const effective =
       ref?.worktreeMode ?? ctx.globalModeDefaultsRef.current.worktreeMode;
@@ -184,17 +191,17 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     (budget: number): void => {
       ctx.setGoalModeTokenBudgetState(budget);
     },
-    [ctx.setGoalModeTokenBudgetState]
+    [ctx.setGoalModeTokenBudgetState],
   );
 
   const refreshGoalModeTokenBudget = useCallback(async (): Promise<void> => {
     // Per-conversation isolation: the session's own override wins, falling
     // back to the neutral default budget for cold sessions.
-    const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+    const key = ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY;
     const ref = ctx.sessionsRefData.current.get(key);
     applyGoalModeTokenBudget(
       ref?.goalModeTokenBudget ??
-        ctx.globalModeDefaultsRef.current.goalModeTokenBudget
+        ctx.globalModeDefaultsRef.current.goalModeTokenBudget,
     );
   }, [
     applyGoalModeTokenBudget,
@@ -212,7 +219,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
         // global default is never touched — strict per-conversation
         // isolation means other (and new) conversations must not inherit
         // this conversation's budget.
-        const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+        const key = ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY;
         let ref = ctx.sessionsRefData.current.get(key);
         if (!ref) {
           // A fresh new chat has no session ref yet; create one so the
@@ -235,7 +242,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       ctx.activeConversationIdRef,
       ctx.sessionsRefData,
       persistSessionModes,
-    ]
+    ],
   );
 
   // 初始化：读取磁盘 YOLO 设置和永久授权工具列表
@@ -292,13 +299,16 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     loadApprovedTools();
 
     const onToolApprovalsChanged = (): void => loadApprovedTools();
-    window.addEventListener(TOOL_APPROVALS_CHANGED_EVENT, onToolApprovalsChanged);
+    window.addEventListener(
+      TOOL_APPROVALS_CHANGED_EVENT,
+      onToolApprovalsChanged,
+    );
 
     return () => {
       disposed = true;
       window.removeEventListener(
         TOOL_APPROVALS_CHANGED_EVENT,
-        onToolApprovalsChanged
+        onToolApprovalsChanged,
       );
     };
   }, [applyYoloMode, ctx.directoryId, ctx.alwaysApprovedToolsRef]);
@@ -317,7 +327,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
         ctx.setIsUpdatingYoloMode(false);
       }
     },
-    [applyYoloMode, ctx.isUpdatingYoloMode, ctx.setIsUpdatingYoloMode]
+    [applyYoloMode, ctx.isUpdatingYoloMode, ctx.setIsUpdatingYoloMode],
   );
 
   const setPlanMode = useCallback(
@@ -329,7 +339,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       ctx.setIsUpdatingPlanMode(true);
       try {
         applyPlanMode(enabled);
-        const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+        const key = ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY;
         let ref = ctx.sessionsRefData.current.get(key);
         if (!ref) {
           ctx.ensureSession(key, ctx.directoryId);
@@ -360,7 +370,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       ctx.activeConversationIdRef,
       ctx.sessionsRefData,
       persistSessionModes,
-    ]
+    ],
   );
 
   const setGoalMode = useCallback(
@@ -372,7 +382,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       ctx.setIsUpdatingGoalMode(true);
       try {
         applyGoalMode(enabled);
-        const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+        const key = ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY;
         let ref = ctx.sessionsRefData.current.get(key);
         if (!ref) {
           ctx.ensureSession(key, ctx.directoryId);
@@ -403,7 +413,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       ctx.activeConversationIdRef,
       ctx.sessionsRefData,
       persistSessionModes,
-    ]
+    ],
   );
 
   const setWorktreeMode = useCallback(
@@ -415,7 +425,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       ctx.setIsUpdatingWorktreeMode(true);
       try {
         applyWorktreeMode(enabled);
-        const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+        const key = ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY;
         let ref = ctx.sessionsRefData.current.get(key);
         if (!ref) {
           ctx.ensureSession(key, ctx.directoryId);
@@ -446,7 +456,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       ctx.activeConversationIdRef,
       ctx.sessionsRefData,
       persistSessionModes,
-    ]
+    ],
   );
 
   const settleToolAuthorization = useCallback(
@@ -466,11 +476,11 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       // parallel batch must not cascade-reject the remaining tools.
       ctx.pendingToolAuthorizationRef.current.delete(authorizationId);
       ctx.setPendingToolAuthorizations((current) =>
-        current.filter((item) => item.authorizationId !== authorizationId)
+        current.filter((item) => item.authorizationId !== authorizationId),
       );
       pending.resolve(decision);
     },
-    [ctx.pendingToolAuthorizationRef, ctx.setPendingToolAuthorizations]
+    [ctx.pendingToolAuthorizationRef, ctx.setPendingToolAuthorizations],
   );
 
   /**
@@ -502,19 +512,19 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
         targetAuthorizationIds.push(authorizationId);
       });
       targetAuthorizationIds.forEach((authorizationId) =>
-        pendingEntries.delete(authorizationId)
+        pendingEntries.delete(authorizationId),
       );
       if (targetAuthorizationIds.length > 0) {
         ctx.setPendingToolAuthorizations((current) =>
           current.filter(
             (toolCall) =>
               !toolCall.authorizationId ||
-              !targetAuthorizationIds.includes(toolCall.authorizationId)
-          )
+              !targetAuthorizationIds.includes(toolCall.authorizationId),
+          ),
         );
       }
     },
-    [ctx.pendingToolAuthorizationRef, ctx.setPendingToolAuthorizations]
+    [ctx.pendingToolAuthorizationRef, ctx.setPendingToolAuthorizations],
   );
 
   const requestToolAuthorization = useCallback(
@@ -522,7 +532,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       toolCall: ToolCallInfo,
       index: number,
       conversationId: string,
-      projectId?: string
+      projectId?: string,
     ): Promise<ToolAuthorizationDecision> => {
       if (
         toolCall.name === "user-interaction-askUserQuestion" ||
@@ -571,7 +581,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
         try {
           const matches = await window.snow.checkSensitiveCommandMatch(
             command,
-            projectId
+            projectId,
           );
           if (matches.length > 0) {
             // Sensitive command detected — force authorization dialog
@@ -647,14 +657,14 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       ctx.sessionsRefData,
       ctx.setPendingToolAuthorizations,
       ctx.notifySensitiveCommandIntercepted,
-    ]
+    ],
   );
 
   const requestToolAuthorizations = useCallback(
     async (
       toolCalls: ToolCallInfo[],
       conversationId: string,
-      projectId?: string
+      projectId?: string,
     ): Promise<ToolAuthorizationDecision[]> => {
       // Read the persisted app setting once per tool batch so recent YOLO
       // changes take effect without querying SQLite for every tool.
@@ -670,8 +680,13 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       if (ctx.yoloModeRef.current) {
         return Promise.all(
           toolCalls.map((toolCall, index) =>
-            requestToolAuthorization(toolCall, index, conversationId, projectId)
-          )
+            requestToolAuthorization(
+              toolCall,
+              index,
+              conversationId,
+              projectId,
+            ),
+          ),
         );
       }
 
@@ -687,14 +702,14 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
             const confirmResult = await runHook(
               "toolConfirmation",
               projectId || undefined,
-              toolConfirmContext
+              toolConfirmContext,
             );
             if (confirmResult) {
               ctx.updateSessionMessages(conversationId, (currentMessages) =>
                 appendHookExecutionToMessage(
                   currentMessages,
-                  confirmResult.record
-                )
+                  confirmResult.record,
+                ),
               );
               if (confirmResult.outcome.kind === "abort") {
                 return {
@@ -707,7 +722,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
             // Hook execution failed — continue with normal authorization
           }
           return null;
-        })
+        }),
       );
 
       return Promise.all(
@@ -720,12 +735,12 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
             toolCall,
             index,
             conversationId,
-            projectId
+            projectId,
           );
-        })
+        }),
       );
     },
-    [applyYoloMode, requestToolAuthorization, ctx.directoryPath]
+    [applyYoloMode, requestToolAuthorization, ctx.directoryPath],
   );
 
   const approveToolAuthorizationAlways = useCallback(
@@ -735,7 +750,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
           .setToolApprovalProjectToolApproved(
             ctx.directoryId,
             toolCall.name,
-            true
+            true,
           )
           .then(() => {
             ctx.alwaysApprovedToolsRef.current.add(toolCall.name);
@@ -744,7 +759,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
             // The current execution can continue even if persistence fails.
           })
           .finally(() =>
-            settleToolAuthorization(toolCall, { status: "approved" })
+            settleToolAuthorization(toolCall, { status: "approved" }),
           );
       } else {
         // No project context: skip persistence and just approve this call.
@@ -752,7 +767,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
         settleToolAuthorization(toolCall, { status: "approved" });
       }
     },
-    [ctx.directoryId, ctx.alwaysApprovedToolsRef, settleToolAuthorization]
+    [ctx.directoryId, ctx.alwaysApprovedToolsRef, settleToolAuthorization],
   );
 
   // 卸载时清理所有待处理授权

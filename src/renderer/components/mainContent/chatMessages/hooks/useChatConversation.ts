@@ -14,7 +14,11 @@ import type {
   PauseController,
   UseChatConversationResult,
 } from "../utils/conversationTypes";
-import { PENDING_SESSION_KEY } from "../utils/conversationTypes";
+import {
+  PENDING_SESSION_KEY,
+  getPendingSessionKey,
+  isPendingSessionKey,
+} from "../utils/conversationTypes";
 import { useConversationSession } from "./useConversationSession";
 import { useToolAuthorization } from "./useToolAuthorization";
 import { useUserQuestion } from "./useUserQuestion";
@@ -25,7 +29,7 @@ import { useConversationManagement } from "./useConversationManagement";
 
 export const useChatConversation = (
   directoryId?: string,
-  directoryPath?: string
+  directoryPath?: string,
 ): UseChatConversationResult => {
   // --- State ---
   const [sessions, setSessions] = useState<
@@ -61,7 +65,7 @@ export const useChatConversation = (
         [event.conversationId]: event,
       }));
     },
-    []
+    [],
   );
   // File-change stats collected at tool-execution time, keyed by
   // conversationId. Sub-agent changes are stored under the sub-agent's own
@@ -80,7 +84,7 @@ export const useChatConversation = (
   const recordFileChange = useCallback(
     (
       conversationId: string,
-      record: ConversationContextValue["fileChangeStats"][string][number]
+      record: ConversationContextValue["fileChangeStats"][string][number],
     ) => {
       fileChangeStatsHydratedRef.current.add(conversationId);
       setFileChangeStats((prev) => ({
@@ -88,7 +92,7 @@ export const useChatConversation = (
         [conversationId]: [...(prev[conversationId] ?? []), record],
       }));
     },
-    []
+    [],
   );
   const mergeFileChangeStats = useCallback(
     (conversationId: string, records: FileChangeRecord[]): void => {
@@ -100,14 +104,14 @@ export const useChatConversation = (
         const existingKeys = new Set(
           existing.map(
             (record) =>
-              `${record.filePath}\u0000${record.kind}\u0000${record.timestamp}\u0000${record.agent}`
-          )
+              `${record.filePath}\u0000${record.kind}\u0000${record.timestamp}\u0000${record.agent}`,
+          ),
         );
         const fresh = records.filter(
           (record) =>
             !existingKeys.has(
-              `${record.filePath}\u0000${record.kind}\u0000${record.timestamp}\u0000${record.agent}`
-            )
+              `${record.filePath}\u0000${record.kind}\u0000${record.timestamp}\u0000${record.agent}`,
+            ),
         );
         if (fresh.length === 0) {
           return prev;
@@ -118,7 +122,7 @@ export const useChatConversation = (
         };
       });
     },
-    []
+    [],
   );
   const [streamingConversationIds, setStreamingConversationIds] = useState<
     Set<string>
@@ -139,9 +143,8 @@ export const useChatConversation = (
     useState<ScheduledTaskRunOptions | null>(null);
   const [rollbackPreview, setRollbackPreview] =
     useState<ConversationContextValue["rollbackPreview"]>(null);
-  const [rollbackNewChatState, setRollbackNewChatState] = useState<
-    ConversationContextValue["rollbackNewChatState"]
-  >(null);
+  const [rollbackNewChatState, setRollbackNewChatState] =
+    useState<ConversationContextValue["rollbackNewChatState"]>(null);
   const [newChatRequested, setNewChatRequested] = useState(false);
   // Renderer-only lifecycle marker. It must never be reset when the active
   // conversation changes: every new-chat request gets a fresh generation even
@@ -170,7 +173,7 @@ export const useChatConversation = (
     return conversationIds;
   }, [pendingToolAuthorizations, pendingUserQuestionConversationIds]);
   const [activePendingMessages, setActivePendingMessages] = useState<string[]>(
-    []
+    [],
   );
   const [compactionPreview, setCompactionPreview] = useState("");
   const [compactionError, setCompactionError] = useState<string | null>(null);
@@ -184,6 +187,14 @@ export const useChatConversation = (
     ConversationContextValue["sessionsRefData"]["current"]
   >(new Map());
   const activeConversationIdRef = useRef<string | undefined>(undefined);
+  // 新会话槽位序号与当前视图会话 key（真实 id 或 pending 槽位 key）。
+  // 详见 conversationTypes 中 PENDING_SESSION_KEY_PREFIX 的说明。
+  const pendingSessionSeqRef = useRef(0);
+  const activeSessionKeyRef = useRef<string | undefined>(
+    getPendingSessionKey(0),
+  );
+  // pending 槽位 -> 迁移后的真实 conversationId（侧边栏占位替换用）。
+  const pendingToRealConversationIdRef = useRef<Map<string, string>>(new Map());
   const pendingDirectoryIdRef = useRef<string | undefined>(undefined);
   const pendingTaskNameRef = useRef<string | undefined>(undefined);
   const selectionRequestIdRef = useRef(0);
@@ -210,33 +221,35 @@ export const useChatConversation = (
   const updateRuntimeInputState = useCallback(
     (
       conversationId: string | undefined,
-      state: ConversationContextValue["runtimeInputStateRef"]["current"][string]
+      state: ConversationContextValue["runtimeInputStateRef"]["current"][string],
     ): void => {
-      runtimeInputStateRef.current[conversationId ?? PENDING_SESSION_KEY] = state;
+      runtimeInputStateRef.current[
+        conversationId ?? ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY
+      ] = state;
     },
-    []
+    [],
   );
   const inputDraftKeyFor = useCallback(
     (conversationId: string | undefined): string =>
       conversationId ?? PENDING_SESSION_KEY,
-    []
+    [],
   );
   const saveInputDraft = useCallback(
     (conversationId: string | undefined, content: string): void => {
       inputDraftsRef.current[inputDraftKeyFor(conversationId)] = content;
     },
-    [inputDraftKeyFor]
+    [inputDraftKeyFor],
   );
   const getInputDraft = useCallback(
     (conversationId: string | undefined): string | undefined =>
       inputDraftsRef.current[inputDraftKeyFor(conversationId)],
-    [inputDraftKeyFor]
+    [inputDraftKeyFor],
   );
   const clearInputDraft = useCallback(
     (conversationId: string | undefined): void => {
       delete inputDraftsRef.current[inputDraftKeyFor(conversationId)];
     },
-    [inputDraftKeyFor]
+    [inputDraftKeyFor],
   );
   const handleSendMessageRef = useRef<
     (message: string, options: ChatInputSendOptions) => void
@@ -251,7 +264,7 @@ export const useChatConversation = (
       subAgentToolsJson?: string,
       subAgentSystemPrompt?: string,
       thinkingStrength?: string,
-      responsesFastMode?: boolean | null
+      responsesFastMode?: boolean | null,
     ) => Promise<CompactionResult | null>
   >(async () => null);
   const yoloModeRef = useRef(yoloMode);
@@ -282,23 +295,27 @@ export const useChatConversation = (
     if (lastDirectoryIdRef.current === directoryId) return;
     lastDirectoryIdRef.current = directoryId;
 
-    const pendingRef = sessionsRefData.current.get(PENDING_SESSION_KEY);
-    const pendingStreaming = pendingRef?.isSending === true;
-    if (pendingRef && !pendingStreaming) {
-      sessionsRefData.current.delete(PENDING_SESSION_KEY);
-      setSessions((prev) => {
-        const next = { ...prev };
-        delete next[PENDING_SESSION_KEY];
-        return next;
-      });
+    // 清理旧项目遗留的全部 pending 槽位会话（未在后台流式运行时的）。
+    for (const key of Array.from(sessionsRefData.current.keys())) {
+      if (!isPendingSessionKey(key)) continue;
+      const pendingRef = sessionsRefData.current.get(key);
+      if (pendingRef && pendingRef.isSending !== true) {
+        sessionsRefData.current.delete(key);
+        pendingToRealConversationIdRef.current.delete(key);
+        setSessions((prev) => {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+      }
     }
 
-    // 仅当显示的槽位是共享 pending 新对话时才重置显示模式；若当前显示的
-    // 是某个真实会话（属于旧项目，用户切换项目后仍停留在该会话视图），
-    // 保留其会话级模式，待用户选择新项目的会话时再按新会话恢复。
+    // 仅当显示的槽位是 pending 新对话（无任何残留槽位）时才重置显示模式；
+    // 若当前显示的是某个真实会话（属于旧项目，用户切换项目后仍停留在该
+    // 会话视图），保留其会话级模式，待用户选择新项目的会话时再按新会话恢复。
     if (
       activeConversationIdRef.current === undefined &&
-      !sessionsRefData.current.has(PENDING_SESSION_KEY)
+      !Array.from(sessionsRefData.current.keys()).some(isPendingSessionKey)
     ) {
       planModeRef.current = false;
       setPlanModeState(false);
@@ -311,6 +328,7 @@ export const useChatConversation = (
   }, [
     directoryId,
     sessionsRefData,
+    pendingToRealConversationIdRef,
     setSessions,
     activeConversationIdRef,
     planModeRef,
@@ -331,7 +349,7 @@ export const useChatConversation = (
       >
         ? V
         : never
-    >()
+    >(),
   );
   const pendingUserQuestionRef = useRef(
     new Map<
@@ -342,7 +360,7 @@ export const useChatConversation = (
       >
         ? V
         : never
-    >()
+    >(),
   );
   const pendingHookDecisionRef = useRef(
     new Map<
@@ -353,7 +371,7 @@ export const useChatConversation = (
       >
         ? V
         : never
-    >()
+    >(),
   );
   const userQuestionTargetRef = useRef(
     new Map<
@@ -364,7 +382,7 @@ export const useChatConversation = (
       >
         ? V
         : never
-    >()
+    >(),
   );
   yoloModeRef.current = yoloMode;
   planModeRef.current = planMode;
@@ -404,7 +422,7 @@ export const useChatConversation = (
         return null;
       }
     },
-    []
+    [],
   );
 
   // --- Build context object ---
@@ -450,6 +468,8 @@ export const useChatConversation = (
 
     sessionsRefData,
     activeConversationIdRef,
+    pendingSessionSeqRef,
+    activeSessionKeyRef,
     pendingDirectoryIdRef,
     pendingTaskNameRef,
     selectionRequestIdRef,
@@ -458,6 +478,7 @@ export const useChatConversation = (
     sessionsRef,
     newChatRequestedRef,
     pendingQueueRef,
+    pendingToRealConversationIdRef,
     inputDraftsRef,
     runtimeInputStateRef,
     handleSendMessageRef,
@@ -575,10 +596,12 @@ export const useChatConversation = (
   // a session was still streaming), do NOT fall back to the pending session.
   // This keeps the empty greeting visible while the background AI loop
   // continues running and eventually migrates to a real conversation id.
+  // 新会话视图使用当前序号的 pending 槽位 key（每次显式新建会话都会
+  // 递增序号），与仍在后台流式的旧 pending 槽位互不干扰。
   const activeKey =
     newChatRequested || activeConversationId
       ? activeConversationId
-      : PENDING_SESSION_KEY;
+      : getPendingSessionKey(pendingSessionSeqRef.current);
   const activeSession = activeKey ? sessions[activeKey] : undefined;
 
   // --- Approve/reject tool authorization wrappers ---
@@ -589,21 +612,21 @@ export const useChatConversation = (
         sensitiveCommandConfirmed:
           (toolCall.sensitiveCommandMatches?.length ?? 0) > 0,
       }),
-    [toolAuthApi]
+    [toolAuthApi],
   );
 
   const rejectToolAuthorization = useCallback(
     (
       toolCall: ConversationContextValue["pendingToolAuthorizations"][number],
       reason: string,
-      userProvidedReason?: boolean
+      userProvidedReason?: boolean,
     ) =>
       toolAuthApi.settleToolAuthorization(toolCall, {
         status: "rejected",
         reason: reason.trim() || "User declined tool execution",
         ...(userProvidedReason ? { userProvidedReason: true } : {}),
       }),
-    [toolAuthApi]
+    [toolAuthApi],
   );
 
   // --- Pause / Resume ---
@@ -611,7 +634,7 @@ export const useChatConversation = (
   // the pause controller at the start of each iteration and blocks on a
   // promise until handleResume is called or the loop is cancelled.
   const handlePause = useCallback((): void => {
-    const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+    const key = ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY;
     const ref = ctx.sessionsRefData.current.get(key);
     if (!ref?.isSending) {
       return;
@@ -636,7 +659,7 @@ export const useChatConversation = (
   ]);
 
   const handleResume = useCallback((): void => {
-    const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+    const key = ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY;
     const controller = ctx.pauseControllerRef.current.get(key);
     if (!controller || !controller.paused) {
       return;
@@ -660,7 +683,7 @@ export const useChatConversation = (
     (conversationId: string, summary: string): void => {
       ctx.updateSessionField(conversationId, "summary", summary);
     },
-    [ctx.updateSessionField]
+    [ctx.updateSessionField],
   );
 
   return {
@@ -669,6 +692,8 @@ export const useChatConversation = (
     conversationVersion,
     conversationListVersion,
     upsertedConversation,
+    // pending 槽位 -> 真实 conversationId 映射（侧边栏占位替换用）。
+    pendingToRealConversationIdRef,
     subAgentSessionEvents,
     fileChangeStats,
     recordFileChange,
@@ -686,7 +711,7 @@ export const useChatConversation = (
     runTtftMs: activeSession?.runTtftMs ?? 0,
     baselineCheckpointId: activeSession?.baselineCheckpointId,
     checkpointIds: activeKey
-      ? sessionsRefData.current.get(activeKey)?.checkpointIds ?? []
+      ? (sessionsRefData.current.get(activeKey)?.checkpointIds ?? [])
       : [],
     streamStartedAt: activeSession?.streamStartedAt ?? 0,
     visionAnalysis: activeSession?.visionAnalysis,
@@ -737,7 +762,7 @@ export const useChatConversation = (
       content: string,
       directoryId?: string,
       options?: ScheduledTaskRunOptions,
-      taskName?: string
+      taskName?: string,
     ) => {
       conversationManagementApi.handleNewChat(directoryId);
       // One-shot task name for the message-list "triggered by scheduled task"

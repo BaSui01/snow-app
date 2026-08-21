@@ -6,7 +6,10 @@ import type {
   ToolAuthorizationDecision,
   ToolCallInfo,
 } from "../utils/conversationTypes";
-import { PENDING_SESSION_KEY } from "../utils/conversationTypes";
+import {
+  PENDING_SESSION_KEY,
+  isPendingSessionKey,
+} from "../utils/conversationTypes";
 import {
   createMessageId,
   deleteCheckpoints,
@@ -34,13 +37,16 @@ import {
   createStreamIdHandler,
   resetRunStreamMetrics,
 } from "./agentLoopHelpers";
-import { createSubAgentActivation, createSubAgentMainToolExecutor } from "./subAgentActivation";
+import {
+  createSubAgentActivation,
+  createSubAgentMainToolExecutor,
+} from "./subAgentActivation";
 import { createToolExecutor } from "./toolExecution";
 
 type CapturedChatInputSendOptions = ChatInputSendOptions;
 
 const captureChatInputSendOptions = (
-  options: ChatInputSendOptions
+  options: ChatInputSendOptions,
 ): CapturedChatInputSendOptions => {
   const source = options as CapturedChatInputSendOptions;
   const runtimeOverride = source.conversationRuntimeConfigOverride;
@@ -59,7 +65,7 @@ const captureChatInputSendOptions = (
 
 const persistPendingConversationRuntimeConfig = (
   conversationId: string,
-  options: CapturedChatInputSendOptions
+  options: CapturedChatInputSendOptions,
 ): void => {
   const runtimeOverride = options.conversationRuntimeConfigOverride;
   if (!runtimeOverride) {
@@ -84,7 +90,7 @@ const persistPendingConversationRuntimeConfig = (
       .setConversationRuntimeConfig(
         conversationId,
         runtimeOverride.thinkingStrength,
-        runtimeOverride.responsesFastMode
+        runtimeOverride.responsesFastMode,
       )
       .catch(recordFailure);
   } catch (error) {
@@ -97,7 +103,7 @@ export type UseAgentLoopParams = {
   requestToolAuthorizations: (
     toolCalls: ToolCallInfo[],
     conversationId: string,
-    projectId?: string
+    projectId?: string,
   ) => Promise<ToolAuthorizationDecision[]>;
   rejectToolAuthorizations: (sessionKey?: string) => void;
   rejectPendingUserQuestions: (sessionKey?: string) => void;
@@ -127,8 +133,12 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       }
 
       let capturedOptions = captureChatInputSendOptions(options);
+      // 程序化发送（pending 队列自动冲刷）携带目标会话 key：消息必须发到
+      // 队列所属的会话，而不是用户当前停留的视图会话。
       const sessionKey =
-        ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+        options.targetSessionKey ??
+        ctx.activeSessionKeyRef.current ??
+        PENDING_SESSION_KEY;
       const existingRef = ctx.sessionsRefData.current.get(sessionKey);
       // A sub-agent conversation becomes read-only as soon as its run ends.
       // The input box is hidden in the UI; this guard closes the remaining
@@ -146,7 +156,11 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         return;
       }
 
-      const isFirstMessage = ctx.activeConversationIdRef.current === undefined;
+      // 程序化发送（targetSessionKey）是既有会话的后续消息，永远不是
+      // 首条消息：不参与占位记录/首条 summary/回滚状态合并等首条逻辑。
+      const isFirstMessage =
+        ctx.activeConversationIdRef.current === undefined &&
+        !options.targetSessionKey;
       const rollbackState = isFirstMessage ? ctx.rollbackNewChatState : null;
       if (rollbackState) {
         capturedOptions = {
@@ -159,7 +173,8 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             rollbackState.thinkingStrength ??
             undefined,
           responsesFastMode:
-            capturedOptions.responsesFastMode ?? rollbackState.responsesFastMode,
+            capturedOptions.responsesFastMode ??
+            rollbackState.responsesFastMode,
           conversationRuntimeConfigOverride:
             capturedOptions.conversationRuntimeConfigOverride ?? {
               thinkingStrength: rollbackState.thinkingStrength,
@@ -188,8 +203,12 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       // Sending a new message cancels any prior "new chat" intent — the
       // user is now interacting with this session, so the UI should follow
       // it normally (including auto-switching when the pending session
-      // migrates to a real conversation id).
-      ctx.setNewChatRequested(false);
+      // migrates to a real conversation id). 程序化发送（targetSessionKey）
+      // 不是用户在目标会话交互：不得重置 newChatRequested，否则会把用户
+      // 从当前停留的新建会话视图推进一个没有 session 的空槽位（空问候）。
+      if (!options.targetSessionKey) {
+        ctx.setNewChatRequested(false);
+      }
 
       ctx.ensureSession(sessionKey, sessionDirId);
       const sessionRef = ctx.sessionsRefData.current.get(sessionKey);
@@ -210,7 +229,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         .slice(2, 10)}`;
       window.snow.notifyPetTurnStarted(
         petTurnId,
-        capturedOptions.kind === "review" ? "review" : "chat"
+        capturedOptions.kind === "review" ? "review" : "chat",
       );
 
       // Reset pause state for a fresh send — the previous run may have
@@ -271,7 +290,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           trimmed.length > 50 ? `${trimmed.slice(0, 50)}...` : trimmed;
         ctx.setUpsertedConversation({
           record: {
-            conversationId: PENDING_SESSION_KEY,
+            // 占位记录使用本会话自己的 pending 槽位 key：点击侧边栏占位
+            // 项可回到该会话视图（迁移时自动切换到真实 conversationId）。
+            conversationId: sessionKey,
             title: trimmed,
             summary: "",
             lastMessagePreview: preview,
@@ -337,15 +358,14 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       // （调用方退回无 checkpoint 的旧行为，消息照常刷新）。
       const createFlushCheckpoint = async (
         flushKey: string,
-        flushDirPath: string | undefined
+        flushDirPath: string | undefined,
       ): Promise<string | undefined> => {
         if (!flushDirPath) {
           return undefined;
         }
         try {
-          const flushCheckpointId = await window.snow.createCheckpoint(
-            flushDirPath
-          );
+          const flushCheckpointId =
+            await window.snow.createCheckpoint(flushDirPath);
           if (isRunCancelled(flushKey)) {
             if (flushCheckpointId) {
               deleteCheckpoints([flushCheckpointId]);
@@ -364,7 +384,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             ctx.updateSessionField(
               flushKey,
               "baselineCheckpointId",
-              flushCheckpointId
+              flushCheckpointId,
             );
           }
           return flushCheckpointId;
@@ -408,9 +428,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         // persisted as the latest context_compaction boundary, so the Rust
         // backend builds the request context from the database and treats
         // requestMessages as a placeholder (never sent nor persisted).
-        resumeAfterCompaction?: boolean
+        resumeAfterCompaction?: boolean,
       ): Promise<void> => {
-        const iterSessionKey = currentConversationId ?? PENDING_SESSION_KEY;
+        const iterSessionKey = currentConversationId ?? sessionKey;
         let effectiveKey = iterSessionKey;
 
         if (isRunCancelled(effectiveKey)) {
@@ -458,18 +478,17 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             resumeAfterCompaction,
             planMode: iterRef?.planMode ?? ctx.planModeRef.current,
             goalMode: iterRef?.goalMode ?? ctx.goalModeRef.current,
-            worktreeMode:
-              iterRef?.worktreeMode ?? ctx.worktreeModeRef.current,
+            worktreeMode: iterRef?.worktreeMode ?? ctx.worktreeModeRef.current,
           },
           createStreamChunkHandler(
             ctx,
             effectiveKey,
             currentAssistantMessageId,
-            () => isRunCancelled(effectiveKey)
+            () => isRunCancelled(effectiveKey),
           ),
           createStreamIdHandler(ctx, effectiveKey, () =>
-            isRunCancelled(effectiveKey)
-          )
+            isRunCancelled(effectiveKey),
+          ),
         );
         const streamRefBefore = ctx.sessionsRefData.current.get(effectiveKey);
         if (streamRefBefore) {
@@ -520,7 +539,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           const idRemap = new Map<string, string>();
           const remapCount = Math.min(
             pendingUserIds.length,
-            response.persistedUserMessageIds.length
+            response.persistedUserMessageIds.length,
           );
           for (let i = 0; i < remapCount; i++) {
             idRemap.set(pendingUserIds[i], response.persistedUserMessageIds[i]);
@@ -531,7 +550,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               msgs.map((m) => {
                 const newId = idRemap.get(m.id);
                 return newId ? { ...m, id: newId } : m;
-              })
+              }),
             );
             // Update the outer-scope userMessage reference so downstream code
             // (checkpoint association, error retry) uses the real DB id.
@@ -543,25 +562,28 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         }
 
         if (response.conversationId) {
-          if (effectiveKey === PENDING_SESSION_KEY) {
+          if (isPendingSessionKey(effectiveKey)) {
+            // 迁移前的 pending 槽位 key：自动切换判断必须用它（effectiveKey
+            // 在 migrateSession 之后会被赋值为真实 conversationId）。
+            const migratingPendingKey = effectiveKey;
             // Plan Mode approval obtained while the session was still pending
             // must follow the session to its real conversation id. Otherwise
-            // the approval stays keyed under PENDING_SESSION_KEY and the next
+            // the approval stays keyed under the pending slot key and the next
             // agent-loop iteration (effectiveKey = conversationId) hits the
             // Rust hard gate again — the model sees "Plan Mode write blocked"
             // even though the user already approved the plan.
-            if (planApprovedSessionKeysRef.current.has(PENDING_SESSION_KEY)) {
-              planApprovedSessionKeysRef.current.delete(PENDING_SESSION_KEY);
+            if (planApprovedSessionKeysRef.current.has(effectiveKey)) {
+              planApprovedSessionKeysRef.current.delete(effectiveKey);
               planApprovedSessionKeysRef.current.add(response.conversationId);
             }
-            ctx.migrateSession(PENDING_SESSION_KEY, response.conversationId);
+            ctx.migrateSession(effectiveKey, response.conversationId);
             ctx.setRollbackNewChatState(null);
             // Persist only the explicit pending-session snapshot. Request-level
             // thinking/Fast Mode values (including scheduled one-shot values)
             // intentionally stay separate from this durable conversation state.
             persistPendingConversationRuntimeConfig(
               response.conversationId,
-              capturedOptions
+              capturedOptions,
             );
             effectiveKey = response.conversationId;
             finalSessionKey = response.conversationId;
@@ -569,7 +591,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             // had a real id) now has a persisted conversation id: write it
             // through so the modes survive a restart.
             const migratedRef = ctx.sessionsRefData.current.get(
-              response.conversationId
+              response.conversationId,
             );
             if (migratedRef) {
               void window.snow.setConversationModes(
@@ -577,26 +599,20 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                 migratedRef.planMode,
                 migratedRef.goalMode,
                 migratedRef.worktreeMode,
-                migratedRef.goalModeTokenBudget
+                migratedRef.goalModeTokenBudget,
               );
             }
             // Only set active conversation on the first iteration when
             // migrating from pending. Subsequent tool iterations must NOT
             // override the active conversation — the user may have switched
             // to a different conversation while tools are running.
-            // Additionally, if the user explicitly clicked "New chat" while
-            // this session was streaming, do NOT auto-switch back — let the
-            // conversation persist in the background and stay on the empty
-            // greeting.
-            // When activeConversationIdRef is PENDING_SESSION_KEY the user
-            // navigated back to the pending conversation (via sidebar) before
-            // migration completed. After migrateSession deletes the pending
-            // key, the active id must follow to the real conversation id —
-            // otherwise the UI resolves an empty session and falls back to
-            // the Empty greeting screen.
+            // 只当用户仍停留在这个 run 自己的会话视图时才自动切换：用户
+            // 显式新建的会话拥有独立的 pending 槽位 key（activeSessionKeyRef
+            // 指向新槽位），旧会话迁移绝不能把视图拉走；若用户从侧边栏
+            // 点回本 pending 会话（activeSessionKeyRef === migratingPendingKey），
+            // 迁移后视图跟随到真实 conversationId。
             if (
-              (ctx.activeConversationIdRef.current === undefined ||
-                ctx.activeConversationIdRef.current === PENDING_SESSION_KEY) &&
+              ctx.activeSessionKeyRef.current === migratingPendingKey &&
               !ctx.newChatRequestedRef.current
             ) {
               ctx.setActiveId(response.conversationId);
@@ -647,7 +663,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                   ctx.updateSessionField(
                     summaryConvId,
                     "summary",
-                    generatedSummary
+                    generatedSummary,
                   );
                   return window.snow.getChatConversation(summaryConvId);
                 }
@@ -691,7 +707,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           ctx.updateSessionField(
             effectiveKey,
             "tokenUsage",
-            response.tokenUsage
+            response.tokenUsage,
           );
           // response.tokenUsage covers this request only; keep a run-level
           // sum so the summary bar can show the whole loop's consumption.
@@ -707,12 +723,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               currentMessage.id === currentAssistantMessageId
                 ? {
                     ...currentMessage,
-                    content:
-                      response.content || currentMessage.content || "",
+                    content: response.content || currentMessage.content || "",
                     thinking:
-                      response.thinking ||
-                      currentMessage.thinking ||
-                      undefined,
+                      response.thinking || currentMessage.thinking || undefined,
                     timestamp: formatMessageTime(),
                     status: "incomplete" as const,
                     incompleteVariant: responseDisposition.variant,
@@ -725,8 +738,8 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                     retryAttempt: undefined,
                     retryError: undefined,
                   }
-                : currentMessage
-            )
+                : currentMessage,
+            ),
           );
           return;
         }
@@ -764,12 +777,14 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           loopWillContinue &&
           response.tokenUsage &&
           !responseFailed &&
-          effectiveKey !== PENDING_SESSION_KEY
+          !isPendingSessionKey(effectiveKey)
         ) {
           // Use the conversation-scoped profile (capturedOptions.apiProfile) so the
           // auto-compaction decision matches the API config the conversation
           // actually runs on — never the global active profile.
-          const apiConfig = await ctx.getActiveApiConfig(capturedOptions.apiProfile);
+          const apiConfig = await ctx.getActiveApiConfig(
+            capturedOptions.apiProfile,
+          );
           if (apiConfig?.enableAutoCompress) {
             // autoCompressThreshold is stored in TOKENS (resolved from the
             // configured percent against maxContextTokens when the config is
@@ -806,24 +821,23 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                           model: response.model || capturedOptions.model,
                           isRetrying: false,
                         }
-                      : currentMessage
-                  )
+                      : currentMessage,
+                  ),
                 );
 
-                const compactionResult =
-                  await ctx.performCompactionRef.current(
-                    effectiveKey,
-                    capturedOptions.model,
-                    true,
-                    undefined,
-                    capturedOptions.apiProfile,
-                    undefined,
-                    undefined,
-                    capturedOptions.thinkingStrength,
-                    capturedOptions.responsesFastMode
-                  );
+                const compactionResult = await ctx.performCompactionRef.current(
+                  effectiveKey,
+                  capturedOptions.model,
+                  true,
+                  undefined,
+                  capturedOptions.apiProfile,
+                  undefined,
+                  undefined,
+                  capturedOptions.thinkingStrength,
+                  capturedOptions.responsesFastMode,
+                );
 
-                 if (compactionResult) {
+                if (compactionResult) {
                   if (isRunCancelled(effectiveKey)) {
                     return;
                   }
@@ -873,7 +887,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                     ],
                     response.conversationId,
                     compactionResult.checkpointId,
-                    true
+                    true,
                   );
                   return;
                 }
@@ -907,7 +921,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                 visibleToolCalls.length > 0 ? visibleToolCalls : undefined,
               isRetrying: false,
             };
-          })
+          }),
         );
 
         if (responseFailed) {
@@ -931,7 +945,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               directoryIdToPath(sessionDirId) ?? ctx.directoryPath;
             const flushCheckpointId = await createFlushCheckpoint(
               effectiveKey,
-              flushDirPath
+              flushDirPath,
             );
             if (isRunCancelled(effectiveKey)) {
               return;
@@ -975,7 +989,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               nextAssistantId,
               [{ role: "user", content: pendingText }],
               response.conversationId,
-              flushCheckpointId
+              flushCheckpointId,
             );
           }
           return;
@@ -987,7 +1001,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         const authorizationDecisions = await requestToolAuthorizations(
           toolCalls,
           effectiveKey,
-          sessionDirId
+          sessionDirId,
         );
 
         // 非 YOLO 模式授权判定：
@@ -998,12 +1012,12 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         // - 部分拒绝：已拒绝的工具返回拒绝结果给 AI，已批准的工具
         //   正常执行，Loop 继续。
         const allToolsRejected = authorizationDecisions.every(
-          (decision) => decision.status === "rejected"
+          (decision) => decision.status === "rejected",
         );
         const hasUserProvidedRejectionReason = authorizationDecisions.some(
           (decision) =>
             decision.status === "rejected" &&
-            decision.userProvidedReason === true
+            decision.userProvidedReason === true,
         );
 
         const toolExecutor = createToolExecutor({
@@ -1023,7 +1037,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         });
         const toolExecResult = await toolExecutor(
           toolCalls,
-          authorizationDecisions
+          authorizationDecisions,
         );
         if (!toolExecResult) {
           return;
@@ -1050,15 +1064,15 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                     status: "error",
                     isRetrying: false,
                   }
-                : currentMessage
-            )
+                : currentMessage,
+            ),
           );
           ctx.pendingQueueRef.current.delete(effectiveKey);
           ctx.setActivePendingMessages([]);
           if (response.conversationId) {
             await window.snow.appendToolMessage(
               response.conversationId,
-              abortContent
+              abortContent,
             );
           }
           return;
@@ -1071,7 +1085,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         // alongside the tool results.
         if (pendingHookWarnings.length > 0) {
           toolResultContent += `\n\n[Hook Warnings]\n${pendingHookWarnings.join(
-            "\n"
+            "\n",
           )}`;
         }
         const toolResultMessage: ChatConversationMessage = {
@@ -1094,7 +1108,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           if (response.conversationId) {
             await window.snow.appendToolMessage(
               response.conversationId,
-              toolResultContent
+              toolResultContent,
             );
           }
           return;
@@ -1109,7 +1123,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           if (response.conversationId) {
             await window.snow.appendToolMessage(
               response.conversationId,
-              toolResultContent
+              toolResultContent,
             );
           }
           return;
@@ -1132,7 +1146,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             directoryIdToPath(sessionDirId) ?? ctx.directoryPath;
           pendingFlushCheckpointId = await createFlushCheckpoint(
             effectiveKey,
-            flushDirPath
+            flushDirPath,
           );
           if (isRunCancelled(effectiveKey)) {
             return;
@@ -1182,7 +1196,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           newAssistantMessageId,
           nextMessages,
           response.conversationId,
-          pendingFlushCheckpointId ?? checkpointId
+          pendingFlushCheckpointId ?? checkpointId,
         );
       };
 
@@ -1196,11 +1210,13 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         // sent against a fresh, summarized context. This applies both to
         // direct user sends and to pending-message flushes (which re-enter
         // handleSendMessage via handleSendMessageRef).
-        if (sessionKey !== PENDING_SESSION_KEY) {
+        if (!isPendingSessionKey(sessionKey)) {
           // Use the conversation-scoped profile (capturedOptions.apiProfile) so the
           // auto-compaction decision matches the API config the conversation
           // actually runs on — never the global active profile.
-          const apiConfig = await ctx.getActiveApiConfig(capturedOptions.apiProfile);
+          const apiConfig = await ctx.getActiveApiConfig(
+            capturedOptions.apiProfile,
+          );
           if (apiConfig?.enableAutoCompress) {
             // autoCompressThreshold is stored in TOKENS — compare directly (see
             // the in-loop check for why calculateAutoCompressThresholdTokens is
@@ -1223,7 +1239,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                     undefined,
                     undefined,
                     capturedOptions.thinkingStrength,
-                    capturedOptions.responsesFastMode
+                    capturedOptions.responsesFastMode,
                   );
 
                   // performCompaction resets sessionRef.isSending to false in
@@ -1269,8 +1285,8 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         if (checkpointId) {
           ctx.updateSessionMessages(sessionKey, (currentMessages) =>
             currentMessages.map((m) =>
-              m.id === userMessage.id ? { ...m, checkpointId } : m
-            )
+              m.id === userMessage.id ? { ...m, checkpointId } : m,
+            ),
           );
         }
 
@@ -1283,8 +1299,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           const hookContext = JSON.stringify({
             message: trimmed,
             cwd: sessionDirPath ?? "",
-            sessionId:
-              sessionKey === PENDING_SESSION_KEY ? undefined : sessionKey,
+            sessionId: isPendingSessionKey(sessionKey) ? undefined : sessionKey,
           });
           const hookResult = await window.snow.executeHooks({
             hookType: "onUserMessage",
@@ -1298,15 +1313,15 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           const hookExecRecord = buildHookExecRecord(
             "onUserMessage",
             hookResult,
-            outcome
+            outcome,
           );
           if (outcome.kind !== "needsDecision") {
             ctx.updateSessionMessages(finalSessionKey, (currentMessages) =>
               appendHookExecutionToMessage(
                 currentMessages,
                 hookExecRecord,
-                userMessage.id
-              )
+                userMessage.id,
+              ),
             );
           }
 
@@ -1321,8 +1336,8 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                       status: "error",
                       isRetrying: false,
                     }
-                  : currentMessage
-              )
+                  : currentMessage,
+              ),
             );
             return;
           }
@@ -1331,7 +1346,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             const userDecision = await awaitHookDecision(
               finalSessionKey,
               userMessage.id,
-              hookExecRecord
+              hookExecRecord,
             );
             if (isRunCancelled(finalSessionKey)) {
               return;
@@ -1348,8 +1363,8 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                         status: "error",
                         isRetrying: false,
                       }
-                    : currentMessage
-                )
+                    : currentMessage,
+                ),
               );
               return;
             }
@@ -1357,8 +1372,8 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             await runAgentLoop(
               assistantMessageId,
               [{ role: "user", content: trimmed }],
-              sessionKey === PENDING_SESSION_KEY ? undefined : sessionKey,
-              checkpointId
+              isPendingSessionKey(sessionKey) ? undefined : sessionKey,
+              checkpointId,
             );
             return;
           }
@@ -1373,16 +1388,16 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           await runAgentLoop(
             assistantMessageId,
             [{ role: "user", content: effectiveMessage }],
-            sessionKey === PENDING_SESSION_KEY ? undefined : sessionKey,
-            checkpointId
+            isPendingSessionKey(sessionKey) ? undefined : sessionKey,
+            checkpointId,
           );
         } catch (hookError) {
           // If hook execution fails, fall back to sending the original message
           await runAgentLoop(
             assistantMessageId,
             [{ role: "user", content: trimmed }],
-            sessionKey === PENDING_SESSION_KEY ? undefined : sessionKey,
-            checkpointId
+            isPendingSessionKey(sessionKey) ? undefined : sessionKey,
+            checkpointId,
           );
         }
       };
@@ -1407,8 +1422,8 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                     status: "error",
                     isRetrying: false,
                   }
-                : currentMessage
-            )
+                : currentMessage,
+            ),
           );
         })
         .finally(() => {
@@ -1424,12 +1439,12 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             ctx,
             finalSessionKey,
             runUsage,
-            runDurationMs
+            runDurationMs,
           );
           // 持久化（Rust 端累加）：重启后打开会话仍可完整回显。
           // 读取 ref 镜像的累计值（setState 异步可能滞后一拍）。
           // PENDING 会话尚未迁移出真实 id，跳过持久化。
-          if (finalSessionKey !== PENDING_SESSION_KEY) {
+          if (!isPendingSessionKey(finalSessionKey)) {
             void window.snow
               .setConversationRunStats(
                 finalSessionKey,
@@ -1437,7 +1452,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                 runUsage?.outputTokens ?? 0,
                 runUsage?.cacheCreationInputTokens ?? 0,
                 runUsage?.cacheReadInputTokens ?? 0,
-                runDurationMs
+                runDurationMs,
               )
               .catch(() => {
                 // 持久化失败不阻塞收尾
@@ -1453,10 +1468,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             finalSessionKey
           ]?.messages.findLast((message) => message.role !== "tool")?.id;
           const onStopContext = JSON.stringify({
-            conversationId:
-              finalSessionKey === PENDING_SESSION_KEY
-                ? undefined
-                : finalSessionKey,
+            conversationId: isPendingSessionKey(finalSessionKey)
+              ? undefined
+              : finalSessionKey,
             cwd: directoryIdToPath(stopDirId) ?? ctx.directoryPath ?? "",
             reason: isRunCancelled(finalSessionKey) ? "aborted" : "completed",
           });
@@ -1467,8 +1481,8 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                   appendHookExecutionToMessage(
                     currentMessages,
                     toNonBlockingRecord(hookResult.record),
-                    onStopMessageId
-                  )
+                    onStopMessageId,
+                  ),
                 );
               }
             })
@@ -1489,7 +1503,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           // 否则主进程计数泄漏，宠物会永久卡在 busy（多会话并行时尤其明显）。
           window.snow.notifyPetTurnEnded(
             petTurnId,
-            runFailed || isRunCancelled(finalSessionKey)
+            runFailed || isRunCancelled(finalSessionKey),
           );
 
           const ownsSession = !!ref && ref.runId === currentRunId;
@@ -1512,7 +1526,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           // run 已被更新的 run 顶替（守卫内的运行态清理被跳过），侧边栏
           // 记录也必须刷新，否则长跑会话会带着过期的 updatedAt 留在列表
           // 里，把同一个时间分组切成多个重复组头（两个"昨天"）。
-          if (finalSessionKey !== PENDING_SESSION_KEY) {
+          if (!isPendingSessionKey(finalSessionKey)) {
             void window.snow
               .getChatConversation(finalSessionKey)
               .then((conv) => {
@@ -1537,13 +1551,18 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             const lastOptions =
               pendingQueue[pendingQueue.length - 1]?.options ?? {};
             ctx.setActivePendingMessages([]);
-            ctx.handleSendMessageRef.current(combined, lastOptions);
+            // 显式指定目标会话：即使期间用户已切到其他会话/新建会话视图，
+            // 排队消息也必须发回队列所属的会话，且不重置用户的新建意图。
+            ctx.handleSendMessageRef.current(combined, {
+              ...lastOptions,
+              targetSessionKey: finalSessionKey,
+            });
           }
 
           // If this is a background conversation (not the active one),
           // mark it as completed so the sidebar shows a dot indicator.
           if (
-            finalSessionKey !== PENDING_SESSION_KEY &&
+            !isPendingSessionKey(finalSessionKey) &&
             finalSessionKey !== ctx.activeConversationIdRef.current
           ) {
             ctx.updateSessionField(finalSessionKey, "hasNewContent", true);
@@ -1559,7 +1578,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           // 窗口是否聚焦的判断由主进程 notificationManager 负责 —
           // 如果用户正在看应用，主进程会自动跳过通知，不会打扰。
           if (
-            finalSessionKey !== PENDING_SESSION_KEY &&
+            !isPendingSessionKey(finalSessionKey) &&
             !isRunCancelled(finalSessionKey)
           ) {
             const sessionState = ctx.sessionsRef.current?.[finalSessionKey];
@@ -1586,7 +1605,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       ctx.setRollbackNewChatState,
       ctx.notifyAiComplete,
       requestToolAuthorizations,
-    ]
+    ],
   );
 
   // Keep the ref current so the pending-flush closure always calls the latest version.

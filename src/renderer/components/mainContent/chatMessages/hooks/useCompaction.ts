@@ -28,7 +28,7 @@ export const useCompaction = (ctx: ConversationContextValue) => {
       subAgentToolsJson?: string,
       subAgentSystemPrompt?: string,
       thinkingStrength?: string,
-      responsesFastMode?: boolean | null
+      responsesFastMode?: boolean | null,
     ): Promise<CompactionResult | null> => {
       const sessionRef = ctx.sessionsRefData.current.get(conversationId);
       if (sessionRef) {
@@ -89,8 +89,7 @@ export const useCompaction = (ctx: ConversationContextValue) => {
         goalMode:
           ctx.sessionsRefData.current.get(conversationId)?.goalMode ??
           ctx.goalModeRef.current,
-        worktreeMode:
-          sessionRef?.worktreeMode ?? false,
+        worktreeMode: sessionRef?.worktreeMode ?? false,
         // Conversation-scoped profile isolation: the handoff must resolve the
         // same API config the conversation's messages use. For sub-agent
         // conversations, carry the configured profile so Rust resolves the
@@ -116,14 +115,14 @@ export const useCompaction = (ctx: ConversationContextValue) => {
           const compressHookResult = await runHook(
             "beforeCompress",
             compressDirId ?? undefined,
-            beforeCompressContext
+            beforeCompressContext,
           );
           if (compressHookResult) {
             ctx.updateSessionMessages(conversationId, (currentMessages) =>
               appendHookExecutionToMessage(
                 currentMessages,
-                compressHookResult.record
-              )
+                compressHookResult.record,
+              ),
             );
             if (compressHookResult.outcome.kind === "abort") {
               throw new Error(compressHookResult.outcome.message);
@@ -146,14 +145,14 @@ export const useCompaction = (ctx: ConversationContextValue) => {
               return;
             }
             ctx.setCompactionPreview(
-              (current) => chunk.content || `${current}${chunk.contentDelta}`
+              (current) => chunk.content || `${current}${chunk.contentDelta}`,
             );
           },
           (streamId) => {
             if (sessionRef) {
               sessionRef.streamId = streamId;
             }
-          }
+          },
         );
         // createResponseStream invokes the stream-id callback SYNCHRONOUSLY
         // (before it returns the promise), so the promise must be attached to
@@ -209,9 +208,8 @@ export const useCompaction = (ctx: ConversationContextValue) => {
           ...currentMessages,
           compactionMessage,
         ]);
-        const latestRecords = await window.snow.listChatMessages(
-          conversationId
-        );
+        const latestRecords =
+          await window.snow.listChatMessages(conversationId);
         ctx.updateSessionField(conversationId, "messageRecords", latestRecords);
 
         void window.snow.writeLog("INFO", {
@@ -234,7 +232,7 @@ export const useCompaction = (ctx: ConversationContextValue) => {
           ? (ctx.sessionsRef.current?.[conversationId]?.messages ?? [])
               .filter(
                 (message) =>
-                  message.role === "user" && !message.isContextCompaction
+                  message.role === "user" && !message.isContextCompaction,
               )
               .slice(-1)
               .map((message) => ({
@@ -269,7 +267,9 @@ export const useCompaction = (ctx: ConversationContextValue) => {
         });
         if (!isAuto) {
           ctx.setCompactionError(
-            error instanceof Error ? error.message : "Failed to compact context"
+            error instanceof Error
+              ? error.message
+              : "Failed to compact context",
           );
         }
         // Compaction failed — discard the checkpoint we created at the start of
@@ -278,7 +278,7 @@ export const useCompaction = (ctx: ConversationContextValue) => {
         if (checkpointId) {
           if (sessionRef) {
             sessionRef.checkpointIds = sessionRef.checkpointIds.filter(
-              (id) => id !== checkpointId
+              (id) => id !== checkpointId,
             );
           }
           deleteCheckpoints([checkpointId]);
@@ -294,7 +294,7 @@ export const useCompaction = (ctx: ConversationContextValue) => {
         // Only clear the marker if it still points at this conversation, so a
         // newer compaction started in another session is not prematurely hidden.
         ctx.setCompactingConversationId((current) =>
-          current === conversationId ? null : current
+          current === conversationId ? null : current,
         );
 
         // For manual compaction, flush pending messages after completion.
@@ -309,7 +309,12 @@ export const useCompaction = (ctx: ConversationContextValue) => {
             const lastOptions =
               pendingQueue[pendingQueue.length - 1]?.options ?? {};
             ctx.setActivePendingMessages([]);
-            ctx.handleSendMessageRef.current(combined, lastOptions);
+            // 显式指定目标会话：压缩期间用户可能已切到其他会话/新建会话
+            // 视图，排队消息必须发回压缩的会话，且不重置用户的新建意图。
+            ctx.handleSendMessageRef.current(combined, {
+              ...lastOptions,
+              targetSessionKey: conversationId,
+            });
           }
         }
       }
@@ -327,7 +332,7 @@ export const useCompaction = (ctx: ConversationContextValue) => {
       ctx.pendingQueueRef,
       ctx.setActivePendingMessages,
       ctx.handleSendMessageRef,
-    ]
+    ],
   );
 
   // Keep the ref current so runAgentLoop (defined inside handleSendMessage)
@@ -344,9 +349,15 @@ export const useCompaction = (ctx: ConversationContextValue) => {
         return;
       }
 
-      await performCompaction(conversationId, model, false, undefined, apiProfile);
+      await performCompaction(
+        conversationId,
+        model,
+        false,
+        undefined,
+        apiProfile,
+      );
     },
-    [performCompaction, ctx.activeConversationIdRef, ctx.sessionsRefData]
+    [performCompaction, ctx.activeConversationIdRef, ctx.sessionsRefData],
   );
 
   return {

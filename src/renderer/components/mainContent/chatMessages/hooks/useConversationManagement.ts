@@ -6,6 +6,7 @@ import type {
 import {
   PENDING_SESSION_KEY,
   CHAT_MESSAGE_PAGE_SIZE,
+  isPendingSessionKey,
 } from "../utils/conversationTypes";
 import {
   buildConversationMessages,
@@ -29,13 +30,12 @@ export type UseConversationManagementParams = {
  * 会话管理逻辑：选择/新建/中止会话、分页加载历史消息、分叉会话等。
  */
 export const useConversationManagement = (
-  params: UseConversationManagementParams
+  params: UseConversationManagementParams,
 ) => {
   const { ctx, rejectToolAuthorizations, rejectPendingUserQuestions } = params;
 
   const withdrawPendingMessage = useCallback((index: number): string | null => {
-    const sessionKey =
-      ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+    const sessionKey = ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY;
     const queue = ctx.pendingQueueRef.current.get(sessionKey);
     if (!queue || index < 0 || index >= queue.length) {
       return null;
@@ -54,7 +54,7 @@ export const useConversationManagement = (
       conversationId: string,
       title?: string,
       conversationTokenUsage?: TokenUsage | null,
-      conversationDirId?: string
+      conversationDirId?: string,
     ): Promise<void> => {
       const trimmedId = conversationId.trim();
       if (!trimmedId) {
@@ -89,14 +89,13 @@ export const useConversationManagement = (
       // pendingQueueRef, but activePendingMessages is a single shared state).
       const targetPendingQueue = ctx.pendingQueueRef.current.get(trimmedId);
       ctx.setActivePendingMessages(
-        targetPendingQueue ? targetPendingQueue.map((item) => item.text) : []
+        targetPendingQueue ? targetPendingQueue.map((item) => item.text) : [],
       );
 
       // Restore per-conversation mode state from the target session.
       const cachedRef = ctx.sessionsRefData.current.get(trimmedId);
       const defaults = ctx.globalModeDefaultsRef.current;
-      let targetWorktreeMode =
-        cachedRef?.worktreeMode ?? defaults.worktreeMode;
+      let targetWorktreeMode = cachedRef?.worktreeMode ?? defaults.worktreeMode;
       let targetPlanMode = cachedRef?.planMode ?? defaults.planMode;
       let targetGoalMode = cachedRef?.goalMode ?? defaults.goalMode;
       const targetBudget =
@@ -163,7 +162,7 @@ export const useConversationManagement = (
               window.snow.listChatMessagesPaginated(
                 trimmedId,
                 "",
-                CHAT_MESSAGE_PAGE_SIZE
+                CHAT_MESSAGE_PAGE_SIZE,
               ),
               window.snow.getChatConversation(trimmedId),
               window.snow.getConversationModes(trimmedId).catch(() => null),
@@ -196,7 +195,7 @@ export const useConversationManagement = (
                 storedPlanMode,
                 storedGoalMode,
                 storedWorktreeMode,
-                storedBudget
+                storedBudget,
               );
             }
 
@@ -213,15 +212,15 @@ export const useConversationManagement = (
             // the conversation and report a partial picture.
             if (!ctx.fileChangeStatsHydratedRef.current.has(trimmedId)) {
               const isSubAgentConversation = Boolean(
-                conversationRecord?.parentConversationId
+                conversationRecord?.parentConversationId,
               );
               const fullHistory = await window.snow.listChatMessages(trimmedId);
               const firstCheckpointRecord = fullHistory
                 .filter(
-                  (record) => record.role === "user" && record.checkpointId
+                  (record) => record.role === "user" && record.checkpointId,
                 )
                 .sort((left, right) =>
-                  left.createdAt.localeCompare(right.createdAt)
+                  left.createdAt.localeCompare(right.createdAt),
                 )[0];
               baselineCheckpointId =
                 firstCheckpointRecord?.checkpointId ?? baselineCheckpointId;
@@ -237,7 +236,7 @@ export const useConversationManagement = (
                     subAgentName: isSubAgentConversation
                       ? conversationRecord?.subAgentName || undefined
                       : undefined,
-                  }))
+                  })),
                 );
               }
               // A main conversation's stats panel also merges its sub-agents'
@@ -249,7 +248,7 @@ export const useConversationManagement = (
                   await Promise.all(
                     subConversations.map(async (subConversation) => {
                       const subRecords = await window.snow.listChatMessages(
-                        subConversation.conversationId
+                        subConversation.conversationId,
                       );
                       const subChanges =
                         extractFileChangesFromRecords(subRecords);
@@ -263,10 +262,10 @@ export const useConversationManagement = (
                               subConversation.subAgentName ||
                               subConversation.title ||
                               undefined,
-                          }))
+                          })),
                         );
                       }
-                    })
+                    }),
                   );
                 } catch {
                   // Sub-agent scans must not block the session switch
@@ -416,7 +415,7 @@ export const useConversationManagement = (
       void runHook(
         "onSessionStart",
         conversationDirId ?? undefined,
-        onSessionStartContext
+        onSessionStartContext,
       )
         .then((hookResult) => {
           if (hookResult) {
@@ -424,8 +423,8 @@ export const useConversationManagement = (
               appendHookExecutionToMessage(
                 currentMessages,
                 toNonBlockingRecord(hookResult.record),
-                onSessionStartMessageId
-              )
+                onSessionStartMessageId,
+              ),
             );
           }
         })
@@ -450,7 +449,7 @@ export const useConversationManagement = (
       ctx.globalModeDefaultsRef,
       ctx.pendingQueueRef,
       ctx.setActivePendingMessages,
-    ]
+    ],
   );
 
   const loadOlderMessages = useCallback(async (): Promise<void> => {
@@ -477,7 +476,7 @@ export const useConversationManagement = (
       const page = await window.snow.listChatMessagesPaginated(
         conversationId,
         beforeMessageId,
-        CHAT_MESSAGE_PAGE_SIZE
+        CHAT_MESSAGE_PAGE_SIZE,
       );
       const currentSession = ctx.sessionsRef.current[conversationId];
       if (!currentSession) {
@@ -485,20 +484,20 @@ export const useConversationManagement = (
       }
 
       const existingIds = new Set(
-        currentSession.messageRecords.map((record) => record.id)
+        currentSession.messageRecords.map((record) => record.id),
       );
       const olderRecords = page.items.filter(
-        (record) => !existingIds.has(record.id)
+        (record) => !existingIds.has(record.id),
       );
       const combinedRecords = [
         ...olderRecords,
         ...currentSession.messageRecords,
       ];
       const persistedIds = new Set(
-        currentSession.messageRecords.map((record) => record.id)
+        currentSession.messageRecords.map((record) => record.id),
       );
       const transientMessages = currentSession.messages.filter(
-        (message) => !persistedIds.has(message.id)
+        (message) => !persistedIds.has(message.id),
       );
 
       ctx.setSessions((prev) => {
@@ -533,106 +532,119 @@ export const useConversationManagement = (
     }
   }, [ctx.updateSessionField]);
 
-  const handleNewChat = useCallback((directoryId?: string): void => {
-    ctx.selectionRequestIdRef.current += 1;
-    ctx.setIsLoadingInitialHistory(false);
+  const handleNewChat = useCallback(
+    (directoryId?: string): void => {
+      ctx.selectionRequestIdRef.current += 1;
+      ctx.setIsLoadingInitialHistory(false);
 
-    // Mark that the user explicitly requested a new chat. This prevents the
-    // UI from falling back to the pending session (which may still be
-    // streaming in the background) and prevents the agent loop from
-    // auto-switching back to the migrated conversation once it finishes.
-    ctx.setNewChatRequested(true);
-    ctx.setRollbackNewChatState(null);
-    // Increment independently from the legacy boolean: the same pending key can
-    // be reused for consecutive new chats, including across project switches.
-    ctx.setNewChatGeneration((generation) => generation + 1);
+      // Mark that the user explicitly requested a new chat. This prevents the
+      // UI from falling back to the pending session (which may still be
+      // streaming in the background) and prevents the agent loop from
+      // auto-switching back to the migrated conversation once it finishes.
+      ctx.setNewChatRequested(true);
+      ctx.setRollbackNewChatState(null);
+      // Increment independently from the legacy boolean: the same pending key can
+      // be reused for consecutive new chats, including across project switches.
+      ctx.setNewChatGeneration((generation) => generation + 1);
 
-    // Reset Plan Mode so a new chat always starts with the GLOBAL default
-    // (not the previous conversation's mode — real per-conversation
-    // isolation). The global defaults are only mutated by explicit user
-    // toggles, so no persisted write is needed here.
-    const defaults = ctx.globalModeDefaultsRef.current;
-    if (ctx.planModeRef.current !== defaults.planMode) {
-      ctx.planModeRef.current = defaults.planMode;
-      ctx.setPlanModeState(defaults.planMode);
-    }
+      // Reset Plan Mode so a new chat always starts with the GLOBAL default
+      // (not the previous conversation's mode — real per-conversation
+      // isolation). The global defaults are only mutated by explicit user
+      // toggles, so no persisted write is needed here.
+      const defaults = ctx.globalModeDefaultsRef.current;
+      if (ctx.planModeRef.current !== defaults.planMode) {
+        ctx.planModeRef.current = defaults.planMode;
+        ctx.setPlanModeState(defaults.planMode);
+      }
 
-    // Reset WorkTree Mode so a new chat starts with the global default.
-    if (ctx.worktreeModeRef.current !== defaults.worktreeMode) {
-      ctx.worktreeModeRef.current = defaults.worktreeMode;
-      ctx.setWorktreeModeState(defaults.worktreeMode);
-    }
+      // Reset WorkTree Mode so a new chat starts with the global default.
+      if (ctx.worktreeModeRef.current !== defaults.worktreeMode) {
+        ctx.worktreeModeRef.current = defaults.worktreeMode;
+        ctx.setWorktreeModeState(defaults.worktreeMode);
+      }
 
-    // A new chat starts a brand-new task. The pending session's approval is
-    // cleared ONLY when that pending session is not running in the
-    // background — a streaming pending conversation keeps its approved plan
-    // (it will be migrated to its real id). handleSendMessage resets the
-    // new task's own approval on first send, so no other cleanup is needed.
-    const pendingRef = ctx.sessionsRefData.current.get(PENDING_SESSION_KEY);
-    if (!pendingRef?.isSending) {
-      ctx.planApprovedSessionKeysRef.current.delete(PENDING_SESSION_KEY);
-    }
+      // A new chat starts a brand-new task. Each pending slot's approval is
+      // cleared ONLY when that slot's session is not running in the
+      // background — a streaming pending conversation keeps its approved plan
+      // (it will be migrated to its real id). handleSendMessage resets the
+      // new task's own approval on first send, so no other cleanup is needed.
+      for (const pendingKey of Array.from(ctx.sessionsRefData.current.keys())) {
+        if (!isPendingSessionKey(pendingKey)) continue;
+        const pendingSlotRef = ctx.sessionsRefData.current.get(pendingKey);
+        if (!pendingSlotRef?.isSending) {
+          ctx.planApprovedSessionKeysRef.current.delete(pendingKey);
+        }
+      }
 
-    // Reset Goal Mode so a new chat always starts with the global default.
-    if (ctx.goalModeRef.current !== defaults.goalMode) {
-      ctx.goalModeRef.current = defaults.goalMode;
-      ctx.setGoalModeState(defaults.goalMode);
-    }
-    if (ctx.goalModeTokenBudget !== defaults.goalModeTokenBudget) {
-      ctx.setGoalModeTokenBudgetState(defaults.goalModeTokenBudget);
-    }
+      // Reset Goal Mode so a new chat always starts with the global default.
+      if (ctx.goalModeRef.current !== defaults.goalMode) {
+        ctx.goalModeRef.current = defaults.goalMode;
+        ctx.setGoalModeState(defaults.goalMode);
+      }
+      if (ctx.goalModeTokenBudget !== defaults.goalModeTokenBudget) {
+        ctx.setGoalModeTokenBudgetState(defaults.goalModeTokenBudget);
+      }
 
-    // Clear stale pending session only if it is NOT actively streaming.
-    // When the pending session is streaming, we keep it alive so the AI
-    // loop continues in the background and eventually persists the
-    // conversation. The user sees the empty greeting instead.
-    if (pendingRef && !pendingRef.isSending) {
-      deleteCheckpoints(pendingRef.checkpointIds);
-      ctx.sessionsRefData.current.delete(PENDING_SESSION_KEY);
-      ctx.setSessions((prev) => {
-        const next = { ...prev };
-        delete next[PENDING_SESSION_KEY];
-        return next;
-      });
-    }
+      // 清理全部非流式的 pending 槽位会话（上个新会话视图的残留）。
+      // 流式中的槽位保留：AI 循环继续在后台运行并最终迁移到真实会话，
+      // 用户看到的是空问候视图。每个槽位独立，互不影响。
+      for (const pendingKey of Array.from(ctx.sessionsRefData.current.keys())) {
+        if (!isPendingSessionKey(pendingKey)) continue;
+        const pendingSlotRef = ctx.sessionsRefData.current.get(pendingKey);
+        if (pendingSlotRef && !pendingSlotRef.isSending) {
+          deleteCheckpoints(pendingSlotRef.checkpointIds);
+          ctx.sessionsRefData.current.delete(pendingKey);
+          ctx.pendingQueueRef.current.delete(pendingKey);
+          ctx.pendingToRealConversationIdRef.current.delete(pendingKey);
+          ctx.setSessions((prev) => {
+            const next = { ...prev };
+            delete next[pendingKey];
+            return next;
+          });
+        }
+      }
 
-    ctx.setActiveId(undefined);
+      // 新会话视图分配独立的新 pending 槽位 key：即使上一个新会话的
+      // 流式 run 仍占用旧槽位，本视图的发送也会立即获得空闲槽位并行
+      // 运行，绝不排队等待旧会话的第一轮 loop。
+      ctx.pendingSessionSeqRef.current += 1;
+      ctx.setActiveId(undefined);
 
-    // One-shot target project for the next new-chat send (e.g. a scheduled
-    // task firing for its bound project). Consumed by handleSendMessage so
-    // the new PENDING session lands in the target project; undefined resets
-    // to the currently active project.
-    ctx.pendingDirectoryIdRef.current = directoryId;
+      // One-shot target project for the next new-chat send (e.g. a scheduled
+      // task firing for its bound project). Consumed by handleSendMessage so
+      // the new PENDING session lands in the target project; undefined resets
+      // to the currently active project.
+      ctx.pendingDirectoryIdRef.current = directoryId;
 
-    // A new chat uses the PENDING_SESSION_KEY. Reload the pending panel from
-    // that key's queue so messages belonging to the previously active
-    // conversation do not bleed into the empty greeting view.
-    const pendingSessionQueue =
-      ctx.pendingQueueRef.current.get(PENDING_SESSION_KEY);
-    ctx.setActivePendingMessages(
-      pendingSessionQueue ? pendingSessionQueue.map((item) => item.text) : []
-    );
-  }, [
-    ctx.setActiveId,
-    ctx.setNewChatRequested,
-    ctx.setRollbackNewChatState,
-    ctx.setNewChatGeneration,
-    ctx.planModeRef,
-    ctx.setPlanModeState,
-    ctx.worktreeModeRef,
-    ctx.setWorktreeModeState,
-    ctx.goalModeRef,
-    ctx.setGoalModeState,
-    ctx.planApprovedSessionKeysRef,
-    ctx.globalModeDefaultsRef,
-    ctx.goalModeTokenBudget,
-    ctx.setGoalModeTokenBudgetState,
-    ctx.pendingQueueRef,
-    ctx.setActivePendingMessages,
-  ]);
+      // 新视图对应全新的 pending 槽位，其队列必然为空：Pending 面板
+      // 清空，旧视图/旧会话的排队消息不会渗入新视图。
+      ctx.setActivePendingMessages([]);
+    },
+    [
+      ctx.setActiveId,
+      ctx.setNewChatRequested,
+      ctx.setRollbackNewChatState,
+      ctx.setNewChatGeneration,
+      ctx.planModeRef,
+      ctx.setPlanModeState,
+      ctx.worktreeModeRef,
+      ctx.setWorktreeModeState,
+      ctx.goalModeRef,
+      ctx.setGoalModeState,
+      ctx.planApprovedSessionKeysRef,
+      ctx.globalModeDefaultsRef,
+      ctx.goalModeTokenBudget,
+      ctx.setGoalModeTokenBudgetState,
+      ctx.pendingQueueRef,
+      ctx.setActivePendingMessages,
+      ctx.sessionsRefData,
+      ctx.pendingSessionSeqRef,
+      ctx.pendingToRealConversationIdRef,
+    ],
+  );
 
   const handleAbort = useCallback((): void => {
-    const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+    const key = ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY;
     const ref = ctx.sessionsRefData.current.get(key);
     if (!ref?.isSending || ref.isAbortRequested) {
       return;
@@ -681,10 +693,10 @@ export const useConversationManagement = (
                   status: "error",
                   result: toolCall.result ?? "Interrupted by user",
                 }
-              : toolCall
+              : toolCall,
           ),
         };
-      })
+      }),
     );
     // Kill every in-flight bash subprocess of this session so the OS
     // process does not keep running until its timeout.
@@ -711,7 +723,7 @@ export const useConversationManagement = (
     // a cancel-then-rollback flow would wait on the summary promise (which may
     // be stuck in an HTTP retry loop) and the database would remain locked
     // when the rollback's delete/truncate runs.
-    if (key !== PENDING_SESSION_KEY) {
+    if (!isPendingSessionKey(key)) {
       void window.snow.cancelConversationSummary(key);
     }
 
@@ -730,7 +742,7 @@ export const useConversationManagement = (
       // decision that will never arrive.
       rejectToolAuthorizations(subKey);
       killRunningToolExecutions(
-        ctx.sessionsRef.current?.[subKey]?.messages ?? []
+        ctx.sessionsRef.current?.[subKey]?.messages ?? [],
       );
 
       ctx.updateSessionMessages(subKey, (currentMessages) =>
@@ -745,9 +757,9 @@ export const useConversationManagement = (
                   status: "error",
                   result: toolCall.result ?? "Interrupted by user",
                 }
-              : toolCall
+              : toolCall,
           ),
-        }))
+        })),
       );
       ctx.updateSessionField(subKey, "isStreaming", false);
       ctx.updateSessionField(subKey, "streamStartedAt", 0);
@@ -786,7 +798,7 @@ export const useConversationManagement = (
       rejectToolAuthorizations(conversationId);
       rejectPendingUserQuestions(conversationId);
       killRunningToolExecutions(
-        ctx.sessionsRef.current?.[conversationId]?.messages ?? []
+        ctx.sessionsRef.current?.[conversationId]?.messages ?? [],
       );
       if (ref?.streamId) {
         void window.snow.abortResponseStream(ref.streamId);
@@ -844,7 +856,7 @@ export const useConversationManagement = (
       ctx.setWorktreeModeState,
       ctx.goalModeTokenBudget,
       ctx.setGoalModeTokenBudgetState,
-    ]
+    ],
   );
 
   /**
@@ -858,8 +870,7 @@ export const useConversationManagement = (
    */
   const sendPendingMessageNow = useCallback(
     (index: number): void => {
-      const sessionKey =
-        ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+      const sessionKey = ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY;
       const queue = ctx.pendingQueueRef.current.get(sessionKey);
       if (!queue || index < 0 || index >= queue.length) {
         return;
@@ -922,7 +933,7 @@ export const useConversationManagement = (
       // isSending on the session ref.
       ctx.handleSendMessageRef.current(removed.text, removed.options ?? {});
     },
-    [handleAbort, handleSelectConversation, ctx]
+    [handleAbort, handleSelectConversation, ctx],
   );
 
   const refreshConversations = useCallback((): void => {
@@ -939,7 +950,7 @@ export const useConversationManagement = (
       try {
         const forkedRecord = await window.snow.forkConversation(
           trimmedId,
-          upToResponseId.trim()
+          upToResponseId.trim(),
         );
 
         // Refresh sidebar list so the new forked conversation appears
@@ -958,13 +969,13 @@ export const useConversationManagement = (
             cacheCreationInputTokens: forkedRecord.cacheCreationInputTokens,
             cacheReadInputTokens: forkedRecord.cacheReadInputTokens,
           },
-          forkedRecord.directoryId
+          forkedRecord.directoryId,
         );
       } catch {
         // Fork failure should not block the UI
       }
     },
-    [handleSelectConversation]
+    [handleSelectConversation],
   );
 
   return {

@@ -28,7 +28,7 @@ import { ConfirmDialog } from "../../common/ConfirmDialog";
 import { Tooltip } from "../../common/Tooltip";
 import { useI18n } from "../../../i18n";
 import { useChatConversationContext } from "../../mainContent/chatMessages";
-import { PENDING_SESSION_KEY } from "../../mainContent/chatMessages/utils/conversationTypes";
+import { isPendingSessionKey } from "../../mainContent/chatMessages/utils/conversationTypes";
 import type {
   ChatConversationRecord,
   WorkspaceDirectoryRecord,
@@ -69,14 +69,14 @@ const ARCHIVE_PAGE_SIZE = 20;
  */
 const sortConversationsByUpdatedAt = (
   items: ChatConversationRecord[],
-  runningConversationIds?: Set<string>
+  runningConversationIds?: Set<string>,
 ): ChatConversationRecord[] => {
   if (!runningConversationIds || runningConversationIds.size === 0) {
     return [...items].sort(
       (a, b) =>
         parseDbTimestamp(b.updatedAt).getTime() -
           parseDbTimestamp(a.updatedAt).getTime() ||
-        b.conversationId.localeCompare(a.conversationId)
+        b.conversationId.localeCompare(a.conversationId),
     );
   }
 
@@ -92,7 +92,7 @@ const sortConversationsByUpdatedAt = (
 
   const compareByTime = (
     a: ChatConversationRecord,
-    b: ChatConversationRecord
+    b: ChatConversationRecord,
   ): number =>
     parseDbTimestamp(b.updatedAt).getTime() -
       parseDbTimestamp(a.updatedAt).getTime() ||
@@ -122,6 +122,7 @@ export function ChatsSection({
   const {
     conversationListVersion,
     upsertedConversation,
+    pendingToRealConversationIdRef,
     subAgentSessionEvents,
     refreshConversations,
     updateConversationSummary,
@@ -142,7 +143,7 @@ export function ChatsSection({
         ...streamingConversationIds,
         ...attentionRequiredConversationIds,
       ]),
-    [streamingConversationIds, attentionRequiredConversationIds]
+    [streamingConversationIds, attentionRequiredConversationIds],
   );
   // 被用户暂停的流式会话（agent loop 阻塞等待恢复），图标切换为暂停态
   const pausedConversationIds = useMemo(
@@ -150,12 +151,12 @@ export function ChatsSection({
       new Set(
         Object.entries(sessions)
           .filter(([, session]) => session.isPaused)
-          .map(([id]) => id)
+          .map(([id]) => id),
       ),
-    [sessions]
+    [sessions],
   );
   const [conversations, setConversations] = useState<ChatConversationRecord[]>(
-    []
+    [],
   );
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
@@ -172,7 +173,7 @@ export function ChatsSection({
     for (const [parentId, subs] of Object.entries(subAgentMap)) {
       if (
         subs.some((sub) =>
-          attentionRequiredConversationIds.has(sub.conversationId)
+          attentionRequiredConversationIds.has(sub.conversationId),
         )
       ) {
         next.add(parentId);
@@ -200,7 +201,7 @@ export function ChatsSection({
   const [isArchivedLoadingMore, setIsArchivedLoadingMore] = useState(false);
   const [archivedError, setArchivedError] = useState<string | null>(null);
   const [archivedSelectedIds, setArchivedSelectedIds] = useState<Set<string>>(
-    () => new Set()
+    () => new Set(),
   );
   const [isArchivedMultiSelect, setIsArchivedMultiSelect] = useState(false);
   // 归档会话永久删除确认：待删除的归档会话 ID（null = 未打开）
@@ -210,13 +211,13 @@ export function ChatsSection({
   // 归档/还原/删除进行中（含 VACUUM 收缩文件阶段，可能耗时数秒）：
   // 记录受影响会话 ID 集合，只给这些会话显示 loading，同时防止重复提交
   const [archivingIds, setArchivingIds] = useState<Set<string>>(
-    () => new Set()
+    () => new Set(),
   );
   const [restoringIds, setRestoringIds] = useState<Set<string>>(
-    () => new Set()
+    () => new Set(),
   );
   const [deletingArchivedIds, setDeletingArchivedIds] = useState<Set<string>>(
-    () => new Set()
+    () => new Set(),
   );
   const archivedLoadMoreRef = useRef<HTMLDivElement | null>(null);
   // 会话区域收起/展开（localStorage 持久化，与项目区域一致）
@@ -278,7 +279,7 @@ export function ChatsSection({
         const result = await window.snow.listChatConversationsPaginated(
           directoryId,
           CHAT_PAGE_SIZE,
-          0
+          0,
         );
 
         if (!cancelled) {
@@ -292,7 +293,7 @@ export function ChatsSection({
               ? err.message
               : t("sidebar.loadChatsError", {
                   defaultValue: "Failed to load chats",
-                })
+                }),
           );
         }
       } finally {
@@ -325,7 +326,7 @@ export function ChatsSection({
     let isNew = false;
     setConversations((prev) => {
       const existingIndex = prev.findIndex(
-        (item) => item.conversationId === conv.conversationId
+        (item) => item.conversationId === conv.conversationId,
       );
 
       if (existingIndex >= 0) {
@@ -336,18 +337,25 @@ export function ChatsSection({
           return prev;
         }
         const updated = prev.map((item) =>
-          item.conversationId === conv.conversationId ? conv : item
+          item.conversationId === conv.conversationId ? conv : item,
         );
         return sortConversationsByUpdatedAt(updated, runningConversationIds);
       }
 
-      // If the real conversation arrives, replace the pending placeholder.
-      const pendingIndex = prev.findIndex(
-        (item) => item.conversationId === PENDING_SESSION_KEY
-      );
+      // If the real conversation arrives, replace ITS OWN pending placeholder.
+      // 多个 pending 槽位并存时绝不能顶替任意第一个占位：通过迁移映射
+      // （pending 槽位 -> 真实 conversationId）精确找到本会话的占位项。
+      const pendingKeyForConv = pendingToRealConversationIdRef.current
+        ? Array.from(pendingToRealConversationIdRef.current.entries()).find(
+            ([, realId]) => realId === conv.conversationId,
+          )?.[0]
+        : undefined;
+      const pendingIndex = pendingKeyForConv
+        ? prev.findIndex((item) => item.conversationId === pendingKeyForConv)
+        : -1;
       if (pendingIndex >= 0) {
         const replaced = prev.map((item, index) =>
-          index === pendingIndex ? conv : item
+          index === pendingIndex ? conv : item,
         );
         return sortConversationsByUpdatedAt(replaced, runningConversationIds);
       }
@@ -356,14 +364,19 @@ export function ChatsSection({
       // New conversation: prepend and re-sort by updatedAt
       return sortConversationsByUpdatedAt(
         [conv, ...prev],
-        runningConversationIds
+        runningConversationIds,
       );
     });
 
     if (isNew) {
       setTotal((prev) => prev + 1);
     }
-  }, [upsertedConversation, directoryId, runningConversationIds]);
+  }, [
+    upsertedConversation,
+    directoryId,
+    runningConversationIds,
+    pendingToRealConversationIdRef,
+  ]);
 
   // 流式或待处理交互状态变化时，重新排序使相关会话保持在顶部。
   // runningConversationIds 只在生命周期边界变化，不会随每个流式 token 更新。
@@ -372,7 +385,7 @@ export function ChatsSection({
       return;
     }
     setConversations((prev) =>
-      sortConversationsByUpdatedAt(prev, runningConversationIds)
+      sortConversationsByUpdatedAt(prev, runningConversationIds),
     );
   }, [runningConversationIds]);
 
@@ -387,7 +400,7 @@ export function ChatsSection({
       const result = await window.snow.listChatConversationsPaginated(
         directoryId,
         CHAT_PAGE_SIZE,
-        conversations.length
+        conversations.length,
       );
 
       setConversations((prev) => [...prev, ...result.items]);
@@ -420,7 +433,7 @@ export function ChatsSection({
         root: sectionListRef.current,
         rootMargin: "0px 0px 64px",
         threshold: 0.1,
-      }
+      },
     );
 
     observer.observe(sentinel);
@@ -446,7 +459,7 @@ export function ChatsSection({
       const result = await window.snow.listArchivedConversationsPaginated(
         directoryId,
         ARCHIVE_PAGE_SIZE,
-        0
+        0,
       );
       setArchivedConversations(result.items);
       setArchivedTotal(result.total);
@@ -456,7 +469,7 @@ export function ChatsSection({
           ? err.message
           : t("sidebar.loadChatsError", {
               defaultValue: "Failed to load chats",
-            })
+            }),
       );
     } finally {
       setIsArchivedLoading(false);
@@ -489,7 +502,7 @@ export function ChatsSection({
       const result = await window.snow.listArchivedConversationsPaginated(
         directoryId,
         ARCHIVE_PAGE_SIZE,
-        archivedConversations.length
+        archivedConversations.length,
       );
       setArchivedConversations((prev) => [...prev, ...result.items]);
       setArchivedTotal(result.total);
@@ -528,7 +541,7 @@ export function ChatsSection({
         root: sectionListRef.current,
         rootMargin: "0px 0px 64px",
         threshold: 0.1,
-      }
+      },
     );
 
     observer.observe(sentinel);
@@ -546,7 +559,7 @@ export function ChatsSection({
   // 会话历史；即使激活失败，会话记录已存在，直接打开也不受影响。
   const handleOpenCrossProjectNotification = async (
     group: CrossProjectNotificationGroup,
-    notification: CrossProjectNotification
+    notification: CrossProjectNotification,
   ): Promise<void> => {
     try {
       await window.snow.activateWorkspaceDirectory(group.directoryId);
@@ -563,17 +576,17 @@ export function ChatsSection({
           notification.conversation.cacheCreationInputTokens,
         cacheReadInputTokens: notification.conversation.cacheReadInputTokens,
       },
-      group.directoryId
+      group.directoryId,
     );
   };
 
   const handlePin = async (
-    conversation: ChatConversationRecord
+    conversation: ChatConversationRecord,
   ): Promise<void> => {
     try {
       await window.snow.updateConversationStatus(
         conversation.conversationId,
-        "pin"
+        "pin",
       );
       refreshConversations();
     } catch {
@@ -620,7 +633,7 @@ export function ChatsSection({
 
   const handleRename = async (
     conversation: ChatConversationRecord,
-    newTitle: string
+    newTitle: string,
   ): Promise<void> => {
     await window.snow.renameConversation(conversation.conversationId, newTitle);
     // 同步更新内存中 session 的 summary，让 TopBar 标题即时刷新
@@ -630,20 +643,20 @@ export function ChatsSection({
 
   const handleSetEmoji = async (
     conversation: ChatConversationRecord,
-    emoji: string
+    emoji: string,
   ): Promise<void> => {
     // 乐观更新：直接修改本地 state，异步落库，不刷新列表
     setConversations((prev) =>
       prev.map((item) =>
         item.conversationId === conversation.conversationId
           ? { ...item, emoji }
-          : item
-      )
+          : item,
+      ),
     );
     try {
       await window.snow.updateConversationEmoji(
         conversation.conversationId,
-        emoji
+        emoji,
       );
     } catch {
       // 落库失败时回滚
@@ -651,15 +664,15 @@ export function ChatsSection({
         prev.map((item) =>
           item.conversationId === conversation.conversationId
             ? { ...item, emoji: conversation.emoji }
-            : item
-        )
+            : item,
+        ),
       );
     }
   };
 
   const handleDelete = async (
     conversation: ChatConversationRecord,
-    deleteImages: boolean
+    deleteImages: boolean,
   ): Promise<void> => {
     try {
       // 用户选择不保留图片时，先级联删除图库图片（物理 + 索引），
@@ -675,7 +688,7 @@ export function ChatsSection({
       const deleteTargetIds = [
         conversation.conversationId,
         ...(subAgentMap[conversation.conversationId] ?? []).map(
-          (sub) => sub.conversationId
+          (sub) => sub.conversationId,
         ),
       ];
       for (const targetId of deleteTargetIds) {
@@ -703,7 +716,7 @@ export function ChatsSection({
 
   /** 归档单个会话：中止相关流、清理草稿，若正在打开则新建会话 */
   const handleArchive = async (
-    conversation: ChatConversationRecord
+    conversation: ChatConversationRecord,
   ): Promise<void> => {
     if (archivingIds.size > 0) {
       return;
@@ -713,7 +726,7 @@ export function ChatsSection({
       const targetIds = [
         conversation.conversationId,
         ...(subAgentMap[conversation.conversationId] ?? []).map(
-          (sub) => sub.conversationId
+          (sub) => sub.conversationId,
         ),
       ];
       for (const targetId of targetIds) {
@@ -740,7 +753,7 @@ export function ChatsSection({
 
   const handleExport = async (
     conversation: ChatConversationRecord,
-    format: ExportFormat
+    format: ExportFormat,
   ): Promise<void> => {
     const fileName =
       conversation.summary ||
@@ -749,7 +762,7 @@ export function ChatsSection({
     await window.snow.exportConversation(
       conversation.conversationId,
       format,
-      fileName
+      fileName,
     );
   };
 
@@ -805,7 +818,7 @@ export function ChatsSection({
 
   const handleSelectAll = (): void => {
     const allIds = conversations
-      .filter((conv) => conv.conversationId !== PENDING_SESSION_KEY)
+      .filter((conv) => !isPendingSessionKey(conv.conversationId))
       .map((conv) => conv.conversationId);
     setSelectedIds(new Set(allIds));
   };
@@ -819,7 +832,7 @@ export function ChatsSection({
    */
   const handleToggleGroupSelect = (group: TimeGroup): void => {
     const groupIds = group.conversations
-      .filter((conv) => conv.conversationId !== PENDING_SESSION_KEY)
+      .filter((conv) => !isPendingSessionKey(conv.conversationId))
       .map((conv) => conv.conversationId);
     if (groupIds.length === 0) {
       return;
@@ -962,7 +975,7 @@ export function ChatsSection({
 
   /** 还原单个归档会话 */
   const handleRestore = async (
-    conversation: ChatConversationRecord
+    conversation: ChatConversationRecord,
   ): Promise<void> => {
     if (restoringIds.size > 0) {
       return;
@@ -1056,7 +1069,7 @@ export function ChatsSection({
 
   const handleArchivedSelectAll = (): void => {
     setArchivedSelectedIds(
-      new Set(archivedConversations.map((conv) => conv.conversationId))
+      new Set(archivedConversations.map((conv) => conv.conversationId)),
     );
   };
 
@@ -1067,7 +1080,7 @@ export function ChatsSection({
   const timeGroups = groupConversationsByTime(
     conversations,
     new Date(),
-    surfacedConversationIds
+    surfacedConversationIds,
   );
 
   useEffect(() => {
@@ -1083,7 +1096,7 @@ export function ChatsSection({
       // 单次批量查询所有父会话的子代理，避免逐条 IPC（N+1）
       try {
         const map = await window.snow.listSubAgentConversationsByParents(
-          current.map((conv) => conv.conversationId)
+          current.map((conv) => conv.conversationId),
         );
         if (!cancelled) {
           setSubAgentMap(map);
@@ -1116,7 +1129,7 @@ export function ChatsSection({
 
         const existing = next[parentConversationId] ?? [];
         const existingIndex = existing.findIndex(
-          (item) => item.conversationId === conversationId
+          (item) => item.conversationId === conversationId,
         );
 
         const subAgentRecord: ChatConversationRecord = {
@@ -1179,8 +1192,8 @@ export function ChatsSection({
     setExpandedSubAgentConversationIds((prev) => {
       const parentIds = Object.keys(subAgentMap).filter((parentId) =>
         subAgentMap[parentId].some(
-          (sub) => sub.conversationId === activeConversationId
-        )
+          (sub) => sub.conversationId === activeConversationId,
+        ),
       );
       if (parentIds.length === 0) {
         return prev;
@@ -1233,7 +1246,7 @@ export function ChatsSection({
       try {
         localStorage.setItem(
           "chats-time-groups-collapsed",
-          JSON.stringify(next)
+          JSON.stringify(next),
         );
       } catch {
         // ignore storage errors
@@ -1283,7 +1296,7 @@ export function ChatsSection({
               content={
                 selectedIds.size ===
                 conversations.filter(
-                  (conv) => conv.conversationId !== PENDING_SESSION_KEY
+                  (conv) => !isPendingSessionKey(conv.conversationId),
                 ).length
                   ? t("sidebar.chatMultiSelectDeselectAll", {
                       defaultValue: "Deselect all",
@@ -1300,7 +1313,7 @@ export function ChatsSection({
                 onClick={() =>
                   selectedIds.size ===
                   conversations.filter(
-                    (conv) => conv.conversationId !== PENDING_SESSION_KEY
+                    (conv) => !isPendingSessionKey(conv.conversationId),
                   ).length
                     ? handleDeselectAll()
                     : handleSelectAll()
@@ -1311,7 +1324,7 @@ export function ChatsSection({
                 <span>
                   {selectedIds.size ===
                   conversations.filter(
-                    (conv) => conv.conversationId !== PENDING_SESSION_KEY
+                    (conv) => !isPendingSessionKey(conv.conversationId),
                   ).length
                     ? t("sidebar.chatMultiSelectDeselectAll", {
                         defaultValue: "Deselect all",
@@ -1650,13 +1663,13 @@ export function ChatsSection({
                       conversation={conversation}
                       isMultiSelectMode={isArchivedMultiSelect}
                       isSelected={archivedSelectedIds.has(
-                        conversation.conversationId
+                        conversation.conversationId,
                       )}
                       isRestoring={restoringIds.has(
-                        conversation.conversationId
+                        conversation.conversationId,
                       )}
                       isDeleting={deletingArchivedIds.has(
-                        conversation.conversationId
+                        conversation.conversationId,
                       )}
                       onToggleSelect={() =>
                         handleArchivedToggleSelect(conversation.conversationId)
@@ -1780,12 +1793,12 @@ export function ChatsSection({
                               defaultValue: "Untitled",
                             });
                           const parsedDate = parseDbTimestamp(
-                            conversation.updatedAt
+                            conversation.updatedAt,
                           );
                           const timeLabel = formatTimeLabel(
                             parsedDate,
                             new Date(),
-                            t
+                            t,
                           );
                           return (
                             <button
@@ -1795,7 +1808,7 @@ export function ChatsSection({
                               onClick={() =>
                                 void handleOpenCrossProjectNotification(
                                   group,
-                                  notification
+                                  notification,
                                 )
                               }
                               title={t(
@@ -1807,7 +1820,7 @@ export function ChatsSection({
                                   },
                                   defaultValue:
                                     "Open {{conversation}} in {{project}}",
-                                }
+                                },
                               )}
                             >
                               <span
@@ -1815,10 +1828,10 @@ export function ChatsSection({
                                   notification.isAttentionRequired
                                     ? " attention-required"
                                     : notification.isStreaming
-                                    ? " streaming"
-                                    : notification.isCompleted
-                                    ? " completed"
-                                    : ""
+                                      ? " streaming"
+                                      : notification.isCompleted
+                                        ? " completed"
+                                        : ""
                                 }`}
                               >
                                 {notification.isAttentionRequired ? (
@@ -1853,10 +1866,10 @@ export function ChatsSection({
                 const isGroupCollapsed = collapsedGroupKeys[group.key] === true;
                 // 分组粒度的选择状态：全部已选 / 部分已选 / 未选
                 const groupSelectableIds = group.conversations
-                  .filter((conv) => conv.conversationId !== PENDING_SESSION_KEY)
+                  .filter((conv) => !isPendingSessionKey(conv.conversationId))
                   .map((conv) => conv.conversationId);
                 const groupSelectedCount = groupSelectableIds.filter((id) =>
-                  selectedIds.has(id)
+                  selectedIds.has(id),
                 ).length;
                 const isGroupAllSelected =
                   groupSelectableIds.length > 0 &&
@@ -1896,8 +1909,8 @@ export function ChatsSection({
                             isGroupAllSelected
                               ? true
                               : isGroupPartialSelected
-                              ? "mixed"
-                              : false
+                                ? "mixed"
+                                : false
                           }
                           title={
                             isGroupAllSelected
@@ -1935,31 +1948,32 @@ export function ChatsSection({
                           subAgentMap[conversation.conversationId] ?? [];
                         const isSubAgentPanelExpanded =
                           expandedSubAgentConversationIds.has(
-                            conversation.conversationId
+                            conversation.conversationId,
                           );
                         return (
                           <Fragment key={conversation.conversationId}>
                             <ChatItem
                               conversation={conversation}
                               isDraggable={
-                                conversation.conversationId !==
-                                PENDING_SESSION_KEY
+                                !isPendingSessionKey(
+                                  conversation.conversationId,
+                                )
                               }
                               isActive={
                                 conversation.conversationId ===
                                 activeConversationId
                               }
                               isAttentionRequired={attentionRequiredConversationIds.has(
-                                conversation.conversationId
+                                conversation.conversationId,
                               )}
                               isStreaming={streamingConversationIds.has(
-                                conversation.conversationId
+                                conversation.conversationId,
                               )}
                               isPaused={pausedConversationIds.has(
-                                conversation.conversationId
+                                conversation.conversationId,
                               )}
                               isCompleted={completedConversationIds.has(
-                                conversation.conversationId
+                                conversation.conversationId,
                               )}
                               subAgentConversations={subAgentConversations}
                               subAgentAttentionRequiredIds={
@@ -1968,7 +1982,7 @@ export function ChatsSection({
                               isSubAgentExpanded={isSubAgentPanelExpanded}
                               isMultiSelectMode={isMultiSelectMode}
                               isSelected={selectedIds.has(
-                                conversation.conversationId
+                                conversation.conversationId,
                               )}
                               onToggleSelect={() =>
                                 handleToggleSelect(conversation.conversationId)
@@ -1976,7 +1990,7 @@ export function ChatsSection({
                               onEnterMultiSelect={handleEnterMultiSelect}
                               onToggleSubAgentPanel={() =>
                                 handleToggleSubAgentPanel(
-                                  conversation.conversationId
+                                  conversation.conversationId,
                                 )
                               }
                               onPin={() => void handlePin(conversation)}
@@ -1994,7 +2008,7 @@ export function ChatsSection({
                               }
                               onFork={() => handleFork(conversation)}
                               isArchiving={archivingIds.has(
-                                conversation.conversationId
+                                conversation.conversationId,
                               )}
                               onArchive={
                                 conversation.status === "pin"
@@ -2013,7 +2027,7 @@ export function ChatsSection({
                                     cacheReadInputTokens:
                                       conversation.cacheReadInputTokens,
                                   },
-                                  conversation.directoryId
+                                  conversation.directoryId,
                                 )
                               }
                             />
@@ -2033,7 +2047,7 @@ export function ChatsSection({
                                       subConvId,
                                       undefined,
                                       undefined,
-                                      conversation.directoryId
+                                      conversation.directoryId,
                                     )
                                   }
                                 />

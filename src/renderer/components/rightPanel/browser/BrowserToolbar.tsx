@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -8,6 +9,7 @@ import {
   MousePointer2,
   RotateCw,
 } from "lucide-react";
+import { ContextMenu, type ContextMenuItem } from "../../common/ContextMenu";
 import type { ScreenshotFeedback } from "./useWebviewScreenshot";
 import { BrowserMenu } from "./BrowserMenu";
 import { useI18n } from "../../../i18n";
@@ -59,7 +61,7 @@ const buildScreenshotClassName = (feedback: ScreenshotFeedback): string => {
 
 const renderScreenshotIcon = (
   isCapturing: boolean,
-  feedback: ScreenshotFeedback
+  feedback: ScreenshotFeedback,
 ): React.JSX.Element => {
   if (isCapturing) {
     return <Loader2 size={15} strokeWidth={1.8} className="spin-icon" />;
@@ -108,6 +110,92 @@ export const BrowserToolbar = ({
   onRestoreToTabs,
 }: BrowserToolbarProps): React.JSX.Element => {
   const { t } = useI18n();
+  // 地址输入框右键菜单（剪切/复制/粘贴/全选）：
+  // 主进程已 Menu.setApplicationMenu(null)，Electron 不再提供原生编辑菜单，需自建。
+  const addressInputRef = useRef<HTMLInputElement>(null);
+  const [addressMenu, setAddressMenu] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const handleAddressContextMenu = (
+    e: React.MouseEvent<HTMLInputElement>,
+  ): void => {
+    e.preventDefault();
+    e.stopPropagation();
+    addressInputRef.current?.focus();
+    setAddressMenu({ x: e.clientX, y: e.clientY });
+  };
+
+  const runAddressCommand = (
+    command: "cut" | "copy" | "paste" | "selectAll",
+  ): void => {
+    const input = addressInputRef.current;
+    setAddressMenu(null);
+    if (!input) {
+      return;
+    }
+    // 点击菜单项会夺走焦点，执行前必须重新聚焦输入框。
+    input.focus();
+    if (command === "selectAll") {
+      input.select();
+      return;
+    }
+    const start = input.selectionStart ?? 0;
+    const end = input.selectionEnd ?? 0;
+    if (command === "cut") {
+      // 无选区时剪切无意义（对齐原生行为，菜单项已置灰）
+      if (start !== end) {
+        document.execCommand("cut");
+      }
+      return;
+    }
+    if (command === "copy") {
+      // 有选区复制选区，否则复制全文
+      const text = start !== end ? input.value.slice(start, end) : input.value;
+      if (!text) {
+        return;
+      }
+      navigator.clipboard.writeText(text).catch(() => {
+        if (start !== end) {
+          document.execCommand("copy");
+        }
+      });
+      return;
+    }
+    document.execCommand("paste");
+  };
+
+  const hasAddressSelection = (() => {
+    const input = addressInputRef.current;
+    return !!input && (input.selectionStart ?? 0) !== (input.selectionEnd ?? 0);
+  })();
+
+  const addressMenuItems: ContextMenuItem[] = [
+    {
+      id: "cut",
+      label: t("browser.cut"),
+      disabled: !hasAddressSelection,
+      onClick: () => runAddressCommand("cut"),
+    },
+    {
+      id: "copy",
+      label: t("browser.copy"),
+      onClick: () => runAddressCommand("copy"),
+    },
+    {
+      id: "paste",
+      label: t("browser.paste"),
+      onClick: () => runAddressCommand("paste"),
+    },
+    {
+      id: "selectAll",
+      label: t("browser.selectAll"),
+      separator: true,
+      onClick: () => runAddressCommand("selectAll"),
+    },
+  ];
+
   return (
     <div className="browser-toolbar">
       <button
@@ -146,11 +234,13 @@ export const BrowserToolbar = ({
       <div className="browser-address-bar">
         <Globe size={13} strokeWidth={1.6} className="browser-address-icon" />
         <input
+          ref={addressInputRef}
           type="text"
           className="browser-address-input"
           value={addressInput}
           onChange={(e) => onAddressChange(e.target.value)}
           onKeyDown={onAddressKeyDown}
+          onContextMenu={handleAddressContextMenu}
           placeholder={t("browser.addressPlaceholder")}
           spellCheck={false}
         />
@@ -194,6 +284,14 @@ export const BrowserToolbar = ({
         onSetHomepage={onSetHomepage}
         onRestoreToTabs={onRestoreToTabs}
       />
+      {addressMenu && (
+        <ContextMenu
+          x={addressMenu.x}
+          y={addressMenu.y}
+          items={addressMenuItems}
+          onClose={() => setAddressMenu(null)}
+        />
+      )}
     </div>
   );
 };

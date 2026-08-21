@@ -2,11 +2,19 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
 import type { ITheme } from "@xterm/xterm";
-import { ClipboardPaste, Copy, Eraser, ListChecks, Send } from "lucide-react";
+import {
+  ClipboardPaste,
+  Copy,
+  Eraser,
+  Keyboard,
+  ListChecks,
+  Send,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTerminalSettings } from "./useTerminalSettings";
 import { ContextMenu, type ContextMenuItem } from "../common/ContextMenu";
 import { useTerminalMcpInstance } from "./terminal/useTerminalMcpInstance";
+import { detectAwaitingInput } from "./terminal/terminalInputDetector";
 import {
   TERMINAL_INSERT_TEXT_EVENT,
   pushTerminalLines,
@@ -112,6 +120,10 @@ export const TerminalPanelContent = ({
     x: number;
     y: number;
   } | null>(null);
+  /** 终端当前等待输入时屏幕上的提示文本（null = 无等待输入提示） */
+  const [awaitingInput, setAwaitingInput] = useState<string | null>(null);
+  /** 等待输入检测的防抖 timer（输出停止片刻后才判定，避免刷屏闪烁） */
+  const awaitingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ------------------------------------------------------------------
   // 终端日志流：按行切分后实时推送给监控方（输入框「监控终端」模式）
@@ -135,7 +147,7 @@ export const TerminalPanelContent = ({
       }
       pushTerminalLines(tabId, newLines);
     },
-    [tabId]
+    [tabId],
   );
 
   // onOpenLink 存 ref：避免父组件每次渲染产生新引用导致 PTY 重建。
@@ -253,9 +265,7 @@ export const TerminalPanelContent = ({
     // 空缓冲区全选时 hasSelection() 可能为 true 但无实际文本，需过滤。
     term.onSelectionChange(() => {
       if (!disposed) {
-        setHasSelection(
-          term.hasSelection() && term.getSelection().length > 0
-        );
+        setHasSelection(term.hasSelection() && term.getSelection().length > 0);
       }
     });
 
@@ -321,6 +331,18 @@ export const TerminalPanelContent = ({
           if (payload.id === id && !disposed) {
             term.write(payload.data);
             appendLog(payload.data);
+            // 防抖检测"等待输入"：输出停止约 250ms 后按屏幕最后一行判定，
+            // 避免长输出刷屏时提示条反复闪烁。
+            if (awaitingTimerRef.current) {
+              clearTimeout(awaitingTimerRef.current);
+            }
+            awaitingTimerRef.current = setTimeout(() => {
+              if (disposed) {
+                return;
+              }
+              const { awaiting, hint } = detectAwaitingInput(term);
+              setAwaitingInput(awaiting ? hint : null);
+            }, 250);
           }
         });
 
@@ -328,6 +350,7 @@ export const TerminalPanelContent = ({
           if (payload.id === id && !disposed) {
             exited = true;
             term.write("\r\n\x1b[90m[Process exited]\x1b[0m\r\n");
+            setAwaitingInput(null);
             onProcessExitRef.current?.(payload.exitCode);
             disposeOutput?.();
             disposeExit?.();
@@ -355,7 +378,9 @@ export const TerminalPanelContent = ({
         const message = err instanceof Error ? err.message : String(err);
         // 将启动失败原因直接写入终端，替代仅 console 输出——用户与智能体
         // 都能看到"传参无效"之类的明确错误，而不是空白终端。
-        term.write(`\r\n\x1b[91m[Terminal failed to start: ${message}]\x1b[0m\r\n`);
+        term.write(
+          `\r\n\x1b[91m[Terminal failed to start: ${message}]\x1b[0m\r\n`,
+        );
         // eslint-disable-next-line no-console
         console.error("Failed to initialize PTY:", err);
       }
@@ -365,6 +390,10 @@ export const TerminalPanelContent = ({
 
     cleanupRef.current = () => {
       disposed = true;
+      if (awaitingTimerRef.current) {
+        clearTimeout(awaitingTimerRef.current);
+        awaitingTimerRef.current = null;
+      }
       resizeObserver?.disconnect();
       themeObserver?.disconnect();
       disposeOutput?.();
@@ -434,7 +463,8 @@ export const TerminalPanelContent = ({
       setContextMenu({ x: event.clientX, y: event.clientY });
     };
     container.addEventListener("contextmenu", handleContextMenu);
-    return () => container.removeEventListener("contextmenu", handleContextMenu);
+    return () =>
+      container.removeEventListener("contextmenu", handleContextMenu);
   }, []);
 
   // 点击终端面板以外的任意位置时隐藏「添加到输入框」浮动按钮：
@@ -510,7 +540,7 @@ export const TerminalPanelContent = ({
     }
     const payload: TerminalInsertTextPayload = { text, source: cwd };
     window.dispatchEvent(
-      new CustomEvent(TERMINAL_INSERT_TEXT_EVENT, { detail: payload })
+      new CustomEvent(TERMINAL_INSERT_TEXT_EVENT, { detail: payload }),
     );
     // 插入后清除选区（按钮随之隐藏），与复制行为保持一致的交互惯例
     term.clearSelection();
@@ -546,6 +576,16 @@ export const TerminalPanelContent = ({
           minHeight: "200px",
         }}
       />
+      {/* 终端等待输入提示条：程序/shell 正在等待用户输入时显示，
+          明确告知用户当前状态，避免误以为 Agent 卡住。 */}
+      {awaitingInput ? (
+        <div className="terminal-waiting-banner" role="status">
+          <span className="terminal-waiting-dot" aria-hidden="true" />
+          <Keyboard size={12} strokeWidth={1.8} aria-hidden="true" />
+          <span className="terminal-waiting-label">终端等待输入</span>
+          <code className="terminal-waiting-hint">{awaitingInput}</code>
+        </div>
+      ) : null}
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}

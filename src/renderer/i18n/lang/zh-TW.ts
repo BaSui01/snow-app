@@ -561,6 +561,7 @@ export const zhTW = {
   "toolCall.terminal.countdown": "{{seconds}}秒",
   "toolCall.terminal.executing": "正在執行...",
   "toolCall.terminal.waiting": "等待執行",
+  "toolCall.terminal.awaitingInput": "終端等待輸入",
   "toolCall.todo.name": "待辦",
   "toolCall.todo.action.get": "取得待辦列表",
   "toolCall.todo.action.add": "新增待辦",

@@ -4,6 +4,8 @@ import {
   focusTerminalTab,
   registerTerminalMcpInstance,
 } from "./terminalMcpController";
+import { resolveTerminalKeys } from "./terminalKeys";
+import { detectAwaitingInput } from "./terminalInputDetector";
 
 /**
  * Register a terminal tab's xterm.js instance with the terminal MCP
@@ -23,7 +25,7 @@ export const useTerminalMcpInstance = (
   cwd: string,
   isActive: boolean,
   termRef: React.RefObject<Terminal | null>,
-  ptyIdRef: React.RefObject<string | null>
+  ptyIdRef: React.RefObject<string | null>,
 ): void => {
   const isActiveRef = useRef(isActive);
   isActiveRef.current = isActive;
@@ -43,16 +45,26 @@ export const useTerminalMcpInstance = (
             if (!ptyId) {
               throw new Error("Terminal PTY is not ready yet");
             }
-            const input =
-              typeof args.input === "string" ? args.input : "";
+            // keys 模式：命名按键/控制序列，不自动补换行（用于交互提示与 TUI 导航）；
+            // input 模式：普通文本，Rust 端已保证末尾带换行。
+            const keys = Array.isArray(args.keys)
+              ? args.keys.filter(
+                  (key): key is string => typeof key === "string",
+                )
+              : [];
+            const input = typeof args.input === "string" ? args.input : "";
+            const payload = keys.length > 0 ? resolveTerminalKeys(keys) : input;
             // 写入前推进检查点，避免快速命令的输出在 wait 开始前被漏掉
             if (term) {
               advanceCheckpoint(term, checkpointMarkerRef);
             }
-            await window.snow.ptyWrite(ptyId, input);
-            return { sent: true, length: input.length };
+            await window.snow.ptyWrite(ptyId, payload);
+            return {
+              sent: true,
+              length: payload.length,
+              ...(keys.length > 0 ? { keys: keys.length } : {}),
+            };
           }
-
           case "read": {
             if (!term) {
               throw new Error("Terminal display is not ready yet");
@@ -62,12 +74,18 @@ export const useTerminalMcpInstance = (
                 ? Math.min(args.waitMs, 60000)
                 : 0;
             if (waitMs > 0) {
-              await new Promise<void>((resolve) =>
-                setTimeout(resolve, waitMs)
-              );
+              await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
             }
             const text = serializeTerminalBuffer(term);
-            return { text, read: true };
+            const { awaiting, hint } = detectAwaitingInput(term);
+            return {
+              text,
+              read: true,
+              // 终端是否正在等待输入（Agent 据此判断是否需要用户介入）
+              awaitingInput: awaiting,
+              // 等待输入时屏幕上的提示文本
+              inputHint: hint,
+            };
           }
 
           case "resize": {
@@ -75,9 +93,13 @@ export const useTerminalMcpInstance = (
               throw new Error("Terminal display is not ready yet");
             }
             const cols =
-              typeof args.cols === "number" ? Math.max(1, Math.floor(args.cols)) : 80;
+              typeof args.cols === "number"
+                ? Math.max(1, Math.floor(args.cols))
+                : 80;
             const rows =
-              typeof args.rows === "number" ? Math.max(1, Math.floor(args.rows)) : 24;
+              typeof args.rows === "number"
+                ? Math.max(1, Math.floor(args.rows))
+                : 24;
             try {
               term.resize(cols, rows);
             } catch {
@@ -104,11 +126,11 @@ export const useTerminalMcpInstance = (
 
             // 只返回检查点之后的新增内容；marker 失效时退化为读全量
             const marker = checkpointMarkerRef.current;
-            const startLine =
-              marker && marker.line >= 0 ? marker.line : 0;
+            const startLine = marker && marker.line >= 0 ? marker.line : 0;
             const result = await waitForTerminalIdle(term, timeoutMs, idleMs);
             const text = serializeTerminalBufferFrom(term, startLine);
             advanceCheckpoint(term, checkpointMarkerRef);
+            const { awaiting, hint } = detectAwaitingInput(term);
             return {
               idle: result.idle,
               elapsedMs: result.elapsedMs,
@@ -116,6 +138,10 @@ export const useTerminalMcpInstance = (
               text,
               // 兼容保留，与 text 相同
               afterText: text,
+              // 终端是否正在等待输入（如 Press Enter / [y/N] / 密码等交互提示）
+              awaitingInput: awaiting,
+              // 等待输入时屏幕上的提示文本
+              inputHint: hint,
             };
           }
 
@@ -123,7 +149,7 @@ export const useTerminalMcpInstance = (
             throw new Error(`Unknown terminal operation: ${operation}`);
         }
       },
-      { title: cwd || "Terminal", cwd: cwd || "" }
+      { title: cwd || "Terminal", cwd: cwd || "" },
     );
 
     return () => {
@@ -159,7 +185,7 @@ const serializeTerminalBuffer = (term: Terminal): string =>
  */
 const serializeTerminalBufferFrom = (
   term: Terminal,
-  startLine: number
+  startLine: number,
 ): string => {
   const buffer = term.buffer.active;
   const length = buffer.length;
@@ -184,7 +210,7 @@ const serializeTerminalBufferFrom = (
  */
 const advanceCheckpoint = (
   term: Terminal,
-  checkpointMarkerRef: React.RefObject<IMarker | null>
+  checkpointMarkerRef: React.RefObject<IMarker | null>,
 ): void => {
   const previous = checkpointMarkerRef.current;
   if (previous) {
@@ -203,7 +229,7 @@ const advanceCheckpoint = (
 const waitForTerminalIdle = (
   term: Terminal,
   timeoutMs: number,
-  idleMs: number
+  idleMs: number,
 ): Promise<{ idle: boolean; elapsedMs: number }> => {
   return new Promise((resolve) => {
     const startTime = Date.now();

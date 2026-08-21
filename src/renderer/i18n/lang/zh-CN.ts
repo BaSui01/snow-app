@@ -560,6 +560,7 @@ export const zhCN = {
   "toolCall.terminal.countdown": "{{seconds}}s",
   "toolCall.terminal.executing": "正在执行...",
   "toolCall.terminal.waiting": "等待执行",
+  "toolCall.terminal.awaitingInput": "终端等待输入",
   "toolCall.todo.name": "待办",
   "toolCall.todo.action.get": "获取待办列表",
   "toolCall.todo.action.add": "添加待办",

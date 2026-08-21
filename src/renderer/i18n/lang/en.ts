@@ -590,6 +590,7 @@ export const en = {
   "toolCall.terminal.countdown": "{{seconds}}s",
   "toolCall.terminal.executing": "Executing...",
   "toolCall.terminal.waiting": "Waiting to execute",
+  "toolCall.terminal.awaitingInput": "Terminal awaiting input",
   "toolCall.todo.name": "todo",
   "toolCall.todo.action.get": "Get TODO list",
   "toolCall.todo.action.add": "Add TODO",

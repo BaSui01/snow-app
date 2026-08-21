@@ -123,7 +123,10 @@ input {
   touch-action: none;
   -webkit-app-region: no-drag;
   opacity: 1;
-  transition: width 0.2s ease, min-width 0.2s ease, opacity 0.2s ease;
+  transition:
+    width 0.2s ease,
+    min-width 0.2s ease,
+    opacity 0.2s ease;
 }
 
 .panel-resizer::before {
@@ -136,7 +139,9 @@ input {
   background: transparent;
   content: "";
   transform: translateX(-50%);
-  transition: background 0.12s ease, box-shadow 0.12s ease;
+  transition:
+    background 0.12s ease,
+    box-shadow 0.12s ease;
 }
 
 .panel-resizer:hover::before,
@@ -162,7 +167,9 @@ input {
   min-height: calc(var(--header-height) + 20px);
   padding: 10px;
   background: var(--app-bg);
-  transition: grid-template-columns 0.18s ease, column-gap 0.18s ease;
+  transition:
+    grid-template-columns 0.18s ease,
+    column-gap 0.18s ease;
   -webkit-app-region: drag;
   user-select: none;
 }
@@ -334,7 +341,9 @@ input {
   font-size: 12px;
   cursor: pointer;
   text-align: left;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .top-bar-plus-dropdown-item:hover {
@@ -522,7 +531,9 @@ input {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
 }
 
 .top-bar-todo-pin-btn:hover {
@@ -630,7 +641,10 @@ input {
   color: var(--text-muted);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+  transition:
+    opacity 0.12s ease,
+    background 0.12s ease,
+    color 0.12s ease;
 }
 
 .top-bar-todo-item:hover .top-bar-todo-item-delete {
@@ -696,7 +710,9 @@ input {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
 }
 
 .top-bar-todo-add-btn:hover:not(:disabled) {
@@ -717,7 +733,9 @@ input {
 .top-bar-right .panel-tab-group {
   overflow: hidden;
   opacity: 1;
-  transition: opacity 0.12s ease, max-width 0.18s ease;
+  transition:
+    opacity 0.12s ease,
+    max-width 0.18s ease;
   max-width: 310px;
 }
 
@@ -777,7 +795,9 @@ input {
   height: 100%;
   color: var(--text-secondary);
   -webkit-app-region: no-drag;
-  transition: background 0.1s ease, color 0.1s ease;
+  transition:
+    background 0.1s ease,
+    color 0.1s ease;
 }
 
 .window-control-btn:hover {
@@ -803,7 +823,9 @@ input {
   height: 28px;
   border-radius: var(--radius-sm);
   color: var(--text-tertiary);
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .icon-btn:hover {
@@ -831,7 +853,10 @@ input {
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
-  transition: width 0.18s ease, min-width 0.18s ease, opacity 0.12s ease;
+  transition:
+    width 0.18s ease,
+    min-width 0.18s ease,
+    opacity 0.12s ease;
 }
 .sidebar.collapsed {
   width: 0;
@@ -961,7 +986,9 @@ input {
   margin-left: -4px;
   border-radius: var(--radius-sm);
   color: var(--text-muted);
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .section-toggle-btn:hover {
@@ -1091,7 +1118,9 @@ input {
   background: transparent;
   color: var(--text-primary);
   cursor: pointer;
-  transition: background 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    background 0.15s ease,
+    box-shadow 0.15s ease;
   position: relative;
 }
 .chat-item:hover,
@@ -1100,7 +1129,8 @@ input {
 }
 .chat-item.active {
   background: var(--bg-active, rgba(255, 255, 255, 0.05));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05),
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
     0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
@@ -1171,7 +1201,8 @@ input {
 .chat-item-emoji {
   font-size: 13px;
   line-height: 1;
-  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji",
+  font-family:
+    "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji",
     "Twemoji Mozilla", sans-serif;
   user-select: none;
 }
@@ -1333,7 +1364,9 @@ input {
   border-radius: var(--radius-sm, 6px);
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
 }
 .chat-item:hover .chat-item-actions,
 .chat-item.menu-open .chat-item-actions {
@@ -1404,7 +1437,9 @@ input {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
 }
 
 .archived-chat-item-action:hover {
@@ -1447,7 +1482,9 @@ input {
   color: var(--text-secondary);
   font-size: 11px;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .archived-multi-select-btn:hover {
@@ -1472,7 +1509,9 @@ input {
   background: transparent;
   color: #fff;
   cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
 }
 
 .chat-item-checkbox:hover:not(.disabled) {
@@ -1579,7 +1618,9 @@ input {
   background: var(--bg-tertiary);
   border: 1px solid var(--border-subtle, var(--border-color));
   flex-shrink: 0;
-  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
 }
 
 .emoji-picker-search:focus-within {
@@ -1620,7 +1661,9 @@ input {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.1s ease, color 0.1s ease;
+  transition:
+    background 0.1s ease,
+    color 0.1s ease;
 }
 
 .emoji-picker-search-clear:hover {
@@ -1655,7 +1698,9 @@ input {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.1s ease, color 0.1s ease;
+  transition:
+    background 0.1s ease,
+    color 0.1s ease;
 }
 
 .emoji-picker-clear-btn:hover {
@@ -1708,10 +1753,13 @@ input {
   background: transparent;
   font-size: 16px;
   line-height: 1;
-  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji",
+  font-family:
+    "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji",
     "Twemoji Mozilla", sans-serif;
   cursor: pointer;
-  transition: background 0.08s ease, transform 0.08s ease;
+  transition:
+    background 0.08s ease,
+    transform 0.08s ease;
   user-select: none;
 }
 
@@ -1776,7 +1824,8 @@ input {
 .chat-item-menu-emoji {
   font-size: 14px;
   line-height: 1;
-  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji",
+  font-family:
+    "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji",
     "Twemoji Mozilla", sans-serif;
 }
 
@@ -1997,7 +2046,10 @@ input {
   background: transparent;
   color: var(--on-solid);
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .chat-time-group-select:hover {
@@ -2116,7 +2168,9 @@ input {
   background: transparent;
   color: var(--text-tertiary);
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .chat-multi-select-exit-btn:hover {
@@ -2154,7 +2208,9 @@ input {
   color: var(--text-secondary);
   font-size: 11px;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .chat-multi-select-action-btn span {
@@ -2218,7 +2274,9 @@ input {
   background: transparent;
   color: var(--on-solid);
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .chat-item-checkbox:hover {
@@ -2309,7 +2367,9 @@ input {
   border-radius: var(--radius-sm, 6px);
   color: var(--text-tertiary);
   cursor: grab;
-  transition: color 0.12s ease, background 0.12s ease;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease;
 }
 
 .workspace-directory-drag-handle:hover {
@@ -2346,7 +2406,9 @@ input {
   border: 1px solid var(--border-color);
   border-radius: 999px;
   background: var(--bg-primary);
-  transition: border-color 0.12s, background 0.12s;
+  transition:
+    border-color 0.12s,
+    background 0.12s;
 }
 
 .workspace-directory-list .list-item.active .workspace-directory-guide-dot {
@@ -2500,7 +2562,9 @@ input {
   color: var(--text-primary);
   font: inherit;
   font-size: 12px;
-  transition: border-color 0.12s, box-shadow 0.12s;
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
 }
 
 .form-dialog-input:focus {
@@ -2530,7 +2594,13 @@ input {
   display: block;
   overflow: hidden;
   color: var(--text-tertiary);
-  font-family: var(--font-mono, ui-monospace, "Cascadia Mono", Consolas, monospace);
+  font-family: var(
+    --font-mono,
+    ui-monospace,
+    "Cascadia Mono",
+    Consolas,
+    monospace
+  );
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2556,7 +2626,10 @@ input {
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s, opacity 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    opacity 0.12s;
 }
 
 .form-dialog-button.cancel {
@@ -2610,7 +2683,10 @@ input {
   background: var(--bg-secondary);
   color: var(--text-tertiary);
   text-align: center;
-  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    color 0.15s;
 }
 
 .form-dialog-drop-zone > strong {
@@ -2647,7 +2723,9 @@ input {
   color: var(--text-primary);
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
 }
 
 .project-action-card:hover {
@@ -2731,7 +2809,9 @@ input {
   border-radius: var(--radius-sm, 6px);
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
 }
 
 .workspace-directory-row:hover .workspace-directory-actions,
@@ -2921,7 +3001,9 @@ input {
   height: 28px;
   border-radius: var(--radius-sm);
   color: var(--text-tertiary);
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .workspace-directory-icon-btn:not(:disabled):hover {
@@ -3443,7 +3525,9 @@ input {
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   text-align: left;
-  transition: background 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
 }
 
 .settings-item:hover {
@@ -3504,7 +3588,9 @@ input {
   background: var(--bg-secondary);
   color: var(--text-tertiary);
   font-size: 12.5px;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .settings-language-option:hover {
@@ -3777,7 +3863,8 @@ input {
   padding: 10px 0 0;
   border-top: 1px solid var(--border-light);
   background: var(--surface-island-strong);
-  box-shadow: 0 -5px 12px color-mix(in srgb, var(--text-primary) 5%, transparent);
+  box-shadow: 0 -5px 12px
+    color-mix(in srgb, var(--text-primary) 5%, transparent);
 }
 
 .import-settings-footer-selection {
@@ -3863,7 +3950,9 @@ input {
   background: var(--border-light);
   content: "";
   transform: translateX(-50%);
-  transition: background 0.12s ease, box-shadow 0.12s ease;
+  transition:
+    background 0.12s ease,
+    box-shadow 0.12s ease;
 }
 
 .plugins-columns-resizer > svg {
@@ -4925,7 +5014,9 @@ input {
   min-width: 0;
 }
 
-.api-settings-actions.sensitive-commands-actions .api-settings-action-btn > span {
+.api-settings-actions.sensitive-commands-actions
+  .api-settings-action-btn
+  > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4951,7 +5042,10 @@ input {
 }
 .api-settings-form-btn {
   line-height: 1;
-  transition: background 0.12s, border-color 0.12s, opacity 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    opacity 0.12s;
 }
 
 .api-settings-form-btn > svg {
@@ -5019,7 +5113,8 @@ input {
   padding: 9px 14px;
   border: 1px solid transparent;
   border-radius: var(--radius-lg);
-  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.16),
+  box-shadow:
+    0 16px 36px rgba(15, 23, 42, 0.16),
     inset 0 1px 0 rgba(255, 255, 255, 0.48);
   backdrop-filter: blur(14px);
   font-size: 12px;
@@ -5319,7 +5414,9 @@ input {
   font: inherit;
   font-size: 12px;
   outline: none;
-  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
 }
 
 .custom-select-filter:focus {
@@ -5409,7 +5506,9 @@ input {
   border-radius: var(--radius-md);
   color: var(--text-secondary);
   text-align: left;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .api-model-combobox-option.highlighted,
@@ -5514,7 +5613,9 @@ input {
   height: 24px;
   border-radius: var(--radius-sm, 6px);
   color: var(--text-muted);
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .api-token-preset-arrow:hover {
@@ -5634,7 +5735,9 @@ input {
   color: var(--text-secondary);
   font-size: 12px;
   text-align: left;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .api-settings-tree-row:hover {
@@ -5947,7 +6050,9 @@ input {
   border-radius: var(--radius-md);
   background: var(--bg-primary);
   text-align: left;
-  transition: background 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
 }
 
 .api-settings-detected-terminal:hover {
@@ -6032,7 +6137,9 @@ input {
   border-radius: var(--radius-md);
   color: var(--text-secondary);
   text-align: left;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .terminal-combobox-option.highlighted,
@@ -6085,7 +6192,9 @@ input {
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 600;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .terminal-combobox-browse:hover:not(:disabled) {
@@ -6181,7 +6290,9 @@ input {
   border-radius: 999px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
-  transition: background 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
   flex-shrink: 0;
 }
 
@@ -6194,7 +6305,9 @@ input {
   height: 14px;
   border-radius: 50%;
   background: var(--text-tertiary);
-  transition: transform 0.15s, background 0.15s;
+  transition:
+    transform 0.15s,
+    background 0.15s;
 }
 
 .toggle-switch input:checked + .toggle-slider {
@@ -6232,7 +6345,9 @@ input {
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
   background: var(--bg-primary);
-  transition: background 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
 }
 
 .shortcut-item:hover {
@@ -6295,7 +6410,9 @@ input {
   font-size: 11px;
   font-weight: 600;
   line-height: 1.4;
-  transition: border-color 0.12s, color 0.12s;
+  transition:
+    border-color 0.12s,
+    color 0.12s;
 }
 
 /* 录制中按键标签闪烁动画 */
@@ -6555,7 +6672,9 @@ input {
 .skills-settings-item {
   align-items: flex-start;
   padding: 9px 10px;
-  transition: opacity 0.15s ease, background-color 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    background-color 0.15s ease;
 }
 
 .skills-settings-item.inactive {
@@ -6829,7 +6948,9 @@ input {
   backdrop-filter: var(--backdrop-blur-lg);
   overflow: hidden;
   opacity: 1;
-  transition: flex-grow 0.2s ease, opacity 0.2s ease;
+  transition:
+    flex-grow 0.2s ease,
+    opacity 0.2s ease;
   padding: 18px 10px;
 }
 
@@ -7088,7 +7209,9 @@ input {
   color: var(--text-tertiary);
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .sub-agent-info-parent:hover {
@@ -7188,7 +7311,9 @@ input {
   color: var(--text-secondary);
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .sub-agent-finished-bar-back:hover {
@@ -7220,7 +7345,10 @@ input {
   cursor: pointer;
   box-shadow: var(--island-shadow);
   backdrop-filter: var(--backdrop-blur-lg);
-  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
   -webkit-app-region: no-drag;
   user-select: none;
 }
@@ -7328,7 +7456,9 @@ input {
   line-height: 1.4;
   text-align: left;
   cursor: pointer;
-  transition: background 0.1s ease, color 0.1s ease;
+  transition:
+    background 0.1s ease,
+    color 0.1s ease;
 }
 
 .user-message-rail-popover-item:hover {
@@ -7400,10 +7530,14 @@ input {
   border-radius: 50%;
   background: var(--surface-island-strong);
   color: var(--text-primary);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.08);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.14),
+    0 2px 6px rgba(0, 0, 0, 0.08);
   cursor: pointer;
   transform: translate(-50%, calc(-100% - 6px));
-  transition: background-color 0.16s ease, border-color 0.16s ease,
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
     box-shadow 0.16s ease;
   animation: chat-scroll-to-bottom-in 0.16s ease-out;
   -webkit-app-region: no-drag;
@@ -7412,7 +7546,9 @@ input {
 .chat-scroll-to-bottom:hover {
   border-color: var(--border-color);
   background: var(--bg-hover);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.16), 0 3px 8px rgba(0, 0, 0, 0.1);
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.16),
+    0 3px 8px rgba(0, 0, 0, 0.1);
 }
 
 .chat-scroll-to-bottom:focus-visible {
@@ -7705,7 +7841,8 @@ input {
   transform-box: fill-box;
   transform-origin: 50% 100%;
   pointer-events: none;
-  transition: opacity 0.4s ease,
+  transition:
+    opacity 0.4s ease,
     transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .pixel-logo.is-frozen .pixel-logo-deco {
@@ -7971,7 +8108,9 @@ input {
   color: var(--text-primary);
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.18s ease, background 0.18s ease;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease;
 }
 
 .chat-empty-quick-card:hover:not(:disabled) {
@@ -8300,7 +8439,9 @@ input {
   font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.12s ease, border-color 0.12s ease;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease;
 }
 
 .file-changes-view-diff-btn:hover {
@@ -8381,7 +8522,9 @@ input {
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: background-color 0.12s ease, color 0.12s ease;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
 }
 
 .review-retry-btn:hover,
@@ -8472,7 +8615,9 @@ input {
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.12s ease, color 0.12s ease;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
 }
 
 .review-select-all:hover {
@@ -8551,7 +8696,9 @@ input {
   flex-shrink: 0;
   color: transparent;
   background: var(--bg-primary);
-  transition: border-color 0.12s ease, background-color 0.12s ease;
+  transition:
+    border-color 0.12s ease,
+    background-color 0.12s ease;
 }
 
 .review-check.is-checked {
@@ -9020,7 +9167,9 @@ input {
   font-size: 12px;
   line-height: 1.4;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .user-message-toggle:hover {
@@ -9041,7 +9190,9 @@ input {
   height: 26px;
   border-radius: var(--radius-md);
   color: inherit;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .user-message-action-btn:hover {
@@ -9065,7 +9216,9 @@ input {
   border-radius: var(--radius-md);
   color: var(--text-tertiary);
   font-size: 12px;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .previous-messages:hover {
@@ -9124,7 +9277,9 @@ input {
   height: 26px;
   border-radius: var(--radius-md);
   color: inherit;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .ai-response-action-btn:hover {
@@ -9296,7 +9451,9 @@ input {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .context-compaction-message-rollback:hover {
@@ -9770,7 +9927,9 @@ input {
   vertical-align: middle;
   cursor: pointer;
   user-select: none;
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
 }
 
 .md-source-badge:hover {
@@ -9979,7 +10138,9 @@ input {
   color: var(--text-tertiary);
   cursor: pointer;
   user-select: none;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 .ai-message .code-block-lang:hover {
@@ -10015,7 +10176,9 @@ input {
   background: transparent;
   color: var(--text-tertiary);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 .ai-message .code-block-copy:hover {
@@ -10124,7 +10287,9 @@ input {
   background: transparent;
   color: var(--text-tertiary);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
@@ -10247,7 +10412,9 @@ input {
   color: var(--text-secondary);
   cursor: pointer;
   text-align: left;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 .mermaid-export-menu-item:hover {
@@ -10343,7 +10510,9 @@ input {
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 .mermaid-image-viewer-btn:hover {
@@ -10494,7 +10663,10 @@ input {
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
-  transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease,
+    border-color 0.12s ease;
 }
 
 .thinking-block-expand-btn:hover,
@@ -10615,9 +10787,7 @@ input {
 
 .tcn-dot {
   position: absolute;
-  left: calc(
-    var(--tcn-pad-left, 12px) * -1 - var(--tcn-line-width, 1.5px) / 2
-  );
+  left: calc(var(--tcn-pad-left, 12px) * -1 - var(--tcn-line-width, 1.5px) / 2);
   top: 50%;
   transform: translate(-50%, -50%);
   width: 7px;
@@ -10724,7 +10894,10 @@ input {
 
 .tcn-chevron {
   flex-shrink: 0;
-  transition: transform 0.15s ease, opacity 0.15s ease, color 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    opacity 0.15s ease,
+    color 0.15s ease;
   color: var(--text-tertiary);
   opacity: 0.6;
 }
@@ -10881,7 +11054,10 @@ input {
   font-size: 12px;
   line-height: 1.45;
   cursor: pointer;
-  transition: background 0.1s ease, border-color 0.1s ease, color 0.1s ease;
+  transition:
+    background 0.1s ease,
+    border-color 0.1s ease,
+    color 0.1s ease;
 }
 
 .tool-call-user-question-option:hover:not(:has(input:disabled)),
@@ -11588,7 +11764,10 @@ input {
   color: var(--text-tertiary);
   cursor: pointer;
   opacity: 0.7;
-  transition: color 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    opacity 0.15s ease;
 }
 
 .hook-exec-copy:hover {
@@ -11738,7 +11917,9 @@ input {
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: opacity 0.15s ease, background 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    background 0.15s ease;
 }
 
 .hook-exec-decision-btn:hover {
@@ -12066,7 +12247,10 @@ input {
   color: var(--text-secondary);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .tool-call-diff-content:hover .tool-call-diff-open-tab {
@@ -12210,7 +12394,10 @@ input {
   font-size: 10.5px;
   line-height: 1.4;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .tool-call-bash-kill:hover:not(:disabled) {
@@ -12665,6 +12852,68 @@ input {
 .tool-call-terminal-wait-timeout {
   background: var(--accent-orange-bg, rgba(232, 151, 58, 0.12));
   color: var(--accent-orange-text, #e8973a);
+}
+
+/* 终端等待输入徽章：read/wait 检测到交互提示时显示（黄色警示） */
+.tool-call-terminal-awaiting {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid
+    color-mix(in srgb, var(--accent-orange-text, #e8973a) 40%, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--accent-orange-bg, rgba(232, 151, 58, 0.1));
+  color: var(--accent-orange-text, #e8973a);
+  font-size: 11px;
+  font-weight: 500;
+  align-self: flex-start;
+  animation: tool-call-terminal-awaiting-in 0.18s ease;
+}
+
+@keyframes tool-call-terminal-awaiting-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tool-call-terminal-awaiting-hint {
+  max-width: 320px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* terminal-send 的 keys 按键序列展示 */
+.tool-call-terminal-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tool-call-terminal-key-chip {
+  padding: 1px 7px;
+  border: 1px solid var(--border-light);
+  border-radius: 5px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  user-select: text;
 }
 
 .tool-call-terminal-elapsed {
@@ -13283,7 +13532,9 @@ input {
   border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
   background: var(--bg-primary);
-  transition: border-color 0.15s ease, background-color 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
 }
 
 .tool-call-websearch-result:hover {
@@ -13368,7 +13619,10 @@ input {
   color: var(--text-tertiary);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .tool-call-websearch-result:hover .tool-call-websearch-external,
@@ -14328,7 +14582,9 @@ input {
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
 }
 
 .imagegen-nav-item:hover:not(:disabled) {
@@ -14440,7 +14696,10 @@ input {
   color: var(--text-muted);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+  transition:
+    opacity 0.12s ease,
+    background 0.12s ease,
+    color 0.12s ease;
 }
 
 .imagegen-nav-item:hover .imagegen-nav-rename-btn,
@@ -14509,7 +14768,10 @@ input {
   font-size: 11.5px;
   font-weight: 600;
   cursor: pointer;
-  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+  transition:
+    color 0.12s ease,
+    border-color 0.12s ease,
+    background 0.12s ease;
 }
 
 .imagegen-nav-add:hover:not(:disabled) {
@@ -14640,7 +14902,9 @@ input {
   font: inherit;
   font-size: 13px;
   font-weight: 700;
-  transition: border-color 0.12s ease, background 0.12s ease;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease;
 }
 
 .imagegen-channel-name:hover:not(:disabled) {
@@ -14804,7 +15068,9 @@ input {
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .imagegen-stream-segmented-btn:hover:not(:disabled) {
@@ -15159,8 +15425,11 @@ input {
   font-size: 10.5px;
   line-height: 1.5;
   cursor: pointer;
-  transition: border-color 0.15s ease, color 0.15s ease,
-    background-color 0.15s ease, transform 0.1s ease;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease,
+    background-color 0.15s ease,
+    transform 0.1s ease;
 }
 
 .tool-call-browser-instance svg {
@@ -15218,7 +15487,9 @@ input {
   border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
   background: var(--bg-primary);
-  transition: border-color 0.15s ease, background-color 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
   animation: tool-call-browser-rise 0.18s ease both;
 }
 
@@ -15313,7 +15584,10 @@ input {
   color: var(--text-tertiary);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .tool-call-browser-page:hover .tool-call-browser-external,
@@ -16157,7 +16431,9 @@ input {
   border: 1px solid var(--border-light);
   object-fit: contain;
   background: var(--bg-primary);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .tool-call-browser-shot img:hover {
@@ -16448,7 +16724,9 @@ input {
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.15s ease, background-color 0.15s ease,
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
     transform 0.1s ease;
 }
 
@@ -16960,7 +17238,10 @@ input {
   border-radius: var(--radius-sm);
   cursor: pointer;
   align-self: flex-start;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .tool-call-sub-agent-jump:hover {
@@ -17105,7 +17386,10 @@ input {
   cursor: pointer;
   margin-left: auto;
   flex-shrink: 0;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .tool-call-sub-agent-list-item-jump:hover {
@@ -17578,7 +17862,10 @@ input {
   color: var(--text-muted);
   cursor: pointer;
   opacity: 0.6;
-  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+  transition:
+    opacity 0.12s ease,
+    background 0.12s ease,
+    color 0.12s ease;
 }
 
 .pending-message-withdraw:hover {
@@ -17750,7 +18037,9 @@ input {
   cursor: pointer;
   flex-shrink: 0;
   padding: 0;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
 }
 
 .stream-metrics-pause-btn:hover {
@@ -17779,7 +18068,8 @@ input {
   gap: 8px;
   margin-bottom: 8px;
   padding: 8px 12px;
-  border: 1px solid color-mix(in srgb, var(--accent-amber-text) 28%, transparent);
+  border: 1px solid
+    color-mix(in srgb, var(--accent-amber-text) 28%, transparent);
   border-radius: 10px;
   background: var(--accent-amber-bg);
   font-size: 12px;
@@ -17805,14 +18095,17 @@ input {
   align-items: center;
   gap: 5px;
   padding: 4px 10px;
-  border: 1px solid color-mix(in srgb, var(--accent-amber-text) 40%, transparent);
+  border: 1px solid
+    color-mix(in srgb, var(--accent-amber-text) 40%, transparent);
   border-radius: var(--radius-sm);
   background: var(--surface-island-strong);
   color: var(--accent-amber-text);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: opacity 0.12s ease, background 0.12s ease;
+  transition:
+    opacity 0.12s ease,
+    background 0.12s ease;
 }
 
 .api-config-empty-btn:hover {
@@ -17833,7 +18126,9 @@ input {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   padding: 10px 14px;
-  transition: border-color 0.12s, box-shadow 0.12s;
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
   isolation: isolate;
 }
 .input-box::before {
@@ -17851,9 +18146,13 @@ input {
     #a29bfe,
     #ff6b6b
   );
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
-  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
   mask-composite: exclude;
   opacity: 0;
   pointer-events: none;
@@ -17865,7 +18164,9 @@ input {
 }
 .input-box:focus-within {
   border-color: var(--border-color);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.05);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.08),
+    0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 @property --rainbow-angle {
@@ -18006,7 +18307,9 @@ input {
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .memo-filter-tab:hover {
@@ -18148,7 +18451,9 @@ input {
   justify-content: center;
   opacity: 0;
   visibility: hidden;
-  transition: opacity 0.12s, visibility 0.12s;
+  transition:
+    opacity 0.12s,
+    visibility 0.12s;
 }
 
 .memo-list-item:hover .memo-list-item-actions,
@@ -18168,7 +18473,9 @@ input {
   border: none;
   color: var(--text-tertiary);
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .memo-icon-btn:hover {
@@ -18365,7 +18672,9 @@ input {
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .memo-view-tab:hover {
@@ -18446,7 +18755,9 @@ input {
   color: var(--text-secondary);
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .memo-schedule-clear:hover {
@@ -18596,7 +18907,9 @@ input {
   border-radius: 5px;
   background: var(--accent-blue);
   opacity: 0.85;
-  transition: opacity 0.12s, filter 0.12s;
+  transition:
+    opacity 0.12s,
+    filter 0.12s;
 }
 
 .memo-gantt-row:hover .memo-gantt-bar {
@@ -18731,7 +19044,9 @@ input {
   font: inherit;
   font-size: 11px;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .scheduled-tasks-filter-tab > span:first-child {
@@ -18844,7 +19159,10 @@ input {
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    box-shadow 0.12s;
 }
 
 .scheduled-task-item:hover {
@@ -19049,7 +19367,9 @@ input {
   font-size: 11px;
   text-align: left;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .scheduled-tasks-clear-btn:hover {
@@ -19156,7 +19476,10 @@ input {
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    color 0.12s;
 }
 
 .scheduled-task-action-btn:hover:not(:disabled),
@@ -19565,7 +19888,9 @@ input {
   font-weight: 600;
   cursor: pointer;
   align-self: flex-start;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .scheduled-tasks-pre-script-toggle:hover {
@@ -19709,7 +20034,9 @@ input {
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .scheduled-tasks-segmented-btn:hover:not(:disabled) {
@@ -19813,7 +20140,8 @@ input {
   outline-offset: 2px;
 }
 
-.scheduled-tasks-field input:not([type="checkbox"]):not([type="range"]):focus-visible,
+.scheduled-tasks-field
+  input:not([type="checkbox"]):not([type="range"]):focus-visible,
 .scheduled-tasks-field select:focus-visible,
 .scheduled-tasks-prompt-textarea:focus-visible,
 .scheduled-tasks-form .api-model-combobox input:focus-visible {
@@ -20443,7 +20771,9 @@ input {
   color: var(--text-primary);
   font-size: 13px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
 }
 
 .text-snippet-editor-btn:hover {
@@ -20667,7 +20997,9 @@ input {
   background: var(--bg-secondary);
   color: var(--text-primary);
   outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .plus-menu-goal-budget-input:focus {
@@ -20717,7 +21049,9 @@ input {
   border-radius: var(--radius-md);
   color: var(--text-tertiary);
   font-size: 12px;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
   border: none;
   background: transparent;
   cursor: pointer;
@@ -20969,7 +21303,9 @@ input {
   color: var(--text-muted);
   padding: 2px;
   border-radius: var(--radius-sm);
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .file-mention-clear:hover {
@@ -21006,7 +21342,9 @@ input {
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .file-mention-crumb span {
@@ -21040,7 +21378,9 @@ input {
   flex-shrink: 0;
   color: var(--text-tertiary);
   opacity: 0;
-  transition: opacity 0.12s, color 0.12s;
+  transition:
+    opacity 0.12s,
+    color 0.12s;
 }
 
 .mention-entry:hover .mention-entry-enter,
@@ -21925,7 +22265,10 @@ input {
   backdrop-filter: var(--backdrop-blur-lg);
   overflow: hidden;
   opacity: 1;
-  transition: width 0.18s ease, min-width 0.18s ease, flex-grow 0.2s ease,
+  transition:
+    width 0.18s ease,
+    min-width 0.18s ease,
+    flex-grow 0.2s ease,
     opacity 0.18s ease;
 }
 
@@ -22123,7 +22466,9 @@ input {
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .codebase-panel-page-btn:hover:not(:disabled) {
@@ -22169,7 +22514,9 @@ input {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .codebase-panel-view-btn:hover {
@@ -22416,7 +22763,9 @@ input {
   border-radius: var(--radius-md);
   color: var(--text-tertiary);
   font-size: 12px;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .panel-tab:hover {
@@ -23321,7 +23670,11 @@ input {
   font-weight: 650;
   line-height: 1;
   cursor: pointer;
-  transition: color 0.12s, border-color 0.12s, background 0.12s, transform 0.08s;
+  transition:
+    color 0.12s,
+    border-color 0.12s,
+    background 0.12s,
+    transform 0.08s;
 }
 
 .mcp-list-add-btn > svg {
@@ -23482,7 +23835,9 @@ input {
   border: 1px solid var(--border-light);
   content: "";
   transform: translate(-50%, -50%);
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
   z-index: 1;
 }
 
@@ -23927,7 +24282,9 @@ input {
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
-  transition: background 0.1s, color 0.1s;
+  transition:
+    background 0.1s,
+    color 0.1s;
 }
 
 .branch-create-cancel-btn:hover:not(:disabled) {
@@ -24033,7 +24390,9 @@ input {
   color: var(--text-muted);
   font-size: 13px;
   font-weight: 600;
-  transition: background 0.1s, color 0.1s;
+  transition:
+    background 0.1s,
+    color 0.1s;
 }
 
 .git-file-list-action:hover {
@@ -24170,7 +24529,10 @@ input {
   font-size: 12px;
   font-weight: 700;
   opacity: 0;
-  transition: opacity 0.1s, background 0.1s, color 0.1s;
+  transition:
+    opacity 0.1s,
+    background 0.1s,
+    color 0.1s;
 }
 
 .git-file-item:hover .git-file-action {
@@ -24384,7 +24746,10 @@ input {
   background: var(--bg-primary);
   color: var(--text-secondary);
   font-size: 11.5px;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .project-sensitive-command-toolbar-btn:hover:not(:disabled),
@@ -24645,7 +25010,9 @@ input {
   font-size: 12.5px;
   line-height: 1.55;
   resize: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .role-editor-textarea:focus {
@@ -24735,7 +25102,9 @@ input {
   color: var(--text-primary);
   font: inherit;
   font-weight: 400;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .project-sensitive-command-editor > label input:focus {
@@ -25090,7 +25459,10 @@ input {
   background: var(--bg-primary);
   color: var(--text-secondary);
   font-size: 11.5px;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .project-codebase-embed-btn:hover:not(:disabled) {
@@ -25210,7 +25582,10 @@ input {
   background: var(--bg-primary);
   color: var(--text-secondary);
   font-size: 11.5px;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .project-mcp-refresh:hover:not(:disabled) {
@@ -25297,7 +25672,9 @@ input {
   border-radius: var(--radius-lg);
   background: var(--bg-primary);
   box-shadow: 0 1px 2px color-mix(in srgb, var(--text-primary) 4%, transparent);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .project-mcp-server.is-expanded {
@@ -25450,7 +25827,9 @@ input {
   background: var(--bg-primary);
   color: var(--accent-red-text);
   font-size: 10.5px;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .project-mcp-tool-retry:hover {
@@ -25586,12 +25965,20 @@ input {
 
 .lsp-install-badge.installed {
   color: var(--success-strong, #2f9e44);
-  background: color-mix(in srgb, var(--success-strong, #2f9e44) 12%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--success-strong, #2f9e44) 12%,
+    transparent
+  );
 }
 
 .lsp-install-badge.missing {
   color: var(--danger-strong, #e03131);
-  background: color-mix(in srgb, var(--danger-strong, #e03131) 12%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--danger-strong, #e03131) 12%,
+    transparent
+  );
 }
 
 /* LSP 继承徽标（项目作用域下"来自全局"条目）：与语言名同行显示 */
@@ -25740,7 +26127,11 @@ input {
 
 .lsp-stack-detect-badge.enabled {
   color: var(--success-strong, #2f9e44);
-  background: color-mix(in srgb, var(--success-strong, #2f9e44) 12%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--success-strong, #2f9e44) 12%,
+    transparent
+  );
 }
 
 .lsp-stack-detect-badge.muted {
@@ -25778,7 +26169,9 @@ input {
   line-height: 1.6;
   resize: vertical;
   tab-size: 2;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .lsp-editor-json-textarea:hover {
@@ -25815,7 +26208,9 @@ input {
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .mcp-editor-mode-btn:hover:not(:disabled) {
@@ -25852,7 +26247,9 @@ input {
   line-height: 1.6;
   resize: vertical;
   tab-size: 2;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .mcp-editor-json-textarea:hover {
@@ -25982,7 +26379,9 @@ input {
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.1s, border-color 0.1s;
+  transition:
+    background 0.1s,
+    border-color 0.1s;
 }
 
 .confirm-dialog-btn:disabled {
@@ -26203,7 +26602,10 @@ input {
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.1s ease, border-color 0.1s ease, color 0.1s ease;
+  transition:
+    background 0.1s ease,
+    border-color 0.1s ease,
+    color 0.1s ease;
 }
 
 .tool-authorization-action:hover:not(:disabled) {
@@ -26755,7 +27157,10 @@ input {
   color: var(--on-solid);
   font-size: 12.5px;
   font-weight: 500;
-  transition: background 0.12s, border-color 0.12s, opacity 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    opacity 0.12s;
 }
 
 .git-commit-btn:hover:not(:disabled) {
@@ -27309,7 +27714,9 @@ input {
   white-space: nowrap;
   cursor: pointer;
   user-select: none;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .right-panel-tab-item:hover {
@@ -27346,7 +27753,9 @@ input {
   border: none;
   padding: 0;
   cursor: pointer;
-  transition: background 0.1s, color 0.1s;
+  transition:
+    background 0.1s,
+    color 0.1s;
   flex-shrink: 0;
 }
 
@@ -27390,7 +27799,9 @@ input {
   background: var(--bg-primary);
   padding: 10px 12px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
 }
 
 .ai-drawing-composer:focus-within {
@@ -27432,7 +27843,8 @@ input {
   vertical-align: middle;
   margin: 2px 4px 2px 1px;
   padding: 2px 8px 2px 3px;
-  border: 1px solid color-mix(in srgb, var(--accent-color) 40%, var(--border-color));
+  border: 1px solid
+    color-mix(in srgb, var(--accent-color) 40%, var(--border-color));
   border-radius: var(--radius-md, 8px);
   background: color-mix(in srgb, var(--accent-color) 12%, var(--bg-tertiary));
   color: var(--accent-color, #4a9eff);
@@ -27443,20 +27855,34 @@ input {
   white-space: nowrap;
   position: relative;
   z-index: 1;
-  transition: background 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
 }
 
 .ai-drawing-ref-card-inline:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent-color) 20%, var(--bg-tertiary));
-  border-color: color-mix(in srgb, var(--accent-color) 65%, var(--border-color));
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 65%,
+    var(--border-color)
+  );
 }
 
 .ai-drawing-ref-card-inline:disabled {
   cursor: not-allowed;
   opacity: 0.65;
-  border-color: color-mix(in srgb, var(--error-text, #ef6d6d) 45%, var(--border-color));
+  border-color: color-mix(
+    in srgb,
+    var(--error-text, #ef6d6d) 45%,
+    var(--border-color)
+  );
   color: var(--error-text, #ef6d6d);
-  background: color-mix(in srgb, var(--error-text, #ef6d6d) 10%, var(--bg-tertiary));
+  background: color-mix(
+    in srgb,
+    var(--error-text, #ef6d6d) 10%,
+    var(--bg-tertiary)
+  );
 }
 
 /* 卡片内缩略图：完整展示参考图（32px 圆角），非越界态与越界占位等宽防跳动 */
@@ -27473,7 +27899,11 @@ input {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--error-text, #ef6d6d) 10%, var(--bg-tertiary));
+  background: color-mix(
+    in srgb,
+    var(--error-text, #ef6d6d) 10%,
+    var(--bg-tertiary)
+  );
 }
 
 .ai-drawing-ref-card-inline-label {
@@ -27582,7 +28012,10 @@ input {
   color: var(--text-secondary);
   font-size: 11.5px;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s,
+    border-color 0.12s;
 }
 
 .ai-drawing-upload-btn:hover {
@@ -27612,13 +28045,25 @@ input {
 }
 
 .ai-drawing-import-notice-ok {
-  border-color: color-mix(in srgb, var(--success-color, #3fb950) 40%, transparent);
-  background: color-mix(in srgb, var(--success-color, #3fb950) 10%, transparent);
+  border-color: color-mix(
+    in srgb,
+    var(--success-color, #3fb950) 40%,
+    transparent
+  );
+  background: color-mix(
+    in srgb,
+    var(--success-color, #3fb950) 10%,
+    transparent
+  );
   color: var(--success-color, #3fb950);
 }
 
 .ai-drawing-import-notice-error {
-  border-color: color-mix(in srgb, var(--danger-color, #e5534b) 40%, transparent);
+  border-color: color-mix(
+    in srgb,
+    var(--danger-color, #e5534b) 40%,
+    transparent
+  );
   background: color-mix(in srgb, var(--danger-color, #e5534b) 10%, transparent);
   color: var(--danger-color, #e5534b);
 }
@@ -27649,13 +28094,18 @@ input {
   letter-spacing: 0.2px;
   cursor: pointer;
   box-shadow: 0 2px 8px color-mix(in srgb, var(--accent-color) 32%, transparent);
-  transition: filter 0.15s, transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+  transition:
+    filter 0.15s,
+    transform 0.15s,
+    box-shadow 0.15s,
+    opacity 0.15s;
 }
 
 .ai-drawing-generate-btn:hover:not(:disabled) {
   filter: brightness(1.08);
   transform: translateY(-1px);
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent-color) 45%, transparent);
+  box-shadow: 0 4px 14px
+    color-mix(in srgb, var(--accent-color) 45%, transparent);
 }
 
 .ai-drawing-generate-btn:active:not(:disabled) {
@@ -27677,20 +28127,33 @@ input {
   gap: 6px;
   height: 30px;
   padding: 0 16px;
-  border: 1px solid color-mix(in srgb, var(--danger-color, #e5534b) 45%, var(--border-color));
+  border: 1px solid
+    color-mix(in srgb, var(--danger-color, #e5534b) 45%, var(--border-color));
   border-radius: 8px;
-  background: color-mix(in srgb, var(--danger-color, #e5534b) 10%, var(--bg-primary));
+  background: color-mix(
+    in srgb,
+    var(--danger-color, #e5534b) 10%,
+    var(--bg-primary)
+  );
   color: color-mix(in srgb, var(--danger-color, #e5534b) 82%, #ffffff);
   font-size: 12.5px;
   font-weight: 600;
   letter-spacing: 0.2px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    box-shadow 0.15s;
 }
 
 .ai-drawing-cancel-btn:hover {
-  background: color-mix(in srgb, var(--danger-color, #e5534b) 20%, var(--bg-primary));
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--danger-color, #e5534b) 22%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--danger-color, #e5534b) 20%,
+    var(--bg-primary)
+  );
+  box-shadow: 0 2px 8px
+    color-mix(in srgb, var(--danger-color, #e5534b) 22%, transparent);
 }
 
 /* 参数栏（卡片） */
@@ -27732,12 +28195,18 @@ input {
   background: var(--bg-tertiary);
   color: var(--text-secondary);
   font-size: 11.5px;
-  transition: border-color 0.12s, color 0.12s;
+  transition:
+    border-color 0.12s,
+    color 0.12s;
 }
 
 .ai-drawing-param .custom-select-trigger:hover:not(:disabled) {
   color: var(--text-primary);
-  border-color: color-mix(in srgb, var(--accent-color) 40%, var(--border-color));
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 40%,
+    var(--border-color)
+  );
 }
 
 .ai-drawing-param .custom-select-trigger:focus-visible {
@@ -27762,7 +28231,10 @@ input {
   font-size: 11.5px;
   padding: 0 8px;
   outline: none;
-  transition: border-color 0.12s, color 0.12s, box-shadow 0.12s;
+  transition:
+    border-color 0.12s,
+    color 0.12s,
+    box-shadow 0.12s;
 }
 
 .ai-drawing-seed-input:focus {
@@ -27789,13 +28261,20 @@ input {
   color: var(--text-secondary);
   cursor: pointer;
   flex-shrink: 0;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s,
+    border-color 0.12s;
 }
 
 .ai-drawing-retry-models:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
-  border-color: color-mix(in srgb, var(--accent-color) 40%, var(--border-color));
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 40%,
+    var(--border-color)
+  );
 }
 
 .ai-drawing-advanced-toggle {
@@ -27810,14 +28289,21 @@ input {
   color: var(--text-tertiary);
   font-size: 11.5px;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s,
+    border-color 0.12s;
 }
 
 .ai-drawing-advanced-toggle:hover,
 .ai-drawing-advanced-toggle.open {
   background: var(--bg-tertiary);
   color: var(--text-primary);
-  border-color: color-mix(in srgb, var(--accent-color) 35%, var(--border-color));
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 35%,
+    var(--border-color)
+  );
 }
 
 .ai-drawing-advanced-toggle .rotate-90 {
@@ -27849,13 +28335,20 @@ input {
   color: var(--text-secondary);
   font-size: 11.5px;
   cursor: pointer;
-  transition: border-color 0.12s, color 0.12s, background 0.12s;
+  transition:
+    border-color 0.12s,
+    color 0.12s,
+    background 0.12s;
 }
 
 .ai-drawing-size-trigger:hover,
 .ai-drawing-size-trigger.open {
   color: var(--text-primary);
-  border-color: color-mix(in srgb, var(--accent-color) 40%, var(--border-color));
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 40%,
+    var(--border-color)
+  );
   background: var(--bg-hover);
 }
 
@@ -27931,12 +28424,19 @@ input {
   font-size: 11.5px;
   line-height: 1;
   cursor: pointer;
-  transition: border-color 0.12s, color 0.12s, background 0.12s;
+  transition:
+    border-color 0.12s,
+    color 0.12s,
+    background 0.12s;
 }
 
 .ai-drawing-size-option:hover {
   color: var(--text-primary);
-  border-color: color-mix(in srgb, var(--accent-color) 40%, var(--border-color));
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 40%,
+    var(--border-color)
+  );
 }
 
 .ai-drawing-size-option.active {
@@ -28008,7 +28508,9 @@ input {
   background: var(--bg-tertiary);
   flex-shrink: 0;
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
 }
 
 .ai-drawing-ref:hover {
@@ -28050,7 +28552,13 @@ input {
 }
 
 .ai-drawing-ref-hint code {
-  font-family: var(--font-mono, ui-monospace, "Cascadia Code", Consolas, monospace);
+  font-family: var(
+    --font-mono,
+    ui-monospace,
+    "Cascadia Code",
+    Consolas,
+    monospace
+  );
   background: var(--bg-hover);
   border-radius: 4px;
   padding: 0 4px;
@@ -28089,9 +28597,14 @@ input {
   gap: 7px;
   align-self: flex-start;
   padding: 5px 10px;
-  border: 1px solid color-mix(in srgb, var(--warning-color, #d29922) 45%, transparent);
+  border: 1px solid
+    color-mix(in srgb, var(--warning-color, #d29922) 45%, transparent);
   border-radius: 7px;
-  background: color-mix(in srgb, var(--warning-color, #d29922) 10%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--warning-color, #d29922) 10%,
+    transparent
+  );
   color: var(--warning-color, #d29922);
   font-size: 11px;
   flex-shrink: 0;
@@ -28168,7 +28681,9 @@ input {
   color: var(--text-secondary);
   font-size: 11px;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .ai-drawing-save-all-btn:hover:not(:disabled),
@@ -28239,7 +28754,8 @@ input {
     color-mix(in srgb, var(--accent-color) 7%, transparent)
   );
   color: color-mix(in srgb, var(--accent-color) 85%, #ffffff);
-  box-shadow: 0 2px 10px color-mix(in srgb, var(--accent-color) 16%, transparent);
+  box-shadow: 0 2px 10px
+    color-mix(in srgb, var(--accent-color) 16%, transparent);
 }
 
 .ai-drawing-empty-title {
@@ -28287,13 +28803,20 @@ input {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s,
+    border-color 0.12s;
 }
 
 .ai-drawing-example-chip:hover {
   background: color-mix(in srgb, var(--accent-color) 12%, var(--bg-tertiary));
   color: var(--text-primary);
-  border-color: color-mix(in srgb, var(--accent-color) 40%, var(--border-color));
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 40%,
+    var(--border-color)
+  );
 }
 
 /* `@` 唤起的参考图选择弹窗：贴住提示词输入框宽度，窄容器自动降列 */
@@ -28354,11 +28877,17 @@ input {
   background: var(--bg-secondary);
   cursor: pointer;
   overflow: hidden;
-  transition: border-color 0.12s, box-shadow 0.12s;
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
 }
 
 .ai-drawing-ref-picker-item:hover {
-  border-color: color-mix(in srgb, var(--accent-color) 55%, var(--border-color));
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 55%,
+    var(--border-color)
+  );
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
@@ -28411,7 +28940,8 @@ input {
   align-items: flex-start;
   gap: 10px;
   padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--danger-color, #e5534b) 38%, transparent);
+  border: 1px solid
+    color-mix(in srgb, var(--danger-color, #e5534b) 38%, transparent);
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--danger-color, #e5534b) 7%, transparent);
   animation: ai-drawing-error-in 0.2s ease-out;
@@ -28457,7 +28987,8 @@ input {
   max-height: 120px;
   overflow-y: auto;
   padding-top: 2px;
-  border-top: 1px dashed color-mix(in srgb, var(--border-light) 60%, transparent);
+  border-top: 1px dashed
+    color-mix(in srgb, var(--border-light) 60%, transparent);
 }
 
 .ai-drawing-error-actions {
@@ -28480,17 +29011,29 @@ input {
   color: var(--text-secondary);
   font-size: 11.5px;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s, border-color 0.12s, box-shadow 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s,
+    border-color 0.12s,
+    box-shadow 0.12s;
 }
 
 .ai-drawing-error-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
-  border-color: color-mix(in srgb, var(--accent-color) 40%, var(--border-color));
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 40%,
+    var(--border-color)
+  );
 }
 
 .ai-drawing-error-btn-retry {
-  border-color: color-mix(in srgb, var(--accent-color) 45%, var(--border-color));
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 45%,
+    var(--border-color)
+  );
   color: var(--accent-color);
   background: color-mix(in srgb, var(--accent-color) 8%, var(--bg-primary));
 }
@@ -28526,17 +29069,28 @@ input {
   overflow: hidden;
   background: var(--bg-tertiary);
   aspect-ratio: 1;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
 }
 
 .ai-drawing-gallery-item:hover {
-  border-color: color-mix(in srgb, var(--accent-color) 35%, var(--border-light));
-  box-shadow: 0 3px 12px color-mix(in srgb, var(--accent-color) 14%, transparent);
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 35%,
+    var(--border-light)
+  );
+  box-shadow: 0 3px 12px
+    color-mix(in srgb, var(--accent-color) 14%, transparent);
 }
 
 /* 流式预览格：脉冲边框表示仍在生成 */
 .ai-drawing-gallery-item-streaming {
-  border-color: color-mix(in srgb, var(--accent-color) 45%, var(--border-light));
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 45%,
+    var(--border-light)
+  );
   animation: ai-drawing-streaming-pulse 1.6s ease-in-out infinite;
 }
 
@@ -28546,7 +29100,8 @@ input {
     box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-color) 0%, transparent);
   }
   50% {
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-color) 18%, transparent);
+    box-shadow: 0 0 0 3px
+      color-mix(in srgb, var(--accent-color) 18%, transparent);
   }
 }
 
@@ -28556,7 +29111,9 @@ input {
   object-fit: cover;
   display: block;
   cursor: zoom-in;
-  transition: transform 0.18s ease, filter 0.18s ease;
+  transition:
+    transform 0.18s ease,
+    filter 0.18s ease;
 }
 
 .ai-drawing-gallery-item:hover img {
@@ -28588,7 +29145,9 @@ input {
   background: rgba(0, 0, 0, 0.55);
   color: #e6e6e6;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .ai-drawing-img-action:hover {
@@ -28655,7 +29214,10 @@ input {
   border-radius: var(--radius-sm);
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s,
+    border-color 0.12s;
 }
 
 .ai-drawing-delete-cancel {
@@ -28719,7 +29281,9 @@ input {
   color: var(--text-tertiary);
   cursor: pointer;
   flex-shrink: 0;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .ai-drawing-history-collapse:hover {
@@ -28753,7 +29317,10 @@ input {
   font-size: 11px;
   padding: 0 8px;
   outline: none;
-  transition: border-color 0.12s, color 0.12s, box-shadow 0.12s;
+  transition:
+    border-color 0.12s,
+    color 0.12s,
+    box-shadow 0.12s;
 }
 
 .ai-drawing-history-search:focus {
@@ -28787,7 +29354,9 @@ input {
   object-fit: cover;
   display: block;
   cursor: zoom-in;
-  transition: transform 0.18s ease, filter 0.18s ease;
+  transition:
+    transform 0.18s ease,
+    filter 0.18s ease;
 }
 
 .ai-drawing-library-item:hover img {
@@ -28819,7 +29388,9 @@ input {
   color: var(--text-secondary);
   font-size: 11.5px;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .ai-drawing-load-more:hover {
@@ -28958,7 +29529,9 @@ input {
   color: #e6e6e6;
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .ai-drawing-lightbox-btn:hover:not(:disabled) {
@@ -29085,7 +29658,10 @@ input {
   color: var(--text-secondary);
   font-size: 11px;
   cursor: pointer;
-  transition: background 0.1s, border-color 0.1s, color 0.1s;
+  transition:
+    background 0.1s,
+    border-color 0.1s,
+    color 0.1s;
 }
 
 .right-panel-close-confirm-btn:hover {
@@ -29131,7 +29707,9 @@ input {
   text-align: left;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .context-menu-item:hover {
@@ -29233,7 +29811,10 @@ body.ctrl-held [data-path] {
   cursor: pointer;
   box-shadow: 0 4px 14px
     color-mix(in srgb, var(--accent-color) 45%, transparent);
-  transition: background 0.12s ease, transform 0.1s ease, opacity 0.12s ease;
+  transition:
+    background 0.12s ease,
+    transform 0.1s ease,
+    opacity 0.12s ease;
   animation: terminal-toolbar-send-in 0.14s ease;
 }
 
@@ -29255,6 +29836,89 @@ body.ctrl-held [data-path] {
 
 .terminal-toolbar-send:active {
   transform: translateY(0);
+}
+
+/* 终端等待输入提示条：程序/shell 正在等待输入时悬浮在终端顶部，
+   让用户明确知道终端需要介入（而不是 Agent 卡住）。 */
+.terminal-waiting-banner {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 24px);
+  height: 26px;
+  padding: 0 12px;
+  border: 1px solid
+    color-mix(in srgb, var(--accent-orange-text, #e8973a) 45%, transparent);
+  border-radius: 999px;
+  background: color-mix(
+    in srgb,
+    var(--accent-orange-bg, rgba(232, 151, 58, 0.14)) 80%,
+    var(--bg-primary)
+  );
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 16px
+    color-mix(in srgb, var(--accent-orange-text, #e8973a) 22%, transparent);
+  color: var(--accent-orange-text, #e8973a);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  animation: terminal-waiting-in 0.18s ease;
+  pointer-events: none;
+}
+
+@keyframes terminal-waiting-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -4px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* 等待输入脉冲圆点：持续呼吸动画提示“活着的”等待状态 */
+.terminal-waiting-dot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent-orange-text, #e8973a);
+  animation: terminal-waiting-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes terminal-waiting-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.75);
+  }
+}
+
+.terminal-waiting-label {
+  flex-shrink: 0;
+}
+
+.terminal-waiting-hint {
+  min-width: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ===== 终端监控条（输入框上方，拖拽终端后出现） ===== */
@@ -29392,7 +30056,9 @@ body.ctrl-held [data-path] {
   color: var(--text-secondary);
   font-size: 10.5px;
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
 }
 
 .terminal-monitor-stop:hover {
@@ -29497,7 +30163,9 @@ body.ctrl-held [data-path] {
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
   flex-shrink: 0;
 }
 
@@ -29670,7 +30338,10 @@ body.ctrl-held [data-path] {
   background: var(--bg-secondary);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
 }
 
 .browser-element-picker-settings-btn:hover {
@@ -29712,7 +30383,10 @@ body.ctrl-held [data-path] {
   color: var(--text-secondary);
   cursor: pointer;
   padding: 0;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
 }
 
 .browser-element-picker-icon-btn:hover {
@@ -29855,7 +30529,10 @@ body.ctrl-held [data-path] {
   color: var(--text-secondary);
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
 }
 
 .browser-element-picker-btn:hover {
@@ -29933,7 +30610,10 @@ body.ctrl-held [data-path] {
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .browser-tab:hover {
@@ -29977,7 +30657,9 @@ body.ctrl-held [data-path] {
   background: transparent;
   color: var(--text-tertiary);
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .browser-tab-close:hover {
@@ -29998,7 +30680,9 @@ body.ctrl-held [data-path] {
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .browser-tab-new:hover {
@@ -30099,7 +30783,9 @@ body.ctrl-held [data-path] {
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background 0.1s ease, color 0.1s ease;
+  transition:
+    background 0.1s ease,
+    color 0.1s ease;
 }
 
 .browser-menu-zoom-btn:hover:not(:disabled) {
@@ -30123,7 +30809,9 @@ body.ctrl-held [data-path] {
   font-family: inherit;
   text-align: center;
   cursor: pointer;
-  transition: background 0.1s ease, color 0.1s ease;
+  transition:
+    background 0.1s ease,
+    color 0.1s ease;
 }
 
 .browser-menu-zoom-value:hover:not(:disabled) {
@@ -30189,7 +30877,9 @@ body.ctrl-held [data-path] {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition: background 0.1s ease, color 0.1s ease;
+  transition:
+    background 0.1s ease,
+    color 0.1s ease;
 }
 
 .browser-menu-homepage-display:hover {
@@ -30310,7 +31000,9 @@ body.ctrl-held [data-path] {
   border-radius: var(--radius-md);
   background: var(--bg-secondary);
   color: var(--text-muted);
-  transition: border-color 0.12s, box-shadow 0.12s;
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
 }
 
 .browser-settings-search-row:focus-within {
@@ -30410,7 +31102,9 @@ body.ctrl-held [data-path] {
   font-size: 12px;
   font-weight: 650;
   cursor: pointer;
-  transition: opacity 0.12s, transform 0.12s;
+  transition:
+    opacity 0.12s,
+    transform 0.12s;
 }
 
 .browser-settings-scan-action > svg {
@@ -30515,7 +31209,9 @@ body.ctrl-held [data-path] {
   background: transparent;
   color: var(--text-tertiary);
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .browser-settings-icon-btn:hover:not(:disabled) {
@@ -30582,7 +31278,9 @@ body.ctrl-held [data-path] {
   font-size: 11.5px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.12s, opacity 0.12s;
+  transition:
+    background 0.12s,
+    opacity 0.12s;
 }
 
 .browser-settings-batch-delete:hover:not(:disabled) {
@@ -30619,7 +31317,9 @@ body.ctrl-held [data-path] {
   border-radius: var(--radius-md);
   background: var(--bg-secondary);
   cursor: pointer;
-  transition: border-color 0.12s, background 0.12s;
+  transition:
+    border-color 0.12s,
+    background 0.12s;
 }
 
 .browser-settings-source:hover {
@@ -30737,7 +31437,9 @@ body.ctrl-held [data-path] {
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background 0.1s ease, color 0.1s ease;
+  transition:
+    background 0.1s ease,
+    color 0.1s ease;
 }
 
 .browser-find-btn:hover:not(:disabled) {
@@ -31003,7 +31705,9 @@ body.ctrl-held [data-path] {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .ssh-wizard-input-toggle:hover,
@@ -31314,7 +32018,9 @@ body.ctrl-held [data-path] {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.1s, color 0.1s;
+  transition:
+    background 0.1s,
+    color 0.1s;
   padding: 0;
 }
 
@@ -31339,7 +32045,9 @@ body.ctrl-held [data-path] {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.1s, color 0.1s;
+  transition:
+    background 0.1s,
+    color 0.1s;
   flex-shrink: 0;
   padding: 0;
 }
@@ -31530,7 +32238,9 @@ body.ctrl-held [data-path] {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.1s, color 0.1s;
+  transition:
+    background 0.1s,
+    color 0.1s;
   flex-shrink: 0;
   padding: 0;
 }
@@ -31556,7 +32266,9 @@ body.ctrl-held [data-path] {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.1s, color 0.1s;
+  transition:
+    background 0.1s,
+    color 0.1s;
   flex-shrink: 0;
   padding: 0;
 }
@@ -31651,7 +32363,9 @@ body.ctrl-held [data-path] {
   cursor: pointer;
   flex-shrink: 0;
   padding: 0;
-  transition: background 0.1s, color 0.1s;
+  transition:
+    background 0.1s,
+    color 0.1s;
 }
 
 .file-viewer-search-case:hover {
@@ -33792,7 +34506,9 @@ body.ctrl-held [data-path] {
   background: var(--bg-secondary);
   color: var(--text-primary);
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
 }
 .usage-pagination-btn:hover:not(:disabled) {
   background: var(--bg-hover);
@@ -33829,7 +34545,10 @@ body.ctrl-held [data-path] {
   opacity: 0;
   visibility: hidden;
   transform: translateY(2px);
-  transition: opacity 0.12s ease, visibility 0.12s ease, transform 0.12s ease;
+  transition:
+    opacity 0.12s ease,
+    visibility 0.12s ease,
+    transform 0.12s ease;
 }
 
 .usage-floating-tooltip-root.visible {
@@ -33907,7 +34626,10 @@ body.ctrl-held [data-path] {
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.14s, border-color 0.14s, color 0.14s;
+  transition:
+    background 0.14s,
+    border-color 0.14s,
+    color 0.14s;
 }
 
 .system-logs-clear-btn:disabled {
@@ -34023,7 +34745,9 @@ body.ctrl-held [data-path] {
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
 }
 
 .request-logging-duration-preset:hover {
@@ -34093,7 +34817,9 @@ body.ctrl-held [data-path] {
   letter-spacing: 0.03em;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.14s, color 0.14s;
+  transition:
+    background 0.14s,
+    color 0.14s;
 }
 
 .system-logs-level-chip:hover {
@@ -34352,7 +35078,10 @@ body.ctrl-held [data-path] {
   color: var(--text-muted);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.14s, color 0.14s, background 0.14s;
+  transition:
+    opacity 0.14s,
+    color 0.14s,
+    background 0.14s;
 }
 
 .system-logs-detail-row:hover .system-logs-detail-copy-btn {
@@ -34639,7 +35368,10 @@ body.ctrl-held [data-path] {
   font-size: 12px;
   font-weight: 600;
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
-  transition: filter 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+  transition:
+    filter 0.15s ease,
+    transform 0.1s ease,
+    box-shadow 0.15s ease;
 }
 
 .personalization-save-btn:hover:not(:disabled) {
@@ -34676,7 +35408,9 @@ body.ctrl-held [data-path] {
   font-size: 12.5px;
   line-height: 1.6;
   resize: vertical;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .personalization-textarea:hover {
@@ -34895,7 +35629,9 @@ body.ctrl-held [data-path] {
   text-align: center;
   -moz-appearance: textfield;
   appearance: textfield;
-  transition: border-color 0.12s, box-shadow 0.12s;
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
 }
 
 .imagegen-concurrency-control input::-webkit-outer-spin-button,
@@ -35137,7 +35873,10 @@ body.ctrl-held [data-path] {
   height: 30px;
   border: 1px solid transparent;
   border-radius: var(--radius-md);
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .image-library-actions .icon-btn:hover {
@@ -35185,7 +35924,9 @@ body.ctrl-held [data-path] {
   font-size: 10.5px;
   white-space: nowrap;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .image-library-root-action:hover {
@@ -35227,7 +35968,9 @@ body.ctrl-held [data-path] {
   color: var(--text-tertiary);
   font-size: 10.5px;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .image-library-migrate-cancel:hover {
@@ -35324,7 +36067,9 @@ body.ctrl-held [data-path] {
   font-size: 10.5px;
   white-space: nowrap;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .general-storage-action:hover {
@@ -35366,7 +36111,9 @@ body.ctrl-held [data-path] {
   color: var(--text-tertiary);
   font-size: 10.5px;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .general-storage-migrate-cancel:hover {
@@ -35426,7 +36173,10 @@ body.ctrl-held [data-path] {
   font-size: 11.5px;
   cursor: pointer;
   max-width: 170px;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .image-library-album-chip:hover,
@@ -35683,7 +36433,9 @@ body.ctrl-held [data-path] {
   background: var(--bg-tertiary);
   border: 1px dashed var(--border-color);
   color: var(--text-tertiary);
-  transition: color 0.15s ease, border-color 0.15s ease;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .image-library-album-card.add .image-library-album-card-info {
@@ -35793,7 +36545,10 @@ body.ctrl-held [data-path] {
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .image-library-back-btn:hover {
@@ -35874,7 +36629,9 @@ body.ctrl-held [data-path] {
   color: var(--text-tertiary);
   font-size: 11px;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .image-library-filter-btn:hover {
@@ -35930,7 +36687,9 @@ body.ctrl-held [data-path] {
   color: var(--text-tertiary);
   flex: 0 1 240px;
   min-width: 150px;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .image-library-search:focus-within {
@@ -35965,7 +36724,9 @@ body.ctrl-held [data-path] {
   background: transparent;
   color: var(--text-tertiary);
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
 }
 
 .image-library-search button:hover {
@@ -36046,7 +36807,9 @@ body.ctrl-held [data-path] {
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .image-library-state-clear:hover {
@@ -36295,7 +37058,9 @@ body.ctrl-held [data-path] {
   color: var(--text-secondary);
   font-size: 11.5px;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .image-library-lightbox-action:hover {
@@ -36338,7 +37103,9 @@ body.ctrl-held [data-path] {
   cursor: pointer;
   opacity: 0;
   backdrop-filter: blur(2px);
-  transition: opacity 0.15s ease, background 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    background 0.15s ease;
 }
 
 .image-library-card:hover .image-library-card-check,
@@ -36447,11 +37214,13 @@ body.ctrl-held [data-path] {
   padding: 6px 8px;
 }
 
-.image-library-lightbox-details.collapsed .image-library-lightbox-details-title {
+.image-library-lightbox-details.collapsed
+  .image-library-lightbox-details-title {
   display: none;
 }
 
-.image-library-lightbox-details.collapsed .image-library-lightbox-details-toggle {
+.image-library-lightbox-details.collapsed
+  .image-library-lightbox-details-toggle {
   width: 24px;
   height: 24px;
 }
@@ -36561,7 +37330,9 @@ body.ctrl-held [data-path] {
   color: #fff;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s ease, background 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    background 0.15s ease;
   z-index: 2;
 }
 
@@ -36778,7 +37549,10 @@ body.ctrl-held [data-path] {
   line-height: 1.2;
   white-space: nowrap;
   flex-shrink: 0;
-  transition: background 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    box-shadow 0.12s ease;
 }
 
 .detached-chat-tab:hover {
@@ -36893,7 +37667,9 @@ body.ctrl-held [data-path] {
   border-radius: var(--radius-md);
   border: 1px solid transparent;
   background: var(--bg-secondary);
-  transition: background 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
 }
 
 .pets-list-item:hover {
@@ -36910,7 +37686,8 @@ body.ctrl-held [data-path] {
   width: 36px;
   height: 36px;
   border-radius: var(--radius-sm);
-  background: linear-gradient(
+  background:
+    linear-gradient(
       45deg,
       rgba(128, 128, 128, 0.08) 25%,
       transparent 25%,
@@ -36925,7 +37702,9 @@ body.ctrl-held [data-path] {
       rgba(128, 128, 128, 0.08) 75%
     );
   background-size: 8px 8px;
-  background-position: 0 0, 4px 4px;
+  background-position:
+    0 0,
+    4px 4px;
 }
 
 .pets-list-info {
@@ -37085,7 +37864,9 @@ body.ctrl-held [data-path] {
   font-weight: 500;
   letter-spacing: 0;
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
 }
 
 .update-dialog-lang-switch button:hover {

@@ -97,7 +97,7 @@ impl McpService for TerminalService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "send".to_string(),
-                description: "Send input text to a terminal tab's PTY (as if the user typed it). For commands, include a trailing newline (\\n) to press Enter — if you omit it, the backend will automatically append one so the command executes. Omit tabId to target the most recently focused terminal tab. The input is written to the shell's stdin and processed interactively — tab completion, history, and prompts all work normally.".to_string(),
+                description: "Send input to a terminal tab's PTY (as if the user typed it). Two mutually exclusive modes: (1) `input` — free text; a trailing newline is appended automatically if omitted so the command executes; (2) `keys` — an ordered list of named keys / control sequences (e.g. enter, tab, up, down, left, right, backspace, esc, ctrl+c, ctrl+d, home, end, pageup, pagedown, f1-f12) for interactive prompts and TUI navigation; named keys are mapped to the proper terminal bytes and NO newline is appended, so sending e.g. [\"up\",\"enter\"] presses ArrowUp then Enter. Unknown key names are sent verbatim as text. Omit tabId to target the most recently focused terminal tab. The input is written to the shell's stdin and processed interactively — tab completion, history, and prompts all work normally.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -107,10 +107,16 @@ impl McpService for TerminalService {
                         },
                         "input": {
                             "type": "string",
-                            "description": "Text to send to the terminal. For executing a command, append a newline character."
+                            "description": "Text to send to the terminal. For executing a command, append a newline character (or omit it — one is appended automatically)."
+                        },
+                        "keys": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "Ordered list of named keys to send instead of text: enter, tab, backspace, esc, up, down, left, right, home, end, pageup, pagedown, insert, delete, ctrl+c, ctrl+d, ctrl+z, f1-f12. Each name is mapped to the terminal's byte sequence; unknown names are sent verbatim. No newline is appended. Mutually exclusive with input."
                         }
-                    },
-                    "required": ["input"]
+                    }
                 }),
             },
             McpTool {
@@ -286,7 +292,25 @@ fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi::Result<Va
         }
         "send" => {
             optional_non_empty_string(args, "tabId")?;
-            required_non_empty_string(args, "input", tool_name)?;
+            let has_input = args
+                .get("input")
+                .and_then(Value::as_str)
+                .is_some_and(|value| !value.trim().is_empty());
+            let has_keys = args.get("keys").is_some_and(|value| !value.is_null());
+            if has_input && has_keys {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "input and keys are mutually exclusive for terminal-send".to_string(),
+                ));
+            }
+            if has_keys {
+                validate_keys_array(args, tool_name)?;
+            } else if !has_input {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "input or keys is required for terminal-send".to_string(),
+                ));
+            }
             if let Some(input_str) = normalized.get("input").and_then(Value::as_str) {
                 let trimmed = input_str.trim_start_matches(['\n', '\r']);
                 if !trimmed.ends_with('\n') && !trimmed.ends_with('\r') {
@@ -378,6 +402,48 @@ fn validate_shell_path(path: &str) -> napi::Result<()> {
         ));
     }
     Ok(())
+}
+
+/// 校验 terminal-send 的 `keys` 数组：元素必须为非空字符串，且数量有上限，
+/// 防止 Agent 一次性发送超大按键序列。
+fn validate_keys_array(args: &Value, tool_name: &str) -> napi::Result<()> {
+    const MAX_KEYS: usize = 64;
+    match args.get("keys") {
+        None | Some(Value::Null) => Ok(()),
+        Some(Value::Array(items)) => {
+            if items.is_empty() {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "keys must not be empty for terminal-send".to_string(),
+                ));
+            }
+            if items.len() > MAX_KEYS {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    format!("keys must contain at most {MAX_KEYS} entries"),
+                ));
+            }
+            for item in items {
+                let Some(text) = item.as_str() else {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        format!("keys entries must be strings for terminal-{tool_name}"),
+                    ));
+                };
+                if text.trim().is_empty() {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        format!("keys entries must not be empty for terminal-{tool_name}"),
+                    ));
+                }
+            }
+            Ok(())
+        }
+        Some(_) => Err(Error::new(
+            Status::InvalidArg,
+            format!("keys must be an array of strings for terminal-{tool_name}"),
+        )),
+    }
 }
 
 fn bounded_u64(

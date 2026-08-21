@@ -4,6 +4,7 @@ import {
   Check,
   Clock,
   Columns3,
+  Keyboard,
   List,
   Maximize2,
   TerminalSquare,
@@ -36,6 +37,7 @@ type ParsedArgs = {
   cwd?: string;
   shellPath?: string;
   input?: string;
+  keys?: string[];
   waitMs?: number;
   cols?: number;
   rows?: number;
@@ -62,12 +64,17 @@ const parseArgs = (args: string): ParsedArgs => {
   return {
     tabId: typeof parsed.tabId === "string" ? parsed.tabId : undefined,
     cwd: typeof parsed.cwd === "string" ? parsed.cwd : undefined,
-    shellPath: typeof parsed.shellPath === "string" ? parsed.shellPath : undefined,
+    shellPath:
+      typeof parsed.shellPath === "string" ? parsed.shellPath : undefined,
     input: typeof parsed.input === "string" ? parsed.input : undefined,
+    keys: Array.isArray(parsed.keys)
+      ? parsed.keys.filter((key): key is string => typeof key === "string")
+      : undefined,
     waitMs: typeof parsed.waitMs === "number" ? parsed.waitMs : undefined,
     cols: typeof parsed.cols === "number" ? parsed.cols : undefined,
     rows: typeof parsed.rows === "number" ? parsed.rows : undefined,
-    timeoutMs: typeof parsed.timeoutMs === "number" ? parsed.timeoutMs : undefined,
+    timeoutMs:
+      typeof parsed.timeoutMs === "number" ? parsed.timeoutMs : undefined,
     idleMs: typeof parsed.idleMs === "number" ? parsed.idleMs : undefined,
   };
 };
@@ -105,11 +112,11 @@ export const TerminalToolCall = ({
   const operation = parseOperation(toolCall.name);
   const parsedArgs = useMemo(
     () => parseArgs(toolCall.arguments),
-    [toolCall.arguments]
+    [toolCall.arguments],
   );
   const parsedResult = useMemo(
     () => parseResult(toolCall.result),
-    [toolCall.result]
+    [toolCall.result],
   );
 
   const hasError = parsedResult.type === "error";
@@ -119,9 +126,9 @@ export const TerminalToolCall = ({
 
   const countdownTimeoutMs =
     operation === "wait"
-      ? parsedArgs.timeoutMs ?? 30000
+      ? (parsedArgs.timeoutMs ?? 30000)
       : operation === "read"
-        ? parsedArgs.waitMs ?? 0
+        ? (parsedArgs.waitMs ?? 0)
         : 0;
 
   const [remainingMs, setRemainingMs] = useState<number | null>(null);
@@ -147,8 +154,15 @@ export const TerminalToolCall = ({
   const displayName = (() => {
     switch (operation) {
       case "open":
-        return parsedArgs.cwd || parsedArgs.shellPath || t("toolCall.terminal.newTab");
+        return (
+          parsedArgs.cwd ||
+          parsedArgs.shellPath ||
+          t("toolCall.terminal.newTab")
+        );
       case "send":
+        if (parsedArgs.keys?.length) {
+          return parsedArgs.keys.join(" ").slice(0, 60);
+        }
         return parsedArgs.input
           ? parsedArgs.input.replace(/\n/g, "↵").slice(0, 60)
           : undefined;
@@ -191,9 +205,7 @@ export const TerminalToolCall = ({
       {isRunning && countdownSeconds !== null ? (
         <span
           className={`tool-call-terminal-countdown ${
-            countdownSeconds <= 5
-              ? "tool-call-terminal-countdown-urgent"
-              : ""
+            countdownSeconds <= 5 ? "tool-call-terminal-countdown-urgent" : ""
           }`}
         >
           <Timer size={12} aria-hidden="true" />
@@ -270,11 +282,7 @@ export const TerminalToolCall = ({
         ) : null}
 
         {/* Arguments display (operation-specific) */}
-        <TerminalArgsDisplay
-          operation={operation}
-          args={parsedArgs}
-          t={t}
-        />
+        <TerminalArgsDisplay operation={operation} args={parsedArgs} t={t} />
 
         {/* Result display (operation-specific) */}
         {parsedResult.type === "success" ? (
@@ -328,6 +336,24 @@ export const TerminalToolCall = ({
 // Sub-components
 // ---------------------------------------------------------------------------
 
+/** 终端等待输入徽章：read/wait 结果检测到终端正在等待输入时显示，
+ *  提示用户当前需要提供什么输入，避免误以为 Agent 卡住。 */
+const AwaitingInputBadge = ({
+  hint,
+  t,
+}: {
+  hint: string;
+  t: TFunc;
+}): React.JSX.Element => (
+  <div className="tool-call-terminal-awaiting">
+    <Keyboard size={11} aria-hidden="true" />
+    <span>{t("toolCall.terminal.awaitingInput")}</span>
+    {hint ? (
+      <code className="tool-call-terminal-awaiting-hint">{hint}</code>
+    ) : null}
+  </div>
+);
+
 type TerminalArgsDisplayProps = {
   operation: string;
   args: ParsedArgs;
@@ -366,7 +392,7 @@ const TerminalArgsDisplay = ({
     }
 
     case "send": {
-      if (!args.input) {
+      if (!args.input && !args.keys?.length) {
         return null;
       }
       return (
@@ -379,17 +405,30 @@ const TerminalArgsDisplay = ({
               </code>
             </div>
           ) : null}
-          <div className="tool-call-terminal-arg-row">
-            <span className="tool-call-terminal-arg-label">
-              {t("toolCall.terminal.input")}
-            </span>
-            <pre className="tool-call-terminal-input-pre">
-              <span className="tool-call-terminal-prompt" aria-hidden="true">
-                {">"}
+          {args.keys?.length ? (
+            <div className="tool-call-terminal-arg-row">
+              <span className="tool-call-terminal-arg-label">keys</span>
+              <span className="tool-call-terminal-keys">
+                {args.keys.map((key, index) => (
+                  <code key={index} className="tool-call-terminal-key-chip">
+                    {key}
+                  </code>
+                ))}
               </span>
-              <code>{args.input}</code>
-            </pre>
-          </div>
+            </div>
+          ) : (
+            <div className="tool-call-terminal-arg-row">
+              <span className="tool-call-terminal-arg-label">
+                {t("toolCall.terminal.input")}
+              </span>
+              <pre className="tool-call-terminal-input-pre">
+                <span className="tool-call-terminal-prompt" aria-hidden="true">
+                  {">"}
+                </span>
+                <code>{args.input}</code>
+              </pre>
+            </div>
+          )}
         </div>
       );
     }
@@ -527,8 +566,12 @@ const TerminalResultDisplay = ({
 
     case "read": {
       const text = typeof data.text === "string" ? data.text : "";
+      const awaitingInput = data.awaitingInput === true;
+      const inputHint =
+        typeof data.inputHint === "string" ? data.inputHint : "";
       return (
         <div className="tool-call-terminal-result">
+          {awaitingInput ? <AwaitingInputBadge hint={inputHint} t={t} /> : null}
           <pre className="tool-call-terminal-output-pre">{text}</pre>
         </div>
       );
@@ -543,8 +586,10 @@ const TerminalResultDisplay = ({
             ? data.afterText
             : "";
       const idle = data.idle === true;
-      const elapsedMs =
-        typeof data.elapsedMs === "number" ? data.elapsedMs : 0;
+      const elapsedMs = typeof data.elapsedMs === "number" ? data.elapsedMs : 0;
+      const awaitingInput = data.awaitingInput === true;
+      const inputHint =
+        typeof data.inputHint === "string" ? data.inputHint : "";
       return (
         <div className="tool-call-terminal-result">
           <div className="tool-call-terminal-result-row">
@@ -565,13 +610,13 @@ const TerminalResultDisplay = ({
               })}
             </span>
           </div>
+          {awaitingInput ? <AwaitingInputBadge hint={inputHint} t={t} /> : null}
           {text ? (
             <pre className="tool-call-terminal-output-pre">{text}</pre>
           ) : null}
         </div>
       );
     }
-
     case "resize": {
       const cols = typeof data.cols === "number" ? data.cols : 0;
       const rows = typeof data.rows === "number" ? data.rows : 0;
@@ -627,8 +672,7 @@ const TerminalResultDisplay = ({
               }
               const tabId =
                 typeof tab.tabId === "string" ? tab.tabId : `#${index}`;
-              const title =
-                typeof tab.title === "string" ? tab.title : "";
+              const title = typeof tab.title === "string" ? tab.title : "";
               const cwd = typeof tab.cwd === "string" ? tab.cwd : "";
               const isActive = tab.isActive === true;
               return (

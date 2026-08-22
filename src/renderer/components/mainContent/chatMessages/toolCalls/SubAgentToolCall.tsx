@@ -59,11 +59,8 @@ const parseArgs = (
     }
     if (mode === "continue") {
       const conversationId =
-        typeof parsed.conversationId === "string"
-          ? parsed.conversationId
-          : "";
-      const message =
-        typeof parsed.message === "string" ? parsed.message : "";
+        typeof parsed.conversationId === "string" ? parsed.conversationId : "";
+      const message = typeof parsed.message === "string" ? parsed.message : "";
       if (!conversationId || !message) {
         return null;
       }
@@ -281,7 +278,12 @@ export const SubAgentToolCall = ({
     : undefined;
 
   const isRunning = toolCall.status === "running";
-  const isError = parsedResult.type === "error" || toolCall.status === "error";
+  const isEmptyResultError =
+    parsedResult.type === "empty" && toolCall.status === "error";
+  const isError =
+    parsedResult.type === "error" ||
+    toolCall.status === "error" ||
+    isEmptyResultError;
 
   // 首次响应开始后，激活卡片不再显示“正在激活”。流式指标能覆盖
   // 仅输出工具调用或思考内容的响应，消息状态则覆盖首轮结束后的间隔。
@@ -493,7 +495,9 @@ export const SubAgentToolCall = ({
         ) : null}
 
         {/* Pending state - only when no activity yet */}
-        {parsedResult.type === "empty" && toolCallEntries.length === 0 ? (
+        {parsedResult.type === "empty" &&
+        !isEmptyResultError &&
+        toolCallEntries.length === 0 ? (
           <div
             className={`tool-call-sub-agent-pending ${
               isActivationPending ? "tool-call-sub-agent-pending-running" : ""
@@ -541,10 +545,16 @@ export const SubAgentToolCall = ({
         ) : null}
 
         {/* Error */}
-        {parsedResult.type === "error" ? (
+        {parsedResult.type === "error" || isEmptyResultError ? (
           <div className="tool-call-error">
             <AlertCircle size={12} aria-hidden="true" />
-            <span>{parsedResult.message}</span>
+            <span>
+              {isEmptyResultError
+                ? t("toolCall.subAgent.activationFailed")
+                : parsedResult.type === "error"
+                ? parsedResult.message
+                : t("toolCall.subAgent.activationFailed")}
+            </span>
           </div>
         ) : null}
 

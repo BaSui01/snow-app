@@ -115,7 +115,9 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
       }
 
       const normalizedBasicModel =
-        typeof basicModel === "string" ? basicModel.trim() || undefined : undefined;
+        typeof basicModel === "string"
+          ? basicModel.trim() || undefined
+          : undefined;
       return native.generateConversationSummary(
         conversationId.trim(),
         normalizedBasicModel
@@ -330,9 +332,7 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
     "chat-conversations:update-api-profile",
     async (_event, conversationId: unknown, profileName: unknown) => {
       if (typeof conversationId !== "string" || !conversationId.trim()) {
-        throw new Error(
-          "Conversation ID is required to update API profile"
-        );
+        throw new Error("Conversation ID is required to update API profile");
       }
       if (typeof profileName !== "string") {
         throw new Error("Profile name is required to update API profile");
@@ -349,7 +349,9 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
         module: "ipc/conversation",
         func: "update-api-profile",
         message: "Conversation API profile updated",
-        context: `conversation=${conversationId.trim()} profile=${normalizedProfileName || "(unbound)"}`,
+        context: `conversation=${conversationId.trim()} profile=${
+          normalizedProfileName || "(unbound)"
+        }`,
       });
     }
   );
@@ -555,9 +557,7 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
         throw new Error("Directory ID is required to create sub-agent session");
       }
       if (typeof apiProfileName !== "string" || !apiProfileName.trim()) {
-        throw new Error(
-          "API profile is required to create sub-agent session"
-        );
+        throw new Error("API profile is required to create sub-agent session");
       }
       if (typeof model !== "string" || !model.trim()) {
         throw new Error("Model is required to create sub-agent session");
@@ -574,24 +574,38 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
       const capturedResponsesFastMode =
         typeof responsesFastMode === "boolean" ? responsesFastMode : null;
 
-      snowLog.info({
-        module: "ipc/conversation",
-        func: "create-sub-agent-session",
-        message: "Sub-agent session created",
-        context: `agent=${agentName.trim()} conversation=${conversationId.trim()} parent=${parentConversationId.trim()}`,
-      });
-      await native.createSubAgentSession(
-        conversationId.trim(),
-        parentConversationId.trim(),
-        agentId.trim(),
-        agentName.trim(),
-        directoryId.trim(),
-        apiProfileName.trim(),
-        model.trim(),
-        title.trim(),
-        capturedThinkingStrength,
-        capturedResponsesFastMode
-      );
+      const sessionContext = `agent=${agentName.trim()} conversation=${conversationId.trim()} parent=${parentConversationId.trim()}`;
+      try {
+        await native.createSubAgentSession(
+          conversationId.trim(),
+          parentConversationId.trim(),
+          agentId.trim(),
+          agentName.trim(),
+          directoryId.trim(),
+          apiProfileName.trim(),
+          model.trim(),
+          title.trim(),
+          capturedThinkingStrength,
+          capturedResponsesFastMode
+        );
+        snowLog.info({
+          module: "ipc/conversation",
+          func: "create-sub-agent-session",
+          message: "Sub-agent session created",
+          context: sessionContext,
+        });
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        snowLog.error({
+          module: "ipc/conversation",
+          func: "create-sub-agent-session",
+          message: "Failed to create sub-agent session",
+          context: sessionContext,
+          error: errorMessage,
+        });
+        throw error;
+      }
     }
   );
   ipcMain.handle(

@@ -596,6 +596,7 @@ export const zhTW = {
   "toolCall.subAgent.result": "執行結果",
   "toolCall.subAgent.activating": "正在啟用子代理...",
   "toolCall.subAgent.waiting": "等待啟用子代理",
+  "toolCall.subAgent.activationFailed": "子代理啟用失敗，未返回結果",
   "toolCall.subAgent.jumpToConversation": "開啟子代理對話",
   "toolCall.subAgent.status.pending": "等待中",
   "toolCall.subAgent.status.running": "執行中",

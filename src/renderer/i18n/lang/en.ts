@@ -626,6 +626,8 @@ export const en = {
   "toolCall.subAgent.result": "Result",
   "toolCall.subAgent.activating": "Activating sub-agent...",
   "toolCall.subAgent.waiting": "Waiting to activate sub-agent",
+  "toolCall.subAgent.activationFailed":
+    "Sub-agent activation failed without a result",
   "toolCall.subAgent.jumpToConversation": "Open sub-agent conversation",
   "toolCall.subAgent.status.pending": "Pending",
   "toolCall.subAgent.status.running": "Running",

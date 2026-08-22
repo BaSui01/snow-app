@@ -596,6 +596,7 @@ export const zhCN = {
   "toolCall.subAgent.result": "执行结果",
   "toolCall.subAgent.activating": "正在激活子代理...",
   "toolCall.subAgent.waiting": "等待激活子代理",
+  "toolCall.subAgent.activationFailed": "子代理激活失败，未返回结果",
   "toolCall.subAgent.jumpToConversation": "打开子代理对话",
   "toolCall.subAgent.status.pending": "等待中",
   "toolCall.subAgent.status.running": "执行中",

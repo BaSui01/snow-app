@@ -36,6 +36,26 @@ export type ToolExecutionResult = {
   pendingHookWarnings: string[];
 };
 
+const isFailedSubAgentActivationResult = (
+  result: string | undefined
+): boolean => {
+  if (typeof result !== "string" || !result.trim()) {
+    return true;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(result);
+    return (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      !Array.isArray(parsed) &&
+      (parsed as Record<string, unknown>).success === false
+    );
+  } catch {
+    return false;
+  }
+};
+
 export type ToolExecutorDeps = {
   ctx: ConversationContextValue;
   effectiveKey: string;
@@ -48,30 +68,30 @@ export type ToolExecutorDeps = {
   awaitHookDecision: (
     key: string,
     messageId: string,
-    record: HookExecutionRecord,
+    record: HookExecutionRecord
   ) => Promise<boolean>;
   executeSubAgentActivation: (
     argsJson: string,
     parentConversationId: string,
     dirId: string,
     toolCallInteractionId: string | undefined,
-    checkpointIds: string[],
+    checkpointIds: string[]
   ) => Promise<string>;
   executeSubAgentMainTool: (
     toolName: string,
     argsJson: string,
     parentConversationId: string,
-    checkpointIds: string[],
+    checkpointIds: string[]
   ) => Promise<string>;
   planApprovedSessionKeysRef: { current: Set<string> };
   planModeRef: { current: boolean };
 };
 
 export function createToolExecutor(
-  deps: ToolExecutorDeps,
+  deps: ToolExecutorDeps
 ): (
   toolCalls: ToolCallInfo[],
-  authorizationDecisions: ToolAuthorizationDecision[],
+  authorizationDecisions: ToolAuthorizationDecision[]
 ) => Promise<ToolExecutionResult | null> {
   const {
     ctx,
@@ -96,7 +116,7 @@ export function createToolExecutor(
 
   return async (
     toolCalls: ToolCallInfo[],
-    authorizationDecisions: ToolAuthorizationDecision[],
+    authorizationDecisions: ToolAuthorizationDecision[]
   ): Promise<ToolExecutionResult | null> => {
     // Per-conversation mode snapshot: the Rust write gate must see THIS
     // session's Plan Mode, never the live global ref (another conversation
@@ -150,10 +170,10 @@ export function createToolExecutor(
                       chunk.stream === "tool_execution"
                         ? chunk.data
                         : currentToolCall.toolExecutionId,
-                  }),
+                  })
                 ),
               };
-            }),
+            })
           );
           return;
         }
@@ -216,7 +236,7 @@ export function createToolExecutor(
                         const existing = currentToolCall.streamingImages ?? [];
                         const next = [
                           ...existing.filter(
-                            (image) => image.index !== incoming.index,
+                            (image) => image.index !== incoming.index
                           ),
                           incoming,
                         ].sort((a, b) => a.index - b.index);
@@ -231,10 +251,10 @@ export function createToolExecutor(
                   }
 
                   return currentToolCall;
-                },
+                }
               ),
             };
-          }),
+          })
         );
       };
 
@@ -291,10 +311,10 @@ export function createToolExecutor(
                 ...currentToolCall,
                 status: "running" as const,
                 startedAt: Date.now(),
-              }),
+              })
             ),
           };
-        }),
+        })
       );
 
       let afterHookEligible = false;
@@ -310,7 +330,7 @@ export function createToolExecutor(
           const beforeHookResult = await runHook(
             "beforeToolCall",
             sessionDirId ?? undefined,
-            beforeHookContext,
+            beforeHookContext
           );
           if (beforeHookResult) {
             const { outcome } = beforeHookResult;
@@ -318,7 +338,7 @@ export function createToolExecutor(
               const approved = await awaitHookDecision(
                 effectiveKey,
                 currentAssistantMessageId,
-                beforeHookResult.record,
+                beforeHookResult.record
               );
               if (isRunCancelled(effectiveKey)) {
                 return false;
@@ -332,8 +352,8 @@ export function createToolExecutor(
                 appendHookExecutionToMessage(
                   currentMessages,
                   beforeHookResult.record,
-                  currentAssistantMessageId,
-                ),
+                  currentAssistantMessageId
+                )
               );
             }
 
@@ -368,11 +388,11 @@ export function createToolExecutor(
                         ...currentToolCall,
                         status: "error" as const,
                         result: decisionAbortResult,
-                      }),
+                      })
                     ),
                   }
-                : currentMessage,
-            ),
+                : currentMessage
+            )
           );
           // Store the settled error so the main loop can collect it in
           // index order; tools after this index are never started and the
@@ -403,7 +423,7 @@ export function createToolExecutor(
                 effectiveKey,
                 sessionDirId ?? ctx.directoryId ?? "",
                 parallelToolCall.interactionId,
-                checkpointIds,
+                checkpointIds
               );
             } else {
               parallelResult = await window.snow.callMcpTool(
@@ -417,7 +437,7 @@ export function createToolExecutor(
                 parallelToolCall.interactionId,
                 undefined,
                 sessionPlanMode(effectiveKey),
-                planApprovedSessionKeysRef.current.has(effectiveKey),
+                planApprovedSessionKeysRef.current.has(effectiveKey)
               );
             }
           } catch (err) {
@@ -439,12 +459,16 @@ export function createToolExecutor(
                   ["pending", "running"],
                   (currentToolCall) => ({
                     ...currentToolCall,
-                    status: "completed" as const,
+                    status:
+                      isSubAgent &&
+                      isFailedSubAgentActivationResult(parallelResult)
+                        ? ("error" as const)
+                        : ("completed" as const),
                     result: parallelResult,
-                  }),
+                  })
                 ),
               };
-            }),
+            })
           );
 
           if (!isSubAgent) {
@@ -490,7 +514,7 @@ export function createToolExecutor(
       let maxConcurrentImageGen = DEFAULT_IMAGE_GEN_MAX_CONCURRENT;
       try {
         const raw = await window.snow.getSystemSettingValue(
-          IMAGE_GEN_SETTING_CODE,
+          IMAGE_GEN_SETTING_CODE
         );
         maxConcurrentImageGen =
           readImageGenSettingsJson(raw).maxConcurrentImages;
@@ -543,10 +567,10 @@ export function createToolExecutor(
                   ...currentToolCall,
                   status: "completed" as const,
                   result: skippedResult,
-                }),
+                })
               ),
             };
-          }),
+          })
         );
         structuredToolResults.push({
           name: toolCall.name,
@@ -579,7 +603,7 @@ export function createToolExecutor(
             const afterHookResult = await runHook(
               "afterToolCall",
               sessionDirId ?? undefined,
-              afterHookContext,
+              afterHookContext
             );
             if (afterHookResult) {
               const { outcome } = afterHookResult;
@@ -588,7 +612,7 @@ export function createToolExecutor(
                 const approved = await awaitHookDecision(
                   effectiveKey,
                   currentAssistantMessageId,
-                  afterHookResult.record,
+                  afterHookResult.record
                 );
                 if (isRunCancelled(effectiveKey)) {
                   return null;
@@ -603,8 +627,8 @@ export function createToolExecutor(
                   appendHookExecutionToMessage(
                     currentMessages,
                     afterHookResult.record,
-                    currentAssistantMessageId,
-                  ),
+                    currentAssistantMessageId
+                  )
                 );
               }
 
@@ -667,10 +691,10 @@ export function createToolExecutor(
                   ...currentToolCall,
                   status: "error" as const,
                   result,
-                }),
+                })
               ),
             };
-          }),
+          })
         );
       } else {
         const validationError = validateToolCall(toolCall);
@@ -707,7 +731,7 @@ export function createToolExecutor(
             toolArgs = injectSessionIdIntoToolArgs(
               toolCall.name,
               toolArgs,
-              isPendingSessionKey(effectiveKey) ? undefined : effectiveKey,
+              isPendingSessionKey(effectiveKey) ? undefined : effectiveKey
             );
 
             // Persist conversation and tool-call binding so bash commands can
@@ -745,7 +769,7 @@ export function createToolExecutor(
               }
               sensitiveAuthorizationToken =
                 await window.snow.issueSensitiveCommandAuthorization(
-                  parsedArgs.command,
+                  parsedArgs.command
                 );
             }
 
@@ -776,7 +800,7 @@ export function createToolExecutor(
                 const beforeHookResult = await runHook(
                   "beforeToolCall",
                   sessionDirId ?? undefined,
-                  beforeHookContext,
+                  beforeHookContext
                 );
                 if (beforeHookResult) {
                   const { outcome } = beforeHookResult;
@@ -784,7 +808,7 @@ export function createToolExecutor(
                     const approved = await awaitHookDecision(
                       effectiveKey,
                       currentAssistantMessageId,
-                      beforeHookResult.record,
+                      beforeHookResult.record
                     );
                     if (isRunCancelled(effectiveKey)) {
                       return null;
@@ -798,8 +822,8 @@ export function createToolExecutor(
                       appendHookExecutionToMessage(
                         currentMessages,
                         beforeHookResult.record,
-                        currentAssistantMessageId,
-                      ),
+                        currentAssistantMessageId
+                      )
                     );
                   }
 
@@ -846,11 +870,11 @@ export function createToolExecutor(
                               ...currentToolCall,
                               status: "error" as const,
                               result: decisionAbortResult,
-                            }),
+                            })
                           ),
                         }
-                      : currentMessage,
-                  ),
+                      : currentMessage
+                  )
                 );
                 break;
               }
@@ -871,10 +895,10 @@ export function createToolExecutor(
                         ...currentToolCall,
                         status: "running" as const,
                         startedAt: Date.now(),
-                      }),
+                      })
                     ),
                   };
-                }),
+                })
               );
 
               if (
@@ -886,7 +910,7 @@ export function createToolExecutor(
                   effectiveKey,
                   sessionDirId ?? ctx.directoryId ?? "",
                   toolCall.interactionId,
-                  checkpointIds,
+                  checkpointIds
                 );
               } else if (
                 SUB_AGENT_MAIN_TOOL_NAMES.has(toolCall.name) &&
@@ -900,7 +924,7 @@ export function createToolExecutor(
                   toolCall.name,
                   toolArgs,
                   effectiveKey,
-                  checkpointIds,
+                  checkpointIds
                 );
               } else if (result === undefined) {
                 result = await window.snow.callMcpTool(
@@ -914,7 +938,7 @@ export function createToolExecutor(
                   toolCall.interactionId,
                   undefined,
                   sessionPlanMode(effectiveKey),
-                  planApprovedSessionKeysRef.current.has(effectiveKey),
+                  planApprovedSessionKeysRef.current.has(effectiveKey)
                 );
 
                 // Record successful file modifications (filesystem-create /
@@ -931,7 +955,7 @@ export function createToolExecutor(
                   const fileChange = extractFileChangeFromTool(
                     toolCall.name,
                     toolCall.arguments,
-                    result,
+                    result
                   );
                   if (fileChange) {
                     ctx.recordFileChange(effectiveKey, {
@@ -959,7 +983,7 @@ export function createToolExecutor(
                   const afterHookResult = await runHook(
                     "afterToolCall",
                     sessionDirId ?? undefined,
-                    afterHookContext,
+                    afterHookContext
                   );
                   if (!afterHookResult) {
                     throw new Error("HOOK_NOT_CONFIGURED");
@@ -974,7 +998,7 @@ export function createToolExecutor(
                     const approved = await awaitHookDecision(
                       effectiveKey,
                       currentAssistantMessageId,
-                      afterHookResult.record,
+                      afterHookResult.record
                     );
                     if (isRunCancelled(effectiveKey)) {
                       return null;
@@ -989,8 +1013,8 @@ export function createToolExecutor(
                       appendHookExecutionToMessage(
                         currentMessages,
                         afterHookResult.record,
-                        currentAssistantMessageId,
-                      ),
+                        currentAssistantMessageId
+                      )
                     );
                   }
 
@@ -1012,7 +1036,7 @@ export function createToolExecutor(
             } finally {
               if (isInteractiveQuestionTool) {
                 ctx.userQuestionTargetRef.current.delete(
-                  toolCall.interactionId,
+                  toolCall.interactionId
                 );
               }
             }
@@ -1027,12 +1051,12 @@ export function createToolExecutor(
               const sessionMessages =
                 ctx.sessionsRef.current?.[effectiveKey]?.messages ?? [];
               const assistantMessage = sessionMessages.find(
-                (m) => m.id === currentAssistantMessageId,
+                (m) => m.id === currentAssistantMessageId
               );
               const liveToolCall = assistantMessage?.toolCalls?.find(
                 (tc) =>
                   tc.interactionId === toolCall.interactionId &&
-                  tc.name === toolCall.name,
+                  tc.name === toolCall.name
               );
               const partialStdout = liveToolCall?.streamingStdout ?? "";
               const partialStderr = liveToolCall?.streamingStderr ?? "";
@@ -1068,12 +1092,15 @@ export function createToolExecutor(
                   ...currentToolCall,
                   status: isValidationError
                     ? ("error" as const)
+                    : toolCall.name === "sub-agents-activate" &&
+                      isFailedSubAgentActivationResult(result)
+                    ? ("error" as const)
                     : ("completed" as const),
                   result,
-                }),
+                })
               ),
             };
-          }),
+          })
         );
       }
 

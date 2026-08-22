@@ -72,7 +72,7 @@ pub(super) fn build_responses_payload(
                 None => Vec::new(),
             };
             for tool_result in &results {
-                let text = if tool_result.text.is_empty() {
+                let text = if tool_result.text.is_empty() && !tool_result.images.is_empty() {
                     "[image attached]".to_string()
                 } else {
                     tool_result.text.clone()

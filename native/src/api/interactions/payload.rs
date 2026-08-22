@@ -12,7 +12,7 @@ use crate::api::conversation::tool_messages::{
     normalize_tool_calls, parse_tool_results_with_images,
 };
 use crate::api::gemini::payload::{
-    build_gemini_google_search_enabled, build_gemini_thinking_config,
+    build_gemini_thinking_config, should_include_gemini_google_search,
 };
 use crate::api::responses::ResponsesApiRequest;
 use crate::storage::services::chat_conversations::ChatContextMessage;
@@ -173,30 +173,36 @@ pub(super) fn build_interactions_payload(
         }
     }
 
-    let google_search_enabled = build_gemini_google_search_enabled(&api_config.config_json);
-    if google_search_enabled {
-        if let Some(first_tool) = tool_entries.first_mut().and_then(Value::as_object_mut) {
-            first_tool.insert("google_search".to_string(), json!({}));
-        } else {
-            tool_entries.push(json!({ "google_search": {} }));
-        }
+    // A duplicate-read recovery deliberately has no provider tools at all.
+    // Google Search is a provider tool too, even though it is configured
+    // independently from MCP function declarations.
+    let google_search_enabled = should_include_gemini_google_search(
+        &api_config.config_json,
+        request.disable_tools.unwrap_or(false),
+    );
+    let is_cli_proxy_api = api_config
+        .base_url
+        .to_ascii_lowercase()
+        .contains("cliproxyapi");
+    let has_function_tools = tool_entries.iter().any(|entry| {
+        entry
+            .get("function_declarations")
+            .and_then(Value::as_array)
+            .is_some_and(|declarations| !declarations.is_empty())
+    });
+    let include_google_search = google_search_enabled && !(is_cli_proxy_api && has_function_tools);
+    if include_google_search {
+        // Keep server-side and function tools as separate Tool objects. CPA
+        // rejects a single object that mixes google_search with function
+        // declarations even when tool_config is present.
+        tool_entries.push(json!({ "google_search": {} }));
     }
-
-    let has_combined_server_side_tools = google_search_enabled
-        && tool_entries.iter().any(|entry| {
-            entry.as_object().is_some_and(|tool| {
-                tool.get("function_declarations")
-                    .and_then(Value::as_array)
-                    .is_some_and(|declarations| !declarations.is_empty())
-                    && tool.contains_key("google_search")
-            })
-        });
 
     if !tool_entries.is_empty() {
         payload["tools"] = Value::Array(tool_entries);
     }
 
-    if has_combined_server_side_tools {
+    if (include_google_search && has_function_tools) || (is_cli_proxy_api && has_function_tools) {
         payload["tool_config"] = json!({
             "include_server_side_tool_invocations": true
         });
@@ -206,9 +212,18 @@ pub(super) fn build_interactions_payload(
     }
 
     // System instruction
-    if !user_system_prompts.is_empty() {
+    let mut system_instruction_parts = user_system_prompts.to_vec();
+    if let Some(prompt) = request
+        .internal_recovery_prompt
+        .as_deref()
+        .map(str::trim)
+        .filter(|prompt| !prompt.is_empty())
+    {
+        system_instruction_parts.push(prompt.to_string());
+    }
+    if !system_instruction_parts.is_empty() {
         payload["system_instruction"] = json!({
-            "parts": [{ "text": user_system_prompts.join("\n\n") }]
+            "parts": [{ "text": system_instruction_parts.join("\n\n") }]
         });
     }
 
@@ -385,6 +400,8 @@ mod tests {
             sub_agent_system_prompt: None,
             sub_agent_config_profile: None,
             skip_context: None,
+            disable_tools: None,
+            internal_recovery_prompt: None,
             plan_mode: None,
             goal_mode: None,
             worktree_mode: None,
@@ -502,6 +519,7 @@ mod tests {
             payload["generation_config"]["thinking_config"],
             json!({
                 "thinkingLevel": "high",
+                "includeThoughts": true,
                 "thinking_level": "high"
             })
         );
@@ -520,6 +538,32 @@ mod tests {
         .expect("Interactions payload");
 
         assert!(payload.get("generation_config").is_none());
+    }
+
+    #[test]
+    fn internal_recovery_prompt_is_an_interactions_system_instruction() {
+        let mut request = create_test_request();
+        request.internal_recovery_prompt =
+            Some("Use completed results and answer without tools.".to_string());
+        let payload = build_interactions_payload(
+            &[create_test_message()],
+            Path::new("."),
+            &request,
+            &create_test_record(""),
+            None,
+            &["configured system rule".to_string()],
+        )
+        .expect("Interactions payload");
+
+        assert_eq!(
+            payload["system_instruction"],
+            json!({"parts": [{"text": "configured system rule\n\nUse completed results and answer without tools."}]})
+        );
+        assert!(payload["input"]
+            .as_array()
+            .expect("input array")
+            .iter()
+            .all(|entry| entry["text"] != "Use completed results and answer without tools."));
     }
 
     #[test]
@@ -574,7 +618,7 @@ mod tests {
             .as_array()
             .expect("function declarations");
 
-        assert_eq!(tool_entries.len(), 1);
+        assert_eq!(tool_entries.len(), 2);
         assert!(tool_entries[0].get("type").is_none());
         assert_eq!(declarations.len(), 2);
         assert_eq!(declarations[0]["name"], "todo-todo-manage");
@@ -592,8 +636,8 @@ mod tests {
             declarations[1]["parameters"]["properties"]["filePath"]["type"],
             "string"
         );
-        assert_eq!(tool_entries[0]["google_search"], json!({}));
-        assert!(tool_entries[0].get("functionDeclarations").is_none());
+        assert_eq!(tool_entries[1]["google_search"], json!({}));
+        assert!(tool_entries[1].get("function_declarations").is_none());
         assert_eq!(
             payload["tool_config"],
             json!({ "include_server_side_tool_invocations": true })

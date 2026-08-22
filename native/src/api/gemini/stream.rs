@@ -29,6 +29,7 @@ pub(super) struct GeminiStreamResult {
     pub id: String,
     pub content: String,
     pub thinking: String,
+    pub thinking_blocks_json: String,
     pub model: String,
     pub status: String,
     pub interruption_reason: Option<StreamInterruptionReason>,
@@ -61,6 +62,7 @@ pub(super) async fn collect_gemini_stream(
                 id: String::new(),
                 content: String::new(),
                 thinking: String::new(),
+                thinking_blocks_json: "[]".to_string(),
                 model: String::new(),
                 status: String::from("cancelled"),
                 interruption_reason: None,
@@ -77,6 +79,7 @@ pub(super) async fn collect_gemini_stream(
                     id: String::new(),
                     content: String::new(),
                     thinking: String::new(),
+                    thinking_blocks_json: "[]".to_string(),
                     model: String::new(),
                     status: String::from("cancelled"),
                     interruption_reason: None,
@@ -100,6 +103,7 @@ pub(super) async fn collect_gemini_stream(
                         id: String::new(),
                         content: String::new(),
                         thinking: String::new(),
+                        thinking_blocks_json: "[]".to_string(),
                         model: String::new(),
                         status: String::from("cancelled"),
                         interruption_reason: None,
@@ -197,6 +201,7 @@ pub(super) async fn collect_gemini_stream(
         let mut content_chunks = Vec::new();
         let mut thinking_chunks = Vec::new();
         let mut tool_calls = Vec::new();
+        let mut signature_parts = Vec::new();
         let mut response_id = String::new();
         let mut response_model = String::new();
         let mut response_status = String::from("completed");
@@ -219,6 +224,7 @@ pub(super) async fn collect_gemini_stream(
                     &mut content_chunks,
                     &mut thinking_chunks,
                     &mut tool_calls,
+                    &mut signature_parts,
                     &mut response_id,
                     &mut response_model,
                     &mut response_status,
@@ -286,6 +292,7 @@ pub(super) async fn collect_gemini_stream(
         if response_status == "cancelled" || cancel_token.is_cancelled() {
             response_status = String::from("cancelled");
             tool_calls.clear();
+            signature_parts.clear();
             interruption_reason = None;
             recovery_outcome = None;
         } else if stream_finished {
@@ -314,6 +321,7 @@ pub(super) async fn collect_gemini_stream(
                 StreamRecoveryDecision::Cancelled => {
                     response_status = String::from("cancelled");
                     tool_calls.clear();
+                    signature_parts.clear();
                     interruption_reason = None;
                     recovery_outcome = None;
                 }
@@ -344,6 +352,7 @@ pub(super) async fn collect_gemini_stream(
                         Err(_wait_error) if cancel_token.is_cancelled() => {
                             response_status = String::from("cancelled");
                             tool_calls.clear();
+                            signature_parts.clear();
                             interruption_reason = None;
                             recovery_outcome = None;
                         }
@@ -357,6 +366,7 @@ pub(super) async fn collect_gemini_stream(
                     recovery_outcome = decision.recovery_outcome();
                     if matches!(decision, StreamRecoveryDecision::SurfaceInterrupted) {
                         tool_calls.clear();
+                        signature_parts.clear();
                     }
                 }
             }
@@ -366,11 +376,14 @@ pub(super) async fn collect_gemini_stream(
         let thinking = thinking_chunks.join("").trim().to_string();
         let tool_calls_json =
             serde_json::to_string(&tool_calls).unwrap_or_else(|_| "[]".to_string());
+        let thinking_blocks_json =
+            serde_json::to_string(&signature_parts).unwrap_or_else(|_| "[]".to_string());
 
         return Ok(GeminiStreamResult {
             id: response_id,
             content,
             thinking,
+            thinking_blocks_json,
             model: response_model,
             status: response_status,
             interruption_reason,

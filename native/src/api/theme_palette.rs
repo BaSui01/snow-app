@@ -85,6 +85,8 @@ fn build_request(image_data_url: &str) -> ResponsesApiRequest {
         // tag into their native multimodal payloads. An empty conversation_id
         // ensures no chat history is loaded.
         skip_context: None,
+        disable_tools: None,
+        internal_recovery_prompt: None,
         plan_mode: None,
         goal_mode: None,
         worktree_mode: None,

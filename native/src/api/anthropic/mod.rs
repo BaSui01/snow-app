@@ -135,7 +135,10 @@ async fn create_anthropic_response_async(
     )
     .await?;
 
-    let tools = if request.context_compaction.unwrap_or(false) || skip_context {
+    let tools = if request.context_compaction.unwrap_or(false)
+        || skip_context
+        || request.disable_tools.unwrap_or(false)
+    {
         None
     } else {
         match resolve_sub_agent_tools(&request).await {

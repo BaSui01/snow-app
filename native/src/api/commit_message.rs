@@ -65,6 +65,8 @@ fn build_request(staged_diff: &str) -> ResponsesApiRequest {
         sub_agent_system_prompt: None,
         sub_agent_config_profile: None,
         skip_context: Some(true),
+        disable_tools: None,
+        internal_recovery_prompt: None,
         plan_mode: None,
         goal_mode: None,
         worktree_mode: None,

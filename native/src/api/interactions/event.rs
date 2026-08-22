@@ -594,7 +594,14 @@ fn process_top_level_delta(
     tool_calls: &mut InteractionsToolCallState,
     tool_args_delta: &mut String,
 ) {
-    let Some(delta) = event.get("delta") else {
+    // CLIProxyAPI has emitted both canonical top-level `delta` events and
+    // compatibility envelopes with the same delta nested below `step`.
+    // Treat both shapes identically; otherwise the step.start placeholder is
+    // finalized with `{}` while the real arguments fragment is discarded.
+    let delta = event
+        .get("delta")
+        .or_else(|| event.get("step").and_then(|step| step.get("delta")));
+    let Some(delta) = delta else {
         return;
     };
     process_delta_content(delta, "", content_chunks, thinking_chunks);
@@ -607,6 +614,12 @@ fn process_top_level_delta(
             .and_then(Value::as_str),
         _ => None,
     };
+    let index = index.or_else(|| {
+        event
+            .get("step")
+            .and_then(|step| step.get("index"))
+            .and_then(Value::as_u64)
+    });
     if let (Some(index), Some(fragment)) = (index, fragment) {
         tool_args_delta.push_str(fragment);
         tool_calls.append_arguments(index, fragment);
@@ -1181,6 +1194,33 @@ data: {"event_type":"interaction.completed","interaction":{"status":"completed"}
         assert_eq!(
             harness.calls.finalized_tool_calls()[0]["arguments"],
             json!({"filePath": "D:/Desktop/code/package.json"})
+        );
+    }
+
+    #[test]
+    fn reconstructs_arguments_from_nested_step_delta_envelope() {
+        let mut harness = Harness::default();
+        harness.process(
+            r#"event: step.start
+data: {"event_type":"step.start","index":0,"step":{"type":"function_call","id":"call_nested","name":"bash-terminal-execute","arguments":{}}}"#,
+        );
+        harness.process(
+            r#"event: step.delta
+data: {"event_type":"step.delta","step":{"index":0,"delta":{"type":"arguments_delta","arguments":"{\"command\":\"git status --short\"}"}}}"#,
+        );
+        harness.process(
+            r#"event: step.stop
+data: {"event_type":"step.stop","index":0}"#,
+        );
+        harness.process(
+            r#"event: interaction.completed
+data: {"event_type":"interaction.completed","interaction":{"status":"completed"}}"#,
+        );
+
+        assert_eq!(harness.status, "completed");
+        assert_eq!(
+            harness.calls.finalized_tool_calls()[0]["arguments"],
+            json!({"command": "git status --short"})
         );
     }
 

@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::path::Path;
 
 use serde_json::Value;
@@ -14,7 +14,7 @@ use crate::storage::services::chat_conversations::ChatContextMessage;
 /// - **OpenAI Chat**: `{"id":"...","type":"function","function":{"name":"...","arguments":"..."}}`
 /// - **OpenAI Responses**: `{"type":"function_call","call_id":"...","name":"...","arguments":"..."}`
 /// - **Anthropic**: `{"type":"tool_use","id":"...","name":"...","input":{...}}`
-/// - **Gemini**: `{"functionCall":{"name":"...","args":{...}}}`
+/// - **Gemini**: `{"functionCall":{"id":"...","name":"...","args":{...}}}`
 pub fn tool_calls_as_anthropic_blocks(tool_calls_json: &str) -> Vec<Value> {
     normalize_tool_calls(tool_calls_json)
         .into_iter()
@@ -35,12 +35,13 @@ pub fn tool_calls_as_gemini_parts(tool_calls_json: &str) -> Vec<Value> {
     normalize_tool_calls(tool_calls_json)
         .into_iter()
         .map(|entry| {
-            serde_json::json!({
-                "functionCall": {
-                    "name": entry.name,
-                    "args": entry.input,
-                }
-            })
+            let mut function_call = serde_json::Map::new();
+            if !entry.id.is_empty() {
+                function_call.insert("id".to_string(), Value::String(entry.id));
+            }
+            function_call.insert("name".to_string(), Value::String(entry.name));
+            function_call.insert("args".to_string(), entry.input);
+            serde_json::json!({ "functionCall": function_call })
         })
         .collect()
 }
@@ -192,7 +193,7 @@ pub(crate) struct NormalizedToolCall {
 /// - **OpenAI Chat**: `{"id":"...","type":"function","function":{"name":"...","arguments":"..."}}`
 /// - **OpenAI Responses**: `{"type":"function_call","call_id":"...","name":"...","arguments":"..."}`
 /// - **Anthropic**: `{"type":"tool_use","id":"...","name":"...","input":{...}}`
-/// - **Gemini**: `{"functionCall":{"name":"...","args":{...}}}`
+/// - **Gemini**: `{"functionCall":{"id":"...","name":"...","args":{...}}}`
 pub(crate) fn normalize_tool_calls(tool_calls_json: &str) -> Vec<NormalizedToolCall> {
     let Ok(parsed) = serde_json::from_str::<Value>(tool_calls_json) else {
         return Vec::new();
@@ -212,7 +213,13 @@ pub(crate) fn normalize_tool_calls(tool_calls_json: &str) -> Vec<NormalizedToolC
             let id = call
                 .get("call_id")
                 .and_then(Value::as_str)
-                .or_else(|| call.get("id").and_then(Value::as_str))?
+                .or_else(|| call.get("id").and_then(Value::as_str))
+                .or_else(|| {
+                    call.get("functionCall")
+                        .and_then(|function_call| function_call.get("id"))
+                        .and_then(Value::as_str)
+                })
+                .unwrap_or("")
                 .to_string();
             if id.is_empty() {
                 return None;
@@ -307,6 +314,124 @@ pub fn extract_tool_call_entries(tool_calls_json: &str) -> Vec<(String, String)>
         .collect()
 }
 
+/// Remove persisted calls which are syntactically JSON objects but cannot be
+/// executed by Snow's built-in tools. This works on an outbound context copy;
+/// it deliberately never changes the stored conversation.
+///
+/// A malformed upstream functionCall must not be replayed with its parameter
+/// error result, otherwise Gemini-compatible relays can repeatedly emit the
+/// same empty call. This list is intentionally limited to Snow-owned tools
+/// whose required fields are stable. Parameterless and third-party MCP tools
+/// remain untouched.
+pub fn remove_invalid_snow_tool_calls(messages: &mut [ChatContextMessage]) {
+    let mut invalid_call_ids = HashSet::new();
+    // Gemini's native functionCall does not carry an id. Retain the call
+    // order so an id-less functionResponse can be removed with its invalid
+    // call without accidentally removing a preceding valid call of the same
+    // name.
+    let mut idless_call_removals: VecDeque<(String, bool)> = VecDeque::new();
+
+    for message in messages.iter_mut() {
+        match message.role.trim() {
+            "assistant" => {
+                let Some(raw) = message.tool_calls_json.as_deref() else {
+                    continue;
+                };
+                let Ok(Value::Array(calls)) = serde_json::from_str::<Value>(raw) else {
+                    continue;
+                };
+                let normalized = normalize_tool_calls(raw);
+                let filtered: Vec<Value> = calls
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(|(index, call)| {
+                        let Some(entry) = normalized.get(index) else {
+                            return Some(call);
+                        };
+                        let is_valid = snow_tool_call_has_required_arguments(entry);
+                        let id = extract_call_id_from_json(&call);
+                        if id.is_empty() {
+                            idless_call_removals.push_back((entry.name.clone(), !is_valid));
+                        } else if !is_valid {
+                            invalid_call_ids.insert(id);
+                        }
+                        is_valid.then_some(call)
+                    })
+                    .collect();
+                message.tool_calls_json = (!filtered.is_empty())
+                    .then(|| serde_json::to_string(&filtered).ok())
+                    .flatten();
+            }
+            "tool" => {
+                let Some(raw) = message.tool_results_json.as_deref() else {
+                    continue;
+                };
+                let Ok(Value::Array(results)) = serde_json::from_str::<Value>(raw) else {
+                    continue;
+                };
+                let filtered: Vec<Value> = results
+                    .into_iter()
+                    .filter(|result| {
+                        let call_id = extract_result_call_id_from_json(result);
+                        if !call_id.is_empty() {
+                            return !invalid_call_ids.contains(&call_id);
+                        }
+
+                        let Some(result_name) = result.get("name").and_then(Value::as_str) else {
+                            return true;
+                        };
+                        let Some((call_name, remove_result)) = idless_call_removals.front() else {
+                            return true;
+                        };
+                        if call_name != result_name {
+                            return true;
+                        }
+                        let remove_result = *remove_result;
+                        idless_call_removals.pop_front();
+                        !remove_result
+                    })
+                    .collect();
+                message.tool_results_json = (!filtered.is_empty())
+                    .then(|| serde_json::to_string(&filtered).ok())
+                    .flatten();
+            }
+            _ => {}
+        }
+    }
+}
+
+fn snow_tool_call_has_required_arguments(entry: &NormalizedToolCall) -> bool {
+    let required_strings: &[&str] = match entry.name.as_str() {
+        "filesystem-read" => &["filePath"],
+        "filesystem-create" => &["filePath", "content"],
+        "filesystem-replace_edit" => &["filePath", "searchContent", "replaceContent"],
+        "bash-terminal-execute" => &["command"],
+        _ => return true,
+    };
+    if !entry.has_valid_name || !entry.has_valid_input {
+        return false;
+    }
+    let Some(input) = entry.input.as_object() else {
+        return false;
+    };
+    required_strings.iter().all(|key| {
+        input
+            .get(*key)
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.trim().is_empty())
+    }) && (entry.name != "filesystem-create"
+        || input.get("overwrite").is_some_and(Value::is_boolean))
+}
+
+fn extract_result_call_id_from_json(result: &Value) -> String {
+    result
+        .get("callId")
+        .and_then(Value::as_str)
+        .or_else(|| result.get("call_id").and_then(Value::as_str))
+        .unwrap_or("")
+        .to_string()
+}
+
 /// Extract the call ID from a single tool call JSON value.
 ///
 /// Prioritizes `call_id` (Responses API format) over `id` (Chat Completions
@@ -316,6 +441,11 @@ fn extract_call_id_from_json(call: &Value) -> String {
     call.get("call_id")
         .and_then(Value::as_str)
         .or_else(|| call.get("id").and_then(Value::as_str))
+        .or_else(|| {
+            call.get("functionCall")
+                .and_then(|function_call| function_call.get("id"))
+                .and_then(Value::as_str)
+        })
         .unwrap_or("")
         .to_string()
 }
@@ -468,5 +598,156 @@ pub fn ensure_tool_pairing(messages: &mut Vec<ChatContextMessage>) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn message(role: &str, calls: Option<&str>, results: Option<&str>) -> ChatContextMessage {
+        ChatContextMessage {
+            role: role.to_string(),
+            content: "tool context".to_string(),
+            tool_calls_json: calls.map(str::to_string),
+            tool_results_json: results.map(str::to_string),
+            thinking: None,
+            thinking_blocks_json: None,
+        }
+    }
+
+    #[test]
+    fn removes_empty_builtin_call_and_its_result() {
+        let mut messages = vec![
+            message(
+                "assistant",
+                Some(
+                    r#"[{"id":"bad","functionCall":{"name":"filesystem-read","args":{}}},{"id":"good","functionCall":{"name":"filesystem-read","args":{"filePath":"package.json"}}}]"#,
+                ),
+                None,
+            ),
+            message(
+                "tool",
+                None,
+                Some(
+                    r#"[{"name":"filesystem-read","callId":"bad","result":"filePath is required"},{"name":"filesystem-read","callId":"good","result":"{}"}]"#,
+                ),
+            ),
+        ];
+
+        remove_invalid_snow_tool_calls(&mut messages);
+
+        assert_eq!(
+            extract_tool_call_entries(messages[0].tool_calls_json.as_deref().unwrap()),
+            vec![("good".to_string(), "filesystem-read".to_string())]
+        );
+        assert_eq!(
+            parse_tool_results_json(messages[1].tool_results_json.as_deref().unwrap()),
+            vec![(
+                "filesystem-read".to_string(),
+                "good".to_string(),
+                "{}".to_string()
+            )]
+        );
+    }
+
+    #[test]
+    fn preserves_parameterless_third_party_tool() {
+        let mut messages = vec![message(
+            "assistant",
+            Some(r#"[{"id":"search","functionCall":{"name":"server-search","args":{}}}]"#),
+            None,
+        )];
+
+        remove_invalid_snow_tool_calls(&mut messages);
+
+        assert!(messages[0].tool_calls_json.is_some());
+    }
+
+    #[test]
+    fn removes_idless_invalid_gemini_call_and_only_its_ordered_result() {
+        let mut messages = vec![
+            message(
+                "assistant",
+                Some(
+                    r#"[{"functionCall":{"name":"filesystem-read","args":{"filePath":"README.md"}}},{"functionCall":{"name":"filesystem-read","args":{}}}]"#,
+                ),
+                None,
+            ),
+            message(
+                "tool",
+                None,
+                Some(
+                    r#"[{"name":"filesystem-read","result":"README"},{"name":"filesystem-read","result":"filePath is required"}]"#,
+                ),
+            ),
+        ];
+
+        remove_invalid_snow_tool_calls(&mut messages);
+
+        assert_eq!(
+            extract_tool_call_entries(messages[0].tool_calls_json.as_deref().unwrap()),
+            vec![(String::new(), "filesystem-read".to_string())]
+        );
+        let results: Vec<Value> =
+            serde_json::from_str(messages[1].tool_results_json.as_deref().unwrap()).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0]["result"], "README");
+    }
+
+    #[test]
+    fn preserves_nested_gemini_function_call_id_when_replaying_history() {
+        let raw = r#"[{"functionCall":{"id":"gemini-call-1","name":"filesystem-read","args":{"filePath":"package.json"}}}]"#;
+
+        assert_eq!(
+            extract_tool_call_entries(raw),
+            vec![("gemini-call-1".to_string(), "filesystem-read".to_string())]
+        );
+        assert_eq!(
+            tool_calls_as_gemini_parts(raw),
+            vec![serde_json::json!({
+                "functionCall": {
+                    "id": "gemini-call-1",
+                    "name": "filesystem-read",
+                    "args": { "filePath": "package.json" },
+                }
+            })]
+        );
+    }
+
+    #[test]
+    fn pairing_keeps_nested_gemini_call_id_with_matching_result() {
+        let mut messages = vec![
+            message(
+                "assistant",
+                Some(
+                    r#"[{"functionCall":{"id":"gemini-call-1","name":"filesystem-read","args":{"filePath":"package.json"}}}]"#,
+                ),
+                None,
+            ),
+            message(
+                "tool",
+                None,
+                Some(
+                    r#"[{"name":"filesystem-read","callId":"gemini-call-1","result":"package content"}]"#,
+                ),
+            ),
+        ];
+
+        ensure_tool_pairing(&mut messages);
+
+        assert_eq!(messages.len(), 2);
+        assert_eq!(
+            extract_tool_call_entries(messages[0].tool_calls_json.as_deref().unwrap()),
+            vec![("gemini-call-1".to_string(), "filesystem-read".to_string())]
+        );
+        assert_eq!(
+            parse_tool_results_json(messages[1].tool_results_json.as_deref().unwrap()),
+            vec![(
+                "filesystem-read".to_string(),
+                "gemini-call-1".to_string(),
+                "package content".to_string(),
+            )]
+        );
     }
 }

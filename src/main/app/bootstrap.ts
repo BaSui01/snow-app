@@ -8,7 +8,7 @@ import {
 } from "electron";
 import { APP_ICON_PATH, APP_USER_MODEL_ID, isMacOS } from "./constants";
 import { initializeApplicationServices } from "./applicationServices";
-import { createWindow, getMainWindow } from "./mainWindow";
+import { createWindow, getMainWindow, markCloseConfirmed } from "./mainWindow";
 import { initTray } from "./tray";
 import { registerToggleWindowShortcut } from "./globalShortcuts";
 import { registerIpcHandlers } from "../ipc/registerIpcHandlers";
@@ -42,6 +42,7 @@ import {
   stopRemoteControlServer,
 } from "../remoteControl/remoteControlServer";
 import { remoteTunnelManager } from "../remoteControl/remoteTunnelManager";
+import { isInstallerQuitRequest } from "./installerQuit";
 
 export const bootstrapApplication = (): void => {
   // ─── Chromium 启动加速开关（必须在 whenReady 之前）─────────────────────
@@ -76,7 +77,25 @@ export const bootstrapApplication = (): void => {
     return;
   }
 
-  app.on("second-instance", () => {
+  // The installer can launch the executable only to ask an existing instance
+  // to quit. If there is no existing instance, do not open the full app.
+  if (isInstallerQuitRequest(process.platform, process.argv)) {
+    app.quit();
+    return;
+  }
+
+  app.on("second-instance", (_event, commandLine) => {
+    if (isInstallerQuitRequest(process.platform, commandLine)) {
+      snowLog.info({
+        module: "app/bootstrap",
+        func: "second-instance",
+        message: "Installer requested a graceful application shutdown",
+      });
+      markCloseConfirmed();
+      app.quit();
+      return;
+    }
+
     snowLog.info({
       module: "app/bootstrap",
       func: "second-instance",

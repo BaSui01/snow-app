@@ -27,6 +27,7 @@
     "check:docs": "node scripts/check-docs.cjs",
     "check:ts": "tsc --noEmit",
     "check:mobile": "node --experimental-strip-types scripts/check-mobile-page.mjs",
+    "check:packaged-runtime": "node scripts/check-packaged-runtime-deps.mjs",
     "test:remote-control": "node --test --experimental-strip-types scripts/remote-control-*.test.ts",
     "preview": "electron-vite preview"
   },
@@ -158,7 +159,9 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "perMachine": false,
+      "selectPerMachineByDefault": false,
       "allowElevation": true,
+      "include": "build/installer.nsh",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Snow App",

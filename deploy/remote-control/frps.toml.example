@@ -1,0 +1,24 @@
+# frp 0.71.0. The control port is public; forwarded Snow traffic is loopback-only.
+bindAddr = "0.0.0.0"
+bindPort = 7000
+proxyBindAddr = "127.0.0.1"
+
+# This is the only remote port a client may allocate. Caddy is its only consumer.
+allowPorts = [{ single = 18080 }]
+maxPortsPerClient = 1
+
+auth.method = "token"
+auth.additionalScopes = ["HeartBeats", "NewWorkConns"]
+auth.tokenSource.type = "file"
+auth.tokenSource.file.path = "/etc/frp/snow_remote.token"
+
+# TLS encryption alone is insufficient: frps presents a certificate issued by
+# the private FRP CA, and frpc verifies both that CA and the configured DNS name.
+transport.tls.force = true
+transport.tls.certFile = "/etc/frp/tls/frp-server.crt"
+transport.tls.keyFile = "/etc/frp/tls/frp-server.key"
+
+# Keep operational logs in journald. Do not enable the dashboard or access logs.
+log.to = "console"
+log.level = "info"
+log.disablePrintColor = true

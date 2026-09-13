@@ -1,0 +1,27 @@
+# frp 0.71.0 desktop template. Replace the two host names and local certificate
+# path, but keep the proxy type, local IP, local port and remote port unchanged.
+serverAddr = "frp.example.com"
+serverPort = 7000
+loginFailExit = true
+
+auth.method = "token"
+auth.additionalScopes = ["HeartBeats", "NewWorkConns"]
+auth.tokenSource.type = "file"
+auth.tokenSource.file.path = "C:/SnowRemote/secrets/frp-token.txt"
+
+transport.tls.enable = true
+transport.tls.trustedCaFile = "C:/SnowRemote/secrets/frp-ca.crt"
+transport.tls.serverName = "frp.example.com"
+
+log.to = "console"
+log.level = "info"
+log.disablePrintColor = true
+
+[[proxies]]
+name = "snow-remote-control"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 8800
+remotePort = 18080
+transport.bandwidthLimit = "20MB"
+transport.bandwidthLimitMode = "server"

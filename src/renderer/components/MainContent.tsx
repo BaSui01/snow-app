@@ -58,6 +58,11 @@ const PrivacySettingsPanel = lazy(() =>
     default: m.PrivacySettingsPanel,
   })),
 );
+const RemoteControlSettingsPanel = lazy(() =>
+  import("./sidebar/RemoteControlSettingsPanel").then((m) => ({
+    default: m.RemoteControlSettingsPanel,
+  })),
+);
 const ProxyBrowserSettingsPanel = lazy(() =>
   import("./sidebar/ProxyBrowserSettingsPanel").then((m) => ({
     default: m.ProxyBrowserSettingsPanel,
@@ -266,6 +271,8 @@ export const MainContent = ({
             <ThemeSettingsPanel onClose={() => onSelectView("chat")} />
           ) : activeView === "privacy-settings" ? (
             <PrivacySettingsPanel onClose={() => onSelectView("chat")} />
+          ) : activeView === "remote-control-settings" ? (
+            <RemoteControlSettingsPanel onClose={() => onSelectView("chat")} />
           ) : activeView === "keyboard-shortcuts-settings" ? (
             <KeyboardShortcutsSettingsPanel
               onClose={() => onSelectView("chat")}

@@ -25,6 +25,7 @@ import { registerStorageHandlers } from "./handlers/storageHandlers";
 import { registerBrowserPasswordHandlers } from "./handlers/browserPasswordHandlers";
 import { registerUserscriptHandlers } from "./handlers/userscriptHandlers";
 import { registerPetHandlers } from "./handlers/petHandlers";
+import { registerRemoteControlHandlers } from "./handlers/remoteControlHandlers";
 import { PluginRuntimeManager } from "../plugins/pluginRuntimeManager";
 
 export const registerIpcHandlers = (native: NativeBridge): void => {
@@ -56,4 +57,5 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
   registerBrowserPasswordHandlers(native);
   registerUserscriptHandlers(native);
   registerPetHandlers(native);
+  registerRemoteControlHandlers();
 };

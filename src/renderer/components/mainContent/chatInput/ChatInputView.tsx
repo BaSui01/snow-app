@@ -22,6 +22,11 @@ import {
 import { rightPanelEvents } from "../../rightPanel/rightPanelEvents";
 import { CommandPanel } from "./commands/CommandPanel";
 import { createChatCommands } from "./commands/commandRegistry";
+import {
+  clearRemoteControlChatInput,
+  publishRemoteControlChatInput,
+  type SnowRemoteChatInputPublication,
+} from "./remoteControlChatInputRegistry";
 import { useChipInteractions } from "./useChipInteractions";
 import { useContentEditableInteractions } from "./useContentEditableInteractions";
 import { useInputFileOperations } from "./useInputFileOperations";
@@ -346,6 +351,37 @@ export const ChatInputView = ({
       yoloMode,
     ],
   );
+
+  // 向手机远控桥发布输入区的真实能力，不暴露 API 密钥或地址等配置内容。
+  useEffect(() => {
+    const snapshot: SnowRemoteChatInputPublication = {
+      conversationId: activeConversationId ?? null,
+      isSubAgentConversation,
+      isLoadingApiConfig,
+      selectedModel,
+      displayModel,
+      modelIds: models.map((model) => model.id),
+      selectedApiProfile,
+      apiProfileNames: apiConfigs.map((config) => config.profileName),
+      requestMethod,
+      thinkingValue,
+      thinkingOptions: thinkingOptions.map(({ value, label }) => ({
+        value,
+        label,
+      })),
+      responsesFastModeEnabled,
+      maxContextTokens: runtimeApiConfig?.maxContextTokens ?? null,
+      commands,
+      actions: {
+        handleSelectModel,
+        handleSelectApiProfile,
+        handleSelectThinking,
+        handleToggleResponsesFastMode,
+      },
+    };
+    publishRemoteControlChatInput(snapshot);
+    return () => clearRemoteControlChatInput(snapshot);
+  });
 
   // ------------------------------------------------------------------
   // 终端监控模式：拖拽终端到输入框后，实时订阅该终端的日志流

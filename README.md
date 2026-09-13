@@ -38,7 +38,16 @@ Snow App is a developer-focused desktop application that integrates AI-powered c
 - **Config Import** - Import MCP servers, skills, plugins, and prompts from Codex / WSL / SSH environments
 - **i18n** - Multi-language support with a locale system
 - **Settings Management** - Granular configuration for API keys, custom headers, proxy, sensitive commands, and more
+- **Mobile Remote Control** - Continue conversations, switch workspaces and models, approve tools, answer questions, and send images/files from a phone over LAN or a self-hosted public tunnel
 - **Cross-Platform** - Runs on macOS, Windows, and Linux
+
+## Mobile Remote Control
+
+Pair a phone from **Settings → Mobile Remote Control** and control the current Snow session from a mobile browser. LAN pairing works without a cloud service; optional public access uses a self-hosted, authenticated TLS tunnel and supports one-time pairing, session revocation, permission prompts, and sensitive-output redaction. See the [setup guide](docs/en/2-guides/23-mobile-public-remote-control.md).
+
+| Conversation and streaming                                              | Actions, modes, and approvals                                 |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------- |
+| ![Snow mobile remote conversation](docs/images/mobile-conversation.png) | ![Snow mobile remote actions](docs/images/mobile-actions.png) |
 
 ## Tech Stack
 

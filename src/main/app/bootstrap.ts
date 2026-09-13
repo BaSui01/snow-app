@@ -1,7 +1,14 @@
-import { app, ipcMain, Menu, nativeImage, nativeTheme } from "electron";
+import {
+  app,
+  ipcMain,
+  Menu,
+  nativeImage,
+  nativeTheme,
+  powerMonitor,
+} from "electron";
 import { APP_ICON_PATH, APP_USER_MODEL_ID, isMacOS } from "./constants";
 import { initializeApplicationServices } from "./applicationServices";
-import { createWindow, getMainWindow } from "./mainWindow";
+import { createWindow, getMainWindow, markCloseConfirmed } from "./mainWindow";
 import { initTray } from "./tray";
 import { registerToggleWindowShortcut } from "./globalShortcuts";
 import { registerIpcHandlers } from "../ipc/registerIpcHandlers";
@@ -30,6 +37,12 @@ import { initBrowserPopupHandler } from "../browser/browserPopupWindow";
 import { initBrowserDeviceEmulation } from "../browser/browserDeviceEmulation";
 import { disposePetWindow, restorePetWindow } from "../pets/petWindow";
 import { startScheduledTaskWakeup } from "./scheduledTaskWakeup";
+import {
+  startRemoteControlServer,
+  stopRemoteControlServer,
+} from "../remoteControl/remoteControlServer";
+import { remoteTunnelManager } from "../remoteControl/remoteTunnelManager";
+import { isInstallerQuitRequest } from "./installerQuit";
 
 export const bootstrapApplication = (): void => {
   // ─── Chromium 启动加速开关（必须在 whenReady 之前）─────────────────────
@@ -64,7 +77,25 @@ export const bootstrapApplication = (): void => {
     return;
   }
 
-  app.on("second-instance", () => {
+  // The installer can launch the executable only to ask an existing instance
+  // to quit. If there is no existing instance, do not open the full app.
+  if (isInstallerQuitRequest(process.platform, process.argv)) {
+    app.quit();
+    return;
+  }
+
+  app.on("second-instance", (_event, commandLine) => {
+    if (isInstallerQuitRequest(process.platform, commandLine)) {
+      snowLog.info({
+        module: "app/bootstrap",
+        func: "second-instance",
+        message: "Installer requested a graceful application shutdown",
+      });
+      markCloseConfirmed();
+      app.quit();
+      return;
+    }
+
     snowLog.info({
       module: "app/bootstrap",
       func: "second-instance",
@@ -152,6 +183,25 @@ export const bootstrapApplication = (): void => {
     // IPC 注册放在窗口创建之后 — 渲染进程 boot-loader 阶段不需要 IPC，
     // 等 React 挂载后才会发起 invoke 调用，此时注册早已完成。
     registerIpcHandlers(native);
+    // 手机遥控服务是进程级单例；启动失败不会阻塞 Snow 主程序。
+    void startRemoteControlServer().then((info) => {
+      if (info) {
+        void remoteTunnelManager.initialize().catch((error) => {
+          console.warn(
+            "[Snow Remote] 自动连接公网隧道失败：",
+            error instanceof Error ? error.message : String(error),
+          );
+        });
+      }
+    });
+    powerMonitor.on("resume", () => {
+      void remoteTunnelManager.reconnectAfterSystemResume().catch((error) => {
+        console.warn(
+          "[Snow Remote] 系统唤醒后重连公网隧道失败：",
+          error instanceof Error ? error.message : String(error),
+        );
+      });
+    });
     // 用户脚本同步匹配缓存：必须在任何 webview 创建前注册 sendSync
     // handler（webview preload 顶层同步调用，未注册会死锁渲染进程）。
     initUserscriptSyncStore(native);
@@ -251,8 +301,23 @@ export const bootstrapApplication = (): void => {
     }
   });
 
-  // 退出前销毁宠物窗口，避免残留透明置顶窗口。
-  app.on("before-quit", () => {
+  let remoteShutdownComplete = false;
+  let remoteShutdownPromise: Promise<void> | null = null;
+
+  // 退出前释放远控监听端口和隧道进程，并销毁宠物窗口。
+  app.on("before-quit", (event) => {
     disposePetWindow();
+    if (remoteShutdownComplete) return;
+
+    event.preventDefault();
+    remoteShutdownPromise ??= Promise.all([
+      remoteTunnelManager.shutdown(),
+      stopRemoteControlServer(),
+    ])
+      .then(() => undefined)
+      .finally(() => {
+        remoteShutdownComplete = true;
+        app.quit();
+      });
   });
 };

@@ -11,6 +11,7 @@ import { RightPanel, type RightPanelRef } from "./components/RightPanel";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { NotificationNavigationBridge } from "./components/NotificationNavigationBridge";
+import { RemoteControlBridge } from "./components/RemoteControlBridge";
 import {
   ChatConversationProvider,
   useChatConversationContext,
@@ -662,6 +663,11 @@ export const App = (): React.JSX.Element => {
         directoryPath={activeDirectory?.path}
       >
         <NotificationNavigationBridge
+          activeDirectory={activeDirectory}
+          onActiveDirectoryChange={setActiveDirectory}
+          onSelectMainView={setActiveMainView}
+        />
+        <RemoteControlBridge
           activeDirectory={activeDirectory}
           onActiveDirectoryChange={setActiveDirectory}
           onSelectMainView={setActiveMainView}

@@ -2597,6 +2597,7 @@ export const zhTW = {
   "settings.storageRepairOk": "資料庫完好，已完成壓縮最佳化。",
   "settings.storageRepairRecovered": "資料庫曾損壞，現已修復完成。",
   "settings.generalSettings": "通用設定",
+  "settings.remoteControl": "手機遠控",
   "settings.generalSettingsInfo": "語言、版本與更新管理。",
   "settings.storageTab": "儲存與資源",
   "settings.resourceUsage": "資源佔用",

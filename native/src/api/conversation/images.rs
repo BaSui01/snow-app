@@ -620,6 +620,41 @@ pub fn resolve_inline_images_from_disk(content: &str, database_path: &Path) -> S
     result
 }
 
+/// 按序号解析消息内容中的图片（远控图片接口的数据库兜底路径）。
+///
+/// 与前端 `parseContentSegments` 的图片序号口径保持一致：只统计
+/// `@@image:` 标签的出现次序（0 基），返回第 `image_index` 个标签解析出
+/// 的真实图片——data URL 直接解码，`upload/...` 相对路径读盘并校验。
+/// 目标标签无法解析为图片时返回 None（不向后续标签试位，避免与前端
+/// 渲染出的图片序号错位）。SVG 等非位图标签即使解析成功也由调用方按
+/// 支持的 MIME 白名单拒绝（与前端桥的校验一致）。
+pub fn resolve_message_image(
+    content: &str,
+    database_path: &Path,
+    image_index: usize,
+) -> Option<ChatImage> {
+    const IMAGE_TAG_PREFIX: &str = "@@image:";
+
+    let mut remaining = content;
+    let mut index = 0usize;
+    while let Some(tag_start) = remaining.find(IMAGE_TAG_PREFIX) {
+        let tag_value_start = tag_start + IMAGE_TAG_PREFIX.len();
+        let tag_value_and_rest = &remaining[tag_value_start..];
+        let tag_end = tag_value_and_rest.find("@@")?;
+        let value = &tag_value_and_rest[..tag_end];
+        let full_tag_end = tag_value_start + tag_end + 2;
+
+        if index == image_index {
+            return parse_image_tag_value(value, database_path).ok().flatten();
+        }
+
+        index += 1;
+        remaining = &remaining[full_tag_end..];
+    }
+
+    None
+}
+
 fn media_type_to_extension(media_type: &str) -> &str {
     match media_type {
         "image/png" => "png",

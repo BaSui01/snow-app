@@ -1,4 +1,5 @@
 export type RemoteControlPairingState = {
+  enabled: boolean;
   running: boolean;
   host: string;
   port: number;

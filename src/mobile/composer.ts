@@ -1,0 +1,486 @@
+import type {
+  SnowRemoteModeId,
+  SnowRemoteState,
+} from "../renderer/types/remoteControl";
+import {
+  abortRun,
+  discardAttachment,
+  setMode,
+  sendMessage,
+  uploadAttachment,
+} from "./api";
+import { $, escapeHtml } from "./dom";
+import { t } from "./i18n";
+import { iconMarkup } from "./icons";
+import { showNotice } from "./notice";
+import {
+  beginOverlay,
+  closeOverlays,
+  hideOverlays,
+  isActionSheetOpen,
+  rememberOverlayTrigger,
+  setActionSheetOpen,
+} from "./overlays";
+import { openMcpPanel, openRemotePanel, openSkillsPanel } from "./panels";
+import { createNewChat } from "./threads";
+import { openTodosPanel } from "./todos";
+import type { AppContext } from "./types";
+
+/**
+ * 输入区：文本输入、附件（图片/文件）、发送/停止、加号动作面板。
+ */
+type AttachmentKind = "image" | "file";
+
+type ComposerAttachment = {
+  file: File;
+  kind: AttachmentKind;
+  status: "uploading" | "ready" | "failed";
+  id: string;
+  objectUrl: string;
+};
+
+let busy = false;
+let attachments: ComposerAttachment[] = [];
+let attachmentContext = "";
+let pendingSendRequestId = "";
+let isComposing = false;
+let latestState: SnowRemoteState | null = null;
+
+const resizeInput = (): void => {
+  const input = $<HTMLTextAreaElement>("input");
+  input.style.height = "40px";
+  input.style.height = Math.min(150, Math.max(40, input.scrollHeight)) + "px";
+};
+
+/** 撤回待发送消息时把原文恢复到输入框（重置幂等标识并同步高度）。 */
+export const restoreInputText = (text: string): void => {
+  const input = $<HTMLTextAreaElement>("input");
+  input.value = text;
+  pendingSendRequestId = "";
+  resizeInput();
+};
+
+const renderAttachments = (): void => {
+  const strip = $("attachmentStrip");
+  strip.className =
+    "attachment-strip" + (attachments.length ? " has-items" : "");
+  strip.innerHTML = attachments
+    .map((item, index) => {
+      const preview =
+        item.kind === "image"
+          ? `<img src="${escapeHtml(item.objectUrl)}" alt="">`
+          : `<div class="attachment-file">${escapeHtml(item.file.name)}</div>`;
+      const label =
+        item.status === "uploading"
+          ? t("remote.attachments.uploading")
+          : item.status === "failed"
+            ? t("remote.attachments.failed")
+            : t("remote.attachments.ready");
+      return `<div class="attachment-card ${item.status}">${preview}<span class="attachment-state">${label}</span><button class="attachment-remove" data-remove-attachment="${index}" aria-label="${escapeHtml(t("remote.attachments.remove"))}">${iconMarkup("x")}</button></div>`;
+    })
+    .join("");
+  // 发送按钮由附件上传状态控制（排队发送同样需要附件就绪）；
+  // 中断按钮的可用性由 renderComposer 按运行状态维护。
+  $<HTMLButtonElement>("actionButton").disabled = attachments.some(
+    (item) => item.status === "uploading",
+  );
+};
+
+const discardAttachmentItem = (item: ComposerAttachment): void => {
+  if (item.objectUrl) URL.revokeObjectURL(item.objectUrl);
+  if (item.id) discardAttachment(item.id);
+};
+
+const clearAttachments = (): void => {
+  attachments.forEach(discardAttachmentItem);
+  attachments = [];
+  renderAttachments();
+};
+
+const uploadAttachmentItem = async (
+  item: ComposerAttachment,
+): Promise<void> => {
+  item.status = "uploading";
+  renderAttachments();
+  try {
+    const result = await uploadAttachment(item.file, item.kind);
+    item.id = result.id;
+    if (attachments.indexOf(item) === -1) {
+      discardAttachmentItem(item);
+      return;
+    }
+    item.status = "ready";
+  } catch (error) {
+    if (attachments.indexOf(item) !== -1) {
+      item.status = "failed";
+      showNotice((error as Error).message, true);
+    }
+  }
+  renderAttachments();
+};
+
+const addFiles = (files: FileList | null, kind: AttachmentKind): void => {
+  if (!files) return;
+  pendingSendRequestId = "";
+  Array.from(files).forEach((file) => {
+    if (attachments.length >= 4) {
+      showNotice(t("remote.attachments.maxCount"), true);
+      return;
+    }
+    if (
+      kind === "image" &&
+      ["image/png", "image/jpeg", "image/gif", "image/webp"].indexOf(
+        file.type,
+      ) === -1
+    ) {
+      showNotice(t("remote.attachments.imageOnly"), true);
+      return;
+    }
+    const limit = kind === "image" ? 10 * 1024 * 1024 : 20 * 1024 * 1024;
+    if (file.size > limit) {
+      showNotice(
+        kind === "image"
+          ? t("remote.attachments.imageTooLarge")
+          : t("remote.attachments.fileTooLarge"),
+        true,
+      );
+      return;
+    }
+    const item: ComposerAttachment = {
+      file,
+      kind,
+      status: "uploading",
+      id: "",
+      objectUrl: kind === "image" ? URL.createObjectURL(file) : "",
+    };
+    attachments.push(item);
+    void uploadAttachmentItem(item);
+  });
+  renderAttachments();
+};
+
+/** 动作面板中的模式开关顺序（与桌面 PlusMenu 的模式区一致）。 */
+const MODE_IDS: SnowRemoteModeId[] = [
+  "yolo",
+  "lite",
+  "plan",
+  "worktree",
+  "workflow",
+  "goal",
+];
+
+const isModeAction = (action: string): action is SnowRemoteModeId =>
+  (MODE_IDS as readonly string[]).includes(action);
+
+/**
+ * 会话运行中锁定、不允许启停的模式（与桌面 PlusMenu 的 modesLocked 一致：
+ * 精简 / 计划 / WorkTree / WorkFlow / 目标；YOLO 不受限）。
+ */
+const LOCKED_MODE_IDS: readonly SnowRemoteModeId[] = [
+  "lite",
+  "plan",
+  "worktree",
+  "workflow",
+  "goal",
+];
+
+/** 会话运行中（流式 / 正在停止 / 正在压缩），与桌面 isSessionRunning 判定一致。 */
+const isSessionRunning = (state: SnowRemoteState | null): boolean =>
+  Boolean(state?.isStreaming || state?.isAborting || state?.isCompacting);
+
+/** 该模式此刻是否被锁定：会话运行中的模式不允许启停。 */
+const isModeLocked = (
+  state: SnowRemoteState | null,
+  mode: SnowRemoteModeId,
+): boolean => isSessionRunning(state) && LOCKED_MODE_IDS.includes(mode);
+
+const modeLabel = (mode: SnowRemoteModeId): string => {
+  switch (mode) {
+    case "goal":
+      return t("remote.modes.goal");
+    case "plan":
+      return t("remote.modes.plan");
+    case "worktree":
+      return t("remote.modes.worktree");
+    case "workflow":
+      return t("remote.modes.workflow");
+    case "lite":
+      return t("remote.modes.lite");
+    case "yolo":
+      return t("remote.modes.yolo");
+  }
+};
+
+const renderModeActions = (state: SnowRemoteState | null): void => {
+  const modes = state?.modes;
+  MODE_IDS.forEach((mode) => {
+    const button = document.querySelector<HTMLElement>(
+      `[data-action="${mode}"]`,
+    );
+    const toggle = button?.querySelector<HTMLElement>("[data-mode-toggle]");
+    if (!button || !toggle) return;
+    const enabled = Boolean(modes?.[mode]);
+    button.setAttribute("aria-pressed", String(enabled));
+    toggle.classList.toggle("on", enabled);
+    // 会话运行中锁定模式开关：压暗并标记不可用，点击由 handleActionClick 拦截。
+    const locked = isModeLocked(state, mode);
+    button.classList.toggle("is-locked", locked);
+    if (locked) {
+      button.setAttribute("aria-disabled", "true");
+      button.title = t("remote.mode.lockedRunning");
+    } else {
+      button.removeAttribute("aria-disabled");
+      button.removeAttribute("title");
+    }
+  });
+};
+
+export const renderComposer = (next: SnowRemoteState | null): void => {
+  latestState = next;
+  // 发送与中断是独立按钮：运行中发送按钮仍可用（消息进入待发送队列，
+  // 由桌面端在回合边界自动切入），中断按钮单独显示、互不影响。
+  $<HTMLButtonElement>("actionButton").disabled = false;
+  const stop = $<HTMLButtonElement>("stopButton");
+  stop.hidden = !next?.isStreaming;
+  stop.disabled = Boolean(next?.isAborting);
+  renderModeActions(next);
+  renderAttachments();
+};
+
+/** 会话上下文（工作区 + 会话）变化时丢弃旧附件。 */
+export const syncSessionContext = (nextContext: string): void => {
+  if (attachmentContext && nextContext !== attachmentContext) {
+    clearAttachments();
+  }
+  attachmentContext = nextContext;
+};
+
+const positionActions = (): void => {
+  const sheet = $("actionSheet");
+  if (!sheet.classList.contains("open")) return;
+  const trigger = $("plusButton");
+  const rect = trigger.getBoundingClientRect();
+  const margin = 10;
+  const gap = 8;
+  const width = Math.min(360, window.innerWidth - margin * 2);
+  const left = Math.min(
+    window.innerWidth - width - margin,
+    Math.max(margin, rect.left),
+  );
+  sheet.style.left = left + "px";
+  sheet.style.width = width + "px";
+  sheet.style.bottom =
+    Math.max(margin, window.innerHeight - rect.top + gap) + "px";
+  sheet.style.maxHeight = Math.max(120, rect.top - margin - gap) + "px";
+};
+
+const submit = async (ctx: AppContext): Promise<void> => {
+  const input = $<HTMLTextAreaElement>("input");
+  const text = input.value;
+  if (busy) return;
+  if (attachments.some((item) => item.status === "uploading")) {
+    showNotice(t("remote.attachments.uploadingNotice"), true);
+    return;
+  }
+  if (attachments.some((item) => item.status === "failed")) {
+    showNotice(t("remote.attachments.failedNotice"), true);
+    return;
+  }
+  if (!text.trim() && !attachments.length) return;
+  // 运行中（流式 / 停止中 / 压缩中）发送 = 排队：桌面端会把消息加入
+  // 当前会话的待发送队列，在回合边界自动切入。
+  const queued = isSessionRunning(latestState);
+  busy = true;
+  $<HTMLButtonElement>("actionButton").disabled = true;
+  pendingSendRequestId =
+    pendingSendRequestId ||
+    "send-" +
+      Date.now().toString(36) +
+      "-" +
+      Math.random().toString(36).slice(2);
+  try {
+    await sendMessage(
+      text,
+      attachments.map((item) => item.id),
+      pendingSendRequestId,
+    );
+    input.value = "";
+    resizeInput();
+    clearAttachments();
+    pendingSendRequestId = "";
+    showNotice(t(queued ? "remote.notice.queued" : "remote.notice.sent"));
+    await ctx.refresh(false);
+  } catch (error) {
+    showNotice((error as Error).message, true);
+  } finally {
+    busy = false;
+    renderAttachments();
+  }
+};
+
+const handleActionClick = async (
+  ctx: AppContext,
+  action: string,
+): Promise<void> => {
+  const panelAction =
+    action === "todos" ||
+    action === "skills" ||
+    action === "mcp" ||
+    action === "commands" ||
+    action === "theme";
+  const modeAction = isModeAction(action);
+  if (panelAction) setActionSheetOpen(false);
+  // 模式开关不关闭动作面板，方便连续切换多个模式。
+  else if (!modeAction) closeOverlays(false);
+
+  if (action === "image") {
+    $<HTMLInputElement>("imagePicker").click();
+    return;
+  }
+  if (action === "file") {
+    $<HTMLInputElement>("filePicker").click();
+    return;
+  }
+  if (action === "new-chat") {
+    await createNewChat(ctx);
+    return;
+  }
+  if (action === "todos") {
+    await openTodosPanel(ctx);
+    return;
+  }
+  if (action === "skills") {
+    await openSkillsPanel();
+    return;
+  }
+  if (action === "mcp") {
+    await openMcpPanel();
+    return;
+  }
+  if (action === "commands") {
+    openRemotePanel("commandPanel");
+    return;
+  }
+  if (action === "theme") {
+    openRemotePanel("themePanel");
+    return;
+  }
+  if (modeAction) {
+    if (isModeLocked(latestState, action)) {
+      showNotice(t("remote.mode.lockedRunning"));
+      return;
+    }
+    const enabled = !latestState?.modes?.[action];
+    await setMode(action, enabled);
+    showNotice(
+      t(enabled ? "remote.mode.enabled" : "remote.mode.disabled", {
+        name: modeLabel(action),
+      }),
+    );
+    await ctx.refresh(false);
+  }
+};
+
+export const initComposer = (ctx: AppContext): void => {
+  const input = $<HTMLTextAreaElement>("input");
+
+  $("plusButton").onclick = () => {
+    if (isActionSheetOpen()) {
+      closeOverlays(false);
+      return;
+    }
+    hideOverlays();
+    rememberOverlayTrigger($("plusButton"));
+    beginOverlay();
+    $("actionSheet").scrollTop = 0;
+    setActionSheetOpen(true);
+    positionActions();
+  };
+
+  $("actionSheet").onclick = async (event) => {
+    const button = (event.target as HTMLElement).closest<HTMLElement>(
+      "[data-action]",
+    );
+    if (!button) return;
+    try {
+      await handleActionClick(ctx, button.dataset.action ?? "");
+    } catch (error) {
+      showNotice((error as Error).message, true);
+    }
+  };
+
+  $("actionBackdrop").onclick = () => {
+    closeOverlays(false);
+  };
+  window.addEventListener("resize", positionActions);
+
+  const imagePicker = $<HTMLInputElement>("imagePicker");
+  const filePicker = $<HTMLInputElement>("filePicker");
+  imagePicker.onchange = () => {
+    addFiles(imagePicker.files, "image");
+    imagePicker.value = "";
+  };
+  filePicker.onchange = () => {
+    addFiles(filePicker.files, "file");
+    filePicker.value = "";
+  };
+
+  $("attachmentStrip").onclick = (event) => {
+    const button = (event.target as HTMLElement).closest<HTMLElement>(
+      "[data-remove-attachment]",
+    );
+    if (!button) return;
+    const index = Number(button.dataset.removeAttachment);
+    const item = attachments[index];
+    if (!item) return;
+    discardAttachmentItem(item);
+    attachments.splice(index, 1);
+    pendingSendRequestId = "";
+    renderAttachments();
+  };
+
+  input.addEventListener("input", () => {
+    pendingSendRequestId = "";
+    resizeInput();
+    if (input.value.charAt(0) === "/") {
+      openRemotePanel("commandPanel");
+      const search = $<HTMLInputElement>("commandSearch");
+      search.value = input.value.slice(1);
+      search.dispatchEvent(new Event("input"));
+    }
+  });
+  input.addEventListener("compositionstart", () => {
+    isComposing = true;
+  });
+  input.addEventListener("compositionend", () => {
+    isComposing = false;
+  });
+  input.addEventListener("keydown", (event) => {
+    if (
+      event.key === "Enter" &&
+      !event.shiftKey &&
+      !isComposing &&
+      !event.isComposing
+    ) {
+      event.preventDefault();
+      void submit(ctx);
+    }
+  });
+
+  // 发送：运行中同样可发送（消息进入待发送队列，回合边界自动切入），
+  // 与桌面端输入区行为一致。
+  $("actionButton").onclick = async () => {
+    await submit(ctx);
+  };
+
+  // 中断：独立按钮，仅运行中出现，与发送互不干扰。
+  $("stopButton").onclick = async () => {
+    try {
+      await abortRun();
+      showNotice(t("remote.notice.stopping"));
+      await ctx.refresh(false);
+    } catch (error) {
+      showNotice((error as Error).message, true);
+    }
+  };
+};

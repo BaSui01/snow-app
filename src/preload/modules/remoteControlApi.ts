@@ -17,6 +17,10 @@ export const remoteControlApi = {
     ipcRenderer.invoke("remote-control:pairing-state"),
   rotateRemoteControlToken: (): Promise<RemoteControlPairingState> =>
     ipcRenderer.invoke("remote-control:rotate-token"),
+  setRemoteControlEnabled: (
+    enabled: boolean,
+  ): Promise<RemoteControlPairingState> =>
+    ipcRenderer.invoke("remote-control:set-enabled", enabled),
   getRemoteTunnelStatus: (): Promise<RemoteTunnelStatus> =>
     ipcRenderer.invoke("remote-control:tunnel-status"),
   saveRemoteTunnelConfig: (
@@ -49,7 +53,10 @@ export const remoteControlApi = {
     ): void => callback(progress);
     ipcRenderer.on("remote-control:server-deploy-progress", handler);
     return () =>
-      ipcRenderer.removeListener("remote-control:server-deploy-progress", handler);
+      ipcRenderer.removeListener(
+        "remote-control:server-deploy-progress",
+        handler,
+      );
   },
   resolveRemoteAttachments: (
     ids: string[],

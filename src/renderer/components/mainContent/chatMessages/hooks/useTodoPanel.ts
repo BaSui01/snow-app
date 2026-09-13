@@ -22,9 +22,11 @@ const isValidStatus = (value: unknown): value is TodoStatus =>
 /**
  * Parse a todo-manage tool result JSON into a TodoItem array.
  * Returns null if the result is not a valid todo list.
+ * 远控桥（RemoteControlBridge）复用同一解析：它拿到的是直接调用工具后的
+ * 结果 JSON，与消息里的工具结果同形，因此不再重复实现校验。
  */
-const parseTodoResult = (
-  result: string | undefined
+export const parseTodoResult = (
+  result: string | undefined,
 ): { todos: TodoItem[]; sessionId: string } | null => {
   if (!result) {
     return null;
@@ -69,7 +71,7 @@ const parseTodoResult = (
  * successful result that contains a todo array.
  */
 export const useTodoPanel = (
-  messages: ChatConversationMessage[]
+  messages: ChatConversationMessage[],
 ): {
   todos: TodoItem[];
   sessionId: string | null;

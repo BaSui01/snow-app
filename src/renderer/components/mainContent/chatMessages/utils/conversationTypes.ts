@@ -780,6 +780,12 @@ export type UseChatConversationResult = {
   upsertedConversation: UpsertedConversation | null;
   /** pending 槽位 -> 迁移后的真实 conversationId（侧边栏占位替换用）。 */
   pendingToRealConversationIdRef: RefValue<Map<string, string>>;
+  /** 当前视图会话 key（真实 id 或新会话槽位 key；随 setActiveId 更新）。
+   *  远控通道用它定位“所见 pending 队列”的真实归属（含槽位迁移解析）。 */
+  activeSessionKeyRef: RefValue<string | undefined>;
+  /** 待发送队列存储（会话 key -> 队列）：远控通道在操作失败时据此输出
+   *  现场摘要（诊断用）。 */
+  pendingQueueRef: RefValue<Map<string, PendingQueueItem[]>>;
   /** All sub-agent session events keyed by sub-agent conversationId. */
   subAgentSessionEvents: Record<string, SubAgentSessionEvent>;
   /** File changes recorded during this renderer session, keyed by
@@ -841,8 +847,17 @@ export type UseChatConversationResult = {
   loadOlderMessages: () => Promise<void>;
   handleSendMessage: (message: string, options: ChatInputSendOptions) => void;
   pendingMessages: string[];
-  withdrawPendingMessage: (index: number) => string | null;
-  sendPendingMessageNow: (index: number) => void;
+  /** 撤回一条待发送消息。targetSessionKey 缺省为当前激活会话（桌面面板
+   *  只操作激活会话）；远控等跨会话通道可指定“消息所属会话”，从该会话的
+   *  队列移除（目标为后台会话时不更新显示镜像，切回时重载）。返回原文；
+   *  队列中无此条目时返回 null。 */
+  withdrawPendingMessage: (
+    index: number,
+    targetSessionKey?: string,
+  ) => string | null;
+  /** 立即发送一条待发送消息（中断目标会话当前运行并直接发出）。
+   *  targetSessionKey 语义同上；返回是否命中队列条目。 */
+  sendPendingMessageNow: (index: number, targetSessionKey?: string) => boolean;
   compactConversation: (model?: string) => Promise<void>;
   compactionPreview: string;
   compactionError: string | null;

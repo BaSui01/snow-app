@@ -37,10 +37,8 @@ import { initBrowserPopupHandler } from "../browser/browserPopupWindow";
 import { initBrowserDeviceEmulation } from "../browser/browserDeviceEmulation";
 import { disposePetWindow, restorePetWindow } from "../pets/petWindow";
 import { startScheduledTaskWakeup } from "./scheduledTaskWakeup";
-import {
-  startRemoteControlServer,
-  stopRemoteControlServer,
-} from "../remoteControl/remoteControlServer";
+import { stopRemoteControlServer } from "../remoteControl/remoteControlServer";
+import { initializeRemoteControl } from "../remoteControl/remoteControlLifecycle";
 import { remoteTunnelManager } from "../remoteControl/remoteTunnelManager";
 import { isInstallerQuitRequest } from "./installerQuit";
 
@@ -183,17 +181,9 @@ export const bootstrapApplication = (): void => {
     // IPC 注册放在窗口创建之后 — 渲染进程 boot-loader 阶段不需要 IPC，
     // 等 React 挂载后才会发起 invoke 调用，此时注册早已完成。
     registerIpcHandlers(native);
-    // 手机遥控服务是进程级单例；启动失败不会阻塞 Snow 主程序。
-    void startRemoteControlServer().then((info) => {
-      if (info) {
-        void remoteTunnelManager.initialize().catch((error) => {
-          console.warn(
-            "[Snow Remote] 自动连接公网隧道失败：",
-            error instanceof Error ? error.message : String(error),
-          );
-        });
-      }
-    });
+    // 手机遥控默认关闭；仅在用户于设置中开启过时恢复服务与公网隧道，
+    // 启动失败不会阻塞 Snow 主程序。
+    void initializeRemoteControl();
     powerMonitor.on("resume", () => {
       void remoteTunnelManager.reconnectAfterSystemResume().catch((error) => {
         console.warn(

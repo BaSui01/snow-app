@@ -879,6 +879,10 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to list chat messages paginated",
           ),
         ),
+      getChatMessageImage: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to resolve message images"),
+        ),
       findLatestToolResult: () =>
         Promise.reject(
           new Error(

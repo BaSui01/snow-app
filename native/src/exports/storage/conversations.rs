@@ -593,6 +593,20 @@ pub async fn list_chat_messages_paginated(
     .map_err(map_spawn_error)?
 }
 
+/// 按消息 id 解析用户消息中的第 `image_index` 张图片（远控图片接口的
+/// 数据库兜底路径：渲染进程只持有当前会话已加载的内存消息窗口）。
+#[napi]
+pub async fn get_chat_message_image(
+    message_id: String,
+    image_index: i32,
+) -> napi::Result<Option<ChatMessageImage>> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::get_chat_message_image(message_id, image_index)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
 #[napi]
 pub async fn find_latest_tool_result(
     conversation_id: String,

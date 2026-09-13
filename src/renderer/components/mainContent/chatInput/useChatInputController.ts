@@ -413,6 +413,21 @@ export const useChatInputController = ({
     ],
   );
 
+  // runtimeApiConfig 就绪或渠道切换后自动预拉模型列表：手机远控与任何依赖
+  // modelIds 的场景不应要求用户先在桌面打开过模型菜单。按“渠道 + 请求方式”
+  // 去重（同一实例内不重复拉取；会话重挂载 / 换渠道后各拉一次），force 覆盖
+  // “上次失败未重试”的情况；依赖仅 runtimeApiConfig，避免失败重试风暴。
+  const modelPrefetchKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!runtimeApiConfig) return;
+    const key = `${runtimeApiConfig.profileName}|${runtimeApiConfig.requestMethod}`;
+    if (modelPrefetchKeyRef.current === key) return;
+    modelPrefetchKeyRef.current = key;
+    void loadModels(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runtimeApiConfig]);
+
   useEffect(() => {
     if (isStreaming && isModelMenuOpen) {
       setIsModelMenuOpen(false);
@@ -805,11 +820,13 @@ export const useChatInputController = ({
     setIsModelMenuOpen((open) => {
       const nextOpen = !open;
       if (nextOpen) {
-        void loadModels();
+        // 列表为空（首次打开或上次加载失败）时强制重拉：非 force 路径在
+        // modelError 存在时会跳过，否则一次失败后菜单将永远为空。
+        void loadModels(models.length === 0);
       }
       return nextOpen;
     });
-  }, [loadModels]);
+  }, [loadModels, models.length]);
 
   // Switch the conversation-scoped API profile. A profile switch starts a new
   // runtime snapshot: old thinking/Fast overrides are never migrated. The
@@ -955,6 +972,7 @@ export const useChatInputController = ({
     requestMethod,
     thinkingOptions,
     thinkingValue: thinkingOverride,
+    effectiveThinkingValue,
     thinkingLabel: activeThinkingOption.label,
     thinkingDefaultLabel,
     ActiveThinkingIcon: activeThinkingOption.icon,

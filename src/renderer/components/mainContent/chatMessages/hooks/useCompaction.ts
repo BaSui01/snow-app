@@ -308,7 +308,10 @@ export const useCompaction = (ctx: ConversationContextValue) => {
             const combined = pendingQueue.map((item) => item.text).join("\n\n");
             const lastOptions =
               pendingQueue[pendingQueue.length - 1]?.options ?? {};
-            ctx.setActivePendingMessages([]);
+            // 显示镜像只反映当前激活会话的队列（会话隔离）。
+            if (ctx.activeSessionKeyRef.current === conversationId) {
+              ctx.setActivePendingMessages([]);
+            }
             // 显式指定目标会话：压缩期间用户可能已切到其他会话/新建会话
             // 视图，排队消息必须发回压缩的会话，且不重置用户的新建意图。
             ctx.handleSendMessageRef.current(combined, {

@@ -5,6 +5,7 @@ import {
   getRemoteControlPairingState,
   rotateRemoteControlToken,
 } from "../../remoteControl/remoteControlServer";
+import { applyRemoteControlEnabled } from "../../remoteControl/remoteControlLifecycle";
 import {
   resolveRemoteAttachments,
   type RemoteAttachmentContext,
@@ -51,6 +52,16 @@ export const registerRemoteControlHandlers = (): void => {
     assertMainFrame(event);
     return rotateRemoteControlToken();
   });
+  ipcMain.handle(
+    "remote-control:set-enabled",
+    async (event, enabled: unknown) => {
+      assertMainFrame(event);
+      if (typeof enabled !== "boolean") {
+        throw new Error("Invalid remote control enabled flag");
+      }
+      return applyRemoteControlEnabled(enabled);
+    },
+  );
   ipcMain.handle("remote-control:tunnel-status", (event) => {
     assertMainFrame(event);
     return remoteTunnelManager.getStatus();

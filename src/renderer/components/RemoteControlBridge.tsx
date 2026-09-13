@@ -6,7 +6,14 @@ import type {
 } from "../../preload";
 import type { MainContentView } from "./mainContent/types";
 import { useChatConversationContext } from "./mainContent/chatMessages";
+import { parseTodoResult } from "./mainContent/chatMessages/hooks/useTodoPanel";
+import { buildConversationMessages } from "./mainContent/chatMessages/utils/conversationHelpers";
+import type {
+  ChatConversationMessage,
+  ToolCallInfo,
+} from "./mainContent/chatMessages/utils/conversationTypes";
 import {
+  readLiveRemoteControlChatInput,
   readRemoteControlChatInput,
   type SnowRemoteChatInputPublication,
 } from "./mainContent/chatInput/remoteControlChatInputRegistry";
@@ -19,6 +26,8 @@ import type {
   SnowRemoteChange,
   SnowRemoteMessage,
   SnowRemoteState,
+  SnowRemoteTodoItem,
+  SnowRemoteTodoStatus,
   SnowRemoteToolCall,
   SnowRemoteTokenUsage,
 } from "../types/remoteControl";
@@ -30,6 +39,8 @@ type RemoteControlBridgeProps = {
 };
 
 const MAX_MESSAGES = 50;
+/** 会话选择器的分页步长（首屏每工作区一页，「加载更多」按同一页长追加）。 */
+const REMOTE_CONVERSATION_PAGE_SIZE = 30;
 const MAX_MESSAGE_LENGTH = 40_000;
 const MAX_TOOL_ARGUMENT_LENGTH = 2_000;
 const MAX_TOOL_RESULT_LENGTH = 12_000;
@@ -39,6 +50,15 @@ const MAX_COMMANDS = 40;
 const MAX_THINKING_OPTIONS = 20;
 const MAX_THINKING_LENGTH = 100;
 const MAX_IDENTIFIER_LENGTH = 200;
+/** 会话待办：单次下发的最大条目数与单条内容长度上限。 */
+const MAX_TODOS = 200;
+const MAX_TODO_CONTENT_LENGTH = 500;
+/**
+ * 待办快照缓存时长。/api/state 由手机端高频轮询，而待办需要调用
+ * MCP 工具读取（一次 IPC + SQLite 查询）：命中缓存时直接复用，
+ * 变更（mutateTodos）与切换会话时立即失效。
+ */
+const TODO_CACHE_TTL_MS = 3_000;
 
 const truncateTo = (
   value: string | undefined,
@@ -60,6 +80,33 @@ const safeToolText = (
 const truncate = (value: string | undefined): string | undefined =>
   truncateTo(value, MAX_MESSAGE_LENGTH);
 
+/**
+ * 桌面当前生效的主题色：--accent-color 经浏览器原生 var() 解析后的计算值，
+ * 规范化为 #rrggbb 供手机端复用。probe 元素的 color 由浏览器解析，
+ * 无需自己递归展开 CSS 变量；解析失败（如非常规色彩空间）返回空串，
+ * 手机端保持自身默认强调色。
+ */
+const resolveThemeAccentColor = (): string => {
+  try {
+    const probe = document.createElement("div");
+    probe.style.color = "var(--accent-color)";
+    probe.style.display = "none";
+    document.body.appendChild(probe);
+    const computed = window.getComputedStyle(probe).color;
+    probe.remove();
+    const match = /^rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/.exec(computed);
+    if (!match) return "";
+    return (
+      "#" +
+      [match[1], match[2], match[3]]
+        .map((channel) => Number(channel).toString(16).padStart(2, "0"))
+        .join("")
+    );
+  } catch {
+    return "";
+  }
+};
+
 const toRemoteContentBlocks = (
   messageId: string,
   content: string,
@@ -72,7 +119,11 @@ const toRemoteContentBlocks = (
         return text.trim() ? [{ type: "text", text }] : [];
       }
       if (segment.type === "image") {
-        const source = `/api/message-images/${encodeURIComponent(messageId)}/${imageIndex}`;
+        // 无消息 id（待发送消息等尚未落库的内容）时没有取图端点：
+        // source 置空，移动端按附件 chip 降级展示。
+        const source = messageId
+          ? `/api/message-images/${encodeURIComponent(messageId)}/${imageIndex}`
+          : "";
         imageIndex += 1;
         return [{ type: "image", name: segment.tag.name, source }];
       }
@@ -158,11 +209,7 @@ const toRemotePreview = (content: string | undefined): string => {
   return truncateTo(preview, 500) ?? "";
 };
 
-const toRemoteToolCall = (
-  toolCall: ReturnType<
-    typeof useChatConversationContext
-  >["pendingToolAuthorizations"][number],
-): SnowRemoteToolCall => ({
+const toRemoteToolCall = (toolCall: ToolCallInfo): SnowRemoteToolCall => ({
   name: toolCall.name,
   interactionId: toolCall.interactionId,
   authorizationId: toolCall.authorizationId,
@@ -192,7 +239,7 @@ const toRemoteToolCall = (
 });
 
 const toRemoteMessage = (
-  message: ReturnType<typeof useChatConversationContext>["messages"][number],
+  message: ChatConversationMessage,
 ): SnowRemoteMessage => ({
   id: message.id,
   role: message.role,
@@ -219,6 +266,21 @@ const toRemoteMessage = (
   status: message.status,
 });
 
+// 会话列表条目 → 远程 DTO：preview 先剥离附件标记再截断（见 toRemotePreview）。
+const toRemoteConversation = (
+  item: ChatConversationRecord,
+  workspaceName: string,
+): SnowRemoteState["conversations"][number] => ({
+  conversationId: item.conversationId,
+  title: toRemotePreview(item.title),
+  summary: toRemotePreview(item.summary),
+  lastMessagePreview: toRemotePreview(item.lastMessagePreview),
+  status: item.status,
+  directoryId: item.directoryId,
+  workspaceName,
+  updatedAt: item.updatedAt,
+});
+
 // 真实 Token Usage 直传（来源：会话 session，由 Main/Rust 归一化）。
 // Renderer 不重新计算任何 Token 算法，只做非负整数防御性清洗。
 const toRemoteTokenUsage = (
@@ -242,6 +304,27 @@ const toRemoteTokenUsage = (
 const normalizeRemoteIdentifier = (value: string): string =>
   typeof value === "string" ? value.trim() : "";
 
+/**
+ * 待发送队列操作失败时的现场摘要（诊断：请求 key / 当前视图 key / 存活队列 /
+ * 迁移映射 / 队列索引 / 显示镜像长度）。随错误信息返回给移动端，便于定位
+ * “队列定位失败”的真实原因。
+ */
+const pendingOperationFailureDetail = (
+  conversation: ReturnType<typeof useChatConversationContext>,
+  expectedQueueKey: string | null,
+  index: number,
+): string => {
+  const queueKeys = Array.from(conversation.pendingQueueRef.current.keys());
+  const migrationMapping = Array.from(
+    conversation.pendingToRealConversationIdRef.current.entries(),
+  ).map(([from, to]) => `${from}->${to}`);
+  return (
+    `（key=${expectedQueueKey ?? "null"}；视图=${conversation.activeSessionKeyRef.current ?? "null"}；` +
+    `队列=[${queueKeys.join(", ")}]；迁移=[${migrationMapping.join(", ")}]；` +
+    `idx=${index}；镜像=${conversation.pendingMessages.length}）`
+  );
+};
+
 export const RemoteControlBridge = ({
   activeDirectory,
   onActiveDirectoryChange,
@@ -264,18 +347,31 @@ export const RemoteControlBridge = ({
 
   // 远控 Phase A：读取输入区快照并做会话绑定二次校验。
   // 快照绑定会话与活动会话不一致（切换瞬间的陈旧快照）时视为不可用。
-  const resolveChatInput = (): SnowRemoteChatInputPublication | null => {
-    const publication = readRemoteControlChatInput();
-    if (!publication) {
-      return null;
-    }
+  const matchChatInputConversation = (
+    publication: SnowRemoteChatInputPublication,
+  ): SnowRemoteChatInputPublication | null => {
     const activeConversationId =
       stateRef.current.conversation.activeConversationId ?? null;
-    if ((publication.conversationId ?? null) !== activeConversationId) {
-      return null;
-    }
-    return publication;
+    return (publication.conversationId ?? null) === activeConversationId
+      ? publication
+      : null;
   };
+
+  /** 实时快照：变更与指令执行要求输入区挂载中（真实 setter 链仍存活）。 */
+  const resolveChatInput = (): SnowRemoteChatInputPublication | null => {
+    const publication = readLiveRemoteControlChatInput();
+    return publication ? matchChatInputConversation(publication) : null;
+  };
+
+  /**
+   * 展示快照：输入区卸载（桌面停留在设置页等）时回退到最后一次快照，
+   * 手机端仍能显示当前模型 / Profile / 思考强度，而不是退化成「未选择」。
+   */
+  const resolveChatInputForDisplay =
+    (): SnowRemoteChatInputPublication | null => {
+      const publication = readRemoteControlChatInput();
+      return publication ? matchChatInputConversation(publication) : null;
+    };
 
   // 需要“真实 setter 链”的远程变更（模型/Profile/思考强度/Fast Mode）：
   // 桌面端在流式期间禁用模型菜单、子代理会话的输入配置由子代理配置决定，
@@ -283,7 +379,33 @@ export const RemoteControlBridge = ({
   const requireChatInputForMutation = (): SnowRemoteChatInputPublication => {
     const publication = resolveChatInput();
     if (!publication) {
-      throw new Error("聊天输入区未就绪或会话不匹配");
+      const current = stateRef.current.conversation;
+      const activeId = current.activeConversationId;
+      // 子代理 / 工作流节点会话：输入配置由父会话或节点配置决定；会话结束
+      // 后输入区还会被结束提示条替换（live 快照随之消失）。这类会话远程
+      // 不能修改，给出准确原因，避免与“桌面不在对话页”混淆。
+      const record = current.upsertedConversation?.record ?? null;
+      const isChildSession =
+        Boolean(activeId && current.subAgentSessionEvents[activeId]) ||
+        Boolean(
+          activeId &&
+          record &&
+          record.conversationId === activeId &&
+          (record.conversationType === "sub_agent" ||
+            record.conversationType === "workflow_node"),
+        );
+      if (isChildSession) {
+        throw new Error(
+          "电脑端当前是子代理/工作流会话，输入配置不可远程修改（请切换到普通对话）",
+        );
+      }
+      // 展示快照存在而实时快照缺失：输入区已卸载（桌面停留在设置页等
+      // 非对话视图），setter 链随组件销毁，给出明确指引而不是笼统的“未就绪”。
+      throw new Error(
+        resolveChatInputForDisplay()
+          ? "电脑端当前暂不支持修改（请在电脑端打开一个普通对话）"
+          : "电脑端尚未就绪，请确认电脑端已打开对话",
+      );
     }
     if (stateRef.current.conversation.isStreaming) {
       throw new Error("请先停止当前运行");
@@ -316,8 +438,8 @@ export const RemoteControlBridge = ({
       .map((name) => truncateTo(name, MAX_IDENTIFIER_LENGTH) ?? "")
       .filter(Boolean),
     requestMethod: publication.requestMethod,
-    thinkingValue:
-      truncateTo(publication.thinkingValue, MAX_THINKING_LENGTH) ?? "",
+    effectiveThinkingValue:
+      truncateTo(publication.effectiveThinkingValue, MAX_THINKING_LENGTH) ?? "",
     thinkingOptions: publication.thinkingOptions
       .slice(0, MAX_THINKING_OPTIONS)
       .map((option) => ({
@@ -343,10 +465,75 @@ export const RemoteControlBridge = ({
   const conversationCacheRef = useRef<{
     expiresAt: number;
     conversations: SnowRemoteState["conversations"];
+    totals: SnowRemoteState["conversationTotals"];
   }>({
     expiresAt: 0,
     conversations: [],
+    totals: {},
   });
+
+  const todosCacheRef = useRef<{
+    conversationId: string;
+    expiresAt: number;
+    items: SnowRemoteTodoItem[];
+  } | null>(null);
+
+  /**
+   * 会话待办快照：命中缓存（见 TODO_CACHE_TTL_MS）时直接复用，否则按会话
+   * 调用真实 todo-todo-manage 工具读取——与桌面顶部待办面板同一数据源，
+   * 因此手机端看到的完成度与桌面完全一致。会话隔离：读取按会话 ID 进行，
+   * 无活动会话或读取失败时返回 null（移动端隐藏待办入口）。
+   */
+  const resolveTodos = async (
+    conversationId: string | null,
+  ): Promise<SnowRemoteTodoItem[] | null> => {
+    if (!conversationId) {
+      todosCacheRef.current = null;
+      return null;
+    }
+    const cached = todosCacheRef.current;
+    if (
+      cached &&
+      cached.conversationId === conversationId &&
+      cached.expiresAt > Date.now()
+    ) {
+      return cached.items;
+    }
+
+    try {
+      const result = await window.snow.callMcpTool(
+        "todo-todo-manage",
+        JSON.stringify({ action: "get" }),
+        stateRef.current.activeDirectory?.directoryId,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        conversationId,
+      );
+      const items = (parseTodoResult(result)?.todos ?? [])
+        .slice(0, MAX_TODOS)
+        .map((todo) => ({
+          id: todo.id,
+          content: truncateTo(todo.content, MAX_TODO_CONTENT_LENGTH) ?? "",
+          status: todo.status,
+        }));
+      todosCacheRef.current = {
+        conversationId,
+        expiresAt: Date.now() + TODO_CACHE_TTL_MS,
+        items,
+      };
+      return items;
+    } catch {
+      // 读取失败（工具暂不可用等）：本轮不下发待办，也不缓存，
+      // 由下一次轮询重试；把失败当成空列表会让手机端误以为列表被清空。
+      return null;
+    }
+  };
 
   useEffect(() => {
     const api: SnowRemoteControlApi = {
@@ -530,6 +717,76 @@ export const RemoteControlBridge = ({
           throw new Error("会话已切换，请重新打开变更");
         }
         return { conversationId, changes };
+      },
+      /**
+       * 会话待办变更：复用桌面真实 todo-todo-manage 工具（add / update /
+       * delete），会话 ID 由桥注入，移动端无法跨会话读写。变更后立即失效
+       * 快照缓存，调用方随后刷新 /api/state 即可拿到最新列表。
+       * 与桌面顶部待办面板一致：会话运行中待办由 AI 管理，不接受手动变更。
+       */
+      mutateTodos: async (
+        action: "add" | "update" | "delete",
+        payload:
+          | { content?: string; todoId?: string; status?: SnowRemoteTodoStatus }
+          | undefined,
+      ): Promise<{ ok: true }> => {
+        const current = stateRef.current.conversation;
+        const conversationId = current.activeConversationId ?? null;
+        if (!conversationId) {
+          throw new Error("当前没有进行中的会话，暂时无法管理待办");
+        }
+        if (current.isStreaming) {
+          throw new Error("会话运行中，待办由 AI 管理，请稍后再试");
+        }
+
+        const args: Record<string, string> = {};
+        if (action === "add") {
+          const content =
+            typeof payload?.content === "string" ? payload.content.trim() : "";
+          if (!content) throw new Error("待办内容不能为空");
+          if (content.length > MAX_TODO_CONTENT_LENGTH) {
+            throw new Error(
+              `待办内容不能超过 ${MAX_TODO_CONTENT_LENGTH} 个字符`,
+            );
+          }
+          args.action = "add";
+          args.content = content;
+        } else if (action === "update" || action === "delete") {
+          const todoId = normalizeRemoteIdentifier(payload?.todoId ?? "");
+          if (!todoId) throw new Error("待办条目不存在或已过期");
+          args.action = action;
+          args.todoId = todoId;
+          if (action === "update") {
+            const status = payload?.status;
+            if (
+              status !== "pending" &&
+              status !== "inProgress" &&
+              status !== "completed"
+            ) {
+              throw new Error("待办状态无效");
+            }
+            args.status = status;
+          }
+        } else {
+          throw new Error("不支持的待办操作");
+        }
+
+        await window.snow.callMcpTool(
+          "todo-todo-manage",
+          JSON.stringify(args),
+          stateRef.current.activeDirectory?.directoryId,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          conversationId,
+        );
+        todosCacheRef.current = null;
+        return { ok: true };
       },
       getPermissions: async () => {
         const directoryId =
@@ -816,28 +1073,29 @@ export const RemoteControlBridge = ({
               directories.map(async (workspace) => {
                 const page = await window.snow.listChatConversationsPaginated(
                   workspace.directoryId,
-                  30,
+                  REMOTE_CONVERSATION_PAGE_SIZE,
                   0,
                 );
-                return page.items.map((item) => ({
-                  conversationId: item.conversationId,
-                  title: toRemotePreview(item.title),
-                  summary: toRemotePreview(item.summary),
-                  lastMessagePreview: toRemotePreview(item.lastMessagePreview),
-                  status: item.status,
-                  directoryId: item.directoryId,
-                  workspaceName: workspace.name,
-                  updatedAt: item.updatedAt,
-                }));
+                return { workspace, page };
               }),
             );
             conversationCacheRef.current = {
               expiresAt: Date.now() + 5_000,
               conversations: pages
-                .flat()
+                .flatMap(({ workspace, page }) =>
+                  page.items.map((item) =>
+                    toRemoteConversation(item, workspace.name),
+                  ),
+                )
                 .sort((left, right) =>
                   right.updatedAt.localeCompare(left.updatedAt),
                 ),
+              totals: Object.fromEntries(
+                pages.map(({ workspace, page }) => [
+                  workspace.directoryId,
+                  page.total,
+                ]),
+              ),
             };
           })().catch(() => {
             conversationCacheRef.current.expiresAt = Date.now() + 1_000;
@@ -871,7 +1129,9 @@ export const RemoteControlBridge = ({
           }),
         );
 
-        const chatInputPublication = resolveChatInput();
+        // 展示用快照：桌面停留在设置页（输入区已卸载）时仍提供模型 /
+        // Profile / 思考强度，手机端不因桌面视图切换而退化显示。
+        const chatInputPublication = resolveChatInputForDisplay();
 
         return {
           workspace: directory
@@ -892,9 +1152,29 @@ export const RemoteControlBridge = ({
               activeConversationId,
             ),
           messages: remoteMessages,
+          // 待发送队列（会话隔离）：只输出当前激活会话的排队消息，且只含
+          // 展示用分段；撤回原文由 withdrawPending 按需返回。
+          pendingMessages: current.conversation.pendingMessages.map((text) => ({
+            blocks: toRemoteContentBlocks("", text),
+          })),
+          // 上述队列的定位键（不透明标记）：移动端操作时原样回传，桌面端
+          // 按“直接命中 → 槽位迁移映射”解析队列真实位置（新会话迁移到
+          // 真实 id 后同样可定位），操作不因会话切换/迁移而失效。
+          pendingQueueKey:
+            current.conversation.activeSessionKeyRef.current ?? null,
           pendingAuthorizations,
           pendingQuestions,
           conversations,
+          conversationTotals: conversationCacheRef.current.totals,
+          // 无活动会话（如 /clear 后的新建会话视图）没有更早记录；
+          // 会话状态尚未建立（undefined）时不下结论，移动端默认隐藏入口、
+          // 待状态就绪后跟随更新。
+          hasOlderMessages: activeConversationId
+            ? current.conversation.sessions[activeConversationId]
+                ?.hasMoreMessages
+            : false,
+          // 会话待办（会话隔离）：按激活会话读取，切换会话后随快照一起切换。
+          todos: await resolveTodos(activeConversationId),
           modes: {
             plan: current.conversation.planMode,
             goal: current.conversation.goalMode,
@@ -903,9 +1183,73 @@ export const RemoteControlBridge = ({
             yolo: current.conversation.yoloMode,
             lite: current.conversation.liteMode,
           },
+          theme: { accentColor: resolveThemeAccentColor() },
           chatInput: chatInputPublication
             ? toRemoteChatInput(chatInputPublication)
             : null,
+        };
+      },
+
+      getMessages: async (conversationId, beforeMessageId, limit) => {
+        const current = stateRef.current;
+        const activeConversationId =
+          current.conversation.activeConversationId ?? null;
+        if (!activeConversationId || conversationId !== activeConversationId) {
+          throw new Error("会话已切换，请重新加载");
+        }
+        let anchor =
+          typeof beforeMessageId === "string" ? beforeMessageId.trim() : "";
+        // 锚点必须是数据库消息 id（snowflake 纯数字）。渲染进程的临时消息
+        // id（`role-时间-随机串`，如 assistant/tool 消息）在数据库中没有
+        // 对应行，直接传入会让 `id < ?` 的字符串比较命中最新的行而不是更早
+        // 的行。此时退回到「已加载的数据库记录中最早的一条」，从它继续向前
+        // 翻页；没有任何记录时用空锚取最新页，由移动端按 id 去重收敛。
+        if (anchor && !/^\d+$/.test(anchor)) {
+          const session = current.conversation.sessions[conversationId];
+          const records = session?.messageRecords ?? [];
+          if (!records.some((record) => record.id === anchor)) {
+            anchor = records[0]?.id ?? "";
+          }
+        }
+        const page = await window.snow.listChatMessagesPaginated(
+          conversationId,
+          anchor,
+          limit,
+        );
+        if (
+          (stateRef.current.conversation.activeConversationId ?? null) !==
+          conversationId
+        ) {
+          throw new Error("会话已切换，请重新加载");
+        }
+        // 与桌面端历史回放共用同一转换：tool 结果按 name#callId 关联回
+        // assistant 消息的 toolCalls；role=tool 的原始记录不再单独推送。
+        return {
+          conversationId,
+          hasMore: page.hasMore,
+          items: buildConversationMessages(page.items).map(toRemoteMessage),
+        };
+      },
+
+      getConversations: async (directoryId, limit, offset) => {
+        const directories = await window.snow.listWorkspaceDirectories();
+        const workspace = directories.find(
+          (item) => item.directoryId === directoryId,
+        );
+        if (!workspace) {
+          throw new Error("目标工作区不可用");
+        }
+        const page = await window.snow.listChatConversationsPaginated(
+          directoryId,
+          limit,
+          offset,
+        );
+        return {
+          directoryId,
+          total: page.total,
+          items: page.items.map((item) =>
+            toRemoteConversation(item, workspace.name),
+          ),
         };
       },
 
@@ -971,6 +1315,52 @@ export const RemoteControlBridge = ({
         return { ok: true };
       },
 
+      // 待发送队列操作：移动端原样回传“所见队列”的定位键
+      // （pendingQueueKey：不透明标记，新会话槽位 key 或真实会话 id）。
+      // useConversationManagement 侧按“直接命中 → 槽位迁移映射”解析出
+      // 队列的真实位置并从该队列执行（会话隔离）——无论桌面当前视图在
+      // 哪个会话、新会话是否已迁移到真实 id，只要条目仍在队列中就能
+      // 撤回/立即发送；条目已被回合边界自动消费时统一报“待发送消息不存在”。
+      sendPendingNow: async (
+        index,
+        expectedQueueKey,
+      ): Promise<{ ok: true }> => {
+        const current = stateRef.current.conversation;
+        if (!Number.isInteger(index) || index < 0) {
+          throw new Error("待发送消息不存在");
+        }
+        const dispatched = current.sendPendingMessageNow(
+          index,
+          expectedQueueKey ?? undefined,
+        );
+        if (!dispatched) {
+          throw new Error(
+            `待发送消息不存在${pendingOperationFailureDetail(current, expectedQueueKey, index)}`,
+          );
+        }
+        return { ok: true };
+      },
+
+      withdrawPending: async (
+        index,
+        expectedQueueKey,
+      ): Promise<{ ok: true; text: string }> => {
+        const current = stateRef.current.conversation;
+        if (!Number.isInteger(index) || index < 0) {
+          throw new Error("待发送消息不存在");
+        }
+        const text = current.withdrawPendingMessage(
+          index,
+          expectedQueueKey ?? undefined,
+        );
+        if (text === null) {
+          throw new Error(
+            `待发送消息不存在${pendingOperationFailureDetail(current, expectedQueueKey, index)}`,
+          );
+        }
+        return { ok: true, text };
+      },
+
       newChat: async (): Promise<{ ok: true }> => {
         const current = stateRef.current.conversation;
         if (current.isStreaming) {
@@ -982,19 +1372,30 @@ export const RemoteControlBridge = ({
       },
 
       // 真实模式 setter 链：toolAuthApi.setPlanMode / setGoalMode /
-      // setWorktreeMode / setWorkflowMode / setYoloMode。
+      // setWorktreeMode / setWorkflowMode / setYoloMode / setLiteMode。
       // 语义与桌面 PlusMenu 完全一致（布尔开关，可关闭）；
       // Plan/Goal/Worktree/Workflow 的互斥由这些 setter 自身保证。
+      // 与桌面一致：没有活动会话（新会话视图）时切换同样合法——
+      // 会话级模式写入 pending session、应用级设置直接落库，
+      // 都随首次发送 / 立即生效，因此这里不要求 activeConversationId。
       // 安全边界：YOLO 只自动批准“普通 pending 工具授权”，
       // 敏感命令仍走桌面端独立确认，YOLO 不是远控鉴权手段。
       setMode: async (mode, enabled): Promise<{ ok: true }> => {
         const current = stateRef.current.conversation;
-        if (!current.activeConversationId) {
-          throw new Error("请先选择或新建一个对话");
-        }
         // 二次校验：Main 层已做枚举+布尔校验，这里再独立校验一次。
         if (typeof enabled !== "boolean") {
           throw new Error("模式开关必须是布尔值");
+        }
+        // 与桌面 PlusMenu 的 modesLocked 一致：会话运行中（流式 / 正在停止 /
+        // 正在压缩）不允许启停模式（YOLO 不受限）。手机端快照可能滞后，
+        // 这里按实时状态兜底拒绝，错误消息由手机端直接展示。
+        if (
+          mode !== "yolo" &&
+          (current.isStreaming ||
+            current.isAborting ||
+            Boolean(current.isCompacting))
+        ) {
+          throw new Error("会话进行中，暂不可切换模式");
         }
         switch (mode) {
           case "plan":
@@ -1011,6 +1412,9 @@ export const RemoteControlBridge = ({
             break;
           case "yolo":
             await current.setYoloMode(enabled);
+            break;
+          case "lite":
+            await current.setLiteMode(enabled);
             break;
           default:
             throw new Error("不支持的模式");
@@ -1095,7 +1499,12 @@ export const RemoteControlBridge = ({
         }
         const publication = resolveChatInput();
         if (!publication) {
-          throw new Error("聊天输入区未就绪或会话不匹配");
+          // 同 requireChatInputForMutation：桌面不在对话页时指令不可执行。
+          throw new Error(
+            resolveChatInputForDisplay()
+              ? "电脑端不在对话页，暂时无法执行"
+              : "聊天输入区未就绪或会话不匹配",
+          );
         }
         const command = publication.commands.find(
           (item) => item.id === commandId,

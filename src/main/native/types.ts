@@ -1889,6 +1889,15 @@ export type NativeBridge = {
     beforeMessageId: string,
     limit: number,
   ) => Promise<ChatMessagePage>;
+  /**
+   * 按消息 id 解析用户消息中的第 imageIndex 张图片（0 基）。供远控图片
+   * 接口兜底：渲染进程只持有当前会话已加载的内存消息窗口，翻页历史
+   * 消息需从数据库 + upload 磁盘解析。
+   */
+  getChatMessageImage: (
+    messageId: string,
+    imageIndex: number,
+  ) => Promise<{ mimeType: string; base64: string } | null>;
   findLatestToolResult: (
     conversationId: string,
     toolName: string,

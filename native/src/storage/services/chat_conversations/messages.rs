@@ -634,6 +634,31 @@ pub fn list_user_messages(
         .map_err(|error| database::database_error(database_path, "list user messages", error))
 }
 
+/// 按消息 id 读取单条用户消息的原始内容（远控图片接口的数据库兜底）。
+///
+/// 桌面渲染进程只持有当前会话已加载的内存消息窗口（首屏仅一页），手机端
+/// 可翻页读取完整历史，这些历史消息没有内存副本可查；内容按数据库原始
+/// 形态返回（`@@image:` 值可能是 `upload/...` 相对路径或内联 data URL），
+/// 由调用方用 `resolve_message_image` 解析。
+pub fn get_user_message_content(database_path: &Path, message_id: &str) -> Result<Option<String>> {
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            connection
+                .query_row(
+                    "SELECT content
+                       FROM chat_messages
+                      WHERE id = ?1
+                        AND role = 'user'",
+                    params![message_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+        })
+        .map_err(|error| {
+            database::database_error(database_path, "read user message content", error)
+        })
+}
+
 pub fn list_chat_messages_paginated(
     database_path: &Path,
     conversation_id: &str,

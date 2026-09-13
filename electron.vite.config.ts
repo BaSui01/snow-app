@@ -1,10 +1,78 @@
 import { resolve } from "node:path";
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 import react from "@vitejs/plugin-react";
+import { build as buildVite, type Plugin } from "vite";
+
+/** 移动端远控页面（src/mobile）源码与产物目录；主进程按产物目录提供静态资源。 */
+const MOBILE_PAGE_ROOT = resolve(__dirname, "src/mobile");
+const MOBILE_PAGE_OUT_DIR = resolve(__dirname, "out/mobile");
+
+/**
+ * 移动端远控页面是独立的 Vite 构建，由本插件挂在 main 构建上：
+ * - electron-vite build：构建主进程时一并产出 out/mobile（electron-builder 的
+ *   files: out/** 会自动打包进 asar）；
+ * - electron-vite dev：对 src/mobile 启动 Vite watch，改动即重建，手机刷新可见。
+ * 页面用到的 npm 依赖（如 highlight.js）会随该构建打包进 assets/*，
+ * 产物为 index.html + assets/*，由远控服务直接读取。
+ */
+const createMobilePageBuildConfig = (isWatch: boolean) => ({
+  configFile: false as const,
+  root: MOBILE_PAGE_ROOT,
+  base: "/",
+  publicDir: false as const,
+  logLevel: "warn" as const,
+  // 不要擦除 electron-vite dev 的终端输出。
+  clearScreen: false,
+  build: {
+    outDir: MOBILE_PAGE_OUT_DIR,
+    emptyOutDir: true,
+    target: "es2020",
+    minify: !isWatch,
+    sourcemap: isWatch,
+    // Vite 默认注入的 modulepreload polyfill 是内联脚本，而远控页 CSP 只允许
+    // 'self' 脚本；现代手机浏览器均原生支持 modulepreload。
+    modulePreload: { polyfill: false },
+  },
+});
+
+const mobilePageAssetsPlugin = (): Plugin => {
+  let started = false;
+  return {
+    name: "snow-mobile-page-assets",
+    async buildStart() {
+      if (started) return;
+      started = true;
+      if (!this.meta.watchMode) {
+        await buildVite(createMobilePageBuildConfig(false));
+        console.info("[Snow Remote] 移动端页面已构建 → out/mobile");
+        return;
+      }
+      const config = createMobilePageBuildConfig(true);
+      const watcher = await buildVite({
+        ...config,
+        build: { ...config.build, watch: {} },
+      });
+      if (watcher && typeof watcher === "object" && "on" in watcher) {
+        watcher.on("event", (event) => {
+          if (event.code === "BUNDLE_END") {
+            console.info("[Snow Remote] 移动端页面已重新构建 → out/mobile");
+          } else if (event.code === "ERROR") {
+            console.error(
+              "[Snow Remote] 移动端页面构建失败：",
+              event.error instanceof Error
+                ? event.error.message
+                : String(event.error),
+            );
+          }
+        });
+      }
+    },
+  };
+};
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin(), mobilePageAssetsPlugin()],
     build: {
       rollupOptions: {
         input: {

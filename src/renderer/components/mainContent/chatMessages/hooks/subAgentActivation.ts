@@ -970,7 +970,10 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       const subPendingText = subPendingForTools
         .map((item) => item.text)
         .join("\n\n");
-      ctx.setActivePendingMessages([]);
+      // 显示镜像只反映当前激活会话的队列（会话隔离）。
+      if (ctx.activeConversationIdRef.current === subConvId) {
+        ctx.setActivePendingMessages([]);
+      }
       const subPendingUserMsg: ChatConversationMessage = {
         id: createMessageId("user"),
         role: "user",
@@ -1064,11 +1067,11 @@ const createForwardSubPendingQueue = (
       ctx.pendingQueueRef.current.get(parentConversationId) ?? [];
     parentQueue.push(...subQueue);
     ctx.pendingQueueRef.current.set(parentConversationId, parentQueue);
-    ctx.setActivePendingMessages(
-      ctx.activeConversationIdRef.current === parentConversationId
-        ? parentQueue.map((item) => item.text)
-        : [],
-    );
+    // 显示镜像只反映当前激活会话的队列（会话隔离）：父会话是当前视图时
+    // 刷新为转交后的队列，否则不动作，等切回父会话时再从队列重载。
+    if (ctx.activeConversationIdRef.current === parentConversationId) {
+      ctx.setActivePendingMessages(parentQueue.map((item) => item.text));
+    }
   };
 };
 

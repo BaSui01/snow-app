@@ -152,6 +152,8 @@ export type ChatInputState = {
   requestMethod: RequestMethod;
   thinkingOptions: ThinkingOption[];
   thinkingValue: string;
+  /** 会话生效的思考强度值（会话覆盖已解析，回退 Profile 默认）。 */
+  effectiveThinkingValue: string;
   thinkingLabel: string;
   thinkingDefaultLabel: string;
   ActiveThinkingIcon: LucideIcon;

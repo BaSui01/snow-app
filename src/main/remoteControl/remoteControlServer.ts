@@ -1,4 +1,5 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import {
   createServer,
   type IncomingMessage,
@@ -6,9 +7,18 @@ import {
 } from "node:http";
 import { networkInterfaces } from "node:os";
 import type { AddressInfo } from "node:net";
+import { APP_ICON_PATH } from "../app/constants";
 import { getMainWindow } from "../app/mainWindow";
 import { native } from "../native/nativeBridge";
-import { MOBILE_HTML as PRODUCT_MOBILE_HTML } from "./mobilePage";
+import {
+  MOBILE_ASSET_PATH_PREFIX,
+  readMobileAsset,
+  readMobileIndexHtml,
+} from "./mobileAssets";
+import {
+  renderRemoteUnauthorizedPage,
+  resolveRemoteUnauthorizedPageLocale,
+} from "./remoteUnauthorizedPage";
 import { RemoteWanAuth } from "./remoteWanAuth";
 import { waitForCallbackOrTimeout, withTimeout } from "./boundedWait";
 import {
@@ -30,11 +40,14 @@ const WAN_HOST = "127.0.0.1";
 type RemoteAction =
   | "getState"
   | "getMessageImage"
+  | "getMessages"
+  | "getConversations"
   | "getSkills"
   | "setSkillEnabled"
   | "getMcpServers"
   | "setMcpEnabled"
   | "getChanges"
+  | "mutateTodos"
   | "getPermissions"
   | "getRole"
   | "getSensitiveCommands"
@@ -42,6 +55,8 @@ type RemoteAction =
   | "getReview"
   | "send"
   | "abort"
+  | "sendPendingNow"
+  | "withdrawPending"
   | "newChat"
   | "setMode"
   | "select"
@@ -56,11 +71,18 @@ type RemoteAction =
   | "runCommand";
 
 /**
- * 可远程切换的会话级模式白名单。
+ * 可远程切换的代理行为模式白名单。
  * 必须与 renderer/types/remoteControl.ts 的 SnowRemoteModeId 保持一致；
  * Renderer 桥会按同一份枚举做二次校验。
  */
-const REMOTE_MODES = ["plan", "goal", "worktree", "workflow", "yolo"] as const;
+const REMOTE_MODES = [
+  "plan",
+  "goal",
+  "worktree",
+  "workflow",
+  "yolo",
+  "lite",
+] as const;
 
 /** 标识符类字段（模型 id / Profile 名 / 指令 id / 思考强度）的长度上限。 */
 const MAX_IDENTIFIER_LENGTH = 200;
@@ -74,6 +96,21 @@ const isBoundedString = (value: unknown, allowEmpty = false): boolean =>
   typeof value === "string" &&
   value.length <= MAX_IDENTIFIER_LENGTH &&
   (allowEmpty || value.trim().length > 0);
+
+/** 待办内容长度上限（与 Renderer 桥、移动端输入框 maxlength 保持一致）。 */
+const MAX_TODO_CONTENT_LENGTH = 500;
+
+/** 待办内容必须是非空字符串，且不超过长度上限。 */
+const isTodoContent = (value: unknown): boolean =>
+  typeof value === "string" &&
+  value.trim().length > 0 &&
+  value.length <= MAX_TODO_CONTENT_LENGTH;
+
+/** 待办状态白名单，与 todo-todo-manage 工具一致。 */
+const isTodoStatus = (
+  value: unknown,
+): value is "pending" | "inProgress" | "completed" =>
+  value === "pending" || value === "inProgress" || value === "completed";
 
 type RemoteServerInfo = {
   host: string;
@@ -92,6 +129,8 @@ let startPromise: Promise<RemoteServerInfo | null> | null = null;
 let serverInfo: RemoteServerInfo | null = null;
 let activeToken = "";
 let pairingGeneration = 0;
+/** 总开关的内存镜像；持久化与启停编排由 remoteControlLifecycle 负责。 */
+let remoteControlEnabled = false;
 const completedSendRequests = new Map<
   string,
   { generation: number; result: unknown }
@@ -112,7 +151,15 @@ const finishRemoteMutation = (): void => {
   }
 };
 
-const MOBILE_HTML = PRODUCT_MOBILE_HTML;
+// 移动页品牌 logo 与应用图标共用同一 PNG：首次请求时异步读入，
+// 之后复用内存缓冲，避免每次请求都触碰磁盘。
+let appIconBytesPromise: Promise<Buffer | null> | null = null;
+const loadAppIconBytes = (): Promise<Buffer | null> => {
+  if (!appIconBytesPromise) {
+    appIconBytesPromise = readFile(APP_ICON_PATH).catch(() => null);
+  }
+  return appIconBytesPromise;
+};
 
 const writeJson = (
   response: ServerResponse,
@@ -130,6 +177,30 @@ const writeJson = (
     ...extraHeaders,
   });
   response.end(body);
+};
+
+/**
+ * 写入 HTML 响应；bodyless 用于 HEAD 请求（只回响应头）。
+ * CSP 只放行内联样式与 data: 图标：引导页无脚本、无外部资源，杜绝注入面。
+ */
+const writeHtml = (
+  response: ServerResponse,
+  status: number,
+  html: string,
+  bodyless = false,
+): void => {
+  const body = Buffer.from(html, "utf8");
+  response.writeHead(status, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Content-Length": String(body.length),
+    "Cache-Control": "no-store",
+    "Content-Security-Policy":
+      "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+  });
+  response.end(bodyless ? undefined : body);
 };
 
 const parseCookies = (header: string | undefined): Map<string, string> => {
@@ -212,12 +283,88 @@ const callRenderer = async (
   if (!window || window.isDestroyed() || window.webContents.isDestroyed()) {
     throw new Error("Snow 主窗口不可用");
   }
-  const invocation = `(() => { const api = window.__snowRemoteControl; if (!api) throw new Error("远程控制桥尚未就绪"); return api[${JSON.stringify(action)}](...${JSON.stringify(args)}); })()`;
-  return withTimeout(
+  // 在 Renderer 内捕获桥方法异常并结构化返回：业务错误（“电脑端不在对话页”
+  // 等）由调用侧透传给手机端；只有基础设施故障才落到 503 兜底文案。
+  const invocation = `(() => {
+    const api = window.__snowRemoteControl;
+    if (!api) return { __snowRemoteError: "远程控制桥尚未就绪" };
+    try {
+      return Promise.resolve(api[${JSON.stringify(action)}](...${JSON.stringify(args)})).then(
+        (value) => ({ __snowRemoteValue: value }),
+        (error) => ({ __snowRemoteError: (error && error.message) || String(error) }),
+      );
+    } catch (error) {
+      return { __snowRemoteError: (error && error.message) || String(error) };
+    }
+  })()`;
+  const raw = await withTimeout(
     window.webContents.executeJavaScript(invocation, true),
     10_000,
     "桌面 Snow 响应超时，请确认主窗口仍在运行",
   );
+  if (raw && typeof raw === "object" && "__snowRemoteError" in raw) {
+    throw new Error(
+      `RENDERER_ERROR:${String((raw as { __snowRemoteError: unknown }).__snowRemoteError)}`,
+    );
+  }
+  if (raw && typeof raw === "object" && "__snowRemoteValue" in raw) {
+    return (raw as { __snowRemoteValue: unknown }).__snowRemoteValue;
+  }
+  return raw;
+};
+
+/** 消息图片支持的 MIME 白名单（与手机端上传通道一致）。 */
+const MESSAGE_IMAGE_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+]);
+
+/**
+ * 解析消息图片：优先从桌面渲染进程的会话内存取（覆盖尚未落库的即时
+ * 消息），失败时回退到 Rust 数据库 + upload 磁盘解析。
+ *
+ * 渲染进程只持有当前会话已加载的消息窗口（首屏仅一页），而手机端可以
+ * 分页读取完整历史——数据库兜底保证历史消息中的图片同样可显示。
+ */
+const resolveMessageImage = async (
+  messageId: string,
+  imageIndex: number,
+): Promise<{ mimeType: string; base64: string } | null> => {
+  const isValid = (
+    value: unknown,
+  ): value is { mimeType: string; base64: string } => {
+    if (!value || typeof value !== "object") return false;
+    const candidate = value as { mimeType?: unknown; base64?: unknown };
+    return (
+      typeof candidate.mimeType === "string" &&
+      MESSAGE_IMAGE_TYPES.has(candidate.mimeType) &&
+      typeof candidate.base64 === "string" &&
+      candidate.base64.length > 0
+    );
+  };
+
+  try {
+    const rendered = await callRenderer("getMessageImage", [
+      messageId,
+      imageIndex,
+    ]);
+    if (isValid(rendered)) return rendered;
+  } catch {
+    // 渲染进程未持有该消息（历史分页 / 会话已切换）：继续数据库兜底。
+  }
+
+  try {
+    const stored = await native.getChatMessageImage(messageId, imageIndex);
+    if (isValid(stored)) return stored;
+  } catch (error) {
+    console.warn(
+      "[Snow Remote] 消息图片数据库解析失败：",
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+  return null;
 };
 
 const dispatchRemoteSend = async (
@@ -293,6 +440,12 @@ const isJsonRequest = (request: IncomingMessage): boolean =>
   typeof request.headers["content-type"] === "string" &&
   request.headers["content-type"].toLowerCase().startsWith("application/json");
 
+/** GET/HEAD 且声明接受 HTML：典型的浏览器导航（区别于页面内 fetch 与 API 客户端）。 */
+const isBrowserNavigation = (request: IncomingMessage): boolean =>
+  (request.method === "GET" || request.method === "HEAD") &&
+  typeof request.headers.accept === "string" &&
+  request.headers.accept.includes("text/html");
+
 const handleRequest = async (
   request: IncomingMessage,
   response: ServerResponse,
@@ -358,9 +511,27 @@ const handleRequest = async (
     policy.kind === "lan"
       ? Boolean(requestToken && isAuthorized(request, url, requestToken))
       : isWanAuthorized(request, policy.auth);
-  const isWanPairingPage =
-    policy.kind === "wan" && request.method === "GET" && url.pathname === "/";
-  if (!authorized && !isWanPairingPage) {
+  // 公网未配对时也允许读取配对页（HTML / 静态资源 / 品牌 logo），
+  // 否则首屏既加载不了页面脚本，图片资源也会裂开。
+  const isWanPublicPage =
+    policy.kind === "wan" &&
+    request.method === "GET" &&
+    (url.pathname === "/" ||
+      url.pathname === "/icon.png" ||
+      url.pathname.startsWith(MOBILE_ASSET_PATH_PREFIX));
+  if (!authorized && !isWanPublicPage) {
+    // 浏览器导航（地址栏输入 / 旧书签 / 凭据已更换的旧链接）返回服务端渲染的
+    // 配对引导页，代替裸 JSON；引导页不含任何凭据，API 客户端保持 JSON 契约。
+    if (isBrowserNavigation(request)) {
+      const html = renderRemoteUnauthorizedPage(
+        await resolveRemoteUnauthorizedPageLocale(
+          request.headers["accept-language"],
+        ),
+        await loadAppIconBytes(),
+      );
+      writeHtml(response, 401, html, request.method === "HEAD");
+      return;
+    }
     writeJson(response, 401, {
       error: "未授权：请使用 Snow 设置中显示的配对链接",
     });
@@ -378,12 +549,21 @@ const handleRequest = async (
   }
 
   if (request.method === "GET" && url.pathname === "/") {
+    const html = await readMobileIndexHtml();
+    if (!html) {
+      writeJson(response, 503, {
+        error: "移动端页面资源尚未构建，请先运行 npm run build / npm run dev",
+      });
+      return;
+    }
     const headers: Record<string, string> = {
       "Content-Type": "text/html; charset=utf-8",
-      "Content-Length": String(Buffer.byteLength(MOBILE_HTML)),
+      "Content-Length": String(html.length),
       "Cache-Control": "no-store",
+      // 页面脚本 / 样式均为 out/mobile 的独立同源资源，无需 inline 权限；
+      // modulepreload polyfill 已在构建侧关闭（见 electron.vite.config.ts）。
       "Content-Security-Policy":
-        "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+        "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data: blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
       "X-Content-Type-Options": "nosniff",
       "X-Frame-Options": "DENY",
       "Referrer-Policy": "no-referrer",
@@ -396,7 +576,43 @@ const handleRequest = async (
         `${COOKIE_NAME}=${encodeURIComponent(requestToken)}; Path=/; HttpOnly; SameSite=Strict`;
     }
     response.writeHead(200, headers);
-    response.end(MOBILE_HTML);
+    response.end(html);
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/icon.png") {
+    const iconBytes = await loadAppIconBytes();
+    if (!iconBytes) {
+      writeJson(response, 404, { error: "图标资源不可用" });
+      return;
+    }
+    response.writeHead(200, {
+      "Content-Type": "image/png",
+      "Content-Length": String(iconBytes.length),
+      "Cache-Control": "public, max-age=86400",
+      "X-Content-Type-Options": "nosniff",
+    });
+    response.end(iconBytes);
+    return;
+  }
+
+  if (
+    request.method === "GET" &&
+    url.pathname.startsWith(MOBILE_ASSET_PATH_PREFIX)
+  ) {
+    const asset = await readMobileAsset(url.pathname);
+    if (!asset) {
+      writeJson(response, 404, { error: "资源不存在" });
+      return;
+    }
+    response.writeHead(200, {
+      "Content-Type": asset.contentType,
+      "Content-Length": String(asset.bytes.length),
+      // 文件名带内容哈希：URL 变化即自动失效，可放心交给浏览器长缓存。
+      "Cache-Control": "public, max-age=31536000, immutable",
+      "X-Content-Type-Options": "nosniff",
+    });
+    response.end(asset.bytes);
     return;
   }
 
@@ -424,7 +640,9 @@ const handleRequest = async (
       request.method === "GET" &&
       url.pathname.startsWith("/api/message-images/")
     ) {
-      const parts = url.pathname.slice("/api/message-images/".length).split("/");
+      const parts = url.pathname
+        .slice("/api/message-images/".length)
+        .split("/");
       const messageId = decodeURIComponent(parts[0] ?? "");
       const imageIndex = Number(parts[1]);
       if (
@@ -438,23 +656,16 @@ const handleRequest = async (
         return;
       }
       ensureCurrentPairing();
-      const image = (await callRenderer("getMessageImage", [
-        messageId,
-        imageIndex,
-      ])) as { mimeType?: unknown; base64?: unknown };
+      const image = await resolveMessageImage(messageId, imageIndex);
       ensureCurrentPairing();
-      if (
-        typeof image.base64 !== "string" ||
-        typeof image.mimeType !== "string" ||
-        !["image/png", "image/jpeg", "image/gif", "image/webp"].includes(
-          image.mimeType,
-        )
-      ) {
-        throw new Error("图片不可用");
+      if (!image) {
+        writeJson(response, 404, { error: "图片不可用" });
+        return;
       }
       const body = Buffer.from(image.base64, "base64");
       if (body.length === 0 || body.length > 10 * 1024 * 1024) {
-        throw new Error("图片不可用");
+        writeJson(response, 404, { error: "图片不可用" });
+        return;
       }
       response.writeHead(200, {
         "Content-Type": image.mimeType,
@@ -475,7 +686,9 @@ const handleRequest = async (
 
     if (request.method === "POST" && url.pathname === "/api/skills") {
       if (!isJsonRequest(request)) {
-        writeJson(response, 415, { error: "Content-Type 必须是 application/json" });
+        writeJson(response, 415, {
+          error: "Content-Type 必须是 application/json",
+        });
         return;
       }
       const body = (await readJsonBody(request)) as {
@@ -514,6 +727,58 @@ const handleRequest = async (
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/api/messages") {
+      ensureCurrentPairing();
+      const conversationId = url.searchParams.get("conversationId") ?? "";
+      const beforeMessageId = url.searchParams.get("beforeMessageId") ?? "";
+      const limit = Number(url.searchParams.get("limit") ?? "20");
+      if (
+        !isBoundedString(conversationId) ||
+        !isBoundedString(beforeMessageId, true) ||
+        !Number.isInteger(limit) ||
+        limit < 1 ||
+        limit > 50
+      ) {
+        writeJson(response, 400, { error: "消息分页参数无效" });
+        return;
+      }
+      writeJson(
+        response,
+        200,
+        await callRenderer("getMessages", [
+          conversationId,
+          beforeMessageId,
+          limit,
+        ]),
+      );
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/conversations") {
+      ensureCurrentPairing();
+      const directoryId = url.searchParams.get("directoryId") ?? "";
+      const offset = Number(url.searchParams.get("offset") ?? "0");
+      const limit = Number(url.searchParams.get("limit") ?? "20");
+      if (
+        !isBoundedString(directoryId) ||
+        !Number.isInteger(offset) ||
+        offset < 0 ||
+        offset > 100000 ||
+        !Number.isInteger(limit) ||
+        limit < 1 ||
+        limit > 100
+      ) {
+        writeJson(response, 400, { error: "会话分页参数无效" });
+        return;
+      }
+      writeJson(
+        response,
+        200,
+        await callRenderer("getConversations", [directoryId, limit, offset]),
+      );
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/api/changes") {
       ensureCurrentPairing();
       const conversationId = url.searchParams.get("conversationId");
@@ -521,10 +786,17 @@ const handleRequest = async (
         writeJson(response, 400, { error: "会话标识无效" });
         return;
       }
-      writeJson(response, 200, await callRenderer("getChanges", [conversationId]));
+      writeJson(
+        response,
+        200,
+        await callRenderer("getChanges", [conversationId]),
+      );
       return;
     }
-    if (request.method === "GET" && url.pathname === "/api/sensitive-commands") {
+    if (
+      request.method === "GET" &&
+      url.pathname === "/api/sensitive-commands"
+    ) {
       ensureCurrentPairing();
       writeJson(response, 200, await callRenderer("getSensitiveCommands"));
       return;
@@ -556,7 +828,9 @@ const handleRequest = async (
 
     if (request.method === "POST" && url.pathname === "/api/mcp") {
       if (!isJsonRequest(request)) {
-        writeJson(response, 415, { error: "Content-Type 必须是 application/json" });
+        writeJson(response, 415, {
+          error: "Content-Type 必须是 application/json",
+        });
         return;
       }
       const body = (await readJsonBody(request)) as {
@@ -575,12 +849,16 @@ const handleRequest = async (
         return;
       }
       ensureCurrentPairing();
-      writeJson(response, 200, await callRenderer("setMcpEnabled", [
-        body.target,
-        body.id,
-        body.enabled,
-        body.directoryId,
-      ]));
+      writeJson(
+        response,
+        200,
+        await callRenderer("setMcpEnabled", [
+          body.target,
+          body.id,
+          body.enabled,
+          body.directoryId,
+        ]),
+      );
       return;
     }
 
@@ -692,6 +970,51 @@ const handleRequest = async (
       return;
     }
 
+    // 待发送（Pending）队列操作：send-now 中断其所属会话的运行并立即发出
+    // 该条；withdraw 从队列移除并返回原文（移动端恢复到输入区）。会话隔离：
+    // queueKey 为移动端所见的队列定位键（不透明标记），Renderer 桥按
+    // “直接命中 → 槽位迁移映射”解析队列真实位置后执行；队列位置边界同样
+    // 由桥二次检查。
+    if (request.method === "POST" && url.pathname === "/api/pending") {
+      if (!isJsonRequest(request)) {
+        writeJson(response, 415, {
+          error: "Content-Type 必须是 application/json",
+        });
+        return;
+      }
+      const body = (await readJsonBody(request)) as {
+        action?: unknown;
+        index?: unknown;
+        queueKey?: unknown;
+      };
+      if (body.action !== "send-now" && body.action !== "withdraw") {
+        writeJson(response, 400, {
+          error: "action 必须是 send-now 或 withdraw",
+        });
+        return;
+      }
+      if (!Number.isInteger(body.index) || (body.index as number) < 0) {
+        writeJson(response, 400, { error: "index 必须是非负整数" });
+        return;
+      }
+      if (body.queueKey !== null && !isBoundedString(body.queueKey)) {
+        writeJson(response, 400, {
+          error: "queueKey 必须是字符串或 null",
+        });
+        return;
+      }
+      ensureCurrentPairing();
+      writeJson(
+        response,
+        200,
+        await callRenderer(
+          body.action === "send-now" ? "sendPendingNow" : "withdrawPending",
+          [body.index, body.queueKey],
+        ),
+      );
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/api/new-chat") {
       if (!isJsonRequest(request)) {
         writeJson(response, 415, {
@@ -701,6 +1024,50 @@ const handleRequest = async (
       }
       await readJsonBody(request);
       writeJson(response, 200, await callRenderer("newChat"));
+      return;
+    }
+
+    // 会话待办变更（add / update / delete）：复用桌面真实 todo-todo-manage
+    // 工具，会话 ID 由 Renderer 桥注入，移动端无法跨会话读写；最新列表由
+    // /api/state 的 todos 字段回传。
+    if (request.method === "POST" && url.pathname === "/api/todos") {
+      if (!isJsonRequest(request)) {
+        writeJson(response, 415, {
+          error: "Content-Type 必须是 application/json",
+        });
+        return;
+      }
+      const body = (await readJsonBody(request)) as {
+        action?: unknown;
+        content?: unknown;
+        todoId?: unknown;
+        status?: unknown;
+      };
+      const isAdd = body.action === "add";
+      const isUpdate = body.action === "update";
+      const isDelete = body.action === "delete";
+      if (
+        (!isAdd && !isUpdate && !isDelete) ||
+        (isAdd && !isTodoContent(body.content)) ||
+        (!isAdd && !isBoundedString(body.todoId)) ||
+        (isUpdate && !isTodoStatus(body.status))
+      ) {
+        writeJson(response, 400, { error: "待办请求无效" });
+        return;
+      }
+      ensureCurrentPairing();
+      writeJson(
+        response,
+        200,
+        await callRenderer("mutateTodos", [
+          body.action,
+          {
+            content: isAdd ? body.content : undefined,
+            todoId: isAdd ? undefined : body.todoId,
+            status: isUpdate ? body.status : undefined,
+          },
+        ]),
+      );
       return;
     }
 
@@ -968,6 +1335,15 @@ const handleRequest = async (
       writeJson(response, attachmentError[0], { error: attachmentError[1] });
       return;
     }
+    // Renderer 桥的业务错误（会话未就绪、输入区未挂载等）：透传具体原因，
+    // 手机端直接提示用户“电脑端不在对话页”这类可操作信息。
+    if (message.startsWith("RENDERER_ERROR:")) {
+      const reason = message.slice("RENDERER_ERROR:".length).trim();
+      writeJson(response, 409, {
+        error: reason.slice(0, 200) || "Snow 暂时无法处理该请求",
+      });
+      return;
+    }
     console.warn("[Snow Remote] Renderer 调用失败：", message);
     writeJson(response, 503, { error: "Snow 暂时无法处理该请求" });
   }
@@ -1172,7 +1548,13 @@ export const stopRemoteControlServer = async (): Promise<void> => {
   await Promise.all([closeHttpServer(current), stopRemoteWanListener()]);
 };
 
+/** 由 lifecycle 同步总开关的内存镜像（读取持久化值或切换开关时）。 */
+export const markRemoteControlEnabled = (enabled: boolean): void => {
+  remoteControlEnabled = enabled;
+};
+
 export type RemoteControlPairingState = {
+  enabled: boolean;
   running: boolean;
   host: string;
   port: number;
@@ -1188,6 +1570,7 @@ export type RemoteControlPairingState = {
 };
 
 export const getRemoteControlPairingState = (): RemoteControlPairingState => ({
+  enabled: remoteControlEnabled,
   running: Boolean(server && serverInfo && activeToken),
   host: serverInfo?.host ?? "",
   port: serverInfo?.port ?? 0,

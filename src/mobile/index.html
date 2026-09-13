@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="en" data-i18n-pending>
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover,interactive-widget=overlays-content"
+    />
+    <meta name="theme-color" content="#08090b" />
+    <meta name="color-scheme" content="dark" />
+    <!-- 桌面语言注入位：主进程在响应 GET / 时替换为桌面端语言（见 mobileAssets.ts）。 -->
+    <meta name="snow-locale" content="__SNOW_LOCALE__" />
+    <title>Snow Remote</title>
+    <link rel="stylesheet" href="./styles/app.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <button
+          id="historyButton"
+          class="icon-button"
+          type="button"
+          aria-label="会话历史"
+          data-i18n-aria-label="remote.topbar.history"
+          data-icon="panel-left"
+        ></button>
+        <div class="thread-copy">
+          <span class="thread-heading">
+            <span id="statusDot" class="status-dot offline"></span>
+            <span
+              id="threadTitle"
+              class="thread-title"
+              data-i18n="remote.topbar.connecting"
+            ></span>
+          </span>
+          <span
+            id="threadSubtitle"
+            class="thread-subtitle"
+            data-i18n="remote.topbar.secureLan"
+          ></span>
+        </div>
+        <div class="top-actions">
+          <span
+            id="runBadge"
+            class="badge"
+            data-i18n="remote.badge.offline"
+          ></span>
+          <button
+            id="todoButton"
+            class="icon-button todo-button"
+            type="button"
+            aria-label="待办列表"
+            data-i18n-aria-label="remote.todos.title"
+            hidden
+          >
+            <span class="icn-slot" data-icon="list-checks"></span>
+            <span id="todoBadge" class="todo-badge" hidden></span>
+          </button>
+          <button
+            id="newChatButton"
+            class="icon-button"
+            type="button"
+            aria-label="新建对话"
+            data-i18n-aria-label="remote.actions.newChat"
+            data-icon="message-square-plus"
+          ></button>
+        </div>
+      </header>
+
+      <div class="stage">
+        <main id="timeline" class="timeline">
+          <div class="load-earlier-wrap">
+            <button id="loadEarlier" class="load-earlier" type="button" hidden>
+              <span class="load-earlier-spinner" aria-hidden="true"></span>
+              <span
+                id="loadEarlierLabel"
+                data-i18n="remote.timeline.loadEarlier"
+              ></span>
+            </button>
+          </div>
+          <div id="messages" class="timeline-inner">
+            <div class="empty">
+              <div>
+                <img class="snow-logo" src="/icon.png" alt="" />
+                <strong data-i18n="remote.empty.connecting.title"></strong>
+                <span data-i18n="remote.empty.connecting.detail"></span>
+              </div>
+            </div>
+          </div>
+        </main>
+        <div id="interactions" class="interaction-stack"></div>
+        <button
+          id="scrollToBottomButton"
+          class="scroll-to-bottom"
+          type="button"
+          aria-label="滚动到底部"
+          data-i18n-aria-label="remote.timeline.scrollToBottom"
+          hidden
+        >
+          <span class="icn-slot" data-icon="arrow-down"></span>
+        </button>
+        <div id="notice" class="notice" role="status" aria-live="polite"></div>
+
+        <div class="composer-shell">
+          <div id="remoteToolbar" class="remote-toolbar">
+            <button
+              class="remote-chip button model"
+              type="button"
+              data-panel="modelPanel"
+              id="modelChip"
+            ></button>
+            <span class="remote-chip" id="modeChip"></span>
+            <span class="remote-chip" id="contextChip"></span>
+          </div>
+          <div id="attachmentStrip" class="attachment-strip"></div>
+          <div id="pendingMessages" class="pending-messages"></div>
+          <div class="composer">
+            <button
+              id="plusButton"
+              class="plus-button"
+              type="button"
+              aria-label="更多操作"
+              aria-expanded="false"
+              data-i18n-aria-label="remote.composer.more"
+              data-icon="plus"
+            ></button>
+            <textarea
+              id="input"
+              maxlength="8000"
+              rows="1"
+              aria-label="消息"
+              placeholder="问我任何问题，输入 / 打开指令面板..."
+              data-i18n-aria-label="remote.composer.inputLabel"
+              data-i18n-placeholder="remote.composer.placeholder"
+            ></textarea>
+            <button
+              id="stopButton"
+              class="send-button stop"
+              type="button"
+              aria-label="停止"
+              data-i18n-aria-label="remote.composer.stop"
+              hidden
+            >
+              <svg
+                class="icn"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                data-icon="square"
+              ></svg>
+            </button>
+            <button
+              id="actionButton"
+              class="send-button"
+              type="button"
+              aria-label="发送"
+              data-i18n-aria-label="remote.composer.send"
+              disabled
+            >
+              <svg
+                class="icn"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                data-icon="arrow-up"
+              ></svg>
+            </button>
+          </div>
+          <input
+            id="imagePicker"
+            class="hidden-picker"
+            type="file"
+            accept="image/png,image/jpeg,image/gif,image/webp"
+            multiple
+          />
+          <input id="filePicker" class="hidden-picker" type="file" multiple />
+          <div class="signature">SNOW REMOTE · LOCAL & SECURE</div>
+        </div>
+      </div>
+
+      <div id="remotePanelScrim" class="scrim"></div>
+
+      <section
+        id="commandPanel"
+        class="remote-panel"
+        aria-label="指令"
+        data-i18n-aria-label="remote.panels.commands.title"
+      >
+        <div class="panel-head">
+          <h2>
+            <span class="icn-slot" data-icon="command"></span>
+            <span data-i18n="remote.panels.commands.title"></span>
+          </h2>
+        </div>
+        <input
+          id="commandSearch"
+          placeholder="搜索指令…"
+          data-i18n-placeholder="remote.panels.commands.search"
+        />
+        <div id="commandList"></div>
+      </section>
+
+      <section
+        id="permissionsPanel"
+        class="remote-panel"
+        aria-label="权限摘要"
+        data-i18n-aria-label="remote.panels.permissions.title"
+      >
+        <div class="panel-head">
+          <h2>
+            <span class="icn-slot" data-icon="shield-check"></span>
+            <span data-i18n="remote.panels.permissions.title"></span>
+          </h2>
+        </div>
+        <div id="permissionsList"></div>
+      </section>
+
+      <section
+        id="rolePanel"
+        class="remote-panel"
+        aria-label="角色摘要"
+        data-i18n-aria-label="remote.panels.role.title"
+      >
+        <div class="panel-head">
+          <h2>
+            <span class="icn-slot" data-icon="user-cog"></span>
+            <span data-i18n="remote.panels.role.title"></span>
+          </h2>
+        </div>
+        <div id="roleList"></div>
+      </section>
+
+      <section
+        id="sensitivePanel"
+        class="remote-panel"
+        aria-label="敏感指令规则"
+        data-i18n-aria-label="remote.panels.sensitive.title"
+      >
+        <div class="panel-head">
+          <h2>
+            <span class="icn-slot" data-icon="shield-alert"></span>
+            <span data-i18n="remote.panels.sensitive.title"></span>
+          </h2>
+        </div>
+        <div id="sensitiveList"></div>
+      </section>
+
+      <section
+        id="codebasePanel"
+        class="remote-panel"
+        aria-label="代码库摘要"
+        data-i18n-aria-label="remote.panels.codebase.title"
+      >
+        <div class="panel-head">
+          <h2>
+            <span class="icn-slot" data-icon="database"></span>
+            <span data-i18n="remote.panels.codebase.title"></span>
+          </h2>
+        </div>
+        <div id="codebaseList"></div>
+      </section>
+
+      <section
+        id="reviewPanel"
+        class="remote-panel"
+        aria-label="审查摘要"
+        data-i18n-aria-label="remote.panels.review.title"
+      >
+        <div class="panel-head">
+          <h2>
+            <span class="icn-slot" data-icon="scan-search"></span>
+            <span data-i18n="remote.panels.review.title"></span>
+          </h2>
+        </div>
+        <div id="reviewList"></div>
+      </section>
+
+      <section
+        id="modelPanel"
+        class="remote-panel"
+        aria-label="模型与推理"
+        data-i18n-aria-label="remote.panels.model.title"
+      >
+        <div class="panel-head">
+          <h2>
+            <span class="icn-slot" data-icon="settings"></span>
+            <span data-i18n="remote.panels.model.title"></span>
+          </h2>
+        </div>
+        <div id="modelPanelBody"></div>
+      </section>
+
+      <section
+        id="skillsPanel"
+        class="remote-panel"
+        aria-label="Skills"
+        data-i18n-aria-label="remote.panels.skills.title"
+      >
+        <div class="panel-head">
+          <h2>
+            <span class="icn-slot" data-icon="sparkles"></span>
+            <span data-i18n="remote.panels.skills.title"></span>
+          </h2>
+        </div>
+        <input
+          id="skillsSearch"
+          placeholder="搜索 Skill…"
+          data-i18n-placeholder="remote.skills.search"
+        />
+        <div id="skillsList"></div>
+      </section>
+
+      <section
+        id="mcpPanel"
+        class="remote-panel"
+        aria-label="MCP"
+        data-i18n-aria-label="remote.panels.mcp.title"
+      >
+        <div class="panel-head">
+          <h2>
+            <span class="icn-slot" data-icon="blocks"></span>
+            <span data-i18n="remote.panels.mcp.title"></span>
+          </h2>
+        </div>
+        <div id="mcpList"></div>
+      </section>
+
+      <section
+        id="changesPanel"
+        class="remote-panel"
+        aria-label="变更摘要"
+        data-i18n-aria-label="remote.panels.changes.title"
+      >
+        <div class="panel-head">
+          <h2>
+            <span class="icn-slot" data-icon="file-clock"></span>
+            <span data-i18n="remote.panels.changes.title"></span>
+          </h2>
+        </div>
+        <div id="changesList"></div>
+      </section>
+
+      <section
+        id="themePanel"
+        class="remote-panel"
+        aria-label="外观"
+        data-i18n-aria-label="remote.panels.theme.title"
+      >
+        <div class="panel-head">
+          <h2>
+            <span class="icn-slot" data-icon="palette"></span>
+            <span data-i18n="remote.panels.theme.title"></span>
+          </h2>
+        </div>
+        <button
+          class="remote-command theme-choice"
+          type="button"
+          data-theme-choice="system"
+        >
+          <b data-i18n="remote.theme.system"></b>
+          <small data-i18n="remote.theme.systemHint"></small>
+        </button>
+        <button
+          class="remote-command theme-choice"
+          type="button"
+          data-theme-choice="light"
+        >
+          <b data-i18n="remote.theme.light"></b>
+          <small data-i18n="remote.theme.lightHint"></small>
+        </button>
+        <button
+          class="remote-command theme-choice"
+          type="button"
+          data-theme-choice="dark"
+        >
+          <b data-i18n="remote.theme.dark"></b>
+          <small data-i18n="remote.theme.darkHint"></small>
+        </button>
+      </section>
+
+      <section
+        id="todosPanel"
+        class="remote-panel"
+        aria-label="待办列表"
+        data-i18n-aria-label="remote.todos.title"
+      >
+        <div class="panel-head">
+          <h2>
+            <span class="icn-slot" data-icon="list-checks"></span>
+            <span data-i18n="remote.todos.title"></span>
+          </h2>
+        </div>
+        <div id="todosList"></div>
+        <div
+          id="todoRunningHint"
+          class="todo-running-hint"
+          data-i18n="remote.todos.runningHint"
+          hidden
+        ></div>
+        <div id="todoAddBar" class="todo-add-bar" hidden>
+          <input
+            id="todoAddInput"
+            type="text"
+            maxlength="500"
+            inputmode="text"
+            enterkeyhint="done"
+            placeholder="添加待办…"
+            data-i18n-placeholder="remote.todos.addPlaceholder"
+          />
+          <button
+            id="todoAddButton"
+            class="todo-add-button"
+            type="button"
+            aria-label="添加待办"
+            data-i18n-aria-label="remote.todos.add"
+            disabled
+          >
+            <span class="icn-slot" data-icon="plus"></span>
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <div id="actionOverlay" class="action-overlay">
+      <div id="actionBackdrop" class="action-backdrop"></div>
+      <div id="actionSheet" class="action-sheet" role="menu">
+        <button class="action-item" type="button" data-action="image">
+          <span class="icn-slot" data-icon="image-plus"></span>
+          <span class="action-label" data-i18n="remote.actions.image"></span>
+        </button>
+        <button class="action-item" type="button" data-action="file">
+          <span class="icn-slot" data-icon="file-plus"></span>
+          <span class="action-label" data-i18n="remote.actions.file"></span>
+        </button>
+        <button class="action-item" type="button" data-action="new-chat">
+          <span class="icn-slot" data-icon="message-square-plus"></span>
+          <span class="action-label" data-i18n="remote.actions.newChat"></span>
+        </button>
+        <div class="action-divider" role="separator"></div>
+        <button class="action-item" type="button" data-action="todos">
+          <span class="icn-slot" data-icon="list-checks"></span>
+          <span class="action-label" data-i18n="remote.todos.title"></span>
+        </button>
+        <button class="action-item" type="button" data-action="skills">
+          <span class="icn-slot" data-icon="sparkles"></span>
+          <span
+            class="action-label"
+            data-i18n="remote.panels.skills.title"
+          ></span>
+        </button>
+        <button class="action-item" type="button" data-action="mcp">
+          <span class="icn-slot" data-icon="blocks"></span>
+          <span class="action-label" data-i18n="remote.panels.mcp.title"></span>
+        </button>
+        <button class="action-item" type="button" data-action="commands">
+          <span class="icn-slot" data-icon="command"></span>
+          <span class="action-label" data-i18n="remote.actions.commands"></span>
+        </button>
+        <button class="action-item" type="button" data-action="theme">
+          <span class="icn-slot" data-icon="palette"></span>
+          <span
+            class="action-label"
+            data-i18n="remote.panels.theme.title"
+          ></span>
+        </button>
+        <div class="action-divider" role="separator"></div>
+        <div
+          class="action-section-title"
+          data-i18n="remote.modes.sectionTitle"
+        ></div>
+        <button class="action-item" type="button" data-action="yolo">
+          <span class="icn-slot" data-icon="shield-alert"></span>
+          <span class="action-label" data-i18n="remote.modes.yolo"></span>
+          <span
+            class="remote-toggle"
+            data-mode-toggle="yolo"
+            aria-hidden="true"
+          ></span>
+        </button>
+        <button class="action-item" type="button" data-action="lite">
+          <span class="icn-slot" data-icon="feather"></span>
+          <span class="action-label" data-i18n="remote.modes.lite"></span>
+          <span
+            class="remote-toggle"
+            data-mode-toggle="lite"
+            aria-hidden="true"
+          ></span>
+        </button>
+        <button class="action-item" type="button" data-action="plan">
+          <span class="icn-slot" data-icon="clipboard-list"></span>
+          <span class="action-label" data-i18n="remote.modes.plan"></span>
+          <span
+            class="remote-toggle"
+            data-mode-toggle="plan"
+            aria-hidden="true"
+          ></span>
+        </button>
+        <button class="action-item" type="button" data-action="worktree">
+          <span class="icn-slot" data-icon="git-branch"></span>
+          <span class="action-label" data-i18n="remote.modes.worktree"></span>
+          <span
+            class="remote-toggle"
+            data-mode-toggle="worktree"
+            aria-hidden="true"
+          ></span>
+        </button>
+        <button class="action-item" type="button" data-action="workflow">
+          <span class="icn-slot" data-icon="workflow"></span>
+          <span class="action-label" data-i18n="remote.modes.workflow"></span>
+          <span
+            class="remote-toggle"
+            data-mode-toggle="workflow"
+            aria-hidden="true"
+          ></span>
+        </button>
+        <button class="action-item" type="button" data-action="goal">
+          <span class="icn-slot" data-icon="target"></span>
+          <span class="action-label" data-i18n="remote.modes.goal"></span>
+          <span
+            class="remote-toggle"
+            data-mode-toggle="goal"
+            aria-hidden="true"
+          ></span>
+        </button>
+      </div>
+    </div>
+
+    <div id="scrim" class="scrim"></div>
+    <section
+      id="threadSheet"
+      class="sheet"
+      aria-modal="true"
+      role="dialog"
+      aria-label="选择会话"
+      data-i18n-aria-label="remote.threads.title"
+    >
+      <div class="sheet-header">
+        <h2 data-i18n="remote.threads.title"></h2>
+        <button
+          id="closeSheet"
+          type="button"
+          aria-label="关闭"
+          data-i18n-aria-label="remote.threads.close"
+          data-icon="x"
+        ></button>
+      </div>
+      <div id="threadList" class="thread-list"></div>
+    </section>
+
+    <div
+      id="imageLightbox"
+      class="image-lightbox"
+      role="dialog"
+      aria-modal="true"
+      aria-label="图片预览"
+      data-i18n-aria-label="remote.lightbox.alt"
+    >
+      <button
+        id="closeImageLightbox"
+        type="button"
+        aria-label="关闭图片预览"
+        data-i18n-aria-label="remote.lightbox.close"
+        data-icon="x"
+      ></button>
+      <img
+        id="lightboxImage"
+        alt="图片预览"
+        data-i18n-alt="remote.lightbox.alt"
+      />
+    </div>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

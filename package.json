@@ -26,7 +26,6 @@
     "check": "npm run check:ts && cargo check --manifest-path native/Cargo.toml",
     "check:docs": "node scripts/check-docs.cjs",
     "check:ts": "tsc --noEmit",
-    "check:mobile": "node --experimental-strip-types scripts/check-mobile-page.mjs",
     "check:packaged-runtime": "node scripts/check-packaged-runtime-deps.mjs",
     "preview": "electron-vite preview"
   },
@@ -76,7 +75,8 @@
     "electron-builder": "^26.0.12",
     "electron-vite": "^4.0.0",
     "prettier": "^3.9.6",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "vite": "^7.3.5"
   },
   "build": {
     "appId": "com.snow.app",

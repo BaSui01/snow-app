@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
-use crate::api::conversation::images::resolve_inline_images_from_disk;
+use crate::api::conversation::images::{
+    resolve_inline_images_from_disk, resolve_message_image,
+};
 
 use super::ensure_archive_database_file;
 use super::ensure_database_file;
@@ -508,6 +510,40 @@ pub fn list_chat_messages_paginated(
         record.content = resolve_inline_images_from_disk(&record.content, &database_path);
     }
     Ok(page)
+}
+
+/// 单条用户消息图片（MIME + base64 原始字节）。
+#[napi(object)]
+pub struct ChatMessageImage {
+    pub mime_type: String,
+    pub base64: String,
+}
+
+/// 按消息 id 解析用户消息中的第 `image_index` 张图片（0 基，与前端
+/// `parseContentSegments` 的图片序号一致）。
+///
+/// 远控图片接口的数据库兜底路径：渲染进程只持有当前会话已加载的内存
+/// 消息窗口，翻页历史消息必须能从数据库 + upload 磁盘解析出图片。
+pub fn get_chat_message_image(
+    message_id: String,
+    image_index: i32,
+) -> Result<Option<ChatMessageImage>> {
+    if image_index < 0 {
+        return Ok(None);
+    }
+    let database_path = ensure_database_file()?;
+    let Some(content) =
+        services::chat_conversations::get_user_message_content(&database_path, &message_id)?
+    else {
+        return Ok(None);
+    };
+    let Some(image) = resolve_message_image(&content, &database_path, image_index as usize) else {
+        return Ok(None);
+    };
+    Ok(Some(ChatMessageImage {
+        mime_type: image.media_type,
+        base64: image.data,
+    }))
 }
 
 pub fn find_latest_tool_result(

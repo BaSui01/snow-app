@@ -58,6 +58,7 @@ export const ChatInputView = ({
   requestMethod,
   thinkingOptions,
   thinkingValue,
+  effectiveThinkingValue,
   thinkingLabel,
   ActiveThinkingIcon,
   isLoadingApiConfig,
@@ -364,7 +365,7 @@ export const ChatInputView = ({
       selectedApiProfile,
       apiProfileNames: apiConfigs.map((config) => config.profileName),
       requestMethod,
-      thinkingValue,
+      effectiveThinkingValue,
       thinkingOptions: thinkingOptions.map(({ value, label }) => ({
         value,
         label,

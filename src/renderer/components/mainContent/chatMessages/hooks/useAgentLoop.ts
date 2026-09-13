@@ -272,7 +272,11 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         const queue = ctx.pendingQueueRef.current.get(sessionKey) ?? [];
         queue.push({ text: trimmed, options: capturedOptions });
         ctx.pendingQueueRef.current.set(sessionKey, queue);
-        ctx.setActivePendingMessages(queue.map((item) => item.text));
+        // 显示镜像只反映当前激活会话的队列（会话隔离）：目标会话不是
+        // 当前视图时不更新镜像，切回该会话时再从队列重载。
+        if (sessionKey === ctx.activeSessionKeyRef.current) {
+          ctx.setActivePendingMessages(queue.map((item) => item.text));
+        }
         return;
       }
 
@@ -1152,7 +1156,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             const pendingText = pendingQueueNoTools
               .map((item) => item.text)
               .join("\n\n");
-            ctx.setActivePendingMessages([]);
+            // 显示镜像只反映当前激活会话的队列（会话隔离）。
+            if (ctx.activeSessionKeyRef.current === effectiveKey) {
+              ctx.setActivePendingMessages([]);
+            }
 
             const pendingUserMsg: ChatConversationMessage = {
               id: createMessageId("user"),
@@ -1223,7 +1230,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             );
           }
           ctx.pendingQueueRef.current.delete(effectiveKey);
-          ctx.setActivePendingMessages([]);
+          // 显示镜像只反映当前激活会话的队列（会话隔离）。
+          if (ctx.activeSessionKeyRef.current === effectiveKey) {
+            ctx.setActivePendingMessages([]);
+          }
           return;
         }
 
@@ -1400,7 +1410,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             ),
           );
           ctx.pendingQueueRef.current.delete(effectiveKey);
-          ctx.setActivePendingMessages([]);
+          // 显示镜像只反映当前激活会话的队列（会话隔离）。
+          if (ctx.activeSessionKeyRef.current === effectiveKey) {
+            ctx.setActivePendingMessages([]);
+          }
           if (response.conversationId) {
             await window.snow.appendToolMessage(
               response.conversationId,
@@ -1445,7 +1458,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         ) {
           if (duplicateRecoveryAttempted) {
             ctx.pendingQueueRef.current.delete(effectiveKey);
-            ctx.setActivePendingMessages([]);
+            // 显示镜像只反映当前激活会话的队列（会话隔离）。
+            if (ctx.activeSessionKeyRef.current === effectiveKey) {
+              ctx.setActivePendingMessages([]);
+            }
             if (response.conversationId) {
               await window.snow.appendToolMessage(
                 response.conversationId,
@@ -1483,7 +1499,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
 
         if (userQuestionCancelled) {
           ctx.pendingQueueRef.current.delete(effectiveKey);
-          ctx.setActivePendingMessages([]);
+          // 显示镜像只反映当前激活会话的队列（会话隔离）。
+          if (ctx.activeSessionKeyRef.current === effectiveKey) {
+            ctx.setActivePendingMessages([]);
+          }
           if (response.conversationId) {
             await window.snow.appendToolMessage(
               response.conversationId,
@@ -1498,7 +1517,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         // 已在上方写入 toolResults，走正常续跑分支让 AI 继续处理。
         if (allToolsRejected && !hasUserProvidedRejectionReason) {
           ctx.pendingQueueRef.current.delete(effectiveKey);
-          ctx.setActivePendingMessages([]);
+          // 显示镜像只反映当前激活会话的队列（会话隔离）。
+          if (ctx.activeSessionKeyRef.current === effectiveKey) {
+            ctx.setActivePendingMessages([]);
+          }
           if (response.conversationId) {
             await window.snow.appendToolMessage(
               response.conversationId,
@@ -1540,7 +1562,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           const pendingText = pendingQueueForTools
             .map((item) => item.text)
             .join("\n\n");
-          ctx.setActivePendingMessages([]);
+          // 显示镜像只反映当前激活会话的队列（会话隔离）。
+          if (ctx.activeSessionKeyRef.current === effectiveKey) {
+            ctx.setActivePendingMessages([]);
+          }
           const pendingUserMsgForTools: ChatConversationMessage = {
             id: createMessageId("user"),
             role: "user",
@@ -1908,7 +1933,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             const combined = pendingQueue.map((item) => item.text).join("\n\n");
             const lastOptions =
               pendingQueue[pendingQueue.length - 1]?.options ?? {};
-            ctx.setActivePendingMessages([]);
+            // 显示镜像只反映当前激活会话的队列（会话隔离）。
+            if (ctx.activeSessionKeyRef.current === finalSessionKey) {
+              ctx.setActivePendingMessages([]);
+            }
             // 显式指定目标会话：即使期间用户已切到其他会话/新建会话视图，
             // 排队消息也必须发回队列所属的会话，且不重置用户的新建意图。
             ctx.handleSendMessageRef.current(combined, {

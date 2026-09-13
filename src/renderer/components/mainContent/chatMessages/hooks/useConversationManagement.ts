@@ -44,20 +44,52 @@ export const useConversationManagement = (
 ) => {
   const { ctx, rejectToolAuthorizations, rejectPendingUserQuestions } = params;
 
-  const withdrawPendingMessage = useCallback((index: number): string | null => {
-    const sessionKey = ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY;
-    const queue = ctx.pendingQueueRef.current.get(sessionKey);
-    if (!queue || index < 0 || index >= queue.length) {
-      return null;
-    }
+  /**
+   * 解析 pending 队列的真实 key：优先直接命中；新会话槽位
+   * （__pending__:N）迁移到真实 conversationId 时队列 key 会被搬迁，
+   * pendingToRealConversationIdRef 记录该映射；两者都未命中则原样返回
+   * （查询不存在的 key 得到空队列，由调用方按“无此条目”处理）。
+   */
+  const resolvePendingQueueKey = (key: string): string =>
+    ctx.pendingQueueRef.current.has(key)
+      ? key
+      : (ctx.pendingToRealConversationIdRef.current.get(key) ?? key);
 
-    const [removed] = queue.splice(index, 1);
-    if (queue.length === 0) {
-      ctx.pendingQueueRef.current.delete(sessionKey);
-    }
-    ctx.setActivePendingMessages(queue.map((item) => item.text));
-    return removed?.text ?? null;
-  }, []);
+  /**
+   * 撤回一条待发送消息（从队列移除并返回原文）。targetSessionKey 缺省为
+   * 当前激活会话（桌面 Pending 面板只能操作激活会话）；远控等跨会话通道
+   * 传入“所见队列”的定位键（真实 id 或槽位 key），经迁移映射解析后从该
+   * 队列移除，不受桌面视图切换影响。
+   */
+  const withdrawPendingMessage = useCallback(
+    (index: number, targetSessionKey?: string): string | null => {
+      const sessionKey = resolvePendingQueueKey(
+        targetSessionKey ??
+          ctx.activeSessionKeyRef.current ??
+          PENDING_SESSION_KEY,
+      );
+      const queue = ctx.pendingQueueRef.current.get(sessionKey);
+      if (!queue || index < 0 || index >= queue.length) {
+        return null;
+      }
+
+      const [removed] = queue.splice(index, 1);
+      if (queue.length === 0) {
+        ctx.pendingQueueRef.current.delete(sessionKey);
+      }
+      // 显示镜像只反映当前激活会话的队列（会话隔离）：目标为后台会话时
+      // 不更新镜像，等切回该会话时再从队列重载。激活基准同样经迁移映射
+      // 解析（槽位迁移后 activeSessionKey 与队列 key 可能相差一层映射）。
+      const activeSessionKey = resolvePendingQueueKey(
+        ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY,
+      );
+      if (sessionKey === activeSessionKey) {
+        ctx.setActivePendingMessages(queue.map((item) => item.text));
+      }
+      return removed?.text ?? null;
+    },
+    [],
+  );
 
   const handleSelectConversation = useCallback(
     async (
@@ -801,111 +833,120 @@ export const useConversationManagement = (
     [abortSubAgentTree],
   );
 
-  const handleAbort = useCallback((): void => {
-    const key = ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY;
-    const ref = ctx.sessionsRefData.current.get(key);
-    if (!ref?.isSending || ref.isAbortRequested) {
-      return;
-    }
-
-    // Reject only this session's pending tool authorizations. The pending
-    // map is shared across all conversations, so a session-scoped reject is
-    // required — a global reject here would silently decline authorization
-    // prompts waiting in other sessions.
-    rejectToolAuthorizations(key);
-    rejectPendingUserQuestions(key);
-    for (const [decisionId, pendingDecision] of ctx.pendingHookDecisionRef
-      .current) {
-      if (pendingDecision.sessionKey === key) {
-        ctx.pendingHookDecisionRef.current.delete(decisionId);
-        pendingDecision.resolve(false);
+  const handleAbort = useCallback(
+    (targetSessionKey?: string): void => {
+      // targetSessionKey 缺省为当前激活会话；远控通道的“立即发送”会显式
+      // 传入消息所属会话，使后台会话的运行也能被定点中断。
+      const key =
+        targetSessionKey ??
+        ctx.activeSessionKeyRef.current ??
+        PENDING_SESSION_KEY;
+      const ref = ctx.sessionsRefData.current.get(key);
+      if (!ref?.isSending || ref.isAbortRequested) {
+        return;
       }
-    }
 
-    // Wake up the pause checkpoint so the blocked agent loop can observe
-    // the cancellation and exit. Without this, a paused loop would hang
-    // forever because it is awaiting the pause promise.
-    const pauseController = ctx.pauseControllerRef.current.get(key);
-    if (pauseController) {
-      pauseController.paused = false;
-      const resolve = pauseController.resolve;
-      pauseController.resolve = null;
-      if (resolve) {
-        resolve();
+      // Reject only this session's pending tool authorizations. The pending
+      // map is shared across all conversations, so a session-scoped reject is
+      // required — a global reject here would silently decline authorization
+      // prompts waiting in other sessions.
+      rejectToolAuthorizations(key);
+      rejectPendingUserQuestions(key);
+      for (const [decisionId, pendingDecision] of ctx.pendingHookDecisionRef
+        .current) {
+        if (pendingDecision.sessionKey === key) {
+          ctx.pendingHookDecisionRef.current.delete(decisionId);
+          pendingDecision.resolve(false);
+        }
       }
-    }
 
-    ref.isAbortRequested = true;
-    ref.isSending = false;
-    ref.runId += 1;
-    ctx.updateSessionMessages(key, (currentMessages) =>
-      currentMessages.map((message) => {
-        return {
-          ...message,
-          status: message.status === "sending" ? "sent" : message.status,
-          isRetrying: message.status === "sending" ? false : message.isRetrying,
-          toolCalls: message.toolCalls?.map((toolCall) =>
-            toolCall.status === "running" || toolCall.status === "pending"
-              ? {
-                  ...toolCall,
-                  status: "error",
-                  result: toolCall.result ?? "Interrupted by user",
-                }
-              : toolCall,
-          ),
-        };
-      }),
-    );
-    // Kill every in-flight bash subprocess of this session so the OS
-    // process does not keep running until its timeout.
-    killRunningToolExecutions(ctx.sessionsRef.current?.[key]?.messages ?? []);
-    ctx.updateSessionField(key, "isStreaming", false);
-    ctx.updateSessionField(key, "streamStartedAt", 0);
-    ctx.updateSessionField(key, "isAborting", false);
-    ctx.updateSessionField(key, "isPaused", false);
-    // Clear the vision textify status card: an abort while the backend is
-    // describing user images with the external vision model must recycle the
-    // "vision model analyzing image" intermediate state immediately (the
-    // backend also pushes a cancel event, but it races the abort and may be
-    // dropped).
-    ctx.updateSessionField(key, "visionAnalysis", undefined);
-    ctx.pauseControllerRef.current.delete(key);
-    ctx.removeStreamingId(key);
+      // Wake up the pause checkpoint so the blocked agent loop can observe
+      // the cancellation and exit. Without this, a paused loop would hang
+      // forever because it is awaiting the pause promise.
+      const pauseController = ctx.pauseControllerRef.current.get(key);
+      if (pauseController) {
+        pauseController.paused = false;
+        const resolve = pauseController.resolve;
+        pauseController.resolve = null;
+        if (resolve) {
+          resolve();
+        }
+      }
 
-    if (ref.streamId) {
-      void window.snow.abortResponseStream(ref.streamId);
-    }
+      ref.isAbortRequested = true;
+      ref.isSending = false;
+      ref.runId += 1;
+      ctx.updateSessionMessages(key, (currentMessages) =>
+        currentMessages.map((message) => {
+          return {
+            ...message,
+            status: message.status === "sending" ? "sent" : message.status,
+            isRetrying:
+              message.status === "sending" ? false : message.isRetrying,
+            toolCalls: message.toolCalls?.map((toolCall) =>
+              toolCall.status === "running" || toolCall.status === "pending"
+                ? {
+                    ...toolCall,
+                    status: "error",
+                    result: toolCall.result ?? "Interrupted by user",
+                  }
+                : toolCall,
+            ),
+          };
+        }),
+      );
+      // Kill every in-flight bash subprocess of this session so the OS
+      // process does not keep running until its timeout.
+      killRunningToolExecutions(ctx.sessionsRef.current?.[key]?.messages ?? []);
+      ctx.updateSessionField(key, "isStreaming", false);
+      ctx.updateSessionField(key, "streamStartedAt", 0);
+      ctx.updateSessionField(key, "isAborting", false);
+      ctx.updateSessionField(key, "isPaused", false);
+      // Clear the vision textify status card: an abort while the backend is
+      // describing user images with the external vision model must recycle the
+      // "vision model analyzing image" intermediate state immediately (the
+      // backend also pushes a cancel event, but it races the abort and may be
+      // dropped).
+      ctx.updateSessionField(key, "visionAnalysis", undefined);
+      ctx.pauseControllerRef.current.delete(key);
+      ctx.removeStreamingId(key);
 
-    // Cancel any in-flight summary generation so its
-    // update_conversation_summary write transaction is skipped. Without this,
-    // a cancel-then-rollback flow would wait on the summary promise (which may
-    // be stuck in an HTTP retry loop) and the database would remain locked
-    // when the rollback's delete/truncate runs.
-    if (!isPendingSessionKey(key)) {
-      void window.snow.cancelConversationSummary(key);
-    }
+      if (ref.streamId) {
+        void window.snow.abortResponseStream(ref.streamId);
+      }
 
-    // Cascade the abort to every sub-agent spawned by this conversation (and
-    // recursively to their own sub-agents). Without this, stopping the main
-    // flow would leave sub-agents streaming in the background.
-    for (const subAgentId of ref.childSubAgentIds) {
-      abortSubAgentTree(subAgentId);
-    }
+      // Cancel any in-flight summary generation so its
+      // update_conversation_summary write transaction is skipped. Without this,
+      // a cancel-then-rollback flow would wait on the summary promise (which may
+      // be stuck in an HTTP retry loop) and the database would remain locked
+      // when the rollback's delete/truncate runs.
+      if (!isPendingSessionKey(key)) {
+        void window.snow.cancelConversationSummary(key);
+      }
 
-    // 级联中止运行中的 WorkFlow 节点（节点是独立主会话，不在
-    // childSubAgentIds 内；节点及其子代理由 abortSubAgentTree 统一中止），
-    // 并结算挂起的 workflow-generate。
-    abortWorkflowNodes(key);
-  }, [
-    ctx.removeStreamingId,
-    rejectToolAuthorizations,
-    rejectPendingUserQuestions,
-    ctx.updateSessionMessages,
-    ctx.updateSessionField,
-    ctx.pauseControllerRef,
-    abortWorkflowNodes,
-    abortSubAgentTree,
-  ]);
+      // Cascade the abort to every sub-agent spawned by this conversation (and
+      // recursively to their own sub-agents). Without this, stopping the main
+      // flow would leave sub-agents streaming in the background.
+      for (const subAgentId of ref.childSubAgentIds) {
+        abortSubAgentTree(subAgentId);
+      }
+
+      // 级联中止运行中的 WorkFlow 节点（节点是独立主会话，不在
+      // childSubAgentIds 内；节点及其子代理由 abortSubAgentTree 统一中止），
+      // 并结算挂起的 workflow-generate。
+      abortWorkflowNodes(key);
+    },
+    [
+      ctx.removeStreamingId,
+      rejectToolAuthorizations,
+      rejectPendingUserQuestions,
+      ctx.updateSessionMessages,
+      ctx.updateSessionField,
+      ctx.pauseControllerRef,
+      abortWorkflowNodes,
+      abortSubAgentTree,
+    ],
+  );
 
   const abortConversation = useCallback(
     (conversationId: string): void => {
@@ -984,26 +1025,42 @@ export const useConversationManagement = (
   );
 
   /**
-   * Immediately send a pending message: abort the current in-flight session,
-   * remove the message from the pending queue, and dispatch it via
+   * Immediately send a pending message: abort the target session's in-flight
+   * run, remove the message from its pending queue, and dispatch it via
    * handleSendMessage so a fresh agent loop starts right away.
    *
    * This is used when the user does not want to wait for the current AI
    * response to finish — the ongoing stream is cancelled and the selected
-   * pending message is sent immediately.
+   * pending message is sent immediately. targetSessionKey 缺省为当前激活
+   * 会话（桌面面板只操作激活会话）；远控通道传入“所见队列”的定位键
+   * （真实 id 或槽位 key，经迁移映射解析），操作按该队列执行（含定点中断
+   * 其所属会话的运行），不受桌面视图切换影响。返回是否命中队列条目
+   * （未命中 = 已被消费或队列已变化）。
    */
   const sendPendingMessageNow = useCallback(
-    (index: number): void => {
-      const sessionKey = ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY;
+    (index: number, targetSessionKey?: string): boolean => {
+      const sessionKey = resolvePendingQueueKey(
+        targetSessionKey ??
+          ctx.activeSessionKeyRef.current ??
+          PENDING_SESSION_KEY,
+      );
+      // 显示镜像只反映当前激活会话的队列（会话隔离）：目标为后台会话时
+      // 不更新镜像，等切回该会话时再从队列重载。激活基准同样经迁移映射
+      // 解析（槽位迁移后 activeSessionKey 与队列 key 可能相差一层映射）。
+      const isActiveTarget =
+        sessionKey ===
+        resolvePendingQueueKey(
+          ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY,
+        );
       const queue = ctx.pendingQueueRef.current.get(sessionKey);
       if (!queue || index < 0 || index >= queue.length) {
-        return;
+        return false;
       }
 
-      // Abort the current streaming session so isSending flips to false
-      // and handleSendMessage will start a new agent loop instead of
+      // Abort the target session's streaming run so isSending flips to
+      // false and handleSendMessage will start a new agent loop instead of
       // re-queuing the message.
-      handleAbort();
+      handleAbort(sessionKey);
 
       // Remove the target message (and its original send options) from
       // the pending queue.
@@ -1013,8 +1070,10 @@ export const useConversationManagement = (
       }
 
       if (!removed) {
-        ctx.setActivePendingMessages(queue.map((item) => item.text));
-        return;
+        if (isActiveTarget) {
+          ctx.setActivePendingMessages(queue.map((item) => item.text));
+        }
+        return false;
       }
 
       // 子代理会话的"立即发送"必须发给子代理本身（强行发送给谁就是
@@ -1034,9 +1093,11 @@ export const useConversationManagement = (
             { text: removed.text, options: removed.options ?? {} },
           ];
           subRef.forceSendAbort = true;
-          handleAbort();
-          ctx.setActivePendingMessages(queue.map((item) => item.text));
-          return;
+          handleAbort(sessionKey);
+          if (isActiveTarget) {
+            ctx.setActivePendingMessages(queue.map((item) => item.text));
+          }
+          return true;
         }
         const parentId = subAgentEvent.parentConversationId;
         const parentQueue = ctx.pendingQueueRef.current.get(parentId) ?? [];
@@ -1045,9 +1106,13 @@ export const useConversationManagement = (
           options: removed.options ?? {},
         });
         ctx.pendingQueueRef.current.set(parentId, parentQueue);
-        ctx.setActivePendingMessages(parentQueue.map((item) => item.text));
+        // 即将切换到父会话，镜像由 handleSelectConversation 按目标会话
+        // 重载；仅当父会话恰为当前视图时提前同步。
+        if (parentId === ctx.activeSessionKeyRef.current) {
+          ctx.setActivePendingMessages(parentQueue.map((item) => item.text));
+        }
         void handleSelectConversation(parentId);
-        return;
+        return true;
       }
 
       // WorkFlow 节点会话的"立即发送"（与上方子代理分支同语义）：把消息暂存
@@ -1067,18 +1132,28 @@ export const useConversationManagement = (
             { text: removed.text, options: removed.options ?? {} },
           ];
           nodeRef.forceSendAbort = true;
-          handleAbort();
-          ctx.setActivePendingMessages(queue.map((item) => item.text));
-          return;
+          handleAbort(sessionKey);
+          if (isActiveTarget) {
+            ctx.setActivePendingMessages(queue.map((item) => item.text));
+          }
+          return true;
         }
       }
 
-      ctx.setActivePendingMessages(queue.map((item) => item.text));
+      if (isActiveTarget) {
+        ctx.setActivePendingMessages(queue.map((item) => item.text));
+      }
 
       // Dispatch the pending message as a fresh send. handleSendMessage
       // will create a new agent loop because handleAbort already reset
-      // isSending on the session ref.
-      ctx.handleSendMessageRef.current(removed.text, removed.options ?? {});
+      // isSending on the session ref. 非激活目标必须显式指定会话，否则
+      // 消息会被发到当前视图会话；激活目标保持原调用形态（新会话首条
+      // 逻辑依赖 activeSessionKeyRef）。
+      ctx.handleSendMessageRef.current(removed.text, {
+        ...(removed.options ?? {}),
+        ...(isActiveTarget ? {} : { targetSessionKey: sessionKey }),
+      });
+      return true;
     },
     [handleAbort, handleSelectConversation, ctx],
   );

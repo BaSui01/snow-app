@@ -731,6 +731,12 @@ export const useChatConversation = (
     upsertedConversation,
     // pending 槽位 -> 真实 conversationId 映射（侧边栏占位替换用）。
     pendingToRealConversationIdRef,
+    // 当前视图会话 key（真实 id 或新会话槽位 key）：远控通道用它定位
+    // “所见 pending 队列”的真实归属（含槽位→真实会话迁移的解析）。
+    activeSessionKeyRef,
+    // 待发送队列存储（会话 key -> 队列）：远控通道在操作失败时据此输出
+    // 现场摘要（诊断用）。
+    pendingQueueRef,
     subAgentSessionEvents,
     fileChangeStats,
     recordFileChange,

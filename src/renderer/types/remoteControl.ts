@@ -51,6 +51,15 @@ export type SnowRemoteContentBlock =
       detail?: string;
     };
 
+/**
+ * 待发送（Pending）消息：运行中的会话被排队的消息，仅属于当前激活会话
+ * （会话隔离：随 activeConversationId 一起切换，不跨会话展示）。
+ * 只含展示用分段（文本 + 附件 chips），撤回原文通过 withdrawPending 返回。
+ */
+export type SnowRemotePendingMessage = {
+  blocks: SnowRemoteContentBlock[];
+};
+
 export type SnowRemoteConversation = {
   conversationId: string;
   title: string;
@@ -108,10 +117,24 @@ export type SnowRemoteChange = {
   timestamp: number;
 };
 
+export type SnowRemoteTodoStatus = "pending" | "inProgress" | "completed";
+
+/**
+ * 会话待办项：与桌面顶部待办面板同源（todo-todo-manage 工具的展示子集）。
+ * 只保留移动端渲染需要的字段，content 由桥截断后下发。
+ */
+export type SnowRemoteTodoItem = {
+  id: string;
+  content: string;
+  status: SnowRemoteTodoStatus;
+};
+
 /**
  * 远控 Phase A：聊天输入区安全快照。
  * 数据来自 ChatInputView 发布的真实能力（见
  * mainContent/chatInput/remoteControlChatInputRegistry.ts）。
+ * 输入区卸载（桌面停留在设置页等非对话视图）时保留最后一次快照用于展示，
+ * 手机端不会退化为「未选择」；模型 / Profile 等变更仍要求桌面处于对话页。
  * 只含展示层安全数据：不含 ApiConfigRecord、baseUrl、apiKey、configJson。
  */
 export type SnowRemoteChatInputState = {
@@ -125,8 +148,8 @@ export type SnowRemoteChatInputState = {
   selectedApiProfile: string;
   apiProfileNames: string[];
   requestMethod: string;
-  /** 会话级思考强度覆盖；"" = 继承 Profile 默认。 */
-  thinkingValue: string;
+  /** 会话生效的思考强度值（会话覆盖已解析，回退 Profile 默认）。 */
+  effectiveThinkingValue: string;
   thinkingOptions: SnowRemoteThinkingOption[];
   responsesFastModeEnabled: boolean;
   maxContextTokens: number | null;
@@ -136,14 +159,15 @@ export type SnowRemoteChatInputState = {
 };
 
 /**
- * 可远程切换的代理行为模式（会话级）。
- * 与桌面 PlusMenu 的开关一一对应：Plan / Goal / YOLO 由手机端直接启停，
- * Worktree / Workflow 仍复用同一套真实 setter。
+ * 可远程切换的代理行为模式。
+ * 与桌面 PlusMenu 的开关一一对应：Plan / Goal / YOLO / WorkTree / WorkFlow /
+ * Lite 全部由手机端直接启停，复用同一套真实 setter。
+ * Plan/Goal/Worktree/Workflow 为会话级；YOLO / Lite 为应用级设置。
  * 安全边界：YOLO 只影响“普通 pending 工具授权自动批准”，
  * 敏感命令仍需桌面端独立确认；YOLO 与远控鉴权无关。
  */
 export type SnowRemoteModeId =
-  "plan" | "goal" | "worktree" | "workflow" | "yolo";
+  "plan" | "goal" | "worktree" | "workflow" | "yolo" | "lite";
 
 export type SnowRemoteModesState = {
   plan: boolean;
@@ -167,6 +191,18 @@ export type SnowRemoteState = {
   compactionError: string | null;
   attentionRequired: boolean;
   messages: SnowRemoteMessage[];
+  /**
+   * 当前激活会话的待发送（Pending）队列（会话隔离：切换会话后此字段与
+   * activeConversationId 一起切换，绝不展示其他会话的排队消息）。
+   */
+  pendingMessages: SnowRemotePendingMessage[];
+  /**
+   * 待发送队列的定位键（不透明标记）：当前视图会话的 key（新会话槽位
+   * key 或真实会话 id）。移动端操作时原样回传（见 sendPendingNow /
+   * withdrawPending），桌面端据此解析队列真实位置——含新会话槽位迁移
+   * 到真实 id 的映射，因此操作不会因会话迁移/切换而失效。
+   */
+  pendingQueueKey: string | null;
   pendingAuthorizations: SnowRemoteToolCall[];
   pendingQuestions: Array<{
     questionId: string;
@@ -174,7 +210,25 @@ export type SnowRemoteState = {
     options: string[];
   }>;
   conversations: SnowRemoteConversation[];
+  /** directoryId → 该工作区会话总数；移动端会话列表「加载更多」用。 */
+  conversationTotals: Record<string, number>;
+  /**
+   * 当前会话是否还有更早的持久化记录（来自桌面会话的 hasMoreMessages，
+   * 即 DB 分页 hasMore）。会话状态未知时缺省。
+   */
+  hasOlderMessages?: boolean;
+  /**
+   * 当前激活会话的待办列表（与桌面顶部待办面板同源，会话隔离）。
+   * null = 待办不可用（无活动会话或工具读取失败），移动端隐藏待办入口。
+   */
+  todos: SnowRemoteTodoItem[] | null;
   modes: SnowRemoteModesState;
+  /**
+   * 桌面当前生效的主题色（--accent-color 的计算值，规范化为 #rrggbb）。
+   * 手机端把它应用到开关 / 选中态等强调色上，跟随 Snow APP 主题；
+   * 解析失败时为空串，手机端保持自身默认。
+   */
+  theme: { accentColor: string };
   chatInput: SnowRemoteChatInputState | null;
 };
 
@@ -184,6 +238,26 @@ export type SnowRemoteControlApi = {
     messageId: string,
     imageIndex: number,
   ) => Promise<{ mimeType: string; base64: string }>;
+  /** 按时间倒序向前分页加载更早的消息（移动端聊天记录分页）。 */
+  getMessages: (
+    conversationId: string,
+    beforeMessageId: string,
+    limit: number,
+  ) => Promise<{
+    conversationId: string;
+    hasMore: boolean;
+    items: SnowRemoteMessage[];
+  }>;
+  /** 分页加载某个工作区的会话列表（移动端会话选择器分页）。 */
+  getConversations: (
+    directoryId: string,
+    limit: number,
+    offset: number,
+  ) => Promise<{
+    directoryId: string;
+    total: number;
+    items: SnowRemoteConversation[];
+  }>;
   getSkills: () => Promise<{
     directoryId: string | null;
     skills: SnowRemoteSkill[];
@@ -207,11 +281,70 @@ export type SnowRemoteControlApi = {
     conversationId: string | null;
     changes: SnowRemoteChange[];
   }>;
-  getPermissions: () => Promise<{ directoryId: string | null; projectApprovedTools: string[]; globalApprovedTools: string[]; readonlyToolCount: number; yolo: boolean }>;
-  getRole: () => Promise<{ directoryId: string | null; source: "project" | "ssh" | "global" | "none"; exists: boolean; characterCount: number; preview: string; editable: boolean; reason?: string }>;
-  getSensitiveCommands: () => Promise<{ directoryId: string | null; commands: Array<{ commandId: string; pattern: string; description: string; enabled: boolean; scope: "global" | "project"; inherited: boolean; isPreset: boolean }> }>;
-  getCodebase: () => Promise<{ directoryId: string | null; enabled: boolean; agentReview: boolean; reranking: boolean; indexed: boolean; totalFiles: number; totalChunks: number; totalSizeBytes: number; remote: boolean; reason?: string }>;
-  getReview: () => Promise<{ directoryId: string | null; available: boolean; currentBranch: string; stagedCount: number; unstagedCount: number; untrackedCount: number; statusLimitHit: boolean; remote: boolean; reason?: string }>;
+  /**
+   * 会话待办变更：复用桌面真实 todo-todo-manage 工具（add / update / delete）。
+   * 会话隔离：会话 ID 由桥注入，移动端无法跨会话读写；变更结果通过
+   * /api/state 的 todos 字段回传，调用方随后刷新快照即可。
+   */
+  mutateTodos: (
+    action: "add" | "update" | "delete",
+    payload: {
+      content?: string;
+      todoId?: string;
+      status?: SnowRemoteTodoStatus;
+    },
+  ) => Promise<{ ok: true }>;
+  getPermissions: () => Promise<{
+    directoryId: string | null;
+    projectApprovedTools: string[];
+    globalApprovedTools: string[];
+    readonlyToolCount: number;
+    yolo: boolean;
+  }>;
+  getRole: () => Promise<{
+    directoryId: string | null;
+    source: "project" | "ssh" | "global" | "none";
+    exists: boolean;
+    characterCount: number;
+    preview: string;
+    editable: boolean;
+    reason?: string;
+  }>;
+  getSensitiveCommands: () => Promise<{
+    directoryId: string | null;
+    commands: Array<{
+      commandId: string;
+      pattern: string;
+      description: string;
+      enabled: boolean;
+      scope: "global" | "project";
+      inherited: boolean;
+      isPreset: boolean;
+    }>;
+  }>;
+  getCodebase: () => Promise<{
+    directoryId: string | null;
+    enabled: boolean;
+    agentReview: boolean;
+    reranking: boolean;
+    indexed: boolean;
+    totalFiles: number;
+    totalChunks: number;
+    totalSizeBytes: number;
+    remote: boolean;
+    reason?: string;
+  }>;
+  getReview: () => Promise<{
+    directoryId: string | null;
+    available: boolean;
+    currentBranch: string;
+    stagedCount: number;
+    unstagedCount: number;
+    untrackedCount: number;
+    statusLimitHit: boolean;
+    remote: boolean;
+    reason?: string;
+  }>;
   send: (
     text: string,
     attachmentIds?: string[],
@@ -223,6 +356,25 @@ export type SnowRemoteControlApi = {
     pairingGeneration?: number,
   ) => Promise<{ ok: true }>;
   abort: () => Promise<{ ok: true }>;
+  /**
+   * 立即发送一条待发送消息（中断其所属会话的运行并直接发出该条）。
+   * index 为队列位置；expectedQueueKey 为移动端所见的队列定位键
+   * （SnowRemoteState.pendingQueueKey，原样回传），桌面端按“直接命中 →
+   * 槽位迁移映射”解析队列真实位置并从该队列执行（会话隔离）。
+   */
+  sendPendingNow: (
+    index: number,
+    expectedQueueKey: string | null,
+  ) => Promise<{ ok: true }>;
+  /**
+   * 撤回一条待发送消息（从队列移除）。index 为队列位置；
+   * expectedQueueKey 语义同 sendPendingNow。返回原始编码文本，
+   * 供调用端恢复到输入区。
+   */
+  withdrawPending: (
+    index: number,
+    expectedQueueKey: string | null,
+  ) => Promise<{ ok: true; text: string }>;
   newChat: () => Promise<{ ok: true }>;
   /** 复用真实模式 setter 链；enabled=false 时关闭该模式。 */
   setMode: (mode: SnowRemoteModeId, enabled: boolean) => Promise<{ ok: true }>;

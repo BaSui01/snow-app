@@ -26,4 +26,5 @@ export type MainContentView =
   | "pets-settings"
   | "usage-settings"
   | "system-logs"
-  | "general-settings";
+  | "general-settings"
+  | "remote-control-settings";

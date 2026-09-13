@@ -2594,6 +2594,7 @@ export const zhCN = {
   "settings.storageRepairOk": "数据库完好，已完成压缩优化。",
   "settings.storageRepairRecovered": "数据库曾损坏，现已修复完成。",
   "settings.generalSettings": "通用设置",
+  "settings.remoteControl": "手机远控",
   "settings.generalSettingsInfo": "语言、版本与更新管理。",
   "settings.storageTab": "存储与资源",
   "settings.resourceUsage": "资源占用",

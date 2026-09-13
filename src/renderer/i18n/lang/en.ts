@@ -2725,6 +2725,7 @@ export const en = {
   "settings.storageRepairRecovered":
     "Database was damaged and has been repaired.",
   "settings.generalSettings": "General settings",
+  "settings.remoteControl": "Mobile remote control",
   "settings.generalSettingsInfo": "Language, version and update management.",
   "settings.storageTab": "Storage & resources",
   "settings.resourceUsage": "Resource usage",

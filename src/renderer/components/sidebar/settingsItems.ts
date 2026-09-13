@@ -20,6 +20,7 @@ import {
   Settings2,
   Sparkles,
   ShieldAlert,
+  Smartphone,
   Terminal,
   Users,
 } from "lucide-react";
@@ -200,6 +201,13 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
     labelKey: "settings.privacySettings",
     defaultLabel: "Privacy settings",
     view: "privacy-settings",
+  },
+  {
+    id: "remote-control",
+    icon: Smartphone,
+    labelKey: "settings.remoteControl",
+    defaultLabel: "手机远控",
+    view: "remote-control-settings",
   },
   {
     id: "usage",

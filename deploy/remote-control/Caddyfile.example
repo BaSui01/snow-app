@@ -1,0 +1,25 @@
+{
+	admin off
+	email {$ACME_EMAIL}
+}
+
+{$SNOW_REMOTE_DOMAIN} {
+	# Access logging is intentionally disabled: pairing URLs and cookies must not
+	# be copied into ordinary proxy logs.
+	reverse_proxy 127.0.0.1:18080 {
+		# Snow validates the configured public Host itself. Do not derive this
+		# value from X-Forwarded-* headers or expose the FRP port publicly.
+		header_up Host {$SNOW_REMOTE_DOMAIN}
+		header_up -X-Forwarded-For
+		header_up -X-Forwarded-Host
+		header_up -X-Forwarded-Proto
+
+		health_uri /health
+		health_status 401
+		health_interval 30s
+		health_timeout 3s
+		health_headers {
+			Host {$SNOW_REMOTE_DOMAIN}
+		}
+	}
+}

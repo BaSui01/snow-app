@@ -27,6 +27,15 @@ use crate::api::token_counter::count_tokens_bounded;
 /// role/format wrapping) that is not part of message contents.
 const CONTEXT_GUARD_SAFETY_MARGIN_TOKENS: usize = 8_192;
 
+/// Estimated cost (tokens) of one on-disk image reference
+/// (`@@image:upload/...@@`) once the payload layer expands it into a
+/// multimodal image part. Formal vision endpoints bill by pixel dimensions
+/// (~1.1-1.6k tokens for typical sizes on Claude), so counting the tag's few
+/// characters — or worse, any residual base64 — is wildly off in both
+/// directions. A flat per-image estimate keeps the guard honest for both
+/// vision-native endpoints and text-counting relays.
+const CONTEXT_GUARD_IMAGE_TOKEN_ESTIMATE: usize = 1_600;
+
 /// Pre-send context window guard.
 ///
 /// Counts the tokens of the FINAL request messages (system prompt, history,
@@ -85,6 +94,18 @@ fn enforce_context_token_budget(
 
     let mut total: usize = 0;
     for message in messages {
+        // On-disk image references (`@@image:upload/...@@`) expand into
+        // multimodal image parts at the payload layer — bill them at the flat
+        // per-image estimate instead of their tag text. Any residual inline
+        // `@@image:data:` base64 (persist failure fallback) is still counted
+        // as text below, which is the conservative direction.
+        let image_refs = message.content.matches("@@image:upload/").count()
+            + message
+                .tool_results_json
+                .as_deref()
+                .map(|raw| raw.matches("@@image:upload/").count())
+                .unwrap_or(0);
+        total += image_refs * CONTEXT_GUARD_IMAGE_TOKEN_ESTIMATE;
         let payloads = [
             message.content.as_str(),
             message.tool_calls_json.as_deref().unwrap_or(""),
@@ -98,7 +119,7 @@ fn enforce_context_token_budget(
             }
             // Bounded counting stops early once the running budget is
             // exceeded, so oversized attachments never tokenize fully.
-            let measured = count_tokens_bounded(payload, budget - total);
+            let measured = count_tokens_bounded(payload, budget.saturating_sub(total));
             if measured.exceeded {
                 let estimated = total.saturating_add(measured.estimated_total());
                 // Compaction requests already carry the full context — telling
@@ -266,6 +287,18 @@ pub async fn prepare_context_request(
     };
     for message in &mut current_messages {
         message.content = persist_inline_images_to_disk(&message.content, request.database_path)?;
+        // 工具结果同样可能内嵌图片 base64（filesystem-read 读图等）。前端在
+        // 工具轮把 tool 消息直接放进下一轮请求（内存态，未经持久层），若只
+        // persist content，base64 会直达守卫被按文本计数（百万 token 级误拦）。
+        // 落盘后 payload 层构建 vision part 时从磁盘读回，发送行为不变。
+        if let Some(raw) = message.tool_results_json.as_deref() {
+            if raw.contains("@@image:data:") {
+                message.tool_results_json = Some(persist_inline_images_to_disk(
+                    raw,
+                    request.database_path,
+                )?);
+            }
+        }
     }
     if current_messages.is_empty() && !request.resume_after_compaction {
         return Err(Error::from_reason("Chat message content is required"));
@@ -648,6 +681,41 @@ mod tests {
             .expect_err("oversized request must be rejected locally");
         assert!(error.to_string().contains("Context window guard"));
         assert!(error.to_string().contains("maxContextTokens 200000"));
+    }
+
+    #[test]
+    fn context_guard_bills_disk_image_tags_at_flat_estimate() {
+        // 40 upload tags * 1600 = 64k tokens + tiny text: well under the
+        // ~181k budget of a 200k window. The base64 never exists inline, so
+        // this must NOT be counted as text.
+        let tags = "@@image:upload/2026-09-14/hash.png@@".repeat(40);
+        let messages = vec![ChatContextMessage {
+            role: "tool".to_string(),
+            content: String::new(),
+            tool_calls_json: None,
+            tool_results_json: Some(tags),
+            thinking: None,
+            thinking_blocks_json: None,
+        }];
+        enforce_context_token_budget(&messages, Some(200_000), None, false)
+            .expect("40 disk image refs must fit a 200k window");
+    }
+
+    #[test]
+    fn context_guard_still_rejects_when_image_refs_alone_exceed_budget() {
+        // 400 tags * 1600 = 640k > 200k window: even flat estimates must trip
+        // the guard when image count alone blows the budget.
+        let tags = "@@image:upload/2026-09-14/hash.png@@".repeat(400);
+        let messages = vec![ChatContextMessage {
+            role: "tool".to_string(),
+            content: String::new(),
+            tool_calls_json: None,
+            tool_results_json: Some(tags),
+            thinking: None,
+            thinking_blocks_json: None,
+        }];
+        enforce_context_token_budget(&messages, Some(200_000), None, false)
+            .expect_err("400 image refs must exceed a 200k window");
     }
 
     #[test]

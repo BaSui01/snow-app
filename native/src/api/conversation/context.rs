@@ -19,6 +19,91 @@ use crate::storage::SubAgentConfigRecord;
 
 use super::tool_messages::ensure_tool_pairing;
 use super::{images::persist_inline_images_to_disk, ConversationContextRequest};
+use crate::api::token_counter::count_tokens_bounded;
+
+/// Fixed safety margin (tokens) subtracted from the context window by the
+/// pre-send guard: covers tokenizer drift between `o200k_base` estimates and
+/// provider-side counting, plus request envelope overhead (tool schemas,
+/// role/format wrapping) that is not part of message contents.
+const CONTEXT_GUARD_SAFETY_MARGIN_TOKENS: usize = 8_192;
+
+/// Pre-send context window guard.
+///
+/// Counts the tokens of the FINAL request messages (system prompt, history,
+/// attachments already persisted into contents, tool-call/result JSON and
+/// thinking payloads) with the `o200k_base` tokenizer and rejects the request
+/// locally when the estimate exceeds
+/// `maxContextTokens − max_tokens − safety margin`.
+///
+/// Fails fast when an oversized request (most commonly caused by large
+/// uploaded attachments, which expand far beyond the previous response's
+/// usage numbers that auto-compaction thresholds rely on) would be sent
+/// upstream and rejected with an opaque provider 400 "context window exceeds
+/// limit". Failing here turns that into an actionable local error.
+///
+/// Disabled when `max_context_tokens` is unset/invalid (profiles without an
+/// explicit context window keep the previous behavior), or when the
+/// configuration is self-contradictory (`max_tokens` already consumes the
+/// whole window) — such profiles keep the upstream-error behavior.
+fn enforce_context_token_budget(
+    messages: &[ChatContextMessage],
+    max_context_tokens: Option<i32>,
+    max_output_tokens: Option<i32>,
+) -> Result<()> {
+    let max_context = max_context_tokens
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|value| *value > 0);
+    let Some(max_context) = max_context else {
+        return Ok(());
+    };
+    let output_reserve = max_output_tokens
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(0);
+    // Margin scales with the window (5%) but never drops below the fixed
+    // floor, so small windows still keep a proportional reserve.
+    let margin = (max_context / 20).max(CONTEXT_GUARD_SAFETY_MARGIN_TOKENS);
+    let Some(budget) = max_context
+        .checked_sub(output_reserve)
+        .and_then(|value| value.checked_sub(margin))
+        .filter(|value| *value > 0)
+    else {
+        // max_tokens >= maxContextTokens: misconfiguration the provider will
+        // reject anyway; do not shadow it with a guard error.
+        return Ok(());
+    };
+
+    let mut total: usize = 0;
+    for message in messages {
+        let payloads = [
+            message.content.as_str(),
+            message.tool_calls_json.as_deref().unwrap_or(""),
+            message.tool_results_json.as_deref().unwrap_or(""),
+            message.thinking.as_deref().unwrap_or(""),
+            message.thinking_blocks_json.as_deref().unwrap_or(""),
+        ];
+        for payload in payloads {
+            if payload.is_empty() {
+                continue;
+            }
+            // Bounded counting stops early once the running budget is
+            // exceeded, so oversized attachments never tokenize fully.
+            let measured = count_tokens_bounded(payload, budget - total);
+            if measured.exceeded {
+                let estimated = total.saturating_add(measured.estimated_total());
+                return Err(Error::from_reason(format!(
+                    "Context window guard: the prepared request is about {estimated} tokens, \
+                     exceeding the available {budget}-token context budget (maxContextTokens \
+                     {max_context} minus output reserve {output_reserve} and safety margin). \
+                     Compact the conversation (/compact), start a new conversation, or remove \
+                     large attachments before retrying."
+                )));
+            }
+            total += measured.counted;
+        }
+    }
+    Ok(())
+}
 
 pub struct PreparedConversationRequest {
     pub conversation_id: String,
@@ -168,6 +253,11 @@ pub async fn prepare_context_request(
 
     // --- Lightweight mode: skip history loading and system-prompt injection ---
     if request.skip_context {
+        enforce_context_token_budget(
+            &current_messages,
+            request.max_context_tokens,
+            request.max_output_tokens,
+        )?;
         ensure_tool_pairing(&mut current_messages);
         return Ok(PreparedConversationRequest {
             conversation_id: String::new(),
@@ -361,6 +451,15 @@ pub async fn prepare_context_request(
     //     AI API, which would reject the request outright. ---
     ensure_tool_pairing(&mut messages);
 
+    // --- Pre-send context window guard: reject requests that already exceed
+    //     the configured context budget locally, instead of paying an
+    //     upstream 400 round-trip with an opaque provider error. ---
+    enforce_context_token_budget(
+        &messages,
+        request.max_context_tokens,
+        request.max_output_tokens,
+    )?;
+
     Ok(PreparedConversationRequest {
         conversation_id,
         messages,
@@ -473,11 +572,77 @@ mod tests {
     #[test]
     fn normalize_messages_drops_empty_or_malformed_structured_messages() {
         let normalized = normalize_messages(&[
-            message("assistant", "", Some("[]"), None),
-            message("tool", "", None, Some("not-json")),
+            message("assistant", "", Some(r#"[{"id":"call-1"}]"#), None),
+            message("tool", "", None, Some(r#"[{"callId":"call-1"}]"#)),
             message("user", "", None, None),
         ]);
 
         assert!(normalized.is_empty());
+    }
+
+    fn context_message(role: &str, content: &str) -> ChatContextMessage {
+        ChatContextMessage {
+            role: role.to_string(),
+            content: content.to_string(),
+            tool_calls_json: None,
+            tool_results_json: None,
+            thinking: None,
+            thinking_blocks_json: None,
+        }
+    }
+
+    #[test]
+    fn context_guard_passes_small_messages_within_budget() {
+        let messages = vec![context_message("system", "short system prompt")];
+        enforce_context_token_budget(&messages, Some(200_000), Some(8_192))
+            .expect("small request must pass");
+    }
+
+    #[test]
+    fn context_guard_skipped_without_max_context_tokens() {
+        // No configured context window → guard disabled, even for huge content.
+        let huge = "x".repeat(4_000_000);
+        let messages = vec![context_message("user", &huge)];
+        enforce_context_token_budget(&messages, None, None)
+            .expect("guard must be disabled when maxContextTokens is unset");
+    }
+
+    #[test]
+    fn context_guard_skipped_on_contradictory_config() {
+        // max_tokens >= maxContextTokens: nothing left for messages; the
+        // provider will reject such profiles anyway, so the guard stays out.
+        let messages = vec![context_message("user", "hello")];
+        enforce_context_token_budget(&messages, Some(1_000), Some(1_000))
+            .expect("contradictory config must not be shadowed by the guard");
+    }
+
+    #[test]
+    fn context_guard_rejects_oversized_content() {
+        // CJK text has a high token density (~1 token per character), so a
+        // few hundred thousand characters comfortably exceed the budget.
+        let huge = "上下文窗口超限测试载荷".repeat(60_000);
+        let messages = vec![context_message("user", &huge)];
+        let error = enforce_context_token_budget(&messages, Some(200_000), None)
+            .expect_err("oversized request must be rejected locally");
+        assert!(error.to_string().contains("Context window guard"));
+        assert!(error.to_string().contains("maxContextTokens 200000"));
+    }
+
+    #[test]
+    fn context_guard_counts_tool_payloads_and_thinking() {
+        // The content alone fits, but tool results + thinking push the total
+        // over the budget — the guard must see every payload the providers
+        // serialize into the request.
+        let messages = vec![ChatContextMessage {
+            role: "tool".to_string(),
+            content: String::new(),
+            tool_calls_json: None,
+            tool_results_json: Some("tool result payload ".repeat(30_000)),
+            thinking: Some("thinking payload ".repeat(30_000)),
+            thinking_blocks_json: None,
+        }];
+        let error = enforce_context_token_budget(&messages, Some(150_000), None)
+            .expect_err("oversized tool payloads must be rejected");
+        assert!(error.to_string().contains("Context window guard"));
     }
 }

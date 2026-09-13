@@ -435,6 +435,65 @@ pub fn store_chat_exchange(
         .map_err(|error| database::database_error(database_path, "store chat exchange", error))
 }
 
+/// Ceilings for persisted failed-exchange contents. A failed request usually
+/// carries exactly the attachments that blew the context window; persisting
+/// them verbatim makes every subsequent request exceed the limit again (the
+/// failed exchange is loaded as history), trapping the conversation in a
+/// 400-loop. Inline base64 image payloads beyond
+/// [`FAILED_EXCHANGE_IMAGE_TAG_MAX_CHARS`] are replaced by a placeholder and
+/// contents beyond [`FAILED_EXCHANGE_CONTENT_MAX_CHARS`] are truncated.
+const FAILED_EXCHANGE_IMAGE_TAG_MAX_CHARS: usize = 8_192;
+const FAILED_EXCHANGE_CONTENT_MAX_CHARS: usize = 200_000;
+
+/// Slim down a failed exchange message before persistence:
+/// 1. Replace oversized inline base64 image tags (`@@image:data:...@@`) with
+///    a short placeholder — the payload is unreadable to the model anyway
+///    and dominates the content size. Small data URLs and disk-backed
+///    references (`upload/...` paths) are kept as-is.
+/// 2. Truncate contents that still exceed the length ceiling, on a char
+///    boundary, with an explicit marker.
+fn sanitize_failed_exchange_content(content: &str) -> String {
+    const IMAGE_TAG_PREFIX: &str = "@@image:";
+
+    let mut result = String::with_capacity(content.len().min(FAILED_EXCHANGE_CONTENT_MAX_CHARS));
+    let mut remaining = content;
+    while let Some(tag_start) = remaining.find(IMAGE_TAG_PREFIX) {
+        result.push_str(&remaining[..tag_start]);
+        let value_start = tag_start + IMAGE_TAG_PREFIX.len();
+        let value_and_rest = &remaining[value_start..];
+        let Some(tag_end) = value_and_rest.find("@@") else {
+            result.push_str(&remaining[tag_start..]);
+            remaining = "";
+            break;
+        };
+        let value = value_and_rest[..tag_end].trim();
+        let full_tag_end = value_start + tag_end + 2;
+        if value.starts_with("data:") && tag_end > FAILED_EXCHANGE_IMAGE_TAG_MAX_CHARS {
+            result.push_str(&format!(
+                "[image attachment omitted (~{} KB) after failed request]",
+                tag_end / 1024
+            ));
+        } else {
+            result.push_str(&remaining[tag_start..full_tag_end]);
+        }
+        remaining = &remaining[full_tag_end..];
+    }
+    result.push_str(remaining);
+
+    if result.len() > FAILED_EXCHANGE_CONTENT_MAX_CHARS {
+        let original_kb = result.len() / 1024;
+        let mut end = FAILED_EXCHANGE_CONTENT_MAX_CHARS;
+        while end > 0 && !result.is_char_boundary(end) {
+            end -= 1;
+        }
+        result.truncate(end);
+        result.push_str(&format!(
+            "\n[...failed exchange content truncated, original ~{original_kb} KB...]"
+        ));
+    }
+    result
+}
+
 /// Persist a failed exchange (user messages + error assistant message) and
 /// return the resolved conversation id together with the persisted user
 /// message ids. The ids are the rollback boundary for failed turns: the
@@ -456,7 +515,7 @@ pub fn store_failed_chat_exchange(
     let request_messages = request_messages
         .iter()
         .filter_map(|message| {
-            let content = message.content.trim();
+            let content = sanitize_failed_exchange_content(message.content.trim());
             (!content.is_empty()).then(|| ChatContextMessage {
                 role: message.role.trim().to_string(),
                 content: content.to_string(),
@@ -999,4 +1058,144 @@ pub fn reset_conversation_run_stats(
         .map_err(|error| {
             database::database_error(database_path, "reset conversation run stats", error)
         })
+}
+
+#[cfg(test)]
+mod failed_exchange_sanitize_tests {
+    use super::{
+        sanitize_failed_exchange_content, store_failed_chat_exchange,
+        FAILED_EXCHANGE_CONTENT_MAX_CHARS, FAILED_EXCHANGE_IMAGE_TAG_MAX_CHARS,
+    };
+
+    #[test]
+    fn replaces_oversized_inline_base64_image_tag() {
+        let payload = "A".repeat(FAILED_EXCHANGE_IMAGE_TAG_MAX_CHARS * 2);
+        let content = format!("look at this @@image:data:image/png;base64,{payload}@@ end");
+        let sanitized = sanitize_failed_exchange_content(&content);
+
+        assert!(!sanitized.contains("AAAA"), "base64 payload must be dropped");
+        assert!(sanitized.contains("[image attachment omitted"));
+        assert!(sanitized.starts_with("look at this "));
+        assert!(sanitized.ends_with(" end"));
+    }
+
+    #[test]
+    fn keeps_small_data_urls_and_disk_references() {
+        let small = "aGVsbG8="; // tiny valid-ish payload below the ceiling
+        let content = format!(
+            "@@image:data:image/png;base64,{small}@@ and @@image:upload/2026-01-01/hash.png@@"
+        );
+        let sanitized = sanitize_failed_exchange_content(&content);
+
+        assert_eq!(sanitized, content);
+    }
+
+    #[test]
+    fn truncates_oversized_plain_content() {
+        let content = "x".repeat(FAILED_EXCHANGE_CONTENT_MAX_CHARS * 2);
+        let sanitized = sanitize_failed_exchange_content(&content);
+
+        assert!(sanitized.len() < FAILED_EXCHANGE_CONTENT_MAX_CHARS + 256);
+        assert!(sanitized.contains("failed exchange content truncated"));
+    }
+
+    #[test]
+    fn truncation_respects_char_boundaries() {
+        // '雪' is 3 bytes; a byte-ceiling cut must not split it.
+        let content = "雪".repeat(FAILED_EXCHANGE_CONTENT_MAX_CHARS);
+        let sanitized = sanitize_failed_exchange_content(&content);
+
+        assert!(sanitized.contains("failed exchange content truncated"));
+        // Every remaining char must decode cleanly (no panics above; verify tail).
+        assert!(sanitized.rfind('雪').is_some());
+    }
+
+    #[test]
+    fn unclosed_image_tag_is_preserved() {
+        let content = "@@image:data:image/png;base64,QQQ broken tail";
+        let sanitized = sanitize_failed_exchange_content(&content);
+
+        assert_eq!(sanitized, content, "unclosed tag must be left untouched");
+    }
+
+    #[test]
+    fn failed_exchange_persists_sanitized_content() {
+        use super::load_context_messages;
+        use crate::storage::database;
+        use crate::storage::services::chat_conversations::ChatContextMessage;
+
+        let dir = std::env::temp_dir().join(format!(
+            "snow-failed-exchange-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let db_path = dir.join("test.db");
+
+        let persist_result = (|| -> napi::Result<(String, Vec<String>)> {
+            database::ensure_database(&db_path)?;
+            let huge_payload = "A".repeat(120_000);
+            let messages = vec![ChatContextMessage {
+                role: "user".to_string(),
+                content: format!(
+                    "请看图 @@image:data:image/png;base64,{huge_payload}@@ 与长文 {}",
+                    "x".repeat(300_000)
+                ),
+                tool_calls_json: None,
+                tool_results_json: None,
+                thinking: None,
+                thinking_blocks_json: None,
+            }];
+            store_failed_chat_exchange(
+                &db_path,
+                None,
+                None,
+                &messages,
+                "",
+                "test-model",
+                "test-profile",
+                "",
+                false,
+                "simulated upstream 400",
+            )
+        })();
+
+        let (conversation_id, user_ids) = match persist_result {
+            Ok(result) => result,
+            Err(error) => {
+                std::fs::remove_dir_all(&dir).ok();
+                panic!("store_failed_chat_exchange failed: {error}");
+            }
+        };
+
+        let loaded = load_context_messages(&db_path, &conversation_id)
+            .expect("load persisted exchange");
+        std::fs::remove_dir_all(&dir).ok();
+
+        assert_eq!(user_ids.len(), 1);
+        // load_context_messages feeds the NEXT request: the error assistant
+        // row is excluded, but the sanitized user message IS included — and
+        // that is exactly the row that used to blow up the context window.
+        assert_eq!(
+            loaded.len(),
+            1,
+            "only the sanitized user message enters the context"
+        );
+        let persisted = &loaded[0].content;
+        assert!(
+            !persisted.contains("AAAA"),
+            "base64 payload must not be persisted verbatim"
+        );
+        assert!(
+            persisted.contains("[image attachment omitted"),
+            "oversized image tag must be replaced by the placeholder"
+        );
+        assert!(
+            persisted.len() < 400_000,
+            "persisted content must be far smaller than the ~420 KB input"
+        );
+    }
 }

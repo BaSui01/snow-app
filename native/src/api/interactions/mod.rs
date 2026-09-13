@@ -95,6 +95,7 @@ async fn create_interactions_response_async(
         messages: &request_messages,
         max_context_tokens: api_config.max_context_tokens,
         max_output_tokens: api_config.max_tokens,
+        supports_vision: api_config.supports_vision,
         directory_id: request.directory_id.as_deref(),
         context_compaction: request.context_compaction.unwrap_or(false),
         resume_after_compaction: request.resume_after_compaction.unwrap_or(false),

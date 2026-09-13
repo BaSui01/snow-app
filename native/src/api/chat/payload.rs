@@ -49,7 +49,16 @@ pub(super) fn build_chat_completions_payload(
 
         // --- Tool result messages: emit as role "tool" with tool_call_id ---
         if role == "tool" {
-            if content.is_empty() {
+            // tool 消息的正文在 tool_results_json（content 列只是摘要）：
+            // 两者皆空才跳过。仅判 content 会把图片-only 的工具结果整条
+            // 丢弃，断裂 tool 配对并触发上游 "missing tool_call_id" 400。
+            if content.is_empty()
+                && message
+                    .tool_results_json
+                    .as_deref()
+                    .map(|raw| raw.is_empty() || raw == "{}")
+                    .unwrap_or(true)
+            {
                 continue;
             }
             let results = match message.tool_results_json {

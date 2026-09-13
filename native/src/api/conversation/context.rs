@@ -35,6 +35,15 @@ const CONTEXT_GUARD_SAFETY_MARGIN_TOKENS: usize = 8_192;
 /// locally when the estimate exceeds
 /// `maxContextTokens − max_tokens − safety margin`.
 ///
+/// Counting boundary: image base64 payloads have been persisted to disk at
+/// this point (`@@image:upload/...@@` short tags), and `@@conversation:`
+/// references expand later in the provider payload layer — neither is part of
+/// the count here. That matches how formal multimodal endpoints bill images
+/// (by pixel size, not base64 text), but relays that count `image_url`
+/// contents as plain text can still slip past this guard with very large
+/// screenshots; the failed-exchange slimming covers the retry loop in that
+/// case.
+///
 /// Fails fast when an oversized request (most commonly caused by large
 /// uploaded attachments, which expand far beyond the previous response's
 /// usage numbers that auto-compaction thresholds rely on) would be sent
@@ -49,6 +58,7 @@ fn enforce_context_token_budget(
     messages: &[ChatContextMessage],
     max_context_tokens: Option<i32>,
     max_output_tokens: Option<i32>,
+    is_compaction: bool,
 ) -> Result<()> {
     let max_context = max_context_tokens
         .and_then(|value| usize::try_from(value).ok())
@@ -91,12 +101,22 @@ fn enforce_context_token_budget(
             let measured = count_tokens_bounded(payload, budget - total);
             if measured.exceeded {
                 let estimated = total.saturating_add(measured.estimated_total());
+                // Compaction requests already carry the full context — telling
+                // the user to "/compact" while compacting is meaningless.
+                let remedy = if is_compaction {
+                    "The context is too large even for compaction. Start a \
+                     new conversation, or remove large attachments from \
+                     recent messages before retrying."
+                } else {
+                    "Compact the conversation (/compact), start a new \
+                     conversation, or remove large attachments before \
+                     retrying."
+                };
                 return Err(Error::from_reason(format!(
                     "Context window guard: the prepared request is about {estimated} tokens, \
                      exceeding the available {budget}-token context budget (maxContextTokens \
                      {max_context} minus output reserve {output_reserve} and safety margin). \
-                     Compact the conversation (/compact), start a new conversation, or remove \
-                     large attachments before retrying."
+                     {remedy}"
                 )));
             }
             total += measured.counted;
@@ -257,6 +277,7 @@ pub async fn prepare_context_request(
             &current_messages,
             request.max_context_tokens,
             request.max_output_tokens,
+            false,
         )?;
         ensure_tool_pairing(&mut current_messages);
         return Ok(PreparedConversationRequest {
@@ -458,6 +479,7 @@ pub async fn prepare_context_request(
         &messages,
         request.max_context_tokens,
         request.max_output_tokens,
+        request.context_compaction,
     )?;
 
     Ok(PreparedConversationRequest {
@@ -572,8 +594,8 @@ mod tests {
     #[test]
     fn normalize_messages_drops_empty_or_malformed_structured_messages() {
         let normalized = normalize_messages(&[
-            message("assistant", "", Some(r#"[{"id":"call-1"}]"#), None),
-            message("tool", "", None, Some(r#"[{"callId":"call-1"}]"#)),
+            message("assistant", "", Some("[]"), None),
+            message("tool", "", None, Some("not-json")),
             message("user", "", None, None),
         ]);
 
@@ -594,7 +616,7 @@ mod tests {
     #[test]
     fn context_guard_passes_small_messages_within_budget() {
         let messages = vec![context_message("system", "short system prompt")];
-        enforce_context_token_budget(&messages, Some(200_000), Some(8_192))
+        enforce_context_token_budget(&messages, Some(200_000), Some(8_192), false)
             .expect("small request must pass");
     }
 
@@ -603,7 +625,7 @@ mod tests {
         // No configured context window → guard disabled, even for huge content.
         let huge = "x".repeat(4_000_000);
         let messages = vec![context_message("user", &huge)];
-        enforce_context_token_budget(&messages, None, None)
+        enforce_context_token_budget(&messages, None, None, false)
             .expect("guard must be disabled when maxContextTokens is unset");
     }
 
@@ -612,7 +634,7 @@ mod tests {
         // max_tokens >= maxContextTokens: nothing left for messages; the
         // provider will reject such profiles anyway, so the guard stays out.
         let messages = vec![context_message("user", "hello")];
-        enforce_context_token_budget(&messages, Some(1_000), Some(1_000))
+        enforce_context_token_budget(&messages, Some(1_000), Some(1_000), false)
             .expect("contradictory config must not be shadowed by the guard");
     }
 
@@ -622,10 +644,24 @@ mod tests {
         // few hundred thousand characters comfortably exceed the budget.
         let huge = "上下文窗口超限测试载荷".repeat(60_000);
         let messages = vec![context_message("user", &huge)];
-        let error = enforce_context_token_budget(&messages, Some(200_000), None)
+        let error = enforce_context_token_budget(&messages, Some(200_000), None, false)
             .expect_err("oversized request must be rejected locally");
         assert!(error.to_string().contains("Context window guard"));
         assert!(error.to_string().contains("maxContextTokens 200000"));
+    }
+
+    #[test]
+    fn context_guard_compaction_error_suggests_new_conversation() {
+        let huge = "上下文窗口超限测试载荷".repeat(60_000);
+        let messages = vec![context_message("user", &huge)];
+        let error = enforce_context_token_budget(&messages, Some(200_000), None, true)
+            .expect_err("oversized compaction request must be rejected");
+        let message = error.to_string();
+        assert!(message.contains("too large even for compaction"));
+        assert!(
+            !message.contains("/compact),"),
+            "must not suggest compacting while a compaction is already running"
+        );
     }
 
     #[test]
@@ -641,7 +677,7 @@ mod tests {
             thinking: Some("thinking payload ".repeat(30_000)),
             thinking_blocks_json: None,
         }];
-        let error = enforce_context_token_budget(&messages, Some(150_000), None)
+        let error = enforce_context_token_budget(&messages, Some(150_000), None, false)
             .expect_err("oversized tool payloads must be rejected");
         assert!(error.to_string().contains("Context window guard"));
     }

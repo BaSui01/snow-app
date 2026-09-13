@@ -334,10 +334,25 @@ pub fn store_chat_exchange(
                         // the structured (name, callId, result) tuples needed to
                         // emit proper tool_call_id on the next request. Other
                         // message types keep raw_json as "{}".
+                        //
+                        // Tool results may embed image base64 (filesystem-read
+                        // returning `@@image:data:...@@` for an image file):
+                        // persist those inline images to disk first so the
+                        // database and every subsequent request carry short
+                        // upload tags instead of megabytes of base64.
                         let raw_json = if normalize_role(&message.role) == "tool" {
-                            message.tool_results_json.as_deref().unwrap_or("{}")
+                            match message.tool_results_json.as_deref() {
+                                Some(raw) if raw != "{}" && !raw.is_empty() => {
+                                    crate::api::conversation::images::persist_inline_images_to_disk(
+                                        raw,
+                                        database_path,
+                                    )
+                                    .unwrap_or_else(|_| raw.to_string())
+                                }
+                                _ => "{}".to_string(),
+                            }
                         } else {
-                            "{}"
+                            "{}".to_string()
                         };
                         let message_id = insert_message(
                             &transaction,
@@ -350,7 +365,7 @@ pub fn store_chat_exchange(
                             "sent",
                             None,
                             None,
-                            raw_json,
+                            &raw_json,
                             "",
                             "[]",
                             0,
@@ -591,6 +606,14 @@ pub fn append_tool_message(
     if trimmed_content.is_empty() {
         return Ok(());
     }
+
+    // 工具结果可能内嵌图片 base64（如 filesystem-read 读取图片文件时返回
+    // `@@image:data:...@@`，一张几 MB 的生成图就是上百万 token 的文本膨胀）。
+    // 入库前落盘为 `@@image:upload/...@@` 短标签：数据库与后续请求的上下文
+    // 不再被 base64 撑爆，视觉负载由 payload 层构建请求时从磁盘读回。
+    let persisted_content =
+        crate::api::conversation::images::persist_inline_images_to_disk(trimmed_content, database_path)?;
+    let trimmed_content = persisted_content.trim();
 
     database::open_connection(database_path)
         .and_then(|mut connection| {
@@ -1116,6 +1139,161 @@ mod failed_exchange_sanitize_tests {
         let sanitized = sanitize_failed_exchange_content(&content);
 
         assert_eq!(sanitized, content, "unclosed tag must be left untouched");
+    }
+
+    #[test]
+    fn append_tool_message_persists_inline_images_to_disk() {
+        use super::append_tool_message;
+        use crate::storage::database;
+        use rusqlite::OptionalExtension;
+
+        let dir = std::env::temp_dir().join(format!(
+            "snow-tool-message-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let db_path = dir.join("test.db");
+
+        // 1x1 PNG（合法魔数）模拟 filesystem-read 返回的图片工具结果。
+        let png_bytes: &[u8] = &[
+            0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48,
+            0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00,
+            0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78,
+            0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
+            0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+        ];
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(png_bytes);
+        let content = format!(
+            "[Tool: filesystem-read#call_1]
+{{\"content\":\"@@image:data:image/png;base64,{b64}@@\",\"isImage\":true}}"
+        );
+
+        let persist_result = (|| -> napi::Result<()> {
+            database::ensure_database(&db_path)?;
+            // append_tool_message 依赖会话行（外键），先创建会话。
+            super::set_conversation_modes(&db_path, "conv-tool-test", None, None, None, None, None)?;
+            append_tool_message(&db_path, "conv-tool-test", &content)
+        })();
+
+        if let Err(error) = persist_result {
+            std::fs::remove_dir_all(&dir).ok();
+            panic!("append_tool_message failed: {error}");
+        }
+
+        let stored = database::open_connection(&db_path)
+            .and_then(|connection| {
+                connection
+                    .query_row(
+                        "SELECT content FROM chat_messages WHERE conversation_id = 'conv-tool-test'",
+                        [],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .optional()
+            })
+            .expect("query stored tool message");
+        std::fs::remove_dir_all(&dir).ok();
+
+        let stored = stored.expect("tool message row must exist");
+        assert!(
+            !stored.contains("iVBORw0KGgo"),
+            "inline base64 must not be persisted verbatim"
+        );
+        assert!(
+            stored.contains("@@image:upload/"),
+            "image must be persisted to disk and referenced by a short tag"
+        );
+    }
+
+    #[test]
+    fn store_chat_exchange_persists_tool_results_with_images_on_disk() {
+        use crate::storage::database;
+        use crate::storage::services::chat_conversations::ChatContextMessage;
+        use rusqlite::OptionalExtension;
+
+        let dir = std::env::temp_dir().join(format!(
+            "snow-store-tool-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let db_path = dir.join("test.db");
+
+        let png_bytes: &[u8] = &[
+            0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48,
+            0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00,
+            0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78,
+            0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
+            0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+        ];
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(png_bytes);
+        let tool_results = format!(
+            "[{{\"name\":\"filesystem-read\",\"callId\":\"call_1\",\"result\":\"@@image:data:image/png;base64,{b64}@@\"}}]"
+        );
+
+        let messages = vec![ChatContextMessage {
+            role: "tool".to_string(),
+            content: "[Tool: filesystem-read#call_1]".to_string(),
+            tool_calls_json: None,
+            tool_results_json: Some(tool_results),
+            thinking: None,
+            thinking_blocks_json: None,
+        }];
+
+        let persist_result = (|| -> napi::Result<(String, Vec<String>)> {
+            database::ensure_database(&db_path)?;
+            super::store_failed_chat_exchange(
+                &db_path,
+                None,
+                None,
+                &messages,
+                "",
+                "test-model",
+                "test-profile",
+                "",
+                false,
+                "simulated guard rejection",
+            )
+        })();
+
+        let (conversation_id, _) = match persist_result {
+            Ok(result) => result,
+            Err(error) => {
+                std::fs::remove_dir_all(&dir).ok();
+                panic!("store_failed_chat_exchange failed: {error}");
+            }
+        };
+
+        let stored = database::open_connection(&db_path)
+            .and_then(|connection| {
+                connection
+                    .query_row(
+                        "SELECT raw_json FROM chat_messages WHERE conversation_id = ?1 AND role = 'tool'",
+                        [conversation_id],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .optional()
+            })
+            .expect("query stored tool row");
+        std::fs::remove_dir_all(&dir).ok();
+
+        let stored = stored.expect("tool row must exist");
+        assert!(
+            !stored.contains("iVBORw0KGgo"),
+            "tool result base64 must not be persisted verbatim"
+        );
+        assert!(
+            stored.contains("@@image:upload/"),
+            "tool result image must reference a short upload tag"
+        );
     }
 
     #[test]

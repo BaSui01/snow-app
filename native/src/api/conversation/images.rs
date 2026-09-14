@@ -364,12 +364,13 @@ fn parse_image_tag_value(value: &str, database_path: &Path) -> Result<Option<Cha
         return Ok(None);
     }
 
-    let media_type = extension_to_media_type(&file_path);
-    // 仅接受真实图片文件（扩展名 image/* 且内容魔数匹配）；文本文件被引用时
-    // 保留原文，避免上游视觉模型报 "cannot identify image file" 400。
-    if !media_type.starts_with("image/") || !is_supported_image_bytes(&bytes, &media_type) {
-        return Ok(None);
-    }
+    // 仅接受真实图片文件（按内容魔数嗅探，扩展名声明仅作参考——聊天工具
+    // 保存的 `.jpg` 经常实为 PNG）；文本文件被引用时保留原文，避免上游
+    // 视觉模型报 "cannot identify image file" 400。
+    let media_type = match sniff_image_media_type(&bytes) {
+        Some(actual) => actual.to_string(),
+        None => return Ok(None),
+    };
     let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
     let data_url = format!("data:{};base64,{}", media_type, data);
 
@@ -391,50 +392,69 @@ fn parse_base64_image_data_url(data_url: &str) -> Option<ChatImage> {
         return None;
     }
 
-    // 先与上游用相同标准解码器拦截非法 base64，再校验魔数确为真实图片；
+    // 先与上游用相同标准解码器拦截非法 base64，再按内容魔数嗅探真实格式；
     // 仅可解码不足以证明是图片（如文本中的伪标签 `@@image:data:image/png;base64,YQ==@@`），
-    // 否则上游视觉模型报 "cannot identify image file" 400。
+    // 否则上游视觉模型报 "cannot identify image file" 400。声明的 MIME 仅作
+    // 参考，实际以嗅探结果为准（`.jpg` 实为 PNG 时修正 media_type 与 data_url）。
     let decoded = base64::engine::general_purpose::STANDARD.decode(data).ok()?;
-    if !is_supported_image_bytes(&decoded, media_type) {
-        return None;
-    }
+    let actual_media_type = sniff_image_media_type(&decoded)?;
+
+    let data_url = format!("data:{};base64,{}", actual_media_type, data);
 
     Some(ChatImage {
-        media_type: media_type.to_string(),
+        media_type: actual_media_type.to_string(),
         data: data.to_string(),
-        data_url: value.to_string(),
+        data_url,
         source: None,
     })
 }
 
-/// 校验字节确为 media_type 声明的真实图片（魔数 / 文本头）；非图片数据
-/// 不应以 image_url 形式发给视觉模型。
-fn is_supported_image_bytes(bytes: &[u8], media_type: &str) -> bool {
-    if bytes.is_empty() {
-        return false;
+/// 嗅探字节流的真实图片格式（魔数优先于声明的 media_type）。
+///
+/// 聊天工具保存的图片扩展名经常与实际内容不符（如 `.jpg` 实为 PNG）：
+/// 前端按扩展名猜出的 data URL MIME 是错的，若只按声明校验魔数，这类
+/// 图片会被拒绝落盘、整段 base64 留在消息里（数百万 token 级的文本膨胀，
+/// 并以错误 MIME 打死视觉端点）。返回 None 表示不是任何受支持的图片。
+fn sniff_image_media_type(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Some("image/png");
     }
-    match media_type {
-        "image/png" => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
-        "image/jpeg" | "image/jpg" => bytes.starts_with(b"\xFF\xD8\xFF"),
-        "image/gif" => bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a"),
-        "image/webp" => {
-            bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP"
-        }
-        "image/bmp" => bytes.starts_with(b"BM"),
-        "image/x-icon" => bytes.starts_with(b"\x00\x00\x01\x00"),
-        "image/tiff" => bytes.starts_with(b"II*\x00") || bytes.starts_with(b"MM\x00*"),
-        "image/avif" | "image/heic" | "image/heif" => {
-            bytes.len() >= 12 && &bytes[4..8] == b"ftyp"
-        }
-        // SVG 是 XML 文本，检查头部标签即可（try_extract_svg_source 已先处理）。
-        "image/svg+xml" => {
-            let head_len = bytes.len().min(512);
-            String::from_utf8_lossy(&bytes[..head_len])
-                .trim_start()
-                .starts_with('<')
-        }
-        _ => false,
+    if bytes.starts_with(b"\xFF\xD8\xFF") {
+        return Some("image/jpeg");
     }
+    if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        return Some("image/gif");
+    }
+    if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
+        return Some("image/webp");
+    }
+    if bytes.starts_with(b"BM") {
+        return Some("image/bmp");
+    }
+    if bytes.starts_with(b"\x00\x00\x01\x00") {
+        return Some("image/x-icon");
+    }
+    if bytes.starts_with(b"II*\x00") || bytes.starts_with(b"MM\x00*") {
+        return Some("image/tiff");
+    }
+    if bytes.len() >= 12 && &bytes[4..8] == b"ftyp" {
+        return Some("image/avif");
+    }
+    // SVG 是 XML 文本，检查头部标签即可（try_extract_svg_source 已先处理）。
+    let head_len = bytes.len().min(512);
+    if String::from_utf8_lossy(&bytes[..head_len])
+        .trim_start()
+        .starts_with('<')
+    {
+        return Some("image/svg+xml");
+    }
+    None
+}
+
+/// 校验字节确为受支持的真实图片（按内容嗅探，声明的 media_type 仅作
+/// 参考）；非图片数据不应以 image_url 形式发给视觉模型。
+fn is_supported_image_bytes(bytes: &[u8], _media_type: &str) -> bool {
+    sniff_image_media_type(bytes).is_some()
 }
 
 /// If the image tag value refers to an SVG (either inline data URL or file path),
@@ -537,9 +557,12 @@ fn persist_base64_image(data_url: &str, date_dir: &Path) -> Result<Option<String
         Err(_) => return Ok(None),
     };
     // 仅持久化真实图片，避免文本中的伪标签（可解码但非图片）写成垃圾文件。
-    if !is_supported_image_bytes(&decoded, media_type) {
-        return Ok(None);
-    }
+    // MIME 以内容嗅探结果为准（声明的扩展名可能错误，如 `.jpg` 实为 PNG），
+    // 否则这类图片落盘失败、整段 base64 滞留在消息内容里撑爆上下文。
+    let media_type = match sniff_image_media_type(&decoded) {
+        Some(actual) => actual,
+        None => return Ok(None),
+    };
 
     fs::create_dir_all(date_dir).map_err(|error| {
         Error::from_reason(format!(
@@ -662,20 +685,56 @@ fn media_type_to_extension(media_type: &str) -> &str {
         "image/jpg" => "jpg",
         "image/gif" => "gif",
         "image/webp" => "webp",
+        "image/avif" => "avif",
         "image/bmp" => "bmp",
         "image/svg+xml" => "svg",
         _ => "bin",
     }
 }
 
-fn extension_to_media_type(path: &Path) -> String {
-    match path.extension().and_then(|ext| ext.to_str()) {
-        Some("png") => "image/png".to_string(),
-        Some("jpg") | Some("jpeg") => "image/jpeg".to_string(),
-        Some("gif") => "image/gif".to_string(),
-        Some("webp") => "image/webp".to_string(),
-        Some("bmp") => "image/bmp".to_string(),
-        Some("svg") => "image/svg+xml".to_string(),
-        _ => "application/octet-stream".to_string(),
+#[cfg(test)]
+mod sniff_tests {
+    use super::{parse_base64_image_data_url, sniff_image_media_type};
+
+    fn base64_encode(data: &[u8]) -> String {
+        use base64::Engine;
+        base64::engine::general_purpose::STANDARD.encode(data)
+    }
+
+    // PNG magic (89 50 4E 47 0D 0A 1A 0A) + placeholder body; JPEG magic (FF D8 FF).
+    const PNG_BYTES: &[u8] = &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3];
+    const JPEG_BYTES: &[u8] = &[0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3];
+
+    #[test]
+    fn sniffs_real_format_from_magic_bytes() {
+        assert_eq!(sniff_image_media_type(PNG_BYTES), Some("image/png"));
+        assert_eq!(sniff_image_media_type(JPEG_BYTES), Some("image/jpeg"));
+        assert_eq!(sniff_image_media_type(b"not an image at all"), None);
+    }
+
+    #[test]
+    fn parse_data_url_corrects_mismatched_declared_mime() {
+        // Chat tools often save a PNG with a `.jpg` extension: the declared
+        // MIME is wrong, sniffing must win, or the image never persists and
+        // its base64 stays inline bloating the context.
+        let data_url = format!("data:image/jpeg;base64,{}", base64_encode(PNG_BYTES));
+        let image = parse_base64_image_data_url(&data_url).expect("png-in-jpg must be accepted");
+
+        assert_eq!(image.media_type, "image/png");
+        assert!(image.data_url.starts_with("data:image/png;base64,"));
+    }
+
+    #[test]
+    fn parse_data_url_keeps_matching_mime() {
+        let data_url = format!("data:image/png;base64,{}", base64_encode(PNG_BYTES));
+        let image = parse_base64_image_data_url(&data_url).expect("matching mime must pass");
+
+        assert_eq!(image.media_type, "image/png");
+    }
+
+    #[test]
+    fn parse_data_url_rejects_non_image_payload() {
+        let data_url = format!("data:image/png;base64,{}", base64_encode(b"plain text payload"));
+        assert!(parse_base64_image_data_url(&data_url).is_none());
     }
 }

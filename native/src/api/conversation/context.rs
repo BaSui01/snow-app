@@ -19,6 +19,143 @@ use crate::storage::SubAgentConfigRecord;
 
 use super::tool_messages::ensure_tool_pairing;
 use super::{images::persist_inline_images_to_disk, ConversationContextRequest};
+use crate::api::token_counter::count_tokens_bounded;
+
+/// Fixed safety margin (tokens) subtracted from the context window by the
+/// pre-send guard: covers tokenizer drift between `o200k_base` estimates and
+/// provider-side counting, plus request envelope overhead (tool schemas,
+/// role/format wrapping) that is not part of message contents.
+const CONTEXT_GUARD_SAFETY_MARGIN_TOKENS: usize = 8_192;
+
+/// Estimated cost (tokens) of one on-disk image reference
+/// (`@@image:upload/...@@`) once the payload layer expands it into a
+/// multimodal image part. Formal vision endpoints bill by pixel dimensions
+/// (~1.1-1.6k tokens for typical sizes on Claude), so counting the tag's few
+/// characters — or worse, any residual base64 — is wildly off in both
+/// directions. A flat per-image estimate keeps the guard honest for both
+/// vision-native endpoints and text-counting relays.
+const CONTEXT_GUARD_VISION_IMAGE_TOKEN_ESTIMATE: usize = 1_600;
+
+/// Cheaper estimate for text-only endpoints: those images are replaced by
+/// textify descriptions (plus the imagegen reference block) after the guard,
+/// costing a few hundred tokens instead of vision-native pricing.
+const CONTEXT_GUARD_TEXTIFY_IMAGE_TOKEN_ESTIMATE: usize = 800;
+
+/// Pre-send context window guard.
+///
+/// Counts the tokens of the FINAL request messages (system prompt, history,
+/// attachments already persisted into contents, tool-call/result JSON and
+/// thinking payloads) with the `o200k_base` tokenizer and rejects the request
+/// locally when the estimate exceeds
+/// `maxContextTokens − max_tokens − safety margin`.
+///
+/// Counting boundary: image base64 payloads have been persisted to disk at
+/// this point (`@@image:upload/...@@` short tags), and `@@conversation:`
+/// references expand later in the provider payload layer — neither is part of
+/// the count here. That matches how formal multimodal endpoints bill images
+/// (by pixel size, not base64 text), but relays that count `image_url`
+/// contents as plain text can still slip past this guard with very large
+/// screenshots; the failed-exchange slimming covers the retry loop in that
+/// case.
+///
+/// Fails fast when an oversized request (most commonly caused by large
+/// uploaded attachments, which expand far beyond the previous response's
+/// usage numbers that auto-compaction thresholds rely on) would be sent
+/// upstream and rejected with an opaque provider 400 "context window exceeds
+/// limit". Failing here turns that into an actionable local error.
+///
+/// Disabled when `max_context_tokens` is unset/invalid (profiles without an
+/// explicit context window keep the previous behavior), or when the
+/// configuration is self-contradictory (`max_tokens` already consumes the
+/// whole window) — such profiles keep the upstream-error behavior.
+fn enforce_context_token_budget(
+    messages: &[ChatContextMessage],
+    max_context_tokens: Option<i32>,
+    max_output_tokens: Option<i32>,
+    is_compaction: bool,
+    supports_vision: bool,
+) -> Result<()> {
+    let max_context = max_context_tokens
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|value| *value > 0);
+    let Some(max_context) = max_context else {
+        return Ok(());
+    };
+    let output_reserve = max_output_tokens
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(0);
+    // Margin scales with the window (5%) but never drops below the fixed
+    // floor, so small windows still keep a proportional reserve.
+    let margin = (max_context / 20).max(CONTEXT_GUARD_SAFETY_MARGIN_TOKENS);
+    let Some(budget) = max_context
+        .checked_sub(output_reserve)
+        .and_then(|value| value.checked_sub(margin))
+        .filter(|value| *value > 0)
+    else {
+        // max_tokens >= maxContextTokens: misconfiguration the provider will
+        // reject anyway; do not shadow it with a guard error.
+        return Ok(());
+    };
+
+    let mut total: usize = 0;
+    for message in messages {
+        // On-disk image references (`@@image:upload/...@@`) expand into
+        // multimodal image parts at the payload layer — bill them at the flat
+        // per-image estimate instead of their tag text. Any residual inline
+        // `@@image:data:` base64 (persist failure fallback) is still counted
+        // as text below, which is the conservative direction.
+        let image_refs = message.content.matches("@@image:upload/").count()
+            + message
+                .tool_results_json
+                .as_deref()
+                .map(|raw| raw.matches("@@image:upload/").count())
+                .unwrap_or(0);
+        let image_unit_cost = if supports_vision {
+            CONTEXT_GUARD_VISION_IMAGE_TOKEN_ESTIMATE
+        } else {
+            CONTEXT_GUARD_TEXTIFY_IMAGE_TOKEN_ESTIMATE
+        };
+        total += image_refs * image_unit_cost;
+        let payloads = [
+            message.content.as_str(),
+            message.tool_calls_json.as_deref().unwrap_or(""),
+            message.tool_results_json.as_deref().unwrap_or(""),
+            message.thinking.as_deref().unwrap_or(""),
+            message.thinking_blocks_json.as_deref().unwrap_or(""),
+        ];
+        for payload in payloads {
+            if payload.is_empty() {
+                continue;
+            }
+            // Bounded counting stops early once the running budget is
+            // exceeded, so oversized attachments never tokenize fully.
+            let measured = count_tokens_bounded(payload, budget.saturating_sub(total));
+            if measured.exceeded {
+                let estimated = total.saturating_add(measured.estimated_total());
+                // Compaction requests already carry the full context — telling
+                // the user to "/compact" while compacting is meaningless.
+                let remedy = if is_compaction {
+                    "The context is too large even for compaction. Start a \
+                     new conversation, or remove large attachments from \
+                     recent messages before retrying."
+                } else {
+                    "Compact the conversation (/compact), start a new \
+                     conversation, or remove large attachments before \
+                     retrying."
+                };
+                return Err(Error::from_reason(format!(
+                    "Context window guard: the prepared request is about {estimated} tokens, \
+                     exceeding the available {budget}-token context budget (maxContextTokens \
+                     {max_context} minus output reserve {output_reserve} and safety margin). \
+                     {remedy}"
+                )));
+            }
+            total += measured.counted;
+        }
+    }
+    Ok(())
+}
 
 pub struct PreparedConversationRequest {
     pub conversation_id: String,
@@ -161,6 +298,18 @@ pub async fn prepare_context_request(
     };
     for message in &mut current_messages {
         message.content = persist_inline_images_to_disk(&message.content, request.database_path)?;
+        // 工具结果同样可能内嵌图片 base64（filesystem-read 读图等）。前端在
+        // 工具轮把 tool 消息直接放进下一轮请求（内存态，未经持久层），若只
+        // persist content，base64 会直达守卫被按文本计数（百万 token 级误拦）。
+        // 落盘后 payload 层构建 vision part 时从磁盘读回，发送行为不变。
+        if let Some(raw) = message.tool_results_json.as_deref() {
+            if raw.contains("@@image:data:") {
+                message.tool_results_json = Some(persist_inline_images_to_disk(
+                    raw,
+                    request.database_path,
+                )?);
+            }
+        }
     }
     if current_messages.is_empty() && !request.resume_after_compaction {
         return Err(Error::from_reason("Chat message content is required"));
@@ -168,6 +317,13 @@ pub async fn prepare_context_request(
 
     // --- Lightweight mode: skip history loading and system-prompt injection ---
     if request.skip_context {
+        enforce_context_token_budget(
+            &current_messages,
+            request.max_context_tokens,
+            request.max_output_tokens,
+            false,
+            request.supports_vision,
+        )?;
         ensure_tool_pairing(&mut current_messages);
         return Ok(PreparedConversationRequest {
             conversation_id: String::new(),
@@ -361,6 +517,17 @@ pub async fn prepare_context_request(
     //     AI API, which would reject the request outright. ---
     ensure_tool_pairing(&mut messages);
 
+    // --- Pre-send context window guard: reject requests that already exceed
+    //     the configured context budget locally, instead of paying an
+    //     upstream 400 round-trip with an opaque provider error. ---
+    enforce_context_token_budget(
+        &messages,
+        request.max_context_tokens,
+        request.max_output_tokens,
+        request.context_compaction,
+        request.supports_vision,
+    )?;
+
     Ok(PreparedConversationRequest {
         conversation_id,
         messages,
@@ -479,5 +646,120 @@ mod tests {
         ]);
 
         assert!(normalized.is_empty());
+    }
+
+    fn context_message(role: &str, content: &str) -> ChatContextMessage {
+        ChatContextMessage {
+            role: role.to_string(),
+            content: content.to_string(),
+            tool_calls_json: None,
+            tool_results_json: None,
+            thinking: None,
+            thinking_blocks_json: None,
+        }
+    }
+
+    #[test]
+    fn context_guard_passes_small_messages_within_budget() {
+        let messages = vec![context_message("system", "short system prompt")];
+        enforce_context_token_budget(&messages, Some(200_000), Some(8_192), false, true)
+            .expect("small request must pass");
+    }
+
+    #[test]
+    fn context_guard_skipped_without_max_context_tokens() {
+        // No configured context window → guard disabled, even for huge content.
+        let huge = "x".repeat(4_000_000);
+        let messages = vec![context_message("user", &huge)];
+        enforce_context_token_budget(&messages, None, None, false, true)
+            .expect("guard must be disabled when maxContextTokens is unset");
+    }
+
+    #[test]
+    fn context_guard_skipped_on_contradictory_config() {
+        // max_tokens >= maxContextTokens: nothing left for messages; the
+        // provider will reject such profiles anyway, so the guard stays out.
+        let messages = vec![context_message("user", "hello")];
+        enforce_context_token_budget(&messages, Some(1_000), Some(1_000), false, true)
+            .expect("contradictory config must not be shadowed by the guard");
+    }
+
+    #[test]
+    fn context_guard_rejects_oversized_content() {
+        // CJK text has a high token density (~1 token per character), so a
+        // few hundred thousand characters comfortably exceed the budget.
+        let huge = "上下文窗口超限测试载荷".repeat(60_000);
+        let messages = vec![context_message("user", &huge)];
+        let error = enforce_context_token_budget(&messages, Some(200_000), None, false, true)
+            .expect_err("oversized request must be rejected locally");
+        assert!(error.to_string().contains("Context window guard"));
+        assert!(error.to_string().contains("maxContextTokens 200000"));
+    }
+
+    #[test]
+    fn context_guard_bills_disk_image_tags_at_flat_estimate() {
+        // 40 upload tags * 1600 = 64k tokens + tiny text: well under the
+        // ~181k budget of a 200k window. The base64 never exists inline, so
+        // this must NOT be counted as text.
+        let tags = "@@image:upload/2026-09-14/hash.png@@".repeat(40);
+        let messages = vec![ChatContextMessage {
+            role: "tool".to_string(),
+            content: String::new(),
+            tool_calls_json: None,
+            tool_results_json: Some(tags),
+            thinking: None,
+            thinking_blocks_json: None,
+        }];
+        enforce_context_token_budget(&messages, Some(200_000), None, false, true)
+            .expect("40 disk image refs must fit a 200k window");
+    }
+
+    #[test]
+    fn context_guard_still_rejects_when_image_refs_alone_exceed_budget() {
+        // 400 tags * 1600 = 640k > 200k window: even flat estimates must trip
+        // the guard when image count alone blows the budget.
+        let tags = "@@image:upload/2026-09-14/hash.png@@".repeat(400);
+        let messages = vec![ChatContextMessage {
+            role: "tool".to_string(),
+            content: String::new(),
+            tool_calls_json: None,
+            tool_results_json: Some(tags),
+            thinking: None,
+            thinking_blocks_json: None,
+        }];
+        enforce_context_token_budget(&messages, Some(200_000), None, false, true)
+            .expect_err("400 image refs must exceed a 200k window");
+    }
+
+    #[test]
+    fn context_guard_compaction_error_suggests_new_conversation() {
+        let huge = "上下文窗口超限测试载荷".repeat(60_000);
+        let messages = vec![context_message("user", &huge)];
+        let error = enforce_context_token_budget(&messages, Some(200_000), None, true, true)
+            .expect_err("oversized compaction request must be rejected");
+        let message = error.to_string();
+        assert!(message.contains("too large even for compaction"));
+        assert!(
+            !message.contains("/compact),"),
+            "must not suggest compacting while a compaction is already running"
+        );
+    }
+
+    #[test]
+    fn context_guard_counts_tool_payloads_and_thinking() {
+        // The content alone fits, but tool results + thinking push the total
+        // over the budget — the guard must see every payload the providers
+        // serialize into the request.
+        let messages = vec![ChatContextMessage {
+            role: "tool".to_string(),
+            content: String::new(),
+            tool_calls_json: None,
+            tool_results_json: Some("tool result payload ".repeat(30_000)),
+            thinking: Some("thinking payload ".repeat(30_000)),
+            thinking_blocks_json: None,
+        }];
+        let error = enforce_context_token_budget(&messages, Some(150_000), None, false, true)
+            .expect_err("oversized tool payloads must be rejected");
+        assert!(error.to_string().contains("Context window guard"));
     }
 }

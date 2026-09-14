@@ -42,10 +42,23 @@ pub(super) fn build_chat_completions_payload(
     let has_user_system_prompts = !user_system_prompts.is_empty();
     let mut builtin_system_parts = Vec::new();
     let mut payload_messages = Vec::new();
+    // Chat Completions 的 tool 消息 content 只接受字符串（DeepSeek 等严格
+    // 实现对数组 content 报 "Invalid input"），因此工具结果里的图片不能附
+    // 在 tool 消息上。它们先累积在这里，在该 assistant 的全部 tool 消息
+    // 发完（遇下一条非 tool 消息）后作为一条 user 多模态消息发出——配对
+    // 顺序 assistant(tool_calls) → tool×N → user(images) 是合法形态。
+    let mut pending_tool_image_parts: Vec<Value> = Vec::new();
 
     for message in messages {
         let content = message.content.trim();
         let role = message.role.trim();
+
+        // Flush accumulated tool-result images before any non-tool message:
+        // the synthetic user message must come after ALL tool replies of the
+        // same assistant turn to keep tool_call_id pairing consecutive.
+        if role != "tool" {
+            flush_tool_image_parts(&mut payload_messages, &mut pending_tool_image_parts);
+        }
 
         // --- Tool result messages: emit as role "tool" with tool_call_id ---
         if role == "tool" {
@@ -102,33 +115,22 @@ pub(super) fn build_chat_completions_payload(
                         }));
                     }
                 } else {
-                    // Chat Completions `tool` messages accept structured
-                    // multimodal content blocks, so image results stay
-                    // attached to their own tool message. Inserting a
-                    // synthetic user message here would break the required
-                    // pairing (every assistant tool call must be answered by
-                    // consecutive tool messages) and the endpoint rejects the
-                    // request with 400 invalid_request_error — notably when
-                    // several image-reading calls run in parallel.
-                    let content = if tool_result.images.is_empty() {
-                        json!(text)
-                    } else {
-                        let mut parts = Vec::new();
-                        if !text.is_empty() {
-                            parts.push(json!({ "type": "text", "text": text }));
-                        }
-                        parts.extend(tool_result.images.iter().map(|image| {
-                            json!({
-                                "type": "image_url",
-                                "image_url": { "url": image.data_url },
-                            })
+                    // Chat Completions 的 tool 消息 content 只接受字符串：
+                    // DeepSeek 等严格实现对数组 content（含 image_url block）
+                    // 报 400 "Invalid input"（param=messages.N.content）。
+                    // 图片改入 pending 缓冲，随后作为一条 user 多模态消息
+                    // 发出；tool 消息本身携带文本占位，保持 tool_call_id
+                    // 配对完整。
+                    for image in &tool_result.images {
+                        pending_tool_image_parts.push(json!({
+                            "type": "image_url",
+                            "image_url": { "url": image.data_url },
                         }));
-                        Value::Array(parts)
-                    };
+                    }
                     payload_messages.push(json!({
                         "role": "tool",
                         "tool_call_id": tool_result.call_id,
-                        "content": content,
+                        "content": text,
                     }));
                 }
             }
@@ -235,6 +237,8 @@ pub(super) fn build_chat_completions_payload(
         payload_messages.push(msg);
     }
 
+    flush_tool_image_parts(&mut payload_messages, &mut pending_tool_image_parts);
+
     // When user system prompts are present, emit them as a single `system`
     // message with multiple content blocks and demote the built-in prompt
     // to a leading `user` message (Snow CLI PR #127).
@@ -312,6 +316,22 @@ pub(super) fn build_chat_completions_payload(
     Ok(payload)
 }
 
+/// Flush accumulated tool-result image parts as one synthetic user message.
+///
+/// Chat Completions 的 tool 消息 content 只接受字符串，工具结果里的图片
+/// 因此暂存在 `pending` 中；等该 assistant 回合的全部 tool 消息发完后，
+/// 以一条 user 多模态消息统一发出，保持 tool_call_id 配对连续。
+/// 用 `std::mem::take` 转移所有权，避免对含 base64 的大 part 做深拷贝。
+fn flush_tool_image_parts(payload_messages: &mut Vec<Value>, pending: &mut Vec<Value>) {
+    if pending.is_empty() {
+        return;
+    }
+    payload_messages.push(json!({
+        "role": "user",
+        "content": std::mem::take(pending),
+    }));
+}
+
 fn normalize_message_role(role: &str) -> &str {
     match role.trim() {
         "assistant" => "assistant",
@@ -338,4 +358,224 @@ pub(crate) fn build_chat_reasoning_effort(config_json: &str) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty() && *value != "none")
         .map(ToString::to_string)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_request() -> ResponsesApiRequest {
+        ResponsesApiRequest {
+            messages: Vec::new(),
+            model: Some("gpt-4o".to_string()),
+            api_profile: None,
+            conversation_id: None,
+            previous_response_id: None,
+            directory_id: None,
+            checkpoint_id: None,
+            context_compaction: None,
+            resume_after_compaction: None,
+            sub_agent_tools_json: None,
+            sub_agent_system_prompt: None,
+            sub_agent_config_profile: None,
+            skip_context: None,
+            disable_tools: None,
+            internal_recovery_prompt: None,
+            plan_mode: None,
+            goal_mode: None,
+            worktree_mode: None,
+            thinking_strength: None,
+            responses_fast_mode: None,
+            workflow_mode: None,
+            remote_role_content: None,
+            remote_include_global_rules: None,
+        }
+    }
+
+    fn create_test_record() -> ApiConfigRecord {
+        ApiConfigRecord {
+            id: "1".to_string(),
+            profile_name: "default".to_string(),
+            display_name: "Default".to_string(),
+            is_active: true,
+            base_url: "http://localhost".to_string(),
+            base_url_mode: "default".to_string(),
+            api_key: "test-key".to_string(),
+            request_method: "chat".to_string(),
+            advanced_model: "gpt-4o".to_string(),
+            basic_model: "gpt-4o".to_string(),
+            supports_vision: true,
+            vision_base_url: "".to_string(),
+            vision_base_url_mode: "default".to_string(),
+            vision_api_key: "".to_string(),
+            vision_request_method: "chat".to_string(),
+            vision_model: "".to_string(),
+            max_context_tokens: None,
+            max_tokens: None,
+            stream_idle_timeout_sec: None,
+            enable_auto_compress: false,
+            auto_compress_threshold: None,
+            max_retries: None,
+            retry_base_delay_ms: None,
+            partial_retry_max_chars: None,
+            system_prompt_ids_json: "[]".to_string(),
+            custom_header_scheme_id: "".to_string(),
+            config_json: "{}".to_string(),
+            source: "manual".to_string(),
+            updated_at: "".to_string(),
+        }
+    }
+
+    const TINY_PNG_BASE64: &str =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+    fn message(role: &str, content: &str) -> ChatContextMessage {
+        ChatContextMessage {
+            role: role.to_string(),
+            content: content.to_string(),
+            tool_calls_json: None,
+            tool_results_json: None,
+            thinking: None,
+            thinking_blocks_json: None,
+        }
+    }
+
+    fn assistant_with_calls(call_ids: &[&str]) -> ChatContextMessage {
+        let calls: Vec<Value> = call_ids
+            .iter()
+            .map(|id| {
+                json!({
+                    "id": id,
+                    "type": "function",
+                    "function": { "name": "read", "arguments": "{}" }
+                })
+            })
+            .collect();
+        ChatContextMessage {
+            role: "assistant".to_string(),
+            content: String::new(),
+            tool_calls_json: Some(Value::Array(calls).to_string()),
+            tool_results_json: None,
+            thinking: None,
+            thinking_blocks_json: None,
+        }
+    }
+
+    fn tool_message(call_id: &str, result: &str) -> ChatContextMessage {
+        ChatContextMessage {
+            role: "tool".to_string(),
+            content: "tool result summary".to_string(),
+            tool_calls_json: None,
+            tool_results_json: Some(
+                json!([{ "name": "read", "callId": call_id, "result": result }]).to_string(),
+            ),
+            thinking: None,
+            thinking_blocks_json: None,
+        }
+    }
+
+    /// The exact shape filesystem-read returns for image files
+    /// (`{"content":"@@image:...@@","isImage":true}`).
+    fn image_tool_message(call_id: &str) -> ChatContextMessage {
+        let result = format!(
+            "{{\"content\":\"@@image:data:image/png;base64,{}@@\",\"isImage\":true}}",
+            TINY_PNG_BASE64
+        );
+        tool_message(call_id, &result)
+    }
+
+    fn build_payload_with_messages(messages: Vec<ChatContextMessage>) -> Value {
+        let request = create_test_request();
+        let api_record = create_test_record();
+        build_chat_completions_payload(&messages, Path::new(""), &request, &api_record, None, &[])
+            .unwrap()
+    }
+
+    /// The synthesized user message must land only after every tool reply of
+    /// the same turn, keeping tool_call_id pairing contiguous (OpenAI requires
+    /// each assistant tool_calls message to be immediately followed by the
+    /// matching tool messages).
+    #[test]
+    fn tool_result_images_flush_after_all_tool_replies() {
+        let payload = build_payload_with_messages(vec![
+            message("user", "read and screenshot"),
+            assistant_with_calls(&["call_1", "call_2"]),
+            tool_message("call_1", "file contents"),
+            image_tool_message("call_2"),
+            message("assistant", "done"),
+        ]);
+        let messages = payload["messages"].as_array().unwrap();
+        // user, assistant(+tool_calls), tool, tool, synthetic user, assistant
+        assert_eq!(messages.len(), 6);
+        assert_eq!(messages[1]["role"], "assistant");
+        assert!(messages[1]["tool_calls"].is_array());
+        assert_eq!(messages[2]["role"], "tool");
+        assert_eq!(messages[3]["role"], "tool");
+        assert_eq!(messages[4]["role"], "user");
+        assert_eq!(messages[5]["role"], "assistant");
+
+        // Exactly one synthetic user message holds the image.
+        let image_messages: Vec<_> = messages
+            .iter()
+            .filter(|m| m["role"] == "user" && m["content"].is_array())
+            .collect();
+        assert_eq!(image_messages.len(), 1);
+        let parts = image_messages[0]["content"].as_array().unwrap();
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0]["type"], "image_url");
+    }
+
+    /// Tool message content stays a plain string so strict providers accept
+    /// it; the base64 image never appears inside a tool message.
+    #[test]
+    fn tool_message_content_is_plain_text() {
+        let payload = build_payload_with_messages(vec![
+            message("user", "screenshot"),
+            assistant_with_calls(&["call_1"]),
+            image_tool_message("call_1"),
+            message("assistant", "ok"),
+        ]);
+        let messages = payload["messages"].as_array().unwrap();
+        for message in messages.iter().filter(|m| m["role"] == "tool") {
+            let content = message["content"].as_str().unwrap();
+            assert!(!content.contains("@@image:"));
+            assert!(!content.contains(TINY_PNG_BASE64));
+        }
+    }
+
+    /// A turn whose tool results have no images must not gain a synthetic
+    /// empty user message.
+    #[test]
+    fn no_images_means_no_synthetic_user_message() {
+        let payload = build_payload_with_messages(vec![
+            message("user", "hi"),
+            assistant_with_calls(&["call_1", "call_2"]),
+            tool_message("call_1", "plain result"),
+            tool_message("call_2", "another plain result"),
+            message("assistant", "ok"),
+        ]);
+        let messages = payload["messages"].as_array().unwrap();
+        // user, assistant, tool, tool, assistant — no extra message.
+        assert_eq!(messages.len(), 5);
+        let roles: Vec<_> = messages
+            .iter()
+            .map(|m| m["role"].as_str().unwrap())
+            .collect();
+        assert_eq!(roles, vec!["user", "assistant", "tool", "tool", "assistant"]);
+    }
+
+    /// If the last message of the request is a tool result with an image, the
+    /// trailing flush still emits the synthetic user message.
+    #[test]
+    fn trailing_tool_image_flushes_at_end() {
+        let payload = build_payload_with_messages(vec![
+            message("user", "screenshot"),
+            assistant_with_calls(&["call_1"]),
+            image_tool_message("call_1"),
+        ]);
+        let messages = payload["messages"].as_array().unwrap();
+        let last = messages.last().unwrap();
+        assert_eq!(last["role"], "user");
+        assert_eq!(last["content"][0]["type"], "image_url");
+    }
 }

@@ -98,6 +98,10 @@ pub struct McpProjectServerStatus {
     pub global_enabled: bool,
     pub enabled: bool,
     pub tools: Vec<McpProjectToolStatus>,
+    /// 工具尚未从进程内缓存获得（需要后台发现）。保存/启停/删除配置后的
+    /// 快速列表用它标记待发现的服务器，由前端后台补发现，避免阻塞保存；
+    /// 全量发现模式（`list_mcp_project_servers`）下恒为 false。
+    pub tools_pending: bool,
     pub error: Option<String>,
 }
 
@@ -187,6 +191,24 @@ pub async fn list_mcp_server_tools(config_server_id: String) -> napi::Result<Vec
 pub async fn list_mcp_project_servers(
     project_id: String,
 ) -> napi::Result<Vec<McpProjectServerStatus>> {
+    collect_project_server_statuses(project_id, true).await
+}
+
+/// 项目 MCP 服务器快速列表：外部服务器工具**只读进程内缓存**（不连接
+/// 服务器），未命中的服务器以 `tools_pending` 标记，由前端在后台补发现。
+/// 保存 / 启停 / 删除配置后的列表刷新走这里 —— 配置写入本就只应做持久化，
+/// 不能被慢服务器（如 Windows 上冷启动的 npx stdio）的 connect +
+/// tools/list 拖住。
+pub async fn list_mcp_project_servers_cached(
+    project_id: String,
+) -> napi::Result<Vec<McpProjectServerStatus>> {
+    collect_project_server_statuses(project_id, false).await
+}
+
+async fn collect_project_server_statuses(
+    project_id: String,
+    discover_missing_tools: bool,
+) -> napi::Result<Vec<McpProjectServerStatus>> {
     let project_id = required_value(project_id, "Project id")?;
     let scope = load_project_scope(Some(&project_id))
         .await?
@@ -248,13 +270,16 @@ pub async fn list_mcp_project_servers(
                 global_enabled,
                 enabled,
                 tools: to_project_tool_statuses(&tools, &scope),
+                // 内置服务器工具来自进程内注册表，无需发现。
+                tools_pending: false,
                 error,
             }
         })
         .collect::<Vec<_>>();
 
-    // 外部服务器：并发发现已启用服务器的工具并随列表一并返回
-    // （进程内 TTL 缓存，重复请求直接命中，无需前端逐个 IPC）。
+    // 外部服务器：全量模式并发发现已启用服务器的工具并随列表一并返回
+    // （进程内 TTL 缓存，重复请求直接命中，无需前端逐个 IPC）；快速模式
+    // 只读缓存，未命中的服务器以 tools_pending 交给前端后台补发现。
     // 单个服务器发现失败只记录 error、工具留空，不影响其他服务器
     // 与整体列表——避免「一个服务器连不上，全部工具加载失败」。
     let discovered = stream::iter(
@@ -271,21 +296,36 @@ pub async fn list_mcp_project_servers(
                     && (project_owned || scope.is_server_enabled(&scope_server_id));
                 let global_enabled = external_server.global_enabled;
                 async move {
-                    let (tools, error) = if enabled && global_enabled {
-                        match super::external::discover_server_tools(
-                            Some(&project_id),
-                            &external_server.config_server_id,
-                            false,
-                        )
-                        .await
-                        {
-                            Ok(found) => (to_project_tool_statuses(&found, &scope), None),
-                            Err(discovery_error) => {
-                                (Vec::new(), Some(discovery_error.reason.clone()))
+                    let (tools, tools_pending, error) = if enabled && global_enabled {
+                        if discover_missing_tools {
+                            match super::external::discover_server_tools(
+                                Some(&project_id),
+                                &external_server.config_server_id,
+                                false,
+                            )
+                            .await
+                            {
+                                Ok(found) => {
+                                    (to_project_tool_statuses(&found, &scope), false, None)
+                                }
+                                Err(discovery_error) => {
+                                    (Vec::new(), false, Some(discovery_error.reason.clone()))
+                                }
+                            }
+                        } else {
+                            match super::external::cached_discovery_tools(
+                                Some(&project_id),
+                                &external_server.config_server_id,
+                                &external_server.public_name,
+                            ) {
+                                Some(cached) => {
+                                    (to_project_tool_statuses(&cached, &scope), false, None)
+                                }
+                                None => (Vec::new(), true, None),
                             }
                         }
                     } else {
-                        (Vec::new(), None)
+                        (Vec::new(), false, None)
                     };
                     McpProjectServerStatus {
                         id: scope_server_id,
@@ -294,6 +334,7 @@ pub async fn list_mcp_project_servers(
                         global_enabled,
                         enabled,
                         tools,
+                        tools_pending,
                         error,
                     }
                 }
@@ -395,13 +436,17 @@ pub async fn set_mcp_project_server_enabled(
         }
     }
 
+    // 服务器启停只写 scope 黑名单，工具列表在读取时过滤（见
+    // to_project_tool_statuses / tool_is_enabled），发现缓存内容与启停无关，
+    // 因此这里不失效缓存——避免启停一台服务器把其他服务器也拖进重连。
+
     if let Some(external_server_id) = server_id.strip_prefix("external:") {
         let project_servers = super::external::discover_project_servers(&project_id).await?;
         if project_servers.iter().any(|server| {
             server.config_server_id == external_server_id && server.source == "project"
         }) {
             let external_server_id = external_server_id.to_string();
-            let result = with_database_path(move |database_path| {
+            return with_database_path(move |database_path| {
                 crate::storage::services::project_mcp_server_configs::set_project_mcp_server_enabled(
                     &database_path,
                     &project_id,
@@ -410,12 +455,10 @@ pub async fn set_mcp_project_server_enabled(
                 )
             })
             .await;
-            super::external::invalidate_discovery_cache();
-            return result;
         }
     }
 
-    let result = with_database_path(move |database_path| {
+    with_database_path(move |database_path| {
         crate::storage::services::system_settings::set_mcp_project_server_enabled(
             &database_path,
             &project_id,
@@ -423,9 +466,7 @@ pub async fn set_mcp_project_server_enabled(
             enabled,
         )
     })
-    .await;
-    super::external::invalidate_discovery_cache();
-    result
+    .await
 }
 
 pub async fn set_mcp_project_tool_enabled(
@@ -458,7 +499,8 @@ pub async fn set_mcp_project_tool_enabled(
         ));
     }
 
-    let result = with_database_path(move |database_path| {
+    // 工具启停是读取时应用的黑名单，发现缓存内容不变，无需失效。
+    with_database_path(move |database_path| {
         crate::storage::services::system_settings::set_mcp_project_tool_enabled(
             &database_path,
             &project_id,
@@ -466,9 +508,7 @@ pub async fn set_mcp_project_tool_enabled(
             enabled,
         )
     })
-    .await;
-    super::external::invalidate_discovery_cache();
-    result
+    .await
 }
 
 /// 全局启停单个工具：校验工具存在于全局可见的工具集（内置或全局外部服务器）。
@@ -476,16 +516,15 @@ pub async fn set_mcp_tool_enabled(tool_name: String, enabled: bool) -> napi::Res
     let tool_name = required_value(tool_name, "MCP tool name")?;
     ensure_global_tool_exists(&tool_name).await?;
 
-    let result = with_database_path(move |database_path| {
+    // 工具启停是读取时应用的黑名单，发现缓存内容不变，无需失效。
+    with_database_path(move |database_path| {
         crate::storage::services::system_settings::set_mcp_global_tool_enabled(
             &database_path,
             &tool_name,
             enabled,
         )
     })
-    .await;
-    super::external::invalidate_discovery_cache();
-    result
+    .await
 }
 
 /// 全局批量启停工具：逐个校验存在性，全部通过后一次写入存储。
@@ -495,16 +534,15 @@ pub async fn set_mcp_tools_enabled(tool_names: Vec<String>, enabled: bool) -> na
         ensure_global_tool_exists(&tool_name).await?;
     }
 
-    let result = with_database_path(move |database_path| {
+    // 工具启停是读取时应用的黑名单，发现缓存内容不变，无需失效。
+    with_database_path(move |database_path| {
         crate::storage::services::system_settings::set_mcp_global_tools_enabled(
             &database_path,
             &tool_names,
             enabled,
         )
     })
-    .await;
-    super::external::invalidate_discovery_cache();
-    result
+    .await
 }
 
 /// 项目批量启停工具：逐个校验存在性（builtin/external 分支），全部通过后一次写入存储。
@@ -540,7 +578,8 @@ pub async fn set_mcp_project_tools_enabled(
         }
     }
 
-    let result = with_database_path(move |database_path| {
+    // 工具启停是读取时应用的黑名单，发现缓存内容不变，无需失效。
+    with_database_path(move |database_path| {
         crate::storage::services::system_settings::set_mcp_project_tools_enabled(
             &database_path,
             &project_id,
@@ -548,9 +587,7 @@ pub async fn set_mcp_project_tools_enabled(
             enabled,
         )
     })
-    .await;
-    super::external::invalidate_discovery_cache();
-    result
+    .await
 }
 
 /// 校验工具存在于全局可见的工具集（内置工具或已配置的全局外部服务器）中。

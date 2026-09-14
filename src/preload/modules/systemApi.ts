@@ -768,6 +768,16 @@ export const systemApi = {
     projectId: string,
   ): Promise<McpProjectServerStatus[]> =>
     ipcRenderer.invoke("mcp:list-project-servers", projectId),
+  /**
+   * 项目 MCP 服务器快速列表：外部服务器工具只读 Rust 端进程内缓存，
+   * 不连接服务器；`toolsPending` 为 true 的服务器需要后台补发现
+   * （见 `listMcpProjectServerTools`）。保存 / 启停 / 删除配置后的刷新
+   * 用它，避免被慢服务器的工具发现阻塞。
+   */
+  listMcpProjectServersCached: (
+    projectId: string,
+  ): Promise<McpProjectServerStatus[]> =>
+    ipcRenderer.invoke("mcp:list-project-servers-cached", projectId),
   listMcpProjectServerTools: (
     projectId: string,
     serverId: string,

@@ -1227,6 +1227,8 @@ impl ConfigService {
                     format!("Failed to sync MCP server config to app database: {error}"),
                 )
             })?;
+            // 配置写入后只失效这台服务器的工具发现缓存（其余服务器保持命中）。
+            crate::mcp::external::invalidate_server_discovery_cache(&input.server_id);
         }
 
         // 差集删除：DB 中 source=snow-cli 的 global:* 孤儿条目。
@@ -1247,6 +1249,7 @@ impl ConfigService {
                         format!("Failed to delete stale MCP server config: {error}"),
                     )
                 })?;
+                crate::mcp::external::invalidate_server_discovery_cache(&item.server_id);
             }
         }
         Ok(())
@@ -1273,6 +1276,7 @@ impl ConfigService {
                         format!("Failed to delete MCP server config: {error}"),
                     )
                 })?;
+                crate::mcp::external::invalidate_server_discovery_cache(&item.server_id);
             }
         }
         Ok(())

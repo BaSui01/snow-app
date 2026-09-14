@@ -56,6 +56,30 @@ type McpSettingsPanelProps = {
 
 type McpScope = "global" | "project";
 
+/**
+ * 后台补发现项目服务器工具时的并发上限。与 Rust 端全量发现的并发度分开：
+ * 这里逐台触发单服务器发现（内部读写进程内缓存），喂满并发即可，
+ * 不必把设置面板变成连接风暴。
+ */
+const PROJECT_TOOL_DISCOVERY_CONCURRENCY = 3;
+
+/**
+ * 把服务器列表里已返回的工具合并进本地缓存（工具为空的服务器保留旧值，
+ * 避免快速列表 + 后台发现期间列表闪空）。
+ */
+const mergeServerTools = (
+  previous: Record<string, McpServerTool[]>,
+  servers: McpProjectServerStatus[],
+): Record<string, McpServerTool[]> => {
+  const next = { ...previous };
+  servers.forEach((server) => {
+    if (server.tools.length > 0) {
+      next[server.id] = server.tools;
+    }
+  });
+  return next;
+};
+
 export function McpSettingsPanel({
   activeDirectory,
   onClose,
@@ -94,8 +118,115 @@ export function McpSettingsPanel({
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const loadGenerationRef = useRef(0);
+  // 正在进行后台工具发现的服务器（按 scope 服务器 id 去重），
+  // 避免同一台服务器被并发发现两次。
+  const discoveringServerIdsRef = useRef<Set<string>>(new Set());
 
   const isBusy = isLoading || isSaving || isReleasing;
+
+  /**
+   * 单台项目服务器的工具发现：调用 Rust 端发现（内部读写进程内缓存），
+   * 成功后写入 toolsByServerId。后台补发现与手动「获取工具」共用。
+   */
+  const fetchProjectServerTools = useCallback(
+    async (
+      projectId: string,
+      scopeServerId: string,
+      generation: number,
+    ): Promise<McpServerTool[]> => {
+      const tools = await window.snow.listMcpProjectServerTools(
+        projectId,
+        scopeServerId,
+      );
+      if (loadGenerationRef.current === generation) {
+        setToolsByServerId((previous) => ({
+          ...previous,
+          [scopeServerId]: tools,
+        }));
+      }
+      return tools;
+    },
+    [],
+  );
+
+  /**
+   * 后台补发现 `toolsPending` 的服务器：并发上限
+   * PROJECT_TOOL_DISCOVERY_CONCURRENCY，逐台显示「发现中」，单台失败静默
+   * （工具数保持待获取，用户可手动重试）。整个过程不阻塞列表刷新与保存。
+   */
+  const discoverPendingProjectServers = useCallback(
+    async (
+      projectId: string,
+      servers: McpProjectServerStatus[],
+      generation: number,
+    ): Promise<void> => {
+      const pendingIds = servers
+        .filter((server) => server.toolsPending)
+        .map((server) => server.id)
+        .filter((serverId) => !discoveringServerIdsRef.current.has(serverId));
+      if (pendingIds.length === 0) {
+        return;
+      }
+      pendingIds.forEach((serverId) =>
+        discoveringServerIdsRef.current.add(serverId),
+      );
+      setFetchingToolServerIds(
+        (previous) => new Set([...previous, ...pendingIds]),
+      );
+      // 可变工作队列：多个 worker 共同消费（updater 里用的是上面的快照）。
+      const queue = [...pendingIds];
+
+      const worker = async (): Promise<void> => {
+        for (;;) {
+          const serverId = queue.shift();
+          if (!serverId) {
+            return;
+          }
+          try {
+            await fetchProjectServerTools(projectId, serverId, generation);
+          } catch {
+            // 后台发现失败不打扰用户：保留待获取状态，可手动重试。
+          } finally {
+            discoveringServerIdsRef.current.delete(serverId);
+            setFetchingToolServerIds((previous) => {
+              const next = new Set(previous);
+              next.delete(serverId);
+              return next;
+            });
+          }
+        }
+      };
+
+      await Promise.all(
+        Array.from(
+          {
+            length: Math.min(PROJECT_TOOL_DISCOVERY_CONCURRENCY, queue.length),
+          },
+          () => worker(),
+        ),
+      );
+    },
+    [fetchProjectServerTools],
+  );
+
+  /**
+   * 快速刷新项目服务器列表：只读 Rust 端进程内工具缓存（不连接服务器），
+   * 待发现的服务器交给后台补发现。保存 / 启停 / 删除配置后的刷新都走它，
+   * 保证配置写入立即返回，不被慢服务器的 connect + tools/list 拖住。
+   */
+  const refreshProjectServers = useCallback(
+    async (projectId: string, generation: number): Promise<void> => {
+      const nextServers =
+        await window.snow.listMcpProjectServersCached(projectId);
+      if (loadGenerationRef.current !== generation) {
+        return;
+      }
+      setProjectServers(nextServers);
+      setToolsByServerId((previous) => mergeServerTools(previous, nextServers));
+      void discoverPendingProjectServers(projectId, nextServers, generation);
+    },
+    [discoverPendingProjectServers],
+  );
 
   const load = useCallback(async (): Promise<void> => {
     const generation = loadGenerationRef.current + 1;
@@ -108,7 +239,9 @@ export function McpSettingsPanel({
         await Promise.all([
           window.snow.listMcpServerConfigs(),
           activeDirectory
-            ? window.snow.listMcpProjectServers(activeDirectory.directoryId)
+            ? window.snow.listMcpProjectServersCached(
+                activeDirectory.directoryId,
+              )
             : Promise.resolve([]),
           activeDirectory
             ? window.snow.listProjectMcpServerConfigs(
@@ -125,15 +258,17 @@ export function McpSettingsPanel({
       setProjectServers(projectItems);
       setProjectServerConfigs(projectConfigItems);
       setImportResources(managedResources);
-      setToolsByServerId((previous) => {
-        const next = { ...previous };
-        projectItems.forEach((server) => {
-          if (server.tools.length > 0) {
-            next[server.id] = server.tools;
-          }
-        });
-        return next;
-      });
+      setToolsByServerId((previous) =>
+        mergeServerTools(previous, projectItems),
+      );
+      // 列表先渲染，工具在后台逐台发现（列表项显示「发现中」）。
+      if (activeDirectory) {
+        void discoverPendingProjectServers(
+          activeDirectory.directoryId,
+          projectItems,
+          generation,
+        );
+      }
     } catch (loadError) {
       if (loadGenerationRef.current === generation) {
         setError(
@@ -149,7 +284,7 @@ export function McpSettingsPanel({
         setIsLoading(false);
       }
     }
-  }, [activeDirectory, t]);
+  }, [activeDirectory, t, discoverPendingProjectServers]);
 
   useEffect(() => {
     void load();
@@ -413,12 +548,8 @@ export function McpSettingsPanel({
           return;
         }
         setProjectServerConfigs(items);
-        const nextProjectServers =
-          await window.snow.listMcpProjectServers(operationProjectId);
-        if (loadGenerationRef.current !== generation) {
-          return;
-        }
-        setProjectServers(nextProjectServers);
+        // 快速刷新（只读缓存）+ 后台补发现：保存本身不被工具发现阻塞。
+        await refreshProjectServers(operationProjectId, generation);
       }
 
       await adoptImportedResource(importResource);
@@ -813,15 +944,14 @@ export function McpSettingsPanel({
         return;
       }
 
-      const [nextProjectServers, nextProjectConfigs] = await Promise.all([
-        window.snow.listMcpProjectServers(operationProjectId),
-        window.snow.listProjectMcpServerConfigs(operationProjectId),
-      ]);
+      const nextProjectConfigs =
+        await window.snow.listProjectMcpServerConfigs(operationProjectId);
       if (loadGenerationRef.current !== generation) {
         return;
       }
-      setProjectServers(nextProjectServers);
       setProjectServerConfigs(nextProjectConfigs);
+      // 启停本身很快：列表刷新走快速路径，工具由后台补发现。
+      await refreshProjectServers(operationProjectId, generation);
     } catch (updateError) {
       if (loadGenerationRef.current === generation) {
         setError(
@@ -854,17 +984,14 @@ export function McpSettingsPanel({
     setError("");
     setStatus("");
     try {
-      const tools = await window.snow.listMcpProjectServerTools(
+      const tools = await fetchProjectServerTools(
         operationProjectId,
         server.serverId,
+        generation,
       );
       if (loadGenerationRef.current !== generation) {
         return;
       }
-      setToolsByServerId((previous) => ({
-        ...previous,
-        [server.serverId]: tools,
-      }));
       setStatus(
         t("settings.mcpFetchToolsSuccess", {
           defaultValue: "Fetched {{count}} tool(s) from {{name}}.",
@@ -876,13 +1003,11 @@ export function McpSettingsPanel({
         setError(formatMcpError(fetchError, t));
       }
     } finally {
-      if (loadGenerationRef.current === generation) {
-        setFetchingToolServerIds((previous) => {
-          const next = new Set(previous);
-          next.delete(server.serverId);
-          return next;
-        });
-      }
+      setFetchingToolServerIds((previous) => {
+        const next = new Set(previous);
+        next.delete(server.serverId);
+        return next;
+      });
     }
   };
 
@@ -920,12 +1045,9 @@ export function McpSettingsPanel({
         delete next[`external:${server.serverId}`];
         return next;
       });
-      const nextProjectServers =
-        await window.snow.listMcpProjectServers(operationProjectId);
-      if (loadGenerationRef.current !== generation) {
-        return;
-      }
-      setProjectServers(nextProjectServers);
+      // 删除后同样走快速刷新：被删服务器已不在列表，其他服务器缓存不受
+      // 影响（Rust 侧只失效被删服务器的缓存），无需重新连接。
+      await refreshProjectServers(operationProjectId, generation);
       setStatus(
         t("settings.mcpDeleteSuccess", {
           defaultValue: "Deleted MCP server.",

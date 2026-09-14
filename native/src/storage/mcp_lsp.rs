@@ -14,20 +14,21 @@ pub fn list_mcp_server_configs() -> Result<Vec<McpServerConfigRecord>> {
 
 pub fn upsert_mcp_server_config(item: McpServerConfigInput) -> Result<()> {
     let database_path = ensure_database_file()?;
-    let result =
-        services::mcp_server_configs::upsert_mcp_server_config(&database_path, &item);
-    if result.is_ok() {
-        crate::mcp::external::invalidate_discovery_cache();
+    let server_id = item.server_id.trim().to_string();
+    let result = services::mcp_server_configs::upsert_mcp_server_config(&database_path, &item);
+    if result.is_ok() && !server_id.is_empty() {
+        // 只失效被改动的那台服务器：保存一台配置不应把其他服务器的
+        // 工具缓存一起清掉（那会迫使下一次列表刷新重连所有服务器）。
+        crate::mcp::external::invalidate_server_discovery_cache(&server_id);
     }
     result
 }
 
 pub fn delete_mcp_server_config(server_id: String) -> Result<()> {
     let database_path = ensure_database_file()?;
-    let result =
-        services::mcp_server_configs::delete_mcp_server_config(&database_path, &server_id);
+    let result = services::mcp_server_configs::delete_mcp_server_config(&database_path, &server_id);
     if result.is_ok() {
-        crate::mcp::external::invalidate_discovery_cache();
+        crate::mcp::external::invalidate_server_discovery_cache(&server_id);
     }
     result
 }
@@ -126,13 +127,16 @@ pub fn upsert_project_mcp_server_config(
     item: McpServerConfigInput,
 ) -> Result<()> {
     let database_path = ensure_database_file()?;
+    let server_id = item.server_id.trim().to_string();
     let result = services::project_mcp_server_configs::upsert_project_mcp_server_config(
         &database_path,
         &project_id,
         &item,
     );
-    if result.is_ok() {
-        crate::mcp::external::invalidate_discovery_cache();
+    if result.is_ok() && !server_id.is_empty() {
+        // 同全局路径：只失效被改动的那台服务器（新建的项目服务器由存储层
+        // 生成 id，尚无缓存条目）。
+        crate::mcp::external::invalidate_server_discovery_cache(&server_id);
     }
     result
 }
@@ -145,7 +149,7 @@ pub fn delete_project_mcp_server_config(project_id: String, server_id: String) -
         &server_id,
     );
     if result.is_ok() {
-        crate::mcp::external::invalidate_discovery_cache();
+        crate::mcp::external::invalidate_server_discovery_cache(&server_id);
     }
     result
 }

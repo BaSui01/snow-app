@@ -31,8 +31,9 @@ use crate::mcp::servers::websearch::WebSearchCommandCallback;
 use crate::mcp::servers::workflow::validate_graph as validate_workflow_graph_impl;
 use crate::mcp::tools::{
     call_mcp_tool as call_tool, list_mcp_project_server_tools as list_project_server_tools,
-    list_mcp_project_servers as list_project_servers, list_mcp_server_tools as list_server_tools,
-    list_mcp_tools as list_all_mcp_tools,
+    list_mcp_project_servers as list_project_servers,
+    list_mcp_project_servers_cached as list_cached_project_servers,
+    list_mcp_server_tools as list_server_tools, list_mcp_tools as list_all_mcp_tools,
     set_mcp_project_server_enabled as set_project_server_enabled,
     set_mcp_project_tool_enabled as set_project_tool_enabled,
     set_mcp_project_tools_enabled as set_project_tools_enabled,
@@ -270,6 +271,16 @@ pub async fn list_mcp_project_servers(
     project_id: String,
 ) -> napi::Result<Vec<McpProjectServerStatus>> {
     list_project_servers(project_id).await
+}
+
+/// 项目 MCP 服务器快速列表：外部服务器工具只读进程内缓存（不连接服务器），
+/// 未命中的服务器以 `toolsPending` 标记，交给前端后台补发现。保存 / 启停 /
+/// 删除配置后的列表刷新使用它，避免被慢服务器的 connect + tools/list 阻塞。
+#[napi]
+pub async fn list_mcp_project_servers_cached(
+    project_id: String,
+) -> napi::Result<Vec<McpProjectServerStatus>> {
+    list_cached_project_servers(project_id).await
 }
 
 /// 返回仍注册在案的只读内置工具全名（UI 权限面板默认授权用）。

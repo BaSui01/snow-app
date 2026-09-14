@@ -1226,6 +1226,8 @@ export type McpProjectServerStatus = {
   globalEnabled: boolean;
   enabled: boolean;
   tools: McpProjectToolStatus[];
+  /** 工具尚未从缓存获得（需要后台发现）；仅快速列表会返回 true。 */
+  toolsPending: boolean;
   error?: string;
 };
 
@@ -2036,6 +2038,14 @@ export type NativeBridge = {
   listGithubSkills: () => Promise<GithubSkillRecord[]>;
   listMcpServerTools: (configServerId: string) => Promise<McpToolStatus[]>;
   listMcpProjectServers: (
+    projectId: string,
+  ) => Promise<McpProjectServerStatus[]>;
+  /**
+   * 项目 MCP 服务器快速列表：外部服务器工具只读 Rust 进程内缓存，不连接
+   * 服务器；未命中的服务器以 `toolsPending` 标记，需调用方后台补发现。
+   * 保存 / 启停 / 删除配置后的列表刷新用它，避免被慢服务器阻塞。
+   */
+  listMcpProjectServersCached: (
     projectId: string,
   ) => Promise<McpProjectServerStatus[]>;
   listMcpProjectServerTools: (

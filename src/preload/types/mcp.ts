@@ -70,15 +70,16 @@ export type McpProjectServerStatus = {
   globalEnabled: boolean;
   enabled: boolean;
   tools: McpProjectToolStatus[];
+  /**
+   * 工具尚未从 Rust 端进程内缓存获得（需要后台发现）。快速列表
+   * （`listMcpProjectServersCached`）会把它置为 true；全量列表恒为 false。
+   */
+  toolsPending: boolean;
   error?: string;
 };
 export type BashStreamChunk = {
   stream:
-    | "stdout"
-    | "stderr"
-    | "interactive_session"
-    | "tool_execution"
-    | "imagegen";
+    "stdout" | "stderr" | "interactive_session" | "tool_execution" | "imagegen";
   data: string;
 };
 

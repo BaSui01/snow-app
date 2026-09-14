@@ -1146,6 +1146,12 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to list project MCP servers",
           ),
         ),
+      listMcpProjectServersCached: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to list cached project MCP servers",
+          ),
+        ),
       listMcpProjectServerTools: () =>
         Promise.reject(
           new Error(

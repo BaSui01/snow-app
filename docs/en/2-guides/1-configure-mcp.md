@@ -66,9 +66,10 @@ Use trusted HTTPS endpoints only. An HTTP server can see tool arguments sent to 
 2. Select Global or Project scope;
 3. Click **Add Service** and choose `stdio` or `http`;
 4. Fill the transport-specific required fields, `enabled`, and optional `timeoutMs`;
-5. Save and click **Fetch Tools**;
-6. Disable unneeded servers or individual tools in the project tool list;
-7. Validate with one read-only call using minimal arguments.
+5. Save: this only persists the config and returns immediately. The list is rendered from the in-process cache first, then tools are discovered in the background per server (the row shows a spinner), so slow servers never block saving;
+6. Click the tool-count button on a row to fetch that server's tools again;
+7. Disable unneeded servers or individual tools in the project tool list;
+8. Validate with one read-only call using minimal arguments.
 
 JSON import accepts `{ "mcpServers": {...} }`, Claude-style `{ "servers": {...} }`, and a plain server map. Before importing, inspect unknown fields, commands, environment variables, headers, and destination URLs.
 
@@ -175,6 +176,8 @@ An effective tool must satisfy all of these conditions:
 - A project-owned server is itself enabled. Project-owned servers do not use the global-server project toggle, but their individual tools can still be disabled.
 
 A server appearing in Settings therefore does not guarantee that its tools enter the current Agent context. After changing global or project toggles, fetch tools again and use the actual full name in a sub-agent's `toolsJson` or a Skill's `allowed-tools`.
+
+Tool discovery results are cached in-process per server (TTL 60 seconds): a cache hit returns the list immediately. Saving, editing, or deleting one server only invalidates that server's cache entry, so other servers are never reconnected. Server and tool toggles are read-time blacklists and never invalidate the cache.
 
 ## 8. Tool-level toggles
 

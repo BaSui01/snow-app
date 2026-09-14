@@ -26,6 +26,11 @@ export type UserQuestionState = {
   status: "waiting" | "answered" | "cancelled";
   selectedOptions: string[];
   customAnswers: string[];
+  /** 中断标记：提问未被用户作答就被外部结算（会话中断、处理器销毁、工具
+   *  异常结束）。status 同时为 "cancelled"，但与用户主动"取消回答"语义
+   *  不同 —— 取消会终止 agent loop，中断后 loop 继续。卡片据此显示
+   *  "已中断"终态并停止交互，避免停在"等待回答"且点击无反馈。 */
+  interrupted?: boolean;
 };
 
 export type HookExecutionStatus =

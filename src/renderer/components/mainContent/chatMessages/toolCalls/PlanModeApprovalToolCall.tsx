@@ -17,7 +17,7 @@ const APPROVE_OPTION = "Approve and execute the plan";
 const KEEP_PLANNING_OPTION = "Keep planning";
 
 const parseApprovalResult = (
-  resultJson: string | undefined
+  resultJson: string | undefined,
 ): PlanApprovalResult | null => {
   if (!resultJson) {
     return null;
@@ -41,16 +41,23 @@ export const PlanModeApprovalToolCall = ({
   const questionState = toolCall.userQuestion;
   const parsedResult = useMemo(
     () => parseApprovalResult(toolCall.result),
-    [toolCall.result]
+    [toolCall.result],
   );
   const approved = parsedResult?.approved === true;
   const declined = parsedResult?.approved === false;
   const isWaitingForRequest = toolCall.status === "running" && !questionState;
+  // 与 AskUserQuestion 卡片同一套泄漏防护：工具已结束却未通过 approved /
+  // declined 协议结算（提问通道被中断、工具以错误 JSON 结束）时，必须显示
+  // 终态并禁用交互，否则卡片停在"等待回答"且按钮点击没有任何反馈。
+  const isInterrupted =
+    questionState?.interrupted === true ||
+    (questionState?.status === "waiting" && toolCall.status === "completed");
   const isInteractive = Boolean(
     questionState &&
-      questionState.status === "waiting" &&
-      parsedResult === null &&
-      toolCall.status !== "error"
+    questionState.status === "waiting" &&
+    parsedResult === null &&
+    !isInterrupted &&
+    (toolCall.status === "running" || toolCall.status === "pending"),
   );
 
   const submitDecision = (approvedDecision: boolean): void => {
@@ -61,17 +68,19 @@ export const PlanModeApprovalToolCall = ({
     answerUserQuestion(
       questionState.questionId,
       [approvedDecision ? APPROVE_OPTION : KEEP_PLANNING_OPTION],
-      []
+      [],
     );
   };
 
-  const statusLabel = approved
-    ? t("toolCall.planApproval.status.approved")
-    : declined
-      ? t("toolCall.planApproval.status.declined")
-      : toolCall.status === "error"
-        ? t("toolCall.planApproval.status.error")
-        : t("toolCall.planApproval.status.waiting");
+  const statusLabel = isInterrupted
+    ? t("toolCall.userQuestion.status.interrupted")
+    : approved
+      ? t("toolCall.planApproval.status.approved")
+      : declined
+        ? t("toolCall.planApproval.status.declined")
+        : toolCall.status === "error"
+          ? t("toolCall.planApproval.status.error")
+          : t("toolCall.planApproval.status.waiting");
 
   return (
     <div className="tool-call-item tool-call-plan-approval">
@@ -80,7 +89,9 @@ export const PlanModeApprovalToolCall = ({
           name={t("toolCall.planApproval.name")}
           category="interaction"
         />
-        {approved ? (
+        {isInterrupted ? (
+          <CircleX size={14} aria-hidden="true" />
+        ) : approved ? (
           <Check size={14} aria-hidden="true" />
         ) : declined ? (
           <CircleX size={14} aria-hidden="true" />
@@ -98,7 +109,7 @@ export const PlanModeApprovalToolCall = ({
         </span>
         <span
           className={`tool-call-status tool-call-status-${
-            toolCall.status === "error"
+            isInterrupted || toolCall.status === "error"
               ? "error"
               : approved
                 ? "completed"
@@ -141,11 +152,13 @@ export const PlanModeApprovalToolCall = ({
 
         <div className="tool-call-plan-approval-footer">
           <span>
-            {approved
-              ? t("toolCall.planApproval.approvedHint")
-              : declined
-                ? t("toolCall.planApproval.declinedHint")
-                : t("toolCall.planApproval.waitingHint")}
+            {isInterrupted
+              ? t("toolCall.planApproval.interruptedHint")
+              : approved
+                ? t("toolCall.planApproval.approvedHint")
+                : declined
+                  ? t("toolCall.planApproval.declinedHint")
+                  : t("toolCall.planApproval.waitingHint")}
           </span>
           {isInteractive ? (
             <div className="tool-call-plan-approval-actions">

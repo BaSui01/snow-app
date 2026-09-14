@@ -798,6 +798,7 @@ export const en = {
   "toolCall.userQuestion.status.answered": "Answered",
   "toolCall.userQuestion.status.cancelled": "Cancelled",
   "toolCall.userQuestion.status.error": "Failed",
+  "toolCall.userQuestion.status.interrupted": "Interrupted",
   "toolCall.userQuestion.optionsLabel": "Available options",
   "toolCall.userQuestion.customLabel": "Custom answers",
   "toolCall.userQuestion.customPlaceholder": "Add another answer",
@@ -807,8 +808,11 @@ export const en = {
   "toolCall.userQuestion.multiSelectHint": "Select any combination",
   "toolCall.userQuestion.cancelledHint":
     "Answer cancelled; this generation has stopped",
+  "toolCall.userQuestion.interruptedHint":
+    "The question was interrupted; the AI continued without an answer",
   "toolCall.userQuestion.cancel": "Cancel answer",
   "toolCall.userQuestion.cancelled": "Answer cancelled",
+  "toolCall.userQuestion.interrupted": "Answer interrupted",
   "toolCall.userQuestion.submit": "Submit answer",
   "toolCall.userQuestion.submitted": "Answer submitted",
   "toolCall.planApproval.name": "plan approval",
@@ -820,6 +824,8 @@ export const en = {
   "toolCall.planApproval.status.approved": "Approved",
   "toolCall.planApproval.status.declined": "Keep planning",
   "toolCall.planApproval.status.error": "Approval failed",
+  "toolCall.planApproval.interruptedHint":
+    "The approval was interrupted; the AI continued without a decision",
   "toolCall.planApproval.preparing": "Preparing approval request...",
   "toolCall.planApproval.waitingHint":
     "The AI can modify project files only after explicit approval.",

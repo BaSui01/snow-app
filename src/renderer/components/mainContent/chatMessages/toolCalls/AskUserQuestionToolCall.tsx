@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Check,
+  CircleAlert,
   Loader2,
   MessageCircleQuestion,
   Plus,
@@ -28,7 +29,7 @@ type ParsedQuestionResult = {
 };
 
 const parseQuestionArgs = (
-  argumentsJson: string
+  argumentsJson: string,
 ): ParsedQuestionArgs | null => {
   try {
     const parsed: unknown = JSON.parse(argumentsJson);
@@ -47,7 +48,7 @@ const parseQuestionArgs = (
 
     const options = record.options.filter(
       (option): option is string =>
-        typeof option === "string" && Boolean(option.trim())
+        typeof option === "string" && Boolean(option.trim()),
     );
     return {
       question: record.question.trim(),
@@ -59,7 +60,7 @@ const parseQuestionArgs = (
 };
 
 const parseQuestionResult = (
-  resultJson: string | undefined
+  resultJson: string | undefined,
 ): ParsedQuestionResult | null => {
   if (!resultJson) {
     return null;
@@ -107,11 +108,11 @@ export const AskUserQuestionToolCall = ({
   } = useChatConversationContext();
   const parsedArgs = useMemo(
     () => parseQuestionArgs(toolCall.arguments),
-    [toolCall.arguments]
+    [toolCall.arguments],
   );
   const parsedResult = useMemo(
     () => parseQuestionResult(toolCall.result),
-    [toolCall.result]
+    [toolCall.result],
   );
   const questionState = toolCall.userQuestion;
   const question = questionState?.question ?? parsedArgs?.question ?? "";
@@ -124,22 +125,28 @@ export const AskUserQuestionToolCall = ({
     questionState?.status === "answered" ||
     Boolean(parsedResult && !parsedResult.cancelled);
   const isSettled = isAnswered || isCancelled;
-  // 工具被中止（用户点停止 / 会话 abort）时 toolCall 会标记为 error，但
-  // userQuestion 状态保留在 waiting——此时 pending 已被 reject，提交/取消
-  // 都是无效操作，必须禁用表单，否则卡片看起来可交互却点了没反应。
+  // 工具已结束但没有通过 answered/cancelled 协议结算（例如提问在用户未作答
+  // 时被中断、工具以错误 JSON 结果结束）：此时 pending 已被结算，必须显示
+  // 终态并禁用表单——否则卡片会停在"等待回答"且点击没有任何反馈（提问
+  // 卡片泄漏）。注：以 error 结束的提问由状态文案显示为"提问失败"，这里
+  // 只兜底 completed（错误 JSON 结果不会把 toolCall 标为 error）。
+  const isInterrupted =
+    questionState?.interrupted === true ||
+    (!isSettled && toolCall.status === "completed");
   const isInteractive = Boolean(
-    questionState && !isSettled && toolCall.status !== "error"
+    questionState &&
+    !isSettled &&
+    !isInterrupted &&
+    (toolCall.status === "running" || toolCall.status === "pending"),
   );
 
   // 交互状态优先从草稿恢复（卡片因会话切换等重挂载后，本地 state 会丢失，
   // 草稿按 questionId 保存在 context 中，由 useEffect 同步兜底恢复）。
   const [selectedOptions, setSelectedOptions] = useState<string[]>(() =>
-    questionId
-      ? (getUserQuestionDraft(questionId)?.selectedOptions ?? [])
-      : []
+    questionId ? (getUserQuestionDraft(questionId)?.selectedOptions ?? []) : [],
   );
   const [customAnswers, setCustomAnswers] = useState<string[]>(() =>
-    questionId ? (getUserQuestionDraft(questionId)?.customAnswers ?? []) : []
+    questionId ? (getUserQuestionDraft(questionId)?.customAnswers ?? []) : [],
   );
   const [customInput, setCustomInput] = useState("");
 
@@ -149,13 +156,13 @@ export const AskUserQuestionToolCall = ({
       draft?.selectedOptions ??
         questionState?.selectedOptions ??
         parsedResult?.selectedOptions ??
-        []
+        [],
     );
     setCustomAnswers(
       draft?.customAnswers ??
         questionState?.customAnswers ??
         parsedResult?.customAnswers ??
-        []
+        [],
     );
     setCustomInput("");
   }, [
@@ -232,7 +239,7 @@ export const AskUserQuestionToolCall = ({
       selectedOptions,
       pendingCustomAnswer && !customAnswers.includes(pendingCustomAnswer)
         ? [...customAnswers, pendingCustomAnswer]
-        : customAnswers
+        : customAnswers,
     );
   };
 
@@ -246,13 +253,15 @@ export const AskUserQuestionToolCall = ({
     cancelUserQuestion(questionState.questionId);
   };
 
-  const statusLabel = isCancelled
-    ? t("toolCall.userQuestion.status.cancelled")
-    : isAnswered
-    ? t("toolCall.userQuestion.status.answered")
-    : toolCall.status === "error"
-    ? t("toolCall.userQuestion.status.error")
-    : t("toolCall.userQuestion.status.waiting");
+  const statusLabel = isInterrupted
+    ? t("toolCall.userQuestion.status.interrupted")
+    : isCancelled
+      ? t("toolCall.userQuestion.status.cancelled")
+      : isAnswered
+        ? t("toolCall.userQuestion.status.answered")
+        : toolCall.status === "error"
+          ? t("toolCall.userQuestion.status.error")
+          : t("toolCall.userQuestion.status.waiting");
 
   return (
     <div className="tool-call-item tool-call-user-question">
@@ -261,7 +270,9 @@ export const AskUserQuestionToolCall = ({
           name={t("toolCall.userQuestion.name")}
           category="interaction"
         />
-        {isCancelled ? (
+        {isInterrupted ? (
+          <CircleAlert size={14} aria-hidden="true" />
+        ) : isCancelled ? (
           <X size={14} aria-hidden="true" />
         ) : isAnswered ? (
           <Check size={14} aria-hidden="true" />
@@ -279,13 +290,13 @@ export const AskUserQuestionToolCall = ({
         </span>
         <span
           className={`tool-call-status tool-call-status-${
-            toolCall.status === "error"
+            isInterrupted || toolCall.status === "error"
               ? "error"
               : isCancelled
-              ? "cancelled"
-              : isAnswered
-              ? "completed"
-              : "running"
+                ? "cancelled"
+                : isAnswered
+                  ? "completed"
+                  : "running"
           }`}
           role="status"
           aria-live="polite"
@@ -402,9 +413,11 @@ export const AskUserQuestionToolCall = ({
 
         <div className="tool-call-user-question-footer">
           <span>
-            {isCancelled
-              ? t("toolCall.userQuestion.cancelledHint")
-              : t("toolCall.userQuestion.multiSelectHint")}
+            {isInterrupted
+              ? t("toolCall.userQuestion.interruptedHint")
+              : isCancelled
+                ? t("toolCall.userQuestion.cancelledHint")
+                : t("toolCall.userQuestion.multiSelectHint")}
           </span>
           <div className="tool-call-user-question-actions">
             {isInteractive ? (
@@ -423,7 +436,9 @@ export const AskUserQuestionToolCall = ({
               disabled={!canSubmit}
               onClick={submitAnswer}
             >
-              {isCancelled ? (
+              {isInterrupted ? (
+                <CircleAlert size={14} aria-hidden="true" />
+              ) : isCancelled ? (
                 <X size={14} aria-hidden="true" />
               ) : isAnswered ? (
                 <Check size={14} aria-hidden="true" />
@@ -431,11 +446,13 @@ export const AskUserQuestionToolCall = ({
                 <Send size={14} aria-hidden="true" />
               )}
               <span>
-                {isCancelled
-                  ? t("toolCall.userQuestion.cancelled")
-                  : isAnswered
-                  ? t("toolCall.userQuestion.submitted")
-                  : t("toolCall.userQuestion.submit")}
+                {isInterrupted
+                  ? t("toolCall.userQuestion.interrupted")
+                  : isCancelled
+                    ? t("toolCall.userQuestion.cancelled")
+                    : isAnswered
+                      ? t("toolCall.userQuestion.submitted")
+                      : t("toolCall.userQuestion.submit")}
               </span>
             </button>
           </div>

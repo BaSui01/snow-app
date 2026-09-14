@@ -4,6 +4,7 @@ import {
   Power,
   RefreshCw,
   RotateCcw,
+  Save,
   Server,
   Smartphone,
   Unplug,
@@ -19,8 +20,9 @@ import type {
   RemoteTunnelConfigInput,
   RemoteTunnelStatus,
 } from "../../../preload";
+import { useI18n } from "../../i18n";
 import { AutoDismissNotice } from "../AutoDismissNotice";
-import { CustomSelect } from "../common/CustomSelect";
+import { CustomSelect, type CustomSelectOption } from "../common/CustomSelect";
 
 type RemoteControlSettingsPanelProps = {
   onClose?: () => void;
@@ -29,8 +31,20 @@ type RemoteControlSettingsPanelProps = {
 export function RemoteControlSettingsPanel({
   onClose,
 }: RemoteControlSettingsPanelProps): React.JSX.Element {
+  const { t } = useI18n();
+  const authMethodOptions: CustomSelectOption[] = [
+    {
+      value: "password",
+      label: t("remoteControl.authPassword", { defaultValue: "SSH 密码" }),
+    },
+    {
+      value: "privateKey",
+      label: t("remoteControl.authPrivateKey", { defaultValue: "SSH 私钥" }),
+    },
+  ];
   const [state, setState] = useState<RemoteControlPairingState | null>(null);
   const [selectedUrl, setSelectedUrl] = useState("");
+  const [portDraft, setPortDraft] = useState("");
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [wanQrDataUrl, setWanQrDataUrl] = useState("");
   const [tunnel, setTunnel] = useState<RemoteTunnelStatus | null>(null);
@@ -39,6 +53,7 @@ export function RemoteControlSettingsPanel({
     autoConnect: true,
     serverAddr: "",
     serverPort: "7000",
+    remotePort: "18080",
     publicOrigin: "",
     tlsServerName: "",
     token: "",
@@ -61,6 +76,8 @@ export function RemoteControlSettingsPanel({
     rootDomain: "",
     sshPort: "22",
     sshUsername: "root",
+    frpBindPort: "7000",
+    frpRemotePort: "18080",
     authMethod: "password" as "password" | "privateKey",
     password: "",
     privateKeyPath: "",
@@ -86,6 +103,7 @@ export function RemoteControlSettingsPanel({
         autoConnect: next.config.autoConnect,
         serverAddr: next.config.serverAddr,
         serverPort: String(next.config.serverPort),
+        remotePort: String(next.config.remotePort),
         publicOrigin: next.config.publicOrigin,
         tlsServerName: next.config.tlsServerName,
       }));
@@ -105,17 +123,29 @@ export function RemoteControlSettingsPanel({
     } catch (error) {
       setNotice({
         message:
-          error instanceof Error ? error.message : "无法读取手机远控状态",
+          error instanceof Error
+            ? error.message
+            : t("remoteControl.noticeLoadFailed", {
+                defaultValue: "无法读取手机远控状态",
+              }),
         tone: "error",
       });
     } finally {
       setBusy(false);
     }
-  }, [applyState, applyTunnel]);
+  }, [applyState, applyTunnel, t]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  /** 配置端口变化（首次加载 / 保存成功）时同步输入框；轮询返回同值不打断编辑。 */
+  const configuredPort = state?.configuredPort;
+  useEffect(() => {
+    if (configuredPort !== undefined) {
+      setPortDraft(String(configuredPort));
+    }
+  }, [configuredPort]);
 
   useEffect(
     () =>
@@ -183,12 +213,19 @@ export function RemoteControlSettingsPanel({
     try {
       applyState(await window.snow.rotateRemoteControlToken());
       setNotice({
-        message: "配对凭据已更换，旧手机连接已失效",
+        message: t("remoteControl.noticeRotated", {
+          defaultValue: "配对凭据已更换，旧手机连接已失效",
+        }),
         tone: "success",
       });
     } catch (error) {
       setNotice({
-        message: error instanceof Error ? error.message : "更换失败",
+        message:
+          error instanceof Error
+            ? error.message
+            : t("remoteControl.noticeRotateFailed", {
+                defaultValue: "更换失败",
+              }),
         tone: "error",
       });
     } finally {
@@ -200,10 +237,18 @@ export function RemoteControlSettingsPanel({
     if (!selectedUrl) return;
     try {
       await window.snow.writeClipboardText(selectedUrl);
-      setNotice({ message: "配对地址已复制", tone: "success" });
+      setNotice({
+        message: t("remoteControl.noticeCopied", {
+          defaultValue: "配对地址已复制",
+        }),
+        tone: "success",
+      });
     } catch (error) {
       setNotice({
-        message: error instanceof Error ? error.message : "复制失败",
+        message:
+          error instanceof Error
+            ? error.message
+            : t("remoteControl.noticeCopyFailed", { defaultValue: "复制失败" }),
         tone: "error",
       });
     }
@@ -216,16 +261,70 @@ export function RemoteControlSettingsPanel({
       applyState(await window.snow.setRemoteControlEnabled(next));
       applyTunnel(await window.snow.getRemoteTunnelStatus());
       setNotice({
-        message: next ? "手机远控已开启" : "手机远控已关闭",
+        message: next
+          ? t("remoteControl.noticeEnabled", { defaultValue: "手机远控已开启" })
+          : t("remoteControl.noticeDisabled", {
+              defaultValue: "手机远控已关闭",
+            }),
         tone: next ? "success" : "info",
       });
     } catch (error) {
       setNotice({
-        message: error instanceof Error ? error.message : "切换手机远控失败",
+        message:
+          error instanceof Error
+            ? error.message
+            : t("remoteControl.noticeToggleFailed", {
+                defaultValue: "切换手机远控失败",
+              }),
         tone: "error",
       });
       applyState(await window.snow.getRemoteControlPairingState());
       applyTunnel(await window.snow.getRemoteTunnelStatus());
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const savePort = async (): Promise<void> => {
+    const port = Number(portDraft.trim());
+    if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+      setNotice({
+        message: t("remoteControl.errorInvalidPort", {
+          defaultValue: "端口必须是 1 到 65535 的整数",
+        }),
+        tone: "error",
+      });
+      return;
+    }
+    setBusy(true);
+    setNotice(null);
+    try {
+      const wasRunning = state?.running ?? false;
+      applyState(await window.snow.setRemoteControlPort(port));
+      setNotice({
+        message: wasRunning
+          ? t("remoteControl.noticePortSavedRunning", {
+              values: { port },
+              defaultValue:
+                "端口已保存为 {{port}}，服务已按新端口重启；已配对手机需要重新扫码",
+            })
+          : t("remoteControl.noticePortSavedIdle", {
+              values: { port },
+              defaultValue: "端口已保存为 {{port}}，开启远控后生效",
+            }),
+        tone: "success",
+      });
+    } catch (error) {
+      setNotice({
+        message:
+          error instanceof Error
+            ? error.message
+            : t("remoteControl.noticePortFailed", {
+                defaultValue: "端口设置失败",
+              }),
+        tone: "error",
+      });
+      applyState(await window.snow.getRemoteControlPairingState());
     } finally {
       setBusy(false);
     }
@@ -248,13 +347,23 @@ export function RemoteControlSettingsPanel({
       setDnsCheck(result);
       setNotice({
         message: result.ready
-          ? "两条 DNS 解析均已生效，可以开始自动部署"
-          : "DNS 尚未生效，请核对下方两条 A 记录后稍等几分钟再检测",
+          ? t("remoteControl.noticeDnsReady", {
+              defaultValue: "两条 DNS 解析均已生效，可以开始自动部署",
+            })
+          : t("remoteControl.noticeDnsPending", {
+              defaultValue:
+                "DNS 尚未生效，请核对下方两条 A 记录后稍等几分钟再检测",
+            }),
         tone: result.ready ? "success" : "warning",
       });
     } catch (error) {
       setNotice({
-        message: error instanceof Error ? error.message : "DNS 检测失败",
+        message:
+          error instanceof Error
+            ? error.message
+            : t("remoteControl.noticeDnsFailed", {
+                defaultValue: "DNS 检测失败",
+              }),
         tone: "error",
       });
     } finally {
@@ -263,7 +372,11 @@ export function RemoteControlSettingsPanel({
   };
 
   const selectPrivateKey = async (): Promise<void> => {
-    const path = await window.snow.sshSelectPrivateKey("选择服务器 SSH 私钥");
+    const path = await window.snow.sshSelectPrivateKey(
+      t("remoteControl.privateKeyDialogTitle", {
+        defaultValue: "选择服务器 SSH 私钥",
+      }),
+    );
     if (path) {
       setDeployForm((current) => ({ ...current, privateKeyPath: path }));
     }
@@ -274,7 +387,12 @@ export function RemoteControlSettingsPanel({
     setDeploymentActive(true);
     setNotice(null);
     deployCancelRequested.current = false;
-    setDeployProgress({ stage: "checking_dns", message: "正在开始部署" });
+    setDeployProgress({
+      stage: "checking_dns",
+      message: t("remoteControl.deployStarting", {
+        defaultValue: "正在开始部署",
+      }),
+    });
     try {
       const input: RemoteServerDeployInput = {
         serverIp: deployForm.serverIp,
@@ -282,6 +400,8 @@ export function RemoteControlSettingsPanel({
         sshPort: Number(deployForm.sshPort),
         sshUsername: deployForm.sshUsername,
         authMethod: deployForm.authMethod,
+        frpBindPort: Number(deployForm.frpBindPort),
+        frpRemotePort: Number(deployForm.frpRemotePort),
         ...(deployForm.authMethod === "password"
           ? { password: deployForm.password }
           : {
@@ -297,17 +417,29 @@ export function RemoteControlSettingsPanel({
       applyTunnel(result.tunnel);
       applyState(await window.snow.getRemoteControlPairingState());
       setNotice({
-        message: "部署成功。请关闭手机 Wi-Fi，用蜂窝网络扫描下方公网二维码验收",
+        message: t("remoteControl.noticeDeploySuccess", {
+          defaultValue:
+            "部署成功。请关闭手机 Wi-Fi，用蜂窝网络扫描下方公网二维码验收",
+        }),
         tone: "success",
       });
     } catch (error) {
       setDeployProgress(null);
       if (deployCancelRequested.current) {
-        setNotice({ message: "部署已取消", tone: "info" });
+        setNotice({
+          message: t("remoteControl.noticeDeployCanceled", {
+            defaultValue: "部署已取消",
+          }),
+          tone: "info",
+        });
       } else {
         setNotice({
           message:
-            error instanceof Error ? error.message : "服务器自动部署失败",
+            error instanceof Error
+              ? error.message
+              : t("remoteControl.noticeDeployFailed", {
+                  defaultValue: "服务器自动部署失败",
+                }),
           tone: "error",
         });
       }
@@ -328,7 +460,10 @@ export function RemoteControlSettingsPanel({
     if (await window.snow.cancelRemoteControlServerDeployment()) {
       deployCancelRequested.current = true;
       setNotice({
-        message: "正在取消部署；服务器上的当前安装命令可能需要片刻才能停止",
+        message: t("remoteControl.noticeCancelingDeploy", {
+          defaultValue:
+            "正在取消部署；服务器上的当前安装命令可能需要片刻才能停止",
+        }),
         tone: "info",
       });
     }
@@ -343,6 +478,7 @@ export function RemoteControlSettingsPanel({
         autoConnect: form.autoConnect,
         serverAddr: form.serverAddr,
         serverPort: Number(form.serverPort),
+        remotePort: Number(form.remotePort),
         publicOrigin: form.publicOrigin,
         tlsServerName: form.tlsServerName,
         ...(form.token.trim() ? { token: form.token } : {}),
@@ -361,13 +497,22 @@ export function RemoteControlSettingsPanel({
       applyState(await window.snow.getRemoteControlPairingState());
       setNotice({
         message: input.enabled
-          ? "配置已加密保存，正在验证公网入口"
-          : "公网远控已关闭，局域网远控保持可用",
+          ? t("remoteControl.noticeTunnelSaved", {
+              defaultValue: "配置已加密保存，正在验证公网入口",
+            })
+          : t("remoteControl.noticeTunnelDisabled", {
+              defaultValue: "公网远控已关闭，局域网远控保持可用",
+            }),
         tone: input.enabled ? "info" : "success",
       });
     } catch (error) {
       setNotice({
-        message: error instanceof Error ? error.message : "保存或连接失败",
+        message:
+          error instanceof Error
+            ? error.message
+            : t("remoteControl.noticeTunnelSaveFailed", {
+                defaultValue: "保存或连接失败",
+              }),
         tone: "error",
       });
       applyTunnel(await window.snow.getRemoteTunnelStatus());
@@ -383,12 +528,19 @@ export function RemoteControlSettingsPanel({
       applyTunnel(await window.snow.disconnectRemoteTunnel());
       applyState(await window.snow.getRemoteControlPairingState());
       setNotice({
-        message: "公网隧道已断开，局域网远控保持可用",
+        message: t("remoteControl.noticeTunnelDisconnected", {
+          defaultValue: "公网隧道已断开，局域网远控保持可用",
+        }),
         tone: "success",
       });
     } catch (error) {
       setNotice({
-        message: error instanceof Error ? error.message : "断开失败",
+        message:
+          error instanceof Error
+            ? error.message
+            : t("remoteControl.noticeDisconnectFailed", {
+                defaultValue: "断开失败",
+              }),
         tone: "error",
       });
     } finally {
@@ -406,13 +558,20 @@ export function RemoteControlSettingsPanel({
       applyTunnel(result.status);
       applyState(await window.snow.getRemoteControlPairingState());
       setNotice({
-        message:
-          "配置包已校验并加密保存，Snow 正在连接。导入包含 FRP 凭据，请从下载目录安全删除。",
+        message: t("remoteControl.noticeImported", {
+          defaultValue:
+            "配置包已校验并加密保存，Snow 正在连接。导入包含 FRP 凭据，请从下载目录安全删除。",
+        }),
         tone: "success",
       });
     } catch (error) {
       setNotice({
-        message: error instanceof Error ? error.message : "导入配置包失败",
+        message:
+          error instanceof Error
+            ? error.message
+            : t("remoteControl.noticeImportFailed", {
+                defaultValue: "导入配置包失败",
+              }),
         tone: "error",
       });
     } finally {
@@ -421,12 +580,30 @@ export function RemoteControlSettingsPanel({
   };
 
   const tunnelStageLabel: Record<RemoteTunnelStatus["stage"], string> = {
-    stopped: "已关闭",
-    starting: "正在启动本机入口",
-    connecting: "隧道已启动，正在检查 HTTPS",
-    online: "公网入口可用",
-    reconnecting: "网络中断，正在重连",
-    failed: "连接失败",
+    stopped: t("remoteControl.tunnelStageStopped", { defaultValue: "已关闭" }),
+    starting: t("remoteControl.tunnelStageStarting", {
+      defaultValue: "正在启动本机入口",
+    }),
+    connecting: t("remoteControl.tunnelStageConnecting", {
+      defaultValue: "隧道已启动，正在检查 HTTPS",
+    }),
+    online: t("remoteControl.tunnelStageOnline", {
+      defaultValue: "公网入口可用",
+    }),
+    reconnecting: t("remoteControl.tunnelStageReconnecting", {
+      defaultValue: "网络中断，正在重连",
+    }),
+    failed: t("remoteControl.tunnelStageFailed", { defaultValue: "连接失败" }),
+  };
+
+  const endpointStageLabel: Record<
+    RemoteTunnelStatus["endpoint"]["stage"],
+    string
+  > = {
+    unchecked: t("remoteControl.endpointUnchecked", { defaultValue: "未检查" }),
+    checking: t("remoteControl.endpointChecking", { defaultValue: "正在检查" }),
+    reachable: t("remoteControl.endpointReachable", { defaultValue: "已通过" }),
+    failed: t("remoteControl.endpointFailed", { defaultValue: "未通过" }),
   };
 
   return (
@@ -436,9 +613,13 @@ export function RemoteControlSettingsPanel({
     >
       <div className="api-settings-page-header">
         <div className="api-settings-title-group">
-          <strong>手机远控</strong>
+          <strong>
+            {t("settings.remoteControl", { defaultValue: "手机远控" })}
+          </strong>
           <span className="settings-item-description">
-            同一局域网内，用手机浏览器连接这台 Snow。
+            {t("remoteControl.subtitle", {
+              defaultValue: "同一局域网内，用手机浏览器连接这台 Snow。",
+            })}
           </span>
         </div>
         {onClose ? (
@@ -446,7 +627,7 @@ export function RemoteControlSettingsPanel({
             className="icon-btn ghost"
             type="button"
             onClick={onClose}
-            aria-label="关闭"
+            aria-label={t("common.close", { defaultValue: "关闭" })}
           >
             <X size={17} />
           </button>
@@ -455,8 +636,15 @@ export function RemoteControlSettingsPanel({
 
       <div className="remote-master-toggle">
         <div>
-          <strong>启用手机远控</strong>
-          <p>关闭时不会监听端口或连接隧道；开启状态在重启后保持。</p>
+          <strong>
+            {t("remoteControl.enableTitle", { defaultValue: "启用手机远控" })}
+          </strong>
+          <p>
+            {t("remoteControl.enableDescription", {
+              defaultValue:
+                "关闭时不会监听端口或连接隧道；开启状态在重启后保持。",
+            })}
+          </p>
         </div>
         <label className="toggle-switch">
           <input
@@ -470,13 +658,66 @@ export function RemoteControlSettingsPanel({
         </label>
       </div>
 
+      <div className="remote-port-setting">
+        <div>
+          <strong>
+            {t("remoteControl.portLabel", { defaultValue: "局域网监听端口" })}
+          </strong>
+          <p>
+            {t("remoteControl.portDescription", {
+              defaultValue:
+                "手机通过该端口访问本机，默认 8788；修改后服务会自动重启。",
+            })}
+          </p>
+        </div>
+        <div className="remote-port-input">
+          <input
+            type="number"
+            min="1"
+            max="65535"
+            value={portDraft}
+            onChange={(event) => setPortDraft(event.target.value)}
+            disabled={busy || !state}
+            spellCheck={false}
+            aria-label={t("remoteControl.portLabel", {
+              defaultValue: "局域网监听端口",
+            })}
+          />
+          <button
+            type="button"
+            className="api-settings-action-btn primary"
+            onClick={() => void savePort()}
+            disabled={
+              busy ||
+              !state ||
+              portDraft.trim() === String(state.configuredPort)
+            }
+          >
+            <Save size={15} strokeWidth={1.9} />
+            <span>
+              {t("remoteControl.savePort", { defaultValue: "保存端口" })}
+            </span>
+          </button>
+        </div>
+      </div>
+
       {state?.enabled ? (
         <>
           <div className="remote-pairing-layout">
-            <section className="remote-pairing-qr" aria-label="配对二维码">
+            <section
+              className="remote-pairing-qr"
+              aria-label={t("remoteControl.lanQrAria", {
+                defaultValue: "配对二维码",
+              })}
+            >
               <div className="remote-qr-card">
                 {qrDataUrl ? (
-                  <img src={qrDataUrl} alt="Snow 手机远控配对二维码" />
+                  <img
+                    src={qrDataUrl}
+                    alt={t("remoteControl.lanQrAlt", {
+                      defaultValue: "Snow 手机远控配对二维码",
+                    })}
+                  />
                 ) : (
                   <Smartphone size={44} />
                 )}
@@ -484,12 +725,21 @@ export function RemoteControlSettingsPanel({
               <span
                 className={`remote-service-status ${state?.running ? "running" : ""}`}
               >
-                {state?.running ? `正在监听 ${state.port}` : "服务未运行"}
+                {state?.running
+                  ? t("remoteControl.listeningOn", {
+                      values: { port: state.port },
+                      defaultValue: "正在监听 {{port}}",
+                    })
+                  : t("remoteControl.serviceNotRunning", {
+                      defaultValue: "服务未运行",
+                    })}
               </span>
             </section>
 
             <section className="remote-pairing-details">
-              <label>局域网地址</label>
+              <label>
+                {t("remoteControl.lanAddress", { defaultValue: "局域网地址" })}
+              </label>
               <CustomSelect
                 value={selectedUrl}
                 options={(state?.pairingUrls ?? []).map((url) => ({
@@ -507,7 +757,11 @@ export function RemoteControlSettingsPanel({
                   disabled={!selectedUrl || busy}
                 >
                   <Copy size={15} />
-                  <span>复制地址</span>
+                  <span>
+                    {t("remoteControl.copyAddress", {
+                      defaultValue: "复制地址",
+                    })}
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -516,11 +770,18 @@ export function RemoteControlSettingsPanel({
                   disabled={!state?.running || busy}
                 >
                   <RotateCcw size={15} />
-                  <span>更换凭据</span>
+                  <span>
+                    {t("remoteControl.rotateCredentials", {
+                      defaultValue: "更换凭据",
+                    })}
+                  </span>
                 </button>
               </div>
               <p className="remote-pairing-note">
-                更换后，已配对手机及尚未发送的附件会立即失效。
+                {t("remoteControl.rotateNote", {
+                  defaultValue:
+                    "更换后，已配对手机及尚未发送的附件会立即失效。",
+                })}
               </p>
             </section>
           </div>
@@ -529,143 +790,270 @@ export function RemoteControlSettingsPanel({
             <div className="remote-tunnel-heading">
               <Server size={18} />
               <div>
-                <strong>自建服务器公网连接</strong>
+                <strong>
+                  {t("remoteControl.tunnelTitle", {
+                    defaultValue: "自建服务器公网连接",
+                  })}
+                </strong>
                 <p>
-                  安装包已内置并校验
-                  frpc；部署失败时不会保存凭据，验证成功后才会在本机加密保存。
+                  {t("remoteControl.tunnelDescription", {
+                    defaultValue:
+                      "安装包已内置并校验 frpc；部署失败时不会保存凭据，验证成功后才会在本机加密保存。",
+                  })}
                 </p>
               </div>
               <span
                 className={`remote-service-status ${tunnel?.stage === "online" ? "running" : ""}`}
               >
-                {tunnel ? tunnelStageLabel[tunnel.stage] : "读取中"}
+                {tunnel
+                  ? tunnelStageLabel[tunnel.stage]
+                  : t("remoteControl.statusLoading", {
+                      defaultValue: "读取中",
+                    })}
               </span>
             </div>
 
             <div className="remote-tunnel-status-grid">
-              <span>本机 WAN</span>
+              <span>
+                {t("remoteControl.localWan", { defaultValue: "本机 WAN" })}
+              </span>
               <strong>
                 {tunnel?.listenerPort
                   ? `127.0.0.1:${tunnel.listenerPort}`
-                  : "未监听"}
+                  : t("remoteControl.notListening", { defaultValue: "未监听" })}
               </strong>
-              <span>FRP 隧道</span>
+              <span>
+                {t("remoteControl.frpTunnel", { defaultValue: "FRP 隧道" })}
+              </span>
               <strong>
-                {tunnel ? tunnelStageLabel[tunnel.stage] : "未知"}
+                {tunnel
+                  ? tunnelStageLabel[tunnel.stage]
+                  : t("remoteControl.statusUnknown", { defaultValue: "未知" })}
               </strong>
-              <span>HTTPS 探测</span>
+              <span>
+                {t("remoteControl.httpsProbe", { defaultValue: "HTTPS 探测" })}
+              </span>
               <strong>
-                {tunnel?.endpoint.stage === "reachable"
-                  ? "已通过"
-                  : (tunnel?.endpoint.stage ?? "未检查")}
+                {tunnel
+                  ? endpointStageLabel[tunnel.endpoint.stage]
+                  : endpointStageLabel.unchecked}
               </strong>
             </div>
 
             {!tunnel?.config.secureStorageAvailable ? (
               <div className="remote-pairing-message error" role="alert">
-                系统安全存储不可用。为避免明文保存凭据，公网远控已禁用。
+                {t("remoteControl.secureStorageUnavailable", {
+                  defaultValue:
+                    "系统安全存储不可用。为避免明文保存凭据，公网远控已禁用。",
+                })}
               </div>
             ) : null}
 
             <details className="remote-tunnel-guide" open>
-              <summary>第一次公网部署（共 4 步，Snow 负责安装）</summary>
+              <summary>
+                {t("remoteControl.guideSummary", {
+                  defaultValue: "第一次公网部署（共 4 步，Snow 负责安装）",
+                })}
+              </summary>
               <div className="remote-tunnel-guide-content">
                 <div className="remote-tunnel-guide-callout">
-                  <strong>只在同一 Wi-Fi 使用时，不需要服务器。</strong>
+                  <strong>
+                    {t("remoteControl.guideCalloutTitle", {
+                      defaultValue: "只在同一 Wi-Fi 使用时，不需要服务器。",
+                    })}
+                  </strong>
                   <span>
-                    直接扫描上方局域网二维码即可；下面的公网配置可以保持关闭。
+                    {t("remoteControl.guideCalloutText", {
+                      defaultValue:
+                        "直接扫描上方局域网二维码即可；下面的公网配置可以保持关闭。",
+                    })}
                   </span>
                 </div>
 
                 <section className="remote-deploy-step">
                   <h4>
-                    <b>1</b> 购买前确认：只需要服务器和域名
+                    <b>1</b>{" "}
+                    {t("remoteControl.step1Title", {
+                      defaultValue: "购买前确认：只需要服务器和域名",
+                    })}
                   </h4>
                   <ul>
                     <li>
-                      <strong>Linux 公网服务器：</strong>任意厂商，Ubuntu
-                      22.04/24.04、 x86_64、独立公网 IPv4、长期运行；至少 1 核 1
-                      GB。不要买抢占式、 竞价、Windows、数据库、GPU
-                      或预装面板套餐。
+                      <strong>
+                        {t("remoteControl.step1ServerLabel", {
+                          defaultValue: "Linux 公网服务器：",
+                        })}
+                      </strong>
+                      {t("remoteControl.step1ServerText", {
+                        defaultValue:
+                          "任意厂商，Ubuntu 22.04/24.04、Debian 11+、CentOS Stream/Rocky/AlmaLinux 8+ 等常见发行版、x86_64、独立公网 IPv4、长期运行；至少 1 核 1 GB。不要买抢占式、竞价、Windows、数据库、GPU 或预装面板套餐。",
+                      })}
                     </li>
                     <li>
-                      <strong>一个付费域名：</strong>
-                      任意注册商和后缀均可。不需要购买 SSL
-                      证书、CDN、云解析高级版、建站或企业邮箱。
+                      <strong>
+                        {t("remoteControl.step1DomainLabel", {
+                          defaultValue: "一个付费域名：",
+                        })}
+                      </strong>
+                      {t("remoteControl.step1DomainText", {
+                        defaultValue:
+                          "任意注册商和后缀均可。不需要购买 SSL 证书、CDN、云解析高级版、建站或企业邮箱。",
+                      })}
                     </li>
                     <li>
-                      <strong>服务器登录凭据：</strong>root 密码或 SSH
-                      私钥。它不是云厂商
-                      账号密码；服务器没有初始密码时，在服务器控制台点“设置/重置密码”。
+                      <strong>
+                        {t("remoteControl.step1CredentialLabel", {
+                          defaultValue: "服务器登录凭据：",
+                        })}
+                      </strong>
+                      {t("remoteControl.step1CredentialText", {
+                        defaultValue:
+                          "root 密码或 SSH 私钥。它不是云厂商账号密码；服务器没有初始密码时，在服务器控制台点“设置/重置密码”。",
+                      })}
                     </li>
                   </ul>
                 </section>
 
                 <section className="remote-deploy-step">
                   <h4>
-                    <b>2</b> 先去两个控制台完成这些设置
+                    <b>2</b>{" "}
+                    {t("remoteControl.step2Title", {
+                      defaultValue: "先去两个控制台完成这些设置",
+                    })}
                   </h4>
                   <p>
-                    <strong>域名控制台 → DNS/域名解析 → 添加记录：</strong>
+                    <strong>
+                      {t("remoteControl.step2DnsLabel", {
+                        defaultValue: "域名控制台 → DNS/域名解析 → 添加记录：",
+                      })}
+                    </strong>
                   </p>
                   <div
                     className="remote-deploy-table"
                     role="table"
-                    aria-label="DNS 记录"
+                    aria-label={t("remoteControl.dnsTableAria", {
+                      defaultValue: "DNS 记录",
+                    })}
                   >
-                    <strong>类型</strong>
-                    <strong>主机记录</strong>
-                    <strong>记录值</strong>
+                    <strong>
+                      {t("remoteControl.dnsType", { defaultValue: "类型" })}
+                    </strong>
+                    <strong>
+                      {t("remoteControl.dnsHost", { defaultValue: "主机记录" })}
+                    </strong>
+                    <strong>
+                      {t("remoteControl.dnsValue", { defaultValue: "记录值" })}
+                    </strong>
                     <code>A</code>
                     <code>snow</code>
-                    <code>{deployForm.serverIp.trim() || "服务器公网 IP"}</code>
+                    <code>
+                      {deployForm.serverIp.trim() ||
+                        t("remoteControl.serverIpLabel", {
+                          defaultValue: "服务器公网 IP",
+                        })}
+                    </code>
                     <code>A</code>
                     <code>frp</code>
-                    <code>{deployForm.serverIp.trim() || "服务器公网 IP"}</code>
+                    <code>
+                      {deployForm.serverIp.trim() ||
+                        t("remoteControl.serverIpLabel", {
+                          defaultValue: "服务器公网 IP",
+                        })}
+                    </code>
                   </div>
                   <small>
-                    主机记录只填 <code>snow</code> 和 <code>frp</code>
-                    ，不要填写完整域名； 线路和 TTL 保持默认。
+                    {t("remoteControl.step2DnsHintPrefix", {
+                      defaultValue: "主机记录只填",
+                    })}{" "}
+                    <code>snow</code>{" "}
+                    {t("remoteControl.step2DnsHintAnd", { defaultValue: "和" })}{" "}
+                    <code>frp</code>
+                    {t("remoteControl.step2DnsHintSuffix", {
+                      defaultValue: "，不要填写完整域名；线路和 TTL 保持默认。",
+                    })}
                     {normalizedRootDomain
-                      ? ` 保存后会得到 snow.${normalizedRootDomain} 和 frp.${normalizedRootDomain}。`
+                      ? ` ${t("remoteControl.step2DnsHintDomains", {
+                          values: { rootDomain: normalizedRootDomain },
+                          defaultValue:
+                            "保存后会得到 snow.{{rootDomain}} 和 frp.{{rootDomain}}。",
+                        })}`
                       : ""}
                   </small>
                   <p>
                     <strong>
-                      服务器控制台 → 防火墙/安全组 → 添加入站规则：
+                      {t("remoteControl.step2FirewallLabel", {
+                        defaultValue:
+                          "服务器控制台 → 防火墙/安全组 → 添加入站规则：",
+                      })}
                     </strong>
                   </p>
                   <div className="remote-deploy-ports">
                     <code>TCP 22</code>
-                    <span>Snow 登录服务器</span>
+                    <span>
+                      {t("remoteControl.portPurposeSsh", {
+                        defaultValue: "Snow 登录服务器",
+                      })}
+                    </span>
                     <code>TCP 80</code>
-                    <span>自动申请 HTTPS 证书</span>
+                    <span>
+                      {t("remoteControl.portPurposeAcme", {
+                        defaultValue: "自动申请 HTTPS 证书",
+                      })}
+                    </span>
                     <code>TCP 443</code>
-                    <span>手机 HTTPS 访问</span>
-                    <code>TCP 7000</code>
-                    <span>Snow 桌面隧道</span>
+                    <span>
+                      {t("remoteControl.portPurposeHttps", {
+                        defaultValue: "手机 HTTPS 访问",
+                      })}
+                    </span>
+                    <code>TCP {deployForm.frpBindPort.trim() || "7000"}</code>
+                    <span>
+                      {t("remoteControl.portPurposeTunnel", {
+                        defaultValue: "Snow 桌面隧道",
+                      })}
+                    </span>
                   </div>
                   <div className="remote-tunnel-guide-callout warning">
-                    <strong>不要开放 TCP 18080。</strong>
+                    <strong>
+                      {t("remoteControl.step2ClosedPortWarning", {
+                        values: {
+                          port: deployForm.frpRemotePort.trim() || "18080",
+                        },
+                        defaultValue: "不要开放 TCP {{port}}。",
+                      })}
+                    </strong>
                     <span>
-                      它只能在服务器内部使用，Snow 部署结束时会自动检查。
+                      {t("remoteControl.step2ClosedPortText", {
+                        defaultValue:
+                          "它只能在服务器内部使用，Snow 部署结束时会自动检查。",
+                      })}
                     </span>
                   </div>
                 </section>
 
                 <section className="remote-deploy-step">
                   <h4>
-                    <b>3</b> 再填写 Snow 连接信息
+                    <b>3</b>{" "}
+                    {t("remoteControl.step3Title", {
+                      defaultValue: "再填写 Snow 连接信息",
+                    })}
                   </h4>
                   <div className="remote-simple-deploy-form">
                     <label>
-                      服务器公网 IP
+                      {t("remoteControl.serverIpLabel", {
+                        defaultValue: "服务器公网 IP",
+                      })}
                       <small>
-                        服务器详情页中的“公网 IP / 公网 IPv4”，不是私有 IP。
+                        {t("remoteControl.serverIpHint", {
+                          defaultValue:
+                            "服务器详情页中的“公网 IP / 公网 IPv4”，不是私有 IP。",
+                        })}
                       </small>
                       <input
                         value={deployForm.serverIp}
-                        placeholder="例如 42.194.128.147"
+                        placeholder={t("remoteControl.serverIpExample", {
+                          defaultValue: "例如 42.194.128.147",
+                        })}
                         onChange={(event) => {
                           setDnsCheck(null);
                           setDeployForm((current) => ({
@@ -677,14 +1065,20 @@ export function RemoteControlSettingsPanel({
                       />
                     </label>
                     <label>
-                      你的根域名
+                      {t("remoteControl.rootDomainLabel", {
+                        defaultValue: "你的根域名",
+                      })}
                       <small>
-                        填写买到的域名，如 example.com；不要加 snow、https
-                        或路径。
+                        {t("remoteControl.rootDomainHint", {
+                          defaultValue:
+                            "填写买到的域名，如 example.com；不要加 snow、https 或路径。",
+                        })}
                       </small>
                       <input
                         value={deployForm.rootDomain}
-                        placeholder="例如 example.com"
+                        placeholder={t("remoteControl.rootDomainExample", {
+                          defaultValue: "例如 example.com",
+                        })}
                         onChange={(event) => {
                           setDnsCheck(null);
                           setDeployForm((current) => ({
@@ -696,10 +1090,14 @@ export function RemoteControlSettingsPanel({
                       />
                     </label>
                     <label>
-                      SSH 用户名
+                      {t("remoteControl.sshUsername", {
+                        defaultValue: "SSH 用户名",
+                      })}
                       <small>
-                        Ubuntu 密码登录通常填 root；云厂商一键登录显示的 admin
-                        不一定能用。
+                        {t("remoteControl.sshUsernameHint", {
+                          defaultValue:
+                            "Ubuntu/Debian、CentOS/RHEL 系密码登录通常填 root；云厂商一键登录显示的 admin 不一定能用。",
+                        })}
                       </small>
                       <input
                         value={deployForm.sshUsername}
@@ -713,9 +1111,12 @@ export function RemoteControlSettingsPanel({
                       />
                     </label>
                     <label>
-                      SSH 端口
+                      {t("remoteControl.sshPort", { defaultValue: "SSH 端口" })}
                       <small>
-                        服务器远程连接页面显示的端口，未修改时通常是 22。
+                        {t("remoteControl.sshPortHint", {
+                          defaultValue:
+                            "服务器远程连接页面显示的端口，未修改时通常是 22。",
+                        })}
                       </small>
                       <input
                         type="number"
@@ -731,27 +1132,82 @@ export function RemoteControlSettingsPanel({
                       />
                     </label>
                     <label>
-                      登录方式
-                      <small>新手建议使用在服务器控制台设置的 SSH 密码。</small>
-                      <select
-                        value={deployForm.authMethod}
+                      {t("remoteControl.frpBindPort", {
+                        defaultValue: "FRP 控制端口",
+                      })}
+                      <small>
+                        {t("remoteControl.frpBindPortHint", {
+                          defaultValue:
+                            "服务器 frps 的控制端口，会写入客户端配置包；未修改时通常是 7000。",
+                        })}
+                      </small>
+                      <input
+                        type="number"
+                        min="1"
+                        max="65535"
+                        value={deployForm.frpBindPort}
                         onChange={(event) =>
                           setDeployForm((current) => ({
                             ...current,
-                            authMethod: event.target.value as
-                              "password" | "privateKey",
+                            frpBindPort: event.target.value,
                           }))
                         }
-                      >
-                        <option value="password">SSH 密码</option>
-                        <option value="privateKey">SSH 私钥</option>
-                      </select>
+                      />
+                    </label>
+                    <label>
+                      {t("remoteControl.frpRemotePort", {
+                        defaultValue: "FRP 隧道端口",
+                      })}
+                      <small>
+                        {t("remoteControl.frpRemotePortHint", {
+                          defaultValue:
+                            "服务器内部隧道端口，只由 Caddy 使用；无需在安全组放行。",
+                        })}
+                      </small>
+                      <input
+                        type="number"
+                        min="1"
+                        max="65535"
+                        value={deployForm.frpRemotePort}
+                        onChange={(event) =>
+                          setDeployForm((current) => ({
+                            ...current,
+                            frpRemotePort: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      {t("remoteControl.authMethod", {
+                        defaultValue: "登录方式",
+                      })}
+                      <small>
+                        {t("remoteControl.authMethodHint", {
+                          defaultValue:
+                            "新手建议使用在服务器控制台设置的 SSH 密码。",
+                        })}
+                      </small>
+                      <CustomSelect
+                        value={deployForm.authMethod}
+                        options={authMethodOptions}
+                        onChange={(value) =>
+                          setDeployForm((current) => ({
+                            ...current,
+                            authMethod: value as "password" | "privateKey",
+                          }))
+                        }
+                      />
                     </label>
                     {deployForm.authMethod === "password" ? (
                       <label>
-                        SSH 密码
+                        {t("remoteControl.authPassword", {
+                          defaultValue: "SSH 密码",
+                        })}
                         <small>
-                          服务器 root 密码，不是阿里云/腾讯云等网站的登录密码。
+                          {t("remoteControl.sshPasswordHint", {
+                            defaultValue:
+                              "服务器 root 密码，不是阿里云/腾讯云等网站的登录密码。",
+                          })}
                         </small>
                         <input
                           type="password"
@@ -763,21 +1219,34 @@ export function RemoteControlSettingsPanel({
                             }))
                           }
                           autoComplete="new-password"
-                          placeholder="只在本次部署期间保存在内存中"
+                          placeholder={t(
+                            "remoteControl.sshPasswordPlaceholder",
+                            {
+                              defaultValue: "只在本次部署期间保存在内存中",
+                            },
+                          )}
                         />
                       </label>
                     ) : (
                       <>
                         <label className="remote-simple-deploy-key">
-                          SSH 私钥文件
+                          {t("remoteControl.sshKeyFile", {
+                            defaultValue: "SSH 私钥文件",
+                          })}
                           <small>
-                            选择创建服务器或绑定密钥对时下载到本机的私钥文件。
+                            {t("remoteControl.sshKeyFileHint", {
+                              defaultValue:
+                                "选择创建服务器或绑定密钥对时下载到本机的私钥文件。",
+                            })}
                           </small>
                           <span>
                             <input
                               value={deployForm.privateKeyPath}
                               readOnly
-                              placeholder="请选择私钥文件"
+                              placeholder={t(
+                                "remoteControl.sshKeyFilePlaceholder",
+                                { defaultValue: "请选择私钥文件" },
+                              )}
                             />
                             <button
                               type="button"
@@ -785,12 +1254,16 @@ export function RemoteControlSettingsPanel({
                               onClick={() => void selectPrivateKey()}
                               disabled={busy}
                             >
-                              选择
+                              {t("remoteControl.selectFile", {
+                                defaultValue: "选择",
+                              })}
                             </button>
                           </span>
                         </label>
                         <label>
-                          私钥密码（没有可留空）
+                          {t("remoteControl.passphrase", {
+                            defaultValue: "私钥密码（没有可留空）",
+                          })}
                           <input
                             type="password"
                             value={deployForm.passphrase}
@@ -810,11 +1283,16 @@ export function RemoteControlSettingsPanel({
 
                 <section className="remote-deploy-step">
                   <h4>
-                    <b>4</b> 检测成功后再自动部署
+                    <b>4</b>{" "}
+                    {t("remoteControl.step4Title", {
+                      defaultValue: "检测成功后再自动部署",
+                    })}
                   </h4>
                   <p>
-                    先点“检测 DNS”。两行均为 ✓ 后，再点“自动部署并连接”；之后
-                    FRP、Caddy、token、CA、证书和配置导入都由 Snow 处理。
+                    {t("remoteControl.step4Text", {
+                      defaultValue:
+                        "先点“检测 DNS”。两行均为 ✓ 后，再点“自动部署并连接”；之后 FRP、Caddy、token、CA、证书和配置导入都由 Snow 处理。",
+                    })}
                   </p>
 
                   {dnsCheck ? (
@@ -836,7 +1314,11 @@ export function RemoteControlSettingsPanel({
                       disabled={busy}
                     >
                       <RefreshCw size={15} className={busy ? "spin" : ""} />
-                      <span>检测 DNS</span>
+                      <span>
+                        {t("remoteControl.checkDns", {
+                          defaultValue: "检测 DNS",
+                        })}
+                      </span>
                     </button>
                     <button
                       type="button"
@@ -845,7 +1327,11 @@ export function RemoteControlSettingsPanel({
                       disabled={busy || !tunnel?.config.secureStorageAvailable}
                     >
                       <Server size={15} />
-                      <span>自动部署并连接</span>
+                      <span>
+                        {t("remoteControl.deployConnect", {
+                          defaultValue: "自动部署并连接",
+                        })}
+                      </span>
                     </button>
                     {deploymentActive ? (
                       <button
@@ -853,7 +1339,9 @@ export function RemoteControlSettingsPanel({
                         className="nav-item"
                         onClick={() => void cancelDeployment()}
                       >
-                        取消部署
+                        {t("remoteControl.cancelDeploy", {
+                          defaultValue: "取消部署",
+                        })}
                       </button>
                     ) : null}
                   </div>
@@ -865,7 +1353,14 @@ export function RemoteControlSettingsPanel({
                           deployProgress.stage === "completed" ? "" : "spin"
                         }
                       />
-                      <span>{deployProgress.message}</span>
+                      <span>
+                        {t(
+                          `remoteControl.deployStage.${deployProgress.stage}`,
+                          {
+                            defaultValue: deployProgress.message,
+                          },
+                        )}
+                      </span>
                     </div>
                   ) : null}
                 </section>
@@ -873,7 +1368,11 @@ export function RemoteControlSettingsPanel({
             </details>
 
             <details className="remote-tunnel-guide">
-              <summary>高级设置</summary>
+              <summary>
+                {t("remoteControl.advancedSettings", {
+                  defaultValue: "高级设置",
+                })}
+              </summary>
               <div className="remote-tunnel-guide-content">
                 <button
                   type="button"
@@ -882,7 +1381,11 @@ export function RemoteControlSettingsPanel({
                   disabled={busy || !tunnel?.config.secureStorageAvailable}
                 >
                   <FileUp size={15} />
-                  <span>导入已有配置包</span>
+                  <span>
+                    {t("remoteControl.importBundle", {
+                      defaultValue: "导入已有配置包",
+                    })}
+                  </span>
                 </button>
                 <div className="remote-tunnel-form">
                   <label className="remote-tunnel-check">
@@ -896,7 +1399,9 @@ export function RemoteControlSettingsPanel({
                         }))
                       }
                     />
-                    启用公网远控
+                    {t("remoteControl.tunnelEnabled", {
+                      defaultValue: "启用公网远控",
+                    })}
                   </label>
                   <label className="remote-tunnel-check">
                     <input
@@ -909,11 +1414,15 @@ export function RemoteControlSettingsPanel({
                         }))
                       }
                     />
-                    Snow 启动后自动连接
+                    {t("remoteControl.tunnelAutoConnect", {
+                      defaultValue: "Snow 启动后自动连接",
+                    })}
                   </label>
 
                   <label>
-                    FRP 服务器地址
+                    {t("remoteControl.frpServerAddr", {
+                      defaultValue: "FRP 服务器地址",
+                    })}
                     <input
                       value={form.serverAddr}
                       placeholder="frp.example.com"
@@ -927,7 +1436,9 @@ export function RemoteControlSettingsPanel({
                     />
                   </label>
                   <label>
-                    FRP 端口
+                    {t("remoteControl.frpServerPort", {
+                      defaultValue: "FRP 端口",
+                    })}
                     <input
                       type="number"
                       min="1"
@@ -942,7 +1453,26 @@ export function RemoteControlSettingsPanel({
                     />
                   </label>
                   <label>
-                    手机 HTTPS 地址
+                    {t("remoteControl.frpRemotePort", {
+                      defaultValue: "FRP 隧道端口",
+                    })}
+                    <input
+                      type="number"
+                      min="1"
+                      max="65535"
+                      value={form.remotePort}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          remotePort: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    {t("remoteControl.publicOrigin", {
+                      defaultValue: "手机 HTTPS 地址",
+                    })}
                     <input
                       value={form.publicOrigin}
                       placeholder="https://snow.example.com"
@@ -956,7 +1486,9 @@ export function RemoteControlSettingsPanel({
                     />
                   </label>
                   <label>
-                    FRP TLS 服务器名称
+                    {t("remoteControl.tlsServerName", {
+                      defaultValue: "FRP TLS 服务器名称",
+                    })}
                     <input
                       value={form.tlsServerName}
                       placeholder="frp.example.com"
@@ -970,14 +1502,18 @@ export function RemoteControlSettingsPanel({
                     />
                   </label>
                   <label>
-                    FRP 凭据
+                    {t("remoteControl.frpToken", { defaultValue: "FRP 凭据" })}
                     <input
                       type="password"
                       value={form.token}
                       placeholder={
                         tunnel?.config.hasToken
-                          ? "已加密保存；留空保持不变"
-                          : "至少 32 个字符"
+                          ? t("remoteControl.tokenPlaceholderSaved", {
+                              defaultValue: "已加密保存；留空保持不变",
+                            })
+                          : t("remoteControl.tokenPlaceholderNew", {
+                              defaultValue: "至少 32 个字符",
+                            })
                       }
                       onChange={(event) =>
                         setForm((current) => ({
@@ -989,12 +1525,16 @@ export function RemoteControlSettingsPanel({
                     />
                   </label>
                   <label className="remote-tunnel-ca">
-                    FRP CA 证书（PEM）
+                    {t("remoteControl.frpCa", {
+                      defaultValue: "FRP CA 证书（PEM）",
+                    })}
                     <textarea
                       value={form.caCertificate}
                       placeholder={
                         tunnel?.config.hasCaCertificate
-                          ? "证书已加密保存；留空保持不变"
+                          ? t("remoteControl.caPlaceholderSaved", {
+                              defaultValue: "证书已加密保存；留空保持不变",
+                            })
                           : "-----BEGIN CERTIFICATE-----"
                       }
                       onChange={(event) =>
@@ -1017,7 +1557,13 @@ export function RemoteControlSettingsPanel({
                   >
                     <Power size={15} />
                     <span>
-                      {form.enabled ? "保存并连接" : "保存并关闭公网"}
+                      {form.enabled
+                        ? t("remoteControl.saveAndConnect", {
+                            defaultValue: "保存并连接",
+                          })
+                        : t("remoteControl.saveAndDisable", {
+                            defaultValue: "保存并关闭公网",
+                          })}
                     </span>
                   </button>
                   <button
@@ -1027,13 +1573,24 @@ export function RemoteControlSettingsPanel({
                     disabled={busy || tunnel?.stage === "stopped"}
                   >
                     <Unplug size={15} />
-                    <span>仅断开本次连接</span>
+                    <span>
+                      {t("remoteControl.disconnectOnce", {
+                        defaultValue: "仅断开本次连接",
+                      })}
+                    </span>
                   </button>
                 </div>
                 <div className="remote-tunnel-guide-callout warning">
-                  <strong>“仅断开”不会撤销手机登录。</strong>
+                  <strong>
+                    {t("remoteControl.disconnectWarningTitle", {
+                      defaultValue: "“仅断开”不会撤销手机登录。",
+                    })}
+                  </strong>
                   <span>
-                    手机丢失或链接泄露时，请使用页面上方的“更换凭据”，让旧手机连接立即失效。
+                    {t("remoteControl.disconnectWarningText", {
+                      defaultValue:
+                        "手机丢失或链接泄露时，请使用页面上方的“更换凭据”，让旧手机连接立即失效。",
+                    })}
                   </span>
                 </div>
               </div>
@@ -1049,11 +1606,18 @@ export function RemoteControlSettingsPanel({
             <div className="remote-pairing-layout">
               <section
                 className="remote-pairing-qr"
-                aria-label="公网配对二维码"
+                aria-label={t("remoteControl.wanQrAria", {
+                  defaultValue: "公网配对二维码",
+                })}
               >
                 <div className="remote-qr-card">
                   {wanQrDataUrl ? (
-                    <img src={wanQrDataUrl} alt="Snow 公网远控配对二维码" />
+                    <img
+                      src={wanQrDataUrl}
+                      alt={t("remoteControl.wanQrAlt", {
+                        defaultValue: "Snow 公网远控配对二维码",
+                      })}
+                    />
                   ) : (
                     <Smartphone size={44} />
                   )}
@@ -1062,18 +1626,29 @@ export function RemoteControlSettingsPanel({
                   className={`remote-service-status ${tunnel?.stage === "online" ? "running" : ""}`}
                 >
                   {tunnel?.stage === "online"
-                    ? "公网入口已验证"
-                    : "公网入口待验证"}
+                    ? t("remoteControl.wanVerified", {
+                        defaultValue: "公网入口已验证",
+                      })
+                    : t("remoteControl.wanPending", {
+                        defaultValue: "公网入口待验证",
+                      })}
                 </span>
               </section>
               <section className="remote-pairing-details">
-                <label>自建服务器</label>
+                <label>
+                  {t("remoteControl.selfHostedServer", {
+                    defaultValue: "自建服务器",
+                  })}
+                </label>
                 <div className="remote-pairing-message">
                   {state.wan.publicOrigin}
                 </div>
                 <p className="remote-pairing-note">
-                  本机隧道端口 {state.wan.localPort}
-                  。二维码五分钟内有效且只能使用一次。
+                  {t("remoteControl.wanNote", {
+                    values: { port: state.wan.localPort },
+                    defaultValue:
+                      "本机隧道端口 {{port}}。二维码五分钟内有效且只能使用一次。",
+                  })}
                 </p>
               </section>
             </div>

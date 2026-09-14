@@ -2,6 +2,7 @@ import { native } from "../native/nativeBridge";
 import {
   getRemoteControlPairingState,
   markRemoteControlEnabled,
+  persistRemoteControlPort,
   startRemoteControlServer,
   stopRemoteControlServer,
   type RemoteControlPairingState,
@@ -64,6 +65,35 @@ export const applyRemoteControlEnabled = async (
   } else {
     await remoteTunnelManager.disconnect();
     await stopRemoteControlServer();
+  }
+  return getRemoteControlPairingState();
+};
+
+/**
+ * 设置面板保存局域网端口：先持久化，再按需重启监听器。
+ *
+ * 端口变化必须重建监听器，旧令牌随之失效（已配对手机需重新扫码）；
+ * 公网隧道依赖回环监听器，因此运行中的隧道需要断开后恢复。
+ */
+export const applyRemoteControlPort = async (
+  port: number,
+): Promise<RemoteControlPairingState> => {
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new Error("端口必须是 1 到 65535 的整数");
+  }
+  await persistRemoteControlPort(port);
+  const current = await getRemoteControlPairingState();
+  if (!current.running) return current;
+  const tunnelWasActive = remoteTunnelManager.getStatus().stage !== "stopped";
+  await remoteTunnelManager.disconnect().catch(() => undefined);
+  await stopRemoteControlServer();
+  const info = await startRemoteControlServer();
+  if (!info) {
+    throw new Error("端口已保存，但远控服务重启失败；请检查新端口是否被占用");
+  }
+  if (tunnelWasActive) {
+    // 隧道恢复失败不影响局域网服务，状态会在面板轮询中呈现。
+    await remoteTunnelManager.connect().catch(() => undefined);
   }
   return getRemoteControlPairingState();
 };

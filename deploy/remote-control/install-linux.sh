@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Snow 远控服务器端安装脚本。
+# 支持 x86_64 的 Debian/Ubuntu（apt）与 CentOS/RHEL/Rocky/AlmaLinux（dnf/yum）系统。
 set -Eeuo pipefail
 
 FRP_VERSION="0.71.0"
@@ -8,9 +10,11 @@ CADDY_SHA256="3894577b14657feab3624d782f64175050211e52a228a6f57b4f24f4b0d970f3"
 PUBLIC_DOMAIN=""
 FRP_DOMAIN=""
 ACME_EMAIL=""
+FRP_BIND_PORT="7000"
+FRP_REMOTE_PORT="18080"
 
 usage() {
-  echo "用法: sudo bash install-ubuntu.sh --public-domain snow.example.com --frp-domain frp.example.com [--email you@example.com]"
+  echo "用法: sudo bash install-linux.sh --public-domain snow.example.com --frp-domain frp.example.com [--email you@example.com] [--frp-bind-port 7000] [--frp-remote-port 18080]"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -18,6 +22,8 @@ while [[ $# -gt 0 ]]; do
     --public-domain) PUBLIC_DOMAIN="${2:-}"; shift 2 ;;
     --frp-domain) FRP_DOMAIN="${2:-}"; shift 2 ;;
     --email) ACME_EMAIL="${2:-}"; shift 2 ;;
+    --frp-bind-port) FRP_BIND_PORT="${2:-}"; shift 2 ;;
+    --frp-remote-port) FRP_REMOTE_PORT="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "未知参数: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -27,8 +33,23 @@ if [[ ${EUID} -ne 0 ]]; then
   echo "请使用 sudo 运行此脚本。" >&2
   exit 1
 fi
-if ! command -v apt-get >/dev/null 2>&1 || [[ "$(dpkg --print-architecture 2>/dev/null || true)" != "amd64" ]]; then
-  echo "此脚本只支持 Debian/Ubuntu amd64 服务器。" >&2
+if [[ "$(uname -m)" != "x86_64" ]]; then
+  echo "此脚本目前只支持 x86_64（amd64）架构的服务器。" >&2
+  exit 1
+fi
+if command -v apt-get >/dev/null 2>&1; then
+  PACKAGE_MANAGER="apt-get"
+elif command -v dnf >/dev/null 2>&1; then
+  PACKAGE_MANAGER="dnf"
+elif command -v yum >/dev/null 2>&1; then
+  PACKAGE_MANAGER="yum"
+else
+  echo "未检测到受支持的包管理器（需要 apt-get、dnf 或 yum）。" >&2
+  exit 1
+fi
+SYSTEMD_VERSION="$(systemctl --version 2>/dev/null | awk 'NR==1 {print $2}')"
+if [[ ! "${SYSTEMD_VERSION:-}" =~ ^[0-9]+$ ]] || (( SYSTEMD_VERSION < 232 )); then
+  echo "需要 systemd 232 及以上版本（CentOS/RHEL 8+、Debian 10+、Ubuntu 20.04+）。" >&2
   exit 1
 fi
 DOMAIN_RE='^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$'
@@ -41,13 +62,46 @@ fi
 PUBLIC_DOMAIN="${PUBLIC_DOMAIN,,}"
 FRP_DOMAIN="${FRP_DOMAIN,,}"
 
+PORT_RE='^[0-9]{1,5}$'
+for FRP_PORT_VALUE in "$FRP_BIND_PORT" "$FRP_REMOTE_PORT"; do
+  if [[ ! "$FRP_PORT_VALUE" =~ $PORT_RE ]]; then
+    echo "FRP 端口必须是 1 到 65535 的整数。" >&2
+    usage >&2
+    exit 2
+  fi
+done
+FRP_BIND_PORT=$((10#$FRP_BIND_PORT))
+FRP_REMOTE_PORT=$((10#$FRP_REMOTE_PORT))
+if (( FRP_BIND_PORT < 1 || FRP_BIND_PORT > 65535 || FRP_REMOTE_PORT < 1 || FRP_REMOTE_PORT > 65535 )); then
+  echo "FRP 端口必须是 1 到 65535 的整数。" >&2
+  usage >&2
+  exit 2
+fi
+if (( FRP_BIND_PORT == FRP_REMOTE_PORT )); then
+  echo "FRP 控制端口与隧道端口不能相同。" >&2
+  exit 2
+fi
+if (( FRP_BIND_PORT == 80 || FRP_BIND_PORT == 443 || FRP_REMOTE_PORT == 80 || FRP_REMOTE_PORT == 443 )); then
+  echo "FRP 端口不能使用 80 或 443（Caddy 需要该端口提供 HTTPS）。" >&2
+  exit 2
+fi
+
 WORK_DIR="$(mktemp -d /tmp/snow-remote-install.XXXXXX)"
 cleanup() { rm -rf -- "$WORK_DIR"; }
 trap cleanup EXIT
 
-export DEBIAN_FRONTEND=noninteractive
-apt-get update
-apt-get install -y --no-install-recommends ca-certificates curl openssl python3 tar
+if [[ "$PACKAGE_MANAGER" == "apt-get" ]]; then
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update
+  apt-get install -y --no-install-recommends ca-certificates curl openssl python3 tar
+else
+  # RHEL 系镜像常预装 curl-minimal，与 curl 包冲突：已存在 curl 时跳过安装。
+  INSTALL_PACKAGES=(ca-certificates openssl python3 tar)
+  if ! command -v curl >/dev/null 2>&1; then
+    INSTALL_PACKAGES+=(curl)
+  fi
+  "$PACKAGE_MANAGER" install -y "${INSTALL_PACKAGES[@]}"
+fi
 
 curl --fail --location --proto '=https' --tlsv1.2 \
   "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_amd64.tar.gz" \
@@ -105,11 +159,11 @@ fi
 chown root:snow-frp "$CA_CERT" "$SERVER_CERT" "$SERVER_KEY"
 chmod 0640 "$CA_CERT" "$SERVER_CERT" "$SERVER_KEY"
 
-install -m 0640 -o root -g snow-frp /dev/stdin /etc/frp/frps.toml <<'EOF'
+install -m 0640 -o root -g snow-frp /dev/stdin /etc/frp/frps.toml <<EOF
 bindAddr = "0.0.0.0"
-bindPort = 7000
+bindPort = ${FRP_BIND_PORT}
 proxyBindAddr = "127.0.0.1"
-allowPorts = [{ single = 18080 }]
+allowPorts = [{ single = ${FRP_REMOTE_PORT} }]
 maxPortsPerClient = 1
 auth.method = "token"
 auth.additionalScopes = ["HeartBeats", "NewWorkConns"]
@@ -134,7 +188,7 @@ cat > /etc/caddy/Caddyfile <<EOF
 	${CADDY_EMAIL_LINE}
 }
 ${PUBLIC_DOMAIN} {
-	reverse_proxy 127.0.0.1:18080 {
+	reverse_proxy 127.0.0.1:${FRP_REMOTE_PORT} {
 		header_up Host ${PUBLIC_DOMAIN}
 		header_up -X-Forwarded-For
 		header_up -X-Forwarded-Host
@@ -203,7 +257,7 @@ systemctl daemon-reload
 systemctl enable --now snow-frps.service snow-caddy.service
 
 CLIENT_BUNDLE=/root/snow-remote-client.json
-PUBLIC_DOMAIN="$PUBLIC_DOMAIN" FRP_DOMAIN="$FRP_DOMAIN" TOKEN_FILE="$TOKEN_FILE" CA_CERT="$CA_CERT" CLIENT_BUNDLE="$CLIENT_BUNDLE" python3 <<'PY'
+PUBLIC_DOMAIN="$PUBLIC_DOMAIN" FRP_DOMAIN="$FRP_DOMAIN" TOKEN_FILE="$TOKEN_FILE" CA_CERT="$CA_CERT" CLIENT_BUNDLE="$CLIENT_BUNDLE" FRP_BIND_PORT="$FRP_BIND_PORT" FRP_REMOTE_PORT="$FRP_REMOTE_PORT" python3 <<'PY'
 import json, os
 from pathlib import Path
 payload = {
@@ -213,7 +267,8 @@ payload = {
         "enabled": True,
         "autoConnect": True,
         "serverAddr": os.environ["FRP_DOMAIN"],
-        "serverPort": 7000,
+        "serverPort": int(os.environ["FRP_BIND_PORT"]),
+        "remotePort": int(os.environ["FRP_REMOTE_PORT"]),
         "publicOrigin": "https://" + os.environ["PUBLIC_DOMAIN"],
         "tlsServerName": os.environ["FRP_DOMAIN"],
         "token": Path(os.environ["TOKEN_FILE"]).read_text().strip(),
@@ -226,7 +281,7 @@ chmod 0600 "$CLIENT_BUNDLE"
 
 echo
 echo "Snow 远控服务器端部署完成。"
-echo "1. 云防火墙/安全组仅放行 TCP 22、80、443、7000；不要开放 18080。"
+echo "1. 云防火墙/安全组仅放行 TCP 22、80、443、${FRP_BIND_PORT}；不要开放 ${FRP_REMOTE_PORT}。"
 echo "2. 将 $CLIENT_BUNDLE 私密下载到 Windows，切勿粘贴到聊天或公开工单。"
 echo "3. Snow → 设置 → 手机远控 → 导入服务器配置包。"
 echo "4. 手机关闭 Wi-Fi，用蜂窝网络完成最终验收。"

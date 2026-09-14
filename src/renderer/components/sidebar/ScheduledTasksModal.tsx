@@ -1889,31 +1889,33 @@ export function ScheduledTasksModal({
         <span>
           {t("scheduledTask.apiProfile", { defaultValue: "API config" })}
         </span>
-        <select
-          onChange={(event) => handleApiProfileChange(event.target.value)}
+        <CustomSelect
+          onChange={handleApiProfileChange}
+          options={[
+            {
+              value: "",
+              label: activeConfigName
+                ? t("scheduledTask.defaultWithValue", {
+                    values: { value: activeConfigName },
+                    defaultValue: `Default (${activeConfigName})`,
+                  })
+                : t("scheduledTask.optionDefault", {
+                    defaultValue: "Default",
+                  }),
+            },
+            ...apiConfigs.map((config) => ({
+              value: config.profileName,
+              label: `${config.displayName.trim() || config.profileName}${
+                config.isActive
+                  ? ` (${t("scheduledTask.activeTag", {
+                      defaultValue: "active",
+                    })})`
+                  : ""
+              }`,
+            })),
+          ]}
           value={selectedApiProfile}
-        >
-          <option value="">
-            {activeConfigName
-              ? t("scheduledTask.defaultWithValue", {
-                  values: { value: activeConfigName },
-                  defaultValue: `Default (${activeConfigName})`,
-                })
-              : t("scheduledTask.optionDefault", {
-                  defaultValue: "Default",
-                })}
-          </option>
-          {apiConfigs.map((config) => (
-            <option key={config.profileName} value={config.profileName}>
-              {config.displayName.trim() || config.profileName}
-              {config.isActive
-                ? ` (${t("scheduledTask.activeTag", {
-                    defaultValue: "active",
-                  })})`
-                : ""}
-            </option>
-          ))}
-        </select>
+        />
       </label>
 
       <div className="scheduled-tasks-field-row scheduled-tasks-model-row">

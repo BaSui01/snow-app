@@ -3,6 +3,7 @@ export type RemoteControlPairingState = {
   running: boolean;
   host: string;
   port: number;
+  configuredPort: number;
   pairingUrls: string[];
   generation: number;
   wan: {
@@ -34,6 +35,8 @@ export type RemoteTunnelConfigInput = {
   autoConnect: boolean;
   serverAddr: string;
   serverPort: number;
+  /** FRP 隧道远端端口（服务器 allowPorts 与 Caddy 反代目标）；缺省 18080。 */
+  remotePort?: number;
   publicOrigin: string;
   tlsServerName: string;
   token?: string;
@@ -54,6 +57,10 @@ export type RemoteServerDeployInput = {
   password?: string;
   privateKeyPath?: string;
   passphrase?: string;
+  /** frps 控制端口（bindPort）；缺省 7000。 */
+  frpBindPort?: number;
+  /** FRP 隧道远端端口（allowPorts 与 Caddy 反代目标）；缺省 18080。 */
+  frpRemotePort?: number;
 };
 
 export type RemoteServerDnsRecord = {
@@ -94,6 +101,7 @@ export type RemoteTunnelStatus = {
     autoConnect: boolean;
     serverAddr: string;
     serverPort: number;
+    remotePort: number;
     publicOrigin: string;
     tlsServerName: string;
     hasToken: boolean;

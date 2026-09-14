@@ -4,7 +4,7 @@
 
 厂商不限，不要按某一家云厂商写死：
 
-1. 一台长期运行的付费“轻量应用服务器”或普通 VPS：Ubuntu 24.04/22.04、x86_64、至少 1 vCPU、1 GB 内存、20 GB 磁盘，并明确包含独立公网 IPv4。购买包月或包年实例，不要购买抢占式、竞价、Windows、数据库、GPU、预装面板、自定义 Alpine 镜像或需要另一台设备保活的套餐。
+1. 一台长期运行的付费“轻量应用服务器”或普通 VPS：Ubuntu 22.04/24.04、Debian 11+、CentOS Stream/RHEL/Rocky/AlmaLinux 8+ 等常见 x86_64 系统、至少 1 vCPU、1 GB 内存、20 GB 磁盘，并明确包含独立公网 IPv4。购买包月或包年实例，不要购买抢占式、竞价、Windows、数据库、GPU、预装面板、自定义 Alpine 镜像或需要另一台设备保活的套餐。
 2. 一个自己长期持有的付费域名：注册商和后缀不限，推荐 `.com` 等常见后缀。不需要另购 SSL 证书、CDN、云解析高级版、企业邮箱或建站套餐。
 
 购买完成后，在电脑上打开服务器控制台和域名控制台，把下面整段话发送给能操作浏览器与终端的 AI。用户不需要查找或填写 IP、端口、DNS、FRP token、CA 或证书。
@@ -15,11 +15,11 @@
 >
 > 请完成以下工作：
 >
-> 1. 确认服务器是 Ubuntu 24.04/22.04 x86_64，拥有独立公网 IPv4，不是抢占式或竞价实例。
+> 1. 确认服务器是受支持的 x86_64 Linux（Ubuntu 22.04/24.04、Debian 11+、CentOS Stream/RHEL/Rocky/AlmaLinux 8+），拥有独立公网 IPv4，不是抢占式或竞价实例。
 > 2. 在域名控制台创建 `snow` 和 `frp` 两个 A 记录，均指向服务器公网 IPv4。
-> 3. 在云防火墙或安全组放行 TCP 22、80、443、7000，不要对公网开放 18080。
-> 4. 在这台电脑中找到 Snow 安装目录 `resources/remote-control/deploy`，使用其中的 `install-ubuntu.sh` 部署服务器；由你生成并保管 FRP token、CA 和证书，不要让我手工填写。
-> 5. 检查 frps、Caddy、HTTPS、端口和 18080 仅回环监听，确认公网链路可用。
+> 3. 在云防火墙或安全组放行 TCP 22、80、443 与 FRP 控制端口（默认 7000，如需自定义使用部署表单或 `--frp-bind-port`），不要对公网开放隧道端口（默认 18080，可用 `--frp-remote-port` 修改）。
+> 4. 在这台电脑中找到 Snow 安装目录 `resources/remote-control/deploy`，使用其中的 `install-linux.sh` 部署服务器；由你生成并保管 FRP token、CA 和证书，不要让我手工填写。
+> 5. 检查 frps、Caddy、HTTPS、端口与隧道端口（默认 18080）仅回环监听，确认公网链路可用。
 > 6. 将服务器生成的 `/root/snow-remote-client.json` 安全下载到本机，在 Snow 中导入它并连接；导入成功后删除本机明文配置包。
 > 7. 最后提醒我关闭手机 Wi-Fi，用蜂窝网络扫描公网二维码验收。
 >
@@ -28,10 +28,11 @@
 AI 应根据实际厂商操作对应控制台，不能要求用户把页面中的专业参数逐项抄进聊天。只有在 AI 确实无法操作浏览器或终端时，才使用下面的手动备用命令：
 
 ```bash
-sudo bash install-ubuntu.sh \
+# 可选参数：--frp-bind-port <FRP 控制端口> --frp-remote-port <FRP 隧道端口>
+sudo bash install-linux.sh \
   --public-domain snow.example.com \
   --frp-domain frp.example.com \
   --email you@example.com
 ```
 
-脚本只支持 Debian/Ubuntu 的 amd64 服务器；它固定校验 frp/Caddy 下载哈希，生成独立 token 和私有 FRP CA，配置 systemd，并输出仅 root 可读的 Snow 配置包。脚本不会替用户付款购买服务器或域名。
+脚本支持 x86_64 的 Debian/Ubuntu 与 CentOS/RHEL/Rocky/AlmaLinux 系统；它固定校验 frp/Caddy 下载哈希，生成独立 token 和私有 FRP CA，配置 systemd，并输出仅 root 可读的 Snow 配置包。脚本不会替用户付款购买服务器或域名。

@@ -1,10 +1,21 @@
 import { isIP } from "node:net";
 
+/** FRP 服务器端口默认值（frps bindPort）：仅用于展示与部署表单缺省值。 */
+export const DEFAULT_FRP_SERVER_PORT = 7000;
+
+/** FRP 隧道远端端口默认值（frps allowPorts / Caddy 反代目标）：旧配置与旧配置包缺失该字段时沿用。 */
+export const DEFAULT_REMOTE_PORT = 18080;
+
 export type RemoteTunnelConfigInput = {
   enabled: boolean;
   autoConnect: boolean;
   serverAddr: string;
   serverPort: number;
+  /**
+   * FRP 隧道远端端口：服务器 frps allowPorts 与 Caddy 反代的目标端口。
+   * 旧配置与旧服务器配置包可能缺失，缺失时沿用已存值或默认 18080。
+   */
+  remotePort?: number;
   publicOrigin: string;
   tlsServerName: string;
   token?: string;
@@ -20,9 +31,10 @@ export type RemoteTunnelImportBundle = {
 
 export type StoredRemoteTunnelConfig = Omit<
   RemoteTunnelConfigInput,
-  "token" | "caCertificate"
+  "token" | "caCertificate" | "remotePort"
 > & {
   version: 1;
+  remotePort: number;
   token: string;
   caCertificate: string;
 };
@@ -67,9 +79,9 @@ const normalizePublicOrigin = (value: string): string => {
   return url.origin;
 };
 
-const normalizePort = (value: number): number => {
+const normalizePort = (value: number, message: string): number => {
   if (!Number.isInteger(value) || value < 1 || value > 65_535) {
-    throw new Error("FRP 服务器端口必须是 1 到 65535 的整数");
+    throw new Error(message);
   }
   return value;
 };
@@ -109,7 +121,8 @@ export const normalizeRemoteTunnelConfig = (
     typeof input.autoConnect !== "boolean" ||
     typeof input.serverAddr !== "string" ||
     typeof input.publicOrigin !== "string" ||
-    typeof input.tlsServerName !== "string"
+    typeof input.tlsServerName !== "string" ||
+    (input.remotePort !== undefined && typeof input.remotePort !== "number")
   ) {
     throw new Error("公网远控配置字段类型无效");
   }
@@ -128,12 +141,20 @@ export const normalizeRemoteTunnelConfig = (
   if (input.enabled && (!token || !caCertificate)) {
     throw new Error("启用公网远控前必须提供 FRP 凭据和 CA 证书");
   }
+  const remotePort =
+    input.remotePort === undefined
+      ? (previous?.remotePort ?? DEFAULT_REMOTE_PORT)
+      : normalizePort(input.remotePort, "FRP 隧道端口必须是 1 到 65535 的整数");
   return {
     version: 1,
     enabled: Boolean(input.enabled),
     autoConnect: Boolean(input.autoConnect),
     serverAddr: normalizeHost(input.serverAddr, "FRP 服务器地址"),
-    serverPort: normalizePort(input.serverPort),
+    serverPort: normalizePort(
+      input.serverPort,
+      "FRP 服务器端口必须是 1 到 65535 的整数",
+    ),
+    remotePort,
     publicOrigin: normalizePublicOrigin(input.publicOrigin),
     tlsServerName: normalizeHost(input.tlsServerName, "TLS 服务器名称"),
     token,
@@ -165,6 +186,7 @@ export const parseRemoteTunnelImportBundle = (
     autoConnect: normalized.autoConnect,
     serverAddr: normalized.serverAddr,
     serverPort: normalized.serverPort,
+    remotePort: normalized.remotePort,
     publicOrigin: normalized.publicOrigin,
     tlsServerName: normalized.tlsServerName,
     token: normalized.token,
@@ -205,7 +227,7 @@ export const renderFrpcConfig = (
     'type = "tcp"',
     'localIP = "127.0.0.1"',
     `localPort = ${paths.localPort}`,
-    "remotePort = 18080",
+    `remotePort = ${config.remotePort}`,
     'transport.bandwidthLimit = "20MB"',
     'transport.bandwidthLimitMode = "server"',
     "",

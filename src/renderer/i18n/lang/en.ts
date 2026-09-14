@@ -4444,4 +4444,206 @@ export const en = {
   "userscripts.installed": "Script installed",
   "userscripts.installFailed": "Install failed",
   "userscripts.installs": "installs",
+  "remoteControl.subtitle":
+    "Connect to this Snow from a phone browser on the same LAN.",
+  "remoteControl.enableTitle": "Enable mobile remote control",
+  "remoteControl.enableDescription":
+    "When off, no port is listened on and no tunnel is connected. The setting persists across restarts.",
+  "remoteControl.portLabel": "LAN listening port",
+  "remoteControl.portDescription":
+    "Phones reach this computer through this port (default 8788). The service restarts automatically after a change.",
+  "remoteControl.savePort": "Save port",
+  "remoteControl.lanQrAria": "Pairing QR code",
+  "remoteControl.lanQrAlt": "Snow mobile remote control pairing QR code",
+  "remoteControl.listeningOn": "Listening on {{port}}",
+  "remoteControl.serviceNotRunning": "Service not running",
+  "remoteControl.lanAddress": "LAN address",
+  "remoteControl.copyAddress": "Copy address",
+  "remoteControl.rotateCredentials": "Rotate credentials",
+  "remoteControl.rotateNote":
+    "After rotating, paired phones and pending attachments are invalidated immediately.",
+  "remoteControl.tunnelTitle": "Self-hosted public connection",
+  "remoteControl.tunnelDescription":
+    "frpc is bundled and verified; credentials are stored encrypted locally only after verification succeeds.",
+  "remoteControl.statusLoading": "Loading",
+  "remoteControl.statusUnknown": "Unknown",
+  "remoteControl.localWan": "Local WAN",
+  "remoteControl.notListening": "Not listening",
+  "remoteControl.frpTunnel": "FRP tunnel",
+  "remoteControl.httpsProbe": "HTTPS probe",
+  "remoteControl.endpointUnchecked": "Not checked",
+  "remoteControl.endpointChecking": "Checking",
+  "remoteControl.endpointReachable": "Passed",
+  "remoteControl.endpointFailed": "Failed",
+  "remoteControl.secureStorageUnavailable":
+    "System secure storage is unavailable. Public remote control is disabled to avoid storing credentials in plaintext.",
+  "remoteControl.guideSummary":
+    "First public deployment (4 steps, installed by Snow)",
+  "remoteControl.guideCalloutTitle":
+    "No server is needed when you only use the same Wi-Fi.",
+  "remoteControl.guideCalloutText":
+    "Just scan the LAN QR code above; you can leave the public configuration off.",
+  "remoteControl.step1Title": "Buy only a server and a domain",
+  "remoteControl.step1ServerLabel": "Public Linux server: ",
+  "remoteControl.step1ServerText":
+    "Any provider; Ubuntu 22.04/24.04, Debian 11+, CentOS Stream/Rocky/AlmaLinux 8+ or similar, x86_64, a dedicated public IPv4, long-running; at least 1 vCPU and 1 GB RAM. Do not buy spot or preemptible, Windows, database, GPU, or preinstalled-panel plans.",
+  "remoteControl.step1DomainLabel": "A paid domain: ",
+  "remoteControl.step1DomainText":
+    "Any registrar and suffix. You do not need an SSL certificate, CDN, premium DNS, website builder, or business email.",
+  "remoteControl.step1CredentialLabel": "Server login credentials: ",
+  "remoteControl.step1CredentialText":
+    "root password or SSH private key. This is not your cloud account password. If the server has no initial password, click “Set/Reset password” in the server console.",
+  "remoteControl.step2Title": "Complete these settings in two consoles first",
+  "remoteControl.step2DnsLabel": "Domain console → DNS → Add records:",
+  "remoteControl.dnsTableAria": "DNS records",
+  "remoteControl.dnsType": "Type",
+  "remoteControl.dnsHost": "Host",
+  "remoteControl.dnsValue": "Value",
+  "remoteControl.serverIpLabel": "Server public IP",
+  "remoteControl.step2DnsHintPrefix": "Enter only",
+  "remoteControl.step2DnsHintAnd": "and",
+  "remoteControl.step2DnsHintSuffix":
+    "as host records; do not enter the full domain. Keep line and TTL at default.",
+  "remoteControl.step2DnsHintDomains":
+    "After saving, you get snow.{{rootDomain}} and frp.{{rootDomain}}.",
+  "remoteControl.step2FirewallLabel":
+    "Server console → Firewall/Security group → Add inbound rules:",
+  "remoteControl.portPurposeSsh": "Snow SSH access",
+  "remoteControl.portPurposeAcme": "Automatic HTTPS certificate",
+  "remoteControl.portPurposeHttps": "Phone HTTPS access",
+  "remoteControl.portPurposeTunnel": "Snow desktop tunnel",
+  "remoteControl.step2ClosedPortWarning": "Do not expose TCP {{port}}.",
+  "remoteControl.step2ClosedPortText":
+    "It is for server-internal use only; Snow verifies this at the end of deployment.",
+  "remoteControl.step3Title": "Then fill in the Snow connection info",
+  "remoteControl.serverIpHint":
+    "The “Public IP / Public IPv4” from the server details page, not a private IP.",
+  "remoteControl.serverIpExample": "e.g. 42.194.128.147",
+  "remoteControl.rootDomainLabel": "Your root domain",
+  "remoteControl.rootDomainHint":
+    "The domain you bought, e.g. example.com; do not include snow, https, or a path.",
+  "remoteControl.rootDomainExample": "e.g. example.com",
+  "remoteControl.sshUsername": "SSH username",
+  "remoteControl.sshUsernameHint":
+    "Use root for password login on Ubuntu/Debian and CentOS/RHEL; the admin shown by one-click login may not work.",
+  "remoteControl.sshPort": "SSH port",
+  "remoteControl.sshPortHint":
+    "The port shown on the server's remote-connection page; usually 22 if unchanged.",
+  "remoteControl.frpBindPort": "FRP control port",
+  "remoteControl.frpBindPortHint":
+    "The frps control port on the server; written into the client bundle. Usually 7000 if unchanged.",
+  "remoteControl.frpRemotePort": "FRP tunnel port",
+  "remoteControl.frpRemotePortHint":
+    "Server-internal tunnel port used only by Caddy; no security-group rule needed.",
+  "remoteControl.authMethod": "Login method",
+  "remoteControl.authMethodHint":
+    "Beginners should use the SSH password set in the server console.",
+  "remoteControl.authPassword": "SSH password",
+  "remoteControl.authPrivateKey": "SSH private key",
+  "remoteControl.sshPasswordHint":
+    "The server root password, not your Alibaba Cloud/Tencent Cloud website password.",
+  "remoteControl.sshPasswordPlaceholder":
+    "Kept in memory only during this deployment",
+  "remoteControl.sshKeyFile": "SSH private key file",
+  "remoteControl.sshKeyFileHint":
+    "Select the private key file downloaded when you created the server or bound a key pair.",
+  "remoteControl.sshKeyFilePlaceholder": "Select a private key file",
+  "remoteControl.selectFile": "Select",
+  "remoteControl.passphrase": "Key passphrase (leave empty if none)",
+  "remoteControl.step4Title": "Verify first, then deploy automatically",
+  "remoteControl.step4Text":
+    "Click “Check DNS” first. When both lines show ✓, click “Deploy and connect automatically”; Snow then handles FRP, Caddy, token, CA, certificates, and configuration import.",
+  "remoteControl.checkDns": "Check DNS",
+  "remoteControl.deployConnect": "Deploy and connect",
+  "remoteControl.cancelDeploy": "Cancel deployment",
+  "remoteControl.advancedSettings": "Advanced settings",
+  "remoteControl.importBundle": "Import an existing bundle",
+  "remoteControl.tunnelEnabled": "Enable public remote control",
+  "remoteControl.tunnelAutoConnect": "Connect automatically when Snow starts",
+  "remoteControl.frpServerAddr": "FRP server address",
+  "remoteControl.frpServerPort": "FRP port",
+  "remoteControl.publicOrigin": "Phone HTTPS address",
+  "remoteControl.tlsServerName": "FRP TLS server name",
+  "remoteControl.frpToken": "FRP token",
+  "remoteControl.tokenPlaceholderSaved": "Saved encrypted; leave empty to keep",
+  "remoteControl.tokenPlaceholderNew": "At least 32 characters",
+  "remoteControl.frpCa": "FRP CA certificate (PEM)",
+  "remoteControl.caPlaceholderSaved":
+    "Certificate saved encrypted; leave empty to keep",
+  "remoteControl.saveAndConnect": "Save and connect",
+  "remoteControl.saveAndDisable": "Save and disable public access",
+  "remoteControl.disconnectOnce": "Disconnect this session only",
+  "remoteControl.disconnectWarningTitle":
+    "“Disconnect” does not revoke phone sign-in.",
+  "remoteControl.disconnectWarningText":
+    "If the phone is lost or the link leaks, use “Rotate credentials” above so old phone sessions expire immediately.",
+  "remoteControl.wanQrAria": "Public pairing QR code",
+  "remoteControl.wanQrAlt": "Snow public remote control pairing QR code",
+  "remoteControl.wanVerified": "Public entry verified",
+  "remoteControl.wanPending": "Public entry pending",
+  "remoteControl.selfHostedServer": "Self-hosted server",
+  "remoteControl.wanNote":
+    "Local tunnel port {{port}}. The QR code is valid for five minutes and can be used once.",
+  "remoteControl.noticeLoadFailed":
+    "Could not read mobile remote control status",
+  "remoteControl.noticeRotated":
+    "Pairing credentials rotated; old phone sessions are now invalid",
+  "remoteControl.noticeRotateFailed": "Rotation failed",
+  "remoteControl.noticeCopied": "Pairing address copied",
+  "remoteControl.noticeCopyFailed": "Copy failed",
+  "remoteControl.noticeEnabled": "Mobile remote control enabled",
+  "remoteControl.noticeDisabled": "Mobile remote control disabled",
+  "remoteControl.noticeToggleFailed": "Failed to toggle mobile remote control",
+  "remoteControl.errorInvalidPort":
+    "Port must be an integer between 1 and 65535",
+  "remoteControl.noticePortSavedRunning":
+    "Port saved as {{port}}; the service restarted on the new port. Paired phones must pair again.",
+  "remoteControl.noticePortSavedIdle":
+    "Port saved as {{port}}; it takes effect when remote control is enabled.",
+  "remoteControl.noticePortFailed": "Failed to set port",
+  "remoteControl.noticeDnsReady":
+    "Both DNS records are active; you can start the automatic deployment",
+  "remoteControl.noticeDnsPending":
+    "DNS is not ready yet. Verify the two A records below and try again in a few minutes.",
+  "remoteControl.noticeDnsFailed": "DNS check failed",
+  "remoteControl.privateKeyDialogTitle": "Select the server SSH private key",
+  "remoteControl.deployStarting": "Starting deployment",
+  "remoteControl.noticeDeploySuccess":
+    "Deployment succeeded. Turn off phone Wi-Fi and scan the public QR code over cellular data",
+  "remoteControl.noticeDeployCanceled": "Deployment canceled",
+  "remoteControl.noticeDeployFailed": "Automatic server deployment failed",
+  "remoteControl.noticeCancelingDeploy":
+    "Canceling the deployment; the current install command on the server may take a moment to stop",
+  "remoteControl.noticeTunnelSaved":
+    "Configuration saved encrypted; verifying the public entry",
+  "remoteControl.noticeTunnelDisabled":
+    "Public remote control is off; LAN remote control stays available",
+  "remoteControl.noticeTunnelSaveFailed": "Save or connect failed",
+  "remoteControl.noticeTunnelDisconnected":
+    "Public tunnel disconnected; LAN remote control stays available",
+  "remoteControl.noticeDisconnectFailed": "Disconnect failed",
+  "remoteControl.noticeImported":
+    "The bundle was verified and saved encrypted; Snow is connecting. It contains FRP credentials — delete it from your downloads folder.",
+  "remoteControl.noticeImportFailed":
+    "Failed to import the configuration bundle",
+  "remoteControl.tunnelStageStopped": "Stopped",
+  "remoteControl.tunnelStageStarting": "Starting local entry",
+  "remoteControl.tunnelStageConnecting": "Tunnel started; checking HTTPS",
+  "remoteControl.tunnelStageOnline": "Public entry available",
+  "remoteControl.tunnelStageReconnecting": "Network interrupted; reconnecting",
+  "remoteControl.tunnelStageFailed": "Connection failed",
+  "remoteControl.deployStage.checking_dns": "Checking the two DNS records",
+  "remoteControl.deployStage.connecting_ssh":
+    "Connecting to the server securely",
+  "remoteControl.deployStage.checking_server":
+    "Checking distribution, architecture, and admin rights",
+  "remoteControl.deployStage.uploading": "Uploading the bundled Snow deployer",
+  "remoteControl.deployStage.installing":
+    "Installing and configuring FRP and HTTPS; usually takes 2–8 minutes",
+  "remoteControl.deployStage.importing":
+    "Importing the server configuration directly; no plaintext file is written locally",
+  "remoteControl.deployStage.verifying":
+    "Connecting FRP and verifying public HTTPS",
+  "remoteControl.deployStage.completed":
+    "Public remote control deployed; scan the public QR code to verify",
 } satisfies Record<string, string>;

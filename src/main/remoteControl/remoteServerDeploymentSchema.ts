@@ -1,4 +1,8 @@
 import { isIP } from "node:net";
+import {
+  DEFAULT_FRP_SERVER_PORT,
+  DEFAULT_REMOTE_PORT,
+} from "./remoteTunnelSchema";
 
 export type RemoteServerAuthMethod = "password" | "privateKey";
 
@@ -11,11 +15,20 @@ export type RemoteServerDeployInput = {
   password?: string;
   privateKeyPath?: string;
   passphrase?: string;
+  /** frps 控制端口（bindPort）；缺省 7000。 */
+  frpBindPort?: number;
+  /** FRP 隧道远端端口（allowPorts 与 Caddy 反代目标）；缺省 18080。 */
+  frpRemotePort?: number;
 };
 
-export type NormalizedRemoteServerDeployInput = RemoteServerDeployInput & {
+export type NormalizedRemoteServerDeployInput = Omit<
+  RemoteServerDeployInput,
+  "frpBindPort" | "frpRemotePort"
+> & {
   publicDomain: string;
   frpDomain: string;
+  frpBindPort: number;
+  frpRemotePort: number;
 };
 
 const HOSTNAME_PATTERN =
@@ -80,6 +93,13 @@ export const deriveRemoteDomains = (
   };
 };
 
+const normalizeDeployPort = (value: number, label: string): number => {
+  if (!Number.isInteger(value) || value < 1 || value > 65_535) {
+    throw new Error(`${label}必须是 1 到 65535 的整数`);
+  }
+  return value;
+};
+
 export const normalizeRemoteServerDeployInput = (
   input: RemoteServerDeployInput,
 ): NormalizedRemoteServerDeployInput => {
@@ -137,6 +157,31 @@ export const normalizeRemoteServerDeployInput = (
   ) {
     throw new Error("SSH 凭据长度异常");
   }
+  const frpBindPort =
+    input.frpBindPort === undefined
+      ? DEFAULT_FRP_SERVER_PORT
+      : normalizeDeployPort(input.frpBindPort, "FRP 控制端口");
+  const frpRemotePort =
+    input.frpRemotePort === undefined
+      ? DEFAULT_REMOTE_PORT
+      : normalizeDeployPort(input.frpRemotePort, "FRP 隧道端口");
+  if (frpBindPort === frpRemotePort) {
+    throw new Error("FRP 控制端口与 FRP 隧道端口不能相同");
+  }
+  const reservedPorts = new Map<number, string>([
+    [80, "Caddy 申请 HTTPS 证书"],
+    [443, "Caddy 手机 HTTPS 访问"],
+    [input.sshPort, "SSH 登录"],
+  ]);
+  for (const [label, port] of [
+    ["FRP 控制端口", frpBindPort],
+    ["FRP 隧道端口", frpRemotePort],
+  ] as const) {
+    const owner = reservedPorts.get(port);
+    if (owner) {
+      throw new Error(`${label} ${port} 与${owner}冲突，请更换`);
+    }
+  }
   const domains = deriveRemoteDomains(input.rootDomain);
   return {
     serverIp,
@@ -146,6 +191,8 @@ export const normalizeRemoteServerDeployInput = (
     sshPort: input.sshPort,
     sshUsername,
     authMethod: input.authMethod,
+    frpBindPort,
+    frpRemotePort,
     ...(input.authMethod === "password" ? { password: input.password } : {}),
     ...(privateKeyPath ? { privateKeyPath } : {}),
     ...(input.passphrase ? { passphrase: input.passphrase } : {}),
@@ -157,7 +204,12 @@ export const shellQuote = (value: string): string =>
 
 export const buildRemoteInstallCommand = (
   remoteScriptPath: string,
-  domains: { publicDomain: string; frpDomain: string },
+  domains: {
+    publicDomain: string;
+    frpDomain: string;
+    frpBindPort: number;
+    frpRemotePort: number;
+  },
   useSudo: boolean,
 ): string =>
   [
@@ -168,9 +220,26 @@ export const buildRemoteInstallCommand = (
     shellQuote(domains.publicDomain),
     "--frp-domain",
     shellQuote(domains.frpDomain),
+    "--frp-bind-port",
+    String(domains.frpBindPort),
+    "--frp-remote-port",
+    String(domains.frpRemotePort),
   ]
     .filter(Boolean)
     .join(" ");
+
+/**
+ * 受支持的发行版与主版本号（/etc/os-release 的 ID 与 VERSION_ID 主版本）。
+ * RHEL 系部分发行版的 VERSION_ID 带小版本（如 9.4），因此按主版本匹配。
+ */
+const SUPPORTED_SYSTEMS: Record<string, readonly string[]> = {
+  ubuntu: ["22", "24"],
+  debian: ["11", "12", "13"],
+  centos: ["8", "9"],
+  rhel: ["8", "9"],
+  rocky: ["8", "9"],
+  almalinux: ["8", "9"],
+};
 
 export const parseRemotePreflight = (
   output: string,
@@ -185,9 +254,9 @@ export const parseRemotePreflight = (
   const version = values.get("version") ?? "";
   const arch = values.get("arch")?.toLowerCase() ?? "";
   const privilege = values.get("privilege") ?? "none";
-  if (os !== "ubuntu" || !["22.04", "24.04"].includes(version)) {
+  if (!SUPPORTED_SYSTEMS[os]?.includes(version.split(".")[0])) {
     throw new Error(
-      `服务器系统必须是 Ubuntu 22.04 或 24.04；检测到 ${os || "未知"} ${version}`,
+      `服务器系统暂不支持：检测到 ${os || "未知"} ${version}；支持 Ubuntu 22.04/24.04、Debian 11+ 与 CentOS/RHEL/Rocky/AlmaLinux 8+ 的 x86_64 系统`,
     );
   }
   if (!new Set(["x86_64", "amd64"]).has(arch)) {

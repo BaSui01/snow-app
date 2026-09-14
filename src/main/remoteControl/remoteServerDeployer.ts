@@ -146,9 +146,9 @@ const deploymentScriptPath = (): string =>
         process.resourcesPath,
         "remote-control",
         "deploy",
-        "install-ubuntu.sh",
+        "install-linux.sh",
       )
-    : join(app.getAppPath(), "deploy", "remote-control", "install-ubuntu.sh");
+    : join(app.getAppPath(), "deploy", "remote-control", "install-linux.sh");
 
 const preflightCommand = [
   "set -eu",
@@ -213,7 +213,7 @@ export const deployRemoteServer = async (
       { signal: controller.signal },
     );
 
-    report("checking_server", "正在检查 Ubuntu、架构和管理员权限");
+    report("checking_server", "正在检查发行版、架构和管理员权限");
     const preflight = parseRemotePreflight(
       await executeSshCommand(sessionId, preflightCommand, {
         timeoutMs: 30_000,
@@ -269,7 +269,7 @@ export const deployRemoteServer = async (
     if (tunnel.stage !== "online" || tunnel.endpoint.stage !== "reachable") {
       throw new Error(
         tunnel.error?.message ??
-          "服务器已安装，但公网入口仍不可达；请确认安全组已放行 TCP 80、443、7000",
+          `服务器已安装，但公网入口仍不可达；请确认安全组已放行 TCP 80、443、${input.frpBindPort}`,
       );
     }
     const listenCheck = await executeSshCommand(
@@ -277,11 +277,16 @@ export const deployRemoteServer = async (
       `${privilege}systemctl is-active snow-frps.service snow-caddy.service && ${privilege}ss -ltnH`,
       { timeoutMs: 30_000, signal: controller.signal },
     );
+    const remotePort = String(input.frpRemotePort);
     if (
-      !/127\.0\.0\.1:18080\b/.test(listenCheck) ||
-      /(?:0\.0\.0\.0|\[::\]|\*):18080\b/.test(listenCheck)
+      !new RegExp(`127\\.0\\.0\\.1:${remotePort}\\b`).test(listenCheck) ||
+      new RegExp(`(?:0\\.0\\.0\\.0|\\[::\\]|\\*):${remotePort}\\b`).test(
+        listenCheck,
+      )
     ) {
-      throw new Error("服务器端口检查失败：18080 必须且只能监听 127.0.0.1");
+      throw new Error(
+        `服务器端口检查失败：${input.frpRemotePort} 必须且只能监听 127.0.0.1`,
+      );
     }
 
     // Persist only after the tunnel, HTTPS endpoint, and loopback isolation pass.

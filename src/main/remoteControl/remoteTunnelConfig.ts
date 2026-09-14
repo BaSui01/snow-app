@@ -9,6 +9,8 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import {
+  DEFAULT_FRP_SERVER_PORT,
+  DEFAULT_REMOTE_PORT,
   normalizeRemoteTunnelConfig,
   type RemoteTunnelConfigInput,
   type RemoteTunnelConfigView,
@@ -18,8 +20,7 @@ import {
 const MAGIC = Buffer.from("SNOWTUNNEL1", "utf8");
 let writeQueue: Promise<void> = Promise.resolve();
 
-const configDir = (): string =>
-  join(app.getPath("userData"), "remote-control");
+const configDir = (): string => join(app.getPath("userData"), "remote-control");
 const configPath = (): string => join(configDir(), "tunnel-config.bin");
 
 const restrictPermissions = (path: string): void => {
@@ -33,35 +34,38 @@ const restrictPermissions = (path: string): void => {
 export const isRemoteTunnelSecureStorageAvailable = (): boolean =>
   safeStorage.isEncryptionAvailable();
 
-export const loadStoredRemoteTunnelConfig = (): StoredRemoteTunnelConfig | null => {
-  const path = configPath();
-  if (!existsSync(path)) return null;
-  if (!safeStorage.isEncryptionAvailable()) {
-    throw new Error("系统安全存储不可用，无法解密公网远控配置");
-  }
-  const data = readFileSync(path);
-  if (!data.subarray(0, MAGIC.length).equals(MAGIC)) {
-    throw new Error("公网远控配置文件已损坏");
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(safeStorage.decryptString(data.subarray(MAGIC.length)));
-  } catch {
-    throw new Error("公网远控配置无法解密或格式无效");
-  }
-  const value = parsed as StoredRemoteTunnelConfig;
-  if (!value || value.version !== 1) {
-    throw new Error("公网远控配置版本不受支持");
-  }
-  return normalizeRemoteTunnelConfig(
-    {
-      ...value,
-      token: value.token,
-      caCertificate: value.caCertificate,
-    },
-    null,
-  );
-};
+export const loadStoredRemoteTunnelConfig =
+  (): StoredRemoteTunnelConfig | null => {
+    const path = configPath();
+    if (!existsSync(path)) return null;
+    if (!safeStorage.isEncryptionAvailable()) {
+      throw new Error("系统安全存储不可用，无法解密公网远控配置");
+    }
+    const data = readFileSync(path);
+    if (!data.subarray(0, MAGIC.length).equals(MAGIC)) {
+      throw new Error("公网远控配置文件已损坏");
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(
+        safeStorage.decryptString(data.subarray(MAGIC.length)),
+      );
+    } catch {
+      throw new Error("公网远控配置无法解密或格式无效");
+    }
+    const value = parsed as StoredRemoteTunnelConfig;
+    if (!value || value.version !== 1) {
+      throw new Error("公网远控配置版本不受支持");
+    }
+    return normalizeRemoteTunnelConfig(
+      {
+        ...value,
+        token: value.token,
+        caCertificate: value.caCertificate,
+      },
+      null,
+    );
+  };
 
 export const toRemoteTunnelConfigView = (
   value: StoredRemoteTunnelConfig | null,
@@ -70,7 +74,8 @@ export const toRemoteTunnelConfigView = (
   enabled: value?.enabled ?? false,
   autoConnect: value?.autoConnect ?? false,
   serverAddr: value?.serverAddr ?? "",
-  serverPort: value?.serverPort ?? 7000,
+  serverPort: value?.serverPort ?? DEFAULT_FRP_SERVER_PORT,
+  remotePort: value?.remotePort ?? DEFAULT_REMOTE_PORT,
   publicOrigin: value?.publicOrigin ?? "",
   tlsServerName: value?.tlsServerName ?? "",
   hasToken: Boolean(value?.token),

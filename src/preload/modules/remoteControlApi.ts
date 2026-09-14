@@ -21,6 +21,8 @@ export const remoteControlApi = {
     enabled: boolean,
   ): Promise<RemoteControlPairingState> =>
     ipcRenderer.invoke("remote-control:set-enabled", enabled),
+  setRemoteControlPort: (port: number): Promise<RemoteControlPairingState> =>
+    ipcRenderer.invoke("remote-control:set-port", port),
   getRemoteTunnelStatus: (): Promise<RemoteTunnelStatus> =>
     ipcRenderer.invoke("remote-control:tunnel-status"),
   saveRemoteTunnelConfig: (

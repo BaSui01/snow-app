@@ -5,6 +5,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 import { useI18n } from "../../i18n";
 import { getFileTypeIcon } from "../../utils/fileIcons";
+import { CustomSelect } from "../common/CustomSelect";
 import type { CodebaseSphereLayout } from "../../../preload";
 
 // 布局计算为 O(n²)，提供数量阈值选项让用户权衡完整度与等待时间。
@@ -72,7 +73,7 @@ export const CodebaseSphereView = ({
   const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<"loading" | "error" | "empty" | "ready">(
-    "loading"
+    "loading",
   );
   const [nodeLimit, setNodeLimit] = useState<NodeLimit>("all");
   const [shownCount, setShownCount] = useState(0);
@@ -110,7 +111,7 @@ export const CodebaseSphereView = ({
         // 渲染进程等待期间保持响应，不再阻塞整个应用。
         const layout = await window.snow.getCodebaseSphereLayout(
           projectId,
-          limit
+          limit,
         );
         if (disposed) {
           return;
@@ -175,7 +176,7 @@ export const CodebaseSphereView = ({
         50,
         container.clientWidth / Math.max(1, container.clientHeight),
         0.1,
-        100
+        100,
       );
       // 拉远相机，让球体默认尺寸约为原来的一半。
       camera.position.set(0, 0.5, 4.2);
@@ -209,7 +210,7 @@ export const CodebaseSphereView = ({
       const lineGeometry = new THREE.BufferGeometry();
       lineGeometry.setAttribute(
         "position",
-        new THREE.Float32BufferAttribute(linePositions, 3)
+        new THREE.Float32BufferAttribute(linePositions, 3),
       );
       const lineMaterial = new THREE.LineBasicMaterial({
         color: 0x60a5fa,
@@ -224,7 +225,7 @@ export const CodebaseSphereView = ({
       const hoverLineGeometry = new THREE.BufferGeometry();
       hoverLineGeometry.setAttribute(
         "position",
-        new THREE.Float32BufferAttribute([], 3)
+        new THREE.Float32BufferAttribute([], 3),
       );
       const hoverLines = new THREE.LineSegments(
         hoverLineGeometry,
@@ -233,7 +234,7 @@ export const CodebaseSphereView = ({
           transparent: true,
           opacity: 0.85,
           depthWrite: false,
-        })
+        }),
       );
       hoverLines.visible = false;
       scene.add(hoverLines);
@@ -248,7 +249,7 @@ export const CodebaseSphereView = ({
         const color = new THREE.Color().setHSL(
           0.55 + 0.09 * Math.min(1, node.chunkCount / 30),
           0.85,
-          0.62
+          0.62,
         );
         const visual = new THREE.Mesh(
           new THREE.SphereGeometry(visualSize, 16, 12),
@@ -256,7 +257,7 @@ export const CodebaseSphereView = ({
             color,
             transparent: true,
             opacity: 0.95,
-          })
+          }),
         );
         visual.position.set(node.x, node.y, node.z);
         scene.add(visual);
@@ -269,7 +270,7 @@ export const CodebaseSphereView = ({
             transparent: true,
             opacity: 0,
             depthWrite: false,
-          })
+          }),
         );
         hit.position.set(node.x, node.y, node.z);
         scene.add(hit);
@@ -287,7 +288,7 @@ export const CodebaseSphereView = ({
       let focusRafId = 0;
 
       const getNeighbors = (
-        index: number
+        index: number,
       ): { path: string; similarity: number }[] =>
         edges
           .filter((edge) => edge.a === index || edge.b === index)
@@ -301,8 +302,7 @@ export const CodebaseSphereView = ({
       // 悬停时高亮悬停点本身 + 与其最相似的一批文件，其余节点变暗，
       // 形成“以一点为中心的关系聚焦”效果。关联列表由 Rust 端预计算。
       const applyHoverHighlight = (index: number | null): void => {
-        const related =
-          index !== null ? new Set(nodes[index].related) : null;
+        const related = index !== null ? new Set(nodes[index].related) : null;
 
         nodeMeshes.forEach((mesh, i) => {
           const material = mesh.material as THREE.MeshBasicMaterial;
@@ -346,13 +346,13 @@ export const CodebaseSphereView = ({
             nodes[index].z,
             other.x,
             other.y,
-            other.z
+            other.z,
           );
         });
         if (positions.length > 0) {
           hoverLineGeometry.setAttribute(
             "position",
-            new THREE.Float32BufferAttribute(positions, 3)
+            new THREE.Float32BufferAttribute(positions, 3),
           );
           hoverLineGeometry.computeBoundingSphere();
           hoverLines.visible = true;
@@ -389,11 +389,11 @@ export const CodebaseSphereView = ({
             const neighbors = getNeighbors(index);
             const tooltipX = Math.max(
               8,
-              Math.min(event.clientX - rect.left + 14, rect.width - 296)
+              Math.min(event.clientX - rect.left + 14, rect.width - 296),
             );
             const tooltipY = Math.max(
               8,
-              Math.min(event.clientY - rect.top + 14, rect.height - 220)
+              Math.min(event.clientY - rect.top + 14, rect.height - 220),
             );
             setTooltip({ x: tooltipX, y: tooltipY, node, neighbors });
           }
@@ -433,7 +433,7 @@ export const CodebaseSphereView = ({
       const findIndex = (q: string): number => {
         const lower = q.toLowerCase();
         return nodes.findIndex((node) =>
-          node.path.toLowerCase().includes(lower)
+          node.path.toLowerCase().includes(lower),
         );
       };
 
@@ -501,7 +501,7 @@ export const CodebaseSphereView = ({
           renderer.domElement.removeEventListener("pointermove", onPointerMove);
           renderer.domElement.removeEventListener(
             "pointerleave",
-            onPointerLeave
+            onPointerLeave,
           );
           controls.dispose();
           scene.traverse((object) => {
@@ -598,19 +598,21 @@ export const CodebaseSphereView = ({
               {t("codebase.panel.sphereSearchNoMatch")}
             </span>
           )}
-          <select
-            className="codebase-sphere-limit-select"
-            value={nodeLimit}
+          <CustomSelect
+            onChange={(value) => setNodeLimit(value as NodeLimit)}
+            options={[
+              {
+                value: "all",
+                label: t("codebase.panel.sphereLimitAll"),
+              },
+              ...LIMIT_OPTIONS.map((value) => ({
+                value: String(value),
+                label: String(value),
+              })),
+            ]}
             title={t("codebase.panel.sphereLimitTitle")}
-            onChange={(event) => setNodeLimit(event.target.value as NodeLimit)}
-          >
-            <option value="all">{t("codebase.panel.sphereLimitAll")}</option>
-            {LIMIT_OPTIONS.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
+            value={String(nodeLimit)}
+          />
         </div>
       )}
       {state === "ready" && tooltip && (

@@ -5,7 +5,10 @@ import {
   getRemoteControlPairingState,
   rotateRemoteControlToken,
 } from "../../remoteControl/remoteControlServer";
-import { applyRemoteControlEnabled } from "../../remoteControl/remoteControlLifecycle";
+import {
+  applyRemoteControlEnabled,
+  applyRemoteControlPort,
+} from "../../remoteControl/remoteControlLifecycle";
 import type { RemoteAttachmentContext } from "../../../preload/types/remoteControl";
 import { remoteTunnelManager } from "../../remoteControl/remoteTunnelManager";
 import { native } from "../../native/nativeBridge";
@@ -60,6 +63,13 @@ export const registerRemoteControlHandlers = (): void => {
       return applyRemoteControlEnabled(enabled);
     },
   );
+  ipcMain.handle("remote-control:set-port", async (event, port: unknown) => {
+    assertMainFrame(event);
+    if (typeof port !== "number" || !Number.isInteger(port)) {
+      throw new Error("Invalid remote control port");
+    }
+    return applyRemoteControlPort(port);
+  });
   ipcMain.handle("remote-control:tunnel-status", (event) => {
     assertMainFrame(event);
     return remoteTunnelManager.getStatus();

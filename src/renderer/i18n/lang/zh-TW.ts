@@ -4214,4 +4214,191 @@ export const zhTW = {
   "userscripts.installed": "腳本已安裝",
   "userscripts.installFailed": "安裝失敗",
   "userscripts.installs": "次安裝",
+  "remoteControl.subtitle": "在同一區域網路內，用手機瀏覽器連線這台 Snow。",
+  "remoteControl.enableTitle": "啟用手機遠端控制",
+  "remoteControl.enableDescription":
+    "關閉時不會監聽連接埠或連接通道；開啟狀態在重新啟動後保留。",
+  "remoteControl.portLabel": "區域網路監聽連接埠",
+  "remoteControl.portDescription":
+    "手機透過這個連接埠存取本機，預設 8788；修改後服務會自動重新啟動。",
+  "remoteControl.savePort": "儲存連接埠",
+  "remoteControl.lanQrAria": "配對 QR Code",
+  "remoteControl.lanQrAlt": "Snow 手機遠端控制配對 QR Code",
+  "remoteControl.listeningOn": "正在監聽 {{port}}",
+  "remoteControl.serviceNotRunning": "服務未執行",
+  "remoteControl.lanAddress": "區域網路位址",
+  "remoteControl.copyAddress": "複製位址",
+  "remoteControl.rotateCredentials": "更換憑證",
+  "remoteControl.rotateNote":
+    "更換後，已配對的手機與尚未傳送的附件會立即失效。",
+  "remoteControl.tunnelTitle": "自架伺服器公網連線",
+  "remoteControl.tunnelDescription":
+    "安裝檔已內建並驗證 frpc；部署失敗時不會儲存憑證，驗證成功後才會在本機加密儲存。",
+  "remoteControl.statusLoading": "讀取中",
+  "remoteControl.statusUnknown": "未知",
+  "remoteControl.localWan": "本機 WAN",
+  "remoteControl.notListening": "未監聽",
+  "remoteControl.frpTunnel": "FRP 通道",
+  "remoteControl.httpsProbe": "HTTPS 探測",
+  "remoteControl.endpointUnchecked": "未檢查",
+  "remoteControl.endpointChecking": "正在檢查",
+  "remoteControl.endpointReachable": "已通過",
+  "remoteControl.endpointFailed": "未通過",
+  "remoteControl.secureStorageUnavailable":
+    "系統安全儲存無法使用。為避免以明文儲存憑證，公網遠端控制已停用。",
+  "remoteControl.guideSummary": "第一次公網部署（共 4 步，由 Snow 安裝）",
+  "remoteControl.guideCalloutTitle": "只在同一個 Wi-Fi 使用時，不需要伺服器。",
+  "remoteControl.guideCalloutText":
+    "直接掃描上方的區域網路 QR Code 即可；下方的公網設定可以保持關閉。",
+  "remoteControl.step1Title": "購買前確認：只需要伺服器和網域",
+  "remoteControl.step1ServerLabel": "Linux 公網伺服器：",
+  "remoteControl.step1ServerText":
+    "廠商不拘，Ubuntu 22.04/24.04、Debian 11+、CentOS Stream/Rocky/AlmaLinux 8+ 等常見發行版、x86_64、獨立公網 IPv4、長期運作；至少 1 核心 1 GB。不要購買搶佔式、競價、Windows、資料庫、GPU 或預裝面板方案。",
+  "remoteControl.step1DomainLabel": "一個付費網域：",
+  "remoteControl.step1DomainText":
+    "註冊商與後綴不拘。不需要購買 SSL 憑證、CDN、雲端解析進階版、網站建置或企業信箱。",
+  "remoteControl.step1CredentialLabel": "伺服器登入憑證：",
+  "remoteControl.step1CredentialText":
+    "root 密碼或 SSH 私鑰。它不是雲端廠商帳號密碼；伺服器沒有初始密碼時，請在伺服器主控台點「設定/重設密碼」。",
+  "remoteControl.step2Title": "先去兩個主控台完成這些設定",
+  "remoteControl.step2DnsLabel": "網域主控台 → DNS/網域解析 → 新增記錄：",
+  "remoteControl.dnsTableAria": "DNS 記錄",
+  "remoteControl.dnsType": "類型",
+  "remoteControl.dnsHost": "主機記錄",
+  "remoteControl.dnsValue": "記錄值",
+  "remoteControl.serverIpLabel": "伺服器公網 IP",
+  "remoteControl.step2DnsHintPrefix": "主機記錄只填",
+  "remoteControl.step2DnsHintAnd": "和",
+  "remoteControl.step2DnsHintSuffix":
+    "，不要填寫完整網域；線路與 TTL 保持預設。",
+  "remoteControl.step2DnsHintDomains":
+    "儲存後會得到 snow.{{rootDomain}} 和 frp.{{rootDomain}}。",
+  "remoteControl.step2FirewallLabel":
+    "伺服器主控台 → 防火牆/安全性群組 → 新增輸入規則：",
+  "remoteControl.portPurposeSsh": "Snow 登入伺服器",
+  "remoteControl.portPurposeAcme": "自動申請 HTTPS 憑證",
+  "remoteControl.portPurposeHttps": "手機 HTTPS 存取",
+  "remoteControl.portPurposeTunnel": "Snow 桌面通道",
+  "remoteControl.step2ClosedPortWarning": "不要開放 TCP {{port}}。",
+  "remoteControl.step2ClosedPortText":
+    "它只能在伺服器內部使用，Snow 部署結束時會自動檢查。",
+  "remoteControl.step3Title": "再填寫 Snow 連線資訊",
+  "remoteControl.serverIpHint":
+    "伺服器詳細資料頁中的「公網 IP / 公網 IPv4」，不是私有 IP。",
+  "remoteControl.serverIpExample": "例如 42.194.128.147",
+  "remoteControl.rootDomainLabel": "你的根網域",
+  "remoteControl.rootDomainHint":
+    "填寫購買到的網域，例如 example.com；不要加 snow、https 或路徑。",
+  "remoteControl.rootDomainExample": "例如 example.com",
+  "remoteControl.sshUsername": "SSH 使用者名稱",
+  "remoteControl.sshUsernameHint":
+    "Ubuntu/Debian、CentOS/RHEL 系列密碼登入通常填 root；雲端廠商一鍵登入顯示的 admin 不一定可用。",
+  "remoteControl.sshPort": "SSH 連接埠",
+  "remoteControl.sshPortHint":
+    "伺服器遠端連線頁面顯示的連接埠，未修改時通常是 22。",
+  "remoteControl.frpBindPort": "FRP 控制連接埠",
+  "remoteControl.frpBindPortHint":
+    "伺服器 frps 的控制連接埠，會寫入用戶端設定包；未修改時通常是 7000。",
+  "remoteControl.frpRemotePort": "FRP 通道連接埠",
+  "remoteControl.frpRemotePortHint":
+    "伺服器內部通道連接埠，只由 Caddy 使用；不需在安全性群組開放。",
+  "remoteControl.authMethod": "登入方式",
+  "remoteControl.authMethodHint": "新手建議使用在伺服器主控台設定的 SSH 密碼。",
+  "remoteControl.authPassword": "SSH 密碼",
+  "remoteControl.authPrivateKey": "SSH 私鑰",
+  "remoteControl.sshPasswordHint":
+    "伺服器 root 密碼，不是阿里雲/騰訊雲等網站的登入密碼。",
+  "remoteControl.sshPasswordPlaceholder": "只在本次部署期間保存在記憶體中",
+  "remoteControl.sshKeyFile": "SSH 私鑰檔案",
+  "remoteControl.sshKeyFileHint":
+    "選擇建立伺服器或綁定金鑰對時下載到本機的私鑰檔案。",
+  "remoteControl.sshKeyFilePlaceholder": "請選擇私鑰檔案",
+  "remoteControl.selectFile": "選擇",
+  "remoteControl.passphrase": "私鑰密碼（沒有可留空）",
+  "remoteControl.step4Title": "偵測成功後再自動部署",
+  "remoteControl.step4Text":
+    "先點「偵測 DNS」。兩行均為 ✓ 後，再點「自動部署並連線」；之後 FRP、Caddy、token、CA、憑證與設定匯入都由 Snow 處理。",
+  "remoteControl.checkDns": "偵測 DNS",
+  "remoteControl.deployConnect": "自動部署並連線",
+  "remoteControl.cancelDeploy": "取消部署",
+  "remoteControl.advancedSettings": "進階設定",
+  "remoteControl.importBundle": "匯入現有設定包",
+  "remoteControl.tunnelEnabled": "啟用公網遠端控制",
+  "remoteControl.tunnelAutoConnect": "Snow 啟動後自動連線",
+  "remoteControl.frpServerAddr": "FRP 伺服器位址",
+  "remoteControl.frpServerPort": "FRP 連接埠",
+  "remoteControl.publicOrigin": "手機 HTTPS 位址",
+  "remoteControl.tlsServerName": "FRP TLS 伺服器名稱",
+  "remoteControl.frpToken": "FRP 憑證",
+  "remoteControl.tokenPlaceholderSaved": "已加密儲存；留空保持不變",
+  "remoteControl.tokenPlaceholderNew": "至少 32 個字元",
+  "remoteControl.frpCa": "FRP CA 憑證（PEM）",
+  "remoteControl.caPlaceholderSaved": "憑證已加密儲存；留空保持不變",
+  "remoteControl.saveAndConnect": "儲存並連線",
+  "remoteControl.saveAndDisable": "儲存並關閉公網",
+  "remoteControl.disconnectOnce": "僅中斷本次連線",
+  "remoteControl.disconnectWarningTitle": "「僅中斷」不會撤銷手機登入。",
+  "remoteControl.disconnectWarningText":
+    "手機遺失或連結外洩時，請使用頁面上方的「更換憑證」，讓舊手機連線立即失效。",
+  "remoteControl.wanQrAria": "公網配對 QR Code",
+  "remoteControl.wanQrAlt": "Snow 公網遠端控制配對 QR Code",
+  "remoteControl.wanVerified": "公網入口已驗證",
+  "remoteControl.wanPending": "公網入口待驗證",
+  "remoteControl.selfHostedServer": "自架伺服器",
+  "remoteControl.wanNote":
+    "本機通道連接埠 {{port}}。QR Code 五分鐘內有效且只能使用一次。",
+  "remoteControl.noticeLoadFailed": "無法讀取手機遠端控制狀態",
+  "remoteControl.noticeRotated": "配對憑證已更換，舊手機連線已失效",
+  "remoteControl.noticeRotateFailed": "更換失敗",
+  "remoteControl.noticeCopied": "配對位址已複製",
+  "remoteControl.noticeCopyFailed": "複製失敗",
+  "remoteControl.noticeEnabled": "手機遠端控制已開啟",
+  "remoteControl.noticeDisabled": "手機遠端控制已關閉",
+  "remoteControl.noticeToggleFailed": "切換手機遠端控制失敗",
+  "remoteControl.errorInvalidPort": "連接埠必須是 1 到 65535 的整數",
+  "remoteControl.noticePortSavedRunning":
+    "連接埠已儲存為 {{port}}，服務已依新連接埠重新啟動；已配對手機需要重新掃描",
+  "remoteControl.noticePortSavedIdle":
+    "連接埠已儲存為 {{port}}，開啟遠端控制後生效",
+  "remoteControl.noticePortFailed": "連接埠設定失敗",
+  "remoteControl.noticeDnsReady": "兩筆 DNS 解析均已生效，可以開始自動部署",
+  "remoteControl.noticeDnsPending":
+    "DNS 尚未生效，請核對下方兩筆 A 記錄後稍等幾分鐘再偵測",
+  "remoteControl.noticeDnsFailed": "DNS 偵測失敗",
+  "remoteControl.privateKeyDialogTitle": "選擇伺服器 SSH 私鑰",
+  "remoteControl.deployStarting": "正在開始部署",
+  "remoteControl.noticeDeploySuccess":
+    "部署成功。請關閉手機 Wi-Fi，用行動網路掃描下方公網 QR Code 驗收",
+  "remoteControl.noticeDeployCanceled": "部署已取消",
+  "remoteControl.noticeDeployFailed": "伺服器自動部署失敗",
+  "remoteControl.noticeCancelingDeploy":
+    "正在取消部署；伺服器上目前的安裝命令可能需要片刻才能停止",
+  "remoteControl.noticeTunnelSaved": "設定已加密儲存，正在驗證公網入口",
+  "remoteControl.noticeTunnelDisabled":
+    "公網遠端控制已關閉，區域網路遠端控制保持可用",
+  "remoteControl.noticeTunnelSaveFailed": "儲存或連線失敗",
+  "remoteControl.noticeTunnelDisconnected":
+    "公網通道已中斷，區域網路遠端控制保持可用",
+  "remoteControl.noticeDisconnectFailed": "中斷失敗",
+  "remoteControl.noticeImported":
+    "設定包已驗證並加密儲存，Snow 正在連線。內容包含 FRP 憑證，請從下載資料夾安全刪除。",
+  "remoteControl.noticeImportFailed": "匯入設定包失敗",
+  "remoteControl.tunnelStageStopped": "已關閉",
+  "remoteControl.tunnelStageStarting": "正在啟動本機入口",
+  "remoteControl.tunnelStageConnecting": "通道已啟動，正在檢查 HTTPS",
+  "remoteControl.tunnelStageOnline": "公網入口可用",
+  "remoteControl.tunnelStageReconnecting": "網路中斷，正在重新連線",
+  "remoteControl.tunnelStageFailed": "連線失敗",
+  "remoteControl.deployStage.checking_dns": "正在檢查兩筆網域解析",
+  "remoteControl.deployStage.connecting_ssh": "正在安全連線伺服器",
+  "remoteControl.deployStage.checking_server":
+    "正在檢查發行版、架構與管理員權限",
+  "remoteControl.deployStage.uploading": "正在上傳 Snow 內建部署程式",
+  "remoteControl.deployStage.installing":
+    "正在安裝並設定 FRP 與 HTTPS，通常需要 2–8 分鐘",
+  "remoteControl.deployStage.importing":
+    "正在直接匯入伺服器設定；不會產生本機明文檔案",
+  "remoteControl.deployStage.verifying": "正在連線 FRP 並驗證公網 HTTPS",
+  "remoteControl.deployStage.completed":
+    "公網遠端控制部署完成，可以掃描公網 QR Code",
 } satisfies Record<string, string>;

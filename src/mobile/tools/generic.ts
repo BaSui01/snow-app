@@ -15,7 +15,6 @@ import {
   decodeEscapedNewlines,
   extractLongText,
   formatJson,
-  isTruncated,
   parseJsonRecord,
   resolveStatus,
   tcBadge,
@@ -33,7 +32,7 @@ const argumentsText = (raw?: string): string => {
   return record ? formatJson(record) : decodeEscapedNewlines(trimmed);
 };
 
-/** 结果 → 节点：错误行 / 长文本 / JSON 美化 / 原文（附字符数与截断徽标）。 */
+/** 结果 → 节点：错误行 / 长文本 / JSON 美化 / 原文（附字符数徽标）。 */
 const resultSection = (raw?: string): DocumentFragment => {
   const fragment = document.createDocumentFragment();
   if (!raw) return fragment;
@@ -56,9 +55,6 @@ const resultSection = (raw?: string): DocumentFragment => {
       }),
     ),
   ];
-  if (isTruncated(raw)) {
-    meta.push(tcBadge(t("remote.toolCall.common.truncated"), "warn"));
-  }
   fragment.append(
     tcSection(t("remote.toolCall.common.result"), tcPre(content), { meta }),
   );

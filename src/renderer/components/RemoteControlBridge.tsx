@@ -1674,9 +1674,16 @@ export const RemoteControlBridge = ({
           // 无活动会话（如 /clear 后的新建会话视图）没有更早记录；
           // 会话状态尚未建立（undefined）时不下结论，移动端默认隐藏入口、
           // 待状态就绪后跟随更新。
+          // 除了桌面会话自己的 DB 分页状态，还必须计入「下发给手机的消息窗口
+          // 被截断」：本进程内累积的消息全部在内存里（hasMoreMessages 为
+          // false），但手机只拿到最后 MAX_MESSAGES 条，更早的部分仍可沿会话
+          // 内存继续翻页——否则手机端会误判为没有更早记录，入口隐藏且滚动
+          // 也无法触发加载。
           hasOlderMessages: activeConversationId
-            ? current.conversation.sessions[activeConversationId]
-                ?.hasMoreMessages
+            ? Boolean(
+                current.conversation.sessions[activeConversationId]
+                  ?.hasMoreMessages,
+              ) || conversationMessages.length > MAX_MESSAGES
             : false,
           // 回滚入口可见性：与桌面 canRollback 同源（子代理 / 节点会话不可回滚）。
           rollbackAvailable: isRollbackAvailable(current.conversation),
@@ -1704,23 +1711,47 @@ export const RemoteControlBridge = ({
         if (!activeConversationId || conversationId !== activeConversationId) {
           throw new Error("会话已切换，请重新加载");
         }
-        let anchor =
+        const anchor =
           typeof beforeMessageId === "string" ? beforeMessageId.trim() : "";
-        // 锚点必须是数据库消息 id（snowflake 纯数字）。渲染进程的临时消息
-        // id（`role-时间-随机串`，如 assistant/tool 消息）在数据库中没有
-        // 对应行，直接传入会让 `id < ?` 的字符串比较命中最新的行而不是更早
-        // 的行。此时退回到「已加载的数据库记录中最早的一条」，从它继续向前
-        // 翻页；没有任何记录时用空锚取最新页，由移动端按 id 去重收敛。
-        if (anchor && !/^\d+$/.test(anchor)) {
-          const session = current.conversation.sessions[conversationId];
+        const session = current.conversation.sessions[conversationId];
+        // 1. 锚点命中桌面会话内存：本进程内产生的消息只活在内存里（assistant
+        //    / tool 消息的 id 是前端临时串，数据库没有对应行，按 id 无法翻页），
+        //    直接从内存向前切片——翻页内容与桌面所见完全一致，也不受数据库
+        //    分页窗口是否已加载过影响。
+        const memoryMessages = current.conversation.messages;
+        const memoryIndex = anchor
+          ? memoryMessages.findIndex((message) => message.id === anchor)
+          : -1;
+        if (memoryIndex > 0) {
+          const start = Math.max(0, memoryIndex - limit);
+          const slice = memoryMessages.slice(start, memoryIndex);
+          return {
+            conversationId,
+            // 内存里还有更早的消息，或者桌面会话本身还有更早的数据库分页。
+            hasMore: start > 0 || Boolean(session?.hasMoreMessages),
+            items: await attachWorkflowSnapshots(
+              memoryMessages,
+              slice.map(toRemoteMessage),
+              conversationId,
+            ),
+          };
+        }
+        // 2. 锚点不在内存（已翻到内存窗口之外）：沿数据库分页。锚点必须是
+        //    数据库消息 id（snowflake 纯数字）。渲染进程的临时消息 id
+        //    （`role-时间-随机串`，如 assistant/tool 消息）在数据库中没有
+        //    对应行，直接传入会让 `id < ?` 的字符串比较命中最新的行而不是更早
+        //    的行。此时退回到「已加载的数据库记录中最早的一条」，从它继续向前
+        //    翻页；没有任何记录时用空锚取最新页，由移动端按 id 去重收敛。
+        let dbAnchor = anchor;
+        if (dbAnchor && !/^\d+$/.test(dbAnchor)) {
           const records = session?.messageRecords ?? [];
-          if (!records.some((record) => record.id === anchor)) {
-            anchor = records[0]?.id ?? "";
+          if (!records.some((record) => record.id === dbAnchor)) {
+            dbAnchor = records[0]?.id ?? "";
           }
         }
         const page = await window.snow.listChatMessagesPaginated(
           conversationId,
-          anchor,
+          dbAnchor,
           limit,
         );
         if (

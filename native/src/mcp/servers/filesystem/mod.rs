@@ -48,6 +48,20 @@ fn file_write_lock(file_path: &str) -> Arc<AsyncMutex<()>> {
         .clone()
 }
 
+/// 行级精确匹配比较：先按原始文本快速判定（无分配），不一致时再按
+/// 「缩进敏感文件仅忽略 CRLF/LF 差异、普通文件压缩全部空白」的规则归一化比较。
+fn line_matches_normalized(file_line: &str, search_line: &str, preserve_indentation: bool) -> bool {
+    if file_line == search_line {
+        return true;
+    }
+    if preserve_indentation {
+        fuzzy_edit::normalize_line_endings_for_match(file_line)
+            == fuzzy_edit::normalize_line_endings_for_match(search_line)
+    } else {
+        fuzzy_edit::normalize_whitespace(file_line) == fuzzy_edit::normalize_whitespace(search_line)
+    }
+}
+
 /// Prettier 会整体改变行数，格式化后需在结果中重新定位编辑区。
 /// 仅用于行号对齐，低于编辑替换阈值属正常现象。
 const FORMATTED_ALIGN_THRESHOLD: f64 = 0.6;
@@ -377,19 +391,27 @@ impl FilesystemService {
             }
 
             // 收集所有匹配位置。缩进敏感文件只忽略 CRLF/LF 差异，
-            // 不能把行首空格压平后再比较。
+            // 不能把行首空格压平后再比较。先按首行筛选候选，再校验其余行：
+            // 原实现对每个起始位置重复归一化全部 m 行，候选过滤后降为
+            // O(n + k·m)，避免大文件下 O(n·m) 次字符串归一化分配。
+            let first_search_line = search_lines[0];
             let mut match_positions: Vec<usize> = Vec::new();
             for start in 0..=(file_lines.len() - search_line_count) {
-                let all_match = search_lines.iter().enumerate().all(|(i, &sline)| {
-                    if preserve_indentation {
-                        fuzzy_edit::normalize_line_endings_for_match(&file_lines[start + i])
-                            == fuzzy_edit::normalize_line_endings_for_match(sline)
-                    } else {
-                        fuzzy_edit::normalize_whitespace(&file_lines[start + i])
-                            == fuzzy_edit::normalize_whitespace(sline)
-                    }
+                if !line_matches_normalized(
+                    file_lines[start],
+                    first_search_line,
+                    preserve_indentation,
+                ) {
+                    continue;
+                }
+                let rest_match = search_lines[1..].iter().enumerate().all(|(offset, &sline)| {
+                    line_matches_normalized(
+                        file_lines[start + 1 + offset],
+                        sline,
+                        preserve_indentation,
+                    )
                 });
-                if all_match {
+                if rest_match {
                     match_positions.push(start);
                 }
             }
@@ -596,13 +618,9 @@ impl FilesystemService {
         }
 
         // Step 2: 模糊行匹配（基于 Levenshtein 距离 + 变窗口 + 预过滤）
-        if let Some((start_line, end_line, similarity)) =
-            fuzzy_edit::find_best_line_match_v2(
-                search_content,
-                &file_lines,
-                preserve_indentation,
-            )
-        {
+        let fuzzy_match =
+            fuzzy_edit::find_best_line_match_v2(search_content, &file_lines, preserve_indentation);
+        if let Some((start_line, end_line, similarity)) = fuzzy_match {
             if similarity >= FUZZY_MATCH_THRESHOLD {
                 let effective_replacement = fuzzy_edit::pad_replacement_to_match(
                     &file_path,
@@ -669,12 +687,14 @@ impl FilesystemService {
             }
         }
 
-        // Step 3: 所有匹配策略均失败 - 返回包含最相似区间上下文的详细错误
+        // Step 3: 所有匹配策略均失败 - 复用 Step 2 的扫描结果构建详细错误
+        // （原实现会在此重复执行一次全量模糊扫描，未命中路径耗时翻倍）。
         let error_msg = fuzzy_edit::build_search_not_found_error_v2(
             search_content,
             &file_lines,
             &file_path,
             total_lines,
+            fuzzy_match,
         );
 
         Err(Error::new(Status::GenericFailure, error_msg))

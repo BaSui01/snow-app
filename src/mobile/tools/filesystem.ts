@@ -170,9 +170,6 @@ const argsFallbackSection = (
 const rawResultSection = (raw: string): DocumentFragment => {
   const fragment = document.createDocumentFragment();
   fragment.append(noteRow(t("remote.toolCall.filesystem.rawFallback")));
-  if (isTruncated(raw)) {
-    fragment.append(noteRow(t("remote.toolCall.common.truncated"), "warn"));
-  }
   fragment.append(
     tcSection(
       t("remote.toolCall.common.result"),
@@ -612,18 +609,11 @@ export const renderReadCard: ToolCallRenderer = (tool) => {
     }
     const content = resultContent(result);
     if (content) body.append(content);
-    if (isTruncated(tool.result)) {
-      body.append(noteRow(t("remote.toolCall.common.truncated"), "warn"));
-    }
   }
 
   const meta: Node[] = [];
   const metaLabel = readMetaLabel(args, result);
   if (metaLabel) meta.push(tcBadge(metaLabel));
-  if (isTruncated(tool.result)) {
-    meta.push(tcBadge(t("remote.toolCall.common.truncated"), "warn"));
-  }
-
   return withBadgeIcon(
     createToolNode({
       tool,

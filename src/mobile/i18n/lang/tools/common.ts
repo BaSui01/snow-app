@@ -2,7 +2,7 @@
  * 工具卡片公共词条（键前缀 remote.toolCall.common.*）。
  *
  * 覆盖：状态文案（pending / running / completed / error）、折叠按钮（展开 /
- * 收起 / 展开其余 N 行）、参数与输出标签、截断与空态提示、字符数徽标。
+ * 收起 / 展开其余 N 行）、参数与输出标签、空态提示、字符数徽标。
  * 由 i18n/lang/tools/index.ts 聚合，展开进 lang/{en,zh-CN,zh-TW}.ts；三语同键，
  * 占位符统一 {{name}} 形式。
  */
@@ -20,7 +20,6 @@ export const commonEn: Record<string, string> = {
   "remote.toolCall.common.expandLines": "Show {{count}} more lines",
 
   // 提示
-  "remote.toolCall.common.truncated": "Content truncated",
   "remote.toolCall.common.noArgs": "No arguments",
   "remote.toolCall.common.empty": "No arguments or output",
 
@@ -45,7 +44,6 @@ export const commonZhCN: Record<string, string> = {
   "remote.toolCall.common.expandLines": "展开其余 {{count}} 行",
 
   // 提示
-  "remote.toolCall.common.truncated": "内容已截断",
   "remote.toolCall.common.noArgs": "无参数",
   "remote.toolCall.common.empty": "无参数与输出",
 
@@ -70,7 +68,6 @@ export const commonZhTW: Record<string, string> = {
   "remote.toolCall.common.expandLines": "展開其餘 {{count}} 行",
 
   // 提示
-  "remote.toolCall.common.truncated": "內容已截斷",
   "remote.toolCall.common.noArgs": "無參數",
   "remote.toolCall.common.empty": "無參數與輸出",
 

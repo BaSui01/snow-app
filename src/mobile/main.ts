@@ -38,6 +38,11 @@ const buildSignature = (next: SnowRemoteState): string =>
   "|" +
   next.isStreaming +
   "|" +
+  // 「是否还有更早记录」参与签名：它只影响时间线的「加载更早」入口，桌面
+  // 分页状态变化（历史加载完成 / 已翻到最早）不一定伴随消息窗口变化，漏掉
+  // 它会让入口停留在旧结论上（隐藏着打不开，或显示着却已无内容）。
+  (next.hasOlderMessages ?? "") +
+  "|" +
   next.messages
     .map(
       (message) =>

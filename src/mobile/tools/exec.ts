@@ -167,12 +167,6 @@ const rawArgsSection = (raw?: string): HTMLElement => {
   );
 };
 
-/** 远控桥截断徽标（arguments / result / 流式输出被截断时提示内容不完整）。 */
-const truncationMeta = (...texts: (string | undefined)[]): HTMLElement[] =>
-  texts.some((text) => isTruncated(text))
-    ? [tcBadge(t("remote.toolCall.common.truncated"), "warn")]
-    : [];
-
 /** 两端文本是否等价（去首尾空白，避免流式与最终结果重复展示同一段输出）。 */
 const sameText = (a: string, b: string): boolean => a.trim() === b.trim();
 
@@ -335,12 +329,7 @@ export const renderBashCard: ToolCallRenderer = (tool) => {
   const restStderr =
     finalStderr && !sameText(finalStderr, streamStderr) ? finalStderr : "";
 
-  const meta: Node[] = truncationMeta(
-    tool.arguments,
-    tool.result,
-    tool.streamingStdout,
-    tool.streamingStderr,
-  );
+  const meta: Node[] = [];
   if (args.isInteractive) {
     meta.push(tcBadge(t("remote.toolCall.exec.bash.interactive"), "muted"));
   }
@@ -915,10 +904,7 @@ export const renderTerminalCard: ToolCallRenderer = (tool) => {
     status,
     badge: t(`remote.toolCall.exec.terminal.op.${operation}`),
     display: terminalDisplay(operation, args),
-    meta: [
-      ...truncationMeta(tool.arguments, tool.result),
-      ...terminalMeta(operation, args, result),
-    ],
+    meta: terminalMeta(operation, args, result),
     bodyClass: "tc-exec",
     body,
   });
@@ -1137,7 +1123,7 @@ export const renderComputerUseCard: ToolCallRenderer = (tool) => {
       ? cuString(resultRecord, "error").trim()
       : "";
 
-  const meta: Node[] = truncationMeta(tool.arguments);
+  const meta: Node[] = [];
   if (shot?.imageSize) meta.push(tcBadge(shot.imageSize));
   if (shot?.scale !== undefined) {
     meta.push(

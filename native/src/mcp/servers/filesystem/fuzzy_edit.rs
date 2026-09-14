@@ -317,7 +317,12 @@ pub(crate) fn pad_replacement_to_match(
     }
 }
 
-/// 计算两个字符串之间的 Levenshtein 相似度（0.0 ~ 1.0），带提前剪枝优化。
+/// 计算两个字符串之间的 Levenshtein 相似度（0.0 ~ 1.0），带三层剪枝：
+/// 1. 长度比例 + 长度差快速拒绝（与旧实现一致）；
+/// 2. 公共前后缀剥离：d(xS, yS) == d(x, y)，把 DP 规模缩到差异段；
+/// 3. 字符多重集距离下界（O(L)，可证明不超过编辑距离）与带宽受限
+///    （banded）DP：只需在 |i-j| <= max_distance 的对角带内求解，
+///    超出带宽即不可能达标，按 0.0 返回（与旧实现提前退出的语义一致）。
 fn compute_levenshtein_similarity(left: &str, right: &str, threshold: f64) -> f64 {
     let left_u16: Vec<u16> = left.encode_utf16().collect();
     let right_u16: Vec<u16> = right.encode_utf16().collect();
@@ -344,28 +349,154 @@ fn compute_levenshtein_similarity(left: &str, right: &str, threshold: f64) -> f6
         return 0.0;
     }
 
-    let mut previous: Vec<usize> = (0..=right_u16.len()).collect();
-    for (left_index, left_unit) in left_u16.iter().enumerate() {
-        let mut current = Vec::with_capacity(right_u16.len() + 1);
-        current.push(left_index + 1);
-        let mut minimum = left_index + 1;
+    let common_limit = left_u16.len().min(right_u16.len());
+    let mut prefix_len = 0usize;
+    while prefix_len < common_limit && left_u16[prefix_len] == right_u16[prefix_len] {
+        prefix_len += 1;
+    }
+    let mut left_end = left_u16.len();
+    let mut right_end = right_u16.len();
+    while left_end > prefix_len
+        && right_end > prefix_len
+        && left_u16[left_end - 1] == right_u16[right_end - 1]
+    {
+        left_end -= 1;
+        right_end -= 1;
+    }
+    let left_mid = &left_u16[prefix_len..left_end];
+    let right_mid = &right_u16[prefix_len..right_end];
 
-        for (right_index, right_unit) in right_u16.iter().enumerate() {
-            let value = (previous[right_index + 1] + 1)
-                .min(current[right_index] + 1)
-                .min(previous[right_index] + usize::from(left_unit != right_unit));
-            current.push(value);
-            minimum = minimum.min(value);
-        }
-
-        if minimum > max_distance {
-            return 0.0;
-        }
-        previous = current;
+    if char_multiset_distance_bound(left_mid, right_mid) > max_distance {
+        return 0.0;
+    }
+    if left_mid.len().abs_diff(right_mid.len()) > max_distance {
+        return 0.0;
     }
 
-    let distance = previous[right_u16.len()];
-    1.0 - distance as f64 / max_length as f64
+    match banded_levenshtein_distance(left_mid, right_mid, max_distance) {
+        Some(distance) => 1.0 - distance as f64 / max_length as f64,
+        None => 0.0,
+    }
+}
+
+/// 字符多重集距离下界：sum_c |count_left(c) - count_right(c)| / 2。
+/// 单次插入/删除/替换最多把该和改变 1，因此它不超过 Levenshtein 编辑距离；
+/// 超过阈值距离上限时可直接判定“不可能达标”，避免进入 DP。
+/// 低区（Latin-1）用栈上计数，其他字符走溢出表（普通文本几乎不会分配）。
+fn char_multiset_distance_bound(left: &[u16], right: &[u16]) -> usize {
+    let mut buckets = [0i32; 256];
+    let mut overflow: std::collections::HashMap<u16, i32> = std::collections::HashMap::new();
+
+    for &unit in left {
+        if (unit as usize) < buckets.len() {
+            buckets[unit as usize] += 1;
+        } else {
+            *overflow.entry(unit).or_insert(0) += 1;
+        }
+    }
+    for &unit in right {
+        if (unit as usize) < buckets.len() {
+            buckets[unit as usize] -= 1;
+        } else {
+            *overflow.entry(unit).or_insert(0) -= 1;
+        }
+    }
+
+    let mut difference: u64 = buckets
+        .iter()
+        .map(|count| count.unsigned_abs() as u64)
+        .sum();
+    difference += overflow
+        .values()
+        .map(|count| count.unsigned_abs() as u64)
+        .sum::<u64>();
+    (difference / 2) as usize
+}
+
+/// 带宽受限（banded）的 Levenshtein 距离：只求解 |i - j| <= band 的对角带，
+/// 窗口随行号单调右移，用两行紧凑数组滚动计算，时间复杂度 O(len * band)。
+/// 真实距离不超过 band 时结果精确；否则返回 None（必然低于阈值）。
+fn banded_levenshtein_distance(left: &[u16], right: &[u16], band: usize) -> Option<usize> {
+    if left.is_empty() {
+        return (right.len() <= band).then_some(right.len());
+    }
+    if right.is_empty() {
+        return (left.len() <= band).then_some(left.len());
+    }
+
+    let window_capacity = (2 * band + 1).min(right.len() + 1).max(1);
+    let unreachable = usize::MAX / 4;
+
+    let mut previous = vec![unreachable; window_capacity];
+    let mut current = vec![unreachable; window_capacity];
+
+    // 第 0 行：列 [0, min(right.len(), band)] 的编辑距离就是列号。
+    let initial_hi = band.min(right.len());
+    for (column, value) in previous.iter_mut().enumerate().take(initial_hi + 1) {
+        *value = column;
+    }
+    let mut previous_offset = 0usize;
+    let mut previous_len = initial_hi + 1;
+
+    for (left_index, left_unit) in left.iter().enumerate() {
+        let row = left_index + 1;
+        let lo = row.saturating_sub(band);
+        let hi = (row + band).min(right.len());
+        if lo > hi {
+            return None;
+        }
+        let len = hi - lo + 1;
+        let previous_offset_signed = previous_offset as isize;
+
+        let mut minimum = unreachable;
+        for k in 0..len {
+            let column = lo + k;
+            let substitution = if column > 0 {
+                let index = (column - 1) as isize - previous_offset_signed;
+                if index >= 0 && (index as usize) < previous_len {
+                    previous[index as usize]
+                        .saturating_add(usize::from(*left_unit != right[column - 1]))
+                } else {
+                    unreachable
+                }
+            } else {
+                unreachable
+            };
+            let deletion = {
+                let index = column as isize - previous_offset_signed;
+                if index >= 0 && (index as usize) < previous_len {
+                    previous[index as usize].saturating_add(1)
+                } else {
+                    unreachable
+                }
+            };
+            let insertion = if k > 0 {
+                current[k - 1].saturating_add(1)
+            } else {
+                unreachable
+            };
+
+            let value = substitution.min(deletion).min(insertion);
+            current[k] = value;
+            if value < minimum {
+                minimum = value;
+            }
+        }
+
+        if minimum > band {
+            return None;
+        }
+        std::mem::swap(&mut previous, &mut current);
+        previous_offset = lo;
+        previous_len = len;
+    }
+
+    // 终点（left.len(), right.len()）必须落在带内，否则距离必然超过 band。
+    if previous_offset + previous_len - 1 != right.len() {
+        return None;
+    }
+    let distance = previous[previous_len - 1];
+    (distance <= band).then_some(distance)
 }
 
 /// 根据文件内容的主要行尾风格，调整 text 的行尾以匹配。
@@ -377,8 +508,18 @@ pub(crate) fn adapt_line_endings(text: &str, file_content: &str) -> String {
         return text.to_string();
     }
 
-    let crlf_count = file_content.matches("\r\n").count();
-    let lf_count = file_content.matches('\n').count();
+    // 单次扫描统计行尾构成（原实现为两遍 matches，大文件下多扫一遍全文）。
+    let bytes = file_content.as_bytes();
+    let mut lf_count = 0usize;
+    let mut crlf_count = 0usize;
+    for (index, byte) in bytes.iter().enumerate() {
+        if *byte == b'\n' {
+            lf_count += 1;
+            if index > 0 && bytes[index - 1] == b'\r' {
+                crlf_count += 1;
+            }
+        }
+    }
     let lf_only = lf_count.saturating_sub(crlf_count);
     let use_crlf = crlf_count > lf_only;
 
@@ -567,8 +708,9 @@ fn try_substring_replace_once(
     )))
 }
 
-fn indentation_matches(search_content: &str, candidate_lines: &[&str]) -> bool {
-    let search_lines: Vec<&str> = search_content.split('\n').collect();
+/// 缩进敏感文件的行首空白逐行比较。search 行由调用方预拆分，避免每个候选
+/// 重复分割/归一化搜索文本。
+fn indentation_matches(search_lines: &[&str], candidate_lines: &[&str]) -> bool {
     if search_lines.len() != candidate_lines.len() {
         return false;
     }
@@ -582,27 +724,25 @@ fn indentation_matches(search_content: &str, candidate_lines: &[&str]) -> bool {
         })
 }
 
+/// 计算候选窗口与搜索文本的相似度。normalized_search 由调用方预计算
+/// （逐候选重复计算是纯浪费：整个扫描过程只有同一份搜索文本）。
 fn score_candidate(
-    search_content: &str,
+    search_lines: &[&str],
+    normalized_search: &str,
     candidate_lines: &[&str],
     preserve_indentation: bool,
     threshold: f64,
 ) -> f64 {
-    if preserve_indentation && !indentation_matches(search_content, candidate_lines) {
+    if preserve_indentation && !indentation_matches(search_lines, candidate_lines) {
         return 0.0;
     }
 
     let candidate = candidate_lines.join("\n");
-    let normalized_search = normalize_for_match(search_content, preserve_indentation);
     let normalized_candidate = normalize_for_match(&candidate, preserve_indentation);
     if normalized_search == normalized_candidate {
         return 1.0;
     }
-    compute_levenshtein_similarity(
-        &normalized_search,
-        &normalized_candidate,
-        threshold,
-    )
+    compute_levenshtein_similarity(normalized_search, &normalized_candidate, threshold)
 }
 
 /// 在文件行数组中，按行滑动窗口查找与 searchContent 最相似的区间。
@@ -624,6 +764,7 @@ pub(crate) fn find_best_line_match_v2(
     }
 
     let threshold = FUZZY_MATCH_THRESHOLD;
+    let normalized_search = normalize_for_match(search_content, preserve_indentation);
     let normalized_first_line = normalize_for_match(
         search_lines.first().copied().unwrap_or_default(),
         preserve_indentation,
@@ -646,7 +787,8 @@ pub(crate) fn find_best_line_match_v2(
 
         let exact_lines = &file_lines[start_index..start_index + base_window];
         let exact_score = score_candidate(
-            search_content,
+            &search_lines,
+            &normalized_search,
             exact_lines,
             preserve_indentation,
             threshold,
@@ -671,7 +813,8 @@ pub(crate) fn find_best_line_match_v2(
                     let smaller = base_window - delta;
                     let candidate = &file_lines[start_index..start_index + smaller];
                     let candidate_score = score_candidate(
-                        search_content,
+                        &search_lines,
+                        &normalized_search,
                         candidate,
                         preserve_indentation,
                         threshold,
@@ -686,7 +829,8 @@ pub(crate) fn find_best_line_match_v2(
                 if start_index + larger <= file_lines.len() {
                     let candidate = &file_lines[start_index..start_index + larger];
                     let candidate_score = score_candidate(
-                        search_content,
+                        &search_lines,
+                        &normalized_search,
                         candidate,
                         preserve_indentation,
                         threshold,
@@ -814,10 +958,17 @@ pub(crate) fn find_indentation_relaxed_match(
     let search_keys: Vec<String> = search_lines.iter().map(|line| relaxed_line_key(line)).collect();
 
     let mut candidates: Vec<(usize, bool)> = Vec::new();
+    // 先按首行键筛选候选，再校验其余行：原实现对每个起始位置都要计算全部
+    // m 行的键（O(n·m) 次字符串分配），首行过滤后降为 O(n + k·m)。
+    let first_key = &search_keys[0];
     for start in 0..=(file_lines.len() - search_lines.len()) {
+        if relaxed_line_key(file_lines[start]) != *first_key {
+            continue;
+        }
         let all_match = search_keys
             .iter()
             .enumerate()
+            .skip(1)
             .all(|(index, key)| relaxed_line_key(file_lines[start + index]) == *key);
         if !all_match {
             continue;
@@ -921,11 +1072,14 @@ pub(crate) fn build_edit_review_context_lines(
 }
 
 /// 构建 searchContent not found 的详细错误信息，包含最相似区间的上下文。
+/// 最相似区间由调用方传入 Step 2 已完成的扫描结果（best_match），
+/// 避免对同一文件重复执行一次全量模糊扫描。
 pub(crate) fn build_search_not_found_error_v2(
     search_content: &str,
     file_lines: &[&str],
     file_path: &str,
     total_lines: usize,
+    best_match: Option<(usize, usize, f64)>,
 ) -> String {
     let search_lines = search_content.split('\n').count();
     let search_preview: String = search_content
@@ -933,11 +1087,8 @@ pub(crate) fn build_search_not_found_error_v2(
         .take(200)
         .collect::<String>()
         .replace('\n', "\\n");
-    let preserve_indentation = is_indentation_sensitive_path(file_path);
 
-    if let Some((start_line, end_line, similarity)) =
-        find_best_line_match_v2(search_content, file_lines, preserve_indentation)
-    {
+    if let Some((start_line, end_line, similarity)) = best_match {
         let context_start = start_line.saturating_sub(2);
         let context_end = (end_line + 2).min(file_lines.len());
         let context: Vec<String> = (context_start..context_end)

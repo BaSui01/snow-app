@@ -198,24 +198,17 @@ const taskChip = (text: string): HTMLSpanElement => {
   return chip;
 };
 
-const truncationMeta = (raw?: string): Node[] =>
-  isTruncated(raw)
-    ? [tcBadge(t("remote.toolCall.common.truncated"), "warn")]
-    : [];
-
 /** 参数被远控桥截断时的提示（arguments 上限 2000 字符）。 */
 const argsTruncatedRow = (tool: SnowRemoteToolCall): HTMLElement | null =>
   isTruncated(tool.arguments)
     ? noteRow("warn", "shield-alert", tr("argsTruncated"))
     : null;
 
-/** 结果原文（非结构化）：解码转义后按等宽文本展示，附截断徽标。 */
+/** 结果原文（非结构化）：解码转义后按等宽文本展示。 */
 const rawResultSection = (tool: SnowRemoteToolCall): HTMLElement | null => {
   const text = (tool.result ?? "").trim();
   if (!text) return null;
-  return tcSection(tr("result"), tcPre(readable(text)), {
-    meta: truncationMeta(tool.result),
-  });
+  return tcSection(tr("result"), tcPre(readable(text)));
 };
 
 /** 结果里的错误文案：JSON error 优先，其次失败状态下的原始结果文本。 */
@@ -409,9 +402,7 @@ const renderSubAgent = (
     case "success": {
       if (result.text)
         body.append(
-          tcSection(tr("subAgent.summary"), tcPre(readable(result.text)), {
-            meta: truncationMeta(tool.result),
-          }),
+          tcSection(tr("subAgent.summary"), tcPre(readable(result.text))),
         );
       if (result.conversationId)
         body.append(tcKv(tr("subAgent.conversationId"), result.conversationId));
@@ -430,11 +421,7 @@ const renderSubAgent = (
       );
       break;
     case "raw":
-      body.append(
-        tcSection(tr("result"), tcPre(readable(result.text)), {
-          meta: truncationMeta(tool.result),
-        }),
-      );
+      body.append(tcSection(tr("result"), tcPre(readable(result.text))));
       break;
     default: {
       const live = liveRow(
@@ -694,11 +681,7 @@ const renderSkill: ToolCallRenderer = (tool) => {
     body.append(tcErrorRow(readable(error)));
   } else if (info) {
     // 技能内容 = 工具结果原文（<command-message> 提示 + 技能正文 + 目录结构）。
-    body.append(
-      tcSection(tr("skill.content"), tcPre(readable(rawText)), {
-        meta: truncationMeta(tool.result),
-      }),
-    );
+    body.append(tcSection(tr("skill.content"), tcPre(readable(rawText))));
   } else {
     const live = liveRow(tool, tr("skill.loading"));
     if (live) body.append(live);

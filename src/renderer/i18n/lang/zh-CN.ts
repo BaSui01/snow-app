@@ -4279,7 +4279,7 @@ export const zhCN = {
   "remoteControl.step3Title": "再填写 Snow 连接信息",
   "remoteControl.serverIpHint":
     "服务器详情页中的“公网 IP / 公网 IPv4”，不是私有 IP。",
-  "remoteControl.serverIpExample": "例如 42.194.128.147",
+  "remoteControl.serverIpPlaceholder": "填写服务器公网 IPv4",
   "remoteControl.rootDomainLabel": "你的根域名",
   "remoteControl.rootDomainHint":
     "填写买到的域名，如 example.com；不要加 snow、https 或路径。",

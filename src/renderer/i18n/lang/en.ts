@@ -4518,7 +4518,7 @@ export const en = {
   "remoteControl.step3Title": "Then fill in the Snow connection info",
   "remoteControl.serverIpHint":
     "The “Public IP / Public IPv4” from the server details page, not a private IP.",
-  "remoteControl.serverIpExample": "e.g. 42.194.128.147",
+  "remoteControl.serverIpPlaceholder": "Enter the server public IPv4",
   "remoteControl.rootDomainLabel": "Your root domain",
   "remoteControl.rootDomainHint":
     "The domain you bought, e.g. example.com; do not include snow, https, or a path.",

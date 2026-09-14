@@ -1051,8 +1051,8 @@ export function RemoteControlSettingsPanel({
                       </small>
                       <input
                         value={deployForm.serverIp}
-                        placeholder={t("remoteControl.serverIpExample", {
-                          defaultValue: "例如 42.194.128.147",
+                        placeholder={t("remoteControl.serverIpPlaceholder", {
+                          defaultValue: "填写服务器公网 IPv4",
                         })}
                         onChange={(event) => {
                           setDnsCheck(null);

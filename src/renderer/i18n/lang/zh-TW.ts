@@ -4285,7 +4285,7 @@ export const zhTW = {
   "remoteControl.step3Title": "再填寫 Snow 連線資訊",
   "remoteControl.serverIpHint":
     "伺服器詳細資料頁中的「公網 IP / 公網 IPv4」，不是私有 IP。",
-  "remoteControl.serverIpExample": "例如 42.194.128.147",
+  "remoteControl.serverIpPlaceholder": "填寫伺服器公網 IPv4",
   "remoteControl.rootDomainLabel": "你的根網域",
   "remoteControl.rootDomainHint":
     "填寫購買到的網域，例如 example.com；不要加 snow、https 或路徑。",

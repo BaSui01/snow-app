@@ -484,6 +484,19 @@ mod tests {
         tool_message(call_id, &result)
     }
 
+    /// The exact shape `browser-screenshot` produces: a JSON body followed by a
+    /// trailing `@@image:` tag line. This is the form that triggered the
+    /// production 400 `messages.N.content: Invalid input`, so it must stay
+    /// covered. Recognized by `has_image_tags` case 1 (trailing tag line whose
+    /// prefix parses as JSON).
+    fn screenshot_tool_message(call_id: &str) -> ChatContextMessage {
+        let result = format!(
+            "{{\"content\":[{{\"text\":\"Browser screenshot captured: shot.png (832x1216)\",\"type\":\"text\"}}],\"fullPage\":false}}\n@@image:data:image/png;base64,{}@@",
+            TINY_PNG_BASE64
+        );
+        tool_message(call_id, &result)
+    }
+
     fn build_payload_with_messages(messages: Vec<ChatContextMessage>) -> Value {
         let request = create_test_request();
         let api_record = create_test_record();
@@ -541,6 +554,53 @@ mod tests {
             assert!(!content.contains("@@image:"));
             assert!(!content.contains(TINY_PNG_BASE64));
         }
+    }
+
+    /// Regression for the production 400 `messages.N.content: Invalid input`:
+    /// a `browser-screenshot` tool result (JSON body + trailing image tag) must
+    /// still hand its image to the synthetic user message while its own content
+    /// stays a string. Every message in the payload is additionally checked for
+    /// a type the strict endpoint accepts.
+    #[test]
+    fn screenshot_tool_result_keeps_tool_content_a_string() {
+        let payload = build_payload_with_messages(vec![
+            message("user", "take a screenshot"),
+            assistant_with_calls(&["call_shot"]),
+            screenshot_tool_message("call_shot"),
+        ]);
+        let messages = payload["messages"].as_array().unwrap();
+
+        // Tool messages must carry a plain string: the production 400 was
+        // `messages.N.content: Invalid input` caused by an image block array
+        // attached to a tool message.
+        for entry in messages.iter().filter(|m| m["role"] == "tool") {
+            assert!(
+                entry["content"].is_string(),
+                "tool content must be a string, got {}",
+                entry["content"]
+            );
+        }
+
+        let tool_messages: Vec<_> = messages.iter().filter(|m| m["role"] == "tool").collect();
+        assert_eq!(tool_messages.len(), 1);
+        let text = tool_messages[0]["content"].as_str().unwrap();
+        assert!(!text.contains("@@image:"));
+        assert!(!text.contains(TINY_PNG_BASE64));
+
+        // The screenshot itself must survive as a real image block on the
+        // synthetic user message.
+        let image_parts: Vec<_> = messages
+            .iter()
+            .filter(|m| m["role"] == "user")
+            .filter_map(|m| m["content"].as_array())
+            .flatten()
+            .filter(|part| part["type"] == "image_url")
+            .collect();
+        assert_eq!(image_parts.len(), 1);
+        assert!(image_parts[0]["image_url"]["url"]
+            .as_str()
+            .unwrap()
+            .starts_with("data:image/png;base64,"));
     }
 
     /// A turn whose tool results have no images must not gain a synthetic

@@ -129,8 +129,14 @@ markdown.renderer.rules.fence = (tokens, idx, options): string => {
 
 // Wrap tables in a scrollable container so that wide tables are horizontally
 // scrollable instead of being clipped by overflow:hidden on the table element.
+// The wrapper also carries a floating download button (CSV / XLSX export,
+// dispatched by the React layer via `data-table-action`).
 markdown.renderer.rules.table_open = (): string =>
-  '<div class="table-wrapper">\n<table>\n';
+  '<div class="table-wrapper">' +
+  `<button class="table-download-btn" type="button" data-table-action="download" title="下载表格">` +
+  `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>` +
+  `</button>` +
+  "\n<table>\n";
 markdown.renderer.rules.table_close = (): string => "</table>\n</div>\n";
 
 /**

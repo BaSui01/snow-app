@@ -44,28 +44,14 @@ const mobilePageAssetsPlugin = (): Plugin => {
       started = true;
       if (!this.meta.watchMode) {
         await buildVite(createMobilePageBuildConfig(false));
-        console.info("[Snow Remote] 移动端页面已构建 → out/mobile");
         return;
       }
       const config = createMobilePageBuildConfig(true);
-      const watcher = await buildVite({
+      // watch 模式交给 Vite 自行监听 src/mobile：改动即重建，无需在此处理事件。
+      await buildVite({
         ...config,
         build: { ...config.build, watch: {} },
       });
-      if (watcher && typeof watcher === "object" && "on" in watcher) {
-        watcher.on("event", (event) => {
-          if (event.code === "BUNDLE_END") {
-            console.info("[Snow Remote] 移动端页面已重新构建 → out/mobile");
-          } else if (event.code === "ERROR") {
-            console.error(
-              "[Snow Remote] 移动端页面构建失败：",
-              event.error instanceof Error
-                ? event.error.message
-                : String(event.error),
-            );
-          }
-        });
-      }
     },
   };
 };

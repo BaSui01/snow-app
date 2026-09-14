@@ -11,6 +11,7 @@ mod remote_control;
 mod sample;
 mod sphere_layout;
 mod storage;
+mod table;
 pub(crate) mod terminal;
 mod team;
 mod updater;

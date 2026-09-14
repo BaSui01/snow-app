@@ -11265,6 +11265,46 @@ input {
   background: var(--bg-tertiary);
 }
 
+/* 表格右上角下载按钮（markdownWorker 在 .table-wrapper 内生成）：
+   悬浮在表格之上，低对比默认态，悬停表格时提亮；点击弹出 CSV / XLSX
+   格式菜单（tableExport.openTableExportMenu）。 */
+.table-wrapper {
+  position: relative;
+}
+
+.table-download-btn {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-tertiary);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  opacity: 0.45;
+  transition:
+    opacity 0.15s,
+    background 0.15s,
+    color 0.15s;
+}
+
+.table-wrapper:hover .table-download-btn {
+  opacity: 1;
+}
+
+.table-download-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 /* Inline code */
 .ai-message code {
   padding: 1px 5px;
@@ -11651,9 +11691,11 @@ input {
   height: auto;
 }
 
-/* Export dropdown menu (created dynamically by mermaidRenderer.openExportMenu).
-   Rendered in document.body, so it is not nested under .ai-message. */
-.mermaid-export-menu {
+/* Export dropdown menu (created dynamically by mermaidRenderer.openExportMenu
+   and tableExport.openTableExportMenu). Rendered in document.body, so it is
+   not nested under .ai-message. */
+.mermaid-export-menu,
+.table-export-menu {
   z-index: 10000;
   min-width: 88px;
   padding: 4px;
@@ -11663,7 +11705,8 @@ input {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
 }
 
-.mermaid-export-menu-item {
+.mermaid-export-menu-item,
+.table-export-menu-item {
   display: block;
   width: 100%;
   padding: 6px 12px;
@@ -11682,7 +11725,8 @@ input {
     color 0.15s;
 }
 
-.mermaid-export-menu-item:hover {
+.mermaid-export-menu-item:hover,
+.table-export-menu-item:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
@@ -12982,6 +13026,12 @@ input {
 
 .workflow-node.is-selected {
   border-color: var(--text-primary);
+}
+
+/* 运行中（loading）节点的边框高亮：仅描边跟随主题色（--accent-color）；
+   置于 is-selected 之后，运行态优先展示。 */
+.workflow-node.is-running {
+  border-color: var(--accent-color);
 }
 
 .workflow-node-header {

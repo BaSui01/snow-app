@@ -22,6 +22,7 @@ import {
   setMermaidView,
   watchThemeForMermaid,
 } from "./mermaidRenderer";
+import { openTableExportMenu } from "./tableExport";
 import { rightPanelEvents } from "../../../rightPanel/rightPanelEvents";
 import { downloadImageSrc } from "../../../../utils/imageDownload";
 import { Tooltip } from "../../../common/Tooltip";
@@ -633,6 +634,21 @@ export const MarkdownBlock = memo(
             setLightboxSrc(src);
             return;
           }
+        }
+
+        // --- Markdown 表格下载：按钮弹出 CSV / XLSX 格式菜单 ---
+        const tableDownloadBtn = target.closest(
+          "[data-table-action='download']",
+        ) as HTMLElement | null;
+        if (tableDownloadBtn) {
+          const table = tableDownloadBtn
+            .closest(".table-wrapper")
+            ?.querySelector<HTMLTableElement>("table");
+          if (table) {
+            e.preventDefault();
+            openTableExportMenu(tableDownloadBtn, table);
+          }
+          return;
         }
 
         // --- Mermaid block interactions ---

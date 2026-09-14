@@ -14,17 +14,10 @@ const SETTING_CODE = "remote_control_enabled";
 
 /**
  * 注册渲染进程桥（幂等）：Rust 远控服务需要桌面 UI 状态时回调主进程。
- * 注册失败只记录日志——服务本身仍可运行，仅桥相关接口暂时不可用。
+ * 注册失败时忽略——服务本身仍可运行，仅桥相关接口暂时不可用。
  */
 const ensureRendererBridge = async (): Promise<void> => {
-  try {
-    await installRemoteRendererBridge();
-  } catch (error) {
-    console.warn(
-      "[Snow Remote] 渲染进程桥注册失败：",
-      error instanceof Error ? error.message : String(error),
-    );
-  }
+  await installRemoteRendererBridge().catch(() => undefined);
 };
 
 /**
@@ -47,12 +40,8 @@ export const initializeRemoteControl = async (): Promise<void> => {
   await ensureRendererBridge();
   const info = await startRemoteControlServer();
   if (!info) return;
-  await remoteTunnelManager.initialize().catch((error) => {
-    console.warn(
-      "[Snow Remote] 自动连接公网隧道失败：",
-      error instanceof Error ? error.message : String(error),
-    );
-  });
+  // 隧道连接失败不影响局域网远控；失败原因在设置面板的隧道状态中呈现。
+  await remoteTunnelManager.initialize().catch(() => undefined);
 };
 
 /** 设置面板切换总开关：先写持久化，再编排服务与隧道的启停。 */
@@ -71,12 +60,7 @@ export const applyRemoteControlEnabled = async (
     if (!info) {
       throw new Error("手机远控服务启动失败，请检查端口占用后重试");
     }
-    await remoteTunnelManager.initialize().catch((error) => {
-      console.warn(
-        "[Snow Remote] 开启手机远控后连接公网隧道失败：",
-        error instanceof Error ? error.message : String(error),
-      );
-    });
+    await remoteTunnelManager.initialize().catch(() => undefined);
   } else {
     await remoteTunnelManager.disconnect();
     await stopRemoteControlServer();

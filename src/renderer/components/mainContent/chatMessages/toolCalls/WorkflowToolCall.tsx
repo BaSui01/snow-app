@@ -82,12 +82,17 @@ const WorkflowCardNode = memo(function WorkflowCardNode({
   selected,
 }: NodeProps<WorkflowFlowNode>): React.JSX.Element {
   const { node } = data;
+  const isRunning = node.runStatus === "running";
   return (
-    <div className={`workflow-node ${selected ? "is-selected" : ""}`}>
+    <div
+      className={`workflow-node${selected ? " is-selected" : ""}${
+        isRunning ? " is-running" : ""
+      }`}
+    >
       <Handle type="target" position={Position.Left} />
       <div className="workflow-node-header">
         <span className="workflow-node-title">{node.label || node.name}</span>
-        {node.runStatus === "running" ? (
+        {isRunning ? (
           <Loader2 size={13} className="tool-call-icon-spinning" />
         ) : node.runStatus === "completed" ? (
           <Check size={13} className="workflow-node-icon-completed" />

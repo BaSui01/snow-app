@@ -231,10 +231,8 @@ pub async fn start_server(options: StartOptions) -> Result<RemoteControlState, S
     });
 
     if let Some(origin) = options.wan_public_origin {
-        if let Err(error) = start_wan_listener_locked(&origin, options.wan_port).await {
-            // 公网入口是可选项：配置错误或端口占用不能拖垮已就绪的局域网服务。
-            eprintln!("[Snow Remote] 公网入口启动失败，局域网远控保持运行：{error}");
-        }
+        // 公网入口是可选项：配置错误或端口占用不能拖垮已就绪的局域网服务。
+        let _ = start_wan_listener_locked(&origin, options.wan_port).await;
     }
     Ok(state())
 }
@@ -358,9 +356,6 @@ async fn start_wan_listener_locked(
         port,
         auth: wan_auth,
     });
-    eprintln!(
-        "[Snow Remote] 公网隧道入口已在本机端口 {port} 就绪；请在设置中查看短期配对二维码。"
-    );
     Ok(())
 }
 

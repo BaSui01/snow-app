@@ -32,6 +32,14 @@ const EXPORT_EXTENSIONS: Record<ExportFormat, string> = {
 const isExportFormat = (value: string): value is ExportFormat =>
   (EXPORT_FORMATS as readonly string[]).includes(value);
 
+/** Markdown 表格导出格式（渲染层点击表格下载按钮后传入选中的格式）。 */
+const TABLE_EXPORT_FORMATS = ["csv", "xlsx"] as const;
+type TableExportFormat = (typeof TABLE_EXPORT_FORMATS)[number];
+
+const isTableExportFormat = (value: unknown): value is TableExportFormat =>
+  typeof value === "string" &&
+  (TABLE_EXPORT_FORMATS as readonly string[]).includes(value);
+
 export const registerConversationHandlers = (native: NativeBridge): void => {
   ipcMain.handle("chat-conversations:list", (_event, directoryId: unknown) => {
     if (typeof directoryId !== "string" || !directoryId.trim()) {
@@ -1007,6 +1015,64 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
         context: `conversation=${conversationId.trim()} format=${normalizedFormat} file=${
           result.filePath
         }`,
+      });
+
+      return { success: true, canceled: false, filePath: result.filePath };
+    },
+  );
+
+  // ===== Markdown 表格导出 =====
+  // 渲染层从 DOM 提取表格二维数据（JSON），Rust 生成 CSV / XLSX 文件字节，
+  // 主进程弹出保存对话框并将字节写入用户选择的文件。
+  ipcMain.handle(
+    "chat-conversations:export-table",
+    async (
+      event,
+      format: unknown,
+      rowsJson: unknown,
+      defaultFileName: unknown,
+    ) => {
+      if (!isTableExportFormat(format)) {
+        throw new Error(
+          `Unsupported table export format: ${String(
+            format,
+          )}. Supported: ${TABLE_EXPORT_FORMATS.join(", ")}`,
+        );
+      }
+      if (typeof rowsJson !== "string" || !rowsJson.trim()) {
+        throw new Error("Table rows JSON is required to export a table");
+      }
+
+      // 1) 让 Rust 生成目标格式的文件字节（xlsx 为 zip 二进制）
+      const bytes = await native.exportMarkdownTable(format, rowsJson);
+
+      // 2) 弹出保存对话框，让用户选择保存路径
+      const baseName =
+        typeof defaultFileName === "string" && defaultFileName.trim()
+          ? defaultFileName.trim()
+          : "table";
+      const browserWindow = BrowserWindow.fromWebContents(event.sender);
+      const options: Electron.SaveDialogOptions = {
+        title: "Export table",
+        defaultPath: `${baseName}.${format}`,
+        filters: [{ name: format.toUpperCase(), extensions: [format] }],
+      };
+      const result = browserWindow
+        ? await dialog.showSaveDialog(browserWindow, options)
+        : await dialog.showSaveDialog(options);
+
+      if (result.canceled || !result.filePath) {
+        return { success: false, canceled: true, filePath: null };
+      }
+
+      // 3) 将文件字节写入用户选择的路径
+      await writeFile(result.filePath, bytes);
+
+      snowLog.info({
+        module: "ipc/conversation",
+        func: "export-table",
+        message: "Table exported",
+        context: `format=${format} file=${result.filePath}`,
       });
 
       return { success: true, canceled: false, filePath: result.filePath };

@@ -55,6 +55,8 @@ const requiredExports = [
   "reconcileScheduledTaskRuns",
   // 历史会话引用 chip 悬停预览（@@conversation: 标签注入内容预览）
   "previewConversationAttachment",
+  // Markdown 表格导出（CSV / XLSX 字节由 Rust 生成）
+  "exportMarkdownTable",
   // 项目级持久记忆（Project Memory：MCP 工具 + 面板 + 会话删除联动）
   "upsertProjectMemory",
   "listProjectMemories",

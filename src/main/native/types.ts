@@ -2306,6 +2306,8 @@ export type NativeBridge = {
     conversationId: string,
     format: string,
   ) => Promise<string>;
+  /** Markdown 表格导出：Rust 生成 CSV / XLSX 文件字节（rowsJson 为二维字符串数组）。 */
+  exportMarkdownTable: (format: string, rowsJson: string) => Promise<Buffer>;
   listMemos: (
     directoryId: string,
     limit: number,

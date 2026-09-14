@@ -45,7 +45,7 @@ pub enum BridgeError {
     /// 桥尚未注册（主窗口未就绪）。
     NotReady,
     /// 基础设施故障：Node 端异常、超时或返回格式非法。
-    Dispatch(String),
+    Dispatch,
     /// 渲染进程业务错误（原 RENDERER_ERROR 语义），文案可透传给手机端。
     Renderer(String),
 }
@@ -62,13 +62,13 @@ pub async fn call(action: &str, args: Value) -> Result<Value, BridgeError> {
     let promise = callback
         .call_async_catch(request)
         .await
-        .map_err(|error| BridgeError::Dispatch(error.to_string()))?;
+        .map_err(|_| BridgeError::Dispatch)?;
     let raw = tokio::time::timeout(BRIDGE_TIMEOUT, promise)
         .await
-        .map_err(|_| BridgeError::Dispatch("渲染进程桥调用超时".to_string()))?
-        .map_err(|error| BridgeError::Dispatch(error.to_string()))?;
-    let parsed: Value = serde_json::from_str(&raw)
-        .map_err(|error| BridgeError::Dispatch(format!("桥返回格式无效：{error}")))?;
+        .map_err(|_| BridgeError::Dispatch)?
+        .map_err(|_| BridgeError::Dispatch)?;
+    let parsed: Value =
+        serde_json::from_str(&raw).map_err(|_| BridgeError::Dispatch)?;
     if parsed.get("ok").and_then(Value::as_bool) == Some(true) {
         return Ok(parsed.get("value").cloned().unwrap_or(Value::Null));
     }
@@ -79,7 +79,7 @@ pub async fn call(action: &str, args: Value) -> Result<Value, BridgeError> {
         .to_string();
     // 渲染进程业务错误（kind=renderer）透传文案；其余为下层故障。
     if parsed.get("kind").and_then(Value::as_str) == Some("infra") {
-        return Err(BridgeError::Dispatch(message));
+        return Err(BridgeError::Dispatch);
     }
     Err(BridgeError::Renderer(message))
 }

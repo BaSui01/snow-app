@@ -185,12 +185,10 @@ export const bootstrapApplication = (): void => {
     // 启动失败不会阻塞 Snow 主程序。
     void initializeRemoteControl();
     powerMonitor.on("resume", () => {
-      void remoteTunnelManager.reconnectAfterSystemResume().catch((error) => {
-        console.warn(
-          "[Snow Remote] 系统唤醒后重连公网隧道失败：",
-          error instanceof Error ? error.message : String(error),
-        );
-      });
+      // 重连失败不影响主应用；隧道状态在设置的远控面板中可见。
+      void remoteTunnelManager
+        .reconnectAfterSystemResume()
+        .catch(() => undefined);
     });
     // 用户脚本同步匹配缓存：必须在任何 webview 创建前注册 sendSync
     // handler（webview preload 顶层同步调用，未注册会死锁渲染进程）。

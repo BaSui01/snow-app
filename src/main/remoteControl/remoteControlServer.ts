@@ -123,7 +123,7 @@ export const getRemoteControlPairingState =
     toPairingState(await native.getRemoteControlServerState());
 
 /**
- * 启动远控服务；失败时记录日志并返回 null（主应用继续运行）。
+ * 启动远控服务；失败时返回 null（主应用继续运行）。
  * 公网入口地址（SNOW_REMOTE_PUBLIC_ORIGIN）配置时一并启动回环监听器，
  * 其失败不影响局域网服务。
  */
@@ -140,33 +140,19 @@ export const startRemoteControlServer =
           process.env.SNOW_REMOTE_PUBLIC_ORIGIN?.trim() || undefined,
         wanPort: parseWanPort(),
       });
-      console.info(
-        `[Snow Remote] 手机遥控已启动，端口 ${state.port}；请在设置中查看配对二维码。`,
-      );
       return {
         host: state.host,
         port: state.port,
         pairingUrls: toPairingState(state).pairingUrls,
       };
-    } catch (error) {
-      console.error(
-        "[Snow Remote] 启动失败，Snow 主应用将继续运行：",
-        error instanceof Error ? error.message : String(error),
-      );
+    } catch {
       return null;
     }
   };
 
-/** 停止局域网与公网监听器；失败只记录日志（退出流程不应被阻塞）。 */
+/** 停止局域网与公网监听器；失败忽略（退出流程不应被阻塞）。 */
 export const stopRemoteControlServer = async (): Promise<void> => {
-  try {
-    await native.stopRemoteControlServer();
-  } catch (error) {
-    console.error(
-      "[Snow Remote] 停止远控服务失败：",
-      error instanceof Error ? error.message : String(error),
-    );
-  }
+  await native.stopRemoteControlServer().catch(() => undefined);
 };
 
 /** 轮换局域网令牌与公网配对码；服务未运行时抛出。 */

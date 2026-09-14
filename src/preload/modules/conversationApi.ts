@@ -373,4 +373,20 @@ export const conversationApi = {
       format,
       defaultFileName,
     ),
+  /** 导出 Markdown 表格为 CSV / XLSX 文件（rowsJson 为二维字符串数组）。 */
+  exportMarkdownTable: (
+    format: string,
+    rowsJson: string,
+    defaultFileName?: string,
+  ): Promise<{
+    success: boolean;
+    canceled: boolean;
+    filePath: string | null;
+  }> =>
+    ipcRenderer.invoke(
+      "chat-conversations:export-table",
+      format,
+      rowsJson,
+      defaultFileName,
+    ),
 };

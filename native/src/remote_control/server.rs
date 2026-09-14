@@ -447,10 +447,7 @@ fn api_error_from_bridge(error: BridgeError) -> ApiError {
                 reason
             })
         }
-        BridgeError::Dispatch(message) => {
-            eprintln!("[Snow Remote] Renderer 调用失败：{message}");
-            ApiError::service_unavailable()
-        }
+        BridgeError::Dispatch => ApiError::service_unavailable(),
     }
 }
 
@@ -497,10 +494,7 @@ fn api_error_from_attach(error: AttachError) -> ApiError {
             }
             _ => ApiError::service_unavailable(),
         },
-        AttachError::Internal(message) => {
-            eprintln!("[Snow Remote] 附件处理失败：{message}");
-            ApiError::service_unavailable()
-        }
+        AttachError::Internal(_) => ApiError::service_unavailable(),
     }
 }
 

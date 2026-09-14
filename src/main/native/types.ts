@@ -1429,6 +1429,64 @@ export type CheckpointFileDiff = CheckpointFileChange & {
   isBinary: boolean;
 };
 
+/** 远控渲染进程桥的调用请求（Rust → Node，argsJson 为 JSON.stringify 后的参数数组）。 */
+export type RemoteControlBridgeRequest = {
+  action: string;
+  argsJson: string;
+};
+
+/** 远控服务公网入口状态。 */
+export type RemoteControlWanState = {
+  enabled: boolean;
+  localPort: number;
+  publicOrigin: string;
+  pairingUrl: string;
+  /** 无有效配对码时该字段省略（原生侧 Option::None）。 */
+  pairingExpiresAt?: number;
+};
+
+/** 远控服务状态快照（enabled 字段由 Node 侧按总开关补充）。 */
+export type RemoteControlServerState = {
+  running: boolean;
+  host: string;
+  port: number;
+  token: string;
+  generation: number;
+  wan: RemoteControlWanState;
+};
+
+/** 远控服务启动参数（路径与端口由 Node 侧解析后传入）。 */
+export type RemoteControlStartOptions = {
+  host: string;
+  port: number;
+  token?: string;
+  mobileDir: string;
+  iconPath: string;
+  wanPublicOrigin?: string;
+  wanPort: number;
+};
+
+/** 远控附件上下文（与消息发送时的会话 / 工作区绑定，防止跨会话串用）。 */
+export type RemoteControlAttachmentContext = {
+  /**
+   * 未选择工作区 / 会话时省略字段。
+   * 注意：napi 的 Option<String> 只接受 undefined，null 会触发类型转换错误。
+   */
+  directoryId?: string;
+  conversationId?: string;
+};
+
+/** 解析后的远控附件（图片带 dataUrl，文件带磁盘路径；缺省字段省略）。 */
+export type RemoteControlResolvedAttachment = {
+  id: string;
+  kind: "image" | "file";
+  name: string;
+  mimeType: string;
+  size: number;
+  dataUrl?: string;
+  path?: string;
+};
+
 export type NativeBridge = {
   initializeAppStorage: () => Promise<AppStorageInfo>;
 
@@ -1898,6 +1956,39 @@ export type NativeBridge = {
     messageId: string,
     imageIndex: number,
   ) => Promise<{ mimeType: string; base64: string } | null>;
+
+  // ─── 手机远控（HTTP 服务 / 鉴权 / 附件均在原生侧完成）───────────────
+  /**
+   * 注册渲染进程桥：原生服务需要桌面 UI 实时状态时回调该函数，
+   * 回调返回 JSON 字符串（`{ ok: true, value }` 或 `{ ok: false, error }`）。
+   */
+  setRemoteControlRendererBridge: (
+    callback: (request: RemoteControlBridgeRequest) => Promise<string>,
+  ) => void;
+  /** 启动局域网远控服务（按需一并启动公网回环监听器）。 */
+  startRemoteControlServer: (
+    options: RemoteControlStartOptions,
+  ) => Promise<RemoteControlServerState>;
+  /** 停止局域网远控服务与公网回环监听器。 */
+  stopRemoteControlServer: () => Promise<void>;
+  /** 同步读取远控服务状态（内存快照，无 I/O）。 */
+  getRemoteControlServerState: () => RemoteControlServerState;
+  /** 轮换局域网令牌与公网会话，并重发公网配对码。 */
+  rotateRemoteControlToken: () => Promise<RemoteControlServerState>;
+  /** 启动 / 替换公网回环监听器（frpc 隧道入口）。 */
+  startRemoteWanListener: (
+    publicOrigin: string,
+    preferredPort: number,
+  ) => Promise<RemoteControlServerState>;
+  /** 停止公网回环监听器并撤销全部公网会话。 */
+  stopRemoteWanListener: () => Promise<void>;
+  /** 解析远控附件（渲染进程组装消息时使用）。 */
+  resolveRemoteAttachments: (
+    ids: string[],
+    context: RemoteControlAttachmentContext,
+    generation: number,
+  ) => Promise<RemoteControlResolvedAttachment[]>;
+
   findLatestToolResult: (
     conversationId: string,
     toolName: string,

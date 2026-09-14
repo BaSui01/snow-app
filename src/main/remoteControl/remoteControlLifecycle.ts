@@ -6,10 +6,26 @@ import {
   stopRemoteControlServer,
   type RemoteControlPairingState,
 } from "./remoteControlServer";
+import { installRemoteRendererBridge } from "./rendererBridge";
 import { remoteTunnelManager } from "./remoteTunnelManager";
 
 const SETTING_NAME = "Remote control enabled";
 const SETTING_CODE = "remote_control_enabled";
+
+/**
+ * 注册渲染进程桥（幂等）：Rust 远控服务需要桌面 UI 状态时回调主进程。
+ * 注册失败只记录日志——服务本身仍可运行，仅桥相关接口暂时不可用。
+ */
+const ensureRendererBridge = async (): Promise<void> => {
+  try {
+    await installRemoteRendererBridge();
+  } catch (error) {
+    console.warn(
+      "[Snow Remote] 渲染进程桥注册失败：",
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+};
 
 /**
  * 手机远控总开关持久化于系统设置（Rust 存储），默认关闭。
@@ -28,6 +44,7 @@ export const initializeRemoteControl = async (): Promise<void> => {
   const enabled = await readRemoteControlEnabled();
   markRemoteControlEnabled(enabled);
   if (!enabled) return;
+  await ensureRendererBridge();
   const info = await startRemoteControlServer();
   if (!info) return;
   await remoteTunnelManager.initialize().catch((error) => {
@@ -49,6 +66,7 @@ export const applyRemoteControlEnabled = async (
   );
   markRemoteControlEnabled(enabled);
   if (enabled) {
+    await ensureRendererBridge();
     const info = await startRemoteControlServer();
     if (!info) {
       throw new Error("手机远控服务启动失败，请检查端口占用后重试");

@@ -63,6 +63,15 @@ const requiredExports = [
   "clearProjectMemories",
   "getProjectMemoryStats",
   "countProjectMemoriesByConversations",
+  // 手机远控（原生 HTTP 服务 / 鉴权 / 附件）
+  "setRemoteControlRendererBridge",
+  "startRemoteControlServer",
+  "stopRemoteControlServer",
+  "getRemoteControlServerState",
+  "rotateRemoteControlToken",
+  "startRemoteWanListener",
+  "stopRemoteWanListener",
+  "resolveRemoteAttachments",
 ];
 
 const platformName = platformMap[`${process.platform}-${process.arch}`];

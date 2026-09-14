@@ -6,11 +6,9 @@ import {
   rotateRemoteControlToken,
 } from "../../remoteControl/remoteControlServer";
 import { applyRemoteControlEnabled } from "../../remoteControl/remoteControlLifecycle";
-import {
-  resolveRemoteAttachments,
-  type RemoteAttachmentContext,
-} from "../../remoteControl/remoteAttachmentStore";
+import type { RemoteAttachmentContext } from "../../../preload/types/remoteControl";
 import { remoteTunnelManager } from "../../remoteControl/remoteTunnelManager";
+import { native } from "../../native/nativeBridge";
 import {
   cancelRemoteServerDeployment,
   checkRemoteServerDns,
@@ -143,7 +141,16 @@ export const registerRemoteControlHandlers = (): void => {
       ) {
         throw new Error("Invalid remote attachment request");
       }
-      return resolveRemoteAttachments(ids, context, generation);
+      return native.resolveRemoteAttachments(
+        ids,
+        {
+          // 原生侧的 Option<String> 只接受 undefined（null 会被类型转换拒绝）；
+          // 渲染进程未选择会话 / 工作区时传的是 null，这里统一归一化。
+          directoryId: context.directoryId ?? undefined,
+          conversationId: context.conversationId ?? undefined,
+        },
+        generation,
+      );
     },
   );
 };

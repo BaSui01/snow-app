@@ -25,7 +25,6 @@ import {
   type StoredRemoteTunnelConfig,
 } from "./remoteTunnelSchema";
 import {
-  getRemoteControlPairingState,
   startRemoteWanListener,
   stopRemoteWanListener,
 } from "./remoteControlServer";
@@ -216,12 +215,7 @@ export class RemoteTunnelManager {
 
   private resolveBundle(): { executable: string; manifest: FrpcManifest } {
     const root = app.isPackaged
-      ? join(
-          process.resourcesPath,
-          "remote-control",
-          "frp",
-          "win32-x64",
-        )
+      ? join(process.resourcesPath, "remote-control", "frp", "win32-x64")
       : join(
           app.getAppPath(),
           "resources",

@@ -883,6 +883,50 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to resolve message images"),
         ),
+      setRemoteControlRendererBridge: () => {
+        // 绑定缺失时远控服务不可用：注册回调是空操作，请求会直接失败。
+      },
+      startRemoteControlServer: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to start the remote control server",
+          ),
+        ),
+      stopRemoteControlServer: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to stop the remote control server",
+          ),
+        ),
+      getRemoteControlServerState: () => {
+        throw new Error(
+          "Rust native bridge is required to read the remote control state",
+        );
+      },
+      rotateRemoteControlToken: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to rotate the remote control token",
+          ),
+        ),
+      startRemoteWanListener: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to start the remote WAN listener",
+          ),
+        ),
+      stopRemoteWanListener: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to stop the remote WAN listener",
+          ),
+        ),
+      resolveRemoteAttachments: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to resolve remote attachments",
+          ),
+        ),
       findLatestToolResult: () =>
         Promise.reject(
           new Error(

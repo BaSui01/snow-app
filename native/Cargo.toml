@@ -24,8 +24,13 @@ rusqlite = { version = "0.32.1", features = ["bundled"] }
 serde = { version = "1.0.204", features = ["derive"] }
 serde_json = "1.0.120"
 serde_yaml = "0.9"
-tokio = { version = "1.39.2", features = ["io-util", "process", "rt", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1.39.2", features = ["io-util", "process", "rt", "rt-multi-thread", "sync", "time", "net", "fs"] }
 tokio-util = { version = "0.7", features = ["compat"] }
+# 手机远控 HTTP 服务：原生侧直接监听端口、处理请求与鉴权。
+axum = "0.8"
+url = "2"
+percent-encoding = "2"
+getrandom = "0.2"
 notify = "6"
 regex = "1"
 similar = "2"

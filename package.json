@@ -107,7 +107,8 @@
       "native/snow_native.*.node",
       "node_modules/node-pty/**",
       "node_modules/ssh2/**",
-      "node_modules/cpu-features/**"
+      "node_modules/cpu-features/**",
+      "out/mobile/**"
     ],
     "extraResources": [
       {

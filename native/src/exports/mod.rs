@@ -7,6 +7,7 @@ mod ide;
 mod images;
 mod pets;
 pub(crate) mod pre_script;
+mod remote_control;
 mod sample;
 mod sphere_layout;
 mod storage;

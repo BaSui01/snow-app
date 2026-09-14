@@ -1,162 +1,124 @@
-import {
-  type Locale,
-  DEFAULT_LOCALE,
-  normalizeLocale,
-} from "../../shared/locale";
-import { readDesktopLocale } from "./mobileAssets";
+//! 远控「未授权」配对引导页（原生服务端渲染）。
+//!
+//! 未携带有效配对凭据的浏览器直接访问远控地址（地址栏输入、旧书签、凭据已被
+//! 更换的旧链接）时，由这里渲染一张自包含 HTML 代替裸 JSON 报错：
+//! - 样式与图标全部内联，不依赖 out/mobile 产物；配合 strict CSP
+//!   （无脚本、无外部资源）即使远控页构建缺失也能完整显示；
+//! - 文案语言与移动页一致：桌面端语言 → 浏览器 Accept-Language → 英文兜底；
+//! - 页面绝不包含配对凭据或实际地址，只指引用户回桌面端「设置 → 手机远控」
+//!   获取配对链接，避免把 401 变成信息泄漏面。
 
-/**
- * 远控「未授权」配对引导页（主进程服务端渲染）。
- *
- * 未携带有效配对凭据的浏览器直接访问远控地址（地址栏输入、旧书签、凭据已被
- * 更换的旧链接）时，由这里渲染一张自包含 HTML 代替裸 JSON 报错：
- * - 样式与图标全部内联，不依赖 out/mobile 产物；配合 strict CSP
- *   （无脚本、无外部资源）即使远控页构建缺失也能完整显示；
- * - 文案语言与移动页一致：桌面端语言 → 浏览器 Accept-Language → 英文兜底；
- * - 页面绝不包含配对凭据或实际地址，只指引用户回桌面端「设置 → 手机远控」
- *   获取配对链接，避免把 401 变成信息泄漏面。
- */
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use base64::Engine as _;
 
-type UnauthorizedPageCopy = {
-  /** 写入 <html lang>。 */
-  lang: string;
-  /** 写入 <title>。 */
-  title: string;
-  /** 状态胶囊文案。 */
-  badge: string;
-  headline: string;
-  lead: string;
-  /** 配对三步指引。 */
-  steps: readonly { title: string; detail: string }[];
-  /** 重新加载按钮。 */
-  reload: string;
-  /** 安全提示。 */
-  security: string;
-};
+use super::assets::{Locale, DEFAULT_LOCALE};
 
-const COPY: Record<Locale, UnauthorizedPageCopy> = {
-  "zh-CN": {
+type Step = (&'static str, &'static str);
+
+struct PageCopy {
+    /// 写入 <html lang>。
+    lang: &'static str,
+    /// 写入 <title>。
+    title: &'static str,
+    /// 状态胶囊文案。
+    badge: &'static str,
+    headline: &'static str,
+    lead: &'static str,
+    /// 配对三步指引。
+    steps: [Step; 3],
+    /// 重新加载按钮。
+    reload: &'static str,
+    /// 安全提示。
+    security: &'static str,
+}
+
+const COPY_ZH_CN: PageCopy = PageCopy {
     lang: "zh-CN",
     title: "需要配对 · Snow Remote",
     badge: "需要配对",
     headline: "此浏览器尚未与 Snow 配对",
     lead: "远程控制页面只对已配对的设备开放。请用 Snow「设置 → 手机远控」中显示的配对链接重新打开本页。",
     steps: [
-      {
-        title: "打开 Snow 桌面端",
-        detail: "进入「设置 → 手机远控」，确认服务正在运行",
-      },
-      {
-        title: "用这台手机扫描二维码",
-        detail: "局域网或公网二维码均可，扫码会自动带上配对凭据",
-      },
-      {
-        title: "或直接打开配对链接",
-        detail: "点设置页的「复制地址」，把链接发送到这台手机打开",
-      },
+        (
+            "打开 Snow 桌面端",
+            "进入「设置 → 手机远控」，确认服务正在运行",
+        ),
+        (
+            "用这台手机扫描二维码",
+            "局域网或公网二维码均可，扫码会自动带上配对凭据",
+        ),
+        (
+            "或直接打开配对链接",
+            "点设置页的「复制地址」，把链接发送到这台手机打开",
+        ),
     ],
     reload: "重新加载",
     security: "请勿将配对链接分享给他人——持有链接即可控制你的 Snow 会话。",
-  },
-  "zh-TW": {
+};
+
+const COPY_ZH_TW: PageCopy = PageCopy {
     lang: "zh-TW",
     title: "需要配對 · Snow Remote",
     badge: "需要配對",
     headline: "此瀏覽器尚未與 Snow 配對",
     lead: "遠端控制頁面只開放給已配對的裝置。請用 Snow「設定 → 手機遠控」中顯示的配對連結重新開啟本頁。",
     steps: [
-      {
-        title: "開啟電腦版 Snow",
-        detail: "進入「設定 → 手機遠控」，確認服務正在執行",
-      },
-      {
-        title: "用這支手機掃描二維碼",
-        detail: "區域網路或公網二維碼皆可，掃描後會自動帶上配對憑證",
-      },
-      {
-        title: "或直接開啟配對連結",
-        detail: "點設定頁的「複製位址」，把連結傳到這支手機開啟",
-      },
+        (
+            "開啟電腦版 Snow",
+            "進入「設定 → 手機遠控」，確認服務正在執行",
+        ),
+        (
+            "用這支手機掃描二維碼",
+            "區域網路或公網二維碼皆可，掃描後會自動帶上配對憑證",
+        ),
+        (
+            "或直接開啟配對連結",
+            "點設定頁的「複製位址」，把連結傳到這支手機開啟",
+        ),
     ],
     reload: "重新載入",
     security: "請勿將配對連結分享給他人——持有連結即可控制你的 Snow 工作階段。",
-  },
-  en: {
+};
+
+const COPY_EN: PageCopy = PageCopy {
     lang: "en",
     title: "Pairing required · Snow Remote",
     badge: "Pairing required",
     headline: "This browser isn't paired with Snow",
     lead: "The remote control page is only available to paired devices. Reopen this page with the pairing link shown in Snow under Settings → Mobile remote control.",
     steps: [
-      {
-        title: "Open Snow on your computer",
-        detail:
-          "Go to Settings → Mobile remote control and make sure the service is running",
-      },
-      {
-        title: "Scan the QR code with this phone",
-        detail:
-          "LAN and public QR codes both work — they carry the pairing credentials",
-      },
-      {
-        title: "Or open the pairing link directly",
-        detail:
-          "Use “Copy address” in the settings panel and send the link to this phone",
-      },
+        (
+            "Open Snow on your computer",
+            "Go to Settings → Mobile remote control and make sure the service is running",
+        ),
+        (
+            "Scan the QR code with this phone",
+            "LAN and public QR codes both work — they carry the pairing credentials",
+        ),
+        (
+            "Or open the pairing link directly",
+            "Use “Copy address” in the settings panel and send the link to this phone",
+        ),
     ],
     reload: "Reload",
-    security:
-      "Keep the pairing link private — anyone holding it can control your Snow session.",
-  },
+    security: "Keep the pairing link private — anyone holding it can control your Snow session.",
 };
 
-/**
- * 页面语言：桌面端语言 → Accept-Language 首个语言标签（如 zh-CN、en-US → en）
- * → 英文兜底，与移动页「桌面优先、浏览器兜底」的次序一致。
- */
-export const resolveRemoteUnauthorizedPageLocale = async (
-  acceptLanguage: string | undefined,
-): Promise<Locale> => {
-  const desktop = await readDesktopLocale();
-  if (desktop) return desktop;
-  const firstTag = acceptLanguage?.split(",")[0]?.split(";")[0]?.trim();
-  return normalizeLocale(firstTag) ?? DEFAULT_LOCALE;
-};
+/// 页面语言：桌面端语言 → Accept-Language 首个语言标签 → 英文兜底，
+/// 与移动页「桌面优先、浏览器兜底」的次序一致。
+pub fn resolve_locale(desktop: Option<Locale>, accept_language: Option<&str>) -> Locale {
+    desktop
+        .or_else(|| Locale::from_accept_language(accept_language))
+        .unwrap_or(DEFAULT_LOCALE)
+}
 
-/** lucide `lock`：状态胶囊左侧图标（项目约定图标只用 lucide）。 */
-const LOCK_ICON =
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
+/// lucide `lock`：状态胶囊左侧图标（项目约定图标只用 lucide）。
+const LOCK_ICON: &str = r#"<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>"#;
 
-/** 应用图标不可读时的品牌兜底：lucide `snowflake`。 */
-const SNOWFLAKE_FALLBACK =
-  '<svg class="logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="2" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="22"/><path d="m20 16-4-4 4-4"/><path d="m4 8 4 4-4 4"/><path d="m16 4-4 4-4-4"/><path d="m8 20 4-4 4 4"/></svg>';
+/// 应用图标不可读时的品牌兜底：lucide `snowflake`。
+const SNOWFLAKE_FALLBACK: &str = r#"<svg class="logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="2" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="22"/><path d="m20 16-4-4 4-4"/><path d="m4 8 4 4-4 4"/><path d="m16 4-4 4-4-4"/><path d="m8 20 4-4 4 4"/></svg>"#;
 
-/** 渲染引导页 HTML；调用方负责写入响应并附加 CSP 等安全响应头。 */
-export const renderRemoteUnauthorizedPage = (
-  locale: Locale,
-  iconPng: Buffer | null,
-): string => {
-  const copy = COPY[locale];
-  const logo = iconPng
-    ? `<img class="logo" src="data:image/png;base64,${iconPng.toString("base64")}" alt="" width="64" height="64" />`
-    : SNOWFLAKE_FALLBACK;
-  const steps = copy.steps
-    .map(
-      (step, index) =>
-        `<li><span class="step-num" aria-hidden="true">${index + 1}</span><div class="step-body"><b>${step.title}</b><span>${step.detail}</span></div></li>`,
-    )
-    .join("");
-  return `<!doctype html>
-<html lang="${copy.lang}">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-    <meta name="color-scheme" content="dark light" />
-    <meta name="theme-color" content="#08090b" media="(prefers-color-scheme: dark)" />
-    <meta name="theme-color" content="#f5f6f8" media="(prefers-color-scheme: light)" />
-    <meta name="robots" content="noindex, nofollow" />
-    <title>${copy.title}</title>
-    <style>
+const PAGE_STYLE: &str = r#"
       *,
       *::before,
       *::after {
@@ -386,25 +348,81 @@ export const renderRemoteUnauthorizedPage = (
           transition: none;
         }
       }
-    </style>
+"#;
+
+fn copy_for(locale: Locale) -> &'static PageCopy {
+    match locale {
+        Locale::ZhCn => &COPY_ZH_CN,
+        Locale::ZhTw => &COPY_ZH_TW,
+        Locale::En => &COPY_EN,
+    }
+}
+
+/// 渲染引导页 HTML；调用方负责写入响应并附加 CSP 等安全响应头。
+pub fn render_unauthorized_page(locale: Locale, icon_png: Option<&[u8]>) -> String {
+    let copy = copy_for(locale);
+    let logo = match icon_png {
+        Some(bytes) => format!(
+            r#"<img class="logo" src="data:image/png;base64,{}" alt="" width="64" height="64" />"#,
+            BASE64_STANDARD.encode(bytes)
+        ),
+        None => SNOWFLAKE_FALLBACK.to_string(),
+    };
+    let steps = copy
+        .steps
+        .iter()
+        .enumerate()
+        .map(|(index, (title, detail))| {
+            format!(
+                r#"<li><span class="step-num" aria-hidden="true">{}</span><div class="step-body"><b>{}</b><span>{}</span></div></li>"#,
+                index + 1,
+                title,
+                detail
+            )
+        })
+        .collect::<String>();
+    format!(
+        r##"<!doctype html>
+<html lang="{lang}">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#08090b" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f5f6f8" media="(prefers-color-scheme: light)" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>{title}</title>
+    <style>{style}</style>
   </head>
   <body>
     <main class="card">
       <div class="brand">
-        <div class="logo-wrap">${logo}</div>
+        <div class="logo-wrap">{logo}</div>
         <span class="eyebrow">SNOW REMOTE</span>
       </div>
       <div class="head">
-        <span class="status">${LOCK_ICON}${copy.badge}</span>
-        <h1>${copy.headline}</h1>
-        <p class="lead">${copy.lead}</p>
+        <span class="status">{lock}{badge}</span>
+        <h1>{headline}</h1>
+        <p class="lead">{lead}</p>
       </div>
-      <ol class="steps">${steps}</ol>
-      <div class="actions"><a class="button" href="">${copy.reload}</a></div>
-      <p class="security">${copy.security}</p>
+      <ol class="steps">{steps}</ol>
+      <div class="actions"><a class="button" href="">{reload}</a></div>
+      <p class="security">{security}</p>
       <div class="signature">SNOW REMOTE</div>
     </main>
   </body>
 </html>
-`;
-};
+"##,
+        lang = copy.lang,
+        title = copy.title,
+        style = PAGE_STYLE,
+        logo = logo,
+        lock = LOCK_ICON,
+        badge = copy.badge,
+        headline = copy.headline,
+        lead = copy.lead,
+        steps = steps,
+        reload = copy.reload,
+        security = copy.security,
+    )
+}

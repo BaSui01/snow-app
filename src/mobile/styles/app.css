@@ -3112,3 +3112,352 @@ html[data-theme="light"] {
 html[data-i18n-pending] body {
   visibility: hidden;
 }
+
+/* ── 回滚（用户消息入口 + 确认弹层） ───────────────────────────────────────
+   与桌面 RollbackConfirmDialog 同源：底部弹层展示文件变更 / TODO / 项目记忆，
+   diff 视图渲染 Rust 检查点服务给出的 unified diff 文本。 */
+
+/* 用户消息内的回滚入口：贴在气泡底部的行内动作。 */
+.message-rollback {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 7px;
+}
+.message-rollback-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--secondary-control-bg);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.message-rollback-button .icn {
+  width: 13px;
+  height: 13px;
+}
+.message-rollback-button:active {
+  transform: scale(0.96);
+  color: var(--text);
+}
+
+/* 弹层：底部升起（覆盖 .sheet 的左侧抽屉定位）。 */
+.rollback-sheet {
+  left: 10px;
+  right: 10px;
+  top: auto;
+  bottom: 0;
+  width: auto;
+  max-height: calc(100dvh - var(--top) - 24px);
+  border-bottom: 0;
+  border-radius: 16px 16px 0 0;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  padding-bottom: env(safe-area-inset-bottom);
+  transform: translateY(100%);
+}
+.rollback-sheet.open {
+  transform: none;
+}
+/* 类选择器的 display 会覆盖 UA 的 [hidden]{display:none}，需显式还原。 */
+.sheet-header button[hidden] {
+  display: none;
+}
+.rollback-body {
+  padding: 14px 16px 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.rollback-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  color: var(--muted);
+}
+.rollback-spinner {
+  animation: spin 1s linear infinite;
+}
+.rollback-note {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel2);
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.rollback-note.warning {
+  border-color: rgba(242, 198, 109, 0.35);
+  background: var(--amber-dim);
+  color: var(--amber);
+}
+.rollback-note.error {
+  border-color: rgba(255, 114, 123, 0.35);
+  background: var(--red-dim);
+  color: var(--red);
+}
+.rollback-lead {
+  margin: 6px 0 10px;
+}
+.rollback-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.rollback-chip {
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 11px;
+}
+.rollback-chip.added {
+  border-color: rgba(113, 230, 165, 0.35);
+  background: var(--green-dim);
+  color: var(--green);
+}
+.rollback-chip.modified {
+  border-color: rgba(242, 198, 109, 0.35);
+  background: var(--amber-dim);
+  color: var(--amber);
+}
+.rollback-chip.deleted {
+  border-color: rgba(255, 114, 123, 0.35);
+  background: var(--red-dim);
+  color: var(--red);
+}
+.rollback-change-list,
+.rollback-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.rollback-change,
+.rollback-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+.rollback-change:first-child,
+.rollback-list-item:first-child {
+  border-top: 0;
+}
+.rollback-change-icon,
+.rollback-list-icon {
+  color: var(--muted);
+}
+.rollback-change.added .rollback-change-icon {
+  color: var(--green);
+}
+.rollback-change.modified .rollback-change-icon {
+  color: var(--amber);
+}
+.rollback-change.deleted .rollback-change-icon {
+  color: var(--red);
+}
+.rollback-change-type {
+  flex: none;
+  color: var(--muted);
+}
+.rollback-change-path,
+.rollback-list-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rollback-list-item {
+  align-items: flex-start;
+}
+.rollback-list-text {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.rollback-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel2);
+}
+.rollback-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+.rollback-toggle .icn {
+  width: 14px;
+  height: 14px;
+}
+.rollback-section-title {
+  font-size: 12px;
+}
+.rollback-memory-option {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.rollback-memory-option input {
+  margin: 2px 0 0;
+  flex: none;
+}
+.rollback-diff-files {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+.rollback-diff-file {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  max-width: 250px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel2);
+  color: var(--muted);
+  font-size: 11px;
+}
+.rollback-diff-file.active {
+  border-color: var(--accent-color-border);
+  color: var(--text);
+}
+.rollback-diff-file-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rollback-diff-file-stats {
+  flex: none;
+  color: var(--dim);
+}
+.rollback-diff {
+  margin-bottom: 10px;
+}
+.rollback-diff-body {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel2);
+  overflow-x: auto;
+}
+.rollback-diff-line {
+  padding: 0 10px;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre;
+  color: var(--muted);
+}
+.rollback-diff-line.add {
+  background: var(--green-dim);
+  color: var(--green);
+}
+.rollback-diff-line.del {
+  background: var(--red-dim);
+  color: var(--red);
+}
+.rollback-diff-line.hunk {
+  background: rgba(120, 168, 255, 0.1);
+  color: var(--blue);
+}
+.rollback-diff-line.meta {
+  color: var(--dim);
+}
+.rollback-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 16px 14px;
+  border-top: 1px solid var(--line);
+}
+.rollback-primary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.rollback-action {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 92px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel2);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.rollback-action:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.rollback-action:disabled {
+  opacity: 0.5;
+}
+/* 确认回滚是破坏性操作：与桌面 .confirm-dialog-btn.confirm 的红底同义。 */
+.rollback-action.confirm {
+  border-color: rgba(255, 114, 123, 0.35);
+  background: var(--red-dim);
+  color: var(--red);
+}
+.rollback-secondary-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.rollback-secondary-action:active {
+  transform: scale(0.98);
+  color: var(--text);
+}
+.rollback-secondary-action .icn {
+  width: 14px;
+  height: 14px;
+}
+.rollback-action .icn,
+.rollback-spinner .icn {
+  width: 14px;
+  height: 14px;
+}

@@ -33,6 +33,7 @@ VPS 只做转发，不运行 Agent、不保存 Snow 会话，也不持有手机�
 ## 固定版本与端口
 
 - frp `0.71.0`，Caddy `2.11.3`；下载文件和 SHA-256 在 `versions.json`。
+- 桌面安装包按 `resources/remote-control/frp/<platform>-<arch>` 内置 frpc：Windows x64、macOS arm64/x64、Linux x64。新增平台或架构必须同时补齐二进制、`manifest.json` 和 `package.json` 中对应平台的 `extraResources`。
 - VPS 防火墙只允许 TCP `80`、`443`、`7000`。`18080` 必须保持外部不可达。
 - Caddy 从 `127.0.0.1:18080` 读取隧道流量；frps 的 `proxyBindAddr` 也固定为 `127.0.0.1`。
 - 模板不启用 frps/frpc Web 管理面板。
@@ -97,7 +98,7 @@ sudo systemctl enable --now snow-frps caddy
 
 ## 4. 连接桌面 Snow
 
-Windows x64 安装包已经内置固定版本并校验 SHA-256 的 `frpc.exe`，无需另行下载或手动启动。打开 Snow 的“设置 → 手机远控”，展开“第一次配置”向导并填写：
+Windows、macOS 与 Linux 安装包均已内置对应平台固定版本并校验 SHA-256 的 `frpc`（Windows 为 `frpc.exe`），无需另行下载或手动启动。打开 Snow 的“设置 → 手机远控”，展开“第一次配置”向导并填写：
 
 1. FRP 服务器地址：例如 `frp.example.com`，不要包含协议或路径；
 2. FRP 端口：与 VPS 的 `bindPort` 一致，模板默认 `7000`；

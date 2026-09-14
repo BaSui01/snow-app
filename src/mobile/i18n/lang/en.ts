@@ -62,6 +62,49 @@ export const en: Record<string, string> = {
   "remote.todos.statusInProgress": "In progress",
   "remote.todos.statusCompleted": "Completed",
 
+  // Rollback (phone-side confirm sheet backed by the desktop rollback pipeline)
+  "remote.rollback.action": "Roll back",
+  "remote.rollback.actionHint": "Roll back to this message",
+  "remote.rollback.title": "Roll back",
+  "remote.rollback.close": "Close",
+  "remote.rollback.backToSummary": "Back to rollback summary",
+  "remote.rollback.preparing": "Checking file changes…",
+  "remote.rollback.preparingHint":
+    "Stopping the current run and reading checkpoints — SSH workspaces may take longer",
+  "remote.rollback.firstMessageNotice":
+    "Rolling back the first message deletes the whole conversation and removes it from the list. File changes from every later round are reverted as well.",
+  "remote.rollback.changesNotice":
+    "Rolling back reverts file changes from every later round — {{count}} files affected:",
+  "remote.rollback.noChangesNotice":
+    "No file changes — rollback only deletes this message and everything after it. Continue?",
+  "remote.rollback.changeAdded": "Added",
+  "remote.rollback.changeModified": "Modified",
+  "remote.rollback.changeDeleted": "Deleted",
+  "remote.rollback.hiddenChanges": "{{count}} more files not shown…",
+  "remote.rollback.viewChanges": "View changes",
+  "remote.rollback.previewLoading": "Loading changes…",
+  "remote.rollback.previewError": "Failed to load rollback changes",
+  "remote.rollback.previewRetry": "Retry",
+  "remote.rollback.previewEmpty": "No changes to preview",
+  "remote.rollback.previewTruncatedFiles":
+    "Showing the first {{count}} files only",
+  "remote.rollback.binaryFile": "Binary file — preview unavailable",
+  "remote.rollback.cancelAction": "Cancel",
+  "remote.rollback.conversationOnlyAction": "Roll back conversation only",
+  "remote.rollback.conversationAndFilesAction":
+    "Roll back conversation and files",
+  "remote.rollback.confirmAction": "Confirm rollback",
+  "remote.rollback.inProgress": "Rolling back…",
+  "remote.rollback.todoNotice": "Rollback deletes {{count}} TODO items",
+  "remote.rollback.todoToggle": "Show/hide the TODO list",
+  "remote.rollback.workflowNotice":
+    "{{count}} WorkFlow(s) will be aborted (if still running) and deleted together with their node conversations; restoring files also reverts the nodes' edits",
+  "remote.rollback.memoryOption":
+    "Also delete the {{count}} project memories saved by the rolled-back rounds (leave unchecked to keep them)",
+  "remote.rollback.memoryToggle": "Show/hide the memory list",
+  "remote.rollback.done": "Rollback complete",
+  "remote.rollback.ended": "Rollback ended on the desktop",
+
   // Action sheet
   "remote.actions.image": "Add image",
   "remote.actions.file": "Add file",

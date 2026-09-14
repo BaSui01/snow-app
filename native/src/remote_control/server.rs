@@ -52,6 +52,11 @@ const COMPLETED_SEND_CAPACITY: usize = 200;
 const SEND_IDLE_TIMEOUT: Duration = Duration::from_secs(5);
 /// 单次 send 请求内最多携带的附件数（与附件存储一致）。
 const MAX_SEND_ATTACHMENTS: usize = 4;
+/// 回滚 diff：单次请求携带的检查点数量、返回的文件数上限。
+const MAX_ROLLBACK_CHECKPOINTS: usize = 300;
+const MAX_ROLLBACK_DIFF_FILES: usize = 50;
+/// 单个文件 diff 下发给手机端的字符上限（手机屏幕消费不了更长的内容）。
+const MAX_ROLLBACK_DIFF_CHARS: usize = 20_000;
 
 /// percent-encode 集合：与 JS 的 encodeURIComponent 保留字符一致。
 const URI_COMPONENT_SET: &AsciiSet = &NON_ALPHANUMERIC
@@ -408,6 +413,26 @@ fn is_workflow_reply(value: &str) -> bool {
 
 fn is_remote_mode(value: &str) -> bool {
     REMOTE_MODES.contains(&value)
+}
+
+/// 回滚方式白名单（必须与 renderer 的 RollbackMode 一致）。
+fn is_rollback_mode(value: &str) -> bool {
+    matches!(value, "conversation-only" | "conversation-and-files")
+}
+
+/// 检查点 id 形态校验：`cp-{secs}-{nanos}-{count}`（由检查点服务生成）。
+fn is_checkpoint_id(value: &str) -> bool {
+    let Some(rest) = value.strip_prefix("cp-") else {
+        return false;
+    };
+    let mut segments = 0;
+    for segment in rest.split('-') {
+        if segment.is_empty() || !segment.bytes().all(|byte| byte.is_ascii_digit()) {
+            return false;
+        }
+        segments += 1;
+    }
+    segments == 3
 }
 
 fn truncate_chars(value: &str, max: usize) -> String {
@@ -1366,6 +1391,141 @@ async fn handle_api(
             bridge_call("runWorkflow", json!([flow_id])).await?
         } else {
             bridge_call("replyWorkflow", json!([flow_id, message])).await?
+        };
+        return Ok(json_response(StatusCode::OK, &value, Vec::new()));
+    }
+
+    if method == Method::GET && path == "/api/rollback" {
+        ensure_current_pairing(context, request_generation)?;
+        let value = bridge_call("getRollbackState", json!([])).await?;
+        return Ok(json_response(StatusCode::OK, &value, Vec::new()));
+    }
+
+    if method == Method::POST && path == "/api/rollback" {
+        if !is_json_request(headers) {
+            return Ok(json_response(
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                &json!({ "error": "Content-Type 必须是 application/json" }),
+                Vec::new(),
+            ));
+        }
+        let payload = read_json_body(body.take()).await?;
+        let action = payload.get("action").and_then(Value::as_str);
+
+        if action == Some("diff") {
+            // 文件变更 diff 直接在原生侧计算：与桌面 listCheckpointDiffsBatch
+            // 共用同一套检查点服务（含 SSH/SFTP 通道与执行级目录锁），
+            // 无需把渲染进程拉进这次只读查询。
+            let Some(work_dir) = payload
+                .get("workDir")
+                .and_then(Value::as_str)
+                .filter(|value| is_bounded_string(value, false))
+            else {
+                return Ok(json_response(
+                    StatusCode::BAD_REQUEST,
+                    &json!({ "error": "回滚工作目录无效" }),
+                    Vec::new(),
+                ));
+            };
+            let checkpoint_ids = payload
+                .get("checkpointIds")
+                .and_then(Value::as_array)
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_string)
+                        .collect::<Vec<String>>()
+                })
+                .filter(|ids| {
+                    !ids.is_empty()
+                        && ids.len() <= MAX_ROLLBACK_CHECKPOINTS
+                        && ids.iter().all(|id| is_checkpoint_id(id))
+                });
+            let Some(checkpoint_ids) = checkpoint_ids else {
+                return Ok(json_response(
+                    StatusCode::BAD_REQUEST,
+                    &json!({ "error": "回滚检查点无效" }),
+                    Vec::new(),
+                ));
+            };
+            ensure_current_pairing(context, request_generation)?;
+            // include_all=false：与确认回滚时实际会恢复的文件范围一致。
+            let diffs = crate::exports::checkpoint::list_checkpoint_diffs_batch(
+                checkpoint_ids,
+                work_dir.to_string(),
+                Some(false),
+            )
+            .await
+            .map_err(|error| {
+                ApiError::conflict(truncate_chars(&error.to_string(), MAX_IDENTIFIER_LENGTH))
+            })?;
+            let items: Vec<Value> = diffs
+                .into_iter()
+                .take(MAX_ROLLBACK_DIFF_FILES)
+                .map(|diff| {
+                    let truncated = diff.content.chars().count() > MAX_ROLLBACK_DIFF_CHARS;
+                    let content = if truncated {
+                        truncate_chars(&diff.content, MAX_ROLLBACK_DIFF_CHARS)
+                    } else {
+                        diff.content
+                    };
+                    json!({
+                        "path": diff.path,
+                        "changeType": diff.change_type,
+                        "content": content,
+                        "isBinary": diff.is_binary,
+                        "truncated": truncated,
+                    })
+                })
+                .collect();
+            return Ok(json_response(
+                StatusCode::OK,
+                &json!({ "diffs": items }),
+                Vec::new(),
+            ));
+        }
+
+        let Some(message_id) = payload
+            .get("messageId")
+            .and_then(Value::as_str)
+            .filter(|value| is_bounded_string(value, false))
+        else {
+            return Ok(json_response(
+                StatusCode::BAD_REQUEST,
+                &json!({ "error": "回滚目标无效" }),
+                Vec::new(),
+            ));
+        };
+        if !matches!(
+            action,
+            Some("preview") | Some("confirm") | Some("cancel")
+        ) {
+            return Ok(json_response(
+                StatusCode::BAD_REQUEST,
+                &json!({ "error": "action 必须是 preview / confirm / cancel / diff" }),
+                Vec::new(),
+            ));
+        }
+        ensure_current_pairing(context, request_generation)?;
+        let value = match action {
+            Some("preview") => bridge_call("startRollback", json!([message_id])).await?,
+            Some("cancel") => bridge_call("cancelRollback", json!([message_id])).await?,
+            _ => {
+                let mode = payload.get("mode").and_then(Value::as_str);
+                let Some(mode) = mode.filter(|value| is_rollback_mode(value)) else {
+                    return Ok(json_response(
+                        StatusCode::BAD_REQUEST,
+                        &json!({ "error": "回滚方式无效" }),
+                        Vec::new(),
+                    ));
+                };
+                let delete_memories = payload
+                    .get("deleteMemories")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                bridge_call("confirmRollback", json!([message_id, mode, delete_memories])).await?
+            }
         };
         return Ok(json_response(StatusCode::OK, &value, Vec::new()));
     }

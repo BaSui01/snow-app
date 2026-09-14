@@ -3,13 +3,14 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import {
   chmodSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   loadStoredRemoteTunnelConfig,
   saveRemoteTunnelConfig,
@@ -57,6 +58,8 @@ const VERIFY_TIMEOUT_MS = 10_000;
 const ENDPOINT_TIMEOUT_MS = 5_000;
 const ENDPOINT_MONITOR_INTERVAL_MS = 30_000;
 const MAX_LOG_TAIL = 8_000;
+/** 安装包内的 frpc 目录与资源名后缀，例如 win32-x64、darwin-arm64。 */
+const FRPC_PLATFORM_DIRECTORY = `${process.platform}-${process.arch}`;
 
 const restrictPermissions = (path: string): void => {
   try {
@@ -64,6 +67,17 @@ const restrictPermissions = (path: string): void => {
   } catch {
     // safeStorage protects persisted secrets; runtime files are also short-lived.
   }
+};
+
+/** 二进制的内容与长度都必须与版本清单一致才允许执行。 */
+const matchesFrpcDigest = (path: string, manifest: FrpcManifest): boolean => {
+  if (!existsSync(path)) return false;
+  const bytes = readFileSync(path);
+  return (
+    bytes.length === manifest.executable.size &&
+    createHash("sha256").update(bytes).digest("hex") ===
+      manifest.executable.sha256
+  );
 };
 
 const waitForExit = async (
@@ -77,6 +91,27 @@ const waitForExit = async (
       clearTimeout(timer);
       resolve();
     });
+  });
+};
+
+/** frpc 退出前一直占用隧道端口，普通结束信号无效时必须按平台强制终止。 */
+const forceKill = async (pid: number): Promise<void> => {
+  if (process.platform !== "win32") {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // 进程可能已经退出，重复终止不是错误。
+    }
+    return;
+  }
+  const killer = spawn("taskkill.exe", ["/PID", String(pid), "/T", "/F"], {
+    shell: false,
+    windowsHide: true,
+    stdio: "ignore",
+  });
+  await new Promise<void>((resolve) => {
+    killer.once("error", () => resolve());
+    killer.once("exit", () => resolve());
   });
 };
 
@@ -215,37 +250,73 @@ export class RemoteTunnelManager {
 
   private resolveBundle(): { executable: string; manifest: FrpcManifest } {
     const root = app.isPackaged
-      ? join(process.resourcesPath, "remote-control", "frp", "win32-x64")
+      ? join(
+          process.resourcesPath,
+          "remote-control",
+          "frp",
+          FRPC_PLATFORM_DIRECTORY,
+        )
       : join(
           app.getAppPath(),
           "resources",
           "remote-control",
           "frp",
-          "win32-x64",
+          FRPC_PLATFORM_DIRECTORY,
         );
     const manifestPath = join(root, "manifest.json");
     if (!existsSync(manifestPath)) {
-      throw new Error("安装包缺少 frpc 版本清单");
+      throw new Error(
+        `安装包缺少 ${FRPC_PLATFORM_DIRECTORY} 平台的 frpc 版本清单`,
+      );
     }
     const manifest = JSON.parse(
       readFileSync(manifestPath, "utf8"),
     ) as FrpcManifest;
-    const executable = join(root, manifest.executable.file);
-    if (!existsSync(executable)) {
-      throw new Error("安装包缺少 frpc.exe");
+    const bundled = join(root, manifest.executable.file);
+    if (!existsSync(bundled)) {
+      throw new Error(
+        `安装包缺少 ${FRPC_PLATFORM_DIRECTORY} 平台的 frpc 可执行文件`,
+      );
     }
-    if (this.verifiedBinaryPath !== executable) {
-      const bytes = readFileSync(executable);
-      const digest = createHash("sha256").update(bytes).digest("hex");
-      if (
-        bytes.length !== manifest.executable.size ||
-        digest !== manifest.executable.sha256
-      ) {
-        throw new Error("frpc.exe 完整性校验失败");
+    if (
+      this.verifiedBinaryPath !== bundled &&
+      !matchesFrpcDigest(bundled, manifest)
+    ) {
+      throw new Error("内置 frpc 完整性校验失败");
+    }
+    this.verifiedBinaryPath = bundled;
+    return {
+      executable: this.materializeExecutable(bundled, manifest),
+      manifest,
+    };
+  }
+
+  /**
+   * POSIX 安装包内的二进制可能因 Git 检出、解压或只读挂载（如 AppImage）缺少
+   * 可执行位，先复制到用户目录并补齐权限位再运行；Windows 直接使用安装包文件。
+   */
+  private materializeExecutable(
+    bundled: string,
+    manifest: FrpcManifest,
+  ): string {
+    if (process.platform === "win32") return bundled;
+    const target = join(
+      app.getPath("userData"),
+      "remote-control",
+      "frpc",
+      `${FRPC_PLATFORM_DIRECTORY}-${manifest.executable.sha256.slice(0, 16)}`,
+      manifest.executable.file,
+    );
+    try {
+      if (!matchesFrpcDigest(target, manifest)) {
+        mkdirSync(dirname(target), { recursive: true });
+        copyFileSync(bundled, target);
+        chmodSync(target, 0o700);
       }
-      this.verifiedBinaryPath = executable;
+      return target;
+    } catch {
+      return bundled;
     }
-    return { executable, manifest };
   }
 
   private prepareRuntime(
@@ -496,18 +567,7 @@ export class RemoteTunnelManager {
       child.kill();
       await waitForExit(child, 5_000);
       if (child.exitCode === null && child.pid) {
-        const killer = spawn(
-          "taskkill.exe",
-          ["/PID", String(child.pid), "/T", "/F"],
-          {
-            shell: false,
-            windowsHide: true,
-            stdio: "ignore",
-          },
-        );
-        await new Promise<void>((resolve) =>
-          killer.once("exit", () => resolve()),
-        );
+        await forceKill(child.pid);
       }
     }
     await this.cleanupRuntime();

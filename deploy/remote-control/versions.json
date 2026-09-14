@@ -1,11 +1,19 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-09-11",
+  "updatedAt": "2026-09-14",
   "frp": {
     "version": "0.71.0",
     "license": "Apache-2.0",
     "source": "https://github.com/fatedier/frp",
     "assets": {
+      "darwin-amd64": {
+        "file": "frp_0.71.0_darwin_amd64.tar.gz",
+        "sha256": "1b1b4e2f1836e21e8733f1dddaacd4ed9ae67d7dbee39046b9d7b7eda6253637"
+      },
+      "darwin-arm64": {
+        "file": "frp_0.71.0_darwin_arm64.tar.gz",
+        "sha256": "45be02b186860d375ed49a8941ae9569628a54bf14e67fc36b29c98c99dabcc6"
+      },
       "linux-amd64": {
         "file": "frp_0.71.0_linux_amd64.tar.gz",
         "sha256": "84f27e39f11169f7adcef8e8b70c9329de17747b1f14dad9fb95eef5682ea716"

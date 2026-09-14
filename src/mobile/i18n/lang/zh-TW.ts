@@ -58,6 +58,47 @@ export const zhTW: Record<string, string> = {
   "remote.todos.statusInProgress": "進行中",
   "remote.todos.statusCompleted": "已完成",
 
+  // 回滾（與桌面 RollbackConfirmDialog 同源的手機端確認彈層）
+  "remote.rollback.action": "回滾",
+  "remote.rollback.actionHint": "回滾到這則訊息",
+  "remote.rollback.title": "回滾會話",
+  "remote.rollback.close": "關閉",
+  "remote.rollback.backToSummary": "返回回滾摘要",
+  "remote.rollback.preparing": "正在計算檔案變更…",
+  "remote.rollback.preparingHint":
+    "正在中止執行並檢查檢查點，SSH 專案可能需要更久",
+  "remote.rollback.firstMessageNotice":
+    "回滾到第一則訊息將刪除整個對話，對話將從清單中移除。此操作也會撤銷該訊息之後所有輪次產生的檔案變更。",
+  "remote.rollback.changesNotice":
+    "回滾將撤銷此訊息之後所有輪次的檔案變更，共 {{count}} 個檔案受影響：",
+  "remote.rollback.noChangesNotice":
+    "沒有檔案變更，回滾僅刪除此訊息及之後的對話內容。確定要繼續嗎？",
+  "remote.rollback.changeAdded": "新增",
+  "remote.rollback.changeModified": "修改",
+  "remote.rollback.changeDeleted": "刪除",
+  "remote.rollback.hiddenChanges": "還有 {{count}} 個檔案未顯示…",
+  "remote.rollback.viewChanges": "檢視變更",
+  "remote.rollback.previewLoading": "正在載入變更…",
+  "remote.rollback.previewError": "載入回滾變更失敗",
+  "remote.rollback.previewRetry": "重試",
+  "remote.rollback.previewEmpty": "沒有可預覽的變更",
+  "remote.rollback.previewTruncatedFiles": "僅顯示前 {{count}} 個檔案的變更",
+  "remote.rollback.binaryFile": "二進位檔案，無法預覽",
+  "remote.rollback.cancelAction": "取消",
+  "remote.rollback.conversationOnlyAction": "僅回滾會話",
+  "remote.rollback.conversationAndFilesAction": "回滾會話和檔案",
+  "remote.rollback.confirmAction": "確認回滾",
+  "remote.rollback.inProgress": "正在回滾…",
+  "remote.rollback.todoNotice": "回滾將刪除 {{count}} 個 TODO 項",
+  "remote.rollback.todoToggle": "展開/收合 TODO 清單",
+  "remote.rollback.workflowNotice":
+    "將中止（若仍在執行）並級聯刪除 {{count}} 個 WorkFlow 及其節點會話；還原檔案時節點對檔案的變更將一併還原",
+  "remote.rollback.memoryOption":
+    "同時刪除被回滾輪次儲存的 {{count}} 條專案記憶（取消勾選則保留在專案記憶庫）",
+  "remote.rollback.memoryToggle": "展開/收合記憶清單",
+  "remote.rollback.done": "回滾完成",
+  "remote.rollback.ended": "回滾已在電腦端結束",
+
   // 動作面板
   "remote.actions.image": "新增圖片",
   "remote.actions.file": "新增檔案",

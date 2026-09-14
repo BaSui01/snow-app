@@ -6,6 +6,15 @@ import { $ } from "./dom";
  */
 let overlayHistoryActive = false;
 let overlayTrigger: HTMLElement | null = null;
+/**
+ * 浮层关闭钩子：浮层自身有需要复位的状态（如回滚弹层的预览轮询）时注册。
+ * 由 hideOverlays 调用——返回键、其他浮层抢占、显式关闭都会经过它。
+ */
+let overlayCloseHook: (() => void) | null = null;
+
+export const setOverlayCloseHook = (hook: (() => void) | null): void => {
+  overlayCloseHook = hook;
+};
 
 export const isActionSheetOpen = (): boolean =>
   $("actionSheet").classList.contains("open");
@@ -18,6 +27,8 @@ export const setActionSheetOpen = (open: boolean): void => {
 
 /** 关闭所有浮层（不改动 history，供打开新浮层前调用）。 */
 export const hideOverlays = (): void => {
+  // 先通知浮层自身复位状态（回滚弹层据此停止预览轮询），再收起 DOM。
+  overlayCloseHook?.();
   setActionSheetOpen(false);
   $("remotePanelScrim").classList.remove("open");
   document
@@ -27,6 +38,8 @@ export const hideOverlays = (): void => {
   $("threadSheet").classList.remove("open");
   $("imageLightbox").classList.remove("open");
   $("lightboxImage").removeAttribute("src");
+  $("rollbackScrim").classList.remove("open");
+  $("rollbackSheet").classList.remove("open");
 };
 
 /** 压入一条历史记录，保证返回键 / 手势能逐层关闭浮层。 */

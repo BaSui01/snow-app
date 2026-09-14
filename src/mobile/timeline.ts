@@ -11,6 +11,7 @@ import { iconMarkup } from "./icons";
 import { renderMarkdown } from "./markdown";
 import { showNotice } from "./notice";
 import { openImageLightbox } from "./overlays";
+import { openRollbackSheet } from "./rollback";
 import { createToolCallEl } from "./tools";
 import {
   attachMessageNode,
@@ -81,6 +82,11 @@ let loadingOlder = false;
 let userNearBottom = true;
 /** 最近一次快照是否处于流式生成：按钮显示运行光环。 */
 let streaming = false;
+/**
+ * 桌面当前会话是否可回滚（子代理 / 节点会话不可回滚）且不在运行中。
+ * 字段缺失（未上报该状态的桌面版本）时按可用处理，由桥侧做最终校验。
+ */
+let rollbackAvailable = false;
 /** 平滑回底动画的帧句柄（0 = 空闲；非 0 期间滚动事件属于程序化滚动）。 */
 let scrollToBottomAnim = 0;
 
@@ -114,6 +120,37 @@ const renderedNodes = new Map<string, MessageNode>();
  */
 const isRenderableMessage = (message: SnowRemoteMessage): boolean =>
   (message.role || "assistant") !== "tool";
+
+// ── 回滚入口 ──────────────────────────────────────────────────────────────
+
+/**
+ * 该消息是否展示回滚入口：用户消息 + 桌面会话可回滚（子代理 / 节点会话不可）。
+ * 桌面按分页加载会话消息，手机上「加载更早」取回的历史消息同样可回滚——桥侧
+ * 会先沿桌面同一条历史加载通道把目标消息翻页加载进内存再发起回滚。
+ */
+const canRollbackMessage = (message: SnowRemoteMessage): boolean =>
+  (message.role || "assistant") === "user" && rollbackAvailable;
+
+/**
+ * 用户消息上的回滚入口：点击打开回滚确认弹层（与桌面 UserMessageActions 的
+ * 回滚按钮同语义，文案与无障碍标签一并对齐）。回滚本身完全复用桌面逻辑，
+ * 手机端只负责发起与确认。
+ */
+const rollbackActionNode = (messageId: string): HTMLElement => {
+  const row = document.createElement("div");
+  row.className = "message-rollback";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "message-rollback-button";
+  button.dataset.rollback = messageId;
+  button.title = t("remote.rollback.actionHint");
+  button.setAttribute("aria-label", t("remote.rollback.actionHint"));
+  button.innerHTML = `${iconMarkup("undo-2")}<span>${escapeHtml(
+    t("remote.rollback.action"),
+  )}</span>`;
+  row.append(button);
+  return row;
+};
 
 // ── 通用工具 ──────────────────────────────────────────────────────────────
 
@@ -396,6 +433,15 @@ const buildMessageBlocks = (
       ),
   });
 
+  // 回滚入口（仅用户消息）：与桌面版同在消息动作区，位于正文之后。
+  if (canRollbackMessage(message)) {
+    blocks.push({
+      key: "rollback",
+      sig: "rollback",
+      create: () => rollbackActionNode(message.id),
+    });
+  }
+
   const tools = message.toolCalls ?? [];
   // workflow 卡片单独成块：卡片不适合折叠的工具行渲染，块级 diff 也让
   // 节点进度更新（patch）不会重建其它工具条目。
@@ -512,6 +558,8 @@ const messageSignature = (
     caret ? "c1" : "c0",
     toolSummary(message.toolCalls),
     contentDigest(message.content || ""),
+    // 回滚入口的显隐参与签名：可回滚状态变化（流式起止 / 会话切换）必须触发重建。
+    canRollbackMessage(message) ? "r1" : "r0",
   ].join("\u0001");
 };
 
@@ -1019,6 +1067,9 @@ export const renderTimeline = (
 ): void => {
   currentState = next;
   streaming = next.isStreaming;
+  // 回滚入口门控：桌面可回滚（子代理 / 节点会话不可）且不在流式输出中——
+  // 与桌面流式期间隐藏回滚按钮一致；字段缺失时按可用处理（见上方注释）。
+  rollbackAvailable = next.rollbackAvailable !== false && !next.isStreaming;
   const conversationChanged =
     (next.activeConversationId ?? null) !== renderedConversationId;
   if (conversationChanged) {
@@ -1044,6 +1095,30 @@ export const renderTimeline = (
     anchorEl: null,
     rebuild: conversationChanged,
   });
+  updateLoadEarlierButton();
+};
+
+/**
+ * 回滚成功后清理本地时间线：移除目标消息及其之后的所有消息（桌面已按同一边界
+ * 截断会话，首条消息回滚则是整个会话被删除）。手机端的时间线是单调累积的，
+ * 不主动清理会让已回滚的内容一直显示到会话切换。
+ * 目标不在本地（例如 id 已随落库迁移）时保守清空，由下一次快照重建尾部消息。
+ */
+export const dropMessagesFrom = (messageId: string): void => {
+  const index = knownList.findIndex((message) => message.id === messageId);
+  const kept = index === -1 ? [] : knownList.slice(0, index);
+  knownList = kept;
+  knownIds.clear();
+  for (const message of kept) knownIds.add(message.id);
+  if (index === -1) {
+    // 清空后失去分页锚点：复位「加载更早」状态，由快照重新给出结论。
+    loadGeneration += 1;
+    loadingOlder = false;
+    hasLoadedHistory = false;
+    hasOlder = currentState?.hasOlderMessages ?? false;
+  }
+  setPinnedMessageIds(pinnedMessageIds());
+  paint({ follow: true, anchorEl: null });
   updateLoadEarlierButton();
 };
 
@@ -1085,6 +1160,12 @@ export const initTimeline = (): void => {
   };
   $("messages").onclick = (event) => {
     const target = event.target as HTMLElement;
+    // 回滚入口（用户消息）：打开回滚确认弹层。
+    const rollback = target.closest<HTMLElement>("[data-rollback]");
+    if (rollback) {
+      void openRollbackSheet(rollback.dataset.rollback ?? "", rollback);
+      return;
+    }
     // 折叠块：.tc-more 切换展开态并同步按钮文案。
     const more = target.closest<HTMLButtonElement>(".tc-more");
     if (more) {

@@ -32,6 +32,9 @@ import type {
   SnowRemoteChange,
   SnowRemoteConversation,
   SnowRemoteMessage,
+  SnowRemoteRollbackChange,
+  SnowRemoteRollbackMode,
+  SnowRemoteRollbackState,
   SnowRemoteState,
   SnowRemoteTodoItem,
   SnowRemoteTodoStatus,
@@ -60,6 +63,27 @@ const MAX_IDENTIFIER_LENGTH = 200;
 /** 会话待办：单次下发的最大条目数与单条内容长度上限。 */
 const MAX_TODOS = 200;
 const MAX_TODO_CONTENT_LENGTH = 500;
+/**
+ * 回滚预览下发上限：文件变更清单（含总数）、检查点数、TODO 与记忆条目。
+ * 手机端只需展示摘要 + 前若干条，避免把超大清单塞进一次响应。
+ */
+const MAX_ROLLBACK_CHANGES = 200;
+const MAX_ROLLBACK_CHECKPOINTS = 300;
+const MAX_ROLLBACK_TODOS = 100;
+const MAX_ROLLBACK_MEMORIES = 100;
+const MAX_ROLLBACK_PATH_LENGTH = 400;
+const MAX_ROLLBACK_MEMORY_TITLE_LENGTH = 200;
+/**
+ * 跨页回滚的上限：桌面按每页 CHAT_MESSAGE_PAGE_SIZE 条分页加载会话消息，
+ * 手机端可见的历史可能超出已加载窗口，桥侧沿桌面同一条 loadOlderMessages
+ * 通道向前翻页，直到目标消息进入内存。页数 / 时长上限同时兜底——目标过旧
+ * 时给出明确提示，而不是无限翻页。
+ */
+const ROLLBACK_HISTORY_MAX_PAGES = 30;
+const ROLLBACK_HISTORY_TIMEOUT_MS = 8_000;
+/** 每次翻页后等待会话窗口刷新的轮询间隔与次数（渲染落盘通常在下一帧）。 */
+const ROLLBACK_GROWTH_POLL_MS = 20;
+const ROLLBACK_GROWTH_ATTEMPTS = 25;
 /**
  * 待办快照缓存时长。/api/state 由手机端高频轮询，而待办需要调用
  * MCP 工具读取（一次 IPC + SQLite 查询）：命中缓存时直接复用，
@@ -361,6 +385,16 @@ const toRemoteTokenUsage = (
 const normalizeRemoteIdentifier = (value: string): string =>
   typeof value === "string" ? value.trim() : "";
 
+/** 回滚变更类型归一化（检查点服务只会给出 added / modified / deleted）。 */
+const toRollbackChangeType = (
+  value: string,
+): SnowRemoteRollbackChange["changeType"] =>
+  value === "added" || value === "deleted" ? value : "modified";
+
+/** 待办状态归一化（桌面清单里的 status 为字符串）。 */
+const toTodoStatus = (value: string): SnowRemoteTodoStatus =>
+  value === "completed" || value === "inProgress" ? value : "pending";
+
 /**
  * 待发送队列操作失败时的现场摘要（诊断：请求 key / 当前视图 key / 存活队列 /
  * 迁移映射 / 队列索引 / 显示镜像长度）。随错误信息返回给移动端，便于定位
@@ -377,8 +411,28 @@ const pendingOperationFailureDetail = (
   ).map(([from, to]) => `${from}->${to}`);
   return (
     `（key=${expectedQueueKey ?? "null"}；视图=${conversation.activeSessionKeyRef.current ?? "null"}；` +
-    `队列=[${queueKeys.join(", ")}]；迁移=[${migrationMapping.join(", ")}]；` +
+    `队列=[${queueKeys.join(",")}]；迁移=[${migrationMapping.join(",")}]；` +
     `idx=${index}；镜像=${conversation.pendingMessages.length}）`
+  );
+};
+
+/**
+ * 回滚可用性：与桌面 ChatContent 的 canRollback 同源——子代理会话与 Workflow
+ * 节点会话的消息由父会话 / 节点流程管理，桌面端不给回滚入口，手机端同样隐藏
+ * （桥侧方法也会拒绝，双保险）。没有活动会话（新会话视图）时不可回滚。
+ */
+const isRollbackAvailable = (
+  conversation: ReturnType<typeof useChatConversationContext>,
+): boolean => {
+  const activeId = conversation.activeConversationId ?? null;
+  if (!activeId) return false;
+  if (conversation.subAgentSessionEvents[activeId]) return false;
+  const record = conversation.upsertedConversation?.record ?? null;
+  return !(
+    record &&
+    record.conversationId === activeId &&
+    (record.conversationType === "sub_agent" ||
+      record.conversationType === "workflow_node")
   );
 };
 
@@ -471,6 +525,72 @@ export const RemoteControlBridge = ({
       throw new Error("子代理会话的输入配置由子代理配置决定，无法远程修改");
     }
     return publication;
+  };
+
+  /**
+   * 回滚类操作的前置校验：必须有活动会话，且不是子代理 / 节点会话。
+   * 每次从 stateRef 取最新快照，因此拿到的始终是当前渲染的会话上下文。
+   */
+  const requireRollbackConversation = (): ReturnType<
+    typeof useChatConversationContext
+  > => {
+    const conversation = stateRef.current.conversation;
+    if (!conversation.activeConversationId) {
+      throw new Error("当前没有进行中的会话，暂时无法回滚");
+    }
+    if (!isRollbackAvailable(conversation)) {
+      throw new Error("子代理 / 工作流节点会话不支持回滚，请切换到普通对话");
+    }
+    return conversation;
+  };
+
+  /** 目标用户消息是否已在桌面会话的消息窗口内。 */
+  const hasRollbackTarget = (
+    conversation: ReturnType<typeof useChatConversationContext>,
+    messageId: string,
+  ): boolean =>
+    conversation.messages.some(
+      (message) => message.id === messageId && message.role === "user",
+    );
+
+  /** 等待会话消息窗口增长（loadOlderMessages 的渲染结果写回 stateRef）。 */
+  const waitForSessionGrowth = async (
+    activeId: string,
+    previousCount: number,
+  ): Promise<boolean> => {
+    for (let attempt = 0; attempt < ROLLBACK_GROWTH_ATTEMPTS; attempt += 1) {
+      const session = stateRef.current.conversation.sessions[activeId];
+      if ((session?.messages.length ?? 0) > previousCount) return true;
+      await new Promise((resolve) =>
+        setTimeout(resolve, ROLLBACK_GROWTH_POLL_MS),
+      );
+    }
+    return false;
+  };
+
+  /**
+   * 确保回滚目标已加载进桌面会话内存：手机端「加载更早」取回的历史消息可能
+   * 超出桌面已加载的分页窗口，此时沿桌面同一条 loadOlderMessages 通道向前
+   * 翻页并等待渲染写回，直到目标进入窗口。返回是否已就绪。
+   */
+  const ensureRollbackTargetLoaded = async (
+    messageId: string,
+  ): Promise<boolean> => {
+    const deadline = Date.now() + ROLLBACK_HISTORY_TIMEOUT_MS;
+    for (let page = 0; page < ROLLBACK_HISTORY_MAX_PAGES; page += 1) {
+      const conversation = stateRef.current.conversation;
+      if (hasRollbackTarget(conversation, messageId)) return true;
+      const activeId = conversation.activeConversationId;
+      const session = activeId ? conversation.sessions[activeId] : undefined;
+      // 已经没有更早的记录：目标不在该会话里（或会话/消息已被删除）。
+      if (!activeId || !session?.hasMoreMessages) return false;
+      if (Date.now() >= deadline) return false;
+      const loadedCount = session.messages.length;
+      await conversation.loadOlderMessages();
+      // 没有增长（并发加载卡住 / 请求失败）时不空转。
+      if (!(await waitForSessionGrowth(activeId, loadedCount))) return false;
+    }
+    return hasRollbackTarget(stateRef.current.conversation, messageId);
   };
 
   // 输入区快照 → 安全 DTO：只含展示层数据，字符串一律限长。
@@ -1009,6 +1129,137 @@ export const RemoteControlBridge = ({
         );
         return { ok: true };
       },
+      /**
+       * 回滚状态：手机端弹窗期间轮询。preparing 表示桌面正在中止运行并计算文件
+       * 变更（SSH 下经 SFTP 遍历可能较慢）；preview 就绪后下发与电脑端
+       * RollbackConfirmDialog 同源的完整清单，手机端只做展示与确认。
+       */
+      getRollbackState: async (): Promise<SnowRemoteRollbackState> => {
+        const conversation = stateRef.current.conversation;
+        const preview = conversation.rollbackPreview;
+        return {
+          conversationId: conversation.activeConversationId ?? null,
+          preparingMessageId: conversation.rollbackPreparingMessageId ?? null,
+          preview: preview
+            ? {
+                messageId: preview.messageId,
+                changes: preview.changes
+                  .slice(0, MAX_ROLLBACK_CHANGES)
+                  .map((change) => ({
+                    path:
+                      truncateTo(change.path, MAX_ROLLBACK_PATH_LENGTH) ?? "",
+                    changeType: toRollbackChangeType(change.changeType),
+                  })),
+                changeTotals: preview.changes.reduce(
+                  (totals, change) => {
+                    totals[toRollbackChangeType(change.changeType)] += 1;
+                    return totals;
+                  },
+                  { added: 0, modified: 0, deleted: 0 },
+                ),
+                checkpointIds: [
+                  ...preview.checkpointIds,
+                  ...preview.flowCheckpointIds,
+                ].slice(0, MAX_ROLLBACK_CHECKPOINTS),
+                workDir: preview.workDir ?? "",
+                isFirstMessage: preview.isFirstMessage,
+                todoItems: preview.todoItems
+                  .slice(0, MAX_ROLLBACK_TODOS)
+                  .map((todo) => ({
+                    id: normalizeRemoteIdentifier(todo.id),
+                    content:
+                      truncateTo(todo.content, MAX_TODO_CONTENT_LENGTH) ?? "",
+                    status: toTodoStatus(todo.status),
+                  }))
+                  .filter((todo) => todo.id),
+                memoryItems: preview.memoryItems
+                  .slice(0, MAX_ROLLBACK_MEMORIES)
+                  .map((memory) => ({
+                    memoryId: normalizeRemoteIdentifier(memory.memoryId),
+                    title:
+                      truncateTo(
+                        memory.title,
+                        MAX_ROLLBACK_MEMORY_TITLE_LENGTH,
+                      ) ?? "",
+                    kind: truncateTo(memory.kind, MAX_IDENTIFIER_LENGTH) ?? "",
+                  }))
+                  .filter((memory) => memory.memoryId),
+                workflowFlowCount: Math.max(0, preview.workflowFlowCount),
+                error: preview.error
+                  ? truncateTo(preview.error, 500)
+                  : undefined,
+              }
+            : null,
+        };
+      },
+      /**
+       * 发起回滚：直接复用桌面 handleRollback —— 它在中止流 / 终止 WorkFlow
+       * 节点后异步计算文件变更并写入会话上下文（电脑端弹窗同时弹出，用户在
+       * 电脑端取消同样会结束手机端这次预览）。这里立即返回，手机端轮询
+       * getRollbackState 获取结果。
+       *
+       * 目标消息不在桌面会话窗口内时（手机端「加载更早」取回的历史消息）先沿
+       * 桌面同一条 loadOlderMessages 通道把它加载进内存：检查点清单与截断边界
+       * 都取自完整数据库历史，因此结果与在电脑端滚动到该消息后回滚完全一致。
+       */
+      startRollback: async (messageId: string): Promise<{ ok: true }> => {
+        const conversation = requireRollbackConversation();
+        const target = normalizeRemoteIdentifier(messageId);
+        if (!target) {
+          throw new Error("回滚目标无效");
+        }
+        if (conversation.rollbackPreparingMessageId) {
+          throw new Error("正在计算回滚变更，请稍候");
+        }
+        // 与桌面一致：运行中不提供回滚入口（桌面在流式期间隐藏该按钮）。
+        if (conversation.isStreaming) {
+          throw new Error("会话正在运行，请先停止后再回滚");
+        }
+        if (!(await ensureRollbackTargetLoaded(target))) {
+          throw new Error(
+            "这条消息太早，电脑端暂时无法加载，请在电脑端打开该会话并滚动到这条消息后重试",
+          );
+        }
+        // 重新读取最新上下文：翻页加载会刷新会话消息窗口。
+        stateRef.current.conversation.handleRollback(target);
+        return { ok: true };
+      },
+      /**
+       * 确认回滚：复用桌面 confirmRollback（文件恢复 → 会话截断 / 首条消息
+       * 删除 → 清理检查点，可选清理项目记忆）。messageId 用于确认预览仍是
+       * 当前这次，避免手机端拿旧弹窗提交已失效的回滚。
+       */
+      confirmRollback: async (
+        messageId: string,
+        mode: SnowRemoteRollbackMode,
+        deleteMemories: boolean,
+      ): Promise<{ ok: true }> => {
+        const conversation = requireRollbackConversation();
+        const target = normalizeRemoteIdentifier(messageId);
+        if (mode !== "conversation-only" && mode !== "conversation-and-files") {
+          throw new Error("回滚方式无效");
+        }
+        if (!target || conversation.rollbackPreview?.messageId !== target) {
+          throw new Error("回滚预览已失效，请重新发起回滚");
+        }
+        await conversation.confirmRollback(mode, deleteMemories === true);
+        return { ok: true };
+      },
+      /** 取消回滚预览（含正在计算中的请求）；桌面同一次预览一并关闭。 */
+      cancelRollback: async (messageId: string): Promise<{ ok: true }> => {
+        const conversation = stateRef.current.conversation;
+        const target = normalizeRemoteIdentifier(messageId);
+        const preview = conversation.rollbackPreview;
+        if (
+          !target ||
+          (preview?.messageId !== target &&
+            conversation.rollbackPreparingMessageId !== target)
+        ) {
+          throw new Error("回滚已结束或已取消");
+        }
+        conversation.cancelRollback();
+        return { ok: true };
+      },
       getPermissions: async () => {
         const directoryId =
           stateRef.current.activeDirectory?.directoryId ?? null;
@@ -1427,6 +1678,8 @@ export const RemoteControlBridge = ({
             ? current.conversation.sessions[activeConversationId]
                 ?.hasMoreMessages
             : false,
+          // 回滚入口可见性：与桌面 canRollback 同源（子代理 / 节点会话不可回滚）。
+          rollbackAvailable: isRollbackAvailable(current.conversation),
           // 会话待办（会话隔离）：按激活会话读取，切换会话后随快照一起切换。
           todos: await resolveTodos(activeConversationId),
           modes: {

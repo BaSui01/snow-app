@@ -1,6 +1,8 @@
 import type {
   SnowRemoteControlApi,
   SnowRemoteModeId,
+  SnowRemoteRollbackDiff,
+  SnowRemoteRollbackMode,
   SnowRemoteState,
   SnowRemoteTodoStatus,
 } from "../renderer/types/remoteControl";
@@ -30,6 +32,10 @@ type OlderMessagesResponse = Awaited<
 type ConversationsPageResponse = Awaited<
   ReturnType<SnowRemoteControlApi["getConversations"]>
 >;
+type RollbackStateResponse = Awaited<
+  ReturnType<SnowRemoteControlApi["getRollbackState"]>
+>;
+type RollbackDiffsResponse = { diffs: SnowRemoteRollbackDiff[] };
 
 export class RemoteHttpError extends Error {
   readonly status: number;
@@ -48,21 +54,30 @@ type RequestOptions = {
   method?: string;
   headers?: Record<string, string>;
   body?: BodyInit | null;
+  /** 超时上限（毫秒，缺省 12 秒）：SSH 场景下的文件遍历需要放宽。 */
+  timeoutMs?: number;
 };
 
-/** 统一请求：12 秒超时 + JSON 解析，非 2xx 抛出携带状态码的错误。 */
+/** 默认请求超时：12 秒。 */
+const DEFAULT_REQUEST_TIMEOUT_MS = 12_000;
+
+/** 统一请求：超时 + JSON 解析，非 2xx 抛出携带状态码的错误。 */
 const request = async <T>(
   path: string,
   options?: RequestOptions,
 ): Promise<T> => {
+  const { timeoutMs, ...init } = options ?? {};
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 12000);
+  const timer = setTimeout(
+    () => controller.abort(),
+    timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
+  );
   try {
     const response = await fetch(path, {
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       signal: controller.signal,
-      ...options,
+      ...init,
     });
     const body = (await response
       .json()
@@ -343,3 +358,61 @@ export const discardAttachment = (id: string): void => {
     credentials: "same-origin",
   }).catch(() => {});
 };
+
+/**
+ * 回滚实时状态：桌面计算文件变更期间 preparingMessageId 非空；preview 就绪后
+ * 携带与电脑端弹窗同源的清单（文件变更 / TODO / 记忆 / WorkFlow 提示）。
+ */
+export const fetchRollbackState = (): Promise<RollbackStateResponse> =>
+  request("/api/rollback");
+
+/**
+ * 发起回滚预览：复用桌面回滚逻辑（中止运行中的流、终止 WorkFlow 节点后计算
+ * 文件变更），立即返回；结果由调用方轮询 fetchRollbackState 获取。
+ */
+export const startRollback = (messageId: string): Promise<{ ok: true }> =>
+  request("/api/rollback", {
+    method: "POST",
+    body: JSON.stringify({ action: "preview", messageId }),
+  });
+
+/**
+ * 确认回滚：conversation-only 只回滚会话；conversation-and-files 同时恢复文件。
+ * deleteMemories 决定是否一并清理被回滚轮次保存的项目记忆。
+ */
+export const confirmRollback = (
+  messageId: string,
+  mode: SnowRemoteRollbackMode,
+  deleteMemories: boolean,
+): Promise<{ ok: true }> =>
+  request("/api/rollback", {
+    method: "POST",
+    body: JSON.stringify({
+      action: "confirm",
+      messageId,
+      mode,
+      deleteMemories,
+    }),
+  });
+
+/** 取消回滚预览（桌面端同一次预览一并关闭）。 */
+export const cancelRollback = (messageId: string): Promise<{ ok: true }> =>
+  request("/api/rollback", {
+    method: "POST",
+    body: JSON.stringify({ action: "cancel", messageId }),
+  });
+
+/**
+ * 拉取回滚预览的文件 diff：由 Rust 检查点服务直接计算（含 SSH/SFTP 通道），
+ * 范围与确认回滚时实际恢复的文件一致，最多返回 50 个文件。
+ */
+export const fetchRollbackDiffs = (
+  checkpointIds: string[],
+  workDir: string,
+): Promise<RollbackDiffsResponse> =>
+  request("/api/rollback", {
+    method: "POST",
+    body: JSON.stringify({ action: "diff", checkpointIds, workDir }),
+    // 大仓库 / SSH 工作区的逐文件 diff 需要更宽松的超时。
+    timeoutMs: 60_000,
+  });

@@ -204,6 +204,73 @@ export type SnowRemoteTodoItem = {
   status: SnowRemoteTodoStatus;
 };
 
+/** 回滚确认清单里的单条文件变更（与桌面 RollbackConfirmDialog 同源）。 */
+export type SnowRemoteRollbackChange = {
+  path: string;
+  changeType: "added" | "modified" | "deleted";
+};
+
+/** 回滚将删除的 TODO 项。 */
+export type SnowRemoteRollbackTodoItem = {
+  id: string;
+  content: string;
+  status: SnowRemoteTodoStatus;
+};
+
+/** 回滚将删除（可选）的项目记忆条目。 */
+export type SnowRemoteRollbackMemoryItem = {
+  memoryId: string;
+  title: string;
+  kind: string;
+};
+
+/** 回滚方式：conversation-only 只回滚会话，conversation-and-files 同时恢复文件。 */
+export type SnowRemoteRollbackMode =
+  "conversation-only" | "conversation-and-files";
+
+/**
+ * 回滚预览（数据来自桌面会话上下文的 rollbackPreview，与电脑端弹窗完全一致）：
+ * 手机端只读展示并据此确认；checkpointIds / workDir 用于按需拉取文件 diff。
+ */
+export type SnowRemoteRollbackPreview = {
+  /** 回滚目标用户消息 id。 */
+  messageId: string;
+  /** 文件变更清单（已按上限截断，总数见 changeTotals）。 */
+  changes: SnowRemoteRollbackChange[];
+  changeTotals: { added: number; modified: number; deleted: number };
+  /** 消息级 + flow 级检查点（交给 Rust 计算 diff）。 */
+  checkpointIds: string[];
+  workDir: string;
+  /** 回滚首条消息 = 整个对话被删除。 */
+  isFirstMessage: boolean;
+  todoItems: SnowRemoteRollbackTodoItem[];
+  memoryItems: SnowRemoteRollbackMemoryItem[];
+  /** 被回滚轮次关联的 WorkFlow 数量（>0 时提示级联中止并删除）。 */
+  workflowFlowCount: number;
+  /** 截断 / 删除失败时的错误文案；手机端展示并允许重试。 */
+  error?: string;
+};
+
+/**
+ * 回滚实时状态（GET /api/rollback）：preparingMessageId 表示桌面正在中止运行并
+ * 计算文件变更（SSH 下经 SFTP 遍历可能较慢），preview 就绪后手机端渲染确认弹窗。
+ */
+export type SnowRemoteRollbackState = {
+  conversationId: string | null;
+  preparingMessageId: string | null;
+  preview: SnowRemoteRollbackPreview | null;
+};
+
+/** 回滚预览中单个文件的 unified diff（由 Rust 检查点服务直接计算）。 */
+export type SnowRemoteRollbackDiff = {
+  path: string;
+  changeType: "added" | "modified" | "deleted";
+  content: string;
+  isBinary: boolean;
+  /** 内容超过手机端下发上限被截断（截断提示展示用）。 */
+  truncated: boolean;
+};
+
 /**
  * 远控 Phase A：聊天输入区安全快照。
  * 数据来自 ChatInputView 发布的真实能力（见
@@ -293,6 +360,11 @@ export type SnowRemoteState = {
    */
   hasOlderMessages?: boolean;
   /**
+   * 当前激活会话是否可回滚（与桌面 ChatMessageList 的 canRollback 同源：
+   * 子代理 / 工作流节点会话不支持回滚）。移动端据此决定用户消息的回滚入口。
+   */
+  rollbackAvailable: boolean;
+  /**
    * 当前激活会话的待办列表（与桌面顶部待办面板同源，会话隔离）。
    * null = 待办不可用（无活动会话或工具读取失败），移动端隐藏待办入口。
    */
@@ -380,6 +452,28 @@ export type SnowRemoteControlApi = {
    * （模型据此重新设计流程），与桌面卡片反馈入口同语义。
    */
   replyWorkflow: (flowId: string, message: string) => Promise<{ ok: true }>;
+  /**
+   * 回滚实时状态：桌面计算文件变更期间 preparingMessageId 非空，预览就绪后
+   * preview 就位（与电脑端 RollbackConfirmDialog 同一份数据）。
+   */
+  getRollbackState: () => Promise<SnowRemoteRollbackState>;
+  /**
+   * 发起回滚预览：复用桌面 handleRollback（中止流 / 终止 WorkFlow 节点后计算
+   * 文件变更），立即返回；结果由调用方轮询 getRollbackState 获取。桌面弹窗会
+   * 同步弹出，用户在电脑端取消同样会结束手机端这次预览。
+   */
+  startRollback: (messageId: string) => Promise<{ ok: true }>;
+  /**
+   * 确认回滚：复用桌面 confirmRollback（文件恢复 → 会话截断 / 删除 → 清理
+   * 检查点与记忆）。messageId 用于校验预览仍是当前这次。
+   */
+  confirmRollback: (
+    messageId: string,
+    mode: SnowRemoteRollbackMode,
+    deleteMemories: boolean,
+  ) => Promise<{ ok: true }>;
+  /** 取消回滚预览（桌面同一次预览一并关闭）。 */
+  cancelRollback: (messageId: string) => Promise<{ ok: true }>;
   getPermissions: () => Promise<{
     directoryId: string | null;
     projectApprovedTools: string[];

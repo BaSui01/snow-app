@@ -1,0 +1,11 @@
+{
+  "version": "0.71.0",
+  "license": "Apache-2.0",
+  "source": "https://github.com/fatedier/frp/releases/tag/v0.71.0",
+  "archiveSha256": "45be02b186860d375ed49a8941ae9569628a54bf14e67fc36b29c98c99dabcc6",
+  "executable": {
+    "file": "frpc",
+    "sha256": "3ce4ba70ffce7da4026940586c5f3454df50814f4c050d6560efc556b3adef48",
+    "size": 14878482
+  }
+}

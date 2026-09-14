@@ -1,6 +1,6 @@
 # Deploy mobile public remote control
 
-> Applies to Snow desktop on Windows. Snow's built-in deployer performs the installation without invoking the chat AI or requiring the user to understand FRP, Caddy, tokens, CA/PEM files, or TLS names.
+> Applies to Snow desktop on Windows, macOS, and Linux. Snow's built-in deployer performs the installation without invoking the chat AI or requiring the user to understand FRP, Caddy, tokens, CA/PEM files, or TLS names.
 
 ## Goal
 

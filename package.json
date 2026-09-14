@@ -124,10 +124,6 @@
         "to": "web"
       },
       {
-        "from": "resources/remote-control/frp/win32-x64",
-        "to": "remote-control/frp/win32-x64"
-      },
-      {
         "from": "deploy/remote-control",
         "to": "remote-control/deploy"
       }
@@ -146,6 +142,16 @@
       "identity": "-",
       "hardenedRuntime": false,
       "artifactName": "Snow-App-${version}-${arch}.${ext}",
+      "extraResources": [
+        {
+          "from": "resources/remote-control/frp/darwin-arm64",
+          "to": "remote-control/frp/darwin-arm64"
+        },
+        {
+          "from": "resources/remote-control/frp/darwin-x64",
+          "to": "remote-control/frp/darwin-x64"
+        }
+      ],
       "target": [
         "dmg",
         "zip"
@@ -153,7 +159,13 @@
     },
     "win": {
       "icon": "resources/icon.ico",
-      "artifactName": "Snow-App-${version}.${ext}"
+      "artifactName": "Snow-App-${version}.${ext}",
+      "extraResources": [
+        {
+          "from": "resources/remote-control/frp/win32-x64",
+          "to": "remote-control/frp/win32-x64"
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
@@ -170,7 +182,13 @@
     },
     "linux": {
       "icon": "resources/icon.png",
-      "maintainer": "MayDay <mufasa@snow.app>"
+      "maintainer": "MayDay <mufasa@snow.app>",
+      "extraResources": [
+        {
+          "from": "resources/remote-control/frp/linux-x64",
+          "to": "remote-control/frp/linux-x64"
+        }
+      ]
     }
   },
   "allowScripts": {

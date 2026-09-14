@@ -556,6 +556,38 @@
       <div id="threadList" class="thread-list"></div>
     </section>
 
+    <div id="rollbackScrim" class="scrim"></div>
+    <section
+      id="rollbackSheet"
+      class="sheet rollback-sheet"
+      aria-modal="true"
+      role="dialog"
+      aria-label="回滚会话"
+      data-i18n-aria-label="remote.rollback.title"
+    >
+      <div class="sheet-header">
+        <button
+          id="rollbackBack"
+          class="rollback-back"
+          type="button"
+          aria-label="返回回滚摘要"
+          data-i18n-aria-label="remote.rollback.backToSummary"
+          data-icon="chevron-left"
+          hidden
+        ></button>
+        <h2 data-i18n="remote.rollback.title"></h2>
+        <button
+          id="closeRollbackSheet"
+          type="button"
+          aria-label="关闭"
+          data-i18n-aria-label="remote.rollback.close"
+          data-icon="x"
+        ></button>
+      </div>
+      <div id="rollbackBody" class="rollback-body"></div>
+      <div id="rollbackActions" class="rollback-actions"></div>
+    </section>
+
     <div
       id="imageLightbox"
       class="image-lightbox"

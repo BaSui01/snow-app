@@ -1,0 +1,346 @@
+/*
+ * search 族（grep / codebase / codelens / lsp）卡片样式。
+ *
+ * DOM 契约见 src/mobile/tools/search.ts 顶部注释；框架通用类（.tc-section /
+ * .tc-kv / .tc-badge / .tc-pre / .tc-fold / .tc-more）来自 styles/tools/base.css，
+ * 本文件只定义模块自有类（.tc-search-*）。@keyframes spin 复用 app.css 的全局定义。
+ */
+
+/* ── 容器与移动端兜底 ─────────────────────────────────────────────────────
+   命中行 / 路径 / 匹配模式都可能是不含空格的长 token，统一允许任意断点换行。 */
+details.tool.tcn.tc-search-grep .tc-body,
+details.tool.tcn.tc-search-codebase .tc-body,
+details.tool.tcn.tc-search-codelens .tc-body,
+details.tool.tcn.tc-search-lsp .tc-body {
+  overflow-wrap: anywhere;
+}
+
+/* ── 通用零件：图标 / 参数行 / 徽章 / 提示行 / 行 / 列表 ────────────────── */
+.tc-search-ico {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  color: var(--dim);
+}
+.tc-search-ico .icn {
+  width: 12px;
+  height: 12px;
+}
+.tc-search-params {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.tc-search-mono {
+  color: #c3c9d3;
+  font:
+    11px/1.6 "SFMono-Regular",
+    Consolas,
+    monospace;
+  overflow-wrap: anywhere;
+}
+.tc-search-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.tc-search-flags .tc-search-ico {
+  color: inherit;
+}
+.tc-search-badge-info {
+  border-color: rgba(120, 168, 255, 0.32);
+  background: rgba(120, 168, 255, 0.1);
+  color: #bcd2ff;
+}
+.tc-search-note,
+.tc-search-empty,
+.tc-search-progress {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.55;
+}
+.tc-search-note-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.tc-search-note {
+  color: var(--muted);
+}
+.tc-search-empty {
+  color: var(--dim);
+}
+.tc-search-progress,
+.tc-search-progress .tc-search-ico {
+  color: var(--amber);
+}
+.tc-search-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+  font-size: 11px;
+}
+.tc-search-lv1 {
+  margin-left: 13px;
+}
+.tc-search-lv2 {
+  margin-left: 26px;
+}
+.tc-search-list {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.tc-search-omitted {
+  color: var(--dim);
+  font-size: 10px;
+}
+
+/* ── 文件分组与命中列表 ─────────────────────────────────────────────────── */
+.tc-search-groups,
+.tc-search-file {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.tc-search-groups {
+  gap: 8px;
+}
+.tc-search-file-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+}
+.tc-search-file-name {
+  flex: 0 0 auto;
+  color: var(--blue);
+  font-weight: 600;
+}
+.tc-search-file-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--dim);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tc-search-file-count {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 10px;
+}
+.tc-search-file-summary {
+  flex: 0 0 auto;
+  color: var(--dim);
+  font-size: 10px;
+}
+/* 命中行：行号定宽右对齐 + 代码片段（保留缩进、可换行）。 */
+.tc-search-line {
+  flex: 0 0 auto;
+  min-width: 26px;
+  color: var(--dim);
+  font:
+    10.5px/1.6 "SFMono-Regular",
+    Consolas,
+    monospace;
+  text-align: right;
+}
+.tc-search-code {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: #c3c9d3;
+  font:
+    11px/1.6 "SFMono-Regular",
+    Consolas,
+    monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ── 位置 / 符号 / 详情行 ───────────────────────────────────────────────── */
+.tc-search-loc-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+}
+.tc-search-loc-name {
+  flex: 0 0 auto;
+  color: #d6dbe4;
+  font-weight: 600;
+}
+.tc-search-loc {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--dim);
+  font:
+    10.5px/1.6 "SFMono-Regular",
+    Consolas,
+    monospace;
+  overflow-wrap: anywhere;
+}
+.tc-search-sub {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 10.5px;
+  overflow-wrap: anywhere;
+}
+.tc-search-symbol {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.tc-search-sym-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.tc-search-packages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* ── 诊断行（等级徽章 + 位置 + 消息 + 来源） ────────────────────────────── */
+.tc-search-sev {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+  font-size: 9.5px;
+  line-height: 1.75;
+  white-space: nowrap;
+}
+.tc-search-sev-error {
+  border-color: rgba(255, 114, 123, 0.32);
+  background: rgba(255, 114, 123, 0.1);
+  color: #ffc2c7;
+}
+.tc-search-sev-warning {
+  border-color: rgba(242, 198, 109, 0.32);
+  background: rgba(242, 198, 109, 0.1);
+  color: #f3d79b;
+}
+.tc-search-sev-information {
+  border-color: rgba(120, 168, 255, 0.32);
+  background: rgba(120, 168, 255, 0.1);
+  color: #bcd2ff;
+}
+.tc-search-sev-hint {
+  color: var(--dim);
+}
+.tc-search-diag-msg {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: #c3c9d3;
+}
+.tc-search-diag-src {
+  flex: 0 0 auto;
+  color: var(--dim);
+  font-size: 10px;
+}
+/* 窄屏：诊断消息另起一行，避免被等级徽章与位置挤成窄柱。 */
+@media (max-width: 480px) {
+  .tc-search-diag .tc-search-diag-msg {
+    flex-basis: 100%;
+  }
+}
+
+/* ── 检索进度（codebase 执行中） ────────────────────────────────────────── */
+.tc-search-steps {
+  display: grid;
+  gap: 4px;
+}
+.tc-search-step {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.55;
+}
+.tc-search-step-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.tc-search-step-counts {
+  flex: 0 0 auto;
+  color: var(--dim);
+  font-size: 10px;
+}
+.tc-search-step-done {
+  color: var(--dim);
+}
+.tc-search-step-active,
+.tc-search-step-active .tc-search-ico {
+  color: var(--amber);
+}
+.tc-search-step-active .icn {
+  animation: spin 0.9s linear infinite;
+}
+
+/* ── 分块结果（codebase：位置 / 相似度 + 代码片段） ─────────────────────── */
+.tc-search-chunk {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.tc-search-chunk-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: 10.5px;
+}
+
+/* ── 浅色主题 ───────────────────────────────────────────────────────────── */
+html[data-theme="light"] .tc-search-mono,
+html[data-theme="light"] .tc-search-code,
+html[data-theme="light"] .tc-search-diag-msg,
+html[data-theme="light"] .tc-search-loc-name {
+  color: #28364f;
+}
+html[data-theme="light"] .tc-search-file-name {
+  color: #1f4fa8;
+}
+html[data-theme="light"] .tc-search-badge-info {
+  border-color: rgba(37, 99, 235, 0.28);
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+}
+html[data-theme="light"] .tc-search-sev-error {
+  border-color: rgba(220, 38, 38, 0.28);
+  background: rgba(220, 38, 38, 0.07);
+  color: #b91c1c;
+}
+html[data-theme="light"] .tc-search-sev-warning {
+  border-color: rgba(202, 138, 4, 0.3);
+  background: rgba(202, 138, 4, 0.08);
+  color: #a16207;
+}
+html[data-theme="light"] .tc-search-sev-information {
+  border-color: rgba(37, 99, 235, 0.28);
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+}
+html[data-theme="light"] .tc-search-symbol {
+  background: rgba(15, 23, 42, 0.02);
+}

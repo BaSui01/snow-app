@@ -1,0 +1,393 @@
+/*
+ * web 族（网页搜索 / 网页抓取 / 图像生成 / 内置浏览器）卡片样式。
+ *
+ * 结构由 tools/web.ts 生成；公共外观（卡片骨架、折叠、徽章、tc-pre、tc-image）
+ * 见 styles/tools/base.css，本文件只管模块自有类名：
+ *   .tc-web-params / .tc-web-flags           参数行与徽章行
+ *   .tc-web-item*                            搜索结果条目（标题 / URL / 摘要）
+ *   .tc-web-page*                            页面信息卡（抓取结果 / 浏览器）
+ *   .tc-web-op* / .tc-web-chip               浏览器操作行与实例徽章
+ *   .tc-web-images / .tc-web-img*            图片网格与不可达占位
+ *   .tc-web-row* / .tc-web-sub / .tc-web-sev 列表行（控制台 / 网络 / Cookie / 无障碍）
+ *   .tc-web-note|empty|progress|hint|warn    提示行
+ * 颜色优先走 app.css 的主题变量（浅色主题会重定义变量），只有亮色文字
+ * （#d6dbe4 / #c3c9d3）在文件末尾单独做浅色覆盖。
+ */
+
+/* ── 参数 / 徽章 ─────────────────────────────────────────────────────────── */
+.tc-web-params {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.tc-web-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+.tc-web-ico {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: inherit;
+}
+.tc-web-ico > .icn {
+  width: 12px;
+  height: 12px;
+}
+.tc-web-mono {
+  font:
+    10.5px/1.5 "SFMono-Regular",
+    Consolas,
+    monospace;
+  color: #c3c9d3;
+  overflow-wrap: anywhere;
+}
+
+/* ── 搜索结果条目 ────────────────────────────────────────────────────────── */
+.tc-web-list {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.tc-web-item {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.tc-web-item--blocked {
+  opacity: 0.72;
+}
+.tc-web-item-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.tc-web-item-index {
+  flex: 0 0 auto;
+  min-width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--muted);
+  font-size: 9.5px;
+  line-height: 15px;
+  text-align: center;
+}
+.tc-web-item-title {
+  min-width: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #d6dbe4;
+  overflow-wrap: anywhere;
+}
+.tc-web-item-url {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--blue);
+  overflow-wrap: anywhere;
+}
+.tc-web-item-snippet {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* ── 页面信息卡（抓取 / 浏览器） ─────────────────────────────────────────── */
+.tc-web-page {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.tc-web-page-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #d6dbe4;
+}
+.tc-web-page-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.tc-web-page-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* ── 浏览器操作行 ────────────────────────────────────────────────────────── */
+.tc-web-op {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.tc-web-op-label {
+  flex: 0 0 auto;
+  color: var(--dim);
+}
+.tc-web-op--status .tc-web-op-label {
+  color: #c3c9d3;
+}
+.tc-web-op-value {
+  min-width: 0;
+  color: #c3c9d3;
+  overflow-wrap: anywhere;
+}
+.tc-web-op-text {
+  min-width: 0;
+  color: #d6dbe4;
+  overflow-wrap: anywhere;
+}
+.tc-web-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--blue);
+  font:
+    9.5px/1.7 "SFMono-Regular",
+    Consolas,
+    monospace;
+  white-space: nowrap;
+}
+.tc-web-sub {
+  min-width: 0;
+  font-size: 10px;
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+
+/* ── 列表行（控制台 / 网络 / Cookie / 无障碍 / 弹窗） ────────────────────── */
+.tc-web-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.tc-web-row-text {
+  min-width: 0;
+  color: #c3c9d3;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tc-web-status {
+  flex: 0 0 auto;
+  font:
+    10px/1.6 "SFMono-Regular",
+    Consolas,
+    monospace;
+  color: var(--muted);
+}
+.tc-web-sev {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.tc-web-sev-verbose {
+  color: var(--dim);
+}
+.tc-web-sev-info {
+  color: var(--blue);
+}
+.tc-web-sev-warning {
+  color: var(--amber);
+}
+.tc-web-sev-error {
+  color: var(--red);
+}
+.tc-web-console-warning {
+  padding-left: 6px;
+  border-left: 2px solid rgba(242, 198, 109, 0.55);
+}
+.tc-web-console-error {
+  padding-left: 6px;
+  border-left: 2px solid rgba(255, 114, 123, 0.55);
+}
+
+/* ── 提示 / 空态 / 错误 ──────────────────────────────────────────────────── */
+.tc-web-note,
+.tc-web-empty,
+.tc-web-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.tc-web-empty {
+  color: var(--dim);
+}
+.tc-web-progress .tc-web-ico {
+  color: var(--amber);
+  animation: spin 0.9s linear infinite;
+}
+.tc-web-note-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.tc-web-hint {
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+.tc-web-warn {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid rgba(242, 198, 109, 0.28);
+  border-radius: 8px;
+  background: rgba(242, 198, 109, 0.08);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--amber);
+}
+.tc-web-error {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.tc-web-error-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--red);
+}
+
+/* ── 链接列表（远程图片链接 / 页面链接，纯文本） ─────────────────────────── */
+.tc-web-links {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.tc-web-link-row {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.tc-web-link-text {
+  min-width: 0;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--blue);
+  overflow-wrap: anywhere;
+}
+
+/* ── 图片网格与不可达占位 ────────────────────────────────────────────────── */
+.tc-web-images {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.tc-web-img-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  min-width: 0;
+}
+.tc-web-img-grid--multi {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.tc-web-img {
+  width: 100%;
+  height: auto;
+}
+/* 整页截图很高：限高 + contain，避免撑破气泡（点击仍可进灯箱看全图）。 */
+.tc-web-browser--screenshot .tc-web-img {
+  max-height: 360px;
+  object-fit: contain;
+}
+.tc-web-img-void {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 76px;
+  padding: 10px 8px;
+  border: 1px dashed var(--line);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--dim);
+  font-size: 10px;
+  text-align: center;
+}
+.tc-web-img-index {
+  color: var(--muted);
+  font:
+    10px/1.4 "SFMono-Regular",
+    Consolas,
+    monospace;
+}
+.tc-web-img-detail {
+  max-width: 100%;
+  font:
+    9.5px/1.4 "SFMono-Regular",
+    Consolas,
+    monospace;
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+
+/* ── 浅色主题（变量已覆盖大部分，这里只修亮色文字与浅底） ─────────────────── */
+html[data-theme="light"] .tc-web-item,
+html[data-theme="light"] .tc-web-page {
+  background: rgba(15, 23, 42, 0.02);
+}
+html[data-theme="light"] .tc-web-item-title,
+html[data-theme="light"] .tc-web-page-title,
+html[data-theme="light"] .tc-web-op-text {
+  color: #28364f;
+}
+html[data-theme="light"] .tc-web-mono,
+html[data-theme="light"] .tc-web-op-value,
+html[data-theme="light"] .tc-web-row-text,
+html[data-theme="light"] .tc-web-op--status .tc-web-op-label {
+  color: #37435c;
+}
+html[data-theme="light"] .tc-web-item-index,
+html[data-theme="light"] .tc-web-chip {
+  background: rgba(15, 23, 42, 0.05);
+}
+html[data-theme="light"] .tc-web-warn {
+  background: rgba(166, 99, 8, 0.08);
+  border-color: rgba(166, 99, 8, 0.24);
+}
+html[data-theme="light"] .tc-web-img-void {
+  background: rgba(15, 23, 42, 0.02);
+}

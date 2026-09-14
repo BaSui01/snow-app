@@ -1,0 +1,239 @@
+/*
+ * ops 族（config / app-control / dbx / ask / plan）卡片样式：
+ * 键值行、结果表（DBX，横向滚动 + 行数上限）、提问选项清单、审批块与状态徽标。
+ *
+ * 选择器一律以 `tc-ops-*` 命名，卡片根类（tc-ops-config 等）只做
+ * 定位钩子；`details.tool.tcn` 前缀用于提特异性压过 app.css 的既有 .tool 规则。
+ * 待办 / 记忆卡片的样式在 tools/agents.css（.tc-ag-*）。
+ */
+.tc-kv-grid {
+  display: grid;
+  gap: 3px;
+}
+
+/* ── 通用零件：图标 / 徽章色调 / 提示行 / 结论行 ───────────────────────── */
+.tc-ops-ico {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  color: var(--dim);
+}
+.tc-ops-ico .icn {
+  width: 12px;
+  height: 12px;
+}
+.tc-ops-note,
+.tc-ops-empty,
+.tc-ops-progress,
+.tc-ops-warn,
+.tc-ops-status {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.55;
+}
+.tc-ops-note-text,
+.tc-ops-status-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.tc-ops-note {
+  color: var(--muted);
+}
+.tc-ops-empty {
+  color: var(--dim);
+}
+.tc-ops-progress,
+.tc-ops-warn {
+  color: var(--amber);
+}
+.tc-ops-status-ok {
+  color: var(--green);
+}
+.tc-ops-status-warn {
+  color: var(--amber);
+}
+.tc-ops-status-err {
+  color: #ffb3b9;
+}
+.tc-ops-status-muted {
+  color: var(--muted);
+}
+.tc-ops-note .tc-ops-ico,
+.tc-ops-empty .tc-ops-ico,
+.tc-ops-progress .tc-ops-ico,
+.tc-ops-warn .tc-ops-ico,
+.tc-ops-status .tc-ops-ico {
+  color: inherit;
+}
+
+/* ── 标签 / 内联值 / 路径 ─────────────────────────────────────────────── */
+.tc-ops-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.tc-ops-chip {
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--muted);
+  font:
+    10px/1.7 "SFMono-Regular",
+    Consolas,
+    monospace;
+  overflow-wrap: anywhere;
+}
+.tc-ops-value-inline {
+  color: #c3c9d3;
+  font:
+    11px/1.6 "SFMono-Regular",
+    Consolas,
+    monospace;
+  overflow-wrap: anywhere;
+}
+.tc-ops-path {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: 11px;
+}
+.tc-ops-path-label {
+  flex: 0 0 auto;
+  color: var(--dim);
+}
+.tc-ops-path-value {
+  min-width: 0;
+  color: #c3c9d3;
+  font:
+    11px/1.6 "SFMono-Regular",
+    Consolas,
+    monospace;
+  overflow-wrap: anywhere;
+}
+
+/* ── 提问选项（选中态来自 userQuestion 快照 / 结果） ─────────────────── */
+.tc-ops-options {
+  display: grid;
+  gap: 4px;
+}
+.tc-ops-option {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--muted);
+  font-size: 11px;
+}
+.tc-ops-option-mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--dim);
+}
+.tc-ops-option-mark .icn {
+  width: 12px;
+  height: 12px;
+}
+.tc-ops-option-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.tc-ops-option-selected {
+  border-color: rgba(113, 230, 165, 0.32);
+  background: rgba(113, 230, 165, 0.08);
+  color: #d6dbe4;
+}
+.tc-ops-option-selected .tc-ops-option-mark {
+  color: var(--green);
+}
+
+/* ── 结果表（dbx / 外部 MCP） ─────────────────────────────────────────── */
+.tc-ops-table-wrap {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.tc-ops-table-scroll {
+  max-height: min(60vh, 420px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+.tc-ops-table {
+  border-collapse: collapse;
+  font:
+    10.5px/1.5 "SFMono-Regular",
+    Consolas,
+    monospace;
+}
+.tc-ops-table th,
+.tc-ops-table td {
+  max-width: 190px;
+  padding: 3px 8px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tc-ops-table th {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font-weight: 600;
+}
+.tc-ops-table td {
+  color: #c3c9d3;
+}
+.tc-ops-table tr:last-child td {
+  border-bottom: none;
+}
+.tc-ops-table th:last-child,
+.tc-ops-table td:last-child {
+  border-right: none;
+}
+.tc-ops-null {
+  color: var(--dim);
+  font-style: italic;
+}
+
+/* ── 卡片正文（ops 分区较多，行距略紧） ───────────────────────────────── */
+details.tool.tcn > .tc-body.tc-ops {
+  gap: 8px;
+}
+
+/* ── 审批块（app-control-requestApproval） ─────────────────────────────── */
+details.tool.tcn.tc-ops-plan > .tc-body {
+  border-color: rgba(242, 198, 109, 0.26);
+  background:
+    linear-gradient(180deg, rgba(242, 198, 109, 0.06), transparent 46%), #111216;
+}
+
+/* ── 浅色主题 ─────────────────────────────────────────────────────────── */
+html[data-theme="light"] .tc-ops-option-selected {
+  color: #28364f;
+}
+html[data-theme="light"] .tc-ops-value-inline,
+html[data-theme="light"] .tc-ops-path-value,
+html[data-theme="light"] .tc-ops-table td {
+  color: #37435c;
+}
+html[data-theme="light"] .tc-ops-option {
+  background: rgba(15, 23, 42, 0.02);
+}
+html[data-theme="light"] .tc-ops-chip {
+  background: rgba(15, 23, 42, 0.05);
+}
+html[data-theme="light"] details.tool.tcn.tc-ops-plan > .tc-body {
+  border-color: rgba(176, 124, 20, 0.26);
+  background:
+    linear-gradient(180deg, rgba(176, 124, 20, 0.07), transparent 46%), #f0f2f5;
+}

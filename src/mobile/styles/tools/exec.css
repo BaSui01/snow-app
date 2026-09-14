@@ -1,0 +1,301 @@
+/*
+ * exec 族（bash-terminal-execute / terminal-* / computer-use-*）卡片样式：
+ * 命令行、参数行、输出分区、结论行与流式进行中指示。
+ *
+ * 结构契约见 tools/exec.ts 与 tools/ui.ts 顶部注释；本文件只提供 exec 族自有
+ * 类名（.tc-exec-* / .tc-cmd），通用外观（.tc-section / .tc-pre / .tc-fold /
+ * .tc-badge / .tc-kv / .tc-error）来自 base.css，不在此重复定义。
+ *
+ * 三张卡片的折叠体统一带 `tc-exec` 模块标识类（`.tc-body.tc-exec`，与
+ * search / web / agents / ops 的 bodyClass 约定一致）：族内定位、验证脚本与
+ * 后续按族微调间距都可以挂在它上面。
+ */
+
+/* ── 命令行（bash：`$ ` 前缀 + 等宽换行） ───────────────────────────────── */
+
+.tc-cmd {
+  color: #d6dbe4;
+  font-weight: 500;
+}
+.tc-cmd::before {
+  content: "$ ";
+  color: var(--dim);
+}
+
+/* ── 参数 / 结果行 ──────────────────────────────────────────────────────── */
+
+.tc-exec-params {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+/* 截图分区内容（占位说明 + 元数据行；图像本身不随远控桥下发） */
+.tc-exec-shot {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.tc-exec-field {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: 11px;
+}
+.tc-exec-field-label {
+  flex: 0 0 auto;
+  color: var(--dim);
+}
+.tc-exec-value {
+  min-width: 0;
+  color: #c3c9d3;
+  font:
+    11px/1.5 "SFMono-Regular",
+    Consolas,
+    monospace;
+  overflow-wrap: anywhere;
+}
+
+/* ── 终端输入行与按键芯片 ───────────────────────────────────────────────── */
+
+.tc-exec-input {
+  display: flex;
+  gap: 5px;
+  min-width: 0;
+  margin: 0;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28);
+  color: #d6dbe4;
+  font:
+    11px/1.5 "SFMono-Regular",
+    Consolas,
+    monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tc-exec-input-prompt {
+  flex: 0 0 auto;
+  color: var(--green);
+}
+.tc-exec-input-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.tc-exec-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+.tc-exec-key {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+  font:
+    10px/1.7 "SFMono-Regular",
+    Consolas,
+    monospace;
+}
+
+/* ── 终端列表结果 ───────────────────────────────────────────────────────── */
+
+.tc-exec-tabs {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.tc-exec-tab {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 11px;
+}
+.tc-exec-tab-id {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font:
+    10px/1.6 "SFMono-Regular",
+    Consolas,
+    monospace;
+}
+.tc-exec-tab-title {
+  min-width: 0;
+  color: #c3c9d3;
+  overflow-wrap: anywhere;
+}
+.tc-exec-tab-cwd {
+  flex: 1 1 100%;
+  min-width: 0;
+  color: var(--dim);
+  font:
+    10px/1.5 "SFMono-Regular",
+    Consolas,
+    monospace;
+  overflow-wrap: anywhere;
+}
+
+/* ── 结论行 / 提示行 / 等待输入 ─────────────────────────────────────────── */
+
+.tc-exec-status,
+.tc-exec-note,
+.tc-exec-awaiting {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.55;
+}
+.tc-exec-status-ok {
+  color: var(--green);
+}
+.tc-exec-status-warn {
+  color: var(--amber);
+}
+.tc-exec-status-icon,
+.tc-exec-awaiting-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-self: center;
+  color: inherit;
+}
+.tc-exec-status-icon .icn,
+.tc-exec-awaiting-icon .icn {
+  width: 12px;
+  height: 12px;
+}
+.tc-exec-status-text,
+.tc-exec-note,
+.tc-exec-awaiting-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.tc-exec-note-muted {
+  color: var(--muted);
+}
+.tc-exec-note-warn {
+  color: var(--amber);
+}
+.tc-exec-awaiting {
+  color: var(--amber);
+}
+.tc-exec-awaiting-hint {
+  min-width: 0;
+  padding: 1px 6px;
+  border: 1px solid rgba(242, 198, 109, 0.3);
+  border-radius: 6px;
+  font:
+    10px/1.6 "SFMono-Regular",
+    Consolas,
+    monospace;
+  overflow-wrap: anywhere;
+}
+
+/* ── 流式进行中指示 ─────────────────────────────────────────────────────── */
+
+.tc-exec-live {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.tc-exec-live-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  animation: tc-exec-pulse 1.4s ease-in-out infinite;
+}
+.tc-exec-live-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* 旋转图标（computer-use 运行中） */
+.tc-exec-spin {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--muted);
+  animation: tc-exec-spin 1s linear infinite;
+}
+.tc-exec-spin .icn {
+  width: 12px;
+  height: 12px;
+}
+/* 流式输出末尾的光标（仅 status=running 且流式输出存在时渲染） */
+.tc-exec-caret {
+  display: inline-block;
+  width: 5px;
+  height: 11px;
+  margin-left: 2px;
+  background: var(--muted);
+  vertical-align: -1px;
+  animation: tc-exec-blink 1s steps(2, start) infinite;
+}
+
+@keyframes tc-exec-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+@keyframes tc-exec-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes tc-exec-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.15;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tc-exec-live-dot,
+  .tc-exec-spin,
+  .tc-exec-caret {
+    animation: none;
+  }
+}
+
+/* ── 浅色主题 ───────────────────────────────────────────────────────────── */
+
+html[data-theme="light"] .tc-cmd,
+html[data-theme="light"] .tc-exec-input {
+  color: #28364f;
+}
+html[data-theme="light"] .tc-exec-value,
+html[data-theme="light"] .tc-exec-tab-title {
+  color: #37435c;
+}
+html[data-theme="light"] .tc-exec-input {
+  background: rgba(15, 23, 42, 0.04);
+}
+html[data-theme="light"] .tc-exec-key,
+html[data-theme="light"] .tc-exec-input-prompt {
+  background: rgba(15, 23, 42, 0.05);
+}
+html[data-theme="light"] .tc-exec-key {
+  color: var(--muted);
+}
+html[data-theme="light"] .tc-exec-tab {
+  background: rgba(15, 23, 42, 0.02);
+}

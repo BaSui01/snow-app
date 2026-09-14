@@ -83,7 +83,7 @@ export function GitPanelContent({
       ? window.snow.gitCommitFileDiff(
           repoPath,
           commitFileSelection.hash,
-          selectedFile.path
+          selectedFile.path,
         )
       : window.snow.gitFileDiff(repoPath, selectedFile.path, isStaged);
 
@@ -91,8 +91,14 @@ export function GitPanelContent({
       .then((result) => {
         setDiffResult(result);
       })
-      .catch(() => {
-        setDiffResult(null);
+      .catch((err: unknown) => {
+        // 请求失败（IPC/napi 抛错）时给出可见的错误提示，而不是静默
+        // 退化成「没有可显示的变更」。
+        setDiffResult({
+          content: "",
+          isBinary: false,
+          error: err instanceof Error ? err.message : String(err),
+        });
       })
       .finally(() => {
         setDiffLoading(false);
@@ -105,7 +111,7 @@ export function GitPanelContent({
       setSelectedFile(file);
       setSelectedSection(section ?? null);
     },
-    []
+    [],
   );
 
   /** 提交树中点击提交内文件：显示该提交中该文件的差异。 */
@@ -115,7 +121,7 @@ export function GitPanelContent({
       setSelectedSection(null);
       setCommitFileSelection({ hash, file });
     },
-    []
+    [],
   );
 
   const startSplitResize = useCallback(
@@ -146,7 +152,7 @@ export function GitPanelContent({
       document.addEventListener("pointerup", stopResize);
       document.addEventListener("pointercancel", stopResize);
     },
-    [splitRatio]
+    [splitRatio],
   );
 
   return (

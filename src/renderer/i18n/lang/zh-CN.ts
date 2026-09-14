@@ -3582,6 +3582,8 @@ export const zhCN = {
   "rightPanel.imageDiffBefore": "修改前",
   "rightPanel.imageDiffAfter": "修改后",
   "rightPanel.noChangesToDisplay": "没有可显示的变更",
+  "rightPanel.diffLoadFailed": "加载差异失败",
+  "rightPanel.diffUnavailable": "差异内容无法显示",
   "rightPanel.diffPreviewError": "生成差异预览失败",
   "rightPanel.copy": "复制",
   "rightPanel.copyPath": "复制路径",

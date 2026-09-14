@@ -15,6 +15,53 @@ export type SnowRemoteToolCall = {
     selectedOptions: string[];
     customAnswers: string[];
   };
+  /**
+   * WorkFlow 卡片快照（仅 workflow-generate / workflow-resume 工具带此字段）：
+   * 节点图与运行态由桌面渲染进程按 flow 组装，移动端只读展示 + 执行 / 反馈。
+   */
+  workflow?: SnowRemoteWorkflow;
+};
+
+export type SnowRemoteWorkflowNodeStatus =
+  "pending" | "running" | "completed" | "failed";
+
+export type SnowRemoteWorkflowNode = {
+  id: string;
+  label: string;
+  description: string;
+  status: SnowRemoteWorkflowNodeStatus;
+  /** 节点会话 id：非空表示节点已创建会话，可跳转查看执行详情。 */
+  conversationId: string;
+  errorMessage: string;
+  /** 前置节点 label（画布边推导）：移动端用于节点提示与无障碍描述。 */
+  dependsOn: string[];
+};
+
+/**
+ * WorkFlow 卡片快照。
+ * - mode = "generate"：workflow-generate 卡片，挂起时可在手机端执行或提交反馈；
+ * - mode = "resume"：workflow-resume 卡片，只读展示续跑节点状态。
+ */
+export type SnowRemoteWorkflow = {
+  /** flow 标识 = workflow-generate 工具调用 id（动作请求按它定位）。 */
+  flowId: string;
+  mode: "generate" | "resume";
+  title: string;
+  /** 卡片整体状态：idle = 等待用户操作/尚未运行。 */
+  status: "idle" | "running" | "completed" | "failed";
+  /** 生成卡片的执行/反馈入口是否可用（挂起中才可操作）。 */
+  pending: boolean;
+  /** 存在未完成的 run 进度（应用重启/中断/失败）：执行按钮变为「继续执行」。 */
+  resumeAvailable: boolean;
+  nodes: SnowRemoteWorkflowNode[];
+  /** 节点边（source → target）：移动端画布据此绘制箭头并计算分层布局。 */
+  edges: { source: string; target: string }[];
+  failedNode?: {
+    nodeId: string;
+    label: string;
+    error: string;
+    conversationId: string;
+  };
 };
 
 export type SnowRemoteMessage = {
@@ -60,6 +107,14 @@ export type SnowRemotePendingMessage = {
   blocks: SnowRemoteContentBlock[];
 };
 
+/**
+ * 会话列表条目（移动端会话选择器）。
+ *
+ * 运行态字段（isStreaming / isPaused / attentionRequired / isCompleted）与桌面
+ * 侧边栏同源，由渲染进程的会话上下文实时计算，随 /api/state 轮询变化。
+ * children 承载树形子层：Workflow 节点会话与其派生的子代理会话，
+ * 形成「主会话 → 节点会话 → 子代理」层级（与桌面侧边栏一致）。
+ */
 export type SnowRemoteConversation = {
   conversationId: string;
   title: string;
@@ -69,6 +124,26 @@ export type SnowRemoteConversation = {
   directoryId: string;
   workspaceName: string;
   updatedAt: string;
+  /** 桌面自定义会话图标（emoji）；空串 = 未设置。 */
+  emoji: string;
+  /** 会话类型：main / sub_agent / workflow_node。 */
+  conversationType: string;
+  /** 分支会话（由 forkedFromConversationId 派生）：桌面侧边栏显示 GitFork 图标。 */
+  isForked: boolean;
+  /** 子代理名或 Workflow 节点名；主会话为空串，移动端优先展示它。 */
+  subAgentName: string;
+  /** 子代理 / 节点运行状态（running、completed、failed、pending）；主会话为空串。 */
+  runStatus: string;
+  /** 正在流式输出（桌面显示旋转 loading）。 */
+  isStreaming: boolean;
+  /** 流式被用户暂停（agent loop 阻塞等待恢复）。 */
+  isPaused: boolean;
+  /** 需要用户操作（提问或工具授权）。 */
+  attentionRequired: boolean;
+  /** 本轮运行已完成（桌面显示对勾）。 */
+  isCompleted: boolean;
+  /** 树形子层：Workflow 节点会话 + 直接派生的子代理会话（节点下再挂其子代理）。 */
+  children: SnowRemoteConversation[];
 };
 
 export type SnowRemoteTokenUsage = {
@@ -294,6 +369,17 @@ export type SnowRemoteControlApi = {
       status?: SnowRemoteTodoStatus;
     },
   ) => Promise<{ ok: true }>;
+  /**
+   * 执行挂起的 WorkFlow（等价桌面卡片的「执行」按钮，含断点续跑）：
+   * 校验通过后在后台启动渲染进程执行器并立即返回，进度通过 /api/state 的
+   * workflow 快照轮询；执行完成后桌面按卡片同一路径结算工具调用。
+   */
+  runWorkflow: (flowId: string) => Promise<{ ok: true }>;
+  /**
+   * 提交对流程的修改意见：结算挂起的 workflow-generate 工具调用
+   * （模型据此重新设计流程），与桌面卡片反馈入口同语义。
+   */
+  replyWorkflow: (flowId: string, message: string) => Promise<{ ok: true }>;
   getPermissions: () => Promise<{
     directoryId: string | null;
     projectApprovedTools: string[];

@@ -49,6 +49,9 @@ fn wsl_cd_path(repo_path: &str) -> String {
 /// -lc "git ..."` 在 WSL 内执行 git（复用 bash.rs 的终端设置解析），
 /// 使未安装 Git for Windows 的机器也能使用 Git 面板；否则直接执行
 /// `git`。
+///
+/// `color.ui=false` 强制禁用输出着色：用户 gitconfig 里若设置了
+/// `color.ui=always`，patch 文本会混入 ANSI 转义序列，渲染端无法解析。
 fn build_git_command(repo_path: &str, args: &[&str]) -> Command {
     let shell_path = load_terminal_shell_path_sync().unwrap_or_default();
     if detect_shell_family(&shell_path) == "wsl" {
@@ -60,6 +63,8 @@ fn build_git_command(repo_path: &str, args: &[&str]) -> Command {
             "core.quotepath=false",
             "-c",
             "safe.directory=*",
+            "-c",
+            "color.ui=false",
         ]
         .iter()
         .chain(args.iter())
@@ -72,9 +77,16 @@ fn build_git_command(repo_path: &str, args: &[&str]) -> Command {
         cmd
     } else {
         let mut cmd = crate::utils::process::cmd("git");
-        cmd.args(["-c", "core.quotepath=false", "-c", "safe.directory=*"])
-            .args(args)
-            .current_dir(repo_path);
+        cmd.args([
+            "-c",
+            "core.quotepath=false",
+            "-c",
+            "safe.directory=*",
+            "-c",
+            "color.ui=false",
+        ])
+        .args(args)
+        .current_dir(repo_path);
         cmd
     }
 }
@@ -117,6 +129,9 @@ pub struct GitBranch {
 pub struct GitDiffResult {
     pub content: String,
     pub is_binary: bool,
+    /// git 命令失败时的错误消息（成功时为空字符串）。前端据此显示
+    /// 「加载失败」提示，避免把错误文本当成 patch 渲染成空白。
+    pub error: String,
 }
 
 #[napi(object)]

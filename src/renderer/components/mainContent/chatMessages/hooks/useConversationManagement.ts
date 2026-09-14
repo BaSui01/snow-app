@@ -837,10 +837,12 @@ export const useConversationManagement = (
     (targetSessionKey?: string): void => {
       // targetSessionKey 缺省为当前激活会话；远控通道的“立即发送”会显式
       // 传入消息所属会话，使后台会话的运行也能被定点中断。
+      // 非字符串入参（例如直接把本函数绑到 onClick 时漏进来的 MouseEvent）
+      // 一律回退到当前激活会话，避免查找失败而静默不中断。
       const key =
-        targetSessionKey ??
-        ctx.activeSessionKeyRef.current ??
-        PENDING_SESSION_KEY;
+        typeof targetSessionKey === "string" && targetSessionKey.length > 0
+          ? targetSessionKey
+          : (ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY);
       const ref = ctx.sessionsRefData.current.get(key);
       if (!ref?.isSending || ref.isAbortRequested) {
         return;

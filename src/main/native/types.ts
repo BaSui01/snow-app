@@ -1342,6 +1342,8 @@ export type GitBranch = {
 export type GitDiffResult = {
   content: string;
   isBinary: boolean;
+  /** git 命令失败时的错误消息（成功时为空字符串）。 */
+  error: string;
 };
 
 export type GitStageResult = {

@@ -18,16 +18,6 @@ pub struct ConversationContextRequest<'a> {
     pub conversation_id: Option<&'a str>,
     pub previous_response_id: Option<&'a str>,
     pub messages: &'a [ChatContextMessage],
-    pub max_context_tokens: Option<i32>,
-    /// Configured max output tokens (`max_tokens`) of the active API profile.
-    /// Reserved against the context window by the pre-send token guard; when
-    /// absent the guard assumes no explicit output reservation.
-    pub max_output_tokens: Option<i32>,
-    /// Whether the active endpoint accepts native image parts. The pre-send
-    /// guard bills on-disk image refs at a vision-native estimate when true,
-    /// and at the cheaper textify-desciption estimate when false (those
-    /// images are replaced by text descriptions after the guard).
-    pub supports_vision: bool,
     pub directory_id: Option<&'a str>,
     pub context_compaction: bool,
     /// Internal auto-compaction resume mode: the latest `context_compaction`

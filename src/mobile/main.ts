@@ -17,6 +17,7 @@ import { initTimeline, renderTimeline } from "./timeline";
 import { initTodos, renderTodos } from "./todos";
 import { initTopbar, renderTopbar } from "./topbar";
 import type { AppContext } from "./types";
+import { initWorkflow, workflowDigest } from "./workflow";
 
 /**
  * Mobile 远控页入口：装配各功能模块，维护 /api/state 轮询与整体渲染。
@@ -54,9 +55,16 @@ const buildSignature = (next: SnowRemoteState): string =>
               ":" +
               tool.status +
               ":" +
+              // 参数是流式增长的（arguments 边收边拼），长度必须参与签名，
+              // 否则参数变化不会触发消息区重绘。
+              (tool.arguments || "").length +
+              ":" +
               (tool.result || "").length +
               ":" +
-              (tool.streamingStdout || "").length,
+              (tool.streamingStdout || "").length +
+              ":" +
+              // workflow 卡片快照（节点进度）变化必须触发消息区重绘。
+              workflowDigest(tool.workflow),
           )
           .join(","),
     )
@@ -158,6 +166,7 @@ initTopbar(ctx);
 initThreads(ctx);
 initInteractions(ctx);
 initTimeline();
+initWorkflow(ctx);
 initComposer(ctx);
 initPending(ctx);
 initTodos(ctx);

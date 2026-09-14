@@ -3724,6 +3724,8 @@ export const zhTW = {
   "rightPanel.imageDiffBefore": "修改前",
   "rightPanel.imageDiffAfter": "修改後",
   "rightPanel.noChangesToDisplay": "沒有可顯示的變更",
+  "rightPanel.diffLoadFailed": "載入差異失敗",
+  "rightPanel.diffUnavailable": "差異內容無法顯示",
   "rightPanel.diffPreviewError": "產生差異預覽失敗",
   "rightPanel.copy": "複製",
   "rightPanel.copyPath": "複製路徑",

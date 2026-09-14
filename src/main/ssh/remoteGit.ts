@@ -1,8 +1,4 @@
-import {
-  executeSshCommand,
-  listSshDirectory,
-  parseSshUrl,
-} from "./sshManager";
+import { executeSshCommand, listSshDirectory, parseSshUrl } from "./sshManager";
 import {
   buildRemoteWorkspaceUri,
   normalizeRemotePath,
@@ -71,11 +67,13 @@ const runRemoteGit = (workspacePath: string, args: string[]): Promise<string> =>
       "core.quotepath=false",
       "-c",
       "safe.directory=*",
+      "-c",
+      "color.ui=false",
       ...args.map(shellQuote),
     ].join(" ");
     return executeSshCommand(
       sessionId,
-      `cd -- ${shellQuote(remotePath)} && ${gitCommand}`
+      `cd -- ${shellQuote(remotePath)} && ${gitCommand}`,
     );
   });
 
@@ -87,7 +85,7 @@ const runRemoteGit = (workspacePath: string, args: string[]): Promise<string> =>
  */
 const runRemoteGitRaw = (
   workspacePath: string,
-  args: string[]
+  args: string[],
 ): Promise<string> =>
   withSshSession(workspacePath, async (sessionId, remotePath) => {
     const gitCommand = [
@@ -96,11 +94,13 @@ const runRemoteGitRaw = (
       "core.quotepath=false",
       "-c",
       "safe.directory=*",
+      "-c",
+      "color.ui=false",
       ...args.map(shellQuote),
     ].join(" ");
     return executeSshCommand(
       sessionId,
-      `cd -- ${shellQuote(remotePath)} && (${gitCommand}) || true`
+      `cd -- ${shellQuote(remotePath)} && (${gitCommand}) || true`,
     );
   });
 
@@ -109,8 +109,13 @@ const withNetworkTimeout = <T>(promise: Promise<T>): Promise<T> =>
     promise,
     new Promise<T>((_, reject) => {
       setTimeout(
-        () => reject(new Error(`Remote git operation timed out after ${NETWORK_OP_TIMEOUT_MS}ms`)),
-        NETWORK_OP_TIMEOUT_MS
+        () =>
+          reject(
+            new Error(
+              `Remote git operation timed out after ${NETWORK_OP_TIMEOUT_MS}ms`,
+            ),
+          ),
+        NETWORK_OP_TIMEOUT_MS,
       );
     }),
   ]);
@@ -119,7 +124,10 @@ const withNetworkTimeout = <T>(promise: Promise<T>): Promise<T> =>
 
 const parseStatusChar = (c: string): string => (c === " " ? "" : c);
 
-const deriveDisplayStatus = (indexStatus: string, workdirStatus: string): string => {
+const deriveDisplayStatus = (
+  indexStatus: string,
+  workdirStatus: string,
+): string => {
   if (indexStatus === "R") {
     return "R";
   }
@@ -162,7 +170,7 @@ const deriveDisplayStatus = (indexStatus: string, workdirStatus: string): string
 // ===== Public API (signatures mirror native git exports) =====
 
 export const remoteGetGitStatus = async (
-  workspacePath: string
+  workspacePath: string,
 ): Promise<GitStatusResult> => {
   const emptyResult = (): GitStatusResult => ({
     isRepo: false,
@@ -237,10 +245,8 @@ export const remoteGetGitStatus = async (
       const branchNameRaw =
         ellipsisIdx >= 0
           ? branchPart.slice(0, ellipsisIdx)
-          : branchPart.split(" ")[0] ?? "";
-      currentBranch = branchNameRaw.startsWith("HEAD")
-        ? "HEAD"
-        : branchNameRaw;
+          : (branchPart.split(" ")[0] ?? "");
+      currentBranch = branchNameRaw.startsWith("HEAD") ? "HEAD" : branchNameRaw;
       continue;
     }
 
@@ -263,7 +269,11 @@ export const remoteGetGitStatus = async (
     }
 
     // Strip surrounding quotes
-    if (filePath.startsWith('"') && filePath.endsWith('"') && filePath.length >= 2) {
+    if (
+      filePath.startsWith('"') &&
+      filePath.endsWith('"') &&
+      filePath.length >= 2
+    ) {
       filePath = filePath.slice(1, -1);
     }
 
@@ -287,7 +297,11 @@ export const remoteGetGitStatus = async (
       if (f.indexStatus && f.indexStatus !== " " && f.indexStatus !== "?") {
         stagedCount += 1;
       }
-      if (f.workdirStatus && f.workdirStatus !== " " && f.workdirStatus !== "?") {
+      if (
+        f.workdirStatus &&
+        f.workdirStatus !== " " &&
+        f.workdirStatus !== "?"
+      ) {
         unstagedCount += 1;
       }
     }
@@ -308,7 +322,7 @@ export const remoteGetGitStatus = async (
 };
 
 export const remoteGetGitBranches = async (
-  workspacePath: string
+  workspacePath: string,
 ): Promise<GitBranch[]> => {
   let output: string;
   try {
@@ -349,7 +363,7 @@ export const remoteGetGitBranches = async (
 
 export const remoteStageFiles = async (
   workspacePath: string,
-  filePaths: string[]
+  filePaths: string[],
 ): Promise<GitStageResult> => {
   if (filePaths.length === 0) {
     return { success: true, message: "No files to stage" };
@@ -358,13 +372,16 @@ export const remoteStageFiles = async (
     await runRemoteGit(workspacePath, ["add", "--", ...filePaths]);
     return { success: true, message: "Files staged successfully" };
   } catch (err) {
-    return { success: false, message: err instanceof Error ? err.message : String(err) };
+    return {
+      success: false,
+      message: err instanceof Error ? err.message : String(err),
+    };
   }
 };
 
 export const remoteUnstageFiles = async (
   workspacePath: string,
-  filePaths: string[]
+  filePaths: string[],
 ): Promise<GitStageResult> => {
   if (filePaths.length === 0) {
     return { success: true, message: "No files to unstage" };
@@ -373,45 +390,60 @@ export const remoteUnstageFiles = async (
     await runRemoteGit(workspacePath, ["reset", "HEAD", "--", ...filePaths]);
     return { success: true, message: "Files unstaged successfully" };
   } catch (err) {
-    return { success: false, message: err instanceof Error ? err.message : String(err) };
+    return {
+      success: false,
+      message: err instanceof Error ? err.message : String(err),
+    };
   }
 };
 
 export const remoteStageAll = async (
-  workspacePath: string
+  workspacePath: string,
 ): Promise<GitStageResult> => {
   try {
     await runRemoteGit(workspacePath, ["add", "--all"]);
     return { success: true, message: "All changes staged" };
   } catch (err) {
-    return { success: false, message: err instanceof Error ? err.message : String(err) };
+    return {
+      success: false,
+      message: err instanceof Error ? err.message : String(err),
+    };
   }
 };
 
 export const remoteUnstageAll = async (
-  workspacePath: string
+  workspacePath: string,
 ): Promise<GitStageResult> => {
   try {
     await runRemoteGit(workspacePath, ["reset", "HEAD"]);
     return { success: true, message: "All changes unstaged" };
   } catch (err) {
-    return { success: false, message: err instanceof Error ? err.message : String(err) };
+    return {
+      success: false,
+      message: err instanceof Error ? err.message : String(err),
+    };
   }
 };
 
 export const remoteCommitChanges = async (
   workspacePath: string,
-  message: string
+  message: string,
 ): Promise<GitCommitResult> => {
   if (!message.trim()) {
-    return { success: false, message: "Commit message is required", hash: null };
+    return {
+      success: false,
+      message: "Commit message is required",
+      hash: null,
+    };
   }
 
   try {
     await runRemoteGit(workspacePath, ["commit", "-m", message]);
     let hash: string | null = null;
     try {
-      const head = (await runRemoteGit(workspacePath, ["rev-parse", "HEAD"])).trim();
+      const head = (
+        await runRemoteGit(workspacePath, ["rev-parse", "HEAD"])
+      ).trim();
       hash = head.length >= 8 ? head.slice(0, 8) : head;
     } catch {
       // hash lookup is best-effort
@@ -427,35 +459,41 @@ export const remoteCommitChanges = async (
 };
 
 export const remotePushChanges = async (
-  workspacePath: string
+  workspacePath: string,
 ): Promise<GitPushPullResult> => {
   try {
     const stdout = await withNetworkTimeout(
-      runRemoteGit(workspacePath, ["push"])
+      runRemoteGit(workspacePath, ["push"]),
     );
     const message = stdout.trim() ? stdout.trim() : "Push successful";
     return { success: true, message };
   } catch (err) {
-    return { success: false, message: err instanceof Error ? err.message : String(err) };
+    return {
+      success: false,
+      message: err instanceof Error ? err.message : String(err),
+    };
   }
 };
 
 export const remotePullChanges = async (
-  workspacePath: string
+  workspacePath: string,
 ): Promise<GitPushPullResult> => {
   try {
     const stdout = await withNetworkTimeout(
-      runRemoteGit(workspacePath, ["pull"])
+      runRemoteGit(workspacePath, ["pull"]),
     );
     const message = stdout.trim() ? stdout.trim() : "Pull successful";
     return { success: true, message };
   } catch (err) {
-    return { success: false, message: err instanceof Error ? err.message : String(err) };
+    return {
+      success: false,
+      message: err instanceof Error ? err.message : String(err),
+    };
   }
 };
 
 export const remoteFetchRemote = async (
-  workspacePath: string
+  workspacePath: string,
 ): Promise<GitPushPullResult> => {
   try {
     const hasRemote = (await runRemoteGit(workspacePath, ["remote"])).trim();
@@ -463,17 +501,20 @@ export const remoteFetchRemote = async (
       return { success: true, message: "No remote configured" };
     }
     await withNetworkTimeout(
-      runRemoteGit(workspacePath, ["fetch", "--quiet", "--prune"])
+      runRemoteGit(workspacePath, ["fetch", "--quiet", "--prune"]),
     );
     return { success: true, message: "Fetch successful" };
   } catch (err) {
-    return { success: false, message: err instanceof Error ? err.message : String(err) };
+    return {
+      success: false,
+      message: err instanceof Error ? err.message : String(err),
+    };
   }
 };
 
 export const remoteCheckoutBranch = async (
   workspacePath: string,
-  branchName: string
+  branchName: string,
 ): Promise<GitCheckoutResult> => {
   const tryCheckout = async (name: string): Promise<GitCheckoutResult> => {
     try {
@@ -498,7 +539,12 @@ export const remoteCheckoutBranch = async (
         return localResult;
       }
       try {
-        await runRemoteGit(workspacePath, ["checkout", "-b", localName, branchName]);
+        await runRemoteGit(workspacePath, [
+          "checkout",
+          "-b",
+          localName,
+          branchName,
+        ]);
         return {
           success: true,
           message: `Switched to ${localName} (tracking ${branchName})`,
@@ -517,13 +563,16 @@ export const remoteCheckoutBranch = async (
 
 export const remoteCreateBranch = async (
   workspacePath: string,
-  branchName: string
+  branchName: string,
 ): Promise<GitCheckoutResult> => {
   try {
     await runRemoteGit(workspacePath, ["checkout", "-b", branchName]);
     return { success: true, message: `Created and switched to ${branchName}` };
   } catch (err) {
-    return { success: false, message: err instanceof Error ? err.message : String(err) };
+    return {
+      success: false,
+      message: err instanceof Error ? err.message : String(err),
+    };
   }
 };
 
@@ -551,11 +600,13 @@ const isImagePath = (filePath: string): boolean => {
 export const remoteGetFileDiff = async (
   workspacePath: string,
   filePath: string,
-  staged: boolean
+  staged: boolean,
 ): Promise<GitDiffResult> => {
+  // `--no-ext-diff` 保证输出是标准 patch：远端 gitconfig 配置了
+  // `diff.external` / `GIT_EXTERNAL_DIFF` 时，外部程序会产出无法解析的内容。
   const diffArgs = staged
-    ? ["diff", "--cached", "--", filePath]
-    : ["diff", "--", filePath];
+    ? ["diff", "--cached", "--no-ext-diff", "--", filePath]
+    : ["diff", "--no-ext-diff", "--", filePath];
 
   try {
     let stdout = await runRemoteGit(workspacePath, diffArgs);
@@ -564,13 +615,17 @@ export const remoteGetFileDiff = async (
       // 图片扩展名：直接判定为二进制，绝不 `--text` 重试
       // （会 dump 出巨大乱码 patch，渲染端解析卡死）。
       if (isImagePath(filePath)) {
-        return { content: "Binary file - diff not available", isBinary: true };
+        return {
+          content: "Binary file - diff not available",
+          isBinary: true,
+          error: "",
+        };
       }
       // Git's heuristic may falsely flag text files as binary (e.g. files
       // containing NUL bytes). Retry with --text to force a text-mode diff.
       const textArgs = staged
-        ? ["diff", "--cached", "--text", "--", filePath]
-        : ["diff", "--text", "--", filePath];
+        ? ["diff", "--cached", "--text", "--no-ext-diff", "--", filePath]
+        : ["diff", "--text", "--no-ext-diff", "--", filePath];
       let textDiff = "";
       try {
         textDiff = await runRemoteGit(workspacePath, textArgs);
@@ -578,9 +633,13 @@ export const remoteGetFileDiff = async (
         // keep empty
       }
       if (textDiff) {
-        return { content: textDiff, isBinary: false };
+        return { content: textDiff, isBinary: false, error: "" };
       }
-      return { content: "Binary file - diff not available", isBinary: true };
+      return {
+        content: "Binary file - diff not available",
+        isBinary: true,
+        error: "",
+      };
     }
 
     // No diff and not staged: the file may be untracked (new). Generate a
@@ -588,7 +647,11 @@ export const remoteGetFileDiff = async (
     // exits with code 1 when files differ — handled by runRemoteGitRaw.
     if (!staged && !stdout) {
       if (isImagePath(filePath)) {
-        return { content: "Binary file - diff not available", isBinary: true };
+        return {
+          content: "Binary file - diff not available",
+          isBinary: true,
+          error: "",
+        };
       }
       const fullDiff = await runRemoteGitRaw(workspacePath, [
         "diff",
@@ -598,22 +661,25 @@ export const remoteGetFileDiff = async (
         filePath,
       ]);
       if (fullDiff) {
-        return { content: fullDiff, isBinary: false };
+        return { content: fullDiff, isBinary: false, error: "" };
       }
     }
 
-    return { content: stdout, isBinary: false };
+    return { content: stdout, isBinary: false, error: "" };
   } catch (err) {
+    // 请求失败时返回结构化错误（content 为空），前端据此显示「加载失败」
+    // 提示，而不是把错误消息当成 diff 内容渲染成空白。
     return {
-      content: err instanceof Error ? err.message : String(err),
+      content: "",
       isBinary: false,
+      error: err instanceof Error ? err.message : String(err),
     };
   }
 };
 
 export const remoteDiscardChanges = async (
   workspacePath: string,
-  filePaths: string[]
+  filePaths: string[],
 ): Promise<GitStageResult> => {
   if (filePaths.length === 0) {
     return { success: true, message: "No files to discard" };
@@ -631,7 +697,10 @@ export const remoteDiscardChanges = async (
       "-uall",
     ]);
   } catch (err) {
-    return { success: false, message: err instanceof Error ? err.message : String(err) };
+    return {
+      success: false,
+      message: err instanceof Error ? err.message : String(err),
+    };
   }
 
   const pathSet = new Set(filePaths);
@@ -666,7 +735,10 @@ export const remoteDiscardChanges = async (
     try {
       await runRemoteGit(workspacePath, ["checkout", "--", ...tracked]);
     } catch (err) {
-      return { success: false, message: err instanceof Error ? err.message : String(err) };
+      return {
+        success: false,
+        message: err instanceof Error ? err.message : String(err),
+      };
     }
   }
 
@@ -674,7 +746,10 @@ export const remoteDiscardChanges = async (
     try {
       await runRemoteGit(workspacePath, ["clean", "-f", "--", ...untracked]);
     } catch (err) {
-      return { success: false, message: err instanceof Error ? err.message : String(err) };
+      return {
+        success: false,
+        message: err instanceof Error ? err.message : String(err),
+      };
     }
   }
 
@@ -684,7 +759,7 @@ export const remoteDiscardChanges = async (
 export const remoteGetGitLog = async (
   workspacePath: string,
   skip: number,
-  limit: number
+  limit: number,
 ): Promise<GitLogEntry[]> => {
   const skipCount = skip > 0 ? Math.floor(skip) : 0;
   const maxCount = limit <= 0 ? 50 : Math.floor(limit);
@@ -761,7 +836,7 @@ const parseShortstatCount = (line: string, keyword: string): number => {
 
 export const remoteGetCommitFiles = async (
   workspacePath: string,
-  hash: string
+  hash: string,
 ): Promise<GitCommitFile[]> => {
   let output: string;
   try {
@@ -796,14 +871,20 @@ export const remoteGetCommitFiles = async (
 };
 
 export const remoteGetStagedDiff = async (
-  workspacePath: string
+  workspacePath: string,
 ): Promise<string> => runRemoteGit(workspacePath, ["diff", "--cached"]);
 
 export const remoteGetCommitDiff = async (
   workspacePath: string,
-  hash: string
+  hash: string,
 ): Promise<GitDiffResult> => {
-  const diffArgs = ["show", "--format=", "--find-renames", hash];
+  const diffArgs = [
+    "show",
+    "--format=",
+    "--find-renames",
+    "--no-ext-diff",
+    hash,
+  ];
 
   try {
     let stdout = await runRemoteGit(workspacePath, diffArgs);
@@ -818,22 +899,28 @@ export const remoteGetCommitDiff = async (
           "show",
           "--format=",
           "--text",
+          "--no-ext-diff",
           hash,
         ]);
       } catch {
         // keep empty
       }
       if (textDiff && textDiff.length <= 256 * 1024) {
-        return { content: textDiff, isBinary: false };
+        return { content: textDiff, isBinary: false, error: "" };
       }
-      return { content: "Binary file - diff not available", isBinary: true };
+      return {
+        content: "Binary file - diff not available",
+        isBinary: true,
+        error: "",
+      };
     }
 
-    return { content: stdout, isBinary: false };
+    return { content: stdout, isBinary: false, error: "" };
   } catch (err) {
     return {
-      content: err instanceof Error ? err.message : String(err),
+      content: "",
       isBinary: false,
+      error: err instanceof Error ? err.message : String(err),
     };
   }
 };
@@ -842,9 +929,17 @@ export const remoteGetCommitDiff = async (
 export const remoteGetCommitFileDiff = async (
   workspacePath: string,
   hash: string,
-  filePath: string
+  filePath: string,
 ): Promise<GitDiffResult> => {
-  const diffArgs = ["show", "--format=", "--find-renames", hash, "--", filePath];
+  const diffArgs = [
+    "show",
+    "--format=",
+    "--find-renames",
+    "--no-ext-diff",
+    hash,
+    "--",
+    filePath,
+  ];
 
   try {
     let stdout = await runRemoteGit(workspacePath, diffArgs);
@@ -853,7 +948,11 @@ export const remoteGetCommitFileDiff = async (
       // 图片扩展名：直接判定为二进制，绝不 `--text` 重试
       // （会 dump 出巨大乱码 patch，渲染端解析卡死）。
       if (isImagePath(filePath)) {
-        return { content: "Binary file - diff not available", isBinary: true };
+        return {
+          content: "Binary file - diff not available",
+          isBinary: true,
+          error: "",
+        };
       }
       // Git's heuristic may falsely flag text files as binary (e.g. files
       // containing NUL bytes). Retry with --text to force a text-mode diff,
@@ -864,6 +963,7 @@ export const remoteGetCommitFileDiff = async (
           "show",
           "--format=",
           "--text",
+          "--no-ext-diff",
           hash,
           "--",
           filePath,
@@ -872,16 +972,21 @@ export const remoteGetCommitFileDiff = async (
         // keep empty
       }
       if (textDiff && textDiff.length <= 256 * 1024) {
-        return { content: textDiff, isBinary: false };
+        return { content: textDiff, isBinary: false, error: "" };
       }
-      return { content: "Binary file - diff not available", isBinary: true };
+      return {
+        content: "Binary file - diff not available",
+        isBinary: true,
+        error: "",
+      };
     }
 
-    return { content: stdout, isBinary: false };
+    return { content: stdout, isBinary: false, error: "" };
   } catch (err) {
     return {
-      content: err instanceof Error ? err.message : String(err),
+      content: "",
       isBinary: false,
+      error: err instanceof Error ? err.message : String(err),
     };
   }
 };
@@ -893,7 +998,7 @@ export const remoteGetCommitFileDiff = async (
  * UI can pass them straight back to the other remote git operations.
  */
 export const remoteDiscoverGitRepos = async (
-  workspacePath: string
+  workspacePath: string,
 ): Promise<GitRepoInfo[]> => {
   const parsed = parseSshUrl(workspacePath);
   const remoteRootPath = normalizeRemotePath(parsed.remotePath);
@@ -915,22 +1020,22 @@ export const remoteDiscoverGitRepos = async (
         const branch = (
           await executeSshCommand(
             sessionId,
-            `cd -- ${shellQuote(remotePath)} && (git -c core.quotepath=false -c safe.directory=* rev-parse --abbrev-ref HEAD) || true`
+            `cd -- ${shellQuote(remotePath)} && (git -c core.quotepath=false -c safe.directory=* rev-parse --abbrev-ref HEAD) || true`,
           )
-        )
-          .trim();
+        ).trim();
         return !branch || branch === "HEAD" ? "" : branch;
       } catch {
         return "";
       }
     };
 
-    const scan = async (
-      remotePath: string,
-      depth: number
-    ): Promise<void> => {
+    const scan = async (remotePath: string, depth: number): Promise<void> => {
       if (await isRepoRoot(remotePath)) {
-        const uri = buildRemoteWorkspaceUri(workspacePath, remotePath, remoteRootPath);
+        const uri = buildRemoteWorkspaceUri(
+          workspacePath,
+          remotePath,
+          remoteRootPath,
+        );
         const name = remotePath.split("/").filter(Boolean).pop() ?? remotePath;
         repos.push({
           path: uri,
@@ -961,7 +1066,11 @@ export const remoteDiscoverGitRepos = async (
 
     // The workspace root itself may be a repo.
     if (await isRepoRoot(remoteRootPath)) {
-      const uri = buildRemoteWorkspaceUri(workspacePath, remoteRootPath, remoteRootPath);
+      const uri = buildRemoteWorkspaceUri(
+        workspacePath,
+        remoteRootPath,
+        remoteRootPath,
+      );
       const name =
         remoteRootPath.split("/").filter(Boolean).pop() ?? remoteRootPath;
       repos.push({

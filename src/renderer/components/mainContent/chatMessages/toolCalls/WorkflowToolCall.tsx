@@ -38,14 +38,17 @@ import type { ApiConfigRecord, Model } from "../../../../../preload";
 import { useChatConversationContext } from "../components/ChatConversationContext";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import {
+  buildWorkflowSettlePayload,
   getActiveRunNodeStates,
   getActiveWorkflowRun,
   getWorkflowRunner,
+  parseWorkflowCanvasPayload,
   parseWorkflowGraph,
   settleWorkflow,
   subscribeWorkflowRunner,
   subscribeWorkflowReady,
   type NodeRunStatus,
+  type PersistedCanvasPayload,
   type WorkflowEdgeItem,
   type WorkflowGraph,
   type WorkflowNodeData,
@@ -111,26 +114,6 @@ const WORKFLOW_NODE_TYPES = { workflowCard: WorkflowCardNode };
 // 画布持久化（DB 替代 localStorage）
 // ---------------------------------------------------------------------------
 
-/** 持久化 payload 中的节点：只含配置字段与位置。运行态字段
- *  （runStatus/errorMessage/conversationId/handoffContent）绝不落盘，
- *  由 restoreRuns 从 DB 恢复；字段缺省表示 payload 未提供（损坏数据）。 */
-type PersistedCanvasNode = {
-  id: string;
-  name?: string;
-  label?: string;
-  prompt?: string;
-  description?: string;
-  apiProfile?: string;
-  model?: string;
-  position?: { x: number; y: number };
-};
-
-type PersistedCanvasPayload = {
-  version: number;
-  nodes: PersistedCanvasNode[];
-  edges: { source: string; target: string }[];
-};
-
 /** 初始画布计算结果：flow 节点（含位置）+ 业务边列表。 */
 type InitialCanvas = {
   nodes: WorkflowFlowNode[];
@@ -161,60 +144,6 @@ function toFlowNode(
       },
     },
   };
-}
-
-/** 防御性解析 DB 画布 payload：JSON 损坏/结构不符都静默返回 null，
- *  让组件回退到 args 解析图，绝不能因坏数据崩溃。 */
-function parseCanvasPayload(raw: string): PersistedCanvasPayload | null {
-  try {
-    const parsed = JSON.parse(raw) as PersistedCanvasPayload | null;
-    if (
-      !parsed ||
-      typeof parsed !== "object" ||
-      !Array.isArray(parsed.nodes) ||
-      !Array.isArray(parsed.edges)
-    ) {
-      return null;
-    }
-    const nodes = parsed.nodes
-      .filter(
-        (node): node is PersistedCanvasNode =>
-          Boolean(node) && typeof node.id === "string" && node.id.length > 0,
-      )
-      .map((node) => ({
-        id: node.id,
-        name: typeof node.name === "string" ? node.name : undefined,
-        label: typeof node.label === "string" ? node.label : undefined,
-        prompt: typeof node.prompt === "string" ? node.prompt : undefined,
-        description:
-          typeof node.description === "string" ? node.description : undefined,
-        apiProfile:
-          typeof node.apiProfile === "string" ? node.apiProfile : undefined,
-        model: typeof node.model === "string" ? node.model : undefined,
-        position:
-          node.position &&
-          typeof node.position.x === "number" &&
-          Number.isFinite(node.position.x) &&
-          typeof node.position.y === "number" &&
-          Number.isFinite(node.position.y)
-            ? { x: node.position.x, y: node.position.y }
-            : undefined,
-      }));
-    const edges = parsed.edges
-      .filter(
-        (edge): edge is { source: string; target: string } =>
-          Boolean(edge) &&
-          typeof edge.source === "string" &&
-          edge.source.length > 0 &&
-          typeof edge.target === "string" &&
-          edge.target.length > 0,
-      )
-      .map((edge) => ({ source: edge.source, target: edge.target }));
-    return { version: parsed.version, nodes, edges };
-  } catch {
-    // JSON 损坏：静默回退，画布功能不受影响。
-    return null;
-  }
 }
 
 /** 确定性边 id（重复边被禁止，端点即可唯一确定一条边）：派生/删除/过滤
@@ -789,7 +718,7 @@ const WorkflowToolCallInner = ({
             flowId,
           );
           if (!cancelled && record) {
-            const persisted = parseCanvasPayload(record.canvasJson);
+            const persisted = parseWorkflowCanvasPayload(record.canvasJson);
             if (persisted) {
               const parsedNodeById = new Map(
                 graph.nodes.map((node) => [node.id, node] as const),
@@ -1425,22 +1354,7 @@ const WorkflowToolCallInner = ({
       });
       settleWorkflow(
         toolCall.interactionId,
-        JSON.stringify({
-          success: outcome.success,
-          summary: outcome.summary,
-          ...(outcome.totalTokens ? { totalTokens: outcome.totalTokens } : {}),
-          ...(outcome.error ? { error: outcome.error } : {}),
-          // 失败节点详情 + 续跑指引：主流程据此向用户说明失败点，询问
-          // 是否续跑；同意后调用 workflow-resume（flowId + 可选继续提示词）。
-          ...(outcome.failedNode
-            ? {
-                failedNode: outcome.failedNode,
-                resumable: outcome.resumable,
-                resumeInstruction:
-                  "The workflow PAUSED on this failed node; later nodes did not run. Tell the user which node failed and why, then ask whether to resume it. If the user agrees, call the workflow-resume tool with flowId from failedNode and an optional continuePrompt (a short instruction for the failed node's agent on how to continue, e.g. the user's fix suggestion). If the user declines, stop and summarize what was completed.",
-              }
-            : {}),
-        }),
+        buildWorkflowSettlePayload(outcome),
       );
     };
     void executeRun();

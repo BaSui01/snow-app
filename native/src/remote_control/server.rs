@@ -42,6 +42,8 @@ const MESSAGE_IMAGE_TYPES: [&str; 4] = ["image/png", "image/jpeg", "image/gif", 
 const MAX_IDENTIFIER_LENGTH: usize = 200;
 /// 待办内容长度上限（与 Renderer 桥、移动端输入框 maxlength 保持一致）。
 const MAX_TODO_CONTENT_LENGTH: usize = 500;
+/// WorkFlow 反馈内容长度上限（与 Renderer 桥、移动端输入框 maxlength 保持一致）。
+const MAX_WORKFLOW_REPLY_LENGTH: usize = 2_000;
 /// 可远程切换的代理行为模式白名单（必须与 renderer/types/remoteControl.ts 一致）。
 const REMOTE_MODES: [&str; 6] = ["plan", "goal", "worktree", "workflow", "yolo", "lite"];
 /// 已完成 send 请求的去重缓存容量。
@@ -398,6 +400,10 @@ fn is_todo_content(value: &str) -> bool {
 
 fn is_todo_status(value: &str) -> bool {
     matches!(value, "pending" | "inProgress" | "completed")
+}
+
+fn is_workflow_reply(value: &str) -> bool {
+    !value.trim().is_empty() && value.chars().count() <= MAX_WORKFLOW_REPLY_LENGTH
 }
 
 fn is_remote_mode(value: &str) -> bool {
@@ -1330,6 +1336,43 @@ async fn handle_api(
             json!([action, Value::Object(payload_object)]),
         )
         .await?;
+        return Ok(json_response(StatusCode::OK, &value, Vec::new()));
+    }
+
+    if method == Method::POST && path == "/api/workflow" {
+        if !is_json_request(headers) {
+            return Ok(json_response(
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                &json!({ "error": "Content-Type 必须是 application/json" }),
+                Vec::new(),
+            ));
+        }
+        let payload = read_json_body(body.take()).await?;
+        let action = payload.get("action").and_then(Value::as_str);
+        let flow_id = payload.get("flowId").and_then(Value::as_str);
+        let message = payload.get("message").and_then(Value::as_str);
+        let is_run = action == Some("run");
+        let is_reply = action == Some("reply");
+        let valid = (is_run || is_reply)
+            && flow_id
+                .map(|value| is_bounded_string(value, false))
+                .unwrap_or(false)
+            && (!is_reply || message.map(is_workflow_reply).unwrap_or(false));
+        if !valid {
+            return Ok(json_response(
+                StatusCode::BAD_REQUEST,
+                &json!({ "error": "工作流请求无效" }),
+                Vec::new(),
+            ));
+        }
+        ensure_current_pairing(context, request_generation)?;
+        // 执行在渲染进程后台运行（立即返回，进度由 /api/state 轮询），
+        // 反馈直接结算挂起的工具调用；两者都与桌面卡片按钮同语义。
+        let value = if is_run {
+            bridge_call("runWorkflow", json!([flow_id])).await?
+        } else {
+            bridge_call("replyWorkflow", json!([flow_id, message])).await?
+        };
         return Ok(json_response(StatusCode::OK, &value, Vec::new()));
     }
 

@@ -1,3 +1,5 @@
+import { toolsZhTW } from "./tools";
+
 /** Mobile 遠端頁 · 繁體中文詞典。鍵集合與 zh-CN.ts 保持一致。 */
 export const zhTW: Record<string, string> = {
   // 頂欄 / 連線狀態
@@ -236,10 +238,6 @@ export const zhTW: Record<string, string> = {
   "remote.message.thinkingActive": "Snow 正在思考",
   "remote.message.thinkingDone": "已思考 {{seconds}} 秒",
   "remote.message.thinkingView": "檢視思考過程",
-  "remote.message.toolPending": "等待",
-  "remote.message.toolRunning": "執行中",
-  "remote.message.toolCompleted": "完成",
-  "remote.message.toolError": "失敗",
   "remote.tool.arguments": "參數",
   "remote.tool.stdout": "輸出",
   "remote.tool.stderr": "錯誤",
@@ -273,6 +271,18 @@ export const zhTW: Record<string, string> = {
   "remote.threads.loadMore": "載入更多",
   "remote.threads.loading": "載入中…",
   "remote.threads.loadMoreFailed": "載入更多工作階段失敗",
+  "remote.threads.subAgent": "子代理",
+  "remote.threads.workflowNode": "流程節點",
+  "remote.threads.workflowSession": "流程工作階段",
+  "remote.threads.forkedSession": "分支工作階段",
+  "remote.threads.hasSubAgents": "包含子代理",
+  "remote.threads.statusAttention": "需要處理",
+  "remote.threads.statusStreaming": "執行中",
+  "remote.threads.statusPaused": "已暫停",
+  "remote.threads.statusCompleted": "已完成",
+  "remote.threads.statusFailed": "已失敗",
+  "remote.threads.expandChildren": "展開子工作階段",
+  "remote.threads.collapseChildren": "收起子工作階段",
 
   // 相對時間
   "remote.time.justNow": "剛剛",
@@ -312,6 +322,40 @@ export const zhTW: Record<string, string> = {
   "remote.lightbox.close": "關閉圖片預覽",
   "remote.lightbox.alt": "圖片預覽",
 
+  // WorkFlow 卡片（workflow-generate / workflow-resume 工具呼叫）
+  "remote.workflow.title": "工作流",
+  "remote.workflow.status.idle": "待開始",
+  "remote.workflow.status.running": "執行中",
+  "remote.workflow.status.completed": "已完成",
+  "remote.workflow.status.failed": "已暫停",
+  "remote.workflow.status.replied": "已提交回饋",
+  "remote.workflow.dependsOn": "前置：{{names}}",
+  "remote.workflow.execute": "執行",
+  "remote.workflow.resume": "繼續執行",
+  "remote.workflow.idleHint": "確認後執行，或輸入修改意見讓 Snow 重新設計流程",
+  "remote.workflow.runningHint": "工作流執行中，節點進度即時更新",
+  "remote.workflow.completedHint": "工作流已完成",
+  "remote.workflow.failedHint": "工作流已暫停在失敗節點：{{name}}",
+  "remote.workflow.failedHintFallback": "工作流已暫停在失敗節點",
+  "remote.workflow.resumeHint":
+    "存在未完成的進度：繼續執行會自動跳過已完成節點，也可在對話中請 Snow 續跑失敗節點",
+  "remote.workflow.resumeReadonly": "續跑節點狀態（唯讀）",
+  "remote.workflow.settledHint": "此流程已結算，請讓 Snow 重新生成",
+  "remote.workflow.repliedHint": "已提交回饋，Snow 將據此重新設計流程",
+  "remote.workflow.replyLabel": "對流程不滿意？輸入修改意見：",
+  "remote.workflow.replyPlaceholder": "例如：把第 2 步拆成兩步，並補上測試",
+  "remote.workflow.replySubmit": "提交回饋",
+  "remote.workflow.repliedFeedback": "已提交的回饋",
+  "remote.workflow.empty": "暫無可執行節點",
+  "remote.workflow.canvasHint": "拖曳平移 · 雙指縮放 · 輕點節點查看對話",
+  "remote.workflow.fitView": "適應視圖",
+  "remote.workflow.nodeOpen": "查看節點對話",
+  "remote.workflow.started": "工作流已開始執行",
+  "remote.workflow.replied": "回饋已提交",
+
   // 配對
   "remote.pair.invalidCode": "配對碼格式無效",
+
+  // 工具卡片詞典（i18n/lang/tools/* 聚合，鍵前綴 remote.toolCall.*）
+  ...toolsZhTW,
 };

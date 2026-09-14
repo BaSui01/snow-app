@@ -74,10 +74,13 @@ pub fn get_staged_diff(repo_path: &str) -> Result<String> {
 }
 
 pub fn get_file_diff(repo_path: &str, file_path: &str, staged: bool) -> Result<GitDiffResult> {
+    // `--no-ext-diff` 强制使用 git 内建 diff：用户在 gitconfig 里配置了
+    // `diff.external` / `GIT_EXTERNAL_DIFF` 时，外部程序会产出无法解析
+    // 的内容，渲染端只能显示空白。
     let args: Vec<&str> = if staged {
-        vec!["diff", "--cached", "--", file_path]
+        vec!["diff", "--cached", "--no-ext-diff", "--", file_path]
     } else {
-        vec!["diff", "--", file_path]
+        vec!["diff", "--no-ext-diff", "--", file_path]
     };
 
     match run_git(repo_path, &args) {
@@ -90,6 +93,7 @@ pub fn get_file_diff(repo_path: &str, file_path: &str, staged: bool) -> Result<G
                     return Ok(GitDiffResult {
                         content: "Binary file - diff not available".to_string(),
                         is_binary: true,
+                        error: String::new(),
                     });
                 }
                 // Git's heuristic may falsely flag text files as binary
@@ -97,9 +101,9 @@ pub fn get_file_diff(repo_path: &str, file_path: &str, staged: bool) -> Result<G
                 // to force a text-mode diff, but bound the result size —
                 // a huge text dump means the file is really binary.
                 let text_args: Vec<&str> = if staged {
-                    vec!["diff", "--cached", "--text", "--", file_path]
+                    vec!["diff", "--cached", "--text", "--no-ext-diff", "--", file_path]
                 } else {
-                    vec!["diff", "--text", "--", file_path]
+                    vec!["diff", "--text", "--no-ext-diff", "--", file_path]
                 };
                 match run_git(repo_path, &text_args) {
                     Ok(text_diff)
@@ -108,12 +112,14 @@ pub fn get_file_diff(repo_path: &str, file_path: &str, staged: bool) -> Result<G
                         return Ok(GitDiffResult {
                             content: text_diff,
                             is_binary: false,
+                            error: String::new(),
                         });
                     }
                     _ => {
                         return Ok(GitDiffResult {
                             content: "Binary file - diff not available".to_string(),
                             is_binary: true,
+                            error: String::new(),
                         });
                     }
                 }
@@ -129,6 +135,7 @@ pub fn get_file_diff(repo_path: &str, file_path: &str, staged: bool) -> Result<G
                     return Ok(GitDiffResult {
                         content: "Binary file - diff not available".to_string(),
                         is_binary: true,
+                        error: String::new(),
                     });
                 }
                 let no_index_args = vec!["diff", "--no-index", "--text", "/dev/null", file_path];
@@ -137,6 +144,7 @@ pub fn get_file_diff(repo_path: &str, file_path: &str, staged: bool) -> Result<G
                     return Ok(GitDiffResult {
                         content: full_diff,
                         is_binary: false,
+                        error: String::new(),
                     });
                 }
             }
@@ -144,11 +152,13 @@ pub fn get_file_diff(repo_path: &str, file_path: &str, staged: bool) -> Result<G
             Ok(GitDiffResult {
                 content: stdout,
                 is_binary: false,
+                error: String::new(),
             })
         }
         Err(e) => Ok(GitDiffResult {
-            content: format!("{e}"),
+            content: String::new(),
             is_binary: false,
+            error: format!("{e}"),
         }),
     }
 }
@@ -312,6 +322,7 @@ pub fn get_commit_diff(repo_path: &str, hash: &str) -> Result<GitDiffResult> {
         return Ok(GitDiffResult {
             content: String::new(),
             is_binary: false,
+            error: String::new(),
         });
     }
 
@@ -331,12 +342,14 @@ pub fn get_commit_diff(repo_path: &str, hash: &str) -> Result<GitDiffResult> {
                         return Ok(GitDiffResult {
                             content: text_diff,
                             is_binary: false,
+                            error: String::new(),
                         });
                     }
                     _ => {
                         return Ok(GitDiffResult {
                             content: "Binary file - diff not available".to_string(),
                             is_binary: true,
+                            error: String::new(),
                         });
                     }
                 }
@@ -345,11 +358,13 @@ pub fn get_commit_diff(repo_path: &str, hash: &str) -> Result<GitDiffResult> {
             Ok(GitDiffResult {
                 content: stdout,
                 is_binary: false,
+                error: String::new(),
             })
         }
         Err(e) => Ok(GitDiffResult {
-            content: format!("{e}"),
+            content: String::new(),
             is_binary: false,
+            error: format!("{e}"),
         }),
     }
 }
@@ -369,6 +384,7 @@ pub fn get_commit_file_diff(repo_path: &str, hash: &str, file_path: &str) -> Res
         return Ok(GitDiffResult {
             content: String::new(),
             is_binary: false,
+            error: String::new(),
         });
     }
 
@@ -395,6 +411,7 @@ pub fn get_commit_file_diff(repo_path: &str, hash: &str, file_path: &str) -> Res
                     return Ok(GitDiffResult {
                         content: "Binary file - diff not available".to_string(),
                         is_binary: true,
+                        error: String::new(),
                     });
                 }
                 let text_args = vec![
@@ -417,12 +434,14 @@ pub fn get_commit_file_diff(repo_path: &str, hash: &str, file_path: &str) -> Res
                         return Ok(GitDiffResult {
                             content: text_diff,
                             is_binary: false,
+                            error: String::new(),
                         });
                     }
                     _ => {
                         return Ok(GitDiffResult {
                             content: "Binary file - diff not available".to_string(),
                             is_binary: true,
+                            error: String::new(),
                         });
                     }
                 }
@@ -431,11 +450,13 @@ pub fn get_commit_file_diff(repo_path: &str, hash: &str, file_path: &str) -> Res
             Ok(GitDiffResult {
                 content: stdout,
                 is_binary: false,
+                error: String::new(),
             })
         }
         Err(e) => Ok(GitDiffResult {
-            content: format!("{e}"),
+            content: String::new(),
             is_binary: false,
+            error: format!("{e}"),
         }),
     }
 }

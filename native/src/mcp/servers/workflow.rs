@@ -170,10 +170,14 @@ pub(crate) fn validate_graph(nodes: &[Value], edges: &[Value]) -> (Vec<String>, 
     }
 
     // Kahn's algorithm: repeatedly remove nodes with zero in-degree.
-    let mut queue: std::collections::VecDeque<String> = in_degree
+    // 初始队列按输入节点顺序收集（而不是遍历 in_degree 这个 HashMap）：
+    // HashMap 的迭代顺序随实例随机，同层节点（例如多个根节点）的先后会
+    // 在多次调用间抖动 —— 桌面 runner 的执行顺序与远控画布的分层布局都按
+    // 这个 order 排布，顺序不稳定会让同层节点反复互换位置。
+    let mut queue: std::collections::VecDeque<String> = node_ids
         .iter()
-        .filter(|(_, degree)| **degree == 0)
-        .map(|(id, _)| id.clone())
+        .filter(|id| in_degree.get(*id).copied().unwrap_or(0) == 0)
+        .cloned()
         .collect();
     let mut order: Vec<String> = Vec::new();
     while let Some(node) = queue.pop_front() {

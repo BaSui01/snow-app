@@ -70,9 +70,7 @@ export const FileDiffPreview = ({
   const isSingleFile = diffs.length <= 1;
 
   return (
-    <div
-      className={`file-diff-preview${isSingleFile ? " single-file" : ""}`}
-    >
+    <div className={`file-diff-preview${isSingleFile ? " single-file" : ""}`}>
       {!isSingleFile ? (
         <div className="file-diff-preview-files">
           {isLoading ? (
@@ -113,6 +111,7 @@ export const FileDiffPreview = ({
             diffResult={{
               content: selectedDiff.content,
               isBinary: selectedDiff.isBinary,
+              error: "",
             }}
             diffLoading={false}
           />

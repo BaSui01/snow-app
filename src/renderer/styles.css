@@ -30590,6 +30590,33 @@ input {
   text-align: center;
 }
 
+/* 差异请求失败（IPC/napi 抛错或 git 命令报错）时的错误提示 */
+.diff-viewer-error {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 20px;
+  font-size: 13px;
+  text-align: center;
+  overflow: auto;
+}
+
+.diff-viewer-error-title {
+  color: var(--accent-red-text, #ef4444);
+  font-weight: 500;
+}
+
+.diff-viewer-error-message {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .diff-viewer-content {
   flex: 1;
   overflow: auto;
@@ -30667,6 +30694,17 @@ input {
 
 .git-diff-view {
   width: 100%;
+}
+
+/* patch 无法解析（非标准 diff 文本）时的兜底提示，避免纯空白 */
+.git-diff-view-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
 }
 
 /* @git-diff-view 使用 table 布局渲染,在 .ai-message 内需要抵消 markdown 表格样式,

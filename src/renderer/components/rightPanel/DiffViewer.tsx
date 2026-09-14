@@ -3,7 +3,12 @@ import { ExternalLink, X } from "lucide-react";
 import { useI18n } from "../../i18n";
 import { GitDiffView } from "../common/GitDiffView";
 import { getFileTypeIcon } from "../../utils/fileIcons";
-import type { GitDiffResult, GitFileContentResult, GitFileStatus, GitImageDiff } from "./git";
+import type {
+  GitDiffResult,
+  GitFileContentResult,
+  GitFileStatus,
+  GitImageDiff,
+} from "./git";
 import type { OpenDiffTabCallback } from "./types";
 
 type DiffViewerProps = {
@@ -43,19 +48,32 @@ function ImageDiffContent({
   const { old: oldContent, new: newContent } = imageDiff;
 
   if (!oldContent && !newContent) {
-    return <div className="diff-viewer-binary">{t("rightPanel.binaryFile")}</div>;
+    return (
+      <div className="diff-viewer-binary">{t("rightPanel.binaryFile")}</div>
+    );
   }
 
-  const panels: { key: string; label: string; data: GitFileContentResult }[] = [];
+  const panels: { key: string; label: string; data: GitFileContentResult }[] =
+    [];
   if (oldContent) {
-    panels.push({ key: "old", label: t("rightPanel.imageDiffBefore"), data: oldContent });
+    panels.push({
+      key: "old",
+      label: t("rightPanel.imageDiffBefore"),
+      data: oldContent,
+    });
   }
   if (newContent) {
-    panels.push({ key: "new", label: t("rightPanel.imageDiffAfter"), data: newContent });
+    panels.push({
+      key: "new",
+      label: t("rightPanel.imageDiffAfter"),
+      data: newContent,
+    });
   }
 
   return (
-    <div className={`diff-viewer-images${panels.length === 1 ? " single" : ""}`}>
+    <div
+      className={`diff-viewer-images${panels.length === 1 ? " single" : ""}`}
+    >
       {panels.map((panel) => (
         <div key={panel.key} className="diff-viewer-image-panel">
           <div className="diff-viewer-image-panel-header">
@@ -95,7 +113,7 @@ export function DiffViewer({
           selectedFile.path.split("/").pop() ?? selectedFile.path,
           false,
           false,
-          { size: 14, className: "diff-viewer-file-icon" }
+          { size: 14, className: "diff-viewer-file-icon" },
         )}
         <span className="diff-viewer-file-name" title={selectedFile.path}>
           {selectedFile.path}
@@ -133,6 +151,13 @@ export function DiffViewer({
         <div className="diff-viewer-loading">{t("rightPanel.loadingDiff")}</div>
       ) : imageDiff ? (
         <ImageDiffContent imageDiff={imageDiff} />
+      ) : diffResult?.error ? (
+        <div className="diff-viewer-error">
+          <div className="diff-viewer-error-title">
+            {t("rightPanel.diffLoadFailed")}
+          </div>
+          <div className="diff-viewer-error-message">{diffResult.error}</div>
+        </div>
       ) : diffResult?.isBinary ? (
         <div className="diff-viewer-binary">{t("rightPanel.binaryFile")}</div>
       ) : diffResult?.content ? (

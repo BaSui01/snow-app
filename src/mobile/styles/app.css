@@ -8,6 +8,16 @@
  *   4. 主题与修正补丁层（必须保持在最后）
  */
 
+/* 工具卡片样式按域拆分，随 app.css 一并打包；@import 必须在所有规则之前。 */
+@import "./tools/base.css";
+@import "./tools/diff.css";
+@import "./tools/filesystem.css";
+@import "./tools/exec.css";
+@import "./tools/search.css";
+@import "./tools/web.css";
+@import "./tools/agents.css";
+@import "./tools/ops.css";
+
 /* ── 1. 基础层 ─────────────────────────────────────────────────────────── */
 :root {
   --bg: #08090b;
@@ -20,8 +30,14 @@
   --dim: #626974;
   --green: #71e6a5;
   --blue: #78a8ff;
+  /* 会话含子代理的提示色（对应桌面 --accent-secondary 的紫） */
+  --purple: #b39dff;
   --amber: #f2c66d;
   --red: #ff727b;
+  /* 状态徽标 / 文案胶囊的填充色（与 --amber / --green / --red 同色相的低透明度底） */
+  --amber-dim: rgba(242, 198, 109, 0.16);
+  --green-dim: rgba(113, 230, 165, 0.16);
+  --red-dim: rgba(255, 114, 123, 0.16);
   /* 强调色（跟随桌面主题的 --accent-color；theme.ts 同步覆盖，此处为默认值）。
      默认与 --text 一致，对应 Snow 默认主题下 accent = text-primary 的语义。 */
   --accent-color: #f5f7fa;
@@ -298,6 +314,13 @@ textarea:focus-visible {
 }
 .message.assistant .message-shell {
   max-width: 100%;
+}
+/* 视口外消息的占位符（见 virtualization.ts）：内容已整体卸载，只剩一个由
+   inline height 撑开的空节点；contain: strict 让它在布局与绘制计算中彻底
+   短路——滚动时只贡献高度，不贡献渲染开销。 */
+.message.is-placeholder {
+  contain: strict;
+  animation: none;
 }
 .markdown {
   font-size: 15px;
@@ -834,7 +857,134 @@ textarea:focus-visible {
   background: var(--accent-color-dim);
   border-color: var(--accent-color-soft);
 }
+/* 标题行：展开箭头 + 状态徽标 + 标题 + 状态文案（与桌面 .chat-item-icon 同构） */
+.thread-item-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.thread-item-status,
+.thread-item-toggle,
+.thread-item-emoji {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+}
+/* 状态徽标：圆形描边 + 状态色，一眼可辨会话是否在跑 / 需要处理 */
+.thread-item-status,
+.thread-item-emoji {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--panel2);
+  color: var(--muted);
+}
+.thread-item-status .icn {
+  width: 11px;
+  height: 11px;
+}
+.thread-item-emoji {
+  font-size: 12px;
+  line-height: 1;
+}
+/* 需处理：唯一的「黄色实底」状态，配合文案胶囊最醒目 */
+.thread-item-status.attention {
+  border-color: var(--amber);
+  background: var(--amber-dim);
+  color: var(--amber);
+}
+/* 运行中 / 已暂停：只描边不填底，靠旋转与暂停图标区分 */
+.thread-item-status.running {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+.thread-item-status.running .icn {
+  animation: spin 0.9s linear infinite;
+}
+.thread-item-status.paused {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+.thread-item-status.completed {
+  border-color: var(--green);
+  background: var(--green-dim);
+  color: var(--green);
+}
+.thread-item-status.failed {
+  border-color: var(--red);
+  background: var(--red-dim);
+  color: var(--red);
+}
+/* 主会话类型图标：Workflow 主会话（蓝色，同桌面）、分支会话（中性）、含子代理（紫色描边） */
+.thread-item-status.workflow {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+.thread-item-status.forked {
+  color: var(--muted);
+}
+.thread-item-status.has-sub-agents {
+  border-color: var(--purple);
+  color: var(--purple);
+}
+/* 状态文案胶囊（桌面 .chat-item-status-label 的移动端尺寸） */
+.thread-item-status-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: 15px;
+  padding: 0 5px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+.thread-item-status-label.attention {
+  border-color: var(--amber);
+  background: var(--amber-dim);
+  color: var(--amber);
+}
+.thread-item-status-label.completed {
+  border-color: var(--green);
+  background: var(--green-dim);
+  color: var(--green);
+}
+.thread-item-toggle {
+  color: var(--dim);
+  cursor: pointer;
+}
+.thread-item-toggle .icn {
+  width: 13px;
+  height: 13px;
+}
+.thread-item-chevron {
+  display: inline-flex;
+  transition: transform 0.15s ease;
+}
+.thread-item-chevron.expanded {
+  transform: rotate(90deg);
+}
+/* 树形子层缩进：一级 = Workflow 节点 / 子代理，二级 = 节点派生的子代理 */
+.thread-item[data-depth="1"] {
+  padding-left: 26px;
+}
+.thread-item[data-depth="2"] {
+  padding-left: 40px;
+}
+/* 子会话没有预览行：时间只占第一行，避免空行带来的行距 */
+.thread-item[data-depth="1"] .thread-item-time,
+.thread-item[data-depth="2"] .thread-item-time {
+  grid-row: 1;
+}
 .thread-item-title {
+  flex: 1;
+  min-width: 0;
   font-size: 13px;
   font-weight: 620;
   white-space: nowrap;
@@ -1284,6 +1434,17 @@ textarea:focus-visible {
 }
 .thread-item-preview {
   font-size: 10px;
+}
+/* 树形子层：紧凑密度下收窄展开箭头与缩进（状态徽标保持 20px，状态需一眼可辨） */
+.thread-item-toggle .icn {
+  width: 12px;
+  height: 12px;
+}
+.thread-item[data-depth="1"] {
+  padding-left: 22px;
+}
+.thread-item[data-depth="2"] {
+  padding-left: 34px;
 }
 .thread-more {
   padding: 6px 4px 2px;
@@ -2110,6 +2271,341 @@ textarea:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* WorkFlow 卡片（workflow-generate / workflow-resume 工具调用）：节点进度 +
+   执行 / 反馈入口。节点列表按执行顺序纵向排列（移动端不渲染画布）。 */
+.workflow-card {
+  margin: 8px 0 10px;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel2);
+}
+.workflow-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.workflow-head-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted);
+}
+.workflow-head-icon .icn {
+  width: 15px;
+  height: 15px;
+}
+.workflow-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.workflow-status {
+  flex: none;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+.workflow-status.is-running {
+  color: var(--amber);
+  background: rgba(242, 198, 109, 0.14);
+}
+.workflow-status.is-completed {
+  color: var(--green);
+  background: rgba(113, 230, 165, 0.13);
+}
+.workflow-status.is-failed {
+  color: var(--red);
+  background: rgba(255, 114, 123, 0.14);
+}
+/* WorkFlow 画布：视口内是「边 SVG + 绝对定位节点」的同一变换层，手势
+   （平移 / 缩放 / 节点拖动）由 workflowCanvas.ts 处理，故禁用原生触摸行为。 */
+.workflow-canvas {
+  position: relative;
+  height: 240px;
+  margin-top: 9px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.workflow-canvas.is-interacting {
+  cursor: grabbing;
+}
+.workflow-canvas-viewport {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+.workflow-canvas-edges {
+  position: absolute;
+  overflow: visible;
+  pointer-events: none;
+}
+.workflow-edge {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-width: 1.4;
+}
+.workflow-edge.is-done {
+  stroke: rgba(113, 230, 165, 0.55);
+}
+.workflow-edge.is-running {
+  stroke: rgba(242, 198, 109, 0.75);
+  stroke-dasharray: 6 5;
+  animation: workflow-dash 0.9s linear infinite;
+}
+.workflow-edge-arrow {
+  fill: rgba(255, 255, 255, 0.32);
+  stroke: none;
+}
+@keyframes workflow-dash {
+  to {
+    stroke-dashoffset: -11;
+  }
+}
+.workflow-canvas-node {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--panel);
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  overflow: hidden;
+}
+.workflow-canvas-node-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.workflow-canvas-node-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--dim);
+}
+.workflow-canvas-node-icon .icn {
+  width: 13px;
+  height: 13px;
+}
+.workflow-canvas-node.is-running .workflow-canvas-node-icon {
+  color: var(--amber);
+}
+.workflow-canvas-node.is-running .workflow-canvas-node-icon .icn {
+  animation: spin 0.9s linear infinite;
+}
+.workflow-canvas-node.is-completed .workflow-canvas-node-icon {
+  color: var(--green);
+}
+.workflow-canvas-node.is-failed .workflow-canvas-node-icon {
+  color: var(--red);
+}
+.workflow-canvas-node-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.workflow-canvas-node-desc {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.workflow-canvas-node-desc.is-error {
+  color: var(--red);
+}
+.workflow-canvas-node-desc[hidden] {
+  display: none;
+}
+.workflow-canvas-node.is-linked {
+  border-color: var(--accent-color-border);
+}
+.workflow-canvas-node.is-linked:active {
+  background: var(--accent-color-dim);
+}
+.workflow-canvas-node.is-failed {
+  border-color: rgba(255, 114, 123, 0.42);
+}
+.workflow-canvas-node.is-completed {
+  border-color: rgba(113, 230, 165, 0.36);
+}
+.workflow-canvas-node.is-running {
+  border-color: rgba(242, 198, 109, 0.42);
+}
+.workflow-canvas-fit {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel2);
+  color: var(--muted);
+}
+.workflow-canvas-fit:active {
+  transform: scale(0.94);
+}
+.workflow-canvas-fit .icn {
+  width: 15px;
+  height: 15px;
+}
+.workflow-canvas-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 11px;
+  pointer-events: none;
+}
+.workflow-canvas-empty[hidden] {
+  display: none;
+}
+.workflow-canvas-help {
+  margin-top: 6px;
+  color: var(--dim);
+  font-size: 10px;
+}
+.workflow-footer {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.workflow-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+.workflow-run {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--green);
+  color: #07130c;
+  font-size: 12px;
+  font-weight: 700;
+}
+.workflow-run[hidden] {
+  display: none;
+}
+.workflow-run-icon,
+.workflow-reply-send-icon {
+  display: inline-flex;
+}
+.workflow-run .icn {
+  width: 14px;
+  height: 14px;
+}
+.workflow-run:disabled {
+  opacity: 0.55;
+}
+.workflow-hint {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.workflow-hint[hidden] {
+  display: none;
+}
+.workflow-reply {
+  display: grid;
+  gap: 7px;
+}
+.workflow-reply-label {
+  color: var(--muted);
+  font-size: 11px;
+}
+.workflow-reply-input {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #101114;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.workflow-reply-send {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--green);
+  color: #07130c;
+  font-size: 12px;
+  font-weight: 700;
+}
+.workflow-reply-send .icn {
+  width: 13px;
+  height: 13px;
+}
+.workflow-reply-send:disabled {
+  opacity: 0.45;
+}
+.workflow-reply-record {
+  display: grid;
+  gap: 3px;
+}
+.workflow-reply-record-label {
+  color: var(--dim);
+  font-size: 10px;
+  font-weight: 700;
+}
+.workflow-reply-record-content {
+  margin: 0;
+  padding: 8px 9px;
+  border-left: 2px solid #353a44;
+  border-radius: 0 8px 8px 0;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
 html[data-theme="light"] {
   --bg: #f5f6f8;
   --panel: #fff;
@@ -2121,8 +2617,13 @@ html[data-theme="light"] {
   --dim: #98a0ad;
   --green: #168a52;
   --blue: #276ee8;
+  --purple: #7c3aed;
   --amber: #a66308;
   --red: #d73545;
+  /* 状态徽标 / 文案胶囊填充色：浅色主题下用同色相更深的低透明度底 */
+  --amber-dim: rgba(166, 99, 8, 0.12);
+  --green-dim: rgba(22, 138, 82, 0.12);
+  --red-dim: rgba(215, 53, 69, 0.12);
   /* 强调色默认（跟随桌面；未同步时为近文字色，对应 Snow 默认主题语义）。 */
   --accent-color: #17191d;
   --accent-color-dim: rgba(23, 25, 29, 0.08);
@@ -2257,6 +2758,49 @@ html[data-theme="light"] .remote-panel input,
 html[data-theme="light"] .reject-reason,
 html[data-theme="light"] .answer-input {
   background: #f5f6f8;
+}
+/* WorkFlow 卡片浅色覆盖：卡片与画布节点改用浅底 + 主题线条色，输入框与
+   .reject-reason 同色（深色底在浅色页面上不可读）。 */
+html[data-theme="light"] .workflow-card {
+  background: #fff;
+}
+html[data-theme="light"] .workflow-canvas {
+  background: #f5f6f8;
+}
+html[data-theme="light"] .workflow-canvas-node {
+  background: #fff;
+}
+html[data-theme="light"] .workflow-canvas-node.is-linked:active {
+  background: rgba(15, 23, 42, 0.06);
+}
+html[data-theme="light"] .workflow-edge {
+  stroke: rgba(15, 23, 42, 0.2);
+}
+html[data-theme="light"] .workflow-edge.is-done {
+  stroke: rgba(22, 138, 82, 0.6);
+}
+html[data-theme="light"] .workflow-edge.is-running {
+  stroke: rgba(166, 99, 8, 0.75);
+}
+html[data-theme="light"] .workflow-edge-arrow {
+  fill: rgba(15, 23, 42, 0.38);
+}
+html[data-theme="light"] .workflow-canvas-fit {
+  background: #fff;
+}
+html[data-theme="light"] .workflow-status {
+  background: rgba(15, 23, 42, 0.06);
+}
+html[data-theme="light"] .workflow-reply-input,
+html[data-theme="light"] .workflow-reply-record-content {
+  background: #f5f6f8;
+}
+html[data-theme="light"] .workflow-reply-record-content {
+  border-left-color: rgba(15, 23, 42, 0.16);
+}
+html[data-theme="light"] .workflow-run,
+html[data-theme="light"] .workflow-reply-send {
+  color: #fff;
 }
 html[data-theme="light"] .scroll-to-bottom {
   box-shadow: 0 10px 26px rgba(28, 39, 60, 0.16);

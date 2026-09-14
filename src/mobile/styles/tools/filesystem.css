@@ -1,0 +1,144 @@
+/*
+ * filesystem-* 卡片样式（styles/tools/filesystem.css）。
+ *
+ * 类名统一 tc-fs-*；行级 diff 的样式在 styles/tools/diff.css，本文件不重复定义。
+ * 卡片骨架（.tc-body / .tc-section / .tc-pre / .tc-fold / .tc-more / .tc-badge /
+ * .tc-error / .tc-image / .tc-empty）来自 styles/tools/base.css，这里只补文件域零件。
+ *
+ * 覆盖 app.css 既有 .tool* 规则时一律提特异性（details.tool.tcn > …）：app.css 在
+ * @import 之后加载，低特异性选择器会被它压过。
+ */
+
+/* ── 路径行与内容块 ───────────────────────────────────────────────────── */
+
+/* 完整路径行（等宽、任意位置可换行，不省略）。 */
+.tc-fs-path {
+  font:
+    11px/1.5 "SFMono-Regular",
+    Consolas,
+    monospace;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* 行号 / 内容块：Rust 端的 content 自带 `     1: ` 行号前缀，这里只给块级外观。 */
+.tc-fs-code {
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.22);
+  tab-size: 4;
+}
+
+/* ── 提示与结论行 ─────────────────────────────────────────────────────── */
+
+/* 提示行（参数截断 / diff 降级 / 结果回退 / 行窗口统计）。 */
+.tc-fs-note {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.tc-fs-note-warn {
+  color: var(--amber);
+}
+
+/* 结论行（匹配位置 / 创建完成）。 */
+.tc-fs-success {
+  color: var(--green);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* ── 头部统计与清单 ───────────────────────────────────────────────────── */
+
+/* 增删统计（summary 的 meta 区；无删除时只出现 +n）。 */
+.tc-fs-stats {
+  display: inline-flex;
+  gap: 6px;
+  font-size: 10px;
+}
+.tc-fs-stat-add {
+  color: var(--green);
+}
+.tc-fs-stat-del {
+  color: var(--red);
+}
+
+/* 条目清单（目录列表 / 待读取路径 / 多文件段落头）。 */
+.tc-fs-list {
+  display: grid;
+  gap: 3px;
+}
+.tc-fs-row {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 11px;
+}
+.tc-fs-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.tc-fs-meta {
+  flex: 0 0 auto;
+  color: var(--dim);
+  font-size: 10px;
+}
+.tc-fs-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--dim);
+}
+.tc-fs-icon > .icn {
+  width: 12px;
+  height: 12px;
+}
+
+/* ── 头部徽章（模块名 + lucide 文件图标） ─────────────────────────────── */
+
+/* 图标由 tools/filesystem.ts 注入框架产出的 .tool-name（badge 只接受字符串文案）。 */
+details.tool.tcn > summary.tc-summary > .tool-name.tc-fs-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.tc-fs-badge-icon {
+  display: inline-flex;
+  flex: none;
+}
+.tc-fs-badge-icon > .icn {
+  width: 12px;
+  height: 12px;
+}
+.tc-fs-badge-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── diff 容器 ────────────────────────────────────────────────────────── */
+
+/*
+ * 与正文同栅格：内边距沿用 .tc-body 的 9px/10px（不叠加缩进），只保证长行 / 宽内容
+ * 不会撑破卡片；行级样式（行号列、折叠条、配色）全部在 diff.css。
+ */
+.tc-fs-diff {
+  min-width: 0;
+}
+
+/* ── 图片预览 ─────────────────────────────────────────────────────────── */
+
+/* 基础外观来自 base.css 的 .tc-image；这里限制长图高度。 */
+.tc-fs-image {
+  max-height: 220px;
+  object-fit: contain;
+}
+
+/* ── 浅色主题（颜色变量在 html[data-theme="light"] 里已重定义，此处只改硬编码底色） ── */
+
+html[data-theme="light"] .tc-fs-code {
+  background: rgba(15, 23, 42, 0.04);
+}

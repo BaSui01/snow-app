@@ -11,6 +11,24 @@ import { iconMarkup } from "./icons";
 import { renderMarkdown } from "./markdown";
 import { showNotice } from "./notice";
 import { openImageLightbox } from "./overlays";
+import { createToolCallEl } from "./tools";
+import {
+  attachMessageNode,
+  detachMessageNode,
+  flushMessageMeasures,
+  initViewportVirtualization,
+  isMessageVisible,
+  markForceVisible,
+  messagePlaceholderHeight,
+  resetViewportVirtualization,
+  setPinnedMessageIds,
+} from "./virtualization";
+import {
+  createWorkflowCard,
+  isWorkflowCardTool,
+  patchWorkflowCard,
+  workflowDigest,
+} from "./workflow";
 
 /**
  * 时间线渲染。
@@ -21,7 +39,10 @@ import { openImageLightbox } from "./overlays";
  *   分块比较，只替换发生变化的块；details 一律默认折叠（工具执行中 / 思考
  *   进行中都不自动展开，思考折叠时在头部显示单行预览），仅用户手动展开过
  *   的 details 在重建时保留展开状态；未变化的块保持原样；
- * - 工具活动再做工具级 diff，单个工具的流式输出不会重建其余工具。
+ * - 工具活动再做工具级 diff，单个工具的流式输出不会重建其余工具；
+ * - 视口虚拟化：滚动视口外（含 600px 缓冲）的消息整体卸载内容、只留一个按
+ *   实测高度撑开的占位符，回到视口内再重建（见 virtualization.ts）。长会话
+ *   下每轮快照的 diff 与布局重排只覆盖视口附近的消息。
  *
  * 消息模型：
  * - knownList 本地单调累积当前会话的全部已知消息（state 的消息窗口 +
@@ -41,13 +62,6 @@ const LOAD_EARLIER_THRESHOLD = 160;
 const NEAR_BOTTOM_THRESHOLD = 48;
 /** 「滚动到底部」按钮平滑回底的时长（与桌面端 ChatContent 的观感一致）。 */
 const SCROLL_TO_BOTTOM_DURATION_MS = 350;
-
-const TOOL_STATUS_LABEL_KEYS: Record<string, string> = {
-  pending: "remote.message.toolPending",
-  running: "remote.message.toolRunning",
-  completed: "remote.message.toolCompleted",
-  error: "remote.message.toolError",
-};
 
 // ── 模块状态 ──────────────────────────────────────────────────────────────
 
@@ -74,11 +88,20 @@ let scrollToBottomAnim = 0;
 
 type BlockNode = { key: string; sig: string; el: HTMLElement };
 type MessageNode = {
+  /** 消息 id；id 迁移（前端临时 id → 数据库 id）时原地更新。 */
+  id: string;
   el: HTMLElement;
-  blockHost: HTMLElement;
+  /** 可见时承载块内容的 .message-shell；占位符阶段为 null（内容已卸载）。 */
+  blockHost: HTMLElement | null;
   blocks: BlockNode[];
   sig: string;
 };
+
+/**
+ * 视口外消息的占位符类名（高度由 inline style 给出，见 virtualization.ts）：
+ * 带该类的节点会被高度测量与观察器逻辑识别为「占位符而非真实内容」。
+ */
+const MESSAGE_PLACEHOLDER_CLASS = "is-placeholder";
 
 const renderedNodes = new Map<string, MessageNode>();
 
@@ -166,16 +189,24 @@ const inheritUserOpen = (
   }
 };
 
-const toolText = (tool: SnowRemoteToolCall): string => {
-  const chunks: string[] = [];
-  if (tool.arguments)
-    chunks.push(t("remote.tool.arguments") + "\n" + tool.arguments);
-  if (tool.streamingStdout)
-    chunks.push(t("remote.tool.stdout") + "\n" + tool.streamingStdout);
-  if (tool.streamingStderr)
-    chunks.push(t("remote.tool.stderr") + "\n" + tool.streamingStderr);
-  if (tool.result) chunks.push(t("remote.tool.result") + "\n" + tool.result);
-  return chunks.join("\n\n");
+/**
+ * 折叠块展开 / 收起：状态类 .tc-expanded 挂在最近的折叠容器上（框架的
+ * .tc-fold；兼容直接用 .tc-pre 表达折叠的写法），按钮文案随状态更新，
+ * 模块自带的双文案按钮（.tc-more-show / .tc-more-hide）由 CSS 按状态切换。
+ */
+const toggleFold = (button: HTMLButtonElement): void => {
+  const fold = button.closest<HTMLElement>(".tc-fold, .tc-pre");
+  if (!fold) return;
+  const expanded = fold.classList.toggle("tc-expanded");
+  button.setAttribute("aria-expanded", expanded ? "true" : "false");
+  const label = button.querySelector<HTMLElement>(".tc-more-label");
+  if (label) {
+    label.textContent = t(
+      expanded
+        ? "remote.toolCall.common.collapse"
+        : "remote.toolCall.common.expand",
+    );
+  }
 };
 
 const toolSignature = (tool: SnowRemoteToolCall): string =>
@@ -187,6 +218,9 @@ const toolSignature = (tool: SnowRemoteToolCall): string =>
     (tool.result || "").length,
     (tool.streamingStdout || "").length,
     (tool.streamingStderr || "").length,
+    // workflow 卡片快照（节点进度）参与签名：快照变化必须让消息签名变化，
+    // 否则块级 diff 会被消息签名短路，卡片进度冻结。
+    workflowDigest(tool.workflow),
   ].join("\u0001");
 
 const toolSummary = (tools: SnowRemoteToolCall[] | undefined): string =>
@@ -238,44 +272,15 @@ const userContentBlocksHtml = (message: SnowRemoteMessage): string => {
 
 // ── 工具（详情）元素 ──────────────────────────────────────────────────────
 
-const createToolEl = (tool: SnowRemoteToolCall): HTMLDetailsElement => {
-  const label = t(TOOL_STATUS_LABEL_KEYS[tool.status] ?? tool.status);
-  const detail = toolText(tool);
-  const details = document.createElement("details");
-  const statusClass = TOOL_STATUS_LABEL_KEYS[tool.status]
-    ? tool.status
-    : "error";
-  details.className = `tool ${statusClass}`;
-  details.dataset.toolId = tool.interactionId;
-  details.dataset.sig = toolSignature(tool);
-  // 默认折叠（含执行中）：展开只看用户点击。
-
-  const summary = document.createElement("summary");
-  const dot = document.createElement("span");
-  dot.className = "tool-dot";
-  const name = document.createElement("span");
-  name.className = "tool-name";
-  name.textContent = tool.name;
-  const state = document.createElement("span");
-  state.className = "tool-state";
-  state.textContent = label;
-  summary.append(dot, name, state);
-  details.append(summary);
-
-  if (detail) {
-    const body = document.createElement("div");
-    body.className = "tool-body";
-    body.textContent = detail;
-    details.append(body);
-  }
-  return details;
-};
-
-/** 工具级 keyed diff：只重建签名变化的工具条目；用户展开状态跨重建保留。 */
+/**
+ * 工具级 keyed diff：卡片由 tools/index.ts 的派发器渲染（精确名 → 前缀 →
+ * 兜底），这里只重建签名变化的条目；dataset.toolId / dataset.sig 是复用
+ * 判定依据，用户展开状态跨重建保留。
+ */
 const syncToolList = (host: HTMLElement, tools: SnowRemoteToolCall[]): void => {
-  const existing = new Map<string, HTMLDetailsElement>();
+  const existing = new Map<string, HTMLElement>();
   for (const child of Array.from(host.children)) {
-    const el = child as HTMLDetailsElement;
+    const el = child as HTMLElement;
     const id = el.dataset.toolId ?? "";
     if (id) existing.set(id, el);
   }
@@ -289,7 +294,9 @@ const syncToolList = (host: HTMLElement, tools: SnowRemoteToolCall[]): void => {
       nextEls.push(old);
       continue;
     }
-    const el = createToolEl(tool);
+    const el = createToolCallEl(tool);
+    el.dataset.toolId = tool.interactionId;
+    el.dataset.sig = sig;
     inheritUserOpen(old, el);
     old?.remove();
     nextEls.push(el);
@@ -390,17 +397,29 @@ const buildMessageBlocks = (
   });
 
   const tools = message.toolCalls ?? [];
-  if (tools.length) {
+  // workflow 卡片单独成块：卡片不适合折叠的工具行渲染，块级 diff 也让
+  // 节点进度更新（patch）不会重建其它工具条目。
+  const activityTools = tools.filter((tool) => !isWorkflowCardTool(tool));
+  if (activityTools.length) {
     blocks.push({
       key: "activity",
-      sig: toolSummary(tools),
+      sig: toolSummary(activityTools),
       create: () => {
         const el = document.createElement("div");
         el.className = "activity";
-        syncToolList(el, tools);
+        syncToolList(el, activityTools);
         return el;
       },
-      patch: (el) => syncToolList(el, tools),
+      patch: (el) => syncToolList(el, activityTools),
+    });
+  }
+  for (const tool of tools) {
+    if (!isWorkflowCardTool(tool)) continue;
+    blocks.push({
+      key: `workflow:${tool.interactionId}`,
+      sig: workflowDigest(tool.workflow),
+      create: () => createWorkflowCard(tool),
+      patch: (el) => patchWorkflowCard(el, tool),
     });
   }
 
@@ -496,16 +515,72 @@ const messageSignature = (
   ].join("\u0001");
 };
 
+/** 消息 article 的角色类名；占位符阶段不带角色类（气泡等装饰不参与绘制）。 */
+const messageElementClass = (role: string): string =>
+  role === "user" || role === "assistant" ? `message ${role}` : "message";
+
+/**
+ * 占位符化：卸载全部内容（.message-shell 及其块），按缓存的实测高度撑开
+ * article。节点保持挂载并被观察，滚回视口时才能在 updateMessageNode 里复活。
+ */
+const placeMessageNode = (node: MessageNode): MessageNode => {
+  if (node.blockHost === null) return node;
+  for (const block of node.blocks) block.el.remove();
+  node.blocks = [];
+  node.blockHost.remove();
+  node.blockHost = null;
+  node.sig = "";
+  node.el.className = `message ${MESSAGE_PLACEHOLDER_CLASS}`;
+  node.el.style.height = `${messagePlaceholderHeight(node.id)}px`;
+  node.el.setAttribute("aria-hidden", "true");
+  return node;
+};
+
+/** 为从未渲染过内容的消息直接创建占位符（远端新增但当前在视口外）。 */
+const createPlaceholderNode = (id: string): MessageNode => {
+  const el = document.createElement("article");
+  el.className = `message ${MESSAGE_PLACEHOLDER_CLASS}`;
+  el.style.height = `${messagePlaceholderHeight(id)}px`;
+  el.setAttribute("aria-hidden", "true");
+  attachMessageNode(id, el);
+  return { id, el, blockHost: null, blocks: [], sig: "" };
+};
+
+/**
+ * 占位符 → 真实内容：重建 .message-shell，块由紧随其后的块级 diff 填充。
+ * 复活不是「新消息入场」：抑制入场动画，避免快速滚动时消息不断淡入。
+ */
+const reviveMessageNode = (
+  node: MessageNode,
+  message: SnowRemoteMessage,
+): HTMLElement => {
+  node.el.className = messageElementClass(message.role || "assistant");
+  node.el.style.height = "";
+  node.el.style.animation = "none";
+  node.el.removeAttribute("aria-hidden");
+  const shell = document.createElement("div");
+  shell.className = "message-shell";
+  node.el.append(shell);
+  node.blockHost = shell;
+  node.blocks = [];
+  node.sig = "";
+  // 复活后内容高度可能与占位符不同：重新登记并排队一次实测。
+  attachMessageNode(node.id, node.el);
+  return shell;
+};
+
+/**
+ * 构造真实内容节点。虚拟化观察器登记（attachMessageNode）由调用方负责：
+ * 重复 id 的兜底节点不参与虚拟化，因此不注册。
+ */
 const createMessageNode = (
   message: SnowRemoteMessage,
   index: number,
   total: number,
   isStreaming: boolean,
 ): MessageNode => {
-  const role = message.role || "assistant";
   const el = document.createElement("article");
-  el.className =
-    role === "user" || role === "assistant" ? `message ${role}` : "message";
+  el.className = messageElementClass(message.role || "assistant");
   const shell = document.createElement("div");
   shell.className = "message-shell";
   el.append(shell);
@@ -515,6 +590,7 @@ const createMessageNode = (
     buildMessageBlocks(message, index, total, isStreaming),
   );
   return {
+    id: message.id,
     el,
     blockHost: shell,
     blocks,
@@ -529,11 +605,13 @@ const updateMessageNode = (
   total: number,
   isStreaming: boolean,
 ): void => {
+  // 占位符（视口外卸载过内容）先复活，真实内容再走下面的块级 diff。
+  const host = node.blockHost ?? reviveMessageNode(node, message);
   const signature = messageSignature(message, index, total, isStreaming);
   if (signature === node.sig) return;
   node.sig = signature;
   node.blocks = syncBlocks(
-    node.blockHost,
+    host,
     node.blocks,
     buildMessageBlocks(message, index, total, isStreaming),
   );
@@ -550,6 +628,14 @@ const paintEmpty = (): void => {
   if (container.dataset.emptyHtml === html) return;
   container.dataset.emptyHtml = html;
   container.innerHTML = html;
+};
+
+/** 清空全部消息节点（同时停止虚拟化观察）。 */
+const clearRenderedNodes = (): void => {
+  for (const node of renderedNodes.values()) {
+    detachMessageNode(node.id);
+    node.el.remove();
+  }
   renderedNodes.clear();
 };
 
@@ -560,14 +646,16 @@ const reconcileMessages = (rebuild: boolean): void => {
   const isStreaming = state.isStreaming;
 
   if (rebuild) {
-    renderedNodes.clear();
+    clearRenderedNodes();
     container.textContent = "";
     delete container.dataset.emptyHtml;
+    // 会话切换：消息 id 与滚动位置都换了，虚拟化状态与高度缓存全部失效。
+    resetViewportVirtualization();
   }
 
   if (!knownList.length) {
-    for (const node of renderedNodes.values()) node.el.remove();
-    renderedNodes.clear();
+    clearRenderedNodes();
+    resetViewportVirtualization();
     paintEmpty();
     return;
   }
@@ -578,30 +666,42 @@ const reconcileMessages = (rebuild: boolean): void => {
     delete container.dataset.emptyHtml;
   }
 
+  const total = knownList.length;
   const nextEls: HTMLElement[] = [];
   const nextIdSet = new Set<string>();
-  for (let index = 0; index < knownList.length; index += 1) {
+  for (let index = 0; index < total; index += 1) {
     const message = knownList[index];
-    if (nextIdSet.has(message.id)) {
+    const id = message.id;
+    if (nextIdSet.has(id)) {
       // 异常数据（重复 id）：不复用缓存，构造独立节点保证列表结构正确。
+      // 该节点不参与虚拟化（同一个 id 无法被观察器稳定跟踪），始终真实渲染。
+      nextEls.push(createMessageNode(message, index, total, isStreaming).el);
+      continue;
+    }
+    nextIdSet.add(id);
+    const node = renderedNodes.get(id);
+    if (!isMessageVisible(id)) {
+      // 视口外：卸载内容，只留按实测高度撑开的占位符（高度不变 → 滚动条不跳）。
       nextEls.push(
-        createMessageNode(message, index, knownList.length, isStreaming).el,
+        (node ? placeMessageNode(node) : createPlaceholderNode(id)).el,
       );
       continue;
     }
-    nextIdSet.add(message.id);
-    let node = renderedNodes.get(message.id);
-    if (node) {
-      updateMessageNode(node, message, index, knownList.length, isStreaming);
-    } else {
-      node = createMessageNode(message, index, knownList.length, isStreaming);
-      renderedNodes.set(message.id, node);
+    if (!node) {
+      const created = createMessageNode(message, index, total, isStreaming);
+      attachMessageNode(id, created.el);
+      renderedNodes.set(id, created);
+      nextEls.push(created.el);
+      continue;
     }
+    // 占位符在此复活（updateMessageNode 内部处理）。
+    updateMessageNode(node, message, index, total, isStreaming);
     nextEls.push(node.el);
   }
 
   for (const [id, node] of Array.from(renderedNodes.entries())) {
     if (!nextIdSet.has(id)) {
+      detachMessageNode(id);
       node.el.remove();
       renderedNodes.delete(id);
     }
@@ -612,6 +712,9 @@ const reconcileMessages = (rebuild: boolean): void => {
     if (!expected.has(child)) child.remove();
   }
   alignChildren(container, nextEls);
+  // 新挂载 / 复活的真实内容节点：本轮结束前批量测量一次（整批只触发一次
+  // 强制布局），让紧随其后的观察器首批报告能用实测高度占位。
+  flushMessageMeasures();
 };
 
 /** 取消进行中的平滑回底动画。 */
@@ -739,6 +842,10 @@ const loadEarlier = async (): Promise<void> => {
         ($("messages").firstElementChild as HTMLElement | null) ?? null;
       knownList = [...fresh, ...knownList];
       for (const item of fresh) knownIds.add(item.id);
+      // 新分页的消息先按真实内容挂载（观察器首批报告后再交还常规判定）：
+      // 它们尚未被测量过，若先以 80px 占位符存在，下面的滚动锚点回补会按
+      // 占位符几何校正而偏小，真实内容展开时视口内容被顶下去。
+      markForceVisible(fresh.map((item) => item.id));
       paint({ follow: false, anchorEl });
     }
     hasOlder = page.hasMore;
@@ -829,6 +936,12 @@ const reconcileRemappedUserIds = (incoming: SnowRemoteMessage[]): void => {
     if (node) {
       renderedNodes.delete(previous.id);
       renderedNodes.set(next.id, node);
+      // 虚拟化观察器按 id 绑定：随迁移重新登记（占位符节点同样适用），并
+      // 在新 id 被观察器判定前保持真实渲染，避免迁移瞬间的消息位置跳变。
+      detachMessageNode(previous.id);
+      node.id = next.id;
+      attachMessageNode(next.id, node.el);
+      markForceVisible([next.id]);
     }
   }
 
@@ -881,6 +994,22 @@ const mergeKnown = (incoming: SnowRemoteMessage[]): void => {
 // ── 公共入口 ──────────────────────────────────────────────────────────────
 
 /**
+ * 恒定渲染（不因滚出视口而卸载）的消息 id：最后一条 assistant 消息。
+ * 它是唯一持续增长的内容——流式期间卸载再重建的 Markdown 代价最高，而且
+ * 用户随时可能滚回来看实时输出，因此与桌面端一致地始终留在 DOM 里。
+ */
+const pinnedMessageIds = (): ReadonlySet<string> => {
+  const pinned = new Set<string>();
+  for (let index = knownList.length - 1; index >= 0; index -= 1) {
+    if ((knownList[index].role || "assistant") === "assistant") {
+      pinned.add(knownList[index].id);
+      break;
+    }
+  }
+  return pinned;
+};
+
+/**
  * 渲染消息区。仅在 main.ts 检测到快照签名变化时调用；
  * isFirstRender 表示本次是首次渲染（必然滚到底部）。
  */
@@ -909,6 +1038,7 @@ export const renderTimeline = (
     hasOlder = next.hasOlderMessages ?? hasOlder;
   }
   mergeKnown(next.messages);
+  setPinnedMessageIds(pinnedMessageIds());
   paint({
     follow: isFirstRender || userNearBottom,
     anchorEl: null,
@@ -919,6 +1049,12 @@ export const renderTimeline = (
 
 export const initTimeline = (): void => {
   const timeline = $("timeline");
+  // 视口虚拟化：相交集合变化（滚动 / 键盘弹出 / 视口尺寸变化）就重绘消息区，
+  // 视口外的消息卸载为占位符、回到视口内的恢复真实内容；占位符高度取自实测
+  // 缓存，文档高度基本不变，无需修正滚动位置。
+  initViewportVirtualization(timeline, () => {
+    paint({ follow: false, anchorEl: null });
+  });
   timeline.addEventListener("scroll", () => {
     // 平滑回底动画期间：滚动本身是程序化行为，不重推导跟随状态。
     if (scrollToBottomAnim !== 0) return;
@@ -948,9 +1084,15 @@ export const initTimeline = (): void => {
     scrollTimelineToBottom(timeline);
   };
   $("messages").onclick = (event) => {
-    const image = (event.target as HTMLElement).closest<HTMLImageElement>(
-      ".remote-image",
-    );
+    const target = event.target as HTMLElement;
+    // 折叠块：.tc-more 切换展开态并同步按钮文案。
+    const more = target.closest<HTMLButtonElement>(".tc-more");
+    if (more) {
+      toggleFold(more);
+      return;
+    }
+    // 图片（消息附件与工具卡片出图共用灯箱）。
+    const image = target.closest<HTMLImageElement>(".remote-image, .tc-image");
     if (!image) return;
     openImageLightbox(image.src);
   };

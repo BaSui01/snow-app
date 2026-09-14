@@ -213,6 +213,26 @@ export const mutateTodos = (
     body: JSON.stringify({ action, ...payload }),
   });
 
+/**
+ * 执行挂起的 WorkFlow（等价桌面卡片的「执行」按钮）：桌面校验后在后台启动
+ * 执行器并立即返回，节点进度随 /api/state 的 workflow 快照轮询更新。
+ */
+export const runWorkflow = (flowId: string): Promise<{ ok: true }> =>
+  request("/api/workflow", {
+    method: "POST",
+    body: JSON.stringify({ action: "run", flowId }),
+  });
+
+/** 提交对流程的修改意见：结算挂起的 workflow-generate，模型据此重新设计。 */
+export const replyWorkflow = (
+  flowId: string,
+  message: string,
+): Promise<{ ok: true }> =>
+  request("/api/workflow", {
+    method: "POST",
+    body: JSON.stringify({ action: "reply", flowId, message }),
+  });
+
 export const selectConversation = (
   conversationId: string,
   directoryId: string,

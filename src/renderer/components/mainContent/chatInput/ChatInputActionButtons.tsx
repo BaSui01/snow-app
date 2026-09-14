@@ -41,7 +41,10 @@ export const ChatInputActionButtons = ({
       return;
     }
     const onPointerDown = (event: MouseEvent): void => {
-      if (groupRef.current && !groupRef.current.contains(event.target as Node)) {
+      if (
+        groupRef.current &&
+        !groupRef.current.contains(event.target as Node)
+      ) {
         setIsSendKeyMenuOpen(false);
       }
     };
@@ -69,7 +72,9 @@ export const ChatInputActionButtons = ({
           className={`abort-btn ${isAborting ? "is-aborting" : ""}`}
           aria-label={isAborting ? "Stopping generation" : "Stop generating"}
           title={isAborting ? "Stopping generation" : "Stop generating"}
-          onClick={handleAbort}
+          // 必须以无参形式调用：handleAbort 实现接受可选的 targetSessionKey，
+          // 直接绑定会把 MouseEvent 当作会话 key，导致中断静默失效。
+          onClick={() => handleAbort()}
           disabled={isAborting}
           type="button"
         >

@@ -3792,6 +3792,8 @@ export const en = {
   "rightPanel.imageDiffBefore": "Before",
   "rightPanel.imageDiffAfter": "After",
   "rightPanel.noChangesToDisplay": "No changes to display",
+  "rightPanel.diffLoadFailed": "Failed to load diff",
+  "rightPanel.diffUnavailable": "Diff content cannot be displayed",
   "rightPanel.diffPreviewError": "Failed to generate diff preview",
   "rightPanel.copy": "Copy",
   "rightPanel.copyPath": "Copy Path",

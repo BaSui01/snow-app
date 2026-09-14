@@ -1,0 +1,282 @@
+/*
+ * 工具卡片框架样式（styles/tools/base.css）。
+ *
+ * 由 app.css 顶部 @import 引入，先于 app.css 既有的 .tool* 规则加载，因此凡
+ * 覆盖既有规则的选择器都要提特异性（details.tool.tcn > …），否则会被 app.css
+ * 里同名的低特异性规则压过。
+ *
+ * DOM 契约见 src/mobile/tools/ui.ts 顶部注释，勿单独改动其中一侧：
+ *   details.tool.<status>.tcn > summary.tc-summary
+ *     （.tool-dot / .tool-name / .tc-display / .tc-meta / .tool-state / .tc-chevron）
+ *   details.tool.tcn > .tc-body
+ *     （.tc-section / .tc-kv / .tc-badge / .tc-error / .tc-fold / .tc-pre / .tc-image）
+ */
+
+/* ── 卡片容器 ─────────────────────────────────────────────────────────── */
+details.tool.tcn {
+  margin: 5px 0;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+/* ── 头部（summary） ──────────────────────────────────────────────────── */
+details.tool.tcn > summary.tc-summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 4px 10px;
+  color: #b6bbc4;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+details.tool.tcn > summary.tc-summary::-webkit-details-marker {
+  display: none;
+}
+details.tool.tcn > summary.tc-summary > .tool-dot {
+  flex: 0 0 auto;
+}
+/* 模块短名徽章：不参与压缩（窄屏下先压摘要而不是压徽章，否则 2~3 字徽章会被截成
+   「数…」这种残缺文案），仅用 max-width 兜住超长徽章。 */
+details.tool.tcn > summary.tc-summary > .tool-name {
+  flex: 0 0 auto;
+  max-width: 52%;
+}
+details.tool.tcn > summary.tc-summary > .tc-display {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--muted);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+details.tool.tcn > summary.tc-summary > .tc-meta {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+details.tool.tcn > summary.tc-summary > .tool-state {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: var(--dim);
+}
+.tc-chevron {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  margin: 0 2px 0 3px;
+  border-right: 1.5px solid var(--dim);
+  border-bottom: 1.5px solid var(--dim);
+  transform: rotate(45deg) translate(-1px, -1px);
+  transition: transform 0.18s ease;
+}
+details.tool.tcn[open] > summary.tc-summary > .tc-chevron {
+  transform: rotate(225deg) translate(-1px, -1px);
+}
+
+/* ── 折叠体（tc-body） ────────────────────────────────────────────────── */
+details.tool.tcn > .tc-body {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  margin: 0 10px 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #111216;
+  color: #aeb4bf;
+}
+
+/* ── 分区 / 键值 / 徽章 / 错误 / 空态 ─────────────────────────────────── */
+.tc-section {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.tc-section-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--dim);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.tc-section-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--dim);
+}
+.tc-kv {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: 11px;
+}
+.tc-kv-label {
+  flex: 0 0 auto;
+  color: var(--dim);
+}
+.tc-kv-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: #c3c9d3;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tc-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.7;
+  white-space: nowrap;
+}
+.tc-badge-ok {
+  border-color: rgba(113, 230, 165, 0.32);
+  background: rgba(113, 230, 165, 0.1);
+  color: #b6f0cd;
+}
+.tc-badge-warn {
+  border-color: rgba(242, 198, 109, 0.32);
+  background: rgba(242, 198, 109, 0.1);
+  color: #f3d79b;
+}
+.tc-badge-err {
+  border-color: rgba(255, 114, 123, 0.32);
+  background: rgba(255, 114, 123, 0.1);
+  color: #ffc2c7;
+}
+.tc-badge-muted {
+  color: var(--dim);
+}
+.tc-error {
+  padding: 8px 9px;
+  border: 1px solid rgba(255, 114, 123, 0.28);
+  border-radius: 8px;
+  background: rgba(255, 114, 123, 0.09);
+  color: #ffb3b9;
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tc-empty {
+  color: var(--dim);
+  font-size: 11px;
+}
+
+/* ── 等宽文本与折叠（tc-pre / tc-fold / tc-more） ─────────────────────── */
+.tc-pre {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font:
+    11px/1.6 "SFMono-Regular",
+    Consolas,
+    monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tc-pre-err {
+  color: #ffb3b9;
+}
+.tc-fold {
+  min-width: 0;
+}
+/* 折叠高度按 --tc-fold-lines（默认 12 行）计算，与 tcPre 的 maxLines 对齐。 */
+.tc-fold:not(.tc-expanded) > .tc-pre,
+.tc-fold:not(.tc-expanded) > .tc-fold-body {
+  max-height: calc(var(--tc-fold-lines, 12) * 1.6em + 10px);
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(180deg, #000 72%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 72%, transparent 100%);
+}
+.tc-fold.tc-expanded > .tc-pre,
+.tc-fold.tc-expanded > .tc-fold-body {
+  max-height: none;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+.tc-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 7px;
+  padding: 3px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+.tc-more-icon {
+  display: inline-flex;
+}
+.tc-more-icon > .icn {
+  width: 11px;
+  height: 11px;
+}
+.tc-fold.tc-expanded .tc-more-icon {
+  transform: rotate(180deg);
+}
+/* 模块自带的双文案按钮（.tc-more-show / .tc-more-hide）同属折叠协议。 */
+.tc-fold .tc-more-hide {
+  display: none;
+}
+.tc-fold.tc-expanded .tc-more-show {
+  display: none;
+}
+.tc-fold.tc-expanded .tc-more-hide {
+  display: inline;
+}
+
+/* ── 图片（filesystem 图片预览 / imagegen 出图共用） ───────────────────── */
+.tc-image {
+  display: block;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #0b0c0f;
+}
+
+/* ── 浅色主题 ─────────────────────────────────────────────────────────── */
+html[data-theme="light"] details.tool.tcn {
+  background: #ffffff;
+}
+html[data-theme="light"] details.tool.tcn > summary.tc-summary {
+  color: #44506a;
+}
+html[data-theme="light"] details.tool.tcn > .tc-body {
+  background: #f0f2f5;
+  color: #28364f;
+}
+html[data-theme="light"] .tc-kv-value,
+html[data-theme="light"] .tc-pre {
+  color: #28364f;
+}
+html[data-theme="light"] .tc-badge,
+html[data-theme="light"] .tc-more {
+  background: rgba(15, 23, 42, 0.05);
+}
+html[data-theme="light"] .tc-error {
+  background: rgba(220, 38, 38, 0.07);
+  border-color: rgba(220, 38, 38, 0.24);
+  color: #b91c1c;
+}

@@ -18,12 +18,19 @@ import {
   type SnowRemoteChatInputPublication,
 } from "./mainContent/chatInput/remoteControlChatInputRegistry";
 import { redactSensitiveToolText } from "./remoteControlRedaction";
+import {
+  replyRemoteWorkflow,
+  resolveWorkflowSnapshot,
+  runRemoteWorkflow,
+  type WorkflowRemoteContext,
+} from "./remoteControlWorkflow";
 import { parseContentSegments } from "./mainContent/chatInput/fileTagUtils";
 import type {
   SnowRemoteChatInputState,
   SnowRemoteContentBlock,
   SnowRemoteControlApi,
   SnowRemoteChange,
+  SnowRemoteConversation,
   SnowRemoteMessage,
   SnowRemoteState,
   SnowRemoteTodoItem,
@@ -59,6 +66,24 @@ const MAX_TODO_CONTENT_LENGTH = 500;
  * 变更（mutateTodos）与切换会话时立即失效。
  */
 const TODO_CACHE_TTL_MS = 3_000;
+/**
+ * 会话子树（Workflow 节点会话 + 子代理会话）缓存时长。
+ * 子树不随主列表变化（节点/子代理会在主列表不动的前提下创建并更新状态），
+ * 因此单独按同一时间窗刷新；查询是两次批量 IPC（按父会话 id 查询），
+ * 不进入 /api/state 的同步路径。
+ */
+const CONVERSATION_CHILDREN_TTL_MS = 5_000;
+
+/** 父会话 id → 其树形子层（Workflow 节点会话 + 直接派生的子代理会话）。 */
+type RemoteConversationChildren = Record<string, SnowRemoteConversation[]>;
+
+/** 会话运行态来源：渲染进程会话上下文里与「会话是否在跑/是否需关注」相关集合。 */
+type ConversationRuntimeSets = {
+  streamingIds: Set<string>;
+  pausedIds: Set<string>;
+  attentionIds: Set<string>;
+  completedIds: Set<string>;
+};
 
 const truncateTo = (
   value: string | undefined,
@@ -267,10 +292,12 @@ const toRemoteMessage = (
 });
 
 // 会话列表条目 → 远程 DTO：preview 先剥离附件标记再截断（见 toRemotePreview）。
+// 只填充不受运行状态影响的静态字段；运行态与树形子层由 withConversationRuntime
+// 在每次响应时补齐（缓存因此可以安全复用）。
 const toRemoteConversation = (
   item: ChatConversationRecord,
   workspaceName: string,
-): SnowRemoteState["conversations"][number] => ({
+): SnowRemoteConversation => ({
   conversationId: item.conversationId,
   title: toRemotePreview(item.title),
   summary: toRemotePreview(item.summary),
@@ -279,6 +306,36 @@ const toRemoteConversation = (
   directoryId: item.directoryId,
   workspaceName,
   updatedAt: item.updatedAt,
+  emoji: item.emoji,
+  conversationType: item.conversationType,
+  isForked: item.forkedFromConversationId !== "",
+  subAgentName: item.subAgentName,
+  runStatus: item.subAgentStatus,
+  isStreaming: false,
+  isPaused: false,
+  attentionRequired: false,
+  isCompleted: false,
+  children: [],
+});
+
+/**
+ * 挂载运行态与树形子层：运行态来自渲染进程会话上下文（每次响应实时计算，
+ * 不进入缓存），子层来自子树缓存；主会话与其所有后代使用同一套集合判断，
+ * 因此子代理/节点会话在手机端也能显示「运行中 / 需处理 / 已完成」。
+ */
+const withConversationRuntime = (
+  item: SnowRemoteConversation,
+  runtime: ConversationRuntimeSets,
+  children: RemoteConversationChildren,
+): SnowRemoteConversation => ({
+  ...item,
+  isStreaming: runtime.streamingIds.has(item.conversationId),
+  isPaused: runtime.pausedIds.has(item.conversationId),
+  attentionRequired: runtime.attentionIds.has(item.conversationId),
+  isCompleted: runtime.completedIds.has(item.conversationId),
+  children: (children[item.conversationId] ?? []).map((child) =>
+    withConversationRuntime(child, runtime, children),
+  ),
 });
 
 // 真实 Token Usage 直传（来源：会话 session，由 Main/Rust 归一化）。
@@ -472,6 +529,78 @@ export const RemoteControlBridge = ({
     totals: {},
   });
 
+  /** 子树缓存（见 CONVERSATION_CHILDREN_TTL_MS）：列表条目的静态字段之外的部分。 */
+  const conversationChildrenRef = useRef<{
+    expiresAt: number;
+    byParent: RemoteConversationChildren;
+  }>({
+    expiresAt: 0,
+    byParent: {},
+  });
+
+  /**
+   * 会话运行态集合：与桌面侧边栏同源（同一份会话上下文），
+   * 覆盖主会话、Workflow 节点会话与子代理会话。
+   */
+  const conversationRuntimeSets = (): ConversationRuntimeSets => {
+    const current = stateRef.current.conversation;
+    return {
+      streamingIds: current.streamingConversationIds,
+      pausedIds: new Set(
+        Object.entries(current.sessions)
+          .filter(([, session]) => session.isPaused)
+          .map(([conversationId]) => conversationId),
+      ),
+      attentionIds: current.attentionRequiredConversationIds,
+      completedIds: current.completedConversationIds,
+    };
+  };
+
+  /**
+   * 拉取会话的树形子层，层级与桌面侧边栏一致：
+   * 主会话 → Workflow 节点会话 → 节点派生的子代理，另有主会话直接派生的子代理。
+   * 两次批量查询（节点按主会话、子代理按「主会话 + 节点会话」）避免 N+1；
+   * 子条目的 workspaceName 按 directoryId 回填（列表分组只用主会话，缺省为空串）。
+   */
+  const fetchConversationChildren = async (
+    parents: SnowRemoteConversation[],
+  ): Promise<RemoteConversationChildren> => {
+    if (parents.length === 0) {
+      return {};
+    }
+    const workspaceNames = new Map(
+      parents.map((parent) => [parent.directoryId, parent.workspaceName]),
+    );
+    const toChild = (item: ChatConversationRecord): SnowRemoteConversation =>
+      toRemoteConversation(item, workspaceNames.get(item.directoryId) ?? "");
+    const parentIds = parents.map((parent) => parent.conversationId);
+    const nodeMap =
+      await window.snow.listWorkflowNodeSessionsByParents(parentIds);
+    const nodes = Object.values(nodeMap).flat();
+    const subAgentMap = await window.snow.listSubAgentConversationsByParents([
+      ...parentIds,
+      ...nodes.map((node) => node.conversationId),
+    ]);
+
+    // 平铺成「父会话 id → 子层」一张表：节点会话的 id 同样作为父级出现，
+    // 由 withConversationRuntime 递归展开，形成三层结构。
+    // 同一父会话既有节点又有直接子代理时两者合并（节点在前）。
+    const byParent: RemoteConversationChildren = {};
+    const append = (
+      parentId: string,
+      items: SnowRemoteConversation[],
+    ): void => {
+      byParent[parentId] = [...(byParent[parentId] ?? []), ...items];
+    };
+    for (const [parentId, items] of Object.entries(nodeMap)) {
+      append(parentId, items.map(toChild));
+    }
+    for (const [parentId, items] of Object.entries(subAgentMap)) {
+      append(parentId, items.map(toChild));
+    }
+    return byParent;
+  };
+
   const todosCacheRef = useRef<{
     conversationId: string;
     expiresAt: number;
@@ -533,6 +662,60 @@ export const RemoteControlBridge = ({
       // 由下一次轮询重试；把失败当成空列表会让手机端误以为列表被清空。
       return null;
     }
+  };
+
+  /** workflow 动作的执行上下文（执行 / 反馈按当前激活会话定位 flow）。 */
+  const workflowRemoteContext = (
+    current: typeof stateRef.current,
+    conversationId: string,
+  ): WorkflowRemoteContext => ({
+    conversation: current.conversation,
+    conversationId,
+    directoryId: current.activeDirectory?.directoryId ?? "",
+  });
+
+  /**
+   * 为 workflow 工具调用附加卡片快照：节点图与运行态由 renderer 侧的
+   * remoteControlWorkflow 按 flow 组装（挂起 / 活跃 run 读内存，其余读 DB，
+   * 带缓存）。arguments 取源消息的完整原文——下发给手机的工具参数已截断，
+   * 不能用于解析图数据。
+   */
+  const attachWorkflowSnapshots = async (
+    sourceMessages: ChatConversationMessage[],
+    messages: SnowRemoteMessage[],
+    conversationId: string | null,
+  ): Promise<SnowRemoteMessage[]> => {
+    if (!conversationId) {
+      return messages;
+    }
+    const sourceById = new Map(
+      sourceMessages.map((message) => [message.id, message]),
+    );
+    return Promise.all(
+      messages.map(async (message) => {
+        const toolCalls = message.toolCalls;
+        if (!toolCalls?.length) {
+          return message;
+        }
+        const sourceToolCalls = sourceById.get(message.id)?.toolCalls ?? [];
+        const nextToolCalls = await Promise.all(
+          toolCalls.map(async (toolCall) => {
+            const origin = sourceToolCalls.find(
+              (item) => item.interactionId === toolCall.interactionId,
+            );
+            if (!origin) {
+              return toolCall;
+            }
+            const workflow = await resolveWorkflowSnapshot(
+              conversationId,
+              origin,
+            );
+            return workflow ? { ...toolCall, workflow } : toolCall;
+          }),
+        );
+        return { ...message, toolCalls: nextToolCalls };
+      }),
+    );
   };
 
   useEffect(() => {
@@ -786,6 +969,44 @@ export const RemoteControlBridge = ({
           conversationId,
         );
         todosCacheRef.current = null;
+        return { ok: true };
+      },
+      /**
+       * 执行挂起的 WorkFlow：与桌面卡片「执行」按钮共用同一渲染进程执行器
+       * （含断点续跑：已完成节点自动跳过），任务在后台运行并立即返回，移动端
+       * 通过 /api/state 的 workflow 快照轮询进度；完成后按卡片同一载荷结算
+       * 挂起的工具调用（模型侧可见执行汇总）。
+       */
+      runWorkflow: async (flowId: string): Promise<{ ok: true }> => {
+        const current = stateRef.current;
+        const conversationId = current.conversation.activeConversationId ?? "";
+        if (!conversationId) {
+          throw new Error("当前没有进行中的会话，暂时无法执行工作流");
+        }
+        await runRemoteWorkflow(
+          workflowRemoteContext(current, conversationId),
+          flowId,
+        );
+        return { ok: true };
+      },
+      /**
+       * 提交对流程的修改意见：结算挂起的 workflow-generate（模型据此重新
+       * 设计流程），与桌面卡片反馈入口同语义。
+       */
+      replyWorkflow: async (
+        flowId: string,
+        message: string,
+      ): Promise<{ ok: true }> => {
+        const current = stateRef.current;
+        const conversationId = current.conversation.activeConversationId ?? "";
+        if (!conversationId) {
+          throw new Error("当前没有进行中的会话，暂时无法提交反馈");
+        }
+        await replyRemoteWorkflow(
+          workflowRemoteContext(current, conversationId),
+          flowId,
+          message,
+        );
         return { ok: true };
       },
       getPermissions: async () => {
@@ -1061,7 +1282,7 @@ export const RemoteControlBridge = ({
         const activeConversationId =
           current.conversation.activeConversationId ?? null;
         const now = Date.now();
-        let conversations = conversationCacheRef.current.conversations;
+        const conversations = conversationCacheRef.current.conversations;
         if (conversationCacheRef.current.expiresAt <= now) {
           // The current conversation must reach the phone immediately. A slow
           // workspace/database listing is secondary data for the thread picker
@@ -1101,10 +1322,34 @@ export const RemoteControlBridge = ({
             conversationCacheRef.current.expiresAt = Date.now() + 1_000;
           });
         }
+        if (
+          conversations.length > 0 &&
+          conversationChildrenRef.current.expiresAt <= now
+        ) {
+          // 子树（Workflow 节点会话 / 子代理会话）独立刷新：节点或子代理会在
+          // 主列表不变的前提下创建并更新状态。列表为空（首轮尚未抓到会话）
+          // 时不写 TTL，避免把首次查询推迟到下一个时间窗。
+          conversationChildrenRef.current.expiresAt =
+            now + CONVERSATION_CHILDREN_TTL_MS;
+          void fetchConversationChildren(conversations)
+            .then((byParent) => {
+              conversationChildrenRef.current = {
+                expiresAt: Date.now() + CONVERSATION_CHILDREN_TTL_MS,
+                byParent,
+              };
+            })
+            .catch(() => {
+              // 查询失败：保留上一轮子树，缩短重试间隔
+              conversationChildrenRef.current.expiresAt = Date.now() + 1_000;
+            });
+        }
 
-        const remoteMessages = current.conversation.messages
-          .slice(-MAX_MESSAGES)
-          .map(toRemoteMessage);
+        const conversationMessages = current.conversation.messages;
+        const remoteMessages = await attachWorkflowSnapshots(
+          conversationMessages,
+          conversationMessages.slice(-MAX_MESSAGES).map(toRemoteMessage),
+          activeConversationId,
+        );
         const pendingAuthorizations =
           current.conversation.pendingToolAuthorizations
             .filter(
@@ -1132,6 +1377,8 @@ export const RemoteControlBridge = ({
         // 展示用快照：桌面停留在设置页（输入区已卸载）时仍提供模型 /
         // Profile / 思考强度，手机端不因桌面视图切换而退化显示。
         const chatInputPublication = resolveChatInputForDisplay();
+        // 运行态集合每轮只构建一次，供全部列表条目（含树形子层）复用。
+        const runtimeSets = conversationRuntimeSets();
 
         return {
           workspace: directory
@@ -1164,7 +1411,14 @@ export const RemoteControlBridge = ({
             current.conversation.activeSessionKeyRef.current ?? null,
           pendingAuthorizations,
           pendingQuestions,
-          conversations,
+          // 会话列表：静态字段来自缓存，运行态与树形子层在每次响应实时挂载。
+          conversations: conversations.map((item) =>
+            withConversationRuntime(
+              item,
+              runtimeSets,
+              conversationChildrenRef.current.byParent,
+            ),
+          ),
           conversationTotals: conversationCacheRef.current.totals,
           // 无活动会话（如 /clear 后的新建会话视图）没有更早记录；
           // 会话状态尚未建立（undefined）时不下结论，移动端默认隐藏入口、
@@ -1224,10 +1478,15 @@ export const RemoteControlBridge = ({
         }
         // 与桌面端历史回放共用同一转换：tool 结果按 name#callId 关联回
         // assistant 消息的 toolCalls；role=tool 的原始记录不再单独推送。
+        const sourceMessages = buildConversationMessages(page.items);
         return {
           conversationId,
           hasMore: page.hasMore,
-          items: buildConversationMessages(page.items).map(toRemoteMessage),
+          items: await attachWorkflowSnapshots(
+            sourceMessages,
+            sourceMessages.map(toRemoteMessage),
+            conversationId,
+          ),
         };
       },
 
@@ -1244,11 +1503,20 @@ export const RemoteControlBridge = ({
           limit,
           offset,
         );
+        const items = page.items.map((item) =>
+          toRemoteConversation(item, workspace.name),
+        );
+        // 翻页是用户操作：子树现取（不写 5 秒缓存，实时性优先），
+        // 失败时降级为无子树，不阻断列表本身。
+        const children = await fetchConversationChildren(items).catch(
+          (): RemoteConversationChildren => ({}),
+        );
+        const runtimeSets = conversationRuntimeSets();
         return {
           directoryId,
           total: page.total,
-          items: page.items.map((item) =>
-            toRemoteConversation(item, workspace.name),
+          items: items.map((item) =>
+            withConversationRuntime(item, runtimeSets, children),
           ),
         };
       },

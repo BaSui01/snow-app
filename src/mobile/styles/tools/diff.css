@@ -1,0 +1,190 @@
+/*
+ * 行级 diff 视图（.tc-diff）：tools/diffView.ts 的 DOM 契约，勿单独改动一侧。
+ *
+ *   div.tc-diff
+ *     div.tc-diff-head > span.tc-diff-icon + span.tc-diff-name + span.tc-badge.tc-diff-stats
+ *     div.tc-diff-note[.tc-diff-warn]
+ *     div.tc-diff-body
+ *       div.tc-diff-line.add|del|ctx
+ *         > span.tc-diff-no（旧）+ span.tc-diff-no（新）+ span.tc-diff-sign + span.tc-diff-code
+ *       button.tc-diff-fold > span.tc-diff-fold-icon + span.tc-diff-fold-label
+ *
+ * 行号列宽由 diffView.ts 写入的 --tc-diff-old-digits / --tc-diff-new-digits（位数）
+ * 换算，保证各行行号右对齐、互不挤压符号列。
+ */
+.tc-diff {
+  display: grid;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  /* 略深于卡片正文底色（--tc-body #111216）；浅色主题单独覆盖。 */
+  background: rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+/* ── 头部：文件名 + 增删统计 ───────────────────────────────────────────── */
+.tc-diff-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+}
+.tc-diff-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--dim);
+}
+.tc-diff-icon > .icn {
+  width: 12px;
+  height: 12px;
+}
+.tc-diff-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: #c3c9d3;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tc-diff-stats {
+  flex: none;
+}
+
+/* ── 提示行（降级 / 无差异 / 截断） ────────────────────────────────────── */
+.tc-diff-note {
+  padding: 3px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--dim);
+  font-size: 10px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.tc-diff-warn {
+  color: var(--amber);
+}
+
+/* ── 行区 ─────────────────────────────────────────────────────────────── */
+.tc-diff-body {
+  min-width: 0;
+  font:
+    11px/1.6 "SFMono-Regular",
+    Consolas,
+    monospace;
+  tab-size: 4;
+}
+/*
+ * 超长行选择「换行」而非横向滚动：行内横向滚动在触摸端与页面纵向滚动打架，
+ * 且 diff 里的长行多为被截断的代码，换行比左右拖拽更好读。
+ */
+.tc-diff-line {
+  display: grid;
+  grid-template-columns:
+    calc(var(--tc-diff-old-digits, 3) * 1ch + 6px)
+    calc(var(--tc-diff-new-digits, 3) * 1ch + 6px)
+    1.4ch
+    minmax(0, 1fr);
+  padding: 0 8px;
+}
+.tc-diff-no {
+  color: var(--dim);
+  text-align: right;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.tc-diff-sign {
+  color: var(--dim);
+  text-align: center;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.tc-diff-code {
+  min-width: 0;
+  color: #aeb4bf;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tc-diff-line.add {
+  background: rgba(113, 230, 165, 0.1);
+}
+.tc-diff-line.add .tc-diff-sign {
+  color: var(--green);
+}
+.tc-diff-line.add .tc-diff-code {
+  color: #b6f0cd;
+}
+.tc-diff-line.del {
+  background: rgba(255, 114, 123, 0.1);
+}
+.tc-diff-line.del .tc-diff-sign {
+  color: var(--red);
+}
+.tc-diff-line.del .tc-diff-code {
+  color: #ffc2c7;
+}
+.tc-diff-line.ctx .tc-diff-code {
+  color: var(--muted);
+}
+
+/* ── 折叠条（点击展开，交互在 tools/diffView.ts，不走 timeline 的 .tc-more 委托） ── */
+.tc-diff-fold {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 3px 8px;
+  border: 0;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--dim);
+  font-size: 10px;
+  line-height: 1.6;
+  text-align: left;
+  cursor: pointer;
+}
+.tc-diff-fold:hover,
+.tc-diff-fold:active {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--muted);
+}
+.tc-diff-fold-icon {
+  display: inline-flex;
+  flex: none;
+}
+.tc-diff-fold-icon > .icn {
+  width: 11px;
+  height: 11px;
+}
+
+/* ── 浅色主题 ─────────────────────────────────────────────────────────── */
+html[data-theme="light"] .tc-diff {
+  background: #ffffff;
+}
+html[data-theme="light"] .tc-diff-head,
+html[data-theme="light"] .tc-diff-note,
+html[data-theme="light"] .tc-diff-fold {
+  background: rgba(15, 23, 42, 0.045);
+}
+html[data-theme="light"] .tc-diff-name,
+html[data-theme="light"] .tc-diff-code {
+  color: #28364f;
+}
+html[data-theme="light"] .tc-diff-line.add {
+  background: rgba(22, 163, 74, 0.1);
+}
+html[data-theme="light"] .tc-diff-line.add .tc-diff-code {
+  color: #166534;
+}
+html[data-theme="light"] .tc-diff-line.del {
+  background: rgba(220, 38, 38, 0.08);
+}
+html[data-theme="light"] .tc-diff-line.del .tc-diff-code {
+  color: #b91c1c;
+}
+html[data-theme="light"] .tc-diff-fold:hover,
+html[data-theme="light"] .tc-diff-fold:active {
+  background: rgba(15, 23, 42, 0.08);
+}

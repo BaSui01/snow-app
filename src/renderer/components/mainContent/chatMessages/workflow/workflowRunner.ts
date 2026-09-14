@@ -174,6 +174,83 @@ export function parseWorkflowGraph(argsJson: string): WorkflowGraph {
   }
 }
 
+/** 持久化画布 payload 中的节点：只含配置字段与位置。运行态字段
+ *  （runStatus/errorMessage/conversationId/handoffContent）绝不落盘，
+ *  由卡片从 DB 恢复；字段缺省表示 payload 未提供（损坏数据）。
+ *  桌面卡片与远控桥（移动端执行 / 展示）共用同一解析。 */
+export type PersistedCanvasNode = {
+  id: string;
+  name?: string;
+  label?: string;
+  prompt?: string;
+  description?: string;
+  apiProfile?: string;
+  model?: string;
+  position?: { x: number; y: number };
+};
+
+export type PersistedCanvasPayload = {
+  version: number;
+  nodes: PersistedCanvasNode[];
+  edges: { source: string; target: string }[];
+};
+
+/** 防御性解析 DB 画布 payload：JSON 损坏/结构不符都静默返回 null，
+ *  让调用方回退到 args 解析图，绝不能因坏数据崩溃。 */
+export function parseWorkflowCanvasPayload(
+  raw: string,
+): PersistedCanvasPayload | null {
+  try {
+    const parsed = JSON.parse(raw) as PersistedCanvasPayload | null;
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      !Array.isArray(parsed.nodes) ||
+      !Array.isArray(parsed.edges)
+    ) {
+      return null;
+    }
+    const nodes = parsed.nodes
+      .filter(
+        (node): node is PersistedCanvasNode =>
+          Boolean(node) && typeof node.id === "string" && node.id.length > 0,
+      )
+      .map((node) => ({
+        id: node.id,
+        name: typeof node.name === "string" ? node.name : undefined,
+        label: typeof node.label === "string" ? node.label : undefined,
+        prompt: typeof node.prompt === "string" ? node.prompt : undefined,
+        description:
+          typeof node.description === "string" ? node.description : undefined,
+        apiProfile:
+          typeof node.apiProfile === "string" ? node.apiProfile : undefined,
+        model: typeof node.model === "string" ? node.model : undefined,
+        position:
+          node.position &&
+          typeof node.position.x === "number" &&
+          Number.isFinite(node.position.x) &&
+          typeof node.position.y === "number" &&
+          Number.isFinite(node.position.y)
+            ? { x: node.position.x, y: node.position.y }
+            : undefined,
+      }));
+    const edges = parsed.edges
+      .filter(
+        (edge): edge is { source: string; target: string } =>
+          Boolean(edge) &&
+          typeof edge.source === "string" &&
+          edge.source.length > 0 &&
+          typeof edge.target === "string" &&
+          edge.target.length > 0,
+      )
+      .map((edge) => ({ source: edge.source, target: edge.target }));
+    return { version: parsed.version, nodes, edges };
+  } catch {
+    // JSON 损坏：静默回退，调用方保持 args 解析基线。
+    return null;
+  }
+}
+
 /**
  * 阻塞式执行 workflow-generate：注册结算句柄并挂起，直到用户
  * - 确认执行（结算为节点执行汇总），或
@@ -311,6 +388,33 @@ export type WorkflowRunOutcome = {
   /** 失败节点是否可通过 workflow-resume 续跑（失败上下文仍在内存）。 */
   resumable?: boolean;
 };
+
+/**
+ * run 结果 → 工具调用结算载荷（回传给模型的 JSON 字符串）：成功时附节点
+ * 汇总与 token，失败时附失败节点详情与续跑指引（模型据此向用户说明失败点
+ * 并询问是否续跑）。桌面卡片与远控桥（移动端执行）共用，保证同一会话内
+ * 两处触发的执行对模型呈现完全一致。
+ */
+export function buildWorkflowSettlePayload(
+  outcome: WorkflowRunOutcome,
+): string {
+  return JSON.stringify({
+    success: outcome.success,
+    summary: outcome.summary,
+    ...(outcome.totalTokens ? { totalTokens: outcome.totalTokens } : {}),
+    ...(outcome.error ? { error: outcome.error } : {}),
+    // 失败节点详情 + 续跑指引：主流程据此向用户说明失败点，询问
+    // 是否续跑；同意后调用 workflow-resume（flowId + 可选继续提示词）。
+    ...(outcome.failedNode
+      ? {
+          failedNode: outcome.failedNode,
+          resumable: outcome.resumable,
+          resumeInstruction:
+            "The workflow PAUSED on this failed node; later nodes did not run. Tell the user which node failed and why, then ask whether to resume it. If the user agrees, call the workflow-resume tool with flowId from failedNode and an optional continuePrompt (a short instruction for the failed node's agent on how to continue, e.g. the user's fix suggestion). If the user declines, stop and summarize what was completed.",
+        }
+      : {}),
+  });
+}
 
 /** 失败 flow 的续跑上下文：run 失败时登记，workflow-resume 据此原会话续跑。 */
 type FailedFlowEntry = {

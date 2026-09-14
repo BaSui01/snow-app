@@ -451,12 +451,6 @@ fn sniff_image_media_type(bytes: &[u8]) -> Option<&'static str> {
     None
 }
 
-/// 校验字节确为受支持的真实图片（按内容嗅探，声明的 media_type 仅作
-/// 参考）；非图片数据不应以 image_url 形式发给视觉模型。
-fn is_supported_image_bytes(bytes: &[u8], _media_type: &str) -> bool {
-    sniff_image_media_type(bytes).is_some()
-}
-
 /// If the image tag value refers to an SVG (either inline data URL or file path),
 /// decode/read it and return the raw SVG source text. Returns None for non-SVG.
 fn try_extract_svg_source(value: &str, database_path: &Path) -> Option<String> {

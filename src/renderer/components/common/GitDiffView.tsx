@@ -4,9 +4,14 @@ import { DiffFile, generateDiffFile } from "@git-diff-view/file";
 
 import "@git-diff-view/react/styles/diff-view.css";
 
+import { useI18n } from "../../i18n";
+
 // 从独立模块导入（仅依赖 "diff" 库），并重新导出保持现有导入路径兼容。
 import { generateComparePatch } from "../../utils/generateComparePatch";
-export { generateComparePatch, getCompareDiffStats } from "../../utils/generateComparePatch";
+export {
+  generateComparePatch,
+  getCompareDiffStats,
+} from "../../utils/generateComparePatch";
 
 type DiffTheme = "light" | "dark";
 
@@ -49,7 +54,7 @@ const useAutoDiffMode = (): {
     const observer = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width ?? 0;
       setMode(
-        width >= SPLIT_MIN_WIDTH ? DiffModeEnum.Split : DiffModeEnum.Unified
+        width >= SPLIT_MIN_WIDTH ? DiffModeEnum.Split : DiffModeEnum.Unified,
       );
     });
     observer.observe(element);
@@ -100,6 +105,18 @@ export const GitDiffView = ({
 }: GitDiffViewProps): React.JSX.Element => {
   const theme = useDiffViewTheme();
   const { containerRef, mode } = useAutoDiffMode();
+  const { t } = useI18n();
+
+  /**
+   * patch 非空但不含 hunk 头（行首 `@@ `）时，@git-diff-view 会解析出
+   * 0 行并静默渲染成空白。git 报错消息、被 ANSI 色码污染的文本、仅有
+   * mode/rename 变更的 patch 都会命中这种情况，这里提前拦截并显示
+   * 可辨识的提示，而不是留白。
+   */
+  const patchMissingHunks = useMemo(
+    () => (patch ? !/^@@ /m.test(patch) : false),
+    [patch],
+  );
 
   /**
    * 当提供了 oldStartLine/newStartLine 时,说明 oldContent/newContent 是文件片段而非完整文件。
@@ -124,7 +141,7 @@ export const GitDiffView = ({
       oldStr,
       newStr,
       oldStartLine,
-      newStartLine
+      newStartLine,
     );
     if (!patchText) {
       return null;
@@ -139,7 +156,7 @@ export const GitDiffView = ({
         "",
         [patchText],
         lang,
-        lang
+        lang,
       );
       diffFile.initTheme(theme);
       diffFile.initRaw();
@@ -150,7 +167,15 @@ export const GitDiffView = ({
     } catch {
       return null;
     }
-  }, [patch, fileName, oldContent, newContent, oldStartLine, newStartLine, theme]);
+  }, [
+    patch,
+    fileName,
+    oldContent,
+    newContent,
+    oldStartLine,
+    newStartLine,
+    theme,
+  ]);
 
   const patchData = useMemo(
     () =>
@@ -161,7 +186,7 @@ export const GitDiffView = ({
             hunks: [patch],
           }
         : null,
-    [patch, fileName]
+    [patch, fileName],
   );
 
   const compareDiffFile = useMemo<DiffFile | null>(() => {
@@ -175,7 +200,7 @@ export const GitDiffView = ({
       fileName,
       newContent ?? "",
       lang,
-      lang
+      lang,
     );
     diffFile.initTheme(theme);
     diffFile.init();
@@ -184,11 +209,15 @@ export const GitDiffView = ({
     return diffFile;
   }, [patch, offsetDiffFile, fileName, oldContent, newContent, theme]);
 
-  const renderDiffFile = patchData ? null : offsetDiffFile ?? compareDiffFile;
+  const renderDiffFile = patchData ? null : (offsetDiffFile ?? compareDiffFile);
 
   return (
     <div className="git-diff-view" ref={containerRef}>
-      {patchData ? (
+      {patchMissingHunks ? (
+        <div className="git-diff-view-empty">
+          {t("rightPanel.diffUnavailable")}
+        </div>
+      ) : patchData ? (
         <DiffView
           data={patchData}
           diffViewMode={mode}

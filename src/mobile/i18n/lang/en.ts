@@ -1,6 +1,9 @@
+import { toolsEn } from "./tools";
+
 /** Mobile remote page · English dictionary. Keep keys in sync with zh-CN.ts. */
 export const en: Record<string, string> = {
   // Top bar / connection
+
   "remote.topbar.connecting": "Connecting to Snow…",
   "remote.topbar.secureLan": "Secure local network",
   "remote.topbar.history": "Chat history",
@@ -243,10 +246,6 @@ export const en: Record<string, string> = {
   "remote.message.thinkingActive": "Snow is thinking",
   "remote.message.thinkingDone": "Thought for {{seconds}}s",
   "remote.message.thinkingView": "View reasoning",
-  "remote.message.toolPending": "Waiting",
-  "remote.message.toolRunning": "Running",
-  "remote.message.toolCompleted": "Done",
-  "remote.message.toolError": "Failed",
   "remote.tool.arguments": "Arguments",
   "remote.tool.stdout": "Output",
   "remote.tool.stderr": "Error",
@@ -280,6 +279,18 @@ export const en: Record<string, string> = {
   "remote.threads.loadMore": "Load more",
   "remote.threads.loading": "Loading…",
   "remote.threads.loadMoreFailed": "Failed to load more conversations",
+  "remote.threads.subAgent": "Sub-agent",
+  "remote.threads.workflowNode": "Workflow node",
+  "remote.threads.workflowSession": "Workflow session",
+  "remote.threads.forkedSession": "Forked chat",
+  "remote.threads.hasSubAgents": "Has sub-agents",
+  "remote.threads.statusAttention": "Needs action",
+  "remote.threads.statusStreaming": "Running",
+  "remote.threads.statusPaused": "Paused",
+  "remote.threads.statusCompleted": "Completed",
+  "remote.threads.statusFailed": "Failed",
+  "remote.threads.expandChildren": "Expand child sessions",
+  "remote.threads.collapseChildren": "Collapse child sessions",
 
   // Relative time
   "remote.time.justNow": "Just now",
@@ -319,6 +330,45 @@ export const en: Record<string, string> = {
   "remote.lightbox.close": "Close image preview",
   "remote.lightbox.alt": "Image preview",
 
+  // WorkFlow card (workflow-generate / workflow-resume tool calls)
+  "remote.workflow.title": "WorkFlow",
+  "remote.workflow.status.idle": "Ready",
+  "remote.workflow.status.running": "Running",
+  "remote.workflow.status.completed": "Completed",
+  "remote.workflow.status.failed": "Paused",
+  "remote.workflow.status.replied": "Feedback sent",
+  "remote.workflow.dependsOn": "After: {{names}}",
+  "remote.workflow.execute": "Execute",
+  "remote.workflow.resume": "Resume",
+  "remote.workflow.idleHint":
+    "Execute when ready, or send feedback and Snow will redesign the flow",
+  "remote.workflow.runningHint":
+    "Workflow is running — node progress updates live",
+  "remote.workflow.completedHint": "Workflow completed",
+  "remote.workflow.failedHint": "Workflow paused on the failed node: {{name}}",
+  "remote.workflow.failedHintFallback": "Workflow paused on a failed node",
+  "remote.workflow.resumeHint":
+    "Unfinished progress found — resume to skip completed nodes, or ask Snow in the chat to continue the failed node",
+  "remote.workflow.resumeReadonly": "Resumed node status (read-only)",
+  "remote.workflow.settledHint": "This flow is settled — ask Snow to redesign",
+  "remote.workflow.repliedHint":
+    "Feedback submitted — Snow will redesign the flow",
+  "remote.workflow.replyLabel": "Not satisfied? Describe your changes:",
+  "remote.workflow.replyPlaceholder":
+    "e.g. split step 2 into two steps and add tests",
+  "remote.workflow.replySubmit": "Send feedback",
+  "remote.workflow.repliedFeedback": "Submitted feedback",
+  "remote.workflow.empty": "No runnable nodes yet",
+  "remote.workflow.canvasHint":
+    "Drag to pan · pinch to zoom · tap a node to open its chat",
+  "remote.workflow.fitView": "Fit view",
+  "remote.workflow.nodeOpen": "Open node chat",
+  "remote.workflow.started": "Workflow started",
+  "remote.workflow.replied": "Feedback submitted",
+
   // Pairing
   "remote.pair.invalidCode": "Invalid pairing code format",
+
+  // 工具卡片词典（i18n/lang/tools/* 聚合，键前缀 remote.toolCall.*）
+  ...toolsEn,
 };

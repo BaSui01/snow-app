@@ -94,6 +94,7 @@ pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<(
     migrate_project_collections(connection)?;
     migrate_workflow_node_sessions_flow_checkpoint_id(connection)?;
     migrate_project_memories_response_id(connection)?;
+    migrate_workspace_directory_path_health(connection)?;
     Ok(())
 }
 
@@ -1051,5 +1052,38 @@ fn migrate_project_memories_response_id(connection: &Connection) -> rusqlite::Re
             [],
         )?;
     }
+    Ok(())
+}
+
+fn migrate_workspace_directory_path_health(connection: &Connection) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA table_info(workspace_directories)")?;
+    let columns: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    let additions: [(&str, &str); 4] = [
+        ("fs_identity", "TEXT NOT NULL DEFAULT ''"),
+        ("path_state", "TEXT NOT NULL DEFAULT 'unknown'"),
+        ("path_checked_at", "TEXT"),
+        ("last_known_path", "TEXT NOT NULL DEFAULT ''"),
+    ];
+
+    for (column, definition) in additions {
+        if !columns.iter().any(|existing| existing == column) {
+            connection.execute(
+                &format!("ALTER TABLE workspace_directories ADD COLUMN {column} {definition}"),
+                [],
+            )?;
+        }
+    }
+
+    connection.execute(
+        "UPDATE workspace_directories
+            SET last_known_path = path
+          WHERE last_known_path = ''
+            AND path <> ''",
+        [],
+    )?;
+
     Ok(())
 }

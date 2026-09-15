@@ -1,4 +1,12 @@
-import { Folder, FolderOpen, GripVertical, Server } from "lucide-react";
+import {
+  Folder,
+  FolderOpen,
+  FolderX,
+  GripVertical,
+  HardDriveDownload,
+  Server,
+  ShieldAlert,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { DragEvent } from "react";
 
@@ -39,6 +47,8 @@ type WorkspaceDirectoryRowProps = {
   onDrop: (directoryId: string, dataTransfer: DataTransfer) => void;
   onRenameStart?: (directory: WorkspaceDirectoryRecord) => void;
   onShowDetails?: (directoryId: string) => void;
+  /** 查看该项目的迁移记录（含撤销入口） */
+  onShowRelinkHistory?: (directoryId: string) => void;
 };
 
 const getDirectoryIcon = (
@@ -55,6 +65,13 @@ const getDirectoryIcon = (
 
   return <Folder className="list-icon list-icon--local" size={15} />;
 };
+
+const FAILED_PATH_STATES = [
+  "missing",
+  "mismatch",
+  "offline",
+  "permission_error",
+];
 
 /**
  * 单条目录行：按钮菜单与右键菜单状态都在本组件内独立管理
@@ -88,6 +105,7 @@ export function WorkspaceDirectoryRow({
   onDrop,
   onRenameStart,
   onShowDetails,
+  onShowRelinkHistory,
 }: WorkspaceDirectoryRowProps): React.JSX.Element {
   const { t } = useI18n();
   // 三点按钮菜单是否打开（用于行高亮样式）
@@ -109,6 +127,36 @@ export function WorkspaceDirectoryRow({
   const isDragging = draggedDirectoryId === directory.directoryId;
   const isDragOver = dragOverDirectoryId === directory.directoryId;
   const isActive = directory.directoryId === activeDirectoryId;
+
+  // 路径健康徽标：仅在磁盘校验失败的状态下展示，点击行即可触发重新定位。
+  const hasFailedPath =
+    directory.kind !== "ssh" &&
+    FAILED_PATH_STATES.includes(directory.pathState);
+  const pathStateBadge = !hasFailedPath
+    ? null
+    : directory.pathState === "offline"
+      ? {
+          className: "offline",
+          icon: <HardDriveDownload size={11} />,
+          label: t("sidebar.directoryPathOffline", {
+            defaultValue: "Disk not mounted",
+          }),
+        }
+      : directory.pathState === "permission_error"
+        ? {
+            className: "permission",
+            icon: <ShieldAlert size={11} />,
+            label: t("sidebar.directoryPathPermission", {
+              defaultValue: "Permission denied",
+            }),
+          }
+        : {
+            className: "missing",
+            icon: <FolderX size={11} />,
+            label: t("sidebar.directoryPathMissing", {
+              defaultValue: "Location not found",
+            }),
+          };
 
   const handleDragStart = (
     event: DragEvent<HTMLDivElement>,
@@ -235,6 +283,16 @@ export function WorkspaceDirectoryRow({
                   defaultValue: "Local",
                 })}
           </span>
+          {pathStateBadge ? (
+            <span
+              className={`workspace-directory-path-badge ${pathStateBadge.className}`}
+              title={`${pathStateBadge.label}${
+                directory.lastKnownPath ? ` · ${directory.lastKnownPath}` : ""
+              }`}
+            >
+              {pathStateBadge.icon}
+            </span>
+          ) : null}
           {notificationCount ? (
             <span
               className="workspace-directory-notification-badge"
@@ -270,6 +328,11 @@ export function WorkspaceDirectoryRow({
         onRename={onRenameStart ? () => onRenameStart(directory) : undefined}
         onShowDetails={
           onShowDetails ? () => onShowDetails(directory.directoryId) : undefined
+        }
+        onShowRelinkHistory={
+          onShowRelinkHistory
+            ? () => onShowRelinkHistory(directory.directoryId)
+            : undefined
         }
       />
       {!isEditing && isDragOver && dropIndicatorSide ? (

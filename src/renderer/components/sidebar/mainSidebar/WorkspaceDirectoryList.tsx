@@ -50,6 +50,8 @@ type WorkspaceDirectoryListProps = {
   onRename?: (directoryId: string, newName: string) => void | Promise<void>;
   onRenameCollection: (collection: ProjectCollectionRecord) => void;
   onShowDetails?: (directoryId: string) => void;
+  /** 查看该项目的迁移记录（含撤销入口） */
+  onShowRelinkHistory?: (directoryId: string) => void;
   onToggleCollection: (collectionId: string) => void;
   totalCount: number;
   visibleDirectories: WorkspaceDirectoryRecord[];
@@ -85,6 +87,7 @@ export function WorkspaceDirectoryList({
   onRename,
   onRenameCollection,
   onShowDetails,
+  onShowRelinkHistory,
   onToggleCollection,
   totalCount,
   visibleDirectories,
@@ -331,6 +334,7 @@ export function WorkspaceDirectoryList({
             onRenameCancel={handleRenameCancel}
             onRenameSubmit={handleRenameSubmit}
             onShowDetails={onShowDetails}
+            onShowRelinkHistory={onShowRelinkHistory}
             showIndex={false}
             totalCount={0}
           />
@@ -481,6 +485,7 @@ export function WorkspaceDirectoryList({
               onRenameStart={handleRenameStart}
               onRenameSubmit={handleRenameSubmit}
               onShowDetails={onShowDetails}
+              onShowRelinkHistory={onShowRelinkHistory}
               totalCount={totalCount}
             />
           ))}

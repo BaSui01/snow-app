@@ -28,6 +28,8 @@ import type {
 } from "../../../../preload";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
 import { FormDialog } from "../../common/FormDialog";
+import { RelinkDirectoryDialog } from "./RelinkDirectoryDialog";
+import { RelinkHistoryDialog } from "./RelinkHistoryDialog";
 import { SidebarCollapse } from "./SidebarCollapse";
 import { WorkspaceDirectoryList } from "./WorkspaceDirectoryList";
 import type { CrossProjectNotificationGroup } from "./useCrossProjectNotifications";
@@ -100,6 +102,32 @@ const toPersistableDirectoryInput = (
   source: directory.source,
 });
 
+const RELINKABLE_PATH_STATES = new Set([
+  "missing",
+  "mismatch",
+  "permission_error",
+]);
+
+// 可重新定位的失效状态：磁盘未挂载（offline）不算，避免外置盘未插时误导用户迁移
+const isRelinkablePath = (
+  directory: WorkspaceDirectoryRecord | null | undefined,
+): boolean =>
+  Boolean(
+    directory &&
+    directory.kind !== "ssh" &&
+    RELINKABLE_PATH_STATES.has(directory.pathState),
+  );
+
+const isOfflinePath = (
+  directory: WorkspaceDirectoryRecord | null | undefined,
+): boolean =>
+  Boolean(
+    directory && directory.kind !== "ssh" && directory.pathState === "offline",
+  );
+
+const parseUnavailableState = (message: string): string =>
+  message.split("WORKSPACE_DIRECTORY_UNAVAILABLE:")[1]?.split(":")[0] ?? "";
+
 /**
  * 按 git 的默认命名规则从仓库地址推导项目目录名：去掉末尾 `.git`
  * 后缀与斜杠后取最后一段，与 Rust 端 clone_git_repository 的命名
@@ -143,6 +171,12 @@ export function ProjectsSection({
   const [addDirectoryMode, setAddDirectoryMode] =
     useState<AddDirectoryMode>("");
   const [directoryError, setDirectoryError] = useState<string | null>(null);
+  // 路径已失效的项目：打开重新定位对话框
+  const [relinkTarget, setRelinkTarget] =
+    useState<WorkspaceDirectoryRecord | null>(null);
+  // 查看迁移记录的项目
+  const [historyTarget, setHistoryTarget] =
+    useState<WorkspaceDirectoryRecord | null>(null);
   const [directoryPage, setDirectoryPage] = useState(1);
   const [draggedDirectoryId, setDraggedDirectoryId] = useState<string | null>(
     null,
@@ -734,10 +768,100 @@ export function ProjectsSection({
     }
   };
 
+  // 位置是否真的不可用由一次定点校验决定：位置已恢复时不再显示任何提示。
+  // 返回 true 表示已拦截（弹对话框或给出提示），false 表示位置正常、可继续激活。
+  const handleUnavailableDirectory = useCallback(
+    async (directory: WorkspaceDirectoryRecord): Promise<boolean> => {
+      try {
+        const report = await window.snow.verifyWorkspaceDirectory(
+          directory.directoryId,
+        );
+
+        if (report.state === "ok" || report.state === "remote") {
+          await loadWorkspaceDirectories();
+          return false;
+        }
+
+        if (report.state === "offline") {
+          setDirectoryError(
+            t("sidebar.directoryPathOfflineMessage", {
+              defaultValue:
+                "This project is unavailable because its disk is not mounted: {{path}}",
+              values: { path: report.path || directory.path },
+            }),
+          );
+          await loadWorkspaceDirectories();
+          return true;
+        }
+
+        setDirectoryError(null);
+        setRelinkTarget({
+          ...directory,
+          path: report.path || directory.path,
+          lastKnownPath: report.lastKnownPath,
+          pathState: report.state,
+        });
+        await loadWorkspaceDirectories();
+        return true;
+      } catch (error) {
+        setDirectoryError(
+          error instanceof Error
+            ? error.message
+            : t("sidebar.relinkDirectoryOpenError", {
+                defaultValue: "Failed to check the project's location",
+              }),
+        );
+        return true;
+      }
+    },
+    [loadWorkspaceDirectories, t],
+  );
+
+  const handleRelinked = useCallback((): void => {
+    setRelinkTarget(null);
+    setDirectoryError(null);
+    void loadWorkspaceDirectories();
+    void loadProjectCollections();
+  }, [loadProjectCollections, loadWorkspaceDirectories]);
+
+  const handleShowRelinkHistory = useCallback(
+    (directoryId: string): void => {
+      const target = workspaceDirectories.find(
+        (directory) => directory.directoryId === directoryId,
+      );
+      if (!target) {
+        return;
+      }
+      setDirectoryError(null);
+      setHistoryTarget(target);
+    },
+    [workspaceDirectories],
+  );
+
+  const handleRelinkUndone = useCallback((): void => {
+    void loadWorkspaceDirectories();
+    void loadProjectCollections();
+  }, [loadProjectCollections, loadWorkspaceDirectories]);
+
   const handleActivateDirectory = async (
     directoryId: string,
   ): Promise<void> => {
-    if (!directoryId || directoryId === activeDirectory?.directoryId) {
+    if (!directoryId) {
+      return;
+    }
+
+    if (directoryId === activeDirectory?.directoryId) {
+      if (isRelinkablePath(activeDirectory)) {
+        void handleUnavailableDirectory(activeDirectory);
+      } else if (isOfflinePath(activeDirectory)) {
+        setDirectoryError(
+          t("sidebar.directoryPathOfflineMessage", {
+            defaultValue:
+              "This project is unavailable because its disk is not mounted: {{path}}",
+            values: { path: activeDirectory?.path ?? "" },
+          }),
+        );
+      }
       return;
     }
 
@@ -745,17 +869,51 @@ export function ProjectsSection({
     setDirectoryError(null);
 
     try {
+      const target = workspaceDirectories.find(
+        (directory) => directory.directoryId === directoryId,
+      );
+
+      // 缓存标记为失效时先定点校验：位置已恢复则照常激活，避免过期提示与无效拦截
+      if (target && (isRelinkablePath(target) || isOfflinePath(target))) {
+        const isBlocked = await handleUnavailableDirectory(target);
+        if (isBlocked) {
+          return;
+        }
+      }
+
       const directories =
         await window.snow.activateWorkspaceDirectory(directoryId);
       setWorkspaceDirectories(directories);
     } catch (error) {
-      setDirectoryError(
-        error instanceof Error
-          ? error.message
-          : t("sidebar.activateDirectoryError", {
+      // 兜底：缓存状态过期（如目录在应用外被删除）时由主进程拦截并给出同样提示
+      const message = error instanceof Error ? error.message : "";
+      const unavailableState = parseUnavailableState(message);
+      if (unavailableState === "offline") {
+        setDirectoryError(
+          t("sidebar.directoryPathOfflineMessage", {
+            defaultValue:
+              "This project is unavailable because its disk is not mounted: {{path}}",
+            values: { path: directoryId },
+          }),
+        );
+        void loadWorkspaceDirectories();
+      } else if (unavailableState) {
+        const target = workspaceDirectories.find(
+          (directory) => directory.directoryId === directoryId,
+        );
+        if (target) {
+          void handleUnavailableDirectory(target);
+        } else {
+          void loadWorkspaceDirectories();
+        }
+      } else {
+        setDirectoryError(
+          message ||
+            t("sidebar.activateDirectoryError", {
               defaultValue: "Failed to activate workspace directory",
             }),
-      );
+        );
+      }
     } finally {
       updateSwitchingDirectory(false);
     }
@@ -1816,6 +1974,18 @@ export function ProjectsSection({
         ) : null}
       </FormDialog>
 
+      <RelinkDirectoryDialog
+        directory={relinkTarget}
+        onCancel={() => setRelinkTarget(null)}
+        onRelinked={handleRelinked}
+      />
+
+      <RelinkHistoryDialog
+        directory={historyTarget}
+        onCancel={() => setHistoryTarget(null)}
+        onUndone={handleRelinkUndone}
+      />
+
       <SidebarCollapse open={!isProjectsCollapsed}>
         <div className="workspace-directory-card">
           <span className="workspace-directory-label">
@@ -1862,6 +2032,7 @@ export function ProjectsSection({
             onRename={handleRenameDirectory}
             onRenameCollection={handleRenameCollectionOpen}
             onShowDetails={handleShowDetails}
+            onShowRelinkHistory={handleShowRelinkHistory}
             onToggleCollection={handleToggleCollectionExpanded}
             totalCount={topLevelDirectories.length}
             visibleDirectories={visibleDirectories}

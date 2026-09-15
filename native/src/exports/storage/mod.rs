@@ -29,6 +29,7 @@ pub(crate) use crate::storage::{
     SubAgentConfigInput, SubAgentConfigRecord, SystemPromptItemInput, SystemPromptItemRecord,
 UserMessageSummary, UserscriptRecord, UserscriptValue,
     WorkflowCanvasRecord, WorkflowNodeSessionRecord, WorkflowRunRecord, WorkspaceDirectoryInput, WorkspaceDirectoryRecord,
+    WorkspaceDirectoryVerifyReport, WorkspaceRelinkRecord, WorkspaceRelinkReport,
 };
 
 mod agents;

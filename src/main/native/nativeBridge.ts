@@ -293,6 +293,30 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to delete workspace directories",
           ),
         ),
+      verifyWorkspaceDirectory: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to verify workspace directories",
+          ),
+        ),
+      relinkWorkspaceDirectory: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to relink workspace directories",
+          ),
+        ),
+      undoWorkspaceDirectoryRelink: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to undo workspace directory relinks",
+          ),
+        ),
+      listWorkspaceDirectoryRelinks: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to list workspace directory relinks",
+          ),
+        ),
       listProjectCollections: () =>
         Promise.reject(
           new Error(

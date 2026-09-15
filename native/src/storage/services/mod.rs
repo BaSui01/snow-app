@@ -46,4 +46,6 @@ pub mod team;
 pub mod theme_settings;
 pub mod usage_records;
 pub mod workspace_directories;
+pub mod workspace_directory_health;
+pub mod workspace_relink;
 pub mod yolo_settings;

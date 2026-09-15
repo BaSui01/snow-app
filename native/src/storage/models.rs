@@ -166,7 +166,53 @@ pub struct WorkspaceDirectoryRecord {
     pub is_active: bool,
     pub sort_order: i32,
     pub source: String,
+    pub path_state: String,
+    pub last_known_path: String,
     pub updated_at: String,
+}
+
+#[napi(object)]
+pub struct WorkspaceDirectoryVerifyReport {
+    pub directory_id: String,
+    pub path: String,
+    pub kind: String,
+    pub state: String,
+    pub last_known_path: String,
+}
+
+#[napi(object)]
+pub struct WorkspaceRelinkRecord {
+    pub relink_id: String,
+    pub old_directory_id: String,
+    pub new_directory_id: String,
+    pub old_path: String,
+    pub new_path: String,
+    pub moved_by: String,
+    pub created_at: String,
+    pub undone_at: Option<String>,
+}
+
+#[napi(object)]
+pub struct WorkspaceRelinkReport {
+    pub relink_id: String,
+    pub old_directory_id: String,
+    pub new_directory_id: String,
+    pub old_path: String,
+    pub new_path: String,
+    pub dry_run: bool,
+    pub merged: bool,
+    pub conversations: i32,
+    pub archived_conversations: i32,
+    pub memories: i32,
+    pub memos: i32,
+    pub scheduled_tasks: i32,
+    pub collections_touched: i32,
+    pub settings_keys_moved: i32,
+    pub paths_rewritten: i32,
+    pub checkpoints_rewritten: i32,
+    pub codebase_reindex_required: bool,
+    pub archive_updated: bool,
+    pub notes: Vec<String>,
 }
 
 #[napi(object)]

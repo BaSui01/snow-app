@@ -5,6 +5,9 @@ use rusqlite::params;
 
 use super::super::database;
 
+/// 项目向量表名前缀：每个项目一张 `cb_vec_<short_hash>` 表。
+pub const VECTOR_TABLE_PREFIX: &str = "cb_vec_";
+
 /// Sanitize a project id into a safe SQLite table name suffix.
 /// Each project gets its own vector table: `cb_vec_<short_hash>`.
 ///
@@ -13,7 +16,7 @@ use super::super::database;
 /// counts encountered in practice.
 pub fn vector_table_name(project_id: &str) -> String {
     let hash = blake3::hash(project_id.as_bytes()).to_hex();
-    format!("cb_vec_{}", &hash[..16])
+    format!("{VECTOR_TABLE_PREFIX}{}", &hash[..16])
 }
 
 /// Ensure the vector table for the given project exists. Each project gets

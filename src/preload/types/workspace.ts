@@ -13,6 +13,67 @@ export type WorkspaceDirectoryInput = {
 export type WorkspaceDirectoryRecord = WorkspaceDirectoryInput & {
   id: string;
   updatedAt: string;
+  /** 最近一次校验得到的路径状态；unknown 表示尚未校验过。 */
+  pathState: string;
+  /** 最近一次确认存在时的绝对路径（路径失效后用于提示与重新定位）。 */
+  lastKnownPath: string;
+};
+
+/** 目录路径健康状态：ok/remote 可用，其余表示路径已不可达。 */
+export type WorkspaceDirectoryPathState =
+  | "unknown"
+  | "ok"
+  | "missing"
+  | "mismatch"
+  | "offline"
+  | "permission_error"
+  | "remote";
+
+export type WorkspaceDirectoryVerifyReport = {
+  directoryId: string;
+  path: string;
+  kind: string;
+  state: WorkspaceDirectoryPathState | string;
+  lastKnownPath: string;
+};
+
+/** 项目位置迁移记录：用于查看历史并撤销。 */
+export type WorkspaceRelinkRecord = {
+  relinkId: string;
+  oldDirectoryId: string;
+  newDirectoryId: string;
+  oldPath: string;
+  newPath: string;
+  movedBy: string;
+  createdAt: string;
+  undoneAt?: string | null;
+};
+
+export type WorkspaceRelinkReport = {
+  relinkId: string;
+  oldDirectoryId: string;
+  newDirectoryId: string;
+  oldPath: string;
+  newPath: string;
+  dryRun: boolean;
+  merged: boolean;
+  conversations: number;
+  archivedConversations: number;
+  memories: number;
+  memos: number;
+  scheduledTasks: number;
+  collectionsTouched: number;
+  settingsKeysMoved: number;
+  pathsRewritten: number;
+  checkpointsRewritten: number;
+  codebaseReindexRequired: boolean;
+  archiveUpdated: boolean;
+  notes: string[];
+};
+
+export type WorkspaceRelinkResult = {
+  report: WorkspaceRelinkReport;
+  directories: WorkspaceDirectoryRecord[];
 };
 
 /** 项目合集：收纳项目的纯元数据容器（不对应磁盘目录）。 */

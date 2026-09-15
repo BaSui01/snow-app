@@ -5,6 +5,7 @@ import {
   Ellipsis,
   FileSearch,
   FolderMinus,
+  History,
   Loader2,
   Pencil,
   Trash2,
@@ -34,6 +35,8 @@ type WorkspaceDirectoryMenuProps = {
   onRemoveFromCollection?: () => void;
   onRename?: () => void;
   onShowDetails?: () => void;
+  /** 查看该项目的迁移记录（含撤销入口） */
+  onShowRelinkHistory?: () => void;
   /** 右键菜单锚点（光标位置）：非空时菜单以该点定位并保持打开 */
   contextMenuAnchor?: { x: number; y: number } | null;
   /** 右键菜单关闭回调（父组件用于清空锚点） */
@@ -56,6 +59,7 @@ export function WorkspaceDirectoryMenu({
   onRemoveFromCollection,
   onRename,
   onShowDetails,
+  onShowRelinkHistory,
   contextMenuAnchor = null,
   onContextMenuClose,
 }: WorkspaceDirectoryMenuProps): React.JSX.Element {
@@ -241,6 +245,14 @@ export function WorkspaceDirectoryMenu({
     onActivate?.();
     setIsButtonOpen(false);
     onContextMenuCloseRef.current?.();
+  };
+
+  const handleShowRelinkHistoryClick = (): void => {
+    setIsButtonOpen(false);
+    onContextMenuCloseRef.current?.();
+    setShowConfirm(false);
+    setIsOpenWithOpen(false);
+    onShowRelinkHistory?.();
   };
 
   const handleRenameClick = (): void => {
@@ -505,6 +517,21 @@ export function WorkspaceDirectoryMenu({
                     })}
                   </span>
                 </button>
+                {onShowRelinkHistory ? (
+                  <button
+                    type="button"
+                    className="workspace-directory-menu-item"
+                    onClick={handleShowRelinkHistoryClick}
+                    role="menuitem"
+                  >
+                    <History size={13} />
+                    <span>
+                      {t("sidebar.directoryRelinkHistory", {
+                        defaultValue: "Relocation history",
+                      })}
+                    </span>
+                  </button>
+                ) : null}
                 {onRename ? (
                   <button
                     type="button"

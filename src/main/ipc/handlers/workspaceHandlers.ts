@@ -51,7 +51,18 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
         throw new Error("Workspace directory ID is required");
       }
 
-      await native.activateWorkspaceDirectory(directoryId.trim());
+      const normalizedDirectoryId = directoryId.trim();
+      const report = await native.verifyWorkspaceDirectory(
+        normalizedDirectoryId,
+      );
+
+      if (report.state !== "ok" && report.state !== "remote") {
+        throw new Error(
+          `WORKSPACE_DIRECTORY_UNAVAILABLE:${report.state}:${report.path}`,
+        );
+      }
+
+      await native.activateWorkspaceDirectory(normalizedDirectoryId);
       const directories = await native.listWorkspaceDirectories();
       broadcastDirectoryListChanged();
       return directories;
@@ -112,6 +123,90 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
     }
     return (value as string[]).map((id) => id.trim());
   };
+
+  // ===== Path health / relink（项目位置移动的自动兼容） =====
+  ipcMain.handle(
+    "workspace-directories:verify",
+    (_event, directoryId: unknown) =>
+      native.verifyWorkspaceDirectory(
+        requireText(directoryId, "Workspace directory ID"),
+      ),
+  );
+  ipcMain.handle(
+    "workspace-directories:relink",
+    async (
+      _event,
+      oldDirectoryId: unknown,
+      newPath: unknown,
+      dryRun: unknown,
+    ) => {
+      const normalizedOldId = requireText(
+        oldDirectoryId,
+        "Workspace directory ID",
+      );
+      const normalizedNewPath = requireText(
+        newPath,
+        "Workspace directory path",
+      );
+      const isDryRun = dryRun === true;
+
+      // 迁移前记录旧路径，迁移后按新路径重建目录监听。
+      const previousPath = isDryRun
+        ? ""
+        : ((await native.listWorkspaceDirectories()).find(
+            (directory) => directory.directoryId === normalizedOldId,
+          )?.path ?? "");
+
+      const report = await native.relinkWorkspaceDirectory(
+        normalizedOldId,
+        normalizedNewPath,
+        isDryRun,
+      );
+
+      if (!isDryRun) {
+        if (previousPath) {
+          stopDirectoryWatch(previousPath);
+        }
+        startDirectoryWatch(report.newPath);
+        if (typeof native.stopCodebaseWatch === "function") {
+          native.stopCodebaseWatch(report.oldDirectoryId);
+        }
+      }
+
+      const directories = await native.listWorkspaceDirectories();
+      if (!isDryRun) {
+        broadcastDirectoryListChanged();
+      }
+
+      return { report, directories };
+    },
+  );
+  ipcMain.handle(
+    "workspace-directories:relink-undo",
+    async (_event, relinkId: unknown) => {
+      const report = await native.undoWorkspaceDirectoryRelink(
+        requireText(relinkId, "Relink record ID"),
+      );
+
+      const directories = await native.listWorkspaceDirectories();
+      broadcastDirectoryListChanged();
+      return { report, directories };
+    },
+  );
+  ipcMain.handle(
+    "workspace-directories:relink-history",
+    (_event, directoryId: unknown, limit: unknown) => {
+      const normalizedLimit =
+        typeof limit === "number" && Number.isFinite(limit)
+          ? Math.trunc(limit)
+          : 50;
+
+      return native.listWorkspaceDirectoryRelinks(
+        requireText(directoryId, "Workspace directory ID"),
+        normalizedLimit,
+      );
+    },
+  );
 
   ipcMain.handle("project-collections:list", () =>
     native.listProjectCollections(),

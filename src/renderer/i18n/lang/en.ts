@@ -161,6 +161,37 @@ export const en = {
   "sidebar.openInFileManagerError": "Failed to open in file manager",
   "sidebar.openInIdeError": "Failed to open project in IDE",
   "sidebar.directoryKindLocal": "Local",
+  "sidebar.directoryPathMissing": "Location not found",
+  "sidebar.directoryPathOffline": "Disk not mounted",
+  "sidebar.directoryPathOfflineMessage":
+    "This project is unavailable because its disk is not mounted: {{path}}",
+  "sidebar.directoryPathPermission": "Permission denied",
+  "sidebar.relinkDirectoryTitle": "Relink project location",
+  "sidebar.relinkDirectoryDescription":
+    "This project folder is no longer at its recorded location. Pick its current folder to move the project's history (conversations, memory, tasks and project settings) to the new location.",
+  "sidebar.relinkDirectoryRecordedPath": "Recorded location: {{path}}",
+  "sidebar.relinkDirectoryLastKnownPath": "Last known location: {{path}}",
+  "sidebar.relinkDirectoryOpenError": "Failed to check the project's location",
+  "sidebar.relinkDirectoryScanning":
+    "Checking the project's recorded location…",
+  "sidebar.relinkDirectoryTargetLabel": "Current location",
+  "sidebar.relinkDirectorySelectTitle": "Select the project's current location",
+  "sidebar.relinkDirectoryPreview":
+    "Will move {{conversations}} conversation(s), {{memories}} memory entries, {{memos}} memo(s) and {{tasks}} scheduled task(s) to the new location.",
+  "sidebar.relinkDirectoryMerged":
+    "An existing record for this location will be merged.",
+  "sidebar.relinkDirectoryReindex":
+    "The codebase index will be cleared and can be rebuilt afterwards.",
+  "sidebar.relinkDirectoryConfirm": "Relink",
+  "sidebar.directoryRelinkHistory": "Relocation history",
+  "sidebar.relinkHistoryTitle": "Relocation history",
+  "sidebar.relinkHistoryLoading": "Loading relocation history…",
+  "sidebar.relinkHistoryEmpty":
+    "This project has not been relocated. Records appear here after you move a project to a new folder.",
+  "sidebar.relinkHistoryUndo": "Undo",
+  "sidebar.relinkHistoryUndoConfirm":
+    "Undo this relocation? The project and its history move back to the previous location.",
+  "sidebar.relinkHistoryUndone": "Undone",
   "sidebar.directoryKindSsh": "SSH",
   "sidebar.explorerBack": "Back to main sidebar",
   "sidebar.explorerTitle": "Explorer",

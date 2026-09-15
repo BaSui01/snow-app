@@ -30,6 +30,44 @@ pub fn delete_workspace_directory(directory_id: String) -> Result<()> {
     services::workspace_directories::delete_workspace_directory(&database_path, &directory_id)
 }
 
+pub fn verify_workspace_directory(
+    directory_id: String,
+) -> Result<WorkspaceDirectoryVerifyReport> {
+    let database_path = ensure_database_file()?;
+    services::workspace_directory_health::verify_workspace_directory(&database_path, &directory_id)
+}
+
+pub fn relink_workspace_directory(
+    old_directory_id: String,
+    new_path: String,
+    dry_run: bool,
+) -> Result<WorkspaceRelinkReport> {
+    let database_path = ensure_database_file()?;
+    services::workspace_relink::relink_workspace_directory(
+        &database_path,
+        &old_directory_id,
+        &new_path,
+        dry_run,
+    )
+}
+
+pub fn undo_workspace_directory_relink(relink_id: String) -> Result<WorkspaceRelinkReport> {
+    let database_path = ensure_database_file()?;
+    services::workspace_relink::undo_workspace_directory_relink(&database_path, &relink_id)
+}
+
+pub fn list_workspace_directory_relinks(
+    directory_id: String,
+    limit: i32,
+) -> Result<Vec<WorkspaceRelinkRecord>> {
+    let database_path = ensure_database_file()?;
+    services::workspace_relink::list_workspace_directory_relinks(
+        &database_path,
+        &directory_id,
+        limit,
+    )
+}
+
 pub fn list_project_collections() -> Result<Vec<ProjectCollectionRecord>> {
     let database_path = ensure_database_file()?;
     services::project_collections::list_project_collections(&database_path)

@@ -119,6 +119,53 @@ pub async fn delete_workspace_directory(directory_id: String) -> napi::Result<()
 }
 
 #[napi]
+pub async fn verify_workspace_directory(
+    directory_id: String,
+) -> napi::Result<WorkspaceDirectoryVerifyReport> {
+    tokio::task::spawn_blocking(move || crate::storage::verify_workspace_directory(directory_id))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn relink_workspace_directory(
+    old_directory_id: String,
+    new_path: String,
+    dry_run: Option<bool>,
+) -> napi::Result<WorkspaceRelinkReport> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::relink_workspace_directory(
+            old_directory_id,
+            new_path,
+            dry_run.unwrap_or(false),
+        )
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn undo_workspace_directory_relink(
+    relink_id: String,
+) -> napi::Result<WorkspaceRelinkReport> {
+    tokio::task::spawn_blocking(move || crate::storage::undo_workspace_directory_relink(relink_id))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn list_workspace_directory_relinks(
+    directory_id: String,
+    limit: Option<i32>,
+) -> napi::Result<Vec<WorkspaceRelinkRecord>> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::list_workspace_directory_relinks(directory_id, limit.unwrap_or(50))
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
 pub async fn list_project_collections() -> napi::Result<Vec<ProjectCollectionRecord>> {
     tokio::task::spawn_blocking(crate::storage::list_project_collections)
         .await

@@ -10,6 +10,9 @@ import type {
   ProjectCollectionRecord,
   WorkspaceDirectoryInput,
   WorkspaceDirectoryRecord,
+  WorkspaceDirectoryVerifyReport,
+  WorkspaceRelinkRecord,
+  WorkspaceRelinkResult,
 } from "../types";
 
 const AGENT_SEARCH_PROGRESS_CHANNEL =
@@ -87,6 +90,34 @@ export const workspaceApi = {
     directoryId: string,
   ): Promise<WorkspaceDirectoryRecord[]> =>
     ipcRenderer.invoke("workspace-directories:delete", directoryId),
+  verifyWorkspaceDirectory: (
+    directoryId: string,
+  ): Promise<WorkspaceDirectoryVerifyReport> =>
+    ipcRenderer.invoke("workspace-directories:verify", directoryId),
+  relinkWorkspaceDirectory: (
+    oldDirectoryId: string,
+    newPath: string,
+    dryRun = false,
+  ): Promise<WorkspaceRelinkResult> =>
+    ipcRenderer.invoke(
+      "workspace-directories:relink",
+      oldDirectoryId,
+      newPath,
+      dryRun,
+    ),
+  undoWorkspaceDirectoryRelink: (
+    relinkId: string,
+  ): Promise<WorkspaceRelinkResult> =>
+    ipcRenderer.invoke("workspace-directories:relink-undo", relinkId),
+  listWorkspaceDirectoryRelinks: (
+    directoryId: string,
+    limit = 50,
+  ): Promise<WorkspaceRelinkRecord[]> =>
+    ipcRenderer.invoke(
+      "workspace-directories:relink-history",
+      directoryId,
+      limit,
+    ),
   listProjectCollections: (): Promise<ProjectCollectionRecord[]> =>
     ipcRenderer.invoke("project-collections:list"),
   createProjectCollection: (name: string): Promise<ProjectCollectionRecord[]> =>

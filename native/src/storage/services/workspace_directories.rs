@@ -320,7 +320,9 @@ fn query_workspace_directories(
                 is_active,
                 sort_order,
                 source,
-                updated_at
+                updated_at,
+                path_state,
+                last_known_path
            FROM workspace_directories
           ORDER BY sort_order ASC, id ASC",
     )?;
@@ -338,6 +340,8 @@ fn query_workspace_directories(
             sort_order: row.get(6)?,
             source: row.get(7)?,
             updated_at: row.get(8)?,
+            path_state: row.get(9)?,
+            last_known_path: row.get(10)?,
         })
     })?;
 

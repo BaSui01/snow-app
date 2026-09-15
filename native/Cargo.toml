@@ -84,6 +84,9 @@ rmcp = { version = "3.0.1", default-features = false, features = [
     "client",
     "transport-child-process",
     "transport-streamable-http-client-reqwest",
+    # rmcp 默认特性不含 TLS：streamable-http 客户端访问 https 端点会握手失败。
+    # 启用 reqwest-native-tls（Windows 走 schannel）使远程 MCP 服务器支持 https。
+    "reqwest-native-tls",
 ] }
 # rmcp 的 HTTP 传输内部固定依赖 reqwest 0.13（本项目其余部分用 0.12），
 # 自定义代理客户端必须使用同一版本才能满足 StreamableHttpClient 约束。

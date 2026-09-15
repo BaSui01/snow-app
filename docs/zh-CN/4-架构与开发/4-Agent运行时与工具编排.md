@@ -40,12 +40,12 @@ flowchart LR
 
 统一入口 `native/src/api/conversation/stream.rs::create_response_stream` 根据 `request_method` 分派：
 
-| request_method | 适配目录 | 协议 |
-|---|---|---|
-| `chat` | `native/src/api/chat/` | OpenAI Chat Completions |
-| `responses` | `native/src/api/responses/` | OpenAI Responses |
-| `anthropic` | `native/src/api/anthropic/` | Anthropic Messages |
-| `gemini` | `native/src/api/gemini/` | Google Gemini |
+| request_method | 适配目录                    | 协议                    |
+| -------------- | --------------------------- | ----------------------- |
+| `chat`         | `native/src/api/chat/`      | OpenAI Chat Completions |
+| `responses`    | `native/src/api/responses/` | OpenAI Responses        |
+| `anthropic`    | `native/src/api/anthropic/` | Anthropic Messages      |
+| `gemini`       | `native/src/api/gemini/`    | Google Gemini           |
 
 适配器共同负责 provider payload、规范化消息转换、SSE 或等价流解析、文本/thinking/tool calls/usage 累积及 `store_chat_exchange`。工具定义分别由 `tools_as_openai_chat_json`、`tools_as_openai_responses_json`、`tools_as_anthropic_json`、`tools_as_gemini_json` 生成；工具历史跨协议转换集中在 `api/conversation/tool_messages.rs`。
 
@@ -79,7 +79,7 @@ sequenceDiagram
     N-->>R: invoke Promise 返回最终 ResponsesApiResult
 ```
 
-这条链与 `src/main/app/sessionProxy.ts` 无关；后者是 Electron 网络代理配置。
+这条链与 `src/main/app/sessionProxy.ts` 无关；后者是 Electron 网络代理配置。Rust 侧出站请求（含本链路的 provider 适配器）在 `api/http_client.rs` 统一应用同一份代理配置。
 
 ## 4. Renderer 主循环
 
@@ -357,14 +357,14 @@ sequenceDiagram
 
 ## 15. 源码锚点
 
-| 主题 | 文件 |
-|---|---|
-| 主循环与流状态 | `src/renderer/components/mainContent/chatMessages/hooks/useAgentLoop.ts`、`agentLoopHelpers.ts` |
-| 工具执行与授权 | `toolExecution.ts`、`useToolAuthorization.ts` |
-| Hooks | `hooks/hookOutcome.ts`、`useToolAuthorization.ts`、`native/src/hooks/` |
-| 子代理 | `hooks/subAgentActivation.ts`、`native/src/api/conversation/sub_agent.rs`、`native/src/mcp/servers/sub_agents.rs` |
-| 压缩与回滚 | `hooks/useCompaction.ts`、`hooks/useRollback.ts`、`native/src/exports/checkpoint.rs` |
-| 流 IPC | `src/preload/modules/apiConfigApi.ts`、`src/main/ipc/handlers/chatHandlers.ts`、`src/main/utils/safeSend.ts` |
-| Provider 分派 | `native/src/api/conversation/stream.rs`、`tool_messages.rs` |
-| MCP 发现与调用 | `native/src/mcp/builtin.rs`、`native/src/mcp/tools.rs`、`native/src/mcp/external/` |
-| 会话与 usage 存储 | `native/src/storage/services/chat_conversations.rs`、`usage_records.rs` |
+| 主题              | 文件                                                                                                              |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 主循环与流状态    | `src/renderer/components/mainContent/chatMessages/hooks/useAgentLoop.ts`、`agentLoopHelpers.ts`                   |
+| 工具执行与授权    | `toolExecution.ts`、`useToolAuthorization.ts`                                                                     |
+| Hooks             | `hooks/hookOutcome.ts`、`useToolAuthorization.ts`、`native/src/hooks/`                                            |
+| 子代理            | `hooks/subAgentActivation.ts`、`native/src/api/conversation/sub_agent.rs`、`native/src/mcp/servers/sub_agents.rs` |
+| 压缩与回滚        | `hooks/useCompaction.ts`、`hooks/useRollback.ts`、`native/src/exports/checkpoint.rs`                              |
+| 流 IPC            | `src/preload/modules/apiConfigApi.ts`、`src/main/ipc/handlers/chatHandlers.ts`、`src/main/utils/safeSend.ts`      |
+| Provider 分派     | `native/src/api/conversation/stream.rs`、`tool_messages.rs`                                                       |
+| MCP 发现与调用    | `native/src/mcp/builtin.rs`、`native/src/mcp/tools.rs`、`native/src/mcp/external/`                                |
+| 会话与 usage 存储 | `native/src/storage/services/chat_conversations.rs`、`usage_records.rs`                                           |

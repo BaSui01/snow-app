@@ -4,36 +4,36 @@ Snow App's proxy settings apply to application session network requests, web sea
 
 ## 1. Configuration Entries
 
-| Entry | Description |
-| --- | --- |
-| Settings → Proxy & Browser (settings page id: `proxy-browser-settings`) | GUI for proxy, search engine, built-in browser, and site-blocking rules |
-| `~/.snow/proxy-config.json` | File-backed proxy, search-engine, and browser fields exposed by the `proxy` config scope |
-| App database system setting `proxy_browser_settings` | Complete proxy/browser setting used by the UI, including `blockedPatterns` |
+| Entry                                                                   | Description                                                                              |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Settings → Proxy & Browser (settings page id: `proxy-browser-settings`) | GUI for proxy, search engine, built-in browser, and site-blocking rules                  |
+| `~/.snow/proxy-config.json`                                             | File-backed proxy, search-engine, and browser fields exposed by the `proxy` config scope |
+| App database system setting `proxy_browser_settings`                    | Complete proxy/browser setting used by the UI, including `blockedPatterns`               |
 
 The proxy, search-engine, and browser fields are managed by the file-backed `proxy` scope; the settings panel also saves the complete setting in the app database. `blockedPatterns` is not part of `proxy-config.json`; the runtime source of truth is the app database setting `proxy_browser_settings`.
 
 ## 2. Configuring the Proxy
 
-| Field | Description |
-| --- | --- |
+| Field     | Description                           |
+| --------- | ------------------------------------- |
 | `enabled` | Enable switch: whether to use a proxy |
-| `host` | Proxy host, e.g. `127.0.0.1` |
-| `port` | Proxy port, e.g. `7890` |
+| `host`    | Proxy host, e.g. `127.0.0.1`          |
+| `port`    | Proxy port, e.g. `7890`               |
 
 ## 3. Configuring the Search Engine
 
-| Field | Description |
-| --- | --- |
+| Field          | Description                              |
+| -------------- | ---------------------------------------- |
 | `searchEngine` | Search engine, e.g. `bing`, `duckduckgo` |
 
 This setting affects the search result source of the `websearch` tool.
 
 ## 4. Configuring the Built-in Browser
 
-| Field | Description |
-| --- | --- |
-| `browserPath` | Browser executable path; when empty, Chrome / Edge / Chromium is auto-detected, or click Browse to select manually |
-| `browserDebugPort` | Browser debug port, e.g. `9222` |
+| Field              | Description                                                                                                        |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `browserPath`      | Browser executable path; when empty, Chrome / Edge / Chromium is auto-detected, or click Browse to select manually |
+| `browserDebugPort` | Browser debug port, e.g. `9222`                                                                                    |
 
 The debug port is used for the built-in browser panel connection; if the port is occupied, the panel may fail to open.
 
@@ -51,10 +51,10 @@ Use domain boundaries for recommended rules. For example, in JSON tool arguments
 
 The AI can maintain the rules with dedicated tools:
 
-| Tool | Purpose |
-| --- | --- |
-| `app-control-getBlockedPatterns` | Read the current global rule array and count |
-| `app-control-updateBlockedPatterns` | Add, remove, or fully replace rules |
+| Tool                                | Purpose                                      |
+| ----------------------------------- | -------------------------------------------- |
+| `app-control-getBlockedPatterns`    | Read the current global rule array and count |
+| `app-control-updateBlockedPatterns` | Add, remove, or fully replace rules          |
 
 Arguments for `app-control-updateBlockedPatterns`:
 
@@ -75,32 +75,38 @@ Operation semantics:
 ## 6. Scope of Effect
 
 - **App session proxy**: network requests and update checks;
+- **AI model requests**: Rust-side provider adapters (OpenAI Chat / Responses, Anthropic, Gemini), model listing, summaries, embeddings, reranking, and codebase review all send their outbound requests through this proxy;
+- **Remote MCP (`http` transport)**: `server/discover`, `initialize`, `tools/list`, and `tools/call` all go through the proxy;
 - **Web search**: the `websearch` tool, with matching sites filtered;
 - **Page fetching**: the `websearch-fetch` tool, with matching targets refused;
 - **Built-in browser panel**: embedded browser instances;
 - **Site-blocking rules**: global app settings, not project-level configuration.
 
+Loopback and private networks always connect directly and bypass the proxy: `localhost`, `127.0.0.1`, `::1`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `100.64.0.0/10`, `fc00::/7`, `fe80::/10`; entries in the `NO_PROXY` / `no_proxy` environment variables are honored as well. MCP servers using the `stdio` transport do their own networking in the child process and are not affected by this proxy.
+
+No restart is required after changing proxy settings: newly opened or reconnected MCP connections and subsequent AI requests pick up the new configuration immediately.
+
 ## 7. AI / CLI Configuration (config tool)
 
 The `config` tool can read and write the file-backed `proxy` scope, but that scope does not support `blockedPatterns`:
 
-| Tool | Example |
-| --- | --- |
-| `config-get scope=proxy` | View the proxy, search-engine, and browser fields supported by `proxy-config.json` |
-| `config-set scope=proxy value={enabled: true, host: "127.0.0.1", port: 7890}` | Enable the proxy |
-| `config-set scope=proxy key=searchEngine value="duckduckgo"` | Switch the search engine |
-| `config-set scope=proxy key=browserPath value="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"` | Set the browser path (escape Windows backslashes) |
+| Tool                                                                                                        | Example                                                                            |
+| ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `config-get scope=proxy`                                                                                    | View the proxy, search-engine, and browser fields supported by `proxy-config.json` |
+| `config-set scope=proxy value={enabled: true, host: "127.0.0.1", port: 7890}`                               | Enable the proxy                                                                   |
+| `config-set scope=proxy key=searchEngine value="duckduckgo"`                                                | Switch the search engine                                                           |
+| `config-set scope=proxy key=browserPath value="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"` | Set the browser path (escape Windows backslashes)                                  |
 
 Do not use `config-get scope=proxy key=blockedPatterns` or `config-set scope=proxy key=blockedPatterns` to maintain runtime rules; they are not in the current `PROXY_SCOPE_KEYS` whitelist. Maintain site-blocking rules through the settings panel or the dedicated app-control tools above. File-backed config changes may require an app restart or a UI re-save; dedicated app-control updates write the app database and re-apply proxy settings directly.
 
 ## 8. FAQ
 
-| Symptom | Cause & fix |
-| --- | --- |
-| Blocked sites still appear in search results | Check that each rule is valid JavaScript regex and matches the result site's domain |
-| A page fetch is refused | The target matched a global `blockedPatterns` rule; read the rules and remove it if needed |
-| Browser panel won't open | Check whether `browserPath` is correct, or the debug port is occupied |
-| Changes don't take effect | Make sure the settings were saved; rule updates re-apply proxy settings |
+| Symptom                                      | Cause & fix                                                                                |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Blocked sites still appear in search results | Check that each rule is valid JavaScript regex and matches the result site's domain        |
+| A page fetch is refused                      | The target matched a global `blockedPatterns` rule; read the rules and remove it if needed |
+| Browser panel won't open                     | Check whether `browserPath` is correct, or the debug port is occupied                      |
+| Changes don't take effect                    | Make sure the settings were saved; rule updates re-apply proxy settings                    |
 
 ## 9. Reference
 

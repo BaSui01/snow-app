@@ -85,6 +85,12 @@ rmcp = { version = "3.0.1", default-features = false, features = [
     "transport-child-process",
     "transport-streamable-http-client-reqwest",
 ] }
+# rmcp 的 HTTP 传输内部固定依赖 reqwest 0.13（本项目其余部分用 0.12），
+# 自定义代理客户端必须使用同一版本才能满足 StreamableHttpClient 约束。
+rmcp-reqwest = { package = "reqwest", version = "0.13", default-features = false, features = [
+    "json",
+    "stream",
+] }
 # LSP client framework: stdio transport + MainLoop + LanguageClient omnitrait.
 # default-features off to drop client-monitor (server-side) / tracing (unused).
 async-lsp = { version = "0.2", default-features = false, features = ["tokio", "stdio", "omni-trait"] }

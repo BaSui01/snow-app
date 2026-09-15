@@ -27,6 +27,8 @@ MCP（Model Context Protocol）服务器向 AI 提供外部工具。Snow App 支
 
 `timeoutMs` 当前用于**工具发现阶段**：连接和 `tools/list` 共享同一个截止时间。它不是每次 `tools/call` 的通用执行超时；长任务仍应由服务器自身实现取消或超时。
 
+`http` 传输的请求遵循「设置 → 代理与浏览器」的代理配置：工具发现（`server/discover` / `initialize` / `tools/list`）与 `tools/call` 都经代理发出，`localhost` 与内网地址直连；代理开关或地址变更后，新建 / 重连的连接立即生效。`stdio` 服务器的网络请求由子进程自行发起，不受该代理影响。
+
 ### 2.1 stdio 示例
 
 ```json

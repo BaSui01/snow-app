@@ -3351,12 +3351,15 @@ export const en = {
   "projectMcp.emptyGroup": "No MCP services in this group",
   "projectMcp.noTools": "No tools discovered",
   "projectMcp.toolCount": "{{count}} tools",
+  "projectMcp.toolsPending": "Not loaded",
   "projectMcp.loadingToolsShort": "Loading...",
   "projectMcp.loadingTools": "Connecting and loading tools...",
   "projectMcp.loadToolsFailed": "Could not load tools",
   "projectMcp.retryTools": "Retry",
   "projectMcp.globalDisabled":
     "Disabled globally. Enable it in Settings before using it in this project.",
+  "projectMcp.serverDisabledNote":
+    "This service is disabled. Enable it to browse and configure its tools.",
   "projectMcp.serverErrorImagegenNotConfigured":
     "No image generation channel configured. Configure at least one channel in Settings -> Image generation.",
   "mcpBuiltinServer.desc.filesystem": "Read, create, and edit local files",

@@ -67,11 +67,13 @@ export const ProjectMcpPanel = ({
   const pendingToolNamesRef = useRef<Set<string>>(new Set());
   const catalogGenerationRef = useRef(0);
   const loadingToolServerIdsRef = useRef<Set<string>>(new Set());
+  const requestedToolServerIdsRef = useRef<Set<string>>(new Set());
 
   const loadServers = useCallback(async (): Promise<void> => {
     const generation = catalogGenerationRef.current + 1;
     catalogGenerationRef.current = generation;
     loadingToolServerIdsRef.current.clear();
+    requestedToolServerIdsRef.current.clear();
     pendingServerIdsRef.current.clear();
     pendingToolNamesRef.current.clear();
     setServers([]);
@@ -87,7 +89,8 @@ export const ProjectMcpPanel = ({
 
     setIsLoading(true);
     try {
-      const nextServers = await window.snow.listMcpProjectServers(projectId);
+      const nextServers =
+        await window.snow.listMcpProjectServersCached(projectId);
       if (catalogGenerationRef.current === generation) {
         setServers(nextServers);
       }
@@ -109,11 +112,11 @@ export const ProjectMcpPanel = ({
     void loadServers();
   }, [loadServers, open]);
 
-  // 局部重试单个项目/全局服务器的工具发现：list_mcp_project_servers 已
-  // 并发返回全部工具（与设置页共用同一份数据），仅在发现失败时手动刷新。
+  // 单个项目/全局服务器的工具发现：列表来自快速接口（只读 Rust 端进程内
+  // 缓存，未命中的服务器标记为待获取），由展开动作触发或失败后手动重试。
   // 注意：此处 server.source === "external" 表示来自全局配置的 MCP，
   // 界面上显示为「全局 MCP」分组。
-  const retryServerTools = useCallback(
+  const fetchServerTools = useCallback(
     async (server: McpProjectServerStatus): Promise<void> => {
       if (
         !projectId ||
@@ -142,7 +145,7 @@ export const ProjectMcpPanel = ({
           setServers((current) =>
             current.map((item) =>
               item.id === server.id
-                ? { ...item, tools, error: undefined }
+                ? { ...item, tools, toolsPending: false, error: undefined }
                 : item,
             ),
           );
@@ -168,7 +171,27 @@ export const ProjectMcpPanel = ({
     [projectId, t],
   );
 
+  const ensureServerTools = useCallback(
+    (server: McpProjectServerStatus): void => {
+      if (
+        !projectId ||
+        server.source === "system" ||
+        !server.globalEnabled ||
+        !server.enabled ||
+        server.tools.length > 0 ||
+        requestedToolServerIdsRef.current.has(server.id)
+      ) {
+        return;
+      }
+
+      requestedToolServerIdsRef.current.add(server.id);
+      void fetchServerTools(server);
+    },
+    [fetchServerTools, projectId],
+  );
+
   const toggleExpanded = (server: McpProjectServerStatus): void => {
+    const willExpand = !expandedServerIds.has(server.id);
     setExpandedServerIds((current) => {
       const next = new Set(current);
       if (next.has(server.id)) {
@@ -178,6 +201,9 @@ export const ProjectMcpPanel = ({
       }
       return next;
     });
+    if (willExpand) {
+      ensureServerTools(server);
+    }
   };
 
   const updateServer = async (
@@ -308,11 +334,12 @@ export const ProjectMcpPanel = ({
       ) : (
         groupServers.map((server) => {
           const expanded = expandedServerIds.has(server.id);
-          // 工具直接来自 list_mcp_project_servers 的返回值（Rust 已并发发现），
-          // 与设置页项目 MCP 列表共用同一份数据。
+          // 工具来自列表缓存（Rust 进程内 TTL 缓存）或展开时的按需发现结果。
           const tools = server.tools;
           const toolsRetrying = loadingToolServerIds.has(server.id);
           const toolError = toolErrorsByServerId[server.id];
+          const toolsLoading =
+            toolsRetrying || (server.toolsPending && !toolError);
           const discoveryError =
             toolError ?? (server.error as string | null | undefined);
           const canRetry = server.source !== "system";
@@ -321,6 +348,7 @@ export const ProjectMcpPanel = ({
             ? t(descriptionKey)
             : undefined;
           const serverDisabled = !server.globalEnabled;
+          const toolsUnavailable = serverDisabled || !server.enabled;
           const serverClassName = [
             "project-mcp-server",
             expanded ? "is-expanded" : "",
@@ -363,13 +391,17 @@ export const ProjectMcpPanel = ({
                       </span>
                     ) : null}
                   </span>
-                  <span className="project-mcp-tool-count">
-                    {toolsRetrying
-                      ? t("projectMcp.loadingToolsShort")
-                      : t("projectMcp.toolCount", {
-                          values: { count: tools.length },
-                        })}
-                  </span>
+                  {toolsUnavailable ? null : (
+                    <span className="project-mcp-tool-count">
+                      {toolsRetrying
+                        ? t("projectMcp.loadingToolsShort")
+                        : server.toolsPending
+                          ? t("projectMcp.toolsPending")
+                          : t("projectMcp.toolCount", {
+                              values: { count: tools.length },
+                            })}
+                    </span>
+                  )}
                 </button>
                 <label className="toggle-switch">
                   <input
@@ -397,7 +429,7 @@ export const ProjectMcpPanel = ({
                     <button
                       className="project-mcp-tool-retry"
                       disabled={toolsRetrying}
-                      onClick={() => void retryServerTools(server)}
+                      onClick={() => void fetchServerTools(server)}
                       type="button"
                     >
                       <RefreshCw size={13} />
@@ -408,7 +440,16 @@ export const ProjectMcpPanel = ({
               ) : null}
               {expanded ? (
                 <div className="project-mcp-tools">
-                  {toolsRetrying ? (
+                  {toolsUnavailable ? (
+                    <div className="project-mcp-tools-state">
+                      <AlertCircle size={15} />
+                      <span>
+                        {serverDisabled
+                          ? t("projectMcp.globalDisabled")
+                          : t("projectMcp.serverDisabledNote")}
+                      </span>
+                    </div>
+                  ) : toolsLoading ? (
                     <div className="project-mcp-tools-state">
                       <Loader2 className="spin" size={15} />
                       <span>{t("projectMcp.loadingTools")}</span>
@@ -422,7 +463,7 @@ export const ProjectMcpPanel = ({
                       </div>
                       <button
                         className="project-mcp-tool-retry"
-                        onClick={() => void retryServerTools(server)}
+                        onClick={() => void fetchServerTools(server)}
                         type="button"
                       >
                         <RefreshCw size={13} />

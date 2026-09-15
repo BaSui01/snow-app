@@ -3164,11 +3164,13 @@ export const zhCN = {
   "projectMcp.emptyGroup": "此分组暂无 MCP 服务",
   "projectMcp.noTools": "未发现工具",
   "projectMcp.toolCount": "{{count}} 个工具",
+  "projectMcp.toolsPending": "待获取",
   "projectMcp.loadingToolsShort": "加载中...",
   "projectMcp.loadingTools": "正在连接并加载工具...",
   "projectMcp.loadToolsFailed": "工具加载失败",
   "projectMcp.retryTools": "重试",
   "projectMcp.globalDisabled": "该服务已在全局设置中停用，请先在设置页启用。",
+  "projectMcp.serverDisabledNote": "该服务已停用，启用后可查看并配置工具。",
   "projectMcp.serverErrorImagegenNotConfigured":
     "未配置图像生成渠道，请在「设置 -> 图像生成」中配置至少一个渠道。",
   "mcpBuiltinServer.desc.filesystem": "读取、创建与编辑本地文件",

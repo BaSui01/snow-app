@@ -3141,11 +3141,13 @@ export const zhTW = {
   "projectMcp.emptyGroup": "此群組暫無 MCP 服務",
   "projectMcp.noTools": "未發現工具",
   "projectMcp.toolCount": "{{count}} 個工具",
+  "projectMcp.toolsPending": "待載入",
   "projectMcp.loadingToolsShort": "載入中...",
   "projectMcp.loadingTools": "正在連線並載入工具...",
   "projectMcp.loadToolsFailed": "工具載入失敗",
   "projectMcp.retryTools": "重試",
   "projectMcp.globalDisabled": "此服務已在全域設定中停用，請先在設定頁啟用。",
+  "projectMcp.serverDisabledNote": "此服務已停用，啟用後可檢視並設定工具。",
   "projectMcp.serverErrorImagegenNotConfigured":
     "未配置圖像生成渠道，請在「設定 -> 圖像生成」中配置至少一個渠道。",
   "mcpBuiltinServer.desc.filesystem": "讀取、建立與編輯本機檔案",

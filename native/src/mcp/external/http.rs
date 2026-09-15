@@ -14,6 +14,46 @@ use super::super::protocol::RemoteMcpTool;
 
 pub(super) type HttpRunningClient = RunningService<rmcp::RoleClient, ClientInfo>;
 
+/// 构建外部 MCP 的 HTTP 客户端。
+///
+/// 保留 rmcp 默认客户端的连接池 / 重定向策略，并叠加应用代理
+/// （设置 → 代理与浏览器）与统一 User-Agent：远程 MCP 端点与 AI API
+/// 请求遵循同一套代理配置，本地回环与内网端点由 NO_PROXY 语义直连。
+async fn build_transport_http_client() -> Result<rmcp_reqwest::Client> {
+    let proxy_config = crate::api::http_client::load_proxy_config().await?;
+    let mut builder = rmcp_reqwest::Client::builder()
+        .user_agent(crate::api::http_client::app_user_agent())
+        .pool_max_idle_per_host(0)
+        .redirect(rmcp_reqwest::redirect::Policy::none());
+
+    if let Some(proxy_url) = proxy_config.proxy_url() {
+        let proxy = rmcp_reqwest::Proxy::all(proxy_url)
+            .map_err(|error| Error::from_reason(format!("Invalid proxy settings: {error}")))?
+            .no_proxy(rmcp_reqwest::NoProxy::from_string(
+                &proxy_config.no_proxy_list(),
+            ));
+        builder = builder.proxy(proxy);
+    }
+
+    builder.build().map_err(|error| {
+        Error::from_reason(format!(
+            "Failed to create external MCP HTTP client: {error}"
+        ))
+    })
+}
+
+fn build_transport(
+    url: &str,
+    custom_headers: HashMap<HeaderName, HeaderValue>,
+    client: rmcp_reqwest::Client,
+) -> StreamableHttpClientTransport<rmcp_reqwest::Client> {
+    let mut transport_config = StreamableHttpClientTransportConfig::with_uri(url);
+    if !custom_headers.is_empty() {
+        transport_config = transport_config.custom_headers(custom_headers);
+    }
+    StreamableHttpClientTransport::with_client(client, transport_config)
+}
+
 pub(super) struct HttpMcpClient {
     client: HttpRunningClient,
 }
@@ -42,12 +82,11 @@ impl HttpMcpClient {
 
         let client_info = ClientInfo::default();
 
-        let mut transport_config = StreamableHttpClientTransportConfig::with_uri(url);
-        if !custom_headers.is_empty() {
-            transport_config = transport_config.custom_headers(custom_headers.clone());
-        }
-        let transport: StreamableHttpClientTransport<_> =
-            StreamableHttpClientTransport::from_config(transport_config);
+        let transport = build_transport(
+            url,
+            custom_headers,
+            build_transport_http_client().await?,
+        );
 
         // 旧 SDK 服务器（如 fastmcp 构建的 firecrawl-mcp）对带 `_meta` 的
         // `server/discover` 探测会静默不响应——既不返回 JSON-RPC 错误也不
@@ -116,12 +155,11 @@ impl HttpMcpClient {
 
         let custom_headers = parse_headers(&config.headers_json)?;
 
-        let mut transport_config = StreamableHttpClientTransportConfig::with_uri(url);
-        if !custom_headers.is_empty() {
-            transport_config = transport_config.custom_headers(custom_headers);
-        }
-        let transport: StreamableHttpClientTransport<_> =
-            StreamableHttpClientTransport::from_config(transport_config);
+        let transport = build_transport(
+            url,
+            custom_headers,
+            build_transport_http_client().await?,
+        );
 
         let client_info = ClientInfo::default();
         let running = client_info

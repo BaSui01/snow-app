@@ -713,9 +713,8 @@ async fn mask_with_api(text: &str, settings: &PrivacySettings) -> ApiResult<Stri
         }
     }
 
-    let client = reqwest::Client::builder()
-        .user_agent(crate::api::http_client::app_user_agent())
-        .build()
+    let client = crate::api::http_client::build_proxied_client()
+        .await
         .map_err(|e| e.to_string())?;
     let body = json!({
         "text": text,

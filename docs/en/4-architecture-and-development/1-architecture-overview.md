@@ -86,7 +86,7 @@ sequenceDiagram
     R-->>AL: final response through invoke result
 ```
 
-`src/main/app/sessionProxy.ts` only configures Electron `session` network proxies so `net.fetch`, webviews, and updater traffic follow proxy settings. It does not relay AI tokens or tool events.
+`src/main/app/sessionProxy.ts` only configures Electron `session` network proxies so `net.fetch`, webviews, and updater traffic follow proxy settings. It does not relay AI tokens or tool events. Rust-side outbound requests (the `api/` provider adapters, `api/models.rs` model listing, and the HTTP MCP transport in `mcp/external/http.rs`) do not use Electron sessions; they apply the same proxy configuration centrally in `api/http_client.rs` (with NO_PROXY loopback / intranet bypass).
 
 ## 4. Agent Runtime and Rust Capability Split
 

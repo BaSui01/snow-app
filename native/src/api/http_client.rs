@@ -21,6 +21,8 @@ use napi::bindgen_prelude::*;
 const PROXY_BROWSER_SETTING_CODE: &str = "proxy_browser_settings";
 const DEFAULT_PROXY_HOST: &str = "127.0.0.1";
 const DEFAULT_PROXY_PORT: u16 = 7890;
+const DEFAULT_NO_PROXY: &str =
+    "localhost,127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16,100.64.0.0/10,fc00::/7,fe80::/10";
 
 /// 从数据库加载的代理配置快照。
 #[derive(Debug, Clone)]
@@ -28,6 +30,7 @@ pub struct ProxyConfig {
     pub enabled: bool,
     pub host: String,
     pub port: u16,
+    pub no_proxy: Vec<String>,
 }
 
 impl Default for ProxyConfig {
@@ -36,6 +39,7 @@ impl Default for ProxyConfig {
             enabled: false,
             host: DEFAULT_PROXY_HOST.to_string(),
             port: DEFAULT_PROXY_PORT,
+            no_proxy: Vec::new(),
         }
     }
 }
@@ -63,12 +67,58 @@ impl ProxyConfig {
     /// 跟随系统代理环境变量。当 `enabled` 为 true 时注入
     /// `http://{host}:{port}` 代理。
     pub fn apply(self, mut builder: reqwest::ClientBuilder) -> Result<reqwest::ClientBuilder> {
-        if self.enabled {
-            let proxy = reqwest::Proxy::all(format!("http://{}:{}", self.host, self.port))
-                .map_err(|error| Error::from_reason(format!("Invalid proxy settings: {error}")))?;
+        if let Some(proxy) = self.build_proxy()? {
             builder = builder.proxy(proxy);
         }
         Ok(builder)
+    }
+
+    /// 与 [`ProxyConfig::apply`] 相同，但作用于同步的 `reqwest::blocking`
+    /// 客户端构建器（模型列表拉取等同步链路）。
+    pub fn apply_blocking(
+        self,
+        mut builder: reqwest::blocking::ClientBuilder,
+    ) -> Result<reqwest::blocking::ClientBuilder> {
+        if let Some(proxy) = self.build_proxy()? {
+            builder = builder.proxy(proxy);
+        }
+        Ok(builder)
+    }
+
+    fn build_proxy(&self) -> Result<Option<reqwest::Proxy>> {
+        let Some(url) = self.proxy_url() else {
+            return Ok(None);
+        };
+        let proxy = reqwest::Proxy::all(url)
+            .map_err(|error| Error::from_reason(format!("Invalid proxy settings: {error}")))?
+            .no_proxy(reqwest::NoProxy::from_string(&self.no_proxy_list()));
+        Ok(Some(proxy))
+    }
+
+    /// 启用代理时返回 `http://{host}:{port}`，否则返回 None
+    /// （由 reqwest 默认跟随系统代理环境变量）。
+    pub fn proxy_url(&self) -> Option<String> {
+        self.enabled
+            .then(|| format!("http://{}:{}", self.host, self.port))
+    }
+
+    pub fn no_proxy_list(&self) -> String {
+        let mut entries: Vec<String> = DEFAULT_NO_PROXY
+            .split(',')
+            .map(str::to_string)
+            .collect();
+        entries.extend(self.no_proxy.iter().cloned());
+        for key in ["NO_PROXY", "no_proxy"] {
+            if let Ok(value) = std::env::var(key) {
+                entries.extend(
+                    value
+                        .split(',')
+                        .map(|item| item.trim().to_string())
+                        .filter(|item| !item.is_empty()),
+                );
+            }
+        }
+        entries.join(",")
     }
 }
 
@@ -76,22 +126,26 @@ impl ProxyConfig {
 ///
 /// 内部使用 `spawn_blocking` 读取数据库，不会阻塞 Node.js 主线程。
 pub async fn load_proxy_config() -> Result<ProxyConfig> {
-    tokio::task::spawn_blocking(|| {
-        let storage_info = crate::storage::initialize_app_storage()?;
-        let database_path = std::path::PathBuf::from(storage_info.database_path);
+    tokio::task::spawn_blocking(load_proxy_config_sync)
+        .await
+        .map_err(|join_error| {
+            Error::from_reason(format!("Failed to load proxy config: {join_error}"))
+        })?
+}
 
-        let raw = crate::storage::services::system_settings::get_system_setting_value(
-            &database_path,
-            PROXY_BROWSER_SETTING_CODE,
-        )?
-        .unwrap_or_default();
+/// 从数据库同步加载代理配置，仅供本身已是同步阻塞的链路使用
+/// （如 `reqwest::blocking` 的模型列表拉取）。
+pub fn load_proxy_config_sync() -> Result<ProxyConfig> {
+    let storage_info = crate::storage::initialize_app_storage()?;
+    let database_path = std::path::PathBuf::from(storage_info.database_path);
 
-        Ok(parse_proxy_config(&raw))
-    })
-    .await
-    .map_err(|join_error| {
-        Error::from_reason(format!("Failed to load proxy config: {join_error}"))
-    })?
+    let raw = crate::storage::services::system_settings::get_system_setting_value(
+        &database_path,
+        PROXY_BROWSER_SETTING_CODE,
+    )?
+    .unwrap_or_default();
+
+    Ok(parse_proxy_config(&raw))
 }
 
 /// 解析代理配置 JSON。
@@ -118,10 +172,37 @@ fn parse_proxy_config(raw: &str) -> ProxyConfig {
         .map(|p| p as u16)
         .unwrap_or(DEFAULT_PROXY_PORT);
 
+    let no_proxy = parse_no_proxy_entries(
+        value
+            .get("noProxy")
+            .or_else(|| value.get("no_proxy")),
+    );
+
     ProxyConfig {
         enabled,
         host,
         port,
+        no_proxy,
+    }
+}
+
+/// 解析配置中的 `noProxy` 字段，支持逗号分隔字符串与字符串数组。
+fn parse_no_proxy_entries(value: Option<&serde_json::Value>) -> Vec<String> {
+    fn split(text: &str) -> Vec<String> {
+        text.split(',')
+            .map(|item| item.trim().to_string())
+            .filter(|item| !item.is_empty())
+            .collect()
+    }
+
+    match value {
+        Some(serde_json::Value::Array(items)) => items
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .flat_map(split)
+            .collect(),
+        Some(serde_json::Value::String(text)) => split(text),
+        _ => Vec::new(),
     }
 }
 

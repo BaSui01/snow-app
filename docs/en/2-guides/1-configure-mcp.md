@@ -27,6 +27,8 @@ Global servers are visible to every project. Project servers are **added to**, n
 
 `timeoutMs` currently controls the **tool-discovery stage**: connecting and `tools/list` share one deadline. It is not a general timeout for every `tools/call`; a long-running server must implement its own cancellation or timeout.
 
+Requests over the `http` transport follow the proxy configured in Settings -> Proxy and Browser: tool discovery (`server/discover` / `initialize` / `tools/list`) and `tools/call` all go through the proxy, while `localhost` and intranet addresses connect directly; after the proxy is toggled or changed, newly opened or reconnected connections pick it up immediately. A `stdio` server does its own networking in the child process and is not affected by this proxy.
+
 ### 2.1 stdio example
 
 ```json

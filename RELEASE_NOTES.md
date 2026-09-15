@@ -1,5 +1,28 @@
 # Release Notes
 
+## v0.4.0
+
+## New Features
+
+- **Phone Remote Control**: Drive the current session from a phone browser — live conversation and streaming, workspace/model switching, tool approvals, question answering, image and file attachments, and session rollback, plus dedicated tool cards and workflow canvas cards. The remote HTTP service now runs in the Rust native layer, the public entry uses long-term tokens (one-time pairing codes and credential rotation removed), and the bundled frpc extends to macOS/Linux with multi-distribution Linux deployment and custom ports.
+- **Workspace Relocation**: Project directory health is verified (missing location, unmounted volume, no permission) and can be relocated — conversations, memories, memos, scheduled tasks, and project-level settings migrate together, with merge support, a migration history, and undo.
+- **Markdown Table Export**: Tables in replies can be exported as CSV or XLSX.
+
+## Improvements
+
+- Outbound requests now go through the Rust-side proxy uniformly (with no_proxy direct connections for local networks), shared by the MCP HTTP transport.
+- MCP server lists return immediately while tool discovery happens on demand or in the background, so slow servers no longer block the MCP settings panel or the project MCP panel.
+- Memory injection is frozen per session: memories added or changed mid-session no longer disturb the session's prompt-prefix cache.
+- Faster fuzzy matching for indentation-sensitive files.
+
+## Bug Fixes
+
+- Images no longer trust the declared MIME — the real format is sniffed; inline images in tool results are persisted to disk so base64 no longer bloats the database and request context.
+- Fixed 400s from strict Chat Completions providers when tool results carry images: images are emitted as one synthetic user message after the turn's tool replies.
+- Added a pre-send context window guard that rejects oversized requests locally (images billed as vision), instead of letting the provider return an error.
+- Fixed the status leak when a question card is unanswered or interrupted.
+- Fixed the mobile history paging entry point.
+
 ## v0.3.1
 
 ## Improvements

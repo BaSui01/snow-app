@@ -58,6 +58,17 @@ export const zhTW: Record<string, string> = {
   "remote.pending.sent": "已傳送",
   "remote.pending.withdrawn": "已撤回，內容已還原至輸入框",
 
+  // 唯讀收尾列（子代理 / 工作流節點會話結束）
+  "remote.readonly.backToParent": "返回主會話",
+  "remote.readonly.subAgent.completed": "該子代理已完成，會話僅供檢視。",
+  "remote.readonly.subAgent.failed": "該子代理執行失敗，會話僅供檢視。",
+  "remote.readonly.subAgent.cancelled": "該子代理已取消，會話僅供檢視。",
+  "remote.readonly.workflowNode.completed":
+    "該工作流節點已完成，會話僅供檢視。",
+  "remote.readonly.workflowNode.failed": "該工作流節點執行失敗，會話僅供檢視。",
+  "remote.readonly.workflowNode.cancelled":
+    "該工作流節點已取消，會話僅供檢視。",
+
   // 會話待辦
   "remote.todos.title": "待辦列表",
   "remote.todos.progress": "{{completed}} / {{total}} 已完成",
@@ -341,6 +352,8 @@ export const zhTW: Record<string, string> = {
   "remote.threads.statusFailed": "已失敗",
   "remote.threads.expandChildren": "展開子工作階段",
   "remote.threads.collapseChildren": "收起子工作階段",
+  "remote.threads.expandGroup": "展開專案會話",
+  "remote.threads.collapseGroup": "收起專案會話",
 
   // 相對時間
   "remote.time.justNow": "剛剛",

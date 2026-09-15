@@ -115,7 +115,7 @@
           </div>
           <div id="attachmentStrip" class="attachment-strip"></div>
           <div id="pendingMessages" class="pending-messages"></div>
-          <div class="composer">
+          <div id="composerRow" class="composer">
             <button
               id="plusButton"
               class="plus-button"
@@ -175,6 +175,9 @@
               ></svg>
             </button>
           </div>
+          <!-- 只读收尾栏：子代理 / Workflow 节点会话结束后替换输入行（内容由
+               composer.ts 按会话状态渲染，与桌面 SubAgentFinishedNotice 同款）。 -->
+          <div id="readonlyBar" class="readonly-bar" hidden></div>
           <input
             id="imagePicker"
             class="hidden-picker"

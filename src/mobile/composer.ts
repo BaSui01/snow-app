@@ -11,7 +11,7 @@ import {
 } from "./api";
 import { $, escapeHtml } from "./dom";
 import { t } from "./i18n";
-import { iconMarkup } from "./icons";
+import { iconMarkup, type MobileIconName } from "./icons";
 import { showNotice } from "./notice";
 import {
   beginOverlay,
@@ -22,12 +22,14 @@ import {
   setActionSheetOpen,
 } from "./overlays";
 import { openMcpPanel, openRemotePanel, openSkillsPanel } from "./panels";
-import { createNewChat } from "./threads";
+import { createNewChat, selectThread } from "./threads";
 import { openTodosPanel } from "./todos";
 import type { AppContext } from "./types";
 
 /**
  * 输入区：文本输入、附件（图片/文件）、发送/停止、加号动作面板。
+ * 子代理 / Workflow 节点会话结束后会话转只读：输入区整体替换为收尾栏
+ * （与桌面 SubAgentFinishedNotice 判定同源，见 finishedSession）。
  */
 type AttachmentKind = "image" | "file";
 
@@ -235,8 +237,97 @@ const renderModeActions = (state: SnowRemoteState | null): void => {
   });
 };
 
+/** 已结束的子会话：子代理（含 cancelled）与 Workflow 节点（completed / failed）。 */
+type FinishedSession = {
+  kind: "subAgent" | "workflowNode";
+  status: "completed" | "failed" | "cancelled";
+  parentConversationId: string;
+};
+
+/** 终态归一化：子代理含 cancelled，Workflow 节点只有 completed / failed（同桌面）。 */
+const terminalStatus = (
+  kind: FinishedSession["kind"],
+  status: string,
+): FinishedSession["status"] | null => {
+  if (status === "completed" || status === "failed") return status;
+  if (kind === "subAgent" && status === "cancelled") return "cancelled";
+  return null;
+};
+
+/**
+ * 当前视图会话是否为「已结束的子会话」。判定字段来自 /api/state 的激活会话
+ * 身份快照（桌面端按会话记录 + live 子代理事件解析），与桌面 ChatContent
+ * 把输入区换成收尾栏的条件一致。
+ */
+const finishedSession = (
+  state: SnowRemoteState | null,
+): FinishedSession | null => {
+  const conversationType = state?.activeConversationType ?? "";
+  const kind: FinishedSession["kind"] | null =
+    conversationType === "sub_agent"
+      ? "subAgent"
+      : conversationType === "workflow_node"
+        ? "workflowNode"
+        : null;
+  if (!kind) return null;
+  const status = terminalStatus(kind, state?.activeConversationRunStatus ?? "");
+  if (!status) return null;
+  return {
+    kind,
+    status,
+    parentConversationId: state?.activeConversationParentId ?? "",
+  };
+};
+
+/** 收尾栏状态图标（与桌面收尾栏的 CheckCircle2 / XCircle / AlertCircle 对应）。 */
+const readonlyIcon = (status: FinishedSession["status"]): MobileIconName =>
+  status === "failed"
+    ? "circle-alert"
+    : status === "cancelled"
+      ? "circle-x"
+      : "circle-check";
+
+/** 收尾栏渲染签名：身份不变时跳过重建（每轮轮询零成本）。 */
+let renderedReadonlyKey = "";
+
+/**
+ * 只读收尾栏渲染：会话结束时隐藏输入区（工具条 / 附件区 / 待发送队列 / 输入行），
+ * 展示结束状态与「返回主会话」；会话恢复（续跑）时整块还原。
+ */
+const renderReadonlyBar = (finished: FinishedSession | null): void => {
+  const key = finished
+    ? [finished.kind, finished.status, finished.parentConversationId].join("|")
+    : "";
+  if (key === renderedReadonlyKey) return;
+  renderedReadonlyKey = key;
+
+  const readonly = finished !== null;
+  $("remoteToolbar").hidden = readonly;
+  $("attachmentStrip").hidden = readonly;
+  $("pendingMessages").hidden = readonly;
+  $("composerRow").hidden = readonly;
+  const bar = $("readonlyBar");
+  bar.hidden = !readonly;
+  if (!finished) {
+    bar.innerHTML = "";
+    return;
+  }
+
+  const message = escapeHtml(
+    t(`remote.readonly.${finished.kind}.${finished.status}`),
+  );
+  const backLabel = escapeHtml(t("remote.readonly.backToParent"));
+  const backButton = finished.parentConversationId
+    ? `<button class="readonly-back" type="button" data-readonly-back aria-label="${backLabel}">${iconMarkup("arrow-left")}<span>${backLabel}</span></button>`
+    : "";
+  bar.innerHTML =
+    `<span class="readonly-status ${finished.status}">${iconMarkup(readonlyIcon(finished.status))}<span>${message}</span></span>` +
+    backButton;
+};
+
 export const renderComposer = (next: SnowRemoteState | null): void => {
   latestState = next;
+  renderReadonlyBar(finishedSession(next));
   // 发送与中断是独立按钮：运行中发送按钮仍可用（消息进入待发送队列，
   // 由桌面端在回合边界自动切入），中断按钮单独显示、互不影响。
   $<HTMLButtonElement>("actionButton").disabled = false;
@@ -278,6 +369,9 @@ const submit = async (ctx: AppContext): Promise<void> => {
   const input = $<HTMLTextAreaElement>("input");
   const text = input.value;
   if (busy) return;
+  // 只读会话（已结束的子代理 / 节点）不接受发送：输入区已隐藏，这里兜住
+  // 键盘回车等残余入口（桌面端同样会拒绝这类发送）。
+  if (finishedSession(latestState)) return;
   if (attachments.some((item) => item.status === "uploading")) {
     showNotice(t("remote.attachments.uploadingNotice"), true);
     return;
@@ -413,6 +507,16 @@ export const initComposer = (ctx: AppContext): void => {
     closeOverlays(false);
   };
   window.addEventListener("resize", positionActions);
+
+  // 只读收尾栏：返回派生子代理 / 节点的主会话（复用列表的切换链路）。
+  $("readonlyBar").onclick = async (event) => {
+    const button = (event.target as HTMLElement).closest<HTMLElement>(
+      "[data-readonly-back]",
+    );
+    const parentConversationId = latestState?.activeConversationParentId ?? "";
+    if (!button || !parentConversationId) return;
+    await selectThread(ctx, parentConversationId, "");
+  };
 
   const imagePicker = $<HTMLInputElement>("imagePicker");
   const filePicker = $<HTMLInputElement>("filePicker");

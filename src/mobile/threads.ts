@@ -26,14 +26,15 @@ import type { AppContext } from "./types";
  * 展示内容与桌面侧边栏对齐：
  * - 每条会话带运行状态（需处理 / 已暂停 / 运行中 / 已完成），与桌面同源；
  * - 主会话可展开树形子层（Workflow 节点会话 → 其子代理，以及主会话直接
- *   派生的子代理），子会话可直接点击打开。
+ *   派生的子代理），子会话可直接点击打开；
+ * - 工作区分组可收起：默认只展开当前使用的工作区（未使用的项目默认收起）。
  *
  * 分页模型：
  * - state 每轮提供每个工作区的最新一页（conversationTotals 里带总数）；
  * - 「加载更多」按 offset = 该组已加载条目数向前翻页，结果累积在
  *   extraByDirectory，与会话内记录一样不受 state 窗口滑动影响；
  * - 列表渲染带签名比较：数据未变化时完全不触碰 DOM（每轮轮询零成本），
- *   只有内容/加载状态/展开状态变化才重建。
+ *   只有内容/加载状态/展开状态（含分组收起）变化才重建。
  */
 
 /** 每次「加载更多」的分页大小（与 bridge 首屏页长同量级）。 */
@@ -48,6 +49,8 @@ let lastState: SnowRemoteState | null = null;
 let renderedKey = "";
 /** 已展开子层的会话 id（主会话与 Workflow 节点会话共用一套展开状态）。 */
 const expandedIds = new Set<string>();
+/** 分组（工作区）展开状态的手动覆盖：true = 展开，false = 收起；未覆盖走默认。 */
+const groupOverrides = new Map<string, boolean>();
 
 type ThreadGroup = {
   name: string;
@@ -125,6 +128,7 @@ const conversationDigest = (conversation: SnowRemoteConversation): string =>
 const threadsSignature = (
   next: SnowRemoteState,
   groups: ThreadGroup[],
+  groupState: string,
 ): string =>
   [
     // 分钟级时间桶：让相对时间标签自然刷新，同时避免每轮重建。
@@ -133,6 +137,8 @@ const threadsSignature = (
     loadingDirectory ?? "",
     // 展开状态参与签名：点击箭头后无需等待下一轮快照即可重绘。
     Array.from(expandedIds).sort().join(","),
+    // 分组（项目）收起状态同理参与签名。
+    groupState,
     groups
       .map((group) =>
         [
@@ -378,10 +384,49 @@ const conversationHtml = (
   return `<button class="thread-item${active ? " active" : ""}" data-conversation="${escapeHtml(conversation.conversationId)}" data-directory="${escapeHtml(conversation.directoryId)}" data-depth="${depth}"><span class="thread-item-head">${toggleHtml}${badgeHtml}${nameHtml}${pillHtml}</span>${previewHtml}<span class="thread-item-time">${escapeHtml(relativeTime(conversation.updatedAt))}</span></button>${nestedHtml}`;
 };
 
+/**
+ * 默认展开的分组 = 当前使用的工作区；该工作区不在列表里（无活动工作区 /
+ * 会话都在别处）时退回第一组，避免打开列表看到一片全收起的空列表。
+ */
+const defaultOpenDirectory = (
+  groups: ThreadGroup[],
+  state: SnowRemoteState,
+): string => {
+  const workspaceId = state.workspace?.directoryId ?? "";
+  if (groups.some((group) => group.directoryId === workspaceId)) {
+    return workspaceId;
+  }
+  return groups[0]?.directoryId ?? "";
+};
+
+/** 分组是否展开：手动覆盖优先，否则只展开默认分组（未使用的项目默认收起）。 */
+const isGroupExpanded = (directoryId: string, defaultOpen: string): boolean =>
+  groupOverrides.get(directoryId) ?? directoryId === defaultOpen;
+
+/** 分组头（项目名 + 收起/展开箭头 + 条目数）：整行可点，收起后不渲染条目。 */
+const groupHeaderHtml = (group: ThreadGroup, expanded: boolean): string => {
+  const toggleLabel = t(
+    expanded ? "remote.threads.collapseGroup" : "remote.threads.expandGroup",
+  );
+  return (
+    `<button class="workspace-toggle" type="button" data-toggle-group="${escapeHtml(group.directoryId)}" aria-expanded="${expanded}" aria-label="${escapeHtml(toggleLabel)}">` +
+    `<span class="thread-item-chevron${expanded ? " expanded" : ""}">${iconMarkup("chevron-right")}</span>` +
+    `<span class="workspace-name">${escapeHtml(group.name)}</span>` +
+    `<span class="workspace-count">${group.items.length}</span>` +
+    `</button>`
+  );
+};
+
 const groupHtml = (
   group: ThreadGroup,
   activeConversationId: string | null,
+  expanded: boolean,
 ): string => {
+  const header = groupHeaderHtml(group, expanded);
+  if (!expanded) {
+    return `<section class="workspace-group collapsed">${header}</section>`;
+  }
+
   const items = group.items
     .map((conversation) =>
       conversationHtml(conversation, activeConversationId, 0),
@@ -398,19 +443,39 @@ const groupHtml = (
     footer = `<div class="thread-more"><button class="thread-more-button${loading ? " loading" : ""}" type="button" data-load-more="${escapeHtml(group.directoryId)}"${disabled ? " disabled" : ""}>${escapeHtml(label)}</button></div>`;
   }
 
-  return `<section class="workspace-group"><div class="workspace-name">${escapeHtml(group.name)}</div>${items}${footer}</section>`;
+  return `<section class="workspace-group">${header}${items}${footer}</section>`;
 };
 
 /** 会话选择列表渲染（由 main.ts 每轮快照调用）。 */
 export const renderThreads = (next: SnowRemoteState): void => {
   lastState = next;
   const groups = buildGroups(next);
-  const key = threadsSignature(next, groups);
+  const defaultOpen = defaultOpenDirectory(groups, next);
+  const expandedByDirectory = new Map(
+    groups.map((group) => [
+      group.directoryId,
+      isGroupExpanded(group.directoryId, defaultOpen),
+    ]),
+  );
+  const groupState = groups
+    .map(
+      (group) =>
+        group.directoryId +
+        (expandedByDirectory.get(group.directoryId) ? ":1" : ":0"),
+    )
+    .join(",");
+  const key = threadsSignature(next, groups, groupState);
   if (key === renderedKey) return;
   renderedKey = key;
 
   const html = groups
-    .map((group) => groupHtml(group, next.activeConversationId ?? null))
+    .map((group) =>
+      groupHtml(
+        group,
+        next.activeConversationId ?? null,
+        expandedByDirectory.get(group.directoryId) === true,
+      ),
+    )
     .join("");
   $("threadList").innerHTML =
     html || `<div class="empty">${t("remote.threads.empty")}</div>`;
@@ -464,6 +529,28 @@ export const createNewChat = async (ctx: AppContext): Promise<void> => {
   ctx.invalidateTimeline();
   showNotice(t("remote.notice.newChatCreated"));
   await ctx.refresh(false);
+};
+
+/**
+ * 切换会话（会话列表与只读收尾栏的「返回主会话」共用）：关闭浮层 → 选中 →
+ * 失效消息区缓存 → 刷新快照；directoryId 为空时由桌面端按会话记录解析。
+ */
+export const selectThread = async (
+  ctx: AppContext,
+  conversationId: string,
+  directoryId: string,
+): Promise<void> => {
+  if (!conversationId) return;
+  closeOverlays(false);
+  showNotice(t("remote.notice.switchingConversation"));
+  try {
+    await selectConversation(conversationId, directoryId);
+    ctx.invalidateTimeline();
+    await ctx.refresh(false);
+    showNotice(t("remote.notice.conversationSelected"));
+  } catch (error) {
+    showNotice((error as Error).message, true);
+  }
 };
 
 const openThreadSheet = (): void => {
@@ -526,20 +613,26 @@ export const initThreads = (ctx: AppContext): void => {
       }
       return;
     }
+    // 分组（项目）收起/展开：不打开会话，只重绘列表。
+    const groupToggle = target.closest<HTMLElement>("[data-toggle-group]");
+    if (groupToggle) {
+      const directoryId = groupToggle.dataset.toggleGroup ?? "";
+      if (directoryId && lastState) {
+        const expanded =
+          groupOverrides.get(directoryId) ??
+          directoryId ===
+            defaultOpenDirectory(buildGroups(lastState), lastState);
+        groupOverrides.set(directoryId, !expanded);
+        renderThreads(lastState);
+      }
+      return;
+    }
     const button = target.closest<HTMLElement>(".thread-item");
     if (!button) return;
-    closeOverlays(false);
-    showNotice(t("remote.notice.switchingConversation"));
-    try {
-      await selectConversation(
-        button.dataset.conversation ?? "",
-        button.dataset.directory ?? "",
-      );
-      ctx.invalidateTimeline();
-      await ctx.refresh(false);
-      showNotice(t("remote.notice.conversationSelected"));
-    } catch (error) {
-      showNotice((error as Error).message, true);
-    }
+    await selectThread(
+      ctx,
+      button.dataset.conversation ?? "",
+      button.dataset.directory ?? "",
+    );
   };
 };

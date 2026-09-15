@@ -3617,3 +3617,109 @@ html[data-i18n-pending] body {
 .empty-action:active {
   transform: scale(0.98);
 }
+
+/* ── 只读收尾栏：子代理 / 工作流节点会话结束后替换输入区（桌面同款） ─────── */
+/* 类选择器的 display 会覆盖 UA 的 [hidden]{display:none}，需显式还原。 */
+.remote-toolbar[hidden],
+.attachment-strip[hidden],
+.pending-messages[hidden],
+.composer[hidden],
+.readonly-bar[hidden] {
+  display: none;
+}
+.readonly-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 8px 8px 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background-color: var(--panel);
+  /* composer-shell 基础层为 none（渐变背景穿透），交互子元素必须显式恢复命中。 */
+  pointer-events: auto;
+}
+.readonly-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.readonly-status .icn {
+  width: 15px;
+  height: 15px;
+  color: var(--green);
+}
+.readonly-status.failed .icn {
+  color: var(--red);
+}
+.readonly-status.cancelled .icn {
+  color: var(--amber);
+}
+.readonly-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background-color: var(--panel2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+}
+.readonly-back .icn {
+  width: 13px;
+  height: 13px;
+}
+.readonly-back:active {
+  transform: scale(0.97);
+}
+
+/* ── 会话列表的项目分组头：整行可点，收起后不渲染条目 ───────────────────── */
+.workspace-toggle {
+  width: 100%;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  padding: 8px 8px 5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+}
+.workspace-toggle:active {
+  background: var(--panel2);
+}
+.workspace-toggle .thread-item-chevron {
+  color: var(--dim);
+}
+.workspace-toggle .thread-item-chevron .icn {
+  width: 13px;
+  height: 13px;
+}
+.workspace-toggle .workspace-name {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 650;
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.workspace-count {
+  flex: none;
+  font-size: 10px;
+  color: var(--dim);
+}

@@ -63,6 +63,17 @@ export const zhCN: Record<string, string> = {
   "remote.pending.sent": "已发送",
   "remote.pending.withdrawn": "已撤回，内容已恢复到输入框",
 
+  // 只读收尾栏（子代理 / 工作流节点会话结束）
+  "remote.readonly.backToParent": "返回主会话",
+  "remote.readonly.subAgent.completed": "该子代理已完成，会话仅供查看。",
+  "remote.readonly.subAgent.failed": "该子代理执行失败，会话仅供查看。",
+  "remote.readonly.subAgent.cancelled": "该子代理已取消，会话仅供查看。",
+  "remote.readonly.workflowNode.completed":
+    "该工作流节点已完成，会话仅供查看。",
+  "remote.readonly.workflowNode.failed": "该工作流节点执行失败，会话仅供查看。",
+  "remote.readonly.workflowNode.cancelled":
+    "该工作流节点已取消，会话仅供查看。",
+
   // 会话待办
   "remote.todos.title": "待办列表",
   "remote.todos.progress": "{{completed}} / {{total}} 已完成",
@@ -346,6 +357,8 @@ export const zhCN: Record<string, string> = {
   "remote.threads.statusFailed": "已失败",
   "remote.threads.expandChildren": "展开子会话",
   "remote.threads.collapseChildren": "收起子会话",
+  "remote.threads.expandGroup": "展开项目会话",
+  "remote.threads.collapseGroup": "收起项目会话",
 
   // 相对时间
   "remote.time.justNow": "刚刚",

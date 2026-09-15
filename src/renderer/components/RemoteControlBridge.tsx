@@ -97,6 +97,31 @@ const TODO_CACHE_TTL_MS = 3_000;
  * 不进入 /api/state 的同步路径。
  */
 const CONVERSATION_CHILDREN_TTL_MS = 5_000;
+/**
+ * 激活会话身份（会话类型 / 运行状态 / 父会话）缓存时长。
+ * 主会话的会话类型不会变化，落终态也不影响只读判定，可以长缓存；
+ * 子会话（子代理 / Workflow 节点）的运行状态随时可能落终态，必须短缓存，
+ * 否则手机端会在子代理结束后仍停留在输入区。
+ */
+const ACTIVE_CONVERSATION_TTL_MS = 10_000;
+const ACTIVE_CHILD_CONVERSATION_TTL_MS = 1_000;
+
+/** 子会话类型（子代理 / Workflow 节点）：运行态会变，非只读主会话。 */
+const isChildConversationType = (conversationType: string): boolean =>
+  conversationType === "sub_agent" || conversationType === "workflow_node";
+
+/** 激活会话身份快照（移动端只读判定与「返回主会话」跳转用）。 */
+type ActiveConversationMeta = {
+  conversationType: string;
+  runStatus: string;
+  parentConversationId: string;
+};
+
+const EMPTY_ACTIVE_CONVERSATION_META: ActiveConversationMeta = {
+  conversationType: "",
+  runStatus: "",
+  parentConversationId: "",
+};
 
 /** 父会话 id → 其树形子层（Workflow 节点会话 + 直接派生的子代理会话）。 */
 type RemoteConversationChildren = Record<string, SnowRemoteConversation[]>;
@@ -418,22 +443,20 @@ const pendingOperationFailureDetail = (
 
 /**
  * 回滚可用性：与桌面 ChatContent 的 canRollback 同源——子代理会话与 Workflow
- * 节点会话的消息由父会话 / 节点流程管理，桌面端不给回滚入口，手机端同样隐藏
- * （桥侧方法也会拒绝，双保险）。没有活动会话（新会话视图）时不可回滚。
+ * 节点会话的消息由父会话 / 节点流程管理，桌面端不给回滚按钮（回滚下传后还会
+ * 连带删除对应节点会话），手机端同样隐藏，桥侧方法也会拒绝（双保险）。
+ * 身份取 resolveActiveConversationMeta（live 子代理事件 + 会话记录）：
+ * 不再依赖侧边栏 upsert 事件那条可能属于别的会话的旧记录，否则从列表点开
+ * 一个旧的子代理会话时会被误判为可回滚。没有活动会话（新会话视图）时不可回滚。
  */
 const isRollbackAvailable = (
   conversation: ReturnType<typeof useChatConversationContext>,
+  meta: ActiveConversationMeta,
 ): boolean => {
   const activeId = conversation.activeConversationId ?? null;
   if (!activeId) return false;
   if (conversation.subAgentSessionEvents[activeId]) return false;
-  const record = conversation.upsertedConversation?.record ?? null;
-  return !(
-    record &&
-    record.conversationId === activeId &&
-    (record.conversationType === "sub_agent" ||
-      record.conversationType === "workflow_node")
-  );
+  return !isChildConversationType(meta.conversationType);
 };
 
 export const RemoteControlBridge = ({
@@ -529,16 +552,19 @@ export const RemoteControlBridge = ({
 
   /**
    * 回滚类操作的前置校验：必须有活动会话，且不是子代理 / 节点会话。
-   * 每次从 stateRef 取最新快照，因此拿到的始终是当前渲染的会话上下文。
+   * 每次从 stateRef 取最新快照，身份同样按当前会话重新解析（命中缓存时无查询），
+   * 因此拿到的始终是当前渲染的会话上下文。
    */
-  const requireRollbackConversation = (): ReturnType<
-    typeof useChatConversationContext
+  const requireRollbackConversation = async (): Promise<
+    ReturnType<typeof useChatConversationContext>
   > => {
     const conversation = stateRef.current.conversation;
-    if (!conversation.activeConversationId) {
+    const activeId = conversation.activeConversationId ?? null;
+    if (!activeId) {
       throw new Error("当前没有进行中的会话，暂时无法回滚");
     }
-    if (!isRollbackAvailable(conversation)) {
+    const meta = await resolveActiveConversationMeta(activeId);
+    if (!isRollbackAvailable(conversation, meta)) {
       throw new Error("子代理 / 工作流节点会话不支持回滚，请切换到普通对话");
     }
     return conversation;
@@ -782,6 +808,67 @@ export const RemoteControlBridge = ({
       // 由下一次轮询重试；把失败当成空列表会让手机端误以为列表被清空。
       return null;
     }
+  };
+
+  /** 激活会话身份缓存（见 ACTIVE_CONVERSATION_TTL_MS / 子会话短 TTL）。 */
+  const activeConversationMetaRef = useRef<{
+    conversationId: string;
+    expiresAt: number;
+    meta: ActiveConversationMeta;
+  } | null>(null);
+
+  /**
+   * 激活会话身份快照：判据与桌面 ChatContent 的 activeConversationMeta 同源
+   * ——本次运行内激活过的子代理以 live 事件为准（状态变化即时可见），其余读
+   * 会话记录（历史子代理 / Workflow 节点会话只有落盘状态）。记录按会话 id
+   * 缓存并区分主 / 子会话 TTL；读不到记录（会话刚创建等）时不写缓存，
+   * 交给下一轮轮询重试，避免空快照把「已结束的子代理」钉成可输入。
+   */
+  const resolveActiveConversationMeta = async (
+    activeId: string | null,
+  ): Promise<ActiveConversationMeta> => {
+    if (!activeId) {
+      activeConversationMetaRef.current = null;
+      return EMPTY_ACTIVE_CONVERSATION_META;
+    }
+    const cached = activeConversationMetaRef.current;
+    if (
+      !cached ||
+      cached.conversationId !== activeId ||
+      cached.expiresAt <= Date.now()
+    ) {
+      const record = await window.snow
+        .getChatConversation(activeId)
+        .catch(() => null);
+      activeConversationMetaRef.current = record
+        ? {
+            conversationId: activeId,
+            expiresAt:
+              Date.now() +
+              (isChildConversationType(record.conversationType)
+                ? ACTIVE_CHILD_CONVERSATION_TTL_MS
+                : ACTIVE_CONVERSATION_TTL_MS),
+            meta: {
+              conversationType: record.conversationType,
+              runStatus: record.subAgentStatus,
+              parentConversationId: record.parentConversationId,
+            },
+          }
+        : null;
+    }
+    const meta =
+      activeConversationMetaRef.current?.conversationId === activeId
+        ? activeConversationMetaRef.current.meta
+        : EMPTY_ACTIVE_CONVERSATION_META;
+    const live = stateRef.current.conversation.subAgentSessionEvents[activeId];
+    return live
+      ? {
+          conversationType: "sub_agent",
+          runStatus: live.status,
+          parentConversationId:
+            live.parentConversationId || meta.parentConversationId,
+        }
+      : meta;
   };
 
   /** workflow 动作的执行上下文（执行 / 反馈按当前激活会话定位 flow）。 */
@@ -1203,7 +1290,7 @@ export const RemoteControlBridge = ({
        * 都取自完整数据库历史，因此结果与在电脑端滚动到该消息后回滚完全一致。
        */
       startRollback: async (messageId: string): Promise<{ ok: true }> => {
-        const conversation = requireRollbackConversation();
+        const conversation = await requireRollbackConversation();
         const target = normalizeRemoteIdentifier(messageId);
         if (!target) {
           throw new Error("回滚目标无效");
@@ -1234,7 +1321,7 @@ export const RemoteControlBridge = ({
         mode: SnowRemoteRollbackMode,
         deleteMemories: boolean,
       ): Promise<{ ok: true }> => {
-        const conversation = requireRollbackConversation();
+        const conversation = await requireRollbackConversation();
         const target = normalizeRemoteIdentifier(messageId);
         if (mode !== "conversation-only" && mode !== "conversation-and-files") {
           throw new Error("回滚方式无效");
@@ -1630,6 +1717,9 @@ export const RemoteControlBridge = ({
         const chatInputPublication = resolveChatInputForDisplay();
         // 运行态集合每轮只构建一次，供全部列表条目（含树形子层）复用。
         const runtimeSets = conversationRuntimeSets();
+        // 激活会话身份（会话类型 / 运行态 / 父会话）：命中缓存时无额外查询。
+        const activeConversationMeta =
+          await resolveActiveConversationMeta(activeConversationId);
 
         return {
           workspace: directory
@@ -1685,8 +1775,18 @@ export const RemoteControlBridge = ({
                   ?.hasMoreMessages,
               ) || conversationMessages.length > MAX_MESSAGES
             : false,
-          // 回滚入口可见性：与桌面 canRollback 同源（子代理 / 节点会话不可回滚）。
-          rollbackAvailable: isRollbackAvailable(current.conversation),
+          // 回滚入口可见性：与桌面 canRollback 同源（子代理 / 节点会话不可回滚，
+          // 因此手机端用户消息上也不出现回滚按钮）。
+          rollbackAvailable: isRollbackAvailable(
+            current.conversation,
+            activeConversationMeta,
+          ),
+          // 激活会话身份：移动端据此把已结束的子代理 / Workflow 节点会话切为
+          // 只读（输入区替换为收尾栏），并定位「返回主会话」的目标。
+          activeConversationType: activeConversationMeta.conversationType,
+          activeConversationRunStatus: activeConversationMeta.runStatus,
+          activeConversationParentId:
+            activeConversationMeta.parentConversationId,
           // 会话待办（会话隔离）：按激活会话读取，切换会话后随快照一起切换。
           todos: await resolveTodos(activeConversationId),
           modes: {

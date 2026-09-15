@@ -365,6 +365,15 @@ export type SnowRemoteState = {
    */
   rollbackAvailable: boolean;
   /**
+   * 激活会话身份快照（会话类型 / 运行状态 / 父会话 id），与桌面 ChatContent 的
+   * activeConversationMeta 判定同源。子代理 / Workflow 节点会话结束后桌面把
+   * 输入区替换为只读收尾栏，移动端据此做同样处理（隐藏输入区 + 展示收尾栏，
+   * 「返回主会话」指向 activeConversationParentId）。无活动会话时均为空串。
+   */
+  activeConversationType: string;
+  activeConversationRunStatus: string;
+  activeConversationParentId: string;
+  /**
    * 当前激活会话的待办列表（与桌面顶部待办面板同源，会话隔离）。
    * null = 待办不可用（无活动会话或工具读取失败），移动端隐藏待办入口。
    */

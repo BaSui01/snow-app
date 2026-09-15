@@ -61,6 +61,21 @@ export const en: Record<string, string> = {
   "remote.pending.sent": "Sent",
   "remote.pending.withdrawn": "Withdrawn — content restored to the input box",
 
+  // Read-only finished bar (sub-agent / workflow node conversation)
+  "remote.readonly.backToParent": "Back to main conversation",
+  "remote.readonly.subAgent.completed":
+    "This sub-agent has finished. The conversation is read-only.",
+  "remote.readonly.subAgent.failed":
+    "This sub-agent failed. The conversation is read-only.",
+  "remote.readonly.subAgent.cancelled":
+    "This sub-agent was cancelled. The conversation is read-only.",
+  "remote.readonly.workflowNode.completed":
+    "This workflow node has finished. The conversation is read-only.",
+  "remote.readonly.workflowNode.failed":
+    "This workflow node failed. The conversation is read-only.",
+  "remote.readonly.workflowNode.cancelled":
+    "This workflow node was cancelled. The conversation is read-only.",
+
   // Conversation TODOs
   "remote.todos.title": "TODO List",
   "remote.todos.progress": "{{completed}} / {{total}} completed",
@@ -351,6 +366,8 @@ export const en: Record<string, string> = {
   "remote.threads.statusFailed": "Failed",
   "remote.threads.expandChildren": "Expand child sessions",
   "remote.threads.collapseChildren": "Collapse child sessions",
+  "remote.threads.expandGroup": "Expand project conversations",
+  "remote.threads.collapseGroup": "Collapse project conversations",
 
   // Relative time
   "remote.time.justNow": "Just now",

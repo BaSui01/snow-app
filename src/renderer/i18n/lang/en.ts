@@ -4463,31 +4463,30 @@ export const en = {
   "remoteControl.serviceNotRunning": "Service not running",
   "remoteControl.lanAddress": "LAN address",
   "remoteControl.copyAddress": "Copy address",
-  "remoteControl.rotateCredentials": "Rotate credentials",
   "remoteControl.rotateNote":
     "After rotating, paired phones and pending attachments are invalidated immediately.",
   "remoteControl.lanTokenTitle": "LAN token",
   "remoteControl.wanTokenTitle": "Public token",
   "remoteControl.tokenPinnedBadge": "Pinned",
   "remoteControl.tokenAutoBadge": "Random per launch",
-  "remoteControl.wanTokenAutoBadge": "5-minute pairing code",
+  "remoteControl.wanTokenSavedBadge": "Long-lived",
   "remoteControl.lanTokenDescription":
     "Scanning the QR code or opening the pairing link carries the token automatically; a pinned token survives restarts and can also be typed on the phone.",
   "remoteControl.wanTokenDescription":
-    "A pinned token keeps the public address and QR code valid indefinitely and can be typed on the phone.",
+    "The public QR code and address always carry this token; it survives restarts and tunnel reconnects, and the phone can also have it typed in.",
   "remoteControl.wanTokenPinnedNote":
-    "While the public entry is offline the value is stored and applied once the tunnel connects; unpin to return to 5-minute pairing codes.",
+    "While the public entry is offline the value is stored and applied once the tunnel connects; changing it requires a new scan.",
   "remoteControl.tokenCopy": "Copy token",
-  "remoteControl.tokenGenerate": "Generate",
-  "remoteControl.tokenPin": "Pin token",
+  "remoteControl.tokenGenerate": "Regenerate",
+  "remoteControl.tokenPin": "Confirm change",
   "remoteControl.tokenUnpin": "Unpin",
   "remoteControl.tokenPlaceholder": "Custom token (at least 24 characters)",
   "remoteControl.tokenStorageUnavailable":
-    "System secure storage is unavailable, so tokens cannot be pinned.",
+    "System secure storage is unavailable, so tokens cannot be saved.",
   "remoteControl.noticeTokenCopied":
     "Token copied — you can type it on your phone",
   "remoteControl.noticeTokenPinned":
-    "Token pinned; paired phones must enter it again to connect",
+    "Token changed; paired phones must enter the new token to connect",
   "remoteControl.noticeTokenUnpinned":
     "Unpinned; the next launch or connection returns to an automatic token",
   "remoteControl.noticeTokenFailed": "Failed to save the token",
@@ -4657,12 +4656,9 @@ export const en = {
   "remoteControl.wanPending": "Public entry pending",
   "remoteControl.selfHostedServer": "Self-hosted server",
   "remoteControl.wanNote":
-    "Local tunnel port {{port}}. The QR code is valid for five minutes and can be used once.",
+    "Local tunnel port {{port}}. The QR code and address carry the current token; changing it requires a new scan.",
   "remoteControl.noticeLoadFailed":
     "Could not read mobile remote control status",
-  "remoteControl.noticeRotated":
-    "Pairing credentials rotated; old phone sessions are now invalid",
-  "remoteControl.noticeRotateFailed": "Rotation failed",
   "remoteControl.noticeCopied": "Pairing address copied",
   "remoteControl.noticeCopyFailed": "Copy failed",
   "remoteControl.noticeEnabled": "Mobile remote control enabled",

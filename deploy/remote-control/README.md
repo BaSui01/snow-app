@@ -80,7 +80,7 @@ openssl x509 -req -sha256 -days 825 -in frp-server.csr \
 - `frp-ca.crt` 公钥证书；
 - `/etc/frp/snow_remote.token` 中的独立 FRP token。
 
-FRP token 与 Snow 手机配对码用途不同，不得复用。token 文件权限在 VPS 和桌面都应限制为仅运行用户可读。
+FRP token 与 Snow 手机远控令牌用途不同，不得复用。token 文件权限在 VPS 和桌面都应限制为仅运行用户可读。
 
 ## 3. 安装 VPS 配置
 
@@ -112,9 +112,9 @@ Windows、macOS 与 Linux 安装包均已内置对应平台固定版本并校验
 
 启用公网远控后点击“保存并连接”。Snow 使用系统安全存储加密持久化 token 和 CA，在仅当前用户可读的临时目录生成运行配置，校验内置 frpc 后启动；断开或退出时会终止子进程并清理临时明文文件。安全存储不可用时拒绝明文保存。
 
-依次确认设置页的“本机 WAN”“FRP 隧道”“HTTPS 探测”均正常，再扫描短期、一次性公网二维码。二维码只包含 URL fragment；浏览器会用它换取 `Secure; HttpOnly; SameSite=Strict` 会话 Cookie。不要把长期 LAN token 或 FRP token 放进域名、二维码或代理日志。
+依次确认设置页的“本机 WAN”“FRP 隧道”“HTTPS 探测”均正常，再扫描公网二维码。二维码与地址携带公网令牌；浏览器用它换取 `Secure; HttpOnly; SameSite=Strict` 会话 Cookie。不要把 FRP token 放进域名、二维码或代理日志。
 
-`frpc.toml.example` 保留用于服务器管理员独立排错和验证协议兼容性；日常使用不需要外部 frpc。点击“仅断开本次连接”会保留加密配置以便稍后重连；手机丢失或链接泄露时必须在上方轮换配对凭据，使旧配对码、Cookie 和待发送附件立即失效。
+`frpc.toml.example` 保留用于服务器管理员独立排错和验证协议兼容性；日常使用不需要外部 frpc。点击“仅断开本次连接”会保留加密配置以便稍后重连；手机丢失或链接泄露时必须在设置页的“公网令牌”里重新生成并确定更换，使旧 Cookie 和待发送附件立即失效。
 
 ## 5. 验收与故障定位
 

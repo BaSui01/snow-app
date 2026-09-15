@@ -247,32 +247,6 @@ export function RemoteControlSettingsPanel({
     };
   }, [state?.wan.pairingUrl]);
 
-  const rotate = async (): Promise<void> => {
-    setBusy(true);
-    setNotice(null);
-    try {
-      applyState(await window.snow.rotateRemoteControlToken());
-      setNotice({
-        message: t("remoteControl.noticeRotated", {
-          defaultValue: "配对凭据已更换，旧手机连接已失效",
-        }),
-        tone: "success",
-      });
-    } catch (error) {
-      setNotice({
-        message:
-          error instanceof Error
-            ? error.message
-            : t("remoteControl.noticeRotateFailed", {
-                defaultValue: "更换失败",
-              }),
-        tone: "error",
-      });
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const copy = async (): Promise<void> => {
     if (!selectedUrl) return;
     try {
@@ -1033,7 +1007,7 @@ export function RemoteControlSettingsPanel({
                 <RefreshCw size={15} strokeWidth={1.9} />
                 <span>
                   {t("remoteControl.tokenGenerate", {
-                    defaultValue: "随机生成",
+                    defaultValue: "重新生成",
                   })}
                 </span>
               </button>
@@ -1049,7 +1023,7 @@ export function RemoteControlSettingsPanel({
               >
                 <Save size={15} strokeWidth={1.9} />
                 <span>
-                  {t("remoteControl.tokenPin", { defaultValue: "固定令牌" })}
+                  {t("remoteControl.tokenPin", { defaultValue: "确定更换" })}
                 </span>
               </button>
               {state?.tokenPinned ? (
@@ -1068,10 +1042,15 @@ export function RemoteControlSettingsPanel({
                 </button>
               ) : null}
             </div>
+            <p className="remote-pairing-note">
+              {t("remoteControl.rotateNote", {
+                defaultValue: "更换后，已配对手机及尚未发送的附件会立即失效。",
+              })}
+            </p>
             {state && !state.tokenStorageAvailable ? (
               <div className="remote-pairing-message error" role="alert">
                 {t("remoteControl.tokenStorageUnavailable", {
-                  defaultValue: "系统安全存储不可用，无法固定令牌。",
+                  defaultValue: "系统安全存储不可用，无法保存令牌。",
                 })}
               </div>
             ) : null}
@@ -1140,26 +1119,7 @@ export function RemoteControlSettingsPanel({
                       })}
                     </span>
                   </button>
-                  <button
-                    type="button"
-                    className="api-settings-action-btn secondary"
-                    onClick={() => void rotate()}
-                    disabled={!state?.running || busy}
-                  >
-                    <RotateCcw size={15} strokeWidth={1.9} />
-                    <span>
-                      {t("remoteControl.rotateCredentials", {
-                        defaultValue: "更换凭据",
-                      })}
-                    </span>
-                  </button>
                 </div>
-                <p className="remote-pairing-note">
-                  {t("remoteControl.rotateNote", {
-                    defaultValue:
-                      "更换后，已配对手机及尚未发送的附件会立即失效。",
-                  })}
-                </p>
               </section>
             </div>
           ) : (
@@ -1411,7 +1371,7 @@ export function RemoteControlSettingsPanel({
                   <span>
                     {t("remoteControl.disconnectWarningText", {
                       defaultValue:
-                        "手机丢失或链接泄露时，请使用页面上方的“更换凭据”，让旧手机连接立即失效。",
+                        "手机丢失或链接泄露时，请在“公网令牌”里重新生成并确定更换，让旧手机连接立即失效。",
                     })}
                   </span>
                 </div>
@@ -2253,31 +2213,27 @@ export function RemoteControlSettingsPanel({
               <strong>
                 {t("remoteControl.wanTokenTitle", { defaultValue: "公网令牌" })}
               </strong>
-              <span
-                className={`remote-token-status ${state?.wan.fixedToken ? "pinned" : ""}`}
-              >
-                {state?.wan.fixedToken
-                  ? t("remoteControl.tokenPinnedBadge", {
-                      defaultValue: "已固定",
-                    })
-                  : t("remoteControl.wanTokenAutoBadge", {
-                      defaultValue: "五分钟一次性配对码",
-                    })}
-              </span>
+              {state?.wan.token ? (
+                <span className="remote-token-status pinned">
+                  {t("remoteControl.wanTokenSavedBadge", {
+                    defaultValue: "长期有效",
+                  })}
+                </span>
+              ) : null}
             </div>
             <p>
               {t("remoteControl.wanTokenDescription", {
                 defaultValue:
-                  "固定后公网地址与二维码长期有效（不再限时），手机也可以手动填写该令牌连接。",
+                  "公网二维码与地址始终携带该令牌，重启 Snow 或重连隧道都不变；也可以让手机手动填写。",
               })}
             </p>
             <div className="remote-token-value">
-              <code>{maskedSecret(state?.wan.fixedToken ?? "")}</code>
+              <code>{maskedSecret(state?.wan.token ?? "")}</code>
               <button
                 type="button"
                 className="api-settings-action-btn secondary"
-                onClick={() => void copyToken(state?.wan.fixedToken ?? "")}
-                disabled={!state?.wan.fixedToken || busy}
+                onClick={() => void copyToken(state?.wan.token ?? "")}
+                disabled={!state?.wan.token || busy}
               >
                 <Copy size={15} strokeWidth={1.9} />
                 <span>
@@ -2304,7 +2260,7 @@ export function RemoteControlSettingsPanel({
                 <RefreshCw size={15} strokeWidth={1.9} />
                 <span>
                   {t("remoteControl.tokenGenerate", {
-                    defaultValue: "随机生成",
+                    defaultValue: "重新生成",
                   })}
                 </span>
               </button>
@@ -2320,37 +2276,20 @@ export function RemoteControlSettingsPanel({
               >
                 <Save size={15} strokeWidth={1.9} />
                 <span>
-                  {t("remoteControl.tokenPin", { defaultValue: "固定令牌" })}
+                  {t("remoteControl.tokenPin", { defaultValue: "确定更换" })}
                 </span>
               </button>
-              {state?.wan.fixedToken ? (
-                <button
-                  type="button"
-                  className="api-settings-action-btn secondary"
-                  onClick={() => void saveFixedToken("wan", null)}
-                  disabled={busy}
-                >
-                  <RotateCcw size={15} strokeWidth={1.9} />
-                  <span>
-                    {t("remoteControl.tokenUnpin", {
-                      defaultValue: "取消固定",
-                    })}
-                  </span>
-                </button>
-              ) : null}
             </div>
-            {state?.wan.fixedToken ? (
-              <p className="remote-pairing-note">
-                {t("remoteControl.wanTokenPinnedNote", {
-                  defaultValue:
-                    "公网入口未连接时保存会在隧道连接后生效；取消固定后回到五分钟一次性配对码。",
-                })}
-              </p>
-            ) : null}
+            <p className="remote-pairing-note">
+              {t("remoteControl.wanTokenPinnedNote", {
+                defaultValue:
+                  "公网入口未连接时保存会在隧道连接后生效；更换后需要重新扫码。",
+              })}
+            </p>
             {state && !state.tokenStorageAvailable ? (
               <div className="remote-pairing-message error" role="alert">
                 {t("remoteControl.tokenStorageUnavailable", {
-                  defaultValue: "系统安全存储不可用，无法固定令牌。",
+                  defaultValue: "系统安全存储不可用，无法保存令牌。",
                 })}
               </div>
             ) : null}
@@ -2401,7 +2340,7 @@ export function RemoteControlSettingsPanel({
                   {t("remoteControl.wanNote", {
                     values: { port: state.wan.localPort },
                     defaultValue:
-                      "本机隧道端口 {{port}}。二维码五分钟内有效且只能使用一次。",
+                      "本机隧道端口 {{port}}。二维码与地址携带当前令牌，更换令牌后需要重新扫码。",
                   })}
                 </p>
               </section>

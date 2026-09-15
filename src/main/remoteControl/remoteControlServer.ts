@@ -58,9 +58,10 @@ export type RemoteControlPairingState = {
     localPort: number;
     publicOrigin: string;
     pairingUrl: string;
-    pairingExpiresAt: number | null;
-    /** 用户固定的公网令牌；未固定时为空串（公网只用一次性配对码）。 */
-    fixedToken: string;
+    /** 当前生效的公网令牌；公网入口未连接时为已保存值。 */
+    token: string;
+    /** 公网令牌是否为已保存值；否则为本次连接生成的随机令牌。 */
+    tokenPinned: boolean;
   };
 };
 
@@ -137,6 +138,18 @@ const readEnvToken = (): string => process.env.SNOW_REMOTE_TOKEN?.trim() ?? "";
 /** 生成与原生侧同构的随机令牌（24 字节 base64url）。 */
 const createRandomToken = (): string => randomBytes(24).toString("base64url");
 
+/** 首次连接公网入口时生成并加密保存初始令牌；安全存储不可用时只在本进程内使用。 */
+const ensureWanToken = (stored: RemoteFixedTokens): string => {
+  if (stored.wan) return stored.wan;
+  const token = createRandomToken();
+  try {
+    saveRemoteFixedTokens({ ...stored, wan: token });
+  } catch {
+    // 安全存储不可用时仅本次运行有效，面板会提示无法保存令牌。
+  }
+  return token;
+};
+
 const toPairingState = (
   state: NativeRemoteServerState,
   configuredPort: number,
@@ -146,9 +159,7 @@ const toPairingState = (
   const envToken = readEnvToken();
   // 服务未运行时没有内存令牌：改为回显已固定值，面板才能如实显示待生效的配置。
   const lanToken = state.running ? state.token : (stored.lan ?? "");
-  const wanFixedToken = state.wan.enabled
-    ? (state.wan.fixedToken ?? "")
-    : (stored.wan ?? "");
+  const wanToken = state.wan.enabled ? state.wan.token : (stored.wan ?? "");
   return {
     enabled: remoteControlEnabled,
     running: state.running,
@@ -171,9 +182,8 @@ const toPairingState = (
       localPort: state.wan.localPort,
       publicOrigin: state.wan.publicOrigin,
       pairingUrl: state.wan.pairingUrl,
-      // 原生侧无配对码时省略该字段；这里归一化为 null 以保持既有契约。
-      pairingExpiresAt: state.wan.pairingExpiresAt ?? null,
-      fixedToken: wanFixedToken,
+      token: wanToken,
+      tokenPinned: Boolean(stored.wan) && wanToken === stored.wan,
     },
   };
 };
@@ -224,36 +234,6 @@ export const stopRemoteControlServer = async (): Promise<void> => {
   await native.stopRemoteControlServer().catch(() => undefined);
 };
 
-/**
- * 轮换局域网令牌与公网配对码；服务未运行时抛出。
- * 已固定的令牌一并换成新的随机值，保证旧链接与旧手机立即失效。
- */
-export const rotateRemoteControlToken =
-  async (): Promise<RemoteControlPairingState> => {
-    const [state, configuredPort] = await Promise.all([
-      native.rotateRemoteControlToken(),
-      readConfiguredPort(),
-    ]);
-    const stored = loadRemoteFixedTokens();
-    const next: RemoteFixedTokens = { ...stored };
-    let latest = state;
-    if (stored.lan) next.lan = state.token;
-    if (stored.wan) {
-      next.wan = createRandomToken();
-      if (state.wan.enabled) {
-        latest = await native.setRemoteControlWanToken(next.wan);
-      }
-    }
-    if (stored.lan || stored.wan) {
-      try {
-        saveRemoteFixedTokens(next);
-      } catch {
-        // 持久化失败不影响本次轮换结果，仅重启后会回到旧固定值。
-      }
-    }
-    return toPairingState(latest, configuredPort, next);
-  };
-
 /** 应用面板固定的局域网令牌；null 表示取消固定（回到随机令牌）。 */
 export const setRemoteControlLanToken = async (
   token: string | null,
@@ -265,7 +245,7 @@ export const setRemoteControlLanToken = async (
   return toPairingState(state, configuredPort, loadRemoteFixedTokens());
 };
 
-/** 应用面板固定的公网令牌；null 表示取消固定（回到一次性配对码）。 */
+/** 应用面板提交的公网令牌；null 表示取消保存（回到本次随机令牌）。 */
 export const setRemoteControlWanToken = async (
   token: string | null,
 ): Promise<RemoteControlPairingState> => {
@@ -282,18 +262,18 @@ export const startRemoteWanListener = async (
   preferredPort = 0,
 ): Promise<RemoteControlPairingState> => {
   const stored = loadRemoteFixedTokens();
+  const wanToken = ensureWanToken(stored);
   const [state, configuredPort] = await Promise.all([
-    native.startRemoteWanListener(
-      publicOrigin,
-      preferredPort,
-      stored.wan ?? undefined,
-    ),
+    native.startRemoteWanListener(publicOrigin, preferredPort, wanToken),
     readConfiguredPort(),
   ]);
-  return toPairingState(state, configuredPort, stored);
+  return toPairingState(state, configuredPort, {
+    ...stored,
+    wan: wanToken,
+  });
 };
 
-/** 停止公网回环监听器并撤销全部公网会话；局域网不受影响。 */
+/** 停止公网回环监听器；局域网不受影响。 */
 export const stopRemoteWanListener = async (): Promise<void> => {
   await native.stopRemoteWanListener();
 };

@@ -24,7 +24,7 @@ export const zhCN: Record<string, string> = {
   "remote.empty.offline.hint": "检查桌面 Snow 是否保持运行",
   "remote.empty.unauthorized.title": "需要重新配对",
   "remote.empty.failed.title": "连接失败",
-  "remote.error.unauthorized": "配对已失效，请返回 Snow 扫描新的公网二维码",
+  "remote.error.unauthorized": "令牌已更换或失效，请返回 Snow 重新扫描二维码",
   "remote.error.offline": "无法连接桌面 Snow",
   "remote.error.timeout": "连接桌面 Snow 超时",
   "remote.error.badResponse": "响应格式错误",
@@ -415,9 +415,6 @@ export const zhCN: Record<string, string> = {
   "remote.workflow.nodeOpen": "查看节点会话",
   "remote.workflow.started": "工作流已开始执行",
   "remote.workflow.replied": "反馈已提交",
-
-  // 配对
-  "remote.pair.invalidCode": "配对码格式无效",
 
   // 工具卡片词典（i18n/lang/tools/* 聚合，键前缀 remote.toolCall.*）
   ...toolsZhCN,

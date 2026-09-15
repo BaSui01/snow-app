@@ -19,9 +19,10 @@ export type RemoteControlPairingState = {
     localPort: number;
     publicOrigin: string;
     pairingUrl: string;
-    pairingExpiresAt: number | null;
-    /** 用户固定的公网令牌；未固定时为空串。 */
-    fixedToken: string;
+    /** 当前生效的公网令牌；公网入口未连接时为已保存值。 */
+    token: string;
+    /** 公网令牌是否为已保存值；否则为本次连接生成的随机令牌。 */
+    tokenPinned: boolean;
   };
 };
 

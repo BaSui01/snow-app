@@ -334,9 +334,6 @@ export const runCommand = (commandId: string): Promise<{ ok: true }> =>
     body: JSON.stringify({ commandId }),
   });
 
-export const pair = (code: string): Promise<{ ok: true }> =>
-  request("/api/pair", { method: "POST", body: JSON.stringify({ code }) });
-
 /** 令牌填写页提交访问令牌；校验通过后服务端写入会话 Cookie。 */
 export const unlock = (token: string): Promise<{ ok: true }> =>
   request("/api/unlock", { method: "POST", body: JSON.stringify({ token }) });

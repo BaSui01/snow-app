@@ -2,10 +2,7 @@ import { app, dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { getMainWindow } from "../../app/mainWindow";
-import {
-  getRemoteControlPairingState,
-  rotateRemoteControlToken,
-} from "../../remoteControl/remoteControlServer";
+import { getRemoteControlPairingState } from "../../remoteControl/remoteControlServer";
 import {
   applyRemoteControlEnabled,
   applyRemoteControlFixedToken,
@@ -52,10 +49,6 @@ export const registerRemoteControlHandlers = (): void => {
   ipcMain.handle("remote-control:pairing-state", (event) => {
     assertMainFrame(event);
     return getRemoteControlPairingState();
-  });
-  ipcMain.handle("remote-control:rotate-token", async (event) => {
-    assertMainFrame(event);
-    return rotateRemoteControlToken();
   });
   ipcMain.handle(
     "remote-control:set-enabled",

@@ -61,12 +61,10 @@ const UNLOCK_FAILURE_WINDOW_MS: i64 = 5 * 60 * 1000;
 const MAX_UNLOCK_FAILURES: usize = 10;
 /// 令牌长度上限（面板固定令牌与移动端输入都不得超过）。
 const MAX_UNLOCK_TOKEN_LENGTH: usize = 512;
-/// 令牌解锁成功后写入的公网会话 Cookie 有效期（固定令牌本身不设过期）。
+/// 令牌解锁成功后写入的公网会话 Cookie 有效期（令牌本身不设过期）。
 const WAN_COOKIE_MAX_AGE: i64 = 365 * 24 * 60 * 60;
-/// 配对码换取会话票据后写入的 Cookie 有效期（与 24 小时会话一致）。
-const WAN_COOKIE_MAX_AGE_SESSION: i64 = 24 * 60 * 60;
 
-/// 监听器策略：局域网（长期令牌）或公网（配对会话）。
+/// 监听器策略：局域网或公网，两者都只认各自的长期令牌。
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ServerPolicy {
     Lan,
@@ -80,7 +78,7 @@ pub struct ServerContext {
     pub icon_bytes: Option<Arc<Vec<u8>>>,
     /// 局域网令牌（轮换时原地替换）。
     pub lan_token: Option<Arc<RwLock<String>>>,
-    /// 公网入口认证；配对状态查询会就地续期配对码。
+    /// 公网入口认证：与局域网一致的单一长期令牌。
     pub wan_auth: Option<Arc<WanAuth>>,
     /// 配对代数：令牌轮换 / 服务重启后自增，旧请求据此拒绝。
     pub generation: Arc<AtomicU64>,
@@ -635,10 +633,6 @@ async fn process(
         ));
     }
 
-    if context.is_wan() && method == Method::POST && path == "/api/pair" {
-        return handle_wan_pair(context, &headers, body.take()).await;
-    }
-
     if method == Method::POST && path == "/api/unlock" {
         return handle_unlock(context, &headers, body.take()).await;
     }
@@ -770,69 +764,7 @@ async fn process(
     .await
 }
 
-/// 公网配对：校验来源与内容类型后，用一次性配对码换取会话 Cookie。
-async fn handle_wan_pair(
-    context: &ServerContext,
-    headers: &HeaderMap,
-    body: Option<Body>,
-) -> Result<Response<Body>, ApiError> {
-    if !has_expected_wan_origin(headers, context) {
-        return Ok(json_response(
-            StatusCode::FORBIDDEN,
-            &json!({ "error": "请求来源无效" }),
-            Vec::new(),
-        ));
-    }
-    if !is_json_request(headers) {
-        return Ok(json_response(
-            StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            &json!({ "error": "Content-Type 必须是 application/json" }),
-            Vec::new(),
-        ));
-    }
-    let payload = read_json_body(body).await?;
-    let Some(code) = payload.get("code").and_then(Value::as_str) else {
-        return Ok(json_response(
-            StatusCode::BAD_REQUEST,
-            &json!({ "error": "配对码无效" }),
-            Vec::new(),
-        ));
-    };
-    if code.chars().count() > MAX_IDENTIFIER_LENGTH {
-        return Ok(json_response(
-            StatusCode::BAD_REQUEST,
-            &json!({ "error": "配对码无效" }),
-            Vec::new(),
-        ));
-    }
-    let Some(auth) = &context.wan_auth else {
-        return Ok(json_response(
-            StatusCode::UNAUTHORIZED,
-            &json!({ "error": "配对码无效或已过期" }),
-            Vec::new(),
-        ));
-    };
-    let Some(session) = auth.exchange(code) else {
-        return Ok(json_response(
-            StatusCode::UNAUTHORIZED,
-            &json!({ "error": "配对码无效或已过期" }),
-            Vec::new(),
-        ));
-    };
-    Ok(json_response(
-        StatusCode::OK,
-        &json!({ "ok": true, "expiresAt": session.expires_at }),
-        vec![(
-            "Set-Cookie",
-            format!(
-                "{WAN_COOKIE_NAME}={}; Path=/; Max-Age={WAN_COOKIE_MAX_AGE_SESSION}; Secure; HttpOnly; SameSite=Strict",
-                encode_query_component(&session.token)
-            ),
-        )],
-    ))
-}
-
-/// 令牌有效时返回对应的会话 Cookie：局域网写长期令牌，公网写固定令牌 / 会话票据。
+/// 令牌有效时返回对应的会话 Cookie：局域网与公网都写长期令牌。
 fn session_cookie(context: &ServerContext, candidate: &str) -> Option<String> {
     if context.is_wan() {
         let auth = context.wan_auth.as_ref()?;

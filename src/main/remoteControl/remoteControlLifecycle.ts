@@ -141,6 +141,6 @@ export const applyRemoteControlFixedToken = async (
     if (!current.running || current.token === next) return current;
     return setRemoteControlLanToken(next || null);
   }
-  if (!current.wan.enabled || current.wan.fixedToken === next) return current;
+  if (!current.wan.enabled || current.wan.token === next) return current;
   return setRemoteControlWanToken(next || null);
 };

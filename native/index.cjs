@@ -72,7 +72,6 @@ const requiredExports = [
   "startRemoteControlServer",
   "stopRemoteControlServer",
   "getRemoteControlServerState",
-  "rotateRemoteControlToken",
   "setRemoteControlLanToken",
   "setRemoteControlWanToken",
   "startRemoteWanListener",

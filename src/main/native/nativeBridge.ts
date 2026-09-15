@@ -903,12 +903,6 @@ export const loadNativeBridge = (): NativeBridge => {
           "Rust native bridge is required to read the remote control state",
         );
       },
-      rotateRemoteControlToken: () =>
-        Promise.reject(
-          new Error(
-            "Rust native bridge is required to rotate the remote control token",
-          ),
-        ),
       setRemoteControlLanToken: () =>
         Promise.reject(
           new Error(

@@ -1,9 +1,8 @@
-//! 远控 HTTP 认证：局域网长期令牌与公网隧道的配对码 / 会话管理。
+//! 远控 HTTP 认证：局域网与公网共用的长期令牌校验。
 //!
 //! 原先由 Node 主进程的 remoteWanAuth.ts 与 remoteControlServer.ts 承担；
 //! 迁移到 Rust 后，手机请求的鉴权完全绕开 Electron 的 Node 事件循环。
 
-use std::collections::VecDeque;
 use std::sync::{Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -12,14 +11,6 @@ use base64::Engine as _;
 use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use url::Url;
 
-/// 配对码有效期（5 分钟）与配对成功后会话票据有效期（24 小时）。
-const PAIRING_TTL_MS: i64 = 5 * 60 * 1000;
-const SESSION_TTL_MS: i64 = 24 * 60 * 60 * 1000;
-/// 同时保留的公网会话上限；超出时淘汰最早签发的会话。
-const MAX_SESSIONS: usize = 16;
-/// 配对失败限流：窗口内失败次数达到上限后拒绝新的配对尝试。
-const PAIRING_FAILURE_WINDOW_MS: i64 = 60 * 1000;
-const MAX_PAIRING_FAILURES_PER_WINDOW: usize = 20;
 /// 固定令牌与随机令牌共用的最小长度。
 pub const MIN_TOKEN_LEN: usize = 24;
 
@@ -107,45 +98,21 @@ pub fn normalize_public_origin(value: &str) -> Result<String, String> {
     Ok(parsed.origin().ascii_serialization())
 }
 
-/// 一次性配对码及其对应的公网配对链接。
-pub struct PairingCode {
-    pub expires_at: i64,
-    pub url: String,
-}
-
-/// 配对成功后签发的会话票据。
-pub struct WanSession {
-    pub token: String,
-    pub expires_at: i64,
-}
-
 struct WanAuthInner {
-    /// 当前配对码与过期时间；配对成功或被轮换后清空。
-    pairing: Option<(String, i64)>,
-    /// 已签发会话（令牌, 过期时间），按签发时间保序。
-    sessions: VecDeque<(String, i64)>,
-    /// 最近的配对失败时间戳，用于限流。
-    failed_attempts: VecDeque<i64>,
-    /// 用户固定的公网令牌；为空时只接受配对码换取的会话票据。
-    fixed_token: Option<String>,
+    token: String,
 }
 
-/// 公网入口鉴权：一次性配对码换取 24 小时会话票据。
+/// 公网入口鉴权：与局域网一致，用单一长期令牌校验请求。
 pub struct WanAuth {
     origin: String,
     inner: Mutex<WanAuthInner>,
 }
 
 impl WanAuth {
-    pub fn new(origin: &str) -> Result<Self, String> {
+    pub fn new(origin: &str, token: String) -> Result<Self, String> {
         Ok(Self {
             origin: normalize_public_origin(origin)?,
-            inner: Mutex::new(WanAuthInner {
-                pairing: None,
-                sessions: VecDeque::new(),
-                failed_attempts: VecDeque::new(),
-                fixed_token: None,
-            }),
+            inner: Mutex::new(WanAuthInner { token }),
         })
     }
 
@@ -166,116 +133,19 @@ impl WanAuth {
             .unwrap_or_default()
     }
 
-    /// 设置 / 清除用户固定的公网令牌（None 表示回到一次性配对码）。
-    pub fn set_fixed_token(&self, token: Option<String>) {
-        self.lock().fixed_token = token;
+    pub fn set_token(&self, token: String) {
+        self.lock().token = token;
     }
 
-    /// 当前固定的公网令牌；未固定时为空。
-    pub fn fixed_token(&self) -> Option<String> {
-        self.lock().fixed_token.clone()
+    pub fn token(&self) -> String {
+        self.lock().token.clone()
     }
 
-    /// 签发新的配对码（旧码立即失效）。
-    pub fn issue_pairing(&self) -> PairingCode {
-        let code = random_token();
-        let expires_at = now_ms() + PAIRING_TTL_MS;
-        let mut inner = self.lock();
-        inner.pairing = Some((code.clone(), expires_at));
-        PairingCode {
-            url: format!("{}/#pair={}", self.origin, code),
-            expires_at,
-        }
-    }
-
-    /// 当前有效配对码；已过期时清空并返回 None。
-    pub fn current_pairing(&self) -> Option<PairingCode> {
-        let mut inner = self.lock();
-        let (code, expires_at) = inner.pairing.clone()?;
-        if expires_at <= now_ms() {
-            inner.pairing = None;
-            return None;
-        }
-        Some(PairingCode {
-            url: format!("{}/#pair={}", self.origin, code),
-            expires_at,
-        })
-    }
-
-    /// 用配对码换取会话票据；失败计入限流窗口。
-    pub fn exchange(&self, code: &str) -> Option<WanSession> {
-        let now = now_ms();
-        let mut inner = self.lock();
-        while let Some(attempted_at) = inner.failed_attempts.front().copied() {
-            if attempted_at <= now - PAIRING_FAILURE_WINDOW_MS {
-                inner.failed_attempts.pop_front();
-            } else {
-                break;
-            }
-        }
-        if inner.failed_attempts.len() >= MAX_PAIRING_FAILURES_PER_WINDOW {
-            return None;
-        }
-        let pairing = inner.pairing.clone();
-        let matched = match &pairing {
-            Some((stored, expires_at)) => *expires_at > now && secret_matches(code, stored),
-            None => false,
-        };
-        if !matched {
-            if let Some((_, expires_at)) = &pairing {
-                if *expires_at <= now {
-                    inner.pairing = None;
-                }
-            }
-            inner.failed_attempts.push_back(now);
-            return None;
-        }
-        inner.pairing = None;
-        inner.failed_attempts.clear();
-        while let Some((_, expires_at)) = inner.sessions.front() {
-            if *expires_at <= now {
-                inner.sessions.pop_front();
-            } else {
-                break;
-            }
-        }
-        let token = random_token();
-        let expires_at = now + SESSION_TTL_MS;
-        inner.sessions.push_back((token.clone(), expires_at));
-        while inner.sessions.len() > MAX_SESSIONS {
-            inner.sessions.pop_front();
-        }
-        Some(WanSession { token, expires_at })
-    }
-
-    /// 校验会话票据或固定令牌；过期会话在每次校验时顺带清理。
     pub fn authorize(&self, token: Option<&str>) -> bool {
-        let Some(token) = token else {
+        let Some(candidate) = token else {
             return false;
         };
-        if token.is_empty() {
-            return false;
-        }
-        let now = now_ms();
-        let mut inner = self.lock();
-        if let Some(fixed) = inner.fixed_token.as_deref() {
-            if secret_matches(token, fixed) {
-                return true;
-            }
-        }
-        inner.sessions.retain(|(_, expires_at)| *expires_at > now);
-        inner
-            .sessions
-            .iter()
-            .any(|(stored, expires_at)| *expires_at > now && secret_matches(token, stored))
-    }
-
-    /// 撤销全部会话与配对码（停止监听 / 轮换凭据时调用）。
-    pub fn revoke_all(&self) {
-        let mut inner = self.lock();
-        inner.pairing = None;
-        inner.sessions.clear();
-        inner.failed_attempts.clear();
+        secret_matches(candidate, &self.lock().token)
     }
 
     fn lock(&self) -> MutexGuard<'_, WanAuthInner> {

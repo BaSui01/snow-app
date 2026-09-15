@@ -12,16 +12,15 @@ use crate::remote_control::attachments::{AttachError, RemoteAttachmentContext};
 use crate::remote_control::bridge::RemoteBridgeCallback;
 use crate::remote_control::{self, StartOptions};
 
-/// 公网入口状态：回环端口、公网地址与当前配对链接。
+/// 公网入口状态：回环端口、公网地址与当前令牌。
 #[napi(object)]
 pub struct RemoteControlWanState {
     pub enabled: bool,
     pub local_port: u32,
     pub public_origin: String,
     pub pairing_url: String,
-    pub pairing_expires_at: Option<i64>,
-    /// 用户固定的公网令牌；未固定时为空串。
-    pub fixed_token: String,
+    /// 当前生效的公网令牌；公网入口未启动时为空串。
+    pub token: String,
 }
 
 /// 远控服务状态快照（enabled 字段由 Node 侧按总开关补充）。
@@ -79,8 +78,7 @@ fn to_state(state: remote_control::RemoteControlState) -> RemoteControlServerSta
             local_port: state.wan.local_port as u32,
             public_origin: state.wan.public_origin,
             pairing_url: state.wan.pairing_url,
-            pairing_expires_at: state.wan.pairing_expires_at,
-            fixed_token: state.wan.fixed_token,
+            token: state.wan.token,
         },
     }
 }
@@ -135,15 +133,6 @@ pub fn get_remote_control_server_state() -> RemoteControlServerState {
     to_state(remote_control::state())
 }
 
-/// 轮换局域网令牌与公网会话，并重发公网配对码。
-#[napi]
-pub async fn rotate_remote_control_token() -> napi::Result<RemoteControlServerState> {
-    let state = remote_control::rotate_token()
-        .await
-        .map_err(Error::from_reason)?;
-    Ok(to_state(state))
-}
-
 /// 应用面板固定的局域网令牌（None 表示回到随机令牌）。
 #[napi]
 pub async fn set_remote_control_lan_token(
@@ -155,7 +144,7 @@ pub async fn set_remote_control_lan_token(
     Ok(to_state(state))
 }
 
-/// 应用面板固定的公网令牌（None 表示回到一次性配对码）。
+/// 应用面板固定的公网令牌（None 表示回到本次随机令牌）。
 #[napi]
 pub async fn set_remote_control_wan_token(
     token: Option<String>,
@@ -171,15 +160,15 @@ pub async fn set_remote_control_wan_token(
 pub async fn start_remote_wan_listener(
     public_origin: String,
     preferred_port: u32,
-    fixed_token: Option<String>,
+    token: Option<String>,
 ) -> napi::Result<RemoteControlServerState> {
-    let state = remote_control::start_wan_listener(public_origin, preferred_port as u16, fixed_token)
+    let state = remote_control::start_wan_listener(public_origin, preferred_port as u16, token)
         .await
         .map_err(Error::from_reason)?;
     Ok(to_state(state))
 }
 
-/// 停止公网回环监听器并撤销全部公网会话。
+/// 停止公网回环监听器。
 #[napi]
 pub async fn stop_remote_wan_listener() -> napi::Result<()> {
     remote_control::stop_wan_listener()

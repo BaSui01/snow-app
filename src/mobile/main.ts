@@ -1,5 +1,5 @@
 import type { SnowRemoteState } from "../renderer/types/remoteControl";
-import { fetchState, isUnauthorizedError, pair } from "./api";
+import { fetchState, isUnauthorizedError } from "./api";
 import { initComposer, renderComposer, syncSessionContext } from "./composer";
 import { initControls, renderControls } from "./controls";
 import { $, escapeHtml } from "./dom";
@@ -136,24 +136,6 @@ const schedule = (): void => {
   );
 };
 
-const pairFromFragment = async (): Promise<void> => {
-  const params = new URLSearchParams(location.hash.slice(1));
-  const code = params.get("pair");
-  if (!code) return;
-  if (!/^[A-Za-z0-9_-]{32}$/.test(code)) {
-    throw new Error(t("remote.pair.invalidCode"));
-  }
-  history.replaceState(null, "", location.pathname);
-  await pair(code);
-};
-
-const runPairing = (): Promise<void> =>
-  pairFromFragment()
-    .catch((error) => {
-      showNotice((error as Error).message, true);
-    })
-    .then(() => refresh(false));
-
 const ctx: AppContext = {
   refresh,
   getState: () => currentState,
@@ -185,9 +167,6 @@ initUnlock(() => refresh(false));
 renderControls(null);
 renderComposer(null);
 
-window.addEventListener("hashchange", () => {
-  void runPairing();
-});
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) void refresh(true);
   schedule();
@@ -211,4 +190,4 @@ if (viewport) {
 if (location.search) {
   history.replaceState(null, "", location.pathname + location.hash);
 }
-void runPairing().finally(schedule);
+schedule();

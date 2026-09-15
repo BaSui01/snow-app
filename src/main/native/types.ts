@@ -1445,10 +1445,8 @@ export type RemoteControlWanState = {
   localPort: number;
   publicOrigin: string;
   pairingUrl: string;
-  /** 无有效配对码时该字段省略（原生侧 Option::None）。 */
-  pairingExpiresAt?: number;
-  /** 用户固定的公网令牌；未固定时为空串。 */
-  fixedToken: string;
+  /** 当前生效的公网令牌；公网入口未启动时为空串。 */
+  token: string;
 };
 
 /** 远控服务状态快照（enabled 字段由 Node 侧按总开关补充）。 */
@@ -1981,13 +1979,11 @@ export type NativeBridge = {
   stopRemoteControlServer: () => Promise<void>;
   /** 同步读取远控服务状态（内存快照，无 I/O）。 */
   getRemoteControlServerState: () => RemoteControlServerState;
-  /** 轮换局域网令牌与公网会话，并重发公网配对码。 */
-  rotateRemoteControlToken: () => Promise<RemoteControlServerState>;
   /** 应用面板固定的局域网令牌（省略表示回到随机令牌）。 */
   setRemoteControlLanToken: (
     token?: string,
   ) => Promise<RemoteControlServerState>;
-  /** 应用面板固定的公网令牌（省略表示回到一次性配对码）。 */
+  /** 应用面板固定的公网令牌（省略表示回到本次随机令牌）。 */
   setRemoteControlWanToken: (
     token?: string,
   ) => Promise<RemoteControlServerState>;
@@ -1995,9 +1991,9 @@ export type NativeBridge = {
   startRemoteWanListener: (
     publicOrigin: string,
     preferredPort: number,
-    fixedToken?: string,
+    token?: string,
   ) => Promise<RemoteControlServerState>;
-  /** 停止公网回环监听器并撤销全部公网会话。 */
+  /** 停止公网回环监听器。 */
   stopRemoteWanListener: () => Promise<void>;
   /** 解析远控附件（渲染进程组装消息时使用）。 */
   resolveRemoteAttachments: (

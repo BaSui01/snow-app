@@ -19,7 +19,7 @@ export const zhTW: Record<string, string> = {
   "remote.empty.offline.hint": "檢查桌面 Snow 是否保持執行",
   "remote.empty.unauthorized.title": "需要重新配對",
   "remote.empty.failed.title": "連線失敗",
-  "remote.error.unauthorized": "配對已失效，請返回 Snow 掃描新的公網二維碼",
+  "remote.error.unauthorized": "權杖已更換或失效，請返回 Snow 重新掃描 QR Code",
   "remote.error.offline": "無法連線桌面 Snow",
   "remote.error.timeout": "連線桌面 Snow 逾時",
   "remote.error.badResponse": "回應格式錯誤",
@@ -410,9 +410,6 @@ export const zhTW: Record<string, string> = {
   "remote.workflow.nodeOpen": "查看節點對話",
   "remote.workflow.started": "工作流已開始執行",
   "remote.workflow.replied": "回饋已提交",
-
-  // 配對
-  "remote.pair.invalidCode": "配對碼格式無效",
 
   // 工具卡片詞典（i18n/lang/tools/* 聚合，鍵前綴 remote.toolCall.*）
   ...toolsZhTW,

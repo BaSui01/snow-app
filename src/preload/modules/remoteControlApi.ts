@@ -17,8 +17,6 @@ import type {
 export const remoteControlApi = {
   getRemoteControlPairingState: (): Promise<RemoteControlPairingState> =>
     ipcRenderer.invoke("remote-control:pairing-state"),
-  rotateRemoteControlToken: (): Promise<RemoteControlPairingState> =>
-    ipcRenderer.invoke("remote-control:rotate-token"),
   setRemoteControlEnabled: (
     enabled: boolean,
   ): Promise<RemoteControlPairingState> =>

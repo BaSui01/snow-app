@@ -21,7 +21,7 @@ export const en: Record<string, string> = {
   "remote.empty.unauthorized.title": "Pairing required",
   "remote.empty.failed.title": "Connection failed",
   "remote.error.unauthorized":
-    "Pairing expired. Rescan the public QR code in Snow.",
+    "The access token changed or is no longer valid. Rescan the QR code in Snow.",
   "remote.error.offline": "Cannot reach desktop Snow",
   "remote.error.timeout": "Timed out connecting to desktop Snow",
   "remote.error.badResponse": "Unexpected response format",
@@ -425,9 +425,6 @@ export const en: Record<string, string> = {
   "remote.workflow.nodeOpen": "Open node chat",
   "remote.workflow.started": "Workflow started",
   "remote.workflow.replied": "Feedback submitted",
-
-  // Pairing
-  "remote.pair.invalidCode": "Invalid pairing code format",
 
   // 工具卡片词典（i18n/lang/tools/* 聚合，键前缀 remote.toolCall.*）
   ...toolsEn,

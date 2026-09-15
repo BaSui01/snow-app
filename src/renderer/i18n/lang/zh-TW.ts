@@ -4233,29 +4233,28 @@ export const zhTW = {
   "remoteControl.serviceNotRunning": "服務未執行",
   "remoteControl.lanAddress": "區域網路位址",
   "remoteControl.copyAddress": "複製位址",
-  "remoteControl.rotateCredentials": "更換憑證",
   "remoteControl.rotateNote":
     "更換後，已配對的手機與尚未傳送的附件會立即失效。",
   "remoteControl.lanTokenTitle": "區域網路權杖",
   "remoteControl.wanTokenTitle": "公網權杖",
   "remoteControl.tokenPinnedBadge": "已固定",
   "remoteControl.tokenAutoBadge": "本次啟動隨機",
-  "remoteControl.wanTokenAutoBadge": "五分鐘一次性配對碼",
+  "remoteControl.wanTokenSavedBadge": "長期有效",
   "remoteControl.lanTokenDescription":
     "掃碼或開啟配對連結會自動帶上權杖；固定後重新啟動 Snow 也不變，也可以用手機手動填寫。",
   "remoteControl.wanTokenDescription":
-    "固定後公網位址與 QR Code 長期有效（不再限時），手機也可以手動填寫該權杖連線。",
+    "公網 QR Code 與位址一律帶上該權杖，重新啟動 Snow 或重連通道都不變；也可以用手機手動填寫。",
   "remoteControl.wanTokenPinnedNote":
-    "公網入口未連線時儲存會在通道連線後生效；取消固定後回到五分鐘一次性配對碼。",
+    "公網入口未連線時儲存會在通道連線後生效；更換後需要重新掃碼。",
   "remoteControl.tokenCopy": "複製權杖",
-  "remoteControl.tokenGenerate": "隨機產生",
-  "remoteControl.tokenPin": "固定權杖",
+  "remoteControl.tokenGenerate": "重新產生",
+  "remoteControl.tokenPin": "確定更換",
   "remoteControl.tokenUnpin": "取消固定",
   "remoteControl.tokenPlaceholder": "輸入自訂權杖（至少 24 個字元）",
-  "remoteControl.tokenStorageUnavailable": "系統安全儲存不可用，無法固定權杖。",
+  "remoteControl.tokenStorageUnavailable": "系統安全儲存不可用，無法儲存權杖。",
   "remoteControl.noticeTokenCopied": "權杖已複製，可在手機上手動填寫",
   "remoteControl.noticeTokenPinned":
-    "權杖已固定；已配對的手機需要重新填寫該權杖才能連線",
+    "權杖已更換；已配對的手機需要重新填寫新權杖才能連線",
   "remoteControl.noticeTokenUnpinned":
     "已取消固定，下次啟動或連線時回到自動權杖",
   "remoteControl.noticeTokenFailed": "儲存權杖失敗",
@@ -4418,10 +4417,8 @@ export const zhTW = {
   "remoteControl.wanPending": "公網入口待驗證",
   "remoteControl.selfHostedServer": "自架伺服器",
   "remoteControl.wanNote":
-    "本機通道連接埠 {{port}}。QR Code 五分鐘內有效且只能使用一次。",
+    "本機通道連接埠 {{port}}。QR Code 與位址帶上目前權杖，更換權杖後需要重新掃碼。",
   "remoteControl.noticeLoadFailed": "無法讀取手機遠端控制狀態",
-  "remoteControl.noticeRotated": "配對憑證已更換，舊手機連線已失效",
-  "remoteControl.noticeRotateFailed": "更換失敗",
   "remoteControl.noticeCopied": "配對位址已複製",
   "remoteControl.noticeCopyFailed": "複製失敗",
   "remoteControl.noticeEnabled": "手機遠端控制已開啟",

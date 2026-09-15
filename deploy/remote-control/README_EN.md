@@ -112,9 +112,9 @@ The Windows, macOS and Linux installers all bundle a SHA-256-verified `frpc` of 
 
 After enabling public WAN remote control, click "Save and connect". Snow encrypts the token and the CA with the system secure storage, generates the runtime configuration in a temporary directory readable only by the current user, verifies the bundled frpc and then starts it; on disconnect or exit it terminates the child process and removes the temporary plaintext files. When secure storage is unavailable, plaintext persistence is refused.
 
-Confirm in order that "Local WAN", "FRP tunnel" and "HTTPS probe" on the settings page are all healthy, then scan the short-lived, single-use public QR code. The QR code only contains a URL fragment; the browser exchanges it for a `Secure; HttpOnly; SameSite=Strict` session cookie. Never put the long-term LAN token or the FRP token into the domain, the QR code, or proxy logs.
+Confirm in order that "Local WAN", "FRP tunnel" and "HTTPS probe" on the settings page are all healthy, then scan the public QR code. The QR code and address carry the public token; the browser exchanges it for a `Secure; HttpOnly; SameSite=Strict` session cookie. Never put the FRP token into the domain, the QR code, or proxy logs.
 
-`frpc.toml.example` is kept for server administrators who need to troubleshoot independently and verify protocol compatibility; everyday use needs no external frpc. Clicking "Disconnect this connection only" keeps the encrypted configuration for a later reconnect; if the phone is lost or the link leaks, rotate the pairing credential in the settings above so that old pairing codes, cookies, and pending attachments are invalidated immediately.
+`frpc.toml.example` is kept for server administrators who need to troubleshoot independently and verify protocol compatibility; everyday use needs no external frpc. Clicking "Disconnect this connection only" keeps the encrypted configuration for a later reconnect; if the phone is lost or the link leaks, regenerate and confirm a new public token in the settings above so that old cookies and pending attachments are invalidated immediately.
 
 ## 5. Acceptance and troubleshooting
 

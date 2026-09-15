@@ -266,6 +266,153 @@ textarea:focus-visible {
   min-width: 0;
   margin: 0 auto;
 }
+.compaction-stream {
+  margin: 0 0 23px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 14px;
+  padding: 10px 12px;
+  animation: rise 0.2s ease-out;
+}
+.compaction-stream-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.compaction-stream-icon .icn {
+  width: 14px;
+  height: 14px;
+}
+.compaction-stream-heading {
+  flex: 1;
+  min-width: 0;
+}
+.compaction-spinner {
+  display: inline-flex;
+}
+.compaction-spinner .icn {
+  width: 13px;
+  height: 13px;
+  animation: spin 0.9s linear infinite;
+}
+.compaction-stream-body {
+  margin-top: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.compaction-placeholder {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 2px;
+}
+.compaction-placeholder span {
+  height: 7px;
+  border-radius: 999px;
+  background: var(--secondary-control-bg);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.compaction-placeholder span:nth-child(1) {
+  width: 92%;
+}
+.compaction-placeholder span:nth-child(2) {
+  width: 76%;
+  animation-delay: 0.15s;
+}
+.compaction-placeholder span:nth-child(3) {
+  width: 58%;
+  animation-delay: 0.3s;
+}
+.compaction-error {
+  margin: 0 0 23px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border: 1px solid rgba(255, 114, 123, 0.35);
+  background: var(--red-dim);
+  color: var(--red);
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+}
+.compaction-error .icn {
+  width: 14px;
+  height: 14px;
+  margin-top: 1px;
+}
+.message.compaction .message-shell {
+  max-width: 100%;
+}
+.compaction-card {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.compaction-card-header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+  cursor: pointer;
+  list-style: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.compaction-card-header::-webkit-details-marker {
+  display: none;
+}
+.compaction-card-header:active {
+  background: rgba(255, 255, 255, 0.04);
+}
+.compaction-card-icon {
+  color: var(--muted);
+}
+.compaction-card-icon .icn {
+  width: 15px;
+  height: 15px;
+}
+.compaction-card-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.compaction-card-copy strong {
+  font-size: 13px;
+  color: var(--text);
+}
+.compaction-card-desc {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.compaction-card-action {
+  display: inline-flex;
+  color: var(--muted);
+}
+.compaction-card-action .icn {
+  width: 15px;
+  height: 15px;
+  transition: transform 0.15s ease;
+}
+.compaction-card[open] .compaction-card-action .icn {
+  transform: rotate(180deg);
+}
+.compaction-card-body {
+  border-top: 1px solid var(--line);
+  padding: 10px 12px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
 .empty {
   min-height: 55vh;
   display: grid;

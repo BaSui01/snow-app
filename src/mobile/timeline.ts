@@ -4,6 +4,7 @@ import type {
   SnowRemoteToolCall,
 } from "../renderer/types/remoteControl";
 import { fetchOlderMessages } from "./api";
+import { compactionCardHtml, syncCompactionNode } from "./compaction";
 import { $, escapeHtml } from "./dom";
 import { messageTime } from "./format";
 import { t } from "./i18n";
@@ -428,7 +429,9 @@ const buildMessageBlocks = (
     create: () =>
       htmlToElement(
         role === "user"
-          ? userContentBlocksHtml(message)
+          ? Boolean(message.isContextCompaction)
+            ? compactionCardHtml(body)
+            : userContentBlocksHtml(message)
           : `<div class="markdown">${renderMarkdown(body)}</div>`,
       ),
   });
@@ -556,6 +559,7 @@ const messageSignature = (
     isThinkingDisplayActive(message) ? "t1" : "t0",
     String(message.thinkingDurationMs ?? 0),
     caret ? "c1" : "c0",
+    message.isContextCompaction ? "k1" : "k0",
     toolSummary(message.toolCalls),
     contentDigest(message.content || ""),
     // 回滚入口的显隐参与签名：可回滚状态变化（流式起止 / 会话切换）必须触发重建。
@@ -564,8 +568,12 @@ const messageSignature = (
 };
 
 /** 消息 article 的角色类名；占位符阶段不带角色类（气泡等装饰不参与绘制）。 */
-const messageElementClass = (role: string): string =>
-  role === "user" || role === "assistant" ? `message ${role}` : "message";
+const messageElementClass = (role: string, isCompaction: boolean): string => {
+  if (role === "user" && isCompaction) return "message compaction";
+  return role === "user" || role === "assistant"
+    ? `message ${role}`
+    : "message";
+};
 
 /**
  * 占位符化：卸载全部内容（.message-shell 及其块），按缓存的实测高度撑开
@@ -602,7 +610,10 @@ const reviveMessageNode = (
   node: MessageNode,
   message: SnowRemoteMessage,
 ): HTMLElement => {
-  node.el.className = messageElementClass(message.role || "assistant");
+  node.el.className = messageElementClass(
+    message.role || "assistant",
+    Boolean(message.isContextCompaction),
+  );
   node.el.style.height = "";
   node.el.style.animation = "none";
   node.el.removeAttribute("aria-hidden");
@@ -628,7 +639,10 @@ const createMessageNode = (
   isStreaming: boolean,
 ): MessageNode => {
   const el = document.createElement("article");
-  el.className = messageElementClass(message.role || "assistant");
+  el.className = messageElementClass(
+    message.role || "assistant",
+    Boolean(message.isContextCompaction),
+  );
   const shell = document.createElement("div");
   shell.className = "message-shell";
   el.append(shell);
@@ -755,13 +769,14 @@ const reconcileMessages = (rebuild: boolean): void => {
     }
   }
 
+  const compactionEl = syncCompactionNode(state);
   const expected = new Set<Element>(nextEls);
+  if (compactionEl) expected.add(compactionEl);
   for (const child of Array.from(container.children)) {
     if (!expected.has(child)) child.remove();
   }
   alignChildren(container, nextEls);
-  // 新挂载 / 复活的真实内容节点：本轮结束前批量测量一次（整批只触发一次
-  // 强制布局），让紧随其后的观察器首批报告能用实测高度占位。
+  if (compactionEl) container.append(compactionEl);
   flushMessageMeasures();
 };
 

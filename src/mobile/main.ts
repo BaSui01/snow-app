@@ -39,6 +39,12 @@ const buildSignature = (next: SnowRemoteState): string =>
   "|" +
   next.isStreaming +
   "|" +
+  next.isCompacting +
+  "|" +
+  (next.compactionError ?? "") +
+  "|" +
+  (next.compactionPreview ?? "").length +
+  "|" +
   // 回滚入口可见性参与签名（与 timeline.ts 的判定同源）：桌面切到子代理会话、
   // 或会话身份判定完成后「能否回滚」发生变化时，用户消息上的回滚按钮必须立即
   // 跟随消失，不能等下一次消息变化才重绘。

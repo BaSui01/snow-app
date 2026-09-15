@@ -17,6 +17,7 @@ import {
   readRemoteControlChatInput,
   type SnowRemoteChatInputPublication,
 } from "./mainContent/chatInput/remoteControlChatInputRegistry";
+import type { ChatInputSendOptions } from "./mainContent/chatInput/types";
 import { redactSensitiveToolText } from "./remoteControlRedaction";
 import {
   replyRemoteWorkflow,
@@ -84,6 +85,8 @@ const ROLLBACK_HISTORY_TIMEOUT_MS = 8_000;
 /** 每次翻页后等待会话窗口刷新的轮询间隔与次数（渲染落盘通常在下一帧）。 */
 const ROLLBACK_GROWTH_POLL_MS = 20;
 const ROLLBACK_GROWTH_ATTEMPTS = 25;
+const CHAT_INPUT_MOUNT_POLL_MS = 100;
+const CHAT_INPUT_MOUNT_TIMEOUT_MS = 8_000;
 /**
  * 待办快照缓存时长。/api/state 由手机端高频轮询，而待办需要调用
  * MCP 工具读取（一次 IPC + SQLite 查询）：命中缓存时直接复用，
@@ -328,7 +331,7 @@ const toRemoteMessage = (
         ) ?? "")
       : (truncate(message.content) ?? ""),
   contentBlocks:
-    message.role === "user"
+    message.role === "user" && !message.isContextCompaction
       ? toRemoteContentBlocks(message.id, message.content)
       : undefined,
   thinking: truncate(message.thinking),
@@ -338,6 +341,7 @@ const toRemoteMessage = (
   toolCalls: message.toolCalls?.map(toRemoteToolCall),
   timestamp: message.timestamp,
   status: message.status,
+  isContextCompaction: message.isContextCompaction || undefined,
 });
 
 // 会话列表条目 → 远程 DTO：preview 先剥离附件标记再截断（见 toRemotePreview）。
@@ -507,17 +511,45 @@ export const RemoteControlBridge = ({
       return publication ? matchChatInputConversation(publication) : null;
     };
 
-  // 需要“真实 setter 链”的远程变更（模型/Profile/思考强度/Fast Mode）：
-  // 桌面端在流式期间禁用模型菜单、子代理会话的输入配置由子代理配置决定，
-  // 远程操作同样拒绝，避免绕过桌面行为约束。
-  const requireChatInputForMutation = (): SnowRemoteChatInputPublication => {
-    const publication = resolveChatInput();
-    if (!publication) {
+  const isChatInputReadyForMutation = (
+    publication: SnowRemoteChatInputPublication,
+  ): boolean => !publication.isLoadingApiConfig;
+
+  const waitForChatInputReady =
+    (): Promise<SnowRemoteChatInputPublication | null> =>
+      new Promise((resolve) => {
+        const startedAt = Date.now();
+        const check = (): void => {
+          const publication = resolveChatInput();
+          if (publication && isChatInputReadyForMutation(publication)) {
+            resolve(publication);
+            return;
+          }
+          if (Date.now() - startedAt >= CHAT_INPUT_MOUNT_TIMEOUT_MS) {
+            resolve(null);
+            return;
+          }
+          setTimeout(check, CHAT_INPUT_MOUNT_POLL_MS);
+        };
+        check();
+      });
+
+  const guardChatInputForMutation = (
+    publication: SnowRemoteChatInputPublication,
+  ): SnowRemoteChatInputPublication => {
+    if (stateRef.current.conversation.isStreaming) {
+      throw new Error("请先停止当前运行");
+    }
+    if (publication.isSubAgentConversation) {
+      throw new Error("子代理会话的输入配置由子代理配置决定，无法远程修改");
+    }
+    return publication;
+  };
+
+  const ensureChatInputForMutation =
+    async (): Promise<SnowRemoteChatInputPublication> => {
       const current = stateRef.current.conversation;
       const activeId = current.activeConversationId;
-      // 子代理 / 工作流节点会话：输入配置由父会话或节点配置决定；会话结束
-      // 后输入区还会被结束提示条替换（live 快照随之消失）。这类会话远程
-      // 不能修改，给出准确原因，避免与“桌面不在对话页”混淆。
       const record = current.upsertedConversation?.record ?? null;
       const isChildSession =
         Boolean(activeId && current.subAgentSessionEvents[activeId]) ||
@@ -533,22 +565,21 @@ export const RemoteControlBridge = ({
           "电脑端当前是子代理/工作流会话，输入配置不可远程修改（请切换到普通对话）",
         );
       }
-      // 展示快照存在而实时快照缺失：输入区已卸载（桌面停留在设置页等
-      // 非对话视图），setter 链随组件销毁，给出明确指引而不是笼统的“未就绪”。
-      throw new Error(
-        resolveChatInputForDisplay()
-          ? "电脑端当前暂不支持修改（请在电脑端打开一个普通对话）"
-          : "电脑端尚未就绪，请确认电脑端已打开对话",
-      );
-    }
-    if (stateRef.current.conversation.isStreaming) {
-      throw new Error("请先停止当前运行");
-    }
-    if (publication.isSubAgentConversation) {
-      throw new Error("子代理会话的输入配置由子代理配置决定，无法远程修改");
-    }
-    return publication;
-  };
+      const live = resolveChatInput();
+      if (live && isChatInputReadyForMutation(live)) {
+        return guardChatInputForMutation(live);
+      }
+      stateRef.current.onSelectMainView("chat");
+      const publication = await waitForChatInputReady();
+      if (!publication) {
+        throw new Error(
+          resolveChatInputForDisplay()
+            ? "电脑端输入区尚未就绪，请稍后重试"
+            : "电脑端尚未就绪，请确认电脑端已打开对话",
+        );
+      }
+      return guardChatInputForMutation(publication);
+    };
 
   /**
    * 回滚类操作的前置校验：必须有活动会话，且不是子代理 / 节点会话。
@@ -1732,8 +1763,23 @@ export const RemoteControlBridge = ({
           activeConversationId,
           isStreaming: current.conversation.isStreaming,
           isAborting: current.conversation.isAborting,
-          isCompacting: Boolean(current.conversation.isCompacting),
-          compactionError: current.conversation.compactionError ?? null,
+          isCompacting:
+            Boolean(current.conversation.isCompacting) &&
+            activeConversationId !== null &&
+            activeConversationId ===
+              current.conversation.compactingConversationId,
+          compactionError:
+            activeConversationId !== null &&
+            activeConversationId ===
+              current.conversation.compactingConversationId
+              ? (current.conversation.compactionError ?? null)
+              : null,
+          compactionPreview:
+            activeConversationId !== null &&
+            activeConversationId ===
+              current.conversation.compactingConversationId
+              ? (current.conversation.compactionPreview ?? "")
+              : "",
           attentionRequired:
             activeConversationId !== null &&
             current.conversation.attentionRequiredConversationIds.has(
@@ -1958,7 +2004,22 @@ export const RemoteControlBridge = ({
           .filter(Boolean)
           .join("\n");
         stateRef.current.onSelectMainView("chat");
-        stateRef.current.conversation.handleSendMessage(message, {});
+        const chatInput = resolveChatInputForDisplay();
+        const sendOptions: ChatInputSendOptions = {};
+        if (chatInput) {
+          sendOptions.model = chatInput.selectedModel || undefined;
+          sendOptions.apiProfile = chatInput.selectedApiProfile || undefined;
+          sendOptions.thinkingStrength =
+            chatInput.effectiveThinkingValue || undefined;
+          if (chatInput.requestMethod === "responses") {
+            sendOptions.responsesFastMode = chatInput.responsesFastModeEnabled;
+          }
+          sendOptions.conversationRuntimeConfigOverride = {
+            thinkingStrength: chatInput.thinkingOverride || null,
+            responsesFastMode: chatInput.responsesFastModeOverride,
+          };
+        }
+        stateRef.current.conversation.handleSendMessage(message, sendOptions);
         return { ok: true };
       },
 
@@ -2083,7 +2144,7 @@ export const RemoteControlBridge = ({
         if (normalized.length > MAX_IDENTIFIER_LENGTH) {
           throw new Error("模型 ID 过长");
         }
-        const publication = requireChatInputForMutation();
+        const publication = await ensureChatInputForMutation();
         if (!publication.modelIds.includes(normalized)) {
           throw new Error("模型不存在或尚未加载模型列表");
         }
@@ -2100,7 +2161,7 @@ export const RemoteControlBridge = ({
         if (normalized.length > MAX_IDENTIFIER_LENGTH) {
           throw new Error("Profile 名称过长");
         }
-        const publication = requireChatInputForMutation();
+        const publication = await ensureChatInputForMutation();
         if (!publication.apiProfileNames.includes(normalized)) {
           throw new Error("Profile 不存在或不可用");
         }
@@ -2111,7 +2172,7 @@ export const RemoteControlBridge = ({
       // 复用真实 handleSelectThinking setter 链；"" = 继承 Profile 默认，
       // 非空为自定义强度（与桌面 ThinkingStrengthMenu 自定义输入一致）。
       setThinking: async (value: string): Promise<{ ok: true }> => {
-        const publication = requireChatInputForMutation();
+        const publication = await ensureChatInputForMutation();
         const nextValue = typeof value === "string" ? value.trim() : "";
         if (nextValue.length > MAX_THINKING_LENGTH) {
           throw new Error(`思考强度值不能超过 ${MAX_THINKING_LENGTH} 个字符`);
@@ -2124,7 +2185,7 @@ export const RemoteControlBridge = ({
       // desired 为布尔时做幂等处理：与当前状态一致则直接返回，
       // 避免手机端与桌面端并发点击造成来回翻转。
       toggleResponsesFastMode: async (desired?): Promise<{ ok: true }> => {
-        const publication = requireChatInputForMutation();
+        const publication = await ensureChatInputForMutation();
         if (publication.requestMethod !== "responses") {
           throw new Error("当前请求方式不支持 Responses Fast Mode");
         }

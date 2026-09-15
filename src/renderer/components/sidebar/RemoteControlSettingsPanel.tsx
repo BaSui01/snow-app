@@ -1,13 +1,18 @@
 import {
   Copy,
+  Download,
   FileUp,
+  Globe,
   Power,
   RefreshCw,
   RotateCcw,
   Save,
   Server,
+  Settings2,
   Smartphone,
+  Trash2,
   Unplug,
+  Wifi,
   X,
 } from "lucide-react";
 import QRCode from "qrcode";
@@ -22,16 +27,22 @@ import type {
 } from "../../../preload";
 import { useI18n } from "../../i18n";
 import { AutoDismissNotice } from "../AutoDismissNotice";
+import { ConfirmDialog } from "../common/ConfirmDialog";
 import { CustomSelect, type CustomSelectOption } from "../common/CustomSelect";
 
 type RemoteControlSettingsPanelProps = {
   onClose?: () => void;
 };
 
+type RemoteControlSettingsTab = "lan" | "wan";
+
+type RemoteWanMode = "deploy" | "import" | "manual";
+
 export function RemoteControlSettingsPanel({
   onClose,
 }: RemoteControlSettingsPanelProps): React.JSX.Element {
   const { t } = useI18n();
+  const [activeTab, setActiveTab] = useState<RemoteControlSettingsTab>("lan");
   const authMethodOptions: CustomSelectOption[] = [
     {
       value: "password",
@@ -45,6 +56,8 @@ export function RemoteControlSettingsPanel({
   const [state, setState] = useState<RemoteControlPairingState | null>(null);
   const [selectedUrl, setSelectedUrl] = useState("");
   const [portDraft, setPortDraft] = useState("");
+  const [lanTokenDraft, setLanTokenDraft] = useState("");
+  const [wanTokenDraft, setWanTokenDraft] = useState("");
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [wanQrDataUrl, setWanQrDataUrl] = useState("");
   const [tunnel, setTunnel] = useState<RemoteTunnelStatus | null>(null);
@@ -59,9 +72,10 @@ export function RemoteControlSettingsPanel({
     token: "",
     caCertificate: "",
   });
-  const formInitialized = useRef(false);
+  const wanModeInitialized = useRef(false);
   const deployCancelRequested = useRef(false);
   const [busy, setBusy] = useState(false);
+  const [checkingDns, setCheckingDns] = useState(false);
   const [notice, setNotice] = useState<{
     message: string;
     tone: "success" | "error" | "info" | "warning";
@@ -83,6 +97,8 @@ export function RemoteControlSettingsPanel({
     privateKeyPath: "",
     passphrase: "",
   });
+  const [wanMode, setWanMode] = useState<RemoteWanMode | null>(null);
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
 
   const applyState = useCallback((next: RemoteControlPairingState): void => {
     setState(next);
@@ -95,9 +111,12 @@ export function RemoteControlSettingsPanel({
 
   const applyTunnel = useCallback((next: RemoteTunnelStatus): void => {
     setTunnel(next);
-    if (!formInitialized.current) {
-      formInitialized.current = true;
-      setForm((current) => ({
+  }, []);
+
+  /** 表单收起时跟随隧道状态刷新；展开编辑时保留用户输入。 */
+  const syncFormFromTunnel = useCallback((next: RemoteTunnelStatus): void => {
+    setForm((current) => {
+      const merged = {
         ...current,
         enabled: next.config.enabled,
         autoConnect: next.config.autoConnect,
@@ -106,8 +125,17 @@ export function RemoteControlSettingsPanel({
         remotePort: String(next.config.remotePort),
         publicOrigin: next.config.publicOrigin,
         tlsServerName: next.config.tlsServerName,
-      }));
-    }
+      };
+      const unchanged =
+        merged.enabled === current.enabled &&
+        merged.autoConnect === current.autoConnect &&
+        merged.serverAddr === current.serverAddr &&
+        merged.serverPort === current.serverPort &&
+        merged.remotePort === current.remotePort &&
+        merged.publicOrigin === current.publicOrigin &&
+        merged.tlsServerName === current.tlsServerName;
+      return unchanged ? current : merged;
+    });
   }, []);
 
   const load = useCallback(async (): Promise<void> => {
@@ -167,6 +195,18 @@ export function RemoteControlSettingsPanel({
     }, 2_000);
     return () => window.clearInterval(timer);
   }, [applyState, applyTunnel]);
+
+  useEffect(() => {
+    if (!tunnel || wanMode === "manual") return;
+    syncFormFromTunnel(tunnel);
+  }, [tunnel, wanMode, syncFormFromTunnel]);
+
+  /** 首次拿到状态后决定功能区默认项：未配置直接展开部署向导，已配置保持收起。 */
+  useEffect(() => {
+    if (!tunnel || wanModeInitialized.current) return;
+    wanModeInitialized.current = true;
+    if (!tunnel.config.configured) setWanMode("deploy");
+  }, [tunnel]);
 
   useEffect(() => {
     let cancelled = false;
@@ -330,6 +370,91 @@ export function RemoteControlSettingsPanel({
     }
   };
 
+  const maskedSecret = (value: string): string =>
+    value ? `${value.slice(0, 4)}••••${value.slice(-4)}` : "";
+
+  const generateToken = (): string => {
+    const bytes = new Uint8Array(24);
+    crypto.getRandomValues(bytes);
+    return btoa(String.fromCharCode(...bytes))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+  };
+
+  const copyToken = async (value: string): Promise<void> => {
+    if (!value) return;
+    try {
+      await window.snow.writeClipboardText(value);
+      setNotice({
+        message: t("remoteControl.noticeTokenCopied", {
+          defaultValue: "令牌已复制，可在手机上手动填写",
+        }),
+        tone: "success",
+      });
+    } catch (error) {
+      setNotice({
+        message:
+          error instanceof Error
+            ? error.message
+            : t("remoteControl.noticeCopyFailed", { defaultValue: "复制失败" }),
+        tone: "error",
+      });
+    }
+  };
+
+  const saveFixedToken = async (
+    kind: "lan" | "wan",
+    token: string | null,
+  ): Promise<void> => {
+    const next = token?.trim() ?? "";
+    if (next && next.length < 24) {
+      setNotice({
+        message: t("remoteControl.noticeTokenTooShort", {
+          defaultValue: "令牌至少需要 24 个字符",
+        }),
+        tone: "error",
+      });
+      return;
+    }
+    setBusy(true);
+    setNotice(null);
+    try {
+      applyState(
+        await window.snow.setRemoteControlFixedToken(kind, next || null),
+      );
+      if (kind === "lan") {
+        setLanTokenDraft("");
+      } else {
+        setWanTokenDraft("");
+      }
+      setNotice({
+        message: next
+          ? t("remoteControl.noticeTokenPinned", {
+              defaultValue:
+                "令牌已固定；已配对的手机需要重新填写该令牌才能连接",
+            })
+          : t("remoteControl.noticeTokenUnpinned", {
+              defaultValue: "已取消固定，下次启动或连接时回到自动令牌",
+            }),
+        tone: "success",
+      });
+    } catch (error) {
+      setNotice({
+        message:
+          error instanceof Error
+            ? error.message
+            : t("remoteControl.noticeTokenFailed", {
+                defaultValue: "保存令牌失败",
+              }),
+        tone: "error",
+      });
+      applyState(await window.snow.getRemoteControlPairingState());
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const normalizedRootDomain = deployForm.rootDomain
     .trim()
     .toLowerCase()
@@ -338,6 +463,7 @@ export function RemoteControlSettingsPanel({
 
   const checkDns = async (): Promise<void> => {
     setBusy(true);
+    setCheckingDns(true);
     setNotice(null);
     try {
       const result = await window.snow.checkRemoteServerDns({
@@ -368,6 +494,7 @@ export function RemoteControlSettingsPanel({
       });
     } finally {
       setBusy(false);
+      setCheckingDns(false);
     }
   };
 
@@ -413,7 +540,8 @@ export function RemoteControlSettingsPanel({
       };
       const result = await window.snow.deployRemoteControlServer(input);
       setDnsCheck(result.dns);
-      formInitialized.current = false;
+      setWanMode(null);
+      setConfirmingRemove(false);
       applyTunnel(result.tunnel);
       applyState(await window.snow.getRemoteControlPairingState());
       setNotice({
@@ -493,6 +621,8 @@ export function RemoteControlSettingsPanel({
         next = await window.snow.disconnectRemoteTunnel();
       }
       setForm((current) => ({ ...current, token: "", caCertificate: "" }));
+      setWanMode(null);
+      setConfirmingRemove(false);
       applyTunnel(next);
       applyState(await window.snow.getRemoteControlPairingState());
       setNotice({
@@ -548,13 +678,130 @@ export function RemoteControlSettingsPanel({
     }
   };
 
+  const connectTunnel = async (): Promise<void> => {
+    setBusy(true);
+    setNotice(null);
+    try {
+      applyTunnel(await window.snow.connectRemoteTunnel());
+      applyState(await window.snow.getRemoteControlPairingState());
+      setNotice({
+        message: t("remoteControl.noticeTunnelConnecting", {
+          defaultValue: "正在连接公网隧道，HTTPS 探测结果会自动刷新",
+        }),
+        tone: "info",
+      });
+    } catch (error) {
+      setNotice({
+        message:
+          error instanceof Error
+            ? error.message
+            : t("remoteControl.noticeConnectFailed", {
+                defaultValue: "连接公网失败",
+              }),
+        tone: "error",
+      });
+      applyTunnel(await window.snow.getRemoteTunnelStatus());
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** 移除本机公网配置：断开隧道并删除加密保存的 FRP 凭据与 CA 证书。 */
+  const removeConfig = async (): Promise<void> => {
+    setBusy(true);
+    setNotice(null);
+    try {
+      applyTunnel(await window.snow.removeRemoteTunnelConfig());
+      applyState(await window.snow.getRemoteControlPairingState());
+      setConfirmingRemove(false);
+      setWanMode(null);
+      setForm((current) => ({ ...current, token: "", caCertificate: "" }));
+      setNotice({
+        message: t("remoteControl.noticeConfigRemoved", {
+          defaultValue: "公网配置已移除，服务器上的 FRP 与 Caddy 不受影响",
+        }),
+        tone: "success",
+      });
+    } catch (error) {
+      setNotice({
+        message:
+          error instanceof Error
+            ? error.message
+            : t("remoteControl.noticeRemoveFailed", {
+                defaultValue: "移除公网配置失败",
+              }),
+        tone: "error",
+      });
+      applyTunnel(await window.snow.getRemoteTunnelStatus());
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** 导出本机公网配置为配置包（含 FRP 凭据与 CA），可迁移到其他设备导入。 */
+  const exportConfig = async (): Promise<void> => {
+    setBusy(true);
+    setNotice(null);
+    try {
+      const result = await window.snow.exportRemoteTunnelConfig();
+      if (result.canceled) return;
+      setNotice({
+        message: t("remoteControl.noticeExported", {
+          values: { path: result.path ?? "" },
+          defaultValue:
+            "配置包已导出到 {{path}}；文件包含 FRP 凭据，请妥善保管",
+        }),
+        tone: "success",
+      });
+    } catch (error) {
+      setNotice({
+        message:
+          error instanceof Error
+            ? error.message
+            : t("remoteControl.noticeExportFailed", {
+                defaultValue: "导出配置包失败",
+              }),
+        tone: "error",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** 未配置时展开表单默认按“启用并自动连接”填写，已配置时沿用已存值。 */
+  const openManualForm = (): void => {
+    if (tunnel && !tunnel.config.configured) {
+      setForm((current) => ({ ...current, enabled: true, autoConnect: true }));
+    }
+    setConfirmingRemove(false);
+    setWanMode("manual");
+  };
+
+  const closeManualForm = (): void => {
+    setWanMode(null);
+    if (tunnel) syncFormFromTunnel(tunnel);
+  };
+
+  const toggleWanMode = (mode: RemoteWanMode): void => {
+    setWanMode((current) => (current === mode ? null : mode));
+  };
+
+  const toggleManualForm = (): void => {
+    if (wanMode === "manual") {
+      closeManualForm();
+      return;
+    }
+    openManualForm();
+  };
+
   const importConfig = async (): Promise<void> => {
     setBusy(true);
     setNotice(null);
     try {
       const result = await window.snow.importRemoteTunnelConfig();
       if (result.canceled || !result.status) return;
-      formInitialized.current = false;
+      setWanMode(null);
+      setConfirmingRemove(false);
       applyTunnel(result.status);
       applyState(await window.snow.getRemoteControlPairingState());
       setNotice({
@@ -658,134 +905,276 @@ export function RemoteControlSettingsPanel({
         </label>
       </div>
 
-      <div className="remote-port-setting">
-        <div>
-          <strong>
-            {t("remoteControl.portLabel", { defaultValue: "局域网监听端口" })}
-          </strong>
-          <p>
-            {t("remoteControl.portDescription", {
-              defaultValue:
-                "手机通过该端口访问本机，默认 8788；修改后服务会自动重启。",
-            })}
-          </p>
-        </div>
-        <div className="remote-port-input">
-          <input
-            type="number"
-            min="1"
-            max="65535"
-            value={portDraft}
-            onChange={(event) => setPortDraft(event.target.value)}
-            disabled={busy || !state}
-            spellCheck={false}
-            aria-label={t("remoteControl.portLabel", {
-              defaultValue: "局域网监听端口",
-            })}
-          />
-          <button
-            type="button"
-            className="api-settings-action-btn primary"
-            onClick={() => void savePort()}
-            disabled={
-              busy ||
-              !state ||
-              portDraft.trim() === String(state.configuredPort)
-            }
-          >
-            <Save size={15} strokeWidth={1.9} />
-            <span>
-              {t("remoteControl.savePort", { defaultValue: "保存端口" })}
-            </span>
-          </button>
-        </div>
+      <div className="import-settings-tabs remote-settings-tabs" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "lan"}
+          className={`import-settings-tab ${activeTab === "lan" ? "active" : ""}`}
+          onClick={() => setActiveTab("lan")}
+        >
+          <Wifi size={13} strokeWidth={1.8} />
+          {t("remoteControl.tabLan", { defaultValue: "局域网" })}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "wan"}
+          className={`import-settings-tab ${activeTab === "wan" ? "active" : ""}`}
+          onClick={() => setActiveTab("wan")}
+        >
+          <Globe size={13} strokeWidth={1.8} />
+          {t("remoteControl.tabWan", { defaultValue: "公网" })}
+        </button>
       </div>
 
-      {state?.enabled ? (
+      {activeTab === "lan" ? (
         <>
-          <div className="remote-pairing-layout">
-            <section
-              className="remote-pairing-qr"
-              aria-label={t("remoteControl.lanQrAria", {
-                defaultValue: "配对二维码",
-              })}
-            >
-              <div className="remote-qr-card">
-                {qrDataUrl ? (
-                  <img
-                    src={qrDataUrl}
-                    alt={t("remoteControl.lanQrAlt", {
-                      defaultValue: "Snow 手机远控配对二维码",
-                    })}
-                  />
-                ) : (
-                  <Smartphone size={44} />
-                )}
-              </div>
-              <span
-                className={`remote-service-status ${state?.running ? "running" : ""}`}
-              >
-                {state?.running
-                  ? t("remoteControl.listeningOn", {
-                      values: { port: state.port },
-                      defaultValue: "正在监听 {{port}}",
-                    })
-                  : t("remoteControl.serviceNotRunning", {
-                      defaultValue: "服务未运行",
-                    })}
-              </span>
-            </section>
-
-            <section className="remote-pairing-details">
-              <label>
-                {t("remoteControl.lanAddress", { defaultValue: "局域网地址" })}
-              </label>
-              <CustomSelect
-                value={selectedUrl}
-                options={(state?.pairingUrls ?? []).map((url) => ({
-                  value: url,
-                  label: url.replace(/([?&]token=)[^&]+/, "$1••••••••"),
-                }))}
-                onChange={(value) => setSelectedUrl(value)}
-                disabled={busy || !state?.running}
-              />
-              <div className="remote-pairing-actions">
-                <button
-                  type="button"
-                  className="nav-item"
-                  onClick={() => void copy()}
-                  disabled={!selectedUrl || busy}
-                >
-                  <Copy size={15} />
-                  <span>
-                    {t("remoteControl.copyAddress", {
-                      defaultValue: "复制地址",
-                    })}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="nav-item"
-                  onClick={() => void rotate()}
-                  disabled={!state?.running || busy}
-                >
-                  <RotateCcw size={15} />
-                  <span>
-                    {t("remoteControl.rotateCredentials", {
-                      defaultValue: "更换凭据",
-                    })}
-                  </span>
-                </button>
-              </div>
-              <p className="remote-pairing-note">
-                {t("remoteControl.rotateNote", {
+          <div className="remote-port-setting">
+            <div>
+              <strong>
+                {t("remoteControl.portLabel", {
+                  defaultValue: "局域网监听端口",
+                })}
+              </strong>
+              <p>
+                {t("remoteControl.portDescription", {
                   defaultValue:
-                    "更换后，已配对手机及尚未发送的附件会立即失效。",
+                    "手机通过该端口访问本机，默认 8788；修改后服务会自动重启。",
                 })}
               </p>
-            </section>
+            </div>
+            <div className="remote-port-input">
+              <input
+                type="number"
+                min="1"
+                max="65535"
+                value={portDraft}
+                onChange={(event) => setPortDraft(event.target.value)}
+                disabled={busy || !state}
+                spellCheck={false}
+                aria-label={t("remoteControl.portLabel", {
+                  defaultValue: "局域网监听端口",
+                })}
+              />
+              <button
+                type="button"
+                className="api-settings-action-btn primary"
+                onClick={() => void savePort()}
+                disabled={
+                  busy ||
+                  !state ||
+                  portDraft.trim() === String(state.configuredPort)
+                }
+              >
+                <Save size={15} strokeWidth={1.9} />
+                <span>
+                  {t("remoteControl.savePort", { defaultValue: "保存端口" })}
+                </span>
+              </button>
+            </div>
           </div>
 
+          <div className="remote-token-setting">
+            <div className="remote-token-head">
+              <strong>
+                {t("remoteControl.lanTokenTitle", {
+                  defaultValue: "局域网令牌",
+                })}
+              </strong>
+              <span
+                className={`remote-token-status ${state?.tokenPinned ? "pinned" : ""}`}
+              >
+                {state?.tokenPinned
+                  ? t("remoteControl.tokenPinnedBadge", {
+                      defaultValue: "已固定",
+                    })
+                  : t("remoteControl.tokenAutoBadge", {
+                      defaultValue: "本次启动随机",
+                    })}
+              </span>
+            </div>
+            <p>
+              {t("remoteControl.lanTokenDescription", {
+                defaultValue:
+                  "扫码或打开配对链接会自动携带令牌；固定后重启 Snow 也不变，也可以在手机上手动填写。",
+              })}
+            </p>
+            <div className="remote-token-value">
+              <code>{maskedSecret(state?.token ?? "")}</code>
+              <button
+                type="button"
+                className="api-settings-action-btn secondary"
+                onClick={() => void copyToken(state?.token ?? "")}
+                disabled={!state?.token || busy}
+              >
+                <Copy size={15} strokeWidth={1.9} />
+                <span>
+                  {t("remoteControl.tokenCopy", { defaultValue: "复制令牌" })}
+                </span>
+              </button>
+            </div>
+            <div className="remote-token-input">
+              <input
+                value={lanTokenDraft}
+                placeholder={t("remoteControl.tokenPlaceholder", {
+                  defaultValue: "输入自定义令牌（至少 24 个字符）",
+                })}
+                onChange={(event) => setLanTokenDraft(event.target.value)}
+                disabled={busy || !state?.tokenStorageAvailable}
+                spellCheck={false}
+              />
+              <button
+                type="button"
+                className="api-settings-action-btn secondary"
+                onClick={() => setLanTokenDraft(generateToken())}
+                disabled={busy || !state?.tokenStorageAvailable}
+              >
+                <RefreshCw size={15} strokeWidth={1.9} />
+                <span>
+                  {t("remoteControl.tokenGenerate", {
+                    defaultValue: "随机生成",
+                  })}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="api-settings-action-btn primary"
+                onClick={() =>
+                  void saveFixedToken("lan", lanTokenDraft || null)
+                }
+                disabled={
+                  busy || !state?.tokenStorageAvailable || !lanTokenDraft.trim()
+                }
+              >
+                <Save size={15} strokeWidth={1.9} />
+                <span>
+                  {t("remoteControl.tokenPin", { defaultValue: "固定令牌" })}
+                </span>
+              </button>
+              {state?.tokenPinned ? (
+                <button
+                  type="button"
+                  className="api-settings-action-btn secondary"
+                  onClick={() => void saveFixedToken("lan", null)}
+                  disabled={busy}
+                >
+                  <RotateCcw size={15} strokeWidth={1.9} />
+                  <span>
+                    {t("remoteControl.tokenUnpin", {
+                      defaultValue: "取消固定",
+                    })}
+                  </span>
+                </button>
+              ) : null}
+            </div>
+            {state && !state.tokenStorageAvailable ? (
+              <div className="remote-pairing-message error" role="alert">
+                {t("remoteControl.tokenStorageUnavailable", {
+                  defaultValue: "系统安全存储不可用，无法固定令牌。",
+                })}
+              </div>
+            ) : null}
+          </div>
+
+          {state?.enabled ? (
+            <div className="remote-pairing-layout">
+              <section
+                className="remote-pairing-qr"
+                aria-label={t("remoteControl.lanQrAria", {
+                  defaultValue: "配对二维码",
+                })}
+              >
+                <div className="remote-qr-card">
+                  {qrDataUrl ? (
+                    <img
+                      src={qrDataUrl}
+                      alt={t("remoteControl.lanQrAlt", {
+                        defaultValue: "Snow 手机远控配对二维码",
+                      })}
+                    />
+                  ) : (
+                    <Smartphone size={44} />
+                  )}
+                </div>
+                <span
+                  className={`remote-service-status ${state?.running ? "running" : ""}`}
+                >
+                  {state?.running
+                    ? t("remoteControl.listeningOn", {
+                        values: { port: state.port },
+                        defaultValue: "正在监听 {{port}}",
+                      })
+                    : t("remoteControl.serviceNotRunning", {
+                        defaultValue: "服务未运行",
+                      })}
+                </span>
+              </section>
+
+              <section className="remote-pairing-details">
+                <label>
+                  {t("remoteControl.lanAddress", {
+                    defaultValue: "局域网地址",
+                  })}
+                </label>
+                <CustomSelect
+                  value={selectedUrl}
+                  options={(state?.pairingUrls ?? []).map((url) => ({
+                    value: url,
+                    label: url.replace(/([?&]token=)[^&]+/, "$1••••••••"),
+                  }))}
+                  onChange={(value) => setSelectedUrl(value)}
+                  disabled={busy || !state?.running}
+                />
+                <div className="remote-pairing-actions">
+                  <button
+                    type="button"
+                    className="api-settings-action-btn secondary"
+                    onClick={() => void copy()}
+                    disabled={!selectedUrl || busy}
+                  >
+                    <Copy size={15} strokeWidth={1.9} />
+                    <span>
+                      {t("remoteControl.copyAddress", {
+                        defaultValue: "复制地址",
+                      })}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="api-settings-action-btn secondary"
+                    onClick={() => void rotate()}
+                    disabled={!state?.running || busy}
+                  >
+                    <RotateCcw size={15} strokeWidth={1.9} />
+                    <span>
+                      {t("remoteControl.rotateCredentials", {
+                        defaultValue: "更换凭据",
+                      })}
+                    </span>
+                  </button>
+                </div>
+                <p className="remote-pairing-note">
+                  {t("remoteControl.rotateNote", {
+                    defaultValue:
+                      "更换后，已配对手机及尚未发送的附件会立即失效。",
+                  })}
+                </p>
+              </section>
+            </div>
+          ) : (
+            <p className="remote-pairing-hint">
+              {t("remoteControl.lanDisabledHint", {
+                defaultValue:
+                  "开启上方的手机远控后，这里会显示局域网配对二维码与地址。",
+              })}
+            </p>
+          )}
+        </>
+      ) : null}
+
+      {activeTab === "wan" && state?.enabled ? (
+        <>
           <div className="remote-tunnel-card">
             <div className="remote-tunnel-heading">
               <Server size={18} />
@@ -849,13 +1238,495 @@ export function RemoteControlSettingsPanel({
               </div>
             ) : null}
 
-            <details className="remote-tunnel-guide" open>
-              <summary>
-                {t("remoteControl.guideSummary", {
-                  defaultValue: "第一次公网部署（共 4 步，Snow 负责安装）",
+            {tunnel?.config.configured ? (
+              <section className="remote-config-card">
+                <div className="remote-config-head">
+                  <strong>
+                    {t("remoteControl.configuredTitle", {
+                      defaultValue: "已保存的公网配置",
+                    })}
+                  </strong>
+                  <span
+                    className={`remote-token-status ${tunnel.config.enabled ? "pinned" : ""}`}
+                  >
+                    {tunnel.config.enabled
+                      ? t("remoteControl.configEnabledBadge", {
+                          defaultValue: "已启用",
+                        })
+                      : t("remoteControl.configDisabledBadge", {
+                          defaultValue: "已停用",
+                        })}
+                  </span>
+                </div>
+
+                <div className="remote-tunnel-status-grid">
+                  <span>
+                    {t("remoteControl.frpServerAddr", {
+                      defaultValue: "FRP 服务器地址",
+                    })}
+                  </span>
+                  <strong>{`${tunnel.config.serverAddr}:${tunnel.config.serverPort}`}</strong>
+                  <span>
+                    {t("remoteControl.frpRemotePort", {
+                      defaultValue: "FRP 隧道端口",
+                    })}
+                  </span>
+                  <strong>{String(tunnel.config.remotePort)}</strong>
+                  <span>
+                    {t("remoteControl.publicOrigin", {
+                      defaultValue: "手机 HTTPS 地址",
+                    })}
+                  </span>
+                  <strong>{tunnel.config.publicOrigin}</strong>
+                  <span>
+                    {t("remoteControl.tlsServerName", {
+                      defaultValue: "FRP TLS 服务器名称",
+                    })}
+                  </span>
+                  <strong>{tunnel.config.tlsServerName}</strong>
+                  <span>
+                    {t("remoteControl.credentialsLabel", {
+                      defaultValue: "加密凭据",
+                    })}
+                  </span>
+                  <strong>
+                    {tunnel.config.hasToken && tunnel.config.hasCaCertificate
+                      ? t("remoteControl.credentialsSaved", {
+                          defaultValue: "FRP 凭据与 CA 证书已保存",
+                        })
+                      : t("remoteControl.credentialsMissing", {
+                          defaultValue: "缺少 FRP 凭据或 CA 证书",
+                        })}
+                  </strong>
+                  <span>
+                    {t("remoteControl.autoConnectLabel", {
+                      defaultValue: "启动时自动连接",
+                    })}
+                  </span>
+                  <strong>
+                    {tunnel.config.autoConnect
+                      ? t("remoteControl.autoConnectOn", {
+                          defaultValue: "已开启",
+                        })
+                      : t("remoteControl.autoConnectOff", {
+                          defaultValue: "已关闭",
+                        })}
+                  </strong>
+                </div>
+
+                <div className="remote-pairing-actions">
+                  {tunnel.stage === "stopped" || tunnel.stage === "failed" ? (
+                    <button
+                      type="button"
+                      className="api-settings-action-btn primary"
+                      onClick={() => void connectTunnel()}
+                      disabled={
+                        busy ||
+                        !tunnel.config.enabled ||
+                        !tunnel.config.secureStorageAvailable
+                      }
+                    >
+                      <Power size={15} strokeWidth={1.9} />
+                      <span>
+                        {t("remoteControl.connectNow", {
+                          defaultValue: "连接公网",
+                        })}
+                      </span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="api-settings-action-btn secondary"
+                      onClick={() => void disconnect()}
+                      disabled={busy}
+                    >
+                      <Unplug size={15} strokeWidth={1.9} />
+                      <span>
+                        {t("remoteControl.disconnectNow", {
+                          defaultValue: "断开连接",
+                        })}
+                      </span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="api-settings-action-btn secondary"
+                    onClick={toggleManualForm}
+                    disabled={busy || !tunnel.config.secureStorageAvailable}
+                  >
+                    <Settings2 size={15} strokeWidth={1.9} />
+                    <span>
+                      {wanMode === "manual"
+                        ? t("remoteControl.editConfigClose", {
+                            defaultValue: "收起表单",
+                          })
+                        : t("remoteControl.editConfig", {
+                            defaultValue: "编辑配置",
+                          })}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="api-settings-action-btn secondary"
+                    onClick={() => void exportConfig()}
+                    disabled={busy || !tunnel.config.secureStorageAvailable}
+                  >
+                    <Download size={15} strokeWidth={1.9} />
+                    <span>
+                      {t("remoteControl.exportBundle", {
+                        defaultValue: "导出配置包",
+                      })}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="api-settings-action-btn secondary remote-nav-danger"
+                    onClick={() => setConfirmingRemove(true)}
+                    disabled={busy || confirmingRemove}
+                  >
+                    <Trash2 size={15} strokeWidth={1.9} />
+                    <span>
+                      {t("remoteControl.removeConfig", {
+                        defaultValue: "移除配置",
+                      })}
+                    </span>
+                  </button>
+                </div>
+
+                {!tunnel.config.enabled ? (
+                  <p className="remote-pairing-note">
+                    {t("remoteControl.configDisabledHint", {
+                      defaultValue:
+                        "该配置当前已停用：在“编辑配置”中勾选“启用公网远控”并保存后即可连接。",
+                    })}
+                  </p>
+                ) : null}
+
+                <div className="remote-tunnel-guide-callout warning">
+                  <strong>
+                    {t("remoteControl.disconnectWarningTitle", {
+                      defaultValue: "“断开连接”不会撤销手机登录。",
+                    })}
+                  </strong>
+                  <span>
+                    {t("remoteControl.disconnectWarningText", {
+                      defaultValue:
+                        "手机丢失或链接泄露时，请使用页面上方的“更换凭据”，让旧手机连接立即失效。",
+                    })}
+                  </span>
+                </div>
+              </section>
+            ) : (
+              <section className="remote-config-empty">
+                <strong>
+                  {t("remoteControl.configEmptyTitle", {
+                    defaultValue: "还没有公网配置",
+                  })}
+                </strong>
+                <p>
+                  {t("remoteControl.configEmptyText", {
+                    defaultValue:
+                      "部署一台自己的服务器，或使用已有服务器的配置包、连接信息接入公网。",
+                  })}
+                </p>
+              </section>
+            )}
+
+            <div className="import-settings-tabs" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={wanMode === "deploy"}
+                className={`import-settings-tab ${wanMode === "deploy" ? "active" : ""}`}
+                onClick={() => toggleWanMode("deploy")}
+              >
+                <Server size={13} strokeWidth={1.8} />
+                {t("remoteControl.deployNewServer", {
+                  defaultValue: "部署新服务器",
                 })}
-              </summary>
-              <div className="remote-tunnel-guide-content">
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={wanMode === "import"}
+                className={`import-settings-tab ${wanMode === "import" ? "active" : ""}`}
+                onClick={() => toggleWanMode("import")}
+              >
+                <FileUp size={13} strokeWidth={1.8} />
+                {t("remoteControl.importBundle", {
+                  defaultValue: "导入已有配置包",
+                })}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={wanMode === "manual"}
+                className={`import-settings-tab ${wanMode === "manual" ? "active" : ""}`}
+                onClick={toggleManualForm}
+              >
+                <Settings2 size={13} strokeWidth={1.8} />
+                {t("remoteControl.manualConfig", {
+                  defaultValue: "手动填写连接信息",
+                })}
+              </button>
+            </div>
+
+            {wanMode === "manual" ? (
+              <section className="remote-config-form">
+                <div className="remote-config-head">
+                  <strong>
+                    {tunnel?.config.configured
+                      ? t("remoteControl.manualFormTitleEdit", {
+                          defaultValue: "编辑公网配置",
+                        })
+                      : t("remoteControl.manualFormTitleNew", {
+                          defaultValue: "填写公网连接信息",
+                        })}
+                  </strong>
+                </div>
+                <p className="remote-pairing-note">
+                  {t("remoteControl.manualFormHint", {
+                    defaultValue:
+                      "FRP 凭据与 CA 证书会加密保存到本机；留空表示沿用已保存的值。",
+                  })}
+                </p>
+                <div className="remote-tunnel-form">
+                  <label className="remote-tunnel-check">
+                    <input
+                      type="checkbox"
+                      checked={form.enabled}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          enabled: event.target.checked,
+                        }))
+                      }
+                    />
+                    {t("remoteControl.tunnelEnabled", {
+                      defaultValue: "启用公网远控",
+                    })}
+                  </label>
+                  <label className="remote-tunnel-check">
+                    <input
+                      type="checkbox"
+                      checked={form.autoConnect}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          autoConnect: event.target.checked,
+                        }))
+                      }
+                    />
+                    {t("remoteControl.tunnelAutoConnect", {
+                      defaultValue: "Snow 启动后自动连接",
+                    })}
+                  </label>
+
+                  <label>
+                    {t("remoteControl.frpServerAddr", {
+                      defaultValue: "FRP 服务器地址",
+                    })}
+                    <input
+                      value={form.serverAddr}
+                      placeholder="frp.example.com"
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          serverAddr: event.target.value,
+                        }))
+                      }
+                      spellCheck={false}
+                    />
+                  </label>
+                  <label>
+                    {t("remoteControl.frpServerPort", {
+                      defaultValue: "FRP 端口",
+                    })}
+                    <input
+                      type="number"
+                      min="1"
+                      max="65535"
+                      value={form.serverPort}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          serverPort: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    {t("remoteControl.frpRemotePort", {
+                      defaultValue: "FRP 隧道端口",
+                    })}
+                    <input
+                      type="number"
+                      min="1"
+                      max="65535"
+                      value={form.remotePort}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          remotePort: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    {t("remoteControl.publicOrigin", {
+                      defaultValue: "手机 HTTPS 地址",
+                    })}
+                    <input
+                      value={form.publicOrigin}
+                      placeholder="https://snow.example.com"
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          publicOrigin: event.target.value,
+                        }))
+                      }
+                      spellCheck={false}
+                    />
+                  </label>
+                  <label>
+                    {t("remoteControl.tlsServerName", {
+                      defaultValue: "FRP TLS 服务器名称",
+                    })}
+                    <input
+                      value={form.tlsServerName}
+                      placeholder="frp.example.com"
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          tlsServerName: event.target.value,
+                        }))
+                      }
+                      spellCheck={false}
+                    />
+                  </label>
+                  <label>
+                    {t("remoteControl.frpToken", { defaultValue: "FRP 凭据" })}
+                    <input
+                      type="password"
+                      value={form.token}
+                      placeholder={
+                        tunnel?.config.hasToken
+                          ? t("remoteControl.tokenPlaceholderSaved", {
+                              defaultValue: "已加密保存；留空保持不变",
+                            })
+                          : t("remoteControl.tokenPlaceholderNew", {
+                              defaultValue: "至少 32 个字符",
+                            })
+                      }
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          token: event.target.value,
+                        }))
+                      }
+                      autoComplete="new-password"
+                    />
+                  </label>
+                  <label className="remote-tunnel-ca">
+                    {t("remoteControl.frpCa", {
+                      defaultValue: "FRP CA 证书（PEM）",
+                    })}
+                    <textarea
+                      value={form.caCertificate}
+                      placeholder={
+                        tunnel?.config.hasCaCertificate
+                          ? t("remoteControl.caPlaceholderSaved", {
+                              defaultValue: "证书已加密保存；留空保持不变",
+                            })
+                          : "-----BEGIN CERTIFICATE-----"
+                      }
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          caCertificate: event.target.value,
+                        }))
+                      }
+                      spellCheck={false}
+                    />
+                  </label>
+                </div>
+
+                <div className="remote-pairing-actions">
+                  <button
+                    type="button"
+                    className="api-settings-action-btn primary"
+                    onClick={() => void saveAndConnect()}
+                    disabled={busy || !tunnel?.config.secureStorageAvailable}
+                  >
+                    <Power size={15} strokeWidth={1.9} />
+                    <span>
+                      {form.enabled
+                        ? t("remoteControl.saveAndConnect", {
+                            defaultValue: "保存并连接",
+                          })
+                        : t("remoteControl.saveAndDisable", {
+                            defaultValue: "保存并关闭公网",
+                          })}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="api-settings-action-btn secondary"
+                    onClick={closeManualForm}
+                    disabled={busy}
+                  >
+                    <span>{t("common.cancel", { defaultValue: "取消" })}</span>
+                  </button>
+                </div>
+              </section>
+            ) : null}
+
+            {wanMode === "import" ? (
+              <section className="remote-import-panel">
+                <div className="remote-config-head">
+                  <strong>
+                    {t("remoteControl.importBundle", {
+                      defaultValue: "导入已有配置包",
+                    })}
+                  </strong>
+                </div>
+                <p className="remote-pairing-note">
+                  {t("remoteControl.importBundleHint", {
+                    defaultValue:
+                      "已有其他 Snow 生成的配置包时，导入会覆盖本机保存的公网配置。",
+                  })}
+                </p>
+                <div className="remote-pairing-actions">
+                  <button
+                    type="button"
+                    className="api-settings-action-btn primary"
+                    onClick={() => void importConfig()}
+                    disabled={busy || !tunnel?.config.secureStorageAvailable}
+                  >
+                    <FileUp size={15} strokeWidth={1.9} />
+                    <span>
+                      {t("remoteControl.importBundle", {
+                        defaultValue: "导入已有配置包",
+                      })}
+                    </span>
+                  </button>
+                </div>
+              </section>
+            ) : null}
+
+            {wanMode === "deploy" ? (
+              <section className="remote-tunnel-guide-content">
+                <p className="remote-pairing-note">
+                  {tunnel?.config.configured
+                    ? t("remoteControl.redeploySummary", {
+                        defaultValue:
+                          "更换服务器 / 重新部署（共 4 步，Snow 负责安装）",
+                      })
+                    : t("remoteControl.guideSummary", {
+                        defaultValue:
+                          "第一次公网部署（共 4 步，Snow 负责安装）",
+                      })}
+                </p>
                 <div className="remote-tunnel-guide-callout">
                   <strong>
                     {t("remoteControl.guideCalloutTitle", {
@@ -1250,7 +2121,7 @@ export function RemoteControlSettingsPanel({
                             />
                             <button
                               type="button"
-                              className="nav-item"
+                              className="api-settings-action-btn secondary"
                               onClick={() => void selectPrivateKey()}
                               disabled={busy}
                             >
@@ -1309,11 +2180,15 @@ export function RemoteControlSettingsPanel({
                   <div className="remote-pairing-actions">
                     <button
                       type="button"
-                      className="nav-item"
+                      className="api-settings-action-btn secondary"
                       onClick={() => void checkDns()}
                       disabled={busy}
                     >
-                      <RefreshCw size={15} className={busy ? "spin" : ""} />
+                      <RefreshCw
+                        size={15}
+                        strokeWidth={1.9}
+                        className={checkingDns ? "spin" : ""}
+                      />
                       <span>
                         {t("remoteControl.checkDns", {
                           defaultValue: "检测 DNS",
@@ -1322,11 +2197,11 @@ export function RemoteControlSettingsPanel({
                     </button>
                     <button
                       type="button"
-                      className="nav-item remote-import-primary"
+                      className="api-settings-action-btn primary"
                       onClick={() => void deployServer()}
                       disabled={busy || !tunnel?.config.secureStorageAvailable}
                     >
-                      <Server size={15} />
+                      <Server size={15} strokeWidth={1.9} />
                       <span>
                         {t("remoteControl.deployConnect", {
                           defaultValue: "自动部署并连接",
@@ -1336,7 +2211,7 @@ export function RemoteControlSettingsPanel({
                     {deploymentActive ? (
                       <button
                         type="button"
-                        className="nav-item"
+                        className="api-settings-action-btn secondary"
                         onClick={() => void cancelDeployment()}
                       >
                         {t("remoteControl.cancelDeploy", {
@@ -1364,240 +2239,119 @@ export function RemoteControlSettingsPanel({
                     </div>
                   ) : null}
                 </section>
-              </div>
-            </details>
-
-            <details className="remote-tunnel-guide">
-              <summary>
-                {t("remoteControl.advancedSettings", {
-                  defaultValue: "高级设置",
-                })}
-              </summary>
-              <div className="remote-tunnel-guide-content">
-                <button
-                  type="button"
-                  className="nav-item"
-                  onClick={() => void importConfig()}
-                  disabled={busy || !tunnel?.config.secureStorageAvailable}
-                >
-                  <FileUp size={15} />
-                  <span>
-                    {t("remoteControl.importBundle", {
-                      defaultValue: "导入已有配置包",
-                    })}
-                  </span>
-                </button>
-                <div className="remote-tunnel-form">
-                  <label className="remote-tunnel-check">
-                    <input
-                      type="checkbox"
-                      checked={form.enabled}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          enabled: event.target.checked,
-                        }))
-                      }
-                    />
-                    {t("remoteControl.tunnelEnabled", {
-                      defaultValue: "启用公网远控",
-                    })}
-                  </label>
-                  <label className="remote-tunnel-check">
-                    <input
-                      type="checkbox"
-                      checked={form.autoConnect}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          autoConnect: event.target.checked,
-                        }))
-                      }
-                    />
-                    {t("remoteControl.tunnelAutoConnect", {
-                      defaultValue: "Snow 启动后自动连接",
-                    })}
-                  </label>
-
-                  <label>
-                    {t("remoteControl.frpServerAddr", {
-                      defaultValue: "FRP 服务器地址",
-                    })}
-                    <input
-                      value={form.serverAddr}
-                      placeholder="frp.example.com"
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          serverAddr: event.target.value,
-                        }))
-                      }
-                      spellCheck={false}
-                    />
-                  </label>
-                  <label>
-                    {t("remoteControl.frpServerPort", {
-                      defaultValue: "FRP 端口",
-                    })}
-                    <input
-                      type="number"
-                      min="1"
-                      max="65535"
-                      value={form.serverPort}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          serverPort: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                  <label>
-                    {t("remoteControl.frpRemotePort", {
-                      defaultValue: "FRP 隧道端口",
-                    })}
-                    <input
-                      type="number"
-                      min="1"
-                      max="65535"
-                      value={form.remotePort}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          remotePort: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                  <label>
-                    {t("remoteControl.publicOrigin", {
-                      defaultValue: "手机 HTTPS 地址",
-                    })}
-                    <input
-                      value={form.publicOrigin}
-                      placeholder="https://snow.example.com"
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          publicOrigin: event.target.value,
-                        }))
-                      }
-                      spellCheck={false}
-                    />
-                  </label>
-                  <label>
-                    {t("remoteControl.tlsServerName", {
-                      defaultValue: "FRP TLS 服务器名称",
-                    })}
-                    <input
-                      value={form.tlsServerName}
-                      placeholder="frp.example.com"
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          tlsServerName: event.target.value,
-                        }))
-                      }
-                      spellCheck={false}
-                    />
-                  </label>
-                  <label>
-                    {t("remoteControl.frpToken", { defaultValue: "FRP 凭据" })}
-                    <input
-                      type="password"
-                      value={form.token}
-                      placeholder={
-                        tunnel?.config.hasToken
-                          ? t("remoteControl.tokenPlaceholderSaved", {
-                              defaultValue: "已加密保存；留空保持不变",
-                            })
-                          : t("remoteControl.tokenPlaceholderNew", {
-                              defaultValue: "至少 32 个字符",
-                            })
-                      }
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          token: event.target.value,
-                        }))
-                      }
-                      autoComplete="new-password"
-                    />
-                  </label>
-                  <label className="remote-tunnel-ca">
-                    {t("remoteControl.frpCa", {
-                      defaultValue: "FRP CA 证书（PEM）",
-                    })}
-                    <textarea
-                      value={form.caCertificate}
-                      placeholder={
-                        tunnel?.config.hasCaCertificate
-                          ? t("remoteControl.caPlaceholderSaved", {
-                              defaultValue: "证书已加密保存；留空保持不变",
-                            })
-                          : "-----BEGIN CERTIFICATE-----"
-                      }
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          caCertificate: event.target.value,
-                        }))
-                      }
-                      spellCheck={false}
-                    />
-                  </label>
-                </div>
-
-                <div className="remote-pairing-actions">
-                  <button
-                    type="button"
-                    className="nav-item"
-                    onClick={() => void saveAndConnect()}
-                    disabled={busy || !tunnel?.config.secureStorageAvailable}
-                  >
-                    <Power size={15} />
-                    <span>
-                      {form.enabled
-                        ? t("remoteControl.saveAndConnect", {
-                            defaultValue: "保存并连接",
-                          })
-                        : t("remoteControl.saveAndDisable", {
-                            defaultValue: "保存并关闭公网",
-                          })}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    className="nav-item"
-                    onClick={() => void disconnect()}
-                    disabled={busy || tunnel?.stage === "stopped"}
-                  >
-                    <Unplug size={15} />
-                    <span>
-                      {t("remoteControl.disconnectOnce", {
-                        defaultValue: "仅断开本次连接",
-                      })}
-                    </span>
-                  </button>
-                </div>
-                <div className="remote-tunnel-guide-callout warning">
-                  <strong>
-                    {t("remoteControl.disconnectWarningTitle", {
-                      defaultValue: "“仅断开”不会撤销手机登录。",
-                    })}
-                  </strong>
-                  <span>
-                    {t("remoteControl.disconnectWarningText", {
-                      defaultValue:
-                        "手机丢失或链接泄露时，请使用页面上方的“更换凭据”，让旧手机连接立即失效。",
-                    })}
-                  </span>
-                </div>
-              </div>
-            </details>
+              </section>
+            ) : null}
             {tunnel?.error ? (
               <div className="remote-pairing-message error" role="alert">
                 {tunnel.error.message}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="remote-token-setting">
+            <div className="remote-token-head">
+              <strong>
+                {t("remoteControl.wanTokenTitle", { defaultValue: "公网令牌" })}
+              </strong>
+              <span
+                className={`remote-token-status ${state?.wan.fixedToken ? "pinned" : ""}`}
+              >
+                {state?.wan.fixedToken
+                  ? t("remoteControl.tokenPinnedBadge", {
+                      defaultValue: "已固定",
+                    })
+                  : t("remoteControl.wanTokenAutoBadge", {
+                      defaultValue: "五分钟一次性配对码",
+                    })}
+              </span>
+            </div>
+            <p>
+              {t("remoteControl.wanTokenDescription", {
+                defaultValue:
+                  "固定后公网地址与二维码长期有效（不再限时），手机也可以手动填写该令牌连接。",
+              })}
+            </p>
+            <div className="remote-token-value">
+              <code>{maskedSecret(state?.wan.fixedToken ?? "")}</code>
+              <button
+                type="button"
+                className="api-settings-action-btn secondary"
+                onClick={() => void copyToken(state?.wan.fixedToken ?? "")}
+                disabled={!state?.wan.fixedToken || busy}
+              >
+                <Copy size={15} strokeWidth={1.9} />
+                <span>
+                  {t("remoteControl.tokenCopy", { defaultValue: "复制令牌" })}
+                </span>
+              </button>
+            </div>
+            <div className="remote-token-input">
+              <input
+                value={wanTokenDraft}
+                placeholder={t("remoteControl.tokenPlaceholder", {
+                  defaultValue: "输入自定义令牌（至少 24 个字符）",
+                })}
+                onChange={(event) => setWanTokenDraft(event.target.value)}
+                disabled={busy || !state?.tokenStorageAvailable}
+                spellCheck={false}
+              />
+              <button
+                type="button"
+                className="api-settings-action-btn secondary"
+                onClick={() => setWanTokenDraft(generateToken())}
+                disabled={busy || !state?.tokenStorageAvailable}
+              >
+                <RefreshCw size={15} strokeWidth={1.9} />
+                <span>
+                  {t("remoteControl.tokenGenerate", {
+                    defaultValue: "随机生成",
+                  })}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="api-settings-action-btn primary"
+                onClick={() =>
+                  void saveFixedToken("wan", wanTokenDraft || null)
+                }
+                disabled={
+                  busy || !state?.tokenStorageAvailable || !wanTokenDraft.trim()
+                }
+              >
+                <Save size={15} strokeWidth={1.9} />
+                <span>
+                  {t("remoteControl.tokenPin", { defaultValue: "固定令牌" })}
+                </span>
+              </button>
+              {state?.wan.fixedToken ? (
+                <button
+                  type="button"
+                  className="api-settings-action-btn secondary"
+                  onClick={() => void saveFixedToken("wan", null)}
+                  disabled={busy}
+                >
+                  <RotateCcw size={15} strokeWidth={1.9} />
+                  <span>
+                    {t("remoteControl.tokenUnpin", {
+                      defaultValue: "取消固定",
+                    })}
+                  </span>
+                </button>
+              ) : null}
+            </div>
+            {state?.wan.fixedToken ? (
+              <p className="remote-pairing-note">
+                {t("remoteControl.wanTokenPinnedNote", {
+                  defaultValue:
+                    "公网入口未连接时保存会在隧道连接后生效；取消固定后回到五分钟一次性配对码。",
+                })}
+              </p>
+            ) : null}
+            {state && !state.tokenStorageAvailable ? (
+              <div className="remote-pairing-message error" role="alert">
+                {t("remoteControl.tokenStorageUnavailable", {
+                  defaultValue: "系统安全存储不可用，无法固定令牌。",
+                })}
               </div>
             ) : null}
           </div>
@@ -1656,10 +2410,38 @@ export function RemoteControlSettingsPanel({
         </>
       ) : null}
 
+      {activeTab === "wan" && !state?.enabled ? (
+        <p className="remote-pairing-hint">
+          {t("remoteControl.wanDisabledHint", {
+            defaultValue:
+              "公网远控依赖本机服务，请先在“局域网”标签页开启手机远控。",
+          })}
+        </p>
+      ) : null}
+
       <AutoDismissNotice
         message={notice?.message ?? ""}
         tone={notice?.tone ?? "info"}
         onDismiss={dismissNotice}
+      />
+
+      <ConfirmDialog
+        open={confirmingRemove}
+        title={t("remoteControl.removeConfigConfirmTitle", {
+          defaultValue: "确认移除本机保存的公网配置？",
+        })}
+        message={t("remoteControl.removeConfigConfirmText", {
+          defaultValue:
+            "将断开公网隧道并删除加密保存的 FRP 凭据与 CA 证书；服务器上的 FRP 与 Caddy 不受影响，重新部署或导入配置包后可再次连接。",
+        })}
+        confirmLabel={t("remoteControl.removeConfigConfirm", {
+          defaultValue: "确认移除",
+        })}
+        cancelLabel={t("common.cancel", { defaultValue: "取消" })}
+        variant="danger"
+        isConfirming={busy}
+        onConfirm={() => void removeConfig()}
+        onCancel={() => setConfirmingRemove(false)}
       />
     </div>
   );

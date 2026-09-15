@@ -26,6 +26,23 @@ export const en: Record<string, string> = {
   "remote.error.timeout": "Timed out connecting to desktop Snow",
   "remote.error.badResponse": "Unexpected response format",
 
+  // Token entry
+  "remote.unlock.badge": "Token required",
+  "remote.unlock.title": "Enter access token",
+  "remote.unlock.lead":
+    "This phone is not trusted by Snow yet. Enter the token shown in Settings → Mobile remote control on your computer.",
+  "remote.unlock.placeholder": "Paste or type the access token",
+  "remote.unlock.submit": "Connect",
+  "remote.unlock.busy": "Verifying…",
+  "remote.unlock.empty": "Enter the token first",
+  "remote.unlock.failed": "Invalid token — check it and try again",
+  "remote.unlock.tooMany": "Too many attempts — try again later",
+  "remote.unlock.success": "Connected",
+  "remote.unlock.hint":
+    "You can also scan the QR code on your computer — it carries the token automatically. Copy the token from Mobile remote control on the desktop.",
+  "remote.unlock.reload": "Reload page",
+  "remote.unlock.open": "Enter token",
+
   // Timeline
   "remote.timeline.scrollToBottom": "Scroll to bottom",
   "remote.timeline.loadEarlier": "Load earlier messages",

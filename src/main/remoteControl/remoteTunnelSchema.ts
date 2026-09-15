@@ -162,6 +162,26 @@ export const normalizeRemoteTunnelConfig = (
   };
 };
 
+/** 导出本机配置为可分享的配置包（含 FRP 凭据与 CA，由调用方限制落盘位置）。 */
+export const createRemoteTunnelBundle = (
+  config: StoredRemoteTunnelConfig,
+): RemoteTunnelImportBundle => ({
+  schemaVersion: 1,
+  kind: "snow-remote-client-config",
+  generatedAt: new Date().toISOString(),
+  config: {
+    enabled: config.enabled,
+    autoConnect: config.autoConnect,
+    serverAddr: config.serverAddr,
+    serverPort: config.serverPort,
+    remotePort: config.remotePort,
+    publicOrigin: config.publicOrigin,
+    tlsServerName: config.tlsServerName,
+    token: config.token,
+    caCertificate: config.caCertificate,
+  },
+});
+
 export const parseRemoteTunnelImportBundle = (
   value: unknown,
 ): RemoteTunnelConfigInput => {
@@ -241,6 +261,6 @@ export const redactTunnelText = (value: string): string =>
     .slice(-8_000);
 
 export const isPermanentFrpcFailure = (value: string): boolean =>
-  /authentication failed|authorization failed|invalid token|certificate|x509|tls handshake|session shutdown/i.test(
+  /authentication failed|authorization failed|invalid token|token in login|certificate|x509|tls handshake|tls:|session shutdown|unsupported message codec|version_mismatch/i.test(
     value,
   );

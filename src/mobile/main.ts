@@ -18,6 +18,7 @@ import { initTimeline, renderTimeline } from "./timeline";
 import { initTodos, renderTodos } from "./todos";
 import { initTopbar, renderTopbar } from "./topbar";
 import type { AppContext } from "./types";
+import { hideUnlock, initUnlock, showUnlock } from "./unlock";
 import { initWorkflow, workflowDigest } from "./workflow";
 
 /**
@@ -95,7 +96,7 @@ const render = (next: SnowRemoteState): void => {
 };
 
 const offlineHtml = (message: string): string =>
-  `<div class="empty"><div><div class="empty-mark">${iconMarkup("wifi-off")}</div><strong>${escapeHtml(message)}</strong><span>${t("remote.empty.offline.hint")}</span></div></div>`;
+  `<div class="empty"><div><div class="empty-mark">${iconMarkup("wifi-off")}</div><strong>${escapeHtml(message)}</strong><span>${t("remote.empty.offline.hint")}</span><button class="empty-action" type="button" data-unlock-open>${t("remote.unlock.open")}</button></div></div>`;
 
 const refresh = async (silent?: boolean): Promise<void> => {
   const generation = ++requestGeneration;
@@ -104,6 +105,7 @@ const refresh = async (silent?: boolean): Promise<void> => {
     if (generation !== requestGeneration) return;
     syncSessionContext(sessionContextKey(next));
     currentState = next;
+    hideUnlock();
     render(next);
   } catch (error) {
     if (generation !== requestGeneration) return;
@@ -118,6 +120,7 @@ const refresh = async (silent?: boolean): Promise<void> => {
       : t("remote.empty.failed.title");
     $("runBadge").textContent = t("remote.badge.offline");
     $("messages").innerHTML = offlineHtml(message);
+    if (unauthorized) showUnlock("");
     if (!silent) showNotice(message, true);
   }
 };
@@ -178,6 +181,7 @@ initComposer(ctx);
 initPending(ctx);
 initTodos(ctx);
 initControls(ctx);
+initUnlock(() => refresh(false));
 renderControls(null);
 renderComposer(null);
 

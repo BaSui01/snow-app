@@ -4445,7 +4445,9 @@ export const en = {
   "userscripts.installFailed": "Install failed",
   "userscripts.installs": "installs",
   "remoteControl.subtitle":
-    "Connect to this Snow from a phone browser on the same LAN.",
+    "Connect to this Snow from a phone browser over the same LAN or through your own public server.",
+  "remoteControl.tabLan": "LAN",
+  "remoteControl.tabWan": "Public network",
   "remoteControl.enableTitle": "Enable mobile remote control",
   "remoteControl.enableDescription":
     "When off, no port is listened on and no tunnel is connected. The setting persists across restarts.",
@@ -4455,6 +4457,8 @@ export const en = {
   "remoteControl.savePort": "Save port",
   "remoteControl.lanQrAria": "Pairing QR code",
   "remoteControl.lanQrAlt": "Snow mobile remote control pairing QR code",
+  "remoteControl.lanDisabledHint":
+    "Turn on mobile remote control above to show the LAN pairing QR code and address here.",
   "remoteControl.listeningOn": "Listening on {{port}}",
   "remoteControl.serviceNotRunning": "Service not running",
   "remoteControl.lanAddress": "LAN address",
@@ -4462,6 +4466,32 @@ export const en = {
   "remoteControl.rotateCredentials": "Rotate credentials",
   "remoteControl.rotateNote":
     "After rotating, paired phones and pending attachments are invalidated immediately.",
+  "remoteControl.lanTokenTitle": "LAN token",
+  "remoteControl.wanTokenTitle": "Public token",
+  "remoteControl.tokenPinnedBadge": "Pinned",
+  "remoteControl.tokenAutoBadge": "Random per launch",
+  "remoteControl.wanTokenAutoBadge": "5-minute pairing code",
+  "remoteControl.lanTokenDescription":
+    "Scanning the QR code or opening the pairing link carries the token automatically; a pinned token survives restarts and can also be typed on the phone.",
+  "remoteControl.wanTokenDescription":
+    "A pinned token keeps the public address and QR code valid indefinitely and can be typed on the phone.",
+  "remoteControl.wanTokenPinnedNote":
+    "While the public entry is offline the value is stored and applied once the tunnel connects; unpin to return to 5-minute pairing codes.",
+  "remoteControl.tokenCopy": "Copy token",
+  "remoteControl.tokenGenerate": "Generate",
+  "remoteControl.tokenPin": "Pin token",
+  "remoteControl.tokenUnpin": "Unpin",
+  "remoteControl.tokenPlaceholder": "Custom token (at least 24 characters)",
+  "remoteControl.tokenStorageUnavailable":
+    "System secure storage is unavailable, so tokens cannot be pinned.",
+  "remoteControl.noticeTokenCopied":
+    "Token copied — you can type it on your phone",
+  "remoteControl.noticeTokenPinned":
+    "Token pinned; paired phones must enter it again to connect",
+  "remoteControl.noticeTokenUnpinned":
+    "Unpinned; the next launch or connection returns to an automatic token",
+  "remoteControl.noticeTokenFailed": "Failed to save the token",
+  "remoteControl.noticeTokenTooShort": "The token needs at least 24 characters",
   "remoteControl.tunnelTitle": "Self-hosted public connection",
   "remoteControl.tunnelDescription":
     "frpc is bundled and verified; credentials are stored encrypted locally only after verification succeeds.",
@@ -4556,7 +4586,50 @@ export const en = {
   "remoteControl.checkDns": "Check DNS",
   "remoteControl.deployConnect": "Deploy and connect",
   "remoteControl.cancelDeploy": "Cancel deployment",
-  "remoteControl.advancedSettings": "Advanced settings",
+  "remoteControl.configuredTitle": "Saved public configuration",
+  "remoteControl.configEnabledBadge": "Enabled",
+  "remoteControl.configDisabledBadge": "Disabled",
+  "remoteControl.configDisabledHint":
+    "This configuration is disabled: open “Edit configuration”, tick “Enable public remote control”, then save to connect.",
+  "remoteControl.credentialsLabel": "Encrypted credentials",
+  "remoteControl.credentialsSaved": "FRP token and CA certificate saved",
+  "remoteControl.credentialsMissing": "FRP token or CA certificate missing",
+  "remoteControl.autoConnectLabel": "Connect on startup",
+  "remoteControl.autoConnectOn": "On",
+  "remoteControl.autoConnectOff": "Off",
+  "remoteControl.connectNow": "Connect public access",
+  "remoteControl.disconnectNow": "Disconnect",
+  "remoteControl.editConfig": "Edit configuration",
+  "remoteControl.editConfigClose": "Hide form",
+  "remoteControl.removeConfig": "Remove configuration",
+  "remoteControl.removeConfigConfirmTitle":
+    "Remove the saved public configuration from this device?",
+  "remoteControl.removeConfigConfirmText":
+    "The public tunnel is disconnected and the encrypted FRP token and CA certificate are deleted. FRP and Caddy on the server stay untouched; deploy again or import a bundle to reconnect.",
+  "remoteControl.removeConfigConfirm": "Remove",
+  "remoteControl.configEmptyTitle": "No public configuration yet",
+  "remoteControl.configEmptyText":
+    "Deploy your own server, or use an existing server through a configuration bundle or manual connection details.",
+  "remoteControl.deployNewServer": "Deploy a new server",
+  "remoteControl.manualConfig": "Enter connection details",
+  "remoteControl.redeploySummary":
+    "Replace server / redeploy (4 steps, Snow installs)",
+  "remoteControl.manualFormTitleEdit": "Edit public configuration",
+  "remoteControl.manualFormTitleNew": "Public connection details",
+  "remoteControl.manualFormHint":
+    "The FRP token and CA certificate are stored encrypted on this device; leave empty to keep saved values.",
+  "remoteControl.importBundleHint":
+    "Importing a bundle generated by another Snow replaces the public configuration saved on this device.",
+  "remoteControl.noticeTunnelConnecting":
+    "Connecting the public tunnel; the HTTPS probe refreshes automatically",
+  "remoteControl.noticeConnectFailed": "Failed to connect public access",
+  "remoteControl.noticeConfigRemoved":
+    "Public configuration removed; FRP and Caddy on the server stay untouched",
+  "remoteControl.noticeRemoveFailed": "Failed to remove public configuration",
+  "remoteControl.exportBundle": "Export bundle",
+  "remoteControl.noticeExported":
+    "Bundle exported to {{path}}; it contains the FRP token, keep it safe",
+  "remoteControl.noticeExportFailed": "Failed to export bundle",
   "remoteControl.importBundle": "Import an existing bundle",
   "remoteControl.tunnelEnabled": "Enable public remote control",
   "remoteControl.tunnelAutoConnect": "Connect automatically when Snow starts",
@@ -4572,13 +4645,14 @@ export const en = {
     "Certificate saved encrypted; leave empty to keep",
   "remoteControl.saveAndConnect": "Save and connect",
   "remoteControl.saveAndDisable": "Save and disable public access",
-  "remoteControl.disconnectOnce": "Disconnect this session only",
   "remoteControl.disconnectWarningTitle":
     "“Disconnect” does not revoke phone sign-in.",
   "remoteControl.disconnectWarningText":
     "If the phone is lost or the link leaks, use “Rotate credentials” above so old phone sessions expire immediately.",
   "remoteControl.wanQrAria": "Public pairing QR code",
   "remoteControl.wanQrAlt": "Snow public remote control pairing QR code",
+  "remoteControl.wanDisabledHint":
+    "Enable mobile remote control on the “LAN” tab first.",
   "remoteControl.wanVerified": "Public entry verified",
   "remoteControl.wanPending": "Public entry pending",
   "remoteControl.selfHostedServer": "Self-hosted server",

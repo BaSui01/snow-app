@@ -4214,7 +4214,10 @@ export const zhTW = {
   "userscripts.installed": "腳本已安裝",
   "userscripts.installFailed": "安裝失敗",
   "userscripts.installs": "次安裝",
-  "remoteControl.subtitle": "在同一區域網路內，用手機瀏覽器連線這台 Snow。",
+  "remoteControl.subtitle":
+    "用手機瀏覽器連線這台 Snow：區域網路直連，或透過自架伺服器走公網。",
+  "remoteControl.tabLan": "區域網路",
+  "remoteControl.tabWan": "公網",
   "remoteControl.enableTitle": "啟用手機遠端控制",
   "remoteControl.enableDescription":
     "關閉時不會監聽連接埠或連接通道；開啟狀態在重新啟動後保留。",
@@ -4224,6 +4227,8 @@ export const zhTW = {
   "remoteControl.savePort": "儲存連接埠",
   "remoteControl.lanQrAria": "配對 QR Code",
   "remoteControl.lanQrAlt": "Snow 手機遠端控制配對 QR Code",
+  "remoteControl.lanDisabledHint":
+    "開啟上方的行動遠端控制後，這裡會顯示區域網路配對 QR Code 與位址。",
   "remoteControl.listeningOn": "正在監聽 {{port}}",
   "remoteControl.serviceNotRunning": "服務未執行",
   "remoteControl.lanAddress": "區域網路位址",
@@ -4231,6 +4236,30 @@ export const zhTW = {
   "remoteControl.rotateCredentials": "更換憑證",
   "remoteControl.rotateNote":
     "更換後，已配對的手機與尚未傳送的附件會立即失效。",
+  "remoteControl.lanTokenTitle": "區域網路權杖",
+  "remoteControl.wanTokenTitle": "公網權杖",
+  "remoteControl.tokenPinnedBadge": "已固定",
+  "remoteControl.tokenAutoBadge": "本次啟動隨機",
+  "remoteControl.wanTokenAutoBadge": "五分鐘一次性配對碼",
+  "remoteControl.lanTokenDescription":
+    "掃碼或開啟配對連結會自動帶上權杖；固定後重新啟動 Snow 也不變，也可以用手機手動填寫。",
+  "remoteControl.wanTokenDescription":
+    "固定後公網位址與 QR Code 長期有效（不再限時），手機也可以手動填寫該權杖連線。",
+  "remoteControl.wanTokenPinnedNote":
+    "公網入口未連線時儲存會在通道連線後生效；取消固定後回到五分鐘一次性配對碼。",
+  "remoteControl.tokenCopy": "複製權杖",
+  "remoteControl.tokenGenerate": "隨機產生",
+  "remoteControl.tokenPin": "固定權杖",
+  "remoteControl.tokenUnpin": "取消固定",
+  "remoteControl.tokenPlaceholder": "輸入自訂權杖（至少 24 個字元）",
+  "remoteControl.tokenStorageUnavailable": "系統安全儲存不可用，無法固定權杖。",
+  "remoteControl.noticeTokenCopied": "權杖已複製，可在手機上手動填寫",
+  "remoteControl.noticeTokenPinned":
+    "權杖已固定；已配對的手機需要重新填寫該權杖才能連線",
+  "remoteControl.noticeTokenUnpinned":
+    "已取消固定，下次啟動或連線時回到自動權杖",
+  "remoteControl.noticeTokenFailed": "儲存權杖失敗",
+  "remoteControl.noticeTokenTooShort": "權杖至少需要 24 個字元",
   "remoteControl.tunnelTitle": "自架伺服器公網連線",
   "remoteControl.tunnelDescription":
     "安裝檔已內建並驗證 frpc；部署失敗時不會儲存憑證，驗證成功後才會在本機加密儲存。",
@@ -4321,7 +4350,49 @@ export const zhTW = {
   "remoteControl.checkDns": "偵測 DNS",
   "remoteControl.deployConnect": "自動部署並連線",
   "remoteControl.cancelDeploy": "取消部署",
-  "remoteControl.advancedSettings": "進階設定",
+  "remoteControl.configuredTitle": "已儲存的公網設定",
+  "remoteControl.configEnabledBadge": "已啟用",
+  "remoteControl.configDisabledBadge": "已停用",
+  "remoteControl.configDisabledHint":
+    "此設定目前已停用：在「編輯設定」中勾選「啟用公網遠端控制」並儲存後即可連線。",
+  "remoteControl.credentialsLabel": "加密憑證",
+  "remoteControl.credentialsSaved": "FRP 憑證與 CA 憑證已儲存",
+  "remoteControl.credentialsMissing": "缺少 FRP 憑證或 CA 憑證",
+  "remoteControl.autoConnectLabel": "啟動時自動連線",
+  "remoteControl.autoConnectOn": "已開啟",
+  "remoteControl.autoConnectOff": "已關閉",
+  "remoteControl.connectNow": "連線公網",
+  "remoteControl.disconnectNow": "中斷連線",
+  "remoteControl.editConfig": "編輯設定",
+  "remoteControl.editConfigClose": "收起表單",
+  "remoteControl.removeConfig": "移除設定",
+  "remoteControl.removeConfigConfirmTitle": "確認移除本機儲存的公網設定？",
+  "remoteControl.removeConfigConfirmText":
+    "將中斷公網通道並刪除加密儲存的 FRP 憑證與 CA 憑證；伺服器上的 FRP 與 Caddy 不受影響，重新部署或匯入設定包後可再次連線。",
+  "remoteControl.removeConfigConfirm": "確認移除",
+  "remoteControl.configEmptyTitle": "還沒有公網設定",
+  "remoteControl.configEmptyText":
+    "部署一台自己的伺服器，或使用現有伺服器的設定包、連線資訊接入公網。",
+  "remoteControl.deployNewServer": "部署新伺服器",
+  "remoteControl.manualConfig": "手動填寫連線資訊",
+  "remoteControl.redeploySummary":
+    "更換伺服器 / 重新部署（共 4 步，Snow 負責安裝）",
+  "remoteControl.manualFormTitleEdit": "編輯公網設定",
+  "remoteControl.manualFormTitleNew": "填寫公網連線資訊",
+  "remoteControl.manualFormHint":
+    "FRP 憑證與 CA 憑證會加密儲存在本機；留空表示沿用已儲存的值。",
+  "remoteControl.importBundleHint":
+    "已有其他 Snow 產生的設定包時，匯入會覆蓋本機儲存的公網設定。",
+  "remoteControl.noticeTunnelConnecting":
+    "正在連線公網通道，HTTPS 偵測結果會自動重新整理",
+  "remoteControl.noticeConnectFailed": "連線公網失敗",
+  "remoteControl.noticeConfigRemoved":
+    "公網設定已移除，伺服器上的 FRP 與 Caddy 不受影響",
+  "remoteControl.noticeRemoveFailed": "移除公網設定失敗",
+  "remoteControl.exportBundle": "匯出設定包",
+  "remoteControl.noticeExported":
+    "設定包已匯出到 {{path}}；檔案包含 FRP 憑證，請妥善保管",
+  "remoteControl.noticeExportFailed": "匯出設定包失敗",
   "remoteControl.importBundle": "匯入現有設定包",
   "remoteControl.tunnelEnabled": "啟用公網遠端控制",
   "remoteControl.tunnelAutoConnect": "Snow 啟動後自動連線",
@@ -4336,12 +4407,13 @@ export const zhTW = {
   "remoteControl.caPlaceholderSaved": "憑證已加密儲存；留空保持不變",
   "remoteControl.saveAndConnect": "儲存並連線",
   "remoteControl.saveAndDisable": "儲存並關閉公網",
-  "remoteControl.disconnectOnce": "僅中斷本次連線",
-  "remoteControl.disconnectWarningTitle": "「僅中斷」不會撤銷手機登入。",
+  "remoteControl.disconnectWarningTitle": "「中斷連線」不會撤銷手機登入。",
   "remoteControl.disconnectWarningText":
     "手機遺失或連結外洩時，請使用頁面上方的「更換憑證」，讓舊手機連線立即失效。",
   "remoteControl.wanQrAria": "公網配對 QR Code",
   "remoteControl.wanQrAlt": "Snow 公網遠端控制配對 QR Code",
+  "remoteControl.wanDisabledHint":
+    "公網遠端控制依賴本機服務，請先開啟行動遠端控制。",
   "remoteControl.wanVerified": "公網入口已驗證",
   "remoteControl.wanPending": "公網入口待驗證",
   "remoteControl.selfHostedServer": "自架伺服器",

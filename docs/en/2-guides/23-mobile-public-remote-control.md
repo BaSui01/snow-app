@@ -49,6 +49,8 @@ Only `22`, `80`, `443`, and the FRP control port (default `7000`) should be publ
 - SSH connection failure: verify the public IP, port, username, and password or key. Never paste a password or private key into chat.
 - Installation succeeds but the endpoint is unreachable: allow TCP `80`, `443`, and the FRP control port (default `7000`), and check for an additional host firewall.
 - Interrupted deployment: run it again. Snow removes the temporary script and does not leave an unverified configuration reconnecting automatically.
+- Redeploying the same server: Snow reuses the installed frps/Caddy binaries, the FRP token, CA, and server certificate, so no binary is downloaded again and credentials are not rotated; the configuration is rewritten and only the affected service restarts when a port or version changed.
+- Redeploying with a different root domain: the existing FRP server certificate no longer matches the new `frp` domain, so Snow stops instead of rotating the CA unexpectedly. Delete `/etc/frp/tls` on the server once the old certificate is no longer needed, then deploy again.
 - Advanced users may import an existing server bundle from the advanced section. Beginners do not need that entry.
 
 ## Implementation anchors

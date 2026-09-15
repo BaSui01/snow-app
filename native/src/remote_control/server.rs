@@ -17,13 +17,12 @@ use axum::http::{header, HeaderMap, HeaderName, HeaderValue, Method, Request, Re
 use axum::Router;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine as _;
-use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use serde_json::{json, Value};
 use url::Url;
 
 use super::assets::{self, MOBILE_ASSET_PATH_PREFIX};
 use super::attachments::{self, AttachError, AttachmentKind, RemoteAttachmentContext};
-use super::auth::{secret_matches, WanAuth};
+use super::auth::{encode_query_component, now_ms, secret_matches, WanAuth};
 use super::bridge::{self, BridgeError};
 use super::unauthorized;
 
@@ -57,18 +56,15 @@ const MAX_ROLLBACK_CHECKPOINTS: usize = 300;
 const MAX_ROLLBACK_DIFF_FILES: usize = 50;
 /// 单个文件 diff 下发给手机端的字符上限（手机屏幕消费不了更长的内容）。
 const MAX_ROLLBACK_DIFF_CHARS: usize = 20_000;
-
-/// percent-encode 集合：与 JS 的 encodeURIComponent 保留字符一致。
-const URI_COMPONENT_SET: &AsciiSet = &NON_ALPHANUMERIC
-    .remove(b'-')
-    .remove(b'_')
-    .remove(b'.')
-    .remove(b'!')
-    .remove(b'~')
-    .remove(b'*')
-    .remove(b'\'')
-    .remove(b'(')
-    .remove(b')');
+/// 令牌解锁尝试限流：窗口与窗口内允许的失败次数。
+const UNLOCK_FAILURE_WINDOW_MS: i64 = 5 * 60 * 1000;
+const MAX_UNLOCK_FAILURES: usize = 10;
+/// 令牌长度上限（面板固定令牌与移动端输入都不得超过）。
+const MAX_UNLOCK_TOKEN_LENGTH: usize = 512;
+/// 令牌解锁成功后写入的公网会话 Cookie 有效期（固定令牌本身不设过期）。
+const WAN_COOKIE_MAX_AGE: i64 = 365 * 24 * 60 * 60;
+/// 配对码换取会话票据后写入的 Cookie 有效期（与 24 小时会话一致）。
+const WAN_COOKIE_MAX_AGE_SESSION: i64 = 24 * 60 * 60;
 
 /// 监听器策略：局域网（长期令牌）或公网（配对会话）。
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -88,6 +84,8 @@ pub struct ServerContext {
     pub wan_auth: Option<Arc<WanAuth>>,
     /// 配对代数：令牌轮换 / 服务重启后自增，旧请求据此拒绝。
     pub generation: Arc<AtomicU64>,
+    /// 最近的令牌解锁失败时间戳，用于限流暴力尝试。
+    pub unlock_failures: Mutex<VecDeque<i64>>,
 }
 
 impl ServerContext {
@@ -109,6 +107,38 @@ impl ServerContext {
 
     fn generation(&self) -> u64 {
         self.generation.load(Ordering::SeqCst)
+    }
+
+    fn lock_unlock_failures(&self) -> MutexGuard<'_, VecDeque<i64>> {
+        self.unlock_failures
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// 限流窗口内失败次数是否已达上限（顺带清理过期记录）。
+    fn unlock_blocked(&self) -> bool {
+        let now = now_ms();
+        let mut failures = self.lock_unlock_failures();
+        while let Some(attempted_at) = failures.front().copied() {
+            if attempted_at <= now - UNLOCK_FAILURE_WINDOW_MS {
+                failures.pop_front();
+            } else {
+                break;
+            }
+        }
+        failures.len() >= MAX_UNLOCK_FAILURES
+    }
+
+    fn record_unlock_failure(&self) {
+        let mut failures = self.lock_unlock_failures();
+        failures.push_back(now_ms());
+        while failures.len() > MAX_UNLOCK_FAILURES {
+            failures.pop_front();
+        }
+    }
+
+    fn clear_unlock_failures(&self) {
+        self.lock_unlock_failures().clear();
     }
 }
 
@@ -560,11 +590,18 @@ fn is_authorized(context: &ServerContext, headers: &HeaderMap, url: &Url, reques
                 .unwrap_or(false);
             header_match || cookie_match || query_match
         }
-        ServerPolicy::Wan => context
-            .wan_auth
-            .as_ref()
-            .map(|auth| auth.authorize(cookie_value(headers, WAN_COOKIE_NAME).as_deref()))
-            .unwrap_or(false),
+        ServerPolicy::Wan => {
+            let Some(auth) = context.wan_auth.as_ref() else {
+                return false;
+            };
+            if auth.authorize(cookie_value(headers, WAN_COOKIE_NAME).as_deref()) {
+                return true;
+            }
+            url.query_pairs()
+                .find(|(key, _)| key == "token")
+                .map(|(_, value)| auth.authorize(Some(value.as_ref())))
+                .unwrap_or(false)
+        }
     }
 }
 
@@ -602,13 +639,16 @@ async fn process(
         return handle_wan_pair(context, &headers, body.take()).await;
     }
 
+    if method == Method::POST && path == "/api/unlock" {
+        return handle_unlock(context, &headers, body.take()).await;
+    }
+
     let authorized = is_authorized(context, &headers, &url, &request_token);
-    // 公网未配对时也允许读取配对页（HTML / 静态资源 / 品牌 logo），
-    // 否则首屏既加载不了页面脚本，图片资源也会裂开。
-    let is_wan_public_page = context.is_wan()
-        && method == Method::GET
+    // 未授权的浏览器也可以读取移动端外壳（HTML / 静态资源 / 品牌 logo）：
+    // 页面拿不到 /api/state 时会展示令牌填写页，接口本身仍由鉴权把守。
+    let is_public_page = method == Method::GET
         && (path == "/" || path == "/icon.png" || path.starts_with(MOBILE_ASSET_PATH_PREFIX));
-    if !authorized && !is_wan_public_page {
+    if !authorized && !is_public_page {
         if is_browser_navigation(&method, &headers) {
             let desktop_locale = assets::read_desktop_locale().await;
             let locale = unauthorized::resolve_locale(
@@ -654,21 +694,13 @@ async fn process(
             ));
         };
         let mut extra = vec![("Content-Security-Policy", MOBILE_PAGE_CSP.to_string())];
-        if !context.is_wan() {
-            let token_from_query = url
-                .query_pairs()
-                .find(|(key, _)| key == "token")
-                .map(|(_, value)| value.into_owned());
-            if let Some(candidate) = token_from_query {
-                if secret_matches(&candidate, &request_token) {
-                    extra.push((
-                        "Set-Cookie",
-                        format!(
-                            "{COOKIE_NAME}={}; Path=/; HttpOnly; SameSite=Strict",
-                            utf8_percent_encode(&request_token, URI_COMPONENT_SET)
-                        ),
-                    ));
-                }
+        let token_from_query = url
+            .query_pairs()
+            .find(|(key, _)| key == "token")
+            .map(|(_, value)| value.into_owned());
+        if let Some(candidate) = token_from_query {
+            if let Some(cookie) = session_cookie(context, &candidate) {
+                extra.push(("Set-Cookie", cookie));
             }
         }
         return Ok(html_response(StatusCode::OK, html, extra, false));
@@ -793,11 +825,100 @@ async fn handle_wan_pair(
         vec![(
             "Set-Cookie",
             format!(
-                "{WAN_COOKIE_NAME}={}; Path=/; Max-Age=86400; Secure; HttpOnly; SameSite=Strict",
-                utf8_percent_encode(&session.token, URI_COMPONENT_SET)
+                "{WAN_COOKIE_NAME}={}; Path=/; Max-Age={WAN_COOKIE_MAX_AGE_SESSION}; Secure; HttpOnly; SameSite=Strict",
+                encode_query_component(&session.token)
             ),
         )],
     ))
+}
+
+/// 令牌有效时返回对应的会话 Cookie：局域网写长期令牌，公网写固定令牌 / 会话票据。
+fn session_cookie(context: &ServerContext, candidate: &str) -> Option<String> {
+    if context.is_wan() {
+        let auth = context.wan_auth.as_ref()?;
+        if !auth.authorize(Some(candidate)) {
+            return None;
+        }
+        return Some(format!(
+            "{WAN_COOKIE_NAME}={}; Path=/; Max-Age={WAN_COOKIE_MAX_AGE}; Secure; HttpOnly; SameSite=Strict",
+            encode_query_component(candidate)
+        ));
+    }
+    let current = context.current_token();
+    if !secret_matches(candidate, &current) {
+        return None;
+    }
+    Some(format!(
+        "{COOKIE_NAME}={}; Path=/; HttpOnly; SameSite=Strict",
+        encode_query_component(&current)
+    ))
+}
+
+/// 令牌解锁：移动端令牌填写页提交令牌，校验通过后写入会话 Cookie。
+async fn handle_unlock(
+    context: &ServerContext,
+    headers: &HeaderMap,
+    body: Option<Body>,
+) -> Result<Response<Body>, ApiError> {
+    if context.is_wan() && !has_expected_wan_origin(headers, context) {
+        return Ok(json_response(
+            StatusCode::FORBIDDEN,
+            &json!({ "error": "请求来源无效" }),
+            Vec::new(),
+        ));
+    }
+    if !is_json_request(headers) {
+        return Ok(json_response(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            &json!({ "error": "Content-Type 必须是 application/json" }),
+            Vec::new(),
+        ));
+    }
+    if context.unlock_blocked() {
+        return Ok(json_response(
+            StatusCode::TOO_MANY_REQUESTS,
+            &json!({ "error": "令牌错误次数过多，请稍后再试" }),
+            Vec::new(),
+        ));
+    }
+    let payload = read_json_body(body).await?;
+    let token = payload
+        .get("token")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if token.is_empty() || token.chars().count() > MAX_UNLOCK_TOKEN_LENGTH {
+        context.record_unlock_failure();
+        return Ok(json_response(
+            StatusCode::BAD_REQUEST,
+            &json!({ "error": "请输入有效的令牌" }),
+            Vec::new(),
+        ));
+    }
+    match session_cookie(context, &token) {
+        Some(cookie) => {
+            context.clear_unlock_failures();
+            Ok(json_response(
+                StatusCode::OK,
+                &json!({ "ok": true }),
+                vec![("Set-Cookie", cookie)],
+            ))
+        }
+        None => {
+            context.record_unlock_failure();
+            let message = if context.is_wan() {
+                "令牌无效或已过期"
+            } else {
+                "令牌无效"
+            };
+            Ok(json_response(
+                StatusCode::UNAUTHORIZED,
+                &json!({ "error": message }),
+                Vec::new(),
+            ))
+        }
+    }
 }
 
 // ─── API 路由 ──────────────────────────────────────────────────────────────

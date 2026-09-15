@@ -4209,7 +4209,10 @@ export const zhCN = {
   "userscripts.installed": "脚本已安装",
   "userscripts.installFailed": "安装失败",
   "userscripts.installs": "次安装",
-  "remoteControl.subtitle": "同一局域网内，用手机浏览器连接这台 Snow。",
+  "remoteControl.subtitle":
+    "用手机浏览器连接这台 Snow：同一局域网直连，或通过自建服务器走公网。",
+  "remoteControl.tabLan": "局域网",
+  "remoteControl.tabWan": "公网",
   "remoteControl.enableTitle": "启用手机远控",
   "remoteControl.enableDescription":
     "关闭时不会监听端口或连接隧道；开启状态在重启后保持。",
@@ -4219,12 +4222,38 @@ export const zhCN = {
   "remoteControl.savePort": "保存端口",
   "remoteControl.lanQrAria": "配对二维码",
   "remoteControl.lanQrAlt": "Snow 手机远控配对二维码",
+  "remoteControl.lanDisabledHint":
+    "开启上方的手机远控后，这里会显示局域网配对二维码与地址。",
   "remoteControl.listeningOn": "正在监听 {{port}}",
   "remoteControl.serviceNotRunning": "服务未运行",
   "remoteControl.lanAddress": "局域网地址",
   "remoteControl.copyAddress": "复制地址",
   "remoteControl.rotateCredentials": "更换凭据",
   "remoteControl.rotateNote": "更换后，已配对手机及尚未发送的附件会立即失效。",
+  "remoteControl.lanTokenTitle": "局域网令牌",
+  "remoteControl.wanTokenTitle": "公网令牌",
+  "remoteControl.tokenPinnedBadge": "已固定",
+  "remoteControl.tokenAutoBadge": "本次启动随机",
+  "remoteControl.wanTokenAutoBadge": "五分钟一次性配对码",
+  "remoteControl.lanTokenDescription":
+    "扫码或打开配对链接会自动携带令牌；固定后重启 Snow 也不变，也可以在手机上手动填写。",
+  "remoteControl.wanTokenDescription":
+    "固定后公网地址与二维码长期有效（不再限时），手机也可以手动填写该令牌连接。",
+  "remoteControl.wanTokenPinnedNote":
+    "公网入口未连接时保存会在隧道连接后生效；取消固定后回到五分钟一次性配对码。",
+  "remoteControl.tokenCopy": "复制令牌",
+  "remoteControl.tokenGenerate": "随机生成",
+  "remoteControl.tokenPin": "固定令牌",
+  "remoteControl.tokenUnpin": "取消固定",
+  "remoteControl.tokenPlaceholder": "输入自定义令牌（至少 24 个字符）",
+  "remoteControl.tokenStorageUnavailable": "系统安全存储不可用，无法固定令牌。",
+  "remoteControl.noticeTokenCopied": "令牌已复制，可在手机上手动填写",
+  "remoteControl.noticeTokenPinned":
+    "令牌已固定；已配对的手机需要重新填写该令牌才能连接",
+  "remoteControl.noticeTokenUnpinned":
+    "已取消固定，下次启动或连接时回到自动令牌",
+  "remoteControl.noticeTokenFailed": "保存令牌失败",
+  "remoteControl.noticeTokenTooShort": "令牌至少需要 24 个字符",
   "remoteControl.tunnelTitle": "自建服务器公网连接",
   "remoteControl.tunnelDescription":
     "安装包已内置并校验 frpc；部署失败时不会保存凭据，验证成功后才会在本机加密保存。",
@@ -4315,7 +4344,49 @@ export const zhCN = {
   "remoteControl.checkDns": "检测 DNS",
   "remoteControl.deployConnect": "自动部署并连接",
   "remoteControl.cancelDeploy": "取消部署",
-  "remoteControl.advancedSettings": "高级设置",
+  "remoteControl.configuredTitle": "已保存的公网配置",
+  "remoteControl.configEnabledBadge": "已启用",
+  "remoteControl.configDisabledBadge": "已停用",
+  "remoteControl.configDisabledHint":
+    "该配置当前已停用：在“编辑配置”中勾选“启用公网远控”并保存后即可连接。",
+  "remoteControl.credentialsLabel": "加密凭据",
+  "remoteControl.credentialsSaved": "FRP 凭据与 CA 证书已保存",
+  "remoteControl.credentialsMissing": "缺少 FRP 凭据或 CA 证书",
+  "remoteControl.autoConnectLabel": "启动时自动连接",
+  "remoteControl.autoConnectOn": "已开启",
+  "remoteControl.autoConnectOff": "已关闭",
+  "remoteControl.connectNow": "连接公网",
+  "remoteControl.disconnectNow": "断开连接",
+  "remoteControl.editConfig": "编辑配置",
+  "remoteControl.editConfigClose": "收起表单",
+  "remoteControl.removeConfig": "移除配置",
+  "remoteControl.removeConfigConfirmTitle": "确认移除本机保存的公网配置？",
+  "remoteControl.removeConfigConfirmText":
+    "将断开公网隧道并删除加密保存的 FRP 凭据与 CA 证书；服务器上的 FRP 与 Caddy 不受影响，重新部署或导入配置包后可再次连接。",
+  "remoteControl.removeConfigConfirm": "确认移除",
+  "remoteControl.configEmptyTitle": "还没有公网配置",
+  "remoteControl.configEmptyText":
+    "部署一台自己的服务器，或使用已有服务器的配置包、连接信息接入公网。",
+  "remoteControl.deployNewServer": "部署新服务器",
+  "remoteControl.manualConfig": "手动填写连接信息",
+  "remoteControl.redeploySummary":
+    "更换服务器 / 重新部署（共 4 步，Snow 负责安装）",
+  "remoteControl.manualFormTitleEdit": "编辑公网配置",
+  "remoteControl.manualFormTitleNew": "填写公网连接信息",
+  "remoteControl.manualFormHint":
+    "FRP 凭据与 CA 证书会加密保存到本机；留空表示沿用已保存的值。",
+  "remoteControl.importBundleHint":
+    "已有其他 Snow 生成的配置包时，导入会覆盖本机保存的公网配置。",
+  "remoteControl.noticeTunnelConnecting":
+    "正在连接公网隧道，HTTPS 探测结果会自动刷新",
+  "remoteControl.noticeConnectFailed": "连接公网失败",
+  "remoteControl.noticeConfigRemoved":
+    "公网配置已移除，服务器上的 FRP 与 Caddy 不受影响",
+  "remoteControl.noticeRemoveFailed": "移除公网配置失败",
+  "remoteControl.exportBundle": "导出配置包",
+  "remoteControl.noticeExported":
+    "配置包已导出到 {{path}}；文件包含 FRP 凭据，请妥善保管",
+  "remoteControl.noticeExportFailed": "导出配置包失败",
   "remoteControl.importBundle": "导入已有配置包",
   "remoteControl.tunnelEnabled": "启用公网远控",
   "remoteControl.tunnelAutoConnect": "Snow 启动后自动连接",
@@ -4330,12 +4401,13 @@ export const zhCN = {
   "remoteControl.caPlaceholderSaved": "证书已加密保存；留空保持不变",
   "remoteControl.saveAndConnect": "保存并连接",
   "remoteControl.saveAndDisable": "保存并关闭公网",
-  "remoteControl.disconnectOnce": "仅断开本次连接",
-  "remoteControl.disconnectWarningTitle": "“仅断开”不会撤销手机登录。",
+  "remoteControl.disconnectWarningTitle": "“断开连接”不会撤销手机登录。",
   "remoteControl.disconnectWarningText":
     "手机丢失或链接泄露时，请使用页面上方的“更换凭据”，让旧手机连接立即失效。",
   "remoteControl.wanQrAria": "公网配对二维码",
   "remoteControl.wanQrAlt": "Snow 公网远控配对二维码",
+  "remoteControl.wanDisabledHint":
+    "公网远控依赖本机服务，请先“开启手机远控“。",
   "remoteControl.wanVerified": "公网入口已验证",
   "remoteControl.wanPending": "公网入口待验证",
   "remoteControl.selfHostedServer": "自建服务器",

@@ -298,6 +298,7 @@ export const deployRemoteServer = async (
   } finally {
     if (importedConfig && !completed) {
       await remoteTunnelManager.disconnect().catch(() => undefined);
+      await remoteTunnelManager.connect().catch(() => undefined);
     }
     if (sessionId) {
       const privilege = useSudo ? "sudo -n " : "";

@@ -1447,6 +1447,8 @@ export type RemoteControlWanState = {
   pairingUrl: string;
   /** 无有效配对码时该字段省略（原生侧 Option::None）。 */
   pairingExpiresAt?: number;
+  /** 用户固定的公网令牌；未固定时为空串。 */
+  fixedToken: string;
 };
 
 /** 远控服务状态快照（enabled 字段由 Node 侧按总开关补充）。 */
@@ -1468,6 +1470,8 @@ export type RemoteControlStartOptions = {
   iconPath: string;
   wanPublicOrigin?: string;
   wanPort: number;
+  /** 固定的公网令牌；省略时公网只接受一次性配对码。 */
+  wanToken?: string;
 };
 
 /** 远控附件上下文（与消息发送时的会话 / 工作区绑定，防止跨会话串用）。 */
@@ -1979,10 +1983,19 @@ export type NativeBridge = {
   getRemoteControlServerState: () => RemoteControlServerState;
   /** 轮换局域网令牌与公网会话，并重发公网配对码。 */
   rotateRemoteControlToken: () => Promise<RemoteControlServerState>;
+  /** 应用面板固定的局域网令牌（省略表示回到随机令牌）。 */
+  setRemoteControlLanToken: (
+    token?: string,
+  ) => Promise<RemoteControlServerState>;
+  /** 应用面板固定的公网令牌（省略表示回到一次性配对码）。 */
+  setRemoteControlWanToken: (
+    token?: string,
+  ) => Promise<RemoteControlServerState>;
   /** 启动 / 替换公网回环监听器（frpc 隧道入口）。 */
   startRemoteWanListener: (
     publicOrigin: string,
     preferredPort: number,
+    fixedToken?: string,
   ) => Promise<RemoteControlServerState>;
   /** 停止公网回环监听器并撤销全部公网会话。 */
   stopRemoteWanListener: () => Promise<void>;

@@ -3,15 +3,26 @@ import {
   getRemoteControlPairingState,
   markRemoteControlEnabled,
   persistRemoteControlPort,
+  setRemoteControlLanToken,
+  setRemoteControlWanToken,
   startRemoteControlServer,
   stopRemoteControlServer,
   type RemoteControlPairingState,
 } from "./remoteControlServer";
 import { installRemoteRendererBridge } from "./rendererBridge";
 import { remoteTunnelManager } from "./remoteTunnelManager";
+import {
+  isRemoteFixedTokenStorageAvailable,
+  loadRemoteFixedTokens,
+  saveRemoteFixedTokens,
+} from "./remoteTokenStore";
 
 const SETTING_NAME = "Remote control enabled";
 const SETTING_CODE = "remote_control_enabled";
+
+/** 固定令牌长度约束（与原生侧 MIN_TOKEN_LEN 一致）。 */
+const MIN_FIXED_TOKEN_LENGTH = 24;
+const MAX_FIXED_TOKEN_LENGTH = 512;
 
 /**
  * 注册渲染进程桥（幂等）：Rust 远控服务需要桌面 UI 状态时回调主进程。
@@ -96,4 +107,40 @@ export const applyRemoteControlPort = async (
     await remoteTunnelManager.connect().catch(() => undefined);
   }
   return getRemoteControlPairingState();
+};
+
+export type RemoteFixedTokenKind = "lan" | "wan";
+
+/**
+ * 固定 / 取消固定令牌：先加密持久化，再按需应用到运行中的服务。
+ * 服务或公网入口未运行时只写持久化，重启 / 下次连接后生效。
+ */
+export const applyRemoteControlFixedToken = async (
+  kind: RemoteFixedTokenKind,
+  token: string | null,
+): Promise<RemoteControlPairingState> => {
+  const next = token?.trim() ?? "";
+  if (
+    next &&
+    (next.length < MIN_FIXED_TOKEN_LENGTH ||
+      next.length > MAX_FIXED_TOKEN_LENGTH)
+  ) {
+    throw new Error(
+      `令牌长度需为 ${MIN_FIXED_TOKEN_LENGTH} 到 ${MAX_FIXED_TOKEN_LENGTH} 个字符`,
+    );
+  }
+  if (!isRemoteFixedTokenStorageAvailable()) {
+    throw new Error("系统安全存储不可用，无法固定令牌");
+  }
+  saveRemoteFixedTokens({
+    ...loadRemoteFixedTokens(),
+    [kind]: next || null,
+  });
+  const current = await getRemoteControlPairingState();
+  if (kind === "lan") {
+    if (!current.running || current.token === next) return current;
+    return setRemoteControlLanToken(next || null);
+  }
+  if (!current.wan.enabled || current.wan.fixedToken === next) return current;
+  return setRemoteControlWanToken(next || null);
 };

@@ -9,6 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
+use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use url::Url;
 
 /// 配对码有效期（5 分钟）与配对成功后会话票据有效期（24 小时）。
@@ -19,6 +20,37 @@ const MAX_SESSIONS: usize = 16;
 /// 配对失败限流：窗口内失败次数达到上限后拒绝新的配对尝试。
 const PAIRING_FAILURE_WINDOW_MS: i64 = 60 * 1000;
 const MAX_PAIRING_FAILURES_PER_WINDOW: usize = 20;
+/// 固定令牌与随机令牌共用的最小长度。
+pub const MIN_TOKEN_LEN: usize = 24;
+
+/// percent-encode 集合：与 JS 的 encodeURIComponent 保留字符一致。
+pub const URI_COMPONENT_SET: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'_')
+    .remove(b'.')
+    .remove(b'!')
+    .remove(b'~')
+    .remove(b'*')
+    .remove(b'\'')
+    .remove(b'(')
+    .remove(b')');
+
+/// 校验用户固定令牌：去空白后不能为空且不短于最小长度。
+pub fn normalize_fixed_token(value: &str) -> Result<String, String> {
+    let trimmed = value.trim();
+    if trimmed.chars().count() < MIN_TOKEN_LEN {
+        return Err(format!("令牌至少需要 {MIN_TOKEN_LEN} 个字符"));
+    }
+    if trimmed.chars().count() > 512 {
+        return Err("令牌最多 512 个字符".to_string());
+    }
+    Ok(trimmed.to_string())
+}
+
+/// 令牌写入 URL 查询参数时的编码（与 JS encodeURIComponent 一致）。
+pub fn encode_query_component(value: &str) -> String {
+    utf8_percent_encode(value, URI_COMPONENT_SET).to_string()
+}
 
 /// 当前 Unix 毫秒时间戳。
 pub fn now_ms() -> i64 {
@@ -94,6 +126,8 @@ struct WanAuthInner {
     sessions: VecDeque<(String, i64)>,
     /// 最近的配对失败时间戳，用于限流。
     failed_attempts: VecDeque<i64>,
+    /// 用户固定的公网令牌；为空时只接受配对码换取的会话票据。
+    fixed_token: Option<String>,
 }
 
 /// 公网入口鉴权：一次性配对码换取 24 小时会话票据。
@@ -110,6 +144,7 @@ impl WanAuth {
                 pairing: None,
                 sessions: VecDeque::new(),
                 failed_attempts: VecDeque::new(),
+                fixed_token: None,
             }),
         })
     }
@@ -129,6 +164,16 @@ impl WanAuth {
                 })
             })
             .unwrap_or_default()
+    }
+
+    /// 设置 / 清除用户固定的公网令牌（None 表示回到一次性配对码）。
+    pub fn set_fixed_token(&self, token: Option<String>) {
+        self.lock().fixed_token = token;
+    }
+
+    /// 当前固定的公网令牌；未固定时为空。
+    pub fn fixed_token(&self) -> Option<String> {
+        self.lock().fixed_token.clone()
     }
 
     /// 签发新的配对码（旧码立即失效）。
@@ -203,13 +248,21 @@ impl WanAuth {
         Some(WanSession { token, expires_at })
     }
 
-    /// 校验会话票据；过期会话在每次校验时顺带清理。
+    /// 校验会话票据或固定令牌；过期会话在每次校验时顺带清理。
     pub fn authorize(&self, token: Option<&str>) -> bool {
         let Some(token) = token else {
             return false;
         };
+        if token.is_empty() {
+            return false;
+        }
         let now = now_ms();
         let mut inner = self.lock();
+        if let Some(fixed) = inner.fixed_token.as_deref() {
+            if secret_matches(token, fixed) {
+                return true;
+            }
+        }
         inner.sessions.retain(|(_, expires_at)| *expires_at > now);
         inner
             .sessions

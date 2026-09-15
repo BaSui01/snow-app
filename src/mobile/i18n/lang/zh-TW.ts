@@ -24,6 +24,23 @@ export const zhTW: Record<string, string> = {
   "remote.error.timeout": "連線桌面 Snow 逾時",
   "remote.error.badResponse": "回應格式錯誤",
 
+  // 權杖填寫頁
+  "remote.unlock.badge": "需要權杖",
+  "remote.unlock.title": "輸入存取權杖",
+  "remote.unlock.lead":
+    "這支手機尚未與 Snow 建立信任。填寫電腦端「設定 → 手機遠控」顯示的權杖即可連線。",
+  "remote.unlock.placeholder": "貼上或輸入存取權杖",
+  "remote.unlock.submit": "連線",
+  "remote.unlock.busy": "正在驗證…",
+  "remote.unlock.empty": "請先輸入權杖",
+  "remote.unlock.failed": "權杖無效，請確認後重試",
+  "remote.unlock.tooMany": "嘗試次數過多，請稍後再試",
+  "remote.unlock.success": "已連線",
+  "remote.unlock.hint":
+    "也可以直接掃描電腦端的 QR Code，掃碼會自動帶上權杖；權杖可在電腦端「手機遠控」複製。",
+  "remote.unlock.reload": "重新載入頁面",
+  "remote.unlock.open": "填寫權杖",
+
   // 時間軸
   "remote.timeline.scrollToBottom": "捲動到底部",
   "remote.timeline.loadEarlier": "載入更早的紀錄",

@@ -1,5 +1,7 @@
 # 交给 AI 的部署指令
 
+> English version: [AI_DEPLOYMENT_PROMPT_EN.md](AI_DEPLOYMENT_PROMPT_EN.md)
+
 ## 用户只需要购买两样东西
 
 厂商不限，不要按某一家云厂商写死：
@@ -18,7 +20,7 @@
 > 1. 确认服务器是受支持的 x86_64 Linux（Ubuntu 22.04/24.04、Debian 11+、CentOS Stream/RHEL/Rocky/AlmaLinux 8+），拥有独立公网 IPv4，不是抢占式或竞价实例。
 > 2. 在域名控制台创建 `snow` 和 `frp` 两个 A 记录，均指向服务器公网 IPv4。
 > 3. 在云防火墙或安全组放行 TCP 22、80、443 与 FRP 控制端口（默认 7000，如需自定义使用部署表单或 `--frp-bind-port`），不要对公网开放隧道端口（默认 18080，可用 `--frp-remote-port` 修改）。
-> 4. 在这台电脑中找到 Snow 安装目录 `resources/remote-control/deploy`，使用其中的 `install-linux.sh` 部署服务器；由你生成并保管 FRP token、CA 和证书，不要让我手工填写。
+> 4. 在这台电脑中找到 Snow 安装目录 `resources/remote-control/deploy`，使用其中的 `install-linux.sh` 部署服务器；由你生成并保管 FRP token、CA 和证书，不要让我手工填写。脚本默认输出英文，需要中文时加 `--lang zh-CN` 或设置 `SNOW_LANG=zh-CN`。
 > 5. 检查 frps、Caddy、HTTPS、端口与隧道端口（默认 18080）仅回环监听，确认公网链路可用。
 > 6. 将服务器生成的 `/root/snow-remote-client.json` 安全下载到本机，在 Snow 中导入它并连接；导入成功后删除本机明文配置包。
 > 7. 最后提醒我关闭手机 Wi-Fi，用蜂窝网络扫描公网二维码验收。
@@ -28,7 +30,7 @@
 AI 应根据实际厂商操作对应控制台，不能要求用户把页面中的专业参数逐项抄进聊天。只有在 AI 确实无法操作浏览器或终端时，才使用下面的手动备用命令：
 
 ```bash
-# 可选参数：--frp-bind-port <FRP 控制端口> --frp-remote-port <FRP 隧道端口>
+# 可选参数：--frp-bind-port <FRP 控制端口> --frp-remote-port <FRP 隧道端口> --lang en|zh-CN
 sudo bash install-linux.sh \
   --public-domain snow.example.com \
   --frp-domain frp.example.com \

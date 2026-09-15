@@ -3461,3 +3461,159 @@ html[data-i18n-pending] body {
   width: 14px;
   height: 14px;
 }
+
+/* 令牌填写页：未授权 / 连不上时覆盖整个视口，成功连接后自动收起。 */
+.unlock-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: calc(26px + env(safe-area-inset-top, 0px)) 20px
+    calc(26px + env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+  background:
+    radial-gradient(
+      760px 380px at 50% -140px,
+      rgba(120, 168, 255, 0.16),
+      transparent 72%
+    ),
+    var(--bg);
+}
+.unlock-overlay.open {
+  display: flex;
+}
+.unlock-card {
+  width: 100%;
+  max-width: 380px;
+  text-align: center;
+  animation: rise 0.24s ease-out;
+}
+.unlock-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 18px;
+}
+.unlock-logo {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+}
+.unlock-eyebrow {
+  color: var(--dim);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.24em;
+}
+.unlock-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 11px;
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--amber-dim);
+  color: var(--amber);
+  font-size: 11px;
+  font-weight: 700;
+}
+.unlock-badge .icn,
+.unlock-badge svg {
+  width: 12px;
+  height: 12px;
+}
+.unlock-card h1 {
+  margin: 0 0 9px;
+  color: var(--text);
+  font-size: 20px;
+  line-height: 1.45;
+  letter-spacing: -0.01em;
+}
+.unlock-lead {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.75;
+}
+.unlock-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.unlock-form input {
+  height: 46px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  outline: none;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: center;
+}
+.unlock-form input:focus {
+  border-color: var(--accent-color-border);
+}
+.unlock-form input:disabled {
+  opacity: 0.7;
+}
+.unlock-form button {
+  height: 46px;
+  border: none;
+  border-radius: 14px;
+  background: var(--text);
+  color: var(--bg);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.unlock-form button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.unlock-form button:disabled {
+  opacity: 0.6;
+}
+.unlock-error {
+  margin: 12px 0 0;
+  color: var(--red);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.unlock-hint {
+  margin: 14px 0 0;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.7;
+}
+.unlock-reload {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.empty-action {
+  margin-top: 14px;
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.empty-action:active {
+  transform: scale(0.98);
+}

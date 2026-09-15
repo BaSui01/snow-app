@@ -2,7 +2,9 @@ import { ipcRenderer, type IpcRendererEvent } from "electron";
 import type {
   RemoteAttachmentContext,
   RemoteControlPairingState,
+  RemoteFixedTokenKind,
   RemoteTunnelConfigInput,
+  RemoteTunnelExportResult,
   RemoteTunnelImportResult,
   RemoteTunnelStatus,
   RemoteServerDeployInput,
@@ -23,6 +25,11 @@ export const remoteControlApi = {
     ipcRenderer.invoke("remote-control:set-enabled", enabled),
   setRemoteControlPort: (port: number): Promise<RemoteControlPairingState> =>
     ipcRenderer.invoke("remote-control:set-port", port),
+  setRemoteControlFixedToken: (
+    kind: RemoteFixedTokenKind,
+    token: string | null,
+  ): Promise<RemoteControlPairingState> =>
+    ipcRenderer.invoke("remote-control:set-fixed-token", kind, token),
   getRemoteTunnelStatus: (): Promise<RemoteTunnelStatus> =>
     ipcRenderer.invoke("remote-control:tunnel-status"),
   saveRemoteTunnelConfig: (
@@ -33,8 +40,12 @@ export const remoteControlApi = {
     ipcRenderer.invoke("remote-control:tunnel-connect"),
   disconnectRemoteTunnel: (): Promise<RemoteTunnelStatus> =>
     ipcRenderer.invoke("remote-control:tunnel-disconnect"),
+  removeRemoteTunnelConfig: (): Promise<RemoteTunnelStatus> =>
+    ipcRenderer.invoke("remote-control:tunnel-remove"),
   importRemoteTunnelConfig: (): Promise<RemoteTunnelImportResult> =>
     ipcRenderer.invoke("remote-control:tunnel-import"),
+  exportRemoteTunnelConfig: (): Promise<RemoteTunnelExportResult> =>
+    ipcRenderer.invoke("remote-control:tunnel-export"),
   checkRemoteServerDns: (input: {
     serverIp: string;
     rootDomain: string;

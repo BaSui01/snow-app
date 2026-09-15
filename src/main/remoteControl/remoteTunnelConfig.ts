@@ -5,6 +5,7 @@ import {
   mkdirSync,
   readFileSync,
   renameSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -108,4 +109,11 @@ export const saveRemoteTunnelConfig = async (
     () => undefined,
   );
   return operation;
+};
+
+/** 移除本机加密配置：删除后需重新部署或导入配置包才能再次连接公网。 */
+export const deleteStoredRemoteTunnelConfig = (): void => {
+  const path = configPath();
+  rmSync(path, { force: true });
+  rmSync(`${path}.tmp`, { force: true });
 };

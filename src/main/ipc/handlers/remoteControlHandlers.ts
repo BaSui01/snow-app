@@ -1,5 +1,6 @@
-import { dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
-import { readFile } from "node:fs/promises";
+import { app, dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { getMainWindow } from "../../app/mainWindow";
 import {
   getRemoteControlPairingState,
@@ -7,6 +8,7 @@ import {
 } from "../../remoteControl/remoteControlServer";
 import {
   applyRemoteControlEnabled,
+  applyRemoteControlFixedToken,
   applyRemoteControlPort,
 } from "../../remoteControl/remoteControlLifecycle";
 import type { RemoteAttachmentContext } from "../../../preload/types/remoteControl";
@@ -19,9 +21,11 @@ import {
 } from "../../remoteControl/remoteServerDeployer";
 import type { RemoteServerDeployInput } from "../../remoteControl/remoteServerDeploymentSchema";
 import {
+  createRemoteTunnelBundle,
   parseRemoteTunnelImportBundle,
   type RemoteTunnelConfigInput,
 } from "../../remoteControl/remoteTunnelSchema";
+import { loadStoredRemoteTunnelConfig } from "../../remoteControl/remoteTunnelConfig";
 
 const assertMainFrame = (event: IpcMainInvokeEvent): void => {
   const mainWindow = getMainWindow();
@@ -70,6 +74,19 @@ export const registerRemoteControlHandlers = (): void => {
     }
     return applyRemoteControlPort(port);
   });
+  ipcMain.handle(
+    "remote-control:set-fixed-token",
+    async (event, kind: unknown, token: unknown) => {
+      assertMainFrame(event);
+      if (kind !== "lan" && kind !== "wan") {
+        throw new Error("Invalid remote control token kind");
+      }
+      if (token !== null && typeof token !== "string") {
+        throw new Error("Invalid remote control token");
+      }
+      return applyRemoteControlFixedToken(kind, token);
+    },
+  );
   ipcMain.handle("remote-control:tunnel-status", (event) => {
     assertMainFrame(event);
     return remoteTunnelManager.getStatus();
@@ -88,6 +105,10 @@ export const registerRemoteControlHandlers = (): void => {
   ipcMain.handle("remote-control:tunnel-disconnect", async (event) => {
     assertMainFrame(event);
     return remoteTunnelManager.disconnect();
+  });
+  ipcMain.handle("remote-control:tunnel-remove", async (event) => {
+    assertMainFrame(event);
+    return remoteTunnelManager.remove();
   });
   ipcMain.handle("remote-control:tunnel-import", async (event) => {
     assertMainFrame(event);
@@ -114,6 +135,28 @@ export const registerRemoteControlHandlers = (): void => {
     const input = parseRemoteTunnelImportBundle(parsed);
     await remoteTunnelManager.save(input);
     return { canceled: false, status: await remoteTunnelManager.connect() };
+  });
+  ipcMain.handle("remote-control:tunnel-export", async (event) => {
+    assertMainFrame(event);
+    const mainWindow = getMainWindow();
+    if (!mainWindow) throw new Error("Snow 主窗口不可用");
+    const config = loadStoredRemoteTunnelConfig();
+    if (!config) throw new Error("本机还没有可导出的公网配置");
+    const host = new URL(config.publicOrigin).hostname;
+    const selection = await dialog.showSaveDialog(mainWindow, {
+      title: "导出 Snow 公网远控配置包",
+      defaultPath: join(
+        app.getPath("downloads"),
+        `snow-remote-client-${host}.json`,
+      ),
+      filters: [{ name: "Snow 远控配置", extensions: ["json"] }],
+    });
+    if (selection.canceled || !selection.filePath) {
+      return { canceled: true, path: null };
+    }
+    const bytes = JSON.stringify(createRemoteTunnelBundle(config), null, 2);
+    await writeFile(selection.filePath, bytes, { mode: 0o600 });
+    return { canceled: false, path: selection.filePath };
   });
   ipcMain.handle(
     "remote-control:server-check-dns",

@@ -11,6 +11,7 @@ pub mod bridge;
 pub mod server;
 pub mod unauthorized;
 
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, RwLock};
@@ -19,7 +20,7 @@ use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex as AsyncMutex;
 
-use auth::{random_token, WanAuth};
+use auth::{encode_query_component, normalize_fixed_token, random_token, WanAuth};
 use server::{ServerContext, ServerPolicy};
 
 /// 监听器关闭的等待上限（超过后强制中止任务）。
@@ -40,6 +41,8 @@ pub struct StartOptions {
     /// 可选的公网入口地址（设置了才会启动 WAN 监听器）。
     pub wan_public_origin: Option<String>,
     pub wan_port: u16,
+    /// 可选的固定公网令牌；缺省时公网只接受一次性配对码。
+    pub wan_token: Option<String>,
 }
 
 /// 远控服务的对外状态快照（enabled 字段由 Node 侧补充）。
@@ -60,6 +63,8 @@ pub struct WanState {
     pub public_origin: String,
     pub pairing_url: String,
     pub pairing_expires_at: Option<i64>,
+    /// 用户固定的公网令牌；未固定时为空串。
+    pub fixed_token: String,
 }
 
 struct LanServer {
@@ -136,25 +141,41 @@ pub fn state() -> RemoteControlState {
     let wan = {
         let wan = lock_wan();
         match wan.as_ref() {
-            Some(server) => {
-                let pairing = server
-                    .auth
-                    .current_pairing()
-                    .unwrap_or_else(|| server.auth.issue_pairing());
-                WanState {
+            Some(server) => match server.auth.fixed_token() {
+                Some(token) => WanState {
                     enabled: true,
                     local_port: server.port,
                     public_origin: server.auth.origin().to_string(),
-                    pairing_url: pairing.url,
-                    pairing_expires_at: Some(pairing.expires_at),
+                    pairing_url: format!(
+                        "{}/?token={}",
+                        server.auth.origin(),
+                        encode_query_component(&token)
+                    ),
+                    pairing_expires_at: None,
+                    fixed_token: token,
+                },
+                None => {
+                    let pairing = server
+                        .auth
+                        .current_pairing()
+                        .unwrap_or_else(|| server.auth.issue_pairing());
+                    WanState {
+                        enabled: true,
+                        local_port: server.port,
+                        public_origin: server.auth.origin().to_string(),
+                        pairing_url: pairing.url,
+                        pairing_expires_at: Some(pairing.expires_at),
+                        fixed_token: String::new(),
+                    }
                 }
-            }
+            },
             None => WanState {
                 enabled: false,
                 local_port: 0,
                 public_origin: String::new(),
                 pairing_url: String::new(),
                 pairing_expires_at: None,
+                fixed_token: String::new(),
             },
         }
     };
@@ -168,22 +189,22 @@ pub fn state() -> RemoteControlState {
     }
 }
 
+/// 归一化显式配置的令牌（环境变量或面板固定值）；空白视为未配置。
+fn configured_token(value: Option<&str>) -> Result<Option<String>, String> {
+    match value.map(str::trim).filter(|item| !item.is_empty()) {
+        Some(configured) => normalize_fixed_token(configured).map(Some),
+        None => Ok(None),
+    }
+}
+
 /// 启动局域网远控服务；已运行时直接返回当前状态。
 pub async fn start_server(options: StartOptions) -> Result<RemoteControlState, String> {
     let _guard = lifecycle().lock().await;
     if lock_lan().is_some() {
         return Ok(state());
     }
-    if let Some(configured) = &options.token {
-        if configured.chars().count() < 24 {
-            return Err("SNOW_REMOTE_TOKEN 至少需要 24 个字符".to_string());
-        }
-    }
-    let token = options
-        .token
-        .clone()
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(random_token);
+    let token = configured_token(options.token.as_deref())?.unwrap_or_else(random_token);
+    let wan_token = configured_token(options.wan_token.as_deref())?;
     let generation = generation_counter().clone();
     generation.fetch_add(1, Ordering::SeqCst);
     let icon_bytes = tokio::fs::read(&options.icon_path)
@@ -208,6 +229,7 @@ pub async fn start_server(options: StartOptions) -> Result<RemoteControlState, S
         lan_token: Some(token_shared.clone()),
         wan_auth: None,
         generation: generation.clone(),
+        unlock_failures: Mutex::new(VecDeque::new()),
     });
     let (shutdown, shutdown_rx) = tokio::sync::oneshot::channel();
     let app = server::router(context);
@@ -232,7 +254,7 @@ pub async fn start_server(options: StartOptions) -> Result<RemoteControlState, S
 
     if let Some(origin) = options.wan_public_origin {
         // 公网入口是可选项：配置错误或端口占用不能拖垮已就绪的局域网服务。
-        let _ = start_wan_listener_locked(&origin, options.wan_port).await;
+        let _ = start_wan_listener_locked(&origin, options.wan_port, wan_token).await;
     }
     Ok(state())
 }
@@ -279,13 +301,52 @@ pub async fn rotate_token() -> Result<RemoteControlState, String> {
     Ok(state())
 }
 
+/// 应用设置面板固定的局域网令牌；None 表示回到随机令牌。
+pub async fn set_lan_token(token: Option<String>) -> Result<RemoteControlState, String> {
+    let _guard = lifecycle().lock().await;
+    if lock_lan().is_none() {
+        return Err("手机遥控服务尚未启动".to_string());
+    }
+    let next_token = configured_token(token.as_deref())?.unwrap_or_else(random_token);
+    server::wait_send_idle().await;
+    {
+        let mut lan = lock_lan();
+        let Some(server) = lan.as_mut() else {
+            return Err("手机遥控服务尚未启动".to_string());
+        };
+        *server
+            .token
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = next_token;
+        server.generation.fetch_add(1, Ordering::SeqCst);
+    }
+    server::clear_completed_sends();
+    attachments::invalidate_all().await;
+    Ok(state())
+}
+
+/// 应用设置面板固定的公网令牌；None 表示回到一次性配对码。
+pub async fn set_wan_token(token: Option<String>) -> Result<RemoteControlState, String> {
+    let _guard = lifecycle().lock().await;
+    let next_token = configured_token(token.as_deref())?;
+    {
+        let wan = lock_wan();
+        let Some(server) = wan.as_ref() else {
+            return Err("公网远控尚未连接，配置将在下次连接时生效".to_string());
+        };
+        server.auth.set_fixed_token(next_token);
+    }
+    Ok(state())
+}
+
 /// 启动（或替换）公网回环监听器；公网入口变更时会重新配对。
 pub async fn start_wan_listener(
     public_origin: String,
     preferred_port: u16,
+    fixed_token: Option<String>,
 ) -> Result<RemoteControlState, String> {
     let _guard = lifecycle().lock().await;
-    start_wan_listener_locked(&public_origin, preferred_port).await?;
+    start_wan_listener_locked(&public_origin, preferred_port, fixed_token).await?;
     Ok(state())
 }
 
@@ -299,8 +360,10 @@ pub async fn stop_wan_listener() -> Result<(), String> {
 async fn start_wan_listener_locked(
     public_origin: &str,
     preferred_port: u16,
+    fixed_token: Option<String>,
 ) -> Result<(), String> {
     let normalized = auth::normalize_public_origin(public_origin)?;
+    let fixed_token = configured_token(fixed_token.as_deref())?;
     let (mobile_dir, icon_bytes, generation) = {
         let lan = lock_lan();
         let Some(server) = lan.as_ref() else {
@@ -316,6 +379,7 @@ async fn start_wan_listener_locked(
         let wan = lock_wan();
         if let Some(existing) = wan.as_ref() {
             if existing.auth.origin() == normalized
+                && existing.auth.fixed_token() == fixed_token
                 && (preferred_port == 0 || preferred_port == existing.port)
             {
                 return Ok(());
@@ -325,6 +389,7 @@ async fn start_wan_listener_locked(
 
     stop_wan_listener_locked().await;
     let wan_auth = Arc::new(WanAuth::new(&normalized)?);
+    wan_auth.set_fixed_token(fixed_token);
     let listener = TcpListener::bind((WAN_HOST, preferred_port))
         .await
         .map_err(|error| format!("监听公网隧道入口失败：{error}"))?;
@@ -339,6 +404,7 @@ async fn start_wan_listener_locked(
         lan_token: None,
         wan_auth: Some(wan_auth.clone()),
         generation,
+        unlock_failures: Mutex::new(VecDeque::new()),
     });
     let (shutdown, shutdown_rx) = tokio::sync::oneshot::channel();
     let app = server::router(context);

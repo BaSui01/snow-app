@@ -29,6 +29,23 @@ export const zhCN: Record<string, string> = {
   "remote.error.timeout": "连接桌面 Snow 超时",
   "remote.error.badResponse": "响应格式错误",
 
+  // 令牌填写页
+  "remote.unlock.badge": "需要令牌",
+  "remote.unlock.title": "输入访问令牌",
+  "remote.unlock.lead":
+    "这台手机还没有与 Snow 建立信任。填写电脑端「设置 → 手机远控」显示的令牌即可连接。",
+  "remote.unlock.placeholder": "粘贴或输入访问令牌",
+  "remote.unlock.submit": "连接",
+  "remote.unlock.busy": "正在验证…",
+  "remote.unlock.empty": "请先输入令牌",
+  "remote.unlock.failed": "令牌无效，请核对后重试",
+  "remote.unlock.tooMany": "尝试次数过多，请稍后再试",
+  "remote.unlock.success": "已连接",
+  "remote.unlock.hint":
+    "也可以直接扫描电脑端的二维码，扫码会自动携带令牌；令牌可在电脑端「手机远控」中复制。",
+  "remote.unlock.reload": "重新加载页面",
+  "remote.unlock.open": "填写令牌",
+
   // 时间线
   "remote.timeline.scrollToBottom": "滚动到底部",
   "remote.timeline.loadEarlier": "加载更早的记录",

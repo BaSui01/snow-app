@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import {
+  deleteStoredRemoteTunnelConfig,
   loadStoredRemoteTunnelConfig,
   saveRemoteTunnelConfig,
   toRemoteTunnelConfigView,
@@ -29,6 +30,7 @@ import {
   startRemoteWanListener,
   stopRemoteWanListener,
 } from "./remoteControlServer";
+import { probeRemoteTunnelTls } from "./remoteTunnelProbe";
 
 export type RemoteTunnelStage =
   "stopped" | "starting" | "connecting" | "online" | "reconnecting" | "failed";
@@ -57,9 +59,29 @@ type FrpcManifest = {
 const VERIFY_TIMEOUT_MS = 10_000;
 const ENDPOINT_TIMEOUT_MS = 5_000;
 const ENDPOINT_MONITOR_INTERVAL_MS = 30_000;
+/** 首次探测窗口内未通过时的复查间隔，之后回到常规监控间隔。 */
+const ENDPOINT_FIRST_RETRY_MS = 10_000;
+/** 启动自动连接失败后的退避重试延迟（网络 / DNS 尚未就绪等临时故障）。 */
+const STARTUP_RETRY_DELAYS_MS = [5_000, 15_000, 30_000, 60_000];
 const MAX_LOG_TAIL = 8_000;
+const PROXY_ENV_KEYS = [
+  "http_proxy",
+  "HTTP_PROXY",
+  "https_proxy",
+  "HTTPS_PROXY",
+  "all_proxy",
+  "ALL_PROXY",
+] as const;
 /** 安装包内的 frpc 目录与资源名后缀，例如 win32-x64、darwin-arm64。 */
 const FRPC_PLATFORM_DIRECTORY = `${process.platform}-${process.arch}`;
+
+const frpcEnvironment = (): NodeJS.ProcessEnv => {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const key of PROXY_ENV_KEYS) {
+    delete env[key];
+  }
+  return env;
+};
 
 const restrictPermissions = (path: string): void => {
   try {
@@ -123,6 +145,32 @@ const publicError = (
   message,
 });
 
+const FAILURE_DETAIL_MAX = 240;
+const FAILURE_DETAIL_HINT =
+  /(error|fail|x509|token|certificate|tls|refused|timeout|timed out|unreachable|denied|reject)/i;
+
+const extractFrpcFailureDetail = (
+  value: string,
+  fallback = false,
+): string | null => {
+  const lines = value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return null;
+  const picked =
+    [...lines].reverse().find((line) => FAILURE_DETAIL_HINT.test(line)) ??
+    (fallback ? lines[lines.length - 1] : null);
+  if (!picked) return null;
+  const collapsed = picked.replace(/\s+/g, " ");
+  return collapsed.length > FAILURE_DETAIL_MAX
+    ? `${collapsed.slice(0, FAILURE_DETAIL_MAX)}…`
+    : collapsed;
+};
+
+const withFrpcDetail = (message: string, detail: string | null): string =>
+  detail ? `${message}（${detail}）` : message;
+
 export class RemoteTunnelManager {
   private child: ChildProcess | null = null;
   private runtimeDir: string | null = null;
@@ -131,6 +179,7 @@ export class RemoteTunnelManager {
   private endpointMonitorTimer: ReturnType<typeof setTimeout> | null = null;
   private endpointFailureCount = 0;
   private logTail = "";
+  private exitHandling: Promise<void> | null = null;
   private operation: Promise<void> = Promise.resolve();
   private status: Omit<RemoteTunnelStatus, "config"> = {
     stage: "stopped",
@@ -141,6 +190,7 @@ export class RemoteTunnelManager {
     error: null,
   };
   private verifiedBinaryPath: string | null = null;
+  private startupAttempts = 0;
 
   getStatus(): RemoteTunnelStatus {
     let stored: StoredRemoteTunnelConfig | null = null;
@@ -172,18 +222,49 @@ export class RemoteTunnelManager {
   async initialize(): Promise<void> {
     const config = loadStoredRemoteTunnelConfig();
     if (config?.enabled && config.autoConnect) {
+      this.startupAttempts = 0;
+      await this.connectWithStartupRetry();
+    }
+  }
+
+  /**
+   * 启动自动连接：系统刚开机时网络、DNS 可能尚未就绪，首次失败按退避重试；
+   * 凭据或证书类永久失败直接透出，避免无意义重试。
+   */
+  private async connectWithStartupRetry(): Promise<void> {
+    try {
       await this.connect();
+      this.startupAttempts = 0;
+    } catch (error) {
+      const message = redactTunnelText(
+        error instanceof Error ? error.message : String(error),
+      );
+      if (isPermanentFrpcFailure(message)) throw error;
+      const delay = STARTUP_RETRY_DELAYS_MS[this.startupAttempts];
+      if (delay === undefined) throw error;
+      this.startupAttempts += 1;
+      this.status.stage = "reconnecting";
+      this.status.attempt = this.startupAttempts;
+      this.status.nextRetryAt = Date.now() + delay;
+      this.status.error = publicError(
+        "CONNECT_RETRY",
+        `${message}；${Math.round(delay / 1_000)} 秒后自动重试`,
+      );
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = null;
+        void this.connectWithStartupRetry().catch(() => undefined);
+      }, delay);
     }
   }
 
   async connect(): Promise<RemoteTunnelStatus> {
     await this.enqueue(async () => {
-      await this.disconnectInternal(false);
+      const generation = ++this.generation;
+      await this.disconnectInternal();
       const config = loadStoredRemoteTunnelConfig();
       if (!config?.enabled) {
         throw new Error("请先保存并启用自建服务器配置");
       }
-      const generation = ++this.generation;
       this.status = {
         stage: "starting",
         listenerPort: 0,
@@ -203,8 +284,8 @@ export class RemoteTunnelManager {
   ): Promise<RemoteTunnelStatus> {
     const config = normalizeRemoteTunnelConfig(input, null);
     await this.enqueue(async () => {
-      await this.disconnectInternal(false);
       const generation = ++this.generation;
+      await this.disconnectInternal();
       this.status = {
         stage: "starting",
         listenerPort: 0,
@@ -222,12 +303,28 @@ export class RemoteTunnelManager {
   }
 
   async disconnect(): Promise<RemoteTunnelStatus> {
-    await this.enqueue(() => this.disconnectInternal(true));
+    await this.enqueue(async () => {
+      this.generation += 1;
+      await this.disconnectInternal();
+    });
+    return this.getStatus();
+  }
+
+  /** 移除本机保存的公网配置：先断开隧道，再删除加密的 FRP 凭据与 CA 证书。 */
+  async remove(): Promise<RemoteTunnelStatus> {
+    await this.enqueue(async () => {
+      this.generation += 1;
+      await this.disconnectInternal();
+      deleteStoredRemoteTunnelConfig();
+    });
     return this.getStatus();
   }
 
   async shutdown(): Promise<void> {
-    await this.enqueue(() => this.disconnectInternal(true));
+    await this.enqueue(async () => {
+      this.generation += 1;
+      await this.disconnectInternal();
+    });
   }
 
   async reconnectAfterSystemResume(): Promise<void> {
@@ -392,6 +489,10 @@ export class RemoteTunnelManager {
     this.status.nextRetryAt = null;
     this.status.error = null;
     try {
+      if (attempt === 0) {
+        await probeRemoteTunnelTls(config);
+        if (generation !== this.generation) return;
+      }
       const pairing = await startRemoteWanListener(config.publicOrigin, 0);
       const localPort = pairing.wan.localPort;
       this.status.listenerPort = localPort;
@@ -400,10 +501,12 @@ export class RemoteTunnelManager {
       if (generation !== this.generation) return;
       this.status.stage = "connecting";
       this.logTail = "";
+      this.exitHandling = null;
       const child = spawn(runtime.executable, ["-c", runtime.configFile], {
         shell: false,
         windowsHide: true,
         detached: false,
+        env: frpcEnvironment(),
         stdio: ["ignore", "pipe", "pipe"],
       });
       this.child = child;
@@ -417,7 +520,11 @@ export class RemoteTunnelManager {
       });
       child.once("exit", () => {
         if (this.child === child) this.child = null;
-        void this.handleUnexpectedExit(config, generation, attempt);
+        this.exitHandling = this.handleUnexpectedExit(
+          config,
+          generation,
+          attempt,
+        ).catch(() => undefined);
       });
       await this.probeEndpoint(config.publicOrigin, generation);
     } catch (error) {
@@ -454,13 +561,22 @@ export class RemoteTunnelManager {
       }
       await new Promise((resolve) => setTimeout(resolve, 1_000));
     }
-    if (generation === this.generation && this.child) {
-      this.status.endpoint = { stage: "failed", checkedAt: Date.now() };
-      this.status.error = publicError(
-        "ENDPOINT_UNREACHABLE",
-        "隧道进程已启动，但 HTTPS 公网入口尚不可达",
-      );
+    if (generation !== this.generation) return;
+    if (!this.child) {
+      await this.exitHandling;
+      return;
     }
+    this.status.endpoint = { stage: "failed", checkedAt: Date.now() };
+    this.status.error = publicError(
+      "ENDPOINT_UNREACHABLE",
+      withFrpcDetail(
+        "隧道进程已启动，但 HTTPS 公网入口尚不可达；Snow 会继续自动探测",
+        extractFrpcFailureDetail(this.logTail),
+      ),
+    );
+    // 应用刚启动时公网入口就绪可能更慢：继续自动探测，恢复可达即转在线，
+    // 连续探测失败则由监控重启隧道，不需要用户手动断开重连。
+    this.scheduleEndpointMonitor(origin, generation, ENDPOINT_FIRST_RETRY_MS);
   }
 
   private async isEndpointReachable(origin: string): Promise<boolean> {
@@ -481,7 +597,11 @@ export class RemoteTunnelManager {
     }
   }
 
-  private scheduleEndpointMonitor(origin: string, generation: number): void {
+  private scheduleEndpointMonitor(
+    origin: string,
+    generation: number,
+    delayMs = ENDPOINT_MONITOR_INTERVAL_MS,
+  ): void {
     this.clearEndpointMonitor();
     this.endpointMonitorTimer = setTimeout(() => {
       this.endpointMonitorTimer = null;
@@ -507,7 +627,7 @@ export class RemoteTunnelManager {
         }
         this.scheduleEndpointMonitor(origin, generation);
       })();
-    }, ENDPOINT_MONITOR_INTERVAL_MS);
+    }, delayMs);
   }
 
   private clearEndpointMonitor(): void {
@@ -525,16 +645,25 @@ export class RemoteTunnelManager {
   ): Promise<void> {
     if (generation !== this.generation) return;
     this.clearEndpointMonitor();
+    const detail = extractFrpcFailureDetail(this.logTail, true);
     await this.cleanupRuntime();
+    if (generation !== this.generation) return;
     const permanent = isPermanentFrpcFailure(this.logTail);
     if (permanent || !config.enabled) {
+      const tlsRejected = /session shutdown/i.test(this.logTail);
       await stopRemoteWanListener();
+      if (generation !== this.generation) return;
       this.status.stage = "failed";
       this.status.error = publicError(
         permanent ? "AUTH_OR_CERTIFICATE_FAILED" : "TUNNEL_EXITED",
-        permanent
-          ? "FRP 身份验证或服务器证书校验失败，请检查配置"
-          : "FRP 隧道已退出",
+        withFrpcDetail(
+          permanent
+            ? tlsRejected
+              ? "FRP 服务端证书校验未通过，连接未能建立；请检查服务器证书、frp 域名解析与服务器时间"
+              : "FRP 身份验证或服务器证书校验失败，请检查配置"
+            : "FRP 隧道已退出",
+          detail,
+        ),
       );
       return;
     }
@@ -544,6 +673,10 @@ export class RemoteTunnelManager {
     this.status.stage = "reconnecting";
     this.status.attempt = nextAttempt;
     this.status.nextRetryAt = Date.now() + delay;
+    this.status.error = publicError(
+      "TUNNEL_EXITED",
+      withFrpcDetail("FRP 隧道已断开，正在重连", detail),
+    );
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       void this.startAttempt(config, generation, nextAttempt).catch(
@@ -552,10 +685,7 @@ export class RemoteTunnelManager {
     }, delay);
   }
 
-  private async disconnectInternal(
-    incrementGeneration: boolean,
-  ): Promise<void> {
-    if (incrementGeneration) this.generation += 1;
+  private async disconnectInternal(): Promise<void> {
     this.clearEndpointMonitor();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -570,6 +700,7 @@ export class RemoteTunnelManager {
         await forceKill(child.pid);
       }
     }
+    this.exitHandling = null;
     await this.cleanupRuntime();
     await stopRemoteWanListener();
     this.status = {

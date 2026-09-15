@@ -20,6 +20,8 @@ pub struct RemoteControlWanState {
     pub public_origin: String,
     pub pairing_url: String,
     pub pairing_expires_at: Option<i64>,
+    /// 用户固定的公网令牌；未固定时为空串。
+    pub fixed_token: String,
 }
 
 /// 远控服务状态快照（enabled 字段由 Node 侧按总开关补充）。
@@ -43,6 +45,7 @@ pub struct RemoteControlStartOptions {
     pub icon_path: String,
     pub wan_public_origin: Option<String>,
     pub wan_port: u32,
+    pub wan_token: Option<String>,
 }
 
 /// 附件上下文：与消息发送时的会话 / 工作区绑定。
@@ -77,6 +80,7 @@ fn to_state(state: remote_control::RemoteControlState) -> RemoteControlServerSta
             public_origin: state.wan.public_origin,
             pairing_url: state.wan.pairing_url,
             pairing_expires_at: state.wan.pairing_expires_at,
+            fixed_token: state.wan.fixed_token,
         },
     }
 }
@@ -110,6 +114,7 @@ pub async fn start_remote_control_server(
         icon_path: PathBuf::from(options.icon_path),
         wan_public_origin: options.wan_public_origin,
         wan_port: options.wan_port as u16,
+        wan_token: options.wan_token,
     })
     .await
     .map_err(Error::from_reason)?;
@@ -139,13 +144,36 @@ pub async fn rotate_remote_control_token() -> napi::Result<RemoteControlServerSt
     Ok(to_state(state))
 }
 
+/// 应用面板固定的局域网令牌（None 表示回到随机令牌）。
+#[napi]
+pub async fn set_remote_control_lan_token(
+    token: Option<String>,
+) -> napi::Result<RemoteControlServerState> {
+    let state = remote_control::set_lan_token(token)
+        .await
+        .map_err(Error::from_reason)?;
+    Ok(to_state(state))
+}
+
+/// 应用面板固定的公网令牌（None 表示回到一次性配对码）。
+#[napi]
+pub async fn set_remote_control_wan_token(
+    token: Option<String>,
+) -> napi::Result<RemoteControlServerState> {
+    let state = remote_control::set_wan_token(token)
+        .await
+        .map_err(Error::from_reason)?;
+    Ok(to_state(state))
+}
+
 /// 启动或替换公网回环监听器（frpc 隧道入口）。
 #[napi]
 pub async fn start_remote_wan_listener(
     public_origin: String,
     preferred_port: u32,
+    fixed_token: Option<String>,
 ) -> napi::Result<RemoteControlServerState> {
-    let state = remote_control::start_wan_listener(public_origin, preferred_port as u16)
+    let state = remote_control::start_wan_listener(public_origin, preferred_port as u16, fixed_token)
         .await
         .map_err(Error::from_reason)?;
     Ok(to_state(state))

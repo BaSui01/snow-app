@@ -1013,7 +1013,8 @@ pub fn restore_archived_conversations(
                             run_cache_creation_input_tokens, run_cache_read_input_tokens,
                             last_run_duration_ms, directory_id,
                             forked_from_conversation_id, fork_message_count, emoji,
-                            plan_mode, goal_mode, worktree_mode, goal_mode_token_budget, created_at,
+                            plan_mode, goal_mode, worktree_mode, workflow_mode,
+                            goal_mode_token_budget, created_at,
                             datetime('now', 'localtime')
                        FROM archive_db.chat_conversations
                       WHERE conversation_id IN ({placeholders})"

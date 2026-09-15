@@ -610,6 +610,55 @@
       />
     </div>
 
+    <div
+      id="unlockOverlay"
+      class="unlock-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="输入访问令牌"
+      data-i18n-aria-label="remote.unlock.title"
+    >
+      <main class="unlock-card">
+        <div class="unlock-brand">
+          <img class="unlock-logo" src="/icon.png" alt="" />
+          <span class="unlock-eyebrow">SNOW REMOTE</span>
+        </div>
+        <span class="unlock-badge">
+          <span class="icn-slot" data-icon="lock"></span>
+          <span data-i18n="remote.unlock.badge"></span>
+        </span>
+        <h1 data-i18n="remote.unlock.title"></h1>
+        <p class="unlock-lead" data-i18n="remote.unlock.lead"></p>
+        <form id="unlockForm" class="unlock-form" autocomplete="off">
+          <input
+            id="unlockInput"
+            type="password"
+            autocomplete="off"
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
+            aria-label="访问令牌"
+            placeholder="粘贴或输入访问令牌"
+            data-i18n-aria-label="remote.unlock.placeholder"
+            data-i18n-placeholder="remote.unlock.placeholder"
+          />
+          <button
+            id="unlockSubmit"
+            type="submit"
+            data-i18n="remote.unlock.submit"
+          ></button>
+        </form>
+        <p id="unlockError" class="unlock-error" role="alert" hidden></p>
+        <p class="unlock-hint" data-i18n="remote.unlock.hint"></p>
+        <button
+          id="unlockReload"
+          class="unlock-reload"
+          type="button"
+          data-i18n="remote.unlock.reload"
+        ></button>
+      </main>
+    </div>
+
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

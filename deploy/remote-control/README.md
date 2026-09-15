@@ -1,5 +1,7 @@
 # Snow App 自建公网远控模板
 
+> English version: [README_EN.md](README_EN.md)
+
 这套模板把手机 HTTPS 请求转发到桌面 Snow 的专用 WAN listener：
 
 ```text
@@ -26,7 +28,7 @@ VPS 只做转发，不运行 Agent、不保存 Snow 会话，也不持有手机�
 
 然后进入 Snow“设置 → 手机远控”，填写公网 IP、根域名、SSH 登录方式以及 FRP 控制与隧道端口（默认 `7000`、`18080`），点击“检测 DNS”和“自动部署并连接”。Snow 的内置部署器会从安装包固定位置读取脚本，通过 SSH 安装 FRP/Caddy、生成凭据、在内存中导入配置并完成安全检查。这个过程不调用聊天 AI，不扫描磁盘，也不消耗模型 token。用户不需要理解或填写 FRP、Caddy、token、CA、PEM、TLS 名称等参数。
 
-密码和私钥口令只用于本次 SSH 连接，不写入远控配置。FRP token、CA 私钥和 `snow-remote-client.json` 内容不得粘贴到聊天中。`AI_DEPLOYMENT_PROMPT.md` 仅保留给旧版本和高级运维场景，不是普通用户的推荐路径。
+密码和私钥口令只用于本次 SSH 连接，不写入远控配置。FRP token、CA 私钥和 `snow-remote-client.json` 内容不得粘贴到聊天中。`AI_DEPLOYMENT_PROMPT.md` 与英文版 `AI_DEPLOYMENT_PROMPT_EN.md` 仅保留给旧版本和高级运维场景，不是普通用户的推荐路径。
 
 部署结束后，关闭手机 Wi-Fi，用蜂窝网络完成真实公网验收。懂技术的用户可继续阅读下面的手动说明；普通用户到这里即可停止。
 
@@ -36,6 +38,7 @@ VPS 只做转发，不运行 Agent、不保存 Snow 会话，也不持有手机�
 - 桌面安装包按 `resources/remote-control/frp/<platform>-<arch>` 内置 frpc：Windows x64、macOS arm64/x64、Linux x64。新增平台或架构必须同时补齐二进制、`manifest.json` 和 `package.json` 中对应平台的 `extraResources`。
 - VPS 防火墙只允许 TCP `80`、`443` 与 FRP 控制端口（默认 `7000`，可用 `--frp-bind-port` 改为其他端口）。隧道端口（默认 `18080`，可用 `--frp-remote-port` 修改）必须保持外部不可达。
 - Caddy 从 `127.0.0.1:<隧道端口>`（默认 `18080`）读取隧道流量；frps 的 `proxyBindAddr` 也固定为 `127.0.0.1`。
+- `install-linux.sh` 的提示文本支持中英双语：默认英文，可用 `--lang zh-CN`、`SNOW_LANG=zh-CN` 或 UTF-8 的中文 `LC_ALL`/`LC_MESSAGES`/`LANG` 输出中文；非 UTF-8 的中文 locale 回落英文。参数名、退出码与配置包路径不受语言影响。
 - 模板不启用 frps/frpc Web 管理面板。
 
 ## 1. 准备 DNS 与软件

@@ -1,3 +1,5 @@
+export type RemoteFixedTokenKind = "lan" | "wan";
+
 export type RemoteControlPairingState = {
   enabled: boolean;
   running: boolean;
@@ -6,12 +8,20 @@ export type RemoteControlPairingState = {
   configuredPort: number;
   pairingUrls: string[];
   generation: number;
+  /** 当前局域网令牌（服务未运行时为空串）。 */
+  token: string;
+  /** 局域网令牌是否为用户固定值；否则是本次启动生成的随机令牌。 */
+  tokenPinned: boolean;
+  /** 系统安全存储是否可用（固定令牌需要）。 */
+  tokenStorageAvailable: boolean;
   wan: {
     enabled: boolean;
     localPort: number;
     publicOrigin: string;
     pairingUrl: string;
     pairingExpiresAt: number | null;
+    /** 用户固定的公网令牌；未固定时为空串。 */
+    fixedToken: string;
   };
 };
 
@@ -46,6 +56,11 @@ export type RemoteTunnelConfigInput = {
 export type RemoteTunnelImportResult = {
   canceled: boolean;
   status: RemoteTunnelStatus | null;
+};
+
+export type RemoteTunnelExportResult = {
+  canceled: boolean;
+  path: string | null;
 };
 
 export type RemoteServerDeployInput = {

@@ -903,6 +903,58 @@ impl ConfigService {
         }
     }
 
+    /// 脱敏 `{键: 值}` 对象中的全部值（键名保留），与 DB 域 `mcpServers`
+    /// 的 env/headers 脱敏语义保持一致：非空字符串保留首尾各 4 字符，
+    /// null 显示 `****`，其余类型原样保留（端口号等非秘密配置仍可读）。
+    fn masked_secret_pairs(pairs: &Map<String, Value>) -> Value {
+        let mut masked = Map::new();
+        for (key, value) in pairs {
+            let masked_value = match value {
+                Value::String(text) if !text.trim().is_empty() => Self::mask_value(value),
+                Value::Null => json!("****"),
+                other => other.clone(),
+            };
+            masked.insert(key.clone(), masked_value);
+        }
+        Value::Object(masked)
+    }
+
+    /// `mcpServers` 形态脱敏：仅脱敏每个服务器条目的 `env` / `headers` 值，
+    /// 服务器名与 type/url/command/args/enabled 等非敏感字段保持原样。
+    /// `settings.mcpServers`（Snow CLI 同步源）与项目级 mcpServers 都可能
+    /// 含 Authorization / API Key，读取路径必须与 DB 域 `mcpServers` 一致脱敏，
+    /// 否则会违反本服务「plaintext is never returned」的安全承诺。
+    fn mask_mcp_servers_value(value: &Value) -> Value {
+        let Some(servers) = value.as_object() else {
+            return Self::mask_value(value);
+        };
+        let mut masked_servers = Map::new();
+        for (name, entry) in servers {
+            let Some(fields) = entry.as_object() else {
+                masked_servers.insert(name.clone(), Self::mask_value(entry));
+                continue;
+            };
+            let mut masked_fields = fields.clone();
+            for field in ["env", "headers"] {
+                if let Some(Value::Object(pairs)) = fields.get(field) {
+                    masked_fields.insert(field.to_string(), Self::masked_secret_pairs(pairs));
+                }
+            }
+            masked_servers.insert(name.clone(), Value::Object(masked_fields));
+        }
+        Value::Object(masked_servers)
+    }
+
+    /// 解析 `{键: 值}` JSON 字符串并脱敏全部值（键名保留），
+    /// 解析失败返回空对象。用于项目级 mcpServers 的 env/headers 读取。
+    fn masked_json_pairs(json_text: &str) -> Value {
+        let parsed = serde_json::from_str::<Value>(json_text).unwrap_or_else(|_| json!({}));
+        match parsed.as_object() {
+            Some(pairs) => Self::masked_secret_pairs(pairs),
+            None => json!({}),
+        }
+    }
+
     /// 校验值的类型与结构（写前检查）。
     fn validate_value(key_spec: &KeySpec, value: &Value) -> napi::Result<()> {
         let type_ok = match key_spec.value_type {
@@ -1503,6 +1555,9 @@ impl ConfigService {
                     } else {
                         match config_root.get(key_spec.key) {
                             Some(value) if key_spec.sensitive => Self::mask_value(value),
+                            Some(value) if key_spec.key == "mcpServers" => {
+                                Self::mask_mcp_servers_value(value)
+                            }
                             Some(value) => value.clone(),
                             None => Value::Null,
                         }
@@ -1510,6 +1565,9 @@ impl ConfigService {
                 } else {
                     match config_root.get(key_spec.key) {
                         Some(value) if key_spec.sensitive => Self::mask_value(value),
+                        Some(value) if key_spec.key == "mcpServers" => {
+                            Self::mask_mcp_servers_value(value)
+                        }
                         Some(value) => value.clone(),
                         None => Value::Null,
                     }
@@ -1672,6 +1730,7 @@ impl ConfigService {
         let config_root = Self::config_root(scope, &mut root)?;
         let display = match config_root.get(key_name) {
             Some(value) if key_spec.sensitive => Self::mask_value(value),
+            Some(value) if key_spec.key == "mcpServers" => Self::mask_mcp_servers_value(value),
             Some(value) => value.clone(),
             None => Value::Null,
         };
@@ -1825,6 +1884,8 @@ impl ConfigService {
 
         let display = if key_spec.sensitive {
             Self::mask_value(&value)
+        } else if key_spec.key == "mcpServers" {
+            Self::mask_mcp_servers_value(&value)
         } else {
             value
         };
@@ -2014,8 +2075,8 @@ impl ConfigService {
                     "url": server.url,
                     "command": server.command,
                     "args": serde_json::from_str::<Value>(&server.args_json).unwrap_or(json!([])),
-                    "env": serde_json::from_str::<Value>(&server.env_json).unwrap_or(json!({})),
-                    "headers": serde_json::from_str::<Value>(&server.headers_json).unwrap_or(json!({})),
+                    "env": Self::masked_json_pairs(&server.env_json),
+                    "headers": Self::masked_json_pairs(&server.headers_json),
                     "enabled": server.enabled,
                     "timeoutMs": server.timeout_ms,
                     "serverId": server.server_id,
@@ -2361,7 +2422,7 @@ impl ConfigService {
             "count": items.len(),
             "guidance": "CREATING A SUB-AGENT - config-set scope=subAgents key=<agentId> value={name, description?, systemPrompt?, toolsJson?, configProfile?, model?}.
         \
-KEY RULES: (1) an explicit toolsJson tool-name list REQUIRES projectId (the agent becomes project-scoped); \"*\" or an empty list is allowed for global agents; (2) toolsJson accepts a JSON string or an array of tool names that must be enabled for the project; (3) empty configProfile inherits the parent conversation's effective API profile and model at activation; a fixed configProfile uses model when provided, otherwise that profile's advancedModel; (4) project-scoped agents take priority over a same-id global agent at activation; (5) the built-in agent_general cannot be modified or deleted. The systemPrompt must be fully self-contained (no conversation history).
+KEY RULES: (1) toolsJson is REQUIRED and must list at least one read tool (e.g. filesystem-read); an explicit toolsJson tool-name list additionally REQUIRES projectId (the agent becomes project-scoped); (2) toolsJson accepts a JSON string or an array of tool names that must be enabled for the project; (3) empty configProfile inherits the parent conversation's effective API profile and model at activation; a fixed configProfile uses model when provided, otherwise that profile's advancedModel; (4) project-scoped agents take priority over a same-id global agent at activation; (5) the built-in agent_general cannot be modified or deleted. The systemPrompt must be fully self-contained (no conversation history).
 \
         Full guide: ~/.snow/docs/zh-CN/2-使用指南/5-配置Hooks与子代理.md (en: en/2-guides/5-configure-hooks-and-subagents.md)",
         }))
@@ -4204,5 +4265,50 @@ mod tests {
         assert!(parse_tool_approval_value(&json!({ "tools": [1] })).is_err());
         assert!(parse_tool_approval_value(&json!("nope")).is_err());
         assert!(parse_tool_approval_value(&json!(["  "])).is_err());
+    }
+
+    #[test]
+    fn mcp_servers_env_and_headers_are_masked_on_read() {
+        let value = json!({
+            "svc": {
+                "type": "http",
+                "url": "https://example.com/mcp",
+                "enabled": true,
+                "env": { "API_KEY": "fc-verysecretvalue-9876" },
+                "headers": { "Authorization": "Bearer secret-token-4321" },
+            },
+            "localsvc": {
+                "type": "stdio",
+                "command": "node",
+                "env": {},
+            },
+        });
+
+        let masked = ConfigService::mask_mcp_servers_value(&value);
+
+        // 非敏感字段保持可读，便于 agent 正常理解配置结构。
+        assert_eq!(masked["svc"]["url"], json!("https://example.com/mcp"));
+        assert_eq!(masked["svc"]["enabled"], json!(true));
+        assert_eq!(masked["localsvc"]["command"], json!("node"));
+        // 键名保留（只有值脱敏）。
+        assert!(masked["svc"]["headers"].get("Authorization").is_some());
+        assert!(masked["svc"]["env"].get("API_KEY").is_some());
+        // 值必须脱敏：不得出现原始秘密片段。
+        let header = masked["svc"]["headers"]["Authorization"].as_str().unwrap();
+        assert!(!header.contains("secret-token"), "header leaked: {header}");
+        assert!(header.contains("****"));
+        let env = masked["svc"]["env"]["API_KEY"].as_str().unwrap();
+        assert!(!env.contains("verysecretvalue"), "env leaked: {env}");
+        assert!(env.contains("****"));
+    }
+
+    #[test]
+    fn masked_json_pairs_handles_invalid_input() {
+        assert_eq!(ConfigService::masked_json_pairs("not json"), json!({}));
+        assert_eq!(ConfigService::masked_json_pairs("[1,2]"), json!({}));
+        let masked = ConfigService::masked_json_pairs("{\"TOKEN\":\"abcdefghijkl\"}");
+        let token = masked["TOKEN"].as_str().unwrap();
+        assert!(!token.contains("abcdefghijkl"), "token leaked: {token}");
+        assert!(token.contains("****"));
     }
 }

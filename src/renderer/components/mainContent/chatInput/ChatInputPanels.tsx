@@ -19,6 +19,8 @@ export type ChatInputPanelsProps = {
   isRoleEditorOpen: boolean;
   isFileChangesOpen: boolean;
   isReviewOpen: boolean;
+  workflowMode: boolean;
+  planMode: boolean;
   conversationFileChanges: ComponentProps<
     typeof FileChangesPanel
   >["changesOverride"];
@@ -45,6 +47,8 @@ export const ChatInputPanels = ({
   isRoleEditorOpen,
   isFileChangesOpen,
   isReviewOpen,
+  workflowMode,
+  planMode,
   conversationFileChanges,
   reviewWorkDir,
   onStartReview,
@@ -62,6 +66,8 @@ export const ChatInputPanels = ({
       open={isProjectMcpOpen}
       projectId={projectId}
       projectName={projectName}
+      workflowMode={workflowMode}
+      planMode={planMode}
       onClose={onCloseProjectMcp}
     />
     <ProjectSensitiveCommandsPanel

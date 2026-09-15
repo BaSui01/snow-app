@@ -3398,6 +3398,16 @@ export const en = {
     "This service is disabled. Enable it to browse and configure its tools.",
   "projectMcp.serverErrorImagegenNotConfigured":
     "No image generation channel configured. Configure at least one channel in Settings -> Image generation.",
+  "projectMcp.modeNoteWorkflow":
+    "WorkFlow Mode is off — these tools are only added to the model request while WorkFlow Mode is active in the current conversation.",
+  "projectMcp.modeNoteCodebase":
+    "Codebase indexing is not enabled for this project — these tools stay out of the model request until it is.",
+  "projectMcp.modeNoteCodebaseNoIndex":
+    "No indexed files yet — build the codebase index first, otherwise these tools stay out of the model request.",
+  "projectMcp.modeBadgeWorkflow": "WorkFlow Mode off",
+  "projectMcp.modeBadgeCodebase": "Index not enabled",
+  "projectMcp.modeBadgeCodebaseNoIndex": "No index data",
+  "projectMcp.modeBadgePlan": "Plan Mode off",
   "mcpBuiltinServer.desc.filesystem": "Read, create, and edit local files",
   "mcpBuiltinServer.desc.bash": "Run one-shot shell commands",
   "mcpBuiltinServer.desc.todo": "Manage the session TODO list",

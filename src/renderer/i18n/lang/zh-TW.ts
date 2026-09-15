@@ -3182,6 +3182,16 @@ export const zhTW = {
   "projectMcp.serverDisabledNote": "此服務已停用，啟用後可檢視並設定工具。",
   "projectMcp.serverErrorImagegenNotConfigured":
     "未配置圖像生成渠道，請在「設定 -> 圖像生成」中配置至少一個渠道。",
+  "projectMcp.modeNoteWorkflow":
+    "WorkFlow 模式未開啟——目前對話未啟用 WorkFlow 模式時，這些工具不會加入模型請求。",
+  "projectMcp.modeNoteCodebase":
+    "該專案的程式碼庫索引未啟用——啟用前這些工具不會加入模型請求。",
+  "projectMcp.modeNoteCodebaseNoIndex":
+    "程式碼庫索引還沒有資料——先建立索引，否則這些工具不會加入模型請求。",
+  "projectMcp.modeBadgeWorkflow": "WorkFlow 模式未開啟",
+  "projectMcp.modeBadgeCodebase": "索引未啟用",
+  "projectMcp.modeBadgeCodebaseNoIndex": "無索引資料",
+  "projectMcp.modeBadgePlan": "Plan 模式未開啟",
   "mcpBuiltinServer.desc.filesystem": "讀取、建立與編輯本機檔案",
   "mcpBuiltinServer.desc.bash": "執行一次性 shell 指令",
   "mcpBuiltinServer.desc.todo": "管理工作階段的待辦事項",

@@ -29112,6 +29112,32 @@ input {
   font-size: 11px;
 }
 
+/* 「特殊模式未启用」提示条：服务器开关可开，但对应模式（WorkFlow /
+   Codebase 索引 / Plan Mode）未生效时工具不会进入模型请求，此处醒目说明。 */
+.project-mcp-mode-note {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px 8px 43px;
+  border-top: 1px solid
+    color-mix(in srgb, var(--accent-orange, #f59e0b) 30%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--accent-orange, #f59e0b) 7%,
+    var(--bg-secondary)
+  );
+  color: color-mix(
+    in srgb,
+    var(--accent-orange, #f59e0b) 82%,
+    var(--text-primary)
+  );
+  font-size: 11px;
+}
+
+.project-mcp-mode-note > svg {
+  flex-shrink: 0;
+}
+
 .project-mcp-server-error {
   padding: 8px 12px;
   border-top: 1px solid color-mix(in srgb, var(--accent-red) 35%, transparent);
@@ -29237,6 +29263,55 @@ input {
   line-height: 1.4;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+/* 工具名称行：名称 + 「模式未启用」徽章并排（须置于 .project-mcp-tool-content
+   span 之后，以覆盖该选择器对名称行 span 的继承样式）。 */
+.project-mcp-tool-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.project-mcp-tool-name strong {
+  min-width: 0;
+}
+
+.project-mcp-mode-badge {
+  display: inline-flex;
+  flex-shrink: 1;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 1px 6px;
+  border: 1px solid
+    color-mix(in srgb, var(--accent-orange, #f59e0b) 38%, transparent);
+  border-radius: 999px;
+  background: color-mix(
+    in srgb,
+    var(--accent-orange, #f59e0b) 10%,
+    var(--bg-tertiary)
+  );
+  color: color-mix(
+    in srgb,
+    var(--accent-orange, #f59e0b) 82%,
+    var(--text-primary)
+  );
+  font-size: 10px;
+  font-weight: 550;
+  white-space: nowrap;
+}
+
+.project-mcp-mode-badge > svg {
+  flex-shrink: 0;
+}
+
+.project-mcp-mode-badge span {
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  -webkit-line-clamp: 1;
 }
 
 .project-mcp-empty {

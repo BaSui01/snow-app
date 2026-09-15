@@ -3205,6 +3205,16 @@ export const zhCN = {
   "projectMcp.serverDisabledNote": "该服务已停用，启用后可查看并配置工具。",
   "projectMcp.serverErrorImagegenNotConfigured":
     "未配置图像生成渠道，请在「设置 -> 图像生成」中配置至少一个渠道。",
+  "projectMcp.modeNoteWorkflow":
+    "WorkFlow 模式未开启——当前会话未启用 WorkFlow 模式时，这些工具不会加入模型请求。",
+  "projectMcp.modeNoteCodebase":
+    "该项目的代码库索引未启用——启用前这些工具不会加入模型请求。",
+  "projectMcp.modeNoteCodebaseNoIndex":
+    "代码库索引还没有数据——先构建索引，否则这些工具不会加入模型请求。",
+  "projectMcp.modeBadgeWorkflow": "WorkFlow 模式未开启",
+  "projectMcp.modeBadgeCodebase": "索引未启用",
+  "projectMcp.modeBadgeCodebaseNoIndex": "无索引数据",
+  "projectMcp.modeBadgePlan": "Plan 模式未开启",
   "mcpBuiltinServer.desc.filesystem": "读取、创建与编辑本地文件",
   "mcpBuiltinServer.desc.bash": "执行一次性 shell 命令",
   "mcpBuiltinServer.desc.todo": "管理当前会话的待办事项",

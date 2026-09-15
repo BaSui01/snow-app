@@ -556,6 +556,8 @@ export const ChatInputView = ({
         isRoleEditorOpen={isRoleEditorOpen}
         isFileChangesOpen={isFileChangesOpen}
         isReviewOpen={isReviewOpen}
+        workflowMode={workflowMode}
+        planMode={planMode}
         conversationFileChanges={conversationFileChanges}
         reviewWorkDir={reviewWorkDir ?? ""}
         onStartReview={(prompt) => {

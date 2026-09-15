@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronRight,
   Loader2,
+  PowerOff,
   RefreshCw,
   Wrench,
 } from "lucide-react";
@@ -22,10 +23,18 @@ type ProjectMcpPanelProps = {
   open: boolean;
   projectId?: string;
   projectName?: string;
+  workflowMode: boolean;
+  planMode: boolean;
   onClose: () => void;
 };
 
 type ToolErrorsByServerId = Record<string, string>;
+
+/// Codebase 服务器的「模式可用性」状态：只有当项目 Codebase 索引已启用
+/// 且向量表中至少有一个分片时，codebase-* 工具才会真正进入请求体。
+type CodebaseModeStatus = "loading" | "disabled" | "noIndex" | "active";
+
+const REQUEST_APPROVAL_TOOL_NAME = "app-control-requestApproval";
 
 const toolDisplayName = (fullName: string): string => {
   const parts = fullName.split("__");
@@ -49,10 +58,14 @@ export const ProjectMcpPanel = ({
   open,
   projectId,
   projectName,
+  workflowMode,
+  planMode,
   onClose,
 }: ProjectMcpPanelProps): React.JSX.Element => {
   const { t } = useI18n();
   const [servers, setServers] = useState<McpProjectServerStatus[]>([]);
+  const [codebaseMode, setCodebaseMode] =
+    useState<CodebaseModeStatus>("loading");
   const [expandedServerIds, setExpandedServerIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -111,6 +124,42 @@ export const ProjectMcpPanel = ({
     }
     void loadServers();
   }, [loadServers, open]);
+
+  // 加载 Codebase 索引的模式状态（启用开关 + 索引是否已有数据），用于
+  // 在面板里给 codebase 工具标注「索引未启用 / 尚无索引数据」——这两种
+  // 情况下工具不会进入请求体，但服务器开关本身仍可打开。
+  useEffect(() => {
+    if (!open || !projectId) {
+      setCodebaseMode("loading");
+      return;
+    }
+    let cancelled = false;
+    void Promise.all([
+      window.snow.getCodebaseProjectScopeSettings(projectId),
+      window.snow.getCodebaseIndexStats(projectId),
+    ])
+      .then(([scope, stats]) => {
+        if (cancelled) {
+          return;
+        }
+        if (!scope.enabled) {
+          setCodebaseMode("disabled");
+        } else if (stats.totalChunks <= 0) {
+          setCodebaseMode("noIndex");
+        } else {
+          setCodebaseMode("active");
+        }
+      })
+      .catch(() => {
+        // 状态读取失败时不标注，避免误导。
+        if (!cancelled) {
+          setCodebaseMode("active");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, projectId]);
 
   // 单个项目/全局服务器的工具发现：列表来自快速接口（只读 Rust 端进程内
   // 缓存，未命中的服务器标记为待获取），由展开动作触发或失败后手动重试。
@@ -349,6 +398,19 @@ export const ProjectMcpPanel = ({
             : undefined;
           const serverDisabled = !server.globalEnabled;
           const toolsUnavailable = serverDisabled || !server.enabled;
+          // 「特殊模式」标注：这些服务器/工具即使开关处于启用状态，也只有在
+          // 对应模式生效时才会真正加入请求体。模式未生效时给出醒目提示，
+          // 避免「开关是开的、工具却不存在」的误解。
+          let modeNote: string | null = null;
+          if (server.id === "builtin:workflow" && !workflowMode) {
+            modeNote = t("projectMcp.modeNoteWorkflow");
+          } else if (server.id === "builtin:codebase") {
+            if (codebaseMode === "disabled") {
+              modeNote = t("projectMcp.modeNoteCodebase");
+            } else if (codebaseMode === "noIndex") {
+              modeNote = t("projectMcp.modeNoteCodebaseNoIndex");
+            }
+          }
           const serverClassName = [
             "project-mcp-server",
             expanded ? "is-expanded" : "",
@@ -421,6 +483,12 @@ export const ProjectMcpPanel = ({
                   {t("projectMcp.globalDisabled")}
                 </div>
               ) : null}
+              {!serverDisabled && modeNote ? (
+                <div className="project-mcp-mode-note" title={modeNote}>
+                  <PowerOff size={13} />
+                  <span>{modeNote}</span>
+                </div>
+              ) : null}
               {discoveryError ? (
                 <div className="project-mcp-server-error">
                   <AlertCircle size={14} />
@@ -477,31 +545,66 @@ export const ProjectMcpPanel = ({
                       </div>
                     )
                   ) : (
-                    tools.map((tool) => (
-                      <div className="project-mcp-tool-row" key={tool.name}>
-                        <Wrench size={14} />
-                        <div className="project-mcp-tool-content">
-                          <strong>{toolDisplayName(tool.name)}</strong>
-                          <span>{tool.description}</span>
+                    tools.map((tool) => {
+                      // 工具级「模式未启用」徽章：与服务器行提示互补，在
+                      // 工具列表里也一眼可见（如 app-control 下只有
+                      // requestApproval 一个工具受 Plan Mode 限制）。
+                      let toolModeBadge: string | null = null;
+                      if (server.id === "builtin:workflow" && !workflowMode) {
+                        toolModeBadge = t("projectMcp.modeBadgeWorkflow");
+                      } else if (server.id === "builtin:codebase") {
+                        if (codebaseMode === "disabled") {
+                          toolModeBadge = t("projectMcp.modeBadgeCodebase");
+                        } else if (codebaseMode === "noIndex") {
+                          toolModeBadge = t(
+                            "projectMcp.modeBadgeCodebaseNoIndex",
+                          );
+                        }
+                      } else if (
+                        tool.name === REQUEST_APPROVAL_TOOL_NAME &&
+                        !planMode
+                      ) {
+                        toolModeBadge = t("projectMcp.modeBadgePlan");
+                      }
+                      return (
+                        <div className="project-mcp-tool-row" key={tool.name}>
+                          <Wrench size={14} />
+                          <div className="project-mcp-tool-content">
+                            <div className="project-mcp-tool-name">
+                              <strong>{toolDisplayName(tool.name)}</strong>
+                              {toolModeBadge ? (
+                                <span
+                                  className="project-mcp-mode-badge"
+                                  title={toolModeBadge}
+                                >
+                                  <PowerOff size={10} />
+                                  <span>{toolModeBadge}</span>
+                                </span>
+                              ) : null}
+                            </div>
+                            <span>{tool.description}</span>
+                          </div>
+                          <label className="toggle-switch">
+                            <input
+                              checked={tool.enabled}
+                              disabled={
+                                !server.globalEnabled || !server.enabled
+                              }
+                              hidden
+                              onChange={(event) =>
+                                void updateTool(
+                                  server,
+                                  tool,
+                                  event.target.checked,
+                                )
+                              }
+                              type="checkbox"
+                            />
+                            <span className="toggle-slider" />
+                          </label>
                         </div>
-                        <label className="toggle-switch">
-                          <input
-                            checked={tool.enabled}
-                            disabled={!server.globalEnabled || !server.enabled}
-                            hidden
-                            onChange={(event) =>
-                              void updateTool(
-                                server,
-                                tool,
-                                event.target.checked,
-                              )
-                            }
-                            type="checkbox"
-                          />
-                          <span className="toggle-slider" />
-                        </label>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               ) : null}

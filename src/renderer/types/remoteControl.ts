@@ -76,6 +76,7 @@ export type SnowRemoteMessage = {
   toolCalls?: SnowRemoteToolCall[];
   timestamp: string;
   status?: "sending" | "sent" | "incomplete" | "error";
+  isContextCompaction?: boolean;
 };
 
 export type SnowRemoteContentBlock =
@@ -331,6 +332,7 @@ export type SnowRemoteState = {
   isAborting: boolean;
   isCompacting: boolean;
   compactionError: string | null;
+  compactionPreview: string;
   attentionRequired: boolean;
   messages: SnowRemoteMessage[];
   /**

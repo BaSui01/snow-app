@@ -180,7 +180,10 @@ export const zhCN: Record<string, string> = {
   "remote.notice.commandRunning": "指令执行中…",
   "remote.notice.commandExecuted": "指令已执行",
   "remote.notice.compactingWait": "压缩仍在进行，请稍后查看消息",
-  "remote.notice.compacted": "上下文压缩已完成",
+  "remote.compaction.generating": "正在生成上下文交接文档",
+  "remote.compaction.failed": "上下文压缩失败",
+  "remote.compaction.summary": "上下文摘要",
+  "remote.compaction.compacted": "上下文已压缩，后续 AI 请求将忽略隔断前消息",
 
   // 面板框架
   "remote.panels.commands.title": "指令",

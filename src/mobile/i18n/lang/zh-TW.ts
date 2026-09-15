@@ -175,7 +175,10 @@ export const zhTW: Record<string, string> = {
   "remote.notice.commandRunning": "指令執行中…",
   "remote.notice.commandExecuted": "指令已執行",
   "remote.notice.compactingWait": "壓縮仍在進行，請稍後查看訊息",
-  "remote.notice.compacted": "上下文壓縮已完成",
+  "remote.compaction.generating": "正在產生上下文交接文件",
+  "remote.compaction.failed": "上下文壓縮失敗",
+  "remote.compaction.summary": "上下文摘要",
+  "remote.compaction.compacted": "上下文已壓縮，後續 AI 請求將忽略分隔前訊息",
 
   // 面板框架
   "remote.panels.commands.title": "指令",

@@ -64,6 +64,7 @@ export const ChatInputView = ({
   isLoadingApiConfig,
   thinkingError,
   responsesFastModeEnabled,
+  responsesFastModeOverride,
   fastModeError,
   labels,
   isStreaming,
@@ -366,11 +367,13 @@ export const ChatInputView = ({
       apiProfileNames: apiConfigs.map((config) => config.profileName),
       requestMethod,
       effectiveThinkingValue,
+      thinkingOverride: thinkingValue,
       thinkingOptions: thinkingOptions.map(({ value, label }) => ({
         value,
         label,
       })),
       responsesFastModeEnabled,
+      responsesFastModeOverride,
       maxContextTokens: runtimeApiConfig?.maxContextTokens ?? null,
       commands,
       actions: {

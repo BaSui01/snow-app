@@ -38,8 +38,10 @@ export type SnowRemoteChatInputPublication = {
   requestMethod: string;
   /** 会话生效的思考强度值（会话覆盖已解析，回退 Profile 默认）。 */
   effectiveThinkingValue: string;
+  thinkingOverride: string;
   thinkingOptions: Array<{ value: string; label: string }>;
   responsesFastModeEnabled: boolean;
+  responsesFastModeOverride: boolean | null;
   maxContextTokens: number | null;
   /** 真实 createChatCommands 产物：携带真实 execute 回调与禁用状态。 */
   commands: ChatCommand[];

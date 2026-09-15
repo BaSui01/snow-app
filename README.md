@@ -45,6 +45,8 @@ Snow App is a developer-focused desktop application that integrates AI-powered c
 
 Pair a phone from **Settings → Mobile Remote Control** and control the current Snow session from a mobile browser. LAN pairing works without a cloud service; optional public access uses a self-hosted, authenticated TLS tunnel and supports one-time pairing, session revocation, permission prompts, and sensitive-output redaction. See the [setup guide](docs/en/2-guides/23-mobile-public-remote-control.md).
 
+The initial version of Mobile Remote Control was contributed by [zerio1](https://github.com/zerio1) through [PR #130](https://github.com/MayDay-wpf/snow-app/pull/130), then integrated and refined by Snow App.
+
 | Conversation and streaming                                              | Actions, modes, and approvals                                 |
 | ----------------------------------------------------------------------- | ------------------------------------------------------------- |
 | ![Snow mobile remote conversation](docs/images/mobile-conversation.png) | ![Snow mobile remote actions](docs/images/mobile-actions.png) |

@@ -15,8 +15,6 @@ export const agentsEn: Record<string, string> = {
   "remote.toolCall.agents.result": "Result",
   "remote.toolCall.agents.running": "Running…",
   "remote.toolCall.agents.waiting": "Waiting",
-  "remote.toolCall.agents.argsTruncated":
-    "Arguments truncated by the remote bridge (2000 chars max)",
 
   // 子代理（sub-agents-activate / sub-agents-continue）
   "remote.toolCall.agents.subAgent.name": "Sub-agent",
@@ -117,7 +115,6 @@ export const agentsZhCN: Record<string, string> = {
   "remote.toolCall.agents.result": "结果",
   "remote.toolCall.agents.running": "进行中…",
   "remote.toolCall.agents.waiting": "等待中",
-  "remote.toolCall.agents.argsTruncated": "参数被远控桥截断（上限 2000 字符）",
 
   // 子代理
   "remote.toolCall.agents.subAgent.name": "子代理",
@@ -217,7 +214,6 @@ export const agentsZhTW: Record<string, string> = {
   "remote.toolCall.agents.result": "結果",
   "remote.toolCall.agents.running": "進行中…",
   "remote.toolCall.agents.waiting": "等待中",
-  "remote.toolCall.agents.argsTruncated": "參數被遠控橋截斷（上限 2000 字元）",
 
   // 子代理
   "remote.toolCall.agents.subAgent.name": "子代理",

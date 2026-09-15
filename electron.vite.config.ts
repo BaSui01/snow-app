@@ -32,6 +32,7 @@ const createMobilePageBuildConfig = (isWatch: boolean) => ({
     // Vite 默认注入的 modulepreload polyfill 是内联脚本，而远控页 CSP 只允许
     // 'self' 脚本；现代手机浏览器均原生支持 modulepreload。
     modulePreload: { polyfill: false },
+    chunkSizeWarningLimit: 700,
   },
 });
 
@@ -60,6 +61,7 @@ export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin(), mobilePageAssetsPlugin()],
     build: {
+      chunkSizeWarningLimit: 1200,
       rollupOptions: {
         input: {
           index: resolve(__dirname, "src/main/index.ts"),

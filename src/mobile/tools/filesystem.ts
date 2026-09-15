@@ -12,11 +12,9 @@
  * - create：参数 filePath / content / overwrite / encoding（isDirectory 为兼容字段）；
  *   成功结果 { success, path, bytes, lines }。
  *
- * 截断（远控桥对 arguments ≤2000、result ≤12000 字符，尾部追加「\n…（手机端已截断）」）：
- * - 参数被截断 ⇒ 半截 JSON 解析失败 ⇒ **一律不渲染 diff**：searchContent /
- *   replaceContent / content 都可能是残缺片段，画成 diff 会误导阅读；此时给出明确
- *   提示 + 原始参数文本，并用宽松取串抢救 filePath / content 做降级预览；
- * - 结果被截断 ⇒ 结构化字段通常仍完整，照常解析，另加「内容已截断」提示。
+ * 远控桥全量下发工具参数与结果（不截断），因此参数 / 结果解析一律走正常路径；
+ * 仅 read 的 filePath 用宽松取串（partialString）兜底历史会话里被旧版桥截断
+ * 成半截 JSON 的参数快照。
  *
  * 契约：卡片骨架走 tools/ui.ts 的 createToolNode（头部徽章/摘要、状态、折叠体），
  * 行级 diff 视图走 tools/diffView.ts 的 renderDiffView（样式在 diff.css，本模块不重复
@@ -34,7 +32,6 @@ import {
   createToolNode,
   decodeEscapedNewlines,
   formatJson,
-  isTruncated,
   parseJsonRecord,
   resolveStatus,
   tcBadge,
@@ -92,7 +89,7 @@ const preOf = (node: HTMLElement): HTMLElement =>
 const pathRow = (filePath: string): HTMLElement =>
   el("div", "tc-fs-path", filePath);
 
-/** 提示行（截断 / 降级 / 统计说明）。 */
+/** 提示行（降级 / 统计说明）。 */
 const noteRow = (
   message: string,
   variant: "muted" | "warn" = "muted",
@@ -180,27 +177,21 @@ const rawResultSection = (raw: string): DocumentFragment => {
 };
 
 /**
- * 远控桥的截断后缀（与 tools/ui.ts 的 TRUNCATION_SUFFIX 同源；那边未导出该常量，
- * 宽松取串时必须按长度剥掉，否则后缀文案会被当成内容的一部分）。
- */
-const TRUNCATION_SUFFIX = "\n…（手机端已截断）";
-
-/**
- * 半截 JSON 的宽松取串：定位 `"key"` 后的字符串字面量起点，按 JSON 转义规则解出
- * 已到达的部分；遇到未转义的收尾引号或文本末尾即停。仅用于参数被截断时的降级
- * 预览（解析成功的参数走 parseJsonRecord，不经过这里）。
+ * 宽松取串：定位 `"key"` 后的字符串字面量起点，按 JSON 转义规则解出
+ * 已到达的部分；遇到未转义的收尾引号或文本末尾即停。仅用于兼容历史会话里
+ * 参数被旧版远控桥截断成半截 JSON 的快照（新版桥全量下发，正常参数走
+ * parseJsonRecord，不经过这里）。
  */
 const partialString = (raw: string | undefined, key: string): string | null => {
   if (!raw) return null;
-  const text = isTruncated(raw) ? raw.slice(0, -TRUNCATION_SUFFIX.length) : raw;
   const marker = `"${key}"`;
-  const at = text.indexOf(marker);
+  const at = raw.indexOf(marker);
   if (at < 0) return null;
-  const colon = text.indexOf(":", at + marker.length);
+  const colon = raw.indexOf(":", at + marker.length);
   if (colon < 0) return null;
   let index = colon + 1;
-  while (index < text.length && text[index] !== '"') index += 1;
-  if (text[index] !== '"') return null;
+  while (index < raw.length && raw[index] !== '"') index += 1;
+  if (raw[index] !== '"') return null;
 
   const escapes: Record<string, string> = {
     '"': '"',
@@ -214,15 +205,15 @@ const partialString = (raw: string | undefined, key: string): string | null => {
   };
   let out = "";
   index += 1;
-  while (index < text.length) {
-    const ch = text[index];
+  while (index < raw.length) {
+    const ch = raw[index];
     if (ch === '"') break;
     if (ch !== "\\") {
       out += ch;
       index += 1;
       continue;
     }
-    const next = text[index + 1];
+    const next = raw[index + 1];
     if (next === undefined) break; // 半截转义序列：丢弃
     const mapped = escapes[next];
     if (mapped !== undefined) {
@@ -231,7 +222,7 @@ const partialString = (raw: string | undefined, key: string): string | null => {
       continue;
     }
     if (next === "u") {
-      const code = Number.parseInt(text.slice(index + 2, index + 6), 16);
+      const code = Number.parseInt(raw.slice(index + 2, index + 6), 16);
       if (!Number.isInteger(code)) break;
       out += String.fromCharCode(code);
       index += 6;
@@ -243,7 +234,7 @@ const partialString = (raw: string | undefined, key: string): string | null => {
   return out;
 };
 
-/** 从（可能被截断的）参数原文里抢救出 filePath 用于降级展示。 */
+/** 从（历史快照里可能残缺的）参数原文里抢救出 filePath 用于降级展示。 */
 const recoverPath = (raw?: string): string | undefined =>
   partialString(raw, "filePath") || undefined;
 
@@ -567,7 +558,8 @@ export const renderReadCard: ToolCallRenderer = (tool) => {
   const raw = tool.arguments;
   const args = parseReadArgs(parseJsonRecord(raw));
   const result = parseReadResult(tool.result);
-  // 参数被截断时 parseJsonRecord 拿不到东西，用宽松取串抢救 filePath。
+  // 历史快照的参数可能是半截 JSON（旧版桥截断）：parseJsonRecord 拿不到时，
+  // 用宽松取串抢救 filePath。
   const filePath = args && !args.isMulti ? args.filePath : undefined;
   const shownPath = filePath ?? recoverPath(raw);
 
@@ -714,7 +706,6 @@ const matchedRow = (result: {
 export const renderEditCard: ToolCallRenderer = (tool) => {
   const raw = tool.arguments;
   const record = parseJsonRecord(raw);
-  const truncated = isTruncated(raw);
   const args = parseEditArgs(record);
   const result = parseEditResult(tool.result);
   const hasError = result.type === "error";
@@ -734,11 +725,10 @@ export const renderEditCard: ToolCallRenderer = (tool) => {
 
   let meta: Node[] | undefined;
   /*
-   * diff 只在参数完整、两侧文本齐备且无错误时渲染：半截参数（搜索 / 替换文本
-   * 都是残缺片段）画出来的 diff 会误导，此时改为提示 + 原始参数。
-   * replaceContent 允许为空串（整段删除），searchContent 为空则无从对比。
+   * diff 只在参数完整、两侧文本齐备且无错误时渲染。replaceContent 允许为空串
+   * （整段删除），searchContent 为空则无从对比。
    */
-  if (args && !truncated && !hasError && args.searchContent !== "") {
+  if (args && !hasError && args.searchContent !== "") {
     const lines = computeLineDiff(args.searchContent, args.replaceContent);
     meta = [statsNode(diffStats(lines))];
     body.append(
@@ -753,16 +743,8 @@ export const renderEditCard: ToolCallRenderer = (tool) => {
         }),
       ),
     );
-  } else if (truncated) {
-    body.append(
-      noteRow(t("remote.toolCall.filesystem.diffUnavailable"), "warn"),
-    );
-    if (!hasError) {
-      const fallback = argsFallbackSection(record, raw);
-      if (fallback) body.append(fallback);
-    }
   } else if (!hasError) {
-    // 无 diff 可显示：退回参数 JSON 展示（半截 JSON 时退化为原文）。
+    // 无 diff 可显示：退回参数 JSON 展示（JSON 不可解析时退化为原文）。
     const fallback = argsFallbackSection(record, raw);
     if (fallback) body.append(fallback);
   }
@@ -828,17 +810,10 @@ const parseCreateResult = (raw?: string): CreateResult => {
 export const renderCreateCard: ToolCallRenderer = (tool) => {
   const raw = tool.arguments;
   const record = parseJsonRecord(raw);
-  const truncated = isTruncated(raw);
   const args = parseCreateArgs(record);
   const result = parseCreateResult(tool.result);
   const hasError = result.type === "error";
   const shownPath = args?.filePath ?? recoverPath(raw);
-  // 参数被截断时用宽松取串抢救出已到达的内容片段（只作预览，绝不画 diff）。
-  const content = args
-    ? args.content
-    : truncated
-      ? (partialString(raw, "content") ?? "")
-      : "";
 
   if (!args && !raw && result.type === "empty") return null; // 无参数也无结果：交给兜底卡
 
@@ -864,13 +839,7 @@ export const renderCreateCard: ToolCallRenderer = (tool) => {
     meta.push(tcBadge(t("remote.toolCall.filesystem.directory")));
   }
 
-  if (
-    args &&
-    !truncated &&
-    !hasError &&
-    !args.isDirectory &&
-    args.content !== ""
-  ) {
+  if (args && !hasError && !args.isDirectory && args.content !== "") {
     // 全新增：oldText 为空串，整篇按新增渲染。
     const lines = computeLineDiff("", args.content);
     meta.unshift(statsNode(diffStats(lines)));
@@ -884,19 +853,6 @@ export const renderCreateCard: ToolCallRenderer = (tool) => {
         }),
       ),
     );
-  } else if (truncated) {
-    body.append(noteRow(t("remote.toolCall.filesystem.argsTruncated"), "warn"));
-    if (content !== "") {
-      body.append(
-        tcSection(
-          t("remote.toolCall.filesystem.preview"),
-          contentBlock(content),
-        ),
-      );
-    } else {
-      const fallback = argsFallbackSection(record, raw);
-      if (fallback) body.append(fallback);
-    }
   } else if (!hasError) {
     const fallback = argsFallbackSection(record, raw);
     if (fallback) body.append(fallback);

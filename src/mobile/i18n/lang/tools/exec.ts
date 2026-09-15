@@ -73,9 +73,8 @@ export const execEn: Record<string, string> = {
   "remote.toolCall.exec.cu.hold": "hold {{ms}}ms",
   "remote.toolCall.exec.cu.screenshot": "Screenshot",
   "remote.toolCall.exec.cu.imageUnavailable":
-    "Image not transferred to mobile · view it on desktop",
+    "Image data was delivered, but mobile does not render it yet",
   "remote.toolCall.exec.cu.noImage": "Screenshot result has no image",
-  "remote.toolCall.exec.cu.truncated": "Screenshot unavailable (truncated)",
   "remote.toolCall.exec.cu.display": "Display",
   "remote.toolCall.exec.cu.scale": "Scale",
   "remote.toolCall.exec.cu.cursor": "Cursor",
@@ -151,9 +150,8 @@ export const execZhCN: Record<string, string> = {
   "remote.toolCall.exec.cu.hold": "按住 {{ms}}ms",
   "remote.toolCall.exec.cu.screenshot": "截图",
   "remote.toolCall.exec.cu.imageUnavailable":
-    "截图不会传到手机 · 请在桌面端查看",
+    "图像数据已随结果全量下发，手机端暂不渲染",
   "remote.toolCall.exec.cu.noImage": "截图结果未包含图像",
-  "remote.toolCall.exec.cu.truncated": "截图不可用（已截断）",
   "remote.toolCall.exec.cu.display": "显示器",
   "remote.toolCall.exec.cu.scale": "换算系数",
   "remote.toolCall.exec.cu.cursor": "光标",
@@ -229,9 +227,8 @@ export const execZhTW: Record<string, string> = {
   "remote.toolCall.exec.cu.hold": "按住 {{ms}}ms",
   "remote.toolCall.exec.cu.screenshot": "螢幕截圖",
   "remote.toolCall.exec.cu.imageUnavailable":
-    "截圖不會傳到手機 · 請在桌面端檢視",
+    "圖像資料已隨結果全量下發，手機端暫不渲染",
   "remote.toolCall.exec.cu.noImage": "螢幕截圖結果未包含圖像",
-  "remote.toolCall.exec.cu.truncated": "螢幕截圖無法顯示（已截斷）",
   "remote.toolCall.exec.cu.display": "顯示器",
   "remote.toolCall.exec.cu.scale": "換算係數",
   "remote.toolCall.exec.cu.cursor": "游標",

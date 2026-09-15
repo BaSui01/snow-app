@@ -18,8 +18,6 @@ export const opsEn: Record<string, string> = {
   "remote.toolCall.ops.no": "No",
   "remote.toolCall.ops.running": "Running…",
   "remote.toolCall.ops.waiting": "Waiting",
-  "remote.toolCall.ops.argsTruncated":
-    "Arguments truncated by the remote bridge (2000 chars max)",
 
   // 配置（config-list / get / set / delete）
   "remote.toolCall.ops.config.name": "config",
@@ -158,7 +156,6 @@ export const opsZhCN: Record<string, string> = {
   "remote.toolCall.ops.no": "否",
   "remote.toolCall.ops.running": "执行中…",
   "remote.toolCall.ops.waiting": "等待中",
-  "remote.toolCall.ops.argsTruncated": "参数已被远控桥截断（上限 2000 字符）",
 
   // 配置（config-list / get / set / delete）
   "remote.toolCall.ops.config.name": "配置",
@@ -295,7 +292,6 @@ export const opsZhTW: Record<string, string> = {
   "remote.toolCall.ops.no": "否",
   "remote.toolCall.ops.running": "執行中…",
   "remote.toolCall.ops.waiting": "等待中",
-  "remote.toolCall.ops.argsTruncated": "參數已被遠端橋截斷（上限 2000 字元）",
 
   // 設定（config-list / get / set / delete）
   "remote.toolCall.ops.config.name": "設定",

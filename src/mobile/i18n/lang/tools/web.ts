@@ -5,7 +5,7 @@
  * （正文预览 + 图片可达性）、imagegen-generate（参数 / 状态 / 图片区 / 失败分类）、
  * browser-*（18 个操作的摘要字段与 devtools 子视图）。
  *
- * 通用键（result / charCount / truncated / collapse / expand）取自
+ * 通用键（result / charCount / collapse / expand）取自
  * i18n/lang/tools/common.ts，本文件不重复定义；占位符统一 {{name}} 形式，三语同键。
  */
 
@@ -27,9 +27,10 @@ export const webEn: Record<string, string> = {
 
   // ── 图片可达性（fetch / screenshot / imagegen 共用） ──
   "remote.toolCall.web.image.alt": "Image {{index}}",
-  "remote.toolCall.web.image.unavailable": "Image cannot be previewed on mobile",
+  "remote.toolCall.web.image.unavailable":
+    "Image cannot be previewed on mobile",
   "remote.toolCall.web.image.unavailableHint":
-    "Image data is not delivered to the phone: inline images get truncated by the remote bridge, and library files / remote links need the desktop",
+    "Only inline data-URL images can be previewed on the phone; library/disk files and remote links must be viewed on the desktop",
 
   // ── websearch-search ──
   "remote.toolCall.web.search.name": "Web search",
@@ -89,7 +90,8 @@ export const webEn: Record<string, string> = {
   "remote.toolCall.web.imagegen.param.stream": "Stream",
   "remote.toolCall.web.imagegen.error.timeout": "Image generation timed out",
   "remote.toolCall.web.imagegen.error.auth": "Authentication failed",
-  "remote.toolCall.web.imagegen.error.rateLimit": "Rate limited or quota exceeded",
+  "remote.toolCall.web.imagegen.error.rateLimit":
+    "Rate limited or quota exceeded",
   "remote.toolCall.web.imagegen.error.contentFiltered":
     "Rejected by content policy",
   "remote.toolCall.web.imagegen.error.server": "Image service error",
@@ -200,7 +202,7 @@ export const webZhCN: Record<string, string> = {
   "remote.toolCall.web.image.alt": "图片 {{index}}",
   "remote.toolCall.web.image.unavailable": "图片不可在手机端预览",
   "remote.toolCall.web.image.unavailableHint":
-    "图片数据未随远控下发：内联图片会被远控桥截断，图库文件与远程链接需要在桌面端查看",
+    "仅内联 data URL 图片可在手机端预览；图库/磁盘文件与远程链接需要在桌面端查看",
 
   // ── websearch-search ──
   "remote.toolCall.web.search.name": "网页搜索",
@@ -210,7 +212,8 @@ export const webZhCN: Record<string, string> = {
   "remote.toolCall.web.search.results": "搜索结果",
   "remote.toolCall.web.search.resultCount": "{{count}} 条结果",
   "remote.toolCall.web.search.omitted": "其余 {{count}} 条已省略",
-  "remote.toolCall.web.search.linkHint": "链接在手机端仅作文本展示，请在桌面端打开",
+  "remote.toolCall.web.search.linkHint":
+    "链接在手机端仅作文本展示，请在桌面端打开",
   "remote.toolCall.web.search.blocked": "已屏蔽 {{count}} 条",
   "remote.toolCall.web.search.blockedTitle": "被屏蔽的结果",
   "remote.toolCall.web.search.blockedRules": "命中规则",
@@ -367,7 +370,7 @@ export const webZhTW: Record<string, string> = {
   "remote.toolCall.web.image.alt": "圖片 {{index}}",
   "remote.toolCall.web.image.unavailable": "圖片無法在手機端預覽",
   "remote.toolCall.web.image.unavailableHint":
-    "圖片資料未隨遠控下發：內嵌圖片會被遠控橋截斷，圖庫檔案與遠端連結需在桌面端查看",
+    "僅內聯 data URL 圖片可在手機端預覽；圖庫/磁碟檔案與遠端連結需在桌面端查看",
 
   // ── websearch-search ──
   "remote.toolCall.web.search.name": "網頁搜尋",
@@ -377,7 +380,8 @@ export const webZhTW: Record<string, string> = {
   "remote.toolCall.web.search.results": "搜尋結果",
   "remote.toolCall.web.search.resultCount": "{{count}} 筆結果",
   "remote.toolCall.web.search.omitted": "其餘 {{count}} 筆已省略",
-  "remote.toolCall.web.search.linkHint": "連結在手機端僅以文字顯示，請在桌面端開啟",
+  "remote.toolCall.web.search.linkHint":
+    "連結在手機端僅以文字顯示，請在桌面端開啟",
   "remote.toolCall.web.search.blocked": "已封鎖 {{count}} 筆",
   "remote.toolCall.web.search.blockedTitle": "被封鎖的結果",
   "remote.toolCall.web.search.blockedRules": "命中規則",

@@ -8,17 +8,15 @@
  * - 前缀 `browser-`                     → 内置浏览器卡片（18 个操作，见 BROWSER_OPS）。
  *
  * ── 图片可达性（重要结论，勿单方面改动） ──────────────────────────────────
- * 远控桥对工具字段的真实行为（src/renderer/components/RemoteControlBridge.tsx +
- * remoteControlRedaction.ts）：arguments ≤2000 / result ≤12000 / streaming* ≤8000
- * 字符，超出即截断并追加「\n…（手机端已截断）」；脱敏只替换密钥类字面量，
- * 不会剔除 data URL。移动端唯一的图片端点是 `/api/message-images/{messageId}/{index}`
- * （native/src/remote_control/server.rs），它只服务**用户消息** contentBlocks 的
- * 附件（SnowRemoteToolCall 无图片字段、无 streamingImages）；移动页 CSP 为
- * `img-src 'self' data: blob:`，外链 https 图片一律被拦。
- * 结论：工具结果里的图片默认**不可达** —— 内联 base64 会被 12000 字符截断腰斩、
- * 图库/磁盘引用（image/…、upload/…）需要主进程 IPC、远程 URL 被 CSP 拦截。
- * 只有「结果未被截断 且 内联 data URL 完整」这一种情况可以真正渲染，判定集中在
- * resolveImageSrc()；其余情况一律给明确提示 + 替代信息，绝不渲染破图。
+ * 远控桥对工具字段只脱敏、不截断（arguments / result / streaming* 全量下发，
+ * 见 RemoteControlBridge.tsx + remoteControlRedaction.ts）：内联 base64 会完整
+ * 抵达手机；脱敏会替换密钥类字面量（可能破坏 base64 载荷），因此可达性判据
+ * 集中在 resolveImageSrc()：载荷必须是完整的 data URL（CSP 的 img-src 放行
+ * data:，外链 https 一律被拦）且 base64 长度为 4 的整数倍。移动端唯一的图片
+ * 端点是 `/api/message-images/{messageId}/{index}`（native/src/remote_control/
+ * server.rs），它只服务**用户消息** contentBlocks 的附件（SnowRemoteToolCall
+ * 无图片字段、无 streamingImages）；图库/磁盘引用（image/…、upload/…）需要
+ * 主进程 IPC，移动端读不到。不可达的图片一律给明确提示 + 替代信息，绝不渲染破图。
  *
  * 其他约定：数据一律 createElement + textContent（不拼 innerHTML）；URL 只做
  * 纯文本展示（不做外跳链接）；未登记的操作 / 无法解析的输入返回 null 交给兜底卡。
@@ -31,7 +29,6 @@ import {
   argsSummary,
   createToolNode,
   decodeEscapedNewlines,
-  isTruncated,
   parseJsonRecord,
   resolveStatus,
   tcBadge,
@@ -249,21 +246,16 @@ type RemoteImage = {
   path?: string;
 };
 
-/** base64 载荷：标准字母表，长度必须是 4 的整数倍（截断/脱敏都会破坏这条）。 */
+/** base64 载荷：标准字母表，长度必须是 4 的整数倍（脱敏会破坏这条）。 */
 const DATA_URL_RE = /^data:image\/[a-z0-9.+-]+;base64,([A-Za-z0-9+/=]+)$/i;
 
 /**
  * 图片可达性判定：返回可直接用于 <img src> 的 data URL，不可达返回 null。
  * 判据（任一不满足即不可达）：
- *   1. 结果未被远控桥截断 —— 截断后的 base64 必然腰斩，渲染只会得到破图；
- *   2. 载荷形如完整 data URL（CSP 的 img-src 放行 data:，外链 https 不放行）；
- *   3. 载荷非空且长度为 4 的整数倍（脱敏插入的 [REDACTED…] 也走不进字母表）。
+ *   1. 载荷形如完整 data URL（CSP 的 img-src 放行 data:，外链 https 不放行）；
+ *   2. 载荷非空且长度为 4 的整数倍（脱敏插入的 [REDACTED…] 会破坏 base64）。
  */
-const resolveImageSrc = (
-  image: RemoteImage,
-  truncated: boolean,
-): string | null => {
-  if (truncated) return null;
+const resolveImageSrc = (image: RemoteImage): string | null => {
   const raw = image.data.trim();
   if (raw === "") return null;
   const dataUrl = raw.startsWith("data:")
@@ -287,13 +279,13 @@ const imagePlaceholder = (index: number, image: RemoteImage): HTMLElement => {
 };
 
 /** 图片区：可确认渲染的走 img.tc-image（灯箱已由 timeline 接入），否则给明确提示。 */
-const imageArea = (images: RemoteImage[], truncated: boolean): HTMLElement => {
+const imageArea = (images: RemoteImage[]): HTMLElement => {
   const host = el("div", "tc-web-images");
   const grid = el("div", "tc-web-img-grid");
   if (images.length > 1) grid.classList.add("tc-web-img-grid--multi");
   let blocked = 0;
   images.forEach((image, index) => {
-    const src = resolveImageSrc(image, truncated);
+    const src = resolveImageSrc(image);
     if (!src) {
       blocked += 1;
       grid.append(imagePlaceholder(index, image));
@@ -578,7 +570,6 @@ const renderFetch = (tool: SnowRemoteToolCall): HTMLElement | null => {
   const argUrl = args ? optional(readString(args, "url")) : undefined;
   const maxLength = args ? readNumber(args, "maxLength") : undefined;
   const targetUrl = result.kind === "ok" ? result.url : (argUrl ?? "");
-  const truncated = isTruncated(tool.result);
   const body = document.createDocumentFragment();
 
   const params: Node[] = [];
@@ -619,13 +610,9 @@ const renderFetch = (tool: SnowRemoteToolCall): HTMLElement | null => {
 
     if (result.image) {
       body.append(
-        section(
-          tr("fetch.fetchedImage"),
-          imageArea([result.image], truncated),
-          {
-            icon: "image",
-          },
-        ),
+        section(tr("fetch.fetchedImage"), imageArea([result.image]), {
+          icon: "image",
+        }),
       );
       if (result.content) body.append(tcPre(result.content));
     } else {
@@ -647,10 +634,6 @@ const renderFetch = (tool: SnowRemoteToolCall): HTMLElement | null => {
           }),
         );
       }
-    }
-
-    if (truncated) {
-      body.append(hintRow(tc("truncated")));
     }
   }
 
@@ -944,7 +927,6 @@ const renderImageGen = (tool: SnowRemoteToolCall): HTMLElement | null => {
   const args = parseImageGenArgs(tool.arguments);
   const result = parseImageGenResult(tool.result);
   if (!args && result.kind === "raw") return null; // 交给兜底卡展示原文
-  const truncated = isTruncated(tool.result);
   const prompt = args?.prompt ?? "";
   const body = document.createDocumentFragment();
 
@@ -977,7 +959,7 @@ const renderImageGen = (tool: SnowRemoteToolCall): HTMLElement | null => {
     const images = toRemoteImages(result.images, result.inlineDataUrls);
     if (images.length > 0) {
       body.append(
-        section(tr("imagegen.images"), imageArea(images, truncated), {
+        section(tr("imagegen.images"), imageArea(images), {
           icon: "image",
           meta: [badge(tr("imagegen.count", { count: result.imageCount }))],
         }),
@@ -1066,7 +1048,7 @@ type BrowserOp = (typeof BROWSER_OPS)[number];
 const isBrowserOp = (value: string): value is BrowserOp =>
   (BROWSER_OPS as readonly string[]).includes(value);
 
-/** 浏览器操作上下文：参数、结果（二选一：error / raw）与图片可达性输入。 */
+/** 浏览器操作上下文：参数、结果（二选一：error / raw）与内联图片。 */
 type BrowserContext = {
   op: BrowserOp;
   args: JsonRecord | null;
@@ -1074,22 +1056,17 @@ type BrowserContext = {
   error: string | null;
   raw: string | null;
   inlineImages: string[];
-  truncated: boolean;
 };
 
 const parseBrowserResult = (
   raw: string | undefined,
-): Pick<
-  BrowserContext,
-  "data" | "error" | "raw" | "inlineImages" | "truncated"
-> => {
+): Pick<BrowserContext, "data" | "error" | "raw" | "inlineImages"> => {
   if (!raw) {
     return {
       data: null,
       error: null,
       raw: null,
       inlineImages: [],
-      truncated: false,
     };
   }
   const inlineImages: string[] = [];
@@ -1106,7 +1083,6 @@ const parseBrowserResult = (
       error: null,
       raw: text,
       inlineImages,
-      truncated: isTruncated(raw),
     };
   }
   const error = readString(record, "error");
@@ -1115,7 +1091,6 @@ const parseBrowserResult = (
     error: error ?? null,
     raw: null,
     inlineImages,
-    truncated: isTruncated(raw),
   };
 };
 
@@ -1235,8 +1210,9 @@ const describeValue = (value: unknown): string => {
 };
 
 /**
- * 半截 JSON 的正文抢救：结果被 12000 字符截断后 JSON 不可解析，但前缀里的
- * 首个 "text":"…" 文案通常完整（如截图结果的尺寸说明），抽出来避免只看到 base64。
+ * 半截 JSON 的正文抢救：仅用于兼容历史会话里 result 被旧版远控桥截断成半截
+ * JSON 的快照（新版桥全量下发，正常结果可完整解析）——从首个 "text":"…"
+ * 文案抽出可展示的正文，避免只看到半截 base64。
  */
 const SALVAGED_TEXT_RE = /"text"\s*:\s*"((?:[^"\\]|\\.)*)"/;
 
@@ -1669,7 +1645,7 @@ const devtoolsView = (ctx: BrowserContext): Node[] => {
 const buildBrowserView = (
   ctx: BrowserContext,
 ): { display?: string; meta: HTMLElement[]; body: Node[] } => {
-  const { op, data, error, inlineImages, truncated } = ctx;
+  const { op, data, error, inlineImages } = ctx;
   const meta: HTMLElement[] = [];
   const body: Node[] = [];
   let display: string | undefined;
@@ -1947,7 +1923,7 @@ const buildBrowserView = (
       };
       const summary = data ? undefined : salvagedText(ctx.raw);
       body.push(
-        section(tr("fetch.fetchedImage"), imageArea([image], truncated), {
+        section(tr("fetch.fetchedImage"), imageArea([image]), {
           icon: "image",
         }),
       );

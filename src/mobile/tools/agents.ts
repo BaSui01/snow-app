@@ -10,8 +10,8 @@
  * - 前缀 `memory-` → 记忆卡片（检索命中 / 列表 / 保存更新删除结论）。
  *
  * 数据来源与容错（与 tools/ui.ts 的约定一致）：
- * - 快照只有 arguments（≤2000）与 result（≤12000），超限由远控桥追加截断后缀，
- *   因此解析全部走容错路径：半截 JSON → 该行不渲染 + 原文回退；
+ * - 快照的 arguments 与 result 由远控桥全量下发（不截断）；旧版快照可能是
+ *   半截 JSON，解析全部走容错路径：解析失败 → 该行不渲染 + 原文回退；
  * - 桌面的 hookExecutions（HookExecutionUI）不在远控快照里
  *   （SnowRemoteToolCall 无该字段），本模块不实现 hook 步骤；
  * - 子代理会话 ID、待办会话 ID 只作为文本信息展示，移动端跳转由其它机制负责；
@@ -29,7 +29,6 @@ import {
   decodeEscapedNewlines,
   extractLongText,
   formatJson,
-  isTruncated,
   parseJsonRecord,
   resolveStatus,
   tcBadge,
@@ -197,12 +196,6 @@ const taskChip = (text: string): HTMLSpanElement => {
   chip.title = text;
   return chip;
 };
-
-/** 参数被远控桥截断时的提示（arguments 上限 2000 字符）。 */
-const argsTruncatedRow = (tool: SnowRemoteToolCall): HTMLElement | null =>
-  isTruncated(tool.arguments)
-    ? noteRow("warn", "shield-alert", tr("argsTruncated"))
-    : null;
 
 /** 结果原文（非结构化）：解码转义后按等宽文本展示。 */
 const rawResultSection = (tool: SnowRemoteToolCall): HTMLElement | null => {
@@ -435,9 +428,6 @@ const renderSubAgent = (
     }
   }
 
-  const truncated = argsTruncatedRow(tool);
-  if (truncated) body.append(truncated);
-
   const meta: Node[] = [];
   if (identity && parsedArgs.task) meta.push(taskChip(parsedArgs.task));
 
@@ -576,9 +566,6 @@ const renderSubAgentList: ToolCallRenderer = (tool) => {
     if (raw) body.append(raw);
   }
 
-  const truncated = argsTruncatedRow(tool);
-  if (truncated) body.append(truncated);
-
   return createToolNode({
     tool,
     status: resolveStatus(tool),
@@ -688,9 +675,6 @@ const renderSkill: ToolCallRenderer = (tool) => {
     const raw = rawResultSection(tool);
     if (raw) body.append(raw);
   }
-
-  const truncated = argsTruncatedRow(tool);
-  if (truncated) body.append(truncated);
 
   return createToolNode({
     tool,
@@ -910,9 +894,6 @@ const renderTodo: ToolCallRenderer = (tool) => {
     const raw = rawResultSection(tool);
     if (raw) body.append(raw);
   }
-
-  const truncated = argsTruncatedRow(tool);
-  if (truncated) body.append(truncated);
 
   const target = contentText ? clip(contentText) : ids ? clip(ids) : "";
 
@@ -1139,9 +1120,6 @@ const renderMemory: ToolCallRenderer = (tool) => {
     const raw = rawResultSection(tool);
     if (raw) body.append(raw);
   }
-
-  const truncated = argsTruncatedRow(tool);
-  if (truncated) body.append(truncated);
 
   const target = title ?? query ?? memoryId ?? "";
 

@@ -53,9 +53,6 @@ const MAX_MESSAGES = 50;
 /** 会话选择器的分页步长（首屏每工作区一页，「加载更多」按同一页长追加）。 */
 const REMOTE_CONVERSATION_PAGE_SIZE = 30;
 const MAX_MESSAGE_LENGTH = 40_000;
-const MAX_TOOL_ARGUMENT_LENGTH = 2_000;
-const MAX_TOOL_RESULT_LENGTH = 12_000;
-const MAX_TOOL_STREAM_LENGTH = 8_000;
 const MAX_SEND_LENGTH = 8_000;
 const MAX_COMMANDS = 40;
 const MAX_THINKING_OPTIONS = 20;
@@ -146,13 +143,6 @@ const truncateTo = (
   }
   return `${value.slice(0, maxLength)}\n…（手机端已截断）`;
 };
-
-// Tool payload sanitization stays in a dependency-free module so its security
-// contract can be exercised without mounting the React bridge.
-const safeToolText = (
-  value: string | undefined,
-  maxLength: number,
-): string | undefined => redactSensitiveToolText(truncateTo(value, maxLength));
 
 const truncate = (value: string | undefined): string | undefined =>
   truncateTo(value, MAX_MESSAGE_LENGTH);
@@ -291,16 +281,13 @@ const toRemoteToolCall = (toolCall: ToolCallInfo): SnowRemoteToolCall => ({
   interactionId: toolCall.interactionId,
   authorizationId: toolCall.authorizationId,
   status: toolCall.status,
-  arguments: safeToolText(toolCall.arguments, MAX_TOOL_ARGUMENT_LENGTH),
-  result: safeToolText(toolCall.result, MAX_TOOL_RESULT_LENGTH),
-  streamingStdout: safeToolText(
-    toolCall.streamingStdout,
-    MAX_TOOL_STREAM_LENGTH,
-  ),
-  streamingStderr: safeToolText(
-    toolCall.streamingStderr,
-    MAX_TOOL_STREAM_LENGTH,
-  ),
+  // 工具参数 / 结果 / 流式输出与 PC 端一致：全量下发（不做长度截断），
+  // 只过一遍脱敏（redactSensitiveToolText 留在无依赖模块里，安全契约
+  // 不挂载 React 桥也能被直接验证）。
+  arguments: redactSensitiveToolText(toolCall.arguments),
+  result: redactSensitiveToolText(toolCall.result),
+  streamingStdout: redactSensitiveToolText(toolCall.streamingStdout),
+  streamingStderr: redactSensitiveToolText(toolCall.streamingStderr),
   userQuestion: toolCall.userQuestion
     ? {
         questionId: toolCall.userQuestion.questionId,
@@ -915,7 +902,7 @@ export const RemoteControlBridge = ({
   /**
    * 为 workflow 工具调用附加卡片快照：节点图与运行态由 renderer 侧的
    * remoteControlWorkflow 按 flow 组装（挂起 / 活跃 run 读内存，其余读 DB，
-   * 带缓存）。arguments 取源消息的完整原文——下发给手机的工具参数已截断，
+   * 带缓存）。arguments 取源消息的完整原文——下发给手机的工具参数经过脱敏，
    * 不能用于解析图数据。
    */
   const attachWorkflowSnapshots = async (

@@ -17,8 +17,8 @@
  *
  * 约定（与 tools/ui.ts 一致）：
  * - 数据一律 createElement + textContent，只有静态图标标记走 innerHTML；
- * - 远控桥会截断 arguments ≤2000 / result ≤12000，因此解析全部走容错路径：
- *   半截 JSON → 原文回退，字段缺失 → 该行不渲染；
+ * - 远控桥全量下发 arguments / result（不截断）；旧版快照可能是半截 JSON，
+ *   解析全部走容错路径：JSON 不可解析 → 原文回退，字段缺失 → 该行不渲染；
  * - 提问 / 审批的提交动作在手机端独立交互区（interactions.ts）完成，本模块只做
  *   时间线内的只读复盘（等待中 / 已回答 / 已取消 / 已批准或拒绝）；
  * - 参数与结果都解析不出、也没有提问快照时返回 null，交由 generic 兜底卡展示
@@ -34,7 +34,6 @@ import {
   argsSummary,
   createToolNode,
   decodeEscapedNewlines,
-  isTruncated,
   parseJsonRecord,
   resolveStatus,
   tcBadge,
@@ -145,12 +144,6 @@ const rawFallback = (raw: string | null | undefined): HTMLElement | null => {
   if (!text) return null;
   return tcSection(tr("fallback"), tcPre(readable(text)));
 };
-
-/** 参数被远控桥截断时的提示（arguments 上限 2000 字符）。 */
-const argsTruncated = (tool: SnowRemoteToolCall): HTMLElement | null =>
-  isTruncated(tool.arguments)
-    ? noteRow("warn", "shield-alert", tr("argsTruncated"))
-    : null;
 
 /** 结果里的错误文案：优先 JSON error，其次失败状态下的原始结果文本。 */
 const errorTextOf = (tool: SnowRemoteToolCall, record: Json | null): string => {
@@ -383,8 +376,6 @@ const renderConfigTool = (tool: SnowRemoteToolCall): HTMLElement | null => {
     const fallback = rawFallback(tool.result);
     if (fallback) body.append(fallback);
   }
-  const truncated = argsTruncated(tool);
-  if (truncated) body.append(truncated);
 
   const meta: HTMLElement[] = [];
   if (entryTexts.length)
@@ -638,9 +629,6 @@ const renderAppTool = (tool: SnowRemoteToolCall): HTMLElement | null => {
     const fallback = rawFallback(tool.result);
     if (fallback) body.append(fallback);
   }
-  const truncated = argsTruncated(tool);
-  if (truncated) body.append(truncated);
-
   const meta: HTMLElement[] = [];
   if (result && !result.error) {
     if (operation === "setMode") meta.push(tcBadge(tr("app.applied"), "ok"));
@@ -743,9 +731,6 @@ const renderPlanApproval = (tool: SnowRemoteToolCall): HTMLElement | null => {
     const fallback = rawFallback(tool.result);
     if (fallback) body.append(fallback);
   }
-  const truncated = argsTruncated(tool);
-  if (truncated) body.append(truncated);
-
   const meta: HTMLElement[] = [];
   if (approved) meta.push(tcBadge(tr("plan.approved"), "ok"));
   else if (declined) meta.push(tcBadge(tr("plan.declined"), "warn"));
@@ -849,8 +834,6 @@ const renderAskTool = (tool: SnowRemoteToolCall): HTMLElement | null => {
     const fallback = rawFallback(tool.result);
     if (fallback) body.append(fallback);
   }
-  const truncated = argsTruncated(tool);
-  if (truncated) body.append(truncated);
 
   const meta: HTMLElement[] = [];
   if (cancelled) meta.push(tcBadge(tr("ask.cancelled"), "muted"));
@@ -1206,8 +1189,6 @@ const renderDbxTool = (tool: SnowRemoteToolCall): HTMLElement | null => {
     const pending = pendingRow(tool);
     if (pending) body.append(pending);
   }
-  const truncated = argsTruncated(tool);
-  if (truncated) body.append(truncated);
 
   return createToolNode({
     tool,

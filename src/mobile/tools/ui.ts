@@ -43,13 +43,6 @@ const STATUS_KEYS: Record<string, string> = {
   error: "remote.toolCall.common.status.error",
 };
 
-/**
- * 远控桥对超长字段会追加截断后缀（arguments ≤2000 / result ≤12000 /
- * streamingStdout·stderr ≤8000 字符，见 renderer/RemoteControlBridge.tsx）。
- * 解析前先剥离，否则截断后的合法 JSON 会被判为「半截 JSON」。
- */
-const TRUNCATION_SUFFIX = "\n…（手机端已截断）";
-
 /** 折叠阈值：超过 maxLines 行（或等量字符）才生成 .tc-fold。 */
 const FOLD_LINE_CHARS = 96;
 
@@ -152,23 +145,13 @@ export const decodeEscapedNewlines = (text: string): string => {
     .replace(/\\t/g, "\t");
 };
 
-/** 是否被远控桥截断（内容以截断后缀结尾）。 */
-export const isTruncated = (text?: string): boolean =>
-  Boolean(text && text.endsWith(TRUNCATION_SUFFIX));
-
-/** 剥离截断后缀后的原文（未截断时原样返回）。 */
-const stripTruncation = (text: string): string =>
-  text.endsWith(TRUNCATION_SUFFIX)
-    ? text.slice(0, -TRUNCATION_SUFFIX.length)
-    : text;
-
 /**
- * 安全 JSON 解析：仅接受对象（数组 / 字面量 / 半截 JSON 一律返回 null，
+ * 安全 JSON 解析：仅接受对象（数组 / 字面量 / 非法 JSON 一律返回 null，
  * 调用方据此回退原文展示）。
  */
 export const parseJsonRecord = (text?: string): JsonRecord | null => {
   if (!text) return null;
-  const raw = stripTruncation(text).trim();
+  const raw = text.trim();
   if (!raw.startsWith("{")) return null;
   try {
     const value: unknown = JSON.parse(raw);
@@ -208,7 +191,7 @@ const truncate = (value: string, max = SUMMARY_MAX_CHARS): string =>
 /**
  * 参数摘要：按 SUMMARY_KEYS 优先级取首个可读字段（路径 / 查询 / 命令…），
  * 依次尝试「字符串 → host:port 组合 → 数组首项」，与桌面端 getArgsSummary
- * 的优先级和截断规则对齐；参数缺失 / 半截 JSON 返回 undefined。
+ * 的优先级和截断规则对齐；参数缺失 / JSON 不可解析返回 undefined。
  */
 export const argsSummary = (args?: string): string | undefined => {
   const record = parseJsonRecord(args);

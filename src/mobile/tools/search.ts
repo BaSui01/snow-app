@@ -16,8 +16,8 @@
  *
  * 解析约定（与 tools/ui.ts 一致）：
  * - 数据一律 createElement + textContent，只有静态图标标记走 innerHTML；
- * - 远控桥截断 arguments ≤2000 / result ≤12000 / streamingStdout ≤8000，全部走
- *   parseJsonRecord（其内部先剥离截断后缀），半截 JSON 回退原文展示；
+ * - 远控桥全量下发 arguments / result（不截断）；历史会话的旧版快照可能是
+ *   半截 JSON，parseJsonRecord 解析失败时回退原文展示；
  * - 列表条数上限 MAX_ROWS，超出部分只报「已省略 n 条」；行数超 FOLD_ROWS 时挂
  *   .tc-fold，展开态由 timeline.ts 的 .tc-more 事件委托接管；
  * - 参数与结果都无法解析时返回 null，交回框架兜底卡（tools/index.ts 的候选回退）。
@@ -599,7 +599,7 @@ const renderGrep = (tool: SnowRemoteToolCall): HTMLElement | null => {
     record && Array.isArray(record.matches)
       ? parseGrepMatches(record.matches)
       : null;
-  // 结果里回显了检索条件（grep.rs 输出 pattern/path/fileGlob），参数被截断时用它兜底。
+  // 结果里回显了检索条件（grep.rs 输出 pattern/path/fileGlob），旧版快照参数为半截 JSON 时用它兜底。
   const pattern =
     optional(args?.pattern) ??
     optional(record ? readString(record, "pattern") : undefined) ??

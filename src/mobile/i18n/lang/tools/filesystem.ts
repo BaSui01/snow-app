@@ -3,7 +3,7 @@
  * filesystem-create，渲染见 mobile/tools/filesystem.ts）与卡片内嵌的行级 diff
  * （diff 自身的词条在 lang/tools/diff.ts，本文件不要重复登记）。
  *
- * 键前缀统一 remote.toolCall.filesystem.*，三语必须同键；折叠 / 参数 / 结果 / 截断
+ * 键前缀统一 remote.toolCall.filesystem.*，三语必须同键；折叠 / 参数 / 结果
  * 等公共词条归 lang/tools/common.ts（聚合器 lang/tools/index.ts 里 common 最后合并）。
  */
 
@@ -13,21 +13,17 @@ export const filesystemEn: Record<string, string> = {
   "remote.toolCall.filesystem.edit": "Edit",
   "remote.toolCall.filesystem.create": "Create",
 
-  // 提示（参数截断 / 结果回退 / 空态 / 预览）
+  // 提示（结果回退 / 空态）
   "remote.toolCall.filesystem.noArguments": "No arguments",
-  "remote.toolCall.filesystem.argsTruncated":
-    "Arguments were truncated - the content below is incomplete",
-  "remote.toolCall.filesystem.diffUnavailable":
-    "Arguments were truncated - the full diff cannot be shown",
   "remote.toolCall.filesystem.rawFallback":
     "Could not parse the result; showing raw text",
-  "remote.toolCall.filesystem.preview": "Preview",
 
   // read：行范围与计数
   "remote.toolCall.filesystem.linesTotal": "{{count}} lines",
   "remote.toolCall.filesystem.linesRange": "L{{start}}-{{end}}",
   "remote.toolCall.filesystem.lineSingle": "L{{line}}",
-  "remote.toolCall.filesystem.lineWindow": "Lines {{start}}-{{end}} of {{total}}",
+  "remote.toolCall.filesystem.lineWindow":
+    "Lines {{start}}-{{end}} of {{total}}",
   "remote.toolCall.filesystem.fileCount": "{{count}} files",
   "remote.toolCall.filesystem.entryCount": "{{count}} entries",
   "remote.toolCall.filesystem.imagePreview": "Image preview ({{mediaType}})",
@@ -49,15 +45,13 @@ export const filesystemZhCN: Record<string, string> = {
   "remote.toolCall.filesystem.create": "创建",
 
   "remote.toolCall.filesystem.noArguments": "无参数",
-  "remote.toolCall.filesystem.argsTruncated": "参数已被截断，下方内容不完整",
-  "remote.toolCall.filesystem.diffUnavailable": "参数已被截断，无法展示完整 diff",
   "remote.toolCall.filesystem.rawFallback": "无法解析结构化结果，显示原文",
-  "remote.toolCall.filesystem.preview": "预览",
 
   "remote.toolCall.filesystem.linesTotal": "共 {{count}} 行",
   "remote.toolCall.filesystem.linesRange": "第 {{start}}-{{end}} 行",
   "remote.toolCall.filesystem.lineSingle": "第 {{line}} 行",
-  "remote.toolCall.filesystem.lineWindow": "第 {{start}}-{{end}} 行，共 {{total}} 行",
+  "remote.toolCall.filesystem.lineWindow":
+    "第 {{start}}-{{end}} 行，共 {{total}} 行",
   "remote.toolCall.filesystem.fileCount": "{{count}} 个文件",
   "remote.toolCall.filesystem.entryCount": "{{count}} 个条目",
   "remote.toolCall.filesystem.imagePreview": "图片预览（{{mediaType}}）",
@@ -77,15 +71,13 @@ export const filesystemZhTW: Record<string, string> = {
   "remote.toolCall.filesystem.create": "建立",
 
   "remote.toolCall.filesystem.noArguments": "無參數",
-  "remote.toolCall.filesystem.argsTruncated": "參數已被截斷，下方內容不完整",
-  "remote.toolCall.filesystem.diffUnavailable": "參數已被截斷，無法顯示完整 diff",
   "remote.toolCall.filesystem.rawFallback": "無法解析結構化結果，顯示原文",
-  "remote.toolCall.filesystem.preview": "預覽",
 
   "remote.toolCall.filesystem.linesTotal": "共 {{count}} 行",
   "remote.toolCall.filesystem.linesRange": "第 {{start}}-{{end}} 行",
   "remote.toolCall.filesystem.lineSingle": "第 {{line}} 行",
-  "remote.toolCall.filesystem.lineWindow": "第 {{start}}-{{end}} 行，共 {{total}} 行",
+  "remote.toolCall.filesystem.lineWindow":
+    "第 {{start}}-{{end}} 行，共 {{total}} 行",
   "remote.toolCall.filesystem.fileCount": "{{count}} 個檔案",
   "remote.toolCall.filesystem.entryCount": "{{count}} 個項目",
   "remote.toolCall.filesystem.imagePreview": "圖片預覽（{{mediaType}}）",

@@ -10,8 +10,8 @@
  * - terminal-*：按 open / send / read / resize / wait / close / focus / list
  *   分操作给出摘要与正文（工具名清单来自 native/src/mcp/servers/terminal.rs）；
  * - computer-use-*：动作名 + 坐标 / 文本 / 按键摘要 + 结果 JSON；截图类结果
- *   只给占位（真实 base64 远大于远控桥的 result ≤12000 字符上限，图像不可能
- *   抵达手机，不伪装成可看图）。
+ *   的图像数据现在随 result 全量下发，但手机端暂无图像渲染能力，仍只展示
+ *   占位与元数据，不伪装成可看图。
  *
  * 通用约定（tools/ui.ts 顶部注释）：
  * - 卡片走 createToolNode，长文本走 tcPre 折叠（.tc-fold 由 timeline 的点击
@@ -29,7 +29,6 @@ import {
   createToolNode,
   decodeEscapedNewlines,
   formatJson,
-  isTruncated,
   parseJsonRecord,
   tcBadge,
   tcErrorRow,
@@ -929,8 +928,8 @@ const CU_ACTIONS: Record<string, string> = {
 
 /**
  * 结果里追加的内联图片标签（真实 base64 只存在此处）：`{JSON}\n@@image:data:…@@`。
- * 结尾用 `(?:@@|$)` 容忍被远控桥截断的半截标签，否则 JSON 会被残片污染成
- * 「解析失败」，退化成原始文本。
+ * 结尾用 `(?:@@|$)` 容忍历史快照里被旧版远控桥截断的半截标签（新版桥全量下发，
+ * 正常结果标签完整），否则 JSON 会被残片污染成「解析失败」，退化成原始文本。
  */
 const INLINE_IMAGE_TAG_RE = /@@image:[^@]*(?:@@|$)/g;
 
@@ -1035,9 +1034,9 @@ const cuSummary = (
   }
 };
 
-/** 截图结果（剥离内联图片标签后解析；图像本身不会抵达手机）。 */
+/** 截图结果（剥离内联图片标签后解析；图像已全量下发，手机端暂不渲染）。 */
 type CuShot = {
-  /** 结果中存在图像（真实 base64 超过远控桥上限，必然被截断）。 */
+  /** 结果中存在图像（随 result 全量下发，手机端暂只展示占位）。 */
   hasImage: boolean;
   /** 模型收到的坐标映射说明。 */
   mapping: string;
@@ -1133,9 +1132,6 @@ export const renderComputerUseCard: ToolCallRenderer = (tool) => {
       ),
     );
   }
-  if (isScreenshot && isTruncated(tool.result)) {
-    meta.push(tcBadge(t("remote.toolCall.exec.cu.truncated"), "warn"));
-  }
   const steps =
     argsRecord && Array.isArray(argsRecord.actions)
       ? argsRecord.actions.length
@@ -1153,7 +1149,7 @@ export const renderComputerUseCard: ToolCallRenderer = (tool) => {
 
   if (isScreenshot) {
     if (shot) {
-      // 图像不随远控桥下发：只给占位与元数据，不伪装成可看图。
+      // 图像数据随结果全量下发，手机端暂不渲染：只给占位与元数据。
       const section = el("div", "tc-exec-shot");
       if (shot.hasImage) {
         section.append(

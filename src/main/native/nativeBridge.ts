@@ -1388,6 +1388,10 @@ export const loadNativeBridge = (): NativeBridge => {
           "Rust native bridge is required to stop codebase watch",
         );
       },
+      cancelCodebaseSync: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to cancel codebase sync"),
+        ),
       syncCodebaseChanges: () =>
         Promise.reject(
           new Error("Rust native bridge is required to sync codebase changes"),

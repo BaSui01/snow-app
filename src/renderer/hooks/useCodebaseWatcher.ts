@@ -69,7 +69,7 @@ export const useCodebaseWatcher = ({
 }: UseCodebaseWatcherParams): UseCodebaseWatcherResult => {
   const [syncStatus, setSyncStatus] = useState<CodebaseSyncStatus>("idle");
   const [watchedProjectId, setWatchedProjectId] = useState<string | undefined>(
-    undefined
+    undefined,
   );
 
   // Track the project id we're currently watching so we can stop it when
@@ -158,16 +158,30 @@ export const useCodebaseWatcher = ({
           });
         currentWatchIdRef.current = undefined;
       }
+      // Cancel any in-flight incremental sync for this project, so turning
+      // the switch off (or losing the project) actually stops the embedding
+      // work running in Rust. Also drop any coalesced pending sync so it
+      // can't re-trigger from the running sync's `.finally()`.
+      if (projectId) {
+        void window.snow.cancelCodebaseSync(projectId).catch(() => {
+          // Silent fail — the sync may have already finished.
+        });
+      }
+      syncPendingRef.current = false;
       setSyncStatus("idle");
       setWatchedProjectId(undefined);
       return;
     }
 
-    // If the project changed, stop the previous watcher first.
+    // If the project changed, stop the previous watcher and cancel its
+    // in-flight sync first.
     if (currentWatchIdRef.current && currentWatchIdRef.current !== projectId) {
       const prevId = currentWatchIdRef.current;
       void window.snow.stopCodebaseWatch(prevId).catch(() => {
         // Silent fail
+      });
+      void window.snow.cancelCodebaseSync(prevId).catch(() => {
+        // Silent fail — the sync may have already finished.
       });
       currentWatchIdRef.current = undefined;
     }

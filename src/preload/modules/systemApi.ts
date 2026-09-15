@@ -578,6 +578,8 @@ export const systemApi = {
     ipcRenderer.invoke("codebase:start-watch", projectId, projectPath),
   stopCodebaseWatch: (projectId: string): Promise<void> =>
     ipcRenderer.invoke("codebase:stop-watch", projectId),
+  cancelCodebaseSync: (projectId: string): Promise<boolean> =>
+    ipcRenderer.invoke("codebase:cancel-sync", projectId),
   syncCodebaseChanges: (
     projectId: string,
     onProgress?: (progress: CodebaseSyncProgress) => void,

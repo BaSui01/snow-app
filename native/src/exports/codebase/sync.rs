@@ -2,6 +2,105 @@
 
 use super::*;
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
+// ============================================================================
+// 同步取消注册表（per-project abort flag）
+// ============================================================================
+
+/// 进行中的增量同步取消标记，按项目 id 索引。
+///
+/// `sync_codebase_changes` 启动时注册一个全新的标记，结束时（done / error /
+/// cancelled 任意返回路径，经由 [`SyncRegistration`] 的 Drop）注销。
+/// `cancel_codebase_sync` 将标记置为 true，正在运行的同步会在下一个检查点
+/// （每个文件 / 每个批处理前）停止发起新的嵌入批处理并提前返回。
+///
+/// 这与全量嵌入的 `EMBED_SESSIONS` 取消机制相互独立：增量同步通常由文件
+/// 监视器自动触发，用户关闭 codebase 开关或切换项目时必须能立即停掉进行
+/// 中的同步，而不是让它跑完。
+static SYNC_ABORT_FLAGS: Mutex<Option<HashMap<String, Arc<AtomicBool>>>> = Mutex::new(None);
+
+fn with_sync_flags<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut HashMap<String, Arc<AtomicBool>>) -> R,
+{
+    let mut guard = SYNC_ABORT_FLAGS
+        .lock()
+        .expect("Codebase sync abort flags mutex poisoned");
+    let flags = guard.get_or_insert_with(HashMap::new);
+    f(flags)
+}
+
+/// 为一个项目注册全新的同步取消标记。替换任何陈旧标记，确保新同步始终从
+/// false 开始（同一项目同一时刻只会有一个同步在跑，替换是安全的）。
+fn register_sync(project_id: &str) -> Arc<AtomicBool> {
+    with_sync_flags(|flags| {
+        let flag = Arc::new(AtomicBool::new(false));
+        flags.insert(project_id.to_string(), flag.clone());
+        flag
+    })
+}
+
+/// 注销一个项目的同步取消标记。
+fn unregister_sync(project_id: &str) {
+    with_sync_flags(|flags| {
+        flags.remove(project_id);
+    });
+}
+
+/// 置位某项目的同步取消标记。返回是否找到了进行中的同步。
+fn abort_sync(project_id: &str) -> bool {
+    with_sync_flags(|flags| match flags.get(project_id) {
+        Some(flag) => {
+            flag.store(true, Ordering::SeqCst);
+            true
+        }
+        None => false,
+    })
+}
+
+/// 查询某项目的同步是否已被取消。
+fn is_sync_aborted(project_id: &str) -> bool {
+    with_sync_flags(|flags| {
+        flags
+            .get(project_id)
+            .map(|flag| flag.load(Ordering::SeqCst))
+            .unwrap_or(false)
+    })
+}
+
+/// RAII 守卫：在 `sync_codebase_changes` 入口注册，函数任意返回路径析构时
+/// 自动注销，避免在每个 return 处重复调用 `unregister_sync`。
+struct SyncRegistration {
+    project_id: String,
+}
+
+impl SyncRegistration {
+    fn new(project_id: &str) -> Self {
+        register_sync(project_id);
+        Self {
+            project_id: project_id.to_string(),
+        }
+    }
+}
+
+impl Drop for SyncRegistration {
+    fn drop(&mut self) {
+        unregister_sync(&self.project_id);
+    }
+}
+
+/// 同步被取消时构建的部分结果，反映取消前已完成的删除 / 嵌入数量。
+fn build_cancelled_result(deleted_files: i32, embedded_files: i32, skipped_files: i32) -> CodebaseSyncResult {
+    CodebaseSyncResult {
+        changed: deleted_files > 0 || embedded_files > 0,
+        embedded_files,
+        deleted_files,
+        skipped_files,
+        error: String::new(),
+    }
+}
+
 /// Progress event sent to the frontend during incremental sync.
 #[napi(object)]
 pub struct CodebaseSyncProgress {
@@ -72,6 +171,11 @@ pub async fn sync_codebase_changes(
     let storage_info = crate::storage::initialize_app_storage()?;
     let database_path = Arc::new(PathBuf::from(&storage_info.database_path));
     let project_id = Arc::new(project_id);
+
+    // 注册 per-project 取消标记，使 `cancel_codebase_sync`（用户在同步进行
+    // 中关闭 codebase 开关 / 切换项目时调用）能停掉本次运行。RAII 守卫在
+    // 任意返回路径（done / error / cancelled）自动注销。
+    let _sync_registration = SyncRegistration::new(project_id.as_str());
 
     // Helper to send progress events.
     let send_progress = {
@@ -201,6 +305,11 @@ pub async fn sync_codebase_changes(
         );
 
         for file_path in &files_to_delete {
+            // 取消检查点：用户关闭 codebase 开关 / 切换项目时立即停止。
+            if is_sync_aborted(project_id.as_str()) {
+                send_progress("done", 0, 0, deleted_files, 0, "", "");
+                return Ok(build_cancelled_result(deleted_files, 0, 0));
+            }
             let db_path = Arc::clone(&database_path);
             let pid = (*project_id).clone();
             let fp = file_path.clone();
@@ -315,6 +424,20 @@ pub async fn sync_codebase_changes(
     // sufficient and avoids the complexity of the concurrent embed_single_file
     // (which has many parameters and lifetime constraints).
     for file_chunks in files_to_embed {
+        // 取消检查点：每个文件嵌入前检查一次。
+        if is_sync_aborted(project_id.as_str()) {
+            let pf = *processed_files.lock().unwrap_or_else(|e| e.into_inner());
+            send_progress(
+                "done",
+                files_to_embed_count,
+                pf,
+                deleted_files,
+                skipped_files,
+                "",
+                "",
+            );
+            return Ok(build_cancelled_result(deleted_files, pf, skipped_files));
+        }
         let file_hash = blake3::hash(file_chunks.content.as_bytes())
             .to_hex()
             .to_string();
@@ -325,6 +448,20 @@ pub async fn sync_codebase_changes(
         let mut file_vectors: Vec<VectorInsert> = Vec::new();
 
         while chunk_start < chunks.len() {
+            // 取消检查点：每个批处理前检查一次，尽早停止发起新的嵌入 API 调用。
+            if is_sync_aborted(project_id.as_str()) {
+                let pf = *processed_files.lock().unwrap_or_else(|e| e.into_inner());
+                send_progress(
+                    "done",
+                    files_to_embed_count,
+                    pf,
+                    deleted_files,
+                    skipped_files,
+                    &file_chunks.file.relative_path,
+                    "",
+                );
+                return Ok(build_cancelled_result(deleted_files, pf, skipped_files));
+            }
             let chunk_end = (chunk_start + batch_max_lines).min(chunks.len());
             let batch = &chunks[chunk_start..chunk_end];
             let inputs: Vec<String> = batch.iter().map(|c| c.content.clone()).collect();
@@ -457,4 +594,16 @@ pub async fn sync_codebase_changes(
         skipped_files,
         error: String::new(),
     })
+}
+
+/// Cancel an in-progress incremental sync for a project. Returns true if a
+/// running sync was found and signalled to stop. The running sync stops
+/// starting new embedding batches at its next check point (before each file /
+/// before each batch) and returns its partial result. This is called when the
+/// user disables codebase indexing for the project or switches to another
+/// project while a sync is in flight, so the "update embedding" stops
+/// immediately instead of running to completion.
+#[napi]
+pub fn cancel_codebase_sync(project_id: String) -> bool {
+    abort_sync(project_id.trim())
 }

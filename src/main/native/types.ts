@@ -1708,6 +1708,7 @@ export type NativeBridge = {
     onChange: (projectId: string) => void,
   ) => void;
   stopCodebaseWatch: (projectId: string) => void;
+  cancelCodebaseSync: (projectId: string) => Promise<boolean>;
   syncCodebaseChanges: (
     projectId: string,
     onProgress: (progress: CodebaseSyncProgress) => void,

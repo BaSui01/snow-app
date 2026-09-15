@@ -35,7 +35,7 @@ pub use {
     embedding::{cancel_codebase_embedding, is_codebase_embedding_active, pause_codebase_embedding, resume_codebase_embedding, start_codebase_embedding},
     index::{clear_codebase_index, discard_resumable_codebase_session, get_codebase_index_stats, get_resumable_codebase_sessions, list_codebase_indexed_files, ResumableCodebaseSession},
     preview::{preview_codebase_scan, CodebaseScanPreview},
-    sync::{sync_codebase_changes, CodebaseSyncProgress, CodebaseSyncResult},
+    sync::{cancel_codebase_sync, sync_codebase_changes, CodebaseSyncProgress, CodebaseSyncResult},
     watch::{start_codebase_watch, stop_codebase_watch},
 };
 pub(crate) use embedding::{load_codebase_settings, FileChunks};

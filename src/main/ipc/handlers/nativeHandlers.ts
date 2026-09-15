@@ -477,6 +477,12 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
     }
     return native.stopCodebaseWatch(projectId.trim());
   });
+  ipcMain.handle("codebase:cancel-sync", (_event, projectId: unknown) => {
+    if (typeof projectId !== "string" || !projectId.trim()) {
+      throw new Error("Project id is required");
+    }
+    return native.cancelCodebaseSync(projectId.trim());
+  });
   ipcMain.handle("codebase:sync-changes", async (event, projectId: unknown) => {
     if (typeof projectId !== "string" || !projectId.trim()) {
       throw new Error("Project id is required");

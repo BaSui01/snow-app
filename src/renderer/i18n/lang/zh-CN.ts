@@ -1966,8 +1966,10 @@ export const zhCN = {
   "settings.customHeadersHeaderValuePlaceholder": "请求头值",
   "settings.customHeadersRemoveHeader": "移除请求头",
   "settings.customHeadersAddHeader": "添加请求头",
+  "settings.customHeadersVariablesLabel": "可用变量",
+  "settings.customHeadersVariablesInsertTip": "点击插入到请求头值",
   "settings.customHeadersVariablesHint":
-    "值中可使用 {{session_id}}：发送请求时替换为当前会话 ID（也可写 {{sessionId}}）。无会话上下文的请求（如获取模型列表）会省略该请求头。",
+    "以上 6 种写法等价：发送请求时替换为当前会话 ID（可与其它文本组合，如 snow-app-{{session_id}}）；无会话上下文的请求（如获取模型列表）会省略该请求头。",
   "settings.saveCustomHeaders": "保存方案",
   "settings.customHeadersListTitle": "请求头方案",
   "settings.customHeadersNoSchemes":

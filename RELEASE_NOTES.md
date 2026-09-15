@@ -8,6 +8,7 @@
 - **Workspace Relocation**: Project directory health is verified (missing location, unmounted volume, no permission) and can be relocated — conversations, memories, memos, scheduled tasks, and project-level settings migrate together, with merge support, a migration history, and undo.
 - **Markdown Table Export**: Tables in replies can be exported as CSV or XLSX.
 - **Header Session Variable**: custom header values support the `{{session_id}}` placeholder, expanded to the session ID of the conversation that sends the request; requests without a session context omit the header instead of sending the literal template.
+- **Five new config scopes**: live MCP servers (with tool-level switches), request logging (expiry required), scheduled tasks (read-only; writes point to the renderer channel), tool approval allow-list (project-level), and usage statistics (read-only).
 
 ## Improvements
 

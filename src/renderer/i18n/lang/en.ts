@@ -2051,8 +2051,11 @@ export const en = {
   "settings.customHeadersHeaderValuePlaceholder": "Header value",
   "settings.customHeadersRemoveHeader": "Remove header",
   "settings.customHeadersAddHeader": "Add header",
+  "settings.customHeadersVariablesLabel": "Available variables",
+  "settings.customHeadersVariablesInsertTip":
+    "Click to insert into the header value",
   "settings.customHeadersVariablesHint":
-    "Use {{session_id}} in a value: it is replaced with the session ID of the conversation that sends the request ({{sessionId}} works too). Requests without a session context (e.g. model listing) omit this header.",
+    "All six spellings are equivalent: they are replaced with the session ID of the conversation that sends the request (they can be combined with other text, e.g. snow-app-{{session_id}}); requests without a session context (e.g. model listing) omit this header.",
   "settings.saveCustomHeaders": "Save scheme",
   "settings.customHeadersListTitle": "Header schemes",
   "settings.customHeadersNoSchemes":

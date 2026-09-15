@@ -120,7 +120,7 @@ Custom request-header schemes (🔒 masked on read).
 | `active`  | string |           | Active scheme id                                                                                                                                    |
 | `schemes` | array  | 🔒        | Scheme array, items: `{id, name, headers, createdAt}`; `headers` is a `{header: value}` map (may contain sensitive headers such as `Authorization`) |
 
-Header values may use the `{{session_id}}` placeholder; it is expanded to the session ID of the request's conversation when the request is sent (see the personalization, theme, and shortcuts guide).
+Header values may use the session-ID placeholder (six equivalent spellings: `{{session_id}}`, `{{sessionId}}`, `{{conversation_id}}`, `{{conversationId}}`, `${session_id}`, `${conversation_id}`); it is expanded to the session ID of the request's conversation when the request is sent and can be combined with other text (e.g. `snow-app-{{session_id}}`). Requests without a session context (e.g. model listing) omit that header (see the personalization, theme, and shortcuts guide).
 
 ## 6. system-prompt.json (scope: `system-prompt`)
 

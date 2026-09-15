@@ -17,7 +17,7 @@
 //!   `~/.snow/.config-backups/` (latest 10 kept per file) and the target file
 //!   is replaced atomically (tmp file + rename) so a crash cannot corrupt it.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -31,7 +31,11 @@ use super::super::tools::McpTool;
 mod imagegen_scope;
 mod lsp_config_scope;
 mod logs_scope;
+mod mcp_servers_scope;
 mod personalization_scope;
+mod request_logging_scope;
+mod scheduled_tasks_scope;
+mod usage_scope;
 mod userscripts_scope;
 
 pub const SERVER_ID: &str = "config";
@@ -97,6 +101,41 @@ const SCOPE_LSP_CONFIG: &str = "lsp-config";
 /// 要直接改 App 生效的请求头请用本域。
 const SCOPE_CUSTOM_HEADER_SCHEMES: &str = "customHeaderSchemes";
 
+/// DB-backed 配置域：MCP 服务器配置与工具级启停（应用真实生效的那一份）。
+/// projectId 非空 = 项目级（会话内缺省自动注入当前项目），显式 `""` = 全局；
+/// key = 服务器名（`"new"` 表示按 value.name 新建，不可改名）；
+/// value = merge 语义的服务器字段
+/// `{name?, type?("stdio"|"sse"|"http"), url?, command?, args?, env?, headers?,
+/// enabled?, timeoutMs?}`，另可用 `tools: {toolName: bool}` 或
+/// `disabledTools: [toolName]` 批量启停工具；delete 需 confirmed。
+/// 与 `settings.mcpServers`（Snow CLI 同步入口）的区别：本域不需要经过文件同步。
+const SCOPE_MCP_SERVERS: &str = "mcpServers";
+
+/// DB-backed 单例配置域：请求日志开关与自动过期时间（system_settings，
+/// 与「系统日志」设置页同源）。key = `"settings"`；
+/// value = `{enabled: bool, expiresAt?: number(ms)|expiresInMinutes?: number}`。
+/// 开启时必须给出过期时间（缺省 30 分钟，上限 24 小时）——Rust 的记录路径会在
+/// 过期后自动复位开关，避免忘记关闭导致持续写盘。不支持 delete。
+const SCOPE_REQUEST_LOGGING: &str = "requestLogging";
+
+/// 只读配置域：定时任务定义、状态与运行历史（scheduled_tasks 表）。
+/// 调度器运行在渲染进程、任务 store 仅在启动时 hydrate，因此本域只读：
+/// 新建任务用 app-control-createScheduledTask，改/删/暂停请在界面「定时任务」面板操作。
+const SCOPE_SCHEDULED_TASKS: &str = "scheduledTasks";
+
+/// 工具免确认白名单（授权域）。projectId 非空 = 项目级（system_settings
+/// `project_tool_approval_scope_*`，可读写）；显式 `""` = 全局视图（真源是
+/// permissions.json 的 `alwaysApprovedTools`，此处只读展示，写入请用
+/// `scope=permissions`）。key = `"tools"`；value = 数组，或
+/// `{tools: [...]}` / `{add: [...], remove: [...]}`；项目级 delete 清空白名单（需 confirmed）。
+const SCOPE_TOOL_APPROVAL: &str = "toolApproval";
+
+/// 只读配置域：用量统计（usage_records 表，与「用量统计」设置页同源）。
+/// list 支持 `since`/`until`（缺省最近 30 天）；get 的
+/// key = `summary` | `daily` | `models` | `records`（records 支持
+/// conversationId/directoryId/limit/offset）。不支持 set/delete。
+const SCOPE_USAGE: &str = "usage";
+
 /// config-list/get/set/delete 暴露的 scope 枚举（文件域 SCOPES + DB / 委托 /
 /// 只读域，与 execute_* 的实际分发逻辑保持一致）。
 const CONFIG_SCOPE_ENUM: &[&str] = &[
@@ -120,6 +159,11 @@ const CONFIG_SCOPE_ENUM: &[&str] = &[
     "apiProfiles",
     "userscripts",
     "customHeaderSchemes",
+    "mcpServers",
+    "requestLogging",
+    "scheduledTasks",
+    "toolApproval",
+    "usage",
 ];
 
 /// ROLE.md 文件名（~/.snow/ROLE.md，与 personalizationHandlers.ts 约定一致）。
@@ -1337,6 +1381,38 @@ impl ConfigService {
             if scope_name == SCOPE_CUSTOM_HEADER_SCHEMES {
                 return self.list_db_custom_header_schemes();
             }
+            if scope_name == SCOPE_MCP_SERVERS {
+                return mcp_servers_scope::execute_mcp_servers_scope(
+                    TOOL_LIST,
+                    args,
+                    db_path_or_error(&self.db_path)?,
+                    project_id.as_deref(),
+                );
+            }
+            if scope_name == SCOPE_REQUEST_LOGGING {
+                return request_logging_scope::execute_request_logging_scope(
+                    TOOL_LIST,
+                    args,
+                    db_path_or_error(&self.db_path)?,
+                );
+            }
+            if scope_name == SCOPE_SCHEDULED_TASKS {
+                return scheduled_tasks_scope::execute_scheduled_tasks_scope(
+                    TOOL_LIST,
+                    args,
+                    db_path_or_error(&self.db_path)?,
+                );
+            }
+            if scope_name == SCOPE_TOOL_APPROVAL {
+                return self.list_tool_approval(project_id);
+            }
+            if scope_name == SCOPE_USAGE {
+                return usage_scope::execute_usage_scope(
+                    TOOL_LIST,
+                    args,
+                    db_path_or_error(&self.db_path)?,
+                );
+            }
 
             let scope =
                 Self::find_scope(scope_name).ok_or_else(|| invalid_scope_error(scope_name))?;
@@ -1421,6 +1497,38 @@ impl ConfigService {
         if scope_name == SCOPE_CUSTOM_HEADER_SCHEMES {
             return self.get_db_custom_header_scheme(key_name);
         }
+        if scope_name == SCOPE_MCP_SERVERS {
+            return mcp_servers_scope::execute_mcp_servers_scope(
+                TOOL_GET,
+                args,
+                db_path_or_error(&self.db_path)?,
+                project_id.as_deref(),
+            );
+        }
+        if scope_name == SCOPE_REQUEST_LOGGING {
+            return request_logging_scope::execute_request_logging_scope(
+                TOOL_GET,
+                args,
+                db_path_or_error(&self.db_path)?,
+            );
+        }
+        if scope_name == SCOPE_SCHEDULED_TASKS {
+            return scheduled_tasks_scope::execute_scheduled_tasks_scope(
+                TOOL_GET,
+                args,
+                db_path_or_error(&self.db_path)?,
+            );
+        }
+        if scope_name == SCOPE_TOOL_APPROVAL {
+            return self.get_tool_approval(key_name, project_id);
+        }
+        if scope_name == SCOPE_USAGE {
+            return usage_scope::execute_usage_scope(
+                TOOL_GET,
+                args,
+                db_path_or_error(&self.db_path)?,
+            );
+        }
         // 项目级 settings：仅 mcpServers / sensitiveCommands 支持 projectId。
         if scope_name == "settings" {
             if let Some(pid) = &project_id {
@@ -1491,6 +1599,38 @@ impl ConfigService {
         }
         if scope_name == SCOPE_CUSTOM_HEADER_SCHEMES {
             return self.set_db_custom_header_scheme(key_name, &value);
+        }
+        if scope_name == SCOPE_MCP_SERVERS {
+            return mcp_servers_scope::execute_mcp_servers_scope(
+                TOOL_SET,
+                args,
+                db_path_or_error(&self.db_path)?,
+                project_id.as_deref(),
+            );
+        }
+        if scope_name == SCOPE_REQUEST_LOGGING {
+            return request_logging_scope::execute_request_logging_scope(
+                TOOL_SET,
+                args,
+                db_path_or_error(&self.db_path)?,
+            );
+        }
+        if scope_name == SCOPE_SCHEDULED_TASKS {
+            return scheduled_tasks_scope::execute_scheduled_tasks_scope(
+                TOOL_SET,
+                args,
+                db_path_or_error(&self.db_path)?,
+            );
+        }
+        if scope_name == SCOPE_TOOL_APPROVAL {
+            return self.set_tool_approval(key_name, &value, project_id);
+        }
+        if scope_name == SCOPE_USAGE {
+            return usage_scope::execute_usage_scope(
+                TOOL_SET,
+                args,
+                db_path_or_error(&self.db_path)?,
+            );
         }
         // 项目级 settings：仅 mcpServers / sensitiveCommands 支持 projectId（全量替换）。
         if scope_name == "settings" {
@@ -1574,6 +1714,38 @@ impl ConfigService {
         }
         if scope_name == SCOPE_CUSTOM_HEADER_SCHEMES {
             return self.delete_db_custom_header_scheme(key_name);
+        }
+        if scope_name == SCOPE_MCP_SERVERS {
+            return mcp_servers_scope::execute_mcp_servers_scope(
+                TOOL_DELETE,
+                args,
+                db_path_or_error(&self.db_path)?,
+                project_id.as_deref(),
+            );
+        }
+        if scope_name == SCOPE_REQUEST_LOGGING {
+            return request_logging_scope::execute_request_logging_scope(
+                TOOL_DELETE,
+                args,
+                db_path_or_error(&self.db_path)?,
+            );
+        }
+        if scope_name == SCOPE_SCHEDULED_TASKS {
+            return scheduled_tasks_scope::execute_scheduled_tasks_scope(
+                TOOL_DELETE,
+                args,
+                db_path_or_error(&self.db_path)?,
+            );
+        }
+        if scope_name == SCOPE_TOOL_APPROVAL {
+            return self.delete_tool_approval(key_name, project_id);
+        }
+        if scope_name == SCOPE_USAGE {
+            return usage_scope::execute_usage_scope(
+                TOOL_DELETE,
+                args,
+                db_path_or_error(&self.db_path)?,
+            );
         }
         // 项目级 settings：仅 mcpServers / sensitiveCommands 支持 projectId（清空）。
         if scope_name == "settings" {
@@ -2706,6 +2878,242 @@ Full guide: ~/.snow/docs/zh-CN/2-使用指南/3-配置API密钥与模型.md (en:
     // 同步源文件，写入后不会被 App 自动加载）明确区分，避免「改了文件却没生效」。
     // ---------------------------------------------------------------------
 
+    // ---------------------------------------------------------------------
+    // scope=toolApproval
+    //
+    // 工具免确认白名单有两个真源：
+    //   - 全局：~/.snow/permissions.json 的 alwaysApprovedTools（与 scope=permissions
+    //     同一个文件，此处只读展示，写入仍走 permissions 域，避免两个写入口打架）；
+    //   - 项目级：system_settings 的 project_tool_approval_scope_<blake3(projectId)>。
+    // ---------------------------------------------------------------------
+
+    /// 读取全局白名单（真源：~/.snow/permissions.json）。
+    fn read_global_approved_tools(&self) -> napi::Result<Vec<String>> {
+        let Some(scope) = Self::find_scope("permissions") else {
+            return Ok(Vec::new());
+        };
+        let mut root = Self::read_json(scope)?;
+        let config_root = Self::config_root(scope, &mut root)?;
+        Ok(config_root
+            .get("alwaysApprovedTools")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::trim)
+                    .filter(|name| !name.is_empty())
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default())
+    }
+
+    fn list_tool_approval(&self, project_id: Option<String>) -> napi::Result<Value> {
+        match project_id {
+            Some(project_id) => {
+                let db_path = db_path_or_error(&self.db_path)?;
+                let settings =
+                    crate::storage::services::system_settings::get_tool_approval_project_scope_settings(
+                        db_path,
+                        &project_id,
+                    )?;
+                Ok(json!({
+                    "scope": SCOPE_TOOL_APPROVAL,
+                    "file": null,
+                    "scoped": "project",
+                    "projectId": project_id,
+                    "keys": [{
+                        "key": TOOL_APPROVAL_KEY,
+                        "type": "array",
+                        "sensitive": false,
+                        "configured": true,
+                        "value": settings.approved_tool_names,
+                    }],
+                }))
+            }
+            None => Ok(json!({
+                "scope": SCOPE_TOOL_APPROVAL,
+                "file": "permissions.json",
+                "scoped": "global",
+                "projectId": Value::Null,
+                "note": GLOBAL_TOOL_APPROVAL_NOTE,
+                "keys": [{
+                    "key": TOOL_APPROVAL_KEY,
+                    "type": "array",
+                    "sensitive": false,
+                    "configured": true,
+                    "value": self.read_global_approved_tools()?,
+                }],
+            })),
+        }
+    }
+
+    fn get_tool_approval(
+        &self,
+        key_name: &str,
+        project_id: Option<String>,
+    ) -> napi::Result<Value> {
+        if key_name != TOOL_APPROVAL_KEY {
+            return Err(Error::new(
+                Status::InvalidArg,
+                format!("toolApproval only defines the key \"{TOOL_APPROVAL_KEY}\""),
+            ));
+        }
+        match project_id {
+            Some(project_id) => {
+                let db_path = db_path_or_error(&self.db_path)?;
+                let tools =
+                    crate::storage::services::system_settings::list_tool_approval_project_approved_tools(
+                        db_path,
+                        &project_id,
+                    )?;
+                Ok(json!({
+                    "scope": SCOPE_TOOL_APPROVAL,
+                    "key": TOOL_APPROVAL_KEY,
+                    "scoped": "project",
+                    "projectId": project_id,
+                    "value": tools,
+                }))
+            }
+            None => Ok(json!({
+                "scope": SCOPE_TOOL_APPROVAL,
+                "key": TOOL_APPROVAL_KEY,
+                "scoped": "global",
+                "projectId": Value::Null,
+                "note": GLOBAL_TOOL_APPROVAL_NOTE,
+                "value": self.read_global_approved_tools()?,
+            })),
+        }
+    }
+
+    fn set_tool_approval(
+        &self,
+        key_name: &str,
+        value: &Value,
+        project_id: Option<String>,
+    ) -> napi::Result<Value> {
+        if key_name != TOOL_APPROVAL_KEY {
+            return Err(Error::new(
+                Status::InvalidArg,
+                format!("toolApproval only defines the key \"{TOOL_APPROVAL_KEY}\""),
+            ));
+        }
+        let Some(project_id) = project_id else {
+            return Err(Error::new(Status::InvalidArg, GLOBAL_TOOL_APPROVAL_NOTE.to_string()));
+        };
+        let db_path = db_path_or_error(&self.db_path)?;
+        let current = crate::storage::services::system_settings::get_tool_approval_project_scope_settings(
+            db_path,
+            &project_id,
+        )?
+        .approved_tool_names;
+
+        let (full, add, remove) = parse_tool_approval_value(value)?;
+        let mut all = current.clone();
+
+        if let Some(full) = full {
+            let target = full.iter().cloned().collect::<BTreeSet<String>>();
+            let to_add = target.difference(&current).cloned().collect::<Vec<_>>();
+            let to_remove = current.difference(&target).cloned().collect::<Vec<_>>();
+            if !to_add.is_empty() {
+                crate::storage::services::system_settings::set_tool_approval_project_tools_approved(
+                    db_path,
+                    &project_id,
+                    &to_add,
+                    true,
+                )?;
+            }
+            if !to_remove.is_empty() {
+                crate::storage::services::system_settings::set_tool_approval_project_tools_approved(
+                    db_path,
+                    &project_id,
+                    &to_remove,
+                    false,
+                )?;
+            }
+            all = target;
+        }
+
+        if !add.is_empty() {
+            crate::storage::services::system_settings::set_tool_approval_project_tools_approved(
+                db_path,
+                &project_id,
+                &add,
+                true,
+            )?;
+            all.extend(add);
+        }
+        if !remove.is_empty() {
+            crate::storage::services::system_settings::set_tool_approval_project_tools_approved(
+                db_path,
+                &project_id,
+                &remove,
+                false,
+            )?;
+            for name in &remove {
+                all.remove(name);
+            }
+        }
+
+        Ok(json!({
+            "scope": SCOPE_TOOL_APPROVAL,
+            "key": TOOL_APPROVAL_KEY,
+            "scoped": "project",
+            "projectId": project_id,
+            "value": all.into_iter().collect::<Vec<_>>(),
+        }))
+    }
+
+    fn delete_tool_approval(
+        &self,
+        key_name: &str,
+        project_id: Option<String>,
+    ) -> napi::Result<Value> {
+        if key_name != TOOL_APPROVAL_KEY {
+            return Err(Error::new(
+                Status::InvalidArg,
+                format!("toolApproval only defines the key \"{TOOL_APPROVAL_KEY}\""),
+            ));
+        }
+        let Some(project_id) = project_id else {
+            return Err(Error::new(Status::InvalidArg, GLOBAL_TOOL_APPROVAL_NOTE.to_string()));
+        };
+        let db_path = db_path_or_error(&self.db_path)?;
+        let current = crate::storage::services::system_settings::get_tool_approval_project_scope_settings(
+            db_path,
+            &project_id,
+        )?
+        .approved_tool_names;
+
+        if current.is_empty() {
+            return Ok(json!({
+                "scope": SCOPE_TOOL_APPROVAL,
+                "key": TOOL_APPROVAL_KEY,
+                "projectId": project_id,
+                "deleted": false,
+                "value": Vec::<String>::new(),
+            }));
+        }
+
+        let names = current.iter().cloned().collect::<Vec<_>>();
+        crate::storage::services::system_settings::set_tool_approval_project_tools_approved(
+            db_path,
+            &project_id,
+            &names,
+            false,
+        )?;
+
+        Ok(json!({
+            "scope": SCOPE_TOOL_APPROVAL,
+            "key": TOOL_APPROVAL_KEY,
+            "projectId": project_id,
+            "deleted": true,
+            "clearedTools": names,
+            "value": Vec::<String>::new(),
+        }))
+    }
+
     /// 列出全部请求头方案（值脱敏）+ 当前激活方案 + API 档案绑定概览。
     fn list_db_custom_header_schemes(&self) -> napi::Result<Value> {
         let db_path = db_path_or_error(&self.db_path)?;
@@ -3257,6 +3665,84 @@ fn validate_sub_agent_tools(
     Ok(())
 }
 
+/// toolApproval 域的唯一定义键。
+const TOOL_APPROVAL_KEY: &str = "tools";
+/// 全局工具授权的写入口提示：真源在 permissions.json，写入走 permissions 域。
+const GLOBAL_TOOL_APPROVAL_NOTE: &str = "The global allow-list lives in ~/.snow/permissions.json (`alwaysApprovedTools`); this scope only shows it. Write the global list with scope=permissions key=alwaysApprovedTools. Pass a projectId (project sessions inject the current project automatically) to read or write the project-level allow-list.";
+
+/// 解析 toolApproval 的 value：
+/// 数组 = 全量替换；对象 = `{tools: [...]}` 全量替换，
+/// 或 `{add: [...], remove: [...]}` 增量。
+fn parse_tool_approval_value(
+    value: &Value,
+) -> napi::Result<(Option<Vec<String>>, Vec<String>, Vec<String>)> {
+    let read_array = |items: &[Value], field: &str| -> napi::Result<Vec<String>> {
+        let mut names = Vec::new();
+        for item in items {
+            let name = item
+                .as_str()
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .ok_or_else(|| {
+                    Error::new(
+                        Status::InvalidArg,
+                        format!("{field} must be an array of tool names"),
+                    )
+                })?;
+            names.push(name.to_string());
+        }
+        Ok(names)
+    };
+
+    match value {
+        Value::Array(items) => Ok((Some(read_array(items, "value")?), Vec::new(), Vec::new())),
+        Value::Object(map) => {
+            let full = match map.get("tools") {
+                Some(Value::Array(items)) => Some(read_array(items, "tools")?),
+                Some(_) => {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        "tools must be an array of tool names".to_string(),
+                    ))
+                }
+                None => None,
+            };
+            let add = match map.get("add") {
+                Some(Value::Array(items)) => read_array(items, "add")?,
+                Some(_) => {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        "add must be an array of tool names".to_string(),
+                    ))
+                }
+                None => Vec::new(),
+            };
+            let remove = match map.get("remove") {
+                Some(Value::Array(items)) => read_array(items, "remove")?,
+                Some(_) => {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        "remove must be an array of tool names".to_string(),
+                    ))
+                }
+                None => Vec::new(),
+            };
+            if full.is_none() && add.is_empty() && remove.is_empty() {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "toolApproval value must be an array of tool names, {tools: [...]}, or {add: [...], remove: [...]}".to_string(),
+                ));
+            }
+            Ok((full, add, remove))
+        }
+        _ => Err(Error::new(
+            Status::InvalidArg,
+            "toolApproval value must be an array of tool names, {tools: [...]}, or {add: [...], remove: [...]}"
+                .to_string(),
+        )),
+    }
+}
+
 /// 可选 projectId 参数：去空白，空串视为未提供（全局作用域）。
 fn optional_project_id(args: &Value) -> Option<String> {
     args.get("projectId")
@@ -3287,6 +3773,8 @@ fn config_scope_supports_project_id(args: &Value) -> bool {
     };
     match scope {
         SCOPE_SUB_AGENTS | SCOPE_HOOKS | SCOPE_SKILLS | SCOPE_LSP_CONFIG => true,
+        // 项目级 MCP 服务器与项目级工具授权：缺省注入会话项目（显式 "" 走全局）。
+        SCOPE_MCP_SERVERS | SCOPE_TOOL_APPROVAL => true,
         "settings" => {
             let key = args.get("key").and_then(Value::as_str).unwrap_or("");
             key == "mcpServers" || key == "sensitiveCommands"
@@ -3305,7 +3793,7 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_LIST.to_string(),
-                description: "List configuration scopes and their keys; pass `scope` to inspect one scope (returns current values; sensitive keys masked).\nSCOPE REFERENCE:\n1. settings (~/.snow/settings.json): mcpServers, codebase, sensitiveCommands, yoloMode, planMode, goal, toolSearchEnabled, ...; MCP tool-level enable/disable (global/project) is managed in the MCP Settings panel (app database), not in settings.json.\n2. snowcfg (~/.snow/config.json): baseUrl, apiKey, advancedModel, basicModel, maxTokens, chatThinking, ...\n3. proxy (~/.snow/proxy-config.json): enabled, host, port, searchEngine, browserPath, browserDebugPort\n4. app (~/.snow/active-profile.json): activeProfile\n5. custom-headers (~/.snow/custom-headers.json): active, schemes (sensitive); this is the Snow CLI compatibility SYNC SOURCE only - writing this file does NOT change the request headers Snow App actually sends (the running app reads the custom_header_schemes table); use scope=customHeaderSchemes to edit the app's live request headers\n6. system-prompt (~/.snow/system-prompt.json): active, prompts (sensitive)\n7. theme (~/.snow/theme.json): theme, simpleMode, diffOpacity, toolIcons, customColors, ...\n8. language (~/.snow/language.json): language\n9. permissions (~/.snow/permissions.json): alwaysApprovedTools (global no-confirmation tool list; the UI authorization flow reads it and merges it with project-level approvals)\n10. lsp-config (~/.snow/lsp-config.json): schemaVersion, servers\n11. buddy (~/.snow/buddy.json): version, companion, muted\n12. subAgents (app DB): sub-agent configs, key=agentId; list returns items + CREATING guidance\n13. hooks (app DB): lifecycle hook configs, key=hookType; list returns items + CONFIGURING guidance\n14. imagegen (app DB): image generation channels + top-level maxConcurrentImages (1-8, default 4) and timeoutSecs (60-3600, default 300); list returns keys + note\n15. skills (delegated): skillId toggles / GitHub installs\n16. logs (read-only): log files under ~/.snow/log\n17. personalization (~/.snow/ROLE.md): global role/rules file (plain markdown, non-JSON), key=role; list returns length + preview, get returns the full rules text, set writes the whole file, delete removes it (restores defaults)\n18. apiProfiles (app DB): API profiles (api_configs table, same as the UI); key=profileName; list returns all profiles with masked apiKey/visionApiKey; set creates/updates a profile (empty/omitted apiKey keeps the existing key - create keyless profiles first, then fill the key; isActive:true switches the active profile; omitted fields keep current values); delete removes a profile (requires confirmed)\n19. userscripts (app DB): Tampermonkey-compatible userscripts (userscripts table + files under ~/.snowapp/browser-script/); key=scriptId (\"new\" creates one); RECOMMENDED: write the full source to a file with the filesystem server first (filesystem-create / filesystem-replace_edit), then install/update via config-set value={sourcePath: \"/abs/path/script.user.js\"} - the backend reads the file, avoiding huge tool args; small scripts can be inlined with value={raw: \"...\"}; value={enabled: bool} toggles a script, value={values: {...}} writes GM_* persisted values, value={deleteValues: [...]} removes GM values; get returns metadata + full source + GM values; delete removes a script (requires confirmed)\n20. customHeaderSchemes (app DB): Snow App's LIVE custom request headers (custom_header_schemes table, same as the Settings > Custom headers panel; takes effect immediately, no restart and no CLI sync needed). key=schemeId (\"new\" creates one and returns the generated id); set value={name?, headers?, isActive?, sortOrder?} writes a scheme (headers is {headerName: value} MERGED into the existing headers, null removes a header; name is required for a new scheme; isActive:true activates it exclusively, and an API profile with an empty customHeaderSchemeId then uses the active scheme - bind one with config-set scope=apiProfiles value={customHeaderSchemeId: \"<schemeId>\"}); delete removes a scheme and reports affectedProfiles (requires confirmed); header values are masked on read\nRULES: pass projectId to scope subAgents/hooks/skills listings to a specific project (omitted = auto-injects the CURRENT SESSION's projectId, so you get/configure the active project's settings; pass an empty string \"\" for global); every list response includes the current session's projectId as `currentProjectId` — read it to obtain the project id bound to the current conversation; sensitive values (apiKey, visionApiKey, custom-header schemes, system-prompt prompts, imagegen apiKey) are always masked."
+                description: "List configuration scopes and their keys; pass `scope` to inspect one scope (returns current values; sensitive keys masked).\nSCOPE REFERENCE:\n1. settings (~/.snow/settings.json): mcpServers, codebase, sensitiveCommands, yoloMode, planMode, goal, toolSearchEnabled, ...; MCP tool-level enable/disable (global/project) is managed in the MCP Settings panel (app database), not in settings.json.\n2. snowcfg (~/.snow/config.json): baseUrl, apiKey, advancedModel, basicModel, maxTokens, chatThinking, ...\n3. proxy (~/.snow/proxy-config.json): enabled, host, port, searchEngine, browserPath, browserDebugPort\n4. app (~/.snow/active-profile.json): activeProfile\n5. custom-headers (~/.snow/custom-headers.json): active, schemes (sensitive); this is the Snow CLI compatibility SYNC SOURCE only - writing this file does NOT change the request headers Snow App actually sends (the running app reads the custom_header_schemes table); use scope=customHeaderSchemes to edit the app's live request headers\n6. system-prompt (~/.snow/system-prompt.json): active, prompts (sensitive)\n7. theme (~/.snow/theme.json): theme, simpleMode, diffOpacity, toolIcons, customColors, ...\n8. language (~/.snow/language.json): language\n9. permissions (~/.snow/permissions.json): alwaysApprovedTools (global no-confirmation tool list; the UI authorization flow reads it and merges it with project-level approvals)\n10. lsp-config (~/.snow/lsp-config.json): schemaVersion, servers\n11. buddy (~/.snow/buddy.json): version, companion, muted\n12. subAgents (app DB): sub-agent configs, key=agentId; list returns items + CREATING guidance\n13. hooks (app DB): lifecycle hook configs, key=hookType; list returns items + CONFIGURING guidance\n14. imagegen (app DB): image generation channels + top-level maxConcurrentImages (1-8, default 4) and timeoutSecs (60-3600, default 300); list returns keys + note\n15. skills (delegated): skillId toggles / GitHub installs\n16. logs (read-only): log files under ~/.snow/log\n17. personalization (~/.snow/ROLE.md): global role/rules file (plain markdown, non-JSON), key=role; list returns length + preview, get returns the full rules text, set writes the whole file, delete removes it (restores defaults)\n18. apiProfiles (app DB): API profiles (api_configs table, same as the UI); key=profileName; list returns all profiles with masked apiKey/visionApiKey; set creates/updates a profile (empty/omitted apiKey keeps the existing key - create keyless profiles first, then fill the key; isActive:true switches the active profile; omitted fields keep current values); delete removes a profile (requires confirmed)\n19. userscripts (app DB): Tampermonkey-compatible userscripts (userscripts table + files under ~/.snowapp/browser-script/); key=scriptId (\"new\" creates one); RECOMMENDED: write the full source to a file with the filesystem server first (filesystem-create / filesystem-replace_edit), then install/update via config-set value={sourcePath: \"/abs/path/script.user.js\"} - the backend reads the file, avoiding huge tool args; small scripts can be inlined with value={raw: \"...\"}; value={enabled: bool} toggles a script, value={values: {...}} writes GM_* persisted values, value={deleteValues: [...]} removes GM values; get returns metadata + full source + GM values; delete removes a script (requires confirmed)\n20. customHeaderSchemes (app DB): Snow App's LIVE custom request headers (custom_header_schemes table, same as the Settings > Custom headers panel; takes effect immediately, no restart and no CLI sync needed). key=schemeId (\"new\" creates one and returns the generated id); set value={name?, headers?, isActive?, sortOrder?} writes a scheme (headers is {headerName: value} MERGED into the existing headers, null removes a header; name is required for a new scheme; isActive:true activates it exclusively, and an API profile with an empty customHeaderSchemeId then uses the active scheme - bind one with config-set scope=apiProfiles value={customHeaderSchemeId: \"<schemeId>\"}); delete removes a scheme and reports affectedProfiles (requires confirmed); header values are masked on read\n21. mcpServers (app DB): Snow App's LIVE MCP servers (mcp_server_configs table + project-level records) with tool-level enable/disable - no settings.json sync needed. projectId = project scope (project sessions inject the current project automatically; pass \"\" for global); key = server name (\"new\" creates one from value.name; renaming is not supported); set value = {name?, type?(\"stdio\"|\"sse\"|\"http\"), url?, command?, args?, env?, headers?, enabled?, timeoutMs?} MERGED into the existing server (stdio requires command, http/sse requires url; servers written here use source=manual so the Snow CLI sync never deletes them); value.tools={toolName:bool} or value.disabledTools=[...] flips tool-level switches; env/headers values are masked on read; delete removes a server (requires confirmed). Changes apply to the next tool discovery; a live MCP session may need an app restart/reconnect.\n22. requestLogging (app DB, singleton): API request-body logging switch used for debugging. key=\"settings\"; set value={enabled: bool, expiresInMinutes?: number} or {enabled: true, expiresAt: <epoch ms>} - enabling always requires an expiry (default 30 minutes, max 1440) because the backend auto-resets the switch once the expiry passes and stops writing request bodies; enabling with enabled=false clears the expiry. Read captured requests with scope=logs. delete is not supported (set enabled=false instead).\n23. scheduledTasks (app DB, READ-ONLY): scheduled task definitions, state and run history (scheduled_tasks table, same as the UI Scheduled Tasks panel). list returns a compact view (promptPreview, schedule, status, paused, nextRunAt, lastRunAt, runCount, lastError, skip counters, historyCount) and accepts directoryId filtering; get key=<taskId> returns the full record including the prompt and the last 20 runs. WRITES ARE INTENTIONALLY REJECTED: the scheduler runs in the renderer process and the task store hydrates from the database only at app startup, so create tasks with app-control-createScheduledTask (the renderer registers the timer immediately) and edit/pause/delete them in the UI panel.\n24. toolApproval: tool no-confirmation allow-list (authorization). Project sessions auto-inject projectId -> the project-level list is stored in system_settings; key=\"tools\"; set value = an array of tool names, {tools: [...]} (full replace), or {add: [...], remove: [...]}; delete clears the project list and requires confirmed. With projectId=\"\" the GLOBAL list is returned READ-ONLY - it lives in ~/.snow/permissions.json (alwaysApprovedTools) and must be written with scope=permissions key=alwaysApprovedTools.\n25. usage (app DB, READ-ONLY): token and request usage statistics (usage_records table, same as the UI Usage panel). list accepts since/until (YYYY-MM-DD or \"YYYY-MM-DD HH:MM:SS\", default the last 30 days) and returns summary + daily breakdown (<=90 rows) + per-model breakdown (<=20 rows); get key=summary|daily|models returns one of those, and key=records returns paginated details (conversationId, directoryId, limit<=100, offset). set/delete are rejected - usage rows are written by the app itself.\nRULES: pass projectId to scope subAgents/hooks/skills listings to a specific project (omitted = auto-injects the CURRENT SESSION's projectId, so you get/configure the active project's settings; pass an empty string \"\" for global); every list response includes the current session's projectId as `currentProjectId` — read it to obtain the project id bound to the current conversation; sensitive values (apiKey, visionApiKey, custom-header schemes, system-prompt prompts, imagegen apiKey) are always masked."
                     .to_string(),
                 input_schema: json!({
                     "type": "object",
@@ -3326,7 +3814,7 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_GET.to_string(),
-                description: "Read the value of a configuration key. Sensitive keys (apiKey, visionApiKey) are always returned masked (e.g. sk-****abcd); this tool never exposes plaintext secrets. Returns null when the key is not configured. DB-backed scopes: subAgents (key=agentId) and hooks (key=hookType) read directly from the app database; apiProfiles (key=profileName) reads an API profile from the app database (apiKey/visionApiKey masked, null when the profile does not exist); pass optional `projectId` to read a project-scoped config (omitted = global). Read-only logs scope: key is a log file name (e.g. 2026-08-03-error.log) or a level shortcut (error/warn/info/debug for today's file); optional `limit` controls returned tail lines (default 200, max 2000). personalization (key=role): returns the full ~/.snow/ROLE.md rules text (null when the file does not exist). userscripts (key=scriptId): returns the script metadata + full source + GM values (null when the script does not exist). customHeaderSchemes (key=schemeId): reads one LIVE custom-header scheme from the app database (scheme metadata + masked header values; null when it does not exist). Project-scoped settings: pass `projectId` to read settings.mcpServers / settings.sensitiveCommands from the project-scoped app database (other keys reject projectId).".to_string(),
+                description: "Read the value of a configuration key. Sensitive keys (apiKey, visionApiKey) are always returned masked (e.g. sk-****abcd); this tool never exposes plaintext secrets. Returns null when the key is not configured. DB-backed scopes: subAgents (key=agentId) and hooks (key=hookType) read directly from the app database; apiProfiles (key=profileName) reads an API profile from the app database (apiKey/visionApiKey masked, null when the profile does not exist); pass optional `projectId` to read a project-scoped config (omitted = global). Read-only logs scope: key is a log file name (e.g. 2026-08-03-error.log) or a level shortcut (error/warn/info/debug for today's file); optional `limit` controls returned tail lines (default 200, max 2000). personalization (key=role): returns the full ~/.snow/ROLE.md rules text (null when the file does not exist). userscripts (key=scriptId): returns the script metadata + full source + GM values (null when the script does not exist). customHeaderSchemes (key=schemeId): reads one LIVE custom-header scheme from the app database (scheme metadata + masked header values; null when it does not exist).  mcpServers (key=server name or serverId, optional projectId): reads one LIVE MCP server (mcp_server_configs / project-level records; env and headers values masked) plus the scope tool state. requestLogging (key=settings): reads the request-logging switch, its expiry and remaining time. scheduledTasks (key=taskId): reads one scheduled task with its prompt and the last 20 runs (read-only scope). toolApproval (key=tools): reads the no-confirmation allow-list (project-level with a projectId, otherwise the global list from permissions.json). usage (key=summary|daily|models|records; optional since/until): reads usage statistics (read-only scope; records also accept conversationId/directoryId/limit/offset).Project-scoped settings: pass `projectId` to read settings.mcpServers / settings.sensitiveCommands from the project-scoped app database (other keys reject projectId).".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -3357,7 +3845,7 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_SET.to_string(),
-                description: "Write a value for a configuration key (whitelisted scopes only; type-checked; auto-backup to ~/.snow/.config-backups as a temporary safety net before the write, removed after a successful write; atomic write).\nRULES:\n- settings.mcpServers: syncs into the app database on write and takes effect immediately (same diff semantics as the UI sync action). MCP tool-level enable/disable (global/project) is managed in the MCP Settings panel (app database), not in settings.json.\n- Other file-backed scopes (snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy): changes may need an app restart or a UI re-save. personalization (key=role, value must be a string): replaces the whole ~/.snow/ROLE.md file (markdown text); takes effect in the next conversation.\n- DB-backed scopes (take effect immediately): subAgents (key=agentId, value={name, description?, systemPrompt?, toolsJson?, configProfile?, model?}; an explicit toolsJson tool list requires projectId, see the guidance from config-list scope=subAgents); hooks (key=hookType, value={rules:[...]}, see the guidance from config-list scope=hooks); apiProfiles (key=profileName, value={displayName?, baseUrl?, baseUrlMode?, apiKey?, requestMethod?, advancedModel?, basicModel?, supportsVision?, visionBaseUrl?, visionApiKey?, visionRequestMethod?, visionModel?, maxContextTokens?, maxTokens?, isActive?, ...} - creates or updates the profile in the app database (same as the UI); an empty or omitted apiKey/visionApiKey ALWAYS keeps the existing key, so you can create a keyless profile first and fill the key later; isActive:true switches the active profile immediately; omitted fields keep current values for existing profiles and use defaults for new ones; configJson is generated automatically); imagegen (value={channels:[...]} full replace, {<channelId>: {...}} per-channel merge keeping omitted fields, or a global field alone: {maxConcurrentImages: N} clamped to 1-8 / {timeoutSecs: N} clamped to 60-3600).\nuserscripts (key=scriptId, value={sourcePath: \"<abs path>\"} RECOMMENDED - write the full source to a file with the filesystem server first, then pass the path here to avoid huge tool args; the backend reads the file, parses the // ==UserScript== metadata and writes the DB + file; value={raw: \"<full source>\"} is also supported for small scripts; value={enabled: bool} toggles it; value={values: {...}} writes GM_* persisted values; value={deleteValues: [...]} removes GM values).\n- Project-scoped: pass projectId for settings.mcpServers (full replace of {name: {type,url,command,args,env,headers,enabled,timeoutMs}}) or settings.sensitiveCommands (full replace of [{commandId, pattern, description, enabled}]); other scopes ignore projectId. customHeaderSchemes: key=schemeId (or \"new\" to create one and get the generated id back), value={name?, headers?, isActive?, sortOrder?} writes a request-header scheme STRAIGHT INTO the app database (same source as the Settings > Custom headers panel, effective immediately - use THIS scope instead of scope=custom-headers, which only writes the Snow CLI sync file ~/.snow/custom-headers.json and changes nothing until the user syncs it in the UI): headers is {headerName: value} MERGED into the existing headers (set a header to null to remove it); name is required when creating a scheme; isActive:true activates this scheme exclusively, so an API profile with an empty customHeaderSchemeId immediately uses it (bind one explicitly with scope=apiProfiles value={customHeaderSchemeId}); sortOrder defaults to last; header values are masked on read and support the {{session_id}} placeholder.".to_string(),
+                description: "Write a value for a configuration key (whitelisted scopes only; type-checked; auto-backup to ~/.snow/.config-backups as a temporary safety net before the write, removed after a successful write; atomic write).\nRULES:\n- settings.mcpServers: syncs into the app database on write and takes effect immediately (same diff semantics as the UI sync action). MCP tool-level enable/disable (global/project) is managed in the MCP Settings panel (app database), not in settings.json.\n- Other file-backed scopes (snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy): changes may need an app restart or a UI re-save. personalization (key=role, value must be a string): replaces the whole ~/.snow/ROLE.md file (markdown text); takes effect in the next conversation.\n- DB-backed scopes (take effect immediately): subAgents (key=agentId, value={name, description?, systemPrompt?, toolsJson?, configProfile?, model?}; an explicit toolsJson tool list requires projectId, see the guidance from config-list scope=subAgents); hooks (key=hookType, value={rules:[...]}, see the guidance from config-list scope=hooks); apiProfiles (key=profileName, value={displayName?, baseUrl?, baseUrlMode?, apiKey?, requestMethod?, advancedModel?, basicModel?, supportsVision?, visionBaseUrl?, visionApiKey?, visionRequestMethod?, visionModel?, maxContextTokens?, maxTokens?, isActive?, ...} - creates or updates the profile in the app database (same as the UI); an empty or omitted apiKey/visionApiKey ALWAYS keeps the existing key, so you can create a keyless profile first and fill the key later; isActive:true switches the active profile immediately; omitted fields keep current values for existing profiles and use defaults for new ones; configJson is generated automatically); imagegen (value={channels:[...]} full replace, {<channelId>: {...}} per-channel merge keeping omitted fields, or a global field alone: {maxConcurrentImages: N} clamped to 1-8 / {timeoutSecs: N} clamped to 60-3600).\nuserscripts (key=scriptId, value={sourcePath: \"<abs path>\"} RECOMMENDED - write the full source to a file with the filesystem server first, then pass the path here to avoid huge tool args; the backend reads the file, parses the // ==UserScript== metadata and writes the DB + file; value={raw: \"<full source>\"} is also supported for small scripts; value={enabled: bool} toggles it; value={values: {...}} writes GM_* persisted values; value={deleteValues: [...]} removes GM values).\n- Project-scoped: pass projectId for settings.mcpServers (full replace of {name: {type,url,command,args,env,headers,enabled,timeoutMs}}) or settings.sensitiveCommands (full replace of [{commandId, pattern, description, enabled}]); other scopes ignore projectId. customHeaderSchemes: key=schemeId (or \"new\" to create one and get the generated id back), value={name?, headers?, isActive?, sortOrder?} writes a request-header scheme STRAIGHT INTO the app database (same source as the Settings > Custom headers panel, effective immediately - use THIS scope instead of scope=custom-headers, which only writes the Snow CLI sync file ~/.snow/custom-headers.json and changes nothing until the user syncs it in the UI): headers is {headerName: value} MERGED into the existing headers (set a header to null to remove it); name is required when creating a scheme; isActive:true activates this scheme exclusively, so an API profile with an empty customHeaderSchemeId immediately uses it (bind one explicitly with scope=apiProfiles value={customHeaderSchemeId}); sortOrder defaults to last; header values are masked on read and support the {{session_id}} placeholder. mcpServers: key=server name (\"new\" creates one from value.name), value={name?, type?, url?, command?, args?, env?, headers?, enabled?, timeoutMs?} MERGED into the app database record (stdio needs command, http/sse need url; projectId selects the project scope; value.tools={toolName:bool} or value.disabledTools=[...] flips tool-level switches; env/headers are masked on read). requestLogging: key=settings, value={enabled: bool, expiresInMinutes?: number} - enabling requires an expiry (default 30 minutes, max 1440) because the backend auto-resets the switch afterwards. toolApproval: key=tools (projectId required; project sessions inject it automatically), value = an array of tool names, {tools: [...]} (full replace), or {add: [...], remove: [...]}; the global list is written with scope=permissions key=alwaysApprovedTools. scheduledTasks and usage are READ-ONLY scopes and reject set.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -3385,7 +3873,7 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_DELETE.to_string(),
-                description: "Delete a configuration key (e.g. clear an apiKey). DESTRUCTIVE — REQUIRES EXPLICIT USER CONFIRMATION: before calling this tool you MUST call the `askUserQuestion` tool from the `user-interaction` server to show the user exactly which config will be deleted (scope, key, projectId) and its impact, then wait for their explicit approval; only then retry this call with `confirmed: true`. Calls without `confirmed: true` are rejected. Scope-specific semantics: `imagegen` DELETES ALL image generation channels (not just the named key — the whole image generation config is cleared); `skills` uninstalls the skill; `logs` deletes one log file; `subAgents` deletes a sub-agent (built-in agent_general cannot be deleted); `hooks` deletes the hookType config; `apiProfiles` deletes an API profile (no default profile is auto-created; if no profile is active after the deletion, one remaining profile is activated automatically). `userscripts` deletes a userscript (DB row + ~/.snowapp/browser-script file). `customHeaderSchemes` deletes one request-header scheme from the app database (API profiles bound to it stop applying those headers; the response lists them as affectedProfiles). `personalization` deletes ~/.snow/ROLE.md (restores default rules). The current value is backed up before the write (temporary safety net) and the backup is removed after a successful write. Returns deleted=false when the key was not configured. Pass optional `projectId` to delete a project-scoped config (omitted = global). Project-scoped settings: projectId + settings.mcpServers clears all project MCP servers; projectId + settings.sensitiveCommands clears all project sensitive-command overrides.".to_string(),
+                description: "Delete a configuration key (e.g. clear an apiKey). DESTRUCTIVE — REQUIRES EXPLICIT USER CONFIRMATION: before calling this tool you MUST call the `askUserQuestion` tool from the `user-interaction` server to show the user exactly which config will be deleted (scope, key, projectId) and its impact, then wait for their explicit approval; only then retry this call with `confirmed: true`. Calls without `confirmed: true` are rejected. Scope-specific semantics: `imagegen` DELETES ALL image generation channels (not just the named key — the whole image generation config is cleared); `skills` uninstalls the skill; `logs` deletes one log file; `subAgents` deletes a sub-agent (built-in agent_general cannot be deleted); `hooks` deletes the hookType config; `apiProfiles` deletes an API profile (no default profile is auto-created; if no profile is active after the deletion, one remaining profile is activated automatically). `userscripts` deletes a userscript (DB row + ~/.snowapp/browser-script file). `customHeaderSchemes` deletes one request-header scheme from the app database (API profiles bound to it stop applying those headers; the response lists them as affectedProfiles). `personalization` deletes ~/.snow/ROLE.md (restores default rules). The current value is backed up before the write (temporary safety net) and the backup is removed after a successful write. Returns deleted=false when the key was not configured. Pass optional `projectId` to delete a project-scoped config (omitted = global). Project-scoped settings: projectId + settings.mcpServers clears all project MCP servers; projectId + settings.sensitiveCommands clears all project sensitive-command overrides. `mcpServers` deletes one LIVE MCP server (pass projectId for the project scope; requires confirmed; the response echoes the removed serverId). `toolApproval` clears the project-level no-confirmation allow-list (requires confirmed; the global list must be cleared with scope=permissions). `scheduledTasks` and `usage` are read-only scopes and reject delete; `requestLogging` has no delete (set enabled=false instead).".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -3488,4 +3976,49 @@ fn required_string<'a>(args: &'a Value, key: &str) -> napi::Result<&'a str> {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .ok_or_else(|| Error::new(Status::InvalidArg, format!("{key} is required")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_scope_enum_covers_new_scopes() {
+        for scope in [
+            SCOPE_MCP_SERVERS,
+            SCOPE_REQUEST_LOGGING,
+            SCOPE_SCHEDULED_TASKS,
+            SCOPE_TOOL_APPROVAL,
+            SCOPE_USAGE,
+        ] {
+            assert!(
+                CONFIG_SCOPE_ENUM.contains(&scope),
+                "scope {scope} must be advertised in CONFIG_SCOPE_ENUM"
+            );
+        }
+    }
+
+    #[test]
+    fn tool_approval_value_accepts_array_and_object_forms() {
+        let (full, add, remove) = parse_tool_approval_value(&json!(["a", "b"])).unwrap();
+        assert_eq!(full, Some(vec!["a".to_string(), "b".to_string()]));
+        assert!(add.is_empty() && remove.is_empty());
+
+        let (full, _, _) = parse_tool_approval_value(&json!({ "tools": ["x"] })).unwrap();
+        assert_eq!(full, Some(vec!["x".to_string()]));
+
+        let (full, add, remove) =
+            parse_tool_approval_value(&json!({ "add": ["n1"], "remove": ["n2"] })).unwrap();
+        assert!(full.is_none());
+        assert_eq!(add, vec!["n1".to_string()]);
+        assert_eq!(remove, vec!["n2".to_string()]);
+    }
+
+    #[test]
+    fn tool_approval_value_rejects_invalid_forms() {
+        assert!(parse_tool_approval_value(&json!({})).is_err());
+        assert!(parse_tool_approval_value(&json!({ "tools": [1] })).is_err());
+        assert!(parse_tool_approval_value(&json!("nope")).is_err());
+        assert!(parse_tool_approval_value(&json!(["  "])).is_err());
+    }
 }

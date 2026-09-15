@@ -76,6 +76,8 @@ Header schemes are stored in the SQLite `custom_header_schemes` table. They can 
 > activates the scheme exclusively; changes apply to subsequent API requests
 > immediately (in-flight requests are unaffected).
 
+Below the header list, the scheme editor shows an "Available variables" hint listing the six equivalent session-ID spellings (`{{session_id}}`, `{{sessionId}}`, `{{conversation_id}}`, `{{conversationId}}`, `${session_id}`, `${conversation_id}`): clicking one inserts it at the caret position inside the header value, where it can be combined with other text.
+
 An API profile's `customHeaderSchemeId` also has three states:
 
 | Value          | Behavior                         |

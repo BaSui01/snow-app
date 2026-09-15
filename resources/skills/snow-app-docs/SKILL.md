@@ -18,7 +18,8 @@ description: >-
   (config-list/get/set/delete; scopes: settings/snowcfg/proxy/app/
   custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy/
   subAgents/hooks/skills/logs/imagegen/personalization/apiProfiles/
-  customHeaderSchemes), including
+  customHeaderSchemes/mcpServers/requestLogging/scheduledTasks/toolApproval/
+  usage), including
   project-scoped mcpServers/sensitiveCommands/subAgents/hooks/skills via
   `projectId`, the read-only logs scope, imagegen multi-channel settings,
   masked secrets, and app-control-openSettings (21 settings pages).
@@ -143,6 +144,12 @@ allowed-tools:
   激活方案，也可用 `apiProfiles` 域的 `customHeaderSchemeId` 显式绑定）；delete 需
   确认。**`custom-headers` 文件域只是 Snow CLI 同步源，写它不会自动生效**。
   → `2-使用指南/19-个性化主题与快捷键.md`、`3-参考手册/3-配置文件字段参考.md`
+- **App 生效配置（DB 域）**：`mcpServers`（App 实际生效的 MCP 服务器 + 工具级启停，
+  `projectId` 区分全局/项目；写入用 `source=manual`，不会被 Snow CLI 同步删除）、
+  `requestLogging`（`key=settings`，开启必须带过期时间，到期自动复位）、`toolApproval`
+  （项目级工具免确认白名单；全局仍走 `permissions` 域）、`scheduledTasks` 与 `usage`
+  为只读域（前者调度器在渲染进程，写入被拒绝并指向 `app-control-createScheduledTask`）。
+  → `3-参考手册/2-内置工具参考.md`
 - **站点拦截规则**：`blockedPatterns` 是应用全局数组，实际存储在应用数据库系统设置
   `proxy_browser_settings`，影响 `websearch` 结果过滤和 `websearch-fetch` 抓取拒绝，
   不是项目级配置。优先使用 `app-control-getBlockedPatterns` 读取，使用

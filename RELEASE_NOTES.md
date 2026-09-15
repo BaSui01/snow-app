@@ -9,6 +9,7 @@
 - **Markdown Table Export**: Tables in replies can be exported as CSV or XLSX.
 - **Header Session Variable**: custom header values support the `{{session_id}}` placeholder, expanded to the session ID of the conversation that sends the request; requests without a session context omit the header instead of sending the literal template.
 - **Five new config scopes**: live MCP servers (with tool-level switches), request logging (expiry required), scheduled tasks (read-only; writes point to the renderer channel), tool approval allow-list (project-level), and usage statistics (read-only).
+- **Five more config scopes**: centralized switches (`appSettings`, `yoloMode` read-only), privacy filtering (`privacy`), codebase index configuration (`codebase`, with project-level overrides), keyboard shortcuts (`keyboardShortcuts`, with conflict detection), and workspaces/project groups (`workspace`).
 
 ## Improvements
 

@@ -28,15 +28,20 @@ use serde_json::{json, Map, Value};
 use super::super::service::McpService;
 use super::super::tools::McpTool;
 
+mod app_settings_scope;
+mod codebase_scope;
 mod imagegen_scope;
+mod keyboard_shortcuts_scope;
 mod lsp_config_scope;
 mod logs_scope;
 mod mcp_servers_scope;
 mod personalization_scope;
+mod privacy_scope;
 mod request_logging_scope;
 mod scheduled_tasks_scope;
 mod usage_scope;
 mod userscripts_scope;
+mod workspace_scope;
 
 pub const SERVER_ID: &str = "config";
 
@@ -136,6 +141,31 @@ const SCOPE_TOOL_APPROVAL: &str = "toolApproval";
 /// conversationId/directoryId/limit/offset）。不支持 set/delete。
 const SCOPE_USAGE: &str = "usage";
 
+/// DB-backed 集中开关域：把 system_settings 里的零散开关集中暴露。
+/// key = `liteMode` | `autoFormat` | `terminal` | `proxyBrowser` |
+/// `imageLibraryDir` | `yoloMode`（只读）。terminal/proxyBrowser 为白名单字段
+/// merge（站点拦截规则由 app-control 维护，不在白名单内）；yoloMode 故意只读。
+const SCOPE_APP_SETTINGS: &str = "appSettings";
+
+/// DB-backed 单例域：隐私过滤设置（system_settings.privacy_settings）。
+/// key = `settings`；`value={enabled?, mode?("local"|"api"), api?:{url?, apiKey?, model?},
+/// toolResults?:{tools?:[...]}}`，apiKey 读取掩码、写入空/省略保留旧值；不支持 delete。
+const SCOPE_PRIVACY: &str = "privacy";
+
+/// 代码库索引配置：projectId 非空 = 项目级三态开关（key=`scope`，null 表示继承
+/// 全局）；显式 `""` = 全局（key=`settings`，system_settings.codebase_settings，
+/// 密钥掩码 + 白名单字段 merge）。改 embedding 配置后需重建索引才作用于既有文件。
+const SCOPE_CODEBASE: &str = "codebase";
+
+/// DB-backed 单例域：键盘快捷键（12 个动作，稀疏 merge；读取附带键位冲突组）。
+/// key = `settings`；value=`{动作名: {key?, enabled?, foregroundOnly?}}`；不支持 delete。
+const SCOPE_KEYBOARD_SHORTCUTS: &str = "keyboardShortcuts";
+
+/// DB-backed 域：工作区清单与项目分组。key=`directories`（只读）/
+/// `collections`（读写，action 分发：create/rename/move/reorder/removeMember）/
+/// `collection:<collectionId>`（读；config-delete 删分组需 confirmed）。
+const SCOPE_WORKSPACE: &str = "workspace";
+
 /// config-list/get/set/delete 暴露的 scope 枚举（文件域 SCOPES + DB / 委托 /
 /// 只读域，与 execute_* 的实际分发逻辑保持一致）。
 const CONFIG_SCOPE_ENUM: &[&str] = &[
@@ -164,6 +194,11 @@ const CONFIG_SCOPE_ENUM: &[&str] = &[
     "scheduledTasks",
     "toolApproval",
     "usage",
+    "appSettings",
+    "privacy",
+    "codebase",
+    "keyboardShortcuts",
+    "workspace",
 ];
 
 /// ROLE.md 文件名（~/.snow/ROLE.md，与 personalizationHandlers.ts 约定一致）。
@@ -1413,6 +1448,42 @@ impl ConfigService {
                     db_path_or_error(&self.db_path)?,
                 );
             }
+            if scope_name == SCOPE_APP_SETTINGS {
+                return app_settings_scope::execute_app_settings_scope(
+                    TOOL_LIST,
+                    args,
+                    db_path_or_error(&self.db_path)?,
+                );
+            }
+            if scope_name == SCOPE_PRIVACY {
+                return privacy_scope::execute_privacy_scope(
+                    TOOL_LIST,
+                    args,
+                    db_path_or_error(&self.db_path)?,
+                );
+            }
+            if scope_name == SCOPE_CODEBASE {
+                return codebase_scope::execute_codebase_scope(
+                    TOOL_LIST,
+                    args,
+                    db_path_or_error(&self.db_path)?,
+                    project_id.as_deref(),
+                );
+            }
+            if scope_name == SCOPE_KEYBOARD_SHORTCUTS {
+                return keyboard_shortcuts_scope::execute_keyboard_shortcuts_scope(
+                    TOOL_LIST,
+                    args,
+                    db_path_or_error(&self.db_path)?,
+                );
+            }
+            if scope_name == SCOPE_WORKSPACE {
+                return workspace_scope::execute_workspace_scope(
+                    TOOL_LIST,
+                    args,
+                    db_path_or_error(&self.db_path)?,
+                );
+            }
 
             let scope =
                 Self::find_scope(scope_name).ok_or_else(|| invalid_scope_error(scope_name))?;
@@ -1529,6 +1600,42 @@ impl ConfigService {
                 db_path_or_error(&self.db_path)?,
             );
         }
+        if scope_name == SCOPE_APP_SETTINGS {
+            return app_settings_scope::execute_app_settings_scope(
+                TOOL_GET,
+                args,
+                db_path_or_error(&self.db_path)?,
+            );
+        }
+        if scope_name == SCOPE_PRIVACY {
+            return privacy_scope::execute_privacy_scope(
+                TOOL_GET,
+                args,
+                db_path_or_error(&self.db_path)?,
+            );
+        }
+        if scope_name == SCOPE_CODEBASE {
+            return codebase_scope::execute_codebase_scope(
+                TOOL_GET,
+                args,
+                db_path_or_error(&self.db_path)?,
+                project_id.as_deref(),
+            );
+        }
+        if scope_name == SCOPE_KEYBOARD_SHORTCUTS {
+            return keyboard_shortcuts_scope::execute_keyboard_shortcuts_scope(
+                TOOL_GET,
+                args,
+                db_path_or_error(&self.db_path)?,
+            );
+        }
+        if scope_name == SCOPE_WORKSPACE {
+            return workspace_scope::execute_workspace_scope(
+                TOOL_GET,
+                args,
+                db_path_or_error(&self.db_path)?,
+            );
+        }
         // 项目级 settings：仅 mcpServers / sensitiveCommands 支持 projectId。
         if scope_name == "settings" {
             if let Some(pid) = &project_id {
@@ -1627,6 +1734,42 @@ impl ConfigService {
         }
         if scope_name == SCOPE_USAGE {
             return usage_scope::execute_usage_scope(
+                TOOL_SET,
+                args,
+                db_path_or_error(&self.db_path)?,
+            );
+        }
+        if scope_name == SCOPE_APP_SETTINGS {
+            return app_settings_scope::execute_app_settings_scope(
+                TOOL_SET,
+                args,
+                db_path_or_error(&self.db_path)?,
+            );
+        }
+        if scope_name == SCOPE_PRIVACY {
+            return privacy_scope::execute_privacy_scope(
+                TOOL_SET,
+                args,
+                db_path_or_error(&self.db_path)?,
+            );
+        }
+        if scope_name == SCOPE_CODEBASE {
+            return codebase_scope::execute_codebase_scope(
+                TOOL_SET,
+                args,
+                db_path_or_error(&self.db_path)?,
+                project_id.as_deref(),
+            );
+        }
+        if scope_name == SCOPE_KEYBOARD_SHORTCUTS {
+            return keyboard_shortcuts_scope::execute_keyboard_shortcuts_scope(
+                TOOL_SET,
+                args,
+                db_path_or_error(&self.db_path)?,
+            );
+        }
+        if scope_name == SCOPE_WORKSPACE {
+            return workspace_scope::execute_workspace_scope(
                 TOOL_SET,
                 args,
                 db_path_or_error(&self.db_path)?,
@@ -1742,6 +1885,42 @@ impl ConfigService {
         }
         if scope_name == SCOPE_USAGE {
             return usage_scope::execute_usage_scope(
+                TOOL_DELETE,
+                args,
+                db_path_or_error(&self.db_path)?,
+            );
+        }
+        if scope_name == SCOPE_APP_SETTINGS {
+            return app_settings_scope::execute_app_settings_scope(
+                TOOL_DELETE,
+                args,
+                db_path_or_error(&self.db_path)?,
+            );
+        }
+        if scope_name == SCOPE_PRIVACY {
+            return privacy_scope::execute_privacy_scope(
+                TOOL_DELETE,
+                args,
+                db_path_or_error(&self.db_path)?,
+            );
+        }
+        if scope_name == SCOPE_CODEBASE {
+            return codebase_scope::execute_codebase_scope(
+                TOOL_DELETE,
+                args,
+                db_path_or_error(&self.db_path)?,
+                project_id.as_deref(),
+            );
+        }
+        if scope_name == SCOPE_KEYBOARD_SHORTCUTS {
+            return keyboard_shortcuts_scope::execute_keyboard_shortcuts_scope(
+                TOOL_DELETE,
+                args,
+                db_path_or_error(&self.db_path)?,
+            );
+        }
+        if scope_name == SCOPE_WORKSPACE {
+            return workspace_scope::execute_workspace_scope(
                 TOOL_DELETE,
                 args,
                 db_path_or_error(&self.db_path)?,
@@ -3774,7 +3953,7 @@ fn config_scope_supports_project_id(args: &Value) -> bool {
     match scope {
         SCOPE_SUB_AGENTS | SCOPE_HOOKS | SCOPE_SKILLS | SCOPE_LSP_CONFIG => true,
         // 项目级 MCP 服务器与项目级工具授权：缺省注入会话项目（显式 "" 走全局）。
-        SCOPE_MCP_SERVERS | SCOPE_TOOL_APPROVAL => true,
+        SCOPE_MCP_SERVERS | SCOPE_TOOL_APPROVAL | SCOPE_CODEBASE => true,
         "settings" => {
             let key = args.get("key").and_then(Value::as_str).unwrap_or("");
             key == "mcpServers" || key == "sensitiveCommands"
@@ -3793,7 +3972,7 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_LIST.to_string(),
-                description: "List configuration scopes and their keys; pass `scope` to inspect one scope (returns current values; sensitive keys masked).\nSCOPE REFERENCE:\n1. settings (~/.snow/settings.json): mcpServers, codebase, sensitiveCommands, yoloMode, planMode, goal, toolSearchEnabled, ...; MCP tool-level enable/disable (global/project) is managed in the MCP Settings panel (app database), not in settings.json.\n2. snowcfg (~/.snow/config.json): baseUrl, apiKey, advancedModel, basicModel, maxTokens, chatThinking, ...\n3. proxy (~/.snow/proxy-config.json): enabled, host, port, searchEngine, browserPath, browserDebugPort\n4. app (~/.snow/active-profile.json): activeProfile\n5. custom-headers (~/.snow/custom-headers.json): active, schemes (sensitive); this is the Snow CLI compatibility SYNC SOURCE only - writing this file does NOT change the request headers Snow App actually sends (the running app reads the custom_header_schemes table); use scope=customHeaderSchemes to edit the app's live request headers\n6. system-prompt (~/.snow/system-prompt.json): active, prompts (sensitive)\n7. theme (~/.snow/theme.json): theme, simpleMode, diffOpacity, toolIcons, customColors, ...\n8. language (~/.snow/language.json): language\n9. permissions (~/.snow/permissions.json): alwaysApprovedTools (global no-confirmation tool list; the UI authorization flow reads it and merges it with project-level approvals)\n10. lsp-config (~/.snow/lsp-config.json): schemaVersion, servers\n11. buddy (~/.snow/buddy.json): version, companion, muted\n12. subAgents (app DB): sub-agent configs, key=agentId; list returns items + CREATING guidance\n13. hooks (app DB): lifecycle hook configs, key=hookType; list returns items + CONFIGURING guidance\n14. imagegen (app DB): image generation channels + top-level maxConcurrentImages (1-8, default 4) and timeoutSecs (60-3600, default 300); list returns keys + note\n15. skills (delegated): skillId toggles / GitHub installs\n16. logs (read-only): log files under ~/.snow/log\n17. personalization (~/.snow/ROLE.md): global role/rules file (plain markdown, non-JSON), key=role; list returns length + preview, get returns the full rules text, set writes the whole file, delete removes it (restores defaults)\n18. apiProfiles (app DB): API profiles (api_configs table, same as the UI); key=profileName; list returns all profiles with masked apiKey/visionApiKey; set creates/updates a profile (empty/omitted apiKey keeps the existing key - create keyless profiles first, then fill the key; isActive:true switches the active profile; omitted fields keep current values); delete removes a profile (requires confirmed)\n19. userscripts (app DB): Tampermonkey-compatible userscripts (userscripts table + files under ~/.snowapp/browser-script/); key=scriptId (\"new\" creates one); RECOMMENDED: write the full source to a file with the filesystem server first (filesystem-create / filesystem-replace_edit), then install/update via config-set value={sourcePath: \"/abs/path/script.user.js\"} - the backend reads the file, avoiding huge tool args; small scripts can be inlined with value={raw: \"...\"}; value={enabled: bool} toggles a script, value={values: {...}} writes GM_* persisted values, value={deleteValues: [...]} removes GM values; get returns metadata + full source + GM values; delete removes a script (requires confirmed)\n20. customHeaderSchemes (app DB): Snow App's LIVE custom request headers (custom_header_schemes table, same as the Settings > Custom headers panel; takes effect immediately, no restart and no CLI sync needed). key=schemeId (\"new\" creates one and returns the generated id); set value={name?, headers?, isActive?, sortOrder?} writes a scheme (headers is {headerName: value} MERGED into the existing headers, null removes a header; name is required for a new scheme; isActive:true activates it exclusively, and an API profile with an empty customHeaderSchemeId then uses the active scheme - bind one with config-set scope=apiProfiles value={customHeaderSchemeId: \"<schemeId>\"}); delete removes a scheme and reports affectedProfiles (requires confirmed); header values are masked on read\n21. mcpServers (app DB): Snow App's LIVE MCP servers (mcp_server_configs table + project-level records) with tool-level enable/disable - no settings.json sync needed. projectId = project scope (project sessions inject the current project automatically; pass \"\" for global); key = server name (\"new\" creates one from value.name; renaming is not supported); set value = {name?, type?(\"stdio\"|\"sse\"|\"http\"), url?, command?, args?, env?, headers?, enabled?, timeoutMs?} MERGED into the existing server (stdio requires command, http/sse requires url; servers written here use source=manual so the Snow CLI sync never deletes them); value.tools={toolName:bool} or value.disabledTools=[...] flips tool-level switches; env/headers values are masked on read; delete removes a server (requires confirmed). Changes apply to the next tool discovery; a live MCP session may need an app restart/reconnect.\n22. requestLogging (app DB, singleton): API request-body logging switch used for debugging. key=\"settings\"; set value={enabled: bool, expiresInMinutes?: number} or {enabled: true, expiresAt: <epoch ms>} - enabling always requires an expiry (default 30 minutes, max 1440) because the backend auto-resets the switch once the expiry passes and stops writing request bodies; enabling with enabled=false clears the expiry. Read captured requests with scope=logs. delete is not supported (set enabled=false instead).\n23. scheduledTasks (app DB, READ-ONLY): scheduled task definitions, state and run history (scheduled_tasks table, same as the UI Scheduled Tasks panel). list returns a compact view (promptPreview, schedule, status, paused, nextRunAt, lastRunAt, runCount, lastError, skip counters, historyCount) and accepts directoryId filtering; get key=<taskId> returns the full record including the prompt and the last 20 runs. WRITES ARE INTENTIONALLY REJECTED: the scheduler runs in the renderer process and the task store hydrates from the database only at app startup, so create tasks with app-control-createScheduledTask (the renderer registers the timer immediately) and edit/pause/delete them in the UI panel.\n24. toolApproval: tool no-confirmation allow-list (authorization). Project sessions auto-inject projectId -> the project-level list is stored in system_settings; key=\"tools\"; set value = an array of tool names, {tools: [...]} (full replace), or {add: [...], remove: [...]}; delete clears the project list and requires confirmed. With projectId=\"\" the GLOBAL list is returned READ-ONLY - it lives in ~/.snow/permissions.json (alwaysApprovedTools) and must be written with scope=permissions key=alwaysApprovedTools.\n25. usage (app DB, READ-ONLY): token and request usage statistics (usage_records table, same as the UI Usage panel). list accepts since/until (YYYY-MM-DD or \"YYYY-MM-DD HH:MM:SS\", default the last 30 days) and returns summary + daily breakdown (<=90 rows) + per-model breakdown (<=20 rows); get key=summary|daily|models returns one of those, and key=records returns paginated details (conversationId, directoryId, limit<=100, offset). set/delete are rejected - usage rows are written by the app itself.\nRULES: pass projectId to scope subAgents/hooks/skills listings to a specific project (omitted = auto-injects the CURRENT SESSION's projectId, so you get/configure the active project's settings; pass an empty string \"\" for global); every list response includes the current session's projectId as `currentProjectId` — read it to obtain the project id bound to the current conversation; sensitive values (apiKey, visionApiKey, custom-header schemes, system-prompt prompts, imagegen apiKey) are always masked."
+                description: "List configuration scopes and their keys; pass `scope` to inspect one scope (returns current values; sensitive keys masked).\nSCOPE REFERENCE:\n1. settings (~/.snow/settings.json): mcpServers, codebase, sensitiveCommands, yoloMode, planMode, goal, toolSearchEnabled, ...; MCP tool-level enable/disable (global/project) is managed in the MCP Settings panel (app database), not in settings.json.\n2. snowcfg (~/.snow/config.json): baseUrl, apiKey, advancedModel, basicModel, maxTokens, chatThinking, ...\n3. proxy (~/.snow/proxy-config.json): enabled, host, port, searchEngine, browserPath, browserDebugPort\n4. app (~/.snow/active-profile.json): activeProfile\n5. custom-headers (~/.snow/custom-headers.json): active, schemes (sensitive); this is the Snow CLI compatibility SYNC SOURCE only - writing this file does NOT change the request headers Snow App actually sends (the running app reads the custom_header_schemes table); use scope=customHeaderSchemes to edit the app's live request headers\n6. system-prompt (~/.snow/system-prompt.json): active, prompts (sensitive)\n7. theme (~/.snow/theme.json): theme, simpleMode, diffOpacity, toolIcons, customColors, ...\n8. language (~/.snow/language.json): language\n9. permissions (~/.snow/permissions.json): alwaysApprovedTools (global no-confirmation tool list; the UI authorization flow reads it and merges it with project-level approvals)\n10. lsp-config (~/.snow/lsp-config.json): schemaVersion, servers\n11. buddy (~/.snow/buddy.json): version, companion, muted\n12. subAgents (app DB): sub-agent configs, key=agentId; list returns items + CREATING guidance\n13. hooks (app DB): lifecycle hook configs, key=hookType; list returns items + CONFIGURING guidance\n14. imagegen (app DB): image generation channels + top-level maxConcurrentImages (1-8, default 4) and timeoutSecs (60-3600, default 300); list returns keys + note\n15. skills (delegated): skillId toggles / GitHub installs\n16. logs (read-only): log files under ~/.snow/log\n17. personalization (~/.snow/ROLE.md): global role/rules file (plain markdown, non-JSON), key=role; list returns length + preview, get returns the full rules text, set writes the whole file, delete removes it (restores defaults)\n18. apiProfiles (app DB): API profiles (api_configs table, same as the UI); key=profileName; list returns all profiles with masked apiKey/visionApiKey; set creates/updates a profile (empty/omitted apiKey keeps the existing key - create keyless profiles first, then fill the key; isActive:true switches the active profile; omitted fields keep current values); delete removes a profile (requires confirmed)\n19. userscripts (app DB): Tampermonkey-compatible userscripts (userscripts table + files under ~/.snowapp/browser-script/); key=scriptId (\"new\" creates one); RECOMMENDED: write the full source to a file with the filesystem server first (filesystem-create / filesystem-replace_edit), then install/update via config-set value={sourcePath: \"/abs/path/script.user.js\"} - the backend reads the file, avoiding huge tool args; small scripts can be inlined with value={raw: \"...\"}; value={enabled: bool} toggles a script, value={values: {...}} writes GM_* persisted values, value={deleteValues: [...]} removes GM values; get returns metadata + full source + GM values; delete removes a script (requires confirmed)\n20. customHeaderSchemes (app DB): Snow App's LIVE custom request headers (custom_header_schemes table, same as the Settings > Custom headers panel; takes effect immediately, no restart and no CLI sync needed). key=schemeId (\"new\" creates one and returns the generated id); set value={name?, headers?, isActive?, sortOrder?} writes a scheme (headers is {headerName: value} MERGED into the existing headers, null removes a header; name is required for a new scheme; isActive:true activates it exclusively, and an API profile with an empty customHeaderSchemeId then uses the active scheme - bind one with config-set scope=apiProfiles value={customHeaderSchemeId: \"<schemeId>\"}); delete removes a scheme and reports affectedProfiles (requires confirmed); header values are masked on read\n21. mcpServers (app DB): Snow App's LIVE MCP servers (mcp_server_configs table + project-level records) with tool-level enable/disable - no settings.json sync needed. projectId = project scope (project sessions inject the current project automatically; pass \"\" for global); key = server name (\"new\" creates one from value.name; renaming is not supported); set value = {name?, type?(\"stdio\"|\"sse\"|\"http\"), url?, command?, args?, env?, headers?, enabled?, timeoutMs?} MERGED into the existing server (stdio requires command, http/sse requires url; servers written here use source=manual so the Snow CLI sync never deletes them); value.tools={toolName:bool} or value.disabledTools=[...] flips tool-level switches; env/headers values are masked on read; delete removes a server (requires confirmed). Changes apply to the next tool discovery; a live MCP session may need an app restart/reconnect.\n22. requestLogging (app DB, singleton): API request-body logging switch used for debugging. key=\"settings\"; set value={enabled: bool, expiresInMinutes?: number} or {enabled: true, expiresAt: <epoch ms>} - enabling always requires an expiry (default 30 minutes, max 1440) because the backend auto-resets the switch once the expiry passes and stops writing request bodies; enabling with enabled=false clears the expiry. Read captured requests with scope=logs. delete is not supported (set enabled=false instead).\n23. scheduledTasks (app DB, READ-ONLY): scheduled task definitions, state and run history (scheduled_tasks table, same as the UI Scheduled Tasks panel). list returns a compact view (promptPreview, schedule, status, paused, nextRunAt, lastRunAt, runCount, lastError, skip counters, historyCount) and accepts directoryId filtering; get key=<taskId> returns the full record including the prompt and the last 20 runs. WRITES ARE INTENTIONALLY REJECTED: the scheduler runs in the renderer process and the task store hydrates from the database only at app startup, so create tasks with app-control-createScheduledTask (the renderer registers the timer immediately) and edit/pause/delete them in the UI panel.\n24. toolApproval: tool no-confirmation allow-list (authorization). Project sessions auto-inject projectId -> the project-level list is stored in system_settings; key=\"tools\"; set value = an array of tool names, {tools: [...]} (full replace), or {add: [...], remove: [...]}; delete clears the project list and requires confirmed. With projectId=\"\" the GLOBAL list is returned READ-ONLY - it lives in ~/.snow/permissions.json (alwaysApprovedTools) and must be written with scope=permissions key=alwaysApprovedTools.\n25. usage (app DB, READ-ONLY): token and request usage statistics (usage_records table, same as the UI Usage panel). list accepts since/until (YYYY-MM-DD or \"YYYY-MM-DD HH:MM:SS\", default the last 30 days) and returns summary + daily breakdown (<=90 rows) + per-model breakdown (<=20 rows); get key=summary|daily|models returns one of those, and key=records returns paginated details (conversationId, directoryId, limit<=100, offset). set/delete are rejected - usage rows are written by the app itself.\n26. appSettings (app DB): centralized switches from system_settings. key=liteMode | autoFormat | terminal | proxyBrowser | imageLibraryDir | yoloMode. liteMode disables the Browser / App Control / Terminal built-in MCP servers; autoFormat runs Prettier after file edits; terminal and proxyBrowser are whitelist-merged JSON blobs (terminal: shellPath, fontFamily, fontSize, fontWeight, lineHeight; proxyBrowser: enabled, host, port, browserPath, browserDebugPort, searchEngine - blockedPatterns is NOT writable here, use app-control-updateBlockedPatterns); imageLibraryDir accepts an empty string to restore the default directory; yoloMode is READ-ONLY (only the user can change it in the UI, so an agent can never silently disable tool confirmation). delete is not supported.\n27. privacy (app DB, singleton): privacy filtering. key=settings; set value={enabled?, mode?(\"local\"|\"api\"), api?:{url?, apiKey?, model?}, toolResults?:{tools?:[...]}} MERGED into the stored settings; apiKey is masked on read and an empty/omitted apiKey keeps the existing secret; toolResults.tools replaces the list. Enabling routes tool results through the filter (local or remote). No delete (set enabled=false).\n28. codebase: index configuration. projectId non-empty = project scope (key=scope, value={enabled?, enableAgentReview?, enableReranking?} stored as three-state overrides; an unset field follows the global default); projectId=\"\" = global (key=settings: embeddingModelName/embeddingBaseUrl/embeddingApiKey/embeddingDimensions/chunking*/batch*/reranking* etc., whitelist-merged; embeddingApiKey and rerankingApiKey are masked on read and preserved when written empty). Changing the embedding model/baseUrl/dimensions/key requires rebuilding the index before existing files use the new configuration. No delete.\n29. keyboardShortcuts (app DB, singleton): key=settings; set value={action: {key?, enabled?, foregroundOnly?}} SPARSE-MERGED (only the actions you pass change). Actions: cancelSession, openSearch, openMemo, openTodo, cycleProject, openProjectExplorer, cycleApiProfile, toggleWindow, togglePet, focusInput, toggleSidebar, toggleRightPanel. Read responses include `conflicts` (the same key bound to several enabled actions). The renderer registers shortcuts after reading this setting, so the UI may need a settings-page reopen or app restart. No delete.\n30. workspace (app DB): workspaces and project groups. key=directories (READ-ONLY: directoryId, name, path, kind, isActive, sortOrder, pathState); key=collections (read/write; set value={action:\"create\", name} | {action:\"rename\", collectionId, name} | {action:\"move\", collectionId, directoryId, orderedMemberIds?} | {action:\"reorder\", collectionId, orderedMemberIds} | {action:\"removeMember\", collectionId, directoryId}); key=collection:<collectionId> reads one group and config-delete removes it (requires confirmed). Creating/deleting/relocating projects stays in the UI (or app-control-createProject).\nRULES: pass projectId to scope subAgents/hooks/skills listings to a specific project (omitted = auto-injects the CURRENT SESSION's projectId, so you get/configure the active project's settings; pass an empty string \"\" for global); every list response includes the current session's projectId as `currentProjectId` — read it to obtain the project id bound to the current conversation; sensitive values (apiKey, visionApiKey, custom-header schemes, system-prompt prompts, imagegen apiKey) are always masked."
                     .to_string(),
                 input_schema: json!({
                     "type": "object",
@@ -3814,7 +3993,7 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_GET.to_string(),
-                description: "Read the value of a configuration key. Sensitive keys (apiKey, visionApiKey) are always returned masked (e.g. sk-****abcd); this tool never exposes plaintext secrets. Returns null when the key is not configured. DB-backed scopes: subAgents (key=agentId) and hooks (key=hookType) read directly from the app database; apiProfiles (key=profileName) reads an API profile from the app database (apiKey/visionApiKey masked, null when the profile does not exist); pass optional `projectId` to read a project-scoped config (omitted = global). Read-only logs scope: key is a log file name (e.g. 2026-08-03-error.log) or a level shortcut (error/warn/info/debug for today's file); optional `limit` controls returned tail lines (default 200, max 2000). personalization (key=role): returns the full ~/.snow/ROLE.md rules text (null when the file does not exist). userscripts (key=scriptId): returns the script metadata + full source + GM values (null when the script does not exist). customHeaderSchemes (key=schemeId): reads one LIVE custom-header scheme from the app database (scheme metadata + masked header values; null when it does not exist).  mcpServers (key=server name or serverId, optional projectId): reads one LIVE MCP server (mcp_server_configs / project-level records; env and headers values masked) plus the scope tool state. requestLogging (key=settings): reads the request-logging switch, its expiry and remaining time. scheduledTasks (key=taskId): reads one scheduled task with its prompt and the last 20 runs (read-only scope). toolApproval (key=tools): reads the no-confirmation allow-list (project-level with a projectId, otherwise the global list from permissions.json). usage (key=summary|daily|models|records; optional since/until): reads usage statistics (read-only scope; records also accept conversationId/directoryId/limit/offset).Project-scoped settings: pass `projectId` to read settings.mcpServers / settings.sensitiveCommands from the project-scoped app database (other keys reject projectId).".to_string(),
+                description: "Read the value of a configuration key. Sensitive keys (apiKey, visionApiKey) are always returned masked (e.g. sk-****abcd); this tool never exposes plaintext secrets. Returns null when the key is not configured. DB-backed scopes: subAgents (key=agentId) and hooks (key=hookType) read directly from the app database; apiProfiles (key=profileName) reads an API profile from the app database (apiKey/visionApiKey masked, null when the profile does not exist); pass optional `projectId` to read a project-scoped config (omitted = global). Read-only logs scope: key is a log file name (e.g. 2026-08-03-error.log) or a level shortcut (error/warn/info/debug for today's file); optional `limit` controls returned tail lines (default 200, max 2000). personalization (key=role): returns the full ~/.snow/ROLE.md rules text (null when the file does not exist). userscripts (key=scriptId): returns the script metadata + full source + GM values (null when the script does not exist). customHeaderSchemes (key=schemeId): reads one LIVE custom-header scheme from the app database (scheme metadata + masked header values; null when it does not exist).  mcpServers (key=server name or serverId, optional projectId): reads one LIVE MCP server (mcp_server_configs / project-level records; env and headers values masked) plus the scope tool state. requestLogging (key=settings): reads the request-logging switch, its expiry and remaining time. scheduledTasks (key=taskId): reads one scheduled task with its prompt and the last 20 runs (read-only scope). toolApproval (key=tools): reads the no-confirmation allow-list (project-level with a projectId, otherwise the global list from permissions.json). usage (key=summary|daily|models|records; optional since/until): reads usage statistics (read-only scope; records also accept conversationId/directoryId/limit/offset). appSettings (key=liteMode|autoFormat|terminal|proxyBrowser|imageLibraryDir|yoloMode): reads the centralized switches (yoloMode is read-only). privacy (key=settings): reads the privacy filter with the API key masked. codebase (key=settings for the global config, or key=scope with a projectId): reads the index configuration (embedding keys masked) or the project-level overrides. keyboardShortcuts (key=settings): reads all 12 shortcut actions plus the conflict groups. workspace (key=directories|collections|collection:<id>): reads workspaces and project groups.Project-scoped settings: pass `projectId` to read settings.mcpServers / settings.sensitiveCommands from the project-scoped app database (other keys reject projectId).".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -3845,7 +4024,7 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_SET.to_string(),
-                description: "Write a value for a configuration key (whitelisted scopes only; type-checked; auto-backup to ~/.snow/.config-backups as a temporary safety net before the write, removed after a successful write; atomic write).\nRULES:\n- settings.mcpServers: syncs into the app database on write and takes effect immediately (same diff semantics as the UI sync action). MCP tool-level enable/disable (global/project) is managed in the MCP Settings panel (app database), not in settings.json.\n- Other file-backed scopes (snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy): changes may need an app restart or a UI re-save. personalization (key=role, value must be a string): replaces the whole ~/.snow/ROLE.md file (markdown text); takes effect in the next conversation.\n- DB-backed scopes (take effect immediately): subAgents (key=agentId, value={name, description?, systemPrompt?, toolsJson?, configProfile?, model?}; an explicit toolsJson tool list requires projectId, see the guidance from config-list scope=subAgents); hooks (key=hookType, value={rules:[...]}, see the guidance from config-list scope=hooks); apiProfiles (key=profileName, value={displayName?, baseUrl?, baseUrlMode?, apiKey?, requestMethod?, advancedModel?, basicModel?, supportsVision?, visionBaseUrl?, visionApiKey?, visionRequestMethod?, visionModel?, maxContextTokens?, maxTokens?, isActive?, ...} - creates or updates the profile in the app database (same as the UI); an empty or omitted apiKey/visionApiKey ALWAYS keeps the existing key, so you can create a keyless profile first and fill the key later; isActive:true switches the active profile immediately; omitted fields keep current values for existing profiles and use defaults for new ones; configJson is generated automatically); imagegen (value={channels:[...]} full replace, {<channelId>: {...}} per-channel merge keeping omitted fields, or a global field alone: {maxConcurrentImages: N} clamped to 1-8 / {timeoutSecs: N} clamped to 60-3600).\nuserscripts (key=scriptId, value={sourcePath: \"<abs path>\"} RECOMMENDED - write the full source to a file with the filesystem server first, then pass the path here to avoid huge tool args; the backend reads the file, parses the // ==UserScript== metadata and writes the DB + file; value={raw: \"<full source>\"} is also supported for small scripts; value={enabled: bool} toggles it; value={values: {...}} writes GM_* persisted values; value={deleteValues: [...]} removes GM values).\n- Project-scoped: pass projectId for settings.mcpServers (full replace of {name: {type,url,command,args,env,headers,enabled,timeoutMs}}) or settings.sensitiveCommands (full replace of [{commandId, pattern, description, enabled}]); other scopes ignore projectId. customHeaderSchemes: key=schemeId (or \"new\" to create one and get the generated id back), value={name?, headers?, isActive?, sortOrder?} writes a request-header scheme STRAIGHT INTO the app database (same source as the Settings > Custom headers panel, effective immediately - use THIS scope instead of scope=custom-headers, which only writes the Snow CLI sync file ~/.snow/custom-headers.json and changes nothing until the user syncs it in the UI): headers is {headerName: value} MERGED into the existing headers (set a header to null to remove it); name is required when creating a scheme; isActive:true activates this scheme exclusively, so an API profile with an empty customHeaderSchemeId immediately uses it (bind one explicitly with scope=apiProfiles value={customHeaderSchemeId}); sortOrder defaults to last; header values are masked on read and support the {{session_id}} placeholder. mcpServers: key=server name (\"new\" creates one from value.name), value={name?, type?, url?, command?, args?, env?, headers?, enabled?, timeoutMs?} MERGED into the app database record (stdio needs command, http/sse need url; projectId selects the project scope; value.tools={toolName:bool} or value.disabledTools=[...] flips tool-level switches; env/headers are masked on read). requestLogging: key=settings, value={enabled: bool, expiresInMinutes?: number} - enabling requires an expiry (default 30 minutes, max 1440) because the backend auto-resets the switch afterwards. toolApproval: key=tools (projectId required; project sessions inject it automatically), value = an array of tool names, {tools: [...]} (full replace), or {add: [...], remove: [...]}; the global list is written with scope=permissions key=alwaysApprovedTools. scheduledTasks and usage are READ-ONLY scopes and reject set.".to_string(),
+                description: "Write a value for a configuration key (whitelisted scopes only; type-checked; auto-backup to ~/.snow/.config-backups as a temporary safety net before the write, removed after a successful write; atomic write).\nRULES:\n- settings.mcpServers: syncs into the app database on write and takes effect immediately (same diff semantics as the UI sync action). MCP tool-level enable/disable (global/project) is managed in the MCP Settings panel (app database), not in settings.json.\n- Other file-backed scopes (snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy): changes may need an app restart or a UI re-save. personalization (key=role, value must be a string): replaces the whole ~/.snow/ROLE.md file (markdown text); takes effect in the next conversation.\n- DB-backed scopes (take effect immediately): subAgents (key=agentId, value={name, description?, systemPrompt?, toolsJson?, configProfile?, model?}; an explicit toolsJson tool list requires projectId, see the guidance from config-list scope=subAgents); hooks (key=hookType, value={rules:[...]}, see the guidance from config-list scope=hooks); apiProfiles (key=profileName, value={displayName?, baseUrl?, baseUrlMode?, apiKey?, requestMethod?, advancedModel?, basicModel?, supportsVision?, visionBaseUrl?, visionApiKey?, visionRequestMethod?, visionModel?, maxContextTokens?, maxTokens?, isActive?, ...} - creates or updates the profile in the app database (same as the UI); an empty or omitted apiKey/visionApiKey ALWAYS keeps the existing key, so you can create a keyless profile first and fill the key later; isActive:true switches the active profile immediately; omitted fields keep current values for existing profiles and use defaults for new ones; configJson is generated automatically); imagegen (value={channels:[...]} full replace, {<channelId>: {...}} per-channel merge keeping omitted fields, or a global field alone: {maxConcurrentImages: N} clamped to 1-8 / {timeoutSecs: N} clamped to 60-3600).\nuserscripts (key=scriptId, value={sourcePath: \"<abs path>\"} RECOMMENDED - write the full source to a file with the filesystem server first, then pass the path here to avoid huge tool args; the backend reads the file, parses the // ==UserScript== metadata and writes the DB + file; value={raw: \"<full source>\"} is also supported for small scripts; value={enabled: bool} toggles it; value={values: {...}} writes GM_* persisted values; value={deleteValues: [...]} removes GM values).\n- Project-scoped: pass projectId for settings.mcpServers (full replace of {name: {type,url,command,args,env,headers,enabled,timeoutMs}}) or settings.sensitiveCommands (full replace of [{commandId, pattern, description, enabled}]); other scopes ignore projectId. customHeaderSchemes: key=schemeId (or \"new\" to create one and get the generated id back), value={name?, headers?, isActive?, sortOrder?} writes a request-header scheme STRAIGHT INTO the app database (same source as the Settings > Custom headers panel, effective immediately - use THIS scope instead of scope=custom-headers, which only writes the Snow CLI sync file ~/.snow/custom-headers.json and changes nothing until the user syncs it in the UI): headers is {headerName: value} MERGED into the existing headers (set a header to null to remove it); name is required when creating a scheme; isActive:true activates this scheme exclusively, so an API profile with an empty customHeaderSchemeId immediately uses it (bind one explicitly with scope=apiProfiles value={customHeaderSchemeId}); sortOrder defaults to last; header values are masked on read and support the {{session_id}} placeholder. mcpServers: key=server name (\"new\" creates one from value.name), value={name?, type?, url?, command?, args?, env?, headers?, enabled?, timeoutMs?} MERGED into the app database record (stdio needs command, http/sse need url; projectId selects the project scope; value.tools={toolName:bool} or value.disabledTools=[...] flips tool-level switches; env/headers are masked on read). requestLogging: key=settings, value={enabled: bool, expiresInMinutes?: number} - enabling requires an expiry (default 30 minutes, max 1440) because the backend auto-resets the switch afterwards. toolApproval: key=tools (projectId required; project sessions inject it automatically), value = an array of tool names, {tools: [...]} (full replace), or {add: [...], remove: [...]}; the global list is written with scope=permissions key=alwaysApprovedTools. scheduledTasks and usage are READ-ONLY scopes and reject set. appSettings: key=liteMode|autoFormat (boolean), terminal|proxyBrowser (whitelist-merged objects), imageLibraryDir (string; empty restores the default) - yoloMode is read-only. privacy: key=settings (merge; an empty apiKey keeps the existing secret). codebase: key=settings (global, whitelist-merged, empty keys preserved) or key=scope (project-level overrides). keyboardShortcuts: key=settings, sparse-merged per action. workspace: key=collections with {action: create|rename|move|reorder|removeMember}.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -3873,7 +4052,7 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_DELETE.to_string(),
-                description: "Delete a configuration key (e.g. clear an apiKey). DESTRUCTIVE — REQUIRES EXPLICIT USER CONFIRMATION: before calling this tool you MUST call the `askUserQuestion` tool from the `user-interaction` server to show the user exactly which config will be deleted (scope, key, projectId) and its impact, then wait for their explicit approval; only then retry this call with `confirmed: true`. Calls without `confirmed: true` are rejected. Scope-specific semantics: `imagegen` DELETES ALL image generation channels (not just the named key — the whole image generation config is cleared); `skills` uninstalls the skill; `logs` deletes one log file; `subAgents` deletes a sub-agent (built-in agent_general cannot be deleted); `hooks` deletes the hookType config; `apiProfiles` deletes an API profile (no default profile is auto-created; if no profile is active after the deletion, one remaining profile is activated automatically). `userscripts` deletes a userscript (DB row + ~/.snowapp/browser-script file). `customHeaderSchemes` deletes one request-header scheme from the app database (API profiles bound to it stop applying those headers; the response lists them as affectedProfiles). `personalization` deletes ~/.snow/ROLE.md (restores default rules). The current value is backed up before the write (temporary safety net) and the backup is removed after a successful write. Returns deleted=false when the key was not configured. Pass optional `projectId` to delete a project-scoped config (omitted = global). Project-scoped settings: projectId + settings.mcpServers clears all project MCP servers; projectId + settings.sensitiveCommands clears all project sensitive-command overrides. `mcpServers` deletes one LIVE MCP server (pass projectId for the project scope; requires confirmed; the response echoes the removed serverId). `toolApproval` clears the project-level no-confirmation allow-list (requires confirmed; the global list must be cleared with scope=permissions). `scheduledTasks` and `usage` are read-only scopes and reject delete; `requestLogging` has no delete (set enabled=false instead).".to_string(),
+                description: "Delete a configuration key (e.g. clear an apiKey). DESTRUCTIVE — REQUIRES EXPLICIT USER CONFIRMATION: before calling this tool you MUST call the `askUserQuestion` tool from the `user-interaction` server to show the user exactly which config will be deleted (scope, key, projectId) and its impact, then wait for their explicit approval; only then retry this call with `confirmed: true`. Calls without `confirmed: true` are rejected. Scope-specific semantics: `imagegen` DELETES ALL image generation channels (not just the named key — the whole image generation config is cleared); `skills` uninstalls the skill; `logs` deletes one log file; `subAgents` deletes a sub-agent (built-in agent_general cannot be deleted); `hooks` deletes the hookType config; `apiProfiles` deletes an API profile (no default profile is auto-created; if no profile is active after the deletion, one remaining profile is activated automatically). `userscripts` deletes a userscript (DB row + ~/.snowapp/browser-script file). `customHeaderSchemes` deletes one request-header scheme from the app database (API profiles bound to it stop applying those headers; the response lists them as affectedProfiles). `personalization` deletes ~/.snow/ROLE.md (restores default rules). The current value is backed up before the write (temporary safety net) and the backup is removed after a successful write. Returns deleted=false when the key was not configured. Pass optional `projectId` to delete a project-scoped config (omitted = global). Project-scoped settings: projectId + settings.mcpServers clears all project MCP servers; projectId + settings.sensitiveCommands clears all project sensitive-command overrides. `mcpServers` deletes one LIVE MCP server (pass projectId for the project scope; requires confirmed; the response echoes the removed serverId). `toolApproval` clears the project-level no-confirmation allow-list (requires confirmed; the global list must be cleared with scope=permissions). `scheduledTasks` and `usage` are read-only scopes and reject delete; `requestLogging` has no delete (set enabled=false instead). `appSettings`, `privacy`, `codebase` and `keyboardShortcuts` do not support delete (write explicit values instead). `workspace` deletes a project group with key=\"collection:<collectionId>\" (requires confirmed; the response reports how many members were detached - projects themselves are never deleted here).".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -3990,6 +4169,11 @@ mod tests {
             SCOPE_SCHEDULED_TASKS,
             SCOPE_TOOL_APPROVAL,
             SCOPE_USAGE,
+            SCOPE_APP_SETTINGS,
+            SCOPE_PRIVACY,
+            SCOPE_CODEBASE,
+            SCOPE_KEYBOARD_SHORTCUTS,
+            SCOPE_WORKSPACE,
         ] {
             assert!(
                 CONFIG_SCOPE_ENUM.contains(&scope),

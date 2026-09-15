@@ -19,7 +19,7 @@ description: >-
   custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy/
   subAgents/hooks/skills/logs/imagegen/personalization/apiProfiles/
   customHeaderSchemes/mcpServers/requestLogging/scheduledTasks/toolApproval/
-  usage), including
+  usage/appSettings/privacy/codebase/keyboardShortcuts/workspace), including
   project-scoped mcpServers/sensitiveCommands/subAgents/hooks/skills via
   `projectId`, the read-only logs scope, imagegen multi-channel settings,
   masked secrets, and app-control-openSettings (21 settings pages).
@@ -149,6 +149,14 @@ allowed-tools:
   `requestLogging`（`key=settings`，开启必须带过期时间，到期自动复位）、`toolApproval`
   （项目级工具免确认白名单；全局仍走 `permissions` 域）、`scheduledTasks` 与 `usage`
   为只读域（前者调度器在渲染进程，写入被拒绝并指向 `app-control-createScheduledTask`）。
+  → `3-参考手册/2-内置工具参考.md`
+- **集中开关 / 索引 / 隐私 / 快捷键 / 工作区（DB 域）**：`appSettings`（`liteMode`、
+  `autoFormat`、`terminal`、`proxyBrowser`、`imageLibraryDir`；`yoloMode` 只读）、
+  `privacy`（apiKey 写入空值保留旧值，`mode=local|api`）、`codebase`（全局白名单
+  merge，改 embedding 配置后需重建索引；项目级 `scope` 三态覆盖，未设置继承全局）、
+  `keyboardShortcuts`（按动作稀疏 merge，读取附带键位冲突）、`workspace`
+  （`directories` 只读、`collections` 按 action 增改、`collection:<id>` 读取、
+  delete 需确认）。
   → `3-参考手册/2-内置工具参考.md`
 - **站点拦截规则**：`blockedPatterns` 是应用全局数组，实际存储在应用数据库系统设置
   `proxy_browser_settings`，影响 `websearch` 结果过滤和 `websearch-fetch` 抓取拒绝，

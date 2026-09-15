@@ -1966,6 +1966,10 @@ export const zhTW = {
   "settings.customHeadersHeaderValuePlaceholder": "請求標頭值",
   "settings.customHeadersRemoveHeader": "移除請求標頭",
   "settings.customHeadersAddHeader": "新增請求標頭",
+  "settings.customHeadersVariablesLabel": "可用變數",
+  "settings.customHeadersVariablesInsertTip": "點擊插入到請求標頭值",
+  "settings.customHeadersVariablesHint":
+    "以上 6 種寫法等價：送出請求時替換為目前會話 ID（可與其他文字組合，如 snow-app-{{session_id}}）；無會話上下文的請求（如取得模型清單）會省略該請求標頭。",
   "settings.saveCustomHeaders": "儲存方案",
   "settings.customHeadersListTitle": "請求標頭方案",
   "settings.customHeadersNoSchemes":

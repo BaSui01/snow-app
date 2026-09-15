@@ -245,7 +245,11 @@ where
 async fn review_results(query: &str, results: &[SearchResult]) -> Result<ReviewOutcome> {
     let context = get_active_api_request_context()?;
     let api_config = context.api_config;
-    let custom_headers = context.custom_headers;
+    // A review request belongs to no conversation: session-scoped header
+    // placeholders (`{{session_id}}`) are dropped instead of sending the
+    // literal template.
+    let mut custom_headers = context.custom_headers;
+    crate::api::common::expand_custom_header_session_id(&mut custom_headers, "");
 
     let model = resolve_basic_model(None, &api_config.basic_model)?;
 

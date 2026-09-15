@@ -310,6 +310,19 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     // 磁盘加载全局模式——冷会话一律使用中性默认值（Plan/Goal 关、
     // 预算 2000000），已打开会话的模式由各自的 session ref 恢复。
 
+    // 历史遗留工具名别名：MCP server "bash" 的内部工具名是 `terminal-execute`，
+    // 暴露给模型的完整名是 `bash-terminal-execute`；早期文档示例与旧配置可能
+    // 写入内部名或 `mcp__bash__terminal-execute` 形式。授权判定用的是完整名
+    // （见 shouldAutoApprove），因此这里统一归一化，避免既有免确认条目静默失效。
+    // 只做精确别名映射，不做模糊匹配，不扩大授权范围。
+    const ALWAYS_APPROVED_TOOL_ALIASES: Record<string, string> = {
+      "terminal-execute": "bash-terminal-execute",
+      "mcp__bash__terminal-execute": "bash-terminal-execute",
+    };
+
+    const normalizeApprovedToolName = (name: string): string =>
+      ALWAYS_APPROVED_TOOL_ALIASES[name] ?? name;
+
     // 免审批列表 = 全局 permissions.alwaysApprovedTools（~/.snow/
     // permissions.json，对所有项目生效）∪ 项目级授权（应用 DB）。
     const loadApprovedTools = (): void => {
@@ -325,15 +338,17 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
         ]).then(([globalNames, projectNames]) => {
           if (!disposed) {
             ctx.alwaysApprovedToolsRef.current = new Set([
-              ...globalNames,
-              ...projectNames,
+              ...globalNames.map(normalizeApprovedToolName),
+              ...projectNames.map(normalizeApprovedToolName),
             ]);
           }
         });
       } else {
         void globalPromise.then((globalNames) => {
           if (!disposed) {
-            ctx.alwaysApprovedToolsRef.current = new Set(globalNames);
+            ctx.alwaysApprovedToolsRef.current = new Set(
+              globalNames.map(normalizeApprovedToolName),
+            );
           }
         });
       }

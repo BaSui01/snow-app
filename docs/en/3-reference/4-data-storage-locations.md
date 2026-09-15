@@ -201,23 +201,23 @@ Non-macOS platforms use `electron-updater`. Its download cache is managed by the
 
 This directory is shared with Snow CLI and the `config` tool. Main entries include:
 
-| Path                                             | Contents and boundary                                                                             |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| `settings.json`                                  | Global settings; workspace settings may override them                                             |
-| `config.json`                                    | `snowcfg` API/model configuration that may contain keys                                           |
-| `proxy-config.json`                              | Proxy, search-engine, and browser configuration                                                   |
-| `active-profile.json`                            | Active profile                                                                                    |
-| `custom-headers.json`                            | CLI custom-header synchronization source; may contain secrets                                     |
-| `system-prompt.json`                             | CLI system-prompt synchronization source                                                          |
-| `theme.json` / `language.json`                   | Config-tool theme and language domains; not the sole source for current SQLite-backed UI settings |
-| `permissions.json`                               | Always-approved tool allowlist                                                                    |
-| `lsp-config.json` / `buddy.json`                 | LSP and Buddy configuration                                                                       |
-| `ROLE.md`                                        | Global personalization rules                                                                      |
-| `skills/` / `skills-registry.json`               | Global skills and registration metadata                                                           |
-| `docs/`                                          | Synchronized built-in documentation copy                                                          |
-| `plugin-marketplaces/` / `plugins/marketplaces/` | Plugin marketplace cache and installed bodies                                                     |
-| `log/`                                           | Daily level files for the config `logs` scope                                                     |
-| `.config-backups/`                               | Temporary pre-write safety net used by the config tool and removed after success                  |
+| Path                                             | Contents and boundary                                                                                                                                                                         |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `settings.json`                                  | Global settings; workspace settings may override them                                                                                                                                         |
+| `config.json`                                    | `snowcfg` API/model configuration that may contain keys                                                                                                                                       |
+| `proxy-config.json`                              | Proxy, search-engine, and browser configuration                                                                                                                                               |
+| `active-profile.json`                            | Active profile                                                                                                                                                                                |
+| `custom-headers.json`                            | CLI custom-header synchronization source; may contain secrets. The schemes the app actually sends live in the app database `custom_header_schemes` table (config scope `customHeaderSchemes`) |
+| `system-prompt.json`                             | CLI system-prompt synchronization source                                                                                                                                                      |
+| `theme.json` / `language.json`                   | Config-tool theme and language domains; not the sole source for current SQLite-backed UI settings                                                                                             |
+| `permissions.json`                               | Always-approved tool allowlist                                                                                                                                                                |
+| `lsp-config.json` / `buddy.json`                 | LSP and Buddy configuration                                                                                                                                                                   |
+| `ROLE.md`                                        | Global personalization rules                                                                                                                                                                  |
+| `skills/` / `skills-registry.json`               | Global skills and registration metadata                                                                                                                                                       |
+| `docs/`                                          | Synchronized built-in documentation copy                                                                                                                                                      |
+| `plugin-marketplaces/` / `plugins/marketplaces/` | Plugin marketplace cache and installed bodies                                                                                                                                                 |
+| `log/`                                           | Daily level files for the config `logs` scope                                                                                                                                                 |
+| `.config-backups/`                               | Temporary pre-write safety net used by the config tool and removed after success                                                                                                              |
 
 ## 6. Project Workspace
 

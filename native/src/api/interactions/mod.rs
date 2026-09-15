@@ -51,7 +51,7 @@ async fn create_interactions_response_async(
     request: ResponsesApiRequest,
     database_path: PathBuf,
     api_config: ApiConfigRecord,
-    custom_headers: HashMap<String, String>,
+    mut custom_headers: HashMap<String, String>,
     on_chunk: &ResponsesApiStreamCallback,
     cancel_token: CancellationToken,
 ) -> Result<ResponsesApiResult> {
@@ -108,6 +108,13 @@ async fn create_interactions_response_async(
         remote_include_global_rules: request.remote_include_global_rules,
     })
     .await?;
+
+    // Session-scoped header placeholders (e.g. `{{session_id}}`) resolve to the
+    // conversation this request is stored under.
+    crate::api::common::expand_custom_header_session_id(
+        &mut custom_headers,
+        &prepared_request.conversation_id,
+    );
 
     let client = crate::api::http_client::build_proxied_client()
         .await

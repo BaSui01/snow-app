@@ -70,7 +70,10 @@ pub async fn generate_conversation_summary(
     )?;
     let database_path = context.database_path;
     let api_config = context.api_config;
-    let custom_headers = context.custom_headers;
+    let mut custom_headers = context.custom_headers;
+    // The summary belongs to `conversation_id`, so session-scoped header
+    // placeholders (e.g. `{{session_id}}`) resolve to that conversation.
+    crate::api::common::expand_custom_header_session_id(&mut custom_headers, &conversation_id);
     let model = resolve_basic_model(basic_model.as_deref(), &api_config.basic_model)?;
 
     let messages = load_context_messages(&database_path, &conversation_id)?;

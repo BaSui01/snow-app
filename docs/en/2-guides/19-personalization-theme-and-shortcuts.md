@@ -52,11 +52,11 @@ System-prompt templates are stored in the SQLite `system_prompts` table. They ca
 
 An API profile's `systemPromptIdsJson` has three states:
 
-| Value | Behavior |
-|---|---|
-| Empty string | Inherit globally enabled system prompts |
-| `__DISABLED__` | Use no user-configured system-prompt template for this profile |
-| JSON string array | Bind an explicit list of system-prompt IDs |
+| Value             | Behavior                                                       |
+| ----------------- | -------------------------------------------------------------- |
+| Empty string      | Inherit globally enabled system prompts                        |
+| `__DISABLED__`    | Use no user-configured system-prompt template for this profile |
+| JSON string array | Bind an explicit list of system-prompt IDs                     |
 
 At runtime, effective user prompts map to each provider's protocol: a `system` message for Chat Completions, `instructions` for Responses, top-level `system` for Anthropic, and `systemInstruction` for Gemini. Whenever user prompts are present, they exclusively occupy that provider system field. Snow's built-in Agent prompt is not discarded; it is demoted to a leading `user` message. Without a user prompt, the built-in prompt remains in the provider system field. Consequently, `__DISABLED__` disables user templates rather than removing Snow's built-in Agent instructions.
 
@@ -66,21 +66,41 @@ Before disabling or deleting a template, check the profiles that use it. An expl
 
 Header schemes are stored in the SQLite `custom_header_schemes` table. They can be created, edited, enabled, disabled, and deleted. Header names must be unique within a scheme, and Snow CLI configuration can be synchronized from `~/.snow/custom-headers.json`.
 
+> **Know the two entry points**: `~/.snow/custom-headers.json` is only a Snow CLI
+> compatibility sync source — writing it does not change the headers the app sends
+> (the user must click "Sync Snow CLI custom headers" in the panel). The app's live
+> configuration is the database table above. To let an agent maintain live headers
+> directly, use
+> `config-set scope=customHeaderSchemes key=<schemeId> value={name?, headers?, isActive?}`:
+> `headers` is merged (set a header to `null` to remove it) and `isActive:true`
+> activates the scheme exclusively; changes apply to subsequent API requests
+> immediately (in-flight requests are unaffected).
+
+Below the header list, the scheme editor shows an "Available variables" hint listing the six equivalent session-ID spellings (`{{session_id}}`, `{{sessionId}}`, `{{conversation_id}}`, `{{conversationId}}`, `${session_id}`, `${conversation_id}`): clicking one inserts it at the caret position inside the header value, where it can be combined with other text.
+
 An API profile's `customHeaderSchemeId` also has three states:
 
-| Value | Behavior |
-|---|---|
-| Empty string | Inherit the global header scheme |
-| `__DISABLED__` | Add no custom headers |
-| Scheme ID | Bind the specified header scheme |
+| Value          | Behavior                         |
+| -------------- | -------------------------------- |
+| Empty string   | Inherit the global header scheme |
+| `__DISABLED__` | Add no custom headers            |
+| Scheme ID      | Bind the specified header scheme |
 
 Custom headers are injected after Snow sets authentication and protocol headers. Empty names/values are skipped, while an invalid HTTP header name or value fails the request. Reserved names are matched case-insensitively and cannot override application-managed values:
 
-| Provider protocol | Headers a custom scheme cannot override |
-|---|---|
-| Chat Completions and Responses | `Authorization`, `Content-Type`, `Accept-Encoding` |
-| Anthropic | The preceding three plus `X-API-Key` |
-| Gemini | `Content-Type`, `Accept-Encoding`; the API key is in the URL query rather than an Authorization header |
+| Provider protocol              | Headers a custom scheme cannot override                                                                |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Chat Completions and Responses | `Authorization`, `Content-Type`, `Accept-Encoding`                                                     |
+| Anthropic                      | The preceding three plus `X-API-Key`                                                                   |
+| Gemini                         | `Content-Type`, `Accept-Encoding`; the API key is in the URL query rather than an Authorization header |
+
+### Session Variable in Header Values
+
+Header values support the `{{session_id}}` template placeholder: when a request is sent, it is replaced with the session ID of the conversation that issues it (the conversation's `conversation_id`, shaped like `conv-<timestamp>-<pid>`), and it can be combined with fixed text (for example `snow-app-{{session_id}}`). The aliases `{{sessionId}}`, `{{conversation_id}}`, and `${session_id}` are equivalent.
+
+- Conversation-scoped requests expand to the current session ID: Chat Completions, Responses, Anthropic, Gemini, Interactions, and conversation summaries; a sub-agent conversation uses its own session ID.
+- Requests without a session context (model listing, codebase review, standalone image reading, and similar helpers) omit the header instead of sending the literal `{{session_id}}`.
+- Unrecognized placeholders are left untouched and everything else is sent as-is.
 
 > **Security warning:** Headers may contain API keys, bearer tokens, cookies, or other secrets. Do not share raw configuration files, the database, request logs, or screenshots that expose headers. Redact troubleshooting material first.
 
@@ -141,15 +161,15 @@ active pet, and toggle between waking (showing on your desktop) and dismissing
 
 `Mod` means the platform's primary modifier: Command on macOS and Control on other platforms.
 
-| Action | Default key |
-|---|---|
-| Cancel the current session | `Escape` |
-| Open search | `Mod+F` |
-| Open memo | `Mod+B` |
-| Open TODO | `Mod+T` |
-| Cycle project | `Mod+Backtick` |
-| Open project explorer | `Mod+D` |
-| Cycle API profile | macOS `Ctrl+P`; other platforms `Alt+P` |
+| Action                     | Default key                             |
+| -------------------------- | --------------------------------------- |
+| Cancel the current session | `Escape`                                |
+| Open search                | `Mod+F`                                 |
+| Open memo                  | `Mod+B`                                 |
+| Open TODO                  | `Mod+T`                                 |
+| Cycle project              | `Mod+Backtick`                          |
+| Open project explorer      | `Mod+D`                                 |
+| Cycle API profile          | macOS `Ctrl+P`; other platforms `Alt+P` |
 
 All seven shortcuts are enabled by default with `foregroundOnly=true`. Their JSON configuration is stored in the `keyboard_shortcuts` record in SQLite `system_settings`.
 
@@ -163,13 +183,13 @@ The “Foreground only” value is persisted, but the current engine is based on
 
 ## Storage, Lifecycle, and Security Boundaries
 
-| Data | Location | Lifecycle | Security boundary |
-|---|---|---|---|
-| Global ROLE | `~/.snow/ROLE.md` | Retained until the user overwrites or deletes it | Can affect every project that loads global rules |
-| Project ROLE and switch | `<workspace>/ROLE.md`, `<workspace>/.snow/settings.json` | Retained with workspace files | Limited to the current project; SSH content uses the remote-access path |
-| System prompts and header schemes | `~/.snowapp/snowapp.db` | Retained until UI deletion, database migration, or recovery | May contain instructions and secrets; database backups are sensitive too |
-| Theme, language, and shortcuts | SQLite `system_settings` | Retained until changed, reset, or the database is replaced | localStorage is only a startup cache, not a replacement source of truth |
-| Backgrounds and cursor SVGs | `~/.snowapp/backgrounds/`, `~/.snowapp/stream-cursors/` | Managed copies remain after the original is removed | `theme-bg://` exposes only controlled local resources |
+| Data                              | Location                                                 | Lifecycle                                                   | Security boundary                                                        |
+| --------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Global ROLE                       | `~/.snow/ROLE.md`                                        | Retained until the user overwrites or deletes it            | Can affect every project that loads global rules                         |
+| Project ROLE and switch           | `<workspace>/ROLE.md`, `<workspace>/.snow/settings.json` | Retained with workspace files                               | Limited to the current project; SSH content uses the remote-access path  |
+| System prompts and header schemes | `~/.snowapp/snowapp.db`                                  | Retained until UI deletion, database migration, or recovery | May contain instructions and secrets; database backups are sensitive too |
+| Theme, language, and shortcuts    | SQLite `system_settings`                                 | Retained until changed, reset, or the database is replaced  | localStorage is only a startup cache, not a replacement source of truth  |
+| Backgrounds and cursor SVGs       | `~/.snowapp/backgrounds/`, `~/.snowapp/stream-cursors/`  | Managed copies remain after the original is removed         | `theme-bg://` exposes only controlled local resources                    |
 
 For the full directory, backup, and restore boundaries, see [Data Storage Locations](../3-reference/4-data-storage-locations.md).
 

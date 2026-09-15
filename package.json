@@ -82,6 +82,7 @@
     "appId": "com.snow.app",
     "productName": "Snow App",
     "asar": true,
+    "npmRebuild": false,
     "files": [
       "out/**",
       "native/snow_native.*.node",

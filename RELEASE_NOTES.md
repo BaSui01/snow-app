@@ -7,6 +7,9 @@
 - **Phone Remote Control**: Drive the current session from a phone browser — live conversation and streaming, workspace/model switching, tool approvals, question answering, image and file attachments, and session rollback, plus dedicated tool cards and workflow canvas cards. The remote HTTP service now runs in the Rust native layer, the public entry uses long-term tokens (one-time pairing codes and credential rotation removed), and the bundled frpc extends to macOS/Linux with multi-distribution Linux deployment and custom ports.
 - **Workspace Relocation**: Project directory health is verified (missing location, unmounted volume, no permission) and can be relocated — conversations, memories, memos, scheduled tasks, and project-level settings migrate together, with merge support, a migration history, and undo.
 - **Markdown Table Export**: Tables in replies can be exported as CSV or XLSX.
+- **Header Session Variable**: custom header values support the `{{session_id}}` placeholder, expanded to the session ID of the conversation that sends the request; requests without a session context omit the header instead of sending the literal template.
+- **Five new config scopes**: live MCP servers (with tool-level switches), request logging (expiry required), scheduled tasks (read-only; writes point to the renderer channel), tool approval allow-list (project-level), and usage statistics (read-only).
+- **Five more config scopes**: centralized switches (`appSettings`, `yoloMode` read-only), privacy filtering (`privacy`), codebase index configuration (`codebase`, with project-level overrides), keyboard shortcuts (`keyboardShortcuts`, with conflict detection), and workspaces/project groups (`workspace`).
 
 ## Improvements
 

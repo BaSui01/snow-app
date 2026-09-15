@@ -349,6 +349,13 @@ pub fn fetch_available_models(
     config: &ApiConfigForModels,
     custom_headers: &HashMap<String, String>,
 ) -> Result<Vec<Model>> {
+    // A model listing belongs to no conversation: session-scoped header
+    // placeholders (`{{session_id}}`) are dropped instead of sending the
+    // literal template to the provider.
+    let mut resolved_headers = custom_headers.clone();
+    crate::api::common::expand_custom_header_session_id(&mut resolved_headers, "");
+    let custom_headers = &resolved_headers;
+
     let base_url = normalize_base_url(&config.base_url);
 
     if base_url.is_empty() {

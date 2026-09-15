@@ -61,7 +61,11 @@ pub(crate) async fn describe_image_file(path: &str, user_prompt: &str) -> Result
 
     // 3. 复用视觉管线（配置 + 客户端 + 缓存）
     let context = crate::api::config::get_active_api_request_context()?;
-    let vision_config = VisionApiConfig::from(&context.api_config, &context.custom_headers)?;
+    // 独立读图请求没有会话上下文：会话级占位符（`{{session_id}}`）直接丢弃，
+    // 避免把字面模板发送给供应商。
+    let mut custom_headers = context.custom_headers;
+    crate::api::common::expand_custom_header_session_id(&mut custom_headers, "");
+    let vision_config = VisionApiConfig::from(&context.api_config, &custom_headers)?;
     let client = crate::api::http_client::build_proxied_client()
         .await
         .map_err(|error| {

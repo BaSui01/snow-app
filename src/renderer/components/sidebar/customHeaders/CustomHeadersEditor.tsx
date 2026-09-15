@@ -10,7 +10,7 @@ type CustomHeadersEditorProps = {
   onUpdateHeaderPair: (
     pairId: string,
     field: "key" | "value",
-    value: string
+    value: string,
   ) => void;
   onAddHeaderPair: () => void;
   onRemoveHeaderPair: (pairId: string) => void;
@@ -105,6 +105,13 @@ export function CustomHeadersEditor({
           </div>
         ))}
       </div>
+
+      <small className="api-settings-hint-text">
+        {t("settings.customHeadersVariablesHint", {
+          defaultValue:
+            "Use {{session_id}} in a value: it is replaced with the session ID of the conversation that sends the request ({{sessionId}} works too). Requests without a session context omit this header.",
+        })}
+      </small>
     </>
   );
 }

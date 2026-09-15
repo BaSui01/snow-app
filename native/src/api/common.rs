@@ -319,6 +319,10 @@ pub(crate) fn read_first_i64(value: &Value, paths: &[&[&str]]) -> i64 {
 /// Each provider calls this after setting its own authentication headers,
 /// passing the keys it manages internally so user headers cannot override
 /// them.
+///
+/// Entries whose value still carries an unexpanded session-id placeholder are
+/// skipped as well (see [`expand_custom_header_session_id`]): a request without
+/// conversation context must not send the literal template to the provider.
 pub(crate) fn inject_custom_headers(
     headers: &mut HeaderMap,
     custom_headers: &HashMap<String, String>,
@@ -328,6 +332,10 @@ pub(crate) fn inject_custom_headers(
         let trimmed_key = key.trim();
         let trimmed_value = value.trim();
         if trimmed_key.is_empty() || trimmed_value.is_empty() {
+            continue;
+        }
+
+        if contains_session_id_placeholder(trimmed_value) {
             continue;
         }
 
@@ -353,4 +361,135 @@ pub(crate) fn inject_custom_headers(
         headers.insert(header_name, header_value);
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Custom header placeholders
+// ---------------------------------------------------------------------------
+
+/// Placeholder tokens accepted inside custom header values for the session id
+/// of the conversation that sends the request.
+///
+/// `{{session_id}}` follows the `{{NAME}}` convention already used by
+/// scheduled-task prompts; the remaining spellings exist so users do not have
+/// to memorize one exact form. All of them are replaced inside a longer value
+/// as well, so `snow-app-{{session_id}}` works.
+pub(crate) const SESSION_ID_PLACEHOLDER_TOKENS: &[&str] = &[
+    "{{session_id}}",
+    "{{sessionId}}",
+    "{{conversation_id}}",
+    "{{conversationId}}",
+    "${session_id}",
+    "${conversation_id}",
+];
+
+/// True when `value` still carries a session-id placeholder token.
+pub(crate) fn contains_session_id_placeholder(value: &str) -> bool {
+    SESSION_ID_PLACEHOLDER_TOKENS
+        .iter()
+        .any(|token| value.contains(token))
+}
+
+/// Expand session-id placeholders in custom header values.
+///
+/// `session_id` is the conversation id the request belongs to (the same id the
+/// exchange is persisted under), so a scheme like `x-session: {{session_id}}`
+/// addresses the conversation that is actually sending the request.
+///
+/// Passing an empty `session_id` (a request with no conversation context, such
+/// as a model listing) clears the affected values instead of leaking the
+/// literal template; empty values are skipped by every header builder, so the
+/// header is simply omitted for those requests.
+pub(crate) fn expand_custom_header_session_id(
+    headers: &mut HashMap<String, String>,
+    session_id: &str,
+) {
+    let session_id = session_id.trim();
+
+    for value in headers.values_mut() {
+        if !contains_session_id_placeholder(value) {
+            continue;
+        }
+
+        if session_id.is_empty() {
+            value.clear();
+            continue;
+        }
+
+        let mut expanded = value.clone();
+        for token in SESSION_ID_PLACEHOLDER_TOKENS {
+            if expanded.contains(token) {
+                expanded = expanded.replace(token, session_id);
+            }
+        }
+        *value = expanded;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{contains_session_id_placeholder, expand_custom_header_session_id};
+    use std::collections::HashMap;
+
+    fn headers(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+        pairs
+            .iter()
+            .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn expands_session_id_placeholders_and_keeps_other_values() {
+        let mut custom = headers(&[
+            ("x-opencode-session", "{{session_id}}"),
+            ("x-prefixed", "snow-app-{{session_id}}"),
+            ("user-agent", "Snow-App/1.0 (coding-agent)"),
+            ("x-dollar", "${session_id}"),
+        ]);
+
+        expand_custom_header_session_id(&mut custom, "conv-123-456");
+
+        assert_eq!(
+            custom.get("x-opencode-session").map(String::as_str),
+            Some("conv-123-456")
+        );
+        assert_eq!(
+            custom.get("x-prefixed").map(String::as_str),
+            Some("snow-app-conv-123-456")
+        );
+        assert_eq!(
+            custom.get("x-dollar").map(String::as_str),
+            Some("conv-123-456")
+        );
+        assert_eq!(
+            custom.get("user-agent").map(String::as_str),
+            Some("Snow-App/1.0 (coding-agent)")
+        );
+    }
+
+    #[test]
+    fn clears_placeholder_values_without_conversation_context() {
+        let mut custom = headers(&[
+            ("x-session", "{{session_id}}"),
+            ("x-static", "fixed"),
+        ]);
+
+        expand_custom_header_session_id(&mut custom, "   ");
+
+        assert_eq!(custom.get("x-session").map(String::as_str), Some(""));
+        assert_eq!(custom.get("x-static").map(String::as_str), Some("fixed"));
+    }
+
+    #[test]
+    fn leaves_unknown_placeholders_untouched() {
+        let mut custom = headers(&[("x-unknown", "{{unknown_token}}")]);
+
+        expand_custom_header_session_id(&mut custom, "conv-123-456");
+
+        assert_eq!(
+            custom.get("x-unknown").map(String::as_str),
+            Some("{{unknown_token}}")
+        );
+        assert!(!contains_session_id_placeholder("{{unknown_token}}"));
+    }
 }

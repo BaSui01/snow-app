@@ -2051,6 +2051,8 @@ export const en = {
   "settings.customHeadersHeaderValuePlaceholder": "Header value",
   "settings.customHeadersRemoveHeader": "Remove header",
   "settings.customHeadersAddHeader": "Add header",
+  "settings.customHeadersVariablesHint":
+    "Use {{session_id}} in a value: it is replaced with the session ID of the conversation that sends the request ({{sessionId}} works too). Requests without a session context (e.g. model listing) omit this header.",
   "settings.saveCustomHeaders": "Save scheme",
   "settings.customHeadersListTitle": "Header schemes",
   "settings.customHeadersNoSchemes":

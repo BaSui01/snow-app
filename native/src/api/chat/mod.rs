@@ -56,7 +56,7 @@ async fn create_chat_completion_response_async(
     request: ResponsesApiRequest,
     database_path: PathBuf,
     api_config: ApiConfigRecord,
-    custom_headers: HashMap<String, String>,
+    mut custom_headers: HashMap<String, String>,
     on_chunk: &ResponsesApiStreamCallback,
     cancel_token: CancellationToken,
 ) -> Result<ResponsesApiResult> {
@@ -117,6 +117,13 @@ async fn create_chat_completion_response_async(
         remote_role_content: request.remote_role_content.as_deref(),
         remote_include_global_rules: request.remote_include_global_rules,
     }).await?;
+
+    // Session-scoped header placeholders (e.g. `{{session_id}}`) resolve to the
+    // conversation this request is stored under.
+    crate::api::common::expand_custom_header_session_id(
+        &mut custom_headers,
+        &prepared_request.conversation_id,
+    );
 
     let skip_context = request.skip_context.unwrap_or(false);
     let mut prepared_messages = prepared_request.messages;

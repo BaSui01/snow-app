@@ -12,6 +12,7 @@
 | Dev mode (`npm run dev`) works, packaged build does not | `out/` was written concurrently during packaging | Sections 2 & 4 |
 | Installed app exits quickly, no WER crash record in Event Viewer | Main-process JS syntax error (graceful exit code 1) | Diagnostic commands in Section 2 |
 | "Entry point not found" DLL error dialog | Missing runtime / incomplete artifact | Check top-level DLLs in `win-unpacked` |
+| Packaging aborts with `gyp: buildcheck.gypi not found` (cpu-features) | An optional dependency's install step was skipped, so its gyp fragment is missing | See Section 6 |
 
 > A failed packaged app usually leaves **no logs at all**: `snowLog` writes via the Rust
 > `writeAppLog` into SQLite, but the process dies before logging initializes, so neither
@@ -120,6 +121,7 @@ process failed during module loading.
 3. Note that packaging may include uncommitted changes — `git log -1 --format="%ci"`
    shows when the current commit was made;
 4. Run the startup check in Section 3 before releasing.
+5. If packaging fails on cpu-features / `buildcheck.gypi`, generate the gyp fragment first (Section 6); `build.npmRebuild: false` is a fallback switch that must be re-evaluated when adding nan/V8-ABI native dependencies.
 
 ## 5. Diagnostic Tool Caveats
 
@@ -130,3 +132,56 @@ process failed during module loading.
   reading raw bytes by offset also yields wrong content;
 - Reliable way: `ELECTRON_RUN_AS_NODE=1 electron.exe -e "require('fs').readFileSync('app.asar/<path>')"`
   (Electron's `fs` natively supports asar paths and returns the exact bytes the app loads).
+
+## 6. Case Study: Packaging Aborted by a Failed Native Rebuild (2026-09-15)
+
+### 6.1 Symptoms
+
+`npm run build:win` aborts during the electron-builder phase and `release/` stays empty:
+
+```
+• executing @electron/rebuild  electronVersion=37.10.3 arch=x64
+• preparing       moduleName=cpu-features arch=x64
+⨯ gyp: buildcheck.gypi not found (cwd: node_modules/cpu-features) while reading
+  includes of deps\cpu_features\cpu_features.gyp
+⨯ node-gyp failed to rebuild 'node_modules/cpu-features'
+```
+
+### 6.2 Root cause
+
+`cpu-features` (an optional acceleration dependency of `ssh2`, built with `nan`/V8 ABI, so
+it must be rebuilt for Electron) generates its gyp fragment during install:
+
+```
+"install": "node buildcheck.js > buildcheck.gypi && node-gyp rebuild"
+```
+
+When that step is skipped (npm ignores a failed optional-dependency install, or the
+install was interrupted), `buildcheck.gypi` is missing — it is **not part of the published
+npm package** (verify with `npm pack buildcheck@0.0.2`), so reinstalling `buildcheck`
+never restores it.
+
+### 6.3 Fix
+
+```bash
+# 1) Generate the gyp fragment (idempotent)
+cd node_modules/cpu-features && node buildcheck.js > buildcheck.gypi
+
+# 2) Package again (requires VS C++ toolchain + Python; @electron/rebuild rebuilds
+#    cpu-features and node-pty)
+cd ../.. && npm run build:win
+```
+
+If the machine genuinely cannot compile native modules (e.g. no VS Build Tools C++
+workload), rely on the fallback switch `package.json` → `build.npmRebuild: false`,
+which skips `@electron/rebuild`. Impact assessment: `node-pty` is N-API based and ships
+`prebuilds/win32-x64` (no rebuild needed); when `cpu-features` is missing or not rebuilt,
+`ssh2` falls back to pure JS (performance only). **Note**: when adding other nan/V8-ABI
+native dependencies, re-evaluate this switch and restore rebuilding.
+
+### 6.4 Verification
+
+- Packaging logs show `finished moduleName=cpu-features arch=x64` and
+  `completed installing native dependencies`;
+- Or verify the artifact per Section 3 (the asar main-process file matches the local one,
+  and the native binding lives in `app.asar.unpacked/native/`).

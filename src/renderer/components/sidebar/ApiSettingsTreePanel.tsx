@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { AlertTriangle, Copy, X } from "lucide-react";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { Modal } from "../common/Modal";
 import { useI18n } from "../../i18n";
-import type { ApiConfigRecord } from "../../../preload";
+import type { ApiConfigImportOutcome, ApiConfigRecord } from "../../../preload";
 import { ApiSettingsActions } from "./apiSettings/ApiSettingsActions";
 import {
   ApiSettingsFormActions,
@@ -22,6 +22,18 @@ import type {
   ApiSettingsPanelProps,
 } from "./apiSettings/types";
 
+/** 导入文件中与现有配置同名的待确认状态。 */
+type PendingApiConfigImport = {
+  filePath: string;
+  /** 文件中可导入的配置总数。 */
+  totalCount: number;
+  /** 文件中与现有配置同名的配置名。 */
+  conflictNames: string[];
+};
+
+/** 冲突确认弹窗中最多直接列出的同名配置数量。 */
+const MAX_LISTED_CONFLICTS = 8;
+
 export function ApiSettingsTreePanel({
   onClose,
 }: ApiSettingsPanelProps): React.JSX.Element {
@@ -29,6 +41,7 @@ export function ApiSettingsTreePanel({
   const [configs, setConfigs] = useState<ApiConfigRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [addForm, setAddForm] = useState<ApiConfigFormData>(() =>
     emptyApiConfigForm(1, true),
@@ -36,10 +49,12 @@ export function ApiSettingsTreePanel({
   const [editingConfig, setEditingConfig] = useState<ApiConfigRecord | null>(
     null,
   );
+  const [pendingImport, setPendingImport] =
+    useState<PendingApiConfigImport | null>(null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
 
-  const isBusy = isLoading || isSaving;
+  const isBusy = isLoading || isSaving || isImporting;
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -170,6 +185,151 @@ export function ApiSettingsTreePanel({
       );
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  /** 把导入结果拼成一条状态提示（覆盖/副本/忽略条目数按需追加）。 */
+  const buildImportStatus = (outcome: ApiConfigImportOutcome): string => {
+    let message = t("settings.apiImportFileSuccess", {
+      defaultValue: "Imported {count} API profile(s).",
+    }).replace("{count}", String(outcome.importedCount));
+
+    if (outcome.overwrittenCount > 0) {
+      message += ` ${t("settings.apiImportOverwriteCount", {
+        defaultValue: "Overwrote {count} same-name profile(s).",
+      }).replace("{count}", String(outcome.overwrittenCount))}`;
+    }
+    if (outcome.renamedCount > 0) {
+      message += ` ${t("settings.apiImportRenamedCount", {
+        defaultValue: "Kept {count} as new copies.",
+      }).replace("{count}", String(outcome.renamedCount))}`;
+    }
+    if (outcome.skippedCount > 0) {
+      message += ` ${t("settings.apiImportSkippedCount", {
+        defaultValue: "Skipped {count} unrecognized entries.",
+      }).replace("{count}", String(outcome.skippedCount))}`;
+    }
+    if (outcome.activatedProfileName) {
+      message += ` ${t("settings.apiImportActivated", {
+        defaultValue: "Activated {name}.",
+      }).replace("{name}", outcome.activatedProfileName)}`;
+    }
+
+    return message;
+  };
+
+  const applyImport = async (
+    filePath: string,
+    conflictStrategy: "overwrite" | "duplicate",
+  ) => {
+    setIsSaving(true);
+    setIsImporting(true);
+    setError("");
+    setStatus("");
+
+    try {
+      const result = await window.snow.importApiConfigsFile(
+        filePath,
+        conflictStrategy,
+      );
+      setConfigs(result.configs);
+      setAddForm(
+        emptyApiConfigForm(
+          result.configs.length + 1,
+          result.configs.length === 0,
+        ),
+      );
+      setPendingImport(null);
+      setStatus(buildImportStatus(result.outcome));
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : t("settings.apiImportFileError", {
+              defaultValue: "Failed to import API profiles",
+            }),
+      );
+    } finally {
+      setIsSaving(false);
+      setIsImporting(false);
+    }
+  };
+
+  const handleImportFile = async () => {
+    setIsImporting(true);
+    setError("");
+    setStatus("");
+
+    try {
+      const result = await window.snow.pickApiConfigImportFile();
+      if (result.canceled || !result.preview) {
+        return;
+      }
+
+      const existingNames = new Set(
+        configs.map((config) => config.profileName),
+      );
+      const conflictNames = result.preview.profiles
+        .map((profile) => profile.profileName)
+        .filter((profileName) => existingNames.has(profileName));
+
+      if (conflictNames.length > 0) {
+        setPendingImport({
+          filePath: result.filePath,
+          totalCount: result.preview.profiles.length,
+          conflictNames,
+        });
+        return;
+      }
+
+      await applyImport(result.filePath, "overwrite");
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : t("settings.apiImportFileError", {
+              defaultValue: "Failed to import API profiles",
+            }),
+      );
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleExportSelected = async (profileNames: string[]) => {
+    setIsSaving(true);
+    setError("");
+    setStatus("");
+
+    try {
+      const result = await window.snow.exportApiConfigsFile(profileNames);
+      if (result.canceled) {
+        return;
+      }
+
+      setStatus(
+        `${t("settings.apiExportSuccess", {
+          defaultValue: "Exported {count} API profile(s) to {path}.",
+        })
+          .replace("{count}", String(result.exportedCount))
+          .replace("{path}", result.filePath)} ${t(
+          "settings.apiExportKeysWarning",
+          {
+            defaultValue:
+              "The exported file contains API keys in plain text. Keep it safe.",
+          },
+        )}`,
+      );
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : t("settings.apiExportError", {
+              defaultValue: "Failed to export API profiles",
+            }),
+      );
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -349,8 +509,10 @@ export function ApiSettingsTreePanel({
       <ApiSettingsActions
         isBusy={isBusy}
         isLoading={isLoading}
+        isImporting={isImporting}
         showAddForm={showAddForm}
         onImport={() => void handleImport()}
+        onImportFile={() => void handleImportFile()}
         onToggleAddForm={toggleAddForm}
       />
 
@@ -366,12 +528,16 @@ export function ApiSettingsTreePanel({
       <ApiSettingsTable
         configs={configs}
         isLoading={isLoading}
+        isBusy={isBusy}
         onDuplicate={(config) => void handleDuplicate(config)}
         onEdit={setEditingConfig}
         onDelete={(profileName, displayName) =>
           void handleDelete(profileName, displayName)
         }
         onToggleActive={(config) => void handleToggleActive(config)}
+        onExportSelected={(profileNames) =>
+          void handleExportSelected(profileNames)
+        }
       />
 
       <Modal
@@ -410,6 +576,91 @@ export function ApiSettingsTreePanel({
           })}
           asForm
         />
+      </Modal>
+
+      <Modal
+        open={pendingImport !== null}
+        title={t("settings.apiImportPreviewTitle", {
+          defaultValue: "Import API profiles",
+        })}
+        description={t("settings.apiImportPreviewInfo", {
+          defaultValue:
+            "{count} profile(s) in the file, {conflict} share a name with an existing profile.",
+        })
+          .replace("{count}", String(pendingImport?.totalCount ?? 0))
+          .replace(
+            "{conflict}",
+            String((pendingImport?.conflictNames ?? []).length),
+          )}
+        closeLabel={t("settings.cancel", { defaultValue: "Cancel" })}
+        onClose={() => setPendingImport(null)}
+        closeDisabled={isSaving}
+        footer={
+          <>
+            <button
+              className="api-settings-form-btn secondary"
+              onClick={() => setPendingImport(null)}
+              type="button"
+              disabled={isSaving}
+            >
+              <X size={15} strokeWidth={1.9} />
+              <span>{t("settings.cancel", { defaultValue: "Cancel" })}</span>
+            </button>
+            <button
+              className="api-settings-form-btn secondary"
+              onClick={() =>
+                pendingImport &&
+                void applyImport(pendingImport.filePath, "duplicate")
+              }
+              type="button"
+              disabled={isSaving}
+            >
+              <Copy size={15} strokeWidth={1.9} />
+              <span>
+                {t("settings.apiImportDuplicate", {
+                  defaultValue: "Keep both as copies",
+                })}
+              </span>
+            </button>
+            <button
+              className="api-settings-form-btn primary"
+              onClick={() =>
+                pendingImport &&
+                void applyImport(pendingImport.filePath, "overwrite")
+              }
+              type="button"
+              disabled={isSaving}
+            >
+              <AlertTriangle size={15} strokeWidth={1.9} />
+              <span>
+                {t("settings.apiImportOverwrite", {
+                  defaultValue: "Overwrite existing",
+                })}
+              </span>
+            </button>
+          </>
+        }
+      >
+        <div className="api-settings-import-conflict">
+          <span>
+            {t("settings.apiImportConflictHint", {
+              defaultValue: "Choose how to handle the duplicated names:",
+            })}
+          </span>
+          <ul>
+            {pendingImport?.conflictNames
+              .slice(0, MAX_LISTED_CONFLICTS)
+              .map((profileName) => (
+                <li key={profileName}>{profileName}</li>
+              ))}
+            {pendingImport &&
+              pendingImport.conflictNames.length > MAX_LISTED_CONFLICTS && (
+                <li>
+                  +{pendingImport.conflictNames.length - MAX_LISTED_CONFLICTS}
+                </li>
+              )}
+          </ul>
+        </div>
       </Modal>
 
       <ApiSettingsEditModal

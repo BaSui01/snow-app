@@ -40,6 +40,49 @@ export type ImportSnowCliApiConfigsResult = {
   configs: ApiConfigRecord[];
 };
 
+/** 导入文件预览中的单条配置（不含密钥，仅用于同名冲突确认）。 */
+export type ApiConfigImportPreviewItem = {
+  profileName: string;
+  displayName: string;
+  baseUrl: string;
+  requestMethod: string;
+  advancedModel: string;
+};
+
+export type ApiConfigImportPreview = {
+  profiles: ApiConfigImportPreviewItem[];
+  /** 文件中无法识别而被忽略的条目数。 */
+  skippedCount: number;
+};
+
+export type ApiConfigImportOutcome = {
+  importedCount: number;
+  /** 覆盖了同名既有配置的数量。 */
+  overwrittenCount: number;
+  /** 因同名而另存为新副本的数量。 */
+  renamedCount: number;
+  skippedCount: number;
+  /** 导入后按文件中的激活标记切换了启用配置时，返回该配置名。 */
+  activatedProfileName?: string | null;
+};
+
+export type ApiConfigExportFileResult = {
+  canceled: boolean;
+  filePath: string;
+  exportedCount: number;
+};
+
+export type ApiConfigImportPickResult = {
+  canceled: boolean;
+  filePath: string;
+  preview: ApiConfigImportPreview | null;
+};
+
+export type ApiConfigImportApplyResult = {
+  outcome: ApiConfigImportOutcome;
+  configs: ApiConfigRecord[];
+};
+
 export type Model = {
   id: string;
   object: string;

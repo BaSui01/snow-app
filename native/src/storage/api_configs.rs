@@ -3,6 +3,9 @@ use napi::bindgen_prelude::*;
 use super::ensure_database_file;
 use super::models::*;
 use super::services;
+use super::services::api_config_transfer::{
+    ApiConfigExportResult, ApiConfigImportOutcome, ApiConfigImportPreview,
+};
 
 pub fn list_api_configs() -> Result<Vec<ApiConfigRecord>> {
     let database_path = ensure_database_file()?;
@@ -17,6 +20,27 @@ pub fn upsert_api_config(config: ApiConfigInput) -> Result<()> {
 pub fn delete_api_config(profile_name: String) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::api_configs::delete_api_config(&database_path, &profile_name)
+}
+
+pub fn export_api_configs(profile_names: Vec<String>) -> Result<ApiConfigExportResult> {
+    let database_path = ensure_database_file()?;
+    services::api_config_transfer::export_api_configs(&database_path, &profile_names)
+}
+
+pub fn inspect_api_config_import(payload_json: String) -> Result<ApiConfigImportPreview> {
+    services::api_config_transfer::inspect_api_config_import(&payload_json)
+}
+
+pub fn import_api_configs(
+    payload_json: String,
+    conflict_strategy: String,
+) -> Result<ApiConfigImportOutcome> {
+    let database_path = ensure_database_file()?;
+    services::api_config_transfer::import_api_configs(
+        &database_path,
+        &payload_json,
+        &conflict_strategy,
+    )
 }
 
 pub fn list_system_prompts() -> Result<Vec<SystemPromptItemRecord>> {

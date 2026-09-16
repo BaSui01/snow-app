@@ -4,13 +4,14 @@ use std::path::{Path, PathBuf};
 use crate::api::chat::payload::build_chat_reasoning_effort;
 use crate::api::config::{
     get_api_request_context_with_fallback, normalize_base_url, resolve_basic_model,
-    resolve_sdk_api_base_url, DEFAULT_ANTHROPIC_BASE_URL, DEFAULT_GEMINI_BASE_URL,
-    DEFAULT_OPENAI_BASE_URL,
+    resolve_sdk_api_base_url, DEFAULT_ANTHROPIC_BASE_URL, DEFAULT_OPENAI_BASE_URL,
 };
+use crate::api::gemini::payload::resolve_gemini_endpoint;
 use crate::api::responses::payload::build_responses_reasoning;
-use crate::api::retry::{should_retry, RetryOptions};
+use crate::api::retry::RetryOptions;
+use crate::api::sse::send_streaming_sse_request;
 use crate::storage::initialize_app_storage;
-use crate::storage::services::app_logs::maybe_log_api_request;
+use crate::storage::services::app_logs::{log_api_error, log_api_warning, maybe_log_api_request};
 use crate::storage::services::chat_conversations::{
     get_conversation_api_profile, load_context_messages, update_conversation_summary,
 };
@@ -143,11 +144,49 @@ pub async fn generate_conversation_summary(
                     &retry_options,
                 ).await,
             }
-        } => result?,
+        } => result,
+    };
+
+    // 摘要生成失败（HTTP 错误、响应解析失败、鉴权失败……）此前完全无痕：
+    // 只有开启「请求日志」才会留下请求体，失败原因无处可查。这里统一记一条
+    // ERROR，带上 provider/model/会话，便于在日志面板定位标题总是失败的原因。
+    let summary_text = match summary_text {
+        Ok(text) => text,
+        Err(error) => {
+            log_api_error(
+                &database_path,
+                "generate_conversation_summary",
+                "Conversation summary generation failed",
+                &format!(
+                    "provider={}, model={}, conversation_id={}, error={}",
+                    resolve_summary_provider(&api_config.request_method),
+                    model,
+                    conversation_id,
+                    error.reason,
+                ),
+            )
+            .await;
+            return Err(error);
+        }
     };
 
     let trimmed = summary_text.trim();
     if trimmed.is_empty() {
+        // 请求成功但没解析出任何正文（模型只回了思考内容、被网关改写、
+        // 返回结构不匹配等）：标题会一直为空，属于必须留痕的异常情况。
+        log_api_warning(
+            &database_path,
+            "generate_conversation_summary",
+            "Conversation summary generation returned empty title",
+            &format!(
+                "provider={}, model={}, conversation_id={}",
+                resolve_summary_provider(&api_config.request_method),
+                model,
+                conversation_id,
+            ),
+        )
+        .await;
+
         return Ok(String::new());
     }
 
@@ -161,10 +200,36 @@ pub async fn generate_conversation_summary(
     // Best-effort write. If the conversation was concurrently deleted/truncated
     // (e.g. user rolled back), this UPDATE would race and could lock the
     // database. Swallow the error so a late summary does not propagate a
-    // failure that surfaces as "database is locked" in unrelated flows.
-    let _ = update_conversation_summary(&database_path, &conversation_id, trimmed);
+    // failure that surfaces as "database is locked" in unrelated flows —
+    // but record it, otherwise the generated title silently disappears.
+    if let Err(error) = update_conversation_summary(&database_path, &conversation_id, trimmed) {
+        log_api_warning(
+            &database_path,
+            "generate_conversation_summary",
+            "Conversation summary failed to persist",
+            &format!(
+                "conversation_id={}, title_chars={}, error={}",
+                conversation_id,
+                trimmed.chars().count(),
+                error.reason,
+            ),
+        )
+        .await;
+    }
 
     Ok(trimmed.to_string())
+}
+
+/// Map the configured request method to the provider tag used in summary logs,
+/// so a log line can be matched against the request-logging entries.
+fn resolve_summary_provider(request_method: &str) -> &str {
+    match request_method.trim() {
+        "responses" => "responses",
+        "anthropic" => "anthropic",
+        "gemini" => "gemini",
+        "interactions" => "interactions",
+        _ => "chat",
+    }
 }
 
 async fn generate_summary_via_chat(
@@ -187,9 +252,16 @@ async fn generate_summary_via_chat(
     let mut payload = json!({
         "model": model,
         "messages": chat_messages,
-        "stream": false,
-        "max_tokens": 4096,
+        "stream": true,
     });
+
+    // max_tokens 遵循用户配置（留空时不传该参数，由服务端决定默认值），
+    // 与主会话（api/chat/payload.rs）保持一致。
+    if let Some(max_tokens) = api_config.max_tokens {
+        if max_tokens > 0 {
+            payload["max_tokens"] = json!(max_tokens);
+        }
+    }
 
     // DeepSeek 等供应商不接受 "none" 作为 reasoning_effort（仅支持 low/medium/high 等）。
     // 跟随用户 chatThinking 配置：build_chat_reasoning_effort 会过滤 "none" 值，
@@ -209,18 +281,23 @@ async fn generate_summary_via_chat(
     )
     .await;
 
-    let body: Value = send_api_request_with_retry(
+    // 流式请求：只累积正文增量，思考内容（reasoning_content / thinking 分块 /
+    // 内联 think 段落）一律丢弃——标题绝不能采用模型的思考内容。
+    let mut text = String::new();
+    send_streaming_sse_request(
         &client,
         &endpoint,
         build_header_map(api_key, custom_headers)?,
         &payload,
         retry_options,
+        |event| {
+            merge_chat_summary_event(&event, &mut text);
+            Ok(())
+        },
     )
     .await?;
 
-    let content = extract_chat_content(&body);
-
-    Ok(content)
+    Ok(strip_inline_thinking(&text))
 }
 
 async fn generate_summary_via_responses(
@@ -246,8 +323,16 @@ async fn generate_summary_via_responses(
     let mut payload = json!({
         "model": model,
         "input": input,
-        "stream": false,
+        "stream": true,
     });
+
+    // max_output_tokens 遵循用户配置（留空时不传该参数，由服务端决定默认值），
+    // 与主流程（api/responses/payload.rs）保持一致。
+    if let Some(max_tokens) = api_config.max_tokens {
+        if max_tokens > 0 {
+            payload["max_output_tokens"] = json!(max_tokens);
+        }
+    }
 
     // 同样跟随 responsesReasoning 配置：build_responses_reasoning 会过滤 "none"，
     // 关闭思考时返回 None → 不发送 reasoning 字段，避免供应商 400。
@@ -266,18 +351,22 @@ async fn generate_summary_via_responses(
 
     let client = crate::api::http_client::build_proxied_client().await?;
 
-    let body: Value = send_api_request_with_retry(
+    // 流式请求：只采纳 response.output_text.* 正文，reasoning 事件一律忽略。
+    let mut text = String::new();
+    send_streaming_sse_request(
         &client,
         &endpoint,
         build_header_map(api_key, custom_headers)?,
         &payload,
         retry_options,
+        |event| {
+            merge_responses_summary_event(&event, &mut text);
+            Ok(())
+        },
     )
     .await?;
 
-    let content = extract_responses_content(&body);
-
-    Ok(content)
+    Ok(text.trim().to_string())
 }
 
 async fn generate_summary_via_anthropic(
@@ -306,13 +395,20 @@ async fn generate_summary_via_anthropic(
             &api_config.config_json,
         );
     let model = crate::api::anthropic::payload::strip_one_m_context_marker(model);
-    let payload = json!({
+    let mut payload = json!({
         "model": model,
-        "max_tokens": 4096,
-        "stream": false,
+        "stream": true,
         "messages": [{"role": "user", "content": user_content}],
         "thinking": {"type": "disabled"},
     });
+
+    // max_tokens 遵循用户配置（留空时不传该参数，由服务端决定默认值），
+    // 与主流程（api/anthropic/payload.rs）保持一致。
+    if let Some(max_tokens) = api_config.max_tokens {
+        if max_tokens > 0 {
+            payload["max_tokens"] = json!(max_tokens);
+        }
+    }
 
     // 请求日志开启时记录标题生成请求（此前完全无痕，无法与上游对账）。
     maybe_log_api_request(
@@ -325,18 +421,23 @@ async fn generate_summary_via_anthropic(
 
     let client = crate::api::http_client::build_proxied_client().await?;
 
-    let body: Value = send_api_request_with_retry(
+    // 流式请求：`thinking` 已显式关闭，这里只采纳 text 分块增量，
+    // thinking / redacted_thinking 分块一律忽略。
+    let mut text = String::new();
+    send_streaming_sse_request(
         &client,
         &endpoint,
         build_anthropic_header_map(api_key, custom_headers, enable_one_m_context)?,
         &payload,
         retry_options,
+        |event| {
+            merge_anthropic_summary_event(&event, &mut text);
+            Ok(())
+        },
     )
     .await?;
 
-    let content = extract_anthropic_content(&body);
-
-    Ok(content)
+    Ok(text.trim().to_string())
 }
 
 async fn generate_summary_via_gemini(
@@ -348,6 +449,7 @@ async fn generate_summary_via_gemini(
     messages: &[crate::storage::services::chat_conversations::ChatContextMessage],
     retry_options: &RetryOptions,
 ) -> Result<String> {
+    // 流式端点：`/models/{model}:streamGenerateContent?alt=sse`。
     let endpoint = resolve_gemini_endpoint(api_config, model, api_key);
     if endpoint.is_empty() {
         return Err(Error::from_reason(
@@ -357,14 +459,22 @@ async fn generate_summary_via_gemini(
 
     let conversation_text = build_conversation_text(messages);
     let user_content = build_structured_user_content(&conversation_text);
+
+    // maxOutputTokens 遵循用户配置（留空时不传该参数，由服务端决定默认值），
+    // 与主流程（api/gemini/payload.rs）保持一致。
+    let mut generation_config = json!({});
+    if let Some(max_tokens) = api_config.max_tokens {
+        if max_tokens > 0 {
+            generation_config["maxOutputTokens"] = json!(max_tokens);
+        }
+    }
+
     let payload = json!({
         "contents": [{
             "role": "user",
             "parts": [{"text": user_content}]
         }],
-        "generationConfig": {
-            "maxOutputTokens": 4096
-        }
+        "generationConfig": generation_config,
     });
 
     // 请求日志开启时记录标题生成请求（此前完全无痕，无法与上游对账）。
@@ -378,77 +488,150 @@ async fn generate_summary_via_gemini(
 
     let client = crate::api::http_client::build_proxied_client().await?;
 
-    let body: Value = send_api_request_with_retry(
+    // 流式请求：逐 chunk 累积 parts 中的正文，`thought: true` 的思考 part
+    // 一律忽略——标题绝不能采用模型的思考内容。
+    let mut text = String::new();
+    send_streaming_sse_request(
         &client,
         &endpoint,
         build_gemini_header_map(custom_headers)?,
         &payload,
         retry_options,
+        |event| {
+            merge_gemini_summary_event(&event, &mut text);
+            Ok(())
+        },
     )
     .await?;
 
-    let content = extract_gemini_content(&body);
-
-    Ok(content)
+    Ok(text.trim().to_string())
 }
 
-/// Send a non-streaming API request with retry logic.
-/// Wraps the HTTP send + status check + JSON parse in a retry loop.
-/// Shared by summary generation and other internal API helpers.
-pub(crate) async fn send_api_request_with_retry(
-    client: &reqwest::Client,
-    endpoint: &str,
-    headers: reqwest::header::HeaderMap,
-    payload: &Value,
-    retry_options: &RetryOptions,
-) -> Result<Value> {
-    let mut attempt: u32 = 0;
-    loop {
-        let response = client
-            .post(endpoint)
-            .headers(headers.clone())
-            .json(payload)
-            .send()
-            .await
-            .map_err(|error| Error::from_reason(format!("API request failed: {}", error)));
+/// 合并 chat/completions 流式事件：累积 `delta.content` 正文增量；网关忽略
+/// `stream` 参数直接返回完整响应（`choices[].message`）时整体交给
+/// `extract_chat_content` 解析。思考内容（`reasoning_content`、thinking 分块）
+/// 一律不采纳。
+fn merge_chat_summary_event(event: &Value, text: &mut String) {
+    let complete = extract_chat_content(event);
+    if !complete.is_empty() {
+        *text = complete;
+        return;
+    }
 
-        match response {
-            Ok(response) => {
-                let status = response.status();
-                if !status.is_success() {
-                    let error_body = response.text().await.unwrap_or_default();
-                    let error = Error::from_reason(format!(
-                        "API request failed: {} {}",
-                        status, error_body
-                    ));
-
-                    if !should_retry(&error, attempt, retry_options) {
-                        return Err(error);
-                    }
-
-                    attempt += 1;
-                    let delay = std::time::Duration::from_millis(retry_options.base_delay_ms);
-                    tokio::time::sleep(delay).await;
-                    continue;
-                }
-
-                let body: Value = response.json().await.map_err(|error| {
-                    Error::from_reason(format!("Failed to parse API response: {}", error))
-                })?;
-
-                return Ok(body);
-            }
-            Err(error) => {
-                if !should_retry(&error, attempt, retry_options) {
-                    return Err(error);
-                }
-
-                attempt += 1;
-                let delay = std::time::Duration::from_millis(retry_options.base_delay_ms);
-                tokio::time::sleep(delay).await;
-                continue;
+    let Some(choices) = event.get("choices").and_then(Value::as_array) else {
+        return;
+    };
+    for choice in choices {
+        if let Some(delta) = choice.get("delta") {
+            if let Some(content) = delta.get("content") {
+                append_stream_text(content, text);
             }
         }
+    }
+}
+
+/// 合并 responses 协议流式事件：`response.output_text.delta` 为正文增量，
+/// `response.output_text.done` 与 `response.completed` 携带的最终正文优先
+/// 采用；reasoning 事件一律忽略。
+fn merge_responses_summary_event(event: &Value, text: &mut String) {
+    let Some(event_type) = event.get("type").and_then(Value::as_str) else {
+        // 无 type 字段：网关忽略 stream 参数时返回的完整响应体。
+        let complete = extract_responses_content(event);
+        if !complete.is_empty() {
+            *text = complete;
+        }
+        return;
+    };
+
+    match event_type {
+        "response.output_text.delta" => {
+            if let Some(delta) = event.get("delta").and_then(Value::as_str) {
+                text.push_str(delta);
+            }
+        }
+        "response.output_text.done" => {
+            if let Some(done) = event
+                .get("text")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                *text = done.to_string();
+            }
+        }
+        "response.completed" | "response.incomplete" | "response.failed" => {
+            if let Some(response) = event.get("response") {
+                let complete = extract_responses_content(response);
+                if !complete.is_empty() {
+                    *text = complete;
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// 合并 anthropic 协议流式事件：`content_block_delta` 的 `text_delta` 为正文
+/// 增量；`thinking_delta` 是模型内部思考，一律忽略。网关忽略 stream 参数时
+/// 返回的完整响应体（`type: "message"`）整体交给 `extract_anthropic_content`。
+fn merge_anthropic_summary_event(event: &Value, text: &mut String) {
+    match event.get("type").and_then(Value::as_str).unwrap_or_default() {
+        "" | "message" => {
+            let complete = extract_anthropic_content(event);
+            if !complete.is_empty() {
+                *text = complete;
+            }
+        }
+        "content_block_delta" => {
+            let delta_type = event
+                .pointer("/delta/type")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if delta_type == "text_delta" {
+                if let Some(delta) = event.pointer("/delta/text").and_then(Value::as_str) {
+                    text.push_str(delta);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// 合并 gemini 协议流式事件：把每个 chunk 的 `candidates[0].content.parts`
+/// 中的正文依次追加（`thought: true` 的思考 part 由 `append_stream_text` 跳过）。
+fn merge_gemini_summary_event(event: &Value, text: &mut String) {
+    if let Some(parts) = event.pointer("/candidates/0/content/parts") {
+        append_stream_text(parts, text);
+    }
+}
+
+/// 累积正文增量：字符串形态直接拼接；数组形态只取 text 分块，跳过
+/// `thinking` / `reasoning` 等思考分块与 `thought: true` 分块。
+fn append_stream_text(value: &Value, text: &mut String) {
+    match value {
+        Value::String(chunk) => text.push_str(chunk),
+        Value::Array(parts) => {
+            for part in parts {
+                let part_type = part.get("type").and_then(Value::as_str).unwrap_or_default();
+                if matches!(
+                    part_type,
+                    "thinking"
+                        | "reasoning"
+                        | "reasoning_text"
+                        | "redacted_thinking"
+                        | "summary_text"
+                ) {
+                    continue;
+                }
+                if part.get("thought").and_then(Value::as_bool).unwrap_or(false) {
+                    continue;
+                }
+                if let Some(part_text) = part.get("text").and_then(Value::as_str) {
+                    text.push_str(part_text);
+                }
+            }
+        }
+        _ => {}
     }
 }
 
@@ -517,45 +700,6 @@ fn extract_anthropic_content(body: &Value) -> String {
     String::new()
 }
 
-fn extract_gemini_content(body: &Value) -> String {
-    let Some(candidates) = body.get("candidates").and_then(Value::as_array) else {
-        return String::new();
-    };
-    let Some(candidate) = candidates.first() else {
-        return String::new();
-    };
-    let Some(parts) = candidate
-        .get("content")
-        .and_then(|content| content.get("parts"))
-        .and_then(Value::as_array)
-    else {
-        return String::new();
-    };
-
-    // Gemini thinking models emit internal reasoning as text parts flagged
-    // with `"thought": true`, usually placed BEFORE the final answer. Only the
-    // main text (正文) is adopted as the summary; thought parts are skipped.
-    for part in parts {
-        if part
-            .get("thought")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-        {
-            continue;
-        }
-        if let Some(text) = part
-            .get("text")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|text| !text.is_empty())
-        {
-            return text.to_string();
-        }
-    }
-
-    String::new()
-}
-
 pub(crate) fn resolve_anthropic_endpoint(api_config: &crate::storage::ApiConfigRecord) -> String {
     let normalized_base_url = normalize_base_url(&api_config.base_url);
     if normalized_base_url.is_empty() {
@@ -574,39 +718,6 @@ pub(crate) fn resolve_anthropic_endpoint(api_config: &crate::storage::ApiConfigR
 
     let resolved_base = resolve_sdk_api_base_url(&base_url, &api_config.base_url_mode);
     format!("{}/messages", resolved_base)
-}
-
-pub(crate) fn resolve_gemini_endpoint(
-    api_config: &crate::storage::ApiConfigRecord,
-    model: &str,
-    api_key: &str,
-) -> String {
-    let normalized_base_url = normalize_base_url(&api_config.base_url);
-    if normalized_base_url.is_empty() {
-        return String::new();
-    }
-
-    let base_url = if normalized_base_url == DEFAULT_OPENAI_BASE_URL {
-        DEFAULT_GEMINI_BASE_URL.to_string()
-    } else {
-        normalized_base_url
-    };
-
-    let resolved_base = if api_config.base_url_mode == "endpoint" {
-        base_url
-    } else {
-        resolve_sdk_api_base_url(&base_url, &api_config.base_url_mode)
-    };
-
-    let clean_model = model.strip_prefix("models/").unwrap_or(model);
-
-    let mut url = format!("{}/models/{}:generateContent", resolved_base, clean_model);
-
-    if !api_key.is_empty() {
-        url.push_str(&format!("?key={}", api_key));
-    }
-
-    url
 }
 
 pub(crate) fn build_anthropic_header_map(

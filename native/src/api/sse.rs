@@ -1,9 +1,14 @@
 use std::time::Duration;
 
-use futures::Stream;
+use futures::{Stream, StreamExt};
+use napi::bindgen_prelude::{Error, Result};
+use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
-use crate::api::retry::{next_stream_item_with_idle, StreamReadOutcome};
+use crate::api::retry::{
+    next_stream_item_with_idle, non_sse_response_error, should_retry, RetryOptions,
+    StreamReadOutcome,
+};
 
 /// Find the earliest SSE event separator in a byte buffer.
 ///
@@ -95,4 +100,139 @@ where
             StreamReadOutcome::IdleTimeout => return SseStreamEnd::IdleTimeout,
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// 流式请求发送
+// ---------------------------------------------------------------------------
+
+/// 发送流式请求并按 SSE 事件逐条回调 `on_event`（每个 `data:` 行一个 JSON）。
+/// 连接失败或非 2xx 状态时按重试策略重试；一旦开始读取流即不再重试。
+/// 整个流结束仍未收到任何 `data:` 事件时返回 non-SSE 错误（部分网关会以
+/// 200 + JSON 错误体响应流式请求）。
+/// 调用方负责取消：本函数不自带取消令牌，上游用 `tokio::select!` 竞争
+/// 取消令牌并丢弃本 future 即可中止在途请求。
+pub(crate) async fn send_streaming_sse_request(
+    client: &reqwest::Client,
+    endpoint: &str,
+    headers: reqwest::header::HeaderMap,
+    payload: &Value,
+    retry_options: &RetryOptions,
+    mut on_event: impl FnMut(Value) -> Result<()>,
+) -> Result<()> {
+    let mut attempt: u32 = 0;
+    loop {
+        let response = match client
+            .post(endpoint)
+            .headers(headers.clone())
+            .json(payload)
+            .send()
+            .await
+        {
+            Ok(response) => response,
+            Err(error) => {
+                let error = Error::from_reason(format!("API request failed: {}", error));
+                if !should_retry(&error, attempt, retry_options) {
+                    return Err(error);
+                }
+                attempt += 1;
+                tokio::time::sleep(std::time::Duration::from_millis(
+                    retry_options.base_delay_ms,
+                ))
+                .await;
+                continue;
+            }
+        };
+
+        let status = response.status();
+        if !status.is_success() {
+            let error_body = response.text().await.unwrap_or_default();
+            let error =
+                Error::from_reason(format!("API request failed: {} {}", status, error_body));
+            if !should_retry(&error, attempt, retry_options) {
+                return Err(error);
+            }
+            attempt += 1;
+            tokio::time::sleep(std::time::Duration::from_millis(
+                retry_options.base_delay_ms,
+            ))
+            .await;
+            continue;
+        }
+
+        // 已进入流式读取阶段，中途失败不再重试（事件可能已部分消费）。
+        let mut byte_buffer: Vec<u8> = Vec::new();
+        let mut received_any_event = false;
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|error| {
+                Error::from_reason(format!("API stream read failed: {}", error))
+            })?;
+            byte_buffer.extend_from_slice(&chunk);
+            loop {
+                let Some((separator_pos, separator_len)) = find_sse_separator(&byte_buffer) else {
+                    break;
+                };
+                let event_bytes: Vec<u8> = byte_buffer.drain(..separator_pos).collect();
+                byte_buffer.drain(..separator_len);
+                let event_block = String::from_utf8_lossy(&event_bytes);
+                if process_sse_event_block(&event_block, &mut on_event)? {
+                    received_any_event = true;
+                }
+            }
+        }
+        // 处理流末尾残余（可能是不带尾随空行的最后一个事件）。
+        if !byte_buffer.is_empty() {
+            let event_block = String::from_utf8_lossy(&byte_buffer);
+            if process_sse_event_block(&event_block, &mut on_event)? {
+                received_any_event = true;
+            }
+        }
+        if !received_any_event {
+            let body = String::from_utf8_lossy(&byte_buffer).to_string();
+            return Err(non_sse_response_error(&body));
+        }
+        return Ok(());
+    }
+}
+
+/// 解析一个 SSE 事件块（两个空行之间的文本），逐行提取 `data:` 前缀的
+/// JSON 并回调。返回是否至少处理了一个事件。
+/// 兼容部分网关对 `stream: true` 仍返回完整 JSON（无 `data:` 前缀）的
+/// 情况：整个块按 JSON 解析后作为单个事件回调。
+fn process_sse_event_block(
+    event_block: &str,
+    on_event: &mut impl FnMut(Value) -> Result<()>,
+) -> Result<bool> {
+    let mut processed = false;
+    for line in event_block.lines() {
+        let trimmed = line.trim_start();
+        let Some(data) = trimmed.strip_prefix("data:") else {
+            continue;
+        };
+        let data = data.trim_start();
+        if data.is_empty() || data == "[DONE]" {
+            continue;
+        }
+        let Ok(event) = serde_json::from_str::<Value>(data) else {
+            continue;
+        };
+        processed = true;
+        on_event(event)?;
+    }
+
+    // Fallback: 无 `data:` 行时，把整个块当完整 JSON 响应解析（例如
+    // 网关忽略 stream 参数直接返回非流式响应，或 `: ping` 注释行）。
+    if !processed {
+        let trimmed_block = event_block.trim();
+        if !trimmed_block.is_empty() && !trimmed_block.starts_with(':') && trimmed_block != "[DONE]"
+        {
+            if let Ok(event) = serde_json::from_str::<Value>(trimmed_block) {
+                on_event(event)?;
+                processed = true;
+            }
+        }
+    }
+
+    Ok(processed)
 }

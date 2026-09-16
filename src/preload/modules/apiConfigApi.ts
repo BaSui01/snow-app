@@ -1,5 +1,8 @@
 import { ipcRenderer, type IpcRendererEvent } from "electron";
 import type {
+  ApiConfigExportFileResult,
+  ApiConfigImportApplyResult,
+  ApiConfigImportPickResult,
   ApiConfigInput,
   ApiConfigRecord,
   ApiModelsConfig,
@@ -259,6 +262,20 @@ export const apiConfigApi = {
     ipcRenderer.invoke("chat:abort-response-stream", streamId),
   importSnowCliApiConfigs: (): Promise<ImportSnowCliApiConfigsResult> =>
     ipcRenderer.invoke("api-configs:import-snow-cli"),
+  /** 导出选中的 API 配置为迁移 JSON 文件（含明文密钥），返回保存结果。 */
+  exportApiConfigsFile: (
+    profileNames: string[],
+  ): Promise<ApiConfigExportFileResult> =>
+    ipcRenderer.invoke("api-configs:export-file", profileNames),
+  /** 弹出文件选择框并解析导入文件，返回预览（不写库）。 */
+  pickApiConfigImportFile: (): Promise<ApiConfigImportPickResult> =>
+    ipcRenderer.invoke("api-configs:pick-import-file"),
+  /** 按同名冲突策略执行导入，返回导入结果与最新配置列表。 */
+  importApiConfigsFile: (
+    filePath: string,
+    conflictStrategy: "overwrite" | "duplicate",
+  ): Promise<ApiConfigImportApplyResult> =>
+    ipcRenderer.invoke("api-configs:import-file", filePath, conflictStrategy),
   importSnowCliProxyConfig: (): Promise<ProxyBrowserSettings> =>
     ipcRenderer.invoke("proxy-browser-settings:import-snow-cli"),
   applyProxySettings: (): Promise<void> =>

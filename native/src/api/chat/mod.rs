@@ -200,7 +200,8 @@ async fn create_chat_completion_response_async(
                 "create_chat_completion_response_stream",
                 "Chat completions API call failed",
                 &error.reason,
-            );
+            )
+            .await;
             return Err(error);
         }
     };
@@ -230,7 +231,8 @@ async fn create_chat_completion_response_async(
                 "create_chat_completion_response_stream",
                 "Tool call JSON parse failed after streaming",
                 parse_error,
-            );
+            )
+            .await;
         }
     }
 
@@ -259,7 +261,8 @@ async fn create_chat_completion_response_async(
                     streamed_response.thinking.chars().count(),
                     streamed_response.total_duration_ms,
                 ),
-            );
+            )
+            .await;
         }
         FinalStreamWarningDisposition::EmptyResponse => {
             log_api_warning(
@@ -270,7 +273,8 @@ async fn create_chat_completion_response_async(
                     "model={}, status={}",
                     streamed_response.model, streamed_response.status
                 ),
-            );
+            )
+            .await;
         }
         FinalStreamWarningDisposition::None => {}
     }

@@ -8,6 +8,10 @@
     />
     <meta name="theme-color" content="#08090b" />
     <meta name="color-scheme" content="dark" />
+    <!-- 应用品牌图标：由 Rust 远控服务的 GET /icon.png 提供（见 native/src/remote_control/server.rs），
+         同时用于浏览器标签页图标与 iOS 添加到主屏幕的图标。 -->
+    <link rel="icon" type="image/png" href="/icon.png" />
+    <link rel="apple-touch-icon" href="/icon.png" />
     <!-- 桌面语言注入位：Rust 远控服务在响应 GET / 时替换为桌面端语言
          （见 native/src/remote_control/assets.rs）。 -->
     <meta name="snow-locale" content="__SNOW_LOCALE__" />

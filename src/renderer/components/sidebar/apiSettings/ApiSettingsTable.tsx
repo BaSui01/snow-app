@@ -1,5 +1,5 @@
-import { useMemo, useState, type ChangeEvent } from "react";
-import { Copy, Loader2, Pencil, Search, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { Copy, Loader2, Pencil, Search, Trash2, Upload, X } from "lucide-react";
 import { useI18n } from "../../../i18n";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
 import {
@@ -12,33 +12,80 @@ import type { ApiConfigItem } from "./types";
 type ApiSettingsTableProps = {
   configs: ApiConfigItem[];
   isLoading: boolean;
+  isBusy: boolean;
   onDuplicate: (config: ApiConfigItem) => void;
   onEdit: (config: ApiConfigItem) => void;
   onDelete: (profileName: string, displayName: string) => void;
   onToggleActive: (config: ApiConfigItem) => void;
+  /** 导出选中的配置为迁移文件（含明文密钥）。 */
+  onExportSelected: (profileNames: string[]) => void;
 };
 
 export function ApiSettingsTable({
   configs,
   isLoading,
+  isBusy,
   onDuplicate,
   onEdit,
   onDelete,
   onToggleActive,
+  onExportSelected,
 }: ApiSettingsTableProps): React.JSX.Element {
   const { t } = useI18n();
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedNames, setSelectedNames] = useState<string[]>([]);
   const [pendingDeletion, setPendingDeletion] = useState<ApiConfigItem | null>(
-    null
+    null,
   );
   const filteredConfigs = useMemo(
     () => filterApiConfigs(configs, searchQuery),
-    [configs, searchQuery]
+    [configs, searchQuery],
   );
   const hasSearchQuery = searchQuery.trim().length > 0;
 
+  // 配置列表变化（删除、导入、同步）后丢弃已不存在的选中项。
+  useEffect(() => {
+    setSelectedNames((previous) => {
+      const available = new Set(configs.map((config) => config.profileName));
+      const next = previous.filter((name) => available.has(name));
+      return next.length === previous.length ? previous : next;
+    });
+  }, [configs]);
+
+  const selectedNameSet = useMemo(
+    () => new Set(selectedNames),
+    [selectedNames],
+  );
+  const selectedCount = selectedNames.length;
+  const isAllFilteredSelected =
+    filteredConfigs.length > 0 &&
+    filteredConfigs.every((config) => selectedNameSet.has(config.profileName));
+  const isPartiallySelected =
+    !isAllFilteredSelected &&
+    filteredConfigs.some((config) => selectedNameSet.has(config.profileName));
+
   const handleSearchChange = (event: ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(event.target.value);
+  };
+
+  const toggleSelection = (profileName: string) => {
+    setSelectedNames((previous) =>
+      previous.includes(profileName)
+        ? previous.filter((name) => name !== profileName)
+        : [...previous, profileName],
+    );
+  };
+
+  const toggleSelectAll = () => {
+    const filteredNames = filteredConfigs.map((config) => config.profileName);
+    setSelectedNames((previous) => {
+      const everySelected =
+        filteredNames.length > 0 &&
+        filteredNames.every((name) => previous.includes(name));
+      return everySelected
+        ? previous.filter((name) => !filteredNames.includes(name))
+        : Array.from(new Set([...previous, ...filteredNames]));
+    });
   };
 
   return (
@@ -65,6 +112,44 @@ export function ApiSettingsTable({
         </label>
       </div>
 
+      {selectedCount > 0 && (
+        <div className="api-settings-selection-bar">
+          <span>
+            {t("settings.apiSelectedCount", {
+              defaultValue: "{count} selected",
+            }).replace("{count}", String(selectedCount))}
+          </span>
+          <div className="api-settings-selection-bar-actions">
+            <button
+              className="api-settings-action-btn primary"
+              onClick={() => onExportSelected(selectedNames)}
+              type="button"
+              disabled={isBusy}
+            >
+              <Upload size={14} strokeWidth={1.8} />
+              <span>
+                {t("settings.apiExportSelected", {
+                  defaultValue: "Export selected",
+                })}
+              </span>
+            </button>
+            <button
+              className="icon-btn ghost"
+              onClick={() => setSelectedNames([])}
+              type="button"
+              title={t("settings.clearSelection", {
+                defaultValue: "Clear selection",
+              })}
+              aria-label={t("settings.clearSelection", {
+                defaultValue: "Clear selection",
+              })}
+            >
+              <X size={13} strokeWidth={1.8} />
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="api-settings-table-wrap">
         {isLoading && configs.length === 0 ? (
           <div className="api-settings-empty">
@@ -90,6 +175,24 @@ export function ApiSettingsTable({
           <table className="api-settings-table">
             <thead>
               <tr>
+                <th className="api-settings-table-select">
+                  <input
+                    type="checkbox"
+                    checked={isAllFilteredSelected}
+                    ref={(element) => {
+                      if (element) {
+                        element.indeterminate = isPartiallySelected;
+                      }
+                    }}
+                    onChange={toggleSelectAll}
+                    title={t("settings.apiSelectAll", {
+                      defaultValue: "Select all",
+                    })}
+                    aria-label={t("settings.apiSelectAll", {
+                      defaultValue: "Select all",
+                    })}
+                  />
+                </th>
                 <th>{t("settings.tableName", { defaultValue: "Name" })}</th>
                 <th>
                   {t("settings.tableBaseUrl", { defaultValue: "Base URL" })}
@@ -118,9 +221,23 @@ export function ApiSettingsTable({
                   : t("settings.clickToActivate", {
                       defaultValue: "Click to enable this profile",
                     });
+                const isSelected = selectedNameSet.has(config.profileName);
 
                 return (
-                  <tr key={config.profileName}>
+                  <tr
+                    key={config.profileName}
+                    className={isSelected ? "is-selected" : undefined}
+                  >
+                    <td className="api-settings-table-select">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelection(config.profileName)}
+                        aria-label={t("settings.apiSelectProfile", {
+                          defaultValue: "Select {name}",
+                        }).replace("{name}", config.displayName)}
+                      />
+                    </td>
                     <td className="cell-name">
                       <strong>{config.displayName}</strong>
                       <small className="profile-name-hint">

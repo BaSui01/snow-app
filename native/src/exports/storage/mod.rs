@@ -3,6 +3,9 @@ pub(crate) use napi_derive::napi;
 
 pub(crate) use crate::hooks::{HookExecuteInput, HookExecuteResult};
 pub(crate) use crate::storage::services::fs_explorer::{DirectoryEntry, FileContentResult, FileSearchResult};
+pub(crate) use crate::storage::services::api_config_transfer::{
+    ApiConfigExportResult, ApiConfigImportOutcome, ApiConfigImportPreview,
+};
 pub(crate) use crate::storage::services::privacy_settings::{
     PrivacyApiConfig, PrivacySettings, PrivacyToolResultsConfig,
 };

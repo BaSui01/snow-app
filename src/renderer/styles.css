@@ -6322,6 +6322,19 @@ input {
   white-space: nowrap;
 }
 
+/* API 设置页：同步 / 手动添加 / 导入配置 三键并排等宽 */
+.api-settings-actions.api-settings-actions-trio {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.api-settings-actions.api-settings-actions-trio
+  .api-settings-action-btn
+  > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .api-settings-action-btn,
 .api-settings-form-btn {
   display: inline-flex;
@@ -7099,6 +7112,72 @@ input {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+}
+
+.api-settings-selection-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px 4px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+}
+
+.api-settings-selection-bar > span {
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.api-settings-selection-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.api-settings-selection-bar-actions .api-settings-action-btn {
+  padding: 5px 10px;
+  font-size: 11.5px;
+}
+
+.api-settings-table-select {
+  width: 1%;
+  padding-right: 4px !important;
+}
+
+.api-settings-table-select input[type="checkbox"] {
+  display: block;
+  margin: 0;
+  accent-color: var(--text-primary);
+  cursor: pointer;
+}
+
+.api-settings-table tbody tr.is-selected {
+  background: var(--bg-hover);
+}
+
+.api-settings-table tbody tr.is-selected td:first-child {
+  box-shadow: inset 2px 0 0 var(--text-primary);
+}
+
+.api-settings-import-conflict {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+}
+
+.api-settings-import-conflict ul {
+  max-height: 180px;
+  margin: 0;
+  padding-left: 18px;
+  overflow: auto;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
 }
 
 .api-settings-table-search {

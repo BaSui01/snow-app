@@ -67,6 +67,36 @@ export type ApiConfigRecord = ApiConfigInput & {
   updatedAt: string;
 };
 
+/** 导入文件预览中的单条配置（不含密钥，仅用于同名冲突确认）。 */
+export type ApiConfigImportPreviewItem = {
+  profileName: string;
+  displayName: string;
+  baseUrl: string;
+  requestMethod: string;
+  advancedModel: string;
+};
+
+export type ApiConfigImportPreview = {
+  profiles: ApiConfigImportPreviewItem[];
+  /** 文件中无法识别而被忽略的条目数。 */
+  skippedCount: number;
+};
+
+export type ApiConfigImportOutcome = {
+  importedCount: number;
+  overwrittenCount: number;
+  renamedCount: number;
+  skippedCount: number;
+  /** 导入后按文件中的激活标记切换了启用配置时，返回该配置名。 */
+  activatedProfileName?: string | null;
+};
+
+/** 导出结果：迁移文档文本 + 实际导出条数。 */
+export type ApiConfigExportResult = {
+  content: string;
+  exportedCount: number;
+};
+
 export type CodebaseSettingsInput = {
   profileName: string;
   embeddingType: string;
@@ -1738,6 +1768,14 @@ export type NativeBridge = {
   listApiConfigs: () => Promise<ApiConfigRecord[]>;
   upsertApiConfig: (config: ApiConfigInput) => Promise<void>;
   deleteApiConfig: (profileName: string) => Promise<void>;
+  exportApiConfigs: (profileNames: string[]) => Promise<ApiConfigExportResult>;
+  inspectApiConfigImport: (
+    payloadJson: string,
+  ) => Promise<ApiConfigImportPreview>;
+  importApiConfigs: (
+    payloadJson: string,
+    conflictStrategy: string,
+  ) => Promise<ApiConfigImportOutcome>;
   listSystemPrompts: () => Promise<SystemPromptItemRecord[]>;
   upsertSystemPrompt: (item: SystemPromptItemInput) => Promise<void>;
   deleteSystemPrompt: (promptId: string) => Promise<void>;

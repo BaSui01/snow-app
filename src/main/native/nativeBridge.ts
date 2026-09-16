@@ -233,6 +233,18 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to delete API configs"),
         ),
+      exportApiConfigs: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to export API configs"),
+        ),
+      inspectApiConfigImport: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to inspect API configs"),
+        ),
+      importApiConfigs: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to import API configs"),
+        ),
       listSystemPrompts: () =>
         Promise.reject(
           new Error("Rust native bridge is required to list system prompts"),

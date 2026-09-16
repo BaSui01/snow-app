@@ -145,45 +145,67 @@ pub fn clear_app_logs(database_path: &Path) -> Result<u32> {
 }
 
 /// Write an API-layer warning log (tool JSON parse failure, empty response, etc.).
-/// Failures are silently ignored to avoid disrupting the main request flow.
-pub fn log_api_warning(database_path: &Path, func: &str, message: &str, context: &str) {
-    let _ = insert_app_log(
-        database_path,
-        &AppLogInput {
-            level: "WARN".to_string(),
-            module: "api".to_string(),
-            func: func.to_string(),
-            line: None,
-            message: message.to_string(),
-            input: None,
-            output: None,
-            duration: None,
-            context: Some(context.to_string()),
-            error: None,
-            source: "main".to_string(),
-        },
-    );
+/// The SQLite insert is offloaded to `spawn_blocking` so the async API path is
+/// never blocked by database I/O. Failures are silently ignored to avoid
+/// disrupting the main request flow.
+pub async fn log_api_warning(database_path: &Path, func: &str, message: &str, context: &str) {
+    let db_path = database_path.to_path_buf();
+    let func = func.to_string();
+    let message = message.to_string();
+    let context = context.to_string();
+
+    tokio::task::spawn_blocking(move || {
+        let _ = insert_app_log(
+            &db_path,
+            &AppLogInput {
+                level: "WARN".to_string(),
+                module: "api".to_string(),
+                func,
+                line: None,
+                message,
+                input: None,
+                output: None,
+                duration: None,
+                context: Some(context),
+                error: None,
+                source: "main".to_string(),
+            },
+        );
+    })
+    .await
+    .ok();
 }
 
 /// Write an API-layer error log (request failure, stream error, etc.).
-/// Failures are silently ignored to avoid disrupting the main request flow.
-pub fn log_api_error(database_path: &Path, func: &str, message: &str, error: &str) {
-    let _ = insert_app_log(
-        database_path,
-        &AppLogInput {
-            level: "ERROR".to_string(),
-            module: "api".to_string(),
-            func: func.to_string(),
-            line: None,
-            message: message.to_string(),
-            input: None,
-            output: None,
-            duration: None,
-            context: None,
-            error: Some(error.to_string()),
-            source: "main".to_string(),
-        },
-    );
+/// The SQLite insert is offloaded to `spawn_blocking` so the async API path is
+/// never blocked by database I/O. Failures are silently ignored to avoid
+/// disrupting the main request flow.
+pub async fn log_api_error(database_path: &Path, func: &str, message: &str, error: &str) {
+    let db_path = database_path.to_path_buf();
+    let func = func.to_string();
+    let message = message.to_string();
+    let error = error.to_string();
+
+    tokio::task::spawn_blocking(move || {
+        let _ = insert_app_log(
+            &db_path,
+            &AppLogInput {
+                level: "ERROR".to_string(),
+                module: "api".to_string(),
+                func,
+                line: None,
+                message,
+                input: None,
+                output: None,
+                duration: None,
+                context: None,
+                error: Some(error),
+                source: "main".to_string(),
+            },
+        );
+    })
+    .await
+    .ok();
 }
 
 /// Conditionally log a complete raw API request JSON when request logging

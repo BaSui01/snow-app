@@ -237,7 +237,8 @@ async fn create_gemini_response_async(
             "gemini_duplicate_recovery_outbound",
             "Gemini duplicate recovery protocol audit",
             &gemini_recovery_outbound_audit(&payload),
-        );
+        )
+        .await;
     }
     let retry_options = RetryOptions::from_config(
         api_config.max_retries,
@@ -274,7 +275,8 @@ async fn create_gemini_response_async(
                 "create_gemini_response_stream",
                 "Gemini API call failed",
                 &error.reason,
-            );
+            )
+            .await;
             return Err(error);
         }
     };
@@ -284,7 +286,8 @@ async fn create_gemini_response_async(
             "gemini_duplicate_recovery_inbound",
             "Gemini duplicate recovery protocol audit",
             &gemini_recovery_inbound_audit(&streamed_response),
-        );
+        )
+        .await;
     }
     // See chat/mod.rs: assistant raw_events are not needed for replay, so we
     // skip serializing the full SSE chunk array to avoid DB bloat.
@@ -321,7 +324,8 @@ async fn create_gemini_response_async(
                     streamed_response.thinking.chars().count(),
                     streamed_response.total_duration_ms,
                 ),
-            );
+            )
+            .await;
         }
         FinalStreamWarningDisposition::EmptyResponse => {
             log_api_warning(
@@ -332,7 +336,8 @@ async fn create_gemini_response_async(
                     "model={}, status={}",
                     streamed_response.model, streamed_response.status
                 ),
-            );
+            )
+            .await;
         }
         FinalStreamWarningDisposition::None => {}
     }

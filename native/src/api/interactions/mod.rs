@@ -191,7 +191,8 @@ async fn create_interactions_response_async(
                 "create_interactions_response_stream",
                 "Google Interactions API call failed",
                 &error.reason,
-            );
+            )
+            .await;
             return Err(error);
         }
     };
@@ -229,7 +230,8 @@ async fn create_interactions_response_async(
                     streamed_response.thinking.chars().count(),
                     streamed_response.total_duration_ms,
                 ),
-            );
+            )
+            .await;
         }
         FinalStreamWarningDisposition::EmptyResponse => {
             log_api_warning(
@@ -240,7 +242,8 @@ async fn create_interactions_response_async(
                     "model={}, status={}",
                     streamed_response.model, streamed_response.status
                 ),
-            );
+            )
+            .await;
         }
         FinalStreamWarningDisposition::None => {}
     }

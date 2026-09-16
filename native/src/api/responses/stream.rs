@@ -327,17 +327,16 @@ pub(super) async fn collect_streaming_response(
                             let db_path = database_path.clone();
                             let endpoint_info = endpoint.to_string();
                             let error_info = error.reason.clone();
-                            tokio::task::spawn_blocking(move || {
-                                log_api_warning(
-                                    &db_path,
-                                    "create_response_stream_with_context",
-                                    "Responses API request retrying",
-                                    &format!(
-                                        "attempt={} cause=http_status endpoint={endpoint_info} error={error_info}",
-                                        attempt + 1,
-                                    ),
-                                );
-                            });
+                            log_api_warning(
+                                &db_path,
+                                "create_response_stream_with_context",
+                                "Responses API request retrying",
+                                &format!(
+                                    "attempt={} cause=http_status endpoint={endpoint_info} error={error_info}",
+                                    attempt + 1,
+                                ),
+                            )
+                            .await;
                         }
 
                         match wait_before_retry(retry_options, cancel_token, attempt).await {
@@ -381,17 +380,16 @@ pub(super) async fn collect_streaming_response(
                         let db_path = database_path.clone();
                         let endpoint_info = endpoint.to_string();
                         let error_info = error.reason.clone();
-                        tokio::task::spawn_blocking(move || {
-                            log_api_warning(
-                                &db_path,
-                                "create_response_stream_with_context",
-                                "Responses API request retrying",
-                                &format!(
-                                    "attempt={} cause=connect_error endpoint={endpoint_info} error={error_info}",
-                                    attempt + 1,
-                                ),
-                            );
-                        });
+                        log_api_warning(
+                            &db_path,
+                            "create_response_stream_with_context",
+                            "Responses API request retrying",
+                            &format!(
+                                "attempt={} cause=connect_error endpoint={endpoint_info} error={error_info}",
+                                attempt + 1,
+                            ),
+                        )
+                        .await;
                     }
 
                     match wait_before_retry(retry_options, cancel_token, attempt).await {
@@ -503,18 +501,17 @@ pub(super) async fn collect_streaming_response(
                     let endpoint_info = endpoint.to_string();
                     let error_info = retry_error.clone();
                     let partial_chars = progress.visible_content_chars;
-                    tokio::task::spawn_blocking(move || {
-                        log_api_warning(
-                            &db_path,
-                            "create_response_stream_with_context",
-                            "Responses API request retrying",
-                            &format!(
-                                "attempt={} cause={:?} partial_chars={partial_chars} endpoint={endpoint_info} error={error_info}",
-                                attempt + 1,
-                                cause,
-                            ),
-                        );
-                    });
+                    log_api_warning(
+                        &db_path,
+                        "create_response_stream_with_context",
+                        "Responses API request retrying",
+                        &format!(
+                            "attempt={} cause={:?} partial_chars={partial_chars} endpoint={endpoint_info} error={error_info}",
+                            attempt + 1,
+                            cause,
+                        ),
+                    )
+                    .await;
                 }
 
                 on_chunk.call(

@@ -392,7 +392,8 @@ async fn create_response_async(
                 "create_response_stream_with_context",
                 "Responses API call failed",
                 &error.reason,
-            );
+            )
+            .await;
             return Err(error);
         }
     };
@@ -416,7 +417,8 @@ async fn create_response_async(
                 "create_response_stream_with_context",
                 "Tool call JSON parse failed after streaming",
                 parse_error,
-            );
+            )
+            .await;
         }
     }
 
@@ -446,7 +448,8 @@ async fn create_response_async(
                     streamed_response.thinking.chars().count(),
                     streamed_response.total_duration_ms,
                 ),
-            );
+            )
+            .await;
         }
         FinalStreamWarningDisposition::EmptyResponse => {
             log_api_warning(
@@ -457,7 +460,8 @@ async fn create_response_async(
                     "model={}, status={}",
                     streamed_response.model, streamed_response.status
                 ),
-            );
+            )
+            .await;
         }
         FinalStreamWarningDisposition::None => {}
     }

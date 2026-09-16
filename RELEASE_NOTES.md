@@ -1,5 +1,29 @@
 # Release Notes
 
+## v0.4.1
+
+## New Features
+
+- **Codebase Sync Cancellation**: In-flight codebase incremental sync can now be cancelled — turning the switch off or switching projects actually stops the embedding work running in Rust.
+- **Project MCP Mode Indicators**: The project MCP panel shows status indicators for disabled modes (WorkFlow / codebase index / Plan), explaining why the tools are not added to the model request.
+- **Mobile Compaction Visualization**: The mobile remote control page now shows context compaction progress and summary cards.
+
+## Improvements
+
+- Removed field truncation from the remote control bridge, sending full tool parameters and results to the mobile side.
+- image-describe now prefers the main model when it supports vision.
+- The user message rail now includes context-compaction messages.
+- Duplicate directory names in the sidebar are disambiguated.
+
+## Bug Fixes
+
+- Fixed the no-confirmation whitelist silently missing historical tool names (terminal-execute).
+- Sensitive fields (env/headers) are now masked when reading MCP server configs.
+- Fixed the "Project MCP scope setting identity does not match" error after workspace relocation (self-healing write-back on read).
+- Fixed https MCP server connection failures (rmcp now has TLS enabled).
+- Fixed remote input-config changes failing while the chat input was not ready yet.
+- Fixed the duplicated prefix in the image-describe tool registration name.
+
 ## v0.4.0
 
 ## New Features

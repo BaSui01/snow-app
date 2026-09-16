@@ -28,6 +28,7 @@ import type {
 } from "../../../../preload";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
 import { FormDialog } from "../../common/FormDialog";
+import { getAutoDirectoryName } from "./directoryDisplayName";
 import { RelinkDirectoryDialog } from "./RelinkDirectoryDialog";
 import { RelinkHistoryDialog } from "./RelinkHistoryDialog";
 import { SidebarCollapse } from "./SidebarCollapse";
@@ -58,19 +59,6 @@ const createDirectoryId = (
   path: string,
 ): string => `${kind}:${path.trim()}`;
 
-const getDirectoryName = (
-  kind: WorkspaceDirectoryKind,
-  path: string,
-): string => {
-  const trimmedPath = path.trim();
-
-  if (kind === "ssh") {
-    return trimmedPath.replace(/^ssh:\/\//, "") || trimmedPath;
-  }
-
-  return trimmedPath.split(/[\\/]/).filter(Boolean).pop() || trimmedPath;
-};
-
 const toWorkspaceDirectoryInput = (
   path: string,
   kind: WorkspaceDirectoryKind,
@@ -80,7 +68,7 @@ const toWorkspaceDirectoryInput = (
 
   return {
     directoryId: createDirectoryId(kind, trimmedPath),
-    name: getDirectoryName(kind, trimmedPath),
+    name: getAutoDirectoryName(kind, trimmedPath),
     path: trimmedPath,
     kind,
     isActive: true,

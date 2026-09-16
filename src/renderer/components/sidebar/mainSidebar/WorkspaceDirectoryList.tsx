@@ -8,6 +8,7 @@ import type {
   WorkspaceDirectoryRecord,
 } from "../../../../preload";
 import { SidebarCollapse } from "./SidebarCollapse";
+import { buildDirectoryDisplayNames } from "./directoryDisplayName";
 import { WorkspaceDirectoryRow } from "./WorkspaceDirectoryRow";
 
 type WorkspaceDirectoryListProps = {
@@ -101,6 +102,11 @@ export function WorkspaceDirectoryList({
   const [editingValue, setEditingValue] = useState("");
   // 防重复提交：Enter 触发提交后 input 失焦会再次触发 onBlur
   const isSubmittingRef = useRef(false);
+
+  const displayNames = useMemo(
+    () => buildDirectoryDisplayNames(workspaceDirectories),
+    [workspaceDirectories],
+  );
 
   const handleRenameStart = (directory: WorkspaceDirectoryRecord): void => {
     isSubmittingRef.current = false;
@@ -295,6 +301,7 @@ export function WorkspaceDirectoryList({
           <WorkspaceDirectoryRow
             activeDirectoryId={activeDirectoryId}
             directory={directory}
+            displayName={displayNames.get(directory.directoryId)}
             draggedDirectoryId={draggedDirectoryId}
             dragOverDirectoryId={dragOverDirectoryId}
             dropIndicatorSide={getCollectionMemberDropSide(
@@ -460,6 +467,7 @@ export function WorkspaceDirectoryList({
             <WorkspaceDirectoryRow
               activeDirectoryId={activeDirectoryId}
               directory={directory}
+              displayName={displayNames.get(directory.directoryId)}
               draggedDirectoryId={draggedDirectoryId}
               dragOverDirectoryId={dragOverDirectoryId}
               dropIndicatorSide={dropIndicatorSide}

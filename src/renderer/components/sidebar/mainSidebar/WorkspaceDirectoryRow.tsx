@@ -16,6 +16,7 @@ import { WorkspaceDirectoryMenu } from "./WorkspaceDirectoryMenu";
 
 type WorkspaceDirectoryRowProps = {
   directory: WorkspaceDirectoryRecord;
+  displayName?: string;
   index: number;
   totalCount: number;
   activeDirectoryId?: string;
@@ -80,6 +81,7 @@ const FAILED_PATH_STATES = [
  */
 export function WorkspaceDirectoryRow({
   directory,
+  displayName,
   index,
   totalCount,
   activeDirectoryId,
@@ -273,7 +275,7 @@ export function WorkspaceDirectoryRow({
             <GripVertical size={13} />
           </span>
           {getDirectoryIcon(directory)}
-          <span className="list-label">{directory.name}</span>
+          <span className="list-label">{displayName ?? directory.name}</span>
           <span className="list-meta">
             {directory.kind === "ssh"
               ? t("sidebar.directoryKindSsh", {

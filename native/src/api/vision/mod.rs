@@ -211,16 +211,39 @@ impl VisionApiConfig {
         api_config: &ApiConfigRecord,
         custom_headers: &HashMap<String, String>,
     ) -> Result<Self> {
-        let request_method = api_config.vision_request_method.trim().to_string();
-        let base_url = api_config.vision_base_url.trim().to_string();
-        let base_url_mode = api_config.vision_base_url_mode.trim().to_string();
-        let api_key = api_config.vision_api_key.trim().to_string();
-        let model = api_config.vision_model.trim().to_string();
+        let (request_method, base_url, base_url_mode, api_key, model) =
+            if api_config.supports_vision {
+                (
+                    api_config.request_method.trim().to_string(),
+                    api_config.base_url.trim().to_string(),
+                    api_config.base_url_mode.trim().to_string(),
+                    api_config.api_key.trim().to_string(),
+                    api_config.advanced_model.trim().to_string(),
+                )
+            } else {
+                (
+                    api_config.vision_request_method.trim().to_string(),
+                    api_config.vision_base_url.trim().to_string(),
+                    api_config.vision_base_url_mode.trim().to_string(),
+                    api_config.vision_api_key.trim().to_string(),
+                    api_config.vision_model.trim().to_string(),
+                )
+            };
 
         if base_url.is_empty() {
-            return Err(Error::from_reason(
-                "Vision base URL is not configured. Please configure the vision API settings first.",
-            ));
+            return Err(Error::from_reason(if api_config.supports_vision {
+                "API base URL is not configured. Please configure the API settings first."
+            } else {
+                "Vision base URL is not configured. Please configure the vision API settings first."
+            }));
+        }
+
+        if model.is_empty() {
+            return Err(Error::from_reason(if api_config.supports_vision {
+                "Advanced model is not configured. Please select or configure an advanced model in API settings."
+            } else {
+                "Vision model is not configured. Please configure the vision API settings first."
+            }));
         }
 
         let snowcfg = serde_json::from_str::<Value>(&api_config.config_json)

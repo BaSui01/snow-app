@@ -8,9 +8,9 @@ use super::*;
 /// - 绝对路径：直接读取（用户本地任意目录的图片，如项目中的 UI 设计稿）；
 /// - 相对路径：必须位于 `upload/` 目录内（相对数据库文件所在目录），拒绝穿越。
 ///
-/// 限制：单张 20MB 上限；仅接受图片扩展名。视觉配置复用主 API 配置的
-/// vision 通道（chat / responses / anthropic / gemini），结果走
-/// [`describe_image`] 的 blake3 内容缓存。
+/// 限制：单张 20MB 上限；仅接受图片扩展名。主模型支持视觉时直接复用主
+/// 通道，否则回退到主 API 配置的 vision 通道（chat / responses /
+/// anthropic / gemini）；结果走 [`describe_image`] 的 blake3 内容缓存。
 pub(crate) async fn describe_image_file(path: &str, user_prompt: &str) -> Result<String> {
     use std::fs;
 
@@ -72,10 +72,12 @@ pub(crate) async fn describe_image_file(path: &str, user_prompt: &str) -> Result
             Error::from_reason(format!("Failed to create vision HTTP client: {error}"))
         })?;
 
+    let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    let data_url = format!("data:{};base64,{}", mime_type, data);
     let image = ChatImage {
-        media_type: mime_type.clone(),
-        data: base64::engine::general_purpose::STANDARD.encode(&bytes),
-        data_url: String::new(),
+        media_type: mime_type,
+        data,
+        data_url,
         source: None,
     };
     // 工具入口没有请求级取消令牌（工具执行取消走独立的 tool 注册表），

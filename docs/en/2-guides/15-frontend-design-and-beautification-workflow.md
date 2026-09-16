@@ -5,21 +5,21 @@ This guide covers four common scenarios and provides prompt templates you can re
 
 ## 1. Tool matrix
 
-| Tool | Role in this workflow |
-| --- | --- |
-| `filesystem-*` | Read and write frontend code (`create` / `replace_edit` / `read` / `search`) |
-| `bash-terminal-execute` | Start a dev server and run builds (`npm run dev`, and so on) |
-| `browser-navigate` | Open a local dev server (`http://localhost:xxxx`) or a live page |
-| `browser-screenshot` | Capture the current viewport or full page as the “before” reference |
-| `browser-devtools` | Inspect the accessibility tree (`ax`), diagnose console errors, and review network requests |
-| `browser-evaluate` | Run JavaScript in the page to test styles, inspect layout data, or verify interactions |
-| `browser-click` / `browser-type` / `browser-hover` / `browser-wait` | Verify interactions by clicking, typing, hovering, and waiting for rendering |
-| `imagegen-generate` | Generate mockups, icons, illustrations, and style references |
-| `imagegen-image-describe` | **Visual understanding**: analyze a mockup and return an implementation-ready UI description |
-| Image-generation library and albums | Organize generated mockups and assets into albums such as “Mockups” and “Icons” |
-| `grep-search` / `codebase` | Locate project structure and existing style patterns |
+| Tool                                                                | Role in this workflow                                                                        |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `filesystem-*`                                                      | Read and write frontend code (`create` / `replace_edit` / `read` / `search`)                 |
+| `bash-terminal-execute`                                             | Start a dev server and run builds (`npm run dev`, and so on)                                 |
+| `browser-navigate`                                                  | Open a local dev server (`http://localhost:xxxx`) or a live page                             |
+| `browser-screenshot`                                                | Capture the current viewport or full page as the “before” reference                          |
+| `browser-devtools`                                                  | Inspect the accessibility tree (`ax`), diagnose console errors, and review network requests  |
+| `browser-evaluate`                                                  | Run JavaScript in the page to test styles, inspect layout data, or verify interactions       |
+| `browser-click` / `browser-type` / `browser-hover` / `browser-wait` | Verify interactions by clicking, typing, hovering, and waiting for rendering                 |
+| `imagegen-generate`                                                 | Generate mockups, icons, illustrations, and style references                                 |
+| `imagegen-image-describe`                                           | **Visual understanding**: analyze a mockup and return an implementation-ready UI description |
+| Image-generation library and albums                                 | Organize generated mockups and assets into albums such as “Mockups” and “Icons”              |
+| `grep-search` / `codebase`                                          | Locate project structure and existing style patterns                                         |
 
-> The `path` accepted by `imagegen-image-describe` can be an **absolute disk path** anywhere in the project, such as `C:/Users/xx/project/design/home.png`, or an `upload/`-relative path. Each image must be no larger than 20 MB and use an image format. The vision channel reuses the vision-model settings under Settings → API.
+> The `path` accepted by `imagegen-image-describe` can be an **absolute disk path** anywhere in the project, such as `C:/Users/xx/project/design/home.png`, or an `upload/`-relative path. Each image must be no larger than 20 MB and use an image format. The tool uses the main model directly when it supports vision; otherwise the vision channel reuses the vision-model settings under Settings → API.
 
 ## 2. Scenario A: implement a frontend from a mockup
 
@@ -150,15 +150,15 @@ flowchart TD
 
 ## 7. Best practices
 
-| Practice | Guidance |
-| --- | --- |
-| **Capture before editing** | Take a `browser-screenshot` before every visual change so the Agent and user share a baseline. |
-| **Describe first, code second** | Have the vision model produce a design specification—hex values, spacing, and components—before writing code. |
-| **Iterate in small steps** | Change one module, verify it with a screenshot, and then continue; this converges more reliably than a single large rewrite. |
-| **Organize assets in albums** | Keep mockups, icons, and style references in separate albums so later tasks can reuse the approved direction. |
-| **Wait before capturing** | For interactive pages, use `browser-wait` until rendering completes; use `fullPage=true` for a full-page capture. |
-| **Configure the vision channel** | `imagegen-image-describe` requires a vision model in the main API settings and reports a configuration error when none is available. |
-| **Separate design from implementation** | Treat the mockup as intent input; do not embed it into the final page when the design can be implemented with real layout, styles, and assets. |
+| Practice                                | Guidance                                                                                                                                                                                                                   |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Capture before editing**              | Take a `browser-screenshot` before every visual change so the Agent and user share a baseline.                                                                                                                             |
+| **Describe first, code second**         | Have the vision model produce a design specification—hex values, spacing, and components—before writing code.                                                                                                              |
+| **Iterate in small steps**              | Change one module, verify it with a screenshot, and then continue; this converges more reliably than a single large rewrite.                                                                                               |
+| **Organize assets in albums**           | Keep mockups, icons, and style references in separate albums so later tasks can reuse the approved direction.                                                                                                              |
+| **Wait before capturing**               | For interactive pages, use `browser-wait` until rendering completes; use `fullPage=true` for a full-page capture.                                                                                                          |
+| **A usable vision model is required**   | `imagegen-image-describe` uses the main model directly when it supports vision (supportsVision=true); otherwise it needs a vision model in the main API settings and reports a configuration error when none is available. |
+| **Separate design from implementation** | Treat the mockup as intent input; do not embed it into the final page when the design can be implemented with real layout, styles, and assets.                                                                             |
 
 ## 8. Related documentation
 

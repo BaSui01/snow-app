@@ -97,7 +97,7 @@ pub const READONLY_TOOL_NAMES: &[&str] = &[
     "app-control-listMemos",
     "app-control-getMemo",
     "app-control-getBlockedPatterns",
-    "imagegen-imagegen-image-describe",
+    "imagegen-image-describe",
     "codebase-search",
     "todo-todo-manage",
     "memory-search",

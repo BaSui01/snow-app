@@ -39,7 +39,6 @@ pub const TOOL_GENERATE: &str = "generate";
 /// 视觉分析工具：读取项目中的图片（如 UI 设计稿）并用视觉模型生成描述，
 /// 供主模型理解设计后编码还原（前端页面等）。
 const TOOL_DESCRIBE: &str = "image-describe";
-const TOOL_DESCRIBE_NAME: &str = "imagegen-image-describe";
 
 /// image-describe 默认分析提示词（UI/UX 设计稿还原场景）。
 const DEFAULT_DESCRIBE_PROMPT: &str = "Describe this image as a UI/UX design reference for front-end implementation. Cover: overall layout structure (sections, columns, hierarchy), color palette (exact hex codes where discernible), typography (font styles, sizes, weights), spacing and margins, components (buttons, cards, forms, navigation, modals, lists), visual effects (shadows, gradients, border radius), icons and imagery, and any responsive/adaptive hints. Output a concise but COMPLETE structured description (use sections) that a developer can directly translate into code to recreate the page.";
@@ -145,7 +144,8 @@ impl ImageGenService {
 
     /// `image-describe`：读取磁盘图片（绝对路径或 upload/ 相对路径）并用
     /// 视觉模型生成描述。用于「读取项目中的 UI 设计稿 → 理解设计 →
-    /// 编码还原前端页面」的工作流。视觉配置复用主 API 的 vision 通道。
+    /// 编码还原前端页面」的工作流。主模型支持视觉时直接用主通道，否则
+    /// 复用主 API 的 vision 通道。
     pub async fn execute_describe(&self, args: &Value) -> napi::Result<Value> {
         let path = required_string(args, "path", TOOL_DESCRIBE)?;
         let user_prompt = args
@@ -1312,8 +1312,8 @@ impl McpService for ImageGenService {
             }),
         }, McpTool {
             server_id: SERVER_ID.to_string(),
-            name: TOOL_DESCRIBE_NAME.to_string(),
-            description: "Analyze an image file on disk with the vision model (uses the vision channel of the main API config) and return a structured description. USE THIS when the user asks you to read/understand a design image from the project (e.g. UI mockups, design screenshots, Figma exports) and implement or recreate it as code — for example 'look at the design in design/home.png and build this page'. The `path` accepts an absolute disk path (e.g. C:/Users/xx/project/design/home.png or /home/user/project/design/home.png) or a path relative to the conversation's upload/ directory (upload/2026-07-25/hash.png). Max 20MB, image formats only. Combine with filesystem tools: list/search the project for design files first, then describe each relevant image, then write the implementation code. The description focuses on UI/UX details (layout, colors with hex codes, typography, spacing, components, effects) so it can be translated directly into front-end code."
+            name: TOOL_DESCRIBE.to_string(),
+            description: "Analyze an image file on disk with the vision model (uses the main model directly when it supports vision, otherwise the vision channel of the main API config) and return a structured description. USE THIS when the user asks you to read/understand a design image from the project (e.g. UI mockups, design screenshots, Figma exports) and implement or recreate it as code — for example 'look at the design in design/home.png and build this page'. The `path` accepts an absolute disk path (e.g. C:/Users/xx/project/design/home.png or /home/user/project/design/home.png) or a path relative to the conversation's upload/ directory (upload/2026-07-25/hash.png). Max 20MB, image formats only. Combine with filesystem tools: list/search the project for design files first, then describe each relevant image, then write the implementation code. The description focuses on UI/UX details (layout, colors with hex codes, typography, spacing, components, effects) so it can be translated directly into front-end code."
                 .to_string(),
             input_schema: json!({
                 "type": "object",

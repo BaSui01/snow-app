@@ -89,4 +89,5 @@ export type UserMessageSummary = {
   id: string;
   content: string;
   createdAt: string;
+  isContextCompaction: boolean;
 };

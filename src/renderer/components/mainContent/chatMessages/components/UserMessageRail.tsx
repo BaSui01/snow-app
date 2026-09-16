@@ -777,37 +777,41 @@ export const UserMessageRail = memo(
                 {userMessages.map((msg, index) => {
                   const summary = buildPlainTextSummary(msg.content);
                   const hasChips =
-                    msg.content.includes("@@file:") ||
-                    msg.content.includes("@@dir:") ||
-                    msg.content.includes("@@image:") ||
-                    msg.content.includes("@@commit:") ||
-                    msg.content.includes("@@change:") ||
-                    msg.content.includes("@@text-snippet:") ||
-                    msg.content.includes("@@review:") ||
-                    msg.content.includes("@@element:") ||
-                    msg.content.includes("@@web:") ||
-                    msg.content.includes("@@conversation:") ||
-                    msg.content.includes("@@skill:");
+                    !msg.isContextCompaction &&
+                    (msg.content.includes("@@file:") ||
+                      msg.content.includes("@@dir:") ||
+                      msg.content.includes("@@image:") ||
+                      msg.content.includes("@@commit:") ||
+                      msg.content.includes("@@change:") ||
+                      msg.content.includes("@@text-snippet:") ||
+                      msg.content.includes("@@review:") ||
+                      msg.content.includes("@@element:") ||
+                      msg.content.includes("@@web:") ||
+                      msg.content.includes("@@conversation:") ||
+                      msg.content.includes("@@skill:"));
                   const isVisible = visibleUserIndices.has(index);
+                  const itemLabel = msg.isContextCompaction
+                    ? t("chat.compactionSummary", {
+                        defaultValue: "Context summary",
+                      })
+                    : summary.length > 0
+                      ? summary.length > 64
+                        ? `${summary.slice(0, 64)}...`
+                        : summary
+                      : `#${index + 1}`;
                   return (
                     <button
                       type="button"
                       key={msg.id}
                       className={`user-message-rail-popover-item${isVisible ? " is-visible" : ""}`}
                       onClick={() => void handleItemClick(msg.id)}
-                      title={summary}
+                      title={msg.isContextCompaction ? itemLabel : summary}
                     >
                       <span className="user-message-rail-popover-item-index">
                         {index + 1}
                       </span>
                       <span className="user-message-rail-popover-item-text">
-                        {hasChips
-                          ? renderRailSegments(msg.content)
-                          : summary.length > 0
-                            ? summary.length > 64
-                              ? `${summary.slice(0, 64)}...`
-                              : summary
-                            : `#${index + 1}`}
+                        {hasChips ? renderRailSegments(msg.content) : itemLabel}
                       </span>
                     </button>
                   );

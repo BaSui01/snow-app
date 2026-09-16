@@ -474,14 +474,16 @@ pub fn list_chat_messages(conversation_id: String) -> Result<Vec<ChatMessageReco
 
 /// Lightweight summary of a single user message, used by the chat UI's
 /// user-message rail for quick navigation. Only carries the fields the rail
-/// needs (id for DOM lookup, content for preview, created_at for ordering),
-/// so long conversations do not pay the cost of loading full tool_calls_json
+/// needs (id for DOM lookup, content for preview, created_at for ordering,
+/// is_context_compaction so the rail can label compaction boundaries), so
+/// long conversations do not pay the cost of loading full tool_calls_json
 /// and thinking blobs for every message.
 #[napi(object)]
 pub struct UserMessageSummary {
     pub id: String,
     pub content: String,
     pub created_at: String,
+    pub is_context_compaction: bool,
 }
 
 pub fn list_user_messages(conversation_id: String) -> Result<Vec<UserMessageSummary>> {

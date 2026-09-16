@@ -599,11 +599,11 @@ pub fn list_chat_messages(
         .map_err(|error| database::database_error(database_path, "list chat messages", error))
 }
 
-/// Fetch only user-role messages (excluding context-compaction markers) for
-/// a conversation. Returns just id, content and created_at — enough for the
-/// chat UI's user-message rail to preview and navigate. Because it skips the
-/// heavy thinking/tool_calls_json columns and filters on role, it stays fast
-/// even for conversations with thousands of messages.
+/// Fetch user-role messages for a conversation, including context-compaction
+/// boundaries, so the chat UI's user-message rail can preview and navigate to
+/// them. Returns just id, content, created_at and the compaction flag —
+/// because it skips the heavy thinking/tool_calls_json columns and filters on
+/// role, it stays fast even for conversations with thousands of messages.
 pub fn list_user_messages(
     database_path: &Path,
     conversation_id: &str,
@@ -613,19 +613,21 @@ pub fn list_user_messages(
             let mut statement = connection.prepare(
                 "SELECT id,
                         content,
-                        created_at
+                        created_at,
+                        status
                    FROM chat_messages
                   WHERE conversation_id = ?1
                     AND role = 'user'
-                    AND (status = '' OR status IS NULL OR status != 'context_compaction')
                   ORDER BY id ASC",
             )?;
 
             let rows = statement.query_map(params![conversation_id], |row| {
+                let status: String = row.get(3)?;
                 Ok(UserMessageSummary {
                     id: row.get(0)?,
                     content: row.get(1)?,
                     created_at: row.get(2)?,
+                    is_context_compaction: status == "context_compaction",
                 })
             })?;
 

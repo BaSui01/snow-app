@@ -20567,7 +20567,7 @@ input {
   max-width: 100%;
   padding: 2px 10px;
   border: 1px solid var(--border-color);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-island);
   overflow-x: auto;
   scrollbar-width: none;
@@ -20696,7 +20696,7 @@ input {
   width: 18px;
   height: 18px;
   border: none;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-tertiary);
   cursor: pointer;
@@ -21018,7 +21018,7 @@ input {
 
 .memo-filter-tab {
   padding: 4px 8px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: transparent;
   border: none;
   color: var(--text-tertiary);
@@ -21098,7 +21098,7 @@ input {
   align-items: center;
   gap: 4px;
   padding: 4px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: var(--accent-green-bg);
   border: none;
   color: var(--accent-green-text);
@@ -21132,7 +21132,7 @@ input {
   align-items: stretch;
   gap: 4px;
   padding: 8px 8px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition: background 0.12s;
 }
@@ -21208,7 +21208,7 @@ input {
   justify-content: center;
   width: 24px;
   height: 24px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: transparent;
   border: none;
   color: var(--text-tertiary);
@@ -21307,7 +21307,7 @@ input {
 
 .memo-editor-status-badge {
   padding: 2px 8px;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
@@ -21357,7 +21357,7 @@ input {
 
 .memo-editor img {
   max-width: 100%;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   margin: 4px 0;
 }
 
@@ -21378,14 +21378,14 @@ input {
 .memo-editor code {
   background: var(--bg-active);
   padding: 1px 4px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   font-size: 0.9em;
 }
 
 .memo-editor pre {
   background: var(--bg-active);
   padding: 8px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   overflow-x: auto;
   margin: 6px 0;
 }
@@ -21406,7 +21406,7 @@ input {
   gap: 5px;
   padding: 5px 12px;
   border: none;
-  border-radius: 6px 6px 0 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
   background: transparent;
   color: var(--text-tertiary);
   font-size: 12px;
@@ -21457,7 +21457,7 @@ input {
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
   background: var(--bg-primary);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-md);
 }
 
 .memo-schedule-field {
@@ -21644,7 +21644,7 @@ input {
   position: absolute;
   top: 8px;
   height: 20px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--accent-blue);
   opacity: 0.85;
   transition:
@@ -21778,7 +21778,7 @@ input {
   min-width: 0;
   padding: 5px 6px;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-tertiary);
   font: inherit;
@@ -21819,7 +21819,7 @@ input {
   min-width: 17px;
   height: 17px;
   padding: 0 4px;
-  border-radius: 9px;
+  border-radius: var(--radius-lg);
   background: var(--bg-hover);
   color: var(--text-muted);
   font-size: 10px;
@@ -21893,7 +21893,7 @@ input {
   min-width: 0;
   padding: 9px 10px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-primary);
   font: inherit;
@@ -21942,7 +21942,7 @@ input {
   display: inline-flex;
   align-items: center;
   padding: 2px 7px;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   font-size: 10px;
   font-weight: 600;
   line-height: 1.35;
@@ -22073,7 +22073,7 @@ input {
   gap: 6px;
   margin: 8px 8px 0;
   padding: 8px 9px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: var(--accent-amber-bg);
   color: var(--accent-amber-text);
   font-size: 11px;
@@ -22100,7 +22100,7 @@ input {
   min-width: 0;
   padding: 6px 7px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-tertiary);
   font: inherit;
@@ -22208,7 +22208,7 @@ input {
   gap: 5px;
   padding: 6px 9px;
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: var(--bg-primary);
   color: var(--text-secondary);
   font: inherit;
@@ -22271,7 +22271,7 @@ input {
   max-width: 780px;
   padding: 14px;
   border: 1px solid var(--border-light);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--bg-secondary);
 }
 
@@ -22295,7 +22295,7 @@ input {
 .scheduled-task-config-grid > div {
   min-width: 0;
   padding: 9px 10px;
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   background: var(--bg-primary);
 }
 
@@ -22365,7 +22365,7 @@ input {
   overflow: auto;
   padding: 10px 11px;
   border: 1px solid var(--border-subtle, var(--border-color));
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   background: var(--bg-primary);
   color: var(--text-secondary);
   font-family: inherit;
@@ -22393,7 +22393,7 @@ input {
   gap: 8px;
   min-width: 0;
   padding: 8px 9px;
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   background: var(--bg-primary);
   color: var(--text-muted);
   font-size: 11px;
@@ -22545,7 +22545,7 @@ input {
   max-width: 680px;
   padding: 14px;
   border: 1px solid var(--border-light);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--bg-secondary);
 }
 
@@ -22620,7 +22620,7 @@ input {
   gap: 5px;
   padding: 4px 6px;
   border: none;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-tertiary);
   font-size: 11.5px;
@@ -22765,7 +22765,7 @@ input {
   min-width: 0;
   padding: 6px 8px;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-tertiary);
   font: inherit;
@@ -22813,7 +22813,7 @@ input {
   min-width: 0;
   margin-right: auto;
   padding: 7px 9px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: var(--accent-red-bg);
   color: var(--accent-red);
   font-size: 11px;
@@ -24570,7 +24570,7 @@ input {
 }
 
 .token-usage-ring-cache {
-  stroke: #f59e0b;
+  stroke: #a855f7;
   transition: stroke-dasharray 0.3s ease;
 }
 
@@ -44789,8 +44789,8 @@ pre.file-viewer-code {
 }
 
 .memory-clear-btn:hover:not(:disabled) {
-  background: var(--danger-bg, rgba(229, 72, 77, 0.12));
-  color: var(--danger-text, #e5484d);
+  background: var(--accent-red-bg);
+  color: var(--accent-red);
 }
 
 .memory-clear-btn:disabled {
@@ -44848,7 +44848,7 @@ pre.file-viewer-code {
 .memory-kind-badge {
   flex-shrink: 0;
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-lg);
   background: var(--accent-blue-bg);
   color: var(--accent-blue-text);
   font-size: 10px;
@@ -44858,23 +44858,27 @@ pre.file-viewer-code {
 }
 
 .memory-kind-badge.decision {
-  background: var(--accent-purple-bg, rgba(139, 92, 246, 0.14));
-  color: var(--accent-purple-text, #8b5cf6);
+  background: color-mix(
+    in srgb,
+    var(--accent-purple-text, var(--accent-blue-text)) 14%,
+    transparent
+  );
+  color: var(--accent-purple-text, var(--accent-blue-text));
 }
 
 .memory-kind-badge.preference {
-  background: var(--accent-green-bg, rgba(34, 197, 94, 0.14));
-  color: var(--accent-green-text, #16a34a);
+  background: var(--accent-green-bg);
+  color: var(--accent-green-text);
 }
 
 .memory-kind-badge.pitfall {
-  background: var(--accent-orange-bg, rgba(249, 115, 22, 0.14));
-  color: var(--accent-orange-text, #f97316);
+  background: var(--accent-orange-bg, rgba(232, 151, 58, 0.12));
+  color: var(--accent-orange-text, #e8973a);
 }
 
 .memory-kind-badge.task_state {
-  background: var(--accent-yellow-bg, rgba(234, 179, 8, 0.16));
-  color: var(--accent-yellow-text, #b45309);
+  background: var(--accent-amber-bg);
+  color: var(--accent-amber-text);
 }
 
 .memory-list-item-title {
@@ -44891,7 +44895,7 @@ pre.file-viewer-code {
 .memory-list-item-importance {
   flex-shrink: 0;
   font-size: 10px;
-  color: #f5b301;
+  color: var(--warning, #f5b301);
   line-height: 1;
   letter-spacing: 1px;
 }
@@ -44914,13 +44918,13 @@ pre.file-viewer-code {
   align-items: center;
   gap: 3px;
   padding: 0 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-lg);
   font-size: 10px;
 }
 
 .memory-status-badge.pending {
-  background: var(--accent-yellow-bg, rgba(234, 179, 8, 0.16));
-  color: var(--accent-yellow-text, #b45309);
+  background: var(--accent-amber-bg);
+  color: var(--accent-amber-text);
 }
 
 .memory-status-badge.archived {
@@ -44983,7 +44987,7 @@ pre.file-viewer-code {
 .memory-editor-conversation {
   flex-shrink: 0;
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-lg);
   background: var(--bg-hover);
   color: var(--text-tertiary);
   font-size: 10px;
@@ -45003,7 +45007,7 @@ pre.file-viewer-code {
   padding: 0 10px;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
-  background: var(--bg-input);
+  background: var(--bg-primary);
   color: var(--text-primary);
   font-size: 13px;
   font-weight: 600;
@@ -45014,7 +45018,7 @@ pre.file-viewer-code {
 
 .memory-editor-title:focus {
   outline: none;
-  border-color: var(--accent-blue-border);
+  border-color: var(--border-focus);
 }
 
 .memory-editor-row {
@@ -45055,7 +45059,7 @@ pre.file-viewer-code {
   padding: 10px 12px;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
-  background: var(--bg-input);
+  background: var(--bg-primary);
   color: var(--text-primary);
   font-size: 12.5px;
   font-family: inherit;
@@ -45066,7 +45070,7 @@ pre.file-viewer-code {
 
 .memory-editor-content:focus {
   outline: none;
-  border-color: var(--accent-blue-border);
+  border-color: var(--border-focus);
 }
 
 .memory-editor-tags {
@@ -45075,7 +45079,7 @@ pre.file-viewer-code {
   padding: 0 10px;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
-  background: var(--bg-input);
+  background: var(--bg-primary);
   color: var(--text-primary);
   font-size: 12px;
   font-family: inherit;
@@ -45085,7 +45089,7 @@ pre.file-viewer-code {
 
 .memory-editor-tags:focus {
   outline: none;
-  border-color: var(--accent-blue-border);
+  border-color: var(--border-focus);
 }
 
 .memory-editor-actions {
@@ -45194,11 +45198,11 @@ pre.file-viewer-code {
 }
 
 .memory-multi-select-action-btn.danger {
-  color: var(--danger, #e5484d);
+  color: var(--accent-red);
 }
 
 .memory-multi-select-action-btn.danger:hover:not(:disabled) {
-  background: rgba(229, 72, 77, 0.1);
+  background: var(--accent-red-bg);
 }
 
 /* 多选模式下条目由纵向堆叠改为勾选框 + 内容的横向布局 */
@@ -45215,7 +45219,7 @@ pre.file-viewer-code {
   width: 16px;
   height: 16px;
   margin-top: 2px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   border: 1.5px solid var(--text-muted);
   background: transparent;
   color: var(--on-solid);

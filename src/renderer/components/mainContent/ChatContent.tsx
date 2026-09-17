@@ -440,8 +440,16 @@ const ChatContentBody = ({
     }
     dismissQuote();
   }, [quoteState, dismissQuote]);
+  // 视图重建 key 用 sessionViewKey（而非 activeConversationId）：pending 会话
+  // 首轮结束迁移为真实 ID 时它保持不变，chat-area / ChatInput 不重建——
+  // 否则首次工具组挂载的同一瞬间整页闪烁、输入框失焦。
+  // 它同时是滚动容器的身份：项目切换（directoryId 变化）会让 chat-area
+  // 整体重挂载、新容器 scrollTop 归零，但 activeConversationId 不变——
+  // 滚动状态的复位与初始定位必须据此判断，否则新容器停在顶部。
+  const chatRenderKey = `${activeDirectory?.directoryId ?? "no-project"}:${sessionViewKey}:${newChatGeneration}`;
   const activeConversationIdRef = useRef(activeConversationId);
   const previousActiveConversationIdRef = useRef(activeConversationId);
+  const previousChatRenderKeyRef = useRef(chatRenderKey);
   const positionedConversationIdsRef = useRef(new Set<string>());
   const pendingScrollRestoreRef = useRef<PendingScrollRestore | null>(null);
   const scrollRestoreRequestIdRef = useRef(0);
@@ -573,11 +581,18 @@ const ChatContentBody = ({
   );
 
   useLayoutEffect(() => {
-    if (previousActiveConversationIdRef.current === activeConversationId) {
+    // 会话切换与容器重建（切换项目）都算视图更换：后者 activeConversationId
+    // 不变，但 chat-area 的 DOM 被整体替换，滚动状态必须一并复位。
+    const isConversationChange =
+      previousActiveConversationIdRef.current !== activeConversationId;
+    const isContainerRebuild =
+      previousChatRenderKeyRef.current !== chatRenderKey;
+    if (!isConversationChange && !isContainerRebuild) {
       return;
     }
 
     previousActiveConversationIdRef.current = activeConversationId;
+    previousChatRenderKeyRef.current = chatRenderKey;
     scrollRestoreRequestIdRef.current += 1;
     pendingScrollRestoreRef.current = null;
     isLoadingOlderWithScrollRef.current = false;
@@ -606,7 +621,7 @@ const ChatContentBody = ({
       lastClientHeightRef.current = 0;
       container.scrollTop = 0;
     }
-  }, [activeConversationId]);
+  }, [activeConversationId, chatRenderKey]);
 
   // chat-area 重挂载（灵动岛重开/紧凑展开）时容器 DOM 被整体替换：
   // 清除已定位标记，让初始定位 effect 在同轮 commit 重新滚到底部。
@@ -663,6 +678,7 @@ const ChatContentBody = ({
     };
   }, [
     activeConversationId,
+    chatRenderKey,
     isChatAreaRendered,
     isInitialHistoryLoaded,
     isLoadingInitialHistory,
@@ -786,7 +802,12 @@ const ChatContentBody = ({
       mutationObserver.disconnect();
       resizeObserver.disconnect();
     };
-  }, [activeConversationId, isChatAreaRendered, syncScrollButtonVisibility]);
+  }, [
+    activeConversationId,
+    chatRenderKey,
+    isChatAreaRendered,
+    syncScrollButtonVisibility,
+  ]);
 
   useLayoutEffect(() => {
     const container = scrollRef.current;
@@ -835,7 +856,7 @@ const ChatContentBody = ({
     }
 
     scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [autoScrollEnabled, isStreaming, messages]);
+  }, [autoScrollEnabled, isStreaming, messages, chatRenderKey]);
 
   // Run 结束瞬间（isStreaming true→false）消息集中定稿：showActions 按钮、
   // run summary 摘要条、Thinking 折叠、markdown 定稿，高度逐帧变化，而流式
@@ -1386,11 +1407,6 @@ const ChatContentBody = ({
     };
   }, []);
 
-  // 视图重建 key 用 sessionViewKey（而非 activeConversationId）：pending 会话
-  // 首轮结束迁移为真实 ID 时它保持不变，chat-area / ChatInput 不重建——
-  // 否则首次工具组挂载的同一瞬间整页闪烁、输入框失焦。
-  const chatRenderKey = `${activeDirectory?.directoryId ?? "no-project"}:${sessionViewKey}:${newChatGeneration}`;
-
   // 悬浮头部标题：AI 摘要 > 会话标题 > 项目名 > 兜底（运行中优先摘要）
   const floatTitle =
     activeConversationMeta?.summary ||
@@ -1511,6 +1527,7 @@ const ChatContentBody = ({
             <UserMessageRail
               conversationId={activeConversationId}
               scrollContainerRef={scrollRef}
+              containerKey={chatRenderKey}
               loadOlderMessages={loadOlderMessages}
               isLoadingOlderMessages={isLoadingOlderMessages}
               hasMoreMessages={hasMoreMessages}

@@ -2738,6 +2738,7 @@ export const zhCN = {
   "settings.themePresetsInfo": "选择内置配色方案，浅色和深色变体打包在一起。",
   "settings.themePresetSnow": "Snow",
   "settings.themePresetCream": "奶油",
+  "settings.themePresetWin95": "Win95",
   "settings.themePresetMidnightBlue": "午夜蓝",
   "settings.themePresetForestGreen": "森林绿",
   "settings.themePresetRosePink": "玫瑰粉",

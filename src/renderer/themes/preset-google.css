@@ -517,6 +517,9 @@
   --selection-bg: rgba(11, 87, 208, 0.18) !important;
   --focus-ring: rgba(11, 87, 208, 0.24) !important;
   --on-solid: #ffffff !important;
+  --scrollbar-thumb: rgba(60, 64, 67, 0.24);
+  --scrollbar-thumb-hover: rgba(11, 87, 208, 0.5);
+  --scrollbar-thumb-active: rgba(11, 87, 208, 0.72);
 }
 
 :root[data-theme-preset="google"][data-theme="dark"] {
@@ -572,6 +575,9 @@
   --selection-bg: rgba(168, 199, 250, 0.28) !important;
   --focus-ring: rgba(168, 199, 250, 0.3) !important;
   --on-solid: #202124 !important;
+  --scrollbar-thumb: rgba(232, 234, 237, 0.22);
+  --scrollbar-thumb-hover: rgba(168, 199, 250, 0.55);
+  --scrollbar-thumb-active: rgba(168, 199, 250, 0.78);
 }
 
 :root[data-theme-preset="google"] body,
@@ -1316,8 +1322,502 @@
   background: color-mix(in srgb, var(--google-on-primary) 12%, transparent);
 }
 
+:root[data-theme-preset="google"] .send-key-group {
+  border-radius: 999px;
+}
+
+:root[data-theme-preset="google"] .send-key-menu {
+  border-color: var(--google-outline);
+  border-radius: var(--radius-lg);
+  background: var(--google-surface-0);
+  box-shadow: var(--google-elevation-2);
+}
+
+:root[data-theme-preset="google"] .send-key-menu-item {
+  border-radius: var(--radius-md);
+}
+
+:root[data-theme-preset="google"] .send-key-menu-item:hover,
+:root[data-theme-preset="google"] .send-key-menu-item:focus-visible {
+  background: var(--accent-blue-bg);
+  color: var(--text-primary);
+}
+
+:root[data-theme-preset="google"] .send-key-menu-item.is-active {
+  color: var(--google-blue);
+}
+
+:root[data-theme-preset="google"] .abort-btn {
+  border: 1px solid color-mix(in srgb, var(--google-red) 30%, transparent);
+  background: var(--google-red);
+  color: var(--google-on-primary);
+}
+
+:root[data-theme-preset="google"] .abort-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--google-red) 88%, #000000);
+}
+
+:root[data-theme-preset="google"] .tcg-toggle {
+  padding: 3px 10px;
+  border: 1px solid var(--google-outline-variant);
+  border-radius: 999px;
+  background: var(--google-surface-1);
+  color: var(--text-tertiary);
+}
+
+:root[data-theme-preset="google"] .tcg-toggle:hover {
+  border-color: var(--google-blue);
+  background: var(--accent-blue-bg);
+  color: var(--google-blue);
+}
+
+:root[data-theme-preset="google"] .tcg-toggle:active {
+  background: var(--google-blue-container);
+  color: var(--google-blue);
+}
+
+:root[data-theme-preset="google"] .tcg-label {
+  font-weight: 600;
+}
+
+:root[data-theme-preset="google"] .tcg-chevron {
+  color: var(--google-blue);
+}
+
+:root[data-theme-preset="google"] .tcg-list::before {
+  background: color-mix(
+    in srgb,
+    var(--google-blue) 26%,
+    var(--google-outline-variant)
+  );
+}
+
+:root[data-theme-preset="google"] .token-usage-ring-bg {
+  stroke: var(--google-outline);
+  opacity: 0.4;
+}
+
+:root[data-theme-preset="google"] .token-usage-ring-input {
+  stroke: var(--google-blue);
+}
+
+:root[data-theme-preset="google"] .token-usage-ring-output {
+  stroke: var(--google-green);
+}
+
+:root[data-theme-preset="google"] .token-usage-ring-cache {
+  stroke: var(--google-yellow);
+}
+
+:root[data-theme-preset="google"] .token-usage-ring-text {
+  color: var(--text-secondary);
+}
+
+:root[data-theme-preset="google"] .token-usage-tooltip {
+  border-color: var(--google-outline);
+  border-radius: var(--radius-lg);
+  background: var(--google-surface-0);
+  box-shadow: var(--google-elevation-2);
+}
+
+:root[data-theme-preset="google"] .token-usage-tooltip::before {
+  border-top-color: var(--google-outline);
+}
+
+:root[data-theme-preset="google"] .token-usage-tooltip::after {
+  border-top-color: var(--google-surface-0);
+}
+
+:root[data-theme-preset="google"] .token-usage-dot-input {
+  background: var(--google-blue);
+}
+
+:root[data-theme-preset="google"] .token-usage-dot-output {
+  background: var(--google-green);
+}
+
+:root[data-theme-preset="google"] .token-usage-dot-cache {
+  background: var(--google-yellow);
+}
+
+:root[data-theme-preset="google"] .token-usage-dot-cache-read {
+  background: var(--google-red);
+}
+
+:root[data-theme-preset="google"] .token-usage-tooltip-divider {
+  background: color-mix(
+    in srgb,
+    var(--google-blue) 22%,
+    var(--google-outline-variant)
+  );
+}
+
+:root[data-theme-preset="google"] .chat-scroll-to-bottom {
+  border-color: var(--google-outline);
+  background: var(--google-surface-0);
+  color: var(--text-primary);
+  box-shadow: var(--google-elevation-2);
+}
+
+:root[data-theme-preset="google"] .chat-scroll-to-bottom:hover {
+  border-color: var(--google-blue);
+  background: var(--accent-blue-bg);
+  color: var(--google-blue);
+  box-shadow: var(--google-elevation-2);
+}
+
+:root[data-theme-preset="google"] .chat-scroll-to-bottom:active {
+  box-shadow: var(--google-elevation-1);
+}
+
+:root[data-theme-preset="google"] .chat-scroll-to-bottom.is-streaming::before {
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    var(--google-blue) 60deg,
+    transparent 140deg,
+    transparent 360deg
+  );
+}
+
+:root[data-theme-preset="google"] .git-panel-diff {
+  background: var(--google-surface-1);
+}
+
+:root[data-theme-preset="google"] .diff-viewer-empty {
+  margin: 6px;
+  border: 1px dashed var(--google-outline);
+  border-radius: var(--radius-md);
+  background-color: var(--google-surface-0);
+  color: var(--text-tertiary);
+  letter-spacing: 0.02em;
+}
+
+:root[data-theme-preset="google"] .input-field {
+  font-family: var(--font-brand-body);
+}
+
+:root[data-theme-preset="google"]
+  :is(
+    .context-menu-item.danger,
+    .explorer-entry-context-menu-item.danger
+  ):hover {
+  background: var(--google-red-container);
+  color: var(--google-red);
+}
+
+:root[data-theme-preset="google"]
+  :is(.top-bar-plus-btn, .top-bar-todo-btn, .top-bar-codebase-sync):hover:not(
+    :disabled
+  ) {
+  background: var(--accent-blue-bg);
+  color: var(--google-blue);
+}
+
+:root[data-theme-preset="google"] .window-control-btn:not(.close-btn):hover {
+  background: var(--accent-blue-bg);
+  color: var(--google-blue);
+}
+
+:root[data-theme-preset="google"] .chat-message-tool:hover {
+  border-color: color-mix(
+    in srgb,
+    var(--google-blue) 32%,
+    var(--google-outline)
+  );
+}
+
+:root[data-theme-preset="google"] .user-message-bubble:hover {
+  border-color: color-mix(
+    in srgb,
+    var(--google-blue) 44%,
+    var(--google-outline)
+  );
+}
+
+:root[data-theme-preset="google"]
+  :is(
+    .top-bar-plus-dropdown,
+    .top-bar-todo-dropdown,
+    .plus-menu-dropdown,
+    .model-dropdown,
+    .file-mention-popup,
+    .chat-command-panel,
+    .custom-select-dropdown,
+    .custom-select-dropdown-portal,
+    .browser-menu-dropdown,
+    .branch-dropdown,
+    .app-modal-dialog,
+    .confirm-dialog,
+    .search-modal,
+    .explorer-entry-context-menu,
+    .context-menu
+  ) {
+  border-color: var(--google-outline);
+  border-radius: var(--radius-lg);
+  background: var(--google-surface-0);
+  box-shadow: var(--google-elevation-2);
+}
+
+:root[data-theme-preset="google"]
+  :is(
+    .top-bar-plus-dropdown-item,
+    .top-bar-todo-item,
+    .plus-menu-item,
+    .model-dropdown-item,
+    .custom-select-item,
+    .browser-menu-item,
+    .branch-dropdown-item,
+    .chat-command-item,
+    .mention-entry,
+    .explorer-entry-context-menu-item,
+    .context-menu-item
+  ):hover,
+:root[data-theme-preset="google"]
+  :is(
+    .top-bar-plus-dropdown-item,
+    .top-bar-todo-item,
+    .plus-menu-item,
+    .model-dropdown-item,
+    .custom-select-item,
+    .browser-menu-item,
+    .branch-dropdown-item,
+    .chat-command-item,
+    .mention-entry,
+    .explorer-entry-context-menu-item,
+    .context-menu-item
+  ).highlighted {
+  border-radius: var(--radius-md);
+  background: var(--accent-blue-bg);
+  color: var(--text-primary);
+}
+
 @media (prefers-reduced-motion: reduce) {
   :root[data-theme-preset="google"] .chat-empty-quick-card {
     transition: none;
   }
+}
+
+:root[data-theme-preset="google"]
+  :is(
+    .memo-sidebar,
+    .memory-sidebar,
+    .scheduled-tasks-sidebar,
+    .scheduled-tasks-sidebar-footer,
+    .memo-gantt-header,
+    .memo-gantt-corner,
+    .memo-gantt-section-title
+  ) {
+  border-color: var(--google-outline-variant);
+  background: var(--google-surface-1);
+}
+
+:root[data-theme-preset="google"]
+  :is(
+    .memo-content,
+    .memory-content,
+    .scheduled-tasks-content,
+    .memo-editor-toolbar,
+    .scheduled-task-details-header,
+    .scheduled-tasks-form-header,
+    .scheduled-tasks-form-footer
+  ) {
+  border-color: var(--google-outline-variant);
+  background: var(--google-surface-0);
+}
+
+:root[data-theme-preset="google"]
+  :is(.scheduled-task-details-section, .scheduled-tasks-form-section) {
+  border-color: var(--google-outline-variant);
+  background: var(--google-surface-1);
+}
+
+:root[data-theme-preset="google"]
+  :is(
+    .scheduled-tasks-filter-tabs,
+    .scheduled-tasks-segmented,
+    .scheduled-tasks-pre-script-body,
+    .scheduled-task-prompt-content,
+    .scheduled-task-history-item,
+    .scheduled-task-details-grid > div,
+    .scheduled-task-config-grid > div,
+    .memo-schedule-panel
+  ) {
+  border-color: var(--google-outline);
+  background: var(--google-surface-0);
+}
+
+:root[data-theme-preset="google"]
+  :is(
+    .memo-filter-tab,
+    .memo-view-tab,
+    .scheduled-tasks-filter-tab,
+    .scheduled-tasks-segmented-btn
+  ) {
+  border-radius: 999px;
+}
+
+:root[data-theme-preset="google"]
+  :is(
+    .memo-filter-tab.active,
+    .memo-view-tab.active,
+    .scheduled-tasks-filter-tab.active,
+    .scheduled-tasks-segmented-btn.active,
+    .memo-list-item.selected,
+    .memory-list-item.selected,
+    .scheduled-task-item.selected,
+    .memo-gantt-row.selected
+  ) {
+  border-color: transparent;
+  background: var(--google-blue-container);
+  color: var(--google-blue);
+}
+
+:root[data-theme-preset="google"]
+  :is(
+    .memo-filter-tab,
+    .memo-view-tab,
+    .memo-list-item,
+    .memory-list-item,
+    .memo-gantt-row,
+    .scheduled-task-item,
+    .scheduled-tasks-filter-tab,
+    .scheduled-tasks-segmented-btn,
+    .scheduled-tasks-pre-script-toggle
+  ):hover:not(:disabled) {
+  background: var(--accent-blue-bg);
+  color: var(--text-primary);
+}
+
+:root[data-theme-preset="google"]
+  :is(
+    .memo-icon-btn:not(.danger):not(.done-toggle),
+    .memo-sort-btn,
+    .memory-multi-select-exit-btn,
+    .memory-multi-select-action-btn:not(.danger)
+  ):hover:not(:disabled) {
+  background: var(--accent-blue-bg);
+  color: var(--google-blue);
+}
+
+:root[data-theme-preset="google"]
+  :is(
+    .memo-icon-btn,
+    .memory-clear-btn,
+    .memory-multi-select-action-btn
+  ).danger:hover:not(:disabled) {
+  background: var(--google-red-container);
+  color: var(--google-red);
+}
+
+:root[data-theme-preset="google"]
+  :is(
+    .scheduled-task-action-btn,
+    .scheduled-task-copy-btn,
+    .scheduled-task-edit-btn,
+    .scheduled-tasks-back-btn,
+    .scheduled-tasks-cancel-btn
+  ) {
+  border: 1px solid var(--google-outline);
+  border-radius: 18px;
+  background: transparent;
+  color: var(--google-blue);
+}
+
+:root[data-theme-preset="google"]
+  :is(
+    .scheduled-task-action-btn,
+    .scheduled-task-copy-btn,
+    .scheduled-task-edit-btn,
+    .scheduled-tasks-back-btn,
+    .scheduled-tasks-cancel-btn
+  ):hover:not(:disabled) {
+  border-color: var(--google-blue);
+  background: var(--accent-blue-bg);
+  color: var(--google-blue);
+}
+
+:root[data-theme-preset="google"] .scheduled-task-action-btn.primary {
+  border-color: var(--google-blue);
+  background: var(--google-blue);
+  color: var(--google-on-primary);
+}
+
+:root[data-theme-preset="google"] .scheduled-task-action-btn.danger {
+  border-color: transparent;
+  background: transparent;
+  color: var(--google-red);
+}
+
+:root[data-theme-preset="google"]
+  .scheduled-task-action-btn.danger:hover:not(:disabled) {
+  border-color: var(--google-red);
+  background: var(--google-red-container);
+  color: var(--google-red);
+}
+
+:root[data-theme-preset="google"] .memory-editor-btn {
+  border-color: var(--google-blue);
+  border-radius: 18px;
+  background: var(--google-blue);
+  color: var(--google-on-primary);
+}
+
+:root[data-theme-preset="google"]
+  :is(
+    .memo-editor-status-badge,
+    .scheduled-task-item-status-badge,
+    .memory-kind-badge,
+    .memory-status-badge,
+    .memory-editor-conversation,
+    .scheduled-tasks-count
+  ) {
+  border-radius: 999px;
+}
+
+:root[data-theme-preset="google"]
+  :is(
+    .scheduled-tasks-prompt-textarea,
+    .scheduled-tasks-script-textarea,
+    .thinking-menu-trigger,
+    .memory-editor-title,
+    .memory-editor-content,
+    .memory-editor-tags,
+    .memo-schedule-field input[type="date"],
+    .scheduled-tasks-field input:not([type="checkbox"]):not([type="range"])
+  ) {
+  border-color: var(--google-outline);
+  background: var(--google-surface-0);
+}
+
+:root[data-theme-preset="google"]
+  :is(
+    .scheduled-tasks-prompt-textarea,
+    .scheduled-tasks-script-textarea,
+    .thinking-menu-trigger,
+    .memory-editor-title,
+    .memory-editor-content,
+    .memory-editor-tags
+  ):focus {
+  border-color: var(--google-blue);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+:root[data-theme-preset="google"] .stream-metrics {
+  border-color: var(--google-outline);
+  border-radius: var(--radius-pill);
+  background: var(--google-surface-0);
+}
+
+:root[data-theme-preset="google"] .stream-metrics-sep {
+  background: var(--google-outline-variant);
+}
+
+:root[data-theme-preset="google"] .stream-metrics-pause-btn:hover {
+  background: var(--accent-blue-bg);
+  color: var(--google-blue);
+}
+
+:root[data-theme-preset="google"] .stream-metrics-pause-btn:focus-visible {
+  outline-color: var(--google-blue);
 }

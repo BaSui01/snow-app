@@ -651,6 +651,66 @@ const creamDark: ThemePalette = {
   focusRing: "rgba(217, 119, 87, 0.28)",
 };
 
+const win95Light: ThemePalette = {
+  bgPrimary: "#ffffff",
+  bgSecondary: "#c0c0c0",
+  bgTertiary: "#dfdfdf",
+  bgHover: "#d4d0c8",
+  bgActive: "#a0a0a0",
+  chromeBg: "#c0c0c0",
+  appBg: "#008080",
+  borderColor: "#808080",
+  borderLight: "#dfdfdf",
+  borderSubtle: "#000000",
+  textPrimary: "#000000",
+  textSecondary: "#1f1f1f",
+  textTertiary: "#404040",
+  textMuted: "#767676",
+  accentGreen: "#008000",
+  accentGreenBg: "#c8e6c8",
+  accentGreenText: "#005400",
+  accentRed: "#c00000",
+  accentRedBg: "#f0cccc",
+  accentRedText: "#660000",
+  accentBlue: "#000080",
+  accentBlueBg: "#c3d1e8",
+  accentBlueText: "#000060",
+  accentColor: "#000080",
+  onSolid: "#ffffff",
+  selectionBg: "#000080",
+  focusRing: "rgba(0, 0, 0, 0.4)",
+};
+
+const win95Dark: ThemePalette = {
+  bgPrimary: "#2b2b2b",
+  bgSecondary: "#3c3c3c",
+  bgTertiary: "#4a4a4a",
+  bgHover: "#525252",
+  bgActive: "#5e5e5e",
+  chromeBg: "#3c3c3c",
+  appBg: "#1a1a1a",
+  borderColor: "#6a6a6a",
+  borderLight: "#5a5a5a",
+  borderSubtle: "#0a0a0a",
+  textPrimary: "#ececec",
+  textSecondary: "#d2d2d2",
+  textTertiary: "#adadad",
+  textMuted: "#8f8f8f",
+  accentGreen: "#7fc97f",
+  accentGreenBg: "#243a24",
+  accentGreenText: "#b6e2b6",
+  accentRed: "#e07272",
+  accentRedBg: "#3d2020",
+  accentRedText: "#f2b3b3",
+  accentBlue: "#7aa7e0",
+  accentBlueBg: "#26364f",
+  accentBlueText: "#bcd4f5",
+  accentColor: "#8fb8ea",
+  onSolid: "#1a1a1a",
+  selectionBg: "#2f5aa8",
+  focusRing: "rgba(255, 255, 255, 0.25)",
+};
+
 export const THEME_PRESETS: ThemePreset[] = [
   {
     id: "snow",
@@ -736,6 +796,13 @@ export const THEME_PRESETS: ThemePreset[] = [
     light: creamLight,
     dark: creamDark,
   },
+  {
+    id: "win95",
+    nameKey: "settings.themePresetWin95",
+    defaultName: "Win95",
+    light: win95Light,
+    dark: win95Dark,
+  },
 ];
 
 export const DEFAULT_THEME_PRESET_ID = "snow";
@@ -748,7 +815,7 @@ const LEGACY_PRESET_ID_ALIASES: Record<string, string> = {
   "solarized-light": "solarized",
   "solarized-dark": "solarized",
   // anthropic 预设已更名为 cream，映射旧 id 以兼容已持久化的选择。
-  "anthropic": "cream",
+  anthropic: "cream",
 };
 
 export const resolvePresetId = (id: string): string =>

@@ -27,6 +27,8 @@ type RefValue<T> = { current: T };
 type UserMessageRailProps = {
   conversationId: string | undefined;
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
+  /** 滚动容器身份 key（.chat-area 的 React key）：容器整体重建后必须重绑监听。 */
+  containerKey: string;
   /** Triggers paginated loading of older messages. Called repeatedly until the
    *  target message enters the DOM. */
   loadOlderMessages: () => Promise<void>;
@@ -390,6 +392,7 @@ export const UserMessageRail = memo(
   ({
     conversationId,
     scrollContainerRef,
+    containerKey,
     loadOlderMessages,
     isLoadingOlderMessages,
     hasMoreMessages,
@@ -529,7 +532,7 @@ export const UserMessageRail = memo(
         container.removeEventListener("scroll", scheduleCompute);
         window.removeEventListener("resize", scheduleCompute);
       };
-    }, [scrollContainerRef, conversationId, conversationVersion]);
+    }, [scrollContainerRef, containerKey, conversationId, conversationVersion]);
 
     // Compute popover position relative to the rail element so it opens to
     // the left, hugging the rail's left edge. The popover top is clamped to

@@ -15,6 +15,7 @@ import "./styles.css";
 import "./themes/tokens.css";
 import "./themes/preset-cream.css";
 import "./themes/preset-google.css";
+import "./themes/preset-win95.css";
 import { I18nProvider } from "./i18n";
 import { useTheme } from "./hooks/useTheme";
 import { applyThemeCacheToDocument } from "./components/sidebar/themeSettings/themeSettingsUtils";

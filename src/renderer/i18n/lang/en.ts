@@ -2883,6 +2883,7 @@ export const en = {
     "Pick a built-in color scheme. Light and dark variants are bundled together.",
   "settings.themePresetSnow": "Snow",
   "settings.themePresetCream": "Cream",
+  "settings.themePresetWin95": "Win95",
   "settings.themePresetMidnightBlue": "Midnight Blue",
   "settings.themePresetForestGreen": "Forest Green",
   "settings.themePresetRosePink": "Rose Pink",

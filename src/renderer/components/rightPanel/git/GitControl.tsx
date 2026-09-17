@@ -5,9 +5,11 @@ import {
   ChevronDown,
   Copy,
   Diff,
+  FolderTree,
   FolderOpen,
   GitCommitHorizontal,
   GitGraph as GitGraphIcon,
+  List,
   Loader2,
   RefreshCw,
   Sparkles,
@@ -175,6 +177,25 @@ export const GitControl = ({
   // to top once the refreshed status has been applied to the DOM.
   const commitPendingRef = useRef(false);
   const [viewMode, setViewMode] = useState<"changes" | "graph">("changes");
+  // 变更/暂存区文件展示方式：平铺列表或按目录分组的树，偏好存 localStorage。
+  const [fileViewMode, setFileViewMode] = useState<"list" | "tree">(() => {
+    try {
+      return localStorage.getItem("git-file-view") === "tree" ? "tree" : "list";
+    } catch {
+      return "list";
+    }
+  });
+  const handleToggleFileViewMode = useCallback(() => {
+    setFileViewMode((prev) => {
+      const next = prev === "list" ? "tree" : "list";
+      try {
+        localStorage.setItem("git-file-view", next);
+      } catch {
+        // localStorage 不可用时静默忽略，仅本次会话生效。
+      }
+      return next;
+    });
+  }, []);
   // Spins the toolbar refresh button until the current view's refresh
   // settles: status fetch always, plus the GitGraph reload when the graph
   // view is active. graphLoadedResolveRef bridges the GitGraph onLoaded
@@ -924,6 +945,26 @@ export const GitControl = ({
                 <GitGraphIcon size={14} strokeWidth={1.8} />
               )}
             </button>
+            {viewMode === "changes" && (
+              <button
+                type="button"
+                className={`icon-btn git-action-btn${
+                  fileViewMode === "tree" ? " active" : ""
+                }`}
+                onClick={handleToggleFileViewMode}
+                title={
+                  fileViewMode === "tree"
+                    ? t("git.showAsList", { defaultValue: "Show as List" })
+                    : t("git.showAsTree", { defaultValue: "Show as Tree" })
+                }
+              >
+                {fileViewMode === "tree" ? (
+                  <List size={14} strokeWidth={1.8} />
+                ) : (
+                  <FolderTree size={14} strokeWidth={1.8} />
+                )}
+              </button>
+            )}
           </div>
         </div>
 
@@ -952,6 +993,7 @@ export const GitControl = ({
               section="unstaged"
               selectedPaths={selectedPaths}
               actionInProgress={actionInProgress}
+              viewMode={fileViewMode}
               onFileSelect={handleFileSelect}
               onStageToggle={handleStageToggle}
               onStageAll={handleStageAll}
@@ -966,6 +1008,7 @@ export const GitControl = ({
               section="staged"
               selectedPaths={selectedPaths}
               actionInProgress={actionInProgress}
+              viewMode={fileViewMode}
               onFileSelect={handleFileSelect}
               onStageToggle={handleStageToggle}
               onUnstageAll={handleUnstageAll}

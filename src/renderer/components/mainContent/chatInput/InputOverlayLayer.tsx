@@ -1,13 +1,9 @@
-import {
-  Copy,
-  ExternalLink,
-  Loader2,
-  Trash2,
-} from "lucide-react";
+import { Copy, ExternalLink, Loader2, Trash2 } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "../../../i18n";
 import { ContextMenu } from "../../common/ContextMenu";
+import { HoverCopyButton } from "../../common/HoverCopyButton";
 import { Modal } from "../../common/Modal";
 
 export type ImagePreviewState = {
@@ -39,6 +35,7 @@ export type WebChipMenuState = {
 export type ChipDetailsState = {
   rows: { label: string; value: string }[];
   content?: string;
+  copyText?: string;
   x: number;
   y: number;
 };
@@ -61,9 +58,7 @@ type InputOverlayLayerProps = {
   setImageLightbox: Dispatch<SetStateAction<string | null>>;
   textSnippetPreview: TextSnippetPreviewState | null;
   textSnippetEditor: TextSnippetEditorState | null;
-  setTextSnippetEditor: Dispatch<
-    SetStateAction<TextSnippetEditorState | null>
-  >;
+  setTextSnippetEditor: Dispatch<SetStateAction<TextSnippetEditorState | null>>;
   webChipMenu: WebChipMenuState | null;
   setWebChipMenu: Dispatch<SetStateAction<WebChipMenuState | null>>;
   chipDetails: ChipDetailsState | null;
@@ -129,7 +124,7 @@ export const InputOverlayLayer = ({
           >
             <img src={imagePreview.url} alt="preview" />
           </div>,
-          document.body
+          document.body,
         )}
       {imageLightbox &&
         createPortal(
@@ -139,7 +134,7 @@ export const InputOverlayLayer = ({
           >
             <img src={imageLightbox} alt="fullscreen" />
           </div>,
-          document.body
+          document.body,
         )}
       {textSnippetPreview &&
         createPortal(
@@ -157,7 +152,7 @@ export const InputOverlayLayer = ({
               {textSnippetPreview.content}
             </pre>
           </div>,
-          document.body
+          document.body,
         )}
       {chipDetails &&
         createPortal(
@@ -171,6 +166,11 @@ export const InputOverlayLayer = ({
             onMouseEnter={cancelHideChipDetails}
             onMouseLeave={scheduleHideChipDetails}
           >
+            {chipDetails.copyText ? (
+              <div className="chip-details-preview-toolbar">
+                <HoverCopyButton text={chipDetails.copyText} />
+              </div>
+            ) : null}
             <div className="chip-details-preview-rows">
               {chipDetails.rows.map((row) => (
                 <div className="chip-details-preview-row" key={row.label}>
@@ -189,7 +189,7 @@ export const InputOverlayLayer = ({
               </pre>
             )}
           </div>,
-          document.body
+          document.body,
         )}
       {conversationPreview &&
         createPortal(
@@ -258,7 +258,7 @@ export const InputOverlayLayer = ({
               })}
             </div>
           </div>,
-          document.body
+          document.body,
         )}
       {textSnippetEditor &&
         createPortal(
@@ -305,14 +305,14 @@ export const InputOverlayLayer = ({
                 value={textSnippetEditor.content}
                 onChange={(event) =>
                   setTextSnippetEditor((prev) =>
-                    prev ? { ...prev, content: event.target.value } : prev
+                    prev ? { ...prev, content: event.target.value } : prev,
                   )
                 }
                 rows={16}
               />
             </div>
           </Modal>,
-          document.body
+          document.body,
         )}
       {webChipMenu && (
         <ContextMenu
@@ -337,9 +337,9 @@ export const InputOverlayLayer = ({
               }),
               icon: <Copy size={13} strokeWidth={1.8} />,
               onClick: () => {
-                void window.snow.writeClipboardText(webChipMenu.url).catch(
-                  () => {}
-                );
+                void window.snow
+                  .writeClipboardText(webChipMenu.url)
+                  .catch(() => {});
                 setWebChipMenu(null);
               },
             },

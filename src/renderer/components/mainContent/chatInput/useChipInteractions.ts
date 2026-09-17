@@ -1,9 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import type {
-  Dispatch,
-  RefObject,
-  SetStateAction,
-} from "react";
+import type { Dispatch, RefObject, SetStateAction } from "react";
 import { useI18n } from "../../../i18n";
 import {
   type ChipDetailsState,
@@ -28,7 +24,10 @@ import { rightPanelEvents } from "../../rightPanel/rightPanelEvents";
  * TTL 较短，保证被引用会话新增消息后预览能较快刷新。
  */
 type ConversationPreviewCacheEntry = { content: string; at: number };
-const conversationPreviewCache = new Map<string, ConversationPreviewCacheEntry>();
+const conversationPreviewCache = new Map<
+  string,
+  ConversationPreviewCacheEntry
+>();
 const CONVERSATION_PREVIEW_CACHE_TTL_MS = 30_000;
 /** 悬停防抖：停留片刻才发起加载，鼠标快速掠过不触发。 */
 const CONVERSATION_PREVIEW_HOVER_DELAY_MS = 120;
@@ -96,10 +95,10 @@ export const useChipInteractions = ({
 }: UseChipInteractionsOptions): ChipInteractionsResult => {
   const { t } = useI18n();
   const [imagePreview, setImagePreview] = useState<ImagePreviewState | null>(
-    null
+    null,
   );
   const imagePreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null
+    null,
   );
   const [imageLightbox, setImageLightbox] = useState<string | null>(null);
   const [textSnippetPreview, setTextSnippetPreview] =
@@ -109,12 +108,10 @@ export const useChipInteractions = ({
   > | null>(null);
   const [textSnippetEditor, setTextSnippetEditor] =
     useState<TextSnippetEditorState | null>(null);
-  const [webChipMenu, setWebChipMenu] = useState<WebChipMenuState | null>(
-    null
-  );
+  const [webChipMenu, setWebChipMenu] = useState<WebChipMenuState | null>(null);
   const [chipDetails, setChipDetails] = useState<ChipDetailsState | null>(null);
   const chipDetailsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null
+    null,
   );
   const [conversationPreview, setConversationPreview] =
     useState<ConversationPreviewState | null>(null);
@@ -137,14 +134,14 @@ export const useChipInteractions = ({
       conversationPreviewShownIdRef.current = conversationId;
       setConversationPreview(state);
     },
-    []
+    [],
   );
 
   const showImagePreview = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement;
       const chip = target.closest(
-        "[data-image-tag='true']"
+        "[data-image-tag='true']",
       ) as HTMLElement | null;
       if (!chip) {
         if (imagePreviewTimerRef.current) {
@@ -171,11 +168,11 @@ export const useChipInteractions = ({
       const halfW = 328 / 2;
       const clampedX = Math.max(
         halfW + 4,
-        Math.min(rect.left + rect.width / 2, window.innerWidth - halfW - 4)
+        Math.min(rect.left + rect.width / 2, window.innerWidth - halfW - 4),
       );
       setImagePreview({ url: dataUrl, x: clampedX, y: rect.top });
     },
-    []
+    [],
   );
 
   const scheduleHideImagePreview = useCallback(() => {
@@ -195,7 +192,7 @@ export const useChipInteractions = ({
     (event: React.MouseEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement;
       const chip = target.closest(
-        "[data-text-snippet-tag='true']"
+        "[data-text-snippet-tag='true']",
       ) as HTMLElement | null;
       if (!chip) {
         if (textSnippetPreviewTimerRef.current) {
@@ -233,7 +230,7 @@ export const useChipInteractions = ({
       const halfW = 440 / 2;
       const clampedX = Math.max(
         halfW + 4,
-        Math.min(rect.left + rect.width / 2, window.innerWidth - halfW - 4)
+        Math.min(rect.left + rect.width / 2, window.innerWidth - halfW - 4),
       );
       setTextSnippetPreview({
         content: parsed.content ?? "",
@@ -242,7 +239,7 @@ export const useChipInteractions = ({
         y: rect.top,
       });
     },
-    []
+    [],
   );
 
   const scheduleHideTextSnippetPreview = useCallback(() => {
@@ -265,7 +262,7 @@ export const useChipInteractions = ({
         return;
       }
       const chip = target.closest(
-        "[data-text-snippet-tag='true']"
+        "[data-text-snippet-tag='true']",
       ) as HTMLElement | null;
       if (!chip || !textareaRef.current?.contains(chip)) {
         return;
@@ -289,7 +286,7 @@ export const useChipInteractions = ({
         // Ignore malformed data
       }
     },
-    [textareaRef]
+    [textareaRef],
   );
 
   const handleWebChipClick = useCallback(
@@ -299,7 +296,7 @@ export const useChipInteractions = ({
         return;
       }
       const chip = target.closest(
-        "[data-web-tag='true']"
+        "[data-web-tag='true']",
       ) as HTMLElement | null;
       if (!chip || !textareaRef.current?.contains(chip)) {
         return;
@@ -317,7 +314,7 @@ export const useChipInteractions = ({
         // Ignore malformed data
       }
     },
-    [textareaRef]
+    [textareaRef],
   );
 
   const handleWebChipContextMenu = useCallback(
@@ -327,7 +324,7 @@ export const useChipInteractions = ({
         return;
       }
       const chip = target.closest(
-        "[data-web-tag='true']"
+        "[data-web-tag='true']",
       ) as HTMLElement | null;
       if (!chip || !textareaRef.current?.contains(chip)) {
         return;
@@ -353,7 +350,7 @@ export const useChipInteractions = ({
         // Ignore malformed data
       }
     },
-    [textareaRef]
+    [textareaRef],
   );
 
   const handleTextSnippetEditorSave = useCallback(() => {
@@ -391,7 +388,7 @@ export const useChipInteractions = ({
     (event: React.MouseEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement;
       const chip = target.closest(
-        "[data-file-tag='true'],[data-commit-tag='true'],[data-change-tag='true'],[data-review-tag='true'],[data-element-tag='true'],[data-web-tag='true']"
+        "[data-file-tag='true'],[data-commit-tag='true'],[data-change-tag='true'],[data-review-tag='true'],[data-element-tag='true'],[data-web-tag='true']",
       ) as HTMLElement | null;
       const clear = (): void => {
         if (chipDetailsTimerRef.current) {
@@ -406,13 +403,18 @@ export const useChipInteractions = ({
       }
       const rows: { label: string; value: string }[] = [];
       let content: string | undefined;
+      let copyText: string | undefined;
       try {
         if (chip.dataset.fileTag === "true") {
           const path = chip.dataset.filePath ?? "";
           const isDir = chip.dataset.fileIsDir === "true";
           const lines = chip.dataset.fileLines;
           rows.push({
-            label: t(isDir ? "chatInput.chipDetailsFolder" : "chatInput.chipDetailsFile"),
+            label: t(
+              isDir
+                ? "chatInput.chipDetailsFolder"
+                : "chatInput.chipDetailsFile",
+            ),
             value: path,
           });
           if (lines) {
@@ -420,22 +422,34 @@ export const useChipInteractions = ({
           }
         } else if (chip.dataset.commitTag === "true") {
           const data = JSON.parse(
-            chip.dataset.commitData ?? "{}"
+            chip.dataset.commitData ?? "{}",
           ) as Partial<CommitTag>;
-          rows.push({ label: t("chatInput.chipDetailsCommit"), value: data.shortHash ?? "" });
-          rows.push({ label: t("chatInput.chipDetailsAuthor"), value: data.author ?? "" });
+          rows.push({
+            label: t("chatInput.chipDetailsCommit"),
+            value: data.shortHash ?? "",
+          });
+          rows.push({
+            label: t("chatInput.chipDetailsAuthor"),
+            value: data.author ?? "",
+          });
           if (data.date) {
-            rows.push({ label: t("chatInput.chipDetailsDate"), value: data.date });
+            rows.push({
+              label: t("chatInput.chipDetailsDate"),
+              value: data.date,
+            });
           }
           if (data.repoPath) {
-            rows.push({ label: t("chatInput.chipDetailsRepo"), value: data.repoPath });
+            rows.push({
+              label: t("chatInput.chipDetailsRepo"),
+              value: data.repoPath,
+            });
           }
           if (data.message) {
             content = data.message;
           }
         } else if (chip.dataset.changeTag === "true") {
           const data = JSON.parse(
-            chip.dataset.changeData ?? "{}"
+            chip.dataset.changeData ?? "{}",
           ) as Partial<ChangeTag>;
           const sectionLabel =
             data.section === "staged"
@@ -443,65 +457,101 @@ export const useChipInteractions = ({
               : t("chatInput.chipDetailsUnstaged");
           rows.push({
             label: t("chatInput.chipDetailsSection"),
-            value: data.status ? `${sectionLabel} · ${data.status}` : sectionLabel,
+            value: data.status
+              ? `${sectionLabel} · ${data.status}`
+              : sectionLabel,
           });
-          rows.push({ label: t("chatInput.chipDetailsPath"), value: data.path ?? "" });
+          rows.push({
+            label: t("chatInput.chipDetailsPath"),
+            value: data.path ?? "",
+          });
           if (data.repoPath) {
-            rows.push({ label: t("chatInput.chipDetailsRepo"), value: data.repoPath });
+            rows.push({
+              label: t("chatInput.chipDetailsRepo"),
+              value: data.repoPath,
+            });
           }
         } else if (chip.dataset.reviewTag === "true") {
-          const data = JSON.parse(
-            chip.dataset.reviewData ?? "{}"
-          ) as {
+          const data = JSON.parse(chip.dataset.reviewData ?? "{}") as {
             prompt?: string;
             summary?: string;
             charCount?: number;
             branch?: string;
             repoPath?: string;
           };
-          rows.push({ label: t("chatInput.chipDetailsSummary"), value: data.summary ?? "" });
+          rows.push({
+            label: t("chatInput.chipDetailsSummary"),
+            value: data.summary ?? "",
+          });
           if (typeof data.charCount === "number") {
-            rows.push({ label: t("chatInput.chipDetailsChars"), value: String(data.charCount) });
+            rows.push({
+              label: t("chatInput.chipDetailsChars"),
+              value: String(data.charCount),
+            });
           }
           if (data.branch) {
-            rows.push({ label: t("chatInput.chipDetailsBranch"), value: data.branch });
+            rows.push({
+              label: t("chatInput.chipDetailsBranch"),
+              value: data.branch,
+            });
           }
           if (data.repoPath) {
-            rows.push({ label: t("chatInput.chipDetailsRepo"), value: data.repoPath });
+            rows.push({
+              label: t("chatInput.chipDetailsRepo"),
+              value: data.repoPath,
+            });
           }
           if (data.prompt) {
             content = base64ToUtf8(data.prompt);
+            copyText = content;
           }
         } else if (chip.dataset.elementTag === "true") {
-          const data = JSON.parse(
-            chip.dataset.elementData ?? "{}"
-          ) as {
+          const data = JSON.parse(chip.dataset.elementData ?? "{}") as {
             url?: string;
             tag?: string;
             label?: string;
             text?: string;
             note?: string;
           };
-          rows.push({ label: t("chatInput.chipDetailsTag"), value: data.label ?? "" });
+          rows.push({
+            label: t("chatInput.chipDetailsTag"),
+            value: data.label ?? "",
+          });
           if (data.tag) {
-            rows.push({ label: t("chatInput.chipDetailsType"), value: data.tag });
+            rows.push({
+              label: t("chatInput.chipDetailsType"),
+              value: data.tag,
+            });
           }
           if (data.url) {
-            rows.push({ label: t("chatInput.chipDetailsUrl"), value: data.url });
+            rows.push({
+              label: t("chatInput.chipDetailsUrl"),
+              value: data.url,
+            });
           }
           if (data.note) {
-            rows.push({ label: t("chatInput.chipDetailsNote"), value: base64ToUtf8(data.note) });
+            rows.push({
+              label: t("chatInput.chipDetailsNote"),
+              value: base64ToUtf8(data.note),
+            });
           }
           if (data.text) {
             content = base64ToUtf8(data.text);
           }
         } else if (chip.dataset.webTag === "true") {
-          const data = JSON.parse(
-            chip.dataset.webData ?? "{}"
-          ) as { url?: string; title?: string };
-          rows.push({ label: t("chatInput.chipDetailsUrl"), value: data.url ?? "" });
+          const data = JSON.parse(chip.dataset.webData ?? "{}") as {
+            url?: string;
+            title?: string;
+          };
+          rows.push({
+            label: t("chatInput.chipDetailsUrl"),
+            value: data.url ?? "",
+          });
           if (data.title) {
-            rows.push({ label: t("chatInput.chipDetailsTitle"), value: data.title });
+            rows.push({
+              label: t("chatInput.chipDetailsTitle"),
+              value: data.title,
+            });
           }
         }
       } catch {
@@ -520,11 +570,11 @@ export const useChipInteractions = ({
       const halfW = 420 / 2;
       const clampedX = Math.max(
         halfW + 4,
-        Math.min(rect.left + rect.width / 2, window.innerWidth - halfW - 4)
+        Math.min(rect.left + rect.width / 2, window.innerWidth - halfW - 4),
       );
-      setChipDetails({ rows, content, x: clampedX, y: rect.top });
+      setChipDetails({ rows, content, copyText, x: clampedX, y: rect.top });
     },
-    [t]
+    [t],
   );
 
   const scheduleHideChipDetails = useCallback(() => {
@@ -578,7 +628,7 @@ export const useChipInteractions = ({
         hideConversationPreview();
       }
     },
-    [hideConversationPreview, syncContent, textareaRef]
+    [hideConversationPreview, syncContent, textareaRef],
   );
 
   const scheduleHideConversationPreview = useCallback(() => {
@@ -609,7 +659,7 @@ export const useChipInteractions = ({
     (event: React.MouseEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement;
       const chip = target.closest(
-        "[data-conversation-tag='true']"
+        "[data-conversation-tag='true']",
       ) as HTMLElement | null;
       if (!chip) {
         // 悬停点不在会话 chip 上：取消尚未开始的加载；已显示的浮层给
@@ -676,7 +726,7 @@ export const useChipInteractions = ({
         const halfW = CONVERSATION_PREVIEW_WIDTH / 2;
         const clampedX = Math.max(
           halfW + 4,
-          Math.min(rect.left + rect.width / 2, window.innerWidth - halfW - 4)
+          Math.min(rect.left + rect.width / 2, window.innerWidth - halfW - 4),
         );
         return { x: clampedX, y: rect.top };
       };
@@ -750,7 +800,7 @@ export const useChipInteractions = ({
       cancelHideConversationPreview,
       hideConversationPreview,
       scheduleHideConversationPreview,
-    ]
+    ],
   );
 
   return {

@@ -21,6 +21,7 @@ import {
   ScanSearch,
 } from "lucide-react";
 import { UserMessageActions } from "./UserMessageActions";
+import { HoverCopyButton } from "../../../common/HoverCopyButton";
 import { HookExecutionUI } from "../toolCalls/HookExecutionUI";
 import type { UserMessageProps } from "../utils/types";
 import {
@@ -57,6 +58,7 @@ export const UserMessage = memo(
     );
     const [textSnippetPreview, setTextSnippetPreview] = useState<{
       content: string;
+      copyText?: string;
       x: number;
       y: number;
       placement: "up" | "down";
@@ -130,7 +132,11 @@ export const UserMessage = memo(
     }, []);
 
     const handleTextSnippetChipMouseMove = useCallback(
-      (event: React.MouseEvent<HTMLSpanElement>, snippetContent: string) => {
+      (
+        event: React.MouseEvent<HTMLSpanElement>,
+        snippetContent: string,
+        copyText?: string,
+      ) => {
         if (textSnippetPreviewTimerRef.current) {
           clearTimeout(textSnippetPreviewTimerRef.current);
           textSnippetPreviewTimerRef.current = null;
@@ -152,6 +158,7 @@ export const UserMessage = memo(
             : "down";
         setTextSnippetPreview({
           content: snippetContent,
+          copyText,
           x: clampedX,
           y: placement === "up" ? rect.top : rect.bottom,
           placement,
@@ -355,7 +362,11 @@ export const UserMessage = memo(
                     key={index}
                     title={reviewTitle}
                     onMouseMove={(event) =>
-                      handleTextSnippetChipMouseMove(event, segment.tag.prompt)
+                      handleTextSnippetChipMouseMove(
+                        event,
+                        segment.tag.prompt,
+                        segment.tag.prompt,
+                      )
                     }
                     onMouseLeave={scheduleHideTextSnippetPreview}
                   >
@@ -569,6 +580,11 @@ export const UserMessage = memo(
               onMouseEnter={cancelHideTextSnippetPreview}
               onMouseLeave={scheduleHideTextSnippetPreview}
             >
+              {textSnippetPreview.copyText ? (
+                <div className="text-snippet-preview-toolbar">
+                  <HoverCopyButton text={textSnippetPreview.copyText} />
+                </div>
+              ) : null}
               <pre className="text-snippet-preview-content">
                 {textSnippetPreview.content}
               </pre>

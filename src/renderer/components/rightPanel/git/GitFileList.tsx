@@ -1,5 +1,6 @@
 import {
   ChevronDown,
+  ChevronRight,
   Copy,
   FileMinus,
   FilePlus,
@@ -11,7 +12,7 @@ import {
   Terminal as TerminalIcon,
   Undo2,
 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { GitFileStatus } from "../../../../preload";
 import { useI18n } from "../../../i18n";
 import { getFileTypeIcon } from "../../../utils/fileIcons";
@@ -23,6 +24,8 @@ type GitFileListProps = {
   section: "staged" | "unstaged";
   selectedPaths: Set<string>;
   actionInProgress: string | null;
+  /** 文件展示方式：平铺列表或按目录分组的树。 */
+  viewMode?: "list" | "tree";
   onFileSelect: (
     file: GitFileStatus,
     e: React.MouseEvent,
@@ -95,12 +98,92 @@ const getStatusLabel = (status: string): string => {
   }
 };
 
+type GitTreeFolder = {
+  name: string;
+  path: string;
+  children: GitTreeFolder[];
+  file?: GitFileStatus;
+};
+
+const buildFileTree = (files: GitFileStatus[]): GitTreeFolder[] => {
+  const root: GitTreeFolder = { name: "", path: "", children: [] };
+  for (const file of files) {
+    const segments = file.path.split(/[/\\]+/).filter(Boolean);
+    let current = root;
+    let acc = "";
+    segments.forEach((segment, index) => {
+      acc = acc ? `${acc}/${segment}` : segment;
+      let child = current.children.find((node) => node.name === segment);
+      if (!child) {
+        child = { name: segment, path: acc, children: [] };
+        current.children.push(child);
+      }
+      if (index === segments.length - 1) {
+        child.file = file;
+      }
+      current = child;
+    });
+  }
+  const sortNodes = (nodes: GitTreeFolder[]): void => {
+    nodes.sort((a, b) => {
+      const aIsFolder = a.file === undefined;
+      const bIsFolder = b.file === undefined;
+      if (aIsFolder !== bIsFolder) {
+        return aIsFolder ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name);
+    });
+    for (const node of nodes) {
+      sortNodes(node.children);
+    }
+  };
+  sortNodes(root.children);
+  return root.children;
+};
+
+const countTreeFiles = (node: GitTreeFolder): number => {
+  if (node.file) {
+    return 1;
+  }
+  return node.children.reduce((sum, child) => sum + countTreeFiles(child), 0);
+};
+
+type GitTreeRow =
+  | { kind: "folder"; node: GitTreeFolder; depth: number; isExpanded: boolean }
+  | { kind: "file"; file: GitFileStatus; depth: number };
+
+const flattenTree = (
+  nodes: GitTreeFolder[],
+  collapsedDirs: Set<string>,
+  depth = 0,
+): GitTreeRow[] => {
+  const rows: GitTreeRow[] = [];
+  for (const node of nodes) {
+    if (node.file) {
+      rows.push({ kind: "file", file: node.file, depth });
+      continue;
+    }
+    const isExpanded = !collapsedDirs.has(node.path);
+    rows.push({ kind: "folder", node, depth, isExpanded });
+    if (isExpanded) {
+      rows.push(...flattenTree(node.children, collapsedDirs, depth + 1));
+    }
+  }
+  return rows;
+};
+
+const INDENT_STEP = 14;
+const INDENT_BASE = 12;
+const treeIndent = (depth: number): React.CSSProperties | undefined =>
+  depth > 0 ? { paddingLeft: INDENT_BASE + depth * INDENT_STEP } : undefined;
+
 export const GitFileList = ({
   repoPath,
   files,
   section,
   selectedPaths,
   actionInProgress,
+  viewMode = "list",
   onFileSelect,
   onStageToggle,
   onStageAll,
@@ -113,6 +196,24 @@ export const GitFileList = ({
   const isStaged = section === "staged";
   const headerLabel = isStaged ? t("git.stagedChanges") : t("git.changes");
   const headerCount = files.length;
+  const fileTree = useMemo(() => buildFileTree(files), [files]);
+  const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set());
+  const treeRows = useMemo(
+    () => flattenTree(fileTree, collapsedDirs),
+    [fileTree, collapsedDirs],
+  );
+
+  const toggleDir = useCallback((path: string) => {
+    setCollapsedDirs((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }, []);
 
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -321,6 +422,144 @@ export const GitFileList = ({
     [repoPath, section],
   );
 
+  const renderFileItem = (
+    file: GitFileStatus,
+    depth: number,
+  ): React.JSX.Element => {
+    const isSelected = selectedPaths.has(`${section}:${file.path}`);
+    const lastSep = Math.max(
+      file.path.lastIndexOf("/"),
+      file.path.lastIndexOf("\\"),
+    );
+    const fileName = lastSep === -1 ? file.path : file.path.slice(lastSep + 1);
+    const dirPath = lastSep === -1 ? "" : file.path.slice(0, lastSep + 1);
+    return (
+      <div
+        key={`${section}-${file.path}`}
+        className={`git-file-item${isSelected ? " selected" : ""}`}
+        style={treeIndent(depth)}
+        onClick={(e) => onFileSelect(file, e, section)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setContextMenu({ x: e.clientX, y: e.clientY, file });
+        }}
+        draggable
+        onDragStart={(event) => handleFileDragStart(event, file)}
+      >
+        <span className={`git-file-status ${getStatusColor(file.status)}`}>
+          {getStatusLabel(file.status)}
+        </span>
+        <span
+          className={`git-file-name${file.status === "D" ? " deleted" : ""}`}
+          title={file.path}
+        >
+          {getFileTypeIcon(
+            file.path.split("/").pop() ?? file.path,
+            false,
+            false,
+            { size: 13, className: "git-file-type-icon" },
+          )}
+          <span className="git-file-name-text">{fileName}</span>
+          {dirPath && viewMode === "list" && (
+            <span className="git-file-path">{dirPath}</span>
+          )}
+        </span>
+        <button
+          type="button"
+          className="git-file-action"
+          onClick={(e) => {
+            e.stopPropagation();
+            const filesToToggle = isSelected
+              ? files.filter((f) => selectedPaths.has(`${section}:${f.path}`))
+              : [file];
+            onStageToggle(filesToToggle, section);
+          }}
+          disabled={actionInProgress !== null}
+          title={isStaged ? t("git.unstageFile") : t("git.stageFile")}
+        >
+          <span>{isStaged ? "-" : "+"}</span>
+        </button>
+        {!isStaged && onDiscard && (
+          <button
+            type="button"
+            className="git-file-action git-discard-action"
+            onClick={(e) => {
+              e.stopPropagation();
+              const filesToDiscard = isSelected
+                ? files.filter((f) => selectedPaths.has(`${section}:${f.path}`))
+                : [file];
+              onDiscard(filesToDiscard);
+            }}
+            disabled={actionInProgress !== null}
+            title={t("git.discardFile")}
+          >
+            <Undo2 size={12} strokeWidth={1.8} />
+          </button>
+        )}
+        {onOpenFile && (
+          <button
+            type="button"
+            className="git-file-action git-open-action"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenFile(file);
+            }}
+            disabled={actionInProgress !== null}
+            title={t("git.openFile")}
+          >
+            <FileText size={12} strokeWidth={1.8} />
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  const renderFolderRow = (row: {
+    node: GitTreeFolder;
+    depth: number;
+    isExpanded: boolean;
+  }): React.JSX.Element => {
+    const { node, depth, isExpanded } = row;
+    return (
+      <div
+        className="git-file-item git-tree-folder-row"
+        key={`dir-${node.path}`}
+        style={treeIndent(depth)}
+        onClick={() => toggleDir(node.path)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            toggleDir(node.path);
+          }
+        }}
+        title={node.path}
+      >
+        <span className="git-tree-chevron">
+          {isExpanded ? (
+            <ChevronDown size={13} strokeWidth={1.8} />
+          ) : (
+            <ChevronRight size={13} strokeWidth={1.8} />
+          )}
+        </span>
+        {getFileTypeIcon(node.name, true, isExpanded, {
+          size: 13,
+          className: "git-file-type-icon",
+        })}
+        <span className="git-file-name">
+          <span className="git-file-name-text">{node.name}</span>
+        </span>
+        <span className="git-tree-folder-count">{countTreeFiles(node)}</span>
+      </div>
+    );
+  };
+
+  const renderTreeRow = (row: GitTreeRow): React.JSX.Element =>
+    row.kind === "folder"
+      ? renderFolderRow(row)
+      : renderFileItem(row.file, row.depth);
+
   return (
     <div className="git-file-list">
       <div className="git-file-list-header">
@@ -388,105 +627,9 @@ export const GitFileList = ({
             </div>
           ) : (
             <div className="git-file-list-items">
-              {files.map((file) => {
-                const isSelected = selectedPaths.has(`${section}:${file.path}`);
-                const lastSep = Math.max(
-                  file.path.lastIndexOf("/"),
-                  file.path.lastIndexOf("\\"),
-                );
-                const fileName =
-                  lastSep === -1 ? file.path : file.path.slice(lastSep + 1);
-                const dirPath =
-                  lastSep === -1 ? "" : file.path.slice(0, lastSep + 1);
-                return (
-                  <div
-                    key={`${section}-${file.path}`}
-                    className={`git-file-item${isSelected ? " selected" : ""}`}
-                    onClick={(e) => onFileSelect(file, e, section)}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      setContextMenu({ x: e.clientX, y: e.clientY, file });
-                    }}
-                    draggable
-                    onDragStart={(event) => handleFileDragStart(event, file)}
-                  >
-                    <span
-                      className={`git-file-status ${getStatusColor(file.status)}`}
-                    >
-                      {getStatusLabel(file.status)}
-                    </span>
-                    <span
-                      className={`git-file-name${
-                        file.status === "D" ? " deleted" : ""
-                      }`}
-                      title={file.path}
-                    >
-                      {getFileTypeIcon(
-                        file.path.split("/").pop() ?? file.path,
-                        false,
-                        false,
-                        { size: 13, className: "git-file-type-icon" },
-                      )}
-                      <span className="git-file-name-text">{fileName}</span>
-                      {dirPath && (
-                        <span className="git-file-path">{dirPath}</span>
-                      )}
-                    </span>
-                    <button
-                      type="button"
-                      className="git-file-action"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const filesToToggle = isSelected
-                          ? files.filter((f) =>
-                              selectedPaths.has(`${section}:${f.path}`),
-                            )
-                          : [file];
-                        onStageToggle(filesToToggle, section);
-                      }}
-                      disabled={actionInProgress !== null}
-                      title={
-                        isStaged ? t("git.unstageFile") : t("git.stageFile")
-                      }
-                    >
-                      <span>{isStaged ? "-" : "+"}</span>
-                    </button>
-                    {!isStaged && onDiscard && (
-                      <button
-                        type="button"
-                        className="git-file-action git-discard-action"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const filesToDiscard = isSelected
-                            ? files.filter((f) =>
-                                selectedPaths.has(`${section}:${f.path}`),
-                              )
-                            : [file];
-                          onDiscard(filesToDiscard);
-                        }}
-                        disabled={actionInProgress !== null}
-                        title={t("git.discardFile")}
-                      >
-                        <Undo2 size={12} strokeWidth={1.8} />
-                      </button>
-                    )}
-                    {onOpenFile && (
-                      <button
-                        type="button"
-                        className="git-file-action git-open-action"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenFile(file);
-                        }}
-                        disabled={actionInProgress !== null}
-                        title={t("git.openFile")}
-                      >
-                        <FileText size={12} strokeWidth={1.8} />
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
+              {viewMode === "tree"
+                ? treeRows.map((row) => renderTreeRow(row))
+                : files.map((file) => renderFileItem(file, 0))}
             </div>
           )}
         </div>

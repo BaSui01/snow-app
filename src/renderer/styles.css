@@ -15038,6 +15038,31 @@ input {
   animation: tool-call-bash-countdown-pulse 1s ease-in-out infinite;
 }
 
+/* 终止二次确认态：按钮转为警示配色，配合自动展开的确认 tooltip 提示
+   「需再次点击」；确认态超时或点击别处即回到默认外观。 */
+.tool-call-bash-kill-armed {
+  border-color: var(--accent-red-text);
+  background: var(--accent-red-bg);
+  color: var(--accent-red-text);
+  font-weight: 600;
+}
+
+/* 终止二次确认 tooltip 内容：标题 + 操作提示两行。 */
+.tool-call-bash-kill-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tool-call-bash-kill-confirm-title {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.tool-call-bash-kill-confirm-hint {
+  color: var(--text-tertiary);
+}
+
 .tool-call-bash-timeout-notice {
   border-left: 2px solid var(--accent-orange-text, #e8973a);
 }

@@ -8,6 +8,7 @@ import {
   Square,
   Timer,
 } from "lucide-react";
+import { Tooltip } from "../../../common/Tooltip";
 import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
@@ -39,6 +40,10 @@ type ParsedBashResult =
   | { type: "empty" };
 
 const DEFAULT_TIMEOUT_MS = 30000;
+
+/** 终止二次确认的自动收起时限：首次点击后若未在此时限内再次点击，确认态
+ *  自动失效（命令不受影响），避免按钮长时间停留在「确认终止」状态被误点。 */
+const KILL_CONFIRM_TIMEOUT_MS = 4000;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -298,12 +303,46 @@ export const BashToolCall = ({
   // execution has reached a terminal status.
   const [isKilling, setIsKilling] = useState(false);
   const isKillRequestedRef = useRef(false);
+  // 终止二次确认：首次点击只进入确认态并展开确认 tooltip（不结束命令），
+  // 确认态下再次点击同一按钮才真正终止。命令结束、超时未确认或点击别处
+  // 都会收起确认态，避免用户误以为已终止而命令仍在运行。
+  const [isKillConfirmArmed, setIsKillConfirmArmed] = useState(false);
   useEffect(() => {
     if (!isRunning) {
       isKillRequestedRef.current = false;
       setIsKilling(false);
+      setIsKillConfirmArmed(false);
     }
   }, [isRunning]);
+
+  // 确认态超时自动收起：只撤销确认，不影响正在运行的命令。
+  useEffect(() => {
+    if (!isKillConfirmArmed) {
+      return;
+    }
+    const timer = window.setTimeout(
+      () => setIsKillConfirmArmed(false),
+      KILL_CONFIRM_TIMEOUT_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [isKillConfirmArmed]);
+
+  // 点击按钮以外的任意位置时收起确认态（捕获阶段监听；确认 tooltip 自身
+  // pointer-events: none，不会成为点击目标）。
+  useEffect(() => {
+    if (!isKillConfirmArmed) {
+      return;
+    }
+    const handlePointerDown = (event: MouseEvent): void => {
+      const target = event.target as Element | null;
+      if (target && !target.closest(".tool-call-bash-kill")) {
+        setIsKillConfirmArmed(false);
+      }
+    };
+    document.addEventListener("mousedown", handlePointerDown, true);
+    return () =>
+      document.removeEventListener("mousedown", handlePointerDown, true);
+  }, [isKillConfirmArmed]);
 
   const handleKill = useCallback(
     async (reason: "user" | "timeout" = "user") => {
@@ -333,6 +372,17 @@ export const BashToolCall = ({
     },
     [toolExecutionId],
   );
+
+  // 按钮点击：未进入确认态时只展开确认 tooltip（命令继续运行），已进入确认
+  // 态时才是用户真正的终止意图。watchdog 的自动超时终止不走这条路径。
+  const handleKillClick = useCallback((): void => {
+    if (!isKillConfirmArmed) {
+      setIsKillConfirmArmed(true);
+      return;
+    }
+    setIsKillConfirmArmed(false);
+    void handleKill("user");
+  }, [handleKill, isKillConfirmArmed]);
 
   // Renderer-side watchdog: the Rust timeout remains authoritative, but this
   // fail-safe sends a kill request with the explicit "timeout" reason when
@@ -455,16 +505,47 @@ export const BashToolCall = ({
             </span>
           ) : null}
           {isRunning && toolExecutionId ? (
-            <button
-              className="tool-call-bash-kill"
-              disabled={isKilling}
-              onClick={() => void handleKill("user")}
-              title={t("toolCall.bash.killTitle")}
-              type="button"
+            <Tooltip
+              placement="top"
+              // 确认态由点击驱动（受控显示）；未进入确认态时回退到组件内部
+              // 的 hover 行为，继续展示原有的「终止」说明。
+              visible={isKillConfirmArmed ? true : undefined}
+              content={
+                isKillConfirmArmed ? (
+                  <span className="tool-call-bash-kill-confirm">
+                    <span className="tool-call-bash-kill-confirm-title">
+                      {t("toolCall.bash.killConfirmTitle")}
+                    </span>
+                    <span className="tool-call-bash-kill-confirm-hint">
+                      {t("toolCall.bash.killConfirmHint")}
+                    </span>
+                  </span>
+                ) : (
+                  t("toolCall.bash.killTitle")
+                )
+              }
             >
-              <Square size={11} aria-hidden="true" />
-              {isKilling ? t("toolCall.bash.killing") : t("toolCall.bash.kill")}
-            </button>
+              <button
+                className={`tool-call-bash-kill${
+                  isKillConfirmArmed ? " tool-call-bash-kill-armed" : ""
+                }`}
+                disabled={isKilling}
+                // 不冒泡到 summary：点击终止按钮不参与卡片开合，避免二次确认
+                // 过程中卡片意外折叠。
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleKillClick();
+                }}
+                type="button"
+              >
+                <Square size={11} aria-hidden="true" />
+                {isKilling
+                  ? t("toolCall.bash.killing")
+                  : isKillConfirmArmed
+                    ? t("toolCall.bash.killConfirmAction")
+                    : t("toolCall.bash.kill")}
+              </button>
+            </Tooltip>
           ) : null}
         </>
       }

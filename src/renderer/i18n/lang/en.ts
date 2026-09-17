@@ -708,6 +708,10 @@ export const en = {
   "toolCall.bash.killing": "Stopping...",
   "toolCall.bash.killTitle":
     "Kill the running command without waiting for the timeout",
+  "toolCall.bash.killConfirmTitle": "Stop this command?",
+  "toolCall.bash.killConfirmHint":
+    'Click "Stop" again to interrupt the running command now',
+  "toolCall.bash.killConfirmAction": "Confirm stop",
   "toolCall.bash.status.pending": "Pending",
   "toolCall.bash.status.running": "Running",
   "toolCall.bash.status.completed": "Completed",

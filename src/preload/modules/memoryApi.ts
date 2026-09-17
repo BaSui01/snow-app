@@ -25,6 +25,25 @@ export const memoryApi = {
       kind,
     ),
 
+  /** 关键词检索（复用 AI 侧 memory-search 的相关性排序），返回分页 + 命中总数。 */
+  searchProjectMemories: (
+    directoryId: string,
+    query: string,
+    limit: number,
+    offset: number,
+    status?: MemoryStatus,
+    kind?: MemoryKind,
+  ): Promise<MemoryPage> =>
+    ipcRenderer.invoke(
+      "memories:search",
+      directoryId,
+      query,
+      limit,
+      offset,
+      status,
+      kind,
+    ),
+
   createProjectMemory: (
     directoryId: string,
     kind: MemoryKind,
@@ -85,6 +104,17 @@ export const memoryApi = {
     limit?: number,
   ): Promise<MemoryRecord[]> =>
     ipcRenderer.invoke("memories:list-by-conversation", conversationId, limit),
+
+  /** 会话树溯源：一次取回主会话 + 子代理 / WorkFlow 节点会话保存的记忆。 */
+  listProjectMemoriesByConversations: (
+    conversationIds: string[],
+    limit?: number,
+  ): Promise<MemoryRecord[]> =>
+    ipcRenderer.invoke(
+      "memories:list-by-conversations",
+      conversationIds,
+      limit,
+    ),
 
   deleteProjectMemoriesByConversation: (
     conversationId: string,

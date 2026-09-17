@@ -1510,6 +1510,18 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to list project memories"),
         ),
+      searchProjectMemories: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to search project memories",
+          ),
+        ),
+      listProjectMemoriesByConversations: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to list memories by conversations",
+          ),
+        ),
       updateProjectMemory: () =>
         Promise.reject(
           new Error(

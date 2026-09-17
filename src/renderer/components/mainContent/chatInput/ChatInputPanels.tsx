@@ -6,6 +6,7 @@ import { ProjectSensitiveCommandsPanel } from "./ProjectSensitiveCommandsPanel";
 import { ProjectSkillsPanel } from "./ProjectSkillsPanel";
 import { RoleEditorPanel } from "./RoleEditorPanel";
 import { FileChangesPanel } from "./commands/FileChangesPanel";
+import { MemoryPanel } from "./commands/MemoryPanel";
 import { ReviewPanel } from "./commands/ReviewPanel";
 
 export type ChatInputPanelsProps = {
@@ -18,6 +19,7 @@ export type ChatInputPanelsProps = {
   isProjectCodebaseOpen: boolean;
   isRoleEditorOpen: boolean;
   isFileChangesOpen: boolean;
+  isMemoryOpen: boolean;
   isReviewOpen: boolean;
   workflowMode: boolean;
   planMode: boolean;
@@ -33,6 +35,7 @@ export type ChatInputPanelsProps = {
   onCloseCodebase: () => void;
   onCloseRoleEditor: () => void;
   onCloseFileChanges: () => void;
+  onCloseMemory: () => void;
   onCloseReview: () => void;
 };
 
@@ -46,6 +49,7 @@ export const ChatInputPanels = ({
   isProjectCodebaseOpen,
   isRoleEditorOpen,
   isFileChangesOpen,
+  isMemoryOpen,
   isReviewOpen,
   workflowMode,
   planMode,
@@ -59,6 +63,7 @@ export const ChatInputPanels = ({
   onCloseCodebase,
   onCloseRoleEditor,
   onCloseFileChanges,
+  onCloseMemory,
   onCloseReview,
 }: ChatInputPanelsProps): React.JSX.Element => (
   <>
@@ -105,6 +110,7 @@ export const ChatInputPanels = ({
       changesOverride={conversationFileChanges}
       onClose={onCloseFileChanges}
     />
+    <MemoryPanel open={isMemoryOpen} onClose={onCloseMemory} />
     <ReviewPanel
       open={isReviewOpen}
       workDir={reviewWorkDir}

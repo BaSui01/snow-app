@@ -27,7 +27,11 @@ import {
 import { useCrossProjectNotifications } from "./mainSidebar/useCrossProjectNotifications";
 import { GlobalSearchModal } from "./GlobalSearchModal";
 import { MemoModal } from "./MemoModal";
-import { MemoryModal } from "./MemoryModal";
+import {
+  MemoryModal,
+  OPEN_MEMORY_MODAL_EVENT,
+  type MemoryModalOpenDetail,
+} from "./MemoryModal";
 import { ScheduledTasksModal } from "./ScheduledTasksModal";
 import { UpdateDialog, OPEN_UPDATE_DIALOG_EVENT } from "./UpdateDialog";
 import type { SidebarContentProps } from "./types";
@@ -63,6 +67,8 @@ export function MainSidebarContent({
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isMemoOpen, setIsMemoOpen] = useState(false);
   const [isMemoryOpen, setIsMemoryOpen] = useState(false);
+  /** /memory 面板请求「在项目记忆中定位」时携带的检索词。 */
+  const [memorySearchSeed, setMemorySearchSeed] = useState<string | null>(null);
   const [isScheduledTasksOpen, setIsScheduledTasksOpen] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
   const [isChatsCollapsed, setIsChatsCollapsed] = useState(false);
@@ -150,6 +156,19 @@ export function MainSidebarContent({
   useEffect(() => {
     refreshMemoryCount();
   }, [refreshMemoryCount]);
+
+  // /memory 面板「在项目记忆中定位」：把目标条目措辞作为检索种子打开记忆库。
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<MemoryModalOpenDetail>).detail;
+      setMemorySearchSeed(detail?.query ?? "");
+      setIsMemoryOpen(true);
+    };
+    window.addEventListener(OPEN_MEMORY_MODAL_EVENT, handler);
+    return () => {
+      window.removeEventListener(OPEN_MEMORY_MODAL_EVENT, handler);
+    };
+  }, []);
 
   // 订阅 AI 记忆写工具的变更广播：memory-save/update/delete 成功后，
   // 主进程带项目 ID 广播，命中当前项目时刷新徽标。
@@ -434,8 +453,11 @@ export function MainSidebarContent({
         open={isMemoryOpen}
         onClose={() => {
           setIsMemoryOpen(false);
+          // 清掉检索种子：下次从侧边栏直接打开时不应带着上次的定位词。
+          setMemorySearchSeed(null);
           refreshMemoryCount();
         }}
+        searchSeed={memorySearchSeed}
       />
       <ScheduledTasksModal
         directoryId={activeDirectoryId}

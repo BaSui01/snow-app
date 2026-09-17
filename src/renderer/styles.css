@@ -10001,6 +10001,285 @@ input {
   color: var(--text-primary);
 }
 
+/* ===== Conversation memory panel (/memory): memories saved by the active
+   conversation and its sub-agent / WorkFlow node conversations, with the
+   main/sub split mirroring the /changes panel. ===== */
+.memory-panel-modal .app-modal-body {
+  max-height: 62vh;
+  overflow-y: auto;
+}
+
+.memory-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.memory-panel-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 2px 2px 0;
+}
+
+.memory-panel-summary-text {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.memory-panel-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.memory-panel-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.memory-panel-badge.is-created {
+  background: var(--accent-green-bg);
+  color: var(--accent-green-text);
+}
+
+.memory-panel-badge.is-updated {
+  background: var(--accent-amber-bg);
+  color: var(--accent-amber-text);
+}
+
+.memory-panel-badge.is-main {
+  background: var(--accent-blue-bg);
+  color: var(--accent-blue-text);
+}
+
+.memory-panel-badge.is-sub {
+  background: var(--accent-green-bg);
+  color: var(--accent-green-text);
+}
+
+.memory-panel-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.memory-panel-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
+.memory-panel-group-count {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-tertiary);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.memory-panel-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.memory-panel-row {
+  border-radius: 8px;
+  transition: background-color 0.12s ease;
+}
+
+.memory-panel-row:hover {
+  background: var(--surface-island-strong);
+}
+
+.memory-panel-row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.memory-panel-row-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.memory-panel-row-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.memory-panel-row-importance {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--warning, #f5b301);
+  line-height: 1;
+  letter-spacing: 1px;
+}
+
+.memory-panel-row-source {
+  flex-shrink: 0;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-tertiary);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.memory-panel-row-date {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.memory-panel-row-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px 8px 10px 32px;
+}
+
+.memory-panel-row-content {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.memory-panel-row-tags {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.memory-panel-tag {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-tertiary);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.memory-panel-locate-btn {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 5px;
+  padding: 4px 9px;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
+}
+
+.memory-panel-locate-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.memory-panel-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--accent-red-text);
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.memory-panel-delete-btn:hover:not(:disabled) {
+  background: var(--accent-red-bg);
+  border-color: transparent;
+}
+
+.memory-panel-delete-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.memory-panel-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.memory-panel-empty-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.memory-panel-empty-hint {
+  max-width: 360px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
 /* ===== Code review panel (/review) ===== */
 .review-modal .app-modal-body {
   max-height: 66vh;
@@ -44921,6 +45200,84 @@ pre.file-viewer-code {
   white-space: nowrap;
   font-size: 11px;
   color: var(--text-muted);
+}
+
+/* 关键词检索行（搜索框 + 清除）与命中高亮 / 命中上下文预览 */
+.memory-search-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 10px 8px;
+  padding: 0 8px;
+  height: 28px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  flex-shrink: 0;
+}
+
+.memory-search-row:focus-within {
+  border-color: var(--border-focus);
+}
+
+.memory-search-icon {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.memory-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-family: inherit;
+  outline: none;
+  appearance: none;
+}
+
+.memory-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.memory-search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.memory-search-clear:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.memory-search-mark {
+  padding: 0 1px;
+  border-radius: 2px;
+  background: var(--accent-amber-bg, rgba(245, 179, 1, 0.18));
+  color: inherit;
+  font-weight: 600;
+}
+
+.memory-list-item-snippet {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
 }
 
 .memory-clear-btn {

@@ -186,6 +186,7 @@ export const ChatInputView = ({
   const [isProjectCodebaseOpen, setIsProjectCodebaseOpen] = useState(false);
   const [isRoleEditorOpen, setIsRoleEditorOpen] = useState(false);
   const [isFileChangesOpen, setIsFileChangesOpen] = useState(false);
+  const [isMemoryOpen, setIsMemoryOpen] = useState(false);
   // 稳定引用：供 StreamMetricsWorkSummary memo 使用，避免父组件重渲染时
   // 传入新的 inline lambda 导致文件统计区域失效重绘（P0-1 性能优化）。
   const handleOpenFileChanges = useCallback(() => {
@@ -199,6 +200,8 @@ export const ChatInputView = ({
     setIsProjectSkillsOpen(false);
     setIsRoleEditorOpen(false);
     setIsFileChangesOpen(false);
+    setIsMemoryOpen(false);
+    setIsReviewOpen(false);
     setIsProjectCodebaseOpen(true);
   }, []);
   const [isReviewOpen, setIsReviewOpen] = useState(false);
@@ -234,7 +237,19 @@ export const ChatInputView = ({
           setIsProjectSkillsOpen(false);
           setIsProjectCodebaseOpen(false);
           setIsRoleEditorOpen(false);
+          setIsMemoryOpen(false);
           setIsFileChangesOpen(true);
+        },
+        onOpenMemoryPanel: () => {
+          setIsProjectMcpOpen(false);
+          setIsProjectSensitiveCommandsOpen(false);
+          setIsProjectPermissionsOpen(false);
+          setIsProjectSkillsOpen(false);
+          setIsProjectCodebaseOpen(false);
+          setIsRoleEditorOpen(false);
+          setIsFileChangesOpen(false);
+          setIsReviewOpen(false);
+          setIsMemoryOpen(true);
         },
         onOpenMcpPanel: () => {
           setIsProjectSensitiveCommandsOpen(false);
@@ -243,6 +258,7 @@ export const ChatInputView = ({
           setIsProjectCodebaseOpen(false);
           setIsRoleEditorOpen(false);
           setIsFileChangesOpen(false);
+          setIsMemoryOpen(false);
           setIsProjectMcpOpen(true);
         },
         onOpenRolePanel: () => {
@@ -252,6 +268,7 @@ export const ChatInputView = ({
           setIsProjectSkillsOpen(false);
           setIsProjectCodebaseOpen(false);
           setIsFileChangesOpen(false);
+          setIsMemoryOpen(false);
           setIsRoleEditorOpen(true);
         },
         onOpenPermissionsPanel: () => {
@@ -261,6 +278,7 @@ export const ChatInputView = ({
           setIsProjectCodebaseOpen(false);
           setIsRoleEditorOpen(false);
           setIsFileChangesOpen(false);
+          setIsMemoryOpen(false);
           setIsProjectPermissionsOpen(true);
         },
         onOpenSensitiveCommandsPanel: () => {
@@ -270,6 +288,7 @@ export const ChatInputView = ({
           setIsProjectCodebaseOpen(false);
           setIsRoleEditorOpen(false);
           setIsFileChangesOpen(false);
+          setIsMemoryOpen(false);
           setIsProjectSensitiveCommandsOpen(true);
         },
         onOpenSkillsPanel: () => {
@@ -279,6 +298,7 @@ export const ChatInputView = ({
           setIsProjectCodebaseOpen(false);
           setIsRoleEditorOpen(false);
           setIsFileChangesOpen(false);
+          setIsMemoryOpen(false);
           setIsProjectSkillsOpen(true);
         },
         onOpenCodebasePanel: handleOpenCodebasePanel,
@@ -290,12 +310,15 @@ export const ChatInputView = ({
           setIsProjectCodebaseOpen(false);
           setIsRoleEditorOpen(false);
           setIsFileChangesOpen(false);
+          setIsMemoryOpen(false);
           setIsReviewOpen(true);
         },
         model: selectedModel || undefined,
         apiProfile: selectedApiProfile || undefined,
         compactDisabled: messages.length === 0 || isCompacting,
         fileChangesDisabled: !activeConversationId,
+        // 记忆清单按会话溯源，没有活动会话时无可展示内容。
+        memoryDisabled: !activeConversationId,
         mcpDisabled: !projectId,
         // YOLO 模式下工具自动授权，无需（也不允许）管理授权列表。
         permissionsDisabled: !projectId || yoloMode,
@@ -309,6 +332,9 @@ export const ChatInputView = ({
           clearDescription: t("chatCommand.clearDescription"),
           compactDescription: t("chatCommand.compactDescription"),
           fileChangesDescription: t("chatCommand.fileChangesDescription"),
+          memoryDescription: activeConversationId
+            ? t("chatCommand.memoryDescription")
+            : t("chatCommand.memoryNoProject"),
           mcpDescription: projectId
             ? t("chatCommand.mcpDescription")
             : t("chatCommand.mcpNoProject"),
@@ -555,6 +581,7 @@ export const ChatInputView = ({
         isProjectCodebaseOpen={isProjectCodebaseOpen}
         isRoleEditorOpen={isRoleEditorOpen}
         isFileChangesOpen={isFileChangesOpen}
+        isMemoryOpen={isMemoryOpen}
         isReviewOpen={isReviewOpen}
         workflowMode={workflowMode}
         planMode={planMode}
@@ -577,6 +604,7 @@ export const ChatInputView = ({
         onCloseCodebase={() => setIsProjectCodebaseOpen(false)}
         onCloseRoleEditor={() => setIsRoleEditorOpen(false)}
         onCloseFileChanges={() => setIsFileChangesOpen(false)}
+        onCloseMemory={() => setIsMemoryOpen(false)}
         onCloseReview={() => setIsReviewOpen(false)}
       />
       <div className="input-content" ref={mentionAnchorRef}>

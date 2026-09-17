@@ -85,6 +85,37 @@ export const registerMemoryHandlers = (native: NativeBridge): void => {
     },
   );
 
+  // 面板关键词检索：与列表同形的分页返回（条目 + 命中总数 + 是否有更多），
+  // 排序复用 AI 侧 memory-search 的打分逻辑。
+  ipcMain.handle(
+    "memories:search",
+    (
+      _event,
+      directoryId: unknown,
+      query: unknown,
+      limit: unknown,
+      offset: unknown,
+      status: unknown,
+      kind: unknown,
+    ) => {
+      if (typeof query !== "string" || !query.trim()) {
+        throw new Error("Search query is required");
+      }
+      const safeLimit =
+        typeof limit === "number" && limit > 0 ? Math.floor(limit) : 30;
+      const safeOffset =
+        typeof offset === "number" && offset > 0 ? Math.floor(offset) : 0;
+      return native.searchProjectMemories(
+        requireDirectoryId(directoryId),
+        query.trim(),
+        safeLimit,
+        safeOffset,
+        optionalStatus(status),
+        optionalKind(kind),
+      );
+    },
+  );
+
   ipcMain.handle(
     "memories:create",
     (
@@ -176,6 +207,24 @@ export const registerMemoryHandlers = (native: NativeBridge): void => {
         conversationId.trim(),
         safeLimit,
       );
+    },
+  );
+
+  // 会话树溯源：主会话 + 其子代理 / WorkFlow 节点会话保存的记忆一并返回。
+  ipcMain.handle(
+    "memories:list-by-conversations",
+    (_event, conversationIds: unknown, limit: unknown) => {
+      const safeIds = Array.isArray(conversationIds)
+        ? conversationIds.filter(
+            (id): id is string => typeof id === "string" && id.trim() !== "",
+          )
+        : [];
+      if (safeIds.length === 0) {
+        return Promise.resolve([]);
+      }
+      const safeLimit =
+        typeof limit === "number" && limit > 0 ? Math.floor(limit) : 200;
+      return native.listProjectMemoriesByConversations(safeIds, safeLimit);
     },
   );
 

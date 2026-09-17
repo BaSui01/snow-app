@@ -2466,6 +2466,20 @@ export type NativeBridge = {
     status?: string,
     kind?: string,
   ) => Promise<MemoryPage>;
+  /** 面板关键词检索：与列表同形分页（条目 + 命中总数 + 是否有更多）。 */
+  searchProjectMemories: (
+    directoryId: string,
+    query: string,
+    limit: number,
+    offset: number,
+    status?: string,
+    kind?: string,
+  ) => Promise<MemoryPage>;
+  /** 列出多个会话（主会话 + 其子代理 / WorkFlow 节点会话）保存的记忆。 */
+  listProjectMemoriesByConversations: (
+    conversationIds: string[],
+    limit?: number,
+  ) => Promise<MemoryRecord[]>;
   updateProjectMemory: (
     memoryId: string,
     kind?: string,

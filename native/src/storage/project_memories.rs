@@ -63,6 +63,40 @@ pub fn update_project_memory(memory_id: String, patch: MemoryUpdatePatch) -> Res
     services::project_memories::update_memory(&database_path, &memory_id, &patch)
 }
 
+/// 面板关键词检索（分页 + 命中总数），排序与 MCP memory-search 一致。
+pub fn search_project_memories(
+    directory_id: String,
+    query: String,
+    limit: i32,
+    offset: i32,
+    status: Option<String>,
+    kind: Option<String>,
+) -> Result<MemoryPage> {
+    let database_path = ensure_database_file()?;
+    services::project_memories::search_memories_page(
+        &database_path,
+        &directory_id,
+        &query,
+        kind.as_deref(),
+        status.as_deref(),
+        limit,
+        offset,
+    )
+}
+
+/// 列出多个会话（主会话 + 子代理 / WorkFlow 节点会话）保存的记忆。
+pub fn list_project_memories_by_conversations(
+    conversation_ids: Vec<String>,
+    limit: i32,
+) -> Result<Vec<MemoryRecord>> {
+    let database_path = ensure_database_file()?;
+    services::project_memories::list_memories_by_conversation_ids(
+        &database_path,
+        &conversation_ids,
+        limit,
+    )
+}
+
 pub fn delete_project_memory(memory_id: String) -> Result<bool> {
     let database_path = ensure_database_file()?;
     services::project_memories::delete_memory(&database_path, &memory_id)

@@ -3,6 +3,7 @@ import { createCodebaseCommand } from "./CodebaseCommand";
 import { createCompactCommand } from "./CompactCommand";
 import { createFileChangesCommand } from "./FileChangesCommand";
 import { createMcpCommand } from "./McpCommand";
+import { createMemoryCommand } from "./MemoryCommand";
 import { createPermissionsCommand } from "./PermissionsCommand";
 import { createReviewCommand } from "./ReviewCommand";
 import { createRoleCommand } from "./RoleCommand";
@@ -35,6 +36,7 @@ export const RUNNING_DISABLED_COMMAND_IDS: ReadonlySet<string> = new Set([
 const COMMAND_DESCRIPTION_KEYS: Record<string, string[]> = {
   clear: ["chatCommand.clearDescription"],
   changes: ["chatCommand.fileChangesDescription"],
+  memory: ["chatCommand.memoryDescription", "chatCommand.memoryNoProject"],
   mcp: ["chatCommand.mcpDescription", "chatCommand.mcpNoProject"],
   permissions: [
     "chatCommand.permissionsDescription",
@@ -47,7 +49,10 @@ const COMMAND_DESCRIPTION_KEYS: Record<string, string[]> = {
     "chatCommand.sensitiveCommandsNoProject",
   ],
   skills: ["chatCommand.skillsDescription", "chatCommand.skillsNoProject"],
-  codebase: ["chatCommand.codebaseDescription", "chatCommand.codebaseNoProject"],
+  codebase: [
+    "chatCommand.codebaseDescription",
+    "chatCommand.codebaseNoProject",
+  ],
   review: [
     "chatCommand.reviewDescription",
     "chatCommand.reviewNoProject",
@@ -77,6 +82,7 @@ type ChatCommandLabels = {
   compactDescription: string;
   fileChangesDescription: string;
   mcpDescription: string;
+  memoryDescription: string;
   permissionsDescription: string;
   reviewDescription: string;
   reviewNoProject: string;
@@ -90,10 +96,11 @@ type CreateChatCommandsOptions = {
   onNewChat: () => void;
   onCompactConversation?: (
     model?: string,
-    apiProfile?: string
+    apiProfile?: string,
   ) => void | Promise<void>;
   onOpenFileChangesPanel: () => void;
   onOpenMcpPanel: () => void;
+  onOpenMemoryPanel: () => void;
   onOpenPermissionsPanel: () => void;
   onOpenRolePanel: () => void;
   onOpenReviewPanel: () => void;
@@ -105,6 +112,7 @@ type CreateChatCommandsOptions = {
   compactDisabled: boolean;
   fileChangesDisabled: boolean;
   mcpDisabled: boolean;
+  memoryDisabled: boolean;
   permissionsDisabled: boolean;
   reviewDisabled: boolean;
   roleDisabled: boolean;
@@ -120,6 +128,7 @@ export const createChatCommands = ({
   onCompactConversation,
   onOpenFileChangesPanel,
   onOpenMcpPanel,
+  onOpenMemoryPanel,
   onOpenPermissionsPanel,
   onOpenRolePanel,
   onOpenReviewPanel,
@@ -131,6 +140,7 @@ export const createChatCommands = ({
   compactDisabled,
   fileChangesDisabled,
   mcpDisabled,
+  memoryDisabled,
   permissionsDisabled,
   reviewDisabled,
   roleDisabled,
@@ -149,9 +159,18 @@ export const createChatCommands = ({
       ...createFileChangesCommand(
         onOpenFileChangesPanel,
         labels.fileChangesDescription,
-        fileChangesDisabled
+        fileChangesDisabled,
       ),
       disabled: fileChangesDisabled,
+    },
+    {
+      // memory 面板只读，运行中同样可打开（不进 RUNNING_DISABLED_COMMAND_IDS）。
+      ...createMemoryCommand(
+        onOpenMemoryPanel,
+        labels.memoryDescription,
+        memoryDisabled,
+      ),
+      disabled: memoryDisabled,
     },
     {
       ...createMcpCommand(onOpenMcpPanel, labels.mcpDescription, mcpDisabled),
@@ -162,7 +181,7 @@ export const createChatCommands = ({
       ...createPermissionsCommand(
         onOpenPermissionsPanel,
         labels.permissionsDescription,
-        permissionsDisabled
+        permissionsDisabled,
       ),
       disabled: permissionsDisabled || isRunningDisabled("permissions"),
     },
@@ -170,7 +189,7 @@ export const createChatCommands = ({
       ...createRoleCommand(
         onOpenRolePanel,
         roleDisabled ? labels.roleNoProject : labels.roleDescription,
-        roleDisabled
+        roleDisabled,
       ),
       disabled: roleDisabled || isRunningDisabled("role"),
     },
@@ -178,23 +197,26 @@ export const createChatCommands = ({
       ...createSensitiveCommandsCommand(
         onOpenSensitiveCommandsPanel,
         labels.sensitiveCommandsDescription,
-        sensitiveCommandsDisabled
+        sensitiveCommandsDisabled,
       ),
-      disabled: sensitiveCommandsDisabled || isRunningDisabled("sensitive-commands"),
+      disabled:
+        sensitiveCommandsDisabled || isRunningDisabled("sensitive-commands"),
     },
     {
       ...createSkillsCommand(
         onOpenSkillsPanel,
         labels.skillsDescription,
-        skillsDisabled
+        skillsDisabled,
       ),
       disabled: skillsDisabled || isRunningDisabled("skills"),
     },
     {
       ...createCodebaseCommand(
         onOpenCodebasePanel,
-        codebaseDisabled ? labels.codebaseNoProject : labels.codebaseDescription,
         codebaseDisabled
+          ? labels.codebaseNoProject
+          : labels.codebaseDescription,
+        codebaseDisabled,
       ),
       disabled: codebaseDisabled || isRunningDisabled("codebase"),
     },
@@ -203,7 +225,7 @@ export const createChatCommands = ({
       ...createReviewCommand(
         onOpenReviewPanel,
         labels.reviewDescription,
-        reviewDisabled
+        reviewDisabled,
       ),
       disabled: reviewDisabled || isRunningDisabled("review"),
     },
@@ -216,7 +238,7 @@ export const createChatCommands = ({
         model,
         apiProfile,
         labels.compactDescription,
-        compactDisabled
+        compactDisabled,
       ),
       disabled: compactDisabled || isRunningDisabled("compact"),
     });

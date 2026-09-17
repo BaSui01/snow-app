@@ -404,6 +404,14 @@ that stay alive across multiple calls), complementary to `bash-terminal-execute`
 > `memory-delete` is destructive: obtain the user's explicit approval via
 > `user-interaction-askUserQuestion` first, then retry with `confirmed: true`;
 > calls without it are rejected.
+>
+> **User-facing entries**: the memory bank opened from the sidebar "Project
+> Memory" entry supports keyword search (title / tags / content, reusing the
+> `memory-search` ranking, stackable with the status / kind filters, with
+> matches highlighted); typing `/memory` in chat lists the memories the current
+> conversation (including its sub-agents and WorkFlow nodes) saved or merged,
+> with full content on expand and a jump that locates an entry in the memory
+> bank.
 
 ## 4. Special Notes
 

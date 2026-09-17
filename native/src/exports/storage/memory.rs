@@ -56,6 +56,24 @@ pub async fn list_project_memories(
     .map_err(map_spawn_error)?
 }
 
+/// 面板关键词检索：与列表同一分页形态（条目 + 命中总数 + 是否有更多），
+/// 排序复用 MCP memory-search 的打分逻辑。
+#[napi]
+pub async fn search_project_memories(
+    directory_id: String,
+    query: String,
+    limit: i32,
+    offset: i32,
+    status: Option<String>,
+    kind: Option<String>,
+) -> napi::Result<MemoryPage> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::search_project_memories(directory_id, query, limit, offset, status, kind)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
 #[napi]
 pub async fn update_project_memory(
     memory_id: String,
@@ -135,6 +153,23 @@ pub async fn list_project_memories_by_conversation(
             &database_path,
             &conversation_id,
             limit.unwrap_or(50),
+        )
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+/// 列出多个会话（主会话 + 其子代理 / WorkFlow 节点会话）保存的记忆，
+/// 供 /memory 面板按会话树溯源展示。
+#[napi]
+pub async fn list_project_memories_by_conversations(
+    conversation_ids: Vec<String>,
+    limit: Option<i32>,
+) -> napi::Result<Vec<MemoryRecord>> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::list_project_memories_by_conversations(
+            conversation_ids,
+            limit.unwrap_or(200),
         )
     })
     .await

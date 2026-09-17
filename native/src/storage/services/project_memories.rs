@@ -455,6 +455,57 @@ pub fn list_memories_by_conversation(
         .map_err(|error| database::database_error(database_path, "list memories by conversation", error))
 }
 
+/// 列出多个会话（主会话 + 其子代理 / WorkFlow 节点会话）保存的记忆，
+/// 按更新时间倒序合并返回。分块查询以规避 SQLite 变量数量上限，
+/// 合并后在内存中统一排序并截断到 `limit`。
+pub fn list_memories_by_conversation_ids(
+    database_path: &Path,
+    conversation_ids: &[String],
+    limit: i32,
+) -> Result<Vec<MemoryRecord>> {
+    let ids: Vec<String> = conversation_ids
+        .iter()
+        .map(|id| id.trim().to_string())
+        .filter(|id| !id.is_empty())
+        .collect();
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let safe_limit = if limit > 0 { limit } else { 200 };
+
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            let mut items: Vec<MemoryRecord> = Vec::new();
+            for chunk in ids.chunks(MEMORY_SQL_CHUNK) {
+                let placeholders = chunk
+                    .iter()
+                    .enumerate()
+                    .map(|(index, _)| format!("?{}", index + 1))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let sql = format!(
+                    "SELECT {MEMORY_COLUMNS} FROM project_memories
+                      WHERE conversation_id IN ({placeholders})
+                      ORDER BY updated_at DESC, id DESC"
+                );
+                let mut statement = connection.prepare(&sql)?;
+                let rows = statement.query_map(rusqlite::params_from_iter(chunk.iter().cloned()), map_memory_row)?;
+                items.extend(rows.collect::<rusqlite::Result<Vec<_>>>()?);
+            }
+            items.sort_by(|left, right| {
+                right
+                    .updated_at
+                    .cmp(&left.updated_at)
+                    .then_with(|| right.id.cmp(&left.id))
+            });
+            items.truncate(safe_limit as usize);
+            Ok(items)
+        })
+        .map_err(|error| {
+            database::database_error(database_path, "list memories by conversations", error)
+        })
+}
+
 /// 删除某个会话保存的全部记忆（手动维护入口），返回删除条数。
 pub fn delete_memories_by_conversation(
     database_path: &Path,
@@ -965,7 +1016,81 @@ pub fn search_memories(
     status_filter: Option<&str>,
     limit: i32,
 ) -> Result<Vec<MemoryRecord>> {
-    // —— 参数校验 ——
+    let (directory_id, query, kind_filter, status_filter) =
+        normalize_search_params(directory_id, query, kind_filter, status_filter)?;
+    // MCP 检索：未显式指定状态时只检索「生效中」的条目（active + pending）。
+    let statuses: Vec<&str> = if MEMORY_STATUSES.contains(&status_filter) {
+        vec![status_filter]
+    } else {
+        vec!["active", "pending"]
+    };
+
+    let connection = database::open_connection(database_path)
+        .map_err(|error| database::database_error(database_path, "open database", error))?;
+    let (results, _total) = search_memories_with_connection(
+        &connection,
+        directory_id,
+        query,
+        &statuses,
+        kind_filter,
+        if limit > 0 { limit } else { 10 },
+        0,
+    )
+    .map_err(|error| database::database_error(database_path, "search memories", error))?;
+    Ok(results)
+}
+
+/// 面板关键词检索：返回分页命中条目 + 命中总数，排序与 MCP 的
+/// `search_memories` 完全一致（同一套打分与召回统计）。
+/// 与 MCP 检索的唯一差别是「未指定状态时不过滤状态」——面板的「全部」
+/// 语义含 archived，与列表浏览保持一致。
+pub fn search_memories_page(
+    database_path: &Path,
+    directory_id: &str,
+    query: &str,
+    kind_filter: Option<&str>,
+    status_filter: Option<&str>,
+    limit: i32,
+    offset: i32,
+) -> Result<MemoryPage> {
+    let (directory_id, query, kind_filter, status_filter) =
+        normalize_search_params(directory_id, query, kind_filter, status_filter)?;
+    let statuses: Vec<&str> = if MEMORY_STATUSES.contains(&status_filter) {
+        vec![status_filter]
+    } else {
+        Vec::new()
+    };
+    let safe_limit = if limit > 0 { limit } else { 30 };
+    let safe_offset = if offset > 0 { offset } else { 0 };
+
+    let connection = database::open_connection(database_path)
+        .map_err(|error| database::database_error(database_path, "open database", error))?;
+    let (items, total) = search_memories_with_connection(
+        &connection,
+        directory_id,
+        query,
+        &statuses,
+        kind_filter,
+        safe_limit,
+        safe_offset,
+    )
+    .map_err(|error| database::database_error(database_path, "search memories", error))?;
+
+    Ok(MemoryPage {
+        has_more: safe_offset + (items.len() as i32) < total,
+        items,
+        total,
+    })
+}
+
+/// 检索参数归一化：校验检索词与项目，非法 kind / status 静默忽略。
+/// 返回 (项目 ID, 检索词, kind 过滤, status 过滤)。
+fn normalize_search_params<'a>(
+    directory_id: &'a str,
+    query: &'a str,
+    kind_filter: Option<&'a str>,
+    status_filter: Option<&'a str>,
+) -> Result<(&'a str, &'a str, Option<&'a str>, &'a str)> {
     let query = query.trim();
     if query.is_empty() {
         return Err(Error::new(
@@ -980,66 +1105,50 @@ pub fn search_memories(
             "Memory search requires a selected project (directory id)".to_string(),
         ));
     }
-    let safe_limit = if limit > 0 { limit } else { 10 };
-    let status_filter = status_filter.unwrap_or("");
-    let status_explicit = MEMORY_STATUSES.contains(&status_filter);
     let kind_filter = kind_filter
         .map(str::trim)
         .filter(|value| MEMORY_KINDS.contains(value));
-
-    // —— DB 操作 ——
-    let connection = database::open_connection(database_path)
-        .map_err(|error| database::database_error(database_path, "open database", error))?;
-    let results = search_memories_with_connection(
-        &connection,
+    Ok((
         directory_id,
         query,
-        status_filter,
-        status_explicit,
         kind_filter,
-        safe_limit,
-    )
-    .map_err(|error| database::database_error(database_path, "search memories", error))?;
-    Ok(results)
+        status_filter.unwrap_or("").trim(),
+    ))
 }
 
+/// 打分检索的公共实现：返回（当前页条目, 命中总数）。
+/// `statuses` 为空表示不限制状态；其中的值都来自 MEMORY_STATUSES 白名单，
+/// kind 亦已经过白名单校验，因此直接内联进 SQL（非用户可控文本，无注入风险），
+/// 避免占位符数量随组合变化造成参数个数校验失败。
 fn search_memories_with_connection(
     connection: &Connection,
     directory_id: &str,
     query: &str,
-    status_filter: &str,
-    status_explicit: bool,
+    statuses: &[&str],
     kind_filter: Option<&str>,
-    safe_limit: i32,
-) -> rusqlite::Result<Vec<MemoryRecord>> {
+    limit: i32,
+    offset: i32,
+) -> rusqlite::Result<(Vec<MemoryRecord>, i32)> {
     let mut sql = format!(
         "SELECT {MEMORY_COLUMNS} FROM project_memories WHERE directory_id = ?1"
     );
-    if status_explicit {
-        sql.push_str(" AND status = ?2");
-    } else {
-        sql.push_str(" AND status IN ('active', 'pending')");
+    if !statuses.is_empty() {
+        let list = statuses
+            .iter()
+            .map(|status| format!("'{status}'"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        sql.push_str(&format!(" AND status IN ({list})"));
     }
-    if kind_filter.is_some() {
-        sql.push_str(" AND kind = ?3");
+    if let Some(kind) = kind_filter {
+        sql.push_str(&format!(" AND kind = '{kind}'"));
     }
     sql.push_str(" ORDER BY importance DESC, updated_at DESC, id DESC");
 
     let mut statement = connection.prepare(&sql)?;
-    let rows: Vec<MemoryRecord> = match (status_explicit, kind_filter) {
-        (true, Some(kind)) => statement
-            .query_map(params![directory_id, status_filter, kind], map_memory_row)?
-            .collect::<rusqlite::Result<Vec<_>>>()?,
-        (true, None) => statement
-            .query_map(params![directory_id, status_filter], map_memory_row)?
-            .collect::<rusqlite::Result<Vec<_>>>()?,
-        (false, Some(kind)) => statement
-            .query_map(params![directory_id, kind], map_memory_row)?
-            .collect::<rusqlite::Result<Vec<_>>>()?,
-        (false, None) => statement
-            .query_map(params![directory_id], map_memory_row)?
-            .collect::<rusqlite::Result<Vec<_>>>()?,
-    };
+    let rows: Vec<MemoryRecord> = statement
+        .query_map(params![directory_id], map_memory_row)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
 
     let now = chrono::Local::now().naive_local();
     let query_lower = query.to_lowercase();
@@ -1061,9 +1170,13 @@ fn search_memories_with_connection(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
+    let total = scored.len() as i32;
+    let safe_offset = if offset > 0 { offset as usize } else { 0 };
+    let safe_limit = if limit > 0 { limit as usize } else { 1 };
     let results: Vec<MemoryRecord> = scored
         .into_iter()
-        .take(safe_limit as usize)
+        .skip(safe_offset)
+        .take(safe_limit)
         .map(|(_, record)| record)
         .collect();
 
@@ -1078,7 +1191,7 @@ fn search_memories_with_connection(
         );
     }
 
-    Ok(results)
+    Ok((results, total))
 }
 
 /// 打分：返回 `(分数, 是否有文本命中)`。无任何文本命中的条目不进入

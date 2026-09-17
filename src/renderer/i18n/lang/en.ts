@@ -486,12 +486,16 @@ export const en = {
   "memory.multiSelect": "Multi-select",
   "memory.multiSelectExit": "Exit multi-select",
   "memory.multiSelectCount": "{{count}} selected",
-  "memory.multiSelectAll": "Select all",
+  "memory.multiSelectAll": "Select all loaded",
   "memory.multiSelectDeselectAll": "Deselect all",
   "memory.multiSelectDelete": "Delete selected",
   "memory.multiSelectDeleting": "Deleting...",
   "memory.multiSelectDeleteConfirm":
     "Permanently delete the {{count}} selected memories? This cannot be undone.",
+  "memory.searchPlaceholder": "Search title / tags / content",
+  "memory.searchClear": "Clear search",
+  "memory.searchHits": "{{count}} matches",
+  "memory.searchEmpty": 'No memories match "{{query}}".',
   "sidebar.chatActionMultiSelect": "Multi-select",
   "sidebar.chatMultiSelectCount": "{{count}} selected",
   "sidebar.chatMultiSelectAll": "Select all",
@@ -3213,6 +3217,9 @@ export const en = {
   "chatCommand.codebaseNoProject": "Select a project before managing codebase",
   "chatCommand.fileChangesDescription":
     "View files modified in this conversation",
+  "chatCommand.memoryDescription":
+    "View memories saved or updated in this conversation",
+  "chatCommand.memoryNoProject": "Save a memory in the conversation first",
   "chatCommand.reviewDescription": "Review Git changes with AI",
   "chatCommand.reviewNoProject":
     "Select a project before reviewing Git changes",
@@ -3571,6 +3578,24 @@ export const en = {
   "chat.fileChanges.diffTitle": "Change preview",
   "chat.fileChanges.diffEmpty": "No changes to display",
   "chat.fileChanges.selectFile": "Select a file to view changes",
+  "chat.memory.title": "Conversation memories",
+  "chat.memory.description":
+    "Memories this conversation (and its sub-agents / WorkFlow nodes) saved or merged.",
+  "chat.memory.summary": "{{count}} memor(y/ies) touched in this session",
+  "chat.memory.createdBadge": "New {{count}}",
+  "chat.memory.updatedBadge": "Updated {{count}}",
+  "chat.memory.agentMainBadge": "Agent {{count}}",
+  "chat.memory.agentSubBadge": "Sub-agents {{count}}",
+  "chat.memory.agentMainName": "Main agent",
+  "chat.memory.agentSubName": "Sub-agents / WorkFlow nodes",
+  "chat.memory.locateInLibrary": "Locate in project memory",
+  "chat.memory.deleteAll": "Delete memories from this conversation",
+  "chat.memory.deleteAllConfirm":
+    "Permanently delete the {{count}} memories saved by this conversation and its sub-agents? This cannot be undone.",
+  "chat.memory.emptyTitle": "No memories saved in this conversation",
+  "chat.memory.emptyHint":
+    "Memories the AI saves during the conversation show up here in real time.",
+  "chat.memory.noConversation": "Open a conversation to view its memories.",
   "chat.review.title": "Code Review",
   "chat.review.description":
     "Pick Git changes to review. The AI only analyzes and never modifies files.",

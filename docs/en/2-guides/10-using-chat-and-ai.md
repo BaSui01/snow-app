@@ -79,22 +79,23 @@ The sidebar **Conversations** section normally shows only the **current project'
 
 ## 3. Complete Slash Command List
 
-Type `/` to open the command palette. The current version has exactly ten commands:
+Type `/` to open the command palette. The current version has exactly eleven commands:
 
-| Command               | Behavior and availability                                                                                                 |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `/clear`              | Creates a new conversation; it is not `/new` and does not erase history inside the existing conversation                  |
-| `/file-changes`       | Shows file changes and diffs for the current conversation; disabled until the conversation has been persisted             |
-| `/mcp`                | Manages MCP servers for the current project; requires a selected project                                                  |
-| `/role`               | Edits the current project's `ROLE.md`; requires a selected project                                                        |
-| `/sensitive-commands` | Configures sensitive-command rules for the current project; requires a selected project                                   |
-| `/permissions`        | Views/deletes the permanently authorized tools of the current project; requires a selected project, disabled in YOLO mode |
-| `/skills`             | Manages Skills for the current project; requires a selected project                                                       |
-| `/codebase`           | Manages the current project's codebase index; requires a selected project                                                 |
-| `/review`             | Asks the AI to review Git changes in the current project; available only in a new conversation with a project directory   |
-| `/compact`            | Compacts the current conversation; disabled when there are no messages or compaction is already running                   |
+| Command               | Behavior and availability                                                                                                                                                                                                                                                              |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/clear`              | Creates a new conversation; it is not `/new` and does not erase history inside the existing conversation                                                                                                                                                                               |
+| `/file-changes`       | Shows file changes and diffs for the current conversation; disabled until the conversation has been persisted                                                                                                                                                                          |
+| `/memory`             | Shows the project memories saved or merged by the current conversation (including its sub-agents and WorkFlow nodes), with per-entry detail, a "locate in project memory" jump and an option to delete this conversation's entries; disabled until the conversation has been persisted |
+| `/mcp`                | Manages MCP servers for the current project; requires a selected project                                                                                                                                                                                                               |
+| `/role`               | Edits the current project's `ROLE.md`; requires a selected project                                                                                                                                                                                                                     |
+| `/sensitive-commands` | Configures sensitive-command rules for the current project; requires a selected project                                                                                                                                                                                                |
+| `/permissions`        | Views/deletes the permanently authorized tools of the current project; requires a selected project, disabled in YOLO mode                                                                                                                                                              |
+| `/skills`             | Manages Skills for the current project; requires a selected project                                                                                                                                                                                                                    |
+| `/codebase`           | Manages the current project's codebase index; requires a selected project                                                                                                                                                                                                              |
+| `/review`             | Asks the AI to review Git changes in the current project; available only in a new conversation with a project directory                                                                                                                                                                |
+| `/compact`            | Compacts the current conversation; disabled when there are no messages or compaction is already running                                                                                                                                                                                |
 
-While the AI is running, `/compact`, `/role`, `/sensitive-commands`, `/skills`, `/codebase`, `/mcp`, and `/review` are disabled. `/file-changes` and `/clear` are not in that running-disabled set, but their own conditions still apply.
+While the AI is running, `/compact`, `/role`, `/sensitive-commands`, `/skills`, `/codebase`, `/mcp`, and `/review` are disabled. `/file-changes`, `/memory` and `/clear` are not in that running-disabled set, but their own conditions still apply.
 
 ## 4. Plan, Goal, and YOLO
 

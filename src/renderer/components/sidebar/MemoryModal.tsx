@@ -5,6 +5,7 @@ import {
   ListChecks,
   Loader2,
   Plus,
+  Search,
   Trash2,
   X,
 } from "lucide-react";
@@ -23,6 +24,20 @@ import type {
 } from "../../../preload";
 
 const PAGE_SIZE = 30;
+
+/** 关键词输入的防抖时长：停顿后才发起检索，避免逐字打满 IPC。 */
+const SEARCH_DEBOUNCE_MS = 300;
+
+/**
+ * /memory 面板「在项目记忆中定位」请求打开记忆库时携带的载荷：
+ * 目标条目标题作为初始检索词。
+ */
+export type MemoryModalOpenDetail = {
+  query: string;
+};
+
+/** /memory 面板请求打开记忆库并定位某条记忆的窗口事件。 */
+export const OPEN_MEMORY_MODAL_EVENT = "project-memory:open-modal";
 
 const KIND_KEYS: MemoryKind[] = [
   "fact",
@@ -52,7 +67,78 @@ type MemoryDraft = {
 type MemoryModalProps = {
   open: boolean;
   directoryId: string;
+  /**
+   * 由 /memory 面板「在项目记忆中定位」传入的初始检索词；
+   * 弹窗打开时把关键词填进搜索框并立即检索。
+   */
+  searchSeed?: string | null;
   onClose: () => void;
+};
+
+/** 转义正则元字符，用于把关键词安全地拼成高亮匹配模式。 */
+const escapeRegExp = (value: string): string =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * 命中高亮：把关键词（整句 + 分词）在文本中的出现位置包成 <mark>。
+ * 利用带捕获组的 split 特性——奇数下标即为命中片段。
+ */
+const HighlightedText = ({
+  text,
+  query,
+}: {
+  text: string;
+  query: string;
+}): React.JSX.Element => {
+  const terms = [...new Set([query, ...query.split(/\s+/)])].filter(
+    (term) => term.trim() !== "",
+  );
+  if (terms.length === 0) {
+    return <>{text}</>;
+  }
+  const pattern = new RegExp(`(${terms.map(escapeRegExp).join("|")})`, "gi");
+  return (
+    <>
+      {text.split(pattern).map((part, index) =>
+        index % 2 === 1 ? (
+          <mark className="memory-search-mark" key={`${part}-${index}`}>
+            {part}
+          </mark>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  );
+};
+
+/**
+ * 截取命中关键词附近的内容片段，让命中内容（而非标题）的条目也能被
+ * 一眼看到；无命中返回 null（该条目的命中只可能来自标签）。
+ */
+const buildContentSnippet = (content: string, query: string): string | null => {
+  const normalized = content.replace(/\s+/g, " ").trim();
+  const lower = normalized.toLowerCase();
+  const terms = [
+    ...new Set([query.toLowerCase(), ...query.toLowerCase().split(/\s+/)]),
+  ]
+    .map((term) => term.trim())
+    .filter((term) => term !== "");
+  let hitIndex = -1;
+  for (const term of terms) {
+    const at = lower.indexOf(term);
+    if (at < 0) continue;
+    hitIndex = hitIndex < 0 ? at : Math.min(hitIndex, at);
+  }
+  if (hitIndex < 0) {
+    return null;
+  }
+  const SNIPPET_LENGTH = 90;
+  const offset = Math.max(0, hitIndex - 20);
+  const snippet = normalized.slice(offset, offset + SNIPPET_LENGTH);
+  return `${offset > 0 ? "…" : ""}${snippet}${
+    offset + SNIPPET_LENGTH < normalized.length ? "…" : ""
+  }`;
 };
 
 const draftFromRecord = (record: MemoryRecord): MemoryDraft => ({
@@ -86,6 +172,7 @@ type Selection =
 export function MemoryModal({
   open,
   directoryId,
+  searchSeed,
   onClose,
 }: MemoryModalProps): React.JSX.Element {
   const { t } = useI18n();
@@ -96,6 +183,10 @@ export function MemoryModal({
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [filterStatus, setFilterStatus] = useState<MemoryFilterStatus>("all");
   const [filterKind, setFilterKind] = useState<MemoryFilterKind>("all");
+  const [searchInput, setSearchInput] = useState("");
+  /** 已生效的检索词（防抖后）；非空时列表走关键词检索而非分页浏览。 */
+  const [activeQuery, setActiveQuery] = useState("");
+  const [hitTotal, setHitTotal] = useState(0);
   const [selection, setSelection] = useState<Selection>({ mode: "none" });
   const [draft, setDraft] = useState<MemoryDraft>(emptyDraft());
   const [isSaving, setIsSaving] = useState(false);
@@ -130,14 +221,27 @@ export function MemoryModal({
       } else {
         setIsLoading(true);
       }
-      window.snow
-        .listProjectMemories(
-          directoryId,
-          PAGE_SIZE,
-          offset,
-          filterStatus === "all" ? undefined : filterStatus,
-          filterKind === "all" ? undefined : filterKind,
-        )
+      const statusFilter = filterStatus === "all" ? undefined : filterStatus;
+      const kindFilter = filterKind === "all" ? undefined : filterKind;
+      // 非空检索词走关键词检索（与 AI memory-search 同一套相关性排序），
+      // 命中总数用于「共 N 条命中」提示；空检索词沿用浏览分页。
+      const request: Promise<MemoryPage> = activeQuery
+        ? window.snow.searchProjectMemories(
+            directoryId,
+            activeQuery,
+            PAGE_SIZE,
+            offset,
+            statusFilter,
+            kindFilter,
+          )
+        : window.snow.listProjectMemories(
+            directoryId,
+            PAGE_SIZE,
+            offset,
+            statusFilter,
+            kindFilter,
+          );
+      request
         .then((page: MemoryPage) => {
           if (requestId !== requestIdRef.current) return;
           setMemories((prev) => {
@@ -150,11 +254,13 @@ export function MemoryModal({
             ];
           });
           setHasMore(page.hasMore);
+          setHitTotal(activeQuery ? page.total : 0);
         })
         .catch(() => {
           if (requestId === requestIdRef.current && !append) {
             setMemories([]);
             setHasMore(false);
+            setHitTotal(0);
           }
         })
         .finally(() => {
@@ -166,10 +272,10 @@ export function MemoryModal({
           loadingMoreRef.current = false;
         });
     },
-    [directoryId, filterStatus, filterKind],
+    [directoryId, filterStatus, filterKind, activeQuery],
   );
 
-  // 打开或筛选变化时重新加载第一页
+  // 打开或筛选/关键词变化时重新加载第一页
   useEffect(() => {
     if (!open) return;
     setSelection({ mode: "none" });
@@ -177,12 +283,42 @@ export function MemoryModal({
     refreshStats();
   }, [open, loadPage, refreshStats]);
 
-  // 关闭弹窗时重置多选状态
+  // 切换项目时清空检索与详情选择：记忆按项目隔离，旧关键词在新项目里无意义。
+  useEffect(() => {
+    setSearchInput("");
+    setActiveQuery("");
+    setHitTotal(0);
+    setSelection({ mode: "none" });
+  }, [directoryId]);
+
+  // 由 /memory 面板跳转而来：把目标条目标题作为初始检索词直接生效。
+  // 与「打开即加载」分开，避免用旧检索条件多查一次。
+  useEffect(() => {
+    if (!open || searchSeed == null) return;
+    setSearchInput(searchSeed);
+    setActiveQuery(searchSeed.trim());
+  }, [open, searchSeed]);
+
+  // 关键词防抖：输入停顿后才发起检索；清空立即回到浏览列表。
+  useEffect(() => {
+    const trimmed = searchInput.trim();
+    if (trimmed === activeQuery) return;
+    const timer = window.setTimeout(
+      () => setActiveQuery(trimmed),
+      trimmed === "" ? 0 : SEARCH_DEBOUNCE_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [searchInput, activeQuery]);
+
+  // 关闭弹窗时重置多选与检索状态（下次打开从干净状态开始）
   useEffect(() => {
     if (open) return;
     setIsMultiSelectMode(false);
     setSelectedMemoryIds(new Set());
     setIsBatchDeleteConfirmOpen(false);
+    setSearchInput("");
+    setActiveQuery("");
+    setHitTotal(0);
   }, [open]);
 
   const handleListScroll = () => {
@@ -309,7 +445,8 @@ export function MemoryModal({
     });
   };
 
-  // 全选只覆盖当前已加载条目；滚动加载的新条目需再次全选
+  // 全选只覆盖当前已加载条目（按钮文案同步为「全选已加载」）；
+  // 滚动加载进来的新条目需要再次点击才能纳入选择。
   const isAllSelected =
     memories.length > 0 &&
     memories.every((item) => selectedMemoryIds.has(item.memoryId));
@@ -473,6 +610,52 @@ export function MemoryModal({
           </>
         )}
       </div>
+      <div className="memory-search-row">
+        <Search
+          aria-hidden="true"
+          className="memory-search-icon"
+          size={13}
+          strokeWidth={2}
+        />
+        <input
+          aria-label={t("memory.searchPlaceholder", {
+            defaultValue: "Search memories",
+          })}
+          className="memory-search-input"
+          onChange={(event) => setSearchInput(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              setActiveQuery(searchInput.trim());
+            } else if (event.key === "Escape") {
+              event.preventDefault();
+              setSearchInput("");
+              setActiveQuery("");
+            }
+          }}
+          placeholder={t("memory.searchPlaceholder", {
+            defaultValue: "Search memories",
+          })}
+          type="text"
+          value={searchInput}
+        />
+        {searchInput !== "" && (
+          <button
+            aria-label={t("memory.searchClear", {
+              defaultValue: "Clear search",
+            })}
+            className="memory-search-clear"
+            onClick={() => {
+              setSearchInput("");
+              setActiveQuery("");
+            }}
+            title={t("memory.searchClear", { defaultValue: "Clear search" })}
+            type="button"
+          >
+            <X size={12} strokeWidth={2.2} />
+          </button>
+        )}
+      </div>
       <div className="memory-sidebar-subrow">
         <CustomSelect
           onChange={(value) => {
@@ -494,12 +677,17 @@ export function MemoryModal({
           value={filterKind}
         />
         <span className="memory-sidebar-stats">
-          {stats
-            ? t("memory.statsCompact", {
-                defaultValue: "{{total}} entries",
-                values: { total: stats.total },
+          {activeQuery
+            ? t("memory.searchHits", {
+                defaultValue: "{{count}} matches",
+                values: { count: hitTotal },
               })
-            : ""}
+            : stats
+              ? t("memory.statsCompact", {
+                  defaultValue: "{{total}} entries",
+                  values: { total: stats.total },
+                })
+              : ""}
         </span>
         <button
           className="memory-clear-btn"
@@ -522,14 +710,19 @@ export function MemoryModal({
           </div>
         ) : memories.length === 0 ? (
           <div className="memory-list-empty">
-            {stats?.total === 0
-              ? t("memory.emptyHint", {
-                  defaultValue:
-                    "No memories yet. The AI saves what it learns via memory-save, or add one manually.",
+            {activeQuery
+              ? t("memory.searchEmpty", {
+                  defaultValue: 'No memories match "{{query}}".',
+                  values: { query: activeQuery },
                 })
-              : t("memory.emptyFilterHint", {
-                  defaultValue: "No memories match the current filter.",
-                })}
+              : stats?.total === 0
+                ? t("memory.emptyHint", {
+                    defaultValue:
+                      "No memories yet. The AI saves what it learns via memory-save, or add one manually.",
+                  })
+                : t("memory.emptyFilterHint", {
+                    defaultValue: "No memories match the current filter.",
+                  })}
           </div>
         ) : (
           memories.map((record) => {
@@ -569,7 +762,14 @@ export function MemoryModal({
                       {kindLabel(record.kind)}
                     </span>
                     <span className="memory-list-item-title">
-                      {record.title}
+                      {activeQuery ? (
+                        <HighlightedText
+                          query={activeQuery}
+                          text={record.title}
+                        />
+                      ) : (
+                        record.title
+                      )}
                     </span>
                   </div>
                   <div className="memory-list-item-meta">
@@ -589,6 +789,19 @@ export function MemoryModal({
                       </span>
                     )}
                   </div>
+                  {/* 检索态下补一行命中上下文，让「命中内容」的条目也能被定位 */}
+                  {activeQuery !== "" &&
+                    (() => {
+                      const snippet = buildContentSnippet(
+                        record.content,
+                        activeQuery,
+                      );
+                      return snippet ? (
+                        <div className="memory-list-item-snippet">
+                          <HighlightedText query={activeQuery} text={snippet} />
+                        </div>
+                      ) : null;
+                    })()}
                 </div>
                 {!isMultiSelectMode && (
                   <div className="memo-list-item-actions">

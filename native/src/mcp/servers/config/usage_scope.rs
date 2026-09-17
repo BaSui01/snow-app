@@ -6,7 +6,8 @@
 //! 操作，仍由 UI 完成。
 //!
 //! 日期参数接受 `YYYY-MM-DD`（自动补全为当天 00:00:00 / 23:59:59）或
-//! `YYYY-MM-DD HH:MM:SS`；两者都省略时默认最近 30 天。
+//! `YYYY-MM-DD HH:MM:SS`；两者都省略时默认最近 30 天。可选参数 `profile`
+//! 按 API 配置名称精确过滤（对应用量记录里的 `api_profile_name`）。
 
 use std::path::Path;
 
@@ -143,16 +144,17 @@ fn record_json(row: &UsageRecord) -> Value {
     })
 }
 
-fn summary_payload(db_path: &Path, since: &str, until: &str) -> Result<Value> {
-    let summary = get_usage_summary(db_path, since, until)?;
-    let daily = get_usage_daily_breakdown(db_path, since, until)?;
+fn summary_payload(db_path: &Path, since: &str, until: &str, profile: &str) -> Result<Value> {
+    let summary = get_usage_summary(db_path, since, until, profile)?;
+    let daily = get_usage_daily_breakdown(db_path, since, until, profile)?;
     let daily_truncated = daily.len() > MAX_DAILY_ROWS;
-    let models = get_usage_model_breakdown(db_path, since, until)?;
+    let models = get_usage_model_breakdown(db_path, since, until, profile)?;
     let model_truncated = models.len() > MAX_MODEL_ROWS;
 
     Ok(json!({
         "since": since,
         "until": until,
+        "profile": profile,
         "summary": summary_json(&summary),
         "daily": daily.iter().take(MAX_DAILY_ROWS).map(daily_json).collect::<Vec<_>>(),
         "dailyTruncated": daily_truncated,
@@ -170,6 +172,7 @@ pub(crate) fn execute_usage_scope(
     match tool_name {
         "list" => {
             let (since, until) = read_window(args);
+            let profile = optional_arg(args, "profile");
             Ok(json!({
                 "scope": "usage",
                 "file": null,
@@ -178,41 +181,45 @@ pub(crate) fn execute_usage_scope(
                     "type": "object",
                     "sensitive": false,
                     "configured": true,
-                    "value": summary_payload(db_path, &since, &until)?,
+                    "value": summary_payload(db_path, &since, &until, profile)?,
                 }],
             }))
         }
         TOOL_GET => {
             let key = optional_arg(args, "key");
             let (since, until) = read_window(args);
+            let profile = optional_arg(args, "profile");
             match key {
                 "summary" => Ok(json!({
                     "scope": "usage",
                     "key": key,
                     "since": since,
                     "until": until,
-                    "value": summary_json(&get_usage_summary(db_path, &since, &until)?),
+                    "profile": profile,
+                    "value": summary_json(&get_usage_summary(db_path, &since, &until, profile)?),
                 })),
                 "daily" => {
-                    let rows = get_usage_daily_breakdown(db_path, &since, &until)?;
+                    let rows = get_usage_daily_breakdown(db_path, &since, &until, profile)?;
                     let truncated = rows.len() > MAX_DAILY_ROWS;
                     Ok(json!({
                         "scope": "usage",
                         "key": key,
                         "since": since,
                         "until": until,
+                        "profile": profile,
                         "truncated": truncated,
                         "value": rows.iter().take(MAX_DAILY_ROWS).map(daily_json).collect::<Vec<_>>(),
                     }))
                 }
                 "models" => {
-                    let rows = get_usage_model_breakdown(db_path, &since, &until)?;
+                    let rows = get_usage_model_breakdown(db_path, &since, &until, profile)?;
                     let truncated = rows.len() > MAX_MODEL_ROWS;
                     Ok(json!({
                         "scope": "usage",
                         "key": key,
                         "since": since,
                         "until": until,
+                        "profile": profile,
                         "truncated": truncated,
                         "value": rows.iter().take(MAX_MODEL_ROWS).map(model_json).collect::<Vec<_>>(),
                     }))
@@ -235,6 +242,7 @@ pub(crate) fn execute_usage_scope(
                         db_path,
                         optional_arg(args, "conversationId"),
                         optional_arg(args, "directoryId"),
+                        profile,
                         limit,
                         offset,
                     )?;
@@ -274,7 +282,6 @@ pub(crate) fn execute_usage_scope(
         )),
     }
 }
-
 
 #[cfg(test)]
 mod tests {

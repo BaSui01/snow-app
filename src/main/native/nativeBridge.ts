@@ -1444,6 +1444,12 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to get usage model breakdown",
           ),
         ),
+      listUsageProfileNames: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to list usage profile names",
+          ),
+        ),
       deleteUsageRecords: () =>
         Promise.reject(
           new Error("Rust native bridge is required to delete usage records"),

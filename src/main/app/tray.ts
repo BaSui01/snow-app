@@ -87,7 +87,7 @@ const encodePng = (rgba: Uint8Array, width: number, height: number): Buffer => {
     raw[y * (1 + stride)] = 0;
     Buffer.from(rgba.buffer, rgba.byteOffset + y * stride, stride).copy(
       raw,
-      y * (1 + stride) + 1
+      y * (1 + stride) + 1,
     );
   }
   const idat = deflateSync(raw);
@@ -114,7 +114,7 @@ const paethPredictor = (a: number, b: number, c: number): number => {
  * 仅用于解码托盘 favicon 以叠加活动角标；其他格式返回 null。
  */
 const decodePng = (
-  buffer: Buffer
+  buffer: Buffer,
 ): { width: number; height: number; rgba: Uint8Array } | null => {
   const signature = Buffer.from([
     0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
@@ -211,7 +211,7 @@ const overlayActivityDot = (
   rgba: Uint8Array,
   width: number,
   height: number,
-  color: [number, number, number, number]
+  color: [number, number, number, number],
 ): void => {
   const cx = width - 3.6;
   const cy = height - 3.6;
@@ -250,7 +250,7 @@ const GREEN_DOT: [number, number, number, number] = [34, 197, 94, 255];
 const extractSnowflakeMask = (
   rgba: Uint8Array,
   width: number,
-  height: number
+  height: number,
 ): Float32Array => {
   // 动态检测雪花纯色的 r 基准：取最蓝像素（b - max(r,g) 最大者）的 r 均值
   let bestBlue = -1;
@@ -335,7 +335,7 @@ const extractSnowflakeMask = (
 const computeContentCrop = (
   mask: Float32Array,
   width: number,
-  height: number
+  height: number,
 ): { x: number; y: number; side: number } => {
   let minX = width;
   let minY = height;
@@ -381,7 +381,7 @@ const maskToTemplateRgba = (
   srcHeight: number,
   crop: { x: number; y: number; side: number },
   targetWidth: number,
-  targetHeight: number
+  targetHeight: number,
 ): Uint8Array => {
   const out = new Uint8Array(targetWidth * targetHeight * 4);
   const sample = (sx: number, sy: number): number => {
@@ -394,13 +394,13 @@ const maskToTemplateRgba = (
     const sy0 = Math.floor(crop.y + (ty * crop.side) / targetHeight);
     const sy1 = Math.max(
       sy0 + 1,
-      Math.floor(crop.y + ((ty + 1) * crop.side) / targetHeight)
+      Math.floor(crop.y + ((ty + 1) * crop.side) / targetHeight),
     );
     for (let tx = 0; tx < targetWidth; tx++) {
       const sx0 = Math.floor(crop.x + (tx * crop.side) / targetWidth);
       const sx1 = Math.max(
         sx0 + 1,
-        Math.floor(crop.x + ((tx + 1) * crop.side) / targetWidth)
+        Math.floor(crop.x + ((tx + 1) * crop.side) / targetWidth),
       );
       let sum = 0;
       let n = 0;
@@ -454,7 +454,7 @@ const drawCountDigits = (
   canvasWidth: number,
   canvasHeight: number,
   snowSize: number,
-  count: number
+  count: number,
 ): void => {
   const text = count > 99 ? "99" : String(count);
   const cell = digitCell(snowSize);
@@ -525,7 +525,7 @@ const createMacTemplateIcons = (): TrayIcons => {
     crop: { x: number; y: number; side: number },
     rgba: Uint8Array,
     canvasW: number,
-    snowSize: number
+    snowSize: number,
   ): void => {
     const sample = (sx: number, sy: number): number => {
       if (sx < 0 || sx >= srcWidth || sy < 0 || sy >= srcHeight) {
@@ -537,13 +537,13 @@ const createMacTemplateIcons = (): TrayIcons => {
       const sy0 = Math.floor(crop.y + (ty * crop.side) / snowSize);
       const sy1 = Math.max(
         sy0 + 1,
-        Math.floor(crop.y + ((ty + 1) * crop.side) / snowSize)
+        Math.floor(crop.y + ((ty + 1) * crop.side) / snowSize),
       );
       for (let tx = 0; tx < snowSize; tx++) {
         const sx0 = Math.floor(crop.x + (tx * crop.side) / snowSize);
         const sx1 = Math.max(
           sx0 + 1,
-          Math.floor(crop.x + ((tx + 1) * crop.side) / snowSize)
+          Math.floor(crop.x + ((tx + 1) * crop.side) / snowSize),
         );
         let sum = 0;
         let n = 0;
@@ -565,7 +565,7 @@ const createMacTemplateIcons = (): TrayIcons => {
     srcWidth: number,
     srcHeight: number,
     crop: { x: number; y: number; side: number },
-    count: number
+    count: number,
   ): { png16: Buffer; png32: Buffer } => {
     const build1x = buildActiveRgba(mask, srcWidth, srcHeight, crop, 16, count);
     const build2x = buildActiveRgba(mask, srcWidth, srcHeight, crop, 32, count);
@@ -582,7 +582,7 @@ const createMacTemplateIcons = (): TrayIcons => {
     srcHeight: number,
     crop: { x: number; y: number; side: number },
     snowSize: number,
-    count: number
+    count: number,
   ): { width: number; height: number; rgba: Uint8Array } => {
     const canvasW = activeCanvasWidth(snowSize, count);
     const canvasH = snowSize;
@@ -598,7 +598,7 @@ const createMacTemplateIcons = (): TrayIcons => {
       const mask = extractSnowflakeMask(
         decoded.rgba,
         decoded.width,
-        decoded.height
+        decoded.height,
       );
       const crop = computeContentCrop(mask, decoded.width, decoded.height);
 
@@ -607,8 +607,8 @@ const createMacTemplateIcons = (): TrayIcons => {
         encodePng(
           maskToTemplateRgba(mask, decoded.width, decoded.height, crop, 16, 16),
           16,
-          16
-        )
+          16,
+        ),
       );
       normal16.addRepresentation({
         scaleFactor: 2,
@@ -617,7 +617,7 @@ const createMacTemplateIcons = (): TrayIcons => {
         buffer: encodePng(
           maskToTemplateRgba(mask, decoded.width, decoded.height, crop, 32, 32),
           32,
-          32
+          32,
         ),
       });
       normal16.setTemplateImage(true);
@@ -635,7 +635,7 @@ const createMacTemplateIcons = (): TrayIcons => {
           decoded.width,
           decoded.height,
           crop,
-          key
+          key,
         );
         const img = nativeImage.createFromBuffer(png16);
         // @2x 表示需按实际画布尺寸（位数不同宽度不同）注册。
@@ -663,7 +663,7 @@ const createMacTemplateIcons = (): TrayIcons => {
 /** 构建 Windows 双表示图标：16px @1x + 32px @2x，DPI 精确匹配。 */
 const buildDualRepIcon = (
   icon16: NativeImage,
-  icon32: NativeImage
+  icon32: NativeImage,
 ): NativeImage => {
   icon16.addRepresentation({
     scaleFactor: 2,
@@ -683,7 +683,7 @@ const withActivityDot = (pngPath: string): NativeImage => {
     }
     overlayActivityDot(decoded.rgba, decoded.width, decoded.height, GREEN_DOT);
     return nativeImage.createFromBuffer(
-      encodePng(decoded.rgba, decoded.width, decoded.height)
+      encodePng(decoded.rgba, decoded.width, decoded.height),
     );
   } catch {
     return nativeImage.createFromPath(pngPath);
@@ -710,7 +710,7 @@ const createColorIcons = (): TrayIcons => {
     if (!icon16.isEmpty() && !icon32.isEmpty()) {
       const active = buildDualRepIcon(
         withActivityDot(APP_FAVICON_16_PATH),
-        withActivityDot(APP_FAVICON_32_PATH)
+        withActivityDot(APP_FAVICON_32_PATH),
       );
       return {
         normal: buildDualRepIcon(icon16, icon32),
@@ -828,7 +828,7 @@ const applyActiveVisual = (): void => {
 const refreshAllStats = (native: NativeBridge): void => {
   const today = new Date();
   const dateStr = `${today.getFullYear()}-${String(
-    today.getMonth() + 1
+    today.getMonth() + 1,
   ).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
   // Rust 端对 usage 使用 SQLite datetime 字符串比较，需带时间部分，
   // 否则 "YYYY-MM-DD HH:MM:SS" 格式的 created_at 无法匹配纯日期边界。
@@ -839,10 +839,10 @@ const refreshAllStats = (native: NativeBridge): void => {
     try {
       const [directories, usage] = await Promise.all([
         native.listWorkspaceDirectories(),
-        native.getUsageSummary(dayStart, dayEnd),
+        native.getUsageSummary(dayStart, dayEnd, ""),
       ]);
       const memoResults = await Promise.allSettled(
-        directories.map((d) => native.getMemoCountSummary(d.directoryId))
+        directories.map((d) => native.getMemoCountSummary(d.directoryId)),
       );
       stats = {
         activeSessions: stats.activeSessions,
@@ -850,7 +850,7 @@ const refreshAllStats = (native: NativeBridge): void => {
         projects: directories.length,
         pendingMemos: memoResults.reduce(
           (sum, r) => sum + (r.status === "fulfilled" ? r.value.pending : 0),
-          0
+          0,
         ),
         todayTokens: usage?.totalTokens ?? 0,
       };

@@ -38440,6 +38440,31 @@ pre.file-viewer-code {
   white-space: nowrap;
 }
 
+/* 配置筛选行：位于日期筛选栏上方，风格与之一致 */
+.usage-profile-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.usage-profile-filter-bar .custom-select {
+  min-width: 200px;
+  max-width: 320px;
+}
+
+.usage-profile-filter-bar .custom-select-trigger {
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  font-size: 12px;
+}
+
 .usage-date-preset-select {
   position: relative;
   flex-shrink: 0;

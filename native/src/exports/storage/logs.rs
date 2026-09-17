@@ -8,11 +8,12 @@ use super::*;
 pub async fn list_usage_records(
     conversation_id: String,
     directory_id: String,
+    profile_name: String,
     limit: i32,
     offset: i32,
 ) -> napi::Result<crate::storage::services::usage_records::UsageRecordPage> {
     tokio::task::spawn_blocking(move || {
-        crate::storage::list_usage_records(conversation_id, directory_id, limit, offset)
+        crate::storage::list_usage_records(conversation_id, directory_id, profile_name, limit, offset)
     })
     .await
     .map_err(map_spawn_error)?
@@ -22,28 +23,44 @@ pub async fn list_usage_records(
 pub async fn get_usage_summary(
     since: String,
     until: String,
+    profile_name: String,
 ) -> napi::Result<crate::storage::services::usage_records::UsageSummary> {
-    tokio::task::spawn_blocking(move || crate::storage::get_usage_summary(since, until))
-        .await
-        .map_err(map_spawn_error)?
+    tokio::task::spawn_blocking(move || {
+        crate::storage::get_usage_summary(since, until, profile_name)
+    })
+    .await
+    .map_err(map_spawn_error)?
 }
 
 #[napi]
 pub async fn get_usage_daily_breakdown(
     since: String,
     until: String,
+    profile_name: String,
 ) -> napi::Result<Vec<crate::storage::services::usage_records::DailyUsageBreakdown>> {
-    tokio::task::spawn_blocking(move || crate::storage::get_usage_daily_breakdown(since, until))
-        .await
-        .map_err(map_spawn_error)?
+    tokio::task::spawn_blocking(move || {
+        crate::storage::get_usage_daily_breakdown(since, until, profile_name)
+    })
+    .await
+    .map_err(map_spawn_error)?
 }
 
 #[napi]
 pub async fn get_usage_model_breakdown(
     since: String,
     until: String,
+    profile_name: String,
 ) -> napi::Result<Vec<crate::storage::services::usage_records::ModelUsageBreakdown>> {
-    tokio::task::spawn_blocking(move || crate::storage::get_usage_model_breakdown(since, until))
+    tokio::task::spawn_blocking(move || {
+        crate::storage::get_usage_model_breakdown(since, until, profile_name)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn list_usage_profile_names() -> napi::Result<Vec<String>> {
+    tokio::task::spawn_blocking(crate::storage::list_usage_profile_names)
         .await
         .map_err(map_spawn_error)?
 }

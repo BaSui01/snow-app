@@ -158,33 +158,35 @@ pub fn record_usage(database_path: &Path, input: &UsageRecordInput<'_>) -> Resul
         .map(|_| ())
 }
 
-/// List usage records with optional filters. `conversation_id` and
-/// `directory_id` accept empty strings to skip filtering. `limit` and
-/// `offset` are clamped to non-negative values; `limit <= 0` defaults to 50.
+/// List usage records with optional filters. `conversation_id`,
+/// `directory_id` and `profile_name` accept empty strings to skip filtering.
+/// `limit` and `offset` are clamped to non-negative values; `limit <= 0`
+/// defaults to 50.
 pub fn list_usage_records(
     database_path: &Path,
     conversation_id: &str,
     directory_id: &str,
+    profile_name: &str,
     limit: i32,
     offset: i32,
 ) -> Result<UsageRecordPage> {
     let safe_limit = if limit > 0 { limit } else { 50 };
     let safe_offset = if offset > 0 { offset } else { 0 };
 
-    let filter_conversation = !conversation_id.trim().is_empty();
-    let filter_directory = !directory_id.trim().is_empty();
-
     database::open_connection(database_path)
         .and_then(|connection| {
             let mut where_clauses: Vec<String> = Vec::new();
-            let mut param_index = 1usize;
-            if filter_conversation {
-                where_clauses.push(format!("conversation_id = ?{param_index}"));
-                param_index += 1;
-            }
-            if filter_directory {
-                where_clauses.push(format!("directory_id = ?{param_index}"));
-                param_index += 1;
+            let mut values: Vec<String> = Vec::new();
+            for (column, value) in [
+                ("conversation_id", conversation_id),
+                ("directory_id", directory_id),
+                ("api_profile_name", profile_name),
+            ] {
+                if value.trim().is_empty() {
+                    continue;
+                }
+                values.push(value.trim().to_string());
+                where_clauses.push(format!("{column} = ?{}", values.len()));
             }
             let where_sql = if where_clauses.is_empty() {
                 String::new()
@@ -193,21 +195,9 @@ pub fn list_usage_records(
             };
 
             let count_sql = format!("SELECT COUNT(*) FROM usage_records{where_sql}");
-            let total: i32 = if filter_conversation && filter_directory {
-                connection.query_row(
-                    &count_sql,
-                    params![conversation_id.trim(), directory_id.trim()],
-                    |row| row.get(0),
-                )?
-            } else if filter_conversation {
-                connection.query_row(&count_sql, params![conversation_id.trim()], |row| {
-                    row.get(0)
-                })?
-            } else if filter_directory {
-                connection.query_row(&count_sql, params![directory_id.trim()], |row| row.get(0))?
-            } else {
-                connection.query_row(&count_sql, [], |row| row.get(0))?
-            };
+            let filter_params = to_sql_params(&values);
+            let total: i32 =
+                connection.query_row(&count_sql, filter_params.as_slice(), |row| row.get(0))?;
 
             let list_sql = format!(
                 "SELECT id,
@@ -227,35 +217,17 @@ pub fn list_usage_records(
                         created_at
                    FROM usage_records{where_sql}
                   ORDER BY created_at DESC, id DESC
-                  LIMIT ?{param_index} OFFSET ?{next}",
-                param_index = param_index,
-                next = param_index + 1
+                  LIMIT ?{limit_index} OFFSET ?{offset_index}",
+                limit_index = values.len() + 1,
+                offset_index = values.len() + 2
             );
 
+            let mut list_params = to_sql_params(&values);
+            list_params.push(&safe_limit);
+            list_params.push(&safe_offset);
+
             let mut statement = connection.prepare(&list_sql)?;
-            let rows = if filter_conversation && filter_directory {
-                statement.query_map(
-                    params![
-                        conversation_id.trim(),
-                        directory_id.trim(),
-                        safe_limit,
-                        safe_offset
-                    ],
-                    map_usage_row,
-                )?
-            } else if filter_conversation {
-                statement.query_map(
-                    params![conversation_id.trim(), safe_limit, safe_offset],
-                    map_usage_row,
-                )?
-            } else if filter_directory {
-                statement.query_map(
-                    params![directory_id.trim(), safe_limit, safe_offset],
-                    map_usage_row,
-                )?
-            } else {
-                statement.query_map(params![safe_limit, safe_offset], map_usage_row)?
-            };
+            let rows = statement.query_map(list_params.as_slice(), map_usage_row)?;
 
             let items: Vec<UsageRecord> = rows.collect::<rusqlite::Result<Vec<_>>>()?;
             Ok(UsageRecordPage { items, total })
@@ -264,28 +236,18 @@ pub fn list_usage_records(
 }
 
 /// Aggregate usage statistics over an optional time range. `since` and
-/// `until` are RFC3339/SQLite datetime strings; empty strings skip the
-/// corresponding bound.
-pub fn get_usage_summary(database_path: &Path, since: &str, until: &str) -> Result<UsageSummary> {
-    let filter_since = !since.trim().is_empty();
-    let filter_until = !until.trim().is_empty();
+/// `until` are RFC3339/SQLite datetime strings, `profile_name` an exact API
+/// profile name; empty strings skip the corresponding filter.
+pub fn get_usage_summary(
+    database_path: &Path,
+    since: &str,
+    until: &str,
+    profile_name: &str,
+) -> Result<UsageSummary> {
+    let (where_sql, values) = build_usage_filter(since, until, profile_name, false);
 
     database::open_connection(database_path)
         .and_then(|connection| {
-            let mut where_clauses: Vec<String> = Vec::new();
-            if filter_since {
-                where_clauses.push("created_at >= ?1".to_string());
-            }
-            if filter_until {
-                let idx = if filter_since { 2 } else { 1 };
-                where_clauses.push(format!("created_at <= ?{idx}"));
-            }
-            let where_sql = if where_clauses.is_empty() {
-                String::new()
-            } else {
-                format!(" WHERE {}", where_clauses.join(" AND "))
-            };
-
             let sql = format!(
                 "SELECT
                    COALESCE(SUM(input_tokens), 0),
@@ -297,51 +259,17 @@ pub fn get_usage_summary(database_path: &Path, since: &str, until: &str) -> Resu
                  FROM usage_records{where_sql}"
             );
 
-            let row = if filter_since && filter_until {
-                connection.query_row(&sql, params![since.trim(), until.trim()], |row| {
-                    Ok((
-                        row.get::<_, i64>(0)?,
-                        row.get::<_, i64>(1)?,
-                        row.get::<_, i64>(2)?,
-                        row.get::<_, i64>(3)?,
-                        row.get::<_, i64>(4)?,
-                        row.get::<_, i64>(5)?,
-                    ))
-                })?
-            } else if filter_since {
-                connection.query_row(&sql, params![since.trim()], |row| {
-                    Ok((
-                        row.get::<_, i64>(0)?,
-                        row.get::<_, i64>(1)?,
-                        row.get::<_, i64>(2)?,
-                        row.get::<_, i64>(3)?,
-                        row.get::<_, i64>(4)?,
-                        row.get::<_, i64>(5)?,
-                    ))
-                })?
-            } else if filter_until {
-                connection.query_row(&sql, params![until.trim()], |row| {
-                    Ok((
-                        row.get::<_, i64>(0)?,
-                        row.get::<_, i64>(1)?,
-                        row.get::<_, i64>(2)?,
-                        row.get::<_, i64>(3)?,
-                        row.get::<_, i64>(4)?,
-                        row.get::<_, i64>(5)?,
-                    ))
-                })?
-            } else {
-                connection.query_row(&sql, [], |row| {
-                    Ok((
-                        row.get::<_, i64>(0)?,
-                        row.get::<_, i64>(1)?,
-                        row.get::<_, i64>(2)?,
-                        row.get::<_, i64>(3)?,
-                        row.get::<_, i64>(4)?,
-                        row.get::<_, i64>(5)?,
-                    ))
-                })?
-            };
+            let query_params = to_sql_params(&values);
+            let row = connection.query_row(&sql, query_params.as_slice(), |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, i64>(4)?,
+                    row.get::<_, i64>(5)?,
+                ))
+            })?;
 
             Ok(UsageSummary {
                 total_input_tokens: row.0,
@@ -362,32 +290,18 @@ pub fn get_usage_summary(database_path: &Path, since: &str, until: &str) -> Resu
 }
 
 /// Aggregate usage by day for heatmap visualization. Returns one row per
-/// day with a non-zero request count, ordered by date ascending. `since`
-/// and `until` are SQLite datetime strings; empty strings skip the bound.
+/// day with a non-zero request count, ordered by date ascending. `since`,
+/// `until` and `profile_name` accept empty strings to skip that filter.
 pub fn get_usage_daily_breakdown(
     database_path: &Path,
     since: &str,
     until: &str,
+    profile_name: &str,
 ) -> Result<Vec<DailyUsageBreakdown>> {
-    let filter_since = !since.trim().is_empty();
-    let filter_until = !until.trim().is_empty();
+    let (where_sql, values) = build_usage_filter(since, until, profile_name, true);
 
     database::open_connection(database_path)
         .and_then(|connection| {
-            let mut where_clauses: Vec<String> = Vec::new();
-            if filter_since {
-                where_clauses.push("date(created_at) >= date(?1)".to_string());
-            }
-            if filter_until {
-                let idx = if filter_since { 2 } else { 1 };
-                where_clauses.push(format!("date(created_at) <= date(?{idx})"));
-            }
-            let where_sql = if where_clauses.is_empty() {
-                String::new()
-            } else {
-                format!(" WHERE {}", where_clauses.join(" AND "))
-            };
-
             let sql = format!(
                 "SELECT date(created_at) AS day,
                         COUNT(*) AS req_count,
@@ -401,16 +315,9 @@ pub fn get_usage_daily_breakdown(
                   ORDER BY day ASC"
             );
 
+            let query_params = to_sql_params(&values);
             let mut statement = connection.prepare(&sql)?;
-            let rows = if filter_since && filter_until {
-                statement.query_map(params![since.trim(), until.trim()], map_daily_row)?
-            } else if filter_since {
-                statement.query_map(params![since.trim()], map_daily_row)?
-            } else if filter_until {
-                statement.query_map(params![until.trim()], map_daily_row)?
-            } else {
-                statement.query_map([], map_daily_row)?
-            };
+            let rows = statement.query_map(query_params.as_slice(), map_daily_row)?;
 
             rows.collect()
         })
@@ -421,32 +328,18 @@ pub fn get_usage_daily_breakdown(
 
 /// Aggregate usage grouped by model for per-model consumption stats.
 /// Returns one row per model with non-zero request count, ordered by total
-/// tokens descending. `since` and `until` are SQLite datetime strings;
-/// empty strings skip the bound.
+/// tokens descending. `since`, `until` and `profile_name` accept empty
+/// strings to skip that filter.
 pub fn get_usage_model_breakdown(
     database_path: &Path,
     since: &str,
     until: &str,
+    profile_name: &str,
 ) -> Result<Vec<ModelUsageBreakdown>> {
-    let filter_since = !since.trim().is_empty();
-    let filter_until = !until.trim().is_empty();
+    let (where_sql, values) = build_usage_filter(since, until, profile_name, false);
 
     database::open_connection(database_path)
         .and_then(|connection| {
-            let mut where_clauses: Vec<String> = Vec::new();
-            if filter_since {
-                where_clauses.push("created_at >= ?1".to_string());
-            }
-            if filter_until {
-                let idx = if filter_since { 2 } else { 1 };
-                where_clauses.push(format!("created_at <= ?{idx}"));
-            }
-            let where_sql = if where_clauses.is_empty() {
-                String::new()
-            } else {
-                format!(" WHERE {}", where_clauses.join(" AND "))
-            };
-
             let sql = format!(
                 "SELECT model,
                         COUNT(*) AS req_count,
@@ -461,22 +354,82 @@ pub fn get_usage_model_breakdown(
                            COUNT(*) DESC"
             );
 
+            let query_params = to_sql_params(&values);
             let mut statement = connection.prepare(&sql)?;
-            let rows = if filter_since && filter_until {
-                statement.query_map(params![since.trim(), until.trim()], map_model_row)?
-            } else if filter_since {
-                statement.query_map(params![since.trim()], map_model_row)?
-            } else if filter_until {
-                statement.query_map(params![until.trim()], map_model_row)?
-            } else {
-                statement.query_map([], map_model_row)?
-            };
+            let rows = statement.query_map(query_params.as_slice(), map_model_row)?;
 
             rows.collect()
         })
         .map_err(|error| {
             database::database_error(database_path, "get usage model breakdown", error)
         })
+}
+
+/// List the distinct API profile names found in the usage records, ordered by
+/// consumed tokens descending. Used to populate the profile filter dropdown.
+pub fn list_usage_profile_names(database_path: &Path) -> Result<Vec<String>> {
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            let mut statement = connection.prepare(
+                "SELECT api_profile_name
+                   FROM usage_records
+                  WHERE TRIM(api_profile_name) <> ''
+                  GROUP BY api_profile_name
+                  ORDER BY (COALESCE(SUM(input_tokens), 0) + COALESCE(SUM(output_tokens), 0)) DESC,
+                           COUNT(*) DESC",
+            )?;
+            let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+
+            rows.collect()
+        })
+        .map_err(|error| {
+            database::database_error(database_path, "list usage profile names", error)
+        })
+}
+
+/// Builds the `WHERE` clause and its bound values shared by the usage
+/// aggregation queries. Empty `since`/`until`/`profile_name` skip that
+/// filter; `date_only` compares calendar days instead of full timestamps.
+fn build_usage_filter(
+    since: &str,
+    until: &str,
+    profile_name: &str,
+    date_only: bool,
+) -> (String, Vec<String>) {
+    let mut clauses: Vec<String> = Vec::new();
+    let mut values: Vec<String> = Vec::new();
+
+    let compare = |operator: &str, index: usize| {
+        if date_only {
+            format!("date(created_at) {operator} date(?{index})")
+        } else {
+            format!("created_at {operator} ?{index}")
+        }
+    };
+
+    if !since.trim().is_empty() {
+        values.push(since.trim().to_string());
+        clauses.push(compare(">=", values.len()));
+    }
+    if !until.trim().is_empty() {
+        values.push(until.trim().to_string());
+        clauses.push(compare("<=", values.len()));
+    }
+    if !profile_name.trim().is_empty() {
+        values.push(profile_name.trim().to_string());
+        clauses.push(format!("api_profile_name = ?{}", values.len()));
+    }
+
+    let where_sql = if clauses.is_empty() {
+        String::new()
+    } else {
+        format!(" WHERE {}", clauses.join(" AND "))
+    };
+    (where_sql, values)
+}
+
+fn to_sql_params(values: &[String]) -> Vec<&dyn rusqlite::ToSql> {
+    values.iter().map(|value| value as &dyn rusqlite::ToSql).collect()
 }
 
 /// Delete usage records within an optional time range, mirroring the

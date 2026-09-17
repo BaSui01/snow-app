@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { AutoDismissNotice } from "../../AutoDismissNotice";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
+import { CustomSelect } from "../../common/CustomSelect";
 import { DailyTrendChart } from "./DailyTrendChart";
 import { ModelDonutChart } from "./ModelDonutChart";
 import { UsageDateFilter } from "./UsageDateFilter";
@@ -24,6 +25,7 @@ import type {
 import type { UsageDatePreset, UsageSettingsPanelProps } from "./types";
 
 const PAGE_SIZE = 20;
+const ALL_PROFILES = "";
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 
@@ -147,6 +149,9 @@ export function UsageSettingsPanel({
   const [modelBreakdown, setModelBreakdown] = useState<ModelUsageBreakdown[]>(
     [],
   );
+  // 配置（档案）筛选：空字符串表示全部配置。
+  const [profileFilter, setProfileFilter] = useState<string>(ALL_PROFILES);
+  const [profileNames, setProfileNames] = useState<string[]>([]);
   const [dailyData, setDailyData] = useState<DailyUsageBreakdown[]>([]);
   // 趋势图数据：按当前筛选区间请求，与年度热力图（整年）区分开。
   const [trendData, setTrendData] = useState<DailyUsageBreakdown[]>([]);
@@ -213,6 +218,7 @@ export function UsageSettingsPanel({
         const page: UsageRecordPage = await window.snow.listUsageRecords(
           "",
           "",
+          profileFilter,
           PAGE_SIZE,
           pageOffset,
         );
@@ -231,8 +237,17 @@ export function UsageSettingsPanel({
         setIsLoading(false);
       }
     },
-    [t],
+    [profileFilter, t],
   );
+
+  const loadProfileNames = useCallback(async () => {
+    try {
+      const names = await window.snow.listUsageProfileNames();
+      setProfileNames(names ?? []);
+    } catch {
+      setProfileNames([]);
+    }
+  }, []);
 
   const loadSummaryAndHeatmap = useCallback(async () => {
     try {
@@ -242,10 +257,26 @@ export function UsageSettingsPanel({
       const heatmapUntil = formatDateForInput(now);
       const [summaryResult, dailyResult, modelResult, trendResult] =
         await Promise.all([
-          window.snow.getUsageSummary(sinceDateTime, untilDateTime),
-          window.snow.getUsageDailyBreakdown(heatmapSince, heatmapUntil),
-          window.snow.getUsageModelBreakdown(sinceDateTime, untilDateTime),
-          window.snow.getUsageDailyBreakdown(sinceDateTime, untilDateTime),
+          window.snow.getUsageSummary(
+            sinceDateTime,
+            untilDateTime,
+            profileFilter,
+          ),
+          window.snow.getUsageDailyBreakdown(
+            heatmapSince,
+            heatmapUntil,
+            profileFilter,
+          ),
+          window.snow.getUsageModelBreakdown(
+            sinceDateTime,
+            untilDateTime,
+            profileFilter,
+          ),
+          window.snow.getUsageDailyBreakdown(
+            sinceDateTime,
+            untilDateTime,
+            profileFilter,
+          ),
         ]);
       setSummary(summaryResult);
       setDailyData(dailyResult ?? []);
@@ -260,12 +291,31 @@ export function UsageSettingsPanel({
             }),
       );
     }
-  }, [sinceDateTime, untilDateTime, now, t]);
+  }, [sinceDateTime, untilDateTime, profileFilter, now, t]);
 
   const handleRefresh = useCallback(() => {
     void loadRecords(offset);
     void loadSummaryAndHeatmap();
-  }, [loadRecords, loadSummaryAndHeatmap, offset]);
+    void loadProfileNames();
+  }, [loadRecords, loadSummaryAndHeatmap, loadProfileNames, offset]);
+
+  const handleProfileFilterChange = useCallback((value: string) => {
+    setProfileFilter(value);
+    setOffset(0);
+  }, []);
+
+  const profileOptions = useMemo(
+    () => [
+      {
+        value: ALL_PROFILES,
+        label: t("settings.usageProfileAll", {
+          defaultValue: "All profiles",
+        }),
+      },
+      ...profileNames.map((name) => ({ value: name, label: name })),
+    ],
+    [profileNames, t],
+  );
 
   const clearSinceDateTime = clearSinceDate ? `${clearSinceDate} 00:00:00` : "";
   const clearUntilDateTime = clearUntilDate ? `${clearUntilDate} 23:59:59` : "";
@@ -314,7 +364,11 @@ export function UsageSettingsPanel({
         }),
       );
       setPendingClear(false);
-      await Promise.all([loadRecords(0), loadSummaryAndHeatmap()]);
+      await Promise.all([
+        loadRecords(0),
+        loadSummaryAndHeatmap(),
+        loadProfileNames(),
+      ]);
     } catch (e) {
       setError(
         e instanceof Error
@@ -331,6 +385,7 @@ export function UsageSettingsPanel({
     clearUntilDateTime,
     loadRecords,
     loadSummaryAndHeatmap,
+    loadProfileNames,
     t,
   ]);
 
@@ -341,6 +396,10 @@ export function UsageSettingsPanel({
   useEffect(() => {
     void loadSummaryAndHeatmap();
   }, [loadSummaryAndHeatmap]);
+
+  useEffect(() => {
+    void loadProfileNames();
+  }, [loadProfileNames]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
@@ -801,6 +860,29 @@ export function UsageSettingsPanel({
         tone="success"
         onDismiss={() => setClearNotice("")}
       />
+
+      <div className="usage-profile-filter-bar">
+        <span className="usage-date-filter-label">
+          {t("settings.usageProfileFilterLabel", {
+            defaultValue: "API profile",
+          })}
+        </span>
+        <CustomSelect
+          value={profileFilter}
+          options={profileOptions}
+          onChange={handleProfileFilterChange}
+          filterable
+          title={t("settings.usageProfileFilterLabel", {
+            defaultValue: "API profile",
+          })}
+          filterPlaceholder={t("settings.usageProfileFilterSearch", {
+            defaultValue: "Search profiles",
+          })}
+          noMatchText={t("settings.usageProfileFilterNoMatch", {
+            defaultValue: "No matching profile",
+          })}
+        />
+      </div>
 
       <UsageDateFilter
         preset={datePreset}

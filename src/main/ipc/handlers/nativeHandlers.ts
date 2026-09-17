@@ -1284,43 +1284,58 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       _event,
       conversationId: unknown,
       directoryId: unknown,
+      profileName: unknown,
       limit: unknown,
       offset: unknown,
     ) => {
       const convId =
         typeof conversationId === "string" ? conversationId.trim() : "";
       const dirId = typeof directoryId === "string" ? directoryId.trim() : "";
+      const profile = typeof profileName === "string" ? profileName.trim() : "";
       const safeLimit = typeof limit === "number" && limit > 0 ? limit : 50;
       const safeOffset = typeof offset === "number" && offset > 0 ? offset : 0;
-      return native.listUsageRecords(convId, dirId, safeLimit, safeOffset);
+      return native.listUsageRecords(
+        convId,
+        dirId,
+        profile,
+        safeLimit,
+        safeOffset,
+      );
     },
   );
 
   ipcMain.handle(
     "usage:get-summary",
-    (_event, since: unknown, until: unknown) => {
+    (_event, since: unknown, until: unknown, profileName: unknown) => {
       const sinceStr = typeof since === "string" ? since.trim() : "";
       const untilStr = typeof until === "string" ? until.trim() : "";
-      return native.getUsageSummary(sinceStr, untilStr);
+      const profile = typeof profileName === "string" ? profileName.trim() : "";
+      return native.getUsageSummary(sinceStr, untilStr, profile);
     },
   );
 
   ipcMain.handle(
     "usage:get-daily-breakdown",
-    (_event, since: unknown, until: unknown) => {
+    (_event, since: unknown, until: unknown, profileName: unknown) => {
       const sinceStr = typeof since === "string" ? since.trim() : "";
       const untilStr = typeof until === "string" ? until.trim() : "";
-      return native.getUsageDailyBreakdown(sinceStr, untilStr);
+      const profile = typeof profileName === "string" ? profileName.trim() : "";
+      return native.getUsageDailyBreakdown(sinceStr, untilStr, profile);
     },
   );
 
   ipcMain.handle(
     "usage:get-model-breakdown",
-    (_event, since: unknown, until: unknown) => {
+    (_event, since: unknown, until: unknown, profileName: unknown) => {
       const sinceStr = typeof since === "string" ? since.trim() : "";
       const untilStr = typeof until === "string" ? until.trim() : "";
-      return native.getUsageModelBreakdown(sinceStr, untilStr);
+      const profile = typeof profileName === "string" ? profileName.trim() : "";
+      return native.getUsageModelBreakdown(sinceStr, untilStr, profile);
     },
+  );
+
+  ipcMain.handle("usage:list-profile-names", () =>
+    native.listUsageProfileNames(),
   );
 
   ipcMain.handle(

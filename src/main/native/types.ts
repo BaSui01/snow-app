@@ -2390,18 +2390,26 @@ export type NativeBridge = {
   listUsageRecords: (
     conversationId: string,
     directoryId: string,
+    profileName: string,
     limit: number,
     offset: number,
   ) => Promise<UsageRecordPage>;
-  getUsageSummary: (since: string, until: string) => Promise<UsageSummary>;
+  getUsageSummary: (
+    since: string,
+    until: string,
+    profileName: string,
+  ) => Promise<UsageSummary>;
   getUsageDailyBreakdown: (
     since: string,
     until: string,
+    profileName: string,
   ) => Promise<DailyUsageBreakdown[]>;
   getUsageModelBreakdown: (
     since: string,
     until: string,
+    profileName: string,
   ) => Promise<ModelUsageBreakdown[]>;
+  listUsageProfileNames: () => Promise<string[]>;
   deleteUsageRecords: (since: string, until: string) => Promise<number>;
   writeAppLog: (input: AppLogInput) => Promise<void>;
   /** Executes a scheduled-task pre-script (shell command) in the project cwd. */

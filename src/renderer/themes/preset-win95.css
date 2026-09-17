@@ -278,6 +278,18 @@
   box-shadow: var(--w95-in-flat);
 }
 
+/* 关闭按钮悬停/按下保留系统红色警示底，覆盖上面的通用灰底悬停 */
+:root[data-theme-preset="win95"]
+  .window-control-btn.close-btn:is(:hover, :active):not(:disabled) {
+  background: #e81123;
+  color: #ffffff;
+}
+
+:root[data-theme-preset="win95"]
+  .window-control-btn.close-btn:active:not(:disabled) {
+  background: #b30d1b;
+}
+
 :root[data-theme-preset="win95"]
   :is(
     .api-settings-action-btn,

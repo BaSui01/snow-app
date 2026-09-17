@@ -3,6 +3,7 @@ import {
   Bubbles,
   CheckCircle2,
   ChevronRight,
+  ChevronUp,
   Timer,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -28,6 +29,9 @@ const THINKING_LONG_TEXT_CHARS = 100_000;
 const THINKING_LONG_TEXT_INTERVAL_MS = 600;
 
 const COLLAPSE_ANIMATION_MAX_CHARS = 4000;
+
+/** 思考内容超过该长度时，内容底部追加"收起"按钮，读完即可就地收起。 */
+const COLLAPSE_FOOTER_MIN_CHARS = 320;
 
 const formatTokenCount = (count: number): string =>
   count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count);
@@ -216,6 +220,8 @@ export const ThinkingBlock = ({
       ? THINKING_LONG_TEXT_INTERVAL_MS
       : THINKING_RENDER_INTERVAL_MS;
   const instantCollapse = content.length > COLLAPSE_ANIMATION_MAX_CHARS;
+  // 长内容才需要底部收起入口；短内容贴近头部，不必多此一举。
+  const showFooterButton = content.length >= COLLAPSE_FOOTER_MIN_CHARS;
 
   return (
     <div className="thinking-block">
@@ -307,6 +313,22 @@ export const ThinkingBlock = ({
               />
             )}
           </div>
+          {/* 底部收起入口：长内容读到末尾时不必再滚回头部，就地收起。
+              与 MarkdownBlock 同生命周期挂载，避免收起动画中途高度突变。 */}
+          {contentMounted && showFooterButton ? (
+            <div className="thinking-block-footer">
+              <button
+                className="thinking-block-footer-btn"
+                type="button"
+                title={t("chat.collapse")}
+                aria-label={t("chat.collapse")}
+                onClick={handleToggleCollapse}
+              >
+                <ChevronUp size={13} aria-hidden="true" />
+                <span>{t("chat.collapse")}</span>
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

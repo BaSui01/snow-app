@@ -12492,6 +12492,44 @@ input {
   transition: visibility 0.3s;
 }
 
+/* 底部"收起"入口：长思考内容读到末尾时就地收起，省去滚回头部。
+   左对齐更符合阅读视线落点，与正文左边缘对齐（2px + 12px）。 */
+.thinking-block-footer {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 6px;
+  margin-left: 14px;
+}
+
+.thinking-block-footer-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: pointer;
+  transition:
+    color 0.14s ease,
+    background-color 0.14s ease,
+    border-color 0.14s ease;
+}
+
+.thinking-block-footer-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border-color: var(--border-strong, var(--border-light));
+}
+
+.thinking-block-footer-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-primary, #4c9aff);
+}
+
 /* 思考正文：字号小于正文并拉开行距，与正文形成层级差 */
 .thinking-block-body {
   color: var(--text-secondary);
@@ -12908,6 +12946,7 @@ input {
 
   .tcg-collapse,
   .thinking-block-collapse,
+  .thinking-block-footer-btn,
   .tcn-dot {
     transition: none;
   }

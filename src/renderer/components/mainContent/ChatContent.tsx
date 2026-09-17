@@ -474,6 +474,9 @@ const ChatContentBody = ({
   const previousIsCompactingRef = useRef(isCompactingActive);
   const scrollRafIdRef = useRef(0);
   const wheelScrollbarTimerRef = useRef(0);
+  // 自动续页：上一轮基线高度 + 连续未长高轮次。
+  const autoFillStartHeightRef = useRef(0);
+  const autoFillStallRef = useRef(0);
   const hasMessagesRef = useRef(hasMessages);
   const messagesRef = useRef(messages);
   const autoScrollEnabledRef = useRef(autoScrollEnabled);
@@ -612,6 +615,9 @@ const ChatContentBody = ({
     if (activeConversationId) {
       positionedConversationIdsRef.current.delete(activeConversationId);
     }
+
+    autoFillStartHeightRef.current = 0;
+    autoFillStallRef.current = 0;
 
     const container = scrollRef.current;
     if (container) {
@@ -1092,6 +1098,59 @@ const ChatContentBody = ({
     isLoadingOlderWithScrollRef.current = false;
   }, [messages, activeConversationId, restoreTick]);
 
+  // 内容不足一屏时容器不可滚动，scroll 事件永不触发，唯一的分页入口
+  // （handleChatScroll 的顶部阈值）就此死锁：首屏只取 CHAT_MESSAGE_PAGE_SIZE
+  // 条 DB 记录，其中 role=tool 记录会被折叠进上一条 assistant，渲染高度可能
+  // 远不满一屏。这里在每页落地后复检，仍不足一屏且还有更早记录就继续续页，
+  // 直到出现滚动条或没有更多；连续两轮没让内容长高则停止，避免把整段历史
+  // 全部拉进内存。
+  useLayoutEffect(() => {
+    const container = scrollRef.current;
+    if (
+      !container ||
+      !activeConversationId ||
+      !isChatAreaRendered ||
+      !isInitialHistoryLoaded ||
+      isLoadingInitialHistory ||
+      isLoadingOlderMessages ||
+      isStreaming ||
+      !hasMoreMessages ||
+      messages.length === 0 ||
+      pendingScrollRestoreRef.current !== null ||
+      isLoadingOlderWithScrollRef.current
+    ) {
+      return;
+    }
+    if (container.scrollHeight > container.clientHeight + 1) {
+      return;
+    }
+
+    const baselineHeight = autoFillStartHeightRef.current;
+    autoFillStartHeightRef.current = container.scrollHeight;
+    if (baselineHeight > 0 && container.scrollHeight <= baselineHeight + 1) {
+      autoFillStallRef.current += 1;
+      if (autoFillStallRef.current > 1) {
+        return;
+      }
+    } else {
+      autoFillStallRef.current = 0;
+    }
+
+    void handleLoadOlderWithScroll();
+  }, [
+    activeConversationId,
+    chatRenderKey,
+    hasMoreMessages,
+    isChatAreaRendered,
+    isInitialHistoryLoaded,
+    isLoadingInitialHistory,
+    isLoadingOlderMessages,
+    isStreaming,
+    messages.length,
+    restoreTick,
+    handleLoadOlderWithScroll,
+  ]);
+
   const markUserScrollIntent = useCallback((direction: number): void => {
     isUserScrollIntentRef.current = true;
     isInitialBottomPositioningRef.current = false;
@@ -1165,6 +1224,14 @@ const ChatContentBody = ({
         if (container.scrollTop > 0) {
           shouldStickToBottomRef.current = false;
           syncScrollButtonVisibility(container);
+        } else if (
+          hasMoreMessages &&
+          !isLoadingOlderMessages &&
+          container.scrollHeight <= container.clientHeight + 1
+        ) {
+          // 内容不足一屏：容器没有可滚动区间，滚轮不产生 scroll 事件，
+          // 常规的「滚到顶部加载更早记录」通道失效，这里按手势显式续页。
+          void handleLoadOlderWithScroll();
         }
         return;
       }
@@ -1176,7 +1243,14 @@ const ChatContentBody = ({
         setShowScrollToBottom(false);
       }
     },
-    [flashChatScrollbar, markUserScrollIntent, syncScrollButtonVisibility],
+    [
+      flashChatScrollbar,
+      handleLoadOlderWithScroll,
+      hasMoreMessages,
+      isLoadingOlderMessages,
+      markUserScrollIntent,
+      syncScrollButtonVisibility,
+    ],
   );
 
   const handleChatPointerDown = useCallback(

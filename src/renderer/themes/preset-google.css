@@ -1761,6 +1761,12 @@
 }
 
 :root[data-theme-preset="google"]
+  .project-collection-delete-btn:hover:not(:disabled) {
+  background: var(--google-red-container);
+  color: var(--google-red);
+}
+
+:root[data-theme-preset="google"]
   :is(
     .scheduled-task-action-btn,
     .scheduled-task-copy-btn,

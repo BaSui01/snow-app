@@ -982,6 +982,12 @@
 }
 
 :root[data-theme-preset="cream"]
+  .project-collection-delete-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--danger);
+}
+
+:root[data-theme-preset="cream"]
   :is(
     .memo-icon-btn,
     .memo-sort-btn,

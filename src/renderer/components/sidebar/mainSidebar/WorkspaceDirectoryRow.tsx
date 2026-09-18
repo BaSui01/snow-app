@@ -1,6 +1,4 @@
 import {
-  Folder,
-  FolderOpen,
   FolderX,
   GripVertical,
   HardDriveDownload,
@@ -11,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import type { DragEvent } from "react";
 
 import { useI18n } from "../../../i18n";
+import { getFileTypeIcon } from "../../../utils/fileIcons";
 import type { WorkspaceDirectoryRecord } from "../../../../preload";
 import { WorkspaceDirectoryMenu } from "./WorkspaceDirectoryMenu";
 
@@ -60,11 +59,11 @@ const getDirectoryIcon = (
     return <Server className="list-icon list-icon--ssh" size={15} />;
   }
 
-  if (directory.isActive) {
-    return <FolderOpen className="list-icon list-icon--local" size={15} />;
-  }
-
-  return <Folder className="list-icon list-icon--local" size={15} />;
+  // 本地文件夹配色复用资源管理器（utils/fileIcons）
+  return getFileTypeIcon(directory.name, true, directory.isActive, {
+    className: "list-icon",
+    size: 15,
+  });
 };
 
 const FAILED_PATH_STATES = [

@@ -1181,11 +1181,7 @@ input {
   flex-shrink: 0;
 }
 
-/* 项目列表图标语义配色：本地=蓝 / SSH=红 / 合集=绿 */
-.list-icon--local {
-  color: var(--accent-blue-text);
-}
-
+/* 项目列表图标语义配色：SSH=红 / 合集=绿（本地文件夹沿用资源管理器配色） */
 .list-icon--ssh {
   color: var(--accent-red-text);
 }
@@ -2833,6 +2829,11 @@ input {
 .project-collection-row:hover .project-collection-actions,
 .project-collection-row:focus-within .project-collection-actions {
   opacity: 1;
+}
+
+.project-collection-delete-btn:hover:not(:disabled) {
+  background: var(--accent-red-bg);
+  color: var(--accent-red);
 }
 
 /* 合集成员项目列表：缩进 + 左侧引导线 */

@@ -429,7 +429,7 @@ export function WorkspaceDirectoryList({
                       aria-label={t("sidebar.deleteCollection", {
                         defaultValue: "Delete collection",
                       })}
-                      className="icon-btn ghost"
+                      className="icon-btn ghost project-collection-delete-btn"
                       disabled={isActionLocked}
                       onClick={() => onDeleteCollection(collection)}
                       title={t("sidebar.deleteCollection", {

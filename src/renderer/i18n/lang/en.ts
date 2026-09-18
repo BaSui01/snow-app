@@ -698,6 +698,8 @@ export const en = {
   "chat.forkedFromConversation": "Forked from conversation",
   "chat.runSummary.duration": "Current conversation cumulative duration",
   "chat.runSummary.tokens": "Current conversation total token usage",
+  "chat.runSummary.ttft":
+    "Current conversation average TTFT (time to first token)",
   "chat.runSummary.speed": "Current conversation average output speed",
   "chat.runSummary.cacheWrite": "Current conversation cache write",
   "chat.runSummary.cacheRead": "Current conversation cache hit",

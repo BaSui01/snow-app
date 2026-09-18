@@ -20,8 +20,10 @@ const setBusy = (busy: boolean): void => {
   submitting = busy;
   const input = $<HTMLInputElement>("unlockInput");
   const submit = $<HTMLButtonElement>("unlockSubmit");
+  const paste = $<HTMLButtonElement>("unlockPaste");
   input.disabled = busy;
   submit.disabled = busy;
+  paste.disabled = busy;
   submit.textContent = t(busy ? "remote.unlock.busy" : "remote.unlock.submit");
 };
 
@@ -44,7 +46,9 @@ export const hideUnlock = (): void => {
   $("unlockOverlay").classList.remove("open");
 };
 
-const submit = async (onUnlocked: () => void | Promise<void>): Promise<void> => {
+const submit = async (
+  onUnlocked: () => void | Promise<void>,
+): Promise<void> => {
   const input = $<HTMLInputElement>("unlockInput");
   const token = input.value.trim();
   if (!token) {
@@ -73,9 +77,58 @@ const submit = async (onUnlocked: () => void | Promise<void>): Promise<void> => 
   }
 };
 
+const supportsTextSecurity = (): boolean =>
+  typeof CSS !== "undefined" &&
+  typeof CSS.supports === "function" &&
+  CSS.supports("-webkit-text-security", "disc");
+
+const applyTokenFieldType = (): void => {
+  const input = $<HTMLInputElement>("unlockInput");
+  input.type = supportsTextSecurity() ? "text" : "password";
+};
+
+const readClipboardText = async (): Promise<string> => {
+  const clipboard = navigator.clipboard;
+  if (!clipboard?.readText) return "";
+  try {
+    return await clipboard.readText();
+  } catch {
+    return "";
+  }
+};
+
+const legacyPaste = (input: HTMLInputElement): string => {
+  const before = input.value;
+  input.focus();
+  input.setSelectionRange(before.length, before.length);
+  try {
+    if (!document.execCommand("paste")) return "";
+  } catch {
+    return "";
+  }
+  return input.value.length > before.length ? input.value.trim() : "";
+};
+
+const pasteToken = async (): Promise<void> => {
+  if (submitting) return;
+  const input = $<HTMLInputElement>("unlockInput");
+  const token = (await readClipboardText()).trim() || legacyPaste(input);
+  if (!token) {
+    input.focus();
+    showNotice(t("remote.unlock.pasteHint"), true);
+    return;
+  }
+  input.value = token;
+  setError("");
+  input.focus();
+  input.setSelectionRange(token.length, token.length);
+};
+
 /** 装配令牌页：提交、重新加载，以及离线空态里的「填写令牌」入口。 */
 export const initUnlock = (onUnlocked: () => void | Promise<void>): void => {
+  applyTokenFieldType();
   setBusy(false);
+  $("unlockPaste").addEventListener("click", () => void pasteToken());
   $("unlockForm").addEventListener("submit", (event) => {
     event.preventDefault();
     if (!submitting) void submit(onUnlocked);

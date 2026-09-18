@@ -99,6 +99,8 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
           goalModeTokenBudget: defaults.goalModeTokenBudget,
           runTokenUsage: null,
           lastRunDurationMs: 0,
+          runTtftSumMs: 0,
+          runRequestCount: 0,
         });
       }
       ctx.setSessions((prev) => {
@@ -122,10 +124,14 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
             streamElapsedMs: 0,
             streamTtftMs: 0,
             runTtftMs: 0,
+            runTtftSumMs: 0,
+            runRequestCount: 0,
             streamStartedAt: 0,
             runTokenUsage: null,
             conversationTokenUsage: null,
             lastRunDurationMs: 0,
+            conversationTtftSumMs: 0,
+            conversationRequestCount: 0,
           },
         };
       });

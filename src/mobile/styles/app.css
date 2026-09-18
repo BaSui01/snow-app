@@ -3692,7 +3692,13 @@ html[data-i18n-pending] body {
   flex-direction: column;
   gap: 10px;
 }
+.unlock-field {
+  display: flex;
+  gap: 8px;
+}
 .unlock-form input {
+  flex: 1;
+  min-width: 0;
   height: 46px;
   padding: 0 14px;
   border: 1px solid var(--line);
@@ -3703,6 +3709,18 @@ html[data-i18n-pending] body {
   font: inherit;
   font-size: 14px;
   text-align: center;
+  -webkit-text-security: disc;
+}
+.unlock-form .unlock-paste {
+  flex: none;
+  height: 46px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
 }
 .unlock-form input:focus {
   border-color: var(--accent-color-border);

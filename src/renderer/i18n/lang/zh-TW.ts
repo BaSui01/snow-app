@@ -662,6 +662,7 @@ export const zhTW = {
   "chat.forkedFromConversation": "從對話中派生",
   "chat.runSummary.duration": "目前對話累計耗時",
   "chat.runSummary.tokens": "目前對話總 Token 消耗",
+  "chat.runSummary.ttft": "目前對話平均 TTFT（首 Token 延遲）",
   "chat.runSummary.speed": "目前對話平均輸出速度",
   "chat.runSummary.cacheWrite": "目前對話快取寫入",
   "chat.runSummary.cacheRead": "目前對話快取命中",

@@ -749,6 +749,8 @@ export const useChatConversation = (
     runTokenUsage: activeSession?.runTokenUsage ?? null,
     conversationTokenUsage: activeSession?.conversationTokenUsage ?? null,
     lastRunDurationMs: activeSession?.lastRunDurationMs ?? 0,
+    conversationTtftSumMs: activeSession?.conversationTtftSumMs ?? 0,
+    conversationRequestCount: activeSession?.conversationRequestCount ?? 0,
     streamTokenCount: activeSession?.streamTokenCount ?? 0,
     streamElapsedMs: activeSession?.streamElapsedMs ?? 0,
     streamTtftMs: activeSession?.streamTtftMs ?? 0,

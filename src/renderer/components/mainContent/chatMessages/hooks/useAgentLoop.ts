@@ -444,6 +444,8 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             runCacheCreationInputTokens: 0,
             runCacheReadInputTokens: 0,
             lastRunDurationMs: 0,
+            runTtftSumMs: 0,
+            runRequestCount: 0,
             emoji: "",
           },
           timestamp: Date.now(),
@@ -1836,13 +1838,17 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           // 统计（内存 + DB 双向，展示的是整个会话的累计值）。耗时用
           // 本地 runStartedAt 计算，不受 catch 分支提前清零的影响。
           const runDurationMs = Math.max(0, Date.now() - runStartedAt);
-          const runUsage =
-            ctx.sessionsRefData.current.get(finalSessionKey)?.runTokenUsage;
+          const finalRef = ctx.sessionsRefData.current.get(finalSessionKey);
+          const runUsage = finalRef?.runTokenUsage;
+          const runTtftSumMs = finalRef?.runTtftSumMs ?? 0;
+          const runRequestCount = finalRef?.runRequestCount ?? 0;
           accumulateConversationRunStats(
             ctx,
             finalSessionKey,
             runUsage,
             runDurationMs,
+            runTtftSumMs,
+            runRequestCount,
           );
 
           if (!isPendingSessionKey(finalSessionKey)) {
@@ -1854,6 +1860,8 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                 runUsage?.cacheCreationInputTokens ?? 0,
                 runUsage?.cacheReadInputTokens ?? 0,
                 runDurationMs,
+                runTtftSumMs,
+                runRequestCount,
               )
               .catch(() => {
                 // 持久化失败不阻塞收尾

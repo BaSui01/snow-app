@@ -1139,8 +1139,18 @@ const createSubAgentFinalizer = (
       ctx.sessionsRef.current?.[convId]?.streamStartedAt ?? 0;
     if (finalizeStartedAt > 0) {
       const finalizeDurationMs = Math.max(0, Date.now() - finalizeStartedAt);
-      const runUsage = ctx.sessionsRefData.current.get(convId)?.runTokenUsage;
-      accumulateConversationRunStats(ctx, convId, runUsage, finalizeDurationMs);
+      const finalRefStats = ctx.sessionsRefData.current.get(convId);
+      const runUsage = finalRefStats?.runTokenUsage;
+      const runTtftSumMs = finalRefStats?.runTtftSumMs ?? 0;
+      const runRequestCount = finalRefStats?.runRequestCount ?? 0;
+      accumulateConversationRunStats(
+        ctx,
+        convId,
+        runUsage,
+        finalizeDurationMs,
+        runTtftSumMs,
+        runRequestCount,
+      );
       // 持久化（Rust 端累加），重启后打开子代理会话仍可完整回显。
       void window.snow
         .setConversationRunStats(
@@ -1150,6 +1160,8 @@ const createSubAgentFinalizer = (
           runUsage?.cacheCreationInputTokens ?? 0,
           runUsage?.cacheReadInputTokens ?? 0,
           finalizeDurationMs,
+          runTtftSumMs,
+          runRequestCount,
         )
         .catch(() => {
           // 持久化失败不阻塞收尾

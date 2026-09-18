@@ -770,6 +770,8 @@ fn migrate_chat_conversations_run_stats(connection: &Connection) -> rusqlite::Re
         ),
         ("run_cache_read_input_tokens", "INTEGER NOT NULL DEFAULT 0"),
         ("last_run_duration_ms", "INTEGER NOT NULL DEFAULT 0"),
+        ("run_ttft_sum_ms", "INTEGER NOT NULL DEFAULT 0"),
+        ("run_request_count", "INTEGER NOT NULL DEFAULT 0"),
     ] {
         if !columns.iter().any(|column| column == name) {
             connection.execute(

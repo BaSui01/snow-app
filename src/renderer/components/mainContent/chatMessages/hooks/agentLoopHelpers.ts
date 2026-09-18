@@ -24,7 +24,7 @@ export const PARENT_PLAN_APPROVAL_REQUIRED = "PARENT_PLAN_APPROVAL_REQUIRED";
 
 export const isStructuredPlanApproval = (
   toolName: string,
-  result: string
+  result: string,
 ): boolean => {
   if (toolName !== PLAN_APPROVAL_TOOL_NAME) {
     return false;
@@ -49,7 +49,7 @@ export const isStructuredPlanApproval = (
  */
 export const createIsRunCancelled = (
   ctx: ConversationContextValue,
-  currentRunId: number
+  currentRunId: number,
 ) => {
   return (key: string): boolean => {
     const r = ctx.sessionsRefData.current.get(key);
@@ -74,7 +74,7 @@ export const createIsRunCancelled = (
 export const remapPersistedUserMessageIds = (
   ctx: ConversationContextValue,
   sessionKey: string,
-  persistedUserMessageIds: string[]
+  persistedUserMessageIds: string[],
 ): ReadonlyMap<string, string> => {
   if (!persistedUserMessageIds || persistedUserMessageIds.length === 0) {
     return new Map();
@@ -102,7 +102,7 @@ export const remapPersistedUserMessageIds = (
   const idRemap = new Map<string, string>();
   const remapCount = Math.min(
     pendingUserIds.length,
-    persistedUserMessageIds.length
+    persistedUserMessageIds.length,
   );
   for (let i = 0; i < remapCount; i++) {
     idRemap.set(pendingUserIds[i], persistedUserMessageIds[i]);
@@ -113,7 +113,7 @@ export const remapPersistedUserMessageIds = (
       msgs.map((m) => {
         const newId = idRemap.get(m.id);
         return newId ? { ...m, id: newId } : m;
-      })
+      }),
     );
   }
 
@@ -134,7 +134,7 @@ export const createAwaitHookDecision = (ctx: ConversationContextValue) => {
   return async (
     key: string,
     messageId: string,
-    record: HookExecutionRecord
+    record: HookExecutionRecord,
   ): Promise<boolean> => {
     const decisionId = `${messageId}-${
       record.hookType
@@ -162,8 +162,8 @@ export const createAwaitHookDecision = (ctx: ConversationContextValue) => {
             _decisionId: decisionId,
             _resolveDecision: settle,
           },
-          messageId
-        )
+          messageId,
+        ),
       );
     });
 
@@ -181,11 +181,11 @@ export const createAwaitHookDecision = (ctx: ConversationContextValue) => {
                         status: approved ? "pass" : "abort",
                         _resolveDecision: undefined,
                       }
-                    : execution
+                    : execution,
               ),
             }
-          : currentMessage
-      )
+          : currentMessage,
+      ),
     );
     return approved;
   };
@@ -200,18 +200,22 @@ export const createAwaitHookDecision = (ctx: ConversationContextValue) => {
  *  reset: they accumulate across every run of the conversation. */
 export const resetRunStreamMetrics = (
   ctx: ConversationContextValue,
-  sessionKey: string
+  sessionKey: string,
 ): void => {
   ctx.updateSessionField(sessionKey, "streamTokenCount", 0);
   ctx.updateSessionField(sessionKey, "streamElapsedMs", 0);
   ctx.updateSessionField(sessionKey, "streamTtftMs", 0);
   ctx.updateSessionField(sessionKey, "runTtftMs", 0);
+  ctx.updateSessionField(sessionKey, "runTtftSumMs", 0);
+  ctx.updateSessionField(sessionKey, "runRequestCount", 0);
   ctx.updateSessionField(sessionKey, "runTokenUsage", null);
   const refSession = ctx.sessionsRefData.current.get(sessionKey);
   if (refSession) {
     refSession.iterationTokenCount = 0;
     refSession.iterationElapsedMs = 0;
     refSession.runTokenUsage = null;
+    refSession.runTtftSumMs = 0;
+    refSession.runRequestCount = 0;
   }
 };
 
@@ -223,7 +227,7 @@ export const resetRunStreamMetrics = (
  *  count, tok/s and TTFT restart from zero on every iteration. */
 export const resetIterationStreamMetrics = (
   ctx: ConversationContextValue,
-  sessionKey: string
+  sessionKey: string,
 ): void => {
   ctx.updateSessionField(sessionKey, "streamTokenCount", 0);
   ctx.updateSessionField(sessionKey, "streamElapsedMs", 0);
@@ -241,7 +245,7 @@ export const resetIterationStreamMetrics = (
 export const accumulateRunTokenUsage = (
   ctx: ConversationContextValue,
   sessionKey: string,
-  usage: TokenUsage | null | undefined
+  usage: TokenUsage | null | undefined,
 ): void => {
   if (!usage) {
     return;
@@ -273,7 +277,9 @@ export const accumulateConversationRunStats = (
   ctx: ConversationContextValue,
   sessionKey: string,
   runUsage: TokenUsage | null | undefined,
-  runDurationMs: number
+  runDurationMs: number,
+  runTtftSumMs: number,
+  runRequestCount: number,
 ): void => {
   const current = ctx.sessionsRef.current?.[sessionKey]?.conversationTokenUsage;
   ctx.updateSessionField(sessionKey, "conversationTokenUsage", {
@@ -291,7 +297,21 @@ export const accumulateConversationRunStats = (
   ctx.updateSessionField(
     sessionKey,
     "lastRunDurationMs",
-    currentDuration + Math.max(0, runDurationMs)
+    currentDuration + Math.max(0, runDurationMs),
+  );
+  const currentTtftSum =
+    ctx.sessionsRef.current?.[sessionKey]?.conversationTtftSumMs ?? 0;
+  ctx.updateSessionField(
+    sessionKey,
+    "conversationTtftSumMs",
+    currentTtftSum + Math.max(0, runTtftSumMs),
+  );
+  const currentRequestCount =
+    ctx.sessionsRef.current?.[sessionKey]?.conversationRequestCount ?? 0;
+  ctx.updateSessionField(
+    sessionKey,
+    "conversationRequestCount",
+    currentRequestCount + Math.max(0, runRequestCount),
   );
 };
 
@@ -307,7 +327,7 @@ export const accumulateConversationRunStats = (
 export const applyStreamChunkToMessage = (
   currentMessage: ChatConversationMessage,
   chunk: ResponsesApiStreamChunk,
-  timestamp: string = formatMessageTime()
+  timestamp: string = formatMessageTime(),
 ): ChatConversationMessage => {
   const {
     isRetrying: _isRetrying,
@@ -341,18 +361,18 @@ export const applyStreamChunkToMessage = (
   const nextThinkingTokenCount =
     chunk.thinkingTokenCount > 0
       ? chunk.thinkingTokenCount
-      : ordinaryStreamingMessage.thinkingTokenCount ?? 0;
+      : (ordinaryStreamingMessage.thinkingTokenCount ?? 0);
   const nextThinkingDurationMs =
     chunk.thinkingDurationMs > 0
       ? chunk.thinkingDurationMs
-      : ordinaryStreamingMessage.thinkingDurationMs ?? 0;
+      : (ordinaryStreamingMessage.thinkingDurationMs ?? 0);
   // The thinking phase is active while thinking deltas keep arriving; the
   // first content delta (or the end of the stream) marks it as finished.
   const nextIsThinkingActive = chunk.thinkingDelta
     ? true
     : chunk.contentDelta || chunk.content
-    ? false
-    : ordinaryStreamingMessage.isThinkingActive ?? false;
+      ? false
+      : (ordinaryStreamingMessage.isThinkingActive ?? false);
 
   return {
     ...ordinaryStreamingMessage,
@@ -379,7 +399,7 @@ export const createStreamChunkHandler = (
   ctx: ConversationContextValue,
   sessionKey: string,
   assistantMessageId: string,
-  isCancelled: () => boolean
+  isCancelled: () => boolean,
 ) => {
   const refSession = ctx.sessionsRefData.current.get(sessionKey);
   const iterationTokenBase = refSession?.iterationTokenCount ?? 0;
@@ -390,6 +410,8 @@ export const createStreamChunkHandler = (
   // 精度无感，但把每 chunk 的 setState 次数从 3 次降到 1 次（消息更新）。
   let lastMetricsAt = 0;
   const METRICS_UPDATE_INTERVAL_MS = 250;
+  // 本次迭代的 TTFT 是否已计入 run 级总和（每次迭代只记一次）。
+  let iterationTtftRecorded = false;
 
   return (chunk: ResponsesApiStreamChunk): void => {
     // External-vision textify progress event: update the session-level
@@ -417,7 +439,7 @@ export const createStreamChunkHandler = (
           ctx.updateSessionField(
             sessionKey,
             "visionAnalysis",
-            keep ? parsed : undefined
+            keep ? parsed : undefined,
           );
         }
       } catch {
@@ -455,6 +477,25 @@ export const createStreamChunkHandler = (
     ) {
       ctx.updateSessionField(sessionKey, "runTtftMs", chunk.ttftMs);
     }
+    // 每次迭代（一个 createResponseStream 调用）只累加一次 TTFT：本次迭代的
+    // 首个 TTFT 到达时记入 run 级总和与请求数，收尾时折算进会话累计平均。
+    if (chunk.ttftMs > 0 && !iterationTtftRecorded) {
+      iterationTtftRecorded = true;
+      if (refSession) {
+        refSession.runTtftSumMs += chunk.ttftMs;
+        refSession.runRequestCount += 1;
+      }
+      ctx.updateSessionField(
+        sessionKey,
+        "runTtftSumMs",
+        (ctx.sessionsRef.current[sessionKey]?.runTtftSumMs ?? 0) + chunk.ttftMs,
+      );
+      ctx.updateSessionField(
+        sessionKey,
+        "runRequestCount",
+        (ctx.sessionsRef.current[sessionKey]?.runRequestCount ?? 0) + 1,
+      );
+    }
 
     ctx.updateSessionMessages(sessionKey, (currentMessages) =>
       currentMessages.map((currentMessage) => {
@@ -463,7 +504,7 @@ export const createStreamChunkHandler = (
         }
 
         return applyStreamChunkToMessage(currentMessage, chunk);
-      })
+      }),
     );
   };
 };
@@ -480,7 +521,7 @@ export const createStreamChunkHandler = (
 export const createStreamIdHandler = (
   ctx: ConversationContextValue,
   sessionKey: string,
-  isCancelled: () => boolean
+  isCancelled: () => boolean,
 ) => {
   return (streamId: string): void => {
     const ref = ctx.sessionsRefData.current.get(sessionKey);
@@ -495,8 +536,8 @@ export const createStreamIdHandler = (
         const reason = !liveRef
           ? "session-ref-missing"
           : liveRef.isAbortRequested
-          ? "abort-requested"
-          : `runId-changed(live=${liveRef.runId})`;
+            ? "abort-requested"
+            : `runId-changed(live=${liveRef.runId})`;
         void window.snow.writeLog("WARN", {
           module: "chat/stream",
           func: "createStreamIdHandler",

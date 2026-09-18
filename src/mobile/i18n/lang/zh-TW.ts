@@ -30,6 +30,8 @@ export const zhTW: Record<string, string> = {
   "remote.unlock.lead":
     "這支手機尚未與 Snow 建立信任。填寫電腦端「設定 → 手機遠控」顯示的權杖即可連線。",
   "remote.unlock.placeholder": "貼上或輸入存取權杖",
+  "remote.unlock.paste": "貼上",
+  "remote.unlock.pasteHint": "無法讀取剪貼簿，請長按輸入框選擇「貼上」",
   "remote.unlock.submit": "連線",
   "remote.unlock.busy": "正在驗證…",
   "remote.unlock.empty": "請先輸入權杖",

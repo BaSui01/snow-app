@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import {
+  Clock,
   Database,
   Gauge,
   GitFork,
@@ -19,6 +20,7 @@ import { ModelBrandIcon } from "../../../common/ModelBrandIcon";
 import { Tooltip } from "../../../common/Tooltip";
 import { useI18n } from "../../../../i18n";
 import { formatTokens } from "../../../../utils/formatTokens";
+import { formatTtft } from "../../../../utils/formatTtft";
 import { AiResponse } from "./AiResponse";
 import { CompactionMessage } from "./CompactionMessage";
 import { UserMessage } from "./UserMessage";
@@ -230,6 +232,8 @@ export const ChatMessageList = ({
     triggeredByTask,
     conversationTokenUsage,
     lastRunDurationMs,
+    conversationTtftSumMs,
+    conversationRequestCount,
   } = useChatConversationContext();
 
   const lastAssistantMessageId = useMemo(() => {
@@ -340,7 +344,8 @@ export const ChatMessageList = ({
       lastRunDurationMs > 0 ||
       totalTokens > 0 ||
       cacheRead > 0 ||
-      cacheWrite > 0;
+      cacheWrite > 0 ||
+      conversationRequestCount > 0;
     if (!hasStats) {
       return null;
     }
@@ -357,6 +362,22 @@ export const ChatMessageList = ({
           <span className="chat-run-summary-item">
             <Timer size={12} strokeWidth={1.8} aria-hidden="true" />
             <span>{formatDuration(lastRunDurationMs)}</span>
+          </span>
+        </Tooltip>,
+      );
+    }
+    if (conversationRequestCount > 0 && conversationTtftSumMs > 0) {
+      const averageTtftMs = conversationTtftSumMs / conversationRequestCount;
+      items.push(
+        <Tooltip
+          key="ttft"
+          content={t("chat.runSummary.ttft", {
+            defaultValue: "当前会话平均 TTFT（首 Token 延迟）",
+          })}
+        >
+          <span className="chat-run-summary-item">
+            <Clock size={12} strokeWidth={1.8} aria-hidden="true" />
+            <span>{formatTtft(averageTtftMs)}</span>
           </span>
         </Tooltip>,
       );

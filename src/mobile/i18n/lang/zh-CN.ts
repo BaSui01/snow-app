@@ -35,6 +35,8 @@ export const zhCN: Record<string, string> = {
   "remote.unlock.lead":
     "这台手机还没有与 Snow 建立信任。填写电脑端「设置 → 手机远控」显示的令牌即可连接。",
   "remote.unlock.placeholder": "粘贴或输入访问令牌",
+  "remote.unlock.paste": "粘贴",
+  "remote.unlock.pasteHint": "无法读取剪贴板，请长按输入框选择「粘贴」",
   "remote.unlock.submit": "连接",
   "remote.unlock.busy": "正在验证…",
   "remote.unlock.empty": "请先输入令牌",

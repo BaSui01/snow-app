@@ -373,6 +373,8 @@ export const useConversationManagement = (
                   subAgentTerminated: isTerminatedSubAgent || undefined,
                   runTokenUsage: null,
                   lastRunDurationMs: 0,
+                  runTtftSumMs: 0,
+                  runRequestCount: 0,
                 });
               }
               ctx.setSessions((prev) => {
@@ -400,6 +402,8 @@ export const useConversationManagement = (
                     streamElapsedMs: 0,
                     streamTtftMs: 0,
                     runTtftMs: 0,
+                    runTtftSumMs: 0,
+                    runRequestCount: 0,
                     baselineCheckpointId,
                     streamStartedAt: 0,
                     // 历史会话回显 DB 持久化的会话累计（token + 耗时）。
@@ -414,6 +418,10 @@ export const useConversationManagement = (
                     },
                     lastRunDurationMs:
                       conversationRecord?.lastRunDurationMs ?? 0,
+                    conversationTtftSumMs:
+                      conversationRecord?.runTtftSumMs ?? 0,
+                    conversationRequestCount:
+                      conversationRecord?.runRequestCount ?? 0,
                   },
                 };
               });

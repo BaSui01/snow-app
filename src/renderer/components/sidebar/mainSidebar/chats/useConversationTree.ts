@@ -243,6 +243,8 @@ export function useConversationTree({
           runCacheCreationInputTokens: 0,
           runCacheReadInputTokens: 0,
           lastRunDurationMs: 0,
+          runTtftSumMs: 0,
+          runRequestCount: 0,
           emoji: "",
         };
 

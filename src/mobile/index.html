@@ -637,18 +637,28 @@
         <h1 data-i18n="remote.unlock.title"></h1>
         <p class="unlock-lead" data-i18n="remote.unlock.lead"></p>
         <form id="unlockForm" class="unlock-form" autocomplete="off">
-          <input
-            id="unlockInput"
-            type="password"
-            autocomplete="off"
-            autocapitalize="off"
-            autocorrect="off"
-            spellcheck="false"
-            aria-label="访问令牌"
-            placeholder="粘贴或输入访问令牌"
-            data-i18n-aria-label="remote.unlock.placeholder"
-            data-i18n-placeholder="remote.unlock.placeholder"
-          />
+          <div class="unlock-field">
+            <input
+              id="unlockInput"
+              type="text"
+              autocomplete="off"
+              autocapitalize="off"
+              autocorrect="off"
+              spellcheck="false"
+              aria-label="访问令牌"
+              placeholder="粘贴或输入访问令牌"
+              data-i18n-aria-label="remote.unlock.placeholder"
+              data-i18n-placeholder="remote.unlock.placeholder"
+            />
+            <button
+              id="unlockPaste"
+              class="unlock-paste"
+              type="button"
+              aria-label="粘贴"
+              data-i18n-aria-label="remote.unlock.paste"
+              data-i18n="remote.unlock.paste"
+            ></button>
+          </div>
           <button
             id="unlockSubmit"
             type="submit"

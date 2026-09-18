@@ -32,6 +32,9 @@ export const en: Record<string, string> = {
   "remote.unlock.lead":
     "This phone is not trusted by Snow yet. Enter the token shown in Settings → Mobile remote control on your computer.",
   "remote.unlock.placeholder": "Paste or type the access token",
+  "remote.unlock.paste": "Paste",
+  "remote.unlock.pasteHint":
+    "Cannot read the clipboard — long-press the field and choose Paste",
   "remote.unlock.submit": "Connect",
   "remote.unlock.busy": "Verifying…",
   "remote.unlock.empty": "Enter the token first",

@@ -177,6 +177,8 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       runCacheCreationInputTokens: number,
       runCacheReadInputTokens: number,
       lastRunDurationMs: number,
+      runTtftSumMs: number,
+      runRequestCount: number,
     ) =>
       native.setConversationRunStats(
         conversationId,
@@ -185,6 +187,8 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         runCacheCreationInputTokens,
         runCacheReadInputTokens,
         lastRunDurationMs,
+        runTtftSumMs,
+        runRequestCount,
       ),
   );
   ipcMain.handle(

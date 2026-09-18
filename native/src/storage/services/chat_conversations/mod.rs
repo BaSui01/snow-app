@@ -788,6 +788,8 @@ pub(crate) fn map_chat_conversation_row(row: &Row<'_>) -> rusqlite::Result<ChatC
         run_cache_creation_input_tokens: row.get(27)?,
         run_cache_read_input_tokens: row.get(28)?,
         last_run_duration_ms: row.get(29)?,
+        run_ttft_sum_ms: row.get(30)?,
+        run_request_count: row.get(31)?,
     })
 }
 
@@ -1022,6 +1024,8 @@ pub fn set_conversation_run_stats(
     run_cache_creation_input_tokens: i64,
     run_cache_read_input_tokens: i64,
     last_run_duration_ms: i64,
+    run_ttft_sum_ms: i64,
+    run_request_count: i64,
 ) -> Result<()> {
     database::open_connection(database_path)
         .and_then(|connection| {
@@ -1030,15 +1034,17 @@ pub fn set_conversation_run_stats(
                    id, conversation_id,
                    run_input_tokens, run_output_tokens,
                    run_cache_creation_input_tokens, run_cache_read_input_tokens,
-                   last_run_duration_ms
+                   last_run_duration_ms, run_ttft_sum_ms, run_request_count
                  )
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                  ON CONFLICT(conversation_id) DO UPDATE SET
                    run_input_tokens = chat_conversations.run_input_tokens + excluded.run_input_tokens,
                    run_output_tokens = chat_conversations.run_output_tokens + excluded.run_output_tokens,
                    run_cache_creation_input_tokens = chat_conversations.run_cache_creation_input_tokens + excluded.run_cache_creation_input_tokens,
                    run_cache_read_input_tokens = chat_conversations.run_cache_read_input_tokens + excluded.run_cache_read_input_tokens,
                    last_run_duration_ms = chat_conversations.last_run_duration_ms + excluded.last_run_duration_ms,
+                   run_ttft_sum_ms = chat_conversations.run_ttft_sum_ms + excluded.run_ttft_sum_ms,
+                   run_request_count = chat_conversations.run_request_count + excluded.run_request_count,
                    updated_at = datetime('now', 'localtime')",
                 params![
                     database::create_snowflake_id(),
@@ -1048,6 +1054,8 @@ pub fn set_conversation_run_stats(
                     run_cache_creation_input_tokens,
                     run_cache_read_input_tokens,
                     last_run_duration_ms,
+                    run_ttft_sum_ms,
+                    run_request_count,
                 ],
             )?;
             Ok(())
@@ -1072,6 +1080,8 @@ pub fn reset_conversation_run_stats(
                         run_cache_creation_input_tokens = 0,
                         run_cache_read_input_tokens = 0,
                         last_run_duration_ms = 0,
+                        run_ttft_sum_ms = 0,
+                        run_request_count = 0,
                         updated_at = datetime('now', 'localtime')
                   WHERE conversation_id = ?1",
                 params![conversation_id],

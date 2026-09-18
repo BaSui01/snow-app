@@ -246,6 +246,9 @@ export type ConversationSessionState = {
   streamTtftMs: number;
   /** TTFT of the first model iteration in the active run. */
   runTtftMs: number;
+  /** 本次 run 所有模型请求的 TTFT 之和与请求数（平均 TTFT = 总和 / 次数）。 */
+  runTtftSumMs: number;
+  runRequestCount: number;
   /** First checkpoint in the conversation, used as the cumulative diff baseline. */
   baselineCheckpointId?: string;
   /** Wall-clock timestamp (Date.now()) captured once when an agent loop
@@ -263,10 +266,12 @@ export type ConversationSessionState = {
    *  runTokenUsage is added here (mirrors the persisted run_* columns).
    *  Used by the run summary bar after the loop ends. */
   conversationTokenUsage: TokenUsage | null;
-  /** Whole-conversation cumulative wall-clock duration (ms): every finished
-   *  run's duration is added here (mirrors the persisted last_run_duration_ms
-   *  column). 0 until the first run has completed. */
   lastRunDurationMs: number;
+  /** Whole-conversation cumulative TTFT sum (ms) and the request count that
+   *  produced it (mirrors the persisted run_ttft_sum_ms / run_request_count
+   *  columns). The run summary bar shows sum / count. */
+  conversationTtftSumMs: number;
+  conversationRequestCount: number;
   /** External-vision textify progress, driven by `ResponsesApiStreamChunk.
    *  visionStatus` events. Set while the backend describes user images with
    *  the external vision model; cleared when the textify pass finishes
@@ -324,6 +329,9 @@ export type ConversationSessionRef = {
   runTokenUsage: TokenUsage | null;
   /** 本次 run 的墙钟总耗时 ms（ref 同步镜像）。 */
   lastRunDurationMs: number;
+  /** 本次 run 的 TTFT 总和与请求数（ref 同步镜像，供收尾持久化读取）。 */
+  runTtftSumMs: number;
+  runRequestCount: number;
   /** Whether WorkTree Mode was active when this session was last used. */
   worktreeMode: boolean;
   /** Whether WorkFlow Mode was active when this session was last used. */
@@ -834,6 +842,9 @@ export type UseChatConversationResult = {
   conversationTokenUsage: TokenUsage | null;
   /** Whole-conversation cumulative wall-clock duration (ms). */
   lastRunDurationMs: number;
+  /** Whole-conversation cumulative TTFT sum (ms) and request count. */
+  conversationTtftSumMs: number;
+  conversationRequestCount: number;
   /** External-vision textify progress for the active conversation. Present
    *  while the backend describes user images with the external vision model. */
   visionAnalysis: VisionAnalysisState | undefined;

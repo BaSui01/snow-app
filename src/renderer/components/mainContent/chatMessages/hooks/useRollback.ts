@@ -559,9 +559,7 @@ export const useRollback = (ctx: ConversationContextValue) => {
         // 显示 loading。恢复失败不阻塞后续 DB 回滚（best effort）。
         try {
           await window.snow.restoreCheckpoints(
-            [...checkpointIds, ...flowCheckpointIds].sort(
-              compareCheckpointIds,
-            ),
+            [...checkpointIds, ...flowCheckpointIds].sort(compareCheckpointIds),
             preview.workDir,
           );
         } catch {
@@ -587,6 +585,8 @@ export const useRollback = (ctx: ConversationContextValue) => {
           ctx.updateSessionField(key, "runTokenUsage", null);
           ctx.updateSessionField(key, "conversationTokenUsage", null);
           ctx.updateSessionField(key, "lastRunDurationMs", 0);
+          ctx.updateSessionField(key, "conversationTtftSumMs", 0);
+          ctx.updateSessionField(key, "conversationRequestCount", 0);
           await window.snow.truncateConversationFromMessage(
             convId,
             persistedMessageId,
@@ -601,6 +601,8 @@ export const useRollback = (ctx: ConversationContextValue) => {
           ctx.updateSessionField(key, "runTokenUsage", null);
           ctx.updateSessionField(key, "conversationTokenUsage", null);
           ctx.updateSessionField(key, "lastRunDurationMs", 0);
+          ctx.updateSessionField(key, "conversationTtftSumMs", 0);
+          ctx.updateSessionField(key, "conversationRequestCount", 0);
           await window.snow.truncateConversation(convId, responseId);
           // 回滚后累计统计已无对应消息：清零 DB（覆盖而非累加）。
           void window.snow.resetConversationRunStats(convId).catch(() => {

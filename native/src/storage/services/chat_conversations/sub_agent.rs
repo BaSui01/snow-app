@@ -44,7 +44,9 @@ pub fn list_sub_agent_conversations(
                         COALESCE(conversation.run_output_tokens, 0),
                         COALESCE(conversation.run_cache_creation_input_tokens, 0),
                         COALESCE(conversation.run_cache_read_input_tokens, 0),
-                        COALESCE(conversation.last_run_duration_ms, 0)
+                        COALESCE(conversation.last_run_duration_ms, 0),
+                        COALESCE(conversation.run_ttft_sum_ms, 0),
+                        COALESCE(conversation.run_request_count, 0)
                    FROM sub_agent_sessions AS sub_agent
                    JOIN chat_conversations AS conversation
                      ON conversation.conversation_id = sub_agent.conversation_id
@@ -103,7 +105,9 @@ pub fn list_sub_agent_conversations_by_parents(
                         COALESCE(conversation.run_output_tokens, 0),
                         COALESCE(conversation.run_cache_creation_input_tokens, 0),
                         COALESCE(conversation.run_cache_read_input_tokens, 0),
-                        COALESCE(conversation.last_run_duration_ms, 0)
+                        COALESCE(conversation.last_run_duration_ms, 0),
+                        COALESCE(conversation.run_ttft_sum_ms, 0),
+                        COALESCE(conversation.run_request_count, 0)
                    FROM sub_agent_sessions AS sub_agent
                    JOIN chat_conversations AS conversation
                      ON conversation.conversation_id = sub_agent.conversation_id

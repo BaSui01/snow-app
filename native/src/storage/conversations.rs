@@ -211,6 +211,8 @@ pub fn set_conversation_run_stats(
     run_cache_creation_input_tokens: i64,
     run_cache_read_input_tokens: i64,
     last_run_duration_ms: i64,
+    run_ttft_sum_ms: i64,
+    run_request_count: i64,
 ) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::chat_conversations::set_conversation_run_stats(
@@ -221,6 +223,8 @@ pub fn set_conversation_run_stats(
         run_cache_creation_input_tokens,
         run_cache_read_input_tokens,
         last_run_duration_ms,
+        run_ttft_sum_ms,
+        run_request_count,
     )
 }
 

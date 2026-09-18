@@ -145,6 +145,8 @@ export const apiConfigApi = {
     runCacheCreationInputTokens: number,
     runCacheReadInputTokens: number,
     lastRunDurationMs: number,
+    runTtftSumMs: number,
+    runRequestCount: number,
   ): Promise<void> =>
     ipcRenderer.invoke(
       "settings:set-conversation-run-stats",
@@ -154,6 +156,8 @@ export const apiConfigApi = {
       runCacheCreationInputTokens,
       runCacheReadInputTokens,
       lastRunDurationMs,
+      runTtftSumMs,
+      runRequestCount,
     ),
   resetConversationRunStats: (conversationId: string): Promise<void> =>
     ipcRenderer.invoke("settings:reset-conversation-run-stats", conversationId),

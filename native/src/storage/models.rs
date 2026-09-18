@@ -746,6 +746,8 @@ pub struct ChatConversationRecord {
     pub run_cache_creation_input_tokens: i64,
     pub run_cache_read_input_tokens: i64,
     pub last_run_duration_ms: i64,
+    pub run_ttft_sum_ms: i64,
+    pub run_request_count: i64,
     pub emoji: String,
 }
 

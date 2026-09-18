@@ -33,7 +33,7 @@ const MAX_VARIABLES: usize = 400;
 /// 与运行库 chat_conversations 完全一致的列（不含归档时间列）。
 /// 必须与运行库 create_schema 的 chat_conversations 列保持同步——
 /// 归档与还原都按此清单显式拷贝，漏列即静默丢数据。
-const CONVERSATION_COLUMNS: &str = "id, conversation_id, title, summary, last_message_preview, message_count, model, api_profile_name, thinking_strength, responses_fast_mode, last_response_id, status, input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, total_duration_ms, run_input_tokens, run_output_tokens, run_cache_creation_input_tokens, run_cache_read_input_tokens, last_run_duration_ms, directory_id, forked_from_conversation_id, fork_message_count, emoji, plan_mode, goal_mode, worktree_mode, workflow_mode, goal_mode_token_budget, created_at, updated_at";
+const CONVERSATION_COLUMNS: &str = "id, conversation_id, title, summary, last_message_preview, message_count, model, api_profile_name, thinking_strength, responses_fast_mode, last_response_id, status, input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, total_duration_ms, run_input_tokens, run_output_tokens, run_cache_creation_input_tokens, run_cache_read_input_tokens, last_run_duration_ms, run_ttft_sum_ms, run_request_count, directory_id, forked_from_conversation_id, fork_message_count, emoji, plan_mode, goal_mode, worktree_mode, workflow_mode, goal_mode_token_budget, created_at, updated_at";
 
 /// 与运行库 chat_messages 完全一致的列。
 /// 必须与运行库 create_schema 的 chat_messages 列保持同步——
@@ -118,6 +118,8 @@ pub(crate) fn create_archive_schema(connection: &Connection) -> rusqlite::Result
            run_cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
            run_cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
            last_run_duration_ms INTEGER NOT NULL DEFAULT 0,
+           run_ttft_sum_ms INTEGER NOT NULL DEFAULT 0,
+           run_request_count INTEGER NOT NULL DEFAULT 0,
            directory_id TEXT NOT NULL DEFAULT '',
            forked_from_conversation_id TEXT NOT NULL DEFAULT '',
            fork_message_count INTEGER NOT NULL DEFAULT 0,
@@ -268,6 +270,8 @@ fn migrate_archive_chat_conversations(connection: &Connection) -> rusqlite::Resu
         ),
         ("run_cache_read_input_tokens", "INTEGER NOT NULL DEFAULT 0"),
         ("last_run_duration_ms", "INTEGER NOT NULL DEFAULT 0"),
+        ("run_ttft_sum_ms", "INTEGER NOT NULL DEFAULT 0"),
+        ("run_request_count", "INTEGER NOT NULL DEFAULT 0"),
     ] {
         if !columns.iter().any(|column| column == name) {
             connection.execute(
@@ -824,7 +828,9 @@ pub fn list_archived_conversations_paginated(
                        conversation.run_output_tokens,
                        conversation.run_cache_creation_input_tokens,
                        conversation.run_cache_read_input_tokens,
-                       COALESCE(conversation.last_run_duration_ms, 0)
+                       COALESCE(conversation.last_run_duration_ms, 0),
+                       conversation.run_ttft_sum_ms,
+                       conversation.run_request_count
                   FROM chat_conversations AS conversation
                   WHERE directory_id = ?1
                     AND status = 'active'
@@ -890,6 +896,8 @@ fn map_archived_conversation_row(
         run_cache_creation_input_tokens: row.get(27)?,
         run_cache_read_input_tokens: row.get(28)?,
         last_run_duration_ms: row.get(29)?,
+        run_ttft_sum_ms: row.get(30)?,
+        run_request_count: row.get(31)?,
     })
 }
 
@@ -1011,7 +1019,8 @@ pub fn restore_archived_conversations(
                             cache_read_input_tokens, total_duration_ms,
                             run_input_tokens, run_output_tokens,
                             run_cache_creation_input_tokens, run_cache_read_input_tokens,
-                            last_run_duration_ms, directory_id,
+                            last_run_duration_ms, run_ttft_sum_ms,
+                            run_request_count, directory_id,
                             forked_from_conversation_id, fork_message_count, emoji,
                             plan_mode, goal_mode, worktree_mode, workflow_mode,
                             goal_mode_token_budget, created_at,

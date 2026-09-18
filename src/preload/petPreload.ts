@@ -4,14 +4,12 @@
  * 暴露 window.petBridge：
  * - getConfig: 拉取宠物配置（设置 + 激活宠物清单）
  * - onConfigChanged / onActivityChanged: 订阅主进程广播
+ * - showContextMenu: 请求主进程弹出宠物右键菜单（菜单项在主进程构建）
  *
  * 窗口拖拽由 CSS `-webkit-app-region: drag` 交给操作系统，无需桥接。
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
-import type {
-  PetActivityState,
-  PetWindowConfig,
-} from "./types/pets";
+import type { PetActivityState, PetWindowConfig } from "./types/pets";
 
 const petBridge = {
   getConfig: (): Promise<PetWindowConfig | null> =>
@@ -19,10 +17,17 @@ const petBridge = {
   /** 拉取当前 AI 活动状态（补偿先启动会话再唤醒宠物时丢失的广播）。 */
   getActivity: (): Promise<PetActivityState> =>
     ipcRenderer.invoke("pets:get-activity"),
+  /** 请求主进程弹出宠物右键菜单（无返回值，菜单点击在 main 侧处理）。 */
+  showContextMenu: (): void => {
+    ipcRenderer.send("pets:show-context-menu");
+  },
   onConfigChanged: (
-    callback: (config: PetWindowConfig) => void
+    callback: (config: PetWindowConfig) => void,
   ): (() => void) => {
-    const handler = (_event: IpcRendererEvent, config: PetWindowConfig): void => {
+    const handler = (
+      _event: IpcRendererEvent,
+      config: PetWindowConfig,
+    ): void => {
       callback(config);
     };
     ipcRenderer.on("pets:config-changed", handler);
@@ -31,11 +36,11 @@ const petBridge = {
     };
   },
   onActivityChanged: (
-    callback: (state: PetActivityState) => void
+    callback: (state: PetActivityState) => void,
   ): (() => void) => {
     const handler = (
       _event: IpcRendererEvent,
-      state: PetActivityState
+      state: PetActivityState,
     ): void => {
       callback(state);
     };
@@ -45,11 +50,11 @@ const petBridge = {
     };
   },
   onDragStateChanged: (
-    callback: (state: "running-right" | "running-left" | null) => void
+    callback: (state: "running-right" | "running-left" | null) => void,
   ): (() => void) => {
     const handler = (
       _event: IpcRendererEvent,
-      state: "running-right" | "running-left" | null
+      state: "running-right" | "running-left" | null,
     ): void => {
       callback(state);
     };
@@ -61,11 +66,5 @@ const petBridge = {
 };
 
 contextBridge.exposeInMainWorld("petBridge", petBridge);
-
-// 禁用系统默认右键菜单（Chromium 内置菜单）。后续扩展自定义右键菜单时，
-// 在此处拦截 contextmenu 事件并转发给主进程渲染自定义菜单即可。
-window.addEventListener("contextmenu", (event) => {
-  event.preventDefault();
-});
 
 export type PetBridge = typeof petBridge;

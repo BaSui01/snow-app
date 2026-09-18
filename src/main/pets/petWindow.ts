@@ -6,12 +6,20 @@
  * - 窗口生命周期（唤醒 / 收起 / 退出清理）
  * - 活动状态机（忙碌 / 等待 / 出错 / 完成 / 待机）并广播给宠物窗口
  * - 拖拽移动（基于主进程光标坐标，1:1 跟手，无 DPI/坐标漂移）
+ * - 右键菜单（菜单项由主进程构建，见 showPetContextMenu）
  *
  * 位置策略：每次唤醒都出现在固定的默认位置（应用主窗口右下角），
  * 主窗口不可用时回退到主显示器工作区右下角，不做跨会话位置持久化，
  * 避免宠物出现在屏幕外而"找不到"。
  */
-import { app, BrowserWindow, screen, type WebContents } from "electron";
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  screen,
+  type MenuItemConstructorOptions,
+  type WebContents,
+} from "electron";
 import { is } from "@electron-toolkit/utils";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -22,6 +30,7 @@ import { getMainWindow } from "../app/mainWindow";
 import { isMacOS } from "../app/constants";
 import {
   loadPetSettings,
+  savePetSettings,
   type PetActivityState,
   type PetSettings,
   type PetTurnKind,
@@ -39,6 +48,11 @@ const SETTLE_DELAY_MS = 3000;
 const DRAG_DIRECTION_SETTLE_MS = 160;
 /** 唤醒时与屏幕边缘的间距。 */
 const WAKE_EDGE_MARGIN = 24;
+/**
+ * 右键菜单弹出抑制窗口（毫秒）：同一次右键可能同时命中渲染层 IPC 与
+ * Windows 非客户区 system-context-menu 两条路径，只放行第一条。
+ */
+const MENU_POPUP_GUARD_MS = 250;
 
 /** 发送给宠物窗口 / 设置界面的完整配置。 */
 export type PetWindowConfig = {
@@ -49,6 +63,8 @@ export type PetWindowConfig = {
 let petWindow: BrowserWindow | null = null;
 let currentConfig: PetWindowConfig | null = null;
 let currentState: PetActivityState = "idle";
+/** 最近一次右键菜单弹出时间（去重同一次点击的两条触发路径）。 */
+let lastMenuPopupAt = 0;
 /**
  * 进行中的 AI 回合，按渲染层生成的 turnId 精确跟踪。
  *
@@ -197,6 +213,59 @@ const destroyPetWindow = (): void => {
   petWindow = null;
 };
 
+/**
+ * 收起宠物（右键菜单「关闭宠物」）：与设置面板的开关语义完全一致 ——
+ * 持久化 enabled=false 后由 refreshPetWindow 收起窗口，重启不会自动唤醒，
+ * 可从设置面板或快捷键（默认 mod+shift+p）重新唤醒。
+ */
+const closePet = async (native: NativeBridge): Promise<void> => {
+  try {
+    const settings = await loadPetSettings(native);
+    await savePetSettings(native, { ...settings, enabled: false });
+    await refreshPetWindow(native);
+  } catch (error) {
+    snowLog.warn({
+      module: "pets/petWindow",
+      func: "closePet",
+      message: "Failed to persist pet disabled state",
+      error: error instanceof Error ? error.message : String(error),
+    });
+    destroyPetWindow();
+    broadcastPetsChanged();
+  }
+};
+
+/**
+ * 弹出宠物右键菜单（菜单项在主进程构建，后续可继续扩充）。
+ *
+ * 触发有两条互补路径，同一次右键可能都命中，用时间窗去重：
+ * 1. 渲染层 contextmenu → IPC pets:show-context-menu（常规路径）；
+ * 2. Windows 上拖拽区域被系统当作标题栏，右键走非客户区 WM_CONTEXTMENU，
+ *    渲染层收不到事件，只能由窗口的 system-context-menu 兜底。
+ */
+export const showPetContextMenu = (native: NativeBridge): void => {
+  if (!petWindow || petWindow.isDestroyed()) {
+    return;
+  }
+  const now = Date.now();
+  if (now - lastMenuPopupAt < MENU_POPUP_GUARD_MS) {
+    return;
+  }
+  lastMenuPopupAt = now;
+
+  const template: MenuItemConstructorOptions[] = [
+    {
+      label: "关闭宠物",
+      click: () => {
+        void closePet(native);
+      },
+    },
+  ];
+
+  // 不传坐标：菜单默认在鼠标当前位置弹出，与右键位置一致。
+  Menu.buildFromTemplate(template).popup({ window: petWindow });
+};
+
 /** 刷新配置并按需创建/更新/关闭宠物窗口。 */
 export const refreshPetWindow = async (native: NativeBridge): Promise<void> => {
   const settings = await loadPetSettings(native);
@@ -211,7 +280,7 @@ export const refreshPetWindow = async (native: NativeBridge): Promise<void> => {
   }
 
   if (!petWindow || petWindow.isDestroyed()) {
-    createPetWindow(settings);
+    createPetWindow(settings, native);
   } else {
     const { width, height } = computeWindowSize(settings.scale);
     petWindow.setSize(width, height);
@@ -222,7 +291,7 @@ export const refreshPetWindow = async (native: NativeBridge): Promise<void> => {
   broadcastPetsChanged();
 };
 
-const createPetWindow = (settings: PetSettings): void => {
+const createPetWindow = (settings: PetSettings, native: NativeBridge): void => {
   const { width, height } = computeWindowSize(settings.scale);
   const { x, y } = resolveWakePosition(width, height);
 
@@ -294,9 +363,10 @@ const createPetWindow = (settings: PetSettings): void => {
   });
 
   // 屏蔽 Windows 系统窗口菜单（最大化/最小化/移动/关闭等，由非客户区
-  // 右键或 Alt+Space 触发）。后续扩展自定义右键菜单时统一在此拦截。
+  // 右键或 Alt+Space 触发），改为弹出宠物自定义右键菜单。
   petWindow.on("system-context-menu", (event) => {
     event.preventDefault();
+    showPetContextMenu(native);
   });
 
   // Alt+Space 走 WM_SYSCOMMAND（与右键的 WM_CONTEXTMENU 不同），

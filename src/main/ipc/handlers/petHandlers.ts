@@ -2,7 +2,7 @@
  * 桌面宠物系统 IPC 处理器。
  *
  * 主窗口设置界面：安装（zip 文件对话框）/ 列表 / 卸载 / 启用 / 选择 / 缩放。
- * 宠物窗口：拉取配置、拖拽位置、右键收起。
+ * 宠物窗口：拉取配置、上报活动状态、弹出右键菜单。
  */
 import { dialog, ipcMain } from "electron";
 import type { NativeBridge } from "../../native/types";
@@ -19,11 +19,12 @@ import {
   refreshPetWindow,
   reportPetTurnEnded,
   reportPetTurnStarted,
+  showPetContextMenu,
 } from "../../pets/petWindow";
 
 /** 解析渲染层的回合事件载荷，非法载荷返回 null 直接丢弃。 */
 const parsePetTurnPayload = (
-  payload: unknown
+  payload: unknown,
 ): { turnId: string; kind: PetTurnKind; failed: boolean } | null => {
   if (typeof payload !== "object" || payload === null) {
     return null;
@@ -46,9 +47,7 @@ export const registerPetHandlers = (native: NativeBridge): void => {
     const selection = await dialog.showOpenDialog({
       title: "Install Codex Pet Package",
       buttonLabel: "Install",
-      filters: [
-        { name: "Codex Pet Package", extensions: ["zip"] },
-      ],
+      filters: [{ name: "Codex Pet Package", extensions: ["zip"] }],
       properties: ["openFile"],
     });
     if (selection.canceled || selection.filePaths.length === 0) {
@@ -58,7 +57,7 @@ export const registerPetHandlers = (native: NativeBridge): void => {
     const zipPath = selection.filePaths[0];
     const manifest = await native.installPetFromZip(zipPath);
 
-// 若尚未选择宠物，新安装的宠物自动设为激活。
+    // 若尚未选择宠物，新安装的宠物自动设为激活。
     const settings = await loadPetSettings(native);
     if (!settings.activePetId) {
       await savePetSettings(native, { ...settings, activePetId: manifest.id });
@@ -77,7 +76,7 @@ export const registerPetHandlers = (native: NativeBridge): void => {
 
     await native.uninstallPet(petId.trim());
 
-// 卸载的是当前激活宠物时清空激活项并收起窗口。
+    // 卸载的是当前激活宠物时清空激活项并收起窗口。
     const settings = await loadPetSettings(native);
     if (settings.activePetId === petId.trim()) {
       await savePetSettings(native, { ...settings, activePetId: null });
@@ -95,7 +94,7 @@ export const registerPetHandlers = (native: NativeBridge): void => {
 
   ipcMain.handle("pets:get-settings", () => loadPetSettings(native));
 
-ipcMain.handle("pets:set-enabled", async (_event, enabled: unknown) => {
+  ipcMain.handle("pets:set-enabled", async (_event, enabled: unknown) => {
     if (typeof enabled !== "boolean") {
       throw new Error("Enabled flag must be a boolean");
     }
@@ -125,7 +124,10 @@ ipcMain.handle("pets:set-enabled", async (_event, enabled: unknown) => {
     }
     const clamped = Math.min(PET_SCALE_MAX, Math.max(PET_SCALE_MIN, value));
     const settings = await loadPetSettings(native);
-    const saved = await savePetSettings(native, { ...settings, scale: clamped });
+    const saved = await savePetSettings(native, {
+      ...settings,
+      scale: clamped,
+    });
     await refreshPetWindow(native);
     return saved;
   });
@@ -154,5 +156,10 @@ ipcMain.handle("pets:set-enabled", async (_event, enabled: unknown) => {
       return;
     }
     reportPetTurnEnded(parsed.turnId, parsed.failed);
+  });
+
+  // 宠物窗口右键 → 弹出宠物右键菜单（菜单项在主进程构建）。
+  ipcMain.on("pets:show-context-menu", () => {
+    showPetContextMenu(native);
   });
 };

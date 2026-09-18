@@ -2,15 +2,12 @@
  * 桌面宠物窗口入口。
  *
  * 通过 window.petBridge 与主进程通信：拉取配置、订阅 AI 活动状态与
- * OS 拖拽方向（左/右奔跑）。窗口移动由 CSS `-webkit-app-region: drag`
- * 交给操作系统处理。
+ * OS 拖拽方向（左/右奔跑）、请求弹出右键菜单。窗口移动由 CSS
+ * `-webkit-app-region: drag` 交给操作系统处理。
  */
 import { createRoot } from "react-dom/client";
 import { useEffect, useState } from "react";
-import type {
-  PetActivityState,
-  PetWindowConfig,
-} from "../preload/types/pets";
+import type { PetActivityState, PetWindowConfig } from "../preload/types/pets";
 import type { PetSpriteState } from "./components/pet/petSprites";
 import { PetStage } from "./components/pet/PetStage";
 import "./pet.css";
@@ -49,12 +46,19 @@ function PetWindowApp(): React.JSX.Element | null {
     };
   }, []);
 
+  // 右键：阻止页面默认右键行为，菜单本体由主进程构建并弹出
+  // （Windows 上拖拽区域的右键由主进程 system-context-menu 兜底）。
+  const handleContextMenu = (event: React.MouseEvent<HTMLDivElement>): void => {
+    event.preventDefault();
+    window.petBridge?.showContextMenu();
+  };
+
   if (!config || !config.manifest) {
     return null;
   }
 
   return (
-    <div className="pet-window">
+    <div className="pet-window" onContextMenu={handleContextMenu}>
       <PetStage
         manifest={config.manifest}
         scale={config.settings.scale}

@@ -229,6 +229,10 @@ export const apiConfigApi = {
     ipcRenderer.invoke("api-configs:upsert", config),
   deleteApiConfig: (profileName: string): Promise<ApiConfigRecord[]> =>
     ipcRenderer.invoke("api-configs:delete", profileName),
+  reorderApiConfigs: (
+    orderedProfileNames: string[],
+  ): Promise<ApiConfigRecord[]> =>
+    ipcRenderer.invoke("api-configs:reorder", orderedProfileNames),
   fetchAvailableModels: (): Promise<Model[]> =>
     ipcRenderer.invoke("api-models:fetch"),
   fetchAvailableModelsForConfig: (config: ApiModelsConfig): Promise<Model[]> =>

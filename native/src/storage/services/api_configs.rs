@@ -297,6 +297,7 @@ fn record_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ApiConfigRecord>
         source: snowcfg_text(&config_json, "source"),
         config_json,
         updated_at: row.get(28)?,
+        sort_order: row.get(29)?,
     })
 }
 
@@ -337,9 +338,10 @@ pub fn list_api_configs(database_path: &Path) -> Result<Vec<ApiConfigRecord>> {
                     custom_header_scheme_id,
                     config_json,
                     source,
-                    updated_at
+                    updated_at,
+                    sort_order
                FROM api_configs
-              ORDER BY is_active DESC, display_name COLLATE NOCASE ASC",
+              ORDER BY sort_order ASC, display_name COLLATE NOCASE ASC, profile_name ASC",
         )
         .map_err(|error| database::database_error(database_path, "prepare API config list", error))?;
     let rows = statement
@@ -347,6 +349,52 @@ pub fn list_api_configs(database_path: &Path) -> Result<Vec<ApiConfigRecord>> {
         .map_err(|error| database::database_error(database_path, "query API configs", error))?;
     rows.collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|error| database::database_error(database_path, "read API configs", error))
+}
+
+/// 重排 API 档案：按给定档案名顺序重写 `sort_order`（0,1,2,...）。
+///
+/// 未出现在 `ordered_profile_names` 中的档案保持原有相对顺序并排在其后；
+/// 名单里不存在的名称（例如已被删除的档案）会被忽略。
+pub fn reorder_api_configs(database_path: &Path, ordered_profile_names: &[String]) -> Result<()> {
+    database::open_connection(database_path)
+        .and_then(|mut connection| {
+            let transaction = connection.transaction()?;
+            let mut statement = transaction.prepare(
+                "SELECT profile_name
+                   FROM api_configs
+                  ORDER BY sort_order ASC, display_name COLLATE NOCASE ASC, profile_name ASC",
+            )?;
+            let existing: Vec<String> = statement
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            drop(statement);
+
+            let mut ordered: Vec<String> = Vec::with_capacity(existing.len());
+            for name in ordered_profile_names {
+                let name = name.trim();
+                if name.is_empty()
+                    || !existing.iter().any(|item| item == name)
+                    || ordered.iter().any(|item| item == name)
+                {
+                    continue;
+                }
+                ordered.push(name.to_string());
+            }
+            for name in &existing {
+                if !ordered.iter().any(|item| item == name) {
+                    ordered.push(name.clone());
+                }
+            }
+
+            for (index, profile_name) in ordered.iter().enumerate() {
+                transaction.execute(
+                    "UPDATE api_configs SET sort_order = ?1 WHERE profile_name = ?2",
+                    params![index as i64, profile_name],
+                )?;
+            }
+            transaction.commit()
+        })
+        .map_err(|error| database::database_error(database_path, "reorder API configs", error))
 }
 
 pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Result<()> {
@@ -518,6 +566,13 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
                 "{\"snowcfg\":{}}".to_string()
             });
 
+            // 新档案追加到列表末尾；已存在的档案保持用户排序（ON CONFLICT 分支不写 sort_order）。
+            let next_sort_order: i64 = transaction.query_row(
+                "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM api_configs",
+                [],
+                |row| row.get(0),
+            )?;
+
             transaction.execute(
                 "INSERT INTO api_configs (
                    id,
@@ -548,6 +603,7 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
                    custom_header_scheme_id,
                    config_json,
                    source,
+                   sort_order,
                    created_at,
                    updated_at
                  ) VALUES (
@@ -557,7 +613,7 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
                    ) THEN NULL ELSE ?1 END,
                    ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
                    ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
-                   ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28,
+                   ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29,
                    datetime('now', 'localtime'), datetime('now', 'localtime')
                  )
                  ON CONFLICT(profile_name) DO UPDATE SET
@@ -621,9 +677,10 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
                     effective_partial_retry_max_chars,
                     config.system_prompt_ids_json,
                     config.custom_header_scheme_id,
-                    canonical_json,
-                    config.source,
-                ],
+                     canonical_json,
+                     config.source,
+                     next_sort_order,
+                 ],
             )?;
 
             if !config.is_active {

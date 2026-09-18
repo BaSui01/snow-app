@@ -22,6 +22,11 @@ pub fn delete_api_config(profile_name: String) -> Result<()> {
     services::api_configs::delete_api_config(&database_path, &profile_name)
 }
 
+pub fn reorder_api_configs(ordered_profile_names: Vec<String>) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::api_configs::reorder_api_configs(&database_path, &ordered_profile_names)
+}
+
 pub fn export_api_configs(profile_names: Vec<String>) -> Result<ApiConfigExportResult> {
     let database_path = ensure_database_file()?;
     services::api_config_transfer::export_api_configs(&database_path, &profile_names)

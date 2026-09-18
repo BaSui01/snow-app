@@ -17,6 +17,7 @@ use super::{
 
 /// Bumped whenever the schema changes; written to `PRAGMA user_version` after
 /// a successful `create_schema` so the app can detect stale databases.
+/// 44: api_configs.sort_order column (user-ordered API profile list).
 /// 42: workspace_directories path health columns + workspace_directory_relinks table.
 /// 41: memory_prompt_snapshots table (per-conversation frozen Project Memory prompt section).
 /// 40: project_memories.response_id column (rollback memory cleanup anchor).
@@ -29,7 +30,7 @@ use super::{
 /// 32: api_configs canonical config_json migration plus conversation runtime config columns.
 /// 31: main's scheduled-tasks pre-script migration (30) + PR #65's three
 /// stream-interruption migrations (29 baseline + 4 total additions).
-const CURRENT_SCHEMA_VERSION: i64 = 43;
+const CURRENT_SCHEMA_VERSION: i64 = 44;
 const SNOWFLAKE_EPOCH_MS: u64 = 1_704_067_200_000;
 const SNOWFLAKE_WORKER_ID_BITS: u64 = 10;
 const SNOWFLAKE_SEQUENCE_BITS: u64 = 12;
@@ -518,9 +519,10 @@ pub(crate) fn create_schema(connection: &Connection) -> rusqlite::Result<()> {
            custom_header_scheme_id TEXT NOT NULL DEFAULT '',
            config_json TEXT NOT NULL DEFAULT '{}',
            source TEXT NOT NULL DEFAULT 'manual',
+           sort_order INTEGER NOT NULL DEFAULT 0,
            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
            updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
-         );
+          );
 
 CREATE INDEX IF NOT EXISTS idx_api_configs_active
            ON api_configs(is_active);

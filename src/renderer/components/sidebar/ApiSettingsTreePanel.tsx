@@ -12,6 +12,7 @@ import {
 import { ApiSettingsEditModal } from "./apiSettings/ApiSettingsEditModal";
 import { ApiSettingsSummary } from "./apiSettings/ApiSettingsSummary";
 import { ApiSettingsTable } from "./apiSettings/ApiSettingsTable";
+import { orderApiConfigsByName } from "./apiSettings/apiConfigReorder";
 import { buildDuplicateName } from "./duplicateName";
 import {
   emptyApiConfigForm,
@@ -80,6 +81,25 @@ export function ApiSettingsTreePanel({
   useEffect(() => {
     void load();
   }, [load]);
+
+  // 拖拽 / 上移下移排序：先本地重排给出即时反馈，再以 Rust 返回的权威顺序覆盖。
+  const handleReorder = async (orderedNames: string[]): Promise<void> => {
+    setError("");
+    setConfigs((previous) => orderApiConfigsByName(previous, orderedNames));
+
+    try {
+      setConfigs(await window.snow.reorderApiConfigs(orderedNames));
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : t("settings.apiReorderError", {
+              defaultValue: "Failed to save the new order",
+            }),
+      );
+      await load();
+    }
+  };
 
   const onFieldChange = (
     field: keyof ApiConfigFormData,
@@ -538,6 +558,7 @@ export function ApiSettingsTreePanel({
         onExportSelected={(profileNames) =>
           void handleExportSelected(profileNames)
         }
+        onReorder={(orderedNames) => void handleReorder(orderedNames)}
       />
 
       <Modal

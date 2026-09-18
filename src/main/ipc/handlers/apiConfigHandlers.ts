@@ -42,6 +42,24 @@ const normalizeExportProfileNames = (value: unknown): string[] => {
   return Array.from(new Set(names));
 };
 
+/** 校验渲染层传来的排序名单：非空字符串数组，去重去空。 */
+const normalizeOrderedProfileNames = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    throw new Error("Ordered profile names must be an array");
+  }
+
+  const names = value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+
+  if (names.length === 0) {
+    throw new Error("At least one API profile is required for reordering");
+  }
+
+  return Array.from(new Set(names));
+};
+
 /** 读取导入文件文本；失败时抛出带上下文的错误。 */
 const readImportFileContent = async (filePath: string): Promise<string> => {
   try {
@@ -69,6 +87,15 @@ export const registerApiConfigHandlers = (native: NativeBridge): void => {
     await native.deleteApiConfig(profileName.trim());
     return native.listApiConfigs();
   });
+  ipcMain.handle(
+    "api-configs:reorder",
+    async (_event, orderedNames: unknown) => {
+      await native.reorderApiConfigs(
+        normalizeOrderedProfileNames(orderedNames),
+      );
+      return native.listApiConfigs();
+    },
+  );
   ipcMain.handle("api-configs:import-snow-cli", async () => {
     const profiles = readSnowCliProfiles();
     const existingConfigs = await native.listApiConfigs();

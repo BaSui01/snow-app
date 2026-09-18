@@ -1,5 +1,16 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
-import { Copy, Loader2, Pencil, Search, Trash2, Upload, X } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  GripVertical,
+  Loader2,
+  Pencil,
+  Search,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
 import { useI18n } from "../../../i18n";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
 import {
@@ -7,6 +18,7 @@ import {
   ENABLED_STATUS_LABEL,
 } from "./apiSettingsConstants";
 import { filterApiConfigs } from "./apiSettingsSearch";
+import { useApiConfigReorder } from "./apiConfigReorder";
 import type { ApiConfigItem } from "./types";
 
 type ApiSettingsTableProps = {
@@ -19,6 +31,8 @@ type ApiSettingsTableProps = {
   onToggleActive: (config: ApiConfigItem) => void;
   /** 导出选中的配置为迁移文件（含明文密钥）。 */
   onExportSelected: (profileNames: string[]) => void;
+  /** 拖拽或上移下移后的完整档案名顺序；由父组件负责落库。 */
+  onReorder: (orderedProfileNames: string[]) => void;
 };
 
 export function ApiSettingsTable({
@@ -30,6 +44,7 @@ export function ApiSettingsTable({
   onDelete,
   onToggleActive,
   onExportSelected,
+  onReorder,
 }: ApiSettingsTableProps): React.JSX.Element {
   const { t } = useI18n();
   const [searchQuery, setSearchQuery] = useState("");
@@ -41,6 +56,19 @@ export function ApiSettingsTable({
     () => filterApiConfigs(configs, searchQuery),
     [configs, searchQuery],
   );
+  const allProfileNames = useMemo(
+    () => configs.map((config) => config.profileName),
+    [configs],
+  );
+  const visibleProfileNames = useMemo(
+    () => filteredConfigs.map((config) => config.profileName),
+    [filteredConfigs],
+  );
+  const reorder = useApiConfigReorder({
+    allNames: allProfileNames,
+    visibleNames: visibleProfileNames,
+    onReorder,
+  });
   const hasSearchQuery = searchQuery.trim().length > 0;
 
   // 配置列表变化（删除、导入、同步）后丢弃已不存在的选中项。
@@ -175,6 +203,7 @@ export function ApiSettingsTable({
           <table className="api-settings-table">
             <thead>
               <tr>
+                <th className="api-settings-table-order" />
                 <th className="api-settings-table-select">
                   <input
                     type="checkbox"
@@ -223,11 +252,37 @@ export function ApiSettingsTable({
                     });
                 const isSelected = selectedNameSet.has(config.profileName);
 
+                const isDragging = reorder.draggingName === config.profileName;
+                const isDropTarget =
+                  reorder.dropTargetName === config.profileName;
+                const rowClassName = [
+                  isSelected && "is-selected",
+                  isDragging && "is-dragging",
+                  isDropTarget &&
+                    (reorder.dropPlacement === "before"
+                      ? "is-drop-before"
+                      : "is-drop-after"),
+                ]
+                  .filter(Boolean)
+                  .join(" ");
+
                 return (
                   <tr
                     key={config.profileName}
-                    className={isSelected ? "is-selected" : undefined}
+                    {...reorder.getDropTargetProps(config.profileName)}
+                    className={rowClassName || undefined}
                   >
+                    <td className="api-settings-table-order">
+                      <span
+                        className="api-settings-drag-handle"
+                        {...reorder.getDragHandleProps(config.profileName)}
+                        title={t("settings.apiDragToReorder", {
+                          defaultValue: "Drag to reorder",
+                        })}
+                      >
+                        <GripVertical size={13} strokeWidth={1.8} />
+                      </span>
+                    </td>
                     <td className="api-settings-table-select">
                       <input
                         type="checkbox"
@@ -269,6 +324,34 @@ export function ApiSettingsTable({
                     </td>
                     <td className="api-settings-table-actions-col">
                       <div className="api-settings-table-actions">
+                        <button
+                          className="icon-btn ghost"
+                          onClick={() => reorder.moveUp(config.profileName)}
+                          disabled={!reorder.canMoveUp(config.profileName)}
+                          type="button"
+                          title={t("settings.apiMoveUp", {
+                            defaultValue: "Move up",
+                          })}
+                          aria-label={t("settings.apiMoveUp", {
+                            defaultValue: "Move up",
+                          })}
+                        >
+                          <ChevronUp size={13} strokeWidth={1.8} />
+                        </button>
+                        <button
+                          className="icon-btn ghost"
+                          onClick={() => reorder.moveDown(config.profileName)}
+                          disabled={!reorder.canMoveDown(config.profileName)}
+                          type="button"
+                          title={t("settings.apiMoveDown", {
+                            defaultValue: "Move down",
+                          })}
+                          aria-label={t("settings.apiMoveDown", {
+                            defaultValue: "Move down",
+                          })}
+                        >
+                          <ChevronDown size={13} strokeWidth={1.8} />
+                        </button>
                         <button
                           className="icon-btn ghost"
                           onClick={() => onDuplicate(config)}

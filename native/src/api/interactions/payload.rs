@@ -470,6 +470,7 @@ mod tests {
             custom_header_scheme_id: "".to_string(),
             config_json: "{}".to_string(),
             source: "manual".to_string(),
+            sort_order: 0,
             updated_at: "".to_string(),
         }
     }

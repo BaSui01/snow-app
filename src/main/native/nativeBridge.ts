@@ -233,6 +233,10 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to delete API configs"),
         ),
+      reorderApiConfigs: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to reorder API configs"),
+        ),
       exportApiConfigs: () =>
         Promise.reject(
           new Error("Rust native bridge is required to export API configs"),

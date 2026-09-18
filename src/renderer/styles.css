@@ -7198,6 +7198,42 @@ input {
   cursor: pointer;
 }
 
+.api-settings-table-order {
+  width: 1%;
+  padding-right: 0 !important;
+}
+
+.api-settings-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  cursor: grab;
+  opacity: 0.55;
+  transition: opacity 0.12s ease;
+}
+
+.api-settings-drag-handle:hover {
+  color: var(--text-primary);
+  opacity: 1;
+}
+
+.api-settings-drag-handle:active {
+  cursor: grabbing;
+}
+
+.api-settings-table tbody tr.is-dragging {
+  opacity: 0.45;
+}
+
+.api-settings-table tbody tr.is-drop-before td {
+  box-shadow: inset 0 2px 0 var(--accent-color);
+}
+
+.api-settings-table tbody tr.is-drop-after td {
+  box-shadow: inset 0 -2px 0 var(--accent-color);
+}
+
 .api-settings-table tbody tr.is-selected {
   background: var(--bg-hover);
 }
@@ -7364,7 +7400,7 @@ input {
 }
 
 .api-settings-table-actions-col {
-  width: 70px;
+  width: 108px;
 }
 
 .api-settings-table-actions {
@@ -25385,6 +25421,52 @@ input {
 .model-dropdown-item.active,
 .model-dropdown-item.highlighted {
   background: var(--bg-hover);
+}
+
+.model-dropdown-item.is-dragging {
+  opacity: 0.45;
+}
+
+.model-dropdown-item.is-drop-before {
+  box-shadow: inset 0 2px 0 var(--accent-color);
+}
+
+.model-dropdown-item.is-drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent-color);
+}
+
+.model-dropdown-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  /* 与编辑按钮对称：默认不占布局空间（宽度 0 + 负 margin 抵消行内 gap），行悬停时展开 */
+  width: 0;
+  margin-right: -8px;
+  overflow: hidden;
+  color: var(--text-muted);
+  cursor: grab;
+  opacity: 0;
+  transition:
+    width 0.12s ease,
+    margin-right 0.12s ease,
+    opacity 0.12s ease;
+}
+
+.model-dropdown-item:hover .model-dropdown-drag-handle,
+.model-dropdown-drag-handle:focus-visible {
+  width: 14px;
+  margin-right: 0;
+  opacity: 0.75;
+}
+
+.model-dropdown-item:hover .model-dropdown-drag-handle:hover {
+  color: var(--accent-color);
+  opacity: 1;
+}
+
+.model-dropdown-drag-handle:active {
+  cursor: grabbing;
 }
 
 .model-dropdown-item-name {

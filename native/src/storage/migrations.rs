@@ -87,6 +87,7 @@ pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<(
     migrate_scheduled_tasks_pre_script(connection)?;
     migrate_api_configs_partial_retry_max_chars(connection)?;
     migrate_api_configs_config_json(connection)?;
+    migrate_api_configs_sort_order(connection)?;
     migrate_chat_messages_interruption_metadata(connection)?;
     migrate_chat_messages_thinking_stats(connection)?;
     purge_assistant_raw_json_blobs(connection)?;
@@ -434,6 +435,62 @@ fn migrate_api_configs_config_json(connection: &Connection) -> rusqlite::Result<
     Ok(())
 }
 
+
+/// Adds the `sort_order` column to `api_configs` and backfills it for databases
+/// created before API profiles could be reordered.
+///
+/// The legacy list was ordered "active first, then display name", so the
+/// backfill walks exactly that legacy order and writes 0..n-1 — upgrading users
+/// keep the list they are used to until they reorder it themselves.
+///
+/// Idempotent: a database that already carries a user-defined order (any
+/// non-zero `sort_order`) is left untouched, so re-running never clobbers it.
+/// Fresh databases get the column from the `CREATE TABLE` statement in
+/// `create_schema`.
+fn migrate_api_configs_sort_order(connection: &Connection) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA table_info(api_configs)")?;
+    let columns: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(statement);
+
+    if !columns.iter().any(|column| column == "sort_order") {
+        connection.execute(
+            "ALTER TABLE api_configs ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+
+    // 单行库（全新数据库的默认档案）无需回填；已存在非 0 排序号说明用户已自定义顺序。
+    let needs_backfill: bool = connection.query_row(
+        "SELECT (SELECT COUNT(*) FROM api_configs) > 1
+            AND NOT EXISTS (SELECT 1 FROM api_configs WHERE sort_order <> 0)",
+        [],
+        |row| row.get(0),
+    )?;
+    if !needs_backfill {
+        return Ok(());
+    }
+
+    let mut statement = connection.prepare(
+        "SELECT profile_name
+           FROM api_configs
+          ORDER BY is_active DESC, display_name COLLATE NOCASE ASC, profile_name ASC",
+    )?;
+    let profiles: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(statement);
+
+    for (index, profile_name) in profiles.iter().enumerate() {
+        connection.execute(
+            "UPDATE api_configs SET sort_order = ?1 WHERE profile_name = ?2",
+            params![index as i64, profile_name],
+        )?;
+    }
+
+    Ok(())
+}
 
 /// Existing rows remain `NULL`, and each column is checked independently so
 /// partially migrated and repeatedly migrated databases are both safe.

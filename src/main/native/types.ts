@@ -65,6 +65,8 @@ export type ApiConfigInput = {
 export type ApiConfigRecord = ApiConfigInput & {
   id: string;
   updatedAt: string;
+  /** 列表展示顺序号（越小越靠前），由拖拽 / 上移下移维护。 */
+  sortOrder: number;
 };
 
 /** 导入文件预览中的单条配置（不含密钥，仅用于同名冲突确认）。 */
@@ -1773,6 +1775,8 @@ export type NativeBridge = {
   listApiConfigs: () => Promise<ApiConfigRecord[]>;
   upsertApiConfig: (config: ApiConfigInput) => Promise<void>;
   deleteApiConfig: (profileName: string) => Promise<void>;
+  /** 按给定档案名顺序重写展示排序（拖拽 / 上移下移）。 */
+  reorderApiConfigs: (orderedProfileNames: string[]) => Promise<void>;
   exportApiConfigs: (profileNames: string[]) => Promise<ApiConfigExportResult>;
   inspectApiConfigImport: (
     payloadJson: string,

@@ -33,6 +33,8 @@ export type ApiConfigInput = {
 export type ApiConfigRecord = ApiConfigInput & {
   id: string;
   updatedAt: string;
+  /** 列表展示顺序号（越小越靠前），由拖拽 / 上移下移维护。 */
+  sortOrder: number;
 };
 
 export type ImportSnowCliApiConfigsResult = {

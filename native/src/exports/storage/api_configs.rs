@@ -23,6 +23,15 @@ pub async fn delete_api_config(profile_name: String) -> napi::Result<()> {
         .map_err(map_spawn_error)?
 }
 
+/// 重排 API 档案（设置页表格 / 模型菜单渠道列表的拖拽与上移下移）：
+/// 按给定档案名顺序重写 sort_order。
+#[napi]
+pub async fn reorder_api_configs(ordered_profile_names: Vec<String>) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::reorder_api_configs(ordered_profile_names))
+        .await
+        .map_err(map_spawn_error)?
+}
+
 /// 导出选中配置为迁移文档（含明文密钥），文件写入由主进程完成。
 #[napi]
 pub async fn export_api_configs(profile_names: Vec<String>) -> napi::Result<ApiConfigExportResult> {

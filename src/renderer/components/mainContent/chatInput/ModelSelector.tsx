@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  GripVertical,
   Keyboard,
   Loader2,
   Pencil,
@@ -22,6 +23,10 @@ import { useDropdownDirection } from "./useDropdownDirection";
 import type { MainContentView } from "../types";
 import type { ChatInputActions, ChatInputState } from "./types";
 import { ApiSettingsEditModal } from "../../sidebar/apiSettings/ApiSettingsEditModal";
+import {
+  orderApiConfigsByName,
+  useApiConfigReorder,
+} from "../../sidebar/apiSettings/apiConfigReorder";
 import type { ApiConfigRecord } from "../../../../preload";
 
 type ModelSelectorProps = Pick<
@@ -152,10 +157,18 @@ export const ModelSelector = ({
     setModelActiveIndex(index >= 0 ? index : 0);
   }, [isModelMenuOpen, modelMenuView, isManualMode, models, selectedModel]);
 
+  // 进入渠道视图时把键盘高亮定位到当前选中项；
+  // 视图已打开时列表变化（如拖拽排序）不再打断用户当前的高亮位置。
+  const apiProfileViewEnteredRef = useRef(false);
   useEffect(() => {
     if (!isModelMenuOpen || modelMenuView !== "apiProfile") {
+      apiProfileViewEnteredRef.current = false;
       return;
     }
+    if (apiProfileViewEnteredRef.current) {
+      return;
+    }
+    apiProfileViewEnteredRef.current = true;
     const index = effectiveApiConfigs.findIndex(
       (config) => config.profileName === selectedApiProfile,
     );
@@ -255,6 +268,31 @@ export const ModelSelector = ({
         (config.basicModel || "").toLowerCase().includes(query),
     );
   }, [effectiveApiConfigs, apiProfileSearchQuery]);
+
+  const apiConfigNames = useMemo(
+    () => effectiveApiConfigs.map((config) => config.profileName),
+    [effectiveApiConfigs],
+  );
+  const apiConfigVisibleNames = useMemo(
+    () => filteredApiConfigs.map((config) => config.profileName),
+    [filteredApiConfigs],
+  );
+
+  // 渠道列表排序：本地先按新顺序即时反馈，落库后以 Rust 返回的列表为准。
+  const handleReorderApiConfigs = (orderedNames: string[]): void => {
+    const base = apiConfigsOverride ?? apiConfigs;
+    setApiConfigsOverride(orderApiConfigsByName(base, orderedNames));
+    void window.snow
+      .reorderApiConfigs(orderedNames)
+      .then((list) => setApiConfigsOverride(list))
+      .catch(() => setApiConfigsOverride(null));
+  };
+
+  const apiConfigReorder = useApiConfigReorder({
+    allNames: apiConfigNames,
+    visibleNames: apiConfigVisibleNames,
+    onReorder: handleReorderApiConfigs,
+  });
 
   // 过滤结果变化时收敛索引，避免越界
   useEffect(() => {
@@ -507,9 +545,20 @@ export const ModelSelector = ({
                 {filteredApiConfigs.map((config, index) => (
                   <div
                     key={config.profileName}
+                    {...apiConfigReorder.getDropTargetProps(config.profileName)}
                     className={`model-dropdown-item ${
                       config.profileName === selectedApiProfile ? "active" : ""
-                    } ${apiProfileActiveIndex === index ? "highlighted" : ""}`}
+                    } ${apiProfileActiveIndex === index ? "highlighted" : ""}${
+                      apiConfigReorder.draggingName === config.profileName
+                        ? " is-dragging"
+                        : ""
+                    }${
+                      apiConfigReorder.dropTargetName === config.profileName
+                        ? apiConfigReorder.dropPlacement === "before"
+                          ? " is-drop-before"
+                          : " is-drop-after"
+                        : ""
+                    }`}
                     onClick={() => {
                       void handleSelectApiProfile(config.profileName);
                     }}
@@ -524,6 +573,17 @@ export const ModelSelector = ({
                     tabIndex={-1}
                     title={config.displayName}
                   >
+                    <span
+                      className="model-dropdown-drag-handle"
+                      {...apiConfigReorder.getDragHandleProps(
+                        config.profileName,
+                      )}
+                      title={t("settings.apiDragToReorder", {
+                        defaultValue: "Drag to reorder",
+                      })}
+                    >
+                      <GripVertical size={12} />
+                    </span>
                     <span className="model-dropdown-item-name">
                       {config.displayName}
                     </span>

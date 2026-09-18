@@ -98,6 +98,8 @@ pub struct ApiConfigRecord {
     pub custom_header_scheme_id: String,
     pub config_json: String,
     pub source: String,
+    /// 列表展示顺序号（越小越靠前，由拖拽/上移下移维护）；新建档案自动取当前最大值 +1。
+    pub sort_order: i32,
     pub updated_at: String,
 }
 

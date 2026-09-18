@@ -1,5 +1,35 @@
 # Release Notes
 
+## v0.4.2
+
+## New Features
+
+- **API Profile Import/Export**: Batch import and export API profiles, with drag-and-drop reordering.
+- **Conversation Import**: Import conversation JSON files, including batch import into a chosen project.
+- **Memory Panel and Search**: New `/memory` session memory panel, plus keyword search in the memory bank.
+- **Win95 Theme**: New Win95 theme preset, with cream / google presets filled in as well.
+- **Message and Memo Editing**: User messages can be written back into the input box for further editing; the memo editor supports `@` references.
+- **Usage Filtering**: Usage statistics can be filtered by API profile.
+- **Session Stats and Mobile**: Average TTFT is now tracked per session; the mobile page gains a token paste button.
+- **Git Panel**: Changed files can be viewed as a tree and keywords copied; push/pull now requires double confirmation with a toggle.
+- **Misc**: A "Clear App Cache" action in settings; a right-click menu on the pet window that can close pets; double confirmation for the Bash stop button.
+
+## Improvements
+
+- Empty AI responses are retried automatically.
+- Digest generation now uses a non-streaming request.
+- The sidebar conversation and project areas were refactored into standalone components and hooks.
+- The command trigger stays visible and the typed input is preserved when running a command.
+- Local-folder icons in the project list reuse the Explorer color scheme and have a hover state.
+- Long thinking-block content gets a collapse entry at the bottom.
+
+## Bug Fixes
+
+- Fixed a deadlock when earlier records spanned less than one screen and the continuation page could not load.
+- Fixed a scroll race condition in message pagination.
+- Fixed the scroll position being reset when switching entries.
+- Fixed the Win95 theme close-button hover color.
+
 ## v0.4.1
 
 ## New Features

@@ -169,21 +169,19 @@ export const ChatInputToolbar = ({
           onAutoFormatChange={onAutoFormatChange}
           onRefreshAutoFormat={onRefreshAutoFormat}
         />
-        {value.trim() === "" && (
-          <button
-            ref={commandTriggerRef}
-            className={`toolbar-btn command-trigger${
-              isCommandOpen ? " is-active" : ""
-            }`}
-            aria-label={t("chatCommand.trigger")}
-            aria-expanded={isCommandOpen}
-            onClick={handleToggleCommand}
-            type="button"
-            title={t("chatCommand.trigger")}
-          >
-            <Command size={15} />
-          </button>
-        )}
+        <button
+          ref={commandTriggerRef}
+          className={`toolbar-btn command-trigger${
+            isCommandOpen ? " is-active" : ""
+          }`}
+          aria-label={t("chatCommand.trigger")}
+          aria-expanded={isCommandOpen}
+          onClick={handleToggleCommand}
+          type="button"
+          title={t("chatCommand.trigger")}
+        >
+          <Command size={15} />
+        </button>
         {(planMode ||
           goalMode ||
           worktreeMode ||

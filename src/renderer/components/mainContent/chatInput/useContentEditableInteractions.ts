@@ -231,10 +231,12 @@ export const useContentEditableInteractions = ({
         return;
       }
       handleCloseCommand();
-      restoreContent("");
+      if (value.trim().startsWith("/")) {
+        restoreContent("");
+      }
       command.execute();
     },
-    [handleCloseCommand, restoreContent],
+    [handleCloseCommand, restoreContent, value],
   );
 
   const handleMentionDragStart = useCallback(

@@ -33862,10 +33862,20 @@ input {
   }
 }
 
-/* 关闭二次确认 tooltip：terminal / browser tab 点 X 后弹出的气泡浮层 */
+/* 关闭二次确认 tooltip：terminal / browser tab 点 X 后弹出的气泡浮层；
+   git 拉取/推送的确认气泡（portal 渲染，固定定位）共用同一外观 */
 .right-panel-close-confirm {
   position: absolute;
   z-index: 40;
+}
+
+.git-confirm-bubble {
+  position: fixed;
+  z-index: 60;
+}
+
+.right-panel-close-confirm,
+.git-confirm-bubble {
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -33891,7 +33901,8 @@ input {
   }
 }
 
-.right-panel-close-confirm-arrow {
+.right-panel-close-confirm-arrow,
+.git-confirm-bubble-arrow {
   position: absolute;
   top: -5px;
   width: 8px;
@@ -33902,13 +33913,15 @@ input {
   transform: rotate(45deg);
 }
 
-.right-panel-close-confirm-actions {
+.right-panel-close-confirm-actions,
+.git-confirm-bubble-actions {
   display: flex;
   gap: 6px;
   justify-content: flex-end;
 }
 
-.right-panel-close-confirm-btn {
+.right-panel-close-confirm-btn,
+.git-confirm-bubble-btn {
   height: 22px;
   padding: 0 10px;
   border: 1px solid var(--border-color);
@@ -33923,18 +33936,21 @@ input {
     color 0.1s;
 }
 
-.right-panel-close-confirm-btn:hover {
+.right-panel-close-confirm-btn:hover,
+.git-confirm-bubble-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
 
-.right-panel-close-confirm-btn.danger {
+.right-panel-close-confirm-btn.danger,
+.git-confirm-bubble-btn.primary {
   background: var(--accent-color);
   border-color: var(--accent-color);
   color: var(--on-solid);
 }
 
-.right-panel-close-confirm-btn.danger:hover {
+.right-panel-close-confirm-btn.danger:hover,
+.git-confirm-bubble-btn.primary:hover {
   background: color-mix(in srgb, var(--accent-color) 88%, white);
   border-color: color-mix(in srgb, var(--accent-color) 88%, white);
 }

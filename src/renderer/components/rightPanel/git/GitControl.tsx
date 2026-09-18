@@ -26,9 +26,11 @@ import type {
   GitStatusResult,
 } from "../../../../preload";
 import { useI18n } from "../../../i18n";
+import { GIT_SETTINGS_CHANGED_EVENT } from "../../../constants/gitEvents";
 import { useGitStatus } from "./useGitStatus";
 import { useRemotePolling } from "./useRemotePolling";
 import { BranchSelector } from "./BranchSelector";
+import { GitConfirmBubble, type GitConfirmAnchor } from "./GitConfirmBubble";
 import { GitFileList } from "./GitFileList";
 import { GitGraph } from "./GitGraph";
 import { RepoSelector } from "./RepoSelector";
@@ -156,6 +158,12 @@ export const GitControl = ({
   );
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [discardTarget, setDiscardTarget] = useState<GitFileStatus[]>([]);
+  // 拉取/推送二次确认：开关值来自 Git 设置面板，保存后通过自定义事件同步。
+  const [confirmPullPush, setConfirmPullPush] = useState(true);
+  const [gitActionConfirm, setGitActionConfirm] = useState<{
+    action: "pull" | "push";
+    anchor: GitConfirmAnchor;
+  } | null>(null);
   const [operationError, setOperationError] = useState<{
     title: string;
     message: string;
@@ -224,6 +232,33 @@ export const GitControl = ({
       repoPath != null && commitMsgGenerations.has(repoPath),
     );
   }, [repoPath]);
+
+  // 读取“拉取/推送二次确认”开关；设置面板保存后经自定义事件通知刷新，
+  // 无需重挂载 Git 面板即可生效。
+  useEffect(() => {
+    let cancelled = false;
+    const loadConfirmSetting = (): void => {
+      void window.snow
+        .getGitScanSettings()
+        .then((settings) => {
+          if (!cancelled) {
+            setConfirmPullPush(settings.confirmPullPush);
+          }
+        })
+        .catch(() => {
+          // 读取失败时保持默认值（开启二次确认）。
+        });
+    };
+    loadConfirmSetting();
+    window.addEventListener(GIT_SETTINGS_CHANGED_EVENT, loadConfirmSetting);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(
+        GIT_SETTINGS_CHANGED_EVENT,
+        loadConfirmSetting,
+      );
+    };
+  }, []);
 
   // 订阅模块级生成状态广播：任意仓库的生成开始/结束都会通知，
   // isGeneratingCommitMsg 始终反映“当前仓库”的实时状态（包括切走后
@@ -652,6 +687,39 @@ export const GitControl = ({
       .finally(() => setActionInProgress(null));
   }, [repoPath, refresh, t, reportGitError]);
 
+  // 拉取/推送入口：开关开启时先弹二次确认气泡，确认后才真正执行。
+  const requestGitAction = useCallback(
+    (action: "pull" | "push", anchor: GitConfirmAnchor) => {
+      if (!confirmPullPush) {
+        if (action === "pull") {
+          handlePull();
+        } else {
+          handlePush();
+        }
+        return;
+      }
+      setGitActionConfirm({ action, anchor });
+    },
+    [confirmPullPush, handlePull, handlePush],
+  );
+
+  const handleConfirmGitAction = useCallback(() => {
+    const pending = gitActionConfirm;
+    setGitActionConfirm(null);
+    if (!pending) {
+      return;
+    }
+    if (pending.action === "pull") {
+      handlePull();
+    } else {
+      handlePush();
+    }
+  }, [gitActionConfirm, handlePull, handlePush]);
+
+  const handleCancelGitAction = useCallback(() => {
+    setGitActionConfirm(null);
+  }, []);
+
   const handleDiscardRequest = useCallback((files: GitFileStatus[]) => {
     if (files.length === 0) {
       return;
@@ -704,8 +772,14 @@ export const GitControl = ({
         icon: <ArrowDownToLine size={13} strokeWidth={1.8} />,
         disabled: busy,
         onClick: () => {
+          const anchorX = actionsContextMenu?.x ?? 0;
+          const anchorY = actionsContextMenu?.y ?? 0;
           setActionsContextMenu(null);
-          handlePull();
+          requestGitAction("pull", {
+            left: anchorX,
+            right: anchorX,
+            bottom: anchorY,
+          });
         },
       },
       {
@@ -714,8 +788,14 @@ export const GitControl = ({
         icon: <ArrowUpFromLine size={13} strokeWidth={1.8} />,
         disabled: busy,
         onClick: () => {
+          const anchorX = actionsContextMenu?.x ?? 0;
+          const anchorY = actionsContextMenu?.y ?? 0;
           setActionsContextMenu(null);
-          handlePush();
+          requestGitAction("push", {
+            left: anchorX,
+            right: anchorX,
+            bottom: anchorY,
+          });
         },
       },
       {
@@ -901,7 +981,14 @@ export const GitControl = ({
             <button
               type="button"
               className="icon-btn git-action-btn"
-              onClick={handlePull}
+              onClick={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                requestGitAction("pull", {
+                  left: rect.left,
+                  right: rect.right,
+                  bottom: rect.bottom,
+                });
+              }}
               disabled={actionInProgress !== null}
               title={
                 status.behind > 0
@@ -921,7 +1008,14 @@ export const GitControl = ({
             <button
               type="button"
               className="icon-btn git-action-btn"
-              onClick={handlePush}
+              onClick={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                requestGitAction("push", {
+                  left: rect.left,
+                  right: rect.right,
+                  bottom: rect.bottom,
+                });
+              }}
               disabled={actionInProgress !== null}
               title={t("git.push")}
             >
@@ -1161,6 +1255,25 @@ export const GitControl = ({
             },
           ]}
           onClose={() => setCommitModeMenu(null)}
+        />
+      )}
+
+      {gitActionConfirm && (
+        <GitConfirmBubble
+          anchor={gitActionConfirm.anchor}
+          message={
+            gitActionConfirm.action === "pull"
+              ? t("git.confirmPull")
+              : t("git.confirmPush")
+          }
+          confirmLabel={
+            gitActionConfirm.action === "pull"
+              ? t("git.confirmPullBtn")
+              : t("git.confirmPushBtn")
+          }
+          cancelLabel={t("common.cancel")}
+          onConfirm={handleConfirmGitAction}
+          onCancel={handleCancelGitAction}
         />
       )}
 

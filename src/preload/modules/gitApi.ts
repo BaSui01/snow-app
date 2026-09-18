@@ -147,6 +147,7 @@ export const gitApi = {
     remotePollIntervalMs: number;
     statusLimit: number;
     autoRefresh: boolean;
+    confirmPullPush: boolean;
   }> => ipcRenderer.invoke("git-settings:get"),
   setGitScanSettings: (value: {
     maxDepth: number;
@@ -155,6 +156,7 @@ export const gitApi = {
     remotePollIntervalMs: number;
     statusLimit: number;
     autoRefresh: boolean;
+    confirmPullPush: boolean;
   }): Promise<{
     maxDepth: number;
     ignoredFolders: string[];
@@ -162,6 +164,7 @@ export const gitApi = {
     remotePollIntervalMs: number;
     statusLimit: number;
     autoRefresh: boolean;
+    confirmPullPush: boolean;
   }> => ipcRenderer.invoke("git-settings:set", value),
   generateCommitMessage: (
     repoPath: string,

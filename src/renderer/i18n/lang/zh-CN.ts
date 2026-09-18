@@ -1868,6 +1868,9 @@ export const zhCN = {
   "settings.gitAutoRefreshOff": "关",
   "settings.gitAutoRefreshHint":
     "启用后文件变化会自动刷新 git 状态；关闭则仅手动刷新，在超大仓库上更省资源。",
+  "settings.gitConfirmPullPushLabel": "拉取/推送前二次确认",
+  "settings.gitConfirmPullPushHint":
+    "开启后点击拉取或推送会先弹出确认气泡，避免误触触发远程操作。",
   "settings.codebaseSettingsInfo": "管理索引和工作区代码搜索。",
   "settings.codebaseLoadError": "加载代码库设置失败",
   "settings.codebaseSaveSuccess": "已保存代码库设置。",
@@ -3987,6 +3990,10 @@ export const zhCN = {
   "git.expandSection": "展开",
   "git.pushFailed": "推送失败",
   "git.pullFailed": "拉取失败",
+  "git.confirmPull": "拉取远程更新？",
+  "git.confirmPullBtn": "拉取",
+  "git.confirmPush": "推送提交到远程？",
+  "git.confirmPushBtn": "推送",
   "git.errorDismiss": "确定",
   "git.operationFailedGeneric":
     "Git 未返回任何详细输出，请检查网络连接与仓库配置。",

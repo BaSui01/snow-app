@@ -12,6 +12,7 @@ type GitScanSettings = {
   remotePollIntervalMs: number;
   statusLimit: number;
   autoRefresh: boolean;
+  confirmPullPush: boolean;
 };
 
 type UseGitStatusResult = {
@@ -22,7 +23,7 @@ type UseGitStatusResult = {
 };
 
 export const useGitStatus = (
-  repoPath: string | undefined | null
+  repoPath: string | undefined | null,
 ): UseGitStatusResult => {
   const [status, setStatus] = useState<GitStatusResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);

@@ -1951,6 +1951,9 @@ export const en = {
   "settings.gitAutoRefreshOff": "Off",
   "settings.gitAutoRefreshHint":
     "When enabled, git status refreshes automatically when files change. Disable to only refresh manually, saving resources on very large repositories.",
+  "settings.gitConfirmPullPushLabel": "Confirm before pull / push",
+  "settings.gitConfirmPullPushHint":
+    "When enabled, a confirmation bubble appears before pulling or pushing so the operation is never triggered by accident.",
   "settings.codebaseSettingsInfo": "Manage indexing and workspace code search.",
   "settings.codebaseLoadError": "Failed to load codebase settings",
   "settings.codebaseSaveSuccess": "Saved codebase settings.",
@@ -4224,6 +4227,10 @@ export const en = {
   "git.expandSection": "Expand section",
   "git.pushFailed": "Push Failed",
   "git.pullFailed": "Pull Failed",
+  "git.confirmPull": "Pull remote changes?",
+  "git.confirmPullBtn": "Pull",
+  "git.confirmPush": "Push commits to remote?",
+  "git.confirmPushBtn": "Push",
   "git.errorDismiss": "OK",
   "git.operationFailedGeneric":
     "Git returned no detailed output. Check your network connection and repository configuration.",

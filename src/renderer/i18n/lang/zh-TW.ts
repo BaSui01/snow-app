@@ -1867,6 +1867,9 @@ export const zhTW = {
   "settings.gitAutoRefreshOff": "關",
   "settings.gitAutoRefreshHint":
     "啟用後檔案變更會自動重新整理 git 狀態；關閉則僅手動重新整理，在超大儲存庫上更省資源。",
+  "settings.gitConfirmPullPushLabel": "拉取/推送前二次確認",
+  "settings.gitConfirmPullPushHint":
+    "開啟後點擊拉取或推送會先彈出確認氣泡，避免誤觸觸發遠端操作。",
   "settings.codebaseSettingsInfo": "管理索引和工作區程式碼搜尋。",
   "settings.codebaseLoadError": "載入程式碼庫設定失敗",
   "settings.codebaseSaveSuccess": "已儲存程式碼庫設定。",
@@ -3965,6 +3968,10 @@ export const zhTW = {
   "git.expandSection": "展開",
   "git.pushFailed": "推送失敗",
   "git.pullFailed": "拉取失敗",
+  "git.confirmPull": "拉取遠端更新？",
+  "git.confirmPullBtn": "拉取",
+  "git.confirmPush": "推送提交到遠端？",
+  "git.confirmPushBtn": "推送",
   "git.errorDismiss": "確定",
   "git.operationFailedGeneric":
     "Git 未回傳任何詳細輸出，請檢查網路連線與倉庫設定。",

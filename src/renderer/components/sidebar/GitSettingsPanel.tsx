@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { useBlurAutoSave } from "../../hooks/useBlurAutoSave";
 import { useI18n } from "../../i18n";
+import { GIT_SETTINGS_CHANGED_EVENT } from "../../constants/gitEvents";
 
 type GitScanSettings = {
   maxDepth: number;
@@ -12,6 +13,7 @@ type GitScanSettings = {
   remotePollIntervalMs: number;
   statusLimit: number;
   autoRefresh: boolean;
+  confirmPullPush: boolean;
 };
 
 type GitSettingsFormValue = {
@@ -21,6 +23,7 @@ type GitSettingsFormValue = {
   remotePollIntervalMs: string;
   statusLimit: string;
   autoRefresh: boolean;
+  confirmPullPush: boolean;
 };
 
 type GitSettingsPanelProps = {
@@ -42,6 +45,7 @@ const toSettings = (form: GitSettingsFormValue): GitScanSettings => {
     remotePollIntervalMs: parse(form.remotePollIntervalMs, 10000),
     statusLimit: parse(form.statusLimit, 10000),
     autoRefresh: form.autoRefresh,
+    confirmPullPush: form.confirmPullPush,
   };
 };
 
@@ -52,6 +56,7 @@ const toForm = (settings: GitScanSettings): GitSettingsFormValue => ({
   remotePollIntervalMs: String(settings.remotePollIntervalMs),
   statusLimit: String(settings.statusLimit),
   autoRefresh: settings.autoRefresh,
+  confirmPullPush: settings.confirmPullPush,
 });
 
 export function GitSettingsPanel({
@@ -66,7 +71,8 @@ export function GitSettingsPanel({
       remotePollIntervalMs: 10000,
       statusLimit: 10000,
       autoRefresh: true,
-    })
+      confirmPullPush: true,
+    }),
   );
   const [lastSaved, setLastSaved] = useState<GitScanSettings>({
     maxDepth: 1,
@@ -75,6 +81,7 @@ export function GitSettingsPanel({
     remotePollIntervalMs: 10000,
     statusLimit: 10000,
     autoRefresh: true,
+    confirmPullPush: true,
   });
   const [isLoading, setIsLoading] = useState(true);
   const [status, setStatus] = useState("");
@@ -101,7 +108,7 @@ export function GitSettingsPanel({
           ? loadError.message
           : t("settings.gitLoadError", {
               defaultValue: "Failed to load Git settings",
-            })
+            }),
       );
     } finally {
       if (isMountedRef.current) {
@@ -118,12 +125,14 @@ export function GitSettingsPanel({
     async (settings: GitScanSettings): Promise<void> => {
       try {
         await window.snow.setGitScanSettings(settings);
+        // 广播给 Git 面板：二次确认等开关无需重挂载即可生效。
+        window.dispatchEvent(new CustomEvent(GIT_SETTINGS_CHANGED_EVENT));
         if (isMountedRef.current) {
           setLastSaved(settings);
           setStatus(
             t("settings.gitSaveSuccess", {
               defaultValue: "Git settings saved.",
-            })
+            }),
           );
         }
       } catch (saveError) {
@@ -133,17 +142,16 @@ export function GitSettingsPanel({
               ? saveError.message
               : t("settings.gitSaveError", {
                   defaultValue: "Failed to save Git settings",
-                })
+                }),
           );
         }
       }
     },
-    [t]
+    [t],
   );
 
   const updateField =
-    (field: keyof GitSettingsFormValue) =>
-    (value: string | boolean) => {
+    (field: keyof GitSettingsFormValue) => (value: string | boolean) => {
       setForm((previous) => ({ ...previous, [field]: value }));
     };
 
@@ -155,11 +163,17 @@ export function GitSettingsPanel({
     toSettings,
     lastSaved,
     (settings) => void saveSettings(settings),
-    setError
+    setError,
   );
 
   const handleToggleAutoRefresh = (checked: boolean): void => {
     const nextForm = { ...form, autoRefresh: checked };
+    setForm(nextForm);
+    commitSave(nextForm);
+  };
+
+  const handleToggleConfirmPullPush = (checked: boolean): void => {
+    const nextForm = { ...form, confirmPullPush: checked };
     setForm(nextForm);
     commitSave(nextForm);
   };
@@ -212,7 +226,9 @@ export function GitSettingsPanel({
               <input
                 className="form-dialog-input"
                 inputMode="numeric"
-                onChange={(event) => updateField("maxDepth")(event.target.value)}
+                onChange={(event) =>
+                  updateField("maxDepth")(event.target.value)
+                }
                 onBlur={() => commitSave()}
                 placeholder="1"
                 value={form.maxDepth}
@@ -352,6 +368,42 @@ export function GitSettingsPanel({
                 {t("settings.gitAutoRefreshHint", {
                   defaultValue:
                     "When enabled, git status refreshes automatically when files change. Disable to only refresh manually, saving resources on very large repositories.",
+                })}
+              </span>
+            </label>
+
+            <label className="form-dialog-field">
+              <span className="form-dialog-label">
+                {t("settings.gitConfirmPullPushLabel", {
+                  defaultValue: "Confirm before pull / push",
+                })}
+              </span>
+              <label
+                className="toggle-switch"
+                title={
+                  form.confirmPullPush
+                    ? t("settings.gitAutoRefreshOn", {
+                        defaultValue: "On",
+                      })
+                    : t("settings.gitAutoRefreshOff", {
+                        defaultValue: "Off",
+                      })
+                }
+              >
+                <input
+                  type="checkbox"
+                  checked={form.confirmPullPush}
+                  onChange={(event) =>
+                    handleToggleConfirmPullPush(event.target.checked)
+                  }
+                  hidden
+                />
+                <span className="toggle-slider" />
+              </label>
+              <span className="settings-item-description">
+                {t("settings.gitConfirmPullPushHint", {
+                  defaultValue:
+                    "When enabled, a confirmation bubble appears before pulling or pushing so the operation is never triggered by accident.",
                 })}
               </span>
             </label>

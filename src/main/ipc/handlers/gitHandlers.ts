@@ -45,6 +45,8 @@ type GitScanSettings = {
   statusLimit: number;
   /** 文件变化时自动刷新 git status，默认 true */
   autoRefresh: boolean;
+  /** 拉取/推送前弹出二次确认气泡，默认 true */
+  confirmPullPush: boolean;
 };
 
 const DEFAULT_GIT_SCAN_SETTINGS: GitScanSettings = {
@@ -54,13 +56,14 @@ const DEFAULT_GIT_SCAN_SETTINGS: GitScanSettings = {
   remotePollIntervalMs: 10000,
   statusLimit: 10000,
   autoRefresh: true,
+  confirmPullPush: true,
 };
 
 const toPositiveInteger = (
   value: unknown,
   fallback: number,
   min: number,
-  max: number
+  max: number,
 ): number => {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return fallback;
@@ -69,7 +72,7 @@ const toPositiveInteger = (
 };
 
 const readGitScanSettings = async (
-  native: NativeBridge
+  native: NativeBridge,
 ): Promise<GitScanSettings> => {
   try {
     const raw = await native.getSystemSettingValue(GIT_SETTINGS_CODE);
@@ -84,7 +87,7 @@ const readGitScanSettings = async (
     const ignoredFolders = Array.isArray(parsed.ignoredFolders)
       ? parsed.ignoredFolders.filter(
           (folder): folder is string =>
-            typeof folder === "string" && folder.trim().length > 0
+            typeof folder === "string" && folder.trim().length > 0,
         )
       : [];
     return {
@@ -94,24 +97,28 @@ const readGitScanSettings = async (
         parsed.changeDebounceMs,
         DEFAULT_GIT_SCAN_SETTINGS.changeDebounceMs,
         50,
-        60000
+        60000,
       ),
       remotePollIntervalMs: toPositiveInteger(
         parsed.remotePollIntervalMs,
         DEFAULT_GIT_SCAN_SETTINGS.remotePollIntervalMs,
         1000,
-        600000
+        600000,
       ),
       statusLimit: toPositiveInteger(
         parsed.statusLimit,
         DEFAULT_GIT_SCAN_SETTINGS.statusLimit,
         0,
-        1000000
+        1000000,
       ),
       autoRefresh:
         typeof parsed.autoRefresh === "boolean"
           ? parsed.autoRefresh
           : DEFAULT_GIT_SCAN_SETTINGS.autoRefresh,
+      confirmPullPush:
+        typeof parsed.confirmPullPush === "boolean"
+          ? parsed.confirmPullPush
+          : DEFAULT_GIT_SCAN_SETTINGS.confirmPullPush,
     };
   } catch {
     return DEFAULT_GIT_SCAN_SETTINGS;
@@ -143,7 +150,7 @@ export const registerGitHandlers = (native: NativeBridge): void => {
         if (!event.sender.isDestroyed()) {
           event.sender.send("git:status-changed", changedRepoPath);
         }
-      }
+      },
     );
   });
 
@@ -194,7 +201,7 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       return isSshPath(trimmed)
         ? remoteStageFiles(trimmed, paths)
         : native.gitStageFiles(trimmed, paths);
-    }
+    },
   );
 
   ipcMain.handle(
@@ -210,7 +217,7 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       return isSshPath(trimmed)
         ? remoteUnstageFiles(trimmed, paths)
         : native.gitUnstageFiles(trimmed, paths);
-    }
+    },
   );
 
   ipcMain.handle("git:stage-all", async (_event, repoPath: unknown) => {
@@ -246,7 +253,7 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       return isSshPath(trimmed)
         ? remoteCommitChanges(trimmed, message)
         : native.gitCommit(trimmed, message);
-    }
+    },
   );
 
   ipcMain.handle("git:push", async (_event, repoPath: unknown) => {
@@ -292,7 +299,7 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       return isSshPath(trimmed)
         ? remoteCheckoutBranch(trimmed, branchName.trim())
         : native.gitCheckout(trimmed, branchName.trim());
-    }
+    },
   );
 
   ipcMain.handle(
@@ -308,7 +315,7 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       return isSshPath(trimmed)
         ? remoteCreateBranch(trimmed, branchName.trim())
         : native.gitCreateBranch(trimmed, branchName.trim());
-    }
+    },
   );
 
   ipcMain.handle(
@@ -324,17 +331,12 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       return isSshPath(trimmed)
         ? remoteGetFileDiff(trimmed, filePath.trim(), staged === true)
         : native.gitFileDiff(trimmed, filePath.trim(), staged === true);
-    }
+    },
   );
 
   ipcMain.handle(
     "git:file-content",
-    async (
-      _event,
-      repoPath: unknown,
-      filePath: unknown,
-      revision: unknown
-    ) => {
+    async (_event, repoPath: unknown, filePath: unknown, revision: unknown) => {
       if (typeof repoPath !== "string" || !repoPath.trim()) {
         throw new Error("Repository path is required");
       }
@@ -346,10 +348,12 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       if (isSshPath(trimmed)) {
         // Remote (SSH) repos cannot read file bytes locally — the caller
         // falls back to the binary-file placeholder.
-        throw new Error("File content preview is not supported for remote repositories");
+        throw new Error(
+          "File content preview is not supported for remote repositories",
+        );
       }
       return native.gitFileContent(trimmed, filePath.trim(), rev);
-    }
+    },
   );
 
   ipcMain.handle(
@@ -365,7 +369,7 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       return isSshPath(trimmed)
         ? remoteDiscardChanges(trimmed, paths)
         : native.gitDiscardChanges(trimmed, paths);
-    }
+    },
   );
 
   ipcMain.handle(
@@ -381,7 +385,7 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       return isSshPath(trimmed)
         ? remoteGetGitLog(trimmed, skipCount, maxCount)
         : native.getGitLog(trimmed, skipCount, maxCount);
-    }
+    },
   );
 
   ipcMain.handle(
@@ -397,7 +401,7 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       return isSshPath(trimmed)
         ? remoteGetCommitFiles(trimmed, hash.trim())
         : native.getGitCommitFiles(trimmed, hash.trim());
-    }
+    },
   );
 
   ipcMain.handle(
@@ -413,7 +417,7 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       return isSshPath(trimmed)
         ? remoteGetCommitDiff(trimmed, hash.trim())
         : native.getCommitDiff(trimmed, hash.trim());
-    }
+    },
   );
 
   ipcMain.handle(
@@ -432,7 +436,7 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       return isSshPath(trimmed)
         ? remoteGetCommitFileDiff(trimmed, hash.trim(), filePath.trim())
         : native.gitCommitFileDiff(trimmed, hash.trim(), filePath.trim());
-    }
+    },
   );
   // ===== Git repo discovery =====
   ipcMain.handle("git:discover-repos", async (_event, rootPath: unknown) => {
@@ -447,7 +451,7 @@ export const registerGitHandlers = (native: NativeBridge): void => {
     return native.discoverGitRepos(
       trimmed,
       settings.maxDepth,
-      settings.ignoredFolders
+      settings.ignoredFolders,
     );
   });
 
@@ -463,7 +467,7 @@ export const registerGitHandlers = (native: NativeBridge): void => {
     const ignoredFolders = Array.isArray(source.ignoredFolders)
       ? source.ignoredFolders.filter(
           (folder): folder is string =>
-            typeof folder === "string" && folder.trim().length > 0
+            typeof folder === "string" && folder.trim().length > 0,
         )
       : [];
     const normalized: GitScanSettings = {
@@ -473,29 +477,33 @@ export const registerGitHandlers = (native: NativeBridge): void => {
         source.changeDebounceMs,
         DEFAULT_GIT_SCAN_SETTINGS.changeDebounceMs,
         50,
-        60000
+        60000,
       ),
       remotePollIntervalMs: toPositiveInteger(
         source.remotePollIntervalMs,
         DEFAULT_GIT_SCAN_SETTINGS.remotePollIntervalMs,
         1000,
-        600000
+        600000,
       ),
       statusLimit: toPositiveInteger(
         source.statusLimit,
         DEFAULT_GIT_SCAN_SETTINGS.statusLimit,
         0,
-        1000000
+        1000000,
       ),
       autoRefresh:
         typeof source.autoRefresh === "boolean"
           ? source.autoRefresh
           : DEFAULT_GIT_SCAN_SETTINGS.autoRefresh,
+      confirmPullPush:
+        typeof source.confirmPullPush === "boolean"
+          ? source.confirmPullPush
+          : DEFAULT_GIT_SCAN_SETTINGS.confirmPullPush,
     };
     await native.setSystemSetting(
       GIT_SETTINGS_NAME,
       GIT_SETTINGS_CODE,
-      JSON.stringify(normalized)
+      JSON.stringify(normalized),
     );
     return normalized;
   });
@@ -528,15 +536,15 @@ export const registerGitHandlers = (native: NativeBridge): void => {
         return await native.generateCommitMessageFromDiff(
           stagedDiff,
           onChunk,
-          normalizedStreamId
+          normalizedStreamId,
         );
       }
 
       return await native.generateCommitMessage(
         trimmed,
         onChunk,
-        normalizedStreamId
+        normalizedStreamId,
       );
-    }
+    },
   );
 };

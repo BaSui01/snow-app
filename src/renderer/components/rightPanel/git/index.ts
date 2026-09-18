@@ -1,4 +1,6 @@
 export { GitControl } from "./GitControl";
+export { GitConfirmBubble } from "./GitConfirmBubble";
+export type { GitConfirmAnchor } from "./GitConfirmBubble";
 export { GitFileList } from "./GitFileList";
 export { GitGraph } from "./GitGraph";
 export { BranchSelector } from "./BranchSelector";

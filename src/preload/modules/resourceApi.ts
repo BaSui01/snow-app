@@ -10,4 +10,8 @@ export const resourceApi = {
   /** 整理本进程内存（仅 Windows 支持；其它平台快速失败），返回整理前后常驻内存 */
   optimizeMemory: (): Promise<MemoryOptimizeResult> =>
     ipcRenderer.invoke("settings:optimize-memory"),
+
+  /** 清空应用 HTTP 缓存并强制重新加载界面 */
+  clearAppCacheAndReload: (): Promise<void> =>
+    ipcRenderer.invoke("app:clear-cache-and-reload"),
 };

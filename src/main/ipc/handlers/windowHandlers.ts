@@ -329,6 +329,20 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
     }
   });
 
+  // 通用设置「清空应用缓存」：只清当前 session 的 HTTP 缓存后强制重新加载
+  // 当前页面（最快路径，不触碰 code cache / DNS / 登录态与本地数据）。
+  ipcMain.handle("app:clear-cache-and-reload", async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    try {
+      await event.sender.session.clearCache();
+    } catch {
+      // 清理失败不阻断重载
+    }
+    if (win && !win.isDestroyed()) {
+      win.webContents.reloadIgnoringCache();
+    }
+  });
+
   // 渲染进程保存快捷键设置后调用：重新读取数据库并注册/注销
   // 显示/隐藏窗口的全局快捷键（toggleWindow）。
   ipcMain.handle("shortcuts:reload-global", () =>

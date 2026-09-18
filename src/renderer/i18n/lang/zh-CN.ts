@@ -2680,6 +2680,14 @@ export const zhCN = {
   "settings.resourceOptimizeDone":
     "优化完成，磁盘已释放 {{disk}}，内存已释放 {{memory}}",
   "settings.resourceOptimizeDoneDiskOnly": "优化完成，磁盘已释放 {{disk}}",
+  "settings.resourceClearCache": "清空应用缓存",
+  "settings.resourceClearCacheInfo":
+    "清空应用的网络资源缓存并重新加载界面，不影响登录态与本地数据。",
+  "settings.resourceClearCacheWorking": "正在清空…",
+  "settings.resourceClearCacheTitle": "清空应用缓存",
+  "settings.resourceClearCacheConfirm":
+    "将清空应用的网络资源缓存并重新加载界面（不影响登录态与本地数据）。是否继续？",
+  "settings.resourceClearCacheConfirmBtn": "清空并重新加载",
   "settings.generalSettingsClosePanel": "关闭通用设置",
   "settings.attachContextTitle": "会话上下文注入",
   "settings.attachContextInfo":

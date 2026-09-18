@@ -30,7 +30,9 @@ type UserMessageRailProps = {
   /** 滚动容器身份 key（.chat-area 的 React key）：容器整体重建后必须重绑监听。 */
   containerKey: string;
   /** Triggers paginated loading of older messages. Called repeatedly until the
-   *  target message enters the DOM. */
+   *  target message enters the DOM. The loader preserves the viewport anchor
+   *  (content must not shift while pages are prepended) and resolves only after
+   *  that restore has converged, so the next round never races the correction. */
   loadOlderMessages: () => Promise<void>;
   /** Whether older messages are currently being fetched. */
   isLoadingOlderMessages: boolean;
@@ -417,6 +419,12 @@ export const UserMessageRail = memo(
     const railRef = useRef<HTMLDivElement | null>(null);
     const popoverRef = useRef<HTMLDivElement | null>(null);
     const userMessagesRef = useRef<UserMessageSummary[]>([]);
+    // 定位循环要连续翻多页：props 在回调闭包里是快照，翻页期间
+    // hasMoreMessages 变为 false 后必须立刻停止续页，否则会白等兜底超时。
+    const hasMoreMessagesRef = useRef(hasMoreMessages);
+    const isLoadingOlderMessagesRef = useRef(isLoadingOlderMessages);
+    hasMoreMessagesRef.current = hasMoreMessages;
+    isLoadingOlderMessagesRef.current = isLoadingOlderMessages;
 
     // Fetch all user messages from the Rust backend on every version bump
     // and conversation switch. No caching — the backend query is lightweight
@@ -668,7 +676,10 @@ export const UserMessageRail = memo(
     // with real DB ids after persistence, so the DOM's data-message-id always
     // matches the DB snowflake id from listUserMessages. If the message is not
     // yet in the DOM (paginated loading hasn't reached it), repeatedly call
-    // loadOlderMessages until it appears or there are no more pages. Then use
+    // loadOlderMessages until it appears or there are no more pages. The loader
+    // is the chat area's anchor-preserving paging entry: every prepended page is
+    // corrected back to the current viewport anchor before it resolves, so the
+    // visible content never jumps while we page up to the target. Then use
     // scrollIntoView and iterate: virtualized placeholders above the target
     // expand to real content (height changes), pushing the target down. We
     // keep re-scrolling until the position stabilizes.
@@ -692,12 +703,15 @@ export const UserMessageRail = memo(
 
         let el = findMessageElement(container, messageId);
 
-        // If not found, load older messages in a loop until it appears.
+        // If not found, load older messages in a loop until it appears. Guard on
+        // the refs, not the captured props: after the last page lands
+        // hasMoreMessages flips to false and the loop must stop instead of
+        // burning rounds (each of which would wait out the loader's fallback).
         const MAX_LOAD_ROUNDS = 200;
         let round = 0;
-        while (!el && hasMoreMessages && round < MAX_LOAD_ROUNDS) {
+        while (!el && hasMoreMessagesRef.current && round < MAX_LOAD_ROUNDS) {
           round++;
-          if (isLoadingOlderMessages) {
+          if (isLoadingOlderMessagesRef.current) {
             await new Promise((resolve) => setTimeout(resolve, 50));
             continue;
           }
@@ -741,8 +755,6 @@ export const UserMessageRail = memo(
       [
         scrollContainerRef,
         loadOlderMessages,
-        isLoadingOlderMessages,
-        hasMoreMessages,
         shouldStickToBottomRef,
         isInitialBottomPositioningRef,
         isUserScrollIntentRef,

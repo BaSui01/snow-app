@@ -2819,6 +2819,14 @@ export const en = {
   "settings.resourceOptimizeDone":
     "Done — reclaimed {{disk}} on disk and {{memory}} of memory",
   "settings.resourceOptimizeDoneDiskOnly": "Done — reclaimed {{disk}} on disk",
+  "settings.resourceClearCache": "Clear app cache",
+  "settings.resourceClearCacheInfo":
+    "Clear cached app network resources, then reload the interface. Sign-in state and local data are kept.",
+  "settings.resourceClearCacheWorking": "Clearing...",
+  "settings.resourceClearCacheTitle": "Clear app cache",
+  "settings.resourceClearCacheConfirm":
+    "Cached app network resources will be cleared and the interface will reload. Sign-in state and local data are kept. Continue?",
+  "settings.resourceClearCacheConfirmBtn": "Clear and reload",
   "settings.generalSettingsClosePanel": "Close general settings",
   "settings.attachContextTitle": "Conversation context injection",
   "settings.attachContextInfo":

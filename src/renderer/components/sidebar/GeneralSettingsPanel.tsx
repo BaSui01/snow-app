@@ -14,6 +14,7 @@ import {
   Recycle,
   RefreshCw,
   RotateCcw,
+  Trash2,
   Wrench,
   X,
 } from "lucide-react";
@@ -155,6 +156,10 @@ export function GeneralSettingsPanel({
   const [isOptimizing, setIsOptimizing] = useState(false);
   /** 最近一次优化占用的提示（空字符串表示无） */
   const [optimizeHint, setOptimizeHint] = useState("");
+  /** 正在清空应用缓存（清完会重新加载界面） */
+  const [isClearingCache, setIsClearingCache] = useState(false);
+  /** 待确认清空应用缓存（true 表示弹窗打开） */
+  const [pendingClearCache, setPendingClearCache] = useState(false);
   /** 用户请求取消迁移（chunk 循环之间检查） */
   const migrationCancelledRef = useRef(false);
   /** 组件卸载时若迁移仍进行中，触发回滚 */
@@ -724,6 +729,24 @@ export function GeneralSettingsPanel({
     }
   };
 
+  /** 清空应用缓存（HTTP / 代码缓存）并重新加载界面；登录态与本地数据不受影响。 */
+  const handleClearCacheAndReload = async (): Promise<void> => {
+    if (isClearingCache) {
+      return;
+    }
+    setIsClearingCache(true);
+    setStorageError("");
+    setRepairHint("");
+    setOptimizeHint("");
+    try {
+      await window.snow.clearAppCacheAndReload();
+      // 成功后主进程会重新加载页面，无需复位状态
+    } catch (error) {
+      setStorageError(error instanceof Error ? error.message : String(error));
+      setIsClearingCache(false);
+    }
+  };
+
   /** 渲染某个数据库的「修复」按钮（kind 区分运行库 / 归档库）。 */
   const renderRepairButton = (kind: DatabaseKind): React.JSX.Element => {
     const isRepairing = repairingDb === kind;
@@ -1117,6 +1140,68 @@ export function GeneralSettingsPanel({
                         })
                       : t("settings.resourceOptimize", {
                           defaultValue: "Optimize disk usage",
+                        })}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* 清空应用缓存：清掉 HTTP / 代码缓存后强制重新加载界面 */}
+            <div className="general-storage-row">
+              <div className="general-storage-info">
+                <Trash2
+                  size={14}
+                  strokeWidth={1.8}
+                  className="general-storage-icon"
+                  aria-hidden="true"
+                />
+                <div className="general-storage-text">
+                  <span className="general-storage-label">
+                    {t("settings.resourceClearCache", {
+                      defaultValue: "Clear app cache",
+                    })}
+                  </span>
+                  <span className="settings-item-description">
+                    {t("settings.resourceClearCacheInfo", {
+                      defaultValue:
+                        "Clear cached app resources and reload the interface. Sign-in state and local data are kept.",
+                    })}
+                  </span>
+                </div>
+              </div>
+              <div className="general-storage-actions">
+                <button
+                  type="button"
+                  className="general-storage-action"
+                  onClick={() => setPendingClearCache(true)}
+                  disabled={
+                    isClearingCache ||
+                    isOptimizing ||
+                    isMigrating ||
+                    isImageLibraryBusy
+                  }
+                  title={t("settings.resourceClearCacheInfo", {
+                    defaultValue:
+                      "Clear cached app resources and reload the interface. Sign-in state and local data are kept.",
+                  })}
+                >
+                  {isClearingCache ? (
+                    <LoaderCircle
+                      size={11}
+                      strokeWidth={1.8}
+                      className="tool-call-icon-spinning"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <Trash2 size={11} strokeWidth={1.8} aria-hidden="true" />
+                  )}
+                  <span>
+                    {isClearingCache
+                      ? t("settings.resourceClearCacheWorking", {
+                          defaultValue: "Clearing...",
+                        })
+                      : t("settings.resourceClearCache", {
+                          defaultValue: "Clear app cache",
                         })}
                   </span>
                 </button>
@@ -1821,6 +1906,26 @@ export function GeneralSettingsPanel({
           }
         }}
         onCancel={() => setPendingRepair(null)}
+      />
+
+      <ConfirmDialog
+        open={pendingClearCache}
+        title={t("settings.resourceClearCacheTitle", {
+          defaultValue: "Clear app cache",
+        })}
+        message={t("settings.resourceClearCacheConfirm", {
+          defaultValue:
+            "Cached app resources will be cleared and the interface will reload. Sign-in state and local data are kept. Continue?",
+        })}
+        confirmLabel={t("settings.resourceClearCacheConfirmBtn", {
+          defaultValue: "Clear and reload",
+        })}
+        cancelLabel={t("settings.cancel", { defaultValue: "Cancel" })}
+        onConfirm={() => {
+          setPendingClearCache(false);
+          void handleClearCacheAndReload();
+        }}
+        onCancel={() => setPendingClearCache(false)}
       />
     </div>
   );

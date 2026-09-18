@@ -454,6 +454,9 @@ const ChatContentBody = ({
   const pendingScrollRestoreRef = useRef<PendingScrollRestore | null>(null);
   const scrollRestoreRequestIdRef = useRef(0);
   const isLoadingOlderWithScrollRef = useRef(false);
+  // 一轮翻页滚动恢复的在途信号：等不到新页/被新一轮接管时也必须唤醒等待方。
+  const scrollRestoreInflightRef = useRef<Promise<void> | null>(null);
+  const scrollRestoreSettleRef = useRef<(() => void) | null>(null);
   const scrolledAuthorizationSignatureRef = useRef("");
   const shouldStickToBottomRef = useRef(true);
   const lastScrollTopRef = useRef(0);
@@ -478,6 +481,7 @@ const ChatContentBody = ({
   const autoFillStartHeightRef = useRef(0);
   const autoFillStallRef = useRef(0);
   const hasMessagesRef = useRef(hasMessages);
+  const hasMoreMessagesRef = useRef(hasMoreMessages);
   const messagesRef = useRef(messages);
   const autoScrollEnabledRef = useRef(autoScrollEnabled);
   const isStreamingRef = useRef(isStreaming);
@@ -488,9 +492,22 @@ const ChatContentBody = ({
   const previousIsStreamingRef = useRef(isStreaming);
   activeConversationIdRef.current = activeConversationId;
   hasMessagesRef.current = hasMessages;
+  hasMoreMessagesRef.current = hasMoreMessages;
   messagesRef.current = messages;
   autoScrollEnabledRef.current = autoScrollEnabled;
   isStreamingRef.current = isStreaming;
+
+  // 结束一轮翻页滚动恢复：释放在途标记并唤醒等待该轮收敛的调用方（用户消息
+  // 定位需要按页推进），避免等待一个永不抵达的信号。
+  const finishScrollRestore = useCallback((): void => {
+    isLoadingOlderWithScrollRef.current = false;
+    const settle = scrollRestoreSettleRef.current;
+    scrollRestoreSettleRef.current = null;
+    scrollRestoreInflightRef.current = null;
+    if (settle) {
+      settle();
+    }
+  }, []);
 
   const syncScrollButtonVisibility = useCallback(
     (container: HTMLDivElement): void => {
@@ -598,7 +615,7 @@ const ChatContentBody = ({
     previousChatRenderKeyRef.current = chatRenderKey;
     scrollRestoreRequestIdRef.current += 1;
     pendingScrollRestoreRef.current = null;
-    isLoadingOlderWithScrollRef.current = false;
+    finishScrollRestore();
     scrolledAuthorizationSignatureRef.current = "";
     shouldStickToBottomRef.current = true;
     isInitialBottomPositioningRef.current = false;
@@ -627,7 +644,7 @@ const ChatContentBody = ({
       lastClientHeightRef.current = 0;
       container.scrollTop = 0;
     }
-  }, [activeConversationId, chatRenderKey]);
+  }, [activeConversationId, chatRenderKey, finishScrollRestore]);
 
   // chat-area 重挂载（灵动岛重开/紧凑展开）时容器 DOM 被整体替换：
   // 清除已定位标记，让初始定位 effect 在同轮 commit 重新滚到底部。
@@ -980,7 +997,21 @@ const ChatContentBody = ({
   const handleLoadOlderWithScroll = useCallback(async (): Promise<void> => {
     const container = scrollRef.current;
     const conversationId = activeConversationIdRef.current;
-    if (!container || !conversationId || isLoadingOlderWithScrollRef.current) {
+    if (!container || !conversationId) {
+      return;
+    }
+
+    // 已有翻页在途：等待它收敛后返回。定位用户消息需要按页推进，直接返回
+    // 会让调用方误以为这一页已经到位。
+    const inflightRestore = scrollRestoreInflightRef.current;
+    if (inflightRestore) {
+      await inflightRestore;
+      return;
+    }
+
+    // 没有更早的记录时 loadOlderMessages 直接返回，建立恢复等待只会让调用
+    // 方白等一轮兜底超时。
+    if (!hasMoreMessagesRef.current) {
       return;
     }
 
@@ -1006,6 +1037,13 @@ const ChatContentBody = ({
       }
     }
 
+    let resolveRestore: () => void = () => {};
+    const restoreFinished = new Promise<void>((resolve) => {
+      resolveRestore = resolve;
+    });
+    scrollRestoreSettleRef.current = resolveRestore;
+    scrollRestoreInflightRef.current = restoreFinished;
+
     pendingScrollRestoreRef.current = {
       conversationId,
       requestId,
@@ -1024,15 +1062,21 @@ const ChatContentBody = ({
       // 消费 pending（paint 前校正，视觉零扰动）。此超时仅作兜底：新页为
       // 空/加载异常导致 firstMessageId 始终未变时，清理状态防止
       // isLoadingOlderWithScrollRef 卡死翻页。requestId 不匹配说明期间
-      // 发起了新一轮翻页，交由新轮回收。
+      // 发起了新一轮翻页，交由新轮回收，本轮只唤醒等待方。
       window.setTimeout(() => {
         if (scrollRestoreRequestIdRef.current === requestId) {
           pendingScrollRestoreRef.current = null;
-          isLoadingOlderWithScrollRef.current = false;
+          finishScrollRestore();
+          return;
         }
+        resolveRestore();
       }, 2000);
     }
-  }, [loadOlderMessages]);
+
+    // 收敛后才返回：等待方（用户消息定位）据此保证「视口内容零跳动地翻完
+    // 这一页」再决定下一步。
+    await restoreFinished;
+  }, [finishScrollRestore, loadOlderMessages]);
 
   // 翻页滚动恢复（多轮收敛）：新页 commit 后、paint 前按 anchor 的内容
   // 坐标差分校正推挤。新页消息由虚拟化 hook 的 forceVisible 机制挂载即
@@ -1095,8 +1139,8 @@ const ChatContentBody = ({
     }
 
     pendingScrollRestoreRef.current = null;
-    isLoadingOlderWithScrollRef.current = false;
-  }, [messages, activeConversationId, restoreTick]);
+    finishScrollRestore();
+  }, [messages, activeConversationId, restoreTick, finishScrollRestore]);
 
   // 内容不足一屏时容器不可滚动，scroll 事件永不触发，唯一的分页入口
   // （handleChatScroll 的顶部阈值）就此死锁：首屏只取 CHAT_MESSAGE_PAGE_SIZE
@@ -1602,7 +1646,7 @@ const ChatContentBody = ({
               conversationId={activeConversationId}
               scrollContainerRef={scrollRef}
               containerKey={chatRenderKey}
-              loadOlderMessages={loadOlderMessages}
+              loadOlderMessages={handleLoadOlderWithScroll}
               isLoadingOlderMessages={isLoadingOlderMessages}
               hasMoreMessages={hasMoreMessages}
               conversationVersion={conversationVersion}

@@ -2683,6 +2683,14 @@ export const zhTW = {
   "settings.resourceOptimizeDone":
     "最佳化完成，磁碟已釋放 {{disk}}，記憶體已釋放 {{memory}}",
   "settings.resourceOptimizeDoneDiskOnly": "最佳化完成，磁碟已釋放 {{disk}}",
+  "settings.resourceClearCache": "清空應用快取",
+  "settings.resourceClearCacheInfo":
+    "清空應用的網路資源快取並重新載入介面，不影響登入狀態與本機資料。",
+  "settings.resourceClearCacheWorking": "正在清空…",
+  "settings.resourceClearCacheTitle": "清空應用快取",
+  "settings.resourceClearCacheConfirm":
+    "將清空應用的網路資源快取並重新載入介面（不影響登入狀態與本機資料）。是否繼續？",
+  "settings.resourceClearCacheConfirmBtn": "清空並重新載入",
   "settings.generalSettingsClosePanel": "關閉通用設定",
   "settings.attachContextTitle": "會話上下文注入",
   "settings.attachContextInfo":

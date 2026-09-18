@@ -146,8 +146,8 @@ input {
 
 .panel-resizer:hover::before,
 .app-shell.is-resizing .panel-resizer.is-active::before {
-  background: rgba(59, 130, 246, 0.45);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  background: color-mix(in srgb, var(--accent-color) 45%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-color) 10%, transparent);
 }
 
 .layout-resizer {
@@ -7269,6 +7269,28 @@ input {
   background: var(--bg-secondary);
   clip-path: inset(0 round var(--radius-lg));
   contain: paint;
+}
+
+.api-settings-tree-page .api-settings-page-header,
+.api-settings-tree-page .api-settings-summary-grid,
+.api-settings-tree-page .api-settings-actions {
+  flex-shrink: 0;
+}
+
+.api-settings-tree-page .api-settings-table-panel {
+  min-height: 240px;
+  flex: 1 1 auto;
+}
+
+.api-settings-tree-page .api-settings-table-panel > .api-settings-table-toolbar,
+.api-settings-tree-page .api-settings-table-panel > .api-settings-selection-bar,
+.api-settings-tree-page .api-settings-table-panel > .api-settings-search-count {
+  flex-shrink: 0;
+}
+
+.api-settings-tree-page .api-settings-table-wrap {
+  min-height: 0;
+  flex: 1 1 auto;
 }
 
 .api-settings-table {
@@ -27611,7 +27633,7 @@ input {
   left: 0;
   right: 0;
   height: 1px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--border-light);
   content: "";
   transform: translateY(-50%);
@@ -27624,7 +27646,7 @@ input {
   left: 50%;
   width: 22px;
   height: 14px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--bg-tertiary);
   border: 1px solid var(--border-light);
   content: "";
@@ -27637,13 +27659,14 @@ input {
 
 .h-resizer:hover::before,
 .h-resizer:active::before {
-  background: rgba(59, 130, 246, 0.45);
+  background: color-mix(in srgb, var(--accent-color) 45%, transparent);
 }
 
 .h-resizer:hover::after,
 .h-resizer:active::after {
-  border-color: rgba(59, 130, 246, 0.4);
-  box-shadow: inset 0 0 0 100px rgba(59, 130, 246, 0.1);
+  border-color: color-mix(in srgb, var(--accent-color) 40%, transparent);
+  box-shadow: inset 0 0 0 100px
+    color-mix(in srgb, var(--accent-color) 10%, transparent);
 }
 
 .h-resizer-icon {
@@ -27660,7 +27683,7 @@ input {
 
 .h-resizer:hover .h-resizer-icon,
 .h-resizer:active .h-resizer-icon {
-  color: rgba(59, 130, 246, 0.8);
+  color: color-mix(in srgb, var(--accent-color) 80%, transparent);
 }
 
 .git-control {

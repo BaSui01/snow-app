@@ -800,7 +800,8 @@
     .project-codebase-embed-btn,
     .model-manual-btn.primary,
     .git-commit-btn.primary,
-    .scheduled-tasks-create-btn
+    .scheduled-tasks-create-btn,
+    .scheduled-tasks-new-btn
   ) {
   min-height: 36px;
   border-radius: 18px;
@@ -824,6 +825,7 @@
     .git-commit-btn.primary,
     .memo-new-btn,
     .scheduled-tasks-create-btn,
+    .scheduled-tasks-new-btn,
     .mcp-editor-mode-btn.active
   ) {
   border-color: var(--google-blue);
@@ -847,6 +849,7 @@
     .git-commit-btn.primary,
     .memo-new-btn,
     .scheduled-tasks-create-btn,
+    .scheduled-tasks-new-btn,
     .mcp-editor-mode-btn.active
   ):hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--google-blue) 88%, #000000);
@@ -1491,6 +1494,53 @@
   background-color: var(--google-surface-0);
   color: var(--text-tertiary);
   letter-spacing: 0.02em;
+}
+
+:root[data-theme-preset="google"] .git-panel-changes {
+  background: var(--google-surface-1);
+}
+
+:root[data-theme-preset="google"] .h-resizer {
+  height: 16px;
+  min-height: 16px;
+}
+
+:root[data-theme-preset="google"] .h-resizer::before {
+  background: color-mix(
+    in srgb,
+    var(--google-blue) 32%,
+    var(--google-outline-variant)
+  );
+}
+
+:root[data-theme-preset="google"] .h-resizer::after {
+  width: 30px;
+  height: 13px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--google-surface-2);
+  box-shadow: var(--google-elevation-1);
+}
+
+:root[data-theme-preset="google"] .h-resizer:hover::before,
+:root[data-theme-preset="google"] .h-resizer:active::before {
+  background: color-mix(in srgb, var(--google-blue) 70%, transparent);
+}
+
+:root[data-theme-preset="google"] .h-resizer:hover::after,
+:root[data-theme-preset="google"] .h-resizer:active::after {
+  border-color: transparent;
+  background: var(--accent-blue-bg);
+  box-shadow: var(--google-elevation-2);
+}
+
+:root[data-theme-preset="google"] .h-resizer-icon {
+  color: var(--text-tertiary);
+}
+
+:root[data-theme-preset="google"] .h-resizer:hover .h-resizer-icon,
+:root[data-theme-preset="google"] .h-resizer:active .h-resizer-icon {
+  color: var(--google-blue);
 }
 
 :root[data-theme-preset="google"] .input-field {

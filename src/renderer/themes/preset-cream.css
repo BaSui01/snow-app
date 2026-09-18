@@ -293,6 +293,7 @@
     .git-commit-btn.primary,
     .memo-new-btn,
     .scheduled-tasks-create-btn,
+    .scheduled-tasks-new-btn,
     .mcp-editor-mode-btn.active
   ) {
   border-color: var(--accent-orange);
@@ -316,6 +317,7 @@
     .git-commit-btn.primary,
     .memo-new-btn,
     .scheduled-tasks-create-btn,
+    .scheduled-tasks-new-btn,
     .mcp-editor-mode-btn.active
   ):hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent-orange) 88%, var(--text-primary));
@@ -765,6 +767,53 @@
   background-color: var(--bg-primary);
   color: var(--text-tertiary);
   letter-spacing: 0.02em;
+}
+
+:root[data-theme-preset="cream"] .git-panel-changes {
+  background: var(--surface-island-muted);
+}
+
+:root[data-theme-preset="cream"] .h-resizer {
+  height: 16px;
+  min-height: 16px;
+}
+
+:root[data-theme-preset="cream"] .h-resizer::before {
+  background: color-mix(in srgb, var(--accent-orange) 28%, var(--border-light));
+}
+
+:root[data-theme-preset="cream"] .h-resizer::after {
+  width: 30px;
+  height: 13px;
+  border-color: color-mix(
+    in srgb,
+    var(--accent-orange) 26%,
+    var(--border-color)
+  );
+  border-radius: var(--radius-pill);
+  background: var(--surface-island-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+:root[data-theme-preset="cream"] .h-resizer:hover::before,
+:root[data-theme-preset="cream"] .h-resizer:active::before {
+  background: color-mix(in srgb, var(--accent-orange) 55%, transparent);
+}
+
+:root[data-theme-preset="cream"] .h-resizer:hover::after,
+:root[data-theme-preset="cream"] .h-resizer:active::after {
+  border-color: var(--accent-orange);
+  background: var(--accent-orange-bg);
+  box-shadow: var(--shadow-sm);
+}
+
+:root[data-theme-preset="cream"] .h-resizer-icon {
+  color: var(--text-tertiary);
+}
+
+:root[data-theme-preset="cream"] .h-resizer:hover .h-resizer-icon,
+:root[data-theme-preset="cream"] .h-resizer:active .h-resizer-icon {
+  color: var(--accent-orange);
 }
 
 :root[data-theme-preset="cream"] .theme-preset-card-cream {

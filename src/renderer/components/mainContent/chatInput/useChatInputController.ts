@@ -79,6 +79,23 @@ const isComposingKeyboardEvent = (
   return nativeEvent.isComposing || nativeEventWithKeyCode.keyCode === 229;
 };
 
+/** 聚焦可编辑元素并把光标落到内容末尾 */
+const focusEditableAtEnd = (element: HTMLElement | null): void => {
+  if (!element) {
+    return;
+  }
+  element.focus();
+  const selection = window.getSelection();
+  if (!selection) {
+    return;
+  }
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  range.collapse(false);
+  selection.removeAllRanges();
+  selection.addRange(range);
+};
+
 export const useChatInputController = ({
   projectId,
   conversationId,
@@ -500,15 +517,7 @@ export const useChatInputController = ({
       clearInputDraft?.(conversationId);
       requestAnimationFrame(() => {
         adjustHeight();
-        textarea.focus();
-        const selection = window.getSelection();
-        if (selection) {
-          const range = document.createRange();
-          range.selectNodeContents(textarea);
-          range.collapse(false);
-          selection.removeAllRanges();
-          selection.addRange(range);
-        }
+        focusEditableAtEnd(textarea);
 
         // If autoSendToken is non-zero, this draft was queued by
         // buildFromContent — automatically send it right after restore.
@@ -586,7 +595,7 @@ export const useChatInputController = ({
           : "false";
         requestAnimationFrame(() => {
           adjustHeight();
-          textareaRef.current?.focus();
+          focusEditableAtEnd(textareaRef.current);
         });
       }
     },
@@ -883,16 +892,7 @@ export const useChatInputController = ({
 
   // 聚焦输入框（Ctrl/Cmd+I 快捷键触发）：焦点移到内容末尾，便于直接输入。
   const handleFocusInput = useCallback((): void => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-    textarea.focus();
-    const selection = window.getSelection();
-    if (!selection) return;
-    const range = document.createRange();
-    range.selectNodeContents(textarea);
-    range.collapse(false);
-    selection.removeAllRanges();
-    selection.addRange(range);
+    focusEditableAtEnd(textareaRef.current);
   }, [textareaRef]);
 
   useEffect(() => {

@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Check, Copy, Loader2, Undo2 } from "lucide-react";
+import { Check, Copy, Loader2, Pencil, Undo2 } from "lucide-react";
+import { writeBackToChatInput } from "../../chatInput/chatInputDraftBridge";
 type UserMessageActionsProps = {
   content: string;
   isStreaming: boolean;
@@ -17,11 +18,21 @@ export const UserMessageActions = ({
 }: UserMessageActionsProps): React.JSX.Element => {
   const [copied, setCopied] = useState(false);
 
+  const [editWritten, setEditWritten] = useState(false);
+
   const handleCopy = (): void => {
     navigator.clipboard.writeText(content).then(() => {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     });
+  };
+
+  const handleEdit = (): void => {
+    const written = writeBackToChatInput(content);
+    if (written) {
+      setEditWritten(true);
+      window.setTimeout(() => setEditWritten(false), 2000);
+    }
   };
 
   return (
@@ -36,6 +47,19 @@ export const UserMessageActions = ({
           <Check size={15} strokeWidth={1.8} />
         ) : (
           <Copy size={15} strokeWidth={1.8} />
+        )}
+      </button>
+      <button
+        className="user-message-action-btn"
+        type="button"
+        aria-label="Edit message in input"
+        title={editWritten ? "Written back to input" : "Edit in input box"}
+        onClick={handleEdit}
+      >
+        {editWritten ? (
+          <Check size={15} strokeWidth={1.8} />
+        ) : (
+          <Pencil size={15} strokeWidth={1.8} />
         )}
       </button>
       {canRollback && !isStreaming ? (

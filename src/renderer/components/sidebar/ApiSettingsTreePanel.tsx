@@ -476,7 +476,7 @@ export function ApiSettingsTreePanel({
   };
 
   return (
-    <div className="api-settings-page" role="region">
+    <div className="api-settings-page api-settings-tree-page" role="region">
       <div className="api-settings-page-header">
         <div className="api-settings-title-group">
           <strong>

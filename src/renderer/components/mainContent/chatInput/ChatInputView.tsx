@@ -30,6 +30,7 @@ import {
 import { useChipInteractions } from "./useChipInteractions";
 import { useContentEditableInteractions } from "./useContentEditableInteractions";
 import { useInputFileOperations } from "./useInputFileOperations";
+import { registerChatInputDraftSink } from "./chatInputDraftBridge";
 
 /** 终端监控日志预览保留的最大行数 */
 const MAX_MONITORED_LINES = 1000;
@@ -568,6 +569,9 @@ export const ChatInputView = ({
     },
     [onSendPendingMessageNow],
   );
+
+  // 用户消息「写回输入框」入口：注册真实的 restoreContent 供消息侧调用。
+  useEffect(() => registerChatInputDraftSink(restoreContent), [restoreContent]);
 
   return (
     <div className="input-area">

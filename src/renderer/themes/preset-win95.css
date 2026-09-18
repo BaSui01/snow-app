@@ -1,6 +1,7 @@
 :root[data-theme-preset="win95"] {
   --w95-face: #c0c0c0;
   --w95-face-light: #dfdfdf;
+  --w95-client-bg: #ffffff;
   --w95-highlight: #ffffff;
   --w95-shadow: #808080;
   --w95-dark: #000000;
@@ -73,6 +74,7 @@
 :root[data-theme-preset="win95"][data-theme="dark"] {
   --w95-face: #3c3c3c;
   --w95-face-light: #4a4a4a;
+  --w95-client-bg: #2b2b2b;
   --w95-highlight: #5a5a5a;
   --w95-shadow: #202020;
   --w95-dark: #0a0a0a;
@@ -232,7 +234,7 @@
 
 :root[data-theme-preset="win95"] .main-content {
   border-radius: 0;
-  background: var(--w95-face);
+  background: var(--w95-client-bg);
   box-shadow: var(--w95-in);
 }
 
@@ -312,6 +314,7 @@
     .git-commit-btn.primary,
     .memo-new-btn,
     .scheduled-tasks-create-btn,
+    .scheduled-tasks-new-btn,
     .api-config-empty-btn,
     .mcp-editor-mode-btn
   ) {
@@ -337,6 +340,7 @@
     .git-commit-btn.primary,
     .memo-new-btn,
     .scheduled-tasks-create-btn,
+    .scheduled-tasks-new-btn,
     .mcp-editor-mode-btn.active
   ) {
   outline: 1px solid var(--w95-dark);
@@ -366,6 +370,7 @@
     .git-commit-btn.primary,
     .memo-new-btn,
     .scheduled-tasks-create-btn,
+    .scheduled-tasks-new-btn,
     .mcp-editor-mode-btn
   ):active:not(:disabled) {
   box-shadow: var(--w95-in-flat);
@@ -433,6 +438,7 @@
   border: 1px solid var(--w95-face);
   border-radius: 0;
   background: var(--w95-field-bg);
+  box-shadow: var(--w95-in);
 }
 
 :root[data-theme-preset="win95"] .input-box::before {
@@ -650,6 +656,17 @@
 }
 
 :root[data-theme-preset="win95"]
+  :is(.nav-item, .list-item, .settings-item, .chat-item, .panel-tab).active:is(
+    :hover,
+    :focus-visible
+  ) {
+  border-color: var(--w95-select-bg);
+  background: var(--w95-select-bg);
+  color: var(--w95-select-text);
+  box-shadow: none;
+}
+
+:root[data-theme-preset="win95"]
   :is(
     .chat-empty-quick-card,
     .top-bar-plus-dropdown-item,
@@ -788,7 +805,8 @@
     .top-bar-todo-btn,
     .top-bar-codebase-sync,
     .memo-new-btn,
-    .scheduled-tasks-create-btn
+    .scheduled-tasks-create-btn,
+    .scheduled-tasks-new-btn
   ):hover:not(:disabled) {
   background: var(--w95-face-light);
   color: var(--text-primary);
@@ -837,6 +855,56 @@
   box-shadow: var(--w95-in);
   color: var(--text-tertiary);
   letter-spacing: 0.02em;
+}
+
+:root[data-theme-preset="win95"] .git-panel-changes {
+  background: var(--w95-client-bg);
+  box-shadow: var(--w95-in);
+}
+
+:root[data-theme-preset="win95"] .h-resizer {
+  height: 16px;
+  min-height: 16px;
+  background: var(--w95-face);
+  box-shadow: var(--w95-out-flat);
+}
+
+:root[data-theme-preset="win95"] .h-resizer::before {
+  height: 1px;
+  border-radius: var(--radius-pill);
+  background: var(--w95-shadow);
+  box-shadow: 0 1px 0 var(--w95-highlight);
+}
+
+:root[data-theme-preset="win95"] .h-resizer::after {
+  width: 30px;
+  height: 12px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--w95-face);
+  box-shadow: var(--w95-out-flat);
+}
+
+:root[data-theme-preset="win95"] .h-resizer:hover::before,
+:root[data-theme-preset="win95"] .h-resizer:active::before {
+  background: var(--w95-select-bg);
+  box-shadow: 0 1px 0 var(--w95-highlight);
+}
+
+:root[data-theme-preset="win95"] .h-resizer:hover::after,
+:root[data-theme-preset="win95"] .h-resizer:active::after {
+  border-color: transparent;
+  background: var(--w95-face-light);
+  box-shadow: var(--w95-out);
+}
+
+:root[data-theme-preset="win95"] .h-resizer-icon {
+  color: var(--text-secondary);
+}
+
+:root[data-theme-preset="win95"] .h-resizer:hover .h-resizer-icon,
+:root[data-theme-preset="win95"] .h-resizer:active .h-resizer-icon {
+  color: var(--text-primary);
 }
 
 :root[data-theme-preset="win95"] .tcg-toggle {
@@ -1163,8 +1231,11 @@
 
 :root[data-theme-preset="win95"]
   :is(
+    .memo-list-item:hover,
     .memo-list-item.selected,
+    .memory-list-item:hover,
     .memory-list-item.selected,
+    .scheduled-task-item:hover,
     .scheduled-task-item.selected
   )
   :is(
@@ -1172,6 +1243,7 @@
     .memo-list-item-meta,
     .memory-list-item-title,
     .memory-list-item-meta,
+    .memory-list-item-snippet,
     .scheduled-task-item-name,
     .scheduled-task-item-prompt,
     .scheduled-task-item-meta

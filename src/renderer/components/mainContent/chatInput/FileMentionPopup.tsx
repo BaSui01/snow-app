@@ -682,7 +682,7 @@ export const FileMentionPopup = forwardRef<
   );
 
   useEffect(() => {
-    if (!selectedIndex) {
+    if (!visible) {
       return;
     }
     const container = listRef.current;
@@ -692,10 +692,17 @@ export const FileMentionPopup = forwardRef<
     const selected = container.querySelector<HTMLElement>(
       `[data-mention-index="${selectedIndex}"]`,
     );
-    if (selected) {
-      selected.scrollIntoView({ block: "nearest" });
+    if (!selected) {
+      return;
     }
-  }, [selectedIndex]);
+    const containerRect = container.getBoundingClientRect();
+    const itemRect = selected.getBoundingClientRect();
+    if (itemRect.top < containerRect.top) {
+      container.scrollTop -= containerRect.top - itemRect.top;
+    } else if (itemRect.bottom > containerRect.bottom) {
+      container.scrollTop += itemRect.bottom - containerRect.bottom;
+    }
+  }, [selectedIndex, visible, displayEntries.length, skills.length]);
 
   useEffect(() => {
     if (!visible) {

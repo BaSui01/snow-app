@@ -602,3 +602,9 @@ pub fn export_conversation(conversation_id: String, format: String) -> Result<St
     let database_path = ensure_database_file()?;
     services::conversation_export::export_conversation(&database_path, &conversation_id, &format)
 }
+
+/// 导入导出的会话 JSON 文件到指定项目，返回导入结果 JSON。
+pub fn import_conversation(directory_id: String, file_path: String) -> Result<String> {
+    let database_path = ensure_database_file()?;
+    services::conversation_export::import_conversation(&database_path, &directory_id, &file_path)
+}

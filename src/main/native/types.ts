@@ -2432,6 +2432,11 @@ export type NativeBridge = {
     conversationId: string,
     format: string,
   ) => Promise<string>;
+  /** 会话 JSON 导入：Rust 读取文件、解析并写入新的会话与消息，返回结果 JSON。 */
+  importConversation: (
+    directoryId: string,
+    filePath: string,
+  ) => Promise<string>;
   /** Markdown 表格导出：Rust 生成 CSV / XLSX 文件字节（rowsJson 为二维字符串数组）。 */
   exportMarkdownTable: (format: string, rowsJson: string) => Promise<Buffer>;
   listMemos: (

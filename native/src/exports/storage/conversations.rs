@@ -681,3 +681,15 @@ pub async fn export_conversation(conversation_id: String, format: String) -> nap
     .map_err(map_spawn_error)?
 }
 
+#[napi]
+pub async fn import_conversation(
+    directory_id: String,
+    file_path: String,
+) -> napi::Result<String> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::import_conversation(directory_id, file_path)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+

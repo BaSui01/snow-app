@@ -7,6 +7,7 @@ use super::chat_conversations;
 
 mod csv;
 mod html;
+mod import;
 mod json;
 mod markdown;
 
@@ -52,6 +53,15 @@ pub fn export_conversation(
     };
 
     Ok(content)
+}
+
+/// 导入导出格式的会话 JSON，落库为指定项目下的新会话。
+pub fn import_conversation(
+    database_path: &Path,
+    directory_id: &str,
+    file_path: &str,
+) -> Result<String> {
+    self::import::import_conversation(database_path, directory_id, file_path)
 }
 
 // ============================================================================

@@ -1646,6 +1646,49 @@ input {
   line-height: 15px;
 }
 
+/* ============================================================
+ * 会话导入（导出 JSON 迁移）
+ * ============================================================ */
+
+/* 导入按钮：导入进行中禁用并显示转圈 */
+.chats-import-toggle:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.chat-import-progress {
+  padding: 4px 10px 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.chat-import-progress-text {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.chat-import-progress-file {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-import-progress-track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--bg-active);
+  overflow: hidden;
+}
+
+.chat-import-progress-bar {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 0.15s ease;
+}
+
 /* 归档会话条目：不允许直接打开，整体弱化显示 */
 .chat-item.archived .chat-item-title {
   color: var(--text-muted);

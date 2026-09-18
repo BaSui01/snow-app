@@ -510,6 +510,12 @@ export const en = {
   "sidebar.chatRenamePlaceholder": "Enter new name",
   "sidebar.chatActionError": "Operation failed",
   "sidebar.chatToggleCollapse": "Collapse/expand chats",
+  "sidebar.chatImportConversations": "Import conversations",
+  "sidebar.chatImportProgress": "Importing {{current}}/{{total}}",
+  "sidebar.chatImportDone": "Imported {{count}} conversation(s)",
+  "sidebar.chatImportPartial":
+    "Imported {{imported}} conversation(s), {{failed}} file(s) failed",
+  "sidebar.chatImportFailed": "Failed to import conversations",
   "sidebar.archivedChats": "Archived",
   "sidebar.archivedChatsToggle": "View archived chats",
   "sidebar.archivedChatsToggleBack": "Back to chats",

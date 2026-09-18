@@ -1474,6 +1474,10 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to export conversation"),
         ),
+      importConversation: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to import conversations"),
+        ),
       exportMarkdownTable: () =>
         Promise.reject(
           new Error("Rust native bridge is required to export table files"),

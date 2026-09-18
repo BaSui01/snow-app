@@ -1,9 +1,11 @@
-import { ipcRenderer } from "electron";
+import { ipcRenderer, type IpcRendererEvent } from "electron";
 import type {
   ChatConversationPage,
   ChatConversationRecord,
   ChatMessagePage,
   ChatMessageRecord,
+  ConversationImportProgress,
+  ConversationImportSummary,
   ConversationSearchResult,
   UserMessageSummary,
   WorkflowCanvasRecord,
@@ -11,6 +13,38 @@ import type {
   WorkflowNodeSessionRecord,
   WorkflowRunRecord,
 } from "../types";
+
+const CONVERSATION_IMPORT_PROGRESS_CHANNEL =
+  "chat-conversations:import-progress";
+
+const importProgressCallbacks = new Map<
+  string,
+  (progress: ConversationImportProgress) => void
+>();
+let importProgressListenerRegistered = false;
+
+const ensureImportProgressListener = (): void => {
+  if (importProgressListenerRegistered) {
+    return;
+  }
+  importProgressListenerRegistered = true;
+  ipcRenderer.on(
+    CONVERSATION_IMPORT_PROGRESS_CHANNEL,
+    (_event: IpcRendererEvent, payload: unknown) => {
+      const record = payload as Record<string, unknown> | null;
+      const streamId = record?.streamId;
+      if (typeof streamId !== "string") {
+        return;
+      }
+      importProgressCallbacks.get(streamId)?.(
+        payload as ConversationImportProgress,
+      );
+    },
+  );
+};
+
+const createImportStreamId = (): string =>
+  `conversation-import-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 export const conversationApi = {
   listChatConversations: (
@@ -373,6 +407,30 @@ export const conversationApi = {
       format,
       defaultFileName,
     ),
+  /** 打开文件对话框选择要导入的会话 JSON（支持多选）。 */
+  pickConversationImportFiles: (): Promise<string[]> =>
+    ipcRenderer.invoke("chat-conversations:pick-import-files"),
+  /**
+   * 批量导入会话 JSON 文件，逐个文件推送进度；返回汇总结果。
+   */
+  importConversations: (
+    directoryId: string,
+    filePaths: string[],
+    onProgress?: (progress: ConversationImportProgress) => void,
+  ): Promise<ConversationImportSummary> => {
+    const streamId = createImportStreamId();
+    ensureImportProgressListener();
+
+    if (onProgress) {
+      importProgressCallbacks.set(streamId, onProgress);
+    }
+
+    return ipcRenderer
+      .invoke("chat-conversations:import", directoryId, filePaths, streamId)
+      .finally(() => {
+        importProgressCallbacks.delete(streamId);
+      });
+  },
   /** 导出 Markdown 表格为 CSV / XLSX 文件（rowsJson 为二维字符串数组）。 */
   exportMarkdownTable: (
     format: string,

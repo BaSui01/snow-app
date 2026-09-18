@@ -1,4 +1,10 @@
-import { Archive, ArchiveRestore, ChevronRight } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  ChevronRight,
+  FolderDown,
+  Loader2,
+} from "lucide-react";
 import type { RefObject } from "react";
 
 import { useI18n } from "../../../../i18n";
@@ -8,8 +14,10 @@ type ChatsSectionHeaderProps = {
   isCollapsed: boolean;
   isArchiveMode: boolean;
   archivedTotal: number;
+  isImportingConversations: boolean;
   onToggleCollapsed: () => void;
   onToggleArchiveMode: () => void;
+  onImportConversations: () => void;
 };
 
 export function ChatsSectionHeader({
@@ -17,8 +25,10 @@ export function ChatsSectionHeader({
   isCollapsed,
   isArchiveMode,
   archivedTotal,
+  isImportingConversations,
   onToggleCollapsed,
   onToggleArchiveMode,
+  onImportConversations,
 }: ChatsSectionHeaderProps): React.JSX.Element {
   const { t } = useI18n();
 
@@ -49,6 +59,24 @@ export function ChatsSectionHeader({
       <div className="section-actions">
         <button
           type="button"
+          aria-label={t("sidebar.chatImportConversations", {
+            defaultValue: "Import conversations",
+          })}
+          className="icon-btn ghost chats-import-toggle"
+          disabled={isImportingConversations}
+          onClick={onImportConversations}
+          title={t("sidebar.chatImportConversations", {
+            defaultValue: "Import conversations",
+          })}
+        >
+          {isImportingConversations ? (
+            <Loader2 className="spin" size={14} />
+          ) : (
+            <FolderDown size={14} />
+          )}
+        </button>
+        <button
+          type="button"
           aria-pressed={isArchiveMode}
           aria-label={
             isArchiveMode
@@ -73,11 +101,7 @@ export function ChatsSectionHeader({
                 })
           }
         >
-          {isArchiveMode ? (
-            <ArchiveRestore size={14} />
-          ) : (
-            <Archive size={14} />
-          )}
+          {isArchiveMode ? <ArchiveRestore size={14} /> : <Archive size={14} />}
         </button>
       </div>
     </div>

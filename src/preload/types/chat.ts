@@ -91,3 +91,32 @@ export type UserMessageSummary = {
   createdAt: string;
   isContextCompaction: boolean;
 };
+
+/** 单个导入文件的处理进度。 */
+export type ConversationImportProgress = {
+  processed: number;
+  total: number;
+  fileName: string;
+  success: boolean;
+  error: string | null;
+};
+
+export type ImportedConversationSummary = {
+  conversationId: string;
+  title: string;
+  messageCount: number;
+};
+
+export type ConversationImportFileResult = {
+  filePath: string;
+  success: boolean;
+  error: string | null;
+  conversations: ImportedConversationSummary[];
+};
+
+export type ConversationImportSummary = {
+  total: number;
+  importedCount: number;
+  failedCount: number;
+  results: ConversationImportFileResult[];
+};

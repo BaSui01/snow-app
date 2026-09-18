@@ -489,6 +489,12 @@ export const zhTW = {
   "sidebar.chatRenamePlaceholder": "輸入新名稱",
   "sidebar.chatActionError": "操作失敗",
   "sidebar.chatToggleCollapse": "收起/展開對話",
+  "sidebar.chatImportConversations": "匯入對話",
+  "sidebar.chatImportProgress": "正在匯入 {{current}}/{{total}}",
+  "sidebar.chatImportDone": "已匯入 {{count}} 個對話",
+  "sidebar.chatImportPartial":
+    "已匯入 {{imported}} 個對話，{{failed}} 個檔案失敗",
+  "sidebar.chatImportFailed": "匯入對話失敗",
   "sidebar.archivedChats": "歸檔對話",
   "sidebar.archivedChatsToggle": "查看歸檔對話",
   "sidebar.archivedChatsToggleBack": "返回對話列表",

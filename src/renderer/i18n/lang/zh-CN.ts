@@ -488,6 +488,12 @@ export const zhCN = {
   "sidebar.chatRenamePlaceholder": "输入新名称",
   "sidebar.chatActionError": "操作失败",
   "sidebar.chatToggleCollapse": "收起/展开会话",
+  "sidebar.chatImportConversations": "导入会话",
+  "sidebar.chatImportProgress": "正在导入 {{current}}/{{total}}",
+  "sidebar.chatImportDone": "已导入 {{count}} 个会话",
+  "sidebar.chatImportPartial":
+    "已导入 {{imported}} 个会话，{{failed}} 个文件失败",
+  "sidebar.chatImportFailed": "导入会话失败",
   "sidebar.archivedChats": "归档会话",
   "sidebar.archivedChatsToggle": "查看归档会话",
   "sidebar.archivedChatsToggleBack": "返回会话列表",

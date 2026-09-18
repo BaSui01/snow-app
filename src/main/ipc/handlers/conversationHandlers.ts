@@ -1,4 +1,5 @@
 import { BrowserWindow, dialog, ipcMain } from "electron";
+import { basename } from "node:path";
 import { writeFile } from "node:fs/promises";
 import type { NativeBridge } from "../../native/types";
 import { snowLog } from "../../../utils/snowLogger";
@@ -39,6 +40,45 @@ type TableExportFormat = (typeof TABLE_EXPORT_FORMATS)[number];
 const isTableExportFormat = (value: unknown): value is TableExportFormat =>
   typeof value === "string" &&
   (TABLE_EXPORT_FORMATS as readonly string[]).includes(value);
+
+/** 会话导入进度推送通道（渲染层按 streamId 订阅）。 */
+const CONVERSATION_IMPORT_PROGRESS_CHANNEL =
+  "chat-conversations:import-progress";
+
+type ImportedConversationSummary = {
+  conversationId: string;
+  title: string;
+  messageCount: number;
+};
+
+type ConversationImportFileResult = {
+  filePath: string;
+  success: boolean;
+  error: string | null;
+  conversations: ImportedConversationSummary[];
+};
+
+const readImportedConversations = (
+  raw: string,
+): ImportedConversationSummary[] => {
+  const parsed = JSON.parse(raw) as { imported?: unknown };
+  if (!Array.isArray(parsed.imported)) {
+    return [];
+  }
+
+  return parsed.imported
+    .filter(
+      (item): item is Record<string, unknown> =>
+        typeof item === "object" && item !== null,
+    )
+    .map((item) => ({
+      conversationId:
+        typeof item.conversationId === "string" ? item.conversationId : "",
+      title: typeof item.title === "string" ? item.title : "",
+      messageCount:
+        typeof item.messageCount === "number" ? item.messageCount : 0,
+    }));
+};
 
 export const registerConversationHandlers = (native: NativeBridge): void => {
   ipcMain.handle("chat-conversations:list", (_event, directoryId: unknown) => {
@@ -1018,6 +1058,105 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
       });
 
       return { success: true, canceled: false, filePath: result.filePath };
+    },
+  );
+
+  // ===== Conversation import =====
+  // 渲染层选择若干「导出会话」JSON 文件，主进程逐个交给 Rust 解析并落库
+  // （新会话 ID、归属当前项目、未归档），并在每个文件处理后推送进度事件。
+  ipcMain.handle("chat-conversations:pick-import-files", async (event) => {
+    const options: Electron.OpenDialogOptions = {
+      title: "Import conversations",
+      properties: ["openFile", "multiSelections"],
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    };
+    const browserWindow = BrowserWindow.fromWebContents(event.sender);
+    const result = browserWindow
+      ? await dialog.showOpenDialog(browserWindow, options)
+      : await dialog.showOpenDialog(options);
+
+    return result.canceled ? [] : result.filePaths;
+  });
+
+  ipcMain.handle(
+    "chat-conversations:import",
+    async (
+      event,
+      directoryId: unknown,
+      filePaths: unknown,
+      streamId: unknown,
+    ) => {
+      if (typeof directoryId !== "string" || !directoryId.trim()) {
+        throw new Error("Directory ID is required to import conversations");
+      }
+      if (
+        !Array.isArray(filePaths) ||
+        filePaths.length === 0 ||
+        filePaths.some((item) => typeof item !== "string" || !item.trim())
+      ) {
+        throw new Error(
+          "Conversation import file paths must be a string array",
+        );
+      }
+
+      const targetDirectoryId = directoryId.trim();
+      const paths = (filePaths as string[]).map((item) => item.trim());
+      const progressStreamId = typeof streamId === "string" ? streamId : "";
+      const results: ConversationImportFileResult[] = [];
+
+      for (const [index, filePath] of paths.entries()) {
+        let conversations: ImportedConversationSummary[] = [];
+        let error: string | null = null;
+
+        try {
+          const raw = await native.importConversation(
+            targetDirectoryId,
+            filePath,
+          );
+          conversations = readImportedConversations(raw);
+        } catch (importError) {
+          error =
+            importError instanceof Error
+              ? importError.message
+              : String(importError);
+        }
+
+        results.push({
+          filePath,
+          success: error === null,
+          error,
+          conversations,
+        });
+
+        safeSend(event.sender, CONVERSATION_IMPORT_PROGRESS_CHANNEL, {
+          streamId: progressStreamId,
+          processed: index + 1,
+          total: paths.length,
+          fileName: basename(filePath),
+          success: error === null,
+          error,
+        });
+      }
+
+      const importedCount = results.reduce(
+        (total, result) => total + result.conversations.length,
+        0,
+      );
+      const failedCount = results.filter((result) => !result.success).length;
+
+      snowLog.info({
+        module: "ipc/conversation",
+        func: "import",
+        message: "Conversations imported",
+        context: `directory=${targetDirectoryId} files=${paths.length} imported=${importedCount} failed=${failedCount}`,
+      });
+
+      return {
+        total: paths.length,
+        importedCount,
+        failedCount,
+        results,
+      };
     },
   );
 

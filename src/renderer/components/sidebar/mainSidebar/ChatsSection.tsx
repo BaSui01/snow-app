@@ -6,6 +6,7 @@ import type {
   WorkspaceDirectoryRecord,
 } from "../../../../preload";
 import { useI18n } from "../../../i18n";
+import { AutoDismissNotice } from "../../AutoDismissNotice";
 import { useChatConversationContext } from "../../mainContent/chatMessages";
 import { groupConversationsByTime } from "./chatTimeGroup";
 import { ArchivedChatList } from "./chats/ArchivedChatList";
@@ -16,11 +17,13 @@ import {
   type ChatMultiSelectAction,
 } from "./chats/ChatMultiSelectBar";
 import { ChatTimeGroupList } from "./chats/ChatTimeGroupList";
+import { ChatImportProgress } from "./chats/ChatImportProgress";
 import { ChatsSectionDialogs } from "./chats/ChatsSectionDialogs";
 import { ChatsSectionHeader } from "./chats/ChatsSectionHeader";
 import { CrossProjectNotificationList } from "./chats/CrossProjectNotificationList";
 import { useArchivedConversations } from "./chats/useArchivedConversations";
 import { useChatConversationList } from "./chats/useChatConversationList";
+import { useChatImport } from "./chats/useChatImport";
 import { useChatSelection } from "./chats/useChatSelection";
 import {
   useChatsCollapse,
@@ -149,6 +152,11 @@ export function ChatsSection({
     sectionListRef,
     refreshConversations,
     onExitChatMultiSelect: exitMultiSelect,
+  });
+
+  const chatImport = useChatImport({
+    directoryId,
+    refreshConversations,
   });
 
   /** 收起/展开会话区域；收起时退出多选模式 */
@@ -306,10 +314,21 @@ export function ChatsSection({
           headerRef={layout.headerRef}
           isArchiveMode={archived.isArchiveMode}
           isCollapsed={collapse.isCollapsed}
+          isImportingConversations={chatImport.isImporting}
+          onImportConversations={() =>
+            void chatImport.handleImportConversations()
+          }
           onToggleArchiveMode={archived.toggleArchiveMode}
           onToggleCollapsed={toggleCollapsed}
         />
       )}
+      <ChatImportProgress progress={chatImport.progress} />
+      <AutoDismissNotice
+        durationMs={3000}
+        message={chatImport.notice?.message ?? ""}
+        onDismiss={chatImport.dismissNotice}
+        tone={chatImport.notice?.tone ?? "success"}
+      />
       <div
         className={`section-list${
           layout.isChatDragOver ? " chat-drag-over" : ""

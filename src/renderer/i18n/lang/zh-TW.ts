@@ -248,7 +248,8 @@ export const zhTW = {
   "memo.buildConfirm": "將以該備忘內容作為使用者訊息新建會話並傳送，是否繼續？",
   "memo.buildTitle": "從備望建構",
   "memo.pendingCount": "{{count}} 條待辦",
-  "memo.richTextPlaceholder": "在此記錄備忘...（可貼上圖片、格式化文字）",
+  "memo.richTextPlaceholder":
+    "在此記錄備忘...（可貼上圖片、格式化文字、@ 引用專案檔案）",
   "memo.editorLabel": "備忘內容",
   "memo.deleteShortcut": "刪除選中的備忘",
   "memo.sortToggle": "切換排序",

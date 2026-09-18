@@ -18,9 +18,10 @@ use tokio_util::sync::CancellationToken;
 use crate::api::common::{emit_stream_chunk, emit_tool_args_probe, ThinkingStreamTracker};
 use crate::api::responses::{ResponsesApiStreamCallback, ResponsesApiStreamChunk};
 use crate::api::retry::{
-    decide_stream_recovery, should_retry, stream_idle_timeout_error, visible_content_char_count,
-    wait_before_retry, RetryOptions, StreamAttemptProgress, StreamEndCause,
-    StreamInterruptionReason, StreamRecoveryDecision, StreamRecoveryOutcome,
+    attempt_has_payload, decide_stream_recovery, should_retry, should_retry_empty_response,
+    stream_idle_timeout_error, visible_content_char_count, wait_before_retry,
+    RetryOptions, StreamAttemptProgress, StreamEndCause, StreamInterruptionReason,
+    StreamRecoveryDecision, StreamRecoveryOutcome, EMPTY_RESPONSE_RETRY_ERROR,
 };
 use crate::api::sse::{read_sse_stream_until_terminal, SseStreamEnd};
 use crate::storage::services::app_logs::log_api_warning;
@@ -125,6 +126,14 @@ impl ResponsesAttemptState {
         }
     }
 
+    fn has_payload(&self) -> bool {
+        attempt_has_payload(
+            &self.content_chunks,
+            &self.thinking_chunks,
+            !self.tool_calls.is_empty() || !self.reasoning_items.is_empty(),
+        )
+    }
+
     fn finish_cancelled(&mut self) {
         self.response_status = String::from("cancelled");
         self.tool_calls.clear();
@@ -219,6 +228,32 @@ pub(super) async fn collect_streaming_response(
     let mut ttft_ms: i64 = 0;
 
     let idle_timeout = Duration::from_secs(stream_idle_timeout_sec);
+
+    macro_rules! retry_empty_attempt {
+        () => {{
+            on_chunk.call(
+                ResponsesApiStreamChunk {
+                    content_delta: String::new(),
+                    thinking_delta: String::new(),
+                    content: String::new(),
+                    thinking: String::new(),
+                    retrying: true,
+                    retry_attempt: Some((attempt + 1) as i32),
+                    retry_error: Some(EMPTY_RESPONSE_RETRY_ERROR.to_string()),
+                    stream_token_count: stream_token_count as i64,
+                    thinking_token_count: thinking_tracker.token_count as i64,
+                    thinking_duration_ms: thinking_tracker.duration_ms(),
+                    elapsed_ms: stream_start.elapsed().as_millis() as i64,
+                    ttft_ms,
+                    vision_status: None,
+                },
+                ThreadsafeFunctionCallMode::NonBlocking,
+            );
+
+            wait_before_retry(retry_options, cancel_token, attempt).await?;
+            attempt += 1;
+        }};
+    }
 
     let (mut attempt_state, interruption_reason, recovery_outcome) = 'attempt_loop: loop {
         // Every HTTP response gets fresh Provider-local state. Retrying drops
@@ -459,6 +494,12 @@ pub(super) async fn collect_streaming_response(
         if let SseStreamEnd::ProviderTerminal = &stream_end {
             let (terminal_interruption_reason, terminal_recovery_outcome) =
                 attempt_state.finalize_provider_terminal();
+            if terminal_interruption_reason.is_none()
+                && should_retry_empty_response(attempt, retry_options, attempt_state.has_payload())
+            {
+                retry_empty_attempt!();
+                continue 'attempt_loop;
+            }
             break 'attempt_loop (
                 attempt_state,
                 terminal_interruption_reason,
@@ -491,6 +532,16 @@ pub(super) async fn collect_streaming_response(
             StreamRecoveryDecision::FinishProviderResult => {
                 let (provider_reason, provider_outcome) =
                     attempt_state.finalize_provider_terminal();
+                if provider_reason.is_none()
+                    && should_retry_empty_response(
+                        attempt,
+                        retry_options,
+                        attempt_state.has_payload(),
+                    )
+                {
+                    retry_empty_attempt!();
+                    continue 'attempt_loop;
+                }
                 break 'attempt_loop (attempt_state, provider_reason, provider_outcome);
             }
             StreamRecoveryDecision::Retry => {

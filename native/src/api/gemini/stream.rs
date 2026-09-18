@@ -20,9 +20,10 @@ use crate::api::common::{
 };
 use crate::api::responses::{ResponsesApiStreamCallback, ResponsesApiStreamChunk};
 use crate::api::retry::{
-    decide_stream_recovery, should_retry, stream_idle_timeout_error, visible_content_char_count,
-    wait_before_retry, RetryOptions, StreamAttemptProgress, StreamEndCause,
-    StreamInterruptionReason, StreamRecoveryDecision, StreamRecoveryOutcome,
+    attempt_has_payload, decide_stream_recovery, should_retry, should_retry_empty_response,
+    stream_idle_timeout_error, visible_content_char_count, wait_before_retry,
+    RetryOptions, StreamAttemptProgress, StreamEndCause, StreamInterruptionReason,
+    StreamRecoveryDecision, StreamRecoveryOutcome, EMPTY_RESPONSE_RETRY_ERROR,
 };
 use crate::api::sse::{read_sse_stream_until_terminal, SseStreamEnd};
 use crate::storage::services::chat_conversations::ChatTokenUsage;
@@ -62,6 +63,32 @@ pub(super) async fn collect_gemini_stream(
     let stream_start = std::time::Instant::now();
     let mut ttft_ms: i64 = 0;
     let idle_timeout = Duration::from_secs(stream_idle_timeout_sec);
+
+    macro_rules! retry_empty_attempt {
+        () => {{
+            on_chunk.call(
+                ResponsesApiStreamChunk {
+                    content_delta: String::new(),
+                    thinking_delta: String::new(),
+                    content: String::new(),
+                    thinking: String::new(),
+                    retrying: true,
+                    retry_attempt: Some((attempt + 1) as i32),
+                    retry_error: Some(EMPTY_RESPONSE_RETRY_ERROR.to_string()),
+                    stream_token_count: stream_token_count as i64,
+                    thinking_token_count: thinking_tracker.token_count as i64,
+                    thinking_duration_ms: thinking_tracker.duration_ms(),
+                    elapsed_ms: stream_start.elapsed().as_millis() as i64,
+                    ttft_ms,
+                    vision_status: None,
+                },
+                ThreadsafeFunctionCallMode::NonBlocking,
+            );
+
+            wait_before_retry(retry_options, cancel_token, attempt).await?;
+            attempt += 1;
+        }};
+    }
 
     'attempt_loop: loop {
         if cancel_token.is_cancelled() {
@@ -318,6 +345,16 @@ pub(super) async fn collect_gemini_stream(
             // finishReason is an authoritative Provider terminal. In
             // particular, MAX_TOKENS is output-limit metadata, not a transport
             // retry trigger.
+            if response_status != "max_tokens"
+                && should_retry_empty_response(
+                    attempt,
+                    retry_options,
+                    attempt_has_payload(&content_chunks, &thinking_chunks, !tool_calls.is_empty()),
+                )
+            {
+                retry_empty_attempt!();
+                continue 'attempt_loop;
+            }
             if response_status == "max_tokens" {
                 interruption_reason = Some(StreamInterruptionReason::OutputLimit);
             }

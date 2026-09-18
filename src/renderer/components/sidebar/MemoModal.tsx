@@ -15,6 +15,21 @@ import { useI18n } from "../../i18n";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { Modal } from "../common/Modal";
 import { useChatConversationContext } from "../mainContent/chatMessages";
+import {
+  createChipHtml,
+  createSkillChipHtml,
+  encodeFileTag,
+  encodeImageTag,
+  encodeSkillTag,
+  insertHtmlAtSelection,
+  parseLinesStr,
+  type FileTag,
+  type SkillTag,
+} from "../mainContent/chatInput/fileTagUtils";
+import {
+  FileMentionPopup,
+  type FileMentionPopupHandle,
+} from "../mainContent/chatInput/FileMentionPopup";
 import { formatTimeLabel, parseDbTimestamp } from "./mainSidebar/chatTimeGroup";
 import type { MemoPage, MemoRecord, MemoStatus } from "../../../preload";
 
@@ -47,8 +62,56 @@ const buildLocalPreview = (content: string): string => {
 };
 
 /**
+ * 将编辑器中的引用 chip 还原为聊天输入的标签格式，让「生成任务」把
+ * memo 内的文件/目录/技能/图片引用一并发给 AI。
+ */
+const chipHtmlToChatTag = (el: HTMLElement): string | null => {
+  if (el.dataset.fileTag === "true") {
+    const path = el.dataset.filePath ?? "";
+    if (!path) return null;
+    const isDirectory = el.dataset.fileIsDir === "true";
+    const linesRaw = isDirectory ? undefined : el.dataset.fileLines;
+    return encodeFileTag({
+      path,
+      name: el.dataset.fileName || path,
+      isDirectory,
+      lines: linesRaw ? parseLinesStr(linesRaw) : undefined,
+    });
+  }
+
+  if (el.dataset.skillTag === "true") {
+    try {
+      const data = JSON.parse(
+        el.dataset.skillData ?? "{}",
+      ) as Partial<SkillTag>;
+      if (!data.skillId) return null;
+      return encodeSkillTag({
+        skillId: data.skillId,
+        name: data.name || data.skillId,
+        description: data.description ?? "",
+        location: data.location === "project" ? "project" : "global",
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  if (el.dataset.imageTag === "true") {
+    const dataUrl = el.dataset.imageDataUrl ?? "";
+    if (!dataUrl) return null;
+    return encodeImageTag({
+      name: el.dataset.imageName || "image.png",
+      dataUrl,
+    });
+  }
+
+  return null;
+};
+
+/**
  * Converts the rich-text editor HTML into the chat input's tagged format:
  *  - <img src="data:..."> becomes @@image:data:...@@
+ *  - reference chips become @@file/@@dir/@@skill/@@image tags
  *  - <br> / </p> / </div> become newlines
  *  - remaining HTML tags are stripped to plain text
  * This mirrors how ChatInput serialises content (readEditableContent + encodeImageTag).
@@ -60,13 +123,19 @@ const memoHtmlToChatContent = (html: string): string => {
   const result: string[] = [];
   const walk = (node: Node): void => {
     if (node.nodeType === Node.TEXT_NODE) {
-      result.push(node.textContent ?? "");
+      result.push((node.textContent ?? "").replace(/\u200B/g, ""));
       return;
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
 
     const el = node as HTMLElement;
     const tag = el.tagName.toLowerCase();
+
+    const chatTag = chipHtmlToChatTag(el);
+    if (chatTag) {
+      result.push(chatTag);
+      return;
+    }
 
     if (tag === "img") {
       const src = el.getAttribute("src") ?? "";
@@ -114,7 +183,12 @@ export function MemoModal({
   const [isSaving, setIsSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<MemoRecord | null>(null);
   const [buildTarget, setBuildTarget] = useState<MemoRecord | null>(null);
-
+  // @ 引用面板：查询文本以 @ 之后的输入为准
+  const [isMentionOpen, setIsMentionOpen] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState("");
+  // 首帧先隐藏，等定位计算完成后再显示，避免弹窗闪到视口外
+  const [mentionPopupStyle, setMentionPopupStyle] =
+    useState<React.CSSProperties>({ visibility: "hidden" });
   const listScrollRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -122,6 +196,12 @@ export function MemoModal({
   const requestIdRef = useRef(0);
   const editorFocusedRef = useRef(false);
   const lastSavedContentRef = useRef("");
+  const mentionPopupRef = useRef<FileMentionPopupHandle>(null);
+  // @ 在编辑器纯文本中的位置（@ 之后的下标）
+  const mentionStartOffsetRef = useRef<number>(-1);
+  // 编辑器内的最后一段光标区间。点击 @ 面板时浏览器可能清空选区，
+  // 需要靠它把光标还原回编辑器再插入 chip。
+  const editorRangeRef = useRef<Range | null>(null);
 
   // Refs that always hold the latest values, so async save handlers can read
   // them without being trapped by stale useCallback closures. This is the key
@@ -137,6 +217,48 @@ export function MemoModal({
   // this cache instead guarantees we persist the last-typed content instead
   // of an empty string that would wipe the database row.
   const editorHtmlRef = useRef("");
+
+  const closeMention = useCallback(() => {
+    setIsMentionOpen(false);
+    setMentionQuery("");
+    mentionStartOffsetRef.current = -1;
+  }, []);
+
+  const captureEditorRange = useCallback(() => {
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    if (!editor || !selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    if (!editor.contains(range.startContainer)) return;
+    editorRangeRef.current = range.cloneRange();
+  }, []);
+
+  /**
+   * @ 引用操作（删除查询词 / 插入 chip / 路径导航）使用的锚点区间。
+   * 点击面板时浏览器会清空编辑器选区，因此以 @ 触发时记录的光标为准；
+   * 点击面板不会走 here，仅当记录失效时才回退当前选区。
+   */
+  const getMentionAnchorRange = useCallback((): Range | null => {
+    const editor = editorRef.current;
+    if (!editor) return null;
+    const saved = editorRangeRef.current;
+    if (saved && editor.contains(saved.startContainer)) {
+      return saved;
+    }
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      const live = selection.getRangeAt(0);
+      if (editor.contains(live.startContainer)) return live;
+    }
+    return null;
+  }, []);
+
+  const placeEditorCaret = useCallback((range: Range) => {
+    const selection = window.getSelection();
+    if (!selection) return;
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }, []);
 
   useEffect(() => {
     selectedMemoIdRef.current = selectedMemoId;
@@ -207,8 +329,10 @@ export function MemoModal({
     setSelectedMemoId(null);
     setEditorContent("");
     lastSavedContentRef.current = "";
+    closeMention();
+    editorRangeRef.current = null;
     if (editorRef.current) editorRef.current.textContent = "";
-  }, [directoryId, open]);
+  }, [directoryId, open, closeMention]);
 
   // Auto-select the first memo when opening (or after creating the first one)
   useEffect(() => {
@@ -228,6 +352,8 @@ export function MemoModal({
   // 若依赖整个对象会重写 DOM 导致光标跳回文档开头
   const selectedMemoKey = selectedMemo?.memoId ?? null;
   useEffect(() => {
+    closeMention();
+    editorRangeRef.current = null;
     if (!selectedMemoKey) return;
     const current = memosRef.current.find(
       (memo) => memo.memoId === selectedMemoKey,
@@ -240,7 +366,7 @@ export function MemoModal({
     if (editorRef.current && editorRef.current.innerHTML !== content) {
       editorRef.current.innerHTML = content;
     }
-  }, [selectedMemoKey]);
+  }, [selectedMemoKey, closeMention]);
 
   // Stop the close-triggered flushSave effect from running after the editor
   // has already been unmounted. The actual flush happens synchronously inside
@@ -297,9 +423,10 @@ export function MemoModal({
   const handleClose = useCallback(() => {
     editorHtmlRef.current =
       editorRef.current?.innerHTML ?? editorHtmlRef.current;
+    closeMention();
     void flushSave();
     onClose();
-  }, [flushSave, onClose]);
+  }, [closeMention, flushSave, onClose]);
 
   // Flush pending save when modal closes. This runs AFTER open has flipped
   // to false, so the editor may already be unmounted — editorHtmlRef holds
@@ -329,9 +456,171 @@ export function MemoModal({
     }, SAVE_DEBOUNCE_MS);
   }, [selectedMemoId, flushSave]);
 
-  const handleEditorInput = () => {
+  /** 光标前若为 `@xxx`（@ 前必须是行首或空白）则打开引用面板。 */
+  const checkMentionTrigger = useCallback(() => {
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    if (!editor || !selection || selection.rangeCount === 0) {
+      closeMention();
+      return;
+    }
+    const range = selection.getRangeAt(0);
+    const node = range.startContainer;
+    if (
+      !editor.contains(node) ||
+      node.nodeType !== Node.TEXT_NODE ||
+      !range.collapsed
+    ) {
+      closeMention();
+      return;
+    }
+    const textBefore = (node.textContent ?? "").slice(0, range.startOffset);
+    const match = textBefore.match(/(?:^|\s)@([^\s]*)$/);
+    if (!match) {
+      closeMention();
+      return;
+    }
+    const queryText = match[1];
+    // 记录 @ 触发时的光标：点击面板会清空编辑器选区，后续插入靠它定位
+    editorRangeRef.current = range.cloneRange();
+    setIsMentionOpen(true);
+    setMentionQuery(queryText);
+    mentionStartOffsetRef.current = range.startOffset - queryText.length;
+  }, [closeMention]);
+
+  const handleEditorInput = useCallback(() => {
     editorHtmlRef.current = editorRef.current?.innerHTML ?? "";
     scheduleSave();
+    checkMentionTrigger();
+  }, [checkMentionTrigger, scheduleSave]);
+
+  /** 选中引用项后删除输入框中的 `@查询词` 并保留插入点。 */
+  const deleteMentionQuery = useCallback(() => {
+    if (mentionStartOffsetRef.current < 0) return;
+    const anchor = editorRangeRef.current;
+    if (!anchor) return;
+    const editor = editorRef.current;
+    if (!editor || !editor.contains(anchor.startContainer)) return;
+    if (anchor.startContainer.nodeType !== Node.TEXT_NODE) return;
+    const range = anchor.cloneRange();
+    const node = range.startContainer;
+    const start = mentionStartOffsetRef.current - 1;
+    const end = range.startOffset;
+    if (start < 0 || end <= start) return;
+    range.setStart(node, start);
+    range.setEnd(node, end);
+    range.deleteContents();
+    mentionStartOffsetRef.current = -1;
+    editorRangeRef.current = range.cloneRange();
+  }, []);
+
+  const insertEditorTag = useCallback(
+    (tag: FileTag | SkillTag) => {
+      const editor = editorRef.current;
+      if (!editor) return;
+      const anchor = editorRangeRef.current;
+      editor.focus();
+      if (anchor && editor.contains(anchor.startContainer)) {
+        placeEditorCaret(anchor.cloneRange());
+      }
+      insertHtmlAtSelection(
+        "skillId" in tag ? createSkillChipHtml(tag) : createChipHtml(tag),
+      );
+      captureEditorRange();
+      handleEditorInput();
+    },
+    [captureEditorRange, handleEditorInput, placeEditorCaret],
+  );
+
+  const handleMentionSelect = useCallback(
+    (tag: FileTag | SkillTag) => {
+      deleteMentionQuery();
+      insertEditorTag(tag);
+    },
+    [deleteMentionQuery, insertEditorTag],
+  );
+
+  const handleMentionSelectBatch = useCallback(
+    (tags: (FileTag | SkillTag)[]) => {
+      deleteMentionQuery();
+      tags.forEach(insertEditorTag);
+    },
+    [deleteMentionQuery, insertEditorTag],
+  );
+
+  /** 路径导航：把 `@src/ren` 替换为 `@src/renderer/` 后继续浏览。 */
+  const replaceMentionQuery = useCallback(
+    (relativePath: string) => {
+      if (mentionStartOffsetRef.current < 0) return;
+      const anchor = editorRangeRef.current;
+      const editor = editorRef.current;
+      if (!anchor || !editor || !editor.contains(anchor.startContainer)) return;
+      if (anchor.startContainer.nodeType !== Node.TEXT_NODE) return;
+      const range = anchor.cloneRange();
+      const node = range.startContainer;
+      const start = mentionStartOffsetRef.current;
+      const end = range.startOffset;
+      if (end < start) return;
+      range.setStart(node, start);
+      range.setEnd(node, end);
+      range.deleteContents();
+      editorRangeRef.current = range.cloneRange();
+      editor.focus();
+      placeEditorCaret(range);
+      if (relativePath) {
+        document.execCommand("insertText", false, `${relativePath}/`);
+        captureEditorRange();
+      }
+      checkMentionTrigger();
+    },
+    [captureEditorRange, checkMentionTrigger, placeEditorCaret],
+  );
+
+  // 引用面板以编辑器为锚点：默认贴着编辑器底边向上展开（memo 编辑器顶边
+  // 离视口顶部很近，向上会顶到视口外），上方空间不足时改为向下展开。
+  useEffect(() => {
+    if (!isMentionOpen) return;
+
+    const updateMentionPopupStyle = (): void => {
+      const editor = editorRef.current;
+      if (!editor) return;
+      const rect = editor.getBoundingClientRect();
+      const placeAbove = rect.bottom - 8 >= window.innerHeight - rect.top - 8;
+      setMentionPopupStyle({
+        position: "fixed",
+        left: rect.left,
+        right: "auto",
+        top: placeAbove ? "auto" : rect.top + 4,
+        bottom: placeAbove ? window.innerHeight - rect.bottom + 4 : "auto",
+        width: rect.width,
+        marginTop: 0,
+        marginBottom: 0,
+        zIndex: 10000,
+      });
+    };
+
+    updateMentionPopupStyle();
+    window.addEventListener("resize", updateMentionPopupStyle);
+    const editor = editorRef.current;
+    editor?.addEventListener("scroll", updateMentionPopupStyle, true);
+    return () => {
+      window.removeEventListener("resize", updateMentionPopupStyle);
+      editor?.removeEventListener("scroll", updateMentionPopupStyle, true);
+    };
+  }, [isMentionOpen]);
+
+  /** 点击 chip 的关闭按钮时移除引用，并记录光标用于后续插入。 */
+  const handleEditorClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target;
+    if (target instanceof Element) {
+      const removeButton = target.closest("[data-chip-remove='true']");
+      if (removeButton) {
+        removeButton.parentElement?.remove();
+        handleEditorInput();
+        return;
+      }
+    }
+    captureEditorRange();
   };
 
   const handleEditorPaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
@@ -491,6 +780,10 @@ export function MemoModal({
   };
 
   const handleEditorKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    // @ 引用面板打开时优先由面板处理上下选择/回车确认/ESC
+    if (isMentionOpen && mentionPopupRef.current?.handleKeyDown(event)) {
+      return;
+    }
     // Ctrl/Cmd + Backspace on empty editor deletes the memo
     if (
       (event.ctrlKey || event.metaKey) &&
@@ -505,6 +798,7 @@ export function MemoModal({
 
   const handleEditorFocus = () => {
     editorFocusedRef.current = true;
+    captureEditorRange();
   };
 
   const handleEditorBlur = () => {
@@ -689,20 +983,38 @@ export function MemoModal({
             </button>
           </div>
         </div>
-        <div
-          aria-label={t("memo.editorLabel")}
-          className="memo-editor"
-          contentEditable
-          data-placeholder={t("memo.richTextPlaceholder")}
-          onBlur={handleEditorBlur}
-          onFocus={handleEditorFocus}
-          onInput={handleEditorInput}
-          onKeyDown={handleEditorKeyDown}
-          onPaste={handleEditorPaste}
-          ref={editorRef}
-          role="textbox"
-          suppressContentEditableWarning
-        />
+        <div className="memo-editor-area">
+          <FileMentionPopup
+            ref={mentionPopupRef}
+            visible={isMentionOpen}
+            query={mentionQuery}
+            onClose={closeMention}
+            onSelect={handleMentionSelect}
+            onSelectBatch={handleMentionSelectBatch}
+            textareaRef={editorRef}
+            onNavigateTo={replaceMentionQuery}
+            projectId={directoryId}
+            style={mentionPopupStyle}
+            portal
+          />
+          <div
+            aria-label={t("memo.editorLabel")}
+            className="memo-editor"
+            contentEditable
+            data-placeholder={t("memo.richTextPlaceholder")}
+            onBlur={handleEditorBlur}
+            onClick={handleEditorClick}
+            onFocus={handleEditorFocus}
+            onInput={handleEditorInput}
+            onKeyDown={handleEditorKeyDown}
+            onKeyUp={captureEditorRange}
+            onMouseUp={captureEditorRange}
+            onPaste={handleEditorPaste}
+            ref={editorRef}
+            role="textbox"
+            suppressContentEditableWarning
+          />
+        </div>
       </div>
     );
   };

@@ -21696,6 +21696,13 @@ input {
   min-height: 0;
 }
 
+.memo-editor-area {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 .memo-editor-toolbar {
   display: flex;
   align-items: center;

@@ -265,6 +265,23 @@ pub fn decide_stream_recovery(
     StreamRecoveryDecision::SurfaceInterrupted
 }
 
+pub fn attempt_has_payload(
+    content_chunks: &[String],
+    thinking_chunks: &[String],
+    has_tool_state: bool,
+) -> bool {
+    has_tool_state
+        || content_chunks.iter().any(|chunk| !chunk.trim().is_empty())
+        || thinking_chunks.iter().any(|chunk| !chunk.trim().is_empty())
+}
+
+pub const EMPTY_RESPONSE_RETRY_ERROR: &str =
+    "AI returned an empty response (no content, thinking or tool calls)";
+
+pub fn should_retry_empty_response(attempt: u32, options: &RetryOptions, has_payload: bool) -> bool {
+    !has_payload && attempt < options.max_retries
+}
+
 pub fn is_retriable_error(error: &Error) -> bool {
     let message = error.reason.to_lowercase();
 

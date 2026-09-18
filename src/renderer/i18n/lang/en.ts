@@ -261,7 +261,7 @@ export const en = {
   "memo.buildTitle": "Build from memo",
   "memo.pendingCount": "{{count}} pending",
   "memo.richTextPlaceholder":
-    "Write your memo here... (paste images, format text)",
+    "Write your memo here... (paste images, format text, @ to reference project files)",
   "memo.editorLabel": "Memo content",
   "memo.deleteShortcut": "Delete selected memo",
   "memo.sortToggle": "Toggle sort order",

@@ -247,7 +247,8 @@ export const zhCN = {
   "memo.buildConfirm": "将以该备忘内容作为用户消息新建会话并发送，是否继续？",
   "memo.buildTitle": "从备忘构建",
   "memo.pendingCount": "{{count}} 条待办",
-  "memo.richTextPlaceholder": "在此记录备忘...（可粘贴图片、格式化文本）",
+  "memo.richTextPlaceholder":
+    "在此记录备忘...（可粘贴图片、格式化文本、@ 引用项目文件）",
   "memo.editorLabel": "备忘内容",
   "memo.deleteShortcut": "删除选中的备忘",
   "memo.sortToggle": "切换排序",

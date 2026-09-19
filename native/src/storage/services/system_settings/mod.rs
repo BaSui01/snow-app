@@ -33,6 +33,20 @@ const DEFAULT_CODEBASE_SETTING_NAME: &str = "Codebase settings";
 const DEFAULT_CODEBASE_SETTING_CODE: &str = "codebase_settings";
 const DEFAULT_CODEBASE_SETTING_VALUE: &str = "{\"profileName\":\"default\",\"embeddingType\":\"jina\",\"embeddingModelName\":\"\",\"embeddingBaseUrl\":\"\",\"embeddingApiKey\":\"\",\"embeddingDimensions\":1536,\"batchMaxLines\":10,\"batchConcurrency\":3,\"chunkingMaxLinesPerChunk\":200,\"chunkingMinLinesPerChunk\":10,\"chunkingMinCharsPerChunk\":20,\"chunkingOverlapLines\":20,\"modelContextLength\":8192,\"rerankingModelName\":\"\",\"rerankingBaseUrl\":\"\",\"rerankingApiKey\":\"\",\"rerankingContextLength\":4096,\"rerankingTopN\":5,\"configJson\":\"{}\",\"source\":\"manual\"}";
 
+// 决策模型（TypeSafe System One 一类的判定型模型）：全局配置，代码库代理审查
+// 等场景按 id 选用；字段与前端 src/renderer/constants/decisionModels.ts 一致。
+const DEFAULT_DECISION_MODELS_SETTING_NAME: &str = "Decision models";
+const DEFAULT_DECISION_MODELS_SETTING_CODE: &str = "decision_models";
+const DEFAULT_DECISION_MODELS_SETTING_VALUE: &str = "{\"models\":[]}";
+
+// 敏感命令的决策模型辅助（全局）：命中敏感规则的命令在弹出确认前先请决策
+// 模型判定是否可直接放行（`enabled`）。`delegate` 打开时判定直接生效
+// （允许则放行、拒绝则拒绝），关闭时只在拦截提示中作为建议展示。
+const DEFAULT_SENSITIVE_COMMAND_ASSIST_SETTING_NAME: &str = "Sensitive command decision assist";
+const DEFAULT_SENSITIVE_COMMAND_ASSIST_SETTING_CODE: &str = "sensitive_command_assist";
+const DEFAULT_SENSITIVE_COMMAND_ASSIST_SETTING_VALUE: &str =
+    "{\"enabled\":false,\"modelId\":\"\",\"delegate\":false}";
+
 const DEFAULT_YOLO_MODE_SETTING_NAME: &str = "YOLO mode";
 const DEFAULT_YOLO_MODE_SETTING_CODE: &str = "yolo_mode";
 const DEFAULT_YOLO_MODE_SETTING_VALUE: &str = "false";
@@ -249,6 +263,19 @@ impl ToolApprovalProjectScopeSettings {
         self.project_id = self.project_id.trim().to_string();
         self.approved_tool_names = normalized_set(&self.approved_tool_names);
     }
+}
+
+/// 敏感命令的决策模型辅助配置（system_settings 的 `sensitive_command_assist`，
+/// 字段名与前端 camelCase 一致）。
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct SensitiveCommandAssistSettings {
+    /// 总开关，默认关闭：关闭时不请求决策模型，敏感命令照常弹确认。
+    pub enabled: bool,
+    /// 参与判定的决策模型 id（`decision_models` 中已启用的条目）。
+    pub model_id: String,
+    /// 托管：判定直接生效（允许则放行、拒绝则拒绝），默认关闭（仅展示建议）。
+    pub delegate: bool,
 }
 
 pub fn seed_default_settings(database_path: &Path) -> Result<()> {
@@ -488,6 +515,29 @@ pub fn set_image_library_dir(database_path: &Path, dir: &str) -> Result<()> {
     )
 }
 
+/// 读取敏感命令的决策模型辅助配置；未配置 / 解析失败时回落到默认值
+/// （关闭、未选择模型、非托管），敏感命令的确认流程不受影响。
+pub fn get_sensitive_command_assist(
+    database_path: &Path,
+) -> Result<SensitiveCommandAssistSettings> {
+    let Some(value) =
+        get_system_setting_value(database_path, DEFAULT_SENSITIVE_COMMAND_ASSIST_SETTING_CODE)?
+    else {
+        return Ok(SensitiveCommandAssistSettings::default());
+    };
+
+    if value.trim().is_empty() {
+        return Ok(SensitiveCommandAssistSettings::default());
+    }
+
+    serde_json::from_str::<SensitiveCommandAssistSettings>(&value).map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to parse sensitive command assist setting: {error}"),
+        )
+    })
+}
+
 fn normalize_required_value(value: &str, label: &str) -> Result<String> {
     let normalized = value.trim();
     if normalized.is_empty() {
@@ -585,6 +635,18 @@ fn seed_default_settings_with_connection(connection: &Connection) -> rusqlite::R
         DEFAULT_CODEBASE_SETTING_NAME,
         DEFAULT_CODEBASE_SETTING_CODE,
         DEFAULT_CODEBASE_SETTING_VALUE,
+    )?;
+    insert_default_setting(
+        connection,
+        DEFAULT_DECISION_MODELS_SETTING_NAME,
+        DEFAULT_DECISION_MODELS_SETTING_CODE,
+        DEFAULT_DECISION_MODELS_SETTING_VALUE,
+    )?;
+    insert_default_setting(
+        connection,
+        DEFAULT_SENSITIVE_COMMAND_ASSIST_SETTING_NAME,
+        DEFAULT_SENSITIVE_COMMAND_ASSIST_SETTING_CODE,
+        DEFAULT_SENSITIVE_COMMAND_ASSIST_SETTING_VALUE,
     )?;
     insert_default_setting(
         connection,

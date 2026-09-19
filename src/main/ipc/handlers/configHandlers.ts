@@ -67,7 +67,7 @@ const normalizeHookConfig = (item: unknown): HookConfigInput => {
 const validateSubAgentTools = async (
   native: NativeBridge,
   projectId: string | undefined,
-  toolsJson: string
+  toolsJson: string,
 ): Promise<void> => {
   const parsed: unknown = JSON.parse(toolsJson);
   const toolNames = Array.isArray(parsed)
@@ -89,27 +89,27 @@ const validateSubAgentTools = async (
 
   const servers = await native.listMcpProjectServers(projectId);
   const availableServers = servers.filter(
-    (server) => server.globalEnabled && server.enabled && !server.error
+    (server) => server.globalEnabled && server.enabled && !server.error,
   );
   const toolsByServer = await Promise.all(
     availableServers.map(async (server) =>
       server.source === "system"
         ? server.tools
-        : native.listMcpProjectServerTools(projectId, server.id)
-    )
+        : native.listMcpProjectServerTools(projectId, server.id),
+    ),
   );
   const availableToolNames = new Set(
     toolsByServer.flatMap((tools) =>
-      tools.filter((tool) => tool.enabled).map((tool) => tool.name)
-    )
+      tools.filter((tool) => tool.enabled).map((tool) => tool.name),
+    ),
   );
   const unavailableTool = toolNames.find(
-    (toolName) => !availableToolNames.has(toolName)
+    (toolName) => !availableToolNames.has(toolName),
   );
 
   if (unavailableTool) {
     throw new Error(
-      `Selected sub-agent MCP tool is not enabled for the current project: ${unavailableTool}`
+      `Selected sub-agent MCP tool is not enabled for the current project: ${unavailableTool}`,
     );
   }
 };
@@ -129,19 +129,19 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
     return native.listSystemPrompts();
   });
   ipcMain.handle("system-prompts:import-snow-cli", () =>
-    readSnowCliSystemPromptConfig(native)
+    readSnowCliSystemPromptConfig(native),
   );
 
   // ===== Custom Header Schemes =====
   ipcMain.handle("custom-header-schemes:list", () =>
-    native.listCustomHeaderSchemes()
+    native.listCustomHeaderSchemes(),
   );
   ipcMain.handle(
     "custom-header-schemes:upsert",
     async (_event, item: unknown) => {
       await native.upsertCustomHeaderScheme(normalizeCustomHeaderScheme(item));
       return native.listCustomHeaderSchemes();
-    }
+    },
   );
   ipcMain.handle(
     "custom-header-schemes:delete",
@@ -151,15 +151,15 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
       }
       await native.deleteCustomHeaderScheme(schemeId.trim());
       return native.listCustomHeaderSchemes();
-    }
+    },
   );
   ipcMain.handle("custom-header-schemes:import-snow-cli", () =>
-    readSnowCliCustomHeadersConfig(native)
+    readSnowCliCustomHeadersConfig(native),
   );
 
   // ===== MCP Server Configs =====
   ipcMain.handle("mcp-server-configs:list", () =>
-    native.listMcpServerConfigs()
+    native.listMcpServerConfigs(),
   );
   ipcMain.handle("mcp-server-configs:upsert", async (_event, item: unknown) => {
     await native.upsertMcpServerConfig(normalizeMcpServerConfig(item));
@@ -173,43 +173,40 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
       }
       const normalizedServerId = serverId.trim();
       const existing = (await native.listMcpServerConfigs()).find(
-        (item) => item.serverId === normalizedServerId
+        (item) => item.serverId === normalizedServerId,
       );
       if (existing?.source === "snow-cli") {
         deleteSnowCliMcpServerConfig(existing.name);
       }
       await native.deleteMcpServerConfig(normalizedServerId);
       return native.listMcpServerConfigs();
-    }
+    },
   );
   ipcMain.handle("mcp-server-configs:import-snow-cli", () =>
-    readSnowCliMcpConfig(native)
+    readSnowCliMcpConfig(native),
   );
 
   // ===== LSP Server Configs =====
   ipcMain.handle("lsp-server-configs:list", () =>
-    native.listLspServerConfigs()
+    native.listLspServerConfigs(),
   );
   ipcMain.handle("lsp-server-configs:upsert", async (_event, item: unknown) => {
     await native.upsertLspServerConfig(normalizeLspServerConfig(item));
     return native.listLspServerConfigs();
   });
-  ipcMain.handle(
-    "lsp-server-configs:delete",
-    async (_event, lang: unknown) => {
-      if (typeof lang !== "string" || !lang.trim()) {
-        throw new Error("Language is required");
-      }
-      await native.deleteLspServerConfig(lang.trim());
-      return native.listLspServerConfigs();
+  ipcMain.handle("lsp-server-configs:delete", async (_event, lang: unknown) => {
+    if (typeof lang !== "string" || !lang.trim()) {
+      throw new Error("Language is required");
     }
-  );
+    await native.deleteLspServerConfig(lang.trim());
+    return native.listLspServerConfigs();
+  });
   ipcMain.handle(
     "project-lsp-server-configs:list",
     (_event, projectId: unknown) => {
       const normalizedProjectId = requireProjectId(projectId);
       return native.listProjectLspServerConfigs(normalizedProjectId);
-    }
+    },
   );
   ipcMain.handle(
     "project-lsp-server-configs:upsert",
@@ -217,11 +214,11 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
       const normalizedProjectId = requireProjectId(projectId);
       await native.upsertProjectLspServerConfig(
         normalizedProjectId,
-        normalizeLspServerConfig(item)
+        normalizeLspServerConfig(item),
       );
       // 返回 effective 合并视图（全局 + 项目覆盖），UI 直接刷新为项目生效配置。
       return native.listEffectiveLspServerConfigs(normalizedProjectId);
-    }
+    },
   );
   ipcMain.handle(
     "project-lsp-server-configs:delete",
@@ -230,10 +227,13 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
       if (typeof lang !== "string" || !lang.trim()) {
         throw new Error("Language is required");
       }
-      await native.deleteProjectLspServerConfig(normalizedProjectId, lang.trim());
+      await native.deleteProjectLspServerConfig(
+        normalizedProjectId,
+        lang.trim(),
+      );
       // 返回 effective 合并视图（全局 + 项目覆盖），UI 直接刷新为项目生效配置。
       return native.listEffectiveLspServerConfigs(normalizedProjectId);
-    }
+    },
   );
   ipcMain.handle(
     "lsp-server-configs:effective:list",
@@ -241,15 +241,15 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
       native.listEffectiveLspServerConfigs(
         typeof projectId === "string" && projectId.trim()
           ? projectId.trim()
-          : undefined
-      )
+          : undefined,
+      ),
   );
   ipcMain.handle("lsp-server-configs:probe", (_event, projectId: unknown) =>
     native.probeLspServerCommands(
       typeof projectId === "string" && projectId.trim()
         ? projectId.trim()
-        : undefined
-    )
+        : undefined,
+    ),
   );
   // 技术栈检测：扫描项目根目录（纯文件系统，无副作用）。
   ipcMain.handle("lsp-project-stack:detect", (_event, projectRoot: unknown) => {
@@ -262,8 +262,10 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
   // 可选 projectId：传入时只返回该项目根下的会话（徽章按当前项目过滤）。
   ipcMain.handle("lsp-session-statuses:list", (_event, projectId: unknown) =>
     native.listLspSessionStatuses(
-      typeof projectId === "string" && projectId.trim() ? projectId.trim() : undefined
-    )
+      typeof projectId === "string" && projectId.trim()
+        ? projectId.trim()
+        : undefined,
+    ),
   );
   // 安装语言服务器：执行配置表中的 installCommand。命令来源 = 用户主动配置
   // 的表（与 bash 工具同级信任），渲染进程必须先经确认对话框展示确切命令；
@@ -278,15 +280,13 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
       const hasProjectId =
         typeof projectId === "string" && projectId.trim().length > 0;
       const records = hasProjectId
-        ? await native.listProjectLspServerConfigs(
-            (projectId as string).trim()
-          )
+        ? await native.listProjectLspServerConfigs((projectId as string).trim())
         : await native.listLspServerConfigs();
       const record = records.find((item) => item.lang === normalizedLang);
       const installCommand = record?.installCommand?.trim();
       if (!installCommand) {
         throw new Error(
-          `No install command configured for language "${normalizedLang}"`
+          `No install command configured for language "${normalizedLang}"`,
         );
       }
       return await new Promise<{
@@ -305,9 +305,11 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
         child.stdout?.on("data", append);
         child.stderr?.on("data", append);
         child.on("error", (error) => reject(error));
-        child.on("close", (code) => resolve({ command: installCommand, output, exitCode: code }));
+        child.on("close", (code) =>
+          resolve({ command: installCommand, output, exitCode: code }),
+        );
       });
-    }
+    },
   );
   ipcMain.handle("project-mcp-server-configs:list", (_event, projectId) => {
     const normalizedProjectId = requireProjectId(projectId);
@@ -319,10 +321,10 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
       const normalizedProjectId = requireProjectId(projectId);
       await native.upsertProjectMcpServerConfig(
         normalizedProjectId,
-        normalizeProjectMcpServerConfig(item)
+        normalizeProjectMcpServerConfig(item),
       );
       return native.listProjectMcpServerConfigs(normalizedProjectId);
-    }
+    },
   );
   ipcMain.handle(
     "project-mcp-server-configs:delete",
@@ -332,30 +334,31 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
         throw new Error("MCP server ID is required");
       }
       const normalizedServerId = serverId.trim();
-      const existing = (await native.listProjectMcpServerConfigs(
-        normalizedProjectId
-      )).find((item) => item.serverId === normalizedServerId);
+      const existing = (
+        await native.listProjectMcpServerConfigs(normalizedProjectId)
+      ).find((item) => item.serverId === normalizedServerId);
       if (existing?.source === "snow-cli") {
         await deleteSnowCliProjectMcpServerConfig(
           native,
           normalizedProjectId,
-          existing.name
+          existing.name,
         );
       }
       await native.deleteProjectMcpServerConfig(
         normalizedProjectId,
-        normalizedServerId
+        normalizedServerId,
       );
       return native.listProjectMcpServerConfigs(normalizedProjectId);
-    }
+    },
   );
 
   // ===== Sub-agent Configs =====
-  const normalizeOptionalProjectId = (value: unknown): string | undefined =>
+  /** 可选字符串参数归一化：空白字符串一律视为未提供。 */
+  const normalizeOptionalText = (value: unknown): string | undefined =>
     typeof value === "string" && value.trim() ? value.trim() : undefined;
 
   ipcMain.handle("sub-agent-configs:list", (_event, projectId: unknown) =>
-    native.listSubAgentConfigs(normalizeOptionalProjectId(projectId))
+    native.listSubAgentConfigs(normalizeOptionalText(projectId)),
   );
   ipcMain.handle(
     "sub-agent-configs:get",
@@ -365,14 +368,14 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
       }
       return native.getSubAgentConfig(
         agentId.trim(),
-        normalizeOptionalProjectId(projectId)
+        normalizeOptionalText(projectId),
       );
-    }
+    },
   );
   ipcMain.handle(
     "sub-agent-configs:upsert",
     async (_event, projectId: unknown, item: unknown) => {
-      const normalizedProjectId = normalizeOptionalProjectId(projectId);
+      const normalizedProjectId = normalizeOptionalText(projectId);
       const normalized = normalizeSubAgentConfig({
         ...(typeof item === "object" && item !== null
           ? (item as Record<string, unknown>)
@@ -383,7 +386,7 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
       if (
         normalized.configProfile &&
         !apiConfigs.some(
-          (config) => config.profileName === normalized.configProfile
+          (config) => config.profileName === normalized.configProfile,
         )
       ) {
         throw new Error("Selected sub-agent API profile does not exist");
@@ -391,11 +394,11 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
       await validateSubAgentTools(
         native,
         normalizedProjectId,
-        normalized.toolsJson
+        normalized.toolsJson,
       );
       await native.upsertSubAgentConfig(normalized);
       return native.listSubAgentConfigs(normalizedProjectId);
-    }
+    },
   );
   ipcMain.handle(
     "sub-agent-configs:delete",
@@ -405,36 +408,33 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
       }
 
       const normalizedAgentId = agentId.trim();
-      const normalizedProjectId = normalizeOptionalProjectId(projectId);
+      const normalizedProjectId = normalizeOptionalText(projectId);
       const existing = await native.listSubAgentConfigs(normalizedProjectId);
       if (
         existing.some(
-          (item) => item.agentId === normalizedAgentId && item.builtin
+          (item) => item.agentId === normalizedAgentId && item.builtin,
         )
       ) {
         throw new Error("Built-in sub-agents cannot be deleted");
       }
 
-      await native.deleteSubAgentConfig(
-        normalizedAgentId,
-        normalizedProjectId
-      );
+      await native.deleteSubAgentConfig(normalizedAgentId, normalizedProjectId);
       return native.listSubAgentConfigs(normalizedProjectId);
-    }
+    },
   );
 
   // ===== Sensitive Command Configs =====
   ipcMain.handle("sensitive-command-configs:list", () =>
-    native.listSensitiveCommandConfigs()
+    native.listSensitiveCommandConfigs(),
   );
   ipcMain.handle(
     "sensitive-command-configs:upsert",
     async (_event, item: unknown) => {
       await native.upsertSensitiveCommandConfig(
-        normalizeSensitiveCommandConfig(item)
+        normalizeSensitiveCommandConfig(item),
       );
       return native.listSensitiveCommandConfigs();
-    }
+    },
   );
   ipcMain.handle(
     "sensitive-command-configs:delete",
@@ -445,10 +445,10 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
 
       await native.deleteSensitiveCommandConfig(commandId.trim());
       return native.listSensitiveCommandConfigs();
-    }
+    },
   );
   ipcMain.handle("sensitive-command-configs:import-snow-cli", () =>
-    readSnowCliSensitiveCommandConfig(native)
+    readSnowCliSensitiveCommandConfig(native),
   );
   ipcMain.handle("sensitive-command-configs:reset", async () => {
     await native.resetSensitiveCommandConfigs();
@@ -460,7 +460,7 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
     (_event, projectId) => {
       const normalizedProjectId = requireProjectId(projectId);
       return native.listProjectSensitiveCommandConfigs(normalizedProjectId);
-    }
+    },
   );
   ipcMain.handle(
     "project-sensitive-command-configs:set-enabled",
@@ -476,10 +476,10 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
       await native.setProjectSensitiveCommandEnabled(
         normalizedProjectId,
         commandId.trim(),
-        enabled
+        enabled,
       );
       return native.listProjectSensitiveCommandConfigs(normalizedProjectId);
-    }
+    },
   );
   ipcMain.handle(
     "project-sensitive-command-configs:upsert",
@@ -487,10 +487,10 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
       const normalizedProjectId = requireProjectId(projectId);
       await native.upsertProjectSensitiveCommandConfig(
         normalizedProjectId,
-        normalizeProjectSensitiveCommandConfig(item)
+        normalizeProjectSensitiveCommandConfig(item),
       );
       return native.listProjectSensitiveCommandConfigs(normalizedProjectId);
-    }
+    },
   );
   ipcMain.handle(
     "project-sensitive-command-configs:delete",
@@ -502,10 +502,10 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
 
       await native.deleteProjectSensitiveCommandConfig(
         normalizedProjectId,
-        commandId.trim()
+        commandId.trim(),
       );
       return native.listProjectSensitiveCommandConfigs(normalizedProjectId);
-    }
+    },
   );
 
   ipcMain.handle(
@@ -519,7 +519,31 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
           ? projectId.trim()
           : undefined;
       return native.checkSensitiveCommandMatch(command, normalizedProjectId);
-    }
+    },
+  );
+
+  // 决策模型辅助：命中敏感规则时判定是否可直接放行（返回 null = 未启用 /
+  // 无可用模型 / 未命中规则，渲染层保持原有确认流程）。workingDirectory 与
+  // description 是风险判定的上下文：命令在哪个目录执行、模型自己的意图说明。
+  ipcMain.handle(
+    "sensitive-command-configs:evaluate-decision",
+    (
+      _event,
+      command: unknown,
+      projectId: unknown,
+      workingDirectory: unknown,
+      description: unknown,
+    ) => {
+      if (typeof command !== "string" || !command.trim()) {
+        return Promise.resolve(null);
+      }
+      return native.evaluateSensitiveCommandDecision(
+        command.trim(),
+        normalizeOptionalText(projectId),
+        normalizeOptionalText(workingDirectory),
+        normalizeOptionalText(description),
+      );
+    },
   );
 
   // ===== Hook Configs =====
@@ -540,7 +564,7 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
         throw new Error("Project id is required for project scope hooks");
       }
       return native.listHookConfigs(scope, normalizedProjectId);
-    }
+    },
   );
   ipcMain.handle("hook-configs:upsert", async (_event, item: unknown) => {
     await native.upsertHookConfig(normalizeHookConfig(item));
@@ -568,10 +592,10 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
       await native.deleteHookConfig(
         hookType.trim(),
         scope,
-        normalizedProjectId
+        normalizedProjectId,
       );
       return;
-    }
+    },
   );
 
   ipcMain.handle("hooks:execute", async (_event, input: unknown) => {

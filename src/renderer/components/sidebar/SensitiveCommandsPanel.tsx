@@ -1,11 +1,36 @@
-import { Download, Folder, Globe2, Loader2, Plus, RotateCcw, X } from "lucide-react";
+import {
+  Download,
+  Folder,
+  Globe2,
+  Loader2,
+  Plus,
+  RotateCcw,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkspaceDirectoryRecord } from "../../../preload";
+import {
+  DECISION_MODELS_SETTING_CODE,
+  readDecisionModelsJson,
+  type DecisionModelConfig,
+} from "../../constants/decisionModels";
+import {
+  DEFAULT_SENSITIVE_COMMAND_ASSIST_SETTINGS,
+  SENSITIVE_COMMAND_ASSIST_SETTING_CODE,
+  SENSITIVE_COMMAND_ASSIST_SETTING_NAME,
+  readSensitiveCommandAssistSettings,
+  toSensitiveCommandAssistJson,
+  type SensitiveCommandAssistSettings,
+} from "../../constants/sensitiveCommandAssist";
 import { useI18n } from "../../i18n";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { Modal } from "../common/Modal";
-import { SensitiveCommandEditor, SensitiveCommandEditorActions } from "./sensitiveCommands/SensitiveCommandEditor";
+import { SensitiveCommandDecisionAssist } from "./sensitiveCommands/SensitiveCommandDecisionAssist";
+import {
+  SensitiveCommandEditor,
+  SensitiveCommandEditorActions,
+} from "./sensitiveCommands/SensitiveCommandEditor";
 import {
   SensitiveCommandList,
   type SensitiveCommandListItem,
@@ -43,6 +68,14 @@ export function SensitiveCommandsPanel({
   >([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  /** 决策模型辅助设置（全局）：与全局/项目标签页无关，始终显示。 */
+  const [assistSettings, setAssistSettings] =
+    useState<SensitiveCommandAssistSettings>(() => ({
+      ...DEFAULT_SENSITIVE_COMMAND_ASSIST_SETTINGS,
+    }));
+  const [decisionModels, setDecisionModels] = useState<DecisionModelConfig[]>(
+    [],
+  );
   const [draft, setDraft] = useState<SensitiveCommandDraft | null>(null);
   const [commandPendingDeletion, setCommandPendingDeletion] =
     useState<SensitiveCommandListItem | null>(null);
@@ -64,20 +97,30 @@ export function SensitiveCommandsPanel({
     setError("");
 
     try {
-      const [globalItems, projectItems] = await Promise.all([
-        window.snow.listSensitiveCommandConfigs(),
-        activeDirectory
-          ? window.snow.listProjectSensitiveCommandConfigs(
-              activeDirectory.directoryId
-            )
-          : Promise.resolve([]),
-      ]);
+      const [globalItems, projectItems, assistRaw, decisionModelsRaw] =
+        await Promise.all([
+          window.snow.listSensitiveCommandConfigs(),
+          activeDirectory
+            ? window.snow.listProjectSensitiveCommandConfigs(
+                activeDirectory.directoryId,
+              )
+            : Promise.resolve([]),
+          // 辅助设置与决策模型只是展示依赖：读取失败时退回默认值，不阻断规则列表。
+          window.snow
+            .getSystemSettingValue(SENSITIVE_COMMAND_ASSIST_SETTING_CODE)
+            .catch(() => null),
+          window.snow
+            .getSystemSettingValue(DECISION_MODELS_SETTING_CODE)
+            .catch(() => null),
+        ]);
       if (loadGenerationRef.current !== generation) {
         return;
       }
 
       setCommands(globalItems);
       setProjectCommands(projectItems);
+      setAssistSettings(readSensitiveCommandAssistSettings(assistRaw));
+      setDecisionModels(readDecisionModelsJson(decisionModelsRaw));
     } catch (loadError) {
       if (loadGenerationRef.current === generation) {
         setError(
@@ -85,7 +128,7 @@ export function SensitiveCommandsPanel({
             ? loadError.message
             : t("settings.sensitiveCommandLoadError", {
                 defaultValue: "Failed to load sensitive command rules",
-              })
+              }),
         );
       }
     } finally {
@@ -117,7 +160,7 @@ export function SensitiveCommandsPanel({
       setStatus(
         t("settings.sensitiveCommandImportSuccess", {
           defaultValue: "Synced sensitive command rules from Snow CLI.",
-        })
+        }),
       );
     } catch (importError) {
       setError(
@@ -125,10 +168,47 @@ export function SensitiveCommandsPanel({
           ? importError.message
           : t("settings.sensitiveCommandImportError", {
               defaultValue: "Failed to sync Snow CLI sensitive command rules",
-            })
+            }),
       );
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  /** 持久化决策模型辅助设置：只写这两个开关与模型选择，不重载规则列表。 */
+  const saveAssistSettings = async (
+    next: SensitiveCommandAssistSettings,
+  ): Promise<void> => {
+    if (isSaving) {
+      return;
+    }
+
+    setIsSaving(true);
+    setError("");
+    setStatus("");
+
+    try {
+      await window.snow.setSystemSetting(
+        SENSITIVE_COMMAND_ASSIST_SETTING_NAME,
+        SENSITIVE_COMMAND_ASSIST_SETTING_CODE,
+        toSensitiveCommandAssistJson(next),
+      );
+      setAssistSettings(next);
+      setStatus(
+        t("settings.sensitiveCommandAssistSaveSuccess", {
+          defaultValue: "Saved decision model assist settings.",
+        }),
+      );
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : t("settings.sensitiveCommandAssistSaveError", {
+              defaultValue: "Failed to save decision model assist settings",
+            }),
+      );
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -137,7 +217,7 @@ export function SensitiveCommandsPanel({
       activeScope === "global" ? commands : projectCommands;
     const maxSortOrder = scopedCommands.reduce(
       (max, command) => Math.max(max, command.sortOrder),
-      -1
+      -1,
     );
     setDraft({
       ...EMPTY_SENSITIVE_COMMAND_DRAFT,
@@ -155,14 +235,14 @@ export function SensitiveCommandsPanel({
 
     if (activeScope === "global") {
       const globalCommand = commands.find(
-        (item) => item.commandId === command.commandId
+        (item) => item.commandId === command.commandId,
       );
       if (globalCommand) {
         setDraft(toDraft(globalCommand));
       }
     } else {
       const projectCommand = projectCommands.find(
-        (item) => item.commandId === command.commandId && !item.inherited
+        (item) => item.commandId === command.commandId && !item.inherited,
       );
       if (projectCommand) {
         setDraft({
@@ -198,7 +278,7 @@ export function SensitiveCommandsPanel({
       setError(
         t("settings.sensitiveCommandPatternRequired", {
           defaultValue: "Command pattern is required.",
-        })
+        }),
       );
       setStatus("");
       return;
@@ -210,13 +290,13 @@ export function SensitiveCommandsPanel({
         : projectCommands.some(
             (command) =>
               command.pattern.trim() === draft.pattern.trim() &&
-              command.commandId !== draft.commandId
+              command.commandId !== draft.commandId,
           );
     if (duplicatePattern) {
       setError(
         t("settings.sensitiveCommandDuplicatePattern", {
           defaultValue: "Command pattern already exists.",
-        })
+        }),
       );
       setStatus("");
       return;
@@ -233,10 +313,10 @@ export function SensitiveCommandsPanel({
       if (operationScope === "global") {
         const maxSortOrder = commands.reduce(
           (max, command) => Math.max(max, command.sortOrder),
-          -1
+          -1,
         );
         const items = await window.snow.upsertSensitiveCommandConfig(
-          toInput(draft, maxSortOrder + 1)
+          toInput(draft, maxSortOrder + 1),
         );
         setCommands(items);
       } else if (operationProjectId) {
@@ -251,7 +331,7 @@ export function SensitiveCommandsPanel({
             description: draft.description.trim(),
             enabled: draft.enabled,
             sortOrder: draft.commandId ? draft.sortOrder : maxSortOrder + 1,
-          }
+          },
         );
         if (loadGenerationRef.current !== generation) {
           return;
@@ -269,7 +349,7 @@ export function SensitiveCommandsPanel({
             })
           : t("settings.sensitiveCommandAddSuccess", {
               defaultValue: "Added sensitive command rule.",
-            })
+            }),
       );
     } catch (saveError) {
       if (
@@ -281,7 +361,7 @@ export function SensitiveCommandsPanel({
             ? saveError.message
             : t("settings.sensitiveCommandSaveError", {
                 defaultValue: "Failed to save sensitive command rule",
-              })
+              }),
         );
       }
     } finally {
@@ -295,7 +375,7 @@ export function SensitiveCommandsPanel({
   };
 
   const toggleEnabled = async (
-    command: SensitiveCommandListItem
+    command: SensitiveCommandListItem,
   ): Promise<void> => {
     if (isBusy) {
       return;
@@ -311,7 +391,7 @@ export function SensitiveCommandsPanel({
     try {
       if (operationScope === "global") {
         const globalCommand = commands.find(
-          (item) => item.commandId === command.commandId
+          (item) => item.commandId === command.commandId,
         );
         if (!globalCommand) {
           return;
@@ -330,7 +410,7 @@ export function SensitiveCommandsPanel({
         const items = await window.snow.setProjectSensitiveCommandEnabled(
           operationProjectId,
           command.commandId,
-          !command.enabled
+          !command.enabled,
         );
         if (loadGenerationRef.current !== generation) {
           return;
@@ -347,7 +427,7 @@ export function SensitiveCommandsPanel({
             ? updateError.message
             : t("settings.sensitiveCommandSaveError", {
                 defaultValue: "Failed to update sensitive command rule",
-              })
+              }),
         );
       }
     } finally {
@@ -361,7 +441,7 @@ export function SensitiveCommandsPanel({
   };
 
   const handleDelete = async (
-    command: SensitiveCommandListItem
+    command: SensitiveCommandListItem,
   ): Promise<void> => {
     if (isBusy || !command.canDelete) {
       return;
@@ -378,13 +458,13 @@ export function SensitiveCommandsPanel({
     try {
       if (operationScope === "global") {
         const items = await window.snow.deleteSensitiveCommandConfig(
-          command.commandId
+          command.commandId,
         );
         setCommands(items);
       } else if (operationProjectId) {
         const items = await window.snow.deleteProjectSensitiveCommandConfig(
           operationProjectId,
-          command.commandId
+          command.commandId,
         );
         if (loadGenerationRef.current !== generation) {
           return;
@@ -400,7 +480,7 @@ export function SensitiveCommandsPanel({
       setStatus(
         t("settings.sensitiveCommandDeleteSuccess", {
           defaultValue: "Deleted sensitive command rule.",
-        })
+        }),
       );
     } catch (deleteError) {
       if (
@@ -412,7 +492,7 @@ export function SensitiveCommandsPanel({
             ? deleteError.message
             : t("settings.sensitiveCommandDeleteError", {
                 defaultValue: "Failed to delete sensitive command rule",
-              })
+              }),
         );
       }
     } finally {
@@ -452,7 +532,7 @@ export function SensitiveCommandsPanel({
       setStatus(
         t("settings.sensitiveCommandResetSuccess", {
           defaultValue: "Reset sensitive command rules to system defaults.",
-        })
+        }),
       );
     } catch (resetError) {
       setError(
@@ -460,7 +540,7 @@ export function SensitiveCommandsPanel({
           ? resetError.message
           : t("settings.sensitiveCommandResetError", {
               defaultValue: "Failed to reset sensitive command rules",
-            })
+            }),
       );
     } finally {
       setIsSaving(false);
@@ -480,7 +560,7 @@ export function SensitiveCommandsPanel({
       overridden: false,
       canEdit: true,
       canDelete: !command.isPreset,
-    })
+    }),
   );
   const projectListItems: SensitiveCommandListItem[] = projectCommands.map(
     (command) => ({
@@ -495,11 +575,11 @@ export function SensitiveCommandsPanel({
         command.inherited && command.enabled !== command.globalEnabled,
       canEdit: !command.inherited,
       canDelete: !command.inherited,
-    })
+    }),
   );
   const activeCommands = isGlobalScope ? globalListItems : projectListItems;
   const enabledCount = activeCommands.filter(
-    (command) => command.enabled
+    (command) => command.enabled,
   ).length;
   const specialCount = isGlobalScope
     ? activeCommands.filter((command) => command.isPreset).length
@@ -619,11 +699,18 @@ export function SensitiveCommandsPanel({
                 : "settings.sensitiveCommandAddProjectRule",
               {
                 defaultValue: isGlobalScope ? "Add rule" : "Add project rule",
-              }
+              },
             )}
           </span>
         </button>
       </div>
+
+      <SensitiveCommandDecisionAssist
+        settings={assistSettings}
+        decisionModels={decisionModels}
+        isBusy={isBusy}
+        onChange={(next) => void saveAssistSettings(next)}
+      />
 
       <AutoDismissNotice
         message={error || status}

@@ -43,6 +43,7 @@ use crate::mcp::tools::{
 };
 use crate::storage::initialize_app_storage;
 use crate::storage::services::fs_explorer::FileSearchResult;
+use crate::storage::SensitiveCommandDecisionRecord;
 
 #[napi]
 pub async fn fetch_available_models() -> napi::Result<Vec<Model>> {
@@ -337,6 +338,96 @@ pub async fn set_mcp_project_tools_enabled(
 #[napi]
 pub async fn authorize_sensitive_command(command: String, token: String) -> napi::Result<()> {
     authorize_command(command, token).await
+}
+
+/// Evaluate a command that matched a sensitive rule with the configured decision
+/// model (TypeSafe System One / Jev).
+///
+/// The verdict is a risk judgement of the command's real effect in
+/// `workingDirectory` (with the model's own `description` as context) — a rule
+/// match alone never decides it. Returns `None` when the assist is disabled,
+/// the command matches no rule, or no usable decision model is selected — the
+/// caller then keeps the plain confirmation prompt. Transport / protocol
+/// failures are reported as errors so the caller can fall back the same way
+/// instead of acting on a guess.
+#[napi]
+pub async fn evaluate_sensitive_command_decision(
+    command: String,
+    project_id: Option<String>,
+    working_directory: Option<String>,
+    description: Option<String>,
+) -> napi::Result<Option<SensitiveCommandDecisionRecord>> {
+    let command = command.trim().to_string();
+    if command.is_empty() {
+        return Ok(None);
+    }
+
+    let working_directory = working_directory.unwrap_or_default().trim().to_string();
+    let description = description.unwrap_or_default().trim().to_string();
+
+    let database_path = PathBuf::from(initialize_app_storage()?.database_path);
+
+    // 设置、规则表与决策模型配置都是同步 SQLite 读取，放入阻塞线程执行，
+    // 避免阻塞 Node.js 主线程。
+    let (assist, matched_rules, decision_models) = {
+        let db_path = database_path.clone();
+        let candidate = command.clone();
+        tokio::task::spawn_blocking(move || {
+            let assist =
+                crate::storage::services::system_settings::get_sensitive_command_assist(&db_path)?;
+            let matched_rules =
+                crate::storage::check_sensitive_command_match(vec![(candidate, None)], project_id)?;
+            let decision_models = crate::api::jev::load_decision_models(&db_path);
+            Ok::<_, Error>((assist, matched_rules, decision_models))
+        })
+        .await
+        .map_err(|e| {
+            Error::from_reason(format!(
+                "Failed to load sensitive command decision context: {e}"
+            ))
+        })?
+    }?;
+
+    // 未开启辅助、未命中规则、或选中的决策模型不可用时，保持原有确认流程。
+    if !assist.enabled || matched_rules.is_empty() {
+        return Ok(None);
+    }
+
+    let Some(selected) =
+        crate::api::jev::find_enabled_decision_model(&decision_models, &assist.model_id)
+    else {
+        return Ok(None);
+    };
+    let model_name = if selected.name.trim().is_empty() {
+        selected.model.clone()
+    } else {
+        selected.name.trim().to_string()
+    };
+
+    let Some(config) =
+        crate::api::jev::JevConfig::from_decision_model(&decision_models, &assist.model_id)
+    else {
+        return Ok(None);
+    };
+
+    let verdict = crate::api::jev::evaluate_command(
+        &config,
+        &crate::api::jev::CommandContext {
+            command: &command,
+            description: &description,
+            working_directory: &working_directory,
+            matched_rules: &matched_rules,
+        },
+    )
+    .await?;
+
+    Ok(Some(SensitiveCommandDecisionRecord {
+        allow: verdict.allow,
+        reason: verdict.reason,
+        confidence: verdict.confidence,
+        delegate: assist.delegate,
+        model_name,
+    }))
 }
 
 #[napi]

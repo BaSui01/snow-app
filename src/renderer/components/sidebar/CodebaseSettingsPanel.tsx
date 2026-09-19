@@ -9,6 +9,14 @@ import {
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { useI18n } from "../../i18n";
 import { useBlurAutoSave } from "../../hooks/useBlurAutoSave";
+import {
+  DECISION_MODELS_SETTING_CODE,
+  DECISION_MODELS_SETTING_NAME,
+  mergeLegacyDecisionModel,
+  readDecisionModelsJson,
+  toDecisionModelsJson,
+  type DecisionModelConfig,
+} from "../../constants/decisionModels";
 import { CodebaseSettingsForm } from "./codebaseSettings/CodebaseSettingsForm";
 import { CodebaseSettingsSummary } from "./codebaseSettings/CodebaseSettingsSummary";
 import {
@@ -19,6 +27,7 @@ import {
 import {
   normalizeCodebaseSettings,
   readCodebaseSettingsJson,
+  readLegacyJevConfig,
   toCodebaseForm,
   toCodebaseSettings,
 } from "./codebaseSettings/codebaseSettingsUtils";
@@ -33,10 +42,14 @@ export function CodebaseSettingsPanel({
 }: CodebaseSettingsPanelProps): React.JSX.Element {
   const { t } = useI18n();
   const [form, setForm] = useState<CodebaseSettingsFormValue>(() =>
-    toCodebaseForm(DEFAULT_CODEBASE_SETTINGS)
+    toCodebaseForm(DEFAULT_CODEBASE_SETTINGS),
   );
   const [lastSaved, setLastSaved] = useState<CodebaseSettings>(
-    DEFAULT_CODEBASE_SETTINGS
+    DEFAULT_CODEBASE_SETTINGS,
+  );
+  /** 全局决策模型配置：本页只选择，配置在「API 配置 → 决策模型」中维护。 */
+  const [decisionModels, setDecisionModels] = useState<DecisionModelConfig[]>(
+    [],
   );
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -56,12 +69,36 @@ export function CodebaseSettingsPanel({
     setError("");
 
     try {
-      const value = await window.snow.getSystemSettingValue(
-        CODEBASE_SETTING_CODE
+      const [rawSettings, rawDecisionModels] = await Promise.all([
+        window.snow.getSystemSettingValue(CODEBASE_SETTING_CODE),
+        window.snow.getSystemSettingValue(DECISION_MODELS_SETTING_CODE),
+      ]);
+      const storedModels = readDecisionModelsJson(rawDecisionModels);
+      let normalized = normalizeCodebaseSettings(
+        readCodebaseSettingsJson(rawSettings),
       );
-      const normalized = normalizeCodebaseSettings(
-        readCodebaseSettingsJson(value)
-      );
+      // 旧版把 Jev 的 baseUrl / apiKey / model 内联在 codebase 设置里：一次性迁移到
+      // 决策模型并选中它，随后写回设置（旧字段随之消失，不会重复迁移）。
+      const legacy = readLegacyJevConfig(rawSettings);
+
+      if (legacy && !normalized.agentReviewModelId) {
+        const migrated = mergeLegacyDecisionModel(storedModels, legacy);
+        normalized = { ...normalized, agentReviewModelId: migrated.modelId };
+        setDecisionModels(migrated.models);
+        await window.snow.setSystemSetting(
+          DECISION_MODELS_SETTING_NAME,
+          DECISION_MODELS_SETTING_CODE,
+          toDecisionModelsJson(migrated.models),
+        );
+        await window.snow.setSystemSetting(
+          CODEBASE_SETTING_NAME,
+          CODEBASE_SETTING_CODE,
+          JSON.stringify(normalized),
+        );
+      } else {
+        setDecisionModels(storedModels);
+      }
+
       setForm(toCodebaseForm(normalized));
       setLastSaved(normalized);
     } catch (e) {
@@ -70,7 +107,7 @@ export function CodebaseSettingsPanel({
           ? e.message
           : t("settings.codebaseLoadError", {
               defaultValue: "Failed to load codebase settings",
-            })
+            }),
       );
     } finally {
       setIsLoading(false);
@@ -102,7 +139,7 @@ export function CodebaseSettingsPanel({
 
   const validatePositiveInteger = (
     value: string,
-    message: string
+    message: string,
   ): string | null => {
     const parsed = Number.parseInt(value, 10);
     return Number.isInteger(parsed) && parsed > 0 ? null : message;
@@ -155,13 +192,13 @@ export function CodebaseSettingsPanel({
             defaultValue: "Min lines per chunk must be greater than 0.",
           }),
         ],
-         [
-           currentForm.modelContextLength,
-           t("settings.codebaseValidationModelContextLengthPositive", {
-             defaultValue: "Model context length must be greater than 0.",
-           }),
-         ],
-       ];
+        [
+          currentForm.modelContextLength,
+          t("settings.codebaseValidationModelContextLengthPositive", {
+            defaultValue: "Model context length must be greater than 0.",
+          }),
+        ],
+      ];
 
       for (const [value, message] of numericChecks) {
         const validationError = validatePositiveInteger(value, message);
@@ -173,11 +210,11 @@ export function CodebaseSettingsPanel({
 
       const overlapLines = Number.parseInt(
         currentForm.chunkingOverlapLines,
-        10
+        10,
       );
       const maxLinesPerChunk = Number.parseInt(
         currentForm.chunkingMaxLinesPerChunk,
-        10
+        10,
       );
 
       if (!Number.isInteger(overlapLines) || overlapLines < 0) {
@@ -217,7 +254,7 @@ export function CodebaseSettingsPanel({
           currentForm.rerankingContextLength,
           t("settings.codebaseValidationRerankingContextLengthPositive", {
             defaultValue: "Reranking context length must be greater than 0.",
-          })
+          }),
         );
 
         if (contextLengthError) {
@@ -228,7 +265,7 @@ export function CodebaseSettingsPanel({
           currentForm.rerankingTopN,
           t("settings.codebaseValidationRerankingTopNPositive", {
             defaultValue: "Reranking top N must be greater than 0.",
-          })
+          }),
         );
 
         if (topNError) {
@@ -238,7 +275,7 @@ export function CodebaseSettingsPanel({
 
       return null;
     },
-    [t]
+    [t],
   );
 
   const saveSettings = useCallback(
@@ -249,7 +286,7 @@ export function CodebaseSettingsPanel({
         await window.snow.setSystemSetting(
           CODEBASE_SETTING_NAME,
           CODEBASE_SETTING_CODE,
-          JSON.stringify(settings)
+          JSON.stringify(settings),
         );
         const normalized = normalizeCodebaseSettings(settings);
         if (isMountedRef.current) {
@@ -258,7 +295,7 @@ export function CodebaseSettingsPanel({
           setStatus(
             t("settings.codebaseSaveSuccess", {
               defaultValue: "Saved codebase settings.",
-            })
+            }),
           );
         }
       } catch (e) {
@@ -268,7 +305,7 @@ export function CodebaseSettingsPanel({
               ? e.message
               : t("settings.codebaseSaveError", {
                   defaultValue: "Failed to save codebase settings",
-                })
+                }),
           );
         }
       } finally {
@@ -277,7 +314,7 @@ export function CodebaseSettingsPanel({
         }
       }
     },
-    [t]
+    [t],
   );
 
   // 失焦保存：输入框失焦或即时控件变更时立即保存，验证失败则不保存，卸载时立即冲刷避免丢失。
@@ -287,7 +324,7 @@ export function CodebaseSettingsPanel({
     toCodebaseSettings,
     lastSaved,
     saveSettings,
-    setError
+    setError,
   );
 
   const handleImport = async () => {
@@ -303,7 +340,7 @@ export function CodebaseSettingsPanel({
       setStatus(
         t("settings.codebaseImportSuccess", {
           defaultValue: "Synced codebase settings from Snow CLI.",
-        })
+        }),
       );
     } catch (e) {
       setError(
@@ -311,7 +348,7 @@ export function CodebaseSettingsPanel({
           ? e.message
           : t("settings.codebaseImportError", {
               defaultValue: "Failed to sync Snow CLI codebase settings",
-            })
+            }),
       );
     } finally {
       setIsLoading(false);
@@ -383,6 +420,7 @@ export function CodebaseSettingsPanel({
 
       <CodebaseSettingsForm
         form={form}
+        decisionModels={decisionModels}
         isBusy={isBusy}
         onUpdateField={updateField}
         onSetValue={setValue}

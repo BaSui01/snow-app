@@ -1,4 +1,4 @@
-import { ShieldAlert } from "lucide-react";
+import { ShieldAlert, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
@@ -9,20 +9,27 @@ type SensitiveCommandMatch = {
   description: string;
 };
 
+type SensitiveCommandDecision = {
+  allow: boolean;
+  reason: string;
+  confidence: number;
+  modelName: string;
+};
+
 type SensitiveCommandConfirmDialogProps = {
   toolCalls: ToolCallInfo[];
   onApprove: (toolCall: ToolCallInfo) => void;
   onReject: (
     toolCall: ToolCallInfo,
     reason: string,
-    userProvidedReason?: boolean
+    userProvidedReason?: boolean,
   ) => void;
 };
 const COMMAND_TOOL_NAMES = new Set(["bash-terminal-execute"]);
 
 const parseBashArgument = (
   toolCall: ToolCallInfo,
-  key: "command" | "description"
+  key: "command" | "description",
 ): string | null => {
   if (!COMMAND_TOOL_NAMES.has(toolCall.name)) {
     return null;
@@ -50,18 +57,20 @@ const parseBashArgument = (
 const SensitiveCommandItem = ({
   toolCall,
   matches,
+  decision,
   isSubmitting,
   onApprove,
   onReject,
 }: {
   toolCall: ToolCallInfo;
   matches: SensitiveCommandMatch[];
+  decision?: SensitiveCommandDecision;
   isSubmitting: boolean;
   onApprove: (toolCall: ToolCallInfo) => void;
   onReject: (
     toolCall: ToolCallInfo,
     reason: string,
-    userProvidedReason?: boolean
+    userProvidedReason?: boolean,
   ) => void;
 }): React.JSX.Element => {
   const { t } = useI18n();
@@ -120,6 +129,51 @@ const SensitiveCommandItem = ({
         </ul>
       </div>
 
+      {decision ? (
+        <div
+          className={`sensitive-command-decision ${
+            decision.allow ? "is-allow" : "is-confirm"
+          }`}
+        >
+          <span className="tool-authorization-tool-label">
+            {t("sensitiveCommand.decisionLabel")}
+          </span>
+          <div className="sensitive-command-decision-body">
+            <span className="sensitive-command-decision-verdict">
+              {decision.allow ? (
+                <ShieldCheck size={13} strokeWidth={2} aria-hidden="true" />
+              ) : (
+                <ShieldAlert size={13} strokeWidth={2} aria-hidden="true" />
+              )}
+              <strong>
+                {decision.allow
+                  ? t("sensitiveCommand.decisionAllow")
+                  : t("sensitiveCommand.decisionConfirm")}
+              </strong>
+              {decision.confidence > 0 ? (
+                <small>
+                  {t("sensitiveCommand.decisionConfidence", {
+                    values: { value: Math.round(decision.confidence * 100) },
+                  })}
+                </small>
+              ) : null}
+            </span>
+            <span className="sensitive-command-decision-reason">
+              {t(`sensitiveCommand.decision.reason.${decision.reason}`, {
+                defaultValue: decision.reason,
+              })}
+            </span>
+            {decision.modelName ? (
+              <span className="sensitive-command-decision-model">
+                {t("sensitiveCommand.decisionModel", {
+                  values: { name: decision.modelName },
+                })}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
       <label className="tool-authorization-rejection-reason">
         <span className="tool-authorization-tool-label">
           {t("toolAuthorization.rejectionReason")}
@@ -142,7 +196,7 @@ const SensitiveCommandItem = ({
             onReject(
               toolCall,
               trimmedReason || t("toolAuthorization.defaultRejectionReason"),
-              trimmedReason.length > 0
+              trimmedReason.length > 0,
             );
           }}
           type="button"
@@ -200,12 +254,16 @@ export const SensitiveCommandConfirmDialog = ({
             pattern: match.pattern,
             description: match.description,
           }));
+          // 决策模型辅助的判定（未启用辅助 / 请求失败时为空，只显示规则命中）。
+          const decision: SensitiveCommandDecision | undefined =
+            toolCall.sensitiveCommandDecision;
 
           return (
             <SensitiveCommandItem
               key={id}
               toolCall={toolCall}
               matches={matches}
+              decision={decision}
               isSubmitting={submittingId === id}
               onApprove={(item) => {
                 setSubmittingId(id);

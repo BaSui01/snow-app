@@ -31,6 +31,8 @@ type ApiSettingsTableProps = {
   onToggleActive: (config: ApiConfigItem) => void;
   /** 导出选中的配置为迁移文件（含明文密钥）。 */
   onExportSelected: (profileNames: string[]) => void;
+  /** 删除选中的配置。 */
+  onDeleteSelected: (profileNames: string[]) => void;
   /** 拖拽或上移下移后的完整档案名顺序；由父组件负责落库。 */
   onReorder: (orderedProfileNames: string[]) => void;
 };
@@ -44,14 +46,15 @@ export function ApiSettingsTable({
   onDelete,
   onToggleActive,
   onExportSelected,
+  onDeleteSelected,
   onReorder,
 }: ApiSettingsTableProps): React.JSX.Element {
   const { t } = useI18n();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedNames, setSelectedNames] = useState<string[]>([]);
-  const [pendingDeletion, setPendingDeletion] = useState<ApiConfigItem | null>(
-    null,
-  );
+  const [pendingDeletion, setPendingDeletion] = useState<
+    ApiConfigItem[] | null
+  >(null);
   const filteredConfigs = useMemo(
     () => filterApiConfigs(configs, searchQuery),
     [configs, searchQuery],
@@ -158,6 +161,25 @@ export function ApiSettingsTable({
               <span>
                 {t("settings.apiExportSelected", {
                   defaultValue: "Export selected",
+                })}
+              </span>
+            </button>
+            <button
+              className="api-settings-action-btn danger"
+              onClick={() =>
+                setPendingDeletion(
+                  configs.filter((config) =>
+                    selectedNameSet.has(config.profileName),
+                  ),
+                )
+              }
+              type="button"
+              disabled={isBusy}
+            >
+              <Trash2 size={14} strokeWidth={1.8} />
+              <span>
+                {t("settings.apiDeleteSelected", {
+                  defaultValue: "Delete selected",
                 })}
               </span>
             </button>
@@ -378,7 +400,7 @@ export function ApiSettingsTable({
                         </button>
                         <button
                           className="icon-btn ghost danger"
-                          onClick={() => setPendingDeletion(config)}
+                          onClick={() => setPendingDeletion([config])}
                           type="button"
                           title={t("settings.delete", {
                             defaultValue: "Delete",
@@ -409,20 +431,39 @@ export function ApiSettingsTable({
 
       <ConfirmDialog
         open={pendingDeletion !== null}
-        title={t("settings.apiDeleteTitle", {
-          defaultValue: "Delete API profile",
-        })}
-        message={t("settings.apiDeleteConfirm", {
-          defaultValue: `Delete API profile "${
-            pendingDeletion?.displayName ?? ""
-          }"? This cannot be undone.`,
-          values: { name: pendingDeletion?.displayName ?? "" },
-        })}
+        title={
+          pendingDeletion && pendingDeletion.length > 1
+            ? t("settings.apiDeleteSelectedTitle", {
+                defaultValue: "Delete API profiles",
+              })
+            : t("settings.apiDeleteTitle", {
+                defaultValue: "Delete API profile",
+              })
+        }
+        message={
+          pendingDeletion && pendingDeletion.length > 1
+            ? t("settings.apiDeleteSelectedConfirm", {
+                defaultValue: `Delete ${pendingDeletion.length} API profiles? This cannot be undone.`,
+              })
+            : t("settings.apiDeleteConfirm", {
+                defaultValue: `Delete API profile "${
+                  pendingDeletion?.[0]?.displayName ?? ""
+                }"? This cannot be undone.`,
+                values: { name: pendingDeletion?.[0]?.displayName ?? "" },
+              })
+        }
         confirmLabel={t("settings.delete", { defaultValue: "Delete" })}
         cancelLabel={t("settings.cancel", { defaultValue: "Cancel" })}
         onConfirm={() => {
-          if (pendingDeletion) {
-            onDelete(pendingDeletion.profileName, pendingDeletion.displayName);
+          if (pendingDeletion && pendingDeletion.length > 0) {
+            if (pendingDeletion.length === 1) {
+              const [config] = pendingDeletion;
+              onDelete(config.profileName, config.displayName);
+            } else {
+              onDeleteSelected(
+                pendingDeletion.map((config) => config.profileName),
+              );
+            }
           }
           setPendingDeletion(null);
         }}

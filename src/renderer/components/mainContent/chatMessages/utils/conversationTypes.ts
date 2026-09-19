@@ -100,6 +100,18 @@ export type ToolCallInfo = {
     pattern: string;
     description: string;
   }>;
+  /** 决策模型辅助：对这条敏感命令的判定（在拦截提示中展示；托管模式下判定
+   *  已直接生效，不会再生成待授权项，因此不会出现在这里）。 */
+  sensitiveCommandDecision?: {
+    /** true = 决策模型认为可以直接放行。 */
+    allow: boolean;
+    /** 判定理由的分类 key，由渲染层本地化展示。 */
+    reason: string;
+    /** 模型对判定的置信度（0-1）。 */
+    confidence: number;
+    /** 参与判定的决策模型名称。 */
+    modelName: string;
+  };
   /** Epoch milliseconds when the tool transitioned to "running".
    *  Used by the Bash tool UI to render a live timeout countdown. */
   startedAt?: number;
@@ -460,11 +472,26 @@ export type ToolAuthorizationDecision =
   | {
       status: "rejected";
       reason: string;
-      /** 用户是否主动填写了拒绝理由。为 true 时拒绝理由作为工具结果
-       *  回传 AI 并继续 Loop；为 false 或缺失时（如直接拒绝、中断、
-       *  hook abort）全部拒绝则终止 AI 流程。 */
+      /** 用户是否主动填写了拒绝理由（UI 层信号）。 */
       userProvidedReason?: boolean;
+      /** 拒绝理由是否作为工具结果回传 AI 并继续 Loop（而不是终止 AI 流程）：
+       *  - 用户主动填写了拒绝理由；
+       *  - 敏感命令被拒绝（用户点「拒绝」，或决策模型托管判定拒绝）——
+       *    敏感命令门禁只否决这一条命令，任何情况下都不中断 AI 流程。
+       *  为 false 或缺失时（普通工具授权被直接拒绝 / 中断 / hook abort），
+       *  全部拒绝则终止 AI 流程。 */
+      reasonForModel?: boolean;
     };
+
+/**
+ * 该拒绝是否继续 AI 流程（把拒绝理由作为工具结果回传给模型）。
+ * 只有「用户直接拒绝普通工具授权（没填理由）/ 中断 / hook abort」才会
+ * 终止 AI 流程，敏感命令的拒绝不在其中。
+ */
+export const rejectionKeepsAiFlow = (
+  decision: ToolAuthorizationDecision,
+): boolean =>
+  decision.status === "rejected" && decision.reasonForModel === true;
 
 export type PendingToolAuthorization = {
   toolCall: ToolCallInfo;

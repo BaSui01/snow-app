@@ -23,6 +23,8 @@ export type CodebaseSettingsForm = {
   rerankingApiKey: string;
   rerankingContextLength: string;
   rerankingTopN: string;
+  /** 代理审查选用的决策模型 id（空 = 使用基础 LLM 模型）。 */
+  agentReviewModelId: string;
 };
 
 export type CodebaseSettings = CodebaseSettingsInput;

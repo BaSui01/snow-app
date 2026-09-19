@@ -8,11 +8,11 @@ Snow App connects AI suggestions, tool execution, local data, and external servi
 
 Different Snow windows use different policies. It is inaccurate to claim that every window is sandboxed.
 
-| Window/content | `contextIsolation` | Node integration | Sandbox | Notes |
-| --- | --- | --- | --- | --- |
-| Snow main window | Enabled | Disabled | **Disabled** (`sandbox: false`) | Controlled native capabilities are exposed through preload / `contextBridge`; the main window permits `<webview>` |
-| Built-in browser popup | Enabled | Disabled | **Enabled** | Created by the main process for guest `window.open` / `target=_blank` requests |
-| System browser | Outside Snow's renderer | Not applicable | Not applicable | A normal `window.open` in the main window is denied and delegated to the system browser |
+| Window/content         | `contextIsolation`      | Node integration | Sandbox                         | Notes                                                                                                             |
+| ---------------------- | ----------------------- | ---------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Snow main window       | Enabled                 | Disabled         | **Disabled** (`sandbox: false`) | Controlled native capabilities are exposed through preload / `contextBridge`; the main window permits `<webview>` |
+| Built-in browser popup | Enabled                 | Disabled         | **Enabled**                     | Created by the main process for guest `window.open` / `target=_blank` requests                                    |
+| System browser         | Outside Snow's renderer | Not applicable   | Not applicable                  | A normal `window.open` in the main window is denied and delegated to the system browser                           |
 
 Main-window renderer code cannot use Node APIs directly. `contextIsolation` separates page and preload contexts, but the main window is explicitly not sandboxed; only predefined bridge APIs can ask the main process or Rust layer to act. The built-in `<webview>` and every remote page loaded in it form an additional trust boundary.
 
@@ -100,6 +100,8 @@ Sensitive commands are detected using enabled regular expressions (**Settings �
 
 After confirmation, Snow issues a token for the **exact command text**. The token lasts about 60 seconds and is deleted when consumed; the Rust Bash executor checks the token, command, and expiry. It cannot authorize a different command or be reused.
 
+The settings page also offers an optional **decision model assist** (off by default, stored in the `sensitive_command_assist` system setting). With a decision model selected, a command that matches a rule is evaluated by that model (TypeSafe System One) before the prompt appears. The question is a **risk judgement** of the command's real effect — its text, its working directory and the model's own description of it are part of the state, and a matched rule is only a hint (rules also fire on file names, arguments and commit messages). The verdict, its reason category, the confidence, and the model name are shown on the confirmation card. Turning on **let the decision model handle the gate** makes the verdict effective — an allow verdict runs the command with an authorization token, a deny verdict rejects that command — while the default keeps the prompt and the human decision. A rejected sensitive command never terminates the run: whether the user clicks reject or the decision model denies it, only that one command is denied and the reason goes back to the model as its tool result, so the AI keeps working with a different approach (ordinary tool authorization still ends the run when the user rejects it without a reason). A disabled assist, an unselected or unavailable model, or any request failure leaves the original confirmation flow untouched.
+
 Important limitations:
 
 - rules catch only the textual patterns they cover; a dangerous unmatched command can still run;
@@ -131,11 +133,11 @@ Declarative marketplace components do not run installation scripts, but you shou
 
 Hooks can run shell commands, inject context, and change the tool-call flow. Command exit codes are generally interpreted as follows:
 
-| Exit code | Outcome |
-| --- | --- |
-| `0` | Pass; stdout may become injected context |
-| `1` | Soft warning; structured decision JSON may open a confirmation UI |
-| `2+` | Block the current flow when that lifecycle point is blockable |
+| Exit code | Outcome                                                           |
+| --------- | ----------------------------------------------------------------- |
+| `0`       | Pass; stdout may become injected context                          |
+| `1`       | Soft warning; structured decision JSON may open a confirmation UI |
+| `2+`      | Block the current flow when that lifecycle point is blockable     |
 
 Fire-and-forget Hooks such as `onStop` and `onSessionStart` cannot truly block the originating flow; pending decisions are reduced to ordinary warnings. Treat every Hook script and dependency as a local automation program with its own supply-chain trust.
 
@@ -158,14 +160,14 @@ See [Configure MCP Servers](1-configure-mcp.md) and [Configure Hooks and Sub-age
 
 ## 10. Misconceptions and troubleshooting
 
-| Misconception/symptom | Correct interpretation or action |
-| --- | --- |
-| “The main window is sandboxed” | Incorrect: it uses `sandbox: false`, while context isolation is enabled and Node integration is disabled |
-| “Browser popups do not share login state” | OAuth popups share the opener webview's session and cookies |
-| “A privacy API failure passes the original text through” | API failures fall back to local rules; local-task failures and rule misses still matter |
-| “YOLO bypasses sensitive commands” | Matching non-interactive commands still require confirmation |
-| “Permanent approval applies to every project” | Approval is bound to the active project/workspace |
-| “Plan Mode is prompt-only” | The Rust layer blocks unapproved ordinary file creation and replacement edits |
-| “A Plugin in a utility process is safe” | Isolation reduces blast radius; it does not guarantee provenance, logic, or data handling |
+| Misconception/symptom                                    | Correct interpretation or action                                                                         |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| “The main window is sandboxed”                           | Incorrect: it uses `sandbox: false`, while context isolation is enabled and Node integration is disabled |
+| “Browser popups do not share login state”                | OAuth popups share the opener webview's session and cookies                                              |
+| “A privacy API failure passes the original text through” | API failures fall back to local rules; local-task failures and rule misses still matter                  |
+| “YOLO bypasses sensitive commands”                       | Matching non-interactive commands still require confirmation                                             |
+| “Permanent approval applies to every project”            | Approval is bound to the active project/workspace                                                        |
+| “Plan Mode is prompt-only”                               | The Rust layer blocks unapproved ordinary file creation and replacement edits                            |
+| “A Plugin in a utility process is safe”                  | Isolation reduces blast radius; it does not guarantee provenance, logic, or data handling                |
 
 For browser credentials and login state, continue with [Browser Settings, Passwords, and Data Import](17-browser-settings-passwords-and-import.md). For the complete boundary matrix, see [Security and Trust Boundaries](../3-reference/5-security-and-trust-boundaries.md).

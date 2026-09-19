@@ -28,32 +28,33 @@ const DEFAULT_CODEBASE_SETTINGS: CodebaseSettingsInput = {
   rerankingApiKey: "",
   rerankingContextLength: 4096,
   rerankingTopN: 5,
+  agentReviewModelId: "",
   configJson: "{}",
   source: "manual",
 };
 
 const getCodebaseObject = (
-  settings: Record<string, unknown> | null
+  settings: Record<string, unknown> | null,
 ): Record<string, unknown> => {
   const codebase = settings?.codebase;
   return isRecord(codebase) ? codebase : {};
 };
 
 export const normalizeCodebaseSettings = (
-  value: unknown
+  value: unknown,
 ): CodebaseSettingsInput => {
   const source = isRecord(value) ? value : {};
   const profileName = toText(
     source.profileName,
-    DEFAULT_CODEBASE_SETTINGS.profileName
+    DEFAULT_CODEBASE_SETTINGS.profileName,
   ).trim();
   const embeddingType = toText(
     source.embeddingType,
-    DEFAULT_CODEBASE_SETTINGS.embeddingType
+    DEFAULT_CODEBASE_SETTINGS.embeddingType,
   ).trim();
   const sourceLabel = toText(
     source.source,
-    DEFAULT_CODEBASE_SETTINGS.source
+    DEFAULT_CODEBASE_SETTINGS.source,
   ).trim();
 
   return {
@@ -61,79 +62,94 @@ export const normalizeCodebaseSettings = (
     embeddingType: embeddingType || DEFAULT_CODEBASE_SETTINGS.embeddingType,
     embeddingModelName: toText(
       source.embeddingModelName,
-      DEFAULT_CODEBASE_SETTINGS.embeddingModelName
+      DEFAULT_CODEBASE_SETTINGS.embeddingModelName,
     ).trim(),
     embeddingBaseUrl: toText(
       source.embeddingBaseUrl,
-      DEFAULT_CODEBASE_SETTINGS.embeddingBaseUrl
+      DEFAULT_CODEBASE_SETTINGS.embeddingBaseUrl,
     ).trim(),
     embeddingApiKey: toText(
       source.embeddingApiKey,
-      DEFAULT_CODEBASE_SETTINGS.embeddingApiKey
+      DEFAULT_CODEBASE_SETTINGS.embeddingApiKey,
     ),
     embeddingDimensions: toPositiveInteger(
       source.embeddingDimensions,
-      DEFAULT_CODEBASE_SETTINGS.embeddingDimensions
+      DEFAULT_CODEBASE_SETTINGS.embeddingDimensions,
     ),
     batchMaxLines: toPositiveInteger(
       source.batchMaxLines,
-      DEFAULT_CODEBASE_SETTINGS.batchMaxLines
+      DEFAULT_CODEBASE_SETTINGS.batchMaxLines,
     ),
     batchConcurrency: toPositiveInteger(
       source.batchConcurrency,
-      DEFAULT_CODEBASE_SETTINGS.batchConcurrency
+      DEFAULT_CODEBASE_SETTINGS.batchConcurrency,
     ),
     chunkingMaxLinesPerChunk: toPositiveInteger(
       source.chunkingMaxLinesPerChunk,
-      DEFAULT_CODEBASE_SETTINGS.chunkingMaxLinesPerChunk
+      DEFAULT_CODEBASE_SETTINGS.chunkingMaxLinesPerChunk,
     ),
     chunkingMinLinesPerChunk: toPositiveInteger(
       source.chunkingMinLinesPerChunk,
-      DEFAULT_CODEBASE_SETTINGS.chunkingMinLinesPerChunk
+      DEFAULT_CODEBASE_SETTINGS.chunkingMinLinesPerChunk,
     ),
     chunkingMinCharsPerChunk: toPositiveInteger(
       source.chunkingMinCharsPerChunk,
-      DEFAULT_CODEBASE_SETTINGS.chunkingMinCharsPerChunk
+      DEFAULT_CODEBASE_SETTINGS.chunkingMinCharsPerChunk,
     ),
     chunkingOverlapLines: toPositiveInteger(
       source.chunkingOverlapLines,
-      DEFAULT_CODEBASE_SETTINGS.chunkingOverlapLines
+      DEFAULT_CODEBASE_SETTINGS.chunkingOverlapLines,
     ),
     modelContextLength: toPositiveInteger(
       source.modelContextLength,
-      DEFAULT_CODEBASE_SETTINGS.modelContextLength
+      DEFAULT_CODEBASE_SETTINGS.modelContextLength,
     ),
     rerankingModelName: toText(source.rerankingModelName).trim(),
     rerankingBaseUrl: toText(source.rerankingBaseUrl).trim(),
     rerankingApiKey: toText(source.rerankingApiKey),
     rerankingContextLength: toPositiveInteger(
       source.rerankingContextLength,
-      DEFAULT_CODEBASE_SETTINGS.rerankingContextLength
+      DEFAULT_CODEBASE_SETTINGS.rerankingContextLength,
     ),
     rerankingTopN: toPositiveInteger(
       source.rerankingTopN,
-      DEFAULT_CODEBASE_SETTINGS.rerankingTopN
+      DEFAULT_CODEBASE_SETTINGS.rerankingTopN,
     ),
+    agentReviewModelId: toText(source.agentReviewModelId).trim(),
     configJson: toText(source.configJson, DEFAULT_CODEBASE_SETTINGS.configJson),
     source: sourceLabel || DEFAULT_CODEBASE_SETTINGS.source,
   };
 };
 
+/** 读取已保存的 codebase 设置：用于导入时保留 Snow CLI 未覆盖的字段。 */
+const readStoredAgentReviewModelId = (raw: string | null): string => {
+  if (!raw) {
+    return "";
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return isRecord(parsed) ? toText(parsed.agentReviewModelId).trim() : "";
+  } catch {
+    return "";
+  }
+};
+
 export const persistCodebaseSettings = async (
   native: NativeBridge,
-  settings: CodebaseSettingsInput
+  settings: CodebaseSettingsInput,
 ): Promise<CodebaseSettingsInput> => {
   const normalized = normalizeCodebaseSettings(settings);
   await native.setSystemSetting(
     CODEBASE_SETTING_NAME,
     CODEBASE_SETTING_CODE,
-    JSON.stringify(normalized)
+    JSON.stringify(normalized),
   );
   return normalized;
 };
 
 export const readSnowCliCodebaseSettings = async (
-  native: NativeBridge
+  native: NativeBridge,
 ): Promise<CodebaseSettingsInput> => {
   const globalSettings = readJsonFile(SNOW_CLI_GLOBAL_SETTINGS_FILE);
   const projectSettings = readJsonFile(SNOW_CLI_PROJECT_SETTINGS_FILE);
@@ -168,6 +184,10 @@ export const readSnowCliCodebaseSettings = async (
     rerankingApiKey: reranking.apiKey,
     rerankingContextLength: reranking.contextLength,
     rerankingTopN: reranking.topN,
+    // Snow CLI 没有决策模型的概念：保留当前选中的决策模型，避免同步后审查模型被重置为 LLM。
+    agentReviewModelId: readStoredAgentReviewModelId(
+      await native.getSystemSettingValue(CODEBASE_SETTING_CODE),
+    ),
     configJson: JSON.stringify({
       global: globalSettings ?? {},
       project: projectSettings ?? {},

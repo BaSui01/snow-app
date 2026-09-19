@@ -29,8 +29,41 @@ const toNonNegativeInteger = (value: unknown, fallback: number): number => {
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
 };
 
+/**
+ * 旧版 codebase 设置把 Jev 的 baseUrl / apiKey / model 内联保存；现在这些配置统一放在
+ * 决策模型里（见 constants/decisionModels.ts），这里读出旧值供一次性迁移使用。
+ * 返回 null 表示没有可迁移的旧配置（未填写密钥或已迁移完成）。
+ */
+export const readLegacyJevConfig = (
+  value: string | null,
+): { baseUrl: string; apiKey: string; model: string } | null => {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!isRecord(parsed)) {
+      return null;
+    }
+
+    const apiKey = toText(parsed.jevApiKey).trim();
+    if (!apiKey) {
+      return null;
+    }
+
+    return {
+      baseUrl: toText(parsed.jevBaseUrl).trim(),
+      apiKey,
+      model: toText(parsed.jevModel).trim(),
+    };
+  } catch {
+    return null;
+  }
+};
+
 export const readCodebaseSettingsJson = (
-  value: string | null
+  value: string | null,
 ): CodebaseSettingsInput => {
   if (!value) {
     return normalizeCodebaseSettings(null);
@@ -44,20 +77,20 @@ export const readCodebaseSettingsJson = (
 };
 
 export const normalizeCodebaseSettings = (
-  value: unknown
+  value: unknown,
 ): CodebaseSettingsInput => {
   const source = isRecord(value) ? value : {};
   const profileName = toText(
     source.profileName,
-    DEFAULT_CODEBASE_SETTINGS.profileName
+    DEFAULT_CODEBASE_SETTINGS.profileName,
   ).trim();
   const embeddingType = toText(
     source.embeddingType,
-    DEFAULT_CODEBASE_SETTINGS.embeddingType
+    DEFAULT_CODEBASE_SETTINGS.embeddingType,
   ).trim();
   const sourceLabel = toText(
     source.source,
-    DEFAULT_CODEBASE_SETTINGS.source
+    DEFAULT_CODEBASE_SETTINGS.source,
   ).trim();
 
   return {
@@ -65,66 +98,67 @@ export const normalizeCodebaseSettings = (
     embeddingType: embeddingType || DEFAULT_CODEBASE_SETTINGS.embeddingType,
     embeddingModelName: toText(
       source.embeddingModelName,
-      DEFAULT_CODEBASE_SETTINGS.embeddingModelName
+      DEFAULT_CODEBASE_SETTINGS.embeddingModelName,
     ).trim(),
     embeddingBaseUrl: toText(
       source.embeddingBaseUrl,
-      DEFAULT_CODEBASE_SETTINGS.embeddingBaseUrl
+      DEFAULT_CODEBASE_SETTINGS.embeddingBaseUrl,
     ).trim(),
     embeddingApiKey: toText(
       source.embeddingApiKey,
-      DEFAULT_CODEBASE_SETTINGS.embeddingApiKey
+      DEFAULT_CODEBASE_SETTINGS.embeddingApiKey,
     ),
     embeddingDimensions: toPositiveInteger(
       source.embeddingDimensions,
-      DEFAULT_CODEBASE_SETTINGS.embeddingDimensions
+      DEFAULT_CODEBASE_SETTINGS.embeddingDimensions,
     ),
     batchMaxLines: toPositiveInteger(
       source.batchMaxLines,
-      DEFAULT_CODEBASE_SETTINGS.batchMaxLines
+      DEFAULT_CODEBASE_SETTINGS.batchMaxLines,
     ),
     batchConcurrency: toPositiveInteger(
       source.batchConcurrency,
-      DEFAULT_CODEBASE_SETTINGS.batchConcurrency
+      DEFAULT_CODEBASE_SETTINGS.batchConcurrency,
     ),
     chunkingMaxLinesPerChunk: toPositiveInteger(
       source.chunkingMaxLinesPerChunk,
-      DEFAULT_CODEBASE_SETTINGS.chunkingMaxLinesPerChunk
+      DEFAULT_CODEBASE_SETTINGS.chunkingMaxLinesPerChunk,
     ),
     chunkingMinLinesPerChunk: toPositiveInteger(
       source.chunkingMinLinesPerChunk,
-      DEFAULT_CODEBASE_SETTINGS.chunkingMinLinesPerChunk
+      DEFAULT_CODEBASE_SETTINGS.chunkingMinLinesPerChunk,
     ),
     chunkingMinCharsPerChunk: toPositiveInteger(
       source.chunkingMinCharsPerChunk,
-      DEFAULT_CODEBASE_SETTINGS.chunkingMinCharsPerChunk
+      DEFAULT_CODEBASE_SETTINGS.chunkingMinCharsPerChunk,
     ),
     chunkingOverlapLines: toNonNegativeInteger(
       source.chunkingOverlapLines,
-      DEFAULT_CODEBASE_SETTINGS.chunkingOverlapLines
+      DEFAULT_CODEBASE_SETTINGS.chunkingOverlapLines,
     ),
     modelContextLength: toPositiveInteger(
       source.modelContextLength,
-      DEFAULT_CODEBASE_SETTINGS.modelContextLength
+      DEFAULT_CODEBASE_SETTINGS.modelContextLength,
     ),
     rerankingModelName: toText(source.rerankingModelName).trim(),
     rerankingBaseUrl: toText(source.rerankingBaseUrl).trim(),
     rerankingApiKey: toText(source.rerankingApiKey),
     rerankingContextLength: toPositiveInteger(
       source.rerankingContextLength,
-      DEFAULT_CODEBASE_SETTINGS.rerankingContextLength
+      DEFAULT_CODEBASE_SETTINGS.rerankingContextLength,
     ),
     rerankingTopN: toPositiveInteger(
       source.rerankingTopN,
-      DEFAULT_CODEBASE_SETTINGS.rerankingTopN
+      DEFAULT_CODEBASE_SETTINGS.rerankingTopN,
     ),
+    agentReviewModelId: toText(source.agentReviewModelId).trim(),
     configJson: toText(source.configJson, DEFAULT_CODEBASE_SETTINGS.configJson),
     source: sourceLabel || DEFAULT_CODEBASE_SETTINGS.source,
   };
 };
 
 export const toCodebaseForm = (
-  settings: CodebaseSettingsInput
+  settings: CodebaseSettingsInput,
 ): CodebaseSettingsForm => ({
   profileName: settings.profileName,
   embeddingType: settings.embeddingType,
@@ -144,10 +178,11 @@ export const toCodebaseForm = (
   rerankingApiKey: settings.rerankingApiKey,
   rerankingContextLength: String(settings.rerankingContextLength),
   rerankingTopN: String(settings.rerankingTopN),
+  agentReviewModelId: settings.agentReviewModelId,
 });
 
 export const toSnowCliCodebaseConfigJson = (
-  settings: CodebaseSettingsInput
+  settings: CodebaseSettingsInput,
 ): string =>
   JSON.stringify({
     codebase: {
@@ -180,7 +215,7 @@ export const toSnowCliCodebaseConfigJson = (
   });
 
 export const toCodebaseSettings = (
-  form: CodebaseSettingsForm
+  form: CodebaseSettingsForm,
 ): CodebaseSettingsInput => {
   const settings = normalizeCodebaseSettings({
     ...form,

@@ -118,6 +118,8 @@ export type CodebaseSettingsInput = {
   rerankingApiKey: string;
   rerankingContextLength: number;
   rerankingTopN: number;
+  /** 代理审查选用的决策模型 id（空 = 使用基础 LLM 模型）；导入 Snow CLI 配置时原样保留。 */
+  agentReviewModelId: string;
   configJson: string;
   source: string;
 };
@@ -845,6 +847,20 @@ export type ProjectSensitiveCommandConfigRecord =
     isPreset: boolean;
     source: string;
   };
+
+/** 决策模型对一条命中敏感规则的命令的判定结果。 */
+export type SensitiveCommandDecisionRecord = {
+  /** true = 判定可以直接放行。 */
+  allow: boolean;
+  /** 判定理由的分类 key，由渲染层本地化展示。 */
+  reason: string;
+  /** 模型对判定的置信度（0-1）。 */
+  confidence: number;
+  /** 决策模型托管：判定直接生效，不再弹拦截提示。 */
+  delegate: boolean;
+  /** 参与判定的决策模型名称。 */
+  modelName: string;
+};
 
 export type Model = {
   id: string;
@@ -2024,6 +2040,14 @@ export type NativeBridge = {
       description: string;
     }>
   >;
+  /** 用决策模型判定一条命中敏感规则的命令是否可直接放行（辅助 / 托管）。
+   *  workingDirectory / description 是风险判定的上下文（执行目录、模型意图说明）。 */
+  evaluateSensitiveCommandDecision: (
+    command: string,
+    projectId?: string,
+    workingDirectory?: string,
+    description?: string,
+  ) => Promise<SensitiveCommandDecisionRecord | null>;
   listChatConversations: (
     directoryId: string,
   ) => Promise<ChatConversationRecord[]>;

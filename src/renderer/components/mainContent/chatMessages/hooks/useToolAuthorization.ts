@@ -1,4 +1,5 @@
 import { useCallback, useEffect } from "react";
+import { useI18n } from "../../../../i18n";
 import type {
   ConversationContextValue,
   ToolCallInfo,
@@ -21,6 +22,8 @@ export const LITE_MODE_CHANGED_EVENT = "lite-mode:changed";
  * 同轮工具调用分别显示为对话内卡片，所有授权完成前不执行。
  */
 export const useToolAuthorization = (ctx: ConversationContextValue) => {
+  const { t } = useI18n();
+
   // 保持 ref 与 state 同步
   ctx.yoloModeRef.current = ctx.yoloMode;
   ctx.planModeRef.current = ctx.planMode;
@@ -647,6 +650,30 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     [ctx.pendingToolAuthorizationRef, ctx.setPendingToolAuthorizations],
   );
 
+  /**
+   * 命中敏感规则后请决策模型判定该命令是否可直接放行（辅助 / 托管）。
+   *
+   * 未启用辅助、未选择可用的决策模型、未命中规则或请求失败都返回 null，
+   * 调用方保持原有的拦截提示流程 —— 辅助功能不改变安全闸门的默认行为。
+   */
+  const requestSensitiveCommandDecision = useCallback(
+    (
+      command: string,
+      projectId: string | undefined,
+      workingDirectory: string,
+      description: string,
+    ) =>
+      window.snow
+        .evaluateSensitiveCommandDecision(
+          command,
+          projectId,
+          workingDirectory || undefined,
+          description || undefined,
+        )
+        .catch(() => null),
+    [],
+  );
+
   const requestToolAuthorization = useCallback(
     (
       toolCall: ToolCallInfo,
@@ -681,10 +708,18 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
         }
 
         let command = "";
+        let description = "";
+        let workingDirectory = "";
         try {
           const parsed = JSON.parse(toolCall.arguments || "{}");
           if (typeof parsed?.command === "string") {
             command = parsed.command;
+          }
+          if (typeof parsed?.description === "string") {
+            description = parsed.description;
+          }
+          if (typeof parsed?.workingDirectory === "string") {
+            workingDirectory = parsed.workingDirectory;
           }
         } catch {
           // ignore parse error
@@ -704,8 +739,44 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
             projectId,
           );
           if (matches.length > 0) {
-            // Sensitive command detected — force authorization dialog
-            // even in YOLO mode.
+            // 风险判定需要上下文：命令自身的说明 + 实际执行目录（工具没给时
+            // 回落到项目目录）。只看命令文本容易把所有规则命中都判成风险。
+            const decision = await requestSensitiveCommandDecision(
+              command,
+              projectId,
+              workingDirectory || directoryIdToPath(projectId) || "",
+              description,
+            );
+
+            // 托管模式：判定直接生效，不再弹拦截提示 —— 允许则放行（等价于
+            // 用户点了「确认执行」）；拒绝则只拒绝这条命令并把模型的理由交回
+            // AI，AI 流程继续（模型可换一种做法），任何情况下都不中断会话。
+            if (decision?.delegate) {
+              if (decision.allow) {
+                return {
+                  status: "approved",
+                  sensitiveCommandConfirmed: true,
+                };
+              }
+
+              return {
+                status: "rejected",
+                reasonForModel: true,
+                reason: t("sensitiveCommand.decisionRejectedReason", {
+                  values: {
+                    model: decision.modelName,
+                    reason: t(
+                      `sensitiveCommand.decision.reason.${decision.reason}`,
+                      { defaultValue: decision.reason },
+                    ),
+                  },
+                  defaultValue:
+                    "Rejected by the decision model ({{model}}): {{reason}}",
+                }),
+              };
+            }
+
+            // 敏感命令检测到 —— 强制授权对话框，即使 YOLO 模式也要确认。
             const authorizationId = `${
               toolCall.callId ?? toolCall.name
             }-${index}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -714,6 +785,17 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
               authorizationId,
               authorizationConversationId: conversationId,
               sensitiveCommandMatches: matches,
+              // 非托管时判定只作为建议，连同拦截提示一起展示给用户。
+              ...(decision
+                ? {
+                    sensitiveCommandDecision: {
+                      allow: decision.allow,
+                      reason: decision.reason,
+                      confidence: decision.confidence,
+                      modelName: decision.modelName,
+                    },
+                  }
+                : {}),
             };
 
             // 通知系统：敏感命令被拦截，需要用户确认
@@ -771,6 +853,8 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       });
     },
     [
+      t,
+      requestSensitiveCommandDecision,
       ctx.yoloModeRef,
       ctx.alwaysApprovedToolsRef,
       ctx.pendingToolAuthorizationRef,

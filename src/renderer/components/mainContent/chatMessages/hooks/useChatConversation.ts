@@ -657,12 +657,21 @@ export const useChatConversation = (
       toolCall: ConversationContextValue["pendingToolAuthorizations"][number],
       reason: string,
       userProvidedReason?: boolean,
-    ) =>
-      toolAuthApi.settleToolAuthorization(toolCall, {
+    ) => {
+      // 敏感命令的拒绝（用户点「拒绝」，或决策模型托管判定）只否决这一条
+      // 命令：理由随工具结果回传 AI，AI 流程继续，任何时候都不因敏感命令被
+      // 拒绝而中断。普通工具授权仍只在用户填了拒绝理由时才续跑。
+      const isSensitiveCommand =
+        (toolCall.sensitiveCommandMatches?.length ?? 0) > 0;
+
+      return toolAuthApi.settleToolAuthorization(toolCall, {
         status: "rejected",
         reason: reason.trim() || "User declined tool execution",
-        ...(userProvidedReason ? { userProvidedReason: true } : {}),
-      }),
+        ...(userProvidedReason || isSensitiveCommand
+          ? { reasonForModel: true }
+          : {}),
+      });
+    },
     [toolAuthApi],
   );
 

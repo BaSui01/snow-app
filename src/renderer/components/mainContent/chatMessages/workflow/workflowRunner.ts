@@ -9,6 +9,7 @@ import type {
   ToolAuthorizationDecision,
   ToolCallInfo,
 } from "../utils/conversationTypes";
+import { rejectionKeepsAiFlow } from "../utils/conversationTypes";
 import {
   createMessageId,
   deleteCheckpoints,
@@ -2126,11 +2127,7 @@ export function createWorkflowRunner(
         const allRejected =
           toolCalls.length > 0 &&
           decisions.every((decision) => decision.status === "rejected");
-        const hasUserProvidedRejectionReason = decisions.some(
-          (decision) =>
-            decision.status === "rejected" &&
-            decision.userProvidedReason === true,
-        );
+        const hasContinuableRejection = decisions.some(rejectionKeepsAiFlow);
 
         const structuredResults: {
           name: string;
@@ -2155,7 +2152,7 @@ export function createWorkflowRunner(
           if (decision.status === "rejected") {
             const rejectResult = JSON.stringify({
               success: false,
-              error: "TOOL_EXECUTION_DENIED_BY_USER",
+              error: "TOOL_EXECUTION_DENIED",
               reason: decision.reason || "User declined tool execution",
             });
             structuredResults.push({
@@ -2372,7 +2369,7 @@ export function createWorkflowRunner(
           },
         ]);
 
-        if (allRejected && !hasUserProvidedRejectionReason) {
+        if (allRejected && !hasContinuableRejection) {
           return {
             content: "",
             failed: true,

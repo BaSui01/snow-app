@@ -1772,6 +1772,11 @@ export const zhTW = {
   "settings.apiDeleteConfirm":
     "確定刪除 API 配置「{{name}}」嗎？此操作無法復原。",
   "settings.apiDeleteSuccess": "已刪除 API 配置 {name}。",
+  "settings.apiDeleteSelected": "刪除選取",
+  "settings.apiDeleteSelectedTitle": "刪除 API 配置",
+  "settings.apiDeleteSelectedConfirm":
+    "確定刪除 {count} 個 API 配置嗎？此操作無法復原。",
+  "settings.apiDeleteSelectedSuccess": "已刪除 {count} 個 API 配置。",
   "settings.apiDuplicateSuccess": "已複製 API 配置 {name}。",
   "settings.apiDuplicateError": "複製 API 配置失敗",
   "settings.apiEditTitle": "編輯配置",
@@ -1907,6 +1912,14 @@ export const zhTW = {
   "settings.codebaseRerankingApiKey": "重排 API Key",
   "settings.codebaseRerankingContextLength": "重排上下文長度",
   "settings.codebaseRerankingTopN": "重排 Top N",
+  "settings.codebaseAgentReviewSettings": "代理審查設定",
+  "settings.codebaseAgentReviewInfo":
+    "代理審查會剔除不相關的搜尋結果。預設由目前 API 配置的 LLM 基礎模型判定；選擇決策模型時由該模型逐條判定相關性。需要優化檢索詞時仍由 LLM 只產生新的檢索詞。",
+  "settings.codebaseReviewModel": "審查模型",
+  "settings.codebaseReviewModelLlm": "LLM（基礎模型）",
+  "settings.codebaseReviewModelUnavailable": "不可用",
+  "settings.codebaseReviewModelHint":
+    "決策模型在「API 配置 → 決策模型」中管理，這裡只能選擇已啟用的模型。",
   "settings.codebaseBatchChunkingSettings": "批次處理和分塊",
   "settings.codebaseBatchMaxLines": "批次處理最大行數",
   "settings.codebaseBatchConcurrency": "批次處理並發數",
@@ -1943,6 +1956,38 @@ export const zhTW = {
   "settings.codebaseValidationRerankingContextLengthPositive":
     "重排上下文長度必須大於 0。",
   "settings.codebaseValidationRerankingTopNPositive": "重排 Top N 必須大於 0。",
+  "settings.apiTabLlmModels": "LLM 模型",
+  "settings.apiTabDecisionModels": "決策模型",
+  "settings.decisionModelsTitle": "決策模型",
+  "settings.decisionModelsInfo":
+    "決策模型不生成文字，只對每條結果判定相關性。在這裡統一配置，其他需要決策模型的功能（如程式碼庫代理審查）直接選用。",
+  "settings.decisionModelsLoading": "載入中…",
+  "settings.decisionModelsEmpty":
+    "還沒有決策模型。新增一個後即可用於程式碼庫代理審查。",
+  "settings.decisionModelAdd": "新增決策模型",
+  "settings.decisionModelSave": "儲存決策模型",
+  "settings.decisionModelName": "名稱",
+  "settings.decisionModelModel": "模型名稱",
+  "settings.decisionModelBaseUrl": "Base URL",
+  "settings.decisionModelApiKey": "API Key",
+  "settings.decisionModelToggle": "啟用或停用該決策模型",
+  "settings.decisionModelEditorAddTitle": "新增決策模型",
+  "settings.decisionModelEditorEditTitle": "編輯決策模型",
+  "settings.decisionModelEditorInfo":
+    "API Key 儲存在本機，僅在呼叫該介面時使用。",
+  "settings.decisionModelNameRequired": "請填寫名稱。",
+  "settings.decisionModelBaseUrlRequired": "請填寫 Base URL。",
+  "settings.decisionModelModelRequired": "請填寫模型名稱。",
+  "settings.decisionModelLoadError": "載入決策模型失敗",
+  "settings.decisionModelSaveError": "儲存決策模型失敗",
+  "settings.decisionModelAddSuccess": "已新增決策模型 {{name}}。",
+  "settings.decisionModelSaveSuccess": "已儲存決策模型 {{name}}。",
+  "settings.decisionModelEnabledSuccess": "已啟用 {{name}}。",
+  "settings.decisionModelDisabledSuccess": "已停用 {{name}}。",
+  "settings.decisionModelDeleteSuccess": "已刪除 {{name}}。",
+  "settings.decisionModelDeleteTitle": "刪除決策模型",
+  "settings.decisionModelDeleteConfirm":
+    "確定刪除 {{name}}？正在使用它的功能（如程式碼庫代理審查）會退回 LLM 基礎模型。",
   "settings.systemPromptSettings": "系統提示詞",
   "settings.systemPromptSettingsInfo": "自訂助手系統提示詞。",
   "settings.systemPromptTitle": "系統提示詞",
@@ -2524,6 +2569,25 @@ export const zhTW = {
   "settings.sensitiveCommandCount": "規則數",
   "settings.sensitiveCommandEnabledCount": "已啟用規則",
   "settings.sensitiveCommandPresetCount": "預置規則",
+  "settings.sensitiveCommandAssistTitle": "決策模型輔助",
+  "settings.sensitiveCommandAssistInfo":
+    "命中敏感命令規則時，先由決策模型判定該命令是否可以直接執行。",
+  "settings.sensitiveCommandAssistToggle": "啟用決策模型輔助",
+  "settings.sensitiveCommandAssistToggleInfo":
+    "預設關閉；關閉時敏感命令仍走原有的確認流程。",
+  "settings.sensitiveCommandAssistModel": "決策模型",
+  "settings.sensitiveCommandAssistModelNone": "未選擇",
+  "settings.sensitiveCommandAssistModelUnavailable": "不可用",
+  "settings.sensitiveCommandAssistModelInfo": "只能選用已啟用的決策模型。",
+  "settings.sensitiveCommandAssistModelEmpty":
+    "還沒有已啟用的決策模型，請先在「API 設定 → 決策模型」中新增。",
+  "settings.sensitiveCommandAssistModelUnavailableInfo":
+    "所選決策模型已停用或被刪除，輔助在重新選擇前不會生效。",
+  "settings.sensitiveCommandAssistDelegate": "由決策模型託管",
+  "settings.sensitiveCommandAssistDelegateInfo":
+    "開啟後：判定允許將直接執行；判定拒絕則只拒絕這條命令並把理由交回模型，AI 流程繼續，不再彈出攔截提示。關閉時判定僅作為建議顯示，是否執行仍由使用者決定。",
+  "settings.sensitiveCommandAssistSaveSuccess": "已儲存決策模型輔助設定。",
+  "settings.sensitiveCommandAssistSaveError": "儲存決策模型輔助設定失敗",
   "settings.subAgentSettings": "子代理設定",
   "settings.subAgentSettingsInfo": "管理專用 AI 子代理。",
   "settings.subAgentTitle": "子代理設定",
@@ -3079,6 +3143,22 @@ export const zhTW = {
   "sensitiveCommand.description": "命令說明",
   "sensitiveCommand.matchedRules": "匹配的規則",
   "sensitiveCommand.confirmExecution": "確認執行",
+  "sensitiveCommand.decisionLabel": "決策模型判定",
+  "sensitiveCommand.decisionAllow": "允許執行",
+  "sensitiveCommand.decisionConfirm": "建議人工確認",
+  "sensitiveCommand.decisionConfidence": "置信度 {{value}}%",
+  "sensitiveCommand.decisionModel": "判定模型：{{name}}",
+  "sensitiveCommand.decisionRejectedReason":
+    "決策模型判定拒絕執行（{{model}}）：{{reason}}",
+  "sensitiveCommand.decision.reason.readOnly":
+    "只讀取資訊，不修改檔案與系統狀態",
+  "sensitiveCommand.decision.reason.regenerable":
+    "只影響可重新產生的產物（建置輸出、快取、暫存檔案、相依目錄）",
+  "sensitiveCommand.decision.reason.scopedChange": "變更限於專案內且可撤銷",
+  "sensitiveCommand.decision.reason.dataLoss": "會刪除或覆寫無法復原的資料",
+  "sensitiveCommand.decision.reason.systemState": "會修改系統或環境狀態",
+  "sensitiveCommand.decision.reason.externalEffect": "會發布或外傳資料",
+  "sensitiveCommand.decision.reason.unclear": "影響範圍不明確，建議自行判斷",
   "chatInput.placeholder":
     "問我任何問題，輸入 / 開啟指令面板，輸入 @ 開啟檔案面板...",
   "chatCommand.title": "聊天指令",
@@ -3335,6 +3415,9 @@ export const zhTW = {
   "projectCodebase.toggleRerankingDescription":
     "對擷取到的程式碼庫片段進行重排序以提升相關性",
   "projectCodebase.configHint": "嵌入、重排序和分塊參數請在設定頁中設定。",
+  "projectCodebase.reviewProviderLlm": "LLM（基礎模型）",
+  "projectCodebase.reviewProviderDecision": "決策模型 · {{model}}",
+  "projectCodebase.openCodebaseSettings": "開啟程式碼庫設定",
   "projectCodebase.gitignoreMissing":
     "目前專案根目錄下未偵測到 .gitignore 檔案。為避免大規模嵌入無關檔案（如 node_modules、建置產物等），請先在專案根目錄建立 .gitignore 後再啟用程式碼庫索引。",
   "projectCodebase.remoteUnsupported":

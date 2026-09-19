@@ -218,6 +218,20 @@ pub(crate) fn truncate_utf8_safe(value: &str, max_bytes: usize) -> &str {
     &value[..end]
 }
 
+/// Truncate a string to at most `max_chars` characters (not bytes) and append
+/// an ellipsis when text is dropped.
+///
+/// [`truncate_utf8_safe`] slices by byte budget and returns a borrowed slice;
+/// this helper is for display/log strings where a character budget reads better
+/// (and multi-byte text is counted the way a human would count it).
+pub(crate) fn truncate_chars(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+    let head: String = value.chars().take(max_chars).collect();
+    format!("{head}...")
+}
+
 /// Push reasoning/thinking text from a Chat Completions delta or message object
 /// into a chunk vector, normalising the three field shapes providers emit:
 ///

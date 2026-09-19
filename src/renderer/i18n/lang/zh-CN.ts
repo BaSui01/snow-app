@@ -1772,6 +1772,11 @@ export const zhCN = {
   "settings.apiDeleteConfirm":
     "确定删除 API 配置「{{name}}」吗？此操作无法撤销。",
   "settings.apiDeleteSuccess": "已删除 API 配置 {name}。",
+  "settings.apiDeleteSelected": "删除选中",
+  "settings.apiDeleteSelectedTitle": "删除 API 配置",
+  "settings.apiDeleteSelectedConfirm":
+    "确定删除 {count} 个 API 配置吗？此操作无法撤销。",
+  "settings.apiDeleteSelectedSuccess": "已删除 {count} 个 API 配置。",
   "settings.apiDuplicateSuccess": "已复制 API 配置 {name}。",
   "settings.apiDuplicateError": "复制 API 配置失败",
   "settings.apiEditTitle": "编辑配置",
@@ -1908,6 +1913,14 @@ export const zhCN = {
   "settings.codebaseRerankingApiKey": "重排 API Key",
   "settings.codebaseRerankingContextLength": "重排上下文长度",
   "settings.codebaseRerankingTopN": "重排 Top N",
+  "settings.codebaseAgentReviewSettings": "代理审查设置",
+  "settings.codebaseAgentReviewInfo":
+    "代理审查会剔除不相关的搜索结果。默认由当前 API 配置的 LLM 基础模型判定；选择决策模型时由该模型逐条判定相关性。需要优化检索词时仍由 LLM 只生成新的检索词。",
+  "settings.codebaseReviewModel": "审查模型",
+  "settings.codebaseReviewModelLlm": "LLM（基础模型）",
+  "settings.codebaseReviewModelUnavailable": "不可用",
+  "settings.codebaseReviewModelHint":
+    "决策模型在「API 配置 → 决策模型」中管理，这里只能选择已启用的模型。",
   "settings.codebaseBatchChunkingSettings": "批处理和分块",
   "settings.codebaseBatchMaxLines": "批处理最大行数",
   "settings.codebaseBatchConcurrency": "批处理并发数",
@@ -1943,6 +1956,38 @@ export const zhCN = {
   "settings.codebaseValidationRerankingContextLengthPositive":
     "重排上下文长度必须大于 0。",
   "settings.codebaseValidationRerankingTopNPositive": "重排 Top N 必须大于 0。",
+  "settings.apiTabLlmModels": "LLM 模型",
+  "settings.apiTabDecisionModels": "决策模型",
+  "settings.decisionModelsTitle": "决策模型",
+  "settings.decisionModelsInfo":
+    "决策模型不生成文本，只对每条结果判定相关性。在这里统一配置，其他需要决策模型的功能（如代码库代理审查）直接选用。",
+  "settings.decisionModelsLoading": "加载中…",
+  "settings.decisionModelsEmpty":
+    "还没有决策模型。添加一个后即可用于代码库代理审查。",
+  "settings.decisionModelAdd": "添加决策模型",
+  "settings.decisionModelSave": "保存决策模型",
+  "settings.decisionModelName": "名称",
+  "settings.decisionModelModel": "模型名称",
+  "settings.decisionModelBaseUrl": "Base URL",
+  "settings.decisionModelApiKey": "API Key",
+  "settings.decisionModelToggle": "启用或停用该决策模型",
+  "settings.decisionModelEditorAddTitle": "添加决策模型",
+  "settings.decisionModelEditorEditTitle": "编辑决策模型",
+  "settings.decisionModelEditorInfo":
+    "API Key 保存在本地，仅在调用该接口时使用。",
+  "settings.decisionModelNameRequired": "请填写名称。",
+  "settings.decisionModelBaseUrlRequired": "请填写 Base URL。",
+  "settings.decisionModelModelRequired": "请填写模型名称。",
+  "settings.decisionModelLoadError": "加载决策模型失败",
+  "settings.decisionModelSaveError": "保存决策模型失败",
+  "settings.decisionModelAddSuccess": "已添加决策模型 {{name}}。",
+  "settings.decisionModelSaveSuccess": "已保存决策模型 {{name}}。",
+  "settings.decisionModelEnabledSuccess": "已启用 {{name}}。",
+  "settings.decisionModelDisabledSuccess": "已停用 {{name}}。",
+  "settings.decisionModelDeleteSuccess": "已删除 {{name}}。",
+  "settings.decisionModelDeleteTitle": "删除决策模型",
+  "settings.decisionModelDeleteConfirm":
+    "确定删除 {{name}}？正在使用它的功能（如代码库代理审查）会退回 LLM 基础模型。",
   "settings.systemPromptSettings": "系统提示词",
   "settings.systemPromptSettingsInfo": "自定义助手系统提示词。",
   "settings.systemPromptTitle": "系统提示词",
@@ -2523,6 +2568,25 @@ export const zhCN = {
   "settings.sensitiveCommandCount": "规则数",
   "settings.sensitiveCommandEnabledCount": "已启用规则",
   "settings.sensitiveCommandPresetCount": "预置规则",
+  "settings.sensitiveCommandAssistTitle": "决策模型辅助",
+  "settings.sensitiveCommandAssistInfo":
+    "命中敏感命令规则时，先由决策模型判定该命令是否可以直接执行。",
+  "settings.sensitiveCommandAssistToggle": "启用决策模型辅助",
+  "settings.sensitiveCommandAssistToggleInfo":
+    "默认关闭；关闭时敏感命令仍走原有的确认流程。",
+  "settings.sensitiveCommandAssistModel": "决策模型",
+  "settings.sensitiveCommandAssistModelNone": "未选择",
+  "settings.sensitiveCommandAssistModelUnavailable": "不可用",
+  "settings.sensitiveCommandAssistModelInfo": "只能选用已启用的决策模型。",
+  "settings.sensitiveCommandAssistModelEmpty":
+    "还没有已启用的决策模型，请先在「API 配置 → 决策模型」中添加。",
+  "settings.sensitiveCommandAssistModelUnavailableInfo":
+    "所选决策模型已停用或被删除，辅助在重新选择前不会生效。",
+  "settings.sensitiveCommandAssistDelegate": "由决策模型托管",
+  "settings.sensitiveCommandAssistDelegateInfo":
+    "开启后：判定允许将直接执行；判定拒绝则只拒绝这条命令并把理由交回模型，AI 流程继续，不再弹出拦截提示。关闭时判定仅作为建议展示，是否执行仍由用户决定。",
+  "settings.sensitiveCommandAssistSaveSuccess": "已保存决策模型辅助设置。",
+  "settings.sensitiveCommandAssistSaveError": "保存决策模型辅助设置失败",
   "settings.subAgentSettings": "子代理设置",
   "settings.subAgentSettingsInfo": "管理专用 AI 子代理。",
   "settings.subAgentTitle": "子代理设置",
@@ -3103,6 +3167,22 @@ export const zhCN = {
   "sensitiveCommand.description": "命令释义",
   "sensitiveCommand.matchedRules": "匹配的规则",
   "sensitiveCommand.confirmExecution": "确认执行",
+  "sensitiveCommand.decisionLabel": "决策模型判定",
+  "sensitiveCommand.decisionAllow": "允许执行",
+  "sensitiveCommand.decisionConfirm": "建议人工确认",
+  "sensitiveCommand.decisionConfidence": "置信度 {{value}}%",
+  "sensitiveCommand.decisionModel": "判定模型：{{name}}",
+  "sensitiveCommand.decisionRejectedReason":
+    "决策模型判定拒绝执行（{{model}}）：{{reason}}",
+  "sensitiveCommand.decision.reason.readOnly":
+    "只读取信息，不修改文件与系统状态",
+  "sensitiveCommand.decision.reason.regenerable":
+    "只影响可再生成的产物（构建输出、缓存、临时文件、依赖目录）",
+  "sensitiveCommand.decision.reason.scopedChange": "改动限于项目内且可撤销",
+  "sensitiveCommand.decision.reason.dataLoss": "会删除或覆盖不可恢复的数据",
+  "sensitiveCommand.decision.reason.systemState": "会修改系统或环境状态",
+  "sensitiveCommand.decision.reason.externalEffect": "会发布或外发数据",
+  "sensitiveCommand.decision.reason.unclear": "影响范围不明确，建议自行判断",
   "chatInput.placeholder":
     "问我任何问题，输入 / 打开指令面板，输入 @ 打开文件面板...",
   "chatCommand.title": "聊天指令",
@@ -3358,6 +3438,9 @@ export const zhCN = {
   "projectCodebase.toggleRerankingDescription":
     "对检索到的代码库片段进行重排序以提升相关性",
   "projectCodebase.configHint": "嵌入、重排序和分块参数请在设置页中配置。",
+  "projectCodebase.reviewProviderLlm": "LLM（基础模型）",
+  "projectCodebase.reviewProviderDecision": "决策模型 · {{model}}",
+  "projectCodebase.openCodebaseSettings": "打开代码库设置",
   "projectCodebase.gitignoreMissing":
     "当前项目根目录下未检测到 .gitignore 文件。为避免大规模嵌入无关文件（如 node_modules、构建产物等），请先在项目根目录创建 .gitignore 后再启用代码库索引。",
   "projectCodebase.remoteUnsupported":

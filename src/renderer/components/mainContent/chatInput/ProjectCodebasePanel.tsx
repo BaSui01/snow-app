@@ -28,6 +28,13 @@ import { useCodebaseSync } from "../../../hooks/useCodebaseSync";
 import { APP_CONTROL_OPEN_SETTINGS_EVENT } from "../../../hooks/useAppControl";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
 import { Modal } from "../../common/Modal";
+import {
+  DECISION_MODELS_SETTING_CODE,
+  enabledDecisionModels,
+  readDecisionModelsJson,
+} from "../../../constants/decisionModels";
+import { CODEBASE_SETTING_CODE } from "../../sidebar/codebaseSettings/codebaseSettingsConstants";
+import { readCodebaseSettingsJson } from "../../sidebar/codebaseSettings/codebaseSettingsUtils";
 
 /** 派发该事件打开当前项目的代码库管理弹窗（TopBar 同步指示器使用）。 */
 export const OPEN_PROJECT_CODEBASE_PANEL_EVENT = "project-codebase:open-panel";
@@ -76,6 +83,13 @@ export const ProjectCodebasePanel = ({
   const [pendingKey, setPendingKey] = useState<ToggleKey | null>(null);
   const [hasGitignore, setHasGitignore] = useState<boolean | null>(null);
   const [isRemoteProject, setIsRemoteProject] = useState(false);
+
+  // ── Agent review backend (global codebase setting, shown for context) ──
+  // The review model is configured once in the codebase settings page; the project
+  // panel only reflects which backend agent review will use. An empty name means
+  // the basic LLM model (no decision model selected, or the selected one is
+  // disabled / deleted, in which case Rust falls back to the LLM as well).
+  const [reviewModelName, setReviewModelName] = useState("");
 
   // ── Index stats & scan preview (project-scoped data) ─────────────────
   const [indexStats, setIndexStats] = useState<CodebaseIndexStats | null>(null);
@@ -135,6 +149,15 @@ export const ProjectCodebasePanel = ({
 
   const isEnabled = scope?.enabled ?? false;
 
+  // Human-readable name of the review backend currently selected in the global
+  // codebase settings (a decision model shows which model it will call).
+  const reviewProviderLabel =
+    reviewModelName !== ""
+      ? t("projectCodebase.reviewProviderDecision", {
+          values: { model: reviewModelName },
+        })
+      : t("projectCodebase.reviewProviderLlm");
+
   // ── Load scope & gitignore when project changes ──────────────────────
   const loadScope = useCallback(async (): Promise<void> => {
     const generation = loadGenerationRef.current + 1;
@@ -144,6 +167,7 @@ export const ProjectCodebasePanel = ({
     setError(null);
     setHasGitignore(null);
     setIsRemoteProject(false);
+    setReviewModelName("");
 
     if (!projectId) {
       setIsLoading(false);
@@ -152,9 +176,16 @@ export const ProjectCodebasePanel = ({
 
     setIsLoading(true);
     try {
-      const [nextScope, nextHasGitignore] = await Promise.all([
+      const [
+        nextScope,
+        nextHasGitignore,
+        nextCodebaseSettings,
+        nextDecisionModels,
+      ] = await Promise.all([
         window.snow.getCodebaseProjectScopeSettings(projectId),
         window.snow.checkProjectHasGitignore(projectId),
+        window.snow.getSystemSettingValue(CODEBASE_SETTING_CODE),
+        window.snow.getSystemSettingValue(DECISION_MODELS_SETTING_CODE),
       ]);
       let nextIsRemote = false;
       try {
@@ -164,9 +195,15 @@ export const ProjectCodebasePanel = ({
         // when the check fails so scope loading is not blocked.
       }
       if (loadGenerationRef.current === generation) {
+        const codebaseSettings = readCodebaseSettingsJson(nextCodebaseSettings);
+        // 只有已启用的决策模型会被 Rust 采用，其余情况审查退回 LLM 基础模型。
+        const reviewModel = enabledDecisionModels(
+          readDecisionModelsJson(nextDecisionModels),
+        ).find((model) => model.id === codebaseSettings.agentReviewModelId);
         setScope(nextScope);
         setHasGitignore(nextHasGitignore);
         setIsRemoteProject(nextIsRemote);
+        setReviewModelName(reviewModel?.name ?? "");
       }
     } catch (loadError) {
       if (loadGenerationRef.current === generation) {
@@ -522,7 +559,7 @@ export const ProjectCodebasePanel = ({
               {renderToggle(
                 "enableAgentReview",
                 t("projectCodebase.toggleAgentReview"),
-                t("projectCodebase.toggleAgentReviewDescription"),
+                `${t("projectCodebase.toggleAgentReviewDescription")} · ${reviewProviderLabel}`,
                 BrainCircuit,
               )}
               {renderToggle(
@@ -827,6 +864,14 @@ export const ProjectCodebasePanel = ({
             <div className="project-codebase-config-hint">
               <BrainCircuit size={14} />
               <span>{t("projectCodebase.configHint")}</span>
+              <button
+                className="project-sensitive-command-toolbar-btn"
+                onClick={handleOpenCodebaseSettings}
+                type="button"
+              >
+                <Settings size={14} />
+                <span>{t("projectCodebase.openCodebaseSettings")}</span>
+              </button>
             </div>
           </>
         )}

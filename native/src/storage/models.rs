@@ -688,6 +688,22 @@ pub struct SensitiveCommandMatchResult {
     pub description: String,
 }
 
+/// 决策模型对一条命中敏感规则的命令的判定结果。
+#[napi(object)]
+pub struct SensitiveCommandDecisionRecord {
+    /// true = 判定可以直接放行。
+    pub allow: bool,
+    /// 判定理由的分类 key，由前端本地化展示
+    /// （`sensitiveCommand.decision.reason.<key>`）。
+    pub reason: String,
+    /// 模型对判定的置信度（0-1）。
+    pub confidence: f64,
+    /// 决策模型托管：判定直接生效（放行 / 拒绝），不再弹拦截提示。
+    pub delegate: bool,
+    /// 参与判定的决策模型名称（用于展示）。
+    pub model_name: String,
+}
+
 #[napi(object)]
 pub struct HookConfigInput {
     pub hook_type: String,

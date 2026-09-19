@@ -22,6 +22,8 @@ export const DEFAULT_CODEBASE_SETTINGS: CodebaseSettingsInput = {
   rerankingApiKey: "",
   rerankingContextLength: 4096,
   rerankingTopN: 5,
+  // 空 = 代理审查使用 LLM 基础模型；决策模型本身在「API 配置 → 决策模型」中维护。
+  agentReviewModelId: "",
   configJson: "{}",
   source: "manual",
 };

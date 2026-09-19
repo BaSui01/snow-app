@@ -723,6 +723,12 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to check sensitive command matches",
           ),
         ),
+      evaluateSensitiveCommandDecision: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to evaluate sensitive command decisions",
+          ),
+        ),
       listChatConversations: () =>
         Promise.reject(
           new Error(

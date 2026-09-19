@@ -1,9 +1,19 @@
 //! Agent review for codebase search results.
 //!
-//! Uses the active API config's **basic model** to review vector search
-//! results and remove irrelevant chunks. If more than 50% of the results
-//! are deemed irrelevant, the model is asked to generate a refined search
-//! query and the search is retried (up to 3 attempts total).
+//! Two review backends share the same loop:
+//!
+//! * **LLM** (default) — the active API config's **basic model** reviews the
+//!   vector search results and removes irrelevant chunks. If more than 50% of
+//!   the results are deemed irrelevant, the model is asked to generate a
+//!   refined search query and the search is retried (up to 3 attempts total).
+//! * **Jev** (TypeSafe System One) — a decision model answers one yes/no
+//!   question per result and returns a calibrated probability, which is
+//!   cheaper and faster than a generative review. Its verdict *is* the review:
+//!   the LLM is never asked to judge the same results again. Jev cannot write
+//!   a refined query, so when its verdict sends the loop into a re-search the
+//!   LLM is used for that single job — writing the refined query — and Jev
+//!   then judges the re-searched results. Only a Jev failure (transport,
+//!   protocol, missing configuration) falls back to the full LLM review path.
 //!
 //! On the 3rd attempt, all results are returned regardless of how many
 //! were deemed irrelevant — this guarantees the caller always gets
@@ -21,17 +31,34 @@ use reqwest::header::{
 };
 use serde_json::{json, Value};
 
+use crate::api::chat::payload::build_chat_reasoning_effort;
+use crate::api::common::truncate_chars;
 use crate::api::config::{
     get_active_api_request_context, normalize_base_url, resolve_basic_model,
     resolve_sdk_api_base_url, DEFAULT_ANTHROPIC_BASE_URL, DEFAULT_GEMINI_BASE_URL,
     DEFAULT_OPENAI_BASE_URL,
 };
+use crate::api::jev::JevConfig;
+use crate::api::responses::payload::build_responses_reasoning;
 use crate::api::retry::{should_retry, RetryOptions};
+use crate::api::summary::{
+    extract_anthropic_content, extract_chat_content, extract_responses_content,
+};
 use crate::storage::services::codebase_index::SearchResult;
 
 const REVIEW_SYSTEM_PROMPT: &str = "You are a code search relevance reviewer. Given a user's search query and a list of code search results, your job is to identify which results are actually relevant to the query and which are irrelevant noise.\n\nYou will receive the query and a numbered list of code snippets. Respond with ONLY a JSON object in this exact format:\n{\"relevant\": [1, 3, 5], \"refined_query\": \"optional better search query\"}\n\nRules:\n- \"relevant\" is an array of 1-based result indices that are genuinely relevant to the query.\n- \"refined_query\" should be a better search query ONLY if many results are irrelevant. If results are mostly relevant, set it to empty string \"\".\n- Do not include any explanation, only the JSON object.";
 
+const REFINE_QUERY_SYSTEM_PROMPT: &str = "You are a code search query rewriter. The developer's search query returned mostly irrelevant code search results. Write a better search query that is more likely to find the code they are actually looking for.\n\nRules:\n- Output ONLY the new search query on a single line: no quotes, no explanation, no markdown, no JSON.\n- Keep the same language as the original query.\n- Keep it short and specific: focus on the concrete identifiers, concepts or file names behind the original query.\n- If no better query exists, repeat the original query unchanged.";
+
 const MAX_REVIEW_ATTEMPTS: u32 = 3;
+
+/// Output-token budget used when the active API config leaves `maxTokens` unset
+/// and the backend requires an explicit limit — the Anthropic Messages API
+/// rejects a request without `max_tokens`.
+const DEFAULT_MAX_OUTPUT_TOKENS: i32 = 4096;
+
+/// Maximum characters of a raw review response echoed in an error message.
+const RAW_RESPONSE_PREVIEW_CHARS: usize = 500;
 
 /// Threshold: if the fraction of irrelevant results exceeds this value,
 /// a refined query is requested and the search is retried.
@@ -102,6 +129,9 @@ impl ReviewPhase {
 /// Run the agent review loop on a set of search results.
 ///
 /// `initial_results` are the results from the first vector search.
+/// `jev_config` selects the review backend: `Some` asks Jev for a per-result
+/// relevance verdict and only uses the LLM to write a refined query when a
+/// re-search is needed, `None` always uses the LLM for the whole review.
 /// `re_search_fn` is a closure that takes a query string and returns a
 /// new set of search results — this is called when the model suggests a
 /// refined query.
@@ -109,13 +139,14 @@ impl ReviewPhase {
 /// can report progress to the UI.
 ///
 /// Behavior:
-/// 1. Send results to the basic model for review.
+/// 1. Send results to the configured review backend.
 /// 2. If >50% are irrelevant AND we haven't hit MAX_REVIEW_ATTEMPTS,
 ///    use the refined query to re-search and review again.
 /// 3. On the final attempt, return all results regardless of relevance.
 pub async fn run_agent_review<F, Fut, P>(
     initial_query: String,
     initial_results: Vec<SearchResult>,
+    jev_config: Option<JevConfig>,
     re_search_fn: F,
     on_progress: P,
 ) -> Result<AgentReviewResult>
@@ -173,9 +204,9 @@ where
             total_count: current_results.len(),
             relevant_count: None,
             refined_query: None,
-        });
+});
 
-        let outcome = review_results(&current_query, &current_results).await?;
+        let outcome = review_results(&current_query, &current_results, jev_config.as_ref()).await?;
 
         let total = current_results.len();
         let relevant_count = outcome.relevant_indices.len();
@@ -241,83 +272,259 @@ where
     }
 }
 
-/// Send the current results to the basic model for relevance review.
-async fn review_results(query: &str, results: &[SearchResult]) -> Result<ReviewOutcome> {
+/// Review the current results with the configured backend.
+///
+/// Jev runs first when configured. Its verdict is the review, so the LLM is
+/// only consulted for the one thing Jev cannot do: writing a refined query when
+/// the verdict sends the loop into a re-search. Any Jev failure falls back to
+/// the full LLM review, so the search never degrades because of the review
+/// backend.
+async fn review_results(
+    query: &str,
+    results: &[SearchResult],
+    jev_config: Option<&JevConfig>,
+) -> Result<ReviewOutcome> {
+    let Some(config) = jev_config else {
+        return review_via_llm(query, results).await;
+    };
+
+    let outcome = match review_via_jev(config, query, results).await {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            log_review_fallback(
+                query,
+                "Jev agent review failed, falling back to the LLM review",
+                &error.reason,
+            )
+            .await;
+            return review_via_llm(query, results).await;
+        }
+    };
+
+    let total = results.len();
+    let irrelevant = total.saturating_sub(outcome.relevant_indices.len());
+    let needs_research =
+        total > 0 && (irrelevant as f64 / total as f64) > IRRELEVANT_FRACTION_THRESHOLD;
+
+    if !needs_research {
+        return Ok(outcome);
+    }
+
+    // The verdict stands — only the query has to be rewritten, and that is the
+    // one job Jev cannot do. When even that fails the verdict is still a
+    // complete review, so the loop keeps it instead of failing outright.
+    match write_refined_query(query, results).await {
+        Ok(refined_query) => Ok(ReviewOutcome {
+            relevant_indices: outcome.relevant_indices,
+            refined_query,
+        }),
+        Err(error) => {
+            log_review_fallback(
+                query,
+                "Refined query generation failed, keeping the Jev verdict",
+                &error.reason,
+            )
+            .await;
+            Ok(outcome)
+        }
+    }
+}
+
+/// Ask Jev for the relevance verdict of every result.
+async fn review_via_jev(
+    config: &JevConfig,
+    query: &str,
+    results: &[SearchResult],
+) -> Result<ReviewOutcome> {
+    let relevant_indices = crate::api::jev::evaluate_relevance(config, query, results).await?;
+
+    Ok(ReviewOutcome {
+        relevant_indices,
+        // Jev is a decision model: it cannot write a refined query, so the
+        // review loop always starts with an empty one. The caller asks the LLM
+        // for a refined query when the verdict requires a re-search.
+        refined_query: String::new(),
+    })
+}
+
+/// Record a review fallback in the app log (best effort). The database
+/// initialization/IO runs on a blocking worker so the async reviewer is never
+/// blocked by it.
+async fn log_review_fallback(query: &str, message: &str, reason: &str) {
+    let Ok(Ok(database_path)) =
+        tokio::task::spawn_blocking(crate::storage::ensure_database_file).await
+    else {
+        return;
+    };
+
+    crate::storage::services::app_logs::log_api_warning(
+        &database_path,
+        "codebase_review",
+        message,
+        &format!(
+            "query: {}; reason: {}",
+            truncate_chars(query, 200),
+            truncate_chars(reason, 300)
+        ),
+    )
+    .await;
+}
+
+/// Resolve the LLM context shared by the two LLM jobs of the review loop: the
+/// active API config, its custom headers (a review belongs to no conversation,
+/// so session-scoped header placeholders are dropped instead of sending the
+/// literal template) and the resolved basic model.
+fn resolve_review_llm_context(
+) -> Result<(crate::storage::ApiConfigRecord, HashMap<String, String>, String)> {
     let context = get_active_api_request_context()?;
     let api_config = context.api_config;
-    // A review request belongs to no conversation: session-scoped header
-    // placeholders (`{{session_id}}`) are dropped instead of sending the
-    // literal template.
-    let mut custom_headers = context.custom_headers;
-    crate::api::common::expand_custom_header_session_id(&mut custom_headers, "");
 
-    let model = resolve_basic_model(None, &api_config.basic_model)?;
-
-    let api_key = api_config.api_key.trim();
-    if api_key.is_empty() {
+    if api_config.api_key.trim().is_empty() {
         return Err(Error::from_reason(
             "API key not configured. Please configure API settings first.",
         ));
     }
 
-    let retry_options = RetryOptions::from_config(
+    let mut custom_headers = context.custom_headers;
+    crate::api::common::expand_custom_header_session_id(&mut custom_headers, "");
+
+    let model = resolve_basic_model(None, &api_config.basic_model)?;
+
+    Ok((api_config, custom_headers, model))
+}
+
+/// Retry policy of the active API config, shared by every review request.
+fn retry_options_for(api_config: &crate::storage::ApiConfigRecord) -> RetryOptions {
+    RetryOptions::from_config(
         api_config.max_retries,
         api_config.retry_base_delay_ms,
         api_config.partial_retry_max_chars,
-    );
+    )
+}
 
-    let review_text = match api_config.request_method.as_str() {
+/// Send a non-streaming request through the API method of the active config and
+/// return the assistant text.
+///
+/// `system_prompt` is the only difference between the two LLM jobs of the
+/// review loop: judging the results, or writing a refined query.
+async fn request_review_text(
+    api_config: &crate::storage::ApiConfigRecord,
+    custom_headers: &HashMap<String, String>,
+    model: &str,
+    system_prompt: &str,
+    user_content: &str,
+    retry_options: &RetryOptions,
+) -> Result<String> {
+    let api_key = api_config.api_key.trim();
+
+    match api_config.request_method.as_str() {
         "responses" => {
             review_via_responses(
-                &api_config,
-                &api_key,
-                &custom_headers,
-                &model,
-                query,
-                results,
-                &retry_options,
+                api_config,
+                api_key,
+                custom_headers,
+                model,
+                system_prompt,
+                user_content,
+                retry_options,
             )
-            .await?
+            .await
         }
         "anthropic" => {
             review_via_anthropic(
-                &api_config,
-                &api_key,
-                &custom_headers,
-                &model,
-                query,
-                results,
-                &retry_options,
+                api_config,
+                api_key,
+                custom_headers,
+                model,
+                system_prompt,
+                user_content,
+                retry_options,
             )
-            .await?
+            .await
         }
         "gemini" | "interactions" => {
             review_via_gemini(
-                &api_config,
-                &api_key,
-                &custom_headers,
-                &model,
-                query,
-                results,
-                &retry_options,
+                api_config,
+                api_key,
+                custom_headers,
+                model,
+                system_prompt,
+                user_content,
+                retry_options,
             )
-            .await?
+            .await
         }
         _ => {
             review_via_chat(
-                &api_config,
-                &api_key,
-                &custom_headers,
-                &model,
-                query,
-                results,
-                &retry_options,
+                api_config,
+                api_key,
+                custom_headers,
+                model,
+                system_prompt,
+                user_content,
+                retry_options,
             )
-            .await?
+            .await
         }
-    };
+    }
+}
+
+/// Send the current results to the basic model for relevance review.
+async fn review_via_llm(query: &str, results: &[SearchResult]) -> Result<ReviewOutcome> {
+    let (api_config, custom_headers, model) = resolve_review_llm_context()?;
+    let retry_options = retry_options_for(&api_config);
+    let user_content = build_review_user_content(query, results);
+
+    let review_text = request_review_text(
+        &api_config,
+        &custom_headers,
+        &model,
+        REVIEW_SYSTEM_PROMPT,
+        &user_content,
+        &retry_options,
+    )
+    .await?;
 
     parse_review_response(&review_text, results.len())
+}
+
+/// Ask the basic model for a better search query.
+///
+/// Jev cannot rewrite the query, so when its verdict sends the review loop into
+/// a re-search this is the only job the LLM gets: writing the refined query. It
+/// never reviews the results a second time.
+async fn write_refined_query(query: &str, results: &[SearchResult]) -> Result<String> {
+    let (api_config, custom_headers, model) = resolve_review_llm_context()?;
+    let retry_options = retry_options_for(&api_config);
+    let user_content = build_review_user_content(query, results);
+
+    let text = request_review_text(
+        &api_config,
+        &custom_headers,
+        &model,
+        REFINE_QUERY_SYSTEM_PROMPT,
+        &user_content,
+        &retry_options,
+    )
+    .await?;
+
+    Ok(normalize_refined_query(&text))
+}
+
+/// Clean the model's refined query down to a single bare line: models often
+/// wrap the query in quotes or a code fence, and any of the surrounding prose
+/// would be sent to the embedding model as-is. An empty result means "no
+/// refinement", which keeps the current query.
+fn normalize_refined_query(text: &str) -> String {
+    let line = text
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or_default();
+
+    line.trim_matches(|ch: char| matches!(ch, '"' | '\'' | '`' | '“' | '”'))
+        .trim()
+        .to_string()
 }
 
 fn build_review_user_content(query: &str, results: &[SearchResult]) -> String {
@@ -343,8 +550,8 @@ async fn review_via_chat(
     api_key: &str,
     custom_headers: &HashMap<String, String>,
     model: &str,
-    query: &str,
-    results: &[SearchResult],
+    system_prompt: &str,
+    user_content: &str,
     retry_options: &RetryOptions,
 ) -> Result<String> {
     let endpoint = resolve_chat_endpoint(api_config);
@@ -354,16 +561,29 @@ async fn review_via_chat(
         ));
     }
 
-    let user_content = build_review_user_content(query, results);
-    let payload = json!({
+    let mut payload = json!({
         "model": model,
         "messages": [
-            {"role": "system", "content": REVIEW_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content}
         ],
         "stream": false,
-        "max_tokens": 4096,
     });
+
+    // max_tokens 遵循用户配置（留空时不传该参数，由服务端决定默认值），与主会话
+    // （api/chat/payload.rs）保持一致：写死的小额度会被推理模型的思考内容吃光，
+    // 正文就会变成空的。
+    if let Some(max_tokens) = api_config.max_tokens {
+        if max_tokens > 0 {
+            payload["max_tokens"] = json!(max_tokens);
+        }
+    }
+
+    // 审查与改写查询只需要一段文本：跟随用户 chatThinking 配置，关闭思考时不发送
+    // reasoning_effort，避免供应商 400。
+    if let Some(reasoning_effort) = build_chat_reasoning_effort(&api_config.config_json) {
+        payload["reasoning_effort"] = json!(reasoning_effort);
+    }
 
     let client = crate::api::http_client::build_proxied_client().await?;
 
@@ -376,15 +596,7 @@ async fn review_via_chat(
     )
     .await?;
 
-    let content = body
-        .get("choices")
-        .and_then(|choices| choices.get(0))
-        .and_then(|choice| choice.get("message"))
-        .and_then(|message| message.get("content"))
-        .and_then(Value::as_str)
-        .unwrap_or("");
-
-    Ok(content.to_string())
+    ensure_review_text(extract_chat_content(&body), &body)
 }
 
 async fn review_via_responses(
@@ -392,8 +604,8 @@ async fn review_via_responses(
     api_key: &str,
     custom_headers: &HashMap<String, String>,
     model: &str,
-    query: &str,
-    results: &[SearchResult],
+    system_prompt: &str,
+    user_content: &str,
     retry_options: &RetryOptions,
 ) -> Result<String> {
     let base_url = normalize_base_url(&api_config.base_url);
@@ -406,15 +618,25 @@ async fn review_via_responses(
     let resolved_base = resolve_sdk_api_base_url(&base_url, &api_config.base_url_mode);
     let endpoint = format!("{}/responses", resolved_base);
 
-    let user_content = build_review_user_content(query, results);
-    let payload = json!({
+    let mut payload = json!({
         "model": model,
         "input": [
-            {"type": "message", "role": "system", "content": REVIEW_SYSTEM_PROMPT},
+            {"type": "message", "role": "system", "content": system_prompt},
             {"type": "message", "role": "user", "content": user_content}
         ],
         "stream": false,
     });
+
+    // max_output_tokens / reasoning 均遵循用户配置，与主流程
+    // （api/responses/payload.rs）保持一致。
+    if let Some(max_tokens) = api_config.max_tokens {
+        if max_tokens > 0 {
+            payload["max_output_tokens"] = json!(max_tokens);
+        }
+    }
+    if let Some(reasoning) = build_responses_reasoning(&api_config.config_json) {
+        payload["reasoning"] = reasoning;
+    }
 
     let client = crate::api::http_client::build_proxied_client().await?;
 
@@ -427,7 +649,7 @@ async fn review_via_responses(
     )
     .await?;
 
-    Ok(extract_responses_content(&body))
+    ensure_review_text(extract_responses_content(&body), &body)
 }
 
 async fn review_via_anthropic(
@@ -435,8 +657,8 @@ async fn review_via_anthropic(
     api_key: &str,
     custom_headers: &HashMap<String, String>,
     model: &str,
-    query: &str,
-    results: &[SearchResult],
+    system_prompt: &str,
+    user_content: &str,
     retry_options: &RetryOptions,
 ) -> Result<String> {
     let endpoint = resolve_anthropic_endpoint(api_config);
@@ -455,12 +677,19 @@ async fn review_via_anthropic(
         );
     let model = crate::api::anthropic::payload::strip_one_m_context_marker(model);
 
-    let user_content = build_review_user_content(query, results);
+    // Anthropic Messages API 要求 max_tokens 必填：用户未配置时回落到默认额度。
+    let max_tokens = api_config
+        .max_tokens
+        .filter(|value| *value > 0)
+        .unwrap_or(DEFAULT_MAX_OUTPUT_TOKENS);
+
     let payload = json!({
         "model": model,
-        "max_tokens": 4096,
+        "max_tokens": max_tokens,
         "stream": false,
-        "system": REVIEW_SYSTEM_PROMPT,
+        // 审查不需要思考：显式关闭，避免思考内容吃掉正文额度（与标题生成一致）。
+        "thinking": {"type": "disabled"},
+        "system": system_prompt,
         "messages": [{"role": "user", "content": user_content}],
     });
 
@@ -475,7 +704,7 @@ async fn review_via_anthropic(
     )
     .await?;
 
-    Ok(extract_anthropic_content(&body))
+    ensure_review_text(extract_anthropic_content(&body), &body)
 }
 
 async fn review_via_gemini(
@@ -483,8 +712,8 @@ async fn review_via_gemini(
     api_key: &str,
     custom_headers: &HashMap<String, String>,
     model: &str,
-    query: &str,
-    results: &[SearchResult],
+    system_prompt: &str,
+    user_content: &str,
     retry_options: &RetryOptions,
 ) -> Result<String> {
     let endpoint = resolve_gemini_endpoint(api_config, model, api_key);
@@ -494,18 +723,24 @@ async fn review_via_gemini(
         ));
     }
 
-    let user_content = build_review_user_content(query, results);
+    // maxOutputTokens 遵循用户配置（留空时由服务端决定默认值），与主流程
+    // （api/gemini/payload.rs）保持一致。
+    let mut generation_config = json!({});
+    if let Some(max_tokens) = api_config.max_tokens {
+        if max_tokens > 0 {
+            generation_config["maxOutputTokens"] = json!(max_tokens);
+        }
+    }
+
     let payload = json!({
         "systemInstruction": {
-            "parts": [{"text": REVIEW_SYSTEM_PROMPT}]
+            "parts": [{"text": system_prompt}]
         },
         "contents": [{
             "role": "user",
             "parts": [{"text": user_content}]
         }],
-        "generationConfig": {
-            "maxOutputTokens": 4096
-        }
+        "generationConfig": generation_config
     });
 
     let client = crate::api::http_client::build_proxied_client().await?;
@@ -519,19 +754,7 @@ async fn review_via_gemini(
     )
     .await?;
 
-    let content = body
-        .get("candidates")
-        .and_then(Value::as_array)
-        .and_then(|items| items.first())
-        .and_then(|item| item.get("content"))
-        .and_then(|content| content.get("parts"))
-        .and_then(Value::as_array)
-        .and_then(|parts| parts.first())
-        .and_then(|part| part.get("text"))
-        .and_then(Value::as_str)
-        .unwrap_or("");
-
-    Ok(content.to_string())
+    ensure_review_text(extract_gemini_content(&body), &body)
 }
 
 /// Send a non-streaming review request with retry logic.
@@ -620,7 +843,7 @@ fn parse_review_response(text: &str, total_results: usize) -> Result<ReviewOutco
         Error::from_reason(format!(
             "Failed to parse review response as JSON: {}. Raw text: {}",
             error,
-            truncate(text, 300)
+            truncate_chars(text, 300)
         ))
     })?;
 
@@ -670,74 +893,55 @@ fn strip_prefix_ci<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
     }
 }
 
-fn truncate(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        s.to_string()
-    } else {
-        format!("{}...", &s[..max_len])
-    }
-}
-
-fn extract_anthropic_content(body: &Value) -> String {
-    let Some(content_array) = body.get("content").and_then(Value::as_array) else {
+/// Extract the assistant text from a non-streaming Gemini response.
+///
+/// `thought: true` parts carry the model's internal reasoning and are skipped:
+/// only the main text is the review answer.
+fn extract_gemini_content(body: &Value) -> String {
+    let Some(parts) = body
+        .get("candidates")
+        .and_then(Value::as_array)
+        .and_then(|items| items.first())
+        .and_then(|item| item.get("content"))
+        .and_then(|content| content.get("parts"))
+        .and_then(Value::as_array)
+    else {
         return String::new();
     };
 
-    for block in content_array {
-        let block_type = block
-            .get("type")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        if block_type == "text" {
-            if let Some(text) = block
-                .get("text")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|text| !text.is_empty())
-            {
+    for part in parts {
+        if part
+            .get("thought")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        if let Some(text) = part.get("text").and_then(Value::as_str) {
+            if !text.trim().is_empty() {
                 return text.to_string();
             }
-        }
-    }
-
-    for block in content_array {
-        if let Some(text) = block
-            .get("text")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|text| !text.is_empty())
-        {
-            return text.to_string();
         }
     }
 
     String::new()
 }
 
-fn extract_responses_content(body: &Value) -> String {
-    if let Some(output) = body.get("output").and_then(Value::as_array) {
-        for item in output {
-            if let Some(content) = item.get("content").and_then(Value::as_array) {
-                for part in content {
-                    if let Some(text) = part.get("text").and_then(Value::as_str) {
-                        if !text.is_empty() {
-                            return text.to_string();
-                        }
-                    }
-                    if let Some(text) = part.get("output_text").and_then(Value::as_str) {
-                        if !text.is_empty() {
-                            return text.to_string();
-                        }
-                    }
-                }
-            }
-        }
+/// Reject an empty answer from a review backend.
+///
+/// Without this check an empty body reaches `serde_json` and surfaces as a
+/// meaningless "EOF while parsing a value" error; the response preview in the
+/// message tells what the backend actually returned instead.
+fn ensure_review_text(text: String, body: &Value) -> Result<String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Err(Error::from_reason(format!(
+            "Review backend returned no usable text. Response body: {}",
+            truncate_chars(&body.to_string(), RAW_RESPONSE_PREVIEW_CHARS)
+        )));
     }
 
-    body.get("output_text")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string()
+    Ok(trimmed.to_string())
 }
 
 fn resolve_anthropic_endpoint(api_config: &crate::storage::ApiConfigRecord) -> String {

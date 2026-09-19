@@ -715,8 +715,8 @@ export function createToolExecutor(
           authorizationDecision.reason || "User declined tool execution";
         result = JSON.stringify({
           success: false,
-          error: "TOOL_EXECUTION_DENIED_BY_USER",
-          message: `Tool execution rejected by user. Reason: ${rejectionReason}`,
+          error: "TOOL_EXECUTION_DENIED",
+          message: `Tool execution rejected. Reason: ${rejectionReason}`,
           reason: rejectionReason,
           toolName: toolCall.name,
         });

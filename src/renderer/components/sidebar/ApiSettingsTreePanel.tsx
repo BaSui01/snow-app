@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Copy, X } from "lucide-react";
+import { AlertTriangle, Bot, BrainCircuit, Copy, X } from "lucide-react";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { Modal } from "../common/Modal";
 import { useI18n } from "../../i18n";
@@ -12,6 +12,7 @@ import {
 import { ApiSettingsEditModal } from "./apiSettings/ApiSettingsEditModal";
 import { ApiSettingsSummary } from "./apiSettings/ApiSettingsSummary";
 import { ApiSettingsTable } from "./apiSettings/ApiSettingsTable";
+import { DecisionModelsPanel } from "./apiSettings/DecisionModelsPanel";
 import { orderApiConfigsByName } from "./apiSettings/apiConfigReorder";
 import { buildDuplicateName } from "./duplicateName";
 import {
@@ -32,6 +33,9 @@ type PendingApiConfigImport = {
   conflictNames: string[];
 };
 
+/** API 配置页的标签页：LLM 对话模型 / 决策模型。 */
+type ApiSettingsTab = "llm" | "decision";
+
 /** 冲突确认弹窗中最多直接列出的同名配置数量。 */
 const MAX_LISTED_CONFLICTS = 8;
 
@@ -39,6 +43,7 @@ export function ApiSettingsTreePanel({
   onClose,
 }: ApiSettingsPanelProps): React.JSX.Element {
   const { t } = useI18n();
+  const [activeTab, setActiveTab] = useState<ApiSettingsTab>("llm");
   const [configs, setConfigs] = useState<ApiConfigRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -377,6 +382,41 @@ export function ApiSettingsTreePanel({
     }
   };
 
+  const handleDeleteSelected = async (profileNames: string[]) => {
+    setError("");
+    setStatus("");
+    setIsSaving(true);
+
+    try {
+      // 逐个删除：Rust 侧每次删除都会保证至少保留一个激活配置。
+      let list: ApiConfigRecord[] | undefined;
+      for (const profileName of profileNames) {
+        list = await window.snow.deleteApiConfig(profileName);
+      }
+      if (list) {
+        setConfigs(list);
+      }
+      if (editingConfig && profileNames.includes(editingConfig.profileName)) {
+        setEditingConfig(null);
+      }
+      setStatus(
+        t("settings.apiDeleteSelectedSuccess", {
+          defaultValue: "Deleted {count} API profiles.",
+        }).replace("{count}", String(profileNames.length)),
+      );
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : t("settings.apiDeleteError", {
+              defaultValue: "Failed to delete API config",
+            }),
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleDuplicate = async (config: ApiConfigRecord) => {
     setError("");
     setStatus("");
@@ -525,41 +565,77 @@ export function ApiSettingsTreePanel({
         )}
       </div>
 
-      <ApiSettingsSummary configs={configs} />
-      <ApiSettingsActions
-        isBusy={isBusy}
-        isLoading={isLoading}
-        isImporting={isImporting}
-        showAddForm={showAddForm}
-        onImport={() => void handleImport()}
-        onImportFile={() => void handleImportFile()}
-        onToggleAddForm={toggleAddForm}
-      />
+      <div className="import-settings-tabs" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "llm"}
+          className={`import-settings-tab ${activeTab === "llm" ? "active" : ""}`}
+          onClick={() => setActiveTab("llm")}
+        >
+          <Bot size={13} strokeWidth={1.8} />
+          {t("settings.apiTabLlmModels", { defaultValue: "LLM models" })}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "decision"}
+          className={`import-settings-tab ${
+            activeTab === "decision" ? "active" : ""
+          }`}
+          onClick={() => setActiveTab("decision")}
+        >
+          <BrainCircuit size={13} strokeWidth={1.8} />
+          {t("settings.apiTabDecisionModels", {
+            defaultValue: "Decision models",
+          })}
+        </button>
+      </div>
 
-      <AutoDismissNotice
-        message={error || status}
-        tone={error ? "error" : "success"}
-        onDismiss={() => {
-          setError("");
-          setStatus("");
-        }}
-      />
+      {activeTab === "llm" ? (
+        <>
+          <ApiSettingsSummary configs={configs} />
+          <ApiSettingsActions
+            isBusy={isBusy}
+            isLoading={isLoading}
+            isImporting={isImporting}
+            showAddForm={showAddForm}
+            onImport={() => void handleImport()}
+            onImportFile={() => void handleImportFile()}
+            onToggleAddForm={toggleAddForm}
+          />
 
-      <ApiSettingsTable
-        configs={configs}
-        isLoading={isLoading}
-        isBusy={isBusy}
-        onDuplicate={(config) => void handleDuplicate(config)}
-        onEdit={setEditingConfig}
-        onDelete={(profileName, displayName) =>
-          void handleDelete(profileName, displayName)
-        }
-        onToggleActive={(config) => void handleToggleActive(config)}
-        onExportSelected={(profileNames) =>
-          void handleExportSelected(profileNames)
-        }
-        onReorder={(orderedNames) => void handleReorder(orderedNames)}
-      />
+          <AutoDismissNotice
+            message={error || status}
+            tone={error ? "error" : "success"}
+            onDismiss={() => {
+              setError("");
+              setStatus("");
+            }}
+          />
+
+          <ApiSettingsTable
+            configs={configs}
+            isLoading={isLoading}
+            isBusy={isBusy}
+            onDuplicate={(config) => void handleDuplicate(config)}
+            onEdit={setEditingConfig}
+            onDelete={(profileName, displayName) =>
+              void handleDelete(profileName, displayName)
+            }
+            onToggleActive={(config) => void handleToggleActive(config)}
+            onExportSelected={(profileNames) =>
+              void handleExportSelected(profileNames)
+            }
+            onDeleteSelected={(profileNames) =>
+              void handleDeleteSelected(profileNames)
+            }
+            onReorder={(orderedNames) => void handleReorder(orderedNames)}
+          />
+        </>
+      ) : (
+        <DecisionModelsPanel />
+      )}
 
       <Modal
         open={showAddForm}

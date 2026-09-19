@@ -12,6 +12,7 @@ pub mod file_search_agent;
 pub mod gemini;
 pub mod http_client;
 pub mod interactions;
+pub mod jev;
 pub mod models;
 pub mod reranking;
 pub mod responses;

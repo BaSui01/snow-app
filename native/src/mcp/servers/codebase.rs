@@ -139,7 +139,7 @@ impl CodebaseService {
         let storage_info = crate::storage::initialize_app_storage()?;
         let database_path = PathBuf::from(&storage_info.database_path);
 
-        let (scope, settings) = {
+        let (scope, settings, decision_models) = {
             let db_path = database_path.clone();
             let pid = project_id.clone();
             tokio::task::spawn_blocking(move || {
@@ -148,7 +148,8 @@ impl CodebaseService {
                         &db_path, &pid,
                     )?;
                 let settings = load_codebase_settings(&db_path)?;
-                Ok::<_, Error>((scope, settings))
+                let decision_models = crate::api::jev::load_decision_models(&db_path);
+                Ok::<_, Error>((scope, settings, decision_models))
             })
             .await
             .map_err(|e| Error::from_reason(format!("Failed to load project scope: {e}")))?
@@ -238,6 +239,20 @@ impl CodebaseService {
         let enable_reranking = scope.enable_reranking.unwrap_or(false);
         let enable_agent_review = scope.enable_agent_review.unwrap_or(false);
 
+        // Review backend for this search: the decision model selected in the
+        // codebase settings when it is still enabled and its request information
+        // is complete, the basic LLM model otherwise (`None` keeps the LLM path).
+        // The decision models themselves are configured in the API settings page.
+        let jev_config = crate::api::jev::JevConfig::from_decision_model(
+            &decision_models,
+            &settings.agent_review_model_id,
+        );
+        let agent_review_provider = if jev_config.is_some() {
+            "decision"
+        } else {
+            "llm"
+        };
+
         // Determine the processing pipeline.
         //
         // - If agent review is enabled, it subsumes reranking (the agent
@@ -277,6 +292,7 @@ impl CodebaseService {
             let review_result = crate::api::codebase_review::run_agent_review(
                 query.to_string(),
                 initial_results,
+                jev_config,
                 move |refined_query: String| {
                     let db_path = db_path.clone();
                     let pid = pid.clone();
@@ -391,6 +407,7 @@ impl CodebaseService {
             "pipeline": {
                 "type": pipeline.pipeline_type.as_str(),
                 "agentReview": enable_agent_review,
+                "agentReviewProvider": agent_review_provider,
                 "reranking": enable_reranking,
                 "attempts": pipeline.attempts,
                 "refinedQuery": pipeline.refined_query,
@@ -446,6 +463,10 @@ struct CodebaseSettings {
     reranking_api_key: String,
     reranking_context_length: i32,
     reranking_top_n: i32,
+    /// 代理审查选用的决策模型 id（空 = 使用基础 LLM 模型）。决策模型的
+    /// baseUrl / apiKey / model 存在 system_settings 的 `decision_models` 里，
+    /// 由 crate::api::jev 按这里的 id 解析。
+    agent_review_model_id: String,
 }
 
 fn load_codebase_settings(database_path: &std::path::Path) -> Result<CodebaseSettings> {
@@ -476,8 +497,9 @@ enum PipelineType {
     Cosine,
     /// Reranking model applied to reorder results.
     Reranking,
-    /// Agent review applied — the basic model judged relevance and
-    /// potentially refined the query and re-searched.
+    /// Agent review applied — the configured review backend (Jev or the basic
+    /// model) judged relevance, and the LLM potentially refined the query and
+    /// re-searched.
     AgentReview,
 }
 

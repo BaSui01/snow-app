@@ -1,6 +1,11 @@
 import { RotateCcw } from "lucide-react";
 import { type ChangeEvent } from "react";
 import { useI18n } from "../../../i18n";
+import {
+  enabledDecisionModels,
+  findDecisionModel,
+  type DecisionModelConfig,
+} from "../../../constants/decisionModels";
 import { CustomSelect } from "../../common/CustomSelect";
 import { EMBEDDING_TYPE_OPTIONS } from "./codebaseSettingsConstants";
 import { maskSecret } from "./codebaseSettingsUtils";
@@ -8,17 +13,20 @@ import type { CodebaseSettingsForm as CodebaseSettingsFormValue } from "./types"
 
 type CodebaseSettingsFormProps = {
   form: CodebaseSettingsFormValue;
+  /** 全局决策模型配置：这里只做选择，配置本身在「API 配置 → 决策模型」中维护。 */
+  decisionModels: DecisionModelConfig[];
   isBusy: boolean;
   onUpdateField: (
-    field: keyof CodebaseSettingsFormValue
+    field: keyof CodebaseSettingsFormValue,
   ) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
   onSetValue: (field: keyof CodebaseSettingsFormValue, value: string) => void;
-  onBlurSave: () => void;
+  onBlurSave: (nextForm?: CodebaseSettingsFormValue) => void;
   onReset: () => void;
 };
 
 export function CodebaseSettingsForm({
   form,
+  decisionModels,
   isBusy,
   onUpdateField,
   onSetValue,
@@ -27,12 +35,44 @@ export function CodebaseSettingsForm({
 }: CodebaseSettingsFormProps): React.JSX.Element {
   const { t } = useI18n();
 
+  // 只能选用已启用的决策模型；已选模型被停用/删除时保留一个提示项，避免选择被静默改掉。
+  const enabledModels = enabledDecisionModels(decisionModels);
+  const isSelectionAvailable = enabledModels.some(
+    (model) => model.id === form.agentReviewModelId,
+  );
+  const unavailableSelection =
+    form.agentReviewModelId !== "" && !isSelectionAvailable
+      ? findDecisionModel(decisionModels, form.agentReviewModelId)
+      : null;
+  const reviewModelOptions = [
+    {
+      value: "",
+      label: t("settings.codebaseReviewModelLlm", {
+        defaultValue: "LLM (basic model)",
+      }),
+    },
+    ...enabledModels.map((model) => ({ value: model.id, label: model.name })),
+    ...(form.agentReviewModelId !== "" && !isSelectionAvailable
+      ? [
+          {
+            value: form.agentReviewModelId,
+            label: `${
+              unavailableSelection?.name ?? form.agentReviewModelId
+            } · ${t("settings.codebaseReviewModelUnavailable", {
+              defaultValue: "Unavailable",
+            })}`,
+          },
+        ]
+      : []),
+  ];
+
   const renderTextInput = (
     field: keyof CodebaseSettingsFormValue,
     label: string,
     placeholder = "",
     type: "text" | "password" | "number" = "text",
-    min?: number
+    min?: number,
+    step?: number,
   ) => (
     <label className="api-settings-field">
       <span>{label}</span>
@@ -43,6 +83,7 @@ export function CodebaseSettingsForm({
         placeholder={placeholder}
         type={type}
         min={min}
+        step={step}
         disabled={isBusy}
       />
     </label>
@@ -83,7 +124,7 @@ export function CodebaseSettingsForm({
                 options={EMBEDDING_TYPE_OPTIONS}
                 onChange={(value) => {
                   onSetValue("embeddingType", value);
-                  onBlurSave();
+                  onBlurSave({ ...form, embeddingType: value });
                 }}
                 disabled={isBusy}
               />
@@ -93,14 +134,14 @@ export function CodebaseSettingsForm({
               t("settings.codebaseEmbeddingModelName", {
                 defaultValue: "Embedding model name",
               }),
-              "jina-embeddings-v3"
+              "jina-embeddings-v3",
             )}
             {renderTextInput(
               "embeddingBaseUrl",
               t("settings.codebaseEmbeddingBaseUrl", {
                 defaultValue: "Embedding base URL",
               }),
-              "https://api.jina.ai/v1/embeddings"
+              "https://api.jina.ai/v1/embeddings",
             )}
             {renderTextInput(
               "embeddingDimensions",
@@ -109,7 +150,7 @@ export function CodebaseSettingsForm({
               }),
               "1536",
               "number",
-              1
+              1,
             )}
             {renderTextInput(
               "embeddingApiKey",
@@ -117,7 +158,7 @@ export function CodebaseSettingsForm({
                 defaultValue: "Embedding API key",
               }),
               maskSecret(form.embeddingApiKey),
-              "password"
+              "password",
             )}
             {renderTextInput(
               "modelContextLength",
@@ -126,7 +167,7 @@ export function CodebaseSettingsForm({
               }),
               "8192",
               "number",
-              1
+              1,
             )}
           </div>
         </div>
@@ -143,14 +184,14 @@ export function CodebaseSettingsForm({
               t("settings.codebaseRerankingModelName", {
                 defaultValue: "Reranking model name",
               }),
-              "jina-reranker-v2-base-multilingual"
+              "jina-reranker-v2-base-multilingual",
             )}
             {renderTextInput(
               "rerankingBaseUrl",
               t("settings.codebaseRerankingBaseUrl", {
                 defaultValue: "Reranking base URL",
               }),
-              "https://api.jina.ai/v1/rerank"
+              "https://api.jina.ai/v1/rerank",
             )}
             {renderTextInput(
               "rerankingContextLength",
@@ -159,7 +200,7 @@ export function CodebaseSettingsForm({
               }),
               "4096",
               "number",
-              1
+              1,
             )}
             {renderTextInput(
               "rerankingTopN",
@@ -168,7 +209,7 @@ export function CodebaseSettingsForm({
               }),
               "5",
               "number",
-              1
+              1,
             )}
             {renderTextInput(
               "rerankingApiKey",
@@ -176,9 +217,47 @@ export function CodebaseSettingsForm({
                 defaultValue: "Reranking API key",
               }),
               maskSecret(form.rerankingApiKey),
-              "password"
+              "password",
             )}
           </div>
+        </div>
+
+        <div className="api-settings-form-section">
+          <strong className="api-settings-form-section-title">
+            {t("settings.codebaseAgentReviewSettings", {
+              defaultValue: "Agent review settings",
+            })}
+          </strong>
+          <span className="settings-item-description">
+            {t("settings.codebaseAgentReviewInfo", {
+              defaultValue:
+                "Agent review removes irrelevant search results. The LLM (basic model) judges them by default; a decision model judges every result on its own. When a refined query is needed, the LLM only writes the new query.",
+            })}
+          </span>
+          <div className="api-settings-form-grid">
+            <label className="api-settings-field">
+              <span>
+                {t("settings.codebaseReviewModel", {
+                  defaultValue: "Review model",
+                })}
+              </span>
+              <CustomSelect
+                value={form.agentReviewModelId}
+                options={reviewModelOptions}
+                onChange={(value) => {
+                  onSetValue("agentReviewModelId", value);
+                  onBlurSave({ ...form, agentReviewModelId: value });
+                }}
+                disabled={isBusy}
+              />
+            </label>
+          </div>
+          <span className="settings-item-description">
+            {t("settings.codebaseReviewModelHint", {
+              defaultValue:
+                "Decision models are managed in API configuration → Decision models; only enabled ones can be selected here.",
+            })}
+          </span>
         </div>
 
         <div className="api-settings-form-section">
@@ -195,7 +274,7 @@ export function CodebaseSettingsForm({
               }),
               "10",
               "number",
-              1
+              1,
             )}
             {renderTextInput(
               "batchConcurrency",
@@ -204,7 +283,7 @@ export function CodebaseSettingsForm({
               }),
               "3",
               "number",
-              1
+              1,
             )}
             {renderTextInput(
               "chunkingMaxLinesPerChunk",
@@ -213,7 +292,7 @@ export function CodebaseSettingsForm({
               }),
               "200",
               "number",
-              1
+              1,
             )}
             {renderTextInput(
               "chunkingMinLinesPerChunk",
@@ -222,7 +301,7 @@ export function CodebaseSettingsForm({
               }),
               "10",
               "number",
-              1
+              1,
             )}
             {renderTextInput(
               "chunkingMinCharsPerChunk",
@@ -231,7 +310,7 @@ export function CodebaseSettingsForm({
               }),
               "20",
               "number",
-              1
+              1,
             )}
             {renderTextInput(
               "chunkingOverlapLines",
@@ -240,7 +319,7 @@ export function CodebaseSettingsForm({
               }),
               "20",
               "number",
-              0
+              0,
             )}
           </div>
         </div>

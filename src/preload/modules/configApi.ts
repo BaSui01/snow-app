@@ -20,6 +20,7 @@ import type {
   ProjectStackDetection,
   SensitiveCommandConfigInput,
   SensitiveCommandConfigRecord,
+  SensitiveCommandDecisionRecord,
   SubAgentConfigInput,
   SubAgentConfigRecord,
   SystemPromptItemInput,
@@ -38,11 +39,11 @@ export const configApi = {
   listCustomHeaderSchemes: (): Promise<CustomHeaderSchemeRecord[]> =>
     ipcRenderer.invoke("custom-header-schemes:list"),
   upsertCustomHeaderScheme: (
-    item: CustomHeaderSchemeInput
+    item: CustomHeaderSchemeInput,
   ): Promise<CustomHeaderSchemeRecord[]> =>
     ipcRenderer.invoke("custom-header-schemes:upsert", item),
   deleteCustomHeaderScheme: (
-    schemeId: string
+    schemeId: string,
   ): Promise<CustomHeaderSchemeRecord[]> =>
     ipcRenderer.invoke("custom-header-schemes:delete", schemeId),
   importSnowCliCustomHeadersConfig: (): Promise<CustomHeaderSchemeRecord[]> =>
@@ -50,7 +51,7 @@ export const configApi = {
   listMcpServerConfigs: (): Promise<McpServerConfigRecord[]> =>
     ipcRenderer.invoke("mcp-server-configs:list"),
   upsertMcpServerConfig: (
-    item: McpServerConfigInput
+    item: McpServerConfigInput,
   ): Promise<McpServerConfigRecord[]> =>
     ipcRenderer.invoke("mcp-server-configs:upsert", item),
   deleteMcpServerConfig: (serverId: string): Promise<McpServerConfigRecord[]> =>
@@ -60,32 +61,32 @@ export const configApi = {
   listLspServerConfigs: (): Promise<LspServerConfigRecord[]> =>
     ipcRenderer.invoke("lsp-server-configs:list"),
   upsertLspServerConfig: (
-    item: LspServerConfigInput
+    item: LspServerConfigInput,
   ): Promise<LspServerConfigRecord[]> =>
     ipcRenderer.invoke("lsp-server-configs:upsert", item),
   deleteLspServerConfig: (lang: string): Promise<LspServerConfigRecord[]> =>
     ipcRenderer.invoke("lsp-server-configs:delete", lang),
   listProjectLspServerConfigs: (
-    projectId: string
+    projectId: string,
   ): Promise<LspServerConfigRecord[]> =>
     ipcRenderer.invoke("project-lsp-server-configs:list", projectId),
   upsertProjectLspServerConfig: (
     projectId: string,
-    item: LspServerConfigInput
+    item: LspServerConfigInput,
   ): Promise<LspServerConfigRecord[]> =>
     ipcRenderer.invoke("project-lsp-server-configs:upsert", projectId, item),
   deleteProjectLspServerConfig: (
     projectId: string,
-    lang: string
+    lang: string,
   ): Promise<LspServerConfigRecord[]> =>
     ipcRenderer.invoke("project-lsp-server-configs:delete", projectId, lang),
   /** 项目生效配置合并视图：全局记录 + 项目覆盖（同 lang 覆盖替换全局）。 */
   listEffectiveLspServerConfigs: (
-    projectId?: string
+    projectId?: string,
   ): Promise<LspServerConfigRecord[]> =>
     ipcRenderer.invoke("lsp-server-configs:effective:list", projectId),
   probeLspServerCommands: (
-    projectId?: string
+    projectId?: string,
   ): Promise<LspCommandProbeResult[]> =>
     ipcRenderer.invoke("lsp-server-configs:probe", projectId),
   /** 扫描项目根目录检测技术栈（纯文件系统，无副作用）。 */
@@ -97,52 +98,52 @@ export const configApi = {
     ipcRenderer.invoke("lsp-session-statuses:list", projectId),
   installLspServer: (
     lang: string,
-    projectId?: string
+    projectId?: string,
   ): Promise<LspInstallResult> =>
     ipcRenderer.invoke("lsp-server-configs:install", projectId, lang),
   listProjectMcpServerConfigs: (
-    projectId: string
+    projectId: string,
   ): Promise<ProjectMcpServerConfigRecord[]> =>
     ipcRenderer.invoke("project-mcp-server-configs:list", projectId),
   upsertProjectMcpServerConfig: (
     projectId: string,
-    item: McpServerConfigInput
+    item: McpServerConfigInput,
   ): Promise<ProjectMcpServerConfigRecord[]> =>
     ipcRenderer.invoke("project-mcp-server-configs:upsert", projectId, item),
   deleteProjectMcpServerConfig: (
     projectId: string,
-    serverId: string
+    serverId: string,
   ): Promise<ProjectMcpServerConfigRecord[]> =>
     ipcRenderer.invoke(
       "project-mcp-server-configs:delete",
       projectId,
-      serverId
+      serverId,
     ),
   listSubAgentConfigs: (projectId?: string): Promise<SubAgentConfigRecord[]> =>
     ipcRenderer.invoke("sub-agent-configs:list", projectId),
   getSubAgentConfig: (
     agentId: string,
-    projectId?: string
+    projectId?: string,
   ): Promise<SubAgentConfigRecord | null> =>
     ipcRenderer.invoke("sub-agent-configs:get", agentId, projectId),
   upsertSubAgentConfig: (
     projectId: string | undefined,
-    item: SubAgentConfigInput
+    item: SubAgentConfigInput,
   ): Promise<SubAgentConfigRecord[]> =>
     ipcRenderer.invoke("sub-agent-configs:upsert", projectId, item),
   deleteSubAgentConfig: (
     agentId: string,
-    projectId?: string
+    projectId?: string,
   ): Promise<SubAgentConfigRecord[]> =>
     ipcRenderer.invoke("sub-agent-configs:delete", agentId, projectId),
   listSensitiveCommandConfigs: (): Promise<SensitiveCommandConfigRecord[]> =>
     ipcRenderer.invoke("sensitive-command-configs:list"),
   upsertSensitiveCommandConfig: (
-    item: SensitiveCommandConfigInput
+    item: SensitiveCommandConfigInput,
   ): Promise<SensitiveCommandConfigRecord[]> =>
     ipcRenderer.invoke("sensitive-command-configs:upsert", item),
   deleteSensitiveCommandConfig: (
-    commandId: string
+    commandId: string,
   ): Promise<SensitiveCommandConfigRecord[]> =>
     ipcRenderer.invoke("sensitive-command-configs:delete", commandId),
   resetSensitiveCommandConfigs: (): Promise<SensitiveCommandConfigRecord[]> =>
@@ -151,41 +152,41 @@ export const configApi = {
     SensitiveCommandConfigRecord[]
   > => ipcRenderer.invoke("sensitive-command-configs:import-snow-cli"),
   listProjectSensitiveCommandConfigs: (
-    projectId: string
+    projectId: string,
   ): Promise<ProjectSensitiveCommandConfigRecord[]> =>
     ipcRenderer.invoke("project-sensitive-command-configs:list", projectId),
   setProjectSensitiveCommandEnabled: (
     projectId: string,
     commandId: string,
-    enabled: boolean
+    enabled: boolean,
   ): Promise<ProjectSensitiveCommandConfigRecord[]> =>
     ipcRenderer.invoke(
       "project-sensitive-command-configs:set-enabled",
       projectId,
       commandId,
-      enabled
+      enabled,
     ),
   upsertProjectSensitiveCommandConfig: (
     projectId: string,
-    item: ProjectSensitiveCommandConfigInput
+    item: ProjectSensitiveCommandConfigInput,
   ): Promise<ProjectSensitiveCommandConfigRecord[]> =>
     ipcRenderer.invoke(
       "project-sensitive-command-configs:upsert",
       projectId,
-      item
+      item,
     ),
   deleteProjectSensitiveCommandConfig: (
     projectId: string,
-    commandId: string
+    commandId: string,
   ): Promise<ProjectSensitiveCommandConfigRecord[]> =>
     ipcRenderer.invoke(
       "project-sensitive-command-configs:delete",
       projectId,
-      commandId
+      commandId,
     ),
   checkSensitiveCommandMatch: (
     command: string,
-    projectId?: string
+    projectId?: string,
   ): Promise<
     Array<{
       commandId: string;
@@ -196,11 +197,26 @@ export const configApi = {
     ipcRenderer.invoke(
       "sensitive-command-configs:check-match",
       command,
-      projectId
+      projectId,
+    ),
+  /** 决策模型辅助：判定命中敏感规则的命令是否可直接放行（null = 未启用）。
+   *  workingDirectory / description 是风险判定的上下文（执行目录、模型意图说明）。 */
+  evaluateSensitiveCommandDecision: (
+    command: string,
+    projectId?: string,
+    workingDirectory?: string,
+    description?: string,
+  ): Promise<SensitiveCommandDecisionRecord | null> =>
+    ipcRenderer.invoke(
+      "sensitive-command-configs:evaluate-decision",
+      command,
+      projectId,
+      workingDirectory,
+      description,
     ),
   listHookConfigs: (
     scope: HookScope,
-    projectId?: string
+    projectId?: string,
   ): Promise<HookConfigRecord[]> =>
     ipcRenderer.invoke("hook-configs:list", scope, projectId),
   upsertHookConfig: (item: HookConfigInput): Promise<void> =>
@@ -208,7 +224,7 @@ export const configApi = {
   deleteHookConfig: (
     hookType: string,
     scope: HookScope,
-    projectId?: string
+    projectId?: string,
   ): Promise<void> =>
     ipcRenderer.invoke("hook-configs:delete", hookType, scope, projectId),
   executeHooks: (input: HookExecuteInput): Promise<HookExecuteResult> =>

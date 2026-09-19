@@ -70,6 +70,8 @@ const requiredExports = [
   "countProjectMemoriesByConversations",
   // MCP 设置面板保存链路（快速列表：只读发现缓存，保存不再等全量工具发现）
   "listMcpProjectServersCached",
+  // 敏感命令决策模型辅助（拦截提示展示判定 / 托管执行）
+  "evaluateSensitiveCommandDecision",
   // 手机远控（原生 HTTP 服务 / 鉴权 / 附件）
   "setRemoteControlRendererBridge",
   "startRemoteControlServer",

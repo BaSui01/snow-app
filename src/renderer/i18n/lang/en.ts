@@ -1851,6 +1851,11 @@ export const en = {
   "settings.apiDeleteConfirm":
     'Delete API profile "{{name}}"? This cannot be undone.',
   "settings.apiDeleteSuccess": "Deleted API profile {name}.",
+  "settings.apiDeleteSelected": "Delete selected",
+  "settings.apiDeleteSelectedTitle": "Delete API profiles",
+  "settings.apiDeleteSelectedConfirm":
+    "Delete {count} API profiles? This cannot be undone.",
+  "settings.apiDeleteSelectedSuccess": "Deleted {count} API profiles.",
   "settings.apiDuplicateSuccess": "Duplicated API profile {name}.",
   "settings.apiDuplicateError": "Failed to duplicate API config",
   "settings.apiEditTitle": "Edit profile",
@@ -1991,6 +1996,14 @@ export const en = {
   "settings.codebaseRerankingApiKey": "Reranking API key",
   "settings.codebaseRerankingContextLength": "Reranking context length",
   "settings.codebaseRerankingTopN": "Reranking Top N",
+  "settings.codebaseAgentReviewSettings": "Agent review settings",
+  "settings.codebaseAgentReviewInfo":
+    "Agent review removes irrelevant search results. The LLM (basic model) judges them by default; a decision model judges every result on its own. When the query needs refining, the LLM only writes the new query.",
+  "settings.codebaseReviewModel": "Review model",
+  "settings.codebaseReviewModelLlm": "LLM (basic model)",
+  "settings.codebaseReviewModelUnavailable": "Unavailable",
+  "settings.codebaseReviewModelHint":
+    "Decision models are managed in API configuration → Decision models; only enabled ones can be selected here.",
   "settings.codebaseBatchChunkingSettings": "Batch and chunking",
   "settings.codebaseBatchMaxLines": "Batch max lines",
   "settings.codebaseBatchConcurrency": "Batch concurrency",
@@ -2030,6 +2043,38 @@ export const en = {
     "Reranking context length must be greater than 0.",
   "settings.codebaseValidationRerankingTopNPositive":
     "Reranking Top N must be greater than 0.",
+  "settings.apiTabLlmModels": "LLM models",
+  "settings.apiTabDecisionModels": "Decision models",
+  "settings.decisionModelsTitle": "Decision models",
+  "settings.decisionModelsInfo":
+    "Decision models judge each result on its own instead of generating text. Configure them once here, then select one wherever a decision model is used (for example codebase agent review).",
+  "settings.decisionModelsLoading": "Loading...",
+  "settings.decisionModelsEmpty":
+    "No decision model configured yet. Add one to use it for codebase agent review.",
+  "settings.decisionModelAdd": "Add decision model",
+  "settings.decisionModelSave": "Save decision model",
+  "settings.decisionModelName": "Name",
+  "settings.decisionModelModel": "Model name",
+  "settings.decisionModelBaseUrl": "Base URL",
+  "settings.decisionModelApiKey": "API key",
+  "settings.decisionModelToggle": "Enable or disable this decision model",
+  "settings.decisionModelEditorAddTitle": "Add decision model",
+  "settings.decisionModelEditorEditTitle": "Edit decision model",
+  "settings.decisionModelEditorInfo":
+    "The API key is stored locally and is only sent to this endpoint.",
+  "settings.decisionModelNameRequired": "Name is required.",
+  "settings.decisionModelBaseUrlRequired": "Base URL is required.",
+  "settings.decisionModelModelRequired": "Model name is required.",
+  "settings.decisionModelLoadError": "Failed to load decision models",
+  "settings.decisionModelSaveError": "Failed to save decision models",
+  "settings.decisionModelAddSuccess": "Added decision model {{name}}.",
+  "settings.decisionModelSaveSuccess": "Saved decision model {{name}}.",
+  "settings.decisionModelEnabledSuccess": "Enabled {{name}}.",
+  "settings.decisionModelDisabledSuccess": "Disabled {{name}}.",
+  "settings.decisionModelDeleteSuccess": "Deleted {{name}}.",
+  "settings.decisionModelDeleteTitle": "Delete decision model",
+  "settings.decisionModelDeleteConfirm":
+    "Delete {{name}}? Anything using it (for example codebase agent review) falls back to the LLM model.",
   "settings.systemPromptSettings": "System prompt",
   "settings.systemPromptSettingsInfo": "Customize the assistant system prompt.",
   "settings.systemPromptTitle": "System prompt",
@@ -2646,6 +2691,29 @@ export const en = {
   "settings.sensitiveCommandCount": "Rules",
   "settings.sensitiveCommandEnabledCount": "Enabled rules",
   "settings.sensitiveCommandPresetCount": "Preset rules",
+  "settings.sensitiveCommandAssistTitle": "Decision model assist",
+  "settings.sensitiveCommandAssistInfo":
+    "Let a decision model judge a command that matched a sensitive rule before the confirmation prompt shows up.",
+  "settings.sensitiveCommandAssistToggle": "Enable decision model assist",
+  "settings.sensitiveCommandAssistToggleInfo":
+    "Off by default. While off, sensitive commands keep the plain confirmation prompt.",
+  "settings.sensitiveCommandAssistModel": "Decision model",
+  "settings.sensitiveCommandAssistModelNone": "Not selected",
+  "settings.sensitiveCommandAssistModelUnavailable": "Unavailable",
+  "settings.sensitiveCommandAssistModelInfo":
+    "Only enabled decision models can be selected here.",
+  "settings.sensitiveCommandAssistModelEmpty":
+    "No enabled decision model yet. Add one in API settings → Decision models first.",
+  "settings.sensitiveCommandAssistModelUnavailableInfo":
+    "The selected decision model is disabled or deleted; the assist stays idle until another one is selected.",
+  "settings.sensitiveCommandAssistDelegate":
+    "Let the decision model handle the gate",
+  "settings.sensitiveCommandAssistDelegateInfo":
+    "When on, an allow verdict runs the command directly; a deny verdict rejects that command and hands the reason back to the model (the AI flow continues), without showing the prompt.",
+  "settings.sensitiveCommandAssistSaveSuccess":
+    "Saved decision model assist settings.",
+  "settings.sensitiveCommandAssistSaveError":
+    "Failed to save decision model assist settings",
   "settings.subAgentSettings": "Sub-agent settings",
   "settings.subAgentSettingsInfo": "Manage specialized AI sub-agents.",
   "settings.subAgentTitle": "Sub-agent settings",
@@ -3272,6 +3340,27 @@ export const en = {
   "sensitiveCommand.description": "What it does",
   "sensitiveCommand.matchedRules": "Matched rules",
   "sensitiveCommand.confirmExecution": "Confirm execution",
+  "sensitiveCommand.decisionLabel": "Decision model verdict",
+  "sensitiveCommand.decisionAllow": "Allow",
+  "sensitiveCommand.decisionConfirm": "Confirm first",
+  "sensitiveCommand.decisionConfidence": "Confidence {{value}}%",
+  "sensitiveCommand.decisionModel": "Judged by {{name}}",
+  "sensitiveCommand.decisionRejectedReason":
+    "Rejected by the decision model ({{model}}): {{reason}}",
+  "sensitiveCommand.decision.reason.readOnly":
+    "Only reads information, leaves files and system state untouched",
+  "sensitiveCommand.decision.reason.regenerable":
+    "Only touches generated or regenerable artifacts (build output, caches, temporary files, dependencies)",
+  "sensitiveCommand.decision.reason.scopedChange":
+    "Changes stay inside the workspace and can be undone",
+  "sensitiveCommand.decision.reason.dataLoss":
+    "Deletes or overwrites data that cannot be recovered",
+  "sensitiveCommand.decision.reason.systemState":
+    "Changes system or environment state",
+  "sensitiveCommand.decision.reason.externalEffect":
+    "Publishes or sends data outside this machine",
+  "sensitiveCommand.decision.reason.unclear":
+    "Effect is unclear, judge it yourself",
   "chatInput.placeholder":
     "Ask me anything. Type / for commands or @ for files...",
   "chatCommand.title": "Chat commands",
@@ -3568,6 +3657,9 @@ export const en = {
     "Rerank retrieved codebase chunks for better relevance",
   "projectCodebase.configHint":
     "Embedding, reranking and chunking parameters are configured in Settings.",
+  "projectCodebase.reviewProviderLlm": "LLM (basic model)",
+  "projectCodebase.reviewProviderDecision": "Decision model · {{model}}",
+  "projectCodebase.openCodebaseSettings": "Open codebase settings",
   "projectCodebase.gitignoreMissing":
     "No .gitignore file detected in the project root. To avoid embedding large amounts of irrelevant files (such as node_modules, build artifacts, etc.), please create a .gitignore in the project root before enabling codebase indexing.",
   "projectCodebase.remoteUnsupported":

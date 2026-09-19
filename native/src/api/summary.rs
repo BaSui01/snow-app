@@ -652,7 +652,11 @@ fn build_conversation_text(
         .join("\n")
 }
 
-fn extract_anthropic_content(body: &Value) -> String {
+/// Extract the assistant text from an Anthropic Messages response.
+///
+/// Shared with the codebase agent review, which parses the same non-streaming
+/// response shapes.
+pub(crate) fn extract_anthropic_content(body: &Value) -> String {
     let Some(content_array) = body.get("content").and_then(Value::as_array) else {
         return String::new();
     };
@@ -908,7 +912,11 @@ fn build_summary_responses_input(
     })]
 }
 
-fn extract_responses_content(body: &Value) -> String {
+/// Extract the assistant text from a Responses API response.
+///
+/// Shared with the codebase agent review, which parses the same non-streaming
+/// response shapes.
+pub(crate) fn extract_responses_content(body: &Value) -> String {
     // The top-level `output_text` field is the concatenation of the final
     // assistant text only; it never contains reasoning/thinking content, so it
     // is the preferred source for the summary (正文).
@@ -963,7 +971,10 @@ fn extract_responses_content(body: &Value) -> String {
     String::new()
 }
 
-/// Extract only the main text (正文) from a Chat Completions response.
+/// Extract the assistant text from a Chat Completions response.
+///
+/// Shared with the codebase agent review, which parses the same non-streaming
+/// response shapes.
 ///
 /// Some models cannot disable their chain of thought, so even though the
 /// request asks for no reasoning (`reasoning_effort: "none"`), the response
@@ -973,7 +984,7 @@ fn extract_responses_content(body: &Value) -> String {
 /// - array `content` parts typed `thinking` / `reasoning` are skipped;
 /// - inline `[think]...[/think]` / `<thinking>...</thinking>` /
 ///   `[reasoning]...[/reasoning]` sections inside the text are stripped.
-fn extract_chat_content(body: &Value) -> String {
+pub(crate) fn extract_chat_content(body: &Value) -> String {
     let Some(choice) = body
         .get("choices")
         .and_then(Value::as_array)

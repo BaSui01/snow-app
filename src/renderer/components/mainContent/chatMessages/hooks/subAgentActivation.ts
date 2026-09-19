@@ -5,6 +5,7 @@ import type {
   ToolAuthorizationDecision,
   ToolCallInfo,
 } from "../utils/conversationTypes";
+import { rejectionKeepsAiFlow } from "../utils/conversationTypes";
 import type { ChatConversationRecord } from "../../../../../preload";
 import {
   createMessageId,
@@ -615,12 +616,10 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
     const subAllToolsRejected = subAuthorizationDecisions.every(
       (decision) => decision.status === "rejected",
     );
-    // 用户填写了拒绝理由时，拒绝理由作为工具结果回传子代理 AI，
-    // 子代理 Loop 继续；仅当全部拒绝且没有用户理由时才终止。
-    const subHasUserProvidedRejectionReason = subAuthorizationDecisions.some(
-      (decision) =>
-        decision.status === "rejected" && decision.userProvidedReason === true,
-    );
+    // 拒绝可续跑时（用户填写了理由 / 敏感命令被拒绝），拒绝理由作为工具
+    // 结果回传子代理 AI，子代理 Loop 继续；仅当全部拒绝且不可续跑时才终止。
+    const subHasContinuableRejection =
+      subAuthorizationDecisions.some(rejectionKeepsAiFlow);
 
     const subToolResults: string[] = [];
     const subStructuredResults: {
@@ -645,7 +644,7 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       if (subAuthorizationDecision.status === "rejected") {
         const subRejectResult = JSON.stringify({
           success: false,
-          error: "TOOL_EXECUTION_DENIED_BY_USER",
+          error: "TOOL_EXECUTION_DENIED",
           reason:
             subAuthorizationDecision.reason || "User declined tool execution",
         });
@@ -948,7 +947,7 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       return "Sub-agent stopped because the main conversation must approve the Plan Mode plan before delegated writes can run.";
     }
 
-    if (subAllToolsRejected && !subHasUserProvidedRejectionReason) {
+    if (subAllToolsRejected && !subHasContinuableRejection) {
       return subToolResults.join("\n\n");
     }
 

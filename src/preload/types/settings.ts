@@ -181,6 +181,8 @@ export type CodebaseSettingsInput = {
   rerankingApiKey: string;
   rerankingContextLength: number;
   rerankingTopN: number;
+  /** 代理审查选用的决策模型 id（空 = 使用基础 LLM 模型）。决策模型配置在 API 配置页维护。 */
+  agentReviewModelId: string;
   configJson: string;
   source: string;
 };
@@ -456,6 +458,20 @@ export type ProjectSensitiveCommandConfigRecord =
     isPreset: boolean;
     source: string;
   };
+
+/** 决策模型对一条命中敏感规则的命令的判定结果。 */
+export type SensitiveCommandDecisionRecord = {
+  /** true = 判定可以直接放行。 */
+  allow: boolean;
+  /** 判定理由的分类 key，由渲染层本地化展示。 */
+  reason: string;
+  /** 模型对判定的置信度（0-1）。 */
+  confidence: number;
+  /** 决策模型托管：判定直接生效，不再弹拦截提示。 */
+  delegate: boolean;
+  /** 参与判定的决策模型名称。 */
+  modelName: string;
+};
 
 // ===== Keyboard shortcuts =====
 

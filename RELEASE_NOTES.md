@@ -1,5 +1,23 @@
 # Release Notes
 
+## v0.4.3
+
+## New Features
+
+- **Local Data Cleanup**: A new "Data Cleanup" section in settings scans local usage by category (checkpoint snapshots, uploads, image library, theme backgrounds, pet resources, browser state, app logs) and deletes the selected ones by age (7 / 15 / 30 / 90 days, or all time). Scanning and deletion run in the Rust layer, so the UI stays responsive.
+- **Rollback Target List**: Double-press ESC to open a list of past messages and roll back to any turn (context-compaction summaries included); targets older than the loaded page window are fetched on demand.
+
+## Improvements
+
+- While a commit message is being generated, the git commit input is read-only and follows the latest streaming chunk; its height now auto-fits the content via CSS.
+- The conversation import button is hidden in the archive list.
+
+## Bug Fixes
+
+- Fixed ESC bubbling out of nested dialogs and closing the outer one (dialogs now opt in to ESC closing individually).
+- Fixed HTTP 400 rejections when a tool schema omitted `required` (e.g. `browser-create`).
+- Fixed Linux AppImage update 404s caused by artifact name drift: the AppImage file name is now pinned at packaging time, and update manifests are verified against the packaged files before publishing.
+
 ## v0.4.2
 
 ## New Features

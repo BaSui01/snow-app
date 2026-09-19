@@ -1,4 +1,11 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { MessageSquare } from "lucide-react";
 import { useI18n } from "../../../../i18n";
@@ -8,6 +15,7 @@ import {
   parseContentSegments,
   summarizeContentAsPlainText,
 } from "../../chatInput/fileTagUtils";
+import { ChatHistorySkeleton } from "./ChatHistorySkeleton";
 
 type RefValue<T> = { current: T };
 
@@ -86,6 +94,21 @@ export const UserMessageRail = memo(
     const [visibleUserIndices, setVisibleUserIndices] = useState<Set<number>>(
       new Set(),
     );
+    // 定位遮罩：目标消息还在未加载的分页里时置位。翻页过程中消息区被隐藏、
+    // 由骨架屏接管视觉，避免「翻页期间轻微抖动 + 最后一帧瞬间跳走」的观感。
+    const [locating, setLocating] = useState(false);
+    const [locateRect, setLocateRect] = useState<{
+      top: number;
+      left: number;
+      width: number;
+      height: number;
+    } | null>(null);
+    // 定位在途标志：期间忽略新的点击，防止两轮定位互相踩踏、遮罩被先结束
+    // 的一轮提前撤下（回调闭包里读 state 会拿到快照，必须走 ref）。
+    const locatingRef = useRef(false);
+    // 遮罩类挂在滚动容器的真实 DOM 上（与 is-wheelscrolling 等同类做法），
+    // 卸载清理时 ref 可能已被 React 置空，因此单独存一份元素引用。
+    const locateContainerRef = useRef<HTMLElement | null>(null);
     const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const railRef = useRef<HTMLDivElement | null>(null);
     const popoverRef = useRef<HTMLDivElement | null>(null);
@@ -273,6 +296,53 @@ export const UserMessageRail = memo(
       };
     }, []);
 
+    // 撤下定位遮罩：恢复消息列表绘制并卸掉骨架屏。翻页失败（目标迟迟没
+    // 出现，循环退出）时同样走这里，不会把消息区永久留在隐藏状态。
+    const finishLocating = useCallback((): void => {
+      locatingRef.current = false;
+      locateContainerRef.current?.classList.remove("is-locating-message");
+      locateContainerRef.current = null;
+      setLocating(false);
+      setLocateRect(null);
+    }, []);
+
+    // 骨架屏遮罩跟随滚动容器的位置与尺寸（窗口缩放、面板开合都会改变它）。
+    // layout effect：与点击同一次提交内量好坐标，遮罩首帧就带着骨架屏，
+    // 不会先闪一帧只剩隐藏消息区的空屏。
+    useLayoutEffect(() => {
+      if (!locating) {
+        return;
+      }
+      const syncRect = (): void => {
+        const container = scrollContainerRef.current;
+        if (!container) {
+          return;
+        }
+        const rect = container.getBoundingClientRect();
+        setLocateRect({
+          top: rect.top,
+          left: rect.left,
+          width: rect.width,
+          height: rect.height,
+        });
+      };
+      syncRect();
+      window.addEventListener("resize", syncRect);
+      return () => {
+        window.removeEventListener("resize", syncRect);
+      };
+    }, [locating, scrollContainerRef]);
+
+    // 定位途中卸载（会话切换、消息清空）：遮罩类必须摘干净，否则重建后的
+    // 消息区会一直停在隐藏状态。此处刻意不走 setState，卸载后不再需要。
+    useEffect(() => {
+      return () => {
+        locatingRef.current = false;
+        locateContainerRef.current?.classList.remove("is-locating-message");
+        locateContainerRef.current = null;
+      };
+    }, []);
+
     // After the popover mounts (hovered becomes true), measure its real
     // height on the next frame and compute the final clamped position. This
     // runs once per open — it reads offsetHeight synchronously after layout
@@ -354,10 +424,20 @@ export const UserMessageRail = memo(
     // scrollIntoView and iterate: virtualized placeholders above the target
     // expand to real content (height changes), pushing the target down. We
     // keep re-scrolling until the position stabilizes.
+    //
+    // 目标还压在未加载的分页里时（needsPaging），消息列表在定位全程只隐藏
+    // 绘制、保留布局：翻页锚点校正与 scrollIntoView 读的都是真实 rect，照常
+    // 工作，视觉则交给盖在滚动容器位置上的骨架屏——翻页期间的轻微抖动与最后
+    // 那一下瞬间跳走都不会被看到，落地后再揭开遮罩。
     const handleItemClick = useCallback(
       async (messageId: string): Promise<void> => {
         const container = scrollContainerRef.current;
         if (!container) {
+          return;
+        }
+        // 上一轮定位还没结束：忽略这次点击。两轮定位的翻页会互相等待
+        // （loader 有 in-flight 守卫），而遮罩会被先结束的一轮提前撤下。
+        if (locatingRef.current) {
           return;
         }
 
@@ -374,54 +454,76 @@ export const UserMessageRail = memo(
 
         let el = findMessageElement(container, messageId);
 
-        // If not found, load older messages in a loop until it appears. Guard on
-        // the refs, not the captured props: after the last page lands
-        // hasMoreMessages flips to false and the loop must stop instead of
-        // burning rounds (each of which would wait out the loader's fallback).
-        const MAX_LOAD_ROUNDS = 200;
-        let round = 0;
-        while (!el && hasMoreMessagesRef.current && round < MAX_LOAD_ROUNDS) {
-          round++;
-          if (isLoadingOlderMessagesRef.current) {
-            await new Promise((resolve) => setTimeout(resolve, 50));
-            continue;
-          }
-          await loadOlderMessages();
-          await nextFrame();
-          await nextFrame();
-          el = findMessageElement(container, messageId);
-        }
-
-        if (!el) {
+        const needsPaging = !el;
+        if (needsPaging) {
+          locatingRef.current = true;
+          locateContainerRef.current = container;
+          container.classList.add("is-locating-message");
+          // 选中即离场：定位期间浮层让位给遮罩（骨架屏才是进度反馈）。
           setHovered(false);
           setPopoverPos(null);
-          return;
+          setLocating(true);
         }
 
-        // Iterate scrollIntoView until the target's offsetTop stabilizes.
-        // Each scrollIntoView brings the target to the top of the viewport,
-        // which causes virtualized placeholders *above* it (within the 600px
-        // IntersectionObserver buffer) to render real content. Their height
-        // grows, pushing the target down. We re-scroll and repeat until the
-        // target's offsetTop no longer changes between frames.
-        let prevOffsetTop = -1;
-        for (let i = 0; i < 30; i++) {
-          el = findMessageElement(container, messageId);
-          if (!el) break;
-          el.scrollIntoView({ block: "start", behavior: "auto" });
-          await nextFrame();
-          await nextFrame();
-          const elNow = findMessageElement(container, messageId);
-          if (!elNow) break;
-          const currentOffsetTop = elNow.offsetTop;
-          if (currentOffsetTop === prevOffsetTop) {
-            break;
+        try {
+          // If not found, load older messages in a loop until it appears. Guard on
+          // the refs, not the captured props: after the last page lands
+          // hasMoreMessages flips to false and the loop must stop instead of
+          // burning rounds (each of which would wait out the loader's fallback).
+          const MAX_LOAD_ROUNDS = 200;
+          let round = 0;
+          // container.isConnected：定位途中切换会话会整体重建 .chat-area，旧
+          // 容器脱离文档后目标永远不会出现，继续翻页只会把新会话的历史白拉
+          // 进内存（遮罩类挂在旧容器上，不影响新容器）。
+          while (
+            !el &&
+            hasMoreMessagesRef.current &&
+            container.isConnected &&
+            round < MAX_LOAD_ROUNDS
+          ) {
+            round++;
+            if (isLoadingOlderMessagesRef.current) {
+              await new Promise((resolve) => setTimeout(resolve, 50));
+              continue;
+            }
+            await loadOlderMessages();
+            await nextFrame();
+            await nextFrame();
+            el = findMessageElement(container, messageId);
           }
-          prevOffsetTop = currentOffsetTop;
-        }
 
-        setHovered(false);
-        setPopoverPos(null);
+          if (!el) {
+            return;
+          }
+
+          // Iterate scrollIntoView until the target's offsetTop stabilizes.
+          // Each scrollIntoView brings the target to the top of the viewport,
+          // which causes virtualized placeholders *above* it (within the 600px
+          // IntersectionObserver buffer) to render real content. Their height
+          // grows, pushing the target down. We re-scroll and repeat until the
+          // target's offsetTop no longer changes between frames.
+          let prevOffsetTop = -1;
+          for (let i = 0; i < 30; i++) {
+            el = findMessageElement(container, messageId);
+            if (!el) break;
+            el.scrollIntoView({ block: "start", behavior: "auto" });
+            await nextFrame();
+            await nextFrame();
+            const elNow = findMessageElement(container, messageId);
+            if (!elNow) break;
+            const currentOffsetTop = elNow.offsetTop;
+            if (currentOffsetTop === prevOffsetTop) {
+              break;
+            }
+            prevOffsetTop = currentOffsetTop;
+          }
+        } finally {
+          if (needsPaging) {
+            finishLocating();
+          }
+          setHovered(false);
+          setPopoverPos(null);
+        }
       },
       [
         scrollContainerRef,
@@ -429,6 +531,7 @@ export const UserMessageRail = memo(
         shouldStickToBottomRef,
         isInitialBottomPositioningRef,
         isUserScrollIntentRef,
+        finishLocating,
       ],
     );
 
@@ -514,6 +617,27 @@ export const UserMessageRail = memo(
           )
         : null;
 
+    // 定位遮罩：坐标取自滚动容器的视口矩形（与浮层同一套 portal + 定坐标
+    // 做法），骨架屏在其中垂直居中。消息列表此时被 .is-locating-message
+    // 隐藏绘制，这一层就是定位期间唯一的视觉反馈。
+    const locateOverlay =
+      locating && locateRect
+        ? createPortal(
+            <div
+              className="user-message-locate-overlay"
+              style={{
+                top: `${locateRect.top}px`,
+                left: `${locateRect.left}px`,
+                width: `${locateRect.width}px`,
+                height: `${locateRect.height}px`,
+              }}
+            >
+              <ChatHistorySkeleton />
+            </div>,
+            document.body,
+          )
+        : null;
+
     return (
       <>
         <div
@@ -535,6 +659,7 @@ export const UserMessageRail = memo(
             </span>
           ) : null}
         </div>
+        {locateOverlay}
         {popover}
       </>
     );

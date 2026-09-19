@@ -94,19 +94,20 @@ export const VIRTUAL_PLACEHOLDER_DEFAULT_HEIGHT = DEFAULT_PLACEHOLDER_HEIGHT;
  *   full-list first render for large conversations: the initial commit only
  *   renders this window, and the first IntersectionObserver report replaces
  *   it with the real intersection set.
- * @param newlyPrependedIds Ids of messages freshly prepended at the top of
- *   the list (loadOlder paging). They render their real content immediately
- *   on mount and stay force-visible until the observer's first report takes
- *   over — an 80px placeholder phase between would make the scroll-restore
- *   correction under-shift and then visibly shove the viewport as the real
- *   content expands.
+ * @param eagerVisibleIds Ids that must render their real content immediately
+ *   on mount, before the observer's first report takes over: freshly
+ *   prepended pages (loadOlder paging — an 80px placeholder phase would make
+ *   the scroll-restore correction under-shift and then visibly shove the
+ *   viewport as the real content expands) and messages re-created under a new
+ *   id (用户消息临时 id → 数据库 id 的迁移 — the swap would otherwise flash
+ *   a placeholder frame and jump the content height).
  * @returns Virtualization API: `visibleIds`, `heights`, `register`.
  */
 export const useViewportVirtualization = (
   scrollContainerRef: React.RefObject<HTMLDivElement | null>,
   pinnedIds: ReadonlySet<string>,
   initialVisibleIds?: ReadonlySet<string> | null,
-  newlyPrependedIds?: ReadonlySet<string>,
+  eagerVisibleIds?: ReadonlySet<string>,
 ): ViewportVirtualization => {
   // null = "not yet initialized". While null, every message renders its real
   // content so the first paint is not a wall of empty placeholders. As soon
@@ -143,10 +144,11 @@ export const useViewportVirtualization = (
   // the observer callback; a shallow copy is pushed to state when it changes.
   const intersectingIdsRef = useRef<Set<string>>(new Set());
   // Ids that render real content unconditionally until the observer reports
-  // their first intersection state (freshly prepended pages). Keeps a newly
-  // prepended page from spending frames as 80px placeholders — the paging
-  // scroll-restore correction measures geometry while those frames exist and
-  // under-shifts, then the real content expansion visibly shoves the viewport.
+  // their first intersection state (top-prepended pages and id-migrated
+  // messages). Keeps a newly prepended page from spending frames as 80px
+  // placeholders — the paging scroll-restore correction measures geometry
+  // while those frames exist and under-shifts, then the real content expansion
+  // visibly shoves the viewport.
   const forceVisibleIdsRef = useRef<Set<string>>(new Set());
   // Current pinned ids, kept in a ref so the observer callback (which closes
   // over the ref, not the value) always reads the latest set without being
@@ -187,23 +189,53 @@ export const useViewportVirtualization = (
     });
   }, []);
 
-  // Fold freshly prepended ids into the force-visible set and flush before
-  // paint: the newly prepended page must mount with its real content (layout
-  // effect → synchronous re-render, still pre-paint), not as 80px
-  // placeholders — the paging scroll-restore correction measures geometry
-  // across these commits and a placeholder frame makes it under-shift, after
-  // which the real content expansion visibly shoves the viewport. The
-  // observer's first report for each id removes it from the set, handing
-  // visibility back to the normal intersection logic.
+  // visibleIds 的实时镜像：pinned 补齐 effect 需要在本 commit 内读取最新
+  // 可见集（state 更新尚未提交时不能依赖渲染期的值）。
+  const visibleIdsRef = useRef<ReadonlySet<string> | null>(visibleIds);
+  visibleIdsRef.current = visibleIds;
+
+  // pinnedIds（最新流式消息、待授权消息）语义上"必须始终渲染真实内容"，
+  // 但此前并入可见集的时机只跟随 IntersectionObserver 报告：主线程繁忙
+  // （工具执行刚结束、大量内容更新）时 IO 回调会晚到数帧，pinned 消息先以
+  // 80px 占位符渲染、随后才切换为真实内容，导致高度跳变与入场动画重播
+  // （表现为消息区闪一下）。这里在 pinned 集合变化后立即补齐（paint 前的
+  // layout effect），保证 pinned 消息首帧即真实内容。
   useLayoutEffect(() => {
-    if (!newlyPrependedIds || newlyPrependedIds.size === 0) {
+    const current = visibleIdsRef.current;
+    if (current === null) {
+      // 尚未初始化：所有消息都渲染真实内容，无需补齐。
       return;
     }
-    for (const id of newlyPrependedIds) {
+    let missing = false;
+    for (const id of pinnedIds) {
+      if (!current.has(id)) {
+        missing = true;
+        break;
+      }
+    }
+    if (missing) {
+      flushVisibleIds();
+    }
+  }, [pinnedIds, flushVisibleIds]);
+
+  // Fold eager ids (top-prepended pages, id-migrated messages) into the
+  // force-visible set and flush before paint: they must mount with their real
+  // content (layout effect → synchronous re-render, still pre-paint), not as
+  // 80px placeholders — the paging scroll-restore correction measures geometry
+  // across these commits and a placeholder frame makes it under-shift, after
+  // which the real content expansion visibly shoves the viewport; an
+  // id-migrated message would similarly jump. The observer's first report for
+  // each id removes it from the set, handing visibility back to the normal
+  // intersection logic.
+  useLayoutEffect(() => {
+    if (!eagerVisibleIds || eagerVisibleIds.size === 0) {
+      return;
+    }
+    for (const id of eagerVisibleIds) {
       forceVisibleIdsRef.current.add(id);
     }
     flushVisibleIds();
-  }, [newlyPrependedIds, flushVisibleIds]);
+  }, [eagerVisibleIds, flushVisibleIds]);
 
   // IntersectionObserver callback factory. Kept as a stable function so both
   // the lazy creation path and the container-change path share one impl.

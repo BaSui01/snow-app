@@ -1,6 +1,8 @@
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   AlertCircle,
+  ChevronDown,
+  ChevronRight,
   Circle,
   List,
   Loader2,
@@ -34,11 +36,35 @@ type ParsedMemoryArgs = {
   status?: string;
 };
 
+/** 记忆条目（memory-search 的 results / memory-list 的 items 元素）。 */
+type MemoryListItem = {
+  /** memory_id，用作列表与展开状态 key；缺失时退回「索引-标题」组合。 */
+  key: string;
+  title: string;
+  kind: MemoryKind | null;
+  importance: number | null;
+  tags: string[];
+  content: string;
+};
+
 type ParsedMemoryResult =
-  | { type: "success"; itemCount: number; deleted: boolean; saved: boolean }
+  | {
+      type: "success";
+      items: MemoryListItem[];
+      deleted: boolean;
+      saved: boolean;
+    }
   | { type: "error"; message: string }
   | { type: "raw"; text: string }
   | { type: "empty" };
+
+/** 展开条目时内容摘要的字符上限，超出部分截断。 */
+const CONTENT_PREVIEW_LIMIT = 240;
+
+const previewContent = (content: string): string =>
+  content.length > CONTENT_PREVIEW_LIMIT
+    ? `${content.slice(0, CONTENT_PREVIEW_LIMIT)}…`
+    : content;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -90,6 +116,37 @@ const actionFromName = (name: string): MemoryAction | null => {
   return isValidAction(suffix) ? suffix : null;
 };
 
+/** 解析记忆条目数组：字段名沿用 Rust 侧 serde 序列化结果（snake_case）。 */
+const parseMemoryItems = (raw: unknown[]): MemoryListItem[] => {
+  const items: MemoryListItem[] = [];
+
+  for (const [index, entry] of raw.entries()) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+    const title = typeof entry.title === "string" ? entry.title : "";
+    const content = typeof entry.content === "string" ? entry.content : "";
+    if (!title && !content) {
+      continue;
+    }
+
+    const memoryId = typeof entry.memory_id === "string" ? entry.memory_id : "";
+    items.push({
+      key: memoryId || `${index}-${title}`,
+      title,
+      kind: isValidKind(entry.kind) ? entry.kind : null,
+      importance:
+        typeof entry.importance === "number" ? entry.importance : null,
+      tags: Array.isArray(entry.tags)
+        ? entry.tags.filter((tag): tag is string => typeof tag === "string")
+        : [],
+      content,
+    });
+  }
+
+  return items;
+};
+
 const parseResult = (result: string | undefined): ParsedMemoryResult => {
   if (!result) {
     return { type: "empty" };
@@ -108,23 +165,29 @@ const parseResult = (result: string | undefined): ParsedMemoryResult => {
     // 注意：message 是成功响应也带有的提示文案（save/update/delete/search），
     // 不能据此判定为错误；真实错误统一走 error 字段或 MCP 错误通道。
 
-    const deleted = parsed.deleted === true;
-    const saved = isRecord(parsed.memory);
-    const itemCount = Array.isArray(parsed.items)
-      ? parsed.items.length
-      : Array.isArray(parsed.results)
-        ? parsed.results.length
-        : typeof parsed.todos === "number"
-          ? parsed.todos
-          : 0;
+    // search 返回 results，list 返回 items，两者元素同为 MemoryRecord。
+    const rawList = Array.isArray(parsed.results)
+      ? parsed.results
+      : Array.isArray(parsed.items)
+        ? parsed.items
+        : null;
 
-    if (
-      deleted ||
-      itemCount > 0 ||
-      saved ||
-      typeof parsed.memoryId === "string"
-    ) {
-      return { type: "success", itemCount, deleted, saved };
+    if (rawList) {
+      return {
+        type: "success",
+        items: parseMemoryItems(rawList),
+        deleted: false,
+        saved: false,
+      };
+    }
+
+    if (parsed.deleted === true) {
+      return { type: "success", items: [], deleted: true, saved: false };
+    }
+
+    // save / update 返回单个 memory 对象。
+    if (isRecord(parsed.memory)) {
+      return { type: "success", items: [], deleted: false, saved: true };
     }
 
     return { type: "raw", text: result };
@@ -154,11 +217,42 @@ export const MemoryToolCall = ({
     [toolCall.result],
   );
 
+  // 结果列表（memory-search / memory-list）中已展开条目的 key。
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
+
+  const toggleExpanded = useCallback((key: string): void => {
+    setExpandedKeys((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(key)) {
+        next.add(key);
+      }
+      return next;
+    });
+  }, []);
+
   const isRunning = toolCall.status === "running";
 
   const action = parsedArgs.action ?? actionFromName(toolCall.name) ?? "list";
   const ActionIcon = ACTION_ICON_MAP[action] ?? List;
   const actionLabel = t(`toolCall.memory.action.${action}`);
+
+  const resultItems = parsedResult.type === "success" ? parsedResult.items : [];
+
+  // 结果提示：删除/保存/更新为单条动作反馈；列表为空时提示无匹配。
+  const hintText =
+    parsedResult.type !== "success"
+      ? null
+      : parsedResult.deleted
+        ? t("toolCall.memory.deleted")
+        : parsedResult.saved
+          ? action === "update"
+            ? t("toolCall.memory.updated")
+            : t("toolCall.memory.saved")
+          : resultItems.length === 0
+            ? t("toolCall.memory.empty")
+            : null;
 
   const effectiveStatus =
     parsedResult.type === "error" ? "error" : toolCall.status;
@@ -181,10 +275,10 @@ export const MemoryToolCall = ({
       displayName={summary}
       status={effectiveStatus}
       meta={
-        parsedResult.type === "success" && parsedResult.itemCount > 0 ? (
+        resultItems.length > 0 ? (
           <span className="tool-call-memory-count">
             {t("toolCall.memory.itemCount", {
-              values: { count: parsedResult.itemCount },
+              values: { count: resultItems.length },
             })}
           </span>
         ) : null
@@ -198,18 +292,8 @@ export const MemoryToolCall = ({
             <ActionIcon size={12} aria-hidden="true" />
             {actionLabel}
           </span>
-          {parsedResult.type === "success" ? (
-            <span className="tool-call-memory-hint">
-              {parsedResult.deleted
-                ? t("toolCall.memory.deleted")
-                : parsedResult.itemCount > 0
-                  ? t("toolCall.memory.viewInSidebar")
-                  : parsedResult.saved
-                    ? action === "update"
-                      ? t("toolCall.memory.updated")
-                      : t("toolCall.memory.saved")
-                    : t("toolCall.memory.empty")}
-            </span>
+          {hintText ? (
+            <span className="tool-call-memory-hint">{hintText}</span>
           ) : null}
         </div>
 
@@ -307,6 +391,61 @@ export const MemoryToolCall = ({
             </div>
           ) : null}
         </div>
+
+        {/* Result list (memory-search / memory-list) */}
+        {resultItems.length > 0 ? (
+          <ul className="tool-call-memory-list">
+            {resultItems.map((item) => {
+              const isExpanded = expandedKeys.has(item.key);
+              return (
+                <li className="tool-call-memory-list-item" key={item.key}>
+                  <button
+                    type="button"
+                    className="tool-call-memory-list-head"
+                    aria-expanded={isExpanded}
+                    onClick={() => toggleExpanded(item.key)}
+                  >
+                    {isExpanded ? (
+                      <ChevronDown size={12} aria-hidden="true" />
+                    ) : (
+                      <ChevronRight size={12} aria-hidden="true" />
+                    )}
+                    {item.kind ? (
+                      <span className="tool-call-memory-kind-badge">
+                        {t(`toolCall.memory.kindValue.${item.kind}`)}
+                      </span>
+                    ) : null}
+                    <span
+                      className="tool-call-memory-list-title"
+                      title={item.title}
+                    >
+                      {item.title}
+                    </span>
+                    {item.importance ? (
+                      <span className="tool-call-memory-importance-badge">
+                        {item.importance}
+                      </span>
+                    ) : null}
+                    {item.tags.length > 0 ? (
+                      <span className="tool-call-memory-tags">
+                        {item.tags.map((tag) => (
+                          <code className="tool-call-memory-tag" key={tag}>
+                            {tag}
+                          </code>
+                        ))}
+                      </span>
+                    ) : null}
+                  </button>
+                  {isExpanded && item.content ? (
+                    <p className="tool-call-memory-list-content">
+                      {previewContent(item.content)}
+                    </p>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
 
         {/* Error */}
         {hasError ? (

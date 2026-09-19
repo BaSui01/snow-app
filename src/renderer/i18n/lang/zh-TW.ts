@@ -757,7 +757,6 @@ export const zhTW = {
   "toolCall.memory.saved": "已儲存",
   "toolCall.memory.updated": "已更新",
   "toolCall.memory.empty": "無相符項目",
-  "toolCall.memory.viewInSidebar": "在側邊欄查看完整列表",
   "toolCall.memory.result": "執行結果",
   "toolCall.memory.running": "正在存取記憶...",
   "toolCall.memory.waiting": "等待存取記憶",

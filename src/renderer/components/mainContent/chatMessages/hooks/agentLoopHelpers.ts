@@ -112,7 +112,10 @@ export const remapPersistedUserMessageIds = (
     ctx.updateSessionMessages(sessionKey, (msgs) =>
       msgs.map((m) => {
         const newId = idRemap.get(m.id);
-        return newId ? { ...m, id: newId } : m;
+        // idRemappedFrom：渲染层标记（不持久化），让迁移后的新消息在
+        // ChatMessageList / VirtualizedMessage 中不被当作"首次出现"——
+        // 避免整条消息重新挂载时重播入场动画与占位符高度跳变。
+        return newId ? { ...m, id: newId, idRemappedFrom: m.id } : m;
       }),
     );
   }

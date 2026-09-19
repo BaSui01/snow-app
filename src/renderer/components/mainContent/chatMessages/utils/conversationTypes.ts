@@ -160,6 +160,11 @@ export type ChatConversationMessage = {
    *  Used by rollback to restore the working directory to its pre-AI state. */
   checkpointId?: string;
   isContextCompaction?: boolean;
+  /** 该消息的 id 是从旧 id 迁移来的（首轮响应落库后，用户消息的前端临时
+   *  id 被替换为数据库 id，见 remapPersistedUserMessageIds）。仅为渲染层
+   *  标记：迁移产生的新元素不重播入场动画、且首帧即按真实内容渲染
+   *  （ChatMessageList / VirtualizedMessage）；从不持久化。 */
+  idRemappedFrom?: string;
   /** Hook execution records for this message (e.g. onUserMessage hooks
    *  executed before the message was sent to the AI).  Stored on the user
    *  message so the UI can render what hooks ran and their outcomes. */

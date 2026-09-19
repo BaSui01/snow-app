@@ -1,4 +1,4 @@
-import { memo, useCallback } from "react";
+import { memo, useCallback, useEffect, useRef } from "react";
 import type { ViewportVirtualization } from "../hooks/useViewportVirtualization";
 import { VIRTUAL_PLACEHOLDER_DEFAULT_HEIGHT } from "../hooks/useViewportVirtualization";
 
@@ -30,12 +30,21 @@ type VirtualizedMessageProps = {
   id: string;
   /** Virtualization API from useViewportVirtualization. */
   virtualization: ViewportVirtualization;
+  /** 该消息此前是否已渲染过真实内容（父级判定的既知事实，例如 id 迁移
+   *  后的新元素继承旧元素的渲染状态）。为 true 时本实例即使首次渲染也
+   *  不播放入场动画（见 is-replay）。 */
+  previouslyRendered?: boolean;
   /** The real message content. Only rendered when visible. */
   children: React.ReactNode;
 };
 
 export const VirtualizedMessage = memo(
-  ({ id, virtualization, children }: VirtualizedMessageProps): React.JSX.Element => {
+  ({
+    id,
+    virtualization,
+    previouslyRendered = false,
+    children,
+  }: VirtualizedMessageProps): React.JSX.Element => {
     const { visibleIds, heights, register } = virtualization;
     // visibleIds === null means the IntersectionObserver has not reported yet.
     // Render real content for everyone so the first paint is not a wall of
@@ -44,11 +53,26 @@ export const VirtualizedMessage = memo(
     const isVisible = visibleIds === null || visibleIds.has(id);
     const cachedHeight = heights.get(id);
 
+    // 该消息此前是否已渲染过真实内容：用于区分「首次出现」与「虚拟化回显」。
+    // 回显（占位符 → 真实内容的重新挂载）不重播入场动画（见 wrapper 上的
+    // .is-replay 类与 styles.css 的覆盖规则），避免滚回视口 / 可见集恢复时
+    // 整片消息区看起来在"重刷闪烁"；首次出现仍保留柔和浮现动画。
+    // previouslyRendered 作为初始值：id 迁移（remap）重建的新实例据此
+    // 继承"已渲染过"状态，同样不重播动画。
+    const hasRenderedContentRef = useRef(previouslyRendered);
+    const isReplay = isVisible && hasRenderedContentRef.current;
+
+    useEffect(() => {
+      if (isVisible) {
+        hasRenderedContentRef.current = true;
+      }
+    }, [isVisible]);
+
     const setRef = useCallback(
       (node: HTMLDivElement | null): void => {
         register(id, node);
       },
-      [id, register]
+      [id, register],
     );
 
     if (isVisible) {
@@ -59,7 +83,9 @@ export const VirtualizedMessage = memo(
       // ResizeObserver can measure the true height for future placeholder use.
       return (
         <div
-          className="virtualized-message is-visible"
+          className={`virtualized-message is-visible${
+            isReplay ? " is-replay" : ""
+          }`}
           ref={setRef}
           data-message-id={id}
         >
@@ -72,7 +98,8 @@ export const VirtualizedMessage = memo(
     // scrollbar does not jump when content is unmounted. Using a non-content
     // height here is fine: the real element will remount on scroll-back and
     // immediately measure its true height via the ResizeObserver.
-    const placeholderHeight = cachedHeight ?? VIRTUAL_PLACEHOLDER_DEFAULT_HEIGHT;
+    const placeholderHeight =
+      cachedHeight ?? VIRTUAL_PLACEHOLDER_DEFAULT_HEIGHT;
     return (
       <div
         className="virtualized-message is-placeholder"
@@ -82,7 +109,7 @@ export const VirtualizedMessage = memo(
         aria-hidden="true"
       />
     );
-  }
+  },
 );
 
 VirtualizedMessage.displayName = "VirtualizedMessage";

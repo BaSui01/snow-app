@@ -551,32 +551,48 @@ export const ChatMessageList = ({
     return ids;
   }, [messages, pinnedIds]);
 
-  // 翻页（loadOlder）往顶部插入的新消息前缀：比较本次与上次渲染的首条
-  // 消息 id 得出。传给虚拟化 hook，让新页在 IO 首批报告前就以真实内容
-  // 挂载（见 useViewportVirtualization 的 forceVisible 机制）——若新页
-  // 先以 80px 占位符存在，ChatContent 的翻页滚动恢复按占位符几何校正必
-  // 然偏小，新内容涌入后再把视口内容往下挤，观感就是「被挤下去」。
-  const [newlyPrependedIds, setNewlyPrependedIds] = useState<
-    ReadonlySet<string>
-  >(() => new Set<string>());
-  const prevFirstMessageIdRef = useRef<string | undefined>(undefined);
+  // eager 可见集：传给虚拟化 hook，让这些消息在 IntersectionObserver 首批
+  // 报告前就以真实内容挂载（见 useViewportVirtualization 的 forceVisible
+  // 机制）。两类来源：
+  // 1) 翻页（loadOlder）往顶部插入的新消息前缀——若新页先以 80px 占位符
+  //    存在，ChatContent 的翻页滚动恢复按占位符几何校正必然偏小，新内容
+  //    涌入后再把视口内容往下挤，观感就是「被挤下去」；
+  // 2) id 迁移的消息（首轮响应落库后用户消息的临时 id 被替换为数据库 id，
+  //    见 remapPersistedUserMessageIds）：旧元素卸载、新元素挂载，若不在
+  //    eager 集合中会先以占位符渲染一帧再切换，表现为内容跳变。
+  // 判定基准是「与上一轮消息 id 集合的差集」：顶部连续新增段 + 带
+  // idRemappedFrom 标记的新 id。id 被替换（而非真正新增）的消息不会把全部
+  // 历史消息误判成"顶部新增"（旧实现以首条 id 变化为信号，remap 命中首条
+  // 时会一路遍历到表尾、收集整表 id，导致全量强制可见）。
+  const [eagerVisibleIds, setEagerVisibleIds] = useState<ReadonlySet<string>>(
+    () => new Set<string>(),
+  );
+  const prevMessageIdsRef = useRef<ReadonlySet<string> | null>(null);
   useLayoutEffect(() => {
-    const prevFirst = prevFirstMessageIdRef.current;
-    prevFirstMessageIdRef.current = messages[0]?.id;
-    if (
-      prevFirst === undefined ||
-      messages.length === 0 ||
-      messages[0].id === prevFirst
-    ) {
+    if (messages.length === 0) {
       return;
     }
-    const ids = new Set<string>();
-    for (const message of messages) {
-      if (message.id === prevFirst) break;
-      ids.add(message.id);
+    const prevMessageIds = prevMessageIdsRef.current;
+    prevMessageIdsRef.current = new Set(messages.map((message) => message.id));
+    // 首次挂载不产出 eager 集合：初始窗口由 initialVisibleIds 控制，
+    // 全量 eager 会废掉大会话首帧的虚拟化优化。
+    if (prevMessageIds === null) {
+      return;
     }
-    if (ids.size > 0) {
-      setNewlyPrependedIds(ids);
+    const eager = new Set<string>();
+    for (const message of messages) {
+      if (message.idRemappedFrom && !prevMessageIds.has(message.id)) {
+        eager.add(message.id);
+      }
+    }
+    for (const message of messages) {
+      if (prevMessageIds.has(message.id)) {
+        break;
+      }
+      eager.add(message.id);
+    }
+    if (eager.size > 0) {
+      setEagerVisibleIds(eager);
     }
   }, [messages]);
 
@@ -584,7 +600,7 @@ export const ChatMessageList = ({
     scrollContainerRef,
     pinnedIds,
     initialVisibleIds,
-    newlyPrependedIds,
+    eagerVisibleIds,
   );
 
   // Intermediate status card shown while the backend describes user images
@@ -671,6 +687,7 @@ export const ChatMessageList = ({
         id={message.id}
         key={message.id}
         virtualization={virtualization}
+        previouslyRendered={Boolean(message.idRemappedFrom)}
       >
         <div className={className} data-message-index={index}>
           <MessageContent

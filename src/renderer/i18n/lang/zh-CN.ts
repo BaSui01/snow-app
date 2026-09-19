@@ -756,7 +756,6 @@ export const zhCN = {
   "toolCall.memory.saved": "已保存",
   "toolCall.memory.updated": "已更新",
   "toolCall.memory.empty": "无匹配项",
-  "toolCall.memory.viewInSidebar": "在侧边栏查看完整列表",
   "toolCall.memory.result": "执行结果",
   "toolCall.memory.running": "正在访问记忆...",
   "toolCall.memory.waiting": "等待访问记忆",

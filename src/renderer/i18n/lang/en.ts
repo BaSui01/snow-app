@@ -796,7 +796,6 @@ export const en = {
   "toolCall.memory.saved": "Saved",
   "toolCall.memory.updated": "Updated",
   "toolCall.memory.empty": "No items",
-  "toolCall.memory.viewInSidebar": "View full list in sidebar",
   "toolCall.memory.result": "Result",
   "toolCall.memory.running": "Accessing memory...",
   "toolCall.memory.waiting": "Waiting to access memory",

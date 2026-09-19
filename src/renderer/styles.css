@@ -8793,6 +8793,12 @@ input {
   gap: 16px;
 }
 
+/* 用户消息定位遮罩与 .chat-area 共用内容宽度梯度（骨架屏与消息列同宽）。
+   基础值在此，视口断点梯度见上方的 @media 段。 */
+.user-message-locate-overlay {
+  --chat-content-max: 720px;
+}
+
 .chat-area::-webkit-scrollbar {
   width: 8px;
 }
@@ -8827,31 +8833,36 @@ input {
    ≥1920px（2K/带鱼屏）      1240px
    ≥2560px（4K/超宽）        1400px —— 并行生图画廊 4 列每格 ~330px */
 @media (min-width: 1024px) {
-  .chat-area {
+  .chat-area,
+  .user-message-locate-overlay {
     --chat-content-max: 860px;
   }
 }
 
 @media (min-width: 1280px) {
-  .chat-area {
+  .chat-area,
+  .user-message-locate-overlay {
     --chat-content-max: 1000px;
   }
 }
 
 @media (min-width: 1440px) {
-  .chat-area {
+  .chat-area,
+  .user-message-locate-overlay {
     --chat-content-max: 1120px;
   }
 }
 
 @media (min-width: 1920px) {
-  .chat-area {
+  .chat-area,
+  .user-message-locate-overlay {
     --chat-content-max: 1240px;
   }
 }
 
 @media (min-width: 2560px) {
-  .chat-area {
+  .chat-area,
+  .user-message-locate-overlay {
     --chat-content-max: 1400px;
   }
 }
@@ -9232,6 +9243,31 @@ input {
 
 .user-message-rail-popover-item-text .user-message-file-chip {
   max-width: 180px;
+}
+
+/* ===== 用户消息定位遮罩 =====
+   目标消息还压在未加载的分页里时，定位全程给 .chat-area 挂上
+   .is-locating-message：消息列表只隐藏绘制（不影响布局与 rect，翻页锚点校正
+   和目标的 scrollIntoView 照常工作），这层骨架屏盖在滚动容器的位置上接管
+   视觉——翻页期间的轻微抖动与最后一帧的瞬间跳转都不会被看到。
+   隐藏用 opacity 而非 visibility：消息树里有显式声明 visibility: visible 的
+   子节点（如折叠展开的 .tcg-collapse.is-open），会把父级的 visibility: hidden
+   漏穿；opacity 整棵子树一起生效，子节点无从抵消。 */
+.chat-area.is-locating-message .chat-message-list {
+  opacity: 0;
+}
+
+/* 坐标由 JS 按滚动容器的视口矩形写入（见 UserMessageRail），此处只负责铺满
+   该矩形并把骨架屏垂直居中。期间吞掉消息区的点击：内容不可见时不应还能点到
+   里面（输入区不在遮罩范围内，仍可正常使用）。与 .chat-area 共用
+   --chat-content-max 梯度，保证骨架屏与消息列同宽。 */
+.user-message-locate-overlay {
+  position: fixed;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  -webkit-app-region: no-drag;
 }
 
 .chat-scroll-to-bottom {
@@ -10994,8 +11030,9 @@ input {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  /* 新消息挂载时柔和浮现，替代瞬间跳变（虚拟化消息滚回视口重挂载时
-     同样播放，作为内容重建的轻量视觉提示）。 */
+  /* 消息首次挂载时柔和浮现，替代瞬间跳变。虚拟化回显（滚回视口的重新
+     挂载）由 .virtualized-message.is-replay 抑制动画（见下方规则），
+     避免内容重建时整片消息区闪烁。 */
   animation: chat-enter 0.18s ease-out both;
 }
 
@@ -11036,6 +11073,16 @@ input {
   /* Height is set inline by VirtualizedMessage based on the last measured
      value. Keep the node paint-cheap: no background, no children. */
   contain: strict;
+}
+
+/* 虚拟化回显（滚回视口 / 可见集恢复导致的重新挂载）：不重播入场动画，
+   避免消息内容重建时整片区域闪烁。消息的首次出现仍播放 chat-enter。 */
+.virtualized-message.is-replay > .chat-message-group,
+.virtualized-message.is-replay .tcg,
+.virtualized-message.is-replay .tcn,
+.virtualized-message.is-replay .response-incomplete-notice,
+.virtualized-message.is-replay .ai-response-actions {
+  animation: none;
 }
 
 /* Tool-role messages render nothing but must keep a stable React key. */
@@ -46513,4 +46560,66 @@ pre.file-viewer-code {
 
 .tool-call-memory-pending-running {
   color: var(--accent);
+}
+
+.tool-call-memory-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.tool-call-memory-list-item {
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+}
+
+.tool-call-memory-list-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.tool-call-memory-list-head:hover {
+  background: var(--bg-active);
+}
+
+.tool-call-memory-list-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-call-memory-list-head .tool-call-memory-tags {
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  max-width: 45%;
+  overflow: hidden;
+}
+
+.tool-call-memory-list-content {
+  margin: 0;
+  padding: 2px 8px 6px 24px;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--text-tertiary);
+  white-space: pre-wrap;
+  word-break: break-word;
 }

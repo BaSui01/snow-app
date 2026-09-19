@@ -31,6 +31,9 @@ const requiredExports = [
   "migrateCheckpointLayout",
   "listChatMessagesPaginated",
   "cancelRunningSubAgentSessions",
+  // 本地数据清理（设置 → 存储与资源 → 数据清理）
+  "scanCleanup",
+  "deleteCleanupData",
   // LSP 服务器配置与会话状态（配置中心 / 状态徽章轮询）
   "listLspServerConfigs",
   "upsertLspServerConfig",

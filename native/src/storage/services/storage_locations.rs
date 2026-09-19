@@ -15,7 +15,7 @@ const UPLOAD_DIR_SETTING_CODE: &str = "upload_dir";
 const CHECKPOINT_DIR_NAME: &str = "checkpoints";
 const UPLOAD_DIR_NAME: &str = "upload";
 /// checkpoint 根目录下的纯临时目录（工具执行期间的快照），迁移时跳过。
-const PENDING_DIR_NAME: &str = "pending";
+pub(crate) const PENDING_DIR_NAME: &str = "pending";
 
 const CHECKPOINT_MIGRATION_JOURNAL_FILE: &str = ".snow-checkpoint-migration.json";
 const UPLOAD_MIGRATION_JOURNAL_FILE: &str = ".snow-upload-migration.json";

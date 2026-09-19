@@ -1027,6 +1027,49 @@ export type MemoryOptimizeResult = {
   bytesAfter: number;
 };
 
+/** 数据清理：可清理的分类 id（与 Rust 侧 cleanup 服务一一对应） */
+export type CleanupCategoryId =
+  | "checkpoints"
+  | "upload"
+  | "imageLibrary"
+  | "backgrounds"
+  | "pets"
+  | "browserState"
+  | "appLogs";
+
+/** 数据清理：单个时间档位（早于 N 天）可清理的数据量 */
+export type CleanupAgeBucket = {
+  days: number;
+  files: number;
+  bytes: number;
+};
+
+/** 数据清理：单个分类的扫描结果 */
+export type CleanupCategoryStats = {
+  id: CleanupCategoryId;
+  files: number;
+  bytes: number;
+  /** 与请求的 daysList 顺序一致：早于各天数档位可清理的数据量 */
+  ageBuckets: CleanupAgeBucket[];
+};
+
+/** 数据清理：一次扫描的完整结果 */
+export type CleanupScanResult = {
+  categories: CleanupCategoryStats[];
+  totalFiles: number;
+  totalBytes: number;
+};
+
+/** 数据清理：删除结果 */
+export type CleanupDeleteResult = {
+  deletedFiles: number;
+  deletedBytes: number;
+  /** 被整体移除的顶层条目数（文件或目录） */
+  removedTargets: number;
+  /** 删除失败的信息（最多 20 条） */
+  errors: string[];
+};
+
 export type UserMessageSummary = {
   id: string;
   content: string;
@@ -2607,6 +2650,13 @@ export type NativeBridge = {
   repairDatabase: (kind: DatabaseKind) => Promise<DatabaseRepairResult>;
   /** 优化数据库磁盘占用（runtime=运行库 / archive=归档库）：VACUUM 回收空闲页并截断 WAL */
   optimizeDatabase: (kind: DatabaseKind) => Promise<DatabaseOptimizeResult>;
+  /** 扫描本地数据分类的占用（daysList 为需要一并统计的天数档位，如 [7,15,30,90]） */
+  scanCleanup: (daysList: number[]) => Promise<CleanupScanResult>;
+  /** 删除选中的清理分类数据（maxAgeDays=0 表示删除分类目录下的全部内容） */
+  deleteCleanupData: (
+    categories: CleanupCategoryId[],
+    maxAgeDays: number,
+  ) => Promise<CleanupDeleteResult>;
   /** 探测本机浏览器（Chrome/Edge/Chromium/Firefox）及其配置文件与数据量 */
   browserImportListSources: () => Promise<BrowserImportSource[]>;
   /** 解密并导出指定浏览器配置文件的已保存密码（明文，仅供主进程加密落盘） */

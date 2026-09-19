@@ -1,5 +1,8 @@
 import { BrowserWindow, dialog, ipcMain, shell } from "electron";
 import type {
+  CleanupCategoryId,
+  CleanupDeleteResult,
+  CleanupScanResult,
   DatabaseKind,
   DatabaseOptimizeResult,
   DatabaseRepairResult,
@@ -10,6 +13,21 @@ import type {
 
 const isStorageLocationKind = (value: unknown): value is StorageLocationKind =>
   value === "checkpoint" || value === "upload";
+
+/** 数据清理分类 id（与 Rust 侧 cleanup 服务保持一致） */
+const CLEANUP_CATEGORY_IDS: readonly CleanupCategoryId[] = [
+  "checkpoints",
+  "upload",
+  "imageLibrary",
+  "backgrounds",
+  "pets",
+  "browserState",
+  "appLogs",
+];
+
+const isCleanupCategoryId = (value: unknown): value is CleanupCategoryId =>
+  typeof value === "string" &&
+  (CLEANUP_CATEGORY_IDS as readonly string[]).includes(value);
 
 /**
  * 存储位置（数据库 / 检查点 / 上传图片）IPC。
@@ -22,6 +40,8 @@ const isStorageLocationKind = (value: unknown): value is StorageLocationKind =>
  * - `storage:dir-set`：设置 checkpoint / upload 自定义目录
  * - `storage:migrate-prepare / -chunk / -commit / -rollback`：更换目录时的
  *   迁移流程（与图库迁移一致的 prepare → 分批复制 → commit / rollback）
+ * - `storage:cleanup-scan`：扫描本地数据分类的占用与各时间档位可清理量
+ * - `storage:cleanup-delete`：删除选中的清理分类数据（Rust 侧执行）
  */
 export const registerStorageHandlers = (native: NativeBridge): void => {
   ipcMain.handle("storage:get-locations", async (): Promise<unknown> => {
@@ -166,6 +186,48 @@ export const registerStorageHandlers = (native: NativeBridge): void => {
       // Rust 端在 spawn_blocking 中执行 VACUUM + WAL 截断，
       // 不会阻塞主进程；参数校验后直接转发。
       return native.optimizeDatabase(kind as DatabaseKind);
+    },
+  );
+
+  ipcMain.handle(
+    "storage:cleanup-scan",
+    async (_event, daysList: unknown): Promise<CleanupScanResult> => {
+      // Rust 端在 spawn_blocking 中遍历磁盘统计占用，不阻塞主进程。
+      const days = Array.isArray(daysList)
+        ? daysList
+            .filter(
+              (value): value is number =>
+                typeof value === "number" &&
+                Number.isFinite(value) &&
+                value > 0,
+            )
+            .map((value) => Math.floor(value))
+        : [];
+      return native.scanCleanup(days);
+    },
+  );
+
+  ipcMain.handle(
+    "storage:cleanup-delete",
+    async (
+      _event,
+      categories: unknown,
+      maxAgeDays: unknown,
+    ): Promise<CleanupDeleteResult> => {
+      const selected = Array.isArray(categories)
+        ? categories.filter(isCleanupCategoryId)
+        : [];
+      if (selected.length === 0) {
+        throw new Error("No valid cleanup category selected");
+      }
+      // maxAgeDays = 0 表示不限制时间（删除分类目录下的全部内容）
+      const days =
+        typeof maxAgeDays === "number" &&
+        Number.isFinite(maxAgeDays) &&
+        maxAgeDays > 0
+          ? Math.floor(maxAgeDays)
+          : 0;
+      return native.deleteCleanupData(selected, days);
     },
   );
 };

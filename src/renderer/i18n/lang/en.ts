@@ -2836,6 +2836,52 @@ export const en = {
   "settings.resourceClearCacheConfirm":
     "Cached app network resources will be cleared and the interface will reload. Sign-in state and local data are kept. Continue?",
   "settings.resourceClearCacheConfirmBtn": "Clear and reload",
+  "settings.cleanupTitle": "Data cleanup",
+  "settings.cleanupInfo":
+    "Scan local data by category and delete what you no longer need within a time range.",
+  "settings.cleanupScanning": "Scanning...",
+  "settings.cleanupTotal": "{{size}} total",
+  "settings.cleanupNoData": "No local data to clean up.",
+  "settings.cleanupAgeFilter": "Time range",
+  "settings.cleanupAgeAll": "Any time",
+  "settings.cleanupAgeOlderThan": "Older than {{days}} days",
+  "settings.cleanupSelected": "{{count}} selected",
+  "settings.cleanupSelectHint": "Select the categories you want to clean up.",
+  "settings.cleanupSelectAll": "Select all",
+  "settings.cleanupSelectNone": "Clear selection",
+  "settings.cleanupWillFree": "Will delete {{files}} file(s) and free {{size}}",
+  "settings.cleanupDelete": "Delete selected",
+  "settings.cleanupDeleting": "Cleaning...",
+  "settings.cleanupRescan": "Rescan",
+  "settings.cleanupCategorySize": "{{files}} files · {{size}}",
+  "settings.cleanupCategoryEmpty": "Empty",
+  "settings.cleanupConfirmTitle": "Delete data",
+  "settings.cleanupConfirmMessage":
+    "This permanently deletes {{files}} file(s) ({{size}}) from {{count}} selected categories — {{range}}. This cannot be undone.",
+  "settings.cleanupConfirmBtn": "Delete",
+  "settings.cleanupDone":
+    "Cleanup finished: deleted {{files}} file(s) and freed {{size}}",
+  "settings.cleanupDoneWithErrors":
+    "Cleanup finished: deleted {{files}} file(s) and freed {{size}}; {{errors}} item(s) failed",
+  "settings.cleanupCategoryCheckpoints": "Checkpoint snapshots",
+  "settings.cleanupCategoryCheckpointsInfo":
+    "File snapshots used for code rollback (in-flight temporary snapshots excluded).",
+  "settings.cleanupCategoryUpload": "Uploaded attachments",
+  "settings.cleanupCategoryUploadInfo":
+    "Images and files uploaded in conversations.",
+  "settings.cleanupCategoryImageLibrary": "Image library",
+  "settings.cleanupCategoryImageLibraryInfo":
+    "Images generated and saved in the image library.",
+  "settings.cleanupCategoryBackgrounds": "Theme backgrounds",
+  "settings.cleanupCategoryBackgroundsInfo":
+    "Background images used by custom themes.",
+  "settings.cleanupCategoryPets": "Pet resources",
+  "settings.cleanupCategoryPetsInfo": "Installed desktop pet packages.",
+  "settings.cleanupCategoryBrowserState": "Browser state",
+  "settings.cleanupCategoryBrowserStateInfo":
+    "Sign-in snapshots and history backups of the built-in browser.",
+  "settings.cleanupCategoryAppLogs": "App logs",
+  "settings.cleanupCategoryAppLogsInfo": "Runtime log files under ~/.snow/log.",
   "settings.generalSettingsClosePanel": "Close general settings",
   "settings.attachContextTitle": "Conversation context injection",
   "settings.attachContextInfo":

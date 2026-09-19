@@ -18,7 +18,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { localeLabels, useI18n, type Locale } from "../../i18n";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { ConfirmDialog } from "../common/ConfirmDialog";
@@ -34,11 +34,14 @@ import {
   normalizeCloseBehavior,
   type CloseBehavior,
 } from "../../constants/closeBehavior";
-import type { UpdateStatus } from "../../../preload";
 import type {
+  CleanupCategoryId,
+  CleanupCategoryStats,
+  CleanupScanResult,
   DatabaseKind,
   StorageLocationKind,
   StorageLocations,
+  UpdateStatus,
 } from "../../../preload";
 
 const INITIAL_UPDATE_STATUS: UpdateStatus = {
@@ -57,6 +60,57 @@ type CheckHint = "up-to-date" | "error" | null;
 
 // 可迁移的存储位置（checkpoint / upload）
 const STORAGE_KINDS: StorageLocationKind[] = ["checkpoint", "upload"];
+
+// 数据清理：分类展示顺序（与 Rust 侧 cleanup 服务保持一致）
+const CLEANUP_CATEGORY_IDS: CleanupCategoryId[] = [
+  "checkpoints",
+  "upload",
+  "imageLibrary",
+  "backgrounds",
+  "pets",
+  "browserState",
+  "appLogs",
+];
+
+/** 数据清理：分类的文案 key（标题 / 说明） */
+const CLEANUP_CATEGORY_TEXT: Record<
+  CleanupCategoryId,
+  { label: string; description: string }
+> = {
+  checkpoints: {
+    label: "settings.cleanupCategoryCheckpoints",
+    description: "settings.cleanupCategoryCheckpointsInfo",
+  },
+  upload: {
+    label: "settings.cleanupCategoryUpload",
+    description: "settings.cleanupCategoryUploadInfo",
+  },
+  imageLibrary: {
+    label: "settings.cleanupCategoryImageLibrary",
+    description: "settings.cleanupCategoryImageLibraryInfo",
+  },
+  backgrounds: {
+    label: "settings.cleanupCategoryBackgrounds",
+    description: "settings.cleanupCategoryBackgroundsInfo",
+  },
+  pets: {
+    label: "settings.cleanupCategoryPets",
+    description: "settings.cleanupCategoryPetsInfo",
+  },
+  browserState: {
+    label: "settings.cleanupCategoryBrowserState",
+    description: "settings.cleanupCategoryBrowserStateInfo",
+  },
+  appLogs: {
+    label: "settings.cleanupCategoryAppLogs",
+    description: "settings.cleanupCategoryAppLogsInfo",
+  },
+};
+
+/** 数据清理：可选的「早于 N 天」档位 */
+const CLEANUP_DAY_OPTIONS = [7, 15, 30, 90];
+/** 数据清理：不限制时间的档位值 */
+const CLEANUP_AGE_ALL = "0";
 
 // 会话上下文注入预算（与 Rust native 侧 context_attachments.rs 保持一致）
 const ATTACH_CONTEXT_SINGLE_BUDGET_SETTING =
@@ -160,6 +214,26 @@ export function GeneralSettingsPanel({
   const [isClearingCache, setIsClearingCache] = useState(false);
   /** 待确认清空应用缓存（true 表示弹窗打开） */
   const [pendingClearCache, setPendingClearCache] = useState(false);
+
+  // 数据清理（扫描各分类占用后由用户勾选删除）
+  /** 扫描结果（null 表示尚未扫描） */
+  const [cleanupScan, setCleanupScan] = useState<CleanupScanResult | null>(
+    null,
+  );
+  /** 扫描进行中 */
+  const [cleanupScanning, setCleanupScanning] = useState(false);
+  /** 勾选待清理的分类 */
+  const [cleanupSelected, setCleanupSelected] = useState<CleanupCategoryId[]>(
+    [],
+  );
+  /** 时间档位（CLEANUP_AGE_ALL 表示不限制时间） */
+  const [cleanupAgeDays, setCleanupAgeDays] = useState(CLEANUP_AGE_ALL);
+  /** 待确认清理（true 表示弹窗打开） */
+  const [pendingCleanup, setPendingCleanup] = useState(false);
+  /** 清理进行中 */
+  const [isCleaningUp, setIsCleaningUp] = useState(false);
+  /** 最近一次清理完成的提示（空字符串表示无） */
+  const [cleanupHint, setCleanupHint] = useState("");
   /** 用户请求取消迁移（chunk 循环之间检查） */
   const migrationCancelledRef = useRef(false);
   /** 组件卸载时若迁移仍进行中，触发回滚 */
@@ -747,6 +821,137 @@ export function GeneralSettingsPanel({
     }
   };
 
+  /** 扫描本地数据占用：进入「存储与资源」页与手动刷新时调用（Rust 侧单次遍历）。 */
+  const runCleanupScan = useCallback(async (): Promise<void> => {
+    setCleanupScanning(true);
+    try {
+      const result = await window.snow.scanCleanup(CLEANUP_DAY_OPTIONS);
+      setCleanupScan(result);
+      // 清掉已无数据的分类勾选，避免出现「选中但删不出东西」
+      setCleanupSelected((prev) =>
+        prev.filter((id) =>
+          result.categories.some(
+            (category) => category.id === id && category.files > 0,
+          ),
+        ),
+      );
+    } catch (error) {
+      setStorageError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setCleanupScanning(false);
+    }
+  }, []);
+
+  // 切到「存储与资源」页时扫描一次（每次切回都会重新扫描，保证数字新鲜）
+  useEffect(() => {
+    if (activeTab === "storage") {
+      void runCleanupScan();
+    }
+  }, [activeTab, runCleanupScan]);
+
+  /** 勾选 / 取消勾选某个清理分类。 */
+  const toggleCleanupCategory = (id: CleanupCategoryId): void => {
+    setCleanupSelected((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    );
+  };
+
+  /** 已扫描出数据的分类 id（决定全选按钮可用性与空状态）。 */
+  const cleanupAvailableIds = (cleanupScan?.categories ?? [])
+    .filter((category) => category.files > 0)
+    .map((category) => category.id);
+
+  /** 一键全选 / 取消全选有数据的分类。 */
+  const toggleCleanupSelectAll = (): void => {
+    setCleanupSelected((prev) =>
+      prev.length === cleanupAvailableIds.length ? [] : cleanupAvailableIds,
+    );
+  };
+
+  /** 本次实际会删除的数据量：勾选分类 ∩ 时间档位。 */
+  const cleanupPlan = useMemo(() => {
+    const days = Number.parseInt(cleanupAgeDays, 10);
+    const limited = Number.isFinite(days) && days > 0;
+    return (cleanupScan?.categories ?? [])
+      .filter((category) => cleanupSelected.includes(category.id))
+      .reduce(
+        (plan, category) => {
+          const target = limited
+            ? (category.ageBuckets.find((bucket) => bucket.days === days) ?? {
+                files: 0,
+                bytes: 0,
+              })
+            : category;
+          plan.files += target.files;
+          plan.bytes += target.bytes;
+          return plan;
+        },
+        { files: 0, bytes: 0 },
+      );
+  }, [cleanupAgeDays, cleanupScan, cleanupSelected]);
+
+  /** 时间档位的展示文案（确认弹窗与提示共用）。 */
+  const cleanupAgeLabel =
+    cleanupAgeDays === CLEANUP_AGE_ALL
+      ? t("settings.cleanupAgeAll", { defaultValue: "Any time" })
+      : t("settings.cleanupAgeOlderThan", {
+          values: { days: cleanupAgeDays },
+          defaultValue: `Older than ${cleanupAgeDays} days`,
+        });
+
+  /** 执行清理：删除勾选分类中早于所选档位的数据（不限时间档位则删除全部）。 */
+  const confirmCleanup = async (): Promise<void> => {
+    if (cleanupSelected.length === 0 || isCleaningUp) {
+      return;
+    }
+    const days = Number.parseInt(cleanupAgeDays, 10);
+    const maxAgeDays = Number.isFinite(days) && days > 0 ? days : 0;
+    setPendingCleanup(false);
+    setIsCleaningUp(true);
+    setStorageError("");
+    setRepairHint("");
+    setOptimizeHint("");
+    setCleanupHint("");
+    try {
+      const result = await window.snow.deleteCleanupData(
+        cleanupSelected,
+        maxAgeDays,
+      );
+      setCleanupSelected([]);
+      setCleanupHint(
+        result.errors.length > 0
+          ? t("settings.cleanupDoneWithErrors", {
+              values: {
+                files: result.deletedFiles,
+                size: formatBytes(result.deletedBytes),
+                errors: result.errors.length,
+              },
+              defaultValue:
+                `Deleted ${result.deletedFiles} file(s) and freed ` +
+                `${formatBytes(result.deletedBytes)}; ` +
+                `${result.errors.length} item(s) failed`,
+            })
+          : t("settings.cleanupDone", {
+              values: {
+                files: result.deletedFiles,
+                size: formatBytes(result.deletedBytes),
+              },
+              defaultValue:
+                `Deleted ${result.deletedFiles} file(s) and freed ` +
+                `${formatBytes(result.deletedBytes)}`,
+            }),
+      );
+      await runCleanupScan();
+      if (locations) {
+        void refreshPathSizes(locations, imageLibraryRoot);
+      }
+    } catch (error) {
+      setStorageError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsCleaningUp(false);
+    }
+  };
+
   /** 渲染某个数据库的「修复」按钮（kind 区分运行库 / 归档库）。 */
   const renderRepairButton = (kind: DatabaseKind): React.JSX.Element => {
     const isRepairing = repairingDb === kind;
@@ -778,6 +983,50 @@ export function GeneralSettingsPanel({
               })}
         </span>
       </button>
+    );
+  };
+
+  /** 渲染单个可清理分类的勾选行（勾选状态、文件数与占用大小）。 */
+  const renderCleanupCategoryRow = (
+    category: CleanupCategoryStats,
+  ): React.JSX.Element => {
+    const text = CLEANUP_CATEGORY_TEXT[category.id];
+    const isEmpty = category.files === 0;
+    const checked = cleanupSelected.includes(category.id);
+    const label = t(text.label, { defaultValue: category.id });
+    return (
+      <div className="general-storage-row" key={category.id}>
+        <div className="general-storage-info">
+          <label className="cleanup-category-check" title={label}>
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={() => toggleCleanupCategory(category.id)}
+              disabled={isEmpty || isCleaningUp || cleanupScanning}
+            />
+            <span className="cleanup-category-box" aria-hidden="true" />
+          </label>
+          <div className="general-storage-text">
+            <span className="general-storage-label">{label}</span>
+            <span className="settings-item-description">
+              {t(text.description, { defaultValue: "" })}
+            </span>
+          </div>
+        </div>
+        <div className="general-storage-actions">
+          <span className="general-storage-size">
+            {isEmpty
+              ? t("settings.cleanupCategoryEmpty", { defaultValue: "Empty" })
+              : t("settings.cleanupCategorySize", {
+                  values: {
+                    files: category.files,
+                    size: formatBytes(category.bytes),
+                  },
+                  defaultValue: "{{files}} files · {{size}}",
+                })}
+          </span>
+        </div>
+      </div>
     );
   };
 
@@ -895,6 +1144,7 @@ export function GeneralSettingsPanel({
           storageError ||
           repairHint ||
           optimizeHint ||
+          cleanupHint ||
           (checkHint === "up-to-date"
             ? t("settings.upToDate", { defaultValue: "You're up to date" })
             : checkHint === "error"
@@ -908,6 +1158,7 @@ export function GeneralSettingsPanel({
           setStorageError("");
           setRepairHint("");
           setOptimizeHint("");
+          setCleanupHint("");
           setCheckHint(null);
         }}
       />
@@ -1207,6 +1458,237 @@ export function GeneralSettingsPanel({
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 数据清理：扫描各分类占用，按分类 + 时间档位选择性删除 */}
+      {activeTab === "storage" && (
+        <div className="api-settings-manual-form">
+          <div className="api-settings-manual-header">
+            <strong>
+              {t("settings.cleanupTitle", { defaultValue: "Data cleanup" })}
+            </strong>
+            <span>
+              {t("settings.cleanupInfo", {
+                defaultValue:
+                  "Scan local data by category, then delete only the items you select.",
+              })}
+              {cleanupScan !== null
+                ? ` · ${t("settings.cleanupTotal", {
+                    values: { size: formatBytes(cleanupScan.totalBytes) },
+                    defaultValue: `Total ${formatBytes(cleanupScan.totalBytes)}`,
+                  })}`
+                : ""}
+            </span>
+          </div>
+
+          <div className="api-settings-form-body">
+            {/* 首次扫描中：占位提示（已有结果时保留旧数据，避免闪烁） */}
+            {cleanupScan === null && cleanupScanning && (
+              <div className="general-storage-row">
+                <div className="general-storage-info">
+                  <LoaderCircle
+                    size={14}
+                    strokeWidth={1.8}
+                    className="general-storage-icon tool-call-icon-spinning"
+                    aria-hidden="true"
+                  />
+                  <div className="general-storage-text">
+                    <span className="general-storage-label">
+                      {t("settings.cleanupScanning", {
+                        defaultValue: "Scanning...",
+                      })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {cleanupScan !== null && (
+              <>
+                {/* 分类列表：勾选参与清理的分类 */}
+                {CLEANUP_CATEGORY_IDS.map((id) => {
+                  const category = cleanupScan.categories.find(
+                    (item) => item.id === id,
+                  );
+                  return category ? renderCleanupCategoryRow(category) : null;
+                })}
+
+                {cleanupAvailableIds.length === 0 && (
+                  <div className="general-storage-row">
+                    <div className="general-storage-info">
+                      <div className="general-storage-text">
+                        <span className="settings-item-description">
+                          {t("settings.cleanupNoData", {
+                            defaultValue: "No local data to clean up.",
+                          })}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 时间档位：只删除早于该档位修改的文件 */}
+                <div className="settings-about-row">
+                  <span className="settings-item-description">
+                    {t("settings.cleanupAgeFilter", {
+                      defaultValue: "Time range",
+                    })}
+                  </span>
+                  <div className="settings-close-behavior-select">
+                    <CustomSelect
+                      value={cleanupAgeDays}
+                      options={[
+                        {
+                          value: CLEANUP_AGE_ALL,
+                          label: t("settings.cleanupAgeAll", {
+                            defaultValue: "Any time",
+                          }),
+                        },
+                        ...CLEANUP_DAY_OPTIONS.map((days) => ({
+                          value: String(days),
+                          label: t("settings.cleanupAgeOlderThan", {
+                            values: { days },
+                            defaultValue: `Older than ${days} days`,
+                          }),
+                        })),
+                      ]}
+                      onChange={setCleanupAgeDays}
+                      disabled={isCleaningUp || cleanupScanning}
+                    />
+                  </div>
+                </div>
+
+                {/* 选中汇总 + 全选 / 清理 / 重新扫描 */}
+                <div className="general-storage-row">
+                  <div className="general-storage-info">
+                    <Trash2
+                      size={14}
+                      strokeWidth={1.8}
+                      className="general-storage-icon"
+                      aria-hidden="true"
+                    />
+                    <div className="general-storage-text">
+                      <span className="general-storage-label">
+                        {t("settings.cleanupSelected", {
+                          values: { count: cleanupSelected.length },
+                          defaultValue: "{{count}} selected",
+                        })}
+                        {` · ${cleanupAgeLabel}`}
+                      </span>
+                      <span className="settings-item-description">
+                        {cleanupSelected.length > 0 && cleanupPlan.files > 0
+                          ? t("settings.cleanupWillFree", {
+                              values: {
+                                files: cleanupPlan.files,
+                                size: formatBytes(cleanupPlan.bytes),
+                              },
+                              defaultValue:
+                                "Will delete {{files}} file(s) and free {{size}}",
+                            })
+                          : t("settings.cleanupSelectHint", {
+                              defaultValue:
+                                "Select the categories you want to clean up.",
+                            })}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="general-storage-actions">
+                    <button
+                      type="button"
+                      className="general-storage-action"
+                      onClick={toggleCleanupSelectAll}
+                      disabled={
+                        cleanupScanning ||
+                        isCleaningUp ||
+                        cleanupAvailableIds.length === 0
+                      }
+                      title={t("settings.cleanupSelectAll", {
+                        defaultValue: "Select all",
+                      })}
+                    >
+                      <span>
+                        {cleanupAvailableIds.length > 0 &&
+                        cleanupSelected.length === cleanupAvailableIds.length
+                          ? t("settings.cleanupSelectNone", {
+                              defaultValue: "Clear selection",
+                            })
+                          : t("settings.cleanupSelectAll", {
+                              defaultValue: "Select all",
+                            })}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="general-storage-action danger"
+                      onClick={() => setPendingCleanup(true)}
+                      disabled={
+                        cleanupSelected.length === 0 ||
+                        cleanupPlan.files === 0 ||
+                        isCleaningUp
+                      }
+                      title={t("settings.cleanupDelete", {
+                        defaultValue: "Delete selected",
+                      })}
+                    >
+                      {isCleaningUp ? (
+                        <LoaderCircle
+                          size={11}
+                          strokeWidth={1.8}
+                          className="tool-call-icon-spinning"
+                          aria-hidden="true"
+                        />
+                      ) : (
+                        <Trash2
+                          size={11}
+                          strokeWidth={1.8}
+                          aria-hidden="true"
+                        />
+                      )}
+                      <span>
+                        {isCleaningUp
+                          ? t("settings.cleanupDeleting", {
+                              defaultValue: "Cleaning...",
+                            })
+                          : t("settings.cleanupDelete", {
+                              defaultValue: "Delete selected",
+                            })}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="general-storage-action"
+                      onClick={() => void runCleanupScan()}
+                      disabled={cleanupScanning || isCleaningUp}
+                      title={t("settings.cleanupRescan", {
+                        defaultValue: "Rescan",
+                      })}
+                    >
+                      {cleanupScanning ? (
+                        <LoaderCircle
+                          size={11}
+                          strokeWidth={1.8}
+                          className="tool-call-icon-spinning"
+                          aria-hidden="true"
+                        />
+                      ) : (
+                        <RefreshCw
+                          size={11}
+                          strokeWidth={1.8}
+                          aria-hidden="true"
+                        />
+                      )}
+                      <span>
+                        {t("settings.cleanupRescan", {
+                          defaultValue: "Rescan",
+                        })}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -1926,6 +2408,32 @@ export function GeneralSettingsPanel({
           void handleClearCacheAndReload();
         }}
         onCancel={() => setPendingClearCache(false)}
+      />
+
+      <ConfirmDialog
+        open={pendingCleanup}
+        variant="danger"
+        title={t("settings.cleanupConfirmTitle", {
+          defaultValue: "Delete selected data",
+        })}
+        message={t("settings.cleanupConfirmMessage", {
+          values: {
+            count: cleanupSelected.length,
+            files: cleanupPlan.files,
+            size: formatBytes(cleanupPlan.bytes),
+            range: cleanupAgeLabel,
+          },
+          defaultValue:
+            "This permanently deletes {{files}} file(s) ({{size}}) from " +
+            "{{count}} selected category(ies) — {{range}}. This cannot be undone.",
+        })}
+        confirmLabel={t("settings.cleanupConfirmBtn", {
+          defaultValue: "Delete",
+        })}
+        cancelLabel={t("settings.cancel", { defaultValue: "Cancel" })}
+        isConfirming={isCleaningUp}
+        onConfirm={() => void confirmCleanup()}
+        onCancel={() => setPendingCleanup(false)}
       />
     </div>
   );

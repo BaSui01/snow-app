@@ -34,6 +34,47 @@ pub struct MemoryOptimizeResult {
     pub bytes_after: i64,
 }
 
+/// 数据清理：单个分类的扫描结果（由「设置 → 存储与资源 → 数据清理」触发）。
+#[napi(object)]
+pub struct CleanupCategoryStats {
+    /// 分类 id：checkpoints / upload / imageLibrary / backgrounds / pets / browserState / appLogs
+    pub id: String,
+    /// 该分类下的文件总数
+    pub files: i64,
+    /// 该分类占用的总字节数
+    pub bytes: i64,
+    /// 与请求的 days_list 顺序一致：早于各天数档位可清理的文件数与字节数
+    pub age_buckets: Vec<CleanupAgeBucket>,
+}
+
+/// 数据清理：单个时间档位（早于 N 天）可清理的数据量。
+#[napi(object)]
+pub struct CleanupAgeBucket {
+    /// 天数档位（早于该天数之前创建的文件）
+    pub days: u32,
+    pub files: i64,
+    pub bytes: i64,
+}
+
+/// 数据清理：一次扫描的完整结果。
+#[napi(object)]
+pub struct CleanupScanResult {
+    pub categories: Vec<CleanupCategoryStats>,
+    pub total_files: i64,
+    pub total_bytes: i64,
+}
+
+/// 数据清理：删除结果。
+#[napi(object)]
+pub struct CleanupDeleteResult {
+    pub deleted_files: i64,
+    pub deleted_bytes: i64,
+    /// 被整体移除的顶层条目数（文件或目录）
+    pub removed_targets: i64,
+    /// 删除失败的信息（最多 20 条）
+    pub errors: Vec<String>,
+}
+
 #[napi(object)]
 pub struct ApiConfigInput {
     pub profile_name: String,

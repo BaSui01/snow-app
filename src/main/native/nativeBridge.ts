@@ -1756,6 +1756,14 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to optimize databases"),
         ),
+      scanCleanup: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to scan local data"),
+        ),
+      deleteCleanupData: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to clean local data"),
+        ),
       browserImportListSources: () =>
         Promise.reject(
           new Error("Rust native bridge is required to probe browser sources"),

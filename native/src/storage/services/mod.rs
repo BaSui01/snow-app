@@ -5,6 +5,7 @@ pub mod archive;
 pub mod chat_conversations;
 pub mod checkpoint;
 pub mod checkpoint_skip;
+pub mod cleanup;
 pub mod code_chunker;
 pub mod codebase_embed_sessions;
 pub mod codebase_index;

@@ -1,5 +1,8 @@
 import { ipcRenderer } from "electron";
 import type {
+  CleanupCategoryId,
+  CleanupDeleteResult,
+  CleanupScanResult,
   DatabaseKind,
   DatabaseOptimizeResult,
   DatabaseRepairResult,
@@ -58,4 +61,21 @@ export const storageApi = {
   /** 优化数据库磁盘占用（runtime=运行库 / archive=归档库）：VACUUM 回收空闲页并截断 WAL */
   optimizeDatabase: (kind: DatabaseKind): Promise<DatabaseOptimizeResult> =>
     ipcRenderer.invoke("storage:optimize-database", kind),
+
+  /**
+   * 扫描本地数据分类的占用（daysList 为需要一并统计的天数档位，如
+   * [7, 15, 30, 90]；每个分类会返回各档位可清理的文件数与字节数）。
+   */
+  scanCleanup: (daysList: number[]): Promise<CleanupScanResult> =>
+    ipcRenderer.invoke("storage:cleanup-scan", daysList),
+
+  /**
+   * 删除选中的清理分类数据（maxAgeDays 为 0 表示删除分类目录下的全部
+   * 内容，否则只删除早于该天数的文件）。
+   */
+  deleteCleanupData: (
+    categories: CleanupCategoryId[],
+    maxAgeDays: number,
+  ): Promise<CleanupDeleteResult> =>
+    ipcRenderer.invoke("storage:cleanup-delete", categories, maxAgeDays),
 };

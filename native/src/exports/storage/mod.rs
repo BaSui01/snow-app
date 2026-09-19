@@ -38,6 +38,7 @@ UserMessageSummary, UserscriptRecord, UserscriptValue,
 mod agents;
 mod api_configs;
 mod app;
+mod cleanup;
 mod conversations;
 mod hooks;
 mod imports;
@@ -58,7 +59,8 @@ mod userscripts;
 // 保留 crate::exports::storage::* 原有公共路径的重导出
 #[allow(unused_imports)]
 pub use {
-    agents::*, api_configs::*, app::*, conversations::*, hooks::*, imports::*, logs::*, lsp::*,
+    agents::*, api_configs::*, app::*, cleanup::*, conversations::*, hooks::*, imports::*, logs::*,
+    lsp::*,
     mcp::*,
     memos::*, memory::*, plugins::*, privacy::*, projects::*, scheduled_tasks::*, shortcuts::*,
     storage_locations::*, theme::*, userscripts::*,

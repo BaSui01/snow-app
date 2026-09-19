@@ -19,7 +19,7 @@ import {
 } from "../utils/conversationHelpers";
 import { resolveResponseDisposition } from "../utils/responseDisposition";
 import { appendHookExecutionToMessage, runHook } from "./hookOutcome";
-import { extractFileChangeFromTool } from "./fileChangeTracking";
+import { extractFileChangesFromTool } from "./fileChangeTracking";
 import { injectSessionIdIntoToolArgs } from "../utils/toolSessionMetadata";
 import type { SubAgentRuntimeConfig } from "./subAgentRuntimeConfig";
 import {
@@ -894,12 +894,12 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       // full picture (main agent + sub-agents) without extra lookups;
       // the sub-agent's own key keeps its per-session view accurate.
       if (!subToolErrored && subResult !== undefined) {
-        const subFileChange = extractFileChangeFromTool(
+        const subFileChanges = extractFileChangesFromTool(
           subToolCall.name,
           subToolArgs,
           subResult,
         );
-        if (subFileChange) {
+        for (const subFileChange of subFileChanges) {
           const subChangeRecord = {
             ...subFileChange,
             agent: "sub" as const,

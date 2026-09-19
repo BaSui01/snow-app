@@ -622,10 +622,14 @@ export const validateToolCall = (toolCall: ToolCallInfo): string | null => {
     "filesystem-read": ["filePath"],
     "filesystem-create": ["filePath", "content"],
     "filesystem-replace_edit": ["filePath", "searchContent", "replaceContent"],
+    "filesystem-copy": ["filePath", "sourceFilePath"],
     "bash-terminal-execute": ["command"],
   };
   const requiredBooleanArguments: Record<string, readonly string[]> = {
     "filesystem-create": ["overwrite"],
+  };
+  const requiredNumberArguments: Record<string, readonly string[]> = {
+    "filesystem-copy": ["sourceStartLine"],
   };
   const args = parsedArguments as Record<string, unknown>;
   const missing = [
@@ -634,6 +638,9 @@ export const validateToolCall = (toolCall: ToolCallInfo): string | null => {
     ),
     ...(requiredBooleanArguments[toolCall.name] ?? []).filter(
       (key) => typeof args[key] !== "boolean",
+    ),
+    ...(requiredNumberArguments[toolCall.name] ?? []).filter(
+      (key) => typeof args[key] !== "number",
     ),
   ];
   if (missing.length > 0) {

@@ -95,7 +95,7 @@ pub async fn call_mcp_tool(
         && !plan_approved
         && matches!(
             tool_full_name.as_str(),
-            "filesystem-replace_edit" | "filesystem-create"
+            "filesystem-replace_edit" | "filesystem-create" | "filesystem-copy"
         )
         && (is_sub_agent_call
             || !is_allowed_plan_document_write(project_id.as_deref(), &args).await?)
@@ -169,6 +169,7 @@ pub async fn call_mcp_tool(
         ToolCheckpointOperationGuard::None
     } else {
         acquire_tool_checkpoint_operation_guard(
+            &tool_full_name,
             checkpoint_scope,
             &args,
             checkpoint_work_dir.as_deref(),

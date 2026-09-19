@@ -63,6 +63,7 @@ type CapturedChatInputSendOptions = ChatInputSendOptions;
 const WORKSPACE_MUTATING_TOOL_NAMES = new Set([
   "filesystem-create",
   "filesystem-replace_edit",
+  "filesystem-copy",
   "bash-terminal-execute",
 ]);
 

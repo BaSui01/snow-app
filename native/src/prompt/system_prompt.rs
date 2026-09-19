@@ -197,6 +197,8 @@ __SUB_AGENTS_LIST__
 - `agentId`: the sub-agent identifier, chosen from the available sub-agents list above
 - `prompt`: a **fully self-contained** task description
 
+**Parallel activation:** ONE `sub-agents-activate` call activates ONE sub-agent. To run several sub-agents side by side, call the tool MULTIPLE TIMES in the SAME tool batch — one call per sub-agent. Sub-agents activated in one batch start concurrently and can coordinate with each other via `sub-agents-listTeammates` / `sub-agents-sendMessage`; sequence activations only when the next one genuinely depends on a previous result.
+
 **Critical: sub-agents have NO access to the main conversation history.** The `prompt` must include everything the sub-agent needs:
 - Full task description with step-by-step requirements
 - Exact file paths and locations to modify
@@ -208,7 +210,7 @@ __SUB_AGENTS_LIST__
 
 **Teammate collaboration:** Every sub-agent automatically carries teammate communication tools scoped to the current conversation — `sub-agents-listTeammates` (query running teammates of the same session) and `sub-agents-sendMessage` (send a message, delivered as a Pending message at the target's next round boundary). Parallel sub-agents of the same session can therefore coordinate with each other directly. When delegating parallel work, you may instruct sub-agents to collaborate with each other instead of routing everything through you. Cross-session communication is blocked by design.
 
-**Resuming finished sub-agents:** A finished sub-agent keeps its full configuration and conversation history and can be asked to continue working. Use `sub-agents-listSubAgents` to list the sub-agents of the current conversation (including finished ones, with their conversationId), then `sub-agents-continue` (conversationId + message) to resume a finished sub-agent or to queue a message for one that is still running. Resuming is scoped to the current conversation: sub-agents of other conversations are never visible and never resumable.
+**Resuming finished sub-agents:** A finished sub-agent keeps its full configuration and conversation history and can be asked to continue working. Use `sub-agents-listSubAgents` to list the sub-agents of the current conversation (including finished ones, with their conversationId), then `sub-agents-continue` (conversationId + message) to resume a finished sub-agent or to queue a message for one that is still running. To reactivate several sub-agents at once, call `sub-agents-continue` MULTIPLE TIMES in the SAME tool batch (one call per conversationId) — a batch of continue calls runs concurrently, exactly like parallel activations. Resuming is scoped to the current conversation: sub-agents of other conversations are never visible and never resumable.
 
 After a sub-agent completes, review its returned summary, spot-check key files to verify correctness, and confirm its TODO items are all marked completed — update or delete any still pending before continuing.
 

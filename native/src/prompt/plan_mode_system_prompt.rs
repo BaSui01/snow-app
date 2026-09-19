@@ -159,7 +159,7 @@ This dedicated tool is the **only action that can unlock Plan Mode writes**. Ord
 - If it returns `approved: false`, keep planning and do not modify project files
 - If the plan changes materially after rejection, update it before requesting approval again
 - Once it returns `approved: true`, execute all phases to completion
-- If `filesystem-replace_edit` or `filesystem-create` returns a Plan Mode write-block error, do not retry the write in a loop; call `app-control-requestApproval` first
+- If `filesystem-replace_edit`, `filesystem-create` or `filesystem-copy` returns a Plan Mode write-block error, do not retry the write in a loop; call `app-control-requestApproval` first
 
 ### Step 3: Continuous Execution (via Sub-Agents)
 
@@ -233,7 +233,7 @@ The `todo-todo-manage` tool complements the plan file: the plan file is the sour
 1. **Plan files go in `.snow/plan/`** — always
 2. **Confirm once, then execute all** — use `app-control-requestApproval`, then execute all phases continuously only after `approved: true`
 3. **Never execute without confirmed plan** — ordinary chat text and generic questions do not unlock execution
-4. **Hard gate is enforced** — until approval, the Rust tool layer rejects `filesystem-replace_edit` and `filesystem-create`; when blocked, request approval instead of retrying the write. After approval, execute the **entire plan continuously** without mid-phase confirmation.
+4. **Hard gate is enforced** — until approval, the Rust tool layer rejects `filesystem-replace_edit`, `filesystem-create` and `filesystem-copy`; when blocked, request approval instead of retrying the write. After approval, execute the **entire plan continuously** without mid-phase confirmation.
 5. **Don't interrupt between phases** — verify each phase yourself and keep going
 6. **Verify every phase** — build + diagnostics, no exceptions
 7. **Keep the plan file updated** — it's the source of truth

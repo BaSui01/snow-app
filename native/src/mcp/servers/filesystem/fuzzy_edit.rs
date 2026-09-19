@@ -499,16 +499,13 @@ fn banded_levenshtein_distance(left: &[u16], right: &[u16], band: usize) -> Opti
     (distance <= band).then_some(distance)
 }
 
-/// 根据文件内容的主要行尾风格，调整 text 的行尾以匹配。
-/// 若文件以 CRLF 为主，则将 text 中的行尾转为 CRLF；
-/// 若文件以 LF 为主，则将 text 中的行尾转为 LF。
-/// 若文件为空或无法判定，则原样返回。
-pub(crate) fn adapt_line_endings(text: &str, file_content: &str) -> String {
-    if file_content.is_empty() || text.is_empty() {
-        return text.to_string();
+/// 单次扫描统计文件的主要行尾风格：CRLF 行尾数量超过纯 LF 时返回 true。
+/// 空内容无从判定，返回 false（按 LF 处理）。
+pub(crate) fn uses_crlf_line_endings(file_content: &str) -> bool {
+    if file_content.is_empty() {
+        return false;
     }
 
-    // 单次扫描统计行尾构成（原实现为两遍 matches，大文件下多扫一遍全文）。
     let bytes = file_content.as_bytes();
     let mut lf_count = 0usize;
     let mut crlf_count = 0usize;
@@ -520,10 +517,19 @@ pub(crate) fn adapt_line_endings(text: &str, file_content: &str) -> String {
             }
         }
     }
-    let lf_only = lf_count.saturating_sub(crlf_count);
-    let use_crlf = crlf_count > lf_only;
+    crlf_count > lf_count.saturating_sub(crlf_count)
+}
 
-    if use_crlf {
+/// 根据文件内容的主要行尾风格，调整 text 的行尾以匹配。
+/// 若文件以 CRLF 为主，则将 text 中的行尾转为 CRLF；
+/// 若文件以 LF 为主，则将 text 中的行尾转为 LF。
+/// 若文件为空或无法判定，则原样返回。
+pub(crate) fn adapt_line_endings(text: &str, file_content: &str) -> String {
+    if file_content.is_empty() || text.is_empty() {
+        return text.to_string();
+    }
+
+    if uses_crlf_line_endings(file_content) {
         let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
         normalized.replace('\n', "\r\n")
     } else {
@@ -1023,6 +1029,12 @@ pub(crate) fn find_indentation_relaxed_match(
     })
 }
 
+/// 复核块中的一行："{marker} {行号右对齐 6 位}: {行内容}"。
+/// 编辑/复制的复核块共用同一列宽，保证模型看到的格式一致。
+pub(crate) fn format_review_line(marker: &str, line_number: usize, text: &str) -> String {
+    format!("{} {:>6}: {}", marker, line_number, text)
+}
+
 /// 构建编辑成功后的复核上下文：返回编辑区域前后各 EDIT_REVIEW_CONTEXT_LINES 行
 /// 的带行号代码块（编辑行以 ">>>" 标记），供 AI 复核编辑结果是否正确。
 pub(crate) fn build_edit_review_context_lines(
@@ -1057,7 +1069,7 @@ pub(crate) fn build_edit_review_context_lines(
             } else {
                 "   "
             };
-            format!("{} {:>6}: {}", marker, index + 1, lines[index])
+            format_review_line(marker, index + 1, lines[index])
         })
         .collect();
 

@@ -1271,6 +1271,7 @@ export const zhTW = {
   "toolNames.filesystem-read": "讀取檔案",
   "toolNames.filesystem-replace_edit": "編輯檔案",
   "toolNames.filesystem-create": "新增檔案",
+  "toolNames.filesystem-copy": "複製行",
   "toolNames.sub-agents-activate": "子代理",
   "toolNames.sub-agents-listTeammates": "查詢隊友",
   "toolNames.sub-agents-sendMessage": "發送訊息",

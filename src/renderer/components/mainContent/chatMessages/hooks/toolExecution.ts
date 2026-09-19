@@ -11,7 +11,7 @@ import {
   isStructuredPlanApproval,
 } from "./agentLoopHelpers";
 import { appendHookExecutionToMessage, runHook } from "./hookOutcome";
-import { extractFileChangeFromTool } from "./fileChangeTracking";
+import { extractFileChangesFromTool } from "./fileChangeTracking";
 import { SUB_AGENT_MAIN_TOOL_NAMES } from "./subAgentActivation";
 import { isPendingSessionKey } from "../utils/conversationTypes";
 import { injectSessionIdIntoToolArgs } from "../utils/toolSessionMetadata";
@@ -36,9 +36,9 @@ export type ToolExecutionResult = {
   pendingHookWarnings: string[];
 };
 
-const isFailedSubAgentActivationResult = (
-  result: string | undefined,
-): boolean => {
+/** 子代理工具（激活 / 重新激活）失败判定：结果 JSON 的 success === false
+ *  或结果缺失时，卡片需要展示为错误态。 */
+const isFailedSubAgentResult = (result: string | undefined): boolean => {
   if (typeof result !== "string" || !result.trim()) {
     return true;
   }
@@ -273,19 +273,20 @@ export function createToolExecutor(
       };
 
     // When the model requests multiple parallelizable tool calls in a single
-    // tool batch (sub-agent activations, image generations) they must run
-    // concurrently, not queued one after another. Pre-start every approved
-    // call up front and store the pending promises keyed by tool index; the
-    // main loop below simply awaits the already-running promise when it
-    // reaches each pre-started tool call.
+    // tool batch (sub-agent activations, sub-agent reactivations, image
+    // generations) they must run concurrently, not queued one after another.
+    // Pre-start every approved call up front and store the pending promises
+    // keyed by tool index; the main loop below simply awaits the already-
+    // running promise when it reaches each pre-started tool call.
     //
-    // beforeToolCall hooks are intentionally skipped for parallel sub-agents
-    // — the activation runs its own beforeSubAgentStart / onSubAgentComplete
-    // lifecycle hooks. Image generation keeps the normal hook semantics: its
-    // beforeToolCall hook runs during pre-start (before the request is
-    // fired) and its afterToolCall hook runs in the main loop when the
-    // result is collected. runHook is a cheap no-op when no rules are
-    // configured.
+    // beforeToolCall hooks are intentionally skipped for parallel
+    // sub-agents-activate calls — the activation runs its own
+    // beforeSubAgentStart / onSubAgentComplete lifecycle hooks. Image
+    // generation and sub-agents-continue keep the normal hook semantics:
+    // their beforeToolCall hook runs during pre-start (before the request is
+    // fired / before the sub-agent is resumed) and their afterToolCall hook
+    // runs in the main loop when the result is collected. runHook is a cheap
+    // no-op when no rules are configured.
     const preStartedParallelTools = new Map<
       number,
       { promise: Promise<string>; afterHookEligible: boolean }
@@ -296,7 +297,7 @@ export function createToolExecutor(
     // 队列头部的下一个立即启动，任何时刻在飞的生图请求不超过该值。
     // 生图服务商（OpenAI gpt-image / Gemini Imagen）都有速率限制，且
     // 每张图的 base64 结果体积很大，无上限并发容易触发限流或造成内存
-    // 压力。子代理激活不受此限制（保持原有行为）。
+    // 压力。子代理（激活 / 重新激活）不受此限制（保持原有行为）。
     const pendingImageGenQueue: number[] = [];
     let activeImageGenCount = 0;
     // 启动一个并行工具：置为 running、执行生图 beforeToolCall hook、
@@ -306,7 +307,10 @@ export function createToolExecutor(
     // 的 checkpoint，不能把后续工具结果写回更早消息的 expected 状态。
     const startParallelTool = async (idx: number): Promise<boolean> => {
       const parallelToolCall = toolCalls[idx];
-      const isSubAgent = parallelToolCall.name === "sub-agents-activate";
+      const isSubAgentActivation =
+        parallelToolCall.name === "sub-agents-activate";
+      const isSubAgentContinue =
+        parallelToolCall.name === "sub-agents-continue";
       const isImageGen = parallelToolCall.name === "imagegen-generate";
 
       // Mark running immediately so each card shows live progress while
@@ -333,9 +337,12 @@ export function createToolExecutor(
       );
 
       let afterHookEligible = false;
-      if (!isSubAgent) {
+      if (!isSubAgentActivation) {
         // Run the beforeToolCall hook for image generation before the
         // request is fired; a decision gate or abort prevents the start.
+        // sub-agents-continue goes through the same gate (it resumes a real
+        // sub-agent run and must obey the user's hook policy); only parallel
+        // sub-agent activations skip it.
         try {
           const beforeHookContext = JSON.stringify({
             toolName: parallelToolCall.name,
@@ -432,12 +439,23 @@ export function createToolExecutor(
         promise: (async () => {
           let parallelResult: string;
           try {
-            if (isSubAgent) {
+            if (isSubAgentActivation) {
               parallelResult = await executeSubAgentActivation(
                 parallelToolCall.arguments,
                 effectiveKey,
                 sessionDirId ?? ctx.directoryId ?? "",
                 parallelToolCall.interactionId,
+                checkpointIds,
+              );
+            } else if (isSubAgentContinue) {
+              // 重新激活（sub-agents-continue）与激活同语义：阻塞至子代理
+              // 本次回合结束（运行中的目标则入 Pending 队列后立即返回）。
+              // 同批次的多个 continue 因此并发运行，与并行激活完全一致；
+              // 会话隔离与内存/DB 恢复器解析都在执行器内部完成。
+              parallelResult = await executeSubAgentMainTool(
+                parallelToolCall.name,
+                parallelToolCall.arguments,
+                effectiveKey,
                 checkpointIds,
               );
             } else {
@@ -478,8 +496,8 @@ export function createToolExecutor(
                   (currentToolCall) => ({
                     ...currentToolCall,
                     status:
-                      isSubAgent &&
-                      isFailedSubAgentActivationResult(parallelResult)
+                      (isSubAgentActivation || isSubAgentContinue) &&
+                      isFailedSubAgentResult(parallelResult)
                         ? ("error" as const)
                         : ("completed" as const),
                     result: parallelResult,
@@ -533,13 +551,20 @@ export function createToolExecutor(
     const parallelIndices: number[] = [];
     for (let i = 0; i < toolCalls.length; i++) {
       const name = toolCalls[i].name;
+      // 子代理激活与重新激活（continue）都必须在同一批次中并发运行：
+      // 模型一次派发多个 continue 时要同时唤醒多个子代理，而不是串行等待。
       const isParallelizable =
-        name === "sub-agents-activate" || name === "imagegen-generate";
+        name === "sub-agents-activate" ||
+        name === "sub-agents-continue" ||
+        name === "imagegen-generate";
       const isReadonlyTool =
         readonlyToolNames.has(name) &&
         (name !== "todo-todo-manage" || isTodoReadAction(toolCalls[i]));
+      // PENDING 会话还没有真实会话 id，无法关联子代理（执行器内部也会
+      // 拒绝），因此不进入并行预启动，交由顺序路径返回结构化错误。
       const skipPendingSubAgent =
-        name === "sub-agents-activate" && isPendingSessionKey(effectiveKey);
+        (name === "sub-agents-activate" || name === "sub-agents-continue") &&
+        isPendingSessionKey(effectiveKey);
       if (
         (isParallelizable || isReadonlyTool) &&
         !skipPendingSubAgent &&
@@ -564,19 +589,22 @@ export function createToolExecutor(
         // 设置读取失败时保持默认值，不阻塞生图流程。
       }
 
-      // 预启动：子代理全部立即启动（保持原有行为）；生图最多同时
-      // 启动 maxConcurrentImageGen 个，其余排队，完成一个补一个。
+      // 预启动：子代理（激活 / 重新激活）全部立即启动（保持原有行为）；
+      // 生图最多同时启动 maxConcurrentImageGen 个，其余排队，完成一个补一个。
       for (const idx of parallelIndices) {
-        const isSubAgent = toolCalls[idx].name === "sub-agents-activate";
+        const parallelName = toolCalls[idx].name;
+        const isSubAgent =
+          parallelName === "sub-agents-activate" ||
+          parallelName === "sub-agents-continue";
         if (
           isSubAgent ||
-          toolCalls[idx].name !== "imagegen-generate" ||
+          parallelName !== "imagegen-generate" ||
           activeImageGenCount < maxConcurrentImageGen
         ) {
           if (!(await startParallelTool(idx))) {
             break;
           }
-          if (toolCalls[idx].name === "imagegen-generate") {
+          if (parallelName === "imagegen-generate") {
             activeImageGenCount++;
           }
         } else {
@@ -1027,22 +1055,23 @@ export function createToolExecutor(
                 );
 
                 // Record successful file modifications (filesystem-create /
-                // filesystem-replace_edit) into the conversation's file-change
-                // stats. Done right after the tool returns — before
-                // afterToolCall hooks may append context to the result — so
-                // the success JSON is always parseable. The pending session
-                // has no persisted conversation, so its changes are skipped;
-                // they land in the real session once it is created.
+                // filesystem-replace_edit / filesystem-copy) into the
+                // conversation's file-change stats. Done right after the tool
+                // returns — before afterToolCall hooks may append context to
+                // the result — so the success JSON is always parseable. The
+                // pending session has no persisted conversation, so its changes
+                // are skipped; they land in the real session once it is
+                // created.
                 if (
                   !isPendingSessionKey(effectiveKey) &&
                   result !== undefined
                 ) {
-                  const fileChange = extractFileChangeFromTool(
+                  const fileChanges = extractFileChangesFromTool(
                     toolCall.name,
                     toolCall.arguments,
                     result,
                   );
-                  if (fileChange) {
+                  for (const fileChange of fileChanges) {
                     ctx.recordFileChange(effectiveKey, {
                       ...fileChange,
                       agent: "main",
@@ -1177,8 +1206,9 @@ export function createToolExecutor(
                   ...currentToolCall,
                   status: isValidationError
                     ? ("error" as const)
-                    : toolCall.name === "sub-agents-activate" &&
-                        isFailedSubAgentActivationResult(result)
+                    : (toolCall.name === "sub-agents-activate" ||
+                          toolCall.name === "sub-agents-continue") &&
+                        isFailedSubAgentResult(result)
                       ? ("error" as const)
                       : ("completed" as const),
                   result,

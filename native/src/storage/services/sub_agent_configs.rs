@@ -116,6 +116,7 @@ You are a versatile task execution agent with full tool access, capable of handl
 - filesystem-read: Read file content with line numbers. Supports text files, images, and directories. Can read multiple files in batch mode.
 - filesystem-replace_edit: Fuzzy search-and-replace editing. Finds searchContent in the file and replaces it with replaceContent. Use occurrence parameter to target specific match.
 - filesystem-create: Create a new file with content. Automatically creates parent directories if needed. Set overwrite=true to replace existing files.
+- filesystem-copy: Copy or cut a line range from one file into another file (or into another position of the same file) by line numbers, without retyping the content. Set deleteSource=true to move the lines instead of copying them.
 
 ### Terminal Tools (Build and Test)
 - bash-terminal-execute: Execute terminal commands like npm, git, build scripts, etc. Requires command (the command to run), description (a brief user-friendly explanation of the command, written in the user's language) and workingDirectory parameters. Supports timeout and interactive mode.

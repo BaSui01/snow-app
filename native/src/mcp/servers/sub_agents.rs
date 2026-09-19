@@ -86,7 +86,7 @@ impl McpService for SubAgentsService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_NAME.to_string(),
-                description: "Activate a sub-agent to handle a complex task independently. The sub-agent runs its own AI loop with a restricted tool set and returns a final summary. Use this when a task requires focused, multi-step execution that benefits from isolation. The sub-agent has NO access to the main conversation history - all context must be provided in the prompt."
+                description: "Activate a sub-agent to handle a complex task independently. The sub-agent runs its own AI loop with a restricted tool set and returns a final summary. Use this when a task requires focused, multi-step execution that benefits from isolation. The sub-agent has NO access to the main conversation history - all context must be provided in the prompt. PARALLEL ACTIVATION: ONE call activates ONE sub-agent; to run several sub-agents side by side, call this tool MULTIPLE TIMES in the SAME batch - one call per sub-agent, each with its own fully self-contained prompt. Sub-agents activated in one batch start concurrently, so do NOT wait for one activation to finish before starting the next independent one."
                     .to_string(),
                 input_schema: json!({
                     "type": "object",
@@ -106,7 +106,7 @@ impl McpService for SubAgentsService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_LIST_SUB_AGENTS.to_string(),
-                description: "List the sub-agents of the CURRENT conversation session, including finished ones (only those activated during this app run are listed). Returns conversationId, agentId, agentName, status (running/completed/failed/cancelled) and resumable for each. Only sub-agents belonging to the current conversation are returned (session isolation). Use sub-agents-continue with a returned conversationId to resume a finished sub-agent."
+                description: "List the sub-agents of the CURRENT conversation session, including finished ones (only those activated during this app run are listed). Returns conversationId, agentId, agentName, status (running/completed/failed/cancelled) and resumable for each. Only sub-agents belonging to the current conversation are returned (session isolation). Use sub-agents-continue with a returned conversationId to resume a finished sub-agent - to reactivate several sub-agents at once, call sub-agents-continue MULTIPLE TIMES in the same batch (those calls run in parallel)."
                     .to_string(),
                 input_schema: json!({
                     "type": "object",
@@ -117,7 +117,7 @@ impl McpService for SubAgentsService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_CONTINUE.to_string(),
-                description: "Send a message to a sub-agent of the CURRENT conversation session and resume it: if the target has finished it is reactivated and keeps its original configuration (model, tools, system prompt) and full conversation history; if it is still running the message is queued as a Pending message delivered at the end of its current round. The queued message is prefixed with the sender's identity. Only sub-agents belonging to the current conversation can be resumed - sub-agents of other conversations are rejected (session isolation)."
+                description: "Send a message to a sub-agent of the CURRENT conversation session and resume it: if the target has finished it is reactivated and keeps its original configuration (model, tools, system prompt) and full conversation history; if it is still running the message is queued as a Pending message delivered at the end of its current round. The queued message is prefixed with the sender's identity. Only sub-agents belonging to the current conversation can be resumed - sub-agents of other conversations are rejected (session isolation). PARALLEL RESUME: ONE call resumes ONE sub-agent; to reactivate several sub-agents, call this tool MULTIPLE TIMES in the SAME batch - one call per conversationId. A batch of continue calls runs concurrently (exactly like a batch of sub-agents-activate calls), so do NOT resume them one by one."
                     .to_string(),
                 input_schema: json!({
                     "type": "object",

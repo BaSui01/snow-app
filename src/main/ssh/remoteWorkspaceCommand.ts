@@ -34,6 +34,12 @@ const REMOTE_SEARCH_MAX_RESULTS = 200;
 // SSH branch cannot hang the tool card forever when the remote side stalls.
 const REMOTE_GREP_TIMEOUT_MS = 30_000;
 const CODELENS_MAX_SOURCE_BYTES = 512 * 1024;
+// filesystem-copy 的复核反馈上限：粘贴区域超过 COPY_REPORT_MAX_LINES 行时只回传
+// 首尾各 COPY_REPORT_EDGE_LINES 行，中间折成一行省略标记（omittedLines 报告省略行数）。
+const COPY_REPORT_MAX_LINES = 800;
+const COPY_REPORT_EDGE_LINES = 30;
+// review 上下文块：粘贴区域前后各 COPY_REVIEW_CONTEXT_LINES 行。
+const COPY_REVIEW_CONTEXT_LINES = 5;
 
 export type RemoteWorkspaceCommand = {
   operation: string;
@@ -47,6 +53,13 @@ type RemoteWorkspaceCommandArgs = {
   searchContent?: unknown;
   replaceContent?: unknown;
   occurrence?: unknown;
+  sourceFilePath?: unknown;
+  sourceStartLine?: unknown;
+  sourceEndLine?: unknown;
+  targetLine?: unknown;
+  targetEndLine?: unknown;
+  position?: unknown;
+  deleteSource?: unknown;
   content?: unknown;
   overwrite?: unknown;
   pattern?: unknown;
@@ -465,6 +478,19 @@ const ensureOptionalPositiveInteger = (value: unknown): number | undefined => {
     throw new Error("Line range values must be finite numbers");
   }
   return Math.max(1, Math.floor(value));
+};
+
+// 必填行号：复用 ensureOptionalPositiveInteger 的解析，把“缺失”也当作参数错误抛出，
+// filesystem-copy 的行号是定位锚点，缺省会导致复制到意料之外的位置。
+const ensureRequiredPositiveInteger = (
+  value: unknown,
+  fieldName: string,
+): number => {
+  const parsed = ensureOptionalPositiveInteger(value);
+  if (parsed === undefined) {
+    throw new Error(`${fieldName} is required`);
+  }
+  return parsed;
 };
 
 const isIndentationSensitivePath = (filePath: string): boolean => {
@@ -1255,6 +1281,475 @@ const executeFilesystemCreate = async (
   };
 };
 
+const executeFilesystemCopy = async (
+  args: RemoteWorkspaceCommandArgs,
+  signal?: AbortSignal,
+): Promise<Record<string, unknown>> => {
+  // 可见行数：与 filesystem-read 一致，忽略文件末尾换行产生的幽灵空元素。数组下标
+  // 与 splice 仍沿用幽灵空串语义，只有校验与截断走这个口径。
+  const visibleLineCount = (content: string, lines: string[]): number =>
+    content === ""
+      ? 0
+      : content.endsWith("\n")
+        ? lines.length - 1
+        : lines.length;
+
+  const targetPath = validateSshWorkspacePath(args.filePath, "filePath");
+  const sourcePath = validateSshWorkspacePath(
+    args.sourceFilePath,
+    "sourceFilePath",
+  );
+  const workspaceRoot = resolveAuthorizedWorkspaceRoot(
+    targetPath,
+    args.workspaceRoot,
+  );
+  const targetUrl = parseSshUrl(targetPath);
+  const sourceUrl = parseSshUrl(sourcePath);
+  // 源与目标必须落在同一 SSH authority：workspaceRoot 只授权了一台主机，跨主机
+  // 复制还需要第二条连接，直接拒绝比默默读到另一台机器的同名文件更安全。
+  if (
+    sourceUrl.host !== targetUrl.host ||
+    sourceUrl.port !== targetUrl.port ||
+    sourceUrl.username !== targetUrl.username
+  ) {
+    throw new Error(
+      "sourceFilePath and filePath must use the same SSH authority",
+    );
+  }
+  // 同文件判定：authority 已在上方校验一致，这里只需比较去掉尾部斜杠后的远端路径。
+  const sameFile =
+    normalizeRemotePath(sourceUrl.remotePath) ===
+    normalizeRemotePath(targetUrl.remotePath);
+  // deleteSource=true 即剪切/移动：粘贴后把源区间从源文件里删除（源文件即使被
+  // 删空也只清空内容，文件本身保留）。
+  const deleteSource = args.deleteSource === true;
+
+  if (
+    args.mode !== undefined &&
+    args.mode !== "insert" &&
+    args.mode !== "replace"
+  ) {
+    throw new Error('mode must be either "insert" or "replace"');
+  }
+  const mode: "insert" | "replace" =
+    args.mode === "replace" ? "replace" : "insert";
+  if (
+    args.position !== undefined &&
+    args.position !== "before" &&
+    args.position !== "after"
+  ) {
+    throw new Error('position must be either "before" or "after"');
+  }
+  const position: "before" | "after" =
+    args.position === "after" ? "after" : "before";
+
+  const sourceStartArg = ensureRequiredPositiveInteger(
+    args.sourceStartLine,
+    "sourceStartLine",
+  );
+  const sourceEndArg =
+    ensureOptionalPositiveInteger(args.sourceEndLine) ?? sourceStartArg;
+  // 目标锚点：replace 需要必填的锚点闭区间，insert 只需要可选参照行（省略即追加到末尾）。
+  const anchor:
+    | { mode: "replace"; startLine: number; endLine: number }
+    | { mode: "insert"; line?: number } =
+    mode === "replace"
+      ? {
+          mode: "replace",
+          startLine: ensureRequiredPositiveInteger(
+            args.targetLine,
+            "targetLine",
+          ),
+          endLine: ensureRequiredPositiveInteger(
+            args.targetEndLine,
+            "targetEndLine",
+          ),
+        }
+      : {
+          mode: "insert",
+          line: ensureOptionalPositiveInteger(args.targetLine),
+        };
+
+  // targetEndLine 只在 replace 模式有意义：insert 模式下出现多半是“想替换却漏写
+  // mode”，静默按插入执行会悄悄多出一份副本，因此明确拒绝。
+  if (anchor.mode === "insert" && args.targetEndLine !== undefined) {
+    throw new Error(
+      'targetEndLine is only used with mode="replace". Pass mode="replace" to overwrite a target range, or drop targetEndLine to insert the copied lines.',
+    );
+  }
+
+  const source = await readRemoteText(sourcePath, signal);
+  const sourceLines = source.content.split("\n");
+  const sourceVisibleLines = visibleLineCount(source.content, sourceLines);
+  if (sourceVisibleLines === 0) {
+    throw new Error(
+      `sourceFilePath ${sourcePath} is empty: there is no line to copy.`,
+    );
+  }
+  // 源区间：逆序自动交换，末行越界截断到最后一行；起始行越界说明调用方行号
+  // 算错，静默截断会复制到意料之外的内容，因此直接拒绝。
+  const sourceStart = Math.min(sourceStartArg, sourceEndArg);
+  if (sourceStart > sourceVisibleLines) {
+    throw new Error(
+      `sourceStartLine (${sourceStart}) is beyond the end of the source file (${sourceVisibleLines} lines)`,
+    );
+  }
+  const sourceEnd = Math.min(
+    Math.max(sourceStartArg, sourceEndArg),
+    sourceVisibleLines,
+  );
+
+  // 目标锚点始终按“操作前”的行号解释。同文件剪切时 insert 的锚点若落在源区间内
+  // （含两端），锚点行会被同一次删除一起拿走，位置语义含糊，因此直接拒绝；
+  // 纯复制不受此限制（可以在区间内部再插一份副本）。
+  if (
+    deleteSource &&
+    sameFile &&
+    anchor.mode === "insert" &&
+    anchor.line !== undefined &&
+    sourceStart <= anchor.line &&
+    anchor.line <= sourceEnd
+  ) {
+    throw new Error(
+      `targetLine (${anchor.line}) falls inside the source range (${sourceStart}-${sourceEnd}) being cut from the same file; pick a target line outside that range`,
+    );
+  }
+
+  // 目标文件：先判定存在性（同 filesystem-create），存在时连版本一起读出作为写入
+  // 的 CAS 前置条件，不存在则用 { exists: false } 让写入走新建路径。
+  const targetFile = await withSshSession(
+    targetPath,
+    async (sessionId, remotePath) => {
+      const exists = (
+        await executeSshCommand(sessionId, buildRemoteStatCommand(remotePath), {
+          signal,
+        })
+      ).trim();
+      if (!exists) {
+        return {
+          exists: false,
+          content: "",
+          version: { exists: false } as SshFileVersion,
+        };
+      }
+      const loaded = await readSshFileWithVersion(sessionId, remotePath, {
+        signal,
+      });
+      const file = processFileContent(remotePath, loaded.content);
+      if (file.isBinary || file.isImage) {
+        throw new Error("Remote filesystem copy requires a text target file");
+      }
+      return { exists: true, content: file.content, version: loaded.version };
+    },
+    { signal },
+  );
+
+  const targetLines = targetFile.exists ? targetFile.content.split("\n") : [];
+  // 目标可见行数：目标不存在时按 0 行处理（新建文件没有可替换/可锚定的行）。
+  const targetVisibleLines = targetFile.exists
+    ? visibleLineCount(targetFile.content, targetLines)
+    : 0;
+  // 逐行原样搬运（不重新缩进、不改写内容）：行尾风格向目标文件靠拢，目标不存在
+  // 时沿用源文件风格，让新建出来的文件与来源保持一致。
+  const pastedText = adaptLineEndings(
+    sourceLines.slice(sourceStart - 1, sourceEnd).join("\n"),
+    targetFile.exists ? targetFile.content : source.content,
+  );
+  const pastedLines = pastedText.split("\n");
+
+  // 源区间在快照上的 0-based 半开区间 [sourceStartIndex, sourceEndIndex)；
+  // targetLine / targetEndLine 始终按“操作前”的行号解释（下面的修正只影响写入位置）。
+  const sourceStartIndex = sourceStart - 1;
+  const sourceEndIndex = sourceEnd;
+  const removedLineCount = sourceEnd - sourceStart + 1;
+  const cutWithinTarget = deleteSource && sameFile;
+  // 同文件剪切只写一次：目标基线就是“快照删掉源区间”之后的行数组。
+  const targetBaseLines = cutWithinTarget
+    ? [
+        ...targetLines.slice(0, sourceStartIndex),
+        ...targetLines.slice(sourceEndIndex),
+      ]
+    : targetLines;
+  // 删除点之前的下标不动，之后的下标整体前移被删除的行数（纯复制时是恒等映射）。
+  const shiftAfterSourceRemoval = (index: number): number =>
+    cutWithinTarget
+      ? index -
+        Math.min(Math.max(index - sourceStartIndex, 0), removedLineCount)
+      : index;
+
+  let newLines: string[];
+  let pasteStartIndex: number;
+  let replacedContent = "";
+  if (anchor.mode === "replace") {
+    if (!targetFile.exists) {
+      throw new Error("mode=replace requires an existing target file");
+    }
+    if (targetVisibleLines === 0) {
+      throw new Error(
+        `Cannot replace lines in ${targetPath}: the file is empty. Use mode="insert" (default) instead.`,
+      );
+    }
+    // 目标区间：逆序自动交换，末行越界截断到最后一行。
+    const targetStart = Math.min(anchor.startLine, anchor.endLine);
+    if (targetStart > targetVisibleLines) {
+      throw new Error(
+        `targetLine (${targetStart}) is beyond the end of the target file (${targetVisibleLines} lines)`,
+      );
+    }
+    const targetEnd = Math.min(
+      Math.max(anchor.startLine, anchor.endLine),
+      targetVisibleLines,
+    );
+    // 同一文件的就地替换：两个区间重叠时行号会互相污染（先落盘的行会挪动待替换
+    // 区间的位置），因此拒绝；不同文件或区间不重叠时照常执行。
+    if (sameFile && targetStart <= sourceEnd && sourceStart <= targetEnd) {
+      throw new Error(
+        "Source and target ranges overlap in the same file; use non-overlapping ranges or copy from another file",
+      );
+    }
+    // 被替换掉的内容按“操作前”的行号从快照取；写入位置再按同文件剪切的删除量修正。
+    replacedContent = adaptLineEndings(
+      targetLines.slice(targetStart - 1, targetEnd).join("\n"),
+      targetFile.content,
+    );
+    pasteStartIndex = shiftAfterSourceRemoval(targetStart - 1);
+    newLines = [
+      ...targetBaseLines.slice(0, pasteStartIndex),
+      ...pastedLines,
+      ...targetBaseLines.slice(shiftAfterSourceRemoval(targetEnd)),
+    ];
+  } else {
+    if (anchor.line !== undefined && anchor.line > targetVisibleLines + 1) {
+      throw new Error(
+        `targetLine ${anchor.line} is beyond the end of the target file (${targetPath} has ${targetVisibleLines} lines): use a line between 1 and ${targetVisibleLines + 1}, or omit targetLine to append at the end of the file.`,
+      );
+    }
+    // insert：省略 targetLine ⇒ 追加到文件末尾；文件以换行结尾时（split 出的末尾
+    // 空串）插入点落在该空串之前，既不凭空多出一个空行，也保留原有的结尾换行。
+    // 显式 targetLine 的锚点截断按可见行数（targetLine = 可见行数 + 1 视作追加）。
+    const insertIndex =
+      anchor.line === undefined
+        ? targetLines.length > 0 && targetLines[targetLines.length - 1] === ""
+          ? targetLines.length - 1
+          : targetLines.length
+        : Math.min(anchor.line, targetVisibleLines + 1) -
+          (position === "after" ? 0 : 1);
+    pasteStartIndex = shiftAfterSourceRemoval(
+      Math.max(0, Math.min(insertIndex, targetLines.length)),
+    );
+    newLines = [
+      ...targetBaseLines.slice(0, pasteStartIndex),
+      ...pastedLines,
+      ...targetBaseLines.slice(pasteStartIndex),
+    ];
+  }
+
+  const totalLines = newLines.length;
+  const newContent = newLines.join("\n");
+  // 同文件剪切若结果与原文逐字一致（块被挪到紧邻位置等），等价于没有移动，
+  // 直接拒绝，避免回一次什么都没做的“成功剪切”。
+  if (deleteSource && sameFile && newContent === targetFile.content) {
+    throw new Error(
+      "Cutting and pasting these ranges would leave the file unchanged (the lines are already at the target position); nothing was written",
+    );
+  }
+  // 替换结果与原文逐字一致说明这次复制没有带来任何变化（多半是行号选错），
+  // 直接拒绝，避免回一个虚假的“成功写入”。
+  if (anchor.mode === "replace" && newContent === targetFile.content) {
+    throw new Error(
+      "mode=replace would produce an identical file (the copied lines match the replaced lines); nothing was written",
+    );
+  }
+
+  // 源文件在这次操作后的行数组：纯复制保持原样；剪切是删掉源区间之后的结果，
+  // 同文件剪切复用目标基线（源文件就是目标文件，不会再单独写回一次）。
+  const sourceLinesAfter = deleteSource
+    ? cutWithinTarget
+      ? targetBaseLines
+      : [
+          ...sourceLines.slice(0, sourceStartIndex),
+          ...sourceLines.slice(sourceEndIndex),
+        ]
+    : sourceLines;
+  const sourceContentAfter = sourceLinesAfter.join("\n");
+  // 与 filesystem-read 一致的可见行数口径：删空的源文件记 0 行。
+  const sourceTotalLines = visibleLineCount(
+    sourceContentAfter,
+    sourceLinesAfter,
+  );
+
+  if (!targetFile.exists) {
+    // 与 filesystem-create 一致：目标不存在时先补齐父目录，再由 writeSshFile 落盘。
+    await withSshSession(
+      targetPath,
+      async (sessionId, remotePath) => {
+        const parentPath = dirname(remotePath);
+        if (parentPath && parentPath !== ".") {
+          await executeSshCommand(
+            sessionId,
+            buildRemoteMkdirCommand(parentPath),
+            { signal },
+          );
+        }
+      },
+      { signal },
+    );
+  }
+
+  const save = await writeRemoteText(
+    targetPath,
+    workspaceRoot,
+    newContent,
+    targetFile.version,
+    signal,
+  );
+
+  if (deleteSource && !sameFile) {
+    // 跨文件剪切：目标先落盘，再删源文件里的区间（两侧 authority 相同，
+    // workspaceRoot 对源文件同样适用）。源删除失败时把“目标已写入”说清楚，
+    // 宁可留下重复副本，也不让调用方以为内容丢了。
+    try {
+      await writeRemoteText(
+        sourcePath,
+        workspaceRoot,
+        sourceContentAfter,
+        source.version,
+        signal,
+      );
+    } catch (error) {
+      throw new Error(
+        `Target file was written, but removing the copied lines from the source file failed: ${
+          error instanceof Error ? error.message : String(error)
+        }. The source file still contains the copied lines, so a duplicate copy may now exist.`,
+      );
+    }
+  }
+
+  const matchedLineStart = pasteStartIndex + 1;
+  const matchedLineEnd = pasteStartIndex + pastedLines.length;
+  // 粘贴区域过大时只回传首尾各 COPY_REPORT_EDGE_LINES 行：先按真实行号建表，再把
+  // 中间段 splice 成一行省略标记，review 与 pastedContent 共用这份折叠结果。
+  const pastedReport = pastedLines.map((text, index) => ({
+    line: matchedLineStart + index,
+    text,
+  }));
+  const omittedLines =
+    pastedLines.length > COPY_REPORT_MAX_LINES
+      ? pastedLines.length - COPY_REPORT_EDGE_LINES * 2
+      : 0;
+  if (omittedLines > 0) {
+    pastedReport.splice(COPY_REPORT_EDGE_LINES, omittedLines, {
+      line: matchedLineStart + COPY_REPORT_EDGE_LINES,
+      text: `... ${omittedLines} lines omitted ...`,
+    });
+  }
+
+  const reviewStartLine = Math.max(
+    1,
+    matchedLineStart - COPY_REVIEW_CONTEXT_LINES,
+  );
+  const reviewEndLine = Math.min(
+    totalLines,
+    matchedLineEnd + COPY_REVIEW_CONTEXT_LINES,
+  );
+  const reviewBlocks: string[] = [];
+  for (let line = reviewStartLine; line < matchedLineStart; line += 1) {
+    reviewBlocks.push(
+      `   ${String(line).padStart(6, " ")}: ${newLines[line - 1]}`,
+    );
+  }
+  for (const entry of pastedReport) {
+    reviewBlocks.push(
+      `>>> ${String(entry.line).padStart(6, " ")}: ${entry.text}`,
+    );
+  }
+  for (let line = matchedLineEnd + 1; line <= reviewEndLine; line += 1) {
+    reviewBlocks.push(
+      `   ${String(line).padStart(6, " ")}: ${newLines[line - 1]}`,
+    );
+  }
+
+  // 剪切的附加回显：被删除的源行沿用同一套折叠规则（首尾各 30 行）；源复核窗口
+  // 描述“源区间删除后”的上下文（前后各 5 行），整段删除不逐行标记，故不加 >>>。
+  // 源文件被删空时 totalLines 与 endLine 为 0、content 为空串。
+  const removedLines = deleteSource
+    ? adaptLineEndings(
+        sourceLines.slice(sourceStartIndex, sourceEndIndex).join("\n"),
+        source.content,
+      ).split("\n")
+    : [];
+  const removedContent =
+    removedLines.length > COPY_REPORT_MAX_LINES
+      ? [
+          ...removedLines.slice(0, COPY_REPORT_EDGE_LINES),
+          `... ${removedLines.length - COPY_REPORT_EDGE_LINES * 2} lines omitted ...`,
+          ...removedLines.slice(removedLines.length - COPY_REPORT_EDGE_LINES),
+        ].join("\n")
+      : removedLines.join("\n");
+  const sourceReviewStartLine = Math.max(
+    1,
+    sourceStartIndex - (COPY_REVIEW_CONTEXT_LINES - 1),
+  );
+  const sourceReviewEndLine = Math.min(
+    sourceTotalLines,
+    sourceStartIndex + COPY_REVIEW_CONTEXT_LINES,
+  );
+  const sourceReviewBlocks: string[] = [];
+  if (deleteSource) {
+    for (
+      let line = sourceReviewStartLine;
+      line <= sourceReviewEndLine;
+      line += 1
+    ) {
+      sourceReviewBlocks.push(
+        `   ${String(line).padStart(6, " ")}: ${sourceLinesAfter[line - 1]}`,
+      );
+    }
+  }
+
+  return {
+    success: true,
+    sourceFilePath: sourcePath,
+    sourceLineStart: sourceStart,
+    sourceLineEnd: sourceEnd,
+    copiedLines: pastedLines.length,
+    deleteSource,
+    sourceTotalLines,
+    targetFilePath: targetPath,
+    mode: anchor.mode,
+    ...(anchor.mode === "insert" ? { position } : {}),
+    matchedLineStart,
+    matchedLineEnd,
+    totalLines,
+    replacedContent,
+    pastedContent: pastedReport.map((entry) => entry.text).join("\n"),
+    omittedLines,
+    ...(deleteSource
+      ? {
+          removedContent,
+          sourceReview: {
+            startLine: sourceReviewStartLine,
+            endLine: sourceReviewEndLine,
+            editedLineStart: 0,
+            editedLineEnd: 0,
+            totalLines: sourceTotalLines,
+            content: sourceReviewBlocks.join("\n"),
+          },
+        }
+      : {}),
+    saveGuarantee: save.guarantee,
+    sideEffect: save.sideEffect,
+    review: {
+      startLine: reviewStartLine,
+      endLine: reviewEndLine,
+      editedLineStart: matchedLineStart,
+      editedLineEnd: matchedLineEnd,
+      totalLines,
+      content: reviewBlocks.join("\n"),
+    },
+  };
+};
+
 const executeGrepSearch = async (
   args: RemoteWorkspaceCommandArgs,
   signal?: AbortSignal,
@@ -1893,6 +2388,8 @@ const dispatchRemoteWorkspaceOperation = async (
       return executeFilesystemReplaceEdit(args, signal);
     case "filesystem-create":
       return executeFilesystemCreate(args, signal);
+    case "filesystem-copy":
+      return executeFilesystemCopy(args, signal);
     case "grep-search":
       return executeGrepSearch(args, signal);
     case "bash-terminal-execute":

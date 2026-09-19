@@ -29,8 +29,10 @@ type FileChangesPanelProps = {
  * Opened via the /changes slash command.
  *
  * Data comes from fileChangeStats, which the tool-execution pipeline fills in
- * live: filesystem-create / filesystem-replace_edit calls that completed
- * successfully. Records are keyed by conversationId — the main conversation
+ * live: filesystem-create / filesystem-replace_edit / filesystem-copy calls
+ * that completed successfully. A cut performed by filesystem-copy modifies two
+ * files at once and therefore contributes two records. Records are keyed by
+ * conversationId — the main conversation
  * collects its own changes (agent: "main"), each sub-agent collects its own
  * under its conversationId (agent: "sub"), and this panel merges them via the
  * parent's childSubAgentIds set.
@@ -58,13 +60,13 @@ export const FileChangesPanel = ({
     }
     return collectConversationFileChanges(
       fileChangeStats,
-      activeConversationId
+      activeConversationId,
     );
   }, [activeConversationId, changesOverride, fileChangeStats]);
 
   const summary = useMemo(() => {
     const mainCount = changes.filter(
-      (change) => change.agent === "main"
+      (change) => change.agent === "main",
     ).length;
     return {
       uniqueFiles: countUniqueFiles(changes),
@@ -90,7 +92,7 @@ export const FileChangesPanel = ({
           content: change.diff?.patch ?? "",
           isBinary: change.diff?.isBinary ?? false,
         })),
-    [changes]
+    [changes],
   );
 
   const isSubChange = (change: FileChangeRecord): boolean =>
@@ -233,8 +235,8 @@ export const FileChangesPanel = ({
                     }`}
                   >
                     {isSubChange(change)
-                      ? change.subAgentName ??
-                        t("chat.fileChanges.agentSubName")
+                      ? (change.subAgentName ??
+                        t("chat.fileChanges.agentSubName"))
                       : t("chat.fileChanges.agentMainName")}
                   </span>
                   {change.diff?.patch ? (

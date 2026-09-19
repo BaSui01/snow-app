@@ -34,11 +34,12 @@ Listed in registration order:
 
 ### filesystem
 
-| Full tool name            | Purpose                                                     | Key parameters                                              |
-| ------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------- |
-| `filesystem-read`         | Read file content (supports text, images, Office documents) | `filePath`, `startLine`, `endLine`                          |
-| `filesystem-replace_edit` | Fuzzy search-and-replace editing                            | `filePath`, `searchContent`, `replaceContent`, `occurrence` |
-| `filesystem-create`       | Create a new file (auto-creates parent directories)         | `filePath`, `content`, `overwrite`, `encoding`              |
+| Full tool name            | Purpose                                                            | Key parameters                                                                                                                      |
+| ------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `filesystem-read`         | Read file content (supports text, images, Office documents)        | `filePath`, `startLine`, `endLine`                                                                                                  |
+| `filesystem-replace_edit` | Fuzzy search-and-replace editing                                   | `filePath`, `searchContent`, `replaceContent`, `occurrence`                                                                         |
+| `filesystem-create`       | Create a new file (auto-creates parent directories)                | `filePath`, `content`, `overwrite`, `encoding`                                                                                      |
+| `filesystem-copy`         | Copy (or cut, with deleteSource) a line range into the target file | `filePath`, `sourceFilePath`, `sourceStartLine`, `sourceEndLine`, `targetLine`, `position`, `mode`, `targetEndLine`, `deleteSource` |
 
 ### bash
 

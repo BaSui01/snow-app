@@ -1331,6 +1331,7 @@ export const en = {
   "toolNames.filesystem-read": "Read file",
   "toolNames.filesystem-replace_edit": "Edit file",
   "toolNames.filesystem-create": "Create file",
+  "toolNames.filesystem-copy": "Copy lines",
   "toolNames.sub-agents-activate": "Sub-agent",
   "toolNames.sub-agents-listTeammates": "List teammates",
   "toolNames.sub-agents-sendMessage": "Send message",

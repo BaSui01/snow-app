@@ -1,5 +1,6 @@
 import {
   Bot,
+  Copy,
   FilePen,
   FilePlus,
   FileText,
@@ -21,6 +22,7 @@ export type ToolCategory =
   | "read"
   | "edit"
   | "create"
+  | "copy"
   | "search"
   | "terminal"
   | "web"
@@ -38,6 +40,7 @@ const CATEGORY_ICONS: Record<ToolCategory, LucideIcon> = {
   read: FileText,
   edit: FilePen,
   create: FilePlus,
+  copy: Copy,
   search: Search,
   terminal: Terminal,
   web: Globe,
@@ -63,6 +66,7 @@ const getToolIcon = (category: ToolCategory): LucideIcon =>
  *   "filesystem-read"       -> "read"
  *   "filesystem-replace_edit" -> "edit"
  *   "filesystem-create"      -> "create"
+ *   "filesystem-copy"        -> "copy"
  *   "ace-search"                   -> "search"
  *   "terminal-execute"             -> "terminal"
  *   "websearch-search"             -> "web"
@@ -80,6 +84,7 @@ export const getToolCategory = (toolName: string): ToolCategory => {
   ) {
     return "agent";
   }
+  if (lower.includes("copy")) return "copy";
   if (lower.includes("read")) return "read";
   if (lower.includes("edit") || lower.includes("replace")) return "edit";
   if (lower.includes("create") || lower.includes("write")) return "create";

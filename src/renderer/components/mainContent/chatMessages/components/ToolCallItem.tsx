@@ -8,6 +8,7 @@ import {
   FilesystemReadToolCall,
   FilesystemEditToolCall,
   FilesystemCreateToolCall,
+  FilesystemCopyToolCall,
   TodoToolCall,
   GrepToolCall,
   SubAgentToolCall,
@@ -314,6 +315,10 @@ export const ToolCallItem = memo(
 
     if (toolCall.name === "filesystem-create") {
       return <FilesystemCreateToolCall toolCall={toolCall} />;
+    }
+
+    if (toolCall.name === "filesystem-copy") {
+      return <FilesystemCopyToolCall toolCall={toolCall} />;
     }
 
     if (toolCall.name === "bash-terminal-execute") {

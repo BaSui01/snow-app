@@ -1,5 +1,6 @@
 /**
- * filesystem 工具族卡片：filesystem-read / filesystem-replace_edit / filesystem-create。
+ * filesystem 工具族卡片：filesystem-read / filesystem-replace_edit / filesystem-create /
+ * filesystem-copy。
  *
  * 数据契约（字段语义与桌面 Filesystem*ToolCall 的解析逐字段对齐，字段名以 Rust 端为准）：
  * - read：参数 filePath（字符串 / 数组 / JSON 数组字符串 → 多文件）、startLine、endLine
@@ -10,7 +11,16 @@
  * - replace_edit：参数 filePath / searchContent / replaceContent / occurrence；成功结果
  *   { success, totalMatches, occurrence, matchType, matchedLineStart, matchedLineEnd }；
  * - create：参数 filePath / content / overwrite / encoding（isDirectory 为兼容字段）；
- *   成功结果 { success, path, bytes, lines }。
+ *   成功结果 { success, path, bytes, lines }；
+ * - copy：参数 filePath（粘贴目的地）/ sourceFilePath / sourceStartLine / sourceEndLine
+ *   （缺省 = sourceStartLine）/ targetLine / position / mode / targetEndLine / deleteSource
+ *   （true = 剪切：粘贴后源区间从源文件删除，缺省 false）；成功结果
+ *   { success, sourceFilePath, sourceLineStart, sourceLineEnd, copiedLines, deleteSource,
+ *   sourceTotalLines, targetFilePath, mode, position, matchedLineStart, matchedLineEnd,
+ *   totalLines, replacedContent, pastedContent, omittedLines, formatted?, removedContent?,
+ *   sourceReview? }，失败结果是错误文本（可能落在 message 字段）。
+ *   剪切时源侧另有回显：源 / 目标不同文件时在目标 diff 之后再渲染源文件的删除 diff，
+ *   同文件（文件内移动）只给一行说明。
  *
  * 远控桥全量下发工具参数与结果（不截断），因此参数 / 结果解析一律走正常路径；
  * 仅 read 的 filePath 用宽松取串（partialString）兜底历史会话里被旧版桥截断
@@ -874,6 +884,411 @@ export const renderCreateCard: ToolCallRenderer = (tool) => {
   );
 };
 
+// ── copy ─────────────────────────────────────────────────────────────────
+
+type CopyMode = "insert" | "replace";
+type CopyPosition = "before" | "after";
+
+type CopyArgs = {
+  filePath: string;
+  sourceFilePath: string;
+  sourceStartLine?: number;
+  sourceEndLine?: number;
+  targetLine?: number;
+  targetEndLine?: number;
+  mode: CopyMode;
+  position: CopyPosition;
+  /** true = 剪切：粘贴后源区间从源文件删除。 */
+  deleteSource: boolean;
+};
+
+/**
+ * 源文件删除点的复核窗口（仅剪切时出现）。与 review 一样，窗口 content 不在卡片里
+ * 渲染——源侧信息由 removedContent 与源文件的删除 diff 承担，这里只留定位字段。
+ */
+type CopySourceReview = {
+  startLine?: number;
+  totalLines?: number;
+};
+
+type CopyResult =
+  | {
+      type: "success";
+      sourceFilePath: string;
+      sourceLineStart?: number;
+      sourceLineEnd?: number;
+      copiedLines?: number;
+      deleteSource: boolean;
+      sourceTotalLines?: number;
+      targetFilePath: string;
+      mode: CopyMode;
+      position?: CopyPosition;
+      matchedLineStart?: number;
+      matchedLineEnd?: number;
+      totalLines?: number;
+      replacedContent: string;
+      pastedContent: string;
+      omittedLines: number;
+      formatted: boolean;
+      /** 剪切时才有：从源文件删掉的行内容（区域过大时中间省略）。 */
+      removedContent?: string;
+      sourceReview?: CopySourceReview;
+    }
+  | { type: "error"; message: string }
+  | { type: "raw"; text: string }
+  | { type: "empty" };
+
+/** 枚举字段读取（非法值一律视为缺失，由调用方回退默认值）。 */
+const copyModeOf = (value: unknown): CopyMode | undefined =>
+  value === "insert" || value === "replace" ? value : undefined;
+
+const copyPositionOf = (value: unknown): CopyPosition | undefined =>
+  value === "before" || value === "after" ? value : undefined;
+
+/** 解析 copy 参数：filePath（粘贴目的地）与 sourceFilePath 必填，其余逐字段类型防御。 */
+const parseCopyArgs = (record: JsonRecord | null): CopyArgs | null => {
+  if (!record) return null;
+  if (typeof record.filePath !== "string" || !record.filePath) return null;
+  if (typeof record.sourceFilePath !== "string" || !record.sourceFilePath) {
+    return null;
+  }
+  const sourceStartLine = numberOf(record, "sourceStartLine");
+  return {
+    filePath: record.filePath,
+    sourceFilePath: record.sourceFilePath,
+    sourceStartLine,
+    // sourceEndLine 缺省 = sourceStartLine（只复制一行）。
+    sourceEndLine: numberOf(record, "sourceEndLine") ?? sourceStartLine,
+    targetLine: numberOf(record, "targetLine"),
+    targetEndLine: numberOf(record, "targetEndLine"),
+    mode: copyModeOf(record.mode) ?? "insert",
+    position: copyPositionOf(record.position) ?? "before",
+    // 非布尔一律视为纯复制。
+    deleteSource: record.deleteSource === true,
+  };
+};
+
+/** 解析 sourceReview（仅剪切时出现；非对象一律视为缺失）。 */
+const parseCopySourceReview = (record: JsonRecord): CopySourceReview | null => {
+  const value = record.sourceReview;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  const review = value as JsonRecord;
+  return {
+    startLine: numberOf(review, "startLine"),
+    totalLines: numberOf(review, "totalLines"),
+  };
+};
+
+const parseCopyResult = (raw?: string): CopyResult => {
+  if (!raw) return { type: "empty" };
+  const record = parseJsonRecord(raw);
+  if (!record) return { type: "raw", text: raw };
+  if (typeof record.error === "string") {
+    return { type: "error", message: record.error };
+  }
+  if (record.success !== true) {
+    // 失败结果是错误文本：无 success 标记时取 message 字段，取不到再回退原文。
+    const message =
+      typeof record.message === "string" ? record.message.trim() : "";
+    return message ? { type: "error", message } : { type: "raw", text: raw };
+  }
+  const sourceLineStart = numberOf(record, "sourceLineStart");
+  const sourceReview = parseCopySourceReview(record);
+  return {
+    type: "success",
+    sourceFilePath:
+      typeof record.sourceFilePath === "string" ? record.sourceFilePath : "",
+    sourceLineStart,
+    sourceLineEnd: numberOf(record, "sourceLineEnd") ?? sourceLineStart,
+    copiedLines: numberOf(record, "copiedLines"),
+    deleteSource: record.deleteSource === true,
+    // 源文件本次操作后的总行数（缺字段时回退 sourceReview.totalLines，两者同值）。
+    sourceTotalLines:
+      numberOf(record, "sourceTotalLines") ?? sourceReview?.totalLines,
+    targetFilePath:
+      typeof record.targetFilePath === "string" ? record.targetFilePath : "",
+    mode: copyModeOf(record.mode) ?? "insert",
+    position: copyPositionOf(record.position),
+    matchedLineStart: numberOf(record, "matchedLineStart"),
+    matchedLineEnd: numberOf(record, "matchedLineEnd"),
+    totalLines: numberOf(record, "totalLines"),
+    replacedContent:
+      typeof record.replacedContent === "string" ? record.replacedContent : "",
+    pastedContent:
+      typeof record.pastedContent === "string" ? record.pastedContent : "",
+    omittedLines: numberOf(record, "omittedLines") ?? 0,
+    formatted: record.formatted === true,
+    // removedContent 缺失即 undefined：区分「没有回显」与「被删内容是空串」。
+    removedContent:
+      typeof record.removedContent === "string"
+        ? record.removedContent
+        : undefined,
+    sourceReview: sourceReview ?? undefined,
+  };
+};
+
+/** 路径归一化（去首尾空白 + 统一分隔符 + 大小写不敏感），用于判断源与目标是否同一文件。 */
+const normalizePathForCompare = (filePath: string): string =>
+  filePath.trim().replace(/\\/g, "/").toLowerCase();
+
+/** 源区间边界：闭区间语义（逆序的两个行号等价于其区间）；起始行缺失返回 null。 */
+const copyRegionBounds = (
+  start?: number,
+  end?: number,
+): { from: number; to: number } | null =>
+  start === undefined
+    ? null
+    : {
+        from: Math.min(start, end ?? start),
+        to: Math.max(start, end ?? start),
+      };
+
+/** 源区间标签：单行 / 区间两种文案（起始行缺失返回空串）。 */
+const copySourceLabel = (start?: number, end?: number): string => {
+  const bounds = copyRegionBounds(start, end);
+  if (!bounds) return "";
+  return bounds.from < bounds.to
+    ? t("remote.toolCall.filesystem.copySourceRange", {
+        start: bounds.from,
+        end: bounds.to,
+      })
+    : t("remote.toolCall.filesystem.copySourceLine", { line: bounds.from });
+};
+
+/** 目标位置标签：replace 为目标区间，insert 为锚点行前后；无锚点的 insert 即追加。 */
+const copyTargetLabel = (options: {
+  mode: CopyMode;
+  position?: CopyPosition;
+  targetLine?: number;
+  targetEndLine?: number;
+}): string => {
+  const { mode, position, targetLine, targetEndLine } = options;
+  if (mode === "replace") {
+    if (targetLine === undefined) return "";
+    const last = targetEndLine ?? targetLine;
+    return t("remote.toolCall.filesystem.copyTargetReplace", {
+      start: Math.min(targetLine, last),
+      end: Math.max(targetLine, last),
+    });
+  }
+  if (targetLine === undefined) {
+    return t("remote.toolCall.filesystem.copyTargetAppend");
+  }
+  return position === "after"
+    ? t("remote.toolCall.filesystem.copyTargetAfter", { line: targetLine })
+    : t("remote.toolCall.filesystem.copyTargetBefore", { line: targetLine });
+};
+
+/** 「源区间 → 目标位置」行：缺一侧时只显示存在的一侧，都缺返回 null。 */
+const copyRouteRow = (source: string, target: string): HTMLElement | null => {
+  if (source === "") return target === "" ? null : noteRow(target);
+  if (target === "") return noteRow(source);
+  return noteRow(t("remote.toolCall.filesystem.copyRoute", { source, target }));
+};
+
+/** 源侧统计行：被删行数 + 源文件剩余总行数（总行数缺失时只报行数）。 */
+const copyRemovedNote = (count: number, sourceTotalLines?: number): string =>
+  sourceTotalLines === undefined
+    ? t("remote.toolCall.filesystem.copyRemovedSourceOnly", { count })
+    : t("remote.toolCall.filesystem.copyRemovedSource", {
+        count,
+        total: sourceTotalLines,
+      });
+
+/** 结论行文案：优先「粘贴区域 + 文件总行数」，区域缺失时退化为「已复制 / 已剪切 N 行」。 */
+const copyPastedLabel = (
+  result: {
+    matchedLineStart?: number;
+    matchedLineEnd?: number;
+    totalLines?: number;
+    copiedLines?: number;
+  },
+  cut: boolean,
+): string => {
+  const start = result.matchedLineStart;
+  if (start === undefined) {
+    const count = result.copiedLines;
+    if (count === undefined) return "";
+    return cut
+      ? t("remote.toolCall.filesystem.copyCutCount", { count })
+      : t("remote.toolCall.filesystem.copiedCount", { count });
+  }
+  const end = result.matchedLineEnd ?? start;
+  const values = {
+    start,
+    end,
+    total: result.totalLines ?? result.copiedLines ?? end - start + 1,
+  };
+  return cut
+    ? t("remote.toolCall.filesystem.copyCutPasted", values)
+    : t("remote.toolCall.filesystem.copyPasted", values);
+};
+
+export const renderCopyCard: ToolCallRenderer = (tool) => {
+  const raw = tool.arguments;
+  const record = parseJsonRecord(raw);
+  const args = parseCopyArgs(record);
+  const result = parseCopyResult(tool.result);
+  const hasError = result.type === "error";
+  const success = result.type === "success" ? result : null;
+  const shownPath =
+    args?.filePath ??
+    (success?.targetFilePath || undefined) ??
+    recoverPath(raw);
+
+  if (!args && !raw && result.type === "empty") return null; // 无参数也无结果：交给兜底卡
+
+  const body = document.createDocumentFragment();
+  if (shownPath) body.append(pathRow(shownPath));
+
+  /*
+   * 源区间 / 目标位置：锚点行只存在于参数里，因此参数优先；参数缺失时用结果里的
+   * 源区间与 replace 的目标区域兜底（insert 的粘贴区域已由结论行给出）。
+   */
+  const sourceStart = args?.sourceStartLine ?? success?.sourceLineStart;
+  const sourceEnd = args?.sourceEndLine ?? success?.sourceLineEnd;
+  const bounds = copyRegionBounds(sourceStart, sourceEnd);
+  const sourceName = fileNameOf(
+    args?.sourceFilePath ?? success?.sourceFilePath ?? "",
+  );
+  const route = copyRouteRow(
+    [sourceName, copySourceLabel(sourceStart, sourceEnd)]
+      .filter(Boolean)
+      .join(" "),
+    args
+      ? copyTargetLabel(args)
+      : success && success.mode === "replace"
+        ? copyTargetLabel({
+            mode: "replace",
+            targetLine: success.matchedLineStart,
+            targetEndLine: success.matchedLineEnd,
+          })
+        : "",
+  );
+  if (route) body.append(route);
+  if (hasError) body.append(tcErrorRow(result.message));
+
+  // 剪切（deleteSource=true）：结果回显优先，结果里缺该字段时退回参数。
+  const cut = success?.deleteSource ?? args?.deleteSource ?? false;
+  const sourcePath = success?.sourceFilePath || args?.sourceFilePath || "";
+  const targetPath = success?.targetFilePath || args?.filePath || "";
+  // 源 / 目标同一文件 = 文件内移动：源侧没有独立的删除 diff，只给一行说明。
+  const sameFile =
+    sourcePath !== "" &&
+    targetPath !== "" &&
+    normalizePathForCompare(sourcePath) === normalizePathForCompare(targetPath);
+
+  let meta: Node[] | undefined;
+  if (success) {
+    const pastedLabel = copyPastedLabel(success, cut);
+    if (pastedLabel) body.append(successRow(pastedLabel));
+    // 目标侧 diff：replace 用被替换的原目标行作旧侧，insert 旧侧为空串（整段按新增渲染）。
+    const replaced = success.mode === "replace" ? success.replacedContent : "";
+    if (success.pastedContent !== "") {
+      const lines = computeLineDiff(replaced, success.pastedContent);
+      meta = [statsNode(diffStats(lines))];
+      body.append(
+        diffBlock(
+          renderDiffView({
+            fileName: fileNameOf(success.targetFilePath || shownPath || ""),
+            oldText: replaced,
+            newText: success.pastedContent,
+            startLine: success.matchedLineStart,
+            lines,
+          }),
+        ),
+      );
+    }
+    if (cut) {
+      const removedCount = bounds ? bounds.to - bounds.from + 1 : undefined;
+      if (sameFile) {
+        // 文件内移动：源区间已就地移除，位置说明即可，不再渲染第二个 diff。
+        if (bounds) {
+          body.append(
+            noteRow(
+              t("remote.toolCall.filesystem.copyMoveSameFile", {
+                start: bounds.from,
+                end: bounds.to,
+              }),
+            ),
+          );
+        }
+      } else {
+        // 跨文件剪切：源文件侧的删除 diff（旧侧为被删内容，新侧为空串）。
+        if (removedCount !== undefined) {
+          body.append(
+            noteRow(copyRemovedNote(removedCount, success.sourceTotalLines)),
+          );
+        }
+        const removed = success.removedContent ?? "";
+        // 被删内容是空串（剪掉一行空行）时无从对比，只留上面的统计行。
+        if (removed !== "") {
+          const lines = computeLineDiff(removed, "");
+          if (meta === undefined) meta = [statsNode(diffStats(lines))];
+          body.append(
+            diffBlock(
+              renderDiffView({
+                fileName: fileNameOf(sourcePath),
+                oldText: removed,
+                newText: "",
+                // 行号锚点取源区间起点，sourceReview 只在缺字段时兜底。
+                startLine: sourceStart ?? success.sourceReview?.startLine,
+                lines,
+              }),
+            ),
+          );
+        }
+      }
+    }
+    // 目标 / 源都没有 diff 可显示：用行数徽章补足头部信息。
+    if (meta === undefined && success.copiedLines !== undefined) {
+      meta = [
+        tcBadge(
+          t("remote.toolCall.filesystem.linesTotal", {
+            count: success.copiedLines,
+          }),
+        ),
+      ];
+    }
+    if (success.omittedLines > 0) {
+      body.append(
+        noteRow(
+          t("remote.toolCall.filesystem.copyOmitted", {
+            count: success.omittedLines,
+          }),
+        ),
+      );
+    }
+    if (success.formatted) {
+      body.append(noteRow(t("remote.toolCall.filesystem.copyFormatted")));
+    }
+  } else if (!hasError) {
+    const fallback = argsFallbackSection(record, raw);
+    if (fallback) body.append(fallback);
+  }
+  if (result.type === "raw") body.append(rawResultSection(result.text));
+
+  return withBadgeIcon(
+    createToolNode({
+      tool,
+      status: resolveStatus(tool),
+      badge: t(
+        cut
+          ? "remote.toolCall.filesystem.copyCut"
+          : "remote.toolCall.filesystem.copy",
+      ),
+      display:
+        (shownPath ? fileNameOf(shownPath) : undefined) ?? argsSummary(raw),
+      displayTitle: shownPath,
+      meta,
+      body: body.childNodes.length > 0 ? body : undefined,
+    }),
+    "copy",
+  );
+};
+
 // ── 注册表 ───────────────────────────────────────────────────────────────
 
 export const filesystemModule: ToolModule = {
@@ -881,6 +1296,7 @@ export const filesystemModule: ToolModule = {
     "filesystem-read": renderReadCard,
     "filesystem-replace_edit": renderEditCard,
     "filesystem-create": renderCreateCard,
+    "filesystem-copy": renderCopyCard,
   },
   prefixes: [],
 };

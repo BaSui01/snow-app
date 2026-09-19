@@ -4,6 +4,7 @@ export { BashToolCall } from "./BashToolCall";
 export { FilesystemReadToolCall } from "./FilesystemReadToolCall";
 export { FilesystemEditToolCall } from "./FilesystemEditToolCall";
 export { FilesystemCreateToolCall } from "./FilesystemCreateToolCall";
+export { FilesystemCopyToolCall } from "./FilesystemCopyToolCall";
 export { MemoryToolCall } from "./MemoryToolCall";
 export { TodoToolCall } from "./TodoToolCall";
 export { GrepToolCall } from "./GrepToolCall";

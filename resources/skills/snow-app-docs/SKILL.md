@@ -37,6 +37,7 @@ allowed-tools:
   - filesystem-read
   - filesystem-replace_edit
   - filesystem-create
+  - filesystem-copy
   - websearch-websearch-search
   - websearch-websearch-fetch
 ---

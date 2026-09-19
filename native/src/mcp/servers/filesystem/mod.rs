@@ -19,6 +19,7 @@ mod office;
 mod text_codec;
 mod fuzzy_edit;
 mod io;
+mod copy;
 
 use text_codec::{decode_text_bytes, encode_text, encode_text_back, encoding_for_label};
 
@@ -160,6 +161,55 @@ impl McpService for FilesystemService {
                     "required": ["filePath", "content","overwrite"]
                 }),
             },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "copy".to_string(),
+                description: "Copy or cut a line range from one file (source) into another file (target), or into another position of the same file, WITHOUT retyping the content: only line numbers are transmitted, so no output tokens are spent on reproducing the code and every moved line stays byte-exact (no paraphrase, no re-indentation). Prefer it over filesystem-replace_edit whenever the destination text already exists somewhere on disk. HOW TO USE: 1) locate the source range with grep-search / filesystem-read (line numbers are 1-indexed and inclusive; omit sourceEndLine to copy a single line); 2) choose the target position: mode=insert (default) inserts before targetLine (position=before, default) or right after it (position=after), and appends at the end of the file when targetLine is omitted; mode=replace overwrites the inclusive range targetLine..targetEndLine. 3) set deleteSource=true to CUT (move) the lines instead of copying them - the source range is removed from the source file within the same call, and the source file is kept even when it becomes empty. All line numbers refer to the files BEFORE this operation. A missing target file is created together with its parent directories and inherits the encoding, BOM and line-ending style of the source file; an existing target keeps its own encoding, BOM, line-ending style and trailing-newline state. Overlapping source/target ranges inside one file, and operations that would change nothing, are rejected with an explicit error. On success the response reports where the lines landed (matchedLineStart / matchedLineEnd in the written file, totalLines), returns pastedContent and replacedContent (the target lines that were overwritten) for diff display, and for a cut also removedContent (only when the source is a different file) plus sourceReview with the context around the removal. The review block carries the pasted region with surrounding context lines (pasted lines marked with >>>): verify it instead of reading the file again. omittedLines > 0 means a very large region was elided in the payload. When auto-format is enabled the target file is formatted with Prettier afterwards and formatted=true is returned. EXAMPLES: copy lines 40-60 of a.ts to the end of b.ts -> {sourceFilePath: a.ts, sourceStartLine: 40, sourceEndLine: 60, filePath: b.ts}; insert them before line 12 of b.ts -> {sourceFilePath: a.ts, sourceStartLine: 40, sourceEndLine: 60, filePath: b.ts, targetLine: 12}; move lines 40-60 of a.ts into b.ts after line 5 -> {sourceFilePath: a.ts, sourceStartLine: 40, sourceEndLine: 60, filePath: b.ts, targetLine: 5, position: after, deleteSource: true}; overwrite lines 12-30 of b.ts with them -> {filePath: b.ts, mode: replace, targetLine: 12, targetEndLine: 30, sourceFilePath: a.ts, sourceStartLine: 40, sourceEndLine: 60}.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "sourceFilePath": {
+                            "type": "string",
+                            "description": "Path of the file the lines are copied from."
+                        },
+                        "sourceStartLine": {
+                            "type": "number",
+                            "description": "First line of the source range (1-indexed, inclusive)."
+                        },
+                        "sourceEndLine": {
+                            "type": "number",
+                            "description": "Last line of the source range (1-indexed, inclusive). Defaults to sourceStartLine; swapped when smaller than sourceStartLine and clamped to the source file's last line."
+                        },
+                        "filePath": {
+                            "type": "string",
+                            "description": "Path of the target file that receives the lines (the file that gets modified or created)."
+                        },
+                        "mode": {
+                            "type": "string",
+                            "enum": ["insert", "replace"],
+                            "description": "insert (default): insert the lines at targetLine. replace: overwrite the targetLine..targetEndLine range."
+                        },
+                        "targetLine": {
+                            "type": "number",
+                            "description": "Anchor line in the target file (1-indexed, referring to the file BEFORE this operation). Insert mode: insert before it (or after it with position=after); omit it to append at the end of the file. Replace mode: first line to overwrite (required)."
+                        },
+                        "targetEndLine": {
+                            "type": "number",
+                            "description": "Replace mode only (required): last line to overwrite (1-indexed, inclusive). Swapped when smaller than targetLine and clamped to the target file's last line. Rejected in insert mode so a forgotten mode cannot silently duplicate content."
+                        },
+                        "position": {
+                            "type": "string",
+                            "enum": ["before", "after"],
+                            "description": "Insert mode only (default before): insert before or right after targetLine."
+                        },
+                        "deleteSource": {
+                            "type": "boolean",
+                            "description": "true = cut (move): remove the source range from the source file after pasting. Default false keeps the source file untouched."
+                        }
+                    },
+                    "required": ["sourceFilePath", "sourceStartLine", "filePath"]
+                }),
+            },
         ]
     }
 
@@ -168,10 +218,11 @@ impl McpService for FilesystemService {
             "read" => self.execute_read(args),
             "replace_edit" => self.execute_replace_edit(args),
             "create" => self.execute_create(args),
+            "copy" => copy::execute(args),
             _ => Err(Error::new(
                 Status::GenericFailure,
                 format!(
-                    "Unknown tool: \"{}\" for MCP server \"filesystem\". Available tools: [filesystem-read, filesystem-replace_edit, filesystem-create]",
+                    "Unknown tool: \"{}\" for MCP server \"filesystem\". Available tools: [filesystem-read, filesystem-replace_edit, filesystem-create, filesystem-copy]",
                     tool_name
                 ),
             )),
@@ -200,21 +251,26 @@ impl FilesystemService {
 
         // 写文件类工具对同一文件全程加锁：并行调用若各自基于同一份旧
         // 内容计算再先后写盘，会互相覆盖或与格式化交错导致误报 not found。
-        let write_guard = if matches!(tool_name, "replace_edit" | "create") {
-            file_path.map(|path| file_write_lock(path))
-        } else {
-            None
+        // 剪切会同时改写源文件与目标文件，两把锁按路径排序后依次获取，
+        // 避免两次交叉剪切互相等待。
+        let write_locks: Vec<Arc<AsyncMutex<()>>> = match tool_name {
+            "replace_edit" | "create" => file_path.map(file_write_lock).into_iter().collect(),
+            "copy" => copy::write_lock_paths(args)
+                .into_iter()
+                .map(file_write_lock)
+                .collect(),
+            _ => Vec::new(),
         };
         // 锁须覆盖整个「读取 -> 计算 -> 写盘 -> 格式化」生命周期。
-        let _write_permit = match write_guard.as_deref() {
-            Some(lock) => Some(lock.lock().await),
-            None => None,
-        };
+        let mut _write_permits = Vec::with_capacity(write_locks.len());
+        for lock in &write_locks {
+            _write_permits.push(Arc::clone(lock).lock_owned().await);
+        }
 
         self.execute_local(tool_name, args, file_path).await
     }
 
-    /// 本地执行：同步 IO 与模糊匹配放入 blocking pool；replace_edit 成功
+    /// 本地执行：同步 IO 与模糊匹配放入 blocking pool；写文件类工具成功
     /// 后按全局开关自动 Prettier 格式化并重建反馈结果。
     async fn execute_local(
         &self,
@@ -237,13 +293,13 @@ impl FilesystemService {
             )
         })??;
 
-        if tool_name != "replace_edit" {
+        // 写文件类工具成功后按全局开关（默认开启）自动用 Prettier 格式化。
+        // 格式化失败（未安装 prettier / 无 node / 不支持的类型等）静默
+        // 跳过，绝不回退已成功的写入结果。
+        if tool_name != "replace_edit" && tool_name != "copy" {
             return Ok(result);
         }
 
-        // 编辑成功后按全局开关（默认开启）自动用 Prettier 格式化。
-        // 格式化失败（未安装 prettier / 无 node / 不支持的类型等）静默
-        // 跳过，绝不回退已成功的编辑结果。
         if let Some(file_path) = local_file_path {
             let auto_format = tokio::task::spawn_blocking(crate::storage::get_auto_format)
                 .await
@@ -254,9 +310,24 @@ impl FilesystemService {
                 if let Some(formatted_content) =
                     format_file_with_prettier(Path::new(file_path)).await
                 {
-                    rebuild_result_after_format(&mut result, file_path, &formatted_content);
+                    // 格式化会整体改变行数，两个工具各自重建自己的行号与复核内容。
+                    match tool_name {
+                        "replace_edit" => {
+                            rebuild_result_after_format(&mut result, file_path, &formatted_content)
+                        }
+                        _ => copy::rebuild_result_after_format(
+                            &mut result,
+                            file_path,
+                            &formatted_content,
+                        ),
+                    }
                 }
             }
+        }
+
+        // 复制用于格式化后重定位的完整粘贴文本只在内部流转，不回传给 AI 与前端。
+        if tool_name == "copy" {
+            copy::strip_internal_fields(&mut result);
         }
 
         Ok(result)

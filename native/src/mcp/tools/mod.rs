@@ -14,10 +14,13 @@ use crate::storage::services::system_settings::{McpGlobalScopeSettings, McpProje
 
 enum ToolCheckpointCapture {
     None,
-    File {
+    /// 需要回滚保护的文件集合。常规文件工具只含目标文件；剪切（filesystem-copy
+    /// deleteSource=true）会同时包含源文件——两个文件都必须留下 before/after，
+    /// 否则回滚会丢掉被搬走的代码。
+    Files {
         checkpoint_ids: Vec<String>,
         work_dir: String,
-        file_path: String,
+        file_paths: Vec<String>,
     },
     Worktree(Option<CheckpointWorktreeCapture>),
 }
@@ -29,9 +32,11 @@ enum ToolCheckpointCapture {
 /// 字段只用于 RAII，离开调用作用域时自动释放。
 enum ToolCheckpointOperationGuard {
     None,
-    File {
+    /// 一次调用可能改写多个文件（剪切）：所有文件锁按路径排序后依次获取，
+    /// 全部到手再进入目录共享锁，交叉持锁不会死锁。
+    Files {
         _work_dir_guard: tokio::sync::OwnedRwLockReadGuard<()>,
-        _file_guard: tokio::sync::OwnedMutexGuard<()>,
+        _file_guards: Vec<tokio::sync::OwnedMutexGuard<()>>,
     },
     /// 影响范围未知的外部 MCP 工具：整树独占锁，避免污染可捕获工具
     /// （bash / 文件工具）的 before/after 记录。
@@ -686,66 +691,100 @@ async fn prepare_remote_workspace_args(
     mut args: Value,
     project_id: Option<&str>,
 ) -> napi::Result<(Value, bool)> {
-    let Some(path_field) = remote_workspace_path_field(tool_full_name) else {
-        return Ok((args, false));
-    };
-    let Some(path) = args.get(path_field).and_then(Value::as_str) else {
+    let path_fields = remote_workspace_path_fields(tool_full_name);
+    // 首个字段是本次调用的主路径，决定本机 / SSH 通道；其余字段必须落在同一
+    // 工作区（filesystem-copy 同时涉及目标文件与源文件）。
+    let Some(primary_path) = path_fields
+        .first()
+        .and_then(|field| args.get(*field))
+        .and_then(Value::as_str)
+    else {
         return Ok((args, false));
     };
     // Windows 盘符与 UNC 路径属于 App Host（本机）路径，不能拼入 SSH
     // 工作区；直接走本机通道，由 Electron 在本机读取。
-    if is_windows_absolute_path(path) {
+    if is_windows_absolute_path(primary_path) {
         return Ok((args, false));
     }
     let remote_project_workspace = resolve_remote_project_workspace(project_id).await?;
-    if is_ssh_path(path) {
-        // ssh:// 路径必须属于当前项目 SSH 工作区，否则是跨区域操作，
-        // 直接拦截，避免缺失 workspaceRoot 时 Electron 抛底层异常。
-        let Some(workspace_path) = remote_project_workspace.as_deref() else {
+    let mut uses_remote_workspace = false;
+
+    for path_field in path_fields {
+        let Some(path) = args.get(*path_field).and_then(Value::as_str) else {
+            continue;
+        };
+        // 本机绝对路径与 SSH 工作区路径混用会让其中一个文件在错误的机器上
+        // 被读写，直接拦截。
+        if is_windows_absolute_path(path) {
             return Err(Error::new(
                 Status::GenericFailure,
                 format!(
-                    "[BLOCKED] 跨区域操作被拒绝：{path_field}（{path}）是 SSH 工作区路径，但当前项目不是 SSH 工作区。工具只能访问当前项目工作区内的路径。"
+                    "[BLOCKED] 跨区域操作被拒绝：{path_field}（{path}）是本机路径，与本次调用的其他 SSH 工作区路径混用。同一次调用的所有路径必须位于同一工作区。"
                 ),
             ));
-        };
-        if let (
-            Some((workspace_authority, workspace_segments)),
-            Some((candidate_authority, candidate_segments)),
-        ) = (
-            plan_write::normalize_ssh_path(workspace_path),
-            plan_write::normalize_ssh_path(path),
-        ) {
-            if workspace_authority == candidate_authority
-                && plan_write::remote_segments_start_with(&candidate_segments, &workspace_segments)
-            {
-                args["workspaceRoot"] = Value::String(workspace_path.to_string());
-                return Ok((args, true));
-            }
         }
-        return Err(Error::new(
-            Status::GenericFailure,
-            format!(
-                "[BLOCKED] 跨区域操作被拒绝：{path} 不属于当前项目的 SSH 工作区（{workspace_path}）。工具只能访问当前项目工作区内的路径。"
-            ),
-        ));
+        if is_ssh_path(path) {
+            // ssh:// 路径必须属于当前项目 SSH 工作区，否则是跨区域操作，
+            // 直接拦截，避免缺失 workspaceRoot 时 Electron 抛底层异常。
+            let Some(workspace_path) = remote_project_workspace.as_deref() else {
+                return Err(Error::new(
+                    Status::GenericFailure,
+                    format!(
+                        "[BLOCKED] 跨区域操作被拒绝：{path_field}（{path}）是 SSH 工作区路径，但当前项目不是 SSH 工作区。工具只能访问当前项目工作区内的路径。"
+                    ),
+                ));
+            };
+            let in_workspace = matches!(
+                (
+                    plan_write::normalize_ssh_path(workspace_path),
+                    plan_write::normalize_ssh_path(path),
+                ),
+                (
+                    Some((workspace_authority, workspace_segments)),
+                    Some((candidate_authority, candidate_segments)),
+                ) if workspace_authority == candidate_authority
+                    && plan_write::remote_segments_start_with(
+                        &candidate_segments,
+                        &workspace_segments,
+                    )
+            );
+            if !in_workspace {
+                return Err(Error::new(
+                    Status::GenericFailure,
+                    format!(
+                        "[BLOCKED] 跨区域操作被拒绝：{path} 不属于当前项目的 SSH 工作区（{workspace_path}）。工具只能访问当前项目工作区内的路径。"
+                    ),
+                ));
+            }
+            uses_remote_workspace = true;
+            continue;
+        }
+
+        // 相对路径只在当前项目确实是 SSH 工作区时才解析到远端。
+        let Some(workspace_path) = remote_project_workspace.as_deref() else {
+            continue;
+        };
+        args[*path_field] = Value::String(resolve_remote_workspace_path(workspace_path, path));
+        uses_remote_workspace = true;
     }
 
-    let Some(workspace_path) = remote_project_workspace else {
-        return Ok((args, false));
-    };
-    args[path_field] = Value::String(resolve_remote_workspace_path(&workspace_path, path));
-    args["workspaceRoot"] = Value::String(workspace_path);
-    Ok((args, true))
+    if uses_remote_workspace {
+        if let Some(workspace_path) = remote_project_workspace.as_deref() {
+            args["workspaceRoot"] = Value::String(workspace_path.to_string());
+        }
+    }
+    Ok((args, uses_remote_workspace))
 }
 
-fn remote_workspace_path_field(tool_full_name: &str) -> Option<&'static str> {
+fn remote_workspace_path_fields(tool_full_name: &str) -> &'static [&'static str] {
     match tool_full_name {
-        "filesystem-read" | "filesystem-replace_edit" | "filesystem-create" => Some("filePath"),
-        name if name.starts_with("codelens-") => Some("filePath"),
-        "grep-search" => Some("path"),
-        "bash-terminal-execute" => Some("workingDirectory"),
-        _ => None,
+        "filesystem-read" | "filesystem-replace_edit" | "filesystem-create" => &["filePath"],
+        // 复制/剪切会同时读写源文件与目标文件，两个路径都必须解析到远端。
+        "filesystem-copy" => &["filePath", "sourceFilePath"],
+        name if name.starts_with("codelens-") => &["filePath"],
+        "grep-search" => &["path"],
+        "bash-terminal-execute" => &["workingDirectory"],
+        _ => &[],
     }
 }
 
@@ -849,9 +888,34 @@ enum ToolCheckpointScope {
     Unknown,
 }
 
+/// 一次工具调用会改写的文件路径（剪切会同时改写源文件与目标文件）。去重并按路径
+/// 排序：加锁顺序一致，交叉持锁不会死锁；checkpoint 也对同一集合记录快照，
+/// 回滚才能把两个文件一起还原。
+fn checkpoint_file_paths(tool_full_name: &str, args: &Value) -> Vec<String> {
+    let mut paths: Vec<String> = Vec::new();
+    if let Some(path) = args.get("filePath").and_then(Value::as_str) {
+        paths.push(path.to_string());
+    }
+    if tool_full_name == "filesystem-copy"
+        && args
+            .get("deleteSource")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    {
+        if let Some(path) = args.get("sourceFilePath").and_then(Value::as_str) {
+            paths.push(path.to_string());
+        }
+    }
+    paths.sort_unstable();
+    paths.dedup();
+    paths
+}
+
 fn tool_checkpoint_scope(tool_full_name: &str) -> ToolCheckpointScope {
     match tool_full_name {
-        "filesystem-replace_edit" | "filesystem-create" => ToolCheckpointScope::File,
+        "filesystem-replace_edit" | "filesystem-create" | "filesystem-copy" => {
+            ToolCheckpointScope::File
+        }
         "bash-terminal-execute" => ToolCheckpointScope::Worktree,
         _ => {
             // 内置 server 其余工具不修改工作区；外部 MCP 影响范围未知。
@@ -867,6 +931,7 @@ fn tool_checkpoint_scope(tool_full_name: &str) -> ToolCheckpointScope {
 }
 
 async fn acquire_tool_checkpoint_operation_guard(
+    tool_full_name: &str,
     scope: ToolCheckpointScope,
     args: &Value,
     checkpoint_work_dir: Option<&str>,
@@ -877,27 +942,29 @@ async fn acquire_tool_checkpoint_operation_guard(
 
     match scope {
         ToolCheckpointScope::File => {
-            let file_path = args
-                .get("filePath")
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    Error::new(
-                        Status::InvalidArg,
-                        "filePath is required for checkpoint operation locking".to_string(),
-                    )
-                })?;
-            // 先等同文件锁，再进入目录共享锁：等待同文件的调用不会长期占住
-            // 目录读锁，回滚可在两次文件编辑之间公平取得独占锁。
-            let file_lock = crate::storage::services::checkpoint::checkpoint_file_operation_lock(
-                work_dir, file_path,
-            )?;
-            let file_guard = file_lock.lock_owned().await;
+            let file_paths = checkpoint_file_paths(tool_full_name, args);
+            if file_paths.is_empty() {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "filePath is required for checkpoint operation locking".to_string(),
+                ));
+            }
+            // 先按路径顺序等齐所有文件锁，再进入目录共享锁：等待同文件的调用不会
+            // 长期占住目录读锁，回滚可在两次文件编辑之间公平取得独占锁。
+            let mut file_guards = Vec::with_capacity(file_paths.len());
+            for file_path in &file_paths {
+                let file_lock =
+                    crate::storage::services::checkpoint::checkpoint_file_operation_lock(
+                        work_dir, file_path,
+                    )?;
+                file_guards.push(file_lock.lock_owned().await);
+            }
             let work_dir_lock =
                 crate::storage::services::checkpoint::checkpoint_operation_lock(work_dir)?;
             let work_dir_guard = work_dir_lock.read_owned().await;
-            Ok(ToolCheckpointOperationGuard::File {
+            Ok(ToolCheckpointOperationGuard::Files {
                 _work_dir_guard: work_dir_guard,
-                _file_guard: file_guard,
+                _file_guards: file_guards,
             })
         }
         ToolCheckpointScope::Worktree => {
@@ -944,25 +1011,25 @@ fn capture_checkpoint_before_tool(
         ToolCheckpointScope::None | ToolCheckpointScope::Unknown => Ok(ToolCheckpointCapture::None),
         ToolCheckpointScope::File => {
             let work_dir = require_checkpoint_work_dir(checkpoint_work_dir)?;
-            let file_path = args
-                .get("filePath")
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    Error::new(
-                        Status::InvalidArg,
-                        "filePath is required for checkpoint capture".to_string(),
-                    )
-                })?
-                .to_string();
-            crate::storage::services::checkpoint::record_checkpoint_file(
-                checkpoint_ids.clone(),
-                work_dir.clone(),
-                file_path.clone(),
-            )?;
-            Ok(ToolCheckpointCapture::File {
+            let file_paths = checkpoint_file_paths(tool_full_name, args);
+            if file_paths.is_empty() {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "filePath is required for checkpoint capture".to_string(),
+                ));
+            }
+            // 每个文件各留一份 before 快照：剪切时源文件与目标文件都必须可回滚。
+            for file_path in &file_paths {
+                crate::storage::services::checkpoint::record_checkpoint_file(
+                    checkpoint_ids.clone(),
+                    work_dir.clone(),
+                    file_path.clone(),
+                )?;
+            }
+            Ok(ToolCheckpointCapture::Files {
                 checkpoint_ids,
                 work_dir,
-                file_path,
+                file_paths,
             })
         }
         ToolCheckpointScope::Worktree => {
@@ -1019,30 +1086,29 @@ async fn capture_checkpoint_before_tool_remote(
     match tool_checkpoint_scope(tool_full_name) {
         ToolCheckpointScope::None | ToolCheckpointScope::Unknown => Ok(ToolCheckpointCapture::None),
         ToolCheckpointScope::File => {
-            // 单文件回滚语义保持不变：记录失败按工具错误上抛。
+            // 回滚语义不变：记录失败按工具错误上抛。
             let work_dir = require_checkpoint_work_dir(checkpoint_work_dir)?;
-            let file_path = args
-                .get("filePath")
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    Error::new(
-                        Status::InvalidArg,
-                        "filePath is required for checkpoint capture".to_string(),
-                    )
-                })?
-                .to_string();
+            let file_paths = checkpoint_file_paths(tool_full_name, args);
+            if file_paths.is_empty() {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "filePath is required for checkpoint capture".to_string(),
+                ));
+            }
             let client = RemoteCheckpointClient::new(on_remote_workspace_command);
-            crate::storage::services::checkpoint::remote::record_checkpoint_file_remote(
-                &client,
-                checkpoint_ids.clone(),
-                work_dir.clone(),
-                file_path.clone(),
-            )
-            .await?;
-            Ok(ToolCheckpointCapture::File {
+            for file_path in &file_paths {
+                crate::storage::services::checkpoint::remote::record_checkpoint_file_remote(
+                    &client,
+                    checkpoint_ids.clone(),
+                    work_dir.clone(),
+                    file_path.clone(),
+                )
+                .await?;
+            }
+            Ok(ToolCheckpointCapture::Files {
                 checkpoint_ids,
                 work_dir,
-                file_path,
+                file_paths,
             })
         }
         ToolCheckpointScope::Worktree => {
@@ -1155,20 +1221,23 @@ async fn capture_checkpoint_after_tool_remote(
         }
     };
     match capture {
-        ToolCheckpointCapture::File {
+        ToolCheckpointCapture::Files {
             checkpoint_ids,
             work_dir,
-            file_path,
+            file_paths,
         } => {
-            // 单文件回滚语义保持不变：记录失败仍按工具错误上抛。
+            // 回滚语义不变：记录失败仍按工具错误上抛。
             let client = RemoteCheckpointClient::new(on_remote_workspace_command);
-            crate::storage::services::checkpoint::remote::record_checkpoint_file_after_remote(
-                &client,
-                checkpoint_ids,
-                work_dir,
-                file_path,
-            )
-            .await
+            for file_path in file_paths {
+                crate::storage::services::checkpoint::remote::record_checkpoint_file_after_remote(
+                    &client,
+                    checkpoint_ids.clone(),
+                    work_dir.clone(),
+                    file_path,
+                )
+                .await?;
+            }
+            Ok(())
         }
         ToolCheckpointCapture::Worktree(Some(capture)) => {
             // 命令已结束：after 失败只意味着变更记录不完整，软失败降级，
@@ -1221,15 +1290,20 @@ async fn capture_checkpoint_after_tool_remote(
 
 fn capture_checkpoint_after_tool(capture: ToolCheckpointCapture) -> napi::Result<()> {
     match capture {
-        ToolCheckpointCapture::File {
+        ToolCheckpointCapture::Files {
             checkpoint_ids,
             work_dir,
-            file_path,
-        } => crate::storage::services::checkpoint::record_checkpoint_file_after(
-            checkpoint_ids,
-            work_dir,
-            file_path,
-        ),
+            file_paths,
+        } => {
+            for file_path in file_paths {
+                crate::storage::services::checkpoint::record_checkpoint_file_after(
+                    checkpoint_ids.clone(),
+                    work_dir.clone(),
+                    file_path,
+                )?;
+            }
+            Ok(())
+        }
         ToolCheckpointCapture::Worktree(Some(capture)) => {
             // 软失败：after 记录失败只意味着回滚保护可能不完整，不能把
             // 已经成功的工具结果覆盖为失败（避免模型重试已执行的命令）。

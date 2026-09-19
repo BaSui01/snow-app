@@ -1270,6 +1270,7 @@ export const zhCN = {
   "toolNames.filesystem-read": "读取文件",
   "toolNames.filesystem-replace_edit": "编辑文件",
   "toolNames.filesystem-create": "新建文件",
+  "toolNames.filesystem-copy": "复制行",
   "toolNames.sub-agents-activate": "子代理",
   "toolNames.sub-agents-listTeammates": "查询队友",
   "toolNames.sub-agents-sendMessage": "发送消息",

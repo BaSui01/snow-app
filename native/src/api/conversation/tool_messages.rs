@@ -438,6 +438,7 @@ fn snow_tool_call_has_required_arguments(entry: &NormalizedToolCall) -> bool {
         "filesystem-read" => &["filePath"],
         "filesystem-create" => &["filePath", "content"],
         "filesystem-replace_edit" => &["filePath", "searchContent", "replaceContent"],
+        "filesystem-copy" => &["filePath", "sourceFilePath"],
         "bash-terminal-execute" => &["command"],
         _ => return true,
     };
@@ -452,8 +453,20 @@ fn snow_tool_call_has_required_arguments(entry: &NormalizedToolCall) -> bool {
             .get(*key)
             .and_then(Value::as_str)
             .is_some_and(|value| !value.trim().is_empty())
-    }) && (entry.name != "filesystem-create"
-        || input.get("overwrite").is_some_and(Value::is_boolean))
+    }) && tool_specific_arguments_valid(&entry.name, input)
+}
+
+/// 逐工具的额外参数约束：缺参数的调用不应进入执行层（filesystem-create 必须显式
+/// 声明 overwrite，filesystem-copy 必须有决定落点的源起始行号）。
+fn tool_specific_arguments_valid(name: &str, input: &serde_json::Map<String, Value>) -> bool {
+    match name {
+        "filesystem-create" => input.get("overwrite").is_some_and(Value::is_boolean),
+        "filesystem-copy" => input
+            .get("sourceStartLine")
+            .and_then(Value::as_f64)
+            .is_some_and(|value| value.is_finite() && value >= 1.0),
+        _ => true,
+    }
 }
 
 fn extract_result_call_id_from_json(result: &Value) -> String {

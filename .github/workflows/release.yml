@@ -146,6 +146,12 @@ jobs:
       - name: Generate latest-mac.json
         run: node scripts/generate-latest-json.cjs ${{ inputs.tag || github.ref_name }}
 
+      # 发布前校验：更新清单（latest*.yml / latest-mac.json）引用的文件名必须与
+      # release 目录中真实存在的文件一致。命名漂移（如 AppImage 文件名里的空格
+      # 被 GitHub 改写成点号）会让客户端更新下载 404。
+      - name: Verify update manifests match packaged files
+        run: node scripts/verify-update-manifests.cjs release
+
       - name: Prepare release notes
         env:
           RELEASE_NOTES_INPUT: ${{ inputs.release_notes }}

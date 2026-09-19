@@ -178,8 +178,8 @@ export const GitControl = ({
   const lastClickedSectionRef = useRef<"staged" | "unstaged" | null>(null);
   const prevStatusRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  // 提交信息输入框引用：提交成功后清除用户拖拽拉伸留下的 inline
-  // height，让输入框回归 rows={1} 的单行默认尺寸。
+  // 提交信息输入框引用：生成提交信息时把最新流式分片滚入视野
+  // （高度由 CSS field-sizing 随内容自适应，无需 JS 写尺寸）。
   const commitInputRef = useRef<HTMLTextAreaElement>(null);
   // Set to true after a commit succeeds; the effect below resets scroll
   // to top once the refreshed status has been applied to the DOM.
@@ -273,6 +273,19 @@ export const GitControl = ({
       commitMsgGenerationListeners.delete(listener);
     };
   }, []);
+
+  // 生成期间输入框只读，内容随流式分片持续变长；未聚焦的 textarea 不会
+  // 自动跟随光标，这里把最新内容滚入视野（高度未达上限时
+  // scrollHeight === clientHeight，赋值无副作用）。
+  useEffect(() => {
+    if (!isGeneratingCommitMsg) {
+      return;
+    }
+    const input = commitInputRef.current;
+    if (input) {
+      input.scrollTop = input.scrollHeight;
+    }
+  }, [isGeneratingCommitMsg, displayedCommitMessage]);
 
   // 统一写入草稿：先写模块级缓存（按仓库路径隔离），仅当目标仓库
   // 仍是当前显示的仓库时才同步 UI。切换项目后，旧项目迟到的 AI
@@ -601,12 +614,6 @@ export const GitControl = ({
         // 清空的是“该仓库”的草稿：若提交期间已切换项目，UI 不受影响。
         applyCommitMessage(repoPath, "");
         commitPendingRef.current = true;
-        // 输入框回归单行：拖拽拉伸由浏览器写入 inline height，React
-        // 重渲染不会清掉，这里主动移除使其回到 rows={1} 的默认尺寸。
-        // 仅在当前显示的还是提交的仓库时执行，避免误清新仓库的拉伸状态。
-        if (repoPath === currentRepoRef.current) {
-          commitInputRef.current?.style.removeProperty("height");
-        }
         // 提交并推送模式下，提交成功后紧接着推送。
         if (shouldPush) {
           return window.snow.gitPush(repoPath);
@@ -1114,10 +1121,13 @@ export const GitControl = ({
               <div className="git-commit-input-wrapper">
                 <textarea
                   ref={commitInputRef}
-                  className="git-commit-input"
+                  className={`git-commit-input${
+                    isGeneratingCommitMsg ? " is-generating" : ""
+                  }`}
                   placeholder={t("git.commitMessagePlaceholder")}
                   value={displayedCommitMessage}
                   onChange={(e) => applyCommitMessage(repoPath, e.target.value)}
+                  readOnly={isGeneratingCommitMsg}
                   rows={1}
                 />
                 <div className="git-commit-input-actions">

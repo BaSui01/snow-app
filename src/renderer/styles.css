@@ -31520,6 +31520,8 @@ input {
 .git-commit-input-wrapper {
   position: relative;
   display: flex;
+  /* 不让 flex 拉伸输入框：高度完全由输入框自身的内容尺寸决定 */
+  align-items: flex-start;
 }
 
 .git-commit-input {
@@ -31532,10 +31534,19 @@ input {
   font-size: 12.5px;
   font-family: var(--font-sans);
   line-height: 1.5;
-  resize: vertical;
+  /* 高度交给 CSS：field-sizing 让输入框随内容自然长高，超出 max-height
+     后转为内部滚动；禁用拖拽改尺寸，避免 inline height 覆盖内容自适应 */
+  resize: none;
+  field-sizing: content;
+  overflow-y: auto;
   min-height: 36px;
-  /* 拖拽扩展上限：约 8 行（8 × 18.75px 行高 + 上下 6px 内边距 + 2px 边框） */
+  /* 自动增高上限：约 8 行（8 × 18.75px 行高 + 上下 6px 内边距 + 2px 边框） */
   max-height: 164px;
+}
+
+/* 生成提交信息期间输入框只读：不显示可编辑的文本光标 */
+.git-commit-input.is-generating {
+  cursor: default;
 }
 .git-commit-input:focus {
   outline: none;

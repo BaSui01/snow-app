@@ -181,6 +181,9 @@
       "deleteAppDataOnUninstall": false,
       "artifactName": "Snow-App-Setup-${version}.${ext}"
     },
+    "appImage": {
+      "artifactName": "Snow-App-${version}.${ext}"
+    },
     "linux": {
       "icon": "resources/icon.png",
       "maintainer": "MayDay <mufasa@snow.app>",

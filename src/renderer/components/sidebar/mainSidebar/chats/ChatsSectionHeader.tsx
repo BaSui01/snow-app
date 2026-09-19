@@ -57,24 +57,27 @@ export function ChatsSectionHeader({
         ) : null}
       </button>
       <div className="section-actions">
-        <button
-          type="button"
-          aria-label={t("sidebar.chatImportConversations", {
-            defaultValue: "Import conversations",
-          })}
-          className="icon-btn ghost chats-import-toggle"
-          disabled={isImportingConversations}
-          onClick={onImportConversations}
-          title={t("sidebar.chatImportConversations", {
-            defaultValue: "Import conversations",
-          })}
-        >
-          {isImportingConversations ? (
-            <Loader2 className="spin" size={14} />
-          ) : (
-            <FolderDown size={14} />
-          )}
-        </button>
+        {/* 归档列表模式下隐藏导入按钮，切回会话列表时恢复 */}
+        {!isArchiveMode && (
+          <button
+            type="button"
+            aria-label={t("sidebar.chatImportConversations", {
+              defaultValue: "Import conversations",
+            })}
+            className="icon-btn ghost chats-import-toggle"
+            disabled={isImportingConversations}
+            onClick={onImportConversations}
+            title={t("sidebar.chatImportConversations", {
+              defaultValue: "Import conversations",
+            })}
+          >
+            {isImportingConversations ? (
+              <Loader2 className="spin" size={14} />
+            ) : (
+              <FolderDown size={14} />
+            )}
+          </button>
+        )}
         <button
           type="button"
           aria-pressed={isArchiveMode}

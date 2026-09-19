@@ -25,6 +25,7 @@ export const ChatInput = ({
   rollbackInputState,
   onRuntimeInputStateChange,
   getRuntimeInputState,
+  loadOlderMessages,
   pendingMessages = [],
   onWithdrawPendingMessage,
   onSendPendingMessageNow,
@@ -91,6 +92,7 @@ export const ChatInput = ({
       onNavigateToView={onNavigateToView}
       {...controller}
       tokenUsage={tokenUsage}
+      loadOlderMessages={loadOlderMessages}
       pendingMessages={pendingMessages}
       onWithdrawPendingMessage={onWithdrawPendingMessage}
       onSendPendingMessageNow={onSendPendingMessageNow}

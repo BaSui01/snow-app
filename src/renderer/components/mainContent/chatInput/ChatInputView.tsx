@@ -8,6 +8,8 @@ import { ChatInputPanels } from "./ChatInputPanels";
 import { OPEN_PROJECT_CODEBASE_PANEL_EVENT } from "./ProjectCodebasePanel";
 import { ChatInputToolbar } from "./ChatInputToolbar";
 import { FileMentionPopup } from "./FileMentionPopup";
+import { RollbackTargetPopup } from "./RollbackTargetPopup";
+import { useRollbackPicker } from "./useRollbackPicker";
 import { PendingMessages } from "./PendingMessages";
 import { StreamMetrics } from "./StreamMetrics";
 import { useChatConversationContext } from "../chatMessages";
@@ -73,6 +75,7 @@ export const ChatInputView = ({
   sendKeyMode,
   setSendKeyMode,
   tokenUsage,
+  loadOlderMessages,
   pendingMessages,
   onWithdrawPendingMessage,
   onSendPendingMessageNow,
@@ -147,6 +150,11 @@ export const ChatInputView = ({
     handlePause,
     handleResume,
   } = useChatConversationContext();
+  // 双击 ESC 打开的回滚目标列表（子代理会话不支持回滚）。
+  const rollbackPicker = useRollbackPicker({
+    enabled: !isSubAgentConversation,
+    loadOlderMessages,
+  });
   // 用户发送过的历史消息（终端式 ↑/↓ 回溯用）：按时间正序保留。
   // 过滤压缩摘要（isContextCompaction）等非用户真实输入的系统消息。
   const userHistoryMessages = useMemo(
@@ -520,6 +528,17 @@ export const ChatInputView = ({
     handleDragOver,
     handleDragLeave,
   } = contentEditableInteractions;
+  // 回滚目标列表优先接管按键：列表打开时 ↑/↓/Enter/Esc 不再触达输入区逻辑
+  // （历史回溯、发送、@ 提及面板等）；列表关闭时它只累计连续 ESC。
+  const handleInputKeyDownWithRollback = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>): void => {
+      if (rollbackPicker.handleKeyDown(event)) {
+        return;
+      }
+      handleInputKeyDown(event);
+    },
+    [handleInputKeyDown, rollbackPicker.handleKeyDown],
+  );
   const {
     imagePreview,
     setImagePreview,
@@ -632,6 +651,16 @@ export const ChatInputView = ({
           onClose={handleCloseCommand}
           onSelect={handleCommandSelect}
         />
+        <RollbackTargetPopup
+          visible={rollbackPicker.isOpen}
+          targets={rollbackPicker.targets}
+          selectedIndex={rollbackPicker.selectedIndex}
+          isLoadingTargets={rollbackPicker.isLoadingTargets}
+          preparingMessageId={rollbackPicker.preparingMessageId}
+          loadError={rollbackPicker.loadError}
+          containerRef={rollbackPicker.containerRef}
+          onSelect={rollbackPicker.select}
+        />
         <PendingMessages
           messages={pendingMessages}
           onWithdraw={handleWithdrawPending}
@@ -695,7 +724,7 @@ export const ChatInputView = ({
             data-placeholder={placeholder}
             data-empty="true"
             onInput={handleInput}
-            onKeyDown={handleInputKeyDown}
+            onKeyDown={handleInputKeyDownWithRollback}
             onCopy={handleCopy}
             onCut={handleCut}
             onPaste={handlePaste}

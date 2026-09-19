@@ -656,6 +656,127 @@ export const parseContentSegments = (content: string): ContentSegment[] => {
   return segments;
 };
 
+/**
+ * 把消息内容（含 @@file:...@@ / @@image:...@@ 等 chip 标签）折叠为单行
+ * 可读纯文本，用于回滚目标列表、会话导航栏等紧凑位置的预览与 tooltip。
+ *
+ * 标签不会以编码串形式暴露，而是替换为其人类可读名称：文件取「名称:行号」
+ * （L7-L9），图片取 [image.png]，提交取短 hash，网页取「标题 URL」，文本片段
+ * 与引用取摘要等。
+ */
+export const summarizeContentAsPlainText = (content: string): string => {
+  const parts: string[] = [];
+  for (const segment of parseContentSegments(content)) {
+    if (segment.type === "text") {
+      // 历史数据里可能混有未编码的 data URL，替换掉避免长串 base64 污染摘要。
+      const text = segment.content.replace(
+        /data:image\/[^;]+;base64,[^\s)]+/g,
+        "[image]",
+      );
+      const trimmed = text.trim();
+      if (trimmed) {
+        parts.push(trimmed);
+      }
+    } else if (segment.type === "image") {
+      parts.push(`[${segment.tag.name}]`);
+    } else if (segment.type === "commit") {
+      parts.push(segment.tag.shortHash);
+    } else if (segment.type === "change") {
+      const lastSep = Math.max(
+        segment.tag.path.lastIndexOf("/"),
+        segment.tag.path.lastIndexOf("\\"),
+      );
+      parts.push(
+        lastSep === -1 ? segment.tag.path : segment.tag.path.slice(lastSep + 1),
+      );
+    } else if (
+      segment.type === "text-snippet" ||
+      segment.type === "quote" ||
+      segment.type === "review"
+    ) {
+      parts.push(segment.tag.summary);
+    } else if (segment.type === "element") {
+      parts.push(
+        segment.tag.note
+          ? `${segment.tag.label}: ${segment.tag.note}`
+          : segment.tag.label,
+      );
+    } else if (segment.type === "web") {
+      parts.push(
+        segment.tag.title
+          ? `${segment.tag.title} ${segment.tag.url}`
+          : segment.tag.url,
+      );
+    } else if (segment.type === "conversation") {
+      parts.push(segment.tag.title);
+    } else if (segment.type === "skill") {
+      parts.push(segment.tag.name);
+    } else {
+      const { tag } = segment;
+      const linesStr =
+        !tag.isDirectory && tag.lines && tag.lines.length > 0
+          ? formatLinesStr(tag.lines)
+          : "";
+      parts.push(linesStr ? `${tag.name}:${linesStr}` : tag.name);
+    }
+  }
+  return parts.join(" ").replace(/\s+/g, " ").trim();
+};
+
+/** 非文本片段（chip）：消息区与列表预览共用的渲染单位。 */
+type ChipSegment = Exclude<ContentSegment, { type: "text" }>;
+
+/**
+ * chip 在紧凑位置显示的单行文本：文件取「名称:行号」、图片取「名称 #序号」、
+ * 提交取短 hash、网页取「标题 · 域名」等。
+ *
+ * 消息区 chip 渲染与回滚列表的「预览长度预算」共用这份规则，避免两处各写一套
+ * 显示名逻辑（原始路径、data URL 等不得进入显示文本）。
+ */
+export const getChipDisplayLabel = (segment: ChipSegment): string => {
+  switch (segment.type) {
+    case "image": {
+      const index = segment.tag.index ?? 0;
+      return index > 0 ? `${segment.tag.name} #${index}` : segment.tag.name;
+    }
+    case "commit":
+      return segment.tag.shortHash;
+    case "change": {
+      const lastSep = Math.max(
+        segment.tag.path.lastIndexOf("/"),
+        segment.tag.path.lastIndexOf("\\"),
+      );
+      return lastSep === -1
+        ? segment.tag.path
+        : segment.tag.path.slice(lastSep + 1);
+    }
+    case "text-snippet":
+    case "quote":
+    case "review":
+      return segment.tag.summary;
+    case "element":
+      return segment.tag.note
+        ? `${segment.tag.label} · ${segment.tag.note}`
+        : segment.tag.label;
+    case "web": {
+      const host = extractUrlHost(segment.tag.url);
+      return segment.tag.title ? `${segment.tag.title} · ${host}` : host;
+    }
+    case "conversation":
+      return segment.tag.title;
+    case "skill":
+      return segment.tag.name;
+    default: {
+      const { tag } = segment;
+      const linesStr =
+        !tag.isDirectory && tag.lines && tag.lines.length > 0
+          ? formatLinesStr(tag.lines)
+          : "";
+      return linesStr ? `${tag.name}:${linesStr}` : tag.name;
+    }
+  }
+};
+
 const escapeHtml = (s: string): string =>
   s
     .replace(/&/g, "&amp;")

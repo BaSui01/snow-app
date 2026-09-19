@@ -24980,6 +24980,205 @@ input {
   margin-left: auto;
 }
 
+/* ===== Rollback Picker (双击 ESC) ===== */
+.rollback-picker-popup {
+  position: absolute;
+  bottom: 100%;
+  left: 20px;
+  right: 20px;
+  margin-bottom: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  max-height: 380px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: mention-popup-in 0.12s ease-out;
+}
+
+.rollback-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  user-select: none;
+}
+
+.rollback-picker-title {
+  font-weight: 600;
+}
+
+.rollback-picker-count {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+}
+
+.rollback-picker-list {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 0;
+  min-height: 80px;
+  max-height: 300px;
+}
+
+.rollback-picker-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px 12px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.rollback-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: background 0.08s;
+  user-select: none;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+}
+
+.rollback-picker-item:hover {
+  background: var(--bg-hover);
+}
+
+.rollback-picker-item.selected {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.rollback-picker-ordinal {
+  flex-shrink: 0;
+  min-width: 26px;
+  text-align: right;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rollback-picker-item.selected .rollback-picker-ordinal {
+  color: var(--accent-color, #3b82f6);
+}
+
+.rollback-picker-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.rollback-picker-item.selected .rollback-picker-icon {
+  color: var(--text-primary);
+}
+
+.rollback-picker-preview {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 预览里的 chip：比消息区更紧凑，避免撑高列表行高 */
+.rollback-picker-preview .user-message-file-chip {
+  margin: 0 2px;
+  padding: 1px 5px;
+  max-width: 220px;
+  font-size: 11.5px;
+  vertical-align: middle;
+}
+
+.rollback-picker-preview .user-message-file-chip-name {
+  max-width: 180px;
+}
+
+.rollback-picker-badge {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 16px;
+}
+
+.rollback-picker-item.selected .rollback-picker-badge {
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+}
+
+/* 跨页加载中的目标：行内 loading，鼠标点击暂不生效 */
+.rollback-picker-item.is-preparing {
+  cursor: progress;
+}
+
+.rollback-picker-item.is-preparing .rollback-picker-preview {
+  color: var(--text-muted);
+}
+
+.rollback-picker-error {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  border-top: 1px solid var(--border-color);
+  color: var(--accent-red);
+  font-size: 11px;
+}
+
+.rollback-picker-error svg {
+  flex-shrink: 0;
+}
+
+.rollback-picker-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px;
+  border-top: 1px solid var(--border-color);
+}
+
+.rollback-picker-hint {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.rollback-picker-hint kbd {
+  display: inline-block;
+  padding: 1px 4px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  line-height: 1.3;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+}
+
+.rollback-picker-hint kbd.rollback-kbd-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px;
+  width: 18px;
+  height: 16px;
+}
+
 /* ===== Model Selector ===== */
 .model-selector {
   position: relative;

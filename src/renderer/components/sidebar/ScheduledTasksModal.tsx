@@ -2467,6 +2467,7 @@ export function ScheduledTasksModal({
     <Modal
       className="scheduled-tasks-modal"
       closeLabel={t("scheduledTask.close", { defaultValue: "Close" })}
+      closeOnEscape
       onClose={onClose}
       open={open}
       size="large"

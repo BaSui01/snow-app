@@ -1708,6 +1708,7 @@ const ChatContentBody = ({
                 rollbackInputState={rollbackNewChatState}
                 onRuntimeInputStateChange={handleRuntimeInputStateChange}
                 getRuntimeInputState={getRuntimeInputState}
+                loadOlderMessages={handleLoadOlderWithScroll}
                 pendingMessages={pendingMessages}
                 onWithdrawPendingMessage={withdrawPendingMessage}
                 onSendPendingMessageNow={sendPendingMessageNow}

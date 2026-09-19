@@ -19,6 +19,11 @@ type ModalProps = {
   size?: "medium" | "large";
   closeDisabled?: boolean;
   className?: string;
+  /**
+   * 是否支持按 ESC 关闭。默认关闭：部分弹窗内部存在局部 ESC 语义
+   * （引用面板、下拉列表等），需要逐个显式开启。
+   */
+  closeOnEscape?: boolean;
 };
 
 const FOCUSABLE_SELECTOR = [
@@ -41,6 +46,7 @@ export function Modal({
   size = "medium",
   closeDisabled = false,
   className = "",
+  closeOnEscape = false,
 }: ModalProps): React.JSX.Element {
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -62,10 +68,22 @@ export function Modal({
   }, [open]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    // ESC 同时是全局「中断会话」快捷键，因此在弹窗内必须吞掉该事件：
+    // 既不向外冒泡（内部组件的局部 ESC 语义会先行 stopPropagation），
+    // 也不触发浏览器默认行为。
+    if (event.key === "Escape" && closeOnEscape) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!closeDisabled) {
+        onClose();
+      }
+      return;
+    }
+
     if (event.key !== "Tab" || !dialogRef.current) return;
 
     const focusableElements = Array.from(
-      dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
+      dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
     );
     if (focusableElements.length === 0) {
       event.preventDefault();
@@ -105,27 +123,27 @@ export function Modal({
           role="dialog"
           tabIndex={-1}
         >
-            <div className="app-modal-header">
-              <div className="app-modal-title-group">
-                <strong id={titleId}>{title}</strong>
-                {description && <span id={descriptionId}>{description}</span>}
-              </div>
-              <button
-                aria-label={closeLabel}
-                className="icon-btn ghost app-modal-close"
-                disabled={closeDisabled}
-                onClick={onClose}
-                title={closeLabel}
-                type="button"
-              >
-                <X size={16} strokeWidth={1.9} />
-              </button>
+          <div className="app-modal-header">
+            <div className="app-modal-title-group">
+              <strong id={titleId}>{title}</strong>
+              {description && <span id={descriptionId}>{description}</span>}
             </div>
-            <div className="app-modal-body">{children}</div>
-            {footer && <div className="app-modal-footer">{footer}</div>}
+            <button
+              aria-label={closeLabel}
+              className="icon-btn ghost app-modal-close"
+              disabled={closeDisabled}
+              onClick={onClose}
+              title={closeLabel}
+              type="button"
+            >
+              <X size={16} strokeWidth={1.9} />
+            </button>
           </div>
+          <div className="app-modal-body">{children}</div>
+          {footer && <div className="app-modal-footer">{footer}</div>}
         </div>
+      </div>
     ),
-    document.body
+    document.body,
   );
 }

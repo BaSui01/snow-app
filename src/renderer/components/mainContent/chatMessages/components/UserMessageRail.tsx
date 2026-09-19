@@ -1,26 +1,13 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import {
-  BookOpen,
-  FileText,
-  GitCommitHorizontal,
-  GitCompare,
-  Globe,
-  Link2,
-  MessageSquare,
-  MessageSquareQuote,
-  MousePointer2,
-  ScanSearch,
-} from "lucide-react";
+import { MessageSquare } from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import type { UserMessageSummary } from "../../../../../preload";
+import { ContentChips } from "../../chatInput/ContentChips";
 import {
-  extractUrlHost,
-  formatLinesStr,
   parseContentSegments,
-  type ContentSegment,
+  summarizeContentAsPlainText,
 } from "../../chatInput/fileTagUtils";
-import { getFileTypeIcon } from "../../../../utils/fileIcons";
 
 type RefValue<T> = { current: T };
 
@@ -56,322 +43,6 @@ type UserMessageRailProps = {
    *  true to mark a user-initiated navigation, so the scroll-follow logic
    *  respects our programmatic scroll instead of pinning to the bottom. */
   isUserScrollIntentRef: RefValue<boolean>;
-};
-
-/** Build a plain-text summary from a user message's content, stripping
- *  tags and image data so the rail's tooltip and fallback text show only
- *  human-readable content. Tag chips are rendered separately by
- *  renderRailSegments. */
-const buildPlainTextSummary = (content: string): string => {
-  const segments = parseContentSegments(content);
-  const parts: string[] = [];
-  for (const segment of segments) {
-    if (segment.type === "text") {
-      const text = segment.content.replace(
-        /data:image\/[^;]+;base64,[^\s)]+/g,
-        "[image]",
-      );
-      const trimmed = text.trim();
-      if (trimmed) {
-        parts.push(trimmed);
-      }
-    } else if (segment.type === "image") {
-      parts.push(`[${segment.tag.name}]`);
-    } else if (segment.type === "commit") {
-      parts.push(segment.tag.shortHash);
-    } else if (segment.type === "change") {
-      const lastSep = Math.max(
-        segment.tag.path.lastIndexOf("/"),
-        segment.tag.path.lastIndexOf("\\"),
-      );
-      parts.push(
-        lastSep === -1 ? segment.tag.path : segment.tag.path.slice(lastSep + 1),
-      );
-    } else if (segment.type === "text-snippet") {
-      parts.push(segment.tag.summary);
-    } else if (segment.type === "quote") {
-      parts.push(segment.tag.summary);
-    } else if (segment.type === "review") {
-      parts.push(segment.tag.summary);
-    } else if (segment.type === "element") {
-      parts.push(
-        segment.tag.note
-          ? `${segment.tag.label}: ${segment.tag.note}`
-          : segment.tag.label,
-      );
-    } else if (segment.type === "web") {
-      parts.push(
-        segment.tag.title
-          ? `${segment.tag.title} ${segment.tag.url}`
-          : segment.tag.url,
-      );
-    } else if (segment.type === "conversation") {
-      parts.push(segment.tag.title);
-    } else if (segment.type === "skill") {
-      parts.push(segment.tag.name);
-    } else {
-      const { tag } = segment;
-      const linesStr =
-        !tag.isDirectory && tag.lines && tag.lines.length > 0
-          ? formatLinesStr(tag.lines)
-          : "";
-      parts.push(linesStr ? `${tag.name}:${linesStr}` : tag.name);
-    }
-  }
-  return parts.join(" ").replace(/\s+/g, " ").trim();
-};
-
-/** Render content segments as inline chips inside the rail popover item.
- *  Mirrors UserMessage/PendingMessages chip rendering but without the
- *  hover-preview interactions (the popover is already a transient
- *  surface). Uses the shared user-message-file-chip styles. */
-const renderRailSegments = (content: string): React.ReactNode => {
-  const segments = parseContentSegments(content);
-  return segments.map((segment: ContentSegment, index: number) => {
-    if (segment.type === "text") {
-      return <span key={index}>{segment.content}</span>;
-    }
-
-    if (segment.type === "image") {
-      const imgIndex = segment.tag.index ?? 0;
-      const imgDisplayName =
-        imgIndex > 0 ? `${segment.tag.name} #${imgIndex}` : segment.tag.name;
-      return (
-        <span
-          key={index}
-          className="user-message-file-chip image-chip"
-          title={segment.tag.name}
-        >
-          {getFileTypeIcon(segment.tag.name, false, false, {
-            size: 12,
-            className: "user-message-file-chip-icon",
-          })}
-          <span className="user-message-file-chip-name">{imgDisplayName}</span>
-        </span>
-      );
-    }
-
-    if (segment.type === "commit") {
-      const chipTitle = `${segment.tag.shortHash} ${segment.tag.message} (${segment.tag.author}, ${segment.tag.date})`;
-      return (
-        <span
-          key={index}
-          className="user-message-file-chip commit-chip"
-          title={chipTitle}
-        >
-          <GitCommitHorizontal
-            size={12}
-            className="user-message-file-chip-icon"
-            style={{ color: "#f05032" }}
-          />
-          <span className="user-message-file-chip-name">
-            {segment.tag.shortHash}
-          </span>
-        </span>
-      );
-    }
-
-    if (segment.type === "change") {
-      const lastSep = Math.max(
-        segment.tag.path.lastIndexOf("/"),
-        segment.tag.path.lastIndexOf("\\"),
-      );
-      const changeName =
-        lastSep === -1 ? segment.tag.path : segment.tag.path.slice(lastSep + 1);
-      const chipTitle = `${
-        segment.tag.section === "staged" ? "Staged" : "Unstaged"
-      } ${segment.tag.status} ${segment.tag.path}`;
-      return (
-        <span
-          key={index}
-          className="user-message-file-chip change-chip"
-          title={chipTitle}
-        >
-          <GitCompare
-            size={12}
-            className="user-message-file-chip-icon"
-            style={{ color: "#f59e0b" }}
-          />
-          <span className="user-message-file-chip-name">{changeName}</span>
-        </span>
-      );
-    }
-
-    if (segment.type === "text-snippet") {
-      const snippetTitle = `${segment.tag.summary} (${segment.tag.charCount} chars)`;
-      return (
-        <span
-          key={index}
-          className="user-message-file-chip text-snippet-chip"
-          title={snippetTitle}
-        >
-          <FileText
-            size={12}
-            className="user-message-file-chip-icon"
-            style={{ color: "#6c757d" }}
-          />
-          <span className="user-message-file-chip-name">
-            {segment.tag.summary}
-          </span>
-        </span>
-      );
-    }
-
-    if (segment.type === "quote") {
-      const quoteTitle = `${segment.tag.summary} (${segment.tag.charCount} chars)`;
-      return (
-        <span
-          key={index}
-          className="user-message-file-chip quote-chip"
-          title={quoteTitle}
-        >
-          <MessageSquareQuote
-            size={12}
-            className="user-message-file-chip-icon"
-            style={{ color: "var(--accent-color, #4a9eff)" }}
-          />
-          <span className="user-message-file-chip-name">
-            {segment.tag.summary}
-          </span>
-        </span>
-      );
-    }
-
-    if (segment.type === "review") {
-      const reviewTitle = `${segment.tag.summary} (${segment.tag.charCount} chars)`;
-      return (
-        <span
-          key={index}
-          className="user-message-file-chip review-chip"
-          title={reviewTitle}
-        >
-          <ScanSearch
-            size={12}
-            className="user-message-file-chip-icon"
-            style={{ color: "#2ea043" }}
-          />
-          <span className="user-message-file-chip-name">
-            {segment.tag.summary}
-          </span>
-        </span>
-      );
-    }
-
-    if (segment.type === "element") {
-      const displayName = segment.tag.note
-        ? `${segment.tag.label} · ${segment.tag.note}`
-        : segment.tag.label;
-      const elementTitle = segment.tag.url
-        ? `${segment.tag.label} (${segment.tag.url})`
-        : segment.tag.label;
-      return (
-        <span
-          key={index}
-          className="user-message-file-chip element-chip"
-          title={elementTitle}
-        >
-          <MousePointer2
-            size={12}
-            className="user-message-file-chip-icon"
-            style={{ color: "#1a73e8" }}
-          />
-          <span className="user-message-file-chip-name">{displayName}</span>
-        </span>
-      );
-    }
-
-    if (segment.type === "web") {
-      const host = extractUrlHost(segment.tag.url);
-      const displayName = segment.tag.title
-        ? `${segment.tag.title} · ${host}`
-        : host;
-      const webTitle = `${displayName} (${segment.tag.url})`;
-      return (
-        <span
-          key={index}
-          className="user-message-file-chip web-chip"
-          title={webTitle}
-        >
-          <Globe
-            size={12}
-            className="user-message-file-chip-icon"
-            style={{ color: "#0f766e" }}
-          />
-          <span className="user-message-file-chip-name">{displayName}</span>
-        </span>
-      );
-    }
-
-    if (segment.type === "conversation") {
-      const { tag } = segment;
-      return (
-        <span
-          key={index}
-          className="user-message-file-chip conversation-chip"
-          title={tag.title}
-        >
-          {tag.emoji ? (
-            <span
-              className="user-message-file-chip-icon"
-              style={{ fontSize: 12, lineHeight: 1 }}
-            >
-              {tag.emoji}
-            </span>
-          ) : (
-            <Link2
-              size={12}
-              className="user-message-file-chip-icon"
-              style={{ color: "var(--accent-color, #4a9eff)" }}
-            />
-          )}
-          <span className="user-message-file-chip-name">{tag.title}</span>
-        </span>
-      );
-    }
-
-    if (segment.type === "skill") {
-      const skillTitle = segment.tag.description
-        ? `${segment.tag.name} - ${segment.tag.description}`
-        : segment.tag.name;
-      return (
-        <span
-          key={index}
-          className="user-message-file-chip skill-chip"
-          title={skillTitle}
-        >
-          <BookOpen
-            size={12}
-            className="user-message-file-chip-icon"
-            style={{ color: "#a855f7" }}
-          />
-          <span className="user-message-file-chip-name">
-            {segment.tag.name}
-          </span>
-        </span>
-      );
-    }
-
-    const { tag } = segment;
-    const linesStr =
-      !tag.isDirectory && tag.lines && tag.lines.length > 0
-        ? formatLinesStr(tag.lines)
-        : "";
-    const fileDisplayName = linesStr ? `${tag.name}:${linesStr}` : tag.name;
-    const fileChipTitle = linesStr ? `${tag.path}:${linesStr}` : tag.path;
-    return (
-      <span
-        key={index}
-        className="user-message-file-chip"
-        title={fileChipTitle}
-      >
-        {getFileTypeIcon(tag.name, tag.isDirectory, false, {
-          size: 12,
-          className: "user-message-file-chip-icon",
-        })}
-        <span className="user-message-file-chip-name">{fileDisplayName}</span>
-      </span>
-    );
-  });
 };
 
 /** Find the DOM element for a given message id. The VirtualizedMessage
@@ -790,7 +461,7 @@ export const UserMessageRail = memo(
               </div>
               <div className="user-message-rail-popover-list">
                 {userMessages.map((msg, index) => {
-                  const summary = buildPlainTextSummary(msg.content);
+                  const summary = summarizeContentAsPlainText(msg.content);
                   const hasChips =
                     !msg.isContextCompaction &&
                     (msg.content.includes("@@file:") ||
@@ -826,7 +497,13 @@ export const UserMessageRail = memo(
                         {index + 1}
                       </span>
                       <span className="user-message-rail-popover-item-text">
-                        {hasChips ? renderRailSegments(msg.content) : itemLabel}
+                        {hasChips ? (
+                          <ContentChips
+                            segments={parseContentSegments(msg.content)}
+                          />
+                        ) : (
+                          itemLabel
+                        )}
                       </span>
                     </button>
                   );

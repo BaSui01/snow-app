@@ -7,7 +7,11 @@ import type {
 import type { MainContentView } from "./mainContent/types";
 import { useChatConversationContext } from "./mainContent/chatMessages";
 import { parseTodoResult } from "./mainContent/chatMessages/hooks/useTodoPanel";
-import { buildConversationMessages } from "./mainContent/chatMessages/utils/conversationHelpers";
+import {
+  buildConversationMessages,
+  ensureMessageLoaded,
+  type MessageLoadBudget,
+} from "./mainContent/chatMessages/utils/conversationHelpers";
 import type {
   ChatConversationMessage,
   ToolCallInfo,
@@ -72,16 +76,17 @@ const MAX_ROLLBACK_MEMORIES = 100;
 const MAX_ROLLBACK_PATH_LENGTH = 400;
 const MAX_ROLLBACK_MEMORY_TITLE_LENGTH = 200;
 /**
- * 跨页回滚的上限：桌面按每页 CHAT_MESSAGE_PAGE_SIZE 条分页加载会话消息，
- * 手机端可见的历史可能超出已加载窗口，桥侧沿桌面同一条 loadOlderMessages
- * 通道向前翻页，直到目标消息进入内存。页数 / 时长上限同时兜底——目标过旧
- * 时给出明确提示，而不是无限翻页。
+ * 跨页回滚的目标定位预算：手机端可沿数据库分页看到比桌面内存窗口更早的历史
+ * （见 getConversationMessages 的第 2 条路径），回滚这些目标需要按页
+ * （每页 CHAT_MESSAGE_PAGE_SIZE 条）把它们加载进桌面内存，页数因此放宽。
+ * 时长必须严格压在 Rust 桥的 12s（remote_control::bridge 的 BRIDGE_TIMEOUT）
+ * 之内：桥侧超时后手机会先收到失败，而桌面仍在继续加载并弹出回滚预览，
+ * 造成两端状态割裂。
  */
-const ROLLBACK_HISTORY_MAX_PAGES = 30;
-const ROLLBACK_HISTORY_TIMEOUT_MS = 8_000;
-/** 每次翻页后等待会话窗口刷新的轮询间隔与次数（渲染落盘通常在下一帧）。 */
-const ROLLBACK_GROWTH_POLL_MS = 20;
-const ROLLBACK_GROWTH_ATTEMPTS = 25;
+const ROLLBACK_TARGET_BUDGET: MessageLoadBudget = {
+  maxPages: 80,
+  timeoutMs: 8_000,
+};
 const CHAT_INPUT_MOUNT_POLL_MS = 100;
 const CHAT_INPUT_MOUNT_TIMEOUT_MS = 8_000;
 /**
@@ -597,19 +602,13 @@ export const RemoteControlBridge = ({
       (message) => message.id === messageId && message.role === "user",
     );
 
-  /** 等待会话消息窗口增长（loadOlderMessages 的渲染结果写回 stateRef）。 */
-  const waitForSessionGrowth = async (
-    activeId: string,
-    previousCount: number,
-  ): Promise<boolean> => {
-    for (let attempt = 0; attempt < ROLLBACK_GROWTH_ATTEMPTS; attempt += 1) {
-      const session = stateRef.current.conversation.sessions[activeId];
-      if ((session?.messages.length ?? 0) > previousCount) return true;
-      await new Promise((resolve) =>
-        setTimeout(resolve, ROLLBACK_GROWTH_POLL_MS),
-      );
-    }
-    return false;
+  /** 当前激活会话已加载的消息条数（翻页写回判定用）。 */
+  const activeMessageCount = (): number => {
+    const conversation = stateRef.current.conversation;
+    const activeId = conversation.activeConversationId;
+    return activeId
+      ? (conversation.sessions[activeId]?.messages.length ?? 0)
+      : 0;
   };
 
   /**
@@ -619,23 +618,25 @@ export const RemoteControlBridge = ({
    */
   const ensureRollbackTargetLoaded = async (
     messageId: string,
-  ): Promise<boolean> => {
-    const deadline = Date.now() + ROLLBACK_HISTORY_TIMEOUT_MS;
-    for (let page = 0; page < ROLLBACK_HISTORY_MAX_PAGES; page += 1) {
-      const conversation = stateRef.current.conversation;
-      if (hasRollbackTarget(conversation, messageId)) return true;
-      const activeId = conversation.activeConversationId;
-      const session = activeId ? conversation.sessions[activeId] : undefined;
-      // 已经没有更早的记录：目标不在该会话里（或会话/消息已被删除）。
-      if (!activeId || !session?.hasMoreMessages) return false;
-      if (Date.now() >= deadline) return false;
-      const loadedCount = session.messages.length;
-      await conversation.loadOlderMessages();
-      // 没有增长（并发加载卡住 / 请求失败）时不空转。
-      if (!(await waitForSessionGrowth(activeId, loadedCount))) return false;
-    }
-    return hasRollbackTarget(stateRef.current.conversation, messageId);
-  };
+  ): Promise<boolean> =>
+    ensureMessageLoaded(
+      messageId,
+      {
+        isLoaded: (targetId) =>
+          hasRollbackTarget(stateRef.current.conversation, targetId),
+        hasMoreMessages: () => {
+          const conversation = stateRef.current.conversation;
+          const activeId = conversation.activeConversationId;
+          return Boolean(
+            activeId && conversation.sessions[activeId]?.hasMoreMessages,
+          );
+        },
+        getLoadedCount: activeMessageCount,
+        loadOlderMessages: () =>
+          stateRef.current.conversation.loadOlderMessages(),
+      },
+      ROLLBACK_TARGET_BUDGET,
+    );
 
   // 输入区快照 → 安全 DTO：只含展示层数据，字符串一律限长。
   const toRemoteChatInput = (

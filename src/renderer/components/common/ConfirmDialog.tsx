@@ -52,6 +52,8 @@ export const ConfirmDialog = ({
         onKeyDown={(e) => {
           if (e.key === "Escape") {
             e.preventDefault();
+            // ESC 已由本层消费：阻止冒泡，避免嵌套在弹窗内时把外层弹窗一并关闭。
+            e.stopPropagation();
             if (!isConfirming) {
               onCancel();
             }

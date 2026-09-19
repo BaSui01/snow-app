@@ -89,6 +89,8 @@ export function ThinkingStrengthMenu({
       event.preventDefault();
       handleConfirmCustom();
     } else if (event.key === "Escape") {
+      // 退出自定义输入即消费掉 ESC，避免继续冒泡到外层弹窗。
+      event.stopPropagation();
       setIsCustomMode(false);
     }
   };

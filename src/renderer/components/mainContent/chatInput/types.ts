@@ -76,6 +76,11 @@ export type ChatInputProps = {
   getRuntimeInputState?: (
     conversationId: string,
   ) => ConversationInputRuntimeState | undefined;
+  /**
+   * 加载更早一页历史消息（ChatContent 实现，保留聊天视口锚点）。回滚目标
+   * 超出已加载的分页窗口时，用于把它加载进内存消息窗口。
+   */
+  loadOlderMessages: () => Promise<void>;
   pendingMessages?: string[];
   onWithdrawPendingMessage?: (index: number) => string | null;
   onSendPendingMessageNow?: (index: number) => void;
@@ -222,6 +227,8 @@ export type ChatInputViewProps = ChatInputState &
     /** 未配置 API 时引导跳转到 API 设置页。 */
     onNavigateToView?: (view: MainContentView) => void;
     tokenUsage: TokenUsage | null;
+    /** 加载更早一页历史消息（保留聊天视口锚点）。 */
+    loadOlderMessages: () => Promise<void>;
     pendingMessages: string[];
     onWithdrawPendingMessage?: (index: number) => string | null;
     onSendPendingMessageNow?: (index: number) => void;

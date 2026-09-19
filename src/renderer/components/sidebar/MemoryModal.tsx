@@ -628,7 +628,13 @@ export function MemoryModal({
               event.preventDefault();
               setActiveQuery(searchInput.trim());
             } else if (event.key === "Escape") {
+              // 有关键词时 ESC 只清空检索并吞掉事件（关闭弹窗留给下一次 ESC）；
+              // 检索框为空时放行，由弹窗统一处理为「关闭模态框」。
+              if (searchInput === "") {
+                return;
+              }
               event.preventDefault();
+              event.stopPropagation();
               setSearchInput("");
               setActiveQuery("");
             }
@@ -1045,6 +1051,7 @@ export function MemoryModal({
     <Modal
       className="memo-modal"
       closeLabel={t("common.close", { defaultValue: "Close" })}
+      closeOnEscape
       onClose={onClose}
       open={open}
       size="large"

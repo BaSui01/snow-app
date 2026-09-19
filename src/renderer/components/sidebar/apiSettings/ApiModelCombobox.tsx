@@ -128,7 +128,12 @@ export function ApiModelCombobox({
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Escape") {
-      setIsOpen(false);
+      if (isOpen) {
+        // 仅在本层真正消费 ESC（关闭下拉列表）时阻断冒泡，
+        // 避免把事件传给外层弹窗导致其被一并关闭。
+        event.stopPropagation();
+        setIsOpen(false);
+      }
       return;
     }
 

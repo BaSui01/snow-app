@@ -1023,6 +1023,7 @@ export function MemoModal({
     <Modal
       className="memo-modal"
       closeLabel={t("memo.close")}
+      closeOnEscape
       onClose={handleClose}
       open={open}
       size="large"

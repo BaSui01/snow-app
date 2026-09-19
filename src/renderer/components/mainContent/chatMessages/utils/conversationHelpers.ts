@@ -639,9 +639,102 @@ export const validateToolCall = (toolCall: ToolCallInfo): string | null => {
   if (missing.length > 0) {
     return JSON.stringify({
       error: "INVALID_MODEL_TOOL_CALL",
-      message: `Model returned an incomplete call for tool "${toolCall.name}". Missing required arguments: ${missing.join(", ")}. The call was not executed.`,
+      message: `Model returned an incomplete call for tool "${toolCall.name}". Missing required arguments: ${missing.join(
+        ", ",
+      )}. The call was not executed.`,
     });
   }
 
   return null;
+};
+
+/** 每次翻页后等待会话窗口刷新的轮询间隔与次数（渲染写回通常在下一帧）。 */
+const MESSAGE_LOAD_GROWTH_POLL_MS = 20;
+const MESSAGE_LOAD_GROWTH_ATTEMPTS = 25;
+
+/** 跨页定位的预算：页数与总时长同时兜底，目标过旧时给出失败结果。 */
+export type MessageLoadBudget = {
+  /** 最多向前翻多少页。 */
+  maxPages: number;
+  /** 总时长上限（毫秒）。 */
+  timeoutMs: number;
+};
+
+/**
+ * 默认预算：远控桥沿用（手机端在 HTTP 请求内等待，不宜过长）。桌面临时定位
+ * 历史消息时可按需放宽（见 useRollbackPicker）。
+ */
+export const DEFAULT_MESSAGE_LOAD_BUDGET: MessageLoadBudget = {
+  maxPages: 30,
+  timeoutMs: 8_000,
+};
+
+export type MessageWindowAccess = {
+  /** 目标消息是否已在内存消息窗口内。 */
+  isLoaded: (messageId: string) => boolean;
+  /** 是否还有更早的分页未加载。 */
+  hasMoreMessages: () => boolean;
+  /** 窗口内已加载的消息条数：翻页后据此确认渲染是否写回。 */
+  getLoadedCount: () => number;
+  /** 加载更早一页（会话上下文同一条 loadOlderMessages 通道）。 */
+  loadOlderMessages: () => Promise<void>;
+  /** 可选：调用方放弃本次定位（关闭面板 / 取消）时提前退出。 */
+  isCancelled?: () => boolean;
+};
+
+/**
+ * 确保目标消息进入会话的内存消息窗口，返回是否已就绪。
+ *
+ * 会话历史按页加载（每页 CHAT_MESSAGE_PAGE_SIZE 条），分页窗口之外的历史
+ * 消息没有内存副本；而回滚的检查点清单、截断边界与回滚后的内存消息更新
+ * 都以内存窗口为基准，跨页目标直接回滚会静默失败。这里沿 loadOlderMessages
+ * 逐页向前推进，并等待渲染写回（翻页结果是异步 setSessions），直到目标进入
+ * 窗口；预算耗尽时返回 false 由调用方提示。
+ */
+export const ensureMessageLoaded = async (
+  messageId: string,
+  access: MessageWindowAccess,
+  budget: MessageLoadBudget = DEFAULT_MESSAGE_LOAD_BUDGET,
+): Promise<boolean> => {
+  const isCancelled = access.isCancelled ?? ((): boolean => false);
+  const deadline = Date.now() + budget.timeoutMs;
+
+  for (let page = 0; page < budget.maxPages; page += 1) {
+    if (access.isLoaded(messageId)) {
+      return true;
+    }
+    if (isCancelled() || !access.hasMoreMessages() || Date.now() >= deadline) {
+      return false;
+    }
+
+    const loadedCount = access.getLoadedCount();
+    await access.loadOlderMessages();
+    if (isCancelled()) {
+      return false;
+    }
+
+    // 没有增长（并发加载卡住 / 请求失败）时不空转。
+    let grew = false;
+    for (
+      let attempt = 0;
+      attempt < MESSAGE_LOAD_GROWTH_ATTEMPTS;
+      attempt += 1
+    ) {
+      if (access.getLoadedCount() > loadedCount) {
+        grew = true;
+        break;
+      }
+      if (isCancelled()) {
+        return false;
+      }
+      await new Promise((resolve) =>
+        setTimeout(resolve, MESSAGE_LOAD_GROWTH_POLL_MS),
+      );
+    }
+    if (!grew) {
+      return false;
+    }
+  }
+
+  return access.isLoaded(messageId);
 };

@@ -24,9 +24,11 @@ pub fn tools_as_openai_chat_json(tools: &[McpTool]) -> Value {
 /// Tool APIs require input schemas to describe an object. Some gateways (e.g.
 /// Google Gemini API, OpenAI, Claude) strictly enforce that any schema node with
 /// `properties` or `required` MUST declare `"type": "object"`, any node with
-/// `items` MUST declare `"type": "array"`, and `type` cannot be a union array.
-/// Remove root combinators (`oneOf`/`anyOf`/`allOf`) and recursively ensure all
-/// nested schema nodes are compliant.
+/// `items` MUST declare `"type": "array"`, `type` cannot be a union array, and
+/// every object node must carry a `required` array (a missing keyword is read as
+/// null and fails the whole request with HTTP 400). Remove root combinators
+/// (`oneOf`/`anyOf`/`allOf`) and recursively ensure all nested schema nodes are
+/// compliant.
 fn sanitize_tool_input_schema(schema: &Value) -> Value {
     let mut root = schema.clone();
     sanitize_schema_node(&mut root, true);
@@ -52,6 +54,20 @@ fn sanitize_schema_node(node: &mut Value, is_root: bool) {
             map.insert("type".to_string(), Value::String("object".to_string()));
         } else if map.contains_key("items") {
             map.insert("type".to_string(), Value::String("array".to_string()));
+        }
+
+        // Strict gateways (openai / google compatible) validate every object
+        // node of a tool schema and require the `required` keyword to be an
+        // array. A tool definition that omits it is read as null and rejected
+        // with `Invalid schema for function "<name>": null is not of type
+        // "array"` together with HTTP 400 — the request never reaches the
+        // model, so the agent loop dies on a client-side defect (browser-create
+        // had no `required`). Normalize missing / null / non-array values to an
+        // empty array so any tool definition stays sendable.
+        if map.get("type").and_then(Value::as_str) == Some("object")
+            && !matches!(map.get("required"), Some(Value::Array(_)))
+        {
+            map.insert("required".to_string(), Value::Array(Vec::new()));
         }
 
         if let Some(properties) = map.get_mut("properties") {

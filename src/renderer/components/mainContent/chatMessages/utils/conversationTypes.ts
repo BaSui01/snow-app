@@ -436,9 +436,9 @@ export type RollbackPreview = {
   messageContent: string;
   /** 回滚目标及其后续用户消息的文件变更。 */
   changes: CheckpointFileChange[];
-  /** 回滚目标及其后续用户消息按持久化顺序排列的检查点。 */
+  /** 回滚目标及其后续用户消息按持久化顺序排列的检查点；恢复时由 Rust 侧
+   *  合并整条链，顺序不影响结果。 */
   checkpointIds: string[];
-  checkpointId?: string;
   workDir?: string;
   /** 回滚首条消息后恢复到 pending 会话的项目目录。 */
   directoryId?: string;

@@ -510,13 +510,13 @@ pub async fn canonical_work_dir_remote(
 use super::{
     bump_restore_epoch, change_owned_by_other_capture, checkpoint_manifest_exists,
     checkpoint_operation_lock, current_restore_epoch, filter_existing_checkpoints,
-    fingerprint_lookup, fingerprint_store, manifest_lock, object_path, original_object_id,
-    pending_state_to_original, read_manifest, register_file_capture_end,
+    fingerprint_lookup, fingerprint_store, manifest_lock, merge_chained_manifests, object_path,
+    original_object_id, pending_state_to_original, read_manifest, register_file_capture_end,
     register_file_capture_start, register_recorded_change, should_skip_manifest_path,
     should_skip_relative, store_object_bytes, work_dir_lock, work_dir_read_guard_async,
-    work_dir_write_guard_async, write_manifest, CachedCheckpointDiff, CheckpointEntry,
-    CheckpointFileChange, CheckpointFileDiff, CheckpointManifest, CheckpointWorktreeCapture,
-    OriginalState, PendingFileState, DIFF_CACHE_MAX_ENTRIES,
+    work_dir_write_guard_async, write_manifest, CachedCheckpointDiff, ChainedEntry,
+    CheckpointEntry, CheckpointFileChange, CheckpointFileDiff, CheckpointManifest,
+    CheckpointWorktreeCapture, OriginalState, PendingFileState, DIFF_CACHE_MAX_ENTRIES,
 };
 
 use crate::storage::services::checkpoint_skip::should_skip_pending_copy_size;
@@ -1368,6 +1368,57 @@ pub(crate) async fn list_checkpoint_changes_remote(
     Ok(changes)
 }
 
+/// 远程版单文件 diff：original 摘要 + 远程 mtime/size 均未变时复用进程内缓存。
+/// `cache_key` 由调用方按「条目所属检查点 + 路径」构造。
+fn checkpoint_file_diff_remote(
+    cache_key: String,
+    relative: &str,
+    original: &OriginalState,
+    stat: Option<&RemoteFileStat>,
+    content: Option<Option<Vec<u8>>>,
+) -> Result<(String, bool)> {
+    let digest = super::original_digest(original, None, relative);
+    let cached = {
+        let cache = super::diff_cache();
+        cache.get(&cache_key).and_then(|cached_entry| {
+            let stat = stat?;
+            (cached_entry.original_digest == digest
+                && cached_entry.current_mtime_ms == stat.mtime_ms
+                && cached_entry.current_size == stat.size)
+                .then_some((cached_entry.content.clone(), cached_entry.is_binary))
+        })
+    };
+    if let Some(cached) = cached {
+        return Ok(cached);
+    }
+    let original_content = super::read_original_content(original, None, relative)?;
+    let current_content = if stat.is_some() {
+        content.flatten()
+    } else {
+        None
+    };
+    let (content, is_binary) = super::build_unified_diff(
+        relative,
+        original_content.as_deref(),
+        current_content.as_deref(),
+    );
+    let mut cache = super::diff_cache();
+    if cache.len() >= DIFF_CACHE_MAX_ENTRIES {
+        cache.clear();
+    }
+    cache.insert(
+        cache_key,
+        CachedCheckpointDiff {
+            original_digest: digest,
+            current_mtime_ms: stat.map(|stat| stat.mtime_ms).unwrap_or(0),
+            current_size: stat.map(|stat| stat.size).unwrap_or(0),
+            content: content.clone(),
+            is_binary,
+        },
+    );
+    Ok((content, is_binary))
+}
+
 /// 远程版 diff 列表（回滚预览 / 文件变更面板）：只对追踪条目做批量
 /// stat + 批量内容读取，不再全树扫描。
 pub(crate) async fn list_checkpoint_diffs_remote(
@@ -1438,58 +1489,13 @@ pub(crate) async fn list_checkpoint_diffs_remote(
             continue;
         };
 
-        // 进程内 diff 缓存：original 摘要 + 远程 mtime/size 未变时复用。
-        let cache_key = format!("{}:{}", checkpoint_id, probe.entry.path);
-        let digest = super::original_digest(
-            &probe.entry.original,
-            manifest.git.as_ref(),
+        let (content, is_binary) = checkpoint_file_diff_remote(
+            format!("{}:{}", checkpoint_id, probe.entry.path),
             &probe.entry.path,
-        );
-        let cached = {
-            let cache = super::diff_cache();
-            cache.get(&cache_key).and_then(|cached_entry| {
-                let stat = probe.stat.as_ref()?;
-                (cached_entry.original_digest == digest
-                    && cached_entry.current_mtime_ms == stat.mtime_ms
-                    && cached_entry.current_size == stat.size)
-                    .then_some((cached_entry.content.clone(), cached_entry.is_binary))
-            })
-        };
-        let (content, is_binary) = match cached {
-            Some((content, is_binary)) => (content, is_binary),
-            None => {
-                let original_content = super::read_original_content(
-                    &probe.entry.original,
-                    manifest.git.as_ref(),
-                    &probe.entry.path,
-                )?;
-                let current_content = probe
-                    .stat
-                    .as_ref()
-                    .and_then(|_| probe.content.as_ref())
-                    .and_then(|content| content.clone());
-                let (content, is_binary) = super::build_unified_diff(
-                    &probe.entry.path,
-                    original_content.as_deref(),
-                    current_content.as_deref(),
-                );
-                let mut cache = super::diff_cache();
-                if cache.len() >= DIFF_CACHE_MAX_ENTRIES {
-                    cache.clear();
-                }
-                cache.insert(
-                    cache_key,
-                    CachedCheckpointDiff {
-                        original_digest: digest,
-                        current_mtime_ms: probe.stat.as_ref().map(|stat| stat.mtime_ms).unwrap_or(0),
-                        current_size: probe.stat.as_ref().map(|stat| stat.size).unwrap_or(0),
-                        content: content.clone(),
-                        is_binary,
-                    },
-                );
-                (content, is_binary)
-            }
-        };
+            &probe.entry.original,
+            probe.stat.as_ref(),
+            probe.content.clone(),
+        )?;
         diffs.push(CheckpointFileDiff {
             path: probe.entry.path.clone(),
             change_type,
@@ -1501,25 +1507,114 @@ pub(crate) async fn list_checkpoint_diffs_remote(
     Ok(diffs)
 }
 
+/// 远程读取回滚链上的 manifest 并合并：与本地 `collect_chained_entries` 共用
+/// 同一份合并实现，只有加锁方式不同（异步锁）。调用方必须已持有工作区执行级锁。
+async fn collect_chained_entries_remote(
+    checkpoint_ids: &[String],
+    validate: impl Fn(&CheckpointManifest) -> Result<()>,
+) -> Result<Vec<ChainedEntry>> {
+    let mut manifests = Vec::new();
+    for checkpoint_id in checkpoint_ids {
+        if !checkpoint_manifest_exists(checkpoint_id) {
+            continue;
+        }
+        let lock = manifest_lock(checkpoint_id)?;
+        let _guard = lock.lock().await;
+        let manifest = read_manifest(checkpoint_id)?;
+        validate(&manifest)?;
+        manifests.push((checkpoint_id.clone(), manifest));
+    }
+    Ok(merge_chained_manifests(&manifests))
+}
+
+/// 链式条目 → 远端探测所需的 CheckpointEntry（expected 即门控状态）。
+fn chained_probe_entries(chained: &[ChainedEntry]) -> Vec<CheckpointEntry> {
+    chained
+        .iter()
+        .map(|entry| CheckpointEntry {
+            path: entry.path.clone(),
+            original: entry.original.clone(),
+            expected: Some(entry.expected.clone()),
+        })
+        .collect()
+}
+
+/// 远程版回滚链 diff / 变更列表：与本地 `list_checkpoint_diffs_batch` 同语义
+/// ——按路径合并整条链（original 取最早、expected 取最新），先新建再编辑的
+/// 文件显示为「新增（回滚会删除它）」，与实际恢复结果一致。
 pub(crate) async fn list_checkpoint_diffs_batch_remote(
     client: &RemoteCheckpointClient<'_>,
     checkpoint_ids: Vec<String>,
     work_dir: String,
     include_all: bool,
 ) -> Result<Vec<CheckpointFileDiff>> {
-    let mut seen_paths = HashSet::new();
-    let mut diffs = Vec::new();
-    for checkpoint_id in checkpoint_ids {
-        if !checkpoint_manifest_exists(&checkpoint_id) {
-            continue;
-        }
-        for diff in
-            list_checkpoint_diffs_remote(client, checkpoint_id, work_dir.clone(), include_all).await?
-        {
-            if seen_paths.insert(diff.path.clone()) {
-                diffs.push(diff);
+    let root = canonical_work_dir_remote(client, &work_dir).await?;
+    let root_path = PathBuf::from(&root);
+    let work_dir_lock = work_dir_lock(&root_path)?;
+    let _work_dir_guard = work_dir_read_guard_async(&work_dir_lock).await;
+    let chained = collect_chained_entries_remote(&checkpoint_ids, |manifest| {
+        validate_manifest_work_dir_remote(manifest, &work_dir).map(|_| ())
+    })
+    .await?;
+    if chained.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // !include_all 时先用 expected 过滤（回滚预览语义）；original 对比恒定需要。
+    let entries = chained_probe_entries(&chained);
+    let mut compare_states: Vec<(usize, OriginalState)> = Vec::new();
+    for (index, entry) in entries.iter().enumerate() {
+        if !include_all {
+            if let Some(expected) = entry.expected.as_ref() {
+                compare_states.push((index, expected.clone()));
             }
         }
+        compare_states.push((index, entry.original.clone()));
+    }
+    let probed = probe_tracked_entries(client, &root, entries, &compare_states, true).await?;
+
+    let mut diffs = Vec::new();
+    for (probe, chained_entry) in probed.items.iter().zip(chained.iter()) {
+        if !include_all {
+            let expected = probe.entry.expected.as_ref().ok_or_else(|| {
+                Error::from_reason("Checkpoint entry lost its expected state during probe")
+            })?;
+            let expected_differs = classify_remote_state(
+                probe.stat.as_ref(),
+                probe.content.as_ref().map(|content| content.as_deref()),
+                expected,
+                &probed.objects,
+                &probe.entry.path,
+            )?
+            .is_some();
+            if expected_differs {
+                continue;
+            }
+        }
+        let Some(change_type) = classify_remote_state(
+            probe.stat.as_ref(),
+            probe.content.as_ref().map(|content| content.as_deref()),
+            &probe.entry.original,
+            &probed.objects,
+            &probe.entry.path,
+        )?
+        else {
+            continue;
+        };
+
+        let (content, is_binary) = checkpoint_file_diff_remote(
+            format!("{}:{}", chained_entry.source_checkpoint_id, probe.entry.path),
+            &probe.entry.path,
+            &probe.entry.original,
+            probe.stat.as_ref(),
+            probe.content.clone(),
+        )?;
+        diffs.push(CheckpointFileDiff {
+            path: probe.entry.path.clone(),
+            change_type,
+            content,
+            is_binary,
+        });
     }
     Ok(diffs)
 }
@@ -1542,69 +1637,19 @@ pub(crate) async fn list_checkpoint_changes_batch_remote(
     )
 }
 
-/// 远程版回滚：把工作区恢复到 checkpoint 记录的 pre-change 状态.
-/// 只探测追踪条目（批量 stat + 共享内容读取），不再全树扫描。
+/// 远程版回滚：把工作区恢复到 checkpoint 记录的 pre-change 状态。
+/// 与批量恢复共用同一套链式语义，只是链上只有一个检查点。
 pub(crate) async fn restore_checkpoint_remote(
     client: &RemoteCheckpointClient<'_>,
     checkpoint_id: String,
     work_dir: String,
 ) -> Result<()> {
-    let root = canonical_work_dir_remote(client, &work_dir).await?;
-    let root_path = PathBuf::from(&root);
-    let work_dir_lock = work_dir_lock(&root_path)?;
-    let _work_dir_guard = work_dir_write_guard_async(&work_dir_lock).await;
-    let manifest_lock = manifest_lock(&checkpoint_id)?;
-    let _manifest_guard = manifest_lock.lock().await;
-    if !checkpoint_manifest_exists(&checkpoint_id) {
-        return Ok(());
-    }
-    let manifest = read_manifest(&checkpoint_id)?;
-    validate_manifest_work_dir_remote(&manifest, &work_dir)?;
-    // 递增回滚纪元：此刻起该远程目录上正在运行的 bash 命令的 after 捕获
-    // 会检测到工作树被回滚改写并跳过变更记录，防止跨会话误记。
-    bump_restore_epoch(&work_dir)?;
-
-    // 当前树 stat：只恢复仍处于 expected 状态的文件（与本地一致）。
-    let tracked: Vec<CheckpointEntry> = manifest
-        .entries
-        .iter()
-        .filter(|entry| !should_skip_manifest_path(&entry.path) && entry.expected.is_some())
-        .cloned()
-        .collect();
-    let mut restored_entries = Vec::new();
-    if !tracked.is_empty() {
-        let compare_states: Vec<(usize, OriginalState)> = tracked
-            .iter()
-            .enumerate()
-            .filter_map(|(index, entry)| {
-                entry.expected.as_ref().map(|expected| (index, expected.clone()))
-            })
-            .collect();
-        let probed = probe_tracked_entries(client, &root, tracked, &compare_states, false).await?;
-        for probe in &probed.items {
-            let expected = probe.entry.expected.as_ref().ok_or_else(|| {
-                Error::from_reason("Checkpoint entry lost its expected state during probe")
-            })?;
-            let expected_differs = classify_remote_state(
-                probe.stat.as_ref(),
-                probe.content.as_ref().map(|content| content.as_deref()),
-                expected,
-                &probed.objects,
-                &probe.entry.path,
-            )?
-            .is_some();
-            if expected_differs {
-                continue;
-            }
-            let destination = resolve_remote_manifest_path(&root, &probe.entry.path);
-            restore_entry_remote(client, &probe.entry, &destination).await?;
-            restored_entries.push(probe.entry.path.clone());
-        }
-    }
-    prune_empty_parent_directories_remote(client, &root, &restored_entries).await?;
-    Ok(())
+    restore_checkpoints_remote(client, vec![checkpoint_id], work_dir).await
 }
 
+/// 远程版回滚链恢复：与本地 `restore_checkpoints` 同语义——按路径合并整条链
+/// （original 取最早的目标状态、expected 取最新的门控状态），只探测追踪条目
+/// （批量 stat + 共享内容读取），不再全树扫描。
 pub(crate) async fn restore_checkpoints_remote(
     client: &RemoteCheckpointClient<'_>,
     checkpoint_ids: Vec<String>,
@@ -1614,55 +1659,53 @@ pub(crate) async fn restore_checkpoints_remote(
     let root_path = PathBuf::from(&root);
     let work_dir_lock = work_dir_lock(&root_path)?;
     let _work_dir_guard = work_dir_write_guard_async(&work_dir_lock).await;
+    // 递增回滚纪元：此刻起该远程目录上正在运行的 bash 命令的 after 捕获
+    // 会检测到工作树被回滚改写并跳过变更记录，防止跨会话误记。
     bump_restore_epoch(&work_dir)?;
 
-    let mut restored_entries = Vec::new();
-    for checkpoint_id in checkpoint_ids.into_iter().rev() {
-        let manifest_lock = manifest_lock(&checkpoint_id)?;
-        let _manifest_guard = manifest_lock.lock().await;
-        if !checkpoint_manifest_exists(&checkpoint_id) {
-            continue;
-        }
-        let manifest = read_manifest(&checkpoint_id)?;
-        validate_manifest_work_dir_remote(&manifest, &work_dir)?;
-        let tracked: Vec<CheckpointEntry> = manifest
-            .entries
-            .iter()
-            .filter(|entry| !should_skip_manifest_path(&entry.path) && entry.expected.is_some())
-            .cloned()
-            .collect();
-        if tracked.is_empty() {
-            continue;
-        }
-        let compare_states: Vec<(usize, OriginalState)> = tracked
-            .iter()
-            .enumerate()
-            .filter_map(|(index, entry)| {
-                entry.expected.as_ref().map(|expected| (index, expected.clone()))
-            })
-            .collect();
-        let probed = probe_tracked_entries(client, &root, tracked, &compare_states, false).await?;
-        for probe in &probed.items {
-            let expected = probe.entry.expected.as_ref().ok_or_else(|| {
-                Error::from_reason("Checkpoint entry lost its expected state during probe")
-            })?;
-            let expected_differs = classify_remote_state(
-                probe.stat.as_ref(),
-                probe.content.as_ref().map(|content| content.as_deref()),
-                expected,
-                &probed.objects,
-                &probe.entry.path,
-            )?
-            .is_some();
-            if expected_differs {
-                continue;
-            }
-            let destination = resolve_remote_manifest_path(&root, &probe.entry.path);
-            restore_entry_remote(client, &probe.entry, &destination).await?;
-            restored_entries.push(probe.entry.path.clone());
-        }
+    let chained = collect_chained_entries_remote(&checkpoint_ids, |manifest| {
+        validate_manifest_work_dir_remote(manifest, &work_dir).map(|_| ())
+    })
+    .await?;
+    if chained.is_empty() {
+        return Ok(());
     }
-    prune_empty_parent_directories_remote(client, &root, &restored_entries).await
+
+    // 当前树 stat：只恢复仍处于链尾 expected 状态的文件（与本地一致）。
+    let entries = chained_probe_entries(&chained);
+    let compare_states: Vec<(usize, OriginalState)> = entries
+        .iter()
+        .enumerate()
+        .filter_map(|(index, entry)| {
+            entry
+                .expected
+                .as_ref()
+                .map(|expected| (index, expected.clone()))
+        })
+        .collect();
+    let probed = probe_tracked_entries(client, &root, entries, &compare_states, false).await?;
+
+    let mut restored_paths = Vec::new();
+    for probe in &probed.items {
+        let expected = probe.entry.expected.as_ref().ok_or_else(|| {
+            Error::from_reason("Checkpoint entry lost its expected state during probe")
+        })?;
+        let expected_differs = classify_remote_state(
+            probe.stat.as_ref(),
+            probe.content.as_ref().map(|content| content.as_deref()),
+            expected,
+            &probed.objects,
+            &probe.entry.path,
+        )?
+        .is_some();
+        if expected_differs {
+            continue;
+        }
+        let destination = resolve_remote_manifest_path(&root, &probe.entry.path);
+        restore_entry_remote(client, &probe.entry, &destination).await?;
+        restored_paths.push(probe.entry.path.clone());
+    }
+    prune_empty_parent_directories_remote(client, &root, &restored_paths).await
 }
 
 async fn restore_entry_remote(

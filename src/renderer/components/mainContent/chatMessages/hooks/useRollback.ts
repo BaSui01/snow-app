@@ -21,34 +21,6 @@ import {
 } from "../utils/conversationHelpers";
 import { getActiveWorkflowNodeIds } from "../workflow/workflowRunner";
 
-/** 比较两个 checkpoint id 的快照时间（`cp-{secs}-{nanos}-{count}`）。
- *  各段定宽补零后做字典序比较，等价于时间升序；无法解析时返回 0，
- *  由 sort 的稳定性保持原相对顺序。 */
-const compareCheckpointIds = (a: string, b: string): number => {
-  const parse = (id: string): [string, string, string] | null => {
-    const match = id.match(/^cp-(\d+)-(\d+)-(\d+)$/);
-    return match
-      ? [
-          match[1].padStart(10, "0"),
-          match[2].padStart(9, "0"),
-          match[3].padStart(6, "0"),
-        ]
-      : null;
-  };
-  const parsedA = parse(a);
-  const parsedB = parse(b);
-  if (!parsedA || !parsedB) {
-    return 0;
-  }
-  for (let index = 0; index < parsedA.length; index++) {
-    const order = parsedA[index].localeCompare(parsedB[index]);
-    if (order !== 0) {
-      return order;
-    }
-  }
-  return 0;
-};
-
 /**
  * 回滚逻辑：中止流、预览文件变更、确认/取消回滚。
  * context_compaction 回滚必须调用 truncateConversation，以其自身 responseId
@@ -123,7 +95,8 @@ export const useRollback = (ctx: ConversationContextValue) => {
 
       const targetMessage = messages[targetIndex];
       const messageContent = targetMessage.content;
-      const checkpointId = targetMessage.checkpointId;
+      // 回滚链 = 目标消息及之后所有用户消息的检查点；Rust 侧负责按路径
+      // 合并整条链，这里只按消息顺序收集，无需自行排序。
       const initialCheckpointIds = messages
         .slice(targetIndex)
         .filter((message) => message.role === "user" && message.checkpointId)
@@ -353,10 +326,12 @@ export const useRollback = (ctx: ConversationContextValue) => {
           let changes: CheckpointFileChange[] = [];
           if (previewCheckpointIds.length > 0 && sessionWorkDir) {
             try {
-              // includeAll=false（rollback preview 语义）：只列出当前状态
-              // 仍处于 checkpoint 后状态的文件——与 restoreCheckpoints 的
-              // 实际恢复范围完全一致。true 的"文件面板"语义会把后来被
-              // 覆盖/漂移的痕迹也列出来，造成"回滚列表混入无关文件"。
+              // includeAll=false（rollback preview 语义）：Rust 侧按路径合并
+              // 整条链（最早 original → 最新 expected）后，只列出当前状态仍
+              // 处于链尾后状态的文件——与 restoreCheckpoints 的实际恢复范围
+              // 完全一致。先新建再编辑的文件因此显示为"新增（回滚会删除它）"，
+              // 而不是"修改"。true 的"文件面板"语义会把后来被覆盖/漂移的
+              // 痕迹也列出来，造成"回滚列表混入无关文件"。
               changes = await window.snow.listCheckpointChangesBatch(
                 previewCheckpointIds,
                 sessionWorkDir,
@@ -450,7 +425,6 @@ export const useRollback = (ctx: ConversationContextValue) => {
             messageContent,
             changes,
             checkpointIds,
-            checkpointId: checkpointIds[0],
             workDir: sessionWorkDir,
             directoryId: capturedSessionRef?.directoryId,
             convId,
@@ -547,9 +521,9 @@ export const useRollback = (ctx: ConversationContextValue) => {
       // DB 失败重试时已恢复文件不再匹配 manifest 的 expected 状态，
       // states_match 门控自动跳过，重试安全。checkpointIds 为预览阶段
       // 按消息持久化顺序收集的检查点，flowCheckpointIds 为被回滚
-      // WorkFlow 的 flow 级检查点（flow 首节点执行前拍摄），按快照时间
-      // 升序合并交给 restore（其内部逆序逐个恢复，最终工作区 = 最早
-      // 快照 = 回滚目标处理前状态）。
+      // WorkFlow 的 flow 级检查点（flow 首节点执行前拍摄）。Rust 侧按路径
+      // 合并整条链（original 取最早、expected 取最新）后逐条恢复，与传入
+      // 顺序无关，最终工作区 = 回滚目标处理前状态。
       if (
         mode === "conversation-and-files" &&
         preview.workDir &&
@@ -559,7 +533,7 @@ export const useRollback = (ctx: ConversationContextValue) => {
         // 显示 loading。恢复失败不阻塞后续 DB 回滚（best effort）。
         try {
           await window.snow.restoreCheckpoints(
-            [...checkpointIds, ...flowCheckpointIds].sort(compareCheckpointIds),
+            [...checkpointIds, ...flowCheckpointIds],
             preview.workDir,
           );
         } catch {

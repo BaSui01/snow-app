@@ -189,7 +189,7 @@ struct CheckpointEntry {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-enum OriginalState {
+pub(crate) enum OriginalState {
     Missing,
     Object { object_id: String },
     Git,
@@ -1262,94 +1262,161 @@ pub fn record_checkpoint_worktree_after(capture: CheckpointWorktreeCapture) -> R
     Ok(())
 }
 
-/// Restore only paths that were recorded by mutating tools after this checkpoint.
-pub fn restore_checkpoint(checkpoint_id: String, work_dir: String) -> Result<()> {
-    let root = canonical_work_dir(&work_dir)?;
-    let work_dir_lock = work_dir_lock(&root)?;
-    let _work_dir_guard = work_dir_write_guard(&work_dir_lock)?;
-    let manifest_lock = manifest_lock(&checkpoint_id)?;
-    let _manifest_guard = manifest_lock.blocking_lock();
-    // If the manifest no longer exists (checkpoint was deleted or corrupted),
-    // there is nothing to restore. Return Ok so the rollback flow continues
-    // to delete messages without being blocked by a missing checkpoint.
-    if !checkpoint_manifest_exists(&checkpoint_id) {
-        return Ok(());
-    }
-    let manifest = read_manifest(&checkpoint_id)?;
-    validate_manifest_work_dir(&manifest, &work_dir)?;
-    // 递增回滚纪元：此刻起该目录上正在运行的 bash 命令的 after 捕获
-    // 会检测到工作树被回滚改写并跳过变更记录，防止跨会话误记。
-    bump_restore_epoch(&work_dir)?;
-
-    let mut restored_entries = Vec::new();
-    for entry in &manifest.entries {
-        if should_skip_manifest_path(&entry.path) {
-            continue;
-        }
-        let destination = resolve_manifest_path(&root, &entry.path);
-        let Some(expected) = entry.expected.as_ref() else {
-            continue;
-        };
-        if !states_match(&destination, expected, manifest.git.as_ref(), &entry.path)? {
-            continue;
-        }
-        restore_entry(&root, &manifest, entry)?;
-        restored_entries.push(entry.path.clone());
-    }
-    prune_empty_parent_directories(
-        &root,
-        &manifest
-            .entries
-            .iter()
-            .filter(|entry| restored_entries.contains(&entry.path))
-            .cloned()
-            .collect::<Vec<_>>(),
-    );
-
-    Ok(())
+/// checkpoint id 内嵌的创建时间（`cp-{secs}-{nanos}-{count}`）：用于把回滚链
+/// 按时间升序处理，使合并结果与调用方传入顺序无关。
+fn parse_checkpoint_id(checkpoint_id: &str) -> Option<(u64, u64, u64)> {
+    let mut parts = checkpoint_id.strip_prefix("cp-")?.split('-');
+    let secs = parts.next()?.parse().ok()?;
+    let nanos = parts.next()?.parse().ok()?;
+    let count = parts.next()?.parse().ok()?;
+    parts.next().is_none().then_some((secs, nanos, count))
 }
 
-pub fn restore_checkpoints(checkpoint_ids: Vec<String>, work_dir: String) -> Result<()> {
-    let root = canonical_work_dir(&work_dir)?;
-    let work_dir_lock = work_dir_lock(&root)?;
-    let _work_dir_guard = work_dir_write_guard(&work_dir_lock)?;
-    bump_restore_epoch(&work_dir)?;
+/// 同一文件在链上的合并键：大小写规则与 `manifest_paths_equal` 一致
+/// （Windows 大小写不敏感）；工作区外 `\x00abs:` 条目的绝对路径原样参与比较。
+fn manifest_merge_key(path: &str) -> String {
+    #[cfg(windows)]
+    {
+        path.to_ascii_lowercase()
+    }
+    #[cfg(not(windows))]
+    {
+        path.to_string()
+    }
+}
 
-    let mut restored_entries = Vec::new();
-    for checkpoint_id in checkpoint_ids.into_iter().rev() {
-        let manifest_lock = manifest_lock(&checkpoint_id)?;
-        let _manifest_guard = manifest_lock.blocking_lock();
-        if !checkpoint_manifest_exists(&checkpoint_id) {
-            continue;
-        }
-        let manifest = read_manifest(&checkpoint_id)?;
-        validate_manifest_work_dir(&manifest, &work_dir)?;
+/// 链式合并后的追踪条目：一个文件在整条回滚链上的两端状态。
+pub(crate) struct ChainedEntry {
+    /// 路径：取链上最新一次记录的真实大小写。
+    pub(crate) path: String,
+    /// 链上最早一次记录该路径时的 pre-change 状态：回滚的目标状态。
+    pub(crate) original: OriginalState,
+    /// 链上最新一次记录该路径时的 post-change 状态：门控参考状态。
+    pub(crate) expected: OriginalState,
+    /// expected 来源检查点 id（diff 缓存键使用）。
+    pub(crate) source_checkpoint_id: String,
+}
+
+/// 按路径合并链上各 checkpoint 的追踪条目：original 取最早（回滚真正要回到的
+/// 状态），expected 取最新（判断文件是否仍处于本会话改动后状态的依据）。
+///
+/// 单看某一个 checkpoint 会把「先新建、再编辑」的文件误判成「回滚编辑」：
+/// 新建轮次记录 original=missing → expected=v1，编辑轮次记录 original=v1 →
+/// expected=v2。只有把两端配对（missing → v2）才还原出回滚链的真实语义——
+/// 撤回新建（删除文件），而不是把内容回退到上一版。
+///
+/// 处理顺序与调用方传入顺序无关：内部按 id 内嵌时间升序，无法解析的 id
+/// 视为等价（稳定排序保持原相对顺序）。
+fn merge_chained_manifests(manifests: &[(String, CheckpointManifest)]) -> Vec<ChainedEntry> {
+    let mut ordered: Vec<&(String, CheckpointManifest)> = manifests.iter().collect();
+    ordered.sort_by(
+        |left, right| match (parse_checkpoint_id(&left.0), parse_checkpoint_id(&right.0)) {
+            (Some(left_key), Some(right_key)) => left_key.cmp(&right_key),
+            _ => std::cmp::Ordering::Equal,
+        },
+    );
+    let mut positions: HashMap<String, usize> = HashMap::new();
+    let mut chained: Vec<ChainedEntry> = Vec::new();
+    for (checkpoint_id, manifest) in ordered {
         for entry in &manifest.entries {
             if should_skip_manifest_path(&entry.path) {
                 continue;
             }
-            let destination = resolve_manifest_path(&root, &entry.path);
+            // 未完成捕获（工具执行中 / 失败）的条目不能作为门控依据。
             let Some(expected) = entry.expected.as_ref() else {
                 continue;
             };
-            if !states_match(&destination, expected, manifest.git.as_ref(), &entry.path)? {
-                continue;
+            match positions.get(&manifest_merge_key(&entry.path)) {
+                Some(index) => {
+                    // 后续轮次：只推进门控状态，并升级为磁盘真实大小写。
+                    let target = &mut chained[*index];
+                    target.path = entry.path.clone();
+                    target.expected = expected.clone();
+                    target.source_checkpoint_id = checkpoint_id.clone();
+                }
+                None => {
+                    positions.insert(manifest_merge_key(&entry.path), chained.len());
+                    chained.push(ChainedEntry {
+                        path: entry.path.clone(),
+                        original: entry.original.clone(),
+                        expected: expected.clone(),
+                        source_checkpoint_id: checkpoint_id.clone(),
+                    });
+                }
             }
-            restore_entry(&root, &manifest, entry)?;
-            restored_entries.push(entry.clone());
         }
     }
-    prune_empty_parent_directories(&root, &restored_entries);
+    chained.sort_by(|left, right| left.path.cmp(&right.path));
+    chained
+}
+
+/// 本地读取回滚链上的 manifest 并合并：逐个 manifest 短暂加锁，与旧的单
+/// checkpoint 读取保持同一并发纪律。调用方必须已持有工作区执行级锁——
+/// 捕获流程只在该锁之外改写 manifest。
+fn collect_chained_entries(
+    checkpoint_ids: &[String],
+    validate: impl Fn(&CheckpointManifest) -> Result<()>,
+) -> Result<Vec<ChainedEntry>> {
+    let mut manifests = Vec::new();
+    for checkpoint_id in checkpoint_ids {
+        if !checkpoint_manifest_exists(checkpoint_id) {
+            continue;
+        }
+        let lock = manifest_lock(checkpoint_id)?;
+        let _guard = lock.blocking_lock();
+        let manifest = read_manifest(checkpoint_id)?;
+        validate(&manifest)?;
+        manifests.push((checkpoint_id.clone(), manifest));
+    }
+    Ok(merge_chained_manifests(&manifests))
+}
+
+/// Restore a single checkpoint. 与批量恢复共用同一套链式语义，只是链上
+/// 只有一个检查点。
+pub fn restore_checkpoint(checkpoint_id: String, work_dir: String) -> Result<()> {
+    restore_checkpoints(vec![checkpoint_id], work_dir)
+}
+
+/// Restore the working directory to the state before the rollback target turn.
+///
+/// 链上各检查点按路径合并后逐条恢复：`original`（链上最早捕获的 pre-change
+/// 状态）是目标状态，`expected`（链上最新捕获的 post-change 状态）是门控——
+/// 文件已被用户或其他会话改写时跳过，绝不覆盖别人的改动。
+/// 合并让恢复结果既不依赖调用方传入顺序，也不要求链上检查点连续。
+pub fn restore_checkpoints(checkpoint_ids: Vec<String>, work_dir: String) -> Result<()> {
+    let root = canonical_work_dir(&work_dir)?;
+    let work_dir_lock = work_dir_lock(&root)?;
+    let _work_dir_guard = work_dir_write_guard(&work_dir_lock)?;
+    // 递增回滚纪元：此刻起该目录上正在运行的 bash 命令的 after 捕获
+    // 会检测到工作树被回滚改写并跳过变更记录，防止跨会话误记。
+    bump_restore_epoch(&work_dir)?;
+
+    let chained = collect_chained_entries(&checkpoint_ids, |manifest| {
+        validate_manifest_work_dir(manifest, &work_dir).map(|_| ())
+    })?;
+    let mut restored_paths = Vec::new();
+    for entry in &chained {
+        let destination = resolve_manifest_path(&root, &entry.path);
+        if !states_match(&destination, &entry.expected, None, &entry.path)? {
+            continue;
+        }
+        restore_entry(&root, &entry.path, &entry.original, None)?;
+        restored_paths.push(entry.path.clone());
+    }
+    prune_empty_parent_directories(&root, &restored_paths);
     Ok(())
 }
 
+/// 把一条链式条目恢复到它的 original 状态：missing → 删除文件；
+/// object → 写回内容；git → 从基线对象读回（当前 manifest 版本恒为 None）。
 fn restore_entry(
     root: &Path,
-    manifest: &CheckpointManifest,
-    entry: &CheckpointEntry,
+    path: &str,
+    original: &OriginalState,
+    baseline: Option<&GitBaseline>,
 ) -> Result<()> {
-    let destination = resolve_manifest_path(root, &entry.path);
-    match &entry.original {
+    let destination = resolve_manifest_path(root, path);
+    match original {
         OriginalState::Missing => {
             if destination.is_file() || destination.is_symlink() {
                 fs::remove_file(&destination).map_err(|error| {
@@ -1366,15 +1433,10 @@ fn restore_entry(
             restore_file(&source, &destination)
         }
         OriginalState::Git => {
-            let baseline = manifest
-                .git
-                .as_ref()
-                .ok_or_else(|| Error::from_reason("Checkpoint Git baseline is missing"))?;
-            let content = read_git_object(baseline, &entry.path)?.ok_or_else(|| {
-                Error::from_reason(format!(
-                    "Checkpoint Git object is missing for '{}'",
-                    entry.path
-                ))
+            let baseline =
+                baseline.ok_or_else(|| Error::from_reason("Checkpoint Git baseline is missing"))?;
+            let content = read_git_object(baseline, path)?.ok_or_else(|| {
+                Error::from_reason(format!("Checkpoint Git object is missing for '{path}'"))
             })?;
             write_file(&destination, &content)
         }
@@ -1422,11 +1484,12 @@ fn write_file(destination: &Path, content: &[u8]) -> Result<()> {
     })
 }
 
-fn prune_empty_parent_directories(root: &Path, entries: &[CheckpointEntry]) {
-    let mut directories: Vec<PathBuf> = entries
+/// 回滚后清理空父目录（最深优先，最多上溯到工作区根）。
+fn prune_empty_parent_directories(root: &Path, paths: &[String]) {
+    let mut directories: Vec<PathBuf> = paths
         .iter()
-        .filter_map(|entry| {
-            resolve_manifest_path(root, &entry.path)
+        .filter_map(|path| {
+            resolve_manifest_path(root, path)
                 .parent()
                 .map(Path::to_path_buf)
         })
@@ -1563,6 +1626,53 @@ pub fn list_checkpoint_changes(
     Ok(changes)
 }
 
+/// 单个文件的 unified diff：original 摘要 + 磁盘 mtime/size 均未变时复用进程内
+/// 缓存，避免高频工具循环下反复读文件与 TextDiff 全量计算（P0-4 性能优化）。
+/// `cache_key` 由调用方按「条目所属检查点 + 路径」构造。
+fn checkpoint_file_diff(
+    cache_key: String,
+    relative: &str,
+    original: &OriginalState,
+    baseline: Option<&GitBaseline>,
+    current: &Path,
+) -> Result<(String, bool)> {
+    let digest = original_digest(original, baseline, relative);
+    let cached = {
+        let cache = diff_cache();
+        let meta = fs::metadata(current).ok();
+        cache.get(&cache_key).and_then(|cached_entry| {
+            let meta = meta.as_ref()?;
+            (cached_entry.original_digest == digest
+                && cached_entry.current_mtime_ms == mtime_ms(meta)
+                && cached_entry.current_size == meta.len())
+            .then_some((cached_entry.content.clone(), cached_entry.is_binary))
+        })
+    };
+    if let Some(cached) = cached {
+        return Ok(cached);
+    }
+    let original_content = read_original_content(original, baseline, relative)?;
+    let current_content = read_current_content(current)?;
+    let (content, is_binary) =
+        build_unified_diff(relative, original_content.as_deref(), current_content.as_deref());
+    let meta = fs::metadata(current).ok();
+    let mut cache = diff_cache();
+    if cache.len() >= DIFF_CACHE_MAX_ENTRIES {
+        cache.clear();
+    }
+    cache.insert(
+        cache_key,
+        CachedCheckpointDiff {
+            original_digest: digest,
+            current_mtime_ms: meta.as_ref().map(mtime_ms).unwrap_or(0),
+            current_size: meta.as_ref().map(|meta| meta.len()).unwrap_or(0),
+            content: content.clone(),
+            is_binary,
+        },
+    );
+    Ok((content, is_binary))
+}
+
 /// Build unified diffs from checkpoint content to the current working state.
 /// This is read-only and is used by the renderer's rollback preview and the
 /// file-changes panel.
@@ -1590,10 +1700,9 @@ pub fn list_checkpoint_diffs(
     }
     let manifest = read_manifest(&checkpoint_id)?;
     validate_manifest_work_dir(&manifest, &work_dir)?;
-    let tracked = collect_tracked_entries(&manifest);
 
     let mut diffs = Vec::new();
-    for entry in tracked {
+    for entry in &manifest.entries {
         if should_skip_manifest_path(&entry.path) {
             continue;
         }
@@ -1613,52 +1722,13 @@ pub fn list_checkpoint_diffs(
         else {
             continue;
         };
-
-        // 进程内 diff 缓存：original 摘要 + 磁盘 mtime/size 均未变时直接
-        // 复用上次生成的 unified diff，避免高频工具循环下反复读文件与
-        // TextDiff 全量计算（P0-4 性能优化）。
-        let cache_key = format!("{}:{}", checkpoint_id, entry.path);
-        let digest = original_digest(&entry.original, manifest.git.as_ref(), &entry.path);
-        let cached = {
-            let cache = diff_cache();
-            let meta = fs::metadata(&current).ok();
-            cache.get(&cache_key).and_then(|cached_entry| {
-                let meta = meta.as_ref()?;
-                (cached_entry.original_digest == digest
-                    && cached_entry.current_mtime_ms == mtime_ms(meta)
-                    && cached_entry.current_size == meta.len())
-                .then_some((cached_entry.content.clone(), cached_entry.is_binary))
-            })
-        };
-        let (content, is_binary) = match cached {
-            Some((content, is_binary)) => (content, is_binary),
-            None => {
-                let original_content =
-                    read_original_content(&entry.original, manifest.git.as_ref(), &entry.path)?;
-                let current_content = read_current_content(&current)?;
-                let (content, is_binary) = build_unified_diff(
-                    &entry.path,
-                    original_content.as_deref(),
-                    current_content.as_deref(),
-                );
-                let meta = fs::metadata(&current).ok();
-                let mut cache = diff_cache();
-                if cache.len() >= DIFF_CACHE_MAX_ENTRIES {
-                    cache.clear();
-                }
-                cache.insert(
-                    cache_key,
-                    CachedCheckpointDiff {
-                        original_digest: digest,
-                        current_mtime_ms: meta.as_ref().map(mtime_ms).unwrap_or(0),
-                        current_size: meta.as_ref().map(|meta| meta.len()).unwrap_or(0),
-                        content: content.clone(),
-                        is_binary,
-                    },
-                );
-                (content, is_binary)
-            }
-        };
+        let (content, is_binary) = checkpoint_file_diff(
+            format!("{}:{}", checkpoint_id, entry.path),
+            &entry.path,
+            &entry.original,
+            manifest.git.as_ref(),
+            &current,
+        )?;
         diffs.push(CheckpointFileDiff {
             path: display_entry_path(&root, &entry.path),
             change_type,
@@ -1670,22 +1740,46 @@ pub fn list_checkpoint_diffs(
     Ok(diffs)
 }
 
+/// 回滚链（目标消息及其之后所有轮次的检查点）的变更/diff 列表：按路径合并
+/// 整条链——original 取最早、expected 取最新。先新建再编辑的文件因此显示为
+/// 「新增（回滚会删除它）」，而不是「修改」，与实际恢复结果完全一致。
+///
+/// `include_all=false`（回滚预览）只报告仍处于链尾后状态、回滚真正会恢复的
+/// 文件；`true`（文件变更面板）报告相对链首 pre-change 状态仍有差异的文件。
 pub fn list_checkpoint_diffs_batch(
     checkpoint_ids: Vec<String>,
     work_dir: String,
     include_all: bool,
 ) -> Result<Vec<CheckpointFileDiff>> {
-    let mut seen_paths = HashSet::new();
+    let root = canonical_work_dir(&work_dir)?;
+    let work_dir_lock = work_dir_lock(&root)?;
+    let _work_dir_guard = work_dir_read_guard(&work_dir_lock)?;
+    let chained = collect_chained_entries(&checkpoint_ids, |manifest| {
+        validate_manifest_work_dir(manifest, &work_dir).map(|_| ())
+    })?;
+
     let mut diffs = Vec::new();
-    for checkpoint_id in checkpoint_ids {
-        if !checkpoint_manifest_exists(&checkpoint_id) {
+    for entry in &chained {
+        let current = resolve_manifest_path(&root, &entry.path);
+        if !include_all && !states_match(&current, &entry.expected, None, &entry.path)? {
             continue;
         }
-        for diff in list_checkpoint_diffs(checkpoint_id, work_dir.clone(), include_all)? {
-            if seen_paths.insert(diff.path.clone()) {
-                diffs.push(diff);
-            }
-        }
+        let Some(change_type) = classify_change(&current, &entry.original, None, &entry.path)? else {
+            continue;
+        };
+        let (content, is_binary) = checkpoint_file_diff(
+            format!("{}:{}", entry.source_checkpoint_id, entry.path),
+            &entry.path,
+            &entry.original,
+            None,
+            &current,
+        )?;
+        diffs.push(CheckpointFileDiff {
+            path: display_entry_path(&root, &entry.path),
+            change_type,
+            content,
+            is_binary,
+        });
     }
     Ok(diffs)
 }

@@ -133,8 +133,8 @@ export const RollbackConfirmDialog = ({
     setPreviewLoading(true);
     setPreviewError(false);
     void window.snow
-      // includeAll=false：diff 预览与实际回滚范围一致（只显示仍处于
-      // checkpoint 后状态、确认回滚时会被恢复的文件）。
+      // includeAll=false：diff 预览与实际回滚范围一致（Rust 侧按路径合并
+      // 整条回滚链后，只显示仍处于链尾后状态、确认回滚时会被恢复的文件）。
       .listCheckpointDiffsBatch(checkpointIds, workDir, false)
       .then((result) => {
         setDiffs(result);

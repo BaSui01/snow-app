@@ -37,11 +37,11 @@ export function GlobalSearchModal({
   const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [directories, setDirectories] = useState<WorkspaceDirectoryRecord[]>(
-    []
+    [],
   );
-  const [conversations, setConversations] = useState<ConversationSearchResult[]>(
-    []
-  );
+  const [conversations, setConversations] = useState<
+    ConversationSearchResult[]
+  >([]);
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -192,7 +192,7 @@ export function GlobalSearchModal({
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       setActiveIndex((prev) =>
-        prev === 0 ? flatResults.length - 1 : prev - 1
+        prev === 0 ? flatResults.length - 1 : prev - 1,
       );
     } else if (event.key === "Enter") {
       event.preventDefault();
@@ -210,7 +210,7 @@ export function GlobalSearchModal({
 
   const renderConversationItem = (
     conversation: ConversationSearchResult,
-    itemIndex: number
+    itemIndex: number,
   ): React.JSX.Element => {
     const displayName =
       conversation.summary ||
@@ -249,7 +249,7 @@ export function GlobalSearchModal({
 
   const renderDirectoryItem = (
     directory: WorkspaceDirectoryRecord,
-    itemIndex: number
+    itemIndex: number,
   ): React.JSX.Element => {
     return (
       <div
@@ -276,7 +276,7 @@ export function GlobalSearchModal({
 
   const renderSettingItem = (
     setting: SettingsItem,
-    itemIndex: number
+    itemIndex: number,
   ): React.JSX.Element => {
     const label = t(setting.labelKey, { defaultValue: setting.defaultLabel });
     const Icon = setting.icon;
@@ -349,7 +349,7 @@ export function GlobalSearchModal({
               })}
             </div>
             {conversations.map((conversation) =>
-              renderConversationItem(conversation, index++)
+              renderConversationItem(conversation, index++),
             )}
           </div>
         )}
@@ -359,7 +359,7 @@ export function GlobalSearchModal({
               {t("search.groupProjects", { defaultValue: "Projects" })}
             </div>
             {matchedDirectories.map((directory) =>
-              renderDirectoryItem(directory, index++)
+              renderDirectoryItem(directory, index++),
             )}
           </div>
         )}
@@ -369,7 +369,7 @@ export function GlobalSearchModal({
               {t("search.groupSettings", { defaultValue: "Settings" })}
             </div>
             {matchedSettings.map((setting) =>
-              renderSettingItem(setting, index++)
+              renderSettingItem(setting, index++),
             )}
           </div>
         )}
@@ -392,6 +392,7 @@ export function GlobalSearchModal({
       open={open}
       title={t("search.title", { defaultValue: "Search" })}
       closeLabel={t("search.close", { defaultValue: "Close search" })}
+      closeOnEscape
       onClose={onClose}
       size="large"
       className="search-modal"

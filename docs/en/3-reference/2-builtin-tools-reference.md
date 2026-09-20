@@ -53,6 +53,11 @@ Listed in registration order:
 > `shellPath` parameter — use `terminal-open` to open an interactive
 > terminal with a specific shell.
 
+> **Working directory**: `workingDirectory` may be omitted — it then defaults to
+> the current project's workspace directory (the remote workspace path for SSH
+> projects). It is only mandatory when the session is not bound to a project
+> workspace.
+
 ### todo
 
 | Full tool name     | Purpose                             | Key parameters                                                   |

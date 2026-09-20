@@ -16,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "../../i18n";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { CustomSelect } from "../common/CustomSelect";
+import { HighlightedText } from "../common/HighlightedText";
 import { Modal } from "../common/Modal";
 import type {
   ChatConversationRecord,
@@ -84,43 +85,6 @@ type MemoryModalProps = {
     target: ConversationNavigationTarget,
   ) => Promise<ConversationNavigationOutcome>;
   onClose: () => void;
-};
-
-/** 转义正则元字符，用于把关键词安全地拼成高亮匹配模式。 */
-const escapeRegExp = (value: string): string =>
-  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-/**
- * 命中高亮：把关键词（整句 + 分词）在文本中的出现位置包成 <mark>。
- * 利用带捕获组的 split 特性——奇数下标即为命中片段。
- */
-const HighlightedText = ({
-  text,
-  query,
-}: {
-  text: string;
-  query: string;
-}): React.JSX.Element => {
-  const terms = [...new Set([query, ...query.split(/\s+/)])].filter(
-    (term) => term.trim() !== "",
-  );
-  if (terms.length === 0) {
-    return <>{text}</>;
-  }
-  const pattern = new RegExp(`(${terms.map(escapeRegExp).join("|")})`, "gi");
-  return (
-    <>
-      {text.split(pattern).map((part, index) =>
-        index % 2 === 1 ? (
-          <mark className="memory-search-mark" key={`${part}-${index}`}>
-            {part}
-          </mark>
-        ) : (
-          part
-        ),
-      )}
-    </>
-  );
 };
 
 /**

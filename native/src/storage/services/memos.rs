@@ -16,16 +16,21 @@ pub fn create_memo(database_path: &Path, directory_id: &str, content: &str) -> R
         .map_err(|error| database::database_error(database_path, "create memo", error))
 }
 
-/// Lists a page of memos ordered by creation time.
+/// Lists a page of memos ordered by the selected timestamp column.
 /// `status_filter` accepts "", "pending" or "done"; empty means all.
+/// `sort_field` accepts "created" or "updated" (default "updated").
 /// `sort_order` accepts "asc" or "desc" (default "desc").
+/// `keyword` is a substring match on the raw content (ASCII case-insensitive);
+/// an empty keyword disables the text filter.
 pub fn list_memos(
     database_path: &Path,
     directory_id: &str,
     limit: i32,
     offset: i32,
     status_filter: Option<&str>,
+    sort_field: Option<&str>,
     sort_order: Option<&str>,
+    keyword: Option<&str>,
 ) -> Result<MemoPage> {
     database::open_connection(database_path)
         .and_then(|connection| {
@@ -33,9 +38,11 @@ pub fn list_memos(
                 &connection,
                 directory_id,
                 status_filter.unwrap_or(""),
+                sort_field.unwrap_or(""),
+                sort_order.unwrap_or("desc"),
+                keyword.unwrap_or(""),
                 limit,
                 offset,
-                sort_order.unwrap_or("desc"),
             )
         })
         .map_err(|error| database::database_error(database_path, "list memos", error))
@@ -134,51 +141,53 @@ fn query_memos_page(
     connection: &Connection,
     directory_id: &str,
     status_filter: &str,
+    sort_field: &str,
+    sort_order: &str,
+    keyword: &str,
     limit: i32,
     offset: i32,
-    sort_order: &str,
 ) -> rusqlite::Result<MemoPage> {
     let safe_limit = if limit > 0 { limit } else { 20 };
     let safe_offset = if offset > 0 { offset } else { 0 };
-    let order_clause = if sort_order.eq_ignore_ascii_case("asc") {
-        "ORDER BY created_at ASC, id ASC"
+    let direction = if sort_order.eq_ignore_ascii_case("asc") {
+        "ASC"
     } else {
-        "ORDER BY created_at DESC, id DESC"
+        "DESC"
     };
-
-    let total = count_memos_with_connection(connection, directory_id, status_filter)?;
-    let items = if matches!(status_filter, "" | "pending" | "done") {
-        let mut statement = if status_filter.is_empty() {
-            connection.prepare(&format!(
-                "SELECT id, memo_id, directory_id, content, status, created_at, updated_at
-                   FROM memos
-                  WHERE directory_id = ?1
-                  {order_clause}
-                  LIMIT ?2 OFFSET ?3"
-            ))?
-        } else {
-            connection.prepare(&format!(
-                "SELECT id, memo_id, directory_id, content, status, created_at, updated_at
-                   FROM memos
-                  WHERE directory_id = ?1 AND status = ?2
-                  {order_clause}
-                  LIMIT ?3 OFFSET ?4"
-            ))?
-        };
-
-        let row_mapper = |row: &Row| map_memo_row(row);
-        let rows = if status_filter.is_empty() {
-            statement.query_map(params![directory_id, safe_limit, safe_offset], row_mapper)?
-        } else {
-            statement.query_map(
-                params![directory_id, status_filter, safe_limit, safe_offset],
-                row_mapper,
-            )?
-        };
-        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    let sort_column = if sort_field.eq_ignore_ascii_case("created") {
+        "created_at"
     } else {
-        Vec::new()
+        "updated_at"
     };
+    // 时间戳只精确到秒，同一秒内用自增 id 兜底，保证分页顺序稳定不重不漏。
+    let order_clause = format!("ORDER BY {sort_column} {direction}, id {direction}");
+    let status = normalize_status_filter(status_filter);
+    let keyword_pattern = build_keyword_pattern(keyword);
+
+    let total =
+        count_memos_with_connection(connection, directory_id, status, keyword_pattern.as_deref())?;
+
+    let mut statement = connection.prepare(&format!(
+        "SELECT id, memo_id, directory_id, content, status, created_at, updated_at
+           FROM memos
+          WHERE directory_id = ?1
+            AND (?2 IS NULL OR status = ?2)
+            AND (?3 IS NULL OR content LIKE ?3 ESCAPE '\\')
+          {order_clause}
+          LIMIT ?4 OFFSET ?5"
+    ))?;
+    let items = statement
+        .query_map(
+            params![
+                directory_id,
+                status,
+                keyword_pattern.as_deref(),
+                safe_limit,
+                safe_offset
+            ],
+            |row: &Row| map_memo_row(row),
+        )?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
 
     let has_more = (safe_offset + safe_limit) < total;
 
@@ -189,27 +198,49 @@ fn query_memos_page(
     })
 }
 
+/// 状态筛选归一化：仅 `pending` / `done` 生效，其余（含空串）视为不过滤。
+fn normalize_status_filter(value: &str) -> Option<&'static str> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "pending" => Some("pending"),
+        "done" => Some("done"),
+        _ => None,
+    }
+}
+
+/// 关键词归一化为 `LIKE` 模式：转义 `%` / `_` / `\` 避免被当通配符，
+/// 空关键词返回 `None`（SQL 对应「不过滤」分支）。SQLite 默认的 `LIKE`
+/// 对 ASCII 不区分大小写，中文等无大小写字符按原样匹配。
+fn build_keyword_pattern(keyword: &str) -> Option<String> {
+    let trimmed = keyword.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let mut pattern = String::with_capacity(trimmed.len() + 2);
+    pattern.push('%');
+    for character in trimmed.chars() {
+        if matches!(character, '%' | '_' | '\\') {
+            pattern.push('\\');
+        }
+        pattern.push(character);
+    }
+    pattern.push('%');
+    Some(pattern)
+}
+
 fn count_memos_with_connection(
     connection: &Connection,
     directory_id: &str,
-    status_filter: &str,
+    status: Option<&str>,
+    keyword_pattern: Option<&str>,
 ) -> rusqlite::Result<i32> {
-    let count: i32 = if status_filter.is_empty() {
-        connection.query_row(
-            "SELECT COUNT(*) FROM memos WHERE directory_id = ?1",
-            params![directory_id],
-            |row| row.get(0),
-        )?
-    } else if matches!(status_filter, "pending" | "done") {
-        connection.query_row(
-            "SELECT COUNT(*) FROM memos WHERE directory_id = ?1 AND status = ?2",
-            params![directory_id, status_filter],
-            |row| row.get(0),
-        )?
-    } else {
-        0
-    };
-    Ok(count)
+    connection.query_row(
+        "SELECT COUNT(*) FROM memos
+          WHERE directory_id = ?1
+            AND (?2 IS NULL OR status = ?2)
+            AND (?3 IS NULL OR content LIKE ?3 ESCAPE '\\')",
+        params![directory_id, status, keyword_pattern],
+        |row| row.get(0),
+    )
 }
 
 fn update_memo_content_with_connection(

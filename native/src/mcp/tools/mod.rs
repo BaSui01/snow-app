@@ -817,6 +817,39 @@ async fn resolve_local_project_root(project_id: Option<&str>) -> napi::Result<Op
     Ok(workspace_path.filter(|path| !is_ssh_path(path)))
 }
 
+/// bash 工具未显式提供 workingDirectory 时的兜底：默认使用当前会话项目的
+/// 工作区根目录 —— SSH 项目解析为远端工作区 URI，本地项目解析为
+/// workspace_directories 中登记的项目根路径。必须在远程 / 本地路径解析之前
+/// 运行，否则 SSH 项目会因缺少主路径字段被误判为本机通道（checkpoint 也会
+/// 走错分支）。无法解析出项目工作区（如未绑定项目的全局会话）时保持原样，
+/// 由 BashService 报出明确的参数错误。
+async fn default_bash_working_directory(
+    tool_full_name: &str,
+    mut args: Value,
+    project_id: Option<&str>,
+) -> napi::Result<Value> {
+    if tool_full_name != "bash-terminal-execute" {
+        return Ok(args);
+    }
+    let provided = args
+        .get("workingDirectory")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|path| !path.is_empty());
+    if provided.is_some() {
+        return Ok(args);
+    }
+
+    let workspace_root = match resolve_remote_project_workspace(project_id).await? {
+        Some(remote_workspace) => Some(remote_workspace),
+        None => resolve_local_project_root(project_id).await?,
+    };
+    if let Some(workspace_root) = workspace_root {
+        args["workingDirectory"] = Value::String(workspace_root);
+    }
+    Ok(args)
+}
+
 /// 将本地 filesystem / grep / codelens 工具的相对路径解析到当前项目根目录。
 /// 当 AI 以 "."、"./src"、"src/main.ts" 等相对路径调用工具时，避免路径被
 /// Rust 解析为 Electron 进程的工作目录（通常并非项目根目录）。grep 未提供 path

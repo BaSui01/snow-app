@@ -13,10 +13,20 @@ pub async fn list_memos(
     limit: i32,
     offset: i32,
     status: Option<String>,
+    sort_field: Option<String>,
     sort_order: Option<String>,
+    keyword: Option<String>,
 ) -> napi::Result<MemoPage> {
     tokio::task::spawn_blocking(move || {
-        crate::storage::list_memos(directory_id, limit, offset, status, sort_order)
+        crate::storage::list_memos(
+            directory_id,
+            limit,
+            offset,
+            status,
+            sort_field,
+            sort_order,
+            keyword,
+        )
     })
     .await
     .map_err(map_spawn_error)?

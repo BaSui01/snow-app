@@ -3,6 +3,7 @@ import type {
   MemoCountSummary,
   MemoPage,
   MemoRecord,
+  MemoSortField,
   MemoStatus,
 } from "../types";
 
@@ -12,7 +13,9 @@ export const memoApi = {
     limit: number,
     offset: number,
     status?: MemoStatus,
+    sortField?: MemoSortField,
     sortOrder?: "asc" | "desc",
+    keyword?: string,
   ): Promise<MemoPage> =>
     ipcRenderer.invoke(
       "memos:list",
@@ -20,7 +23,9 @@ export const memoApi = {
       limit,
       offset,
       status,
+      sortField,
       sortOrder,
+      keyword,
     ),
   createMemo: (directoryId: string, content: string): Promise<MemoRecord> =>
     ipcRenderer.invoke("memos:create", directoryId, content),

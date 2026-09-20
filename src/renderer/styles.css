@@ -20666,6 +20666,84 @@ input {
   flex-shrink: 0;
 }
 
+/* 关键词检索行（搜索框 + 清除） */
+.memo-search-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 10px 8px;
+  padding: 0 8px;
+  height: 28px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  flex-shrink: 0;
+}
+
+.memo-search-row:focus-within {
+  border-color: var(--border-focus);
+}
+
+.memo-search-icon {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.memo-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-family: inherit;
+  outline: none;
+  appearance: none;
+}
+
+.memo-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.memo-search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.memo-search-clear:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* 排序行：排序依据选择 + 升降序切换 + 命中/总条数 */
+.memo-sidebar-subrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px 8px;
+  flex-shrink: 0;
+}
+
+.memo-sidebar-subrow .custom-select {
+  width: 118px;
+  flex: 0 0 auto;
+}
+
+.memo-sidebar-subrow .custom-select-trigger {
+  padding: 4px 8px;
+}
+
 .memo-filter-tabs {
   display: flex;
   gap: 2px;
@@ -20771,10 +20849,14 @@ input {
 }
 
 .memo-sidebar-count {
-  padding: 0 12px 6px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 11px;
   color: var(--text-muted);
-  flex-shrink: 0;
+  text-align: right;
 }
 
 .memo-list-scroll {
@@ -44985,7 +45067,9 @@ pre.file-viewer-code {
   color: var(--text-primary);
 }
 
-.memory-search-mark {
+/* 命中关键词高亮：备忘录面板 / 项目记忆面板共用
+   （components/common/HighlightedText.tsx） */
+.search-hit-mark {
   padding: 0 1px;
   border-radius: 2px;
   background: var(--accent-amber-bg, rgba(245, 179, 1, 0.18));

@@ -6,13 +6,17 @@ import {
   Circle,
   Loader2,
   Plus,
+  Search,
   Trash2,
+  X,
   Sparkles,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "../../i18n";
 import { ConfirmDialog } from "../common/ConfirmDialog";
+import { CustomSelect } from "../common/CustomSelect";
+import { HighlightedText } from "../common/HighlightedText";
 import { Modal } from "../common/Modal";
 import { useChatConversationContext } from "../mainContent/chatMessages";
 import {
@@ -31,11 +35,19 @@ import {
   type FileMentionPopupHandle,
 } from "../mainContent/chatInput/FileMentionPopup";
 import { formatTimeLabel, parseDbTimestamp } from "./mainSidebar/chatTimeGroup";
-import type { MemoPage, MemoRecord, MemoStatus } from "../../../preload";
+import type {
+  MemoPage,
+  MemoRecord,
+  MemoSortField,
+  MemoStatus,
+} from "../../../preload";
 
 const PAGE_SIZE = 20;
 const SAVE_DEBOUNCE_MS = 600;
+const SEARCH_DEBOUNCE_MS = 300;
 const PREVIEW_MAX_LEN = 120;
+/** 命中关键词时预览片段在命中位置前后各保留的字符数。 */
+const PREVIEW_MATCH_CONTEXT = 40;
 
 type MemoFilter = "all" | MemoStatus;
 
@@ -48,17 +60,35 @@ type MemoModalProps = {
   onPendingCountChange?: (count: number) => void;
 };
 
-const isMemoStatus = (value: string): value is MemoStatus =>
-  value === "pending" || value === "done";
+const clipPreview = (text: string): string =>
+  text.length <= PREVIEW_MAX_LEN
+    ? text
+    : `${text.slice(0, PREVIEW_MAX_LEN)}...`;
 
-const buildLocalPreview = (content: string): string => {
-  const plain = content
+/** 去掉富文本标签与多余空白，得到列表预览用的纯文本。 */
+const toPlainPreviewText = (content: string): string =>
+  content
     .replace(/<[^>]*>/g, " ")
     .replace(/&nbsp;/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  if (plain.length <= PREVIEW_MAX_LEN) return plain;
-  return plain.slice(0, PREVIEW_MAX_LEN) + "...";
+
+/**
+ * 列表预览文本。命中关键词时围绕命中位置截取一段，让命中落在正文深处
+ * （超过 120 字）的备忘录也能一眼看到关键词高亮。
+ */
+const buildLocalPreview = (content: string, keyword: string): string => {
+  const plain = toPlainPreviewText(content);
+  if (!keyword) return clipPreview(plain);
+  const hitIndex = plain.toLowerCase().indexOf(keyword.toLowerCase());
+  if (hitIndex < 0) return clipPreview(plain);
+  const start = Math.max(0, hitIndex - PREVIEW_MATCH_CONTEXT);
+  const end = Math.min(
+    plain.length,
+    hitIndex + keyword.length + PREVIEW_MATCH_CONTEXT,
+  );
+  const snippet = plain.slice(start, end);
+  return `${start > 0 ? "..." : ""}${snippet}${end < plain.length ? "..." : ""}`;
 };
 
 /**
@@ -176,7 +206,11 @@ export function MemoModal({
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [filter, setFilter] = useState<MemoFilter>("all");
+  const [sortField, setSortField] = useState<MemoSortField>("updated");
   const [sortOrder, setSortOrder] = useState<MemoSortOrder>("desc");
+  // 搜索框的原始输入与防抖后真正下发的关键词（后者驱动查询与高亮）
+  const [searchInput, setSearchInput] = useState("");
+  const [searchKeyword, setSearchKeyword] = useState("");
   const [selectedMemoId, setSelectedMemoId] = useState<string | null>(null);
   const [editorContent, setEditorContent] = useState("");
   const [isCreating, setIsCreating] = useState(false);
@@ -191,6 +225,7 @@ export function MemoModal({
     useState<React.CSSProperties>({ visibility: "hidden" });
   const listScrollRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadingMoreRef = useRef(false);
   const requestIdRef = useRef(0);
@@ -274,7 +309,12 @@ export function MemoModal({
   );
 
   const loadFirstPage = useCallback(
-    async (currentFilter: MemoFilter, currentSortOrder: MemoSortOrder) => {
+    async (
+      currentFilter: MemoFilter,
+      currentSortField: MemoSortField,
+      currentSortOrder: MemoSortOrder,
+      currentKeyword: string,
+    ) => {
       const currentRequestId = ++requestIdRef.current;
       setIsLoading(true);
       try {
@@ -284,7 +324,9 @@ export function MemoModal({
           PAGE_SIZE,
           0,
           statusParam,
+          currentSortField,
           currentSortOrder,
+          currentKeyword || undefined,
         );
         if (currentRequestId !== requestIdRef.current) return;
         setMemos(page.items);
@@ -316,17 +358,74 @@ export function MemoModal({
 
   useEffect(() => {
     if (!open) return;
-    void loadFirstPage(filter, sortOrder);
+    void loadFirstPage(filter, sortField, sortOrder, searchKeyword);
     void refreshPendingCount();
-  }, [open, filter, sortOrder, loadFirstPage, refreshPendingCount]);
+  }, [
+    open,
+    filter,
+    sortField,
+    sortOrder,
+    searchKeyword,
+    loadFirstPage,
+    refreshPendingCount,
+  ]);
+
+  // 关键词防抖：输入停顿后才重新查询；清空立即恢复完整列表。
+  useEffect(() => {
+    const trimmed = searchInput.trim();
+    if (trimmed === searchKeyword) return;
+    const timer = window.setTimeout(
+      () => setSearchKeyword(trimmed),
+      trimmed === "" ? 0 : SEARCH_DEBOUNCE_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [searchInput, searchKeyword]);
+
+  // 关闭时重置检索状态，下次打开从完整列表开始。
+  useEffect(() => {
+    if (open) return;
+    setSearchInput("");
+    setSearchKeyword("");
+  }, [open]);
+
+  // 面板内快捷键：`/` 或 Ctrl/Cmd+K 聚焦搜索框。
+  // 编辑器/输入框里输入 "/" 保持原样，只有 Ctrl/Cmd+K 会强制聚焦。
+  useEffect(() => {
+    if (!open) return;
+
+    const handleWindowKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing) return;
+      const withModifier = event.ctrlKey || event.metaKey;
+      const isFocusShortcut = withModifier && event.key.toLowerCase() === "k";
+      const isSlashShortcut =
+        event.key === "/" && !withModifier && !event.altKey;
+      if (!isFocusShortcut && !isSlashShortcut) return;
+
+      const active = document.activeElement as HTMLElement | null;
+      const isEditing =
+        active?.isContentEditable === true ||
+        active?.tagName === "INPUT" ||
+        active?.tagName === "TEXTAREA";
+      if (!isFocusShortcut && isEditing) return;
+
+      event.preventDefault();
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    };
+
+    window.addEventListener("keydown", handleWindowKeyDown);
+    return () => window.removeEventListener("keydown", handleWindowKeyDown);
+  }, [open]);
 
   // When the active project (directoryId) changes while the modal is open,
   // reset the selection and editor so stale content from another project is
   // never shown. The list/editor will be repopulated by the loadFirstPage
-  // effect above.
+  // effect above. 检索词同样清空：备忘按项目隔离，旧关键词在新项目里无意义。
   useEffect(() => {
     if (!open) return;
     setSelectedMemoId(null);
+    setSearchInput("");
+    setSearchKeyword("");
     setEditorContent("");
     lastSavedContentRef.current = "";
     closeMention();
@@ -660,6 +759,10 @@ export function MemoModal({
     setIsCreating(true);
     try {
       const created = await window.snow.createMemo(directoryId, "");
+      // 新建的备忘一定是 pending 且不含检索词：退出筛选/检索视图，
+      // 否则它会被当前条件过滤掉，刚创建就"消失"。
+      if (filter !== "all") setFilter("all");
+      if (searchInput) setSearchInput("");
       setMemos((prev) =>
         sortOrder === "asc" ? [...prev, created] : [created, ...prev],
       );
@@ -764,9 +867,20 @@ export function MemoModal({
     setIsLoadingMore(true);
     const statusParam = filter === "all" ? undefined : filter;
     const currentLength = memos.length;
+    // 记录请求序号：期间若筛选/检索条件变化触发重新加载，丢弃这次追加以免混入旧结果。
+    const currentRequestId = requestIdRef.current;
     window.snow
-      .listMemos(directoryId, PAGE_SIZE, currentLength, statusParam, sortOrder)
+      .listMemos(
+        directoryId,
+        PAGE_SIZE,
+        currentLength,
+        statusParam,
+        sortField,
+        sortOrder,
+        searchKeyword || undefined,
+      )
       .then((page: MemoPage) => {
+        if (currentRequestId !== requestIdRef.current) return;
         setMemos((prev) => [...prev, ...page.items]);
         setHasMore(page.hasMore);
       })
@@ -808,7 +922,7 @@ export function MemoModal({
 
   const renderMemoItem = (memo: MemoRecord) => {
     const isSelected = memo.memoId === selectedMemoId;
-    const preview = buildLocalPreview(memo.content);
+    const preview = buildLocalPreview(memo.content, searchKeyword);
     const parsedDate = parseDbTimestamp(memo.updatedAt || memo.createdAt);
     const timeLabel = formatTimeLabel(parsedDate, new Date(), t);
     const isDone = memo.status === "done";
@@ -825,7 +939,11 @@ export function MemoModal({
       >
         <div className="memo-list-item-main">
           <div className="memo-list-item-preview">
-            {preview || t("memo.untitled")}
+            {preview ? (
+              <HighlightedText query={searchKeyword} text={preview} />
+            ) : (
+              t("memo.untitled")
+            )}
           </div>
           <div className="memo-list-item-meta">
             <span className="memo-list-item-time">{timeLabel}</span>
@@ -883,7 +1001,14 @@ export function MemoModal({
     if (memos.length === 0) {
       return (
         <div className="memo-empty">
-          <span>{t("memo.emptyHint")}</span>
+          <span>
+            {searchKeyword
+              ? t("memo.searchEmpty", {
+                  values: { query: searchKeyword },
+                  defaultValue: `No memos match "${searchKeyword}".`,
+                })
+              : t("memo.emptyHint")}
+          </span>
         </div>
       );
     }
@@ -1051,6 +1176,89 @@ export function MemoModal({
               ))}
             </div>
             <button
+              className="memo-new-btn compact"
+              disabled={isCreating}
+              onClick={() => void handleCreate()}
+              title={t("memo.newMemo")}
+              type="button"
+            >
+              <Plus size={15} strokeWidth={2.2} />
+            </button>
+          </div>
+          <div className="memo-search-row">
+            <Search
+              aria-hidden="true"
+              className="memo-search-icon"
+              size={13}
+              strokeWidth={2}
+            />
+            <input
+              aria-label={t("memo.searchPlaceholder", {
+                defaultValue: "Search memos",
+              })}
+              className="memo-search-input"
+              onChange={(event) => setSearchInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && searchInput !== "") {
+                  // 有关键词时 ESC 只清空检索并吞掉事件（关闭弹窗留给下一次 ESC）
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setSearchInput("");
+                  return;
+                }
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  setSearchKeyword(searchInput.trim());
+                }
+              }}
+              placeholder={t("memo.searchPlaceholder", {
+                defaultValue: "Search memos",
+              })}
+              ref={searchInputRef}
+              title={t("memo.searchShortcut", {
+                defaultValue: "Press / or Ctrl+K to focus search",
+              })}
+              type="text"
+              value={searchInput}
+            />
+            {searchInput !== "" && (
+              <button
+                aria-label={t("memo.searchClear", {
+                  defaultValue: "Clear search",
+                })}
+                className="memo-search-clear"
+                onClick={() => setSearchInput("")}
+                title={t("memo.searchClear", {
+                  defaultValue: "Clear search",
+                })}
+                type="button"
+              >
+                <X size={12} strokeWidth={2.2} />
+              </button>
+            )}
+          </div>
+          <div className="memo-sidebar-subrow">
+            <CustomSelect
+              onChange={(value) => setSortField(value as MemoSortField)}
+              options={[
+                {
+                  label: t("memo.sortFieldUpdated", {
+                    defaultValue: "Updated time",
+                  }),
+                  value: "updated",
+                },
+                {
+                  label: t("memo.sortFieldCreated", {
+                    defaultValue: "Created time",
+                  }),
+                  value: "created",
+                },
+              ]}
+              portal
+              title={t("memo.sortField", { defaultValue: "Sort by" })}
+              value={sortField}
+            />
+            <button
               aria-label={t("memo.sortToggle")}
               className="memo-sort-btn"
               onClick={() =>
@@ -1067,24 +1275,20 @@ export function MemoModal({
                 <ArrowUpNarrowWide size={15} strokeWidth={2} />
               )}
             </button>
-            <button
-              className="memo-new-btn compact"
-              disabled={isCreating}
-              onClick={() => void handleCreate()}
-              title={t("memo.newMemo")}
-              type="button"
-            >
-              <Plus size={15} strokeWidth={2.2} />
-            </button>
+            {totalCount > 0 && (
+              <span className="memo-sidebar-count">
+                {searchKeyword
+                  ? t("memo.searchHits", {
+                      values: { count: totalCount },
+                      defaultValue: `${totalCount} matches`,
+                    })
+                  : t("memo.totalCount", {
+                      values: { count: totalCount },
+                      defaultValue: `${totalCount}`,
+                    })}
+              </span>
+            )}
           </div>
-          {totalCount > 0 && (
-            <div className="memo-sidebar-count">
-              {t("memo.pendingCount", {
-                values: { count: totalCount },
-                defaultValue: `${totalCount}`,
-              })}
-            </div>
-          )}
           {renderBody()}
         </div>
         <div className="memo-content">{renderEditor()}</div>

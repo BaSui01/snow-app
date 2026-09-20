@@ -262,7 +262,7 @@ impl McpService for BashService {
                     },
                     "workingDirectory": {
                         "type": "string",
-                        "description": "REQUIRED: Working directory where the command should be executed. Can be a local path (e.g., \"D:/projects/myapp\")."
+                        "description": "Working directory where the command should be executed. Defaults to the current project's workspace directory when omitted. Can be a local path (e.g., \"D:/projects/myapp\")."
                     },
                     "timeout": {
                         "type": "number",
@@ -281,7 +281,7 @@ impl McpService for BashService {
                         "description": "System-injected session identifier (do not supply). Exposed to the child process as SNOW_SESSION_ID so Trellis scripts can track the active task."
                     }
                 },
-                "required": ["command", "description", "workingDirectory", "timeout"]
+                "required": ["command", "description", "timeout"]
             }),
         }]
     }
@@ -336,13 +336,18 @@ impl BashService {
             })?
             .to_string();
 
+        // workingDirectory 缺失时已由 tools::default_bash_working_directory 兜底为
+        // 当前项目工作区目录；这里仍为空只可能是会话未绑定项目工作区，报参数错误。
         let working_directory = args
             .get("workingDirectory")
             .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
             .ok_or_else(|| {
                 Error::new(
                     Status::InvalidArg,
-                    "workingDirectory is required".to_string(),
+                    "workingDirectory is required: the session is not bound to a project workspace directory"
+                        .to_string(),
                 )
             })?
             .to_string();

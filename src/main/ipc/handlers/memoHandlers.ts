@@ -9,6 +9,26 @@ const normalizeMemoStatus = (value: unknown): string | undefined => {
   return undefined;
 };
 
+/** 排序依据白名单：created / updated，其余（含空值）交给 Rust 侧默认。 */
+const normalizeMemoSortField = (value: unknown): string | undefined => {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim().toLowerCase();
+  if (trimmed === "created" || trimmed === "updated") return trimmed;
+  return undefined;
+};
+
+const normalizeMemoSortOrder = (value: unknown): string | undefined => {
+  if (typeof value !== "string") return undefined;
+  return value.trim().toLowerCase() === "asc" ? "asc" : "desc";
+};
+
+/** 关键词：空白串归一化为 undefined（napi Option 只接受 undefined，不接受 null）。 */
+const normalizeMemoKeyword = (value: unknown): string | undefined => {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed;
+};
+
 const requireMemoId = (value: unknown): string => {
   if (typeof value !== "string" || !value.trim()) {
     throw new Error("Memo ID is required");
@@ -39,24 +59,22 @@ export const registerMemoHandlers = (native: NativeBridge): void => {
       limit: unknown,
       offset: unknown,
       status: unknown,
+      sortField: unknown,
       sortOrder: unknown,
+      keyword: unknown,
     ) => {
       const safeLimit =
         typeof limit === "number" && limit > 0 ? Math.floor(limit) : 20;
       const safeOffset =
         typeof offset === "number" && offset > 0 ? Math.floor(offset) : 0;
-      const statusFilter = normalizeMemoStatus(status);
-      const safeSortOrder =
-        typeof sortOrder === "string" &&
-        sortOrder.trim().toLowerCase() === "asc"
-          ? "asc"
-          : "desc";
       return native.listMemos(
         requireDirectoryId(directoryId),
         safeLimit,
         safeOffset,
-        statusFilter,
-        safeSortOrder,
+        normalizeMemoStatus(status),
+        normalizeMemoSortField(sortField),
+        normalizeMemoSortOrder(sortOrder),
+        normalizeMemoKeyword(keyword),
       );
     },
   );

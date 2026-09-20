@@ -91,6 +91,10 @@ pub async fn call_mcp_tool(
     }
 
     let args = parse_tool_args(&tool_full_name, &args_json)?;
+    // bash 未填 workingDirectory 时兜底为当前项目工作区目录：必须早于远程 /
+    // 本地路径解析，否则 SSH 项目会因缺少主路径被当作本机命令（checkpoint
+    // 也会落到本机分支）。
+    let args = default_bash_working_directory(&tool_full_name, args, project_id.as_deref()).await?;
     if plan_mode
         && !plan_approved
         && matches!(

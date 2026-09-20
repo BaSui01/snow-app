@@ -11,7 +11,9 @@ pub fn list_memos(
     limit: i32,
     offset: i32,
     status: Option<String>,
+    sort_field: Option<String>,
     sort_order: Option<String>,
+    keyword: Option<String>,
 ) -> Result<MemoPage> {
     let database_path = ensure_database_file()?;
     services::memos::list_memos(
@@ -20,7 +22,9 @@ pub fn list_memos(
         limit,
         offset,
         status.as_deref(),
+        sort_field.as_deref(),
         sort_order.as_deref(),
+        keyword.as_deref(),
     )
 }
 

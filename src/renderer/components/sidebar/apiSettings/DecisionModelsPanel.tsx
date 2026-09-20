@@ -4,16 +4,21 @@ import { useI18n } from "../../../i18n";
 import {
   DECISION_MODELS_SETTING_CODE,
   DECISION_MODELS_SETTING_NAME,
+  DECISION_MODEL_BASE_URL_MODE_AUTO,
+  DECISION_MODEL_BASE_URL_MODE_CUSTOM,
+  DECISION_MODEL_CUSTOM_BASE_URL_EXAMPLE,
   DEFAULT_DECISION_MODEL_BASE_URL,
   DEFAULT_DECISION_MODEL_MODEL,
   DEFAULT_DECISION_MODEL_NAME,
   createDecisionModel,
   readDecisionModelsJson,
+  resolveDecisionModelEndpoint,
   toDecisionModelsJson,
   type DecisionModelConfig,
 } from "../../../constants/decisionModels";
 import { AutoDismissNotice } from "../../AutoDismissNotice";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
+import { CustomSelect } from "../../common/CustomSelect";
 import { Modal } from "../../common/Modal";
 
 /**
@@ -142,10 +147,13 @@ export function DecisionModelsPanel(): React.JSX.Element {
       );
       return;
     }
-    if (!current.baseUrl.trim()) {
+    if (
+      current.baseUrlMode === DECISION_MODEL_BASE_URL_MODE_CUSTOM &&
+      !current.baseUrl.trim()
+    ) {
       setError(
         t("settings.decisionModelBaseUrlRequired", {
-          defaultValue: "Base URL is required.",
+          defaultValue: "The full request URL is required in custom mode.",
         }),
       );
       return;
@@ -291,7 +299,9 @@ export function DecisionModelsPanel(): React.JSX.Element {
                       <strong>{model.name}</strong>
                     </td>
                     <td>{model.model}</td>
-                    <td className="cell-url">{model.baseUrl}</td>
+                    <td className="cell-url">
+                      {resolveDecisionModelEndpoint(model) || "-"}
+                    </td>
                     <td>
                       <label
                         className="toggle-switch api-settings-table-switch"
@@ -443,6 +453,32 @@ export function DecisionModelsPanel(): React.JSX.Element {
                 placeholder={DEFAULT_DECISION_MODEL_MODEL}
               />
             </label>
+            <label className="api-settings-field">
+              <span>
+                {t("settings.decisionModelBaseUrlMode", {
+                  defaultValue: "Base URL mode",
+                })}
+              </span>
+              <CustomSelect
+                value={draft.baseUrlMode}
+                options={[
+                  {
+                    value: DECISION_MODEL_BASE_URL_MODE_AUTO,
+                    label: t("settings.decisionModelBaseUrlModeAuto", {
+                      defaultValue: "Auto",
+                    }),
+                  },
+                  {
+                    value: DECISION_MODEL_BASE_URL_MODE_CUSTOM,
+                    label: t("settings.decisionModelBaseUrlModeCustom", {
+                      defaultValue: "Custom",
+                    }),
+                  },
+                ]}
+                onChange={(value) => updateDraft("baseUrlMode", value)}
+                disabled={isSaving}
+              />
+            </label>
             <label className="api-settings-field wide">
               <span>
                 {t("settings.decisionModelBaseUrl", {
@@ -453,8 +489,18 @@ export function DecisionModelsPanel(): React.JSX.Element {
                 value={draft.baseUrl}
                 onChange={(event) => updateDraft("baseUrl", event.target.value)}
                 disabled={isSaving}
-                placeholder={DEFAULT_DECISION_MODEL_BASE_URL}
+                placeholder={
+                  draft.baseUrlMode === DECISION_MODEL_BASE_URL_MODE_CUSTOM
+                    ? DECISION_MODEL_CUSTOM_BASE_URL_EXAMPLE
+                    : DEFAULT_DECISION_MODEL_BASE_URL
+                }
               />
+              <small className="api-settings-hint-text">
+                {t("settings.decisionModelEndpointHint", {
+                  values: { url: resolveDecisionModelEndpoint(draft) },
+                  defaultValue: "Requests are sent to {{url}}.",
+                })}
+              </small>
             </label>
             <label className="api-settings-field wide">
               <span>

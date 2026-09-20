@@ -2056,6 +2056,10 @@ export const en = {
   "settings.decisionModelName": "Name",
   "settings.decisionModelModel": "Model name",
   "settings.decisionModelBaseUrl": "Base URL",
+  "settings.decisionModelBaseUrlMode": "Base URL mode",
+  "settings.decisionModelBaseUrlModeAuto": "Auto",
+  "settings.decisionModelBaseUrlModeCustom": "Custom",
+  "settings.decisionModelEndpointHint": "Endpoint in use: {{url}}",
   "settings.decisionModelApiKey": "API key",
   "settings.decisionModelToggle": "Enable or disable this decision model",
   "settings.decisionModelEditorAddTitle": "Add decision model",
@@ -2063,7 +2067,8 @@ export const en = {
   "settings.decisionModelEditorInfo":
     "The API key is stored locally and is only sent to this endpoint.",
   "settings.decisionModelNameRequired": "Name is required.",
-  "settings.decisionModelBaseUrlRequired": "Base URL is required.",
+  "settings.decisionModelBaseUrlRequired":
+    "A full request URL is required in custom mode.",
   "settings.decisionModelModelRequired": "Model name is required.",
   "settings.decisionModelLoadError": "Failed to load decision models",
   "settings.decisionModelSaveError": "Failed to save decision models",

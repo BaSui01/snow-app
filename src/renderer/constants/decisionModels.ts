@@ -3,7 +3,7 @@
  * 不生成文本，只对给定状态逐条给出选择。
  *
  * 真源是 system_settings 的 `decision_models`，JSON 形如：
- * `{ "models": [{ id, name, baseUrl, model, apiKey, enabled }] }`。
+ * `{ "models": [{ id, name, baseUrl, baseUrlMode, model, apiKey, enabled }] }`。
  * 该配置独立于代码库设置：代码库只保存选中的决策模型 id，其它功能可复用同一份配置。
  * Rust 侧（native/src/api/jev.rs）按同一份 JSON 解析，字段名必须保持 camelCase 一致。
  */
@@ -18,11 +18,21 @@ export const DEFAULT_DECISION_MODEL_MODEL = "jev-latest";
 /** 新建决策模型时的默认名称。 */
 export const DEFAULT_DECISION_MODEL_NAME = "Jev (TypeSafe)";
 
+export type DecisionModelBaseUrlMode = "auto" | "custom";
+
+export const DECISION_MODEL_BASE_URL_MODE_AUTO: DecisionModelBaseUrlMode =
+  "auto";
+export const DECISION_MODEL_BASE_URL_MODE_CUSTOM: DecisionModelBaseUrlMode =
+  "custom";
+export const DECISION_MODEL_CUSTOM_BASE_URL_EXAMPLE =
+  "https://openrouter.ai/api/alpha/decisions";
+
 /** 单个决策模型配置。 */
 export type DecisionModelConfig = {
   id: string;
   name: string;
   baseUrl: string;
+  baseUrlMode: DecisionModelBaseUrlMode;
   model: string;
   apiKey: string;
   enabled: boolean;
@@ -45,10 +55,18 @@ export const createDecisionModel = (
   id: createDecisionModelId(),
   name,
   baseUrl: DEFAULT_DECISION_MODEL_BASE_URL,
+  baseUrlMode: DECISION_MODEL_BASE_URL_MODE_AUTO,
   model: DEFAULT_DECISION_MODEL_MODEL,
   apiKey: "",
   enabled: true,
 });
+
+export const normalizeDecisionModelBaseUrlMode = (
+  value: unknown,
+): DecisionModelBaseUrlMode =>
+  toText(value) === DECISION_MODEL_BASE_URL_MODE_CUSTOM
+    ? DECISION_MODEL_BASE_URL_MODE_CUSTOM
+    : DECISION_MODEL_BASE_URL_MODE_AUTO;
 
 /** 规范化单个条目；既没有名称也没有模型名的条目视为无效。 */
 const normalizeDecisionModel = (value: unknown): DecisionModelConfig | null => {
@@ -63,10 +81,18 @@ const normalizeDecisionModel = (value: unknown): DecisionModelConfig | null => {
     return null;
   }
 
+  const baseUrlMode = normalizeDecisionModelBaseUrlMode(value.baseUrlMode);
+  const baseUrl = toText(value.baseUrl);
+
   return {
     id: toText(value.id) || createDecisionModelId(),
     name: name || model,
-    baseUrl: toText(value.baseUrl) || DEFAULT_DECISION_MODEL_BASE_URL,
+    baseUrl:
+      baseUrl ||
+      (baseUrlMode === DECISION_MODEL_BASE_URL_MODE_CUSTOM
+        ? ""
+        : DEFAULT_DECISION_MODEL_BASE_URL),
+    baseUrlMode,
     model,
     apiKey: typeof value.apiKey === "string" ? value.apiKey : "",
     // 缺省视为启用：手写配置时无需显式写 enabled。
@@ -112,10 +138,35 @@ export const toDecisionModelsJson = (models: DecisionModelConfig[]): string =>
       ...model,
       name: model.name.trim(),
       baseUrl: model.baseUrl.trim(),
+      baseUrlMode: normalizeDecisionModelBaseUrlMode(model.baseUrlMode),
       model: model.model.trim(),
       apiKey: model.apiKey.trim(),
     })),
   });
+
+export const resolveDecisionModelEndpoint = (
+  model: Pick<DecisionModelConfig, "baseUrl" | "baseUrlMode">,
+): string => {
+  const baseUrl = model.baseUrl.trim().replace(/\/+$/, "");
+
+  if (model.baseUrlMode === DECISION_MODEL_BASE_URL_MODE_CUSTOM) {
+    return baseUrl;
+  }
+
+  if (!baseUrl) {
+    return `${DEFAULT_DECISION_MODEL_BASE_URL}/systemone`;
+  }
+
+  if (baseUrl.endsWith("/systemone")) {
+    return baseUrl;
+  }
+
+  if (baseUrl.endsWith("/v1")) {
+    return `${baseUrl}/systemone`;
+  }
+
+  return `${baseUrl}/v1/systemone`;
+};
 
 /** 已启用的决策模型（代码库审查等场景只能选用已启用的模型）。 */
 export const enabledDecisionModels = (

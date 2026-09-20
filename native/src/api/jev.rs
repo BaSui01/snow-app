@@ -38,6 +38,9 @@ use crate::storage::SensitiveCommandMatchResult;
 /// empty in the decision model configuration.
 const DEFAULT_BASE_URL: &str = "https://api.typesafe.ai/v1";
 
+const CUSTOM_BASE_URL_MODE: &str = "custom";
+const AUTO_BASE_URL_MODE: &str = "auto";
+
 /// system_settings 里决策模型配置的 setting_code（与前端
 /// `src/renderer/constants/decisionModels.ts` 保持一致）。
 pub const DECISION_MODELS_SETTING_CODE: &str = "decision_models";
@@ -115,6 +118,7 @@ const REASON_CATEGORIES: &[(&str, &str)] = &[
 #[derive(Debug, Clone)]
 pub struct JevConfig {
     pub base_url: String,
+    pub base_url_mode: String,
     pub api_key: String,
     pub model: String,
 }
@@ -127,6 +131,7 @@ pub struct DecisionModel {
     pub id: String,
     pub name: String,
     pub base_url: String,
+    pub base_url_mode: String,
     pub api_key: String,
     pub model: String,
     pub enabled: bool,
@@ -172,8 +177,16 @@ impl JevConfig {
             return None;
         }
 
+        let base_url_mode = normalize_base_url_mode(&selected.base_url_mode);
+        let base_url = resolve_base_url(&selected.base_url, &base_url_mode);
+
+        if base_url.is_empty() {
+            return None;
+        }
+
         Some(Self {
-            base_url: resolve_base_url(&selected.base_url),
+            base_url,
+            base_url_mode,
             api_key: api_key.to_string(),
             model: model.to_string(),
         })
@@ -194,9 +207,21 @@ pub fn find_enabled_decision_model<'a>(
     models.iter().find(|item| item.id == model_id && item.enabled)
 }
 
+fn normalize_base_url_mode(base_url_mode: &str) -> String {
+    if base_url_mode.trim() == CUSTOM_BASE_URL_MODE {
+        CUSTOM_BASE_URL_MODE.to_string()
+    } else {
+        AUTO_BASE_URL_MODE.to_string()
+    }
+}
+
 /// Normalized Base URL, falling back to the official TypeSafe endpoint.
-fn resolve_base_url(base_url: &str) -> String {
+fn resolve_base_url(base_url: &str, base_url_mode: &str) -> String {
     let normalized = normalize_base_url(base_url);
+
+    if base_url_mode == CUSTOM_BASE_URL_MODE {
+        return normalized;
+    }
 
     if normalized.is_empty() {
         DEFAULT_BASE_URL.to_string()
@@ -423,7 +448,7 @@ pub async fn evaluate_command(
 /// Every failure (transport, HTTP status, malformed body) is reported as an
 /// error so the caller can decide what to fall back to.
 async fn evaluate_state(config: &JevConfig, body: &Value) -> Result<Value> {
-    let endpoint = resolve_systemone_endpoint(&config.base_url);
+    let endpoint = resolve_systemone_endpoint(&config.base_url, &config.base_url_mode);
 
     // Request logging needs the database path; resolving it touches the
     // filesystem on first use, so it runs on a blocking worker instead of
@@ -506,8 +531,12 @@ fn build_state(query: &str, results: &[SearchResult]) -> (Value, Vec<(usize, Str
     (json!({ "query": query, "results": items }), asked)
 }
 
-fn resolve_systemone_endpoint(base_url: &str) -> String {
+fn resolve_systemone_endpoint(base_url: &str, base_url_mode: &str) -> String {
     let normalized = normalize_base_url(base_url);
+
+    if base_url_mode == CUSTOM_BASE_URL_MODE {
+        return normalized;
+    }
 
     if normalized.is_empty() {
         return format!("{DEFAULT_BASE_URL}/systemone");

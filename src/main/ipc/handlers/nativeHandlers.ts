@@ -53,6 +53,20 @@ import { WebSearchService } from "../../websearch/webSearchService";
 
 const MCP_TOOL_CHUNK_CHANNEL = "mcp:call-tool:chunk";
 
+/** 解析 config-* 工具参数中的 scope（非法 JSON 或缺失时返回 null）。 */
+const readConfigScope = (argsJson: string): string | null => {
+  try {
+    const parsed: unknown = JSON.parse(argsJson);
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+    const scope = (parsed as { scope?: unknown }).scope;
+    return typeof scope === "string" ? scope.trim() : null;
+  } catch {
+    return null;
+  }
+};
+
 export const registerNativeHandlers = (native: NativeBridge): void => {
   // Web 搜索由 puppeteer 驱动系统浏览器执行（绕过 JS 反爬），
   // 服务实例持有代理/搜索引擎配置的读取能力。
@@ -1139,6 +1153,15 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
           toolName === "memory-delete"
         ) {
           safeSend(event.sender, "memories:changed", normalizedProjectId);
+        }
+        // 插件安装/启停/卸载（config-set / config-delete 的 plugins 作用域）
+        // 成功后广播插件变更：AI 同样可在主对话/子代理/定时任务任意路径改库，
+        // 渲染层的插件列表与侧边栏插件徽标仅在此处能感知。
+        if (
+          (toolName === "config-set" || toolName === "config-delete") &&
+          readConfigScope(argsJson) === "plugins"
+        ) {
+          safeSend(event.sender, "plugins:changed");
         }
         return result;
       } finally {

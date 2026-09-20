@@ -3,7 +3,8 @@ import type { PluginRecord, PluginStorageValue } from "../types/plugins";
 
 export const pluginsApi = {
   /** 列出全部已安装插件。 */
-  listPlugins: (): Promise<PluginRecord[]> => ipcRenderer.invoke("plugins:list"),
+  listPlugins: (): Promise<PluginRecord[]> =>
+    ipcRenderer.invoke("plugins:list"),
   /** 插件根目录绝对路径（~/.snowapp/plugins）。 */
   getPluginsDirectory: (): Promise<string> =>
     ipcRenderer.invoke("plugins:get-directory"),
@@ -44,4 +45,16 @@ export const pluginsApi = {
   /** 删除插件的持久化 KV 数据。 */
   deletePluginValue: (pluginId: string, key: string): Promise<void> =>
     ipcRenderer.invoke("plugins:delete-value", pluginId, key),
+  /** 插件集合被 AI 侧改动（config-set / config-delete 的 plugins 作用域）后由主进程广播。 */
+  onPluginsChanged: (callback: () => void): (() => void) => {
+    const handler = (): void => {
+      callback();
+    };
+
+    ipcRenderer.on("plugins:changed", handler);
+
+    return () => {
+      ipcRenderer.removeListener("plugins:changed", handler);
+    };
+  },
 };

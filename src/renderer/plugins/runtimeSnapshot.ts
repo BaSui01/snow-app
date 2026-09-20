@@ -66,9 +66,29 @@ export type RuntimeStreamingSession = {
   runTokenUsage: unknown;
 };
 
+/**
+ * 输入区实时数据（插件运行时域）：与输入框右侧 Token 用量环（TokenUsageRing）
+ * 同源。`tokenUsage` 来自 `RuntimeConversationState.tokenUsage`，这里补齐环的
+ * 另外两个输入：当前生效的上下文窗口上限与 API 配置加载态。
+ * 由 ChatInputView 在输入区挂载期间发布（同「流式指标条」数据由会话上下文
+ * 发布的方式一致），值反映最后一次发布，且仅对 `conversationId` 对应的会话有效。
+ */
+export type RuntimeChatInputState = {
+  /** 输入区当前绑定的会话；null = 新会话输入区（尚未绑定真实会话）。 */
+  conversationId: string | null;
+  /** 会话生效 API 档案的上下文窗口上限（null = 未知 / 未配置）。 */
+  maxContextTokens: number | null;
+  /**
+   * API 配置是否仍在加载：为 true 时 `maxContextTokens` 未就绪，
+   * 按 TokenUsageRing 的口径应显示占位环而不是把 total 当分母算比例。
+   */
+  isLoadingApiConfig: boolean;
+};
+
 export type RuntimeSnapshot = {
   activeDirectory: WorkspaceDirectoryRecord | null;
   conversation: RuntimeConversationState | null;
+  chatInput: RuntimeChatInputState | null;
   streamingSessions: RuntimeStreamingSession[];
   panels: RuntimePanelState;
   activeSessionDirectoryIds: string[];
@@ -89,6 +109,7 @@ const EMPTY_PANELS: RuntimePanelState = {
 let snapshot: RuntimeSnapshot = {
   activeDirectory: null,
   conversation: null,
+  chatInput: null,
   streamingSessions: [],
   panels: EMPTY_PANELS,
   activeSessionDirectoryIds: [],

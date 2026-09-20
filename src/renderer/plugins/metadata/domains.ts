@@ -364,6 +364,7 @@ export const METADATA_DOMAINS: MetadataDomainDefinition[] = [
       const snapshot = runtimeSnapshot.get();
       return {
         conversation: snapshot.conversation,
+        chatInput: snapshot.chatInput,
         streamingSessions: snapshot.streamingSessions,
         panels: snapshot.panels,
         activeDirectory: snapshot.activeDirectory,

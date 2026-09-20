@@ -4946,6 +4946,13 @@ export const en = {
   "plugins.refresh": "Refresh",
   "plugins.loading": "Loading…",
   "plugins.empty": "No plugins installed yet",
+  "plugins.createHint":
+    "Describe the plugin you want (Enter to send, Shift+Enter for a new line) and AI reads the docs, writes the code and installs it.",
+  "plugins.createPlaceholder":
+    "e.g. a panel that lists this project's recent git commits",
+  "plugins.createAction": "Build with AI",
+  "plugins.createPrompt":
+    "Help me build a Snow App plugin.\n\nWhat I want: {{request}}\n\nPlease read the plugin development and installation guide (~/.snowapp/docs/en/2-guides/24-plugin-development-and-installation.md) and the metadata domain reference (~/.snowapp/docs/en/3-reference/6-plugin-metadata-domains.md) first, then create a complete plugin folder following the spec (plugin.json, entry file, plus any icon assets, styles or locale files needed). Finally install and enable it with the config-set plugins scope (key=new, with sourceDir pointing at the absolute plugin folder path), and tell me how to use the plugin.",
   "plugins.enable": "Enable",
   "plugins.disable": "Disable",
   "plugins.rescan": "Reload manifest",

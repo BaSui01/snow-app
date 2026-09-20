@@ -34,7 +34,10 @@ const toViews = (records: PluginRecord[]): PluginView[] =>
   records.map(parsePluginRecord);
 
 const load = async (): Promise<void> => {
-  commit({ status: state.status === "ready" ? "ready" : "loading", error: null });
+  commit({
+    status: state.status === "ready" ? "ready" : "loading",
+    error: null,
+  });
   try {
     const records = await window.snow.listPlugins();
     commit({ status: "ready", plugins: toViews(records), error: null });
@@ -117,4 +120,16 @@ export const pluginStore = {
 };
 
 export const usePluginStore = (): PluginStoreState =>
-  useSyncExternalStore(pluginStore.subscribe, pluginStore.getState, () => state);
+  useSyncExternalStore(
+    pluginStore.subscribe,
+    pluginStore.getState,
+    () => state,
+  );
+
+// AI 侧（config-set / config-delete 的 plugins 作用域）安装、启停或卸载插件时，
+// 渲染层无从感知列表变化；主进程广播后统一刷新，侧边栏插件徽标与插件面板同步。
+if (typeof window !== "undefined" && window.snow?.onPluginsChanged) {
+  window.snow.onPluginsChanged(() => {
+    void pluginStore.refresh();
+  });
+}

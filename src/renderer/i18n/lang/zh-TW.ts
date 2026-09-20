@@ -4675,6 +4675,12 @@ export const zhTW = {
   "plugins.refresh": "重新整理",
   "plugins.loading": "載入中…",
   "plugins.empty": "尚未安裝任何外掛",
+  "plugins.createHint":
+    "描述你想要的插件（Enter 傳送，Shift+Enter 換行），AI 會讀文件、寫程式並安裝它。",
+  "plugins.createPlaceholder": "例如：一個顯示目前專案最近 Git 提交的面板",
+  "plugins.createAction": "讓 AI 製作",
+  "plugins.createPrompt":
+    "幫我為 Snow App 製作一個外掛。\n\n我的需求：{{request}}\n\n請先閱讀外掛開發與安裝文件（~/.snowapp/docs/zh-CN/2-使用指南/24-插件开发与安装.md）和外掛中繼資料域參考（~/.snowapp/docs/zh-CN/3-参考手册/6-插件元数据域参考.md），再依規範建立完整的外掛目錄（plugin.json、進入點檔案，以及需要的圖示資源、樣式與多語言檔案），最後用 config-set 的 plugins 領域安裝並啟用它（key 用 new，value 的 sourceDir 傳外掛目錄的絕對路徑），然後告訴我這個外掛怎麼用。",
   "plugins.enable": "啟用",
   "plugins.disable": "停用",
   "plugins.rescan": "重新讀取清單",

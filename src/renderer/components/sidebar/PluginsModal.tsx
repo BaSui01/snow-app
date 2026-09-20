@@ -2,6 +2,7 @@ import {
   FolderOpen,
   RefreshCw,
   ShieldAlert,
+  Sparkles,
   Trash2,
   Upload,
   Puzzle,
@@ -15,6 +16,7 @@ import { pluginStore, usePluginStore } from "../../plugins/pluginStore";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { Modal } from "../common/Modal";
 import { PluginIcon } from "../common/PluginIcon";
+import { useChatConversationContext } from "../mainContent/chatMessages";
 
 type PluginsModalProps = {
   open: boolean;
@@ -27,6 +29,7 @@ export const PluginsModal = ({
 }: PluginsModalProps): React.JSX.Element => {
   const { t, locale } = useI18n();
   const state = usePluginStore();
+  const { buildFromContent } = useChatConversationContext();
   const [busyPluginId, setBusyPluginId] = useState<string | null>(null);
   const [isInstalling, setIsInstalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +37,7 @@ export const PluginsModal = ({
     null,
   );
   const [isUninstalling, setIsUninstalling] = useState(false);
+  const [createRequest, setCreateRequest] = useState("");
 
   useEffect(() => {
     if (open) {
@@ -135,6 +139,43 @@ export const PluginsModal = ({
     [t],
   );
 
+  const handleCreateWithAi = useCallback(() => {
+    const requirement = createRequest.trim();
+    if (!requirement) {
+      return;
+    }
+    // Close the modal first so the chat view is visible underneath, then start
+    // a new conversation that auto-sends the requirement — the AI reads the
+    // plugin docs, scaffolds the plugin folder and installs it.
+    setCreateRequest("");
+    onClose();
+    buildFromContent(
+      t("plugins.createPrompt", {
+        defaultValue:
+          "Help me build a Snow App plugin.\n\nWhat I want: {{request}}",
+        values: { request: requirement },
+      }),
+    );
+  }, [buildFromContent, createRequest, onClose, t]);
+
+  const handleCreateKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (event.key !== "Enter" || event.shiftKey) {
+        return;
+      }
+      const nativeEvent = event.nativeEvent as unknown as {
+        isComposing?: boolean;
+        keyCode?: number;
+      };
+      if (nativeEvent.isComposing || nativeEvent.keyCode === 229) {
+        return;
+      }
+      event.preventDefault();
+      handleCreateWithAi();
+    },
+    [handleCreateWithAi],
+  );
+
   const scopeLabel = (scope: SensitiveScope): string =>
     t(`plugins.scopes.${scope}`, { defaultValue: scope });
 
@@ -211,6 +252,38 @@ export const PluginsModal = ({
                   defaultValue: "No plugins installed yet",
                 })}
               </span>
+              <span className="plugins-empty-hint">
+                {t("plugins.createHint", {
+                  defaultValue:
+                    "Describe the plugin you want (Enter to send, Shift+Enter for a new line) and AI will build and install it.",
+                })}
+              </span>
+              <div className="plugins-create">
+                <textarea
+                  className="plugins-create-input"
+                  value={createRequest}
+                  rows={3}
+                  placeholder={t("plugins.createPlaceholder", {
+                    defaultValue:
+                      "e.g. a panel that lists this project's recent git commits",
+                  })}
+                  onChange={(event) => setCreateRequest(event.target.value)}
+                  onKeyDown={handleCreateKeyDown}
+                />
+                <button
+                  className="plugins-toolbar-btn primary"
+                  type="button"
+                  disabled={createRequest.trim().length === 0}
+                  onClick={handleCreateWithAi}
+                >
+                  <Sparkles size={14} strokeWidth={1.8} />
+                  <span>
+                    {t("plugins.createAction", {
+                      defaultValue: "Build with AI",
+                    })}
+                  </span>
+                </button>
+              </div>
             </div>
           )}
 

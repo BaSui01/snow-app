@@ -33,6 +33,7 @@ import { useChipInteractions } from "./useChipInteractions";
 import { useContentEditableInteractions } from "./useContentEditableInteractions";
 import { useInputFileOperations } from "./useInputFileOperations";
 import { registerChatInputDraftSink } from "./chatInputDraftBridge";
+import { runtimeSnapshot } from "../../../plugins/runtimeSnapshot";
 
 /** 终端监控日志预览保留的最大行数 */
 const MAX_MONITORED_LINES = 1000;
@@ -421,6 +422,20 @@ export const ChatInputView = ({
     publishRemoteControlChatInput(snapshot);
     return () => clearRemoteControlChatInput(snapshot);
   });
+
+  // 向插件运行时快照发布输入区实测数据：Token 用量环（TokenUsageRing）的另外
+  // 两个输入（生效上下文窗口上限、API 配置加载态）只存在于输入区控制器，按
+  // 「谁持有谁发布」的口径在这里写入（与 RightPanel 发布 panels 同模式）。
+  // 只在依赖变化时写入，避免每次渲染都通知 live 元数据域重新采集。
+  useEffect(() => {
+    runtimeSnapshot.patch({
+      chatInput: {
+        conversationId: activeConversationId ?? null,
+        maxContextTokens: runtimeApiConfig?.maxContextTokens ?? null,
+        isLoadingApiConfig,
+      },
+    });
+  }, [activeConversationId, runtimeApiConfig, isLoadingApiConfig]);
 
   // ------------------------------------------------------------------
   // 终端监控模式：拖拽终端到输入框后，实时订阅该终端的日志流

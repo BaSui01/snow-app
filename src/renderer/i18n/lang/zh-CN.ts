@@ -4665,6 +4665,12 @@ export const zhCN = {
   "plugins.refresh": "刷新",
   "plugins.loading": "加载中…",
   "plugins.empty": "还没有安装插件",
+  "plugins.createHint":
+    "描述你想要的插件（Enter 发送，Shift+Enter 换行），AI 会读文档、写代码并安装它。",
+  "plugins.createPlaceholder": "例如：一个展示当前项目最近 Git 提交的面板",
+  "plugins.createAction": "让 AI 制作",
+  "plugins.createPrompt":
+    "帮我为 Snow App 制作一个插件。\n\n我的需求：{{request}}\n\n请先阅读插件开发与安装文档（~/.snowapp/docs/zh-CN/2-使用指南/24-插件开发与安装.md）和插件元数据域参考（~/.snowapp/docs/zh-CN/3-参考手册/6-插件元数据域参考.md），再按规范创建完整的插件目录（plugin.json、入口文件，以及需要的图标资源、样式与多语言文件），最后用 config-set 的 plugins 域安装并启用它（key 用 new，value 里的 sourceDir 传插件目录的绝对路径），再告诉我这个插件怎么用。",
   "plugins.enable": "启用",
   "plugins.disable": "禁用",
   "plugins.rescan": "重新读取清单",

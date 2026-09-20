@@ -46002,7 +46002,8 @@ pre.file-viewer-code {
 }
 
 .plugins-modal {
-  width: min(880px, calc(100vw - 48px));
+  width: min(860px, calc(100vw - 48px));
+  height: min(680px, calc(100vh - 48px));
 }
 
 .plugins-modal .app-modal-body {
@@ -46019,7 +46020,7 @@ pre.file-viewer-code {
   flex-direction: column;
   gap: 10px;
   padding: 12px;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .plugins-toolbar {
@@ -46075,6 +46076,7 @@ pre.file-viewer-code {
 
 .plugins-empty {
   display: flex;
+  flex: 1;
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -46084,15 +46086,62 @@ pre.file-viewer-code {
   font-size: 12px;
 }
 
+.plugins-empty-hint {
+  max-width: 420px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.plugins-create {
+  display: flex;
+  width: min(440px, calc(100% - 24px));
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.plugins-create-input {
+  width: 100%;
+  min-height: 76px;
+  max-height: 160px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  outline: none;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.plugins-create-input:focus {
+  border-color: var(--text-muted);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.plugins-create .plugins-toolbar-btn.primary {
+  align-self: flex-end;
+}
+
 .plugins-list {
   display: flex;
+  min-height: 0;
+  flex: 1;
   flex-direction: column;
   gap: 8px;
+  overflow-y: auto;
 }
 
 .plugins-item {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   gap: 6px;
   padding: 10px 12px;
   border: 1px solid var(--border-light);

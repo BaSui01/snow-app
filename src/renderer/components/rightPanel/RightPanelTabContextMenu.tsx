@@ -4,16 +4,14 @@ import {
   CopyX,
   ExternalLink,
   Globe,
+  MonitorUp,
   Paintbrush,
   Terminal,
   X,
   XCircle,
 } from "lucide-react";
 import { useI18n } from "../../i18n";
-import {
-  ContextMenu,
-  type ContextMenuItem,
-} from "../common/ContextMenu";
+import { ContextMenu, type ContextMenuItem } from "../common/ContextMenu";
 
 type RightPanelTabContextMenuProps = {
   /** 右键时的鼠标坐标（viewport 坐标）。 */
@@ -31,6 +29,8 @@ type RightPanelTabContextMenuProps = {
   onCloseAllTabs?: () => void;
   /** 浏览器 tab 专属：在新窗口中打开该浏览器实例（打开后原 tab 关闭）。 */
   onOpenInNewWindow?: () => void;
+  onOpenInLocalBrowser?: () => void;
+  localBrowserUrl?: string;
   onNewTerminal: () => void;
   onNewBrowser: () => void;
   onNewDrawing: () => void;
@@ -52,6 +52,8 @@ export function RightPanelTabContextMenu({
   onCloseToLeft,
   onCloseAllTabs,
   onOpenInNewWindow,
+  onOpenInLocalBrowser,
+  localBrowserUrl,
   onNewTerminal,
   onNewBrowser,
   onNewDrawing,
@@ -97,6 +99,18 @@ export function RightPanelTabContextMenu({
       }),
       icon: <ExternalLink size={13} strokeWidth={1.8} />,
       onClick: onOpenInNewWindow,
+    });
+  }
+
+  if (onOpenInLocalBrowser) {
+    items.push({
+      id: "open-in-local-browser",
+      label: t("rightPanel.openInLocalBrowser", {
+        defaultValue: "Open in local browser",
+      }),
+      icon: <MonitorUp size={13} strokeWidth={1.8} />,
+      disabled: !localBrowserUrl,
+      onClick: onOpenInLocalBrowser,
     });
   }
 

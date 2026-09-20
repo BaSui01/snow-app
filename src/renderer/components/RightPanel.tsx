@@ -199,6 +199,11 @@ const getTabFileIcon = (tab: RightPanelTab): React.ReactNode => {
   return null;
 };
 
+const toLocalBrowserUrl = (url: string | undefined): string => {
+  const trimmed = url?.trim() ?? "";
+  return /^https?:\/\//i.test(trimmed) ? trimmed : "";
+};
+
 export type RightPanelRef = {
   openTerminal: (cwd: string) => void;
   openBrowser: (url?: string) => void;
@@ -918,6 +923,20 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       [tabs, handleCloseTab],
     );
 
+    const handleOpenBrowserInLocalBrowser = useCallback(
+      (tabId: string): void => {
+        const tab = tabs.find((t) => t.id === tabId && t.type === "browser");
+        const url = toLocalBrowserUrl(
+          tab ? (tab.data as BrowserTabData).url : undefined,
+        );
+        if (!url) {
+          return;
+        }
+        window.open(url, "_blank");
+      },
+      [tabs],
+    );
+
     // 独立浏览器窗口「还原为标签页」：主进程转发还原请求后，把该实例恢复
     // 为右侧面板浏览器 tab。保持原 instanceId（MCP 浏览器工具按实例路由，
     // 新 tab 挂载上报后自动接管）；携带的页面 URL / 标题经 initialUrl
@@ -1382,6 +1401,16 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
             (t) => t.id === tabContextMenu.tabId && t.type === "browser",
           )
         : false;
+    const contextMenuTargetLocalBrowserUrl = toLocalBrowserUrl(
+      tabContextMenu !== null &&
+        tabContextMenu.tabId !== null &&
+        contextMenuTargetIsBrowser
+        ? (
+            tabs.find((t) => t.id === tabContextMenu.tabId)?.data as
+              BrowserTabData | undefined
+          )?.url
+        : undefined,
+    );
     const hasClosableTabs = tabs.some((t) => t.id !== GIT_TAB_ID);
     const hasClosableOthers =
       contextMenuTargetIndex >= 0 &&
@@ -1632,6 +1661,17 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
                   }
                 : undefined
             }
+            onOpenInLocalBrowser={
+              contextMenuTargetIsBrowser
+                ? () => {
+                    setTabContextMenu(null);
+                    if (tabContextMenu.tabId !== null) {
+                      handleOpenBrowserInLocalBrowser(tabContextMenu.tabId);
+                    }
+                  }
+                : undefined
+            }
+            localBrowserUrl={contextMenuTargetLocalBrowserUrl}
             onCloseTab={() => {
               setTabContextMenu(null);
               if (tabContextMenu.tabId !== null) {

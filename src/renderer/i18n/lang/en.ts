@@ -3998,6 +3998,7 @@ export const en = {
   "rightPanel.tabContextNewBrowser": "New Browser",
   "rightPanel.tabContextNewDrawing": "New Drawing Workspace",
   "rightPanel.openInNewWindow": "Open in new window",
+  "rightPanel.openInLocalBrowser": "Open in local browser",
   "rightPanel.closeDiff": "Close diff",
   "rightPanel.selectFileToViewDiff": "Select a file to view its diff",
   "rightPanel.noRepositorySelected": "No repository selected",

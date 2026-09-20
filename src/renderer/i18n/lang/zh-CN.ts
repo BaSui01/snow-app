@@ -3762,6 +3762,7 @@ export const zhCN = {
   "rightPanel.tabContextNewBrowser": "新建浏览器",
   "rightPanel.tabContextNewDrawing": "新建绘图工作台",
   "rightPanel.openInNewWindow": "在新窗口中打开",
+  "rightPanel.openInLocalBrowser": "在本地浏览器打开",
   "rightPanel.closeDiff": "关闭差异",
   "rightPanel.selectFileToViewDiff": "选择文件以查看差异",
   "rightPanel.noRepositorySelected": "未选择仓库",

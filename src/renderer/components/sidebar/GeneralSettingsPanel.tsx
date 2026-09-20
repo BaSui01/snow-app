@@ -1,19 +1,28 @@
 import {
   Archive,
+  Bot,
+  CircleCheck,
   Database,
   DatabaseBackup,
   Download,
+  FileText,
+  Filter,
   FolderCog,
   FolderOpen,
+  GitFork,
   HardDrive,
   Image as ImageIcon,
   Images,
   Info,
   LoaderCircle,
+  LockKeyhole,
   MemoryStick,
   Recycle,
   RefreshCw,
   RotateCcw,
+  Scale,
+  Server,
+  Terminal,
   Trash2,
   Wrench,
   X,
@@ -111,6 +120,99 @@ const CLEANUP_CATEGORY_TEXT: Record<
 const CLEANUP_DAY_OPTIONS = [7, 15, 30, 90];
 /** 数据清理：不限制时间的档位值 */
 const CLEANUP_AGE_ALL = "0";
+
+/** 许可协议原文（MIT，与仓库 LICENSE 保持一致，不翻译） */
+const MIT_LICENSE_TEXT = `MIT License
+
+Copyright (c) 2026 MayMay
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.`;
+
+/** 第三方声明原文（保留上游署名，不翻译） */
+const THIRD_PARTY_NOTICE_TEXT = `Snow App
+
+This project is derived from MayDay-wpf/snow-app (https://github.com/MayDay-wpf/snow-app), Copyright (c) 2026 MayMay, under the MIT License.
+本项目基于 MayDay-wpf/snow-app 继续开发，原项目 Copyright (c) 2026 MayMay，并保留其 MIT License。
+
+GPT Mini
+
+The mobile remote-control experience references and reproduces ideas from GPT Mini by CoimgRain. Original repository: https://github.com/CoimgRain/Codex-Mini. The applicable notice is preserved in LICENSE-CODEX-MINI. This independent derivative does not imply endorsement or an official partnership.
+
+中文非商业声明：GPT Mini 仅允许个人、学习、研究、评估等非商业用途使用。允许 fork、修改和继续公开发布，但必须保留对原项目和作者的清晰署名：GPT Mini by CoimgRain，并附上原项目链接：https://github.com/CoimgRain/Codex-Mini。未经作者事先书面授权，不得用于商业服务、付费托管、SaaS、中转服务、代部署收费、转售访问权或其他商业化用途。`;
+
+/** 隐私说明条目：图标 + 标题 / 说明文案 key */
+const ABOUT_PRIVACY_ITEMS = [
+  {
+    icon: HardDrive,
+    titleKey: "settings.aboutPrivacyLocalTitle",
+    bodyKey: "settings.aboutPrivacyLocal",
+  },
+  {
+    icon: Server,
+    titleKey: "settings.aboutPrivacyNetworkTitle",
+    bodyKey: "settings.aboutPrivacyNetwork",
+  },
+  {
+    icon: LockKeyhole,
+    titleKey: "settings.aboutPrivacyCredentialsTitle",
+    bodyKey: "settings.aboutPrivacyCredentials",
+  },
+  {
+    icon: Filter,
+    titleKey: "settings.aboutPrivacyFilterTitle",
+    bodyKey: "settings.aboutPrivacyFilter",
+  },
+  {
+    icon: Trash2,
+    titleKey: "settings.aboutPrivacyControlTitle",
+    bodyKey: "settings.aboutPrivacyControl",
+  },
+];
+
+/** 免责声明条目：图标 + 标题 / 说明文案 key */
+const ABOUT_DISCLAIMER_ITEMS = [
+  {
+    icon: Scale,
+    titleKey: "settings.aboutDisclaimerAsIsTitle",
+    bodyKey: "settings.aboutDisclaimerAsIs",
+  },
+  {
+    icon: Bot,
+    titleKey: "settings.aboutDisclaimerAiTitle",
+    bodyKey: "settings.aboutDisclaimerAi",
+  },
+  {
+    icon: Terminal,
+    titleKey: "settings.aboutDisclaimerToolsTitle",
+    bodyKey: "settings.aboutDisclaimerTools",
+  },
+  {
+    icon: DatabaseBackup,
+    titleKey: "settings.aboutDisclaimerBackupTitle",
+    bodyKey: "settings.aboutDisclaimerBackup",
+  },
+  {
+    icon: Server,
+    titleKey: "settings.aboutDisclaimerThirdPartyTitle",
+    bodyKey: "settings.aboutDisclaimerThirdParty",
+  },
+];
 
 // 会话上下文注入预算（与 Rust native 侧 context_attachments.rs 保持一致）
 const ATTACH_CONTEXT_SINGLE_BUDGET_SETTING =
@@ -2326,6 +2428,185 @@ export function GeneralSettingsPanel({
                   </span>
                 </button>
               )}
+            </div>
+
+            <div className="api-settings-form-section">
+              <div className="api-settings-manual-header">
+                <strong>
+                  {t("settings.aboutLicense", { defaultValue: "开源协议" })}
+                </strong>
+                <span>
+                  {t("settings.aboutLicenseInfo", {
+                    defaultValue:
+                      "Snow App 以 MIT 许可发布，上游项目与第三方署名如下。",
+                  })}
+                </span>
+              </div>
+
+              <div className="general-storage-row">
+                <div className="general-storage-info">
+                  <FileText
+                    size={14}
+                    strokeWidth={1.8}
+                    className="general-storage-icon"
+                    aria-hidden="true"
+                  />
+                  <div className="general-storage-text">
+                    <span className="general-storage-label">MIT License</span>
+                    <span className="settings-item-description">
+                      {t("settings.aboutLicenseCopyright", {
+                        defaultValue: "Copyright (c) 2026 MayMay",
+                      })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="general-storage-row">
+                <div className="general-storage-info">
+                  <GitFork
+                    size={14}
+                    strokeWidth={1.8}
+                    className="general-storage-icon"
+                    aria-hidden="true"
+                  />
+                  <div className="general-storage-text">
+                    <span className="general-storage-label">
+                      {t("settings.aboutThirdParty", {
+                        defaultValue: "第三方与衍生声明",
+                      })}
+                    </span>
+                    <span className="settings-item-description">
+                      {t("settings.aboutThirdPartyDerived", {
+                        defaultValue:
+                          "本项目基于 MayDay-wpf/snow-app 继续开发，原项目 Copyright (c) 2026 MayMay，MIT License。",
+                      })}
+                    </span>
+                    <span className="settings-item-description">
+                      {t("settings.aboutThirdPartyCodexMini", {
+                        defaultValue:
+                          "移动端远控体验参考 GPT Mini by CoimgRain（Codex-Mini），仅限非商业使用。",
+                      })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="about-legal-details">
+                <details>
+                  <summary>
+                    {t("settings.aboutLicenseFull", {
+                      defaultValue: "查看许可协议全文",
+                    })}
+                  </summary>
+                  <pre className="about-legal-text">{MIT_LICENSE_TEXT}</pre>
+                </details>
+                <details>
+                  <summary>
+                    {t("settings.aboutThirdPartyFull", {
+                      defaultValue: "查看第三方声明全文",
+                    })}
+                  </summary>
+                  <pre className="about-legal-text">
+                    {THIRD_PARTY_NOTICE_TEXT}
+                  </pre>
+                </details>
+              </div>
+            </div>
+
+            <div className="api-settings-form-section">
+              <div className="api-settings-manual-header">
+                <strong>
+                  {t("settings.aboutPrivacy", { defaultValue: "隐私说明" })}
+                </strong>
+                <span>
+                  {t("settings.aboutPrivacyInfo", {
+                    defaultValue: "Snow App 在本机如何处理你的数据。",
+                  })}
+                </span>
+              </div>
+
+              {ABOUT_PRIVACY_ITEMS.map(({ icon: Icon, titleKey, bodyKey }) => (
+                <div className="general-storage-row" key={titleKey}>
+                  <div className="general-storage-info">
+                    <Icon
+                      size={14}
+                      strokeWidth={1.8}
+                      className="general-storage-icon"
+                      aria-hidden="true"
+                    />
+                    <div className="general-storage-text">
+                      <span className="general-storage-label">
+                        {t(titleKey)}
+                      </span>
+                      <span className="settings-item-description">
+                        {t(bodyKey)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="api-settings-form-section">
+              <div className="api-settings-manual-header">
+                <strong>
+                  {t("settings.aboutDisclaimer", { defaultValue: "免责声明" })}
+                </strong>
+                <span>
+                  {t("settings.aboutDisclaimerInfo", {
+                    defaultValue:
+                      "Snow App 按「原样」提供，请在理解风险的前提下使用。",
+                  })}
+                </span>
+              </div>
+
+              {ABOUT_DISCLAIMER_ITEMS.map(
+                ({ icon: Icon, titleKey, bodyKey }) => (
+                  <div className="general-storage-row" key={titleKey}>
+                    <div className="general-storage-info">
+                      <Icon
+                        size={14}
+                        strokeWidth={1.8}
+                        className="general-storage-icon"
+                        aria-hidden="true"
+                      />
+                      <div className="general-storage-text">
+                        <span className="general-storage-label">
+                          {t(titleKey)}
+                        </span>
+                        <span className="settings-item-description">
+                          {t(bodyKey)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ),
+              )}
+
+              <div className="general-storage-row">
+                <div className="general-storage-info">
+                  <CircleCheck
+                    size={14}
+                    strokeWidth={1.8}
+                    className="general-storage-icon"
+                    aria-hidden="true"
+                  />
+                  <div className="general-storage-text">
+                    <span className="general-storage-label">
+                      {t("settings.aboutAgreement", {
+                        defaultValue: "使用即同意",
+                      })}
+                    </span>
+                    <span className="settings-item-description">
+                      {t("settings.aboutAgreementInfo", {
+                        defaultValue:
+                          "继续使用 Snow App，即表示你已阅读并同意上述开源协议、隐私说明与免责声明。",
+                      })}
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

@@ -2966,7 +2966,8 @@ export const en = {
   "settings.attachContextSaved": "Saved",
   "settings.attachContextBudgetHint":
     "Range 1000-200000; overflow is truncated automatically.",
-  "settings.aboutInfo": "Version and update management for Snow App.",
+  "settings.aboutInfo":
+    "Version, updates, open-source license, privacy notice and disclaimer for Snow App.",
   "settings.languageSettings": "Language",
   "settings.languageSettingsInfo": "Choose the display language for Snow App.",
   "settings.pets": "Desktop pet",
@@ -2993,6 +2994,55 @@ export const en = {
   "settings.petsInstalledSection": "Installed pets",
   "settings.petsInstalledInfo": "Select a pet to make it the active one.",
   "settings.about": "About",
+  "settings.aboutLicense": "Open-source license",
+  "settings.aboutLicenseInfo":
+    "Snow App is released under the MIT License; upstream and third-party attributions are listed below.",
+  "settings.aboutLicenseCopyright": "Copyright (c) 2026 MayMay",
+  "settings.aboutThirdParty": "Derivatives and third-party notices",
+  "settings.aboutThirdPartyDerived":
+    "Derived from MayDay-wpf/snow-app; original work Copyright (c) 2026 MayMay, MIT License.",
+  "settings.aboutThirdPartyCodexMini":
+    "The mobile remote-control experience references GPT Mini by CoimgRain (Codex-Mini); non-commercial use only.",
+  "settings.aboutLicenseFull": "View full license text",
+  "settings.aboutThirdPartyFull": "View full third-party notices",
+  "settings.aboutPrivacy": "Privacy notice",
+  "settings.aboutPrivacyInfo": "How Snow App handles your data on this device.",
+  "settings.aboutPrivacyLocalTitle": "Data stays on this device",
+  "settings.aboutPrivacyLocal":
+    "Conversations, settings, checkpoints, uploaded images, the image library and logs are written to your local user directory only. Paths and sizes are listed under Storage & resources.",
+  "settings.aboutPrivacyNetworkTitle": "No upload to our own servers",
+  "settings.aboutPrivacyNetwork":
+    "Snow App has no backend of its own. Request content is sent only to the external services you configure or trigger, such as AI APIs, web search and external MCP servers.",
+  "settings.aboutPrivacyCredentialsTitle": "Encrypted credentials",
+  "settings.aboutPrivacyCredentials":
+    "Browser passwords and sign-in state are encrypted with the OS credential backend (macOS Keychain / Windows DPAPI / Linux keyring); plain-text passwords are never shown.",
+  "settings.aboutPrivacyFilterTitle": "Optional privacy filter",
+  "settings.aboutPrivacyFilter":
+    "The privacy filter is off by default; when enabled it masks the selected tool results using local rules or a filter API you specify.",
+  "settings.aboutPrivacyControlTitle": "You stay in control",
+  "settings.aboutPrivacyControl":
+    "Clean up local data by category or clear the app cache under Storage & resources; deleting the data directory removes all local data.",
+  "settings.aboutDisclaimer": "Disclaimer",
+  "settings.aboutDisclaimerInfo":
+    "Snow App is provided as is; use it with a clear understanding of the risks.",
+  "settings.aboutDisclaimerAsIsTitle": "Provided as is",
+  "settings.aboutDisclaimerAsIs":
+    'This software is provided "as is", without warranty of any kind, express or implied. To the maximum extent permitted by law, the authors are not liable for any damages arising from the use of, or inability to use, this software.',
+  "settings.aboutDisclaimerAiTitle": "AI output is not advice",
+  "settings.aboutDisclaimerAi":
+    "Model output may be inaccurate, outdated or incomplete. Verify it before relying on it, and never treat it as legal, medical or financial advice.",
+  "settings.aboutDisclaimerToolsTitle": "Tool execution is your call",
+  "settings.aboutDisclaimerTools":
+    "The agent can call terminal, file and browser tools with real side effects (command execution, file changes, network requests). Review the parameters before approving and take responsibility for the outcome.",
+  "settings.aboutDisclaimerBackupTitle": "Back up your data",
+  "settings.aboutDisclaimerBackup":
+    "You are responsible for backing up, encrypting and restoring local data; cleanup, migration and repair operations may cause data loss.",
+  "settings.aboutDisclaimerThirdPartyTitle": "Third-party services",
+  "settings.aboutDisclaimerThirdParty":
+    "AI services, MCP servers, websites and plugins you connect are operated by their respective providers; their availability, billing and data handling are outside this project's control.",
+  "settings.aboutAgreement": "Acceptance of terms",
+  "settings.aboutAgreementInfo":
+    "By continuing to use Snow App you confirm that you have read and agree to the open-source license, privacy notice and disclaimer above.",
   "settings.version": "Version",
   "settings.checkUpdate": "Check for updates",
   "settings.checkingUpdate": "Checking for updates...",

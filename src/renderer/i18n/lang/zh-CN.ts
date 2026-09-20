@@ -2815,7 +2815,7 @@ export const zhCN = {
   "settings.attachContextReset": "恢复默认",
   "settings.attachContextSaved": "已保存",
   "settings.attachContextBudgetHint": "范围 1000-200000，超出自动截断。",
-  "settings.aboutInfo": "Snow App 的版本与更新管理。",
+  "settings.aboutInfo": "Snow App 的版本、更新、开源协议、隐私与免责声明。",
   "settings.languageSettings": "多语言",
   "settings.languageSettingsInfo": "选择 Snow App 的显示语言。",
   "settings.pets": "桌面宠物",
@@ -2841,6 +2841,55 @@ export const zhCN = {
   "settings.petsInstalledSection": "已安装的宠物",
   "settings.petsInstalledInfo": "点击选择要激活的宠物。",
   "settings.about": "关于",
+  "settings.aboutLicense": "开源协议",
+  "settings.aboutLicenseInfo":
+    "Snow App 以 MIT 许可发布，上游项目与第三方署名如下。",
+  "settings.aboutLicenseCopyright": "Copyright (c) 2026 MayMay",
+  "settings.aboutThirdParty": "第三方与衍生声明",
+  "settings.aboutThirdPartyDerived":
+    "本项目基于 MayDay-wpf/snow-app 继续开发，原项目 Copyright (c) 2026 MayMay，MIT License。",
+  "settings.aboutThirdPartyCodexMini":
+    "移动端远控体验参考 GPT Mini by CoimgRain（Codex-Mini），仅限非商业使用。",
+  "settings.aboutLicenseFull": "查看许可协议全文",
+  "settings.aboutThirdPartyFull": "查看第三方声明全文",
+  "settings.aboutPrivacy": "隐私说明",
+  "settings.aboutPrivacyInfo": "Snow App 在本机如何处理你的数据。",
+  "settings.aboutPrivacyLocalTitle": "数据保存在本机",
+  "settings.aboutPrivacyLocal":
+    "会话、设置、检查点、上传图片、图库与日志等数据默认只写入本机用户目录，可在「存储与资源」查看路径与占用。",
+  "settings.aboutPrivacyNetworkTitle": "不向自建服务器上传",
+  "settings.aboutPrivacyNetwork":
+    "应用自身没有后端服务；仅当你使用所配置的 AI 服务、网页搜索、外部 MCP 等外部服务时，相关请求内容才会发送给对应服务商。",
+  "settings.aboutPrivacyCredentialsTitle": "凭据加密保存",
+  "settings.aboutPrivacyCredentials":
+    "浏览器密码与登录状态经系统凭据后端（macOS Keychain / Windows DPAPI / Linux keyring）加密后落盘，界面不回显明文密码。",
+  "settings.aboutPrivacyFilterTitle": "隐私过滤可选",
+  "settings.aboutPrivacyFilter":
+    "隐私过滤默认关闭；启用后按所选工具结果脱敏，可选本地规则或你指定的过滤 API。",
+  "settings.aboutPrivacyControlTitle": "数据由你掌控",
+  "settings.aboutPrivacyControl":
+    "可在「存储与资源」按分类清理本地数据或清空缓存；删除数据目录即可彻底移除全部本地数据。",
+  "settings.aboutDisclaimer": "免责声明",
+  "settings.aboutDisclaimerInfo":
+    "Snow App 按「原样」提供，请在理解风险的前提下使用。",
+  "settings.aboutDisclaimerAsIsTitle": "按原样提供",
+  "settings.aboutDisclaimerAsIs":
+    "本软件按「原样」提供，不附带任何明示或暗示的担保；在法律允许的最大范围内，因使用或无法使用本软件造成的任何损失，作者不承担责任。",
+  "settings.aboutDisclaimerAiTitle": "AI 输出仅供参考",
+  "settings.aboutDisclaimerAi":
+    "模型生成内容可能不准确、过时或不完整，请在采纳前自行核实；不要将其作为法律、医疗、财务等专业建议。",
+  "settings.aboutDisclaimerToolsTitle": "工具执行风险自担",
+  "settings.aboutDisclaimerTools":
+    "AI 代理可调用终端、文件、浏览器等工具并产生真实副作用（命令执行、文件改动、网络请求），请在授权前确认参数并自行承担执行结果。",
+  "settings.aboutDisclaimerBackupTitle": "请自行备份数据",
+  "settings.aboutDisclaimerBackup":
+    "本地数据的备份、加密与恢复由你负责；清理、迁移与修复操作可能造成数据丢失。",
+  "settings.aboutDisclaimerThirdPartyTitle": "第三方服务",
+  "settings.aboutDisclaimerThirdParty":
+    "你接入的 AI 服务、MCP 服务器、网页与插件由对应提供方负责，其可用性、计费与数据处理不受本项目控制。",
+  "settings.aboutAgreement": "使用即同意",
+  "settings.aboutAgreementInfo":
+    "继续使用 Snow App，即表示你已阅读并同意上述开源协议、隐私说明与免责声明。",
   "settings.version": "版本",
   "settings.checkUpdate": "检查更新",
   "settings.checkingUpdate": "正在检查更新...",

@@ -4998,6 +4998,41 @@ input {
   pointer-events: none;
 }
 
+/* Settings - About：开源协议与隐私说明 */
+.about-legal-details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.about-legal-details > details > summary {
+  width: fit-content;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  transition: color 0.15s ease;
+}
+
+.about-legal-details > details > summary:hover {
+  color: var(--accent-color);
+}
+
+.about-legal-text {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .check-update-btn.checking svg {
   animation: snow-spin 1.5s linear infinite;
   color: var(--accent, #2563eb);

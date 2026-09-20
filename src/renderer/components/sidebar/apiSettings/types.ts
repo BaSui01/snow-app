@@ -36,6 +36,9 @@ export type ApiConfigFormData = {
   oneMContext: boolean;
   responsesVerbosity: string;
   responsesFastMode: boolean;
+  /** Responses WebSocket 开关（snowcfg.responsesWebSocket）。开启后 Responses
+   *  请求改用 WebSocket 传输，并在多轮之间复用同一条连接。 */
+  responsesWebSocket: boolean;
   googleSearch: boolean;
   visionGoogleSearch: boolean;
   visionThinkingEnabled: boolean;

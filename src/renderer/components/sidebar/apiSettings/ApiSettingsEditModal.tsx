@@ -16,6 +16,7 @@ import {
   extractOneMContextFromConfigJson,
   extractResponsesFastModeFromConfigJson,
   extractResponsesVerbosityFromConfigJson,
+  extractResponsesWebSocketFromConfigJson,
   extractThinkingValueFromConfigJson,
   extractToolResultTokenLimitFromConfigJson,
   extractVisionGoogleSearchFromConfigJson,
@@ -70,8 +71,7 @@ export function ApiSettingsEditModal({
       supportsVision: config.supportsVision,
       visionBaseUrl: config.visionBaseUrl || "",
       visionApiKey: config.visionApiKey || "",
-      visionRequestMethod:
-        config.visionRequestMethod || DEFAULT_REQUEST_METHOD,
+      visionRequestMethod: config.visionRequestMethod || DEFAULT_REQUEST_METHOD,
       visionModel: config.visionModel || "",
       maxContextTokens:
         config.maxContextTokens != null ? String(config.maxContextTokens) : "",
@@ -83,10 +83,10 @@ export function ApiSettingsEditModal({
       enableAutoCompress: config.enableAutoCompress ?? true,
       autoCompressThreshold: calculateAutoCompressThresholdPercent(
         config.maxContextTokens,
-        config.autoCompressThreshold
+        config.autoCompressThreshold,
       ),
       toolResultTokenLimit: extractToolResultTokenLimitFromConfigJson(
-        config.configJson
+        config.configJson,
       ),
       maxRetries: config.maxRetries != null ? String(config.maxRetries) : "",
       retryBaseDelayMs:
@@ -99,28 +99,31 @@ export function ApiSettingsEditModal({
       customHeaderSchemeId: config.customHeaderSchemeId ?? "",
       thinkingValue: extractThinkingValueFromConfigJson(
         config.configJson,
-        config.requestMethod || DEFAULT_REQUEST_METHOD
+        config.requestMethod || DEFAULT_REQUEST_METHOD,
       ),
       responsesVerbosity: extractResponsesVerbosityFromConfigJson(
-        config.configJson
+        config.configJson,
       ),
       responsesFastMode: extractResponsesFastModeFromConfigJson(
-        config.configJson
+        config.configJson,
+      ),
+      responsesWebSocket: extractResponsesWebSocketFromConfigJson(
+        config.configJson,
       ),
       googleSearch: extractGoogleSearchFromConfigJson(config.configJson),
       oneMContext: extractOneMContextFromConfigJson(config.configJson),
       visionGoogleSearch: extractVisionGoogleSearchFromConfigJson(
-        config.configJson
+        config.configJson,
       ),
       visionThinkingEnabled: extractVisionThinkingEnabledFromConfigJson(
-        config.configJson
+        config.configJson,
       ),
       visionThinkingEffort: extractVisionThinkingEffortFromConfigJson(
-        config.configJson
+        config.configJson,
       ),
       visionMaxTokens: extractVisionMaxTokensFromConfigJson(config.configJson),
       visionMaxConcurrency: extractVisionMaxConcurrencyFromConfigJson(
-        config.configJson
+        config.configJson,
       ),
       configJson: config.configJson,
     });
@@ -132,18 +135,18 @@ export function ApiSettingsEditModal({
 
   const onFieldChange = (
     field: keyof ApiConfigFormData,
-    value: string | boolean
+    value: string | boolean,
   ): void => {
     if (field === "isActive" && value === false) {
       const profileName = editForm?.profileName;
       const willKeepAnotherActive = configs.some(
-        (item) => item.isActive && item.profileName !== profileName
+        (item) => item.isActive && item.profileName !== profileName,
       );
       if (!willKeepAnotherActive) {
         setError(
           t("settings.apiAtLeastOneActive", {
             defaultValue: "At least one API profile must be enabled.",
-          })
+          }),
         );
         return;
       }
@@ -152,7 +155,7 @@ export function ApiSettingsEditModal({
     // （如 1M 上下文开关同时更新 oneMContext 与两个模型名），
     // 非函数式展开会基于同一旧快照互相覆盖，导致部分字段丢失。
     setEditForm((previous) =>
-      previous ? { ...previous, [field]: value } : previous
+      previous ? { ...previous, [field]: value } : previous,
     );
   };
 
@@ -164,7 +167,7 @@ export function ApiSettingsEditModal({
       setError(
         t("settings.apiManualProfileRequired", {
           defaultValue: "Profile name is required.",
-        })
+        }),
       );
       return;
     }
@@ -176,14 +179,14 @@ export function ApiSettingsEditModal({
       const payload = toApiConfigPayload(
         editForm,
         editForm.isActive,
-        configs.length
+        configs.length,
       );
       // 配置名变化时携带原配置名,由后端在同一事务内完成原子重命名
       const previousProfileName = config?.profileName;
       const list = await window.snow.upsertApiConfig(
         previousProfileName && previousProfileName !== profileName
           ? { ...payload, previousProfileName }
-          : payload
+          : payload,
       );
       onSaved(list, profileName);
     } catch (e) {
@@ -192,7 +195,7 @@ export function ApiSettingsEditModal({
           ? e.message
           : t("settings.apiUpdateError", {
               defaultValue: "Failed to update API config",
-            })
+            }),
       );
     } finally {
       setIsSaving(false);

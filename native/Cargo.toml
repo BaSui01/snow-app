@@ -105,6 +105,14 @@ lsp-types = { version = "0.95" }
 # reference it directly in our code.
 http = "1"
 
+# OpenAI Responses WebSocket 模式（snowcfg.responsesWebSocket）：tungstenite 只负责
+# RFC 6455 编解码与握手，代理 CONNECT 隧道与 TLS 由 api/responses/ws.rs 自行建立，
+# 以便完整复用项目既有的代理配置。native-tls / tokio-native-tls 本就在依赖图里
+# （reqwest 的 default-tls），这里显式声明只是为了能直接调用。
+tokio-tungstenite = "0.24"
+native-tls = "0.2"
+tokio-native-tls = "0.3"
+
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"
 windows-sys = { version = "0.59", features = [

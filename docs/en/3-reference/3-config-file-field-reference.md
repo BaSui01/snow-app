@@ -66,6 +66,7 @@ Snow CLI).
 | `responsesReasoning`    | object  |           | Responses reasoning config (`{enabled, effort}`)                                        |
 | `responsesVerbosity`    | string  |           | Responses verbosity, e.g. `medium`                                                      |
 | `responsesFastMode`     | boolean |           | Responses fast mode                                                                     |
+| `responsesWebSocket`    | boolean |           | Responses WebSocket transport (persistent connection instead of SSE)                    |
 | `chatThinking`          | object  |           | Thinking-strength config (`{enabled, reasoning_effort}`)                                |
 
 > **Model routing and profile completeness**: Snow App does not switch between

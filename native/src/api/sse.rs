@@ -42,7 +42,9 @@ pub(crate) fn find_sse_separator(buffer: &[u8]) -> Option<(usize, usize)> {
     }
 }
 
-/// Final outcome of consuming one Provider SSE response body.
+/// Final outcome of consuming one Provider streaming response body
+/// (SSE event stream, or the WebSocket frame sequence of the Responses
+/// WebSocket transport — both share the same recovery taxonomy).
 ///
 /// The Provider-specific parser reports terminal events through the callback;
 /// transport EOF, read errors, idle timeouts, and cancellation remain typed so

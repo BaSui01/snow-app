@@ -459,6 +459,11 @@ const SNOWCFG_SCOPE_KEYS: &[KeySpec] = &[
         sensitive: false,
     },
     KeySpec {
+        key: "responsesWebSocket",
+        value_type: ValueType::Bool,
+        sensitive: false,
+    },
+    KeySpec {
         key: "chatThinking",
         value_type: ValueType::Object,
         sensitive: false,

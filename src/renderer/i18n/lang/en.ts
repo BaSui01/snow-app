@@ -1759,6 +1759,9 @@ export const en = {
   "settings.apiResponsesFastMode": "Responses Fast Mode",
   "settings.apiResponsesFastModeHint":
     "Sends service_tier: priority when enabled and can be toggled from the chat input.",
+  "settings.apiResponsesWebSocket": "Responses WebSocket mode",
+  "settings.apiResponsesWebSocketHint":
+    "Uses the WebSocket transport (wss://.../responses) instead of SSE and keeps the connection alive between turns to save handshake latency.",
   "settings.apiGoogleSearch": "Google Search grounding",
   "settings.apiGoogleSearchHint":
     "When enabled, Gemini requests (chat / vision image models) inject the Google Search tool (native Gemini grounding) for real-time web information.",

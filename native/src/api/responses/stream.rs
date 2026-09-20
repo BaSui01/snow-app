@@ -55,7 +55,7 @@ pub(super) struct StreamingResponseResult {
     pub total_duration_ms: i64,
 }
 
-struct ResponsesAttemptState {
+pub(super) struct ResponsesAttemptState {
     raw_events: Vec<Value>,
     content_chunks: Vec<String>,
     thinking_chunks: Vec<String>,
@@ -94,7 +94,7 @@ impl Default for ResponsesAttemptState {
 }
 
 impl ResponsesAttemptState {
-    fn process_event_block(&mut self, event_block: &str) -> (String, String, String) {
+    pub(super) fn process_event_block(&mut self, event_block: &str) -> (String, String, String) {
         let mut tool_args_delta_out = String::new();
         let (content_delta, thinking_delta) = process_responses_sse_event_block(
             event_block,
@@ -116,7 +116,7 @@ impl ResponsesAttemptState {
         (content_delta, thinking_delta, tool_args_delta_out)
     }
 
-    fn progress(&self, user_cancelled: bool) -> StreamAttemptProgress {
+    pub(super) fn progress(&self, user_cancelled: bool) -> StreamAttemptProgress {
         StreamAttemptProgress {
             visible_content_chars: visible_content_char_count(&self.content_chunks),
             has_tool_state: !self.tool_calls.is_empty(),
@@ -126,7 +126,7 @@ impl ResponsesAttemptState {
         }
     }
 
-    fn has_payload(&self) -> bool {
+    pub(super) fn has_payload(&self) -> bool {
         attempt_has_payload(
             &self.content_chunks,
             &self.thinking_chunks,
@@ -134,14 +134,15 @@ impl ResponsesAttemptState {
         )
     }
 
-    fn finish_cancelled(&mut self) {
+    /// 取消收尾：标记 cancelled 并丢弃未完成的工具状态。
+    pub(super) fn finish_cancelled(&mut self) {
         self.response_status = String::from("cancelled");
         self.tool_calls.clear();
         self.streaming_tool_items.clear();
         self.tool_parse_errors.clear();
     }
 
-    fn finalize_provider_terminal(
+    pub(super) fn finalize_provider_terminal(
         &mut self,
     ) -> (
         Option<StreamInterruptionReason>,
@@ -183,9 +184,15 @@ impl ResponsesAttemptState {
             (None, None)
         }
     }
+
+    /// 是否已收到 Provider 终态事件（`response.completed` / `incomplete` /
+    /// `failed` / `error`）。WebSocket 传输据此判断某一帧之后可以停止读取。
+    pub(super) fn stream_completed_normally(&self) -> bool {
+        self.stream_completed_normally
+    }
 }
 
-fn finalize_transport_interruption(
+pub(super) fn finalize_transport_interruption(
     state: &mut ResponsesAttemptState,
     decision: StreamRecoveryDecision,
     cause: StreamEndCause,
@@ -206,6 +213,81 @@ fn finalize_transport_interruption(
         Some(cause.interruption_reason()),
         decision.recovery_outcome(),
     )
+}
+
+/// 取消早于任何事件到达时的结果（连接阶段被取消）。SSE 与 WebSocket 传输共用，
+/// 保证两条路径返回完全一致的字段。
+pub(super) fn cancelled_stream_result(
+    thinking_tracker: &ThinkingStreamTracker,
+    stream_start: std::time::Instant,
+) -> StreamingResponseResult {
+    StreamingResponseResult {
+        id: String::new(),
+        content: String::new(),
+        thinking: String::new(),
+        reasoning_items_json: "[]".to_string(),
+        model: String::new(),
+        status: String::from("cancelled"),
+        interruption_reason: None,
+        recovery_outcome: None,
+        token_usage: ChatTokenUsage {
+            input_tokens: 0,
+            output_tokens: 0,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+        },
+        tool_calls_json: "[]".to_string(),
+        tool_parse_errors: Vec::new(),
+        thinking_token_count: thinking_tracker.token_count as i64,
+        thinking_duration_ms: thinking_tracker.duration_ms(),
+        total_duration_ms: stream_start.elapsed().as_millis() as i64,
+    }
+}
+
+/// 收尾一次流式尝试：补全 reasoning round-trip、拼接正文，并附上中断元数据。
+/// SSE 与 WebSocket 传输共用，保证持久化字段完全一致。
+pub(super) fn finalize_attempt_result(
+    attempt_state: &mut ResponsesAttemptState,
+    interruption_reason: Option<StreamInterruptionReason>,
+    recovery_outcome: Option<StreamRecoveryOutcome>,
+    thinking_tracker: &ThinkingStreamTracker,
+    stream_start: std::time::Instant,
+) -> StreamingResponseResult {
+    // If no structured reasoning item arrived, preserve streamed reasoning text
+    // in the existing minimal round-trip shape.
+    if attempt_state.reasoning_items.is_empty() {
+        let thinking = attempt_state.thinking_chunks.join("").trim().to_string();
+        if !thinking.is_empty() {
+            attempt_state.reasoning_items.push(json!({
+                "type": "reasoning",
+                "reasoning_text": thinking,
+            }));
+        }
+    }
+
+    let content = attempt_state.content_chunks.join("").trim().to_string();
+    let thinking = attempt_state.thinking_chunks.join("").trim().to_string();
+    let tool_calls_json =
+        serde_json::to_string(&attempt_state.tool_calls).unwrap_or_else(|_| "[]".to_string());
+    let reasoning_items_json = serde_json::to_string(&attempt_state.reasoning_items)
+        .unwrap_or_else(|_| "[]".to_string());
+
+    StreamingResponseResult {
+        id: attempt_state.response_id.clone(),
+        content,
+        thinking,
+        reasoning_items_json,
+        model: attempt_state.response_model.clone(),
+        status: attempt_state.response_status.clone(),
+        interruption_reason,
+        recovery_outcome,
+        token_usage: attempt_state.token_usage,
+        tool_calls_json,
+        tool_parse_errors: attempt_state.tool_parse_errors.clone(),
+        thinking_token_count: thinking_tracker.token_count as i64,
+        thinking_duration_ms: thinking_tracker.duration_ms(),
+        total_duration_ms: stream_start.elapsed().as_millis() as i64,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -263,27 +345,7 @@ pub(super) async fn collect_streaming_response(
         let header_map = super::payload::build_header_map(api_key, custom_headers)?;
         let response = loop {
             if cancel_token.is_cancelled() {
-                return Ok(StreamingResponseResult {
-                    id: String::new(),
-                    content: String::new(),
-                    thinking: String::new(),
-                    reasoning_items_json: "[]".to_string(),
-                    model: String::new(),
-                    status: String::from("cancelled"),
-                    interruption_reason: None,
-                    recovery_outcome: None,
-                    token_usage: ChatTokenUsage {
-                        input_tokens: 0,
-                        output_tokens: 0,
-                        cache_creation_input_tokens: 0,
-                        cache_read_input_tokens: 0,
-                    },
-                    tool_calls_json: "[]".to_string(),
-                    tool_parse_errors: Vec::new(),
-                    thinking_token_count: thinking_tracker.token_count as i64,
-                    thinking_duration_ms: thinking_tracker.duration_ms(),
-                    total_duration_ms: stream_start.elapsed().as_millis() as i64,
-                });
+                return Ok(cancelled_stream_result(&thinking_tracker, stream_start));
             }
 
             let send_future = client
@@ -295,27 +357,7 @@ pub(super) async fn collect_streaming_response(
             let result = tokio::select! {
                 biased;
                 _ = cancel_token.cancelled() => {
-                    return Ok(StreamingResponseResult {
-                        id: String::new(),
-                        content: String::new(),
-                        thinking: String::new(),
-                        reasoning_items_json: "[]".to_string(),
-                        model: String::new(),
-                        status: String::from("cancelled"),
-                        interruption_reason: None,
-                        recovery_outcome: None,
-                        token_usage: ChatTokenUsage {
-                            input_tokens: 0,
-                            output_tokens: 0,
-                            cache_creation_input_tokens: 0,
-                            cache_read_input_tokens: 0,
-                        },
-                        tool_calls_json: "[]".to_string(),
-                        tool_parse_errors: Vec::new(),
-                        thinking_token_count: thinking_tracker.token_count as i64,
-                        thinking_duration_ms: thinking_tracker.duration_ms(),
-                        total_duration_ms: stream_start.elapsed().as_millis() as i64,
-                    });
+                    return Ok(cancelled_stream_result(&thinking_tracker, stream_start));
                 }
                 result = send_future => {
                     result.map_err(|error| Error::from_reason(format!("Failed to create response stream: {error}")))
@@ -605,39 +647,11 @@ pub(super) async fn collect_streaming_response(
         }
     };
 
-    // If no structured reasoning item arrived, preserve streamed reasoning text
-    // in the existing minimal round-trip shape.
-    if attempt_state.reasoning_items.is_empty() {
-        let thinking = attempt_state.thinking_chunks.join("").trim().to_string();
-        if !thinking.is_empty() {
-            attempt_state.reasoning_items.push(json!({
-                "type": "reasoning",
-                "reasoning_text": thinking,
-            }));
-        }
-    }
-
-    let content = attempt_state.content_chunks.join("").trim().to_string();
-    let thinking = attempt_state.thinking_chunks.join("").trim().to_string();
-    let tool_calls_json =
-        serde_json::to_string(&attempt_state.tool_calls).unwrap_or_else(|_| "[]".to_string());
-    let reasoning_items_json =
-        serde_json::to_string(&attempt_state.reasoning_items).unwrap_or_else(|_| "[]".to_string());
-
-    Ok(StreamingResponseResult {
-        id: attempt_state.response_id,
-        content,
-        thinking,
-        reasoning_items_json,
-        model: attempt_state.response_model,
-        status: attempt_state.response_status,
+    Ok(finalize_attempt_result(
+        &mut attempt_state,
         interruption_reason,
         recovery_outcome,
-        token_usage: attempt_state.token_usage,
-        tool_calls_json,
-        tool_parse_errors: attempt_state.tool_parse_errors,
-        thinking_token_count: thinking_tracker.token_count as i64,
-        thinking_duration_ms: thinking_tracker.duration_ms(),
-        total_duration_ms: stream_start.elapsed().as_millis() as i64,
-    })
+        &thinking_tracker,
+        stream_start,
+    ))
 }

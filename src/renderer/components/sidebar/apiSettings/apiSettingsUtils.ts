@@ -18,7 +18,8 @@ import {
 } from "../../mainContent/chatInput/constants";
 import type { ApiConfigFormData } from "./types";
 
-type RequestMethod = "chat" | "responses" | "gemini" | "anthropic" | "interactions";
+type RequestMethod =
+  "chat" | "responses" | "gemini" | "anthropic" | "interactions";
 
 const normalizeRequestMethod = (value: string): RequestMethod => {
   if (
@@ -50,47 +51,53 @@ const readSnowcfg = (configJson: string): Record<string, unknown> => {
 };
 
 export const extractToolResultTokenLimitFromConfigJson = (
-  configJson: string
+  configJson: string,
 ): string => {
   const value = readSnowcfg(configJson).toolResultTokenLimit;
   return String(
     normalizeToolResultLimitPercent(
-      typeof value === "string" || typeof value === "number" ? value : undefined
-    )
+      typeof value === "string" || typeof value === "number"
+        ? value
+        : undefined,
+    ),
   );
 };
 
 export const extractResponsesVerbosityFromConfigJson = (
-  configJson: string
+  configJson: string,
 ): string => {
   const value = readSnowcfg(configJson).responsesVerbosity;
   return value === "low" || value === "medium" || value === "high" ? value : "";
 };
 
 export const extractResponsesFastModeFromConfigJson = (
-  configJson: string
+  configJson: string,
 ): boolean => readSnowcfg(configJson).responsesFastMode === true;
+
+/** 读取 Responses WebSocket 开关（snowcfg.responsesWebSocket，默认关闭） */
+export const extractResponsesWebSocketFromConfigJson = (
+  configJson: string,
+): boolean => readSnowcfg(configJson).responsesWebSocket === true;
 
 /** 读取 gemini 渠道的谷歌搜索联网开关（snowcfg.googleSearch） */
 export const extractGoogleSearchFromConfigJson = (
-  configJson: string
+  configJson: string,
 ): boolean => readSnowcfg(configJson).googleSearch === true;
 
 /** 读取 1M 上下文开关（snowcfg.enable1mContext）。
  *  开启后所有 anthropic 请求都会携带 context-1m beta 头，
  *  与模型名 `[1M]` 标记互为兜底（任一成立即生效）。 */
-export const extractOneMContextFromConfigJson = (
-  configJson: string
-): boolean => readSnowcfg(configJson).enable1mContext === true;
+export const extractOneMContextFromConfigJson = (configJson: string): boolean =>
+  readSnowcfg(configJson).enable1mContext === true;
 
 /** 读取 gemini 视觉（图片模型）渠道的谷歌搜索联网开关（snowcfg.visionGoogleSearch） */
 export const extractVisionGoogleSearchFromConfigJson = (
-  configJson: string
+  configJson: string,
 ): boolean => readSnowcfg(configJson).visionGoogleSearch === true;
 
 /** 读取视觉模型的思考开关（snowcfg.visionThinking.enabled，默认关闭） */
 export const extractVisionThinkingEnabledFromConfigJson = (
-  configJson: string
+  configJson: string,
 ): boolean => {
   const thinking = readSnowcfg(configJson).visionThinking;
   return (
@@ -102,7 +109,7 @@ export const extractVisionThinkingEnabledFromConfigJson = (
 
 /** 读取视觉模型的思考强度（snowcfg.visionThinking.reasoning_effort） */
 export const extractVisionThinkingEffortFromConfigJson = (
-  configJson: string
+  configJson: string,
 ): string => {
   const thinking = readSnowcfg(configJson).visionThinking;
   if (typeof thinking !== "object" || thinking === null) return "";
@@ -112,7 +119,7 @@ export const extractVisionThinkingEffortFromConfigJson = (
 
 /** 读取视觉模型的最大输出 tokens（snowcfg.visionMaxTokens，默认 4096） */
 export const extractVisionMaxTokensFromConfigJson = (
-  configJson: string
+  configJson: string,
 ): string => {
   const value = readSnowcfg(configJson).visionMaxTokens;
   return typeof value === "number" && value > 0 ? String(value) : "";
@@ -120,7 +127,7 @@ export const extractVisionMaxTokensFromConfigJson = (
 
 /** 读取视觉文本化的最大并发数（snowcfg.visionMaxConcurrency，默认 8） */
 export const extractVisionMaxConcurrencyFromConfigJson = (
-  configJson: string
+  configJson: string,
 ): string => {
   const value = readSnowcfg(configJson).visionMaxConcurrency;
   return typeof value === "number" && value > 0 ? String(value) : "";
@@ -133,7 +140,7 @@ export const extractVisionMaxConcurrencyFromConfigJson = (
  */
 export const resolveThinkingValue = (
   thinkingValue: string,
-  requestMethod: string
+  requestMethod: string,
 ): string => {
   const method = normalizeRequestMethod(requestMethod);
   const options = THINKING_OPTIONS_BY_METHOD[method];
@@ -154,7 +161,7 @@ const buildConfigJsonWithThinking = (
   thinkingValue: string,
   requestMethod: string,
   configJson: string,
-  snowcfgOverrides: Record<string, unknown>
+  snowcfgOverrides: Record<string, unknown>,
 ): string => {
   const method = normalizeRequestMethod(requestMethod);
   const isThinkingEnabled = thinkingValue !== "none";
@@ -204,7 +211,7 @@ const buildConfigJsonWithThinking = (
  */
 export const extractThinkingValueFromConfigJson = (
   configJson: string,
-  requestMethod: string
+  requestMethod: string,
 ): string => {
   try {
     const parsed = JSON.parse(configJson);
@@ -238,10 +245,10 @@ export const extractThinkingValueFromConfigJson = (
       method === "anthropic"
         ? "effort"
         : method === "gemini" || method === "interactions"
-        ? "thinkingLevel"
-        : method === "responses"
-        ? "effort"
-        : "reasoning_effort";
+          ? "thinkingLevel"
+          : method === "responses"
+            ? "effort"
+            : "reasoning_effort";
 
     const value = section[valueKey];
     return typeof value === "string" && value.trim()
@@ -254,7 +261,7 @@ export const extractThinkingValueFromConfigJson = (
 
 export const emptyApiConfigForm = (
   index: number,
-  active: boolean
+  active: boolean,
 ): ApiConfigFormData => ({
   profileName: `manual-${index}`,
   displayName: "",
@@ -285,6 +292,7 @@ export const emptyApiConfigForm = (
   oneMContext: false,
   responsesVerbosity: "",
   responsesFastMode: false,
+  responsesWebSocket: false,
   googleSearch: false,
   visionGoogleSearch: false,
   visionThinkingEnabled: false,
@@ -302,7 +310,7 @@ export const parseOptionalInteger = (value: string): number | null => {
 export function toApiConfigPayload(
   data: ApiConfigFormData,
   isActive: boolean,
-  configCount: number
+  configCount: number,
 ): ApiConfigInput {
   const profileName = data.profileName.trim();
   const displayName = data.displayName.trim() || profileName;
@@ -312,11 +320,11 @@ export function toApiConfigPayload(
   const basicModel = data.basicModel.trim();
   const visionRequestMethod = data.visionRequestMethod.trim() || requestMethod;
   const autoCompressThresholdPercent = normalizeAutoCompressThresholdPercent(
-    data.autoCompressThreshold
+    data.autoCompressThreshold,
   );
   const autoCompressThresholdTokens = calculateAutoCompressThresholdTokens(
     data.maxContextTokens,
-    autoCompressThresholdPercent
+    autoCompressThresholdPercent,
   );
   const configJson = buildConfigJsonWithThinking(
     data.thinkingValue || DEFAULT_THINKING_VALUE,
@@ -338,10 +346,11 @@ export function toApiConfigPayload(
       autoCompressThresholdPercent,
       autoCompressThreshold: autoCompressThresholdTokens ?? undefined,
       toolResultTokenLimit: normalizeToolResultLimitPercent(
-        data.toolResultTokenLimit
+        data.toolResultTokenLimit,
       ),
       responsesVerbosity: data.responsesVerbosity || undefined,
       responsesFastMode: data.responsesFastMode,
+      responsesWebSocket: data.responsesWebSocket,
       googleSearch: data.googleSearch,
       enable1mContext: data.oneMContext,
       visionGoogleSearch: data.visionGoogleSearch,
@@ -354,7 +363,7 @@ export function toApiConfigPayload(
       visionMaxTokens: parseOptionalInteger(data.visionMaxTokens) ?? undefined,
       visionMaxConcurrency:
         parseOptionalInteger(data.visionMaxConcurrency) ?? undefined,
-    }
+    },
   );
 
   return {

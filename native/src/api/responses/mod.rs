@@ -9,6 +9,7 @@
 mod event;
 pub(crate) mod payload;
 mod stream;
+mod ws;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -16,6 +17,7 @@ use std::path::PathBuf;
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::ThreadsafeFunction;
 use napi_derive::napi;
+use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use crate::api::config::resolve_advanced_model;
@@ -316,9 +318,6 @@ async fn create_response_async(
         effective_headers.insert("session_id".to_string(), cache_key.to_string());
     }
 
-    let client = crate::api::http_client::build_proxied_client()
-        .await
-        .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
     let skip_context = request.skip_context.unwrap_or(false);
     let mut prepared_messages = prepared_request.messages;
     crate::api::vision::textify_images_in_messages(
@@ -371,20 +370,42 @@ async fn create_response_async(
     )
     .await;
 
-    let streamed_response = match stream::collect_streaming_response(
-        &client,
-        database_path.clone(),
-        &endpoint,
-        api_key,
-        &effective_headers,
-        payload,
-        on_chunk,
-        &cancel_token,
-        &retry_options,
-        stream_idle_timeout_sec,
-    )
-    .await
-    {
+    // WebSocket 传输复用同一份 payload、事件解析与恢复策略，只是把 SSE 长连接
+    // 换成 WebSocket 连接（snowcfg.responsesWebSocket），因此不需要 reqwest 客户端。
+    let streamed_response = if responses_web_socket_enabled(&api_config.config_json) {
+        ws::collect_streaming_response_ws(
+            database_path.clone(),
+            &endpoint,
+            api_key,
+            &effective_headers,
+            payload,
+            on_chunk,
+            &cancel_token,
+            &retry_options,
+            stream_idle_timeout_sec,
+        )
+        .await
+    } else {
+        let client = crate::api::http_client::build_proxied_client()
+            .await
+            .map_err(|error| {
+                Error::from_reason(format!("Failed to create HTTP client: {}", error))
+            })?;
+        stream::collect_streaming_response(
+            &client,
+            database_path.clone(),
+            &endpoint,
+            api_key,
+            &effective_headers,
+            payload,
+            on_chunk,
+            &cancel_token,
+            &retry_options,
+            stream_idle_timeout_sec,
+        )
+        .await
+    };
+    let streamed_response = match streamed_response {
         Ok(result) => result,
         Err(error) => {
             log_api_error(
@@ -517,4 +538,18 @@ async fn create_response_async(
         },
         persisted_user_message_ids,
     })
+}
+
+/// 该 API 档案是否启用 Responses WebSocket 传输
+/// （`snowcfg.responsesWebSocket`，缺省关闭）。
+fn responses_web_socket_enabled(config_json: &str) -> bool {
+    serde_json::from_str::<Value>(config_json)
+        .ok()
+        .and_then(|parsed| {
+            parsed
+                .get("snowcfg")?
+                .get("responsesWebSocket")?
+                .as_bool()
+        })
+        .unwrap_or(false)
 }

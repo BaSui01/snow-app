@@ -1685,6 +1685,9 @@ export const zhTW = {
   "settings.apiResponsesFastMode": "Responses Fast Mode",
   "settings.apiResponsesFastModeHint":
     "啟用後傳送 service_tier: priority，可在聊天輸入區即時切換。",
+  "settings.apiResponsesWebSocket": "Responses WebSocket 模式",
+  "settings.apiResponsesWebSocketHint":
+    "改用 WebSocket 傳輸（wss://.../responses）而非 SSE，並在多輪之間重用同一條連線以節省握手延遲。",
   "settings.apiGoogleSearch": "谷歌搜尋聯網",
   "settings.apiGoogleSearchHint":
     "開啟後 Gemini 請求（文字 / 視覺圖片模型）注入 Google Search 工具（Gemini 原生 grounding），即時獲取聯網資訊。",

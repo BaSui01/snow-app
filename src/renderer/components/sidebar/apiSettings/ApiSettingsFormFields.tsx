@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from "react";
 import { ChevronDown, Eye, EyeOff } from "lucide-react";
 import { useI18n } from "../../../i18n";
 import { ApiModelCombobox } from "./ApiModelCombobox";
@@ -79,16 +85,16 @@ export function ApiSettingsFormFields({
   // 记录哪些模型下拉框正在等待加载结果（两个下拉框共享同一份数据源，
   // 只保留一个在途请求，但只有被点击的字段才显示 loading）。
   const [loadingModelFields, setLoadingModelFields] = useState<ModelField[]>(
-    []
+    [],
   );
   const [modelOptionsError, setModelOptionsError] = useState<string | null>(
-    null
+    null,
   );
   const [loadedModelOptionsKey, setLoadedModelOptionsKey] = useState<
     string | null
   >(null);
   const [systemPrompts, setSystemPrompts] = useState<SystemPromptItemRecord[]>(
-    []
+    [],
   );
   const [customHeaderSchemes, setCustomHeaderSchemes] = useState<
     CustomHeaderSchemeRecord[]
@@ -136,7 +142,10 @@ export function ApiSettingsFormFields({
     const prev = prevRequestMethodRef.current;
     prevRequestMethodRef.current = data.requestMethod;
     if (prev === data.requestMethod) return;
-    const resolved = resolveThinkingValue(data.thinkingValue, data.requestMethod);
+    const resolved = resolveThinkingValue(
+      data.thinkingValue,
+      data.requestMethod,
+    );
     if (resolved !== data.thinkingValue) {
       onChange("thinkingValue", resolved);
     }
@@ -144,8 +153,7 @@ export function ApiSettingsFormFields({
 
   const thinkingOptions =
     THINKING_OPTIONS_BY_METHOD[
-      (data.requestMethod ||
-        "chat") as keyof typeof THINKING_OPTIONS_BY_METHOD
+      (data.requestMethod || "chat") as keyof typeof THINKING_OPTIONS_BY_METHOD
     ] || THINKING_OPTIONS_BY_METHOD.chat;
   const activeThinkingLabel =
     thinkingOptions.find((option) => option.value === data.thinkingValue)
@@ -166,7 +174,7 @@ export function ApiSettingsFormFields({
       }
 
       setLoadingModelFields((fields) =>
-        fields.includes(field) ? fields : [...fields, field]
+        fields.includes(field) ? fields : [...fields, field],
       );
       setModelOptionsError(null);
 
@@ -184,7 +192,7 @@ export function ApiSettingsFormFields({
             apiKey: data.apiKey,
             requestMethod: data.requestMethod,
             customHeaderSchemeId: data.customHeaderSchemeId,
-          }
+          },
         );
         setModelOptions(availableModels);
         setLoadedModelOptionsKey(configKey);
@@ -194,7 +202,7 @@ export function ApiSettingsFormFields({
             ? error.message
             : t("chat.loadModelsError", {
                 defaultValue: "Failed to load models",
-              })
+              }),
         );
         setLoadedModelOptionsKey(null);
       } finally {
@@ -210,21 +218,21 @@ export function ApiSettingsFormFields({
       loadedModelOptionsKey,
       loadingModelFields,
       t,
-    ]
+    ],
   );
 
   const handleModelInputFocus = useCallback(
     (field: ModelField) => {
       void loadModelOptions(field);
     },
-    [loadModelOptions]
+    [loadModelOptions],
   );
 
   const handleRetryModelOptions = useCallback(
     (field: ModelField) => {
       void loadModelOptions(field, true);
     },
-    [loadModelOptions]
+    [loadModelOptions],
   );
 
   const changeField =
@@ -239,21 +247,21 @@ export function ApiSettingsFormFields({
     };
 
   const autoCompressThresholdPercent = normalizeAutoCompressThresholdPercent(
-    data.autoCompressThreshold
+    data.autoCompressThreshold,
   );
   const autoCompressThresholdTokens = calculateAutoCompressThresholdTokens(
     data.maxContextTokens,
-    autoCompressThresholdPercent
+    autoCompressThresholdPercent,
   );
 
   const toolResultLimitPercent = normalizeToolResultLimitPercent(
-    data.toolResultTokenLimit
+    data.toolResultTokenLimit,
   );
 
   const renderModelField = (
     field: ModelField,
     label: string,
-    placeholder: string
+    placeholder: string,
   ) => (
     <ApiModelCombobox
       label={label}
@@ -424,7 +432,7 @@ export function ApiSettingsFormFields({
                   {t(
                     data.googleSearch
                       ? "settings.enabled"
-                      : "settings.disabled"
+                      : "settings.disabled",
                   )}
                 </span>
               </label>
@@ -473,12 +481,35 @@ export function ApiSettingsFormFields({
                     {t(
                       data.responsesFastMode
                         ? "settings.enabled"
-                        : "settings.disabled"
+                        : "settings.disabled",
                     )}
                   </span>
                 </label>
                 <small className="api-settings-hint-text">
                   {t("settings.apiResponsesFastModeHint")}
+                </small>
+              </div>
+              <div className="api-settings-field">
+                <span>{t("settings.apiResponsesWebSocket")}</span>
+                <label className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={data.responsesWebSocket}
+                    onChange={changeField("responsesWebSocket")}
+                    disabled={disabled}
+                    hidden
+                  />
+                  <span className="toggle-slider" />
+                  <span>
+                    {t(
+                      data.responsesWebSocket
+                        ? "settings.enabled"
+                        : "settings.disabled",
+                    )}
+                  </span>
+                </label>
+                <small className="api-settings-hint-text">
+                  {t("settings.apiResponsesWebSocketHint")}
                 </small>
               </div>
             </>
@@ -555,12 +586,12 @@ export function ApiSettingsFormFields({
             t("settings.apiAdvancedModel", {
               defaultValue: "Advanced model",
             }),
-            "gpt-4.1"
+            "gpt-4.1",
           )}
           {renderModelField(
             "basicModel",
             t("settings.apiBasicModel", { defaultValue: "Basic model" }),
-            "gpt-4.1-mini"
+            "gpt-4.1-mini",
           )}
           {data.requestMethod === "anthropic" && (
             <div className="api-settings-field">
@@ -582,9 +613,7 @@ export function ApiSettingsFormFields({
                 <span className="toggle-slider" />
                 <span>
                   {t(
-                    data.oneMContext
-                      ? "settings.enabled"
-                      : "settings.disabled"
+                    data.oneMContext ? "settings.enabled" : "settings.disabled",
                   )}
                 </span>
               </label>
@@ -635,7 +664,8 @@ export function ApiSettingsFormFields({
             />
             <small className="api-settings-hint-text">
               {t("settings.apiMaxTokensHint", {
-                defaultValue: "Leave empty to omit this parameter from requests.",
+                defaultValue:
+                  "Leave empty to omit this parameter from requests.",
               })}
             </small>
           </label>
@@ -749,7 +779,7 @@ export function ApiSettingsFormFields({
                     {t(
                       data.visionGoogleSearch
                         ? "settings.enabled"
-                        : "settings.disabled"
+                        : "settings.disabled",
                     )}
                   </span>
                 </label>
@@ -780,7 +810,7 @@ export function ApiSettingsFormFields({
                   {t(
                     data.visionThinkingEnabled
                       ? "settings.enabled"
-                      : "settings.disabled"
+                      : "settings.disabled",
                   )}
                 </span>
               </label>
@@ -836,7 +866,8 @@ export function ApiSettingsFormFields({
               />
               <small className="api-settings-hint-text">
                 {t("settings.apiVisionMaxTokensHint", {
-                  defaultValue: "Maximum output tokens for image descriptions. Defaults to 4096 when empty.",
+                  defaultValue:
+                    "Maximum output tokens for image descriptions. Defaults to 4096 when empty.",
                 })}
               </small>
             </label>

@@ -3,7 +3,7 @@
 > For AI agents working inside Snow App: how to pick and combine the built-in
 > tools correctly for **coding, debugging, performance work, pixel-level UI
 > fixes, new features, and learning new tools**.
-> This is the *strategy* layer — tool mechanics live in
+> This is the _strategy_ layer — tool mechanics live in
 > [2-builtin-tools-reference](../3-reference/2-builtin-tools-reference.md).
 
 ---
@@ -12,12 +12,12 @@
 
 ### 1.1 The fundamental difference
 
-| Dimension | `bash-terminal-execute` (one-shot) | `terminal-*` (persistent PTY) |
-| --- | --- | --- |
-| Lifecycle | Ends when the command ends; `detach:true` keeps it running in background | Tab stays alive across calls |
-| Log access | detach writes `<workspace>/.snow/logs/<name>-<ts>.log`; read via `filesystem-read` | `terminal-read` reads the screen buffer; `terminal-wait` waits for idle |
-| Interactivity | None (one-shot); `isInteractive:true` waits for input | Fully interactive: signals, passwords, keys |
-| Best for | Build, test, lint, one-off scripts | **dev servers, long-running processes, anything you need to watch** |
+| Dimension     | `bash-terminal-execute` (one-shot)                                                 | `terminal-*` (persistent PTY)                                           |
+| ------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Lifecycle     | Ends when the command ends; `detach:true` keeps it running in background           | Tab stays alive across calls                                            |
+| Log access    | detach writes `<workspace>/.snow/logs/<name>-<ts>.log`; read via `filesystem-read` | `terminal-read` reads the screen buffer; `terminal-wait` waits for idle |
+| Interactivity | None (one-shot); `isInteractive:true` waits for input                              | Fully interactive: signals, passwords, keys                             |
+| Best for      | Build, test, lint, one-off scripts                                                 | **dev servers, long-running processes, anything you need to watch**     |
 
 ### 1.2 Decision table (check before launching any process)
 
@@ -66,14 +66,14 @@ instrument → fix + regression → cleanup/post-mortem) is **methodology**, not
 framework-dependent — Snow App's built-in tools are enough to run it end to end.
 Tool mapping per phase:
 
-| Phase | Backend (Rust/Node) | Frontend (WebView) |
-| --- | --- | --- |
-| Feedback loop | `bash-terminal-execute` runs tests/repro; `terminal-*` starts services | `browser-create/navigate` loads the page; `browser-click/type` reproduces |
-| Capture errors | `terminal-read` (PTY screen) / `filesystem-read` (detach log) / `grep-search` logs | `browser-devtools action=console` (JS errors); `action=network` (failed requests + bodies) |
-| Locate code | `codelens-find_definition/references` from stack traces; `grep-search` / `codebase-search` | same + `browser-evaluate` for runtime state |
-| Perf locating | layered timing / profiler / `EXPLAIN QUERY PLAN` | `browser-devtools action=trace` (long tasks); `action=network` (waterfall); `browser-evaluate` with `performance.now()` |
-| Verify fix | `bash-terminal-execute` re-runs tests | `browser-wait` + `browser-screenshot` + re-check console |
-| Parallel work | `sub-agents-activate` generic agents gather evidence (e.g. read-only "what is the correct usage of this API"), main session keeps the loop | same |
+| Phase          | Backend (Rust/Node)                                                                                                                        | Frontend (WebView)                                                                                                      |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| Feedback loop  | `bash-terminal-execute` runs tests/repro; `terminal-*` starts services                                                                     | `browser-create/navigate` loads the page; `browser-click/type` reproduces                                               |
+| Capture errors | `terminal-read` (PTY screen) / `filesystem-read` (detach log) / `grep-search` logs                                                         | `browser-devtools action=console` (JS errors); `action=network` (failed requests + bodies)                              |
+| Locate code    | `codelens-find_definition/references` from stack traces; `grep-search` / `codebase-search`                                                 | same + `browser-evaluate` for runtime state                                                                             |
+| Perf locating  | layered timing / profiler / `EXPLAIN QUERY PLAN`                                                                                           | `browser-devtools action=trace` (long tasks); `action=network` (waterfall); `browser-evaluate` with `performance.now()` |
+| Verify fix     | `bash-terminal-execute` re-runs tests                                                                                                      | `browser-wait` + `browser-screenshot` + re-check console                                                                |
+| Parallel work  | `sub-agents-activate` generic agents gather evidence (e.g. read-only "what is the correct usage of this API"), main session keeps the loop | same                                                                                                                    |
 
 > Tip: if the project has Trellis installed (`.trellis/` exists), load the
 > `diagnosing-bugs` skill for the full 6-phase discipline text and use
@@ -165,12 +165,12 @@ flowchart LR
 
 ### 4.3 Research (when needed)
 
-| Question type | Approach |
-| --- | --- |
-| Third-party library / API usage | `websearch-search/fetch`, ctx7, official docs; **never guess interfaces from memory** |
-| Existing implementation / patterns in repo | `grep-search` / `codebase-search` (semantic) / `codelens-file_outline` |
-| How existing code calls a function | `codelens-find_references` to trace call sites |
-| Independent sub-questions in parallel | `sub-agents-activate` several agents at once, each summarizing its own finding |
+| Question type                              | Approach                                                                              |
+| ------------------------------------------ | ------------------------------------------------------------------------------------- |
+| Third-party library / API usage            | `websearch-search/fetch`, ctx7, official docs; **never guess interfaces from memory** |
+| Existing implementation / patterns in repo | `grep-search` / `codebase-search` (semantic) / `codelens-file_outline`                |
+| How existing code calls a function         | `codelens-find_references` to trace call sites                                        |
+| Independent sub-questions in parallel      | `sub-agents-activate` several agents at once, each summarizing its own finding        |
 
 ### 4.4 Implement
 
@@ -214,7 +214,7 @@ When you meet an unfamiliar tool, MCP server, or capability:
 
 ```
 ① Read the tool description: every tool carries usage + params — start there
-② Read the official docs: load the snow-app-docs skill → it reads ~/.snow/docs
+② Read the official docs: load the snow-app-docs skill → it reads ~/.snowapp/docs
    for the matching section (config: MCP/skills/hooks/api; reference: tools/fields/settings)
 ③ Smoke-test: try it once in a safe environment (bash command / browser page / example)
 ④ Ask when unsure: user-interaction-askUserQuestion (the only question channel)

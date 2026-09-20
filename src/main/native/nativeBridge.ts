@@ -1762,6 +1762,28 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to uninstall pets"),
         ),
+      listPlugins: () =>
+        Promise.reject(new Error("Rust native bridge is required for plugins")),
+      installPlugin: () =>
+        Promise.reject(new Error("Rust native bridge is required for plugins")),
+      rescanPlugin: () =>
+        Promise.reject(new Error("Rust native bridge is required for plugins")),
+      setPluginEnabled: () =>
+        Promise.reject(new Error("Rust native bridge is required for plugins")),
+      deletePlugin: () =>
+        Promise.reject(new Error("Rust native bridge is required for plugins")),
+      readPluginFile: () =>
+        Promise.reject(new Error("Rust native bridge is required for plugins")),
+      readPluginAsset: () =>
+        Promise.reject(new Error("Rust native bridge is required for plugins")),
+      getPluginValues: () =>
+        Promise.reject(new Error("Rust native bridge is required for plugins")),
+      setPluginValue: () =>
+        Promise.reject(new Error("Rust native bridge is required for plugins")),
+      deletePluginValue: () =>
+        Promise.reject(new Error("Rust native bridge is required for plugins")),
+      getPluginsDirectory: () =>
+        Promise.reject(new Error("Rust native bridge is required for plugins")),
     };
   }
 };

@@ -33,6 +33,11 @@ import {
 } from "./common/PlusMenuButton";
 import { RightPanelTabContextMenu } from "./rightPanel/RightPanelTabContextMenu";
 import { OverlayScrollbar } from "./common/OverlayScrollbar";
+import { PluginIcon } from "./common/PluginIcon";
+import { Puzzle } from "lucide-react";
+import { resolveLocalized } from "../plugins/manifest";
+import { pluginStore, usePluginStore } from "../plugins/pluginStore";
+import { runtimeSnapshot } from "../plugins/runtimeSnapshot";
 // 浏览器面板静态导入（非 lazy）：模块（含 homepage 缓存）随应用启动加载并
 // 预取起始页，避免首次创建浏览器实例时异步拉取 chunk 造成「不进预设起始页」
 // 与时序类问题（useBrowserHomepage 的模块级状态在 lazy 加载前不存在）。
@@ -63,6 +68,7 @@ import type {
   FileDiffPreviewTabData,
   FileViewerTabData,
   OpenDiffTabCallback,
+  PluginTabData,
   RightPanelContentProps,
   RightPanelTab,
   TerminalTabData,
@@ -163,6 +169,11 @@ const DrawingPanelContent = lazy(() =>
     default: m.DrawingPanelContent,
   })),
 );
+const PluginPanelContent = lazy(() =>
+  import("./rightPanel/PluginPanelContent").then((m) => ({
+    default: m.PluginPanelContent,
+  })),
+);
 
 const GIT_TAB_ID = "git";
 const CODEBASE_TAB_ID = "codebase";
@@ -209,6 +220,7 @@ export type RightPanelRef = {
   openBrowser: (url?: string) => void;
   openCodebase: (projectId: string, projectName: string) => void;
   openDrawing: () => void;
+  openPluginPanel: (pluginId: string, panelId: string) => void;
   openFile: (
     filePath: string,
     fileName: string,
@@ -243,7 +255,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     ref,
   ): React.JSX.Element => {
     const isWindows = navigator.userAgent.includes("Win");
-    const { t } = useI18n();
+    const { t, locale } = useI18n();
     const [tabs, setTabs] = useState<RightPanelTab[]>([
       { id: GIT_TAB_ID, type: "git", title: t("rightPanel.gitTab") },
     ]);
@@ -448,6 +460,72 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       setActiveTabId(tabId);
       return tabId;
     }, [t]);
+
+    // 插件面板 tab：同一插件的同一面板复用同一个 tab（避免重复实例）。
+    const handleOpenPluginPanel = useCallback(
+      (pluginId: string, panelId: string, title: string): string => {
+        const tabId = `plugin:${pluginId}:${panelId}`;
+        setTabs((prev) =>
+          prev.some((tab) => tab.id === tabId)
+            ? prev
+            : [
+                ...prev,
+                {
+                  id: tabId,
+                  type: "plugin",
+                  title,
+                  data: { pluginId, panelId },
+                },
+              ],
+        );
+        setActiveTabId(tabId);
+        return tabId;
+      },
+      [],
+    );
+
+    useEffect(() => {
+      return rightPanelEvents.on("open-plugin-panel", (payload) => {
+        handleOpenPluginPanel(
+          payload.pluginId,
+          payload.panelId,
+          payload.title?.trim() || payload.pluginId,
+        );
+        rightPanelEvents.emit("request-expand");
+      });
+    }, [handleOpenPluginPanel]);
+
+    const pluginState = usePluginStore();
+
+    useEffect(() => {
+      void pluginStore.ensureLoaded();
+    }, []);
+
+    useEffect(() => {
+      runtimeSnapshot.patch({
+        panels: {
+          tabs: tabs.map((tab) => {
+            const pluginData =
+              tab.type === "plugin" ? (tab.data as PluginTabData) : null;
+            return {
+              id: tab.id,
+              type: tab.type,
+              title: tab.title,
+              isActive: tab.id === activeTabId,
+              ...(pluginData
+                ? {
+                    pluginId: pluginData.pluginId,
+                    panelId: pluginData.panelId,
+                  }
+                : {}),
+            };
+          }),
+          activeTabId,
+          isCollapsed,
+          isFullscreen,
+        },
+      });
+    }, [tabs, activeTabId, isCollapsed, isFullscreen]);
 
     // 项目切换后重新判断代码库 tab：
     // - 新项目有索引（totalChunks > 0）：更新 tab 数据，触发列表重新加载。
@@ -751,6 +829,17 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         openDrawing: () => {
           handleOpenDrawingTab();
         },
+        openPluginPanel: (pluginId: string, panelId: string) => {
+          const plugin = pluginStore.getById(pluginId);
+          const panel = plugin?.panels.find((item) => item.id === panelId);
+          handleOpenPluginPanel(
+            pluginId,
+            panelId,
+            panel
+              ? resolveLocalized(panel.title, locale)
+              : (plugin?.pluginId ?? pluginId),
+          );
+        },
         openFile: (
           filePath: string,
           fileName: string,
@@ -776,6 +865,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         handleOpenBrowserTab,
         handleOpenCodebaseTab,
         handleOpenDrawingTab,
+        handleOpenPluginPanel,
         handleOpenFileTab,
       ],
     );
@@ -1206,6 +1296,11 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       codebaseSyncSnapshot.enabled &&
       codebaseSyncSnapshot.isIndexed &&
       codebaseSyncSnapshot.activeProjectId === activeDirectory?.directoryId;
+    const pluginPanels = pluginState.plugins.flatMap((plugin) =>
+      plugin.enabled
+        ? plugin.panels.map((_, panelIndex) => ({ plugin, panelIndex }))
+        : [],
+    );
     const plusMenuItems: PlusMenuItem[] = [
       {
         id: "terminal",
@@ -1231,9 +1326,42 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
             },
           ]
         : []),
+      ...pluginPanels.map(({ plugin, panelIndex }) => {
+        const panel = plugin.panels[panelIndex];
+        const panelTitle = resolveLocalized(panel.title, locale);
+        return {
+          id: `plugin:${plugin.pluginId}:${panel.id}`,
+          label: panelTitle,
+          title: `${resolveLocalized(plugin.name, locale)} · ${panelTitle}`,
+          icon: Puzzle,
+          section: "plugins",
+          iconNode: (
+            <PluginIcon
+              pluginId={plugin.pluginId}
+              icon={panel.icon || plugin.icon}
+              size={13}
+            />
+          ),
+        } satisfies PlusMenuItem;
+      }),
     ];
 
     const handlePlusMenuAction = (actionId: PlusMenuAction): void => {
+      if (actionId.startsWith("plugin:")) {
+        const [, pluginId, panelId] = actionId.split(":");
+        if (pluginId && panelId) {
+          const plugin = pluginStore.getById(pluginId);
+          const panel = plugin?.panels.find((item) => item.id === panelId);
+          handleOpenPluginPanel(
+            pluginId,
+            panelId,
+            panel
+              ? resolveLocalized(panel.title, locale)
+              : (plugin?.name[locale] ?? pluginId),
+          );
+        }
+        return;
+      }
       if (actionId === "terminal") {
         handleOpenTerminalTab(activeDirectory?.path ?? "");
       } else if (actionId === "browser") {
@@ -1323,6 +1451,14 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
                   : undefined
               }
             />
+          ) : tab.type === "plugin" ? (
+            (tab.data as PluginTabData) ? (
+              <PluginPanelContent
+                pluginId={(tab.data as PluginTabData).pluginId}
+                panelId={(tab.data as PluginTabData).panelId}
+                isActive={activeTabId === tab.id}
+              />
+            ) : null
           ) : tab.type === "diff" ? (
             (tab.data as DiffTabData) ? (
               <DiffViewer

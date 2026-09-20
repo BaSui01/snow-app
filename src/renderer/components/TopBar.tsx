@@ -25,6 +25,10 @@ import { TodoPanelButton } from "./TopBar/TodoPanelButton";
 import { codebaseSyncStore } from "./TopBar/codebaseSyncStore";
 import { ContextMenu, type ContextMenuItem } from "./common/ContextMenu";
 import { PlusMenuButton, type PlusMenuItem } from "./common/PlusMenuButton";
+import { PluginIcon } from "./common/PluginIcon";
+import { Puzzle } from "lucide-react";
+import { resolveLocalized } from "../plugins/manifest";
+import { pluginStore, usePluginStore } from "../plugins/pluginStore";
 import { WindowControlsButtons } from "./WindowControls";
 import { useCodebaseWatcher } from "../hooks/useCodebaseWatcher";
 
@@ -40,6 +44,7 @@ type TopBarProps = {
   onOpenBrowser?: () => void;
   onOpenCodebase?: (projectId: string, projectName: string) => void;
   onOpenDrawing?: () => void;
+  onOpenPluginPanel?: (pluginId: string, panelId: string) => void;
 };
 
 export const TopBar = ({
@@ -54,9 +59,16 @@ export const TopBar = ({
   onOpenBrowser,
   onOpenCodebase,
   onOpenDrawing,
+  onOpenPluginPanel,
 }: TopBarProps): React.JSX.Element => {
   const isWindows = navigator.userAgent.includes("Win");
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const pluginState = usePluginStore();
+  const pluginPanels = pluginState.plugins.flatMap((plugin) =>
+    plugin.enabled
+      ? plugin.panels.map((_, panelIndex) => ({ plugin, panelIndex }))
+      : [],
+  );
   const {
     handleNewChat,
     summary,
@@ -592,9 +604,34 @@ export const TopBar = ({
           },
         ]
       : []),
+    ...pluginPanels.map(({ plugin, panelIndex }) => {
+      const panel = plugin.panels[panelIndex];
+      const panelTitle = resolveLocalized(panel.title, locale);
+      return {
+        id: `plugin:${plugin.pluginId}:${panel.id}`,
+        label: panelTitle,
+        title: `${resolveLocalized(plugin.name, locale)} · ${panelTitle}`,
+        icon: Puzzle,
+        section: "plugins",
+        iconNode: (
+          <PluginIcon
+            pluginId={plugin.pluginId}
+            icon={panel.icon || plugin.icon}
+            size={13}
+          />
+        ),
+      } satisfies PlusMenuItem;
+    }),
   ];
 
   const handlePlusMenuAction = (actionId: string): void => {
+    if (actionId.startsWith("plugin:")) {
+      const [, pluginId, panelId] = actionId.split(":");
+      if (pluginId && panelId) {
+        onOpenPluginPanel?.(pluginId, panelId);
+      }
+      return;
+    }
     if (actionId === "terminal") {
       onOpenTerminal?.();
     } else if (actionId === "browser") {

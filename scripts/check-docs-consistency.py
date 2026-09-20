@@ -6,7 +6,7 @@
   2. 21 个设置页 id 在 docs + SKILL 中均有覆盖；
   3. SKILL 第 1 节表格引用的文档路径（zh-CN / en 分支）都存在；
   4. docs/README.md 导航表格中的路径都存在；
-  5. ~/.snow/docs 与项目 docs/ 同步状态（diff）；
+  5. ~/.snowapp/docs 与项目 docs/ 同步状态（diff）；
   6. SKILL frontmatter 完整性（enable: true）。
 
 用法：python scripts/check-docs-consistency.py [--repo-root .] [--snow-home ~/.snow]
@@ -64,6 +64,7 @@ NAME_MAP = {
     ("2-使用指南", 20): "20-usage-statistics-and-system-logs.md",
     ("2-使用指南", 21): "21-create-and-author-skills.md",
     ("2-使用指南", 22): "22-data-management-backup-and-webdav-sync.md",
+    ("2-使用指南", 24): "24-plugin-development-and-installation.md",
     ("3-参考手册", 1): "1-settings-json-reference.md",
     ("3-参考手册", 2): "2-builtin-tools-reference.md",
     ("3-参考手册", 3): "3-config-file-field-reference.md",
@@ -98,11 +99,14 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo-root", default=".", help="snow-app 仓库根目录")
     parser.add_argument("--snow-home", default=str(Path.home() / ".snow"),
-                        help="已安装副本目录（~/.snow）")
+                        help="Snow CLI 全局目录（skills 副本）")
+    parser.add_argument("--app-data-home", default=str(Path.home() / ".snowapp"),
+                        help="应用自有数据目录（内置文档副本 docs/）")
     args = parser.parse_args()
 
     root = Path(args.repo_root).resolve()
     snow = Path(args.snow_home).expanduser().resolve()
+    app_data = Path(args.app_data_home).expanduser().resolve()
     failures: list[str] = []
 
     def check(ok: bool, msg: str) -> None:
@@ -160,18 +164,18 @@ def main() -> int:
         rel = ref.strip("()")
         check((root / "docs" / rel).exists(), f"{rel} 存在")
 
-    # ---------- 5. ~/.snow 同步状态 ----------
-    print("== 5. ~/.snow 副本同步 ==")
-    if not snow.exists():
-        print("  [SKIP] ~/.snow 不存在（非本机运行）")
+    # ---------- 5. 已安装副本同步状态 ----------
+    print("== 5. 已安装副本同步（~/.snowapp/docs、~/.snow/skills） ==")
+    if not app_data.exists():
+        print("  [SKIP] ~/.snowapp 不存在（非本机运行）")
     else:
         for rel in ("README.md", "DOCUMENTATION_GUIDE.md", "FEATURE_COVERAGE.md",
                     "zh-CN", "en"):
             src = root / "docs" / rel
-            dst = snow / "docs" / rel
+            dst = app_data / "docs" / rel
             if src.is_file():
                 ok = dst.exists() and src.read_bytes() == dst.read_bytes()
-                check(ok, f"docs/{rel} 与 ~/.snow/docs/{rel} 一致")
+                check(ok, f"docs/{rel} 与 ~/.snowapp/docs/{rel} 一致")
             elif src.is_dir():
                 diffs = 0
                 for f in src.rglob("*.md"):
@@ -180,6 +184,9 @@ def main() -> int:
                     if not df.exists() or f.read_bytes() != df.read_bytes():
                         diffs += 1
                 check(diffs == 0, f"docs/{rel}: {diffs} 个文件差异")
+    if not snow.exists():
+        print("  [SKIP] ~/.snow 不存在（非本机运行）")
+    else:
         skill_src = root / "resources" / "skills" / "snow-app-docs" / "SKILL.md"
         skill_dst = snow / "skills" / "snow-app-docs" / "SKILL.md"
         ok = skill_dst.exists() and skill_src.read_bytes() == skill_dst.read_bytes()

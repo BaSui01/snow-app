@@ -59,11 +59,21 @@ export type OpenFilePayload = {
   focusLine?: number;
 };
 
+export type OpenPluginPanelPayload = {
+  /** 目标插件 id */
+  pluginId: string;
+  /** 插件内面板 id（plugin.json 的 panels[].id） */
+  panelId: string;
+  /** tab 标题（缺省时回退到插件 id） */
+  title?: string;
+};
+
 type RightPanelEventMap = {
   "open-file-diff-preview": (payload: OpenFileDiffPreviewPayload) => void;
   "open-browser-tab": (payload: OpenBrowserTabPayload) => void;
   "focus-browser-tab": (payload: FocusBrowserTabPayload) => void;
   "open-file": (payload: OpenFilePayload) => void;
+  "open-plugin-panel": (payload: OpenPluginPanelPayload) => void;
   "request-expand": () => void;
 };
 
@@ -74,13 +84,14 @@ const listeners: {
   "open-browser-tab"?: Set<(payload: OpenBrowserTabPayload) => void>;
   "focus-browser-tab"?: Set<(payload: FocusBrowserTabPayload) => void>;
   "open-file"?: Set<(payload: OpenFilePayload) => void>;
+  "open-plugin-panel"?: Set<(payload: OpenPluginPanelPayload) => void>;
   "request-expand"?: Set<() => void>;
 } = {};
 
 export const rightPanelEvents = {
   on<K extends EventKey>(
     event: K,
-    listener: RightPanelEventMap[K]
+    listener: RightPanelEventMap[K],
   ): () => void {
     const set = listeners[event];
     if (!set) {
@@ -91,7 +102,7 @@ export const rightPanelEvents = {
     (listeners[event] as Set<RightPanelEventMap[K]>).add(listener);
     return () => {
       (listeners[event] as Set<RightPanelEventMap[K]> | undefined)?.delete(
-        listener
+        listener,
       );
     };
   },
@@ -100,16 +111,12 @@ export const rightPanelEvents = {
     event: K,
     ...args: Parameters<RightPanelEventMap[K]>
   ): void {
-    const set = listeners[event] as
-      | Set<(...a: never[]) => void>
-      | undefined;
+    const set = listeners[event] as Set<(...a: never[]) => void> | undefined;
     if (!set) {
       return;
     }
     for (const listener of set) {
-      (listener as (...a: Parameters<RightPanelEventMap[K]>) => void)(
-        ...args
-      );
+      (listener as (...a: Parameters<RightPanelEventMap[K]>) => void)(...args);
     }
   },
 };

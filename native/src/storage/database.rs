@@ -696,6 +696,43 @@ CREATE TABLE IF NOT EXISTS userscripts (
            FOREIGN KEY(script_id) REFERENCES userscripts(script_id) ON DELETE CASCADE
          );
 
+CREATE TABLE IF NOT EXISTS app_plugins (
+           plugin_id TEXT PRIMARY KEY NOT NULL,
+           name_json TEXT NOT NULL DEFAULT '{}',
+           description_json TEXT NOT NULL DEFAULT '{}',
+           version TEXT NOT NULL DEFAULT '1.0.0',
+           author TEXT NOT NULL DEFAULT '',
+           homepage TEXT NOT NULL DEFAULT '',
+           license TEXT NOT NULL DEFAULT '',
+           icon TEXT NOT NULL DEFAULT '',
+           render_mode TEXT NOT NULL DEFAULT 'esm',
+           entry TEXT NOT NULL DEFAULT 'index.js',
+           enabled INTEGER NOT NULL DEFAULT 1,
+           install_path TEXT NOT NULL DEFAULT '',
+           source_path TEXT NOT NULL DEFAULT '',
+           manifest_json TEXT NOT NULL DEFAULT '{}',
+           panels_json TEXT NOT NULL DEFAULT '[]',
+           locales_json TEXT NOT NULL DEFAULT '{}',
+           styles_json TEXT NOT NULL DEFAULT '[]',
+           privacy_json TEXT NOT NULL DEFAULT '[]',
+           privacy_note TEXT NOT NULL DEFAULT '',
+           min_app_version TEXT NOT NULL DEFAULT '',
+           sort_order INTEGER NOT NULL DEFAULT 0,
+           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+           updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+         );
+         CREATE INDEX IF NOT EXISTS idx_app_plugins_enabled
+           ON app_plugins(enabled, sort_order);
+
+         CREATE TABLE IF NOT EXISTS app_plugin_values (
+           plugin_id TEXT NOT NULL,
+           key TEXT NOT NULL,
+           value TEXT NOT NULL,
+           updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+           PRIMARY KEY (plugin_id, key),
+           FOREIGN KEY(plugin_id) REFERENCES app_plugins(plugin_id) ON DELETE CASCADE
+         );
+
          CREATE TABLE IF NOT EXISTS sub_agent_configs (
            id TEXT PRIMARY KEY NOT NULL,
            agent_id TEXT NOT NULL,

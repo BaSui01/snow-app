@@ -4,10 +4,13 @@ description: >-
   Snow App 配置与排查向导（中文/English）——配置/管理 API 密钥、模型与档案、
   MCP 服务器、Skills、子代理、Hooks、图像生成、代理与网络、全局站点拦截规则、
   安全隐私与工具授权、个性化/系统提示词/自定义请求头/主题/快捷键、用量统计与
-  系统日志、数据存储位置、settings.json 字段、内置工具等。
-  Guides the agent to read the built-in Snow App documentation (~/.snow/docs)
+  系统日志、数据存储位置、settings.json 字段、内置工具、插件开发与安装
+  （plugin.json 清单、ESM/iframe 面板、运行时元数据 API、config plugins 域）等。
+  Guides the agent to read the built-in Snow App documentation (~/.snowapp/docs)
   before configuring or troubleshooting Snow App. Covers MCP servers;
-  installing, managing, creating, and authoring Skills; sub-agents; Hooks;
+  installing, managing, creating, and authoring Skills; plugin authoring and
+  installation (plugin.json manifest, ESM/iframe panels, runtime metadata API,
+  config plugins scope); sub-agents; Hooks;
   API keys/models; image generation; proxy/network;
   browser passwords and local-browser data import; app updates;
   security/privacy/tool authorization; personalization, system prompts, custom
@@ -19,7 +22,7 @@ description: >-
   custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy/
   subAgents/hooks/skills/logs/imagegen/personalization/apiProfiles/
   customHeaderSchemes/mcpServers/requestLogging/scheduledTasks/toolApproval/
-  usage/appSettings/privacy/codebase/keyboardShortcuts/workspace), including
+  usage/appSettings/privacy/codebase/keyboardShortcuts/workspace/plugins), including
   project-scoped mcpServers/sensitiveCommands/subAgents/hooks/skills via
   `projectId`, the read-only logs scope, imagegen multi-channel settings,
   masked secrets, and app-control-openSettings (21 settings pages).
@@ -51,13 +54,13 @@ allowed-tools:
 
 ## 1. 先读文档（Read the docs first）
 
-文档随应用安装到 `~/.snow/docs/`（Windows 为 `C:\Users\<用户名>\.snow\docs\`）。
+文档随应用安装到 `~/.snowapp/docs/`（Windows 为 `C:\Users\<用户名>\.snowapp\docs\`）。
 **先执行 `config-list scope=language` 读取界面语言**（支持 `en`/`zh-CN`/`zh-TW`；
 旧安装可能存兼容值 `zh`，等同简体中文；无法读取时默认中文分支），
 再选择对应文档分支（无法读取时默认中文分支）：
 
-- 中文界面 → 读 `~/.snow/docs/zh-CN/`
-- English UI → read `~/.snow/docs/en/`
+- 中文界面 → 读 `~/.snowapp/docs/zh-CN/`
+- English UI → read `~/.snowapp/docs/en/`
 
 按任务定位文档（路径相对所选语言分支）：
 
@@ -67,6 +70,7 @@ allowed-tools:
 | 配置 MCP 服务器                                | `2-使用指南/1-配置MCP服务器.md`（en: `2-guides/1-configure-mcp.md`）                                                                                                                                                                                                    | `3-参考手册/1-settings.json配置参考.md`                                                                                         |
 | 安装与管理 Skills                              | `2-使用指南/2-安装与管理Skills.md`（en: `2-guides/2-install-and-manage-skills.md`）                                                                                                                                                                                     | —                                                                                                                               |
 | 创建与编写 Skills                              | `2-使用指南/21-创建与编写Skills.md`（en: `2-guides/21-create-and-author-skills.md`）                                                                                                                                                                                    | —                                                                                                                               |
+| 开发、安装与管理插件（含 AI 自动安装）         | `2-使用指南/24-插件开发与安装.md`（en: `2-guides/24-plugin-development-and-installation.md`）                                                                                                                                                                           | `3-参考手册/2-内置工具参考.md`（config `plugins` 域）、`3-参考手册/4-数据存储位置.md`                                           |
 | 配置 API 密钥与模型                            | `2-使用指南/3-配置API密钥与模型.md#5`（en: `2-guides/3-configure-api-keys.md#5`；§5 为 agent 操作速查）                                                                                                                                                                 | `3-参考手册/1-settings.json配置参考.md`                                                                                         |
 | 配置图像生成                                   | `2-使用指南/9-图像生成.md`（en: `2-guides/9-image-generation.md`）                                                                                                                                                                                                      | `3-参考手册/2-内置工具参考.md`（imagegen 章节与 config 的 imagegen scope）                                                      |
 | 使用聊天与 AI 助手（界面/对话/命令/回滚/压缩） | `2-使用指南/10-使用聊天与AI助手.md`（en: `2-guides/10-using-chat-and-ai.md`）                                                                                                                                                                                           | —                                                                                                                               |
@@ -86,13 +90,13 @@ allowed-tools:
 | 查询配置文件字段                               | —                                                                                                                                                                                                                                                                       | `3-参考手册/3-配置文件字段参考.md`（en: `3-reference/3-config-file-field-reference.md`）                                        |
 | 架构与开发（构建/故障排查/数据流）             | `4-架构与开发/1-架构总览.md`、`2-开发者指南.md`、`3-打包与安装故障排查.md`、`4-Agent运行时与工具编排.md`、`5-存储迁移备份与恢复.md`、`6-功能模块架构与数据流图集.md`（en: `4-architecture-and-development/1-architecture-overview.md` 等，按同名编号对应）              | —                                                                                                                               |
 
-> 若 `~/.snow/docs/` 不存在，说明文档尚未同步，可提示用户重启应用后重试。
+> 若 `~/.snowapp/docs/` 不存在，说明文档尚未同步，可提示用户重启应用后重试。
 
 ## 2. 按文档执行配置（Then apply the configuration）
 
 **通用流程**：先 `config-list scope=<域>` 查看现状（DB 型域响应附 guidance
 使用规则），再按文档步骤执行；查看已安装 skill 的元数据（id/path/状态）用
-`config-list scope=skills`，文档正文用 `filesystem-read` 读取 `~/.snow/docs/`；
+`config-list scope=skills`，文档正文用 `filesystem-read` 读取 `~/.snowapp/docs/`；
 需要 `projectId` 时优先读取任意 `config-list` 响应附带的 `currentProjectId`
 字段（即当前会话绑定的项目），项目档案 `~/.snow/projects/index.json` 中按
 `knownPaths` 匹配路径后取对应记录的 `projectId` 字段。读取文档时可用
@@ -125,6 +129,12 @@ allowed-tools:
 - **创建/编写 Skills**：frontmatter 是 **`enable` 与 `allowed-tools`**；技能 ID
   来自 SKILL.md 相对扫描根的路径；创建后核对 id/path/enabled 并只读测试。
   → `21-创建与编写Skills.md`
+- **插件（app DB + 文件系统）**：`plugins` 域（key=pluginId，安装用 `"new"`；写
+  `app_plugins` 表 + `~/.snowapp/plugins/<pluginId>/`）。`config-set` 的 value 按
+  字段分发：`{sourceDir}`/`{sourcePath}` 安装或原地更新（先用 filesystem 工具写好
+  `plugin.json` 与入口文件）、`{rescan: true}` 重读清单、`{enabled}` 启停；
+  `config-get` 返回插件元数据；`config-delete` 卸载需 confirmed，缺省连目录一起
+  删除（`value={deleteFiles: false}` 只删登记）。→ `24-插件开发与安装.md`
 - **图像生成**：`imagegen` 域（`{channels:[...]}` 全量替换或 `{<channelId>: {...}}`
   按 id 合并，未提供字段保留原值；顶层 `maxConcurrentImages` 1-8/`timeoutSecs`
   60-3600；渠道需 `enabled`+`apiKey`+`model` 齐备，全未配置时 `imagegen-generate`

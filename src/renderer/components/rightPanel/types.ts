@@ -13,7 +13,8 @@ export type RightPanelContentKey =
   | "file"
   | "file-diff-preview"
   | "codebase"
-  | "drawing";
+  | "drawing"
+  | "plugin";
 
 export type RightPanelContentProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
@@ -73,6 +74,12 @@ export type CodebaseTabData = {
 /** 绘图工作台 tab 数据（画布内容保存在组件内部状态，无需持久化字段）。 */
 export type DrawingTabData = Record<string, never>;
 
+/** 插件面板 tab 数据：定位到具体插件下的某个面板。 */
+export type PluginTabData = {
+  pluginId: string;
+  panelId: string;
+};
+
 export type RightPanelTab = {
   id: string;
   type:
@@ -83,7 +90,8 @@ export type RightPanelTab = {
     | "file"
     | "file-diff-preview"
     | "codebase"
-    | "drawing";
+    | "drawing"
+    | "plugin";
   title: string;
   data?:
     | DiffTabData
@@ -92,7 +100,8 @@ export type RightPanelTab = {
     | FileViewerTabData
     | FileDiffPreviewTabData
     | CodebaseTabData
-    | DrawingTabData;
+    | DrawingTabData
+    | PluginTabData;
 };
 
 export type OpenDiffTabCallback = (

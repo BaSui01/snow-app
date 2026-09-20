@@ -836,3 +836,36 @@ pub struct ScheduledTaskRecordInput {
     pub created_at: String,
     pub updated_at: String,
 }
+
+#[napi(object)]
+pub struct PluginRecord {
+    pub plugin_id: String,
+    pub name: String,
+    pub description: String,
+    pub version: String,
+    pub author: String,
+    pub homepage: String,
+    pub license: String,
+    pub icon: String,
+    pub render_mode: String,
+    pub entry: String,
+    pub enabled: bool,
+    pub install_path: String,
+    pub source_path: String,
+    pub manifest_json: String,
+    pub panels: String,
+    pub locales: String,
+    pub styles: String,
+    pub privacy: Vec<String>,
+    pub privacy_note: String,
+    pub min_app_version: String,
+    pub sort_order: i32,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[napi(object)]
+pub struct PluginStorageValue {
+    pub key: String,
+    pub value: String,
+}

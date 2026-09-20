@@ -2711,6 +2711,33 @@ export type NativeBridge = {
   ) => Promise<void>;
   /** 删除脚本的 GM 值 */
   deleteUserscriptValue: (scriptId: string, key: string) => Promise<void>;
+  // ── 应用插件 ────────────────────────────────────────────────────────
+  /** 列出全部已安装插件 */
+  listPlugins: () => Promise<PluginRecord[]>;
+  /** 从本地目录安装（或更新）插件，返回插件记录 */
+  installPlugin: (sourceDir: string) => Promise<PluginRecord>;
+  /** 重新读取插件目录中的 plugin.json 并刷新元数据 */
+  rescanPlugin: (pluginId: string) => Promise<PluginRecord>;
+  /** 启用/禁用插件 */
+  setPluginEnabled: (pluginId: string, enabled: boolean) => Promise<void>;
+  /** 卸载插件；deleteFiles 为 true 时同时删除插件目录 */
+  deletePlugin: (pluginId: string, deleteFiles: boolean) => Promise<void>;
+  /** 读取插件目录内的文本文件（入口代码 / 样式 / 语言包） */
+  readPluginFile: (pluginId: string, relativePath: string) => Promise<string>;
+  /** 读取插件目录内的二进制资源（图标等），返回原始字节 */
+  readPluginAsset: (pluginId: string, relativePath: string) => Promise<Buffer>;
+  /** 读取插件的持久化 KV 数据 */
+  getPluginValues: (pluginId: string) => Promise<PluginStorageValue[]>;
+  /** 写入插件的持久化 KV 数据 */
+  setPluginValue: (
+    pluginId: string,
+    key: string,
+    value: string,
+  ) => Promise<void>;
+  /** 删除插件的持久化 KV 数据 */
+  deletePluginValue: (pluginId: string, key: string) => Promise<void>;
+  /** 插件根目录绝对路径（~/.snowapp/plugins） */
+  getPluginsDirectory: () => Promise<string>;
 };
 
 /** 本机浏览器源（探测结果）。 */
@@ -2826,6 +2853,41 @@ export type UserscriptMatchItem = {
 
 /** GM_* API 的持久化值条目。 */
 export type UserscriptValue = {
+  key: string;
+  value: string;
+};
+
+// ── 应用插件 ──────────────────────────────────────────────────────────
+
+/** 插件完整记录（名称与描述为 JSON 字符串，形如 {"default":"...","zh-CN":"..."}）。 */
+export type PluginRecord = {
+  pluginId: string;
+  name: string;
+  description: string;
+  version: string;
+  author: string;
+  homepage: string;
+  license: string;
+  icon: string;
+  renderMode: string;
+  entry: string;
+  enabled: boolean;
+  installPath: string;
+  sourcePath: string;
+  manifestJson: string;
+  panels: string;
+  locales: string;
+  styles: string;
+  privacy: string[];
+  privacyNote: string;
+  minAppVersion: string;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** 插件持久化 KV 条目。 */
+export type PluginStorageValue = {
   key: string;
   value: string;
 };

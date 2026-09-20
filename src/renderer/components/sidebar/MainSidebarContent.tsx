@@ -4,6 +4,7 @@ import {
   Download,
   LoaderCircle,
   NotebookText,
+  Puzzle,
   Search,
   Settings,
   SquarePen,
@@ -11,6 +12,9 @@ import {
 import { useCallback, useEffect, useState } from "react";
 
 import { useI18n } from "../../i18n";
+import { pluginStore, usePluginStore } from "../../plugins/pluginStore";
+import { runtimeSnapshot } from "../../plugins/runtimeSnapshot";
+import { PluginsModal } from "./PluginsModal";
 import { useChatConversationContext } from "../mainContent/chatMessages";
 import { shortcutEvents } from "../shortcutEvents";
 import { APP_CONTROL_MEMO_CREATED_EVENT } from "../../hooks/useAppControl";
@@ -69,15 +73,22 @@ export function MainSidebarContent({
   /** /memory 面板请求「在项目记忆中定位」时携带的检索词。 */
   const [memorySearchSeed, setMemorySearchSeed] = useState<string | null>(null);
   const [isScheduledTasksOpen, setIsScheduledTasksOpen] = useState(false);
+  const [isPluginsOpen, setIsPluginsOpen] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
   const [isChatsCollapsed, setIsChatsCollapsed] = useState(false);
   const [pendingMemoCount, setPendingMemoCount] = useState(0);
   const [memoryCount, setMemoryCount] = useState(0);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>(
-    INITIAL_UPDATE_STATUS
+    INITIAL_UPDATE_STATUS,
   );
 
   const activeDirectoryId = activeDirectory?.directoryId ?? "";
+
+  const pluginState = usePluginStore();
+
+  useEffect(() => {
+    void pluginStore.ensureLoaded();
+  }, []);
 
   // 团队协作入口：仅在当前目录为 Git 仓库且团队协作开关开启时展示
   // （identity.isRepo 由 Rust 判定，开关关闭时恒为 false）
@@ -99,6 +110,12 @@ export function MainSidebarContent({
   const { groups: crossProjectNotifications, activeSessionDirectoryIds } =
     useCrossProjectNotifications(activeDirectoryId);
 
+  useEffect(() => {
+    runtimeSnapshot.patch({
+      activeSessionDirectoryIds: Array.from(activeSessionDirectoryIds),
+    });
+  }, [activeSessionDirectoryIds]);
+
   // Scheduled tasks: the hook registers buildFromContent as the AI Loop
   // executor and subscribes to the in-memory store. Mounted here (always
   // rendered inside ChatConversationProvider) so the executor is available
@@ -107,7 +124,7 @@ export function MainSidebarContent({
   // the memo project-isolation model.
   const { tasks: scheduledTasks } = useScheduledTasks(
     activeDirectoryId,
-    activeDirectory?.path ?? ""
+    activeDirectory?.path ?? "",
   );
 
   // Load the pending memo count for the sidebar badge. It is refreshed
@@ -224,7 +241,7 @@ export function MainSidebarContent({
   }, []);
 
   const handleSearchSelectConversation = (
-    conversation: ConversationSearchResult
+    conversation: ConversationSearchResult,
   ): void => {
     void handleSelectConversation(
       conversation.conversationId,
@@ -235,7 +252,7 @@ export function MainSidebarContent({
         cacheCreationInputTokens: conversation.cacheCreationInputTokens,
         cacheReadInputTokens: conversation.cacheReadInputTokens,
       },
-      conversation.directoryId
+      conversation.directoryId,
     );
   };
 
@@ -244,7 +261,7 @@ export function MainSidebarContent({
       onActiveDirectoryChange?.(directory);
       onSwitchContent?.("main");
     },
-    [onActiveDirectoryChange, onSwitchContent]
+    [onActiveDirectoryChange, onSwitchContent],
   );
 
   const handleSearchSelectSetting = useCallback(
@@ -252,7 +269,7 @@ export function MainSidebarContent({
       onSwitchContent?.("settings");
       onSelectMainView(view);
     },
-    [onSwitchContent, onSelectMainView]
+    [onSwitchContent, onSelectMainView],
   );
 
   return (
@@ -337,6 +354,20 @@ export function MainSidebarContent({
           </span>
           {scheduledTasks.length > 0 && (
             <span className="sidebar-memo-badge">{scheduledTasks.length}</span>
+          )}
+        </button>
+        <button
+          className="nav-item sidebar-plugins-btn"
+          onClick={() => setIsPluginsOpen(true)}
+          title={t("plugins.sidebarEntry", { defaultValue: "Plugins" })}
+          type="button"
+        >
+          <Puzzle size={16} strokeWidth={1.8} />
+          <span>{t("plugins.sidebarEntry", { defaultValue: "Plugins" })}</span>
+          {pluginState.plugins.length > 0 && (
+            <span className="sidebar-memory-badge">
+              {pluginState.plugins.length}
+            </span>
           )}
         </button>
       </div>
@@ -459,6 +490,10 @@ export function MainSidebarContent({
         directoryPath={activeDirectory?.path ?? ""}
         open={isScheduledTasksOpen}
         onClose={() => setIsScheduledTasksOpen(false)}
+      />
+      <PluginsModal
+        open={isPluginsOpen}
+        onClose={() => setIsPluginsOpen(false)}
       />
       <UpdateDialog
         open={isUpdateDialogOpen}

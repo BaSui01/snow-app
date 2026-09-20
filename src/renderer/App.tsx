@@ -12,6 +12,7 @@ import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { NotificationNavigationBridge } from "./components/NotificationNavigationBridge";
 import { RemoteControlBridge } from "./components/RemoteControlBridge";
+import { PluginRuntimeBridge } from "./plugins/PluginRuntimeBridge";
 import {
   ChatConversationProvider,
   useChatConversationContext,
@@ -449,6 +450,18 @@ export const App = (): React.JSX.Element => {
     });
   }, [isRightPanelCollapsed]);
 
+  const handleOpenPluginPanel = useCallback(
+    (pluginId: string, panelId: string) => {
+      if (isRightPanelCollapsed) {
+        setIsRightPanelCollapsed(false);
+      }
+      requestAnimationFrame(() => {
+        rightPanelRef.current?.openPluginPanel(pluginId, panelId);
+      });
+    },
+    [isRightPanelCollapsed],
+  );
+
   const handleOpenCodebase = useCallback(
     (projectId: string, projectName: string) => {
       if (isRightPanelCollapsed) {
@@ -674,6 +687,7 @@ export const App = (): React.JSX.Element => {
           onSelectMainView={setActiveMainView}
         />
         <ShortcutHandlerBridge />
+        <PluginRuntimeBridge activeDirectory={activeDirectory} />
         <div ref={appShellRef} className={shellClasses} style={panelSizeStyle}>
           <TopBar
             isSidebarCollapsed={isSidebarCollapsed}
@@ -696,6 +710,7 @@ export const App = (): React.JSX.Element => {
             onOpenBrowser={handleOpenBrowser}
             onOpenCodebase={handleOpenCodebase}
             onOpenDrawing={handleOpenDrawing}
+            onOpenPluginPanel={handleOpenPluginPanel}
           />
           <div className="app-layout">
             <Sidebar

@@ -1642,6 +1642,25 @@ export type RemoteControlResolvedAttachment = {
   path?: string;
 };
 
+export type AppLockState = {
+  enabled: boolean;
+  hasPin: boolean;
+  totpBound: boolean;
+  delayMs: number;
+  locked: boolean;
+};
+
+export type AppLockVerifyResult = {
+  ok: boolean;
+  retryAfterMs: number;
+  remainingAttempts: number;
+};
+
+export type AppLockTotpBinding = {
+  secret: string;
+  otpauthUri: string;
+};
+
 export type NativeBridge = {
   initializeAppStorage: () => Promise<AppStorageInfo>;
 
@@ -1652,6 +1671,24 @@ export type NativeBridge = {
     settingValue: string,
   ) => Promise<void>;
   deleteSystemSetting: (settingCode: string) => Promise<void>;
+  getAppLockState: () => Promise<AppLockState>;
+  setAppLockDelay: (delayMs: number) => Promise<void>;
+  beginAppLockTotpBinding: () => Promise<AppLockTotpBinding>;
+  confirmAppLockTotpBinding: (
+    secret: string,
+    code: string,
+    verification: string,
+  ) => Promise<boolean>;
+  clearAppLockTotp: (code: string) => Promise<AppLockVerifyResult>;
+  enableAppLock: (pin: string) => Promise<void>;
+  changeAppLockPin: (
+    verification: string,
+    newPin: string,
+  ) => Promise<AppLockVerifyResult>;
+  disableAppLock: (verification: string) => Promise<AppLockVerifyResult>;
+  verifyAppLockPin: (pin: string) => Promise<AppLockVerifyResult>;
+  verifyAppLockTotp: (code: string) => Promise<AppLockVerifyResult>;
+  setAppLockLocked: (locked: boolean) => Promise<void>;
   getYoloMode: () => Promise<boolean>;
   setYoloMode: (enabled: boolean) => Promise<void>;
   getLiteMode: () => Promise<boolean>;

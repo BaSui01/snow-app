@@ -9,6 +9,7 @@ import {
 import { APP_ICON_PATH, APP_USER_MODEL_ID, isMacOS } from "./constants";
 import { initializeApplicationServices } from "./applicationServices";
 import { createWindow, getMainWindow, markCloseConfirmed } from "./mainWindow";
+import { lockAppOnStartup } from "./appLock";
 import { initTray } from "./tray";
 import { registerToggleWindowShortcut } from "./globalShortcuts";
 import { registerIpcHandlers } from "../ipc/registerIpcHandlers";
@@ -148,6 +149,8 @@ export const bootstrapApplication = (): void => {
     // 第一优先级：创建窗口并加载 boot-loader HTML。
     // 窗口使用 show:false + ready-to-show，确保用户看到的第一帧就是
     // 完整的 loading 动画，而非空白/黑屏过渡。
+    // 应用锁先落库：启用时本次启动必须重新验证身份，重启不可绕过。
+    void lockAppOnStartup();
     const mainWindow = createWindow();
 
     const stopScheduledTaskWakeup = startScheduledTaskWakeup(mainWindow);

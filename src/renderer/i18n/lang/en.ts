@@ -3016,6 +3016,9 @@ export const en = {
   "settings.aboutPrivacyCredentialsTitle": "Encrypted credentials",
   "settings.aboutPrivacyCredentials":
     "Browser passwords and sign-in state are encrypted with the OS credential backend (macOS Keychain / Windows DPAPI / Linux keyring); plain-text passwords are never shown.",
+  "settings.aboutPrivacyAppLockTitle": "App lock and Google Authenticator",
+  "settings.aboutPrivacyAppLock":
+    "The app lock is off by default and only covers the interface without encrypting data on disk. The PIN is stored as a salted hash (PBKDF2) only; the authenticator secret is generated locally and stored as plain text in the local database, never uploaded, and can unlock the app - keep it safe.",
   "settings.aboutPrivacyFilterTitle": "Optional privacy filter",
   "settings.aboutPrivacyFilter":
     "The privacy filter is off by default; when enabled it masks the selected tool results using local rules or a filter API you specify.",
@@ -3263,6 +3266,89 @@ export const en = {
   "settings.shortcutReset": "Reset to default",
   "settings.privacySettings": "Privacy settings",
   "settings.privacySettingsInfo": "Redact sensitive data from tool results.",
+  "settings.privacyTab": "Privacy",
+  "settings.appLockTitle": "App lock",
+  "settings.appLockInfo":
+    "Lock Snow App behind a PIN. Verification is required on every launch and after the window loses focus; locking only covers the interface - running sessions and enabled features keep working.",
+  "settings.appLockStatus": "Lock status",
+  "settings.appLockStateLoading": "Reading...",
+  "settings.appLockStateReading": "Reading the authenticator binding status...",
+  "settings.appLockStateUnavailable":
+    "Failed to read the app lock status. Try again.",
+  "settings.appLockDelay": "Lock timing",
+  "settings.appLockDelayImmediate": "Immediately after losing focus",
+  "settings.appLockDelay1m": "1 minute after losing focus",
+  "settings.appLockDelay5m": "5 minutes after losing focus",
+  "settings.appLockDelay10m": "10 minutes after losing focus",
+  "settings.appLockLockNow": "Lock now",
+  "settings.appLockTotpTitle": "Google Authenticator",
+  "settings.appLockTotpInfo":
+    "Google Authenticator is the fallback when the PIN is forgotten, so binding it is required before enabling the app lock.",
+  "settings.appLockTotpStatus": "Authenticator status",
+  "settings.appLockTotpBound": "Bound",
+  "settings.appLockTotpUnbound": "Not bound",
+  "settings.appLockTotpBind": "Bind authenticator",
+  "settings.appLockTotpRebind": "Rebind authenticator",
+  "settings.appLockTotpUnbind": "Unbind authenticator",
+  "settings.appLockTotpUnboundDone":
+    "Authenticator unbound and the app lock disabled",
+  "settings.appLockTotpUnbindHint":
+    "Unbinding requires a 6-digit code from the authenticator: it also clears the PIN and disables the app lock, so a forgotten PIN can always be reset after unbinding.",
+  "settings.appLockUnbindVerify": "Unbind verification (6-digit code)",
+  "settings.appLockUnbindCodeRequired":
+    "Enter the 6-digit code from the authenticator",
+  "settings.appLockVerifyRequired":
+    "Enter the current PIN or 6-digit code first",
+  "settings.appLockTotpRebindNeedPin":
+    "Verify the current PIN before rebinding",
+  "settings.appLockTotpScan":
+    "Scan the QR code with Google Authenticator, or enter the key below manually.",
+  "settings.appLockTotpQrAlt": "Authenticator QR code",
+  "settings.appLockTotpCode": "6-digit code",
+  "settings.appLockTotpConfirm": "Confirm binding",
+  "settings.appLockTotpBindFailed":
+    "The code is incorrect. Check the device clock and retry.",
+  "settings.appLockTotpBoundDone": "Google Authenticator bound",
+  "settings.appLockTotpRequired":
+    "Bind Google Authenticator before enabling the app lock.",
+  "settings.appLockEnableTitle": "Set a PIN and enable",
+  "settings.appLockEnableInfo":
+    "The PIN is 4-8 digits and is stored locally as a salted hash only - never in plain text.",
+  "settings.appLockEnableAction": "Enable app lock",
+  "settings.appLockEnabledDone": "App lock enabled",
+  "settings.appLockManagePin": "Change or disable the PIN",
+  "settings.appLockManagePinInfo":
+    "Both actions accept the current PIN or a 6-digit authenticator code. Disabling the lock keeps the authenticator binding.",
+  "settings.appLockCurrentPin": "Current PIN or 6-digit code",
+  "settings.appLockNewPin": "New PIN",
+  "settings.appLockNewPinConfirm": "Confirm new PIN",
+  "settings.appLockPinHint": "4-8 digits",
+  "settings.appLockChangePinAction": "Update PIN",
+  "settings.appLockPinChanged": "PIN updated",
+  "settings.appLockDisablePin": "PIN or 6-digit code to disable the lock",
+  "settings.appLockDisableAction": "Disable app lock",
+  "settings.appLockDisabledDone": "App lock disabled",
+  "settings.appLockPinInvalid": "PIN must be 4-8 digits",
+  "settings.appLockPinMismatch": "The two PIN entries do not match",
+  "settings.appLockWrongPin": "Incorrect PIN",
+  "settings.appLockWrongCode": "Incorrect code",
+  "settings.appLockWrongCredential": "Incorrect PIN or code",
+  "settings.appLockAttemptsLeft": "Incorrect. {{count}} attempt(s) left",
+  "settings.appLockCooldown": "Too many attempts. Try again in {{seconds}}s",
+  "settings.appLockUnlockFailed": "Unlock failed, please try again",
+  "settings.appLockLockedTitle": "Snow App locked",
+  "settings.appLockLockedInfo":
+    "Enter your PIN to unlock. Locking only covers the interface - sessions and tasks keep running in the background.",
+  "settings.appLockTotpRecoveryInfo":
+    "Enter the 6-digit code from Google Authenticator. Reset your PIN right after unlocking.",
+  "settings.appLockUnlock": "Unlock",
+  "settings.appLockVerifyTotp": "Verify code",
+  "settings.appLockPinPlaceholder": "PIN",
+  "settings.appLockTotpCodePlaceholder": "6-digit code",
+  "settings.appLockForgotPin": "Forgot the PIN? Use Google Authenticator",
+  "settings.appLockBackToPin": "Back to PIN",
+  "settings.appLockRunningHint":
+    "Sessions and tasks keep running in the background while locked",
   "settings.privacyTitle": "Privacy settings",
   "settings.privacyManualTitle": "Filter configuration",
   "settings.privacyManualInfo":

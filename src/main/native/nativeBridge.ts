@@ -26,6 +26,9 @@ const wrapWithStorageGate = <T extends object>(binding: T): T => {
   }) as T;
 };
 
+const unavailableAppLock = (): Promise<never> =>
+  Promise.reject(new Error("Rust native bridge is required for app lock"));
+
 let rawBinding: NativeBridge | null = null;
 
 export const loadNativeBridge = (): NativeBridge => {
@@ -59,6 +62,17 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to delete system settings"),
         ),
+      getAppLockState: unavailableAppLock,
+      setAppLockDelay: unavailableAppLock,
+      beginAppLockTotpBinding: unavailableAppLock,
+      confirmAppLockTotpBinding: unavailableAppLock,
+      clearAppLockTotp: unavailableAppLock,
+      enableAppLock: unavailableAppLock,
+      changeAppLockPin: unavailableAppLock,
+      disableAppLock: unavailableAppLock,
+      verifyAppLockPin: unavailableAppLock,
+      verifyAppLockTotp: unavailableAppLock,
+      setAppLockLocked: unavailableAppLock,
       getYoloMode: () =>
         Promise.reject(
           new Error("Rust native bridge is required to read YOLO mode"),

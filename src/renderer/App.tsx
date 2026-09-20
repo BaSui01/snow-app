@@ -19,6 +19,7 @@ import {
 import type { MainContentView } from "./components/mainContent/types";
 import { SshConnectWizard } from "./components/sidebar/mainSidebar/SshConnectWizard";
 import { ConfirmDialog } from "./components/common/ConfirmDialog";
+import { AppLockOverlay } from "./components/AppLockOverlay";
 import { rightPanelEvents } from "./components/rightPanel/rightPanelEvents";
 import {
   KeyboardShortcutsProvider,
@@ -783,6 +784,8 @@ export const App = (): React.JSX.Element => {
               <span>{t("app.closeNeverAskAgain")}</span>
             </label>
           </ConfirmDialog>
+          {/* 应用锁：锁定态用毛玻璃遮罩盖住整个界面，仅影响查看 */}
+          <AppLockOverlay />
         </div>
       </ChatConversationProvider>
     </KeyboardShortcutsProvider>

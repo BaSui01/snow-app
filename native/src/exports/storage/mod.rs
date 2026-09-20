@@ -3,6 +3,9 @@ pub(crate) use napi_derive::napi;
 
 pub(crate) use crate::hooks::{HookExecuteInput, HookExecuteResult};
 pub(crate) use crate::storage::services::fs_explorer::{DirectoryEntry, FileContentResult, FileSearchResult};
+pub(crate) use crate::storage::services::app_lock::{
+    AppLockState, AppLockTotpBinding, AppLockVerifyResult,
+};
 pub(crate) use crate::storage::services::api_config_transfer::{
     ApiConfigExportResult, ApiConfigImportOutcome, ApiConfigImportPreview,
 };
@@ -38,6 +41,7 @@ UserMessageSummary, UserscriptRecord, UserscriptValue,
 mod agents;
 mod api_configs;
 mod app;
+mod app_lock;
 mod cleanup;
 mod conversations;
 mod hooks;
@@ -59,7 +63,7 @@ mod userscripts;
 // 保留 crate::exports::storage::* 原有公共路径的重导出
 #[allow(unused_imports)]
 pub use {
-    agents::*, api_configs::*, app::*, cleanup::*, conversations::*, hooks::*, imports::*, logs::*,
+    agents::*, api_configs::*, app::*, app_lock::*, cleanup::*, conversations::*, hooks::*, imports::*, logs::*,
     lsp::*,
     mcp::*,
     memos::*, memory::*, plugins::*, privacy::*, projects::*, scheduled_tasks::*, shortcuts::*,

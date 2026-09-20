@@ -16,6 +16,7 @@ import {
   macTrafficLightPosition,
 } from "./constants";
 import { killAllPtyForWebContents } from "../pty/ptyManager";
+import { bindAppLockWatcher } from "./appLock";
 import { initAutoUpdater } from "../updater/autoUpdater";
 import {
   DEFAULT_WINDOW_HEIGHT,
@@ -218,6 +219,9 @@ export const createWindow = (): BrowserWindow => {
   // 监听缩窄方向（左/右边缘），推送 window:resize-edge-changed 供渲染层
   // 自动收起对应侧面板；聊天区可缩窄到手机尺寸。
   bindResizeEdgeDetection(mainWindow);
+
+  // 应用锁：窗口失焦/隐藏/最小化后按设置延时锁定，回到前台时取消待定锁定。
+  bindAppLockWatcher(mainWindow);
 
   mainWindow.webContents.on("before-input-event", (event, input) => {
     if (is.dev && input.key === "F12") {

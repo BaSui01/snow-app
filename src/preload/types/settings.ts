@@ -514,3 +514,27 @@ export type KeyboardShortcutsSettings = {
   toggleSidebar: KeyboardShortcutConfig;
   toggleRightPanel: KeyboardShortcutConfig;
 };
+
+// ===== App lock =====
+
+/** 应用锁状态：PIN 与谷歌身份验证器（TOTP）绑定情况、锁定延时与当前锁定态。 */
+export type AppLockState = {
+  enabled: boolean;
+  hasPin: boolean;
+  totpBound: boolean;
+  delayMs: number;
+  locked: boolean;
+};
+
+/** 校验结果：失败时给出剩余尝试次数或等待冷却时间。 */
+export type AppLockVerifyResult = {
+  ok: boolean;
+  retryAfterMs: number;
+  remainingAttempts: number;
+};
+
+/** 身份验证器绑定信息：Base32 密钥与 otpauth 二维码地址。 */
+export type AppLockTotpBinding = {
+  secret: string;
+  otpauthUri: string;
+};

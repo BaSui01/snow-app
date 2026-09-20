@@ -2,6 +2,7 @@ import { app } from "electron";
 import type { NativeBridge } from "../native/types";
 import { registerPtyHandlers } from "../pty/registerPtyHandlers";
 import { registerNativeHandlers } from "./handlers/nativeHandlers";
+import { registerAppLockHandlers } from "./handlers/appLockHandlers";
 import { registerApiConfigHandlers } from "./handlers/apiConfigHandlers";
 import { registerChatHandlers } from "./handlers/chatHandlers";
 import { registerConfigHandlers } from "./handlers/configHandlers";
@@ -34,6 +35,7 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
   registerPtyHandlers();
 
   registerNativeHandlers(native);
+  registerAppLockHandlers(native);
   registerApiConfigHandlers(native);
   registerChatHandlers(native);
   registerConfigHandlers(native);

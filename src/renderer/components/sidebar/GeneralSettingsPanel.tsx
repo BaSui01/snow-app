@@ -22,6 +22,7 @@ import {
   RotateCcw,
   Scale,
   Server,
+  ShieldCheck,
   Terminal,
   Trash2,
   Wrench,
@@ -30,6 +31,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { localeLabels, useI18n, type Locale } from "../../i18n";
 import { AutoDismissNotice } from "../AutoDismissNotice";
+import { AppLockSettingsSection } from "./AppLockSettingsSection";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { CustomSelect } from "../common/CustomSelect";
 import { OPEN_UPDATE_DIALOG_EVENT } from "./UpdateDialog";
@@ -174,6 +176,11 @@ const ABOUT_PRIVACY_ITEMS = [
     bodyKey: "settings.aboutPrivacyCredentials",
   },
   {
+    icon: ShieldCheck,
+    titleKey: "settings.aboutPrivacyAppLockTitle",
+    bodyKey: "settings.aboutPrivacyAppLock",
+  },
+  {
     icon: Filter,
     titleKey: "settings.aboutPrivacyFilterTitle",
     bodyKey: "settings.aboutPrivacyFilter",
@@ -253,7 +260,7 @@ type GeneralSettingsPanelProps = {
   onClose?: () => void;
 };
 
-type GeneralSettingsTab = "general" | "storage" | "about";
+type GeneralSettingsTab = "general" | "storage" | "privacy" | "about";
 
 /** 取文件路径的父目录（跨平台字符串处理，避免在渲染层引入 node:path）。 */
 const parentDirOf = (filePath: string): string =>
@@ -1230,6 +1237,18 @@ export function GeneralSettingsPanel({
         <button
           type="button"
           role="tab"
+          aria-selected={activeTab === "privacy"}
+          className={`import-settings-tab ${
+            activeTab === "privacy" ? "active" : ""
+          }`}
+          onClick={() => setActiveTab("privacy")}
+        >
+          <LockKeyhole size={13} strokeWidth={1.8} />
+          {t("settings.privacyTab", { defaultValue: "Privacy" })}
+        </button>
+        <button
+          type="button"
+          role="tab"
           aria-selected={activeTab === "about"}
           className={`import-settings-tab ${
             activeTab === "about" ? "active" : ""
@@ -1264,6 +1283,8 @@ export function GeneralSettingsPanel({
           setCheckHint(null);
         }}
       />
+
+      {activeTab === "privacy" && <AppLockSettingsSection />}
 
       {activeTab === "general" && (
         <div className="api-settings-manual-form">

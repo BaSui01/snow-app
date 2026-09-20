@@ -147,7 +147,21 @@ An external MCP server may launch a local process over stdio or connect to an HT
 
 See [Configure MCP Servers](1-configure-mcp.md) and [Configure Hooks and Sub-agents](5-configure-hooks-and-subagents.md).
 
-## 9. Recommended security baseline
+## 9. App lock (PIN + Google Authenticator)
+
+The app lock under **General settings -> Privacy** covers the whole interface behind a PIN so that nobody walking by can read your sessions. Locking **only blocks viewing**: running sessions, streaming generations, terminals, the embedded browser, scheduled tasks, and mobile remote control all keep working in the background.
+
+- **Prerequisite**: Google Authenticator must be bound first. The settings page generates a Base32 secret locally and shows an `otpauth://totp/...` QR code; scan it (or type the key manually), then confirm the binding with a 6-digit code. The secret is stored only in the local app database. **A PIN and an authenticator binding must always coexist**: when either one is missing the lock counts as disabled, so the app can never lock you out with no way back in.
+- **PIN storage**: The PIN is 4-8 digits and is stored as a salted PBKDF2-HMAC-SHA256 hash (random salt, 120k iterations). No plaintext PIN reaches the database, and verification runs in the Rust backend with a constant-time comparison.
+- **Lock timing**: Choose "immediately after losing focus", "1 minute", "5 minutes", or "10 minutes". The countdown is owned by the main process and is cancelled as soon as the window returns to the foreground; "Lock now" in the settings page locks manually at any time. **Every launch starts locked**, so restarting the app can never bypass the PIN.
+- **Locked appearance**: A frosted-glass layer covers the entire interface, including the top bar and both side panels, and only accepts a PIN or an authenticator code. Background progress resumes exactly where it was after unlocking.
+- **Forgot PIN**: Switch to "Forgot the PIN? Use Google Authenticator" on the lock screen and enter a 6-digit code (a +/-1 step, 30-second window is accepted). Reset the PIN right after unlocking.
+- **Failure protection**: Five consecutive failures start a cooldown (30 seconds, doubling up to 5 minutes). PIN and authenticator codes share the counter, which is not cleared by restarting the app.
+- **Change, disable, rebind, and unbind**: changing the PIN and disabling the lock both accept the current PIN or a 6-digit authenticator code, so a forgotten PIN is no longer a dead end; rebinding verifies the current PIN, while **unbinding only accepts an authenticator code**. Disabling the lock keeps the authenticator binding so it can be re-enabled later, whereas unbinding also disables the app lock and clears the PIN: a PIN must never exist without the authenticator. PIN configuration stays hidden until an authenticator is bound.
+
+The app lock protects what is visible on screen, not the data on disk; the local database is not encrypted. For encryption at rest, rely on full-disk encryption of the operating system.
+
+## 10. Recommended security baseline
 
 1. Leave YOLO off by default and retain per-call approval for writes, terminal commands, and external tools.
 2. Permanently approve the smallest project-specific tool set and revoke approvals that are no longer needed.
@@ -158,7 +172,7 @@ See [Configure MCP Servers](1-configure-mcp.md) and [Configure Hooks and Sub-age
 7. Verify the publisher, source, and permission changes before installing or updating third-party extensions.
 8. Periodically review logs, project approvals, and enabled Hooks/MCP servers; disable suspicious components and rotate exposed credentials immediately.
 
-## 10. Misconceptions and troubleshooting
+## 11. Misconceptions and troubleshooting
 
 | Misconception/symptom                                    | Correct interpretation or action                                                                         |
 | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |

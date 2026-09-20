@@ -1,5 +1,6 @@
 import { contextBridge } from "electron";
 import { apiConfigApi } from "./modules/apiConfigApi";
+import { appLockApi } from "./modules/appLockApi";
 import { configApi } from "./modules/configApi";
 import { conversationApi } from "./modules/conversationApi";
 import { workspaceApi } from "./modules/workspaceApi";
@@ -26,6 +27,7 @@ export type * from "./types";
 
 const api = {
   ...apiConfigApi,
+  ...appLockApi,
   ...configApi,
   ...conversationApi,
   ...workspaceApi,

@@ -1,5 +1,6 @@
 pub mod api_config_transfer;
 pub mod api_configs;
+pub mod app_lock;
 pub mod app_logs;
 pub mod archive;
 pub mod chat_conversations;

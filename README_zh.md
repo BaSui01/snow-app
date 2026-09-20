@@ -18,7 +18,6 @@ Snow App 是一款面向开发者的桌面应用，将 AI 对话、终端模拟�
 
 <img width="1525" height="1058" alt="image" src="https://github.com/user-attachments/assets/48410803-4cde-41a6-a99b-26c446f86740" />
 
-
 ## 功能特性
 
 - **AI 对话** - 流式 AI 助手，支持 Markdown 渲染、语法高亮和可配置的系统提示词
@@ -35,7 +34,6 @@ Snow App 是一款面向开发者的桌面应用，将 AI 对话、终端模拟�
 - **Plan / Goal 模式** - 计划先行（Plan）与自主长任务执行（Goal）两种工作模式
 - **终端交互会话** - AI 可驱动持久 PTY 会话，运行长驻进程与交互式命令
 - **代码库浏览器** - 项目文件树，支持工作区目录管理
-- **配置导入** - 从 Codex / WSL / SSH 等环境导入 MCP、Skills、插件与提示词
 - **国际化** - 多语言支持，内置语言包系统
 - **设置管理** - 细粒度配置，涵盖 API 密钥、自定义请求头、代理、敏感命令等
 - **手机远控** - 通过局域网或自建公网隧道，在手机上继续对话、切换工作区与模型、审批工具、回答问题并发送图片/文件
@@ -57,7 +55,7 @@ Snow App 是一款面向开发者的桌面应用，将 AI 对话、终端模拟�
 | -------- | --------------------------------------------- |
 | 外壳     | Electron 37                                   |
 | 前端     | React 19, TypeScript 5.9                      |
-| 打包器   | electron-vite 4 (Vite 7)                       |
+| 打包器   | electron-vite 4 (Vite 7)                      |
 | 原生模块 | Rust 2021 Edition (napi-rs 3)                 |
 | 应用打包 | electron-builder 26                           |
 | 终端     | node-pty, xterm.js 6                          |
@@ -74,13 +72,9 @@ snow-app/
 ├── src/
 │   ├── main/            # Electron 主进程
 │   │   ├── app/         # 应用引导与窗口管理
-│   │   ├── codex/       # Codex 兼容层
-│   │   │   └── importer.ts # 设置页手动导入 MCP、Skills、Plugins 与提示词
-│   │   ├── importConfig/ # 第三方配置导入（可逆事务 + 环境发现）
 │   │   ├── ipc/         # IPC 处理器注册
 │   │   ├── native/      # Rust 原生桥接（storageReady 门控）
 │   │   ├── notification/ # 系统通知
-│   │   ├── plugins/     # 插件运行时（worker 隔离）
 │   │   ├── pty/         # PTY 与终端管理
 │   │   ├── settings/    # 配置存储
 │   │   ├── snowCli/     # CLI 路径与配置文件管理
@@ -107,8 +101,6 @@ snow-app/
 ├── resources/           # 应用图标与静态资源
 └── electron.vite.config.ts
 ```
-
-Codex 兼容层只能从设置页手动执行导入，应用启动时不会自动同步 Codex 文件。
 
 ## 环境要求
 
@@ -186,7 +178,7 @@ Rust 原生模块（`snow_native`）通过 napi-rs 编译为 Node 插件（`.nod
 
 ## 友情链接
 
-* [Linux DO](https://linux.do)
+- [Linux DO](https://linux.do)
 
 ## 开源协议
 

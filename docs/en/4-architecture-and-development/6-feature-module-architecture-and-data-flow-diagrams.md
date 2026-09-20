@@ -174,29 +174,6 @@ flowchart LR
 
 **Source anchors**: `src/main/ipc/handlers/gitHandlers.ts`, `src/main/ssh/remoteGit.ts`, `native/src/exports/git.rs`, `native/src/exports/codebase.rs`, `native/src/mcp/servers/codebase.rs`, `native/src/mcp/servers/codelens/`, `native/src/storage/services/codebase_embed_sessions.rs`.
 
-## 9. Third-Party Import and Plugins
-
-**Purpose and boundary**: Codex, Claude Code, and OpenCode can be discovered and selectively imported from local, WSL, or SSH environments. Directory changes coordinate rollback with a SQLite import transaction. Plugin runtimes use restricted utility processes.
-
-```mermaid
-flowchart TD
-    sources["Codex Claude Code OpenCode"] --> env["Local WSL SSH environments"]
-    env --> discover["Discovery worker scanning and hashes"]
-    discover --> select["Selective import plan"]
-    select --> dirs["Staged directory commits"]
-    dirs --> dbtx["Atomic native DB import transaction"]
-    dbtx --> finalize["Finalize and remove directory backups"]
-    dbtx -. "failure" .-> rollback["Reverse committed directories"]
-    finalize --> plugins["Plugin records and components"]
-    plugins --> verify["Verify source content hash and entry boundary"]
-    verify --> worker["utilityProcess with Node permissions"]
-    worker --> private["userData plugins hash directory"]
-```
-
-**Maintenance**: `ImportExecutionPlan.commit` commits staged directories first, then one native DB transaction; DB failure rolls directories back in reverse. Plugins receive only declared storage/network/child-process permissions, require rescan after source hash changes, and stop through `stopAll()` on exit.
-
-**Source anchors**: `src/main/codex/importer.ts`, `src/main/importConfig/importEnvironments.ts`, `discovery.ts`, `selectedImport.ts`, `directoryCommit.ts`, `importTransaction.ts`, `pluginManager.ts`, `src/main/plugins/pluginRuntimeManager.ts`, `plugin-runtime-worker.ts`.
-
 ## 10. Configuration
 
 **Purpose and boundary**: Configuration spans file-backed, DB-backed, global, and project scopes. Renderer uses config APIs and the model can use config MCP tools; Rust centralizes validation, masking, backup, and writes.

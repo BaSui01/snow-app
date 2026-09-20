@@ -21,9 +21,6 @@ const KEYED_COLUMNS: &[(&str, &str)] = &[
     ("memory_prompt_snapshots", "directory_id"),
     ("sub_agent_configs", "project_id"),
     ("system_prompts", "project_id"),
-    ("plugins", "project_id"),
-    ("import_resources", "project_id"),
-    ("import_resource_sources", "project_id"),
 ];
 
 const HASHED_SETTING_KEY_PREFIXES: &[&str] = &[
@@ -41,15 +38,6 @@ const PLAIN_SETTING_KEY_PREFIXES: &[&str] = &["project_lsp_server_configs_"];
 const BUILTIN_SOURCE: &str = "builtin";
 const LOCAL_KIND: &str = "local";
 const ARCHIVE_TABLES: &[&str] = &["chat_conversations", "workflow_runs"];
-
-// 按绝对路径存储的项目相关列：迁移时按前缀改写，避免历史数据指向已失效的旧路径。
-const PATH_PREFIX_COLUMNS: &[(&str, &str)] = &[
-    ("import_resources", "target_path"),
-    ("import_resource_sources", "origin_path"),
-    ("plugins", "source_path"),
-    ("plugin_components", "target_path"),
-    ("plugin_components", "origin_path"),
-];
 
 // 带唯一约束的路径列：改写时用 OR REPLACE，冲突行直接替换（缓存/遗留 id 可重建）。
 const UNIQUE_PATH_PREFIX_COLUMNS: &[(&str, &str)] = &[
@@ -297,10 +285,6 @@ fn rewrite_path_columns(
 
     let mut total = 0;
 
-    for (table, column) in PATH_PREFIX_COLUMNS {
-        total += rewrite_path_prefix(connection, table, column, old_path, new_path, false)?;
-    }
-
     for (table, column) in UNIQUE_PATH_PREFIX_COLUMNS {
         total += rewrite_path_prefix(connection, table, column, old_path, new_path, true)?;
     }
@@ -333,10 +317,6 @@ fn count_paths(connection: &Connection, old_path: &str) -> rusqlite::Result<i32>
     }
 
     let mut total = 0;
-
-    for (table, column) in PATH_PREFIX_COLUMNS {
-        total += count_path_columns(connection, table, column, old_path)?;
-    }
 
     for (table, column) in UNIQUE_PATH_PREFIX_COLUMNS {
         total += count_path_columns(connection, table, column, old_path)?;

@@ -1,29 +1,3 @@
-import type {
-  ImportResourceInput,
-  ImportResourceRecord,
-  ImportResourceRelease,
-  ImportResourceReleaseInput,
-} from "../../shared/importResources";
-import type {
-  PluginInput,
-  PluginMarketplaceInput,
-  PluginMarketplaceRecord,
-  PluginRecord,
-} from "../../shared/plugins";
-
-export type {
-  ImportResourceInput,
-  ImportResourceRecord,
-  ImportResourceRelease,
-  ImportResourceReleaseInput,
-};
-export type {
-  PluginInput,
-  PluginMarketplaceInput,
-  PluginMarketplaceRecord,
-  PluginRecord,
-};
-
 export type AppStorageInfo = {
   directoryPath: string;
   databasePath: string;
@@ -723,19 +697,6 @@ export type LspSessionStatus = {
   lastUsedMs: number;
   /** 异常状态说明（running 时为 null） */
   error: string | null;
-};
-
-export type ProjectMcpServerImportInput = {
-  projectId: string;
-  input: McpServerConfigInput;
-};
-
-export type ImportDatabaseTransactionInput = {
-  mcpServers: McpServerConfigInput[];
-  projectMcpServers: ProjectMcpServerImportInput[];
-  systemPrompts: SystemPromptItemInput[];
-  plugins: PluginInput[];
-  importResources: ImportResourceInput[];
 };
 
 export type HookScope = "global" | "project";
@@ -2009,24 +1970,6 @@ export type NativeBridge = {
   detectProjectStack: (projectRoot: string) => Promise<ProjectStackDetection[]>;
   /** 语言服务器会话运行时状态快照（不触发任何会话创建/回收）。 */
   listLspSessionStatuses: (projectId?: string) => Promise<LspSessionStatus[]>;
-  listImportResources: () => Promise<ImportResourceRecord[]>;
-  upsertImportResources: (items: ImportResourceInput[]) => Promise<void>;
-  commitImportTransaction: (
-    input: ImportDatabaseTransactionInput,
-  ) => Promise<void>;
-  releaseImportResource: (
-    input: ImportResourceReleaseInput,
-  ) => Promise<ImportResourceRelease>;
-  listPlugins: () => Promise<PluginRecord[]>;
-  upsertPlugins: (items: PluginInput[]) => Promise<void>;
-  setPluginState: (
-    pluginId: string,
-    state: PluginInput["state"],
-  ) => Promise<void>;
-  deletePlugin: (pluginId: string) => Promise<void>;
-  listPluginMarketplaces: () => Promise<PluginMarketplaceRecord[]>;
-  upsertPluginMarketplace: (item: PluginMarketplaceInput) => Promise<void>;
-  deletePluginMarketplace: (marketplaceId: string) => Promise<void>;
   listHookConfigs: (
     scope: HookScope,
     projectId?: string,

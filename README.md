@@ -18,7 +18,6 @@ Snow App is a developer-focused desktop application that integrates AI-powered c
 
 <img width="1525" height="1058" alt="image" src="https://github.com/user-attachments/assets/343e09f8-e085-4a2b-99ca-011e244460f0" />
 
-
 ## Features
 
 - **AI Chat** - Streaming AI assistant with markdown rendering, syntax highlighting, and configurable system prompts
@@ -35,7 +34,6 @@ Snow App is a developer-focused desktop application that integrates AI-powered c
 - **Plan / Goal Modes** - Plan-first and autonomous long-running task execution modes
 - **Interactive Terminal Sessions** - The AI can drive persistent PTY sessions for long-running and interactive commands
 - **Codebase Explorer** - Project file tree with workspace directory management
-- **Config Import** - Import MCP servers, skills, plugins, and prompts from Codex / WSL / SSH environments
 - **i18n** - Multi-language support with a locale system
 - **Settings Management** - Granular configuration for API keys, custom headers, proxy, sensitive commands, and more
 - **Mobile Remote Control** - Continue conversations, switch workspaces and models, approve tools, answer questions, and send images/files from a phone over LAN or a self-hosted public tunnel
@@ -53,19 +51,19 @@ The initial version of Mobile Remote Control was contributed by [zerio1](https:/
 
 ## Tech Stack
 
-| Layer     | Technology                                    |
-| --------- | --------------------------------------------- |
-| Shell     | Electron 37                                   |
-| Frontend  | React 19, TypeScript 5.9                      |
-| Bundler   | electron-vite 4 (Vite 7)                        |
-| Native    | Rust 2021 Edition (napi-rs 3)                 |
-| Packaging | electron-builder 26                           |
-| Terminal  | node-pty, xterm.js 6                          |
-| SSH       | ssh2                                          |
-| Storage   | rusqlite (SQLite, bundled)                    |
+| Layer     | Technology                                                    |
+| --------- | ------------------------------------------------------------- |
+| Shell     | Electron 37                                                   |
+| Frontend  | React 19, TypeScript 5.9                                      |
+| Bundler   | electron-vite 4 (Vite 7)                                      |
+| Native    | Rust 2021 Edition (napi-rs 3)                                 |
+| Packaging | electron-builder 26                                           |
+| Terminal  | node-pty, xterm.js 6                                          |
+| SSH       | ssh2                                                          |
+| Storage   | rusqlite (SQLite, bundled)                                    |
 | AI/HTTP   | reqwest (multi-provider protocol adapters and streaming HTTP) |
-| Markdown  | markdown-it, streaming-markdown, highlight.js |
-| Icons     | lucide-react                                  |
+| Markdown  | markdown-it, streaming-markdown, highlight.js                 |
+| Icons     | lucide-react                                                  |
 
 ## Project Structure
 
@@ -74,13 +72,9 @@ snow-app/
 ├── src/
 │   ├── main/            # Electron main process
 │   │   ├── app/         # Application bootstrap & window management
-│   │   ├── codex/       # Codex compatibility import layer
-│   │   │   └── importer.ts # Manual settings import for MCP, Skills, Plugins, and prompts
-│   │   ├── importConfig/ # Third-party config import (reversible transaction + environment discovery)
 │   │   ├── ipc/         # IPC handler registration
 │   │   ├── native/      # Rust native bridge (storageReady gate)
 │   │   ├── notification/ # System notifications
-│   │   ├── plugins/     # Plugin runtime (isolated workers)
 │   │   ├── pty/         # PTY & terminal management
 │   │   ├── settings/    # Configuration stores
 │   │   ├── snowCli/     # CLI path & profile management
@@ -107,9 +101,6 @@ snow-app/
 ├── resources/           # App icons & static assets
 └── electron.vite.config.ts
 ```
-
-Codex compatibility imports are started manually from the Codex compatibility
-entry in Settings; the app does not synchronize Codex files during startup.
 
 ## Prerequisites
 
@@ -187,7 +178,7 @@ The Rust native module (`snow_native`) is compiled to a Node addon (`.node`) via
 
 ## Friendly links
 
-* [Linux DO](https://linux.do)
+- [Linux DO](https://linux.do)
 
 ## License
 

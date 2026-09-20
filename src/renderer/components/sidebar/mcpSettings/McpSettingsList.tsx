@@ -1,12 +1,14 @@
-import { ChevronRight, Loader2, Pencil, Search, Trash2, Wrench, X } from "lucide-react";
+import {
+  ChevronRight,
+  Loader2,
+  Pencil,
+  Search,
+  Trash2,
+  Wrench,
+  X,
+} from "lucide-react";
 import { useState } from "react";
 import { useI18n } from "../../../i18n";
-import type {
-  ImportResourceRecord,
-  ImportResourceReleaseDisposition,
-  ImportResourceSource,
-} from "../../../../preload";
-import { ManagedImportResourceActions } from "../importConfig/ManagedImportResourceActions";
 import type { McpServerTool } from "./types";
 
 export type McpSettingsListItem = {
@@ -16,7 +18,6 @@ export type McpSettingsListItem = {
   globalEnabled: boolean;
   detail: string;
   canManage: boolean;
-  importResource?: ImportResourceRecord;
 };
 
 const formatToolSchema = (inputSchemaJson: string): string => {
@@ -39,19 +40,11 @@ type McpSettingsListProps = {
   onToggleTool: (
     server: McpSettingsListItem,
     tool: McpServerTool,
-    enabled: boolean
+    enabled: boolean,
   ) => void;
-  onToggleAllTools: (
-    server: McpSettingsListItem,
-    enabled: boolean
-  ) => void;
+  onToggleAllTools: (server: McpSettingsListItem, enabled: boolean) => void;
   onEdit: (server: McpSettingsListItem) => void;
   onDelete: (server: McpSettingsListItem) => void;
-  onReleaseImportResource: (
-    resource: ImportResourceRecord,
-    source: ImportResourceSource,
-    disposition: ImportResourceReleaseDisposition
-  ) => void;
 };
 
 export function McpSettingsList({
@@ -67,11 +60,10 @@ export function McpSettingsList({
   onToggleAllTools,
   onEdit,
   onDelete,
-  onReleaseImportResource,
 }: McpSettingsListProps): React.JSX.Element {
   const { t } = useI18n();
   const [expandedServerIds, setExpandedServerIds] = useState<Set<string>>(
-    () => new Set()
+    () => new Set(),
   );
   const [toolFilters, setToolFilters] = useState<Record<string, string>>({});
   const [expandedToolNames, setExpandedToolNames] = useState<
@@ -124,15 +116,15 @@ export function McpSettingsList({
                   defaultValue: "Disabled in global scope",
                 })
               : server.enabled
-              ? t("settings.mcpDisableServer", { defaultValue: "Disable" })
-              : t("settings.mcpEnableServer", { defaultValue: "Enable" });
+                ? t("settings.mcpDisableServer", { defaultValue: "Disable" })
+                : t("settings.mcpEnableServer", { defaultValue: "Enable" });
             const activeStateLabel = globallyUnavailable
               ? t("settings.mcpGlobalDisabledShort", {
                   defaultValue: "Global off",
                 })
               : server.enabled
-              ? t("settings.active", { defaultValue: "Active" })
-              : t("settings.inactive", { defaultValue: "Inactive" });
+                ? t("settings.active", { defaultValue: "Active" })
+                : t("settings.inactive", { defaultValue: "Inactive" });
             const isFetchingTools = fetchingToolServerIds.has(server.serverId);
             const tools = toolsByServerId[server.serverId];
             const toolCount = tools?.length;
@@ -143,17 +135,17 @@ export function McpSettingsList({
               (tool) =>
                 !normalizedFilter ||
                 tool.name.toLowerCase().includes(normalizedFilter) ||
-                tool.description.toLowerCase().includes(normalizedFilter)
+                tool.description.toLowerCase().includes(normalizedFilter),
             );
             const fetchToolsLabel = globallyUnavailable
               ? t("settings.mcpGloballyDisabled", {
                   defaultValue: "Disabled in global scope",
                 })
               : server.enabled
-              ? t("settings.mcpFetchTools", { defaultValue: "Fetch tools" })
-              : t("settings.mcpEnableBeforeFetchTools", {
-                  defaultValue: "Enable this server before fetching tools",
-                });
+                ? t("settings.mcpFetchTools", { defaultValue: "Fetch tools" })
+                : t("settings.mcpEnableBeforeFetchTools", {
+                    defaultValue: "Enable this server before fetching tools",
+                  });
 
             return (
               <div
@@ -237,11 +229,6 @@ export function McpSettingsList({
                       </button>
                     </>
                   )}
-                  <ManagedImportResourceActions
-                    resource={server.importResource}
-                    isBusy={isBusy}
-                    onRelease={onReleaseImportResource}
-                  />
                 </div>
 
                 {isExpanded && (
@@ -320,8 +307,9 @@ export function McpSettingsList({
                       <div className="mcp-server-expanded-tools">
                         {filteredTools.map((tool) => {
                           const isToolExpanded =
-                            expandedToolNames[server.serverId]?.has(tool.name) ??
-                            false;
+                            expandedToolNames[server.serverId]?.has(
+                              tool.name,
+                            ) ?? false;
                           const toolToggleLabel = tool.enabled
                             ? t("settings.mcpToolDisable", {
                                 defaultValue: "Disable tool",
@@ -345,10 +333,7 @@ export function McpSettingsList({
                                 aria-label={detailsLabel}
                                 title={detailsLabel}
                                 onClick={() =>
-                                  toggleToolExpanded(
-                                    server.serverId,
-                                    tool.name
-                                  )
+                                  toggleToolExpanded(server.serverId, tool.name)
                                 }
                               >
                                 <Wrench size={14} strokeWidth={1.9} />
@@ -380,7 +365,7 @@ export function McpSettingsList({
                                     onToggleTool(
                                       server,
                                       tool,
-                                      event.target.checked
+                                      event.target.checked,
                                     )
                                   }
                                 />

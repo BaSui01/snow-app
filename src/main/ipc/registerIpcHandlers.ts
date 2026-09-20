@@ -1,4 +1,3 @@
-import { app } from "electron";
 import type { NativeBridge } from "../native/types";
 import { registerPtyHandlers } from "../pty/registerPtyHandlers";
 import { registerNativeHandlers } from "./handlers/nativeHandlers";
@@ -18,8 +17,6 @@ import { registerMemoHandlers } from "./handlers/memoHandlers";
 import { registerMemoryHandlers } from "./handlers/memoryHandlers";
 import { registerScheduledTaskHandlers } from "./handlers/scheduledTaskHandlers";
 import { registerPersonalizationHandlers } from "./handlers/personalizationHandlers";
-import { registerCodexHandlers } from "./handlers/codexHandlers";
-import { registerImportConfigHandlers } from "./handlers/importConfigHandlers";
 import { registerImageHandlers } from "./handlers/imageHandlers";
 import { registerImageLibraryHandlers } from "./handlers/imageLibraryHandlers";
 import { registerStorageHandlers } from "./handlers/storageHandlers";
@@ -27,11 +24,8 @@ import { registerBrowserPasswordHandlers } from "./handlers/browserPasswordHandl
 import { registerUserscriptHandlers } from "./handlers/userscriptHandlers";
 import { registerPetHandlers } from "./handlers/petHandlers";
 import { registerRemoteControlHandlers } from "./handlers/remoteControlHandlers";
-import { PluginRuntimeManager } from "../plugins/pluginRuntimeManager";
 
 export const registerIpcHandlers = (native: NativeBridge): void => {
-  const pluginRuntime = new PluginRuntimeManager();
-  app.once("before-quit", () => pluginRuntime.stopAll());
   registerPtyHandlers();
 
   registerNativeHandlers(native);
@@ -51,8 +45,6 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
   registerMemoryHandlers(native);
   registerScheduledTaskHandlers(native);
   registerPersonalizationHandlers();
-  registerCodexHandlers(native);
-  registerImportConfigHandlers(native, pluginRuntime);
   registerImageHandlers(native);
   registerImageLibraryHandlers(native);
   registerStorageHandlers(native);

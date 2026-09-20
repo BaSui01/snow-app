@@ -75,8 +75,6 @@ pub fn run_pre_schema_migrations(connection: &Connection) -> rusqlite::Result<()
 /// already have via `CREATE TABLE`).
 pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<()> {
     migrate_chat_conversations_api_profile(connection)?;
-    migrate_plugins_runtime(connection)?;
-    migrate_plugins_desired_state(connection)?;
     migrate_system_prompt_scope(connection)?;
     migrate_chat_conversations_modes(connection)?;
     migrate_chat_conversations_workflow_mode(connection)?;
@@ -183,53 +181,6 @@ fn migrate_chat_conversations_api_profile(connection: &Connection) -> rusqlite::
         connection.execute(
             "ALTER TABLE chat_conversations
                 ADD COLUMN api_profile_name TEXT NOT NULL DEFAULT ''",
-            [],
-        )?;
-    }
-
-    Ok(())
-}
-
-/// Adds the `runtime_json` column to the `plugins` table for databases that
-/// were created with an earlier plugin schema.
-///
-/// The column stores the serialized plugin runtime declaration (entry,
-/// permissions, timeout). Idempotent: no-op when the column is already
-/// present (fresh databases get it from `CREATE TABLE` in `create_schema`).
-fn migrate_plugins_runtime(connection: &Connection) -> rusqlite::Result<()> {
-    let mut statement = connection.prepare("PRAGMA table_info(plugins)")?;
-    let mut columns = statement.query_map([], |row| row.get::<_, String>(1))?;
-    let has_runtime_column = columns.try_fold(false, |found, column| {
-        Ok::<bool, rusqlite::Error>(found || column? == "runtime_json")
-    })?;
-
-    if !has_runtime_column {
-        connection.execute(
-            "ALTER TABLE plugins ADD COLUMN runtime_json TEXT NOT NULL DEFAULT 'null'",
-            [],
-        )?;
-    }
-
-    Ok(())
-}
-
-/// Adds the persisted requested state for Plugins. Runtime discovery can set a
-/// Plugin to broken or update-available; this column preserves whether the
-/// user intended it to be enabled when its source becomes available again.
-fn migrate_plugins_desired_state(connection: &Connection) -> rusqlite::Result<()> {
-    let mut statement = connection.prepare("PRAGMA table_info(plugins)")?;
-    let columns: Vec<String> = statement
-        .query_map([], |row| row.get::<_, String>(1))?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-
-    if !columns.iter().any(|column| column == "desired_state") {
-        connection.execute(
-            "ALTER TABLE plugins ADD COLUMN desired_state TEXT NOT NULL DEFAULT 'enabled'",
-            [],
-        )?;
-        connection.execute(
-            "UPDATE plugins
-                SET desired_state = CASE WHEN state = 'disabled' THEN 'disabled' ELSE 'enabled' END",
             [],
         )?;
     }
@@ -608,39 +559,10 @@ fn migrate_legacy_imported_system_prompts(connection: &Connection) -> rusqlite::
     }
     connection.execute(
         "UPDATE system_prompts
-            SET scope = 'project',
-                project_id = (
-                    SELECT plugins.project_id
-                      FROM plugin_components
-                      JOIN plugins ON plugins.plugin_id = plugin_components.plugin_id
-                     WHERE plugin_components.target_id = system_prompts.prompt_id
-                       AND plugins.scope = 'project'
-                       AND plugins.project_id IS NOT NULL
-                     LIMIT 1
-                )
-          WHERE scope = 'global'
-            AND project_id IS NULL
-            AND EXISTS (
-                SELECT 1
-                  FROM plugin_components
-                  JOIN plugins ON plugins.plugin_id = plugin_components.plugin_id
-                 WHERE plugin_components.target_id = system_prompts.prompt_id
-                   AND plugins.scope = 'project'
-                   AND plugins.project_id IS NOT NULL
-            )",
-        [],
-    )?;
-    connection.execute(
-        "UPDATE system_prompts
             SET is_active = 0
           WHERE prompt_id LIKE 'claude-code:%:command:%'
              OR prompt_id LIKE 'opencode:%:command:%'
-             OR prompt_id LIKE 'opencode:%:agent:%'
-             OR prompt_id IN (
-                 SELECT target_id
-                   FROM plugin_components
-                  WHERE component_type IN ('command', 'agent')
-             )",
+             OR prompt_id LIKE 'opencode:%:agent:%'",
         [],
     )?;
 

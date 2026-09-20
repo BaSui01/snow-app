@@ -38,11 +38,6 @@ const LspSettingsPanel = lazy(() =>
     default: m.LspSettingsPanel,
   })),
 );
-const ImportSettingsPanel = lazy(() =>
-  import("./sidebar/ImportSettingsPanel").then((m) => ({
-    default: m.ImportSettingsPanel,
-  })),
-);
 const ImageGenSettingsPanel = lazy(() =>
   import("./sidebar/ImageGenSettingsPanel").then((m) => ({
     default: m.ImageGenSettingsPanel,
@@ -237,11 +232,6 @@ export const MainContent = ({
             />
           ) : activeView === "lsp-settings" ? (
             <LspSettingsPanel
-              activeDirectory={activeDirectory}
-              onClose={() => onSelectView("chat")}
-            />
-          ) : activeView === "import-settings" ? (
-            <ImportSettingsPanel
               activeDirectory={activeDirectory}
               onClose={() => onSelectView("chat")}
             />

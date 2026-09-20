@@ -9,7 +9,7 @@ Snow handles high-value assets including:
 - API keys, passwords, cookies, localStorage, and OAuth sessions;
 - source code, project files, terminal commands, and database/network access;
 - AI context, tool arguments/results, Hook output, and logs;
-- code or instructions supplied by Plugins, Skills, sub-agents, and external MCP servers;
+- code or instructions supplied by Skills, sub-agents, and external MCP servers;
 - application update manifests, packages, caches, and installation scripts.
 
 Principal risks include malicious or compromised pages/extensions/services, prompt injection, mistaken authorization, supply-chain tampering, control of an unlocked local account, and incorrect assumptions about the portability of encrypted backups.
@@ -29,13 +29,12 @@ flowchart LR
     M --> W[webview and web pages]
     W --> B[Sandboxed browser popups]
     N --> A[AI / privacy-filter API]
-    M --> X[Plugin utility process]
     N --> H[Hook shell commands]
     N --> E[External MCP: stdio / HTTP]
     M --> Q[Update source and installer]
 
     classDef external fill:#fff3cd,stroke:#9a6700,color:#000;
-    class A,W,B,X,H,E,Q external;
+    class A,W,B,H,E,Q external;
 ```
 
 Every arrow is a boundary requiring identity checks, argument validation, data minimization, and defined failure behavior. Process isolation, encryption, and authorization each solve only part of the problem; none automatically establishes trustworthy provenance or business correctness.
@@ -114,18 +113,16 @@ Treat remote pages as untrusted. A page can read data visible to its own origin,
 
 Local-browser import reads source profiles. Chromium uses DPAPI + AES-256-GCM on Windows and Keychain/PBKDF2/AES-128-CBC on macOS; the current Linux implementation cannot obtain Chromium keys from GNOME Keyring/KWallet. Firefox uses an NSS-related 3DES flow and requires special handling for a Primary Password. Locks, WAL state, version changes, and cookie constraints can cause partial failures.
 
-## 8. Plugin, Hook, Skill, MCP, and sub-agent boundary
+## 8. Hook, Skill, MCP, and sub-agent boundary
 
-| Extension surface  | Execution/source                                 | Key risk                                                                 | Recommendation                                               |
-| ------------------ | ------------------------------------------------ | ------------------------------------------------------------------------ | ------------------------------------------------------------ |
-| Declarative Plugin | Marketplace declaration; no install script       | Malicious configuration, provenance, and update risk                     | Install only trusted publishers                              |
-| External Plugin    | Isolated utility process with pre-launch warning | Isolation does not imply trust; granted permissions can be abused        | Review code, permissions, and updates                        |
-| Hook               | Shell command, context, or prompt                | Local code execution, context injection, and flow changes                | Pin dependencies, use least privilege, retain output         |
-| Skill              | Agent workflow/knowledge instructions            | Can encourage broader tool calls or data access                          | Read source and content before enabling                      |
-| External MCP       | Local stdio process or HTTP service              | Arbitrary external side effects, retention, misleading tool declarations | Restrict tools, endpoints, and credentials; audit separately |
-| Sub-agent          | Independent agent loop plus tool allowlist       | Context mistakes and side effects from allowed tools                     | Provide minimum context and clear file ownership             |
+| Extension surface | Execution/source                           | Key risk                                                                 | Recommendation                                               |
+| ----------------- | ------------------------------------------ | ------------------------------------------------------------------------ | ------------------------------------------------------------ |
+| Hook              | Shell command, context, or prompt          | Local code execution, context injection, and flow changes                | Pin dependencies, use least privilege, retain output         |
+| Skill             | Agent workflow/knowledge instructions      | Can encourage broader tool calls or data access                          | Read source and content before enabling                      |
+| External MCP      | Local stdio process or HTTP service        | Arbitrary external side effects, retention, misleading tool declarations | Restrict tools, endpoints, and credentials; audit separately |
+| Sub-agent         | Independent agent loop plus tool allowlist | Context mistakes and side effects from allowed tools                     | Provide minimum context and clear file ownership             |
 
-Hook exit code 0 passes, 1 warns or requests an optional decision, and 2+ blocks at a blockable lifecycle point. Fire-and-forget points such as `onStop` and `onSessionStart` cannot truly block; a pending decision becomes a warning. Tool authorization controls the Snow entry point, not the internal safety of a Plugin, Hook, or MCP server.
+Hook exit code 0 passes, 1 warns or requests an optional decision, and 2+ blocks at a blockable lifecycle point. Fire-and-forget points such as `onStop` and `onSessionStart` cannot truly block; a pending decision becomes a warning. Tool authorization controls the Snow entry point, not the internal safety of a Hook or MCP server.
 
 See [Configure Hooks and Sub-agents](../2-guides/5-configure-hooks-and-subagents.md) and [Configure MCP Servers](../2-guides/1-configure-mcp.md).
 
@@ -147,17 +144,17 @@ See [App Updates](../2-guides/18-app-updates.md) for the complete flow.
 
 1. Manually review tool arguments, paths, commands, and external endpoints.
 2. Keep YOLO, permanent project approvals, and extension permissions minimal.
-3. Give trusted AI/API/MCP/Plugin/Hook parties only the data required for the task.
+3. Give trusted AI/API/MCP/Hook parties only the data required for the task.
 4. Use OS screen locking, disk encryption, malware protection, and independent backups.
 5. Review login sessions after cookie import and revoke them server-side after device loss.
 6. Protect release accounts, manifests, and organizational proxy infrastructure.
-7. Do not treat privacy filtering, sandboxing, utility processes, or AES-GCM as end-to-end proof of safety.
+7. Do not treat privacy filtering, sandboxing, or AES-GCM as end-to-end proof of safety.
 
 ## 11. Security incident response
 
 When unexpected tool execution, credential exposure, a suspicious extension, or update tampering is detected:
 
-1. stop the affected conversation, disable YOLO, and disable suspicious Hooks/Plugins/MCP servers;
+1. stop the affected conversation, disable YOLO, and disable suspicious Hooks/MCP servers;
 2. disconnect or isolate the device while preserving necessary logs and a timeline;
 3. revoke cookies/OAuth sessions server-side and rotate API keys, passwords, and tokens;
 4. review project approvals, sensitive-command rules, Hook output, and tool-call records;

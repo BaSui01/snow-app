@@ -65,14 +65,6 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(__dirname, "src/main/index.ts"),
-          "import-discovery-worker": resolve(
-            __dirname,
-            "src/main/importConfig/import-discovery-worker.mjs",
-          ),
-          "plugin-runtime-worker": resolve(
-            __dirname,
-            "src/main/plugins/plugin-runtime-worker.ts",
-          ),
         },
       },
     },

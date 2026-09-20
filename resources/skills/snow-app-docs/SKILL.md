@@ -2,14 +2,14 @@
 name: snow-app-docs
 description: >-
   Snow App 配置与排查向导（中文/English）——配置/管理 API 密钥、模型与档案、
-  MCP 服务器、Skills、子代理、Hooks、图像生成、代理与网络、全局站点拦截规则、第三方配置导入、
+  MCP 服务器、Skills、子代理、Hooks、图像生成、代理与网络、全局站点拦截规则、
   安全隐私与工具授权、个性化/系统提示词/自定义请求头/主题/快捷键、用量统计与
   系统日志、数据存储位置、settings.json 字段、内置工具等。
   Guides the agent to read the built-in Snow App documentation (~/.snow/docs)
   before configuring or troubleshooting Snow App. Covers MCP servers;
   installing, managing, creating, and authoring Skills; sub-agents; Hooks;
-  API keys/models; image generation; proxy/network; third-party config and
-  Plugin runtimes; browser passwords and local-browser data import; app updates;
+  API keys/models; image generation; proxy/network;
+  browser passwords and local-browser data import; app updates;
   security/privacy/tool authorization; personalization, system prompts, custom
   headers, themes, and shortcuts; usage/log diagnostics; project-scoped
   settings; settings.json fields; storage locations; and built-in tools. Use
@@ -45,8 +45,7 @@ allowed-tools:
 # Snow App 文档阅读与配置指导（Docs & Configuration Guide）
 
 当用户请求**配置 MCP 服务器、安装与管理 Skills、创建与编写 Skills、配置 Hooks
-与子代理、配置 API 密钥与模型、配置图像生成、配置代理与网络、导入第三方配置
-与插件、管理浏览器密码/数据、处理应用更新、个性化与自定义请求头、用量/日志诊断、
+与子代理、配置 API 密钥与模型、配置图像生成、配置代理与网络、管理浏览器密码/数据、处理应用更新、个性化与自定义请求头、用量/日志诊断、
 项目级设置**，或询问 **settings.json 字段 / 内置工具 / 安全边界 / 数据位置**时，
 先阅读应用内置文档，再按文档步骤动手配置，而不是凭记忆操作。
 
@@ -77,7 +76,6 @@ allowed-tools:
 | 配置 Hooks 与子代理                            | `2-使用指南/5-配置Hooks与子代理.md`（en: `2-guides/5-configure-hooks-and-subagents.md`）                                                                                                                                                                                | —                                                                                                                               |
 | 浏览器自动化                                   | `2-使用指南/6-浏览器自动化.md`（en: `2-guides/6-browser-automation.md`）                                                                                                                                                                                                | —                                                                                                                               |
 | 代码库索引与代码诊断                           | `2-使用指南/7-代码库索引与代码诊断.md`（en: `2-guides/7-codebase-index-and-diagnostics.md`）                                                                                                                                                                            | —                                                                                                                               |
-| 第三方配置导入与插件 runtime                   | `2-使用指南/8-第三方配置导入.md`（en: `2-guides/8-third-party-configuration-import.md`）                                                                                                                                                                                | `3-参考手册/5-安全与信任边界.md`                                                                                                |
 | AI 开发协作、经验与前端美化工作流              | `2-使用指南/13-AI开发协作.md`、`2-使用指南/14-AI开发经验与教训.md`、`2-使用指南/15-前端设计与美化工作流.md`（en: `2-guides/13-ai-development-collaboration.md`、`2-guides/14-ai-development-lessons.md`、`2-guides/15-frontend-design-and-beautification-workflow.md`） | `4-架构与开发/2-开发者指南.md`                                                                                                  |
 | 安全、隐私与工具授权                           | `2-使用指南/16-安全隐私与工具授权.md`（en: `2-guides/16-security-privacy-and-tool-authorization.md`）                                                                                                                                                                   | `3-参考手册/5-安全与信任边界.md`                                                                                                |
 | 浏览器设置、密码保险库与本机导入               | `2-使用指南/17-浏览器设置密码与数据导入.md`（en: `2-guides/17-browser-settings-passwords-and-import.md`）                                                                                                                                                               | `3-参考手册/4-数据存储位置.md`                                                                                                  |

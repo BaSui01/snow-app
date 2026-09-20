@@ -4,16 +4,16 @@ Snow App checks for new versions automatically but does not silently download or
 
 ## 1. Update entry point and status
 
-Open Settings and scroll to the **About** area at the bottom of the Settings sidebar to view the current version and update status. **About** is a separate sidebar information area rather than one of the 24 settings pages. The UI can expose:
+Open Settings and scroll to the **About** area at the bottom of the Settings sidebar to view the current version and update status. **About** is a separate sidebar information area rather than one of the 25 settings pages. The UI can expose:
 
-| State | Meaning |
-| --- | --- |
-| `available` | A version newer than the installed version was found |
-| `version` | Available update version |
-| `downloading` | The package is being downloaded |
-| `progress` | Download progress |
-| `downloaded` | Download and verification are complete; restart installation is available |
-| `error` | Check, download, verification, or installation preparation failed |
+| State         | Meaning                                                                   |
+| ------------- | ------------------------------------------------------------------------- |
+| `available`   | A version newer than the installed version was found                      |
+| `version`     | Available update version                                                  |
+| `downloading` | The package is being downloaded                                           |
+| `progress`    | Download progress                                                         |
+| `downloaded`  | Download and verification are complete; restart installation is available |
+| `error`       | Check, download, verification, or installation preparation failed         |
 
 Click **Check for Updates** to check immediately. After a new version is found, clicking the version/download control starts the download. After completion, clicking **Restart to Update** installs it. An update-triggered quit bypasses the ordinary close confirmation so it cannot block the installer.
 
@@ -78,13 +78,13 @@ This documentation promises only the `electron-updater` behavior visible in the 
 
 ### Common Windows/Linux issues
 
-| Symptom | Recommendation |
-| --- | --- |
-| Checking never finishes | Check system/in-app proxy, DNS, TLS, and update-source response |
-| No update is reported after a release | Verify installed version, channel, platform/architecture assets, and release metadata |
-| Download fails | Check the dedicated updater partition's proxy, available disk space, and network logs |
-| Downloaded update will not install | Check installation-directory permissions, installer files, locking processes, and security software |
-| Development behavior differs | Development checks depend on dev update config and do not reproduce every packaged-build condition |
+| Symptom                               | Recommendation                                                                                      |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Checking never finishes               | Check system/in-app proxy, DNS, TLS, and update-source response                                     |
+| No update is reported after a release | Verify installed version, channel, platform/architecture assets, and release metadata               |
+| Download fails                        | Check the dedicated updater partition's proxy, available disk space, and network logs               |
+| Downloaded update will not install    | Check installation-directory permissions, installer files, locking processes, and security software |
+| Development behavior differs          | Development checks depend on dev update config and do not reproduce every packaged-build condition  |
 
 ## 5. macOS: custom full-ZIP update
 

@@ -13,7 +13,7 @@ flowchart TB
     APP --> W[Project workspace]
     N --> DB[(snowapp.db SQLite WAL)]
     N --> RES[Images backgrounds checkpoints password vault login state]
-    E --> CH[Chromium session window state plugin private data]
+    E --> CH[Chromium session window state]
     G --> CFG[CLI config ROLE Skills file logs]
     W --> PROJ[ROLE .snow/settings Skills background logs]
 ```
@@ -35,25 +35,24 @@ The application uses SQLite through rusqlite with:
 
 Representative tables include:
 
-| Table                                                   | Contents and sensitivity                                                                                                                                                                                                      |
-| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `system_settings`                                       | Key-value settings for theme, language, shortcuts, privacy, request logging, image-library root, and more                                                                                                                     |
-| `api_configs`                                           | API profiles, keys, and model settings; highly sensitive                                                                                                                                                                      |
-| `system_prompts`                                        | Global and project system-prompt templates                                                                                                                                                                                    |
-| `custom_header_schemes`                                 | Custom request-header schemes that may contain tokens                                                                                                                                                                         |
-| `workspace_directories`                                 | Workspace list                                                                                                                                                                                                                |
-| `mcp_server_configs`                                    | Global MCP configuration                                                                                                                                                                                                      |
-| `lsp_server_configs`                                    | LSP language-server configuration (DB-backed `lsp-config` scope; legacy `~/.snow/lsp-config.json` merged in)                                                                                                                  |
-| `plugins` / `plugin_marketplaces` / `plugin_components` | Plugin metadata, marketplaces, and component registry                                                                                                                                                                         |
-| `chat_conversations` / `chat_messages`                  | Conversations and messages, including resource references                                                                                                                                                                     |
-| `sub_agent_sessions` / `sub_agent_configs`              | Sub-agent sessions and configuration                                                                                                                                                                                          |
-| `todo_items` / `memos`                                  | TODO items and memos                                                                                                                                                                                                          |
-| `project_memories`                                      | Project-level persistent memory (cross-session AI knowledge bank; isolated per `directory_id`, traceable to the source conversation via `conversation_id`)                                                                    |
-| `usage_records`                                         | Token usage, status, model, and project associations                                                                                                                                                                          |
-| `userscripts` / `userscript_values`                     | Built-in browser Tampermonkey-compatible userscript metadata and `GM_*` persistent values; script source files are stored separately under `~/.snowapp/browser-script/`, not sensitive but may hold credential-like GM values |
-| `app_logs`                                              | System logs and optional raw API request payloads                                                                                                                                                                             |
-| `image_library`                                         | Image-library index; files live in the default or custom root                                                                                                                                                                 |
-| `codebase_embed_sessions` / `codebase_embeddings_*`     | Codebase embedding state and dynamically created per-project vector tables                                                                                                                                                    |
+| Table                                               | Contents and sensitivity                                                                                                                                                                                                      |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `system_settings`                                   | Key-value settings for theme, language, shortcuts, privacy, request logging, image-library root, and more                                                                                                                     |
+| `api_configs`                                       | API profiles, keys, and model settings; highly sensitive                                                                                                                                                                      |
+| `system_prompts`                                    | Global and project system-prompt templates                                                                                                                                                                                    |
+| `custom_header_schemes`                             | Custom request-header schemes that may contain tokens                                                                                                                                                                         |
+| `workspace_directories`                             | Workspace list                                                                                                                                                                                                                |
+| `mcp_server_configs`                                | Global MCP configuration                                                                                                                                                                                                      |
+| `lsp_server_configs`                                | LSP language-server configuration (DB-backed `lsp-config` scope; legacy `~/.snow/lsp-config.json` merged in)                                                                                                                  |
+| `chat_conversations` / `chat_messages`              | Conversations and messages, including resource references                                                                                                                                                                     |
+| `sub_agent_sessions` / `sub_agent_configs`          | Sub-agent sessions and configuration                                                                                                                                                                                          |
+| `todo_items` / `memos`                              | TODO items and memos                                                                                                                                                                                                          |
+| `project_memories`                                  | Project-level persistent memory (cross-session AI knowledge bank; isolated per `directory_id`, traceable to the source conversation via `conversation_id`)                                                                    |
+| `usage_records`                                     | Token usage, status, model, and project associations                                                                                                                                                                          |
+| `userscripts` / `userscript_values`                 | Built-in browser Tampermonkey-compatible userscript metadata and `GM_*` persistent values; script source files are stored separately under `~/.snowapp/browser-script/`, not sensitive but may hold credential-like GM values |
+| `app_logs`                                          | System logs and optional raw API request payloads                                                                                                                                                                             |
+| `image_library`                                     | Image-library index; files live in the default or custom root                                                                                                                                                                 |
+| `codebase_embed_sessions` / `codebase_embeddings_*` | Codebase embedding state and dynamically created per-project vector tables                                                                                                                                                    |
 
 Treat database backups as sensitive because one file can contain credentials, prompts, user messages, logs, and project paths.
 
@@ -168,25 +167,9 @@ Application-written content includes:
 | ---------------------------------------- | ----------------------------------------------------------------------------- |
 | `<userData>/window-state.json`           | Window position, size, and maximized state                                    |
 | `<userData>/ssh-credentials`             | SSH credential storage                                                        |
-| `<userData>/plugins/<hash>/`             | Plugin runtime private storage                                                |
 | Electron/Chromium-managed subdirectories | Live sessions, cookies, caches, and related data; exact structure is unstable |
 
-### 4.1 Isolated Plugin Storage
-
-Each plugin receives `<userData>/plugins/<first 24 characters of sha256(pluginId)>/`. The path is passed as `SNOW_PLUGIN_STORAGE_PATH`, and the utility process also uses it as its working directory. Only plugins declaring `storage` permission may read and write their own directory. `network` and `child-process` permissions separately control network and child-process access.
-
-Plugin data is split across four locations:
-
-| Type                         | Location                                                     |
-| ---------------------------- | ------------------------------------------------------------ |
-| Metadata                     | SQLite `plugins`, `plugin_marketplaces`, `plugin_components` |
-| Marketplace cache            | `~/.snow/plugin-marketplaces/`                               |
-| Marketplace-installed bodies | `~/.snow/plugins/marketplaces/`                              |
-| Runtime private data         | `<userData>/plugins/<hash>/`                                 |
-
-Disabling or stopping a plugin does not mean its private storage is deleted. Source does not guarantee that uninstall always cleans this directory, so backup and cleanup must handle each location separately.
-
-### 4.2 Platform Differences in Update Caches
+### 4.1 Platform Differences in Update Caches
 
 The custom macOS updater uses:
 
@@ -201,23 +184,22 @@ Non-macOS platforms use `electron-updater`. Its download cache is managed by the
 
 This directory is shared with Snow CLI and the `config` tool. Main entries include:
 
-| Path                                             | Contents and boundary                                                                                                                                                                         |
-| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `settings.json`                                  | Global settings; workspace settings may override them                                                                                                                                         |
-| `config.json`                                    | `snowcfg` API/model configuration that may contain keys                                                                                                                                       |
-| `proxy-config.json`                              | Proxy, search-engine, and browser configuration                                                                                                                                               |
-| `active-profile.json`                            | Active profile                                                                                                                                                                                |
-| `custom-headers.json`                            | CLI custom-header synchronization source; may contain secrets. The schemes the app actually sends live in the app database `custom_header_schemes` table (config scope `customHeaderSchemes`) |
-| `system-prompt.json`                             | CLI system-prompt synchronization source                                                                                                                                                      |
-| `theme.json` / `language.json`                   | Config-tool theme and language domains; not the sole source for current SQLite-backed UI settings                                                                                             |
-| `permissions.json`                               | Always-approved tool allowlist                                                                                                                                                                |
-| `lsp-config.json` / `buddy.json`                 | LSP and Buddy configuration                                                                                                                                                                   |
-| `ROLE.md`                                        | Global personalization rules                                                                                                                                                                  |
-| `skills/` / `skills-registry.json`               | Global skills and registration metadata                                                                                                                                                       |
-| `docs/`                                          | Synchronized built-in documentation copy                                                                                                                                                      |
-| `plugin-marketplaces/` / `plugins/marketplaces/` | Plugin marketplace cache and installed bodies                                                                                                                                                 |
-| `log/`                                           | Daily level files for the config `logs` scope                                                                                                                                                 |
-| `.config-backups/`                               | Temporary pre-write safety net used by the config tool and removed after success                                                                                                              |
+| Path                               | Contents and boundary                                                                                                                                                                         |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `settings.json`                    | Global settings; workspace settings may override them                                                                                                                                         |
+| `config.json`                      | `snowcfg` API/model configuration that may contain keys                                                                                                                                       |
+| `proxy-config.json`                | Proxy, search-engine, and browser configuration                                                                                                                                               |
+| `active-profile.json`              | Active profile                                                                                                                                                                                |
+| `custom-headers.json`              | CLI custom-header synchronization source; may contain secrets. The schemes the app actually sends live in the app database `custom_header_schemes` table (config scope `customHeaderSchemes`) |
+| `system-prompt.json`               | CLI system-prompt synchronization source                                                                                                                                                      |
+| `theme.json` / `language.json`     | Config-tool theme and language domains; not the sole source for current SQLite-backed UI settings                                                                                             |
+| `permissions.json`                 | Always-approved tool allowlist                                                                                                                                                                |
+| `lsp-config.json` / `buddy.json`   | LSP and Buddy configuration                                                                                                                                                                   |
+| `ROLE.md`                          | Global personalization rules                                                                                                                                                                  |
+| `skills/` / `skills-registry.json` | Global skills and registration metadata                                                                                                                                                       |
+| `docs/`                            | Synchronized built-in documentation copy                                                                                                                                                      |
+| `log/`                             | Daily level files for the config `logs` scope                                                                                                                                                 |
+| `.config-backups/`                 | Temporary pre-write safety net used by the config tool and removed after success                                                                                                              |
 
 ## 6. Project Workspace
 
@@ -250,7 +232,6 @@ Raw API request logging writes to the first source and may include complete requ
 | Uploaded and library images       | Retained with resource directories                                       | Database index and physical files must stay consistent; conversation deletion may cascade |
 | Theme resources                   | Managed copies persist                                                   | Removing originals does not affect copies; removing copies breaks references              |
 | Password vault and browser states | Retained until user deletion or directory replacement                    | Encryption is OS-user-bound, so cross-machine copies may be unrecoverable                 |
-| Plugin private data               | May remain after disabling or stopping                                   | Do not assume uninstall always cleans it                                                  |
 | Update cache                      | Managed by update flow/library                                           | Platform location and cleanup policy differ                                               |
 | Config backups                    | Temporary safety net during config writes                                | Not a long-term backup strategy                                                           |
 
@@ -259,7 +240,6 @@ Raw API request logging writes to the first source and may include complete requ
 - `snowapp.db`, `~/.snow/config.json`, custom headers, request logs, and SSH credentials may contain secrets.
 - Files protected by `safeStorage` depend on the current OS user and key backend; they are not freely portable encrypted backups.
 - Restore localStorage, cookies, and passwords only on trusted devices and trusted user accounts.
-- Plugin private directories are permission boundaries; do not copy one plugin's data to another.
 - Setting file mode `0600` is best effort. On Windows, actual protection depends on account ACLs and DPAPI.
 - Before sharing logs, databases, or directory listings, remove API keys, Authorization values, cookies, prompts, user content, paths, and private network addresses.
 
@@ -271,7 +251,7 @@ Raw API request logging writes to the first source and may include complete requ
 2. Back up all of `~/.snowapp/`, not only `snowapp.db`; this also captures WAL/SHM sidecars, uploads, the default image library, backgrounds, checkpoints, and the password vault.
 3. If the image library uses a custom root, back up that root separately.
 4. Back up `~/.snow/`, protecting its keys, ROLE, skills, browser states, and logs as sensitive data.
-5. Back up Electron `userData` when needed, especially plugin private data and live browser sessions.
+5. Back up Electron `userData` when needed, especially live browser sessions.
 6. Back up the workspace `ROLE.md`, `.snow/settings.json`, project skills, and background-task logs that must be retained.
 
 ### Restore
@@ -280,7 +260,7 @@ Raw API request logging writes to the first source and may include complete requ
 2. Preserve a copy of the target environment's existing directories so the replacement can be rolled back.
 3. Restore `~/.snowapp/`, `~/.snow/`, required `userData`, and any custom image-library root.
 4. Start the application and allow schema migrations and interrupted image-library recovery to run.
-5. Verify conversations, images, API profiles, plugins, and usage records.
+5. Verify conversations, images, API profiles, and usage records.
 6. Validate the password vault and browser login states separately. Across OS users or machines, `safeStorage` binding may prevent decryption.
 
 > Do not replace `snowapp.db` while Snow App is running, and do not restore only the database while omitting `upload/`, the image-library root, or other resources referenced by messages.

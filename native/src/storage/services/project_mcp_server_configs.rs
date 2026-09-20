@@ -231,12 +231,6 @@ pub fn delete_project_mcp_server_config(
                 ));
             }
             write_project_mcp_server_settings_with_connection(&transaction, &settings)?;
-            super::import_resources::delete_mcp_tracking_for_target(
-                &transaction,
-                "project",
-                Some(&settings.project_id),
-                &normalized_server_id,
-            )?;
             transaction.commit()?;
             Ok(())
         })

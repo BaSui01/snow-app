@@ -12,9 +12,6 @@ import { memoApi } from "./modules/memoApi";
 import { memoryApi } from "./modules/memoryApi";
 import { scheduledTaskApi } from "./modules/scheduledTaskApi";
 import { personalizationApi } from "./modules/personalizationApi";
-import { codexApi } from "./modules/codexApi";
-import { importConfigApi } from "./modules/importConfigApi";
-import { pluginsApi } from "./modules/pluginsApi";
 import { userscriptsApi } from "./modules/userscriptsApi";
 import { imageLibraryApi } from "./modules/imageLibraryApi";
 import { storageApi } from "./modules/storageApi";
@@ -41,9 +38,6 @@ const api = {
   ...memoryApi,
   ...scheduledTaskApi,
   ...personalizationApi,
-  ...codexApi,
-  ...importConfigApi,
-  ...pluginsApi,
   ...userscriptsApi,
   ...imageLibraryApi,
   ...storageApi,

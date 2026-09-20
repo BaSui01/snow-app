@@ -34,7 +34,6 @@ pub fn delete_system_prompt(database_path: &Path, prompt_id: &str) -> Result<()>
                 "DELETE FROM system_prompts WHERE prompt_id = ?1",
                 [prompt_id],
             )?;
-            super::import_resources::delete_prompt_tracking_for_target(&transaction, prompt_id)?;
             transaction.commit()?;
             Ok(())
         })

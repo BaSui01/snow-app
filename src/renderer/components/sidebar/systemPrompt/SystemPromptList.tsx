@@ -1,11 +1,5 @@
 import { Pencil, Trash2 } from "lucide-react";
 import { useI18n } from "../../../i18n";
-import type {
-  ImportResourceRecord,
-  ImportResourceReleaseDisposition,
-  ImportResourceSource,
-} from "../../../../preload";
-import { ManagedImportResourceActions } from "../importConfig/ManagedImportResourceActions";
 import type { SystemPromptItem } from "./types";
 
 type SystemPromptListProps = {
@@ -14,12 +8,6 @@ type SystemPromptListProps = {
   onToggleActive: (prompt: SystemPromptItem) => void;
   onEdit: (prompt: SystemPromptItem) => void;
   onDelete: (prompt: SystemPromptItem) => void;
-  importResources: ImportResourceRecord[];
-  onReleaseImportResource: (
-    resource: ImportResourceRecord,
-    source: ImportResourceSource,
-    disposition: ImportResourceReleaseDisposition
-  ) => void;
 };
 
 export function SystemPromptList({
@@ -28,8 +16,6 @@ export function SystemPromptList({
   onToggleActive,
   onEdit,
   onDelete,
-  importResources,
-  onReleaseImportResource,
 }: SystemPromptListProps): React.JSX.Element {
   const { t } = useI18n();
 
@@ -53,12 +39,6 @@ export function SystemPromptList({
           </div>
         ) : (
           prompts.map((prompt) => {
-            const importResource = importResources.find((resource) =>
-              (resource.resourceType === "prompt" ||
-                resource.resourceType === "command" ||
-                resource.resourceType === "agent") &&
-              resource.targetId === prompt.promptId
-            );
             const activeLabel = prompt.isActive
               ? t("settings.systemPromptDeactivate", {
                   defaultValue: "Deactivate",
@@ -118,14 +98,7 @@ export function SystemPromptList({
                   </button>
                   <button
                     className="icon-btn ghost danger"
-                    onClick={() => {
-                      const source = importResource?.sources[0];
-                      if (importResource && source) {
-                        onReleaseImportResource(importResource, source, "delete");
-                        return;
-                      }
-                      onDelete(prompt);
-                    }}
+                    onClick={() => onDelete(prompt)}
                     type="button"
                     aria-label={t("settings.delete", {
                       defaultValue: "Delete",
@@ -135,11 +108,6 @@ export function SystemPromptList({
                   >
                     <Trash2 size={14} strokeWidth={1.9} />
                   </button>
-                  <ManagedImportResourceActions
-                    resource={importResource}
-                    isBusy={isBusy}
-                    onRelease={onReleaseImportResource}
-                  />
                 </div>
               </div>
             );

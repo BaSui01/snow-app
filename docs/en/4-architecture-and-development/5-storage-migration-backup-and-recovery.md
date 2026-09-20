@@ -12,7 +12,7 @@ flowchart TD
     assets["~/.snowapp resources\ncheckpoints backgrounds uploads images workspace"]
     config["~/.snow\nuser configuration and skills"]
     project["workspace/.snow\nproject-scoped configuration"]
-    userdata["Electron userData\nwindow state plugin private data updates"]
+    userdata["Electron userData\nwindow state updates"]
     custom["Custom image library directory"]
 
     app --> rust
@@ -28,13 +28,13 @@ Do not describe all data as residing under `~/.snowapp`. Actual locations are de
 
 ## 2. Persistence Locations
 
-| Domain | Typical content | Notes |
-|---|---|---|
-| `~/.snowapp/` | `snowapp.db`, `checkpoints/`, `backgrounds/`, `stream-cursors/`, `upload/<date>/`, default `image/`, built-in `workspace/` | Application data and default resource root |
-| `~/.snow/` | Settings JSON, Skills, docs, `ROLE.md`, temporary `.config-backups/` | CLI/agent-visible configuration domain |
-| `<workspace>/.snow/` | Project MCP, approvals, Hooks, sub-agents, or index-related state | Isolated by workspace |
-| Electron `userData` | `window-state.json`, `plugins/<hash>/`, update cache, and more | Main-process and plugin-private data |
-| Custom image directory | `image/...` files | The database still holds the index and relative paths |
+| Domain                 | Typical content                                                                                                            | Notes                                                 |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `~/.snowapp/`          | `snowapp.db`, `checkpoints/`, `backgrounds/`, `stream-cursors/`, `upload/<date>/`, default `image/`, built-in `workspace/` | Application data and default resource root            |
+| `~/.snow/`             | Settings JSON, Skills, docs, `ROLE.md`, temporary `.config-backups/`                                                       | CLI/agent-visible configuration domain                |
+| `<workspace>/.snow/`   | Project MCP, approvals, Hooks, sub-agents, or index-related state                                                          | Isolated by workspace                                 |
+| Electron `userData`    | `window-state.json`, update cache, and more                                                                                | Main-process data                                     |
+| Custom image directory | `image/...` files                                                                                                          | The database still holds the index and relative paths |
 
 SSH credentials and platform security storage may live in OS- or Electron-managed locations and must be treated as sensitive credentials during backup.
 
@@ -53,7 +53,7 @@ At runtime, `snowapp.db-wal` may contain committed transactions not yet checkpoi
 
 ## 4. Schema and user_version
 
-The direct `create_schema` batch currently creates 20 tables, followed by `image_library::ensure_image_library_table`, for **21 core business tables including `image_library`**. Auxiliary tables such as `codebase_embed_sessions` and per-project dynamic codebase-index tables are outside those 21 direct core tables.
+The direct `create_schema` batch currently creates 29 tables, followed by `image_library::ensure_image_library_table`, for **30 core business tables including `image_library`**. Auxiliary tables such as `codebase_embed_sessions` and per-project dynamic codebase-index tables are outside those 29 direct core tables.
 
 The current `PRAGMA user_version` is 26. New tables belong in the current schema; new columns/indexes and old-structure conversions belong in migrations. Every migration must be idempotent, followed by a `user_version` bump. Never edit the database or change `user_version` manually to bypass migrations.
 
@@ -165,9 +165,8 @@ Recommended offline backup:
 2. Copy all of `~/.snowapp/`, not only the database main file.
 3. Copy all of `~/.snow/`.
 4. If `system_settings.image_library_dir` points to a custom directory, copy it separately.
-5. To retain plugin-private data, copy `<userData>/plugins/`.
-6. Optionally copy window state, update cache, or SSH-related data; encrypt credentials and restrict access.
-7. Record app version, operating system, and custom paths for compatibility decisions during restore.
+5. Optionally copy window state, update cache, or SSH-related data; encrypt credentials and restrict access.
+6. Record app version, operating system, and custom paths for compatibility decisions during restore.
 
 ```mermaid
 flowchart LR
@@ -188,7 +187,7 @@ If online backup becomes a requirement, implement SQLite's backup API or a contr
 1. Keep Snow App fully stopped.
 2. First save the current `~/.snowapp/`, `~/.snow/`, and relevant custom directories so the only usable copy is not overwritten.
 3. Restore the complete directory set; do not replace only `snowapp.db` while leaving mismatched `-wal` / `-shm` files.
-4. Restore the custom image library and required plugin-private data.
+4. Restore the custom image library.
 5. Start Snow App and let the current version run idempotent schema migrations.
 6. Inspect app logs, key conversations, settings, images, and workspace bindings.
 7. If automatic corruption recovery occurs, preserve `.corrupt.*.bak` and verify whether rows were lost.
@@ -197,24 +196,24 @@ Restoring old-version data into a newer version allows forward migrations to run
 
 ## 11. Failure Scenarios and Prohibitions
 
-| Scenario | Correct response |
-|---|---|
-| Copy only `snowapp.db` while running | Stop the app and copy the full directory, or later use a formal SQLite backup API |
-| Manually alter `user_version` | Restore a backup and let migration code run |
-| Data is incomplete after auto-recovery | Preserve the corrupt backup, compare logs, and perform manual recovery |
-| Config write is interrupted | Inspect target, tmp, and `.config-backups` leftovers; do not treat that directory as version history |
-| Image migration is interrupted | Let journal recovery determine commit or rollback at next initialization |
-| Open a new DB in an old app | Use a matching version or validate compatibility; migrations are not assumed reversible |
+| Scenario                               | Correct response                                                                                     |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Copy only `snowapp.db` while running   | Stop the app and copy the full directory, or later use a formal SQLite backup API                    |
+| Manually alter `user_version`          | Restore a backup and let migration code run                                                          |
+| Data is incomplete after auto-recovery | Preserve the corrupt backup, compare logs, and perform manual recovery                               |
+| Config write is interrupted            | Inspect target, tmp, and `.config-backups` leftovers; do not treat that directory as version history |
+| Image migration is interrupted         | Let journal recovery determine commit or rollback at next initialization                             |
+| Open a new DB in an old app            | Use a matching version or validate compatibility; migrations are not assumed reversible              |
 
 ## 12. Source Anchors
 
-| Topic | File or function |
-|---|---|
-| Path resolution | `native/src/storage/paths.rs` |
-| Connections, schema, corruption recovery | `native/src/storage/database.rs` |
-| Pre/post migration | `native/src/storage/migrations.rs` |
-| Initialization and interrupted migration recovery | `native/src/storage/mod.rs` |
-| Image-library migration | `native/src/storage/services/image_library.rs` |
-| Image-library IPC | `src/main/ipc/handlers/imageLibraryHandlers.ts`, `src/preload/modules/imageLibraryApi.ts` |
-| Config backup and atomic write | `native/src/mcp/servers/config.rs` |
-| Conversations and checkpoints | `native/src/storage/services/chat_conversations.rs`, `checkpoint.rs` |
+| Topic                                             | File or function                                                                          |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Path resolution                                   | `native/src/storage/paths.rs`                                                             |
+| Connections, schema, corruption recovery          | `native/src/storage/database.rs`                                                          |
+| Pre/post migration                                | `native/src/storage/migrations.rs`                                                        |
+| Initialization and interrupted migration recovery | `native/src/storage/mod.rs`                                                               |
+| Image-library migration                           | `native/src/storage/services/image_library.rs`                                            |
+| Image-library IPC                                 | `src/main/ipc/handlers/imageLibraryHandlers.ts`, `src/preload/modules/imageLibraryApi.ts` |
+| Config backup and atomic write                    | `native/src/mcp/servers/config.rs`                                                        |
+| Conversations and checkpoints                     | `native/src/storage/services/chat_conversations.rs`, `checkpoint.rs`                      |

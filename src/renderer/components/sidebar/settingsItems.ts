@@ -3,7 +3,6 @@ import {
   ChartColumn,
   Compass,
   Database,
-  Download,
   EyeOff,
   FishingHook,
   GitBranch,
@@ -131,13 +130,6 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
     labelKey: "settings.skillsSettings",
     defaultLabel: "Skills settings",
     view: "skills-settings",
-  },
-  {
-    id: "import-config",
-    icon: Download,
-    labelKey: "settings.thirdPartySettings",
-    defaultLabel: "Third-party configuration",
-    view: "import-settings",
   },
   {
     id: "subagent",

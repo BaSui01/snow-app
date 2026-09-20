@@ -429,7 +429,7 @@ that stay alive across multiple calls), complementary to `bash-terminal-execute`
 | `personalization-settings`    | Personalization                                          |
 | `custom-headers-settings`     | Custom Headers                                           |
 | `mcp-settings`                | MCP Settings (server and tool toggles, global + project) |
-| `import-settings`             | Import                                                   |
+| `lsp-settings`                | LSP Settings                                             |
 | `skills-settings`             | Skills Settings                                          |
 | `sub-agent-settings`          | Sub-Agent Settings                                       |
 | `sensitive-command-settings`  | Sensitive Commands                                       |

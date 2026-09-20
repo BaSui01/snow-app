@@ -16,13 +16,13 @@ The branch selector groups **local branches** and **remote branches** separately
 
 ### 1.3 Changes, Staging, and Diffs
 
-| Operation | Behavior |
-| --- | --- |
-| Inspect changes | The **Changes** view separates unstaged and staged files and shows added/modified/deleted status; click a file to open its corresponding diff |
-| Select one or many | A normal click selects one item; `Ctrl/Cmd` adds/removes items and `Shift` selects a range within the same section |
-| Stage/unstage | Act on selected items, or use the section action to stage all or unstage all |
-| Discard changes | Request discard for one or more unstaged files; a confirmation dialog is required before the operation runs, then status refreshes |
-| File shortcuts | Open a file in the file reader or open a terminal at its location; local paths can also be revealed in the file manager |
+| Operation          | Behavior                                                                                                                                      |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Inspect changes    | The **Changes** view separates unstaged and staged files and shows added/modified/deleted status; click a file to open its corresponding diff |
+| Select one or many | A normal click selects one item; `Ctrl/Cmd` adds/removes items and `Shift` selects a range within the same section                            |
+| Stage/unstage      | Act on selected items, or use the section action to stage all or unstage all                                                                  |
+| Discard changes    | Request discard for one or more unstaged files; a confirmation dialog is required before the operation runs, then status refreshes            |
+| File shortcuts     | Open a file in the file reader or open a terminal at its location; local paths can also be revealed in the file manager                       |
 
 Use the toolbar to switch between **Changes** and **Graph**. Graph pages through commit history and renders commit relationships and branch/remote/tag decorations. Expanding a commit reveals **its file list and per-commit diff**:
 
@@ -79,13 +79,13 @@ Choose **Details** from a workspace's ellipsis/context menu to open that workspa
 
 The right panel is a **multi-tab** file reader. It reads local files or remote files through an existing SSH session, and editable text can be changed and saved back to the corresponding local or remote path.
 
-| File type | Support |
-| --- | --- |
-| Text/code | Syntax highlighting, line numbers, open at a target line, editing and saving, and in-file search |
+| File type        | Support                                                                                                                                       |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Text/code        | Syntax highlighting, line numbers, open at a target line, editing and saving, and in-file search                                              |
 | Markdown (`.md`) | Rendered preview for headings/tables/code/math/diagrams plus source mode; relative file links open in another tab; editing switches to source |
-| Images | Preview; SVG has image/code dual modes |
-| Office documents | Extracted text from PDF / Word / Excel / CSV and related formats |
-| Binary | A **Binary file** placeholder, with no text editing |
+| Images           | Preview; SVG has image/code dual modes                                                                                                        |
+| Office documents | Extracted text from PDF / Word / Excel / CSV and related formats                                                                              |
+| Binary           | A **Binary file** placeholder, with no text editing                                                                                           |
 
 Editing and search shortcuts:
 
@@ -106,7 +106,7 @@ Global search combines three kinds of objects:
 
 1. **Conversations**, matched by title, summary, and searchable message content;
 2. **Projects/workspaces**, matched by display name or path and activated when selected;
-3. **All 24 settings pages**, matched by localized page name or settings-page id and opened directly when selected.
+3. **All 25 settings pages**, matched by localized page name or settings-page id and opened directly when selected.
 
 Results are grouped as conversations, projects, and settings. Use `Up` / `Down` to cycle through items and `Enter` to open the current result. Hovering or clicking with the mouse also updates/selects the current item.
 
@@ -163,14 +163,14 @@ The known recognition table includes Visual Studio Code/Insiders, Cursor, Windsu
 
 ## 7. Troubleshooting
 
-| Symptom | Cause & fix |
-| --- | --- |
-| Git panel shows no repos | Confirm `.git` exists under the workspace; remote repos need an SSH connection first |
-| No IDE appears under Open with | Confirm the IDE is installed in a detectable system location; close and reopen the directory menu to retry its loading flow in the current session |
-| IDE launch fails | Check the executable path shown by the menu item, project-directory permissions, and local security policy; SSH workspaces do not support this entry |
-| Semantic search unavailable | Codebase index not enabled or not finished; check the embedding model config |
-| 3D sphere lags | Layout already runs off-thread; for huge repos narrow the index with `fileGlob` |
-| Preview vs source mismatch | Markdown preview goes through the renderer; the source view is authoritative |
+| Symptom                        | Cause & fix                                                                                                                                          |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Git panel shows no repos       | Confirm `.git` exists under the workspace; remote repos need an SSH connection first                                                                 |
+| No IDE appears under Open with | Confirm the IDE is installed in a detectable system location; close and reopen the directory menu to retry its loading flow in the current session   |
+| IDE launch fails               | Check the executable path shown by the menu item, project-directory permissions, and local security policy; SSH workspaces do not support this entry |
+| Semantic search unavailable    | Codebase index not enabled or not finished; check the embedding model config                                                                         |
+| 3D sphere lags                 | Layout already runs off-thread; for huge repos narrow the index with `fileGlob`                                                                      |
+| Preview vs source mismatch     | Markdown preview goes through the renderer; the source view is authoritative                                                                         |
 
 ## 8. References
 

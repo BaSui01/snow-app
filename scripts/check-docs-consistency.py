@@ -22,11 +22,11 @@ from pathlib import Path
 
 # 21 个 openSettings 页面 id（与 native/src/mcp/servers/app_control.rs 的
 # VALID_SETTINGS_PAGES 对齐；settingsItems.ts 的 UI 设置项现为 25 个，
-# 其中 data-management/general/git/pets 未暴露给 app-control-openSettings）
+# 其中 general/git/pets/remote-control 未暴露给 app-control-openSettings）
 SETTINGS_PAGES = [
     "api-settings", "imagegen-settings", "image-library", "proxy-browser-settings",
     "codebase-settings", "system-prompt-settings", "personalization-settings",
-    "custom-headers-settings", "mcp-settings", "import-settings", "skills-settings",
+    "custom-headers-settings", "mcp-settings", "lsp-settings", "skills-settings",
     "sub-agent-settings", "sensitive-command-settings", "hooks-settings",
     "theme-settings", "terminal-settings", "browser-settings",
     "keyboard-shortcuts-settings", "privacy-settings", "usage-settings", "system-logs",
@@ -50,7 +50,6 @@ NAME_MAP = {
     ("2-使用指南", 5): "5-configure-hooks-and-subagents.md",
     ("2-使用指南", 6): "6-browser-automation.md",
     ("2-使用指南", 7): "7-codebase-index-and-diagnostics.md",
-    ("2-使用指南", 8): "8-third-party-configuration-import.md",
     ("2-使用指南", 9): "9-image-generation.md",
     ("2-使用指南", 10): "10-using-chat-and-ai.md",
     ("2-使用指南", 11): "11-terminal-and-ssh.md",

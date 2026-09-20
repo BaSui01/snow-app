@@ -9,9 +9,6 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
-  ImportResourceRecord,
-  ImportResourceReleaseDisposition,
-  ImportResourceSource,
   McpProjectServerStatus,
   WorkspaceDirectoryRecord,
 } from "../../../preload";
@@ -95,15 +92,6 @@ export function McpSettingsPanel({
   >([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [isReleasing, setIsReleasing] = useState(false);
-  const [importResources, setImportResources] = useState<
-    ImportResourceRecord[]
-  >([]);
-  const [pendingRelease, setPendingRelease] = useState<{
-    resource: ImportResourceRecord;
-    source: ImportResourceSource;
-    disposition: ImportResourceReleaseDisposition;
-  } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{
     server: McpSettingsListItem;
     scope: McpScope;
@@ -122,7 +110,7 @@ export function McpSettingsPanel({
   // 避免同一台服务器被并发发现两次。
   const discoveringServerIdsRef = useRef<Set<string>>(new Set());
 
-  const isBusy = isLoading || isSaving || isReleasing;
+  const isBusy = isLoading || isSaving;
 
   /**
    * 单台项目服务器的工具发现：调用 Rust 端发现（内部读写进程内缓存），
@@ -235,8 +223,8 @@ export function McpSettingsPanel({
     setError("");
 
     try {
-      const [globalItems, projectItems, projectConfigItems, managedResources] =
-        await Promise.all([
+      const [globalItems, projectItems, projectConfigItems] = await Promise.all(
+        [
           window.snow.listMcpServerConfigs(),
           activeDirectory
             ? window.snow.listMcpProjectServersCached(
@@ -248,8 +236,8 @@ export function McpSettingsPanel({
                 activeDirectory.directoryId,
               )
             : Promise.resolve([]),
-          window.snow.listManagedImportResources(),
-        ]);
+        ],
+      );
       if (loadGenerationRef.current !== generation) {
         return;
       }
@@ -257,7 +245,6 @@ export function McpSettingsPanel({
       setServers(globalItems);
       setProjectServers(projectItems);
       setProjectServerConfigs(projectConfigItems);
-      setImportResources(managedResources);
       setToolsByServerId((previous) =>
         mergeServerTools(previous, projectItems),
       );
@@ -358,20 +345,6 @@ export function McpSettingsPanel({
   const cancelDraft = () => {
     setDraft(null);
     setError("");
-  };
-
-  const adoptImportedResource = async (
-    resource: ImportResourceRecord | undefined,
-  ): Promise<void> => {
-    const source = resource?.sources[0];
-    if (!resource || !source) {
-      return;
-    }
-    await window.snow.releaseManagedImportResource({
-      resourceId: resource.resourceId,
-      sourceId: source.sourceId,
-      disposition: "adopt",
-    });
   };
 
   const patchDraft = (patch: Partial<McpServerDraft>) => {
@@ -510,17 +483,6 @@ export function McpSettingsPanel({
       );
       return;
     }
-    const importResource = draft.serverId
-      ? importResources.find(
-          (resource) =>
-            resource.resourceType === "mcp" &&
-            resource.scope === operationScope &&
-            resource.projectId ===
-              (operationScope === "project" ? operationProjectId : undefined) &&
-            resource.targetId === draft.serverId,
-        )
-      : undefined;
-
     setIsSaving(true);
     setError("");
     setStatus("");
@@ -551,8 +513,6 @@ export function McpSettingsPanel({
         // 快速刷新（只读缓存）+ 后台补发现：保存本身不被工具发现阻塞。
         await refreshProjectServers(operationProjectId, generation);
       }
-
-      await adoptImportedResource(importResource);
 
       setDraft(null);
       setStatus(
@@ -607,14 +567,6 @@ export function McpSettingsPanel({
         source: server.source,
       });
       setServers(items);
-      await adoptImportedResource(
-        importResources.find(
-          (resource) =>
-            resource.resourceType === "mcp" &&
-            resource.scope === "global" &&
-            resource.targetId === server.serverId,
-        ),
-      );
     } catch (e) {
       setError(
         e instanceof Error
@@ -802,12 +754,6 @@ export function McpSettingsPanel({
     globalEnabled: true,
     detail: `${server.transportType} · ${getMcpServerEndpoint(server) || "-"}`,
     canManage: true,
-    importResource: importResources.find(
-      (resource) =>
-        resource.resourceType === "mcp" &&
-        resource.scope === "global" &&
-        resource.targetId === server.serverId,
-    ),
   }));
   const projectListItems: McpSettingsListItem[] = projectServers.map(
     (server) => {
@@ -845,15 +791,6 @@ export function McpSettingsPanel({
           ? `${sourceDetail} · ${builtinDescription}`
           : sourceDetail,
         canManage: server.source === "project",
-        importResource: projectConfig
-          ? importResources.find(
-              (resource) =>
-                resource.resourceType === "mcp" &&
-                resource.scope === "project" &&
-                resource.projectId === activeDirectory?.directoryId &&
-                resource.targetId === projectConfig.serverId,
-            )
-          : undefined,
       };
     },
   );
@@ -929,17 +866,6 @@ export function McpSettingsPanel({
           window.dispatchEvent(new CustomEvent(LITE_MODE_CHANGED_EVENT));
         }
       }
-      await adoptImportedResource(
-        projectConfig
-          ? importResources.find(
-              (resource) =>
-                resource.resourceType === "mcp" &&
-                resource.scope === "project" &&
-                resource.projectId === operationProjectId &&
-                resource.targetId === projectConfig.serverId,
-            )
-          : undefined,
-      );
       if (loadGenerationRef.current !== generation) {
         return;
       }
@@ -1122,11 +1048,6 @@ export function McpSettingsPanel({
   };
 
   const handleListDelete = (server: McpSettingsListItem): void => {
-    const source = server.importResource?.sources[0];
-    if (server.importResource && source) {
-      requestRelease(server.importResource, source, "delete");
-      return;
-    }
     setPendingDelete({ server, scope: activeScope });
   };
 
@@ -1148,50 +1069,6 @@ export function McpSettingsPanel({
     const projectServer = findProjectServer(pending.server.serverId);
     if (projectServer) {
       await handleProjectDelete(projectServer);
-    }
-  };
-
-  const requestRelease = (
-    resource: ImportResourceRecord,
-    source: ImportResourceSource,
-    disposition: ImportResourceReleaseDisposition,
-  ): void => setPendingRelease({ resource, source, disposition });
-
-  const confirmRelease = async (): Promise<void> => {
-    const pending = pendingRelease;
-    if (!pending) {
-      return;
-    }
-    setPendingRelease(null);
-    setIsReleasing(true);
-    setError("");
-    setStatus("");
-    try {
-      await window.snow.releaseManagedImportResource({
-        resourceId: pending.resource.resourceId,
-        sourceId: pending.source.sourceId,
-        disposition: pending.disposition,
-      });
-      await load();
-      setStatus(
-        pending.disposition === "adopt"
-          ? t("settings.importResourceKeepCopySuccess", {
-              defaultValue: "Kept the local copy and removed its import link.",
-            })
-          : t("settings.importResourceRemoveSuccess", {
-              defaultValue: "Removed the imported resource association.",
-            }),
-      );
-    } catch (releaseError) {
-      setError(
-        releaseError instanceof Error
-          ? releaseError.message
-          : t("settings.importResourceRemoveError", {
-              defaultValue: "Failed to remove imported resource.",
-            }),
-      );
-    } finally {
-      setIsReleasing(false);
     }
   };
 
@@ -1374,7 +1251,6 @@ export function McpSettingsPanel({
             onToggleAllTools={handleListToggleAllTools}
             onEdit={handleListEdit}
             onDelete={handleListDelete}
-            onReleaseImportResource={requestRelease}
           />
         </div>
       </div>
@@ -1474,46 +1350,6 @@ export function McpSettingsPanel({
         variant="danger"
         onConfirm={() => void confirmDelete()}
         onCancel={() => setPendingDelete(null)}
-      />
-
-      <ConfirmDialog
-        open={Boolean(pendingRelease)}
-        title={
-          pendingRelease?.disposition === "adopt"
-            ? t("settings.importResourceKeepCopy", {
-                defaultValue: "Keep local copy",
-              })
-            : t("settings.importResourceRemove", {
-                defaultValue: "Remove imported resource",
-              })
-        }
-        message={
-          pendingRelease?.disposition === "adopt"
-            ? t("settings.importResourceKeepCopyConfirm", {
-                defaultValue:
-                  "Keep this local copy and remove its import association?",
-              })
-            : pendingRelease && pendingRelease.resource.sourceCount > 1
-              ? t("settings.importResourceUnlinkConfirm", {
-                  defaultValue:
-                    "Remove this source association? Other sources will keep the resource available.",
-                })
-              : t("settings.importResourceRemoveConfirm", {
-                  defaultValue:
-                    "Remove this import association and delete the Snow-managed resource?",
-                })
-        }
-        confirmLabel={
-          pendingRelease?.disposition === "adopt"
-            ? t("settings.importResourceKeepCopy", {
-                defaultValue: "Keep copy",
-              })
-            : t("settings.remove", { defaultValue: "Remove" })
-        }
-        cancelLabel={t("common.cancel", { defaultValue: "Cancel" })}
-        variant={pendingRelease?.disposition === "adopt" ? "default" : "danger"}
-        onConfirm={() => void confirmRelease()}
-        onCancel={() => setPendingRelease(null)}
       />
     </div>
   );

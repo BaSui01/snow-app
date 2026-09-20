@@ -18,7 +18,6 @@
 | [2-使用指南/5-配置 Hooks 与子代理](zh-CN/2-使用指南/5-配置Hooks与子代理.md)                   | [2-guides/5-configure-hooks-and-subagents](en/2-guides/5-configure-hooks-and-subagents.md)                                                                                       | Hooks 与子代理配置 / Configure hooks & sub-agents                                                   |
 | [2-使用指南/6-浏览器自动化](zh-CN/2-使用指南/6-浏览器自动化.md)                               | [2-guides/6-browser-automation](en/2-guides/6-browser-automation.md)                                                                                                             | 浏览器自动化 / Browser automation                                                                   |
 | [2-使用指南/7-代码库索引与代码诊断](zh-CN/2-使用指南/7-代码库索引与代码诊断.md)               | [2-guides/7-codebase-index-and-diagnostics](en/2-guides/7-codebase-index-and-diagnostics.md)                                                                                     | 代码库索引与代码诊断 / Codebase index & diagnostics                                                 |
-| [2-使用指南/8-第三方配置导入](zh-CN/2-使用指南/8-第三方配置导入.md)                           | [2-guides/8-third-party-configuration-import](en/2-guides/8-third-party-configuration-import.md)                                                                                 | 第三方配置导入 / Import third-party configuration                                                   |
 | [2-使用指南/9-图像生成](zh-CN/2-使用指南/9-图像生成.md)                                       | [2-guides/9-image-generation](en/2-guides/9-image-generation.md)                                                                                                                 | 图像生成与编辑 / Image generation                                                                   |
 | [2-使用指南/10-使用聊天与 AI 助手](zh-CN/2-使用指南/10-使用聊天与AI助手.md)                   | [2-guides/10-using-chat-and-ai](en/2-guides/10-using-chat-and-ai.md)                                                                                                             | 聊天与 AI 助手使用 / Using chat & AI assistant                                                      |
 | [2-使用指南/11-终端与 SSH 远程管理](zh-CN/2-使用指南/11-终端与SSH远程管理.md)                 | [2-guides/11-terminal-and-ssh](en/2-guides/11-terminal-and-ssh.md)                                                                                                               | 终端与 SSH 远程管理 / Terminal & SSH                                                                |
@@ -49,7 +48,7 @@
 
 ## 文档覆盖与维护 / Coverage & Maintenance
 
-- [功能文档覆盖审计 / Feature Documentation Coverage Audit](FEATURE_COVERAGE.md)：功能、24 个设置页、工具域、平台能力到代码和双语文档的覆盖矩阵。
+- [功能文档覆盖审计 / Feature Documentation Coverage Audit](FEATURE_COVERAGE.md)：功能、25 个设置页、工具域、平台能力到代码和双语文档的覆盖矩阵。
 - [文档治理指南 / Documentation Governance Guide](DOCUMENTATION_GUIDE.md)：信息架构、双语同步、代码锚点、Mermaid 规范与功能变更完成标准。
 - 任何产品功能变更都必须同步更新对应中英文文档、覆盖矩阵与本索引，并运行 `npm run check:docs`。
 

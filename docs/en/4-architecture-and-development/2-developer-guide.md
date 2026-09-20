@@ -52,11 +52,11 @@ npm run build:linux    # Linux: AppImage + deb
 
 Artifacts go to `release/`:
 
-| Artifact | Description |
-| --- | --- |
+| Artifact                       | Description                                                    |
+| ------------------------------ | -------------------------------------------------------------- |
 | `Snow App Setup <version>.exe` | NSIS installer (recommended for distribution and installation) |
-| `Snow App <version>.exe` | Portable build (no install; double-click to run) |
-| `win-unpacked/` | Unpacked directory; run `Snow App.exe` directly (debugging) |
+| `Snow App <version>.exe`       | Portable build (no install; double-click to run)               |
+| `win-unpacked/`                | Unpacked directory; run `Snow App.exe` directly (debugging)    |
 
 Time estimate: the native release build takes ~2-4 min; a full first-time package
 (including electron-builder downloading electron / nsis dependencies) usually takes
@@ -89,11 +89,11 @@ An installed build uses the code and native artifacts from **packaging time**:
 
 ### 3.5 Common issues
 
-| Issue | Resolution |
-| --- | --- |
-| Installed build won't open (dev works) | `out/` was concurrently written during packaging, corrupting the asar: stop all dev processes → delete `out/` → re-package (see [Troubleshooting](3-packaging-troubleshooting.md)) |
-| Changed `native/src/` but the installed build behaves the same | Make sure `build:rust` ran and `out/` was clean before re-packaging |
-| electron-builder downloads are slow / fail | The npmmirror registry is configured; retry or set the `ELECTRON_MIRROR` env var |
+| Issue                                                          | Resolution                                                                                                                                                                         |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Installed build won't open (dev works)                         | `out/` was concurrently written during packaging, corrupting the asar: stop all dev processes → delete `out/` → re-package (see [Troubleshooting](3-packaging-troubleshooting.md)) |
+| Changed `native/src/` but the installed build behaves the same | Make sure `build:rust` ran and `out/` was clean before re-packaging                                                                                                                |
+| electron-builder downloads are slow / fail                     | The npmmirror registry is configured; retry or set the `ELECTRON_MIRROR` env var                                                                                                   |
 
 ## 4. Directory Responsibilities
 
@@ -106,12 +106,9 @@ snow-app/
 │   │   ├── native/         # Rust bridge (nativeBridge.ts gate)
 │   │   ├── pty/            # PTY terminal
 │   │   ├── ssh/            # SSH / remote workspaces
-│   │   ├── plugins/        # Plugin runtime (isolated workers)
 │   │   ├── settings/       # Settings read/write
 │   │   ├── snowCli/        # ~/.snow CLI compatibility
-│   │   ├── updater/        # App updates
-│   │   ├── codex/          # Codex compatibility layer
-│   │   └── importConfig/   # Third-party config import
+│   │   └── updater/        # App updates
 │   ├── preload/
 │   │   ├── index.ts        # contextBridge.exposeInMainWorld("snow", api)
 │   │   ├── modules/        # One *Api.ts per domain (ipcRenderer.invoke)
@@ -213,21 +210,21 @@ the runtime API is flat.
 
 ## 7. Common Pitfalls
 
-| Issue                                                                                      | Notes                                                                                                                                                                                                                                                                             |
-| ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Native changes don't take effect                                                           | Forgot `npm run build:rust` or didn't restart (`.node` can't hot-swap)                                                                                                                                                                                                            |
-| storageReady deadlock                                                                      | Calling native before init without the Proxy — only bootstrap may use the raw binding                                                                                                                                                                                             |
-| tsc can't find a module                                                                    | Run `npm install` after adding deps; commit lockfile changes with the PR                                                                                                                                                                                                          |
-| Missing translation                                                                        | The three i18n files must stay structurally identical; missing keys show `undefined` at runtime                                                                                                                                                                                   |
-| CRLF warnings                                                                              | Git CRLF→LF notices on Windows are normal (repo is LF-normalized)                                                                                                                                                                                                                 |
-| DB migration failure                                                                       | Migrations must be idempotent; verify on a backup DB before committing                                                                                                                                                                                                            |
-| Standalone script calling `callMcpTool` fails with `Create threadsafe function ... failed` | Positions 7–12 of `callMcpTool` (onChunk, onBrowserCommand, onUserQuestion, onAppControl, onRemoteWorkspaceCommand, onTerminalCommand) are all **required** `ThreadsafeFunction`s; passing `undefined` fails with `InvalidArg` — see the detailed section below                   |
-| CSS rules silently don't apply                                                             | A custom class inside a shared container is overridden: `.api-settings-summary-card span/small` (specificity 0,1,1) beats a bare class selector (0,1,0) — always qualify child selectors with the container class (e.g. `.imagegen-concurrency-card .imagegen-concurrency-head`)  |
-| The same class is defined twice in styles.css                                              | Classes from retired layouts (e.g. `imagegen-*` at ~line 12180) are still reused by newer panels; `grep -n` the whole file before writing a new rule, add only delta rules                                                                                                        |
-| File corrupted after a large search-replace                                                | Replacing very long JSX/CSS blocks can leave stale tails (`})}`, stray `}`); read the region back and verify pairs immediately, then run `tsc --noEmit` + `electron-vite build`                                                                                                   |
-| imagegen reference images show only placeholders                                           | `images:resolve-upload-image` used `join(uploadRoot, normalized)` while `normalized` already carries the `upload/` prefix → double `uploadRoot\\upload\\...` prefix made every read fail; join against `dirname(databasePath)` instead (fixed with a comment in `imageHandlers.ts`) |
-| Broken images for `image/`/`upload/` paths in Markdown                                       | The markdown worker's image rule used to proxy only http(s) images, so local relative paths were loaded as relative URLs and broke. Local paths (`image/`, `upload/` — decodes first, normalizes separators, rejects `..` and absolute paths, `normalizeLocalImagePath` in `markdownWorker.ts`) are now rewritten to `img-proxy://` URLs (`localImageProxyUrl`) just like external images, and the main-process protocol handler (`serveLocalImage` in `imageProxyProtocol.ts`) resolves the library/upload root and reads the file directly — no IPC or data-URL round-trip in the renderer |
-| Debugging renderer image/file chains                                                       | Use plain `node` with `require("../native/index.cjs")`, call `initializeAppStorage()` to get `databasePath`, replicate the main-process path logic + `readFile` — no Electron needed to locate the fault                                                                          |
+| Issue                                                                                      | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Native changes don't take effect                                                           | Forgot `npm run build:rust` or didn't restart (`.node` can't hot-swap)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| storageReady deadlock                                                                      | Calling native before init without the Proxy — only bootstrap may use the raw binding                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| tsc can't find a module                                                                    | Run `npm install` after adding deps; commit lockfile changes with the PR                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Missing translation                                                                        | The three i18n files must stay structurally identical; missing keys show `undefined` at runtime                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| CRLF warnings                                                                              | Git CRLF→LF notices on Windows are normal (repo is LF-normalized)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| DB migration failure                                                                       | Migrations must be idempotent; verify on a backup DB before committing                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Standalone script calling `callMcpTool` fails with `Create threadsafe function ... failed` | Positions 7–12 of `callMcpTool` (onChunk, onBrowserCommand, onUserQuestion, onAppControl, onRemoteWorkspaceCommand, onTerminalCommand) are all **required** `ThreadsafeFunction`s; passing `undefined` fails with `InvalidArg` — see the detailed section below                                                                                                                                                                                                                                                                                                                              |
+| CSS rules silently don't apply                                                             | A custom class inside a shared container is overridden: `.api-settings-summary-card span/small` (specificity 0,1,1) beats a bare class selector (0,1,0) — always qualify child selectors with the container class (e.g. `.imagegen-concurrency-card .imagegen-concurrency-head`)                                                                                                                                                                                                                                                                                                             |
+| The same class is defined twice in styles.css                                              | Classes from retired layouts (e.g. `imagegen-*` at ~line 12180) are still reused by newer panels; `grep -n` the whole file before writing a new rule, add only delta rules                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| File corrupted after a large search-replace                                                | Replacing very long JSX/CSS blocks can leave stale tails (`})}`, stray `}`); read the region back and verify pairs immediately, then run `tsc --noEmit` + `electron-vite build`                                                                                                                                                                                                                                                                                                                                                                                                              |
+| imagegen reference images show only placeholders                                           | `images:resolve-upload-image` used `join(uploadRoot, normalized)` while `normalized` already carries the `upload/` prefix → double `uploadRoot\\upload\\...` prefix made every read fail; join against `dirname(databasePath)` instead (fixed with a comment in `imageHandlers.ts`)                                                                                                                                                                                                                                                                                                          |
+| Broken images for `image/`/`upload/` paths in Markdown                                     | The markdown worker's image rule used to proxy only http(s) images, so local relative paths were loaded as relative URLs and broke. Local paths (`image/`, `upload/` — decodes first, normalizes separators, rejects `..` and absolute paths, `normalizeLocalImagePath` in `markdownWorker.ts`) are now rewritten to `img-proxy://` URLs (`localImageProxyUrl`) just like external images, and the main-process protocol handler (`serveLocalImage` in `imageProxyProtocol.ts`) resolves the library/upload root and reads the file directly — no IPC or data-URL round-trip in the renderer |
+| Debugging renderer image/file chains                                                       | Use plain `node` with `require("../native/index.cjs")`, call `initializeAppStorage()` to get `databasePath`, replicate the main-process path logic + `readFile` — no Electron needed to locate the fault                                                                                                                                                                                                                                                                                                                                                                                     |
 
 ### callMcpTool callbacks (standalone scripts / e2e verification)
 
@@ -276,7 +273,7 @@ const result = await native.callMcpTool(
   asyncNoop, // onTerminalCommand ← required, 6 callbacks in total
   undefined,
   undefined,
-  undefined // subAgentAllowedTools / planMode / planApproved
+  undefined, // subAgentAllowedTools / planMode / planApproved
 );
 // Resolves to a Promise<string> — the tool result as a JSON string
 ```
@@ -305,22 +302,22 @@ A commit message consists of a **header** and an optional **body**:
 - **Header**: one line, at most 72 characters; `type` and `scope` are lowercase,
   and the `summary` is concise, imperative English. Keep technical terms such as
   `N+1`, `IPC`, and `localStorage` unchanged.
-- **Body**: multiple lines explaining *why* the change was made and its impact;
+- **Body**: multiple lines explaining _why_ the change was made and its impact;
   use `-` bullets when needed. Write a body only for complex changes or breaking
   behavior — simple changes need just the header.
 
 ### 8.2 Types
 
-| type | Purpose | Example |
-| --- | --- | --- |
-| `feat` | New feature | `feat(chat): persist drafts per conversation - preserve input when switching` |
-| `fix` | Bug fix | `fix(imagegen): validate model capabilities - disable references for text-only models` |
-| `refactor` | Refactor, behavior unchanged | `refactor(sidebar): use batch deletion API - remove N+1 calls` |
-| `docs` | Documentation only | `docs: document commit message conventions` |
-| `chore` | Build/deps/misc | `chore: exclude e2e verification scratch files` |
-| `perf` | Performance improvement | `perf(chat): batch sub-agent queries - avoid N+1 calls` |
-| `test` | Tests | `test(storage): cover cascading deletion in batch operations` |
-| `style` | Styling/formatting (no logic change) | `style: normalize import ordering` |
+| type       | Purpose                              | Example                                                                                |
+| ---------- | ------------------------------------ | -------------------------------------------------------------------------------------- |
+| `feat`     | New feature                          | `feat(chat): persist drafts per conversation - preserve input when switching`          |
+| `fix`      | Bug fix                              | `fix(imagegen): validate model capabilities - disable references for text-only models` |
+| `refactor` | Refactor, behavior unchanged         | `refactor(sidebar): use batch deletion API - remove N+1 calls`                         |
+| `docs`     | Documentation only                   | `docs: document commit message conventions`                                            |
+| `chore`    | Build/deps/misc                      | `chore: exclude e2e verification scratch files`                                        |
+| `perf`     | Performance improvement              | `perf(chat): batch sub-agent queries - avoid N+1 calls`                                |
+| `test`     | Tests                                | `test(storage): cover cascading deletion in batch operations`                          |
+| `style`    | Styling/formatting (no logic change) | `style: normalize import ordering`                                                     |
 
 ### 8.3 Scope (optional)
 
@@ -330,9 +327,9 @@ module-specific.
 
 ### 8.4 Summary Style
 
-- Start with a verb describing *what was done*, not *what it is*;
+- Start with a verb describing _what was done_, not _what it is_;
 - One commit does one thing — keep the summary aligned with the diff, no mixed changes;
-- Append motivation with ` - ` when needed, e.g.
+- Append motivation with `-` when needed, e.g.
   `feat(chat): persist drafts per conversation - preserve input when switching`.
 
 ### 8.5 Body Example

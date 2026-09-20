@@ -1,5 +1,28 @@
 # Release Notes
 
+## v0.4.4
+
+## New Features
+
+- **Plugins**: Install plugins from a local folder to add custom panels to the right panel (each plugin panel reuses a single tab); plugins run in an isolated iframe, and the install view lists the permission scopes they declare (API keys, system prompts, conversations, logs, and more), with enable/disable, manifest rescan, reveal-in-folder, and uninstall. With no plugin installed you can simply describe what you want and the AI reads the plugin docs to build and install it.
+- **Decision Models (TypeSafe / Jev)**: A new "Decision models" page in API settings manages judgment-only models (auto / custom base URL, model, API key, enable/disable). Codebase agent review can use one to judge each search result's relevance, and sensitive commands gain an optional decision-model assist that first decides whether a matched command may run without confirmation, with delegation support.
+- **App Lock**: Lock the app with a 4-8 digit PIN (stored as a salted hash); verification is required at startup and after the window loses focus (configurable delay, or lock immediately). A bound Google Authenticator code works as a fallback unlock, with attempt limits and a cooldown. Locking only covers the UI — sessions keep running in the background.
+- **Pinned Conversations**: Pinned conversations now sit inline at the top of the conversation list and can be reordered by dragging.
+- **filesystem-copy Tool**: The AI can copy (or cut) a line range and insert or overwrite it at a target position, works in SSH remote projects as well, and comes with dedicated tool cards in chat and on mobile.
+- **Responses WebSocket Mode**: A new API settings toggle switches Responses requests from SSE to WebSocket, reusing one connection across turns.
+- **Misc**: Browser tabs in the right panel can be opened in the system browser from the context menu; the About page gains open-source license, privacy notice, and disclaimer sections; API profiles support deleting selected entries.
+
+## Improvements
+
+- Rollback merges the checkpoint chain: a file that was created and then edited is deleted on rollback instead of being reverted to its previous content.
+- Memory tool cards can be expanded to preview each entry.
+- Chat history loading shows a skeleton, and the scroll-follow logic was reworked.
+- The file-changes panel now includes edits made by filesystem-copy.
+
+## Removals
+
+- Third-party config import (Codex / Claude Code / OpenCode) and its settings page are removed; the old plugin marketplace is replaced by the new plugin system.
+
 ## v0.4.3
 
 ## New Features

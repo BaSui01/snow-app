@@ -265,6 +265,17 @@ pub fn list_chat_conversations_by_ids(
     )
 }
 
+/// 记忆来源解析：按会话 ID 批量查询会话记录（含子代理 / WorkFlow 节点会话）。
+pub fn list_memory_source_conversations(
+    conversation_ids: Vec<String>,
+) -> Result<Vec<ChatConversationRecord>> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::list_memory_source_conversations(
+        &database_path,
+        &conversation_ids,
+    )
+}
+
 pub fn list_pinned_conversations(directory_id: String) -> Result<Vec<ChatConversationRecord>> {
     let database_path = ensure_database_file()?;
     services::chat_conversations::list_pinned_conversations(&database_path, &directory_id)

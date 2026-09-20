@@ -454,6 +454,10 @@ export const zhCN = {
   "memory.statsCompact": "共 {{total}} 条",
   "memory.selectHint": "选择一条记忆查看和编辑，或新建一条。",
   "memory.fromConversation": "来自会话",
+  "memory.fromConversationNamed": "来自「{{title}}」",
+  "memory.sourceConversationDeleted": "会话已删除",
+  "memory.sourceConversationDeletedHint": "来源会话已删除，记忆仍保留。",
+  "memory.jumpToConversation": "跳转到该会话",
   "memory.allLoaded": "全部记忆已加载",
   "memory.emptyHint":
     "暂无记忆。AI 会通过 memory-save 保存所学知识，也可以在此手动添加。",

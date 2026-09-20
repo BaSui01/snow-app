@@ -455,6 +455,10 @@ export const zhTW = {
   "memory.statsCompact": "共 {{total}} 條",
   "memory.selectHint": "選擇一條記憶查看和編輯，或新增一條。",
   "memory.fromConversation": "來自對話",
+  "memory.fromConversationNamed": "來自「{{title}}」",
+  "memory.sourceConversationDeleted": "對話已刪除",
+  "memory.sourceConversationDeletedHint": "來源對話已刪除，記憶仍保留。",
+  "memory.jumpToConversation": "跳轉到該對話",
   "memory.allLoaded": "全部記憶已載入",
   "memory.emptyHint":
     "暫無記憶。AI 會透過 memory-save 保存所學知識，也可以在此手動新增。",

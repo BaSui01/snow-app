@@ -707,6 +707,12 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to list chat conversations by ids",
           ),
         ),
+      listMemorySourceConversations: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to list memory source conversations",
+          ),
+        ),
       listPinnedConversations: () =>
         Promise.reject(
           new Error(

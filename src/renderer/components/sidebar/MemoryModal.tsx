@@ -4,6 +4,8 @@ import {
   CheckSquare,
   ListChecks,
   Loader2,
+  MessageSquareOff,
+  MessageSquareText,
   Plus,
   Search,
   Trash2,
@@ -16,12 +18,17 @@ import { ConfirmDialog } from "../common/ConfirmDialog";
 import { CustomSelect } from "../common/CustomSelect";
 import { Modal } from "../common/Modal";
 import type {
+  ChatConversationRecord,
   MemoryKind,
   MemoryPage,
   MemoryRecord,
   MemoryStats,
   MemoryStatus,
 } from "../../../preload";
+import type {
+  ConversationNavigationOutcome,
+  ConversationNavigationTarget,
+} from "../../hooks/useConversationNavigation";
 
 const PAGE_SIZE = 30;
 
@@ -72,6 +79,10 @@ type MemoryModalProps = {
    * 弹窗打开时把关键词填进搜索框并立即检索。
    */
   searchSeed?: string | null;
+  /** 跳转到来源会话：校验存在 → 必要时切换项目 → 进入 chat 视图选中该会话。 */
+  onNavigateToConversation: (
+    target: ConversationNavigationTarget,
+  ) => Promise<ConversationNavigationOutcome>;
   onClose: () => void;
 };
 
@@ -141,6 +152,120 @@ const buildContentSnippet = (content: string, query: string): string | null => {
   }`;
 };
 
+/** 已解析的来源会话：展示名、所属项目与最后更新时间。 */
+type MemorySourceConversation = {
+  displayName: string;
+  directoryId: string;
+  updatedAt: string;
+};
+
+/** 会话记录 → 来源徽章数据（展示名与侧边栏会话列表一致：summary 优先）。 */
+const toSourceConversation = (
+  record: ChatConversationRecord,
+): MemorySourceConversation => ({
+  displayName: (record.summary || record.title).trim() || record.conversationId,
+  directoryId: record.directoryId.trim(),
+  updatedAt: record.updatedAt || record.createdAt,
+});
+
+type SourceConversationBadgeProps = {
+  /** 已解析的来源会话；undefined = 解析中，null = 会话已删除。 */
+  source: MemorySourceConversation | null | undefined;
+  className: string;
+  /** 列表行用紧凑样式：只展示会话名，不带「来自」前缀。 */
+  compact: boolean;
+  /** 是否可点击跳转（多选态下仅展示）。 */
+  interactive: boolean;
+  isNavigating: boolean;
+  onOpen: () => void;
+};
+
+/**
+ * 「来自会话」徽章：解析中显示中性文案；来源会话已删除时显示降级禁用态
+ * （不提供跳转，避免坏链）；其余渲染为可点击徽章——点击直达来源会话。
+ */
+const SourceConversationBadge = ({
+  source,
+  className,
+  compact,
+  interactive,
+  isNavigating,
+  onOpen,
+}: SourceConversationBadgeProps): React.JSX.Element => {
+  const { t } = useI18n();
+
+  if (source === undefined) {
+    return (
+      <span className={className}>
+        <MessageSquareText size={10} strokeWidth={2} />
+        <span className="memory-source-name">
+          {t("memory.fromConversation", { defaultValue: "from conversation" })}
+        </span>
+      </span>
+    );
+  }
+
+  if (source === null) {
+    return (
+      <span
+        className={`${className} is-deleted`}
+        title={t("memory.sourceConversationDeletedHint", {
+          defaultValue:
+            "The source conversation was deleted; this memory is kept.",
+        })}
+      >
+        <MessageSquareOff size={10} strokeWidth={2} />
+        <span className="memory-source-name">
+          {t("memory.sourceConversationDeleted", {
+            defaultValue: "Conversation deleted",
+          })}
+        </span>
+      </span>
+    );
+  }
+
+  const title = `${source.displayName} · ${source.updatedAt.slice(0, 10)} · ${t(
+    "memory.jumpToConversation",
+    { defaultValue: "Jump to this conversation" },
+  )}`;
+  const label = compact
+    ? source.displayName
+    : t("memory.fromConversationNamed", {
+        defaultValue: "From “{{title}}”",
+        values: { title: source.displayName },
+      });
+
+  if (!interactive) {
+    return (
+      <span className={className} title={title}>
+        <MessageSquareText size={10} strokeWidth={2} />
+        <span className="memory-source-name">{label}</span>
+      </span>
+    );
+  }
+
+  return (
+    <button
+      className={`${className} is-linked`}
+      disabled={isNavigating}
+      onClick={(event) => {
+        // 列表行整行可选中/多选，徽章点击只用于跳转
+        event.stopPropagation();
+        onOpen();
+      }}
+      title={title}
+      type="button"
+    >
+      {isNavigating ? (
+        <Loader2 className="spin" size={10} strokeWidth={2.2} />
+      ) : (
+        <MessageSquareText size={10} strokeWidth={2} />
+      )}
+      <span className="memory-source-name">{label}</span>
+    </button>
+  );
+};
+
 const draftFromRecord = (record: MemoryRecord): MemoryDraft => ({
   title: record.title,
   content: record.content,
@@ -173,6 +298,7 @@ export function MemoryModal({
   open,
   directoryId,
   searchSeed,
+  onNavigateToConversation,
   onClose,
 }: MemoryModalProps): React.JSX.Element {
   const { t } = useI18n();
@@ -199,10 +325,22 @@ export function MemoryModal({
   const [isBatchDeleting, setIsBatchDeleting] = useState(false);
   const [isBatchDeleteConfirmOpen, setIsBatchDeleteConfirmOpen] =
     useState(false);
+  /**
+   * 来源会话解析缓存：键为会话 ID，undefined = 尚未解析（或解析中），
+   * null = 会话已删除（渲染降级徽章）。
+   */
+  const [sourceConversations, setSourceConversations] = useState<
+    Map<string, MemorySourceConversation | null>
+  >(() => new Map());
+  const [navigatingSourceId, setNavigatingSourceId] = useState<string | null>(
+    null,
+  );
 
   const requestIdRef = useRef(0);
   const loadingMoreRef = useRef(false);
   const listScrollRef = useRef<HTMLDivElement>(null);
+  /** 已解析过的来源会话 ID：滚动加载只补查新增条目，避免重复批量查询。 */
+  const resolvedSourceIdsRef = useRef<Set<string>>(new Set());
 
   const refreshStats = useCallback(() => {
     if (!directoryId) return;
@@ -289,6 +427,8 @@ export function MemoryModal({
     setActiveQuery("");
     setHitTotal(0);
     setSelection({ mode: "none" });
+    setSourceConversations(new Map());
+    resolvedSourceIdsRef.current = new Set();
   }, [directoryId]);
 
   // 由 /memory 面板跳转而来：把目标条目标题作为初始检索词直接生效。
@@ -319,7 +459,61 @@ export function MemoryModal({
     setSearchInput("");
     setActiveQuery("");
     setHitTotal(0);
+    // 来源会话解析缓存同样重置：下次打开按最新标题重新解析
+    setSourceConversations(new Map());
+    resolvedSourceIdsRef.current = new Set();
+    setNavigatingSourceId(null);
   }, [open]);
+
+  // 来源会话解析：对已加载条目收集去重后的 conversationId，一次批量查询
+  // （单请求，含子代理 / WorkFlow 节点会话）；未返回的即不可用（会话已删除，
+  // 或已归档搬离运行库——归档会话本就不允许直接打开），缓存为 null 供降级
+  // 渲染。已解析过的 ID 不重复查询。
+  useEffect(() => {
+    if (!open) return;
+    const pendingIds = [
+      ...new Set(
+        memories
+          .map((record) => record.conversationId.trim())
+          .filter(
+            (conversationId) =>
+              conversationId !== "" &&
+              !resolvedSourceIdsRef.current.has(conversationId),
+          ),
+      ),
+    ];
+    if (pendingIds.length === 0) return;
+
+    let cancelled = false;
+    window.snow
+      .listMemorySourceConversations(pendingIds)
+      .then((records) => {
+        if (cancelled) return;
+        for (const conversationId of pendingIds) {
+          resolvedSourceIdsRef.current.add(conversationId);
+        }
+        const foundById = new Map(
+          records.map((record) => [
+            record.conversationId,
+            toSourceConversation(record),
+          ]),
+        );
+        setSourceConversations((prev) => {
+          const next = new Map(prev);
+          for (const conversationId of pendingIds) {
+            next.set(conversationId, foundById.get(conversationId) ?? null);
+          }
+          return next;
+        });
+      })
+      .catch(() => {
+        // 查询失败保持未解析，下次列表变化时自动重试
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, memories]);
 
   const handleListScroll = () => {
     const el = listScrollRef.current;
@@ -472,6 +666,38 @@ export function MemoryModal({
       // Ignore
     } finally {
       setIsBatchDeleting(false);
+    }
+  };
+
+  /**
+   * 打开来源会话：走共享跳转流程（校验存在 → 必要时切换项目 → 进入
+   * chat 视图）；校验时发现会话已被删除则就地降级为「会话已删除」徽章，
+   * 跳转成功则关闭弹窗让位。
+   */
+  const handleOpenSourceConversation = async (
+    conversationId: string,
+  ): Promise<void> => {
+    const source = sourceConversations.get(conversationId);
+    if (!source || navigatingSourceId !== null) return;
+    setNavigatingSourceId(conversationId);
+    try {
+      const outcome = await onNavigateToConversation({
+        conversationId,
+        directoryId: source.directoryId,
+      });
+      if (outcome === "missing") {
+        setSourceConversations((prev) => {
+          const next = new Map(prev);
+          next.set(conversationId, null);
+          return next;
+        });
+        return;
+      }
+      if (outcome === "opened") {
+        onClose();
+      }
+    } finally {
+      setNavigatingSourceId(null);
     }
   };
 
@@ -737,6 +963,7 @@ export function MemoryModal({
               selection.record.memoryId === record.memoryId;
             const isChecked = selectedMemoryIds.has(record.memoryId);
             const date = (record.updatedAt || record.createdAt).slice(0, 10);
+            const sourceId = record.conversationId.trim();
             return (
               <div
                 className={`memo-list-item memory-list-item${
@@ -786,6 +1013,18 @@ export function MemoryModal({
                       </span>
                     </span>
                     <span>{date}</span>
+                    {sourceId !== "" && (
+                      <SourceConversationBadge
+                        className="memory-list-item-source"
+                        compact
+                        interactive={!isMultiSelectMode}
+                        isNavigating={navigatingSourceId === sourceId}
+                        onOpen={() =>
+                          void handleOpenSourceConversation(sourceId)
+                        }
+                        source={sourceConversations.get(sourceId)}
+                      />
+                    )}
                     {record.status !== "active" && (
                       <span className={`memory-status-badge ${record.status}`}>
                         {record.status === "archived" ? (
@@ -867,6 +1106,7 @@ export function MemoryModal({
     const date = editingRecord
       ? (editingRecord.updatedAt || editingRecord.createdAt).slice(0, 10)
       : "";
+    const editingSourceId = editingRecord?.conversationId.trim() ?? "";
 
     return (
       <div className="memory-editor">
@@ -884,15 +1124,17 @@ export function MemoryModal({
                 <span className="memory-editor-source">
                   {editingRecord?.source} · {date}
                 </span>
-                {editingRecord && editingRecord.conversationId && (
-                  <span
+                {editingSourceId !== "" && (
+                  <SourceConversationBadge
                     className="memory-editor-conversation"
-                    title={editingRecord.conversationId}
-                  >
-                    {t("memory.fromConversation", {
-                      defaultValue: "from conversation",
-                    })}
-                  </span>
+                    compact={false}
+                    interactive
+                    isNavigating={navigatingSourceId === editingSourceId}
+                    onOpen={() =>
+                      void handleOpenSourceConversation(editingSourceId)
+                    }
+                    source={sourceConversations.get(editingSourceId)}
+                  />
                 )}
               </>
             )}

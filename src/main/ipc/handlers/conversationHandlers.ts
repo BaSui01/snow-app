@@ -122,6 +122,23 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
       );
     },
   );
+  // 记忆来源解析：与 list-by-ids 不同，这里刻意包含子代理 / WorkFlow 节点会话
+  // （记忆的会话溯源可能指向它们），未返回的 ID 即表示来源会话已被删除。
+  ipcMain.handle(
+    "chat-conversations:list-memory-sources",
+    (_event, conversationIds: unknown) => {
+      if (
+        !Array.isArray(conversationIds) ||
+        conversationIds.some((id) => typeof id !== "string" || !id.trim())
+      ) {
+        throw new Error("Conversation IDs must be a non-empty string array");
+      }
+
+      return native.listMemorySourceConversations(
+        (conversationIds as string[]).map((id) => id.trim()),
+      );
+    },
+  );
   ipcMain.handle(
     "chat-conversations:list-pinned",
     (_event, directoryId: unknown) => {

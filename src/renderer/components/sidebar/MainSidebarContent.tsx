@@ -18,6 +18,7 @@ import { PluginsModal } from "./PluginsModal";
 import { useChatConversationContext } from "../mainContent/chatMessages";
 import { shortcutEvents } from "../shortcutEvents";
 import { APP_CONTROL_MEMO_CREATED_EVENT } from "../../hooks/useAppControl";
+import { useConversationNavigation } from "../../hooks/useConversationNavigation";
 import { useScheduledTasks } from "../../hooks/useScheduledTasks";
 import type { MainContentView } from "../mainContent/types";
 import { ChatsSection } from "./mainSidebar/ChatsSection";
@@ -126,6 +127,14 @@ export function MainSidebarContent({
     activeDirectoryId,
     activeDirectory?.path ?? "",
   );
+
+  // 会话跳转管道（校验会话存在 → 必要时切换项目 → 切到 chat 视图）：
+  // 项目记忆弹窗的「来自会话」徽章据此直达来源会话。
+  const { navigateToConversation } = useConversationNavigation({
+    activeDirectory: activeDirectory ?? null,
+    onActiveDirectoryChange,
+    onSelectMainView,
+  });
 
   // Load the pending memo count for the sidebar badge. It is refreshed
   // whenever the memo modal closes (the modal calls onPendingCountChange
@@ -483,6 +492,7 @@ export function MainSidebarContent({
           setMemorySearchSeed(null);
           refreshMemoryCount();
         }}
+        onNavigateToConversation={navigateToConversation}
         searchSeed={memorySearchSeed}
       />
       <ScheduledTasksModal

@@ -66,6 +66,17 @@ export const conversationApi = {
     conversationIds: string[],
   ): Promise<ChatConversationRecord[]> =>
     ipcRenderer.invoke("chat-conversations:list-by-ids", conversationIds),
+  /**
+   * 记忆来源解析：按会话 ID 批量查询会话记录（含子代理 / WorkFlow 节点会话）。
+   * 未出现在返回结果中的 ID 表示来源会话已被删除。
+   */
+  listMemorySourceConversations: (
+    conversationIds: string[],
+  ): Promise<ChatConversationRecord[]> =>
+    ipcRenderer.invoke(
+      "chat-conversations:list-memory-sources",
+      conversationIds,
+    ),
   listPinnedConversations: (
     directoryId: string,
   ): Promise<ChatConversationRecord[]> =>

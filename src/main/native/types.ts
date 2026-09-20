@@ -2040,6 +2040,10 @@ export type NativeBridge = {
   listChatConversationsByIds: (
     conversationIds: string[],
   ) => Promise<ChatConversationRecord[]>;
+  /** 记忆来源解析：按会话 ID 批量查询会话记录（含子代理 / WorkFlow 节点会话）。 */
+  listMemorySourceConversations: (
+    conversationIds: string[],
+  ) => Promise<ChatConversationRecord[]>;
   listPinnedConversations: (
     directoryId: string,
   ) => Promise<ChatConversationRecord[]>;

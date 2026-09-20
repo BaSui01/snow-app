@@ -242,6 +242,80 @@ conversation.run_cache_read_input_tokens,
         })
 }
 
+/// 记忆来源解析：按会话 ID 批量查询会话记录，**包含**子代理 / WorkFlow
+/// 节点会话（记忆的会话溯源可能指向这两类会话，而它们会被供「跨项目通知」
+/// 使用的 [list_chat_conversations_by_ids] 过滤掉）。
+///
+/// 不按 `directory_id` / `status` 过滤：来源会话可能属于其他项目（跳转时
+/// 由渲染层自动切换项目），归档会话依然存在、同样需要返回标题；未出现在
+/// 返回结果中的 ID 即表示该会话已被删除（渲染层据此渲染降级徽章）。
+pub fn list_memory_source_conversations(
+    database_path: &Path,
+    conversation_ids: &[String],
+) -> Result<Vec<ChatConversationRecord>> {
+    if conversation_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            let placeholders = in_clause_placeholders(conversation_ids.len());
+            let mut statement = connection.prepare(&format!(
+                "SELECT conversation.conversation_id,
+                        conversation.title,
+                        conversation.summary,
+                        conversation.last_message_preview,
+                        conversation.message_count,
+                        conversation.model,
+                        conversation.status,
+                        conversation.directory_id,
+                        conversation.forked_from_conversation_id,
+                        conversation.fork_message_count,
+                        conversation.created_at,
+                        conversation.updated_at,
+                        conversation.input_tokens,
+                        conversation.output_tokens,
+                        conversation.cache_creation_input_tokens,
+                        conversation.cache_read_input_tokens,
+                        CASE
+                          WHEN workflow_node.conversation_id IS NOT NULL THEN 'workflow_node'
+                          WHEN sub_agent.conversation_id IS NULL THEN 'main'
+                          ELSE 'sub_agent'
+                        END,
+                        COALESCE(sub_agent.parent_conversation_id, workflow_node.parent_conversation_id, ''),
+                        COALESCE(sub_agent.agent_id, workflow_node.node_id, ''),
+                        COALESCE(sub_agent.agent_name, workflow_node.node_name, ''),
+                        COALESCE(sub_agent.run_status, workflow_node.run_status, ''),
+                        COALESCE(sub_agent.error_message, workflow_node.error_message, ''),
+                        COALESCE(conversation.total_duration_ms, 0),
+                        COALESCE(conversation.emoji, ''),
+                        COALESCE(conversation.api_profile_name, ''),
+                        COALESCE(conversation.run_input_tokens, 0),
+                        COALESCE(conversation.run_output_tokens, 0),
+                        COALESCE(conversation.run_cache_creation_input_tokens, 0),
+                        COALESCE(conversation.run_cache_read_input_tokens, 0),
+                        COALESCE(conversation.last_run_duration_ms, 0),
+                        COALESCE(conversation.run_ttft_sum_ms, 0),
+                        COALESCE(conversation.run_request_count, 0)
+                   FROM chat_conversations AS conversation
+                   LEFT JOIN sub_agent_sessions AS sub_agent
+                     ON sub_agent.conversation_id = conversation.conversation_id
+                   LEFT JOIN workflow_node_sessions AS workflow_node
+                     ON workflow_node.conversation_id = conversation.conversation_id
+                  WHERE conversation.conversation_id IN ({placeholders})"
+            ))?;
+
+            let rows = statement.query_map(
+                rusqlite::params_from_iter(conversation_ids.iter()),
+                map_chat_conversation_row,
+            )?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(|error| {
+            database::database_error(database_path, "list memory source conversations", error)
+        })
+}
+
 pub fn search_chat_conversations(
     database_path: &Path,
     query: &str,

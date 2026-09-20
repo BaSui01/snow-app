@@ -45217,14 +45217,71 @@ pre.file-viewer-code {
   white-space: nowrap;
 }
 
-.memory-editor-conversation {
-  flex-shrink: 0;
+/* 来源会话徽章（「来自《会话名》」）：解析中显示中性文案，指向真实会话时
+   渲染为可点击徽章（悬停变蓝、点击直达该会话），来源会话已删除则为降级态。 */
+.memory-editor-conversation,
+.memory-list-item-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 220px;
+  overflow: hidden;
   padding: 1px 6px;
+  border: none;
   border-radius: var(--radius-lg);
   background: var(--bg-hover);
   color: var(--text-tertiary);
   font-size: 10px;
+  font-family: inherit;
   white-space: nowrap;
+}
+
+.memory-editor-conversation {
+  flex-shrink: 0;
+}
+
+/* 列表行内的紧凑变体：只显示会话名，宽度更窄（超出以省略号截断） */
+.memory-list-item-source {
+  flex-shrink: 0;
+  max-width: 150px;
+  padding: 0 5px;
+}
+
+.memory-editor-conversation svg,
+.memory-list-item-source svg {
+  flex-shrink: 0;
+}
+
+.memory-source-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memory-editor-conversation.is-linked,
+.memory-list-item-source.is-linked {
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+
+.memory-editor-conversation.is-linked:hover:not(:disabled),
+.memory-list-item-source.is-linked:hover:not(:disabled) {
+  background: var(--accent-blue-bg);
+  color: var(--accent-blue-text);
+}
+
+.memory-editor-conversation.is-linked:disabled,
+.memory-list-item-source.is-linked:disabled {
+  cursor: default;
+}
+
+.memory-editor-conversation.is-deleted,
+.memory-list-item-source.is-deleted {
+  opacity: 0.75;
 }
 
 .memory-editor-header-actions {

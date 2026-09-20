@@ -68,6 +68,8 @@ const requiredExports = [
   "clearProjectMemories",
   "getProjectMemoryStats",
   "countProjectMemoriesByConversations",
+  // 记忆来源会话解析（含子代理 / WorkFlow 节点会话，供「来自会话」徽章跳转）
+  "listMemorySourceConversations",
   // MCP 设置面板保存链路（快速列表：只读发现缓存，保存不再等全量工具发现）
   "listMcpProjectServersCached",
   // 敏感命令决策模型辅助（拦截提示展示判定 / 托管执行）

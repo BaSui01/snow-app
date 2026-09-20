@@ -474,6 +474,11 @@ export const en = {
   "memory.selectHint":
     "Select a memory to view and edit it, or create a new one.",
   "memory.fromConversation": "from conversation",
+  "memory.fromConversationNamed": "From “{{title}}”",
+  "memory.sourceConversationDeleted": "Conversation deleted",
+  "memory.sourceConversationDeletedHint":
+    "The source conversation was deleted; this memory is kept.",
+  "memory.jumpToConversation": "Jump to this conversation",
   "memory.allLoaded": "All memories loaded",
   "memory.emptyHint":
     "No memories yet. The AI saves what it learns via memory-save, or add one manually.",

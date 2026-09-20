@@ -221,6 +221,19 @@ pub async fn list_chat_conversations_by_ids(
     .map_err(map_spawn_error)?
 }
 
+/// 记忆来源解析：按会话 ID 批量查询会话记录（含子代理 / WorkFlow 节点会话；
+/// 未返回的 ID 表示来源会话已被删除）。
+#[napi]
+pub async fn list_memory_source_conversations(
+    conversation_ids: Vec<String>,
+) -> napi::Result<Vec<ChatConversationRecord>> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::list_memory_source_conversations(conversation_ids)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
 #[napi]
 pub async fn list_pinned_conversations(
     directory_id: String,

@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import type { ChatConversationRecord } from "../../../../../preload";
 import { isChatDrag, readChatDragData } from "../chatDrag";
 import type { UseChatConversationResult } from "../../../mainContent/chatMessages/utils/conversationTypes";
@@ -19,6 +21,9 @@ export function useChatsSectionInteractions({
   refreshConversations,
   handleSelectConversation,
 }: UseChatsSectionInteractionsOptions) {
+  // 置顶分组拖拽悬停：高亮提示拖入即置顶
+  const [isPinnedDragOver, setIsPinnedDragOver] = useState(false);
+
   // 打开其他项目的通知会话：先激活其所属项目，再打开会话。
   // 激活成功后主进程广播 workspace-directory-list:changed，项目列表与
   // 对话列表会自动刷新到目标项目，随后 handleSelectConversation 加载
@@ -83,6 +88,49 @@ export function useChatsSectionInteractions({
       });
   };
 
+  /** 拖入置顶分组：将会话置顶（拦截冒泡，避免被外层"取消置顶"处理） */
+  const handlePinnedDragOver = (
+    event: React.DragEvent<HTMLDivElement>,
+  ): void => {
+    if (isArchiveMode || !isChatDrag(event)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "move";
+    setIsChatDragOver(false);
+    setIsPinnedDragOver(true);
+  };
+
+  const handlePinnedDragLeave = (
+    event: React.DragEvent<HTMLDivElement>,
+  ): void => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      return;
+    }
+    setIsPinnedDragOver(false);
+  };
+
+  /** 拖入置顶分组：将拖拽的会话置顶 */
+  const handlePinnedDrop = (event: React.DragEvent<HTMLDivElement>): void => {
+    setIsPinnedDragOver(false);
+    if (isArchiveMode || !isChatDrag(event)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const payload = readChatDragData(event);
+    if (!payload || payload.status === "pin") {
+      return;
+    }
+    void window.snow
+      .updateConversationStatus(payload.conversationId, "pin")
+      .then(() => refreshConversations())
+      .catch(() => {
+        // Silent fail
+      });
+  };
+
   const handleSelectConversationFromList = (
     conversation: ChatConversationRecord,
   ): void => {
@@ -116,6 +164,10 @@ export function useChatsSectionInteractions({
     handleDragOver,
     handleDragLeave,
     handleDrop,
+    handlePinnedDragOver,
+    handlePinnedDragLeave,
+    handlePinnedDrop,
+    isPinnedDragOver,
     handleSelectConversationFromList,
     handleSelectChildConversation,
   };

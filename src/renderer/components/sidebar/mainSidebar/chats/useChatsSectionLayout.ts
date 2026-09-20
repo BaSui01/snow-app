@@ -120,6 +120,8 @@ export function useChatsSectionLayout({
 
   const getGroupLabel = (key: TimeGroupKey): string => {
     switch (key) {
+      case "pinned":
+        return t("sidebar.pinned", { defaultValue: "Pinned" });
       case "running":
         return t("sidebar.chatTimeRunning", { defaultValue: "Running" });
       case "today":

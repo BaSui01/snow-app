@@ -1,6 +1,7 @@
 import type { ChatConversationRecord } from "../../../../preload";
 
-export type TimeGroupKey = "running" | "today" | "yesterday" | "last7days" | "earlier";
+export type TimeGroupKey =
+  "pinned" | "running" | "today" | "yesterday" | "last7days" | "earlier";
 
 export type TimeGroup = {
   key: TimeGroupKey;
@@ -9,7 +10,10 @@ export type TimeGroup = {
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
-type TimeTranslate = (key: string, options?: { defaultValue?: string }) => string;
+type TimeTranslate = (
+  key: string,
+  options?: { defaultValue?: string },
+) => string;
 
 const WEEKDAY_KEYS = [
   "sidebar.chatWeekdaySun",
@@ -47,7 +51,7 @@ export const getTimeGroup = (date: Date, now: Date): TimeGroupKey => {
   const startOfToday = new Date(
     now.getFullYear(),
     now.getMonth(),
-    now.getDate()
+    now.getDate(),
   );
   const startOfYesterday = new Date(startOfToday.getTime() - ONE_DAY_MS);
   const startOf7Days = new Date(startOfToday.getTime() - 6 * ONE_DAY_MS);
@@ -77,7 +81,7 @@ export const getTimeGroup = (date: Date, now: Date): TimeGroupKey => {
 export const formatTimeLabel = (
   date: Date,
   now: Date,
-  t?: TimeTranslate
+  t?: TimeTranslate,
 ): string => {
   const group = getTimeGroup(date, now);
 
@@ -117,7 +121,7 @@ export const formatTimeLabel = (
 export const groupConversationsByTime = (
   conversations: ChatConversationRecord[],
   now: Date = new Date(),
-  streamingIds?: Set<string>
+  streamingIds?: Set<string>,
 ): TimeGroup[] => {
   const buckets = new Map<TimeGroupKey, ChatConversationRecord[]>();
 
@@ -152,7 +156,7 @@ export const groupConversationsByTime = (
     bucket.sort(
       (a, b) =>
         parseDbTimestamp(b.updatedAt).getTime() -
-        parseDbTimestamp(a.updatedAt).getTime()
+        parseDbTimestamp(a.updatedAt).getTime(),
     );
     groups.push({ key, conversations: bucket });
   }

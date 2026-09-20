@@ -17,7 +17,6 @@ import { APP_CONTROL_MEMO_CREATED_EVENT } from "../../hooks/useAppControl";
 import { useScheduledTasks } from "../../hooks/useScheduledTasks";
 import type { MainContentView } from "../mainContent/types";
 import { ChatsSection } from "./mainSidebar/ChatsSection";
-import { PinnedSection } from "./mainSidebar/PinnedSection";
 import { ProjectsSection } from "./mainSidebar/ProjectsSection";
 import { TeamEntry } from "./mainSidebar/TeamEntry";
 import {
@@ -75,7 +74,7 @@ export function MainSidebarContent({
   const [pendingMemoCount, setPendingMemoCount] = useState(0);
   const [memoryCount, setMemoryCount] = useState(0);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>(
-    INITIAL_UPDATE_STATUS,
+    INITIAL_UPDATE_STATUS
   );
 
   const activeDirectoryId = activeDirectory?.directoryId ?? "";
@@ -108,7 +107,7 @@ export function MainSidebarContent({
   // the memo project-isolation model.
   const { tasks: scheduledTasks } = useScheduledTasks(
     activeDirectoryId,
-    activeDirectory?.path ?? "",
+    activeDirectory?.path ?? ""
   );
 
   // Load the pending memo count for the sidebar badge. It is refreshed
@@ -225,7 +224,7 @@ export function MainSidebarContent({
   }, []);
 
   const handleSearchSelectConversation = (
-    conversation: ConversationSearchResult,
+    conversation: ConversationSearchResult
   ): void => {
     void handleSelectConversation(
       conversation.conversationId,
@@ -236,7 +235,7 @@ export function MainSidebarContent({
         cacheCreationInputTokens: conversation.cacheCreationInputTokens,
         cacheReadInputTokens: conversation.cacheReadInputTokens,
       },
-      conversation.directoryId,
+      conversation.directoryId
     );
   };
 
@@ -245,7 +244,7 @@ export function MainSidebarContent({
       onActiveDirectoryChange?.(directory);
       onSwitchContent?.("main");
     },
-    [onActiveDirectoryChange, onSwitchContent],
+    [onActiveDirectoryChange, onSwitchContent]
   );
 
   const handleSearchSelectSetting = useCallback(
@@ -253,7 +252,7 @@ export function MainSidebarContent({
       onSwitchContent?.("settings");
       onSelectMainView(view);
     },
-    [onSwitchContent, onSelectMainView],
+    [onSwitchContent, onSelectMainView]
   );
 
   return (
@@ -341,10 +340,6 @@ export function MainSidebarContent({
           )}
         </button>
       </div>
-      <PinnedSection
-        activeDirectory={activeDirectory}
-        isSwitchingDirectory={isSwitchingDirectory}
-      />
       <ProjectsSection
         activeDirectory={activeDirectory}
         activeSessionDirectoryIds={activeSessionDirectoryIds}

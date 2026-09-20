@@ -8,7 +8,7 @@ import type {
 import { useI18n } from "../../../i18n";
 import { AutoDismissNotice } from "../../AutoDismissNotice";
 import { useChatConversationContext } from "../../mainContent/chatMessages";
-import { groupConversationsByTime } from "./chatTimeGroup";
+import { groupConversationsByTime, type TimeGroup } from "./chatTimeGroup";
 import { ArchivedChatList } from "./chats/ArchivedChatList";
 import { ChatConversationRow } from "./chats/ChatConversationRow";
 import { ChatListFooter } from "./chats/ChatListFooter";
@@ -31,6 +31,7 @@ import {
 } from "./chats/useChatsSectionLayout";
 import { useConversationActions } from "./chats/useConversationActions";
 import { useConversationTree } from "./chats/useConversationTree";
+import { usePinnedConversations } from "./chats/usePinnedConversations";
 import { useChatsSectionInteractions } from "./chats/useChatsSectionInteractions";
 import type { CrossProjectNotificationGroup } from "./useCrossProjectNotifications";
 
@@ -75,7 +76,7 @@ export function ChatsSection({
         ...streamingConversationIds,
         ...attentionRequiredConversationIds,
       ]),
-    [streamingConversationIds, attentionRequiredConversationIds],
+    [streamingConversationIds, attentionRequiredConversationIds]
   );
   // 被用户暂停的流式会话（agent loop 阻塞等待恢复），图标切换为暂停态
   const pausedConversationIds = useMemo(
@@ -83,14 +84,20 @@ export function ChatsSection({
       new Set(
         Object.entries(sessions)
           .filter(([, session]) => session.isPaused)
-          .map(([id]) => id),
+          .map(([id]) => id)
       ),
-    [sessions],
+    [sessions]
   );
 
   const directoryId = activeDirectory?.directoryId ?? "";
   const sectionListRef = useRef<HTMLDivElement | null>(null);
   const collapse = useChatsCollapse({ onCollapsedChange });
+
+  const pinned = usePinnedConversations({
+    directoryId,
+    conversationListVersion,
+    upsertedConversation,
+  });
 
   const list = useChatConversationList({
     directoryId,
@@ -181,6 +188,10 @@ export function ChatsSection({
     handleDragOver,
     handleDragLeave,
     handleDrop,
+    handlePinnedDragOver,
+    handlePinnedDragLeave,
+    handlePinnedDrop,
+    isPinnedDragOver,
     handleSelectConversationFromList,
     handleSelectChildConversation,
   } = interactions;
@@ -188,11 +199,28 @@ export function ChatsSection({
   const timeGroups = groupConversationsByTime(
     list.conversations,
     new Date(),
-    tree.surfacedConversationIds,
+    tree.surfacedConversationIds
   );
+  // 运行中会话分组单独渲染在滚动容器之外，固定在列表头部不随列表滚动
+  const runningGroup = timeGroups.find((group) => group.key === "running");
+  const contentGroups = timeGroups.filter((group) => group.key !== "running");
+  // 置顶会话在会话列表内单独成组（随列表滚动），行内以 Pin 图标标注
+  const pinnedGroups: TimeGroup[] =
+    pinned.pinnedConversations.length > 0
+      ? [{ key: "pinned", conversations: pinned.pinnedConversations }]
+      : [];
 
   const showLoading =
     isSwitchingDirectory || (list.isLoading && directoryId !== "");
+
+  const showPinnedRunning =
+    !archived.isArchiveMode &&
+    !collapse.isCollapsed &&
+    !showLoading &&
+    directoryId !== "" &&
+    !list.error;
+  // 多选模式下会话列表按选择集合渲染，置顶分组临时隐藏避免不可选条目干扰
+  const showPinnedGroup = showPinnedRunning && !selection.isMultiSelectMode;
 
   const allSelected =
     selection.selectedIds.size === selection.multiSelectableCount;
@@ -233,7 +261,7 @@ export function ChatsSection({
   ];
 
   const renderConversationRow = (
-    conversation: ChatConversationRecord,
+    conversation: ChatConversationRecord
   ): React.JSX.Element => {
     const conversationId = conversation.conversationId;
     return (
@@ -250,10 +278,10 @@ export function ChatsSection({
         isMultiSelectMode={selection.isMultiSelectMode}
         isSelected={selection.selectedIds.has(conversationId)}
         isSubAgentExpanded={tree.expandedSubAgentConversationIds.has(
-          conversationId,
+          conversationId
         )}
         isWorkflowPanelExpanded={tree.expandedWorkflowConversationIds.has(
-          conversationId,
+          conversationId
         )}
         onArchive={() => void actions.handleArchive(conversation)}
         onDelete={(deleteImages, deleteMemories) =>
@@ -262,7 +290,11 @@ export function ChatsSection({
         onEnterMultiSelect={selection.enterMultiSelect}
         onExport={(format) => void actions.handleExport(conversation, format)}
         onFork={() => actions.handleFork(conversation)}
-        onPin={() => void actions.handlePin(conversation)}
+        onPin={() =>
+          void (conversation.status === "pin"
+            ? actions.handleUnpin(conversation)
+            : actions.handlePin(conversation))
+        }
         onRename={(newTitle) => actions.handleRename(conversation, newTitle)}
         onSelectChildConversation={handleSelectChildConversation}
         onSelectConversation={handleSelectConversationFromList}
@@ -329,6 +361,21 @@ export function ChatsSection({
         onDismiss={chatImport.dismissNotice}
         tone={chatImport.notice?.tone ?? "success"}
       />
+      {showPinnedRunning && runningGroup ? (
+        <div className="chats-running-list">
+          <ChatTimeGroupList
+            collapsedGroupKeys={layout.collapsedGroupKeys}
+            getGroupLabel={layout.getGroupLabel}
+            groups={[runningGroup]}
+            isMultiSelectable={selection.isMultiSelectable}
+            isMultiSelectMode={selection.isMultiSelectMode}
+            onToggleGroupCollapsed={layout.toggleGroupCollapsed}
+            onToggleGroupSelect={selection.handleToggleGroupSelect}
+            renderRow={renderConversationRow}
+            selectedIds={selection.selectedIds}
+          />
+        </div>
+      ) : null}
       <div
         className={`section-list${
           layout.isChatDragOver ? " chat-drag-over" : ""
@@ -380,12 +427,36 @@ export function ChatsSection({
         ) : list.error ? (
           <span className="empty-text error">{list.error}</span>
         ) : list.conversations.length === 0 &&
-          crossProjectNotifications.length === 0 ? (
+          crossProjectNotifications.length === 0 &&
+          pinnedGroups.length === 0 ? (
           <span className="empty-text">
             {t("sidebar.noChats", { defaultValue: "No chats" })}
           </span>
         ) : (
           <>
+            {/* 置顶会话分组：随列表滚动；拖入该分组=置顶，拖到普通列表区=取消置顶 */}
+            {showPinnedGroup && (
+              <div
+                className={`chat-pinned-group${
+                  isPinnedDragOver ? " chat-drag-over" : ""
+                }`}
+                onDragOver={handlePinnedDragOver}
+                onDragLeave={handlePinnedDragLeave}
+                onDrop={handlePinnedDrop}
+              >
+                <ChatTimeGroupList
+                  collapsedGroupKeys={layout.collapsedGroupKeys}
+                  getGroupLabel={layout.getGroupLabel}
+                  groups={pinnedGroups}
+                  isMultiSelectable={selection.isMultiSelectable}
+                  isMultiSelectMode={selection.isMultiSelectMode}
+                  onToggleGroupCollapsed={layout.toggleGroupCollapsed}
+                  onToggleGroupSelect={selection.handleToggleGroupSelect}
+                  renderRow={renderConversationRow}
+                  selectedIds={selection.selectedIds}
+                />
+              </div>
+            )}
             {/* 跨项目通知：其他项目运行中/需关注/已完成的会话，
                   点击自动切换项目并打开对应会话 */}
             {crossProjectNotifications.length > 0 && (
@@ -401,7 +472,7 @@ export function ChatsSection({
             <ChatTimeGroupList
               collapsedGroupKeys={layout.collapsedGroupKeys}
               getGroupLabel={layout.getGroupLabel}
-              groups={timeGroups}
+              groups={contentGroups}
               isMultiSelectable={selection.isMultiSelectable}
               isMultiSelectMode={selection.isMultiSelectMode}
               onToggleGroupCollapsed={layout.toggleGroupCollapsed}

@@ -16,10 +16,10 @@ type UseConversationActionsOptions = {
   handleNewChat: () => void;
   handleForkConversation: (
     conversationId: string,
-    messageId: string,
+    messageId: string
   ) => Promise<void> | void;
   setConversations: (
-    updater: (prev: ChatConversationRecord[]) => ChatConversationRecord[],
+    updater: (prev: ChatConversationRecord[]) => ChatConversationRecord[]
   ) => void;
 };
 
@@ -39,24 +39,39 @@ export function useConversationActions({
   const { t } = useI18n();
   const [deletingIds, setDeletingIds] = useState<Set<string>>(() => new Set());
   const [archivingIds, setArchivingIds] = useState<Set<string>>(
-    () => new Set(),
+    () => new Set()
   );
   const [isBatchDeleting, setIsBatchDeleting] = useState(false);
   const [showBatchConfirm, setShowBatchConfirm] = useState(false);
   const [batchImagesCount, setBatchImagesCount] = useState<number | null>(null);
   const [batchDeleteImages, setBatchDeleteImages] = useState(false);
   const [batchMemoriesCount, setBatchMemoriesCount] = useState<number | null>(
-    null,
+    null
   );
   const [batchDeleteMemories, setBatchDeleteMemories] = useState(false);
 
   const handlePin = async (
-    conversation: ChatConversationRecord,
+    conversation: ChatConversationRecord
   ): Promise<void> => {
     try {
       await window.snow.updateConversationStatus(
         conversation.conversationId,
-        "pin",
+        "pin"
+      );
+      refreshConversations();
+    } catch {
+      // Silent fail
+    }
+  };
+
+  /** 取消置顶：状态改回 active，会话回到普通时间分组 */
+  const handleUnpin = async (
+    conversation: ChatConversationRecord
+  ): Promise<void> => {
+    try {
+      await window.snow.updateConversationStatus(
+        conversation.conversationId,
+        "active"
       );
       refreshConversations();
     } catch {
@@ -66,7 +81,7 @@ export function useConversationActions({
 
   const handleRename = async (
     conversation: ChatConversationRecord,
-    newTitle: string,
+    newTitle: string
   ): Promise<void> => {
     await window.snow.renameConversation(conversation.conversationId, newTitle);
     // 同步更新内存中 session 的 summary，让 TopBar 标题即时刷新
@@ -76,20 +91,20 @@ export function useConversationActions({
 
   const handleSetEmoji = async (
     conversation: ChatConversationRecord,
-    emoji: string,
+    emoji: string
   ): Promise<void> => {
     // 乐观更新：直接修改本地 state，异步落库，不刷新列表
     setConversations((prev) =>
       prev.map((item) =>
         item.conversationId === conversation.conversationId
           ? { ...item, emoji }
-          : item,
-      ),
+          : item
+      )
     );
     try {
       await window.snow.updateConversationEmoji(
         conversation.conversationId,
-        emoji,
+        emoji
       );
     } catch {
       // 落库失败时回滚
@@ -97,8 +112,8 @@ export function useConversationActions({
         prev.map((item) =>
           item.conversationId === conversation.conversationId
             ? { ...item, emoji: conversation.emoji }
-            : item,
-        ),
+            : item
+        )
       );
     }
   };
@@ -106,7 +121,7 @@ export function useConversationActions({
   const handleDelete = async (
     conversation: ChatConversationRecord,
     deleteImages: boolean,
-    deleteMemories: boolean,
+    deleteMemories: boolean
   ): Promise<void> => {
     if (deletingIds.size > 0) {
       return;
@@ -124,7 +139,7 @@ export function useConversationActions({
       // Rust 侧级联删除子代理与 workflow 节点会话：收集全部待删 ID，
       // 以便中止对应流，并在当前正打开被删会话或其子层时清空聊天区
       const deleteTargetIds = collectConversationTreeIds(
-        conversation.conversationId,
+        conversation.conversationId
       );
       for (const targetId of deleteTargetIds) {
         abortConversation(targetId);
@@ -134,7 +149,7 @@ export function useConversationActions({
       // 保存的项目记忆一并删除；默认保留
       await window.snow.deleteConversation(
         conversation.conversationId,
-        deleteMemories,
+        deleteMemories
       );
 
       // 删除的会话不再需要保留输入草稿
@@ -158,7 +173,7 @@ export function useConversationActions({
 
   /** 归档单个会话：中止相关流、清理草稿，若正在打开则新建会话 */
   const handleArchive = async (
-    conversation: ChatConversationRecord,
+    conversation: ChatConversationRecord
   ): Promise<void> => {
     if (archivingIds.size > 0) {
       return;
@@ -190,7 +205,7 @@ export function useConversationActions({
 
   const handleExport = async (
     conversation: ChatConversationRecord,
-    format: ExportFormat,
+    format: ExportFormat
   ): Promise<void> => {
     const fileName =
       conversation.summary ||
@@ -199,7 +214,7 @@ export function useConversationActions({
     await window.snow.exportConversation(
       conversation.conversationId,
       format,
-      fileName,
+      fileName
     );
   };
 
@@ -260,7 +275,7 @@ export function useConversationActions({
       // 把这些会话保存的项目记忆一并删除
       await window.snow.deleteConversations(
         [...selectedIds],
-        batchDeleteMemories,
+        batchDeleteMemories
       );
 
       // 删除的会话不再需要保留输入草稿
@@ -338,6 +353,7 @@ export function useConversationActions({
     setBatchDeleteMemories,
     isActionLocked,
     handlePin,
+    handleUnpin,
     handleRename,
     handleSetEmoji,
     handleDelete,

@@ -1154,6 +1154,15 @@ input {
   scrollbar-gutter: stable;
 }
 
+/* 运行中会话固定区：不随列表滚动，超高时区块内部滚动 */
+.chats-running-list {
+  flex-shrink: 0;
+  max-height: 45%;
+  margin-bottom: 4px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
 .list-item {
   display: flex;
   align-items: center;
@@ -2181,6 +2190,20 @@ input {
   font-size: 10px;
   font-weight: 500;
   opacity: 0.65;
+}
+
+.chat-pinned-group.chat-drag-over {
+  border-radius: var(--radius-md);
+  outline: 1px dashed var(--accent-color);
+  outline-offset: -1px;
+  background: color-mix(in srgb, var(--accent-color) 10%, transparent);
+}
+
+.chat-item-pin-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--accent-color);
 }
 
 /* ===== 跨项目通知区块（对话列表顶部） ===== */
@@ -46915,4 +46938,132 @@ pre.file-viewer-code {
   letter-spacing: 1px;
   word-break: break-all;
   user-select: all;
+}
+
+.plugin-view-host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.plugin-view-webview {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: transparent;
+}
+
+.plugin-view-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  padding: 24px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: center;
+}
+
+.plugin-view-icon {
+  border-radius: 3px;
+  object-fit: contain;
+}
+
+.top-bar-plus-dropdown-separator {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border-subtle);
+}
+
+.top-bar-plus-dropdown-item.disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.plugin-settings-component-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.plugin-settings-component-row .plugin-settings-component {
+  flex: 1;
+  min-width: 0;
+}
+
+.plugin-settings-component-toggle {
+  flex-shrink: 0;
+}
+
+.plugin-settings-views {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.plugin-settings-views-title {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.plugin-settings-view-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.plugin-settings-view-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+.plugin-settings-view-row strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-settings-view-row code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-settings-audit-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.plugin-settings-audit-field {
+  display: flex;
+  min-width: 160px;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.plugin-settings-audit-field input {
+  padding: 4px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12px;
 }

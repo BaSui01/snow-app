@@ -66,9 +66,15 @@ Listed in registration order:
 
 ### grep
 
-| Full tool name | Purpose                           | Key parameters                                                          |
-| -------------- | --------------------------------- | ----------------------------------------------------------------------- |
-| `grep-search`  | Search file contents with ripgrep | `pattern`, `path`, `fileGlob`, `caseSensitive`, `isRegex`, `maxResults` |
+| Full tool name | Purpose                           | Key parameters                                                                         |
+| -------------- | --------------------------------- | -------------------------------------------------------------------------------------- |
+| `grep-search`  | Search file contents with ripgrep | `pattern`, `description`, `path`, `fileGlob`, `caseSensitive`, `isRegex`, `maxResults` |
+
+> **Explanation**: `description` lets users skip decoding the regex — the model
+> writes one sentence (in the user's language) describing what the search looks
+> for, and the UI shows it in place of the raw regex (the regex itself stays
+> visible in the card). When the model omits it the card just falls back to the
+> regex — the search still runs.
 
 ### websearch
 

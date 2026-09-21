@@ -27,6 +27,13 @@ type FormDialogProps = {
   showFooter?: boolean;
   confirmDisabled?: boolean;
   isSubmitting?: boolean;
+  /**
+   * 提交中仍允许关闭对话框（X / Esc / 取消按钮保持可用，确认按钮不被
+   * 提交态强制禁用）：用于克隆仓库这类可以在后台继续运行的任务。
+   */
+  dismissableWhenSubmitting?: boolean;
+  /** 自定义底部操作区：提供后替代默认的「取消 / 确认」按钮。 */
+  footer?: ReactNode;
   initialFocusRef?: RefObject<HTMLElement | null>;
   onConfirm?: () => void;
   onCancel: () => void;
@@ -42,6 +49,8 @@ export function FormDialog({
   showFooter = true,
   confirmDisabled = false,
   isSubmitting = false,
+  dismissableWhenSubmitting = false,
+  footer,
   initialFocusRef,
   onConfirm,
   onCancel,
@@ -53,7 +62,8 @@ export function FormDialog({
   useEffect(() => {
     if (!open) return;
 
-    const previouslyFocusedElement = document.activeElement as HTMLElement | null;
+    const previouslyFocusedElement =
+      document.activeElement as HTMLElement | null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
@@ -72,17 +82,21 @@ export function FormDialog({
 
   if (!open) return null;
 
+  // 提交态默认锁死关闭入口（防止半途丢失表单）；可后台继续的任务
+  // （如克隆仓库）通过 dismissableWhenSubmitting 保持 X / Esc 可用。
+  const isDismissLocked = isSubmitting && !dismissableWhenSubmitting;
+
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key === "Escape") {
       event.preventDefault();
-      if (!isSubmitting) onCancel();
+      if (!isDismissLocked) onCancel();
       return;
     }
 
     if (event.key !== "Tab" || !dialogRef.current) return;
 
     const focusableElements = Array.from(
-      dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
+      dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
     );
     if (focusableElements.length === 0) {
       event.preventDefault();
@@ -123,7 +137,7 @@ export function FormDialog({
           <button
             aria-label={closeLabel}
             className="icon-btn ghost form-dialog-close"
-            disabled={isSubmitting}
+            disabled={isDismissLocked}
             onClick={onCancel}
             title={closeLabel}
             type="button"
@@ -134,27 +148,33 @@ export function FormDialog({
         <div className="form-dialog-body">{children}</div>
         {showFooter ? (
           <div className="form-dialog-footer">
-            <button
-              className="form-dialog-button cancel"
-              disabled={isSubmitting}
-              onClick={onCancel}
-              type="button"
-            >
-              {cancelLabel}
-            </button>
-            <button
-              className="form-dialog-button confirm"
-              disabled={confirmDisabled || isSubmitting}
-              onClick={onConfirm}
-              type="button"
-            >
-              {isSubmitting ? <span className="form-dialog-spinner" /> : null}
-              {confirmLabel}
-            </button>
+            {footer ?? (
+              <>
+                <button
+                  className="form-dialog-button cancel"
+                  disabled={isDismissLocked}
+                  onClick={onCancel}
+                  type="button"
+                >
+                  {cancelLabel}
+                </button>
+                <button
+                  className="form-dialog-button confirm"
+                  disabled={confirmDisabled || isDismissLocked}
+                  onClick={onConfirm}
+                  type="button"
+                >
+                  {isSubmitting ? (
+                    <span className="form-dialog-spinner" />
+                  ) : null}
+                  {confirmLabel}
+                </button>
+              </>
+            )}
           </div>
         ) : null}
       </div>
     </div>,
-    document.body
+    document.body,
   );
 }

@@ -7,6 +7,7 @@ import type {
   WorkspaceDirectoryRecord,
 } from "../../../../preload";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
+import { CloneTaskList } from "./projects/CloneTaskList";
 import { RelinkDirectoryDialog } from "./RelinkDirectoryDialog";
 import { RelinkHistoryDialog } from "./RelinkHistoryDialog";
 import { SidebarCollapse } from "./SidebarCollapse";
@@ -244,7 +245,9 @@ export function ProjectsSection({
       </div>
 
       <AddDirectoryMenuDialog
-        onAddLocalDirectory={() => addFlow.handleAddDirectoryModeSelect("local")}
+        onAddLocalDirectory={() =>
+          addFlow.handleAddDirectoryModeSelect("local")
+        }
         onAddSshDirectory={() => addFlow.handleAddDirectoryModeSelect("ssh")}
         onCloneRepository={addFlow.handleCloneRepoModeOpen}
         onClose={addFlow.closeAddMenu}
@@ -316,8 +319,10 @@ export function ProjectsSection({
       />
 
       <CloneRepositoryDialog
-        error={directoryError}
-        isSubmitting={isSavingDirectory}
+        error={addFlow.cloneError}
+        isAborting={addFlow.isCloneAborting}
+        isSubmitting={addFlow.isCloneSubmitting}
+        onAbort={addFlow.handleAbortActiveClone}
         onCancel={addFlow.handleCloneRepoCancel}
         onConfirm={() => void addFlow.handleCloneRepoConfirm()}
         onRepoUrlChange={addFlow.setCloneRepoUrl}
@@ -392,6 +397,11 @@ export function ProjectsSection({
             totalCount={topLevelDirectories.length}
             visibleDirectories={visibleDirectories}
             workspaceDirectories={workspaceDirectories}
+          />
+          <CloneTaskList
+            onAbort={(streamId) => void addFlow.handleAbortCloneTask(streamId)}
+            onRemove={addFlow.handleRemoveCloneTask}
+            tasks={addFlow.cloneTasks}
           />
           {directoryError && !isDialogOpen ? (
             <span className="workspace-directory-error">{directoryError}</span>

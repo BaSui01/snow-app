@@ -51,11 +51,11 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const parseArgs = (args: string): ParsedBashArgs | null => {
   try {
     const parsed: unknown = JSON.parse(args);
-    if (
-      !isRecord(parsed) ||
-      typeof parsed.command !== "string" ||
-      typeof parsed.workingDirectory !== "string"
-    ) {
+    // 只有 command 是必需字段：workingDirectory 允许缺省（Rust 侧
+    // default_bash_working_directory 会兜底为当前项目工作区）。若在此强制
+    // 要求它，整个解析会失败，头部与命令体一起退回 "terminal-execute"
+    // 占位符，模型写好的 description 也随之丢失。
+    if (!isRecord(parsed) || typeof parsed.command !== "string") {
       return null;
     }
     const timeout =
@@ -74,7 +74,10 @@ const parseArgs = (args: string): ParsedBashArgs | null => {
         typeof parsed.description === "string" && parsed.description.trim()
           ? parsed.description
           : undefined,
-      workingDirectory: parsed.workingDirectory,
+      workingDirectory:
+        typeof parsed.workingDirectory === "string"
+          ? parsed.workingDirectory
+          : "",
       timeout,
       isInteractive,
       detach,

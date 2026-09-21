@@ -179,15 +179,19 @@ export const workspaceApi = {
   /**
    * 克隆 Git 仓库：在 `parentPath` 下按 git 惯例以项目名新建子目录
    * 进行克隆，完成后由主进程登记为活动工作区目录。
-   * `onProgress` 接收 git stderr 解析出的实时进度（行文本 + 百分比）。
+   * `onProgress` 接收 git stderr 解析出的实时进度（行文本 + 百分比）；
+   * `onStreamId` 同步回调本次克隆的 streamId，供
+   * `cancelCloneWorkspaceRepository` 中止（弹窗关闭后克隆仍在后台进行）。
    */
   cloneWorkspaceRepository: (
     repoUrl: string,
     parentPath: string,
     onProgress?: (chunk: GitCloneProgress) => void,
+    onStreamId?: (streamId: string) => void,
   ): Promise<WorkspaceDirectoryRecord[]> => {
     const streamId = createCloneStreamId();
     ensureCloneProgressListener();
+    onStreamId?.(streamId);
 
     if (onProgress) {
       cloneProgressCallbacks.set(streamId, onProgress);
@@ -204,6 +208,15 @@ export const workspaceApi = {
         cloneProgressCallbacks.delete(streamId);
       });
   },
+  /**
+   * 中止正在进行的克隆：Rust 侧杀掉整棵 git 进程树并清理半成品目标
+   * 目录，返回是否命中在跑的任务（已完成/已中止时为 false）。
+   */
+  cancelCloneWorkspaceRepository: (streamId: string): Promise<boolean> =>
+    ipcRenderer.invoke(
+      "workspace-directories:clone-repository:cancel",
+      streamId,
+    ),
   selectWorkspaceDirectory: (dialogTitle?: string): Promise<string | null> =>
     ipcRenderer.invoke(
       "workspace-directories:select-local-directory",

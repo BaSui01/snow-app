@@ -10,7 +10,7 @@ import {
   MessageSquareQuote,
   MousePointer2,
   ScanSearch,
-  Trash2,
+  Undo2,
 } from "lucide-react";
 import { useI18n } from "../../../i18n";
 import {
@@ -326,7 +326,7 @@ export const PendingMessages = ({
                 aria-label={t("chatInput.withdraw")}
                 title={t("chatInput.withdraw")}
               >
-                <Trash2 size={12} />
+                <Undo2 size={12} />
               </button>
             )}
           </li>

@@ -262,7 +262,6 @@ export const PluginsModal = ({
                 <textarea
                   className="plugins-create-input"
                   value={createRequest}
-                  rows={3}
                   placeholder={t("plugins.createPlaceholder", {
                     defaultValue:
                       "e.g. a panel that lists this project's recent git commits",
@@ -270,19 +269,21 @@ export const PluginsModal = ({
                   onChange={(event) => setCreateRequest(event.target.value)}
                   onKeyDown={handleCreateKeyDown}
                 />
-                <button
-                  className="plugins-toolbar-btn primary"
-                  type="button"
-                  disabled={createRequest.trim().length === 0}
-                  onClick={handleCreateWithAi}
-                >
-                  <Sparkles size={14} strokeWidth={1.8} />
-                  <span>
-                    {t("plugins.createAction", {
-                      defaultValue: "Build with AI",
-                    })}
-                  </span>
-                </button>
+                <div className="plugins-create-actions">
+                  <button
+                    className="plugins-toolbar-btn primary"
+                    type="button"
+                    disabled={createRequest.trim().length === 0}
+                    onClick={handleCreateWithAi}
+                  >
+                    <Sparkles size={14} strokeWidth={1.8} />
+                    <span>
+                      {t("plugins.createAction", {
+                        defaultValue: "Build with AI",
+                      })}
+                    </span>
+                  </button>
+                </div>
               </div>
             </div>
           )}

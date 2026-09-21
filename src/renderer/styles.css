@@ -1169,6 +1169,7 @@ input {
   margin-bottom: 4px;
   overflow-y: auto;
   scrollbar-gutter: stable;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
 }
 
 .list-item {
@@ -3088,6 +3089,49 @@ input {
   white-space: nowrap;
 }
 
+/* 克隆进度：百分比进度条 + 当前 git 进度行（弹窗内展示） */
+.clone-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.clone-progress-track {
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--bg-tertiary);
+}
+
+.clone-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--text-primary);
+  transition: width 0.2s ease;
+}
+
+.clone-progress-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-family: var(
+    --font-mono,
+    ui-monospace,
+    "Cascadia Mono",
+    Consolas,
+    monospace
+  );
+  font-size: 11px;
+}
+
+.clone-progress-message {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .form-dialog-footer {
   display: flex;
   justify-content: flex-end;
@@ -3122,6 +3166,17 @@ input {
 
 .form-dialog-button.cancel:hover:not(:disabled) {
   background: var(--bg-hover);
+}
+
+/* 危险类操作（如「中止克隆」）：红调描边按钮，与常规取消区分 */
+.form-dialog-button.abort {
+  border-color: color-mix(in srgb, var(--accent-red) 45%, transparent);
+  background: var(--accent-red-bg);
+  color: var(--accent-red-text);
+}
+
+.form-dialog-button.abort:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-red) 26%, transparent);
 }
 
 .form-dialog-button.confirm {
@@ -3508,6 +3563,104 @@ input {
   color: var(--accent-red);
   font-size: 11.5px;
   line-height: 1.35;
+}
+
+/* 克隆占位条目：弹窗关闭后仍在后台进行的克隆（以及失败待处理的克隆）
+   在项目列表下方占一行 —— 进行中显示 spinner + 百分比与中止入口，
+   失败时显示原因与移除入口。 */
+.clone-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0 2px 0 10px;
+  list-style: none;
+}
+
+.clone-task-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px 5px 8px;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.clone-task-row.is-failed {
+  border-color: color-mix(in srgb, var(--accent-red) 42%, transparent);
+  background: var(--accent-red-bg);
+}
+
+.clone-task-icon {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.clone-task-row.is-failed .clone-task-icon {
+  color: var(--accent-red);
+}
+
+.clone-task-body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.clone-task-name {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clone-task-status {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clone-task-row.is-failed .clone-task-status {
+  color: var(--accent-red-text);
+}
+
+.clone-task-action {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+
+.clone-task-action:not(:disabled):hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.clone-task-row.is-failed .clone-task-action:not(:disabled):hover {
+  background: color-mix(in srgb, var(--accent-red) 22%, transparent);
+  color: var(--accent-red-text);
+}
+
+.clone-task-action:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 /* 路径健康徽标：仅磁盘校验失败时显示，hover 提示原位置 */
@@ -6153,34 +6306,98 @@ input {
   gap: 7px;
 }
 
-.api-settings-auto-compress-header,
-.api-settings-threshold-slider-row {
+/* ===== 统一滑块（RangeSlider，components/common/RangeSlider.tsx） =====
+   API 阈值、主题背景/光标、宠物大小、请求日志时长等所有 range 控件共用这一套
+   样式。主题预设只覆写下面的 --range-* 变量（或轨道/滑块伪元素）即可适配，
+   不再各自维护一份滑块 CSS。 */
+.range-slider {
+  --range-accent: var(--text-primary); /* 滑块与已填充轨道的主色 */
+  --range-fill: var(--range-accent);
+  --range-track-h: 4px;
+  --range-track-bg: color-mix(in srgb, var(--text-primary) 14%, transparent);
+  --range-track-radius: var(--radius-pill);
+  --range-thumb-w: 13px;
+  --range-thumb-h: 13px;
+  --range-thumb-bg: var(--range-accent);
+  --range-thumb-radius: var(--radius-pill);
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.api-settings-auto-compress-header .toggle-switch {
+.range-slider-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* 说明文字占满剩余宽度靠左，其余控件（开关、数值）固定贴右；
+   窄列下说明文字省略而不是换行，保证同一行的多个滑块标题行高度一致。 */
+.range-slider .range-slider-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.range-slider-head > *:not(.range-slider-label) {
   flex-shrink: 0;
 }
 
-.api-settings-threshold-slider-row input[type="range"] {
-  width: 100%;
-  min-width: 0;
-  accent-color: var(--text-primary);
+.range-slider .range-slider-value {
+  min-width: 34px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
 }
 
-.api-settings-threshold-slider-row input[type="range"]:disabled {
+.range-slider-input {
+  width: 100%;
+  min-width: 0;
+  height: max(16px, var(--range-thumb-h));
+  margin: 0;
+  padding: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.range-slider-input:disabled {
   cursor: default;
   opacity: 0.5;
 }
 
-.api-settings-threshold-slider-row strong {
-  min-width: 38px;
-  color: var(--text-primary);
-  font-size: 12px;
-  text-align: right;
+.range-slider-input::-webkit-slider-runnable-track {
+  height: var(--range-track-h);
+  border-radius: var(--range-track-radius);
+  background: linear-gradient(
+    90deg,
+    var(--range-fill) var(--range-progress, 0%),
+    var(--range-track-bg) var(--range-progress, 0%)
+  );
+}
+
+.range-slider-input::-webkit-slider-thumb {
+  appearance: none;
+  width: var(--range-thumb-w);
+  height: var(--range-thumb-h);
+  margin-top: calc((var(--range-track-h) - var(--range-thumb-h)) / 2);
+  border: none;
+  border-radius: var(--range-thumb-radius);
+  background: var(--range-thumb-bg);
+}
+
+.range-slider-input:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .api-settings-field .api-settings-threshold-hint {
@@ -6553,6 +6770,30 @@ input {
   font-size: 10.5px;
   font-family: var(--font-mono);
   margin-top: 1px;
+}
+
+.api-settings-table .cell-name-button {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.api-settings-table .cell-name-button:hover strong {
+  color: var(--accent-color);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.api-settings-table .cell-name-button:focus-visible {
+  outline: 1px solid var(--accent-color);
+  outline-offset: 2px;
+  border-radius: 3px;
 }
 
 .api-settings-table .cell-url {
@@ -7832,6 +8073,10 @@ input {
    基础值在此，视口断点梯度见上方的 @media 段。 */
 .user-message-locate-overlay {
   --chat-content-max: 720px;
+}
+
+.chat-area.is-scroll-anchor-off {
+  overflow-anchor: none;
 }
 
 .chat-area::-webkit-scrollbar {
@@ -15393,6 +15638,32 @@ input {
 .tool-call-grep-no-matches {
   color: var(--text-tertiary);
   background: var(--bg-tertiary);
+}
+
+/* 释义行：模型用用户语言解释检索意图，用户无需自行解读正则 */
+.tool-call-grep-description {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  font-size: 11.5px;
+  line-height: 1.45;
+  user-select: text;
+}
+
+.tool-call-grep-description svg {
+  display: block;
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--accent-blue-text);
+}
+
+.tool-call-grep-description-text {
+  min-width: 0;
+  color: var(--text-secondary);
+  word-break: break-word;
 }
 
 .tool-call-grep-params {
@@ -23417,6 +23688,21 @@ input {
   min-width: 0;
 }
 
+/* 左组（PlusMenu / 命令 / 模式徽章）不参与压缩：模式徽章是 flex-shrink: 0 的
+   固定尺寸图标，允许左组收缩时盒子先变小、徽章压不动，溢出部分会盖到右侧
+   模型区（表现为模型品牌图标与模式图标重叠）。固定左组宽度后，压缩量全部
+   交给右组，由模型名负责截断。 */
+.toolbar-left {
+  flex: 0 0 auto;
+}
+
+/* 右组吸收压缩并右对齐（父级 space-between 下视觉一致）：内部只有模型名可
+   截断，Token 用量环与发送按钮保持原尺寸。 */
+.toolbar-right {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
+
 /* ===== Plus Menu ===== */
 .plus-menu {
   position: relative;
@@ -24777,6 +25063,25 @@ input {
   }
 
   .model-trigger-fast span {
+    display: none;
+  }
+}
+
+/* 窄容器下刚性元素按「最次要信息优先」让位：模式徽章（26px/个，最多 6 个）与
+   Token 用量环都无法压缩，留在行内会把右侧模型选择器挤出容器，表现为徽章
+   溢出盖住模型图标。断点取「上一阶段所需宽度 + 余量」标定：
+   - 模型名收到 0 后模型区仍需约 256px，6 个模式徽章约 180px，两者不能共存
+   - 440px：收起左组模式徽章与分隔线（模式状态仍可在 PlusMenu 中查看/切换）
+   - 300px：收起 Token 用量环，保证极窄输入框下发送按钮不被挤出 */
+@container (max-width: 440px) {
+  .toolbar-left .plan-mode-badge,
+  .toolbar-left .toolbar-divider {
+    display: none;
+  }
+}
+
+@container (max-width: 300px) {
+  .token-usage-ring-wrapper {
     display: none;
   }
 }
@@ -39608,11 +39913,9 @@ pre.file-viewer-code {
   font-weight: 600;
 }
 
+/* 请求日志「自动关闭时长」滑块：沿用统一滑块样式，仅把主色换成红色语义色。 */
 .request-logging-duration-slider {
-  width: 100%;
-  margin: 0;
-  accent-color: var(--accent-red);
-  cursor: pointer;
+  --range-accent: var(--accent-red);
 }
 
 .request-logging-duration-scale {
@@ -42694,23 +42997,6 @@ pre.file-viewer-code {
 .pets-list-item:hover .pets-uninstall-btn,
 .pets-list-item:focus-within .pets-uninstall-btn {
   opacity: 1;
-}
-
-.pets-scale-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 2px 4px;
-}
-
-.pets-scale-row .settings-item-description {
-  flex-shrink: 0;
-}
-
-.pets-scale-row input[type="range"] {
-  flex: 1;
-  min-width: 0;
-  accent-color: var(--text-primary);
 }
 
 /* ==========================================================================
@@ -46235,39 +46521,61 @@ pre.file-viewer-code {
   text-align: center;
 }
 
+/* 输入框与操作按钮同处一个描边容器（对齐聊天输入框的 composer 形态）：
+   焦点环落在容器上，输入框自身无边框，也就没有原生右下角的拖拽手柄 */
 .plugins-create {
   display: flex;
   width: min(440px, calc(100% - 24px));
   flex-direction: column;
-  align-items: stretch;
   gap: 8px;
   margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-primary);
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
+}
+
+.plugins-create:focus-within {
+  border-color: var(--text-muted);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .plugins-create-input {
   width: 100%;
-  min-height: 76px;
+  min-height: 60px;
+  /* 自动增高上限：约 8 行（8 × 18px 行高），更高改为内部滚动 */
   max-height: 160px;
-  padding: 8px 10px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  outline: none;
-  background: var(--bg-primary);
+  padding: 0;
+  border: none;
+  background: transparent;
   color: var(--text-primary);
   font: inherit;
   font-size: 12px;
   line-height: 1.5;
   box-sizing: border-box;
-  resize: vertical;
+  /* 高度交给 CSS：field-sizing 让输入框随内容自然长高，超出 max-height
+     后转为内部滚动；resize: none 关闭原生拖拽改尺寸。 */
+  resize: none;
+  field-sizing: content;
+  overflow-y: auto;
+  /* cream 等主题对所有 textarea:focus-visible 施加橙色 outline（preset-cream.css）；
+     焦点反馈由 .plugins-create:focus-within 承担，此处压掉浏览器 outline。
+     !important 用于覆盖主题规则的高特异性。 */
+  outline: none !important;
 }
 
-.plugins-create-input:focus {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+.plugins-create-input::placeholder {
+  color: var(--text-muted);
 }
 
-.plugins-create .plugins-toolbar-btn.primary {
-  align-self: flex-end;
+.plugins-create-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .plugins-list {

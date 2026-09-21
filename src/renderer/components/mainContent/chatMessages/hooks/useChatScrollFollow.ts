@@ -12,16 +12,19 @@ type PendingScrollRestore = {
   conversationId: string;
   requestId: number;
 
-  anchorElement: Element | null;
-
-  anchorContentOffset: number;
-
   firstMessageId: string | undefined;
   /** 恢复收敛轮次计数（防御性上限）。 */
   rounds: number;
-  /** anchor 缺失/失效时的兜底几何快照：翻页前的 scrollHeight/scrollTop。 */
+};
+
+type ScrollAnchorLock = {
+  container: HTMLDivElement;
+  anchorElement: Element | null;
+  anchorContentOffset: number;
   scrollHeight: number;
   scrollTop: number;
+  expectedScrollTop: number;
+  anchorLost: boolean;
 };
 
 const LOAD_OLDER_SCROLL_THRESHOLD = 96;
@@ -40,6 +43,18 @@ const FOLLOW_EASE_RATE_PER_S = 20;
 // 跟随位移不超过该值时直接瞬时贴合：行高级变化肉眼无感知，无需动画；
 // 超过则以平滑动画滑向底部，避免流式输出时视口逐块硬跳。
 const FOLLOW_INSTANT_JUMP_PX = 4;
+
+const SCROLL_ANCHOR_OFF_CLASS = "is-scroll-anchor-off";
+const SCROLL_RESTORE_WATCHDOG_STABLE_FRAMES = 12;
+const SCROLL_RESTORE_WATCHDOG_MAX_FRAMES = 90;
+
+const measureAnchorContentOffset = (
+  container: HTMLDivElement,
+  anchor: Element,
+): number =>
+  anchor.getBoundingClientRect().top -
+  container.getBoundingClientRect().top +
+  container.scrollTop;
 
 const willNestedScrollerConsumeWheel = (
   container: HTMLElement,
@@ -132,11 +147,15 @@ export const useChatScrollFollow = ({
   const previousChatRenderKeyRef = useRef(chatRenderKey);
   const positionedConversationIdsRef = useRef(new Set<string>());
   const pendingScrollRestoreRef = useRef<PendingScrollRestore | null>(null);
+  const scrollAnchorLockRef = useRef<ScrollAnchorLock | null>(null);
   const scrollRestoreRequestIdRef = useRef(0);
   const isLoadingOlderWithScrollRef = useRef(false);
   // 一轮翻页滚动恢复的在途信号：等不到新页/被新一轮接管时也必须唤醒等待方。
   const scrollRestoreInflightRef = useRef<Promise<void> | null>(null);
   const scrollRestoreSettleRef = useRef<(() => void) | null>(null);
+  const scrollRestoreWatchdogRafRef = useRef(0);
+  const scrollRestoreWatchdogFramesRef = useRef(0);
+  const scrollRestoreStableFramesRef = useRef(0);
   const scrolledAuthorizationSignatureRef = useRef("");
   const shouldStickToBottomRef = useRef(true);
   const lastScrollTopRef = useRef(0);
@@ -200,6 +219,12 @@ export const useChatScrollFollow = ({
     }
     // 滚到底部补间在途时让位：补间是显式动作，两个逐帧写入会互相踩踏。
     if (isSmoothScrollingToBottomRef.current) {
+      return;
+    }
+    if (
+      isLoadingOlderWithScrollRef.current ||
+      pendingScrollRestoreRef.current !== null
+    ) {
       return;
     }
     // 注意：初始定位（isInitialBottomPositioningRef）不在此豁免——该标志表示
@@ -267,6 +292,112 @@ export const useChatScrollFollow = ({
       settle();
     }
   }, []);
+
+  const applyAnchorCorrection = useCallback((): boolean => {
+    const lock = scrollAnchorLockRef.current;
+    if (!lock) {
+      return false;
+    }
+    const { container } = lock;
+    if (scrollRef.current !== container) {
+      scrollAnchorLockRef.current = null;
+      return false;
+    }
+
+    const anchorEl = lock.anchorElement;
+    if (!anchorEl || !container.contains(anchorEl)) {
+      if (lock.anchorLost) {
+        return false;
+      }
+      lock.anchorLost = true;
+      const addedHeight = container.scrollHeight - lock.scrollHeight;
+      container.scrollTop = lock.scrollTop + Math.max(0, addedHeight);
+      lock.expectedScrollTop = container.scrollTop;
+      return true;
+    }
+
+    const anchorContentNow = measureAnchorContentOffset(container, anchorEl);
+    const pushSinceLastRound = anchorContentNow - lock.anchorContentOffset;
+    if (pushSinceLastRound === 0) {
+      return false;
+    }
+
+    const externalShift = container.scrollTop - lock.expectedScrollTop;
+    const isAlreadyCompensated =
+      externalShift !== 0 &&
+      Math.sign(externalShift) === Math.sign(pushSinceLastRound) &&
+      Math.abs(externalShift - pushSinceLastRound) <= 1;
+    const correction = isAlreadyCompensated ? 0 : pushSinceLastRound;
+
+    lock.anchorContentOffset = anchorContentNow;
+    if (correction !== 0) {
+      container.scrollTop += correction;
+    }
+    lock.expectedScrollTop = container.scrollTop;
+    return true;
+  }, []);
+
+  const stopScrollRestoreWatchdog = useCallback((): void => {
+    if (scrollRestoreWatchdogRafRef.current !== 0) {
+      cancelAnimationFrame(scrollRestoreWatchdogRafRef.current);
+      scrollRestoreWatchdogRafRef.current = 0;
+    }
+    scrollRestoreWatchdogFramesRef.current = 0;
+    scrollRestoreStableFramesRef.current = 0;
+    scrollAnchorLockRef.current?.container.classList.remove(
+      SCROLL_ANCHOR_OFF_CLASS,
+    );
+    scrollAnchorLockRef.current = null;
+  }, []);
+
+  const startScrollRestoreWatchdog = useCallback((): void => {
+    const container =
+      scrollAnchorLockRef.current?.container ?? scrollRef.current;
+    if (!container) {
+      return;
+    }
+    container.classList.add(SCROLL_ANCHOR_OFF_CLASS);
+    scrollRestoreWatchdogFramesRef.current = 0;
+    scrollRestoreStableFramesRef.current = 0;
+    if (scrollRestoreWatchdogRafRef.current !== 0) {
+      return;
+    }
+
+    const tick = (): void => {
+      scrollRestoreWatchdogRafRef.current = 0;
+      scrollRestoreWatchdogFramesRef.current += 1;
+      const didCorrect = applyAnchorCorrection();
+      if (scrollAnchorLockRef.current === null) {
+        stopScrollRestoreWatchdog();
+        return;
+      }
+
+      const isRestoreInflight =
+        pendingScrollRestoreRef.current !== null ||
+        isLoadingOlderWithScrollRef.current;
+      scrollRestoreStableFramesRef.current =
+        didCorrect || isRestoreInflight
+          ? 0
+          : scrollRestoreStableFramesRef.current + 1;
+
+      const isSettled =
+        !isRestoreInflight &&
+        scrollRestoreStableFramesRef.current >=
+          SCROLL_RESTORE_WATCHDOG_STABLE_FRAMES;
+      if (
+        isSettled ||
+        scrollRestoreWatchdogFramesRef.current >=
+          SCROLL_RESTORE_WATCHDOG_MAX_FRAMES
+      ) {
+        stopScrollRestoreWatchdog();
+        return;
+      }
+
+      scrollRestoreWatchdogRafRef.current = requestAnimationFrame(tick);
+    };
+
+    scrollRestoreWatchdogRafRef.current = requestAnimationFrame(tick);
+  }, [applyAnchorCorrection, stopScrollRestoreWatchdog]);
 
   const syncScrollButtonVisibility = useCallback(
     (container: HTMLDivElement): void => {
@@ -383,6 +514,7 @@ export const useChatScrollFollow = ({
     scrollRestoreRequestIdRef.current += 1;
     pendingScrollRestoreRef.current = null;
     finishScrollRestore();
+    stopScrollRestoreWatchdog();
     scrolledAuthorizationSignatureRef.current = "";
     shouldStickToBottomRef.current = true;
     isInitialBottomPositioningRef.current = false;
@@ -417,6 +549,7 @@ export const useChatScrollFollow = ({
     chatRenderKey,
     finishScrollRestore,
     stopFollowAnimation,
+    stopScrollRestoreWatchdog,
   ]);
 
   // chat-area 重挂载（灵动岛重开/紧凑展开）时容器 DOM 被整体替换：
@@ -768,6 +901,7 @@ export const useChatScrollFollow = ({
 
     shouldStickToBottomRef.current = true;
     stopFollowAnimation();
+    stopScrollRestoreWatchdog();
     const scrollToBottom = (): void => {
       const container = scrollRef.current;
       if (container) {
@@ -777,7 +911,7 @@ export const useChatScrollFollow = ({
 
     scrollToBottom();
     requestAnimationFrame(scrollToBottom);
-  }, [isCompactingActive, stopFollowAnimation]);
+  }, [isCompactingActive, stopFollowAnimation, stopScrollRestoreWatchdog]);
 
   const handleLoadOlderWithScroll = useCallback(async (): Promise<void> => {
     const container = scrollRef.current;
@@ -803,11 +937,6 @@ export const useChatScrollFollow = ({
     const requestId = ++scrollRestoreRequestIdRef.current;
     isLoadingOlderWithScrollRef.current = true;
 
-    // 以视口内首个消息节点为翻页恢复锚点：新页插在它上方，恢复时按它
-    // 在内容坐标系中的位移做增量校正。内容坐标 = anchorRect.top -
-    // containerTop + scrollTop：用户滚动时 anchorRect 与 scrollTop 同步
-    // 反向移动，内容坐标恒定；只有 DOM 推挤才会改变它——校正量天然剥离
-    // 等待期间用户继续慢滚的位移，只补偿推挤，不回拨用户。
     let anchorElement: Element | null = null;
     let anchorContentOffset = 0;
     const containerTop = container.getBoundingClientRect().top;
@@ -816,8 +945,7 @@ export const useChatScrollFollow = ({
     )) {
       if (el.getBoundingClientRect().bottom > containerTop) {
         anchorElement = el;
-        anchorContentOffset =
-          el.getBoundingClientRect().top - containerTop + container.scrollTop;
+        anchorContentOffset = measureAnchorContentOffset(container, el);
         break;
       }
     }
@@ -829,16 +957,24 @@ export const useChatScrollFollow = ({
     scrollRestoreSettleRef.current = resolveRestore;
     scrollRestoreInflightRef.current = restoreFinished;
 
+    scrollAnchorLockRef.current = {
+      container,
+      anchorElement,
+      anchorContentOffset,
+      scrollHeight: container.scrollHeight,
+      scrollTop: container.scrollTop,
+      expectedScrollTop: container.scrollTop,
+      anchorLost: false,
+    };
+
     pendingScrollRestoreRef.current = {
       conversationId,
       requestId,
-      anchorElement,
-      anchorContentOffset,
       firstMessageId: messagesRef.current[0]?.id,
       rounds: 0,
-      scrollHeight: container.scrollHeight,
-      scrollTop: container.scrollTop,
     };
+
+    startScrollRestoreWatchdog();
 
     try {
       await loadOlderMessages();
@@ -861,7 +997,7 @@ export const useChatScrollFollow = ({
     // 收敛后才返回：等待方（用户消息定位）据此保证「视口内容零跳动地翻完
     // 这一页」再决定下一步。
     await restoreFinished;
-  }, [finishScrollRestore, loadOlderMessages]);
+  }, [finishScrollRestore, loadOlderMessages, startScrollRestoreWatchdog]);
 
   // 翻页滚动恢复（多轮收敛）：新页 commit 后、paint 前按 anchor 的内容
   // 坐标差分校正推挤。新页消息由虚拟化 hook 的 forceVisible 机制挂载即
@@ -884,23 +1020,7 @@ export const useChatScrollFollow = ({
       return;
     }
 
-    const anchorEl = pendingRestore.anchorElement;
-    if (anchorEl && container.contains(anchorEl)) {
-      const anchorContentNow =
-        anchorEl.getBoundingClientRect().top -
-        container.getBoundingClientRect().top +
-        container.scrollTop;
-      const pushSinceLastRound =
-        anchorContentNow - pendingRestore.anchorContentOffset;
-      if (pushSinceLastRound !== 0) {
-        container.scrollTop += pushSinceLastRound;
-        pendingRestore.anchorContentOffset = anchorContentNow;
-      }
-    } else {
-      // 兜底：锚点缺失/失效时按几何增量恢复。
-      const addedHeight = container.scrollHeight - pendingRestore.scrollHeight;
-      container.scrollTop = pendingRestore.scrollTop + Math.max(0, addedHeight);
-    }
+    applyAnchorCorrection();
 
     // 收敛检查：新页里只要还有占位符形态的消息，说明 forceVisible 的
     // 反虚拟化渲染尚未落地，几何还会变化——bump restoreTick 排队下一轮
@@ -925,7 +1045,13 @@ export const useChatScrollFollow = ({
 
     pendingScrollRestoreRef.current = null;
     finishScrollRestore();
-  }, [messages, activeConversationId, restoreTick, finishScrollRestore]);
+  }, [
+    messages,
+    activeConversationId,
+    restoreTick,
+    finishScrollRestore,
+    applyAnchorCorrection,
+  ]);
 
   // 内容不足一屏时容器不可滚动，scroll 事件永不触发，唯一的分页入口
   // （handleChatScroll 的顶部阈值）就此死锁：首屏只取 CHAT_MESSAGE_PAGE_SIZE
@@ -1281,8 +1407,9 @@ export const useChatScrollFollow = ({
         wheelScrollbarTimerRef.current = 0;
       }
       stopFollowAnimation();
+      stopScrollRestoreWatchdog();
     };
-  }, [stopFollowAnimation]);
+  }, [stopFollowAnimation, stopScrollRestoreWatchdog]);
 
   return {
     scrollRef,

@@ -2,6 +2,7 @@ import { FileUp, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../../../i18n";
 import { CustomSelect } from "../../common/CustomSelect";
+import { RangeSlider } from "../../common/RangeSlider";
 import { STREAM_CURSOR_LUCIDE_ICONS } from "./streamCursorIcons";
 import type { ThemeStreamCursor } from "./types";
 import { themeBgUrl } from "../../../utils/themeBgUrl";
@@ -195,7 +196,7 @@ export function ThemeStreamCursorSection({
             {cursor.iconType === "lucide" &&
               (() => {
                 const Icon = STREAM_CURSOR_LUCIDE_ICONS.find(
-                  (i) => i.name === cursor.lucideName
+                  (i) => i.name === cursor.lucideName,
                 )?.Icon;
                 return Icon ? (
                   <Icon
@@ -216,29 +217,19 @@ export function ThemeStreamCursorSection({
               />
             )}
           </div>
-          <label className="theme-slider-field">
-            <span className="theme-slider-label">
-              {t("settings.themeStreamCursorSize", {
-                defaultValue: "Icon size",
-              })}
-              <span className="theme-slider-value">
-                {Math.round(localSize)}px
-              </span>
-            </span>
-            <input
-              type="range"
-              min="8"
-              max="48"
-              step="1"
-              value={localSize}
-              onChange={(event) =>
-                setLocalSize(Number.parseFloat(event.target.value))
-              }
-              onPointerUp={commitSize}
-              onKeyUp={commitSize}
-              disabled={isBusy}
-            />
-          </label>
+          <RangeSlider
+            label={t("settings.themeStreamCursorSize", {
+              defaultValue: "Icon size",
+            })}
+            formatValue={(value) => `${Math.round(value)}px`}
+            value={localSize}
+            min={8}
+            max={48}
+            step={1}
+            disabled={isBusy}
+            onChange={(value) => setLocalSize(value)}
+            onCommit={commitSize}
+          />
         </>
       )}
     </div>

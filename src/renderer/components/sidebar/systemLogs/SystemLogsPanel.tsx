@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { AutoDismissNotice } from "../../AutoDismissNotice";
 import { Modal } from "../../common/Modal";
+import { RangeSlider } from "../../common/RangeSlider";
 import { UsageDateFilter } from "../usageSettings/UsageDateFilter";
 import { useI18n } from "../../../i18n";
 import type { AppLogPage, AppLogRecord } from "../../../../preload";
@@ -31,7 +32,7 @@ const formatCountdown = (ms: number): string => {
   const seconds = totalSeconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(
     2,
-    "0"
+    "0",
   )}`;
 };
 
@@ -58,12 +59,12 @@ const getMonthEnd = (date: Date): Date =>
 
 const getPresetRange = (
   preset: UsageDatePreset,
-  now: Date
+  now: Date,
 ): { since: Date; until: Date } => {
   const startOfToday = new Date(
     now.getFullYear(),
     now.getMonth(),
-    now.getDate()
+    now.getDate(),
   );
   switch (preset) {
     case "today":
@@ -79,7 +80,7 @@ const getPresetRange = (
           23,
           59,
           59,
-          999
+          999,
         ),
       };
     }
@@ -150,10 +151,10 @@ const levelClass = (level: string): string => {
 const hasDetail = (record: AppLogRecord): boolean =>
   Boolean(
     record.input ||
-      record.output ||
-      record.duration ||
-      record.context ||
-      record.error
+    record.output ||
+    record.duration ||
+    record.context ||
+    record.error,
   );
 
 export function SystemLogsPanel({
@@ -182,10 +183,10 @@ export function SystemLogsPanel({
 
   const [datePreset, setDatePreset] = useState<UsageDatePreset>("today");
   const [sinceDate, setSinceDate] = useState<string>(() =>
-    formatDateForInput(getPresetRange("today", new Date()).since)
+    formatDateForInput(getPresetRange("today", new Date()).since),
   );
   const [untilDate, setUntilDate] = useState<string>(() =>
-    formatDateForInput(getPresetRange("today", new Date()).until)
+    formatDateForInput(getPresetRange("today", new Date()).until),
   );
 
   const handlePresetChange = useCallback((preset: UsageDatePreset) => {
@@ -213,11 +214,11 @@ export function SystemLogsPanel({
 
   const sinceDateTime = useMemo(
     () => (sinceDate ? `${sinceDate} 00:00:00` : ""),
-    [sinceDate]
+    [sinceDate],
   );
   const untilDateTime = useMemo(
     () => (untilDate ? `${untilDate} 23:59:59` : ""),
-    [untilDate]
+    [untilDate],
   );
 
   const loadLogs = useCallback(
@@ -231,7 +232,7 @@ export function SystemLogsPanel({
           sinceDateTime,
           untilDateTime,
           PAGE_SIZE,
-          pageOffset
+          pageOffset,
         );
         setRecords(page.items ?? []);
         setTotal(page.total ?? 0);
@@ -243,13 +244,13 @@ export function SystemLogsPanel({
             ? e.message
             : t("settings.systemLogsLoadError", {
                 defaultValue: "Failed to load system logs.",
-              })
+              }),
         );
       } finally {
         setIsLoading(false);
       }
     },
-    [sinceDateTime, untilDateTime, t]
+    [sinceDateTime, untilDateTime, t],
   );
 
   useEffect(() => {
@@ -311,7 +312,7 @@ export function SystemLogsPanel({
               })
             : t("settings.systemLogsRequestLoggingDisabled", {
                 defaultValue: "Request logging disabled.",
-              })
+              }),
         );
       } catch (e) {
         setError(
@@ -319,11 +320,11 @@ export function SystemLogsPanel({
             ? e.message
             : t("settings.systemLogsRequestLoggingError", {
                 defaultValue: "Failed to toggle request logging.",
-              })
+              }),
         );
       }
     },
-    [t]
+    [t],
   );
 
   // 倒计时：每秒刷新显示；到点自动关闭（即使 Rust 后端也会强制停写，这里负责 UI 复位）。
@@ -362,7 +363,7 @@ export function SystemLogsPanel({
       setNotice(
         t("settings.systemLogsRequestLoggingEnabled", {
           defaultValue: "Request logging enabled.",
-        })
+        }),
       );
     } catch (e) {
       setRequestLoggingEnabled(false);
@@ -372,7 +373,7 @@ export function SystemLogsPanel({
           ? e.message
           : t("settings.systemLogsRequestLoggingError", {
               defaultValue: "Failed to toggle request logging.",
-            })
+            }),
       );
     }
   }, [durationMinutes, t]);
@@ -430,7 +431,7 @@ export function SystemLogsPanel({
       setNotice(
         t("settings.systemLogsCleared", {
           defaultValue: "System logs cleared.",
-        })
+        }),
       );
       void loadLogs(0, levelFilter);
     } catch (e) {
@@ -439,7 +440,7 @@ export function SystemLogsPanel({
           ? e.message
           : t("settings.systemLogsClearError", {
               defaultValue: "Failed to clear system logs.",
-            })
+            }),
       );
     }
   }, [confirmingClear, levelFilter, loadLogs, t]);
@@ -485,7 +486,7 @@ export function SystemLogsPanel({
       }
       return rows;
     },
-    [t]
+    [t],
   );
 
   return (
@@ -699,15 +700,14 @@ export function SystemLogsPanel({
               </button>
             ))}
           </div>
-          <input
-            type="range"
+          <RangeSlider
             className="request-logging-duration-slider"
             min={DURATION_MIN}
             max={DURATION_MAX}
             step={1}
             value={durationMinutes}
-            onChange={(event) => setDurationMinutes(Number(event.target.value))}
-            aria-label={t("settings.systemLogsRequestLoggingDuration", {
+            onChange={(value) => setDurationMinutes(value)}
+            ariaLabel={t("settings.systemLogsRequestLoggingDuration", {
               defaultValue: "Auto-disable after",
             })}
           />
@@ -771,7 +771,7 @@ export function SystemLogsPanel({
                     </span>
                     <span
                       className={`system-logs-level-badge ${levelClass(
-                        record.level
+                        record.level,
                       )}`}
                     >
                       {record.level}
@@ -874,7 +874,7 @@ export function SystemLogsPanel({
               onClick={() =>
                 void loadLogs(
                   Math.min((totalPages - 1) * PAGE_SIZE, offset + PAGE_SIZE),
-                  levelFilter
+                  levelFilter,
                 )
               }
               disabled={currentPage >= totalPages || isLoading}

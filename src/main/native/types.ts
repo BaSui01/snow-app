@@ -1656,6 +1656,8 @@ export type NativeBridge = {
   setLiteMode: (enabled: boolean) => Promise<void>;
   getAutoFormat: () => Promise<boolean>;
   setAutoFormat: (enabled: boolean) => Promise<void>;
+  /** 退出前落盘尚未执行的延迟自动格式化。 */
+  flushPendingFileFormats: () => Promise<void>;
   getConversationModes: (
     conversationId: string,
   ) => Promise<ConversationModesResult>;
@@ -1911,7 +1913,10 @@ export type NativeBridge = {
     repoUrl: string,
     parentPath: string,
     onProgress: ((chunk: GitCloneProgress) => void) | undefined,
+    streamId: string,
   ) => Promise<string>;
+  /** 中止正在进行的克隆：命中的任务会被杀掉进程树并清理半成品目录。 */
+  cancelGitClone: (streamId: string) => Promise<boolean>;
   readDirectoryEntries: (dirPath: string) => Promise<DirectoryEntry[]>;
   renameWorkspaceEntry: (
     rootPath: string,

@@ -12,6 +12,7 @@ import { useI18n } from "../../i18n";
 import type { PetManifest, PetSettings } from "../../../preload/types/pets";
 import { PetPreview } from "../pet/PetPreview";
 import { ConfirmDialog } from "../common/ConfirmDialog";
+import { RangeSlider } from "../common/RangeSlider";
 
 type PetsSettingsPanelProps = {
   onClose?: () => void;
@@ -235,24 +236,14 @@ export function PetsSettingsPanel({
               })}
             </span>
             {petEnabled && (
-              <div className="pets-scale-row">
-                <span className="settings-item-description">
-                  {t("settings.petsScale", { defaultValue: "Size" })}
-                </span>
-                <input
-                  type="range"
-                  min={0.5}
-                  max={2}
-                  step={0.05}
-                  value={petScaleDraft ?? petSettings?.scale ?? 0.75}
-                  onChange={(event) =>
-                    handlePetScaleChange(Number(event.target.value))
-                  }
-                  aria-label={t("settings.petsScale", {
-                    defaultValue: "Size",
-                  })}
-                />
-              </div>
+              <RangeSlider
+                label={t("settings.petsScale", { defaultValue: "Size" })}
+                value={petScaleDraft ?? petSettings?.scale ?? 0.75}
+                min={0.5}
+                max={2}
+                step={0.05}
+                onChange={handlePetScaleChange}
+              />
             )}
           </div>
 

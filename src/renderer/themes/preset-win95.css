@@ -440,6 +440,29 @@
   outline: none;
 }
 
+/* 统一滑块（common/RangeSlider.tsx）：还原经典 trackbar——白色凹槽轨道 +
+   凸起的方块滑块，且没有已填充段。 */
+:root[data-theme-preset="win95"] .range-slider {
+  --range-fill: transparent;
+  --range-track-h: 5px;
+  --range-track-bg: var(--w95-track);
+  --range-track-radius: 0;
+  --range-thumb-w: 10px;
+  --range-thumb-h: 18px;
+  --range-thumb-bg: var(--w95-face);
+  --range-thumb-radius: 0;
+}
+
+:root[data-theme-preset="win95"]
+  .range-slider-input::-webkit-slider-runnable-track {
+  box-shadow: var(--w95-in-flat);
+}
+
+:root[data-theme-preset="win95"] .range-slider-input::-webkit-slider-thumb {
+  border: 1px solid var(--w95-face);
+  box-shadow: var(--w95-out-flat);
+}
+
 :root[data-theme-preset="win95"] .input-box {
   border: 1px solid var(--w95-face);
   border-radius: 0;

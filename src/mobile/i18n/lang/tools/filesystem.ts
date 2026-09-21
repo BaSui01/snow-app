@@ -54,7 +54,8 @@ export const filesystemEn: Record<string, string> = {
   "remote.toolCall.filesystem.copiedCount": "Pasted {{count}} lines",
   "remote.toolCall.filesystem.copyOmitted":
     "{{count}} lines omitted in the preview",
-  "remote.toolCall.filesystem.copyFormatted": "Formatted with Prettier",
+  "remote.toolCall.filesystem.copyFormatPending":
+    "Queued for Prettier auto-format",
 
   // copy 剪切（deleteSource=true）：源区间粘贴后从源文件删除
   "remote.toolCall.filesystem.copyCut": "Cut",
@@ -106,7 +107,8 @@ export const filesystemZhCN: Record<string, string> = {
     "已粘贴到第 {{start}}-{{end}} 行，共 {{total}} 行",
   "remote.toolCall.filesystem.copiedCount": "已粘贴 {{count}} 行",
   "remote.toolCall.filesystem.copyOmitted": "粘贴内容中间省略 {{count}} 行",
-  "remote.toolCall.filesystem.copyFormatted": "已用 Prettier 自动格式化",
+  "remote.toolCall.filesystem.copyFormatPending":
+    "已排队等待 Prettier 自动格式化",
 
   "remote.toolCall.filesystem.copyCut": "剪切",
   "remote.toolCall.filesystem.copyCutPasted":
@@ -156,7 +158,8 @@ export const filesystemZhTW: Record<string, string> = {
     "已貼上至第 {{start}}-{{end}} 行，共 {{total}} 行",
   "remote.toolCall.filesystem.copiedCount": "已貼上 {{count}} 行",
   "remote.toolCall.filesystem.copyOmitted": "貼上內容中間省略 {{count}} 行",
-  "remote.toolCall.filesystem.copyFormatted": "已用 Prettier 自動格式化",
+  "remote.toolCall.filesystem.copyFormatPending":
+    "已排隊等待 Prettier 自動格式化",
 
   "remote.toolCall.filesystem.copyCut": "剪下",
   "remote.toolCall.filesystem.copyCutPasted":

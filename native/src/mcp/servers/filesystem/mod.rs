@@ -1,12 +1,9 @@
-use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::sync::{Arc, OnceLock};
 
 use base64::Engine;
 use napi::bindgen_prelude::*;
 use serde_json::{json, Value};
-use tokio::sync::Mutex as AsyncMutex;
 use tokio_util::sync::CancellationToken;
 
 use super::super::service::McpService;
@@ -18,6 +15,8 @@ use super::remote_workspace::{
 mod office;
 mod text_codec;
 mod fuzzy_edit;
+mod file_lock;
+mod format;
 mod io;
 mod copy;
 
@@ -35,20 +34,6 @@ const EDIT_REVIEW_CONTEXT_LINES: usize = 5;
 /// 逐行剥离前缀后重试匹配。
 const LINE_PREFIX_REGEX: &str = r"^\s*\d+[\s\|:]*";
 
-/// 写文件类工具按完整路径持有的互斥锁表，
-/// 保证同一文件「读取 -> 计算 -> 写盘 -> 格式化」全程串行。
-type FileWriteLockMap = HashMap<String, Arc<AsyncMutex<()>>>;
-
-static FILE_WRITE_LOCKS: OnceLock<std::sync::Mutex<FileWriteLockMap>> = OnceLock::new();
-
-fn file_write_lock(file_path: &str) -> Arc<AsyncMutex<()>> {
-    let locks = FILE_WRITE_LOCKS.get_or_init(|| std::sync::Mutex::new(HashMap::new()));
-    let mut map = locks.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    map.entry(file_path.to_string())
-        .or_insert_with(|| Arc::new(AsyncMutex::new(())))
-        .clone()
-}
-
 /// 行级精确匹配比较：先按原始文本快速判定（无分配），不一致时再按
 /// 「缩进敏感文件仅忽略 CRLF/LF 差异、普通文件压缩全部空白」的规则归一化比较。
 fn line_matches_normalized(file_line: &str, search_line: &str, preserve_indentation: bool) -> bool {
@@ -62,10 +47,6 @@ fn line_matches_normalized(file_line: &str, search_line: &str, preserve_indentat
         fuzzy_edit::normalize_whitespace(file_line) == fuzzy_edit::normalize_whitespace(search_line)
     }
 }
-
-/// Prettier 会整体改变行数，格式化后需在结果中重新定位编辑区。
-/// 仅用于行号对齐，低于编辑替换阈值属正常现象。
-const FORMATTED_ALIGN_THRESHOLD: f64 = 0.6;
 
 pub struct FilesystemService;
 
@@ -110,7 +91,7 @@ impl McpService for FilesystemService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "replace_edit".to_string(),
-                description: "Fuzzy search-and-replace editing. Finds searchContent in the file and replaces it with replaceContent. The file's original text encoding is auto-detected and preserved on write-back (the edited file keeps its original encoding and BOM). IMPORTANT: searchContent and replaceContent must be COPIED EXACTLY from the file's raw content. Do NOT include line number prefixes (like \\\"42:\\\") from read output, do NOT retype or paraphrase, and preserve every leading space/tab. For indentation-sensitive Python/YAML/Makefile files, indentation is syntax: exact and fuzzy matching retain line indentation. If searchContent is missing leading indentation on some lines, the tool automatically realigns it from the matched region and rebases replaceContent the same way; the edit is rejected with an explicit error only when the indentation intent is genuinely ambiguous. If the exact text is not found, a fuzzy match is attempted only without discarding indentation; on failure the error includes the closest matching region. On success the response includes a \\\"review\\\" field with the edited region plus surrounding context lines (edited lines marked with \\\">>>\\\") - always verify the edit landed correctly. When the auto-format setting is enabled (default), the edited file is automatically formatted with Prettier afterwards and the response marks \\\"formatted\\\": true. ESCAPE SEQUENCES: text inside string literals (e.g. Rust/Python/JSON source) stores escapes like \\\\n, \\\\t, \\\\\\\", \\\\\\\\ as literal backslash + character pairs in the file. When searchContent or replaceContent touches such text, keep the escapes in their literal form exactly as shown by filesystem-read output - never convert a literal backslash-n into a real newline, and never convert a real newline into a literal \\\\n. Use a real newline only when the file actually contains one; use a literal escape sequence only when the file text shows that escape.".to_string(),
+                description: "Fuzzy search-and-replace editing. Finds searchContent in the file and replaces it with replaceContent. The file's original text encoding is auto-detected and preserved on write-back (the edited file keeps its original encoding and BOM). IMPORTANT: searchContent and replaceContent must be COPIED EXACTLY from the file's raw content. Do NOT include line number prefixes (like \\\"42:\\\") from read output, do NOT retype or paraphrase, and preserve every leading space/tab. For indentation-sensitive Python/YAML/Makefile files, indentation is syntax: exact and fuzzy matching retain line indentation. If searchContent is missing leading indentation on some lines, the tool automatically realigns it from the matched region and rebases replaceContent the same way; the edit is rejected with an explicit error only when the indentation intent is genuinely ambiguous. If the exact text is not found, a fuzzy match is attempted only without discarding indentation; on failure the error includes the closest matching region. On success the response includes a \\\"review\\\" field with the edited region plus surrounding context lines (edited lines marked with \\\">>>\\\") - always verify the edit landed correctly. When the auto-format setting is enabled (default), the file is queued for automatic Prettier formatting that runs once this batch of edits stops writing the file; the response marks \\\"formatPending\\\": true. Formatting can reflow the whole file, so re-read it before issuing further edits from memory. ESCAPE SEQUENCES: text inside string literals (e.g. Rust/Python/JSON source) stores escapes like \\\\n, \\\\t, \\\\\\\", \\\\\\\\ as literal backslash + character pairs in the file. When searchContent or replaceContent touches such text, keep the escapes in their literal form exactly as shown by filesystem-read output - never convert a literal backslash-n into a real newline, and never convert a real newline into a literal \\\\n. Use a real newline only when the file actually contains one; use a literal escape sequence only when the file text shows that escape.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -137,7 +118,7 @@ impl McpService for FilesystemService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "create".to_string(),
-                description: "Create a new file with content. Automatically creates parent directories if needed. If the file already exists, an error is returned with the current file size and line count - use overwrite=true to replace it, or use replace_edit instead to modify the existing file. The optional encoding parameter (default: utf-8) controls the file's byte encoding, e.g. gbk, gb18030, big5, shift_jis, euc-kr, utf-16le, utf-16be, windows-1252.".to_string(),
+                description: "Create a new file with content. Automatically creates parent directories if needed. If the file already exists, an error is returned with the current file size and line count - use overwrite=true to replace it, or use replace_edit instead to modify the existing file. The optional encoding parameter (default: utf-8) controls the file's byte encoding, e.g. gbk, gb18030, big5, shift_jis, euc-kr, utf-16le, utf-16be, windows-1252. When auto-format is enabled the new file is queued for automatic Prettier formatting that runs once this batch of edits stops writing it.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -164,7 +145,7 @@ impl McpService for FilesystemService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "copy".to_string(),
-                description: "Copy or cut a line range from one file (source) into another file (target), or into another position of the same file, WITHOUT retyping the content: only line numbers are transmitted, so no output tokens are spent on reproducing the code and every moved line stays byte-exact (no paraphrase, no re-indentation). Prefer it over filesystem-replace_edit whenever the destination text already exists somewhere on disk. HOW TO USE: 1) locate the source range with grep-search / filesystem-read (line numbers are 1-indexed and inclusive; omit sourceEndLine to copy a single line); 2) choose the target position: mode=insert (default) inserts before targetLine (position=before, default) or right after it (position=after), and appends at the end of the file when targetLine is omitted; mode=replace overwrites the inclusive range targetLine..targetEndLine. 3) set deleteSource=true to CUT (move) the lines instead of copying them - the source range is removed from the source file within the same call, and the source file is kept even when it becomes empty. All line numbers refer to the files BEFORE this operation. A missing target file is created together with its parent directories and inherits the encoding, BOM and line-ending style of the source file; an existing target keeps its own encoding, BOM, line-ending style and trailing-newline state. Overlapping source/target ranges inside one file, and operations that would change nothing, are rejected with an explicit error. On success the response reports where the lines landed (matchedLineStart / matchedLineEnd in the written file, totalLines), returns pastedContent and replacedContent (the target lines that were overwritten) for diff display, and for a cut also removedContent (only when the source is a different file) plus sourceReview with the context around the removal. The review block carries the pasted region with surrounding context lines (pasted lines marked with >>>): verify it instead of reading the file again. omittedLines > 0 means a very large region was elided in the payload. When auto-format is enabled the target file is formatted with Prettier afterwards and formatted=true is returned. EXAMPLES: copy lines 40-60 of a.ts to the end of b.ts -> {sourceFilePath: a.ts, sourceStartLine: 40, sourceEndLine: 60, filePath: b.ts}; insert them before line 12 of b.ts -> {sourceFilePath: a.ts, sourceStartLine: 40, sourceEndLine: 60, filePath: b.ts, targetLine: 12}; move lines 40-60 of a.ts into b.ts after line 5 -> {sourceFilePath: a.ts, sourceStartLine: 40, sourceEndLine: 60, filePath: b.ts, targetLine: 5, position: after, deleteSource: true}; overwrite lines 12-30 of b.ts with them -> {filePath: b.ts, mode: replace, targetLine: 12, targetEndLine: 30, sourceFilePath: a.ts, sourceStartLine: 40, sourceEndLine: 60}.".to_string(),
+                description: "Copy or cut a line range from one file (source) into another file (target), or into another position of the same file, WITHOUT retyping the content: only line numbers are transmitted, so no output tokens are spent on reproducing the code and every moved line stays byte-exact (no paraphrase, no re-indentation). Prefer it over filesystem-replace_edit whenever the destination text already exists somewhere on disk. HOW TO USE: 1) locate the source range with grep-search / filesystem-read (line numbers are 1-indexed and inclusive; omit sourceEndLine to copy a single line); 2) choose the target position: mode=insert (default) inserts before targetLine (position=before, default) or right after it (position=after), and appends at the end of the file when targetLine is omitted; mode=replace overwrites the inclusive range targetLine..targetEndLine. 3) set deleteSource=true to CUT (move) the lines instead of copying them - the source range is removed from the source file within the same call, and the source file is kept even when it becomes empty. All line numbers refer to the files BEFORE this operation. A missing target file is created together with its parent directories and inherits the encoding, BOM and line-ending style of the source file; an existing target keeps its own encoding, BOM, line-ending style and trailing-newline state. Overlapping source/target ranges inside one file, and operations that would change nothing, are rejected with an explicit error. On success the response reports where the lines landed (matchedLineStart / matchedLineEnd in the written file, totalLines), returns pastedContent and replacedContent (the target lines that were overwritten) for diff display, and for a cut also removedContent (only when the source is a different file) plus sourceReview with the context around the removal. The review block carries the pasted region with surrounding context lines (pasted lines marked with >>>): verify it instead of reading the file again. omittedLines > 0 means a very large region was elided in the payload. When auto-format is enabled the file is queued for automatic Prettier formatting that runs once this batch of edits stops writing it; the response marks formatPending=true. Formatting can reflow the whole file, so re-read it before issuing further edits from memory. EXAMPLES: copy lines 40-60 of a.ts to the end of b.ts -> {sourceFilePath: a.ts, sourceStartLine: 40, sourceEndLine: 60, filePath: b.ts}; insert them before line 12 of b.ts -> {sourceFilePath: a.ts, sourceStartLine: 40, sourceEndLine: 60, filePath: b.ts, targetLine: 12}; move lines 40-60 of a.ts into b.ts after line 5 -> {sourceFilePath: a.ts, sourceStartLine: 40, sourceEndLine: 60, filePath: b.ts, targetLine: 5, position: after, deleteSource: true}; overwrite lines 12-30 of b.ts with them -> {filePath: b.ts, mode: replace, targetLine: 12, targetEndLine: 30, sourceFilePath: a.ts, sourceStartLine: 40, sourceEndLine: 60}.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -231,6 +212,12 @@ impl McpService for FilesystemService {
 }
 
 impl FilesystemService {
+    /// 把仍在等待自动格式化的文件立即落盘（应用退出前调用，避免退出时丢掉
+    /// 延迟执行的格式化）。
+    pub async fn flush_pending_formats() {
+        format::flush_all().await;
+    }
+
     pub async fn execute_async(
         &self,
         tool_name: &str,
@@ -238,8 +225,11 @@ impl FilesystemService {
         on_remote_workspace_command: &RemoteWorkspaceCallback,
         cancel_token: Option<&CancellationToken>,
     ) -> napi::Result<Value> {
-        let file_path = args.get("filePath").and_then(Value::as_str);
-        if file_path.is_some_and(is_ssh_path) {
+        let file_path = args
+            .get("filePath")
+            .and_then(Value::as_str)
+            .map(io::normalize_path);
+        if file_path.as_deref().is_some_and(is_ssh_path) {
             return execute_remote_workspace_command(
                 on_remote_workspace_command,
                 &format!("filesystem-{tool_name}"),
@@ -249,34 +239,46 @@ impl FilesystemService {
             .await;
         }
 
-        // 写文件类工具对同一文件全程加锁：并行调用若各自基于同一份旧
-        // 内容计算再先后写盘，会互相覆盖或与格式化交错导致误报 not found。
-        // 剪切会同时改写源文件与目标文件，两把锁按路径排序后依次获取，
-        // 避免两次交叉剪切互相等待。
-        let write_locks: Vec<Arc<AsyncMutex<()>>> = match tool_name {
-            "replace_edit" | "create" => file_path.map(file_write_lock).into_iter().collect(),
-            "copy" => copy::write_lock_paths(args)
-                .into_iter()
-                .map(file_write_lock)
-                .collect(),
-            _ => Vec::new(),
-        };
-        // 锁须覆盖整个「读取 -> 计算 -> 写盘 -> 格式化」生命周期。
-        let mut _write_permits = Vec::with_capacity(write_locks.len());
-        for lock in &write_locks {
-            _write_permits.push(Arc::clone(lock).lock_owned().await);
+        // 观察点：读取前先把该文件的待格式化落盘，保证模型读到的就是磁盘
+        // 最终态 —— 否则基于它发起的后续编辑会匹配不到被重排过的正文。
+        if tool_name == "read" {
+            if let Some(path) = file_path.as_deref() {
+                format::flush_path(path).await;
+            }
         }
 
-        self.execute_local(tool_name, args, file_path).await
+        // 写文件类工具：先登记「在途写」，再按路径加锁，全程串行同一文件的
+        // 「读取 -> 计算 -> 写盘」。顺序很关键：延迟格式化调度器拿到同一把
+        // 锁后会复查在途写并主动让位，因此同一批工具调用里的第二次编辑永远
+        // 不会读到被格式化重排过的内容（并行调用也不会互相覆盖）。
+        // 剪切会同时改写源文件与目标文件，两把锁按路径排序后依次获取，
+        // 避免两次交叉剪切互相等待。
+        let write_paths = write_target_paths(tool_name, args, file_path.as_deref());
+        let mut _in_flight_writes = Vec::with_capacity(write_paths.len());
+        let mut _write_permits = Vec::with_capacity(write_paths.len());
+        for path in &write_paths {
+            _in_flight_writes.push(file_lock::InFlightWrite::acquire(path));
+            _write_permits.push(file_lock::file_write_lock(path).lock_owned().await);
+        }
+        if !write_paths.is_empty() {
+            // 延迟格式化调度器按需启动；刷新写入静默窗口，让同一批编辑
+            // 期间的格式化继续让位。
+            format::ensure_worker().await;
+            for path in &write_paths {
+                format::note_write_start(path);
+            }
+        }
+
+        self.execute_local(tool_name, args, &write_paths).await
     }
 
-    /// 本地执行：同步 IO 与模糊匹配放入 blocking pool；写文件类工具成功
-    /// 后按全局开关自动 Prettier 格式化并重建反馈结果。
+    /// 本地执行：同步 IO 与模糊匹配放入 blocking pool；写文件类工具成功后
+    /// 按全局开关登记延迟格式化（由 format.rs 的后台任务合并执行）。
     async fn execute_local(
         &self,
         tool_name: &str,
         args: &Value,
-        local_file_path: Option<&str>,
+        write_paths: &[String],
     ) -> napi::Result<Value> {
         // 本地文件系统读写、编码转换和模糊匹配都是同步操作，必须放进
         // Tokio blocking pool，不能占用承载 Electron N-API Promise 的异步线程。
@@ -293,41 +295,25 @@ impl FilesystemService {
             )
         })??;
 
-        // 写文件类工具成功后按全局开关（默认开启）自动用 Prettier 格式化。
-        // 格式化失败（未安装 prettier / 无 node / 不支持的类型等）静默
-        // 跳过，绝不回退已成功的写入结果。
-        if tool_name != "replace_edit" && tool_name != "copy" {
-            return Ok(result);
+        // 模型自己写入的内容无需回传：review 已给出编辑后的真实布局，
+        // 重复回传只会白占上下文。
+        if let Some(object) = result.as_object_mut() {
+            object.remove("editedContent");
         }
 
-        if let Some(file_path) = local_file_path {
-            let auto_format = tokio::task::spawn_blocking(crate::storage::get_auto_format)
-                .await
-                .ok()
-                .and_then(|result| result.ok())
-                .unwrap_or(true);
-            if auto_format {
-                if let Some(formatted_content) =
-                    format_file_with_prettier(Path::new(file_path)).await
-                {
-                    // 格式化会整体改变行数，两个工具各自重建自己的行号与复核内容。
-                    match tool_name {
-                        "replace_edit" => {
-                            rebuild_result_after_format(&mut result, file_path, &formatted_content)
-                        }
-                        _ => copy::rebuild_result_after_format(
-                            &mut result,
-                            file_path,
-                            &formatted_content,
-                        ),
-                    }
+        // 写文件成功后按全局开关（默认开启）登记自动格式化：格式化由后台
+        // 任务在该文件停止写入后执行，失败（未安装 prettier / 无 node /
+        // 不支持的类型等）静默跳过，绝不回退已成功的写入结果。
+        if !write_paths.is_empty() && format::auto_format_enabled().await {
+            let mut scheduled = false;
+            for path in write_paths {
+                scheduled |= format::schedule(path);
+            }
+            if scheduled {
+                if let Some(object) = result.as_object_mut() {
+                    object.insert("formatPending".to_string(), json!(true));
                 }
             }
-        }
-
-        // 复制用于格式化后重定位的完整粘贴文本只在内部流转，不回传给 AI 与前端。
-        if tool_name == "copy" {
-            copy::strip_internal_fields(&mut result);
         }
 
         Ok(result)
@@ -878,144 +864,22 @@ impl FilesystemService {
     }
 }
 
-/// 格式化会整体改变行数，需在格式化结果中按实际写入片段重新定位编辑区，
-/// 再用新行号重建 review，保证反馈给 AI 和前端 Diff 的都是格式化后的
-/// 真实布局；定位失败时回退格式化前的旧行号。
-fn locate_formatted_edit(
-    file_path: &str,
-    formatted_content: &str,
-    edited_content: Option<&str>,
-    old_start: usize,
-    old_end: usize,
-) -> (usize, Option<usize>) {
-    let Some(edited) = edited_content.filter(|content| !content.trim().is_empty()) else {
-        return (old_start, Some(old_end));
-    };
-    let formatted_lines: Vec<&str> = formatted_content.split('\n').collect();
-    let preserve_indentation = fuzzy_edit::is_indentation_sensitive_path(file_path);
-    if let Some((start, end, similarity)) =
-        fuzzy_edit::find_best_line_match_v2(edited, &formatted_lines, preserve_indentation)
-    {
-        if similarity >= FORMATTED_ALIGN_THRESHOLD {
-            return (start, Some(end.saturating_sub(1)));
+/// 本次调用会改写的文件路径（去重后按路径排序）：替换编辑与新文件只写目标
+/// 文件；剪切会同时改写源文件，因此源与目标都要登记加锁。
+fn write_target_paths(tool_name: &str, args: &Value, file_path: Option<&str>) -> Vec<String> {
+    match tool_name {
+        "replace_edit" | "create" => file_path
+            .map(|path| vec![path.to_string()])
+            .unwrap_or_default(),
+        "copy" => {
+            let mut paths: Vec<String> = copy::write_lock_paths(args)
+                .into_iter()
+                .map(io::normalize_path)
+                .collect();
+            paths.sort_unstable();
+            paths.dedup();
+            paths
         }
+        _ => Vec::new(),
     }
-    (old_start, Some(old_end))
-}
-
-/// 用格式化后的文件内容重建 replace_edit 的反馈：review、matched 行号和
-/// totalLines 全部对齐格式化后的布局，并移除仅供定位的 editedContent。
-fn rebuild_result_after_format(result: &mut Value, file_path: &str, formatted_content: &str) {
-    let Some(object) = result.as_object_mut() else {
-        return;
-    };
-
-    let edited_content = object
-        .get("editedContent")
-        .and_then(Value::as_str)
-        .map(str::to_owned);
-    let old_start = object
-        .get("matchedLineStart")
-        .and_then(Value::as_u64)
-        .unwrap_or(1)
-        .saturating_sub(1) as usize;
-    let old_end = object
-        .get("matchedLineEnd")
-        .and_then(Value::as_u64)
-        .unwrap_or(old_start as u64 + 1)
-        .saturating_sub(1) as usize;
-
-    object.remove("editedContent");
-    object.insert("formatted".to_string(), json!(true));
-
-    let (edit_start, edit_end) = locate_formatted_edit(
-        file_path,
-        formatted_content,
-        edited_content.as_deref(),
-        old_start,
-        old_end,
-    );
-
-    if object.contains_key("totalLines") {
-        let total_lines = formatted_content.split('\n').count();
-        object.insert("totalLines".to_string(), json!(total_lines));
-    }
-
-    if let Some(edit_end) = edit_end {
-        object.insert("matchedLineStart".to_string(), json!(edit_start + 1));
-        object.insert("matchedLineEnd".to_string(), json!(edit_end + 1));
-    }
-
-    let review = fuzzy_edit::build_edit_review_context_lines(formatted_content, edit_start, edit_end);
-    object.insert("review".to_string(), review);
-}
-
-/// Prettier 3 内置支持（无需额外插件）的文件扩展名。
-fn is_prettier_supported_extension(file_path: &Path) -> bool {
-    let Some(extension) = file_path.extension().and_then(|e| e.to_str()) else {
-        return false;
-    };
-    matches!(
-        extension.to_ascii_lowercase().as_str(),
-        "js" | "jsx" | "mjs" | "cjs" | "ts" | "tsx" | "mts" | "cts"
-            | "json" | "jsonc" | "css" | "scss" | "less" | "html"
-            | "md" | "markdown" | "yaml" | "yml" | "graphql" | "gql"
-    )
-}
-
-/// 从被编辑文件所在目录向上逐级查找 node_modules/prettier/bin/prettier.cjs。
-/// 找到后用 `node <该入口> --write <file>` 调用，不依赖 shell 与 PATH 上的
-/// npx。目标项目未安装 prettier 时返回 None（调用方静默跳过格式化）。
-fn find_prettier_bin(file_path: &Path) -> Option<std::path::PathBuf> {
-    let mut dir = file_path.parent()?.to_path_buf();
-    loop {
-        let candidate = dir
-            .join("node_modules")
-            .join("prettier")
-            .join("bin")
-            .join("prettier.cjs");
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-        if !dir.pop() {
-            return None;
-        }
-    }
-}
-
-/// 对已编辑写入的文件执行 Prettier 格式化，成功后返回格式化后的内容。
-/// 所有文件查找、子进程调用和回读都放在 spawn_blocking 中，避免阻塞
-/// Node.js 主线程；任何一步失败都返回 None，不影响编辑结果。
-async fn format_file_with_prettier(file_path: &Path) -> Option<String> {
-    if !is_prettier_supported_extension(file_path) {
-        return None;
-    }
-    let file_path_owned = file_path.to_path_buf();
-
-    tokio::task::spawn_blocking(move || {
-        let prettier_bin = find_prettier_bin(&file_path_owned)?;
-        let mut command = std::process::Command::new("node");
-        command
-            .arg(&prettier_bin)
-            .arg("--write")
-            .arg(&file_path_owned);
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            // CREATE_NO_WINDOW：避免格式化时控制台窗口一闪而过。
-            command.creation_flags(0x0800_0000);
-        }
-        let output = command.output().ok()?;
-        if !output.status.success() {
-            return None;
-        }
-
-        // 重新读取格式化后的内容（保持与原编辑路径一致的编码检测）。
-        let bytes = fs::read(&file_path_owned).ok()?;
-        let decoded = decode_text_bytes(&bytes).ok()?;
-        Some(decoded.text)
-    })
-    .await
-    .ok()
-    .flatten()
 }

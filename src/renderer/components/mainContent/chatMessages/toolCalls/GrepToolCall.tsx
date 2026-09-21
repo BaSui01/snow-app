@@ -7,6 +7,7 @@ import {
   FileCode,
   Filter,
   CheckCircle,
+  Info,
 } from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
@@ -18,6 +19,8 @@ type GrepToolCallProps = {
 
 type ParsedGrepArgs = {
   pattern: string;
+  /** 释义：模型用用户语言写的检索意图说明，替代原始正则展示给用户。 */
+  description?: string;
   path?: string;
   fileGlob?: string;
   isRegex?: boolean;
@@ -56,6 +59,9 @@ const parseArgs = (args: string): ParsedGrepArgs | null => {
 
     const result: ParsedGrepArgs = { pattern: parsed.pattern };
 
+    if (typeof parsed.description === "string" && parsed.description.trim()) {
+      result.description = parsed.description;
+    }
     if (typeof parsed.path === "string") {
       result.path = parsed.path;
     }
@@ -101,7 +107,7 @@ const parseResult = (result: string | undefined): ParsedGrepResult => {
           (m) =>
             typeof m.file === "string" &&
             typeof m.line === "number" &&
-            typeof m.content === "string"
+            typeof m.content === "string",
         )
         .map((m) => ({
           file: m.file as string,
@@ -142,11 +148,11 @@ export const GrepToolCall = ({
   const { t } = useI18n();
   const parsedArgs = useMemo(
     () => parseArgs(toolCall.arguments),
-    [toolCall.arguments]
+    [toolCall.arguments],
   );
   const parsedResult = useMemo(
     () => parseResult(toolCall.result),
-    [toolCall.result]
+    [toolCall.result],
   );
 
   const isRunning = toolCall.status === "running";
@@ -172,7 +178,7 @@ export const GrepToolCall = ({
     }
 
     return Array.from(groups.entries()).sort((a, b) =>
-      a[0].localeCompare(b[0])
+      a[0].localeCompare(b[0]),
     );
   }, [parsedResult]);
 
@@ -181,7 +187,11 @@ export const GrepToolCall = ({
       toolName={toolCall.name}
       badgeName={t("toolCall.grep.name")}
       category="search"
-      displayName={pattern.length > 60 ? `${pattern.slice(0, 60)}...` : pattern}
+      displayName={
+        parsedArgs?.description ??
+        (pattern.length > 60 ? `${pattern.slice(0, 60)}...` : pattern)
+      }
+      displayNameTitle={parsedArgs?.description ? pattern : undefined}
       status={effectiveStatus}
       meta={
         parsedResult.type === "success" ? (
@@ -199,6 +209,19 @@ export const GrepToolCall = ({
       className="tool-call-grep"
     >
       <div className="tool-call-body tool-call-grep-body">
+        {/* 释义：模型用用户语言解释检索意图，用户无需解读正则 */}
+        {parsedArgs?.description ? (
+          <div className="tool-call-grep-description">
+            <Info size={11} aria-hidden="true" />
+            <span className="tool-call-grep-param-label">
+              {t("toolCall.grep.description")}
+            </span>
+            <span className="tool-call-grep-description-text">
+              {parsedArgs.description}
+            </span>
+          </div>
+        ) : null}
+
         {/* Search parameters */}
         {parsedArgs ? (
           <div className="tool-call-grep-params">

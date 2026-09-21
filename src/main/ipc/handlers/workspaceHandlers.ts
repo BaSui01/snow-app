@@ -357,8 +357,10 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
       const normalizedStreamId = streamId.trim();
       // 克隆由 Rust 后端以 tokio 异步子进程执行（不阻塞主进程），
       // 按 git 惯例在所选目录下以项目名新建子目录进行克隆，进度行
-      // 通过广播通道实时推送给发起窗口。克隆成功后把实际克隆目录
-      // 登记为活动本地工作区目录。
+      // 通过广播通道实时推送给发起窗口。克隆运行期间可用
+      // "workspace-directories:clone-repository:cancel" 以同一个 streamId
+      // 中止（Rust 侧杀掉进程树并清理半成品目录）。克隆成功后把实际
+      // 克隆目录登记为活动本地工作区目录。
       const clonedPath = await native.cloneGitRepository(
         repoUrl.trim(),
         parentPath.trim(),
@@ -368,6 +370,7 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
             chunk,
           });
         },
+        normalizedStreamId,
       );
       const existingCount = (await native.listWorkspaceDirectories()).length;
       await native.upsertWorkspaceDirectory(
@@ -376,6 +379,18 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
       const directories = await native.listWorkspaceDirectories();
       broadcastDirectoryListChanged();
       return directories;
+    },
+  );
+  ipcMain.handle(
+    "workspace-directories:clone-repository:cancel",
+    async (_event, streamId: unknown) => {
+      if (typeof streamId !== "string" || !streamId.trim()) {
+        throw new Error("Clone progress stream ID is required");
+      }
+
+      // 取消请求交给 Rust 后端处理：命中在跑的任务时杀进程树 + 清理
+      // 半成品目录；任务已结束则返回 false（调用方无需额外处理）。
+      return native.cancelGitClone(streamId.trim());
     },
   );
 

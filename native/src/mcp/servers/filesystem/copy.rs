@@ -25,10 +25,6 @@ use super::EDIT_REVIEW_CONTEXT_LINES;
 const COPY_PAYLOAD_MAX_LINES: usize = 800;
 const COPY_PAYLOAD_EDGE_LINES: usize = 30;
 
-/// 仅用于「格式化后重新定位粘贴区域」的完整粘贴文本字段：它只在回传内容被省略时
-/// 出现，且必定由 execute_local 在返回前移除（见 strip_internal_fields）。
-const RELOCATION_FIELD: &str = "relocationContent";
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CopyMode {
     Insert,
@@ -392,23 +388,9 @@ pub(super) fn execute(args: &Value) -> napi::Result<Value> {
         if let Some(source_review) = source_review {
             object.insert("sourceReview".to_string(), source_review);
         }
-        // 载荷被省略时，完整粘贴文本仅供格式化后重定位，不回传给模型与前端。
-        if omitted_lines > 0 {
-            object.insert(
-                RELOCATION_FIELD.to_string(),
-                json!(logical_text(&copied_elements)),
-            );
-        }
     }
 
     Ok(result)
-}
-
-/// 移除仅供格式化后重定位的内部字段：粘贴内容不该被重复塞回会话上下文与历史库。
-pub(super) fn strip_internal_fields(result: &mut Value) {
-    if let Some(object) = result.as_object_mut() {
-        object.remove(RELOCATION_FIELD);
-    }
 }
 
 /// 本次调用会改写的文件路径（纯复制只改目标文件；剪切同时改写源文件）。
@@ -430,66 +412,6 @@ pub(super) fn write_lock_paths(args: &Value) -> Vec<&str> {
     paths.sort_unstable();
     paths.dedup();
     paths
-}
-
-/// 格式化会整体改变行数：用完整粘贴文本在格式化后的目标内容里重新定位粘贴区域，
-/// 再按新布局重建行号、review 与回传载荷；定位失败时保留格式化前的行号。
-pub(super) fn rebuild_result_after_format(
-    result: &mut Value,
-    file_path: &str,
-    formatted_content: &str,
-) {
-    let Some(object) = result.as_object_mut() else {
-        return;
-    };
-    let relocation = object
-        .get(RELOCATION_FIELD)
-        .and_then(Value::as_str)
-        .map(str::to_owned);
-    let displayed = object
-        .get("pastedContent")
-        .and_then(Value::as_str)
-        .map(str::to_owned);
-    let anchor = relocation.as_deref().or(displayed.as_deref());
-    let old_start = object
-        .get("matchedLineStart")
-        .and_then(Value::as_u64)
-        .unwrap_or(1)
-        .saturating_sub(1) as usize;
-    let old_end = object
-        .get("matchedLineEnd")
-        .and_then(Value::as_u64)
-        .unwrap_or(old_start as u64 + 1)
-        .saturating_sub(1) as usize;
-
-    object.insert("formatted".to_string(), json!(true));
-    object.insert(
-        "totalLines".to_string(),
-        json!(total_line_count(formatted_content)),
-    );
-
-    let (region_start, region_end) =
-        super::locate_formatted_edit(file_path, formatted_content, anchor, old_start, old_end);
-    let Some(region_end) = region_end else {
-        return;
-    };
-
-    object.insert("matchedLineStart".to_string(), json!(region_start + 1));
-    object.insert("matchedLineEnd".to_string(), json!(region_end + 1));
-
-    let pasted_lines: Vec<String> = formatted_content
-        .split('\n')
-        .skip(region_start)
-        .take(region_end + 1 - region_start)
-        .map(str::to_owned)
-        .collect();
-    let (pasted_content, omitted_lines) = build_payload(&pasted_lines);
-    object.insert("pastedContent".to_string(), json!(pasted_content));
-    object.insert("omittedLines".to_string(), json!(omitted_lines));
-    object.insert(
-        "review".to_string(),
-        build_review(formatted_content, region_start, Some(region_end)),
-    );
 }
 
 /// 复核块，结构与 replace_edit 的 review 一致（startLine / endLine /

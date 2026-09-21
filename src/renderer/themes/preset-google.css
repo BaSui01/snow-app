@@ -206,6 +206,17 @@
   outline: none;
 }
 
+/* 统一滑块（common/RangeSlider.tsx）采用 Material 观感：Google 蓝主色 +
+   低饱和浅色轨道。 */
+:root[data-theme-preset="google"] .range-slider {
+  --range-accent: var(--google-blue);
+  --range-track-bg: color-mix(
+    in srgb,
+    var(--google-blue) 16%,
+    var(--bg-tertiary)
+  );
+}
+
 :root[data-theme-preset="google"]
   .toggle-switch
   input:checked

@@ -316,10 +316,20 @@ export function ApiSettingsTable({
                       />
                     </td>
                     <td className="cell-name">
-                      <strong>{config.displayName}</strong>
-                      <small className="profile-name-hint">
-                        {config.profileName}
-                      </small>
+                      <button
+                        className="cell-name-button"
+                        onClick={() => onEdit(config)}
+                        type="button"
+                        title={t("settings.edit", { defaultValue: "Edit" })}
+                        aria-label={t("settings.apiEditProfile", {
+                          defaultValue: "Edit {name}",
+                        }).replace("{name}", config.displayName)}
+                      >
+                        <strong>{config.displayName}</strong>
+                        <small className="profile-name-hint">
+                          {config.profileName}
+                        </small>
+                      </button>
                     </td>
                     <td className="cell-url">{config.baseUrl || "-"}</td>
                     <td>{config.advancedModel || config.basicModel || "-"}</td>

@@ -176,6 +176,10 @@ impl McpService for GrepService {
                         "type": "string",
                         "description": "The search pattern (regex by default, or literal string when isRegex is false)."
                     },
+                    "description": {
+                        "type": "string",
+                        "description": "REQUIRED: a SHORT user-friendly explanation of what this search is looking for - one brief sentence (about 15 words / 20 characters max), written in the SAME language as the user's latest query. It is shown to the user in place of the raw pattern, so they never have to read the regex. Do NOT repeat the pattern or explain its syntax."
+                    },
                     "path": {
                         "type": "string",
                         "description": "The directory or file to search in. Defaults to the current working directory."
@@ -200,7 +204,7 @@ impl McpService for GrepService {
                         "default": 100
                     }
                 },
-                "required": ["pattern"]
+                "required": ["pattern", "description"]
             }),
         }]
     }
@@ -230,6 +234,9 @@ impl GrepService {
         on_remote_workspace_command: &RemoteWorkspaceCallback,
         cancel_token: Option<&CancellationToken>,
     ) -> napi::Result<Value> {
+        // 释义（description）只是面向用户的展示字段，不参与检索逻辑：模型漏填
+        // 时照常执行搜索，由 UI 回退为展示原始正则——只读检索不该因为缺少一句
+        // 解释而失败（schema 仍把 description 列为必填，用于提示模型补齐）。
         if args
             .get("path")
             .and_then(Value::as_str)
@@ -249,6 +256,7 @@ impl GrepService {
 
     /// 本地路径的 grep 搜索执行体（不含 SSH 远程派发逻辑）。
     /// 文件搜索 agent 等内部调用方复用此入口执行本地搜索。
+    /// 释义（description）只用于 UI 展示、不参与检索逻辑，缺失时不影响搜索。
     pub async fn execute_search_local(&self, args: &Value) -> napi::Result<Value> {
         let pattern = args.get("pattern").and_then(Value::as_str).ok_or_else(|| {
             Error::new(

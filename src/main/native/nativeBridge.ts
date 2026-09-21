@@ -97,6 +97,8 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to write Auto format"),
         ),
+      // 无原生桥时没有延迟格式化任务，无需落盘。
+      flushPendingFileFormats: () => Promise.resolve(),
       getConversationModes: () =>
         Promise.reject(
           new Error(
@@ -424,6 +426,10 @@ export const loadNativeBridge = (): NativeBridge => {
       cloneGitRepository: () =>
         Promise.reject(
           new Error("Rust native bridge is required to clone git repositories"),
+        ),
+      cancelGitClone: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to cancel git clones"),
         ),
       readDirectoryEntries: () =>
         Promise.reject(

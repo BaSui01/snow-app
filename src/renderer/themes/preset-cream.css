@@ -268,6 +268,17 @@
   outline: none;
 }
 
+/* 统一滑块（common/RangeSlider.tsx）跟随奶油橙品牌色：轨道底色由品牌色与
+   米色底混合而成，保留柔和的低对比层次。 */
+:root[data-theme-preset="cream"] .range-slider {
+  --range-accent: var(--accent-orange);
+  --range-track-bg: color-mix(
+    in srgb,
+    var(--accent-orange) 20%,
+    var(--bg-tertiary)
+  );
+}
+
 :root[data-theme-preset="cream"] .toggle-switch input:checked + .toggle-slider,
 :root[data-theme-preset="cream"] .toggle-slider {
   border-color: var(--border-subtle);

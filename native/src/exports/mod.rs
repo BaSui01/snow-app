@@ -2,6 +2,7 @@ mod api;
 pub(crate) mod checkpoint;
 mod codebase;
 mod engine;
+mod formatting;
 mod git;
 mod ide;
 mod images;

@@ -1,3 +1,4 @@
+import { Loader2 } from "lucide-react";
 import { useRef } from "react";
 
 import { useI18n } from "../../../../../i18n";
@@ -11,11 +12,18 @@ type CloneRepositoryDialogProps = {
   targetPreview: string;
   progress: GitCloneProgress | null;
   isSubmitting: boolean;
+  isAborting: boolean;
   error: string | null;
   onRepoUrlChange: (repoUrl: string) => void;
   onSelectFolder: () => void;
+  /**
+   * 关闭弹窗：空闲时=取消；克隆中=让克隆在后台继续（不中断 git 进程，
+   * 进度移到侧边栏项目区的占位条目上）。
+   */
   onCancel: () => void;
   onConfirm: () => void;
+  /** 克隆中：中止克隆（Rust 侧杀进程树 + 清理半成品目录）。 */
+  onAbort: () => void;
 };
 
 export function CloneRepositoryDialog({
@@ -25,23 +33,67 @@ export function CloneRepositoryDialog({
   targetPreview,
   progress,
   isSubmitting,
+  isAborting,
   error,
   onRepoUrlChange,
   onSelectFolder,
   onCancel,
   onConfirm,
+  onAbort,
 }: CloneRepositoryDialogProps): React.JSX.Element {
   const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement | null>(null);
 
+  const percent = progress?.percent ?? null;
+  const percentWidth =
+    percent === null ? 0 : Math.min(100, Math.max(0, percent));
+  const progressMessage = progress
+    ? percent !== null
+      ? `${percent.toFixed(0)}% · ${progress.line}`
+      : progress.line
+    : t("sidebar.cloneStarting", { defaultValue: "Starting git clone…" });
+
+  // 克隆进行中的底部操作区：「中止克隆」中断任务，「在后台继续」只是
+  // 关闭弹窗（克隆照常跑完并自动登记为项目）。
+  const cloningFooter = (
+    <>
+      <button
+        className="form-dialog-button abort"
+        disabled={isAborting}
+        onClick={onAbort}
+        type="button"
+      >
+        {isAborting ? <span className="form-dialog-spinner" /> : null}
+        {t("sidebar.cloneAbort", { defaultValue: "Abort clone" })}
+      </button>
+      <button
+        className="form-dialog-button confirm"
+        onClick={onCancel}
+        type="button"
+      >
+        {t("sidebar.cloneRunInBackground", {
+          defaultValue: "Run in background",
+        })}
+      </button>
+    </>
+  );
+
   return (
     <FormDialog
       cancelLabel={t("common.cancel", { defaultValue: "Cancel" })}
-      closeLabel={t("sidebar.close", { defaultValue: "Close" })}
+      closeLabel={
+        isSubmitting
+          ? t("sidebar.cloneKeepCloningHint", {
+              defaultValue: "Close and keep cloning in the background",
+            })
+          : t("sidebar.close", { defaultValue: "Close" })
+      }
       confirmDisabled={!repoUrl.trim() || !parentPath.trim()}
       confirmLabel={t("sidebar.cloneRepositoryConfirm", {
         defaultValue: "Clone",
       })}
+      dismissableWhenSubmitting
+      footer={isSubmitting ? cloningFooter : undefined}
       initialFocusRef={inputRef}
       isSubmitting={isSubmitting}
       onCancel={onCancel}
@@ -114,12 +166,27 @@ export function CloneRepositoryDialog({
           })}
         </span>
       ) : null}
-      {progress ? (
-        <span className="form-dialog-description clone-progress-text">
-          {progress.percent !== null && progress.percent !== undefined
-            ? `${progress.percent.toFixed(0)}% · ${progress.line}`
-            : progress.line}
-        </span>
+      {isSubmitting ? (
+        <div className="clone-progress">
+          {percent !== null ? (
+            <div className="clone-progress-track">
+              <div
+                className="clone-progress-fill"
+                style={{ width: `${percentWidth}%` }}
+              />
+            </div>
+          ) : null}
+          <span className="clone-progress-status">
+            <Loader2 className="spin" size={12} strokeWidth={1.9} />
+            <span className="clone-progress-message">{progressMessage}</span>
+          </span>
+          <span className="form-dialog-description">
+            {t("sidebar.cloneBackgroundHint", {
+              defaultValue:
+                "Closing this dialog keeps the clone running in the background — progress and abort stay available in the project list.",
+            })}
+          </span>
+        </div>
       ) : null}
       {error ? <span className="form-dialog-error">{error}</span> : null}
     </FormDialog>

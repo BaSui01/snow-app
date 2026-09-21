@@ -304,6 +304,8 @@ export const bootstrapApplication = (): void => {
     remoteShutdownPromise ??= Promise.all([
       remoteTunnelManager.shutdown(),
       stopRemoteControlServer(),
+      // 自动格式化已改为延迟执行：退出前把尚未落盘的格式化任务跑完。
+      native.flushPendingFileFormats(),
     ])
       .then(() => undefined)
       .finally(() => {

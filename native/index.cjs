@@ -49,6 +49,8 @@ const requiredExports = [
   // （历史会话引用已改为 @@conversation: 内联标签，不再需要附件表导出）
   "deleteWorkspaceEntries",
   "gitFileContent",
+  // 克隆 Git 仓库的中止入口（克隆进行中杀进程树 + 清理半成品目录）
+  "cancelGitClone",
   "listScheduledTasks",
   "upsertScheduledTask",
   "deleteScheduledTask",
@@ -84,6 +86,8 @@ const requiredExports = [
   "startRemoteWanListener",
   "stopRemoteWanListener",
   "resolveRemoteAttachments",
+  // 退出前落盘尚未执行的自动格式化（延迟格式化调度器，见 filesystem/format.rs）
+  "flushPendingFileFormats",
 ];
 
 const platformName = platformMap[`${process.platform}-${process.arch}`];

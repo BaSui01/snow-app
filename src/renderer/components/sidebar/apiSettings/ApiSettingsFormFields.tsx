@@ -9,6 +9,7 @@ import { ChevronDown, Eye, EyeOff } from "lucide-react";
 import { useI18n } from "../../../i18n";
 import { ApiModelCombobox } from "./ApiModelCombobox";
 import { CustomSelect } from "../../common/CustomSelect";
+import { RangeSlider } from "../../common/RangeSlider";
 import { SystemPromptSelect } from "./SystemPromptSelect";
 import { TokenPresetInput, type TokenPreset } from "./TokenPresetInput";
 import {
@@ -963,23 +964,20 @@ export function ApiSettingsFormFields({
             />
           </label>
           <div className="api-settings-field api-settings-auto-compress-field">
-            <span>
-              {t("settings.apiToolResultTokenLimit", {
+            <RangeSlider
+              label={t("settings.apiToolResultTokenLimit", {
                 defaultValue: "Tool result limit",
               })}
-            </span>
-            <div className="api-settings-threshold-slider-row">
-              <input
-                value={toolResultLimitPercent}
-                onChange={changeField("toolResultTokenLimit")}
-                type="range"
-                min={TOOL_RESULT_LIMIT_MIN_PERCENT}
-                max={TOOL_RESULT_LIMIT_MAX_PERCENT}
-                step={TOOL_RESULT_LIMIT_STEP_PERCENT}
-                disabled={disabled}
-              />
-              <strong>{toolResultLimitPercent}%</strong>
-            </div>
+              value={toolResultLimitPercent}
+              min={TOOL_RESULT_LIMIT_MIN_PERCENT}
+              max={TOOL_RESULT_LIMIT_MAX_PERCENT}
+              step={TOOL_RESULT_LIMIT_STEP_PERCENT}
+              disabled={disabled}
+              formatValue={(value) => `${value}%`}
+              onChange={(value) =>
+                onChange("toolResultTokenLimit", String(value))
+              }
+            />
             <small className="api-settings-threshold-hint">
               {t("settings.apiToolResultTokenLimitHint", {
                 defaultValue:
@@ -988,44 +986,41 @@ export function ApiSettingsFormFields({
             </small>
           </div>
           <div className="api-settings-field api-settings-auto-compress-field">
-            <div className="api-settings-auto-compress-header">
-              <span>
-                {t("settings.apiAutoCompressThreshold", {
-                  defaultValue: "Auto compress threshold",
-                })}
-              </span>
-              <label className="toggle-switch">
-                <input
-                  type="checkbox"
-                  checked={data.enableAutoCompress}
-                  onChange={changeField("enableAutoCompress")}
-                  disabled={disabled}
-                  hidden
-                />
-                <span className="toggle-slider" />
-                <span>
-                  {data.enableAutoCompress
-                    ? t("settings.active", {
-                        defaultValue: ENABLED_STATUS_LABEL,
-                      })
-                    : t("settings.inactive", {
-                        defaultValue: DISABLED_STATUS_LABEL,
-                      })}
-                </span>
-              </label>
-            </div>
-            <div className="api-settings-threshold-slider-row">
-              <input
-                value={autoCompressThresholdPercent}
-                onChange={changeField("autoCompressThreshold")}
-                type="range"
-                min={AUTO_COMPRESS_THRESHOLD_MIN_PERCENT}
-                max={AUTO_COMPRESS_THRESHOLD_MAX_PERCENT}
-                step={AUTO_COMPRESS_THRESHOLD_STEP_PERCENT}
-                disabled={disabled || !data.enableAutoCompress}
-              />
-              <strong>{autoCompressThresholdPercent}%</strong>
-            </div>
+            <RangeSlider
+              label={t("settings.apiAutoCompressThreshold", {
+                defaultValue: "Auto compress threshold",
+              })}
+              headerAside={
+                <label className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={data.enableAutoCompress}
+                    onChange={changeField("enableAutoCompress")}
+                    disabled={disabled}
+                    hidden
+                  />
+                  <span className="toggle-slider" />
+                  <span>
+                    {data.enableAutoCompress
+                      ? t("settings.active", {
+                          defaultValue: ENABLED_STATUS_LABEL,
+                        })
+                      : t("settings.inactive", {
+                          defaultValue: DISABLED_STATUS_LABEL,
+                        })}
+                  </span>
+                </label>
+              }
+              value={autoCompressThresholdPercent}
+              min={AUTO_COMPRESS_THRESHOLD_MIN_PERCENT}
+              max={AUTO_COMPRESS_THRESHOLD_MAX_PERCENT}
+              step={AUTO_COMPRESS_THRESHOLD_STEP_PERCENT}
+              disabled={disabled || !data.enableAutoCompress}
+              formatValue={(value) => `${value}%`}
+              onChange={(value) =>
+                onChange("autoCompressThreshold", String(value))
+              }
+            />
             <span className="api-settings-threshold-hint">
               {autoCompressThresholdTokens == null
                 ? t("settings.apiAutoCompressThresholdNeedMaxContext", {

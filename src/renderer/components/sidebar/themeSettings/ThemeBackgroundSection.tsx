@@ -1,6 +1,7 @@
 import { ImageIcon, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../../../i18n";
+import { RangeSlider } from "../../common/RangeSlider";
 import type { ThemeBackground } from "./types";
 import { MAX_BACKGROUND_OPACITY } from "./themeSettingsUtils";
 import { themeBgUrl } from "../../../utils/themeBgUrl";
@@ -51,7 +52,7 @@ export function ThemeBackgroundSection({
 
   const updateField = <K extends keyof ThemeBackground>(
     field: K,
-    value: ThemeBackground[K]
+    value: ThemeBackground[K],
   ): void => {
     onChange({ ...background, [field]: value });
   };
@@ -172,52 +173,32 @@ export function ThemeBackgroundSection({
       </div>
       {background.imagePath && (
         <>
-          <label className="theme-slider-field">
-            <span className="theme-slider-label">
-              {t("settings.themeBackgroundOpacity", {
-                defaultValue: "Opacity",
-              })}
-              <span className="theme-slider-value">
-                {Math.round(localOpacity * 100)}%
-              </span>
-            </span>
-            <input
-              type="range"
-              min="0"
-              max={MAX_BACKGROUND_OPACITY}
-              step="0.01"
-              value={localOpacity}
-              onChange={(event) =>
-                handleOpacityInput(Number.parseFloat(event.target.value))
-              }
-              onPointerUp={commitSliders}
-              onKeyUp={commitSliders}
-              disabled={isBusy}
-            />
-          </label>
-          <label className="theme-slider-field">
-            <span className="theme-slider-label">
-              {t("settings.themeBackgroundBlur", {
-                defaultValue: "Blur",
-              })}
-              <span className="theme-slider-value">
-                {Math.round(localBlur)}px
-              </span>
-            </span>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              step="1"
-              value={localBlur}
-              onChange={(event) =>
-                handleBlurInput(Number.parseFloat(event.target.value))
-              }
-              onPointerUp={commitSliders}
-              onKeyUp={commitSliders}
-              disabled={isBusy}
-            />
-          </label>
+          <RangeSlider
+            label={t("settings.themeBackgroundOpacity", {
+              defaultValue: "Opacity",
+            })}
+            formatValue={(value) => `${Math.round(value * 100)}%`}
+            value={localOpacity}
+            min={0}
+            max={MAX_BACKGROUND_OPACITY}
+            step={0.01}
+            disabled={isBusy}
+            onChange={handleOpacityInput}
+            onCommit={commitSliders}
+          />
+          <RangeSlider
+            label={t("settings.themeBackgroundBlur", {
+              defaultValue: "Blur",
+            })}
+            formatValue={(value) => `${Math.round(value)}px`}
+            value={localBlur}
+            min={0}
+            max={100}
+            step={1}
+            disabled={isBusy}
+            onChange={handleBlurInput}
+            onCommit={commitSliders}
+          />
         </>
       )}
     </div>

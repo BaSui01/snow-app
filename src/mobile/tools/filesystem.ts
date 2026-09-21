@@ -17,7 +17,7 @@
  *   （true = 剪切：粘贴后源区间从源文件删除，缺省 false）；成功结果
  *   { success, sourceFilePath, sourceLineStart, sourceLineEnd, copiedLines, deleteSource,
  *   sourceTotalLines, targetFilePath, mode, position, matchedLineStart, matchedLineEnd,
- *   totalLines, replacedContent, pastedContent, omittedLines, formatted?, removedContent?,
+ *   totalLines, replacedContent, pastedContent, omittedLines, formatPending?, removedContent?,
  *   sourceReview? }，失败结果是错误文本（可能落在 message 字段）。
  *   剪切时源侧另有回显：源 / 目标不同文件时在目标 diff 之后再渲染源文件的删除 diff，
  *   同文件（文件内移动）只给一行说明。
@@ -929,7 +929,7 @@ type CopyResult =
       replacedContent: string;
       pastedContent: string;
       omittedLines: number;
-      formatted: boolean;
+      formatPending: boolean;
       /** 剪切时才有：从源文件删掉的行内容（区域过大时中间省略）。 */
       removedContent?: string;
       sourceReview?: CopySourceReview;
@@ -1019,7 +1019,7 @@ const parseCopyResult = (raw?: string): CopyResult => {
     pastedContent:
       typeof record.pastedContent === "string" ? record.pastedContent : "",
     omittedLines: numberOf(record, "omittedLines") ?? 0,
-    formatted: record.formatted === true,
+    formatPending: record.formatPending === true,
     // removedContent 缺失即 undefined：区分「没有回显」与「被删内容是空串」。
     removedContent:
       typeof record.removedContent === "string"
@@ -1261,8 +1261,8 @@ export const renderCopyCard: ToolCallRenderer = (tool) => {
         ),
       );
     }
-    if (success.formatted) {
-      body.append(noteRow(t("remote.toolCall.filesystem.copyFormatted")));
+    if (success.formatPending) {
+      body.append(noteRow(t("remote.toolCall.filesystem.copyFormatPending")));
     }
   } else if (!hasError) {
     const fallback = argsFallbackSection(record, raw);

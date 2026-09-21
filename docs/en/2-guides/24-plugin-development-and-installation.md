@@ -17,7 +17,7 @@
 
 ## Entry Point
 
-The **Plugins** button at the bottom of the sidebar (with an installed-count badge) opens the plugin management modal; it is not a settings page with its own page id. The toolbar offers **Install from folder** and **Refresh**; each row shows the plugin version, author and render mode, and a plugin that declares privacy scopes lists every requested data domain as an amber tag (localized, e.g. "API keys", "Messages") followed by the manifest `note`. The modal is management-only; open panels from the plus menu's Plugins group in the top bar or the right-panel plugin entry.
+The **Plugins** button at the bottom of the sidebar (with an installed-count badge) opens the plugin management modal; it is not a settings page with its own page id. The toolbar offers **Install from folder**, **Refresh** and **Metadata catalog**; each row shows the plugin version, author and render mode, and a plugin that declares privacy scopes lists every requested data domain as an amber tag (localized, e.g. "API keys", "Messages") followed by the manifest `note`. **Metadata catalog** opens the "App metadata available to plugins" modal: it groups all 34 domains with a one-line summary, the required privacy declaration, live-versus-polled behavior and accepted parameters, with keyword search. The per-row "Metadata n/34" link opens the same catalog with that plugin's declared (readable) and undeclared (denied) domains marked, so users can audit the `privacy` declaration. The modal is management-only; open panels from the plus menu's Plugins group in the top bar or the right-panel plugin entry.
 
 ## Steps
 

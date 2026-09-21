@@ -4745,4 +4745,31 @@ export const zhTW = {
   "plugins.scopes.userscripts": "使用者腳本",
   "plugins.scopes.remoteControl": "遠端控制",
   "plugins.scopes.plugins": "其他外掛資料",
+  "plugins.metadata.action": "中繼資料清單",
+  "plugins.metadata.title": "外掛可取得的應用程式資料",
+  "plugins.metadata.description":
+    "外掛透過 api.metadata 以唯讀方式讀取的應用程式資料域；標示隱私網域的域需在 plugin.json 的 privacy 中宣告後才能讀取。",
+  "plugins.metadata.searchPlaceholder": "搜尋域、欄位或參數",
+  "plugins.metadata.count": "{{matched}} / {{total}} 個域",
+  "plugins.metadata.empty": "沒有符合的中繼資料域",
+  "plugins.metadata.public": "公開",
+  "plugins.metadata.fieldLevel": "欄位層級",
+  "plugins.metadata.live": "即時",
+  "plugins.metadata.polled": "輪詢",
+  "plugins.metadata.params": "參數",
+  "plugins.metadata.granted": "可讀",
+  "plugins.metadata.denied": "未宣告",
+  "plugins.metadata.scopeHint":
+    "讀取該域需在 plugin.json 的 privacy 中宣告「{{scope}}」隱私域",
+  "plugins.metadata.pluginContext":
+    "「{{name}}」：{{granted}} / {{total}} 個域已授權，其餘域讀取會被拒絕",
+  "plugins.metadata.pluginEntry": "可讀中繼資料 {{granted}}/{{total}}",
+  "plugins.metadata.docHint":
+    "完整欄位、參數與範例見內建文件 ~/.snowapp/docs/zh-CN/3-参考手册/6-插件元数据域参考.md",
+  "plugins.metadata.groups.appearance": "應用與外觀",
+  "plugins.metadata.groups.ai": "AI 與設定",
+  "plugins.metadata.groups.content": "工作階段、內容與執行",
+  "plugins.metadata.groups.project": "專案與程式碼",
+  "plugins.metadata.groups.connectivity": "連線與資產",
+  "plugins.metadata.groups.other": "其他",
 } satisfies Record<string, string>;

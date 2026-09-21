@@ -1,4 +1,5 @@
 import {
+  Database,
   FolderOpen,
   RefreshCw,
   ShieldAlert,
@@ -11,12 +12,14 @@ import { useCallback, useEffect, useState } from "react";
 
 import { useI18n } from "../../i18n";
 import { resolveLocalized } from "../../plugins/manifest";
+import { describeMetadataDomains } from "../../plugins/metadata";
 import type { PluginView, SensitiveScope } from "../../plugins/types";
 import { pluginStore, usePluginStore } from "../../plugins/pluginStore";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { Modal } from "../common/Modal";
 import { PluginIcon } from "../common/PluginIcon";
 import { useChatConversationContext } from "../mainContent/chatMessages";
+import { PluginMetadataModal } from "./PluginMetadataModal";
 
 type PluginsModalProps = {
   open: boolean;
@@ -38,12 +41,19 @@ export const PluginsModal = ({
   );
   const [isUninstalling, setIsUninstalling] = useState(false);
   const [createRequest, setCreateRequest] = useState("");
+  const [isMetadataOpen, setIsMetadataOpen] = useState(false);
+  const [metadataPlugin, setMetadataPlugin] = useState<PluginView | null>(null);
 
   useEffect(() => {
     if (open) {
       void pluginStore.refresh();
     }
   }, [open]);
+
+  const openMetadata = useCallback((plugin: PluginView | null) => {
+    setMetadataPlugin(plugin);
+    setIsMetadataOpen(true);
+  }, []);
 
   const handleInstall = useCallback(async () => {
     setIsInstalling(true);
@@ -234,6 +244,18 @@ export const PluginsModal = ({
               <RefreshCw size={14} strokeWidth={1.8} />
               <span>{t("plugins.refresh", { defaultValue: "Refresh" })}</span>
             </button>
+            <button
+              className="plugins-toolbar-btn"
+              type="button"
+              onClick={() => openMetadata(null)}
+            >
+              <Database size={14} strokeWidth={1.8} />
+              <span>
+                {t("plugins.metadata.action", {
+                  defaultValue: "Metadata catalog",
+                })}
+              </span>
+            </button>
           </div>
 
           {error && <div className="plugins-error">{error}</div>}
@@ -291,6 +313,10 @@ export const PluginsModal = ({
           <div className="plugins-list">
             {state.plugins.map((plugin) => {
               const isBusy = busyPluginId === plugin.pluginId;
+              const metadata = describeMetadataDomains(plugin);
+              const readableDomains = metadata.filter(
+                (domain) => domain.granted,
+              ).length;
               return (
                 <div className="plugins-item" key={plugin.pluginId}>
                   <div className="plugins-item-head">
@@ -378,6 +404,23 @@ export const PluginsModal = ({
 
                   {renderScopeTags(plugin)}
 
+                  <button
+                    className="plugins-metadata-link"
+                    type="button"
+                    onClick={() => openMetadata(plugin)}
+                  >
+                    <Database size={12} strokeWidth={1.8} />
+                    <span>
+                      {t("plugins.metadata.pluginEntry", {
+                        values: {
+                          granted: readableDomains,
+                          total: metadata.length,
+                        },
+                        defaultValue: "Metadata {{granted}}/{{total}}",
+                      })}
+                    </span>
+                  </button>
+
                   {plugin.privacyNote && (
                     <div className="plugins-privacy-note">
                       {plugin.privacyNote}
@@ -393,6 +436,12 @@ export const PluginsModal = ({
           </div>
         </div>
       </Modal>
+
+      <PluginMetadataModal
+        open={isMetadataOpen}
+        plugin={metadataPlugin}
+        onClose={() => setIsMetadataOpen(false)}
+      />
 
       <ConfirmDialog
         open={pendingUninstall !== null}

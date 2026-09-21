@@ -5018,4 +5018,31 @@ export const en = {
   "plugins.scopes.userscripts": "Userscripts",
   "plugins.scopes.remoteControl": "Remote control",
   "plugins.scopes.plugins": "Other plugins",
+  "plugins.metadata.action": "Metadata catalog",
+  "plugins.metadata.title": "App metadata available to plugins",
+  "plugins.metadata.description":
+    "App metadata domains a plugin can read through api.metadata (read-only). A domain tagged with a privacy scope must be declared in plugin.json before it can be read.",
+  "plugins.metadata.searchPlaceholder": "Search domains, fields or parameters",
+  "plugins.metadata.count": "{{matched}} / {{total}} domains",
+  "plugins.metadata.empty": "No matching metadata domain",
+  "plugins.metadata.public": "Public",
+  "plugins.metadata.fieldLevel": "Field-level",
+  "plugins.metadata.live": "Live",
+  "plugins.metadata.polled": "Polled",
+  "plugins.metadata.params": "Parameters",
+  "plugins.metadata.granted": "Readable",
+  "plugins.metadata.denied": "Not declared",
+  "plugins.metadata.scopeHint":
+    "Reading this domain requires declaring the “{{scope}}” privacy scope in plugin.json",
+  "plugins.metadata.pluginContext":
+    "“{{name}}”: {{granted}} / {{total}} domains granted, the rest are denied",
+  "plugins.metadata.pluginEntry": "Metadata {{granted}}/{{total}}",
+  "plugins.metadata.docHint":
+    "Full fields, parameters and examples: the built-in doc ~/.snowapp/docs/en/3-reference/6-plugin-metadata-domains.md",
+  "plugins.metadata.groups.appearance": "App and appearance",
+  "plugins.metadata.groups.ai": "AI and configuration",
+  "plugins.metadata.groups.content": "Conversations, content and runtime",
+  "plugins.metadata.groups.project": "Projects and code",
+  "plugins.metadata.groups.connectivity": "Connections and assets",
+  "plugins.metadata.groups.other": "Other",
 } satisfies Record<string, string>;

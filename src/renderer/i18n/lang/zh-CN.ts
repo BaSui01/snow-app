@@ -4735,4 +4735,31 @@ export const zhCN = {
   "plugins.scopes.userscripts": "用户脚本",
   "plugins.scopes.remoteControl": "远程控制",
   "plugins.scopes.plugins": "其他插件数据",
+  "plugins.metadata.action": "元数据清单",
+  "plugins.metadata.title": "插件可获取的应用元数据",
+  "plugins.metadata.description":
+    "插件通过 api.metadata 以只读方式读取的应用元数据域；标注隐私域的域需要在 plugin.json 的 privacy 中声明后才能读取。",
+  "plugins.metadata.searchPlaceholder": "搜索域、字段或参数",
+  "plugins.metadata.count": "{{matched}} / {{total}} 个域",
+  "plugins.metadata.empty": "没有匹配的元数据域",
+  "plugins.metadata.public": "公开",
+  "plugins.metadata.fieldLevel": "字段级",
+  "plugins.metadata.live": "实时",
+  "plugins.metadata.polled": "轮询",
+  "plugins.metadata.params": "参数",
+  "plugins.metadata.granted": "可读",
+  "plugins.metadata.denied": "未声明",
+  "plugins.metadata.scopeHint":
+    "读取该域需在 plugin.json 的 privacy 中声明「{{scope}}」隐私域",
+  "plugins.metadata.pluginContext":
+    "「{{name}}」：{{granted}} / {{total}} 个域已授权，其余域读取会被拒绝",
+  "plugins.metadata.pluginEntry": "可读元数据 {{granted}}/{{total}}",
+  "plugins.metadata.docHint":
+    "完整字段、参数与示例见内置文档 ~/.snowapp/docs/zh-CN/3-参考手册/6-插件元数据域参考.md",
+  "plugins.metadata.groups.appearance": "应用与外观",
+  "plugins.metadata.groups.ai": "AI 与配置",
+  "plugins.metadata.groups.content": "会话、内容与运行",
+  "plugins.metadata.groups.project": "项目与代码",
+  "plugins.metadata.groups.connectivity": "连接与资产",
+  "plugins.metadata.groups.other": "其他",
 } satisfies Record<string, string>;

@@ -1,5 +1,33 @@
 # Release Notes
 
+## v0.4.5
+
+## New Features
+
+- **Plugin Metadata Catalog**: The plugins panel gains a "Metadata catalog" that browses every metadata domain a plugin may read — fields, parameters, privacy scope, and live vs. polled — and shows how many domains each plugin is currently granted; plugin rows open the same detail view.
+- **Jump to a Memory's Source Conversation**: Memory entries show a source-conversation badge; clicking it opens that conversation directly (switching projects when needed). When the source conversation was deleted the badge degrades to a non-clickable hint and the memory is kept.
+- **Memo Search and Sorting**: The memo panel supports keyword search (debounced, matches highlighted, preview snippet centred on the match so hits deep in the body stay visible) plus sorting by created/updated time in either direction; `/` or Ctrl/Cmd+K focuses the search box. Filtering, sorting and paging all run in the Rust layer.
+- **Unified Range Slider**: Sliders across API settings (tool result limit, auto-compress threshold), theme (background opacity/blur, stream cursor icon size), request-logging duration, and pet size now share one component — the value updates live while dragging and commits on release, and theme presets only override CSS variables (cream / Google / Win95 each ship their own look).
+- **Clones Continue in the Background**: The clone dialog can be dismissed while the clone keeps running; progress, an abort entry and failure reasons move to placeholder rows in the sidebar project list. Aborting kills the whole git process tree and cleans up the partial directory, failures clean up too, and retries are no longer blocked by leftovers.
+
+## Improvements
+
+- Auto-formatting is now delayed and batched: a write only registers the file, and Prettier runs once that file has gone quiet with no write tool in flight — formatting can no longer land between two edits of the same batch and make the later one miss its match. Reads and app shutdown force a flush (new `flushPendingFileFormats`).
+- Writes to the same file hold a file lock for the whole read → compute → write cycle and register an in-flight write, so parallel edits can no longer overwrite each other.
+- Chat scroll restoration during paging gained a watchdog: it keeps compensating the anchor for every push from the newly loaded page, never rolls back scrolling the user did meanwhile, and stops as soon as it converges.
+- `grep-search` gained a required `description` argument: the model states in the user's language what the search is looking for, the card shows that instead of the raw regex (the regex moves to the tooltip), and the search still runs when the model omits it.
+- `bash-terminal-execute` no longer requires `workingDirectory` — it defaults to the current project workspace (resolved to the remote path for SSH projects) and only errors when the session has no workspace bound.
+- Child-process reaping is unified in the Rust process module: waiting for exit on Windows now polls instead of relying on the OS wait-thread pool (which could stall under load), and bash and git clone share one process-tree kill path.
+- Tool results no longer echo `editedContent` (the review block already shows the real layout), saving context.
+- The edit/copy result field `formatted` became `formatPending`, mirrored in chat cards and on mobile.
+- API profiles can be opened for editing by clicking the profile name; the global search modal closes with ESC; the pending-message withdraw icon became an undo arrow.
+
+## Bug Fixes
+
+- Fixed Prettier formatting landing between two edits of the same batch and making the later edit report "content not found".
+- Fixed failed git clones leaving a partial directory behind, which blocked retries with "Target directory is not empty".
+- Fixed child-process waits on Windows stalling when many tool processes ran at once (the OS wait-thread-pool callback could be delayed indefinitely).
+
 ## v0.4.4
 
 ## New Features

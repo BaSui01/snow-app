@@ -75,6 +75,7 @@ const readImportFileContent = async (filePath: string): Promise<string> => {
 
 export const registerApiConfigHandlers = (native: NativeBridge): void => {
   ipcMain.handle("api-configs:list", () => native.listApiConfigs());
+  ipcMain.handle("api-configs:retry-defaults", () => native.getRetryDefaults());
   ipcMain.handle("api-configs:upsert", async (_event, config: unknown) => {
     await native.upsertApiConfig(normalizeApiConfigInput(config));
     return native.listApiConfigs();

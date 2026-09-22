@@ -241,6 +241,10 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to list API configs"),
         ),
+      getRetryDefaults: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to read retry defaults"),
+        ),
       upsertApiConfig: () =>
         Promise.reject(
           new Error("Rust native bridge is required to write API configs"),

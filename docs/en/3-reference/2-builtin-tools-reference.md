@@ -109,9 +109,9 @@ Listed in registration order:
 
 ### user-interaction
 
-| Full tool name                     | Purpose                                                              | Key parameters        |
-| ---------------------------------- | -------------------------------------------------------------------- | --------------------- |
-| `user-interaction-askUserQuestion` | Ask the user a question (blocking interaction; must be called alone) | `question`, `options` |
+| Full tool name                     | Purpose                                                                           | Key parameters        |
+| ---------------------------------- | --------------------------------------------------------------------------------- | --------------------- |
+| `user-interaction-askUserQuestion` | Ask the user a question (blocking interaction; several may be issued in one turn) | `question`, `options` |
 
 ### sub-agents
 

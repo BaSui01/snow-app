@@ -6,26 +6,7 @@ import {
   ApiSettingsFormActions,
   ApiSettingsFormPanel,
 } from "./ApiSettingsFormPanel";
-import {
-  DEFAULT_API_BASE_URL,
-  DEFAULT_REQUEST_METHOD,
-} from "./apiSettingsConstants";
-import { calculateAutoCompressThresholdPercent } from "./autoCompressThreshold";
-import {
-  extractGoogleSearchFromConfigJson,
-  extractOneMContextFromConfigJson,
-  extractResponsesFastModeFromConfigJson,
-  extractResponsesVerbosityFromConfigJson,
-  extractResponsesWebSocketFromConfigJson,
-  extractThinkingValueFromConfigJson,
-  extractToolResultTokenLimitFromConfigJson,
-  extractVisionGoogleSearchFromConfigJson,
-  extractVisionMaxConcurrencyFromConfigJson,
-  extractVisionMaxTokensFromConfigJson,
-  extractVisionThinkingEffortFromConfigJson,
-  extractVisionThinkingEnabledFromConfigJson,
-  toApiConfigPayload,
-} from "./apiSettingsUtils";
+import { apiConfigToForm, toApiConfigPayload } from "./apiSettingsUtils";
 import type { ApiConfigFormData } from "./types";
 
 type ApiSettingsEditModalProps = {
@@ -58,75 +39,7 @@ export function ApiSettingsEditModal({
     }
     setError("");
     setIsSaving(false);
-    setEditForm({
-      profileName: config.profileName,
-      displayName: config.displayName,
-      baseUrl: config.baseUrl || DEFAULT_API_BASE_URL,
-      baseUrlMode: config.baseUrlMode || "auto",
-      apiKey: config.apiKey || "",
-      requestMethod: config.requestMethod || DEFAULT_REQUEST_METHOD,
-      advancedModel: config.advancedModel || "",
-      basicModel: config.basicModel || "",
-      isActive: config.isActive,
-      supportsVision: config.supportsVision,
-      visionBaseUrl: config.visionBaseUrl || "",
-      visionApiKey: config.visionApiKey || "",
-      visionRequestMethod: config.visionRequestMethod || DEFAULT_REQUEST_METHOD,
-      visionModel: config.visionModel || "",
-      maxContextTokens:
-        config.maxContextTokens != null ? String(config.maxContextTokens) : "",
-      maxTokens: config.maxTokens != null ? String(config.maxTokens) : "",
-      streamIdleTimeoutSec:
-        config.streamIdleTimeoutSec != null
-          ? String(config.streamIdleTimeoutSec)
-          : "",
-      enableAutoCompress: config.enableAutoCompress ?? true,
-      autoCompressThreshold: calculateAutoCompressThresholdPercent(
-        config.maxContextTokens,
-        config.autoCompressThreshold,
-      ),
-      toolResultTokenLimit: extractToolResultTokenLimitFromConfigJson(
-        config.configJson,
-      ),
-      maxRetries: config.maxRetries != null ? String(config.maxRetries) : "",
-      retryBaseDelayMs:
-        config.retryBaseDelayMs != null ? String(config.retryBaseDelayMs) : "",
-      partialRetryMaxChars:
-        config.partialRetryMaxChars != null
-          ? String(config.partialRetryMaxChars)
-          : "",
-      systemPromptIdsJson: config.systemPromptIdsJson ?? "",
-      customHeaderSchemeId: config.customHeaderSchemeId ?? "",
-      thinkingValue: extractThinkingValueFromConfigJson(
-        config.configJson,
-        config.requestMethod || DEFAULT_REQUEST_METHOD,
-      ),
-      responsesVerbosity: extractResponsesVerbosityFromConfigJson(
-        config.configJson,
-      ),
-      responsesFastMode: extractResponsesFastModeFromConfigJson(
-        config.configJson,
-      ),
-      responsesWebSocket: extractResponsesWebSocketFromConfigJson(
-        config.configJson,
-      ),
-      googleSearch: extractGoogleSearchFromConfigJson(config.configJson),
-      oneMContext: extractOneMContextFromConfigJson(config.configJson),
-      visionGoogleSearch: extractVisionGoogleSearchFromConfigJson(
-        config.configJson,
-      ),
-      visionThinkingEnabled: extractVisionThinkingEnabledFromConfigJson(
-        config.configJson,
-      ),
-      visionThinkingEffort: extractVisionThinkingEffortFromConfigJson(
-        config.configJson,
-      ),
-      visionMaxTokens: extractVisionMaxTokensFromConfigJson(config.configJson),
-      visionMaxConcurrency: extractVisionMaxConcurrencyFromConfigJson(
-        config.configJson,
-      ),
-      configJson: config.configJson,
-    });
+    setEditForm(apiConfigToForm(config));
     void window.snow
       .listApiConfigs()
       .then(setConfigs)

@@ -1832,6 +1832,8 @@ export type NativeBridge = {
   setAlwaysApprovedTools: (tools: string[]) => Promise<void>;
   listReadonlyTools: () => Promise<string[]>;
   listApiConfigs: () => Promise<ApiConfigRecord[]>;
+  /** 重试错误分类默认关键词（JSON 字符串，单一来源在 Rust api::retry）。 */
+  getRetryDefaults: () => Promise<string>;
   upsertApiConfig: (config: ApiConfigInput) => Promise<void>;
   deleteApiConfig: (profileName: string) => Promise<void>;
   /** 按给定档案名顺序重写展示排序（拖拽 / 上移下移）。 */

@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Bot, BrainCircuit, Copy, X } from "lucide-react";
+import {
+  AlertTriangle,
+  Bot,
+  BrainCircuit,
+  Copy,
+  RotateCcw,
+  X,
+} from "lucide-react";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { Modal } from "../common/Modal";
 import { useI18n } from "../../i18n";
@@ -13,6 +20,7 @@ import { ApiSettingsEditModal } from "./apiSettings/ApiSettingsEditModal";
 import { ApiSettingsSummary } from "./apiSettings/ApiSettingsSummary";
 import { ApiSettingsTable } from "./apiSettings/ApiSettingsTable";
 import { DecisionModelsPanel } from "./apiSettings/DecisionModelsPanel";
+import { RetrySettingsPanel } from "./apiSettings/RetrySettingsPanel";
 import { orderApiConfigsByName } from "./apiSettings/apiConfigReorder";
 import { buildDuplicateName } from "./duplicateName";
 import {
@@ -33,8 +41,8 @@ type PendingApiConfigImport = {
   conflictNames: string[];
 };
 
-/** API 配置页的标签页：LLM 对话模型 / 决策模型。 */
-type ApiSettingsTab = "llm" | "decision";
+/** API 配置页的标签页：LLM 对话模型 / 决策模型 / 重试策略。 */
+type ApiSettingsTab = "llm" | "decision" | "retry";
 
 /** 冲突确认弹窗中最多直接列出的同名配置数量。 */
 const MAX_LISTED_CONFLICTS = 8;
@@ -590,6 +598,18 @@ export function ApiSettingsTreePanel({
             defaultValue: "Decision models",
           })}
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "retry"}
+          className={`import-settings-tab ${
+            activeTab === "retry" ? "active" : ""
+          }`}
+          onClick={() => setActiveTab("retry")}
+        >
+          <RotateCcw size={13} strokeWidth={1.8} />
+          {t("settings.apiTabRetry", { defaultValue: "Retry policy" })}
+        </button>
       </div>
 
       {activeTab === "llm" ? (
@@ -633,8 +653,10 @@ export function ApiSettingsTreePanel({
             onReorder={(orderedNames) => void handleReorder(orderedNames)}
           />
         </>
-      ) : (
+      ) : activeTab === "decision" ? (
         <DecisionModelsPanel />
+      ) : (
+        <RetrySettingsPanel />
       )}
 
       <Modal

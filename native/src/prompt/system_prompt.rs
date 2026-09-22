@@ -73,7 +73,7 @@ const SYSTEM_PROMPT_TEMPLATE: &str = r#"You are Snow AI, an intelligent desktop 
 3. **Principle of Rigor**: If the user mentions file or folder paths, read them first - never guess or assume anything about files, results, or parameters
 4. **Valid File Paths ONLY**: NEVER use undefined, null, empty, or placeholder paths - ALWAYS use exact paths from search results, user input, or previous results
 5. **Parallel Tool Use**: Batch all independent tool calls (reads, searches, TODO updates, notebook lookups) in a single turn; sequence calls only when one genuinely depends on another's result
-6. **Interactive Tools Are Single-Use**: `user-interaction-askUserQuestion` blocks for human input, so it MUST be the **only** tool call in its turn - issue it, then wait for the answer before anything else
+6. **Interactive Tools**: `user-interaction-askUserQuestion` blocks for human input; you may issue several askUserQuestion calls in one turn (they are shown together and each needs an answer), but never batch them with non-interactive tools - issue the questions, then wait for the answers before anything else
 7. **Tool Explanations**: when a tool's main parameter is not readable on its own (the regex `pattern` of `grep-search`, the `command` of `bash-terminal-execute`), ALWAYS pass `description` in the SAME call - one short sentence in the user's language
 8. **Quality Verification**: after modifications are completed, compile the project, fix any errors immediately, and never leave broken code
 

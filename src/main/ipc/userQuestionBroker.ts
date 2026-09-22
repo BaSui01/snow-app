@@ -29,8 +29,8 @@ const failPendingQuestionsForRenderer = (rendererId: number): void => {
 
     pending.reject(new Error("User question renderer was destroyed"));
     pendingQuestions.delete(questionId);
-    reportPetWaiting(false);
   }
+  reportPetWaiting(pendingQuestions.size > 0);
 };
 
 const watchRenderer = (renderer: WebContents): void => {
@@ -49,7 +49,7 @@ const watchRenderer = (renderer: WebContents): void => {
 export const dispatchUserQuestion = async (
   source: WebContents,
   command: UserQuestionCommand,
-  interactionId: string
+  interactionId: string,
 ): Promise<string> => {
   if (source.isDestroyed()) {
     throw new Error("User question renderer is not available");
@@ -76,7 +76,7 @@ export const dispatchUserQuestion = async (
       safeSend(source, USER_QUESTION_CHANNEL, request);
     } catch (error) {
       pendingQuestions.delete(questionId);
-      reportPetWaiting(false);
+      reportPetWaiting(pendingQuestions.size > 0);
       reject(error instanceof Error ? error : new Error(String(error)));
     }
   });
@@ -84,7 +84,7 @@ export const dispatchUserQuestion = async (
 
 export const resolveUserQuestion = (
   source: WebContents,
-  response: UserQuestionResponse
+  response: UserQuestionResponse,
 ): void => {
   if (!response.questionId.startsWith(`${source.id}:`)) {
     return;
@@ -96,7 +96,7 @@ export const resolveUserQuestion = (
   }
 
   pendingQuestions.delete(response.questionId);
-  reportPetWaiting(false);
+  reportPetWaiting(pendingQuestions.size > 0);
   if (response.error) {
     pending.reject(new Error(response.error));
     return;

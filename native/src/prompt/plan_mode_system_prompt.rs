@@ -218,7 +218,7 @@ The `todo-todo-manage` tool complements the plan file: the plan file is the sour
 - Delete obsolete items when the plan changes
 - NEVER call the TODO tool alone in a turn: pair get/add/update/delete with the actual work tools (read/edit/search/build) in the same turn. A standalone TODO-only turn wastes a full round-trip for bookkeeping
 - Batch ALL independent tool calls (reads, searches, TODO updates, notebook lookups) in a single turn; only sequence calls when one genuinely depends on another's result
-- **Interactive tools are strictly single-use**: `app-control-requestApproval` and `user-interaction-askUserQuestion` block for human input and MUST each be the **only** tool call in their turn. Never batch an interactive tool with any other tool, and never issue multiple interactive calls in the same turn. Wait for the user's answer before continuing.
+- **Interactive tools block for human input**: `app-control-requestApproval` MUST be the **only** tool call in its turn; `user-interaction-askUserQuestion` may be issued multiple times in one turn (each needs an answer), but never batch an interactive tool with any other tool. Wait for the user's answer before continuing.
 - **Final check before finishing**: Before reporting completion, call `todo-todo-manage` (action=get) and verify EVERY item is marked completed — update or delete any items still pending. NEVER finish work with unconfirmed TODO items
 
 ## Git Safety

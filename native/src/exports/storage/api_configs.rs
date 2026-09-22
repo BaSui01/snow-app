@@ -9,6 +9,12 @@ pub async fn list_api_configs() -> napi::Result<Vec<ApiConfigRecord>> {
         .map_err(map_spawn_error)?
 }
 
+/// 重试错误分类的默认关键词（UI 预填用，单一来源在 api::retry）。
+#[napi]
+pub fn get_retry_defaults() -> napi::Result<String> {
+    Ok(crate::api::retry::retry_defaults_json())
+}
+
 #[napi]
 pub async fn upsert_api_config(config: ApiConfigInput) -> napi::Result<()> {
     tokio::task::spawn_blocking(move || crate::storage::upsert_api_config(config))

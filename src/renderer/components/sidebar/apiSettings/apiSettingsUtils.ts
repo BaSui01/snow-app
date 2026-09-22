@@ -1,10 +1,11 @@
-import type { ApiConfigInput } from "../../../../preload";
+import type { ApiConfigInput, ApiConfigRecord } from "../../../../preload";
 import {
   DEFAULT_API_BASE_URL,
   DEFAULT_REQUEST_METHOD,
 } from "./apiSettingsConstants";
 import {
   DEFAULT_AUTO_COMPRESS_THRESHOLD_PERCENT,
+  calculateAutoCompressThresholdPercent,
   calculateAutoCompressThresholdTokens,
   normalizeAutoCompressThresholdPercent,
 } from "./autoCompressThreshold";
@@ -258,6 +259,123 @@ export const extractThinkingValueFromConfigJson = (
     return DEFAULT_THINKING_VALUE;
   }
 };
+
+export function apiConfigToForm(config: ApiConfigRecord): ApiConfigFormData {
+  return {
+    profileName: config.profileName,
+    displayName: config.displayName,
+    baseUrl: config.baseUrl || DEFAULT_API_BASE_URL,
+    baseUrlMode: config.baseUrlMode || "auto",
+    apiKey: config.apiKey || "",
+    requestMethod: config.requestMethod || DEFAULT_REQUEST_METHOD,
+    advancedModel: config.advancedModel || "",
+    basicModel: config.basicModel || "",
+    isActive: config.isActive,
+    supportsVision: config.supportsVision,
+    visionBaseUrl: config.visionBaseUrl || "",
+    visionApiKey: config.visionApiKey || "",
+    visionRequestMethod: config.visionRequestMethod || DEFAULT_REQUEST_METHOD,
+    visionModel: config.visionModel || "",
+    maxContextTokens:
+      config.maxContextTokens != null ? String(config.maxContextTokens) : "",
+    maxTokens: config.maxTokens != null ? String(config.maxTokens) : "",
+    streamIdleTimeoutSec:
+      config.streamIdleTimeoutSec != null
+        ? String(config.streamIdleTimeoutSec)
+        : "",
+    enableAutoCompress: config.enableAutoCompress ?? true,
+    autoCompressThreshold: calculateAutoCompressThresholdPercent(
+      config.maxContextTokens,
+      config.autoCompressThreshold,
+    ),
+    toolResultTokenLimit: extractToolResultTokenLimitFromConfigJson(
+      config.configJson,
+    ),
+    maxRetries: config.maxRetries != null ? String(config.maxRetries) : "",
+    retryBaseDelayMs:
+      config.retryBaseDelayMs != null ? String(config.retryBaseDelayMs) : "",
+    partialRetryMaxChars:
+      config.partialRetryMaxChars != null
+        ? String(config.partialRetryMaxChars)
+        : "",
+    systemPromptIdsJson: config.systemPromptIdsJson ?? "",
+    customHeaderSchemeId: config.customHeaderSchemeId ?? "",
+    thinkingValue: extractThinkingValueFromConfigJson(
+      config.configJson,
+      config.requestMethod || DEFAULT_REQUEST_METHOD,
+    ),
+    responsesVerbosity: extractResponsesVerbosityFromConfigJson(
+      config.configJson,
+    ),
+    responsesFastMode: extractResponsesFastModeFromConfigJson(
+      config.configJson,
+    ),
+    responsesWebSocket: extractResponsesWebSocketFromConfigJson(
+      config.configJson,
+    ),
+    googleSearch: extractGoogleSearchFromConfigJson(config.configJson),
+    oneMContext: extractOneMContextFromConfigJson(config.configJson),
+    visionGoogleSearch: extractVisionGoogleSearchFromConfigJson(
+      config.configJson,
+    ),
+    visionThinkingEnabled: extractVisionThinkingEnabledFromConfigJson(
+      config.configJson,
+    ),
+    visionThinkingEffort: extractVisionThinkingEffortFromConfigJson(
+      config.configJson,
+    ),
+    visionMaxTokens: extractVisionMaxTokensFromConfigJson(config.configJson),
+    visionMaxConcurrency: extractVisionMaxConcurrencyFromConfigJson(
+      config.configJson,
+    ),
+    configJson: config.configJson,
+  };
+}
+
+export type RetryCategoryState = {
+  enabled: boolean;
+  keywords: string;
+};
+
+export type RetryConfigState = {
+  always: boolean;
+  categories: Record<string, RetryCategoryState>;
+  customKeywords: string;
+};
+
+export const parseRetryPolicy = (raw: string | null): RetryConfigState => {
+  let parsed: unknown = null;
+  try {
+    parsed = raw ? JSON.parse(raw) : null;
+  } catch {
+    parsed = null;
+  }
+  const policy = isRecord(parsed) ? parsed : {};
+  const categories: Record<string, RetryCategoryState> = {};
+  const storedCategories = isRecord(policy.categories) ? policy.categories : {};
+
+  for (const [id, value] of Object.entries(storedCategories)) {
+    if (!isRecord(value)) continue;
+    categories[id] = {
+      enabled: value.enabled !== false,
+      keywords: typeof value.keywords === "string" ? value.keywords : "",
+    };
+  }
+
+  return {
+    always: policy.always === true,
+    categories,
+    customKeywords:
+      typeof policy.customKeywords === "string" ? policy.customKeywords : "",
+  };
+};
+
+export const serializeRetryPolicy = (state: RetryConfigState): string =>
+  JSON.stringify({
+    always: state.always,
+    categories: state.categories,
+    customKeywords: state.customKeywords,
+  });
 
 export const emptyApiConfigForm = (
   index: number,

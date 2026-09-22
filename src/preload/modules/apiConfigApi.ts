@@ -225,6 +225,8 @@ export const apiConfigApi = {
     ipcRenderer.invoke("permissions:list-readonly-tools"),
   listApiConfigs: (): Promise<ApiConfigRecord[]> =>
     ipcRenderer.invoke("api-configs:list"),
+  getRetryDefaults: (): Promise<string> =>
+    ipcRenderer.invoke("api-configs:retry-defaults"),
   upsertApiConfig: (config: ApiConfigInput): Promise<ApiConfigRecord[]> =>
     ipcRenderer.invoke("api-configs:upsert", config),
   deleteApiConfig: (profileName: string): Promise<ApiConfigRecord[]> =>

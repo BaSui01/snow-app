@@ -229,7 +229,7 @@ When you meet an unfamiliar tool, MCP server, or capability:
 ## 6. Universal Discipline (every scenario)
 
 1. **Decisions go through the tool**: user decisions → `user-interaction-askUserQuestion`
-   (sole call of its turn); never end a turn with a text question
+   (several may be issued in one turn); never end a turn with a text question
 2. **Outputs land on disk**: repro scripts, timing harnesses, measurements go
    into files — conversations get compacted, files don't
 3. **Sub-agent discipline**: no git writes, no re-dispatching; the dispatch

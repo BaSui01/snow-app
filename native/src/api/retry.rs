@@ -2,12 +2,14 @@ use std::time::Duration;
 
 use futures::{Stream, StreamExt};
 use napi::bindgen_prelude::*;
+use serde_json::{json, Value};
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 
 pub const DEFAULT_MAX_RETRIES: u32 = 5;
 pub const DEFAULT_BASE_DELAY_MS: u64 = 3000;
 pub const DEFAULT_STREAM_IDLE_TIMEOUT_SEC: u64 = 60;
+pub const RETRY_POLICY_SETTING_CODE: &str = "retry_policy";
 
 /// 阶段感知流恢复的可见正文保留阈值缺省值（Unicode 字符数）。
 /// transport 中断时仅用户可见 content 达到该阈值才可保留 partial；
@@ -20,6 +22,174 @@ pub struct RetryOptions {
     pub base_delay_ms: u64,
     /// mid-stream 中断时保留 partial 的纯文本阈值（字符数），来自 API 档案配置。
     pub partial_retry_max_chars: usize,
+    pub retry_always: bool,
+    pub match_keywords: Vec<String>,
+}
+
+pub struct RetryCategoryDefaults {
+    pub id: &'static str,
+    pub keywords: &'static [&'static str],
+}
+
+pub const DEFAULT_RETRY_CATEGORIES: &[RetryCategoryDefaults] = &[
+    RetryCategoryDefaults {
+        id: "overloaded",
+        keywords: &["overloaded", "529"],
+    },
+    RetryCategoryDefaults {
+        id: "network",
+        keywords: &[
+            "error sending request",
+            "error trying to connect",
+            "network",
+            "econnrefused",
+            "econnreset",
+            "etimedout",
+            "timeout",
+            "connection refused",
+            "connection closed",
+            "connection aborted",
+            "connection reset",
+            "socket hang up",
+            "dns error",
+            "dns lookup",
+            "failed to lookup",
+            "tls handshake",
+            "handshake error",
+            "ehostunreach",
+            "enetunreach",
+            "network is unreachable",
+            "no route to host",
+            "unexpected eof",
+            "end of file",
+            "http2 error",
+            "h2 error",
+            "stream error",
+            "tunnel",
+            "proxy error",
+        ],
+    },
+    RetryCategoryDefaults {
+        id: "rateLimit",
+        keywords: &["rate limit", "too many requests", "429"],
+    },
+    RetryCategoryDefaults {
+        id: "serverError",
+        keywords: &[
+            "500",
+            "502",
+            "503",
+            "504",
+            "server_error",
+            "internal server error",
+            "bad gateway",
+            "service unavailable",
+            "gateway timeout",
+        ],
+    },
+    RetryCategoryDefaults {
+        id: "unavailable",
+        keywords: &["unavailable"],
+    },
+    RetryCategoryDefaults {
+        id: "terminated",
+        keywords: &["terminated"],
+    },
+    RetryCategoryDefaults {
+        id: "stream",
+        keywords: &[
+            "stream ended",
+            "stream terminated",
+            "incomplete data",
+            "reader error",
+        ],
+    },
+    RetryCategoryDefaults {
+        id: "idleTimeout",
+        keywords: &["stream idle timeout"],
+    },
+    RetryCategoryDefaults {
+        id: "nonSse",
+        keywords: &["non-sse response"],
+    },
+];
+
+fn default_retry_keywords() -> Vec<String> {
+    DEFAULT_RETRY_CATEGORIES
+        .iter()
+        .flat_map(|category| category.keywords)
+        .map(|keyword| keyword.to_string())
+        .collect()
+}
+
+fn split_keywords(raw: &str) -> Vec<String> {
+    raw.split([',', '\n'])
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_lowercase())
+        .collect()
+}
+
+fn load_global_retry_policy() -> (bool, Vec<String>) {
+    let raw = crate::storage::get_system_setting_value(RETRY_POLICY_SETTING_CODE.to_string())
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    resolve_retry_rules(&raw)
+}
+
+fn resolve_retry_rules(policy_json: &str) -> (bool, Vec<String>) {
+    let parsed: Value = serde_json::from_str(policy_json).unwrap_or(Value::Null);
+    if !parsed.is_object() {
+        return (false, default_retry_keywords());
+    }
+    let retry = &parsed;
+
+    let always = retry
+        .get("always")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let categories = retry.get("categories");
+    let mut keywords = Vec::new();
+
+    for category in DEFAULT_RETRY_CATEGORIES {
+        let entry = categories.and_then(|value| value.get(category.id));
+        let enabled = entry
+            .and_then(|value| value.get("enabled"))
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+        if !enabled {
+            continue;
+        }
+        let custom = entry
+            .and_then(|value| value.get("keywords"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        match custom {
+            Some(list) => keywords.extend(split_keywords(list)),
+            None => keywords.extend(category.keywords.iter().map(|keyword| (*keyword).to_string())),
+        }
+    }
+
+    if let Some(custom) = retry.get("customKeywords").and_then(Value::as_str) {
+        keywords.extend(split_keywords(custom));
+    }
+
+    (always, keywords)
+}
+
+pub fn retry_defaults_json() -> String {
+    let categories: Vec<Value> = DEFAULT_RETRY_CATEGORIES
+        .iter()
+        .map(|category| {
+            json!({
+                "id": category.id,
+                "keywords": category.keywords,
+            })
+        })
+        .collect();
+    json!({ "categories": categories }).to_string()
 }
 
 impl Default for RetryOptions {
@@ -28,6 +198,8 @@ impl Default for RetryOptions {
             max_retries: DEFAULT_MAX_RETRIES,
             base_delay_ms: DEFAULT_BASE_DELAY_MS,
             partial_retry_max_chars: DEFAULT_PARTIAL_RETRY_MAX_CHARS,
+            retry_always: false,
+            match_keywords: default_retry_keywords(),
         }
     }
 }
@@ -50,10 +222,13 @@ impl RetryOptions {
             .filter(|&v| v > 0)
             .map(|v| v as usize)
             .unwrap_or(DEFAULT_PARTIAL_RETRY_MAX_CHARS);
+        let (retry_always, match_keywords) = load_global_retry_policy();
         Self {
             max_retries,
             base_delay_ms,
             partial_retry_max_chars,
+            retry_always,
+            match_keywords,
         }
     }
 }
@@ -282,114 +457,21 @@ pub fn should_retry_empty_response(attempt: u32, options: &RetryOptions, has_pay
     !has_payload && attempt < options.max_retries
 }
 
-pub fn is_retriable_error(error: &Error) -> bool {
+pub fn is_retriable_error(error: &Error, options: &RetryOptions) -> bool {
     let message = error.reason.to_lowercase();
 
     if message.contains("aborted") || message.contains("cancel") {
         return false;
     }
 
-    // Overloaded
-    if message.contains("overloaded") || message.contains("529") {
+    if options.retry_always {
         return true;
     }
 
-    // Network errors — reqwest surfaces connect-layer failures as
-    // "error sending request for url (...): <cause>" where <cause> can be a
-    // DNS failure, refused/reset connection, TLS handshake error, timeout,
-    // HTTP/2 stream error, or a plain "connection closed before message
-    // completed". Match both the top-level wrapper and the common causes so
-    // transient network failures are retried instead of failing the turn.
-    if message.contains("error sending request")
-        || message.contains("error trying to connect")
-        || message.contains("network")
-        || message.contains("econnrefused")
-        || message.contains("econnreset")
-        || message.contains("etimedout")
-        || message.contains("timeout")
-        || message.contains("connection refused")
-        || message.contains("connection closed")
-        || message.contains("connection aborted")
-        || message.contains("connection reset")
-        || message.contains("socket hang up")
-        || message.contains("dns error")
-        || message.contains("dns lookup")
-        || message.contains("failed to lookup")
-        || message.contains("tls handshake")
-        || message.contains("handshake error")
-        || message.contains("ehostunreach")
-        || message.contains("enetunreach")
-        || message.contains("network is unreachable")
-        || message.contains("no route to host")
-        || message.contains("unexpected eof")
-        || message.contains("end of file")
-        || message.contains("http2 error")
-        || message.contains("h2 error")
-        || message.contains("stream error")
-        || message.contains("tunnel")
-        || message.contains("proxy error")
-    {
-        return true;
-    }
-
-    // Rate limit errors
-    if message.contains("rate limit")
-        || message.contains("too many requests")
-        || message.contains("429")
-    {
-        return true;
-    }
-
-    // Server errors (5xx and terminal Responses API server failures)
-    if message.contains("500")
-        || message.contains("502")
-        || message.contains("503")
-        || message.contains("504")
-        || message.contains("server_error")
-        || message.contains("internal server error")
-        || message.contains("bad gateway")
-        || message.contains("service unavailable")
-        || message.contains("gateway timeout")
-    {
-        return true;
-    }
-
-    // Temporary unavailable
-    if message.contains("unavailable") {
-        return true;
-    }
-
-    // Connection terminated by server
-    if message.contains("terminated") {
-        return true;
-    }
-
-    // Stream errors
-    if message.contains("stream ended")
-        || message.contains("stream terminated")
-        || message.contains("incomplete data")
-        || message.contains("reader error")
-    {
-        return true;
-    }
-
-    // Stream idle timeout — a stalled upstream is treated as retriable so the
-    // agent loop re-issues the request with the original parameters.
-    if message.contains("stream idle timeout") {
-        return true;
-    }
-
-    // Non-SSE response body — the server returned HTTP 200 but the body is
-    // not a valid SSE stream (e.g. a JSON error envelope from a relay).
-    // This is surfaced by `non_sse_response_error` when the stream ends
-    // with accumulated bytes that produced no SSE events. Relays that wrap
-    // upstream errors this way are retried so transient relay failures can
-    // recover once the relay's quota/rate window resets.
-    if message.contains("non-sse response") {
-        return true;
-    }
-
-    false
+    options
+        .match_keywords
+        .iter()
+        .any(|keyword| message.contains(keyword.as_str()))
 }
 
 /// Check if an error should trigger a retry, given the current attempt count.
@@ -399,7 +481,7 @@ pub fn should_retry(error: &Error, attempt: u32, options: &RetryOptions) -> bool
     if attempt >= options.max_retries {
         return false;
     }
-    is_retriable_error(error)
+    is_retriable_error(error, options)
 }
 
 /// Wait for the retry delay, respecting the cancel token.

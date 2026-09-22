@@ -199,10 +199,11 @@ async fn start_attempt(
     api_key: &str,
     custom_headers: &HashMap<String, String>,
     frame_json: &str,
+    retry_options: &RetryOptions,
 ) -> std::result::Result<StartedAttempt, StartFailure> {
     let (mut socket, reused, created_at) = match take_pooled_socket(pool_key).await {
         Some((socket, created_at)) => (socket, true, created_at),
-        None => match connect_socket(endpoint, api_key, custom_headers).await {
+        None => match connect_socket(endpoint, api_key, custom_headers, retry_options).await {
             Ok(socket) => (socket, false, Instant::now()),
             Err(failure) => {
                 return Err(StartFailure {
@@ -231,6 +232,7 @@ async fn connect_socket(
     endpoint: &str,
     api_key: &str,
     custom_headers: &HashMap<String, String>,
+    retry_options: &RetryOptions,
 ) -> std::result::Result<WsSocket, StartFailure> {
     let url = websocket_url(endpoint).map_err(|error| StartFailure {
         error,
@@ -262,7 +264,7 @@ async fn connect_socket(
                 .unwrap_or_default();
             let error =
                 Error::from_reason(format!("Responses API request failed: {status} {body}"));
-            let retriable = is_retriable_error(&error);
+            let retriable = is_retriable_error(&error, retry_options);
             Err(StartFailure {
                 error,
                 retriable,
@@ -718,7 +720,7 @@ pub(super) async fn collect_streaming_response_ws(
             _ = cancel_token.cancelled() => {
                 return Ok(cancelled_stream_result(&progress.thinking, progress.started_at));
             }
-            result = start_attempt(&pool_key, endpoint, api_key, custom_headers, &frame_json) => result,
+            result = start_attempt(&pool_key, endpoint, api_key, custom_headers, &frame_json, retry_options) => result,
         };
 
         let started = match started {

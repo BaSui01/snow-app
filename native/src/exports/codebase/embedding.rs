@@ -892,7 +892,7 @@ async fn embed_with_retry(
         match api_embedding::embed_batch(config, inputs).await {
             Ok(result) => return Ok(result),
             Err(error) => {
-                if attempt >= options.max_retries || !is_retriable_error(&error) {
+                if attempt >= options.max_retries || !is_retriable_error(&error, &options) {
                     return Err(error);
                 }
 

@@ -146,6 +146,33 @@ export function createToolExecutor(
     let hookAborted = false;
     let hookAbortMessage = "";
     const pendingHookWarnings: string[] = [];
+    const userQuestionIndices = toolCalls
+      .map((toolCall, index) =>
+        toolCall.name === "user-interaction-askUserQuestion" ? index : -1,
+      )
+      .filter((index) => index >= 0);
+    const userQuestionSettlements = new Map<
+      number,
+      { settled: boolean; cancelled: boolean }
+    >();
+    const allUserQuestionsRefused = (): boolean =>
+      userQuestionIndices.length > 0 &&
+      userQuestionIndices.every((index) => {
+        const settlement = userQuestionSettlements.get(index);
+        return settlement?.settled === true && settlement.cancelled === true;
+      });
+    const registerUserQuestionSettlement = (
+      index: number,
+      result: string,
+    ): void => {
+      userQuestionSettlements.set(index, {
+        settled: true,
+        cancelled: isUserQuestionCancellationResult(result),
+      });
+      if (allUserQuestionsRefused()) {
+        userQuestionCancelled = true;
+      }
+    };
 
     // Shared streaming-chunk handler factory used by both the sequential
     // path and the parallel pre-start path, so concurrent tool calls
@@ -312,6 +339,22 @@ export function createToolExecutor(
       const isSubAgentContinue =
         parallelToolCall.name === "sub-agents-continue";
       const isImageGen = parallelToolCall.name === "imagegen-generate";
+      const isInteractiveQuestionTool =
+        parallelToolCall.name === "user-interaction-askUserQuestion" ||
+        parallelToolCall.name === PLAN_APPROVAL_TOOL_NAME;
+      if (isInteractiveQuestionTool) {
+        ctx.userQuestionTargetRef.current.set(parallelToolCall.interactionId, {
+          sessionKey: effectiveKey,
+          assistantMessageId: currentAssistantMessageId,
+        });
+      }
+      const detachInteractiveTarget = (): void => {
+        if (isInteractiveQuestionTool) {
+          ctx.userQuestionTargetRef.current.delete(
+            parallelToolCall.interactionId,
+          );
+        }
+      };
 
       // Mark running immediately so each card shows live progress while
       // the others are still working.
@@ -337,6 +380,7 @@ export function createToolExecutor(
       );
 
       let afterHookEligible = false;
+      let interactiveHookAnswer: string | undefined;
       if (!isSubAgentActivation) {
         // Run the beforeToolCall hook for image generation before the
         // request is fired; a decision gate or abort prevents the start.
@@ -363,6 +407,7 @@ export function createToolExecutor(
                 beforeHookResult.record,
               );
               if (isRunCancelled(effectiveKey)) {
+                detachInteractiveTarget();
                 return false;
               }
               if (!approved) {
@@ -383,6 +428,15 @@ export function createToolExecutor(
               hookAborted = true;
               hookAbortMessage = outcome.message;
             }
+
+            if (
+              outcome.kind === "pass" &&
+              outcome.output &&
+              isInteractiveQuestionTool
+            ) {
+              interactiveHookAnswer = outcome.output;
+            }
+
             if (outcome.kind === "warn") {
               pendingHookWarnings.push(outcome.message);
             }
@@ -423,7 +477,40 @@ export function createToolExecutor(
             promise: Promise.resolve(decisionAbortResult),
             afterHookEligible: false,
           });
+          detachInteractiveTarget();
           return false;
+        }
+
+        if (interactiveHookAnswer !== undefined) {
+          const hookAnswer = interactiveHookAnswer;
+          ctx.updateSessionMessages(effectiveKey, (currentMessages) =>
+            currentMessages.map((currentMessage) =>
+              currentMessage.id === currentAssistantMessageId
+                ? {
+                    ...currentMessage,
+                    toolCalls: updateFirstMatchingToolCall(
+                      currentMessage.toolCalls,
+                      parallelToolCall,
+                      ["pending", "running"],
+                      (currentToolCall) => ({
+                        ...currentToolCall,
+                        status: "completed" as const,
+                        result: hookAnswer,
+                      }),
+                    ),
+                  }
+                : currentMessage,
+            ),
+          );
+          if (parallelToolCall.name === "user-interaction-askUserQuestion") {
+            registerUserQuestionSettlement(idx, hookAnswer);
+          }
+          preStartedParallelTools.set(idx, {
+            promise: Promise.resolve(hookAnswer),
+            afterHookEligible: true,
+          });
+          detachInteractiveTarget();
+          return true;
         }
         afterHookEligible = true;
       }
@@ -480,6 +567,11 @@ export function createToolExecutor(
             parallelResult = JSON.stringify({
               error: getErrorMessage(err),
             });
+          }
+
+          detachInteractiveTarget();
+          if (parallelToolCall.name === "user-interaction-askUserQuestion") {
+            registerUserQuestionSettlement(idx, parallelResult);
           }
 
           ctx.updateSessionMessages(effectiveKey, (currentMessages) =>
@@ -613,13 +705,34 @@ export function createToolExecutor(
       }
     }
 
+    const executableUserQuestionIndices: number[] = [];
+    for (let i = 0; i < toolCalls.length; i++) {
+      if (
+        toolCalls[i].name === "user-interaction-askUserQuestion" &&
+        authorizationDecisions[i]?.status !== "rejected" &&
+        !validateToolCall(toolCalls[i])
+      ) {
+        executableUserQuestionIndices.push(i);
+      }
+    }
+    if (executableUserQuestionIndices.length > 1) {
+      for (const idx of executableUserQuestionIndices) {
+        if (!(await startParallelTool(idx))) {
+          break;
+        }
+      }
+    }
+
     for (let toolIndex = 0; toolIndex < toolCalls.length; toolIndex++) {
       const toolCall = toolCalls[toolIndex];
       if (isRunCancelled(effectiveKey)) {
         return null;
       }
 
-      if (userQuestionCancelled) {
+      if (
+        userQuestionCancelled &&
+        toolCall.name !== "user-interaction-askUserQuestion"
+      ) {
         const skippedResult = JSON.stringify({
           cancelled: true,
           skipped: true,
@@ -1219,11 +1332,8 @@ export function createToolExecutor(
         );
       }
 
-      if (
-        toolCall.name === "user-interaction-askUserQuestion" &&
-        isUserQuestionCancellationResult(result!)
-      ) {
-        userQuestionCancelled = true;
+      if (toolCall.name === "user-interaction-askUserQuestion") {
+        registerUserQuestionSettlement(toolIndex, result!);
       }
 
       // Only the dedicated Plan Mode tool's structured approved=true result

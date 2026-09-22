@@ -196,15 +196,18 @@ export function useArchivedConversations({
     if (restoringIds.size > 0) {
       return;
     }
-    setRestoringIds(new Set([conversation.conversationId]));
+    const restoreId = conversation.conversationId;
+    setRestoringIds(new Set([restoreId]));
+    setArchivedConversations((previous) =>
+      previous.filter((item) => item.conversationId !== restoreId),
+    );
+    setArchivedTotal((total) => Math.max(0, total - 1));
     try {
-      await window.snow.restoreArchivedConversations([
-        conversation.conversationId,
-      ]);
-      await loadArchivedFirstPage();
-      refreshConversations();
+      await window.snow.restoreArchivedConversations([restoreId]);
+      await Promise.all([loadArchivedFirstPage(), refreshConversations()]);
     } catch {
       // Silent fail
+      await loadArchivedFirstPage();
     } finally {
       setRestoringIds(new Set());
     }
@@ -216,15 +219,21 @@ export function useArchivedConversations({
       return;
     }
 
-    setRestoringIds(new Set(archivedSelectedIds));
+    const restoreIds = [...archivedSelectedIds];
+    setRestoringIds(new Set(restoreIds));
+    const restoreIdSet = new Set(restoreIds);
+    setArchivedConversations((previous) =>
+      previous.filter((item) => !restoreIdSet.has(item.conversationId)),
+    );
+    setArchivedTotal((total) => Math.max(0, total - restoreIds.length));
     try {
-      await window.snow.restoreArchivedConversations([...archivedSelectedIds]);
-      await loadArchivedFirstPage();
-      refreshConversations();
+      await window.snow.restoreArchivedConversations(restoreIds);
+      await Promise.all([loadArchivedFirstPage(), refreshConversations()]);
       setArchivedSelectedIds(new Set());
       setIsArchivedMultiSelect(false);
     } catch {
       // Silent fail
+      await loadArchivedFirstPage();
     } finally {
       setRestoringIds(new Set());
     }

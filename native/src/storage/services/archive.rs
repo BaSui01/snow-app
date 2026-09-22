@@ -30,6 +30,11 @@ use super::chat_conversations::{cleanup_orphan_checkpoint_files, collect_convers
 /// SQLite 变量数上限，分块执行避免超出（与 chat_conversations 一致）。
 const MAX_VARIABLES: usize = 400;
 
+/// 归档库 schema 版本。首次创建或旧版本归档库会执行完整初始化
+/// （建表 + 列迁移）并写入该版本号；已达到该版本的归档库走快路径。
+/// v2：在 v1（历史版本号）基础上引入 user_version 快路径。
+const ARCHIVE_SCHEMA_VERSION: i64 = 2;
+
 /// 与运行库 chat_conversations 完全一致的列（不含归档时间列）。
 /// 必须与运行库 create_schema 的 chat_conversations 列保持同步——
 /// 归档与还原都按此清单显式拷贝，漏列即静默丢数据。
@@ -350,16 +355,29 @@ fn migrate_archive_runtime_config(connection: &Connection) -> rusqlite::Result<(
 }
 
 /// 确保归档冷数据库存在且结构就绪。
+///
+/// `user_version` 已达到目标版本时直接返回（快路径），跳过建表与列迁移；
+/// 低于目标版本（含首次创建）才执行完整的 schema 初始化。归档/还原每次
+/// 调用都会经过这里，快路径省掉每次 7 表 10 索引的 `CREATE ... IF NOT
+/// EXISTS` 与 3 轮 `PRAGMA table_info` 检查。
 pub fn ensure_archive_database(archive_path: &Path) -> Result<()> {
     let connection = open_archive_connection(archive_path).map_err(|error| {
         database::database_error(archive_path, "initialize archive database", error)
     })?;
+    let schema_version: i64 = connection
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .map_err(|error| {
+            database::database_error(archive_path, "initialize archive database", error)
+        })?;
+    if schema_version >= ARCHIVE_SCHEMA_VERSION {
+        return Ok(());
+    }
     create_archive_schema(&connection)
         .map_err(|error| database::database_error(archive_path, "initialize archive database", error))?;
     migrate_archive_runtime_config(&connection)
         .map_err(|error| database::database_error(archive_path, "initialize archive database", error))?;
     connection
-        .pragma_update(None, "user_version", 1)
+        .pragma_update(None, "user_version", ARCHIVE_SCHEMA_VERSION)
         .map_err(|error| database::database_error(archive_path, "initialize archive database", error))?;
     Ok(())
 }
@@ -758,20 +776,6 @@ pub fn archive_conversations(
             database::database_error(main_database_path, "archive conversations", error)
         })?;
 
-    // ---- 收缩运行库文件 ----
-    // DELETE 只把页面标记为空闲页（auto_vacuum=NONE），物理文件大小不变，
-    // 归档后必须 VACUUM 重建数据库文件才能立即回收这些页面。
-    // VACUUM 不能在事务中、也不能在存在附加数据库时执行，故放在
-    // COMMIT 与 DETACH 之后。归档事务已提交，VACUUM 仅是空间优化，
-    // 失败（如其他连接占用导致 busy_timeout 超时）不应让上层误判归档
-    // 失败，记录日志后忽略。
-    if let Err(error) = connection.execute_batch("VACUUM") {
-        eprintln!(
-            "Snow App archive VACUUM failed (conversations already archived): {}",
-            error
-        );
-    }
-
     Ok(())
 }
 
@@ -1160,10 +1164,9 @@ pub fn restore_archived_conversations(
     }
 
 // ---- 清理归档库 ----
-    let mut deleted_rows: usize = 0;
     for chunk in all_target_ids.chunks(MAX_VARIABLES) {
         let placeholders = in_clause_placeholders(chunk.len());
-        deleted_rows += transaction
+        transaction
             .execute(
                 &format!("DELETE FROM archive_db.chat_messages WHERE conversation_id IN ({placeholders})"),
                 params_from_iter(chunk.iter()),
@@ -1171,7 +1174,7 @@ pub fn restore_archived_conversations(
             .map_err(|error| {
                 database::database_error(main_database_path, "restore archived conversations", error)
             })?;
-        deleted_rows += transaction
+        transaction
             .execute(
                 &format!("DELETE FROM archive_db.todo_items WHERE session_id IN ({placeholders})"),
                 params_from_iter(chunk.iter()),
@@ -1189,7 +1192,7 @@ pub fn restore_archived_conversations(
         for id in chunk {
             params.push(id);
         }
-        deleted_rows += transaction
+        transaction
             .execute(
                 &format!(
                     "DELETE FROM archive_db.sub_agent_sessions
@@ -1211,7 +1214,7 @@ pub fn restore_archived_conversations(
         for id in chunk {
             params.push(id);
         }
-        deleted_rows += transaction
+        transaction
             .execute(
                 &format!(
                     "DELETE FROM archive_db.workflow_node_sessions
@@ -1227,7 +1230,7 @@ pub fn restore_archived_conversations(
     // 已还原父会话的 run 级状态与画布从归档库清理。
     for chunk in unique_ids.chunks(MAX_VARIABLES) {
         let placeholders = in_clause_placeholders(chunk.len());
-        deleted_rows += transaction
+        transaction
             .execute(
                 &format!(
                     "DELETE FROM archive_db.workflow_runs WHERE parent_conversation_id IN ({placeholders})"
@@ -1237,7 +1240,7 @@ pub fn restore_archived_conversations(
             .map_err(|error| {
                 database::database_error(main_database_path, "restore archived conversations", error)
             })?;
-        deleted_rows += transaction
+        transaction
             .execute(
                 &format!(
                     "DELETE FROM archive_db.workflow_canvases WHERE parent_conversation_id IN ({placeholders})"
@@ -1250,7 +1253,7 @@ pub fn restore_archived_conversations(
     }
     for chunk in all_target_ids.chunks(MAX_VARIABLES) {
         let placeholders = in_clause_placeholders(chunk.len());
-        deleted_rows += transaction
+        transaction
             .execute(
                 &format!("DELETE FROM archive_db.chat_conversations WHERE conversation_id IN ({placeholders})"),
                 params_from_iter(chunk.iter()),
@@ -1270,22 +1273,6 @@ pub fn restore_archived_conversations(
         .map_err(|error| {
             database::database_error(main_database_path, "restore archived conversations", error)
         })?;
-
-    // ---- 收缩归档库文件（与归档运行库对称）----
-    // 还原从归档库删除了数据，归档库同样不会自动回收空闲页（auto_vacuum=NONE）。
-    // VACUUM 不能在事务中、也不能在存在附加数据库时执行，故在 COMMIT+DETACH
-    // 之后单独打开归档库连接执行；仅当确实删除了行时才执行。
-    // 还原事务已提交，VACUUM 仅是空间优化，失败记录日志后忽略。
-    if deleted_rows > 0 {
-        let vacuum_result = open_archive_connection(archive_database_path)
-            .and_then(|archive_connection| archive_connection.execute_batch("VACUUM"));
-        if let Err(error) = vacuum_result {
-            eprintln!(
-                "Snow App restore VACUUM failed (conversations already restored): {}",
-                error
-            );
-        }
-    }
 
     Ok(())
 }

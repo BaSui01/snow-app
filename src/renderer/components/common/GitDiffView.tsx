@@ -5,6 +5,7 @@ import { DiffFile, generateDiffFile } from "@git-diff-view/file";
 import "@git-diff-view/react/styles/diff-view.css";
 
 import { useI18n } from "../../i18n";
+import { IncrementalUnifiedDiffView } from "./IncrementalUnifiedDiffView";
 
 // 从独立模块导入（仅依赖 "diff" 库），并重新导出保持现有导入路径兼容。
 import { generateComparePatch } from "../../utils/generateComparePatch";
@@ -64,6 +65,45 @@ const useAutoDiffMode = (): {
   return { containerRef, mode };
 };
 
+/** 预构建 DiffFile 实例，避免 DiffView 内部再克隆一份完整数据 */
+const buildDiffFile = (
+  fileName: string,
+  oldContent: string,
+  newContent: string,
+  hunks: string[] | null,
+  theme: DiffTheme,
+): DiffFile | null => {
+  try {
+    const lang = getLang(fileName);
+    const diffFile = hunks
+      ? new DiffFile(
+          fileName,
+          oldContent,
+          fileName,
+          newContent,
+          hunks,
+          lang,
+          lang,
+        )
+      : generateDiffFile(
+          fileName,
+          oldContent,
+          fileName,
+          newContent,
+          lang,
+          lang,
+        );
+    diffFile.initTheme(theme);
+    diffFile.initRaw();
+    diffFile.initSyntax();
+    diffFile.buildSplitDiffLines();
+    diffFile.buildUnifiedDiffLines();
+    return diffFile;
+  } catch {
+    return null;
+  }
+};
+
 type GitDiffViewProps = {
   /** 用于推断语法高亮语言的文件名 */
   fileName: string;
@@ -119,97 +159,55 @@ export const GitDiffView = ({
   );
 
   /**
-   * 当提供了 oldStartLine/newStartLine 时,说明 oldContent/newContent 是文件片段而非完整文件。
-   * 复用 generateComparePatch 生成带正确行号偏移的 unified diff 文本,
-   * 再预构建 DiffFile 实例(与 compareDiffFile 一致),避免 data 模式的异步初始化导致渲染闪烁。
+   * 有行号偏移时，先用 generateComparePatch（context:3）把片段转成带正确行号的
+   * 标准 patch；无偏移的大片段同样转 patch，把上下文行压缩到 hunk 级别，
+   * 避免 createTwoFilesPatch 的全量上下文参与构建。
    */
-  const offsetDiffFile = useMemo<DiffFile | null>(() => {
+  const comparePatch = useMemo(() => {
     if (patch) {
       return null;
     }
     const oldStr = oldContent ?? "";
     const newStr = newContent ?? "";
-    if (
-      (oldStartLine == null || oldStartLine <= 1) &&
-      (newStartLine == null || newStartLine <= 1)
-    ) {
+    if (!oldStr && !newStr) {
       return null;
     }
-
-    const patchText = generateComparePatch(
+    const hasOffset =
+      (oldStartLine != null && oldStartLine > 1) ||
+      (newStartLine != null && newStartLine > 1);
+    const totalLines = oldStr.split("\n").length + newStr.split("\n").length;
+    if (!hasOffset && totalLines <= 500) {
+      return null;
+    }
+    return generateComparePatch(
       fileName,
       oldStr,
       newStr,
       oldStartLine,
       newStartLine,
     );
-    if (!patchText) {
+  }, [patch, fileName, oldContent, newContent, oldStartLine, newStartLine]);
+
+  const activePatch = patch ?? comparePatch;
+
+  const renderDiffFile = useMemo<DiffFile | null>(() => {
+    if (patchMissingHunks) {
       return null;
     }
-
-    try {
-      const lang = getLang(fileName);
-      const diffFile = new DiffFile(
-        fileName,
-        "",
-        fileName,
-        "",
-        [patchText],
-        lang,
-        lang,
-      );
-      diffFile.initTheme(theme);
-      diffFile.initRaw();
-      diffFile.init();
-      diffFile.buildSplitDiffLines();
-      diffFile.buildUnifiedDiffLines();
-      return diffFile;
-    } catch {
-      return null;
+    if (activePatch) {
+      return buildDiffFile(fileName, "", "", [activePatch], theme);
     }
-  }, [
-    patch,
-    fileName,
-    oldContent,
-    newContent,
-    oldStartLine,
-    newStartLine,
-    theme,
-  ]);
-
-  const patchData = useMemo(
-    () =>
-      patch
-        ? {
-            oldFile: { fileName, content: null as string | null },
-            newFile: { fileName, content: null as string | null },
-            hunks: [patch],
-          }
-        : null,
-    [patch, fileName],
-  );
-
-  const compareDiffFile = useMemo<DiffFile | null>(() => {
-    if (patch || offsetDiffFile) {
-      return null;
-    }
-    const lang = getLang(fileName);
-    const diffFile = generateDiffFile(
+    return buildDiffFile(
       fileName,
       oldContent ?? "",
-      fileName,
       newContent ?? "",
-      lang,
-      lang,
+      null,
+      theme,
     );
-    diffFile.initTheme(theme);
-    diffFile.init();
-    diffFile.buildSplitDiffLines();
-    diffFile.buildUnifiedDiffLines();
-    return diffFile;
-  }, [patch, offsetDiffFile, fileName, oldContent, newContent, theme]);
+  }, [patchMissingHunks, activePatch, fileName, oldContent, newContent, theme]);
 
-  const renderDiffFile = patchData ? null : (offsetDiffFile ?? compareDiffFile);
+  const useIncremental =
+    mode === DiffModeEnum.Unified && renderDiffFile !== null;
 
   return (
     <div className="git-diff-view" ref={containerRef}>
@@ -217,14 +215,10 @@ export const GitDiffView = ({
         <div className="git-diff-view-empty">
           {t("rightPanel.diffUnavailable")}
         </div>
-      ) : patchData ? (
-        <DiffView
-          data={patchData}
-          diffViewMode={mode}
-          diffViewTheme={theme}
-          diffViewHighlight
-          diffViewWrap
-          diffViewFontSize={fontSize}
+      ) : useIncremental && renderDiffFile ? (
+        <IncrementalUnifiedDiffView
+          diffFile={renderDiffFile}
+          fontSize={fontSize}
         />
       ) : renderDiffFile ? (
         <DiffView

@@ -31797,6 +31797,49 @@ input {
   width: 100%;
 }
 
+.incremental-diff-wrapper {
+  font-family: Menlo, Consolas, monospace;
+  font-size: var(--diff-font-size--);
+  line-height: 1.6;
+}
+
+.incremental-diff-line {
+  display: flex;
+  align-items: stretch;
+  min-height: 1.6em;
+}
+
+.incremental-diff-num {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: calc(var(--diff-font-size--) * 7);
+  min-width: 72px;
+  padding: 0 10px;
+  justify-content: space-between;
+  text-align: right;
+  color: var(--diff-plain-lineNumber-color--);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.incremental-diff-num span {
+  display: inline-block;
+  width: 50%;
+  text-align: right;
+}
+
+.incremental-diff-content {
+  flex: 1;
+  min-width: 0;
+  padding-left: 2em;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.incremental-diff-content [data-diff-highlight] {
+  border-radius: 0.2em;
+}
+
 /* patch 无法解析（非标准 diff 文本）时的兜底提示，避免纯空白 */
 .git-diff-view-empty {
   display: flex;

@@ -182,9 +182,21 @@ async fn format_file(file_path: &str) {
         return;
     }
     let path = PathBuf::from(file_path);
+    let recorded_path = file_path.to_string();
     // Prettier 子进程是同步阻塞调用，放进 blocking pool，避免占用承载
-    // Electron N-API Promise 的异步线程。
-    let _ = tokio::task::spawn_blocking(move || run_prettier(&path)).await;
+    // Electron N-API Promise 的异步线程；改写发生时补记检查点 expected。
+    let _ = tokio::task::spawn_blocking(move || {
+        let Some(previous_object_id) = run_prettier(&path) else {
+            return;
+        };
+        if let Err(error) = crate::storage::services::checkpoint::record_formatted_file(
+            &recorded_path,
+            &previous_object_id,
+        ) {
+            eprintln!("[checkpoint] failed to record formatted file '{recorded_path}': {error}");
+        }
+    })
+    .await;
 }
 
 /// 自动格式化全局开关（默认开启）；读取失败按开启处理。
@@ -229,19 +241,18 @@ fn find_prettier_bin(file_path: &Path) -> Option<PathBuf> {
     }
 }
 
-/// 对文件执行一次 Prettier 格式化，返回是否成功。任何一步失败都静默跳过，
-/// 不影响已经写盘的编辑结果；非 UTF-8（GBK / UTF-16 等）文件会被 Prettier
-/// 按 UTF-8 重写而损坏，因此直接跳过。
-fn run_prettier(file_path: &Path) -> bool {
-    let Ok(bytes) = fs::read(file_path) else {
-        return false;
-    };
-    if std::str::from_utf8(&bytes).is_err() {
-        return false;
+/// 对文件执行一次 Prettier 格式化，返回被改写前内容的对象 id（BLAKE3）。
+///
+/// 返回 None 表示未执行、执行失败或输出与原文一致（Prettier 不写盘），调用
+/// 方据此决定是否补记检查点 expected。任何一步失败都静默跳过，不影响已经
+/// 写盘的编辑结果；非 UTF-8（GBK / UTF-16 等）文件会被 Prettier 按 UTF-8
+/// 重写而损坏，因此直接跳过。
+fn run_prettier(file_path: &Path) -> Option<String> {
+    let before = fs::read(file_path).ok()?;
+    if std::str::from_utf8(&before).is_err() {
+        return None;
     }
-    let Some(prettier_bin) = find_prettier_bin(file_path) else {
-        return false;
-    };
+    let prettier_bin = find_prettier_bin(file_path)?;
 
     let mut command = std::process::Command::new("node");
     command.arg(&prettier_bin).arg("--write").arg(file_path);
@@ -251,8 +262,22 @@ fn run_prettier(file_path: &Path) -> bool {
         // CREATE_NO_WINDOW：避免格式化时控制台窗口一闪而过。
         command.creation_flags(0x0800_0000);
     }
-    command
+    if !command
         .output()
         .map(|output| output.status.success())
         .unwrap_or(false)
+    {
+        return None;
+    }
+    let after = fs::read(file_path).ok()?;
+    if before == after {
+        return None;
+    }
+    Some(
+        blake3::Hasher::new()
+            .update(&before)
+            .finalize()
+            .to_hex()
+            .to_string(),
+    )
 }

@@ -25,8 +25,8 @@ use self::git::{read_git_object, update_checkpoint_git_ref};
 use self::manifest::{read_manifest, write_manifest};
 use self::paths::{
     canonical_work_dir, checkpoint_dir, checkpoint_manifest_exists, filter_existing_checkpoints,
-    manifest_paths_equal, real_relative_path, resolve_checkpoint_path, resolve_manifest_path,
-    should_skip_manifest_path,
+    manifest_paths_equal, path_key, real_relative_path, resolve_checkpoint_path,
+    resolve_manifest_path, should_skip_manifest_path,
 };
 
 pub use self::migrate::migrate_checkpoint_layout;
@@ -362,7 +362,8 @@ pub(crate) fn bump_restore_epoch(work_dir: &str) -> Result<()> {
 /// 归属，bash 全树 after 对比据此跳过并行会话已认领的文件——防止把其他
 /// 会话在 bash 执行期间的修改误记到本会话 checkpoint（回滚列表混入无关
 /// 文件的核心防线）。
-/// key = "{normalized_work_dir}\\0{normalized_relative}"。
+/// 本地条目以绝对路径（`path_key` 归一化）为键，便于延迟格式化按绝对路径
+/// 反查；远程（SSH）条目以工作目录 + 相对路径为键。
 struct RecordedFileChange {
     /// 变更前内容对象 id（BLAKE3，None = 变更前不存在）。用于判断
     /// "变更起点与本会话 before 指纹一致"——一致说明该变化发生在本会话
@@ -371,10 +372,18 @@ struct RecordedFileChange {
     /// 文件工具 before 已登记、after 尚未完成。超时自动失效（工具崩溃
     /// 后 after 不会执行，避免该路径被永久跳过）。
     active_since: Option<Instant>,
+    /// 捕获所属工作目录：延迟格式化（Prettier）改写文件后据此补记 expected。
+    work_dir: String,
+    /// 该路径最近捕获涉及的检查点：格式化改写后逐个补记（并行会话可能
+    /// 先后在同一路径上捕获）。
+    checkpoint_ids: Vec<String>,
 }
 
 /// active 登记（before→after 区间）的兜底超时：正常文件工具毫秒级完成。
 const ACTIVE_CAPTURE_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// 每个路径保留的检查点上限（格式化补记范围）。
+const RECORDED_CHANGE_CHECKPOINT_LIMIT: usize = 8;
 
 /// 归属注册表上限：超过后清理已完成（非 active）的条目防膨胀。
 const RECORDED_CHANGES_MAX_ENTRIES: usize = 100_000;
@@ -389,6 +398,7 @@ fn recorded_changes() -> MutexGuard<'static, HashMap<String, RecordedFileChange>
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// 远程（SSH）注册表键：远程工作目录 + 相对路径。
 fn recorded_change_key(work_dir: &str, relative: &str) -> String {
     format!(
         "{}\0{}",
@@ -397,72 +407,163 @@ fn recorded_change_key(work_dir: &str, relative: &str) -> String {
     )
 }
 
+/// 本地注册表键：绝对路径（`path_key` 归一化）。延迟格式化器（Prettier）
+/// 只有绝对路径，用同一键即可定位需要补记 expected 的条目。
+fn local_change_key(absolute: &Path) -> String {
+    path_key(absolute)
+}
+
 fn trim_recorded_changes(changes: &mut HashMap<String, RecordedFileChange>) {
     if changes.len() >= RECORDED_CHANGES_MAX_ENTRIES {
         changes.retain(|_, entry| entry.active_since.is_some());
     }
 }
 
+/// 合并检查点集合：保留先前的 id（并行会话可能先后在同一路径捕获），
+/// 超上限丢弃最早的。
+fn merge_checkpoint_ids(entry: &mut RecordedFileChange, checkpoint_ids: &[String]) {
+    for checkpoint_id in checkpoint_ids {
+        if !entry
+            .checkpoint_ids
+            .iter()
+            .any(|existing| existing == checkpoint_id)
+        {
+            entry.checkpoint_ids.push(checkpoint_id.clone());
+        }
+    }
+    if entry.checkpoint_ids.len() > RECORDED_CHANGE_CHECKPOINT_LIMIT {
+        let excess = entry.checkpoint_ids.len() - RECORDED_CHANGE_CHECKPOINT_LIMIT;
+        entry.checkpoint_ids.drain(0..excess);
+    }
+}
+
 /// 文件工具 before：登记目标文件（active），original 为变更前内容 id。
-pub(crate) fn register_file_capture_start(
+fn register_capture_start_at(
+    key: String,
     work_dir: &str,
-    relative: &str,
     original_object_id: Option<String>,
+    checkpoint_ids: &[String],
 ) {
     let mut changes = recorded_changes();
     trim_recorded_changes(&mut changes);
-    changes.insert(
-        recorded_change_key(work_dir, relative),
-        RecordedFileChange {
-            original_object_id,
-            active_since: Some(Instant::now()),
-        },
-    );
+    let entry = changes.entry(key).or_insert_with(|| RecordedFileChange {
+        original_object_id: None,
+        active_since: None,
+        work_dir: String::new(),
+        checkpoint_ids: Vec::new(),
+    });
+    entry.original_object_id = original_object_id;
+    entry.active_since = Some(Instant::now());
+    entry.work_dir = work_dir.to_string();
+    merge_checkpoint_ids(entry, checkpoint_ids);
 }
 
 /// 文件工具 after：解除 active，保留变更归属（original 不变）。
-pub(crate) fn register_file_capture_end(work_dir: &str, relative: &str) {
-    let key = recorded_change_key(work_dir, relative);
+fn register_capture_end_at(key: &str) {
     let mut changes = recorded_changes();
-    if let Some(entry) = changes.get_mut(&key) {
+    if let Some(entry) = changes.get_mut(key) {
         entry.active_since = None;
     }
 }
 
 /// 变更被写入 manifest（bash 全树对比 / 文件工具 after）时登记归属。
+fn register_recorded_change_at(
+    key: String,
+    work_dir: &str,
+    original_object_id: Option<String>,
+    checkpoint_ids: &[String],
+) {
+    let mut changes = recorded_changes();
+    trim_recorded_changes(&mut changes);
+    let entry = changes.entry(key).or_insert_with(|| RecordedFileChange {
+        original_object_id: None,
+        active_since: None,
+        work_dir: String::new(),
+        checkpoint_ids: Vec::new(),
+    });
+    entry.original_object_id = original_object_id;
+    entry.active_since = None;
+    entry.work_dir = work_dir.to_string();
+    merge_checkpoint_ids(entry, checkpoint_ids);
+}
+
+/// 文件工具 before（本地）：登记目标文件与所属检查点。
+fn register_local_file_capture_start(
+    absolute: &Path,
+    work_dir: &str,
+    original_object_id: Option<String>,
+    checkpoint_ids: &[String],
+) {
+    register_capture_start_at(
+        local_change_key(absolute),
+        work_dir,
+        original_object_id,
+        checkpoint_ids,
+    );
+}
+
+/// 文件工具 after（本地）：解除 active，保留变更归属。
+fn register_local_file_capture_end(absolute: &Path) {
+    register_capture_end_at(&local_change_key(absolute));
+}
+
+/// 本地 bash 全树对比写入 manifest 时登记归属。
+fn register_local_recorded_change(
+    absolute: &Path,
+    work_dir: &str,
+    original_object_id: Option<String>,
+    checkpoint_ids: &[String],
+) {
+    register_recorded_change_at(
+        local_change_key(absolute),
+        work_dir,
+        original_object_id,
+        checkpoint_ids,
+    );
+}
+
+/// 文件工具 before（远程 SSH）。
+pub(crate) fn register_file_capture_start(
+    work_dir: &str,
+    relative: &str,
+    original_object_id: Option<String>,
+) {
+    register_capture_start_at(
+        recorded_change_key(work_dir, relative),
+        work_dir,
+        original_object_id,
+        &[],
+    );
+}
+
+/// 文件工具 after（远程 SSH）。
+pub(crate) fn register_file_capture_end(work_dir: &str, relative: &str) {
+    register_capture_end_at(&recorded_change_key(work_dir, relative));
+}
+
+/// 变更被写入 manifest（远程 SSH 的 bash 全树对比）时登记归属。
 pub(crate) fn register_recorded_change(
     work_dir: &str,
     relative: &str,
     original_object_id: Option<String>,
 ) {
-    let mut changes = recorded_changes();
-    trim_recorded_changes(&mut changes);
-    changes
-        .entry(recorded_change_key(work_dir, relative))
-        .and_modify(|entry| {
-            entry.original_object_id.clone_from(&original_object_id);
-            entry.active_since = None;
-        })
-        .or_insert_with(|| RecordedFileChange {
-            original_object_id,
-            active_since: None,
-        });
+    register_recorded_change_at(
+        recorded_change_key(work_dir, relative),
+        work_dir,
+        original_object_id,
+        &[],
+    );
 }
 
-/// bash 全树 after 对比判定：该路径的变化是否已由其他捕获认领。
+/// 归属判定核心：该路径的变化是否已由其他捕获认领。
 /// - active（并行文件工具正在追捕）：跳过，它稍后会自己记录；
 /// - 登记的变更前内容与本会话 before 指纹一致：变化发生在观察起点之后
 ///   且已被人记录，归别人负责；
 /// - 登记的变更前内容不同：那条记录的起点早于本会话观察，与本会话无关，
 ///   继续走正常对比。
-pub(crate) fn change_owned_by_other_capture(
-    work_dir: &str,
-    relative: &str,
-    before_object_id: Option<&str>,
-) -> bool {
-    let key = recorded_change_key(work_dir, relative);
+fn change_owned_by_other_capture_at(key: &str, before_object_id: Option<&str>) -> bool {
     let changes = recorded_changes();
-    let Some(entry) = changes.get(&key) else {
+    let Some(entry) = changes.get(key) else {
         return false;
     };
     if let Some(active_since) = entry.active_since {
@@ -475,6 +576,88 @@ pub(crate) fn change_owned_by_other_capture(
         None => entry.original_object_id.is_none(),
         Some(object_id) => entry.original_object_id.as_deref() == Some(object_id),
     }
+}
+
+/// 本地 bash 全树 after 对比判定。
+fn change_owned_by_other_capture_local(absolute: &Path, before_object_id: Option<&str>) -> bool {
+    change_owned_by_other_capture_at(&local_change_key(absolute), before_object_id)
+}
+
+/// 远程（SSH）bash 全树 after 对比判定。
+pub(crate) fn change_owned_by_other_capture(
+    work_dir: &str,
+    relative: &str,
+    before_object_id: Option<&str>,
+) -> bool {
+    change_owned_by_other_capture_at(&recorded_change_key(work_dir, relative), before_object_id)
+}
+
+/// 延迟格式化（Prettier）改写文件后调用：把磁盘最终内容补记到该路径最近
+/// 捕获所属检查点的 expected。
+///
+/// 文件工具的 after 捕获发生在工具返回时，自动格式化却在静默窗口结束后由
+/// 后台任务执行：不补记的话，格式化重排后的内容与 manifest 的 expected
+/// 不一致，回滚门控（states_match）判定文件"已被他人改写"而跳过——新建的
+/// 文件不出现在回滚预览里、回滚也不会删除它。
+///
+/// `previous_object_id` 是格式化前内容的对象 id：只刷新仍停留在该内容的
+/// 条目。同一路径被多轮/多会话反复修改时，只有"最近一次写入"的条目会被
+/// 刷新，更早的条目描述的是旧版本，保持原样（它们本来也不该匹配当前磁盘）。
+pub(crate) fn record_formatted_file(file_path: &str, previous_object_id: &str) -> Result<()> {
+    let canonical = fs::canonicalize(Path::new(file_path))
+        .unwrap_or_else(|_| PathBuf::from(file_path));
+    let (work_dir, checkpoint_ids) = {
+        let changes = recorded_changes();
+        let Some(entry) = changes.get(&local_change_key(&canonical)) else {
+            return Ok(());
+        };
+        (entry.work_dir.clone(), entry.checkpoint_ids.clone())
+    };
+    if checkpoint_ids.is_empty() {
+        return Ok(());
+    }
+    let root = canonical_work_dir(&work_dir)?;
+    let work_dir_lock = work_dir_lock(&root)?;
+    let _work_dir_guard = work_dir_read_guard(&work_dir_lock)?;
+    let (absolute, path) = resolve_checkpoint_path(&root, file_path)?;
+    if path.is_empty() || should_skip_manifest_path(&path) {
+        return Ok(());
+    }
+    let expected = current_state(&absolute)?;
+    for checkpoint_id in &checkpoint_ids {
+        with_manifest_lock(checkpoint_id, || {
+            if !checkpoint_manifest_exists(checkpoint_id) {
+                return Ok(());
+            }
+            let mut manifest = read_manifest(checkpoint_id)?;
+            let Some(_root) = validate_capture_work_dir(&manifest, &work_dir) else {
+                return Ok(());
+            };
+            let Some(entry) = manifest
+                .entries
+                .iter_mut()
+                .find(|entry| manifest_paths_equal(&entry.path, &path))
+            else {
+                return Ok(());
+            };
+            match entry.expected.as_ref() {
+                Some(OriginalState::Object { object_id })
+                    if object_id.as_str() == previous_object_id => {}
+                _ => return Ok(()),
+            }
+            entry.path = path.clone();
+            entry.expected = Some(expected.clone());
+            write_manifest(checkpoint_id, &manifest)
+        })?;
+    }
+    if let Some(mut cache) = DIFF_CACHE.get().and_then(|cache| cache.lock().ok()) {
+        cache.retain(|key, _| {
+            !checkpoint_ids
+                .iter()
+                .any(|checkpoint_id| key.starts_with(&format!("{checkpoint_id}:")))
+        });
+    }
+    Ok(())
 }
 
 /// 从记录状态提取归属比对用的内容 id（Missing / Git 无法对比，返回 None）。
@@ -856,6 +1039,7 @@ fn capture_entry(
     relative: &Path,
     original: OriginalState,
     work_dir: &str,
+    checkpoint_ids: &[String],
 ) -> Result<()> {
     if relative.as_os_str().is_empty() || should_skip_relative(relative) {
         return Ok(());
@@ -881,7 +1065,7 @@ fn capture_entry(
     }
     // 登记归属：该路径的变化由本次捕获负责，并行会话的 bash 全树对比
     // 会据此跳过，不再重复/误记。
-    register_recorded_change(work_dir, &path, original_id);
+    register_local_recorded_change(absolute, work_dir, original_id, checkpoint_ids);
     Ok(())
 }
 
@@ -957,11 +1141,16 @@ pub fn record_checkpoint_file(
     // 后续轮次再次被编辑时，manifest 里已存在记录）都必须登记"正在追捕"，
     // 否则本轮编辑执行期间并行 bash 的全树对比会把变化误记到自己名下。
     let original = current_state(&absolute)?;
-    register_file_capture_start(&work_dir, &path, original_object_id(&original));
+    register_local_file_capture_start(
+        &absolute,
+        &work_dir,
+        original_object_id(&original),
+        &checkpoint_ids,
+    );
 
-    for checkpoint_id in checkpoint_ids {
-        with_manifest_lock(&checkpoint_id, || {
-            let mut manifest = read_manifest(&checkpoint_id)?;
+    for checkpoint_id in &checkpoint_ids {
+        with_manifest_lock(checkpoint_id, || {
+            let mut manifest = read_manifest(checkpoint_id)?;
             let Some(_root) = validate_capture_work_dir(&manifest, &work_dir) else {
                 return Ok(());
             };
@@ -980,7 +1169,7 @@ pub fn record_checkpoint_file(
                 original: original.clone(),
                 expected: None,
             });
-            write_manifest(&checkpoint_id, &manifest)
+            write_manifest(checkpoint_id, &manifest)
         })?;
     }
     Ok(())
@@ -1018,7 +1207,7 @@ pub fn record_checkpoint_file_after(
     }
     // 无条件解除"正在追捕"登记（即使 before 记录失败 / 工具未实际修改），
     // 并保留变更归属，供并行 bash 的全树对比判定跳过。
-    register_file_capture_end(&work_dir, &path);
+    register_local_file_capture_end(&absolute);
     Ok(())
 }
 
@@ -1229,9 +1418,8 @@ pub fn record_checkpoint_worktree_after(capture: CheckpointWorktreeCapture) -> R
                 // 多会话并行防线：该路径已被并行文件工具认领（正在追捕或
                 // 已按同一变更起点记录）时跳过——变化归它负责，不能记入
                 // 本会话 checkpoint（回滚列表混入无关文件的根因）。
-                if change_owned_by_other_capture(
-                    &capture.work_dir,
-                    relative_path,
+                if change_owned_by_other_capture_local(
+                    &absolute,
                     before_state.and_then(|state| state.object_id.as_deref()),
                 ) {
                     continue;
@@ -1241,7 +1429,14 @@ pub fn record_checkpoint_worktree_after(capture: CheckpointWorktreeCapture) -> R
                     None => OriginalState::Missing,
                 };
 
-                capture_entry(&mut manifest, &absolute, &relative, original, &capture.work_dir)?;
+                capture_entry(
+                    &mut manifest,
+                    &absolute,
+                    &relative,
+                    original,
+                    &capture.work_dir,
+                    &capture.checkpoint_ids,
+                )?;
                 changed = true;
             }
 

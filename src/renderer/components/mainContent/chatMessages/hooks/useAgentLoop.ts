@@ -729,6 +729,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         const iterSessionKey = currentConversationId ?? sessionKey;
         let effectiveKey = iterSessionKey;
 
+        if (resumeAfterCompaction) {
+          completedReadonlyCalls.clear();
+        }
+
         if (isRunCancelled(effectiveKey)) {
           return;
         }

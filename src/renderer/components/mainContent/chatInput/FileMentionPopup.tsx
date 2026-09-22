@@ -142,7 +142,7 @@ export const FileMentionPopup = forwardRef<
 >(function FileMentionPopup(
   {
     visible,
-    query,
+    query: propQuery,
     onClose,
     onSelect,
     onSelectBatch,
@@ -156,6 +156,29 @@ export const FileMentionPopup = forwardRef<
   ref,
 ): React.JSX.Element | null {
   const { t } = useI18n();
+  const [isClosing, setIsClosing] = useState(false);
+  const [prevVisible, setPrevVisible] = useState(visible);
+  const [lastQuery, setLastQuery] = useState(propQuery);
+  const query = visible ? propQuery : lastQuery;
+
+  if (visible !== prevVisible) {
+    setPrevVisible(visible);
+    setIsClosing(!visible);
+  }
+
+  useEffect(() => {
+    if (!isClosing) {
+      return;
+    }
+    const timer = window.setTimeout(() => setIsClosing(false), 160);
+    return () => window.clearTimeout(timer);
+  }, [isClosing]);
+
+  useEffect(() => {
+    if (visible) {
+      setLastQuery(propQuery);
+    }
+  }, [visible, propQuery]);
   const [activeDirectory, setActiveDirectory] =
     useState<WorkspaceDirectoryRecord | null>(null);
   const [entries, setEntries] = useState<FileSearchResult[]>([]);
@@ -772,237 +795,238 @@ export const FileMentionPopup = forwardRef<
     t,
   ]);
 
-  const popup = visible ? (
-    <div
-      className="file-mention-popup"
-      ref={popupRef}
-      style={style}
-      data-esc-panel
-    >
-      {pathSegments.length > 0 && (
-        <div className="file-mention-breadcrumbs">
-          <button
-            type="button"
-            className="file-mention-crumb"
-            onClick={() => {
-              textareaRef.current?.focus();
-              onNavigateTo("");
-            }}
-            title={activeDirectory?.path ?? ""}
-          >
-            <Folder size={11} />
-            <span>{activeDirectory?.name ?? "workspace"}</span>
-          </button>
-          {pathSegments.map((segment, index) => (
-            <span className="file-mention-crumb-segment" key={index}>
-              <ChevronRight size={10} className="file-mention-crumb-sep" />
-              <button
-                type="button"
-                className="file-mention-crumb"
-                onClick={() => {
-                  textareaRef.current?.focus();
-                  onNavigateTo(pathSegments.slice(0, index + 1).join("/"));
-                }}
-              >
-                {segment}
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-      {(isSearching || displayEntries.length > 0 || skills.length > 0) && (
-        <span className="file-mention-count">
-          {isSearching && <Loader2 className="spin" size={11} />}
-          {displayEntries.length > 0 &&
-            t("fileMention.results", {
-              values: { count: displayEntries.length },
-            })}
-          {isSkillMode &&
-            skills.length > 0 &&
-            t("fileMention.results", {
-              values: { count: skills.length },
-            })}
-          {displayEntries.length > 0 &&
-            checkedPaths.size > 0 &&
-            ` | ${t("fileMention.selected", {
-              values: { count: checkedPaths.size },
-            })}`}
-        </span>
-      )}
-      <div className="file-mention-list" ref={listRef}>
-        {isSkillMode ? (
-          isSearching && skills.length === 0 ? (
-            <div className="file-mention-empty">
-              <Loader2 className="spin" size={14} />
-              <span>{t("fileMention.skillSearching")}</span>
-            </div>
-          ) : skills.length === 0 ? (
-            <div className="file-mention-empty">
-              <span>
-                {skillQuery
-                  ? t("fileMention.skillNoResults")
-                  : t("fileMention.skillHint")}
-              </span>
-            </div>
-          ) : (
-            skills.map((skill, index) => {
-              const isSelected = selectedIndex === index;
-              return (
-                <div
-                  key={skill.id}
-                  data-mention-index={index}
-                  className={`mention-entry ${isSelected ? "selected" : ""}`}
+  const popup =
+    visible || isClosing ? (
+      <div
+        className={`file-mention-popup${isClosing ? " is-closing" : ""}`}
+        ref={popupRef}
+        style={style}
+        data-esc-panel
+      >
+        {pathSegments.length > 0 && (
+          <div className="file-mention-breadcrumbs">
+            <button
+              type="button"
+              className="file-mention-crumb"
+              onClick={() => {
+                textareaRef.current?.focus();
+                onNavigateTo("");
+              }}
+              title={activeDirectory?.path ?? ""}
+            >
+              <Folder size={11} />
+              <span>{activeDirectory?.name ?? "workspace"}</span>
+            </button>
+            {pathSegments.map((segment, index) => (
+              <span className="file-mention-crumb-segment" key={index}>
+                <ChevronRight size={10} className="file-mention-crumb-sep" />
+                <button
+                  type="button"
+                  className="file-mention-crumb"
                   onClick={() => {
-                    onSelect(toSkillTag(skill));
-                    onClose();
+                    textareaRef.current?.focus();
+                    onNavigateTo(pathSegments.slice(0, index + 1).join("/"));
                   }}
-                  title={skill.description}
                 >
-                  <span className="mention-entry-check" />
-                  <BookOpen size={14} className="mention-entry-icon" />
-                  <span className="mention-entry-name">{skill.name}</span>
-                  <span className="mention-entry-path">
-                    {skill.description || skill.id}
-                  </span>
-                </div>
-              );
-            })
-          )
-        ) : isLoadingInitial ? (
-          <div className="file-mention-skeleton">
-            {Array.from({ length: 6 }, (_, i) => (
-              <div className="mention-skeleton-item" key={i}>
-                <div className="mention-skeleton-icon" />
-                <div className="mention-skeleton-line" />
-              </div>
+                  {segment}
+                </button>
+              </span>
             ))}
-            <div className="file-mention-empty">
-              <Loader2 className="spin" size={14} />
-              <span>{t("fileMention.loading")}</span>
-            </div>
           </div>
-        ) : isSearching && entries.length === 0 ? (
-          isNaturalLanguage ? (
-            <div className="file-mention-agent">
-              <div className="file-mention-agent-header">
-                <Loader2 className="spin" size={12} />
-                <span>{t("fileMention.aiSearching")}</span>
+        )}
+        {(isSearching || displayEntries.length > 0 || skills.length > 0) && (
+          <span className="file-mention-count">
+            {isSearching && <Loader2 className="spin" size={11} />}
+            {displayEntries.length > 0 &&
+              t("fileMention.results", {
+                values: { count: displayEntries.length },
+              })}
+            {isSkillMode &&
+              skills.length > 0 &&
+              t("fileMention.results", {
+                values: { count: skills.length },
+              })}
+            {displayEntries.length > 0 &&
+              checkedPaths.size > 0 &&
+              ` | ${t("fileMention.selected", {
+                values: { count: checkedPaths.size },
+              })}`}
+          </span>
+        )}
+        <div className="file-mention-list" ref={listRef}>
+          {isSkillMode ? (
+            isSearching && skills.length === 0 ? (
+              <div className="file-mention-empty">
+                <Loader2 className="spin" size={14} />
+                <span>{t("fileMention.skillSearching")}</span>
               </div>
-              {agentProgress.length > 0 && (
-                <div className="file-mention-agent-steps">
-                  {agentProgress.map((step, index) => (
-                    <div className="agent-step" key={index}>
-                      <span className="agent-step-round">
-                        {step.round}/{MAX_AGENT_ROUNDS}
-                      </span>
-                      <span className="agent-step-tool">
-                        {step.tool
-                          .replace("grep-search", "grep")
-                          .replace("filesystem-read", "read")}
-                      </span>
-                      <span className="agent-step-detail">
-                        {step.resultPreview}
-                      </span>
-                    </div>
-                  ))}
+            ) : skills.length === 0 ? (
+              <div className="file-mention-empty">
+                <span>
+                  {skillQuery
+                    ? t("fileMention.skillNoResults")
+                    : t("fileMention.skillHint")}
+                </span>
+              </div>
+            ) : (
+              skills.map((skill, index) => {
+                const isSelected = selectedIndex === index;
+                return (
+                  <div
+                    key={skill.id}
+                    data-mention-index={index}
+                    className={`mention-entry ${isSelected ? "selected" : ""}`}
+                    onClick={() => {
+                      onSelect(toSkillTag(skill));
+                      onClose();
+                    }}
+                    title={skill.description}
+                  >
+                    <span className="mention-entry-check" />
+                    <BookOpen size={14} className="mention-entry-icon" />
+                    <span className="mention-entry-name">{skill.name}</span>
+                    <span className="mention-entry-path">
+                      {skill.description || skill.id}
+                    </span>
+                  </div>
+                );
+              })
+            )
+          ) : isLoadingInitial ? (
+            <div className="file-mention-skeleton">
+              {Array.from({ length: 6 }, (_, i) => (
+                <div className="mention-skeleton-item" key={i}>
+                  <div className="mention-skeleton-icon" />
+                  <div className="mention-skeleton-line" />
                 </div>
-              )}
+              ))}
+              <div className="file-mention-empty">
+                <Loader2 className="spin" size={14} />
+                <span>{t("fileMention.loading")}</span>
+              </div>
             </div>
-          ) : (
+          ) : isSearching && entries.length === 0 ? (
+            isNaturalLanguage ? (
+              <div className="file-mention-agent">
+                <div className="file-mention-agent-header">
+                  <Loader2 className="spin" size={12} />
+                  <span>{t("fileMention.aiSearching")}</span>
+                </div>
+                {agentProgress.length > 0 && (
+                  <div className="file-mention-agent-steps">
+                    {agentProgress.map((step, index) => (
+                      <div className="agent-step" key={index}>
+                        <span className="agent-step-round">
+                          {step.round}/{MAX_AGENT_ROUNDS}
+                        </span>
+                        <span className="agent-step-tool">
+                          {step.tool
+                            .replace("grep-search", "grep")
+                            .replace("filesystem-read", "read")}
+                        </span>
+                        <span className="agent-step-detail">
+                          {step.resultPreview}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="file-mention-empty">
+                <Loader2 className="spin" size={14} />
+                <span>{emptyText}</span>
+              </div>
+            )
+          ) : entries.length === 0 ? (
             <div className="file-mention-empty">
-              <Loader2 className="spin" size={14} />
               <span>{emptyText}</span>
             </div>
-          )
-        ) : entries.length === 0 ? (
-          <div className="file-mention-empty">
-            <span>{emptyText}</span>
-          </div>
-        ) : (
-          <>
-            {displayEntries.map((entry, index) => {
-              const isChecked = checkedPaths.has(entry.path);
-              const isSelected = selectedIndex === index;
-              return (
-                <div
-                  key={entry.path}
-                  data-mention-index={index}
-                  className={`mention-entry ${isSelected ? "selected" : ""} ${
-                    isChecked ? "checked" : ""
-                  }`}
-                  draggable
-                  onDragStart={(e) => handleEntryDragStart(e, entry)}
-                  onClick={() => handleSelectEntry(entry)}
-                  title={entry.path}
-                >
-                  <span className="mention-entry-check">
-                    {isChecked && <Check size={13} />}
-                  </span>
-                  {getFileTypeIcon(entry.name, entry.isDirectory, false, {
-                    size: 14,
-                    className: "mention-entry-icon",
-                  })}
-                  <span className="mention-entry-name">{entry.name}</span>
-                  {entry.relativePath && (
-                    <span className="mention-entry-path">
-                      {entry.relativePath.replace(/\\/g, "/")}
+          ) : (
+            <>
+              {displayEntries.map((entry, index) => {
+                const isChecked = checkedPaths.has(entry.path);
+                const isSelected = selectedIndex === index;
+                return (
+                  <div
+                    key={entry.path}
+                    data-mention-index={index}
+                    className={`mention-entry ${isSelected ? "selected" : ""} ${
+                      isChecked ? "checked" : ""
+                    }`}
+                    draggable
+                    onDragStart={(e) => handleEntryDragStart(e, entry)}
+                    onClick={() => handleSelectEntry(entry)}
+                    title={entry.path}
+                  >
+                    <span className="mention-entry-check">
+                      {isChecked && <Check size={13} />}
                     </span>
-                  )}
-                  {entry.isDirectory && (
-                    <ChevronRight
-                      size={13}
-                      className="mention-entry-enter"
-                      aria-hidden
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </>
-        )}
-      </div>
+                    {getFileTypeIcon(entry.name, entry.isDirectory, false, {
+                      size: 14,
+                      className: "mention-entry-icon",
+                    })}
+                    <span className="mention-entry-name">{entry.name}</span>
+                    {entry.relativePath && (
+                      <span className="mention-entry-path">
+                        {entry.relativePath.replace(/\\/g, "/")}
+                      </span>
+                    )}
+                    {entry.isDirectory && (
+                      <ChevronRight
+                        size={13}
+                        className="mention-entry-enter"
+                        aria-hidden
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </div>
 
-      <div className="file-mention-footer">
-        <span className="file-mention-hint">
-          <kbd className="mention-kbd-icon">
-            <ArrowUp size={10} />
-          </kbd>
-          <kbd className="mention-kbd-icon">
-            <ArrowDown size={10} />
-          </kbd>{" "}
-          {t("fileMention.navigate")}
-        </span>
-        {!isSkillMode && (
-          <>
-            <span className="file-mention-hint">
-              <kbd className="mention-kbd-icon">
-                <ArrowRight size={10} />
-              </kbd>{" "}
-              {t("fileMention.enter")}
-            </span>
-            <span className="file-mention-hint">
-              <kbd className="mention-kbd-icon">
-                <ArrowLeft size={10} />
-              </kbd>{" "}
-              {t("fileMention.back")}
-            </span>
-            <span className="file-mention-hint">
-              <kbd>Space</kbd> {t("fileMention.check")}
-            </span>
-          </>
-        )}
-        <span className="file-mention-hint">
-          <kbd>Enter</kbd> {t("fileMention.confirm")}
-        </span>
-        <span className="file-mention-hint">
-          <kbd>Esc</kbd> {t("fileMention.close")}
-        </span>
-        <span className="file-mention-hint drag-hint">
-          {t("fileMention.dragToInput")}
-        </span>
+        <div className="file-mention-footer">
+          <span className="file-mention-hint">
+            <kbd className="mention-kbd-icon">
+              <ArrowUp size={10} />
+            </kbd>
+            <kbd className="mention-kbd-icon">
+              <ArrowDown size={10} />
+            </kbd>{" "}
+            {t("fileMention.navigate")}
+          </span>
+          {!isSkillMode && (
+            <>
+              <span className="file-mention-hint">
+                <kbd className="mention-kbd-icon">
+                  <ArrowRight size={10} />
+                </kbd>{" "}
+                {t("fileMention.enter")}
+              </span>
+              <span className="file-mention-hint">
+                <kbd className="mention-kbd-icon">
+                  <ArrowLeft size={10} />
+                </kbd>{" "}
+                {t("fileMention.back")}
+              </span>
+              <span className="file-mention-hint">
+                <kbd>Space</kbd> {t("fileMention.check")}
+              </span>
+            </>
+          )}
+          <span className="file-mention-hint">
+            <kbd>Enter</kbd> {t("fileMention.confirm")}
+          </span>
+          <span className="file-mention-hint">
+            <kbd>Esc</kbd> {t("fileMention.close")}
+          </span>
+          <span className="file-mention-hint drag-hint">
+            {t("fileMention.dragToInput")}
+          </span>
+        </div>
       </div>
-    </div>
-  ) : null;
+    ) : null;
 
   return portal && popup ? createPortal(popup, document.body) : popup;
 });

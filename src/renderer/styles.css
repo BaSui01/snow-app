@@ -538,59 +538,7 @@ input {
   overflow: hidden;
   -webkit-app-region: no-drag;
   transform-origin: top right;
-}
-
-/* 进出场灵动动画：从按钮处弹性展开，收起时缩回 */
-.top-bar-todo-dropdown.is-entering {
-  animation: todo-dropdown-in 0.24s cubic-bezier(0.16, 1, 0.3, 1.35) both;
-}
-
-.top-bar-todo-dropdown.is-leaving {
-  animation: todo-dropdown-out 0.12s cubic-bezier(0.5, 0, 0.75, 0.4) both;
-  pointer-events: none;
-}
-
-@keyframes todo-dropdown-in {
-  from {
-    transform: translateY(-6px) scale(0.96);
-  }
-  to {
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes todo-dropdown-out {
-  from {
-    transform: translateY(0) scale(1);
-  }
-  to {
-    transform: translateY(-6px) scale(0.96);
-  }
-}
-
-/* 进入时条目级联浮现 */
-.top-bar-todo-dropdown.is-entering .top-bar-todo-item {
-  animation: todo-item-in 0.28s cubic-bezier(0.2, 0.9, 0.3, 1) both;
-}
-
-@keyframes todo-item-in {
-  from {
-    transform: scale(0.9);
-  }
-  to {
-    transform: scale(1);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .top-bar-todo-dropdown.is-entering,
-  .top-bar-todo-dropdown.is-entering .top-bar-todo-item {
-    animation: none;
-  }
-  /* 保留动画名让 animationend 仍触发，保证面板正常卸载 */
-  .top-bar-todo-dropdown.is-leaving {
-    animation-duration: 0s;
-  }
+  animation: dropdown-pop-in 0.18s cubic-bezier(0.2, 0.9, 0.25, 1.15);
 }
 
 .top-bar-todo-dropdown-header {
@@ -23742,25 +23690,50 @@ input {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   background: var(--bg-secondary);
-  box-shadow: var(--island-shadow);
+  box-shadow:
+    var(--island-shadow),
+    0 12px 32px rgba(0, 0, 0, 0.14),
+    0 2px 8px rgba(0, 0, 0, 0.1);
   z-index: 100;
-  animation: plus-menu-in 0.12s ease-out;
+  transform-origin: top left;
+  animation: dropdown-pop-in 0.18s cubic-bezier(0.2, 0.9, 0.25, 1.15);
 }
 
-@keyframes plus-menu-in {
+@keyframes dropdown-pop-in {
   from {
     opacity: 0;
-    transform: translateY(4px);
+    transform: translateY(6px) scale(0.92);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
+}
+
+@keyframes dropdown-pop-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(4px) scale(0.94);
+  }
+}
+
+.plus-menu-dropdown.is-closing,
+.chat-command-panel.is-closing,
+.model-dropdown.is-closing,
+.file-mention-popup.is-closing,
+.top-bar-todo-dropdown.is-closing {
+  animation: dropdown-pop-out 0.12s ease-in forwards;
+  pointer-events: none;
 }
 
 .plus-menu-dropdown.drop-up {
   bottom: calc(100% + 6px);
   left: 0;
+  transform-origin: bottom left;
 }
 
 .plus-menu-dropdown::-webkit-scrollbar {
@@ -24119,7 +24092,8 @@ input {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: mention-popup-in 0.12s ease-out;
+  transform-origin: center bottom;
+  animation: dropdown-pop-in 0.18s cubic-bezier(0.2, 0.9, 0.25, 1.15);
 }
 
 @keyframes mention-popup-in {
@@ -24146,7 +24120,8 @@ input {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-  animation: mention-popup-in 0.12s ease-out;
+  transform-origin: center bottom;
+  animation: dropdown-pop-in 0.18s cubic-bezier(0.2, 0.9, 0.25, 1.15);
 }
 
 .chat-command-list {
@@ -25116,14 +25091,20 @@ input {
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
   background: var(--bg-secondary);
-  box-shadow: var(--island-shadow);
+  box-shadow:
+    var(--island-shadow),
+    0 12px 32px rgba(0, 0, 0, 0.14),
+    0 2px 8px rgba(0, 0, 0, 0.1);
   z-index: 100;
+  transform-origin: top right;
+  animation: dropdown-pop-in 0.18s cubic-bezier(0.2, 0.9, 0.25, 1.15);
 }
 
 /* Default: drop up (backward compatible) */
 .model-dropdown.drop-up {
   bottom: calc(100% + 6px);
   right: 0;
+  transform-origin: bottom right;
 }
 
 /* Drop down when there is enough space below */

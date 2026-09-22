@@ -101,6 +101,7 @@ export const PlusMenu = ({
 }: PlusMenuProps): React.JSX.Element => {
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const dropdownDir = useDropdownDirection(containerRef, isOpen);
   const [showGoalBudget, setShowGoalBudget] = useState(false);
@@ -111,11 +112,21 @@ export const PlusMenu = ({
     }
   }, [goalMode]);
 
+  useEffect(() => {
+    if (!isClosing) {
+      return;
+    }
+    const timer = window.setTimeout(() => setIsClosing(false), 160);
+    return () => window.clearTimeout(timer);
+  }, [isClosing]);
+
   const handleClose = useCallback(() => {
     setIsOpen(false);
+    setIsClosing(true);
   }, []);
 
   const handleToggle = useCallback(() => {
+    setIsClosing(false);
     setIsOpen((prev) => {
       const next = !prev;
       if (next) {
@@ -184,8 +195,12 @@ export const PlusMenu = ({
       >
         <Plus size={16} />
       </button>
-      {isOpen && (
-        <div className={`plus-menu-dropdown drop-${dropdownDir}`}>
+      {(isOpen || isClosing) && (
+        <div
+          className={`plus-menu-dropdown drop-${dropdownDir}${
+            isClosing ? " is-closing" : ""
+          }`}
+        >
           {sections.map((section, sectionIndex) => (
             <div key={section.id} className="plus-menu-section">
               <div className="plus-menu-section-title">{section.label}</div>

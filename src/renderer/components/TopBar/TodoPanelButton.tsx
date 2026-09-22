@@ -84,9 +84,13 @@ export const TodoPanelButton = ({
 }: TodoPanelButtonProps): React.JSX.Element | null => {
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
-  // 面板挂载与退出动画状态：关闭时先播离场动画再卸载
-  const [isPanelRendered, setIsPanelRendered] = useState(false);
-  const [isPanelLeaving, setIsPanelLeaving] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const [prevOpen, setPrevOpen] = useState(isOpen);
+
+  if (isOpen !== prevOpen) {
+    setPrevOpen(isOpen);
+    setIsClosing(!isOpen);
+  }
   const [isPinned, setIsPinned] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
   const [confirmDeleteIds, setConfirmDeleteIds] = useState<string[] | null>(
@@ -198,32 +202,19 @@ export const TodoPanelButton = ({
     };
   }, [messages, projectId, sessionId, conversationId]);
 
-  // 上报"面板是否仍在屏幕上"而非仅 isOpen：收起动画播完（面板卸载）
-  // 才报 false，动画期间父级保持 overflow: visible 不裁剪面板。
-  useEffect(() => {
-    onOpenChange?.(isPanelRendered);
-  }, [isPanelRendered, onOpenChange]);
+  const isPanelVisible = isOpen || isClosing;
 
-  // 面板进出场：打开即挂载并播放进入动画，关闭时保持挂载播放离场动画。
   useEffect(() => {
-    if (isOpen) {
-      setIsPanelRendered(true);
-      setIsPanelLeaving(false);
-    } else {
-      setIsPanelLeaving(true);
+    onOpenChange?.(isPanelVisible);
+  }, [isPanelVisible, onOpenChange]);
+
+  useEffect(() => {
+    if (!isClosing) {
+      return;
     }
-  }, [isOpen]);
-
-  const handlePanelAnimationEnd = useCallback(
-    (event: React.AnimationEvent<HTMLDivElement>): void => {
-      if (event.animationName !== "todo-dropdown-out") {
-        return;
-      }
-      setIsPanelRendered(false);
-      setIsPanelLeaving(false);
-    },
-    [],
-  );
+    const timer = window.setTimeout(() => setIsClosing(false), 160);
+    return () => window.clearTimeout(timer);
+  }, [isClosing]);
 
   // 订阅快捷键事件：Ctrl/Cmd+T 切换待办面板。
   useEffect(() => {
@@ -406,10 +397,9 @@ export const TodoPanelButton = ({
           <span className="top-bar-todo-badge">{incompleteCount}</span>
         ) : null}
       </button>
-      {isPanelRendered ? (
+      {isPanelVisible ? (
         <div
-          className={`top-bar-todo-dropdown${isPanelLeaving ? " is-leaving" : " is-entering"}`}
-          onAnimationEnd={handlePanelAnimationEnd}
+          className={`top-bar-todo-dropdown${isClosing ? " is-closing" : ""}`}
         >
           <div className="top-bar-todo-dropdown-header">
             <span className="top-bar-todo-dropdown-title">
@@ -434,7 +424,7 @@ export const TodoPanelButton = ({
             </div>
           </div>
           <ul className="top-bar-todo-list">
-            {todos.map((todo, index) => {
+            {todos.map((todo) => {
               const StatusIcon = todoStatusIcon(todo.status);
               const nextStatusLabel = todoStatusLabel(
                 nextTodoStatus(todo.status),
@@ -443,9 +433,6 @@ export const TodoPanelButton = ({
                 <li
                   key={todo.id}
                   className={`top-bar-todo-item top-bar-todo-item-${todo.status}`}
-                  style={{
-                    animationDelay: `${Math.min(index, 10) * 24}ms`,
-                  }}
                 >
                   <button
                     className="top-bar-todo-item-status"

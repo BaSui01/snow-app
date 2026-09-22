@@ -126,6 +126,31 @@ export const ModelSelector = ({
   const modelListRef = useRef<HTMLDivElement | null>(null);
   const apiProfileListRef = useRef<HTMLDivElement | null>(null);
   const modelDropdownDir = useDropdownDirection(dropdownRef, isModelMenuOpen);
+  const [isMenuClosing, setIsMenuClosing] = useState(false);
+  const [prevMenuOpen, setPrevMenuOpen] = useState(isModelMenuOpen);
+  const [lastMenuView, setLastMenuView] = useState(modelMenuView);
+
+  if (isModelMenuOpen !== prevMenuOpen) {
+    setPrevMenuOpen(isModelMenuOpen);
+    setIsMenuClosing(!isModelMenuOpen);
+  }
+
+  useEffect(() => {
+    if (!isMenuClosing) {
+      return;
+    }
+    const timer = window.setTimeout(() => setIsMenuClosing(false), 160);
+    return () => window.clearTimeout(timer);
+  }, [isMenuClosing]);
+
+  useEffect(() => {
+    if (isModelMenuOpen) {
+      setLastMenuView(modelMenuView);
+    }
+  }, [isModelMenuOpen, modelMenuView]);
+
+  const displayView = isModelMenuOpen ? modelMenuView : lastMenuView;
+  const menuHidden = !isModelMenuOpen && !isMenuClosing;
   // 在渠道菜单内直接编辑配置后，用最新列表覆盖 props（props 仅在会话切换时刷新）
   const [apiConfigsOverride, setApiConfigsOverride] = useState<
     ApiConfigRecord[] | null
@@ -138,15 +163,15 @@ export const ModelSelector = ({
   const effectiveApiConfigs = apiConfigsOverride ?? apiConfigs;
 
   useEffect(() => {
-    if (!isModelMenuOpen || modelMenuView !== "model") {
+    if (menuHidden || displayView !== "model") {
       setModelSearchQuery("");
       setModelActiveIndex(-1);
     }
-    if (!isModelMenuOpen || modelMenuView !== "apiProfile") {
+    if (menuHidden || displayView !== "apiProfile") {
       setApiProfileSearchQuery("");
       setApiProfileActiveIndex(-1);
     }
-  }, [isModelMenuOpen, modelMenuView]);
+  }, [menuHidden, displayView]);
 
   // 进入模型/渠道视图时，把键盘高亮定位到当前选中项
   useEffect(() => {
@@ -396,12 +421,14 @@ export const ModelSelector = ({
         )}
         <ChevronDown size={12} />
       </button>
-      {isModelMenuOpen && (
+      {(isModelMenuOpen || isMenuClosing) && (
         <div
-          className={`model-dropdown drop-${modelDropdownDir}`}
+          className={`model-dropdown drop-${modelDropdownDir}${
+            isMenuClosing ? " is-closing" : ""
+          }`}
           onKeyDown={handleDropdownKeyDown}
         >
-          {modelMenuView === "root" && (
+          {displayView === "root" && (
             <div className="model-dropdown-list">
               <button
                 className="model-dropdown-item"
@@ -494,7 +521,7 @@ export const ModelSelector = ({
               )}
             </div>
           )}
-          {modelMenuView === "apiProfile" && (
+          {displayView === "apiProfile" && (
             <>
               <div className="model-menu-header">
                 <button
@@ -638,7 +665,7 @@ export const ModelSelector = ({
               </div>
             </>
           )}
-          {modelMenuView === "model" &&
+          {displayView === "model" &&
             (isManualMode ? (
               <>
                 <div className="model-menu-header">
@@ -797,7 +824,7 @@ export const ModelSelector = ({
                 </div>
               </>
             ))}
-          {modelMenuView === "thinking" && (
+          {displayView === "thinking" && (
             <ThinkingStrengthMenu
               open={isModelMenuOpen}
               value={thinkingValue}

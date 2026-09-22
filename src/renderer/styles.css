@@ -5595,6 +5595,12 @@ input {
   line-height: 1.45;
 }
 
+.sensitive-command-table-wrap {
+  min-height: 0;
+  max-height: min(360px, 46vh);
+  overscroll-behavior: contain;
+}
+
 /* API 设置页：同步 / 手动添加 / 导入配置 三键并排等宽 */
 .api-settings-actions.api-settings-actions-trio {
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -35061,14 +35067,14 @@ body.ctrl-held [data-path] {
   display: flex;
 }
 
-/* ===== 书签维护表格（浏览器设置页）===== */
-.browser-settings-bookmark-add-row {
+/* ===== 浏览器设置页：密码/书签维护表格的新增行通用样式 ===== */
+.browser-settings-add-row {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.browser-settings-bookmark-add-input {
+.browser-settings-add-input {
   flex: 1;
   min-width: 0;
   padding: 5px 8px;
@@ -35081,20 +35087,20 @@ body.ctrl-held [data-path] {
   outline: none;
 }
 
-.browser-settings-bookmark-add-input.is-url {
+.browser-settings-add-input.is-url {
   flex: 1.6;
 }
 
-.browser-settings-bookmark-add-input:focus {
+.browser-settings-add-input:focus {
   border-color: var(--border-color);
   box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
-.browser-settings-bookmark-add-input::placeholder {
+.browser-settings-add-input::placeholder {
   color: var(--text-muted);
 }
 
-.browser-settings-bookmark-add-btn {
+.browser-settings-add-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -35109,12 +35115,12 @@ body.ctrl-held [data-path] {
   cursor: pointer;
 }
 
-.browser-settings-bookmark-add-btn:hover:not(:disabled) {
+.browser-settings-add-btn:hover:not(:disabled) {
   color: var(--text-primary);
   border-color: var(--border-color);
 }
 
-.browser-settings-bookmark-add-btn:disabled {
+.browser-settings-add-btn:disabled {
   opacity: 0.4;
   cursor: default;
 }

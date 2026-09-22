@@ -53,10 +53,12 @@ When an HTTP/HTTPS page contains an empty password field, Snow queries credentia
 
 Snow tries immediately after DOM readiness, then every 800 ms for roughly 8 seconds. Complex Shadow DOM, nonstandard controls, cross-origin iframes, multi-step logins, dynamic secure keyboards, and sites that actively disable autofill may not work. Autofill is best-effort, not a compatibility promise for every site.
 
-## 4. Search, reveal, and delete passwords
+## 4. Add, search, reveal, and delete passwords
 
 Under **Settings → Browser Settings → Passwords**:
 
+- click the **Add password** button in the section header and fill in the site (the `https://` prefix is optional), an optional username, and the password in the dialog; the site is normalized to an `http(s)://host[:port]` origin and autofill matches on that origin;
+- saving the same `origin + username` again overwrites the stored password instead of adding a duplicate;
 - search by site or username;
 - the list API returns metadata only, and passwords are masked by default;
 - clicking the eye control decrypts that record by ID and caches the plaintext in the current settings UI state;

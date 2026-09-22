@@ -2547,6 +2547,8 @@ export const en = {
   "settings.sensitiveCommandCount": "Rules",
   "settings.sensitiveCommandEnabledCount": "Enabled rules",
   "settings.sensitiveCommandPresetCount": "Preset rules",
+  "settings.sensitiveCommandPanelTabs": "Sensitive command settings",
+  "settings.sensitiveCommandRulesTab": "Command rules",
   "settings.sensitiveCommandAssistTitle": "Decision model assist",
   "settings.sensitiveCommandAssistInfo":
     "Let a decision model judge a command that matched a sensitive rule before the confirmation prompt shows up.",
@@ -3956,7 +3958,7 @@ export const en = {
   "settings.browserPasswordsHint":
     "Passwords are stored AES-256-GCM encrypted, key protected by the OS keychain",
   "settings.browserPasswordsEmpty":
-    "No saved passwords yet. They are saved automatically when you submit a login form, or import them from another browser below",
+    "No saved passwords yet. Add one with the button above, let them save automatically when you submit a login form, or import them from another browser below",
   "settings.browserPasswordSite": "Site",
   "settings.browserPasswordUser": "Username",
   "settings.browserPasswordValue": "Password",
@@ -3965,6 +3967,12 @@ export const en = {
   "settings.browserPasswordSearch": "Search site or username",
   "settings.browserPasswordSearchEmpty": "No passwords match your search",
   "settings.browserPasswordsManualTitle": "Manage saved passwords",
+  "settings.browserPasswordAddAction": "Add password",
+  "settings.browserPasswordSitePlaceholder": "Site, e.g. example.com",
+  "settings.browserPasswordUserPlaceholder": "Username (optional)",
+  "settings.browserPasswordValuePlaceholder": "Password",
+  "settings.browserPasswordAdded": "Password saved",
+  "settings.browserPasswordUpdated": "Password updated for this site",
   "settings.browserPasswordSelectAll": "Select all",
   "settings.browserPasswordSelectRecord": "Select this password",
   "settings.browserPasswordSelectedCount": "{{count}} selected",

@@ -1,10 +1,12 @@
 import {
+  BrainCircuit,
   Download,
   Folder,
   Globe2,
   Loader2,
   Plus,
   RotateCcw,
+  ShieldCheck,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -55,11 +57,15 @@ type SensitiveCommandsPanelProps = {
 
 type SensitiveCommandScope = "global" | "project";
 
+type SensitiveCommandPanelTab = "rules" | "assist";
+
 export function SensitiveCommandsPanel({
   activeDirectory,
   onClose,
 }: SensitiveCommandsPanelProps): React.JSX.Element {
   const { t } = useI18n();
+  /** 顶部标签页：命令规则 / 决策模型辅助。 */
+  const [activeTab, setActiveTab] = useState<SensitiveCommandPanelTab>("rules");
   const [activeScope, setActiveScope] =
     useState<SensitiveCommandScope>("global");
   const [commands, setCommands] = useState<SensitiveCommandConfig[]>([]);
@@ -640,77 +646,42 @@ export function SensitiveCommandsPanel({
         )}
       </div>
 
-      <SensitiveCommandSummary
-        totalCount={activeCommands.length}
-        enabledCount={enabledCount}
-        specialCount={specialCount}
-        specialLabel={specialLabel}
-      />
-
-      <div className="api-settings-actions sensitive-commands-actions">
-        {isGlobalScope && (
-          <button
-            className="api-settings-action-btn primary"
-            onClick={() => void handleImport()}
-            type="button"
-            disabled={isBusy}
-          >
-            {isLoading ? (
-              <Loader2 size={15} className="spin" />
-            ) : (
-              <Download size={15} />
-            )}
-            <span>
-              {t("settings.syncSnowCliSensitiveCommands", {
-                defaultValue: "Sync Snow CLI sensitive commands",
-              })}
-            </span>
-          </button>
-        )}
-        {isGlobalScope && (
-          <button
-            className="api-settings-action-btn secondary"
-            onClick={() => setResetPending(true)}
-            type="button"
-            disabled={isBusy}
-            title={t("settings.sensitiveCommandReset", {
-              defaultValue: "Reset to system defaults",
-            })}
-          >
-            <RotateCcw size={15} />
-            <span>
-              {t("settings.sensitiveCommandReset", {
-                defaultValue: "Reset to system defaults",
-              })}
-            </span>
-          </button>
-        )}
+      <div
+        className="import-settings-tabs"
+        role="tablist"
+        aria-label={t("settings.sensitiveCommandPanelTabs", {
+          defaultValue: "Sensitive command settings",
+        })}
+      >
         <button
-          className="api-settings-action-btn secondary"
-          onClick={startAdd}
           type="button"
-          disabled={isBusy || (!isGlobalScope && !activeDirectory)}
+          role="tab"
+          aria-selected={activeTab === "rules"}
+          className={`import-settings-tab ${
+            activeTab === "rules" ? "active" : ""
+          }`}
+          onClick={() => setActiveTab("rules")}
         >
-          <Plus size={15} />
-          <span>
-            {t(
-              isGlobalScope
-                ? "settings.sensitiveCommandAddNew"
-                : "settings.sensitiveCommandAddProjectRule",
-              {
-                defaultValue: isGlobalScope ? "Add rule" : "Add project rule",
-              },
-            )}
-          </span>
+          <ShieldCheck size={13} strokeWidth={1.8} />
+          {t("settings.sensitiveCommandRulesTab", {
+            defaultValue: "Command rules",
+          })}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "assist"}
+          className={`import-settings-tab ${
+            activeTab === "assist" ? "active" : ""
+          }`}
+          onClick={() => setActiveTab("assist")}
+        >
+          <BrainCircuit size={13} strokeWidth={1.8} />
+          {t("settings.sensitiveCommandAssistTitle", {
+            defaultValue: "Decision model assist",
+          })}
         </button>
       </div>
-
-      <SensitiveCommandDecisionAssist
-        settings={assistSettings}
-        decisionModels={decisionModels}
-        isBusy={isBusy}
-        onChange={(next) => void saveAssistSettings(next)}
-      />
 
       <AutoDismissNotice
         message={error || status}
@@ -721,81 +692,161 @@ export function SensitiveCommandsPanel({
         }}
       />
 
-      <div
-        className="skills-settings-tabs"
-        role="tablist"
-        aria-label={t("settings.sensitiveCommandScopeTabs", {
-          defaultValue: "Sensitive command scope",
-        })}
-      >
-        <button
-          className={`skills-settings-tab ${isGlobalScope ? "active" : ""}`}
-          type="button"
-          role="tab"
-          aria-selected={isGlobalScope}
-          onClick={() => {
-            setActiveScope("global");
-            setDraft(null);
-          }}
-        >
-          <Globe2 size={14} strokeWidth={1.8} />
-          <span>
-            {t("settings.sensitiveCommandTabGlobal", {
-              defaultValue: "Global",
-            })}
-          </span>
-          <small>{globalListItems.length}</small>
-        </button>
-        <button
-          className={`skills-settings-tab ${!isGlobalScope ? "active" : ""}`}
-          type="button"
-          role="tab"
-          aria-selected={!isGlobalScope}
-          onClick={() => {
-            setActiveScope("project");
-            setDraft(null);
-          }}
-          disabled={!activeDirectory}
-        >
-          <Folder size={14} strokeWidth={1.8} />
-          <span>
-            {t("settings.sensitiveCommandTabProject", {
-              defaultValue: "Project",
-            })}
-          </span>
-          <small>{projectListItems.length}</small>
-        </button>
-      </div>
-
-      <div className="api-settings-manual-form">
-        <div className="api-settings-manual-header">
-          <strong>{listTitle}</strong>
-          <span>
-            {isGlobalScope
-              ? t("settings.sensitiveCommandGlobalTabInfo", {
-                  defaultValue:
-                    "Manage command approval rules shared by all projects.",
-                })
-              : t("settings.sensitiveCommandProjectTabInfo", {
-                  defaultValue:
-                    "Manage project rules for {{name}}. Inherited global rules can only be enabled or disabled here.",
-                  values: { name: activeDirectory?.name ?? "" },
-                })}
-          </span>
-        </div>
-
-        <div className="api-settings-form-body">
-          <SensitiveCommandList
-            commands={activeCommands}
-            isBusy={isBusy}
-            listTitle={listTitle}
-            emptyMessage={emptyMessage}
-            onToggleEnabled={(command) => void toggleEnabled(command)}
-            onEdit={startEdit}
-            onDelete={setCommandPendingDeletion}
+      {activeTab === "rules" && (
+        <>
+          <SensitiveCommandSummary
+            totalCount={activeCommands.length}
+            enabledCount={enabledCount}
+            specialCount={specialCount}
+            specialLabel={specialLabel}
           />
-        </div>
-      </div>
+
+          <div className="api-settings-actions sensitive-commands-actions">
+            {isGlobalScope && (
+              <button
+                className="api-settings-action-btn primary"
+                onClick={() => void handleImport()}
+                type="button"
+                disabled={isBusy}
+              >
+                {isLoading ? (
+                  <Loader2 size={15} className="spin" />
+                ) : (
+                  <Download size={15} />
+                )}
+                <span>
+                  {t("settings.syncSnowCliSensitiveCommands", {
+                    defaultValue: "Sync Snow CLI sensitive commands",
+                  })}
+                </span>
+              </button>
+            )}
+            {isGlobalScope && (
+              <button
+                className="api-settings-action-btn secondary"
+                onClick={() => setResetPending(true)}
+                type="button"
+                disabled={isBusy}
+                title={t("settings.sensitiveCommandReset", {
+                  defaultValue: "Reset to system defaults",
+                })}
+              >
+                <RotateCcw size={15} />
+                <span>
+                  {t("settings.sensitiveCommandReset", {
+                    defaultValue: "Reset to system defaults",
+                  })}
+                </span>
+              </button>
+            )}
+            <button
+              className="api-settings-action-btn secondary"
+              onClick={startAdd}
+              type="button"
+              disabled={isBusy || (!isGlobalScope && !activeDirectory)}
+            >
+              <Plus size={15} />
+              <span>
+                {t(
+                  isGlobalScope
+                    ? "settings.sensitiveCommandAddNew"
+                    : "settings.sensitiveCommandAddProjectRule",
+                  {
+                    defaultValue: isGlobalScope
+                      ? "Add rule"
+                      : "Add project rule",
+                  },
+                )}
+              </span>
+            </button>
+          </div>
+
+          <div
+            className="skills-settings-tabs"
+            role="tablist"
+            aria-label={t("settings.sensitiveCommandScopeTabs", {
+              defaultValue: "Sensitive command scope",
+            })}
+          >
+            <button
+              className={`skills-settings-tab ${isGlobalScope ? "active" : ""}`}
+              type="button"
+              role="tab"
+              aria-selected={isGlobalScope}
+              onClick={() => {
+                setActiveScope("global");
+                setDraft(null);
+              }}
+            >
+              <Globe2 size={14} strokeWidth={1.8} />
+              <span>
+                {t("settings.sensitiveCommandTabGlobal", {
+                  defaultValue: "Global",
+                })}
+              </span>
+              <small>{globalListItems.length}</small>
+            </button>
+            <button
+              className={`skills-settings-tab ${!isGlobalScope ? "active" : ""}`}
+              type="button"
+              role="tab"
+              aria-selected={!isGlobalScope}
+              onClick={() => {
+                setActiveScope("project");
+                setDraft(null);
+              }}
+              disabled={!activeDirectory}
+            >
+              <Folder size={14} strokeWidth={1.8} />
+              <span>
+                {t("settings.sensitiveCommandTabProject", {
+                  defaultValue: "Project",
+                })}
+              </span>
+              <small>{projectListItems.length}</small>
+            </button>
+          </div>
+
+          <div className="api-settings-manual-form">
+            <div className="api-settings-manual-header">
+              <strong>{listTitle}</strong>
+              <span>
+                {isGlobalScope
+                  ? t("settings.sensitiveCommandGlobalTabInfo", {
+                      defaultValue:
+                        "Manage command approval rules shared by all projects.",
+                    })
+                  : t("settings.sensitiveCommandProjectTabInfo", {
+                      defaultValue:
+                        "Manage project rules for {{name}}. Inherited global rules can only be enabled or disabled here.",
+                      values: { name: activeDirectory?.name ?? "" },
+                    })}
+              </span>
+            </div>
+
+            <div className="api-settings-form-body">
+              <SensitiveCommandList
+                commands={activeCommands}
+                isBusy={isBusy}
+                listTitle={listTitle}
+                emptyMessage={emptyMessage}
+                onToggleEnabled={(command) => void toggleEnabled(command)}
+                onEdit={startEdit}
+                onDelete={setCommandPendingDeletion}
+              />
+            </div>
+          </div>
+        </>
+      )}
+
+      {activeTab === "assist" && (
+        <SensitiveCommandDecisionAssist
+          settings={assistSettings}
+          decisionModels={decisionModels}
+          isBusy={isBusy}
+          onChange={(next) => void saveAssistSettings(next)}
+        />
+      )}
 
       <Modal
         open={Boolean(draft)}

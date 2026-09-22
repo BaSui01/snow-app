@@ -2431,6 +2431,8 @@ export const zhCN = {
   "settings.sensitiveCommandCount": "规则数",
   "settings.sensitiveCommandEnabledCount": "已启用规则",
   "settings.sensitiveCommandPresetCount": "预置规则",
+  "settings.sensitiveCommandPanelTabs": "敏感命令设置",
+  "settings.sensitiveCommandRulesTab": "命令规则",
   "settings.sensitiveCommandAssistTitle": "决策模型辅助",
   "settings.sensitiveCommandAssistInfo":
     "命中敏感命令规则时，先由决策模型判定该命令是否可以直接执行。",
@@ -3723,7 +3725,7 @@ export const zhCN = {
   "settings.browserPasswordsHint":
     "密码以 AES-256-GCM 加密存储，密钥由系统钥匙串保护",
   "settings.browserPasswordsEmpty":
-    "暂无保存的密码。登录网站并提交表单后会自动保存，或从下方导入其他浏览器的密码",
+    "暂无保存的密码。可用右上角按钮手动添加，登录网站提交表单后会自动保存，或从下方导入其他浏览器的密码",
   "settings.browserPasswordSite": "站点",
   "settings.browserPasswordUser": "用户名",
   "settings.browserPasswordValue": "密码",
@@ -3732,6 +3734,12 @@ export const zhCN = {
   "settings.browserPasswordSearch": "搜索站点或用户名",
   "settings.browserPasswordSearchEmpty": "没有匹配的密码",
   "settings.browserPasswordsManualTitle": "管理已保存的密码",
+  "settings.browserPasswordAddAction": "添加密码",
+  "settings.browserPasswordSitePlaceholder": "站点，如 example.com",
+  "settings.browserPasswordUserPlaceholder": "用户名（可选）",
+  "settings.browserPasswordValuePlaceholder": "密码",
+  "settings.browserPasswordAdded": "密码已保存",
+  "settings.browserPasswordUpdated": "已更新该站点的密码",
   "settings.browserPasswordSelectAll": "全选",
   "settings.browserPasswordSelectRecord": "选择此条密码",
   "settings.browserPasswordSelectedCount": "已选 {{count}} 项",

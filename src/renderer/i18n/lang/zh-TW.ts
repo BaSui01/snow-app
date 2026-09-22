@@ -2432,6 +2432,8 @@ export const zhTW = {
   "settings.sensitiveCommandCount": "規則數",
   "settings.sensitiveCommandEnabledCount": "已啟用規則",
   "settings.sensitiveCommandPresetCount": "預置規則",
+  "settings.sensitiveCommandPanelTabs": "敏感命令設定",
+  "settings.sensitiveCommandRulesTab": "命令規則",
   "settings.sensitiveCommandAssistTitle": "決策模型輔助",
   "settings.sensitiveCommandAssistInfo":
     "命中敏感命令規則時，先由決策模型判定該命令是否可以直接執行。",
@@ -3701,7 +3703,7 @@ export const zhTW = {
   "settings.browserPasswordsHint":
     "密碼以 AES-256-GCM 加密儲存，金鑰由系統鑰匙圈保護",
   "settings.browserPasswordsEmpty":
-    "尚無已儲存的密碼。登入網站並送出表單後會自動儲存，或從下方匯入其他瀏覽器的密碼",
+    "尚無已儲存的密碼。可用右上角按鈕手動新增，登入網站送出表單後會自動儲存，或從下方匯入其他瀏覽器的密碼",
   "settings.browserPasswordSite": "網站",
   "settings.browserPasswordUser": "使用者名稱",
   "settings.browserPasswordValue": "密碼",
@@ -3710,6 +3712,12 @@ export const zhTW = {
   "settings.browserPasswordSearch": "搜尋網站或使用者名稱",
   "settings.browserPasswordSearchEmpty": "沒有相符的密碼",
   "settings.browserPasswordsManualTitle": "管理已儲存的密碼",
+  "settings.browserPasswordAddAction": "新增密碼",
+  "settings.browserPasswordSitePlaceholder": "網站，如 example.com",
+  "settings.browserPasswordUserPlaceholder": "使用者名稱（可選）",
+  "settings.browserPasswordValuePlaceholder": "密碼",
+  "settings.browserPasswordAdded": "密碼已儲存",
+  "settings.browserPasswordUpdated": "已更新該網站的密碼",
   "settings.browserPasswordSelectAll": "全選",
   "settings.browserPasswordSelectRecord": "選擇此條密碼",
   "settings.browserPasswordSelectedCount": "已選 {{count}} 項",

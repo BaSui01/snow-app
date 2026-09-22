@@ -23,6 +23,7 @@ import { useI18n } from "../../../i18n";
 import { TampermonkeyIcon } from "../../icons/tampermonkeyIcon";
 import { AutoDismissNotice } from "../../AutoDismissNotice";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
+import { FormDialog } from "../../common/FormDialog";
 import { useBrowserHomepage } from "../../rightPanel/browser/useBrowserHomepage";
 import { useBrowserBookmarks } from "../../rightPanel/browser/useBrowserBookmarks";
 import {
@@ -72,6 +73,25 @@ const displayHost = (origin: string): string => {
   }
 };
 
+const SITE_SCHEME_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
+
+/** 归一化用户手填站点为 URL origin；无法识别或非 http(s) 返回 null。 */
+const resolveSiteOrigin = (value: string): string | null => {
+  const raw = value.trim();
+  if (!raw) {
+    return null;
+  }
+  try {
+    const url = new URL(SITE_SCHEME_RE.test(raw) ? raw : `https://${raw}`);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return null;
+    }
+    return url.origin;
+  } catch {
+    return null;
+  }
+};
+
 export function BrowserSettingsPanel({
   onClose,
   initialTab = "settings",
@@ -115,6 +135,13 @@ export function BrowserSettingsPanel({
   );
   const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
   const [deletingBatch, setDeletingBatch] = useState(false);
+  const [newPasswordSite, setNewPasswordSite] = useState("");
+  const [newPasswordUser, setNewPasswordUser] = useState("");
+  const [newPasswordValue, setNewPasswordValue] = useState("");
+  const [addingPassword, setAddingPassword] = useState(false);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [passwordDialogError, setPasswordDialogError] = useState("");
+  const passwordSiteInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadRecords = useCallback(async (): Promise<void> => {
     setRecordsLoading(true);
@@ -232,6 +259,67 @@ export function BrowserSettingsPanel({
       return host.includes(query) || username.includes(query);
     });
   }, [records, searchQuery]);
+
+  const newPasswordOrigin = resolveSiteOrigin(newPasswordSite);
+  const canAddPassword =
+    newPasswordOrigin !== null && newPasswordValue.length > 0;
+
+  const openPasswordDialog = (): void => {
+    setPasswordDialogError("");
+    setNewPasswordSite("");
+    setNewPasswordUser("");
+    setNewPasswordValue("");
+    setPasswordDialogOpen(true);
+  };
+
+  const closePasswordDialog = (): void => {
+    if (addingPassword) {
+      return;
+    }
+    setPasswordDialogOpen(false);
+    setPasswordDialogError("");
+  };
+
+  const handleAddPassword = async (): Promise<void> => {
+    if (!newPasswordOrigin || !newPasswordValue || addingPassword) {
+      return;
+    }
+    setAddingPassword(true);
+    setPasswordDialogError("");
+    try {
+      const result = await window.snow.browserPasswordSave({
+        origin: newPasswordOrigin,
+        username: newPasswordUser.trim(),
+        password: newPasswordValue,
+      });
+      await loadRecords();
+      setPlaintext((prev) => {
+        const next = { ...prev };
+        delete next[result.id];
+        return next;
+      });
+      setNewPasswordSite("");
+      setNewPasswordUser("");
+      setNewPasswordValue("");
+      setPasswordDialogOpen(false);
+      setStatus(
+        t(
+          result.updated
+            ? "settings.browserPasswordUpdated"
+            : "settings.browserPasswordAdded",
+          {
+            defaultValue: result.updated
+              ? "Password updated for this site"
+              : "Password saved",
+          },
+        ),
+      );
+    } catch (err) {
+      setPasswordDialogError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAddingPassword(false);
+    }
+  };
 
   // ---- 书签管理 ----
   const [bookmarkSearchQuery, setBookmarkSearchQuery] = useState("");
@@ -894,6 +982,21 @@ export function BrowserSettingsPanel({
               <span className="api-settings-form-section-title">
                 {t("settings.browserPasswords", { defaultValue: "Passwords" })}
               </span>
+              <button
+                type="button"
+                className="browser-settings-scan-action"
+                onClick={openPasswordDialog}
+                title={t("settings.browserPasswordAddAction", {
+                  defaultValue: "Add password",
+                })}
+              >
+                <Plus size={13} strokeWidth={2} />
+                <span>
+                  {t("settings.browserPasswordAddAction", {
+                    defaultValue: "Add password",
+                  })}
+                </span>
+              </button>
             </div>
 
             <div className="api-settings-manual-form">
@@ -920,7 +1023,7 @@ export function BrowserSettingsPanel({
                   <div className="browser-settings-empty">
                     {t("settings.browserPasswordsEmpty", {
                       defaultValue:
-                        "No saved passwords yet. They are saved automatically when you submit a login form, or import them from another browser below.",
+                        "No saved passwords yet. Add one above, let them save automatically when you submit a login form, or import them from another browser below.",
                     })}
                   </div>
                 ) : (
@@ -1214,10 +1317,10 @@ export function BrowserSettingsPanel({
                     </div>
 
                     {/* 新增行：标题 / URL / 文件夹 + 添加 */}
-                    <div className="browser-settings-bookmark-add-row">
+                    <div className="browser-settings-add-row">
                       <input
                         type="text"
-                        className="browser-settings-bookmark-add-input"
+                        className="browser-settings-add-input"
                         value={newBookmarkTitle}
                         onChange={(e) => setNewBookmarkTitle(e.target.value)}
                         placeholder={t("settings.browserBookmarkTitle", {
@@ -1227,7 +1330,7 @@ export function BrowserSettingsPanel({
                       />
                       <input
                         type="text"
-                        className="browser-settings-bookmark-add-input is-url"
+                        className="browser-settings-add-input is-url"
                         value={newBookmarkUrl}
                         onChange={(e) => setNewBookmarkUrl(e.target.value)}
                         onKeyDown={(e) => {
@@ -1243,7 +1346,7 @@ export function BrowserSettingsPanel({
                       />
                       <input
                         type="text"
-                        className="browser-settings-bookmark-add-input"
+                        className="browser-settings-add-input"
                         value={newBookmarkFolder}
                         onChange={(e) => setNewBookmarkFolder(e.target.value)}
                         onKeyDown={(e) => {
@@ -1262,7 +1365,7 @@ export function BrowserSettingsPanel({
                       />
                       <button
                         type="button"
-                        className="browser-settings-bookmark-add-btn"
+                        className="browser-settings-add-btn"
                         onClick={() => void handleAddBookmark()}
                         disabled={!newBookmarkUrl.trim() || addingBookmark}
                         aria-label={t("settings.browserBookmarkAddAction", {
@@ -1615,6 +1718,91 @@ export function BrowserSettingsPanel({
         onConfirm={() => void handleBatchDeleteBookmarks()}
         onCancel={() => setBookmarkBatchDeleteConfirm(false)}
       />
+
+      <FormDialog
+        cancelLabel={t("common.cancel", { defaultValue: "Cancel" })}
+        closeLabel={t("common.close", { defaultValue: "Close" })}
+        confirmDisabled={!canAddPassword || addingPassword}
+        confirmLabel={t("common.save", { defaultValue: "Save" })}
+        initialFocusRef={passwordSiteInputRef}
+        isSubmitting={addingPassword}
+        onCancel={closePasswordDialog}
+        onConfirm={() => void handleAddPassword()}
+        open={passwordDialogOpen}
+        title={t("settings.browserPasswordAddAction", {
+          defaultValue: "Add password",
+        })}
+      >
+        <label className="form-dialog-field">
+          <span className="form-dialog-label">
+            {t("settings.browserPasswordSite", { defaultValue: "Site" })}
+          </span>
+          <input
+            ref={passwordSiteInputRef}
+            className="form-dialog-input"
+            disabled={addingPassword}
+            onChange={(e) => setNewPasswordSite(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void handleAddPassword();
+              }
+            }}
+            placeholder={t("settings.browserPasswordSitePlaceholder", {
+              defaultValue: "Site, e.g. example.com",
+            })}
+            spellCheck={false}
+            value={newPasswordSite}
+          />
+        </label>
+        <label className="form-dialog-field">
+          <span className="form-dialog-label">
+            {t("settings.browserPasswordUser", { defaultValue: "Username" })}
+          </span>
+          <input
+            className="form-dialog-input"
+            disabled={addingPassword}
+            onChange={(e) => setNewPasswordUser(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void handleAddPassword();
+              }
+            }}
+            placeholder={t("settings.browserPasswordUserPlaceholder", {
+              defaultValue: "Username (optional)",
+            })}
+            spellCheck={false}
+            value={newPasswordUser}
+          />
+        </label>
+        <label className="form-dialog-field">
+          <span className="form-dialog-label">
+            {t("settings.browserPasswordValue", { defaultValue: "Password" })}
+          </span>
+          <input
+            type="password"
+            className="form-dialog-input"
+            disabled={addingPassword}
+            autoComplete="new-password"
+            onChange={(e) => setNewPasswordValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void handleAddPassword();
+              }
+            }}
+            placeholder={t("settings.browserPasswordValuePlaceholder", {
+              defaultValue: "Password",
+            })}
+            spellCheck={false}
+            value={newPasswordValue}
+          />
+        </label>
+        {passwordDialogError ? (
+          <span className="form-dialog-error">{passwordDialogError}</span>
+        ) : null}
+      </FormDialog>
 
       <AutoDismissNotice
         message={error || warning || status}

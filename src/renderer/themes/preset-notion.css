@@ -1,0 +1,1056 @@
+/* ===== Notion system-wide refinement =====
+   Document-grade restraint: generous whitespace, hairline dividers, muted
+   charcoal accents, and serif display type that keeps the workspace calm. */
+:root[data-theme-preset="notion"] {
+  --font-sans:
+    "Inter", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-brand-body: var(--font-sans);
+  --font-brand-display: "Lora", "Source Serif Pro", Georgia, serif;
+  --nt-charcoal: #37352f;
+  --nt-charcoal-dark: #d4d4d2;
+  --nt-accent: var(--nt-charcoal);
+  --nt-accent-bg: rgba(55, 53, 47, 0.06);
+  --nt-accent-text: #37352f;
+  --accent: var(--nt-charcoal);
+  --accent-primary: var(--nt-charcoal);
+  --accent-secondary: #0f7b0f;
+  --accent-color: var(--nt-charcoal);
+  --accent-orange: var(--nt-charcoal);
+  --accent-orange-bg: var(--nt-accent-bg);
+  --accent-orange-text: var(--nt-accent-text);
+  --accent-primary-bg: var(--nt-accent-bg);
+  --accent-primary-text: var(--nt-accent-text);
+  --color-primary: var(--nt-charcoal);
+  --color-success: #0f7b0f;
+  --color-error: #c4554d;
+  --success: #0f7b0f;
+  --warning: #b8860b;
+  --danger: #c4554d;
+  --text-link: #37352f;
+  --border-focus: var(--nt-charcoal);
+  --surface-hover: rgba(55, 53, 47, 0.04);
+  --shadow-sm: none;
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --backdrop-blur-lg: none;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+  --radius-pill: 999px;
+}
+
+:root[data-theme-preset="notion"][data-theme="light"] {
+  --surface-island: #ffffff;
+  --surface-island-strong: #ffffff;
+  --surface-island-muted: #f7f6f3;
+  --island-shadow: none;
+  --scrollbar-thumb: rgba(55, 53, 47, 0.16);
+  --scrollbar-thumb-hover: rgba(55, 53, 47, 0.28);
+  --scrollbar-thumb-active: rgba(55, 53, 47, 0.4);
+}
+
+:root[data-theme-preset="notion"][data-theme="dark"] {
+  --nt-accent: var(--nt-charcoal-dark);
+  --nt-accent-bg: rgba(212, 212, 210, 0.1);
+  --nt-accent-text: #d4d4d2;
+  --accent-orange-bg: var(--nt-accent-bg);
+  --accent-orange-text: var(--nt-accent-text);
+  --accent-primary-bg: var(--nt-accent-bg);
+  --accent-primary-text: var(--nt-accent-text);
+  --surface-island: #202020;
+  --surface-island-strong: #191919;
+  --surface-island-muted: #1a1a1a;
+  --island-shadow: none;
+  --scrollbar-thumb: rgba(212, 212, 210, 0.16);
+  --scrollbar-thumb-hover: rgba(212, 212, 210, 0.28);
+  --scrollbar-thumb-active: rgba(212, 212, 210, 0.4);
+}
+
+:root[data-theme-preset="notion"][data-theme="light"] {
+  --app-bg: #f7f6f3 !important;
+}
+
+:root[data-theme-preset="notion"][data-theme="dark"] {
+  --app-bg: #141414 !important;
+}
+
+:root[data-theme-preset="notion"] body,
+:root[data-theme-preset="notion"] button,
+:root[data-theme-preset="notion"] input,
+:root[data-theme-preset="notion"] select,
+:root[data-theme-preset="notion"] textarea {
+  font-family: var(--app-font-family, var(--font-sans));
+}
+
+:root[data-theme-preset="notion"] h1,
+:root[data-theme-preset="notion"] h2,
+:root[data-theme-preset="notion"] h3,
+:root[data-theme-preset="notion"] h4,
+:root[data-theme-preset="notion"] h5,
+:root[data-theme-preset="notion"] h6,
+:root[data-theme-preset="notion"] .api-settings-title-group strong {
+  font-family: var(--font-brand-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+:root[data-theme-preset="notion"]
+  :is(
+    .sidebar-content-title,
+    .header-title,
+    .section-title,
+    .settings-item-title,
+    .chat-empty-quick-card-title,
+    strong
+  ) {
+  font-family: var(--font-sans);
+}
+
+:root[data-theme-preset="notion"] .ai-message,
+:root[data-theme-preset="notion"] .ai-message p,
+:root[data-theme-preset="notion"] .ai-message li,
+:root[data-theme-preset="notion"] .user-message-bubble,
+:root[data-theme-preset="notion"] .context-compaction-markdown,
+:root[data-theme-preset="notion"] .chat-empty-quick-card-desc {
+  font-family: var(--font-brand-body);
+}
+
+:root[data-theme-preset="notion"] .ai-message h1,
+:root[data-theme-preset="notion"] .ai-message h2,
+:root[data-theme-preset="notion"] .ai-message h3,
+:root[data-theme-preset="notion"] .ai-message h4,
+:root[data-theme-preset="notion"] .context-compaction-markdown h1,
+:root[data-theme-preset="notion"] .context-compaction-markdown h2,
+:root[data-theme-preset="notion"] .context-compaction-markdown h3,
+:root[data-theme-preset="notion"] .context-compaction-markdown h4 {
+  font-family: var(--font-brand-display);
+}
+
+:root[data-theme-preset="notion"] .app-shell,
+:root[data-theme-preset="notion"] .app-layout,
+:root[data-theme-preset="notion"] .top-bar {
+  background: var(--app-bg);
+}
+
+:root[data-theme-preset="notion"] .app-layout {
+  padding: 0 12px 12px;
+}
+
+:root[data-theme-preset="notion"] .top-bar {
+  gap: 8px;
+  height: calc(var(--header-height) + 16px);
+  min-height: calc(var(--header-height) + 16px);
+  padding: 8px 12px;
+}
+
+:root[data-theme-preset="notion"] .top-bar-left,
+:root[data-theme-preset="notion"] .top-bar-main,
+:root[data-theme-preset="notion"] .top-bar-right,
+:root[data-theme-preset="notion"] .sidebar,
+:root[data-theme-preset="notion"] .main-content,
+:root[data-theme-preset="notion"] .right-panel {
+  border: none;
+  border-radius: var(--radius-lg);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+:root[data-theme-preset="notion"] .top-bar-left,
+:root[data-theme-preset="notion"] .top-bar-right,
+:root[data-theme-preset="notion"] .sidebar,
+:root[data-theme-preset="notion"] .right-panel {
+  background: var(--surface-island-muted);
+}
+
+:root[data-theme-preset="notion"] .top-bar-main,
+:root[data-theme-preset="notion"] .main-content {
+  background: var(--surface-island-strong);
+}
+
+:root[data-theme-preset="notion"] .main-content {
+  padding: 24px 20px;
+}
+
+:root[data-theme-preset="notion"]
+  .app-shell.right-panel-fullscreen
+  .main-content {
+  padding: 0;
+}
+
+:root[data-theme-preset="notion"] .main-header,
+:root[data-theme-preset="notion"] .panel-tabs {
+  background: transparent;
+  border-bottom: 1px solid var(--border-light);
+}
+
+:root[data-theme-preset="notion"]
+  :is(button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--nt-charcoal);
+  outline-offset: 2px;
+}
+
+:root[data-theme-preset="notion"]
+  :is(
+    .icon-btn,
+    .nav-item,
+    .list-item,
+    .settings-item,
+    .panel-tab,
+    .panel-tab-btn,
+    .toolbar-btn,
+    .chat-item,
+    .codebase-panel-view-btn,
+    .file-viewer-action-btn,
+    .git-action-btn,
+    .browser-nav-btn
+  ):hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+:root[data-theme-preset="notion"]
+  :is(.nav-item, .list-item, .settings-item, .chat-item, .panel-tab).active {
+  border-color: transparent;
+  background: var(--bg-active);
+  color: var(--text-primary);
+  box-shadow: none;
+}
+
+:root[data-theme-preset="notion"] .settings-item.active,
+:root[data-theme-preset="notion"] .chat-item.active {
+  box-shadow: none;
+}
+
+:root[data-theme-preset="notion"] .sidebar-content-header,
+:root[data-theme-preset="notion"] .section-header,
+:root[data-theme-preset="notion"] .api-settings-page-header,
+:root[data-theme-preset="notion"] .codebase-panel-header,
+:root[data-theme-preset="notion"] .file-viewer-header,
+:root[data-theme-preset="notion"] .git-control-header {
+  border-bottom-color: var(--border-light);
+}
+
+:root[data-theme-preset="notion"]
+  :is(
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+    select,
+    textarea,
+    .custom-select-trigger,
+    .model-manual-field,
+    .search-modal-input,
+    .browser-address-input,
+    .browser-find-input,
+    .git-commit-input,
+    .file-viewer-search-input,
+    .branch-create-input
+  ) {
+  border-color: var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+:root[data-theme-preset="notion"]
+  :is(
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+    select,
+    textarea,
+    .custom-select-trigger,
+    .model-manual-field,
+    .search-modal-input,
+    .browser-address-input,
+    .browser-find-input,
+    .git-commit-input,
+    .file-viewer-search-input,
+    .branch-create-input
+  ):focus {
+  border-color: var(--nt-charcoal);
+  box-shadow: 0 0 0 3px var(--nt-accent-bg);
+  outline: none;
+}
+
+:root[data-theme-preset="notion"] .range-slider {
+  --range-accent: var(--nt-charcoal);
+  --range-track-bg: color-mix(
+    in srgb,
+    var(--nt-charcoal) 16%,
+    var(--bg-tertiary)
+  );
+}
+
+:root[data-theme-preset="notion"] .toggle-switch input:checked + .toggle-slider,
+:root[data-theme-preset="notion"] .toggle-slider {
+  border-color: var(--border-subtle);
+}
+
+:root[data-theme-preset="notion"]
+  .toggle-switch
+  input:checked
+  + .toggle-slider {
+  background: var(--nt-charcoal);
+}
+
+:root[data-theme-preset="notion"]
+  :is(
+    .api-settings-action-btn.primary,
+    .api-settings-form-btn.primary,
+    .model-manual-btn.primary,
+    .project-codebase-embed-btn.primary,
+    .confirm-dialog-btn.confirm,
+    .tool-call-user-question-submit,
+    .tool-call-plan-approval-approve,
+    .project-sensitive-command-save,
+    .personalization-save-btn,
+    .branch-create-submit-btn,
+    .git-commit-btn,
+    .git-commit-btn.primary,
+    .memo-new-btn,
+    .scheduled-tasks-create-btn,
+    .scheduled-tasks-new-btn,
+    .mcp-editor-mode-btn.active
+  ) {
+  border-color: var(--nt-charcoal);
+  background: var(--nt-charcoal);
+  color: #ffffff;
+}
+
+:root[data-theme-preset="notion"]
+  :is(
+    .api-settings-action-btn.primary,
+    .api-settings-form-btn.primary,
+    .model-manual-btn.primary,
+    .project-codebase-embed-btn.primary,
+    .confirm-dialog-btn.confirm,
+    .tool-call-user-question-submit,
+    .tool-call-plan-approval-approve,
+    .project-sensitive-command-save,
+    .personalization-save-btn,
+    .branch-create-submit-btn,
+    .git-commit-btn,
+    .git-commit-btn.primary,
+    .memo-new-btn,
+    .scheduled-tasks-create-btn,
+    .scheduled-tasks-new-btn,
+    .mcp-editor-mode-btn.active
+  ):hover:not(:disabled) {
+  background: color-mix(in srgb, var(--nt-charcoal) 88%, #000000);
+}
+
+:root[data-theme-preset="notion"]
+  :is(
+    .top-bar-plus-dropdown,
+    .top-bar-todo-dropdown,
+    .plus-menu-dropdown,
+    .model-dropdown,
+    .file-mention-popup,
+    .chat-command-panel,
+    .custom-select-dropdown,
+    .custom-select-dropdown-portal,
+    .browser-menu-dropdown,
+    .branch-dropdown,
+    .app-modal-dialog,
+    .confirm-dialog,
+    .search-modal,
+    .explorer-entry-context-menu,
+    .context-menu
+  ) {
+  border-color: var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--surface-island-strong);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: none;
+}
+
+:root[data-theme-preset="notion"]
+  :is(
+    .top-bar-plus-dropdown-item,
+    .top-bar-todo-item,
+    .plus-menu-item,
+    .model-dropdown-item,
+    .custom-select-item,
+    .browser-menu-item,
+    .branch-dropdown-item,
+    .chat-command-item,
+    .mention-entry,
+    .explorer-entry-context-menu-item,
+    .context-menu-item
+  ):hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+:root[data-theme-preset="notion"] .chat-empty-greeting-logo {
+  color: var(--nt-charcoal);
+  filter: none;
+}
+
+:root[data-theme-preset="notion"] .app-shell::after {
+  z-index: 0;
+}
+
+:root[data-theme-preset="notion"] .app-shell > .top-bar,
+:root[data-theme-preset="notion"] .app-shell > .app-layout {
+  position: relative;
+  z-index: 1;
+}
+
+:root[data-theme-preset="notion"] .app-shell > .top-bar {
+  z-index: 2;
+}
+
+:root[data-theme-preset="notion"] .pixel-logo.is-frozen {
+  filter: none;
+}
+
+:root[data-theme-preset="notion"] .pixel-logo-pixel-frost {
+  opacity: 0 !important;
+}
+
+:root[data-theme-preset="notion"] .chat-empty-greeting-title {
+  color: var(--text-primary);
+  font-family: var(--font-brand-display);
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  max-width: 620px;
+  overflow-wrap: anywhere;
+}
+
+:root[data-theme-preset="notion"] .chat-empty-quick-card {
+  border-color: var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--surface-island-strong);
+  box-shadow: none;
+}
+
+:root[data-theme-preset="notion"] .chat-empty-quick-card:hover:not(:disabled),
+:root[data-theme-preset="notion"] .chat-empty-quick-card:focus-visible {
+  border-color: var(--nt-charcoal);
+  background: var(--surface-hover);
+  box-shadow: none;
+}
+
+:root[data-theme-preset="notion"] .user-message-bubble {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--surface-island-muted);
+}
+
+:root[data-theme-preset="notion"] .input-box {
+  border-color: var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--surface-island-strong);
+  box-shadow: none;
+}
+
+:root[data-theme-preset="notion"] .input-box::before {
+  display: none;
+}
+
+:root[data-theme-preset="notion"] .input-box:focus-within {
+  border-color: var(--nt-charcoal);
+  box-shadow: 0 0 0 3px var(--nt-accent-bg);
+}
+
+:root[data-theme-preset="notion"] .input-field {
+  font-family: var(--font-brand-body);
+}
+
+:root[data-theme-preset="notion"] .pending-messages-area {
+  border-color: var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--surface-island-muted);
+}
+
+:root[data-theme-preset="notion"] .pending-messages-header {
+  color: var(--nt-accent-text);
+}
+
+:root[data-theme-preset="notion"] .pending-message-item {
+  border-radius: var(--radius-md);
+}
+
+:root[data-theme-preset="notion"] .pending-message-item:hover {
+  background: var(--surface-hover);
+}
+
+:root[data-theme-preset="notion"] .pending-message-send-now {
+  background: var(--nt-charcoal);
+  color: #ffffff;
+}
+
+:root[data-theme-preset="notion"] .pending-message-send-now:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--nt-charcoal) 88%, #000000);
+}
+
+:root[data-theme-preset="notion"] .pending-message-withdraw:hover {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+
+:root[data-theme-preset="notion"] .chat-message-tool,
+:root[data-theme-preset="notion"] .context-compaction-message,
+:root[data-theme-preset="notion"] .context-compaction-stream,
+:root[data-theme-preset="notion"] .file-changes-card,
+:root[data-theme-preset="notion"] .tool-call-bash-terminal {
+  border-color: var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--surface-island-muted);
+  box-shadow: none;
+}
+
+:root[data-theme-preset="notion"] .tool-call-status-running,
+:root[data-theme-preset="notion"] .tool-call-browser-pending-running,
+:root[data-theme-preset="notion"] .tool-call-grep-pending-running {
+  color: var(--nt-accent-text);
+  background: var(--nt-accent-bg);
+}
+
+:root[data-theme-preset="notion"]
+  :is(
+    .ai-message .code-block-wrapper,
+    .context-compaction-markdown .code-block-wrapper,
+    .file-viewer,
+    .diff-viewer,
+    .git-diff-view,
+    .terminal-container,
+    .browser-panel,
+    .codebase-panel-table-wrap
+  ) {
+  border-color: var(--border-color);
+  background: var(--bg-primary);
+}
+
+:root[data-theme-preset="notion"]
+  :is(
+    .ai-message .code-block-header,
+    .context-compaction-markdown .code-block-header,
+    .codebase-panel-table th,
+    .api-settings-table th,
+    .file-changes-header
+  ) {
+  background: var(--bg-secondary);
+  border-color: var(--border-light);
+}
+
+:root[data-theme-preset="notion"]
+  :is(
+    .ai-message a,
+    .context-compaction-markdown a,
+    .chat-fork-divider-link,
+    .codebase-sphere-tooltip-neighbor span:last-child
+  ) {
+  color: var(--accent-blue-text);
+}
+
+:root[data-theme-preset="notion"] ::selection {
+  background: var(--selection-bg);
+}
+
+:root[data-theme-preset="notion"] .git-commit-split-btn {
+  border: 1px solid var(--nt-charcoal);
+  background: var(--nt-charcoal);
+  color: #ffffff;
+  box-shadow: none;
+}
+
+:root[data-theme-preset="notion"] .git-commit-split-btn .git-commit-btn {
+  border-color: transparent;
+  background: transparent;
+  color: inherit;
+}
+
+:root[data-theme-preset="notion"]
+  .git-commit-split-btn
+  .git-commit-mode-toggle {
+  border-left-color: color-mix(in srgb, #ffffff 28%, transparent);
+  color: inherit;
+}
+
+:root[data-theme-preset="notion"]
+  :is(
+    .git-commit-split-btn .git-commit-btn,
+    .git-commit-split-btn .git-commit-mode-toggle
+  ):hover:not(:disabled) {
+  background: color-mix(in srgb, #ffffff 12%, transparent);
+}
+
+:root[data-theme-preset="notion"] .send-key-group {
+  border-radius: 999px;
+}
+
+:root[data-theme-preset="notion"] .send-btn,
+:root[data-theme-preset="notion"] .send-key-menu-toggle {
+  background: var(--nt-charcoal);
+  color: #ffffff;
+}
+
+:root[data-theme-preset="notion"] .send-btn {
+  box-shadow: none;
+}
+
+:root[data-theme-preset="notion"] .send-key-menu-toggle {
+  box-shadow: inset 1px 0 0 color-mix(in srgb, #ffffff 28%, transparent);
+}
+
+:root[data-theme-preset="notion"] .send-btn:hover:not(:disabled),
+:root[data-theme-preset="notion"] .send-key-menu-toggle:hover,
+:root[data-theme-preset="notion"] .send-key-menu-toggle.is-open {
+  background: color-mix(in srgb, var(--nt-charcoal) 88%, #000000);
+  opacity: 1;
+}
+
+:root[data-theme-preset="notion"] .send-key-menu {
+  border-color: var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--surface-island-strong);
+  box-shadow: var(--shadow-md);
+}
+
+:root[data-theme-preset="notion"] .send-key-menu-item {
+  border-radius: var(--radius-md);
+}
+
+:root[data-theme-preset="notion"] .send-key-menu-item:hover,
+:root[data-theme-preset="notion"] .send-key-menu-item:focus-visible {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+:root[data-theme-preset="notion"] .send-key-menu-item.is-active {
+  color: var(--nt-charcoal);
+}
+
+:root[data-theme-preset="notion"] .abort-btn {
+  border: 1px solid color-mix(in srgb, var(--danger) 32%, transparent);
+  background: var(--danger);
+  color: var(--on-solid);
+}
+
+:root[data-theme-preset="notion"] .abort-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 88%, #000000);
+}
+
+:root[data-theme-preset="notion"] .tcg-toggle {
+  padding: 2px 8px;
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  background: var(--surface-island-muted);
+  color: var(--text-tertiary);
+}
+
+:root[data-theme-preset="notion"] .tcg-toggle:hover {
+  border-color: var(--border-color);
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+}
+
+:root[data-theme-preset="notion"] .tcg-toggle:active {
+  background: var(--bg-active);
+}
+
+:root[data-theme-preset="notion"] .tcg-label {
+  font-weight: 500;
+}
+
+:root[data-theme-preset="notion"] .tcg-chevron {
+  color: var(--text-secondary);
+}
+
+:root[data-theme-preset="notion"] .tcg-list::before {
+  background: var(--border-light);
+}
+
+:root[data-theme-preset="notion"] .token-usage-ring-bg {
+  stroke: var(--border-subtle);
+  opacity: 0.4;
+}
+
+:root[data-theme-preset="notion"] .token-usage-ring-input {
+  stroke: var(--nt-charcoal);
+}
+
+:root[data-theme-preset="notion"] .token-usage-ring-output {
+  stroke: var(--accent-green);
+}
+
+:root[data-theme-preset="notion"] .token-usage-ring-cache {
+  stroke: var(--accent-blue);
+}
+
+:root[data-theme-preset="notion"] .token-usage-ring-text {
+  color: var(--text-secondary);
+}
+
+:root[data-theme-preset="notion"] .token-usage-tooltip {
+  border-color: var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--surface-island-strong);
+  box-shadow: var(--shadow-md);
+}
+
+:root[data-theme-preset="notion"] .token-usage-tooltip::before {
+  border-top-color: var(--border-color);
+}
+
+:root[data-theme-preset="notion"] .token-usage-tooltip::after {
+  border-top-color: var(--surface-island-strong);
+}
+
+:root[data-theme-preset="notion"] .token-usage-dot-input {
+  background: var(--nt-charcoal);
+}
+
+:root[data-theme-preset="notion"] .token-usage-dot-output {
+  background: var(--accent-green);
+}
+
+:root[data-theme-preset="notion"] .token-usage-dot-cache {
+  background: var(--warning);
+}
+
+:root[data-theme-preset="notion"] .token-usage-dot-cache-read {
+  background: var(--accent-blue);
+}
+
+:root[data-theme-preset="notion"] .token-usage-tooltip-divider {
+  background: var(--border-light);
+}
+
+:root[data-theme-preset="notion"] .chat-scroll-to-bottom {
+  border-color: var(--border-color);
+  background: var(--surface-island-strong);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-md);
+}
+
+:root[data-theme-preset="notion"] .chat-scroll-to-bottom:hover {
+  border-color: var(--border-subtle);
+  background: var(--surface-hover);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-md);
+}
+
+:root[data-theme-preset="notion"] .chat-scroll-to-bottom:active {
+  box-shadow: none;
+}
+
+:root[data-theme-preset="notion"] .chat-scroll-to-bottom.is-streaming::before {
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    var(--nt-charcoal) 60deg,
+    transparent 140deg,
+    transparent 360deg
+  );
+}
+
+:root[data-theme-preset="notion"] .git-panel-diff {
+  background: var(--surface-island-muted);
+}
+
+:root[data-theme-preset="notion"] .diff-viewer-empty {
+  margin: 6px;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-primary);
+  color: var(--text-tertiary);
+  letter-spacing: 0.02em;
+}
+
+:root[data-theme-preset="notion"] .git-panel-changes {
+  background: var(--surface-island-muted);
+}
+
+:root[data-theme-preset="notion"] .h-resizer {
+  height: 16px;
+  min-height: 16px;
+}
+
+:root[data-theme-preset="notion"] .h-resizer::before {
+  background: var(--border-light);
+}
+
+:root[data-theme-preset="notion"] .h-resizer::after {
+  width: 30px;
+  height: 13px;
+  border-color: var(--border-color);
+  border-radius: var(--radius-pill);
+  background: var(--surface-island-strong);
+  box-shadow: none;
+}
+
+:root[data-theme-preset="notion"] .h-resizer:hover::before,
+:root[data-theme-preset="notion"] .h-resizer:active::before {
+  background: var(--border-subtle);
+}
+
+:root[data-theme-preset="notion"] .h-resizer:hover::after,
+:root[data-theme-preset="notion"] .h-resizer:active::after {
+  border-color: var(--border-subtle);
+  background: var(--surface-hover);
+  box-shadow: none;
+}
+
+:root[data-theme-preset="notion"] .h-resizer-icon {
+  color: var(--text-tertiary);
+}
+
+:root[data-theme-preset="notion"] .h-resizer:hover .h-resizer-icon,
+:root[data-theme-preset="notion"] .h-resizer:active .h-resizer-icon {
+  color: var(--text-secondary);
+}
+
+:root[data-theme-preset="notion"] .theme-preset-card-notion {
+  border-color: color-mix(in srgb, var(--nt-charcoal) 36%, var(--border-color));
+  background: var(--surface-island-muted);
+}
+
+:root[data-theme-preset="notion"] .theme-preset-card-notion.active {
+  border-color: var(--nt-charcoal);
+  box-shadow: 0 0 0 2px var(--nt-accent-bg);
+}
+
+:root[data-theme-preset="notion"]
+  :is(
+    .context-menu-item.danger,
+    .explorer-entry-context-menu-item.danger
+  ):hover {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+
+:root[data-theme-preset="notion"]
+  :is(.top-bar-plus-btn, .top-bar-todo-btn, .top-bar-codebase-sync):hover:not(
+    :disabled
+  ) {
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+}
+
+:root[data-theme-preset="notion"] .window-control-btn:not(.close-btn):hover {
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+}
+
+:root[data-theme-preset="notion"] .chat-message-tool:hover {
+  border-color: var(--border-subtle);
+}
+
+:root[data-theme-preset="notion"] .user-message-bubble:hover {
+  border-color: var(--border-subtle);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme-preset="notion"] * {
+    transition-duration: 0.01ms !important;
+  }
+}
+
+:root[data-theme-preset="notion"]
+  :is(
+    .memo-sidebar,
+    .memory-sidebar,
+    .scheduled-tasks-sidebar,
+    .scheduled-tasks-sidebar-footer,
+    .memo-gantt-header,
+    .memo-gantt-corner,
+    .memo-gantt-section-title
+  ) {
+  border-color: var(--border-color);
+  background: var(--surface-island-muted);
+}
+
+:root[data-theme-preset="notion"]
+  :is(
+    .memo-content,
+    .memory-content,
+    .scheduled-tasks-content,
+    .memo-editor-toolbar,
+    .scheduled-task-details-header,
+    .scheduled-tasks-form-header,
+    .scheduled-tasks-form-footer
+  ) {
+  border-color: var(--border-color);
+  background: var(--surface-island-strong);
+}
+
+:root[data-theme-preset="notion"]
+  :is(.scheduled-task-details-section, .scheduled-tasks-form-section) {
+  border-color: var(--border-color);
+  background: var(--surface-island-muted);
+}
+
+:root[data-theme-preset="notion"]
+  :is(
+    .scheduled-tasks-filter-tabs,
+    .scheduled-tasks-segmented,
+    .scheduled-tasks-pre-script-body,
+    .scheduled-task-prompt-content,
+    .scheduled-task-history-item,
+    .scheduled-task-details-grid > div,
+    .scheduled-task-config-grid > div,
+    .memo-schedule-panel
+  ) {
+  border-color: var(--border-color);
+  background: var(--surface-island-strong);
+}
+
+:root[data-theme-preset="notion"]
+  :is(
+    .memo-filter-tab.active,
+    .memo-view-tab.active,
+    .scheduled-tasks-filter-tab.active,
+    .scheduled-tasks-segmented-btn.active,
+    .memo-list-item.selected,
+    .memory-list-item.selected,
+    .scheduled-task-item.selected,
+    .memo-gantt-row.selected
+  ) {
+  border-color: transparent;
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+:root[data-theme-preset="notion"]
+  :is(
+    .memo-filter-tab,
+    .memo-view-tab,
+    .memo-list-item,
+    .memory-list-item,
+    .memo-gantt-row,
+    .scheduled-task-item,
+    .scheduled-tasks-filter-tab,
+    .scheduled-tasks-segmented-btn,
+    .scheduled-tasks-pre-script-toggle
+  ):hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+:root[data-theme-preset="notion"]
+  :is(
+    .memo-icon-btn:not(.danger):not(.done-toggle),
+    .memo-sort-btn,
+    .memory-multi-select-exit-btn,
+    .memory-multi-select-action-btn:not(.danger)
+  ):hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+}
+
+:root[data-theme-preset="notion"]
+  :is(
+    .memo-icon-btn,
+    .scheduled-task-action-btn,
+    .memory-multi-select-action-btn
+  ).danger:hover:not(:disabled) {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+
+:root[data-theme-preset="notion"]
+  .project-collection-delete-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+
+:root[data-theme-preset="notion"]
+  :is(
+    .memo-icon-btn,
+    .memo-sort-btn,
+    .memory-clear-btn,
+    .memory-multi-select-exit-btn,
+    .memory-multi-select-action-btn,
+    .scheduled-task-action-btn,
+    .scheduled-task-copy-btn,
+    .scheduled-task-edit-btn,
+    .scheduled-tasks-back-btn,
+    .scheduled-tasks-cancel-btn
+  ) {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--surface-island-strong);
+  color: var(--text-secondary);
+}
+
+:root[data-theme-preset="notion"] .memory-editor-btn {
+  border-color: var(--nt-charcoal);
+  background: var(--nt-charcoal);
+  color: #ffffff;
+}
+
+:root[data-theme-preset="notion"]
+  :is(
+    .scheduled-task-prompt-content,
+    .scheduled-tasks-prompt-textarea,
+    .scheduled-tasks-script-textarea,
+    .thinking-menu-trigger,
+    .memory-editor-title,
+    .memory-editor-content,
+    .memory-editor-tags,
+    .memo-schedule-field input[type="date"],
+    .scheduled-tasks-field input:not([type="checkbox"]):not([type="range"])
+  ) {
+  border-color: var(--border-color);
+  background: var(--surface-island-strong);
+}
+
+:root[data-theme-preset="notion"]
+  :is(
+    .scheduled-tasks-prompt-textarea,
+    .scheduled-tasks-script-textarea,
+    .thinking-menu-trigger,
+    .memory-editor-title,
+    .memory-editor-content,
+    .memory-editor-tags
+  ):focus {
+  border-color: var(--nt-charcoal);
+  box-shadow: 0 0 0 3px var(--nt-accent-bg);
+}
+
+:root[data-theme-preset="notion"] .stream-metrics {
+  border-color: var(--border-color);
+  border-radius: var(--radius-pill);
+  background: var(--surface-island-strong);
+}
+
+:root[data-theme-preset="notion"]
+  :is(.stream-metrics-icon, .stream-metrics-label) {
+  color: var(--text-muted);
+}
+
+:root[data-theme-preset="notion"]
+  :is(
+    .stream-metrics-elapsed.is-active,
+    .stream-metrics-tokens.is-active,
+    .stream-metrics-tps.is-active
+  )
+  .stream-metrics-icon {
+  color: var(--nt-charcoal);
+}
+
+:root[data-theme-preset="notion"] .stream-metrics-sep {
+  background: var(--border-light);
+}
+
+:root[data-theme-preset="notion"] .stream-metrics-pause-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+}
+
+:root[data-theme-preset="notion"] .stream-metrics-pause-btn.is-paused {
+  color: var(--nt-charcoal);
+}
+
+:root[data-theme-preset="notion"] .stream-metrics-pause-btn.is-paused:hover {
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+}
+
+:root[data-theme-preset="notion"] .stream-metrics-pause-btn:focus-visible {
+  outline-color: var(--nt-charcoal);
+}

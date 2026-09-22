@@ -2802,6 +2802,8 @@ export const zhCN = {
   "settings.themePresetGithub": "GitHub",
   "settings.themePresetGoogle": "Google",
   "settings.themePresetGruvbox": "Gruvbox",
+  "settings.themePresetCyberpunk": "赛博朋克",
+  "settings.themePresetNotion": "Notion",
   "settings.themeCustomTitle": "自定义主题",
   "settings.themeCustomInfo":
     "启用后可调整每一个颜色，浅色和深色调色板分别编辑。",

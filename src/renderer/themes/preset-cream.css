@@ -215,7 +215,7 @@
 
 :root[data-theme-preset="cream"] .settings-item.active,
 :root[data-theme-preset="cream"] .chat-item.active {
-  box-shadow: inset 2px 0 var(--accent-orange);
+  box-shadow: none;
 }
 
 :root[data-theme-preset="cream"] .sidebar-content-header,

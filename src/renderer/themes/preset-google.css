@@ -164,7 +164,7 @@
 
 :root[data-theme-preset="google"]
   :is(.settings-item.active, .chat-item.active) {
-  box-shadow: inset 2px 0 var(--google-blue);
+  box-shadow: none;
 }
 
 :root[data-theme-preset="google"]
@@ -743,13 +743,7 @@
 
 :root[data-theme-preset="google"]
   :is(.settings-item.active, .chat-item.active)::before {
-  position: absolute;
-  left: 4px;
-  width: 3px;
-  height: 18px;
-  border-radius: 999px;
-  background: var(--google-blue);
-  content: "";
+  display: none;
 }
 
 :root[data-theme-preset="google"] .settings-item.active .settings-item-title,

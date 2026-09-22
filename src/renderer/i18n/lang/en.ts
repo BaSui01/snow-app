@@ -2950,6 +2950,8 @@ export const en = {
   "settings.themePresetGithub": "GitHub",
   "settings.themePresetGoogle": "Google",
   "settings.themePresetGruvbox": "Gruvbox",
+  "settings.themePresetCyberpunk": "Cyberpunk",
+  "settings.themePresetNotion": "Notion",
   "settings.themeCustomTitle": "Custom theme",
   "settings.themeCustomInfo":
     "Enable to fine-tune every color. Light and dark palettes are edited separately.",

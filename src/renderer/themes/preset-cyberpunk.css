@@ -1,0 +1,1154 @@
+/* ===== Cyberpunk system-wide refinement =====
+   Neon-drenched high-contrast chrome with clipped corners, glowing accents,
+   and a dark-first palette that keeps the workspace legible under the glow. */
+:root[data-theme-preset="cyberpunk"] {
+  --font-sans: "Rajdhani", "Orbitron", "Segoe UI", Arial, sans-serif;
+  --font-brand-body: var(--font-sans);
+  --font-brand-display: "Orbitron", "Rajdhani", "Segoe UI", Arial, sans-serif;
+  --cp-neon-pink: #ff00aa;
+  --cp-neon-cyan: #00e5ff;
+  --cp-neon-green: #00ff88;
+  --cp-neon-red: #ff2a6d;
+  --cp-neon-yellow: #f0ff00;
+  --cp-glow-pink:
+    0 0 8px rgba(255, 0, 170, 0.45), 0 0 24px rgba(255, 0, 170, 0.18);
+  --cp-glow-cyan:
+    0 0 8px rgba(0, 229, 255, 0.45), 0 0 24px rgba(0, 229, 255, 0.18);
+  --cp-glow-sm: 0 0 4px rgba(255, 0, 170, 0.35);
+  --cp-clip-sm: polygon(
+    4px 0,
+    100% 0,
+    100% calc(100% - 4px),
+    calc(100% - 4px) 100%,
+    0 100%,
+    0 4px
+  );
+  --cp-clip-md: polygon(
+    6px 0,
+    100% 0,
+    100% calc(100% - 6px),
+    calc(100% - 6px) 100%,
+    0 100%,
+    0 6px
+  );
+  --cp-clip-lg: polygon(
+    8px 0,
+    100% 0,
+    100% calc(100% - 8px),
+    calc(100% - 8px) 100%,
+    0 100%,
+    0 8px
+  );
+  --accent: var(--cp-neon-pink);
+  --accent-primary: var(--cp-neon-pink);
+  --accent-secondary: var(--cp-neon-cyan);
+  --accent-color: var(--cp-neon-pink);
+  --accent-orange: var(--cp-neon-pink);
+  --accent-orange-bg: rgba(255, 0, 170, 0.14);
+  --accent-orange-text: #ff4dc4;
+  --accent-primary-bg: rgba(255, 0, 170, 0.14);
+  --accent-primary-text: #ff4dc4;
+  --color-primary: var(--cp-neon-pink);
+  --color-success: var(--cp-neon-green);
+  --color-error: var(--cp-neon-red);
+  --success: var(--cp-neon-green);
+  --warning: var(--cp-neon-yellow);
+  --danger: var(--cp-neon-red);
+  --text-link: var(--cp-neon-cyan);
+  --border-focus: var(--cp-neon-pink);
+  --surface-hover: rgba(255, 0, 170, 0.1);
+  --shadow-sm: 0 0 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 0 12px rgba(0, 0, 0, 0.5);
+  --backdrop-blur-lg: none;
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+  --radius-xl: 6px;
+  --radius-pill: 2px;
+}
+
+:root[data-theme-preset="cyberpunk"][data-theme="light"] {
+  --cp-neon-pink: #d6008f;
+  --cp-neon-cyan: #00a8c4;
+  --cp-neon-green: #00a854;
+  --cp-neon-red: #d4003a;
+  --cp-glow-pink:
+    0 0 6px rgba(214, 0, 143, 0.3), 0 0 16px rgba(214, 0, 143, 0.12);
+  --cp-glow-cyan:
+    0 0 6px rgba(0, 168, 196, 0.3), 0 0 16px rgba(0, 168, 196, 0.12);
+  --cp-glow-sm: 0 0 3px rgba(214, 0, 143, 0.25);
+  --accent-orange-bg: rgba(214, 0, 143, 0.1);
+  --accent-orange-text: #a0006b;
+  --accent-primary-bg: rgba(214, 0, 143, 0.1);
+  --accent-primary-text: #a0006b;
+  --surface-island: #eaeaee;
+  --surface-island-strong: #f0f0f2;
+  --surface-island-muted: #e0e0e4;
+  --island-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.1);
+  --scrollbar-thumb: rgba(10, 10, 12, 0.24);
+  --scrollbar-thumb-hover: rgba(214, 0, 143, 0.5);
+  --scrollbar-thumb-active: rgba(214, 0, 143, 0.72);
+}
+
+:root[data-theme-preset="cyberpunk"][data-theme="dark"] {
+  --surface-island: #12121a;
+  --surface-island-strong: #0a0a0f;
+  --surface-island-muted: #0e0e14;
+  --island-shadow:
+    0 0 0 1px rgba(255, 0, 170, 0.12), 0 0 16px rgba(0, 0, 0, 0.4);
+  --scrollbar-thumb: rgba(232, 232, 240, 0.18);
+  --scrollbar-thumb-hover: rgba(255, 0, 170, 0.5);
+  --scrollbar-thumb-active: rgba(255, 0, 170, 0.72);
+}
+
+:root[data-theme-preset="cyberpunk"][data-theme="light"] {
+  --app-bg: #d8d8de !important;
+}
+
+:root[data-theme-preset="cyberpunk"][data-theme="dark"] {
+  --app-bg: #060609 !important;
+}
+
+:root[data-theme-preset="cyberpunk"] body,
+:root[data-theme-preset="cyberpunk"] button,
+:root[data-theme-preset="cyberpunk"] input,
+:root[data-theme-preset="cyberpunk"] select,
+:root[data-theme-preset="cyberpunk"] textarea {
+  font-family: var(--app-font-family, var(--font-sans));
+}
+
+:root[data-theme-preset="cyberpunk"] h1,
+:root[data-theme-preset="cyberpunk"] h2,
+:root[data-theme-preset="cyberpunk"] h3,
+:root[data-theme-preset="cyberpunk"] h4,
+:root[data-theme-preset="cyberpunk"] h5,
+:root[data-theme-preset="cyberpunk"] h6,
+:root[data-theme-preset="cyberpunk"] .api-settings-title-group strong {
+  font-family: var(--font-brand-display);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(
+    .sidebar-content-title,
+    .header-title,
+    .section-title,
+    .settings-item-title,
+    .chat-empty-quick-card-title,
+    strong
+  ) {
+  font-family: var(--font-sans);
+}
+
+:root[data-theme-preset="cyberpunk"] .app-shell,
+:root[data-theme-preset="cyberpunk"] .app-layout,
+:root[data-theme-preset="cyberpunk"] .top-bar {
+  background: var(--app-bg);
+}
+
+:root[data-theme-preset="cyberpunk"] .app-layout {
+  padding: 0 10px 10px;
+}
+
+:root[data-theme-preset="cyberpunk"] .top-bar {
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+:root[data-theme-preset="cyberpunk"] .top-bar::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 3;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    var(--cp-neon-pink) 0%,
+    var(--cp-neon-cyan) 50%,
+    var(--cp-neon-pink) 100%
+  );
+  content: "";
+  pointer-events: none;
+  box-shadow: var(--cp-glow-pink);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(
+    .top-bar-left,
+    .top-bar-main,
+    .top-bar-right,
+    .sidebar,
+    .main-content,
+    .right-panel
+  ) {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--island-shadow);
+  backdrop-filter: none;
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(.top-bar-left, .top-bar-right, .sidebar, .right-panel) {
+  background: var(--surface-island-muted);
+}
+
+:root[data-theme-preset="cyberpunk"] :is(.top-bar-main, .main-content) {
+  background: var(--surface-island-strong);
+}
+
+:root[data-theme-preset="cyberpunk"] .main-content {
+  padding: 16px 12px;
+}
+
+:root[data-theme-preset="cyberpunk"]
+  .app-shell.right-panel-fullscreen
+  .main-content {
+  padding: 0;
+}
+
+:root[data-theme-preset="cyberpunk"] .main-header,
+:root[data-theme-preset="cyberpunk"] .panel-tabs {
+  background: var(--surface-island-muted);
+  border-bottom: 1px solid var(--border-light);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--cp-neon-pink);
+  outline-offset: 2px;
+  box-shadow: var(--cp-glow-sm);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(
+    .icon-btn,
+    .nav-item,
+    .list-item,
+    .settings-item,
+    .panel-tab,
+    .panel-tab-btn,
+    .toolbar-btn,
+    .chat-item,
+    .codebase-panel-view-btn,
+    .file-viewer-action-btn,
+    .git-action-btn,
+    .browser-nav-btn
+  ):hover {
+  background: var(--accent-orange-bg);
+  color: var(--text-primary);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(.nav-item, .list-item, .settings-item, .chat-item, .panel-tab).active {
+  border-color: color-mix(
+    in srgb,
+    var(--cp-neon-pink) 42%,
+    var(--border-color)
+  );
+  background: var(--accent-orange-bg);
+  color: var(--text-primary);
+  box-shadow: var(--cp-glow-sm);
+}
+
+:root[data-theme-preset="cyberpunk"] .settings-item.active,
+:root[data-theme-preset="cyberpunk"] .chat-item.active {
+  box-shadow: none;
+}
+
+:root[data-theme-preset="cyberpunk"] .sidebar-content-header,
+:root[data-theme-preset="cyberpunk"] .section-header,
+:root[data-theme-preset="cyberpunk"] .api-settings-page-header,
+:root[data-theme-preset="cyberpunk"] .codebase-panel-header,
+:root[data-theme-preset="cyberpunk"] .file-viewer-header,
+:root[data-theme-preset="cyberpunk"] .git-control-header {
+  border-bottom-color: var(--border-light);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+    select,
+    textarea,
+    .custom-select-trigger,
+    .model-manual-field,
+    .search-modal-input,
+    .browser-address-input,
+    .browser-find-input,
+    .git-commit-input,
+    .file-viewer-search-input,
+    .branch-create-input
+  ) {
+  border-color: var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+    select,
+    textarea,
+    .custom-select-trigger,
+    .model-manual-field,
+    .search-modal-input,
+    .browser-address-input,
+    .browser-find-input,
+    .git-commit-input,
+    .file-viewer-search-input,
+    .branch-create-input
+  ):focus {
+  border-color: var(--cp-neon-pink);
+  box-shadow:
+    0 0 0 3px var(--accent-orange-bg),
+    var(--cp-glow-sm);
+  outline: none;
+}
+
+:root[data-theme-preset="cyberpunk"] .range-slider {
+  --range-accent: var(--cp-neon-pink);
+  --range-track-bg: color-mix(
+    in srgb,
+    var(--cp-neon-pink) 18%,
+    var(--bg-tertiary)
+  );
+}
+
+:root[data-theme-preset="cyberpunk"]
+  .toggle-switch
+  input:checked
+  + .toggle-slider,
+:root[data-theme-preset="cyberpunk"] .toggle-slider {
+  border-color: var(--border-subtle);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  .toggle-switch
+  input:checked
+  + .toggle-slider {
+  background: var(--cp-neon-pink);
+  box-shadow: var(--cp-glow-sm);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(
+    .api-settings-action-btn.primary,
+    .api-settings-form-btn.primary,
+    .model-manual-btn.primary,
+    .project-codebase-embed-btn.primary,
+    .confirm-dialog-btn.confirm,
+    .tool-call-user-question-submit,
+    .tool-call-plan-approval-approve,
+    .project-sensitive-command-save,
+    .personalization-save-btn,
+    .branch-create-submit-btn,
+    .git-commit-btn,
+    .git-commit-btn.primary,
+    .memo-new-btn,
+    .scheduled-tasks-create-btn,
+    .scheduled-tasks-new-btn,
+    .mcp-editor-mode-btn.active
+  ) {
+  border-color: var(--cp-neon-pink);
+  background: var(--cp-neon-pink);
+  color: #ffffff;
+  clip-path: var(--cp-clip-sm);
+  box-shadow: var(--cp-glow-sm);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(
+    .api-settings-action-btn.primary,
+    .api-settings-form-btn.primary,
+    .model-manual-btn.primary,
+    .project-codebase-embed-btn.primary,
+    .confirm-dialog-btn.confirm,
+    .tool-call-user-question-submit,
+    .tool-call-plan-approval-approve,
+    .project-sensitive-command-save,
+    .personalization-save-btn,
+    .branch-create-submit-btn,
+    .git-commit-btn,
+    .git-commit-btn.primary,
+    .memo-new-btn,
+    .scheduled-tasks-create-btn,
+    .scheduled-tasks-new-btn,
+    .mcp-editor-mode-btn.active
+  ):hover:not(:disabled) {
+  background: color-mix(in srgb, var(--cp-neon-pink) 85%, #ffffff);
+  box-shadow: var(--cp-glow-pink);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(
+    .top-bar-plus-dropdown,
+    .top-bar-todo-dropdown,
+    .plus-menu-dropdown,
+    .model-dropdown,
+    .file-mention-popup,
+    .chat-command-panel,
+    .custom-select-dropdown,
+    .custom-select-dropdown-portal,
+    .browser-menu-dropdown,
+    .branch-dropdown,
+    .app-modal-dialog,
+    .confirm-dialog,
+    .search-modal,
+    .explorer-entry-context-menu,
+    .context-menu
+  ) {
+  border-color: var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--surface-island-strong);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: none;
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(
+    .top-bar-plus-dropdown-item,
+    .top-bar-todo-item,
+    .plus-menu-item,
+    .model-dropdown-item,
+    .custom-select-item,
+    .browser-menu-item,
+    .branch-dropdown-item,
+    .chat-command-item,
+    .mention-entry,
+    .explorer-entry-context-menu-item,
+    .context-menu-item
+  ):hover {
+  background: var(--accent-orange-bg);
+  color: var(--text-primary);
+}
+
+:root[data-theme-preset="cyberpunk"] .chat-empty-greeting-logo {
+  color: var(--cp-neon-pink);
+  filter: drop-shadow(0 0 6px rgba(255, 0, 170, 0.4));
+}
+
+:root[data-theme-preset="cyberpunk"] .app-shell::after {
+  z-index: 0;
+}
+
+:root[data-theme-preset="cyberpunk"] .app-shell > .top-bar,
+:root[data-theme-preset="cyberpunk"] .app-shell > .app-layout {
+  position: relative;
+  z-index: 1;
+}
+
+:root[data-theme-preset="cyberpunk"] .app-shell > .top-bar {
+  z-index: 2;
+}
+
+:root[data-theme-preset="cyberpunk"] .pixel-logo.is-frozen {
+  filter: none;
+}
+
+:root[data-theme-preset="cyberpunk"] .pixel-logo-pixel-frost {
+  opacity: 0 !important;
+}
+
+:root[data-theme-preset="cyberpunk"] .chat-empty-greeting-title {
+  color: var(--text-primary);
+  font-family: var(--font-brand-display);
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1.2;
+  max-width: 620px;
+  overflow-wrap: anywhere;
+  text-transform: uppercase;
+}
+
+:root[data-theme-preset="cyberpunk"] .chat-empty-quick-card {
+  border-color: var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--surface-island-muted);
+  box-shadow: none;
+  clip-path: var(--cp-clip-md);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  .chat-empty-quick-card:hover:not(:disabled),
+:root[data-theme-preset="cyberpunk"] .chat-empty-quick-card:focus-visible {
+  border-color: var(--cp-neon-pink);
+  background: var(--accent-orange-bg);
+  box-shadow: var(--cp-glow-sm);
+}
+
+:root[data-theme-preset="cyberpunk"] .user-message-bubble {
+  border: 1px solid
+    color-mix(in srgb, var(--cp-neon-pink) 28%, var(--border-color));
+  border-radius: var(--radius-lg);
+  background: var(--accent-orange-bg);
+  clip-path: var(--cp-clip-md);
+}
+
+:root[data-theme-preset="cyberpunk"] .input-box {
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-island-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+:root[data-theme-preset="cyberpunk"] .input-box::before {
+  display: none;
+}
+
+:root[data-theme-preset="cyberpunk"] .input-box:focus-within {
+  border-color: var(--cp-neon-pink);
+  box-shadow:
+    0 0 0 3px var(--accent-orange-bg),
+    var(--cp-glow-sm);
+}
+
+:root[data-theme-preset="cyberpunk"] .input-field {
+  font-family: var(--font-brand-body);
+}
+
+:root[data-theme-preset="cyberpunk"] .pending-messages-area {
+  border-color: var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--surface-island-muted);
+}
+
+:root[data-theme-preset="cyberpunk"] .pending-messages-header {
+  color: var(--accent-orange-text);
+}
+
+:root[data-theme-preset="cyberpunk"] .pending-message-item {
+  border-radius: var(--radius-md);
+}
+
+:root[data-theme-preset="cyberpunk"] .pending-message-item:hover {
+  background: var(--accent-orange-bg);
+}
+
+:root[data-theme-preset="cyberpunk"] .pending-message-send-now {
+  background: var(--cp-neon-pink);
+  color: #ffffff;
+  clip-path: var(--cp-clip-sm);
+}
+
+:root[data-theme-preset="cyberpunk"] .pending-message-send-now:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--cp-neon-pink) 85%, #ffffff);
+}
+
+:root[data-theme-preset="cyberpunk"] .pending-message-withdraw:hover {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+
+:root[data-theme-preset="cyberpunk"] .chat-message-tool,
+:root[data-theme-preset="cyberpunk"] .context-compaction-message,
+:root[data-theme-preset="cyberpunk"] .context-compaction-stream,
+:root[data-theme-preset="cyberpunk"] .file-changes-card,
+:root[data-theme-preset="cyberpunk"] .tool-call-bash-terminal {
+  border-color: var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--surface-island-muted);
+  box-shadow: none;
+}
+
+:root[data-theme-preset="cyberpunk"] .tool-call-status-running,
+:root[data-theme-preset="cyberpunk"] .tool-call-browser-pending-running,
+:root[data-theme-preset="cyberpunk"] .tool-call-grep-pending-running {
+  color: var(--cp-neon-cyan);
+  background: rgba(0, 229, 255, 0.12);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(
+    .ai-message .code-block-wrapper,
+    .context-compaction-markdown .code-block-wrapper,
+    .file-viewer,
+    .diff-viewer,
+    .git-diff-view,
+    .terminal-container,
+    .browser-panel,
+    .codebase-panel-table-wrap
+  ) {
+  border-color: var(--border-color);
+  background: var(--bg-primary);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(
+    .ai-message .code-block-header,
+    .context-compaction-markdown .code-block-header,
+    .codebase-panel-table th,
+    .api-settings-table th,
+    .file-changes-header
+  ) {
+  background: var(--bg-secondary);
+  border-color: var(--border-light);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(
+    .ai-message a,
+    .context-compaction-markdown a,
+    .chat-fork-divider-link,
+    .codebase-sphere-tooltip-neighbor span:last-child
+  ) {
+  color: var(--cp-neon-cyan);
+}
+
+:root[data-theme-preset="cyberpunk"] ::selection {
+  background: var(--selection-bg);
+}
+
+:root[data-theme-preset="cyberpunk"] .git-commit-split-btn {
+  border: 1px solid var(--cp-neon-pink);
+  background: var(--cp-neon-pink);
+  color: #ffffff;
+  box-shadow: var(--cp-glow-sm);
+  clip-path: var(--cp-clip-sm);
+}
+
+:root[data-theme-preset="cyberpunk"] .git-commit-split-btn .git-commit-btn {
+  border-color: transparent;
+  background: transparent;
+  color: inherit;
+}
+
+:root[data-theme-preset="cyberpunk"]
+  .git-commit-split-btn
+  .git-commit-mode-toggle {
+  border-left-color: color-mix(in srgb, #ffffff 28%, transparent);
+  color: inherit;
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(
+    .git-commit-split-btn .git-commit-btn,
+    .git-commit-split-btn .git-commit-mode-toggle
+  ):hover:not(:disabled) {
+  background: color-mix(in srgb, #ffffff 12%, transparent);
+}
+
+:root[data-theme-preset="cyberpunk"] .send-key-group {
+  border-radius: 0;
+}
+
+:root[data-theme-preset="cyberpunk"] .send-btn,
+:root[data-theme-preset="cyberpunk"] .send-key-menu-toggle {
+  background: var(--cp-neon-pink);
+  color: #ffffff;
+  clip-path: var(--cp-clip-sm);
+}
+
+:root[data-theme-preset="cyberpunk"] .send-btn {
+  box-shadow: var(--cp-glow-sm);
+}
+
+:root[data-theme-preset="cyberpunk"] .send-key-menu-toggle {
+  box-shadow: inset 1px 0 0 color-mix(in srgb, #ffffff 28%, transparent);
+}
+
+:root[data-theme-preset="cyberpunk"] .send-btn:hover:not(:disabled),
+:root[data-theme-preset="cyberpunk"] .send-key-menu-toggle:hover,
+:root[data-theme-preset="cyberpunk"] .send-key-menu-toggle.is-open {
+  background: color-mix(in srgb, var(--cp-neon-pink) 85%, #ffffff);
+  opacity: 1;
+  box-shadow: var(--cp-glow-pink);
+}
+
+:root[data-theme-preset="cyberpunk"] .send-key-menu {
+  border-color: var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--surface-island-strong);
+  box-shadow: var(--shadow-md);
+}
+
+:root[data-theme-preset="cyberpunk"] .send-key-menu-item {
+  border-radius: var(--radius-md);
+}
+
+:root[data-theme-preset="cyberpunk"] .send-key-menu-item:hover,
+:root[data-theme-preset="cyberpunk"] .send-key-menu-item:focus-visible {
+  background: var(--accent-orange-bg);
+  color: var(--text-primary);
+}
+
+:root[data-theme-preset="cyberpunk"] .send-key-menu-item.is-active {
+  color: var(--cp-neon-pink);
+}
+
+:root[data-theme-preset="cyberpunk"] .abort-btn {
+  border: 1px solid color-mix(in srgb, var(--danger) 32%, transparent);
+  background: var(--danger);
+  color: var(--on-solid);
+  clip-path: var(--cp-clip-sm);
+}
+
+:root[data-theme-preset="cyberpunk"] .abort-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 85%, #ffffff);
+  box-shadow: 0 0 8px rgba(255, 42, 109, 0.4);
+}
+
+:root[data-theme-preset="cyberpunk"] .tcg-toggle {
+  padding: 2px 8px;
+  border: 1px solid var(--border-light);
+  border-radius: 0;
+  background: var(--surface-island-muted);
+  color: var(--text-tertiary);
+  clip-path: var(--cp-clip-sm);
+}
+
+:root[data-theme-preset="cyberpunk"] .tcg-toggle:hover {
+  border-color: color-mix(
+    in srgb,
+    var(--cp-neon-pink) 38%,
+    var(--border-color)
+  );
+  background: var(--accent-orange-bg);
+  color: var(--accent-orange-text);
+}
+
+:root[data-theme-preset="cyberpunk"] .tcg-toggle:active {
+  background: color-mix(
+    in srgb,
+    var(--cp-neon-pink) 22%,
+    var(--surface-island-muted)
+  );
+}
+
+:root[data-theme-preset="cyberpunk"] .tcg-label {
+  font-weight: 600;
+}
+
+:root[data-theme-preset="cyberpunk"] .tcg-chevron {
+  color: var(--text-secondary);
+}
+
+:root[data-theme-preset="cyberpunk"] .tcg-list::before {
+  background: color-mix(in srgb, var(--cp-neon-pink) 30%, var(--border-light));
+}
+
+:root[data-theme-preset="cyberpunk"] .token-usage-ring-bg {
+  stroke: var(--border-subtle);
+  opacity: 0.4;
+}
+
+:root[data-theme-preset="cyberpunk"] .token-usage-ring-input {
+  stroke: var(--cp-neon-pink);
+}
+
+:root[data-theme-preset="cyberpunk"] .token-usage-ring-output {
+  stroke: var(--cp-neon-green);
+}
+
+:root[data-theme-preset="cyberpunk"] .token-usage-ring-cache {
+  stroke: var(--cp-neon-cyan);
+}
+
+:root[data-theme-preset="cyberpunk"] .token-usage-ring-text {
+  color: var(--text-secondary);
+}
+
+:root[data-theme-preset="cyberpunk"] .token-usage-tooltip {
+  border-color: var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--surface-island-strong);
+  box-shadow: var(--shadow-md);
+}
+
+:root[data-theme-preset="cyberpunk"] .token-usage-tooltip::before {
+  border-top-color: var(--border-color);
+}
+
+:root[data-theme-preset="cyberpunk"] .token-usage-tooltip::after {
+  border-top-color: var(--surface-island-strong);
+}
+
+:root[data-theme-preset="cyberpunk"] .token-usage-dot-input {
+  background: var(--cp-neon-pink);
+}
+
+:root[data-theme-preset="cyberpunk"] .token-usage-dot-output {
+  background: var(--cp-neon-green);
+}
+
+:root[data-theme-preset="cyberpunk"] .token-usage-dot-cache {
+  background: var(--cp-neon-yellow);
+}
+
+:root[data-theme-preset="cyberpunk"] .token-usage-dot-cache-read {
+  background: var(--cp-neon-cyan);
+}
+
+:root[data-theme-preset="cyberpunk"] .token-usage-tooltip-divider {
+  background: color-mix(in srgb, var(--cp-neon-pink) 24%, var(--border-light));
+}
+
+:root[data-theme-preset="cyberpunk"] .chat-scroll-to-bottom {
+  border-color: var(--border-color);
+  background: var(--surface-island-strong);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-md);
+  clip-path: var(--cp-clip-md);
+}
+
+:root[data-theme-preset="cyberpunk"] .chat-scroll-to-bottom:hover {
+  border-color: color-mix(
+    in srgb,
+    var(--cp-neon-pink) 42%,
+    var(--border-color)
+  );
+  background: var(--accent-orange-bg);
+  color: var(--accent-orange-text);
+  box-shadow: var(--cp-glow-sm);
+}
+
+:root[data-theme-preset="cyberpunk"] .chat-scroll-to-bottom:active {
+  box-shadow: var(--shadow-sm);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  .chat-scroll-to-bottom.is-streaming::before {
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    var(--cp-neon-pink) 60deg,
+    transparent 140deg,
+    transparent 360deg
+  );
+}
+
+:root[data-theme-preset="cyberpunk"] .git-panel-diff {
+  background: var(--surface-island-muted);
+}
+
+:root[data-theme-preset="cyberpunk"] .diff-viewer-empty {
+  margin: 6px;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-primary);
+  color: var(--text-tertiary);
+  letter-spacing: 0.02em;
+}
+
+:root[data-theme-preset="cyberpunk"] .git-panel-changes {
+  background: var(--surface-island-muted);
+}
+
+:root[data-theme-preset="cyberpunk"] .h-resizer {
+  height: 16px;
+  min-height: 16px;
+}
+
+:root[data-theme-preset="cyberpunk"] .h-resizer::before {
+  background: color-mix(in srgb, var(--cp-neon-pink) 28%, var(--border-light));
+}
+
+:root[data-theme-preset="cyberpunk"] .h-resizer::after {
+  width: 30px;
+  height: 13px;
+  border-color: color-mix(
+    in srgb,
+    var(--cp-neon-pink) 26%,
+    var(--border-color)
+  );
+  border-radius: 0;
+  background: var(--surface-island-strong);
+  box-shadow: var(--shadow-sm);
+  clip-path: var(--cp-clip-sm);
+}
+
+:root[data-theme-preset="cyberpunk"] .h-resizer:hover::before,
+:root[data-theme-preset="cyberpunk"] .h-resizer:active::before {
+  background: color-mix(in srgb, var(--cp-neon-pink) 55%, transparent);
+}
+
+:root[data-theme-preset="cyberpunk"] .h-resizer:hover::after,
+:root[data-theme-preset="cyberpunk"] .h-resizer:active::after {
+  border-color: var(--cp-neon-pink);
+  background: var(--accent-orange-bg);
+  box-shadow: var(--cp-glow-sm);
+}
+
+:root[data-theme-preset="cyberpunk"] .h-resizer-icon {
+  color: var(--text-tertiary);
+}
+
+:root[data-theme-preset="cyberpunk"] .h-resizer:hover .h-resizer-icon,
+:root[data-theme-preset="cyberpunk"] .h-resizer:active .h-resizer-icon {
+  color: var(--cp-neon-pink);
+}
+
+:root[data-theme-preset="cyberpunk"] .theme-preset-card-cyberpunk {
+  border-color: color-mix(
+    in srgb,
+    var(--cp-neon-pink) 46%,
+    var(--border-color)
+  );
+  background: var(--surface-island-muted);
+}
+
+:root[data-theme-preset="cyberpunk"] .theme-preset-card-cyberpunk.active {
+  border-color: var(--cp-neon-pink);
+  box-shadow:
+    0 0 0 2px var(--accent-orange-bg),
+    var(--cp-glow-sm);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(
+    .context-menu-item.danger,
+    .explorer-entry-context-menu-item.danger
+  ):hover {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--danger);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(.top-bar-plus-btn, .top-bar-todo-btn, .top-bar-codebase-sync):hover:not(
+    :disabled
+  ) {
+  background: var(--accent-orange-bg);
+  color: var(--accent-orange-text);
+}
+
+:root[data-theme-preset="cyberpunk"] .window-control-btn:not(.close-btn):hover {
+  background: var(--accent-orange-bg);
+  color: var(--accent-orange-text);
+}
+
+:root[data-theme-preset="cyberpunk"] .chat-message-tool:hover {
+  border-color: color-mix(
+    in srgb,
+    var(--cp-neon-pink) 34%,
+    var(--border-color)
+  );
+}
+
+:root[data-theme-preset="cyberpunk"] .user-message-bubble:hover {
+  border-color: color-mix(
+    in srgb,
+    var(--cp-neon-pink) 46%,
+    var(--border-color)
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme-preset="cyberpunk"] * {
+    transition-duration: 0.01ms !important;
+  }
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(
+    .memo-sidebar,
+    .memory-sidebar,
+    .scheduled-tasks-sidebar,
+    .scheduled-tasks-sidebar-footer,
+    .memo-gantt-header,
+    .memo-gantt-corner,
+    .memo-gantt-section-title
+  ) {
+  border-color: var(--border-color);
+  background: var(--surface-island-muted);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(
+    .memo-content,
+    .memory-content,
+    .scheduled-tasks-content,
+    .memo-editor-toolbar,
+    .scheduled-task-details-header,
+    .scheduled-tasks-form-header,
+    .scheduled-tasks-form-footer
+  ) {
+  border-color: var(--border-color);
+  background: var(--surface-island-strong);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(.scheduled-task-details-section, .scheduled-tasks-form-section) {
+  border-color: var(--border-color);
+  background: var(--surface-island-muted);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(
+    .scheduled-tasks-filter-tabs,
+    .scheduled-tasks-segmented,
+    .scheduled-tasks-pre-script-body,
+    .scheduled-task-prompt-content,
+    .scheduled-task-history-item,
+    .scheduled-task-details-grid > div,
+    .scheduled-task-config-grid > div,
+    .memo-schedule-panel
+  ) {
+  border-color: var(--border-color);
+  background: var(--surface-island-strong);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(
+    .memo-filter-tab.active,
+    .memo-view-tab.active,
+    .scheduled-tasks-filter-tab.active,
+    .scheduled-tasks-segmented-btn.active,
+    .memo-list-item.selected,
+    .memory-list-item.selected,
+    .scheduled-task-item.selected,
+    .memo-gantt-row.selected
+  ) {
+  border-color: color-mix(
+    in srgb,
+    var(--cp-neon-pink) 34%,
+    var(--border-color)
+  );
+  background: var(--accent-orange-bg);
+  color: var(--text-primary);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(
+    .memo-filter-tab,
+    .memo-view-tab,
+    .memo-list-item,
+    .memory-list-item,
+    .memo-gantt-row,
+    .scheduled-task-item,
+    .scheduled-tasks-filter-tab,
+    .scheduled-tasks-segmented-btn,
+    .scheduled-tasks-pre-script-toggle
+  ):hover:not(:disabled) {
+  background: var(--accent-orange-bg);
+  color: var(--text-primary);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(
+    .memo-icon-btn:not(.danger):not(.done-toggle),
+    .memo-sort-btn,
+    .memory-multi-select-exit-btn,
+    .memory-multi-select-action-btn:not(.danger)
+  ):hover:not(:disabled) {
+  background: var(--accent-orange-bg);
+  color: var(--accent-orange-text);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(
+    .memo-icon-btn,
+    .scheduled-task-action-btn,
+    .memory-multi-select-action-btn
+  ).danger:hover:not(:disabled) {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--danger);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  .project-collection-delete-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--danger);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(
+    .memo-icon-btn,
+    .memo-sort-btn,
+    .memory-clear-btn,
+    .memory-multi-select-exit-btn,
+    .memory-multi-select-action-btn,
+    .scheduled-task-action-btn,
+    .scheduled-task-copy-btn,
+    .scheduled-task-edit-btn,
+    .scheduled-tasks-back-btn,
+    .scheduled-tasks-cancel-btn
+  ) {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--surface-island-strong);
+  color: var(--text-secondary);
+}
+
+:root[data-theme-preset="cyberpunk"] .memory-editor-btn {
+  border-color: var(--cp-neon-pink);
+  background: var(--cp-neon-pink);
+  color: #ffffff;
+  clip-path: var(--cp-clip-sm);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(
+    .scheduled-task-prompt-content,
+    .scheduled-tasks-prompt-textarea,
+    .scheduled-tasks-script-textarea,
+    .thinking-menu-trigger,
+    .memory-editor-title,
+    .memory-editor-content,
+    .memory-editor-tags,
+    .memo-schedule-field input[type="date"],
+    .scheduled-tasks-field input:not([type="checkbox"]):not([type="range"])
+  ) {
+  border-color: var(--border-color);
+  background: var(--surface-island-strong);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(
+    .scheduled-tasks-prompt-textarea,
+    .scheduled-tasks-script-textarea,
+    .thinking-menu-trigger,
+    .memory-editor-title,
+    .memory-editor-content,
+    .memory-editor-tags
+  ):focus {
+  border-color: var(--cp-neon-pink);
+  box-shadow: 0 0 0 3px var(--accent-orange-bg);
+}
+
+:root[data-theme-preset="cyberpunk"] .stream-metrics {
+  border-color: var(--border-color);
+  border-radius: 0;
+  background: var(--surface-island-strong);
+  clip-path: var(--cp-clip-sm);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(.stream-metrics-icon, .stream-metrics-label) {
+  color: var(--text-muted);
+}
+
+:root[data-theme-preset="cyberpunk"]
+  :is(
+    .stream-metrics-elapsed.is-active,
+    .stream-metrics-tokens.is-active,
+    .stream-metrics-tps.is-active
+  )
+  .stream-metrics-icon {
+  color: var(--cp-neon-pink);
+}
+
+:root[data-theme-preset="cyberpunk"] .stream-metrics-sep {
+  background: color-mix(in srgb, var(--cp-neon-pink) 26%, var(--border-color));
+}
+
+:root[data-theme-preset="cyberpunk"] .stream-metrics-pause-btn:hover {
+  background: var(--accent-orange-bg);
+  color: var(--accent-orange-text);
+}
+
+:root[data-theme-preset="cyberpunk"] .stream-metrics-pause-btn.is-paused {
+  color: var(--cp-neon-pink);
+}
+
+:root[data-theme-preset="cyberpunk"] .stream-metrics-pause-btn.is-paused:hover {
+  background: var(--accent-orange-bg);
+  color: var(--accent-orange-text);
+}
+
+:root[data-theme-preset="cyberpunk"] .stream-metrics-pause-btn:focus-visible {
+  outline-color: var(--cp-neon-pink);
+}

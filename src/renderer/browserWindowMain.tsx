@@ -16,6 +16,8 @@ import "./themes/tokens.css";
 import "./themes/preset-cream.css";
 import "./themes/preset-google.css";
 import "./themes/preset-win95.css";
+import "./themes/preset-cyberpunk.css";
+import "./themes/preset-notion.css";
 import { I18nProvider } from "./i18n";
 import { useTheme } from "./hooks/useTheme";
 import { applyThemeCacheToDocument } from "./components/sidebar/themeSettings/themeSettingsUtils";

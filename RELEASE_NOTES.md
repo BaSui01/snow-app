@@ -1,5 +1,25 @@
 # Release Notes
 
+## v0.4.6
+
+## New Features
+
+- **Custom Commands**: The `/` command panel supports custom commands — global or project scope, an `$ARGUMENTS` placeholder, description and enable/disable management; project-level commands can shadow same-named global ones.
+- **Retry Policy Settings**: A new "Retry" page in API settings toggles retries per error category (rate limit, 5xx, network, stream errors, …), appends extra match keywords, or enables retry-on-any-error in one switch; it applies to all API profiles.
+- **Link Open Menu**: Links in chat replies can be opened in the app browser or the system browser via an open-with menu.
+- **Manual Password Management**: Saved passwords can be added, searched, and deleted manually in browser settings.
+
+## Improvements
+
+- The file viewer gains syntax highlighting and virtual row rendering, so large files open smoothly.
+- Dropdown popovers (file mentions, model selector, command panel, etc.) share unified animation and visibility handling.
+- When every question in a batch of `askUserQuestion` calls is refused, the turn aborts instead of running the remaining tools.
+- The archive database gains schema version management, making database initialization during archiving and restore more robust.
+
+## Bug Fixes
+
+- Fixed the context token snapshot being zeroed after rollback truncation: per-request token usage is persisted on every message and the snapshot is restored from the remaining messages after a rollback.
+
 ## v0.4.5
 
 ## New Features

@@ -388,7 +388,7 @@ export const useChipInteractions = ({
     (event: React.MouseEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement;
       const chip = target.closest(
-        "[data-file-tag='true'],[data-commit-tag='true'],[data-change-tag='true'],[data-review-tag='true'],[data-element-tag='true'],[data-web-tag='true']",
+        "[data-file-tag='true'],[data-commit-tag='true'],[data-change-tag='true'],[data-review-tag='true'],[data-element-tag='true'],[data-web-tag='true'],[data-command-tag='true']",
       ) as HTMLElement | null;
       const clear = (): void => {
         if (chipDetailsTimerRef.current) {
@@ -505,6 +505,15 @@ export const useChipInteractions = ({
             content = base64ToUtf8(data.prompt);
             copyText = content;
           }
+        } else if (chip.dataset.commandTag === "true") {
+          // 命令 chip 只预览 prompt 本体，不显示元信息行（卡片更紧凑）。
+          const data = JSON.parse(chip.dataset.commandData ?? "{}") as {
+            prompt?: string;
+          };
+          if (data.prompt) {
+            content = base64ToUtf8(data.prompt);
+            copyText = content;
+          }
         } else if (chip.dataset.elementTag === "true") {
           const data = JSON.parse(chip.dataset.elementData ?? "{}") as {
             url?: string;
@@ -558,7 +567,7 @@ export const useChipInteractions = ({
         clear();
         return;
       }
-      if (rows.length === 0) {
+      if (rows.length === 0 && !content) {
         clear();
         return;
       }

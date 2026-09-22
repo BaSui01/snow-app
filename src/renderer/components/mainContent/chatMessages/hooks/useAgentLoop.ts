@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { useI18n } from "../../../../i18n";
 import type { ChatInputSendOptions } from "../../chatInput/types";
+import { summarizeContentAsPlainText } from "../../chatInput/fileTagUtils";
 import type {
   ChatConversationMessage,
   ConversationContextValue,
@@ -411,14 +412,19 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       // so the user sees the new conversation without waiting for AI response.
       if (isFirstMessage) {
         const nowIso = new Date().toISOString();
+        // chip 标签（如自定义指令 @@command:...@@）折叠为可读纯文本，
+        // 占位记录不把编码串显示到侧边栏。
+        const titleSource = summarizeContentAsPlainText(trimmed) || trimmed;
         const preview =
-          trimmed.length > 50 ? `${trimmed.slice(0, 50)}...` : trimmed;
+          titleSource.length > 50
+            ? `${titleSource.slice(0, 50)}...`
+            : titleSource;
         ctx.setUpsertedConversation({
           record: {
             // 占位记录使用本会话自己的 pending 槽位 key：点击侧边栏占位
             // 项可回到该会话视图（迁移时自动切换到真实 conversationId）。
             conversationId: sessionKey,
-            title: trimmed,
+            title: titleSource,
             summary: "",
             lastMessagePreview: preview,
             messageCount: 1,

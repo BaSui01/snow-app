@@ -51,12 +51,14 @@ import {
   useTerminalMcpCommandBridge,
   type TerminalMcpTabCallbacks,
 } from "./rightPanel/terminal/useTerminalMcpCommandBridge";
+import { runCommandInTerminal } from "./rightPanel/terminal/terminalCommandRunner";
 import {
   rightPanelEvents,
   type OpenBrowserTabPayload,
   type FocusBrowserTabPayload,
   type OpenFileDiffPreviewPayload,
   type OpenFilePayload,
+  type OpenTerminalCommandPayload,
 } from "./rightPanel/rightPanelEvents";
 import { generateComparePatch } from "../utils/generateComparePatch";
 import { getFileTypeIcon } from "../utils/fileIcons";
@@ -336,16 +338,17 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         options?: TerminalOpenOptions,
       ): string => {
         const tabId = requestedTabId ?? `terminal-${Date.now()}`;
+        const { title, ...terminalOptions } = options ?? {};
         const terminalData: TerminalTabData = {
           cwd,
-          ...(options ?? {}),
+          ...terminalOptions,
         };
         setTabs((prev) => [
           ...prev,
           {
             id: tabId,
             type: "terminal",
-            title: t("rightPanel.terminalTab"),
+            title: title?.trim() || t("rightPanel.terminalTab"),
             data: terminalData,
           },
         ]);
@@ -813,6 +816,33 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     useEffect(() => {
       return rightPanelEvents.on("open-file", handleOpenFileEvent);
     }, [handleOpenFileEvent]);
+
+    // 自定义指令（Bash 类型）请求：新建终端 tab，等 PTY 就绪后把命令写进去，
+    // 由真实 shell 执行——输出与后续交互都留在终端里。
+    const handleOpenTerminalCommandEvent = useCallback(
+      (payload: OpenTerminalCommandPayload) => {
+        const command = payload.command.trim();
+        if (!command) {
+          return;
+        }
+        const cwd = payload.cwd.trim() || activeDirectory?.path || "";
+        const tabId = handleOpenTerminalTab(cwd, undefined, {
+          title: payload.title?.trim() || undefined,
+        });
+        rightPanelEvents.emit("request-expand");
+        void runCommandInTerminal(tabId, command).catch((error: unknown) => {
+          console.error("Failed to run command in terminal", error);
+        });
+      },
+      [activeDirectory?.path, handleOpenTerminalTab],
+    );
+
+    useEffect(() => {
+      return rightPanelEvents.on(
+        "open-terminal-command",
+        handleOpenTerminalCommandEvent,
+      );
+    }, [handleOpenTerminalCommandEvent]);
 
     useImperativeHandle(
       ref,

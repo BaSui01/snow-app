@@ -72,6 +72,12 @@ export type ReviewTag = {
   repoPath?: string;
 };
 
+export type CommandTag = {
+  name: string;
+  prompt: string;
+  charCount: number;
+};
+
 export type ElementTag = {
   /** 元素所在页面 URL */
   url: string;
@@ -149,6 +155,7 @@ export type ContentSegment =
   | { type: "web"; tag: WebTag }
   | { type: "conversation"; tag: ConversationTag }
   | { type: "quote"; tag: QuoteTag }
+  | { type: "command"; tag: CommandTag }
   | { type: "skill"; tag: SkillTag };
 
 /**
@@ -292,6 +299,13 @@ export const encodeReviewTag = (tag: ReviewTag): string =>
     repoPath: tag.repoPath,
   })}@@`;
 
+export const encodeCommandTag = (tag: CommandTag): string =>
+  `@@command:${JSON.stringify({
+    name: tag.name,
+    prompt: utf8ToBase64(tag.prompt),
+    charCount: tag.charCount,
+  })}@@`;
+
 /**
  * 将历史会话引用编码为 conversation 标签。
  * title 为用户自由文本（可能含 `@@`），以 base64 承载避免破坏标签终止符；
@@ -412,7 +426,7 @@ export const buildTextSnippetSummary = (text: string, maxLen = 30): string => {
 export const parseContentSegments = (content: string): ContentSegment[] => {
   const segments: ContentSegment[] = [];
   const regex =
-    /@@(file|dir|image|commit|change|text-snippet|review|element|web|conversation|quote|skill):(.+?)@@/g;
+    /@@(file|dir|image|commit|change|text-snippet|review|element|web|conversation|quote|command|skill):(.+?)@@/g;
   let lastIndex = 0;
   let imageCounter = 0;
   let match: RegExpExecArray | null;
@@ -479,6 +493,29 @@ export const parseContentSegments = (content: string): ContentSegment[] => {
             repoPath: data.repoPath,
           },
         });
+      } catch {
+        segments.push({ type: "text", content: match[0] });
+      }
+    } else if (kind === "command") {
+      try {
+        const data = JSON.parse(value) as Partial<CommandTag>;
+        const name = typeof data.name === "string" ? data.name.trim() : "";
+        if (!name) {
+          segments.push({ type: "text", content: match[0] });
+        } else {
+          const prompt = data.prompt ? base64ToUtf8(data.prompt) : "";
+          segments.push({
+            type: "command",
+            tag: {
+              name,
+              prompt,
+              charCount:
+                typeof data.charCount === "number"
+                  ? data.charCount
+                  : prompt.length,
+            },
+          });
+        }
       } catch {
         segments.push({ type: "text", content: match[0] });
       }
@@ -711,6 +748,8 @@ export const summarizeContentAsPlainText = (content: string): string => {
       parts.push(segment.tag.title);
     } else if (segment.type === "skill") {
       parts.push(segment.tag.name);
+    } else if (segment.type === "command") {
+      parts.push(`/${segment.tag.name}`);
     } else {
       const { tag } = segment;
       const linesStr =
@@ -766,6 +805,8 @@ export const getChipDisplayLabel = (segment: ChipSegment): string => {
       return segment.tag.title;
     case "skill":
       return segment.tag.name;
+    case "command":
+      return `/${segment.tag.name}`;
     default: {
       const { tag } = segment;
       const linesStr =
@@ -884,6 +925,22 @@ export const createReviewChipHtml = (tag: ReviewTag): string => {
   );
   return `<span class="file-chip review-chip" contenteditable="false" data-review-tag="true" data-review-data="${reviewData}"><span class="file-chip-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3"/><path d="m16 16-1.9-1.9"/></svg></span><span class="file-chip-name">${escapeHtml(
     tag.summary,
+  )}</span><span class="file-chip-remove" data-chip-remove="true">${CLOSE_ICON_SVG}</span></span>`;
+};
+
+const COMMAND_ICON_SVG =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/></svg>';
+
+export const createCommandChipHtml = (tag: CommandTag): string => {
+  const commandData = escapeHtml(
+    JSON.stringify({
+      name: tag.name,
+      prompt: utf8ToBase64(tag.prompt),
+      charCount: tag.charCount,
+    }),
+  );
+  return `<span class="file-chip command-chip" contenteditable="false" data-command-tag="true" data-command-data="${commandData}"><span class="file-chip-icon">${COMMAND_ICON_SVG}</span><span class="file-chip-name">${escapeHtml(
+    `/${tag.name}`,
   )}</span><span class="file-chip-remove" data-chip-remove="true">${CLOSE_ICON_SVG}</span></span>`;
 };
 
@@ -1030,6 +1087,9 @@ export const buildSegmentsHtml = (segments: ContentSegment[]): string =>
       if (segment.type === "quote") {
         return createQuoteChipHtml(segment.tag);
       }
+      if (segment.type === "command") {
+        return createCommandChipHtml(segment.tag);
+      }
       if (segment.type === "skill") {
         return createSkillChipHtml(segment.tag);
       }
@@ -1048,6 +1108,7 @@ type ChipSerializers = {
   web: (tag: WebTag) => string;
   conversation: (tag: ConversationTag) => string;
   quote: (tag: QuoteTag) => string;
+  command: (tag: CommandTag) => string;
   skill: (tag: SkillTag) => string;
 };
 
@@ -1221,6 +1282,26 @@ const readEditableContentWith = (
         } catch {
           // Ignore malformed quote data
         }
+      } else if (elem.dataset.commandTag === "true") {
+        try {
+          const data = JSON.parse(
+            elem.dataset.commandData || "{}",
+          ) as Partial<CommandTag>;
+          const name = typeof data.name === "string" ? data.name.trim() : "";
+          if (name) {
+            const prompt = data.prompt ? base64ToUtf8(data.prompt) : "";
+            result += serializers.command({
+              name,
+              prompt,
+              charCount:
+                typeof data.charCount === "number"
+                  ? data.charCount
+                  : prompt.length,
+            });
+          }
+        } catch {
+          // Ignore malformed command data
+        }
       } else if (elem.dataset.skillTag === "true") {
         try {
           const data = JSON.parse(
@@ -1269,6 +1350,7 @@ export const readEditableContent = (el: HTMLElement): string =>
     web: encodeWebTag,
     conversation: encodeConversationTag,
     quote: encodeQuoteTag,
+    command: encodeCommandTag,
     skill: encodeSkillTag,
   });
 
@@ -1319,6 +1401,7 @@ export const readEditableContentAsPlainText = (el: HTMLElement): string =>
     web: (tag) => (tag.title ? `${tag.title} ${tag.url}` : tag.url),
     conversation: (tag) => tag.title,
     quote: (tag) => tag.content,
+    command: (tag) => tag.prompt,
     skill: (tag) => tag.name,
   });
 

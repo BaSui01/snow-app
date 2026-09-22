@@ -166,28 +166,36 @@ export const InputOverlayLayer = ({
             onMouseEnter={cancelHideChipDetails}
             onMouseLeave={scheduleHideChipDetails}
           >
-            {chipDetails.copyText ? (
-              <div className="chip-details-preview-toolbar">
-                <HoverCopyButton text={chipDetails.copyText} />
+            {chipDetails.rows.length > 0 ? (
+              <div className="chip-details-preview-rows">
+                {chipDetails.rows.map((row) => (
+                  <div className="chip-details-preview-row" key={row.label}>
+                    <span className="chip-details-preview-label">
+                      {row.label}
+                    </span>
+                    <span className="chip-details-preview-value">
+                      {row.value}
+                    </span>
+                  </div>
+                ))}
               </div>
             ) : null}
-            <div className="chip-details-preview-rows">
-              {chipDetails.rows.map((row) => (
-                <div className="chip-details-preview-row" key={row.label}>
-                  <span className="chip-details-preview-label">
-                    {row.label}
-                  </span>
-                  <span className="chip-details-preview-value">
-                    {row.value}
-                  </span>
-                </div>
-              ))}
-            </div>
-            {chipDetails.content && (
-              <pre className="chip-details-preview-content">
-                {chipDetails.content}
-              </pre>
-            )}
+            {chipDetails.content ? (
+              <div className="chip-details-preview-content-wrap">
+                <pre
+                  className={`chip-details-preview-content${
+                    chipDetails.copyText ? " has-copy" : ""
+                  }`}
+                >
+                  {chipDetails.content}
+                </pre>
+                {chipDetails.copyText ? (
+                  <div className="chip-details-preview-copy">
+                    <HoverCopyButton text={chipDetails.copyText} />
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>,
           document.body,
         )}

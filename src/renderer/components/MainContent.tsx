@@ -23,6 +23,11 @@ const CustomHeadersSettingsPanel = lazy(() =>
     default: m.CustomHeadersSettingsPanel,
   })),
 );
+const CustomCommandsSettingsPanel = lazy(() =>
+  import("./sidebar/CustomCommandsSettingsPanel").then((m) => ({
+    default: m.CustomCommandsSettingsPanel,
+  })),
+);
 const HooksSettingsPanel = lazy(() =>
   import("./sidebar/HooksSettingsPanel").then((m) => ({
     default: m.HooksSettingsPanel,
@@ -247,6 +252,11 @@ export const MainContent = ({
             />
           ) : activeView === "sensitive-command-settings" ? (
             <SensitiveCommandsPanel
+              activeDirectory={activeDirectory}
+              onClose={() => onSelectView("chat")}
+            />
+          ) : activeView === "custom-commands-settings" ? (
+            <CustomCommandsSettingsPanel
               activeDirectory={activeDirectory}
               onClose={() => onSelectView("chat")}
             />

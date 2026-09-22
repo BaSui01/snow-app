@@ -23,6 +23,7 @@ import {
   readSnowCliSensitiveCommandConfig,
 } from "../../settings/sensitiveCommandSettings";
 import { normalizeSubAgentConfig } from "../../settings/subAgentSettings";
+import { normalizeCustomCommand } from "../../settings/customCommandSettings";
 import type { HookConfigInput, HookScope } from "../../native/types";
 
 const requireProjectId = (value: unknown): string => {
@@ -30,6 +31,14 @@ const requireProjectId = (value: unknown): string => {
     throw new Error("Project id is required");
   }
   return value.trim();
+};
+
+const readOptionalProjectId = (value: unknown): string | undefined => {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
 };
 
 const normalizeHookConfig = (item: unknown): HookConfigInput => {
@@ -155,6 +164,23 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
   );
   ipcMain.handle("custom-header-schemes:import-snow-cli", () =>
     readSnowCliCustomHeadersConfig(native),
+  );
+
+  // ===== Custom Commands =====
+  ipcMain.handle("custom-commands:list", (_event, projectId: unknown) =>
+    native.listCustomCommands(readOptionalProjectId(projectId)),
+  );
+  ipcMain.handle("custom-commands:upsert", async (_event, item: unknown) => {
+    await native.upsertCustomCommand(normalizeCustomCommand(item));
+  });
+  ipcMain.handle(
+    "custom-commands:delete",
+    async (_event, commandId: unknown) => {
+      if (typeof commandId !== "string" || !commandId.trim()) {
+        throw new Error("Custom command id is required");
+      }
+      await native.deleteCustomCommand(commandId.trim());
+    },
   );
 
   // ===== MCP Server Configs =====

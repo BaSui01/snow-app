@@ -924,6 +924,21 @@ export function createToolExecutor(
               }
             }
 
+            if (toolCall.name === "filesystem-create") {
+              try {
+                const parsedArgs = JSON.parse(toolArgs) as Record<
+                  string,
+                  unknown
+                >;
+                if (typeof parsedArgs.overwrite !== "boolean") {
+                  parsedArgs.overwrite = false;
+                  toolArgs = JSON.stringify(parsedArgs);
+                }
+              } catch {
+                // If args are not valid JSON, let the tool fail naturally.
+              }
+            }
+
             // Attach Snow-owned session metadata to command and persistent
             // terminal tools. Pending conversations do not yet have a stable ID.
             toolArgs = injectSessionIdIntoToolArgs(

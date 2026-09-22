@@ -188,6 +188,34 @@ pub struct CustomHeaderSchemeRecord {
 }
 
 #[napi(object)]
+pub struct CustomCommandInput {
+    pub command_id: String,
+    pub scope: String,
+    pub project_id: String,
+    pub name: String,
+    pub command_type: String,
+    pub content: String,
+    pub description: String,
+    pub enabled: bool,
+    pub sort_order: i32,
+}
+
+#[napi(object)]
+pub struct CustomCommandRecord {
+    pub command_id: String,
+    pub scope: String,
+    pub project_id: String,
+    pub name: String,
+    pub command_type: String,
+    pub content: String,
+    pub description: String,
+    pub enabled: bool,
+    pub sort_order: i32,
+    pub shadowed: bool,
+    pub updated_at: String,
+}
+
+#[napi(object)]
 pub struct WorkspaceDirectoryInput {
     pub directory_id: String,
     pub name: String,

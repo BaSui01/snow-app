@@ -577,6 +577,7 @@ export const UserMessageRail = memo(
                       msg.content.includes("@@element:") ||
                       msg.content.includes("@@web:") ||
                       msg.content.includes("@@conversation:") ||
+                      msg.content.includes("@@command:") ||
                       msg.content.includes("@@skill:"));
                   const isVisible = visibleUserIndices.has(index);
                   const itemLabel = msg.isContextCompaction

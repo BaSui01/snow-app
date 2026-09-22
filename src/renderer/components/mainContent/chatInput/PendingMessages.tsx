@@ -11,6 +11,7 @@ import {
   MousePointer2,
   ScanSearch,
   Undo2,
+  Wand2,
 } from "lucide-react";
 import { useI18n } from "../../../i18n";
 import {
@@ -224,6 +225,25 @@ const renderSegments = (content: string): React.ReactNode => {
             />
           )}
           <span className="user-message-file-chip-name">{tag.title}</span>
+        </span>
+      );
+    }
+
+    if (segment.type === "command") {
+      const { tag } = segment;
+      const commandTitle = `/${tag.name} (${tag.charCount} chars)`;
+      return (
+        <span
+          key={index}
+          className="user-message-file-chip command-chip"
+          title={commandTitle}
+        >
+          <Wand2
+            size={12}
+            className="user-message-file-chip-icon"
+            style={{ color: "#0891b2" }}
+          />
+          <span className="user-message-file-chip-name">{`/${tag.name}`}</span>
         </span>
       );
     }

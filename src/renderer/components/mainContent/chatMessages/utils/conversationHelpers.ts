@@ -625,9 +625,6 @@ export const validateToolCall = (toolCall: ToolCallInfo): string | null => {
     "filesystem-copy": ["filePath", "sourceFilePath"],
     "bash-terminal-execute": ["command"],
   };
-  const requiredBooleanArguments: Record<string, readonly string[]> = {
-    "filesystem-create": ["overwrite"],
-  };
   const requiredNumberArguments: Record<string, readonly string[]> = {
     "filesystem-copy": ["sourceStartLine"],
   };
@@ -635,9 +632,6 @@ export const validateToolCall = (toolCall: ToolCallInfo): string | null => {
   const missing = [
     ...(requiredStringArguments[toolCall.name] ?? []).filter(
       (key) => typeof args[key] !== "string" || args[key].trim().length === 0,
-    ),
-    ...(requiredBooleanArguments[toolCall.name] ?? []).filter(
-      (key) => typeof args[key] !== "boolean",
     ),
     ...(requiredNumberArguments[toolCall.name] ?? []).filter(
       (key) => typeof args[key] !== "number",

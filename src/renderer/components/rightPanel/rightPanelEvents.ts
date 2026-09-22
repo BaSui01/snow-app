@@ -59,6 +59,15 @@ export type OpenFilePayload = {
   focusLine?: number;
 };
 
+export type OpenTerminalCommandPayload = {
+  /** 终端工作目录（空串回退到当前工作区目录） */
+  cwd: string;
+  /** 在终端里执行的命令（自动补换行执行，输出留在终端内） */
+  command: string;
+  /** 终端 tab 标题（缺省为「终端」） */
+  title?: string;
+};
+
 export type OpenPluginPanelPayload = {
   /** 目标插件 id */
   pluginId: string;
@@ -73,6 +82,7 @@ type RightPanelEventMap = {
   "open-browser-tab": (payload: OpenBrowserTabPayload) => void;
   "focus-browser-tab": (payload: FocusBrowserTabPayload) => void;
   "open-file": (payload: OpenFilePayload) => void;
+  "open-terminal-command": (payload: OpenTerminalCommandPayload) => void;
   "open-plugin-panel": (payload: OpenPluginPanelPayload) => void;
   "request-expand": () => void;
 };
@@ -84,6 +94,7 @@ const listeners: {
   "open-browser-tab"?: Set<(payload: OpenBrowserTabPayload) => void>;
   "focus-browser-tab"?: Set<(payload: FocusBrowserTabPayload) => void>;
   "open-file"?: Set<(payload: OpenFilePayload) => void>;
+  "open-terminal-command"?: Set<(payload: OpenTerminalCommandPayload) => void>;
   "open-plugin-panel"?: Set<(payload: OpenPluginPanelPayload) => void>;
   "request-expand"?: Set<() => void>;
 } = {};

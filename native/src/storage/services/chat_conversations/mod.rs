@@ -7,8 +7,8 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 use super::super::database;
 use super::super::ChatConversationRecord;
 use crate::api::conversation::images::{
-    expand_conversation_tags_in_content, expand_element_tags_in_content,
-    expand_review_tags_in_content,
+    expand_command_tags_in_content, expand_conversation_tags_in_content,
+    expand_element_tags_in_content, expand_review_tags_in_content,
 };
 
 mod fork_truncate;
@@ -805,10 +805,13 @@ fn create_title(messages: &[ChatContextMessage]) -> String {
                 .find(|message| !message.content.trim().is_empty())
         })
         .map(|message| {
-            // 展开 @@review: / @@element: / @@conversation: 标签，避免标题显示
-            // base64/JSON 外壳；其余消息原文不变。
+            // 展开 @@review: / @@command: / @@element: / @@conversation: 标签，
+            // 避免标题显示 base64/JSON 外壳；其余消息原文不变。
             let mut content = message.content.clone();
             if let Some(expanded) = expand_review_tags_in_content(&content) {
+                content = expanded;
+            }
+            if let Some(expanded) = expand_command_tags_in_content(&content) {
                 content = expanded;
             }
             if let Some(expanded) = expand_element_tags_in_content(&content) {

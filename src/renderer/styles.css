@@ -12508,12 +12508,12 @@ input {
   user-select: none;
   list-style: none;
   line-height: 1.4;
+  border-radius: 6px;
   transition: background 0.15s ease;
 }
 
 .tcn-header:hover {
   background: var(--bg-hover);
-  border-radius: 6px;
 }
 
 .tcn-header::-webkit-details-marker {
@@ -23252,6 +23252,12 @@ input {
   color: var(--accent-color, #4a9eff);
 }
 
+/* ===== Command Chip（自定义指令 prompt） ===== */
+.command-chip:hover {
+  border-color: #0891b2;
+  color: #0891b2;
+}
+
 /* ===== 划词引用浮层：选中文本后出现在光标处，点击插入 quote chip ===== */
 .text-selection-quote-popup {
   position: fixed;
@@ -23325,7 +23331,6 @@ input {
   gap: 6px;
 }
 
-.chip-details-preview-toolbar,
 .text-snippet-preview-toolbar {
   display: flex;
   justify-content: flex-end;
@@ -23409,6 +23414,39 @@ input {
   white-space: pre-wrap;
   word-break: break-all;
   color: var(--text-secondary);
+}
+
+/* 内容区右上角悬浮的复制按钮：不占独立一行，悬停卡片时淡入 */
+.chip-details-preview-content-wrap {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+.chip-details-preview-content-wrap .chip-details-preview-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.chip-details-preview-content.has-copy {
+  padding-right: 30px;
+}
+
+.chip-details-preview-copy {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: flex;
+  opacity: 0;
+  transition: opacity 0.1s;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+}
+
+.chip-details-preview:hover .chip-details-preview-copy,
+.chip-details-preview:focus-within .chip-details-preview-copy {
+  opacity: 1;
 }
 
 /* ===== 会话 Chip 悬停预览（发送时实际注入的上下文内容） ===== */
@@ -46983,4 +47021,181 @@ pre.file-viewer-code {
   font-size: 10px;
   line-height: 1.5;
   word-break: break-all;
+}
+
+.chat-command-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-command-group-header {
+  padding: 6px 12px 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.chat-command-item-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 9.5px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.custom-commands-manager {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 16px 16px;
+}
+
+.custom-commands-modal {
+  height: min(760px, calc(100vh - 48px));
+}
+
+.custom-commands-modal .app-modal-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.custom-commands-modal .custom-commands-manager {
+  padding: 14px 16px 16px;
+}
+
+.custom-command-toolbar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.custom-command-scope-hint {
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.custom-command-toolbar-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.custom-command-editor-modal .app-modal-body {
+  max-height: min(560px, calc(100vh - 260px));
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.custom-command-arguments-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+.custom-command-state {
+  display: flex;
+  min-height: 140px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.custom-command-list {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.custom-command-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+}
+
+.custom-command-row.is-enabled {
+  background: var(--bg-primary);
+}
+
+.custom-command-row > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--text-muted);
+}
+
+.custom-command-content {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.custom-command-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.custom-command-title code {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.custom-command-type {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.custom-command-type.muted {
+  background: var(--accent-amber-bg);
+  color: var(--accent-amber-text);
+}
+
+.custom-command-description {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.custom-command-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
 }

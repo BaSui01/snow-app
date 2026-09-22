@@ -486,6 +486,27 @@ export type CustomHeaderSchemeRecord = CustomHeaderSchemeInput & {
   updatedAt: string;
 };
 
+export type CustomCommandScope = "global" | "project";
+export type CustomCommandType = "prompt" | "bash";
+
+export type CustomCommandInput = {
+  commandId: string;
+  scope: CustomCommandScope;
+  projectId: string;
+  name: string;
+  commandType: CustomCommandType;
+  content: string;
+  description: string;
+  enabled: boolean;
+  sortOrder: number;
+};
+
+export type CustomCommandRecord = CustomCommandInput & {
+  /** 全局指令被同名项目指令覆盖时为 true */
+  shadowed: boolean;
+  updatedAt: string;
+};
+
 export type WorkspaceDirectoryKind = "local" | "ssh";
 
 export type WorkspaceDirectoryInput = {
@@ -1852,6 +1873,9 @@ export type NativeBridge = {
   listCustomHeaderSchemes: () => Promise<CustomHeaderSchemeRecord[]>;
   upsertCustomHeaderScheme: (item: CustomHeaderSchemeInput) => Promise<void>;
   deleteCustomHeaderScheme: (schemeId: string) => Promise<void>;
+  listCustomCommands: (projectId?: string) => Promise<CustomCommandRecord[]>;
+  upsertCustomCommand: (item: CustomCommandInput) => Promise<void>;
+  deleteCustomCommand: (commandId: string) => Promise<void>;
   listWorkspaceDirectories: () => Promise<WorkspaceDirectoryRecord[]>;
   upsertWorkspaceDirectory: (item: WorkspaceDirectoryInput) => Promise<void>;
   activateWorkspaceDirectory: (directoryId: string) => Promise<void>;

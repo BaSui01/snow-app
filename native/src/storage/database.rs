@@ -17,6 +17,7 @@ use super::{
 
 /// Bumped whenever the schema changes; written to `PRAGMA user_version` after
 /// a successful `create_schema` so the app can detect stale databases.
+/// 45: custom_commands table (global/project scoped user-defined slash commands).
 /// 44: api_configs.sort_order column (user-ordered API profile list).
 /// 42: workspace_directories path health columns + workspace_directory_relinks table.
 /// 41: memory_prompt_snapshots table (per-conversation frozen Project Memory prompt section).
@@ -30,7 +31,7 @@ use super::{
 /// 32: api_configs canonical config_json migration plus conversation runtime config columns.
 /// 31: main's scheduled-tasks pre-script migration (30) + PR #65's three
 /// stream-interruption migrations (29 baseline + 4 total additions).
-const CURRENT_SCHEMA_VERSION: i64 = 44;
+const CURRENT_SCHEMA_VERSION: i64 = 45;
 const SNOWFLAKE_EPOCH_MS: u64 = 1_704_067_200_000;
 const SNOWFLAKE_WORKER_ID_BITS: u64 = 10;
 const SNOWFLAKE_SEQUENCE_BITS: u64 = 12;
@@ -556,6 +557,23 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
          );
          CREATE INDEX IF NOT EXISTS idx_custom_header_schemes_active
            ON custom_header_schemes(is_active);
+
+         CREATE TABLE IF NOT EXISTS custom_commands (
+           id TEXT PRIMARY KEY NOT NULL,
+           command_id TEXT NOT NULL UNIQUE,
+           scope TEXT NOT NULL DEFAULT 'global',
+           project_id TEXT NOT NULL DEFAULT '',
+           name TEXT NOT NULL DEFAULT '',
+           command_type TEXT NOT NULL DEFAULT 'prompt',
+           content TEXT NOT NULL DEFAULT '',
+           description TEXT NOT NULL DEFAULT '',
+           enabled INTEGER NOT NULL DEFAULT 1,
+           sort_order INTEGER NOT NULL DEFAULT 0,
+           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+           updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+         );
+         CREATE INDEX IF NOT EXISTS idx_custom_commands_scope
+           ON custom_commands(scope, project_id, sort_order);
 
          CREATE TABLE IF NOT EXISTS workspace_directories (
            id TEXT PRIMARY KEY NOT NULL,

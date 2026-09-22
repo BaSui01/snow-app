@@ -5,6 +5,7 @@ import { ProjectPermissionsPanel } from "./ProjectPermissionsPanel";
 import { ProjectSensitiveCommandsPanel } from "./ProjectSensitiveCommandsPanel";
 import { ProjectSkillsPanel } from "./ProjectSkillsPanel";
 import { RoleEditorPanel } from "./RoleEditorPanel";
+import { CustomCommandsPanel } from "./CustomCommandsPanel";
 import { FileChangesPanel } from "./commands/FileChangesPanel";
 import { MemoryPanel } from "./commands/MemoryPanel";
 import { ReviewPanel } from "./commands/ReviewPanel";
@@ -21,11 +22,10 @@ export type ChatInputPanelsProps = {
   isFileChangesOpen: boolean;
   isMemoryOpen: boolean;
   isReviewOpen: boolean;
+  isCustomCommandsOpen: boolean;
   workflowMode: boolean;
   planMode: boolean;
-  conversationFileChanges: ComponentProps<
-    typeof FileChangesPanel
-  >["changesOverride"];
+  conversationFileChanges: ComponentProps<typeof FileChangesPanel>["changes"];
   reviewWorkDir: string;
   onStartReview: ComponentProps<typeof ReviewPanel>["onStartReview"];
   onCloseProjectMcp: () => void;
@@ -37,6 +37,7 @@ export type ChatInputPanelsProps = {
   onCloseFileChanges: () => void;
   onCloseMemory: () => void;
   onCloseReview: () => void;
+  onCloseCustomCommands: () => void;
 };
 
 export const ChatInputPanels = ({
@@ -51,6 +52,7 @@ export const ChatInputPanels = ({
   isFileChangesOpen,
   isMemoryOpen,
   isReviewOpen,
+  isCustomCommandsOpen,
   workflowMode,
   planMode,
   conversationFileChanges,
@@ -65,6 +67,7 @@ export const ChatInputPanels = ({
   onCloseFileChanges,
   onCloseMemory,
   onCloseReview,
+  onCloseCustomCommands,
 }: ChatInputPanelsProps): React.JSX.Element => (
   <>
     <ProjectMcpPanel
@@ -107,7 +110,7 @@ export const ChatInputPanels = ({
     />
     <FileChangesPanel
       open={isFileChangesOpen}
-      changesOverride={conversationFileChanges}
+      changes={conversationFileChanges}
       onClose={onCloseFileChanges}
     />
     <MemoryPanel open={isMemoryOpen} onClose={onCloseMemory} />
@@ -116,6 +119,12 @@ export const ChatInputPanels = ({
       workDir={reviewWorkDir}
       onStartReview={onStartReview}
       onClose={onCloseReview}
+    />
+    <CustomCommandsPanel
+      open={isCustomCommandsOpen}
+      projectId={projectId}
+      projectName={projectName}
+      onClose={onCloseCustomCommands}
     />
   </>
 );

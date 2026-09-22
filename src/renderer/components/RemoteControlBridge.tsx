@@ -225,9 +225,13 @@ const toRemoteContentBlocks = (
                       ? segment.tag.title || "会话"
                       : segment.type === "quote"
                         ? segment.tag.summary || "引用"
-                        : segment.tag.name || "Skill";
+                        : segment.type === "command"
+                          ? `/${segment.tag.name}`
+                          : segment.tag.name || "Skill";
       const detail =
-        segment.type === "text-snippet" || segment.type === "quote"
+        segment.type === "text-snippet" ||
+        segment.type === "quote" ||
+        segment.type === "command"
           ? `${segment.tag.charCount} 个字符`
           : segment.type === "web"
             ? segment.tag.url
@@ -273,6 +277,7 @@ const toRemotePreview = (content: string | undefined): string => {
       if (segment.type === "element") return `[网页元素 ${segment.tag.label}]`;
       if (segment.type === "review") return `[代码审查 ${segment.tag.summary}]`;
       if (segment.type === "quote") return `[引用 ${segment.tag.summary}]`;
+      if (segment.type === "command") return `[指令 /${segment.tag.name}]`;
       return `[文本片段 ${segment.tag.summary}]`;
     })
     .join("")

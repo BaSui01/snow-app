@@ -1675,16 +1675,16 @@ fn checkpoint_file_diff(
 
 /// Build unified diffs from checkpoint content to the current working state.
 /// This is read-only and is used by the renderer's rollback preview and the
-/// file-changes panel.
+/// file-changes panel (`/changes` command).
 ///
 /// `include_all` controls which captured entries are reported:
-/// - `false` (rollback preview): only files whose current state still matches
-///   the checkpoint's post-change state. These are exactly the files rollback
-///   would restore, so the preview matches the restore behaviour.
-/// - `true` (file-changes panel): every captured entry is reported as long as
+/// - `false` (rollback preview and `/changes` panel): only files whose current
+///   state still matches the checkpoint's post-change state. These are exactly
+///   the files rollback would restore, so both renderer views match the
+///   restore behaviour.
+/// - `true` (include-all listing): every captured entry is reported as long as
 ///   its current state differs from the pre-change state. Files that were
-///   re-modified by later runs in a shared working tree stay visible, so an
-///   earlier conversation's modifications are never erased from the panel.
+///   re-modified by later runs in a shared working tree stay visible.
 pub fn list_checkpoint_diffs(
     checkpoint_id: String,
     work_dir: String,
@@ -1744,8 +1744,9 @@ pub fn list_checkpoint_diffs(
 /// 整条链——original 取最早、expected 取最新。先新建再编辑的文件因此显示为
 /// 「新增（回滚会删除它）」，而不是「修改」，与实际恢复结果完全一致。
 ///
-/// `include_all=false`（回滚预览）只报告仍处于链尾后状态、回滚真正会恢复的
-/// 文件；`true`（文件变更面板）报告相对链首 pre-change 状态仍有差异的文件。
+/// `include_all=false`（回滚预览与 /changes 面板）只报告仍处于链尾后状态、
+/// 回滚真正会恢复的文件；`true`（include-all 列表）报告相对链首 pre-change
+/// 状态仍有差异的文件。
 pub fn list_checkpoint_diffs_batch(
     checkpoint_ids: Vec<String>,
     work_dir: String,

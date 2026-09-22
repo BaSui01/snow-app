@@ -30,6 +30,8 @@ export type DiffTabData = {
 };
 
 export type TerminalOpenOptions = {
+  /** tab 标题（缺省为「终端」）；终端上报的 shell 标题仍会覆盖它 */
+  title?: string;
   ptyId?: string;
   shellPath?: string;
   sessionId?: string;

@@ -180,10 +180,11 @@ pub async fn list_checkpoint_changes_batch(
 ///
 /// `includeAll` (optional, default false):
 /// - `false`: only files still in the checkpoint's post-change state (rollback
-///   preview semantics — matches what `restore_checkpoint` would restore).
+///   preview and `/changes` panel semantics — matches what
+///   `restore_checkpoint` would restore).
 /// - `true`: every captured entry whose current state differs from its
-///   pre-change state (file-changes panel semantics — later runs drifting the
-///   shared working tree never erase an earlier conversation's modifications).
+///   pre-change state (include-all listing — later runs drifting the shared
+///   working tree never erase an earlier conversation's modifications).
 #[napi]
 pub async fn list_checkpoint_diffs(
     checkpoint_id: String,

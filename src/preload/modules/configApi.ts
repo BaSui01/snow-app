@@ -1,5 +1,7 @@
 import { ipcRenderer } from "electron";
 import type {
+  CustomCommandInput,
+  CustomCommandRecord,
   CustomHeaderSchemeInput,
   CustomHeaderSchemeRecord,
   HookConfigInput,
@@ -48,6 +50,12 @@ export const configApi = {
     ipcRenderer.invoke("custom-header-schemes:delete", schemeId),
   importSnowCliCustomHeadersConfig: (): Promise<CustomHeaderSchemeRecord[]> =>
     ipcRenderer.invoke("custom-header-schemes:import-snow-cli"),
+  listCustomCommands: (projectId?: string): Promise<CustomCommandRecord[]> =>
+    ipcRenderer.invoke("custom-commands:list", projectId),
+  upsertCustomCommand: (item: CustomCommandInput): Promise<void> =>
+    ipcRenderer.invoke("custom-commands:upsert", item),
+  deleteCustomCommand: (commandId: string): Promise<void> =>
+    ipcRenderer.invoke("custom-commands:delete", commandId),
   listMcpServerConfigs: (): Promise<McpServerConfigRecord[]> =>
     ipcRenderer.invoke("mcp-server-configs:list"),
   upsertMcpServerConfig: (

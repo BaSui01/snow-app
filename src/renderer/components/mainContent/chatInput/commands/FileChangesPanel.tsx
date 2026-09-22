@@ -7,62 +7,31 @@ import {
   FileDiffPreview,
   type FileDiffPreviewItem,
 } from "../../../common/FileDiffPreview";
-import { useChatConversationContext } from "../../chatMessages/components/ChatConversationContext";
-import {
-  collectConversationFileChanges,
-  countUniqueFiles,
-} from "../../chatMessages/hooks/fileChangeTracking";
+import { countUniqueFiles } from "../../chatMessages/hooks/fileChangeTracking";
 import type { FileChangeRecord } from "../../chatMessages/utils/conversationTypes";
 
 type FileChangesPanelProps = {
   /** Whether the panel is visible. Controlled by the /changes command. */
   open: boolean;
-  /** Final checkpoint-backed changes when available. */
-  changesOverride?: FileChangeRecord[];
+  /** 回滚链计算出的文件变更，与回滚确认弹窗同源。 */
+  changes: FileChangeRecord[];
   onClose: () => void;
 };
 
 /**
- * Modal listing every file modified by the main agent and its sub-agents
- * during the active conversation, with a "view changes" action that switches
- * to a diff preview (same FileDiffPreview used by the rollback dialog).
- * Opened via the /changes slash command.
- *
- * Data comes from fileChangeStats, which the tool-execution pipeline fills in
- * live: filesystem-create / filesystem-replace_edit / filesystem-copy calls
- * that completed successfully. A cut performed by filesystem-copy modifies two
- * files at once and therefore contributes two records. Records are keyed by
- * conversationId — the main conversation
- * collects its own changes (agent: "main"), each sub-agent collects its own
- * under its conversationId (agent: "sub"), and this panel merges them via the
- * parent's childSubAgentIds set.
- *
- * Stats survive restarts: when a conversation is opened, its persisted
- * history (tool calls + results) is scanned to re-hydrate the records, so
- * historical conversations show the same file-change summary as live ones.
+ * Modal opened by the /changes slash command, listing the files the rollback
+ * chain of the active conversation would restore — the same records the
+ * rollback dialog shows (see useConversationFileChanges). The "view changes"
+ * action switches to a diff preview (same FileDiffPreview as the rollback
+ * dialog).
  */
 export const FileChangesPanel = ({
   open,
-  changesOverride,
+  changes,
   onClose,
 }: FileChangesPanelProps): React.JSX.Element | null => {
   const { t } = useI18n();
-  const { fileChangeStats, activeConversationId } =
-    useChatConversationContext();
   const [isDiffView, setIsDiffView] = useState(false);
-
-  const changes = useMemo(() => {
-    if (changesOverride) {
-      return changesOverride;
-    }
-    if (!activeConversationId) {
-      return [];
-    }
-    return collectConversationFileChanges(
-      fileChangeStats,
-      activeConversationId,
-    );
-  }, [activeConversationId, changesOverride, fileChangeStats]);
 
   const summary = useMemo(() => {
     const mainCount = changes.filter(

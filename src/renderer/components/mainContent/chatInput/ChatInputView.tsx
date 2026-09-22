@@ -25,6 +25,11 @@ import { rightPanelEvents } from "../../rightPanel/rightPanelEvents";
 import { CommandPanel } from "./commands/CommandPanel";
 import { createChatCommands } from "./commands/commandRegistry";
 import {
+  applyCustomCommandArguments,
+  type EffectiveCustomCommand,
+} from "./commands/customCommands";
+import { useCustomCommands } from "./commands/useCustomCommands";
+import {
   clearRemoteControlChatInput,
   publishRemoteControlChatInput,
   type SnowRemoteChatInputPublication,
@@ -197,6 +202,7 @@ export const ChatInputView = ({
   const [isRoleEditorOpen, setIsRoleEditorOpen] = useState(false);
   const [isFileChangesOpen, setIsFileChangesOpen] = useState(false);
   const [isMemoryOpen, setIsMemoryOpen] = useState(false);
+  const [isCustomCommandsOpen, setIsCustomCommandsOpen] = useState(false);
   // 稳定引用：供 StreamMetricsWorkSummary memo 使用，避免父组件重渲染时
   // 传入新的 inline lambda 导致文件统计区域失效重绘（P0-1 性能优化）。
   const handleOpenFileChanges = useCallback(() => {
@@ -212,6 +218,7 @@ export const ChatInputView = ({
     setIsFileChangesOpen(false);
     setIsMemoryOpen(false);
     setIsReviewOpen(false);
+    setIsCustomCommandsOpen(false);
     setIsProjectCodebaseOpen(true);
   }, []);
   const [isReviewOpen, setIsReviewOpen] = useState(false);
@@ -235,6 +242,36 @@ export const ChatInputView = ({
   const isNewChat = !activeConversationId;
   const reviewWorkDir = directoryIdToPath(projectId);
 
+  const customCommands = useCustomCommands(projectId);
+  const customCommandWorkingDir = conversationWorkDir ?? reviewWorkDir ?? "";
+
+  const handleRunCustomCommand = useCallback(
+    (command: EffectiveCustomCommand, args?: string): void => {
+      const finalCommand = applyCustomCommandArguments(command.content, args);
+      if (command.commandType === "prompt") {
+        handleSendMessage(finalCommand, {
+          model: selectedModel || undefined,
+          apiProfile: selectedApiProfile || undefined,
+        });
+        return;
+      }
+
+      // Bash 类型：交给系统终端执行——右侧面板新建终端 tab，
+      // 命令写入该 tab 的真实 shell，输出与交互都留在终端里。
+      rightPanelEvents.emit("open-terminal-command", {
+        cwd: customCommandWorkingDir,
+        command: finalCommand,
+        title: `/${command.name}`,
+      });
+    },
+    [
+      customCommandWorkingDir,
+      handleSendMessage,
+      selectedApiProfile,
+      selectedModel,
+    ],
+  );
+
   const commands = useMemo(
     () =>
       createChatCommands({
@@ -248,6 +285,7 @@ export const ChatInputView = ({
           setIsProjectCodebaseOpen(false);
           setIsRoleEditorOpen(false);
           setIsMemoryOpen(false);
+          setIsCustomCommandsOpen(false);
           setIsFileChangesOpen(true);
         },
         onOpenMemoryPanel: () => {
@@ -259,6 +297,7 @@ export const ChatInputView = ({
           setIsRoleEditorOpen(false);
           setIsFileChangesOpen(false);
           setIsReviewOpen(false);
+          setIsCustomCommandsOpen(false);
           setIsMemoryOpen(true);
         },
         onOpenMcpPanel: () => {
@@ -269,6 +308,7 @@ export const ChatInputView = ({
           setIsRoleEditorOpen(false);
           setIsFileChangesOpen(false);
           setIsMemoryOpen(false);
+          setIsCustomCommandsOpen(false);
           setIsProjectMcpOpen(true);
         },
         onOpenRolePanel: () => {
@@ -279,6 +319,7 @@ export const ChatInputView = ({
           setIsProjectCodebaseOpen(false);
           setIsFileChangesOpen(false);
           setIsMemoryOpen(false);
+          setIsCustomCommandsOpen(false);
           setIsRoleEditorOpen(true);
         },
         onOpenPermissionsPanel: () => {
@@ -289,6 +330,7 @@ export const ChatInputView = ({
           setIsRoleEditorOpen(false);
           setIsFileChangesOpen(false);
           setIsMemoryOpen(false);
+          setIsCustomCommandsOpen(false);
           setIsProjectPermissionsOpen(true);
         },
         onOpenSensitiveCommandsPanel: () => {
@@ -299,6 +341,7 @@ export const ChatInputView = ({
           setIsRoleEditorOpen(false);
           setIsFileChangesOpen(false);
           setIsMemoryOpen(false);
+          setIsCustomCommandsOpen(false);
           setIsProjectSensitiveCommandsOpen(true);
         },
         onOpenSkillsPanel: () => {
@@ -309,6 +352,7 @@ export const ChatInputView = ({
           setIsRoleEditorOpen(false);
           setIsFileChangesOpen(false);
           setIsMemoryOpen(false);
+          setIsCustomCommandsOpen(false);
           setIsProjectSkillsOpen(true);
         },
         onOpenCodebasePanel: handleOpenCodebasePanel,
@@ -321,8 +365,23 @@ export const ChatInputView = ({
           setIsRoleEditorOpen(false);
           setIsFileChangesOpen(false);
           setIsMemoryOpen(false);
+          setIsCustomCommandsOpen(false);
           setIsReviewOpen(true);
         },
+        onOpenCustomCommandsPanel: () => {
+          setIsProjectMcpOpen(false);
+          setIsProjectSensitiveCommandsOpen(false);
+          setIsProjectPermissionsOpen(false);
+          setIsProjectSkillsOpen(false);
+          setIsProjectCodebaseOpen(false);
+          setIsRoleEditorOpen(false);
+          setIsFileChangesOpen(false);
+          setIsMemoryOpen(false);
+          setIsReviewOpen(false);
+          setIsCustomCommandsOpen(true);
+        },
+        onRunCustomCommand: handleRunCustomCommand,
+        customCommands,
         model: selectedModel || undefined,
         apiProfile: selectedApiProfile || undefined,
         compactDisabled: messages.length === 0 || isCompacting,
@@ -370,12 +429,17 @@ export const ChatInputView = ({
               ? t("chatCommand.reviewDescription")
               : t("chatCommand.reviewNoProject"),
           reviewNoProject: t("chatCommand.reviewNoProject"),
+          customCommandsDescription: t("chatCommand.customCommandsDescription"),
+          customCommandsPromptType: t("chatCommand.customPromptType"),
+          customCommandsBashType: t("chatCommand.customBashType"),
         },
       }),
     [
       activeConversationId,
+      customCommands,
       handleNewChat,
       handleOpenCodebasePanel,
+      handleRunCustomCommand,
       isCompacting,
       isNewChat,
       isStreaming,
@@ -621,6 +685,7 @@ export const ChatInputView = ({
         isFileChangesOpen={isFileChangesOpen}
         isMemoryOpen={isMemoryOpen}
         isReviewOpen={isReviewOpen}
+        isCustomCommandsOpen={isCustomCommandsOpen}
         workflowMode={workflowMode}
         planMode={planMode}
         conversationFileChanges={conversationFileChanges}
@@ -644,6 +709,7 @@ export const ChatInputView = ({
         onCloseFileChanges={() => setIsFileChangesOpen(false)}
         onCloseMemory={() => setIsMemoryOpen(false)}
         onCloseReview={() => setIsReviewOpen(false)}
+        onCloseCustomCommands={() => setIsCustomCommandsOpen(false)}
       />
       <div className="input-content" ref={mentionAnchorRef}>
         <FileMentionPopup

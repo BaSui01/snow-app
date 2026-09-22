@@ -6,7 +6,6 @@ import type {
   RollbackConversationState,
   RollbackMemoryItem,
   RollbackTodoItem,
-  ToolCallInfo,
 } from "../utils/conversationTypes";
 import {
   PENDING_SESSION_KEY,
@@ -17,8 +16,12 @@ import {
   directoryIdToPath,
   getErrorMessage,
   killRunningToolExecutions,
-  parseToolCalls,
 } from "../utils/conversationHelpers";
+import {
+  collectWorkflowFlowIdsFromMessages,
+  collectWorkflowFlowIdsFromRecords,
+  resolveWorkflowFlowImpact,
+} from "../utils/rollbackChain";
 import { getActiveWorkflowNodeIds } from "../workflow/workflowRunner";
 
 /**
@@ -256,66 +259,18 @@ export const useRollback = (ctx: ConversationContextValue) => {
           // 被回滚轮次中的 workflow-generate 工具调用 → 对应 flow 的节点会话
           // 与 flow 级 checkpoint。优先用截断边界后的持久化历史（分页窗口外
           // 的 flow 卡片也要覆盖），目标消息未落库时回退到内存消息。
-          // 解析复用 parseToolCalls：tool_calls_json 的 name 可能嵌套在
-          // function/function_call 包装内，且 interactionId 的构造格式必须
-          // 与 createWorkflowNodeSession 写入的 flow_id 完全一致。
-          const collectWorkflowFlowIds = (): string[] => {
-            const flowIds: string[] = [];
-            const collectFromToolCalls = (toolCalls: ToolCallInfo[]): void => {
-              for (const toolCall of toolCalls) {
-                if (
-                  toolCall.name.endsWith("workflow-generate") &&
-                  toolCall.interactionId &&
-                  !flowIds.includes(toolCall.interactionId)
-                ) {
-                  flowIds.push(toolCall.interactionId);
-                }
-              }
-            };
-            if (truncatedHistoryRecords) {
-              for (const record of truncatedHistoryRecords) {
-                if (record.role !== "assistant") {
-                  continue;
-                }
-                collectFromToolCalls(parseToolCalls(record.toolCallsJson));
-              }
-            } else {
-              for (const message of messages.slice(targetIndex)) {
-                if (message.role !== "assistant") {
-                  continue;
-                }
-                collectFromToolCalls(message.toolCalls ?? []);
-              }
-            }
-            return flowIds;
-          };
+          const flowIds = truncatedHistoryRecords
+            ? collectWorkflowFlowIdsFromRecords(truncatedHistoryRecords)
+            : collectWorkflowFlowIdsFromMessages(messages.slice(targetIndex));
           let workflowFlowCount = 0;
           let flowCheckpointIds: string[] = [];
           let workflowNodeIds: string[] = [];
-          if (convId && collectWorkflowFlowIds().length > 0) {
-            try {
-              const flowIds = collectWorkflowFlowIds();
-              const nodeRecords =
-                await window.snow.listWorkflowNodeSessions(convId);
-              const affected = nodeRecords.filter((record) =>
-                flowIds.includes(record.flowId),
-              );
-              workflowNodeIds = [
-                ...new Set(affected.map((record) => record.conversationId)),
-              ];
-              flowCheckpointIds = [
-                ...new Set(
-                  affected
-                    .map((record) => record.flowCheckpointId)
-                    .filter(Boolean),
-                ),
-              ];
-              workflowFlowCount = new Set(
-                affected.map((record) => record.flowId),
-              ).size;
-            } catch {
-              // Best effort — 回滚在无 flow 元数据时仍照常进行
-            }
+          if (convId && flowIds.length > 0) {
+            // Best effort — 回滚在无 flow 元数据时仍照常进行
+            const impact = await resolveWorkflowFlowImpact(convId, flowIds);
+            workflowNodeIds = impact.nodeConversationIds;
+            flowCheckpointIds = impact.flowCheckpointIds;
+            workflowFlowCount = impact.flowCount;
           }
 
           // 变更预览必须包含 flow checkpoint：节点（尤其 bash）对工作区的

@@ -407,6 +407,27 @@ export type CustomHeaderSchemeRecord = CustomHeaderSchemeInput & {
   updatedAt: string;
 };
 
+export type CustomCommandScope = "global" | "project";
+export type CustomCommandType = "prompt" | "bash";
+
+export type CustomCommandInput = {
+  commandId: string;
+  scope: CustomCommandScope;
+  projectId: string;
+  name: string;
+  commandType: CustomCommandType;
+  content: string;
+  description: string;
+  enabled: boolean;
+  sortOrder: number;
+};
+
+export type CustomCommandRecord = CustomCommandInput & {
+  /** 全局指令被同名项目指令覆盖时为 true */
+  shadowed: boolean;
+  updatedAt: string;
+};
+
 export type SubAgentConfigInput = {
   agentId: string;
   name: string;

@@ -94,6 +94,7 @@ export type SnowRemoteContentBlock =
         | "web"
         | "conversation"
         | "quote"
+        | "command"
         | "skill";
       label: string;
       detail?: string;

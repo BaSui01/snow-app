@@ -1,6 +1,8 @@
+import { SquareTerminal, Wand2 } from "lucide-react";
 import { createClearCommand } from "./ClearCommand";
 import { createCodebaseCommand } from "./CodebaseCommand";
 import { createCompactCommand } from "./CompactCommand";
+import { createCustomCommandsCommand } from "./CustomCommandsCommand";
 import { createFileChangesCommand } from "./FileChangesCommand";
 import { createMcpCommand } from "./McpCommand";
 import { createMemoryCommand } from "./MemoryCommand";
@@ -10,7 +12,25 @@ import { createRoleCommand } from "./RoleCommand";
 import { createSensitiveCommandsCommand } from "./SensitiveCommandsCommand";
 import { createSkillsCommand } from "./SkillsCommand";
 import { SUPPORTED_LOCALES, resources } from "../../../../i18n";
+import { encodeCommandTag } from "../fileTagUtils";
+import { applyCustomCommandArguments } from "./customCommands";
+import type { EffectiveCustomCommand } from "./customCommands";
 import type { ChatCommand } from "./types";
+
+export const BUILT_IN_COMMAND_NAMES: ReadonlySet<string> = new Set([
+  "clear",
+  "changes",
+  "memory",
+  "mcp",
+  "permissions",
+  "role",
+  "sensitive",
+  "skills",
+  "codebase",
+  "review",
+  "compact",
+  "custom",
+]);
 
 /**
  * 运行中状态下禁止执行的指令 ID 列表。
@@ -59,6 +79,7 @@ const COMMAND_DESCRIPTION_KEYS: Record<string, string[]> = {
     "chatCommand.reviewNewChatOnly",
   ],
   compact: ["chatCommand.compactDescription"],
+  custom: ["chatCommand.customCommandsDescription"],
 };
 
 /** 收集指定 i18n key 在所有语言下的描述文本（去重）作为搜索关键词 */
@@ -80,6 +101,9 @@ type ChatCommandLabels = {
   codebaseDescription: string;
   codebaseNoProject: string;
   compactDescription: string;
+  customCommandsBashType: string;
+  customCommandsDescription: string;
+  customCommandsPromptType: string;
   fileChangesDescription: string;
   mcpDescription: string;
   memoryDescription: string;
@@ -91,6 +115,11 @@ type ChatCommandLabels = {
   sensitiveCommandsDescription: string;
   skillsDescription: string;
 };
+
+export type CustomCommandRunHandler = (
+  command: EffectiveCustomCommand,
+  args?: string,
+) => void;
 
 type CreateChatCommandsOptions = {
   onNewChat: () => void;
@@ -107,6 +136,9 @@ type CreateChatCommandsOptions = {
   onOpenSensitiveCommandsPanel: () => void;
   onOpenSkillsPanel: () => void;
   onOpenCodebasePanel: () => void;
+  onOpenCustomCommandsPanel: () => void;
+  onRunCustomCommand: CustomCommandRunHandler;
+  customCommands: EffectiveCustomCommand[];
   model?: string;
   apiProfile?: string;
   compactDisabled: boolean;
@@ -135,6 +167,9 @@ export const createChatCommands = ({
   onOpenSensitiveCommandsPanel,
   onOpenSkillsPanel,
   onOpenCodebasePanel,
+  onOpenCustomCommandsPanel,
+  onRunCustomCommand,
+  customCommands,
   model,
   apiProfile,
   compactDisabled,
@@ -229,6 +264,10 @@ export const createChatCommands = ({
       ),
       disabled: reviewDisabled || isRunningDisabled("review"),
     },
+    createCustomCommandsCommand(
+      onOpenCustomCommandsPanel,
+      labels.customCommandsDescription,
+    ),
   ];
 
   if (onCompactConversation) {
@@ -241,6 +280,39 @@ export const createChatCommands = ({
         compactDisabled,
       ),
       disabled: compactDisabled || isRunningDisabled("compact"),
+    });
+  }
+
+  for (const customCommand of customCommands) {
+    if (BUILT_IN_COMMAND_NAMES.has(customCommand.name.toLowerCase())) {
+      continue;
+    }
+    commands.push({
+      id: `custom:${customCommand.commandId}`,
+      label: customCommand.name,
+      description:
+        customCommand.description || customCommand.content.split("\n")[0],
+      icon: customCommand.commandType === "bash" ? SquareTerminal : Wand2,
+      group: "custom",
+      badge:
+        customCommand.commandType === "bash"
+          ? labels.customCommandsBashType
+          : labels.customCommandsPromptType,
+      buildInputContent:
+        customCommand.commandType === "prompt"
+          ? (args?: string) => {
+              const prompt = applyCustomCommandArguments(
+                customCommand.content,
+                args,
+              );
+              return encodeCommandTag({
+                name: customCommand.name,
+                prompt,
+                charCount: prompt.length,
+              });
+            }
+          : undefined,
+      execute: (args?: string) => onRunCustomCommand(customCommand, args),
     });
   }
 

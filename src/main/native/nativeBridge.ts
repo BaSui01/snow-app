@@ -299,6 +299,18 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to delete custom header schemes",
           ),
         ),
+      listCustomCommands: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to list custom commands"),
+        ),
+      upsertCustomCommand: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to write custom commands"),
+        ),
+      deleteCustomCommand: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to delete custom commands"),
+        ),
       listWorkspaceDirectories: () =>
         Promise.reject(
           new Error(

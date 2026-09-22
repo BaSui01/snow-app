@@ -1,5 +1,6 @@
 import type { ConversationSessionState } from "../../mainContent/chatMessages/utils/conversationTypes";
 import type { ChatConversationRecord } from "../../../../preload";
+import { summarizeContentAsPlainText } from "../../mainContent/chatInput/fileTagUtils";
 
 /**
  * 由内存会话状态重建 pending 槽位（首条 AI 响应未返回、会话行尚未落库的
@@ -20,13 +21,18 @@ export const buildPendingConversationRecord = (
     (message) => message.role === "user",
   );
   const content = firstUserMessage?.content ?? session.summary;
+  // 首条消息可能整条都是 chip 标签（如自定义指令 prompt）：先折叠为可读
+  // 纯文本，避免占位记录把 @@command:...@@ 一类编码串显示到侧边栏。
+  const plainContent = summarizeContentAsPlainText(content);
   const nowIso = new Date().toISOString();
   return {
     conversationId,
-    title: content,
+    title: plainContent,
     summary: "",
     lastMessagePreview:
-      content.length > 50 ? `${content.slice(0, 50)}...` : content,
+      plainContent.length > 50
+        ? `${plainContent.slice(0, 50)}...`
+        : plainContent,
     messageCount: session.messages.length,
     model:
       session.messages.find((message) => message.role === "assistant")?.model ??

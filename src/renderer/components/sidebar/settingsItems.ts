@@ -19,6 +19,7 @@ import {
   Settings2,
   Sparkles,
   ShieldAlert,
+  SlashSquare,
   Smartphone,
   Terminal,
   Users,
@@ -144,6 +145,13 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
     labelKey: "settings.sensitiveCommands",
     defaultLabel: "Sensitive commands",
     view: "sensitive-command-settings",
+  },
+  {
+    id: "custom-commands",
+    icon: SlashSquare,
+    labelKey: "settings.customCommandsTitle",
+    defaultLabel: "Custom commands",
+    view: "custom-commands-settings",
   },
   {
     id: "hooks",

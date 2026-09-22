@@ -19,6 +19,7 @@ import {
   MessageSquareQuote,
   MousePointer2,
   ScanSearch,
+  Wand2,
 } from "lucide-react";
 import { UserMessageActions } from "./UserMessageActions";
 import { HoverCopyButton } from "../../../common/HoverCopyButton";
@@ -455,6 +456,34 @@ export const UserMessage = memo(
                     )}
                     <span className="user-message-file-chip-name">
                       {tag.title}
+                    </span>
+                  </span>
+                );
+              }
+
+              if (segment.type === "command") {
+                const commandTitle = `/${segment.tag.name} (${segment.tag.charCount} chars)`;
+                return (
+                  <span
+                    className="user-message-file-chip command-chip"
+                    key={index}
+                    title={commandTitle}
+                    onMouseMove={(event) =>
+                      handleTextSnippetChipMouseMove(
+                        event,
+                        segment.tag.prompt,
+                        segment.tag.prompt,
+                      )
+                    }
+                    onMouseLeave={scheduleHideTextSnippetPreview}
+                  >
+                    <Wand2
+                      size={12}
+                      className="user-message-file-chip-icon"
+                      style={{ color: "#0891b2" }}
+                    />
+                    <span className="user-message-file-chip-name">
+                      {`/${segment.tag.name}`}
                     </span>
                   </span>
                 );

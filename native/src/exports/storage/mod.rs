@@ -19,7 +19,8 @@ pub(crate) use crate::storage::{
     ApiConfigInput, ApiConfigRecord, AppStorageInfo, ChatConversationPage, ChatConversationRecord,
     ChatMessageImage,
     ChatMessagePage, ChatMessageRecord, CodebaseProjectScopeSettings,
-    ConversationSearchResult, CustomHeaderSchemeInput, CustomHeaderSchemeRecord,
+    ConversationSearchResult, CustomCommandInput, CustomCommandRecord,
+    CustomHeaderSchemeInput, CustomHeaderSchemeRecord,
     DatabaseOptimizeResult, DatabaseRepairResult,
     HookConfigInput, HookConfigRecord, LspServerConfigInput, LspServerConfigRecord,
     McpServerConfigInput, McpServerConfigRecord,
@@ -43,6 +44,7 @@ mod app;
 mod app_lock;
 mod cleanup;
 mod conversations;
+mod custom_commands;
 mod hooks;
 mod logs;
 mod lsp;
@@ -61,7 +63,8 @@ mod userscripts;
 // 保留 crate::exports::storage::* 原有公共路径的重导出
 #[allow(unused_imports)]
 pub use {
-    agents::*, api_configs::*, app::*, app_lock::*, cleanup::*, conversations::*, hooks::*, logs::*,
+    agents::*, api_configs::*, app::*, app_lock::*, cleanup::*, conversations::*, custom_commands::*,
+    hooks::*, logs::*,
     lsp::*,
     mcp::*,
     memos::*, memory::*, plugins::*, privacy::*, projects::*, scheduled_tasks::*, shortcuts::*,

@@ -29,11 +29,13 @@ pub fn parse_chat_message_content(
 ) -> Result<ParsedChatMessageContent> {
     const IMAGE_TAG_PREFIX: &str = "@@image:";
     const REVIEW_TAG_PREFIX: &str = "@@review:";
+    const COMMAND_TAG_PREFIX: &str = "@@command:";
     const ELEMENT_TAG_PREFIX: &str = "@@element:";
     const CONVERSATION_TAG_PREFIX: &str = "@@conversation:";
-    const TAG_PREFIXES: [&str; 4] = [
+    const TAG_PREFIXES: [&str; 5] = [
         IMAGE_TAG_PREFIX,
         REVIEW_TAG_PREFIX,
+        COMMAND_TAG_PREFIX,
         ELEMENT_TAG_PREFIX,
         CONVERSATION_TAG_PREFIX,
     ];
@@ -69,6 +71,12 @@ pub fn parse_chat_message_content(
             // review 标签：将 base64 编码的完整审查提示词展开为纯文本，
             // 使 AI 收到干净的指令 + diff 内容，而非 JSON 外壳。
             if let Some(prompt) = try_expand_review_tag(value) {
+                parsed.text.push_str(&prompt);
+            } else {
+                parsed.text.push_str(&remaining[tag_start..full_tag_end]);
+            }
+        } else if prefix == COMMAND_TAG_PREFIX {
+            if let Some(prompt) = try_expand_command_tag(value) {
                 parsed.text.push_str(&prompt);
             } else {
                 parsed.text.push_str(&remaining[tag_start..full_tag_end]);
@@ -138,6 +146,20 @@ fn find_earliest_tag(remaining: &str, prefixes: &[&str]) -> Option<usize> {
 /// 标签终止符，base64 字符集不含 `@@` 可安全内嵌）。非法 JSON 或
 /// base64 解码失败时返回 None，调用方保留原始标签、不破坏消息内容。
 fn try_expand_review_tag(value: &str) -> Option<String> {
+    let parsed: serde_json::Value = serde_json::from_str(value).ok()?;
+    let prompt_b64 = parsed.get("prompt")?.as_str()?;
+    if prompt_b64.is_empty() {
+        return Some(String::new());
+    }
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(prompt_b64)
+        .ok()?;
+    String::from_utf8(bytes).ok()
+}
+
+/// 尝试将 `@@command:{"name":"...","prompt":"<base64>","charCount":N}@@` 标签
+/// 展开为自定义指令的 prompt 原文，使 AI 收到干净指令而非 base64 JSON 外壳。
+fn try_expand_command_tag(value: &str) -> Option<String> {
     let parsed: serde_json::Value = serde_json::from_str(value).ok()?;
     let prompt_b64 = parsed.get("prompt")?.as_str()?;
     if prompt_b64.is_empty() {
@@ -241,6 +263,37 @@ pub(crate) fn expand_element_tags_in_content(content: &str) -> Option<String> {
         let full_tag_end = value_start + tag_end + 2;
         match try_expand_element_tag(value) {
             Some(description) => result.push_str(&description),
+            None => result.push_str(&remaining[tag_start..full_tag_end]),
+        }
+        remaining = &remaining[full_tag_end..];
+    }
+    result.push_str(remaining);
+    Some(result)
+}
+
+/// 展开消息内容中所有 `@@command:...@@` 标签为自定义指令的 prompt 原文。
+///
+/// 用于会话标题等展示场景：避免 base64 JSON 外壳污染侧边栏文字。
+/// 内容不含 command 标签时返回 None，调用方沿用原文。
+pub(crate) fn expand_command_tags_in_content(content: &str) -> Option<String> {
+    const COMMAND_TAG_PREFIX: &str = "@@command:";
+    if !content.contains(COMMAND_TAG_PREFIX) {
+        return None;
+    }
+    let mut result = String::with_capacity(content.len());
+    let mut remaining = content;
+    while let Some(tag_start) = remaining.find(COMMAND_TAG_PREFIX) {
+        result.push_str(&remaining[..tag_start]);
+        let value_start = tag_start + COMMAND_TAG_PREFIX.len();
+        let value_and_rest = &remaining[value_start..];
+        let Some(tag_end) = value_and_rest.find("@@") else {
+            result.push_str(&remaining[tag_start..]);
+            return Some(result);
+        };
+        let value = &value_and_rest[..tag_end];
+        let full_tag_end = value_start + tag_end + 2;
+        match try_expand_command_tag(value) {
+            Some(prompt) => result.push_str(&prompt),
             None => result.push_str(&remaining[tag_start..full_tag_end]),
         }
         remaining = &remaining[full_tag_end..];

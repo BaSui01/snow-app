@@ -26,6 +26,7 @@ import {
 } from "./fileTagUtils";
 import type { FileMentionPopupHandle } from "./FileMentionPopup";
 import type { CommandPanelHandle } from "./commands/CommandPanel";
+import { extractCustomCommandArguments } from "./commands/customCommands";
 import type { ChatCommand } from "./commands/types";
 import {
   TERMINAL_DRAG_MIME,
@@ -230,11 +231,25 @@ export const useContentEditableInteractions = ({
       if (command.disabled) {
         return;
       }
+      const args = extractCustomCommandArguments(value, command.label);
       handleCloseCommand();
+      const inputContent = command.buildInputContent?.(args);
+      if (inputContent) {
+        // prompt 类型自定义指令：chip 插入输入框，由用户补充后自行发送。
+        // 末尾补空格：chip 是末节点时光标无法定位到其后（与
+        // insertHtmlAtSelection 同一原因），补空格后可直接继续输入。
+        const typed = value.trim();
+        restoreContent(
+          typed && !typed.startsWith("/")
+            ? `${typed} ${inputContent} `
+            : `${inputContent} `,
+        );
+        return;
+      }
       if (value.trim().startsWith("/")) {
         restoreContent("");
       }
-      command.execute();
+      command.execute(args);
     },
     [handleCloseCommand, restoreContent, value],
   );
@@ -523,11 +538,29 @@ export const useContentEditableInteractions = ({
       return;
     }
     const textBefore = (node.textContent ?? "").slice(0, offset);
-    const commandMatch = textBefore.match(/^\/([^\s]*)$/);
+    // 指令名之后允许继续输入内容：面板按指令名过滤，Enter 时把其余内容作为参数
+    const commandMatch = textBefore.match(/^\/(\S*)(?:\s+([\s\S]*))?$/);
     if (commandMatch) {
+      const queryText = commandMatch[1];
+      const hasArguments = Boolean(commandMatch[2]?.trim());
+      const matchedCommand = commands.some((command) => {
+        const normalized = queryText.trim().toLowerCase();
+        return (
+          command.label.toLowerCase().includes(normalized) ||
+          command.description.toLowerCase().includes(normalized) ||
+          command.searchKeywords?.some((keyword) =>
+            keyword.toLowerCase().includes(normalized),
+          )
+        );
+      });
+      if (hasArguments && queryText.trim() && !matchedCommand) {
+        handleCloseMention();
+        handleCloseCommand();
+        return;
+      }
       handleCloseMention();
       setIsCommandOpen(true);
-      setCommandQuery(commandMatch[1]);
+      setCommandQuery(queryText);
       return;
     }
     const mentionMatch = textBefore.match(/(?:^|\s)@([^\s]*)$/);
@@ -542,7 +575,7 @@ export const useContentEditableInteractions = ({
     }
     handleCloseMention();
     handleCloseCommand();
-  }, [handleCloseCommand, handleCloseMention]);
+  }, [commands, handleCloseCommand, handleCloseMention]);
 
   const serializeSelectionForClipboard = useCallback(() => {
     const el = textareaRef.current;

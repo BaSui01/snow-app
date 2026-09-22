@@ -5071,4 +5071,62 @@ export const en = {
   "plugins.metadata.groups.project": "Projects and code",
   "plugins.metadata.groups.connectivity": "Connections and assets",
   "plugins.metadata.groups.other": "Other",
+  "chatCommand.customCommandsDescription":
+    "Manage custom commands (Prompt / Bash)",
+  "chatCommand.customPromptType": "Prompt",
+  "chatCommand.customBashType": "Bash",
+  "chatCommand.builtinGroup": "Built-in commands",
+  "chatCommand.customGroup": "Custom commands",
+  "settings.customCommandsTitle": "Custom commands",
+  "settings.customCommandsSettingsInfo":
+    "Manage slash commands: Prompt commands send their content to the AI, Bash commands run in the current project directory. Both combine with the text typed after the command name ($ARGUMENTS is replaced in place, otherwise the text is appended).",
+  "settings.closeCustomCommandsSettings": "Close custom commands settings",
+  "settings.customCommandsLoadError": "Failed to load custom commands",
+  "settings.customCommandsGlobalTab": "Global",
+  "settings.customCommandsProjectTab": "Current project",
+  "settings.customCommandsNoProject":
+    "Select a project first to manage project commands",
+  "settings.customCommandsGlobalScopeHint": "Applies to every project",
+  "settings.customCommandsProjectScopeHint":
+    "Applies to {{project}} only; a project command with the same name overrides the global one",
+  "settings.customCommandsAdd": "Add command",
+  "settings.customCommandsRefresh": "Refresh",
+  "settings.customCommandsLoading": "Loading custom commands...",
+  "settings.customCommandsEmpty": "No custom commands yet",
+  "settings.customCommandAddTitle": "New custom command",
+  "settings.customCommandEditTitle": "Edit custom command",
+  "settings.customCommandName": "Command name",
+  "settings.customCommandNameRequired": "Command name is required",
+  "settings.customCommandNameInvalid":
+    "Command name only supports letters, digits, hyphen, underscore and dot",
+  "settings.customCommandNameReserved":
+    "This name is already used by a built-in command",
+  "settings.customCommandDuplicateName":
+    "A command with this name already exists in this scope",
+  "settings.customCommandType": "Type",
+  "settings.customCommandTypePrompt": "Prompt (send to AI)",
+  "settings.customCommandTypeBash": "Bash (run shell command)",
+  "settings.customCommandPromptContent": "Prompt",
+  "settings.customCommandBashContent": "Command",
+  "settings.customCommandPromptPlaceholder":
+    "Review $ARGUMENTS and list the risky parts.",
+  "settings.customCommandContentRequired": "Command content is required",
+  "settings.customCommandDescription": "Description",
+  "settings.customCommandDescriptionPlaceholder": "Shown in the command panel",
+  "settings.customCommandEnabled": "Enabled",
+  "settings.customCommandEnable": "Enable this command",
+  "settings.customCommandDisable": "Disable this command",
+  "settings.customCommandSaveSuccess": "Saved custom command",
+  "settings.customCommandAddSuccess": "Added custom command",
+  "settings.customCommandSaveError": "Failed to save the custom command",
+  "settings.customCommandDeleteSuccess": "Deleted custom command",
+  "settings.customCommandDeleteError": "Failed to delete the custom command",
+  "settings.customCommandDeleteTitle": "Delete custom command",
+  "settings.customCommandDeleteConfirm":
+    "Delete /{{name}}? This cannot be undone.",
+  "settings.customCommandShadowed":
+    "Overridden by a project command with the same name",
+  "settings.customCommandArgumentsHint":
+    "Text typed after the command name is passed in as arguments: $ARGUMENTS is replaced in place, otherwise the text is appended.",
+  "settings.saveCustomCommand": "Save command",
 } satisfies Record<string, string>;

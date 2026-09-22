@@ -17,6 +17,7 @@ export type MainContentView =
   | "skills-settings"
   | "sub-agent-settings"
   | "sensitive-command-settings"
+  | "custom-commands-settings"
   | "hooks-settings"
   | "terminal-settings"
   | "theme-settings"

@@ -50,7 +50,7 @@ export const CommandPanel = forwardRef<CommandPanelHandle, CommandPanelProps>(
 
     const displayQuery = visible ? query : lastQuery;
 
-    const filteredCommands = useMemo(() => {
+    const groupedCommands = useMemo(() => {
       const normalizedQuery = displayQuery.trim().toLowerCase();
       const matched = !normalizedQuery
         ? commands
@@ -63,11 +63,32 @@ export const CommandPanel = forwardRef<CommandPanelHandle, CommandPanelProps>(
               ),
           );
 
-      // 可用的命令排在前面，不可用的统一移到后面集中显示（保持原有相对顺序）
-      return [...matched].sort(
-        (a, b) => Number(a.disabled) - Number(b.disabled),
-      );
+      const sortByDisabled = (items: ChatCommand[]): ChatCommand[] =>
+        [...items].sort((a, b) => Number(a.disabled) - Number(b.disabled));
+
+      return [
+        {
+          key: "builtin",
+          commands: sortByDisabled(
+            matched.filter((command) => command.group !== "custom"),
+          ),
+        },
+        {
+          key: "custom",
+          commands: sortByDisabled(
+            matched.filter((command) => command.group === "custom"),
+          ),
+        },
+      ];
     }, [commands, displayQuery]);
+
+    const filteredCommands = useMemo(
+      () => groupedCommands.flatMap((group) => group.commands),
+      [groupedCommands],
+    );
+
+    const hasMultipleGroups =
+      groupedCommands.filter((group) => group.commands.length > 0).length > 1;
 
     useEffect(() => {
       if (!visible) {
@@ -80,8 +101,9 @@ export const CommandPanel = forwardRef<CommandPanelHandle, CommandPanelProps>(
     useEffect(() => {
       const list = listRef.current;
       if (!list) return;
-      const selectedEl = list.children[selectedIndex] as
-        HTMLElement | undefined;
+      const selectedEl = list.querySelector<HTMLElement>(
+        `[data-command-index="${selectedIndex}"]`,
+      );
       if (selectedEl) {
         selectedEl.scrollIntoView({ block: "nearest" });
       }
@@ -153,41 +175,61 @@ export const CommandPanel = forwardRef<CommandPanelHandle, CommandPanelProps>(
         >
           <div className="chat-command-list" ref={listRef}>
             {filteredCommands.length > 0 ? (
-              filteredCommands.map((command, index) => {
-                const CommandIcon = command.icon;
-                const isSelected = index === selectedIndex;
+              groupedCommands.map((group) =>
+                group.commands.length === 0 ? null : (
+                  <div className="chat-command-group" key={group.key}>
+                    {hasMultipleGroups ? (
+                      <div className="chat-command-group-header">
+                        {group.key === "custom"
+                          ? t("chatCommand.customGroup")
+                          : t("chatCommand.builtinGroup")}
+                      </div>
+                    ) : null}
+                    {group.commands.map((command) => {
+                      const CommandIcon = command.icon;
+                      const index = filteredCommands.indexOf(command);
+                      const isSelected = index === selectedIndex;
 
-                return (
-                  <button
-                    key={command.id}
-                    className={`chat-command-item${
-                      isSelected ? " selected" : ""
-                    }`}
-                    type="button"
-                    role="option"
-                    aria-selected={isSelected}
-                    disabled={command.disabled}
-                    onMouseEnter={() => {
-                      if (!command.disabled) setSelectedIndex(index);
-                    }}
-                    onClick={() => onSelect(command)}
-                  >
-                    <CommandIcon
-                      size={15}
-                      strokeWidth={1.8}
-                      className="chat-command-item-icon"
-                    />
-                    <span className="chat-command-item-content">
-                      <span className="chat-command-item-name">
-                        /{command.label}
-                      </span>
-                      <span className="chat-command-item-description">
-                        {command.description}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })
+                      return (
+                        <button
+                          key={command.id}
+                          className={`chat-command-item${
+                            isSelected ? " selected" : ""
+                          }`}
+                          type="button"
+                          role="option"
+                          aria-selected={isSelected}
+                          data-command-index={index}
+                          disabled={command.disabled}
+                          onMouseEnter={() => {
+                            if (!command.disabled) setSelectedIndex(index);
+                          }}
+                          onClick={() => onSelect(command)}
+                        >
+                          <CommandIcon
+                            size={15}
+                            strokeWidth={1.8}
+                            className="chat-command-item-icon"
+                          />
+                          <span className="chat-command-item-content">
+                            <span className="chat-command-item-name">
+                              /{command.label}
+                              {command.badge ? (
+                                <span className="chat-command-item-badge">
+                                  {command.badge}
+                                </span>
+                              ) : null}
+                            </span>
+                            <span className="chat-command-item-description">
+                              {command.description}
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ),
+              )
             ) : (
               <div className="chat-command-empty">{t("chatCommand.empty")}</div>
             )}

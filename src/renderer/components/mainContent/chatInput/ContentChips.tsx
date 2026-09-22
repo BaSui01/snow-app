@@ -8,6 +8,7 @@ import {
   MessageSquareQuote,
   MousePointer2,
   ScanSearch,
+  Wand2,
 } from "lucide-react";
 import { getFileTypeIcon } from "../../../utils/fileIcons";
 import {
@@ -219,6 +220,26 @@ export const ContentChips = ({
                 style={{ color: "var(--accent-color, #4a9eff)" }}
               />
             )}
+            <span className="user-message-file-chip-name">
+              {getChipDisplayLabel(segment)}
+            </span>
+          </span>
+        );
+      }
+
+      if (segment.type === "command") {
+        const commandTitle = `${getChipDisplayLabel(segment)} (${segment.tag.charCount} chars)`;
+        return (
+          <span
+            key={index}
+            className="user-message-file-chip command-chip"
+            title={commandTitle}
+          >
+            <Wand2
+              size={12}
+              className="user-message-file-chip-icon"
+              style={{ color: "#0891b2" }}
+            />
             <span className="user-message-file-chip-name">
               {getChipDisplayLabel(segment)}
             </span>

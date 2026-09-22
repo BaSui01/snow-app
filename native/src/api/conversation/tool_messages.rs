@@ -456,11 +456,11 @@ fn snow_tool_call_has_required_arguments(entry: &NormalizedToolCall) -> bool {
     }) && tool_specific_arguments_valid(&entry.name, input)
 }
 
-/// 逐工具的额外参数约束：缺参数的调用不应进入执行层（filesystem-create 必须显式
-/// 声明 overwrite，filesystem-copy 必须有决定落点的源起始行号）。
+/// 逐工具的额外参数约束：缺参数的调用不应进入执行层（filesystem-create 的
+/// overwrite 缺省时按 false 兜底、但一旦提供必须是布尔，filesystem-copy 必须有源起始行号）。
 fn tool_specific_arguments_valid(name: &str, input: &serde_json::Map<String, Value>) -> bool {
     match name {
-        "filesystem-create" => input.get("overwrite").is_some_and(Value::is_boolean),
+        "filesystem-create" => input.get("overwrite").is_none_or(Value::is_boolean),
         "filesystem-copy" => input
             .get("sourceStartLine")
             .and_then(Value::as_f64)

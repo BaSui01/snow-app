@@ -3,6 +3,7 @@ import type {
   ChatConversationMessage,
   FileChangeRecord,
 } from "../chatMessages/utils/conversationTypes";
+import { resolveWorkflowFlowImpact } from "../chatMessages/utils/rollbackChain";
 
 type UseConversationFileChangesParams = {
   conversationId?: string;
@@ -19,16 +20,19 @@ type CheckpointDiffs = Awaited<
 >;
 
 type CheckpointDiffState = {
-  requestKey: string;
+  conversationKey: string;
   diffs: CheckpointDiffs | null;
 };
 
 const normalizePath = (filePath: string): string =>
-  filePath.replaceAll("\\", "/").replace(/^\.\/+/, "").toLowerCase();
+  filePath
+    .replaceAll("\\", "/")
+    .replace(/^\.\/+/, "")
+    .toLowerCase();
 
 const findFallbackChange = (
   checkpointPath: string,
-  fallbackChanges: FileChangeRecord[]
+  fallbackChanges: FileChangeRecord[],
 ): FileChangeRecord | undefined => {
   const normalizedCheckpointPath = normalizePath(checkpointPath);
   return fallbackChanges.find((change) => {
@@ -40,9 +44,7 @@ const findFallbackChange = (
   });
 };
 
-const toFileChangeKind = (
-  changeType: string
-): FileChangeRecord["kind"] => {
+const toFileChangeKind = (changeType: string): FileChangeRecord["kind"] => {
   if (changeType === "added") {
     return "create";
   }
@@ -53,16 +55,10 @@ const toFileChangeKind = (
 };
 
 /**
- * Returns the conversation's file modifications: the net workspace diff from
- * its first local checkpoint, merged with the tool-recorded statistics.
- *
- * The checkpoint view reports every captured file (includeAll=true), so later
- * runs drifting the shared working tree cannot erase an earlier
- * conversation's modifications; tool-recorded changes that the checkpoint
- * does not cover (deleted checkpoints, capture failures, SSH workspaces) are
- * appended from the fallback statistics. Remote workspaces and unavailable
- * checkpoint APIs retain the tool-recorded approximation so SSH statistics
- * continue to work.
+ * 会话文件变更 = 回滚本会话时真正会恢复的文件：检查点链取整条会话（加上
+ * WorkFlow 节点 flow 检查点），includeAll=false 与 rollback 弹窗完全一致。
+ * 工具记录的统计只用于补齐代理归属，不再追加条目，保证两个入口列表一致；
+ * 只有在检查点链不可用（无检查点、读取失败，如子代理会话）时才退回统计。
  */
 export const useConversationFileChanges = ({
   conversationId,
@@ -80,29 +76,35 @@ export const useConversationFileChanges = ({
         .filter((toolCall) => toolCall.status === "completed")
         .map(
           (toolCall) =>
-            `${toolCall.interactionId}:${toolCall.status}:${toolCall.result?.length ?? 0}`
+            `${toolCall.interactionId}:${toolCall.status}:${toolCall.result?.length ?? 0}`,
         )
         .join("|"),
-    [messages]
+    [messages],
   );
 
   const orderedCheckpointIds = useMemo(
     () => [...new Set(checkpointIds ?? [])],
-    [checkpointIds]
+    [checkpointIds],
+  );
+  const messageCheckpointIds = useMemo(
+    () =>
+      messages
+        .filter((message) => message.role === "user" && message.checkpointId)
+        .map((message) => message.checkpointId as string),
+    [messages],
   );
   const canUseCheckpoint = Boolean(
-    workDir && (orderedCheckpointIds.length > 0 || baselineCheckpointId)
+    workDir &&
+    (orderedCheckpointIds.length > 0 ||
+      messageCheckpointIds.length > 0 ||
+      baselineCheckpointId),
   );
-  const requestKey = JSON.stringify([
-    conversationId ?? "",
-    orderedCheckpointIds,
-    baselineCheckpointId ?? "",
-    workDir ?? "",
-    completedToolSignature,
-    conversationVersion,
-  ]);
-  const [checkpointState, setCheckpointState] =
-    useState<CheckpointDiffState>({ requestKey: "", diffs: null });
+  // 会话 + 工作区身份：同会话重算时沿用上一次结果，避免列表抖动。
+  const conversationKey = `${conversationId ?? ""}|${workDir ?? ""}`;
+  const [checkpointState, setCheckpointState] = useState<CheckpointDiffState>({
+    conversationKey: "",
+    diffs: null,
+  });
 
   useEffect(() => {
     if (!canUseCheckpoint || !workDir) {
@@ -114,7 +116,8 @@ export const useConversationFileChanges = ({
       let ids = orderedCheckpointIds;
       if (conversationId) {
         try {
-          const fullHistory = await window.snow.listChatMessages(conversationId);
+          const fullHistory =
+            await window.snow.listChatMessages(conversationId);
           const persistedIds = fullHistory
             .filter((record) => record.role === "user" && record.checkpointId)
             .map((record) => record.checkpointId as string);
@@ -125,30 +128,40 @@ export const useConversationFileChanges = ({
           // 使用已缓存的消息顺序，避免历史读取失败时隐藏面板内容。
         }
       }
+      if (ids.length === 0) {
+        ids = messageCheckpointIds;
+      }
       if (ids.length === 0 && baselineCheckpointId) {
         ids = [baselineCheckpointId];
       }
-      if (ids.length === 0) {
+
+      let flowCheckpointIds: string[] = [];
+      if (conversationId) {
+        flowCheckpointIds = (
+          await resolveWorkflowFlowImpact(conversationId, null)
+        ).flowCheckpointIds;
+      }
+      const chainIds = [...new Set([...ids, ...flowCheckpointIds])];
+      if (chainIds.length === 0) {
         if (!cancelled) {
-          setCheckpointState({ requestKey, diffs: null });
+          setCheckpointState({ conversationKey, diffs: null });
         }
         return;
       }
 
       try {
-        // includeAll=true: 后续会话在共享工作区中的修改不会隐藏较早会话
-        // 的变更，批量 API 还会覆盖每个消息检查点记录的文件。
+        // includeAll=false：与回滚弹窗同一语义，只列出回滚真正会恢复的文件。
         const diffs = await window.snow.listCheckpointDiffsBatch(
-          ids,
+          chainIds,
           workDir,
-          true
+          false,
         );
         if (!cancelled) {
-          setCheckpointState({ requestKey, diffs });
+          setCheckpointState({ conversationKey, diffs });
         }
       } catch {
         if (!cancelled) {
-          setCheckpointState({ requestKey, diffs: null });
+          setCheckpointState({ conversationKey, diffs: null });
         }
       }
     };
@@ -163,59 +176,35 @@ export const useConversationFileChanges = ({
     canUseCheckpoint,
     completedToolSignature,
     conversationId,
+    conversationKey,
     conversationVersion,
+    messageCheckpointIds,
     orderedCheckpointIds,
-    requestKey,
     workDir,
   ]);
 
   return useMemo(() => {
     if (
       !canUseCheckpoint ||
-      checkpointState.requestKey !== requestKey ||
-      checkpointState.diffs === null
+      checkpointState.diffs === null ||
+      checkpointState.conversationKey !== conversationKey
     ) {
       return fallbackChanges;
     }
 
-    const checkpointChanges: FileChangeRecord[] = checkpointState.diffs.map(
-      (diff, index) => {
-        const fallback = findFallbackChange(diff.path, fallbackChanges);
-        return {
-          filePath: diff.path,
-          kind: toFileChangeKind(diff.changeType),
-          agent: fallback?.agent ?? "main",
-          subAgentName: fallback?.subAgentName,
-          timestamp: fallback?.timestamp ?? index,
-          diff: {
-            patch: diff.content,
-            isBinary: diff.isBinary,
-          },
-        };
-      }
-    );
-
-    // A successful but empty checkpoint result is ambiguous: the baseline
-    // checkpoint may have been deleted (rollback, compaction cleanup,
-    // new-chat pruning) — listCheckpointDiffs returns an empty list for
-    // missing manifests instead of an error. Also, tool-recorded changes for
-    // files the checkpoint never captured (capture failures, SSH fallbacks)
-    // are absent from the checkpoint view. Append those fallback records so
-    // the panel never loses tool-recorded modifications; checkpoint diffs
-    // keep precedence for files covered by both sources.
-    const checkpointPaths = new Set(
-      checkpointChanges.map((change) => normalizePath(change.filePath))
-    );
-    const missingFallback = fallbackChanges.filter(
-      (change) => !checkpointPaths.has(normalizePath(change.filePath))
-    );
-    return [...checkpointChanges, ...missingFallback].sort(
-      (left, right) => left.timestamp - right.timestamp
-    );
-  }, [
-    canUseCheckpoint,
-    checkpointState,
-    fallbackChanges,
-    requestKey,
-  ]);
+    return checkpointState.diffs.map((diff, index) => {
+      const fallback = findFallbackChange(diff.path, fallbackChanges);
+      return {
+        filePath: diff.path,
+        kind: toFileChangeKind(diff.changeType),
+        agent: fallback?.agent ?? "main",
+        subAgentName: fallback?.subAgentName,
+        timestamp: fallback?.timestamp ?? index,
+        diff: {
+          patch: diff.content,
+          isBinary: diff.isBinary,
+        },
+      };
+    });
+  }, [canUseCheckpoint, checkpointState, conversationKey, fallbackChanges]);
 };

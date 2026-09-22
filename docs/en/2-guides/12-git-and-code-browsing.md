@@ -93,6 +93,11 @@ Editing and search shortcuts:
 - When a file reader has focus, `Ctrl/Cmd+F` opens **in-file search** instead of global search. A Markdown preview switches to source mode automatically;
 - Search has a match-case toggle. `Enter` goes to the next match, `Shift+Enter` to the previous match, and `Esc` closes search. Both view and edit modes navigate to the current match.
 
+Large files:
+
+- Files with tens of thousands of lines render on demand (virtual scrolling): only the visible region is highlighted and measured, while folding, jumping to a line, and in-file search keep working;
+- Above the large-file threshold, edit mode keeps a native input for typing while the line-number gutter and the syntax-highlight layer render only the visible window, so typing and scrolling stay responsive.
+
 ### Markdown Preview Tips
 
 - **Wide tables** scroll horizontally instead of being clipped;

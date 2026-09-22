@@ -36892,11 +36892,6 @@ pre.file-viewer-code {
 .file-viewer-gutter-num {
   margin-left: auto;
 }
-.file-viewer-code-line--hidden,
-.file-viewer-gutter-line--hidden,
-.file-viewer-code-nl {
-  display: none;
-}
 
 /* 折叠块首行末尾的占位标记（文案由 data-fold-label 提供） */
 .file-viewer-code-line--folded::after {
@@ -37335,6 +37330,80 @@ pre.file-viewer-code {
   caret-color: var(--text-primary);
   tab-size: 2;
   -moz-tab-size: 2;
+}
+
+/* 大文件编辑：滚动交给 textarea 自身，行号列与高亮层只渲染可视窗口，
+   两层随 textarea 的滚动位移（translate）保持一致；textarea 文字透明时
+   由底层高亮层显示源码。 */
+.file-viewer-edit-scroll--plain {
+  overflow: hidden;
+}
+
+.file-viewer-code--plain {
+  height: 100%;
+  min-height: 0;
+}
+
+.file-viewer-line-numbers--window {
+  overflow: hidden;
+}
+
+.file-viewer-gutter-window {
+  display: block;
+  white-space: pre;
+  will-change: transform;
+}
+
+.file-viewer-edit-layer {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  tab-size: 2;
+  -moz-tab-size: 2;
+}
+
+.file-viewer-edit-highlight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  margin: 0;
+  padding: 0 14px 0 10px;
+  width: max-content;
+  min-width: 100%;
+  background: transparent;
+  white-space: pre;
+  word-break: normal;
+  overflow-wrap: normal;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.file-viewer-edit-textarea--plain {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0 14px 0 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  font-style: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  resize: none;
+  overflow: auto;
+}
+
+.file-viewer-edit-textarea--ghost {
+  color: transparent;
 }
 
 /* ===== Right Panel Tab Dirty Dot ===== */

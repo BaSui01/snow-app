@@ -27,6 +27,32 @@ import {
   isActiveWorkflowNodeSession,
 } from "../workflow/workflowRunner";
 
+/** 从消息记录中恢复上下文 token 快照：取最后一条 assistant 行持久化的
+ *  单次请求用量（schema v46+；旧行全为 0，返回 null 让调用方回退）。 */
+export const tokenUsageFromMessageRecords = (
+  records: {
+    role: string;
+    inputTokens: number;
+    outputTokens: number;
+    cacheCreationInputTokens: number;
+    cacheReadInputTokens: number;
+  }[],
+): TokenUsage | null => {
+  const lastAssistant = records.findLast(
+    (record) => record.role === "assistant",
+  );
+  if (!lastAssistant) {
+    return null;
+  }
+  const usage: TokenUsage = {
+    inputTokens: lastAssistant.inputTokens,
+    outputTokens: lastAssistant.outputTokens,
+    cacheCreationInputTokens: lastAssistant.cacheCreationInputTokens,
+    cacheReadInputTokens: lastAssistant.cacheReadInputTokens,
+  };
+  return usage.inputTokens + usage.outputTokens > 0 ? usage : null;
+};
+
 /** 会话被选中（切换会话）时派发的全局事件：主视图应回到聊天界面。 */
 export const CONVERSATION_SELECTED_EVENT = "app:conversation-selected";
 
@@ -391,7 +417,10 @@ export const useConversationManagement = (
                     isLoadingOlderMessages: false,
                     hasMoreMessages: page.hasMore,
                     isInitialHistoryLoaded: true,
-                    tokenUsage: conversationTokenUsage ?? null,
+                    tokenUsage:
+                      tokenUsageFromMessageRecords(page.items) ??
+                      conversationTokenUsage ??
+                      null,
                     directoryId: conversationDirId,
                     hasNewContent: false,
                     forkedFromConversationId:

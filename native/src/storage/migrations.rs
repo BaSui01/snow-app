@@ -88,6 +88,7 @@ pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<(
     migrate_api_configs_sort_order(connection)?;
     migrate_chat_messages_interruption_metadata(connection)?;
     migrate_chat_messages_thinking_stats(connection)?;
+    migrate_chat_messages_token_usage(connection)?;
     purge_assistant_raw_json_blobs(connection)?;
     drop_tables_referencing_sub_agent_configs_legacy(connection)?;
     migrate_project_collections(connection)?;
@@ -496,6 +497,40 @@ fn migrate_chat_messages_thinking_stats(connection: &Connection) -> rusqlite::Re
             "ALTER TABLE chat_messages ADD COLUMN thinking_token_count INTEGER NOT NULL DEFAULT 0",
             [],
         )?;
+    }
+
+    Ok(())
+}
+
+/// Adds the per-request token usage columns to `chat_messages` for databases
+/// created before rollback-aware token snapshots existed. Each completed
+/// assistant row records the usage of its own API request, so truncating a
+/// conversation can restore the conversation-level snapshot from the latest
+/// remaining assistant row instead of zeroing it.
+///
+/// Idempotent: each column is checked independently (fresh databases get the
+/// columns from the `CREATE TABLE` statement in `create_schema`).
+fn migrate_chat_messages_token_usage(connection: &Connection) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA table_info(chat_messages)")?;
+    let columns: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    for (name, definition) in [
+        ("input_tokens", "INTEGER NOT NULL DEFAULT 0"),
+        ("output_tokens", "INTEGER NOT NULL DEFAULT 0"),
+        (
+            "cache_creation_input_tokens",
+            "INTEGER NOT NULL DEFAULT 0",
+        ),
+        ("cache_read_input_tokens", "INTEGER NOT NULL DEFAULT 0"),
+    ] {
+        if !columns.iter().any(|column| column == name) {
+            connection.execute(
+                &format!("ALTER TABLE chat_messages ADD COLUMN {name} {definition}"),
+                [],
+            )?;
+        }
     }
 
     Ok(())

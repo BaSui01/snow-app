@@ -23,6 +23,7 @@ import {
   resolveWorkflowFlowImpact,
 } from "../utils/rollbackChain";
 import { getActiveWorkflowNodeIds } from "../workflow/workflowRunner";
+import { tokenUsageFromMessageRecords } from "./useConversationManagement";
 
 /**
  * 回滚逻辑：中止流、预览文件变更、确认/取消回滚。
@@ -510,29 +511,41 @@ export const useRollback = (ctx: ConversationContextValue) => {
         } else if (convId && persistedMessageId) {
           // 失败/中断轮次没有 responseId，用持久化用户消息 ID 作为边界，
           // 从该行开始删除该轮及之后的所有消息。
-          ctx.updateSessionField(key, "tokenUsage", null);
+          await window.snow.truncateConversationFromMessage(
+            convId,
+            persistedMessageId,
+          );
+          // 上下文 token 快照从截断后剩余的最后一条 assistant 消息恢复
+          //（schema v46+ 每条 assistant 行都持久化了产生它的那次请求用量）；
+          // 查不到（如旧数据全为 0）才退回 null。run 级累计统计仍清零——
+          // 被截断轮次的贡献无法重算。
+          const restoredUsage = await window.snow
+            .listChatMessages(convId)
+            .then((records) => tokenUsageFromMessageRecords(records))
+            .catch(() => null);
+          ctx.updateSessionField(key, "tokenUsage", restoredUsage);
           ctx.updateSessionField(key, "runTokenUsage", null);
           ctx.updateSessionField(key, "conversationTokenUsage", null);
           ctx.updateSessionField(key, "lastRunDurationMs", 0);
           ctx.updateSessionField(key, "conversationTtftSumMs", 0);
           ctx.updateSessionField(key, "conversationRequestCount", 0);
-          await window.snow.truncateConversationFromMessage(
-            convId,
-            persistedMessageId,
-          );
           // 回滚后累计统计已无对应消息：清零 DB（覆盖而非累加），
           // 避免重启后摘要条回显与截断后的消息列表不一致。
           void window.snow.resetConversationRunStats(convId).catch(() => {
             // 清零失败不阻塞回滚
           });
         } else if (convId && responseId) {
-          ctx.updateSessionField(key, "tokenUsage", null);
+          await window.snow.truncateConversation(convId, responseId);
+          const restoredUsage = await window.snow
+            .listChatMessages(convId)
+            .then((records) => tokenUsageFromMessageRecords(records))
+            .catch(() => null);
+          ctx.updateSessionField(key, "tokenUsage", restoredUsage);
           ctx.updateSessionField(key, "runTokenUsage", null);
           ctx.updateSessionField(key, "conversationTokenUsage", null);
           ctx.updateSessionField(key, "lastRunDurationMs", 0);
           ctx.updateSessionField(key, "conversationTtftSumMs", 0);
           ctx.updateSessionField(key, "conversationRequestCount", 0);
-          await window.snow.truncateConversation(convId, responseId);
           // 回滚后累计统计已无对应消息：清零 DB（覆盖而非累加）。
           void window.snow.resetConversationRunStats(convId).catch(() => {
             // 清零失败不阻塞回滚

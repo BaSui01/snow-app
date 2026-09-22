@@ -945,6 +945,12 @@ export type ChatMessageRecord = {
   toolCallsJson: string;
   interruptionReason?: StreamInterruptionReason | null;
   recoveryOutcome?: StreamRecoveryOutcome | null;
+  /** Token usage of the API request that produced this assistant message
+   *  (zero for user/tool rows and rows persisted before schema v46). */
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
   createdAt: string;
 };
 

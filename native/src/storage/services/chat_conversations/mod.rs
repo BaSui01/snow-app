@@ -88,6 +88,26 @@ pub struct StoreChatExchangeInput<'a> {
     pub total_duration_ms: i64,
 }
 
+fn context_usage_snapshot(
+    status: &str,
+    context_compaction: bool,
+    response_content: &str,
+    token_usage: ChatTokenUsage,
+) -> Option<ChatTokenUsage> {
+    let successful_context_compaction =
+        context_compaction && status == "completed" && !response_content.trim().is_empty();
+    if status == "error" || (context_compaction && !successful_context_compaction) {
+        None
+    } else if successful_context_compaction {
+        Some(ChatTokenUsage {
+            input_tokens: token_usage.output_tokens,
+            ..ChatTokenUsage::default()
+        })
+    } else {
+        Some(token_usage)
+    }
+}
+
 pub fn resolve_conversation_id(
     database_path: &Path,
     conversation_id: Option<&str>,
@@ -235,18 +255,12 @@ pub fn store_chat_exchange(
             // snapshot: after successful compaction, only the generated handoff
             // remains. Failed, cancelled, or empty compactions keep the previous
             // snapshot intact.
-            let context_usage = if input.status == "error"
-                || (input.context_compaction && !successful_context_compaction)
-            {
-                None
-            } else if successful_context_compaction {
-                Some(ChatTokenUsage {
-                    input_tokens: input.token_usage.output_tokens,
-                    ..ChatTokenUsage::default()
-                })
-            } else {
-                Some(input.token_usage)
-            };
+            let context_usage = context_usage_snapshot(
+                input.status,
+                input.context_compaction,
+                input.response_content,
+                input.token_usage,
+            );
 
             transaction.execute(
                 "INSERT INTO chat_conversations (
@@ -303,6 +317,7 @@ pub fn store_chat_exchange(
                     0,
                     0,
                     "[]",
+                    None,
                     0,
                 )?;
                 persisted_user_message_ids.push(message_id);
@@ -371,6 +386,7 @@ pub fn store_chat_exchange(
                             0,
                             0,
                             "[]",
+                            None,
                             index,
                         )?;
                         if normalize_role(&message.role) == "user" {
@@ -395,6 +411,7 @@ pub fn store_chat_exchange(
                     input.response_thinking_duration_ms,
                     input.response_thinking_token_count,
                     input.tool_calls_json,
+                    context_usage,
                     input.request_messages.len(),
                 )?;
             }
@@ -635,6 +652,7 @@ pub fn append_tool_message(
                 0,
                 0,
                 "[]",
+                None,
                 0,
             )?;
             transaction.execute(
@@ -696,6 +714,7 @@ fn insert_message(
     thinking_duration_ms: i64,
     thinking_token_count: i64,
     tool_calls_json: &str,
+    token_usage: Option<ChatTokenUsage>,
     index: usize,
 ) -> rusqlite::Result<String> {
     let id = database::create_snowflake_id();
@@ -718,9 +737,13 @@ fn insert_message(
            thinking_token_count,
            thinking_blocks_json,
            tool_calls_json,
+           input_tokens,
+           output_tokens,
+           cache_creation_input_tokens,
+           cache_read_input_tokens,
            created_at
          ) VALUES (
-           ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, datetime('now', 'localtime')
+           ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, datetime('now', 'localtime')
          )",
         params![
             id,
@@ -740,6 +763,14 @@ fn insert_message(
             thinking_token_count,
             thinking_blocks_json,
             tool_calls_json,
+            token_usage.map(|usage| usage.input_tokens).unwrap_or(0),
+            token_usage.map(|usage| usage.output_tokens).unwrap_or(0),
+            token_usage
+                .map(|usage| usage.cache_creation_input_tokens)
+                .unwrap_or(0),
+            token_usage
+                .map(|usage| usage.cache_read_input_tokens)
+                .unwrap_or(0),
         ],
     )?;
 

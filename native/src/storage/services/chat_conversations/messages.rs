@@ -569,6 +569,10 @@ pub fn list_chat_messages(
                         tool_calls_json,
                         interruption_reason,
                         recovery_outcome,
+                        input_tokens,
+                        output_tokens,
+                        cache_creation_input_tokens,
+                        cache_read_input_tokens,
                         created_at
                    FROM chat_messages
                   WHERE conversation_id = ?1
@@ -590,7 +594,11 @@ pub fn list_chat_messages(
                     tool_calls_json: row.get(10)?,
                     interruption_reason: row.get(11)?,
                     recovery_outcome: row.get(12)?,
-                    created_at: row.get(13)?,
+                    input_tokens: row.get(13)?,
+                    output_tokens: row.get(14)?,
+                    cache_creation_input_tokens: row.get(15)?,
+                    cache_read_input_tokens: row.get(16)?,
+                    created_at: row.get(17)?,
                 })
             })?;
 
@@ -693,6 +701,10 @@ pub fn list_chat_messages_paginated(
                         tool_calls_json,
                         interruption_reason,
                         recovery_outcome,
+                        input_tokens,
+                        output_tokens,
+                        cache_creation_input_tokens,
+                        cache_read_input_tokens,
                         created_at
                    FROM chat_messages
                   WHERE conversation_id = ?1
@@ -718,7 +730,11 @@ pub fn list_chat_messages_paginated(
                         tool_calls_json: row.get(10)?,
                         interruption_reason: row.get(11)?,
                         recovery_outcome: row.get(12)?,
-                        created_at: row.get(13)?,
+                        input_tokens: row.get(13)?,
+                        output_tokens: row.get(14)?,
+                        cache_creation_input_tokens: row.get(15)?,
+                        cache_read_input_tokens: row.get(16)?,
+                        created_at: row.get(17)?,
                     })
                 },
             )?;

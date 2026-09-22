@@ -111,11 +111,16 @@ pub fn fork_conversation(
         String,
         Option<String>,
         Option<String>,
+        i64,
+        i64,
+        i64,
+        i64,
     )> = {
         let mut stmt = transaction
             .prepare(
                 "SELECT message_id, role, content, model, response_id, status, raw_json, thinking, tool_calls_json,
-                        interruption_reason, recovery_outcome
+                        interruption_reason, recovery_outcome,
+                        input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens
                    FROM chat_messages
                   WHERE conversation_id = ?1
                     AND (?2 = '' OR id <= COALESCE(
@@ -140,6 +145,10 @@ pub fn fork_conversation(
                     row.get(8)?,
                     row.get(9)?,
                     row.get(10)?,
+                    row.get(11)?,
+                    row.get(12)?,
+                    row.get(13)?,
+                    row.get(14)?,
                 ))
             })
             .map_err(|error| database::database_error(database_path, "fork conversation", error))?;
@@ -165,9 +174,13 @@ pub fn fork_conversation(
                tool_calls_json,
                interruption_reason,
                recovery_outcome,
+               input_tokens,
+               output_tokens,
+               cache_creation_input_tokens,
+               cache_read_input_tokens,
                created_at
              ) VALUES (
-               ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, datetime('now', 'localtime')
+               ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, datetime('now', 'localtime')
              )",
                 params![
                     database::create_snowflake_id(),
@@ -183,6 +196,10 @@ pub fn fork_conversation(
                     &msg.8,  // tool_calls_json
                     &msg.9,  // interruption_reason
                     &msg.10, // recovery_outcome
+                    &msg.11, // input_tokens
+                    &msg.12, // output_tokens
+                    &msg.13, // cache_creation_input_tokens
+                    &msg.14, // cache_read_input_tokens
                 ],
             )
             .map_err(|error| database::database_error(database_path, "fork conversation", error))?;
@@ -586,7 +603,12 @@ fn truncate_conversation_from_id(
             })?;
     }
 
-    // Refresh conversation metadata so the sidebar stays consistent.
+    // Refresh conversation metadata so the sidebar stays consistent. The
+    // context-window token snapshot is restored from the latest remaining
+    // assistant row (each row records the usage of its own API request), so
+    // the token ring keeps showing the post-rollback context size instead of
+    // going blank. Rows persisted before v46 carry zeros and simply fall back
+    // to the previous zeroed behaviour.
     transaction
         .execute(
             "UPDATE chat_conversations
@@ -604,10 +626,30 @@ fn truncate_conversation_from_id(
                         ORDER BY id DESC LIMIT 1),
                       ''
                     ),
-                    input_tokens = 0,
-                    output_tokens = 0,
-                    cache_creation_input_tokens = 0,
-                    cache_read_input_tokens = 0,
+                    input_tokens = COALESCE(
+                      (SELECT input_tokens FROM chat_messages
+                        WHERE conversation_id = ?1 AND role = 'assistant'
+                        ORDER BY id DESC LIMIT 1),
+                      0
+                    ),
+                    output_tokens = COALESCE(
+                      (SELECT output_tokens FROM chat_messages
+                        WHERE conversation_id = ?1 AND role = 'assistant'
+                        ORDER BY id DESC LIMIT 1),
+                      0
+                    ),
+                    cache_creation_input_tokens = COALESCE(
+                      (SELECT cache_creation_input_tokens FROM chat_messages
+                        WHERE conversation_id = ?1 AND role = 'assistant'
+                        ORDER BY id DESC LIMIT 1),
+                      0
+                    ),
+                    cache_read_input_tokens = COALESCE(
+                      (SELECT cache_read_input_tokens FROM chat_messages
+                        WHERE conversation_id = ?1 AND role = 'assistant'
+                        ORDER BY id DESC LIMIT 1),
+                      0
+                    ),
                     updated_at = datetime('now', 'localtime')
               WHERE conversation_id = ?1",
             params![conversation_id],

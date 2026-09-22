@@ -38,7 +38,7 @@ const CONVERSATION_COLUMNS: &str = "id, conversation_id, title, summary, last_me
 /// 与运行库 chat_messages 完全一致的列。
 /// 必须与运行库 create_schema 的 chat_messages 列保持同步——
 /// 归档与还原都按此清单显式拷贝，漏列即静默丢数据。
-const MESSAGE_COLUMNS: &str = "id, message_id, conversation_id, role, content, model, response_id, checkpoint_id, status, interruption_reason, recovery_outcome, raw_json, thinking, thinking_duration_ms, thinking_token_count, thinking_blocks_json, tool_calls_json, created_at";
+const MESSAGE_COLUMNS: &str = "id, message_id, conversation_id, role, content, model, response_id, checkpoint_id, status, interruption_reason, recovery_outcome, raw_json, thinking, thinking_duration_ms, thinking_token_count, thinking_blocks_json, tool_calls_json, input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, created_at";
 
 const TODO_COLUMNS: &str = "id, session_id, content, status, response_id, created_at, updated_at, parent_id";
 
@@ -156,10 +156,14 @@ pub(crate) fn create_archive_schema(connection: &Connection) -> rusqlite::Result
            thinking TEXT NOT NULL DEFAULT '',
            thinking_duration_ms INTEGER NOT NULL DEFAULT 0,
            thinking_token_count INTEGER NOT NULL DEFAULT 0,
-           thinking_blocks_json TEXT NOT NULL DEFAULT '[]',
-           tool_calls_json TEXT NOT NULL DEFAULT '[]',
-           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
-           FOREIGN KEY(conversation_id) REFERENCES chat_conversations(conversation_id) ON DELETE CASCADE
+            thinking_blocks_json TEXT NOT NULL DEFAULT '[]',
+            tool_calls_json TEXT NOT NULL DEFAULT '[]',
+            input_tokens INTEGER NOT NULL DEFAULT 0,
+            output_tokens INTEGER NOT NULL DEFAULT 0,
+            cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
+            cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            FOREIGN KEY(conversation_id) REFERENCES chat_conversations(conversation_id) ON DELETE CASCADE
          );
          CREATE INDEX IF NOT EXISTS idx_archive_messages_conversation_id
            ON chat_messages(conversation_id, id ASC);
@@ -301,6 +305,13 @@ fn migrate_archive_chat_messages(connection: &Connection) -> rusqlite::Result<()
         ("recovery_outcome", "TEXT"),
         ("thinking_duration_ms", "INTEGER NOT NULL DEFAULT 0"),
         ("thinking_token_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("input_tokens", "INTEGER NOT NULL DEFAULT 0"),
+        ("output_tokens", "INTEGER NOT NULL DEFAULT 0"),
+        (
+            "cache_creation_input_tokens",
+            "INTEGER NOT NULL DEFAULT 0",
+        ),
+        ("cache_read_input_tokens", "INTEGER NOT NULL DEFAULT 0"),
     ] {
         if !columns.iter().any(|column| column == name) {
             connection.execute(

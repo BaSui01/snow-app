@@ -155,10 +155,14 @@ fn import_entry(database_path: &Path, directory_id: &str, entry: &Value) -> Resu
                        thinking_token_count,
                        thinking_blocks_json,
                        tool_calls_json,
+                       input_tokens,
+                       output_tokens,
+                       cache_creation_input_tokens,
+                       cache_read_input_tokens,
                        created_at
                      ) VALUES (
                        ?1, ?2, ?3, ?4, ?5, ?6, ?7, '', ?8, NULL, NULL, '{}',
-                       ?9, ?10, ?11, '[]', ?12, datetime('now', 'localtime')
+                       ?9, ?10, ?11, '[]', ?12, ?13, ?14, ?15, ?16, datetime('now', 'localtime')
                      )",
                     params![
                         database::create_snowflake_id(),
@@ -173,6 +177,10 @@ fn import_entry(database_path: &Path, directory_id: &str, entry: &Value) -> Resu
                         non_negative_i64(message, "thinkingDurationMs"),
                         non_negative_i64(message, "thinkingTokenCount"),
                         json_array_field(message, "toolCallsJson"),
+                        non_negative_i64(message, "inputTokens"),
+                        non_negative_i64(message, "outputTokens"),
+                        non_negative_i64(message, "cacheCreationInputTokens"),
+                        non_negative_i64(message, "cacheReadInputTokens"),
                     ],
                 )
                 .map_err(|error| {

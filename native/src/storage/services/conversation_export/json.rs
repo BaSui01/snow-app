@@ -68,6 +68,10 @@ fn message_to_json(m: &ChatMessageRecord) -> serde_json::Value {
         "responseId": m.response_id,
         "checkpointId": m.checkpoint_id,
         "toolCallsJson": m.tool_calls_json,
+        "inputTokens": m.input_tokens,
+        "outputTokens": m.output_tokens,
+        "cacheCreationInputTokens": m.cache_creation_input_tokens,
+        "cacheReadInputTokens": m.cache_read_input_tokens,
         "createdAt": m.created_at,
     })
 }

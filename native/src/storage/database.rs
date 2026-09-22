@@ -17,6 +17,8 @@ use super::{
 
 /// Bumped whenever the schema changes; written to `PRAGMA user_version` after
 /// a successful `create_schema` so the app can detect stale databases.
+/// 46: chat_messages per-request token usage columns (rollback restores the
+/// conversation token snapshot from the latest remaining assistant row).
 /// 45: custom_commands table (global/project scoped user-defined slash commands).
 /// 44: api_configs.sort_order column (user-ordered API profile list).
 /// 42: workspace_directories path health columns + workspace_directory_relinks table.
@@ -31,7 +33,7 @@ use super::{
 /// 32: api_configs canonical config_json migration plus conversation runtime config columns.
 /// 31: main's scheduled-tasks pre-script migration (30) + PR #65's three
 /// stream-interruption migrations (29 baseline + 4 total additions).
-const CURRENT_SCHEMA_VERSION: i64 = 45;
+const CURRENT_SCHEMA_VERSION: i64 = 46;
 const SNOWFLAKE_EPOCH_MS: u64 = 1_704_067_200_000;
 const SNOWFLAKE_WORKER_ID_BITS: u64 = 10;
 const SNOWFLAKE_SEQUENCE_BITS: u64 = 12;
@@ -928,12 +930,16 @@ CREATE TABLE IF NOT EXISTS app_plugins (
            thinking TEXT NOT NULL DEFAULT '',
            thinking_duration_ms INTEGER NOT NULL DEFAULT 0,
            thinking_token_count INTEGER NOT NULL DEFAULT 0,
-           thinking_blocks_json TEXT NOT NULL DEFAULT '[]',
-           tool_calls_json TEXT NOT NULL DEFAULT '[]',
-           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
-           FOREIGN KEY(conversation_id) REFERENCES chat_conversations(conversation_id) ON DELETE CASCADE
-         );
-         CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation_id
+            thinking_blocks_json TEXT NOT NULL DEFAULT '[]',
+            tool_calls_json TEXT NOT NULL DEFAULT '[]',
+            input_tokens INTEGER NOT NULL DEFAULT 0,
+            output_tokens INTEGER NOT NULL DEFAULT 0,
+            cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
+            cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            FOREIGN KEY(conversation_id) REFERENCES chat_conversations(conversation_id) ON DELETE CASCADE
+          );
+          CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation_id
            ON chat_messages(conversation_id, id ASC);
          CREATE INDEX IF NOT EXISTS idx_chat_messages_response_id
            ON chat_messages(response_id);

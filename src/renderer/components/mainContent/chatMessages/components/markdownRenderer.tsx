@@ -23,7 +23,8 @@ import {
   watchThemeForMermaid,
 } from "./mermaidRenderer";
 import { openTableExportMenu } from "./tableExport";
-import { rightPanelEvents } from "../../../rightPanel/rightPanelEvents";
+import { openInSystemBrowser, openLinkOpenMenu } from "./linkOpenMenu";
+import { useI18n } from "../../../../i18n";
 import { downloadImageSrc } from "../../../../utils/imageDownload";
 import { Tooltip } from "../../../common/Tooltip";
 
@@ -414,6 +415,7 @@ export const MarkdownBlock = memo(
     minRenderIntervalMs?: number;
   }): React.JSX.Element => {
     const html = useMarkdownRender(content, minRenderIntervalMs);
+    const { t } = useI18n();
 
     const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -589,28 +591,46 @@ export const MarkdownBlock = memo(
       (e: React.MouseEvent<HTMLDivElement>) => {
         const target = e.target as HTMLElement;
 
-        // --- 来源徽章点击：在右侧面板的应用内浏览器打开来源页面 ---
+        // --- 来源徽章点击：弹出内部/系统浏览器选择菜单 ---
         const badge = target.closest(".md-source-badge") as HTMLElement | null;
         if (badge) {
           const url = badge.dataset.url ?? "";
-          if (/^https?:\/\//i.test(url)) {
+          if (e.button === 0 && /^https?:\/\//i.test(url)) {
             e.preventDefault();
-            rightPanelEvents.emit("open-browser-tab", { url });
+            if (e.metaKey || e.ctrlKey) {
+              openInSystemBrowser(url);
+            } else {
+              openLinkOpenMenu(e.clientX, e.clientY, url, {
+                inApp: t("markdown.link.openInApp"),
+                external: t("markdown.link.openExternal"),
+              });
+            }
           }
           return;
         }
 
         // --- 普通链接拦截 ---
-        // markdown-it 默认渲染出的 <a> 没有 target，点击会走 Electron 默认行为
-        // （主进程 setWindowOpenHandler 转交系统浏览器）。这里统一拦截，改为在
-        // 右侧面板的应用内浏览器中新建 tab 打开，与 WebSearchToolCall 行为一致。
-        // 仅处理 http(s) 链接，非 http(s) 的（如 mailto:）保持默认行为。
+        // markdown-it 默认渲染出的 <a> 没有 target，普通点击会走 Electron 默认行为
+        // （主进程 setWindowOpenHandler 转交系统浏览器）。这里统一拦截：普通点击弹出
+        // 内部/系统浏览器选择菜单，Cmd/Ctrl+点击直接系统浏览器打开；中键不拦截，
+        // 放行 Electron 默认转交系统浏览器。仅处理 http(s) 链接，
+        // 非 http(s) 的（如 mailto:）保持默认行为。
         const anchor = target.closest("a") as HTMLAnchorElement | null;
         if (anchor) {
           const href = anchor.getAttribute("href") ?? "";
           if (/^https?:\/\//i.test(href)) {
+            if (e.button !== 0) {
+              return;
+            }
             e.preventDefault();
-            rightPanelEvents.emit("open-browser-tab", { url: href });
+            if (e.metaKey || e.ctrlKey) {
+              openInSystemBrowser(href);
+            } else {
+              openLinkOpenMenu(e.clientX, e.clientY, href, {
+                inApp: t("markdown.link.openInApp"),
+                external: t("markdown.link.openExternal"),
+              });
+            }
             return;
           }
           // 非 http(s) 链接：若像本地文件路径且宿主提供了回调（右侧文件阅读器），
@@ -741,7 +761,7 @@ export const MarkdownBlock = memo(
           window.setTimeout(() => copyBtn.classList.remove("copied"), 2000);
         });
       },
-      [onFileLinkClick],
+      [onFileLinkClick, t],
     );
 
     return (

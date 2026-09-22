@@ -969,6 +969,8 @@ export const zhCN = {
   "toolCall.websearch.waitingFetch": "等待抓取",
   "toolCall.websearch.openInBrowser": "在应用内浏览器打开",
   "toolCall.websearch.openExternal": "在系统浏览器打开",
+  "markdown.link.openInApp": "在应用内浏览器打开",
+  "markdown.link.openExternal": "在系统浏览器打开",
   "toolCall.imagegen.name": "生图",
   "toolCall.imagegen.prompt": "提示词",
   "toolCall.imagegen.prompts": "{{count}} 个提示词",

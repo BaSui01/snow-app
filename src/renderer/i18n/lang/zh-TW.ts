@@ -970,6 +970,8 @@ export const zhTW = {
   "toolCall.websearch.waitingFetch": "等待擷取",
   "toolCall.websearch.openInBrowser": "在應用內瀏覽器開啟",
   "toolCall.websearch.openExternal": "在系統瀏覽器開啟",
+  "markdown.link.openInApp": "在應用內瀏覽器開啟",
+  "markdown.link.openExternal": "在系統瀏覽器開啟",
   "toolCall.imagegen.name": "生圖",
   "toolCall.imagegen.prompt": "提示詞",
   "toolCall.imagegen.prompts": "{{count}} 個提示詞",

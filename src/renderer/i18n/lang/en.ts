@@ -1027,6 +1027,8 @@ export const en = {
   "toolCall.websearch.waitingFetch": "Waiting to fetch",
   "toolCall.websearch.openInBrowser": "Open in app browser",
   "toolCall.websearch.openExternal": "Open in system browser",
+  "markdown.link.openInApp": "Open in app browser",
+  "markdown.link.openExternal": "Open in system browser",
   "toolCall.imagegen.name": "imagegen",
   "toolCall.imagegen.prompt": "Prompt",
   "toolCall.imagegen.prompts": "{{count}} prompts",

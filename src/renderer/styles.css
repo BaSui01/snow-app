@@ -11963,7 +11963,8 @@ input {
    and tableExport.openTableExportMenu). Rendered in document.body, so it is
    not nested under .ai-message. */
 .mermaid-export-menu,
-.table-export-menu {
+.table-export-menu,
+.link-open-menu {
   z-index: 10000;
   min-width: 88px;
   padding: 4px;
@@ -11974,7 +11975,8 @@ input {
 }
 
 .mermaid-export-menu-item,
-.table-export-menu-item {
+.table-export-menu-item,
+.link-open-menu-item {
   display: block;
   width: 100%;
   padding: 6px 12px;
@@ -11994,8 +11996,25 @@ input {
 }
 
 .mermaid-export-menu-item:hover,
-.table-export-menu-item:hover {
+.table-export-menu-item:hover,
+.link-open-menu-item:hover {
   background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.link-open-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.link-open-menu-item-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.link-open-menu-item:hover .link-open-menu-item-icon {
   color: var(--text-primary);
 }
 

@@ -20,7 +20,6 @@ import { shortcutEvents } from "../shortcutEvents";
 import { APP_CONTROL_MEMO_CREATED_EVENT } from "../../hooks/useAppControl";
 import { useConversationNavigation } from "../../hooks/useConversationNavigation";
 import { useScheduledTasks } from "../../hooks/useScheduledTasks";
-import type { MainContentView } from "../mainContent/types";
 import { ChatsSection } from "./mainSidebar/ChatsSection";
 import { ProjectsSection } from "./mainSidebar/ProjectsSection";
 import { TeamEntry } from "./mainSidebar/TeamEntry";
@@ -273,14 +272,6 @@ export function MainSidebarContent({
     [onActiveDirectoryChange, onSwitchContent],
   );
 
-  const handleSearchSelectSetting = useCallback(
-    (view: MainContentView): void => {
-      onSwitchContent?.("settings");
-      onSelectMainView(view);
-    },
-    [onSwitchContent, onSelectMainView],
-  );
-
   return (
     <>
       {/* 团队协作入口（基于 Git 的身份系统，置于侧边栏顶部）；非 Git 目录不显示 */}
@@ -472,7 +463,6 @@ export function MainSidebarContent({
         onClose={() => setIsSearchOpen(false)}
         onSelectConversation={handleSearchSelectConversation}
         onSelectDirectory={handleSearchSelectDirectory}
-        onSelectSetting={handleSearchSelectSetting}
       />
       <MemoModal
         directoryId={activeDirectoryId}

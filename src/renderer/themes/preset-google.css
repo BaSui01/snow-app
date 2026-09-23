@@ -130,8 +130,7 @@
   background: var(--surface-island-strong);
 }
 
-:root[data-theme-preset="google"]
-  :is(button, input, select, textarea, [tabindex]):focus-visible {
+:root[data-theme-preset="google"] :is(button, [tabindex]):focus-visible {
   outline: 2px solid var(--google-blue);
   outline-offset: 2px;
 }
@@ -175,8 +174,6 @@
     .custom-select-trigger,
     .model-manual-field,
     .search-modal-input,
-    .browser-address-input,
-    .browser-find-input,
     .git-commit-input,
     .file-viewer-search-input,
     .branch-create-input
@@ -195,14 +192,11 @@
     .custom-select-trigger,
     .model-manual-field,
     .search-modal-input,
-    .browser-address-input,
-    .browser-find-input,
     .git-commit-input,
     .file-viewer-search-input,
     .branch-create-input
   ):focus {
-  border-color: var(--google-blue);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
   outline: none;
 }
 
@@ -923,8 +917,6 @@
     .custom-select-trigger,
     .model-manual-field,
     .search-modal-input,
-    .browser-address-input,
-    .browser-find-input,
     .git-commit-input,
     .file-viewer-search-input,
     .branch-create-input
@@ -943,8 +935,6 @@
     .custom-select-trigger,
     .model-manual-field,
     .search-modal-input,
-    .browser-address-input,
-    .browser-find-input,
     .git-commit-input,
     .file-viewer-search-input,
     .branch-create-input
@@ -960,14 +950,11 @@
     .custom-select-trigger,
     .model-manual-field,
     .search-modal-input,
-    .browser-address-input,
-    .browser-find-input,
     .git-commit-input,
     .file-viewer-search-input,
     .branch-create-input
   ):focus {
-  border-color: var(--google-blue);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
   outline: none;
 }
 
@@ -1849,19 +1836,6 @@
   ) {
   border-color: var(--google-outline);
   background: var(--google-surface-0);
-}
-
-:root[data-theme-preset="google"]
-  :is(
-    .scheduled-tasks-prompt-textarea,
-    .scheduled-tasks-script-textarea,
-    .thinking-menu-trigger,
-    .memory-editor-title,
-    .memory-editor-content,
-    .memory-editor-tags
-  ):focus {
-  border-color: var(--google-blue);
-  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 :root[data-theme-preset="google"] .stream-metrics {

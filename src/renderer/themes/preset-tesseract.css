@@ -782,8 +782,6 @@
     .custom-select-trigger,
     .model-manual-field,
     .search-modal-input,
-    .browser-address-input,
-    .browser-find-input,
     .git-commit-input,
     .file-viewer-search-input,
     .branch-create-input,
@@ -806,17 +804,12 @@
     .custom-select-trigger,
     .model-manual-field,
     .search-modal-input,
-    .browser-address-input,
-    .browser-find-input,
     .git-commit-input,
     .file-viewer-search-input,
     .branch-create-input,
     .api-model-combobox-field
   ):focus {
-  border-color: var(--tesseract-purple);
-  box-shadow:
-    0 0 0 1px var(--tesseract-purple),
-    0 0 6px var(--tesseract-purple-glow);
+  border-color: var(--accent-color);
   outline: none;
 }
 
@@ -1518,19 +1511,6 @@
   border-color: var(--border-color);
   background: var(--surface-island-strong);
   border-radius: var(--radius-sm);
-}
-
-:root[data-theme-preset="tesseract"]
-  :is(
-    .scheduled-tasks-prompt-textarea,
-    .scheduled-tasks-script-textarea,
-    .thinking-menu-trigger,
-    .memory-editor-title,
-    .memory-editor-content,
-    .memory-editor-tags
-  ):focus {
-  border-color: var(--tesseract-purple);
-  box-shadow: 0 0 6px var(--tesseract-purple-glow);
 }
 
 /* ==========================================================================

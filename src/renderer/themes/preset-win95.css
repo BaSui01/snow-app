@@ -245,8 +245,7 @@
   background: var(--w95-face);
 }
 
-:root[data-theme-preset="win95"]
-  :is(button, input, select, textarea, [tabindex]):focus-visible {
+:root[data-theme-preset="win95"] :is(button, [tabindex]):focus-visible {
   outline: 1px dotted var(--w95-focus);
   outline-offset: -4px;
 }
@@ -408,8 +407,6 @@
     .custom-select-trigger,
     .model-manual-field,
     .search-modal-input,
-    .browser-address-input,
-    .browser-find-input,
     .git-commit-input,
     .file-viewer-search-input,
     .branch-create-input
@@ -429,13 +426,11 @@
     .custom-select-trigger,
     .model-manual-field,
     .search-modal-input,
-    .browser-address-input,
-    .browser-find-input,
     .git-commit-input,
     .file-viewer-search-input,
     .branch-create-input
   ):focus {
-  border-color: var(--w95-face);
+  border-color: var(--accent-color);
   box-shadow: var(--w95-in);
   outline: none;
 }
@@ -1374,7 +1369,7 @@
     .memory-editor-content,
     .memory-editor-tags
   ):focus {
-  border-color: var(--w95-face);
+  border-color: var(--accent-color);
   box-shadow: var(--w95-in);
   outline: none;
 }

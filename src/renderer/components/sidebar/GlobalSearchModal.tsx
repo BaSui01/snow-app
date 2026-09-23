@@ -6,25 +6,21 @@ import type {
   ConversationSearchResult,
   WorkspaceDirectoryRecord,
 } from "../../../preload";
-import type { MainContentView } from "../mainContent/types";
 import { Modal } from "../common/Modal";
 import { formatTimeLabel, parseDbTimestamp } from "./mainSidebar/chatTimeGroup";
-import { SETTINGS_ITEMS, type SettingsItem } from "./settingsItems";
 
 const MAX_RESULTS_PER_GROUP = 6;
 const SEARCH_DEBOUNCE_MS = 300;
 
 type GlobalSearchResult =
   | { kind: "conversation"; conversation: ConversationSearchResult }
-  | { kind: "directory"; directory: WorkspaceDirectoryRecord }
-  | { kind: "setting"; setting: SettingsItem };
+  | { kind: "directory"; directory: WorkspaceDirectoryRecord };
 
 type GlobalSearchModalProps = {
   open: boolean;
   onClose: () => void;
   onSelectConversation: (conversation: ConversationSearchResult) => void;
   onSelectDirectory: (directory: WorkspaceDirectoryRecord) => void;
-  onSelectSetting: (view: MainContentView) => void;
 };
 
 export function GlobalSearchModal({
@@ -32,7 +28,6 @@ export function GlobalSearchModal({
   onClose,
   onSelectConversation,
   onSelectDirectory,
-  onSelectSetting,
 }: GlobalSearchModalProps): React.JSX.Element {
   const { t } = useI18n();
   const [query, setQuery] = useState("");
@@ -127,16 +122,6 @@ export function GlobalSearchModal({
 
   const trimmedQuery = query.trim().toLowerCase();
 
-  const matchedSettings = useMemo(() => {
-    if (!trimmedQuery) return [];
-    return SETTINGS_ITEMS.filter((item) => {
-      const label = t(item.labelKey, {
-        defaultValue: item.defaultLabel,
-      }).toLowerCase();
-      return label.includes(trimmedQuery) || item.id.includes(trimmedQuery);
-    }).slice(0, MAX_RESULTS_PER_GROUP);
-  }, [trimmedQuery, t]);
-
   const matchedDirectories = useMemo(() => {
     if (!trimmedQuery) return [];
     return directories
@@ -157,11 +142,8 @@ export function GlobalSearchModal({
     for (const directory of matchedDirectories) {
       results.push({ kind: "directory", directory });
     }
-    for (const setting of matchedSettings) {
-      results.push({ kind: "setting", setting });
-    }
     return results;
-  }, [conversations, matchedDirectories, matchedSettings]);
+  }, [conversations, matchedDirectories]);
 
   useEffect(() => {
     const el = itemRefs.current[activeIndex];
@@ -175,9 +157,6 @@ export function GlobalSearchModal({
         break;
       case "directory":
         onSelectDirectory(result.directory);
-        break;
-      case "setting":
-        onSelectSetting(result.setting.view);
         break;
     }
     onClose();
@@ -274,35 +253,6 @@ export function GlobalSearchModal({
     );
   };
 
-  const renderSettingItem = (
-    setting: SettingsItem,
-    itemIndex: number,
-  ): React.JSX.Element => {
-    const label = t(setting.labelKey, { defaultValue: setting.defaultLabel });
-    const Icon = setting.icon;
-
-    return (
-      <div
-        key={`setting-${setting.id}`}
-        ref={(el) => {
-          itemRefs.current[itemIndex] = el;
-        }}
-        className={`search-result-item${itemIndex === activeIndex ? " active" : ""}`}
-        onClick={() => handleSelect({ kind: "setting", setting })}
-        onMouseEnter={() => setActiveIndex(itemIndex)}
-        role="button"
-        tabIndex={0}
-      >
-        <span className="search-result-icon">
-          <Icon size={14} />
-        </span>
-        <div className="search-result-content">
-          <div className="search-result-title">{label}</div>
-        </div>
-      </div>
-    );
-  };
-
   const renderBody = (): React.ReactNode => {
     const trimmed = query.trim();
 
@@ -360,16 +310,6 @@ export function GlobalSearchModal({
             </div>
             {matchedDirectories.map((directory) =>
               renderDirectoryItem(directory, index++),
-            )}
-          </div>
-        )}
-        {matchedSettings.length > 0 && (
-          <div className="search-group">
-            <div className="search-group-title">
-              {t("search.groupSettings", { defaultValue: "Settings" })}
-            </div>
-            {matchedSettings.map((setting) =>
-              renderSettingItem(setting, index++),
             )}
           </div>
         )}

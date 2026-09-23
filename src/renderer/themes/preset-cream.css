@@ -177,8 +177,7 @@
 
 /* Shared interactive states make menus, navigation, tables, and icon buttons
    feel like the same product rather than independent component kits. */
-:root[data-theme-preset="cream"]
-  :is(button, input, select, textarea, [tabindex]):focus-visible {
+:root[data-theme-preset="cream"] :is(button, [tabindex]):focus-visible {
   outline: 2px solid var(--accent-orange);
   outline-offset: 2px;
 }
@@ -237,8 +236,6 @@
     .custom-select-trigger,
     .model-manual-field,
     .search-modal-input,
-    .browser-address-input,
-    .browser-find-input,
     .git-commit-input,
     .file-viewer-search-input,
     .branch-create-input
@@ -257,14 +254,11 @@
     .custom-select-trigger,
     .model-manual-field,
     .search-modal-input,
-    .browser-address-input,
-    .browser-find-input,
     .git-commit-input,
     .file-viewer-search-input,
     .branch-create-input
   ):focus {
-  border-color: var(--accent-orange);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
   outline: none;
 }
 
@@ -1037,19 +1031,6 @@
   ) {
   border-color: var(--border-color);
   background: var(--surface-island-strong);
-}
-
-:root[data-theme-preset="cream"]
-  :is(
-    .scheduled-tasks-prompt-textarea,
-    .scheduled-tasks-script-textarea,
-    .thinking-menu-trigger,
-    .memory-editor-title,
-    .memory-editor-content,
-    .memory-editor-tags
-  ):focus {
-  border-color: var(--accent-orange);
-  box-shadow: 0 0 0 3px var(--accent-orange-bg);
 }
 
 :root[data-theme-preset="cream"] .stream-metrics {

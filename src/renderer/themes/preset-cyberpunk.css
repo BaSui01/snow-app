@@ -199,7 +199,7 @@
 }
 
 :root[data-theme-preset="cyberpunk"] .main-content {
-  padding: 16px 12px;
+  padding: 20px 14px;
 }
 
 :root[data-theme-preset="cyberpunk"]
@@ -208,14 +208,19 @@
   padding: 0;
 }
 
+:root[data-theme-preset="cyberpunk"]
+  .app-shell.right-panel-fullscreen:not(.sidebar-collapsed)
+  .top-bar {
+  column-gap: 5px;
+}
+
 :root[data-theme-preset="cyberpunk"] .main-header,
 :root[data-theme-preset="cyberpunk"] .panel-tabs {
   background: var(--surface-island-muted);
   border-bottom: 1px solid var(--border-light);
 }
 
-:root[data-theme-preset="cyberpunk"]
-  :is(button, input, select, textarea, [tabindex]):focus-visible {
+:root[data-theme-preset="cyberpunk"] :is(button, [tabindex]):focus-visible {
   outline: 2px solid var(--cp-neon-pink);
   outline-offset: 2px;
   box-shadow: var(--cp-glow-sm);
@@ -274,8 +279,6 @@
     .custom-select-trigger,
     .model-manual-field,
     .search-modal-input,
-    .browser-address-input,
-    .browser-find-input,
     .git-commit-input,
     .file-viewer-search-input,
     .branch-create-input
@@ -294,16 +297,11 @@
     .custom-select-trigger,
     .model-manual-field,
     .search-modal-input,
-    .browser-address-input,
-    .browser-find-input,
     .git-commit-input,
     .file-viewer-search-input,
     .branch-create-input
   ):focus {
-  border-color: var(--cp-neon-pink);
-  box-shadow:
-    0 0 0 3px var(--accent-orange-bg),
-    var(--cp-glow-sm);
+  border-color: var(--accent-color);
   outline: none;
 }
 
@@ -1094,19 +1092,6 @@
   ) {
   border-color: var(--border-color);
   background: var(--surface-island-strong);
-}
-
-:root[data-theme-preset="cyberpunk"]
-  :is(
-    .scheduled-tasks-prompt-textarea,
-    .scheduled-tasks-script-textarea,
-    .thinking-menu-trigger,
-    .memory-editor-title,
-    .memory-editor-content,
-    .memory-editor-tags
-  ):focus {
-  border-color: var(--cp-neon-pink);
-  box-shadow: 0 0 0 3px var(--accent-orange-bg);
 }
 
 :root[data-theme-preset="cyberpunk"] .stream-metrics {

@@ -736,7 +736,7 @@ input {
 }
 
 .top-bar-todo-add-input:focus {
-  border-color: var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .top-bar-todo-add-input::placeholder {
@@ -1434,7 +1434,7 @@ input {
   flex-direction: column;
   gap: 2px;
   margin: 0 0 4px 19px;
-  padding-left: 19px;
+  padding-left: 3px;
   border-left: 1px solid var(--border-color);
 }
 
@@ -1870,8 +1870,7 @@ input {
 }
 
 .emoji-picker-search:focus-within {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .emoji-picker-search-icon {
@@ -1883,11 +1882,12 @@ input {
   flex: 1;
   min-width: 0;
   padding: 2px 0;
-  border: none;
-  background: transparent;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
   color: var(--text-primary);
   font-size: 12px;
-  outline: none;
+  outline: none !important;
 }
 
 .emoji-picker-search-input::placeholder {
@@ -2114,7 +2114,7 @@ input {
   outline: none;
 }
 .chat-item-rename-input:focus {
-  border-color: var(--text-muted);
+  border-color: var(--accent-color);
 }
 
 .chat-time-group-header {
@@ -3005,8 +3005,7 @@ input {
 }
 
 .form-dialog-input:focus {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .form-dialog-input:disabled,
@@ -3285,8 +3284,7 @@ input {
 }
 
 .workspace-directory-rename-input:focus {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .workspace-directory-row.editing {
@@ -3472,8 +3470,7 @@ input {
 }
 
 .workspace-directory-ssh-form input:focus {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .workspace-directory-ssh-form input:disabled,
@@ -3925,16 +3922,16 @@ input {
 }
 
 .explorer-search-bar:focus-within {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .explorer-search-bar input {
   width: 100%;
   min-width: 0;
-  border: none;
-  outline: none;
-  background: transparent;
+  border: none !important;
+  outline: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
   color: var(--text-primary);
   font: inherit;
   font-size: 12px;
@@ -4134,8 +4131,7 @@ input {
 }
 
 .explorer-entry-context-menu-form input:focus {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 2px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .explorer-entry-context-menu-actions {
@@ -4271,6 +4267,168 @@ input {
   color: var(--text-muted);
   flex-shrink: 0;
   margin-top: 1px;
+}
+
+.settings-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin: 0 8px 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
+}
+
+.settings-search-bar:focus-within {
+  border-color: var(--accent-color);
+}
+
+.settings-search-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.settings-search-input {
+  flex: 1;
+  min-width: 0;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none !important;
+}
+
+.settings-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.settings-search-clear {
+  flex-shrink: 0;
+}
+
+.settings-search-results {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 8px 10px;
+}
+
+.settings-search-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 4px 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-align: left;
+  text-transform: uppercase;
+  transition: color 0.12s;
+}
+
+.settings-search-group-title:hover {
+  color: var(--text-secondary);
+}
+
+.settings-search-group-title span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-search-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  text-align: left;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
+}
+
+.settings-search-result:hover {
+  background: var(--bg-hover);
+}
+
+.settings-search-result.active {
+  border-color: var(--border-color);
+  background: var(--bg-active);
+}
+
+.settings-search-result-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.settings-search-result-body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.settings-search-result-title {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-search-result.active .settings-search-result-title {
+  color: var(--text-primary);
+}
+
+.settings-search-result-path {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-search-empty {
+  padding: 18px 8px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+.settings-search-flash {
+  animation: settings-search-flash 1.6s ease-out;
+}
+
+@keyframes settings-search-flash {
+  0%,
+  40% {
+    background-color: var(--bg-active);
+    box-shadow: 0 0 0 2px var(--focus-ring);
+  }
+
+  100% {
+    background-color: transparent;
+    box-shadow: none;
+  }
 }
 
 .settings-panel {
@@ -5843,8 +6001,7 @@ input {
 
 .api-settings-field input:not([type="checkbox"]):not([type="range"]):focus,
 .api-settings-field select:focus {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .api-settings-field input:not([type="checkbox"]):not([type="range"]):disabled,
@@ -5870,8 +6027,7 @@ input {
 }
 
 .api-settings-field textarea.api-settings-field-textarea:focus {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .api-settings-field textarea.api-settings-field-textarea:disabled {
@@ -5908,8 +6064,7 @@ input {
 
 .custom-select-trigger:focus {
   outline: none;
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .custom-select-trigger:disabled {
@@ -6030,8 +6185,7 @@ input {
 }
 
 .custom-select-filter:focus {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .api-settings-hint-text {
@@ -6615,16 +6769,16 @@ input {
 }
 
 .api-settings-table-search:focus-within {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .api-settings-table-search input {
   width: 100%;
   min-width: 0;
-  border: none;
-  outline: none;
-  background: transparent;
+  border: none !important;
+  outline: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
   color: var(--text-primary);
   font: inherit;
   font-size: 12px;
@@ -6848,8 +7002,7 @@ input {
 
 .api-settings-table .table-input:focus,
 .api-settings-table .table-select:focus {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .api-settings-inline-field {
@@ -7667,8 +7820,7 @@ input {
 }
 
 .skills-settings-install-input:focus {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .skills-settings-install-input:disabled {
@@ -10189,7 +10341,7 @@ input {
 }
 
 .review-instructions-input:focus {
-  border-color: var(--accent-primary, var(--text-secondary));
+  border-color: var(--accent-color);
 }
 
 .review-footer {
@@ -13003,8 +13155,8 @@ input {
 }
 
 .tool-call-user-question-custom-form input:focus-visible {
-  outline: 2px solid var(--text-primary);
-  outline-offset: 1px;
+  outline: none;
+  border-color: var(--accent-color);
 }
 
 .tool-call-user-question-custom-form button,
@@ -13621,7 +13773,8 @@ input {
 }
 
 .workflow-reply textarea:focus {
-  outline: 1px solid var(--text-primary);
+  outline: none;
+  border-color: var(--accent-color);
 }
 
 .workflow-reply .tool-call-plan-approval-approve {
@@ -13771,7 +13924,8 @@ input {
 
 .workflow-editor-field input:focus,
 .workflow-editor-field textarea:focus {
-  outline: 1px solid var(--text-primary);
+  outline: none;
+  border-color: var(--accent-color);
 }
 
 .workflow-editor-field input:disabled,
@@ -15155,7 +15309,7 @@ input {
 }
 
 .tool-call-bash-interactive-input:focus {
-  border-color: var(--accent-orange-text, #e8973a);
+  border-color: var(--accent-color);
 }
 
 .tool-call-bash-interactive-input::placeholder {
@@ -16922,7 +17076,7 @@ input {
 
 .tool-call-imagegen-edit-panel textarea:focus {
   outline: none;
-  border-color: var(--accent-blue-text);
+  border-color: var(--accent-color);
 }
 
 .tool-call-imagegen-edit-actions {
@@ -17508,7 +17662,7 @@ input {
 }
 
 .imagegen-channel-name:focus {
-  border-color: var(--text-muted);
+  border-color: var(--accent-color);
   background: var(--bg-primary);
 }
 
@@ -17539,8 +17693,7 @@ input {
 }
 
 .imagegen-provider-field select:focus {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .imagegen-provider-field select:disabled {
@@ -17707,8 +17860,7 @@ input {
 
 .imagegen-size-row select:focus,
 .imagegen-size-input:focus {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .imagegen-size-row select:disabled {
@@ -19587,8 +19739,7 @@ input {
 
 .search-modal-input:focus {
   outline: none;
-  border-color: var(--text-tertiary);
-  box-shadow: 0 0 0 2px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .search-modal-input::placeholder {
@@ -20986,7 +21137,7 @@ input {
 }
 
 .memo-search-row:focus-within {
-  border-color: var(--border-focus);
+  border-color: var(--accent-color);
 }
 
 .memo-search-icon {
@@ -20998,12 +21149,13 @@ input {
   flex: 1;
   min-width: 0;
   height: 100%;
-  border: none;
-  background: transparent;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
   color: var(--text-primary);
   font-size: 12.5px;
   font-family: inherit;
-  outline: none;
+  outline: none !important;
   appearance: none;
 }
 
@@ -21531,7 +21683,7 @@ input {
 }
 
 .memo-schedule-field input[type="date"]:focus {
-  border-color: var(--border-focus);
+  border-color: var(--accent-color);
 }
 
 .memo-schedule-clear {
@@ -22669,8 +22821,7 @@ input {
 }
 
 .scheduled-tasks-prompt-textarea:focus {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 /* Pre-script (optional) collapsible section */
@@ -22737,8 +22888,7 @@ input {
 }
 
 .scheduled-tasks-script-textarea:focus {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .scheduled-tasks-pre-script-hint {
@@ -22787,9 +22937,8 @@ input {
 }
 
 .thinking-menu-trigger:focus-visible {
-  border-color: var(--text-muted);
+  border-color: var(--accent-color);
   outline: none;
-  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .thinking-menu-trigger > span {
@@ -22956,9 +23105,8 @@ input {
   input:not([type="checkbox"]):not([type="range"]):focus-visible,
 .scheduled-tasks-prompt-textarea:focus-visible,
 .scheduled-tasks-form .api-model-combobox input:focus-visible {
-  border-color: var(--text-muted);
+  border-color: var(--accent-color);
   outline: none;
-  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 @media (max-width: 820px) {
@@ -23646,7 +23794,7 @@ input {
 
 .text-snippet-editor-textarea:focus {
   outline: none;
-  border-color: var(--text-primary);
+  border-color: var(--accent-color);
 }
 
 .text-snippet-editor-footer {
@@ -23970,8 +24118,7 @@ input {
 }
 
 .plus-menu-goal-budget-input:focus {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .plus-menu-goal-budget-input:disabled {
@@ -24330,9 +24477,10 @@ input {
 
 .file-mention-search-bar input {
   flex: 1;
-  border: none;
-  outline: none;
-  background: transparent;
+  border: none !important;
+  outline: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
   font-size: 13px;
   color: var(--text-primary);
   font-family: inherit;
@@ -25237,11 +25385,12 @@ input {
 .model-dropdown-search-input {
   flex: 1;
   min-width: 0;
-  border: none;
-  background: transparent;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
   color: var(--text-primary);
   font-size: 12px;
-  outline: none;
+  outline: none !important;
 }
 
 .model-dropdown-search-input::placeholder {
@@ -25621,7 +25770,7 @@ input {
 }
 
 .model-manual-field:focus {
-  border-color: var(--border-focus, #3b82f6);
+  border-color: var(--accent-color);
 }
 
 .model-manual-actions {
@@ -26369,7 +26518,7 @@ input {
 }
 
 .codebase-sphere-search-input:focus {
-  border-color: var(--accent-blue);
+  border-color: var(--accent-color);
 }
 
 .codebase-sphere-search-input::placeholder {
@@ -26389,7 +26538,7 @@ input {
 }
 
 .codebase-sphere-hint .custom-select-trigger:focus {
-  border-color: var(--accent-blue);
+  border-color: var(--accent-color);
   box-shadow: none;
 }
 
@@ -26665,8 +26814,7 @@ input {
 }
 
 .system-prompt-textarea:focus {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .system-prompt-textarea:disabled {
@@ -27129,7 +27277,7 @@ input {
 }
 
 .mcp-tool-details-search:focus-within {
-  border-color: var(--accent-primary);
+  border-color: var(--accent-color);
 }
 
 .mcp-tool-details-search svg {
@@ -27142,9 +27290,10 @@ input {
 .mcp-tool-details-search input {
   flex: 1;
   min-width: 0;
-  border: none;
-  outline: none;
-  background: transparent;
+  border: none !important;
+  outline: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
   color: var(--text-primary);
   font-size: 11px;
 }
@@ -28069,7 +28218,7 @@ input {
 }
 
 .branch-create-input:focus {
-  border-color: var(--text-primary);
+  border-color: var(--accent-color);
 }
 
 .branch-create-input:disabled {
@@ -28886,8 +29035,7 @@ input {
 }
 
 .role-editor-textarea:focus {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--text-primary) 8%, transparent);
+  border-color: var(--accent-color);
 }
 
 .role-editor-footer {
@@ -28978,8 +29126,7 @@ input {
 }
 
 .project-sensitive-command-editor > label input:focus {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--text-primary) 8%, transparent);
+  border-color: var(--accent-color);
 }
 
 .project-sensitive-command-editor > label input:disabled {
@@ -30144,8 +30291,7 @@ input {
 
 .lsp-editor-json-textarea:focus {
   outline: none;
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 /* ===== MCP JSON 编辑模式 ===== */
@@ -30220,8 +30366,7 @@ input {
 
 .mcp-editor-json-code:focus-within {
   outline: none;
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .mcp-editor-json-code.is-disabled {
@@ -30232,6 +30377,9 @@ input {
 /* 库内 textarea 文字透明（-webkit-text-fill-color: transparent），
    仅用于输入与 caret；tab 缩进与字体度量由容器统一控制。 */
 .mcp-editor-json-input {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
   caret-color: var(--text-primary);
   color: var(--text-primary);
   tab-size: 2;
@@ -30684,8 +30832,8 @@ input {
 }
 
 .tool-authorization-rejection-reason textarea:focus-visible {
-  outline: 2px solid var(--text-primary);
-  outline-offset: 1px;
+  outline: none;
+  border-color: var(--accent-color);
 }
 
 .tool-authorization-rejection-reason textarea:disabled {
@@ -31302,8 +31450,7 @@ input {
 }
 .git-commit-input:focus {
   outline: none;
-  border-color: var(--text-tertiary);
-  box-shadow: 0 0 0 2px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .git-commit-input::placeholder {
@@ -32152,8 +32299,7 @@ input {
 }
 
 .ai-drawing-composer:focus-within {
-  border-color: color-mix(in srgb, var(--accent-color) 55%, transparent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-color) 13%, transparent);
+  border-color: var(--accent-color);
 }
 
 .ai-drawing-prompt {
@@ -32284,7 +32430,7 @@ input {
 }
 
 .ai-drawing-negative-input:focus {
-  border-color: color-mix(in srgb, var(--accent-color) 55%, transparent);
+  border-color: var(--accent-color);
 }
 
 .ai-drawing-negative-input::placeholder {
@@ -32587,7 +32733,6 @@ input {
 .ai-drawing-seed-input:focus {
   border-color: var(--accent-color);
   color: var(--text-primary);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-color) 12%, transparent);
 }
 
 .ai-drawing-seed-input::placeholder {
@@ -33673,7 +33818,6 @@ input {
 .ai-drawing-history-search:focus {
   border-color: var(--accent-color);
   color: var(--text-primary);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-color) 12%, transparent);
 }
 
 .ai-drawing-history-search::placeholder {
@@ -34559,7 +34703,7 @@ body.ctrl-held [data-path] {
 }
 
 .browser-address-bar:focus-within {
-  border-color: var(--accent);
+  border-color: var(--accent-color);
 }
 
 .browser-address-icon {
@@ -34588,9 +34732,10 @@ body.ctrl-held [data-path] {
 .browser-address-input {
   flex: 1;
   min-width: 0;
-  border: none;
-  outline: none;
-  background: transparent;
+  border: none !important;
+  outline: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
   color: var(--text-primary);
   font-size: 12px;
   font-family: inherit;
@@ -34684,7 +34829,7 @@ body.ctrl-held [data-path] {
 }
 
 .browser-element-picker-input:focus {
-  border-color: var(--text-primary);
+  border-color: var(--accent-color);
 }
 
 .browser-element-picker-input::placeholder {
@@ -34838,7 +34983,7 @@ body.ctrl-held [data-path] {
 }
 
 .browser-element-picker-style-value:focus {
-  border-color: var(--text-primary);
+  border-color: var(--accent-color);
 }
 
 .browser-element-picker-style-value::placeholder {
@@ -35196,8 +35341,7 @@ body.ctrl-held [data-path] {
 }
 
 .browser-settings-add-input:focus {
-  border-color: var(--border-color);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .browser-settings-add-input::placeholder {
@@ -35261,8 +35405,7 @@ body.ctrl-held [data-path] {
 }
 
 .browser-settings-device-add-input:focus {
-  border-color: var(--border-color);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .browser-settings-device-add-input::placeholder {
@@ -35718,7 +35861,7 @@ body.ctrl-held [data-path] {
 }
 
 .browser-menu-homepage-input:focus {
-  border-color: var(--accent, #4c8dff);
+  border-color: var(--accent-color);
 }
 
 /* ===== Browser Find Bar ===== */
@@ -35740,9 +35883,10 @@ body.ctrl-held [data-path] {
 .browser-find-input {
   width: 160px;
   min-width: 0;
-  border: none;
-  outline: none;
-  background: transparent;
+  border: none !important;
+  outline: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
   color: var(--text-primary);
   font-size: 12px;
   font-family: inherit;
@@ -35799,8 +35943,7 @@ body.ctrl-held [data-path] {
 }
 
 .browser-settings-input:focus {
-  border-color: var(--border-color);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .browser-settings-input::placeholder {
@@ -35823,8 +35966,7 @@ body.ctrl-held [data-path] {
 }
 
 .browser-settings-search-row:focus-within {
-  border-color: var(--border-color);
-  box-shadow: 0 0 0 1px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .browser-settings-search-row > svg {
@@ -35835,12 +35977,13 @@ body.ctrl-held [data-path] {
   flex: 1;
   min-width: 0;
   padding: 7px 0;
-  border: none;
-  background: transparent;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
   color: var(--text-primary);
   font: inherit;
   font-size: 12px;
-  outline: none;
+  outline: none !important;
 }
 
 .browser-settings-search-row input::placeholder {
@@ -36499,8 +36642,7 @@ body.ctrl-held [data-path] {
 }
 
 .ssh-wizard-input:focus {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .ssh-wizard-input-port {
@@ -37436,6 +37578,9 @@ pre.file-viewer-code {
 }
 
 .file-viewer-edit-textarea {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
   outline: none;
   caret-color: var(--text-primary);
   tab-size: 2;
@@ -37499,8 +37644,9 @@ pre.file-viewer-code {
   width: 100%;
   height: 100%;
   padding: 0 14px 0 10px;
-  border: 0;
-  background: transparent;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
   color: inherit;
   font-family: inherit;
   font-size: inherit;
@@ -39147,8 +39293,7 @@ pre.file-viewer-code {
 
 .usage-date-preset-trigger:focus {
   outline: none;
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .usage-date-preset-label {
@@ -39491,7 +39636,7 @@ pre.file-viewer-code {
 }
 .usage-date-input:focus {
   outline: none;
-  border-color: var(--text-muted);
+  border-color: var(--accent-color);
 }
 
 .usage-date-separator {
@@ -40785,8 +40930,7 @@ pre.file-viewer-code {
 }
 
 .personalization-textarea:focus {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 /* --- Personalization: 空状态 --- */
@@ -41014,8 +41158,7 @@ pre.file-viewer-code {
 }
 
 .imagegen-concurrency-control input:focus {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .imagegen-concurrency-control input:disabled {
@@ -42176,16 +42319,16 @@ pre.file-viewer-code {
 
 .image-library-search:focus-within {
   border-color: var(--accent-color);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-color) 22%, transparent);
 }
 
 .image-library-search input {
   flex: 1;
   min-width: 0;
   padding: 0;
-  border: none;
-  outline: none;
-  background: transparent;
+  border: none !important;
+  outline: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
   color: var(--text-primary);
   font-size: 11.5px;
 }
@@ -45531,7 +45674,7 @@ pre.file-viewer-code {
 }
 
 .memory-search-row:focus-within {
-  border-color: var(--border-focus);
+  border-color: var(--accent-color);
 }
 
 .memory-search-icon {
@@ -45543,12 +45686,13 @@ pre.file-viewer-code {
   flex: 1;
   min-width: 0;
   height: 100%;
-  border: none;
-  background: transparent;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
   color: var(--text-primary);
   font-size: 12.5px;
   font-family: inherit;
-  outline: none;
+  outline: none !important;
   appearance: none;
 }
 
@@ -45901,7 +46045,7 @@ pre.file-viewer-code {
 
 .memory-editor-title:focus {
   outline: none;
-  border-color: var(--border-focus);
+  border-color: var(--accent-color);
 }
 
 .memory-editor-row {
@@ -45953,7 +46097,7 @@ pre.file-viewer-code {
 
 .memory-editor-content:focus {
   outline: none;
-  border-color: var(--border-focus);
+  border-color: var(--accent-color);
 }
 
 .memory-editor-tags {
@@ -45972,7 +46116,7 @@ pre.file-viewer-code {
 
 .memory-editor-tags:focus {
   outline: none;
-  border-color: var(--border-focus);
+  border-color: var(--accent-color);
 }
 
 .memory-editor-actions {
@@ -46388,8 +46532,7 @@ pre.file-viewer-code {
 }
 
 .app-lock-input:focus {
-  border-color: var(--border-subtle);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .app-lock-submit {
@@ -46531,8 +46674,7 @@ pre.file-viewer-code {
 }
 
 .app-lock-settings-input:focus {
-  border-color: var(--border-subtle);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .app-lock-bind {
@@ -46762,8 +46904,7 @@ pre.file-viewer-code {
 }
 
 .plugins-create:focus-within {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .plugins-create-input {
@@ -46772,8 +46913,9 @@ pre.file-viewer-code {
   /* 自动增高上限：约 8 行（8 × 18px 行高），更高改为内部滚动 */
   max-height: 160px;
   padding: 0;
-  border: none;
-  background: transparent;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
   color: var(--text-primary);
   font: inherit;
   font-size: 12px;
@@ -47030,18 +47172,18 @@ pre.file-viewer-code {
 }
 
 .plugin-metadata-search:focus-within {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--accent-color);
 }
 
 .plugin-metadata-search-input {
   width: 100%;
-  border: none;
-  background: transparent;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
   color: var(--text-primary);
   font: inherit;
   font-size: 12px;
-  outline: none;
+  outline: none !important;
 }
 
 .plugin-metadata-search-input::placeholder {

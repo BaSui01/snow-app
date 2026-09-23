@@ -3,6 +3,7 @@ import { Loader2, Maximize2 } from "lucide-react";
 import { ChatContent } from "./mainContent/ChatContent";
 import { TeamPanel } from "./mainContent/team/TeamPanel";
 import { useI18n } from "../i18n";
+import { useSettingsSearchTarget } from "./sidebar/settingsSearchNavigation";
 import type { MainContentView } from "./mainContent/types";
 import type { WorkspaceDirectoryRecord } from "../../preload";
 
@@ -168,6 +169,7 @@ export const MainContent = ({
   onSelectView,
 }: MainContentProps): React.JSX.Element => {
   const { t } = useI18n();
+  useSettingsSearchTarget(activeView);
   return (
     <main className="main-content">
       {isFullscreenPending && (

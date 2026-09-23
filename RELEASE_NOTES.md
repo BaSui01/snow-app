@@ -1,5 +1,32 @@
 # Release Notes
 
+## v0.4.7
+
+## New Features
+
+- **New Theme Presets**: "Cyberpunk" and "Notion" join the theme gallery, each with light and dark palettes; the Google and cream presets were fine-tuned alongside.
+- **Image Generation Moves into API Settings**: The former "Image generation" settings page becomes the "Image models" tab of API settings; the image panel and `openSettings` still jump straight to it (the sidebar highlights API settings).
+- **Per-File Diffs in the File-Changes Panel**: The change list shows each file's added/removed line counts (+N / -N) and clicking a row opens that file's diff directly; a "View all diffs" entry in the header keeps the merged view.
+- **Sub-Agent Activation Summary**: `sub-agents-activate` gains a required `summary` argument (a short label for this activation) that becomes the sub-agent conversation's title and summary — it shows up in the sidebar sub-agent list, the chat header and the tool card header, falling back to the agent name when missing.
+
+## Improvements
+
+- Large diffs render incrementally: the unified diff view mounts rows in batches (200 per batch) and appends the next batch as you scroll near the bottom — full content, no truncation, so very large diffs open smoothly; DiffFile instances are prebuilt instead of cloning the data again.
+- The streaming render pipeline was reworked: a memoized `MessageContent` component means only the last message re-renders while streaming, and stream chunks are merged per frame and force-flushed when the stream ends so the final batch is never lost.
+- Stream chunks are dispatched through a single IPC listener plus a streamId registry, so parallel streams no longer wake every in-flight callback for every chunk.
+- Plugin runtime snapshots are broadcast at a minimum interval (idle state pushes immediately) and the paused-conversation set is reused while unchanged, so the sidebar and plugin panels stop recomputing wholesale during streaming.
+- The user-message rail builds one DOM index per pass and enforces a minimum compute interval, keeping long conversations smooth.
+- `grep-search` caches the ripgrep availability probe, stops reading and kills the child process as soon as output exceeds the limit, and truncates on UTF-8 boundaries.
+- Fuzzy file-edit matching was rewritten (whitespace normalization plus token-distance line comparison with a first-line gate) for more accurate and faster matches.
+- After the delayed Prettier pass rewrites a file, the checkpoint records the formatted content as `expected`, so rollback gating no longer treats auto-formatted files as changed by someone else.
+- The API adapters no longer accumulate unused raw stream events, lowering memory use on long streams.
+- The custom-command type selector now uses the shared `CustomSelect` component.
+
+## Bug Fixes
+
+- Fixed new files disappearing from the rollback preview (and not being deleted on rollback) after the delayed Prettier pass had rewritten them.
+- Fixed the "Web fetch" entry in privacy settings showing the "Web search" label.
+
 ## v0.4.6
 
 ## New Features

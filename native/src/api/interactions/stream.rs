@@ -240,7 +240,6 @@ pub(super) async fn collect_interactions_stream(
 
         let mut content_chunks: Vec<String> = Vec::new();
         let mut thinking_chunks: Vec<String> = Vec::new();
-        let mut raw_events: Vec<Value> = Vec::new();
         let mut tool_calls = super::event::InteractionsToolCallState::default();
         let mut step_text = super::event::InteractionsStepTextState::default();
         let mut response_id = String::new();
@@ -262,7 +261,6 @@ pub(super) async fn collect_interactions_stream(
                 let mut tool_args_delta = String::new();
                 super::event::process_interactions_sse_event_block(
                     $event_block,
-                    &mut raw_events,
                     &mut content_chunks,
                     &mut thinking_chunks,
                     &mut tool_calls,

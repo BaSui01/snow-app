@@ -64,7 +64,6 @@ pub(super) async fn collect_chat_completions_stream(
     // declared outside the main loop so that, when the stream idle timeout
     // fires mid-stream, we can discard the partial result and reset them before
     // re-issuing the request with the original parameters.
-    let mut raw_events: Vec<Value> = Vec::new();
     let mut content_chunks: Vec<String> = Vec::new();
     let mut thinking_chunks: Vec<String> = Vec::new();
     let mut tool_calls: Vec<Value> = Vec::new();
@@ -247,7 +246,6 @@ pub(super) async fn collect_chat_completions_stream(
         // Every retry cause returns to this single reset point, so content,
         // thinking, tools, usage, buffer, terminal state, and final metadata
         // can never leak across attempts.
-        raw_events.clear();
         content_chunks.clear();
         thinking_chunks.clear();
         tool_calls.clear();
@@ -271,7 +269,6 @@ pub(super) async fn collect_chat_completions_stream(
                 let mut tool_args_delta = String::new();
                 super::event::process_sse_event_block(
                     $event_block,
-                    &mut raw_events,
                     &mut content_chunks,
                     &mut thinking_chunks,
                     &mut tool_calls,

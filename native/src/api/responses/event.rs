@@ -38,7 +38,6 @@ pub(super) enum ReasoningStreamMode {
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_responses_sse_event_block(
     event_block: &str,
-    raw_events: &mut Vec<Value>,
     content_chunks: &mut Vec<String>,
     thinking_chunks: &mut Vec<String>,
     tool_calls: &mut Vec<Value>,
@@ -256,7 +255,6 @@ pub(super) fn process_responses_sse_event_block(
             _ => {}
         }
 
-        raw_events.push(event);
         if *stream_completed_normally {
             break;
         }

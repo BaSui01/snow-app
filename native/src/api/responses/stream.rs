@@ -56,7 +56,6 @@ pub(super) struct StreamingResponseResult {
 }
 
 pub(super) struct ResponsesAttemptState {
-    raw_events: Vec<Value>,
     content_chunks: Vec<String>,
     thinking_chunks: Vec<String>,
     tool_calls: Vec<Value>,
@@ -75,7 +74,6 @@ pub(super) struct ResponsesAttemptState {
 impl Default for ResponsesAttemptState {
     fn default() -> Self {
         Self {
-            raw_events: Vec::new(),
             content_chunks: Vec::new(),
             thinking_chunks: Vec::new(),
             tool_calls: Vec::new(),
@@ -98,7 +96,6 @@ impl ResponsesAttemptState {
         let mut tool_args_delta_out = String::new();
         let (content_delta, thinking_delta) = process_responses_sse_event_block(
             event_block,
-            &mut self.raw_events,
             &mut self.content_chunks,
             &mut self.thinking_chunks,
             &mut self.tool_calls,

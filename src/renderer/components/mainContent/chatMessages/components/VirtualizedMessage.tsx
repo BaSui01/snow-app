@@ -1,49 +1,53 @@
 import { memo, useCallback, useEffect, useRef } from "react";
 import type { ViewportVirtualization } from "../hooks/useViewportVirtualization";
 import { VIRTUAL_PLACEHOLDER_DEFAULT_HEIGHT } from "../hooks/useViewportVirtualization";
+import { MessageContent, type MessageContentProps } from "./MessageContent";
 
 /**
  * Viewport-virtualized wrapper for a single chat message.
  *
- * Renders children (the real AiResponse / UserMessage / CompactionMessage
- * subtree) when the message is considered visible by the virtualization hook,
- * otherwise renders a cheap placeholder div that reserves the same height.
+ * Renders the real MessageContent subtree when the message is considered
+ * visible by the virtualization hook, otherwise renders a cheap placeholder
+ * div that reserves the same height.
  *
  * This is the central piece that breaks the "re-render everything on every
  * streaming chunk" cycle: off-screen messages skip their entire React subtree,
  * so MarkdownBlock reconciliation and worker dispatches only run for the few
  * messages actually in the viewport.
  *
- * Height preservation: when a message virtualizes out, its last measured
- * height is applied to the placeholder so the document height does not
- * collapse and cause scrollbar jumps. If the message was never measured
- * (e.g. it was off-screen from the very first render), a small default is
- * used, which is acceptable because content-visibility: auto already provides
- * the same fallback for the browser's own lazy layout.
+ * Height preservation: when a message virtualizes out, it is replaced by a
+ * placeholder that must occupy the same height to avoid scrollbar jumps. The
+ * hook exposes a height cache (Map<id, px>) kept in sync via a ResizeObserver
+ * on every mounted message element. Placeholders read the cached height and
+ * fall back to a reasonable default for messages that were never measured.
  *
  * The wrapper element is always mounted (only its inner content switches), so
  * the IntersectionObserver target is stable and the register call in the ref
  * callback fires exactly once per mount.
  */
-type VirtualizedMessageProps = {
+type VirtualizedMessageProps = MessageContentProps & {
   /** Stable message id, used as the virtualization key. */
   id: string;
+  /** 消息在列表中的序号（透传给内容包装节点）。 */
+  itemIndex: number;
+  /** 内容包装节点的 class（含消息状态）。 */
+  itemClassName: string;
   /** Virtualization API from useViewportVirtualization. */
   virtualization: ViewportVirtualization;
   /** 该消息此前是否已渲染过真实内容（父级判定的既知事实，例如 id 迁移
    *  后的新元素继承旧元素的渲染状态）。为 true 时本实例即使首次渲染也
    *  不播放入场动画（见 is-replay）。 */
   previouslyRendered?: boolean;
-  /** The real message content. Only rendered when visible. */
-  children: React.ReactNode;
 };
 
 export const VirtualizedMessage = memo(
   ({
     id,
+    itemIndex,
+    itemClassName,
     virtualization,
     previouslyRendered = false,
-    children,
+    ...contentProps
   }: VirtualizedMessageProps): React.JSX.Element => {
     const { visibleIds, heights, register } = virtualization;
     // visibleIds === null means the IntersectionObserver has not reported yet.
@@ -89,7 +93,9 @@ export const VirtualizedMessage = memo(
           ref={setRef}
           data-message-id={id}
         >
-          {children}
+          <div className={itemClassName} data-message-index={itemIndex}>
+            <MessageContent {...contentProps} />
+          </div>
         </div>
       );
     }

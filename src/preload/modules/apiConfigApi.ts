@@ -72,6 +72,35 @@ const normalizeResponseStreamChunk = (
   };
 };
 
+// 全局单监听器 + streamId 注册表：每个在途流只登记自己的 handler，chunk 事件
+// 按 streamId 直接分发。此前每条流各注册一个 ipcRenderer.on 监听器，同频道
+// 的每个 chunk 会依次唤醒全部在途流的回调（N 路并行流 = 每 chunk N 次 JS 回调）。
+const chatStreamChunkHandlers = new Map<
+  string,
+  (chunk: ResponsesApiStreamChunk) => void
+>();
+
+ipcRenderer.on(
+  CHAT_CREATE_RESPONSE_CHUNK_CHANNEL,
+  (_event: IpcRendererEvent, payload: unknown): void => {
+    if (!isRecord(payload)) {
+      return;
+    }
+    const streamId =
+      typeof payload.streamId === "string" ? payload.streamId : "";
+    const handler = streamId
+      ? chatStreamChunkHandlers.get(streamId)
+      : undefined;
+    if (!handler) {
+      return;
+    }
+    const chunk = normalizeResponseStreamChunk(payload.chunk);
+    if (chunk) {
+      handler(chunk);
+    }
+  },
+);
+
 export const apiConfigApi = {
   engineInfo: (): Promise<string> => ipcRenderer.invoke("native:engine-info"),
   getSystemSettingValue: (settingCode: string): Promise<string | null> =>
@@ -246,26 +275,14 @@ export const apiConfigApi = {
   ): Promise<ResponsesApiResult> => {
     const streamId = createResponseStreamId();
     onStreamId?.(streamId);
-    const handleChunk = (_event: IpcRendererEvent, payload: unknown): void => {
-      if (!isRecord(payload) || payload.streamId !== streamId) {
-        return;
-      }
-
-      const chunk = normalizeResponseStreamChunk(payload.chunk);
-      if (chunk) {
-        onChunk?.(chunk);
-      }
-    };
-
-    ipcRenderer.on(CHAT_CREATE_RESPONSE_CHUNK_CHANNEL, handleChunk);
+    if (onChunk) {
+      chatStreamChunkHandlers.set(streamId, onChunk);
+    }
 
     return ipcRenderer
       .invoke("chat:create-response-stream", request, streamId)
       .finally(() => {
-        ipcRenderer.removeListener(
-          CHAT_CREATE_RESPONSE_CHUNK_CHANNEL,
-          handleChunk,
-        );
+        chatStreamChunkHandlers.delete(streamId);
       });
   },
   abortResponseStream: (streamId: string): Promise<boolean> =>

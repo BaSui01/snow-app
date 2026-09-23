@@ -69,6 +69,10 @@ const findMessageElement = (
 const nextFrame = (): Promise<void> =>
   new Promise((resolve) => requestAnimationFrame(() => resolve()));
 
+/** 可视高亮计算的最小间隔：滚动期间每帧构建 DOM 索引并读取几何没有必要，
+ *  尾部定时器保证滚动停止后的最后一次计算仍会执行。 */
+const VISIBILITY_COMPUTE_INTERVAL_MS = 120;
+
 export const UserMessageRail = memo(
   ({
     conversationId,
@@ -171,17 +175,27 @@ export const UserMessageRail = memo(
           return;
         }
 
+        // 单次遍历建立 id → 矩形索引：此前逐条 querySelector 会让每条用户
+        // 消息都重扫一遍容器子树（O(消息数²)），长会话滚动时开销显著。
+        const rectById = new Map<string, DOMRect>();
+        const elements =
+          container.querySelectorAll<HTMLElement>("[data-message-id]");
+        for (const element of elements) {
+          const messageId = element.dataset.messageId;
+          if (messageId) {
+            rectById.set(messageId, element.getBoundingClientRect());
+          }
+        }
+
         const containerRect = container.getBoundingClientRect();
         const visible = new Set<number>();
 
         for (let i = 0; i < dbUserMsgs.length; i++) {
-          const dbMsg = dbUserMsgs[i];
           // The frontend replaces temporary ids with DB ids after persistence,
           // so data-message-id always matches the DB snowflake id.
-          const el = findMessageElement(container, dbMsg.id);
-          if (!el) continue;
+          const rect = rectById.get(dbUserMsgs[i].id);
+          if (!rect) continue;
 
-          const rect = el.getBoundingClientRect();
           // Consider the message visible if it overlaps the viewport band
           // of the scroll container (with a small threshold so partially
           // visible messages count).
@@ -212,15 +226,27 @@ export const UserMessageRail = memo(
 
       // Initial compute after a frame so layout is ready.
       const raf = requestAnimationFrame(computeVisible);
-      // 流式滚动时 scroll 事件高频触发（每秒几十次），且每次都要遍历
-      // 全部用户消息做 DOM 查询 + rect 读取；用 rAF 合并到每帧最多一次，
-      // 避免高频重复计算。
+      // 流式滚动时 scroll 事件高频触发（每秒几十次），每次都要建 DOM 索引
+      // 并读取几何；rAF 合并到每帧最多一次后再加最小间隔，滚动停止后的最后
+      // 一次计算由尾部定时器补上，避免高亮停在中间状态。
       let pendingRaf = 0;
+      let trailingTimer = 0;
+      let lastComputeAt = 0;
       const scheduleCompute = (): void => {
-        if (pendingRaf !== 0) return;
+        if (pendingRaf !== 0 || trailingTimer !== 0) return;
         pendingRaf = requestAnimationFrame(() => {
           pendingRaf = 0;
-          computeVisible();
+          const elapsed = performance.now() - lastComputeAt;
+          if (elapsed >= VISIBILITY_COMPUTE_INTERVAL_MS) {
+            lastComputeAt = performance.now();
+            computeVisible();
+            return;
+          }
+          trailingTimer = window.setTimeout(() => {
+            trailingTimer = 0;
+            lastComputeAt = performance.now();
+            computeVisible();
+          }, VISIBILITY_COMPUTE_INTERVAL_MS - elapsed);
         });
       };
       container.addEventListener("scroll", scheduleCompute, { passive: true });
@@ -230,6 +256,9 @@ export const UserMessageRail = memo(
         cancelAnimationFrame(raf);
         if (pendingRaf !== 0) {
           cancelAnimationFrame(pendingRaf);
+        }
+        if (trailingTimer !== 0) {
+          window.clearTimeout(trailingTimer);
         }
         container.removeEventListener("scroll", scheduleCompute);
         window.removeEventListener("resize", scheduleCompute);

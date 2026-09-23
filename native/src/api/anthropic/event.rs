@@ -13,7 +13,6 @@ use crate::storage::services::chat_conversations::ChatTokenUsage;
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_anthropic_sse_event_block(
     event_block: &str,
-    raw_events: &mut Vec<Value>,
     content_chunks: &mut Vec<String>,
     thinking_chunks: &mut Vec<String>,
     thinking_blocks: &mut Vec<Value>,
@@ -65,7 +64,6 @@ pub(super) fn process_anthropic_sse_event_block(
             .unwrap_or_default();
         if event_type == "message_stop" {
             *stream_finished = true;
-            raw_events.push(event);
             return;
         }
 
@@ -93,7 +91,6 @@ pub(super) fn process_anthropic_sse_event_block(
             *stream_finished = true;
             return;
         }
-        raw_events.push(event);
         if *stream_finished {
             return;
         }
@@ -114,7 +111,6 @@ pub(super) fn process_anthropic_sse_event_block(
                 .unwrap_or_default();
             if event_type == "message_stop" {
                 *stream_finished = true;
-                raw_events.push(event);
                 return;
             }
             if let Err(process_error) = process_anthropic_event(
@@ -141,7 +137,6 @@ pub(super) fn process_anthropic_sse_event_block(
                 *stream_finished = true;
                 return;
             }
-            raw_events.push(event);
         }
     }
 }

@@ -11,7 +11,6 @@ use crate::storage::services::chat_conversations::ChatTokenUsage;
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_gemini_sse_event_block(
     event_block: &str,
-    raw_events: &mut Vec<Value>,
     content_chunks: &mut Vec<String>,
     thinking_chunks: &mut Vec<String>,
     tool_calls: &mut Vec<Value>,
@@ -84,7 +83,6 @@ pub(super) fn process_gemini_sse_event_block(
             }
         }
 
-        raw_events.push(event);
         if *stream_finished {
             return;
         }
@@ -131,7 +129,6 @@ pub(super) fn process_gemini_sse_event_block(
                     }
                 }
             }
-            raw_events.push(event);
         }
     }
 }
@@ -379,7 +376,6 @@ mod tests {
 
     #[test]
     fn parses_cli_proxy_usage_aliases_from_gemini_events() {
-        let mut raw_events = Vec::new();
         let mut content_chunks = Vec::new();
         let mut thinking_chunks = Vec::new();
         let mut tool_calls = Vec::new();
@@ -393,7 +389,6 @@ mod tests {
 
         process_gemini_sse_event_block(
             r#"data: {"usage":{"total_input_tokens":6,"total_output_tokens":1,"total_thought_tokens":95,"total_tool_use_tokens":2,"total_cached_tokens":2}}"#,
-            &mut raw_events,
             &mut content_chunks,
             &mut thinking_chunks,
             &mut tool_calls,
@@ -413,7 +408,6 @@ mod tests {
 
     #[test]
     fn preserves_function_call_and_signature_as_opaque_part() {
-        let mut raw_events = Vec::new();
         let mut content_chunks = Vec::new();
         let mut thinking_chunks = Vec::new();
         let mut tool_calls = Vec::new();
@@ -427,7 +421,6 @@ mod tests {
 
         process_gemini_sse_event_block(
             r#"data: {"candidates":[{"content":{"parts":[{"functionCall":{"id":"call-1","name":"filesystem-read","args":{"filePath":"README.md"}},"thoughtSignature":"opaque-signature"}]}}]}"#,
-            &mut raw_events,
             &mut content_chunks,
             &mut thinking_chunks,
             &mut tool_calls,
@@ -453,7 +446,6 @@ mod tests {
 
     #[test]
     fn ignores_empty_or_malformed_signatures() {
-        let mut raw_events = Vec::new();
         let mut content_chunks = Vec::new();
         let mut thinking_chunks = Vec::new();
         let mut tool_calls = Vec::new();
@@ -467,7 +459,6 @@ mod tests {
 
         process_gemini_sse_event_block(
             r#"data: {"candidates":[{"content":{"parts":[{"thoughtSignature":""},{"thoughtSignature":42}]}}]}"#,
-            &mut raw_events,
             &mut content_chunks,
             &mut thinking_chunks,
             &mut tool_calls,

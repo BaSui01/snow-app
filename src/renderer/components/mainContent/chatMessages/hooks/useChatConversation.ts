@@ -642,6 +642,9 @@ export const useChatConversation = (
   const activeSession = activeKey ? sessions[activeKey] : undefined;
 
   // --- Approve/reject tool authorization wrappers ---
+  // 依赖必须取到具体的稳定回调：依赖整个 toolAuthApi 对象（每次渲染新建）
+  // 会让这两个包装每次渲染都换身份，击穿 MessageContent / AiResponse 的 memo，
+  // 使每个流式 chunk 都重渲染当前会话的全部可见消息子树。
   const approveToolAuthorization = useCallback(
     (toolCall: ConversationContextValue["pendingToolAuthorizations"][number]) =>
       toolAuthApi.settleToolAuthorization(toolCall, {
@@ -649,7 +652,7 @@ export const useChatConversation = (
         sensitiveCommandConfirmed:
           (toolCall.sensitiveCommandMatches?.length ?? 0) > 0,
       }),
-    [toolAuthApi],
+    [toolAuthApi.settleToolAuthorization],
   );
 
   const rejectToolAuthorization = useCallback(
@@ -672,7 +675,7 @@ export const useChatConversation = (
           : {}),
       });
     },
-    [toolAuthApi],
+    [toolAuthApi.settleToolAuthorization],
   );
 
   // --- Pause / Resume ---

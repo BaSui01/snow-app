@@ -48,7 +48,6 @@ pub(super) struct AnthropicStreamResult {
 }
 
 struct AnthropicAttemptState {
-    raw_events: Vec<Value>,
     content_chunks: Vec<String>,
     thinking_chunks: Vec<String>,
     thinking_blocks: Vec<Value>,
@@ -68,7 +67,6 @@ struct AnthropicAttemptState {
 impl Default for AnthropicAttemptState {
     fn default() -> Self {
         Self {
-            raw_events: Vec::new(),
             content_chunks: Vec::new(),
             thinking_chunks: Vec::new(),
             thinking_blocks: Vec::new(),
@@ -95,7 +93,6 @@ impl AnthropicAttemptState {
 
         super::event::process_anthropic_sse_event_block(
             event_block,
-            &mut self.raw_events,
             &mut self.content_chunks,
             &mut self.thinking_chunks,
             &mut self.thinking_blocks,

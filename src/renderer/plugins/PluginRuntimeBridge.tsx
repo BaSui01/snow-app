@@ -14,6 +14,10 @@ type PluginRuntimeBridgeProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
 };
 
+/** 流式期间快照广播的最小间隔：每个流式帧都做全量 JSON.stringify 并
+ *  通知插件面板的开销远高于插件展示的精度需求。 */
+const PLUGIN_RUNTIME_PATCH_INTERVAL_MS = 250;
+
 /** 把会话实时状态写入插件运行时快照（元数据 runtime / messages 域的数据源）。 */
 export const PluginRuntimeBridge = ({
   activeDirectory,
@@ -80,7 +84,7 @@ export const PluginRuntimeBridge = ({
     conversation.isStreaming,
     conversation.isPaused,
     conversation.isAborting,
-    conversation.messages,
+    conversation.messages.length,
     conversation.pendingMessages,
     conversation.tokenUsage,
     conversation.runTokenUsage,
@@ -136,14 +140,56 @@ export const PluginRuntimeBridge = ({
   }, [conversation.sessions]);
 
   const signatureRef = useRef("");
+  const latestSnapshotRef = useRef({ payload, streamingSessions });
+  latestSnapshotRef.current = { payload, streamingSessions };
+  const patchTimerRef = useRef(0);
+
   useEffect(() => {
-    const signature = JSON.stringify({ payload, streamingSessions });
-    if (signatureRef.current === signature) {
+    const apply = (): void => {
+      const next = latestSnapshotRef.current;
+      const signature = JSON.stringify({
+        payload: next.payload,
+        streamingSessions: next.streamingSessions,
+      });
+      if (signatureRef.current === signature) {
+        return;
+      }
+      signatureRef.current = signature;
+      runtimeSnapshot.patch({
+        conversation: next.payload,
+        streamingSessions: next.streamingSessions,
+      });
+    };
+
+    // 空闲态立即落地；流式期间合并到固定间隔，避免每个流式帧都对全量
+    // 快照序列化并广播（后台项目的流式输出同样会驱动这里）。
+    const isIdle = !payload.isStreaming && streamingSessions.length === 0;
+    if (isIdle) {
+      if (patchTimerRef.current !== 0) {
+        window.clearTimeout(patchTimerRef.current);
+        patchTimerRef.current = 0;
+      }
+      apply();
       return;
     }
-    signatureRef.current = signature;
-    runtimeSnapshot.patch({ conversation: payload, streamingSessions });
+    if (patchTimerRef.current !== 0) {
+      return;
+    }
+    patchTimerRef.current = window.setTimeout(() => {
+      patchTimerRef.current = 0;
+      apply();
+    }, PLUGIN_RUNTIME_PATCH_INTERVAL_MS);
   }, [payload, streamingSessions]);
+
+  useEffect(
+    () => () => {
+      if (patchTimerRef.current !== 0) {
+        window.clearTimeout(patchTimerRef.current);
+        patchTimerRef.current = 0;
+      }
+    },
+    [],
+  );
 
   return null;
 };

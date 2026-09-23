@@ -78,16 +78,33 @@ export function ChatsSection({
       ]),
     [streamingConversationIds, attentionRequiredConversationIds],
   );
-  // 被用户暂停的流式会话（agent loop 阻塞等待恢复），图标切换为暂停态
-  const pausedConversationIds = useMemo(
-    () =>
-      new Set(
-        Object.entries(sessions)
-          .filter(([, session]) => session.isPaused)
-          .map(([id]) => id),
-      ),
-    [sessions],
-  );
+  // 被用户暂停的流式会话（agent loop 阻塞等待恢复），图标切换为暂停态。
+  // sessions 每个流式帧都会换引用：内容不变时复用上一份 Set，避免下游
+  // （会话列表/树/选择态）因引用抖动而整片重算。
+  const pausedConversationIdsRef = useRef<Set<string>>(new Set());
+  const pausedConversationIds = useMemo(() => {
+    const next = new Set<string>();
+    for (const [id, session] of Object.entries(sessions)) {
+      if (session.isPaused) {
+        next.add(id);
+      }
+    }
+    const previous = pausedConversationIdsRef.current;
+    if (previous.size === next.size) {
+      let same = true;
+      for (const id of next) {
+        if (!previous.has(id)) {
+          same = false;
+          break;
+        }
+      }
+      if (same) {
+        return previous;
+      }
+    }
+    pausedConversationIdsRef.current = next;
+    return next;
+  }, [sessions]);
 
   const directoryId = activeDirectory?.directoryId ?? "";
   const sectionListRef = useRef<HTMLDivElement | null>(null);

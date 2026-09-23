@@ -767,6 +767,12 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         // the live global refs — another conversation toggling its modes
         // must not alter the behaviour of a background-running loop.
         const iterRef = ctx.sessionsRefData.current.get(effectiveKey);
+        const chunkHandler = createStreamChunkHandler(
+          ctx,
+          effectiveKey,
+          currentAssistantMessageId,
+          () => isRunCancelled(effectiveKey),
+        );
         const streamPromise = window.snow.createResponseStream(
           {
             messages: requestMessages,
@@ -785,12 +791,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             worktreeMode: iterRef?.worktreeMode ?? ctx.worktreeModeRef.current,
             workflowMode: iterRef?.workflowMode ?? ctx.workflowModeRef.current,
           },
-          createStreamChunkHandler(
-            ctx,
-            effectiveKey,
-            currentAssistantMessageId,
-            () => isRunCancelled(effectiveKey),
-          ),
+          chunkHandler,
           createStreamIdHandler(ctx, effectiveKey, () =>
             isRunCancelled(effectiveKey),
           ),
@@ -800,7 +801,14 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           streamRefBefore.streamPromise = streamPromise;
         }
 
-        const response = await streamPromise;
+        let response: Awaited<typeof streamPromise>;
+        try {
+          response = await streamPromise;
+        } finally {
+          // 末批 chunk 必须同步落地：此后消息状态会被收尾逻辑覆盖，缓冲里
+          // 残留的增量若晚到就会把内容追加到完整文本之上。
+          chunkHandler.flush();
+        }
         const responseDisposition = resolveResponseDisposition(response);
         const responseFailed = responseDisposition.kind === "error";
 

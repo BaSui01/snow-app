@@ -1849,6 +1849,12 @@ export function createWorkflowRunner(
         let response: Awaited<
           ReturnType<typeof window.snow.createResponseStream>
         >;
+        const chunkHandler = createStreamChunkHandler(
+          ctx,
+          conversationId,
+          assistantMessageId,
+          isNodeCancelled,
+        );
         try {
           response = await window.snow.createResponseStream(
             {
@@ -1864,15 +1870,11 @@ export function createWorkflowRunner(
               workflowMode: false,
               resumeAfterCompaction,
             },
-            createStreamChunkHandler(
-              ctx,
-              conversationId,
-              assistantMessageId,
-              isNodeCancelled,
-            ),
+            chunkHandler,
             createStreamIdHandler(ctx, conversationId, isNodeCancelled),
           );
         } catch (error) {
+          chunkHandler.flush();
           finalizeMessage(assistantMessageId, {
             content: getErrorMessage(error),
             status: "error",
@@ -1880,6 +1882,7 @@ export function createWorkflowRunner(
           });
           return { content: "", failed: true, error: getErrorMessage(error) };
         }
+        chunkHandler.flush();
 
         // 与主会话一致：store_chat_exchange 已把本批 user 消息持久化并返回
         // DB snowflake id，这里把前端临时 id 替换为 DB id，让 DOM 的

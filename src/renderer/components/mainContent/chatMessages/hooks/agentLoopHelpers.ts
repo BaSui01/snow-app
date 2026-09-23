@@ -331,6 +331,7 @@ export const applyStreamChunkToMessage = (
   currentMessage: ChatConversationMessage,
   chunk: ResponsesApiStreamChunk,
   timestamp: string = formatMessageTime(),
+  thinkingActiveOverride?: boolean | null,
 ): ChatConversationMessage => {
   const {
     isRetrying: _isRetrying,
@@ -371,11 +372,14 @@ export const applyStreamChunkToMessage = (
       : (ordinaryStreamingMessage.thinkingDurationMs ?? 0);
   // The thinking phase is active while thinking deltas keep arriving; the
   // first content delta (or the end of the stream) marks it as finished.
-  const nextIsThinkingActive = chunk.thinkingDelta
-    ? true
-    : chunk.contentDelta || chunk.content
-      ? false
-      : (ordinaryStreamingMessage.isThinkingActive ?? false);
+  const nextIsThinkingActive =
+    thinkingActiveOverride != null
+      ? thinkingActiveOverride
+      : chunk.thinkingDelta
+        ? true
+        : chunk.contentDelta || chunk.content
+          ? false
+          : (ordinaryStreamingMessage.isThinkingActive ?? false);
 
   return {
     ...ordinaryStreamingMessage,
@@ -393,17 +397,96 @@ export const applyStreamChunkToMessage = (
 // Factory: stream chunk handler
 // ---------------------------------------------------------------------------
 
+/** onChunk 回调 + 立即落地缓冲内容的 flush（流结束时调用，保证末批内容不丢）。 */
+export type StreamChunkHandler = ((chunk: ResponsesApiStreamChunk) => void) & {
+  flush: () => void;
+};
+
+type MergedStreamBatch = {
+  contentOverride: string;
+  contentDelta: string;
+  thinkingOverride: string;
+  thinkingDelta: string;
+  thinkingTokenCount: number;
+  thinkingDurationMs: number;
+  ttftMs: number;
+  thinkingActive: boolean | null;
+  last: ResponsesApiStreamChunk;
+};
+
+const mergeStreamChunks = (
+  batch: ResponsesApiStreamChunk[],
+): MergedStreamBatch => {
+  let contentOverride = "";
+  let contentDelta = "";
+  let thinkingOverride = "";
+  let thinkingDelta = "";
+  let thinkingTokenCount = 0;
+  let thinkingDurationMs = 0;
+  let ttftMs = 0;
+  let thinkingActive: boolean | null = null;
+  for (const chunk of batch) {
+    if (chunk.content) {
+      contentOverride = chunk.content;
+      contentDelta = "";
+    } else if (chunk.contentDelta) {
+      contentDelta += chunk.contentDelta;
+    }
+    if (chunk.thinking) {
+      thinkingOverride = chunk.thinking;
+      thinkingDelta = "";
+    } else if (chunk.thinkingDelta) {
+      thinkingDelta += chunk.thinkingDelta;
+    }
+    if (chunk.thinkingDelta) {
+      thinkingActive = true;
+    } else if (chunk.contentDelta || chunk.content) {
+      thinkingActive = false;
+    }
+    if (chunk.thinkingTokenCount > 0) {
+      thinkingTokenCount = chunk.thinkingTokenCount;
+    }
+    if (chunk.thinkingDurationMs > 0) {
+      thinkingDurationMs = chunk.thinkingDurationMs;
+    }
+    if (ttftMs === 0 && chunk.ttftMs > 0) {
+      ttftMs = chunk.ttftMs;
+    }
+  }
+  return {
+    contentOverride,
+    contentDelta,
+    thinkingOverride,
+    thinkingDelta,
+    thinkingTokenCount,
+    thinkingDurationMs,
+    ttftMs,
+    thinkingActive,
+    last: batch[batch.length - 1],
+  };
+};
+
+/** rAF 在窗口被遮挡/最小化时会停摆，用定时器兜底保证缓冲内容仍会落地。 */
+const CHUNK_FLUSH_FALLBACK_MS = 100;
+
 /**
  * Creates the onChunk callback for createResponseStream. Handles real-time
  * token probe updates, retry resets, and incremental content/thinking deltas.
  * Shared between the main agent loop and the sub-agent loop.
+ *
+ * Incoming chunks are buffered and applied once per animation frame: IPC
+ * delivers one callback per token, and applying each one immediately forced a
+ * full-provider re-render at token rate — with several sessions streaming in
+ * parallel that saturates the renderer. Frame-batched application also lets
+ * React coalesce updates from every concurrently streaming session into a
+ * single render pass.
  */
 export const createStreamChunkHandler = (
   ctx: ConversationContextValue,
   sessionKey: string,
   assistantMessageId: string,
   isCancelled: () => boolean,
-) => {
+): StreamChunkHandler => {
   const refSession = ctx.sessionsRefData.current.get(sessionKey);
   const iterationTokenBase = refSession?.iterationTokenCount ?? 0;
   const iterationElapsedBase = refSession?.iterationElapsedMs ?? 0;
@@ -416,7 +499,132 @@ export const createStreamChunkHandler = (
   // 本次迭代的 TTFT 是否已计入 run 级总和（每次迭代只记一次）。
   let iterationTtftRecorded = false;
 
-  return (chunk: ResponsesApiStreamChunk): void => {
+  const pendingChunks: ResponsesApiStreamChunk[] = [];
+  let scheduledFrame = 0;
+  let fallbackTimer = 0;
+
+  const cancelScheduledFlush = (): void => {
+    if (scheduledFrame !== 0) {
+      cancelAnimationFrame(scheduledFrame);
+      scheduledFrame = 0;
+    }
+    if (fallbackTimer !== 0) {
+      window.clearTimeout(fallbackTimer);
+      fallbackTimer = 0;
+    }
+  };
+
+  const applyChunkToSession = (
+    chunk: ResponsesApiStreamChunk,
+    thinkingActive: boolean | null,
+  ): void => {
+    const runTokenCount = iterationTokenBase + chunk.streamTokenCount;
+    const runElapsedMs = iterationElapsedBase + chunk.elapsedMs;
+    // ref 同步累加（后续迭代依赖），context 字段走降频。
+    if (refSession) {
+      refSession.iterationTokenCount = runTokenCount;
+      refSession.iterationElapsedMs = runElapsedMs;
+    }
+    const now = Date.now();
+    if (now - lastMetricsAt >= METRICS_UPDATE_INTERVAL_MS) {
+      lastMetricsAt = now;
+      ctx.updateSessionField(sessionKey, "streamTokenCount", runTokenCount);
+      ctx.updateSessionField(sessionKey, "streamElapsedMs", runElapsedMs);
+    }
+    const ttftMs = chunk.ttftMs;
+    if (
+      ttftMs > 0 &&
+      (ctx.sessionsRef.current[sessionKey]?.streamTtftMs ?? 0) === 0
+    ) {
+      ctx.updateSessionField(sessionKey, "streamTtftMs", ttftMs);
+    }
+    if (
+      ttftMs > 0 &&
+      (ctx.sessionsRef.current[sessionKey]?.runTtftMs ?? 0) === 0
+    ) {
+      ctx.updateSessionField(sessionKey, "runTtftMs", ttftMs);
+    }
+    // 每次迭代（一个 createResponseStream 调用）只累加一次 TTFT：本次迭代的
+    // 首个 TTFT 到达时记入 run 级总和与请求数，收尾时折算进会话累计平均。
+    if (ttftMs > 0 && !iterationTtftRecorded) {
+      iterationTtftRecorded = true;
+      if (refSession) {
+        refSession.runTtftSumMs += ttftMs;
+        refSession.runRequestCount += 1;
+      }
+      ctx.updateSessionField(
+        sessionKey,
+        "runTtftSumMs",
+        (ctx.sessionsRef.current[sessionKey]?.runTtftSumMs ?? 0) + ttftMs,
+      );
+      ctx.updateSessionField(
+        sessionKey,
+        "runRequestCount",
+        (ctx.sessionsRef.current[sessionKey]?.runRequestCount ?? 0) + 1,
+      );
+    }
+
+    ctx.updateSessionMessages(sessionKey, (currentMessages) =>
+      currentMessages.map((currentMessage) =>
+        currentMessage.id === assistantMessageId
+          ? applyStreamChunkToMessage(
+              currentMessage,
+              chunk,
+              undefined,
+              thinkingActive,
+            )
+          : currentMessage,
+      ),
+    );
+  };
+
+  const applyMergedBatch = (batch: ResponsesApiStreamChunk[]): void => {
+    const merged = mergeStreamChunks(batch);
+    applyChunkToSession(
+      {
+        ...merged.last,
+        content: merged.contentOverride
+          ? `${merged.contentOverride}${merged.contentDelta}`
+          : "",
+        contentDelta: merged.contentOverride ? "" : merged.contentDelta,
+        thinking: merged.thinkingOverride
+          ? `${merged.thinkingOverride}${merged.thinkingDelta}`
+          : "",
+        thinkingDelta: merged.thinkingOverride ? "" : merged.thinkingDelta,
+        thinkingTokenCount: merged.thinkingTokenCount,
+        thinkingDurationMs: merged.thinkingDurationMs,
+        ttftMs: merged.ttftMs,
+        retrying: false,
+      },
+      merged.thinkingActive,
+    );
+  };
+
+  const flush = (): void => {
+    cancelScheduledFlush();
+    if (pendingChunks.length === 0) {
+      return;
+    }
+    const batch = pendingChunks.splice(0, pendingChunks.length);
+    applyMergedBatch(batch);
+  };
+
+  const scheduleFlush = (): void => {
+    if (scheduledFrame === 0) {
+      scheduledFrame = requestAnimationFrame(() => {
+        scheduledFrame = 0;
+        flush();
+      });
+    }
+    if (fallbackTimer === 0) {
+      fallbackTimer = window.setTimeout(() => {
+        fallbackTimer = 0;
+        flush();
+      }, CHUNK_FLUSH_FALLBACK_MS);
+    }
+  };
+
+  const handler = ((chunk: ResponsesApiStreamChunk): void => {
     // External-vision textify progress event: update the session-level
     // visionAnalysis field only, never touch message content. The backend
     // pushes these chunks while it describes user images with the external
@@ -455,61 +663,20 @@ export const createStreamChunkHandler = (
       return;
     }
 
-    const runTokenCount = iterationTokenBase + chunk.streamTokenCount;
-    const runElapsedMs = iterationElapsedBase + chunk.elapsedMs;
-    // ref 同步累加（后续迭代依赖），context 字段走降频。
-    if (refSession) {
-      refSession.iterationTokenCount = runTokenCount;
-      refSession.iterationElapsedMs = runElapsedMs;
-    }
-    const now = Date.now();
-    if (now - lastMetricsAt >= METRICS_UPDATE_INTERVAL_MS) {
-      lastMetricsAt = now;
-      ctx.updateSessionField(sessionKey, "streamTokenCount", runTokenCount);
-      ctx.updateSessionField(sessionKey, "streamElapsedMs", runElapsedMs);
-    }
-    if (
-      chunk.ttftMs > 0 &&
-      (ctx.sessionsRef.current[sessionKey]?.streamTtftMs ?? 0) === 0
-    ) {
-      ctx.updateSessionField(sessionKey, "streamTtftMs", chunk.ttftMs);
-    }
-    if (
-      chunk.ttftMs > 0 &&
-      (ctx.sessionsRef.current[sessionKey]?.runTtftMs ?? 0) === 0
-    ) {
-      ctx.updateSessionField(sessionKey, "runTtftMs", chunk.ttftMs);
-    }
-    // 每次迭代（一个 createResponseStream 调用）只累加一次 TTFT：本次迭代的
-    // 首个 TTFT 到达时记入 run 级总和与请求数，收尾时折算进会话累计平均。
-    if (chunk.ttftMs > 0 && !iterationTtftRecorded) {
-      iterationTtftRecorded = true;
-      if (refSession) {
-        refSession.runTtftSumMs += chunk.ttftMs;
-        refSession.runRequestCount += 1;
-      }
-      ctx.updateSessionField(
-        sessionKey,
-        "runTtftSumMs",
-        (ctx.sessionsRef.current[sessionKey]?.runTtftSumMs ?? 0) + chunk.ttftMs,
-      );
-      ctx.updateSessionField(
-        sessionKey,
-        "runRequestCount",
-        (ctx.sessionsRef.current[sessionKey]?.runRequestCount ?? 0) + 1,
-      );
+    // Retry chunks reset the message to an empty partial: they must land in
+    // order, never merged with the deltas buffered before/after them.
+    if (chunk.retrying) {
+      flush();
+      applyChunkToSession(chunk, null);
+      return;
     }
 
-    ctx.updateSessionMessages(sessionKey, (currentMessages) =>
-      currentMessages.map((currentMessage) => {
-        if (currentMessage.id !== assistantMessageId) {
-          return currentMessage;
-        }
+    pendingChunks.push(chunk);
+    scheduleFlush();
+  }) as StreamChunkHandler;
 
-        return applyStreamChunkToMessage(currentMessage, chunk);
-      }),
-    );
-  };
+  handler.flush = flush;
+  return handler;
 };
 
 // ---------------------------------------------------------------------------

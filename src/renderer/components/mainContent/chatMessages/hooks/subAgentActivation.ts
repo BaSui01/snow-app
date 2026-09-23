@@ -275,6 +275,12 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       subAssistantMessage,
     ]);
 
+    const subChunkHandler = createStreamChunkHandler(
+      ctx,
+      subConvId,
+      subAssistantMessageId,
+      isSubCancelled,
+    );
     const subStreamPromise = window.snow.createResponseStream(
       {
         messages: subMessages,
@@ -294,12 +300,7 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         goalMode: false,
         worktreeMode: false,
       },
-      createStreamChunkHandler(
-        ctx,
-        subConvId,
-        subAssistantMessageId,
-        isSubCancelled,
-      ),
+      subChunkHandler,
       createStreamIdHandler(ctx, subConvId, isSubCancelled),
     );
     const subStreamRefBefore = ctx.sessionsRefData.current.get(subConvId);
@@ -307,7 +308,12 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       subStreamRefBefore.streamPromise = subStreamPromise;
     }
 
-    const subResponse = await subStreamPromise;
+    let subResponse: Awaited<typeof subStreamPromise>;
+    try {
+      subResponse = await subStreamPromise;
+    } finally {
+      subChunkHandler.flush();
+    }
     const subResponseDisposition = resolveResponseDisposition(subResponse);
     const subResponseFailed = subResponseDisposition.kind === "error";
 

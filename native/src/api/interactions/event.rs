@@ -335,7 +335,6 @@ fn step_id_from(index: Option<u64>, step: &Value) -> String {
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_interactions_sse_event_block(
     event_block: &str,
-    raw_events: &mut Vec<Value>,
     content_chunks: &mut Vec<String>,
     thinking_chunks: &mut Vec<String>,
     tool_calls: &mut InteractionsToolCallState,
@@ -406,7 +405,6 @@ pub(super) fn process_interactions_sse_event_block(
             *provider_failure = Some(failure);
             return;
         }
-        raw_events.push(event);
         if *stream_finished {
             return;
         }
@@ -441,7 +439,6 @@ pub(super) fn process_interactions_sse_event_block(
             *provider_failure = Some(failure);
             return;
         }
-        raw_events.push(event);
     }
 }
 
@@ -1139,7 +1136,6 @@ mod tests {
     use super::*;
 
     struct Harness {
-        raw: Vec<Value>,
         content: Vec<String>,
         thinking: Vec<String>,
         calls: InteractionsToolCallState,
@@ -1156,7 +1152,6 @@ mod tests {
     impl Default for Harness {
         fn default() -> Self {
             Self {
-                raw: Vec::new(),
                 content: Vec::new(),
                 thinking: Vec::new(),
                 calls: InteractionsToolCallState::default(),
@@ -1177,7 +1172,6 @@ mod tests {
             self.args_delta.clear();
             process_interactions_sse_event_block(
                 block,
-                &mut self.raw,
                 &mut self.content,
                 &mut self.thinking,
                 &mut self.calls,

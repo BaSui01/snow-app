@@ -10,6 +10,7 @@ export const zhTW = {
   "sidebar.loadingMoreDirectories": "繼續載入中...",
   "sidebar.allDirectoriesLoaded": "已載入全部目錄",
   "sidebar.loadingWorkspaceContent": "正在載入工作區內容...",
+  "sidebar.loadingPanel": "載入中...",
   "sidebar.addDirectoryScheme": "新增目錄",
   "sidebar.chooseDirectoryScheme": "選擇新增方式",
   "sidebar.close": "關閉",

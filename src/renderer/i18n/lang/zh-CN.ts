@@ -10,6 +10,7 @@ export const zhCN = {
   "sidebar.loadingMoreDirectories": "继续加载中...",
   "sidebar.allDirectoriesLoaded": "已加载全部目录",
   "sidebar.loadingWorkspaceContent": "正在加载工作区内容...",
+  "sidebar.loadingPanel": "加载中...",
   "sidebar.addDirectoryScheme": "添加目录",
   "sidebar.chooseDirectoryScheme": "选择添加方式",
   "sidebar.close": "关闭",

@@ -294,7 +294,6 @@ export function ChatItem({
       }${isMultiSelectMode && !isRunning ? " multi-select" : ""}${
         isSelected ? " selected" : ""
       }${isDragSource ? " dragging" : ""}`}
-      key={conversation.conversationId}
       draggable={canDrag}
       onDragStart={canDrag ? handleDragStart : undefined}
       onDragEnd={handleDragEnd}

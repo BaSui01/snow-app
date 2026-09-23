@@ -10,6 +10,7 @@ export const en = {
   "sidebar.loadingMoreDirectories": "Loading more...",
   "sidebar.allDirectoriesLoaded": "All directories loaded",
   "sidebar.loadingWorkspaceContent": "Loading workspace content...",
+  "sidebar.loadingPanel": "Loading...",
   "sidebar.addDirectoryScheme": "Add directory",
   "sidebar.chooseDirectoryScheme": "Choose add method",
   "sidebar.close": "Close",

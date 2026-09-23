@@ -3,7 +3,7 @@ import { Fragment } from "react";
 import type { ChatConversationRecord } from "../../../../../preload";
 import { ChatItem } from "../ChatItem";
 import type { ExportFormat } from "../ChatItemMenu";
-import { SidebarCollapse } from "../SidebarCollapse";
+import { LazyCollapse } from "../LazyCollapse";
 import { SubAgentListPanel } from "../SubAgentListPanel";
 import { WorkflowNodeListPanel } from "../WorkflowNodeListPanel";
 import { isPendingSessionKey } from "../../../mainContent/chatMessages/utils/conversationTypes";
@@ -122,39 +122,41 @@ export function ChatConversationRow({
         onSelect={() => onSelectConversation(conversation)}
       />
       {/* 面板渲染在 ChatItem 外部，作为兄弟节点，
-                          完全不继承父级会话项的背景色 */}
-      <SidebarCollapse
+          完全不继承父级会话项的背景色 */}
+      <LazyCollapse
         open={isWorkflow && isWorkflowPanelExpanded && !isMultiSelectMode}
-      >
-        <WorkflowNodeListPanel
-          conversations={workflowNodeConversations}
-          activeConversationId={activeConversationId}
-          attentionRequiredConversationIds={attentionRequiredConversationIds}
-          streamingConversationIds={streamingConversationIds}
-          subAgentMap={subAgentMap}
-          expandedNodeIds={expandedWorkflowNodeConversationIds}
-          onToggleNode={onToggleWorkflowNode}
-          onSelect={(nodeConvId) =>
-            onSelectChildConversation(nodeConvId, conversation.directoryId)
-          }
-        />
-      </SidebarCollapse>
-      <SidebarCollapse
+        renderContent={() => (
+          <WorkflowNodeListPanel
+            conversations={workflowNodeConversations}
+            activeConversationId={activeConversationId}
+            attentionRequiredConversationIds={attentionRequiredConversationIds}
+            streamingConversationIds={streamingConversationIds}
+            subAgentMap={subAgentMap}
+            expandedNodeIds={expandedWorkflowNodeConversationIds}
+            onToggleNode={onToggleWorkflowNode}
+            onSelect={(nodeConvId) =>
+              onSelectChildConversation(nodeConvId, conversation.directoryId)
+            }
+          />
+        )}
+      />
+      <LazyCollapse
         open={
           subAgentConversations.length > 0 &&
           isSubAgentExpanded &&
           !isMultiSelectMode
         }
-      >
-        <SubAgentListPanel
-          conversations={subAgentConversations}
-          activeConversationId={activeConversationId}
-          attentionRequiredConversationIds={attentionRequiredConversationIds}
-          onSelect={(subConvId) =>
-            onSelectChildConversation(subConvId, conversation.directoryId)
-          }
-        />
-      </SidebarCollapse>
+        renderContent={() => (
+          <SubAgentListPanel
+            conversations={subAgentConversations}
+            activeConversationId={activeConversationId}
+            attentionRequiredConversationIds={attentionRequiredConversationIds}
+            onSelect={(subConvId) =>
+              onSelectChildConversation(subConvId, conversation.directoryId)
+            }
+          />
+        )}
+      />
     </Fragment>
   );
 }

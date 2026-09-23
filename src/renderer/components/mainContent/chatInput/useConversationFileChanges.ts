@@ -101,6 +101,25 @@ export const useConversationFileChanges = ({
   );
   // 会话 + 工作区身份：同会话重算时沿用上一次结果，避免列表抖动。
   const conversationKey = `${conversationId ?? ""}|${workDir ?? ""}`;
+  const checkpointRequestKey = useMemo(
+    () =>
+      JSON.stringify([
+        conversationKey,
+        orderedCheckpointIds,
+        messageCheckpointIds,
+        baselineCheckpointId ?? "",
+        completedToolSignature,
+        conversationVersion,
+      ]),
+    [
+      baselineCheckpointId,
+      completedToolSignature,
+      conversationKey,
+      conversationVersion,
+      messageCheckpointIds,
+      orderedCheckpointIds,
+    ],
+  );
   const [checkpointState, setCheckpointState] = useState<CheckpointDiffState>({
     conversationKey: "",
     diffs: null,
@@ -171,17 +190,7 @@ export const useConversationFileChanges = ({
     return () => {
       cancelled = true;
     };
-  }, [
-    baselineCheckpointId,
-    canUseCheckpoint,
-    completedToolSignature,
-    conversationId,
-    conversationKey,
-    conversationVersion,
-    messageCheckpointIds,
-    orderedCheckpointIds,
-    workDir,
-  ]);
+  }, [canUseCheckpoint, checkpointRequestKey, workDir]);
 
   return useMemo(() => {
     if (

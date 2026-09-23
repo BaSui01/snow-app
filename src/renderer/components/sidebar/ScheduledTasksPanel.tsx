@@ -35,7 +35,6 @@ import type {
 } from "../../../preload";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { CustomSelect } from "../common/CustomSelect";
-import { Modal } from "../common/Modal";
 import { THINKING_OPTIONS_BY_METHOD } from "../mainContent/chatInput/constants";
 import {
   createChipHtml,
@@ -73,11 +72,9 @@ type Translate = (
   },
 ) => string;
 
-type ScheduledTasksModalProps = {
-  open: boolean;
+type ScheduledTasksPanelProps = {
   directoryId: string;
   directoryPath: string;
-  onClose: () => void;
 };
 
 const PREVIEW_MAX_LEN = 160;
@@ -267,12 +264,10 @@ const toLocalDateTimeInput = (timestamp: number): string => {
   )}T${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 };
 
-export function ScheduledTasksModal({
-  open,
+export function ScheduledTasksPanel({
   directoryId,
   directoryPath,
-  onClose,
-}: ScheduledTasksModalProps): React.JSX.Element {
+}: ScheduledTasksPanelProps): React.JSX.Element {
   const { locale, t } = useI18n();
   const {
     tasks,
@@ -347,7 +342,6 @@ export function ScheduledTasksModal({
   const mentionPopupRef = useRef<FileMentionPopupHandle>(null);
   const mentionStartOffsetRef = useRef<number>(-1);
   const promptDraggingRef = useRef(false);
-  const wasOpenRef = useRef(false);
   const thinkingMenuRef = useRef<HTMLDivElement | null>(null);
 
   const globalTasks = useMemo(
@@ -560,11 +554,8 @@ export function ScheduledTasksModal({
     return () => document.removeEventListener("mousedown", handleMouseDown);
   }, [isThinkingMenuOpen]);
 
+  // 进入页面时初始化一次选择：有可见任务则选中它并展示详情，否则直接进入新建。
   useEffect(() => {
-    const wasOpen = wasOpenRef.current;
-    wasOpenRef.current = open;
-    if (!open || wasOpen) return;
-
     setFormError(null);
     const selectedIsVisible = visibleTasks.some(
       (task) => task.id === selectedTaskId,
@@ -579,11 +570,10 @@ export function ScheduledTasksModal({
 
     setSelectedTaskId(null);
     setPanelMode("create");
-  }, [open, selectedTaskId, tasks.length, visibleTasks]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
-    if (!open) return;
-
     if (visibleTasks.length === 0) {
       if (selectedTaskId !== null) {
         setSelectedTaskId(null);
@@ -597,15 +587,15 @@ export function ScheduledTasksModal({
     if (!visibleTasks.some((task) => task.id === selectedTaskId)) {
       setSelectedTaskId(visibleTasks[0].id);
     }
-  }, [open, panelMode, selectedTaskId, tasks.length, visibleTasks]);
+  }, [panelMode, selectedTaskId, tasks.length, visibleTasks]);
 
   useEffect(() => {
-    if (!open || panelMode !== "create") return;
+    if (panelMode !== "create") return;
     const frame = window.requestAnimationFrame(() => {
       nameInputRef.current?.focus();
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [open, panelMode]);
+  }, [panelMode]);
 
   useEffect(() => {
     if (!isMentionOpen) {
@@ -650,7 +640,6 @@ export function ScheduledTasksModal({
   }, [isMentionOpen]);
 
   useEffect(() => {
-    if (!open) return;
     let cancelled = false;
     window.snow
       .listApiConfigs()
@@ -663,7 +652,7 @@ export function ScheduledTasksModal({
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, []);
 
   useEffect(
     () => () => {
@@ -2464,16 +2453,8 @@ export function ScheduledTasksModal({
   ];
 
   return (
-    <Modal
-      className="scheduled-tasks-modal"
-      closeLabel={t("scheduledTask.close", { defaultValue: "Close" })}
-      closeOnEscape
-      onClose={onClose}
-      open={open}
-      size="large"
-      title={t("scheduledTask.title", { defaultValue: "Scheduled Tasks" })}
-    >
-      <div className="scheduled-tasks-modal-layout">
+    <div className="feature-page">
+      <div className="scheduled-tasks-panel-layout">
         <aside className="scheduled-tasks-sidebar">
           <div className="scheduled-tasks-sidebar-header">
             <div
@@ -2653,6 +2634,6 @@ export function ScheduledTasksModal({
         })}
         variant="danger"
       />
-    </Modal>
+    </div>
   );
 }

@@ -406,8 +406,8 @@ const truncateText = (text: string, max: number): string =>
 export class ScheduledTasksStore {
   private tasks = new Map<string, ScheduledTaskRecord>();
   private listeners = new Set<Listener>();
-  private executor: Executor | null = null;
-  private scriptRunner: ScriptRunner | null = null;
+  private executors = new Set<Executor>();
+  private scriptRunners = new Set<ScriptRunner>();
 
   private tickTimer: ReturnType<typeof setInterval> | null = null;
   /** Currently in-flight execution task ids, to prevent overlapping runs. */
@@ -454,24 +454,41 @@ export class ScheduledTasksStore {
     }
   };
 
-  /** Registers the AI Loop executor (buildFromContent). */
+  /**
+   * Registers the AI Loop executor (buildFromContent). 侧栏与定时任务页面会同时
+   * 注册：注销只移除自己那份，任何一个宿主卸载都不会让调度器失去执行器。
+   */
   setExecutor = (executor: Executor): (() => void) => {
-    this.executor = executor;
+    this.executors.add(executor);
     return () => {
-      if (this.executor === executor) {
-        this.executor = null;
-      }
+      this.executors.delete(executor);
     };
   };
 
   /** Registers the pre-script runner (Rust backend via preload). */
   setScriptRunner = (runner: ScriptRunner): (() => void) => {
-    this.scriptRunner = runner;
+    this.scriptRunners.add(runner);
     return () => {
-      if (this.scriptRunner === runner) {
-        this.scriptRunner = null;
-      }
+      this.scriptRunners.delete(runner);
     };
+  };
+
+  /** 最近一次注册的执行器（多个宿主同时注册时与旧行为一致）。 */
+  private currentExecutor = (): Executor | null => {
+    let current: Executor | null = null;
+    for (const executor of this.executors) {
+      current = executor;
+    }
+    return current;
+  };
+
+  /** 最近一次注册的预脚本执行器。 */
+  private currentScriptRunner = (): ScriptRunner | null => {
+    let current: ScriptRunner | null = null;
+    for (const runner of this.scriptRunners) {
+      current = runner;
+    }
+    return current;
   };
 
   subscribe = (listener: Listener): (() => void) => {
@@ -936,7 +953,7 @@ export class ScheduledTasksStore {
     if (!task) return;
     if (this.runningIds.has(id)) return; // already running
 
-    const executor = this.executor;
+    const executor = this.currentExecutor();
     this.runningIds.add(id);
 
     // Mark running + append an in-progress history entry (finalized by
@@ -1086,7 +1103,7 @@ export class ScheduledTasksStore {
   private evaluatePreScript = async (
     task: ScheduledTaskRecord,
   ): Promise<PreScriptDecision> => {
-    const runner = this.scriptRunner;
+    const runner = this.currentScriptRunner();
     if (!runner) {
       throw new Error("No script runner registered (pre-script unavailable)");
     }

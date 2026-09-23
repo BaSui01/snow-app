@@ -13,6 +13,7 @@ import {
   SidebarOpen,
   SquarePen,
   Terminal,
+  X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkspaceDirectoryRecord } from "../../preload";
@@ -31,8 +32,11 @@ import { resolveLocalized } from "../plugins/manifest";
 import { pluginStore, usePluginStore } from "../plugins/pluginStore";
 import { WindowControlsButtons } from "./WindowControls";
 import { useCodebaseWatcher } from "../hooks/useCodebaseWatcher";
+import { FEATURE_PAGE_TITLES, isFeaturePageView } from "./featurePages";
+import type { MainContentView } from "./mainContent/types";
 
 type TopBarProps = {
+  activeView: MainContentView;
   isSidebarCollapsed: boolean;
   isRightPanelCollapsed: boolean;
   isRightPanelFullscreen: boolean;
@@ -40,6 +44,7 @@ type TopBarProps = {
   onToggleSidebar: () => void;
   onToggleRightPanel: () => void;
   onToggleRightPanelFullscreen: () => void;
+  onSelectView: (view: MainContentView) => void;
   onOpenTerminal?: () => void;
   onOpenBrowser?: () => void;
   onOpenCodebase?: (projectId: string, projectName: string) => void;
@@ -48,6 +53,7 @@ type TopBarProps = {
 };
 
 export const TopBar = ({
+  activeView,
   isSidebarCollapsed,
   isRightPanelCollapsed,
   isRightPanelFullscreen,
@@ -55,6 +61,7 @@ export const TopBar = ({
   onToggleSidebar,
   onToggleRightPanel,
   onToggleRightPanelFullscreen,
+  onSelectView,
   onOpenTerminal,
   onOpenBrowser,
   onOpenCodebase,
@@ -494,6 +501,15 @@ export const TopBar = ({
       : subAgentDisplayName
     : displayDirectoryName || "";
 
+  // 独立页面（备忘录 / 项目记忆 / 定时任务 / 插件）：标题与关闭按钮由 TopBar 承担，
+  // 中部让位给页面本身，不再展示待办面板与代码库同步指示器。
+  const featurePage = isFeaturePageView(activeView)
+    ? FEATURE_PAGE_TITLES[activeView]
+    : null;
+  const featurePageTitle = featurePage
+    ? t(featurePage.key, { defaultValue: featurePage.defaultValue })
+    : "";
+
   // 代码库功能已开启且当前项目嵌入完毕后，才在 Plus 菜单中提供“代码库”项。
   const canOpenCodebase =
     effectiveEnabled && codebaseIndexed && activeProjectId;
@@ -686,7 +702,14 @@ export const TopBar = ({
             type="button"
             aria-label="New chat"
             title="New chat"
-            onClick={() => handleNewChat()}
+            onClick={() => {
+              // 新建会话时收回独立页面（备忘录 / 记忆 / 定时任务 / 插件），
+              // 让新会话在聊天视图里立即可见。
+              if (isFeaturePageView(activeView)) {
+                onSelectView("chat");
+              }
+              handleNewChat();
+            }}
           >
             <SquarePen size={16} strokeWidth={1.8} />
           </button>
@@ -695,32 +718,50 @@ export const TopBar = ({
 
       <div className="top-bar-main">
         <div className="header-title-group">
-          <h2 className="header-title">{headerTitle}</h2>
-          {headerSubtitle ? (
+          <h2 className="header-title">
+            {featurePage ? featurePageTitle : headerTitle}
+          </h2>
+          {!featurePage && headerSubtitle ? (
             <span className="header-subtitle">{headerSubtitle}</span>
           ) : null}
         </div>
-        <TodoPanelButton
-          messages={messages}
-          conversationId={activeConversationId}
-          projectId={conversationDirectoryId ?? activeDirectory?.directoryId}
-          isRunning={isStreaming}
-          onOpenChange={setIsTodoPanelOpen}
-          onPinnedChange={setIsTodoPanelPinned}
-        />
-        <CodebaseSyncIndicator
-          syncStatus={syncStatus}
-          watchedProjectId={watchedProjectId}
-          activeProjectId={activeProjectId}
-          isIndexed={codebaseIndexed}
-          embedError={codebaseEmbedError}
-          onClick={() => {
-            // 同步指示器点击 → 打开代码库管理弹窗（ChatInputView 监听该事件）。
-            window.dispatchEvent(
-              new CustomEvent(OPEN_PROJECT_CODEBASE_PANEL_EVENT),
-            );
-          }}
-        />
+        {featurePage ? (
+          <button
+            className="icon-btn ghost feature-page-close-btn"
+            type="button"
+            aria-label={t("common.close", { defaultValue: "Close" })}
+            title={t("common.close", { defaultValue: "Close" })}
+            onClick={() => onSelectView("chat")}
+          >
+            <X size={16} strokeWidth={1.8} />
+          </button>
+        ) : (
+          <>
+            <TodoPanelButton
+              messages={messages}
+              conversationId={activeConversationId}
+              projectId={
+                conversationDirectoryId ?? activeDirectory?.directoryId
+              }
+              isRunning={isStreaming}
+              onOpenChange={setIsTodoPanelOpen}
+              onPinnedChange={setIsTodoPanelPinned}
+            />
+            <CodebaseSyncIndicator
+              syncStatus={syncStatus}
+              watchedProjectId={watchedProjectId}
+              activeProjectId={activeProjectId}
+              isIndexed={codebaseIndexed}
+              embedError={codebaseEmbedError}
+              onClick={() => {
+                // 同步指示器点击 → 打开代码库管理弹窗（ChatInputView 监听该事件）。
+                window.dispatchEvent(
+                  new CustomEvent(OPEN_PROJECT_CODEBASE_PANEL_EVENT),
+                );
+              }}
+            />
+          </>
+        )}
       </div>
 
       <div

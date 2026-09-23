@@ -2068,10 +2068,9 @@ export const RemoteControlBridge = ({
       },
 
       newChat: async (): Promise<{ ok: true }> => {
+        // 与桌面顶栏 / 侧边栏的「新建会话」一致：Snow 支持多会话并行，
+        // 正在运行的会话留在后台继续跑，不要求先停止。
         const current = stateRef.current.conversation;
-        if (current.isStreaming) {
-          throw new Error("请先停止当前运行");
-        }
         stateRef.current.onSelectMainView("chat");
         current.handleNewChat();
         return { ok: true };

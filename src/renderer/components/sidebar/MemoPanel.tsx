@@ -17,7 +17,6 @@ import { useI18n } from "../../i18n";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { CustomSelect } from "../common/CustomSelect";
 import { HighlightedText } from "../common/HighlightedText";
-import { Modal } from "../common/Modal";
 import { useChatConversationContext } from "../mainContent/chatMessages";
 import {
   createChipHtml,
@@ -35,6 +34,7 @@ import {
   type FileMentionPopupHandle,
 } from "../mainContent/chatInput/FileMentionPopup";
 import { formatTimeLabel, parseDbTimestamp } from "./mainSidebar/chatTimeGroup";
+import { notifyMemosChanged } from "./memoEvents";
 import type {
   MemoPage,
   MemoRecord,
@@ -53,11 +53,9 @@ type MemoFilter = "all" | MemoStatus;
 
 type MemoSortOrder = "asc" | "desc";
 
-type MemoModalProps = {
-  open: boolean;
+type MemoPanelProps = {
   directoryId: string;
   onClose: () => void;
-  onPendingCountChange?: (count: number) => void;
 };
 
 const clipPreview = (text: string): string =>
@@ -192,12 +190,10 @@ const memoHtmlToChatContent = (html: string): string => {
     .trim();
 };
 
-export function MemoModal({
-  open,
+export function MemoPanel({
   directoryId,
   onClose,
-  onPendingCountChange,
-}: MemoModalProps): React.JSX.Element {
+}: MemoPanelProps): React.JSX.Element {
   const { t } = useI18n();
   const { buildFromContent } = useChatConversationContext();
   const [memos, setMemos] = useState<MemoRecord[]>([]);
@@ -246,11 +242,11 @@ export function MemoModal({
   // stale lastSavedContentRef that the "sync editor" effect had already reset.
   const selectedMemoIdRef = useRef<string | null>(null);
   const memosRef = useRef<MemoRecord[]>([]);
-  // Cache of the editor's current innerHTML. The contentEditable editor is
-  // unmounted when the modal closes (Modal returns null), so by the time the
-  // close-triggered flushSave runs, editorRef.current is null. Reading from
-  // this cache instead guarantees we persist the last-typed content instead
-  // of an empty string that would wipe the database row.
+  // Cache of the editor's current innerHTML (refreshed on every input). The
+  // contentEditable editor is gone by the time the unmount flush runs, so
+  // editorRef.current is null there — reading from this cache guarantees we
+  // persist the last-typed content instead of an empty string that would wipe
+  // the database row.
   const editorHtmlRef = useRef("");
 
   const closeMention = useCallback(() => {
@@ -347,28 +343,9 @@ export function MemoModal({
     [directoryId],
   );
 
-  const refreshPendingCount = useCallback(async () => {
-    try {
-      const summary = await window.snow.getMemoCountSummary(directoryId);
-      onPendingCountChange?.(summary.pending);
-    } catch {
-      // Silent: badge is non-critical
-    }
-  }, [directoryId, onPendingCountChange]);
-
   useEffect(() => {
-    if (!open) return;
     void loadFirstPage(filter, sortField, sortOrder, searchKeyword);
-    void refreshPendingCount();
-  }, [
-    open,
-    filter,
-    sortField,
-    sortOrder,
-    searchKeyword,
-    loadFirstPage,
-    refreshPendingCount,
-  ]);
+  }, [filter, sortField, sortOrder, searchKeyword, loadFirstPage]);
 
   // 关键词防抖：输入停顿后才重新查询；清空立即恢复完整列表。
   useEffect(() => {
@@ -381,18 +358,9 @@ export function MemoModal({
     return () => window.clearTimeout(timer);
   }, [searchInput, searchKeyword]);
 
-  // 关闭时重置检索状态，下次打开从完整列表开始。
-  useEffect(() => {
-    if (open) return;
-    setSearchInput("");
-    setSearchKeyword("");
-  }, [open]);
-
   // 面板内快捷键：`/` 或 Ctrl/Cmd+K 聚焦搜索框。
   // 编辑器/输入框里输入 "/" 保持原样，只有 Ctrl/Cmd+K 会强制聚焦。
   useEffect(() => {
-    if (!open) return;
-
     const handleWindowKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing) return;
       const withModifier = event.ctrlKey || event.metaKey;
@@ -415,14 +383,13 @@ export function MemoModal({
 
     window.addEventListener("keydown", handleWindowKeyDown);
     return () => window.removeEventListener("keydown", handleWindowKeyDown);
-  }, [open]);
+  }, []);
 
-  // When the active project (directoryId) changes while the modal is open,
-  // reset the selection and editor so stale content from another project is
-  // never shown. The list/editor will be repopulated by the loadFirstPage
-  // effect above. 检索词同样清空：备忘按项目隔离，旧关键词在新项目里无意义。
+  // When the active project (directoryId) changes, reset the selection and
+  // editor so stale content from another project is never shown. The
+  // list/editor will be repopulated by the loadFirstPage effect above.
+  // 检索词同样清空：备忘按项目隔离，旧关键词在新项目里无意义。
   useEffect(() => {
-    if (!open) return;
     setSelectedMemoId(null);
     setSearchInput("");
     setSearchKeyword("");
@@ -431,11 +398,10 @@ export function MemoModal({
     closeMention();
     editorRangeRef.current = null;
     if (editorRef.current) editorRef.current.textContent = "";
-  }, [directoryId, open, closeMention]);
+  }, [directoryId, closeMention]);
 
-  // Auto-select the first memo when opening (or after creating the first one)
+  // Auto-select the first memo on mount (or after creating the first one)
   useEffect(() => {
-    if (!open) return;
     if (selectedMemoId) return;
     if (memos.length > 0) {
       setSelectedMemoId(memos[0].memoId);
@@ -445,7 +411,7 @@ export function MemoModal({
       lastSavedContentRef.current = "";
       if (editorRef.current) editorRef.current.textContent = "";
     }
-  }, [open, memos, selectedMemoId]);
+  }, [memos, selectedMemoId]);
 
   // 仅依赖 memoId 同步编辑器:自动保存会把同 id 的新对象刷进 memos,
   // 若依赖整个对象会重写 DOM 导致光标跳回文档开头
@@ -467,12 +433,7 @@ export function MemoModal({
     }
   }, [selectedMemoKey, closeMention]);
 
-  // Stop the close-triggered flushSave effect from running after the editor
-  // has already been unmounted. The actual flush happens synchronously inside
-  // handleClose before `open` flips to false, so the editorRef is still alive
-  // at that moment. The effect is kept only as a safety net for unmount without
-  // an explicit close (e.g. directoryId change), where editorHtmlRef already
-  // holds the latest content.
+  // Stop the close-triggered flushSave from reading an unmounted editor.
   // flushSave reads the latest selected memo id and editor content from refs,
   // NOT from useCallback closure variables. This is critical: when the user
   // switches memos, handleSelectMemo awaits flushSave() and only then updates
@@ -488,8 +449,8 @@ export function MemoModal({
     }
     const currentMemoId = selectedMemoIdRef.current;
     if (!currentMemoId) return;
-    // Prefer the cached innerHTML: the contentEditable editor is unmounted
-    // when the modal closes, so editorRef.current may be null at that point.
+    // Prefer the live innerHTML; on unmount editorRef.current is already null,
+    // so editorHtmlRef (refreshed on every input) is the fallback.
     const content = editorRef.current?.innerHTML ?? editorHtmlRef.current;
     if (content === lastSavedContentRef.current) {
       setIsSaving(false);
@@ -505,20 +466,16 @@ export function MemoModal({
       setMemos((prev) =>
         prev.map((memo) => (memo.memoId === currentMemoId ? updated : memo)),
       );
-      void refreshPendingCount();
+      notifyMemosChanged();
     } catch {
       // Keep content in editor so user can retry
     } finally {
       setIsSaving(false);
     }
-  }, [refreshPendingCount]);
+  }, []);
 
-  // handleClose runs BEFORE the modal unmounts the contentEditable editor.
-  // It snapshots the live editor HTML into editorHtmlRef, then flushes the
-  // pending save synchronously while editorRef.current is still attached to
-  // the DOM. This prevents the close-effect flushSave from reading a null
-  // editor (Modal returns null when open=false) and wiping the DB content
-  // with an empty string.
+  // 关闭页面（顶部关闭/新建会话）会先卸载本组件：先把编辑器里的最新内容
+  // 快照进 editorHtmlRef 再落库，避免卸载后 flushSave 读到空内容覆盖数据库。
   const handleClose = useCallback(() => {
     editorHtmlRef.current =
       editorRef.current?.innerHTML ?? editorHtmlRef.current;
@@ -527,22 +484,16 @@ export function MemoModal({
     onClose();
   }, [closeMention, flushSave, onClose]);
 
-  // Flush pending save when modal closes. This runs AFTER open has flipped
-  // to false, so the editor may already be unmounted — editorHtmlRef holds
-  // the snapshot captured by handleClose (or the last input) as a fallback.
-  useEffect(() => {
-    if (!open) {
-      void flushSave();
-    }
-  }, [open, flushSave]);
-
+  // 卸载兜底：页面以任何方式消失（关闭、切换项目、退出应用）都补一次落库
+  // 并清掉待触发的自动保存定时器。
   useEffect(() => {
     return () => {
+      void flushSave();
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current);
       }
     };
-  }, []);
+  }, [flushSave]);
 
   const scheduleSave = useCallback(() => {
     if (!selectedMemoId) return;
@@ -771,7 +722,7 @@ export function MemoModal({
       lastSavedContentRef.current = "";
       setEditorContent("");
       if (editorRef.current) editorRef.current.innerHTML = "";
-      void refreshPendingCount();
+      notifyMemosChanged();
       // Focus editor after render
       setTimeout(() => editorRef.current?.focus(), 50);
     } catch {
@@ -795,7 +746,7 @@ export function MemoModal({
       setMemos((prev) =>
         prev.map((m) => (m.memoId === memo.memoId ? updated : m)),
       );
-      void refreshPendingCount();
+      notifyMemosChanged();
     } catch {
       // Ignore
     }
@@ -820,7 +771,7 @@ export function MemoModal({
       if (selectedMemoId === memo.memoId) {
         setSelectedMemoId(remaining[0]?.memoId ?? null);
       }
-      void refreshPendingCount();
+      notifyMemosChanged();
     } catch {
       // Ignore
     }
@@ -1145,16 +1096,8 @@ export function MemoModal({
   };
 
   return (
-    <Modal
-      className="memo-modal"
-      closeLabel={t("memo.close")}
-      closeOnEscape
-      onClose={handleClose}
-      open={open}
-      size="large"
-      title={t("memo.title")}
-    >
-      <div className="memo-modal-layout">
+    <div className="feature-page">
+      <div className="memo-panel-layout">
         <div className="memo-sidebar">
           <div className="memo-sidebar-header">
             <div className="memo-filter-tabs">
@@ -1315,6 +1258,6 @@ export function MemoModal({
         title={t("memo.buildTitle", { defaultValue: "Build from memo" })}
         variant="default"
       />
-    </Modal>
+    </div>
   );
 }

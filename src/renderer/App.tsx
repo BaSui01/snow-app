@@ -10,6 +10,7 @@ import { MainContent } from "./components/MainContent";
 import { RightPanel, type RightPanelRef } from "./components/RightPanel";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
+import { isFeaturePageView } from "./components/featurePages";
 import { NotificationNavigationBridge } from "./components/NotificationNavigationBridge";
 import { RemoteControlBridge } from "./components/RemoteControlBridge";
 import { PluginRuntimeBridge } from "./plugins/PluginRuntimeBridge";
@@ -210,7 +211,7 @@ export const App = (): React.JSX.Element => {
   useTheme();
   useAppControl({ activeDirectory, setActiveMainView });
 
-  // 切换会话时退出非聊天主视图（如团队协作），让主界面跟随会话回到聊天。
+  // 切换会话时退出非聊天主视图（如团队协作、独立页面），让主界面跟随会话回到聊天。
   useEffect(() => {
     const handler = (): void => {
       setActiveMainView("chat");
@@ -220,6 +221,14 @@ export const App = (): React.JSX.Element => {
       window.removeEventListener(CONVERSATION_SELECTED_EVENT, handler);
     };
   }, []);
+
+  // 独立页面（备忘录 / 项目记忆 / 定时任务 / 插件）渲染在主内容区，而右面板全屏
+  // 会把主内容区整体隐藏 —— 打开这些页面时先退出全屏，避免"点了没反应"。
+  useEffect(() => {
+    if (isFeaturePageView(activeMainView) && isRightPanelFullscreen) {
+      setIsRightPanelFullscreen(false);
+    }
+  }, [activeMainView, isRightPanelFullscreen]);
 
   // 监听主进程的关闭请求：所有关闭路径（标题栏按钮、Alt+F4、任务栏）都会被
   // 主进程按「关闭 Snow App 时」设置拦截——退出/最小化已自动执行，仅询问
@@ -690,6 +699,7 @@ export const App = (): React.JSX.Element => {
         <PluginRuntimeBridge activeDirectory={activeDirectory} />
         <div ref={appShellRef} className={shellClasses} style={panelSizeStyle}>
           <TopBar
+            activeView={activeMainView}
             isSidebarCollapsed={isSidebarCollapsed}
             isRightPanelCollapsed={isRightPanelCollapsed}
             activeDirectory={activeDirectory}
@@ -706,6 +716,7 @@ export const App = (): React.JSX.Element => {
             onToggleRightPanelFullscreen={() =>
               setIsRightPanelFullscreen((isFullscreen) => !isFullscreen)
             }
+            onSelectView={setActiveMainView}
             onOpenTerminal={handleOpenTerminal}
             onOpenBrowser={handleOpenBrowser}
             onOpenCodebase={handleOpenCodebase}
@@ -741,6 +752,7 @@ export const App = (): React.JSX.Element => {
               isResizing={activeResizeTarget !== null}
               isFloating={isChatFloatActive}
               isFullscreenPending={isRightPanelFullscreenPending}
+              onActiveDirectoryChange={setActiveDirectory}
               onSelectView={setActiveMainView}
             />
             {!isRightPanelCollapsed && (

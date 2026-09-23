@@ -4,10 +4,11 @@ import { ChatContent } from "./mainContent/ChatContent";
 import { TeamPanel } from "./mainContent/team/TeamPanel";
 import { useI18n } from "../i18n";
 import { useSettingsSearchTarget } from "./sidebar/settingsSearchNavigation";
+import { useConversationNavigation } from "../hooks/useConversationNavigation";
 import type { MainContentView } from "./mainContent/types";
 import type { WorkspaceDirectoryRecord } from "../../preload";
 
-// 所有设置面板均为低频视图，使用 React.lazy 按需加载，
+// 所有设置面板与低频独立页面均使用 React.lazy 按需加载，
 // 避免首屏打包体积过大拖慢启动速度。
 const ApiSettingsTreePanel = lazy(() =>
   import("./sidebar/ApiSettingsTreePanel").then((m) => ({
@@ -136,6 +137,22 @@ const GitSettingsPanel = lazy(() =>
     default: m.GitSettingsPanel,
   })),
 );
+const MemoPanel = lazy(() =>
+  import("./sidebar/MemoPanel").then((m) => ({ default: m.MemoPanel })),
+);
+const ProjectMemoryPanel = lazy(() =>
+  import("./sidebar/ProjectMemoryPanel").then((m) => ({
+    default: m.ProjectMemoryPanel,
+  })),
+);
+const ScheduledTasksPanel = lazy(() =>
+  import("./sidebar/ScheduledTasksPanel").then((m) => ({
+    default: m.ScheduledTasksPanel,
+  })),
+);
+const PluginsPanel = lazy(() =>
+  import("./sidebar/PluginsPanel").then((m) => ({ default: m.PluginsPanel })),
+);
 
 type MainContentProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
@@ -145,6 +162,9 @@ type MainContentProps = {
   isFloating?: boolean;
   /** 右面板拖宽越界待全屏：显示遮罩提醒，拖回可取消 */
   isFullscreenPending?: boolean;
+  onActiveDirectoryChange?: (
+    directory: WorkspaceDirectoryRecord | null,
+  ) => void;
   onSelectView: (view: MainContentView) => void;
 };
 
@@ -166,10 +186,19 @@ export const MainContent = ({
   isResizing = false,
   isFloating = false,
   isFullscreenPending = false,
+  onActiveDirectoryChange,
   onSelectView,
 }: MainContentProps): React.JSX.Element => {
   const { t } = useI18n();
   useSettingsSearchTarget(activeView);
+  const activeDirectoryId = activeDirectory?.directoryId ?? "";
+  // 项目记忆页「来自会话」徽章复用共享的会话跳转管道（校验 → 切项目 → 切视图）。
+  const { navigateToConversation } = useConversationNavigation({
+    activeDirectory: activeDirectory ?? null,
+    onActiveDirectoryChange,
+    onSelectMainView: onSelectView,
+  });
+  const closePanel = (): void => onSelectView("chat");
   return (
     <main className="main-content">
       {isFullscreenPending && (
@@ -198,7 +227,22 @@ export const MainContent = ({
         />
       ) : (
         <Suspense fallback={<LazyPanelFallback />}>
-          {activeView === "api-settings" ? (
+          {activeView === "memo" ? (
+            <MemoPanel directoryId={activeDirectoryId} onClose={closePanel} />
+          ) : activeView === "memory" ? (
+            <ProjectMemoryPanel
+              directoryId={activeDirectoryId}
+              onNavigateToConversation={navigateToConversation}
+              onClose={closePanel}
+            />
+          ) : activeView === "scheduled-tasks" ? (
+            <ScheduledTasksPanel
+              directoryId={activeDirectoryId}
+              directoryPath={activeDirectory?.path ?? ""}
+            />
+          ) : activeView === "plugins" ? (
+            <PluginsPanel onClose={closePanel} />
+          ) : activeView === "api-settings" ? (
             <ApiSettingsTreePanel onClose={() => onSelectView("chat")} />
           ) : activeView === "imagegen-settings" ? (
             // 「图像生成」并入 API 设置页标签页：独立视图 id 作为别名直达该 tab。

@@ -1,6 +1,10 @@
 export type MainContentView =
   | "chat"
   | "team"
+  | "memo"
+  | "memory"
+  | "scheduled-tasks"
+  | "plugins"
   | "api-settings"
   | "imagegen-settings"
   | "image-library"

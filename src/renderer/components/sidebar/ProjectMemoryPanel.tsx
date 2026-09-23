@@ -17,7 +17,6 @@ import { useI18n } from "../../i18n";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { CustomSelect } from "../common/CustomSelect";
 import { HighlightedText } from "../common/HighlightedText";
-import { Modal } from "../common/Modal";
 import type {
   ChatConversationRecord,
   MemoryKind,
@@ -30,22 +29,15 @@ import type {
   ConversationNavigationOutcome,
   ConversationNavigationTarget,
 } from "../../hooks/useConversationNavigation";
+import {
+  consumeProjectMemorySearchSeed,
+  OPEN_PROJECT_MEMORY_PANEL_EVENT,
+} from "./projectMemoryNavigation";
 
 const PAGE_SIZE = 30;
 
 /** 关键词输入的防抖时长：停顿后才发起检索，避免逐字打满 IPC。 */
 const SEARCH_DEBOUNCE_MS = 300;
-
-/**
- * /memory 面板「在项目记忆中定位」请求打开记忆库时携带的载荷：
- * 目标条目标题作为初始检索词。
- */
-export type MemoryModalOpenDetail = {
-  query: string;
-};
-
-/** /memory 面板请求打开记忆库并定位某条记忆的窗口事件。 */
-export const OPEN_MEMORY_MODAL_EVENT = "project-memory:open-modal";
 
 const KIND_KEYS: MemoryKind[] = [
   "fact",
@@ -72,14 +64,8 @@ type MemoryDraft = {
   tags: string;
 };
 
-type MemoryModalProps = {
-  open: boolean;
+type ProjectMemoryPanelProps = {
   directoryId: string;
-  /**
-   * 由 /memory 面板「在项目记忆中定位」传入的初始检索词；
-   * 弹窗打开时把关键词填进搜索框并立即检索。
-   */
-  searchSeed?: string | null;
   /** 跳转到来源会话：校验存在 → 必要时切换项目 → 进入 chat 视图选中该会话。 */
   onNavigateToConversation: (
     target: ConversationNavigationTarget,
@@ -255,16 +241,14 @@ type Selection =
   | { mode: "edit"; record: MemoryRecord };
 
 /**
- * 项目记忆管理弹窗：双栏布局（左侧筛选 + 列表，右侧详情编辑），
- * 参照 MemoModal 的成熟交互。浏览/新建/编辑/删除当前项目的持久记忆。
+ * 项目记忆页面：双栏布局（左侧筛选 + 列表，右侧详情编辑），
+ * 参照备忘录页面的成熟交互。浏览/新建/编辑/删除当前项目的持久记忆。
  */
-export function MemoryModal({
-  open,
+export function ProjectMemoryPanel({
   directoryId,
-  searchSeed,
   onNavigateToConversation,
   onClose,
-}: MemoryModalProps): React.JSX.Element {
+}: ProjectMemoryPanelProps): React.JSX.Element {
   const { t } = useI18n();
   const [memories, setMemories] = useState<MemoryRecord[]>([]);
   const [stats, setStats] = useState<MemoryStats | null>(null);
@@ -377,13 +361,12 @@ export function MemoryModal({
     [directoryId, filterStatus, filterKind, activeQuery],
   );
 
-  // 打开或筛选/关键词变化时重新加载第一页
+  // 进入页面或筛选/关键词变化时重新加载第一页
   useEffect(() => {
-    if (!open) return;
     setSelection({ mode: "none" });
     loadPage(0, false);
     refreshStats();
-  }, [open, loadPage, refreshStats]);
+  }, [loadPage, refreshStats]);
 
   // 切换项目时清空检索与详情选择：记忆按项目隔离，旧关键词在新项目里无意义。
   useEffect(() => {
@@ -396,12 +379,21 @@ export function MemoryModal({
   }, [directoryId]);
 
   // 由 /memory 面板跳转而来：把目标条目标题作为初始检索词直接生效。
-  // 与「打开即加载」分开，避免用旧检索条件多查一次。
+  // 与「打开即加载」分开，避免用旧检索条件多查一次；页面已挂载时监听事件
+  // 即时生效，事件先于挂载到达则由导航模块暂存的检索词在挂载时取走。
   useEffect(() => {
-    if (!open || searchSeed == null) return;
-    setSearchInput(searchSeed);
-    setActiveQuery(searchSeed.trim());
-  }, [open, searchSeed]);
+    const applySeed = (): void => {
+      const seed = consumeProjectMemorySearchSeed();
+      if (seed === null) return;
+      setSearchInput(seed);
+      setActiveQuery(seed.trim());
+    };
+    applySeed();
+    window.addEventListener(OPEN_PROJECT_MEMORY_PANEL_EVENT, applySeed);
+    return () => {
+      window.removeEventListener(OPEN_PROJECT_MEMORY_PANEL_EVENT, applySeed);
+    };
+  }, []);
 
   // 关键词防抖：输入停顿后才发起检索；清空立即回到浏览列表。
   useEffect(() => {
@@ -414,27 +406,11 @@ export function MemoryModal({
     return () => window.clearTimeout(timer);
   }, [searchInput, activeQuery]);
 
-  // 关闭弹窗时重置多选与检索状态（下次打开从干净状态开始）
-  useEffect(() => {
-    if (open) return;
-    setIsMultiSelectMode(false);
-    setSelectedMemoryIds(new Set());
-    setIsBatchDeleteConfirmOpen(false);
-    setSearchInput("");
-    setActiveQuery("");
-    setHitTotal(0);
-    // 来源会话解析缓存同样重置：下次打开按最新标题重新解析
-    setSourceConversations(new Map());
-    resolvedSourceIdsRef.current = new Set();
-    setNavigatingSourceId(null);
-  }, [open]);
-
   // 来源会话解析：对已加载条目收集去重后的 conversationId，一次批量查询
   // （单请求，含子代理 / WorkFlow 节点会话）；未返回的即不可用（会话已删除，
   // 或已归档搬离运行库——归档会话本就不允许直接打开），缓存为 null 供降级
   // 渲染。已解析过的 ID 不重复查询。
   useEffect(() => {
-    if (!open) return;
     const pendingIds = [
       ...new Set(
         memories
@@ -477,7 +453,7 @@ export function MemoryModal({
     return () => {
       cancelled = true;
     };
-  }, [open, memories]);
+  }, [memories]);
 
   const handleListScroll = () => {
     const el = listScrollRef.current;
@@ -1254,16 +1230,8 @@ export function MemoryModal({
   };
 
   return (
-    <Modal
-      className="memo-modal"
-      closeLabel={t("common.close", { defaultValue: "Close" })}
-      closeOnEscape
-      onClose={onClose}
-      open={open}
-      size="large"
-      title={t("memory.modalTitle", { defaultValue: "Project Memory" })}
-    >
-      <div className="memo-modal-layout">
+    <div className="feature-page">
+      <div className="memo-panel-layout">
         {renderSidebar()}
         <div className="memory-content">{renderContent()}</div>
       </div>
@@ -1310,6 +1278,6 @@ export function MemoryModal({
         title={t("memory.deleteTitle", { defaultValue: "Delete memory" })}
         variant="danger"
       />
-    </Modal>
+    </div>
   );
 }

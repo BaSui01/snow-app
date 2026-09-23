@@ -927,7 +927,8 @@ input {
 .sidebar-toggle-btn,
 .new-chat-btn,
 .right-panel-toggle-btn,
-.right-panel-fullscreen-btn {
+.right-panel-fullscreen-btn,
+.feature-page-close-btn {
   position: relative;
   z-index: 2;
   flex-shrink: 0;
@@ -8070,6 +8071,24 @@ input {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* ===== 独立页面（备忘录 / 项目记忆 / 定时任务 / 插件） ===== */
+/* 页面占满主内容区，标题与关闭按钮由 TopBar 承担；内部沿用各页面原有的
+   双栏布局类（.memo-panel-layout / .scheduled-tasks-panel-layout 等）。 */
+.feature-page {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.feature-page > .memo-panel-layout,
+.feature-page > .scheduled-tasks-panel-layout,
+.feature-page > .plugins-panel-body {
+  flex: 1;
+  min-height: 0;
 }
 
 /* Header */
@@ -21095,34 +21114,27 @@ input {
   text-align: center;
 }
 
-/* ===== Memo Modal ===== */
-.memo-modal {
-  width: min(1120px, calc(100vw - 48px));
-  height: min(760px, calc(100vh - 64px));
-}
-
-.memo-modal .app-modal-body {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  padding: 0;
-}
-
-.memo-modal-layout {
+/* ===== Memo Page ===== */
+.memo-panel-layout {
   display: flex;
   width: 100%;
   height: 100%;
   min-height: 0;
+  gap: 10px;
 }
 
+/* 列表栏做成嵌套圆角卡片：背景改用主题表面色（与主岛同源、可融入毛玻璃），
+   避免整高实色块在圆角主岛内形成硬边。 */
 .memo-sidebar {
   width: 340px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border-right: 1px solid var(--border-light);
-  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--surface-island-muted);
+  overflow: hidden;
 }
 
 .memo-sidebar-header {
@@ -21956,34 +21968,42 @@ input {
   color: var(--text-secondary);
 }
 
-.scheduled-tasks-modal {
-  width: min(1120px, calc(100vw - 48px));
-  height: min(760px, calc(100vh - 64px));
+/* 独立页面入口的选中态：对应页面展开时按钮跟随主题高亮 */
+.sidebar-memo-btn.active,
+.sidebar-memory-btn.active,
+.sidebar-scheduled-tasks-btn.active,
+.sidebar-plugins-btn.active {
+  background: var(--bg-active);
+  color: var(--text-primary);
 }
 
-.scheduled-tasks-modal .app-modal-body {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  padding: 0;
+.sidebar-memo-btn.active svg,
+.sidebar-memory-btn.active svg,
+.sidebar-scheduled-tasks-btn.active svg,
+.sidebar-plugins-btn.active svg {
+  color: var(--text-primary);
 }
 
-.scheduled-tasks-modal-layout {
+.scheduled-tasks-panel-layout {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
   width: 100%;
   height: 100%;
   min-height: 0;
   overflow: hidden;
+  gap: 10px;
 }
 
+/* 列表栏做成嵌套圆角卡片（同备忘录页），内容区用与主岛一致的表面色 */
 .scheduled-tasks-sidebar {
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  border-right: 1px solid var(--border-light);
-  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--surface-island-muted);
+  overflow: hidden;
 }
 
 .scheduled-tasks-sidebar-header {
@@ -22370,7 +22390,7 @@ input {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: var(--bg-primary);
+  background: var(--surface-island-strong);
 }
 
 .scheduled-task-details {
@@ -23121,12 +23141,7 @@ input {
 }
 
 @media (max-width: 820px) {
-  .scheduled-tasks-modal {
-    width: calc(100vw - 24px);
-    height: calc(100vh - 32px);
-  }
-
-  .scheduled-tasks-modal-layout {
+  .scheduled-tasks-panel-layout {
     display: flex;
     flex-direction: column;
   }
@@ -23136,8 +23151,6 @@ input {
     height: 42%;
     min-height: 190px;
     max-height: 300px;
-    border-right: 0;
-    border-bottom: 1px solid var(--border-light);
   }
 
   .scheduled-tasks-sidebar-header {
@@ -23181,11 +23194,6 @@ input {
 }
 
 @media (max-width: 560px) {
-  .scheduled-tasks-modal {
-    width: calc(100vw - 12px);
-    height: calc(100vh - 18px);
-  }
-
   .scheduled-tasks-sidebar {
     min-height: 175px;
     max-height: 40%;
@@ -45630,8 +45638,8 @@ pre.file-viewer-code {
 }
 
 /* ============================================================ */
-/* 项目记忆管理弹窗（MemoryModal）：复用 memo-modal 的尺寸与双栏     */
-/* 骨架（.memo-modal / .memo-modal-layout / .memo-sidebar 等），   */
+/* 项目记忆页面（ProjectMemoryPanel）：复用备忘录页面的尺寸与双栏   */
+/* 骨架（.memo-panel-layout / .memo-sidebar 等），                  */
 /* 此处只保留 memory 特有的覆盖与右栏编辑器样式。                  */
 /* ============================================================ */
 
@@ -46800,19 +46808,7 @@ pre.file-viewer-code {
   background: var(--bg-hover);
 }
 
-.plugins-modal {
-  width: min(860px, calc(100vw - 48px));
-  height: min(680px, calc(100vh - 48px));
-}
-
-.plugins-modal .app-modal-body {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  padding: 0;
-}
-
-.plugins-modal-body {
+.plugins-panel-body {
   display: flex;
   width: 100%;
   min-height: 0;
@@ -46820,6 +46816,62 @@ pre.file-viewer-code {
   gap: 10px;
   padding: 12px;
   overflow: hidden;
+}
+
+.plugins-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  flex-shrink: 0;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.plugins-tab {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.plugins-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.plugins-tab.active {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.plugins-tab small {
+  display: inline-flex;
+  min-width: 20px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.plugins-tab.active small {
+  color: var(--text-secondary);
 }
 
 .plugins-toolbar {
@@ -47137,32 +47189,29 @@ pre.file-viewer-code {
   color: var(--text-primary);
 }
 
-.plugin-metadata-modal {
-  width: min(760px, calc(100vw - 48px));
-  height: min(640px, calc(100vh - 48px));
-}
-
-.plugin-metadata-modal .app-modal-body {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  padding: 0;
-}
-
 .plugin-metadata-body {
   display: flex;
   width: 100%;
   min-height: 0;
+  flex: 1;
   flex-direction: column;
   gap: 10px;
-  padding: 12px;
   overflow: hidden;
 }
 
 .plugin-metadata-toolbar {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 10px;
+  flex-shrink: 0;
+}
+
+.plugin-metadata-caption {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .plugin-metadata-search {
@@ -47213,6 +47262,19 @@ pre.file-viewer-code {
   background: var(--accent-amber-bg);
   color: var(--accent-amber-text);
   font-size: 11px;
+}
+
+.plugin-metadata-context-clear {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .plugin-metadata-list {

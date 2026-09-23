@@ -14,12 +14,11 @@ import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "../../i18n";
 import { pluginStore, usePluginStore } from "../../plugins/pluginStore";
 import { runtimeSnapshot } from "../../plugins/runtimeSnapshot";
-import { PluginsModal } from "./PluginsModal";
 import { useChatConversationContext } from "../mainContent/chatMessages";
 import { shortcutEvents } from "../shortcutEvents";
 import { APP_CONTROL_MEMO_CREATED_EVENT } from "../../hooks/useAppControl";
-import { useConversationNavigation } from "../../hooks/useConversationNavigation";
 import { useScheduledTasks } from "../../hooks/useScheduledTasks";
+import { isFeaturePageView, type FeaturePageView } from "../featurePages";
 import { ChatsSection } from "./mainSidebar/ChatsSection";
 import { ProjectsSection } from "./mainSidebar/ProjectsSection";
 import { TeamEntry } from "./mainSidebar/TeamEntry";
@@ -29,13 +28,8 @@ import {
 } from "../mainContent/team/useTeamData";
 import { useCrossProjectNotifications } from "./mainSidebar/useCrossProjectNotifications";
 import { GlobalSearchModal } from "./GlobalSearchModal";
-import { MemoModal } from "./MemoModal";
-import {
-  MemoryModal,
-  OPEN_MEMORY_MODAL_EVENT,
-  type MemoryModalOpenDetail,
-} from "./MemoryModal";
-import { ScheduledTasksModal } from "./ScheduledTasksModal";
+import { MEMOS_CHANGED_EVENT } from "./memoEvents";
+import { OPEN_PROJECT_MEMORY_PANEL_EVENT } from "./projectMemoryNavigation";
 import { UpdateDialog, OPEN_UPDATE_DIALOG_EVENT } from "./UpdateDialog";
 import type { SidebarContentProps } from "./types";
 import type {
@@ -56,6 +50,7 @@ const INITIAL_UPDATE_STATUS: UpdateStatus = {
 };
 
 export function MainSidebarContent({
+  activeMainView,
   activeDirectory,
   onActiveDirectoryChange,
   onSelectMainView,
@@ -68,12 +63,6 @@ export function MainSidebarContent({
     useChatConversationContext();
   const [isSwitchingDirectory, setIsSwitchingDirectory] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [isMemoOpen, setIsMemoOpen] = useState(false);
-  const [isMemoryOpen, setIsMemoryOpen] = useState(false);
-  /** /memory 面板请求「在项目记忆中定位」时携带的检索词。 */
-  const [memorySearchSeed, setMemorySearchSeed] = useState<string | null>(null);
-  const [isScheduledTasksOpen, setIsScheduledTasksOpen] = useState(false);
-  const [isPluginsOpen, setIsPluginsOpen] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
   const [isChatsCollapsed, setIsChatsCollapsed] = useState(false);
   const [pendingMemoCount, setPendingMemoCount] = useState(0);
@@ -127,18 +116,10 @@ export function MainSidebarContent({
     activeDirectory?.path ?? "",
   );
 
-  // 会话跳转管道（校验会话存在 → 必要时切换项目 → 切到 chat 视图）：
-  // 项目记忆弹窗的「来自会话」徽章据此直达来源会话。
-  const { navigateToConversation } = useConversationNavigation({
-    activeDirectory: activeDirectory ?? null,
-    onActiveDirectoryChange,
-    onSelectMainView,
-  });
-
-  // Load the pending memo count for the sidebar badge. It is refreshed
-  // whenever the memo modal closes (the modal calls onPendingCountChange
-  // while open) and once on mount, and whenever the active project changes
-  // since memos are scoped per directory.
+  // Load the pending memo count for the sidebar badge. Sidebar badges come with
+  // the first screen; the memo page itself loads its own list only when opened.
+  // Refreshed on mount, whenever the active project changes (memos are scoped per
+  // directory) and whenever the memo page reports a change.
   const refreshPendingMemoCount = useCallback(() => {
     if (!activeDirectoryId) {
       setPendingMemoCount(0);
@@ -159,13 +140,15 @@ export function MainSidebarContent({
       refreshPendingMemoCount();
     };
     window.addEventListener(APP_CONTROL_MEMO_CREATED_EVENT, handler);
+    window.addEventListener(MEMOS_CHANGED_EVENT, handler);
     return () => {
       window.removeEventListener(APP_CONTROL_MEMO_CREATED_EVENT, handler);
+      window.removeEventListener(MEMOS_CHANGED_EVENT, handler);
     };
   }, [refreshPendingMemoCount]);
 
-  // 加载当前项目的记忆总条数，用于侧边栏徽标：挂载、切换项目时刷新，
-  // 记忆弹窗关闭时也刷新（弹窗内可增删记忆）。
+  // 加载当前项目的记忆总条数，用于侧边栏徽标：挂载、切换项目时刷新
+  // （AI 记忆写工具成功后主进程会广播，命中当前项目时同样刷新）。
   const refreshMemoryCount = useCallback(() => {
     if (!activeDirectoryId) {
       setMemoryCount(0);
@@ -181,18 +164,17 @@ export function MainSidebarContent({
     refreshMemoryCount();
   }, [refreshMemoryCount]);
 
-  // /memory 面板「在项目记忆中定位」：把目标条目措辞作为检索种子打开记忆库。
+  // /memory 面板「在项目记忆中定位」：切到项目记忆页面，
+  // 检索词由记忆页面自行从导航模块取走（事件先于页面挂载到达也不丢失）。
   useEffect(() => {
-    const handler = (event: Event) => {
-      const detail = (event as CustomEvent<MemoryModalOpenDetail>).detail;
-      setMemorySearchSeed(detail?.query ?? "");
-      setIsMemoryOpen(true);
+    const handler = () => {
+      onSelectMainView("memory");
     };
-    window.addEventListener(OPEN_MEMORY_MODAL_EVENT, handler);
+    window.addEventListener(OPEN_PROJECT_MEMORY_PANEL_EVENT, handler);
     return () => {
-      window.removeEventListener(OPEN_MEMORY_MODAL_EVENT, handler);
+      window.removeEventListener(OPEN_PROJECT_MEMORY_PANEL_EVENT, handler);
     };
-  }, []);
+  }, [onSelectMainView]);
 
   // 订阅 AI 记忆写工具的变更广播：memory-save/update/delete 成功后，
   // 主进程带项目 ID 广播，命中当前项目时刷新徽标。
@@ -233,20 +215,38 @@ export function MainSidebarContent({
     };
   }, []);
 
-  // 订阅快捷键事件：Ctrl/Cmd+F 切换搜索 modal，Ctrl/Cmd+B 切换备忘录 modal。
-  // 快捷键引擎通过 shortcutEvents 总线触发，此组件持有 modal open 状态。
+  // 独立页面（备忘录 / 项目记忆 / 定时任务 / 插件）的开关：再次点击同一入口
+  // 收回聊天视图；当前是设置等其他视图时也可直接切换过去。
+  const toggleFeaturePage = useCallback(
+    (view: FeaturePageView): void => {
+      onSelectMainView(activeMainView === view ? "chat" : view);
+    },
+    [activeMainView, onSelectMainView],
+  );
+
+  // 新建会话前收回独立页面：新会话在聊天视图里创建，页面不应继续占用主区域。
+  const handleNewChatFromSidebar = useCallback((): void => {
+    if (isFeaturePageView(activeMainView)) {
+      onSelectMainView("chat");
+    }
+    handleNewChat();
+  }, [activeMainView, handleNewChat, onSelectMainView]);
+
+  // 订阅快捷键事件：Ctrl/Cmd+F 切换搜索面板，Ctrl/Cmd+B 切换备忘录页面。
+  // 快捷键引擎通过 shortcutEvents 总线触发，页面切换状态由父级持有。
   useEffect(() => {
     const unsubSearch = shortcutEvents.on("toggle-search", () => {
       setIsSearchOpen((prev) => !prev);
     });
     const unsubMemo = shortcutEvents.on("toggle-memo", () => {
-      setIsMemoOpen((prev) => !prev);
+      if (!activeDirectoryId) return;
+      toggleFeaturePage("memo");
     });
     return () => {
       unsubSearch();
       unsubMemo();
     };
-  }, []);
+  }, [activeDirectoryId, toggleFeaturePage]);
 
   const handleSearchSelectConversation = (
     conversation: ConversationSearchResult,
@@ -303,7 +303,7 @@ export function MainSidebarContent({
         </button>
         <button
           className="nav-item sidebar-new-chat-btn"
-          onClick={() => handleNewChat()}
+          onClick={handleNewChatFromSidebar}
           title={t("sidebar.newChat", { defaultValue: "New Chat" })}
           type="button"
         >
@@ -311,9 +311,11 @@ export function MainSidebarContent({
           <span>{t("sidebar.newChat", { defaultValue: "New Chat" })}</span>
         </button>
         <button
-          className="nav-item sidebar-memo-btn"
+          className={`nav-item sidebar-memo-btn${
+            activeMainView === "memo" ? " active" : ""
+          }`}
           disabled={!activeDirectoryId}
-          onClick={() => setIsMemoOpen(true)}
+          onClick={() => toggleFeaturePage("memo")}
           title={t("memo.sidebarEntry", { defaultValue: "Memos" })}
           type="button"
         >
@@ -324,9 +326,11 @@ export function MainSidebarContent({
           )}
         </button>
         <button
-          className="nav-item sidebar-memory-btn"
+          className={`nav-item sidebar-memory-btn${
+            activeMainView === "memory" ? " active" : ""
+          }`}
           disabled={!activeDirectoryId}
-          onClick={() => setIsMemoryOpen(true)}
+          onClick={() => toggleFeaturePage("memory")}
           title={t("memory.sidebarEntry", { defaultValue: "Project Memory" })}
           type="button"
         >
@@ -339,8 +343,10 @@ export function MainSidebarContent({
           )}
         </button>
         <button
-          className="nav-item sidebar-scheduled-tasks-btn"
-          onClick={() => setIsScheduledTasksOpen(true)}
+          className={`nav-item sidebar-scheduled-tasks-btn${
+            activeMainView === "scheduled-tasks" ? " active" : ""
+          }`}
+          onClick={() => toggleFeaturePage("scheduled-tasks")}
           title={t("scheduledTask.sidebarEntry", {
             defaultValue: "Scheduled Tasks",
           })}
@@ -357,8 +363,10 @@ export function MainSidebarContent({
           )}
         </button>
         <button
-          className="nav-item sidebar-plugins-btn"
-          onClick={() => setIsPluginsOpen(true)}
+          className={`nav-item sidebar-plugins-btn${
+            activeMainView === "plugins" ? " active" : ""
+          }`}
+          onClick={() => toggleFeaturePage("plugins")}
           title={t("plugins.sidebarEntry", { defaultValue: "Plugins" })}
           type="button"
         >
@@ -463,37 +471,6 @@ export function MainSidebarContent({
         onClose={() => setIsSearchOpen(false)}
         onSelectConversation={handleSearchSelectConversation}
         onSelectDirectory={handleSearchSelectDirectory}
-      />
-      <MemoModal
-        directoryId={activeDirectoryId}
-        open={isMemoOpen}
-        onClose={() => {
-          setIsMemoOpen(false);
-          refreshPendingMemoCount();
-        }}
-        onPendingCountChange={setPendingMemoCount}
-      />
-      <MemoryModal
-        directoryId={activeDirectoryId}
-        open={isMemoryOpen}
-        onClose={() => {
-          setIsMemoryOpen(false);
-          // 清掉检索种子：下次从侧边栏直接打开时不应带着上次的定位词。
-          setMemorySearchSeed(null);
-          refreshMemoryCount();
-        }}
-        onNavigateToConversation={navigateToConversation}
-        searchSeed={memorySearchSeed}
-      />
-      <ScheduledTasksModal
-        directoryId={activeDirectoryId}
-        directoryPath={activeDirectory?.path ?? ""}
-        open={isScheduledTasksOpen}
-        onClose={() => setIsScheduledTasksOpen(false)}
-      />
-      <PluginsModal
-        open={isPluginsOpen}
-        onClose={() => setIsPluginsOpen(false)}
       />
       <UpdateDialog
         open={isUpdateDialogOpen}

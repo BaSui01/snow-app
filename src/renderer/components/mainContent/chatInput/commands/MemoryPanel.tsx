@@ -11,10 +11,7 @@ import { useI18n } from "../../../../i18n";
 import { ConfirmDialog } from "../../../common/ConfirmDialog";
 import { Modal } from "../../../common/Modal";
 import { useChatConversationContext } from "../../chatMessages/components/ChatConversationContext";
-import {
-  type MemoryModalOpenDetail,
-  OPEN_MEMORY_MODAL_EVENT,
-} from "../../../sidebar/MemoryModal";
+import { requestProjectMemoryPanel } from "../../../sidebar/projectMemoryNavigation";
 
 /** 面板一次取回的记忆条数上限：会话级清单通常很小，够用即可。 */
 const PANEL_MEMORY_LIMIT = 200;
@@ -219,10 +216,9 @@ export const MemoryPanel = ({
     });
   };
 
-  /** 跳转到项目记忆库并预填该条标题，让用户在完整面板里继续查看/编辑。 */
+  /** 跳转到项目记忆页面并预填该条标题，让用户在完整页面里继续查看/编辑。 */
   const handleLocateInLibrary = useCallback((title: string): void => {
-    const detail: MemoryModalOpenDetail = { query: title };
-    window.dispatchEvent(new CustomEvent(OPEN_MEMORY_MODAL_EVENT, { detail }));
+    requestProjectMemoryPanel(title);
   }, []);
 
   const confirmDelete = async (): Promise<void> => {

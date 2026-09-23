@@ -1313,16 +1313,12 @@ input {
   transform: rotate(90deg);
 }
 
-/* 子代理列表面板：渲染在 ChatItem 外部（兄弟节点），
-   以树形轴从主会话图标中心引出连接，子代理项平时透明，
-   仅在悬浮/选中时显示小块背景，不占整行背景 */
 .sub-agent-list-panel {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  /* 轴对齐主会话图标中心：8px padding + 11px 半图标 */
   margin: 0 0 4px 19px;
-  padding-left: 19px;
+  padding-left: 3px;
   border-left: 1px solid var(--border-color);
 }
 
@@ -1546,11 +1542,9 @@ input {
   font-weight: 500;
 }
 
-/* 节点内嵌的子代理面板：在 workflow 节点树下再缩进一层，
-   并与上方节点项留出间隙，避免两块背景紧贴 */
 .workflow-node-list-panel .sub-agent-list-panel {
   margin-top: 4px;
-  margin-left: 13px;
+  margin-left: 10px;
 }
 
 .chat-item-content {

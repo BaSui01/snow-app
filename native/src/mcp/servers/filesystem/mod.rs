@@ -37,15 +37,7 @@ const LINE_PREFIX_REGEX: &str = r"^\s*\d+[\s\|:]*";
 /// 行级精确匹配比较：先按原始文本快速判定（无分配），不一致时再按
 /// 「缩进敏感文件仅忽略 CRLF/LF 差异、普通文件压缩全部空白」的规则归一化比较。
 fn line_matches_normalized(file_line: &str, search_line: &str, preserve_indentation: bool) -> bool {
-    if file_line == search_line {
-        return true;
-    }
-    if preserve_indentation {
-        fuzzy_edit::normalize_line_endings_for_match(file_line)
-            == fuzzy_edit::normalize_line_endings_for_match(search_line)
-    } else {
-        fuzzy_edit::normalize_whitespace(file_line) == fuzzy_edit::normalize_whitespace(search_line)
-    }
+    fuzzy_edit::line_matches_normalized(file_line, search_line, preserve_indentation)
 }
 
 pub struct FilesystemService;

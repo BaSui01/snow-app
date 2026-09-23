@@ -58,6 +58,198 @@ fn normalize_for_match(content: &str, preserve_indentation: bool) -> String {
     }
 }
 
+fn is_match_whitespace(character: char) -> bool {
+    character.is_whitespace() || character == '\u{feff}'
+}
+
+fn take_word<'a>(rest: &mut &'a str) -> Option<&'a str> {
+    let remaining = *rest;
+    let word_start = remaining.find(|character| !is_match_whitespace(character))?;
+    let tail = &remaining[word_start..];
+    let end = tail.find(is_match_whitespace).unwrap_or(tail.len());
+    *rest = &tail[end..];
+    Some(&tail[..end])
+}
+
+fn normalize_lines_for_match(lines: &[&str], preserve_indentation: bool) -> String {
+    let capacity = lines.iter().map(|line| line.len()).sum::<usize>() + lines.len();
+    let mut normalized = String::with_capacity(capacity);
+
+    if preserve_indentation {
+        for (index, line) in lines.iter().enumerate() {
+            if index > 0 {
+                normalized.push('\n');
+            }
+            for character in line.chars() {
+                if character != '\r' {
+                    normalized.push(character);
+                }
+            }
+        }
+        return normalized;
+    }
+
+    let mut has_word = false;
+    for line in lines {
+        let mut rest = *line;
+        while let Some(word) = take_word(&mut rest) {
+            if has_word {
+                normalized.push(' ');
+            }
+            normalized.push_str(word);
+            has_word = true;
+        }
+    }
+
+    normalized
+}
+
+pub(crate) fn line_equal_ignoring_whitespace(left: &str, right: &str) -> bool {
+    if left == right {
+        return true;
+    }
+    let mut left_rest = left;
+    let mut right_rest = right;
+    loop {
+        match (take_word(&mut left_rest), take_word(&mut right_rest)) {
+            (None, None) => return true,
+            (Some(left_word), Some(right_word)) if left_word == right_word => {}
+            _ => return false,
+        }
+    }
+}
+
+pub(crate) fn line_equal_ignoring_cr(left: &str, right: &str) -> bool {
+    if left == right {
+        return true;
+    }
+    if !left.as_bytes().contains(&b'\r') && !right.as_bytes().contains(&b'\r') {
+        return false;
+    }
+    left.chars()
+        .filter(|character| *character != '\r')
+        .eq(right.chars().filter(|character| *character != '\r'))
+}
+
+pub(crate) fn line_matches_normalized(
+    file_line: &str,
+    search_line: &str,
+    preserve_indentation: bool,
+) -> bool {
+    if file_line == search_line {
+        return true;
+    }
+    if preserve_indentation {
+        line_equal_ignoring_cr(file_line, search_line)
+    } else {
+        line_equal_ignoring_whitespace(file_line, search_line)
+    }
+}
+
+struct NonSpaceCounts {
+    buckets: [u32; 256],
+    touched: Vec<u16>,
+    latin1_total: u32,
+    other_total: u32,
+}
+
+impl NonSpaceCounts {
+    fn new() -> Self {
+        NonSpaceCounts {
+            buckets: [0; 256],
+            touched: Vec::new(),
+            latin1_total: 0,
+            other_total: 0,
+        }
+    }
+
+    fn clear(&mut self) {
+        for bucket in self.touched.drain(..) {
+            self.buckets[bucket as usize] = 0;
+        }
+        self.latin1_total = 0;
+        self.other_total = 0;
+    }
+
+    fn add_text(&mut self, text: &str) {
+        for character in text.chars() {
+            if is_match_whitespace(character) {
+                continue;
+            }
+            let code = character as u32;
+            if code < 256 {
+                let index = code as usize;
+                if self.buckets[index] == 0 {
+                    self.touched.push(code as u16);
+                }
+                self.buckets[index] += 1;
+                self.latin1_total += 1;
+            } else {
+                self.other_total += 1;
+            }
+        }
+    }
+
+    fn add_lines(&mut self, lines: &[&str]) {
+        for line in lines {
+            self.add_text(line);
+        }
+    }
+
+    fn latin1_distinct(&self) -> Vec<u16> {
+        (0..256u16)
+            .filter(|bucket| self.buckets[*bucket as usize] > 0)
+            .collect()
+    }
+
+    fn distance_to(&self, sample: &NonSpaceCounts, sample_distinct: &[u16]) -> usize {
+        let mut difference: usize = 0;
+        let mut covered: u32 = 0;
+        for &bucket in sample_distinct {
+            let index = bucket as usize;
+            let count = self.buckets[index];
+            covered += count;
+            difference += (count as i64 - sample.buckets[index] as i64).unsigned_abs() as usize;
+        }
+        difference += self.latin1_total.saturating_sub(covered) as usize;
+        difference += (self.other_total as i64 - sample.other_total as i64).unsigned_abs() as usize;
+        difference / 2
+    }
+}
+
+fn joined_byte_len(lines: &[&str]) -> usize {
+    if lines.is_empty() {
+        return 0;
+    }
+    lines.iter().map(|line| line.len()).sum::<usize>() + lines.len() - 1
+}
+
+fn distance_allowance(max_length: usize, threshold: f64) -> usize {
+    if !(threshold > 0.0) {
+        return max_length;
+    }
+    if threshold >= 1.0 {
+        return 0;
+    }
+    (max_length as f64 * (1.0 - threshold)).ceil() as usize
+}
+
+fn tail_non_space_chars(file_lines: &[&str], window_end: usize, window_delta: usize) -> usize {
+    if window_delta == 0 {
+        return 0;
+    }
+    let start = window_end.saturating_sub(window_delta);
+    let end = (window_end + window_delta).min(file_lines.len());
+    let mut count = 0usize;
+    for line in &file_lines[start..end] {
+        count += line
+            .chars()
+            .filter(|character| !is_match_whitespace(*character))
+            .count();
+    }
+    count
+}
+
 fn leading_horizontal_whitespace(line: &str) -> &str {
     let end = line
         .char_indices()
@@ -648,13 +840,18 @@ fn try_substring_replace_once(
         return Ok(None);
     }
 
-    let mut positions: Vec<usize> = Vec::new();
+    let wanted = occurrence.max(1);
+    let mut positions: Vec<usize> = Vec::with_capacity(wanted.min(8));
+    let mut total_matches = 0usize;
     let mut cursor = 0usize;
     while cursor <= content.len() {
         match content[cursor..].find(&adapted_search) {
             Some(relative) => {
                 let absolute = cursor + relative;
-                positions.push(absolute);
+                if positions.len() < wanted {
+                    positions.push(absolute);
+                }
+                total_matches += 1;
                 cursor = absolute + adapted_search.len();
             }
             None => break,
@@ -710,7 +907,7 @@ fn try_substring_replace_once(
         new_content,
         edit_start_line,
         edit_end_line,
-        positions.len(),
+        total_matches,
     )))
 }
 
@@ -743,12 +940,102 @@ fn score_candidate(
         return 0.0;
     }
 
-    let candidate = candidate_lines.join("\n");
-    let normalized_candidate = normalize_for_match(&candidate, preserve_indentation);
+    let normalized_candidate = normalize_lines_for_match(candidate_lines, preserve_indentation);
     if normalized_search == normalized_candidate {
         return 1.0;
     }
     compute_levenshtein_similarity(normalized_search, &normalized_candidate, threshold)
+}
+
+struct WindowScanner<'a> {
+    search_lines: &'a [&'a str],
+    normalized_search: &'a str,
+    search_byte_len: usize,
+    search_counts: NonSpaceCounts,
+    search_distinct: Vec<u16>,
+    first_search_line: &'a str,
+    first_line_counts: NonSpaceCounts,
+    first_line_distinct: Vec<u16>,
+    preserve_indentation: bool,
+    threshold: f64,
+    scratch: NonSpaceCounts,
+}
+
+impl<'a> WindowScanner<'a> {
+    fn new(
+        search_lines: &'a [&'a str],
+        normalized_search: &'a str,
+        search_content: &str,
+        first_search_line: &'a str,
+        preserve_indentation: bool,
+        threshold: f64,
+    ) -> Self {
+        let mut search_counts = NonSpaceCounts::new();
+        search_counts.add_text(search_content);
+        let search_distinct = search_counts.latin1_distinct();
+
+        let mut first_line_counts = NonSpaceCounts::new();
+        first_line_counts.add_text(first_search_line);
+        let first_line_distinct = first_line_counts.latin1_distinct();
+
+        WindowScanner {
+            search_lines,
+            normalized_search,
+            search_byte_len: search_content.len(),
+            search_counts,
+            search_distinct,
+            first_search_line,
+            first_line_counts,
+            first_line_distinct,
+            preserve_indentation,
+            threshold,
+            scratch: NonSpaceCounts::new(),
+        }
+    }
+
+    fn allowance(&self, candidate_lines: &[&str]) -> usize {
+        distance_allowance(
+            joined_byte_len(candidate_lines).max(self.search_byte_len),
+            self.threshold,
+        )
+    }
+
+    fn bound(&mut self, candidate_lines: &[&str]) -> usize {
+        self.scratch.clear();
+        self.scratch.add_lines(candidate_lines);
+        self.scratch
+            .distance_to(&self.search_counts, &self.search_distinct)
+    }
+
+    fn first_line_gate_rejects(&mut self, candidate_first: &str) -> bool {
+        let allowance = distance_allowance(
+            candidate_first.len().max(self.first_search_line.len()),
+            0.5,
+        );
+        self.scratch.clear();
+        self.scratch.add_text(candidate_first);
+        self.scratch
+            .distance_to(&self.first_line_counts, &self.first_line_distinct)
+            > allowance
+    }
+
+    fn similarity(&self, candidate_lines: &[&str]) -> f64 {
+        score_candidate(
+            self.search_lines,
+            self.normalized_search,
+            candidate_lines,
+            self.preserve_indentation,
+            self.threshold,
+        )
+    }
+
+    fn score(&mut self, candidate_lines: &[&str]) -> Option<f64> {
+        let allowance = self.allowance(candidate_lines);
+        if self.bound(candidate_lines) > allowance {
+            return None;
+        }
+        Some(self.similarity(candidate_lines))
+    }
 }
 
 /// 在文件行数组中，按行滑动窗口查找与 searchContent 最相似的区间。
@@ -771,10 +1058,21 @@ pub(crate) fn find_best_line_match_v2(
 
     let threshold = FUZZY_MATCH_THRESHOLD;
     let normalized_search = normalize_for_match(search_content, preserve_indentation);
-    let normalized_first_line = normalize_for_match(
-        search_lines.first().copied().unwrap_or_default(),
+    let first_search_line = match search_lines.first().copied() {
+        Some(line) => line,
+        None => return None,
+    };
+    let normalized_first_line = normalize_for_match(first_search_line, preserve_indentation);
+
+    let mut scanner = WindowScanner::new(
+        &search_lines,
+        &normalized_search,
+        search_content,
+        first_search_line,
         preserve_indentation,
+        threshold,
     );
+
     let window_delta = if base_window >= 10 {
         (base_window / 5).clamp(3, 15)
     } else {
@@ -786,19 +1084,31 @@ pub(crate) fn find_best_line_match_v2(
     let mut best_end = 0usize;
 
     for start_index in 0..=(file_lines.len() - base_window) {
-        let candidate_first = normalize_for_match(file_lines[start_index], preserve_indentation);
-        if compute_levenshtein_similarity(&normalized_first_line, &candidate_first, 0.5) < 0.5 {
-            continue;
+        let candidate_first = file_lines[start_index];
+        if !line_matches_normalized(candidate_first, first_search_line, preserve_indentation) {
+            if scanner.first_line_gate_rejects(candidate_first) {
+                continue;
+            }
+            let normalized_candidate = normalize_for_match(candidate_first, preserve_indentation);
+            if compute_levenshtein_similarity(&normalized_first_line, &normalized_candidate, 0.5)
+                < 0.5
+            {
+                continue;
+            }
         }
 
         let exact_lines = &file_lines[start_index..start_index + base_window];
-        let exact_score = score_candidate(
-            &search_lines,
-            &normalized_search,
-            exact_lines,
-            preserve_indentation,
-            threshold,
-        );
+        let exact_allowance = scanner.allowance(exact_lines);
+        let exact_bound = scanner.bound(exact_lines);
+        let exact_score = if exact_bound > exact_allowance {
+            let slack = tail_non_space_chars(file_lines, start_index + base_window, window_delta);
+            if exact_bound.saturating_sub(slack) > exact_allowance {
+                continue;
+            }
+            0.0
+        } else {
+            scanner.similarity(exact_lines)
+        };
         if exact_score >= 0.9 {
             if exact_score > best_similarity {
                 best_similarity = exact_score;
@@ -818,32 +1128,22 @@ pub(crate) fn find_best_line_match_v2(
                 if base_window > delta {
                     let smaller = base_window - delta;
                     let candidate = &file_lines[start_index..start_index + smaller];
-                    let candidate_score = score_candidate(
-                        &search_lines,
-                        &normalized_search,
-                        candidate,
-                        preserve_indentation,
-                        threshold,
-                    );
-                    if candidate_score > score {
-                        score = candidate_score;
-                        end = start_index + smaller;
+                    if let Some(candidate_score) = scanner.score(candidate) {
+                        if candidate_score > score {
+                            score = candidate_score;
+                            end = start_index + smaller;
+                        }
                     }
                 }
 
                 let larger = base_window + delta;
                 if start_index + larger <= file_lines.len() {
                     let candidate = &file_lines[start_index..start_index + larger];
-                    let candidate_score = score_candidate(
-                        &search_lines,
-                        &normalized_search,
-                        candidate,
-                        preserve_indentation,
-                        threshold,
-                    );
-                    if candidate_score > score {
-                        score = candidate_score;
-                        end = start_index + larger;
+                    if let Some(candidate_score) = scanner.score(candidate) {
+                        if candidate_score > score {
+                            score = candidate_score;
+                            end = start_index + larger;
+                        }
                     }
                 }
 

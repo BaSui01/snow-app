@@ -2,12 +2,13 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
 
 use napi::bindgen_prelude::*;
 use regex::Regex;
 use serde_json::{json, Value};
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt};
 use tokio_util::sync::CancellationToken;
 
 use super::super::service::McpService;
@@ -359,19 +360,41 @@ impl GrepService {
 // ripgrep backend (preferred)
 // ---------------------------------------------------------------------------
 
+static RIPGREP_AVAILABILITY: AtomicU8 = AtomicU8::new(0);
+
 async fn is_ripgrep_available() -> bool {
+    match RIPGREP_AVAILABILITY.load(Ordering::Relaxed) {
+        1 => return true,
+        2 => return false,
+        _ => {}
+    }
+
     let mut cmd = crate::utils::process::cmd_async("rg");
     cmd.arg("--version");
     cmd.stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
 
-    cmd.spawn()
-        .and_then(|mut child| {
+    let available = cmd
+        .spawn()
+        .map(|mut child| {
             let _ = child.start_kill();
-            Ok(())
         })
-        .is_ok()
+        .is_ok();
+
+    RIPGREP_AVAILABILITY.store(if available { 1 } else { 2 }, Ordering::Relaxed);
+    available
+}
+
+fn utf8_safe_cut(bytes: &[u8], max: usize) -> usize {
+    if bytes.len() <= max {
+        return bytes.len();
+    }
+    let mut end = max;
+    while end > 0 && (bytes[end] & 0xc0) == 0x80 {
+        end -= 1;
+    }
+    end
 }
 
 async fn run_ripgrep(
@@ -407,7 +430,7 @@ async fn run_ripgrep(
 
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::null());
 
     let mut child = cmd.spawn().map_err(|e| {
         Error::new(
@@ -416,20 +439,35 @@ async fn run_ripgrep(
         )
     })?;
 
+    let stdout = child.stdout.take();
     let result = tokio::time::timeout(Duration::from_secs(SEARCH_TIMEOUT_SECS), async {
-        let mut stdout = String::new();
-        if let Some(mut stdout_pipe) = child.stdout.take() {
-            stdout_pipe.read_to_string(&mut stdout).await.map_err(|e| {
-                Error::new(
-                    Status::GenericFailure,
-                    format!("Failed to read ripgrep stdout: {e}"),
-                )
-            })?;
+        let mut collected: Vec<u8> = Vec::new();
+        let mut stopped_early = false;
+        if let Some(stdout) = stdout {
+            let limit = (MAX_OUTPUT_LENGTH as u64).saturating_mul(2);
+            let mut reader = tokio::io::BufReader::new(stdout.take(limit));
+            let mut chunk: Vec<u8> = Vec::new();
+            loop {
+                chunk.clear();
+                let read = reader.read_until(b'\n', &mut chunk).await.map_err(|e| {
+                    Error::new(
+                        Status::GenericFailure,
+                        format!("Failed to read ripgrep stdout: {e}"),
+                    )
+                })?;
+                if read == 0 {
+                    break;
+                }
+                collected.extend_from_slice(&chunk);
+                if collected.len() >= MAX_OUTPUT_LENGTH {
+                    stopped_early = true;
+                    break;
+                }
+            }
         }
 
-        if let Some(mut stderr_pipe) = child.stderr.take() {
-            let mut stderr_buf = Vec::new();
-            let _ = stderr_pipe.read_to_end(&mut stderr_buf).await;
+        if stopped_early {
+            let _ = child.start_kill();
         }
 
         let status = child.wait().await.map_err(|e| {
@@ -439,15 +477,15 @@ async fn run_ripgrep(
             )
         })?;
 
-        Ok::<(String, std::process::ExitStatus), Error>((stdout, status))
+        Ok::<(Vec<u8>, std::process::ExitStatus, bool), Error>((collected, status, stopped_early))
     })
     .await;
 
     match result {
-        Ok(Ok((stdout, status))) => {
+        Ok(Ok((bytes, status, stopped_early))) => {
             // rg exits with 1 when no matches found (not an error).
             // rg exits with 2 for actual errors.
-            if !status.success() {
+            if !stopped_early && !status.success() {
                 let code = status.code().unwrap_or(-1);
                 if code == 2 {
                     return Err(Error::new(
@@ -457,17 +495,21 @@ async fn run_ripgrep(
                 }
             }
 
-            let stdout = if stdout.len() > MAX_OUTPUT_LENGTH {
-                stdout[..MAX_OUTPUT_LENGTH].to_string()
-            } else {
-                stdout
-            };
+            let mut bytes = bytes;
+            let cut = utf8_safe_cut(&bytes, MAX_OUTPUT_LENGTH);
+            bytes.truncate(cut);
 
-            Ok(stdout)
+            String::from_utf8(bytes).map_err(|e| {
+                Error::new(
+                    Status::GenericFailure,
+                    format!("Failed to read ripgrep stdout: {e}"),
+                )
+            })
         }
         Ok(Err(e)) => Err(e),
         Err(_) => {
             let _ = child.start_kill();
+            let _ = child.wait().await;
             Err(Error::new(
                 Status::GenericFailure,
                 format!("ripgrep timed out after {SEARCH_TIMEOUT_SECS}s"),
@@ -678,19 +720,31 @@ fn parse_grep_output(output: &str) -> Vec<Value> {
     matches
 }
 
-static GREP_LINE_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
-
 fn parse_grep_line(line: &str) -> Option<Value> {
-    let re = GREP_LINE_RE
-        .get_or_init(|| Regex::new(r"^(.+?):(\d+):(.*)$").expect("invalid grep line regex"));
-    let captures = re.captures(line)?;
-    let file_path = captures.get(1)?.as_str();
-    let line_number: u64 = captures.get(2)?.as_str().parse().ok()?;
-    let content = captures.get(3)?.as_str();
+    let bytes = line.as_bytes();
+    let mut search_from = 1usize;
 
-    Some(json!({
-        "file": file_path,
-        "line": line_number,
-        "content": content,
-    }))
+    while search_from < bytes.len() {
+        let offset = bytes[search_from..].iter().position(|byte| *byte == b':')?;
+        let colon = search_from + offset;
+
+        let digits_start = colon + 1;
+        let mut digits_end = digits_start;
+        while digits_end < bytes.len() && bytes[digits_end].is_ascii_digit() {
+            digits_end += 1;
+        }
+
+        if digits_end > digits_start && digits_end < bytes.len() && bytes[digits_end] == b':' {
+            let line_number: u64 = line[digits_start..digits_end].parse().ok()?;
+            return Some(json!({
+                "file": &line[..colon],
+                "line": line_number,
+                "content": &line[digits_end + 1..],
+            }));
+        }
+
+        search_from = colon + 1;
+    }
+
+    None
 }

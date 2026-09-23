@@ -3,11 +3,11 @@ import type { ChatCommand } from "./types";
 
 export const createClearCommand = (
   onNewChat: () => void,
-  description: string
+  description: string,
 ): ChatCommand => ({
   id: "clear",
   label: "clear",
   description,
   icon: Eraser,
-  execute: onNewChat,
+  execute: () => onNewChat(),
 });

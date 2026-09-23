@@ -756,8 +756,9 @@ export const useConversationManagement = (
       // One-shot target project for the next new-chat send (e.g. a scheduled
       // task firing for its bound project). Consumed by handleSendMessage so
       // the new PENDING session lands in the target project; undefined resets
-      // to the currently active project.
-      ctx.pendingDirectoryIdRef.current = directoryId;
+      // to the currently active project. 空串 / 空白串一律视为未指定，否则会
+      // 覆盖成空 projectId，导致后续所有工具调用被 IPC 拒收。
+      ctx.pendingDirectoryIdRef.current = directoryId?.trim() || undefined;
 
       // 新视图对应全新的 pending 槽位，其队列必然为空：Pending 面板
       // 清空，旧视图/旧会话的排队消息不会渗入新视图。

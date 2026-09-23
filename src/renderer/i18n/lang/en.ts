@@ -2953,6 +2953,8 @@ export const en = {
   "settings.themePresetGruvbox": "Gruvbox",
   "settings.themePresetCyberpunk": "Cyberpunk",
   "settings.themePresetNotion": "Notion",
+  "settings.themePresetCompact": "Horizon",
+  "settings.themePresetTesseract": "Tesseract",
   "settings.themeCustomTitle": "Custom theme",
   "settings.themeCustomInfo":
     "Enable to fine-tune every color. Light and dark palettes are edited separately.",

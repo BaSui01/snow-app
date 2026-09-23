@@ -2808,6 +2808,8 @@ export const zhTW = {
   "settings.themePresetGruvbox": "Gruvbox",
   "settings.themePresetCyberpunk": "賽博朋克",
   "settings.themePresetNotion": "Notion",
+  "settings.themePresetCompact": "無界",
+  "settings.themePresetTesseract": "超立方",
   "settings.themeCustomTitle": "自訂主題",
   "settings.themeCustomInfo":
     "啟用後可調整每一個顏色，淺色和深色調色盤分別編輯。",

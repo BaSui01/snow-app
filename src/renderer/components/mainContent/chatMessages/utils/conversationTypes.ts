@@ -210,6 +210,9 @@ export type SubAgentSessionEvent = {
   conversationId: string;
   agentId: string;
   agentName: string;
+  /** Activation summary supplied by the parent agent; doubles as the
+   *  sub-agent conversation's title and summary (sidebar list label). */
+  summary: string;
   status: "running" | "completed" | "failed" | "cancelled";
   timestamp: number;
   /** The interactionId of the parent tool call that activated this sub-agent.

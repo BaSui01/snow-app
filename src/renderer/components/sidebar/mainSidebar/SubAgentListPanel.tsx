@@ -19,7 +19,7 @@ type SubAgentListPanelProps = {
 
 function renderStatusIcon(
   status: string,
-  isAttentionRequired: boolean
+  isAttentionRequired: boolean,
 ): React.ReactNode {
   if (isAttentionRequired) {
     return <CircleAlert size={11} className="sub-agent-attention" />;
@@ -53,7 +53,7 @@ export function SubAgentListPanel({
 
   const handleItemClick = (
     event: React.MouseEvent,
-    conversationId: string
+    conversationId: string,
   ): void => {
     // 面板是独立交互区域，阻止点击事件继续冒泡
     event.stopPropagation();
@@ -70,15 +70,15 @@ export function SubAgentListPanel({
         const isAttentionRequired =
           attentionRequiredConversationIds?.has(subAgent.conversationId) ??
           false;
+        const summaryLabel = subAgent.summary || subAgent.title;
+        const agentLabel = subAgent.subAgentName;
         return (
           <div
             key={subAgent.conversationId}
             className={`sub-agent-list-item${
               subAgent.conversationId === activeConversationId ? " active" : ""
             }`}
-            onClick={(event) =>
-              handleItemClick(event, subAgent.conversationId)
-            }
+            onClick={(event) => handleItemClick(event, subAgent.conversationId)}
             role="button"
             tabIndex={0}
             onKeyDown={(event) => {
@@ -93,11 +93,14 @@ export function SubAgentListPanel({
               {renderStatusIcon(subAgent.subAgentStatus, isAttentionRequired)}
             </span>
             <span className="sub-agent-list-name-row">
-              <span className="sub-agent-list-name">
-                {subAgent.subAgentName ||
-                  subAgent.title ||
+              <span className="sub-agent-list-name" title={summaryLabel}>
+                {summaryLabel ||
+                  agentLabel ||
                   t("sidebar.subAgent", { defaultValue: "Sub-agent" })}
               </span>
+              {summaryLabel && agentLabel ? (
+                <span className="sub-agent-list-agent">{agentLabel}</span>
+              ) : null}
               {isAttentionRequired && (
                 <span
                   className="chat-item-status-label attention-required"

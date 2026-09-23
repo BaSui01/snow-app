@@ -1391,9 +1391,25 @@ input {
   text-overflow: ellipsis;
 }
 
+/* 子代理类型：摘要之后的次要信息，宽度受限避免挤占摘要 */
+.sub-agent-list-agent {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 46%;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .sub-agent-list-item.active .sub-agent-list-name {
   color: var(--text-primary);
   font-weight: 500;
+}
+
+.sub-agent-list-item.active .sub-agent-list-agent {
+  color: var(--text-secondary);
 }
 
 .chat-item-sub-agent-count {
@@ -19409,6 +19425,19 @@ input {
   padding: 1px 6px;
   border-radius: var(--radius-sm);
   flex-shrink: 0;
+}
+
+/* 卡片头部：摘要之后的代理名（次要信息，宽度受限避免挤占摘要） */
+.tool-call-sub-agent-head-agent {
+  flex-shrink: 0;
+  max-width: 42%;
+  margin-left: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tool-call-sub-agent-body {

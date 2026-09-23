@@ -467,10 +467,9 @@ export const TopBar = ({
     ? conversationDirectoryName
     : activeDirectory?.name;
 
-  // Sub-agent conversations: the header shows the stage name (the prompt
-  // truncated at activation) as the title and the launching parent
-  // conversation as the subtitle — the project name alone says nothing about
-  // what the run was doing.
+  // Sub-agent conversations: the header shows the activation summary as the
+  // title and the launching parent conversation as the subtitle — the project
+  // name alone says nothing about what the run was doing.
   const liveSubAgentEvent = activeConversationId
     ? subAgentSessionEvents[activeConversationId]
     : undefined;

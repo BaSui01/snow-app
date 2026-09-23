@@ -238,8 +238,9 @@ const childStatus = (conversation: SnowRemoteConversation): ThreadStatus => {
 const conversationName = (conversation: SnowRemoteConversation): string =>
   conversation.summary || conversation.title || t("remote.threads.untitled");
 
-/** 子会话展示名：子代理名 / 节点名优先，回落到会话标题与类型默认名。 */
+/** 子会话展示名：子代理摘要优先，其次子代理名 / 节点标题。 */
 const childName = (conversation: SnowRemoteConversation): string =>
+  (conversation.conversationType === "sub_agent" ? conversation.summary : "") ||
   conversation.subAgentName ||
   conversation.title ||
   t(

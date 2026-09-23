@@ -30,7 +30,7 @@ type SubAgentToolCallProps = {
 };
 
 type ParsedSubAgentArgs =
-  | { mode: "activate"; agentId: string; prompt: string }
+  | { mode: "activate"; agentId: string; summary: string; prompt: string }
   | { mode: "continue"; conversationId: string; message: string };
 
 type ParsedSubAgentResult =
@@ -50,7 +50,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const parseArgs = (
   args: string,
-  mode: "activate" | "continue"
+  mode: "activate" | "continue",
 ): ParsedSubAgentArgs | null => {
   try {
     const parsed: unknown = JSON.parse(args);
@@ -71,7 +71,11 @@ const parseArgs = (
     if (!agentId || !prompt) {
       return null;
     }
-    return { mode: "activate", agentId, prompt };
+    // summary 从本版本起为必填参数；历史会话的激活调用可能缺失，
+    // 因此这里按可选解析（缺失时头部回退为代理名）。
+    const summary =
+      typeof parsed.summary === "string" ? parsed.summary.trim() : "";
+    return { mode: "activate", agentId, summary, prompt };
   } catch {
     return null;
   }
@@ -127,6 +131,13 @@ const getPromptPreview = (prompt: string): string =>
     ? `${prompt.slice(0, PROMPT_PREVIEW_MAX)}...`
     : prompt;
 
+const SUMMARY_PREVIEW_MAX = 80;
+
+const getSummaryPreview = (summary: string): string =>
+  summary.length > SUMMARY_PREVIEW_MAX
+    ? `${summary.slice(0, SUMMARY_PREVIEW_MAX)}...`
+    : summary;
+
 type SubAgentToolCallEntry = {
   id: string;
   name: string;
@@ -170,7 +181,7 @@ const getToolSummary = (name: string, args: string): string => {
 };
 
 const extractSubAgentToolCalls = (
-  messages: ChatConversationMessage[] | undefined
+  messages: ChatConversationMessage[] | undefined,
 ): SubAgentToolCallEntry[] => {
   const entries: SubAgentToolCallEntry[] = [];
 
@@ -212,11 +223,11 @@ export const SubAgentToolCall = ({
 
   const parsedArgs = useMemo(
     () => parseArgs(toolCall.arguments, mode),
-    [toolCall.arguments, mode]
+    [toolCall.arguments, mode],
   );
   const parsedResult = useMemo(
     () => parseResult(toolCall.result),
-    [toolCall.result]
+    [toolCall.result],
   );
 
   // Match the sub-agent session event to this tool call so the sub-agent
@@ -237,7 +248,7 @@ export const SubAgentToolCall = ({
         events.find(
           (event) =>
             event.conversationId === parsedArgs.conversationId &&
-            event.parentConversationId === activeConversationId
+            event.parentConversationId === activeConversationId,
         ) ?? null
       );
     }
@@ -245,7 +256,7 @@ export const SubAgentToolCall = ({
     const byInteractionId = events.find(
       (event) =>
         event.toolCallInteractionId === toolCall.interactionId &&
-        event.parentConversationId === activeConversationId
+        event.parentConversationId === activeConversationId,
     );
     if (byInteractionId) {
       return byInteractionId;
@@ -254,7 +265,7 @@ export const SubAgentToolCall = ({
     const byAgentId = events.find(
       (event) =>
         event.agentId === parsedArgs.agentId &&
-        event.parentConversationId === activeConversationId
+        event.parentConversationId === activeConversationId,
     );
     return byAgentId ?? null;
   }, [
@@ -302,7 +313,7 @@ export const SubAgentToolCall = ({
           (message.toolCalls?.length ?? 0) > 0 ||
           message.status === "sent" ||
           message.status === "incomplete" ||
-          message.status === "error")
+          message.status === "error"),
     );
   }, [subSession]);
 
@@ -310,11 +321,11 @@ export const SubAgentToolCall = ({
 
   const toolCallEntries = useMemo(
     () => extractSubAgentToolCalls(subSession?.messages),
-    [subSession?.messages]
+    [subSession?.messages],
   );
 
   const completedCount = toolCallEntries.filter(
-    (e) => e.status === "completed"
+    (e) => e.status === "completed",
   ).length;
   const totalCount = toolCallEntries.length;
 
@@ -328,18 +339,18 @@ export const SubAgentToolCall = ({
       (hookExecutions ?? []).filter(
         (record) =>
           record.hookType === "beforeSubAgentStart" &&
-          (record.executedActions > 0 || record.pendingDecision)
+          (record.executedActions > 0 || record.pendingDecision),
       ),
-    [hookExecutions]
+    [hookExecutions],
   );
   const postHooks = useMemo(
     () =>
       (hookExecutions ?? []).filter(
         (record) =>
           record.hookType === "onSubAgentComplete" &&
-          (record.executedActions > 0 || record.pendingDecision)
+          (record.executedActions > 0 || record.pendingDecision),
       ),
-    [hookExecutions]
+    [hookExecutions],
   );
 
   const effectiveStatus = isError ? "error" : toolCall.status;
@@ -351,11 +362,19 @@ export const SubAgentToolCall = ({
   const agentName =
     parsedResult.type === "success"
       ? parsedResult.agentName
-      : matchedEvent?.agentName ?? argIdentityId;
+      : (matchedEvent?.agentName ?? argIdentityId);
+
+  // 头部摘要：激活调用取 summary 参数；continue 取目标子代理事件里记录的
+  // 激活摘要（应用重启后事件缺失则回退为代理名）。
+  const headSummary =
+    parsedArgs?.mode === "activate"
+      ? parsedArgs.summary
+      : (matchedEvent?.summary ?? "");
+  const headSummaryPreview = getSummaryPreview(headSummary);
 
   const promptPreview = parsedArgs
     ? getPromptPreview(
-        parsedArgs.mode === "continue" ? parsedArgs.message : parsedArgs.prompt
+        parsedArgs.mode === "continue" ? parsedArgs.message : parsedArgs.prompt,
       )
     : "";
 
@@ -376,7 +395,7 @@ export const SubAgentToolCall = ({
   };
 
   const renderActivityIcon = (
-    status: SubAgentToolCallEntry["status"]
+    status: SubAgentToolCallEntry["status"],
   ): React.ReactNode => {
     if (status === "running") {
       return (
@@ -405,7 +424,21 @@ export const SubAgentToolCall = ({
           : t("toolCall.subAgent.name")
       }
       category="agent"
-      displayName={displayAgentName}
+      displayName={
+        headSummary ? (
+          <>
+            {headSummaryPreview}
+            {agentName ? (
+              <span className="tool-call-sub-agent-head-agent">
+                {displayAgentName}
+              </span>
+            ) : null}
+          </>
+        ) : (
+          displayAgentName
+        )
+      }
+      displayNameTitle={headSummary || undefined}
       status={effectiveStatus}
       meta={
         totalCount > 0 ? (
@@ -518,8 +551,8 @@ export const SubAgentToolCall = ({
                   ? t("toolCall.subAgent.resuming")
                   : t("toolCall.subAgent.activating")
                 : isRunning
-                ? t("toolCall.subAgent.status.running")
-                : t("toolCall.subAgent.waiting")}
+                  ? t("toolCall.subAgent.status.running")
+                  : t("toolCall.subAgent.waiting")}
             </span>
           </div>
         ) : null}
@@ -552,8 +585,8 @@ export const SubAgentToolCall = ({
               {isEmptyResultError
                 ? t("toolCall.subAgent.activationFailed")
                 : parsedResult.type === "error"
-                ? parsedResult.message
-                : t("toolCall.subAgent.activationFailed")}
+                  ? parsedResult.message
+                  : t("toolCall.subAgent.activationFailed")}
             </span>
           </div>
         ) : null}

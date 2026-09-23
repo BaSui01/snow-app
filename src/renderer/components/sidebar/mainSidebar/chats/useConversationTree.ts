@@ -205,8 +205,13 @@ export function useConversationTree({
     setSubAgentMap((prev) => {
       let next = prev;
       for (const event of events) {
-        const { parentConversationId, conversationId, agentName, status } =
-          event;
+        const {
+          parentConversationId,
+          conversationId,
+          agentName,
+          summary,
+          status,
+        } = event;
 
         const existing = next[parentConversationId] ?? [];
         const existingIndex = existing.findIndex(
@@ -215,8 +220,8 @@ export function useConversationTree({
 
         const subAgentRecord: ChatConversationRecord = {
           conversationId,
-          title: agentName,
-          summary: "",
+          title: summary || agentName,
+          summary,
           lastMessagePreview: "",
           messageCount: 0,
           model: "",

@@ -1084,6 +1084,7 @@ type SubAgentFinalizerDeps = {
   ctx: ConversationContextValue;
   parentConversationId: string;
   agentId: string;
+  summary: string;
   getAgentName: () => string;
   dirId: string;
   prompt: string;
@@ -1108,6 +1109,7 @@ const createSubAgentFinalizer = (
     ctx,
     parentConversationId,
     agentId,
+    summary: activationSummary,
     getAgentName,
     dirId,
     prompt,
@@ -1184,6 +1186,7 @@ const createSubAgentFinalizer = (
       conversationId: convId,
       agentId,
       agentName: getAgentName(),
+      summary: activationSummary,
       status,
       timestamp: Date.now(),
       toolCallInteractionId,
@@ -1266,6 +1269,7 @@ type SubAgentResumeDeps = {
   subConvId: string;
   parentConversationId: string;
   agentId: string;
+  summary: string;
   getAgentName: () => string;
   subAgentRunLoop: SubAgentRunLoop;
   finalizeSubAgentSession: SubAgentFinalizeFn;
@@ -1284,6 +1288,7 @@ const createSubAgentResume = (
     subConvId,
     parentConversationId,
     agentId,
+    summary: activationSummary,
     getAgentName,
     subAgentRunLoop,
     finalizeSubAgentSession,
@@ -1335,6 +1340,7 @@ const createSubAgentResume = (
       conversationId: subConvId,
       agentId,
       agentName: getAgentName(),
+      summary: activationSummary,
       status: "running",
       timestamp: Date.now(),
     });
@@ -1391,11 +1397,13 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
       typeof parsedArgs.agentId === "string" ? parsedArgs.agentId : "";
     const prompt =
       typeof parsedArgs.prompt === "string" ? parsedArgs.prompt : "";
+    const activationSummary =
+      typeof parsedArgs.summary === "string" ? parsedArgs.summary.trim() : "";
 
-    if (!agentId || !prompt) {
+    if (!agentId || !prompt || !activationSummary) {
       return JSON.stringify({
         success: false,
-        error: "agentId and prompt are required",
+        error: "agentId, summary and prompt are required",
       });
     }
     let subConversationId: string | undefined;
@@ -1437,7 +1445,6 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
       subConversationId = `sub-${Date.now()}-${Math.random()
         .toString(36)
         .slice(2, 10)}`;
-      const title = prompt.length > 80 ? `${prompt.slice(0, 80)}...` : prompt;
 
       // Execute beforeSubAgentStart hooks. If blocked, abort the
       // sub-agent activation immediately with the hook's message.
@@ -1482,7 +1489,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         dirId,
         runtimeConfig.apiProfile,
         runtimeConfig.model,
-        title,
+        activationSummary,
         runtimeConfig.effectiveThinkingStrength || null,
         runtimeConfig.effectiveResponsesFastMode,
       );
@@ -1499,6 +1506,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         conversationId: subConversationId,
         agentId,
         agentName: runtimeConfig.agentName,
+        summary: activationSummary,
         status: "running",
         timestamp: Date.now(),
         toolCallInteractionId,
@@ -1537,6 +1545,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         ctx,
         parentConversationId,
         agentId,
+        summary: activationSummary,
         getAgentName: () => subAgentName ?? agentId,
         dirId,
         prompt,
@@ -1554,6 +1563,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
           subConvId,
           parentConversationId,
           agentId,
+          summary: activationSummary,
           getAgentName: () => subAgentName ?? agentId,
           subAgentRunLoop,
           finalizeSubAgentSession: subAgentFinalizer,
@@ -1819,6 +1829,7 @@ const restoreSubAgentResumer = async (
     ctx,
     parentConversationId,
     agentId,
+    summary: record.summary || record.title,
     getAgentName: () => agentName || agentId,
     dirId,
     // 恢复路径没有激活时的原始 prompt，用会话标题近似（仅 hooks 上下文用）。
@@ -1835,6 +1846,7 @@ const restoreSubAgentResumer = async (
       subConvId: targetConvId,
       parentConversationId,
       agentId,
+      summary: record.summary || record.title,
       getAgentName: () => agentName || agentId,
       subAgentRunLoop,
       finalizeSubAgentSession,

@@ -86,7 +86,7 @@ impl McpService for SubAgentsService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_NAME.to_string(),
-                description: "Activate a sub-agent to handle a complex task independently. The sub-agent runs its own AI loop with a restricted tool set and returns a final summary. Use this when a task requires focused, multi-step execution that benefits from isolation. The sub-agent has NO access to the main conversation history - all context must be provided in the prompt. PARALLEL ACTIVATION: ONE call activates ONE sub-agent; to run several sub-agents side by side, call this tool MULTIPLE TIMES in the SAME batch - one call per sub-agent, each with its own fully self-contained prompt. Sub-agents activated in one batch start concurrently, so do NOT wait for one activation to finish before starting the next independent one."
+                description: "Activate a sub-agent to handle a complex task independently. The sub-agent runs its own AI loop with a restricted tool set and returns a final summary. Use this when a task requires focused, multi-step execution that benefits from isolation. The sub-agent has NO access to the main conversation history - all context must be provided in the prompt. SUMMARY: the required summary field is a short label for THIS activation - it becomes the sub-agent conversation's title and summary (shown in the sidebar sub-agent list), so make it specific enough to tell parallel siblings apart. PARALLEL ACTIVATION: ONE call activates ONE sub-agent; to run several sub-agents side by side, call this tool MULTIPLE TIMES in the SAME batch - one call per sub-agent, each with its own fully self-contained prompt. Sub-agents activated in one batch start concurrently, so do NOT wait for one activation to finish before starting the next independent one."
                     .to_string(),
                 input_schema: json!({
                     "type": "object",
@@ -98,9 +98,13 @@ impl McpService for SubAgentsService {
                         "prompt": {
                             "type": "string",
                             "description": "Complete task description with all required context, file paths, requirements, and constraints. The sub-agent has no access to the main conversation history."
+                        },
+                        "summary": {
+                            "type": "string",
+                            "description": "Short one-line summary of this activation (a few words to one sentence), written in the same language as the user's request. It becomes the sub-agent conversation's title and summary, and is what the user sees in the sidebar sub-agent list - keep several parallel sub-agents clearly distinguishable (e.g. 'Fix sidebar layout', 'Research Electron IPC')."
                         }
                     },
-                    "required": ["agentId", "prompt"]
+                    "required": ["agentId", "summary", "prompt"]
                 }),
             },
             McpTool {

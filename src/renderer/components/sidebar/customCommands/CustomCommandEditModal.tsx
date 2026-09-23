@@ -4,6 +4,7 @@ import type {
   CustomCommandType,
 } from "../../../../preload";
 import { useI18n } from "../../../i18n";
+import { CustomSelect } from "../../common/CustomSelect";
 import { Modal } from "../../common/Modal";
 
 export type CustomCommandDraft = {
@@ -119,26 +120,27 @@ export function CustomCommandEditModal({
             <span>
               {t("settings.customCommandType", { defaultValue: "Type" })}
             </span>
-            <select
+            <CustomSelect
               disabled={isSaving}
-              onChange={(event) =>
-                onChange({
-                  commandType: event.target.value as CustomCommandType,
-                })
+              onChange={(value) =>
+                onChange({ commandType: value as CustomCommandType })
               }
+              options={[
+                {
+                  value: "prompt",
+                  label: t("settings.customCommandTypePrompt", {
+                    defaultValue: "Prompt (send to AI)",
+                  }),
+                },
+                {
+                  value: "bash",
+                  label: t("settings.customCommandTypeBash", {
+                    defaultValue: "Bash (run shell command)",
+                  }),
+                },
+              ]}
               value={draft.commandType}
-            >
-              <option value="prompt">
-                {t("settings.customCommandTypePrompt", {
-                  defaultValue: "Prompt (send to AI)",
-                })}
-              </option>
-              <option value="bash">
-                {t("settings.customCommandTypeBash", {
-                  defaultValue: "Bash (run shell command)",
-                })}
-              </option>
-            </select>
+            />
           </label>
 
           <label className="api-settings-field wide">

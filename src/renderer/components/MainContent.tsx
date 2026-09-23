@@ -43,11 +43,6 @@ const LspSettingsPanel = lazy(() =>
     default: m.LspSettingsPanel,
   })),
 );
-const ImageGenSettingsPanel = lazy(() =>
-  import("./sidebar/ImageGenSettingsPanel").then((m) => ({
-    default: m.ImageGenSettingsPanel,
-  })),
-);
 const ImageLibraryPanel = lazy(() =>
   import("./sidebar/ImageLibraryPanel").then((m) => ({
     default: m.ImageLibraryPanel,
@@ -204,7 +199,11 @@ export const MainContent = ({
           {activeView === "api-settings" ? (
             <ApiSettingsTreePanel onClose={() => onSelectView("chat")} />
           ) : activeView === "imagegen-settings" ? (
-            <ImageGenSettingsPanel onClose={() => onSelectView("chat")} />
+            // 「图像生成」并入 API 设置页标签页：独立视图 id 作为别名直达该 tab。
+            <ApiSettingsTreePanel
+              initialTab="imagegen"
+              onClose={() => onSelectView("chat")}
+            />
           ) : activeView === "image-library" ? (
             <ImageLibraryPanel onClose={() => onSelectView("chat")} />
           ) : activeView === "browser-settings" ? (

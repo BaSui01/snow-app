@@ -77,7 +77,7 @@ const TOOL_OPTIONS: ToolOption[] = [
   },
   {
     value: "websearch-websearch-fetch",
-    labelKey: "settings.privacyToolWebsearch",
+    labelKey: "settings.privacyToolWebfetch",
     defaultLabel: "Web fetch",
   },
 ];
@@ -91,7 +91,7 @@ const SAVE_DEBOUNCE_MS = 600;
 function computePrivacySaveValue(
   form: PrivacySettings,
   lastSaved: PrivacySettings,
-  isLoading: boolean
+  isLoading: boolean,
 ): PrivacySettings | null {
   if (isLoading) {
     return null;
@@ -112,7 +112,7 @@ export function PrivacySettingsPanel({
   const { t } = useI18n();
   const [form, setForm] = useState<PrivacySettings>(DEFAULT_PRIVACY_SETTINGS);
   const [lastSaved, setLastSaved] = useState<PrivacySettings>(
-    DEFAULT_PRIVACY_SETTINGS
+    DEFAULT_PRIVACY_SETTINGS,
   );
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -141,7 +141,7 @@ export function PrivacySettingsPanel({
           ? e.message
           : t("settings.privacyLoadError", {
               defaultValue: "Failed to load privacy settings",
-            })
+            }),
       );
     } finally {
       setIsLoading(false);
@@ -162,7 +162,7 @@ export function PrivacySettingsPanel({
           defaultValue: option.value === "local" ? "Local rules" : "Online API",
         }),
       })),
-    [t]
+    [t],
   );
 
   const updateEnabled = (enabled: boolean): void => {
@@ -211,7 +211,7 @@ export function PrivacySettingsPanel({
           setStatus(
             t("settings.privacySaveSuccess", {
               defaultValue: "Privacy settings saved.",
-            })
+            }),
           );
         }
       } catch (e) {
@@ -221,7 +221,7 @@ export function PrivacySettingsPanel({
               ? e.message
               : t("settings.privacySaveError", {
                   defaultValue: "Failed to save privacy settings",
-                })
+                }),
           );
         }
       } finally {
@@ -230,13 +230,13 @@ export function PrivacySettingsPanel({
         }
       }
     },
-    [t]
+    [t],
   );
 
   // 修改即保存：表单变化后 debounce 保存，卸载时立即冲刷避免丢失。
   const saveValue = useMemo(
     () => computePrivacySaveValue(form, lastSaved, isLoading),
-    [form, lastSaved, isLoading]
+    [form, lastSaved, isLoading],
   );
   useDebouncedAutoSave(saveValue, saveSettings, SAVE_DEBOUNCE_MS);
 
@@ -504,7 +504,7 @@ const normalizePrivacySettings = (value: unknown): PrivacySettings => {
   const tools = Array.isArray(toolResultsSource.tools)
     ? toolResultsSource.tools
         .map((tool) =>
-          typeof tool === "string" ? migratePrivacyToolName(tool.trim()) : ""
+          typeof tool === "string" ? migratePrivacyToolName(tool.trim()) : "",
         )
         .filter((tool) => tool.length > 0)
     : DEFAULT_PRIVACY_SETTINGS.toolResults.tools;

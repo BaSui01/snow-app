@@ -1,7 +1,19 @@
 import { ArrowLeft } from "lucide-react";
 import { useI18n } from "../../i18n";
 import { SETTINGS_ITEMS, SETTINGS_VIEW_IDS } from "./settingsItems";
+import type { MainContentView } from "../mainContent/types";
 import type { SidebarContentProps } from "./types";
+
+/**
+ * 面板内 tab 直达的视图别名：侧栏仍高亮所属设置项。
+ * browser-devices = 浏览器设置面板的「显示尺寸设备」tab；
+ * imagegen-settings = API 设置页的「图像生成」tab。
+ */
+const SETTINGS_VIEW_ALIASES: Partial<Record<MainContentView, MainContentView>> =
+  {
+    "browser-devices": "browser-settings",
+    "imagegen-settings": "api-settings",
+  };
 
 export function SettingsSidebarContent({
   activeMainView,
@@ -40,12 +52,8 @@ export function SettingsSidebarContent({
         <div className="sidebar-section settings-menu-section">
           <div className="settings-list">
             {SETTINGS_ITEMS.map((item) => {
-              // browser-devices（显示尺寸设备）是浏览器设置面板内部的 tab，
-              // 侧栏仍高亮「浏览器设置」条目。
               const activeItemView =
-                activeMainView === "browser-devices"
-                  ? "browser-settings"
-                  : activeMainView;
+                SETTINGS_VIEW_ALIASES[activeMainView] ?? activeMainView;
               const isActive = item.view === activeItemView;
 
               return (

@@ -2076,6 +2076,7 @@ export const en = {
   "settings.codebaseValidationRerankingTopNPositive":
     "Reranking Top N must be greater than 0.",
   "settings.apiTabLlmModels": "LLM models",
+  "settings.apiTabImageModels": "Image models",
   "settings.apiTabDecisionModels": "Decision models",
   "settings.apiTabRetry": "Retry policy",
   "settings.retryPanelTitle": "Retry policy",
@@ -3239,6 +3240,7 @@ export const en = {
   "settings.privacyToolTerminal": "Terminal",
   "settings.privacyToolSearch": "Search",
   "settings.privacyToolWebsearch": "Web search",
+  "settings.privacyToolWebfetch": "Web fetch",
   "settings.privacyToolCodebase": "Codebase",
   "settings.privacyToolBrowser": "Browser",
   "fileMention.loading": "Loading...",

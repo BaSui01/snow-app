@@ -44,7 +44,3 @@ export type ImageGenSettingsValue = {
 
 /** 设置表单（与存储值同构）。 */
 export type ImageGenSettingsForm = ImageGenSettingsValue;
-
-export type ImageGenSettingsPanelProps = {
-  onClose?: () => void;
-};

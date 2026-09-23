@@ -12,7 +12,6 @@ import {
   SearchX,
   Save,
   Trash2,
-  X,
 } from "lucide-react";
 import {
   useCallback,
@@ -58,7 +57,6 @@ import {
 import type {
   ImageGenChannelValue,
   ImageGenProvider,
-  ImageGenSettingsPanelProps,
 } from "./imagegenSettings/types";
 
 /**
@@ -182,7 +180,7 @@ type SizeControlsProps = {
   draft: ImageGenChannelValue;
   onUpdate: <K extends keyof ImageGenChannelValue>(
     field: K,
-    value: ImageGenChannelValue[K]
+    value: ImageGenChannelValue[K],
   ) => void;
   disabled: boolean;
   t: (key: string, options?: { defaultValue?: string }) => string;
@@ -388,20 +386,18 @@ const getModelCapabilities = (modelId: string): string[] => {
   return [];
 };
 
-export function ImageGenSettingsPanel({
-  onClose,
-}: ImageGenSettingsPanelProps): React.JSX.Element {
+export function ImageGenSettingsPanel(): React.JSX.Element {
   const { t } = useI18n();
   const [channels, setChannels] = useState<ImageGenChannelValue[]>([]);
   /** 同一批次生图请求的最大并发数（1-8，立即保存）。 */
   const [maxConcurrent, setMaxConcurrent] = useState(
-    DEFAULT_IMAGE_GEN_MAX_CONCURRENT
+    DEFAULT_IMAGE_GEN_MAX_CONCURRENT,
   );
   /** persistChannels 闭包内读取最新并发数（避免 state 过期）。 */
   const maxConcurrentRef = useRef(DEFAULT_IMAGE_GEN_MAX_CONCURRENT);
   /** 生图请求超时（秒，60-3600，立即保存）。 */
   const [timeoutSecs, setTimeoutSecs] = useState(
-    DEFAULT_IMAGE_GEN_TIMEOUT_SECS
+    DEFAULT_IMAGE_GEN_TIMEOUT_SECS,
   );
   /** persistChannels 闭包内读取最新超时（避免 state 过期）。 */
   const timeoutSecsRef = useRef(DEFAULT_IMAGE_GEN_TIMEOUT_SECS);
@@ -442,7 +438,7 @@ export function ImageGenSettingsPanel({
 
     try {
       const raw = await window.snow.getSystemSettingValue(
-        IMAGE_GEN_SETTING_CODE
+        IMAGE_GEN_SETTING_CODE,
       );
       const settings = readImageGenSettingsJson(raw);
       setChannels(settings.channels);
@@ -456,7 +452,7 @@ export function ImageGenSettingsPanel({
           ? e.message
           : t("settings.imagegenLoadError", {
               defaultValue: "Failed to load image generation settings",
-            })
+            }),
       );
     } finally {
       setIsLoading(false);
@@ -470,7 +466,7 @@ export function ImageGenSettingsPanel({
   /** 将渠道数组写入存储（即时保存，与 API 设置交互一致）。 */
   const persistChannels = async (
     next: ImageGenChannelValue[],
-    successMessage?: string
+    successMessage?: string,
   ): Promise<boolean> => {
     setIsSaving(true);
     setError("");
@@ -482,7 +478,7 @@ export function ImageGenSettingsPanel({
           channels: next,
           maxConcurrentImages: maxConcurrentRef.current,
           timeoutSecs: timeoutSecsRef.current,
-        })
+        }),
       );
       setChannels(next);
       if (successMessage) {
@@ -495,7 +491,7 @@ export function ImageGenSettingsPanel({
           ? e.message
           : t("settings.imagegenSaveError", {
               defaultValue: "Failed to save image generation settings",
-            })
+            }),
       );
       return false;
     } finally {
@@ -558,12 +554,12 @@ export function ImageGenSettingsPanel({
         t("settings.imagegenToggleMissingModel", {
           defaultValue:
             "Configure an API key and a model for this channel before enabling it — the image generation tool only becomes available when a channel has both.",
-        })
+        }),
       );
       return;
     }
     const next = channels.map((item) =>
-      item.id === channel.id ? { ...item, enabled: !item.enabled } : item
+      item.id === channel.id ? { ...item, enabled: !item.enabled } : item,
     );
     await persistChannels(next);
   };
@@ -624,7 +620,7 @@ export function ImageGenSettingsPanel({
             ? buildGeminiSize(parsed.ratio, supportedSizes[0] ?? "")
             : previous.defaultSize,
           defaultQuality: ["", "low", "medium", "high"].includes(
-            previous.defaultQuality
+            previous.defaultQuality,
           )
             ? previous.defaultQuality
             : "",
@@ -642,7 +638,7 @@ export function ImageGenSettingsPanel({
         ...previous,
         defaultSize: caps.sizes.includes(currentSize)
           ? previous.defaultSize
-          : caps.sizes[0] ?? "",
+          : (caps.sizes[0] ?? ""),
         defaultQuality: caps.quality.includes(previous.defaultQuality)
           ? previous.defaultQuality
           : "",
@@ -682,7 +678,7 @@ export function ImageGenSettingsPanel({
           }).replace("{name}", channelLabel(saved))
         : t("settings.imagegenEditChannelSuccess", {
             defaultValue: "Channel {name} updated.",
-          }).replace("{name}", channelLabel(saved))
+          }).replace("{name}", channelLabel(saved)),
     );
     setDraftSaving(false);
     if (ok) {
@@ -709,7 +705,7 @@ export function ImageGenSettingsPanel({
       next,
       t("settings.imagegenDeleteChannelSuccess", {
         defaultValue: "Channel {name} deleted.",
-      }).replace("{name}", label)
+      }).replace("{name}", label),
     );
   };
 
@@ -719,10 +715,11 @@ export function ImageGenSettingsPanel({
       return;
     }
     // 命名规则：*-Copy-n（n 为递增数字，避免与既有渠道名冲突）。
-    const sourceName = channel.name.trim() || defaultChannelName(channel.provider);
+    const sourceName =
+      channel.name.trim() || defaultChannelName(channel.provider);
     const nextName = buildDuplicateName(
       sourceName,
-      channels.map((item) => item.name)
+      channels.map((item) => item.name),
     );
     const cloned: ImageGenChannelValue = {
       ...channel,
@@ -736,17 +733,17 @@ export function ImageGenSettingsPanel({
       next,
       t("settings.imagegenDuplicateChannelSuccess", {
         defaultValue: "Channel {name} duplicated.",
-      }).replace("{name}", channelLabel(cloned))
+      }).replace("{name}", channelLabel(cloned)),
     );
   };
 
   /** 弹窗内草稿字段更新。 */
   const updateDraft = <K extends keyof ImageGenChannelValue>(
     field: K,
-    value: ImageGenChannelValue[K]
+    value: ImageGenChannelValue[K],
   ) => {
     setDraft((previous) =>
-      previous ? { ...previous, [field]: value } : previous
+      previous ? { ...previous, [field]: value } : previous,
     );
   };
 
@@ -977,7 +974,7 @@ export function ImageGenSettingsPanel({
                 onRequestModels={() => void requestDraftModels()}
                 onRetry={() => void requestDraftModels()}
                 knownModels={KNOWN_IMAGE_MODELS.filter(
-                  (entry) => entry.provider === draft.provider
+                  (entry) => entry.provider === draft.provider,
                 )}
                 previewBadgeText={t("settings.imagegenModelPreviewBadge", {
                   defaultValue: "Preview",
@@ -1039,7 +1036,7 @@ export function ImageGenSettingsPanel({
                     <CustomSelect
                       value={
                         openaiStandardCaps(draft.model).sizes.includes(
-                          draft.defaultSize.trim()
+                          draft.defaultSize.trim(),
                         )
                           ? draft.defaultSize.trim()
                           : ""
@@ -1052,7 +1049,7 @@ export function ImageGenSettingsPanel({
                           }),
                         },
                         ...sizePresetOptions(
-                          openaiStandardCaps(draft.model).sizes
+                          openaiStandardCaps(draft.model).sizes,
                         ),
                       ]}
                       onChange={(preset) => {
@@ -1101,7 +1098,7 @@ export function ImageGenSettingsPanel({
                                 defaultValue: "Auto",
                               })
                             : value,
-                      })
+                      }),
                     )}
                     onChange={(value) => updateDraft("defaultQuality", value)}
                     disabled={draftSaving}
@@ -1229,38 +1226,7 @@ export function ImageGenSettingsPanel({
   };
 
   return (
-    <div className="api-settings-page" role="region">
-      <div className="api-settings-page-header">
-        <div className="api-settings-title-group">
-          <strong>
-            {t("settings.imagegenSettings", {
-              defaultValue: "Image generation",
-            })}
-          </strong>
-          <span className="settings-item-description">
-            {t("settings.imagegenDescription", {
-              defaultValue:
-                "Configure independent OpenAI/Gemini channels; the agent picks one per request. Hidden when none configured.",
-            })}
-          </span>
-        </div>
-        {onClose ? (
-          <button
-            type="button"
-            className="icon-btn ghost"
-            onClick={onClose}
-            aria-label={t("settings.closeImagegenSettings", {
-              defaultValue: "Close image generation settings",
-            })}
-            title={t("settings.closeImagegenSettings", {
-              defaultValue: "Close image generation settings",
-            })}
-          >
-            <X size={15} strokeWidth={1.8} />
-          </button>
-        ) : null}
-      </div>
-
+    <div className="api-settings-page imagegen-tab-page" role="region">
       {/* 汇总卡片：参照 API 设置页（渠道数 / 已启用 / 最大并发生成数） */}
       <div className="api-settings-summary-grid imagegen-summary-grid">
         <div className="api-settings-summary-card">

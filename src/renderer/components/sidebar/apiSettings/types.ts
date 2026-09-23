@@ -1,7 +1,12 @@
 import type { ApiConfigRecord } from "../../../../preload";
 
+/** API 配置页标签页：LLM 对话模型 / 决策模型 / 重试策略 / 图像生成。 */
+export type ApiSettingsTab = "llm" | "decision" | "retry" | "imagegen";
+
 export type ApiSettingsPanelProps = {
   onClose?: () => void;
+  /** 初始选中的标签页（绘图面板等外部入口直达指定 tab）。 */
+  initialTab?: ApiSettingsTab;
 };
 
 export type ApiConfigFormData = {

@@ -40938,6 +40938,12 @@ pre.file-viewer-code {
 }
 
 /* ===== 生图设置面板：渠道表格模式（复用 API 设置页交互） ===== */
+/* 嵌入 API 设置页「图像生成」标签页：外层页面负责滚动，避免嵌套滚动容器 */
+.api-settings-page.imagegen-tab-page {
+  overflow: visible;
+  flex: none;
+}
+
 /* 汇总卡片区：与 API 设置页 api-settings-summary-grid 同构。
    4 列：渠道数 / 已启用 / 最大并发生成数 / 生成超时 */
 .imagegen-summary-grid {

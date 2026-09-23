@@ -562,16 +562,16 @@ markdown.use(texmath, {
 });
 
 /**
- * Tiny LRU cache for rendered HTML. Keyed by content string. We cap the
- * number of entries (not byte size) — markdown HTML for chat messages is
- * small enough that 64 entries cover the visible viewport comfortably,
- * and evicting older entries keeps memory bounded across long sessions.
+ * 块级渲染缓存：key 为块文本。主线程只请求“尚未提交过的块”，因此流式
+ * 中间态入缓存没有任何复用价值，只会把上限挤满大字符串——只在非流式
+ * （终态）请求时写入，并跳过超长块。
  *
  * The cache lives in the worker (not the main thread) so that:
  *   - The same worker instance is reused across all MarkdownBlock instances.
  *   - Cache lookups do not require a structured-clone round-trip.
  */
-const CACHE_MAX_ENTRIES = 64;
+const CACHE_MAX_ENTRIES = 256;
+const CACHE_MAX_CHUNK_CHARS = 8_192;
 const renderCache = new Map<string, string>();
 
 const cacheGet = (key: string): string | undefined => {
@@ -595,32 +595,186 @@ const cacheSet = (key: string, value: string): void => {
   renderCache.set(key, value);
 };
 
+/** 块指纹：长度 + 53 位哈希，用于跨帧比对已提交块（碰撞概率可忽略）。 */
+const cyrb53 = (str: string, seed: number): number => {
+  let h1 = 0xdeadbeef ^ seed;
+  let h2 = 0x41c6ce57 ^ seed;
+  for (let i = 0; i < str.length; i += 1) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 =
+    Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^
+    Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 =
+    Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^
+    Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return 4294967296 * (2097151 & h2) + (h1 >>> 0);
+};
+
+const chunkKey = (text: string): string => `${text.length}:${cyrb53(text, 0)}`;
+
+/** 围栏代码块：起始行（可带 info string）与闭合行（行尾仅空白）。 */
+const FENCE_START_RE = /^ {0,3}(`{3,}|~{3,})/;
+const FENCE_CLOSE_RE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
+
+/**
+ * 切点行若以空白开头（缩进续行/缩进代码块）、或以列表/引用/表格/数字等
+ * 标记字符开头，就说明它可能与前文合并解析，或正处在标记输入的中间态
+ * （如列表项 "2" → "2."），不能作为新块开头。判据只看行首字符类别，
+ * 因此内容继续增长不会让已建立的切点回退——已固化块得以稳定复用。
+ */
+const INDENTED_RE = /^[ \t]/;
+const LEADING_MARKER_RE = /^ {0,3}[-*+>|]/;
+const LEADING_DIGIT_RE = /^ {0,3}\d/;
+const HANDOFF_OPEN_COUNT_RE = /<handoff\b/gi;
+const HANDOFF_CLOSE_COUNT_RE = /<\/handoff>/gi;
+
+const isSafeChunkStart = (line: string): boolean =>
+  !INDENTED_RE.test(line) &&
+  !LEADING_MARKER_RE.test(line) &&
+  !LEADING_DIGIT_RE.test(line);
+
+const countDollarPairs = (line: string): number => {
+  let count = 0;
+  let index = line.indexOf("$$");
+  while (index >= 0) {
+    count += 1;
+    index = line.indexOf("$$", index + 2);
+  }
+  return count;
+};
+
+const countMatches = (line: string, re: RegExp): number =>
+  (line.match(re) ?? []).length;
+
+/**
+ * 按“安全边界”把内容切成块：只在空行之后、且前后块不会互相影响时切分，
+ * 使 markdown.render(块1) + … + markdown.render(块n) 与整篇渲染结果一致
+ * （因此流式时只需重算变化的那几块，其余块复用已提交的 DOM）。
+ *
+ * 切分判据（全部满足才切）：
+ *   - 切点前：围栏代码块已闭合、`$$` 成对、<handoff> 标签配对；
+ *   - 切点行：非缩进、非列表/引用/表格/数字起始（见 isSafeChunkStart）。
+ * 行尾空行不进入块文本，保证已固化块的文本（以及由它算出的 key）在内容
+ * 继续增长时保持稳定，不会被反复重建。
+ */
+const splitMarkdownChunks = (content: string): string[] => {
+  const lines = content.split("\n");
+  const chunks: string[] = [];
+  let chunkStart = 0;
+  let lastContentLine = -1;
+  let fence: { marker: string; size: number } | null = null;
+  let dollarCount = 0;
+  let handoffDepth = 0;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+
+    if (fence) {
+      const close = FENCE_CLOSE_RE.exec(line);
+      if (
+        close &&
+        close[1][0] === fence.marker &&
+        close[1].length >= fence.size
+      ) {
+        fence = null;
+      }
+      // 围栏内的行（含空行）都属于代码块内容，同样计入块尾。
+      lastContentLine = i;
+      continue;
+    }
+
+    if (line.trim().length === 0) {
+      continue;
+    }
+
+    if (
+      lastContentLine >= 0 &&
+      i > lastContentLine + 1 &&
+      dollarCount % 2 === 0 &&
+      handoffDepth === 0 &&
+      isSafeChunkStart(line)
+    ) {
+      chunks.push(lines.slice(chunkStart, lastContentLine + 1).join("\n"));
+      chunkStart = i;
+    }
+
+    lastContentLine = i;
+
+    const fenceStart = FENCE_START_RE.exec(line);
+    if (fenceStart) {
+      fence = { marker: fenceStart[1][0], size: fenceStart[1].length };
+      continue;
+    }
+    dollarCount += countDollarPairs(line);
+    handoffDepth +=
+      countMatches(line, HANDOFF_OPEN_COUNT_RE) -
+      countMatches(line, HANDOFF_CLOSE_COUNT_RE);
+  }
+
+  if (lastContentLine >= chunkStart) {
+    chunks.push(lines.slice(chunkStart, lastContentLine + 1).join("\n"));
+  }
+  return chunks;
+};
+
+export type MarkdownChunk = {
+  /** 块文本的稳定指纹，用于跨帧比对已提交块 */
+  key: string;
+  /** 该块的渲染结果 */
+  html: string;
+};
+
 export type MarkdownRenderRequest = {
   /** Correlates the response with the request that triggered it. */
   id: number;
   content: string;
+  /** 调用方已提交的块 key（连续前缀），据此算出需要重建的起点 */
+  knownKeys: string[];
+  /** 流式渲染的结果不写缓存 */
+  streaming: boolean;
 };
 
 export type MarkdownRenderResponse = {
   id: number;
-  html: string;
+  /** 从该索引起的块与 knownKeys 不同，调用方需重建该索引起的节点 */
+  changedFrom: number;
+  /** changedFrom 起（含）的块渲染结果 */
+  chunks: MarkdownChunk[];
 };
 
-const render = (content: string): string => {
-  const cached = cacheGet(content);
+const renderChunk = (text: string, streaming: boolean): string => {
+  const cached = cacheGet(text);
   if (cached !== undefined) {
     return cached;
   }
-  const html = markdown.render(content);
-  cacheSet(content, html);
+  const html = markdown.render(text);
+  if (!streaming && text.length <= CACHE_MAX_CHUNK_CHARS) {
+    cacheSet(text, html);
+  }
   return html;
 };
 
 // Self-listener keeps the worker framework-agnostic and type-safe even when
 // `self` is the global worker scope (no DOM `window` available).
 self.onmessage = (event: MessageEvent<MarkdownRenderRequest>): void => {
-  const { id, content } = event.data;
-  const html = render(content);
-  const response: MarkdownRenderResponse = { id, html };
+  const { id, content, knownKeys, streaming } = event.data;
+  const texts = splitMarkdownChunks(content);
+  const keys = texts.map(chunkKey);
+  const comparable = Math.min(keys.length, knownKeys.length);
+  let changedFrom = 0;
+  while (
+    changedFrom < comparable &&
+    keys[changedFrom] === knownKeys[changedFrom]
+  ) {
+    changedFrom += 1;
+  }
+  const chunks: MarkdownChunk[] = [];
+  for (let i = changedFrom; i < texts.length; i += 1) {
+    chunks.push({ key: keys[i], html: renderChunk(texts[i], streaming) });
+  }
+  const response: MarkdownRenderResponse = { id, changedFrom, chunks };
   (self as unknown as Worker).postMessage(response);
 };

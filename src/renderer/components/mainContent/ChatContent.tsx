@@ -363,7 +363,7 @@ const ChatContentBody = ({
   // 滚动状态的复位与初始定位必须据此判断，否则新容器停在顶部。
   const chatRenderKey = `${activeDirectory?.directoryId ?? "no-project"}:${sessionViewKey}:${newChatGeneration}`;
 
-  // 滚动跟随控制器（钉底资格推导、平滑跟随、翻页恢复、滚动事件 handlers）。
+  // 滚动跟随控制器（钉底资格推导、即时钉底、翻页恢复、滚动事件 handlers）。
   const {
     scrollRef,
     showScrollToBottom,

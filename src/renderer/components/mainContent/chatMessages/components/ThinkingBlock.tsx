@@ -87,6 +87,10 @@ export const ThinkingBlock = ({
   // 保住 grid-template-rows 过渡动画的起始高度，同时释放 worker 内存。
   const [contentMounted, setContentMounted] = useState(false);
   const [previewText, setPreviewText] = useState("");
+  // 内容区离屏期间暂停 MarkdownBlock 的渲染派发：思考内容可能极长，
+  // 用户滚走之后继续重渲染纯属浪费；重新可见时会立即渲染最新一版。
+  const [contentRenderPaused, setContentRenderPaused] = useState(false);
+  const contentRef = useRef<HTMLDivElement | null>(null);
 
   // 用户手动操作过后不再自动收起，避免打断阅读。
   const userInteractedRef = useRef(false);
@@ -142,6 +146,26 @@ export const ThinkingBlock = ({
       }
     };
   }, [isCollapsed]);
+
+  // 内容区可见性：完全离开视口后暂停渲染派发（带 300px 余量，避免滚动
+  // 过程中来回切换），重新进入视口立即恢复。
+  useEffect(() => {
+    const node = contentRef.current;
+    if (!node || typeof IntersectionObserver === "undefined") {
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[entries.length - 1];
+        if (entry) {
+          setContentRenderPaused(!entry.isIntersecting);
+        }
+      },
+      { rootMargin: "300px 0px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
   const flushPreview = useCallback(() => {
     previewTimerRef.current = null;
@@ -301,12 +325,17 @@ export const ThinkingBlock = ({
         }${instantCollapse ? " thinking-block-collapse--instant" : ""}`}
       >
         <div className="thinking-block-collapse-inner">
-          <div className="thinking-block-content" data-quote-source="true">
+          <div
+            className="thinking-block-content"
+            data-quote-source="true"
+            ref={contentRef}
+          >
             {contentMounted && (
               <MarkdownBlock
                 className="thinking-block-body"
                 content={content}
                 streaming={isStreaming}
+                paused={isStreaming && contentRenderPaused}
                 minRenderIntervalMs={
                   isStreaming ? bodyRenderIntervalMs : undefined
                 }

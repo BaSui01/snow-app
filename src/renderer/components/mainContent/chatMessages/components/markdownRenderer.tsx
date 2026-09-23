@@ -11,6 +11,7 @@ import { Download } from "lucide-react";
 import "katex/dist/katex.min.css";
 import MarkdownWorker from "./markdownWorker?worker";
 import type {
+  MarkdownChunk,
   MarkdownRenderRequest,
   MarkdownRenderResponse,
 } from "./markdownWorker";
@@ -63,88 +64,123 @@ const getMarkdownWorker = (): Worker => {
 let sharedRequestId = 0;
 const nextRequestId = (): number => ++sharedRequestId;
 
+/** 一次渲染请求的结果：changedFrom 起（含）的块需要重建。 */
+type RenderedChunks = {
+  changedFrom: number;
+  chunks: MarkdownChunk[];
+};
+
 /**
  * Pending request registry. Keyed by request id so the global worker
  * `onmessage` handler can route the response back to the originating hook.
  * Entries are self-removing on resolve to avoid leaks.
  */
 type PendingEntry = {
-  resolve: (html: string) => void;
+  resolve: (result: RenderedChunks) => void;
 };
 const pendingRequests = new Map<number, PendingEntry>();
 
 const handleWorkerMessage = (
   event: MessageEvent<MarkdownRenderResponse>,
 ): void => {
-  const { id, html } = event.data;
+  const { id, changedFrom, chunks } = event.data;
   const entry = pendingRequests.get(id);
   if (entry) {
     pendingRequests.delete(id);
-    entry.resolve(html);
+    entry.resolve({ changedFrom, chunks });
   }
 };
 
-const dispatchRender = (content: string): Promise<string> => {
+/**
+ * 派发一次渲染。knownKeys 是调用方已提交（DOM 中已就位）的块指纹，worker
+ * 只返回从第一处不同开始的块，调用方据此增量更新；streaming 为 true 时
+ * worker 不写缓存——流式中间态每帧都不同，缓存它们没有任何复用价值。
+ */
+const dispatchRender = (
+  content: string,
+  knownKeys: string[],
+  streaming: boolean,
+): Promise<RenderedChunks> => {
   const worker = getMarkdownWorker();
   const id = nextRequestId();
-  return new Promise<string>((resolve) => {
+  return new Promise<RenderedChunks>((resolve) => {
     pendingRequests.set(id, { resolve });
-    const request: MarkdownRenderRequest = { id, content };
+    const request: MarkdownRenderRequest = {
+      id,
+      content,
+      knownKeys,
+      streaming,
+    };
     worker.postMessage(request);
   });
 };
 
-/**
- * Module-level LRU cache for rendered HTML. The worker already keeps its own
- * cache, but this mirror lets the React layer satisfy cache hits without any
- * postMessage round-trip at all — critical for the fast-path where a memoized
- * MarkdownBlock re-renders with identical content (e.g. a finalized message
- * that re-enters the viewport under content-visibility).
- *
- * Capped at the same size as the worker cache for parity.
- */
-const CACHE_MAX_ENTRIES = 64;
-const htmlCache = new Map<string, string>();
-
-const cacheGet = (key: string): string | undefined => {
-  const value = htmlCache.get(key);
-  if (value !== undefined) {
-    htmlCache.delete(key);
-    htmlCache.set(key, value);
-  }
-  return value;
+/** 主线程侧的 DOM 镜像：已提交块的指纹与对应的顶层节点。 */
+type CommittedChunk = {
+  key: string;
+  nodes: Node[];
 };
 
-const cacheSet = (key: string, value: string): void => {
-  if (htmlCache.size >= CACHE_MAX_ENTRIES) {
-    const oldestKey = htmlCache.keys().next().value;
-    if (oldestKey !== undefined) {
-      htmlCache.delete(oldestKey);
+/**
+ * 终态内容缓存（整份 content → 完整块列表）：只写入非流式（终态）渲染
+ * 结果——流式中间态每帧都不同，存进来只会把上限挤满、徒增 GC（worker
+ * 侧同理）。命中时组件首帧即可同步还原内容，翻页加载旧消息时不会先
+ * 塌成空白再涌入。总量按条数 + 字节双上限控制。
+ */
+const CONTENT_CACHE_MAX_ENTRIES = 24;
+const CONTENT_CACHE_MAX_BYTES = 4 * 1024 * 1024;
+const CONTENT_CACHE_MAX_CONTENT_CHARS = 200_000;
+
+type ContentCacheEntry = { chunks: MarkdownChunk[]; size: number };
+
+const contentCache = new Map<string, ContentCacheEntry>();
+let contentCacheBytes = 0;
+
+const contentCacheGet = (content: string): MarkdownChunk[] | undefined => {
+  const entry = contentCache.get(content);
+  if (!entry) {
+    return undefined;
+  }
+  // LRU：命中后移到队尾。
+  contentCache.delete(content);
+  contentCache.set(content, entry);
+  return entry.chunks;
+};
+
+const contentCacheSet = (content: string, chunks: MarkdownChunk[]): void => {
+  if (!content || content.length > CONTENT_CACHE_MAX_CONTENT_CHARS) {
+    return;
+  }
+  if (contentCache.has(content)) {
+    return;
+  }
+  let size = content.length;
+  for (const chunk of chunks) {
+    size += chunk.key.length + chunk.html.length;
+  }
+  while (
+    contentCache.size >= CONTENT_CACHE_MAX_ENTRIES ||
+    contentCacheBytes + size > CONTENT_CACHE_MAX_BYTES
+  ) {
+    const oldestKey = contentCache.keys().next().value;
+    if (oldestKey === undefined) {
+      break;
+    }
+    const evicted = contentCache.get(oldestKey);
+    contentCache.delete(oldestKey);
+    if (evicted) {
+      contentCacheBytes -= evicted.size;
     }
   }
-  htmlCache.set(key, value);
-};
-
-/**
- * Fetch rendered HTML for `content`, using the main-thread cache first and
- * falling back to the worker. Resolved values are written back into the cache
- * so subsequent identical content is free.
- */
-const renderMarkdown = async (content: string): Promise<string> => {
-  const cached = cacheGet(content);
-  if (cached !== undefined) {
-    return cached;
-  }
-  const html = await dispatchRender(content);
-  cacheSet(content, html);
-  return html;
+  contentCache.set(content, { chunks, size });
+  contentCacheBytes += size;
 };
 
 /**
  * 预热一批 markdown 渲染结果（翻页加载旧消息时使用）。
  *
- * MarkdownBlock 挂载时若缓存未命中，首帧以空 html 渲染，worker 返回后
- * 内容才涌入——新插入消息的高度因此经历「近空白 → 真实高度」的剧变。
+ * MarkdownBlock 挂载时若缓存未命中，首帧为空，内容要等 worker 往返后才
+ * 涌入——新插入消息的高度因此经历「近空白 → 真实高度」的剧变。
  * 分页加载的滚动恢复若在这个窗口期按偏小的 scrollHeight 补偿 scrollTop，
  * 视口位置必然错位，随后涌入的内容再推挤视口，表现为滚动位置跳变。
  * 翻页前先把渲染结果写进缓存，新消息挂载首帧即为最终高度。
@@ -158,13 +194,18 @@ export const prefetchMarkdown = async (
   timeoutMs = 1500,
 ): Promise<void> => {
   const pending = contents.filter(
-    (content) => content && !htmlCache.has(content),
+    (content) => content && !contentCache.has(content),
   );
   if (pending.length === 0) {
     return;
   }
   await Promise.race([
-    Promise.allSettled(pending.map((content) => renderMarkdown(content))),
+    Promise.allSettled(
+      pending.map(async (content) => {
+        const { chunks } = await dispatchRender(content, [], false);
+        contentCacheSet(content, chunks);
+      }),
+    ),
     new Promise<void>((resolve) => {
       setTimeout(resolve, timeoutMs);
     }),
@@ -191,6 +232,42 @@ const findLastNonEmptyTextNode = (root: Node): Text | null => {
   return last;
 };
 
+/** 节点列表中的最后一个非空文本节点（块级渲染下遍历范围只有该块）。 */
+const findLastNonEmptyTextNodeIn = (nodes: readonly Node[]): Text | null => {
+  for (let i = nodes.length - 1; i >= 0; i -= 1) {
+    const found = findLastNonEmptyTextNode(nodes[i]);
+    if (found) {
+      return found;
+    }
+  }
+  return null;
+};
+
+/** 解析单块 HTML：只解析该块片段，不再对整篇内容做 DOM 级解析。 */
+const parseChunkNodes = (html: string): Node[] => {
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  return Array.from(template.content.childNodes);
+};
+
+/**
+ * 新增文本的淡入 span。动画结束后还原为普通文本节点，避免长时间流式
+ * 在 DOM 中累积大量带残留动画的 span。
+ */
+const createFadeSpan = (text: string): HTMLSpanElement => {
+  const span = document.createElement("span");
+  span.className = MD_STREAM_FADE_CLASS;
+  span.textContent = text;
+  span.addEventListener(
+    "animationend",
+    () => {
+      span.replaceWith(document.createTextNode(span.textContent ?? ""));
+    },
+    { once: true },
+  );
+  return span;
+};
+
 /**
  * 流式渲染最小间隔（ms）。
  *
@@ -198,12 +275,22 @@ const findLastNonEmptyTextNode = (root: Node): Text | null => {
  * 替换是流式高 CPU 的主因：若每帧（60fps）渲染一次，几万字内容每秒解析
  * 60 次，worker 与合成器双双打满。降到 10fps 后视觉无感（流式文本本身
  * 就在滚动），解析/布局/合成开销降低约 6 倍。
+ *
+ * 内容按安全边界分块后，每次只需重算变化的尾块，间隔维持不变即可。
  */
 const MIN_RENDER_INTERVAL_MS = 100;
-/** 超长文本（>= 100KB）的流式渲染间隔：一次 markdown-it 全量解析可达
- *  200ms+，10fps 时 worker 依然吃满；3fps 对滚动中的流式文本无感。 */
+/** 超长文本（>= 100KB）的流式渲染间隔：块级增量后单次成本已与增量成
+ *  正比，但固化块较多时切分扫描本身仍是 O(全文)，保留降频兜底。 */
 const LONG_TEXT_THRESHOLD = 100_000;
 const LONG_TEXT_INTERVAL_MS = 300;
+
+/** 一批待提交的渲染结果：changedFrom 起（含）的块需要重建。 */
+type PendingRender = {
+  changedFrom: number;
+  chunks: MarkdownChunk[];
+  /** 该结果是否为流式渲染（流式提交走增量淡入路径） */
+  streaming: boolean;
+};
 
 /**
  * Render streaming markdown with frame-aligned throttling.
@@ -215,31 +302,55 @@ const LONG_TEXT_INTERVAL_MS = 300;
  * dropped. This keeps the visible output responsive without queueing a
  * backlog of stale renders.
  *
- * 在帧合并之上叠加最小间隔节流：距上次实际渲染不足
- * MIN_RENDER_INTERVAL_MS 时继续推迟到下一帧检查（内容持续变化时自然合并
- * 到 10fps），内容稳定后最多多等一个间隔即输出最终结果。
+ * 在帧合并 + 最小间隔节流之上：
+ *   - 请求携带已提交块的指纹，worker 只回传从第一处不同开始的块；
+ *   - paused（内容离屏/折叠）期间不派发，重新可见时立即渲染最新一版。
  *
  * The hook also tracks the latest in-flight request id so that out-of-order
- * worker responses (a slow render for chunk N completing after the fast cached
- * render for chunk N+1) never overwrite newer HTML.
+ * worker responses never overwrite newer results.
  */
-const useMarkdownRender = (content: string, minIntervalMs?: number): string => {
-  // 未显式指定时按内容长度自适应：超长文本自动降频，避免 worker 打满。
-  const effectiveIntervalMs =
-    minIntervalMs ??
-    (content.length >= LONG_TEXT_THRESHOLD
-      ? LONG_TEXT_INTERVAL_MS
-      : MIN_RENDER_INTERVAL_MS);
-  const [html, setHtml] = useState<string>(() => {
+const useMarkdownRender = (
+  content: string,
+  options: {
+    committedRef: { current: CommittedChunk[] };
+    streaming: boolean;
+    paused: boolean;
+    minIntervalMs?: number;
+  },
+): { pending: PendingRender | null; version: number } => {
+  const { committedRef, streaming, paused, minIntervalMs } = options;
+
+  const [state, setState] = useState<{
+    pending: PendingRender | null;
+    version: number;
+  }>(() => {
     // Warm the state synchronously from the cache when possible so that the
     // first paint after mount is not blank while the worker warms up.
-    return htmlCache.get(content) ?? "";
+    const cached = contentCacheGet(content);
+    return cached
+      ? {
+          pending: { changedFrom: 0, chunks: cached, streaming: false },
+          version: 1,
+        }
+      : { pending: null, version: 0 };
   });
 
   // Holds the latest content so the rAF callback always reads the newest
   // value without re-subscribing on every change.
   const contentRef = useRef(content);
   contentRef.current = content;
+  const streamingRef = useRef(streaming);
+  streamingRef.current = streaming;
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
+
+  // 未显式指定时按内容长度自适应：超长文本自动降频，避免 worker 打满。
+  const intervalMsRef = useRef(MIN_RENDER_INTERVAL_MS);
+  intervalMsRef.current =
+    minIntervalMs ??
+    (content.length >= LONG_TEXT_THRESHOLD
+      ? LONG_TEXT_INTERVAL_MS
+      : MIN_RENDER_INTERVAL_MS);
 
   // Tracks the request id of the most recent dispatch so that a late worker
   // response for a previous chunk cannot clobber a fresher one.
@@ -249,51 +360,76 @@ const useMarkdownRender = (content: string, minIntervalMs?: number): string => {
   // Timestamp of the last time a render result was committed to state.
   const lastRenderAtRef = useRef(0);
 
-  useEffect(() => {
-    // Fast path: synchronous cache hit — no frame scheduling needed.
-    const cached = htmlCache.get(content);
-    if (cached !== undefined) {
-      latestRequestIdRef.current = 0;
-      setHtml(cached);
-      return;
-    }
-
+  const scheduleRender = useCallback((): void => {
     if (scheduledFrameRef.current !== null) {
       return;
     }
 
     const runRender = (): void => {
+      scheduledFrameRef.current = null;
+      // 内容不可见时（离屏/折叠）不派发：内容仍在变，等重新可见时渲染
+      // 最新一版即可，期间省下 worker 与主线程的全部开销。
+      if (pausedRef.current) {
+        return;
+      }
       // Throttle: if the minimum interval has not elapsed since the last
       // commit, defer to the next frame and re-check. While content keeps
       // changing (streaming), this naturally coalesces to ~10fps; once it
       // stabilizes, the final render fires within one interval.
-      if (performance.now() - lastRenderAtRef.current < effectiveIntervalMs) {
+      if (performance.now() - lastRenderAtRef.current < intervalMsRef.current) {
         scheduledFrameRef.current = requestAnimationFrame(runRender);
         return;
       }
       const currentContent = contentRef.current;
+      const isStreaming = streamingRef.current;
       const requestId = nextRequestId();
       latestRequestIdRef.current = requestId;
-      void renderMarkdown(currentContent).then((rendered) => {
-        // Drop stale results: if a newer request superseded this one while
-        // the worker was busy, keep the newer one authoritative.
-        if (latestRequestIdRef.current !== requestId) {
-          return;
-        }
-        lastRenderAtRef.current = performance.now();
-        setHtml(rendered);
-      });
+      const knownKeys = committedRef.current.map((chunk) => chunk.key);
+      void dispatchRender(currentContent, knownKeys, isStreaming).then(
+        ({ changedFrom, chunks }) => {
+          // Drop stale results: if a newer request superseded this one while
+          // the worker was busy, keep the newer one authoritative.
+          if (latestRequestIdRef.current !== requestId) {
+            return;
+          }
+          lastRenderAtRef.current = performance.now();
+          if (!isStreaming && changedFrom === 0) {
+            // 终态且拿到完整块列表：缓存下来，供重挂载/翻页首帧同步还原。
+            contentCacheSet(currentContent, chunks);
+          }
+          if (
+            changedFrom >= committedRef.current.length &&
+            chunks.length === 0
+          ) {
+            return;
+          }
+          setState((prev) => ({
+            pending: { changedFrom, chunks, streaming: isStreaming },
+            version: prev.version + 1,
+          }));
+        },
+      );
     };
 
     scheduledFrameRef.current = requestAnimationFrame(runRender);
+  }, [committedRef]);
 
-    return () => {
-      if (scheduledFrameRef.current !== null) {
-        cancelAnimationFrame(scheduledFrameRef.current);
-        scheduledFrameRef.current = null;
-      }
-    };
-  }, [content]);
+  useEffect(() => {
+    if (paused) {
+      return;
+    }
+    // Fast path: synchronous cache hit — no frame scheduling needed.
+    const cached = contentCacheGet(content);
+    if (cached) {
+      latestRequestIdRef.current = 0;
+      setState((prev) => ({
+        pending: { changedFrom: 0, chunks: cached, streaming: false },
+        version: prev.version + 1,
+      }));
+      return;
+    }
+    scheduleRender();
+  }, [content, paused, scheduleRender]);
 
   // Cancel any pending rAF on unmount. The shared worker itself is left
   // alive (singleton) so other MarkdownBlock instances keep their warm cache;
@@ -307,7 +443,7 @@ const useMarkdownRender = (content: string, minIntervalMs?: number): string => {
     };
   }, []);
 
-  return html;
+  return { pending: state.pending, version: state.version };
 };
 
 /** 来源徽章悬停信息（fixed 坐标系 + 摘要数据）。 */
@@ -398,6 +534,121 @@ const isFileLinkHref = (href: string): boolean => {
   );
 };
 
+/**
+ * 把一次渲染结果提交到容器：先与已提交块对齐（key 相同的块保持现有 DOM
+ * 不动，因此同一结果重复提交是幂等的），再只重建真正变化的块。
+ *
+ * 流式时的淡入保持原观感：
+ *   - 尾块仍是"文本继续增长"时复用它的 DOM，只把新增文本包成淡入 span；
+ *   - 否则重建该块并让新的最后一段文本整体淡入。
+ */
+const commitMarkdownChunks = (
+  container: HTMLElement,
+  committed: CommittedChunk[],
+  pending: PendingRender,
+  lastTailTextRef: { current: string },
+): void => {
+  const { changedFrom, chunks, streaming } = pending;
+
+  // 与已提交块对齐：worker 判定的变化点之后，仍可能有一批 key 相同的块
+  // （例如缓存命中后的重复提交），这些块无需重建。
+  let index = Math.min(changedFrom, committed.length);
+  let cursor = 0;
+  while (
+    cursor < chunks.length &&
+    index < committed.length &&
+    committed[index].key === chunks[cursor].key
+  ) {
+    index += 1;
+    cursor += 1;
+  }
+
+  // 尾块复用：唯一要替换的旧块就是尾块，且新尾块的最后一个文本是旧文本的
+  // 延长——保持旧 DOM 稳定，只追加新增文本（流式最常见的路径）。文本不
+  // 连续或结构变化时落到下方重建路径。
+  const tailIndex = committed.length - 1;
+  const tailNodes = tailIndex >= 0 ? committed[tailIndex].nodes : [];
+  let reuseTail = false;
+  let appendText = "";
+  let parsedTailNodes: Node[] | null = null;
+  if (
+    streaming &&
+    chunks.length === 1 &&
+    cursor === 0 &&
+    index === tailIndex &&
+    tailNodes.length > 0 &&
+    lastTailTextRef.current !== ""
+  ) {
+    parsedTailNodes = parseChunkNodes(chunks[0].html);
+    const tailText =
+      findLastNonEmptyTextNodeIn(parsedTailNodes)?.nodeValue ?? "";
+    if (tailText.startsWith(lastTailTextRef.current)) {
+      reuseTail = true;
+      appendText = tailText.slice(lastTailTextRef.current.length);
+      lastTailTextRef.current = tailText;
+      committed[tailIndex] = { key: chunks[0].key, nodes: tailNodes };
+    }
+  }
+
+  // 删除需要重建的旧块节点。
+  const removeFrom = reuseTail ? committed.length : index;
+  for (let i = committed.length - 1; i >= removeFrom; i -= 1) {
+    for (const node of committed[i].nodes) {
+      node.parentNode?.removeChild(node);
+    }
+  }
+  if (committed.length > removeFrom) {
+    committed.length = removeFrom;
+  }
+
+  if (reuseTail) {
+    if (appendText.trim().length > 0) {
+      const domLastText = findLastNonEmptyTextNodeIn(tailNodes);
+      if (domLastText?.parentNode) {
+        domLastText.parentNode.insertBefore(
+          createFadeSpan(appendText),
+          domLastText.nextSibling,
+        );
+      }
+    }
+  } else {
+    for (let i = cursor; i < chunks.length; i += 1) {
+      const nodes =
+        parsedTailNodes && i === cursor
+          ? parsedTailNodes
+          : parseChunkNodes(chunks[i].html);
+      const fragment = document.createDocumentFragment();
+      for (const node of nodes) {
+        fragment.appendChild(node);
+      }
+      container.appendChild(fragment);
+      for (const node of nodes) {
+        // favicon 判定只针对新增节点，且必须在插入文档后（缓存命中的
+        // 图片插入后才 complete，可同步确定，不再每次扫描整个容器）。
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          bindFaviconFallback(node as HTMLElement);
+        }
+      }
+      committed.push({ key: chunks[i].key, nodes });
+    }
+
+    // 新插入内容里最后一段文本整体淡入（与整块重建时的观感一致）。
+    if (streaming && chunks.length > cursor) {
+      const lastNodes = committed[committed.length - 1]?.nodes ?? [];
+      const lastText = findLastNonEmptyTextNodeIn(lastNodes);
+      if (lastText) {
+        const text = lastText.nodeValue ?? "";
+        lastText.parentNode?.replaceChild(createFadeSpan(text), lastText);
+        lastTailTextRef.current = text;
+      }
+    }
+  }
+
+  if (!streaming) {
+    lastTailTextRef.current = "";
+  }
+};
+
 export const MarkdownBlock = memo(
   ({
     className,
@@ -405,6 +656,7 @@ export const MarkdownBlock = memo(
     streaming = false,
     onFileLinkClick,
     minRenderIntervalMs,
+    paused = false,
   }: {
     className: string;
     content: string;
@@ -413,11 +665,22 @@ export const MarkdownBlock = memo(
     onFileLinkClick?: (href: string) => void;
     /** 流式渲染最小间隔（ms），覆盖默认 100ms。思考过程等幕后内容可传更大值。 */
     minRenderIntervalMs?: number;
+    /** 内容不可见（离屏/折叠）时暂停派发渲染：内容照常记录，重新可见后立即渲染最新版。 */
+    paused?: boolean;
   }): React.JSX.Element => {
-    const html = useMarkdownRender(content, minRenderIntervalMs);
     const { t } = useI18n();
 
     const containerRef = useRef<HTMLDivElement | null>(null);
+    // 已提交块（主线程侧 DOM 镜像）：随提交更新，供下一次请求声明已就位的块。
+    const committedRef = useRef<CommittedChunk[]>([]);
+    // 尾块最后一个非空文本节点的文本：流式增量追加时判断新文本是否为旧文本的延长。
+    const lastTailTextRef = useRef("");
+    const { pending, version } = useMarkdownRender(content, {
+      committedRef,
+      streaming,
+      paused,
+      minIntervalMs: minRenderIntervalMs,
+    });
 
     // Markdown 图片灯箱：点击图片在放大视图中查看（复用生图工具灯箱样式）。
     const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
@@ -482,71 +745,21 @@ export const MarkdownBlock = memo(
       return () => window.removeEventListener("keydown", onKeyDown);
     }, [lightboxSrc]);
 
-    // 流式柔和渐显：接管 innerHTML，把每帧新增的文本包进淡入 span。
-    // 与整块替换（打字机式跳变）不同，旧文字保持原 DOM 稳定不动，只有
-    // 新增部分做 opacity 动画从透明浮现。
-    //
-    // 文本层面前缀匹配：流式内容几乎总是"最后一个文本节点持续增长"
-    // （段落/代码块内），命中后只增量插入 span；markdown 结构变化
-    // （新标题、代码块开始、标记闭合等）时回退整块重建，新最后文本
-    // 整体淡入。streaming 结束时内容已完整渲染，不重建 DOM，让最后一
-    // 段动画自然完成（停止/结束时文字不会突然跳成正色）。
-    const lastStreamTextRef = useRef("");
-    const lastHtmlRef = useRef("");
+    // 块级增量提交：只重建变化的块，已提交块的 DOM 保持稳定不动；
+    // 流式新增文本的柔和渐显与结构变化时的整体淡入在提交内完成。
+    // 同一结果重复提交是幂等的（见 commitMarkdownChunks）。
     useLayoutEffect(() => {
       const node = containerRef.current;
-      if (!node || !html) {
+      if (!node || !pending) {
         return;
       }
-
-      if (!streaming) {
-        lastStreamTextRef.current = "";
-        if (html !== lastHtmlRef.current) {
-          node.innerHTML = html;
-          lastHtmlRef.current = html;
-        }
-        return;
-      }
-
-      const doc = new DOMParser().parseFromString(html, "text/html");
-      const newLastText = findLastNonEmptyTextNode(doc.body);
-      if (!newLastText) {
-        node.innerHTML = html;
-        lastHtmlRef.current = html;
-        return;
-      }
-      const fullText = newLastText.nodeValue ?? "";
-      const prevText = lastStreamTextRef.current;
-
-      // 首帧或结构变化：整块重建，并让新最后文本整体淡入。
-      if (!prevText || !fullText.startsWith(prevText)) {
-        node.innerHTML = html;
-        lastHtmlRef.current = html;
-        lastStreamTextRef.current = fullText;
-        const domLastText = findLastNonEmptyTextNode(node);
-        if (domLastText) {
-          const span = document.createElement("span");
-          span.className = MD_STREAM_FADE_CLASS;
-          span.textContent = domLastText.nodeValue ?? "";
-          domLastText.parentNode?.replaceChild(span, domLastText);
-        }
-        return;
-      }
-
-      // 尾部持续增长：在容器当前最后一个文本节点后追加淡入 span。
-      const newPart = fullText.slice(prevText.length);
-      lastStreamTextRef.current = fullText;
-      if (newPart.trim().length === 0) {
-        return;
-      }
-      const domLastText = findLastNonEmptyTextNode(node);
-      if (domLastText?.parentNode) {
-        const span = document.createElement("span");
-        span.className = MD_STREAM_FADE_CLASS;
-        span.textContent = newPart;
-        domLastText.parentNode.insertBefore(span, domLastText.nextSibling);
-      }
-    }, [html, streaming]);
+      commitMarkdownChunks(
+        node,
+        committedRef.current,
+        pending,
+        lastTailTextRef,
+      );
+    }, [pending]);
 
     // During streaming, skip all mermaid operations entirely — only the code
     // view is shown. Once streaming ends (`streaming` flips to false), both
@@ -554,38 +767,30 @@ export const MarkdownBlock = memo(
     // avoids any flicker from repeatedly attempting to parse incomplete code.
     //
     // Phase 1 — synchronous cache injection (before browser paint) so that
-    // already-rendered diagrams appear instantly after innerHTML replacement.
+    // already-rendered diagrams appear right after a chunk commit.
     useLayoutEffect(() => {
       if (streaming) return;
       const node = containerRef.current;
-      if (node && html) {
+      if (node && version > 0) {
         injectCachedDiagrams(node);
       }
-    }, [html, streaming]);
+    }, [version, streaming]);
 
     // Phase 2 — async rendering of uncached diagrams, debounced via rAF.
     useEffect(() => {
       if (streaming) return;
       const node = containerRef.current;
-      if (!node || !html) return;
+      if (!node || version === 0) return;
 
       const frame = requestAnimationFrame(() => {
         void renderMermaidBlocks(node);
       });
       return () => cancelAnimationFrame(frame);
-    }, [html, streaming]);
+    }, [version, streaming]);
 
     // Attach the global theme-change observer once for the whole app so that
     // diagrams re-render when the user switches between light/dark.
     useEffect(() => watchThemeForMermaid(), []);
-
-    // favicon 状态在 paint 前确定，缓存命中同步判定，避免首帧闪烁。
-    useLayoutEffect(() => {
-      const node = containerRef.current;
-      if (node && html) {
-        bindFaviconFallback(node);
-      }
-    }, [html]);
 
     const handleClick = useCallback(
       (e: React.MouseEvent<HTMLDivElement>) => {

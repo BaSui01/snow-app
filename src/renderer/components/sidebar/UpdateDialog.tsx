@@ -58,9 +58,7 @@ const htmlToMarkdown = (html: string): string => {
       code.replaceWith(`\`${text}\``);
     }
   }
-  for (const strong of Array.from(
-    body.querySelectorAll("strong, b")
-  )) {
+  for (const strong of Array.from(body.querySelectorAll("strong, b"))) {
     const text = strong.textContent ?? "";
     if (text) {
       strong.replaceWith(`**${text}**`);
@@ -102,12 +100,13 @@ export function UpdateDialog({
   onClose,
 }: UpdateDialogProps): React.JSX.Element {
   const { locale, t } = useI18n();
-  const [updateStatus, setUpdateStatus] =
-    useState<UpdateStatus>(INITIAL_UPDATE_STATUS);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>(
+    INITIAL_UPDATE_STATUS,
+  );
   const [currentVersion, setCurrentVersion] = useState("");
   // 发行说明语言：默认按应用语言选择（中文环境优先中文翻译）
   const [notesLang, setNotesLang] = useState<"zh" | "en">(() =>
-    locale.startsWith("zh") ? "zh" : "en"
+    locale.startsWith("zh") ? "zh" : "en",
   );
 
   useEffect(() => {
@@ -195,10 +194,8 @@ export function UpdateDialog({
                     ? "settings.updateDialogRetry"
                     : "settings.updateDialogDownload",
                   {
-                    defaultValue: error
-                      ? "Retry download"
-                      : "Download now",
-                  }
+                    defaultValue: error ? "Retry download" : "Download now",
+                  },
                 )}
               </span>
             </button>
@@ -218,51 +215,40 @@ export function UpdateDialog({
             </button>
           )}
           {showProgress && (
-            <span className="update-dialog-background-hint">
-              <LoaderCircle
-                size={13}
-                strokeWidth={1.8}
-                className="tool-call-icon-spinning"
-                aria-hidden="true"
-              />
-              <span>
+            <>
+              <div className="update-dialog-progress" role="status">
+                <LoaderCircle
+                  size={13}
+                  strokeWidth={1.8}
+                  className="tool-call-icon-spinning update-dialog-progress-spinner"
+                  aria-hidden="true"
+                />
+                <span className="update-dialog-progress-label">
+                  {t("settings.updateDialogDownloading", {
+                    values: { percent: progress },
+                    defaultValue: `Downloading ${progress}%`,
+                  })}
+                </span>
+                <div className="update-dialog-progress-bar">
+                  <div
+                    className="update-dialog-progress-fill"
+                    style={{
+                      width: `${Math.min(100, Math.max(0, progress))}%`,
+                    }}
+                  />
+                </div>
+              </div>
+              <span className="update-dialog-background-hint">
                 {t("settings.updateDialogDownloadingHint", {
                   defaultValue:
                     "Downloading continues in the background. You can close this window.",
                 })}
               </span>
-            </span>
+            </>
           )}
         </>
       }
     >
-      {showProgress && (
-        <div className="update-dialog-progress" role="status">
-          <div className="update-dialog-progress-info">
-            <LoaderCircle
-              size={13}
-              strokeWidth={1.8}
-              className="tool-call-icon-spinning"
-              aria-hidden="true"
-            />
-            <span>
-              {t("settings.updateDialogDownloading", {
-                values: { percent: progress },
-                defaultValue: `Downloading ${progress}%`,
-              })}
-            </span>
-          </div>
-          <div className="update-dialog-progress-bar">
-            <div
-              className="update-dialog-progress-fill"
-              style={{
-                width: `${Math.min(100, Math.max(0, progress))}%`,
-              }}
-            />
-          </div>
-        </div>
-      )}
-
       {error && (
         <div className="update-dialog-error" role="alert">
           {error}

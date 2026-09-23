@@ -36,13 +36,6 @@ const USER_SCROLL_INTENT_WINDOW_MS = 750;
 // run summary 摘要条插入、Thinking 折叠、markdown 定稿，高度逐帧变化。
 // 在此窗口内保持钉底资格，把最终总结带到可视底部。
 const RUN_FINISH_FOLLOW_GRACE_MS = 1200;
-// 流式跟随的平滑趋近速率（1/s）：rAF 每帧向底部做指数趋近，约 150ms 收敛
-// 95%。替代瞬时跳写，让流式增长以连续滑行进入视口而非逐块硬跳；取值权衡
-// 快速流式下的稳态滞后（增量速率/该值 px）与滑行可见度。
-const FOLLOW_EASE_RATE_PER_S = 20;
-// 跟随位移不超过该值时直接瞬时贴合：行高级变化肉眼无感知，无需动画；
-// 超过则以平滑动画滑向底部，避免流式输出时视口逐块硬跳。
-const FOLLOW_INSTANT_JUMP_PX = 4;
 
 const SCROLL_ANCHOR_OFF_CLASS = "is-scroll-anchor-off";
 const SCROLL_RESTORE_WATCHDOG_STABLE_FRAMES = 12;
@@ -113,11 +106,11 @@ export type ChatScrollFollowResult = {
 };
 
 /**
- * 聊天区滚动跟随控制器：滚动状态机（钉底资格推导、几何位移辨识）、平滑跟随
- * 动画、翻页滚动恢复（多轮收敛）、ResizeObserver 钉底、事件 handlers 与滚动
- * 到底部按钮补间。从 ChatContent 抽出，依赖的会话状态直接取自
- * ChatConversationContext；外部仅传入视图层状态（渲染 key、挂载态、压缩态、
- * 自动滚动偏好）。
+ * 聊天区滚动跟随控制器：滚动状态机（钉底资格推导、几何位移辨识）、即时钉底
+ * （内容增长同帧内贴底，不留滞后）、翻页滚动恢复（多轮收敛）、ResizeObserver
+ * 钉底、事件 handlers 与滚动到底部按钮补间。从 ChatContent 抽出，依赖的会话
+ * 状态直接取自 ChatConversationContext；外部仅传入视图层状态（渲染 key、
+ * 挂载态、压缩态、自动滚动偏好）。
  */
 export const useChatScrollFollow = ({
   chatRenderKey,
@@ -172,11 +165,6 @@ export const useChatScrollFollow = ({
 
   const isSmoothScrollingToBottomRef = useRef(false);
 
-  // 流式跟随的平滑趋近动画（区别于滚到底部按钮的 350ms 补间）：rAF 每帧把
-  // scrollTop 向底部做指数趋近。目标每帧重读 scrollHeight，内容增长时动画
-  // 跟着新目标滑行，不会脱底；停止动画后由瞬时钉底兜底，钉底资格不变。
-  const followAnimRafIdRef = useRef(0);
-
   const scrollToBottomAnimRef = useRef(0);
   const previousIsCompactingRef = useRef(isCompactingActive);
   const scrollRafIdRef = useRef(0);
@@ -201,23 +189,9 @@ export const useChatScrollFollow = ({
   autoScrollEnabledRef.current = autoScrollEnabled;
   isStreamingRef.current = isStreaming;
 
-  const stopFollowAnimation = useCallback((): void => {
-    if (followAnimRafIdRef.current !== 0) {
-      cancelAnimationFrame(followAnimRafIdRef.current);
-      followAnimRafIdRef.current = 0;
-    }
-  }, []);
-
-  // 流式跟随的平滑趋近：rAF 循环里每帧向底部指数趋近（一阶惯性），目标为
-  // 当帧的 scrollHeight - clientHeight。内容持续增长时动画滑行追新目标，
-  // 不会脱底；一旦到达（≤1px）即停止，转由调用方路径的瞬时钉底兜底。用户
-  // 滚动输入（markUserScrollIntent）与本函数互斥，上行会先取消本动画。
-  const startFollowAnimation = useCallback((): void => {
-    const container = scrollRef.current;
-    if (!container) {
-      return;
-    }
-    // 滚到底部补间在途时让位：补间是显式动作，两个逐帧写入会互相踩踏。
+  // 跟随路径统一入口：即时把滚动位置贴到容器底部。写入发生在内容生长的
+  // 同一帧内（ResizeObserver 回调在 paint 前触发），视口不会滞后于内容。
+  const pinToBottom = useCallback((): void => {
     if (isSmoothScrollingToBottomRef.current) {
       return;
     }
@@ -227,59 +201,12 @@ export const useChatScrollFollow = ({
     ) {
       return;
     }
-    // 注意：初始定位（isInitialBottomPositioningRef）不在此豁免——该标志表示
-    // 「用户尚未表达滚动意图」，其零扰动保证由初始定位 effect 直接写
-    // scrollTop 实现（不经本函数）；若在此豁免，标志会一直存续到用户首次
-    // 滚动，流式跟随的平滑动画将被无限期禁用（表现为手动滚一下才有过渡）。
-    const maxScrollTop = container.scrollHeight - container.clientHeight;
-    const distance = maxScrollTop - container.scrollTop;
-    // 距离不足一感（≤4px）直接贴合：省一个 rAF 循环，视觉零差异。
-    if (distance <= FOLLOW_INSTANT_JUMP_PX) {
-      container.scrollTop = maxScrollTop;
+    const container = scrollRef.current;
+    if (!container) {
       return;
     }
-    if (followAnimRafIdRef.current !== 0) {
-      cancelAnimationFrame(followAnimRafIdRef.current);
-    }
-    let lastTimeMs = performance.now();
-
-    const tick = (nowMs: number): void => {
-      followAnimRafIdRef.current = 0;
-      const nextContainer = scrollRef.current;
-      if (nextContainer !== container) {
-        return;
-      }
-      // stick 已被外部置 false（用户输入/消息定位跳转）：立即停手。
-      if (!shouldStickToBottomRef.current) {
-        return;
-      }
-      const maxScrollTop =
-        nextContainer.scrollHeight - nextContainer.clientHeight;
-      const distance = maxScrollTop - nextContainer.scrollTop;
-      if (distance <= 1) {
-        nextContainer.scrollTop = maxScrollTop;
-        return;
-      }
-      // 一阶趋近：每帧消耗固定比例的距离，时间步长校正保证 60/120Hz 表现一致
-      const ratio =
-        1 - Math.exp(-FOLLOW_EASE_RATE_PER_S * ((nowMs - lastTimeMs) / 1000));
-      lastTimeMs = nowMs;
-      nextContainer.scrollTop += distance * ratio;
-      followAnimRafIdRef.current = requestAnimationFrame(tick);
-    };
-
-    followAnimRafIdRef.current = requestAnimationFrame(tick);
+    container.scrollTop = container.scrollHeight - container.clientHeight;
   }, []);
-
-  // 跟随路径统一入口：动画在途时交给动画（tick 每帧重读目标，自会滑向
-  // 新底部）；否则交由 startFollowAnimation 分流——噪声级增量瞬时钉底，
-  // 较大增长平滑趋近。
-  const glideOrPinToBottom = useCallback((): void => {
-    if (followAnimRafIdRef.current !== 0) {
-      return;
-    }
-    startFollowAnimation();
-  }, [startFollowAnimation]);
 
   // 结束一轮翻页滚动恢复：释放在途标记并唤醒等待该轮收敛的调用方（用户消息
   // 定位需要按页推进），避免等待一个永不抵达的信号。
@@ -401,10 +328,7 @@ export const useChatScrollFollow = ({
 
   const syncScrollButtonVisibility = useCallback(
     (container: HTMLDivElement): void => {
-      if (
-        isSmoothScrollingToBottomRef.current ||
-        followAnimRafIdRef.current !== 0
-      ) {
+      if (isSmoothScrollingToBottomRef.current) {
         setShowScrollToBottom(false);
         return;
       }
@@ -420,13 +344,10 @@ export const useChatScrollFollow = ({
 
   const deriveFollowStateFromScroll = useCallback(
     (container: HTMLDivElement): void => {
-      if (
-        isSmoothScrollingToBottomRef.current ||
-        followAnimRafIdRef.current !== 0
-      ) {
-        // 程序化滚动（底部补间/跟随动画）产生的 scroll 事件不是用户位移：
-        // 只刷新几何快照，不改 stick——tick 与补间自己检查它，外部改写
-        // （如消息定位跳转置 false）能立即生效，不会被打回 true。
+      if (isSmoothScrollingToBottomRef.current) {
+        // 程序化滚动（底部补间）产生的 scroll 事件不是用户位移：只刷新几何
+        // 快照，不改 stick——补间每帧自查它，外部改写（如消息定位跳转置
+        // false）能立即生效，不会被打回 true。
         lastScrollTopRef.current = container.scrollTop;
         lastScrollHeightRef.current = container.scrollHeight;
         lastClientHeightRef.current = container.clientHeight;
@@ -522,7 +443,6 @@ export const useChatScrollFollow = ({
     lastUserScrollInputAtRef.current = -Infinity;
     lastUserScrollInputDirectionRef.current = 0;
     refocusFollowArmedRef.current = false;
-    stopFollowAnimation();
     if (scrollToBottomAnimRef.current !== 0) {
       cancelAnimationFrame(scrollToBottomAnimRef.current);
       scrollToBottomAnimRef.current = 0;
@@ -548,7 +468,6 @@ export const useChatScrollFollow = ({
     activeConversationId,
     chatRenderKey,
     finishScrollRestore,
-    stopFollowAnimation,
     stopScrollRestoreWatchdog,
   ]);
 
@@ -676,24 +595,13 @@ export const useChatScrollFollow = ({
         (isInitialBottomPositioningRef.current ||
           (autoScrollEnabledRef.current && isFollowActive))
       ) {
-        // 首屏定稿窗口（用户未表达滚动意图且无流式/宽限）：markdown 定稿、
-        // 图片加载、反虚拟化等集中撑高属于初始定位的延续，瞬时贴底——此时
-        // 滑行会表现为进入会话后视口向上追赶，不协调。流式/宽限期间的钉底
-        // 不走此分支，保持平滑趋近。
-        if (isInitialBottomPositioningRef.current && !isFollowActive) {
-          stopFollowAnimation();
-          container.scrollTop = nextScrollHeight;
-          return;
-        }
         // 钉底即续期收尾宽限：定稿渲染逐帧晚到也持续被带到底部，
         // 几何静默或用户上滚（stick=false）后窗口自然失效。
         if (autoScrollEnabledRef.current && isFollowActive) {
           followGraceUntilRef.current =
             performance.now() + RUN_FINISH_FOLLOW_GRACE_MS;
         }
-        // 跟随动画在途时 tick 每帧重读目标，自会滑向新底部；噪声级增量
-        // 瞬时钉底；较大增长交给平滑趋近，避免整屏逐块硬跳。
-        glideOrPinToBottom();
+        pinToBottom();
       }
     };
 
@@ -746,8 +654,7 @@ export const useChatScrollFollow = ({
     activeConversationId,
     chatRenderKey,
     isChatAreaRendered,
-    glideOrPinToBottom,
-    stopFollowAnimation,
+    pinToBottom,
     syncScrollButtonVisibility,
   ]);
 
@@ -779,9 +686,9 @@ export const useChatScrollFollow = ({
 
     scrolledAuthorizationSignatureRef.current = signature;
     requestAnimationFrame(() => {
-      glideOrPinToBottom();
+      pinToBottom();
     });
-  }, [activeConversationId, pendingToolAuthorizations, glideOrPinToBottom]);
+  }, [activeConversationId, pendingToolAuthorizations, pinToBottom]);
 
   // Keep the chat pinned to the latest AI output while streaming, unless the
   // user scrolls away or has disabled the preference entirely.
@@ -795,14 +702,8 @@ export const useChatScrollFollow = ({
       return;
     }
 
-    glideOrPinToBottom();
-  }, [
-    autoScrollEnabled,
-    isStreaming,
-    messages,
-    chatRenderKey,
-    glideOrPinToBottom,
-  ]);
+    pinToBottom();
+  }, [autoScrollEnabled, isStreaming, messages, chatRenderKey, pinToBottom]);
 
   // Run 结束瞬间（isStreaming true→false）消息集中定稿：showActions 按钮、
   // run summary 摘要条、Thinking 折叠、markdown 定稿，高度逐帧变化，而流式
@@ -819,8 +720,8 @@ export const useChatScrollFollow = ({
     }
     followGraceUntilRef.current =
       performance.now() + RUN_FINISH_FOLLOW_GRACE_MS;
-    glideOrPinToBottom();
-  }, [isStreaming, glideOrPinToBottom]);
+    pinToBottom();
+  }, [isStreaming, pinToBottom]);
 
   // 失焦/被遮挡时渲染帧停摆：rAF 与 ResizeObserver 挂起，markdown 渲染
   // （rAF 门控）被推迟；run 在后台结束后，恢复可见时 deferred 渲染集中
@@ -829,9 +730,6 @@ export const useChatScrollFollow = ({
   useEffect(() => {
     let rafId1 = 0;
     let rafId2 = 0;
-    const pinToBottom = (): void => {
-      glideOrPinToBottom();
-    };
     const armFollowCatchUp = (): void => {
       refocusFollowArmedRef.current =
         shouldStickToBottomRef.current &&
@@ -888,7 +786,7 @@ export const useChatScrollFollow = ({
         cancelAnimationFrame(rafId2);
       }
     };
-  }, [glideOrPinToBottom]);
+  }, [pinToBottom]);
 
   // Compaction is an explicit operation, so its preview and persisted boundary
   // must remain visible regardless of the user's normal auto-scroll preference.
@@ -900,7 +798,6 @@ export const useChatScrollFollow = ({
     }
 
     shouldStickToBottomRef.current = true;
-    stopFollowAnimation();
     stopScrollRestoreWatchdog();
     const scrollToBottom = (): void => {
       const container = scrollRef.current;
@@ -911,7 +808,7 @@ export const useChatScrollFollow = ({
 
     scrollToBottom();
     requestAnimationFrame(scrollToBottom);
-  }, [isCompactingActive, stopFollowAnimation, stopScrollRestoreWatchdog]);
+  }, [isCompactingActive, stopScrollRestoreWatchdog]);
 
   const handleLoadOlderWithScroll = useCallback(async (): Promise<void> => {
     const container = scrollRef.current;
@@ -1106,24 +1003,20 @@ export const useChatScrollFollow = ({
     handleLoadOlderWithScroll,
   ]);
 
-  const markUserScrollIntent = useCallback(
-    (direction: number): void => {
-      isUserScrollIntentRef.current = true;
-      isInitialBottomPositioningRef.current = false;
-      lastUserScrollInputAtRef.current = performance.now();
-      lastUserScrollInputDirectionRef.current = direction;
+  const markUserScrollIntent = useCallback((direction: number): void => {
+    isUserScrollIntentRef.current = true;
+    isInitialBottomPositioningRef.current = false;
+    lastUserScrollInputAtRef.current = performance.now();
+    lastUserScrollInputDirectionRef.current = direction;
 
-      // 用户真实输入立即接管视口：跟随动画与底部补间一并停止，
-      // 避免下一帧动画把视口从用户正在查看的位置拽走。
-      stopFollowAnimation();
-      if (scrollToBottomAnimRef.current !== 0) {
-        cancelAnimationFrame(scrollToBottomAnimRef.current);
-        scrollToBottomAnimRef.current = 0;
-      }
-      isSmoothScrollingToBottomRef.current = false;
-    },
-    [stopFollowAnimation],
-  );
+    // 用户真实输入立即接管视口：停止在途的底部补间，
+    // 避免下一帧写入把视口从用户正在查看的位置拽走。
+    if (scrollToBottomAnimRef.current !== 0) {
+      cancelAnimationFrame(scrollToBottomAnimRef.current);
+      scrollToBottomAnimRef.current = 0;
+    }
+    isSmoothScrollingToBottomRef.current = false;
+  }, []);
 
   const handleChatPointerMove = useCallback(
     (event: React.PointerEvent<HTMLDivElement>): void => {
@@ -1313,7 +1206,6 @@ export const useChatScrollFollow = ({
     }
 
     // Cancel any tween already in flight before starting a new one.
-    stopFollowAnimation();
     if (scrollToBottomAnimRef.current !== 0) {
       cancelAnimationFrame(scrollToBottomAnimRef.current);
       scrollToBottomAnimRef.current = 0;
@@ -1372,7 +1264,7 @@ export const useChatScrollFollow = ({
     };
 
     scrollToBottomAnimRef.current = requestAnimationFrame(tick);
-  }, [deriveFollowStateFromScroll, stopFollowAnimation]);
+  }, [deriveFollowStateFromScroll]);
 
   const handleSendWithScroll = useCallback(
     (message: string, options: ChatInputSendOptions) => {
@@ -1384,10 +1276,10 @@ export const useChatScrollFollow = ({
       lastUserScrollInputDirectionRef.current = 0;
       setShowScrollToBottom(false);
       requestAnimationFrame(() => {
-        glideOrPinToBottom();
+        pinToBottom();
       });
     },
-    [handleSendMessage, glideOrPinToBottom],
+    [handleSendMessage, pinToBottom],
   );
 
   // Cancel any pending scroll-throttle and scroll-to-bottom animation frames
@@ -1406,10 +1298,9 @@ export const useChatScrollFollow = ({
         window.clearTimeout(wheelScrollbarTimerRef.current);
         wheelScrollbarTimerRef.current = 0;
       }
-      stopFollowAnimation();
       stopScrollRestoreWatchdog();
     };
-  }, [stopFollowAnimation, stopScrollRestoreWatchdog]);
+  }, [stopScrollRestoreWatchdog]);
 
   return {
     scrollRef,

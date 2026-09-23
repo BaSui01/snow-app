@@ -76,7 +76,7 @@ export function ChatsSection({
         ...streamingConversationIds,
         ...attentionRequiredConversationIds,
       ]),
-    [streamingConversationIds, attentionRequiredConversationIds]
+    [streamingConversationIds, attentionRequiredConversationIds],
   );
   // 被用户暂停的流式会话（agent loop 阻塞等待恢复），图标切换为暂停态
   const pausedConversationIds = useMemo(
@@ -84,9 +84,9 @@ export function ChatsSection({
       new Set(
         Object.entries(sessions)
           .filter(([, session]) => session.isPaused)
-          .map(([id]) => id)
+          .map(([id]) => id),
       ),
-    [sessions]
+    [sessions],
   );
 
   const directoryId = activeDirectory?.directoryId ?? "";
@@ -199,9 +199,9 @@ export function ChatsSection({
   const timeGroups = groupConversationsByTime(
     list.conversations,
     new Date(),
-    tree.surfacedConversationIds
+    tree.surfacedConversationIds,
   );
-  // 运行中会话分组单独渲染在滚动容器之外，固定在列表头部不随列表滚动
+  // 运行中会话分组排在最前，随列表一起滚动（不再固定在列表头部）
   const runningGroup = timeGroups.find((group) => group.key === "running");
   const contentGroups = timeGroups.filter((group) => group.key !== "running");
   // 置顶会话在会话列表内单独成组（随列表滚动），行内以 Pin 图标标注
@@ -213,14 +213,14 @@ export function ChatsSection({
   const showLoading =
     isSwitchingDirectory || (list.isLoading && directoryId !== "");
 
-  const showPinnedRunning =
+  // 多选模式下会话列表按选择集合渲染，置顶分组临时隐藏避免不可选条目干扰
+  const showPinnedGroup =
     !archived.isArchiveMode &&
     !collapse.isCollapsed &&
     !showLoading &&
     directoryId !== "" &&
-    !list.error;
-  // 多选模式下会话列表按选择集合渲染，置顶分组临时隐藏避免不可选条目干扰
-  const showPinnedGroup = showPinnedRunning && !selection.isMultiSelectMode;
+    !list.error &&
+    !selection.isMultiSelectMode;
 
   const allSelected =
     selection.selectedIds.size === selection.multiSelectableCount;
@@ -261,7 +261,7 @@ export function ChatsSection({
   ];
 
   const renderConversationRow = (
-    conversation: ChatConversationRecord
+    conversation: ChatConversationRecord,
   ): React.JSX.Element => {
     const conversationId = conversation.conversationId;
     return (
@@ -278,10 +278,10 @@ export function ChatsSection({
         isMultiSelectMode={selection.isMultiSelectMode}
         isSelected={selection.selectedIds.has(conversationId)}
         isSubAgentExpanded={tree.expandedSubAgentConversationIds.has(
-          conversationId
+          conversationId,
         )}
         isWorkflowPanelExpanded={tree.expandedWorkflowConversationIds.has(
-          conversationId
+          conversationId,
         )}
         onArchive={() => void actions.handleArchive(conversation)}
         onDelete={(deleteImages, deleteMemories) =>
@@ -361,21 +361,6 @@ export function ChatsSection({
         onDismiss={chatImport.dismissNotice}
         tone={chatImport.notice?.tone ?? "success"}
       />
-      {showPinnedRunning && runningGroup ? (
-        <div className="chats-running-list">
-          <ChatTimeGroupList
-            collapsedGroupKeys={layout.collapsedGroupKeys}
-            getGroupLabel={layout.getGroupLabel}
-            groups={[runningGroup]}
-            isMultiSelectable={selection.isMultiSelectable}
-            isMultiSelectMode={selection.isMultiSelectMode}
-            onToggleGroupCollapsed={layout.toggleGroupCollapsed}
-            onToggleGroupSelect={selection.handleToggleGroupSelect}
-            renderRow={renderConversationRow}
-            selectedIds={selection.selectedIds}
-          />
-        </div>
-      ) : null}
       <div
         className={`section-list${
           layout.isChatDragOver ? " chat-drag-over" : ""
@@ -434,6 +419,22 @@ export function ChatsSection({
           </span>
         ) : (
           <>
+            {/* 运行中会话分组：排在列表最前，随列表滚动（不固定） */}
+            {runningGroup ? (
+              <div className="chats-running-group">
+                <ChatTimeGroupList
+                  collapsedGroupKeys={layout.collapsedGroupKeys}
+                  getGroupLabel={layout.getGroupLabel}
+                  groups={[runningGroup]}
+                  isMultiSelectable={selection.isMultiSelectable}
+                  isMultiSelectMode={selection.isMultiSelectMode}
+                  onToggleGroupCollapsed={layout.toggleGroupCollapsed}
+                  onToggleGroupSelect={selection.handleToggleGroupSelect}
+                  renderRow={renderConversationRow}
+                  selectedIds={selection.selectedIds}
+                />
+              </div>
+            ) : null}
             {/* 置顶会话分组：随列表滚动；拖入该分组=置顶，拖到普通列表区=取消置顶 */}
             {showPinnedGroup && (
               <div

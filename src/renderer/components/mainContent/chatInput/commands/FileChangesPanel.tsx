@@ -7,7 +7,10 @@ import {
   FileDiffPreview,
   type FileDiffPreviewItem,
 } from "../../../common/FileDiffPreview";
-import { countUniqueFiles } from "../../chatMessages/hooks/fileChangeTracking";
+import {
+  countFileChangeLines,
+  countUniqueFiles,
+} from "../../chatMessages/hooks/fileChangeTracking";
 import type { FileChangeRecord } from "../../chatMessages/utils/conversationTypes";
 
 type FileChangesPanelProps = {
@@ -32,6 +35,7 @@ export const FileChangesPanel = ({
 }: FileChangesPanelProps): React.JSX.Element | null => {
   const { t } = useI18n();
   const [isDiffView, setIsDiffView] = useState(false);
+  const [selectedDiffPath, setSelectedDiffPath] = useState<string | null>(null);
 
   const summary = useMemo(() => {
     const mainCount = changes.filter(
@@ -43,6 +47,11 @@ export const FileChangesPanel = ({
       subCount: changes.length - mainCount,
     };
   }, [changes]);
+
+  const lineStats = useMemo(
+    () => changes.map((change) => countFileChangeLines([change])),
+    [changes],
+  );
 
   // Records without a diff payload (e.g. tool arguments carried no content)
   // stay in the list but are excluded from the diff preview.
@@ -69,16 +78,28 @@ export const FileChangesPanel = ({
 
   const handleClose = (): void => {
     setIsDiffView(false);
+    setSelectedDiffPath(null);
     onClose();
   };
 
   const handleBackToList = (): void => {
     setIsDiffView(false);
+    setSelectedDiffPath(null);
+  };
+
+  const handleOpenDiff = (filePath: string): void => {
+    setSelectedDiffPath(filePath);
+    setIsDiffView(true);
+  };
+
+  const handleViewAllDiffs = (): void => {
+    setSelectedDiffPath(null);
+    setIsDiffView(true);
   };
 
   return (
     <Modal
-      className="file-changes-modal"
+      className={`file-changes-modal${isDiffView ? " is-diff-view" : ""}`}
       closeLabel={t("chat.fileChanges.close")}
       description={t("chat.fileChanges.description")}
       onClose={handleClose}
@@ -94,7 +115,7 @@ export const FileChangesPanel = ({
           <button
             type="button"
             className="file-changes-view-diff-btn"
-            onClick={() => setIsDiffView(true)}
+            onClick={handleViewAllDiffs}
           >
             <Eye size={14} />
             {t("chat.fileChanges.viewDiff")}
@@ -119,7 +140,9 @@ export const FileChangesPanel = ({
             </span>
           </div>
           <FileDiffPreview
+            key={selectedDiffPath ?? "__all__"}
             diffs={diffItems}
+            initialSelectedPath={selectedDiffPath}
             isLoading={false}
             hasError={false}
             labels={{
@@ -167,58 +190,76 @@ export const FileChangesPanel = ({
             {changes.map((change, index) => {
               const fileName =
                 change.filePath.split(/[\\/]/).pop() || change.filePath;
+              const stats = lineStats[index];
+              const hasDiff = Boolean(change.diff?.patch);
               return (
                 <li
                   className="file-changes-row"
                   key={`${change.filePath}-${change.timestamp}-${index}`}
-                  title={change.filePath}
                 >
-                  <span className="file-changes-row-icon" aria-hidden="true">
-                    {change.kind === "create" ? (
-                      <FilePlus2 size={13} strokeWidth={2} />
-                    ) : change.kind === "delete" ? (
-                      <FileMinus2 size={13} strokeWidth={2} />
-                    ) : (
-                      <FilePen size={13} strokeWidth={2} />
-                    )}
-                  </span>
-                  <span className="file-changes-path">
-                    {getFileTypeIcon(fileName, false, false, {
-                      size: 13,
-                      "aria-hidden": true,
-                    })}
-                    <span className="file-changes-path-text">
-                      {change.filePath}
-                    </span>
-                  </span>
-                  <span className={`file-changes-kind is-${change.kind}`}>
-                    {change.kind === "create"
-                      ? t("chat.fileChanges.kindCreate")
-                      : change.kind === "delete"
-                        ? t("chat.fileChanges.kindDelete")
-                        : t("chat.fileChanges.kindEdit")}
-                  </span>
-                  <span
-                    className={`file-changes-agent${
-                      isSubChange(change) ? " is-sub" : ""
+                  <button
+                    type="button"
+                    className={`file-changes-row-btn${
+                      hasDiff ? "" : " is-static"
                     }`}
+                    onClick={
+                      hasDiff
+                        ? () => handleOpenDiff(change.filePath)
+                        : undefined
+                    }
+                    aria-disabled={hasDiff ? undefined : true}
+                    title={change.filePath}
                   >
-                    {isSubChange(change)
-                      ? (change.subAgentName ??
-                        t("chat.fileChanges.agentSubName"))
-                      : t("chat.fileChanges.agentMainName")}
-                  </span>
-                  {change.diff?.patch ? (
-                    <button
-                      type="button"
-                      className="file-changes-row-diff-btn"
-                      onClick={() => setIsDiffView(true)}
-                      aria-label={t("chat.fileChanges.viewDiff")}
-                      title={t("chat.fileChanges.viewDiff")}
+                    <span className="file-changes-row-icon" aria-hidden="true">
+                      {change.kind === "create" ? (
+                        <FilePlus2 size={13} strokeWidth={2} />
+                      ) : change.kind === "delete" ? (
+                        <FileMinus2 size={13} strokeWidth={2} />
+                      ) : (
+                        <FilePen size={13} strokeWidth={2} />
+                      )}
+                    </span>
+                    <span className="file-changes-path">
+                      {getFileTypeIcon(fileName, false, false, {
+                        size: 13,
+                        "aria-hidden": true,
+                      })}
+                      <span className="file-changes-path-text">
+                        {change.filePath}
+                      </span>
+                    </span>
+                    {stats.additions > 0 || stats.deletions > 0 ? (
+                      <span className="file-changes-line-stats">
+                        {stats.additions > 0 ? (
+                          <span className="file-changes-diff-add">
+                            +{stats.additions}
+                          </span>
+                        ) : null}
+                        {stats.deletions > 0 ? (
+                          <span className="file-changes-diff-del">
+                            -{stats.deletions}
+                          </span>
+                        ) : null}
+                      </span>
+                    ) : null}
+                    <span className={`file-changes-kind is-${change.kind}`}>
+                      {change.kind === "create"
+                        ? t("chat.fileChanges.kindCreate")
+                        : change.kind === "delete"
+                          ? t("chat.fileChanges.kindDelete")
+                          : t("chat.fileChanges.kindEdit")}
+                    </span>
+                    <span
+                      className={`file-changes-agent${
+                        isSubChange(change) ? " is-sub" : ""
+                      }`}
                     >
-                      <Eye size={12} />
-                    </button>
-                  ) : null}
+                      {isSubChange(change)
+                        ? (change.subAgentName ??
+                          t("chat.fileChanges.agentSubName"))
+                        : t("chat.fileChanges.agentMainName")}
+                    </span>
+                  </button>
                 </li>
               );
             })}

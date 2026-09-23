@@ -22,6 +22,7 @@ type FileDiffPreviewProps = {
   isLoading: boolean;
   hasError: boolean;
   labels: FileDiffPreviewLabels;
+  initialSelectedPath?: string | null;
 };
 
 type FileChangeIconProps = {
@@ -63,8 +64,11 @@ export const FileDiffPreview = ({
   isLoading,
   hasError,
   labels,
+  initialSelectedPath,
 }: FileDiffPreviewProps): React.JSX.Element => {
-  const [selectedDiffPath, setSelectedDiffPath] = useState<string | null>(null);
+  const [selectedDiffPath, setSelectedDiffPath] = useState<string | null>(
+    initialSelectedPath ?? null,
+  );
   const selectedDiff =
     diffs.find((diff) => diff.path === selectedDiffPath) ?? diffs[0] ?? null;
   const isSingleFile = diffs.length <= 1;

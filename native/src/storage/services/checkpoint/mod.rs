@@ -743,10 +743,43 @@ fn with_manifest_lock<T>(
 
 fn should_skip_relative(path: &Path) -> bool {
     path.components().any(|component| match component {
-        Component::Normal(name) => name
-            .to_str()
-            .map(|value| SKIP_DIRS.contains(&value))
-            .unwrap_or(false),
+        Component::Normal(name) => {
+            let name_str = name.to_str().unwrap_or("");
+            if SKIP_DIRS.contains(&name_str) {
+                return true;
+            }
+            #[cfg(windows)]
+            {
+                let stem = name_str.split('.').next().unwrap_or(name_str);
+                matches!(
+                    stem.to_ascii_uppercase().as_str(),
+                    "CON"
+                        | "PRN"
+                        | "AUX"
+                        | "NUL"
+                        | "COM1"
+                        | "COM2"
+                        | "COM3"
+                        | "COM4"
+                        | "COM5"
+                        | "COM6"
+                        | "COM7"
+                        | "COM8"
+                        | "COM9"
+                        | "LPT1"
+                        | "LPT2"
+                        | "LPT3"
+                        | "LPT4"
+                        | "LPT5"
+                        | "LPT6"
+                        | "LPT7"
+                        | "LPT8"
+                        | "LPT9"
+                )
+            }
+            #[cfg(not(windows))]
+            false
+        }
         _ => false,
     })
 }
@@ -1297,6 +1330,7 @@ pub fn capture_checkpoint_worktree_before(
         let size = meta.as_ref().map(|meta| meta.len()).unwrap_or(0);
         let (object_id, skipped) = if let Some(object_id) =
             fingerprint_lookup(&work_dir, relative_path, mtime, size)
+                .filter(|id| object_path(id).map(|p| p.is_file()).unwrap_or(false))
         {
             (Some(object_id), false)
         } else if should_skip_pending_copy(&absolute) {
@@ -1640,10 +1674,11 @@ fn restore_entry(
 
 fn restore_file(source: &Path, destination: &Path) -> Result<()> {
     if !source.is_file() {
-        return Err(Error::from_reason(format!(
-            "Checkpoint object not found: {}",
+        eprintln!(
+            "[checkpoint] Warning: checkpoint object not found on disk: {}; skipping file restore",
             source.display()
-        )));
+        );
+        return Ok(());
     }
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent).map_err(|error| {
@@ -1917,13 +1952,22 @@ pub fn list_checkpoint_diffs(
         else {
             continue;
         };
-        let (content, is_binary) = checkpoint_file_diff(
+        let (content, is_binary) = match checkpoint_file_diff(
             format!("{}:{}", checkpoint_id, entry.path),
             &entry.path,
             &entry.original,
             manifest.git.as_ref(),
             &current,
-        )?;
+        ) {
+            Ok(diff) => diff,
+            Err(error) => {
+                eprintln!(
+                    "[checkpoint] Warning: failed to compute diff for '{}': {error}",
+                    entry.path
+                );
+                (String::new(), false)
+            }
+        };
         diffs.push(CheckpointFileDiff {
             path: display_entry_path(&root, &entry.path),
             change_type,
@@ -1963,13 +2007,22 @@ pub fn list_checkpoint_diffs_batch(
         let Some(change_type) = classify_change(&current, &entry.original, None, &entry.path)? else {
             continue;
         };
-        let (content, is_binary) = checkpoint_file_diff(
+        let (content, is_binary) = match checkpoint_file_diff(
             format!("{}:{}", entry.source_checkpoint_id, entry.path),
             &entry.path,
             &entry.original,
             None,
             &current,
-        )?;
+        ) {
+            Ok(diff) => diff,
+            Err(error) => {
+                eprintln!(
+                    "[checkpoint] Warning: failed to compute diff for '{}': {error}",
+                    entry.path
+                );
+                (String::new(), false)
+            }
+        };
         diffs.push(CheckpointFileDiff {
             path: display_entry_path(&root, &entry.path),
             change_type,
@@ -2003,12 +2056,20 @@ fn read_original_content(
         OriginalState::Missing => Ok(None),
         OriginalState::Object { object_id } => {
             let object = object_path(object_id)?;
-            fs::read(&object).map(Some).map_err(|error| {
-                Error::from_reason(format!(
+            match fs::read(&object) {
+                Ok(bytes) => Ok(Some(bytes)),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    eprintln!(
+                        "[checkpoint] Warning: checkpoint object '{}' not found on disk ({error}); falling back to None",
+                        object.display()
+                    );
+                    Ok(None)
+                }
+                Err(error) => Err(Error::from_reason(format!(
                     "Failed to read checkpoint object '{}': {error}",
                     object.display()
-                ))
-            })
+                ))),
+            }
         }
         OriginalState::Git => {
             let baseline =
@@ -2097,6 +2158,9 @@ fn classify_change(
                 return Ok(Some("deleted".to_string()));
             }
             let object = object_path(object_id)?;
+            if !object.is_file() {
+                return Ok(Some("modified".to_string()));
+            }
             Ok(files_are_different(current, &object).then(|| "modified".to_string()))
         }
         OriginalState::Git => {

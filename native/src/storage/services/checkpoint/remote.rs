@@ -1717,12 +1717,22 @@ async fn restore_entry_remote(
         OriginalState::Missing => client.delete_file(destination).await,
         OriginalState::Object { object_id } => {
             let source = object_path(object_id)?;
-            let content = fs::read(&source).map_err(|error| {
-                Error::from_reason(format!(
-                    "Failed to read checkpoint object '{}': {error}",
-                    source.display()
-                ))
-            })?;
+            let content = match fs::read(&source) {
+                Ok(bytes) => bytes,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    eprintln!(
+                        "[checkpoint] Warning: remote checkpoint object '{}' not found on disk: {error}; skipping restore",
+                        source.display()
+                    );
+                    return Ok(());
+                }
+                Err(error) => {
+                    return Err(Error::from_reason(format!(
+                        "Failed to read checkpoint object '{}': {error}",
+                        source.display()
+                    )));
+                }
+            };
             client.write_bytes(destination, &content).await
         }
         OriginalState::Git => Err(Error::from_reason(

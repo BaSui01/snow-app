@@ -1,0 +1,1628 @@
+/* ===== Tesseract (超立方) Preset =====
+   Cybernetic precision chamfer matrix workbench with smooth industrial CNC radii.
+   Design Essence: Modular hard-surface geometry, pure obsidian deep black,
+   quantum neon violet highlights, and refined 4px-7px micro-radii seams.
+   Signature Feature: Quantum Laser Matrix Stripe & CNC Inset Bevel Surface.
+   Motion & Dynamics: Mechanical snap feedback, laser scanline, and quantum pulse. */
+
+:root[data-theme-preset="tesseract"] {
+  --font-sans:
+    "JetBrains Mono", "SF Mono", "Consolas", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  --font-brand-body: var(--font-sans);
+  --font-brand-display: var(--font-sans);
+
+  /* Refined industrial CNC chamfer radii: sharp precision with smooth glide */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 5px;
+  --radius-lg: 7px;
+  --radius-xl: 9px;
+  --radius-pill: 5px;
+
+  /* Tesseract Brand Accent: Quantum Neon Violet & Cyan */
+  --tesseract-purple: #8b5cf6;
+  --tesseract-purple-hover: #9333ea;
+  --tesseract-purple-glow: rgba(139, 92, 246, 0.38);
+  --tesseract-purple-bg: rgba(139, 92, 246, 0.14);
+  --tesseract-cyan: #00f59b;
+  --accent: #8b5cf6;
+  --accent-primary: #8b5cf6;
+  --accent-color: #8b5cf6;
+  --accent-blue: #8b5cf6;
+  --accent-blue-hover: #9333ea;
+  --accent-blue-bg: rgba(139, 92, 246, 0.14);
+  --accent-blue-text: #a78bfa;
+  --accent-primary-bg: rgba(139, 92, 246, 0.14);
+  --accent-primary-text: #a78bfa;
+
+  /* Crisp 1px neon hairline borders & inset grooves */
+  --island-shadow: none;
+  --shadow-xs: none;
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.7);
+  --backdrop-blur-lg: none;
+
+  /* Matrix geometry controls */
+  --compact-header-height: 38px;
+}
+
+/* Light Mode: Matte Industrial Titanium */
+:root[data-theme-preset="tesseract"][data-theme="light"] {
+  --surface-island: #ffffff;
+  --surface-island-strong: #f8f9fa;
+  --surface-island-muted: #eef0f3;
+  --island-shadow: none;
+  --app-bg: #e5e7eb;
+  --chrome-bg: #eef0f3;
+  --scrollbar-thumb: rgba(100, 116, 139, 0.4);
+  --scrollbar-thumb-hover: rgba(71, 85, 105, 0.6);
+  --scrollbar-thumb-active: rgba(51, 65, 85, 0.8);
+}
+
+/* Dark Mode: Pure Obsidian Deep Abyss & Quantum Violet */
+:root[data-theme-preset="tesseract"][data-theme="dark"] {
+  --surface-island: #090c12;
+  --surface-island-strong: #04060a;
+  --surface-island-muted: #0d111a;
+  --island-shadow: none;
+  --app-bg: #040508;
+  --chrome-bg: #080b11;
+  --scrollbar-thumb: rgba(139, 92, 246, 0.28);
+  --scrollbar-thumb-hover: rgba(139, 92, 246, 0.5);
+  --scrollbar-thumb-active: rgba(139, 92, 246, 0.75);
+}
+
+/* Typography & Base Resets */
+:root[data-theme-preset="tesseract"] body,
+:root[data-theme-preset="tesseract"] button,
+:root[data-theme-preset="tesseract"] input,
+:root[data-theme-preset="tesseract"] select,
+:root[data-theme-preset="tesseract"] textarea {
+  font-family: var(--app-font-family, var(--font-sans));
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(.ai-message a, .context-compaction-markdown a, .chat-fork-divider-link) {
+  color: var(--accent-blue-text);
+  text-decoration: none;
+  transition: color 0.12s ease;
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .ai-message a,
+    .context-compaction-markdown a,
+    .chat-fork-divider-link
+  ):hover {
+  text-decoration: underline;
+}
+
+:root[data-theme-preset="tesseract"] ::selection {
+  background: var(--tesseract-purple-bg);
+}
+
+/* ==========================================================================
+   1. Matrix Seamless Shell (超立方矩阵外壳，边缘严丝合缝)
+   ========================================================================== */
+
+:root[data-theme-preset="tesseract"] .app-shell {
+  background: var(--app-bg);
+}
+
+:root[data-theme-preset="tesseract"] .app-layout {
+  padding: 0 !important;
+  gap: 0 !important;
+  background: var(--app-bg);
+}
+
+/* ==========================================================================
+   2. Mechanical Matrix Header with Quantum Laser Stripe (量子激光扫描分割带)
+   ========================================================================== */
+
+@keyframes tesseract-laser-scan {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+:root[data-theme-preset="tesseract"] .top-bar {
+  position: relative;
+  gap: 0 !important;
+  padding: 0 4px !important;
+  height: var(--compact-header-height) !important;
+  min-height: var(--compact-header-height) !important;
+  background: var(--chrome-bg) !important;
+  border-bottom: 1px solid rgba(139, 92, 246, 0.35);
+  box-shadow: none !important;
+}
+
+/* 谷歌级灵魂设计：顶栏量子激光脉冲分割带 (Quantum Laser Stripe) */
+:root[data-theme-preset="tesseract"] .top-bar::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 4;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    #8b5cf6 0%,
+    #00f59b 48%,
+    #00f59b 52%,
+    #8b5cf6 100%
+  );
+  background-size: 200% 100%;
+  animation: tesseract-laser-scan 5s linear infinite;
+  box-shadow: 0 0 8px rgba(139, 92, 246, 0.6);
+  content: "";
+  pointer-events: none;
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(.top-bar-left, .top-bar-main, .top-bar-right) {
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  border: none !important;
+  height: 100% !important;
+}
+
+:root[data-theme-preset="tesseract"] .top-bar-left {
+  padding: 0 8px 0 var(--traffic-light-safe-area);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+:root[data-theme-preset="tesseract"] .app-shell.is-windows .top-bar-left {
+  padding: 0 10px !important;
+}
+
+:root[data-theme-preset="tesseract"] .top-bar-main {
+  padding: 0 14px !important;
+  gap: 8px !important;
+}
+
+:root[data-theme-preset="tesseract"] .top-bar-right {
+  padding: 0 8px !important;
+  gap: 4px !important;
+}
+
+:root[data-theme-preset="tesseract"] .header-title {
+  font-size: 12px !important;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+:root[data-theme-preset="tesseract"] .header-subtitle {
+  font-size: 10px !important;
+  padding: 1px 7px !important;
+  border-radius: var(--radius-sm) !important;
+  border: 1px solid rgba(139, 92, 246, 0.4) !important;
+  background: var(--tesseract-purple-bg) !important;
+  color: var(--accent-blue-text) !important;
+  transition: all 0.12s ease;
+}
+
+:root[data-theme-preset="tesseract"] .top-bar-branch-label {
+  font-size: 11px !important;
+  padding: 2px 9px !important;
+  border-radius: var(--radius-sm) !important;
+  border: 1px solid var(--border-color) !important;
+  background: var(--bg-tertiary) !important;
+  transition: all 0.12s ease;
+}
+
+:root[data-theme-preset="tesseract"] .window-control-btn {
+  height: 100% !important;
+  border-radius: 0 !important;
+  transition: background 0.1s ease;
+}
+
+:root[data-theme-preset="tesseract"] .window-control-btn:not(.close-btn):hover {
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .top-bar-plus-btn,
+    .top-bar-todo-btn,
+    .top-bar-codebase-sync,
+    .always-on-top-btn
+  ) {
+  border-radius: var(--radius-sm) !important;
+  transition: all 0.12s ease !important;
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .top-bar-plus-btn,
+    .top-bar-todo-btn,
+    .top-bar-codebase-sync,
+    .always-on-top-btn
+  ):hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+  border-color: rgba(139, 92, 246, 0.4);
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .top-bar-plus-btn,
+    .top-bar-todo-btn,
+    .top-bar-codebase-sync,
+    .always-on-top-btn
+  ):active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+/* ==========================================================================
+   3. Mechanical Chamfer Panels (纯黑微倒角面板与高反差霓虹刻线)
+   ========================================================================== */
+
+:root[data-theme-preset="tesseract"]
+  :is(.sidebar, .main-content, .right-panel) {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+:root[data-theme-preset="tesseract"] .sidebar {
+  background: var(--bg-secondary) !important;
+  border-right: 1px solid rgba(139, 92, 246, 0.3) !important;
+  border-top: none !important;
+  border-bottom: none !important;
+  border-left: none !important;
+}
+
+:root[data-theme-preset="tesseract"] .main-content {
+  background: var(--bg-primary) !important;
+  padding: 0 !important;
+  border: none !important;
+}
+
+:root[data-theme-preset="tesseract"] .right-panel {
+  background: var(--bg-secondary) !important;
+  border-left: 1px solid rgba(139, 92, 246, 0.3) !important;
+  border-top: none !important;
+  border-bottom: none !important;
+  border-right: none !important;
+}
+
+:root[data-theme-preset="tesseract"] .right-panel.fullscreen {
+  width: calc(100% - var(--sidebar-width)) !important;
+}
+
+:root[data-theme-preset="tesseract"] .panel-resizer {
+  width: 4px !important;
+  min-width: 4px !important;
+  margin-left: -2px;
+  margin-right: -2px;
+  background: transparent !important;
+  z-index: 35;
+}
+
+:root[data-theme-preset="tesseract"] .panel-resizer::before {
+  top: 0 !important;
+  bottom: 0 !important;
+  width: 1px !important;
+  border-radius: 0 !important;
+  background: rgba(139, 92, 246, 0.25) !important;
+  transition: all 0.12s ease;
+}
+
+:root[data-theme-preset="tesseract"] .panel-resizer:hover::before,
+:root[data-theme-preset="tesseract"]
+  .app-shell.is-resizing
+  .panel-resizer.is-active::before {
+  background: var(--tesseract-purple) !important;
+  box-shadow: 0 0 8px var(--tesseract-purple-glow) !important;
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .sidebar-content-header,
+    .section-header,
+    .api-settings-page-header,
+    .codebase-panel-header,
+    .file-viewer-header,
+    .git-control-header
+  ) {
+  border-bottom: 1px solid rgba(139, 92, 246, 0.25);
+}
+
+/* ==========================================================================
+   4. Hard-Surface Settings Layout (硬派工业科技感设置页面)
+   ========================================================================== */
+
+:root[data-theme-preset="tesseract"] .api-settings-page {
+  padding: 24px 32px 36px !important;
+  gap: 16px !important;
+}
+
+:root[data-theme-preset="tesseract"] .api-settings-page-header {
+  margin-bottom: 8px !important;
+}
+
+:root[data-theme-preset="tesseract"] .api-settings-title-group strong {
+  font-size: 18px !important;
+  letter-spacing: 0.02em;
+}
+
+:root[data-theme-preset="tesseract"] .api-settings-description {
+  margin-top: 4px !important;
+  color: var(--text-tertiary) !important;
+}
+
+:root[data-theme-preset="tesseract"] .api-settings-summary-card {
+  border-radius: var(--radius-md) !important;
+  border: 1px solid rgba(139, 92, 246, 0.25) !important;
+  background: var(--bg-tertiary) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+  padding: 10px 14px !important;
+}
+
+:root[data-theme-preset="tesseract"] .settings-item {
+  border-radius: var(--radius-sm) !important;
+  border: 1px solid transparent !important;
+  padding: 6px 10px !important;
+  margin: 2px 0 !important;
+  transition: all 0.12s ease;
+}
+
+:root[data-theme-preset="tesseract"] .settings-item:hover {
+  background: var(--bg-hover) !important;
+  transform: translateX(2px);
+}
+
+:root[data-theme-preset="tesseract"] .settings-item.active {
+  background: var(--tesseract-purple-bg) !important;
+  border: 1px solid rgba(139, 92, 246, 0.4) !important;
+}
+
+:root[data-theme-preset="tesseract"]
+  .settings-item.active
+  .settings-item-title {
+  color: var(--accent-blue-text) !important;
+  font-weight: 600;
+}
+
+:root[data-theme-preset="tesseract"] .settings-item.active .settings-item-icon {
+  color: var(--tesseract-purple) !important;
+}
+
+/* ==========================================================================
+   5. Button Suite: Mechanical Snap Click Feedback (机械硬核按压反馈)
+   ========================================================================== */
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .api-settings-action-btn.primary,
+    .api-settings-form-btn.primary,
+    .browser-settings-scan-action,
+    .model-manual-btn.primary,
+    .project-codebase-embed-btn.primary,
+    .tool-call-user-question-submit,
+    .tool-call-plan-approval-approve,
+    .project-sensitive-command-save,
+    .personalization-save-btn,
+    .branch-create-submit-btn,
+    .git-commit-btn,
+    .git-commit-btn.primary,
+    .git-commit-split-btn .git-commit-btn,
+    .memo-new-btn,
+    .scheduled-tasks-create-btn,
+    .scheduled-tasks-new-btn,
+    .mcp-editor-mode-btn.active,
+    .send-btn
+  ) {
+  background: var(--tesseract-purple) !important;
+  color: #ffffff !important;
+  border: 1px solid transparent !important;
+  border-radius: var(--radius-sm) !important;
+  font-weight: 600 !important;
+  box-shadow: 0 0 8px var(--tesseract-purple-glow) !important;
+  transition: all 0.1s ease !important;
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .api-settings-action-btn.primary,
+    .api-settings-form-btn.primary,
+    .browser-settings-scan-action,
+    .model-manual-btn.primary,
+    .project-codebase-embed-btn.primary,
+    .tool-call-user-question-submit,
+    .tool-call-plan-approval-approve,
+    .project-sensitive-command-save,
+    .personalization-save-btn,
+    .branch-create-submit-btn,
+    .git-commit-btn,
+    .git-commit-btn.primary,
+    .git-commit-split-btn .git-commit-btn,
+    .memo-new-btn,
+    .scheduled-tasks-create-btn,
+    .scheduled-tasks-new-btn,
+    .mcp-editor-mode-btn.active,
+    .send-btn
+  ):hover:not(:disabled) {
+  background: var(--tesseract-purple-hover) !important;
+  box-shadow: 0 0 14px var(--tesseract-purple-glow) !important;
+  color: #ffffff !important;
+}
+
+/* 核心微动效：机械按键物理下陷反馈 (Tactile Mechanical Snap) */
+:root[data-theme-preset="tesseract"]
+  :is(
+    .api-settings-action-btn.primary,
+    .api-settings-form-btn.primary,
+    .browser-settings-scan-action,
+    .model-manual-btn.primary,
+    .project-codebase-embed-btn.primary,
+    .tool-call-user-question-submit,
+    .tool-call-plan-approval-approve,
+    .project-sensitive-command-save,
+    .personalization-save-btn,
+    .branch-create-submit-btn,
+    .git-commit-btn,
+    .git-commit-btn.primary,
+    .git-commit-split-btn .git-commit-btn,
+    .memo-new-btn,
+    .scheduled-tasks-create-btn,
+    .scheduled-tasks-new-btn,
+    .mcp-editor-mode-btn.active,
+    .send-btn
+  ):active:not(:disabled) {
+  transform: translateY(1.5px) !important;
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.7),
+    0 0 4px var(--tesseract-purple-glow) !important;
+  transition:
+    transform 0.05s ease,
+    box-shadow 0.05s ease !important;
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .icon-btn,
+    .nav-item,
+    .list-item,
+    .panel-tab,
+    .panel-tab-btn,
+    .toolbar-btn,
+    .chat-item,
+    .codebase-panel-view-btn,
+    .file-viewer-action-btn,
+    .git-action-btn,
+    .browser-nav-btn,
+    .ai-response-action-btn,
+    .code-block-action-btn,
+    .memo-icon-btn:not(.danger):not(.done-toggle),
+    .memo-sort-btn,
+    .memory-multi-select-exit-btn,
+    .memory-multi-select-action-btn:not(.danger),
+    .scheduled-task-action-btn,
+    .scheduled-task-copy-btn,
+    .scheduled-task-edit-btn,
+    .scheduled-tasks-back-btn,
+    .scheduled-tasks-cancel-btn,
+    .confirm-dialog-btn.cancel,
+    .confirm-dialog-btn:not(.confirm):not(.danger),
+    .memory-editor-btn
+  ) {
+  border-radius: var(--radius-sm) !important;
+  border: 1px solid transparent !important;
+  transition: all 0.1s ease !important;
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .icon-btn,
+    .nav-item,
+    .list-item,
+    .panel-tab,
+    .panel-tab-btn,
+    .toolbar-btn,
+    .chat-item,
+    .codebase-panel-view-btn,
+    .file-viewer-action-btn,
+    .git-action-btn,
+    .browser-nav-btn,
+    .ai-response-action-btn,
+    .code-block-action-btn,
+    .memo-icon-btn:not(.danger):not(.done-toggle),
+    .memo-sort-btn,
+    .memory-multi-select-exit-btn,
+    .memory-multi-select-action-btn:not(.danger),
+    .scheduled-task-action-btn,
+    .scheduled-task-copy-btn,
+    .scheduled-task-edit-btn,
+    .scheduled-tasks-back-btn,
+    .scheduled-tasks-cancel-btn,
+    .confirm-dialog-btn.cancel,
+    .confirm-dialog-btn:not(.confirm):not(.danger),
+    .memory-editor-btn
+  ):hover:not(:disabled) {
+  background: var(--bg-hover) !important;
+  border-color: rgba(139, 92, 246, 0.3) !important;
+  color: var(--text-primary) !important;
+}
+
+/* 核心微动效：图标次级键机械下压反馈 */
+:root[data-theme-preset="tesseract"]
+  :is(
+    .icon-btn,
+    .nav-item,
+    .list-item,
+    .panel-tab,
+    .panel-tab-btn,
+    .toolbar-btn,
+    .browser-nav-btn,
+    .ai-response-action-btn,
+    .code-block-action-btn,
+    .memo-icon-btn,
+    .scheduled-task-action-btn,
+    .confirm-dialog-btn.cancel
+  ):active:not(:disabled) {
+  transform: translateY(1px) !important;
+  background: var(--bg-active) !important;
+  border-color: var(--tesseract-purple) !important;
+  transition: transform 0.05s ease !important;
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(.nav-item, .list-item, .chat-item, .panel-tab).active {
+  border-color: rgba(139, 92, 246, 0.4) !important;
+  background: var(--tesseract-purple-bg) !important;
+  color: var(--accent-blue-text) !important;
+  box-shadow: none !important;
+}
+
+/* 谷歌级语义设计：多态确认弹窗与操作 */
+:root[data-theme-preset="tesseract"]
+  .confirm-dialog:not(.confirm-dialog-danger):not(.confirm-dialog-warning)
+  .confirm-dialog-btn.confirm {
+  background: var(--tesseract-purple) !important;
+  color: #ffffff !important;
+  border-radius: var(--radius-sm) !important;
+}
+
+:root[data-theme-preset="tesseract"]
+  .confirm-dialog-warning
+  .confirm-dialog-btn.confirm {
+  background: #ffb800 !important;
+  color: #040508 !important;
+  font-weight: 700 !important;
+  border-radius: var(--radius-sm) !important;
+}
+
+:root[data-theme-preset="tesseract"]
+  .confirm-dialog-danger
+  .confirm-dialog-btn.confirm {
+  background: #ff3366 !important;
+  color: #ffffff !important;
+  border-radius: var(--radius-sm) !important;
+}
+
+/* 谷歌级设计：会话列表项量子脉冲打字状态与完成图标 */
+@keyframes tesseract-quantum-flicker {
+  0%,
+  100% {
+    box-shadow: 0 0 6px var(--tesseract-purple-glow);
+    filter: brightness(1);
+  }
+  50% {
+    box-shadow:
+      0 0 14px var(--tesseract-purple-glow),
+      0 0 4px #00f59b;
+    filter: brightness(1.2);
+  }
+}
+
+:root[data-theme-preset="tesseract"] .chat-item-icon.streaming {
+  color: var(--tesseract-purple) !important;
+  animation: tesseract-quantum-flicker 1.8s ease-in-out infinite alternate;
+}
+
+:root[data-theme-preset="tesseract"] .chat-item-icon.completed {
+  color: var(--tesseract-cyan) !important;
+  filter: drop-shadow(0 0 6px rgba(0, 245, 155, 0.4));
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .confirm-dialog-btn.danger,
+    .btn-danger,
+    .project-collection-delete-btn,
+    .memo-icon-btn.danger,
+    .memory-clear-btn,
+    .memory-multi-select-action-btn.danger
+  ) {
+  border-radius: var(--radius-sm) !important;
+  background: rgba(255, 51, 102, 0.14) !important;
+  color: var(--accent-red-text) !important;
+  border: 1px solid rgba(255, 51, 102, 0.35) !important;
+  transition: all 0.1s ease !important;
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .confirm-dialog-btn.danger,
+    .btn-danger,
+    .project-collection-delete-btn,
+    .memo-icon-btn.danger,
+    .memory-clear-btn,
+    .memory-multi-select-action-btn.danger
+  ):hover:not(:disabled) {
+  background: rgba(255, 51, 102, 0.24) !important;
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .confirm-dialog-btn.danger,
+    .btn-danger,
+    .project-collection-delete-btn,
+    .memo-icon-btn.danger,
+    .memory-clear-btn,
+    .memory-multi-select-action-btn.danger
+  ):active:not(:disabled) {
+  transform: translateY(1px) !important;
+}
+
+:root[data-theme-preset="tesseract"] .abort-btn {
+  background: rgba(255, 51, 102, 0.16) !important;
+  color: var(--accent-red-text) !important;
+  border: 1px solid rgba(255, 51, 102, 0.4) !important;
+  border-radius: var(--radius-sm) !important;
+  transition: all 0.1s ease !important;
+}
+
+:root[data-theme-preset="tesseract"] .abort-btn:hover:not(:disabled) {
+  background: rgba(255, 51, 102, 0.28) !important;
+}
+
+:root[data-theme-preset="tesseract"] .abort-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+/* ==========================================================================
+   6. Cybernetic Cube Message Flow (魔方几何块与发光切角卡片)
+   ========================================================================== */
+
+:root[data-theme-preset="tesseract"] .chat-messages-container {
+  padding: 12px 18px !important;
+}
+
+:root[data-theme-preset="tesseract"] .chat-messages-inner {
+  max-width: 980px !important;
+  gap: 12px !important;
+}
+
+:root[data-theme-preset="tesseract"] .message-row {
+  margin-bottom: 10px !important;
+}
+
+:root[data-theme-preset="tesseract"] .user-message-bubble {
+  border-radius: var(--radius-md) !important;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.5) !important;
+  padding: 9px 15px !important;
+  border: 1px solid rgba(139, 92, 246, 0.35) !important;
+  background: #0d111a !important;
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+:root[data-theme-preset="tesseract"] .user-message-bubble:hover {
+  border-color: rgba(139, 92, 246, 0.6);
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.3) !important;
+}
+
+:root[data-theme-preset="tesseract"] .assistant-message-content {
+  padding: 4px 0 !important;
+  line-height: 1.6 !important;
+}
+
+:root[data-theme-preset="tesseract"] .chat-input-wrapper {
+  padding: 0 18px 12px !important;
+}
+
+:root[data-theme-preset="tesseract"] .chat-input-container {
+  border-radius: var(--radius-md) !important;
+  border: 1px solid var(--border-subtle) !important;
+  background: var(--bg-primary) !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4) !important;
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease !important;
+}
+
+:root[data-theme-preset="tesseract"] .chat-input-container:focus-within {
+  border-color: var(--tesseract-purple) !important;
+  box-shadow:
+    0 0 0 1px var(--tesseract-purple),
+    0 0 8px var(--tesseract-purple-glow) !important;
+}
+
+:root[data-theme-preset="tesseract"] .chat-input-textarea {
+  padding: 10px 14px !important;
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+}
+
+:root[data-theme-preset="tesseract"] .chat-float-island {
+  border-radius: var(--radius-sm) !important;
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.25) !important;
+  border: 1px solid var(--border-color) !important;
+  background: var(--bg-secondary) !important;
+  transition: all 0.12s ease;
+}
+
+:root[data-theme-preset="tesseract"] .chat-float-island:hover {
+  box-shadow: 0 0 18px rgba(139, 92, 246, 0.45) !important;
+  transform: translateY(-1px);
+}
+
+/* ==========================================================================
+   7. Form Inputs & Select Controls (全局表单与聚焦环)
+   ========================================================================== */
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+    select,
+    textarea,
+    .custom-select-trigger,
+    .model-manual-field,
+    .search-modal-input,
+    .browser-address-input,
+    .browser-find-input,
+    .git-commit-input,
+    .file-viewer-search-input,
+    .branch-create-input,
+    .api-model-combobox-field
+  ) {
+  border-color: var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+    select,
+    textarea,
+    .custom-select-trigger,
+    .model-manual-field,
+    .search-modal-input,
+    .browser-address-input,
+    .browser-find-input,
+    .git-commit-input,
+    .file-viewer-search-input,
+    .branch-create-input,
+    .api-model-combobox-field
+  ):focus {
+  border-color: var(--tesseract-purple);
+  box-shadow:
+    0 0 0 1px var(--tesseract-purple),
+    0 0 6px var(--tesseract-purple-glow);
+  outline: none;
+}
+
+:root[data-theme-preset="tesseract"] .range-slider {
+  --range-accent: var(--tesseract-purple);
+  --range-track-bg: color-mix(
+    in srgb,
+    var(--tesseract-purple) 22%,
+    var(--bg-tertiary)
+  );
+}
+
+:root[data-theme-preset="tesseract"]
+  .toggle-switch
+  input:checked
+  + .toggle-slider,
+:root[data-theme-preset="tesseract"] .toggle-slider {
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-sm);
+  transition: all 0.15s ease;
+}
+
+:root[data-theme-preset="tesseract"]
+  .toggle-switch
+  input:checked
+  + .toggle-slider {
+  background: var(--tesseract-purple);
+}
+
+/* ==========================================================================
+   8. Dropdowns, Overlays & Dialogs (全域浮层与下拉菜单)
+   ========================================================================== */
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .top-bar-plus-dropdown,
+    .top-bar-todo-dropdown,
+    .plus-menu-dropdown,
+    .model-dropdown,
+    .file-mention-popup,
+    .chat-command-panel,
+    .custom-select-dropdown,
+    .custom-select-dropdown-portal,
+    .browser-menu-dropdown,
+    .branch-dropdown,
+    .app-modal-dialog,
+    .confirm-dialog,
+    .search-modal,
+    .explorer-entry-context-menu,
+    .context-menu,
+    .api-model-combobox-menu,
+    .ai-response-copy-menu
+  ) {
+  border: 1px solid rgba(139, 92, 246, 0.35) !important;
+  border-radius: var(--radius-md) !important;
+  background: var(--surface-island-strong) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8) !important;
+  backdrop-filter: none;
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .top-bar-plus-dropdown-item,
+    .top-bar-todo-item,
+    .plus-menu-item,
+    .model-dropdown-item,
+    .custom-select-item,
+    .browser-menu-item,
+    .branch-dropdown-item,
+    .chat-command-item,
+    .mention-entry,
+    .explorer-entry-context-menu-item,
+    .context-menu-item,
+    .api-model-combobox-option,
+    .ai-response-copy-menu-item
+  ) {
+  border-radius: var(--radius-xs) !important;
+  transition: all 0.1s ease;
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .top-bar-plus-dropdown-item,
+    .top-bar-todo-item,
+    .plus-menu-item,
+    .model-dropdown-item,
+    .custom-select-item,
+    .browser-menu-item,
+    .branch-dropdown-item,
+    .chat-command-item,
+    .mention-entry,
+    .explorer-entry-context-menu-item,
+    .context-menu-item,
+    .api-model-combobox-option,
+    .ai-response-copy-menu-item
+  ):hover {
+  background: var(--tesseract-purple-bg) !important;
+  color: var(--text-primary) !important;
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .context-menu-item.danger,
+    .explorer-entry-context-menu-item.danger
+  ):hover {
+  background: rgba(255, 51, 102, 0.2) !important;
+  color: var(--accent-red-text) !important;
+}
+
+/* ==========================================================================
+   9. Send Key Menu & Groups (发送键快捷菜单群)
+   ========================================================================== */
+
+:root[data-theme-preset="tesseract"] .git-commit-split-btn {
+  border: 1px solid var(--tesseract-purple);
+  background: var(--tesseract-purple);
+  color: #ffffff;
+  box-shadow: 0 0 8px var(--tesseract-purple-glow);
+  border-radius: var(--radius-sm);
+}
+
+:root[data-theme-preset="tesseract"] .git-commit-split-btn .git-commit-btn {
+  border-color: transparent;
+  background: transparent;
+  color: inherit;
+}
+
+:root[data-theme-preset="tesseract"]
+  .git-commit-split-btn
+  .git-commit-mode-toggle {
+  border-left-color: rgba(255, 255, 255, 0.28);
+  color: inherit;
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .git-commit-split-btn .git-commit-btn,
+    .git-commit-split-btn .git-commit-mode-toggle
+  ):hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+:root[data-theme-preset="tesseract"] .send-key-group {
+  border-radius: var(--radius-sm);
+}
+
+:root[data-theme-preset="tesseract"] .send-btn,
+:root[data-theme-preset="tesseract"] .send-key-menu-toggle {
+  background: var(--tesseract-purple);
+  color: #ffffff;
+}
+
+:root[data-theme-preset="tesseract"] .send-btn {
+  box-shadow: none;
+}
+
+:root[data-theme-preset="tesseract"] .send-key-menu-toggle {
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.25);
+}
+
+:root[data-theme-preset="tesseract"] .send-btn:hover:not(:disabled),
+:root[data-theme-preset="tesseract"] .send-key-menu-toggle:hover,
+:root[data-theme-preset="tesseract"] .send-key-menu-toggle.is-open {
+  background: var(--tesseract-purple-hover);
+  opacity: 1;
+}
+
+:root[data-theme-preset="tesseract"] .send-key-menu {
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  border-radius: var(--radius-md);
+  background: var(--surface-island-strong);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8);
+}
+
+:root[data-theme-preset="tesseract"] .send-key-menu-item {
+  border-radius: var(--radius-xs);
+  transition: all 0.1s ease;
+}
+
+:root[data-theme-preset="tesseract"] .send-key-menu-item:hover,
+:root[data-theme-preset="tesseract"] .send-key-menu-item:focus-visible {
+  background: var(--tesseract-purple-bg);
+  color: var(--text-primary);
+}
+
+:root[data-theme-preset="tesseract"] .send-key-menu-item.is-active {
+  color: var(--accent-blue-text);
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   10. Thinking Process Collapsible Group (TCG 思考折叠条)
+   ========================================================================== */
+
+:root[data-theme-preset="tesseract"] .tcg-toggle {
+  padding: 2px 8px;
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  border-radius: var(--radius-sm);
+  background: var(--surface-island-muted);
+  color: var(--text-tertiary);
+  transition: all 0.12s ease;
+}
+
+:root[data-theme-preset="tesseract"] .tcg-toggle:hover {
+  border-color: rgba(139, 92, 246, 0.5);
+  background: var(--tesseract-purple-bg);
+  color: var(--accent-blue-text);
+}
+
+:root[data-theme-preset="tesseract"] .tcg-toggle:active {
+  background: var(--bg-active);
+  transform: translateY(1px);
+}
+
+:root[data-theme-preset="tesseract"] .tcg-label {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+:root[data-theme-preset="tesseract"] .tcg-chevron {
+  color: var(--text-secondary);
+}
+
+:root[data-theme-preset="tesseract"] .tcg-list::before {
+  background: rgba(139, 92, 246, 0.25);
+}
+
+/* ==========================================================================
+   11. Pending Messages Queue (排队消息池)
+   ========================================================================== */
+
+:root[data-theme-preset="tesseract"] .pending-messages-area {
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  border-radius: var(--radius-md);
+  background: var(--surface-island-muted);
+}
+
+:root[data-theme-preset="tesseract"] .pending-messages-header {
+  color: var(--accent-blue-text);
+  font-weight: 600;
+}
+
+:root[data-theme-preset="tesseract"] .pending-message-item {
+  border-radius: var(--radius-sm);
+  transition: background 0.1s ease;
+}
+
+:root[data-theme-preset="tesseract"] .pending-message-item:hover {
+  background: var(--tesseract-purple-bg);
+}
+
+:root[data-theme-preset="tesseract"] .pending-message-send-now {
+  background: var(--tesseract-purple);
+  color: #ffffff;
+}
+
+:root[data-theme-preset="tesseract"] .pending-message-send-now:hover {
+  background: var(--tesseract-purple-hover);
+}
+
+:root[data-theme-preset="tesseract"] .pending-message-withdraw:hover {
+  background: rgba(255, 51, 102, 0.2);
+  color: var(--accent-red-text);
+}
+
+/* ==========================================================================
+   12. Chat Empty State & Archetype Quick Cards (卡片分类微浮起)
+   ========================================================================== */
+
+:root[data-theme-preset="tesseract"] .chat-empty-greeting-logo {
+  color: var(--tesseract-purple);
+  filter: drop-shadow(0 0 10px var(--tesseract-purple-glow));
+}
+
+:root[data-theme-preset="tesseract"] .chat-empty-greeting-title {
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+:root[data-theme-preset="tesseract"] .chat-empty-quick-card {
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  border-radius: var(--radius-md);
+  background: var(--surface-island-strong);
+  box-shadow: none;
+  transition: all 0.14s ease !important;
+}
+
+:root[data-theme-preset="tesseract"] .chat-empty-quick-card.is-api {
+  border-color: rgba(0, 245, 155, 0.35);
+  background: color-mix(in srgb, #00f59b 5%, var(--surface-island-strong));
+}
+
+:root[data-theme-preset="tesseract"] .chat-empty-quick-card.is-theme {
+  border-color: rgba(139, 92, 246, 0.4);
+  background: color-mix(in srgb, #8b5cf6 7%, var(--surface-island-strong));
+}
+
+:root[data-theme-preset="tesseract"]
+  .chat-empty-quick-card:hover:not(:disabled),
+:root[data-theme-preset="tesseract"] .chat-empty-quick-card:focus-visible {
+  border-color: var(--tesseract-purple);
+  background: var(--tesseract-purple-bg);
+  box-shadow:
+    0 0 12px var(--tesseract-purple-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+  transform: translateY(-1.5px) !important;
+}
+
+:root[data-theme-preset="tesseract"]
+  .chat-empty-quick-card:active:not(:disabled) {
+  transform: translateY(1px) !important;
+}
+
+/* ==========================================================================
+   13. Tool Calls & Running State (工具卡片与运行中态)
+   ========================================================================== */
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .chat-message-tool,
+    .context-compaction-message,
+    .context-compaction-stream,
+    .file-changes-card,
+    .tool-call-bash-terminal
+  ) {
+  border-radius: var(--radius-md) !important;
+  border: 1px solid var(--border-color) !important;
+  border-left: 3px solid var(--tesseract-purple) !important;
+  background: var(--bg-tertiary) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+
+:root[data-theme-preset="tesseract"] .tool-call-card,
+:root[data-theme-preset="tesseract"] .tool-call-group {
+  border-radius: var(--radius-md) !important;
+  border: 1px solid var(--border-color) !important;
+  border-left: 3px solid var(--tesseract-purple) !important;
+  background: var(--bg-tertiary) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+  margin: 6px 0 !important;
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease !important;
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .tool-call-status-running,
+    .tool-call-browser-pending-running,
+    .tool-call-grep-pending-running
+  ) {
+  color: var(--accent-blue-text);
+  background: var(--tesseract-purple-bg);
+  animation: tesseract-quantum-flicker 1.8s ease-in-out infinite alternate !important;
+}
+
+/* ==========================================================================
+   14. Horizontal Resizer (上下分栏拖拽条)
+   ========================================================================== */
+
+:root[data-theme-preset="tesseract"] .h-resizer {
+  height: 16px;
+  min-height: 16px;
+}
+
+:root[data-theme-preset="tesseract"] .h-resizer::before {
+  background: rgba(139, 92, 246, 0.25);
+  transition: background 0.1s ease;
+}
+
+:root[data-theme-preset="tesseract"] .h-resizer::after {
+  width: 28px;
+  height: 12px;
+  border-color: rgba(139, 92, 246, 0.4);
+  border-radius: var(--radius-sm);
+  background: var(--surface-island-strong);
+  box-shadow: none;
+  transition: all 0.12s ease;
+}
+
+:root[data-theme-preset="tesseract"] .h-resizer:hover::before,
+:root[data-theme-preset="tesseract"] .h-resizer:active::before {
+  background: var(--tesseract-purple);
+}
+
+:root[data-theme-preset="tesseract"] .h-resizer:hover::after,
+:root[data-theme-preset="tesseract"] .h-resizer:active::after {
+  border-color: var(--tesseract-purple);
+  background: var(--tesseract-purple-bg);
+  box-shadow: 0 0 8px var(--tesseract-purple-glow);
+}
+
+:root[data-theme-preset="tesseract"] .h-resizer-icon {
+  color: var(--text-tertiary);
+}
+
+:root[data-theme-preset="tesseract"] .h-resizer:hover .h-resizer-icon,
+:root[data-theme-preset="tesseract"] .h-resizer:active .h-resizer-icon {
+  color: var(--accent-blue-text);
+}
+
+/* ==========================================================================
+   15. Token Usage Rings, Scroll to Bottom & Stream Glow
+   ========================================================================== */
+
+:root[data-theme-preset="tesseract"] .token-usage-ring-bg {
+  stroke: rgba(139, 92, 246, 0.2);
+}
+
+:root[data-theme-preset="tesseract"] .token-usage-ring-input {
+  stroke: var(--tesseract-purple);
+}
+
+:root[data-theme-preset="tesseract"] .token-usage-ring-output {
+  stroke: var(--tesseract-cyan);
+}
+
+:root[data-theme-preset="tesseract"] .token-usage-ring-cache {
+  stroke: #a78bfa;
+}
+
+:root[data-theme-preset="tesseract"] .token-usage-ring-text {
+  color: var(--text-secondary);
+}
+
+:root[data-theme-preset="tesseract"] .token-usage-tooltip {
+  border-radius: var(--radius-md);
+  border-color: rgba(139, 92, 246, 0.4);
+  background: var(--surface-island-strong);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.7);
+}
+
+:root[data-theme-preset="tesseract"] .token-usage-tooltip::before {
+  border-top-color: rgba(139, 92, 246, 0.4);
+}
+
+:root[data-theme-preset="tesseract"] .token-usage-tooltip::after {
+  border-top-color: var(--surface-island-strong);
+}
+
+:root[data-theme-preset="tesseract"] .token-usage-dot-input {
+  background: var(--tesseract-purple);
+}
+
+:root[data-theme-preset="tesseract"] .token-usage-dot-output {
+  background: var(--tesseract-cyan);
+}
+
+:root[data-theme-preset="tesseract"] .token-usage-dot-cache {
+  background: var(--warning);
+}
+
+:root[data-theme-preset="tesseract"] .token-usage-dot-cache-read {
+  background: var(--tesseract-purple);
+}
+
+:root[data-theme-preset="tesseract"] .token-usage-tooltip-divider {
+  background: rgba(139, 92, 246, 0.25);
+}
+
+:root[data-theme-preset="tesseract"] .chat-scroll-to-bottom {
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  background: var(--surface-island-strong);
+  color: var(--text-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  transition: all 0.12s ease !important;
+}
+
+:root[data-theme-preset="tesseract"] .chat-scroll-to-bottom:hover {
+  border-color: var(--tesseract-purple);
+  background: var(--tesseract-purple-bg);
+  color: var(--accent-blue-text);
+  box-shadow: 0 0 12px var(--tesseract-purple-glow);
+}
+
+:root[data-theme-preset="tesseract"] .chat-scroll-to-bottom:active {
+  transform: translateY(1px);
+}
+
+:root[data-theme-preset="tesseract"]
+  .chat-scroll-to-bottom.is-streaming::before {
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    var(--tesseract-purple) 90deg,
+    transparent 180deg,
+    transparent 360deg
+  );
+}
+
+/* ==========================================================================
+   16. Theme Preset Card In Settings (量子激光专属标志条卡片)
+   ========================================================================== */
+
+:root[data-theme-preset="tesseract"] .theme-preset-card-tesseract {
+  position: relative;
+  border: 1px solid rgba(139, 92, 246, 0.45) !important;
+  background: var(--surface-island-muted) !important;
+  border-radius: var(--radius-md) !important;
+  overflow: hidden;
+  transition: all 0.15s ease !important;
+}
+
+:root[data-theme-preset="tesseract"] .theme-preset-card-tesseract::before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #8b5cf6 0%, #00f59b 100%);
+  content: "";
+  pointer-events: none;
+}
+
+:root[data-theme-preset="tesseract"] .theme-preset-card-tesseract:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 14px var(--tesseract-purple-glow) !important;
+}
+
+:root[data-theme-preset="tesseract"] .theme-preset-card-tesseract.active {
+  border-color: var(--tesseract-purple) !important;
+  box-shadow: 0 0 12px var(--tesseract-purple-glow) !important;
+}
+
+/* ==========================================================================
+   17. Memo, Memory & Scheduled Tasks Panels (备忘录、记忆库与任务)
+   ========================================================================== */
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .memo-sidebar,
+    .memory-sidebar,
+    .scheduled-tasks-sidebar,
+    .scheduled-tasks-sidebar-footer,
+    .memo-gantt-header,
+    .memo-gantt-corner,
+    .memo-gantt-section-title
+  ) {
+  border-color: rgba(139, 92, 246, 0.25);
+  background: var(--surface-island-muted);
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .memo-content,
+    .memory-content,
+    .scheduled-tasks-content,
+    .memo-editor-toolbar,
+    .scheduled-task-details-header,
+    .scheduled-tasks-form-header,
+    .scheduled-tasks-form-footer
+  ) {
+  border-color: rgba(139, 92, 246, 0.25);
+  background: var(--surface-island-strong);
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(.scheduled-task-details-section, .scheduled-tasks-form-section) {
+  border-color: rgba(139, 92, 246, 0.25);
+  background: var(--surface-island-muted);
+  border-radius: var(--radius-md);
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .scheduled-tasks-filter-tabs,
+    .scheduled-tasks-segmented,
+    .scheduled-tasks-pre-script-body,
+    .scheduled-task-prompt-content,
+    .scheduled-task-history-item,
+    .scheduled-task-details-grid > div,
+    .scheduled-task-config-grid > div,
+    .memo-schedule-panel
+  ) {
+  border-color: rgba(139, 92, 246, 0.25);
+  background: var(--surface-island-strong);
+  border-radius: var(--radius-sm);
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .memo-filter-tab.active,
+    .memo-view-tab.active,
+    .scheduled-tasks-filter-tab.active,
+    .scheduled-tasks-segmented-btn.active,
+    .memo-list-item.selected,
+    .memory-list-item.selected,
+    .scheduled-task-item.selected,
+    .memo-gantt-row.selected
+  ) {
+  border-color: transparent;
+  background: var(--tesseract-purple-bg);
+  color: var(--accent-blue-text);
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .memo-filter-tab,
+    .memo-view-tab,
+    .memo-list-item,
+    .memory-list-item,
+    .memo-gantt-row,
+    .scheduled-task-item,
+    .scheduled-tasks-filter-tab,
+    .scheduled-tasks-segmented-btn,
+    .scheduled-tasks-pre-script-toggle
+  ) {
+  border-radius: var(--radius-sm);
+  transition: all 0.1s ease;
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .memo-filter-tab,
+    .memo-view-tab,
+    .memo-list-item,
+    .memory-list-item,
+    .memo-gantt-row,
+    .scheduled-task-item,
+    .scheduled-tasks-filter-tab,
+    .scheduled-tasks-segmented-btn,
+    .scheduled-tasks-pre-script-toggle
+  ):hover:not(:disabled) {
+  background: var(--tesseract-purple-bg);
+  color: var(--text-primary);
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .memo-icon-btn:not(.danger):not(.done-toggle),
+    .memo-sort-btn,
+    .memory-multi-select-exit-btn,
+    .memory-multi-select-action-btn:not(.danger)
+  ):hover:not(:disabled) {
+  background: var(--tesseract-purple-bg);
+  color: var(--text-secondary);
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .memo-icon-btn,
+    .memo-sort-btn,
+    .memory-clear-btn,
+    .memory-multi-select-exit-btn,
+    .memory-multi-select-action-btn,
+    .scheduled-task-action-btn,
+    .scheduled-task-copy-btn,
+    .scheduled-task-edit-btn,
+    .scheduled-tasks-back-btn,
+    .scheduled-tasks-cancel-btn
+  ) {
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  border-radius: var(--radius-sm);
+  background: var(--surface-island-strong);
+  color: var(--text-secondary);
+  transition: all 0.1s ease;
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .memo-icon-btn,
+    .memo-sort-btn,
+    .memory-clear-btn,
+    .memory-multi-select-exit-btn,
+    .memory-multi-select-action-btn,
+    .scheduled-task-action-btn,
+    .scheduled-task-copy-btn,
+    .scheduled-task-edit-btn,
+    .scheduled-tasks-back-btn,
+    .scheduled-tasks-cancel-btn
+  ):active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+:root[data-theme-preset="tesseract"] .memory-editor-btn {
+  border-color: var(--tesseract-purple);
+  background: var(--tesseract-purple);
+  color: #ffffff;
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .scheduled-task-prompt-content,
+    .scheduled-tasks-prompt-textarea,
+    .scheduled-tasks-script-textarea,
+    .thinking-menu-trigger,
+    .memory-editor-title,
+    .memory-editor-content,
+    .memory-editor-tags,
+    .memo-schedule-field input[type="date"],
+    .scheduled-tasks-field input:not([type="checkbox"]):not([type="range"])
+  ) {
+  border-color: var(--border-color);
+  background: var(--surface-island-strong);
+  border-radius: var(--radius-sm);
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .scheduled-tasks-prompt-textarea,
+    .scheduled-tasks-script-textarea,
+    .thinking-menu-trigger,
+    .memory-editor-title,
+    .memory-editor-content,
+    .memory-editor-tags
+  ):focus {
+  border-color: var(--tesseract-purple);
+  box-shadow: 0 0 6px var(--tesseract-purple-glow);
+}
+
+/* ==========================================================================
+   18. Stream Metrics Capsule (流式吞吐指标胶囊)
+   ========================================================================== */
+
+:root[data-theme-preset="tesseract"] .stream-metrics {
+  border-color: rgba(139, 92, 246, 0.35);
+  border-radius: var(--radius-sm);
+  background: var(--surface-island-strong);
+  transition: all 0.12s ease;
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(.stream-metrics-icon, .stream-metrics-label) {
+  color: var(--text-muted);
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .stream-metrics-elapsed.is-active,
+    .stream-metrics-tokens.is-active,
+    .stream-metrics-tps.is-active
+  )
+  .stream-metrics-icon {
+  color: var(--accent-blue-text);
+}
+
+:root[data-theme-preset="tesseract"] .stream-metrics-sep {
+  background: rgba(139, 92, 246, 0.25);
+}
+
+:root[data-theme-preset="tesseract"] .stream-metrics-pause-btn:hover {
+  background: var(--tesseract-purple-bg);
+  color: var(--accent-blue-text);
+}
+
+:root[data-theme-preset="tesseract"] .stream-metrics-pause-btn.is-paused {
+  color: var(--accent-blue-text);
+}
+
+:root[data-theme-preset="tesseract"] .stream-metrics-pause-btn.is-paused:hover {
+  background: var(--tesseract-purple-bg);
+  color: var(--accent-blue-text);
+}
+
+:root[data-theme-preset="tesseract"] .stream-metrics-pause-btn:focus-visible {
+  outline-color: var(--tesseract-purple);
+}
+
+/* ==========================================================================
+   19. Git Diff View & Code Viewers (Git 差异面板与查看器)
+   ========================================================================== */
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .ai-message .code-block-wrapper,
+    .context-compaction-markdown .code-block-wrapper,
+    .file-viewer,
+    .diff-viewer,
+    .git-diff-view,
+    .terminal-container,
+    .browser-panel,
+    .codebase-panel-table-wrap
+  ) {
+  border: 1px solid rgba(139, 92, 246, 0.3) !important;
+  border-radius: var(--radius-md) !important;
+  background: var(--bg-primary) !important;
+  transition: border-color 0.12s ease;
+}
+
+:root[data-theme-preset="tesseract"]
+  :is(
+    .ai-message .code-block-header,
+    .context-compaction-markdown .code-block-header,
+    .codebase-panel-table th,
+    .api-settings-table th,
+    .file-changes-header
+  ) {
+  background: var(--bg-secondary);
+  border-bottom: 1px solid rgba(139, 92, 246, 0.25);
+}
+
+:root[data-theme-preset="tesseract"] :is(.git-panel-diff, .git-panel-changes) {
+  background: var(--surface-island-muted);
+}
+
+:root[data-theme-preset="tesseract"] .diff-viewer-empty {
+  margin: 6px;
+  border: 1px dashed rgba(139, 92, 246, 0.35);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-primary);
+  color: var(--text-tertiary);
+  letter-spacing: 0.02em;
+}

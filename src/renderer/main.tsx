@@ -18,6 +18,8 @@ import "./themes/preset-google.css";
 import "./themes/preset-win95.css";
 import "./themes/preset-cyberpunk.css";
 import "./themes/preset-notion.css";
+import "./themes/preset-compact.css";
+import "./themes/preset-tesseract.css";
 
 // 在 React 渲染之前同步应用 localStorage 中缓存的主题快照。
 // 主题持久化在 Rust 后端，渲染进程启动时需通过 IPC 异步读取，

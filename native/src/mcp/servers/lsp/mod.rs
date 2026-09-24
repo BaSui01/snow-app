@@ -72,7 +72,7 @@ fn tool_schemas() -> Vec<McpTool> {
         McpTool {
             server_id: SERVER_ID.to_string(),
             name: "hover".to_string(),
-            description: "Get the exact type signature and doc comment of a symbol at a position. Use to understand an identifier or an unknown API without reading its implementation.\n\n- Position is 1-indexed (line, column).\n- Returns Markdown contents (type info + doc comment).\n\nLocal projects only.".to_string(),
+            description: "Get the exact type signature and doc comment of a symbol at a position. Use to understand an identifier or an unknown API without reading its implementation.\n\nCheaper than filesystem-read when you only need a type or signature.\n\n- Position is 1-indexed (line, column).\n- Returns Markdown contents (type info + doc comment).\n\nLocal projects only.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -95,7 +95,7 @@ fn tool_schemas() -> Vec<McpTool> {
         McpTool {
             server_id: SERVER_ID.to_string(),
             name: "goto".to_string(),
-            description: "Jump to a symbol at a position with one of three navigation kinds: kind=definition (default; the declaration — cross-file, resolution-accurate; imports/generics/traits/stdlib & dependency sources), kind=type-definition (the type's definition), kind=implementation (all implementations of an interface/abstract class/trait).\n\n- Returns target file/line/column(s).\n- type-definition / implementation are only supported by servers that declare those capabilities.\n\nLocal projects only.".to_string(),
+            description: "Jump to a symbol at a position with one of three navigation kinds: kind=definition (default; the declaration — cross-file, resolution-accurate; imports/generics/traits/stdlib & dependency sources), kind=type-definition (the type's definition), kind=implementation (all implementations of an interface/abstract class/trait).\n\nUse INSTEAD OF grep to locate a definition — grep cannot distinguish a real symbol from same-named identifiers in other modules, comments or strings.\n\n- Returns target file/line/column(s).\n- type-definition / implementation are only supported by servers that declare those capabilities.\n\nLocal projects only.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -123,7 +123,7 @@ fn tool_schemas() -> Vec<McpTool> {
         McpTool {
             server_id: SERVER_ID.to_string(),
             name: "references".to_string(),
-            description: "Find all references to a symbol at a position (declaration included by default; pass includeDeclaration=false to exclude it).\n\nUse to assess the impact of renaming or changing a symbol. Each reference carries its one-line code context.\n\nLocal projects only.".to_string(),
+            description: "Find all references to a symbol at a position (declaration included by default; pass includeDeclaration=false to exclude it).\n\nRun this BEFORE renaming, removing or changing any shared symbol — compiler-accurate blast radius, where grep would miss aliased usages and match same-named symbols in unrelated modules. Each reference carries its one-line code context.\n\nLocal projects only.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -301,7 +301,7 @@ fn tool_schemas() -> Vec<McpTool> {
         McpTool {
             server_id: SERVER_ID.to_string(),
             name: "workspace-symbols".to_string(),
-            description: "Fuzzy-search symbols by name across the whole project (workspace/symbol) — semantic, no false positives from strings/comments. Use to locate a symbol you know by name, or to discover related symbols.\n\nReturns up to 50 symbols with kind, container and precise file/line/column. Case-insensitive fuzzy matching.\n\nLocal projects only.".to_string(),
+            description: "Fuzzy-search symbols by name across the whole project (workspace/symbol) — semantic, no false positives from strings/comments. Use INSTEAD OF grep when locating a symbol by name, or to discover related symbols.\n\nReturns up to 50 symbols with kind, container and precise file/line/column. Case-insensitive fuzzy matching.\n\nLocal projects only.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -1744,16 +1744,34 @@ pub(crate) async fn build_system_prompt_section(
         }
     }
 
-    // 任务分诊规则（2026-08-15，方案 C）：语义查询强制走 lsp-*，grep 仅限
-    // 纯文本搜索——消除模型"用 grep 代替语义分析"的路径依赖（实测
-    // grep-search 调用量远超 lsp-* 全家）。
+    // 任务分诊规则（2026-08-15 方案 C；2026-09-24 场景化重写）：从泛化
+    // MUST 改为「场景 → 工具」硬绑定——泛化规则模型无法稳定自判归类，
+    // 实测收效有限（grep 941 次 vs lsp-* 全家 145 次）；硬绑定模仿诊断的
+    // 成功模式（动作-时机绑定 + 明示替代品的缺陷）。workspace-symbols
+    // 非全语言支持（如 csharp），按 merged 能力条件渲染。
+    let has_workspace_symbols = merged.contains(&"workspace-symbols");
     lines.push(String::new());
     lines.push("Routing rules (MUST follow):".to_string());
+    let mut routing = String::from(
+        "- Locating a symbol's definition → `lsp-goto` (kind=definition); all usages of a symbol / impact before a rename → `lsp-references`; a symbol's type or signature → `lsp-hover`",
+    );
+    if has_workspace_symbols {
+        routing.push_str("; finding symbols by name → `lsp-workspace-symbols`");
+    }
+    routing.push('.');
+    lines.push(routing);
     lines.push(
-        "- Semantic queries (symbols, types, definitions, references, call graph, diagnostics) MUST use `lsp-*`; do NOT use `grep-search` or tree-sitter for them."
+        "- `grep-search` matches same-named symbols in unrelated modules, comments and string literals — it cannot tell a real reference from a namesake. Use it ONLY for literal strings/patterns (log text, config keys, comments), NEVER for semantic queries."
             .to_string(),
     );
-    lines.push("- `grep-search` is only for locating literal strings/patterns.".to_string());
+    lines.push(
+        "- `lsp-goto` / `lsp-references` take 1-indexed line/column: line numbers already shown by `lsp-symbols` or `filesystem-read` feed straight into their `line` / `column` params."
+            .to_string(),
+    );
+    lines.push(
+        "- After editing code, run `lsp-diagnostics` on the changed files (batch up to 30 via `filePaths`)."
+            .to_string(),
+    );
 
     lines.push(String::new());
     lines.push(

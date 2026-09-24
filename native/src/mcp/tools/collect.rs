@@ -164,6 +164,41 @@ pub async fn collect_all_mcp_tools(
         }
     }
 
+    // 反制 grep 路径依赖（2026-09-24）：lsp 实际激活（能力可用 + 项目 scope
+    // 已启用）时，给平替工具 grep-search 注入语义路由提示。根因：grep 无法
+    // 区分真实引用与同名符号（其他模块的同名常量、注释、字符串字面量），
+    // 模型拿到"看起来有结果"的匹配集就继续走，不会想到改用 lsp-*。提示只
+    // 点名核心工具（全语言可用），workspace-symbols 非全语言支持（如
+    // csharp），按实际暴露能力条件渲染，避免诱导调用不存在的工具。
+    // lsp 未激活时 grep-search 描述保持原样（不影响其他项目与 prompt cache
+    // 的跨项目稳定性——同一项目内 lsp 状态不变则描述稳定）。
+    if lsp_active {
+        if let Some(grep_tool) = tools
+            .iter_mut()
+            .find(|tool| tool.server_id == "grep" && tool.name == "search")
+        {
+            let mut routes = String::from(
+                "\n\n**Semantic queries are NOT grep's job** — this project has LSP servers \
+                 running, and grep cannot tell a real reference from a same-named symbol in \
+                 another module, a comment or a string literal. Route semantic queries to:\
+                 \n- Where is X defined → `lsp-goto` (kind=definition)\
+                 \n- Every usage of X / impact before renaming → `lsp-references`\
+                 \n- Type or signature of X → `lsp-hover`",
+            );
+            if lsp_available_tools
+                .iter()
+                .any(|tool| tool == "lsp-workspace-symbols")
+            {
+                routes.push_str("\n- Symbols by name across the project → `lsp-workspace-symbols`");
+            }
+            routes.push_str(
+                "\n- Verify edits compile → `lsp-diagnostics`\
+                 \nReserve grep for literal text: log messages, config keys, comments, string constants.",
+            );
+            grep_tool.description = format!("{}{}", grep_tool.description, routes);
+        }
+    }
+
     if let Some(skill_tool) = SkillsService::new().tool(project_id).await? {
         if tool_is_enabled(&skill_tool, global_scope.as_ref(), scope.as_ref()) {
             tools.push(skill_tool);

@@ -237,7 +237,6 @@ export type RightPanelRef = {
 type RightPanelProps = RightPanelContentProps & {
   isCollapsed: boolean;
   isFullscreen: boolean;
-  isResizing?: boolean;
   /** 切换主内容视图（绘图工作台错误卡片跳转设置用）。 */
   onSelectMainView?: (view: MainContentView) => void;
   /** 切换右面板全屏（Windows 下由 tab 操作区的最大化按钮触发）。 */
@@ -249,7 +248,6 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     {
       isCollapsed,
       isFullscreen,
-      isResizing = false,
       activeDirectory,
       onSelectMainView,
       onToggleRightPanelFullscreen,

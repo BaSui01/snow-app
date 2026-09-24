@@ -89,28 +89,10 @@ input {
   background: var(--app-bg);
 }
 
-.app-shell.is-resizing,
-.app-shell.is-resizing * {
+body.is-panel-resizing,
+body.is-panel-resizing * {
   cursor: col-resize !important;
   user-select: none;
-}
-
-.app-shell.is-resizing .top-bar,
-.app-shell.is-resizing .sidebar,
-.app-shell.is-resizing .right-panel,
-.app-shell.is-resizing .main-content,
-.app-shell.is-resizing .panel-resizer {
-  transition: none;
-}
-
-/* During panel resize, the heaviest DOM (many Markdown blocks) would
-   otherwise reflow on every mousemove. With viewport virtualization,
-   off-screen messages are already replaced by fixed-height placeholders
-   (contain: strict), so they are cheap. For the few visible messages we
-   only need to suppress content-visibility toggling so their heights
-   stay stable while the width changes. */
-.app-shell.is-resizing .chat-area {
-  will-change: contents;
 }
 
 .panel-resizer {
@@ -145,7 +127,7 @@ input {
 }
 
 .panel-resizer:hover::before,
-.app-shell.is-resizing .panel-resizer.is-active::before {
+.panel-resizer.is-active::before {
   background: color-mix(in srgb, var(--accent-color) 45%, transparent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-color) 10%, transparent);
 }

@@ -319,9 +319,7 @@
 }
 
 :root[data-theme-preset="tesseract"] .panel-resizer:hover::before,
-:root[data-theme-preset="tesseract"]
-  .app-shell.is-resizing
-  .panel-resizer.is-active::before {
+:root[data-theme-preset="tesseract"] .panel-resizer.is-active::before {
   background: var(--tesseract-purple) !important;
   box-shadow: 0 0 8px var(--tesseract-purple-glow) !important;
 }

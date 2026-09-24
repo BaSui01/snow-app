@@ -335,9 +335,7 @@
 }
 
 :root[data-theme-preset="compact"] .panel-resizer:hover::before,
-:root[data-theme-preset="compact"]
-  .app-shell.is-resizing
-  .panel-resizer.is-active::before {
+:root[data-theme-preset="compact"] .panel-resizer.is-active::before {
   background: var(--compact-accent) !important;
   box-shadow: 0 0 0 1px var(--compact-accent) !important;
 }

@@ -198,8 +198,6 @@ export const App = (): React.JSX.Element => {
   const [rightPanelWidth, setRightPanelWidth] = useState(
     RIGHT_PANEL_DEFAULT_WIDTH,
   );
-  const [activeResizeTarget, setActiveResizeTarget] =
-    useState<ResizeTarget | null>(null);
   const [showSshWizard, setShowSshWizard] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   // 关闭确认弹窗的「不再询问」勾选：勾选后点退出/最小化会把对应行为
@@ -549,7 +547,6 @@ export const App = (): React.JSX.Element => {
     isRightPanelFullscreen ? "right-panel-fullscreen" : "",
     // 全屏时聊天视图悬浮为底部卡片（其他视图仍完全隐藏）
     isChatFloatActive ? "chat-float-enabled" : "",
-    activeResizeTarget ? "is-resizing" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -588,13 +585,91 @@ export const App = (): React.JSX.Element => {
   ): void => {
     event.preventDefault();
 
+    const shellElement = appShellRef.current;
+    const resizerElement = event.currentTarget;
+    if (!shellElement) {
+      return;
+    }
+
+    const panelElement = shellElement.querySelector<HTMLElement>(
+      target === "sidebar" ? ".sidebar" : ".right-panel",
+    );
+    if (!panelElement) {
+      return;
+    }
+    const topBarElement = shellElement.querySelector<HTMLElement>(".top-bar");
+    const sidebarElement = shellElement.querySelector<HTMLElement>(".sidebar");
+    const mainElement =
+      shellElement.querySelector<HTMLElement>(".main-content");
+    const rightPanelElement =
+      shellElement.querySelector<HTMLElement>(".right-panel");
+    const chatAreaElement =
+      shellElement.querySelector<HTMLElement>(".chat-area");
+
+    const panelVariable =
+      target === "sidebar" ? "--sidebar-width" : "--right-panel-width";
     const startX = event.clientX;
     const startWidth = target === "sidebar" ? sidebarWidth : rightPanelWidth;
+    const minWidth =
+      target === "sidebar" ? SIDEBAR_MIN_WIDTH : RIGHT_PANEL_MIN_WIDTH;
+    const maxWidth = getMaxPanelWidth(target);
+    const linkedFullscreenPanel =
+      target === "sidebar" && isRightPanelFullscreen ? rightPanelElement : null;
+    const floatingCardElement =
+      target === "sidebar" && isChatFloatActive ? mainElement : null;
+    const frozenChatWidth = chatAreaElement
+      ? chatAreaElement.getBoundingClientRect().width
+      : 0;
     // 拖动期间的最新宽度，结束后一次性提交到 React state。
     let latestWidth = startWidth;
 
-    setActiveResizeTarget(target);
-    event.currentTarget.setPointerCapture(event.pointerId);
+    const overrideStack: {
+      element: HTMLElement;
+      property: string;
+      previous: string;
+      priority: string;
+    }[] = [];
+    const override = (element: HTMLElement | null, property: string): void => {
+      if (!element) {
+        return;
+      }
+      overrideStack.push({
+        element,
+        property,
+        previous: element.style.getPropertyValue(property),
+        priority: element.style.getPropertyPriority(property),
+      });
+    };
+
+    override(panelElement, "transition");
+    override(panelElement, "width");
+    override(panelElement, "min-width");
+    override(topBarElement, "transition");
+    override(topBarElement, panelVariable);
+    override(chatAreaElement, "width");
+    override(linkedFullscreenPanel, "--sidebar-width");
+    override(floatingCardElement, "--chat-float-region-left");
+
+    const shieldedElements = [
+      sidebarElement,
+      mainElement,
+      rightPanelElement,
+      ...shellElement.querySelectorAll<HTMLElement>("webview, iframe"),
+    ].filter((element): element is HTMLElement => element !== null);
+
+    panelElement.style.setProperty("transition", "none");
+    topBarElement?.style.setProperty("transition", "none");
+    if (chatAreaElement) {
+      chatAreaElement.style.width = `${frozenChatWidth}px`;
+    }
+    for (const element of shieldedElements) {
+      override(element, "pointer-events");
+      element.style.setProperty("pointer-events", "none");
+    }
+
+    document.body.classList.add("is-panel-resizing");
+    resizerElement.classList.add("is-active");
+    resizerElement.setPointerCapture(event.pointerId);
 
     // 右面板待全屏流程：越界区持续拖拽保持 1s 后出现遮罩提示（armed），
     // 此后不回拉、松开鼠标即进入全屏；回拉或提前松手则取消。
@@ -624,25 +699,36 @@ export const App = (): React.JSX.Element => {
         fullscreenTimer = null;
       }
       setIsRightPanelFullscreenPending(false);
-      setActiveResizeTarget(null);
-      // 提交最终宽度：与拖动期间手动写入的 CSS 变量值一致，React 渲染后无缝接管。
+      document.body.classList.remove("is-panel-resizing");
+      resizerElement.classList.remove("is-active");
+      shellElement.style.setProperty(panelVariable, `${latestWidth}px`);
       if (target === "sidebar") {
         setSidebarWidth(latestWidth);
       } else {
         setRightPanelWidth(latestWidth);
       }
+      for (const entry of overrideStack) {
+        if (entry.previous === "" && entry.priority === "") {
+          entry.element.style.removeProperty(entry.property);
+          continue;
+        }
+        entry.element.style.setProperty(
+          entry.property,
+          entry.previous,
+          entry.priority,
+        );
+      }
+      overrideStack.length = 0;
       document.removeEventListener("pointermove", handlePointerMove);
       document.removeEventListener("pointerup", stopResize);
       document.removeEventListener("pointercancel", stopResize);
+      resizerElement.removeEventListener("lostpointercapture", stopResize);
     };
 
     const handlePointerMove = (pointerEvent: PointerEvent): void => {
       const deltaX = pointerEvent.clientX - startX;
       const nextWidth =
         target === "sidebar" ? startWidth + deltaX : startWidth - deltaX;
-      const minWidth =
-        target === "sidebar" ? SIDEBAR_MIN_WIDTH : RIGHT_PANEL_MIN_WIDTH;
-      const maxWidth = getMaxPanelWidth(target);
       // 右面板拖到最大宽度后仍向外拖拽：持续保持 1s 后出现遮罩提示。
       const isOverdrag =
         target === "right-panel" &&
@@ -662,14 +748,19 @@ export const App = (): React.JSX.Element => {
       const clampedWidth = Math.round(clamp(nextWidth, minWidth, maxWidth));
       latestWidth = clampedWidth;
 
-      // 拖动期间直接更新 app-shell 上的 CSS 变量，浏览器原生完成布局，
-      // 不经过 React 状态 → 右侧面板（含 GitDiffView 等高开销组件）不重渲染，
-      // 避免拖动卡顿。最终宽度在 pointerup 时再同步回 React state。
-      const shellElement = appShellRef.current;
-      if (shellElement) {
-        shellElement.style.setProperty(
-          target === "sidebar" ? "--sidebar-width" : "--right-panel-width",
+      panelElement.style.width = `${clampedWidth}px`;
+      panelElement.style.minWidth = `${clampedWidth}px`;
+      topBarElement?.style.setProperty(panelVariable, `${clampedWidth}px`);
+      if (linkedFullscreenPanel) {
+        linkedFullscreenPanel.style.setProperty(
+          "--sidebar-width",
           `${clampedWidth}px`,
+        );
+      }
+      if (floatingCardElement) {
+        floatingCardElement.style.setProperty(
+          "--chat-float-region-left",
+          `${clampedWidth + 20}px`,
         );
       }
     };
@@ -677,6 +768,7 @@ export const App = (): React.JSX.Element => {
     document.addEventListener("pointermove", handlePointerMove);
     document.addEventListener("pointerup", stopResize);
     document.addEventListener("pointercancel", stopResize);
+    resizerElement.addEventListener("lostpointercapture", stopResize);
   };
 
   return (
@@ -728,7 +820,6 @@ export const App = (): React.JSX.Element => {
               activeDirectory={activeDirectory}
               activeMainView={activeMainView}
               isCollapsed={isSidebarCollapsed}
-              isResizing={activeResizeTarget !== null}
               onActiveDirectoryChange={setActiveDirectory}
               onSelectMainView={setActiveMainView}
               onOpenSshWizard={handleOpenSshWizard}
@@ -737,9 +828,7 @@ export const App = (): React.JSX.Element => {
             />
             {!isSidebarCollapsed && (
               <div
-                className={`panel-resizer sidebar-resizer layout-resizer${
-                  activeResizeTarget === "sidebar" ? " is-active" : ""
-                }`}
+                className="panel-resizer sidebar-resizer layout-resizer"
                 role="separator"
                 aria-label="Resize sidebar"
                 aria-orientation="vertical"
@@ -749,7 +838,6 @@ export const App = (): React.JSX.Element => {
             <MainContent
               activeDirectory={activeDirectory}
               activeView={activeMainView}
-              isResizing={activeResizeTarget !== null}
               isFloating={isChatFloatActive}
               isFullscreenPending={isRightPanelFullscreenPending}
               onActiveDirectoryChange={setActiveDirectory}
@@ -757,9 +845,7 @@ export const App = (): React.JSX.Element => {
             />
             {!isRightPanelCollapsed && (
               <div
-                className={`panel-resizer right-panel-resizer layout-resizer${
-                  activeResizeTarget === "right-panel" ? " is-active" : ""
-                }`}
+                className="panel-resizer right-panel-resizer layout-resizer"
                 role="separator"
                 aria-label="Resize review panel"
                 aria-orientation="vertical"
@@ -772,7 +858,6 @@ export const App = (): React.JSX.Element => {
               ref={rightPanelRef}
               isCollapsed={isRightPanelCollapsed}
               isFullscreen={isRightPanelFullscreen}
-              isResizing={activeResizeTarget !== null}
               activeDirectory={activeDirectory}
               onSelectMainView={setActiveMainView}
               onToggleRightPanelFullscreen={() =>

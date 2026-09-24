@@ -157,7 +157,6 @@ const PluginsPanel = lazy(() =>
 type MainContentProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
   activeView: MainContentView;
-  isResizing?: boolean;
   /** 右侧面板全屏时聊天视图悬浮为卡片 */
   isFloating?: boolean;
   /** 右面板拖宽越界待全屏：显示遮罩提醒，拖回可取消 */
@@ -183,7 +182,6 @@ const LazyPanelFallback = (): React.JSX.Element => {
 export const MainContent = ({
   activeDirectory,
   activeView,
-  isResizing = false,
   isFloating = false,
   isFullscreenPending = false,
   onActiveDirectoryChange,

@@ -12,7 +12,6 @@ type SidebarProps = {
   activeMainView: SidebarContentProps["activeMainView"];
   activeDirectory?: SidebarContentProps["activeDirectory"];
   isCollapsed: boolean;
-  isResizing?: boolean;
   onActiveDirectoryChange?: SidebarContentProps["onActiveDirectoryChange"];
   onSelectMainView: SidebarContentProps["onSelectMainView"];
   onOpenSshWizard?: () => void;
@@ -24,7 +23,7 @@ type SidebarProps = {
     sshSessionId?: string | null,
     focusLine?: number,
     sshWorkspaceRoot?: string,
-    sshWorkspaceId?: string
+    sshWorkspaceId?: string,
   ) => void;
 };
 
@@ -32,7 +31,6 @@ export const Sidebar = ({
   activeMainView,
   activeDirectory,
   isCollapsed,
-  isResizing = false,
   onActiveDirectoryChange,
   onSelectMainView,
   onOpenSshWizard,
@@ -41,7 +39,7 @@ export const Sidebar = ({
 }: SidebarProps): React.JSX.Element => {
   const [activeContent, setActiveContent] = useState<SidebarContentKey>("main");
   const [explorerDirectoryId, setExplorerDirectoryId] = useState<string | null>(
-    null
+    null,
   );
 
   const handleSwitchContent = useCallback(
@@ -53,7 +51,7 @@ export const Sidebar = ({
       }
       setActiveContent(content);
     },
-    []
+    [],
   );
 
   const handleSwitchToExplorer = useCallback((directoryId: string): void => {

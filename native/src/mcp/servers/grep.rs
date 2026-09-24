@@ -2,7 +2,8 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::Duration;
 
 use napi::bindgen_prelude::*;
@@ -535,15 +536,28 @@ async fn run_native_search(
     let path_buf = PathBuf::from(path);
     let max_lines = max_results.min(500); // Hard cap to avoid huge output.
 
-    // Run the file walk in a blocking thread to avoid blocking the tokio runtime.
-    let result =
-        tokio::task::spawn_blocking(move || native_search_sync(&path_buf, &regex, max_lines))
-            .await
-            .map_err(|e| {
-                Error::new(Status::GenericFailure, format!("Search task failed: {e}"))
-            })??;
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let cancel_flag = Arc::clone(&cancelled);
 
-    Ok(result)
+    // Run the file walk in a blocking thread to avoid blocking the tokio runtime.
+    let search = tokio::task::spawn_blocking(move || {
+        native_search_sync(&path_buf, &regex, max_lines, &cancel_flag)
+    });
+
+    match tokio::time::timeout(Duration::from_secs(SEARCH_TIMEOUT_SECS), search).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => Err(Error::new(
+            Status::GenericFailure,
+            format!("Search task failed: {error}"),
+        )),
+        Err(_) => {
+            cancelled.store(true, Ordering::Relaxed);
+            Err(Error::new(
+                Status::GenericFailure,
+                format!("native search timed out after {SEARCH_TIMEOUT_SECS}s"),
+            ))
+        }
+    }
 }
 
 fn compile_search_regex(
@@ -566,14 +580,19 @@ fn compile_search_regex(
     builder.map_err(|e| Error::new(Status::InvalidArg, format!("Invalid regex pattern: {e}")))
 }
 
-fn native_search_sync(root: &Path, regex: &Regex, max_lines: usize) -> napi::Result<String> {
+fn native_search_sync(
+    root: &Path,
+    regex: &Regex,
+    max_lines: usize,
+    cancelled: &AtomicBool,
+) -> napi::Result<String> {
     let mut output = String::new();
     let mut match_count = 0usize;
 
     if root.is_file() {
-        search_file(root, regex, max_lines, &mut match_count, &mut output);
+        search_file(root, regex, max_lines, &mut match_count, &mut output, cancelled);
     } else if root.is_dir() {
-        walk_dir(root, regex, max_lines, &mut match_count, &mut output);
+        walk_dir(root, regex, max_lines, &mut match_count, &mut output, cancelled);
     }
 
     Ok(output)
@@ -585,6 +604,7 @@ fn walk_dir(
     max_lines: usize,
     match_count: &mut usize,
     output: &mut String,
+    cancelled: &AtomicBool,
 ) {
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
@@ -592,7 +612,7 @@ fn walk_dir(
     };
 
     for entry in entries.flatten() {
-        if *match_count >= max_lines {
+        if *match_count >= max_lines || cancelled.load(Ordering::Relaxed) {
             return;
         }
 
@@ -605,14 +625,14 @@ fn walk_dir(
                     continue;
                 }
             }
-            walk_dir(&path, regex, max_lines, match_count, output);
+            walk_dir(&path, regex, max_lines, match_count, output, cancelled);
         } else if path.is_file() {
             // Skip files without a known code extension.
             if !is_searchable_file(&path) {
                 continue;
             }
 
-            search_file(&path, regex, max_lines, match_count, output);
+            search_file(&path, regex, max_lines, match_count, output, cancelled);
         }
     }
 }
@@ -658,6 +678,7 @@ fn search_file(
     max_lines: usize,
     match_count: &mut usize,
     output: &mut String,
+    cancelled: &AtomicBool,
 ) {
     let file = match fs::File::open(path) {
         Ok(f) => f,
@@ -669,7 +690,7 @@ fn search_file(
     let path_str = path.to_string_lossy();
 
     for (line_idx, line_result) in reader.lines().enumerate() {
-        if *match_count >= max_lines {
+        if *match_count >= max_lines || cancelled.load(Ordering::Relaxed) {
             return;
         }
 

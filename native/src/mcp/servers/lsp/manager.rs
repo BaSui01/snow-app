@@ -326,8 +326,9 @@ impl ServerManager {
     /// 会话状态快照（供前端状态徽章实时展示，§10）：遍历全部 (语言 × 项目根)
     /// 会话，动态检测进程退出状态；按 (lang, project_root) 排序保证输出稳定。
     ///
-    /// `filter_project_root`：Some(root) 时只返回该项目根下的会话（前端徽章
-    /// 按当前项目过滤，§10）；None 返回全部会话。过滤在持有锁内做纯比较，
+    /// `filter_project_root`：Some(root) 时只返回该项目根**及其子目录**下的
+    /// 会话（会话根可能是项目根之下的技术栈根，如 native/；前端徽章按当前
+    /// 项目过滤，§10）；None 返回全部会话。过滤在持有锁内做纯比较，
     /// 不触发任何会话创建/回收。
     ///
     /// 注意：这里只做**观察**，不修改任何会话状态（不触发回收/重启），
@@ -337,7 +338,9 @@ impl ServerManager {
         let mut statuses: Vec<SessionStatus> = Vec::with_capacity(sessions.len());
         for ((lang, project_root), session) in sessions.iter() {
             if let Some(root) = filter_project_root {
-                if project_root.as_path() != root {
+                // 会话根可能是项目根之下的技术栈根（如 native/）：用
+                // starts_with 匹配（2026-09-24 技术栈感知）。
+                if !project_root.starts_with(root) {
                     continue;
                 }
             }

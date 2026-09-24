@@ -641,7 +641,7 @@ impl LspService {
         let (_config, lang) = config::match_config(configs, &path).ok_or_else(|| {
             types::LspError::NotConfigured(file_extension_label(&path))
         })?;
-        let project_root = resolve_project_root(project_id, file_path)?;
+        let project_root = resolve_lang_root(project_id, file_path, lang)?;
 
         let session = manager::ServerManager::instance()
             .get_or_start(lang, &project_root, project_id)
@@ -675,7 +675,7 @@ impl LspService {
         let (_config, lang) = config::match_config(&configs, &path).ok_or_else(|| {
             types::LspError::NotConfigured(file_extension_label(&path))
         })?;
-        let project_root = resolve_project_root(project_id, &file_path)?;
+        let project_root = resolve_lang_root(project_id, &file_path, lang)?;
 
         let session = manager.get_or_start(lang, &project_root, project_id).await?;
         let mut guard = session.lock().await;
@@ -724,7 +724,7 @@ impl LspService {
                 ))
             }
         }
-        let project_root = resolve_project_root(project_id, &file_path)?;
+        let project_root = resolve_lang_root(project_id, &file_path, lang)?;
 
         let session = manager.get_or_start(lang, &project_root, project_id).await?;
         let mut guard = session.lock().await;
@@ -757,7 +757,7 @@ impl LspService {
         let (_config, lang) = config::match_config(&configs, &path).ok_or_else(|| {
             types::LspError::NotConfigured(file_extension_label(&path))
         })?;
-        let project_root = resolve_project_root(project_id, &file_path)?;
+        let project_root = resolve_lang_root(project_id, &file_path, lang)?;
 
         let session = manager.get_or_start(lang, &project_root, project_id).await?;
         let mut guard = session.lock().await;
@@ -780,7 +780,7 @@ impl LspService {
         let (_config, lang) = config::match_config(&configs, &path).ok_or_else(|| {
             types::LspError::NotConfigured(file_extension_label(&path))
         })?;
-        let project_root = resolve_project_root(project_id, &file_path)?;
+        let project_root = resolve_lang_root(project_id, &file_path, lang)?;
 
         let session = manager.get_or_start(lang, &project_root, project_id).await?;
         let mut guard = session.lock().await;
@@ -811,7 +811,7 @@ impl LspService {
             types::LspError::NotConfigured(file_extension_label(&path))
         })?;
         ensure_capability(&lang, "rename")?;
-        let project_root = resolve_project_root(project_id, &file_path)?;
+        let project_root = resolve_lang_root(project_id, &file_path, lang)?;
 
         let session = manager.get_or_start(lang, &project_root, project_id).await?;
         let mut guard = session.lock().await;
@@ -850,7 +850,7 @@ impl LspService {
             types::LspError::NotConfigured(file_extension_label(&path))
         })?;
         ensure_capability(&lang, "code-action")?;
-        let project_root = resolve_project_root(project_id, &file_path)?;
+        let project_root = resolve_lang_root(project_id, &file_path, lang)?;
 
         let session = manager.get_or_start(lang, &project_root, project_id).await?;
         let mut guard = session.lock().await;
@@ -902,7 +902,7 @@ impl LspService {
                     types::LspError::NotConfigured(file_extension_label(&path))
                 })?;
                 ensure_capability(&lang, "execute-command")?;
-                let root = resolve_project_root(project_id, fp)?;
+                let root = resolve_lang_root(project_id, fp, &lang)?;
                 (lang.to_string(), root)
             }
             None => {
@@ -918,7 +918,7 @@ impl LspService {
                 }
                 let lang = enabled[0].lang.clone();
                 ensure_capability(&lang, "execute-command")?;
-                let root = resolve_project_root(project_id, "")?;
+                let root = resolve_lang_root(project_id, "", &lang)?;
                 (lang, root)
             }
         };
@@ -946,7 +946,7 @@ impl LspService {
             types::LspError::NotConfigured(file_extension_label(&path))
         })?;
         ensure_capability(&lang, "call-hierarchy")?;
-        let project_root = resolve_project_root(project_id, &file_path)?;
+        let project_root = resolve_lang_root(project_id, &file_path, lang)?;
 
         let session = manager.get_or_start(lang, &project_root, project_id).await?;
         let mut guard = session.lock().await;
@@ -972,7 +972,7 @@ impl LspService {
             types::LspError::NotConfigured(file_extension_label(&path))
         })?;
         ensure_capability(&lang, "type-hierarchy")?;
-        let project_root = resolve_project_root(project_id, &file_path)?;
+        let project_root = resolve_lang_root(project_id, &file_path, lang)?;
 
         let session = manager.get_or_start(lang, &project_root, project_id).await?;
         let mut guard = session.lock().await;
@@ -1029,8 +1029,20 @@ impl LspService {
         // 记录 warnings 供 agent 参考。
         let mut warnings: Vec<serde_json::Value> = Vec::new();
         for config in targets {
+            // 技术栈根（技术栈感知）：无栈 → 该语言跳过并记录 warning
+            //（LSP 只在技术栈存在时启动，与调用阶段 resolve_lang_root 一致）。
+            let Some(lang_root) = detect::find_lang_root(&project_root, None, &config.lang) else {
+                warnings.push(json!({
+                    "language": config.lang,
+                    "error": format!(
+                        "项目中未检测到 {} 技术栈标志文件，已跳过（LSP 只在技术栈存在时启动）",
+                        config.lang
+                    ),
+                }));
+                continue;
+            };
             let session = match manager
-                .get_or_start(&config.lang, &project_root, project_id)
+                .get_or_start(&config.lang, &lang_root, project_id)
                 .await
             {
                 Ok(session) => session,
@@ -1046,7 +1058,7 @@ impl LspService {
                 let mut guard = session.lock().await;
                 // TS 服务器无打开文件时 workspace/symbol 报 "No Project"：
                 // 先打开项目入口文件建立项目上下文（失败静默，由降级兜底）。
-                guard.ensure_project_context(&project_root).await;
+                guard.ensure_project_context(&lang_root).await;
                 guard.workspace_symbols(&query).await
             };
             match result {
@@ -1147,8 +1159,19 @@ impl LspService {
         let mut warnings: Vec<Value> = Vec::new();
         let mut languages: Vec<String> = Vec::new();
         for config in targets {
+            // 技术栈根（技术栈感知）：无栈 → 该语言跳过并记录 warning。
+            let Some(lang_root) = detect::find_lang_root(&project_root, None, &config.lang) else {
+                warnings.push(json!({
+                    "language": config.lang,
+                    "error": format!(
+                        "项目中未检测到 {} 技术栈标志文件，已跳过（LSP 只在技术栈存在时启动）",
+                        config.lang
+                    ),
+                }));
+                continue;
+            };
             let session = match manager
-                .get_or_start(&config.lang, &project_root, project_id)
+                .get_or_start(&config.lang, &lang_root, project_id)
                 .await
             {
                 Ok(session) => session,
@@ -1428,6 +1451,31 @@ fn resolve_project_root(project_id: Option<&str>, file_path: &str) -> napi::Resu
         .unwrap_or_else(|| PathBuf::from(".")))
 }
 
+/// 解析 LSP 会话根（技术栈感知，2026-09-24）：
+/// 项目根（workspace_directories 表）→ 该语言真实技术栈根（Cargo.toml /
+/// go.mod / tsconfig.json 等标志文件所在目录；文件级请求向上找最近的，
+/// 无文件上下文向下扫）。找不到技术栈标志 → 明确错误（不启动：避免
+/// 服务器在无项目配置的目录退化/异常，如 rust-analyzer 单文件模式、
+/// gopls 无 go.mod）。标志未定义的语言不约束（保持旧行为）。
+fn resolve_lang_root(
+    project_id: Option<&str>,
+    file_path: &str,
+    lang: &str,
+) -> napi::Result<PathBuf> {
+    let project_root = resolve_project_root(project_id, file_path)?;
+    // 空 file_path（如 execute-command 无 filePath 分支）：无起始目录，
+    // 走向下扫描（Path::new("").parent() 为 None，天然覆盖）。
+    let start = Path::new(file_path).parent();
+    if let Some(root) = detect::find_lang_root(&project_root, start, lang) {
+        return Ok(root);
+    }
+    Err(types::LspError::NoLangStack(
+        lang.to_string(),
+        detect::markers_for_lang(lang).join(", "),
+    )
+    .into())
+}
+
 /// 文件扩展名标签（错误信息用）。
 fn file_extension_label(path: &std::path::Path) -> String {
     path.extension()
@@ -1523,12 +1571,17 @@ pub(crate) async fn lsp_app_log(level: &str, func: &str, message: &str, error: O
     }
 }
 
-/// 服务器是否与项目实际语言匹配（项目语言一致性判定；collect 阶段工具暴露
-/// 与系统提示词注入共用，避免两处口径不一致）。匹配 = 技术栈标志命中
-/// （detect_project_stack，如 Cargo.toml → rust）或项目文件扩展名命中服务器
-/// file_extensions（覆盖无标志文件的 C/C++/Swift 等）。检测结果走 TTL 缓存
+/// 服务器是否与项目实际技术栈匹配（技术栈感知，2026-09-24 统一判定；collect
+/// 阶段工具暴露与系统提示词注入共用）。匹配 = 该语言的技术栈标志文件存在
+/// （find_lang_root 向下扫描，与调用阶段 resolve_lang_root 同一事实来源——
+/// 保证「暴露 = 可调用」：标志不存在时工具不暴露，调用阶段也会明确拒绝）。
+/// 未定义标志的语言退化为标志语言 + 扩展名匹配。检测结果走 TTL 缓存
 /// （detect.rs，60s），避免每次调用重复全量目录扫描。
 pub(crate) fn server_matches_project(config: &types::ServerConfig, project_root: &Path) -> bool {
+    if !detect::markers_for_lang(&config.lang).is_empty() {
+        return detect::find_lang_root(project_root, None, &config.lang).is_some();
+    }
+    // 未定义标志的语言（自定义 lang）：标志语言 + 扩展名兜底（保持旧行为）。
     let profile = detect::detect_project_languages_cached(&project_root.to_string_lossy());
     profile.langs.iter().any(|lang| lang == &config.lang)
         || config.file_extensions.iter().any(|ext| {
@@ -1724,8 +1777,12 @@ pub(crate) async fn build_system_prompt_section(
             if running {
                 continue;
             }
+            // 技术栈根（与调用阶段一致）：无栈不预热（调用时也会明确拒绝）。
+            let Some(stack_root) = detect::find_lang_root(root, None, &config.lang) else {
+                continue;
+            };
             let lang = config.lang.clone();
-            let root = root.to_path_buf();
+            let root = stack_root;
             let project_id = project_id.map(str::to_string);
             let manager = manager.clone();
             tokio::spawn(async move {

@@ -33,6 +33,9 @@ pub enum LspError {
     FileTooLarge(String),
     /// 当前语言的服务器不支持该请求（§8.7 运行时二次校验兜底）。
     CapabilityNotSupported(String, String),
+    /// 项目中不存在该语言的技术栈标志（无 Cargo.toml / go.mod / tsconfig.json 等）：
+    /// LSP 只在真实技术栈存在时启动（技术栈感知，2026-09-24）。
+    NoLangStack(String, String),
     /// 服务器返回了暂不支持的操作（如 documentChanges.operations 的文件
     /// 创建/重命名/删除），不得静默丢弃——错误信息明确告知未应用（R1.2）。
     Unsupported(String),
@@ -77,6 +80,12 @@ impl From<LspError> for napi::Error {
                 napi::Status::GenericFailure,
                 format!(
                     "当前语言的服务器（{lang}）不支持 lsp-{tool}。可检查 lsp-settings 是否启用了支持该能力的语言服务器（附录 F 能力矩阵）"
+                ),
+            ),
+            LspError::NoLangStack(lang, markers) => napi::Error::new(
+                napi::Status::GenericFailure,
+                format!(
+                    "项目中未检测到 {lang} 技术栈标志文件（{markers}）。LSP 服务器只在技术栈真实存在时启动：请确认该技术栈位于此项目内，或检查文件路径与项目根是否匹配"
                 ),
             ),
             LspError::Unsupported(message) => {

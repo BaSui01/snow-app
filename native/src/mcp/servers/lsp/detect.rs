@@ -4,7 +4,7 @@
 //! 供设置页「检测技术栈」功能使用：根据识别结果展示对应语言服务器的启用状态。
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -33,19 +33,35 @@ const SKIPPED_DIRS: &[&str] = &[
 ];
 
 /// 固定标志文件名 → lang 映射（按此优先级检查，同 lang 多标志时保留最先命中的 marker）。
+///
+/// 2026-09-24 扩展：覆盖 LSP 能力表全部语言的技术栈标志（栈根发现 / 工具暴露
+/// 判定共用；此前仅覆盖 UI 技术栈展示所需的最小子集）。不支持通配（如
+/// *.csproj / *.gemspec）——csharp / kotlin / lua 由下方扩展名检测兜底。
 const MARKER_FILES: &[(&str, &str)] = &[
     ("package.json", "typescript"),
     ("tsconfig.json", "typescript"),
+    ("jsconfig.json", "typescript"),
     ("Cargo.toml", "rust"),
     ("go.mod", "go"),
+    ("go.work", "go"),
     ("pyproject.toml", "python"),
     ("requirements.txt", "python"),
     ("setup.py", "python"),
+    ("setup.cfg", "python"),
+    ("Pipfile", "python"),
     ("pom.xml", "java"),
     ("build.gradle", "java"),
     ("build.gradle.kts", "java"),
+    ("settings.gradle", "java"),
+    ("settings.gradle.kts", "java"),
     ("composer.json", "php"),
     ("Gemfile", "ruby"),
+    ("compile_commands.json", "c"),
+    ("CMakeLists.txt", "c"),
+    ("meson.build", "c"),
+    ("Package.swift", "swift"),
+    (".luarc.json", "lua"),
+    (".luacheckrc", "lua"),
 ];
 
 /// 检测项目技术栈：扫描 project_root（递归深度 ≤ 2），返回 (path, lang) 去重后
@@ -279,4 +295,163 @@ fn scan_dir(dir: &Path, rel: &str, depth: usize, results: &mut Vec<ProjectStackD
 /// 隐藏目录（"." 开头）与构建产物/依赖目录跳过。
 fn should_skip_dir(name: &str) -> bool {
     name.starts_with('.') || SKIPPED_DIRS.contains(&name)
+}
+
+// ---------------------------------------------------------------------------
+// 技术栈根发现（LSP workspace 根，2026-09-24）
+// ---------------------------------------------------------------------------
+
+/// 各语言「技术栈根」标志文件（供**向上查找**使用，允许 `*` 前缀后缀通配）。
+///
+/// 与 MARKER_FILES 的关系：MARKER_FILES 供目录扫描（detect_project_stack，
+/// 不支持通配）；本表供文件级向上查找（如 native/src/x.rs → native/Cargo.toml
+/// 所在目录）。两表语义对齐——同一语言的技术栈标志应尽量一致。未定义标志
+/// 的语言返回空切片，调用方对空标志不做栈根约束（保持旧行为）。
+pub(crate) fn markers_for_lang(lang: &str) -> &'static [&'static str] {
+    match lang {
+        "typescript" => &["tsconfig.json", "jsconfig.json", "package.json"],
+        "rust" => &["Cargo.toml"],
+        "go" => &["go.mod", "go.work"],
+        "python" => &[
+            "pyproject.toml",
+            "requirements.txt",
+            "setup.py",
+            "setup.cfg",
+            "Pipfile",
+        ],
+        "java" => &[
+            "pom.xml",
+            "build.gradle",
+            "build.gradle.kts",
+            "settings.gradle",
+            "settings.gradle.kts",
+        ],
+        "c" => &["compile_commands.json", "CMakeLists.txt", "meson.build"],
+        "csharp" => &["*.csproj", "*.sln", "*.fsproj"],
+        "lua" => &[".luarc.json", ".luacheckrc"],
+        "php" => &["composer.json"],
+        "ruby" => &["Gemfile", "*.gemspec"],
+        // kotlin：gradle Kotlin DSL 或含 .kt 源文件的目录（与 java 的
+        // build.gradle.kts 存在重叠——重叠只会让双方都「匹配」，由具体
+        // 服务器命令是否安装与调用时的文件扩展名决定实际使用者）。
+        "kotlin" => &["build.gradle.kts", "*.kt"],
+        "swift" => &["Package.swift", "*.xcodeproj"],
+        _ => &[],
+    }
+}
+
+/// 目录是否命中任一标志（`*` 前缀 = 后缀通配，如 *.csproj / *.kt）。
+pub(crate) fn dir_has_lang_marker(dir: &Path, markers: &[&str]) -> bool {
+    markers.iter().any(|marker| match marker.strip_prefix('*') {
+        Some(suffix) => {
+            let suffix = suffix.to_ascii_lowercase();
+            std::fs::read_dir(dir)
+                .map(|entries| {
+                    entries.filter_map(Result::ok).any(|entry| {
+                        entry
+                            .file_name()
+                            .to_string_lossy()
+                            .to_ascii_lowercase()
+                            .ends_with(&suffix)
+                    })
+                })
+                .unwrap_or(false)
+        }
+        None => dir.join(marker).exists(),
+    })
+}
+
+/// 发现某语言的技术栈根（LSP workspace 根）。
+///
+/// 解析顺序：
+/// 1. `start_dir` 提供时从该目录**向上**查找（含 project_root 层）——
+///    文件级请求用它：monorepo 中每个 crate / 子包各自命中最近的栈根
+///    （如 native/src/x.rs → native/Cargo.toml 所在目录）；
+/// 2. 未命中（或 start_dir 为 None，如 workspace-symbols 无文件上下文）
+///    时从 project_root **向下**扫描（detect_project_stack，深度 ≤2、
+///    60s TTL 缓存）——取该语言最浅的命中目录；
+/// 3. 仍未命中 → None（调用方据此拒绝启动：技术栈不存在，不暴露不使用）。
+///
+/// 标志未定义的语言（markers 为空）→ Some(project_root)（不约束，旧行为）。
+pub(crate) fn find_lang_root(
+    project_root: &Path,
+    start_dir: Option<&Path>,
+    lang: &str,
+) -> Option<PathBuf> {
+    let markers = markers_for_lang(lang);
+    if markers.is_empty() {
+        return Some(project_root.to_path_buf());
+    }
+    // 1) 向上查找：start → project_root（含）。路径比较统一小写（Windows
+    //    大小写不敏感）；start 在项目外时一路向上到文件系统根（分析外部
+    //    文件的合理语义：以其所属技术栈根为根）。
+    if let Some(start) = start_dir {
+        let root_key = project_root.to_string_lossy().to_ascii_lowercase();
+        let mut current = Some(start.to_path_buf());
+        while let Some(dir) = current {
+            if dir_has_lang_marker(&dir, markers) {
+                return Some(dir);
+            }
+            if dir.to_string_lossy().to_ascii_lowercase() == root_key {
+                break; // 已到项目根仍未命中 → 停止（项目根之上不属于本项目）
+            }
+            current = dir.parent().map(Path::to_path_buf);
+        }
+    }
+    // 2) 向下扫描（复用 detect_project_stack 的 60s TTL 缓存）。
+    detect_project_stack(&project_root.to_string_lossy())
+        .iter()
+        .find(|detection| detection.lang == lang)
+        .map(|detection| {
+            if detection.path.is_empty() {
+                project_root.to_path_buf()
+            } else {
+                project_root.join(&detection.path)
+            }
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn markers_cover_lsp_languages() {
+        assert!(markers_for_lang("rust").contains(&"Cargo.toml"));
+        assert!(markers_for_lang("go").contains(&"go.mod"));
+        assert!(markers_for_lang("typescript").contains(&"tsconfig.json"));
+        assert!(markers_for_lang("python").contains(&"pyproject.toml"));
+        assert!(markers_for_lang("java").contains(&"pom.xml"));
+        assert!(markers_for_lang("c").contains(&"CMakeLists.txt"));
+        assert!(markers_for_lang("swift").contains(&"Package.swift"));
+        // 未定义语言：空标志（调用方不约束）。
+        assert!(markers_for_lang("brainfuck").is_empty());
+    }
+
+    #[test]
+    fn find_lang_root_walks_up_to_nearest_ancestor() {
+        // 用本 crate 的真实结构：CARGO_MANIFEST_DIR = .../native（含 Cargo.toml）。
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let start = manifest.join("src").join("mcp");
+        assert_eq!(
+            find_lang_root(manifest, Some(&start), "rust"),
+            Some(manifest.to_path_buf())
+        );
+        // 无文件上下文（向下扫描）同样命中自身。
+        assert_eq!(
+            find_lang_root(manifest, None, "rust"),
+            Some(manifest.to_path_buf())
+        );
+    }
+
+    #[test]
+    fn find_lang_root_returns_none_without_stack() {
+        // native/ 下没有 go.mod → go 栈根不存在（拒绝启动）。
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+        assert_eq!(find_lang_root(manifest, None, "go"), None);
+        assert_eq!(
+            find_lang_root(manifest, Some(&manifest.join("src")), "go"),
+            None
+        );
+    }
 }

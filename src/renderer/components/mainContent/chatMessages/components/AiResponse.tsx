@@ -7,6 +7,7 @@ import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCallItem } from "./ToolCallItem";
 import { ToolCallGroup } from "./ToolCallGroup";
 import { ImageGenGallery } from "../toolCalls/ImageGenGallery";
+import { AskUserQuestionGroup } from "../toolCalls/AskUserQuestionGroup";
 import { ToolAuthorizationDialog } from "../dialogs/ToolAuthorizationDialog";
 import { SensitiveCommandConfirmDialog } from "../toolCalls/SensitiveCommandConfirmDialog";
 import { MarkdownBlock } from "./markdownRenderer";
@@ -14,34 +15,47 @@ import type { AiResponseProps } from "../utils/types";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import type { HookExecutionRecord } from "../utils/conversationTypes";
 
-/** 工具调用渲染单元：连续的 imagegen-generate 调用合并为画廊，其余逐个渲染。 */
+/** 工具调用渲染单元：连续的 imagegen-generate 合并为画廊、连续的多个提问合并
+ *  为 Tab 组，其余逐个渲染。 */
 type ToolCallRenderItem =
   | { type: "gallery"; key: string; toolCalls: ToolCallInfo[] }
+  | { type: "questionGroup"; key: string; toolCalls: ToolCallInfo[] }
   | { type: "single"; key: string; toolCall: ToolCallInfo };
 
-/** 把 toolCalls 分组：相邻的 imagegen-generate（≥2 个）合并为一组画廊，
- *  避免并行生图结果纵向堆叠为多个单张卡片；其余调用保持单卡渲染。 */
+/** 需要合并渲染的工具名（相邻 ≥2 个才合并）。 */
+const ASK_TOOL_NAME = "user-interaction-askUserQuestion";
+const IMAGE_TOOL_NAME = "imagegen-generate";
+
+/** 把 toolCalls 分组：相邻的 imagegen-generate（≥2 个）合并为一组画廊、
+ *  相邻的提问（≥2 个）合并为一个 Tab 容器，避免并行生图结果 / 多轮提问
+ *  纵向堆叠为多个单卡片；其余调用保持单卡渲染。 */
 const groupToolCalls = (toolCalls: ToolCallInfo[]): ToolCallRenderItem[] => {
   const groups: ToolCallRenderItem[] = [];
   for (let i = 0; i < toolCalls.length;) {
-    if (toolCalls[i].name === "imagegen-generate") {
+    const name = toolCalls[i].name;
+    if (name === IMAGE_TOOL_NAME || name === ASK_TOOL_NAME) {
       let j = i;
-      while (
-        j < toolCalls.length &&
-        toolCalls[j].name === "imagegen-generate"
-      ) {
+      while (j < toolCalls.length && toolCalls[j].name === name) {
         j += 1;
       }
       if (j - i >= 2) {
-        groups.push({
-          type: "gallery",
-          key: `imagegen-gallery-${i}`,
-          toolCalls: toolCalls.slice(i, j),
-        });
+        groups.push(
+          name === ASK_TOOL_NAME
+            ? {
+                type: "questionGroup",
+                key: `ask-question-group-${i}`,
+                toolCalls: toolCalls.slice(i, j),
+              }
+            : {
+                type: "gallery",
+                key: `imagegen-gallery-${i}`,
+                toolCalls: toolCalls.slice(i, j),
+              },
+        );
       } else {
         groups.push({
           type: "single",
-          key: `${toolCalls[i].name}-${i}`,
+          key: `${name}-${i}`,
           toolCall: toolCalls[i],
         });
       }
@@ -49,7 +63,7 @@ const groupToolCalls = (toolCalls: ToolCallInfo[]): ToolCallRenderItem[] => {
     } else {
       groups.push({
         type: "single",
-        key: `${toolCalls[i].name}-${i}`,
+        key: `${name}-${i}`,
         toolCall: toolCalls[i],
       });
       i += 1;
@@ -222,6 +236,11 @@ export const AiResponse = memo(
               {groupedToolCalls.map((item) =>
                 item.type === "gallery" ? (
                   <ImageGenGallery key={item.key} toolCalls={item.toolCalls} />
+                ) : item.type === "questionGroup" ? (
+                  <AskUserQuestionGroup
+                    key={item.key}
+                    toolCalls={item.toolCalls}
+                  />
                 ) : (
                   <ToolCallItem
                     key={item.key}

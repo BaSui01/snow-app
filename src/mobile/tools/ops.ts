@@ -29,6 +29,7 @@
 import type { SnowRemoteToolCall } from "../../renderer/types/remoteControl";
 import { t } from "../i18n";
 import { iconMarkup, type MobileIconName } from "../icons";
+import { renderGenericTool } from "./generic";
 import type { ToolModule } from "./types";
 import {
   argsSummary,
@@ -751,10 +752,25 @@ const renderPlanApproval = (tool: SnowRemoteToolCall): HTMLElement | null => {
 
 // ── 用户提问（user-interaction-askUserQuestion） ────────────────────────
 
-const renderAskTool = (tool: SnowRemoteToolCall): HTMLElement | null => {
+/** 提问终态（与桌面 shared/userQuestionView 的枚举一致）。 */
+type AskStatus = "waiting" | "answered" | "cancelled" | "interrupted" | "error";
+
+type AskView = {
+  questionId?: string;
+  question: string;
+  options: string[];
+  selected: string[];
+  custom: string[];
+  status: AskStatus;
+  /** userQuestion 快照是否已下发（区分「准备中」与「等待作答」）。 */
+  hasSnapshot: boolean;
+  error: string;
+};
+
+/** 提问展示态解析：卡片与 Tab 组共用一份判定，避免两处状态漂移。 */
+const resolveAskView = (tool: SnowRemoteToolCall): AskView => {
   const args = parseJsonRecord(tool.arguments);
   const result = parseJsonRecord(tool.result);
-  if (isOpaqueTool(tool, args, result)) return null;
   const snapshot = tool.userQuestion;
 
   const question =
@@ -770,7 +786,6 @@ const renderAskTool = (tool: SnowRemoteToolCall): HTMLElement | null => {
   const custom = snapshot?.customAnswers?.length
     ? snapshot.customAnswers
     : asStrings(result?.customAnswers);
-  const selectedSet = new Set(selected);
   const cancelled =
     snapshot?.status === "cancelled" || result?.cancelled === true;
   const answered =
@@ -780,15 +795,73 @@ const renderAskTool = (tool: SnowRemoteToolCall): HTMLElement | null => {
       (result !== null &&
         result.cancelled !== true &&
         result.error === undefined));
+  // 工具已结束但没走 answered/cancelled 协议结算（用户未作答即被中断）：按
+  // 「已中断」收口，避免卡片停在「等待作答」却无处可答（提问卡片泄漏）。
+  const interrupted =
+    !cancelled &&
+    !answered &&
+    (snapshot?.interrupted === true || tool.status === "completed");
   const error = errorTextOf(tool, result);
+  const status: AskStatus = interrupted
+    ? "interrupted"
+    : cancelled
+      ? "cancelled"
+      : answered
+        ? "answered"
+        : error
+          ? "error"
+          : "waiting";
+
+  return {
+    questionId: snapshot?.questionId,
+    question,
+    options,
+    selected,
+    custom,
+    status,
+    hasSnapshot: Boolean(snapshot),
+    error,
+  };
+};
+
+/** 提问状态文案（Tab 提示与卡片结论共用）。 */
+const askStatusText = (status: AskStatus): string =>
+  status === "answered"
+    ? tr("ask.answered")
+    : status === "cancelled"
+      ? tr("ask.cancelled")
+      : status === "interrupted"
+        ? tr("ask.interrupted")
+        : status === "error"
+          ? tr("ask.failed")
+          : tr("ask.waiting");
+
+/** Tab 状态标记：等待回答用脉冲点（无图标），其余终态用 lucide 图标。 */
+const askStatusIcon = (status: AskStatus): MobileIconName | null =>
+  status === "answered"
+    ? "circle-check"
+    : status === "cancelled"
+      ? "x"
+      : status === "interrupted"
+        ? "circle-alert"
+        : status === "error"
+          ? "circle-x"
+          : null;
+
+const renderAskTool = (tool: SnowRemoteToolCall): HTMLElement | null => {
+  const args = parseJsonRecord(tool.arguments);
+  const result = parseJsonRecord(tool.result);
+  if (isOpaqueTool(tool, args, result)) return null;
+  const view = resolveAskView(tool);
+  const selectedSet = new Set(view.selected);
 
   const body = document.createDocumentFragment();
-  if (question)
-    body.append(tcSection(tr("ask.question"), tcPre(readable(question))));
+  if (view.question)
+    body.append(tcSection(tr("ask.question"), tcPre(readable(view.question))));
 
-  if (options.length) {
+  if (view.options.length) {
     const list = host("tc-ops-options");
-    for (const option of options) {
+    for (const option of view.options) {
       const isSelected = selectedSet.has(option);
       const row = host(
         isSelected ? "tc-ops-option tc-ops-option-selected" : "tc-ops-option",
@@ -801,21 +874,24 @@ const renderAskTool = (tool: SnowRemoteToolCall): HTMLElement | null => {
       list.append(row);
     }
     body.append(tcSection(tr("ask.options"), list));
-  } else if (!custom.length) {
+  } else if (!view.custom.length) {
     body.append(noteRow("empty", "list-checks", tr("ask.noOptions")));
   }
 
-  if (custom.length) {
+  if (view.custom.length) {
     const list = host("tc-ops-chips");
-    for (const answer of custom) list.append(textSpan("tc-ops-chip", answer));
+    for (const answer of view.custom)
+      list.append(textSpan("tc-ops-chip", answer));
     body.append(tcSection(tr("ask.custom"), list));
   }
 
-  if (cancelled) {
+  if (view.status === "cancelled") {
     body.append(statusRow("x", tr("ask.cancelled"), "muted"));
-  } else if (answered) {
+  } else if (view.status === "answered") {
     body.append(statusRow("circle-check", tr("ask.answered"), "ok"));
-  } else if (error) {
+  } else if (view.status === "interrupted") {
+    body.append(statusRow("circle-alert", tr("ask.interrupted"), "warn"));
+  } else if (view.status === "error") {
     body.append(statusRow("circle-x", tr("ask.failed"), "err"));
   } else {
     /* 有快照 → 手机端交互区可作答；只有运行中的工具调用 → 题目尚未下发。 */
@@ -824,33 +900,131 @@ const renderAskTool = (tool: SnowRemoteToolCall): HTMLElement | null => {
       noteRow(
         "note",
         "message-square-plus",
-        snapshot ? tr("ask.waitingHint") : tr("ask.preparing"),
+        view.hasSnapshot ? tr("ask.waitingHint") : tr("ask.preparing"),
       ),
     );
   }
 
-  if (error) body.append(tcErrorRow(readable(error)));
-  if (!result && !error) {
+  if (view.error) body.append(tcErrorRow(readable(view.error)));
+  if (!result && !view.error) {
     const fallback = rawFallback(tool.result);
     if (fallback) body.append(fallback);
   }
 
   const meta: HTMLElement[] = [];
-  if (cancelled) meta.push(tcBadge(tr("ask.cancelled"), "muted"));
-  else if (answered) meta.push(tcBadge(tr("ask.answered"), "ok"));
-  else if (error) meta.push(tcBadge(tr("ask.failed"), "err"));
+  if (view.status === "cancelled")
+    meta.push(tcBadge(tr("ask.cancelled"), "muted"));
+  else if (view.status === "answered")
+    meta.push(tcBadge(tr("ask.answered"), "ok"));
+  else if (view.status === "interrupted")
+    meta.push(tcBadge(tr("ask.interrupted"), "warn"));
+  else if (view.status === "error") meta.push(tcBadge(tr("ask.failed"), "err"));
   else meta.push(tcBadge(tr("ask.waiting"), "muted"));
 
   return createToolNode({
     tool,
     status: resolveStatus(tool),
     badge: tr("ask.name"),
-    display: question ? clip(question) : argsSummary(tool.arguments),
+    display: view.question ? clip(view.question) : argsSummary(tool.arguments),
     meta,
     className: "tc-ops-ask",
     bodyClass: "tc-ops",
     body,
   });
+};
+
+/** 提问 Tab 组实例序号（生成 role=tab / tabpanel 的关联 id）。 */
+let askGroupSeq = 0;
+
+/**
+ * 同一轮内相邻的多个提问合并为一个 Tab 容器：一次只显示一个问题卡片。
+ *
+ * activeKey 为重建前停留的问题键（timeline 工具级 diff 传入），用于避免
+ * 流式更新把阅读位置弹回：停留的问题仍未作答（或已无未作答的问题）时保留
+ * 其位置，否则回到第一个未回答的问题（等同「作答后自动切到下一题」）。
+ */
+export const createAskGroupEl = (
+  tools: SnowRemoteToolCall[],
+  activeKey?: string,
+): HTMLElement => {
+  const entries = tools.map((tool) => ({ tool, view: resolveAskView(tool) }));
+  const keys = entries.map(
+    (entry) => entry.view.questionId ?? entry.tool.interactionId,
+  );
+  const firstWaiting = entries.findIndex((e) => e.view.status === "waiting");
+  const inherited = activeKey ? keys.indexOf(activeKey) : -1;
+  let activeIndex =
+    inherited >= 0 &&
+    (entries[inherited].view.status === "waiting" || firstWaiting < 0)
+      ? inherited
+      : Math.max(0, firstWaiting);
+
+  const groupId = `ask-group-${(askGroupSeq += 1)}`;
+  const root = host("tc-ops-ask-group");
+  const tabs = host("tc-ops-ask-tabs");
+  tabs.setAttribute("role", "tablist");
+  tabs.setAttribute("aria-label", tr("ask.tabsLabel"));
+  const panels = host("tc-ops-ask-panels");
+  panels.setAttribute("role", "tabpanel");
+
+  const renderPanel = (): void => {
+    root.dataset.activeTab = keys[activeIndex] ?? "";
+    panels.setAttribute("aria-labelledby", `${groupId}-tab-${activeIndex}`);
+    const entry = entries[activeIndex];
+    if (!entry) {
+      panels.replaceChildren();
+      return;
+    }
+    const card = renderAskTool(entry.tool) ?? renderGenericTool(entry.tool);
+    panels.replaceChildren(card);
+  };
+
+  entries.forEach((entry, index) => {
+    const tab = document.createElement("button");
+    tab.type = "button";
+    tab.id = `${groupId}-tab-${index}`;
+    tab.className = "tc-ops-ask-tab";
+    tab.setAttribute("role", "tab");
+    tab.setAttribute("aria-controls", "tc-ops-ask-panels");
+    const label =
+      entry.view.question || tr("ask.questionFallback", { index: index + 1 });
+    const statusText = askStatusText(entry.view.status);
+    tab.title = `${label} — ${statusText}`;
+    tab.setAttribute("aria-label", `${label} — ${statusText}`);
+    tab.append(
+      textSpan(
+        "tc-ops-ask-tab-index",
+        tr("ask.tabIndex", { index: index + 1 }),
+      ),
+      textSpan("tc-ops-ask-tab-label", label),
+    );
+    const status = host(
+      `tc-ops-ask-tab-status tc-ops-ask-tab-status-${entry.view.status}`,
+    );
+    status.title = statusText;
+    const icon = askStatusIcon(entry.view.status);
+    status.append(icon ? iconSpan(icon, "icn") : host("tc-ops-ask-tab-dot"));
+    tab.append(status);
+
+    tab.addEventListener("click", () => {
+      activeIndex = index;
+      for (const [i, node] of Array.from(tabs.children).entries()) {
+        node.classList.toggle("is-active", i === index);
+        node.setAttribute("aria-selected", i === index ? "true" : "false");
+      }
+      renderPanel();
+    });
+
+    tabs.append(tab);
+  });
+
+  const activeTab = tabs.children[activeIndex];
+  activeTab?.classList.add("is-active");
+  activeTab?.setAttribute("aria-selected", "true");
+  renderPanel();
+
+  root.append(tabs, panels);
+  return root;
 };
 
 // ── 数据库（dbx-* / dbx_*） ─────────────────────────────────────────────

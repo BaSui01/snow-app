@@ -153,6 +153,115 @@
   color: var(--green);
 }
 
+/* ── 提问 Tab 组（同一轮多个提问合并展示，一次只显示一个问题卡） ─────── */
+.tc-ops-ask-group {
+  display: grid;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  overflow: hidden;
+}
+.tc-ops-ask-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.tc-ops-ask-tabs::-webkit-scrollbar {
+  display: none;
+}
+.tc-ops-ask-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  max-width: 62vw;
+  padding: 4px 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.tc-ops-ask-tab.is-active {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.08);
+  color: #d6dbe4;
+}
+.tc-ops-ask-tab-index {
+  flex: 0 0 auto;
+  font-weight: 600;
+  color: var(--dim);
+}
+.tc-ops-ask-tab.is-active .tc-ops-ask-tab-index {
+  color: var(--muted);
+}
+.tc-ops-ask-tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tc-ops-ask-tab-status {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+.tc-ops-ask-tab-status .icn {
+  width: 12px;
+  height: 12px;
+}
+/* 等待作答用脉冲点（无图标），其余终态用图标 + 色调区分。 */
+.tc-ops-ask-tab-status-waiting,
+.tc-ops-ask-tab-status-interrupted {
+  color: var(--amber);
+}
+.tc-ops-ask-tab-status-answered {
+  color: var(--green);
+}
+.tc-ops-ask-tab-status-cancelled {
+  color: var(--muted);
+}
+.tc-ops-ask-tab-status-error {
+  color: #ffb3b9;
+}
+.tc-ops-ask-tab-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: tc-ask-pulse 1.4s ease-in-out infinite;
+}
+@keyframes tc-ask-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.35;
+    transform: scale(0.75);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tc-ops-ask-tab-dot {
+    animation: none;
+  }
+}
+/* 长问题不撑爆时间线：容器限高 + 面板内部滚动。 */
+.tc-ops-ask-panels {
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
 /* ── 结果表（dbx / 外部 MCP） ─────────────────────────────────────────── */
 .tc-ops-table-wrap {
   display: grid;
@@ -231,6 +340,20 @@ html[data-theme="light"] .tc-ops-option {
 }
 html[data-theme="light"] .tc-ops-chip {
   background: rgba(15, 23, 42, 0.05);
+}
+html[data-theme="light"] .tc-ops-ask-group {
+  background: rgba(15, 23, 42, 0.02);
+}
+html[data-theme="light"] .tc-ops-ask-tab {
+  background: rgba(15, 23, 42, 0.03);
+}
+html[data-theme="light"] .tc-ops-ask-tab.is-active {
+  border-color: rgba(15, 23, 42, 0.18);
+  background: rgba(15, 23, 42, 0.07);
+  color: #28364f;
+}
+html[data-theme="light"] .tc-ops-ask-tab-status-error {
+  color: #b42318;
 }
 html[data-theme="light"] details.tool.tcn.tc-ops-plan > .tc-body {
   border-color: rgba(176, 124, 20, 0.26);

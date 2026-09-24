@@ -34,8 +34,11 @@ const MODULES: ToolModule[] = [
 ];
 
 const exactRenderers = new Map<string, ToolCallRenderer>();
-const prefixRenderers: { prefix: string; order: number; render: ToolCallRenderer }[] =
-  [];
+const prefixRenderers: {
+  prefix: string;
+  order: number;
+  render: ToolCallRenderer;
+}[] = [];
 
 MODULES.forEach((module, order) => {
   for (const [name, render] of Object.entries(module.renderers)) {
@@ -78,3 +81,6 @@ export const createToolCallEl = (tool: SnowRemoteToolCall): HTMLElement => {
   }
   return renderGenericTool(tool);
 };
+
+/** 相邻多个提问合并为 Tab 容器的渲染器（ops 模块实现，timeline 工具级 diff 调用）。 */
+export { createAskGroupEl } from "./ops";

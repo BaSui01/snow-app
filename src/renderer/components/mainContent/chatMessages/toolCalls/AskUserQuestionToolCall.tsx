@@ -12,91 +12,20 @@ import { useI18n } from "../../../../i18n";
 import { useChatConversationContext } from "../components/ChatConversationContext";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolNameBadge } from "./shared/ToolNameBadge";
+import { resolveUserQuestionView } from "./shared/userQuestionView";
 
 type AskUserQuestionToolCallProps = {
   toolCall: ToolCallInfo;
-};
-
-type ParsedQuestionArgs = {
-  question: string;
-  options: string[];
-};
-
-type ParsedQuestionResult = {
-  cancelled: boolean;
-  selectedOptions: string[];
-  customAnswers: string[];
-};
-
-const parseQuestionArgs = (
-  argumentsJson: string,
-): ParsedQuestionArgs | null => {
-  try {
-    const parsed: unknown = JSON.parse(argumentsJson);
-    if (
-      typeof parsed !== "object" ||
-      parsed === null ||
-      Array.isArray(parsed)
-    ) {
-      return null;
-    }
-
-    const record = parsed as Record<string, unknown>;
-    if (typeof record.question !== "string" || !Array.isArray(record.options)) {
-      return null;
-    }
-
-    const options = record.options.filter(
-      (option): option is string =>
-        typeof option === "string" && Boolean(option.trim()),
-    );
-    return {
-      question: record.question.trim(),
-      options,
-    };
-  } catch {
-    return null;
-  }
-};
-
-const parseQuestionResult = (
-  resultJson: string | undefined,
-): ParsedQuestionResult | null => {
-  if (!resultJson) {
-    return null;
-  }
-
-  try {
-    const parsed: unknown = JSON.parse(resultJson);
-    if (
-      typeof parsed !== "object" ||
-      parsed === null ||
-      Array.isArray(parsed)
-    ) {
-      return null;
-    }
-
-    const record = parsed as Record<string, unknown>;
-    if (record.answered !== true && record.cancelled !== true) {
-      return null;
-    }
-
-    const readAnswers = (value: unknown): string[] =>
-      Array.isArray(value)
-        ? value.filter((item): item is string => typeof item === "string")
-        : [];
-    return {
-      cancelled: record.cancelled === true,
-      selectedOptions: readAnswers(record.selectedOptions),
-      customAnswers: readAnswers(record.customAnswers),
-    };
-  } catch {
-    return null;
-  }
+  /** panel：嵌在提问 Tab 组内时省略卡片自身 header（组头已给出工具名与进度）。 */
+  variant?: "card" | "panel";
+  /** 用户提交回答后回调（Tab 组据此切到下一个未回答的问题）。 */
+  onSubmitted?: () => void;
 };
 
 export const AskUserQuestionToolCall = ({
   toolCall,
+  variant = "card",
+  onSubmitted,
 }: AskUserQuestionToolCallProps): React.JSX.Element => {
   const { t } = useI18n();
   const {
@@ -106,39 +35,21 @@ export const AskUserQuestionToolCall = ({
     saveUserQuestionDraft,
     clearUserQuestionDraft,
   } = useChatConversationContext();
-  const parsedArgs = useMemo(
-    () => parseQuestionArgs(toolCall.arguments),
-    [toolCall.arguments],
-  );
-  const parsedResult = useMemo(
-    () => parseQuestionResult(toolCall.result),
-    [toolCall.result],
-  );
-  const questionState = toolCall.userQuestion;
-  const question = questionState?.question ?? parsedArgs?.question ?? "";
-  const options = questionState?.options ?? parsedArgs?.options ?? [];
-  const questionId = questionState?.questionId;
-  const isWaitingForRequest = toolCall.status === "running" && !questionState;
-  const isCancelled =
-    questionState?.status === "cancelled" || parsedResult?.cancelled === true;
-  const isAnswered =
-    questionState?.status === "answered" ||
-    Boolean(parsedResult && !parsedResult.cancelled);
-  const isSettled = isAnswered || isCancelled;
-  // 工具已结束但没有通过 answered/cancelled 协议结算（例如提问在用户未作答
-  // 时被中断、工具以错误 JSON 结果结束）：此时 pending 已被结算，必须显示
-  // 终态并禁用表单——否则卡片会停在"等待回答"且点击没有任何反馈（提问
-  // 卡片泄漏）。注：以 error 结束的提问由状态文案显示为"提问失败"，这里
-  // 只兜底 completed（错误 JSON 结果不会把 toolCall 标为 error）。
-  const isInterrupted =
-    questionState?.interrupted === true ||
-    (!isSettled && toolCall.status === "completed");
-  const isInteractive = Boolean(
-    questionState &&
-    !isSettled &&
-    !isInterrupted &&
-    (toolCall.status === "running" || toolCall.status === "pending"),
-  );
+  // 展示态判定与提问 Tab 组共用同一份逻辑（见 shared/userQuestionView）。
+  const {
+    question,
+    options,
+    questionId,
+    questionState,
+    parsedResult,
+    status,
+    isWaitingForRequest,
+    isInteractive,
+  } = useMemo(() => resolveUserQuestionView(toolCall), [toolCall]);
+  const isAnswered = status === "answered";
+  const isCancelled = status === "cancelled";
+  const isInterrupted = status === "interrupted";
+  const isPanel = variant === "panel";
 
   // 交互状态优先从草稿恢复（卡片因会话切换等重挂载后，本地 state 会丢失，
   // 草稿按 questionId 保存在 context 中，由 useEffect 同步兜底恢复）。
@@ -241,6 +152,7 @@ export const AskUserQuestionToolCall = ({
         ? [...customAnswers, pendingCustomAnswer]
         : customAnswers,
     );
+    onSubmitted?.();
   };
 
   const cancelAnswer = (): void => {
@@ -253,57 +165,64 @@ export const AskUserQuestionToolCall = ({
     cancelUserQuestion(questionState.questionId);
   };
 
-  const statusLabel = isInterrupted
-    ? t("toolCall.userQuestion.status.interrupted")
-    : isCancelled
-      ? t("toolCall.userQuestion.status.cancelled")
-      : isAnswered
-        ? t("toolCall.userQuestion.status.answered")
-        : toolCall.status === "error"
-          ? t("toolCall.userQuestion.status.error")
-          : t("toolCall.userQuestion.status.waiting");
+  const statusLabel =
+    status === "interrupted"
+      ? t("toolCall.userQuestion.status.interrupted")
+      : status === "cancelled"
+        ? t("toolCall.userQuestion.status.cancelled")
+        : status === "answered"
+          ? t("toolCall.userQuestion.status.answered")
+          : status === "error"
+            ? t("toolCall.userQuestion.status.error")
+            : t("toolCall.userQuestion.status.waiting");
 
   return (
-    <div className="tool-call-item tool-call-user-question">
-      <div className="tool-call-header">
-        <ToolNameBadge
-          name={t("toolCall.userQuestion.name")}
-          category="interaction"
-        />
-        {isInterrupted ? (
-          <CircleAlert size={14} aria-hidden="true" />
-        ) : isCancelled ? (
-          <X size={14} aria-hidden="true" />
-        ) : isAnswered ? (
-          <Check size={14} aria-hidden="true" />
-        ) : isWaitingForRequest || toolCall.status === "running" ? (
-          <Loader2
-            className="tool-call-icon-spinning"
-            size={14}
-            aria-hidden="true"
+    <div
+      className={`tool-call-item tool-call-user-question${
+        isPanel ? " tool-call-user-question--panel" : ""
+      }`}
+    >
+      {isPanel ? null : (
+        <div className="tool-call-header">
+          <ToolNameBadge
+            name={t("toolCall.userQuestion.name")}
+            category="interaction"
           />
-        ) : (
-          <MessageCircleQuestion size={14} aria-hidden="true" />
-        )}
-        <span className="tool-call-name">
-          {t("toolCall.userQuestion.action")}
-        </span>
-        <span
-          className={`tool-call-status tool-call-status-${
-            isInterrupted || toolCall.status === "error"
-              ? "error"
-              : isCancelled
-                ? "cancelled"
-                : isAnswered
-                  ? "completed"
-                  : "running"
-          }`}
-          role="status"
-          aria-live="polite"
-        >
-          {statusLabel}
-        </span>
-      </div>
+          {isInterrupted ? (
+            <CircleAlert size={14} aria-hidden="true" />
+          ) : isCancelled ? (
+            <X size={14} aria-hidden="true" />
+          ) : isAnswered ? (
+            <Check size={14} aria-hidden="true" />
+          ) : isWaitingForRequest || toolCall.status === "running" ? (
+            <Loader2
+              className="tool-call-icon-spinning"
+              size={14}
+              aria-hidden="true"
+            />
+          ) : (
+            <MessageCircleQuestion size={14} aria-hidden="true" />
+          )}
+          <span className="tool-call-name">
+            {t("toolCall.userQuestion.action")}
+          </span>
+          <span
+            className={`tool-call-status tool-call-status-${
+              isInterrupted || toolCall.status === "error"
+                ? "error"
+                : isCancelled
+                  ? "cancelled"
+                  : isAnswered
+                    ? "completed"
+                    : "running"
+            }`}
+            role="status"
+            aria-live="polite"
+          >
+            {statusLabel}
+          </span>
+        </div>
+      )}
 
       <div className="tool-call-body tool-call-user-question-body">
         {question ? (

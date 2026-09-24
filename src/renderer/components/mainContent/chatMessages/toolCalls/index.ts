@@ -1,4 +1,5 @@
 export { AskUserQuestionToolCall } from "./AskUserQuestionToolCall";
+export { AskUserQuestionGroup } from "./AskUserQuestionGroup";
 export { PlanModeApprovalToolCall } from "./PlanModeApprovalToolCall";
 export { BashToolCall } from "./BashToolCall";
 export { FilesystemReadToolCall } from "./FilesystemReadToolCall";

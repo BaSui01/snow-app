@@ -12,6 +12,8 @@ export type SnowRemoteToolCall = {
     question: string;
     options: string[];
     status: "waiting" | "answered" | "cancelled";
+    /** 中断标记：未被作答就被外部结算（会话中断 / 处理器销毁 / 工具异常结束）。 */
+    interrupted?: boolean;
     selectedOptions: string[];
     customAnswers: string[];
   };

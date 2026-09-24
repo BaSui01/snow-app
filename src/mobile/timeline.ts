@@ -13,7 +13,7 @@ import { renderMarkdown } from "./markdown";
 import { showNotice } from "./notice";
 import { openImageLightbox } from "./overlays";
 import { openRollbackSheet } from "./rollback";
-import { createToolCallEl } from "./tools";
+import { createAskGroupEl, createToolCallEl } from "./tools";
 import {
   attachMessageNode,
   detachMessageNode,
@@ -310,6 +310,54 @@ const userContentBlocksHtml = (message: SnowRemoteMessage): string => {
 
 // ── 工具（详情）元素 ──────────────────────────────────────────────────────
 
+/** 需要合并为 Tab 容器的提问工具名。 */
+const ASK_TOOL_NAME = "user-interaction-askUserQuestion";
+
+type ToolListEntry = {
+  /** dataset.toolId：工具级 diff 的复用键。 */
+  id: string;
+  /** dataset.sig：条目签名，任一子项变化都需要重建。 */
+  sig: string;
+  /** 创建元素；提问组按 old 上的 activeTab 保留用户停留的 Tab。 */
+  create: (old?: HTMLElement) => HTMLElement;
+};
+
+const singleToolEntry = (tool: SnowRemoteToolCall): ToolListEntry => ({
+  id: tool.interactionId,
+  sig: toolSignature(tool),
+  create: () => createToolCallEl(tool),
+});
+
+/**
+ * 工具列表条目：相邻的多个提问合并为一个 Tab 容器（≥2 才合并，单个提问
+ * 保持原卡片形态），其余工具逐个成卡（顺序不变）。
+ */
+const buildToolEntries = (tools: SnowRemoteToolCall[]): ToolListEntry[] => {
+  const entries: ToolListEntry[] = [];
+  for (let i = 0; i < tools.length;) {
+    if (tools[i].name !== ASK_TOOL_NAME) {
+      entries.push(singleToolEntry(tools[i]));
+      i += 1;
+      continue;
+    }
+    let j = i;
+    while (j < tools.length && tools[j].name === ASK_TOOL_NAME) j += 1;
+    if (j - i >= 2) {
+      const group = tools.slice(i, j);
+      entries.push({
+        // 以首问 interactionId 命名：组内追加提问时复用键保持稳定
+        id: `ask-group:${group[0].interactionId}`,
+        sig: `ask-group\u0001${group.map(toolSignature).join("\u0002")}`,
+        create: (old) => createAskGroupEl(group, old?.dataset.activeTab),
+      });
+    } else {
+      entries.push(singleToolEntry(tools[i]));
+    }
+    i = j;
+  }
+  return entries;
+};
+
 /**
  * 工具级 keyed diff：卡片由 tools/index.ts 的派发器渲染（精确名 → 前缀 →
  * 兜底），这里只重建签名变化的条目；dataset.toolId / dataset.sig 是复用
@@ -324,17 +372,16 @@ const syncToolList = (host: HTMLElement, tools: SnowRemoteToolCall[]): void => {
   }
 
   const nextEls: HTMLElement[] = [];
-  for (const tool of tools) {
-    const sig = toolSignature(tool);
-    const old = existing.get(tool.interactionId);
-    existing.delete(tool.interactionId);
-    if (old && old.dataset.sig === sig) {
+  for (const entry of buildToolEntries(tools)) {
+    const old = existing.get(entry.id);
+    existing.delete(entry.id);
+    if (old && old.dataset.sig === entry.sig) {
       nextEls.push(old);
       continue;
     }
-    const el = createToolCallEl(tool);
-    el.dataset.toolId = tool.interactionId;
-    el.dataset.sig = sig;
+    const el = entry.create(old);
+    el.dataset.toolId = entry.id;
+    el.dataset.sig = entry.sig;
     inheritUserOpen(old, el);
     old?.remove();
     nextEls.push(el);

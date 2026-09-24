@@ -152,6 +152,8 @@ When YOLO is off and a tool is not permanently approved, Snow App displays an au
 
 No tool in the same batch starts until every authorization decision in that batch is complete. `user-interaction-askUserQuestion` enters its interactive flow directly instead of using the ordinary tool-approval card. Sensitive Bash commands always use a separate confirmation; ordinary permanent approval and YOLO cannot replace it.
 
+Several questions asked in the same turn (adjacent calls) are merged into one tabbed container (Q1 / Q2… plus a status mark, one question shown at a time): submitting advances to the next unanswered question, and when everything is settled the tabs stay for review. Switch with `←` / `→`, the tabs, or the arrow buttons; a question awaiting an answer shows a pulsing dot, while answered / cancelled / interrupted / failed show their own icons. A single question keeps the original card without a tab strip.
+
 ```mermaid
 sequenceDiagram
     actor User

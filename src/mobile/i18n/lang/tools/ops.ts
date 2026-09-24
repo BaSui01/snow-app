@@ -111,6 +111,10 @@ export const opsEn: Record<string, string> = {
   "remote.toolCall.ops.ask.preparing": "Preparing question…",
   "remote.toolCall.ops.ask.waitingHint": "Answer in the interaction area below",
   "remote.toolCall.ops.ask.failed": "Question failed",
+  "remote.toolCall.ops.ask.interrupted": "Interrupted",
+  "remote.toolCall.ops.ask.tabsLabel": "Questions in this round",
+  "remote.toolCall.ops.ask.tabIndex": "Q{{index}}",
+  "remote.toolCall.ops.ask.questionFallback": "Question {{index}}",
 
   // 外部数据库（dbx-* / dbx_*）
   "remote.toolCall.ops.dbx.name": "database",
@@ -248,6 +252,10 @@ export const opsZhCN: Record<string, string> = {
   "remote.toolCall.ops.ask.preparing": "正在准备问题…",
   "remote.toolCall.ops.ask.waitingHint": "请在下方交互区作答",
   "remote.toolCall.ops.ask.failed": "提问失败",
+  "remote.toolCall.ops.ask.interrupted": "已中断",
+  "remote.toolCall.ops.ask.tabsLabel": "本轮提问",
+  "remote.toolCall.ops.ask.tabIndex": "Q{{index}}",
+  "remote.toolCall.ops.ask.questionFallback": "问题 {{index}}",
 
   // 外部数据库（dbx-* / dbx_*）
   "remote.toolCall.ops.dbx.name": "数据库",
@@ -384,6 +392,10 @@ export const opsZhTW: Record<string, string> = {
   "remote.toolCall.ops.ask.preparing": "正在準備問題…",
   "remote.toolCall.ops.ask.waitingHint": "請在下方互動區作答",
   "remote.toolCall.ops.ask.failed": "提問失敗",
+  "remote.toolCall.ops.ask.interrupted": "已中斷",
+  "remote.toolCall.ops.ask.tabsLabel": "本輪提問",
+  "remote.toolCall.ops.ask.tabIndex": "Q{{index}}",
+  "remote.toolCall.ops.ask.questionFallback": "問題 {{index}}",
 
   // 外部資料庫（dbx-* / dbx_*）
   "remote.toolCall.ops.dbx.name": "資料庫",

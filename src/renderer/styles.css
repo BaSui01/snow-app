@@ -13481,6 +13481,213 @@ body.is-panel-resizing * {
   opacity: 0.4;
 }
 
+/* ============================================================
+   提问 Tab 组（同一轮多个提问合并展示）
+   ============================================================ */
+.tool-call-user-question-group {
+  display: flex;
+  flex-direction: column;
+  margin: 2px 0;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  overflow: hidden;
+  animation: chat-enter 0.18s ease-out both;
+}
+
+.auqg-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.auqg-progress {
+  font-weight: 500;
+}
+
+.auqg-settled {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-green, #22c55e) 15%, transparent);
+  color: var(--accent-green, #22c55e);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.auqg-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+/* Tab 过多时横向滚动（导航按钮固定在最右，不随滚动移出视野）。 */
+.auqg-tabstrip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.auqg-tabstrip::-webkit-scrollbar {
+  display: none;
+}
+
+.auqg-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  max-width: 220px;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.auqg-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.auqg-tab.is-active {
+  border-color: var(--border-color);
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.auqg-tab:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 1px;
+}
+
+.auqg-tab-index {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  letter-spacing: 0.3px;
+}
+
+.auqg-tab.is-active .auqg-tab-index {
+  color: var(--text-secondary);
+}
+
+.auqg-tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auqg-tab-status {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.auqg-tab-status--waiting {
+  color: var(--accent-blue, #3b82f6);
+}
+
+.auqg-tab-status--answered {
+  color: var(--accent-green, #22c55e);
+}
+
+.auqg-tab-status--cancelled,
+.auqg-tab-status--interrupted,
+.auqg-tab-status--error {
+  color: var(--accent-red-text);
+}
+
+/* 等待回答：进行中的脉冲点（其余终态用图标）。 */
+.auqg-tab-pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: auqg-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes auqg-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.35;
+    transform: scale(0.75);
+  }
+}
+
+.auqg-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.auqg-nav button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.auqg-nav button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* 一次只显示一个问题面板；长问题由容器限高 + 内部滚动兜住。 */
+.auqg-panels {
+  max-height: 60vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.tool-call-user-question--panel {
+  margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-call-user-question-group,
+  .auqg-tab-pulse {
+    animation: none;
+  }
+
+  .auqg-tab {
+    transition: none;
+  }
+}
+
 .tool-call-plan-approval-body {
   gap: 12px;
 }

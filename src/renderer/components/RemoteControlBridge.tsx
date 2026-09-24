@@ -306,6 +306,7 @@ const toRemoteToolCall = (toolCall: ToolCallInfo): SnowRemoteToolCall => ({
           .slice(0, 20)
           .map((option) => truncateTo(option, 500) ?? ""),
         status: toolCall.userQuestion.status,
+        interrupted: toolCall.userQuestion.interrupted,
         selectedOptions: toolCall.userQuestion.selectedOptions.slice(0, 20),
         customAnswers: toolCall.userQuestion.customAnswers.slice(0, 20),
       }

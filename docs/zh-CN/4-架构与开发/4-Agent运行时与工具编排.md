@@ -138,9 +138,10 @@ flowchart TD
 
 **工具域系统提示词注入**：工具可见性之外，系统提示词构建（`native/src/api/conversation/context.rs`）还会按工具域动态追加指引章节，且**注入条件与工具可见性保持一致**——用户禁用的工具域绝不注入，避免诱导调用不可见工具：
 
-- **`## Language Servers`**（LSP 域，`native/src/mcp/servers/lsp/mod.rs` 的 `build_system_prompt_section`）：项目启用了可用外部语言服务器（配置 enabled + 命令已安装 + 语言匹配）且域 scope 允许时注入。列出服务器及运行状态（running / crashed / 未启动），按能力分组列出应优先使用的 `lsp-*` 工具，并强制语义查询 MUST 走 `lsp-*`（grep 仅限纯文本定位）；同时对未运行服务器后台预热，消除模型首次调用的冷启动延迟。
+- **`## Language Servers`**（LSP 域，`native/src/mcp/servers/lsp/mod.rs` 的 `build_system_prompt_section`）：项目启用了可用外部语言服务器（配置 enabled + 命令已安装 + **项目内存在该语言的技术栈标志**，2026-09-24 技术栈感知）且域 scope 允许时注入。列出服务器及运行状态（running / crashed / 未启动），按能力分组列出应优先使用的 `lsp-*` 工具，并以**场景→工具硬绑定**的 Routing rules 引导语义查询走 `lsp-*`（grep 仅限字面文本）；以真实**技术栈根**为会话根对未运行服务器后台预热，消除首次调用的冷启动延迟。
 - **`## Image Generation`**（imagegen 域，`native/src/mcp/servers/imagegen/mod.rs` 的 `build_system_prompt_section`）：配置了至少一个可用生图渠道且域 scope 允许时注入。列出可用渠道（id / 名称 / 协议，非敏感摘要），并强制多图 MUST 并行多次调用 `imagegen-generate`（一次一图，legacy 的 `prompts` / `n>1` 不是多图路径）；连续 ≥2 个并行调用由 UI 自动合并为 `ImageGenGallery` 统一网格。
-- 两个章节都追加在提示词**末尾**（状态变化只影响尾部，最小化 prompt cache 前缀失效），任何查询失败静默降级为空字符串（不打断请求）；普通 / Plan / Goal 三种模式统一注入，子代理系统提示词同样携带。
+- **调查阶段工具清单（模板级动态注入，2026-09-24）**：`native/src/prompt/tool_hints.rs` 按当前项目**实际可调用**的工具生成清单——`lsp-*`（域 scope + 服务器可用 + 技术栈存在，与工具暴露同源判定）与 `codebase-search`（索引可用）条件出现，`grep-search` / `filesystem-read` 为恒定只读底行；请求构建时替换 **Plan / Goal / WorkFlow** 模式模板的 `__ANALYSIS_TOOLS_LINES__` 占位符（Plan「分析阶段」/ Goal「Phase 1 Investigate」/ WorkFlow「Step 1 图设计前调查」），不可用工具的行不存在。工具描述层另有条件注入（grep-search 描述反制 + `lsp-*` 工具时机触发器），详见 LSP 设计文档 §8.10。
+- 各章节都追加在提示词**末尾**（状态变化只影响尾部，最小化 prompt cache 前缀失效），任何查询失败静默降级为空字符串（不打断请求）；普通 / Plan / Goal 三种模式统一注入，子代理系统提示词同样携带。
 
 ## 6. 工具调用与 checkpoint
 

@@ -46,16 +46,16 @@
 
 ## 3. 架构约束（现状事实，实施必须遵守）
 
-| 约束 | 来源 |
-|---|---|
-| `McpService` trait：`id()` / `tools()` / `execute()`（同步） | `native/src/mcp/service.rs` |
-| 异步工具执行：在 `call_mcp_tool`（`native/src/mcp/tools/call.rs`）加 `lsp-` 前缀分支，直接 `.await`（参照 `codelens-` 分支，call.rs:305） | `tools/call.rs` |
-| 同步 `execute()` 对 lsp 工具必须返回「必须通过异步执行器执行」错误（参照 codelens mod.rs:148） | `servers/codelens/mod.rs` |
-| 服务注册：`builtin.rs` `builtin_services_in_order()` **追加到列表末尾**（prompt cache 稳定性红线） | `mcp/builtin.rs:29-51` |
-| 配置路径 | 真相源为数据库表 `lsp_server_configs`；**`lsp-config` scope 数据库化**（DB-backed，照 subAgents/hooks/imagegen 模式，config/mod.rs:1269）；无文件、无差集同步；旧 `~/.snow/lsp-config.json` 一次性迁移导入 | `servers/config/mod.rs:1269`、`database.rs:468` |
-| tokio 已启用 `process`/`io-util`/`sync`/`time`/`rt` 特性 | `native/Cargo.toml:20` |
-| Rust 后端禁止同步阻塞（一律异步 API） | AGENTS.md 红线 7 |
-| 工具名格式 `{server_id}-{tool_name}`，全小写 snake_case | `mcp/tools` 惯例 |
+| 约束                                                                                                                                      | 来源                                                                                                                                                                                                       |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `McpService` trait：`id()` / `tools()` / `execute()`（同步）                                                                              | `native/src/mcp/service.rs`                                                                                                                                                                                |
+| 异步工具执行：在 `call_mcp_tool`（`native/src/mcp/tools/call.rs`）加 `lsp-` 前缀分支，直接 `.await`（参照 `codelens-` 分支，call.rs:305） | `tools/call.rs`                                                                                                                                                                                            |
+| 同步 `execute()` 对 lsp 工具必须返回「必须通过异步执行器执行」错误（参照 codelens mod.rs:148）                                            | `servers/codelens/mod.rs`                                                                                                                                                                                  |
+| 服务注册：`builtin.rs` `builtin_services_in_order()` **追加到列表末尾**（prompt cache 稳定性红线）                                        | `mcp/builtin.rs:29-51`                                                                                                                                                                                     |
+| 配置路径                                                                                                                                  | 真相源为数据库表 `lsp_server_configs`；**`lsp-config` scope 数据库化**（DB-backed，照 subAgents/hooks/imagegen 模式，config/mod.rs:1269）；无文件、无差集同步；旧 `~/.snow/lsp-config.json` 一次性迁移导入 | `servers/config/mod.rs:1269`、`database.rs:468` |
+| tokio 已启用 `process`/`io-util`/`sync`/`time`/`rt` 特性                                                                                  | `native/Cargo.toml:20`                                                                                                                                                                                     |
+| Rust 后端禁止同步阻塞（一律异步 API）                                                                                                     | AGENTS.md 红线 7                                                                                                                                                                                           |
+| 工具名格式 `{server_id}-{tool_name}`，全小写 snake_case                                                                                   | `mcp/tools` 惯例                                                                                                                                                                                           |
 
 ## 4. 依赖清单（native/Cargo.toml 新增）
 
@@ -79,12 +79,14 @@ lsp-types = { version = "0.95" }
 
 ```
 native/src/mcp/servers/lsp/
-├── mod.rs       # LspService：McpService impl + 工具 schema 定义 + execute 入口
-├── config.rs    # 配置加载：从 lsp_server_configs 表读取（spawn_blocking）+ 结构校验
-├── manager.rs   # ServerManager 全局单例：会话路由与生命周期管理
+├── mod.rs       # LspService：McpService impl + 工具 schema 定义 + execute 入口；resolve_lang_root 栈根解析
+├── config.rs    # 配置加载：从 lsp_server_configs 表读取（spawn_blocking）+ 暴露判定（tool_exposure）
+├── detect.rs    # 技术栈检测与栈根发现（markers_for_lang / find_lang_root，见 §7.2）
+├── manager.rs   # ServerManager 全局单例：会话路由与生命周期管理（key = 语言 × 栈根）
 ├── session.rs   # ServerSession：单个语言服务器会话（进程 + 客户端 + 状态）
 ├── client.rs    # 协议操作封装：initialize / didOpen / hover / diagnostics
-└── format.rs    # LSP 响应 → agent 友好输出（JSON + Markdown 摘要）
+├── format.rs    # LSP 响应 → agent 友好输出（JSON + Markdown 摘要）
+└── probe.rs     # 命令安装探测（PATH 扫描 + TTL 缓存）
 
 native/src/storage/services/lsp_server_configs.rs   # 新表 CRUD（照 mcp_server_configs.rs）
 native/src/storage/database.rs                      # 建表（create_schema，幂等）
@@ -93,14 +95,15 @@ native/src/exports/storage/lsp.rs                   # napi 导出（list/upsert/
 
 ### 5.1 各模块职责
 
-| 模块 | 职责 | 关键点 |
-|---|---|---|
-| `mod.rs` | 工具 schema（`McpTool`）、`execute()` 同步错误、`execute_lsp_tool()` async 入口（供 call.rs 调用） | 参照 codelens/mod.rs 模式 |
-| `config.rs` | 读取 `~/.snow/lsp-config.json`，serde 反序列化；文件缺失→空配置；JSON 非法→报错 | 字段与 `validate_lsp_servers` 对齐 |
-| `manager.rs` | `OnceLock<Arc<ServerManager>>`；解析项目根 → 按 (语言, 项目根) 路由会话；懒加载/空闲回收/崩溃重启/并发上限 | 全局唯一实例，`tokio::sync::Mutex` 保护会话表 |
-| `session.rs` | 会话状态机：spawn 进程、async-lsp MainLoop 启动、initialize 握手、文件注册表、串行化操作锁 | 进程句柄持有 + 回收 |
-| `client.rs` | `textDocument/hover`、`textDocument/diagnostic`（pull）+ `publishDiagnostics`（push fallback）、`didOpen/didClose` | 全部 async，带超时 |
-| `format.rs` | Diagnostic→JSON 项、hover→Markdown、错误→降级建议文本 | 输出结构见 §8 |
+| 模块         | 职责                                                                                                                                   | 关键点                                        |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `mod.rs`     | 工具 schema（`McpTool`）、`execute()` 同步错误、`execute_lsp_tool()` async 入口（供 call.rs 调用）                                     | 参照 codelens/mod.rs 模式                     |
+| `config.rs`  | 从 `lsp_server_configs` 表读取（DB-backed，§8.5）+ serde 解析；`tool_exposure` 暴露判定（§8.0，含技术栈存在判定）                      | 字段与 `validate_lsp_servers` 对齐            |
+| `detect.rs`  | 技术栈检测 + **栈根发现**（`markers_for_lang` 12 语言标志表、`find_lang_root` 向上找最近栈根 + 向下扫兜底）；结果 60s TTL 缓存         | 栈根语义见 §7.2；单元测试覆盖                 |
+| `manager.rs` | `OnceLock<Arc<ServerManager>>`；按 (语言, **技术栈根**) 路由会话；懒加载/空闲回收/崩溃重启/并发上限；状态快照按 `starts_with` 归属项目 | 全局唯一实例，`tokio::sync::Mutex` 保护会话表 |
+| `session.rs` | 会话状态机：spawn 进程、async-lsp MainLoop 启动、initialize 握手、文件注册表、串行化操作锁                                             | 进程句柄持有 + 回收                           |
+| `client.rs`  | `textDocument/hover`、`textDocument/diagnostic`（pull）+ `publishDiagnostics`（push fallback）、`didOpen/didClose`                     | 全部 async，带超时                            |
+| `format.rs`  | Diagnostic→JSON 项、hover→Markdown、错误→降级建议文本                                                                                  | 输出结构见 §8                                 |
 
 ## 6. 核心数据结构
 
@@ -192,18 +195,36 @@ stateDiagram-v2
 ```
 
 - SSH/远程项目（`is_ssh_path`）：**不支持**，返回错误（外部语言服务器进程在本地，无法分析远程文件）。
-- 同一会话内多次调用同一 (语言, 项目) 命中同一进程，**绝不重复 spawn**。
+- 同一会话内多次调用同一 (语言, 技术栈根) 命中同一进程，**绝不重复 spawn**。
+
+**技术栈根发现（2026-09-24：会话 key 的第二维从「项目根」升级为「技术栈根」）：**
+
+动机：项目根 ≠ 语言服务器的 workspace 根。典型反例（本项目自身）：`Cargo.toml` 在 `native/` 子目录，项目根只有 `package.json`——若以项目根为 rootUri，rust-analyzer 找不到 Cargo workspace，退化为 **detached 单文件模式**（跨文件跳转/引用失效、类型诊断缺失、dead_code 误报）。
+
+规则：`resolve_lang_root` = 项目根（上表）→ `detect::find_lang_root`：
+
+```
+文件级请求（有 filePath）：从文件所在目录向上找最近的技术栈标志
+  native/src/x.rs → native/Cargo.toml 命中 → 会话根 = native/（monorepo 每 crate 独立会话）
+项目级请求（无文件）：从项目根向下扫（深度 ≤2）取该语言最浅命中目录
+两者都未命中 → LspError::NoLangStack 明确拒绝（不启动、不暴露）
+```
+
+- **12 语言标志表**（`detect.rs::markers_for_lang`，支持 `*.csproj` 等后缀通配）：rust→`Cargo.toml`；go→`go.mod`/`go.work`；typescript→`tsconfig.json`/`jsconfig.json`/`package.json`；python→`pyproject.toml`/`setup.py`/`setup.cfg`/`requirements.txt`/`Pipfile`；java→`pom.xml`/`build.gradle(.kts)`/`settings.gradle(.kts)`；c→`compile_commands.json`/`CMakeLists.txt`/`meson.build`；csharp→`*.csproj`/`*.sln`/`*.fsproj`；lua→`.luarc.json`/`.luacheckrc`；php→`composer.json`；ruby→`Gemfile`/`*.gemspec`；kotlin→`build.gradle.kts`/`*.kt`；swift→`Package.swift`/`*.xcodeproj`。
+- **技术栈不存在 = 不启动**：无标志文件 → `NoLangStack`（§9）；工具暴露层同一判定（§8.0「暴露 = 可调用」），模型根本看不到必然失败的调用。
+- **状态徽章**：`session_statuses` 的项目过滤用 `starts_with`（技术栈根在项目根之下也能正确归属，manager.rs）。
+- 标志未定义的语言（自定义 lang）：不做栈根约束（项目根即会话根，保持旧行为）。
 
 ### 7.3 关键参数
 
-| 参数 | 默认值 | 说明 |
-|---|---|---|
-| `max_sessions` | 3 | **跨 (语言, 项目) 总进程数上限**（rust-analyzer 单进程 ~500MB；多项目并发时按 LRU 淘汰最久未用会话） |
-| `idle_timeout` | 30 min | 空闲回收（无工具调用即回收）；600s → 1800s（2026-08-14 用户决策，减少重服务器冷启动重复支付） |
-| `initialize_timeout` | 30 s（默认）；**JVM 系 120 s** | 按服务器提供默认超时表：`jdtls`/`kotlin-lsp` 120s（JVM 启动慢，参考 Anthropic claude-plugins-official 的 `startupTimeout: 120000`），其余 30s |
-| `request_timeout` | 10 s（diagnostics）/ 5 s（hover） | 单次请求超时 |
-| `restart_limit` | 2 | 崩溃连续重启上限 |
-| 会话淘汰 | LRU | 超上限时回收最久未用会话 |
+| 参数                 | 默认值                            | 说明                                                                                                                                          |
+| -------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `max_sessions`       | 3                                 | **跨 (语言, 项目) 总进程数上限**（rust-analyzer 单进程 ~500MB；多项目并发时按 LRU 淘汰最久未用会话）                                          |
+| `idle_timeout`       | 30 min                            | 空闲回收（无工具调用即回收）；600s → 1800s（2026-08-14 用户决策，减少重服务器冷启动重复支付）                                                 |
+| `initialize_timeout` | 30 s（默认）；**JVM 系 120 s**    | 按服务器提供默认超时表：`jdtls`/`kotlin-lsp` 120s（JVM 启动慢，参考 Anthropic claude-plugins-official 的 `startupTimeout: 120000`），其余 30s |
+| `request_timeout`    | 10 s（diagnostics）/ 5 s（hover） | 单次请求超时                                                                                                                                  |
+| `restart_limit`      | 2                                 | 崩溃连续重启上限                                                                                                                              |
+| 会话淘汰             | LRU                               | 超上限时回收最久未用会话                                                                                                                      |
 
 ### 7.3 进程管理要点
 
@@ -224,6 +245,7 @@ stateDiagram-v2
 - 已暴露但目标文件类型未匹配（如只配了 rust，却诊断 .py）→ 按 §9 返回明确错误（**不静默**）。
 - 子代理场景同样受此策略约束（工具列表由全局注册统一控制）。
 - **工具子集按已启用服务器的能力过滤（§8.7）**：暴露的不是固定工具全集，而是「所有启用且已安装服务器能力并集」对应的子集——某 `lsp-*` 工具（如未来的 `lsp-rename`）没有任何已启用服务器支持时，不出现（不占 prompt、不诱导必然失败的调用）。
+- **技术栈存在判定（2026-09-24，暴露 = 可调用）**：工具暴露与调用阶段共用同一技术栈判定（`server_matches_project` = `find_lang_root` 有解，§7.2）——项目内没有该语言的技术栈标志（如无 `go.mod`）时，对应 `lsp-*` 工具不暴露、服务器不启动、调用（绕过列表时）返回 `NoLangStack` 明确错误。三者一致，不存在「看得到但调不通」或「调得通但服务器异常」的中间态。
 
 ### 8.5 配置架构（DB-backed scope，无文件兼容层）
 
@@ -316,24 +338,27 @@ lsp-hover filePath=<绝对路径> line=<1-based> column=<1-based>
 1-3 同上（不 didClose，文件在会话内保持打开便于连续查询；改用引用计数：文件在多请求期间保持 open，`opened_files` 记录，空闲回收时统一关闭）。
 输出（hover 内容本身就是 Markdown，直接透传 + 结构包装）：
 
-```json
+````json
 {
   "language": "rust",
   "contents": "```rust\nfn foo(x: i32) -> i32\n```\nReturns `x + 1`.",
-  "range": { "start": { "line": 12, "column": 4 }, "end": { "line": 12, "column": 7 } }
+  "range": {
+    "start": { "line": 12, "column": 4 },
+    "end": { "line": 12, "column": 7 }
+  }
 }
-```
+````
 
 ### 8.3 Phase 3（已完成 2026-08-14）— 更多工具 + 项目级作用域
 
 > Phase 2（前端 `lsp-settings` 页面）已于 2026-08-14 实施完成：preload `lspApi` → IPC `lsp-server-configs:*` → `LspSettingsPanel` + `lspSettings/` 子目录（Editor/List/Summary）→ 注册链（`app_control` VALID_PAGES / `types.ts` / `MainContent` lazy / `settingsItems.ts`）→ i18n 三语言。页面 CRUD 直读写 `lsp_server_configs` 表（真相源），与 `config-set scope=lsp-config` 完全一致。
 
-| 工具 | 说明 | 状态 |
-|---|---|---|
+| 工具             | 说明                                                                                                              | 状态                                      |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
 | `lsp-definition` | `textDocument/definition`，输出与 codelens-find_definition 对齐（name + definitions 列表），配置了 LSP 的语言优先 | ✅ 已实施（实测跨文件跳转 manager.rs:29） |
-| `lsp-references` | `textDocument/references`，引用位置 + 单行代码上下文（上限 100） | ✅ 已实施（实测 11 处带上下文） |
-| `lsp-symbols` | `textDocument/documentSymbol`，树形 name/kind/detail/range/children，比 tree-sitter outline 更准 | ✅ 已实施（实测 26 符号） |
-| `lsp-format` | `textDocument/formatting`，dryRun 默认 true 不写盘；false 应用 edits 写回 + didChange 同步 | ✅ 已实施（实测 dryRun 42 edits） |
+| `lsp-references` | `textDocument/references`，引用位置 + 单行代码上下文（上限 100）                                                  | ✅ 已实施（实测 11 处带上下文）           |
+| `lsp-symbols`    | `textDocument/documentSymbol`，树形 name/kind/detail/range/children，比 tree-sitter outline 更准                  | ✅ 已实施（实测 26 符号）                 |
+| `lsp-format`     | `textDocument/formatting`，dryRun 默认 true 不写盘；false 应用 edits 写回 + didChange 同步                        | ✅ 已实施（实测 dryRun 42 edits）         |
 
 **项目级作用域**（2026-08-14 实施）：`project_lsp_server_configs`（system_settings JSON，照 project_mcp_server_configs）——项目配置**覆盖**全局同 lang；`config-set scope=lsp-config projectId=...` 配置；前端 lsp-settings 页全局/项目 tab。会话粒度 (语言 × 项目根) 天然按项目独立进程。
 
@@ -352,10 +377,10 @@ lsp-hover filePath=<绝对路径> line=<1-based> column=<1-based>
 
 **三个写入/校正路径**（全部幂等、无副作用）：
 
-| 路径 | 行为 |
-|---|---|
-| 种子 `default_seed_servers()` | 写入时按 `probe::is_command_installed(command)` 设置 enabled——已装才默认启用 |
-| 迁移 `migrate_legacy_file()` | 同上（旧 lsp-config.json 无 enabled 概念，迁移即按环境定） |
+| 路径                                    | 行为                                                                                                                                                          |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 种子 `default_seed_servers()`           | 写入时按 `probe::is_command_installed(command)` 设置 enabled——已装才默认启用                                                                                  |
+| 迁移 `migrate_legacy_file()`            | 同上（旧 lsp-config.json 无 enabled 概念，迁移即按环境定）                                                                                                    |
 | 存量校正 `reconcile_enabled_by_probe()` | 每次启动执行：仅对 `source=seed`/`source=legacy` 且 `enabled=true` 的记录探测，未安装 → `enabled=false`；**不动 `source=manual`**（用户手动配置）与已停用记录 |
 
 **校正边界**：只做「未安装 → 停用」单向校正，**绝不反向自动启用**——用户安装服务器后需在设置页手动打开开关（避免覆盖用户的明确意图；也避免用户故意停用已装服务器时被强制启用）。
@@ -398,10 +423,10 @@ lsp-hover filePath=<绝对路径> line=<1-based> column=<1-based>
 
 **工具定义**：
 
-| 工具 | LSP 请求 | 输入 | 输出 |
-|---|---|---|---|
+| 工具                 | LSP 请求                                                                                            | 输入                 | 输出                                                                                                                                        |
+| -------------------- | --------------------------------------------------------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `lsp-call-hierarchy` | `textDocument/prepareCallHierarchy` + `callHierarchy/incomingCalls` + `callHierarchy/outgoingCalls` | filePath/line/column | `symbol` + `incoming[]`（caller：name/kind/detail/位置 + callSites：调用点位置+单行代码上下文）+ `outgoing[]`（callee 同构）；上限各 100 条 |
-| `lsp-type-hierarchy` | `textDocument/prepareTypeHierarchy` + `typeHierarchy/supertypes` + `typeHierarchy/subtypes` | filePath/line/column | `symbol` + `supertypes[]`（父类型链）+ `subtypes[]`（全部子类型）；每项 name/kind/detail/位置 |
+| `lsp-type-hierarchy` | `textDocument/prepareTypeHierarchy` + `typeHierarchy/supertypes` + `typeHierarchy/subtypes`         | filePath/line/column | `symbol` + `supertypes[]`（父类型链）+ `subtypes[]`（全部子类型）；每项 name/kind/detail/位置                                               |
 
 **关键设计**：
 
@@ -416,10 +441,10 @@ lsp-hover filePath=<绝对路径> line=<1-based> column=<1-based>
 
 **工具定义**：
 
-| 工具 | LSP 请求 | 输入 | 输出 |
-|---|---|---|---|
-| `lsp-code-action` | `textDocument/codeAction` | filePath/line/column；可选 `only`（kind 过滤，如 `["quickfix"]`）、`apply` | apply=false：action 列表（title/kind/isPreferred + edit 摘要 + command 名与参数）；apply=true：应用 edit 类 action（applied[]），command 类进 deferredCommands（**绝不隐式执行**） |
-| `lsp-execute-command` | `workspace/executeCommand` | `command`（必填）；`arguments`（透传）；`filePath`（可选，定位语言）；`dryRun`（默认 true） | 结果识别 WorkspaceEdit → dryRun 预览多文件 edits / false 应用写盘 + didChange 同步；非 WorkspaceEdit 原样返回 `result` |
+| 工具                  | LSP 请求                   | 输入                                                                                        | 输出                                                                                                                                                                               |
+| --------------------- | -------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lsp-code-action`     | `textDocument/codeAction`  | filePath/line/column；可选 `only`（kind 过滤，如 `["quickfix"]`）、`apply`                  | apply=false：action 列表（title/kind/isPreferred + edit 摘要 + command 名与参数）；apply=true：应用 edit 类 action（applied[]），command 类进 deferredCommands（**绝不隐式执行**） |
+| `lsp-execute-command` | `workspace/executeCommand` | `command`（必填）；`arguments`（透传）；`filePath`（可选，定位语言）；`dryRun`（默认 true） | 结果识别 WorkspaceEdit → dryRun 预览多文件 edits / false 应用写盘 + didChange 同步；非 WorkspaceEdit 原样返回 `result`                                                             |
 
 **关键设计**：
 
@@ -428,21 +453,43 @@ lsp-hover filePath=<绝对路径> line=<1-based> column=<1-based>
 3. **语言定位**：filePath 可选——提供时按扩展名匹配语言并 ensure_open；缺省时仅当**恰好一个**启用服务器才可直接调用（多服务器场景报错提示传 filePath）。
 4. **能力过滤（§8.7）**：code-action 按附录 F ✅ 语言标记（typescript/python/go/rust/c/java/ruby）；execute-command 当前标记 rust/go（2026-08-15 实测核实），其他语言待核实后补充。命令执行有副作用——dryRun 默认 true，false 需 agent 显式传参。
 
+### 8.10 系统提示词动态注入（2026-09-24）
+
+目标：让模型在该用语义工具的场景真正调用 `lsp-*`。背景实测：`lsp-diagnostics` 被调用 134 次，其余 lsp 工具合计仅 11 次，而 `grep-search` 941 次——**泛化的「MUST 用 lsp-\*」规则收效有限**（模型无法稳定自判「我这次算不算语义查询」），有效的是「动作-时机硬绑定 + 明示替代品缺陷」。
+
+三层注入机制（全部条件生效：lsp 实际激活时才出现，与工具可见性严格一致）：
+
+| 层               | 注入点                                                                    | 内容                                                                                                                                                                                                                                                               | 性质                                                                   |
+| ---------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| ① 系统提示词章节 | `build_system_prompt_section`（api/conversation/context.rs 每轮请求注入） | `## Language Servers`：服务器清单 + 运行状态（running / starts on first use）+ 按能力分组的 `lsp-*` 工具清单 + Routing rules（场景→工具硬绑定）+ 预热（后台 spawn 消除首次调用冷启动）                                                                             | 服务器可用时注入                                                       |
+| ② 平替工具反制   | `collect.rs`（每轮工具收集时改写 grep-search 描述）                       | 「Semantic queries are NOT grep's job」+ 场景→工具路由清单（goto/references/hover/workspace-symbols/diagnostics）；只点名**实际暴露**的工具（workspace-symbols 条件渲染）                                                                                          | `lsp_active` 时注入；未激活保持原描述（不影响其他项目与 prompt cache） |
+| ③ 工具时机触发器 | `tool_schemas()`（lsp/mod.rs 静态 schema）                                | 给 goto（「Use INSTEAD OF grep to locate a definition」）、references（「Run this BEFORE renaming/removing any shared symbol」）、hover（「Cheaper than filesystem-read when you only need a type」）、workspace-symbols（「Use INSTEAD OF grep」）加动作-时机引导 | lsp 工具只在激活时暴露 → 天然条件生效                                  |
+
+Routing rules（系统提示词章节内，2026-09-24 场景化重写）：
+
+- 定位符号定义 → `lsp-goto`；全部引用/重命名影响面 → `lsp-references`；类型/签名 → `lsp-hover`；按名找符号 → `lsp-workspace-symbols`（后两项按 merged 能力条件渲染）。
+- `grep-search` 会命中其他模块的同名符号/注释/字符串——**仅限字面文本**（日志、配置键、注释），语义查询禁用。
+- 行列号来源：`lsp-symbols` / `filesystem-read` 输出的 1-indexed 行号直接喂给 `lsp-goto` / `lsp-references` 的 `line`/`column` 参数（组合技，降低参数成本）。
+- 改完代码 → 对改动文件跑 `lsp-diagnostics`（`filePaths` 批量 ≤30）。
+
+设计约束：注入条件必须与工具可见性一致（不一致会诱导调用不可见工具）；同一项目内 lsp 状态不变则注入文本稳定（prompt cache 友好）。
+
 ## 9. 降级与错误策略
 
-| 场景 | 行为 |
-|---|---|
-| SSH/远程路径 | 错误：`远程项目暂不支持 LSP（语言服务器进程在本地运行），请在本地项目中使用` |
-| 文件类型未配置 | 错误：`未为 .xyz 配置 LSP 服务器。可用 lsp-config 域配置（config-set scope=lsp-config）。符号导航可继续使用 codelens-* 工具` |
-| 启用但未安装（§8.6） | 启动会话前 PATH 探测命中 → 错误 + `installCommand` 提示（不等到 spawn ENOENT） |
-| 命令不存在（spawn ENOENT） | 错误 + `installCommand` 提示（如 `rustup component add rust-analyzer`） |
-| initialize 超时/崩溃≥2 次 | 错误：`语言服务器 xxx 启动失败，请检查安装与配置`；会话标记 init_failed，本次调用结束；下次调用重置重试 |
-| pull 不支持 | 自动 fallback push（透明） |
-| 请求超时 | 错误：`lsp 请求超时（10s）` |
-| 服务器不支持某请求（§8.7） | 错误：`当前语言的服务器（xxx）不支持 lsp-yyy`——静态能力表在 collect 阶段已过滤（§8.7.1），此错误仅兜底运行时能力声明与静态表不一致的情况 |
-| 配置文件 JSON 损坏 | 错误提示修复 `~/.snow/lsp-config.json`（config 工具写入有校验，正常不会发生） |
-| 超大文件（>512KB） | 拒绝并提示（与 codelens MAX_FILE_SIZE 一致） |
-| codelens-* 转发（2026-08-15） | LSP 可用时自动优先走 LSP（结果带 `engine: "lsp"`，输出形状不变）；不可用/失败时回退内置静态分析，结果带 **`lspFallback: true`** 标记（显式，非静默）——agent 可感知结果来源，需要语义级结果时改调 `lsp-*` 工具（其错误带可行动配置指引） |
+| 场景                                 | 行为                                                                                                                                                                                                                                     |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SSH/远程路径                         | 错误：`远程项目暂不支持 LSP（语言服务器进程在本地运行），请在本地项目中使用`                                                                                                                                                             |
+| 文件类型未配置                       | 错误：`未为 .xyz 配置 LSP 服务器。可用 lsp-config 域配置（config-set scope=lsp-config）。符号导航可继续使用 codelens-* 工具`                                                                                                             |
+| **技术栈不存在（§7.2，2026-09-24）** | 错误：`项目中未检测到 {lang} 技术栈标志文件（Cargo.toml, …）。LSP 服务器只在技术栈真实存在时启动：请确认该技术栈位于此项目内，或检查文件路径与项目根是否匹配`——工具暴露层同一判定（§8.0「暴露 = 可调用」），正常路径下模型看不到此类调用 |
+| 启用但未安装（§8.6）                 | 启动会话前 PATH 探测命中 → 错误 + `installCommand` 提示（不等到 spawn ENOENT）                                                                                                                                                           |
+| 命令不存在（spawn ENOENT）           | 错误 + `installCommand` 提示（如 `rustup component add rust-analyzer`）                                                                                                                                                                  |
+| initialize 超时/崩溃≥2 次            | 错误：`语言服务器 xxx 启动失败，请检查安装与配置`；会话标记 init_failed，本次调用结束；下次调用重置重试                                                                                                                                  |
+| pull 不支持                          | 自动 fallback push（透明）                                                                                                                                                                                                               |
+| 请求超时                             | 错误：`lsp 请求超时（10s）`                                                                                                                                                                                                              |
+| 服务器不支持某请求（§8.7）           | 错误：`当前语言的服务器（xxx）不支持 lsp-yyy`——静态能力表在 collect 阶段已过滤（§8.7.1），此错误仅兜底运行时能力声明与静态表不一致的情况                                                                                                 |
+| 配置文件 JSON 损坏                   | 错误提示修复 `~/.snow/lsp-config.json`（config 工具写入有校验，正常不会发生）                                                                                                                                                            |
+| 超大文件（>512KB）                   | 拒绝并提示（与 codelens MAX_FILE_SIZE 一致）                                                                                                                                                                                             |
+| codelens-* 转发（2026-08-15）        | LSP 可用时自动优先走 LSP（结果带 `engine: "lsp"`，输出形状不变）；不可用/失败时回退内置静态分析，结果带 **`lspFallback: true`** 标记（显式，非静默）——agent 可感知结果来源，需要语义级结果时改调 `lsp-*` 工具（其错误带可行动配置指引）  |
 
 **降级原则**：lsp 失败**绝不静默回退 codelens**（诊断与符号导航能力不同，静默降级会误导 agent）；错误信息必须可行动。codelens 方向的转发回退同样**显式标记**（`lspFallback: true`），不静默。
 
@@ -457,18 +504,19 @@ lsp-hover filePath=<绝对路径> line=<1-based> column=<1-based>
 
 ## 11. 分阶段实施计划
 
-| 阶段 | 内容 | 验证 |
-|---|---|---|
-| **Phase 0** | Cargo.toml 依赖；`lsp_server_configs` 表 + storage 服务 + exports；旧文件一次性迁移；`lsp/` 目录骨架；builtin.rs 注册；call.rs 分支；种子逻辑改表（按平台） | `cargo check` + `npx tsc --noEmit` |
-| **Phase 1** | 会话生命周期（spawn/initialize/回收/重启）+ `lsp-diagnostics` + `lsp-hover`（配置从表读取） | rust-analyzer 实测（见 §12） |
-| **Phase 1.5** | **lsp-config scope 数据库化**（DB-backed：config-get/set/delete 直读写表，照 subAgents/imagegen）——**agent 配置路径打通** | config-set 后工具立即生效（无需重启） |
-| **Phase 2** | 前端 `lsp-settings` 页面（照 mcp-settings：列表+编辑器+开关+摘要；注册链：app_control VALID_PAGES + types.ts + MainContent lazy + settingsItems.ts + LspSettingsPanel + lspSettings/ 子目录；i18n 三语言同步） | ✅ 已完成（2026-08-14）：页面 CRUD 与表一致，`app-control-openSettings page=lsp-settings` 可用 |
-| **Phase 3** | 更多工具（definition/references/symbols/format）+ 项目级作用域（project_lsp_server_configs + config scope projectId + 前端 tab） | ✅ 已完成（2026-08-14）：工具实测（跨文件 definition/references/format dryRun）+ 项目覆盖语义实测 |
-| **Phase 4** | **按服务器能力动态暴露子工具**（§8.7：capabilities.rs 静态能力表 + collect 过滤——用户启用了哪些语言的服务器，就暴露这些服务器支持的工具子集）+ 新增高价值工具（completion / rename / code-action / signature-help，优先级见附录 F） | ✅ 已完成（2026-08-14）：能力过滤实测（仅 php 启用 → 8 工具无 rename/code-action；恢复后 10 工具）；4 新工具 gopls 实测（completion 9 条 / rename dryRun 3 edits / code-action 6 项 / signature-help 签名）；运行时二次校验实测（php 调 rename 报不支持错误） |
-| **Phase 4.5** | **补齐 agent 高价值工具**：`lsp-workspace-symbols`（跨所有启用服务器语言合并查询，按内容去重、上限 50）、`lsp-implementation`（接口/trait 实现跳转）、`lsp-type-definition`（类型定义跳转）；附录 F-3 否决项定稿（document-highlight 被 references 超集覆盖、inlay-hints 被 hover 覆盖且输出噪音大、semantic-tokens 价值低） | ✅ 已完成（2026-08-14）：gopls 实测（type-definition 在变量上跳类型 / implementation 返回 2 个实现 / workspace-symbols 合并查询项目符号优先）；工具列表 13 个 |
-| **Phase 4.6** | **工具集精简（13→10）+ 项目级诊断**：移除 4 个编辑器向低价值工具（completion/signature-help/code-action/format——LLM 本身即补全器，agent 无光标场景实测空结果；实现代码保留可恢复）；新增 `lsp-workspace-diagnostics`（LSP 3.17 workspace/diagnostic pull，rust-analyzer/gopls/clangd 支持，TS/pyright 不支持自动跳过，按文件分组聚合，失败降级 warnings） | ✅ 已完成（2026-08-14，任务 08-14-lsp-tools-trim）：工具列表 10 个 = diagnostics/hover/definition/references/symbols/rename/type-definition/implementation/workspace-symbols/workspace-diagnostics |
-| **Phase 5** | **补齐 agent 高价值层级工具（§8.8）**：`lsp-call-hierarchy`（LSP 3.16 双向调用链——incoming 谁调用它 + outgoing 它调用谁，一次调用拿全，含调用点代码上下文，改前影响分析无需递归 references）、`lsp-type-hierarchy`（LSP 3.17 父类型链 + 全部子类型，重构基类影响面评估）；能力矩阵按服务器源码复核（tsserver callHierarchy ❌ 修正为 ✅；新增 typeHierarchy 行） | ✅ 已完成（2026-08-15，任务 08-15-lsp-hierarchy-tools）：cargo check + tsc + electron-vite build 通过；能力矩阵单元测试；**rust-analyzer 实测**（session.rs 函数上 call-hierarchy：incoming 1 调用者 + outgoing 18 被调者含标准库、带调用点上下文与签名 detail）；**gopls v0.23 实测**（临时 Go 项目：ReadWriter 接口 → supertypes=[Reader] / subtypes=[File]；Reader 接口 → subtypes=[ReadWriter, File, Buffer] 含接口继承者）；能力校验实测（rust 调 type-hierarchy 报「当前语言的服务器（rust）不支持」）；工具列表 12 个 |
-| **Phase 5.5** | **恢复 `lsp-code-action` + 新增 `lsp-execute-command`（§8.9）**：code-action 恢复（快速修复/重构菜单，agent 修 bug 的正确性痛点——服务器给精确 edit 而非 LLM 手写；apply=true 应用 edit 类，command 类列出待 execute）；execute-command（workspace/executeCommand 执行器——rust-analyzer.applySourceChange / gopls.add_import 等，结果识别 WorkspaceEdit → dryRun 预览/应用写盘；filePath 可选，缺省要求唯一启用服务器） | ✅ 已完成（2026-08-15，任务 08-15-lsp-execute-command）：cargo check + tsc + 单元测试（3 passed）通过；**实测发现并修复**：rust-analyzer 的 quickfix 类 action 依赖 `CodeActionContext.diagnostics`（VS Code 语义），空上下文只返回 refactor 类 → code-action 前自动 pull 当前文件诊断传入（client.rs `code_actions` 增 diagnostics 参数）；工具列表 14 个；**实测待重启后补录**（execute-command 全链路） |
+| 阶段          | 内容                                                                                                                                                                                                                                                                                                                                                                                                                                                         | 验证                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Phase 0**   | Cargo.toml 依赖；`lsp_server_configs` 表 + storage 服务 + exports；旧文件一次性迁移；`lsp/` 目录骨架；builtin.rs 注册；call.rs 分支；种子逻辑改表（按平台）                                                                                                                                                                                                                                                                                                  | `cargo check` + `npx tsc --noEmit`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| **Phase 1**   | 会话生命周期（spawn/initialize/回收/重启）+ `lsp-diagnostics` + `lsp-hover`（配置从表读取）                                                                                                                                                                                                                                                                                                                                                                  | rust-analyzer 实测（见 §12）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| **Phase 1.5** | **lsp-config scope 数据库化**（DB-backed：config-get/set/delete 直读写表，照 subAgents/imagegen）——**agent 配置路径打通**                                                                                                                                                                                                                                                                                                                                    | config-set 后工具立即生效（无需重启）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| **Phase 2**   | 前端 `lsp-settings` 页面（照 mcp-settings：列表+编辑器+开关+摘要；注册链：app_control VALID_PAGES + types.ts + MainContent lazy + settingsItems.ts + LspSettingsPanel + lspSettings/ 子目录；i18n 三语言同步）                                                                                                                                                                                                                                               | ✅ 已完成（2026-08-14）：页面 CRUD 与表一致，`app-control-openSettings page=lsp-settings` 可用                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| **Phase 3**   | 更多工具（definition/references/symbols/format）+ 项目级作用域（project_lsp_server_configs + config scope projectId + 前端 tab）                                                                                                                                                                                                                                                                                                                             | ✅ 已完成（2026-08-14）：工具实测（跨文件 definition/references/format dryRun）+ 项目覆盖语义实测                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **Phase 4**   | **按服务器能力动态暴露子工具**（§8.7：capabilities.rs 静态能力表 + collect 过滤——用户启用了哪些语言的服务器，就暴露这些服务器支持的工具子集）+ 新增高价值工具（completion / rename / code-action / signature-help，优先级见附录 F）                                                                                                                                                                                                                          | ✅ 已完成（2026-08-14）：能力过滤实测（仅 php 启用 → 8 工具无 rename/code-action；恢复后 10 工具）；4 新工具 gopls 实测（completion 9 条 / rename dryRun 3 edits / code-action 6 项 / signature-help 签名）；运行时二次校验实测（php 调 rename 报不支持错误）                                                                                                                                                                                                                                                                |
+| **Phase 4.5** | **补齐 agent 高价值工具**：`lsp-workspace-symbols`（跨所有启用服务器语言合并查询，按内容去重、上限 50）、`lsp-implementation`（接口/trait 实现跳转）、`lsp-type-definition`（类型定义跳转）；附录 F-3 否决项定稿（document-highlight 被 references 超集覆盖、inlay-hints 被 hover 覆盖且输出噪音大、semantic-tokens 价值低）                                                                                                                                 | ✅ 已完成（2026-08-14）：gopls 实测（type-definition 在变量上跳类型 / implementation 返回 2 个实现 / workspace-symbols 合并查询项目符号优先）；工具列表 13 个                                                                                                                                                                                                                                                                                                                                                                |
+| **Phase 4.6** | **工具集精简（13→10）+ 项目级诊断**：移除 4 个编辑器向低价值工具（completion/signature-help/code-action/format——LLM 本身即补全器，agent 无光标场景实测空结果；实现代码保留可恢复）；新增 `lsp-workspace-diagnostics`（LSP 3.17 workspace/diagnostic pull，rust-analyzer/gopls/clangd 支持，TS/pyright 不支持自动跳过，按文件分组聚合，失败降级 warnings）                                                                                                    | ✅ 已完成（2026-08-14，任务 08-14-lsp-tools-trim）：工具列表 10 个 = diagnostics/hover/definition/references/symbols/rename/type-definition/implementation/workspace-symbols/workspace-diagnostics                                                                                                                                                                                                                                                                                                                           |
+| **Phase 5**   | **补齐 agent 高价值层级工具（§8.8）**：`lsp-call-hierarchy`（LSP 3.16 双向调用链——incoming 谁调用它 + outgoing 它调用谁，一次调用拿全，含调用点代码上下文，改前影响分析无需递归 references）、`lsp-type-hierarchy`（LSP 3.17 父类型链 + 全部子类型，重构基类影响面评估）；能力矩阵按服务器源码复核（tsserver callHierarchy ❌ 修正为 ✅；新增 typeHierarchy 行）                                                                                             | ✅ 已完成（2026-08-15，任务 08-15-lsp-hierarchy-tools）：cargo check + tsc + electron-vite build 通过；能力矩阵单元测试；**rust-analyzer 实测**（session.rs 函数上 call-hierarchy：incoming 1 调用者 + outgoing 18 被调者含标准库、带调用点上下文与签名 detail）；**gopls v0.23 实测**（临时 Go 项目：ReadWriter 接口 → supertypes=[Reader] / subtypes=[File]；Reader 接口 → subtypes=[ReadWriter, File, Buffer] 含接口继承者）；能力校验实测（rust 调 type-hierarchy 报「当前语言的服务器（rust）不支持」）；工具列表 12 个 |
+| **Phase 5.5** | **恢复 `lsp-code-action` + 新增 `lsp-execute-command`（§8.9）**：code-action 恢复（快速修复/重构菜单，agent 修 bug 的正确性痛点——服务器给精确 edit 而非 LLM 手写；apply=true 应用 edit 类，command 类列出待 execute）；execute-command（workspace/executeCommand 执行器——rust-analyzer.applySourceChange / gopls.add_import 等，结果识别 WorkspaceEdit → dryRun 预览/应用写盘；filePath 可选，缺省要求唯一启用服务器）                                       | ✅ 已完成（2026-08-15，任务 08-15-lsp-execute-command）：cargo check + tsc + 单元测试（3 passed）通过；**实测发现并修复**：rust-analyzer 的 quickfix 类 action 依赖 `CodeActionContext.diagnostics`（VS Code 语义），空上下文只返回 refactor 类 → code-action 前自动 pull 当前文件诊断传入（client.rs `code_actions` 增 diagnostics 参数）；工具列表 14 个；**实测待重启后补录**（execute-command 全链路）                                                                                                                   |
+| **Phase 6**   | **技术栈感知 + 提示词强化（2026-09-24）**：① 栈根发现（§7.2）——`resolve_lang_root` 以真实技术栈根（如 `native/`）为会话根，16 处会话获取路径全部切换；`NoLangStack` 明确拒绝无栈语言；暴露判定统一（§8.0「暴露 = 可调用」）；状态过滤 `starts_with`。② 系统提示词三层动态注入（§8.10）——Language Servers 章节 + grep-search 描述反制 + 工具时机触发器 + Routing rules 场景化重写。③ `markers_for_lang` 12 语言标志表 + `find_lang_root`（向上找 + 向下扫）。 | ✅ 已完成（2026-09-24）：cargo check 0 警告 + 3 单测全绿（栈根向上 / 无栈拒绝 / 12 语言覆盖）+ build:rust 成功；运行时实测（跨文件 references / TS 栈根 / 无栈拒绝）待应用重启                                                                                                                                                                                                                                                                                                                                               |
 
 **实施红线**：
 
@@ -492,14 +540,14 @@ lsp-hover filePath=<绝对路径> line=<1-based> column=<1-based>
 
 ## 13. 风险与对策
 
-| 风险 | 影响 | 对策 |
-|---|---|---|
-| Windows stdio 管道兼容（Node 系服务器 EOF 语义） | ts 系服务器可能异常 | Phase 1 以 rust-analyzer/gopls 验证；ts 问题留 Phase 2 专项处理 |
-| rust-analyzer 内存占用 | 多项目并发时内存叠加 | max_sessions=3（跨项目合计）+ LRU 淘汰 + 空闲回收 |
-| 多项目各自起进程（per-project 模型） | 进程数随项目增长 | 上限 3 兜底；`go.work`/Cargo workspace 场景天然单进程（模块由服务器自发现） |
-| initialize 慢（jdtls 等冷启动 >30s） | 超时误判 | 超时参数可配置（后续暴露 config），首次调用提示等待 |
-| async-lsp 0.2 API 与 lsp-types 0.95 细节 | 编译/行为差异 | Phase 0 先跑通最小客户端（initialize 握手）再扩展 |
-| 长进程泄漏（异常退出路径） | 僵尸进程 | drop 守卫 + kill 兜底 + 日志观察 |
+| 风险                                             | 影响                 | 对策                                                                        |
+| ------------------------------------------------ | -------------------- | --------------------------------------------------------------------------- |
+| Windows stdio 管道兼容（Node 系服务器 EOF 语义） | ts 系服务器可能异常  | Phase 1 以 rust-analyzer/gopls 验证；ts 问题留 Phase 2 专项处理             |
+| rust-analyzer 内存占用                           | 多项目并发时内存叠加 | max_sessions=3（跨项目合计）+ LRU 淘汰 + 空闲回收                           |
+| 多项目各自起进程（per-project 模型）             | 进程数随项目增长     | 上限 3 兜底；`go.work`/Cargo workspace 场景天然单进程（模块由服务器自发现） |
+| initialize 慢（jdtls 等冷启动 >30s）             | 超时误判             | 超时参数可配置（后续暴露 config），首次调用提示等待                         |
+| async-lsp 0.2 API 与 lsp-types 0.95 细节         | 编译/行为差异        | Phase 0 先跑通最小客户端（initialize 握手）再扩展                           |
+| 长进程泄漏（异常退出路径）                       | 僵尸进程             | drop 守卫 + kill 兜底 + 日志观察                                            |
 
 ## 14. 参考
 
@@ -517,20 +565,20 @@ lsp-hover filePath=<绝对路径> line=<1-based> column=<1-based>
 > 依据：Anthropic claude-plugins-official（Claude Code 官方 12 语言 LSP 插件，2026-08 索引）+ langserver.org / awesome-lsp-servers 交叉验证。
 > 目标：作为 `lsp-config.json` 预置配置的修订依据与用户配置参考。
 
-| 语言 | 推荐服务器 | command | args | 安装方式（installCommand） | 说明 |
-|---|---|---|---|---|---|
-| TypeScript/JS | typescript-language-server | `typescript-language-server` | `["--stdio"]` | `npm install -g typescript-language-server typescript` | ✅ 现有预置正确 |
-| Go | gopls | `gopls` | `[]` | `go install golang.org/x/tools/gopls@latest` | ✅ 现有预置正确（Go 官方） |
-| Rust | rust-analyzer | `rust-analyzer` | `[]` | `rustup component add rust-analyzer` | ✅ 现有预置正确 |
-| Java | jdtls | `jdtls` | `[]` | `brew install jdtls` | ✅ 现有预置正确；**启动超时 120s** |
-| **Python** | **pyright**（pyright-langserver） | `pyright-langserver` | `["--stdio"]` | `pip install pyright` / `npm install -g pyright` | ⚠️ 现有预置 pylsp 建议**改为 pyright**（微软官方、typeshed 类型推断、Neovim 默认；pylsp 社区维护、类型能力弱） |
-| **C#** | **csharp-ls** | `csharp-ls` | `[]` | `dotnet tool install --global csharp-ls` | ⚠️ 现有预置 omnisharp 建议**改为 csharp-ls**（omnisharp 已半退休，.NET SDK 6+） |
-| **C/C++** | clangd | `clangd` | `["--background-index"]` | `apt install clangd` / `brew install llvm` | ➕ 新增（LLVM 官方） |
-| **PHP** | intelephense | `intelephense` | `["--stdio"]` | `npm install -g intelephense` | ➕ 新增（注意：商业授权，个人免费） |
-| **Ruby** | ruby-lsp | `ruby-lsp` | `["--stdio"]` | `gem install ruby-lsp` | ➕ 新增（Shopify 官方，取代 solargraph；Ruby 3.0+） |
-| **Swift** | sourcekit-lsp | `sourcekit-lsp` | `[]` | 随 Swift toolchain / Xcode | ➕ 新增（Apple 官方） |
-| **Kotlin** | kotlin-lsp | `kotlin-lsp` | `["--stdio"]` | 见 Kotlin 官方文档 | ➕ 新增（JetBrains 官方，基于 IntelliJ）；**启动超时 120s**；备选 fwcd/kotlin-language-server |
-| **Lua** | lua-language-server | `lua-language-server` | `[]` | `brew install lua-language-server` | ➕ 新增（sumneko，社区主流） |
+| 语言          | 推荐服务器                        | command                      | args                     | 安装方式（installCommand）                             | 说明                                                                                                           |
+| ------------- | --------------------------------- | ---------------------------- | ------------------------ | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| TypeScript/JS | typescript-language-server        | `typescript-language-server` | `["--stdio"]`            | `npm install -g typescript-language-server typescript` | ✅ 现有预置正确                                                                                                |
+| Go            | gopls                             | `gopls`                      | `[]`                     | `go install golang.org/x/tools/gopls@latest`           | ✅ 现有预置正确（Go 官方）                                                                                     |
+| Rust          | rust-analyzer                     | `rust-analyzer`              | `[]`                     | `rustup component add rust-analyzer`                   | ✅ 现有预置正确                                                                                                |
+| Java          | jdtls                             | `jdtls`                      | `[]`                     | `brew install jdtls`                                   | ✅ 现有预置正确；**启动超时 120s**                                                                             |
+| **Python**    | **pyright**（pyright-langserver） | `pyright-langserver`         | `["--stdio"]`            | `pip install pyright` / `npm install -g pyright`       | ⚠️ 现有预置 pylsp 建议**改为 pyright**（微软官方、typeshed 类型推断、Neovim 默认；pylsp 社区维护、类型能力弱） |
+| **C#**        | **csharp-ls**                     | `csharp-ls`                  | `[]`                     | `dotnet tool install --global csharp-ls`               | ⚠️ 现有预置 omnisharp 建议**改为 csharp-ls**（omnisharp 已半退休，.NET SDK 6+）                                |
+| **C/C++**     | clangd                            | `clangd`                     | `["--background-index"]` | `apt install clangd` / `brew install llvm`             | ➕ 新增（LLVM 官方）                                                                                           |
+| **PHP**       | intelephense                      | `intelephense`               | `["--stdio"]`            | `npm install -g intelephense`                          | ➕ 新增（注意：商业授权，个人免费）                                                                            |
+| **Ruby**      | ruby-lsp                          | `ruby-lsp`                   | `["--stdio"]`            | `gem install ruby-lsp`                                 | ➕ 新增（Shopify 官方，取代 solargraph；Ruby 3.0+）                                                            |
+| **Swift**     | sourcekit-lsp                     | `sourcekit-lsp`              | `[]`                     | 随 Swift toolchain / Xcode                             | ➕ 新增（Apple 官方）                                                                                          |
+| **Kotlin**    | kotlin-lsp                        | `kotlin-lsp`                 | `["--stdio"]`            | 见 Kotlin 官方文档                                     | ➕ 新增（JetBrains 官方，基于 IntelliJ）；**启动超时 120s**；备选 fwcd/kotlin-language-server                  |
+| **Lua**       | lua-language-server               | `lua-language-server`        | `[]`                     | `brew install lua-language-server`                     | ➕ 新增（sumneko，社区主流）                                                                                   |
 
 要点：
 
@@ -543,20 +591,20 @@ lsp-hover filePath=<绝对路径> line=<1-based> column=<1-based>
 
 > 来源：各服务器官方仓库/文档 + Swift.org 平台支持表 + eclipse-jdtls issues。❓=需实测确认。
 
-| 服务器 | Windows | macOS | Linux | 关键注意点 |
-|---|---|---|---|---|
-| typescript-language-server | ✅ | ✅ | ✅ | Node 系；Windows 上 Node 子进程 stdin EOF 语义与 Unix 不同——回收靠 kill 兜底（§7.3 已设计） |
-| pyright | ✅ | ✅ | ✅ | Node 系，同上 |
-| gopls | ✅ | ✅ | ✅ | Go 官方，`go install` 跨平台 |
-| rust-analyzer | ✅ | ✅ | ✅ | `rustup component add` 跨平台 |
-| jdtls | ⚠️ 可用但繁琐 | ✅（brew） | ✅ | **需 Java 21+**（eclipse.jdt.ls 最新要求）；Windows 用 `jdtls.bat` 启动（大量 JVM 参数需 bat 包装）；**已知 bug：路径含空格时 bat 失败**（eclipse-jdtls#3783）；启动 120s |
-| csharp-ls | ✅ | ✅ | ✅ | `dotnet tool install --global csharp-ls`（NuGet 官方）；需 .NET SDK 6+ |
-| clangd | ✅ | ✅（brew llvm） | ✅（apt） | Windows 用 LLVM 官方安装器 / winget；无 compile_commands.json 时诊断精度下降（`--background-index` 只能缓解） |
-| intelephense | ✅ | ✅ | ✅ | Node 系；**商业授权**（个人免费） |
-| ruby-lsp | ✅ | ✅ | ✅ | 需 Ruby 3.0+ |
-| sourcekit-lsp | ⚠️ 实验性 | ✅（随 Xcode） | ✅ | **Windows 支持不成熟**（Swift Forums 讨论，Swift.org 平台支持表）；macOS 上随 Xcode 自带 |
-| kotlin-lsp | ⚠️ 可用 | ✅ | ✅ | JVM 系；Windows 需 Java；启动 120s；备选 fwcd/kotlin-language-server |
-| lua-language-server | ✅ | ✅ | ✅ | 官方 GitHub Releases 提供 Windows 构建 |
+| 服务器                     | Windows       | macOS           | Linux     | 关键注意点                                                                                                                                                                |
+| -------------------------- | ------------- | --------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| typescript-language-server | ✅            | ✅              | ✅        | Node 系；Windows 上 Node 子进程 stdin EOF 语义与 Unix 不同——回收靠 kill 兜底（§7.3 已设计）                                                                               |
+| pyright                    | ✅            | ✅              | ✅        | Node 系，同上                                                                                                                                                             |
+| gopls                      | ✅            | ✅              | ✅        | Go 官方，`go install` 跨平台                                                                                                                                              |
+| rust-analyzer              | ✅            | ✅              | ✅        | `rustup component add` 跨平台                                                                                                                                             |
+| jdtls                      | ⚠️ 可用但繁琐 | ✅（brew）      | ✅        | **需 Java 21+**（eclipse.jdt.ls 最新要求）；Windows 用 `jdtls.bat` 启动（大量 JVM 参数需 bat 包装）；**已知 bug：路径含空格时 bat 失败**（eclipse-jdtls#3783）；启动 120s |
+| csharp-ls                  | ✅            | ✅              | ✅        | `dotnet tool install --global csharp-ls`（NuGet 官方）；需 .NET SDK 6+                                                                                                    |
+| clangd                     | ✅            | ✅（brew llvm） | ✅（apt） | Windows 用 LLVM 官方安装器 / winget；无 compile_commands.json 时诊断精度下降（`--background-index` 只能缓解）                                                             |
+| intelephense               | ✅            | ✅              | ✅        | Node 系；**商业授权**（个人免费）                                                                                                                                         |
+| ruby-lsp                   | ✅            | ✅              | ✅        | 需 Ruby 3.0+                                                                                                                                                              |
+| sourcekit-lsp              | ⚠️ 实验性     | ✅（随 Xcode）  | ✅        | **Windows 支持不成熟**（Swift Forums 讨论，Swift.org 平台支持表）；macOS 上随 Xcode 自带                                                                                  |
+| kotlin-lsp                 | ⚠️ 可用       | ✅              | ✅        | JVM 系；Windows 需 Java；启动 120s；备选 fwcd/kotlin-language-server                                                                                                      |
+| lua-language-server        | ✅            | ✅              | ✅        | 官方 GitHub Releases 提供 Windows 构建                                                                                                                                    |
 
 **设计含义**：
 
@@ -612,7 +660,16 @@ sequenceDiagram
     "typescript": {
       "command": "typescript-language-server",
       "args": ["--stdio"],
-      "fileExtensions": [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs"],
+      "fileExtensions": [
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".mts",
+        ".cts",
+        ".mjs",
+        ".cjs"
+      ],
       "installCommand": "npm install -g typescript-language-server typescript",
       "initializationOptions": {}
     },
@@ -640,7 +697,17 @@ sequenceDiagram
     "c": {
       "command": "clangd",
       "args": ["--background-index"],
-      "fileExtensions": [".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hxx", ".C", ".H"],
+      "fileExtensions": [
+        ".c",
+        ".h",
+        ".cpp",
+        ".cc",
+        ".cxx",
+        ".hpp",
+        ".hxx",
+        ".C",
+        ".H"
+      ],
       "installCommand": "winget install LLVM.LLVM",
       "initializationOptions": {}
     },
@@ -697,20 +764,20 @@ sequenceDiagram
 
 ### 改动边界（Rust 层 + 前端设置页 + 文档）
 
-| 改动 | 文件 |
-|---|---|
-| 新增 lsp 服务 | `native/src/mcp/servers/lsp/`（mod/config/manager/session/client/format.rs） |
-| 新表 + storage | `native/src/storage/database.rs`（create_schema 建表）+ `native/src/storage/services/lsp_server_configs.rs`（CRUD）+ `native/src/exports/storage/lsp.rs`（napi） |
-| config scope 数据库化 | `native/src/mcp/servers/config/mod.rs`（lsp-config 从文件型 scope 改为 DB-backed，照 subAgents/imagegen 模式）+ 可能新增 `lsp_config_scope.rs` 子模块 |
-| 迁移 | 首次启动导入旧 `~/.snow/lsp-config.json`（source=legacy，幂等） |
-| 依赖 | `native/Cargo.toml`（async-lsp + lsp-types） |
-| 注册 | `native/src/mcp/servers/mod.rs`（pub mod lsp）+ `native/src/mcp/builtin.rs`（列表末尾） |
-| 异步分发 | `native/src/mcp/tools/call.rs`（`lsp-` 前缀分支） |
-| 种子 | lsp 种子逻辑改写入表（source=seed，按平台，不覆盖用户记录） |
-| 前端页面（Phase 2） | `src/renderer/components/sidebar/LspSettingsPanel.tsx` + `lspSettings/` 子目录 + `mainContent/types.ts`（ViewType）+ `MainContent.tsx`（lazy 渲染）+ `sidebar/settingsItems.ts`（菜单）+ `app_control.rs`（VALID_PAGES） |
-| preload/IPC（Phase 2） | `src/preload/modules/*Api.ts` + `src/main/ipc/handlers/*Handlers.ts` + `registerIpcHandlers.ts`（完整链路：UI → preload → IPC → native export → storage） |
-| i18n（Phase 2） | `src/renderer/i18n/lang/{zh-CN,en,zh-TW}.ts`（三语言同步红线） |
-| 文档 | 本设计稿（中英）+ `docs/README.md` 索引 + 7-代码库索引与代码诊断.md §2.4（移除「预留」表述）+ 3-配置文件字段参考.md 第 10 节（文件型→表驱动状态更新）+ 2-内置工具参考.md（工具表）+ 4-数据存储位置.md（新表） |
+| 改动                   | 文件                                                                                                                                                                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 新增 lsp 服务          | `native/src/mcp/servers/lsp/`（mod/config/manager/session/client/format.rs）                                                                                                                                             |
+| 新表 + storage         | `native/src/storage/database.rs`（create_schema 建表）+ `native/src/storage/services/lsp_server_configs.rs`（CRUD）+ `native/src/exports/storage/lsp.rs`（napi）                                                         |
+| config scope 数据库化  | `native/src/mcp/servers/config/mod.rs`（lsp-config 从文件型 scope 改为 DB-backed，照 subAgents/imagegen 模式）+ 可能新增 `lsp_config_scope.rs` 子模块                                                                    |
+| 迁移                   | 首次启动导入旧 `~/.snow/lsp-config.json`（source=legacy，幂等）                                                                                                                                                          |
+| 依赖                   | `native/Cargo.toml`（async-lsp + lsp-types）                                                                                                                                                                             |
+| 注册                   | `native/src/mcp/servers/mod.rs`（pub mod lsp）+ `native/src/mcp/builtin.rs`（列表末尾）                                                                                                                                  |
+| 异步分发               | `native/src/mcp/tools/call.rs`（`lsp-` 前缀分支）                                                                                                                                                                        |
+| 种子                   | lsp 种子逻辑改写入表（source=seed，按平台，不覆盖用户记录）                                                                                                                                                              |
+| 前端页面（Phase 2）    | `src/renderer/components/sidebar/LspSettingsPanel.tsx` + `lspSettings/` 子目录 + `mainContent/types.ts`（ViewType）+ `MainContent.tsx`（lazy 渲染）+ `sidebar/settingsItems.ts`（菜单）+ `app_control.rs`（VALID_PAGES） |
+| preload/IPC（Phase 2） | `src/preload/modules/*Api.ts` + `src/main/ipc/handlers/*Handlers.ts` + `registerIpcHandlers.ts`（完整链路：UI → preload → IPC → native export → storage）                                                                |
+| i18n（Phase 2）        | `src/renderer/i18n/lang/{zh-CN,en,zh-TW}.ts`（三语言同步红线）                                                                                                                                                           |
+| 文档                   | 本设计稿（中英）+ `docs/README.md` 索引 + 7-代码库索引与代码诊断.md §2.4（移除「预留」表述）+ 3-配置文件字段参考.md 第 10 节（文件型→表驱动状态更新）+ 2-内置工具参考.md（工具表）+ 4-数据存储位置.md（新表）            |
 
 **不做**：数据库迁移版本提升（新表走 create_schema 幂等建表）、codelens 行为改动、MCP 现有行为改动。
 
@@ -738,22 +805,22 @@ sequenceDiagram
 
 ### F-1 能力矩阵（12 语言 × 13 项 LSP 能力）
 
-| 能力 | TS<br/>tsserver | Python<br/>pyright | Go<br/>gopls | Rust<br/>rust-ana | C/C++<br/>clangd | Java<br/>jdtls | C#<br/>csharp-ls | Kotlin<br/>kotlin-lsp | PHP<br/>intelephense | Ruby<br/>ruby-lsp | Lua<br/>lua-ls | Swift<br/>sourcekit-lsp |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| completion 补全 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ a | ✅ | ✅ |
-| signatureHelp 签名 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ⚠️ b | ✅ |
-| rename 重命名 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | 🔒 | ⚠️ c | ✅ | ✅ |
-| codeAction 快速修复 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ d | ❌ | 🔒 | ✅ | ⚠️ b | ⚠️ e |
-| typeDefinition 类型定义 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | 🔒 | ❌ | ❌ | ✅ |
-| implementation 实现 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | 🔒 | ❌ | ❌ | ⚠️ e |
-| workspaceSymbol 全局符号 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| documentHighlight 高亮 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ⚠️ b | ✅ |
-| inlayHint 内联提示 | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | 🔒 | ✅ | ❌ | ✅ |
-| semanticTokens 语义令牌 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ |
-| callHierarchy 调用层级 | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | 🔒 | ⚠️ f | ❌ | ✅ |
-| typeHierarchy 类型层级 | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | 🔒 | ⚠️ f | ❌ | ❌ |
-| codeLens | ✅ | ⚠️ g | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | 🔒 | ✅ | ❌ | ✅ |
-| 诊断/hover/跳转/引用/大纲/格式化（现状 6 工具） | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 能力                                            | TS<br/>tsserver | Python<br/>pyright | Go<br/>gopls | Rust<br/>rust-ana | C/C++<br/>clangd | Java<br/>jdtls | C#<br/>csharp-ls | Kotlin<br/>kotlin-lsp | PHP<br/>intelephense | Ruby<br/>ruby-lsp | Lua<br/>lua-ls | Swift<br/>sourcekit-lsp |
+| ----------------------------------------------- | --------------- | ------------------ | ------------ | ----------------- | ---------------- | -------------- | ---------------- | --------------------- | -------------------- | ----------------- | -------------- | ----------------------- |
+| completion 补全                                 | ✅              | ✅                 | ✅           | ✅                | ✅               | ✅             | ✅               | ✅                    | ✅                   | ⚠️ a              | ✅             | ✅                      |
+| signatureHelp 签名                              | ✅              | ✅                 | ✅           | ✅                | ✅               | ✅             | ❌               | ✅                    | ✅                   | ✅                | ⚠️ b           | ✅                      |
+| rename 重命名                                   | ✅              | ✅                 | ✅           | ✅                | ✅               | ✅             | ❌               | ❌                    | 🔒                   | ⚠️ c              | ✅             | ✅                      |
+| codeAction 快速修复                             | ✅              | ✅                 | ✅           | ✅                | ✅               | ✅             | ⚠️ d             | ❌                    | 🔒                   | ✅                | ⚠️ b           | ⚠️ e                    |
+| typeDefinition 类型定义                         | ✅              | ✅                 | ✅           | ✅                | ✅               | ✅             | ❌               | ❌                    | 🔒                   | ❌                | ❌             | ✅                      |
+| implementation 实现                             | ✅              | ✅                 | ✅           | ✅                | ✅               | ✅             | ❌               | ❌                    | 🔒                   | ❌                | ❌             | ⚠️ e                    |
+| workspaceSymbol 全局符号                        | ✅              | ✅                 | ✅           | ✅                | ✅               | ✅             | ❌               | ✅                    | ✅                   | ✅                | ✅             | ✅                      |
+| documentHighlight 高亮                          | ✅              | ✅                 | ✅           | ✅                | ✅               | ✅             | ❌               | ❌                    | ✅                   | ✅                | ⚠️ b           | ✅                      |
+| inlayHint 内联提示                              | ✅              | ✅                 | ✅           | ✅                | ❌               | ✅             | ❌               | ❌                    | 🔒                   | ✅                | ❌             | ✅                      |
+| semanticTokens 语义令牌                         | ✅              | ✅                 | ✅           | ✅                | ✅               | ✅             | ❌               | ❌                    | ❌                   | ✅                | ❌             | ✅                      |
+| callHierarchy 调用层级                          | ✅              | ❌                 | ✅           | ✅                | ❌               | ✅             | ❌               | ❌                    | 🔒                   | ⚠️ f              | ❌             | ✅                      |
+| typeHierarchy 类型层级                          | ❌              | ❌                 | ✅           | ❌                | ❌               | ✅             | ❌               | ❌                    | 🔒                   | ⚠️ f              | ❌             | ❌                      |
+| codeLens                                        | ✅              | ⚠️ g               | ❌           | ✅                | ❌               | ✅             | ❌               | ❌                    | 🔒                   | ✅                | ❌             | ✅                      |
+| 诊断/hover/跳转/引用/大纲/格式化（现状 6 工具） | ✅              | ✅                 | ✅           | ✅                | ✅               | ✅             | ✅               | ✅                    | ✅                   | ✅                | ✅             | ✅                      |
 
 > 注 a：ruby-lsp 方法补全仅接收者类型可推断时可用；b：lua-ls 官方未明确宣传 signature/codeAction/highlight，实际部分支持；c：ruby-lsp rename 仅常量/类/模块；d：csharp-ls 有重构但能力清单薄；e：sourcekit-lsp 基于 sourcekitd+clangd 实际支持但文档未细列；f：ruby-lsp typeHierarchy 为实验特性（仅祖先链）；g：pyright codeLens 仅 gotoOverride（实验）。
 > **2026-08-15 修正注（Phase 5，服务器源码复核）**：① callHierarchy 行 tsserver 由 ❌ 修正为 ✅——typescript-language-server `lsp-server.ts` 声明 `callHierarchyProvider = true`（TS ≥ 3.80）；② 新增 typeHierarchy 行——gopls（`gopls/doc/features/navigation.md` 有 Type Hierarchy 章节）✅、jdtls（`InitHandler.java` 声明 `setTypeHierarchyProvider(TRUE)`）✅、rust-analyzer（`crates/rust-analyzer/src/lsp/capabilities.rs` 声明 `call_hierarchy_provider: Some(true)`、`type_hierarchy_provider: None`）❌、tsserver 无 typeHierarchy 实现 ❌、clangd 官方 features 页无 hierarchy 章节 ❌、sourcekit-lsp typeHierarchy 未核实按 ❌ 保守处理。
@@ -770,21 +837,21 @@ sequenceDiagram
 
 ### F-3 可补充工具规划（Phase 4 候选，按 Agent 场景价值排序；状态截至 2026-08-14）
 
-| 优先级 | 新工具 | LSP 请求 | 覆盖服务器 | 落地成本 | 状态 | 备注 |
-|---|---|---|---|---|---|---|
-| 🥇 | `lsp-completion` | `textDocument/completion` | 12/12 | 低 | ✅ 已实施（Phase 4） | 输出 label/kind/detail/doc + 是否触发 signatureHelp；session/客户端全现成 |
-| 🥈 | `lsp-rename` | `textDocument/rename`（+prepareRename） | 9/12 | 低 | ✅ 已实施（Phase 4） | 返回 WorkspaceEdit（多文件 edits）；PHP🔒/Kotlin/C# 不暴露（§8.7 过滤） |
-| 🥉 | `lsp-code-action` | `textDocument/codeAction`（+workspace/executeCommand） | 10/12 | 中 | ✅ 已实施（Phase 4）+ **恢复（Phase 5.5）** | 处理 Command 执行（如 organize imports）；PHP🔒 过滤 |
-| 🏅 | `lsp-signature-help` | `textDocument/signatureHelp` | 10/12 | 低 | ✅ 已实施（Phase 4） | 参数/签名提示；C#/Lua 不暴露 |
-| 5 | `lsp-type-definition` | `textDocument/typeDefinition` | 9/12 | 低 | ✅ 已实施（Phase 4.5） | 与 definition 同构，复用输出格式；变量上直接跳类型 |
-| 6 | `lsp-implementation` | `textDocument/implementation` | 8/12 | 低 | ✅ 已实施（Phase 4.5） | 接口/trait 实现跳转（references 覆盖不到的实现关系） |
-| 7 | `lsp-workspace-symbols` | `workspace/symbol` | 11/12 | 中 | ✅ 已实施（Phase 4.5） | 跨文件按名搜符号；**跨所有启用服务器语言合并查询**、按内容去重、上限 50；C# 不暴露；pyright 需索引 |
-| 8 | `lsp-document-highlight` | `textDocument/documentHighlight` | 9/12 | 低 | ❌ 否决（评估） | 编辑器光标向能力；agent 无光标概念，`lsp-references`（可单文件）已是超集 |
-| 9 | `lsp-inlay-hints` | `textDocument/inlayHint` | 7/12 | 中 | ❌ 否决（评估） | 全文件推断类型输出噪音大、污染上下文；点查询用 `lsp-hover` 更精准 |
-| 10 | `lsp-semantic-tokens` | `textDocument/semanticTokens` | 8/12 | 高 | ❌ 否决（评估） | 编辑器着色向，agent 价值低，不建议 |
-| 11 | `lsp-call-hierarchy` | `textDocument/prepareCallHierarchy` + `callHierarchy/incomingCalls` + `callHierarchy/outgoingCalls` | 5/12 | 低 | ✅ 已实施（Phase 5，2026-08-15） | **双向调用链一次拿全**（incoming 谁调它 + outgoing 它调谁，含调用点代码上下文）——改前影响分析无需递归 references；TS/gopls/rust-analyzer/jdtls/sourcekit-lsp 暴露 |
-| 12 | `lsp-type-hierarchy` | `textDocument/prepareTypeHierarchy` + `typeHierarchy/supertypes` + `typeHierarchy/subtypes` | 2/12 | 低 | ✅ 已实施（Phase 5，2026-08-15） | 父类型链 + 全部子类型——重构基类影响面评估；gopls/jdtls 暴露（rust-analyzer 源码确认不支持）；§8.7.2 项目感知：仅 Go/Java 技术栈项目暴露 |
-| 13 | `lsp-execute-command` | `workspace/executeCommand` | 2/12 | 中 | ✅ 已实施（Phase 5.5，2026-08-15） | 执行服务器命令（rust-analyzer.applySourceChange / gopls.add_import 等）——结果识别 WorkspaceEdit → dryRun 预览/应用；参数经 code-action 中转（服务器私有格式）；rust/go 标记，其他待核实 |
+| 优先级 | 新工具                   | LSP 请求                                                                                            | 覆盖服务器 | 落地成本 | 状态                                        | 备注                                                                                                                                                                                    |
+| ------ | ------------------------ | --------------------------------------------------------------------------------------------------- | ---------- | -------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🥇     | `lsp-completion`         | `textDocument/completion`                                                                           | 12/12      | 低       | ✅ 已实施（Phase 4）                        | 输出 label/kind/detail/doc + 是否触发 signatureHelp；session/客户端全现成                                                                                                               |
+| 🥈     | `lsp-rename`             | `textDocument/rename`（+prepareRename）                                                             | 9/12       | 低       | ✅ 已实施（Phase 4）                        | 返回 WorkspaceEdit（多文件 edits）；PHP🔒/Kotlin/C# 不暴露（§8.7 过滤）                                                                                                                 |
+| 🥉     | `lsp-code-action`        | `textDocument/codeAction`（+workspace/executeCommand）                                              | 10/12      | 中       | ✅ 已实施（Phase 4）+ **恢复（Phase 5.5）** | 处理 Command 执行（如 organize imports）；PHP🔒 过滤                                                                                                                                    |
+| 🏅     | `lsp-signature-help`     | `textDocument/signatureHelp`                                                                        | 10/12      | 低       | ✅ 已实施（Phase 4）                        | 参数/签名提示；C#/Lua 不暴露                                                                                                                                                            |
+| 5      | `lsp-type-definition`    | `textDocument/typeDefinition`                                                                       | 9/12       | 低       | ✅ 已实施（Phase 4.5）                      | 与 definition 同构，复用输出格式；变量上直接跳类型                                                                                                                                      |
+| 6      | `lsp-implementation`     | `textDocument/implementation`                                                                       | 8/12       | 低       | ✅ 已实施（Phase 4.5）                      | 接口/trait 实现跳转（references 覆盖不到的实现关系）                                                                                                                                    |
+| 7      | `lsp-workspace-symbols`  | `workspace/symbol`                                                                                  | 11/12      | 中       | ✅ 已实施（Phase 4.5）                      | 跨文件按名搜符号；**跨所有启用服务器语言合并查询**、按内容去重、上限 50；C# 不暴露；pyright 需索引                                                                                      |
+| 8      | `lsp-document-highlight` | `textDocument/documentHighlight`                                                                    | 9/12       | 低       | ❌ 否决（评估）                             | 编辑器光标向能力；agent 无光标概念，`lsp-references`（可单文件）已是超集                                                                                                                |
+| 9      | `lsp-inlay-hints`        | `textDocument/inlayHint`                                                                            | 7/12       | 中       | ❌ 否决（评估）                             | 全文件推断类型输出噪音大、污染上下文；点查询用 `lsp-hover` 更精准                                                                                                                       |
+| 10     | `lsp-semantic-tokens`    | `textDocument/semanticTokens`                                                                       | 8/12       | 高       | ❌ 否决（评估）                             | 编辑器着色向，agent 价值低，不建议                                                                                                                                                      |
+| 11     | `lsp-call-hierarchy`     | `textDocument/prepareCallHierarchy` + `callHierarchy/incomingCalls` + `callHierarchy/outgoingCalls` | 5/12       | 低       | ✅ 已实施（Phase 5，2026-08-15）            | **双向调用链一次拿全**（incoming 谁调它 + outgoing 它调谁，含调用点代码上下文）——改前影响分析无需递归 references；TS/gopls/rust-analyzer/jdtls/sourcekit-lsp 暴露                       |
+| 12     | `lsp-type-hierarchy`     | `textDocument/prepareTypeHierarchy` + `typeHierarchy/supertypes` + `typeHierarchy/subtypes`         | 2/12       | 低       | ✅ 已实施（Phase 5，2026-08-15）            | 父类型链 + 全部子类型——重构基类影响面评估；gopls/jdtls 暴露（rust-analyzer 源码确认不支持）；§8.7.2 项目感知：仅 Go/Java 技术栈项目暴露                                                 |
+| 13     | `lsp-execute-command`    | `workspace/executeCommand`                                                                          | 2/12       | 中       | ✅ 已实施（Phase 5.5，2026-08-15）          | 执行服务器命令（rust-analyzer.applySourceChange / gopls.add_import 等）——结果识别 WorkspaceEdit → dryRun 预览/应用；参数经 code-action 中转（服务器私有格式）；rust/go 标记，其他待核实 |
 
 **落地记录**：首批（Phase 4）= completion/rename/code-action/signature-help，配合 §8.7 能力过滤一次交付；第二批（Phase 4.5）= type-definition/implementation/workspace-symbols（workspace-symbols 采用多服务器合并查询，实测项目符号优先）。highlight/inlay-hints/semantic-tokens 经 agent 场景评估后否决（理由见上表状态列）。
 
@@ -792,9 +859,9 @@ sequenceDiagram
 
 ### F-4 与 §8.7 的联动示例
 
-| 用户启用组合 | 暴露的工具（含 Phase 4 新增） |
-|---|---|
-| 仅 rust-analyzer | 全部：diagnostics/hover/definition/references/symbols/format + completion/rename/code-action/signature-help/type-definition/implementation/workspace-symbols/highlight |
-| 仅 csharp-ls | 现状 6 个 + completion（**无** rename/code-action/signature-help/workspace-symbols/hierarchy） |
-| 仅 intelephense（未购 license） | 现状 6 个 + completion/signature-help/workspace-symbols（**无** rename/code-action/type-definition/implementation） |
-| gopls + csharp-ls | 并集：gopls 全能力 + csharp-ls 的 completion——基本全量（rename/code-action 因 gopls 支持而暴露，C# 文件调用时按 §8.7.1 二次校验报错） |
+| 用户启用组合                    | 暴露的工具（含 Phase 4 新增）                                                                                                                                          |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 仅 rust-analyzer                | 全部：diagnostics/hover/definition/references/symbols/format + completion/rename/code-action/signature-help/type-definition/implementation/workspace-symbols/highlight |
+| 仅 csharp-ls                    | 现状 6 个 + completion（**无** rename/code-action/signature-help/workspace-symbols/hierarchy）                                                                         |
+| 仅 intelephense（未购 license） | 现状 6 个 + completion/signature-help/workspace-symbols（**无** rename/code-action/type-definition/implementation）                                                    |
+| gopls + csharp-ls               | 并集：gopls 全能力 + csharp-ls 的 completion——基本全量（rename/code-action 因 gopls 支持而暴露，C# 文件调用时按 §8.7.1 二次校验报错）                                  |

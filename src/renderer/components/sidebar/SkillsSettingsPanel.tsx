@@ -74,6 +74,17 @@ export function SkillsSettingsPanel({
   );
 
   const loadSequenceRef = useRef(0);
+  // 是否完成过一次加载：仅首次加载周期用整块 loading 占位。
+  // 之后的常规刷新（启停、安装、卸载、点刷新）一律保留现有列表——
+  // 列表被占位替换会让页面高度骤降，滚动容器 scrollTop 被夹回顶部，
+  // 表现为「启停一次就跳回页首」。
+  const hasLoadedOnceRef = useRef(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  // 当前列表数据所属的项目：切换项目时旧数据立即让位给占位，
+  // 避免在新项目下短暂显示（并可误操作）旧项目的 Skills。
+  const [loadedScopeKey, setLoadedScopeKey] = useState<string | null>(null);
+  const scopeKey = activeDirectory?.directoryId ?? "";
+  const isScopeStale = loadedScopeKey !== null && loadedScopeKey !== scopeKey;
 
   const loadSkills = useCallback(async (): Promise<void> => {
     // Only the latest load may write state.
@@ -103,11 +114,15 @@ export function SkillsSettingsPanel({
         project: projectSkills,
       });
       setGithubSkills(githubRecords);
+      setLoadedScopeKey(activeDirectory?.directoryId ?? "");
     } catch (loadError) {
       if (sequence !== loadSequenceRef.current) {
         return;
       }
-      setSkillsByScope(EMPTY_SKILLS_BY_SCOPE);
+      // 已有数据时保留旧列表：刷新失败清空同样会塌缩列表并重置滚动位置。
+      if (!hasLoadedOnceRef.current) {
+        setSkillsByScope(EMPTY_SKILLS_BY_SCOPE);
+      }
       setError(
         loadError instanceof Error
           ? loadError.message
@@ -117,7 +132,9 @@ export function SkillsSettingsPanel({
       );
     } finally {
       if (sequence === loadSequenceRef.current) {
+        hasLoadedOnceRef.current = true;
         setIsLoading(false);
+        setIsInitialLoading(false);
       }
     }
   }, [activeDirectory, t]);
@@ -547,7 +564,7 @@ export function SkillsSettingsPanel({
           className="system-prompt-list mcp-server-list skills-settings-list"
           aria-live="polite"
         >
-          {isLoading ? (
+          {isInitialLoading || isScopeStale ? (
             <div className="system-prompt-empty skills-settings-empty">
               <Loader2 size={15} className="spin" />
               <span>

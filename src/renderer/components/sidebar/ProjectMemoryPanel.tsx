@@ -289,6 +289,11 @@ export function ProjectMemoryPanel({
   const listScrollRef = useRef<HTMLDivElement>(null);
   /** 已解析过的来源会话 ID：滚动加载只补查新增条目，避免重复批量查询。 */
   const resolvedSourceIdsRef = useRef<Set<string>>(new Set());
+  // 列表数据所属的「查询范围」（项目 + 状态筛选 + 类型筛选 + 关键词）：
+  // 范围变化（切换项目/筛选/搜索）才用整块 loading 占位；
+  // 同一范围下的刷新（保存、删除、批量删除后重载）保留现有列表——
+  // 列表被占位替换会让容器高度骤降，滚动位置被夹回顶部。
+  const [loadedScopeKey, setLoadedScopeKey] = useState("");
 
   const refreshStats = useCallback(() => {
     if (!directoryId) return;
@@ -302,6 +307,7 @@ export function ProjectMemoryPanel({
     (offset: number, append: boolean) => {
       if (!directoryId) return;
       const requestId = ++requestIdRef.current;
+      const requestScopeKey = `${directoryId}|${filterStatus}|${filterKind}|${activeQuery}`;
       if (append) {
         setIsLoadingMore(true);
       } else {
@@ -341,6 +347,7 @@ export function ProjectMemoryPanel({
           });
           setHasMore(page.hasMore);
           setHitTotal(activeQuery ? page.total : 0);
+          setLoadedScopeKey(requestScopeKey);
         })
         .catch(() => {
           if (requestId === requestIdRef.current && !append) {
@@ -360,6 +367,9 @@ export function ProjectMemoryPanel({
     },
     [directoryId, filterStatus, filterKind, activeQuery],
   );
+
+  // 渲染期使用的当前查询范围：与 loadPage 记录的数据范围不一致时才显示整块占位。
+  const currentScopeKey = `${directoryId ?? ""}|${filterStatus}|${filterKind}|${activeQuery}`;
 
   // 进入页面或筛选/关键词变化时重新加载第一页
   useEffect(() => {
@@ -876,7 +886,7 @@ export function ProjectMemoryPanel({
         onScroll={handleListScroll}
         ref={listScrollRef}
       >
-        {isLoading ? (
+        {isLoading && loadedScopeKey !== currentScopeKey ? (
           <div className="memory-list-empty">
             <Loader2 className="spin" size={16} />
           </div>

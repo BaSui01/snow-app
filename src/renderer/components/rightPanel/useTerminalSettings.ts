@@ -17,7 +17,7 @@ const TERMINAL_SETTINGS_CHANGED_EVENT = "terminal-settings-changed";
  */
 export function useTerminalSettings(): TerminalSettings {
   const [settings, setSettings] = useState<TerminalSettings>(
-    DEFAULT_TERMINAL_SETTINGS
+    DEFAULT_TERMINAL_SETTINGS,
   );
 
   useEffect(() => {
@@ -26,7 +26,7 @@ export function useTerminalSettings(): TerminalSettings {
     const loadSettings = async () => {
       try {
         const value = await window.snow.getSystemSettingValue(
-          TERMINAL_SETTING_CODE
+          TERMINAL_SETTING_CODE,
         );
         if (!disposed) {
           setSettings(readTerminalSettingsJson(value));
@@ -43,14 +43,14 @@ export function useTerminalSettings(): TerminalSettings {
     const handleChange = () => void loadSettings();
     window.addEventListener(
       TERMINAL_SETTINGS_CHANGED_EVENT,
-      handleChange as EventListener
+      handleChange as EventListener,
     );
 
     return () => {
       disposed = true;
       window.removeEventListener(
         TERMINAL_SETTINGS_CHANGED_EVENT,
-        handleChange as EventListener
+        handleChange as EventListener,
       );
     };
   }, []);
@@ -64,4 +64,13 @@ export function useTerminalSettings(): TerminalSettings {
  */
 export function notifyTerminalSettingsChanged(): void {
   window.dispatchEvent(new Event(TERMINAL_SETTINGS_CHANGED_EVENT));
+}
+
+export function subscribeTerminalSettingsChanged(
+  listener: () => void,
+): () => void {
+  const handler = (): void => listener();
+  window.addEventListener(TERMINAL_SETTINGS_CHANGED_EVENT, handler);
+  return () =>
+    window.removeEventListener(TERMINAL_SETTINGS_CHANGED_EVENT, handler);
 }

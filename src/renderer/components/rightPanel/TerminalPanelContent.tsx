@@ -7,6 +7,7 @@ import {
   ClipboardPaste,
   Copy,
   Eraser,
+  FolderInput,
   Keyboard,
   ListChecks,
   Send,
@@ -16,6 +17,15 @@ import { useTerminalSettings } from "./useTerminalSettings";
 import { ContextMenu, type ContextMenuItem } from "../common/ContextMenu";
 import { useTerminalMcpInstance } from "./terminal/useTerminalMcpInstance";
 import { detectAwaitingInput } from "./terminal/terminalInputDetector";
+import {
+  createTerminalFontWheelStepper,
+  resolveTerminalFontSize,
+  stepTerminalFontSize,
+} from "./terminal/terminalFontZoom";
+import {
+  formatTerminalPathInsertion,
+  readTerminalDropPaths,
+} from "./terminal/terminalPathDrop";
 import {
   TERMINAL_INSERT_TEXT_EVENT,
   pushTerminalLines,
@@ -136,6 +146,7 @@ export const TerminalPanelContent = ({
   /** GPU 渲染设置镜像：主 effect 不依赖 settings（避免终端随设置重建），
    *  创建 Terminal 时从这里读取最新值决定是否挂 WebGL addon。 */
   const gpuRenderingRef = useRef(settings.gpuRendering);
+  const fontSizeRef = useRef(settings.fontSize);
 
   // ------------------------------------------------------------------
   // 终端日志流：按行切分后实时推送给监控方（输入框「监控终端」模式）
@@ -143,6 +154,8 @@ export const TerminalPanelContent = ({
 
   /** 终端当前是否有选中文本（驱动 Cursor 式「添加到输入框」浮动按钮） */
   const [hasSelection, setHasSelection] = useState(false);
+  const [isPathDragOver, setIsPathDragOver] = useState(false);
+  const pathDragOverRef = useRef(false);
   /** 尚未遇到换行的输出残段（跨 data 分片的行拼接） */
   const logDraftRef = useRef("");
 
@@ -213,6 +226,41 @@ export const TerminalPanelContent = ({
     gpuRenderingRef.current = settings.gpuRendering;
   }, [settings.gpuRendering]);
 
+  useEffect(() => {
+    fontSizeRef.current = settings.fontSize;
+  }, [settings.fontSize]);
+
+  const applyTerminalFontSize = useCallback((fontSize: number): void => {
+    const term = termRef.current;
+    if (!term) {
+      return;
+    }
+    term.options.fontSize = fontSize;
+    const container = containerRef.current;
+    if (
+      !container ||
+      container.clientWidth === 0 ||
+      container.clientHeight === 0
+    ) {
+      return;
+    }
+    try {
+      fitRef.current?.fit();
+    } catch {
+      return;
+    }
+  }, []);
+
+  const zoomTerminalFont = useCallback(
+    (delta: number): void => {
+      const next = stepTerminalFontSize(delta, fontSizeRef.current);
+      if (next !== null) {
+        applyTerminalFontSize(next);
+      }
+    },
+    [applyTerminalFontSize],
+  );
+
   /** 尝试挂载 WebGL2 渲染 addon（GPU 绘制整屏字形，性能远超 DOM 渲染器）。
    *  WebGL 不可用（远程桌面/驱动禁用等）或初始化失败时静默保持 DOM 渲染。 */
   const attachWebgl = useCallback((): void => {
@@ -258,7 +306,8 @@ export const TerminalPanelContent = ({
   }, []);
 
   useEffect(() => {
-    if (!containerRef.current) {
+    const container = containerRef.current;
+    if (!container) {
       return;
     }
 
@@ -317,10 +366,36 @@ export const TerminalPanelContent = ({
         return false;
       }
 
+      if (mod && (key === "=" || key === "+")) {
+        event.preventDefault();
+        zoomTerminalFont(1);
+        return false;
+      }
+
+      if (mod && (key === "-" || key === "_")) {
+        event.preventDefault();
+        zoomTerminalFont(-1);
+        return false;
+      }
+
       return true;
     });
 
-    term.open(containerRef.current);
+    const fontWheelStepper = createTerminalFontWheelStepper(zoomTerminalFont);
+    const handleFontZoomWheel = (event: WheelEvent): void => {
+      if (!event.ctrlKey && !event.metaKey) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      fontWheelStepper(event);
+    };
+    container.addEventListener("wheel", handleFontZoomWheel, {
+      capture: true,
+      passive: false,
+    });
+
+    term.open(container);
 
     // Cursor 式交互：选中文本后浮动显示「添加到输入框」按钮；
     // 选区变化（选择/清除/点击）都会触发，布尔 state 重复值自动跳过渲染。
@@ -378,7 +453,7 @@ export const TerminalPanelContent = ({
         // ignore
       }
     });
-    resizeObserver.observe(containerRef.current);
+    resizeObserver.observe(container);
 
     const themeObserver = new MutationObserver(() => {
       if (!disposed) {
@@ -494,6 +569,9 @@ export const TerminalPanelContent = ({
       }
       resizeObserver?.disconnect();
       themeObserver?.disconnect();
+      container.removeEventListener("wheel", handleFontZoomWheel, {
+        capture: true,
+      });
       disposeOutput?.();
       disposeExit?.();
       if (ptyIdRef.current) {
@@ -522,7 +600,7 @@ export const TerminalPanelContent = ({
       return;
     }
     term.options.fontFamily = settings.fontFamily.trim() || DEFAULT_FONT_FAMILY;
-    term.options.fontSize = settings.fontSize;
+    term.options.fontSize = resolveTerminalFontSize(settings.fontSize);
     term.options.fontWeight = settings.fontWeight as "normal" | "bold" | number;
     term.options.lineHeight = settings.lineHeight;
     const container = containerRef.current;
@@ -682,6 +760,50 @@ export const TerminalPanelContent = ({
     term.clearSelection();
   }, [cwd]);
 
+  const handlePathDragOver = useCallback(
+    (event: React.DragEvent<HTMLDivElement>): void => {
+      const types = event.dataTransfer.types;
+      if (!types.includes("application/json") && !types.includes("Files")) {
+        return;
+      }
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+      if (!pathDragOverRef.current) {
+        pathDragOverRef.current = true;
+        setIsPathDragOver(true);
+      }
+    },
+    [],
+  );
+
+  const handlePathDragLeave = useCallback(
+    (event: React.DragEvent<HTMLDivElement>): void => {
+      if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+        return;
+      }
+      pathDragOverRef.current = false;
+      setIsPathDragOver(false);
+    },
+    [],
+  );
+
+  const handlePathDrop = useCallback(
+    (event: React.DragEvent<HTMLDivElement>): void => {
+      event.preventDefault();
+      pathDragOverRef.current = false;
+      setIsPathDragOver(false);
+      void readTerminalDropPaths(event.dataTransfer).then((paths) => {
+        const term = termRef.current;
+        if (!term || paths.length === 0) {
+          return;
+        }
+        term.paste(formatTerminalPathInsertion(paths, shellPath));
+        term.focus();
+      });
+    },
+    [shellPath],
+  );
+
   return (
     <div ref={panelRef} className="terminal-panel">
       {/* Cursor 式：选中终端文本后浮动「添加到输入框」按钮 */}
@@ -699,6 +821,9 @@ export const TerminalPanelContent = ({
       <div
         ref={containerRef}
         className="terminal-container"
+        onDragOver={handlePathDragOver}
+        onDragLeave={handlePathDragLeave}
+        onDrop={handlePathDrop}
         onMouseDown={(event) => {
           // xterm 在点击空白区域清除选区时不一定触发 onSelectionChange，
           // 先清理按钮状态，拖拽选择后再由 onSelectionChange 显示按钮。
@@ -712,6 +837,12 @@ export const TerminalPanelContent = ({
           minHeight: "200px",
         }}
       />
+      {isPathDragOver ? (
+        <div className="terminal-drop-overlay" aria-hidden="true">
+          <FolderInput size={13} strokeWidth={1.8} />
+          释放以插入路径
+        </div>
+      ) : null}
       {/* 终端等待输入提示条：程序/shell 正在等待用户输入时显示，
           明确告知用户当前状态，避免误以为 Agent 卡住。 */}
       {awaitingInput ? (

@@ -34855,6 +34855,23 @@ body.ctrl-held [data-path] {
   text-overflow: ellipsis;
 }
 
+.terminal-drop-overlay {
+  position: absolute;
+  inset: 6px;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px dashed color-mix(in srgb, var(--accent-color) 55%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
+  color: var(--accent-color);
+  font-size: 12px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
 /* ===== 终端监控条（输入框上方，拖拽终端后出现） ===== */
 .terminal-monitor-bar {
   display: flex;

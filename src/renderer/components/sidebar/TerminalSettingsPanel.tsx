@@ -13,6 +13,8 @@ import { TerminalSettingsForm } from "./terminalSettings/TerminalSettingsForm";
 import { TerminalSettingsSummary } from "./terminalSettings/TerminalSettingsSummary";
 import {
   DEFAULT_TERMINAL_SETTINGS,
+  TERMINAL_FONT_SIZE_MAX,
+  TERMINAL_FONT_SIZE_MIN,
   TERMINAL_SETTING_CODE,
   TERMINAL_SETTING_NAME,
 } from "./terminalSettings/terminalSettingsConstants";
@@ -21,7 +23,10 @@ import {
   toTerminalForm,
   toTerminalSettings,
 } from "./terminalSettings/terminalSettingsUtils";
-import { notifyTerminalSettingsChanged } from "../rightPanel/useTerminalSettings";
+import {
+  notifyTerminalSettingsChanged,
+  subscribeTerminalSettingsChanged,
+} from "../rightPanel/useTerminalSettings";
 import type {
   DetectedTerminalOption,
   TerminalSettingsForm as TerminalSettingsFormValue,
@@ -54,6 +59,43 @@ export function TerminalSettingsPanel({
     return () => {
       isMountedRef.current = false;
     };
+  }, []);
+
+  const formRef = useRef(form);
+  const lastSavedRef = useRef(lastSaved);
+
+  useEffect(() => {
+    formRef.current = form;
+    lastSavedRef.current = lastSaved;
+  }, [form, lastSaved]);
+
+  useEffect(() => {
+    return subscribeTerminalSettingsChanged(() => {
+      void (async () => {
+        try {
+          const value = await window.snow.getSystemSettingValue(
+            TERMINAL_SETTING_CODE,
+          );
+          const next = readTerminalSettingsJson(value);
+          if (
+            !isMountedRef.current ||
+            next.fontSize === lastSavedRef.current.fontSize
+          ) {
+            return;
+          }
+          setForm((previous) => ({
+            ...previous,
+            fontSize: String(next.fontSize),
+          }));
+          setLastSaved((previous) => ({
+            ...previous,
+            fontSize: next.fontSize,
+          }));
+        } catch {
+          return;
+        }
+      })();
+    });
   }, []);
 
   const load = useCallback(async () => {
@@ -105,7 +147,11 @@ export function TerminalSettingsPanel({
       const fontSize = Number.parseFloat(currentForm.fontSize);
       const lineHeight = Number.parseFloat(currentForm.lineHeight);
 
-      if (!Number.isFinite(fontSize) || fontSize < 6 || fontSize > 72) {
+      if (
+        !Number.isFinite(fontSize) ||
+        fontSize < TERMINAL_FONT_SIZE_MIN ||
+        fontSize > TERMINAL_FONT_SIZE_MAX
+      ) {
         return t("settings.terminalFontSizeValidationError", {
           defaultValue: "Font size must be between 6 and 72.",
         });

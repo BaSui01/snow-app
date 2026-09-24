@@ -3,6 +3,9 @@ import type { TerminalSettings } from "../../../../preload";
 export const TERMINAL_SETTING_NAME = "Terminal settings";
 export const TERMINAL_SETTING_CODE = "terminal_settings";
 
+export const TERMINAL_FONT_SIZE_MIN = 6;
+export const TERMINAL_FONT_SIZE_MAX = 72;
+
 export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   shellPath: "",
   fontFamily: "",

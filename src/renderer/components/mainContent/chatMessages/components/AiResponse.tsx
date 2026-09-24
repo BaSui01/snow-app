@@ -6,6 +6,7 @@ import { StreamCursor } from "./StreamCursor";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCallItem } from "./ToolCallItem";
 import { ToolCallGroup } from "./ToolCallGroup";
+import { MessageTimestamp } from "./MessageTimestamp";
 import { ImageGenGallery } from "../toolCalls/ImageGenGallery";
 import { AskUserQuestionGroup } from "../toolCalls/AskUserQuestionGroup";
 import { ToolAuthorizationDialog } from "../dialogs/ToolAuthorizationDialog";
@@ -14,6 +15,7 @@ import { MarkdownBlock } from "./markdownRenderer";
 import type { AiResponseProps } from "../utils/types";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import type { HookExecutionRecord } from "../utils/conversationTypes";
+import { useMessageTimeVisible } from "../utils/messageTimeVisibility";
 
 /** 工具调用渲染单元：连续的 imagegen-generate 合并为画廊、连续的多个提问合并
  *  为 Tab 组，其余逐个渲染。 */
@@ -76,6 +78,7 @@ export const AiResponse = memo(
   ({
     title,
     summary,
+    timestamp,
     thinking,
     thinkingDurationMs,
     thinkingTokenCount,
@@ -98,11 +101,14 @@ export const AiResponse = memo(
     onFork,
   }: AiResponseProps): React.JSX.Element => {
     const { t } = useI18n();
+    const showMessageTime = useMessageTimeVisible();
     const [showRawMarkdown, setShowRawMarkdown] = useState(false);
     const normalizedThinking = thinking?.trim();
     const normalizedSummary = summary.trim();
     const summaryClassName = "ai-message-summary";
     const hasToolCalls = toolCalls.length > 0;
+    const showFooterTime =
+      !isStreaming && !hasToolCalls && showMessageTime && Boolean(timestamp);
     const incompleteVariantMessage =
       incompleteVariant === "partial_content"
         ? t("chat.incomplete.variant.partialContent")
@@ -231,6 +237,7 @@ export const AiResponse = memo(
           {hasToolCalls ? (
             <ToolCallGroup
               count={toolCalls.length}
+              timestamp={timestamp}
               isRunning={toolCalls.some((tc) => tc.status === "running")}
             >
               {groupedToolCalls.map((item) =>
@@ -313,15 +320,25 @@ export const AiResponse = memo(
         </div>
 
         {/* 7. Actions */}
-        {showActions && conversationId && onFork ? (
-          <AiResponseActions
-            content={normalizedSummary}
-            conversationId={conversationId}
-            responseId={responseId}
-            showRawMarkdown={showRawMarkdown}
-            onToggleRawMarkdown={() => setShowRawMarkdown((prev) => !prev)}
-            onFork={onFork}
-          />
+        {showFooterTime || (showActions && conversationId && onFork) ? (
+          <div className="ai-message-footer">
+            {showFooterTime ? (
+              <MessageTimestamp
+                timestamp={timestamp}
+                className="ai-message-time"
+              />
+            ) : null}
+            {showActions && conversationId && onFork ? (
+              <AiResponseActions
+                content={normalizedSummary}
+                conversationId={conversationId}
+                responseId={responseId}
+                showRawMarkdown={showRawMarkdown}
+                onToggleRawMarkdown={() => setShowRawMarkdown((prev) => !prev)}
+                onFork={onFork}
+              />
+            ) : null}
+          </div>
         ) : null}
       </article>
     );

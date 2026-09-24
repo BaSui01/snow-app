@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MemoryRecord } from "../../../../../preload";
+import { useEscapeClose } from "../../../../hooks/useEscapeClose";
 import { useI18n } from "../../../../i18n";
 import { ConfirmDialog } from "../../../common/ConfirmDialog";
 import { Modal } from "../../../common/Modal";
@@ -171,6 +172,14 @@ export const MemoryPanel = ({
     };
   }, [open, load]);
 
+  useEscapeClose(() => {
+    if (isDeleteConfirmOpen) {
+      setIsDeleteConfirmOpen(false);
+      return;
+    }
+    onClose();
+  }, open);
+
   const summary = useMemo(() => {
     const mainCount = entries.filter((entry) => entry.agent === "main").length;
     const createdCount = entries.filter(
@@ -330,6 +339,7 @@ export const MemoryPanel = ({
     <Modal
       className="memory-panel-modal"
       closeLabel={t("common.close", { defaultValue: "Close" })}
+      closeOnEscape
       description={t("chat.memory.description", {
         defaultValue: "Memories saved by this conversation and its sub-agents.",
       })}

@@ -1,10 +1,12 @@
 import { ChevronRight } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useI18n } from "../../../../i18n";
+import { MessageTimestamp } from "./MessageTimestamp";
 
 type ToolCallGroupProps = {
   /** Number of tool calls in this group. */
   count: number;
+  timestamp?: string;
   /** Whether any tool in the group is still running. */
   isRunning?: boolean;
   /** The tool call nodes. */
@@ -13,6 +15,7 @@ type ToolCallGroupProps = {
 
 export const ToolCallGroup = ({
   count,
+  timestamp,
   isRunning = false,
   children,
 }: ToolCallGroupProps): React.JSX.Element => {
@@ -38,6 +41,7 @@ export const ToolCallGroup = ({
         aria-expanded={isOpen}
       >
         <span className="tcg-label">{label}</span>
+        <MessageTimestamp timestamp={timestamp} className="tcg-time" />
         <ChevronRight
           className={`tcg-chevron ${isOpen ? "tcg-chevron--open" : ""}`}
           size={12}

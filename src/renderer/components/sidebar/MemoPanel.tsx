@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useEscapeClose } from "../../hooks/useEscapeClose";
 import { useI18n } from "../../i18n";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { CustomSelect } from "../common/CustomSelect";
@@ -483,6 +484,22 @@ export function MemoPanel({
     void flushSave();
     onClose();
   }, [closeMention, flushSave, onClose]);
+
+  useEscapeClose(() => {
+    if (deleteTarget) {
+      setDeleteTarget(null);
+      return;
+    }
+    if (buildTarget) {
+      setBuildTarget(null);
+      return;
+    }
+    if (searchInput !== "") {
+      setSearchInput("");
+      return;
+    }
+    handleClose();
+  });
 
   // 卸载兜底：页面以任何方式消失（关闭、切换项目、退出应用）都补一次落库
   // 并清掉待触发的自动保存定时器。

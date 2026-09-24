@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { Check, Copy, Loader2, Pencil, Undo2 } from "lucide-react";
 import { writeBackToChatInput } from "../../chatInput/chatInputDraftBridge";
+import { MessageTimestamp } from "./MessageTimestamp";
 type UserMessageActionsProps = {
   content: string;
+  timestamp?: string;
   isStreaming: boolean;
   canRollback?: boolean;
   isRollbackPreparing?: boolean;
@@ -11,6 +13,7 @@ type UserMessageActionsProps = {
 
 export const UserMessageActions = ({
   content,
+  timestamp,
   isStreaming,
   canRollback = true,
   isRollbackPreparing,
@@ -37,6 +40,7 @@ export const UserMessageActions = ({
 
   return (
     <div className="user-message-actions" aria-label="User message actions">
+      <MessageTimestamp timestamp={timestamp} className="user-message-time" />
       <button
         className="user-message-action-btn"
         type="button"

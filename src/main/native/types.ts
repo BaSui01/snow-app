@@ -367,6 +367,7 @@ export type KeyboardShortcutsSettings = {
   copyLastResponse: KeyboardShortcutConfig;
   toggleRightPanelFullscreen: KeyboardShortcutConfig;
   showShortcutHelp: KeyboardShortcutConfig;
+  toggleMessageTime: KeyboardShortcutConfig;
 };
 
 export type CodebaseEmbedProgress = {

@@ -3136,6 +3136,7 @@ export const en = {
   "settings.shortcutToggleRightPanelFullscreen":
     "Toggle right panel fullscreen",
   "settings.shortcutShowShortcutHelp": "Show shortcut cheat sheet",
+  "settings.shortcutToggleMessageTime": "Show/hide message timestamps",
   "settings.shortcutGroupConversation": "Conversation",
   "settings.shortcutGroupNavigation": "Navigation",
   "settings.shortcutGroupWindow": "Window & global",

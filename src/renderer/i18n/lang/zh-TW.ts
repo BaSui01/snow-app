@@ -4315,6 +4315,7 @@ export const zhTW = {
   "settings.shortcutCopyLastResponse": "複製最後一則 AI 回覆",
   "settings.shortcutToggleRightPanelFullscreen": "切換右側面板全螢幕",
   "settings.shortcutShowShortcutHelp": "顯示快捷鍵說明",
+  "settings.shortcutToggleMessageTime": "顯示/隱藏訊息時間",
   "settings.shortcutGroupConversation": "對話操作",
   "settings.shortcutGroupNavigation": "介面導覽",
   "settings.shortcutGroupWindow": "視窗與全域",

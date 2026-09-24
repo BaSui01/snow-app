@@ -29,6 +29,10 @@ import {
   useKeyboardShortcutsSettings,
 } from "./components/KeyboardShortcutsProvider";
 import { shortcutEvents } from "./components/shortcutEvents";
+import {
+  ensureMessageTimeVisibilityLoaded,
+  toggleMessageTimeVisible,
+} from "./components/mainContent/chatMessages/utils/messageTimeVisibility";
 import { useAppControl } from "./hooks/useAppControl";
 import { CONVERSATION_SELECTED_EVENT } from "./components/mainContent/chatMessages/hooks/useConversationManagement";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
@@ -113,6 +117,7 @@ const GLOBAL_ACTION_EVENTS: Record<
   openSettings: "open-settings",
   toggleRightPanelFullscreen: "toggle-right-panel-fullscreen",
   showShortcutHelp: "show-shortcut-help",
+  toggleMessageTime: "toggle-message-time",
 };
 
 type PanelSizeStyle = CSSProperties & {
@@ -223,6 +228,9 @@ const ShortcutHandlerBridge = (): null => {
     const unsubShowShortcutHelp = registerHandler("showShortcutHelp", () => {
       shortcutEvents.emit("show-shortcut-help");
     });
+    const unsubToggleMessageTime = registerHandler("toggleMessageTime", () => {
+      shortcutEvents.emit("toggle-message-time");
+    });
     const unsubTogglePet = registerHandler("togglePet", () => {
       // 切换宠物启停：读取当前设置并取反，主进程 pets:set-enabled
       // 负责创建/收起宠物窗口。
@@ -262,6 +270,7 @@ const ShortcutHandlerBridge = (): null => {
       unsubOpenSettings();
       unsubToggleRightPanelFullscreen();
       unsubShowShortcutHelp();
+      unsubToggleMessageTime();
       unsubTogglePet();
       unsubFocusInput();
       unsubToggleSidebar();
@@ -280,9 +289,17 @@ const ShortcutHandlerBridge = (): null => {
         void window.snow.setPetEnabled(!petSettings.enabled);
       });
     });
+    const unsubToggleMessageTime = shortcutEvents.on(
+      "toggle-message-time",
+      () => {
+        toggleMessageTimeVisible();
+      },
+    );
+    void ensureMessageTimeVisibilityLoaded();
     return () => {
       unsubStopGeneration();
       unsubTogglePet();
+      unsubToggleMessageTime();
     };
   }, []);
 

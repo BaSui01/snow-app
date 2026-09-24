@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useEscapeClose } from "../../hooks/useEscapeClose";
 import { useI18n } from "../../i18n";
 import { useScheduledTasks } from "../../hooks/useScheduledTasks";
 import { validateSchedule } from "../../hooks/scheduledTasksStore";
@@ -75,6 +76,7 @@ type Translate = (
 type ScheduledTasksPanelProps = {
   directoryId: string;
   directoryPath: string;
+  onClose: () => void;
 };
 
 const PREVIEW_MAX_LEN = 160;
@@ -267,6 +269,7 @@ const toLocalDateTimeInput = (timestamp: number): string => {
 export function ScheduledTasksPanel({
   directoryId,
   directoryPath,
+  onClose,
 }: ScheduledTasksPanelProps): React.JSX.Element {
   const { locale, t } = useI18n();
   const {
@@ -1235,6 +1238,30 @@ export function ScheduledTasksPanel({
     }
     setPanelMode("details");
   }, [selectedTaskId, visibleTasks]);
+
+  useEscapeClose(() => {
+    if (deleteTargetId !== null) {
+      setDeleteTargetId(null);
+      return;
+    }
+    if (clearOpen) {
+      setClearOpen(false);
+      return;
+    }
+    if (clearGlobalOpen) {
+      setClearGlobalOpen(false);
+      return;
+    }
+    if (isThinkingMenuOpen) {
+      setIsThinkingMenuOpen(false);
+      return;
+    }
+    if (panelMode === "create" && tasks.length > 0) {
+      closeCreatePanel();
+      return;
+    }
+    onClose();
+  });
 
   const confirmDelete = useCallback((): void => {
     const targetId = deleteTargetId;

@@ -6,6 +6,7 @@ import type {
 } from "./responseDisposition";
 export type UserMessageProps = {
   content: string;
+  timestamp?: string;
   isStreaming: boolean;
   canRollback?: boolean;
   isRollbackPreparing?: boolean;
@@ -21,6 +22,7 @@ export type AiResponseSection = {
 export type AiResponseProps = {
   title?: string;
   summary: string;
+  timestamp?: string;
   thinking?: string;
   /** Thinking-phase duration (ms) measured by the backend for this message. */
   thinkingDurationMs?: number;

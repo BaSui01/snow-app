@@ -2976,6 +2976,7 @@ export const zhCN = {
   "settings.shortcutCopyLastResponse": "复制最后一条 AI 回复",
   "settings.shortcutToggleRightPanelFullscreen": "切换右侧面板全屏",
   "settings.shortcutShowShortcutHelp": "显示快捷键帮助",
+  "settings.shortcutToggleMessageTime": "显示/隐藏消息时间",
   "settings.shortcutGroupConversation": "会话操作",
   "settings.shortcutGroupNavigation": "界面导航",
   "settings.shortcutGroupWindow": "窗口与全局",

@@ -522,7 +522,8 @@ export type KeyboardShortcutAction =
   | "openSettings"
   | "copyLastResponse"
   | "toggleRightPanelFullscreen"
-  | "showShortcutHelp";
+  | "showShortcutHelp"
+  | "toggleMessageTime";
 
 export type KeyboardShortcutConfig = {
   /**
@@ -562,6 +563,7 @@ export type KeyboardShortcutsSettings = {
   copyLastResponse: KeyboardShortcutConfig;
   toggleRightPanelFullscreen: KeyboardShortcutConfig;
   showShortcutHelp: KeyboardShortcutConfig;
+  toggleMessageTime: KeyboardShortcutConfig;
 };
 
 // ===== App lock =====

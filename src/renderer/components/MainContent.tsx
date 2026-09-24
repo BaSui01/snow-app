@@ -237,6 +237,7 @@ export const MainContent = ({
             <ScheduledTasksPanel
               directoryId={activeDirectoryId}
               directoryPath={activeDirectory?.path ?? ""}
+              onClose={closePanel}
             />
           ) : activeView === "plugins" ? (
             <PluginsPanel onClose={closePanel} />

@@ -58,6 +58,7 @@ const DEFAULT_KEYS: Record<KeyboardShortcutAction, string> = {
   copyLastResponse: "mod+shift+c",
   toggleRightPanelFullscreen: "mod+shift+f",
   showShortcutHelp: "mod+/",
+  toggleMessageTime: "mod+shift+y",
 };
 
 type KeyboardShortcutsSettingsPanelProps = {

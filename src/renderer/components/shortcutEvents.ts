@@ -38,7 +38,8 @@ export type ShortcutAction =
   | "copy-last-response"
   | "open-settings"
   | "toggle-right-panel-fullscreen"
-  | "show-shortcut-help";
+  | "show-shortcut-help"
+  | "toggle-message-time";
 
 type ListenerMap = {
   "toggle-search": Set<() => void>;
@@ -66,6 +67,7 @@ type ListenerMap = {
   "open-settings": Set<() => void>;
   "toggle-right-panel-fullscreen": Set<() => void>;
   "show-shortcut-help": Set<() => void>;
+  "toggle-message-time": Set<() => void>;
 };
 
 const listeners: ListenerMap = {
@@ -94,6 +96,7 @@ const listeners: ListenerMap = {
   "open-settings": new Set(),
   "toggle-right-panel-fullscreen": new Set(),
   "show-shortcut-help": new Set(),
+  "toggle-message-time": new Set(),
 };
 
 export const shortcutEvents = {

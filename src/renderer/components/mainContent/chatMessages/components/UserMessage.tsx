@@ -37,6 +37,7 @@ const COLLAPSE_LINES = 6;
 export const UserMessage = memo(
   ({
     content,
+    timestamp,
     isStreaming,
     canRollback,
     isRollbackPreparing,
@@ -556,6 +557,7 @@ export const UserMessage = memo(
         ) : null}
         <UserMessageActions
           content={content}
+          timestamp={timestamp}
           isStreaming={isStreaming}
           canRollback={canRollback}
           isRollbackPreparing={isRollbackPreparing}

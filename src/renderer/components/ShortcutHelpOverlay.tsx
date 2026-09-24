@@ -121,6 +121,7 @@ export function ShortcutHelpOverlay(): React.JSX.Element {
       onClose={() => setOpen(false)}
       size="large"
       closeOnEscape
+      className="shortcut-help-modal"
     >
       <div className="shortcut-help-body">
         <div className="shortcut-help-search">
@@ -168,27 +169,29 @@ export function ShortcutHelpOverlay(): React.JSX.Element {
           )}
         </div>
 
-        {hasResult ? (
-          groups.map(({ group, title, items }) => (
-            <section className="shortcut-help-group" key={group}>
-              <h3 className="shortcut-help-group-title">{title}</h3>
-              <ul className="shortcut-help-list">
-                {items.map((item) => (
-                  <li className="shortcut-help-item" key={item.action}>
-                    <span className="shortcut-help-key">{item.keyText}</span>
-                    <span className="shortcut-help-desc">{item.desc}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))
-        ) : (
-          <div className="shortcut-help-empty">
-            {t("settings.shortcutHelpSearchEmpty", {
-              defaultValue: "No matching shortcuts",
-            })}
-          </div>
-        )}
+        <div className="shortcut-help-content">
+          {hasResult ? (
+            groups.map(({ group, title, items }) => (
+              <section className="shortcut-help-group" key={group}>
+                <h3 className="shortcut-help-group-title">{title}</h3>
+                <ul className="shortcut-help-list">
+                  {items.map((item) => (
+                    <li className="shortcut-help-item" key={item.action}>
+                      <span className="shortcut-help-key">{item.keyText}</span>
+                      <span className="shortcut-help-desc">{item.desc}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))
+          ) : (
+            <div className="shortcut-help-empty">
+              {t("settings.shortcutHelpSearchEmpty", {
+                defaultValue: "No matching shortcuts",
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </Modal>
   );

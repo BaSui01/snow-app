@@ -136,6 +136,11 @@ const DEFAULT_SETTINGS: KeyboardShortcutsSettings = {
     enabled: true,
     foregroundOnly: true,
   },
+  toggleMessageTime: {
+    key: "mod+shift+y",
+    enabled: true,
+    foregroundOnly: true,
+  },
 };
 
 /**

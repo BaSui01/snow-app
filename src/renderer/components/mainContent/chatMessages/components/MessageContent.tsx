@@ -77,6 +77,7 @@ export const MessageContent = memo(
       return (
         <UserMessage
           content={message.content}
+          timestamp={message.timestamp}
           isStreaming={isStreaming}
           canRollback={canRollback}
           isRollbackPreparing={rollbackPreparingMessageId === message.id}
@@ -125,6 +126,7 @@ export const MessageContent = memo(
           isStreaming={message.status === "sending"}
           isAborting={isLastAssistant && isAborting}
           summary={message.content}
+          timestamp={message.timestamp}
           thinking={message.thinking}
           thinkingDurationMs={message.thinkingDurationMs}
           thinkingTokenCount={message.thinkingTokenCount}

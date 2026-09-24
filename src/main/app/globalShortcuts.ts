@@ -41,6 +41,7 @@ const GLOBAL_ACTIONS = [
   "copyLastResponse",
   "toggleRightPanelFullscreen",
   "showShortcutHelp",
+  "toggleMessageTime",
 ] as const;
 
 type GlobalAction = (typeof GLOBAL_ACTIONS)[number];

@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { useEscapeClose } from "../../hooks/useEscapeClose";
 import { useI18n } from "../../i18n";
 import { resolveLocalized } from "../../plugins/manifest";
 import {
@@ -137,6 +138,14 @@ export const PluginsPanel = ({
       setIsUninstalling(false);
     }
   }, [pendingUninstall]);
+
+  useEscapeClose(() => {
+    if (pendingUninstall) {
+      setPendingUninstall(null);
+      return;
+    }
+    onClose();
+  });
 
   const handleOpenFolder = useCallback(
     async (plugin: PluginView) => {

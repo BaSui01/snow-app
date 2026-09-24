@@ -246,6 +246,7 @@ export const SHORTCUT_ACTIONS: KeyboardShortcutAction[] = [
   "togglePet",
   "toggleWindow",
   "showShortcutHelp",
+  "toggleMessageTime",
 ];
 
 /**
@@ -388,6 +389,11 @@ export const SHORTCUT_META: Record<KeyboardShortcutAction, ShortcutMeta> = {
     descKey: "settings.shortcutShowShortcutHelp",
     descDefault: "Show shortcut cheat sheet",
     group: "window",
+  },
+  toggleMessageTime: {
+    descKey: "settings.shortcutToggleMessageTime",
+    descDefault: "Show/hide message timestamps",
+    group: "conversation",
   },
 };
 

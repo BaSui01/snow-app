@@ -182,6 +182,16 @@ fn default_show_shortcut_help_config() -> KeyboardShortcutConfig {
     }
 }
 
+/// toggleMessageTime 的默认配置：mod+shift+y（macOS ⌘⇧Y / 其他 Ctrl+Shift+Y）。
+/// foreground_only 默认 true：时间戳显隐由渲染进程快捷键触发（应用聚焦时生效）。
+fn default_toggle_message_time_config() -> KeyboardShortcutConfig {
+    KeyboardShortcutConfig {
+        key: DEFAULT_TOGGLE_MESSAGE_TIME_KEY.to_string(),
+        enabled: true,
+        foreground_only: true,
+    }
+}
+
 fn default_open_project_memory_config() -> KeyboardShortcutConfig {
     KeyboardShortcutConfig {
         key: DEFAULT_OPEN_PROJECT_MEMORY_KEY.to_string(),
@@ -206,7 +216,7 @@ fn default_open_plugins_config() -> KeyboardShortcutConfig {
     }
 }
 
-/// 完整快捷键设置：26 个快捷键各自的配置。
+/// 完整快捷键设置：27 个快捷键各自的配置。
 /// 序列化为 JSON 存储在 system_settings 表中。
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -266,6 +276,11 @@ pub struct KeyboardShortcutsSettings {
     pub toggle_right_panel_fullscreen: KeyboardShortcutConfig,
     #[serde(default = "default_show_shortcut_help_config")]
     pub show_shortcut_help: KeyboardShortcutConfig,
+    /// 显示/隐藏消息创建时间（用户消息 / AI 消息 / 思考块 / 工具卡）。
+    /// 旧 JSON 缺少该字段时回退到默认配置（mod+shift+y，见
+    /// default_toggle_message_time_config）。
+    #[serde(default = "default_toggle_message_time_config")]
+    pub toggle_message_time: KeyboardShortcutConfig,
 }
 
 impl Default for KeyboardShortcutsSettings {
@@ -325,6 +340,7 @@ impl Default for KeyboardShortcutsSettings {
             copy_last_response: default_copy_last_response_config(),
             toggle_right_panel_fullscreen: default_toggle_right_panel_fullscreen_config(),
             show_shortcut_help: default_show_shortcut_help_config(),
+            toggle_message_time: default_toggle_message_time_config(),
         }
     }
 }
@@ -369,6 +385,7 @@ const DEFAULT_OPEN_SETTINGS_KEY: &str = "mod+,";
 const DEFAULT_COPY_LAST_RESPONSE_KEY: &str = "mod+shift+c";
 const DEFAULT_TOGGLE_RIGHT_PANEL_FULLSCREEN_KEY: &str = "mod+shift+f";
 const DEFAULT_SHOW_SHORTCUT_HELP_KEY: &str = "mod+/";
+const DEFAULT_TOGGLE_MESSAGE_TIME_KEY: &str = "mod+shift+y";
 
 impl KeyboardShortcutsSettings {
     /// 规范化：对每个配置校验 key 合法性，不合法时回退到默认按键绑定。
@@ -458,16 +475,19 @@ impl KeyboardShortcutsSettings {
         if !is_valid_key(&self.show_shortcut_help.key) {
             self.show_shortcut_help.key = DEFAULT_SHOW_SHORTCUT_HELP_KEY.to_string();
         }
+        if !is_valid_key(&self.toggle_message_time.key) {
+            self.toggle_message_time.key = DEFAULT_TOGGLE_MESSAGE_TIME_KEY.to_string();
+        }
     }
 }
 
-/// 默认值：26 个快捷键各自默认 key + enabled=true；除 toggleWindow 外
+/// 默认值：27 个快捷键各自默认 key + enabled=true；除 toggleWindow 外
 /// foreground_only=true，toggleWindow 默认 false（全局生效，窗口隐藏时
 /// 也要能呼出）。与 DEFAULT_*_KEY 常量保持一致；cycleApiProfile 的 key
 /// 平台相关，动态构造。
 fn default_keyboard_shortcuts_value() -> String {
     format!(
-        r#"{{"cancelSession":{{"key":"escape","enabled":true,"foregroundOnly":true}},"openSearch":{{"key":"mod+f","enabled":true,"foregroundOnly":true}},"openMemo":{{"key":"mod+b","enabled":true,"foregroundOnly":true}},"openTodo":{{"key":"mod+t","enabled":true,"foregroundOnly":true}},"cycleProject":{{"key":"mod+backtick","enabled":true,"foregroundOnly":true}},"openProjectExplorer":{{"key":"mod+d","enabled":true,"foregroundOnly":true}},"openProjectMemory":{{"key":"mod+shift+m","enabled":true,"foregroundOnly":true}},"openScheduledTasks":{{"key":"mod+shift+t","enabled":true,"foregroundOnly":true}},"openPlugins":{{"key":"mod+shift+x","enabled":true,"foregroundOnly":true}},"cycleApiProfile":{{"key":"{DEFAULT_CYCLE_API_PROFILE_KEY}","enabled":true,"foregroundOnly":true}},"toggleWindow":{{"key":"mod+shift+h","enabled":true,"foregroundOnly":false}},"togglePet":{{"key":"mod+shift+p","enabled":true,"foregroundOnly":true}},"focusInput":{{"key":"mod+i","enabled":true,"foregroundOnly":true}},"toggleSidebar":{{"key":"mod+shift+l","enabled":true,"foregroundOnly":true}},"toggleRightPanel":{{"key":"mod+shift+r","enabled":true,"foregroundOnly":true}},"newChat":{{"key":"mod+n","enabled":true,"foregroundOnly":true}},"sendMessage":{{"key":"mod+enter","enabled":true,"foregroundOnly":true}},"stopGeneration":{{"key":"mod+.","enabled":true,"foregroundOnly":true}},"prevConversation":{{"key":"alt+left","enabled":true,"foregroundOnly":true}},"nextConversation":{{"key":"alt+right","enabled":true,"foregroundOnly":true}},"scrollToTop":{{"key":"mod+up","enabled":true,"foregroundOnly":true}},"scrollToBottom":{{"key":"mod+down","enabled":true,"foregroundOnly":true}},"openSettings":{{"key":"mod+,","enabled":true,"foregroundOnly":true}},"copyLastResponse":{{"key":"mod+shift+c","enabled":true,"foregroundOnly":true}},"toggleRightPanelFullscreen":{{"key":"mod+shift+f","enabled":true,"foregroundOnly":true}},"showShortcutHelp":{{"key":"mod+/","enabled":true,"foregroundOnly":true}}}}"#
+        r#"{{"cancelSession":{{"key":"escape","enabled":true,"foregroundOnly":true}},"openSearch":{{"key":"mod+f","enabled":true,"foregroundOnly":true}},"openMemo":{{"key":"mod+b","enabled":true,"foregroundOnly":true}},"openTodo":{{"key":"mod+t","enabled":true,"foregroundOnly":true}},"cycleProject":{{"key":"mod+backtick","enabled":true,"foregroundOnly":true}},"openProjectExplorer":{{"key":"mod+d","enabled":true,"foregroundOnly":true}},"openProjectMemory":{{"key":"mod+shift+m","enabled":true,"foregroundOnly":true}},"openScheduledTasks":{{"key":"mod+shift+t","enabled":true,"foregroundOnly":true}},"openPlugins":{{"key":"mod+shift+x","enabled":true,"foregroundOnly":true}},"cycleApiProfile":{{"key":"{DEFAULT_CYCLE_API_PROFILE_KEY}","enabled":true,"foregroundOnly":true}},"toggleWindow":{{"key":"mod+shift+h","enabled":true,"foregroundOnly":false}},"togglePet":{{"key":"mod+shift+p","enabled":true,"foregroundOnly":true}},"focusInput":{{"key":"mod+i","enabled":true,"foregroundOnly":true}},"toggleSidebar":{{"key":"mod+shift+l","enabled":true,"foregroundOnly":true}},"toggleRightPanel":{{"key":"mod+shift+r","enabled":true,"foregroundOnly":true}},"newChat":{{"key":"mod+n","enabled":true,"foregroundOnly":true}},"sendMessage":{{"key":"mod+enter","enabled":true,"foregroundOnly":true}},"stopGeneration":{{"key":"mod+.","enabled":true,"foregroundOnly":true}},"prevConversation":{{"key":"alt+left","enabled":true,"foregroundOnly":true}},"nextConversation":{{"key":"alt+right","enabled":true,"foregroundOnly":true}},"scrollToTop":{{"key":"mod+up","enabled":true,"foregroundOnly":true}},"scrollToBottom":{{"key":"mod+down","enabled":true,"foregroundOnly":true}},"openSettings":{{"key":"mod+,","enabled":true,"foregroundOnly":true}},"copyLastResponse":{{"key":"mod+shift+c","enabled":true,"foregroundOnly":true}},"toggleRightPanelFullscreen":{{"key":"mod+shift+f","enabled":true,"foregroundOnly":true}},"showShortcutHelp":{{"key":"mod+/","enabled":true,"foregroundOnly":true}},"toggleMessageTime":{{"key":"mod+shift+y","enabled":true,"foregroundOnly":true}}}}"#
     )
 }
 

@@ -1,5 +1,32 @@
 # Release Notes
 
+## v0.4.8
+
+## New Features
+
+- **Plugin Write Capabilities**: The plugin runtime gains `api.write` — 201 write actions covering memos, project memory, scheduled tasks, image-library albums, conversations, projects and collections, system interactions (notifications, clipboard, reveal in folder), plus browser data, SSH, remote control and settings domains; each action requires its privacy scope to be declared, and the metadata catalog shows writable capabilities with their grant state.
+- **Settings Search**: A search box in the settings sidebar finds any setting and walks through nested tabs to reach it, flashing the matched entry; the global search drops its duplicate settings group.
+- **Shortcut Enhancements**: A searchable shortcut help overlay (default `mod+/`) and inline shortcut badges on UI buttons; actions with "foreground only" off are registered globally in the main process so they fire while the window is unfocused; a new `mod+shift+y` toggles message timestamps.
+- **Horizon and Tesseract Themes**: Two edge-to-edge compact themes (light and dark palettes each) with micro-interactions and signature header stripes.
+- **Terminal Font Zoom and Path Drop**: Resize the terminal font from the settings panel or with Ctrl/Cmd + wheel, and drop files onto the terminal to insert their paths at the cursor, quoted per shell.
+- **Grouped Question Cards**: `askUserQuestion` calls in one batch merge into a single grouped card with per-question answers and state; mirrored on mobile.
+- **Message Timestamps**: User messages, AI replies, thinking blocks and tool cards can show their creation time (clock icon with a full-timestamp tooltip).
+
+## Improvements
+
+- Markdown rendering is now chunk-incremental: the worker only splits at safe boundaries (closed code fences, paired `$$`, balanced handoff tags) and the main thread rebuilds only the changed chunks — the tail chunk appends in place — so long streaming replies are no longer re-rendered wholesale.
+- Streaming auto-follow now pins to the bottom in the same frame as content growth instead of animating; the run summary bar became its own component.
+- Panel resizing writes DOM variables and commits state once on release, so dragging no longer re-renders the UI every frame.
+- Sidebar collapse panels (sub-agents, workflow nodes) load lazily: collapsing unmounts the content and expanding shows a skeleton first.
+- Memos, project memory, scheduled tasks and plugins turn from modals into standalone lazy-loaded pages.
+- `grep-search` gains a timeout and cancellation: a timed-out search stops its background thread and returns promptly.
+- Outbound request tail guard: Gemini rejects requests ending on a model turn, so payloads drop text-less model turns and append a "Continue." user turn when needed.
+
+## Bug Fixes
+
+- Fixed `/clear` command argument passing and the handling of an empty `projectId` in the pending state.
+- Checkpoint fault tolerance: a single unreadable file no longer breaks a whole diff or rollback batch, missing objects are skipped gracefully, and Windows reserved device names are skipped.
+
 ## v0.4.7
 
 ## New Features

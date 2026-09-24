@@ -18,9 +18,8 @@ import { ContextMenu, type ContextMenuItem } from "../common/ContextMenu";
 import { useTerminalMcpInstance } from "./terminal/useTerminalMcpInstance";
 import { detectAwaitingInput } from "./terminal/terminalInputDetector";
 import {
-  createTerminalFontWheelStepper,
+  createTerminalFontZoom,
   resolveTerminalFontSize,
-  stepTerminalFontSize,
 } from "./terminal/terminalFontZoom";
 import {
   formatTerminalPathInsertion,
@@ -232,7 +231,7 @@ export const TerminalPanelContent = ({
 
   const applyTerminalFontSize = useCallback((fontSize: number): void => {
     const term = termRef.current;
-    if (!term) {
+    if (!term || term.options.fontSize === fontSize) {
       return;
     }
     term.options.fontSize = fontSize;
@@ -250,16 +249,6 @@ export const TerminalPanelContent = ({
       return;
     }
   }, []);
-
-  const zoomTerminalFont = useCallback(
-    (delta: number): void => {
-      const next = stepTerminalFontSize(delta, fontSizeRef.current);
-      if (next !== null) {
-        applyTerminalFontSize(next);
-      }
-    },
-    [applyTerminalFontSize],
-  );
 
   /** 尝试挂载 WebGL2 渲染 addon（GPU 绘制整屏字形，性能远超 DOM 渲染器）。
    *  WebGL 不可用（远程桌面/驱动禁用等）或初始化失败时静默保持 DOM 渲染。 */
@@ -337,6 +326,12 @@ export const TerminalPanelContent = ({
     });
     term.loadAddon(webLinks);
 
+    // 缩放控制器：滚轮距离先累积、再按帧推进字号（逐帧一档，避免整屏跳变）。
+    const fontZoom = createTerminalFontZoom(
+      () => fontSizeRef.current,
+      applyTerminalFontSize,
+    );
+
     // Windows 终端惯例键位：
     // - 有选中文本时 Ctrl+C / Ctrl+Insert / Ctrl+Shift+C = 复制（不发送 \x03）
     // - 无选中文本时 Ctrl+C = 发送中断给 shell（pwsh 7 行为：仅取消当前行）
@@ -368,27 +363,26 @@ export const TerminalPanelContent = ({
 
       if (mod && (key === "=" || key === "+")) {
         event.preventDefault();
-        zoomTerminalFont(1);
+        fontZoom.zoomBy(1);
         return false;
       }
 
       if (mod && (key === "-" || key === "_")) {
         event.preventDefault();
-        zoomTerminalFont(-1);
+        fontZoom.zoomBy(-1);
         return false;
       }
 
       return true;
     });
 
-    const fontWheelStepper = createTerminalFontWheelStepper(zoomTerminalFont);
     const handleFontZoomWheel = (event: WheelEvent): void => {
       if (!event.ctrlKey && !event.metaKey) {
         return;
       }
       event.preventDefault();
       event.stopPropagation();
-      fontWheelStepper(event);
+      fontZoom.handleWheel(event);
     };
     container.addEventListener("wheel", handleFontZoomWheel, {
       capture: true,
@@ -572,6 +566,7 @@ export const TerminalPanelContent = ({
       container.removeEventListener("wheel", handleFontZoomWheel, {
         capture: true,
       });
+      fontZoom.dispose();
       disposeOutput?.();
       disposeExit?.();
       if (ptyIdRef.current) {
@@ -599,9 +594,22 @@ export const TerminalPanelContent = ({
     if (!term) {
       return;
     }
-    term.options.fontFamily = settings.fontFamily.trim() || DEFAULT_FONT_FAMILY;
-    term.options.fontSize = resolveTerminalFontSize(settings.fontSize);
-    term.options.fontWeight = settings.fontWeight as "normal" | "bold" | number;
+    const fontFamily = settings.fontFamily.trim() || DEFAULT_FONT_FAMILY;
+    const fontSize = resolveTerminalFontSize(settings.fontSize);
+    const fontWeight = settings.fontWeight as "normal" | "bold" | number;
+    // 缩放持久化后会带着同一个值再广播一次设置：值没变时跳过，避免多余的
+    // 字体测量 / 字形图集重建让缩放过程掉帧。
+    if (
+      term.options.fontFamily === fontFamily &&
+      term.options.fontSize === fontSize &&
+      term.options.fontWeight === fontWeight &&
+      term.options.lineHeight === settings.lineHeight
+    ) {
+      return;
+    }
+    term.options.fontFamily = fontFamily;
+    term.options.fontSize = fontSize;
+    term.options.fontWeight = fontWeight;
     term.options.lineHeight = settings.lineHeight;
     const container = containerRef.current;
     // 终端不可见(非激活 tab / 折叠面板)时跳过 fit——极小尺寸会触发

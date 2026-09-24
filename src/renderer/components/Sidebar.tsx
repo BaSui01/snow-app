@@ -88,9 +88,14 @@ export const Sidebar = ({
     // 独立浏览器窗口点击「浏览器设置」时，请求经主进程转发到主窗口，
     // 与本地事件走同一打开设置逻辑。
     const unsubscribe = window.snow.onOpenSettingsRequest(openSettings);
+    // 快捷键打开设置：切到设置内容页。
+    const unsubOpenSettings = shortcutEvents.on("open-settings", () => {
+      setActiveContent("settings");
+    });
     return () => {
       window.removeEventListener(APP_CONTROL_OPEN_SETTINGS_EVENT, handler);
       unsubscribe();
+      unsubOpenSettings();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

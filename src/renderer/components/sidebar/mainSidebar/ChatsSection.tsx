@@ -1,5 +1,5 @@
 import { Loader2 } from "lucide-react";
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import type {
   ChatConversationRecord,
@@ -8,6 +8,7 @@ import type {
 import { useI18n } from "../../../i18n";
 import { AutoDismissNotice } from "../../AutoDismissNotice";
 import { useChatConversationContext } from "../../mainContent/chatMessages";
+import { shortcutEvents } from "../../shortcutEvents";
 import { groupConversationsByTime, type TimeGroup } from "./chatTimeGroup";
 import { ArchivedChatList } from "./chats/ArchivedChatList";
 import { ChatConversationRow } from "./chats/ChatConversationRow";
@@ -226,6 +227,38 @@ export function ChatsSection({
     pinned.pinnedConversations.length > 0
       ? [{ key: "pinned", conversations: pinned.pinnedConversations }]
       : [];
+
+  // 快捷键切换上一个/下一个会话：列表顺序 = 置顶 + 时间分组（排除运行中组）。
+  useEffect(() => {
+    const orderedIds: string[] = [
+      ...pinned.pinnedConversations.map((c) => c.conversationId),
+      ...contentGroups.flatMap((group) =>
+        group.conversations.map((c) => c.conversationId),
+      ),
+    ];
+    if (orderedIds.length === 0) return;
+    const currentIndex = orderedIds.indexOf(activeConversationId ?? "");
+    const cycle = (offset: number): void => {
+      if (currentIndex === -1) {
+        void handleSelectConversation(orderedIds[0]);
+        return;
+      }
+      const nextIndex =
+        (currentIndex + offset + orderedIds.length) % orderedIds.length;
+      void handleSelectConversation(orderedIds[nextIndex]);
+    };
+    const unsubPrev = shortcutEvents.on("prev-conversation", () => cycle(-1));
+    const unsubNext = shortcutEvents.on("next-conversation", () => cycle(1));
+    return () => {
+      unsubPrev();
+      unsubNext();
+    };
+  }, [
+    activeConversationId,
+    handleSelectConversation,
+    pinnedGroups,
+    contentGroups,
+  ]);
 
   const showLoading =
     isSwitchingDirectory || (list.isLoading && directoryId !== "");

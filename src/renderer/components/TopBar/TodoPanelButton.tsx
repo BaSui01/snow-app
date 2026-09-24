@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "../../i18n";
+import { useShortcutLabel } from "../../hooks/useShortcutLabel";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { shortcutEvents } from "../shortcutEvents";
 import type { ChatConversationMessage } from "../mainContent/chatMessages/utils/conversationTypes";
@@ -83,6 +84,7 @@ export const TodoPanelButton = ({
   onPinnedChange,
 }: TodoPanelButtonProps): React.JSX.Element | null => {
   const { t } = useI18n();
+  const openTodoShortcut = useShortcutLabel("openTodo");
   const [isOpen, setIsOpen] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [prevOpen, setPrevOpen] = useState(isOpen);
@@ -388,7 +390,11 @@ export const TodoPanelButton = ({
         className={`icon-btn ghost top-bar-todo-btn${isOpen ? " active" : ""}`}
         type="button"
         aria-label={t("topBar.todo.title")}
-        title={t("topBar.todo.title")}
+        title={
+          openTodoShortcut
+            ? `${t("topBar.todo.title")} (${openTodoShortcut})`
+            : t("topBar.todo.title")
+        }
         aria-expanded={isOpen}
         onClick={() => setIsOpen((open) => !open)}
       >

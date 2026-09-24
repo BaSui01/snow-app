@@ -1,6 +1,7 @@
 import { ArrowUp, Check, ChevronUp, Loader2, Square } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../../../i18n";
+import { useShortcutLabel } from "../../../hooks/useShortcutLabel";
 import type { ChatInputViewProps, SendKeyMode } from "./types";
 
 type ChatInputActionButtonsProps = Pick<
@@ -32,6 +33,8 @@ export const ChatInputActionButtons = ({
   setSendKeyMode,
 }: ChatInputActionButtonsProps): React.JSX.Element => {
   const { t } = useI18n();
+  const sendShortcut = useShortcutLabel("sendMessage");
+  const stopShortcut = useShortcutLabel("stopGeneration");
   const [isSendKeyMenuOpen, setIsSendKeyMenuOpen] = useState(false);
   const groupRef = useRef<HTMLDivElement>(null);
 
@@ -70,8 +73,20 @@ export const ChatInputActionButtons = ({
       {(isStreaming || isAborting) && (
         <button
           className={`abort-btn ${isAborting ? "is-aborting" : ""}`}
-          aria-label={isAborting ? "Stopping generation" : "Stop generating"}
-          title={isAborting ? "Stopping generation" : "Stop generating"}
+          aria-label={
+            isAborting
+              ? "Stopping generation"
+              : stopShortcut
+                ? `Stop generating (${stopShortcut})`
+                : "Stop generating"
+          }
+          title={
+            isAborting
+              ? "Stopping generation"
+              : stopShortcut
+                ? `Stop generating (${stopShortcut})`
+                : "Stop generating"
+          }
           // 必须以无参形式调用：handleAbort 实现接受可选的 targetSessionKey，
           // 直接绑定会把 MouseEvent 当作会话 key，导致中断静默失效。
           onClick={() => handleAbort()}
@@ -89,7 +104,7 @@ export const ChatInputActionButtons = ({
         <button
           className="send-btn"
           aria-label="Send"
-          title="Send"
+          title={sendShortcut ? `Send (${sendShortcut})` : "Send"}
           onClick={handleSend}
           disabled={sendDisabled}
           type="button"

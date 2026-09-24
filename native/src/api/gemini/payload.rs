@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use crate::api::config::{
     normalize_base_url, resolve_sdk_api_base_url, DEFAULT_GEMINI_BASE_URL, DEFAULT_OPENAI_BASE_URL,
 };
-use crate::api::conversation::parse_chat_message_content;
+use crate::api::conversation::{parse_chat_message_content, ParsedChatMessageContent};
 use crate::api::conversation::tool_messages::{
     extract_tool_call_entries, parse_tool_results_with_images, remove_invalid_snow_tool_calls,
     ParsedToolResult,
@@ -52,6 +52,37 @@ pub(crate) fn resolve_gemini_endpoint(
     }
 
     url
+}
+
+/// 构建一条文本消息的 Gemini parts（文本块 + 图片 inlineData）。
+///
+/// 解析后为空的标签消息用原始文本兜底：空 user 轮会被上游丢弃，丢弃后前
+/// 一条 model 轮成为请求尾轮（Gemini 400 "Requests ending with a model turn"）。
+fn build_gemini_content_parts(
+    content: &str,
+    database_path: &Path,
+    skip_image_parsing: bool,
+) -> Result<Vec<Value>> {
+    if skip_image_parsing {
+        return Ok(vec![json!({ "text": content })]);
+    }
+    let ParsedChatMessageContent { text, images } =
+        parse_chat_message_content(content, database_path)?;
+    let text = if text.is_empty() {
+        content.to_string()
+    } else {
+        text
+    };
+    let mut parts = vec![json!({ "text": text })];
+    parts.extend(images.iter().map(|image| {
+        json!({
+            "inlineData": {
+                "mimeType": image.media_type,
+                "data": image.data,
+            },
+        })
+    }));
+    Ok(parts)
 }
 
 fn build_gemini_system_instruction(
@@ -108,9 +139,11 @@ pub(super) fn build_gemini_payload(
     let mut call_id_to_name: HashMap<String, String> = HashMap::new();
     let mut pending_call_names: VecDeque<String> = VecDeque::new();
 
-    for message in &messages {
+    let last_message_index = messages.len().saturating_sub(1);
+    for (message_index, message) in messages.iter().enumerate() {
         let content = message.content.trim();
         let role = message.role.trim();
+        let is_last_message = message_index == last_message_index;
 
         // --- Tool result messages: emit as user content with functionResponse parts ---
         if role == "tool" {
@@ -123,6 +156,22 @@ pub(super) fn build_gemini_payload(
                 }
                 None => Vec::new(),
             };
+            // 无结构化结果的 tool 行否则整条被丢：末条时前一条 model 轮会
+            // 成为请求尾轮（Gemini 400 "Requests ending with a model turn"）。
+            // 降级为一条 user 文本内容，既保上下文又保持尾轮合法。
+            if results.is_empty() {
+                if is_last_message && !content.is_empty() {
+                    contents.push(json!({
+                        "role": "user",
+                        "parts": build_gemini_content_parts(
+                            content,
+                            database_path,
+                            skip_image_parsing,
+                        )?,
+                    }));
+                }
+                continue;
+            }
             // Gemini requires tool results as user Content with ordered
             // functionResponse parts. Keep image-bearing responses separate:
             // their inlineData must remain a following user content block.
@@ -267,31 +316,10 @@ pub(super) fn build_gemini_payload(
         if content.is_empty() {
             continue;
         }
-        if skip_image_parsing {
-            contents.push(json!({
-                "role": normalize_gemini_role(role),
-                "parts": [{ "text": content }],
-            }));
-            continue;
-        }
-
-        let parsed_content = parse_chat_message_content(content, database_path)?;
-        let mut parts = Vec::new();
-        if !parsed_content.text.is_empty() {
-            parts.push(json!({ "text": parsed_content.text }));
-        }
-        parts.extend(parsed_content.images.iter().map(|image| {
-            json!({
-                "inlineData": {
-                    "mimeType": image.media_type,
-                    "data": image.data,
-                },
-            })
-        }));
 
         contents.push(json!({
             "role": normalize_gemini_role(role),
-            "parts": parts,
+            "parts": build_gemini_content_parts(content, database_path, skip_image_parsing)?,
         }));
     }
 

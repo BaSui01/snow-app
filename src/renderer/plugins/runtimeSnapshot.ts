@@ -76,6 +76,8 @@ export type RuntimeStreamingSession = {
 export type RuntimeChatInputState = {
   /** 输入区当前绑定的会话；null = 新会话输入区（尚未绑定真实会话）。 */
   conversationId: string | null;
+  /** 输入框原始内容（保留 @@file:...@@ 等标签标记；空串表示未输入）。 */
+  inputText: string;
   /** 会话生效 API 档案的上下文窗口上限（null = 未知 / 未配置）。 */
   maxContextTokens: number | null;
   /**

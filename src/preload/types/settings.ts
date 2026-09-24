@@ -503,12 +503,26 @@ export type KeyboardShortcutAction =
   | "openTodo"
   | "cycleProject"
   | "openProjectExplorer"
+  | "openProjectMemory"
+  | "openScheduledTasks"
+  | "openPlugins"
   | "cycleApiProfile"
   | "toggleWindow"
   | "togglePet"
   | "focusInput"
   | "toggleSidebar"
-  | "toggleRightPanel";
+  | "toggleRightPanel"
+  | "newChat"
+  | "sendMessage"
+  | "stopGeneration"
+  | "prevConversation"
+  | "nextConversation"
+  | "scrollToTop"
+  | "scrollToBottom"
+  | "openSettings"
+  | "copyLastResponse"
+  | "toggleRightPanelFullscreen"
+  | "showShortcutHelp";
 
 export type KeyboardShortcutConfig = {
   /**
@@ -528,12 +542,26 @@ export type KeyboardShortcutsSettings = {
   openTodo: KeyboardShortcutConfig;
   cycleProject: KeyboardShortcutConfig;
   openProjectExplorer: KeyboardShortcutConfig;
+  openProjectMemory: KeyboardShortcutConfig;
+  openScheduledTasks: KeyboardShortcutConfig;
+  openPlugins: KeyboardShortcutConfig;
   cycleApiProfile: KeyboardShortcutConfig;
   toggleWindow: KeyboardShortcutConfig;
   togglePet: KeyboardShortcutConfig;
   focusInput: KeyboardShortcutConfig;
   toggleSidebar: KeyboardShortcutConfig;
   toggleRightPanel: KeyboardShortcutConfig;
+  newChat: KeyboardShortcutConfig;
+  sendMessage: KeyboardShortcutConfig;
+  stopGeneration: KeyboardShortcutConfig;
+  prevConversation: KeyboardShortcutConfig;
+  nextConversation: KeyboardShortcutConfig;
+  scrollToTop: KeyboardShortcutConfig;
+  scrollToBottom: KeyboardShortcutConfig;
+  openSettings: KeyboardShortcutConfig;
+  copyLastResponse: KeyboardShortcutConfig;
+  toggleRightPanelFullscreen: KeyboardShortcutConfig;
+  showShortcutHelp: KeyboardShortcutConfig;
 };
 
 // ===== App lock =====

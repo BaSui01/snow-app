@@ -6,7 +6,7 @@ use napi::bindgen_prelude::*;
 use serde_json::{json, Value};
 
 use crate::api::config::{normalize_base_url, resolve_advanced_model, resolve_sdk_api_base_url};
-use crate::api::conversation::parse_chat_message_content;
+use crate::api::conversation::{parse_chat_message_content, ParsedChatMessageContent};
 use crate::api::responses::ResponsesApiRequest;
 use crate::storage::services::chat_conversations::ChatContextMessage;
 use crate::storage::ApiConfigRecord;
@@ -49,9 +49,11 @@ pub(super) fn build_chat_completions_payload(
     // 顺序 assistant(tool_calls) → tool×N → user(images) 是合法形态。
     let mut pending_tool_image_parts: Vec<Value> = Vec::new();
 
-    for message in messages {
+    let last_message_index = messages.len().saturating_sub(1);
+    for (message_index, message) in messages.iter().enumerate() {
         let content = message.content.trim();
         let role = message.role.trim();
+        let is_last_message = message_index == last_message_index;
 
         // Flush accumulated tool-result images before any non-tool message:
         // the synthetic user message must come after ALL tool replies of the
@@ -84,6 +86,18 @@ pub(super) fn build_chat_completions_payload(
                 }
                 None => Vec::new(),
             };
+            // 无结构化结果的 tool 行否则整条被丢（含正文）：末条时前一条
+            // assistant 会成为请求尾轮，上游直接 400 "Requests ending with
+            // a model turn"。此处把正文降级为一条 user 消息保留上下文。
+            if results.is_empty() {
+                if is_last_message && !content.is_empty() {
+                    payload_messages.push(json!({
+                        "role": "user",
+                        "content": build_chat_content(content, database_path, skip_image_parsing)?,
+                    }));
+                }
+                continue;
+            }
             for tool_result in &results {
                 let text = if tool_result.text.is_empty() && !tool_result.images.is_empty() {
                     "[image attached]".to_string()
@@ -200,26 +214,7 @@ pub(super) fn build_chat_completions_payload(
         if content.is_empty() {
             continue;
         }
-        let content = if skip_image_parsing {
-            Value::String(content.to_string())
-        } else {
-            let parsed_content = parse_chat_message_content(content, database_path)?;
-            if parsed_content.images.is_empty() {
-                Value::String(parsed_content.text)
-            } else {
-                let mut parts = Vec::new();
-                if !parsed_content.text.is_empty() {
-                    parts.push(json!({ "type": "text", "text": parsed_content.text }));
-                }
-                parts.extend(parsed_content.images.iter().map(|image| {
-                    json!({
-                        "type": "image_url",
-                        "image_url": { "url": image.data_url },
-                    })
-                }));
-                Value::Array(parts)
-            }
-        };
+        let content = build_chat_content(content, database_path, skip_image_parsing)?;
 
         let mut msg = json!({
             "role": normalize_message_role(role),
@@ -314,6 +309,42 @@ pub(super) fn build_chat_completions_payload(
     }
 
     Ok(payload)
+}
+
+/// 构建一条文本消息的 content 值。
+///
+/// 解析后为空的标签消息（如空 `@@command:` / `@@review:`）用原始文本兜底：
+/// 空 user 轮会被上游丢弃，丢弃后前一条 assistant 成为尾轮，Gemini 以
+/// "Requests ending with a model turn" 400 拒绝。
+fn build_chat_content(
+    content: &str,
+    database_path: &Path,
+    skip_image_parsing: bool,
+) -> Result<Value> {
+    if skip_image_parsing {
+        return Ok(Value::String(content.to_string()));
+    }
+    let ParsedChatMessageContent { text, images } =
+        parse_chat_message_content(content, database_path)?;
+    let text = if text.is_empty() {
+        content.to_string()
+    } else {
+        text
+    };
+    if images.is_empty() {
+        return Ok(Value::String(text));
+    }
+    let mut parts = Vec::new();
+    if !text.is_empty() {
+        parts.push(json!({ "type": "text", "text": text }));
+    }
+    parts.extend(images.iter().map(|image| {
+        json!({
+            "type": "image_url",
+            "image_url": { "url": image.data_url },
+        })
+    }));
+    Ok(Value::Array(parts))
 }
 
 /// Flush accumulated tool-result image parts as one synthetic user message.

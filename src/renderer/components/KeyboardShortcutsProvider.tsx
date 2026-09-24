@@ -36,6 +36,21 @@ const DEFAULT_SETTINGS: KeyboardShortcutsSettings = {
   openTodo: { key: "mod+t", enabled: true, foregroundOnly: true },
   cycleProject: { key: "mod+backtick", enabled: true, foregroundOnly: true },
   openProjectExplorer: { key: "mod+d", enabled: true, foregroundOnly: true },
+  openProjectMemory: {
+    key: "mod+shift+m",
+    enabled: true,
+    foregroundOnly: true,
+  },
+  openScheduledTasks: {
+    key: "mod+shift+t",
+    enabled: true,
+    foregroundOnly: true,
+  },
+  openPlugins: {
+    key: "mod+shift+x",
+    enabled: true,
+    foregroundOnly: true,
+  },
   cycleApiProfile: {
     key: isMacOS() ? "ctrl+p" : "alt+p",
     enabled: true,
@@ -63,6 +78,61 @@ const DEFAULT_SETTINGS: KeyboardShortcutsSettings = {
   },
   toggleRightPanel: {
     key: "mod+shift+r",
+    enabled: true,
+    foregroundOnly: true,
+  },
+  newChat: {
+    key: "mod+n",
+    enabled: true,
+    foregroundOnly: true,
+  },
+  sendMessage: {
+    key: "mod+enter",
+    enabled: true,
+    foregroundOnly: true,
+  },
+  stopGeneration: {
+    key: "mod+.",
+    enabled: true,
+    foregroundOnly: true,
+  },
+  prevConversation: {
+    key: "alt+left",
+    enabled: true,
+    foregroundOnly: true,
+  },
+  nextConversation: {
+    key: "alt+right",
+    enabled: true,
+    foregroundOnly: true,
+  },
+  scrollToTop: {
+    key: "mod+up",
+    enabled: true,
+    foregroundOnly: true,
+  },
+  scrollToBottom: {
+    key: "mod+down",
+    enabled: true,
+    foregroundOnly: true,
+  },
+  openSettings: {
+    key: "mod+,",
+    enabled: true,
+    foregroundOnly: true,
+  },
+  copyLastResponse: {
+    key: "mod+shift+c",
+    enabled: true,
+    foregroundOnly: true,
+  },
+  toggleRightPanelFullscreen: {
+    key: "mod+shift+f",
+    enabled: true,
+    foregroundOnly: true,
+  },
+  showShortcutHelp: {
+    key: "mod+/",
     enabled: true,
     foregroundOnly: true,
   },

@@ -7,6 +7,7 @@ import type {
   WorkspaceDirectoryRecord,
 } from "../../../preload";
 import { Modal } from "../common/Modal";
+import { keyToDisplay } from "../../utils/shortcutUtils";
 import { formatTimeLabel, parseDbTimestamp } from "./mainSidebar/chatTimeGroup";
 
 const MAX_RESULTS_PER_GROUP = 6;
@@ -353,6 +354,21 @@ export function GlobalSearchModal({
         />
       </div>
       <div className="search-modal-body">{renderBody()}</div>
+      <div className="search-modal-hints">
+        <span>
+          <kbd>{keyToDisplay("up")}</kbd>
+          <kbd>{keyToDisplay("down")}</kbd>
+          {t("search.hintNavigate", { defaultValue: "Select" })}
+        </span>
+        <span>
+          <kbd>{keyToDisplay("enter")}</kbd>
+          {t("search.hintOpen", { defaultValue: "Open" })}
+        </span>
+        <span>
+          <kbd>{keyToDisplay("escape")}</kbd>
+          {t("search.hintClose", { defaultValue: "Close" })}
+        </span>
+      </div>
     </Modal>
   );
 }

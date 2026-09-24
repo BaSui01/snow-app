@@ -6,6 +6,7 @@ pub mod context;
 pub mod images;
 pub mod stream;
 pub mod sub_agent;
+pub mod tail_guard;
 pub mod tool_messages;
 
 pub use context::{prepare_context_request, PreparedConversationRequest};

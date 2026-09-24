@@ -22,6 +22,7 @@ import type { MainContentView } from "./components/mainContent/types";
 import { SshConnectWizard } from "./components/sidebar/mainSidebar/SshConnectWizard";
 import { ConfirmDialog } from "./components/common/ConfirmDialog";
 import { AppLockOverlay } from "./components/AppLockOverlay";
+import { ShortcutHelpOverlay } from "./components/ShortcutHelpOverlay";
 import { rightPanelEvents } from "./components/rightPanel/rightPanelEvents";
 import {
   KeyboardShortcutsProvider,
@@ -79,6 +80,41 @@ const persistCloseBehaviorThen = (
 
 type ResizeTarget = "sidebar" | "right-panel";
 
+/**
+ * 主进程 globalShortcut 触发的动作 → shortcutEvents 事件名映射。
+ * 与 ShortcutHandlerBridge 中 registerHandler 的 emit 保持一致。
+ */
+const GLOBAL_ACTION_EVENTS: Record<
+  string,
+  Parameters<typeof shortcutEvents.emit>[0]
+> = {
+  cancelSession: "stop-generation",
+  openSearch: "toggle-search",
+  openMemo: "toggle-memo",
+  openTodo: "toggle-todo",
+  cycleProject: "cycle-project",
+  openProjectExplorer: "open-project-explorer",
+  openProjectMemory: "toggle-project-memory",
+  openScheduledTasks: "toggle-scheduled-tasks",
+  openPlugins: "toggle-plugins",
+  cycleApiProfile: "open-api-profile-menu",
+  togglePet: "toggle-pet",
+  focusInput: "focus-chat-input",
+  toggleSidebar: "toggle-sidebar",
+  toggleRightPanel: "toggle-right-panel",
+  newChat: "new-chat",
+  sendMessage: "send-message",
+  stopGeneration: "stop-generation",
+  prevConversation: "prev-conversation",
+  nextConversation: "next-conversation",
+  scrollToTop: "scroll-to-top",
+  scrollToBottom: "scroll-to-bottom",
+  copyLastResponse: "copy-last-response",
+  openSettings: "open-settings",
+  toggleRightPanelFullscreen: "toggle-right-panel-fullscreen",
+  showShortcutHelp: "show-shortcut-help",
+};
+
 type PanelSizeStyle = CSSProperties & {
   "--sidebar-width": string;
   "--right-panel-width": string;
@@ -94,9 +130,9 @@ const clamp = (value: number, min: number, max: number): number =>
  * 负责：
  * 1. 调用 useKeyboardShortcuts() 启动 document keydown 监听
  * 2. 注册快捷键动作的处理器：
- *    - cancelSession：直接调用 handleAbort
+ *    - cancelSession / stopGeneration：直接调用 handleAbort
  *    - openSearch / openMemo / openTodo / cycleProject /
- *      openProjectExplorer / cycleApiProfile / focusInput：通过
+ *      openProjectExplorer / cycleApiProfile / focusInput 等：通过
  *      shortcutEvents 事件总线分发到各目标组件
  *    - togglePet：读取宠物设置并取反（主进程负责创建/收起宠物窗口）
  *
@@ -124,6 +160,9 @@ const ShortcutHandlerBridge = (): null => {
     const unsubCancel = registerHandler("cancelSession", () => {
       handleAbortRef.current();
     });
+    const unsubStopGeneration = registerHandler("stopGeneration", () => {
+      handleAbortRef.current();
+    });
     const unsubSearch = registerHandler("openSearch", () => {
       shortcutEvents.emit("toggle-search");
     });
@@ -139,8 +178,50 @@ const ShortcutHandlerBridge = (): null => {
     const unsubExplorer = registerHandler("openProjectExplorer", () => {
       shortcutEvents.emit("open-project-explorer");
     });
+    const unsubProjectMemory = registerHandler("openProjectMemory", () => {
+      shortcutEvents.emit("toggle-project-memory");
+    });
+    const unsubScheduledTasks = registerHandler("openScheduledTasks", () => {
+      shortcutEvents.emit("toggle-scheduled-tasks");
+    });
+    const unsubPlugins = registerHandler("openPlugins", () => {
+      shortcutEvents.emit("toggle-plugins");
+    });
     const unsubCycleApiProfile = registerHandler("cycleApiProfile", () => {
       shortcutEvents.emit("open-api-profile-menu");
+    });
+    const unsubNewChat = registerHandler("newChat", () => {
+      shortcutEvents.emit("new-chat");
+    });
+    const unsubSendMessage = registerHandler("sendMessage", () => {
+      shortcutEvents.emit("send-message");
+    });
+    const unsubPrevConversation = registerHandler("prevConversation", () => {
+      shortcutEvents.emit("prev-conversation");
+    });
+    const unsubNextConversation = registerHandler("nextConversation", () => {
+      shortcutEvents.emit("next-conversation");
+    });
+    const unsubScrollToTop = registerHandler("scrollToTop", () => {
+      shortcutEvents.emit("scroll-to-top");
+    });
+    const unsubScrollToBottom = registerHandler("scrollToBottom", () => {
+      shortcutEvents.emit("scroll-to-bottom");
+    });
+    const unsubCopyLastResponse = registerHandler("copyLastResponse", () => {
+      shortcutEvents.emit("copy-last-response");
+    });
+    const unsubOpenSettings = registerHandler("openSettings", () => {
+      shortcutEvents.emit("open-settings");
+    });
+    const unsubToggleRightPanelFullscreen = registerHandler(
+      "toggleRightPanelFullscreen",
+      () => {
+        shortcutEvents.emit("toggle-right-panel-fullscreen");
+      },
+    );
+    const unsubShowShortcutHelp = registerHandler("showShortcutHelp", () => {
+      shortcutEvents.emit("show-shortcut-help");
     });
     const unsubTogglePet = registerHandler("togglePet", () => {
       // 切换宠物启停：读取当前设置并取反，主进程 pets:set-enabled
@@ -161,18 +242,58 @@ const ShortcutHandlerBridge = (): null => {
 
     return () => {
       unsubCancel();
+      unsubStopGeneration();
       unsubSearch();
       unsubMemo();
       unsubTodo();
       unsubCycle();
       unsubExplorer();
+      unsubProjectMemory();
+      unsubScheduledTasks();
+      unsubPlugins();
       unsubCycleApiProfile();
+      unsubNewChat();
+      unsubSendMessage();
+      unsubPrevConversation();
+      unsubNextConversation();
+      unsubScrollToTop();
+      unsubScrollToBottom();
+      unsubCopyLastResponse();
+      unsubOpenSettings();
+      unsubToggleRightPanelFullscreen();
+      unsubShowShortcutHelp();
       unsubTogglePet();
       unsubFocusInput();
       unsubToggleSidebar();
       unsubToggleRightPanel();
     };
   }, [registerHandler]);
+
+  // 主进程 globalShortcut 触发（仅前台生效关闭的动作）后转发到
+  // 同一渲染层分发链路；toggleWindow 已在主进程直接处理。
+  useEffect(() => {
+    const unsubStopGeneration = shortcutEvents.on("stop-generation", () => {
+      handleAbortRef.current();
+    });
+    const unsubTogglePet = shortcutEvents.on("toggle-pet", () => {
+      void window.snow.getPetSettings().then((petSettings) => {
+        void window.snow.setPetEnabled(!petSettings.enabled);
+      });
+    });
+    return () => {
+      unsubStopGeneration();
+      unsubTogglePet();
+    };
+  }, []);
+
+  useEffect(() => {
+    return window.snow.onGlobalShortcutTriggered((action) => {
+      const event = GLOBAL_ACTION_EVENTS[action];
+      if (event) {
+        shortcutEvents.emit(event);
+      }
+    });
+  }, []);
 
   // 启动快捷键引擎的 document keydown 监听
   useKeyboardShortcuts();
@@ -271,9 +392,16 @@ export const App = (): React.JSX.Element => {
       clearAutoCollapsed("rightPanel");
       setIsRightPanelCollapsed((isCollapsed) => !isCollapsed);
     });
+    const unsubRightPanelFullscreen = shortcutEvents.on(
+      "toggle-right-panel-fullscreen",
+      () => {
+        setIsRightPanelFullscreen((isFullscreen) => !isFullscreen);
+      },
+    );
     return () => {
       unsubSidebar();
       unsubRightPanel();
+      unsubRightPanelFullscreen();
     };
   }, [clearAutoCollapsed]);
 
@@ -898,6 +1026,7 @@ export const App = (): React.JSX.Element => {
           </ConfirmDialog>
           {/* 应用锁：锁定态用毛玻璃遮罩盖住整个界面，仅影响查看 */}
           <AppLockOverlay />
+          <ShortcutHelpOverlay />
         </div>
       </ChatConversationProvider>
     </KeyboardShortcutsProvider>

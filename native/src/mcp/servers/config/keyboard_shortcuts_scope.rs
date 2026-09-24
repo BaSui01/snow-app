@@ -1,4 +1,4 @@
-//! config 服务 `keyboardShortcuts` 作用域：键盘快捷键（单例，12 个动作）。
+//! config 服务 `keyboardShortcuts` 作用域：键盘快捷键（单例，23 个动作）。
 //!
 //! 真源是 system_settings 的 `keyboard_shortcuts`（与 UI「快捷键」设置页同源）。
 //! 每个动作的配置为 `{key, enabled, foregroundOnly}`；本域按**稀疏 merge** 写入：
@@ -24,7 +24,7 @@ const TOOL_DELETE: &str = "delete";
 
 const SHORTCUTS_KEY: &str = "settings";
 
-/// 12 个动作（与 KeyboardShortcutsSettings 的字段一一对应）。
+/// 23 个动作（与 KeyboardShortcutsSettings 的字段一一对应）。
 const ACTIONS: &[&str] = &[
     "cancelSession",
     "openSearch",
@@ -38,6 +38,17 @@ const ACTIONS: &[&str] = &[
     "focusInput",
     "toggleSidebar",
     "toggleRightPanel",
+    "newChat",
+    "sendMessage",
+    "stopGeneration",
+    "prevConversation",
+    "nextConversation",
+    "scrollToTop",
+    "scrollToBottom",
+    "openSettings",
+    "copyLastResponse",
+    "toggleRightPanelFullscreen",
+    "showShortcutHelp",
 ];
 
 /// 单个动作允许写入的字段。

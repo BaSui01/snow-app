@@ -18,7 +18,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::api::config::resolve_advanced_model;
 use crate::api::conversation::{
-    prepare_context_request, resolve_sub_agent_tools, ConversationContextRequest,
+    prepare_context_request, resolve_sub_agent_tools, tail_guard, ConversationContextRequest,
 };
 use crate::api::responses::{
     ResponsesApiRequest, ResponsesApiResult, ResponsesApiStreamCallback, TokenUsage,
@@ -222,7 +222,7 @@ async fn create_gemini_response_async(
             }
         }
     };
-    let payload = payload::build_gemini_payload(
+    let mut payload = payload::build_gemini_payload(
         &prepared_messages,
         &database_path,
         &request,
@@ -230,6 +230,23 @@ async fn create_gemini_response_async(
         tools,
         &prepared_request.user_system_prompts,
     )?;
+    // 尾轮守卫：Gemini 拒绝以 model 轮收尾的请求。
+    let tail_guard = tail_guard::guard_gemini_payload(&mut payload);
+    if tail_guard.fired() {
+        log_api_warning(
+            &database_path,
+            "gemini_tail_guard",
+            "Gemini payload tail turn repaired",
+            &format!(
+                "dropped_model_turns={}, appended_user={}, model={}, conversation_id={}",
+                tail_guard.dropped_model_turns,
+                tail_guard.appended_user,
+                model,
+                prepared_request.conversation_id,
+            ),
+        )
+        .await;
+    }
     let is_duplicate_recovery = request.disable_tools.unwrap_or(false);
     if is_duplicate_recovery {
         log_api_warning(

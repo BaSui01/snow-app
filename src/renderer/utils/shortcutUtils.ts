@@ -18,11 +18,22 @@ export const isMacOS = (): boolean => {
  * 规范化 key 中的主键名：
  * - 反引号 ` → backtick
  * - Escape → escape
+ * - 方向键/Enter/Space → left/right/up/down/enter/space
  * - 其他字母统一小写
  */
+const NAMED_KEY_ALIASES: Record<string, string> = {
+  arrowleft: "left",
+  arrowright: "right",
+  arrowup: "up",
+  arrowdown: "down",
+  return: "enter",
+  spacebar: "space",
+};
+
 const normalizeKeyName = (rawKey: string): string => {
   if (rawKey === "`") return "backtick";
-  return rawKey.toLowerCase();
+  const lower = rawKey.toLowerCase();
+  return NAMED_KEY_ALIASES[lower] ?? lower;
 };
 
 /**
@@ -90,7 +101,8 @@ export const eventToKey = (event: KeyboardEvent): string | null => {
  *      "escape" → "ESC"
  */
 export const keyToDisplay = (key: string): string => {
-  const modLabel = isMacOS() ? "⌘" : "Ctrl";
+  const isMac = isMacOS();
+  const modLabel = isMac ? "⌘" : "Ctrl";
   const parts = key.split("+");
   const segments: string[] = [];
 
@@ -98,15 +110,33 @@ export const keyToDisplay = (key: string): string => {
     if (part === "mod") {
       segments.push(modLabel);
     } else if (part === "alt") {
-      segments.push("Alt");
+      segments.push(isMac ? "⌥ Option" : "Alt");
     } else if (part === "ctrl") {
-      segments.push("Ctrl");
+      segments.push(isMac ? "⌃" : "Ctrl");
     } else if (part === "shift") {
       segments.push("Shift");
     } else if (part === "backtick") {
       segments.push("`");
     } else if (part === "escape") {
       segments.push("ESC");
+    } else if (part === "enter") {
+      segments.push("Enter");
+    } else if (part === "left") {
+      segments.push("←");
+    } else if (part === "right") {
+      segments.push("→");
+    } else if (part === "up") {
+      segments.push("↑");
+    } else if (part === "down") {
+      segments.push("↓");
+    } else if (part === "home") {
+      segments.push("Home");
+    } else if (part === "end") {
+      segments.push("End");
+    } else if (part === "tab") {
+      segments.push("Tab");
+    } else if (part === "space") {
+      segments.push("Space");
     } else if (part.length === 1) {
       segments.push(part.toUpperCase());
     } else {
@@ -191,76 +221,194 @@ export const shouldPreventDefault = (key: string): boolean => {
  */
 export const SHORTCUT_ACTIONS: KeyboardShortcutAction[] = [
   "cancelSession",
+  "sendMessage",
+  "stopGeneration",
+  "newChat",
+  "prevConversation",
+  "nextConversation",
+  "scrollToTop",
+  "scrollToBottom",
+  "copyLastResponse",
+  "focusInput",
   "openSearch",
   "openMemo",
   "openTodo",
   "cycleProject",
   "openProjectExplorer",
+  "openProjectMemory",
+  "openScheduledTasks",
+  "openPlugins",
   "cycleApiProfile",
-  "togglePet",
-  "focusInput",
+  "openSettings",
   "toggleSidebar",
   "toggleRightPanel",
+  "toggleRightPanelFullscreen",
+  "togglePet",
   "toggleWindow",
+  "showShortcutHelp",
 ];
 
 /**
- * 快捷键动作的静态元数据：按键显示文本 key + 描述文案 key。
+ * 快捷键动作的静态元数据：描述文案 key + 描述默认值 + 帮助浮层分组。
+ * group: conversation（会话操作）/ navigation（界面导航）/ window（窗口与全局）。
  */
 type ShortcutMeta = {
   descKey: string;
   descDefault: string;
+  group: "conversation" | "navigation" | "window";
 };
 
 export const SHORTCUT_META: Record<KeyboardShortcutAction, ShortcutMeta> = {
   cancelSession: {
     descKey: "settings.shortcutCancelSession",
     descDefault: "Interrupt current session",
+    group: "conversation",
   },
-  openSearch: {
-    descKey: "settings.shortcutOpenSearch",
-    descDefault: "Open global search",
+  sendMessage: {
+    descKey: "settings.shortcutSendMessage",
+    descDefault: "Send current input",
+    group: "conversation",
   },
-  openMemo: {
-    descKey: "settings.shortcutOpenMemo",
-    descDefault: "Open memos",
+  stopGeneration: {
+    descKey: "settings.shortcutStopGeneration",
+    descDefault: "Stop generating",
+    group: "conversation",
   },
-  openTodo: {
-    descKey: "settings.shortcutOpenTodo",
-    descDefault: "Open todo list",
+  newChat: {
+    descKey: "settings.shortcutNewChat",
+    descDefault: "Start a new conversation",
+    group: "conversation",
   },
-  cycleProject: {
-    descKey: "settings.shortcutCycleProject",
-    descDefault: "Cycle through projects",
+  prevConversation: {
+    descKey: "settings.shortcutPrevConversation",
+    descDefault: "Switch to previous conversation",
+    group: "conversation",
   },
-  openProjectExplorer: {
-    descKey: "settings.shortcutOpenExplorer",
-    descDefault: "Open current project explorer",
+  nextConversation: {
+    descKey: "settings.shortcutNextConversation",
+    descDefault: "Switch to next conversation",
+    group: "conversation",
   },
-  cycleApiProfile: {
-    descKey: "settings.shortcutCycleApiProfile",
-    descDefault: "Open API provider picker",
+  scrollToTop: {
+    descKey: "settings.shortcutScrollToTop",
+    descDefault: "Scroll chat to top",
+    group: "conversation",
   },
-  toggleWindow: {
-    descKey: "settings.shortcutToggleWindow",
-    descDefault: "Show/hide main window",
+  scrollToBottom: {
+    descKey: "settings.shortcutScrollToBottom",
+    descDefault: "Scroll chat to bottom",
+    group: "conversation",
   },
-  togglePet: {
-    descKey: "settings.shortcutTogglePet",
-    descDefault: "Show/hide desktop pet",
+  copyLastResponse: {
+    descKey: "settings.shortcutCopyLastResponse",
+    descDefault: "Copy last AI response",
+    group: "conversation",
   },
   focusInput: {
     descKey: "settings.shortcutFocusInput",
     descDefault: "Focus chat input",
+    group: "conversation",
+  },
+  openSearch: {
+    descKey: "settings.shortcutOpenSearch",
+    descDefault: "Open global search",
+    group: "navigation",
+  },
+  openMemo: {
+    descKey: "settings.shortcutOpenMemo",
+    descDefault: "Open memos",
+    group: "navigation",
+  },
+  openTodo: {
+    descKey: "settings.shortcutOpenTodo",
+    descDefault: "Open todo list",
+    group: "navigation",
+  },
+  cycleProject: {
+    descKey: "settings.shortcutCycleProject",
+    descDefault: "Cycle through projects",
+    group: "navigation",
+  },
+  openProjectExplorer: {
+    descKey: "settings.shortcutOpenExplorer",
+    descDefault: "Open current project explorer",
+    group: "navigation",
+  },
+  openProjectMemory: {
+    descKey: "settings.shortcutOpenProjectMemory",
+    descDefault: "Open project memory",
+    group: "navigation",
+  },
+  openScheduledTasks: {
+    descKey: "settings.shortcutOpenScheduledTasks",
+    descDefault: "Open scheduled tasks",
+    group: "navigation",
+  },
+  openPlugins: {
+    descKey: "settings.shortcutOpenPlugins",
+    descDefault: "Open plugins",
+    group: "navigation",
+  },
+  cycleApiProfile: {
+    descKey: "settings.shortcutCycleApiProfile",
+    descDefault: "Open API provider picker",
+    group: "navigation",
+  },
+  openSettings: {
+    descKey: "settings.shortcutOpenSettings",
+    descDefault: "Open settings",
+    group: "navigation",
   },
   toggleSidebar: {
     descKey: "settings.shortcutToggleSidebar",
     descDefault: "Collapse/expand left sidebar",
+    group: "navigation",
   },
   toggleRightPanel: {
     descKey: "settings.shortcutToggleRightPanel",
     descDefault: "Collapse/expand right panel",
+    group: "navigation",
   },
+  toggleRightPanelFullscreen: {
+    descKey: "settings.shortcutToggleRightPanelFullscreen",
+    descDefault: "Toggle right panel fullscreen",
+    group: "navigation",
+  },
+  togglePet: {
+    descKey: "settings.shortcutTogglePet",
+    descDefault: "Show/hide desktop pet",
+    group: "window",
+  },
+  toggleWindow: {
+    descKey: "settings.shortcutToggleWindow",
+    descDefault: "Show/hide main window",
+    group: "window",
+  },
+  showShortcutHelp: {
+    descKey: "settings.shortcutShowShortcutHelp",
+    descDefault: "Show shortcut cheat sheet",
+    group: "window",
+  },
+};
+
+/**
+ * 帮助浮层分组顺序。
+ */
+export const SHORTCUT_GROUP_ORDER = [
+  "conversation",
+  "navigation",
+  "window",
+] as const;
+
+export type ShortcutGroup = (typeof SHORTCUT_GROUP_ORDER)[number];
+
+/**
+ * 动作能否由主进程 globalShortcut 全局注册：单键（escape 等）
+ * 会抢占整个系统的按键，一律不支持；带修饰键的组合键均可。
+ */
+export const isGlobalCapableKey = (key: string): boolean => {
+  if (key === "escape") return false;
+  return key.includes("+");
 };
 
 /**

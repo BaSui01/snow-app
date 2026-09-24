@@ -29,6 +29,7 @@ import {
 } from "react";
 
 import { useKeyboardShortcutsSettings } from "../KeyboardShortcutsProvider";
+import { keyToDisplay } from "../../utils/shortcutUtils";
 import { useI18n } from "../../i18n";
 import { MarkdownBlock } from "../mainContent/chatMessages/components/markdownRenderer";
 import { ContextMenu, type ContextMenuItem } from "../common/ContextMenu";
@@ -2242,9 +2243,9 @@ export function FileViewerContent({
                 className={`file-viewer-save-btn ${dirty ? "dirty" : ""}`}
                 onClick={handleSave}
                 disabled={!dirty || saving}
-                title={t("rightPanel.fileViewerSave", {
-                  defaultValue: "Save (Ctrl+S)",
-                })}
+                title={`${t("rightPanel.fileViewerSave", {
+                  defaultValue: "Save",
+                })} (${keyToDisplay("mod+s")})`}
               >
                 {saving ? (
                   <Loader2 className="spin" size={13} />

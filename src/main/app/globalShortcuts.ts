@@ -5,19 +5,47 @@ import { refreshTrayStats, showMainWindow } from "./tray";
 import { snowLog } from "../../utils/snowLogger";
 
 /**
- * 显示/隐藏对话窗口全局快捷键（toggleWindow，默认 mod+shift+h）。
+ * 全局快捷键：所有支持全局注册的动作统一在此注册。
  *
- * 与其余 7 个快捷键不同，该快捷键由主进程 globalShortcut 注册：
- * 渲染进程的 keydown 监听只在窗口聚焦时生效（见 useKeyboardShortcuts
- * 的注释），窗口隐藏到托盘后收不到按键事件，无法实现"呼出"。
- * 全局注册后任意状态下都能 toggle，因此该快捷键默认不设"仅台前"。
+ * 渲染进程 keydown 只在窗口聚焦时生效；「仅前台生效」关闭（foregroundOnly=false）
+ * 的动作改由主进程 globalShortcut 注册，失焦也能触发。触发后经 IPC 把动作
+ * 名转发给渲染进程执行（除 toggleWindow / togglePet 等主进程可直接处理的动作）。
  *
- * 键格式转换：渲染层规范化格式（mod+shift+h / mod+f / escape）
- * → Electron accelerator（CommandOrControl+Shift+H / ... / Esc）。
+ * 键格式转换：渲染层规范化格式（mod+shift+h / alt+left / escape）
+ * → Electron accelerator（CommandOrControl+Shift+H / Alt+Left / Esc）。
  */
 
-/** 当前已注册的 accelerator，重注册前先注销旧绑定。 */
-let registeredAccelerator: string | null = null;
+const GLOBAL_ACTIONS = [
+  "cancelSession",
+  "openSearch",
+  "openMemo",
+  "openTodo",
+  "cycleProject",
+  "openProjectExplorer",
+  "openProjectMemory",
+  "openScheduledTasks",
+  "openPlugins",
+  "cycleApiProfile",
+  "toggleWindow",
+  "togglePet",
+  "focusInput",
+  "toggleSidebar",
+  "toggleRightPanel",
+  "newChat",
+  "stopGeneration",
+  "prevConversation",
+  "nextConversation",
+  "scrollToTop",
+  "scrollToBottom",
+  "openSettings",
+  "copyLastResponse",
+  "toggleRightPanelFullscreen",
+  "showShortcutHelp",
+] as const;
+
+type GlobalAction = (typeof GLOBAL_ACTIONS)[number];
+
+const registered = new Map<string, GlobalAction>();
 
 /**
  * 规范化键 → Electron accelerator。
@@ -55,6 +83,30 @@ export const keyToAccelerator = (key: string): string | null => {
     mainPart = "`";
   } else if (main === "escape") {
     mainPart = "Esc";
+  } else if (main === "enter") {
+    mainPart = "Return";
+  } else if (main === "left") {
+    mainPart = "Left";
+  } else if (main === "right") {
+    mainPart = "Right";
+  } else if (main === "up") {
+    mainPart = "Up";
+  } else if (main === "down") {
+    mainPart = "Down";
+  } else if (main === "home") {
+    mainPart = "Home";
+  } else if (main === "end") {
+    mainPart = "End";
+  } else if (main === "tab") {
+    mainPart = "Tab";
+  } else if (main === "space") {
+    mainPart = "Space";
+  } else if (main === ",") {
+    mainPart = ",";
+  } else if (main === ".") {
+    mainPart = ".";
+  } else if (main === "/") {
+    mainPart = "/";
   } else if (main.length === 1 && /^[a-z0-9]$/i.test(main)) {
     mainPart = main.toUpperCase();
   } else {
@@ -83,53 +135,63 @@ const toggleMainWindow = (): void => {
   showMainWindow();
 };
 
+const dispatchToRenderer = (action: GlobalAction): void => {
+  const win = getMainWindow();
+  if (!win || win.isDestroyed()) {
+    return;
+  }
+  if (action === "toggleWindow") {
+    // toggleWindow 直接在主进程处理：窗口隐藏时 webContents 收不到转发
+    toggleMainWindow();
+    return;
+  }
+  if (!win.isVisible()) {
+    showMainWindow();
+  }
+  win.webContents.send("shortcuts:global-triggered", action);
+};
+
 /**
- * 根据数据库中的 toggleWindow 配置注册/注销全局快捷键。
- * - enabled=false 或键不含修饰键：注销并跳过
- * - 注册失败（组合键被其他应用占用）：记录告警，不打扰用户
+ * 根据数据库配置批量注册/注销全局快捷键。
+ * 仅处理 enabled=true 且 foregroundOnly=false 的动作；
+ * 注册失败（组合键被其他应用占用）：记录告警，不打扰用户。
  * native 代理已做 storageReady 门控，storage 未就绪时该调用会自动等待。
  */
-export const registerToggleWindowShortcut = async (
-  native: NativeBridge
+export const registerGlobalShortcuts = async (
+  native: NativeBridge,
 ): Promise<void> => {
-  if (registeredAccelerator) {
-    globalShortcut.unregister(registeredAccelerator);
-    registeredAccelerator = null;
+  for (const accelerator of registered.keys()) {
+    globalShortcut.unregister(accelerator);
   }
+  registered.clear();
 
   const settings = await native.getKeyboardShortcutsSettings();
-  const config = settings.toggleWindow;
-  if (!config?.enabled) {
-    return;
-  }
-
-  const accelerator = keyToAccelerator(config.key);
-  if (!accelerator) {
-    snowLog.warn({
-      module: "app/globalShortcuts",
-      func: "registerToggleWindowShortcut",
-      message: "Toggle window shortcut requires a modifier key, skipped",
-      context: `key=${config.key}`,
-    });
-    return;
-  }
-
-  const ok = globalShortcut.register(accelerator, toggleMainWindow);
-  if (ok) {
-    registeredAccelerator = accelerator;
-    snowLog.info({
-      module: "app/globalShortcuts",
-      func: "registerToggleWindowShortcut",
-      message: "Toggle window global shortcut registered",
-      context: `accelerator=${accelerator}`,
-    });
-  } else {
-    snowLog.warn({
-      module: "app/globalShortcuts",
-      func: "registerToggleWindowShortcut",
-      message:
-        "Failed to register global shortcut, likely taken by another app",
-      context: `accelerator=${accelerator}`,
-    });
+  for (const action of GLOBAL_ACTIONS) {
+    const config = settings[action];
+    if (!config?.enabled || config.foregroundOnly) {
+      continue;
+    }
+    const accelerator = keyToAccelerator(config.key);
+    if (!accelerator) {
+      continue;
+    }
+    if (registered.has(accelerator)) {
+      continue;
+    }
+    const handler = (): void => {
+      dispatchToRenderer(action);
+    };
+    const ok = globalShortcut.register(accelerator, handler);
+    if (ok) {
+      registered.set(accelerator, action);
+    } else {
+      snowLog.warn({
+        module: "app/globalShortcuts",
+        func: "registerGlobalShortcuts",
+        message:
+          "Failed to register global shortcut, likely taken by another app",
+        context: `action=${action} accelerator=${accelerator}`,
+      });
+    }
   }
 };

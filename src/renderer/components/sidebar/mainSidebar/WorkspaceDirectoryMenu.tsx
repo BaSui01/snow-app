@@ -16,6 +16,7 @@ import { createPortal } from "react-dom";
 import { useI18n } from "../../../i18n";
 import type { IdeInfo, WorkspaceDirectoryKind } from "../../../../preload";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
+import { ShortcutHint } from "../../ShortcutHint";
 import { FileManagerIcon } from "../../icons/fileManagerIcons";
 import { IdeIcon } from "../../icons/ideIcons";
 import { isMacOS } from "../../../utils/shortcutUtils";
@@ -516,6 +517,7 @@ export function WorkspaceDirectoryMenu({
                       defaultValue: "Details",
                     })}
                   </span>
+                  <ShortcutHint action="openProjectExplorer" />
                 </button>
                 {onShowRelinkHistory ? (
                   <button

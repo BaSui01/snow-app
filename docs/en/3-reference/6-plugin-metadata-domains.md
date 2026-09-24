@@ -81,38 +81,39 @@ The `live` flag from `api.metadata.domains()` lets a panel distinguish "realtime
 
 ## 2. Requirement to domain map
 
-| UI or feature you want                                   | Domain to read                                      | Key fields                                              |
-| -------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------- |
-| Conversation list, titles, pinned items, message counts  | `conversations`                                     | `items[]`, `pinned[]`, `active`                         |
-| Message bodies and thinking traces of one conversation   | `messages`                                          | `items[]` (with `content`, `thinking`, `toolCallsJson`) |
-| A streaming metrics bar (tokens, elapsed time, TTFT)     | `runtime`                                           | `conversation.*`, `streamingSessions[]`                 |
-| The chat-input token usage ring                          | `runtime` + `conversations`                         | `chatInput.maxContextTokens`, `conversation.tokenUsage` |
-| Which right-panel tabs are open                          | `panels`                                            | `tabs[]`, `activeTabId`                                 |
-| Project (workspace) list, collections, relink history    | `projects`                                          | `directories[]`, `collections[]`, `relinks[]`           |
-| A memo panel with pending/done counts                    | `memos`                                             | `summary`, `items[]`                                    |
-| Project memory browsing and statistics                   | `memory`                                            | `stats`, `items[]`                                      |
-| A scheduled task board                                   | `scheduledTasks`                                    | Task array (with `nextRunAt`, `runCount`)               |
-| Usage charts                                             | `usage`                                             | `summary`, `daily[]`, `models[]`, `records`             |
-| A log viewer                                             | `logs`                                              | `items[]`, `total`                                      |
-| Git status, branches, team identity                      | `git`                                               | `status`, `branches[]`, `identity`                      |
-| Codebase index progress and file list                    | `codebase`                                          | `indexStats`, `indexedFiles`, `resumableSessions[]`     |
-| API profile and model pickers                            | `apiProfiles`                                       | Profile array (`profileName`, `advancedModel`, ...)     |
-| Matching the app theme                                   | `theme`                                             | `mode`, `custom`, `fontFamily`                          |
-| Reading app switches (lite, auto-format, shortcuts, ...) | `settings`                                          | See 4.1.3                                               |
-| MCP servers and tools                                    | `mcp`                                               | `servers[]`, `projectServersWithTools[]`                |
-| Sub-agents, Hooks, Skills, and LSP inventory             | `subAgents`, `hooks`, `skills`, `lsp`               | Their respective arrays                                 |
-| Tool approvals and sensitive command rules               | `permissions`                                       | `alwaysApprovedTools[]`, `sensitiveCommands[]`          |
-| Privacy filtering settings                               | `privacy`                                           | `enabled`, `mode`, `toolResults`                        |
-| System prompts, custom headers, global ROLE              | `systemPrompts`, `customHeaders`, `personalization` | Record arrays or file content                           |
-| App version, engine, storage locations, memory usage     | `app`                                               | `appVersion`, `engine`, `storageLocations`              |
-| SSH credentials, `~/.ssh/config` hosts, remote drafts    | `ssh`                                               | `credentials[]`, `configHosts[]`, `remoteDrafts[]`      |
-| Mobile remote-control pairing and tunnel state           | `remoteControl`                                     | `pairing`, `tunnel`                                     |
-| Browser passwords, bookmarks, downloads, import sources  | `browser`                                           | Four arrays                                             |
-| Userscript inventory                                     | `userscripts`                                       | Script array                                            |
-| Image library and albums                                 | `imageLibrary`                                      | `images[]`, `albums[]`                                  |
-| Desktop pets and their settings                          | `pets`                                              | `installed[]`, `settings`                               |
-| Installed plugins (including this one)                   | `plugins`                                           | Plugin array                                            |
-| Opening an external IDE                                  | `ide`                                               | `id`, `name`, `executable`                              |
+| UI or feature you want                                   | Domain to read                                      | Key fields                                                  |
+| -------------------------------------------------------- | --------------------------------------------------- | ----------------------------------------------------------- |
+| Conversation list, titles, pinned items, message counts  | `conversations`                                     | `items[]`, `pinned[]`, `active`                             |
+| Message bodies and thinking traces of one conversation   | `messages`                                          | `items[]` (with `content`, `thinking`, `toolCallsJson`)     |
+| A streaming metrics bar (tokens, elapsed time, TTFT)     | `runtime`                                           | `conversation.*`, `streamingSessions[]`                     |
+| The chat-input token usage ring                          | `runtime` + `conversations`                         | `chatInput.maxContextTokens`, `conversation.tokenUsage`     |
+| The current chat-input content                           | `runtime`                                           | `chatInput.inputText` (raw text, keeps `@@file:...@@` tags) |
+| Which right-panel tabs are open                          | `panels`                                            | `tabs[]`, `activeTabId`                                     |
+| Project (workspace) list, collections, relink history    | `projects`                                          | `directories[]`, `collections[]`, `relinks[]`               |
+| A memo panel with pending/done counts                    | `memos`                                             | `summary`, `items[]`                                        |
+| Project memory browsing and statistics                   | `memory`                                            | `stats`, `items[]`                                          |
+| A scheduled task board                                   | `scheduledTasks`                                    | Task array (with `nextRunAt`, `runCount`)                   |
+| Usage charts                                             | `usage`                                             | `summary`, `daily[]`, `models[]`, `records`                 |
+| A log viewer                                             | `logs`                                              | `items[]`, `total`                                          |
+| Git status, branches, team identity                      | `git`                                               | `status`, `branches[]`, `identity`                          |
+| Codebase index progress and file list                    | `codebase`                                          | `indexStats`, `indexedFiles`, `resumableSessions[]`         |
+| API profile and model pickers                            | `apiProfiles`                                       | Profile array (`profileName`, `advancedModel`, ...)         |
+| Matching the app theme                                   | `theme`                                             | `mode`, `custom`, `fontFamily`                              |
+| Reading app switches (lite, auto-format, shortcuts, ...) | `settings`                                          | See 4.1.3                                                   |
+| MCP servers and tools                                    | `mcp`                                               | `servers[]`, `projectServersWithTools[]`                    |
+| Sub-agents, Hooks, Skills, and LSP inventory             | `subAgents`, `hooks`, `skills`, `lsp`               | Their respective arrays                                     |
+| Tool approvals and sensitive command rules               | `permissions`                                       | `alwaysApprovedTools[]`, `sensitiveCommands[]`              |
+| Privacy filtering settings                               | `privacy`                                           | `enabled`, `mode`, `toolResults`                            |
+| System prompts, custom headers, global ROLE              | `systemPrompts`, `customHeaders`, `personalization` | Record arrays or file content                               |
+| App version, engine, storage locations, memory usage     | `app`                                               | `appVersion`, `engine`, `storageLocations`                  |
+| SSH credentials, `~/.ssh/config` hosts, remote drafts    | `ssh`                                               | `credentials[]`, `configHosts[]`, `remoteDrafts[]`          |
+| Mobile remote-control pairing and tunnel state           | `remoteControl`                                     | `pairing`, `tunnel`                                         |
+| Browser passwords, bookmarks, downloads, import sources  | `browser`                                           | Four arrays                                                 |
+| Userscript inventory                                     | `userscripts`                                       | Script array                                                |
+| Image library and albums                                 | `imageLibrary`                                      | `images[]`, `albums[]`                                      |
+| Desktop pets and their settings                          | `pets`                                              | `installed[]`, `settings`                                   |
+| Installed plugins (including this one)                   | `plugins`                                           | Plugin array                                                |
+| Opening an external IDE                                  | `ide`                                               | `id`, `name`, `executable`                                  |
 
 ## 3. Domain quick reference
 
@@ -378,7 +379,7 @@ No declaration · Live · No parameters
 | Field                       | Type           | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | --------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `conversation`              | object \| null | Focused conversation: `{ conversationId, sessionKey, title, directoryId, isStreaming, isPaused, isAborting, messageCount, pendingMessageCount, tokenUsage, runTokenUsage, conversationTokenUsage, streamElapsedMs, streamTtftMs, streamStartedAt, runTtftMs, lastRunDurationMs, streamTokenCount, planMode, goalMode, liteMode, yoloMode, fileChangeStats, streamingConversationIds, completedConversationIds, attentionRequiredConversationIds, subAgentSessions, todos }` |
-| `chatInput`                 | object \| null | Chat input data: `{ conversationId, maxContextTokens, isLoadingApiConfig }` (`conversationId` is `null` for the new-conversation input)                                                                                                                                                                                                                                                                                                                                     |
+| `chatInput`                 | object \| null | Chat input data: `{ conversationId, inputText, maxContextTokens, isLoadingApiConfig }` (`conversationId` is `null` for the new-conversation input; `inputText` is the raw input text keeping `@@file:...@@` / `@@image:...@@` tag markers, an empty string means nothing has been typed)                                                                                                                                                                                    |
 | `streamingSessions`         | object[]       | Running sessions: `{ sessionKey, conversationId, title, directoryId, isStreaming, isPaused, isAborting, messageCount, tokenCount, elapsedMs, ttftMs, runTtftMs, startedAt, lastRunDurationMs, runTokenUsage }`                                                                                                                                                                                                                                                              |
 | `panels`                    | object         | Right-panel state (same as the `panels` domain)                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `activeDirectory`           | object \| null | Active project record (`directoryId`, `name`, `path`, `kind`, `isActive`, `pathState`, ...)                                                                                                                                                                                                                                                                                                                                                                                 |
@@ -387,6 +388,8 @@ No declaration · Live · No parameters
 | `locale`                    | string         | Current UI language                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 Live metric semantics: `startedAt` is the wall-clock start of the current run, so live duration is `Date.now() - startedAt` and live speed is `tokenCount / elapsedMs`, matching the streaming metrics bar in the UI.
+
+`chatInput.inputText` is published by the chat input while it is mounted and reflects the last published value (the previous value is kept when the input is not mounted). ESM panels also receive the same value as an `inputText` entry prop (see [24-Plugin development and installation](../2-guides/24-plugin-development-and-installation.md)).
 
 #### 4.3.4 `panels`
 

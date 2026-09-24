@@ -18,6 +18,7 @@ import {
   SHORTCUT_META,
   eventToKey,
   findConflicts,
+  isGlobalCapableKey,
   isMacOS,
   keyToDisplay,
 } from "../../utils/shortcutUtils";
@@ -27,10 +28,8 @@ import {
  * 与 Rust seed 默认值保持一致。
  * cycleApiProfile 平台相关：macOS 用 Ctrl+P，其他平台用 Alt+P。
  * toggleWindow 用 mod+shift+h（全局生效，由主进程 globalShortcut 注册）。
- * togglePet 用 mod+shift+p（仅台前生效，由渲染进程快捷键触发）。
- * focusInput 用 mod+i（仅台前生效，由渲染进程快捷键触发）。
- * toggleSidebar / toggleRightPanel 用 ctrl+shift+l / ctrl+shift+r
- * （仅台前生效，由渲染进程快捷键触发，收起/展开左右侧边栏）。
+ * 其余动作默认仅台前生效（渲染进程快捷键触发），关闭「仅前台」后
+ * 由主进程 globalShortcut 全局注册。
  */
 const DEFAULT_KEYS: Record<KeyboardShortcutAction, string> = {
   cancelSession: "escape",
@@ -39,12 +38,26 @@ const DEFAULT_KEYS: Record<KeyboardShortcutAction, string> = {
   openTodo: "mod+t",
   cycleProject: "mod+backtick",
   openProjectExplorer: "mod+d",
+  openProjectMemory: "mod+shift+m",
+  openScheduledTasks: "mod+shift+t",
+  openPlugins: "mod+shift+x",
   cycleApiProfile: isMacOS() ? "ctrl+p" : "alt+p",
   toggleWindow: "mod+shift+h",
   togglePet: "mod+shift+p",
   focusInput: "mod+i",
   toggleSidebar: "mod+shift+l",
   toggleRightPanel: "mod+shift+r",
+  newChat: "mod+n",
+  sendMessage: "mod+enter",
+  stopGeneration: "mod+.",
+  prevConversation: "alt+left",
+  nextConversation: "alt+right",
+  scrollToTop: "mod+up",
+  scrollToBottom: "mod+down",
+  openSettings: "mod+,",
+  copyLastResponse: "mod+shift+c",
+  toggleRightPanelFullscreen: "mod+shift+f",
+  showShortcutHelp: "mod+/",
 };
 
 type KeyboardShortcutsSettingsPanelProps = {
@@ -261,15 +274,28 @@ export function KeyboardShortcutsSettingsPanel({
                 {/* 仅前台开关 + 恢复默认。
                     toggleWindow 不显示"仅前台"开关：它由主进程 globalShortcut
                     注册，本质就是全局生效（窗口隐藏时也要能呼出），
-                    该开关对它无意义。 */}
+                    该开关对它无意义。
+                    键位无法全局注册（单键如 escape）时开关禁用。 */}
                 <div className="shortcut-toggles">
                   {action !== "toggleWindow" && (
-                    <label className="toggle-switch shortcut-foreground-switch">
+                    <label
+                      className="toggle-switch shortcut-foreground-switch"
+                      title={
+                        !isGlobalCapableKey(config.key)
+                          ? t("settings.shortcutGlobalUnavailable", {
+                              defaultValue:
+                                "Single-key bindings cannot work globally",
+                            })
+                          : undefined
+                      }
+                    >
                       <input
                         type="checkbox"
                         checked={config.foregroundOnly}
                         onChange={handleForegroundOnlyChange(action)}
-                        disabled={!config.enabled}
+                        disabled={
+                          !config.enabled || !isGlobalCapableKey(config.key)
+                        }
                         hidden
                       />
                       <span className="toggle-slider" />
@@ -313,7 +339,7 @@ export function KeyboardShortcutsSettingsPanel({
         <p className="shortcut-note">
           {t("settings.shortcutForegroundOnlyNote", {
             defaultValue:
-              'When "Foreground only" is on, the shortcut only works while the app window is focused. When off, it works as long as the process is running (limited to app-focused scenarios in the current implementation).',
+              'When "Foreground only" is on, the shortcut only works while the app window is focused. When off, it is registered as a system-wide global shortcut and also works while the app is in the background. Single-key bindings (e.g. ESC) only work in the foreground.',
           })}
         </p>
 

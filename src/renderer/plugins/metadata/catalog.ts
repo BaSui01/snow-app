@@ -203,9 +203,9 @@ export const METADATA_DOMAIN_CATALOG: Record<
     group: "content",
     params: [],
     summary: {
-      en: "Live runtime snapshot (conversation, streaming, panels, projects)",
-      "zh-CN": "实时运行时快照（会话、流式指标、面板、项目）",
-      "zh-TW": "即時執行期快照（工作階段、串流指標、面板、專案）",
+      en: "Live runtime snapshot (conversation, chat input, streaming, panels, projects)",
+      "zh-CN": "实时运行时快照（会话、输入框内容、流式指标、面板、项目）",
+      "zh-TW": "即時執行期快照（工作階段、輸入框內容、串流指標、面板、專案）",
     },
   },
   panels: {

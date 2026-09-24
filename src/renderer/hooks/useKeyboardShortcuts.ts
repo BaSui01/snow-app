@@ -17,7 +17,7 @@ import {
  * 1. 事件源位于 [data-local-shortcuts] 区域时整体跳过（该区域的
  *    按键由组件自行处理，如文件搜索栏的 Enter/Esc）
  * 2. 读取 settingsRef（同步，避免闭包过期）
- * 3. 遍历 6 个快捷键动作，检查是否匹配当前按键
+ * 3. 遍历 SHORTCUT_ACTIONS 全部动作，检查是否匹配当前按键
  * 4. 命中后先查作用域（局部）处理器：逆序找第一个 shouldIntercept()
  *    为 true 的条目并调用，用于焦点感知的局部接管（如文件查看器
  *    持有焦点时把 openSearch 接管为文内搜索）
@@ -25,9 +25,9 @@ import {
  * 6. 若需要，preventDefault 阻止浏览器默认行为
  *
  * foregroundOnly 语义说明：
- * - 渲染进程 keydown 监听天然仅在应用聚焦时触发（失焦时浏览器不接收键盘事件）
- * - 因此无论 foregroundOnly 开/关，行为一致（仅应用聚焦时生效）
- * 这是渲染进程方案的固有限制，未来可用 globalShortcut 增强
+ * - 渲染进程 keydown 监听只在应用聚焦时触发（失焦时浏览器不接收键盘事件）
+ * - foregroundOnly=false 的动作由主进程 globalShortcut 注册（见
+ *   globalShortcuts.ts），触发后经 IPC 转发到 shortcutEvents 执行
  */
 
 /** 命令面板 / 文件提及面板是否处于打开状态（渲染在 DOM 中即视为打开）。 */

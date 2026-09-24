@@ -17,6 +17,8 @@ import { runtimeSnapshot } from "../../plugins/runtimeSnapshot";
 import { useChatConversationContext } from "../mainContent/chatMessages";
 import { shortcutEvents } from "../shortcutEvents";
 import { APP_CONTROL_MEMO_CREATED_EVENT } from "../../hooks/useAppControl";
+import { useShortcutLabel } from "../../hooks/useShortcutLabel";
+import { ShortcutHint } from "../ShortcutHint";
 import { useScheduledTasks } from "../../hooks/useScheduledTasks";
 import { isFeaturePageView, type FeaturePageView } from "../featurePages";
 import { ChatsSection } from "./mainSidebar/ChatsSection";
@@ -61,6 +63,7 @@ export function MainSidebarContent({
   const { t } = useI18n();
   const { handleSelectConversation, handleNewChat } =
     useChatConversationContext();
+  const shortcutLabel = useShortcutLabel("newChat");
   const [isSwitchingDirectory, setIsSwitchingDirectory] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
@@ -242,11 +245,31 @@ export function MainSidebarContent({
       if (!activeDirectoryId) return;
       toggleFeaturePage("memo");
     });
+    const unsubNewChat = shortcutEvents.on("new-chat", () => {
+      handleNewChatFromSidebar();
+    });
+    const unsubMemory = shortcutEvents.on("toggle-project-memory", () => {
+      if (!activeDirectoryId) return;
+      toggleFeaturePage("memory");
+    });
+    const unsubScheduledTasks = shortcutEvents.on(
+      "toggle-scheduled-tasks",
+      () => {
+        toggleFeaturePage("scheduled-tasks");
+      },
+    );
+    const unsubPlugins = shortcutEvents.on("toggle-plugins", () => {
+      toggleFeaturePage("plugins");
+    });
     return () => {
       unsubSearch();
       unsubMemo();
+      unsubNewChat();
+      unsubMemory();
+      unsubScheduledTasks();
+      unsubPlugins();
     };
-  }, [activeDirectoryId, toggleFeaturePage]);
+  }, [activeDirectoryId, toggleFeaturePage, handleNewChatFromSidebar]);
 
   const handleSearchSelectConversation = (
     conversation: ConversationSearchResult,
@@ -300,15 +323,17 @@ export function MainSidebarContent({
               defaultValue: "Search",
             })}
           </span>
+          <ShortcutHint action="openSearch" />
         </button>
         <button
           className="nav-item sidebar-new-chat-btn"
           onClick={handleNewChatFromSidebar}
-          title={t("sidebar.newChat", { defaultValue: "New Chat" })}
+          title={`${t("sidebar.newChat", { defaultValue: "New Chat" })} (${shortcutLabel})`}
           type="button"
         >
           <SquarePen size={16} strokeWidth={1.8} />
           <span>{t("sidebar.newChat", { defaultValue: "New Chat" })}</span>
+          <ShortcutHint action="newChat" />
         </button>
         <button
           className={`nav-item sidebar-memo-btn${
@@ -406,6 +431,7 @@ export function MainSidebarContent({
           >
             <Settings size={18} strokeWidth={1.8} />
             <span>{t("sidebar.settings", { defaultValue: "Settings" })}</span>
+            <ShortcutHint action="openSettings" />
           </button>
 
           {/* 自动检测到新版本时显示更新入口，点击打开更新弹窗 */}

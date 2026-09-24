@@ -899,6 +899,10 @@ export const useChatInputController = ({
     return shortcutEvents.on("focus-chat-input", handleFocusInput);
   }, [handleFocusInput]);
 
+  useEffect(() => {
+    return shortcutEvents.on("send-message", handleSend);
+  }, [handleSend]);
+
   const activeThinkingOption = useMemo(() => {
     const matchingOption = thinkingOptions.find(
       (option) => option.value === effectiveThinkingValue,

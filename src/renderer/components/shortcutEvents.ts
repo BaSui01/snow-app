@@ -20,10 +20,25 @@ export type ShortcutAction =
   | "open-todo"
   | "cycle-project"
   | "open-project-explorer"
+  | "toggle-project-memory"
+  | "toggle-scheduled-tasks"
+  | "toggle-plugins"
   | "open-api-profile-menu"
   | "focus-chat-input"
   | "toggle-sidebar"
-  | "toggle-right-panel";
+  | "toggle-right-panel"
+  | "new-chat"
+  | "send-message"
+  | "stop-generation"
+  | "toggle-pet"
+  | "prev-conversation"
+  | "next-conversation"
+  | "scroll-to-top"
+  | "scroll-to-bottom"
+  | "copy-last-response"
+  | "open-settings"
+  | "toggle-right-panel-fullscreen"
+  | "show-shortcut-help";
 
 type ListenerMap = {
   "toggle-search": Set<() => void>;
@@ -32,10 +47,25 @@ type ListenerMap = {
   "open-todo": Set<() => void>;
   "cycle-project": Set<() => void>;
   "open-project-explorer": Set<() => void>;
+  "toggle-project-memory": Set<() => void>;
+  "toggle-scheduled-tasks": Set<() => void>;
+  "toggle-plugins": Set<() => void>;
   "open-api-profile-menu": Set<() => void>;
   "focus-chat-input": Set<() => void>;
   "toggle-sidebar": Set<() => void>;
   "toggle-right-panel": Set<() => void>;
+  "new-chat": Set<() => void>;
+  "send-message": Set<() => void>;
+  "stop-generation": Set<() => void>;
+  "toggle-pet": Set<() => void>;
+  "prev-conversation": Set<() => void>;
+  "next-conversation": Set<() => void>;
+  "scroll-to-top": Set<() => void>;
+  "scroll-to-bottom": Set<() => void>;
+  "copy-last-response": Set<() => void>;
+  "open-settings": Set<() => void>;
+  "toggle-right-panel-fullscreen": Set<() => void>;
+  "show-shortcut-help": Set<() => void>;
 };
 
 const listeners: ListenerMap = {
@@ -45,10 +75,25 @@ const listeners: ListenerMap = {
   "open-todo": new Set(),
   "cycle-project": new Set(),
   "open-project-explorer": new Set(),
+  "toggle-project-memory": new Set(),
+  "toggle-scheduled-tasks": new Set(),
+  "toggle-plugins": new Set(),
   "open-api-profile-menu": new Set(),
   "focus-chat-input": new Set(),
   "toggle-sidebar": new Set(),
   "toggle-right-panel": new Set(),
+  "new-chat": new Set(),
+  "send-message": new Set(),
+  "stop-generation": new Set(),
+  "toggle-pet": new Set(),
+  "prev-conversation": new Set(),
+  "next-conversation": new Set(),
+  "scroll-to-top": new Set(),
+  "scroll-to-bottom": new Set(),
+  "copy-last-response": new Set(),
+  "open-settings": new Set(),
+  "toggle-right-panel-fullscreen": new Set(),
+  "show-shortcut-help": new Set(),
 };
 
 export const shortcutEvents = {

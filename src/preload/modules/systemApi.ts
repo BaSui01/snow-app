@@ -1297,9 +1297,22 @@ export const windowApi = {
   minimizeWindow: (): Promise<void> => ipcRenderer.invoke("window:minimize"),
   hideWindowToTray: (): Promise<void> =>
     ipcRenderer.invoke("window:hide-to-tray"),
-  /** 快捷键设置变更后通知主进程重注册显示/隐藏窗口的全局快捷键。 */
+  /** 快捷键设置变更后通知主进程重注册全局快捷键。 */
   reloadGlobalShortcut: (): Promise<void> =>
     ipcRenderer.invoke("shortcuts:reload-global"),
+  onGlobalShortcutTriggered: (
+    handler: (action: string) => void,
+  ): (() => void) => {
+    const listener = (_event: IpcRendererEvent, action: unknown): void => {
+      if (typeof action === "string") {
+        handler(action);
+      }
+    };
+    ipcRenderer.on("shortcuts:global-triggered", listener);
+    return () => {
+      ipcRenderer.removeListener("shortcuts:global-triggered", listener);
+    };
+  },
   setTrayActiveSessions: (count: number): Promise<void> =>
     ipcRenderer.invoke("tray:set-active-sessions", count),
   toggleMaximizeWindow: (): Promise<void> =>

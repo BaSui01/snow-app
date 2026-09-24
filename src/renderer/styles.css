@@ -7432,6 +7432,58 @@ body.is-panel-resizing * {
   animation: shortcut-record-pulse 1.2s ease-in-out infinite;
 }
 
+/* 界面就近快捷键提示：键帽样式 */
+.shortcut-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+
+.shortcut-hint-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.shortcut-hint-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-light);
+  box-shadow: inset 0 -1px 0 var(--border-light);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.shortcut-hint-sep {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0.65;
+}
+
+.nav-item > .shortcut-hint {
+  margin-left: auto;
+}
+
+.nav-item > .shortcut-hint ~ .sidebar-memo-badge,
+.nav-item > .shortcut-hint ~ .sidebar-memory-badge {
+  margin-left: 0;
+}
+
 @keyframes shortcut-record-pulse {
   0%,
   100% {
@@ -7497,6 +7549,135 @@ body.is-panel-resizing * {
   color: var(--text-muted);
   font-size: 11.5px;
   line-height: 1.4;
+}
+
+/* 快捷键帮助浮层 */
+.shortcut-help-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.shortcut-help-group-title {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.shortcut-help-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shortcut-help-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px;
+  border-radius: var(--radius-md);
+}
+
+.shortcut-help-item:nth-child(odd) {
+  background: var(--bg-tertiary);
+}
+
+.shortcut-help-key {
+  min-width: 110px;
+  flex-shrink: 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: var(--text-primary);
+}
+
+.shortcut-help-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* 帮助浮层顶部搜索栏：吸顶并盖住模态主体的上内边距 */
+.shortcut-help-search {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -16px -16px 0;
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-primary);
+}
+
+.shortcut-help-search-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.shortcut-help-search:focus-within .shortcut-help-search-icon {
+  color: var(--accent-color);
+}
+
+.shortcut-help-search-input {
+  flex: 1;
+  min-width: 0;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none !important;
+}
+
+.shortcut-help-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.shortcut-help-search-clear {
+  flex-shrink: 0;
+}
+
+.shortcut-help-empty {
+  padding: 28px 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+/* 分组标题行内的快捷键提示：紧随标题、不抢占操作按钮空间 */
+.section-header .shortcut-hint {
+  margin-left: 2px;
+}
+
+/* 菜单项内的快捷键提示：右对齐 */
+.workspace-directory-menu-item > .shortcut-hint {
+  margin-left: auto;
+}
+
+/* 搜索弹窗底部快捷键提示条 */
+.search-modal-hints {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 12px 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.search-modal-hints span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.search-modal-hints kbd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
 }
 
 .api-settings-password-wrap {

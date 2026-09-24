@@ -21,6 +21,7 @@ import {
 import type { BrowserRestorePayload } from "../../preload";
 
 import { useI18n } from "../i18n";
+import { useShortcutLabel } from "../hooks/useShortcutLabel";
 import { setWebTagDragData } from "./rightPanel/browserDrag";
 import { GitPanelContent } from "./rightPanel/GitPanelContent";
 import { DiffViewer } from "./rightPanel/DiffViewer";
@@ -256,6 +257,9 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
   ): React.JSX.Element => {
     const isWindows = navigator.userAgent.includes("Win");
     const { t, locale } = useI18n();
+    const fullscreenShortcutLabel = useShortcutLabel(
+      "toggleRightPanelFullscreen",
+    );
     const [tabs, setTabs] = useState<RightPanelTab[]>([
       { id: GIT_TAB_ID, type: "git", title: t("rightPanel.gitTab") },
     ]);
@@ -1680,7 +1684,11 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
                   className="icon-btn ghost right-panel-fullscreen-btn"
                   type="button"
                   aria-label={fullscreenToggleLabel}
-                  title={fullscreenToggleLabel}
+                  title={
+                    fullscreenShortcutLabel
+                      ? `${fullscreenToggleLabel} (${fullscreenShortcutLabel})`
+                      : fullscreenToggleLabel
+                  }
                   onClick={() => onToggleRightPanelFullscreen?.()}
                 >
                   <FullscreenToggleIcon size={16} strokeWidth={1.8} />

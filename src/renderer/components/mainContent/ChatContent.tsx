@@ -13,6 +13,8 @@ import { createPortal } from "react-dom";
 import type { WorkspaceDirectoryRecord } from "../../../preload";
 import { useAutoScrollPreference } from "../../hooks/useAutoScrollPreference";
 import { useI18n } from "../../i18n";
+import { useShortcutLabel } from "../../hooks/useShortcutLabel";
+import { shortcutEvents } from "../shortcutEvents";
 import { ChatFloatIsland } from "./ChatFloatIsland";
 import { ChatFloatHeaderStatus } from "./ChatFloatHeaderStatus";
 import { ChatInput } from "./ChatInput";
@@ -46,6 +48,7 @@ const ChatContentBody = ({
   isFloating = false,
   onNavigateToView,
 }: ChatContentProps): React.JSX.Element => {
+  const scrollToBottomShortcut = useShortcutLabel("scrollToBottom");
   const {
     messages,
     activeConversationId,
@@ -424,6 +427,34 @@ const ChatContentBody = ({
     [setAutoScrollEnabled, handleScrollToBottom],
   );
 
+  // 快捷键：滚动到顶部 / 底部；复制最后一条 AI 回复。
+  useEffect(() => {
+    const unsubTop = shortcutEvents.on("scroll-to-top", () => {
+      const el = scrollRef.current;
+      if (el) {
+        el.scrollTo({ top: 0, behavior: "smooth" });
+        markUserScrollIntent(0);
+      }
+    });
+    const unsubBottom = shortcutEvents.on("scroll-to-bottom", () => {
+      handleScrollToBottom();
+    });
+    const unsubCopy = shortcutEvents.on("copy-last-response", () => {
+      const lastAssistant = [...messages]
+        .reverse()
+        .find((message) => message.role === "assistant");
+      if (!lastAssistant?.content) {
+        return;
+      }
+      void navigator.clipboard.writeText(lastAssistant.content);
+    });
+    return () => {
+      unsubTop();
+      unsubBottom();
+      unsubCopy();
+    };
+  }, [scrollRef, markUserScrollIntent, handleScrollToBottom, messages]);
+
   // 切换自动格式化：乐观更新 UI，写入失败时回读真实状态。
   const handleAutoFormatChange = useCallback(
     (enabled: boolean): void => {
@@ -569,7 +600,11 @@ const ChatContentBody = ({
                 type="button"
                 onClick={handleScrollToBottom}
                 aria-label={t("chat.scrollToBottom")}
-                title={t("chat.scrollToBottom")}
+                title={
+                  scrollToBottomShortcut
+                    ? `${t("chat.scrollToBottom")} (${scrollToBottomShortcut})`
+                    : t("chat.scrollToBottom")
+                }
               >
                 <ArrowDown size={20} strokeWidth={2} aria-hidden="true" />
               </button>

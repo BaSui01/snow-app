@@ -17,7 +17,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::api::config::resolve_advanced_model;
 use crate::api::conversation::{
-    prepare_context_request, resolve_sub_agent_tools, ConversationContextRequest,
+    prepare_context_request, resolve_sub_agent_tools, tail_guard, ConversationContextRequest,
 };
 use crate::api::responses::{
     ResponsesApiRequest, ResponsesApiResult, ResponsesApiStreamCallback, TokenUsage,
@@ -155,7 +155,7 @@ async fn create_chat_completion_response_async(
             }
         }
     };
-    let payload = payload::build_chat_completions_payload(
+    let mut payload = payload::build_chat_completions_payload(
         &prepared_messages,
         &database_path,
         &request,
@@ -163,6 +163,23 @@ async fn create_chat_completion_response_async(
         tools,
         &prepared_request.user_system_prompts,
     )?;
+    // 尾轮守卫：防止请求以 assistant(model) 轮收尾（Gemini 类上游直接 400）。
+    let tail_guard = tail_guard::guard_chat_payload(&mut payload);
+    if tail_guard.fired() {
+        log_api_warning(
+            &database_path,
+            "chat_tail_guard",
+            "Chat payload tail turn repaired",
+            &format!(
+                "dropped_model_turns={}, appended_user={}, model={}, conversation_id={}",
+                tail_guard.dropped_model_turns,
+                tail_guard.appended_user,
+                model,
+                prepared_request.conversation_id,
+            ),
+        )
+        .await;
+    }
     let retry_options = RetryOptions::from_config(
         api_config.max_retries,
         api_config.retry_base_delay_ms,

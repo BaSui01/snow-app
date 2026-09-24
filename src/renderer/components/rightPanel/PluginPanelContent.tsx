@@ -1,5 +1,12 @@
 import { AlertTriangle } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { useI18n } from "../../i18n";
 import {
@@ -18,6 +25,7 @@ import {
   type MountedPanel,
   type PluginModuleExports,
 } from "../../plugins/pluginRuntime";
+import { runtimeSnapshot } from "../../plugins/runtimeSnapshot";
 import { createElement } from "react";
 
 type PluginPanelContentProps = {
@@ -25,6 +33,12 @@ type PluginPanelContentProps = {
   panelId: string;
   isActive: boolean;
 };
+
+const subscribeRuntimeSnapshot = (listener: () => void): (() => void) =>
+  runtimeSnapshot.subscribe(() => listener());
+
+const readChatInputText = (): string =>
+  runtimeSnapshot.get().chatInput?.inputText ?? "";
 
 /** 插件面板宿主：ESM（React 组件 / DOM 挂载）与 iframe 沙箱两种模式。 */
 export const PluginPanelContent = ({
@@ -52,6 +66,12 @@ export const PluginPanelContent = ({
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const entry = panel?.entry || plugin?.entry || "";
+
+  const inputText = useSyncExternalStore(
+    subscribeRuntimeSnapshot,
+    readChatInputText,
+    readChatInputText,
+  );
 
   useEffect(() => {
     void pluginStore.ensureLoaded();
@@ -273,6 +293,7 @@ export const PluginPanelContent = ({
           reactComponent as React.ComponentType<Record<string, unknown>>,
           {
             api,
+            inputText,
             locale,
             panelId,
             panel: panel ?? null,

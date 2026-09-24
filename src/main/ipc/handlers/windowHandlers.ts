@@ -23,7 +23,7 @@ import {
 } from "../../app/mainWindow";
 import { safeSend } from "../../utils/safeSend";
 import { refreshTrayStats } from "../../app/tray";
-import { registerToggleWindowShortcut } from "../../app/globalShortcuts";
+import { registerGlobalShortcuts } from "../../app/globalShortcuts";
 import { clearWindowState } from "../../app/windowState";
 import {
   clearBrowserRouteRules,
@@ -344,9 +344,9 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
   });
 
   // 渲染进程保存快捷键设置后调用：重新读取数据库并注册/注销
-  // 显示/隐藏窗口的全局快捷键（toggleWindow）。
+  // 全局生效的快捷键（foregroundOnly=false 的动作）。
   ipcMain.handle("shortcuts:reload-global", () =>
-    registerToggleWindowShortcut(_native),
+    registerGlobalShortcuts(_native),
   );
 
   // ===== Window Drag (macOS JS drag region) =====

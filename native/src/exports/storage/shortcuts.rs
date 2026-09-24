@@ -3,7 +3,7 @@
 use super::*;
 
 // ============================================================================
-// Keyboard shortcuts — 快捷键设置，12 个快捷键各自 enabled + foregroundOnly。
+// Keyboard shortcuts — 快捷键设置，26 个快捷键各自 enabled + foregroundOnly。
 // ============================================================================
 
 #[napi(object)]
@@ -42,15 +42,29 @@ pub struct KeyboardShortcutsSettingsNapi {
     pub cancel_session: KeyboardShortcutConfigNapi,
     pub open_search: KeyboardShortcutConfigNapi,
     pub open_memo: KeyboardShortcutConfigNapi,
-    pub open_todo: KeyboardShortcutConfigNapi,
-    pub cycle_project: KeyboardShortcutConfigNapi,
     pub open_project_explorer: KeyboardShortcutConfigNapi,
+    pub open_todo: KeyboardShortcutConfigNapi,
+    pub open_project_memory: KeyboardShortcutConfigNapi,
+    pub open_scheduled_tasks: KeyboardShortcutConfigNapi,
+    pub open_plugins: KeyboardShortcutConfigNapi,
+    pub cycle_project: KeyboardShortcutConfigNapi,
     pub cycle_api_profile: KeyboardShortcutConfigNapi,
     pub toggle_window: KeyboardShortcutConfigNapi,
     pub toggle_pet: KeyboardShortcutConfigNapi,
     pub focus_input: KeyboardShortcutConfigNapi,
     pub toggle_sidebar: KeyboardShortcutConfigNapi,
     pub toggle_right_panel: KeyboardShortcutConfigNapi,
+    pub new_chat: KeyboardShortcutConfigNapi,
+    pub send_message: KeyboardShortcutConfigNapi,
+    pub stop_generation: KeyboardShortcutConfigNapi,
+    pub prev_conversation: KeyboardShortcutConfigNapi,
+    pub next_conversation: KeyboardShortcutConfigNapi,
+    pub scroll_to_top: KeyboardShortcutConfigNapi,
+    pub scroll_to_bottom: KeyboardShortcutConfigNapi,
+    pub open_settings: KeyboardShortcutConfigNapi,
+    pub copy_last_response: KeyboardShortcutConfigNapi,
+    pub toggle_right_panel_fullscreen: KeyboardShortcutConfigNapi,
+    pub show_shortcut_help: KeyboardShortcutConfigNapi,
 }
 
 impl From<crate::storage::services::keyboard_shortcuts::KeyboardShortcutsSettings>
@@ -61,15 +75,29 @@ impl From<crate::storage::services::keyboard_shortcuts::KeyboardShortcutsSetting
             cancel_session: s.cancel_session.into(),
             open_search: s.open_search.into(),
             open_memo: s.open_memo.into(),
+            open_project_explorer: s.open_project_explorer.into(),
+            open_project_memory: s.open_project_memory.into(),
+            open_plugins: s.open_plugins.into(),
+            open_scheduled_tasks: s.open_scheduled_tasks.into(),
             open_todo: s.open_todo.into(),
             cycle_project: s.cycle_project.into(),
-            open_project_explorer: s.open_project_explorer.into(),
             cycle_api_profile: s.cycle_api_profile.into(),
             toggle_window: s.toggle_window.into(),
             toggle_pet: s.toggle_pet.into(),
             focus_input: s.focus_input.into(),
             toggle_sidebar: s.toggle_sidebar.into(),
             toggle_right_panel: s.toggle_right_panel.into(),
+            new_chat: s.new_chat.into(),
+            send_message: s.send_message.into(),
+            stop_generation: s.stop_generation.into(),
+            prev_conversation: s.prev_conversation.into(),
+            next_conversation: s.next_conversation.into(),
+            scroll_to_top: s.scroll_to_top.into(),
+            scroll_to_bottom: s.scroll_to_bottom.into(),
+            open_settings: s.open_settings.into(),
+            copy_last_response: s.copy_last_response.into(),
+            toggle_right_panel_fullscreen: s.toggle_right_panel_fullscreen.into(),
+            show_shortcut_help: s.show_shortcut_help.into(),
         }
     }
 }
@@ -82,15 +110,29 @@ impl From<KeyboardShortcutsSettingsNapi>
             cancel_session: s.cancel_session.into(),
             open_search: s.open_search.into(),
             open_memo: s.open_memo.into(),
+            open_project_explorer: s.open_project_explorer.into(),
+            open_project_memory: s.open_project_memory.into(),
+            open_plugins: s.open_plugins.into(),
+            open_scheduled_tasks: s.open_scheduled_tasks.into(),
             open_todo: s.open_todo.into(),
             cycle_project: s.cycle_project.into(),
-            open_project_explorer: s.open_project_explorer.into(),
             cycle_api_profile: s.cycle_api_profile.into(),
             toggle_window: s.toggle_window.into(),
             toggle_pet: s.toggle_pet.into(),
             focus_input: s.focus_input.into(),
             toggle_sidebar: s.toggle_sidebar.into(),
             toggle_right_panel: s.toggle_right_panel.into(),
+            new_chat: s.new_chat.into(),
+            send_message: s.send_message.into(),
+            stop_generation: s.stop_generation.into(),
+            prev_conversation: s.prev_conversation.into(),
+            next_conversation: s.next_conversation.into(),
+            scroll_to_top: s.scroll_to_top.into(),
+            scroll_to_bottom: s.scroll_to_bottom.into(),
+            open_settings: s.open_settings.into(),
+            copy_last_response: s.copy_last_response.into(),
+            toggle_right_panel_fullscreen: s.toggle_right_panel_fullscreen.into(),
+            show_shortcut_help: s.show_shortcut_help.into(),
         }
     }
 }

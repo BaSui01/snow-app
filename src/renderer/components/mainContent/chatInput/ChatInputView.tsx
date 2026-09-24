@@ -495,11 +495,12 @@ export const ChatInputView = ({
     runtimeSnapshot.patch({
       chatInput: {
         conversationId: activeConversationId ?? null,
+        inputText: value,
         maxContextTokens: runtimeApiConfig?.maxContextTokens ?? null,
         isLoadingApiConfig,
       },
     });
-  }, [activeConversationId, runtimeApiConfig, isLoadingApiConfig]);
+  }, [activeConversationId, value, runtimeApiConfig, isLoadingApiConfig]);
 
   // ------------------------------------------------------------------
   // 终端监控模式：拖拽终端到输入框后，实时订阅该终端的日志流

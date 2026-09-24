@@ -29,6 +29,12 @@ export const SENSITIVE_SCOPES = [
   "userscripts",
   "remoteControl",
   "plugins",
+  "terminal",
+  "filesystem",
+  "window",
+  "storage",
+  "updater",
+  "toolApproval",
 ] as const;
 
 export type SensitiveScope = (typeof SENSITIVE_SCOPES)[number];

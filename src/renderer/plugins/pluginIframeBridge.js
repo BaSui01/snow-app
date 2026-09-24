@@ -24,11 +24,14 @@
     if (!values) {
       return template;
     }
-    return String(template).replace(/\{\{\s*(\w+)\s*\}\}/g, function (match, key) {
-      return Object.prototype.hasOwnProperty.call(values, key)
-        ? String(values[key])
-        : match;
-    });
+    return String(template).replace(
+      /\{\{\s*(\w+)\s*\}\}/g,
+      function (match, key) {
+        return Object.prototype.hasOwnProperty.call(values, key)
+          ? String(values[key])
+          : match;
+      },
+    );
   }
 
   function emit(event, payload) {
@@ -44,7 +47,11 @@
 
   window.addEventListener("message", function (event) {
     var data = event.data;
-    if (!data || typeof data !== "object" || data.source !== "snow-plugin-host") {
+    if (
+      !data ||
+      typeof data !== "object" ||
+      data.source !== "snow-plugin-host"
+    ) {
       return;
     }
     if (data.type === "response") {
@@ -91,19 +98,28 @@
         return request("metadata.domains", {});
       },
       subscribe: function (domain, listener, options) {
-        return request("metadata.subscribe", { domain: domain, options: options }).then(
-          function (result) {
-            subscriptions.set(result.subscriptionId, listener);
-            return {
-              unsubscribe: function () {
-                subscriptions.delete(result.subscriptionId);
-                return request("metadata.unsubscribe", {
-                  subscriptionId: result.subscriptionId,
-                });
-              },
-            };
-          }
-        );
+        return request("metadata.subscribe", {
+          domain: domain,
+          options: options,
+        }).then(function (result) {
+          subscriptions.set(result.subscriptionId, listener);
+          return {
+            unsubscribe: function () {
+              subscriptions.delete(result.subscriptionId);
+              return request("metadata.unsubscribe", {
+                subscriptionId: result.subscriptionId,
+              });
+            },
+          };
+        });
+      },
+    },
+    write: {
+      run: function (actionId, params) {
+        return request("write.run", { action: actionId, params: params });
+      },
+      domains: function () {
+        return request("write.domains", {});
       },
     },
     storage: {
@@ -135,13 +151,16 @@
           event,
           current.filter(function (item) {
             return item !== handler;
-          })
+          }),
         );
       };
     },
     log: function () {
       var args = Array.prototype.slice.call(arguments);
-      console.log.apply(console, ["[plugin:" + config.pluginId + "]"].concat(args));
+      console.log.apply(
+        console,
+        ["[plugin:" + config.pluginId + "]"].concat(args),
+      );
     },
   };
 

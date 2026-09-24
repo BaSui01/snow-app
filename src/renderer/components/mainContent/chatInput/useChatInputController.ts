@@ -15,6 +15,10 @@ import type {
 import { useI18n } from "../../../i18n";
 import { shortcutEvents } from "../../shortcutEvents";
 import {
+  PLUGIN_INSERT_INPUT_TEXT_EVENT,
+  PLUGIN_SEND_INPUT_MESSAGE_EVENT,
+} from "../../../plugins/pluginEvents";
+import {
   DEFAULT_THINKING_VALUE,
   THINKING_OPTIONS_BY_METHOD,
 } from "./constants";
@@ -716,6 +720,40 @@ export const useChatInputController = ({
     thinkingOverride,
     value,
   ]);
+
+  const sendRef = useRef(handleSend);
+
+  useEffect(() => {
+    sendRef.current = handleSend;
+  }, [handleSend]);
+
+  useEffect(() => {
+    const insertHandler = (event: Event): void => {
+      const detail = (event as CustomEvent<{ text?: unknown }>).detail;
+      const text = typeof detail?.text === "string" ? detail.text : "";
+      if (!text) {
+        return;
+      }
+      const current = latestValueRef.current ?? "";
+      restoreContent(current ? `${current}${text}` : text);
+    };
+    const sendHandler = (event: Event): void => {
+      const detail = (event as CustomEvent<{ text?: unknown }>).detail;
+      const text = typeof detail?.text === "string" ? detail.text.trim() : "";
+      if (text) {
+        restoreContent(text);
+      }
+      window.setTimeout(() => {
+        sendRef.current();
+      }, 0);
+    };
+    window.addEventListener(PLUGIN_INSERT_INPUT_TEXT_EVENT, insertHandler);
+    window.addEventListener(PLUGIN_SEND_INPUT_MESSAGE_EVENT, sendHandler);
+    return () => {
+      window.removeEventListener(PLUGIN_INSERT_INPUT_TEXT_EVENT, insertHandler);
+      window.removeEventListener(PLUGIN_SEND_INPUT_MESSAGE_EVENT, sendHandler);
+    };
+  }, [restoreContent]);
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {

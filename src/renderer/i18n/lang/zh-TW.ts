@@ -4818,7 +4818,27 @@ export const zhTW = {
   "plugins.scopes.userscripts": "使用者腳本",
   "plugins.scopes.remoteControl": "遠端控制",
   "plugins.scopes.plugins": "其他外掛資料",
+  "plugins.scopes.terminal": "終端執行",
+  "plugins.scopes.filesystem": "檔案系統寫入",
+  "plugins.scopes.window": "視窗與應用程式控制",
+  "plugins.scopes.storage": "儲存遷移與清理",
+  "plugins.scopes.updater": "應用程式更新",
+  "plugins.scopes.toolApproval": "工具授權規則",
+  "plugins.write.entry": "可寫能力 {{granted}}/{{total}}",
+  "plugins.write.title": "可寫能力",
+  "plugins.write.description":
+    "外掛可透過 api.write 呼叫的寫入操作；敏感寫入與讀取一樣需要隱私宣告。",
+  "plugins.write.scopeHint":
+    "呼叫此操作需要在 plugin.json 的隱私宣告中宣告「{{scope}}」",
+  "plugins.write.granted": "可寫",
+  "plugins.write.denied": "未宣告",
+  "plugins.write.empty": "沒有符合的寫入操作",
+  "plugins.write.tabWrite": "可寫能力",
+  "plugins.write.count": "{{matched}} / {{total}} 個動作",
+  "plugins.write.pluginContext":
+    "{{name}}：已宣告 {{granted}} / {{total}} 個寫入動作",
   "plugins.metadata.action": "中繼資料清單",
+  "plugins.metadata.tabMetadata": "可讀中繼資料",
   "plugins.metadata.contextClear": "檢視全部域",
   "plugins.metadata.description":
     "外掛透過 api.metadata 以唯讀方式讀取的應用程式資料域；標示隱私網域的域需在 plugin.json 的 privacy 中宣告後才能讀取。",

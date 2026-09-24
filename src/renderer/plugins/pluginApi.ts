@@ -10,6 +10,11 @@ import {
   type MetadataSubscription,
 } from "./metadata";
 import type { MetadataResponse, PluginView } from "./types";
+import { describeWriteDomains, executeWrite, WRITE_ACTION_IDS } from "./writes";
+import type {
+  PluginWriteDomainSummary,
+  PluginWriteResponse,
+} from "./writes/types";
 
 type TranslationValues = Record<string, string | number>;
 
@@ -21,12 +26,12 @@ type TranslateOptions = {
 export type PluginMetadataApi = {
   get: (
     domain: string | string[],
-    options?: MetadataCollectOptions
+    options?: MetadataCollectOptions,
   ) => Promise<MetadataResponse>;
   subscribe: (
     domain: string,
     listener: (response: MetadataResponse) => void,
-    options?: MetadataCollectOptions & { intervalMs?: number }
+    options?: MetadataCollectOptions & { intervalMs?: number },
   ) => Promise<MetadataSubscription>;
   domains: () => MetadataDomainSummary[];
 };
@@ -40,6 +45,14 @@ export type PluginStorageApi = {
   setJson: (key: string, value: unknown) => Promise<void>;
 };
 
+export type PluginWriteApi = {
+  run: (
+    actionId: string,
+    params?: Record<string, unknown>,
+  ) => Promise<PluginWriteResponse>;
+  domains: () => PluginWriteDomainSummary[];
+} & Record<string, unknown>;
+
 export type PluginRuntimeApi = {
   id: string;
   version: string;
@@ -48,6 +61,7 @@ export type PluginRuntimeApi = {
   locale: Locale;
   t: (key: string, options?: TranslateOptions) => string;
   metadata: PluginMetadataApi;
+  write: PluginWriteApi;
   storage: PluginStorageApi;
   assets: { resolve: (relativePath: string) => Promise<string | null> };
   ui: {
@@ -57,10 +71,7 @@ export type PluginRuntimeApi = {
   log: (...args: unknown[]) => void;
 };
 
-const interpolate = (
-  template: string,
-  values?: TranslationValues
-): string => {
+const interpolate = (template: string, values?: TranslationValues): string => {
   if (!values) {
     return template;
   }
@@ -68,6 +79,31 @@ const interpolate = (
     const value = values[key];
     return value === undefined ? match : String(value);
   });
+};
+
+const createWriteApi = (plugin: PluginView, locale: Locale): PluginWriteApi => {
+  const run = (
+    actionId: string,
+    params?: Record<string, unknown>,
+  ): Promise<PluginWriteResponse> =>
+    executeWrite({ plugin, locale, actionId, params: params ?? {} });
+  const api: Record<string, unknown> = {
+    run,
+    domains: () => describeWriteDomains(plugin, locale),
+  };
+  for (const actionId of WRITE_ACTION_IDS) {
+    const separator = actionId.indexOf(".");
+    const domain = actionId.slice(0, separator);
+    const action = actionId.slice(separator + 1);
+    if (!domain || !action) {
+      continue;
+    }
+    const domainApi = (api[domain] ?? {}) as Record<string, unknown>;
+    domainApi[action] = (params?: Record<string, unknown>) =>
+      run(actionId, params);
+    api[domain] = domainApi;
+  }
+  return api as PluginWriteApi;
 };
 
 export const createPluginApi = async (params: {
@@ -90,7 +126,7 @@ export const createPluginApi = async (params: {
       await window.snow.deletePluginValue(plugin.pluginId, key);
     },
     all: async () => Object.fromEntries(storageCache),
-    getJson: async <T,>(key: string, fallback: T): Promise<T> => {
+    getJson: async <T>(key: string, fallback: T): Promise<T> => {
       const raw = storageCache.get(key);
       if (!raw) {
         return fallback;
@@ -132,12 +168,13 @@ export const createPluginApi = async (params: {
           plugin,
           locale,
           Array.isArray(domain) ? domain : [domain],
-          options ?? {}
+          options ?? {},
         ),
       subscribe: (domain, listener, options) =>
         subscribeMetadata(plugin, locale, domain, listener, options ?? {}),
       domains: () => describeMetadataDomains(plugin),
     },
+    write: createWriteApi(plugin, locale),
     storage,
     assets: {
       resolve: (relativePath) =>

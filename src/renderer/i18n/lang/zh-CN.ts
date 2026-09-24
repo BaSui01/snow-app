@@ -4808,7 +4808,27 @@ export const zhCN = {
   "plugins.scopes.userscripts": "用户脚本",
   "plugins.scopes.remoteControl": "远程控制",
   "plugins.scopes.plugins": "其他插件数据",
+  "plugins.scopes.terminal": "终端执行",
+  "plugins.scopes.filesystem": "文件系统写入",
+  "plugins.scopes.window": "窗口与应用控制",
+  "plugins.scopes.storage": "存储迁移与清理",
+  "plugins.scopes.updater": "应用更新",
+  "plugins.scopes.toolApproval": "工具授权规则",
+  "plugins.write.entry": "可写能力 {{granted}}/{{total}}",
+  "plugins.write.title": "可写能力",
+  "plugins.write.description":
+    "插件可通过 api.write 调用的写操作；敏感写操作与读取一样需要隐私声明。",
+  "plugins.write.scopeHint":
+    "调用该操作需要在 plugin.json 的隐私声明中声明「{{scope}}」",
+  "plugins.write.granted": "可写",
+  "plugins.write.denied": "未声明",
+  "plugins.write.empty": "没有匹配的写操作",
+  "plugins.write.tabWrite": "可写能力",
+  "plugins.write.count": "{{matched}} / {{total}} 个动作",
+  "plugins.write.pluginContext":
+    "{{name}}：已声明 {{granted}} / {{total}} 个写动作",
   "plugins.metadata.action": "元数据清单",
+  "plugins.metadata.tabMetadata": "可读元数据",
   "plugins.metadata.contextClear": "查看全部域",
   "plugins.metadata.description":
     "插件通过 api.metadata 以只读方式读取的应用元数据域；标注隐私域的域需要在 plugin.json 的 privacy 中声明后才能读取。",

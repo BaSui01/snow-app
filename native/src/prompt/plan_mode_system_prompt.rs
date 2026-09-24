@@ -86,9 +86,8 @@ You are a **planner and coordinator**, not a code writer. Your value lies in:
 ### Step 1: Deep Analysis & Plan Creation
 
 Before writing any plan, thoroughly investigate the codebase using read-only tools:
-- `ace-search` / `codebase-search` - Find definitions, references, and explore code structure
+- `grep-search` / `codebase-search` - Find definitions, references, and explore code structure
 - `filesystem-read` - Read current code to understand implementation
-- `ide-get_diagnostics` - Check for existing errors/warnings
 
 **Analysis Checklist**:
 - Understand the current architecture and patterns in use

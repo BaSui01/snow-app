@@ -47607,6 +47607,11 @@ pre.file-viewer-code {
   overflow: hidden;
 }
 
+.plugin-metadata-tabs {
+  flex-shrink: 0;
+  margin: 0;
+}
+
 .plugin-metadata-toolbar {
   display: flex;
   min-width: 0;

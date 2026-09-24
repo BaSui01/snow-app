@@ -1,6 +1,6 @@
 # 6-Plugin Metadata Domains
 
-> Applies to: Snow App desktop plugins (`renderMode` is `esm` or `iframe`). This reference lists, domain by domain, the application metadata a plugin can read through `api.metadata`: domain ids, privacy declaration requirements, liveness, accepted parameters, and return shapes, plus a requirement-to-domain map. For the manifest and installation workflow see [24-Plugin development and installation](../2-guides/24-plugin-development-and-installation.md).
+> Applies to: Snow App desktop plugins (`renderMode` is `esm` or `iframe`). This reference lists, domain by domain, the application metadata a plugin can read through `api.metadata`: domain ids, privacy declaration requirements, liveness, accepted parameters, and return shapes, plus a requirement-to-domain map. Writing application data uses the separate `api.write` (201 write actions, each with its own sensitive scope): call shapes, failure handling, and the action cheat sheet live in the writable-capabilities section of [24-Plugin development and installation](../2-guides/24-plugin-development-and-installation.md), which also covers the manifest and installation workflow.
 
 ## 1. Scope and sources
 
@@ -12,7 +12,7 @@ Metadata is collected in the renderer process and has exactly three sources:
 | Preload API      | `window.snow.*` queries that read the app database and the Rust layer, shared with the settings panels                                                                                                     |
 | Call context     | The current plugin record itself (the `plugins` domain) and the caller-supplied `params`                                                                                                                   |
 
-Metadata is a **read-only** capability: a plugin cannot write application data through `api.metadata`. Use `api.storage` for plugin-private data, or let the user change settings in the UI.
+The metadata domains themselves are a **read-only** capability: `api.metadata` cannot write application data. Writing application data uses the separate `api.write`, which shares the exact same `privacy` rule, so a write action with a non-null `scope` must be declared too (see chapter 7); plugin-private data still goes to `api.storage`.
 
 ```mermaid
 flowchart LR
@@ -52,7 +52,7 @@ const list = api.metadata.domains(); // [{ id, scope, granted, live, sensitiveFi
 
 `get(domain)` accepts a single domain id or an array; an empty array requests all 34 domains (undeclared sensitive domains are still denied).
 
-The app ships the same catalog for users: **Plugins** at the bottom of the sidebar, then **Metadata catalog** in the toolbar, opens the "App metadata available to plugins" modal. It groups all 34 domains with a one-line summary, the privacy requirement, live-versus-polled behavior and accepted parameters, and offers keyword search; the per-plugin "Metadata n/34" link marks that plugin's declared (readable) and undeclared (denied) domains.
+The app ships the same catalog for users: **Plugins** at the bottom of the sidebar, then **Metadata catalog** in the toolbar, opens the "App metadata available to plugins" modal. It groups all 34 domains with a one-line summary, the privacy requirement, live-versus-polled behavior and accepted parameters, and offers keyword search; the per-plugin "Metadata n/34" link marks that plugin's declared (readable) and undeclared (denied) domains. The modal offers "Reading" and "Writable" tabs; the Writable tab uses the same catalog source (201 write actions with their required `scope` and declaration state), and the "Write n/201" badge on a plugin row counts the write actions that plugin has declared - see [24-Plugin development and installation](../2-guides/24-plugin-development-and-installation.md).
 
 ### 1.2 Parameters (`params`)
 
@@ -630,15 +630,18 @@ api.metadata.subscribe("git", ({ domains }) => {
 - Even with a declaration, minimize usage: read high-sensitivity values such as `remoteControl.token` or the `ssh` credential references only when required, and never persist them into plugin storage or logs.
 - `browser.passwords` never contains plaintext passwords; rely on `origin` and `username` when a panel needs account context.
 - The domain set is stable, but **fields inside a domain may be added over releases**: read only what you need and stay tolerant of unknown fields.
-- Metadata is read-only; configuration changes stay in the UI or in the AI's `config` tool scopes.
-- In `iframe` mode only `metadata`, `storage`, and `assets` are available; domain semantics match ESM, but `window.snow` is not reachable.
+- Metadata reads stay **read-only**: `api.metadata` cannot write application data. Writing application data must go through the separate `api.write`, declaring each write action's `scope` in the `plugin.json` `privacy` list under exactly the same rule as reads (except for public actions, whose `scope` is `null`).
+- A sensitive write action without its declared `scope` is denied: `api.write` returns `ok: false` with `denied.reason = "write-declaration-missing"` (including the required `scope`); the "Write" badge in the Plugins modal and the Writable tab of the metadata catalog modal show the declaration state per action so users can audit it.
+- `iframe` mode can use the capabilities `metadata`, `write`, `storage`, and `assets` with the same domain semantics as ESM, but writes are limited to `api.write.run` / `api.write.domains`, and `window.snow` is not reachable.
 
 ## Source anchors
 
 - `src/renderer/plugins/metadata/domains.ts::METADATA_DOMAINS`: definitions, parameter resolution, and collectors for all 34 domains
 - `src/renderer/plugins/metadata/index.ts::collectMetadata`, `::subscribeMetadata`, `::describeMetadataDomains`: privacy checks, field redaction, subscribe/poll plumbing
 - `src/renderer/plugins/metadata/catalog.ts::METADATA_DOMAIN_CATALOG`: grouping, accepted parameters and quick-reference summaries for the 34 domains (data source of the in-app catalog)
-- `src/renderer/components/sidebar/PluginMetadataModal.tsx`: the user-facing "App metadata available to plugins" modal
+- `src/renderer/plugins/writes/index.ts::executeWrite`, `::describeWriteDomains`: privacy-declaration checks for write actions and the action list returned by `api.write.domains()` (data source of the write badge and modal section)
+- `src/renderer/plugins/writes/domains/`: 201 write action definitions in `content.ts`, `system.ts`, `config.ts`, and `admin.ts`
+- `src/renderer/components/sidebar/PluginMetadataCatalog.tsx`: the user-facing "App metadata available to plugins" modal (including the writable-capabilities section)
 - `src/renderer/plugins/runtimeSnapshot.ts::RuntimeSnapshot`: live data source behind the `runtime` and `panels` domains
 - `src/renderer/plugins/pluginApi.ts`: plugin-facing `api.metadata.get / subscribe / domains` wrappers
 - `src/renderer/plugins/pluginIframeBridge.js`: capability allow-list of the iframe runtime

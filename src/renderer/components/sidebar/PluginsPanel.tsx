@@ -19,6 +19,7 @@ import {
 } from "../../plugins/metadata";
 import type { PluginView, SensitiveScope } from "../../plugins/types";
 import { pluginStore, usePluginStore } from "../../plugins/pluginStore";
+import { describeWriteDomains } from "../../plugins/writes";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { PluginIcon } from "../common/PluginIcon";
 import { useChatConversationContext } from "../mainContent/chatMessages";
@@ -345,6 +346,17 @@ export const PluginsPanel = ({
                 const readableDomains = metadata.filter(
                   (domain) => domain.granted,
                 ).length;
+                const writeDomains = describeWriteDomains(plugin, locale);
+                const writableActions = writeDomains.reduce(
+                  (total, domain) =>
+                    total +
+                    domain.actions.filter((action) => action.granted).length,
+                  0,
+                );
+                const totalWriteActions = writeDomains.reduce(
+                  (total, domain) => total + domain.actions.length,
+                  0,
+                );
                 return (
                   <div className="plugins-item" key={plugin.pluginId}>
                     <div className="plugins-item-head">
@@ -447,6 +459,23 @@ export const PluginsPanel = ({
                             total: metadata.length,
                           },
                           defaultValue: "Metadata {{granted}}/{{total}}",
+                        })}
+                      </span>
+                    </button>
+
+                    <button
+                      className="plugins-metadata-link"
+                      type="button"
+                      onClick={() => openMetadata(plugin)}
+                    >
+                      <ShieldAlert size={12} strokeWidth={1.8} />
+                      <span>
+                        {t("plugins.write.entry", {
+                          values: {
+                            granted: writableActions,
+                            total: totalWriteActions,
+                          },
+                          defaultValue: "Write {{granted}}/{{total}}",
                         })}
                       </span>
                     </button>

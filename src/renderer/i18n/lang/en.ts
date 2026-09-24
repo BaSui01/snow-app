@@ -5092,7 +5092,27 @@ export const en = {
   "plugins.scopes.userscripts": "Userscripts",
   "plugins.scopes.remoteControl": "Remote control",
   "plugins.scopes.plugins": "Other plugins",
+  "plugins.scopes.terminal": "Terminal execution",
+  "plugins.scopes.filesystem": "File system writes",
+  "plugins.scopes.window": "Window and lifecycle control",
+  "plugins.scopes.storage": "Storage migration and cleanup",
+  "plugins.scopes.updater": "App updates",
+  "plugins.scopes.toolApproval": "Tool approval rules",
+  "plugins.write.entry": "Write {{granted}}/{{total}}",
+  "plugins.write.title": "Writable capabilities",
+  "plugins.write.description":
+    "Write actions a plugin can call through api.write; sensitive ones require the same privacy declaration as reads.",
+  "plugins.write.scopeHint":
+    "Calling this action requires declaring the \u201c{{scope}}\u201d privacy scope in plugin.json",
+  "plugins.write.granted": "Writable",
+  "plugins.write.denied": "Not declared",
+  "plugins.write.empty": "No matching write action",
+  "plugins.write.tabWrite": "Writable",
+  "plugins.write.count": "{{matched}} / {{total}} actions",
+  "plugins.write.pluginContext":
+    "{{name}}: {{granted}} / {{total}} write actions declared",
   "plugins.metadata.action": "Metadata catalog",
+  "plugins.metadata.tabMetadata": "Reading",
   "plugins.metadata.contextClear": "Show all domains",
   "plugins.metadata.description":
     "App metadata domains a plugin can read through api.metadata (read-only). A domain tagged with a privacy scope must be declared in plugin.json before it can be read.",

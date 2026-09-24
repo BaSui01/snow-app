@@ -67,7 +67,7 @@ const getToolIcon = (category: ToolCategory): LucideIcon =>
  *   "filesystem-replace_edit" -> "edit"
  *   "filesystem-create"      -> "create"
  *   "filesystem-copy"        -> "copy"
- *   "ace-search"                   -> "search"
+ *   "grep-search"                   -> "search"
  *   "terminal-execute"             -> "terminal"
  *   "websearch-search"             -> "web"
  *   "todo-manage"                  -> "generic"

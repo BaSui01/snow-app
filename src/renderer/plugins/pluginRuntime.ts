@@ -9,7 +9,7 @@ export type PluginModuleExports = {
   default?: unknown;
   mount?: (
     container: HTMLElement,
-    api: PluginRuntimeApi
+    api: PluginRuntimeApi,
   ) => void | (() => void) | { unmount?: () => void };
   render?: PluginModuleExports["mount"];
   unmount?: () => void;
@@ -36,14 +36,14 @@ export const loadLucideIcons = async (): Promise<Record<string, unknown>> => {
 };
 
 export const injectPluginStyles = async (
-  plugin: PluginView
+  plugin: PluginView,
 ): Promise<() => void> => {
   const elements: HTMLStyleElement[] = [];
   for (const relativePath of plugin.styles) {
     try {
       const css = await window.snow.readPluginFile(
         plugin.pluginId,
-        relativePath
+        relativePath,
       );
       const element = document.createElement("style");
       element.dataset.snowPlugin = plugin.pluginId;
@@ -53,7 +53,7 @@ export const injectPluginStyles = async (
     } catch (error) {
       console.warn(
         `Failed to load plugin style '${relativePath}' (${plugin.pluginId})`,
-        error
+        error,
       );
     }
   }
@@ -92,7 +92,9 @@ export const loadPluginModule = async (params: {
   const blob = new Blob([source], { type: "text/javascript" });
   const url = URL.createObjectURL(blob);
   try {
-    const module = (await import(/* @vite-ignore */ url)) as PluginModuleExports;
+    const module = (await import(
+      /* @vite-ignore */ url
+    )) as PluginModuleExports;
     return module;
   } finally {
     URL.revokeObjectURL(url);
@@ -100,7 +102,7 @@ export const loadPluginModule = async (params: {
 };
 
 const isMountFunction = (
-  value: unknown
+  value: unknown,
 ): value is NonNullable<PluginModuleExports["mount"]> =>
   typeof value === "function";
 
@@ -113,7 +115,7 @@ export type MountedPanel = {
 export const mountPluginDom = (
   module: PluginModuleExports,
   container: HTMLElement,
-  api: PluginRuntimeApi
+  api: PluginRuntimeApi,
 ): MountedPanel | null => {
   const defaultExport = module.default;
   const mount = isMountFunction(module.mount)
@@ -154,7 +156,7 @@ export const mountPluginDom = (
 
 /** JSX/TSX 组件形式的面板导出（default 为函数）。 */
 export const resolvePluginComponent = (
-  module: PluginModuleExports
+  module: PluginModuleExports,
 ): ((props: Record<string, unknown>) => unknown) | null =>
   typeof module.default === "function"
     ? (module.default as (props: Record<string, unknown>) => unknown)
@@ -203,7 +205,7 @@ type IframeRequest = {
 
 const handleMetadataGet = (
   api: PluginRuntimeApi,
-  payload: Record<string, unknown> | undefined
+  payload: Record<string, unknown> | undefined,
 ): Promise<MetadataResponse> => {
   const raw = payload?.domain;
   const domain = Array.isArray(raw)
@@ -220,14 +222,14 @@ const handleMetadataGet = (
 const createIframeSubscriptionHandler = (
   iframe: HTMLIFrameElement,
   api: PluginRuntimeApi,
-  registry: Map<string, { unsubscribe: () => void }>
+  registry: Map<string, { unsubscribe: () => void }>,
 ) => {
   const post = (message: Record<string, unknown>): void => {
     iframe.contentWindow?.postMessage(message, "*");
   };
 
   return async (
-    payload: Record<string, unknown> | undefined
+    payload: Record<string, unknown> | undefined,
   ): Promise<{ subscriptionId: string }> => {
     const domain = typeof payload?.domain === "string" ? payload.domain : "";
     const options = (payload?.options ?? {}) as Parameters<
@@ -246,7 +248,7 @@ const createIframeSubscriptionHandler = (
           payload: response,
         });
       },
-      options ?? {}
+      options ?? {},
     );
     registry.set(subscriptionId, subscription);
     return { subscriptionId };
@@ -266,22 +268,22 @@ export const createIframePanel = async (params: {
   const stylesCss = (
     await Promise.all(
       plugin.styles.map((style) =>
-        window.snow.readPluginFile(plugin.pluginId, style).catch(() => "")
-      )
+        window.snow.readPluginFile(plugin.pluginId, style).catch(() => ""),
+      ),
     )
   ).join("\n");
 
   const pluginSource = await window.snow.readPluginFile(plugin.pluginId, entry);
   const pluginUrl = URL.createObjectURL(
-    new Blob([pluginSource], { type: "text/javascript" })
+    new Blob([pluginSource], { type: "text/javascript" }),
   );
 
   const bridgeCode = bridgeSource.replace(
     "__SNOW_PLUGIN_CONFIG__",
-    resolveConfigForIframe({ plugin, locale, messages })
+    resolveConfigForIframe({ plugin, locale, messages }),
   );
   const bridgeUrl = URL.createObjectURL(
-    new Blob([bridgeCode], { type: "text/javascript" })
+    new Blob([bridgeCode], { type: "text/javascript" }),
   );
 
   const documentUrl = URL.createObjectURL(
@@ -294,8 +296,8 @@ export const createIframePanel = async (params: {
           title: plugin.name[locale] ?? plugin.name.default ?? plugin.pluginId,
         }),
       ],
-      { type: "text/html" }
-    )
+      { type: "text/html" },
+    ),
   );
 
   const subscriptions = new Map<string, { unsubscribe: () => void }>();
@@ -342,6 +344,19 @@ export const createIframePanel = async (params: {
             result = await api.storage.get(key);
             break;
           }
+          case "write.run": {
+            const actionId =
+              typeof payload?.action === "string" ? payload.action : "";
+            const writeParams =
+              payload?.params && typeof payload.params === "object"
+                ? (payload.params as Record<string, unknown>)
+                : {};
+            result = await api.write.run(actionId, writeParams);
+            break;
+          }
+          case "write.domains":
+            result = api.write.domains();
+            break;
           case "storage.set": {
             const key = typeof payload?.key === "string" ? payload.key : "";
             const value =

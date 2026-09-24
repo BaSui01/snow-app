@@ -16,17 +16,25 @@ use super::common::{
 /// resolved by the Electron main process over SSH (mirroring RoleEditorPanel's
 /// access path). `None` for local workspaces, where the project file is read
 /// directly.
+/// `analysis_tools_lines` is the dynamically built investigation-phase tool
+/// list - only tools actually callable in the current project (same policy as
+/// the Plan Mode list; see `prompt::tool_hints`). It replaces the
+/// `ANALYSIS_TOOLS_MARKER` placeholder in the template.
 pub fn build_goal_mode_system_prompt(
     working_directory: &str,
     shell_type: &str,
     token_budget: i64,
     remote_role_content: Option<&str>,
     remote_include_global_rules: Option<bool>,
+    analysis_tools_lines: &str,
 ) -> String {
     let time_info = get_current_time_info();
     let working_dir_section = get_working_directory_section(working_directory);
     let platform_section = get_platform_section(shell_type);
     let budget_section = get_budget_section(token_budget);
+    // 调查阶段工具清单动态注入（2026-09-24）：只含当前项目实际可调用的工具。
+    let template = GOAL_MODE_SYSTEM_PROMPT_TEMPLATE
+        .replace(ANALYSIS_TOOLS_MARKER, analysis_tools_lines.trim());
 
     match read_active_role(working_directory, remote_role_content, remote_include_global_rules) {
         // Override mode: role content replaces the entire template.
@@ -36,7 +44,7 @@ pub fn build_goal_mode_system_prompt(
 
         // Normal mode: role content replaces the default role text.
         Some((role_content, false)) => {
-            let prompt = apply_role_override(GOAL_MODE_SYSTEM_PROMPT_TEMPLATE, &role_content);
+            let prompt = apply_role_override(&template, &role_content);
             format!(
                 "{prompt}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}{budget_section}"
             )
@@ -44,7 +52,7 @@ pub fn build_goal_mode_system_prompt(
 
         // No ROLE.md found — use the goal mode template as-is.
         None => format!(
-            "{GOAL_MODE_SYSTEM_PROMPT_TEMPLATE}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}{budget_section}"
+            "{template}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}{budget_section}"
         ),
     }
 }
@@ -69,6 +77,10 @@ fn get_budget_section(token_budget: i64) -> String {
     )
 }
 
+/// Placeholder inside `GOAL_MODE_SYSTEM_PROMPT_TEMPLATE` replaced with the
+/// dynamically built investigation tools list (only actually callable tools).
+const ANALYSIS_TOOLS_MARKER: &str = "__ANALYSIS_TOOLS_LINES__";
+
 const GOAL_MODE_SYSTEM_PROMPT_TEMPLATE: &str = r#"You are Snow AI - Goal Mode, a persistent objective-driven agent that works autonomously toward a defined outcome across multiple turns until verifiable completion.
 
 ## Core Identity
@@ -84,8 +96,8 @@ You are a **goal-driven autonomous worker**. Your value lies in:
 ## Operating Loop: Investigate -> Plan -> Act -> Verify -> Iterate
 
 ### Phase 1: Investigate & Understand
-Before taking action, thoroughly understand the current state:
-- Read relevant code, configs, and documentation
+Before taking action, thoroughly understand the current state using read-only tools:
+__ANALYSIS_TOOLS_LINES__
 - Identify the gap between current state and desired outcome
 - Map dependencies, constraints, and risk areas
 

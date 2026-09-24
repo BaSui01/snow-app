@@ -1546,6 +1546,49 @@ async fn lsp_domain_scope_allowed(project_id: Option<&str>) -> napi::Result<bool
     Ok(scope.is_server_enabled(&builtin_scope_server_id("lsp")))
 }
 
+/// 生成 Plan 模式「语义代码工具」清单行（2026-09-24 动态注入）。
+///
+/// 与 collect 阶段的工具暴露**同源判定**（域 scope 允许 + 服务器
+/// enabled/已安装 + 项目技术栈匹配 + 能力并集）——LSP 工具实际可调用时
+/// 返回清单行（只列实际暴露的核心分析工具），否则返回 None（调用方整行
+/// 不注入，绝不用静态文本诱导调用不可见工具）。
+pub(crate) async fn analysis_tools_line(
+    project_id: Option<&str>,
+    project_root: Option<&std::path::Path>,
+) -> Option<String> {
+    // SSH 远程：与工具暴露一致（lsp 仅本地项目可用）。
+    if let Some(root) = project_root {
+        if is_ssh_path(&root.to_string_lossy()) {
+            return None;
+        }
+    }
+    // 域 scope：用户未在项目 scope 启用 builtin:lsp 时不注入。
+    match lsp_domain_scope_allowed(project_id).await {
+        Ok(true) => {}
+        _ => return None,
+    }
+    // 实际暴露工具（enabled + 已安装 + 技术栈匹配 + 能力并集）。
+    let exposure = tool_exposure(project_id).await.ok()?;
+    let present: Vec<String> = [
+        "lsp-workspace-symbols",
+        "lsp-goto",
+        "lsp-references",
+        "lsp-hover",
+        "lsp-diagnostics",
+    ]
+    .iter()
+    .filter(|tool| exposure.tools.iter().any(|name| name == *tool))
+    .map(|tool| format!("`{tool}`"))
+    .collect();
+    if present.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "- {} - Semantic code tools (language servers enabled for this project)",
+        present.join(" / ")
+    ))
+}
+
 /// 写应用日志（app_logs 表，复用项目现有日志体系——与系统日志面板同源，
 /// config 工具 logs scope / listAppLogs 均可查；module="lsp" 便于过滤）。
 /// 通过 spawn_blocking 执行 DB 写，不阻塞 tokio 工作线程；日志写入失败

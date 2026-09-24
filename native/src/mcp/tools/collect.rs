@@ -220,7 +220,7 @@ pub async fn collect_all_mcp_tools(
 /// Check whether the codebase search tool should be available for the
 /// given project: the project must have codebase enabled AND have at
 /// least one embedded chunk in its vector table.
-async fn is_codebase_available(project_id: Option<&str>) -> Result<bool> {
+pub(crate) async fn is_codebase_available(project_id: Option<&str>) -> Result<bool> {
     let Some(project_id) = project_id.map(str::trim).filter(|s| !s.is_empty()) else {
         return Ok(false);
     };

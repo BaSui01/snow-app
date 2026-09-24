@@ -20,15 +20,24 @@ use super::common::{
 /// `remote_role_content` carries the project ROLE.md of an `ssh://` workspace,
 /// resolved by the Electron main process over SSH. `None` for local
 /// workspaces, where the project file is read directly.
+/// `analysis_tools_lines` is the dynamically built investigation-phase tool
+/// list - only tools actually callable in the current project (see
+/// `prompt::tool_hints`). It replaces the `ANALYSIS_TOOLS_MARKER` placeholder
+/// in the template (used in Step 1 when the requirement depends on the
+/// existing codebase).
 pub fn build_workflow_mode_system_prompt(
     working_directory: &str,
     shell_type: &str,
     remote_role_content: Option<&str>,
     remote_include_global_rules: Option<bool>,
+    analysis_tools_lines: &str,
 ) -> String {
     let time_info = get_current_time_info();
     let working_dir_section = get_working_directory_section(working_directory);
     let platform_section = get_platform_section(shell_type);
+    // 调查阶段工具清单动态注入（2026-09-24）：只含当前项目实际可调用的工具。
+    let template = WORKFLOW_MODE_SYSTEM_PROMPT_TEMPLATE
+        .replace(ANALYSIS_TOOLS_MARKER, analysis_tools_lines.trim());
 
     match read_active_role(working_directory, remote_role_content, remote_include_global_rules) {
         // Override mode: role content replaces the entire template.
@@ -38,7 +47,7 @@ pub fn build_workflow_mode_system_prompt(
 
         // Normal mode: role content replaces the default role text.
         Some((role_content, false)) => {
-            let prompt = apply_role_override(WORKFLOW_MODE_SYSTEM_PROMPT_TEMPLATE, &role_content);
+            let prompt = apply_role_override(&template, &role_content);
             format!(
                 "{prompt}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}"
             )
@@ -46,10 +55,14 @@ pub fn build_workflow_mode_system_prompt(
 
         // No ROLE.md found — use the workflow mode template as-is.
         None => format!(
-            "{WORKFLOW_MODE_SYSTEM_PROMPT_TEMPLATE}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}"
+            "{template}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}"
         ),
     }
 }
+
+/// Placeholder inside `WORKFLOW_MODE_SYSTEM_PROMPT_TEMPLATE` replaced with the
+/// dynamically built investigation tools list (only actually callable tools).
+const ANALYSIS_TOOLS_MARKER: &str = "__ANALYSIS_TOOLS_LINES__";
 
 const WORKFLOW_MODE_SYSTEM_PROMPT_TEMPLATE: &str = r#"You are Snow AI - WorkFlow Mode, a workflow orchestrator that decomposes complex requirements into an executable graph of work nodes.
 
@@ -66,7 +79,9 @@ You are a **workflow designer and orchestrator**, not the one who performs the w
 
 ### Step 1: Analyze and Generate the Workflow Graph
 
-Analyze the user's requirement and decompose it into 2-10 work nodes. Then call the `workflow-generate` tool ONCE with the complete graph.
+Analyze the user's requirement and decompose it into 2-10 work nodes. When the requirement depends on the existing codebase, investigate it first with read-only tools (every node prompt must reference exact files/paths):
+__ANALYSIS_TOOLS_LINES__
+Then call the `workflow-generate` tool ONCE with the complete graph.
 
 Each node object must contain:
 - `id`: unique node id (e.g. "node-1")

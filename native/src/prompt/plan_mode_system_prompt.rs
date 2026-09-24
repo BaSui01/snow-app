@@ -21,17 +21,29 @@ use super::common::{
 /// configured sub-agents (built-in + global). When non-empty it is appended as
 /// a Sub-Agents chapter so the coordinator picks a real `agentId` instead of
 /// defaulting to `agent_general`.
+///
+/// `analysis_tools_lines` is the dynamically built analysis-phase tool list —
+/// only tools actually callable in the current project (LSP requires domain
+/// scope + usable servers + a matching language stack; codebase requires an
+/// index); see `prompt::tool_hints`. It replaces the
+/// `__ANALYSIS_TOOLS_LINES__` marker in the template (override-mode roles
+/// replace the whole template, so the marker never appears there).
 pub fn build_plan_mode_system_prompt(
     working_directory: &str,
     shell_type: &str,
     remote_role_content: Option<&str>,
     remote_include_global_rules: Option<bool>,
     sub_agents_section: &str,
+    analysis_tools_lines: &str,
 ) -> String {
     let time_info = get_current_time_info();
     let working_dir_section = get_working_directory_section(working_directory);
     let platform_section = get_platform_section(shell_type);
     let sub_agents_block = build_sub_agents_block(sub_agents_section);
+    // 分析工具清单动态注入（2026-09-24）：只含当前项目实际可调用的工具，
+    // 不可用工具的行不存在（注入条件 = 工具可见性）。
+    let template = PLAN_MODE_SYSTEM_PROMPT_TEMPLATE
+        .replace(ANALYSIS_TOOLS_MARKER, analysis_tools_lines.trim());
 
     let prompt =
         match read_active_role(working_directory, remote_role_content, remote_include_global_rules) {
@@ -42,7 +54,7 @@ pub fn build_plan_mode_system_prompt(
 
             // Normal mode: role content replaces the default role text.
             Some((role_content, false)) => {
-                let prompt = apply_role_override(PLAN_MODE_SYSTEM_PROMPT_TEMPLATE, &role_content);
+                let prompt = apply_role_override(&template, &role_content);
                 format!(
                     "{prompt}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}"
                 )
@@ -50,7 +62,7 @@ pub fn build_plan_mode_system_prompt(
 
             // No ROLE.md found — use the plan mode template as-is.
             None => format!(
-                "{PLAN_MODE_SYSTEM_PROMPT_TEMPLATE}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}"
+                "{template}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}"
             ),
         };
     format!("{prompt}{sub_agents_block}")
@@ -70,6 +82,10 @@ fn build_sub_agents_block(sub_agents_section: &str) -> String {
     }
 }
 
+/// Placeholder inside `PLAN_MODE_SYSTEM_PROMPT_TEMPLATE` replaced with the
+/// dynamically built analysis tools list (only actually callable tools).
+const ANALYSIS_TOOLS_MARKER: &str = "__ANALYSIS_TOOLS_LINES__";
+
 const PLAN_MODE_SYSTEM_PROMPT_TEMPLATE: &str = r#"You are Snow AI - Plan Mode, a task planning and coordination agent that transforms complex requirements into structured, executable plans.
 
 ## Core Identity
@@ -86,8 +102,7 @@ You are a **planner and coordinator**, not a code writer. Your value lies in:
 ### Step 1: Deep Analysis & Plan Creation
 
 Before writing any plan, thoroughly investigate the codebase using read-only tools:
-- `grep-search` / `codebase-search` - Find definitions, references, and explore code structure
-- `filesystem-read` - Read current code to understand implementation
+__ANALYSIS_TOOLS_LINES__
 
 **Analysis Checklist**:
 - Understand the current architecture and patterns in use

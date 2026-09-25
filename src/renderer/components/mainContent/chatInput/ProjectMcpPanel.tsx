@@ -16,6 +16,7 @@ import type {
 import { useI18n } from "../../../i18n";
 import { formatMcpError } from "../../sidebar/mcpSettings/mcpErrorMessages";
 import { builtinServerDescriptionKey } from "../../sidebar/mcpSettings/builtinServerDescriptions";
+import { builtinServerIcon } from "../../sidebar/mcpSettings/builtinServerIcons";
 import { Modal } from "../../common/Modal";
 import { LITE_MODE_CHANGED_EVENT } from "../chatMessages/hooks/useToolAuthorization";
 
@@ -393,6 +394,7 @@ export const ProjectMcpPanel = ({
             toolError ?? (server.error as string | null | undefined);
           const canRetry = server.source !== "system";
           const descriptionKey = builtinServerDescriptionKey(server.id);
+          const ServerIcon = builtinServerIcon(server.id) ?? Blocks;
           const serverDescription = descriptionKey
             ? t(descriptionKey)
             : undefined;
@@ -433,7 +435,7 @@ export const ProjectMcpPanel = ({
                   ) : (
                     <ChevronRight size={16} />
                   )}
-                  <Blocks size={16} />
+                  <ServerIcon size={16} />
                   <span
                     aria-hidden="true"
                     className={`project-mcp-status-dot${

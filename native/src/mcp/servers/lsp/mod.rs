@@ -25,7 +25,7 @@ pub(crate) mod probe; // crate 内共享（storage 种子/迁移/校正也要探
 mod session;
 mod types;
 
-pub use config::tool_exposure;
+pub use config::{lsp_covers_all_project_languages, tool_exposure};
 pub use probe::{probe_commands, ProbeResult};
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -1524,8 +1524,9 @@ async fn lsp_tool_scope_allowed(lsp_tool: &str, project_id: Option<&str>) -> nap
 /// 服务器：无项目 scope（未在任何项目启用过 builtin:lsp）同样返回 false。
 async fn lsp_domain_scope_allowed(project_id: Option<&str>) -> napi::Result<bool> {
     use crate::mcp::tools::{builtin_scope_server_id, load_global_scope, load_project_scope};
-    // 核心代表工具：任一未被全局禁用即认为域可用（collect 阶段按工具粒度
-    // 过滤，工具级个别禁用不影响域级注入）。
+    // 核心代表工具：任一未被全局禁用即认为域可用——这是「注不注入」的域级
+    // 闸门；具体工具清单再逐项过 collect 的 tool_name_is_enabled（2026-09-25
+    // 一致性修复：注入的工具必须与实际可见的工具一致，被禁用的不出现）。
     const CORE_LSP_TOOLS: [&str; 4] = [
         "lsp-goto",
         "lsp-references",
@@ -1569,6 +1570,13 @@ pub(crate) async fn analysis_tools_line(
     }
     // 实际暴露工具（enabled + 已安装 + 技术栈匹配 + 能力并集）。
     let exposure = tool_exposure(project_id).await.ok()?;
+    // 工具级开关（与 collect 阶段 tool_is_enabled 同源，2026-09-25 一致性修复）：
+    // 被禁用的工具不进入清单。
+    let global_scope = crate::mcp::tools::load_global_scope().await.ok().flatten();
+    let project_scope = crate::mcp::tools::load_project_scope(project_id)
+        .await
+        .ok()
+        .flatten();
     let present: Vec<String> = [
         "lsp-workspace-symbols",
         "lsp-goto",
@@ -1577,14 +1585,22 @@ pub(crate) async fn analysis_tools_line(
         "lsp-diagnostics",
     ]
     .iter()
-    .filter(|tool| exposure.tools.iter().any(|name| name == *tool))
+    .filter(|tool| {
+        exposure.tools.iter().any(|name| name == *tool)
+            && crate::mcp::tools::tool_name_is_enabled(
+                tool,
+                "lsp",
+                global_scope.as_ref(),
+                project_scope.as_ref(),
+            )
+    })
     .map(|tool| format!("`{tool}`"))
     .collect();
     if present.is_empty() {
         return None;
     }
     Some(format!(
-        "- {} - Semantic code tools (language servers enabled for this project)",
+        "- Semantic code tools — use these FIRST for symbols / usages / types / impact (language servers are enabled and stack-matched for this project): {}",
         present.join(" / ")
     ))
 }
@@ -1746,20 +1762,31 @@ pub(crate) async fn build_system_prompt_section(
         ));
     }
     lines.push(String::new());
+    // 措辞与下方 Routing rules 的优先级总纲统一（2026-09-25）：两者强度一致
+    // ——「首选/优先」而非「强制」（工具可能被工具级禁用，且字面文本等场景
+    // 本就不该走 LSP）。
     lines.push(
-        "The `lsp-*` tools are the MANDATORY semantic-analysis path for these languages (cross-file accurate; import/generic/trait aware; far more reliable than grep or tree-sitter):"
+        "The `lsp-*` tools are the semantic-analysis path for these languages — cross-file accurate, import/generic/trait aware, and far more reliable than grep or tree-sitter:"
             .to_string(),
     );
 
-    // 合并所有可用服务器支持的工具能力（§8.7 同源判定），按功能分组渲染。
-    let mut merged: Vec<&'static str> = Vec::new();
-    for config in &available {
-        for tool in capabilities::supported_tools_for_lang(&config.lang) {
-            if !merged.contains(&tool) {
-                merged.push(tool);
-            }
+    // 能力判定改用 collect 阶段的 tool_exposure（§8.0/§8.7 单一事实来源）：
+    // 它已包含配置级过滤、项目技术栈匹配与 type-hierarchy 项目感知精修
+    // （§8.7.2）——此前此处用 available 自建能力列表，会与工具实际暴露产生
+    // 偏差（2026-09-25 一致性修复）。查询失败静默降级为不注入章节。
+    let exposure = match config::tool_exposure(project_id).await {
+        Ok(exposure) => exposure,
+        Err(error) => {
+            lsp_app_log(
+                "warn",
+                "build_system_prompt_section",
+                "LSP tool exposure query failed, skipping Language Servers section",
+                Some(&error.to_string()),
+            )
+            .await;
+            return String::new();
         }
-    }
+    };
     let groups: [(&str, &[&str]); 6] = [
         (
             "Errors & diagnostics",
@@ -1771,6 +1798,36 @@ pub(crate) async fn build_system_prompt_section(
         ("Call graph", &["call-hierarchy", "type-hierarchy"]),
         ("Refactoring", &["rename", "code-action", "execute-command"]),
     ];
+    // 工具级开关（与 collect 阶段 tool_is_enabled 同源，2026-09-25 一致性修复）：
+    // 用户单独禁用的 lsp-* 不进入清单——注入的工具必须与实际可见的工具一致。
+    let global_scope = crate::mcp::tools::load_global_scope().await.ok().flatten();
+    let project_scope = crate::mcp::tools::load_project_scope(project_id)
+        .await
+        .ok()
+        .flatten();
+    // 能力并集（短名）：只保留 groups 会渲染、且 tool_exposure 实际暴露、
+    // 且工具级开关允许的项——type-definition / implementation 无独立 schema
+    // （已合并进 goto{kind}），本就不在任何 group 中；type-hierarchy 的项目
+    // 感知精修随 exposure 一并生效。
+    let merged: Vec<&'static str> = groups
+        .iter()
+        .flat_map(|(_, tools)| tools.iter().copied())
+        .filter(|tool| {
+            let full = format!("lsp-{tool}");
+            exposure.tools.iter().any(|name| name == &full)
+                && crate::mcp::tools::tool_name_is_enabled(
+                    &full,
+                    "lsp",
+                    global_scope.as_ref(),
+                    project_scope.as_ref(),
+                )
+        })
+        .collect();
+    // 全部 lsp-* 均被工具级禁用：此时只剩服务器清单与规则、没有任何可调用
+    // 工具，注入会诱导模型调用不存在的工具——整段不注入。
+    if merged.is_empty() {
+        return String::new();
+    }
     for (label, tools) in groups {
         let present: Vec<&str> = tools
             .iter()
@@ -1795,6 +1852,14 @@ pub(crate) async fn build_system_prompt_section(
     let has_workspace_symbols = merged.contains(&"workspace-symbols");
     lines.push(String::new());
     lines.push("Routing rules (MUST follow):".to_string());
+    // 优先级总纲（2026-09-25）：语义问题一律先走 lsp-*；通用只读工具（grep、
+    // 直接读文件）只承接 LSP 覆盖不到的「非语义」场景——字面文本与原始文件
+    // 内容。泛化 MUST 规则实测无法稳定改变模型的 grep 路径依赖（见下方注释），
+    // 因此这里把「先谁后谁」写成单行硬绑定，且不点名可能未暴露的工具，避免
+    // 诱导调用不可见工具（注入条件 = 工具可见性）。
+    lines.push(
+        "- **Prefer `lsp-*` over grep / file reading for every code-semantics question** (symbols, usages, types, impact, structure) — cross-file accurate, import/generic/trait aware. Generic read-only tools are the fallback for what LSP cannot answer: literal text (log messages, config keys, comments, string constants) and raw file content.".to_string(),
+    );
     let mut routing = String::from(
         "- Locating a symbol's definition → `lsp-goto` (kind=definition); all usages of a symbol / impact before a rename → `lsp-references`; a symbol's type or signature → `lsp-hover`",
     );

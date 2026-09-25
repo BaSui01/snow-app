@@ -26,9 +26,9 @@ pub(crate) async fn build_analysis_tools_lines(
 
     // ① LSP 语义工具行：三重条件全部满足（项目启用 builtin:lsp + 服务器可用
     //    且已安装 + 项目内存在该语言的技术栈标志）才出现。
-    if let Some(line) =
-        crate::mcp::servers::lsp::analysis_tools_line(project_id, project_root).await
-    {
+    let lsp_line = crate::mcp::servers::lsp::analysis_tools_line(project_id, project_root).await;
+    let lsp_available = lsp_line.is_some();
+    if let Some(line) = lsp_line {
         lines.push(line);
     }
 
@@ -37,14 +37,19 @@ pub(crate) async fn build_analysis_tools_lines(
         .await
         .unwrap_or(false)
     {
-        lines.push("- `codebase-search` - Semantic search over the project index".to_string());
+        lines.push(
+            "- `codebase-search` - Concept-level semantic search over the project index (\"where is X implemented\" style; not symbol-accurate)".to_string(),
+        );
     }
 
-    // ③ 恒定只读底行。
-    lines.push(
-        "- `grep-search` - Search file contents by pattern (regex or literal), with file glob filtering"
-            .to_string(),
-    );
+    // ③ 恒定只读底行：LSP 可用时明确「回落边界」——语义问题先走上面的 lsp-*，
+    //    grep 只承接字面文本（2026-09-25 优先级强化，与 Language Servers 章节
+    //    的 Routing rules 同一措辞方向）；LSP 不可用时保持通用描述。
+    lines.push(if lsp_available {
+        "- `grep-search` - Literal strings/patterns ONLY (log text, config keys, comments, string constants); it cannot tell a real reference from a same-named symbol".to_string()
+    } else {
+        "- `grep-search` - Search file contents by pattern (regex or literal), with file glob filtering".to_string()
+    });
     lines.push("- `filesystem-read` - Read current code to understand implementation".to_string());
 
     lines

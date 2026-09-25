@@ -293,7 +293,12 @@ export function ProjectMemoryPanel({
   // 范围变化（切换项目/筛选/搜索）才用整块 loading 占位；
   // 同一范围下的刷新（保存、删除、批量删除后重载）保留现有列表——
   // 列表被占位替换会让容器高度骤降，滚动位置被夹回顶部。
-  const [loadedScopeKey, setLoadedScopeKey] = useState("");
+  // null = 还没有任何范围的数据落地。
+  const [loadedScopeKey, setLoadedScopeKey] = useState<string | null>(null);
+  // 首页加载失败的范围：占位判定不能以 isLoading 为前置条件——重载发生在
+  // effect 里，范围切换后的首帧 isLoading 仍是 false，旧范围条目会残留并可点击；
+  // 也不允许失败后继续占位（会永久转圈），因此失败范围单独记账、失败即结束占位。
+  const [failedScopeKey, setFailedScopeKey] = useState<string | null>(null);
 
   const refreshStats = useCallback(() => {
     if (!directoryId) return;
@@ -312,6 +317,8 @@ export function ProjectMemoryPanel({
         setIsLoadingMore(true);
       } else {
         setIsLoading(true);
+        // 重新发起该范围的首屏加载：撤下上一次的失败记账，让占位重新生效。
+        setFailedScopeKey(null);
       }
       const statusFilter = filterStatus === "all" ? undefined : filterStatus;
       const kindFilter = filterKind === "all" ? undefined : filterKind;
@@ -348,12 +355,15 @@ export function ProjectMemoryPanel({
           setHasMore(page.hasMore);
           setHitTotal(activeQuery ? page.total : 0);
           setLoadedScopeKey(requestScopeKey);
+          setFailedScopeKey(null);
         })
         .catch(() => {
           if (requestId === requestIdRef.current && !append) {
             setMemories([]);
             setHasMore(false);
             setHitTotal(0);
+            // 失败记账：结束整块占位改为展示空态，避免永久转圈。
+            setFailedScopeKey(requestScopeKey);
           }
         })
         .finally(() => {
@@ -368,8 +378,16 @@ export function ProjectMemoryPanel({
     [directoryId, filterStatus, filterKind, activeQuery],
   );
 
-  // 渲染期使用的当前查询范围：与 loadPage 记录的数据范围不一致时才显示整块占位。
-  const currentScopeKey = `${directoryId ?? ""}|${filterStatus}|${filterKind}|${activeQuery}`;
+  // 渲染期使用的当前查询范围；无项目时为 null（不会有请求发出，不能占位）。
+  const currentScopeKey = directoryId
+    ? `${directoryId}|${filterStatus}|${filterKind}|${activeQuery}`
+    : null;
+  // 整块占位条件：数据范围与当前范围不一致，且该范围尚未以失败收场。
+  // 与请求启动时机解耦：范围切换当帧即占位，旧范围条目不会被继续显示或点击。
+  const isScopePlaceholder =
+    currentScopeKey !== null &&
+    loadedScopeKey !== currentScopeKey &&
+    failedScopeKey !== currentScopeKey;
 
   // 进入页面或筛选/关键词变化时重新加载第一页
   useEffect(() => {
@@ -886,7 +904,7 @@ export function ProjectMemoryPanel({
         onScroll={handleListScroll}
         ref={listScrollRef}
       >
-        {isLoading && loadedScopeKey !== currentScopeKey ? (
+        {isScopePlaceholder ? (
           <div className="memory-list-empty">
             <Loader2 className="spin" size={16} />
           </div>

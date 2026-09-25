@@ -465,8 +465,9 @@ lsp-hover filePath=<绝对路径> line=<1-based> column=<1-based>
 | ② 平替工具反制   | `collect.rs`（每轮工具收集时改写 grep-search 描述）                       | 「Semantic queries are NOT grep's job」+ 场景→工具路由清单（goto/references/hover/workspace-symbols/diagnostics）；只点名**实际暴露**的工具（workspace-symbols 条件渲染）                                                                                          | `lsp_active` 时注入；未激活保持原描述（不影响其他项目与 prompt cache） |
 | ③ 工具时机触发器 | `tool_schemas()`（lsp/mod.rs 静态 schema）                                | 给 goto（「Use INSTEAD OF grep to locate a definition」）、references（「Run this BEFORE renaming/removing any shared symbol」）、hover（「Cheaper than filesystem-read when you only need a type」）、workspace-symbols（「Use INSTEAD OF grep」）加动作-时机引导 | lsp 工具只在激活时暴露 → 天然条件生效                                  |
 
-Routing rules（系统提示词章节内，2026-09-24 场景化重写）：
+Routing rules（系统提示词章节内，2026-09-24 场景化重写；2026-09-25 增补优先级总纲）：
 
+- **优先级总纲**：代码语义问题（符号、引用、类型、影响面、结构）一律先用 `lsp-*`；通用只读工具（grep、直接读文件）只承接 LSP 覆盖不到的「非语义」场景——字面文本与原始文件内容。
 - 定位符号定义 → `lsp-goto`；全部引用/重命名影响面 → `lsp-references`；类型/签名 → `lsp-hover`；按名找符号 → `lsp-workspace-symbols`（后两项按 merged 能力条件渲染）。
 - `grep-search` 会命中其他模块的同名符号/注释/字符串——**仅限字面文本**（日志、配置键、注释），语义查询禁用。
 - 行列号来源：`lsp-symbols` / `filesystem-read` 输出的 1-indexed 行号直接喂给 `lsp-goto` / `lsp-references` 的 `line`/`column` 参数（组合技，降低参数成本）。

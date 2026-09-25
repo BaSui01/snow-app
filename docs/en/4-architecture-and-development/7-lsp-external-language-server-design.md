@@ -426,8 +426,9 @@ Three injection layers (all conditional: they appear only when lsp is actually a
 | ② Substitute-tool counter | `collect.rs` (rewrites the grep-search description during per-turn tool collection) | "Semantic queries are NOT grep's job" + scenario → tool routing list (goto/references/hover/workspace-symbols/diagnostics); names only the tools actually exposed (workspace-symbols rendered conditionally)                         | injected while `lsp_active`; original description otherwise (other projects and prompt cache unaffected) |
 | ③ Tool timing triggers    | `tool_schemas()` (lsp/mod.rs static schemas)                                        | goto ("Use INSTEAD OF grep to locate a definition"), references ("Run this BEFORE renaming/removing any shared symbol"), hover ("Cheaper than filesystem-read when you only need a type"), workspace-symbols ("Use INSTEAD OF grep") | lsp tools only exist while active → conditionally effective by construction                              |
 
-Routing rules (inside the system-prompt section, rewritten scenario-first on 2026-09-24):
+Routing rules (inside the system-prompt section, rewritten scenario-first on 2026-09-24; priority preamble added 2026-09-25):
 
+- **Priority preamble**: every code-semantics question (symbols, usages, types, impact, structure) starts with `lsp-*`; the generic read-only tools (grep, direct file reads) are the fallback for what LSP cannot answer — literal text and raw file content.
 - Locating a symbol's definition → `lsp-goto`; all usages / impact before a rename → `lsp-references`; a symbol's type or signature → `lsp-hover`; finding symbols by name → `lsp-workspace-symbols` (the last two render conditionally per merged capabilities).
 - `grep-search` matches same-named symbols in unrelated modules, comments and strings — **literal text only** (log text, config keys, comments); semantic queries are forbidden.
 - Getting line/column: the 1-indexed line numbers already shown by `lsp-symbols` / `filesystem-read` feed straight into the `line`/`column` params of `lsp-goto` / `lsp-references` (combo move, lowers parameter cost).

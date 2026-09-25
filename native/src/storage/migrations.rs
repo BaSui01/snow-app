@@ -82,6 +82,7 @@ pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<(
     migrate_chat_conversations_run_stats(connection)?;
     migrate_sub_agent_configs_project_id(connection)?;
     migrate_sub_agent_configs_model(connection)?;
+    migrate_builtin_general_agent_prompt(connection)?;
     migrate_scheduled_tasks_pre_script(connection)?;
     migrate_api_configs_partial_retry_max_chars(connection)?;
     migrate_api_configs_config_json(connection)?;
@@ -925,6 +926,29 @@ fn migrate_sub_agent_configs_model(connection: &Connection) -> rusqlite::Result<
         )?;
     }
 
+    Ok(())
+}
+
+/// 刷新内置通用子代理（agent_general）的系统提示词（2026-09-24）。
+///
+/// 内置行的 `system_prompt` 由 `seed_default_sub_agent_configs` 的
+/// `INSERT OR IGNORE` 写入，只对全新数据库生效——老库里仍是旧版本默认值
+/// （grep-first，与 LSP 语义路由规则直接冲突，会把内置 general 子代理教成
+/// 「先用 grep 定位」）。内置行不允许用户编辑（upsert/delete 均带
+/// `builtin = 0` 过滤），因此可安全地把仍等于任意旧版本默认值的内容刷新为
+/// 当前默认值；`system_prompt <> ?1` 守卫保证幂等（内容一致时不写库），
+/// 全新数据库上行不存在时为 0 行更新，属正常空操作。
+fn migrate_builtin_general_agent_prompt(connection: &Connection) -> rusqlite::Result<()> {
+    connection.execute(
+        "UPDATE sub_agent_configs
+            SET system_prompt = ?1,
+                updated_at = datetime('now', 'localtime')
+          WHERE agent_id = 'agent_general'
+            AND builtin = 1
+            AND project_id = ''
+            AND system_prompt <> ?1",
+        [crate::storage::services::sub_agent_configs::DEFAULT_GENERAL_AGENT_SYSTEM_PROMPT],
+    )?;
     Ok(())
 }
 

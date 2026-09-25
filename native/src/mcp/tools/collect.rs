@@ -360,6 +360,30 @@ fn tool_is_enabled(
         && scope.is_tool_enabled(&tool.full_name())
 }
 
+/// 判断 LSP 语义工具在给定项目下是否**实际可用**（与 collect 阶段 `lsp_active`
+/// 的判定同源：可用能力集合非空 + 全局黑名单未禁用 + 项目 scope 已启用
+/// builtin:lsp）。供调用阶段的语义路由纠偏复用——判定失败一律静默返回 false，
+/// 纠偏提示宁可不加，也不能因状态查询失败打断工具调用。
+pub(crate) async fn is_lsp_tooling_active(project_id: Option<&str>) -> bool {
+    let Ok(exposure) = super::super::servers::lsp::tool_exposure(project_id).await else {
+        return false;
+    };
+    if exposure.tools.is_empty() {
+        return false;
+    }
+    let Ok(global_scope) = load_global_scope().await else {
+        return false;
+    };
+    let Ok(scope) = load_project_scope(project_id).await else {
+        return false;
+    };
+    get_builtin_tools().iter().any(|tool| {
+        tool.server_id == "lsp"
+            && exposure.tools.contains(&tool.full_name())
+            && tool_is_enabled(tool, global_scope.as_ref(), scope.as_ref())
+    })
+}
+
 pub(crate) fn builtin_scope_server_id(server_id: &str) -> String {
     format!("builtin:{server_id}")
 }

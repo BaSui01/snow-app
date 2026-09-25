@@ -227,17 +227,73 @@ pub fn spawn_client(
     let lang_for_mainloop = config.lang.clone();
     tokio::spawn(async move {
         use tokio::io::AsyncReadExt;
+        // stderr 转发（降噪版，2026-09-24）：
+        // - 已知噪音模式直接丢弃：rust-analyzer 的 "inference diagnostic in
+        //   desugared expr" 内部日志实测可达数百条连续重复、无诊断价值
+        //   （其内部 tracing 输出，被它标为 ERROR 级）；
+        // - 其余行折叠连续重复：相同内容连续出现只保留首条，恢复输出时附
+        //   "(previous line repeated N more times)" 摘要——真实错误一条不漏
+        //   （不同内容照常输出）；
+        // - 跨块行缓冲：块读边界不再截断长行（此前 1024B 边界会把一行切
+        //   成两段分别打印）。
+        const NOISE_MARKERS: &[&str] = &["inference diagnostic in desugared expr"];
         let mut reader = stderr;
         let mut buffer = [0u8; 1024];
+        let mut carry = String::new();
+        let mut pending: Option<String> = None;
+        let mut repeated: u32 = 0;
         loop {
             match reader.read(&mut buffer).await {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
-                    let text = String::from_utf8_lossy(&buffer[..n]);
-                    for line in text.lines() {
+                    carry.push_str(&String::from_utf8_lossy(&buffer[..n]));
+                    while let Some(newline) = carry.find('\n') {
+                        let line = carry[..newline].trim_end_matches('\r').to_string();
+                        carry.drain(..=newline);
+                        if NOISE_MARKERS.iter().any(|marker| line.contains(marker)) {
+                            continue;
+                        }
+                        if pending.as_deref() == Some(line.as_str()) {
+                            repeated += 1;
+                            continue;
+                        }
+                        if repeated > 0 {
+                            if let Some(previous) = pending.as_deref() {
+                                eprintln!(
+                                    "[lsp:{lang_for_stderr}] (previous line repeated {repeated} more times): {previous}"
+                                );
+                            }
+                            repeated = 0;
+                        }
                         eprintln!("[lsp:{lang_for_stderr}] {line}");
+                        pending = Some(line);
                     }
                 }
+            }
+        }
+        // 流结束：处理残余（无换行结尾的最后一行）+ 折叠摘要。
+        let tail = carry.trim_end_matches('\r');
+        if !tail.is_empty() && !NOISE_MARKERS.iter().any(|marker| tail.contains(marker)) {
+            if pending.as_deref() == Some(tail) {
+                repeated += 1;
+            } else {
+                if repeated > 0 {
+                    if let Some(previous) = pending.as_deref() {
+                        eprintln!(
+                            "[lsp:{lang_for_stderr}] (previous line repeated {repeated} more times): {previous}"
+                        );
+                    }
+                    repeated = 0;
+                }
+                eprintln!("[lsp:{lang_for_stderr}] {tail}");
+                pending = Some(tail.to_string());
+            }
+        }
+        if repeated > 0 {
+            if let Some(previous) = pending.as_deref() {
+                eprintln!(
+                    "[lsp:{lang_for_stderr}] (previous line repeated {repeated} more times): {previous}"
+                );
             }
         }
     });

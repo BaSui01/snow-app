@@ -224,6 +224,24 @@ pub async fn prepare_context_request(
     // executing any changes.
     let shell_type = resolve_default_shell(request.database_path);
     let sub_agents_section = build_sub_agents_section(request.database_path, request.directory_id);
+    // 调查阶段工具清单（Plan / Goal / WorkFlow 模式动态注入，2026-09-24）：
+    // 只含当前项目实际可调用的工具（LSP 三重判定 / codebase 索引判定），
+    // 不可用工具的行不出现（注入条件 = 工具可见性，见 prompt::tool_hints）。
+    let analysis_tools_section = if request.plan_mode || request.goal_mode || request.workflow_mode
+    {
+        crate::prompt::tool_hints::build_analysis_tools_lines(
+            request.directory_id,
+            if working_directory.trim().is_empty() {
+                None
+            } else {
+                Some(std::path::Path::new(&working_directory))
+            },
+        )
+        .await
+        .join("\n")
+    } else {
+        String::new()
+    };
     let system_prompt = if request.worktree_mode {
         build_worktree_mode_system_prompt(
             &working_directory,
@@ -238,6 +256,7 @@ pub async fn prepare_context_request(
             &shell_type,
             request.remote_role_content,
             request.remote_include_global_rules,
+            &analysis_tools_section,
         )
     } else if request.plan_mode {
         build_plan_mode_system_prompt(
@@ -246,6 +265,7 @@ pub async fn prepare_context_request(
             request.remote_role_content,
             request.remote_include_global_rules,
             &sub_agents_section,
+            &analysis_tools_section,
         )
     } else if request.goal_mode {
         // Per-conversation budget isolation: the conversation's own override
@@ -264,6 +284,7 @@ pub async fn prepare_context_request(
             goal_token_budget,
             request.remote_role_content,
             request.remote_include_global_rules,
+            &analysis_tools_section,
         )
     } else {
         build_system_prompt(

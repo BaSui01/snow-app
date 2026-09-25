@@ -25,7 +25,7 @@ pub(crate) mod probe; // crate 内共享（storage 种子/迁移/校正也要探
 mod session;
 mod types;
 
-pub use config::tool_exposure;
+pub use config::{lsp_covers_all_project_languages, tool_exposure};
 pub use probe::{probe_commands, ProbeResult};
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -72,7 +72,7 @@ fn tool_schemas() -> Vec<McpTool> {
         McpTool {
             server_id: SERVER_ID.to_string(),
             name: "hover".to_string(),
-            description: "Get the exact type signature and doc comment of a symbol at a position. Use to understand an identifier or an unknown API without reading its implementation.\n\n- Position is 1-indexed (line, column).\n- Returns Markdown contents (type info + doc comment).\n\nLocal projects only.".to_string(),
+            description: "Get the exact type signature and doc comment of a symbol at a position. Use to understand an identifier or an unknown API without reading its implementation.\n\nCheaper than filesystem-read when you only need a type or signature.\n\n- Position is 1-indexed (line, column).\n- Returns Markdown contents (type info + doc comment).\n\nLocal projects only.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -95,7 +95,7 @@ fn tool_schemas() -> Vec<McpTool> {
         McpTool {
             server_id: SERVER_ID.to_string(),
             name: "goto".to_string(),
-            description: "Jump to a symbol at a position with one of three navigation kinds: kind=definition (default; the declaration — cross-file, resolution-accurate; imports/generics/traits/stdlib & dependency sources), kind=type-definition (the type's definition), kind=implementation (all implementations of an interface/abstract class/trait).\n\n- Returns target file/line/column(s).\n- type-definition / implementation are only supported by servers that declare those capabilities.\n\nLocal projects only.".to_string(),
+            description: "Jump to a symbol at a position with one of three navigation kinds: kind=definition (default; the declaration — cross-file, resolution-accurate; imports/generics/traits/stdlib & dependency sources), kind=type-definition (the type's definition), kind=implementation (all implementations of an interface/abstract class/trait).\n\nUse INSTEAD OF grep to locate a definition — grep cannot distinguish a real symbol from same-named identifiers in other modules, comments or strings.\n\n- Returns target file/line/column(s).\n- type-definition / implementation are only supported by servers that declare those capabilities.\n\nLocal projects only.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -123,7 +123,7 @@ fn tool_schemas() -> Vec<McpTool> {
         McpTool {
             server_id: SERVER_ID.to_string(),
             name: "references".to_string(),
-            description: "Find all references to a symbol at a position (declaration included by default; pass includeDeclaration=false to exclude it).\n\nUse to assess the impact of renaming or changing a symbol. Each reference carries its one-line code context.\n\nLocal projects only.".to_string(),
+            description: "Find all references to a symbol at a position (declaration included by default; pass includeDeclaration=false to exclude it).\n\nRun this BEFORE renaming, removing or changing any shared symbol — compiler-accurate blast radius, where grep would miss aliased usages and match same-named symbols in unrelated modules. Each reference carries its one-line code context.\n\nLocal projects only.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -301,7 +301,7 @@ fn tool_schemas() -> Vec<McpTool> {
         McpTool {
             server_id: SERVER_ID.to_string(),
             name: "workspace-symbols".to_string(),
-            description: "Fuzzy-search symbols by name across the whole project (workspace/symbol) — semantic, no false positives from strings/comments. Use to locate a symbol you know by name, or to discover related symbols.\n\nReturns up to 50 symbols with kind, container and precise file/line/column. Case-insensitive fuzzy matching.\n\nLocal projects only.".to_string(),
+            description: "Fuzzy-search symbols by name across the whole project (workspace/symbol) — semantic, no false positives from strings/comments. Use INSTEAD OF grep when locating a symbol by name, or to discover related symbols.\n\nReturns up to 50 symbols with kind, container and precise file/line/column. Case-insensitive fuzzy matching.\n\nLocal projects only.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -641,7 +641,7 @@ impl LspService {
         let (_config, lang) = config::match_config(configs, &path).ok_or_else(|| {
             types::LspError::NotConfigured(file_extension_label(&path))
         })?;
-        let project_root = resolve_project_root(project_id, file_path)?;
+        let project_root = resolve_lang_root(project_id, file_path, lang)?;
 
         let session = manager::ServerManager::instance()
             .get_or_start(lang, &project_root, project_id)
@@ -675,7 +675,7 @@ impl LspService {
         let (_config, lang) = config::match_config(&configs, &path).ok_or_else(|| {
             types::LspError::NotConfigured(file_extension_label(&path))
         })?;
-        let project_root = resolve_project_root(project_id, &file_path)?;
+        let project_root = resolve_lang_root(project_id, &file_path, lang)?;
 
         let session = manager.get_or_start(lang, &project_root, project_id).await?;
         let mut guard = session.lock().await;
@@ -724,7 +724,7 @@ impl LspService {
                 ))
             }
         }
-        let project_root = resolve_project_root(project_id, &file_path)?;
+        let project_root = resolve_lang_root(project_id, &file_path, lang)?;
 
         let session = manager.get_or_start(lang, &project_root, project_id).await?;
         let mut guard = session.lock().await;
@@ -757,7 +757,7 @@ impl LspService {
         let (_config, lang) = config::match_config(&configs, &path).ok_or_else(|| {
             types::LspError::NotConfigured(file_extension_label(&path))
         })?;
-        let project_root = resolve_project_root(project_id, &file_path)?;
+        let project_root = resolve_lang_root(project_id, &file_path, lang)?;
 
         let session = manager.get_or_start(lang, &project_root, project_id).await?;
         let mut guard = session.lock().await;
@@ -780,7 +780,7 @@ impl LspService {
         let (_config, lang) = config::match_config(&configs, &path).ok_or_else(|| {
             types::LspError::NotConfigured(file_extension_label(&path))
         })?;
-        let project_root = resolve_project_root(project_id, &file_path)?;
+        let project_root = resolve_lang_root(project_id, &file_path, lang)?;
 
         let session = manager.get_or_start(lang, &project_root, project_id).await?;
         let mut guard = session.lock().await;
@@ -811,7 +811,7 @@ impl LspService {
             types::LspError::NotConfigured(file_extension_label(&path))
         })?;
         ensure_capability(&lang, "rename")?;
-        let project_root = resolve_project_root(project_id, &file_path)?;
+        let project_root = resolve_lang_root(project_id, &file_path, lang)?;
 
         let session = manager.get_or_start(lang, &project_root, project_id).await?;
         let mut guard = session.lock().await;
@@ -850,7 +850,7 @@ impl LspService {
             types::LspError::NotConfigured(file_extension_label(&path))
         })?;
         ensure_capability(&lang, "code-action")?;
-        let project_root = resolve_project_root(project_id, &file_path)?;
+        let project_root = resolve_lang_root(project_id, &file_path, lang)?;
 
         let session = manager.get_or_start(lang, &project_root, project_id).await?;
         let mut guard = session.lock().await;
@@ -902,7 +902,7 @@ impl LspService {
                     types::LspError::NotConfigured(file_extension_label(&path))
                 })?;
                 ensure_capability(&lang, "execute-command")?;
-                let root = resolve_project_root(project_id, fp)?;
+                let root = resolve_lang_root(project_id, fp, &lang)?;
                 (lang.to_string(), root)
             }
             None => {
@@ -918,7 +918,7 @@ impl LspService {
                 }
                 let lang = enabled[0].lang.clone();
                 ensure_capability(&lang, "execute-command")?;
-                let root = resolve_project_root(project_id, "")?;
+                let root = resolve_lang_root(project_id, "", &lang)?;
                 (lang, root)
             }
         };
@@ -946,7 +946,7 @@ impl LspService {
             types::LspError::NotConfigured(file_extension_label(&path))
         })?;
         ensure_capability(&lang, "call-hierarchy")?;
-        let project_root = resolve_project_root(project_id, &file_path)?;
+        let project_root = resolve_lang_root(project_id, &file_path, lang)?;
 
         let session = manager.get_or_start(lang, &project_root, project_id).await?;
         let mut guard = session.lock().await;
@@ -972,7 +972,7 @@ impl LspService {
             types::LspError::NotConfigured(file_extension_label(&path))
         })?;
         ensure_capability(&lang, "type-hierarchy")?;
-        let project_root = resolve_project_root(project_id, &file_path)?;
+        let project_root = resolve_lang_root(project_id, &file_path, lang)?;
 
         let session = manager.get_or_start(lang, &project_root, project_id).await?;
         let mut guard = session.lock().await;
@@ -1029,8 +1029,20 @@ impl LspService {
         // 记录 warnings 供 agent 参考。
         let mut warnings: Vec<serde_json::Value> = Vec::new();
         for config in targets {
+            // 技术栈根（技术栈感知）：无栈 → 该语言跳过并记录 warning
+            //（LSP 只在技术栈存在时启动，与调用阶段 resolve_lang_root 一致）。
+            let Some(lang_root) = detect::find_lang_root(&project_root, None, &config.lang) else {
+                warnings.push(json!({
+                    "language": config.lang,
+                    "error": format!(
+                        "项目中未检测到 {} 技术栈标志文件，已跳过（LSP 只在技术栈存在时启动）",
+                        config.lang
+                    ),
+                }));
+                continue;
+            };
             let session = match manager
-                .get_or_start(&config.lang, &project_root, project_id)
+                .get_or_start(&config.lang, &lang_root, project_id)
                 .await
             {
                 Ok(session) => session,
@@ -1046,7 +1058,7 @@ impl LspService {
                 let mut guard = session.lock().await;
                 // TS 服务器无打开文件时 workspace/symbol 报 "No Project"：
                 // 先打开项目入口文件建立项目上下文（失败静默，由降级兜底）。
-                guard.ensure_project_context(&project_root).await;
+                guard.ensure_project_context(&lang_root).await;
                 guard.workspace_symbols(&query).await
             };
             match result {
@@ -1147,8 +1159,19 @@ impl LspService {
         let mut warnings: Vec<Value> = Vec::new();
         let mut languages: Vec<String> = Vec::new();
         for config in targets {
+            // 技术栈根（技术栈感知）：无栈 → 该语言跳过并记录 warning。
+            let Some(lang_root) = detect::find_lang_root(&project_root, None, &config.lang) else {
+                warnings.push(json!({
+                    "language": config.lang,
+                    "error": format!(
+                        "项目中未检测到 {} 技术栈标志文件，已跳过（LSP 只在技术栈存在时启动）",
+                        config.lang
+                    ),
+                }));
+                continue;
+            };
             let session = match manager
-                .get_or_start(&config.lang, &project_root, project_id)
+                .get_or_start(&config.lang, &lang_root, project_id)
                 .await
             {
                 Ok(session) => session,
@@ -1428,6 +1451,31 @@ fn resolve_project_root(project_id: Option<&str>, file_path: &str) -> napi::Resu
         .unwrap_or_else(|| PathBuf::from(".")))
 }
 
+/// 解析 LSP 会话根（技术栈感知，2026-09-24）：
+/// 项目根（workspace_directories 表）→ 该语言真实技术栈根（Cargo.toml /
+/// go.mod / tsconfig.json 等标志文件所在目录；文件级请求向上找最近的，
+/// 无文件上下文向下扫）。找不到技术栈标志 → 明确错误（不启动：避免
+/// 服务器在无项目配置的目录退化/异常，如 rust-analyzer 单文件模式、
+/// gopls 无 go.mod）。标志未定义的语言不约束（保持旧行为）。
+fn resolve_lang_root(
+    project_id: Option<&str>,
+    file_path: &str,
+    lang: &str,
+) -> napi::Result<PathBuf> {
+    let project_root = resolve_project_root(project_id, file_path)?;
+    // 空 file_path（如 execute-command 无 filePath 分支）：无起始目录，
+    // 走向下扫描（Path::new("").parent() 为 None，天然覆盖）。
+    let start = Path::new(file_path).parent();
+    if let Some(root) = detect::find_lang_root(&project_root, start, lang) {
+        return Ok(root);
+    }
+    Err(types::LspError::NoLangStack(
+        lang.to_string(),
+        detect::markers_for_lang(lang).join(", "),
+    )
+    .into())
+}
+
 /// 文件扩展名标签（错误信息用）。
 fn file_extension_label(path: &std::path::Path) -> String {
     path.extension()
@@ -1476,8 +1524,9 @@ async fn lsp_tool_scope_allowed(lsp_tool: &str, project_id: Option<&str>) -> nap
 /// 服务器：无项目 scope（未在任何项目启用过 builtin:lsp）同样返回 false。
 async fn lsp_domain_scope_allowed(project_id: Option<&str>) -> napi::Result<bool> {
     use crate::mcp::tools::{builtin_scope_server_id, load_global_scope, load_project_scope};
-    // 核心代表工具：任一未被全局禁用即认为域可用（collect 阶段按工具粒度
-    // 过滤，工具级个别禁用不影响域级注入）。
+    // 核心代表工具：任一未被全局禁用即认为域可用——这是「注不注入」的域级
+    // 闸门；具体工具清单再逐项过 collect 的 tool_name_is_enabled（2026-09-25
+    // 一致性修复：注入的工具必须与实际可见的工具一致，被禁用的不出现）。
     const CORE_LSP_TOOLS: [&str; 4] = [
         "lsp-goto",
         "lsp-references",
@@ -1496,6 +1545,64 @@ async fn lsp_domain_scope_allowed(project_id: Option<&str>) -> napi::Result<bool
         return Ok(false);
     };
     Ok(scope.is_server_enabled(&builtin_scope_server_id("lsp")))
+}
+
+/// 生成 Plan 模式「语义代码工具」清单行（2026-09-24 动态注入）。
+///
+/// 与 collect 阶段的工具暴露**同源判定**（域 scope 允许 + 服务器
+/// enabled/已安装 + 项目技术栈匹配 + 能力并集）——LSP 工具实际可调用时
+/// 返回清单行（只列实际暴露的核心分析工具），否则返回 None（调用方整行
+/// 不注入，绝不用静态文本诱导调用不可见工具）。
+pub(crate) async fn analysis_tools_line(
+    project_id: Option<&str>,
+    project_root: Option<&std::path::Path>,
+) -> Option<String> {
+    // SSH 远程：与工具暴露一致（lsp 仅本地项目可用）。
+    if let Some(root) = project_root {
+        if is_ssh_path(&root.to_string_lossy()) {
+            return None;
+        }
+    }
+    // 域 scope：用户未在项目 scope 启用 builtin:lsp 时不注入。
+    match lsp_domain_scope_allowed(project_id).await {
+        Ok(true) => {}
+        _ => return None,
+    }
+    // 实际暴露工具（enabled + 已安装 + 技术栈匹配 + 能力并集）。
+    let exposure = tool_exposure(project_id).await.ok()?;
+    // 工具级开关（与 collect 阶段 tool_is_enabled 同源，2026-09-25 一致性修复）：
+    // 被禁用的工具不进入清单。
+    let global_scope = crate::mcp::tools::load_global_scope().await.ok().flatten();
+    let project_scope = crate::mcp::tools::load_project_scope(project_id)
+        .await
+        .ok()
+        .flatten();
+    let present: Vec<String> = [
+        "lsp-workspace-symbols",
+        "lsp-goto",
+        "lsp-references",
+        "lsp-hover",
+        "lsp-diagnostics",
+    ]
+    .iter()
+    .filter(|tool| {
+        exposure.tools.iter().any(|name| name == *tool)
+            && crate::mcp::tools::tool_name_is_enabled(
+                tool,
+                "lsp",
+                global_scope.as_ref(),
+                project_scope.as_ref(),
+            )
+    })
+    .map(|tool| format!("`{tool}`"))
+    .collect();
+    if present.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "- Semantic code tools — use these FIRST for symbols / usages / types / impact (language servers are enabled and stack-matched for this project): {}",
+        present.join(" / ")
+    ))
 }
 
 /// 写应用日志（app_logs 表，复用项目现有日志体系——与系统日志面板同源，
@@ -1523,12 +1630,17 @@ pub(crate) async fn lsp_app_log(level: &str, func: &str, message: &str, error: O
     }
 }
 
-/// 服务器是否与项目实际语言匹配（项目语言一致性判定；collect 阶段工具暴露
-/// 与系统提示词注入共用，避免两处口径不一致）。匹配 = 技术栈标志命中
-/// （detect_project_stack，如 Cargo.toml → rust）或项目文件扩展名命中服务器
-/// file_extensions（覆盖无标志文件的 C/C++/Swift 等）。检测结果走 TTL 缓存
+/// 服务器是否与项目实际技术栈匹配（技术栈感知，2026-09-24 统一判定；collect
+/// 阶段工具暴露与系统提示词注入共用）。匹配 = 该语言的技术栈标志文件存在
+/// （find_lang_root 向下扫描，与调用阶段 resolve_lang_root 同一事实来源——
+/// 保证「暴露 = 可调用」：标志不存在时工具不暴露，调用阶段也会明确拒绝）。
+/// 未定义标志的语言退化为标志语言 + 扩展名匹配。检测结果走 TTL 缓存
 /// （detect.rs，60s），避免每次调用重复全量目录扫描。
 pub(crate) fn server_matches_project(config: &types::ServerConfig, project_root: &Path) -> bool {
+    if !detect::markers_for_lang(&config.lang).is_empty() {
+        return detect::find_lang_root(project_root, None, &config.lang).is_some();
+    }
+    // 未定义标志的语言（自定义 lang）：标志语言 + 扩展名兜底（保持旧行为）。
     let profile = detect::detect_project_languages_cached(&project_root.to_string_lossy());
     profile.langs.iter().any(|lang| lang == &config.lang)
         || config.file_extensions.iter().any(|ext| {
@@ -1650,20 +1762,31 @@ pub(crate) async fn build_system_prompt_section(
         ));
     }
     lines.push(String::new());
+    // 措辞与下方 Routing rules 的优先级总纲统一（2026-09-25）：两者强度一致
+    // ——「首选/优先」而非「强制」（工具可能被工具级禁用，且字面文本等场景
+    // 本就不该走 LSP）。
     lines.push(
-        "The `lsp-*` tools are the MANDATORY semantic-analysis path for these languages (cross-file accurate; import/generic/trait aware; far more reliable than grep or tree-sitter):"
+        "The `lsp-*` tools are the semantic-analysis path for these languages — cross-file accurate, import/generic/trait aware, and far more reliable than grep or tree-sitter:"
             .to_string(),
     );
 
-    // 合并所有可用服务器支持的工具能力（§8.7 同源判定），按功能分组渲染。
-    let mut merged: Vec<&'static str> = Vec::new();
-    for config in &available {
-        for tool in capabilities::supported_tools_for_lang(&config.lang) {
-            if !merged.contains(&tool) {
-                merged.push(tool);
-            }
+    // 能力判定改用 collect 阶段的 tool_exposure（§8.0/§8.7 单一事实来源）：
+    // 它已包含配置级过滤、项目技术栈匹配与 type-hierarchy 项目感知精修
+    // （§8.7.2）——此前此处用 available 自建能力列表，会与工具实际暴露产生
+    // 偏差（2026-09-25 一致性修复）。查询失败静默降级为不注入章节。
+    let exposure = match config::tool_exposure(project_id).await {
+        Ok(exposure) => exposure,
+        Err(error) => {
+            lsp_app_log(
+                "warn",
+                "build_system_prompt_section",
+                "LSP tool exposure query failed, skipping Language Servers section",
+                Some(&error.to_string()),
+            )
+            .await;
+            return String::new();
         }
-    }
+    };
     let groups: [(&str, &[&str]); 6] = [
         (
             "Errors & diagnostics",
@@ -1675,6 +1798,36 @@ pub(crate) async fn build_system_prompt_section(
         ("Call graph", &["call-hierarchy", "type-hierarchy"]),
         ("Refactoring", &["rename", "code-action", "execute-command"]),
     ];
+    // 工具级开关（与 collect 阶段 tool_is_enabled 同源，2026-09-25 一致性修复）：
+    // 用户单独禁用的 lsp-* 不进入清单——注入的工具必须与实际可见的工具一致。
+    let global_scope = crate::mcp::tools::load_global_scope().await.ok().flatten();
+    let project_scope = crate::mcp::tools::load_project_scope(project_id)
+        .await
+        .ok()
+        .flatten();
+    // 能力并集（短名）：只保留 groups 会渲染、且 tool_exposure 实际暴露、
+    // 且工具级开关允许的项——type-definition / implementation 无独立 schema
+    // （已合并进 goto{kind}），本就不在任何 group 中；type-hierarchy 的项目
+    // 感知精修随 exposure 一并生效。
+    let merged: Vec<&'static str> = groups
+        .iter()
+        .flat_map(|(_, tools)| tools.iter().copied())
+        .filter(|tool| {
+            let full = format!("lsp-{tool}");
+            exposure.tools.iter().any(|name| name == &full)
+                && crate::mcp::tools::tool_name_is_enabled(
+                    &full,
+                    "lsp",
+                    global_scope.as_ref(),
+                    project_scope.as_ref(),
+                )
+        })
+        .collect();
+    // 全部 lsp-* 均被工具级禁用：此时只剩服务器清单与规则、没有任何可调用
+    // 工具，注入会诱导模型调用不存在的工具——整段不注入。
+    if merged.is_empty() {
+        return String::new();
+    }
     for (label, tools) in groups {
         let present: Vec<&str> = tools
             .iter()
@@ -1691,16 +1844,42 @@ pub(crate) async fn build_system_prompt_section(
         }
     }
 
-    // 任务分诊规则（2026-08-15，方案 C）：语义查询强制走 lsp-*，grep 仅限
-    // 纯文本搜索——消除模型"用 grep 代替语义分析"的路径依赖（实测
-    // grep-search 调用量远超 lsp-* 全家）。
+    // 任务分诊规则（2026-08-15 方案 C；2026-09-24 场景化重写）：从泛化
+    // MUST 改为「场景 → 工具」硬绑定——泛化规则模型无法稳定自判归类，
+    // 实测收效有限（grep 941 次 vs lsp-* 全家 145 次）；硬绑定模仿诊断的
+    // 成功模式（动作-时机绑定 + 明示替代品的缺陷）。workspace-symbols
+    // 非全语言支持（如 csharp），按 merged 能力条件渲染。
+    let has_workspace_symbols = merged.contains(&"workspace-symbols");
     lines.push(String::new());
     lines.push("Routing rules (MUST follow):".to_string());
+    // 优先级总纲（2026-09-25）：语义问题一律先走 lsp-*；通用只读工具（grep、
+    // 直接读文件）只承接 LSP 覆盖不到的「非语义」场景——字面文本与原始文件
+    // 内容。泛化 MUST 规则实测无法稳定改变模型的 grep 路径依赖（见下方注释），
+    // 因此这里把「先谁后谁」写成单行硬绑定，且不点名可能未暴露的工具，避免
+    // 诱导调用不可见工具（注入条件 = 工具可见性）。
     lines.push(
-        "- Semantic queries (symbols, types, definitions, references, call graph, diagnostics) MUST use `lsp-*`; do NOT use `grep-search` or tree-sitter for them."
+        "- **Prefer `lsp-*` over grep / file reading for every code-semantics question** (symbols, usages, types, impact, structure) — cross-file accurate, import/generic/trait aware. Generic read-only tools are the fallback for what LSP cannot answer: literal text (log messages, config keys, comments, string constants) and raw file content.".to_string(),
+    );
+    let mut routing = String::from(
+        "- Locating a symbol's definition → `lsp-goto` (kind=definition); all usages of a symbol / impact before a rename → `lsp-references`; a symbol's type or signature → `lsp-hover`",
+    );
+    if has_workspace_symbols {
+        routing.push_str("; finding symbols by name → `lsp-workspace-symbols`");
+    }
+    routing.push('.');
+    lines.push(routing);
+    lines.push(
+        "- `grep-search` matches same-named symbols in unrelated modules, comments and string literals — it cannot tell a real reference from a namesake. Use it ONLY for literal strings/patterns (log text, config keys, comments), NEVER for semantic queries."
             .to_string(),
     );
-    lines.push("- `grep-search` is only for locating literal strings/patterns.".to_string());
+    lines.push(
+        "- `lsp-goto` / `lsp-references` take 1-indexed line/column: line numbers already shown by `lsp-symbols` or `filesystem-read` feed straight into their `line` / `column` params."
+            .to_string(),
+    );
+    lines.push(
+        "- After editing code, run `lsp-diagnostics` on the changed files (batch up to 30 via `filePaths`)."
+            .to_string(),
+    );
 
     lines.push(String::new());
     lines.push(
@@ -1724,8 +1903,12 @@ pub(crate) async fn build_system_prompt_section(
             if running {
                 continue;
             }
+            // 技术栈根（与调用阶段一致）：无栈不预热（调用时也会明确拒绝）。
+            let Some(stack_root) = detect::find_lang_root(root, None, &config.lang) else {
+                continue;
+            };
             let lang = config.lang.clone();
-            let root = root.to_path_buf();
+            let root = stack_root;
             let project_id = project_id.map(str::to_string);
             let manager = manager.clone();
             tokio::spawn(async move {

@@ -281,7 +281,7 @@ pub async fn call_mcp_tool(
         if let Some((tool_execution_id, _)) = remote_cancel {
             crate::api::cancel::unregister_tool_execution(&tool_execution_id);
         }
-        search_result?
+        annotate_grep_result_with_semantic_routing(search_result?, &args, project_id.as_deref()).await
     } else if uses_remote_workspace && tool_full_name.starts_with("codelens-") {
         let codelens_tool = tool_full_name
             .strip_prefix("codelens-")
@@ -502,4 +502,74 @@ pub async fn call_mcp_tool(
         super::super::privacy_mask::mask_tool_result_if_needed(&masking_tool_name, &serialized)
             .await?;
     Ok(limit_tool_result(&masking_tool_name, masked).await)
+}
+
+/// 语义路由纠偏（2026-09-24，配合 LSP 系统提示词章节与 grep-search 描述注入）：
+/// 当 `pattern` 是裸标识符（典型「找符号」查询）且项目 LSP 语义工具实际可用时，
+/// 在 grep 结果里附加 `semanticRoutingHint` 字段，指向 lsp-* 替代工具。
+///
+/// 根因：grep 无法区分真实引用与同名符号（其他模块的同名常量、注释、字符串
+/// 字面量），模型拿到「看起来有结果」的匹配集就继续走；提示词层的 MUST 规则
+/// 实测无法稳定改变这条路径依赖（`lsp/mod.rs` 记录：grep 941 次 vs lsp-* 145 次），
+/// 因此在**结果返回的那一刻**给出可行动的纠正。判据刻意收窄（仅裸标识符 +
+/// LSP 可用），正则/路径/中文/字面量停用词一概不触发，不影响字面文本搜索。
+/// 前端渲染忽略额外字段，模型侧只多一行 JSON。
+async fn annotate_grep_result_with_semantic_routing(
+    result: Value,
+    args: &Value,
+    project_id: Option<&str>,
+) -> Value {
+    let Some(pattern) = args.get("pattern").and_then(Value::as_str) else {
+        return result;
+    };
+    if !looks_like_bare_symbol(pattern) {
+        return result;
+    }
+    if !super::collect::is_lsp_tooling_active(project_id).await {
+        return result;
+    }
+    let mut map = match result {
+        Value::Object(map) => map,
+        other => return other,
+    };
+    map.insert(
+        "semanticRoutingHint".to_string(),
+        Value::String(
+            "This pattern is a bare symbol name. grep matches same-named symbols in other \
+             modules, comments and string literals — it cannot tell a real reference from a \
+             namesake. For semantic questions use the LSP tools instead: `lsp-goto` \
+             (kind=definition), `lsp-references` (all usages), `lsp-hover` (type/signature), \
+             `lsp-workspace-symbols` (symbol by name), `lsp-diagnostics` (after edits). Keep \
+             grep for literal text only: log messages, config keys, comments, string constants."
+                .to_string(),
+        ),
+    );
+    Value::Object(map)
+}
+
+/// 判断搜索模式是否是「裸标识符」——只有这种模式才必然属于语义查询场景。
+/// 收窄到 ASCII 标识符 + 长度 3..=64 + 不在常见字面量停用词表内：正则、路径、
+/// 中文、带空格的短语、`TODO`/`import` 这类常见字面量一律不触发纠偏。
+fn looks_like_bare_symbol(pattern: &str) -> bool {
+    const LITERAL_STOPWORDS: &[&str] = &[
+        "todo", "fixme", "hack", "note", "import", "export", "return", "function", "const",
+        "class", "async", "await", "interface", "struct", "impl", "pub", "use", "mod", "let",
+        "var", "type", "enum", "true", "false", "null", "none", "undefined", "console", "print",
+        "select", "where",
+    ];
+    let trimmed = pattern.trim();
+    if trimmed.len() < 3 || trimmed.len() > 64 {
+        return false;
+    }
+    let mut chars = trimmed.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first.is_ascii_alphabetic() || first == '_' || first == '$') {
+        return false;
+    }
+    if !chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$') {
+        return false;
+    }
+    !LITERAL_STOPWORDS.contains(&trimmed.to_ascii_lowercase().as_str())
 }

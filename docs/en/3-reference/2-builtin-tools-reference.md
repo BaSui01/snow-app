@@ -147,24 +147,26 @@ Diagnostics & hover driven by external language servers (rust-analyzer /
 gopls / pyright ...); **exposed only when the `lsp_server_configs` table has
 at least one enabled AND installed server** (off by default — enabled only
 expresses intent; a command missing from PATH is treated as unavailable).
+The tool subset follows the union of enabled-server capabilities; **when the project has no stack marker for a language (e.g. no `go.mod`), its tools are not exposed and no server starts** (exposed = callable, 2026-09-24).
 Local projects only (SSH/remote not supported).
 
-| Full tool name              | Purpose                                                                                                               | Key parameters                                              |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `lsp-diagnostics`           | File diagnostics (errors/warnings/hints with exact positions & messages)                                              | `filePath` (or `filePaths` batch)                           |
-| `lsp-hover`                 | Symbol hover info (type signature / docs, Markdown)                                                                   | `filePath`, `line`, `column`                                |
-| `lsp-definition`            | Symbol definition location (cross-file semantic jump)                                                                 | `filePath`, `line`, `column`                                |
-| `lsp-references`            | All reference locations + one-line code context (cap 100)                                                             | `filePath`, `line`, `column`; optional `includeDeclaration` |
-| `lsp-symbols`               | File symbol outline (nested name/kind/detail/range/children)                                                          | `filePath`                                                  |
-| `lsp-rename`                | Semantic rename (dryRun default true returns multi-file edits; false writes + syncs)                                  | `filePath`, `line`, `column`, `newName`; optional `dryRun`  |
-| `lsp-type-definition`       | Jump to the definition of a symbol's type (e.g. variable x → class SomeClass)                                         | `filePath`, `line`, `column`                                |
-| `lsp-implementation`        | All implementations of an interface / abstract class / trait                                                          | `filePath`, `line`, `column`                                |
-| `lsp-code-action`           | Code actions (quick-fix / refactor menu; apply=true applies edit-based actions, command actions listed for execution) | `filePath`, `line`, `column`; optional `only`, `apply`      |
-| `lsp-execute-command`       | Execute a server command (e.g. rust-analyzer.applySourceChange; WorkspaceEdit results → dryRun preview / apply)       | `command`; optional `arguments`, `filePath`, `dryRun`       |
-| `lsp-call-hierarchy`        | Two-way call chain (incoming callers + outgoing callees with call-site context, cap 100 each)                         | `filePath`, `line`, `column`                                |
-| `lsp-type-hierarchy`        | Type hierarchy (supertypes parent chain + subtypes children; exposed only for Go/Java projects)                       | `filePath`, `line`, `column`                                |
-| `lsp-workspace-symbols`     | Cross-project fuzzy symbol search (semantic, cap 50, merged across enabled languages)                                 | `query`                                                     |
-| `lsp-workspace-diagnostics` | Project-wide diagnostics (LSP 3.17 pull, grouped by file, cap 100 files × 200 entries)                                | optional `maxFiles`                                         |
+| Full tool name              | Purpose                                                                                                                                           | Key parameters                                              |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `lsp-diagnostics`           | File diagnostics (errors/warnings/hints with exact positions & messages)                                                                          | `filePath` (or `filePaths` batch)                           |
+| `lsp-hover`                 | Symbol hover info (type signature / docs, Markdown)                                                                                               | `filePath`, `line`, `column`                                |
+| `lsp-goto`                  | Three-in-one navigation (kind=definition / type-definition / implementation; cross-file semantic jump; use INSTEAD OF grep to locate definitions) | `filePath`, `line`, `column`; optional `kind`               |
+| `lsp-references`            | All reference locations + one-line code context (cap 100)                                                                                         | `filePath`, `line`, `column`; optional `includeDeclaration` |
+| `lsp-symbols`               | File symbol outline (nested name/kind/detail/range/children)                                                                                      | `filePath`                                                  |
+| `lsp-rename`                | Semantic rename (dryRun default true returns multi-file edits; false writes + syncs)                                                              | `filePath`, `line`, `column`, `newName`; optional `dryRun`  |
+| `lsp-code-action`           | Code actions (quick-fix / refactor menu; apply=true applies edit-based actions, command actions listed for execution)                             | `filePath`, `line`, `column`; optional `only`, `apply`      |
+| `lsp-execute-command`       | Execute a server command (e.g. rust-analyzer.applySourceChange; WorkspaceEdit results → dryRun preview / apply)                                   | `command`; optional `arguments`, `filePath`, `dryRun`       |
+| `lsp-call-hierarchy`        | Two-way call chain (incoming callers + outgoing callees with call-site context, cap 100 each)                                                     | `filePath`, `line`, `column`                                |
+| `lsp-type-hierarchy`        | Type hierarchy (supertypes parent chain + subtypes children; exposed only for Go/Java projects)                                                   | `filePath`, `line`, `column`                                |
+| `lsp-workspace-symbols`     | Cross-project fuzzy symbol search (semantic, cap 50, merged across enabled languages)                                                             | `query`                                                     |
+| `lsp-workspace-diagnostics` | Project-wide diagnostics (LSP 3.17 pull, grouped by file, cap 100 files × 200 entries)                                                            | optional `maxFiles`                                         |
+| `lsp-vulncheck`             | Go dependency vulnerability scan (govulncheck: -json -mode source -scan symbol; requires govulncheck in PATH)                                     | optional `dir`, `pattern`                                   |
+
+> Note: `lsp-definition` / `lsp-type-definition` / `lsp-implementation` were standalone tools until the 2026-08-16 tool trim merged them into the unified `lsp-goto{kind}`; `lsp-vulncheck` is Go-only (added the same day). The tool set is exposed dynamically as the union of enabled-server capabilities.
 
 ### app-control
 

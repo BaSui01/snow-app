@@ -83,6 +83,15 @@ pub async fn collect_all_mcp_tools(
             && tool_is_enabled(tool, global_scope.as_ref(), scope.as_ref())
     });
 
+    // codelens 隐藏判定（2026-09-25 修订，替代此前的全局 `lsp_active` 短路）：
+    // 原先只要项目启用了任意 lsp-* 就隐藏 codelens，导致多语言项目里无 LSP
+    // 覆盖的语言（如 TS 项目中的 Python 文件）同时失去 LSP 与静态分析两条路径。
+    // 现按「语言覆盖度」判定：仅当项目内**全部**被检测到的语言都有可用 server
+    // 时才隐藏 codelens；存在未覆盖语言时保留它作为兜底。
+    // 需要 await → 在 filter 外预计算（filter 闭包是同步的）。
+    let codelens_hidden = lsp_active
+        && super::super::servers::lsp::lsp_covers_all_project_languages(project_id).await;
+
     let mut tools = builtin_tools
         .into_iter()
         .filter(|tool| {
@@ -126,12 +135,11 @@ pub async fn collect_all_mcp_tools(
             if tool.server_id == "lsp" && !lsp_available_tools.contains(&tool.full_name()) {
                 return false;
             }
-            // codelens 与 lsp-* 互斥（2026-08-16）：仅当 lsp-* 实际暴露
-            //（可用能力 + 项目 scope 已启用 builtin:lsp）时隐藏 codelens
-            //（语义分析更优）；LSP 未配置/不可用/未手动启用（含 SSH 远程）
-            // 时暴露 codelens 作为 tree-sitter 静态分析兜底——两个工具集
-            // 永远只有其一出现在模型面前，互补不冗余。
-            if tool.server_id == "codelens" && lsp_active {
+            // codelens 的暴露（2026-09-25 修订）：仅当项目内**全部**语言都有
+            // 可用 LSP server 时隐藏（语义分析更优）；存在 LSP 覆盖不到的
+            // 语言时保留 codelens，避免那些语言失去静态分析兜底。判定见上方
+            // `codelens_hidden` 的预计算注释。
+            if tool.server_id == "codelens" && codelens_hidden {
                 return false;
             }
             tool_is_enabled(tool, global_scope.as_ref(), scope.as_ref())
@@ -164,6 +172,41 @@ pub async fn collect_all_mcp_tools(
         }
     }
 
+    // 反制 grep 路径依赖（2026-09-24）：lsp 实际激活（能力可用 + 项目 scope
+    // 已启用）时，给平替工具 grep-search 注入语义路由提示。根因：grep 无法
+    // 区分真实引用与同名符号（其他模块的同名常量、注释、字符串字面量），
+    // 模型拿到"看起来有结果"的匹配集就继续走，不会想到改用 lsp-*。提示只
+    // 点名核心工具（全语言可用），workspace-symbols 非全语言支持（如
+    // csharp），按实际暴露能力条件渲染，避免诱导调用不存在的工具。
+    // lsp 未激活时 grep-search 描述保持原样（不影响其他项目与 prompt cache
+    // 的跨项目稳定性——同一项目内 lsp 状态不变则描述稳定）。
+    if lsp_active {
+        if let Some(grep_tool) = tools
+            .iter_mut()
+            .find(|tool| tool.server_id == "grep" && tool.name == "search")
+        {
+            let mut routes = String::from(
+                "\n\n**Semantic queries are NOT grep's job** — this project has LSP servers \
+                 running, and grep cannot tell a real reference from a same-named symbol in \
+                 another module, a comment or a string literal. Route semantic queries to:\
+                 \n- Where is X defined → `lsp-goto` (kind=definition)\
+                 \n- Every usage of X / impact before renaming → `lsp-references`\
+                 \n- Type or signature of X → `lsp-hover`",
+            );
+            if lsp_available_tools
+                .iter()
+                .any(|tool| tool == "lsp-workspace-symbols")
+            {
+                routes.push_str("\n- Symbols by name across the project → `lsp-workspace-symbols`");
+            }
+            routes.push_str(
+                "\n- Verify edits compile → `lsp-diagnostics`\
+                 \nReserve grep for literal text: log messages, config keys, comments, string constants.",
+            );
+            grep_tool.description = format!("{}{}", grep_tool.description, routes);
+        }
+    }
+
     if let Some(skill_tool) = SkillsService::new().tool(project_id).await? {
         if tool_is_enabled(&skill_tool, global_scope.as_ref(), scope.as_ref()) {
             tools.push(skill_tool);
@@ -185,7 +228,7 @@ pub async fn collect_all_mcp_tools(
 /// Check whether the codebase search tool should be available for the
 /// given project: the project must have codebase enabled AND have at
 /// least one embedded chunk in its vector table.
-async fn is_codebase_available(project_id: Option<&str>) -> Result<bool> {
+pub(crate) async fn is_codebase_available(project_id: Option<&str>) -> Result<bool> {
     let Some(project_id) = project_id.map(str::trim).filter(|s| !s.is_empty()) else {
         return Ok(false);
     };
@@ -295,34 +338,69 @@ pub async fn collect_allowed_mcp_tools(
 /// (saving tokens) until the user opts in.
 const DEFAULT_DISABLED_SERVER_IDS: &[&str] = &["terminal", "lsp", "computer-use"];
 
-fn tool_is_enabled(
-    tool: &McpTool,
+/// 按「完整工具名 + server_id」判定工具级开关（`tool_is_enabled` 的按名版本）：
+/// 系统提示词注入复用同一逻辑，保证「注入的工具 = 实际可见的工具」
+/// （2026-09-25 一致性修复——此前 LSP 章节/清单只看域级与能力级开关，用户
+/// 单独禁用某个 lsp-* 时仍会被注入，诱导模型调用不可见的工具）。
+pub(crate) fn tool_name_is_enabled(
+    full_name: &str,
+    server_id: &str,
     global_scope: Option<&McpGlobalScopeSettings>,
     scope: Option<&McpProjectScopeSettings>,
 ) -> bool {
     // The global blacklist has the highest priority: a tool disabled
     // globally stays disabled regardless of project scope.
-    if global_scope
-        .is_some_and(|global| global.disabled_tool_names.contains(&tool.full_name()))
-    {
+    if global_scope.is_some_and(|global| global.disabled_tool_names.contains(full_name)) {
         return false;
     }
     // Default-disabled servers are excluded when there is no project
     // scope (no project context = user hasn't opted in).
-    if DEFAULT_DISABLED_SERVER_IDS.contains(&tool.server_id.as_str()) {
+    if DEFAULT_DISABLED_SERVER_IDS.contains(&server_id) {
         let Some(scope) = scope else {
             return false;
         };
-        return scope.is_server_enabled(&builtin_scope_server_id(&tool.server_id))
-            && scope.is_tool_enabled(&tool.full_name());
+        return scope.is_server_enabled(&builtin_scope_server_id(server_id))
+            && scope.is_tool_enabled(full_name);
     }
 
     let Some(scope) = scope else {
         return true;
     };
 
-    scope.is_server_enabled(&builtin_scope_server_id(&tool.server_id))
-        && scope.is_tool_enabled(&tool.full_name())
+    scope.is_server_enabled(&builtin_scope_server_id(server_id))
+        && scope.is_tool_enabled(full_name)
+}
+
+fn tool_is_enabled(
+    tool: &McpTool,
+    global_scope: Option<&McpGlobalScopeSettings>,
+    scope: Option<&McpProjectScopeSettings>,
+) -> bool {
+    tool_name_is_enabled(&tool.full_name(), &tool.server_id, global_scope, scope)
+}
+
+/// 判断 LSP 语义工具在给定项目下是否**实际可用**（与 collect 阶段 `lsp_active`
+/// 的判定同源：可用能力集合非空 + 全局黑名单未禁用 + 项目 scope 已启用
+/// builtin:lsp）。供调用阶段的语义路由纠偏复用——判定失败一律静默返回 false，
+/// 纠偏提示宁可不加，也不能因状态查询失败打断工具调用。
+pub(crate) async fn is_lsp_tooling_active(project_id: Option<&str>) -> bool {
+    let Ok(exposure) = super::super::servers::lsp::tool_exposure(project_id).await else {
+        return false;
+    };
+    if exposure.tools.is_empty() {
+        return false;
+    }
+    let Ok(global_scope) = load_global_scope().await else {
+        return false;
+    };
+    let Ok(scope) = load_project_scope(project_id).await else {
+        return false;
+    };
+    get_builtin_tools().iter().any(|tool| {
+        tool.server_id == "lsp"
+            && exposure.tools.contains(&tool.full_name())
+            && tool_is_enabled(tool, global_scope.as_ref(), scope.as_ref())
+    })
 }
 
 pub(crate) fn builtin_scope_server_id(server_id: &str) -> String {

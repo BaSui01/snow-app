@@ -60,8 +60,8 @@ mod serialize;
 pub use super::servers::sub_agents::SUB_AGENT_COMMS_TOOL_FULL_NAMES;
 pub use call::call_mcp_tool;
 pub(crate) use collect::{
-    builtin_scope_server_id, builtin_server_name, load_global_scope, load_project_scope,
-    server_id_from_tool_name, with_database_path,
+    builtin_scope_server_id, builtin_server_name, is_codebase_available, load_global_scope,
+    load_project_scope, server_id_from_tool_name, tool_name_is_enabled, with_database_path,
 };
 pub use collect::{collect_all_mcp_tools, collect_allowed_mcp_tools};
 pub use serialize::{

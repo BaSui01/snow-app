@@ -1,6 +1,6 @@
 # 7-LSP External Language Server Integration Design (lsp MCP service)
 
-> Status: Design v1 
+> Status: Design v1
 > Target version: v0.2.x
 > Chinese original: `docs/zh-CN/4-架构与开发/7-LSP外部语言服务器接入设计.md`
 
@@ -47,16 +47,16 @@
 
 ## 3. Architecture Constraints (facts to respect)
 
-| Constraint | Source |
-|---|---|
-| `McpService` trait: `id()` / `tools()` / `execute()` (sync) | `native/src/mcp/service.rs` |
-| Async tool execution: add a `lsp-` prefix branch in `call_mcp_tool` (`native/src/mcp/tools/call.rs`) and `.await` directly (mirror `codelens-` branch, call.rs:305) | `tools/call.rs` |
-| Sync `execute()` must return "must be executed through the async executor" for lsp tools (mirror codelens mod.rs:148) | `servers/codelens/mod.rs` |
-| Service registration: append to the END of `builtin_services_in_order()` in `mcp/builtin.rs` (prompt-cache stability red line) | `mcp/builtin.rs:29-51` |
-| Config path | Truth source is the `lsp_server_configs` table; **`lsp-config` scope becomes DB-backed** (like subAgents/hooks/imagegen, config/mod.rs:1269); no file, no diff-sync; legacy `~/.snow/lsp-config.json` imported once | `servers/config/mod.rs:1269`, `database.rs:468` |
-| tokio already enables `process`/`io-util`/`sync`/`time`/`rt` features | `native/Cargo.toml:20` |
-| No synchronous blocking in Rust backend (async APIs only) | AGENTS.md red line 7 |
-| Tool name format `{server_id}-{tool_name}`, lowercase snake_case | `mcp/tools` convention |
+| Constraint                                                                                                                                                          | Source                                                                                                                                                                                                              |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `McpService` trait: `id()` / `tools()` / `execute()` (sync)                                                                                                         | `native/src/mcp/service.rs`                                                                                                                                                                                         |
+| Async tool execution: add a `lsp-` prefix branch in `call_mcp_tool` (`native/src/mcp/tools/call.rs`) and `.await` directly (mirror `codelens-` branch, call.rs:305) | `tools/call.rs`                                                                                                                                                                                                     |
+| Sync `execute()` must return "must be executed through the async executor" for lsp tools (mirror codelens mod.rs:148)                                               | `servers/codelens/mod.rs`                                                                                                                                                                                           |
+| Service registration: append to the END of `builtin_services_in_order()` in `mcp/builtin.rs` (prompt-cache stability red line)                                      | `mcp/builtin.rs:29-51`                                                                                                                                                                                              |
+| Config path                                                                                                                                                         | Truth source is the `lsp_server_configs` table; **`lsp-config` scope becomes DB-backed** (like subAgents/hooks/imagegen, config/mod.rs:1269); no file, no diff-sync; legacy `~/.snow/lsp-config.json` imported once | `servers/config/mod.rs:1269`, `database.rs:468` |
+| tokio already enables `process`/`io-util`/`sync`/`time`/`rt` features                                                                                               | `native/Cargo.toml:20`                                                                                                                                                                                              |
+| No synchronous blocking in Rust backend (async APIs only)                                                                                                           | AGENTS.md red line 7                                                                                                                                                                                                |
+| Tool name format `{server_id}-{tool_name}`, lowercase snake_case                                                                                                    | `mcp/tools` convention                                                                                                                                                                                              |
 
 ## 4. Dependencies (add to native/Cargo.toml)
 
@@ -80,12 +80,14 @@ Rationale:
 
 ```
 native/src/mcp/servers/lsp/
-├── mod.rs       # LspService: McpService impl + tool schemas + execute entry
-├── config.rs    # Config loading: read lsp_server_configs table (spawn_blocking) + validation
-├── manager.rs   # ServerManager global singleton: session routing & lifecycle
+├── mod.rs       # LspService: McpService impl + tool schemas + execute entry; resolve_lang_root stack-root resolution
+├── config.rs    # Config loading: read lsp_server_configs table (spawn_blocking) + exposure decision (tool_exposure)
+├── detect.rs    # Language-stack detection & stack-root discovery (markers_for_lang / find_lang_root, see §7.2)
+├── manager.rs   # ServerManager global singleton: session routing & lifecycle (key = language × stack root)
 ├── session.rs   # ServerSession: single language-server session (process + client + state)
 ├── client.rs    # Protocol ops: initialize / didOpen / hover / diagnostics
-└── format.rs    # LSP responses → agent-friendly output (JSON + Markdown summary)
+├── format.rs    # LSP responses → agent-friendly output (JSON + Markdown summary)
+└── probe.rs     # Command installation probe (PATH scan + TTL cache)
 
 native/src/storage/services/lsp_server_configs.rs   # new table CRUD (mirror mcp_server_configs.rs)
 native/src/storage/database.rs                      # CREATE TABLE (create_schema, idempotent)
@@ -94,14 +96,15 @@ native/src/exports/storage/lsp.rs                   # napi exports (list/upsert/
 
 ### 5.1 Module responsibilities
 
-| Module | Responsibility | Key points |
-|---|---|---|
-| `mod.rs` | Tool schemas (`McpTool`), sync `execute()` error, `execute_lsp_tool()` async entry (for call.rs) | mirror codelens/mod.rs |
-| `config.rs` | Read `~/.snow/lsp-config.json`, serde deserialization; missing file → empty config; invalid JSON → error | fields aligned with `validate_lsp_servers` |
-| `manager.rs` | `OnceLock<Arc<ServerManager>>`; resolve project root → route sessions by (language, project root); lazy start / idle reclaim / crash restart / cap | global singleton; `tokio::sync::Mutex` guards session table |
-| `session.rs` | Session state machine: spawn process, async-lsp MainLoop, initialize handshake, opened-file registry, serialized op lock | holds process handle + reclamation |
-| `client.rs` | `textDocument/hover`, `textDocument/diagnostic` (pull) + `publishDiagnostics` (push fallback), `didOpen/didClose` | all async, with timeouts |
-| `format.rs` | Diagnostic→JSON items, hover→Markdown, errors→actionable text | output structure per §8 |
+| Module       | Responsibility                                                                                                                                                                       | Key points                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
+| `mod.rs`     | Tool schemas (`McpTool`), sync `execute()` error, `execute_lsp_tool()` async entry (for call.rs)                                                                                     | mirror codelens/mod.rs                                      |
+| `config.rs`  | Read from the `lsp_server_configs` table (DB-backed, §8.5) + serde parsing; `tool_exposure` exposure decision (§8.0, incl. lang-stack presence check)                                | fields aligned with `validate_lsp_servers`                  |
+| `detect.rs`  | Language-stack detection + **stack-root discovery** (`markers_for_lang` 12-language marker table; `find_lang_root` nearest-ancestor walk + downward scan fallback); 60s TTL cache    | stack-root semantics in §7.2; unit-tested                   |
+| `manager.rs` | `OnceLock<Arc<ServerManager>>`; route sessions by (language, **stack root**); lazy start / idle reclaim / crash restart / cap; status snapshot attributes sessions via `starts_with` | global singleton; `tokio::sync::Mutex` guards session table |
+| `session.rs` | Session state machine: spawn process, async-lsp MainLoop, initialize handshake, opened-file registry, serialized op lock                                                             | holds process handle + reclamation                          |
+| `client.rs`  | `textDocument/hover`, `textDocument/diagnostic` (pull) + `publishDiagnostics` (push fallback), `didOpen/didClose`                                                                    | all async, with timeouts                                    |
+| `format.rs`  | Diagnostic→JSON items, hover→Markdown, errors→actionable text                                                                                                                        | output structure per §8                                     |
 
 ## 6. Core Data Structures
 
@@ -193,18 +196,36 @@ tool call → project_id present?
 ```
 
 - SSH/remote projects (`is_ssh_path`): **not supported**, return error (external language-server processes run locally).
-- Repeated calls to the same (language, project) within a session hit the same process — **never re-spawn**.
+- Repeated calls to the same (language, stack root) within a session hit the same process — **never re-spawn**.
+
+**Stack-root discovery (2026-09-24: the session key's second dimension upgrades from "project root" to "stack root"):**
+
+Motivation: the project root is NOT the language server's workspace root. Typical counterexample (this project itself): `Cargo.toml` lives in the `native/` subdirectory while the project root only has `package.json` — with the project root as rootUri, rust-analyzer finds no Cargo workspace and degrades to **detached single-file mode** (cross-file jumps/references break, type diagnostics missing, dead_code false positives).
+
+Rule: `resolve_lang_root` = project root (table above) → `detect::find_lang_root`:
+
+```
+file-level request (filePath present): walk UP from the file's directory to the nearest stack marker
+  native/src/x.rs → native/Cargo.toml hit → session root = native/ (each crate in a monorepo gets its own session)
+project-level request (no file): scan DOWN from the project root (depth <= 2), take the shallowest hit
+no hit either way → LspError::NoLangStack, explicit refusal (no start, no exposure)
+```
+
+- **12-language marker table** (`detect.rs::markers_for_lang`, supports `*.csproj`-style suffix wildcards): rust→`Cargo.toml`; go→`go.mod`/`go.work`; typescript→`tsconfig.json`/`jsconfig.json`/`package.json`; python→`pyproject.toml`/`setup.py`/`setup.cfg`/`requirements.txt`/`Pipfile`; java→`pom.xml`/`build.gradle(.kts)`/`settings.gradle(.kts)`; c→`compile_commands.json`/`CMakeLists.txt`/`meson.build`; csharp→`*.csproj`/`*.sln`/`*.fsproj`; lua→`.luarc.json`/`.luacheckrc`; php→`composer.json`; ruby→`Gemfile`/`*.gemspec`; kotlin→`build.gradle.kts`/`*.kt`; swift→`Package.swift`/`*.xcodeproj`.
+- **No stack = no start**: no marker file → `NoLangStack` (§9); the exposure layer shares the same decision (§8.0 "exposed = callable"), so the model never sees a call that is bound to fail.
+- **Status badges**: `session_statuses` filters by project with `starts_with` (stack roots below the project root still attribute correctly; manager.rs).
+- Languages without a marker table (custom `lang`): no stack-root constraint (project root = session root, legacy behavior).
 
 ### 7.3 Key parameters
 
-| Parameter | Default | Notes |
-|---|---|---|
-| `max_sessions` | 3 | **Total process cap across (language, project)** (rust-analyzer ~500MB per process; LRU-evict least-recently-used on overflow) |
-| `idle_timeout` | 10 min | Idle reclamation (no tool calls) |
+| Parameter            | Default                                 | Notes                                                                                                                                         |
+| -------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `max_sessions`       | 3                                       | **Total process cap across (language, project)** (rust-analyzer ~500MB per process; LRU-evict least-recently-used on overflow)                |
+| `idle_timeout`       | 10 min                                  | Idle reclamation (no tool calls)                                                                                                              |
 | `initialize_timeout` | 30 s (default); **120 s for JVM-based** | Per-server default table: `jdtls`/`kotlin-lsp` 120s (JVM startup, per Anthropic claude-plugins-official `startupTimeout: 120000`), others 30s |
-| `request_timeout` | 10 s (diagnostics) / 5 s (hover) | Per-request timeout |
-| `restart_limit` | 2 | Consecutive crash restart cap |
-| Session eviction | LRU | Evict least-recently-used when over cap |
+| `request_timeout`    | 10 s (diagnostics) / 5 s (hover)        | Per-request timeout                                                                                                                           |
+| `restart_limit`      | 2                                       | Consecutive crash restart cap                                                                                                                 |
+| Session eviction     | LRU                                     | Evict least-recently-used when over cap                                                                                                       |
 
 ### 7.4 Process management essentials
 
@@ -218,12 +239,14 @@ tool call → project_id present?
 
 ### 8.0 Tool exposure policy (off by default)
 
-**`lsp` service tools are NOT exposed by default; they only appear when the `lsp_server_configs` table has at least one *enabled AND installed* language server (§8.6).**
+**`lsp` service tools are NOT exposed by default; they only appear when the `lsp_server_configs` table has at least one _enabled AND installed_ language server (§8.6).**
 
-- Implementation: `has_enabled_server()` reads the table and PATH-probes the enabled records — no *enabled-and-installed* record → **empty tool list** (agent never sees `lsp-*` tools; no prompt overhead, no wasted calls). Plain enabled is not enough: a server whose command is missing from PATH can never start, so exposing it only invites guaranteed-to-fail calls.
+- Implementation: `has_enabled_server()` reads the table and PATH-probes the enabled records — no _enabled-and-installed_ record → **empty tool list** (agent never sees `lsp-*` tools; no prompt overhead, no wasted calls). Plain enabled is not enough: a server whose command is missing from PATH can never start, so exposing it only invites guaranteed-to-fail calls.
 - Runtime changes via `config-set scope=lsp-config` (agent) or the `lsp-settings` page (user) take effect on the **next tool call automatically** (reload from table per call — no restart needed; better than file-backed scopes).
 - Exposed but file type unmatchable (e.g. only rust configured, diagnosing .py) → explicit error per §9 (**never silent**).
 - Sub-agent scenarios follow the same policy (tool list controlled globally).
+- **Capability-based subtool exposure (§8.7)**: the exposed set is not a fixed full tool list but the union of capabilities of all _enabled & installed_ servers — an `lsp-*` tool (e.g. a future `lsp-rename`) supported by no enabled server simply does not appear (no prompt overhead, no guaranteed-to-fail calls).
+- **Lang-stack presence check (2026-09-24, "exposed = callable")**: the exposure layer and the invocation layer share one lang-stack decision (`server_matches_project` = `find_lang_root` returns a hit, §7.2) — when the project has no marker for a language (e.g. no `go.mod`), the corresponding `lsp-*` tools are not exposed, no server starts, and a bypassing call returns the explicit `NoLangStack` error. All three stay consistent: no "visible but uncallable" or "callable but the server blows up" in-between state.
 
 ### 8.5 Config architecture (DB-backed scope, no file compatibility layer)
 
@@ -304,24 +327,27 @@ lsp-hover filePath=<absolute path> line=<1-based> column=<1-based>
 Steps 0-3 same as above (file stays open via `opened_files` ref-counting for consecutive queries; closed on idle reclamation).
 Output (hover content is itself Markdown; pass through + wrap):
 
-```json
+````json
 {
   "language": "rust",
   "contents": "```rust\nfn foo(x: i32) -> i32\n```\nReturns `x + 1`.",
-  "range": { "start": { "line": 12, "column": 4 }, "end": { "line": 12, "column": 7 } }
+  "range": {
+    "start": { "line": 12, "column": 4 },
+    "end": { "line": 12, "column": 7 }
+  }
 }
-```
+````
 
 ### 8.3 Phase 3 (completed 2026-08-14) — more tools + project-level scope
 
 > Phase 2 (the `lsp-settings` page) was completed on 2026-08-14: preload `lspApi` → IPC `lsp-server-configs:*` → `LspSettingsPanel` + `lspSettings/` subdirectory (Editor/List/Summary) → registration chain (`app_control` VALID_PAGES / `types.ts` / `MainContent` lazy / `settingsItems.ts`) → i18n in three languages. Page CRUD reads/writes the `lsp_server_configs` table (source of truth) directly, identical to `config-set scope=lsp-config`.
 
-| Tool | Notes | Status |
-|---|---|---|
+| Tool             | Notes                                                                                                                            | Status                                              |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | `lsp-definition` | `textDocument/definition`; output aligned with codelens-find_definition (name + definitions list); LSP preferred when configured | ✅ done (cross-file jump to manager.rs:29 verified) |
-| `lsp-references` | `textDocument/references`; locations + one-line code context (cap 100) | ✅ done (11 refs with context verified) |
-| `lsp-symbols` | `textDocument/documentSymbol`; nested tree name/kind/detail/range/children, more accurate than tree-sitter outline | ✅ done (26 symbols verified) |
-| `lsp-format` | `textDocument/formatting`; dryRun default true (no write); false applies edits + didChange sync | ✅ done (dryRun 42 edits verified) |
+| `lsp-references` | `textDocument/references`; locations + one-line code context (cap 100)                                                           | ✅ done (11 refs with context verified)             |
+| `lsp-symbols`    | `textDocument/documentSymbol`; nested tree name/kind/detail/range/children, more accurate than tree-sitter outline               | ✅ done (26 symbols verified)                       |
+| `lsp-format`     | `textDocument/formatting`; dryRun default true (no write); false applies edits + didChange sync                                  | ✅ done (dryRun 42 edits verified)                  |
 
 **Project-level scope** (2026-08-14): `project_lsp_server_configs` (system_settings JSON, mirroring project_mcp_server_configs) — project configs **override** global ones for the same language; configure via `config-set scope=lsp-config projectId=...`; frontend lsp-settings page gained Global/Project tabs. Session granularity (language × project root) already gives per-project processes.
 
@@ -333,17 +359,17 @@ Output (hover content is itself Markdown; pass through + wrap):
 
 **Problem**: early seeding/migration always wrote `enabled=true` without probing the environment — producing the contradictory "enabled but not installed" state: the tool list exposed servers that could never start, and the truth only surfaced as a call-time error.
 
-**`enabled` semantics (revised)**: `enabled` expresses *user intent to use the config*; it does **not** mean installed. Actual availability = `enabled && installed`:
+**`enabled` semantics (revised)**: `enabled` expresses _user intent to use the config_; it does **not** mean installed. Actual availability = `enabled && installed`:
 
 - `installed`: the command is executable on PATH (`probe.rs`; Windows builds candidates from PATHEXT, explicit paths supported; **pure filesystem scan — no process spawn, no side effects**).
 - Both tool exposure (`has_enabled_server` / the lsp filter in `collect_all_mcp_tools`) and session startup (config lookup in `manager.get_or_start`) require `enabled && installed`; a missing server yields an explicit degradation error (§9).
 
 **Three write/reconcile paths** (all idempotent, side-effect free):
 
-| Path | Behavior |
-|---|---|
-| Seed `default_seed_servers()` | Sets `enabled` from `probe::is_command_installed(command)` at write time — only installed servers default to enabled |
-| Migration `migrate_legacy_file()` | Same (the legacy lsp-config.json has no enabled concept; migration decides by environment) |
+| Path                                                   | Behavior                                                                                                                                                                                                                            |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Seed `default_seed_servers()`                          | Sets `enabled` from `probe::is_command_installed(command)` at write time — only installed servers default to enabled                                                                                                                |
+| Migration `migrate_legacy_file()`                      | Same (the legacy lsp-config.json has no enabled concept; migration decides by environment)                                                                                                                                          |
 | Existing-data reconcile `reconcile_enabled_by_probe()` | Runs at every startup: for records with `source=seed`/`source=legacy` AND `enabled=true` only, probe the command — not installed → `enabled=false`; **never touches `source=manual`** (user-configured) or already-disabled records |
 
 **Reconcile boundary**: one-directional "not installed → disable" only; it **never auto-enables** — after installing a server the user turns the toggle on in the settings page (avoids overriding explicit user intent, and avoids force-enabling a server the user deliberately disabled).
@@ -358,10 +384,10 @@ Output (hover content is itself Markdown; pass through + wrap):
 
 **Tool definitions**:
 
-| Tool | LSP requests | Input | Output |
-|---|---|---|---|
+| Tool                 | LSP requests                                                                                        | Input                | Output                                                                                                                                                           |
+| -------------------- | --------------------------------------------------------------------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `lsp-call-hierarchy` | `textDocument/prepareCallHierarchy` + `callHierarchy/incomingCalls` + `callHierarchy/outgoingCalls` | filePath/line/column | `symbol` + `incoming[]` (caller: name/kind/detail/location + callSites: call-site position + one-line context) + `outgoing[]` (callee, same shape); cap 100 each |
-| `lsp-type-hierarchy` | `textDocument/prepareTypeHierarchy` + `typeHierarchy/supertypes` + `typeHierarchy/subtypes` | filePath/line/column | `symbol` + `supertypes[]` (parent chain) + `subtypes[]` (all children); each item name/kind/detail/location |
+| `lsp-type-hierarchy` | `textDocument/prepareTypeHierarchy` + `typeHierarchy/supertypes` + `typeHierarchy/subtypes`         | filePath/line/column | `symbol` + `supertypes[]` (parent chain) + `subtypes[]` (all children); each item name/kind/detail/location                                                      |
 
 **Key design decisions**:
 
@@ -376,10 +402,10 @@ Output (hover content is itself Markdown; pass through + wrap):
 
 **Tool definitions**:
 
-| Tool | LSP requests | Input | Output |
-|---|---|---|---|
-| `lsp-code-action` | `textDocument/codeAction` | filePath/line/column; optional `only` (kind filter, e.g. `["quickfix"]`), `apply` | apply=false: action list (title/kind/isPreferred + edit summary + command name & args); apply=true: applies edit-based actions (applied[]), command actions go to deferredCommands (**never executed implicitly**) |
-| `lsp-execute-command` | `workspace/executeCommand` | `command` (required); `arguments` (pass-through); `filePath` (optional, locates language); `dryRun` (default true) | WorkspaceEdit results → dryRun preview of multi-file edits / false applies to disk + didChange sync; non-WorkspaceEdit results returned verbatim as `result` |
+| Tool                  | LSP requests               | Input                                                                                                              | Output                                                                                                                                                                                                             |
+| --------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `lsp-code-action`     | `textDocument/codeAction`  | filePath/line/column; optional `only` (kind filter, e.g. `["quickfix"]`), `apply`                                  | apply=false: action list (title/kind/isPreferred + edit summary + command name & args); apply=true: applies edit-based actions (applied[]), command actions go to deferredCommands (**never executed implicitly**) |
+| `lsp-execute-command` | `workspace/executeCommand` | `command` (required); `arguments` (pass-through); `filePath` (optional, locates language); `dryRun` (default true) | WorkspaceEdit results → dryRun preview of multi-file edits / false applies to disk + didChange sync; non-WorkspaceEdit results returned verbatim as `result`                                                       |
 
 **Key design decisions**:
 
@@ -388,20 +414,43 @@ Output (hover content is itself Markdown; pass through + wrap):
 3. **Language targeting**: filePath is optional — when provided it matches the language by extension and ensures the file is open; without it, the call only succeeds when **exactly one** server is enabled (multi-server setups get an error asking for filePath).
 4. **Capability filtering (§8.7)**: code-action is marked per Appendix F ✅ languages (typescript/python/go/rust/c/java/ruby); execute-command is currently marked for rust/go (verified live on 2026-08-15), other languages pending verification. Command execution has side effects — dryRun defaults to true; false requires an explicit argument.
 
+### 8.10 Dynamic system-prompt injection (2026-09-24)
+
+Goal: make the model actually call `lsp-*` tools in semantic scenarios. Measured background: `lsp-diagnostics` was called 134 times, all other lsp tools 11 combined, while `grep-search` hit 941 — **generic "MUST use lsp-\*" rules barely move behavior** (the model cannot reliably self-classify "is this a semantic query?"); what works is "action-timing hard binding + spelling out the substitute's defect".
+
+Three injection layers (all conditional: they appear only when lsp is actually active, strictly consistent with tool visibility):
+
+| Layer                     | Injection point                                                                     | Content                                                                                                                                                                                                                              | Condition                                                                                                |
+| ------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| ① System-prompt section   | `build_system_prompt_section` (api/conversation/context.rs, injected every request) | `## Language Servers`: server list + run state (running / starts on first use) + capability-grouped `lsp-*` tool list + Routing rules (scenario → tool hard bindings) + prewarm (background spawn kills first-call cold start)       | injected while a server is available                                                                     |
+| ② Substitute-tool counter | `collect.rs` (rewrites the grep-search description during per-turn tool collection) | "Semantic queries are NOT grep's job" + scenario → tool routing list (goto/references/hover/workspace-symbols/diagnostics); names only the tools actually exposed (workspace-symbols rendered conditionally)                         | injected while `lsp_active`; original description otherwise (other projects and prompt cache unaffected) |
+| ③ Tool timing triggers    | `tool_schemas()` (lsp/mod.rs static schemas)                                        | goto ("Use INSTEAD OF grep to locate a definition"), references ("Run this BEFORE renaming/removing any shared symbol"), hover ("Cheaper than filesystem-read when you only need a type"), workspace-symbols ("Use INSTEAD OF grep") | lsp tools only exist while active → conditionally effective by construction                              |
+
+Routing rules (inside the system-prompt section, rewritten scenario-first on 2026-09-24; priority preamble added 2026-09-25):
+
+- **Priority preamble**: every code-semantics question (symbols, usages, types, impact, structure) starts with `lsp-*`; the generic read-only tools (grep, direct file reads) are the fallback for what LSP cannot answer — literal text and raw file content.
+- Locating a symbol's definition → `lsp-goto`; all usages / impact before a rename → `lsp-references`; a symbol's type or signature → `lsp-hover`; finding symbols by name → `lsp-workspace-symbols` (the last two render conditionally per merged capabilities).
+- `grep-search` matches same-named symbols in unrelated modules, comments and strings — **literal text only** (log text, config keys, comments); semantic queries are forbidden.
+- Getting line/column: the 1-indexed line numbers already shown by `lsp-symbols` / `filesystem-read` feed straight into the `line`/`column` params of `lsp-goto` / `lsp-references` (combo move, lowers parameter cost).
+- After editing code → run `lsp-diagnostics` on the changed files (`filePaths` batch, <=30).
+
+Design constraints: injection conditions must match tool visibility (a mismatch invites calls to invisible tools); within one project the injected text stays stable while lsp state is unchanged (prompt-cache friendly).
+
 ## 9. Degradation & Error Strategy
 
-| Scenario | Behavior |
-|---|---|
-| SSH/remote path | Error: `remote projects not yet supported for LSP (language-server processes run locally); use a local project` |
-| File type unconfigured | Error: `no LSP server configured for .xyz; configure via the lsp-config domain (config-set scope=lsp-config). Symbol navigation remains available via codelens-* tools` |
-| Enabled but not installed (§8.6) | PATH probe before session start → error + `installCommand` hint (no need to wait for spawn ENOENT) |
-| Command missing (spawn ENOENT) | Error + `installCommand` hint (e.g. `rustup component add rust-analyzer`) |
-| initialize timeout / crash ≥2 | Error: `language server xxx failed to start; check installation & configuration`; mark init_failed; next call retries |
-| Pull unsupported | Auto fallback push (transparent) |
-| Request timeout | Error: `lsp request timed out (10s)` |
-| Config JSON corrupt | Error with fix hint for `~/.snow/lsp-config.json` (config tool validates writes; should not normally happen) |
-| Oversized file (>512KB) | Reject with hint (matches codelens MAX_FILE_SIZE) |
-| codelens-* forwarding (2026-08-15) | When LSP is available the codelens tools automatically run through LSP (result gains `engine: "lsp"`, shape unchanged); when unavailable/failed they fall back to built-in static analysis with an explicit **`lspFallback: true`** marker — agents can tell the source of the result, and call `lsp-*` tools directly for semantic results (their errors carry actionable config guidance) |
+| Scenario                                 | Behavior                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SSH/remote path                          | Error: `remote projects not yet supported for LSP (language-server processes run locally); use a local project`                                                                                                                                                                                                                                                                             |
+| File type unconfigured                   | Error: `no LSP server configured for .xyz; configure via the lsp-config domain (config-set scope=lsp-config). Symbol navigation remains available via codelens-* tools`                                                                                                                                                                                                                     |
+| **No language stack (§7.2, 2026-09-24)** | Error: `no {lang} stack marker found in the project (Cargo.toml, …). LSP servers only start when the stack truly exists: verify the stack lives inside this project, or check the file path against the project root` — the exposure layer applies the same decision (§8.0 "exposed = callable"), so this call normally never reaches the model                                             |
+| Enabled but not installed (§8.6)         | PATH probe before session start → error + `installCommand` hint (no need to wait for spawn ENOENT)                                                                                                                                                                                                                                                                                          |
+| Command missing (spawn ENOENT)           | Error + `installCommand` hint (e.g. `rustup component add rust-analyzer`)                                                                                                                                                                                                                                                                                                                   |
+| initialize timeout / crash ≥2            | Error: `language server xxx failed to start; check installation & configuration`; mark init_failed; next call retries                                                                                                                                                                                                                                                                       |
+| Pull unsupported                         | Auto fallback push (transparent)                                                                                                                                                                                                                                                                                                                                                            |
+| Request timeout                          | Error: `lsp request timed out (10s)`                                                                                                                                                                                                                                                                                                                                                        |
+| Config JSON corrupt                      | Error with fix hint for `~/.snow/lsp-config.json` (config tool validates writes; should not normally happen)                                                                                                                                                                                                                                                                                |
+| Oversized file (>512KB)                  | Reject with hint (matches codelens MAX_FILE_SIZE)                                                                                                                                                                                                                                                                                                                                           |
+| codelens-* forwarding (2026-08-15)       | When LSP is available the codelens tools automatically run through LSP (result gains `engine: "lsp"`, shape unchanged); when unavailable/failed they fall back to built-in static analysis with an explicit **`lspFallback: true`** marker — agents can tell the source of the result, and call `lsp-*` tools directly for semantic results (their errors carry actionable config guidance) |
 
 **Degradation principle**: lsp failures NEVER silently fall back to codelens (diagnostics ≠ symbol navigation; silent fallback misleads the agent); errors must be actionable. The reverse codelens → LSP fallback is likewise **explicitly marked** (`lspFallback: true`), never silent.
 
@@ -416,18 +465,19 @@ Output (hover content is itself Markdown; pass through + wrap):
 
 ## 11. Phased Implementation Plan
 
-| Phase | Content | Verification |
-|---|---|---|
-| **Phase 0** | Cargo.toml deps; `lsp_server_configs` table + storage service + exports; one-time legacy file migration; `lsp/` skeleton; builtin.rs registration; call.rs branch; seed writes to table (platform-aware) | `cargo check` + `npx tsc --noEmit` |
-| **Phase 1** | Session lifecycle (spawn/initialize/reclaim/restart) + `lsp-diagnostics` + `lsp-hover` (config read from table) | rust-analyzer live test (see §12) |
-| **Phase 1.5** | **`lsp-config` scope becomes DB-backed** (config-get/set/delete hit the table directly, mirroring subAgents/imagegen) — **agent config path live** | config-set takes effect immediately (no restart) |
-| **Phase 2** | Frontend `lsp-settings` page (mirroring mcp-settings: list + editor + toggle + summary; registration chain: app_control VALID_PAGES + types.ts + MainContent lazy + settingsItems.ts + LspSettingsPanel + lspSettings/ subdir; i18n zh/en/zh-TW) | ✅ done (2026-08-14): page CRUD consistent with table; `app-control-openSettings page=lsp-settings` works |
-| **Phase 3** | More tools (definition/references/symbols/format) + project-level scope (project_lsp_server_configs + config scope projectId + frontend tabs) | ✅ done (2026-08-14): tools verified (cross-file definition/references/format dryRun) + project override semantics verified |
-| **Phase 4** | **Per-server capability-based tool exposure** (§8.7: capabilities.rs static table + collect filtering — expose only the tool subset supported by enabled language servers) + high-value tools (completion / rename / code-action / signature-help, priority per Appendix F) | ✅ done (2026-08-14): capability filtering verified (php-only → 8 tools without rename/code-action; restored → 10); 4 new tools verified on gopls; runtime second-check verified (php rename → unsupported error) |
-| **Phase 4.5** | **More agent high-value tools**: `lsp-workspace-symbols` (merged query across all enabled server languages, content-dedup, cap 50), `lsp-implementation` (interface/trait implementation jump), `lsp-type-definition` (type definition jump); Appendix F-3 rejections finalized (document-highlight superseded by references, inlay-hints noisy, semantic-tokens low value) | ✅ done (2026-08-14): gopls verified (type-definition on variable / implementation 2 hits / workspace-symbols merged); 13 tools |
-| **Phase 4.6** | **Tool-set trim (13→10) + project-wide diagnostics**: removed 4 editor-oriented low-value tools (completion/signature-help/code-action/format — LLM is the completer, empty results in agent scenarios; code kept for future restore); added `lsp-workspace-diagnostics` (LSP 3.17 workspace/diagnostic pull; rust-analyzer/gopls/clangd support, TS/pyright skipped gracefully, grouped by file, failures degrade to warnings) | ✅ done (2026-08-14, task 08-14-lsp-tools-trim): 10 tools = diagnostics/hover/definition/references/symbols/rename/type-definition/implementation/workspace-symbols/workspace-diagnostics |
-| **Phase 5** | **High-value hierarchy tools (§8.8)**: `lsp-call-hierarchy` (LSP 3.16 two-way call chain — incoming callers + outgoing callees in one call, with call-site context, no recursive references for impact analysis), `lsp-type-hierarchy` (LSP 3.17 parent chain + all subtypes, base-type refactor blast radius); capability matrix re-verified against server sources (tsserver callHierarchy ❌ → ✅; new typeHierarchy row) | ✅ done (2026-08-15, task 08-15-lsp-hierarchy-tools): cargo check + tsc + electron-vite build pass; capability-matrix unit tests; **rust-analyzer live test** (call-hierarchy on a session.rs function: 1 incoming caller + 18 outgoing callees incl. stdlib, with call-site context and signature detail); **gopls v0.23 live test** (temp Go project: ReadWriter interface → supertypes=[Reader] / subtypes=[File]; Reader → subtypes=[ReadWriter, File, Buffer] incl. interface inheritors); capability guard verified (rust + type-hierarchy → "server does not support" error); 12 tools |
-| **Phase 5.5** | **Restore `lsp-code-action` + add `lsp-execute-command` (§8.9)**: code-action restored (quick-fix / refactor menu — the correctness pain point for agent bug fixes: the server supplies exact edits instead of LLM-typed fixes; apply=true applies edit actions, command actions are listed for execute); execute-command (workspace/executeCommand executor — rust-analyzer.applySourceChange / gopls.add_import etc.; WorkspaceEdit results → dryRun preview / apply to disk; filePath optional, default requires exactly one enabled server) | ✅ done (2026-08-15, task 08-15-lsp-execute-command): cargo check + tsc + unit tests (3 passed) pass; **live-test finding fixed**: rust-analyzer quickfix actions depend on `CodeActionContext.diagnostics` (VS Code semantics; empty context yields refactor-only actions) → code-action now pulls the current file's diagnostics automatically (client.rs `code_actions` gained a diagnostics param); 14 tools; **full execute-command pipeline test pending app restart** |
+| Phase         | Content                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Verification                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Phase 0**   | Cargo.toml deps; `lsp_server_configs` table + storage service + exports; one-time legacy file migration; `lsp/` skeleton; builtin.rs registration; call.rs branch; seed writes to table (platform-aware)                                                                                                                                                                                                                                                                                                                                                                                                                    | `cargo check` + `npx tsc --noEmit`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **Phase 1**   | Session lifecycle (spawn/initialize/reclaim/restart) + `lsp-diagnostics` + `lsp-hover` (config read from table)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | rust-analyzer live test (see §12)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| **Phase 1.5** | **`lsp-config` scope becomes DB-backed** (config-get/set/delete hit the table directly, mirroring subAgents/imagegen) — **agent config path live**                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | config-set takes effect immediately (no restart)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| **Phase 2**   | Frontend `lsp-settings` page (mirroring mcp-settings: list + editor + toggle + summary; registration chain: app_control VALID_PAGES + types.ts + MainContent lazy + settingsItems.ts + LspSettingsPanel + lspSettings/ subdir; i18n zh/en/zh-TW)                                                                                                                                                                                                                                                                                                                                                                            | ✅ done (2026-08-14): page CRUD consistent with table; `app-control-openSettings page=lsp-settings` works                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| **Phase 3**   | More tools (definition/references/symbols/format) + project-level scope (project_lsp_server_configs + config scope projectId + frontend tabs)                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | ✅ done (2026-08-14): tools verified (cross-file definition/references/format dryRun) + project override semantics verified                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **Phase 4**   | **Per-server capability-based tool exposure** (§8.7: capabilities.rs static table + collect filtering — expose only the tool subset supported by enabled language servers) + high-value tools (completion / rename / code-action / signature-help, priority per Appendix F)                                                                                                                                                                                                                                                                                                                                                 | ✅ done (2026-08-14): capability filtering verified (php-only → 8 tools without rename/code-action; restored → 10); 4 new tools verified on gopls; runtime second-check verified (php rename → unsupported error)                                                                                                                                                                                                                                                                                                                                                                             |
+| **Phase 4.5** | **More agent high-value tools**: `lsp-workspace-symbols` (merged query across all enabled server languages, content-dedup, cap 50), `lsp-implementation` (interface/trait implementation jump), `lsp-type-definition` (type definition jump); Appendix F-3 rejections finalized (document-highlight superseded by references, inlay-hints noisy, semantic-tokens low value)                                                                                                                                                                                                                                                 | ✅ done (2026-08-14): gopls verified (type-definition on variable / implementation 2 hits / workspace-symbols merged); 13 tools                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| **Phase 4.6** | **Tool-set trim (13→10) + project-wide diagnostics**: removed 4 editor-oriented low-value tools (completion/signature-help/code-action/format — LLM is the completer, empty results in agent scenarios; code kept for future restore); added `lsp-workspace-diagnostics` (LSP 3.17 workspace/diagnostic pull; rust-analyzer/gopls/clangd support, TS/pyright skipped gracefully, grouped by file, failures degrade to warnings)                                                                                                                                                                                             | ✅ done (2026-08-14, task 08-14-lsp-tools-trim): 10 tools = diagnostics/hover/definition/references/symbols/rename/type-definition/implementation/workspace-symbols/workspace-diagnostics                                                                                                                                                                                                                                                                                                                                                                                                     |
+| **Phase 5**   | **High-value hierarchy tools (§8.8)**: `lsp-call-hierarchy` (LSP 3.16 two-way call chain — incoming callers + outgoing callees in one call, with call-site context, no recursive references for impact analysis), `lsp-type-hierarchy` (LSP 3.17 parent chain + all subtypes, base-type refactor blast radius); capability matrix re-verified against server sources (tsserver callHierarchy ❌ → ✅; new typeHierarchy row)                                                                                                                                                                                                | ✅ done (2026-08-15, task 08-15-lsp-hierarchy-tools): cargo check + tsc + electron-vite build pass; capability-matrix unit tests; **rust-analyzer live test** (call-hierarchy on a session.rs function: 1 incoming caller + 18 outgoing callees incl. stdlib, with call-site context and signature detail); **gopls v0.23 live test** (temp Go project: ReadWriter interface → supertypes=[Reader] / subtypes=[File]; Reader → subtypes=[ReadWriter, File, Buffer] incl. interface inheritors); capability guard verified (rust + type-hierarchy → "server does not support" error); 12 tools |
+| **Phase 5.5** | **Restore `lsp-code-action` + add `lsp-execute-command` (§8.9)**: code-action restored (quick-fix / refactor menu — the correctness pain point for agent bug fixes: the server supplies exact edits instead of LLM-typed fixes; apply=true applies edit actions, command actions are listed for execute); execute-command (workspace/executeCommand executor — rust-analyzer.applySourceChange / gopls.add_import etc.; WorkspaceEdit results → dryRun preview / apply to disk; filePath optional, default requires exactly one enabled server)                                                                             | ✅ done (2026-08-15, task 08-15-lsp-execute-command): cargo check + tsc + unit tests (3 passed) pass; **live-test finding fixed**: rust-analyzer quickfix actions depend on `CodeActionContext.diagnostics` (VS Code semantics; empty context yields refactor-only actions) → code-action now pulls the current file's diagnostics automatically (client.rs `code_actions` gained a diagnostics param); 14 tools; **full execute-command pipeline test pending app restart**                                                                                                                  |
+| **Phase 6**   | **Stack awareness + prompt hardening (2026-09-24)**: ① stack-root discovery (§7.2) — `resolve_lang_root` uses the real stack root (e.g. `native/`) as the session root; all 16 session-acquisition paths switched; `NoLangStack` explicitly refuses stack-less languages; exposure decision unified (§8.0 "exposed = callable"); status filter `starts_with`. ② Three-layer dynamic system-prompt injection (§8.10) — Language Servers section + grep-search counter + tool timing triggers + scenario-first Routing rules. ③ `markers_for_lang` 12-language marker table + `find_lang_root` (upward walk + downward scan). | ✅ done (2026-09-24): cargo check 0 warnings + 3 unit tests green (ancestor walk / stack-less refusal / 12-language coverage) + build:rust succeeded; runtime live tests (cross-file references / TS stack root / stack-less refusal) pending app restart                                                                                                                                                                                                                                                                                                                                     |
 
 **Red lines**:
 
@@ -451,14 +501,14 @@ Output (hover content is itself Markdown; pass through + wrap):
 
 ## 13. Risks & Mitigations
 
-| Risk | Impact | Mitigation |
-|---|---|---|
-| Windows stdio compat (Node-family servers EOF semantics) | ts-family servers may misbehave | Phase 1 validated with rust-analyzer/gopls; ts issues handled in Phase 2 |
-| rust-analyzer memory usage | memory stacks across projects | max_sessions=3 (across projects) + LRU eviction + idle reclamation |
-| Per-project processes | process count grows with projects | cap 3; go.work/Cargo-workspace cases are naturally single-process |
-| Slow initialize (jdtls cold start >30s) | false timeout | per-language timeout table (JVM 120s), configurable later |
-| async-lsp 0.2 API vs lsp-types 0.95 details | compile/behavior diffs | Phase 0 runs a minimal client (initialize handshake) before extending |
-| Long-lived process leaks (abnormal exit paths) | zombie processes | drop guard + kill fallback + log observation |
+| Risk                                                     | Impact                            | Mitigation                                                               |
+| -------------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------ |
+| Windows stdio compat (Node-family servers EOF semantics) | ts-family servers may misbehave   | Phase 1 validated with rust-analyzer/gopls; ts issues handled in Phase 2 |
+| rust-analyzer memory usage                               | memory stacks across projects     | max_sessions=3 (across projects) + LRU eviction + idle reclamation       |
+| Per-project processes                                    | process count grows with projects | cap 3; go.work/Cargo-workspace cases are naturally single-process        |
+| Slow initialize (jdtls cold start >30s)                  | false timeout                     | per-language timeout table (JVM 120s), configurable later                |
+| async-lsp 0.2 API vs lsp-types 0.95 details              | compile/behavior diffs            | Phase 0 runs a minimal client (initialize handshake) before extending    |
+| Long-lived process leaks (abnormal exit paths)           | zombie processes                  | drop guard + kill fallback + log observation                             |
 
 ## 14. References
 
@@ -475,20 +525,20 @@ Output (hover content is itself Markdown; pass through + wrap):
 > Source: Anthropic claude-plugins-official (Claude Code's official 12-language LSP plugins, indexed 2026-08) cross-checked with langserver.org / awesome-lsp-servers.
 > Purpose: basis for revising `lsp-config.json` seed config & user reference.
 
-| Language | Recommended server | command | args | Install (installCommand) | Notes |
-|---|---|---|---|---|---|
-| TypeScript/JS | typescript-language-server | `typescript-language-server` | `["--stdio"]` | `npm install -g typescript-language-server typescript` | ✅ existing seed correct |
-| Go | gopls | `gopls` | `[]` | `go install golang.org/x/tools/gopls@latest` | ✅ existing seed correct (official) |
-| Rust | rust-analyzer | `rust-analyzer` | `[]` | `rustup component add rust-analyzer` | ✅ existing seed correct |
-| Java | jdtls | `jdtls` | `[]` | `brew install jdtls` | ✅ existing seed correct; **startup timeout 120s** |
-| **Python** | **pyright** (pyright-langserver) | `pyright-langserver` | `["--stdio"]` | `pip install pyright` / `npm install -g pyright` | ⚠️ seed pylsp → **switch to pyright** (Microsoft, typeshed inference, Neovim default; pylsp is community, weak typing) |
-| **C#** | **csharp-ls** | `csharp-ls` | `[]` | `dotnet tool install --global csharp-ls` | ⚠️ seed omnisharp → **switch to csharp-ls** (omnisharp semi-retired; .NET SDK 6+) |
-| **C/C++** | clangd | `clangd` | `["--background-index"]` | `apt install clangd` / `brew install llvm` | ➕ new (LLVM official) |
-| **PHP** | intelephense | `intelephense` | `["--stdio"]` | `npm install -g intelephense` | ➕ new (commercial license, free for personal use) |
-| **Ruby** | ruby-lsp | `ruby-lsp` | `["--stdio"]` | `gem install ruby-lsp` | ➕ new (Shopify official, replaces solargraph; Ruby 3.0+) |
-| **Swift** | sourcekit-lsp | `sourcekit-lsp` | `[]` | bundled with Swift toolchain / Xcode | ➕ new (Apple official) |
-| **Kotlin** | kotlin-lsp | `kotlin-lsp` | `["--stdio"]` | see Kotlin official docs | ➕ new (JetBrains official, IntelliJ-based); **startup timeout 120s**; alt: fwcd/kotlin-language-server |
-| **Lua** | lua-language-server | `lua-language-server` | `[]` | `brew install lua-language-server` | ➕ new (sumneko, community standard) |
+| Language      | Recommended server               | command                      | args                     | Install (installCommand)                               | Notes                                                                                                                  |
+| ------------- | -------------------------------- | ---------------------------- | ------------------------ | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| TypeScript/JS | typescript-language-server       | `typescript-language-server` | `["--stdio"]`            | `npm install -g typescript-language-server typescript` | ✅ existing seed correct                                                                                               |
+| Go            | gopls                            | `gopls`                      | `[]`                     | `go install golang.org/x/tools/gopls@latest`           | ✅ existing seed correct (official)                                                                                    |
+| Rust          | rust-analyzer                    | `rust-analyzer`              | `[]`                     | `rustup component add rust-analyzer`                   | ✅ existing seed correct                                                                                               |
+| Java          | jdtls                            | `jdtls`                      | `[]`                     | `brew install jdtls`                                   | ✅ existing seed correct; **startup timeout 120s**                                                                     |
+| **Python**    | **pyright** (pyright-langserver) | `pyright-langserver`         | `["--stdio"]`            | `pip install pyright` / `npm install -g pyright`       | ⚠️ seed pylsp → **switch to pyright** (Microsoft, typeshed inference, Neovim default; pylsp is community, weak typing) |
+| **C#**        | **csharp-ls**                    | `csharp-ls`                  | `[]`                     | `dotnet tool install --global csharp-ls`               | ⚠️ seed omnisharp → **switch to csharp-ls** (omnisharp semi-retired; .NET SDK 6+)                                      |
+| **C/C++**     | clangd                           | `clangd`                     | `["--background-index"]` | `apt install clangd` / `brew install llvm`             | ➕ new (LLVM official)                                                                                                 |
+| **PHP**       | intelephense                     | `intelephense`               | `["--stdio"]`            | `npm install -g intelephense`                          | ➕ new (commercial license, free for personal use)                                                                     |
+| **Ruby**      | ruby-lsp                         | `ruby-lsp`                   | `["--stdio"]`            | `gem install ruby-lsp`                                 | ➕ new (Shopify official, replaces solargraph; Ruby 3.0+)                                                              |
+| **Swift**     | sourcekit-lsp                    | `sourcekit-lsp`              | `[]`                     | bundled with Swift toolchain / Xcode                   | ➕ new (Apple official)                                                                                                |
+| **Kotlin**    | kotlin-lsp                       | `kotlin-lsp`                 | `["--stdio"]`            | see Kotlin official docs                               | ➕ new (JetBrains official, IntelliJ-based); **startup timeout 120s**; alt: fwcd/kotlin-language-server                |
+| **Lua**       | lua-language-server              | `lua-language-server`        | `[]`                     | `brew install lua-language-server`                     | ➕ new (sumneko, community standard)                                                                                   |
 
 Key points:
 
@@ -501,20 +551,20 @@ Key points:
 
 > Sources: official server repos/docs + Swift.org platform support table + eclipse-jdtls issues. ❓=needs live verification.
 
-| Server | Windows | macOS | Linux | Key notes |
-|---|---|---|---|---|
-| typescript-language-server | ✅ | ✅ | ✅ | Node-based; Windows stdin EOF semantics differ from Unix — reclamation relies on kill fallback (§7.4) |
-| pyright | ✅ | ✅ | ✅ | Node-based, same as above |
-| gopls | ✅ | ✅ | ✅ | Go official, `go install` cross-platform |
-| rust-analyzer | ✅ | ✅ | ✅ | `rustup component add` cross-platform |
-| jdtls | ⚠️ usable but fiddly | ✅ (brew) | ✅ | **Requires Java 21+** (eclipse.jdt.ls latest); Windows uses `jdtls.bat` (JVM arg wrapping); **known bug: bat fails with spaces in path** (eclipse-jdtls#3783); startup 120s |
-| csharp-ls | ✅ | ✅ | ✅ | `dotnet tool install --global csharp-ls` (NuGet official); needs .NET SDK 6+ |
-| clangd | ✅ | ✅ (brew llvm) | ✅ (apt) | Windows via LLVM official installer / winget; diagnostics degrade without compile_commands.json (`--background-index` only mitigates) |
-| intelephense | ✅ | ✅ | ✅ | Node-based; **commercial license** (free for personal use) |
-| ruby-lsp | ✅ | ✅ | ✅ | Needs Ruby 3.0+ |
-| sourcekit-lsp | ⚠️ experimental | ✅ (bundled w/ Xcode) | ✅ | **Windows support immature** (Swift Forums; Swift.org platform table) |
-| kotlin-lsp | ⚠️ usable | ✅ | ✅ | JVM-based; needs Java on Windows; startup 120s; alt fwcd/kotlin-language-server |
-| lua-language-server | ✅ | ✅ | ✅ | Official Windows builds on GitHub Releases |
+| Server                     | Windows              | macOS                 | Linux    | Key notes                                                                                                                                                                   |
+| -------------------------- | -------------------- | --------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| typescript-language-server | ✅                   | ✅                    | ✅       | Node-based; Windows stdin EOF semantics differ from Unix — reclamation relies on kill fallback (§7.4)                                                                       |
+| pyright                    | ✅                   | ✅                    | ✅       | Node-based, same as above                                                                                                                                                   |
+| gopls                      | ✅                   | ✅                    | ✅       | Go official, `go install` cross-platform                                                                                                                                    |
+| rust-analyzer              | ✅                   | ✅                    | ✅       | `rustup component add` cross-platform                                                                                                                                       |
+| jdtls                      | ⚠️ usable but fiddly | ✅ (brew)             | ✅       | **Requires Java 21+** (eclipse.jdt.ls latest); Windows uses `jdtls.bat` (JVM arg wrapping); **known bug: bat fails with spaces in path** (eclipse-jdtls#3783); startup 120s |
+| csharp-ls                  | ✅                   | ✅                    | ✅       | `dotnet tool install --global csharp-ls` (NuGet official); needs .NET SDK 6+                                                                                                |
+| clangd                     | ✅                   | ✅ (brew llvm)        | ✅ (apt) | Windows via LLVM official installer / winget; diagnostics degrade without compile_commands.json (`--background-index` only mitigates)                                       |
+| intelephense               | ✅                   | ✅                    | ✅       | Node-based; **commercial license** (free for personal use)                                                                                                                  |
+| ruby-lsp                   | ✅                   | ✅                    | ✅       | Needs Ruby 3.0+                                                                                                                                                             |
+| sourcekit-lsp              | ⚠️ experimental      | ✅ (bundled w/ Xcode) | ✅       | **Windows support immature** (Swift Forums; Swift.org platform table)                                                                                                       |
+| kotlin-lsp                 | ⚠️ usable            | ✅                    | ✅       | JVM-based; needs Java on Windows; startup 120s; alt fwcd/kotlin-language-server                                                                                             |
+| lua-language-server        | ✅                   | ✅                    | ✅       | Official Windows builds on GitHub Releases                                                                                                                                  |
 
 **Design implications**:
 
@@ -570,7 +620,16 @@ sequenceDiagram
     "typescript": {
       "command": "typescript-language-server",
       "args": ["--stdio"],
-      "fileExtensions": [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs"],
+      "fileExtensions": [
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".mts",
+        ".cts",
+        ".mjs",
+        ".cjs"
+      ],
       "installCommand": "npm install -g typescript-language-server typescript",
       "initializationOptions": {}
     },
@@ -598,7 +657,17 @@ sequenceDiagram
     "c": {
       "command": "clangd",
       "args": ["--background-index"],
-      "fileExtensions": [".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hxx", ".C", ".H"],
+      "fileExtensions": [
+        ".c",
+        ".h",
+        ".cpp",
+        ".cc",
+        ".cxx",
+        ".hpp",
+        ".hxx",
+        ".C",
+        ".H"
+      ],
       "installCommand": "winget install LLVM.LLVM",
       "initializationOptions": {}
     },
@@ -655,19 +724,19 @@ sequenceDiagram
 
 ### Change boundary (Rust layer + frontend settings page + docs)
 
-| Change | Files |
-|---|---|
-| New lsp service | `native/src/mcp/servers/lsp/` (mod/config/manager/session/client/format.rs) |
-| DB-backed scope conversion | `native/src/mcp/servers/config/mod.rs` (lsp-config from file-backed scope to DB-backed, mirroring subAgents/imagegen) + optional new `lsp_config_scope.rs` submodule |
-| Migration | one-time import of legacy `~/.snow/lsp-config.json` (source=legacy, idempotent) |
-| Dependencies | `native/Cargo.toml` (async-lsp + lsp-types) |
-| Registration | `native/src/mcp/servers/mod.rs` (pub mod lsp) + `native/src/mcp/builtin.rs` (END of list) |
-| Async dispatch | `native/src/mcp/tools/call.rs` (`lsp-` prefix branch) |
-| Seed config | seed writes to table (source=seed, per platform, no user-record overwrite) |
-| Frontend page (Phase 2) | `src/renderer/components/sidebar/LspSettingsPanel.tsx` + `lspSettings/` subdir + `mainContent/types.ts` (ViewType) + `MainContent.tsx` (lazy render) + `sidebar/settingsItems.ts` (menu) + `app_control.rs` (VALID_PAGES) |
-| preload/IPC (Phase 2) | `src/preload/modules/*Api.ts` + `src/main/ipc/handlers/*Handlers.ts` + `registerIpcHandlers.ts` (full chain: UI → preload → IPC → native export → storage) |
-| i18n (Phase 2) | `src/renderer/i18n/lang/{zh-CN,en,zh-TW}.ts` (three-language sync red line) |
-| Docs | this design (zh/en) + `docs/README.md` index + 7-codebase-index-and-diagnostics.md §2.4 (drop "reserved" wording) + 3-config-file-field-reference.md §10 (file-backed → DB-backed status update) + 2-builtin-tools-reference.md (tool table) + 4-data-storage-locations.md (new table) |
+| Change                     | Files                                                                                                                                                                                                                                                                                  |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| New lsp service            | `native/src/mcp/servers/lsp/` (mod/config/manager/session/client/format.rs)                                                                                                                                                                                                            |
+| DB-backed scope conversion | `native/src/mcp/servers/config/mod.rs` (lsp-config from file-backed scope to DB-backed, mirroring subAgents/imagegen) + optional new `lsp_config_scope.rs` submodule                                                                                                                   |
+| Migration                  | one-time import of legacy `~/.snow/lsp-config.json` (source=legacy, idempotent)                                                                                                                                                                                                        |
+| Dependencies               | `native/Cargo.toml` (async-lsp + lsp-types)                                                                                                                                                                                                                                            |
+| Registration               | `native/src/mcp/servers/mod.rs` (pub mod lsp) + `native/src/mcp/builtin.rs` (END of list)                                                                                                                                                                                              |
+| Async dispatch             | `native/src/mcp/tools/call.rs` (`lsp-` prefix branch)                                                                                                                                                                                                                                  |
+| Seed config                | seed writes to table (source=seed, per platform, no user-record overwrite)                                                                                                                                                                                                             |
+| Frontend page (Phase 2)    | `src/renderer/components/sidebar/LspSettingsPanel.tsx` + `lspSettings/` subdir + `mainContent/types.ts` (ViewType) + `MainContent.tsx` (lazy render) + `sidebar/settingsItems.ts` (menu) + `app_control.rs` (VALID_PAGES)                                                              |
+| preload/IPC (Phase 2)      | `src/preload/modules/*Api.ts` + `src/main/ipc/handlers/*Handlers.ts` + `registerIpcHandlers.ts` (full chain: UI → preload → IPC → native export → storage)                                                                                                                             |
+| i18n (Phase 2)             | `src/renderer/i18n/lang/{zh-CN,en,zh-TW}.ts` (three-language sync red line)                                                                                                                                                                                                            |
+| Docs                       | this design (zh/en) + `docs/README.md` index + 7-codebase-index-and-diagnostics.md §2.4 (drop "reserved" wording) + 3-config-file-field-reference.md §10 (file-backed → DB-backed status update) + 2-builtin-tools-reference.md (tool table) + 4-data-storage-locations.md (new table) |
 
 **Not touched**: database migration version bump (new table via idempotent create_schema), codelens behavior, existing MCP behavior.
 

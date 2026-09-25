@@ -133,6 +133,59 @@ pub async fn tool_exposure(project_id: Option<&str>) -> napi::Result<LspToolExpo
     Ok(LspToolExposure { tools, summary })
 }
 
+/// 项目内**全部**被检测到的语言是否都有可用 LSP server 覆盖（2026-09-25）。
+///
+/// codelens 兜底判定用：codelens 提供 tree-sitter/oxc 静态分析，是 LSP 覆盖
+/// 之外语言的兜底。仅当项目里每个检测到的语言都有 enabled + 已安装 + 技术栈
+/// 匹配的 server 时才可隐藏 codelens；只要存在未覆盖语言（如 TS 项目里同时
+/// 有 Python 文件），就保留 codelens——否则那些语言会同时失去 LSP 与静态分析
+/// 两条路径（2026-08-16 全局互斥策略的已知副作用，2026-09-25 修订）。
+///
+/// 保守语义：无项目上下文 / SSH 远程 / 检测不到语言 / 无可用 server / 查询
+/// 失败一律返回 false（保留 codelens 兜底）。
+pub async fn lsp_covers_all_project_languages(project_id: Option<&str>) -> bool {
+    let Some(root) = resolve_project_root_str(project_id).await.ok().flatten() else {
+        return false;
+    };
+    if is_ssh_path(&root) {
+        return false;
+    }
+    let configs = match load_configs(project_id).await {
+        Ok(configs) => configs,
+        Err(_) => return false,
+    };
+    let root_path = PathBuf::from(&root);
+    // 可用 server 覆盖的语言（与 tool_exposure 同一过滤口径：enabled +
+    // 扩展名非空 + 命令已安装 + 项目技术栈匹配）。
+    let covered: Vec<String> = configs
+        .iter()
+        .filter(|config| {
+            config.enabled
+                && !config.file_extensions.is_empty()
+                && is_command_installed_cached(&config.command)
+                && super::server_matches_project(config, &root_path)
+        })
+        .map(|config| config.lang.clone())
+        .collect();
+    if covered.is_empty() {
+        return false;
+    }
+    // 项目实际检测到的语言（60s TTL 缓存，与工具暴露 / 提示词注入同源）。
+    let root_for_detect = root.clone();
+    let profile = tokio::task::spawn_blocking(move || {
+        super::detect::detect_project_languages_cached(&root_for_detect)
+    })
+    .await
+    .unwrap_or_default();
+    if profile.langs.is_empty() {
+        return false;
+    }
+    profile
+        .langs
+        .iter()
+        .all(|lang| covered.iter().any(|covered_lang| covered_lang == lang))
+}
+
 /// 解析项目根目录（workspace_directories 表）；无 project_id / 查不到 /
 /// 查询失败 → None（调用方跳过 SSH 与语言一致性过滤，与 collect 全局
 /// 工具暴露行为一致，不因 LSP 状态打挂工具列表收集）。

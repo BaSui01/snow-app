@@ -74,10 +74,23 @@ export function SkillsSettingsPanel({
   );
 
   const loadSequenceRef = useRef(0);
+  // 仅首次加载周期用整块 loading 占位；之后的常规刷新
+  // （启停、安装、卸载、点刷新）一律保留现有列表——列表被占位替换会让
+  // 页面高度骤降，滚动容器 scrollTop 被夹回顶部，表现为「启停一次就跳回页首」。
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  // 当前列表数据所属的项目：切换项目时旧数据立即让位给占位，
+  // 避免在新项目下短暂显示（并可误操作）旧项目的 Skills。
+  const [loadedScopeKey, setLoadedScopeKey] = useState<string | null>(null);
+  // loadedScopeKey 的镜像：失败分支要在回调里判断「现有数据属于哪个项目」，
+  // 直接读 state 会把 loadedScopeKey 拖进 loadSkills 依赖，触发重载循环。
+  const loadedScopeKeyRef = useRef<string | null>(null);
+  const scopeKey = activeDirectory?.directoryId ?? "";
+  const isScopeStale = loadedScopeKey !== null && loadedScopeKey !== scopeKey;
 
   const loadSkills = useCallback(async (): Promise<void> => {
     // Only the latest load may write state.
     const sequence = ++loadSequenceRef.current;
+    const requestScopeKey = activeDirectory?.directoryId ?? "";
     setIsLoading(true);
     setError("");
 
@@ -103,11 +116,20 @@ export function SkillsSettingsPanel({
         project: projectSkills,
       });
       setGithubSkills(githubRecords);
+      loadedScopeKeyRef.current = requestScopeKey;
+      setLoadedScopeKey(requestScopeKey);
     } catch (loadError) {
       if (sequence !== loadSequenceRef.current) {
         return;
       }
-      setSkillsByScope(EMPTY_SKILLS_BY_SCOPE);
+      // 范围切换后的加载失败：旧项目数据不能冒充新项目数据，清空列表并认领
+      // 失败范围，结束整块占位让错误可见（否则 isScopeStale 永远为 true，永久转圈）。
+      // 同范围刷新失败则保留旧列表：清空同样会塌缩列表并重置滚动位置。
+      if (loadedScopeKeyRef.current !== requestScopeKey) {
+        setSkillsByScope(EMPTY_SKILLS_BY_SCOPE);
+        loadedScopeKeyRef.current = requestScopeKey;
+        setLoadedScopeKey(requestScopeKey);
+      }
       setError(
         loadError instanceof Error
           ? loadError.message
@@ -118,6 +140,7 @@ export function SkillsSettingsPanel({
     } finally {
       if (sequence === loadSequenceRef.current) {
         setIsLoading(false);
+        setIsInitialLoading(false);
       }
     }
   }, [activeDirectory, t]);
@@ -547,7 +570,7 @@ export function SkillsSettingsPanel({
           className="system-prompt-list mcp-server-list skills-settings-list"
           aria-live="polite"
         >
-          {isLoading ? (
+          {isInitialLoading || isScopeStale ? (
             <div className="system-prompt-empty skills-settings-empty">
               <Loader2 size={15} className="spin" />
               <span>

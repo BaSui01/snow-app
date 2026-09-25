@@ -42,6 +42,20 @@ export const registerTeamHandlers = (native: NativeBridge): void => {
     },
   );
 
+  ipcMain.handle(
+    "team:set-avatar-color",
+    async (_event, repoPath: unknown, color: unknown) => {
+      const trimmed = typeof repoPath === "string" ? repoPath.trim() : "";
+      if (!trimmed) {
+        throw new Error("Repository path is required");
+      }
+      if (typeof color !== "string") {
+        throw new Error("Avatar color is required");
+      }
+      return native.teamSetAvatarColor(trimmed, color.trim());
+    },
+  );
+
   ipcMain.handle("team:sync", async (_event, repoPath: unknown) => {
     const trimmed = typeof repoPath === "string" ? repoPath.trim() : "";
     if (!trimmed) {

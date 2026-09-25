@@ -2416,6 +2416,11 @@ export type NativeBridge = {
     name: string,
     email: string,
   ) => Promise<TeamIdentity>;
+  /** 设置当前用户的头像颜色（`#rrggbb`，空串恢复默认色）。 */
+  teamSetAvatarColor: (
+    repoPath: string,
+    color: string,
+  ) => Promise<TeamIdentity>;
   teamSync: (repoPath: string) => Promise<TeamSyncResult>;
   /** 列出某类团队记录，返回原始 JSON 字符串数组。 */
   teamList: (repoPath: string, kind: string) => Promise<string[]>;

@@ -23,6 +23,14 @@ export const teamApi = {
     ),
   teamSync: async (repoPath: string): Promise<TeamSyncResult> =>
     JSON.parse(await ipcRenderer.invoke("team:sync", repoPath)),
+  /** 设置当前用户的头像颜色（`#rrggbb`，空串恢复默认色）。 */
+  teamSetAvatarColor: async (
+    repoPath: string,
+    color: string,
+  ): Promise<TeamIdentity> =>
+    JSON.parse(
+      await ipcRenderer.invoke("team:set-avatar-color", repoPath, color),
+    ),
   /** 列出某类团队记录，返回原始 JSON 字符串数组。 */
   teamList: (repoPath: string, kind: TeamRecordKind): Promise<string[]> =>
     ipcRenderer.invoke("team:list", repoPath, kind),

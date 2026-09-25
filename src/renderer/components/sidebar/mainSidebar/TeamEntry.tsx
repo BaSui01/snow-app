@@ -37,7 +37,11 @@ export const TeamEntry = ({
       })}
     >
       {effIdentity?.hasIdentity ? (
-        <TeamAvatar name={displayName} seed={effIdentity.email} size={22} />
+        <TeamAvatar
+          name={displayName}
+          seed={effIdentity.avatarSeed || effIdentity.email}
+          size={22}
+        />
       ) : (
         <Users size={16} strokeWidth={1.8} />
       )}

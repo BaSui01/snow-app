@@ -46,7 +46,8 @@ export const initials = (name: string): string => {
   return (chars || "?").toUpperCase();
 };
 
-const AVATAR_COLORS = [
+/** 头像调色板（可选自定义色的候选集合）。 */
+export const AVATAR_COLORS = [
   "#e17076",
   "#eda283",
   "#6ba9d0",
@@ -57,8 +58,20 @@ const AVATAR_COLORS = [
   "#d88a9a",
 ];
 
+/** 自定义头像色（`#rrggbb`）判定：Rust 以该格式保存用户选择的颜色。 */
+export const isCustomAvatarColor = (seed: string): boolean =>
+  /^#[0-9a-fA-F]{6}$/.test(seed.trim());
+
+/**
+ * 头像颜色：种子为自定义色（`#rrggbb`）时直接使用，否则按种子前 6 位
+ * （十六进制哈希）取调色板颜色。这样自定义色与旧的邮箱哈希种子互不干扰。
+ */
 export const avatarColor = (seed: string): string => {
-  const n = parseInt(seed.slice(0, 6) || "0", 16) || 0;
+  const trimmed = seed.trim();
+  if (isCustomAvatarColor(trimmed)) {
+    return trimmed;
+  }
+  const n = parseInt(trimmed.slice(0, 6) || "0", 16) || 0;
   return AVATAR_COLORS[n % AVATAR_COLORS.length];
 };
 

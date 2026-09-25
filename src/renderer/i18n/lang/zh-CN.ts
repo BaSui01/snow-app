@@ -4359,6 +4359,9 @@ export const zhCN = {
   "team.header.syncNow": "立即同步",
   "team.header.syncError": "同步异常",
   "team.header.editIdentity": "修改身份",
+  "team.header.close": "关闭团队协作",
+  "team.header.avatarColor": "头像颜色",
+  "team.header.avatarDefault": "默认颜色",
   "team.activity.empty":
     "还没有团队动态。创建任务、发起评审或发一条消息开始协作吧。",
   "team.activity.placeholder": "发一条团队消息…",

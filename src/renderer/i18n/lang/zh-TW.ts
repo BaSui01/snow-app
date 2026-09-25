@@ -4364,6 +4364,9 @@ export const zhTW = {
   "team.header.syncNow": "立即同步",
   "team.header.syncError": "同步異常",
   "team.header.editIdentity": "修改身分",
+  "team.header.close": "關閉團隊協作",
+  "team.header.avatarColor": "頭像顏色",
+  "team.header.avatarDefault": "預設顏色",
   "team.activity.empty":
     "還沒有團隊動態。建立任務、發起評審或發一則訊息開始協作吧。",
   "team.activity.placeholder": "發一則團隊訊息…",

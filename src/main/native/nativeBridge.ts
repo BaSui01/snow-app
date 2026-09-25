@@ -1112,6 +1112,10 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required for team identity"),
         ),
+      teamSetAvatarColor: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required for team avatar color"),
+        ),
       teamSync: () =>
         Promise.reject(
           new Error("Rust native bridge is required for team sync"),

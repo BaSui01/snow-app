@@ -5,13 +5,16 @@ import {
   Loader2,
   MessageSquare,
   Pencil,
-  RefreshCw,
+  RotateCcw,
   Users,
-  X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TeamTask, WorkspaceDirectoryRecord } from "../../../../preload";
 import { useI18n } from "../../../i18n";
+import {
+  teamTopBarStore,
+  type TeamTopBarSnapshot,
+} from "../../TopBar/teamTopBarStore";
 import { Modal } from "../../common/Modal";
 import type { MainContentView } from "../types";
 import { TeamActivity } from "./TeamActivity";
@@ -21,8 +24,12 @@ import { TeamReviews } from "./TeamReviews";
 import { TeamSetupView } from "./TeamSetup";
 import { TeamAvatar } from "./TeamShared";
 import { TeamTasks } from "./TeamTasks";
-import { useTeamData, teamLog } from "./useTeamData";
-import { memberName, timeAgo } from "./teamUtils";
+import {
+  TEAM_ENABLED_CHANGED_EVENT,
+  useTeamData,
+  teamLog,
+} from "./useTeamData";
+import { AVATAR_COLORS, isCustomAvatarColor, memberName } from "./teamUtils";
 
 type TeamTab = "activity" | "tasks" | "reviews" | "notes" | "members";
 
@@ -67,6 +74,9 @@ export const TeamPanel = ({
   const [editEmail, setEditEmail] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
   const [editingIdentity, setEditingIdentity] = useState(false);
+  // 头像颜色（空串 = 默认色）；初始值用于判断保存时是否需要写自定义色
+  const [editColor, setEditColor] = useState("");
+  const editColorRef = useRef("");
 
   // 诊断：捕获团队面板内未捕获的渲染/运行错误
   useEffect(() => {
@@ -94,11 +104,72 @@ export const TeamPanel = ({
 
   const identity = team.identity;
   const myEmail = identity?.email ?? "";
+  const { sync, members, syncResult, lastSyncAt, syncing, error, repoPath } =
+    team;
 
-  // 诊断：每次渲染都输出 identity 状态（内联 JSON，不折叠）
-  const panelInstanceRef = useRef(
-    `tp-${Math.random().toString(36).slice(2, 7)}`,
-  );
+  // 顶栏（TopBar）数据：团队名 / 远端地址 / 同步状态 / 当前身份操作全部由
+  // 顶栏渲染，TeamPanel 只在挂载期间发布快照、卸载时清空（详见 teamTopBarStore）。
+  const readyIdentity =
+    identity && identity.isRepo && identity.hasIdentity ? identity : null;
+  const readyEmail = readyIdentity?.email ?? "";
+  const readyMember = members.find((member) => member.email === readyEmail);
+  const teamName =
+    activeDirectory?.name || readyIdentity?.remoteUrl || repoPath;
+
+  const openEditIdentity = useCallback((): void => {
+    if (!readyIdentity) {
+      return;
+    }
+    const currentColor = isCustomAvatarColor(readyIdentity.avatarSeed)
+      ? readyIdentity.avatarSeed
+      : "";
+    setEditName(readyIdentity.name);
+    setEditEmail(readyIdentity.email);
+    setEditColor(currentColor);
+    editColorRef.current = currentColor;
+    setEditError(null);
+    setEditIdentity(true);
+  }, [readyIdentity]);
+
+  const handleSync = useCallback((): void => {
+    void sync();
+  }, [sync]);
+
+  const topBarSnapshot = useMemo<TeamTopBarSnapshot | null>(() => {
+    if (!readyIdentity) {
+      return null;
+    }
+    return {
+      teamName,
+      remoteUrl: readyIdentity.remoteUrl,
+      syncing,
+      lastSyncAt,
+      localAhead: syncResult?.localAhead ?? 0,
+      localBehind: syncResult?.localBehind ?? 0,
+      error,
+      meName: memberName(members, readyEmail),
+      meSeed: readyIdentity.avatarSeed || readyMember?.avatarSeed || readyEmail,
+      sync: handleSync,
+      editIdentity: openEditIdentity,
+    };
+  }, [
+    readyIdentity,
+    teamName,
+    syncing,
+    lastSyncAt,
+    syncResult,
+    error,
+    members,
+    readyEmail,
+    readyMember,
+    handleSync,
+    openEditIdentity,
+  ]);
+
+  useEffect(() => {
+    teamTopBarStore.set(topBarSnapshot);
+    return () => teamTopBarStore.set(null);
+  }, [topBarSnapshot]);
 
   // 身份尚未解析完成：先显示加载，避免闪回设置视图/工作台
   if (team.identityResolving) {
@@ -129,22 +200,12 @@ export const TeamPanel = ({
     );
   }
 
-  const myMember = team.members.find((m) => m.email === myEmail);
-  const teamName = activeDirectory?.name || identity.remoteUrl || team.repoPath;
-
   const myTaskCount = team.tasks.filter(
     (task) => task.assigneeEmail === myEmail && task.status !== "done",
   ).length;
   const myReviewCount = team.reviews.filter(
     (review) => review.reviewerEmail === myEmail && review.status === "pending",
   ).length;
-
-  const openEditIdentity = (): void => {
-    setEditName(identity.name);
-    setEditEmail(identity.email);
-    setEditError(null);
-    setEditIdentity(true);
-  };
 
   const saveIdentity = async (): Promise<void> => {
     if (!editName.trim() || !editEmail.trim()) {
@@ -161,9 +222,16 @@ export const TeamPanel = ({
         editName.trim(),
         editEmail.trim(),
       );
+      // 仅在颜色变化时写入，避免每次保存都多一次成员记录提交
+      if (editColor !== editColorRef.current) {
+        await window.snow.teamSetAvatarColor(team.repoPath, editColor);
+        editColorRef.current = editColor;
+      }
       setEditIdentity(false);
       await team.refresh();
       void team.sync();
+      // 名称 / 头像色变化后让侧边栏入口立即重新解析身份
+      window.dispatchEvent(new CustomEvent(TEAM_ENABLED_CHANGED_EVENT));
     } catch (e) {
       setEditError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -178,98 +246,8 @@ export const TeamPanel = ({
 
   const consumeReviewPreset = (): void => setReviewPreset(null);
 
-  const syncInfo = team.syncResult;
-  const lastSyncText = team.lastSyncAt
-    ? t("team.header.lastSync", {
-        defaultValue: "同步于 {{time}}",
-        values: { time: timeAgo(team.lastSyncAt) },
-      })
-    : "";
-
   return (
     <div className="team-panel">
-      <header className="team-panel-header">
-        <div className="team-panel-team">
-          <TeamAvatar
-            name={teamName}
-            seed={identity.remoteUrl || teamName}
-            size={34}
-          />
-          <div className="team-panel-team-info">
-            <div className="team-panel-team-name" title={teamName}>
-              {teamName}
-            </div>
-            <div className="team-panel-team-sub" title={identity.remoteUrl}>
-              {identity.remoteUrl
-                ? identity.remoteUrl
-                : t("team.header.noRemote", {
-                    defaultValue: "本地团队（未配置远端，共享仅限本机）",
-                  })}
-            </div>
-          </div>
-        </div>
-        <div className="team-panel-header-right">
-          <div className="team-panel-sync">
-            {team.syncing ? (
-              <Loader2 size={13} className="spin" />
-            ) : (
-              <RefreshCw size={13} />
-            )}
-            <span>
-              {team.syncing
-                ? t("team.header.syncing", { defaultValue: "同步中…" })
-                : lastSyncText}
-              {syncInfo && (syncInfo.localAhead > 0 || syncInfo.localBehind > 0)
-                ? ` (${syncInfo.localAhead}↑ ${syncInfo.localBehind}↓)`
-                : ""}
-            </span>
-          </div>
-          <button
-            type="button"
-            className="team-btn"
-            disabled={team.syncing}
-            onClick={() => void team.sync()}
-            title={t("team.header.syncNow", { defaultValue: "立即同步" })}
-          >
-            <RefreshCw size={14} />
-          </button>
-          {team.error ? (
-            <span className="team-header-error" title={team.error}>
-              {t("team.header.syncError", { defaultValue: "同步异常" })}
-            </span>
-          ) : null}
-          <div className="team-panel-me">
-            <TeamAvatar
-              name={memberName(team.members, myEmail)}
-              seed={myMember?.avatarSeed ?? myEmail}
-              size={26}
-              online
-            />
-            <span className="team-panel-me-name">
-              {memberName(team.members, myEmail)}
-            </span>
-            <button
-              type="button"
-              className="team-btn team-btn-icon"
-              onClick={openEditIdentity}
-              title={t("team.header.editIdentity", {
-                defaultValue: "修改身份",
-              })}
-            >
-              <Pencil size={13} />
-            </button>
-          </div>
-          <button
-            type="button"
-            className="team-btn team-btn-icon team-panel-close"
-            onClick={() => onNavigateToView("chat")}
-            title={t("team.header.close", { defaultValue: "关闭团队协作" })}
-          >
-            <X size={14} />
-          </button>
-        </div>
-      </header>
-
       <div className="team-panel-body">
         <nav className="team-panel-nav">
           {TABS.map((item) => {
@@ -367,6 +345,44 @@ export const TeamPanel = ({
               onChange={(e) => setEditEmail(e.target.value)}
             />
           </label>
+          <div className="team-form-label">
+            {t("team.header.avatarColor", { defaultValue: "头像颜色" })}
+            <div className="team-color-picker">
+              <TeamAvatar
+                name={editName.trim() || identity.name}
+                seed={editColor || identity.avatarSeed}
+                size={26}
+              />
+              {AVATAR_COLORS.map((color) => (
+                <button
+                  key={color}
+                  aria-label={color}
+                  className={`team-color-swatch${
+                    editColor === color ? " is-active" : ""
+                  }`}
+                  style={{ background: color }}
+                  title={color}
+                  type="button"
+                  onClick={() => setEditColor(color)}
+                />
+              ))}
+              <button
+                aria-label={t("team.header.avatarDefault", {
+                  defaultValue: "默认颜色",
+                })}
+                className={`team-color-default${
+                  editColor === "" ? " is-active" : ""
+                }`}
+                title={t("team.header.avatarDefault", {
+                  defaultValue: "默认颜色",
+                })}
+                type="button"
+                onClick={() => setEditColor("")}
+              >
+                <RotateCcw size={12} />
+              </button>
+            </div>
+          </div>
         </div>
       </Modal>
     </div>

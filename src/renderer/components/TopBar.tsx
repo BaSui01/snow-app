@@ -22,8 +22,10 @@ import { useI18n } from "../i18n";
 import { useChatConversationContext } from "./mainContent/chatMessages";
 import { OPEN_PROJECT_CODEBASE_PANEL_EVENT } from "./mainContent/chatInput/ProjectCodebasePanel";
 import { CodebaseSyncIndicator } from "./TopBar/CodebaseSyncIndicator";
+import { TeamTopBarActions } from "./TopBar/TeamTopBarActions";
 import { TodoPanelButton } from "./TopBar/TodoPanelButton";
 import { codebaseSyncStore } from "./TopBar/codebaseSyncStore";
+import { useTeamTopBarSnapshot } from "./TopBar/teamTopBarStore";
 import { ContextMenu, type ContextMenuItem } from "./common/ContextMenu";
 import { PlusMenuButton, type PlusMenuItem } from "./common/PlusMenuButton";
 import { PluginIcon } from "./common/PluginIcon";
@@ -71,6 +73,8 @@ export const TopBar = ({
   const isWindows = navigator.userAgent.includes("Win");
   const { t, locale } = useI18n();
   const pluginState = usePluginStore();
+  // 团队协作视图的顶栏数据（由 TeamPanel 发布，详见 teamTopBarStore）
+  const teamTopBar = useTeamTopBarSnapshot();
   const pluginPanels = pluginState.plugins.flatMap((plugin) =>
     plugin.enabled
       ? plugin.panels.map((_, panelIndex) => ({ plugin, panelIndex }))
@@ -474,6 +478,8 @@ export const TopBar = ({
     ? conversationDirectoryName
     : activeDirectory?.name;
 
+  const isTeamView = activeView === "team";
+
   // Sub-agent conversations: the header shows the activation summary as the
   // title and the launching parent conversation as the subtitle — the project
   // name alone says nothing about what the run was doing.
@@ -486,20 +492,33 @@ export const TopBar = ({
   const subAgentDisplayName =
     liveSubAgentEvent?.agentName ?? activeConversationMeta?.subAgentName ?? "";
 
-  const headerTitle = isSubAgentConversation
-    ? activeConversationMeta?.title ||
-      summary ||
+  // 团队协作视图：标题与副标题取自 TeamPanel 发布的团队数据（团队名 + 远端地址），
+  // 数据未就绪时退回项目名与功能名，与备忘录等独立页面的顶栏标题保持一致。
+  const headerTitle = isTeamView
+    ? teamTopBar?.teamName ||
       displayDirectoryName ||
-      "New Chat"
-    : summary || displayDirectoryName || "New Chat";
-  const headerSubtitle = isSubAgentConversation
-    ? parentConversationTitle
-      ? t("chat.subAgentInfo.launchedBy", {
-          defaultValue: 'Launched by parent "{{title}}"',
-          values: { title: parentConversationTitle },
+      t("team.setup.title", { defaultValue: "团队协作" })
+    : isSubAgentConversation
+      ? activeConversationMeta?.title ||
+        summary ||
+        displayDirectoryName ||
+        "New Chat"
+      : summary || displayDirectoryName || "New Chat";
+  const headerSubtitle = isTeamView
+    ? teamTopBar
+      ? teamTopBar.remoteUrl ||
+        t("team.header.noRemote", {
+          defaultValue: "本地团队（未配置远端，共享仅限本机）",
         })
-      : subAgentDisplayName
-    : displayDirectoryName || "";
+      : ""
+    : isSubAgentConversation
+      ? parentConversationTitle
+        ? t("chat.subAgentInfo.launchedBy", {
+            defaultValue: 'Launched by parent "{{title}}"',
+            values: { title: parentConversationTitle },
+          })
+        : subAgentDisplayName
+      : displayDirectoryName || "";
 
   // 独立页面（备忘录 / 项目记忆 / 定时任务 / 插件）：标题与关闭按钮由 TopBar 承担，
   // 中部让位给页面本身，不再展示待办面板与代码库同步指示器。
@@ -703,9 +722,9 @@ export const TopBar = ({
             aria-label="New chat"
             title="New chat"
             onClick={() => {
-              // 新建会话时收回独立页面（备忘录 / 记忆 / 定时任务 / 插件），
-              // 让新会话在聊天视图里立即可见。
-              if (isFeaturePageView(activeView)) {
+              // 新建会话时收回独立页面（备忘录 / 记忆 / 定时任务 / 插件）与
+              // 团队协作视图，让新会话在聊天视图里立即可见。
+              if (isFeaturePageView(activeView) || isTeamView) {
                 onSelectView("chat");
               }
               handleNewChat();
@@ -735,6 +754,8 @@ export const TopBar = ({
           >
             <X size={16} strokeWidth={1.8} />
           </button>
+        ) : isTeamView ? (
+          <TeamTopBarActions onClose={() => onSelectView("chat")} />
         ) : (
           <>
             <TodoPanelButton

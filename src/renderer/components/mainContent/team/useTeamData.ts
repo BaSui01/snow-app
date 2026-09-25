@@ -13,7 +13,7 @@ import { parseRecords } from "./teamUtils";
 
 const SYNC_INTERVAL_MS = 30_000;
 
-/** 团队协作启停开关变化事件：设置面板切换后派发，侧边栏监听并刷新入口。 */
+/** 团队入口需要重新解析身份的事件：开关切换、身份（名称/头像色）变更后派发。 */
 export const TEAM_ENABLED_CHANGED_EVENT = "snow:team-enabled-changed";
 
 /** 团队协作开关的系统设置 code（与 Rust 侧 team::TEAM_ENABLED_SETTING 一致）。 */

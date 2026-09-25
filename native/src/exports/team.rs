@@ -7,7 +7,7 @@ use napi_derive::napi;
 use crate::storage::services::team::{
     configure_team_identity, delete_team_media, delete_team_record, get_team_identity,
     list_team_records, read_team_media, resolve_team_repo, save_team_file, save_team_media,
-    sync_team, upsert_team_record,
+    set_team_avatar_color, sync_team, upsert_team_record,
 };
 
 fn map_spawn_error(e: tokio::task::JoinError) -> Error {
@@ -43,6 +43,15 @@ pub async fn team_configure_identity(
     })
     .await
     .map_err(map_spawn_error)??;
+    serde_json::to_string(&identity).map_err(|e| Error::from_reason(format!("serialize failed: {e}")))
+}
+
+/// 设置当前用户的头像颜色（`#rrggbb`，空串恢复默认色），返回更新后的身份。
+#[napi]
+pub async fn team_set_avatar_color(repo_path: String, color: String) -> napi::Result<String> {
+    let identity = tokio::task::spawn_blocking(move || set_team_avatar_color(&repo_path, &color))
+        .await
+        .map_err(map_spawn_error)??;
     serde_json::to_string(&identity).map_err(|e| Error::from_reason(format!("serialize failed: {e}")))
 }
 

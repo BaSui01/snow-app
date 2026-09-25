@@ -86,6 +86,8 @@ const requiredExports = [
   "startRemoteWanListener",
   "stopRemoteWanListener",
   "resolveRemoteAttachments",
+  // 团队协作：自定义头像颜色（写入 git config snow.avatarColor）
+  "teamSetAvatarColor",
   // 退出前落盘尚未执行的自动格式化（延迟格式化调度器，见 filesystem/format.rs）
   "flushPendingFileFormats",
 ];

@@ -24,6 +24,10 @@ use knowledge_skill::sync_knowledge_skill;
 const WORKTREE_REL: &str = ".snow/team-worktree";
 const MEMBER_HEARTBEAT_SECS: i64 = 600;
 
+/// 自定义头像颜色（git config，`#rrggbb`）：存在时覆盖邮箱哈希推导的默认色，
+/// 成员记录的 avatarSeed 也随之写入该值，保证各端展示同色。
+const AVATAR_COLOR_KEY: &str = "snow.avatarColor";
+
 /// 团队协作总开关的系统设置 code（DB 持久化）。默认关闭，显式写入 "1" 才启用。
 pub const TEAM_ENABLED_SETTING: &str = "team_collaboration_enabled";
 
@@ -58,6 +62,8 @@ pub struct TeamIdentity {
     pub name: String,
     pub email: String,
     pub remote_url: String,
+    /// 头像种子：自定义颜色（git config `snow.avatarColor`）或邮箱哈希（默认色）。
+    pub avatar_seed: String,
     pub has_identity: bool,
     pub error: Option<String>,
 }
@@ -215,6 +221,28 @@ fn seed_for(email: &str) -> String {
     hasher.finalize().to_hex()[..12].to_string()
 }
 
+/// 头像颜色格式校验：`#rrggbb` 或 `rrggbb`。
+fn is_avatar_color(value: &str) -> bool {
+    let hex = value.strip_prefix('#').unwrap_or(value);
+    hex.len() == 6 && hex.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// 读取自定义头像颜色（git config `snow.avatarColor`）；未配置或格式非法返回 None。
+fn read_avatar_color(repo_path: &str) -> Option<String> {
+    let raw = run_git_raw(repo_path, &["config", "--local", "--get", AVATAR_COLOR_KEY]).ok()?;
+    let value = raw.trim();
+    if is_avatar_color(value) {
+        Some(value.to_string())
+    } else {
+        None
+    }
+}
+
+/// 头像种子：自定义颜色优先（用户可选），否则回退邮箱哈希（默认色）。
+fn avatar_seed_for(repo_path: &str, email: &str) -> String {
+    read_avatar_color(repo_path).unwrap_or_else(|| seed_for(email))
+}
+
 fn io_err(e: std::io::Error) -> Error {
     Error::from_reason(format!("team io error: {e}"))
 }
@@ -336,6 +364,7 @@ pub fn get_team_identity(repo_path: &str) -> Result<TeamIdentity> {
             name: String::new(),
             email: String::new(),
             remote_url: String::new(),
+            avatar_seed: String::new(),
             has_identity: false,
             error: Some("team collaboration disabled".into()),
         });
@@ -352,6 +381,7 @@ pub fn get_team_identity(repo_path: &str) -> Result<TeamIdentity> {
             name: String::new(),
             email: String::new(),
             remote_url: String::new(),
+            avatar_seed: String::new(),
             has_identity: false,
             error: Some("not a git repository".into()),
         });
@@ -368,6 +398,7 @@ pub fn get_team_identity(repo_path: &str) -> Result<TeamIdentity> {
         .unwrap_or_default()
         .trim()
         .to_string();
+    let avatar_seed = avatar_seed_for(&resolved, &email);
     Ok(TeamIdentity {
         is_repo: true,
         repo_path: resolved,
@@ -375,6 +406,7 @@ pub fn get_team_identity(repo_path: &str) -> Result<TeamIdentity> {
         name,
         email,
         remote_url,
+        avatar_seed,
         error: None,
     })
 }
@@ -395,6 +427,32 @@ pub fn configure_team_identity(repo_path: &str, name: &str, email: &str) -> Resu
     }
     run_git(&repo_path, &["config", "user.name", name])?;
     run_git(&repo_path, &["config", "user.email", email])?;
+    get_team_identity(&repo_path)
+}
+
+/// 设置当前用户的头像颜色（git config `snow.avatarColor`，`#rrggbb`；传空串
+/// 表示恢复默认色），并立即重写成员记录，使本地各入口与团队成员同步同色。
+pub fn set_team_avatar_color(repo_path: &str, color: &str) -> Result<TeamIdentity> {
+    if !is_team_enabled() {
+        return Err(team_disabled_err());
+    }
+    let _guard = team_lock()
+        .lock()
+        .map_err(|_| Error::from_reason("team lock poisoned"))?;
+    let repo_path = resolve_repo_path_or_err(repo_path)?;
+    let color = color.trim();
+    if color.is_empty() {
+        // 清除自定义色：不存在该配置时 git 以非零退出，忽略即可
+        let _ = run_git_raw(&repo_path, &["config", "--local", "--unset", AVATAR_COLOR_KEY]);
+    } else {
+        if !is_avatar_color(color) {
+            return Err(Error::from_reason("invalid avatar color"));
+        }
+        run_git(&repo_path, &["config", "--local", AVATAR_COLOR_KEY, color])?;
+    }
+    if let Ok(worktree) = ensure_team_worktree(&repo_path) {
+        touch_member(&repo_path, &worktree, true);
+    }
     get_team_identity(&repo_path)
 }
 
@@ -488,7 +546,7 @@ pub fn sync_team(repo_path: &str) -> Result<TeamSyncResult> {
 
     // 心跳：确保当前用户成员记录存在，>10 分钟未更新则刷新 last_seen
     if has_remote || result.initialized {
-        touch_member(&repo_path, &worktree);
+        touch_member(&repo_path, &worktree, false);
     }
 
     // 团队知识自动沉淀为项目级 Skill（幂等，覆盖初始化与 pull 场景）
@@ -510,7 +568,9 @@ pub fn sync_team(repo_path: &str) -> Result<TeamSyncResult> {
     Ok(result)
 }
 
-fn touch_member(repo_path: &str, worktree: &Path) {
+/// 写入/刷新当前用户的成员记录（avatar_seed 取自定义头像色或邮箱哈希）。
+/// `force` 为 true 时跳过新鲜度检查，用于头像颜色变更后立即落盘。
+fn touch_member(repo_path: &str, worktree: &Path, force: bool) {
     let Ok(identity) = get_team_identity(repo_path) else {
         return;
     };
@@ -525,7 +585,7 @@ fn touch_member(repo_path: &str, worktree: &Path) {
             email: identity.email.clone(),
             name: identity.name.clone(),
             role: "member".into(),
-            avatar_seed: seed_for(&identity.email),
+            avatar_seed: avatar_seed_for(repo_path, &identity.email),
             joined_at: now.clone(),
             last_seen: now.clone(),
         })
@@ -534,13 +594,13 @@ fn touch_member(repo_path: &str, worktree: &Path) {
             email: identity.email.clone(),
             name: identity.name.clone(),
             role: "member".into(),
-            avatar_seed: seed_for(&identity.email),
+            avatar_seed: avatar_seed_for(repo_path, &identity.email),
             joined_at: now.clone(),
             last_seen: now.clone(),
         }
     };
     member.name = identity.name.clone();
-    member.avatar_seed = seed_for(&identity.email);
+    member.avatar_seed = avatar_seed_for(repo_path, &identity.email);
     // 仅当记录已存在且最近 10 分钟内刚心跳过才跳过；新成员必须落盘
     let fresh = existed
         && chrono::DateTime::parse_from_rfc3339(&member.last_seen)
@@ -551,7 +611,7 @@ fn touch_member(repo_path: &str, worktree: &Path) {
                     < MEMBER_HEARTBEAT_SECS
             })
             .unwrap_or(false);
-    if fresh {
+    if fresh && !force {
         return;
     }
     member.last_seen = now;
@@ -598,7 +658,7 @@ fn bump_member_last_seen(repo_path: &str, worktree: &Path) -> Option<String> {
             email: identity.email.clone(),
             name: identity.name.clone(),
             role: "member".into(),
-            avatar_seed: seed_for(&identity.email),
+            avatar_seed: avatar_seed_for(repo_path, &identity.email),
             joined_at: now.clone(),
             last_seen: now.clone(),
         },

@@ -7,6 +7,8 @@ export type TeamIdentity = {
   name: string;
   email: string;
   remoteUrl: string;
+  /** 头像种子：自定义颜色（git config snow.avatarColor）或邮箱哈希（默认色）。 */
+  avatarSeed: string;
   hasIdentity: boolean;
   error: string | null;
 };

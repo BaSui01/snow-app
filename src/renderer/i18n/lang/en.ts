@@ -4619,6 +4619,9 @@ export const en = {
   "team.header.syncNow": "Sync now",
   "team.header.syncError": "Sync issue",
   "team.header.editIdentity": "Edit identity",
+  "team.header.close": "Close team collaboration",
+  "team.header.avatarColor": "Avatar color",
+  "team.header.avatarDefault": "Default color",
   "team.activity.empty":
     "No team activity yet. Create a task, request a review, or send a message to start collaborating.",
   "team.activity.placeholder": "Send a team message...",

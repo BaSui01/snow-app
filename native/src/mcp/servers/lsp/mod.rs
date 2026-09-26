@@ -22,6 +22,7 @@ pub(crate) mod detect; // crate 内共享（exports 层 napi 导出「检测技�
 mod format;
 pub(crate) mod manager; // crate 内共享（exports 层 napi 导出会话状态快照）
 pub(crate) mod probe; // crate 内共享（storage 种子/迁移/校正也要探测，§8.6）
+pub(crate) mod resolve;
 mod session;
 mod types;
 
@@ -72,44 +73,52 @@ fn tool_schemas() -> Vec<McpTool> {
         McpTool {
             server_id: SERVER_ID.to_string(),
             name: "hover".to_string(),
-            description: "Get the exact type signature and doc comment of a symbol at a position. Use to understand an identifier or an unknown API without reading its implementation.\n\nCheaper than filesystem-read when you only need a type or signature.\n\n- Position is 1-indexed (line, column).\n- Returns Markdown contents (type info + doc comment).\n\nLocal projects only.".to_string(),
+            description: "Get the exact type signature and doc comment of a symbol at a position or by name. Use to understand an identifier or an unknown API without reading its implementation.\n\nPrefer this over filesystem-read when you only need a type or signature — it avoids pulling a whole file into context.\n\n- Addressing: provide either (filePath, line, column) coordinates (1-indexed), (filePath, symbol) to resolve within file/project, or symbol alone to search across the entire workspace automatically.\n- Returns Markdown contents (type info + doc comment).\n\nLocal projects only.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "filePath": {
                         "type": "string",
-                        "description": "Absolute path to the source file."
+                        "description": "Absolute path to the source file (optional when symbol is provided)."
                     },
                     "line": {
                         "type": "number",
-                        "description": "1-indexed line number."
+                        "description": "1-indexed line number (required if symbol is omitted)."
                     },
                     "column": {
                         "type": "number",
-                        "description": "1-indexed column number (character offset within the line)."
+                        "description": "1-indexed column number (character offset within the line; required if symbol is omitted)."
+                    },
+                    "symbol": {
+                        "type": "string",
+                        "description": "Symbol name to query directly as an alternative to (line, column). Resolves via single-file AST first, or across the workspace if filePath is omitted."
                     }
                 },
-                "required": ["filePath", "line", "column"]
+                "required": []
             }),
         },
         McpTool {
             server_id: SERVER_ID.to_string(),
             name: "goto".to_string(),
-            description: "Jump to a symbol at a position with one of three navigation kinds: kind=definition (default; the declaration — cross-file, resolution-accurate; imports/generics/traits/stdlib & dependency sources), kind=type-definition (the type's definition), kind=implementation (all implementations of an interface/abstract class/trait).\n\nUse INSTEAD OF grep to locate a definition — grep cannot distinguish a real symbol from same-named identifiers in other modules, comments or strings.\n\n- Returns target file/line/column(s).\n- type-definition / implementation are only supported by servers that declare those capabilities.\n\nLocal projects only.".to_string(),
+            description: "Jump to a symbol at a position or by name with one of three navigation kinds: kind=definition (default; the declaration — cross-file, resolution-accurate; imports/generics/traits/stdlib & dependency sources), kind=type-definition (the type's definition), kind=implementation (all implementations of an interface/abstract class/trait).\n\nUse INSTEAD OF grep to locate a definition — grep cannot distinguish a real symbol from same-named identifiers in other modules, comments or strings.\n\n- Addressing: provide either (filePath, line, column) coordinates (1-indexed), (filePath, symbol) to resolve within file/project, or symbol alone to search across the entire workspace automatically.\n- Returns target file/line/column(s).\n- type-definition / implementation are only supported by servers that declare those capabilities.\n\nLocal projects only.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "filePath": {
                         "type": "string",
-                        "description": "Absolute path to the source file."
+                        "description": "Absolute path to the source file (optional when symbol is provided)."
                     },
                     "line": {
                         "type": "number",
-                        "description": "1-indexed line number."
+                        "description": "1-indexed line number (required if symbol is omitted)."
                     },
                     "column": {
                         "type": "number",
-                        "description": "1-indexed column number (character offset within the line)."
+                        "description": "1-indexed column number (character offset within the line; required if symbol is omitted)."
+                    },
+                    "symbol": {
+                        "type": "string",
+                        "description": "Symbol name to query directly as an alternative to (line, column). Resolves via single-file AST first, or across the workspace if filePath is omitted."
                     },
                     "kind": {
                         "type": "string",
@@ -117,34 +126,38 @@ fn tool_schemas() -> Vec<McpTool> {
                         "description": "Navigation kind (default \"definition\")."
                     }
                 },
-                "required": ["filePath", "line", "column"]
+                "required": []
             }),
         },
         McpTool {
             server_id: SERVER_ID.to_string(),
             name: "references".to_string(),
-            description: "Find all references to a symbol at a position (declaration included by default; pass includeDeclaration=false to exclude it).\n\nRun this BEFORE renaming, removing or changing any shared symbol — compiler-accurate blast radius, where grep would miss aliased usages and match same-named symbols in unrelated modules. Each reference carries its one-line code context.\n\nLocal projects only.".to_string(),
+            description: "Find all references to a symbol at a position or by name (declaration included by default; pass includeDeclaration=false to exclude it).\n\nRun this BEFORE renaming, removing or changing any shared symbol — compiler-accurate blast radius, where grep would miss aliased usages and match same-named symbols in unrelated modules. Each reference carries its one-line code context.\n\n- Addressing: provide either (filePath, line, column) coordinates (1-indexed), (filePath, symbol) to resolve within file/project, or symbol alone to search across the entire workspace automatically.\n\nLocal projects only.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "filePath": {
                         "type": "string",
-                        "description": "Absolute path to the source file."
+                        "description": "Absolute path to the source file (optional when symbol is provided)."
                     },
                     "line": {
                         "type": "number",
-                        "description": "1-indexed line number."
+                        "description": "1-indexed line number (required if symbol is omitted)."
                     },
                     "column": {
                         "type": "number",
-                        "description": "1-indexed column number (character offset within the line)."
+                        "description": "1-indexed column number (character offset within the line; required if symbol is omitted)."
+                    },
+                    "symbol": {
+                        "type": "string",
+                        "description": "Symbol name to query directly as an alternative to (line, column). Resolves via single-file AST first, or across the workspace if filePath is omitted."
                     },
                     "includeDeclaration": {
                         "type": "boolean",
                         "description": "Whether to include the declaration itself (default true)."
                     }
                 },
-                "required": ["filePath", "line", "column"]
+                "required": []
             }),
         },
         McpTool {
@@ -165,21 +178,25 @@ fn tool_schemas() -> Vec<McpTool> {
         McpTool {
             server_id: SERVER_ID.to_string(),
             name: "rename".to_string(),
-            description: "Rename a symbol at a position across the whole project (textDocument/rename, WorkspaceEdit).\n\n- dryRun=true (default): previews the multi-file edit list without writing.\n- dryRun=false: applies the edits to disk.\n- Use after locating the symbol with lsp-goto / lsp-references.\n\nLocal projects only.".to_string(),
+            description: "Rename a symbol at a position or by name across the whole project (textDocument/rename, WorkspaceEdit).\n\nWhen a task asks to rename a shared symbol, prefer this over manual multi-file edits — semantic rename updates every reference correctly, while find/replace misses aliased usages and mis-edits strings/comments.\n\n- Addressing: provide either (filePath, line, column) coordinates (1-indexed), (filePath, symbol) to resolve within file/project, or symbol alone to search across the entire workspace automatically.\n- dryRun=true (default): previews the multi-file edit list without writing — review it, then call again with dryRun=false to apply.\n- Use after locating the symbol with lsp-goto / lsp-references.\n\nLocal projects only.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "filePath": {
                         "type": "string",
-                        "description": "Absolute path to the source file."
+                        "description": "Absolute path to the source file (optional when symbol is provided)."
                     },
                     "line": {
                         "type": "number",
-                        "description": "1-indexed line number."
+                        "description": "1-indexed line number (required if symbol is omitted)."
                     },
                     "column": {
                         "type": "number",
-                        "description": "1-indexed column number (character offset within the line)."
+                        "description": "1-indexed column number (character offset within the line; required if symbol is omitted)."
+                    },
+                    "symbol": {
+                        "type": "string",
+                        "description": "Symbol name to rename directly as an alternative to (line, column). Resolves via single-file AST first, or across the workspace if filePath is omitted."
                     },
                     "newName": {
                         "type": "string",
@@ -190,112 +207,61 @@ fn tool_schemas() -> Vec<McpTool> {
                         "description": "Only return the WorkspaceEdit description without writing files (default true)."
                     }
                 },
-                "required": ["filePath", "line", "column", "newName"]
-            }),
-        },
-        McpTool {
-            server_id: SERVER_ID.to_string(),
-            name: "code-action".to_string(),
-            description: "List or apply code actions (quick fixes / refactorings) at a position. Use to auto-fix lint errors or apply safe refactorings.\n\n- only: optional CodeActionKind filter, e.g. [\"quickfix\"] or [\"refactor.extract\"].\n- apply=true: applies edit-based actions.\n- Command-based actions are NEVER executed implicitly — they are listed in deferredCommands; copy their command/arguments into lsp-execute-command to run.\n\nLocal projects only.".to_string(),
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "filePath": {
-                        "type": "string",
-                        "description": "Absolute path to the source file."
-                    },
-                    "line": {
-                        "type": "number",
-                        "description": "1-indexed line number."
-                    },
-                    "column": {
-                        "type": "number",
-                        "description": "1-indexed column number (character offset within the line)."
-                    },
-                    "only": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "description": "Optional CodeActionKind filter, e.g. [\"quickfix\"] or [\"refactor.extract\"]."
-                    },
-                    "apply": {
-                        "type": "boolean",
-                        "description": "Apply edit-based actions (default false; command-based actions are listed as deferred, never executed implicitly)."
-                    }
-                },
-                "required": ["filePath", "line", "column"]
-            }),
-        },
-        McpTool {
-            server_id: SERVER_ID.to_string(),
-            name: "execute-command".to_string(),
-            description: "Execute a language-server-defined command (workspace/executeCommand) — refactorings, import management, SSR, etc.\n\n- Command names and arguments are server-private: copy them verbatim from the command/arguments fields of an lsp-code-action result (e.g. rust-analyzer.applySourceChange).\n- dryRun=true (default): previews multi-file edits; dryRun=false applies them to disk.\n- filePath is optional when exactly one server is enabled; pass it to target a specific language.\n\nLocal projects only.".to_string(),
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "Server command name, e.g. \"rust-analyzer.applySourceChange\" or \"gopls.add_import\"."
-                    },
-                    "arguments": {
-                        "type": "array",
-                        "description": "Server-private command arguments (JSON array; copy from an lsp-code-action result)."
-                    },
-                    "filePath": {
-                        "type": "string",
-                        "description": "Absolute path to a source file of the target language (optional when only one server is enabled)."
-                    },
-                    "dryRun": {
-                        "type": "boolean",
-                        "description": "Only preview a WorkspaceEdit result without writing (default true)."
-                    }
-                },
-                "required": ["command"]
+                "required": ["newName"]
             }),
         },
         McpTool {
             server_id: SERVER_ID.to_string(),
             name: "call-hierarchy".to_string(),
-            description: "Get the full call graph around a function/method at a position:\n- incoming: which functions call it (caller + call-site line context)\n- outgoing: what it calls (callee + call-site context)\n\nUse for impact analysis — one call replaces many lsp-references queries.\n\nLocal projects only.".to_string(),
+            description: "Get the full call graph around a function/method at a position or by name:\n- incoming: which functions call it (caller + call-site line context)\n- outgoing: what it calls (callee + call-site context)\n\nUse for impact analysis — one call replaces many lsp-references queries.\n\n- Addressing: provide either (filePath, line, column) coordinates (1-indexed), (filePath, symbol) to resolve within file/project, or symbol alone to search across the entire workspace automatically.\n\nLocal projects only.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "filePath": {
                         "type": "string",
-                        "description": "Absolute path to the source file."
+                        "description": "Absolute path to the source file (optional when symbol is provided)."
                     },
                     "line": {
                         "type": "number",
-                        "description": "1-indexed line number."
+                        "description": "1-indexed line number (required if symbol is omitted)."
                     },
                     "column": {
                         "type": "number",
-                        "description": "1-indexed column number (character offset within the line)."
+                        "description": "1-indexed column number (character offset within the line; required if symbol is omitted)."
+                    },
+                    "symbol": {
+                        "type": "string",
+                        "description": "Function/method name to analyze directly as an alternative to (line, column). Resolves via single-file AST first, or across the workspace if filePath is omitted."
                     }
                 },
-                "required": ["filePath", "line", "column"]
+                "required": []
             }),
         },
         McpTool {
             server_id: SERVER_ID.to_string(),
             name: "type-hierarchy".to_string(),
-            description: "Get the type hierarchy around a type at a position:\n- supertypes: parent types (base classes / interfaces / traits)\n- subtypes: all child types (subclasses / implementors)\n\nUse to assess the blast radius of refactoring a base type.\n\nLocal projects only.".to_string(),
+            description: "Get the type hierarchy around a type at a position or by name:\n- supertypes: parent types (base classes / interfaces / traits)\n- subtypes: all child types (subclasses / implementors)\n\nUse to assess the blast radius of refactoring a base type.\n\n- Addressing: provide either (filePath, line, column) coordinates (1-indexed), (filePath, symbol) to resolve within file/project, or symbol alone to search across the entire workspace automatically.\n\nLocal projects only.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "filePath": {
                         "type": "string",
-                        "description": "Absolute path to the source file."
+                        "description": "Absolute path to the source file (optional when symbol is provided)."
                     },
                     "line": {
                         "type": "number",
-                        "description": "1-indexed line number."
+                        "description": "1-indexed line number (required if symbol is omitted)."
                     },
                     "column": {
                         "type": "number",
-                        "description": "1-indexed column number (character offset within the line)."
+                        "description": "1-indexed column number (character offset within the line; required if symbol is omitted)."
+                    },
+                    "symbol": {
+                        "type": "string",
+                        "description": "Type/interface/trait name to analyze directly as an alternative to (line, column). Resolves via single-file AST first, or across the workspace if filePath is omitted."
                     }
                 },
-                "required": ["filePath", "line", "column"]
+                "required": []
             }),
         },
         McpTool {
@@ -390,6 +356,17 @@ fn parse_diagnostics_target(args: &Value) -> napi::Result<DiagnosticsTarget> {
     }
 }
 
+enum ResolvedTargetLocation {
+    Exact {
+        path: PathBuf,
+        line: u32,
+        column: u32,
+        lang: String,
+        symbol: Option<String>,
+    },
+    Ambiguous(Value),
+}
+
 impl LspService {
     pub fn new() -> Self {
         LspService
@@ -409,8 +386,6 @@ impl LspService {
             "references" => self.execute_references(args, project_id).await,
             "symbols" => self.execute_symbols(args, project_id).await,
             "rename" => self.execute_rename(args, project_id).await,
-            "code-action" => self.execute_code_action(args, project_id).await,
-            "execute-command" => self.execute_execute_command(args, project_id).await,
             "call-hierarchy" => self.execute_call_hierarchy(args, project_id).await,
             "type-hierarchy" => self.execute_type_hierarchy(args, project_id).await,
             "workspace-symbols" => self.execute_workspace_symbols(args, project_id).await,
@@ -419,7 +394,7 @@ impl LspService {
             _ => Err(Error::new(
                 Status::GenericFailure,
                 format!(
-                    "Unknown lsp tool: \"{tool_name}\". Available tools: [diagnostics, hover, goto, references, symbols, rename, code-action, execute-command, call-hierarchy, type-hierarchy, workspace-symbols, workspace-diagnostics, vulncheck]"
+                    "Unknown lsp tool: \"{tool_name}\". Available tools: [diagnostics, hover, goto, references, symbols, rename, call-hierarchy, type-hierarchy, workspace-symbols, workspace-diagnostics, vulncheck]"
                 ),
             )),
         }
@@ -658,29 +633,169 @@ impl LspService {
         }
     }
 
-    /// lsp-hover。
-    async fn execute_hover(&self, args: &Value, project_id: Option<&str>) -> napi::Result<Value> {
-        let file_path = required_string(args, "filePath")?;
-        let line = required_u32(args, "line")?;
-        let column = required_u32(args, "column")?;
-        let path = PathBuf::from(&file_path);
-
-        if is_ssh_path(&file_path) {
-            return Err(types::LspError::RemoteNotSupported.into());
-        }
-
+    /// 解析目标符号的位置与归属语言：
+    /// 1. 若提供了 filePath：
+    ///    - 优先物理坐标 (line, column)；
+    ///    - 若仅提供了 symbol，则在该文件的单文件 AST 中推测匹配，未命中回退到该语言的 workspace_symbols；
+    /// 2. 若未提供 filePath：
+    ///    - 必须提供 symbol，跨当前项目所有激活且支持 workspace-symbols 的技术栈服务器全局寻址。
+    async fn resolve_target_location(
+        &self,
+        args: &Value,
+        project_id: Option<&str>,
+    ) -> napi::Result<ResolvedTargetLocation> {
         let manager = manager::ServerManager::instance();
         manager.reload_configs(project_id).await?;
         let configs = manager.configs(project_id).await;
-        let (_config, lang) = config::match_config(&configs, &path).ok_or_else(|| {
-            types::LspError::NotConfigured(file_extension_label(&path))
-        })?;
-        let project_root = resolve_lang_root(project_id, &file_path, lang)?;
 
-        let session = manager.get_or_start(lang, &project_root, project_id).await?;
+        let file_path_opt = args
+            .get("filePath")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+
+        if let Some(file_path) = file_path_opt {
+            if is_ssh_path(file_path) {
+                return Err(types::LspError::RemoteNotSupported.into());
+            }
+            let path = PathBuf::from(file_path);
+            let (_config, lang) = config::match_config(&configs, &path).ok_or_else(|| {
+                types::LspError::NotConfigured(file_extension_label(&path))
+            })?;
+
+            let has_line = args.get("line").and_then(Value::as_u64);
+            let has_col = args.get("column").and_then(Value::as_u64);
+            let symbol_opt = args
+                .get("symbol")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+
+            if let (Some(l), Some(c)) = (has_line, has_col) {
+                if l > 0 && c > 0 {
+                    return Ok(ResolvedTargetLocation::Exact {
+                        path,
+                        line: l as u32,
+                        column: c as u32,
+                        lang: lang.to_string(),
+                        symbol: symbol_opt.map(ToString::to_string),
+                    });
+                }
+            }
+
+            let Some(symbol) = symbol_opt else {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "Missing addressing parameters: provide either (line, column) coordinates or symbol."
+                        .to_string(),
+                ));
+            };
+
+            let project_root = resolve_lang_root(project_id, file_path, lang)?;
+            let session = manager.get_or_start(lang, &project_root, project_id).await?;
+            let mut guard = session.lock().await;
+            guard.ensure_open(&path).await?;
+
+            let resolved = resolve::resolve_symbol_or_coords(&mut guard, &path, args).await?;
+            match resolved {
+                resolve::ResolvedTarget::Exact {
+                    path: target_path,
+                    line,
+                    column,
+                } => {
+                    let target_lang = if target_path != path {
+                        config::match_config(&configs, &target_path)
+                            .map(|(_, l)| l.to_string())
+                            .unwrap_or_else(|| lang.to_string())
+                    } else {
+                        lang.to_string()
+                    };
+                    Ok(ResolvedTargetLocation::Exact {
+                        path: target_path,
+                        line,
+                        column,
+                        lang: target_lang,
+                        symbol: Some(symbol.to_string()),
+                    })
+                }
+                resolve::ResolvedTarget::Ambiguous(val) => {
+                    Ok(ResolvedTargetLocation::Ambiguous(val))
+                }
+            }
+        } else {
+            let symbol_opt = args
+                .get("symbol")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+
+            let Some(symbol) = symbol_opt else {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "Missing addressing parameters: provide either filePath (with line/column or symbol) or symbol alone for workspace-wide resolution."
+                        .to_string(),
+                ));
+            };
+
+            let global_target =
+                resolve::resolve_symbol_workspace_global(manager, &configs, project_id, symbol)
+                    .await?;
+
+            match global_target {
+                resolve::GlobalResolvedTarget::Exact {
+                    path,
+                    line,
+                    column,
+                    lang,
+                } => Ok(ResolvedTargetLocation::Exact {
+                    path,
+                    line,
+                    column,
+                    lang,
+                    symbol: Some(symbol.to_string()),
+                }),
+                resolve::GlobalResolvedTarget::Ambiguous(val) => {
+                    Ok(ResolvedTargetLocation::Ambiguous(val))
+                }
+            }
+        }
+    }
+
+    /// lsp-hover。
+    async fn execute_hover(&self, args: &Value, project_id: Option<&str>) -> napi::Result<Value> {
+        let resolved = self.resolve_target_location(args, project_id).await?;
+        let (path, line, column, lang, symbol) = match resolved {
+            ResolvedTargetLocation::Exact {
+                path,
+                line,
+                column,
+                lang,
+                symbol,
+            } => (path, line, column, lang, symbol),
+            ResolvedTargetLocation::Ambiguous(val) => return Ok(val),
+        };
+
+        let manager = manager::ServerManager::instance();
+        let project_root = resolve_lang_root(project_id, path.to_str().unwrap_or(""), &lang)?;
+        let session = manager.get_or_start(&lang, &project_root, project_id).await?;
         let mut guard = session.lock().await;
         guard.ensure_open(&path).await?;
-        Ok(guard.hover(&path, line, column).await?)
+
+        let mut result = guard.hover(&path, line, column).await?;
+        if let Some(symbol_str) = symbol {
+            if let Value::Object(map) = &mut result {
+                map.insert(
+                    "resolvedSymbol".to_string(),
+                    json!({
+                        "symbol": symbol_str,
+                        "filePath": path.to_string_lossy(),
+                        "line": line,
+                        "column": column,
+                    }),
+                );
+            }
+        }
+        Ok(result)
     }
 
     /// lsp-goto：统一跳转入口（definition / type-definition / implementation）。
@@ -688,9 +803,6 @@ impl LspService {
     /// kind 默认 definition（全语言核心）；type-definition / implementation
     /// 按能力表运行时校验（§8.7.1 兜底，能力标记保留在 capabilities.rs）。
     async fn execute_goto(&self, args: &Value, project_id: Option<&str>) -> napi::Result<Value> {
-        let file_path = required_string(args, "filePath")?;
-        let line = required_u32(args, "line")?;
-        let column = required_u32(args, "column")?;
         let kind = args
             .get("kind")
             .and_then(Value::as_str)
@@ -698,18 +810,19 @@ impl LspService {
             .filter(|s| !s.is_empty())
             .unwrap_or("definition")
             .to_string();
-        let path = PathBuf::from(&file_path);
 
-        if is_ssh_path(&file_path) {
-            return Err(types::LspError::RemoteNotSupported.into());
-        }
+        let resolved = self.resolve_target_location(args, project_id).await?;
+        let (path, line, column, lang, symbol) = match resolved {
+            ResolvedTargetLocation::Exact {
+                path,
+                line,
+                column,
+                lang,
+                symbol,
+            } => (path, line, column, lang, symbol),
+            ResolvedTargetLocation::Ambiguous(val) => return Ok(val),
+        };
 
-        let manager = manager::ServerManager::instance();
-        manager.reload_configs(project_id).await?;
-        let configs = manager.configs(project_id).await;
-        let (_config, lang) = config::match_config(&configs, &path).ok_or_else(|| {
-            types::LspError::NotConfigured(file_extension_label(&path))
-        })?;
         match kind.as_str() {
             // definition 是核心工具，全语言支持，无需能力校验。
             "definition" => {}
@@ -724,45 +837,75 @@ impl LspService {
                 ))
             }
         }
-        let project_root = resolve_lang_root(project_id, &file_path, lang)?;
 
-        let session = manager.get_or_start(lang, &project_root, project_id).await?;
+        let manager = manager::ServerManager::instance();
+        let project_root = resolve_lang_root(project_id, path.to_str().unwrap_or(""), &lang)?;
+        let session = manager.get_or_start(&lang, &project_root, project_id).await?;
         let mut guard = session.lock().await;
         guard.ensure_open(&path).await?;
-        match kind.as_str() {
-            "definition" => Ok(guard.goto_definition(&path, line, column).await?),
-            "type-definition" => Ok(guard.type_definition(&path, line, column).await?),
-            _ => Ok(guard.implementation(&path, line, column).await?),
+
+        let mut result = match kind.as_str() {
+            "definition" => guard.goto_definition(&path, line, column).await?,
+            "type-definition" => guard.type_definition(&path, line, column).await?,
+            _ => guard.implementation(&path, line, column).await?,
+        };
+
+        if let Some(symbol_str) = symbol {
+            if let Value::Object(map) = &mut result {
+                map.insert(
+                    "resolvedSymbol".to_string(),
+                    json!({
+                        "symbol": symbol_str,
+                        "filePath": path.to_string_lossy(),
+                        "line": line,
+                        "column": column,
+                    }),
+                );
+            }
         }
+        Ok(result)
     }
 
     /// lsp-references。
     async fn execute_references(&self, args: &Value, project_id: Option<&str>) -> napi::Result<Value> {
-        let file_path = required_string(args, "filePath")?;
-        let line = required_u32(args, "line")?;
-        let column = required_u32(args, "column")?;
         let include_declaration = args
             .get("includeDeclaration")
             .and_then(Value::as_bool)
             .unwrap_or(true);
-        let path = PathBuf::from(&file_path);
 
-        if is_ssh_path(&file_path) {
-            return Err(types::LspError::RemoteNotSupported.into());
-        }
+        let resolved = self.resolve_target_location(args, project_id).await?;
+        let (path, line, column, lang, symbol) = match resolved {
+            ResolvedTargetLocation::Exact {
+                path,
+                line,
+                column,
+                lang,
+                symbol,
+            } => (path, line, column, lang, symbol),
+            ResolvedTargetLocation::Ambiguous(val) => return Ok(val),
+        };
 
         let manager = manager::ServerManager::instance();
-        manager.reload_configs(project_id).await?;
-        let configs = manager.configs(project_id).await;
-        let (_config, lang) = config::match_config(&configs, &path).ok_or_else(|| {
-            types::LspError::NotConfigured(file_extension_label(&path))
-        })?;
-        let project_root = resolve_lang_root(project_id, &file_path, lang)?;
-
-        let session = manager.get_or_start(lang, &project_root, project_id).await?;
+        let project_root = resolve_lang_root(project_id, path.to_str().unwrap_or(""), &lang)?;
+        let session = manager.get_or_start(&lang, &project_root, project_id).await?;
         let mut guard = session.lock().await;
         guard.ensure_open(&path).await?;
-        Ok(guard.references(&path, line, column, include_declaration).await?)
+
+        let mut result = guard.references(&path, line, column, include_declaration).await?;
+        if let Some(symbol_str) = symbol {
+            if let Value::Object(map) = &mut result {
+                map.insert(
+                    "resolvedSymbol".to_string(),
+                    json!({
+                        "symbol": symbol_str,
+                        "filePath": path.to_string_lossy(),
+                        "line": line,
+                        "column": column,
+                    }),
+                );
+            }
+        }
+        Ok(result)
     }
 
     /// lsp-symbols。
@@ -790,194 +933,125 @@ impl LspService {
 
     /// lsp-rename。
     async fn execute_rename(&self, args: &Value, project_id: Option<&str>) -> napi::Result<Value> {
-        let file_path = required_string(args, "filePath")?;
-        let line = required_u32(args, "line")?;
-        let column = required_u32(args, "column")?;
         let new_name = required_string(args, "newName")?;
         let dry_run = args
             .get("dryRun")
             .and_then(Value::as_bool)
             .unwrap_or(true);
-        let path = PathBuf::from(&file_path);
 
-        if is_ssh_path(&file_path) {
-            return Err(types::LspError::RemoteNotSupported.into());
-        }
-
-        let manager = manager::ServerManager::instance();
-        manager.reload_configs(project_id).await?;
-        let configs = manager.configs(project_id).await;
-        let (_config, lang) = config::match_config(&configs, &path).ok_or_else(|| {
-            types::LspError::NotConfigured(file_extension_label(&path))
-        })?;
-        ensure_capability(&lang, "rename")?;
-        let project_root = resolve_lang_root(project_id, &file_path, lang)?;
-
-        let session = manager.get_or_start(lang, &project_root, project_id).await?;
-        let mut guard = session.lock().await;
-        guard.ensure_open(&path).await?;
-        Ok(guard.rename(&path, line, column, &new_name, dry_run).await?)
-    }
-
-    /// lsp-code-action。
-    async fn execute_code_action(&self, args: &Value, project_id: Option<&str>) -> napi::Result<Value> {
-        let file_path = required_string(args, "filePath")?;
-        let line = required_u32(args, "line")?;
-        let column = required_u32(args, "column")?;
-        let only: Option<Vec<String>> = args
-            .get("only")
-            .and_then(Value::as_array)
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(|item| item.as_str().map(|s| s.to_string()))
-                    .collect()
-            });
-        let apply = args
-            .get("apply")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        let path = PathBuf::from(&file_path);
-
-        if is_ssh_path(&file_path) {
-            return Err(types::LspError::RemoteNotSupported.into());
-        }
-
-        let manager = manager::ServerManager::instance();
-        manager.reload_configs(project_id).await?;
-        let configs = manager.configs(project_id).await;
-        let (_config, lang) = config::match_config(&configs, &path).ok_or_else(|| {
-            types::LspError::NotConfigured(file_extension_label(&path))
-        })?;
-        ensure_capability(&lang, "code-action")?;
-        let project_root = resolve_lang_root(project_id, &file_path, lang)?;
-
-        let session = manager.get_or_start(lang, &project_root, project_id).await?;
-        let mut guard = session.lock().await;
-        guard.ensure_open(&path).await?;
-        let kinds = only.map(|items| {
-            items
-                .iter()
-                .map(|kind| lsp_types::CodeActionKind::from(kind.clone()))
-                .collect::<Vec<_>>()
-        });
-        Ok(guard.code_actions(&path, line, column, kinds, apply).await?)
-    }
-
-    /// lsp-execute-command（workspace/executeCommand：服务器重构/导入等命令）。
-    ///
-    /// filePath 可选：提供时按文件匹配语言；缺省时要求恰好一个启用服务器。
-    async fn execute_execute_command(
-        &self,
-        args: &Value,
-        project_id: Option<&str>,
-    ) -> napi::Result<Value> {
-        let command = required_string(args, "command")?;
-        if command.trim().is_empty() {
-            return Err(Error::new(Status::InvalidArg, "command must not be empty"));
-        }
-        let arguments: Vec<Value> = args
-            .get("arguments")
-            .and_then(Value::as_array)
-            .map(|items| items.iter().cloned().collect())
-            .unwrap_or_default();
-        let dry_run = args
-            .get("dryRun")
-            .and_then(Value::as_bool)
-            .unwrap_or(true);
-        let file_path = args.get("filePath").and_then(Value::as_str).map(str::to_string);
-
-        let manager = manager::ServerManager::instance();
-        manager.reload_configs(project_id).await?;
-        let configs = manager.configs(project_id).await;
-
-        // 确定目标语言与会话：filePath 优先；缺省时仅当恰好一个启用服务器。
-        let (lang, project_root) = match &file_path {
-            Some(fp) => {
-                if is_ssh_path(fp) {
-                    return Err(types::LspError::RemoteNotSupported.into());
-                }
-                let path = PathBuf::from(fp);
-                let (_config, lang) = config::match_config(&configs, &path).ok_or_else(|| {
-                    types::LspError::NotConfigured(file_extension_label(&path))
-                })?;
-                ensure_capability(&lang, "execute-command")?;
-                let root = resolve_lang_root(project_id, fp, &lang)?;
-                (lang.to_string(), root)
-            }
-            None => {
-                let enabled: Vec<&types::ServerConfig> = configs.iter().filter(|c| c.enabled).collect();
-                if enabled.len() != 1 {
-                    return Err(Error::new(
-                        Status::InvalidArg,
-                        format!(
-                            "lsp-execute-command 需要 filePath 定位目标语言服务器（当前启用 {} 个服务器）；或仅启用一个服务器时可直接调用",
-                            enabled.len()
-                        ),
-                    ));
-                }
-                let lang = enabled[0].lang.clone();
-                ensure_capability(&lang, "execute-command")?;
-                let root = resolve_lang_root(project_id, "", &lang)?;
-                (lang, root)
-            }
+        let resolved = self.resolve_target_location(args, project_id).await?;
+        let (path, line, column, lang, symbol) = match resolved {
+            ResolvedTargetLocation::Exact {
+                path,
+                line,
+                column,
+                lang,
+                symbol,
+            } => (path, line, column, lang, symbol),
+            ResolvedTargetLocation::Ambiguous(val) => return Ok(val),
         };
 
+        ensure_capability(&lang, "rename")?;
+
+        let manager = manager::ServerManager::instance();
+        let project_root = resolve_lang_root(project_id, path.to_str().unwrap_or(""), &lang)?;
         let session = manager.get_or_start(&lang, &project_root, project_id).await?;
         let mut guard = session.lock().await;
-        Ok(guard.execute_command(&command, arguments, dry_run).await?)
+        guard.ensure_open(&path).await?;
+
+        let mut result = guard.rename(&path, line, column, &new_name, dry_run).await?;
+        if let Some(symbol_str) = symbol {
+            if let Value::Object(map) = &mut result {
+                map.insert(
+                    "resolvedSymbol".to_string(),
+                    json!({
+                        "symbol": symbol_str,
+                        "filePath": path.to_string_lossy(),
+                        "line": line,
+                        "column": column,
+                    }),
+                );
+            }
+        }
+        Ok(result)
     }
 
     /// callHierarchy 查询（LSP 3.16，双向调用链）：
     async fn execute_call_hierarchy(&self, args: &Value, project_id: Option<&str>) -> napi::Result<Value> {
-        let file_path = required_string(args, "filePath")?;
-        let line = required_u32(args, "line")?;
-        let column = required_u32(args, "column")?;
-        let path = PathBuf::from(&file_path);
+        let resolved = self.resolve_target_location(args, project_id).await?;
+        let (path, line, column, lang, symbol) = match resolved {
+            ResolvedTargetLocation::Exact {
+                path,
+                line,
+                column,
+                lang,
+                symbol,
+            } => (path, line, column, lang, symbol),
+            ResolvedTargetLocation::Ambiguous(val) => return Ok(val),
+        };
 
-        if is_ssh_path(&file_path) {
-            return Err(types::LspError::RemoteNotSupported.into());
-        }
+        ensure_capability(&lang, "call-hierarchy")?;
 
         let manager = manager::ServerManager::instance();
-        manager.reload_configs(project_id).await?;
-        let configs = manager.configs(project_id).await;
-        let (_config, lang) = config::match_config(&configs, &path).ok_or_else(|| {
-            types::LspError::NotConfigured(file_extension_label(&path))
-        })?;
-        ensure_capability(&lang, "call-hierarchy")?;
-        let project_root = resolve_lang_root(project_id, &file_path, lang)?;
-
-        let session = manager.get_or_start(lang, &project_root, project_id).await?;
+        let project_root = resolve_lang_root(project_id, path.to_str().unwrap_or(""), &lang)?;
+        let session = manager.get_or_start(&lang, &project_root, project_id).await?;
         let mut guard = session.lock().await;
         guard.ensure_open(&path).await?;
-        Ok(guard.call_hierarchy(&path, line, column).await?)
+
+        let mut result = guard.call_hierarchy(&path, line, column).await?;
+        if let Some(symbol_str) = symbol {
+            if let Value::Object(map) = &mut result {
+                map.insert(
+                    "resolvedSymbol".to_string(),
+                    json!({
+                        "symbol": symbol_str,
+                        "filePath": path.to_string_lossy(),
+                        "line": line,
+                        "column": column,
+                    }),
+                );
+            }
+        }
+        Ok(result)
     }
 
     /// lsp-type-hierarchy（LSP 3.17：父类型链 + 全部子类型）。
     async fn execute_type_hierarchy(&self, args: &Value, project_id: Option<&str>) -> napi::Result<Value> {
-        let file_path = required_string(args, "filePath")?;
-        let line = required_u32(args, "line")?;
-        let column = required_u32(args, "column")?;
-        let path = PathBuf::from(&file_path);
+        let resolved = self.resolve_target_location(args, project_id).await?;
+        let (path, line, column, lang, symbol) = match resolved {
+            ResolvedTargetLocation::Exact {
+                path,
+                line,
+                column,
+                lang,
+                symbol,
+            } => (path, line, column, lang, symbol),
+            ResolvedTargetLocation::Ambiguous(val) => return Ok(val),
+        };
 
-        if is_ssh_path(&file_path) {
-            return Err(types::LspError::RemoteNotSupported.into());
-        }
+        ensure_capability(&lang, "type-hierarchy")?;
 
         let manager = manager::ServerManager::instance();
-        manager.reload_configs(project_id).await?;
-        let configs = manager.configs(project_id).await;
-        let (_config, lang) = config::match_config(&configs, &path).ok_or_else(|| {
-            types::LspError::NotConfigured(file_extension_label(&path))
-        })?;
-        ensure_capability(&lang, "type-hierarchy")?;
-        let project_root = resolve_lang_root(project_id, &file_path, lang)?;
-
-        let session = manager.get_or_start(lang, &project_root, project_id).await?;
+        let project_root = resolve_lang_root(project_id, path.to_str().unwrap_or(""), &lang)?;
+        let session = manager.get_or_start(&lang, &project_root, project_id).await?;
         let mut guard = session.lock().await;
         guard.ensure_open(&path).await?;
-        Ok(guard.type_hierarchy(&path, line, column).await?)
+
+        let mut result = guard.type_hierarchy(&path, line, column).await?;
+        if let Some(symbol_str) = symbol {
+            if let Value::Object(map) = &mut result {
+                map.insert(
+                    "resolvedSymbol".to_string(),
+                    json!({
+                        "symbol": symbol_str,
+                        "filePath": path.to_string_lossy(),
+                        "line": line,
+                        "column": column,
+                    }),
+                );
+            }
+        }
+        Ok(result)
     }
 
     /// lsp-workspace-symbols（无需文件位置：跨**所有**启用且支持的服务器语言合并查询）。
@@ -1463,8 +1537,7 @@ fn resolve_lang_root(
     lang: &str,
 ) -> napi::Result<PathBuf> {
     let project_root = resolve_project_root(project_id, file_path)?;
-    // 空 file_path（如 execute-command 无 filePath 分支）：无起始目录，
-    // 走向下扫描（Path::new("").parent() 为 None，天然覆盖）。
+    // 空 file_path：无起始目录，走向下扫描（Path::new("").parent() 为 None，天然覆盖）。
     let start = Path::new(file_path).parent();
     if let Some(root) = detect::find_lang_root(&project_root, start, lang) {
         return Ok(root);
@@ -1796,7 +1869,7 @@ pub(crate) async fn build_system_prompt_section(
         ("Navigation", &["goto", "references"]),
         ("Outline & symbol search", &["symbols", "workspace-symbols"]),
         ("Call graph", &["call-hierarchy", "type-hierarchy"]),
-        ("Refactoring", &["rename", "code-action", "execute-command"]),
+        ("Refactoring", &["rename"]),
     ];
     // 工具级开关（与 collect 阶段 tool_is_enabled 同源，2026-09-25 一致性修复）：
     // 用户单独禁用的 lsp-* 不进入清单——注入的工具必须与实际可见的工具一致。
@@ -1868,12 +1941,48 @@ pub(crate) async fn build_system_prompt_section(
     }
     routing.push('.');
     lines.push(routing);
+    if merged.contains(&"rename") {
+        lines.push(
+            "- Renaming a shared symbol → `lsp-rename` (dryRun=true first: review the multi-file edit list, then apply; manual find/replace misses aliased usages and mis-edits strings/comments)."
+                .to_string(),
+        );
+    }
+    if merged.contains(&"type-hierarchy") {
+        lines.push(
+            "- Changing an interface / base class / trait → `lsp-type-hierarchy` before editing (parent chain + all implementors in one call)."
+                .to_string(),
+        );
+    }
+    if merged.contains(&"call-hierarchy") {
+        lines.push(
+            "- Function-level impact (\"who calls this?\" / \"what does it call?\") → `lsp-call-hierarchy` (two-way call chain with call-site context in one call)."
+                .to_string(),
+        );
+    }
+    let has_vulncheck = merged.contains(&"vulncheck");
+    let has_workspace_diagnostics = merged.contains(&"workspace-diagnostics");
+    if has_vulncheck && has_workspace_diagnostics {
+        lines.push(
+            "- After dependency changes (go.mod / go.sum) → `lsp-vulncheck`; after a large refactor, before reporting the project clean → `lsp-workspace-diagnostics`."
+                .to_string(),
+        );
+    } else if has_workspace_diagnostics {
+        lines.push(
+            "- After a large refactor, before reporting the project clean → `lsp-workspace-diagnostics`."
+                .to_string(),
+        );
+    } else if has_vulncheck {
+        lines.push(
+            "- After dependency changes (go.mod / go.sum) → `lsp-vulncheck`."
+                .to_string(),
+        );
+    }
     lines.push(
         "- `grep-search` matches same-named symbols in unrelated modules, comments and string literals — it cannot tell a real reference from a namesake. Use it ONLY for literal strings/patterns (log text, config keys, comments), NEVER for semantic queries."
             .to_string(),
     );
     lines.push(
-        "- `lsp-goto` / `lsp-references` take 1-indexed line/column: line numbers already shown by `lsp-symbols` or `filesystem-read` feed straight into their `line` / `column` params."
+        "- `lsp-hover`, `lsp-goto`, `lsp-references`, `lsp-rename`, `lsp-call-hierarchy`, and `lsp-type-hierarchy` support direct symbol addressing via `symbol: string` without requiring `filePath` or coordinates (workspace-wide search when `filePath` is omitted), or 1-indexed `(line, column)` coordinates."
             .to_string(),
     );
     lines.push(

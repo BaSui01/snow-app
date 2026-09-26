@@ -535,13 +535,15 @@ async fn annotate_grep_result_with_semantic_routing(
     map.insert(
         "semanticRoutingHint".to_string(),
         Value::String(
-            "This pattern is a bare symbol name. grep matches same-named symbols in other \
-             modules, comments and string literals — it cannot tell a real reference from a \
-             namesake. For semantic questions use the LSP tools instead: `lsp-goto` \
-             (kind=definition), `lsp-references` (all usages), `lsp-hover` (type/signature), \
-             `lsp-workspace-symbols` (symbol by name), `lsp-diagnostics` (after edits). Keep \
-             grep for literal text only: log messages, config keys, comments, string constants."
-                .to_string(),
+            format!(
+                "This pattern is a bare symbol name. grep matches same-named symbols in other \
+                 modules, comments and string literals — it cannot tell a real reference from a \
+                 namesake. Since LSP is active, you can query directly by symbol name across the \
+                 workspace without needing file path or coordinates: `lsp-goto` (kind=definition, \
+                 symbol=\"{pattern}\"), `lsp-references` (symbol=\"{pattern}\"), `lsp-hover` \
+                 (symbol=\"{pattern}\"), `lsp-call-hierarchy` (symbol=\"{pattern}\"). Keep \
+                 grep for literal text only: log messages, config keys, comments, string constants."
+            ),
         ),
     );
     Value::Object(map)

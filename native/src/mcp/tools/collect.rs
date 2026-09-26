@@ -50,7 +50,7 @@ pub async fn collect_all_mcp_tools(
     // enough: a command missing from PATH can never start). Tool-level
     // filtering follows §8.7: only the tools supported by the union of
     // enabled servers' capabilities are exposed (e.g. enabling only
-    // csharp-ls hides lsp-rename / lsp-code-action / lsp-signature-help).
+    // csharp-ls hides lsp-rename / lsp-signature-help).
     // Project-scoped: evaluated against the project's effective configs
     // (project overrides global for the same lang, §8.5), matching the
     // invocation stage — project-only servers expose tools, and project
@@ -201,6 +201,7 @@ pub async fn collect_all_mcp_tools(
             }
             routes.push_str(
                 "\n- Verify edits compile → `lsp-diagnostics`\
+                 \nAddressing: `lsp-*` tools support direct symbol addressing via `symbol` alone without requiring `filePath` or coordinates.\
                  \nReserve grep for literal text: log messages, config keys, comments, string constants.",
             );
             grep_tool.description = format!("{}{}", grep_tool.description, routes);

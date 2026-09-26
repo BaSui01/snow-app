@@ -1,8 +1,83 @@
 # 7-LSP External Language Server Integration Design (lsp MCP service)
 
-> Status: Design v1
+> Status: Current behavior and historical design archive (revised 2026-09-26)
 > Target version: v0.2.x
 > Chinese original: `docs/zh-CN/4-架构与开发/7-LSP外部语言服务器接入设计.md`
+> Dated phases, performance measurements and early structure examples below are historical. Where they conflict, §0, §8.10 and current code take precedence. This document does not claim that this change has passed builds, tests or runtime acceptance.
+
+## 0. Current behavior and acceptance boundaries (2026-09-26)
+
+### 0.1 The final request tool set drives routing text
+
+All five providers (Chat, Responses, Anthropic, Gemini and Interactions) resolve final `allowed_tools` before building context, then reuse the same list for the payload and `ConversationContextRequest`. Pure rendering in `prompt_context.rs::ToolSnapshot` produces the Language Servers section, analysis lines and semantic routing:
+
+- The final set includes global/project server and tool switches, language capabilities, installation/stack conditions and the sub-agent `tools_json` whitelist. A handful of representative tools must not decide availability of the entire LSP domain.
+- Every recommended tool is checked individually; a hover-only request may recommend only hover. The grep description is generated after final whitelist filtering; grep result hints also intersect current call-time scope with the existing allowed-tools list.
+- Plan / Goal / WorkFlow analysis lists conditionally include grep, read and codebase too; there is no unconditional baseline. Compaction, disabled-tools, lightweight requests and collection failures must not rediscover and advertise LSP tools independently.
+- Keep CodeLens for uncovered languages, extensions or operations, and for incomplete scans. Suppression requires all three replacements to pass scope and whitelist checks; internal CodeLens forwarding cannot bypass a sub-agent whitelist either.
+- No cross-session tool-snapshot cache is introduced. Exposure does not prove a process has started or an index is ready; prompts promise neither completed prewarming nor instantaneous responses.
+
+### 0.2 Document synchronization, diagnostics and cache trade-offs
+
+`ServerSession::ensure_open` reads size-bounded disk content on each call and compares it with the session's full-text snapshot. It sends `didOpen` on first use and versioned `didChange` after a content change, reusing only identical content. Equal mtime/size is not a substitute for content checks. Workspace requests synchronize opened files first and send `didClose` for deleted files.
+
+Diagnostics **no longer read or write persistent results in `lsp_diagnostic_cache`**. This change does not delete the old table or historical data; retaining storage compatibility does not mean old entries are still used. A single-file fingerprint cannot prove that dependencies, configuration, server versions and other files are unchanged. Additional server requests, initialization or build latency are accepted rather than presenting stale diagnostics as current. Session content snapshots, push URI/document-version checks and short-TTL installation/stack probes are separate mechanisms, not a persistent diagnostics-result cache. They do not make “zero errors” proof of a successful full-project build.
+
+### 0.3 Workspace roots, complete candidates and safe addressing
+
+- `lsp-workspace-symbols`, `lsp-workspace-diagnostics` and symbol-only addressing of symbol-capable tools accept optional `workspaceRoot`. It must be an **explicit, existing absolute local directory**; relative paths, files and SSH/remote paths are rejected. If omitted, the current project root is used; without a reliable root the caller must supply one rather than falling back to a guessed process working directory.
+- Multi-stack projects enumerate language-stack roots within the selected root and check operation support. The scope is this workspace, not arbitrary other projects. An explicit root does not grant additional scope/whitelist permissions.
+- Internal uniqueness decisions use complete candidates, not the first 50 display results. Bounded scans, server failures/timeouts, unsupported operations and clipped responses surface warnings, incompleteness or partial status. One item in a partial result is not proof of uniqueness.
+- Only a unique, verified `selectionRange` supports automatic exact addressing. Ordinary ranges from flat `SymbolInformation` or imprecise candidates are navigation hints and require `requiresExplicitCoordinates`; multiple matches remain ambiguous, incomplete search may return `partial_symbol_search`, and neither silently chooses coordinates nor proceeds with rename.
+
+### 0.4 UI semantics
+
+The ID `lsp-workspace-symbols` is unchanged. Its labels are Simplified Chinese `全局符号搜索`, Traditional Chinese `全域符號搜尋`, and English `Workspace Symbol Search`. “Global” remains bounded by the request workspace. <!-- docs-check: allow-cjk -->
+
+Result cards distinguish complete / partial / failed and expose warnings, unsupported operations, truncation and scope. Bodies are rendered lazily; collapsed or empty lists do not imply success. A running badge describes process/session state, not language-index readiness. Expired snapshots must remain visibly stale rather than claiming unconditional readiness.
+
+### 0.5 Acceptance matrix (pending unified validation, not a pass record)
+
+| Scenario                                                           | Expected check                                                                        |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| Four old representative tools disabled, only hover visible         | Payload, section, analysis list and grep routes recommend only visible tools          |
+| Sub-agent allows only grep / CodeLens, or has an empty whitelist   | No unauthorized LSP recommendation or whitelist bypass via CodeLens                   |
+| Compaction / disable_tools / collection failure                    | Empty final tools; dynamic LSP/analysis lines do not reappear                         |
+| Mixed extensions, missing replacement operation, bounded scan      | Retain CodeLens; do not broaden scope                                                 |
+| Same-size edit, deleted file, dependency/config change             | Synchronize actual content; no persistent diagnostics hit or ghost document           |
+| Valid workspaceRoot / relative path / SSH / absent project root    | Execute within a valid explicit absolute local directory; actionable errors otherwise |
+| More same-name candidates than the display limit, one failed stack | Use full candidates; partial search must not automatically become Exact               |
+| Flat ranges, missing selectionRange, overloads                     | Return candidates / coordinate requirements instead of guessing                       |
+| Unsupported workspace diagnostics or all servers fail              | Do not display a clean-project result; expose failure/warnings and coverage limits    |
+| Scope switches, late async responses, expired badges               | Isolate settings/status by scope; late responses cannot overwrite a new scope         |
+| Three-language labels, collapsed large results and warnings        | Stable tool ID, consistent labels, warnings retained with lazy rendering              |
+
+Implementation anchors: `native/src/mcp/servers/lsp/{prompt_context,session,resolve,detect,manager}.rs`, `native/src/mcp/tools/{collect,call}.rs`, `native/src/api/conversation/context.rs`, `native/src/prompt/tool_hints.rs`.
+
+### 0.6 Conditional MUST, per-tool language capabilities and startup backoff
+
+Reference checks before shared-symbol changes, previews before semantic renames, and file diagnostics after source edits are **MUST** steps when the corresponding tool belongs to the request's final `allowed_tools` and supports the target language/workspace operation. Prefer semantic tools for definition/type/outline investigation; do not run the whole suite on every change. Disabled, unauthorized, uncovered, unsupported, backed-off or unhealthy cases do not meet the mandatory condition: explain the limit and use currently visible fallbacks without expanding permissions. Grep remains for literal searches; text matches are not semantic references.
+
+Evaluate language coverage, negotiated capabilities and health per tool, not by copying the union of enabled languages onto every operation. Enabled, installed, stack-matched, running, operation-capable and index-ready are different states. Startup/initialization failures enter controlled backoff; repeated calls during cooldown must not repeatedly spawn a failing server. Repair installation/configuration and retry within the runtime's permitted window, never present failure as zero results.
+
+The 11 matching labels in `toolNames.lsp-*` and `toolCall.lsp.op.*` are File Diagnostics, Type and Documentation Lookup, Symbol Navigation, Find References, File Symbol Outline, Rename Symbol, Function Call Hierarchy, Type Hierarchy, Workspace Symbol Search, Workspace Diagnostics and Go Dependency Vulnerability Scan. All three locales stay synchronized; IDs and historical keys remain intact. `goto` may specialize to Go to Definition / Go to Type Definition / Find Implementations by kind. See the [ID mapping](../3-reference/2-builtin-tools-reference.md).
+
+### 0.7 Strict diagnostics batch contract
+
+- Supply a nonempty string `filePath` for one file, or `filePaths` with **1..30** nonempty path strings for a batch, mutually exclusively. Put every batch file in the list; do not also send a nonempty single path.
+- Reject wrong types, non-string entries, empty arrays/entries and oversized lists without silent filtering or truncation to 30. A legacy empty `filePath: ""` placeholder means omitted and may accompany a valid list; it does not bypass type/count validation. Validate count before deduplication.
+- Deduplicate by physical file identity, preserving first occurrence in the original request. Keep one result per deduplicated file, including failures.
+- Single `filePath` keeps the legacy top-level shape. A list request, even with one item, returns `batch:true`, `fileCount`, `requestedCount`, `duplicateCount`, `status: complete|partial|failed`, `summary` and `files`. The counts represent deduplicated files, original request entries and physical duplicates removed, respectively.
+- `summary` contains `completedFiles`, `partialFiles`, `failedFiles`, `errorCount` and `warningCount`. Each file retains `filePath`, `status`, `diagnostics`, `warnings`, `truncated`, `error` and related fields. `error:null` is not an error. Empty diagnostics or zero counts do not prove complete success; the UI shows summaries and per-file warnings/truncation.
+- Target bounded concurrency is **3** file tasks (being integrated in `diagnostics.rs`). Completion order must not change result order; same-server locks may still serialize work, so batch latency is not promised to equal a single file.
+
+These are synchronized contracts. Scheduling and related interfaces remain under integration; this is not a claim that builds, fixtures or live acceptance passed.
+
+### 0.8 Content-bound rename preview capabilities
+
+`dryRun=true` returns frozen edits plus `previewId` and `previewExpiresAt` (Unix milliseconds), including zero-edit previews. Capabilities have a **5-minute TTL**, a per-session cap of **32**, are **single-use**, and bind the target and actual contents of involved files. `dryRun=false` requires the capability plus existing write authorization. Apply the frozen edits, not a fresh rename query. Changed contents, expired/missing/consumed capabilities or a lost session require another preview. Unsupported file operations are rejected before issuing an applicable capability. The UI never shows the raw capability or automatically calls apply; no capability means no claim of direct applicability.
+
+Multi-file application is **not transactional**: later I/O failure may leave earlier files written; never claim a full rollback. Structured results retain `status: partial|failed`, `applied:false`, `partiallyApplied`, `appliedFiles`, `failedFile`, `error` and `requiresNewPreview`. `failedFileMayBeModified:true` warns that the failing file itself may have changed. Success may return `previewConsumed:true`. Inspect actual files before creating another preview; never replay the old capability. This is not a runtime pass record.
 
 ## 1. Background & Motivation
 
@@ -12,7 +87,9 @@
 - **v0.1.21 (34677584)**: removed entirely — 3186 lines deleted. Reason: single-file static analysis cannot understand cross-file semantics (imports/module systems/framework globals), false positives were structurally unsolvable; maintaining 10 hand-written analyzers was unsustainable; untrustworthy diagnostics are negative value for an agent.
 - **Conclusion**: diagnostics capability itself is valuable (otherwise the false-positive fix would never have been made) — the problem was the "self-built" approach. The correct path is to **consume external professional language servers** (rust-analyzer/gopls/tsc, maintained by official/community teams).
 
-### 1.2 Current gap
+### 1.2 Initial gaps (historical)
+
+> This records the pre-integration background, not a current absence of an LSP runtime or settings page. See §0 for current behavior.
 
 - `~/.snow/lsp-config.json` (scope `lsp-config`) is a **reserved config domain**: fields complete (command/args/fileExtensions/installCommand/initializationOptions), deep validation implemented in Rust (`config/mod.rs:985`), 6 languages pre-seeded — but **no consumer at all**; writes change nothing.
 - codelens only provides symbol navigation (outline/find_definition/find_references) — no diagnostics/hover/formatting.
@@ -170,7 +247,7 @@ stateDiagram-v2
     Ready --> Restarting: process crash
     Restarting --> Starting: restart count <2
     Restarting --> Failed: restart count ≥2
-    Failed --> Inactive: next call retries (reset count)
+    Failed --> Inactive: backoff elapsed and retry permitted
     Ready --> Closing: session cap eviction (LRU)
     Closing --> Inactive
 ```
@@ -275,6 +352,8 @@ Key points:
 lsp-diagnostics filePath=<absolute path>
 ```
 
+**Batch contract (revised 2026-09-26):** see §0.7 for the legacy single-file shape, strict mutually exclusive 1..30 input, physical deduplication and stable ordering, request/duplicate counts, per-file status and summary, and target concurrency 3. Old abbreviated outputs do not enumerate all fields.
+
 Execution sequence (**revised per 2026-08-14 live testing**):
 
 0. Reject SSH/remote paths (`is_ssh_path` → "remote projects not supported for LSP yet"); file ≤512KB.
@@ -317,6 +396,12 @@ Severity mapping: `1=error, 2=warning, 3=information, 4=hint` (LSP DiagnosticSev
 4. **Windows uri case**: rust-analyzer pushes `file:///c:/...` while `Url::from_file_path` yields `file:///C:/...` — push-store keys must be normalized (lowercase on Windows).
 5. **async-lsp Router terminates the mainloop on unregistered notifications** (Break): register all common notifications (showMessage/logMessage/telemetry/progress/publishDiagnostics) and requests (workspace/configuration, workspaceFolders).
 6. **No `blocking_lock()` in tokio context** (panics); `min_by_key` closures cannot await — collect first, then minimize.
+
+**Diagnostic performance and freshness (revised 2026-09-26):**
+
+The 2026-08-14 performance design used `(mtime_ms, size)` fingerprints and a database result cache. That is historical; claims of millisecond unchanged-file results with no server participation no longer describe current behavior.
+
+Current diagnostics neither read nor write `lsp_diagnostic_cache`, nor delete historical data. Preparation synchronizes actual content/versions before pull/push waiting and merging. Batch concurrency reduces repeated waiting but does not guarantee single-file-equivalent duration. Dependency, configuration, server-environment or other-document changes still require fresh diagnostics; stale push values must be filtered by current version/generation. Freshness takes priority over persistent hits whose validity cannot be proved; see §0.5 for acceptance requirements.
 
 ### 8.2 lsp-hover (Phase 1)
 
@@ -374,7 +459,7 @@ Output (hover content is itself Markdown; pass through + wrap):
 
 **Reconcile boundary**: one-directional "not installed → disable" only; it **never auto-enables** — after installing a server the user turns the toggle on in the settings page (avoids overriding explicit user intent, and avoids force-enabling a server the user deliberately disabled).
 
-**Probe cost**: PATH scan is millisecond-level; only enabled records are probed; `get_or_start` probes once when first creating a session (existing sessions are reused at zero cost). No TTL cache — stays consistent with the real environment: install/uninstall takes effect immediately.
+**Probe/invalidation boundaries:** installation probes use a short TTL (currently 10 seconds), and stack detection uses a short TTL (currently 60 seconds). These reduce filesystem scans; they are not diagnostic-result caches. Environment changes may require expiry or refresh. Reused sessions still require effective-configuration and process-state checks; zero overhead, immediate readiness and instantaneous responses are not promised.
 
 **Frontend**: the `lsp-settings` page shows ✅installed / ❌not-installed badges per row (parallel `probeLspServerCommands`), side by side with the enabled toggle.
 
@@ -416,27 +501,18 @@ Output (hover content is itself Markdown; pass through + wrap):
 3. **Language targeting**: filePath is optional — when provided it matches the language by extension and ensures the file is open; without it, the call only succeeds when **exactly one** server is enabled (multi-server setups get an error asking for filePath).
 4. **Capability filtering (§8.7)**: code-action is marked per Appendix F ✅ languages (typescript/python/go/rust/c/java/ruby); execute-command is currently marked for rust/go (verified live on 2026-08-15), other languages pending verification. Command execution has side effects — dryRun defaults to true; false requires an explicit argument.
 
-### 8.10 Dynamic system-prompt injection (2026-09-24)
+### 8.10 Request-local dynamic prompts (2026-09-26)
 
-Goal: make the model actually call `lsp-*` tools in semantic scenarios. Measured background: `lsp-diagnostics` was called 134 times, all other lsp tools 11 combined, while `grep-search` hit 941 — **generic "MUST use lsp-\*" rules barely move behavior** (the model cannot reliably self-classify "is this a semantic query?"); what works is "action-timing hard binding + spelling out the substitute's defect".
+The historical “active LSP domain implies a fixed recommendation list” is replaced by final-request-tool rendering. All five providers collect once and pass the same list to payload and context construction; `ToolSnapshot` neither queries nor caches a separate visibility decision.
 
-Three injection layers (all conditional: they appear only when lsp is actually active, strictly consistent with tool visibility):
+| Text surface                         | Current source                                               | Boundary                                                                                            |
+| ------------------------------------ | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| Language Servers section             | `ToolSnapshot::system_prompt_section`                        | Filter each tool; omit an empty LSP set; no runtime/prewarm/latency promise                         |
+| Plan / Goal / WorkFlow analysis list | LSP, grep, read, codebase and CodeLens in the final snapshot | Disabled tools have no line; no fixed baseline                                                      |
+| Grep description                     | Pure routing renderer after final filtering in `collect.rs`  | Explicit and wildcard sub-agents both render after final set formation                              |
+| Grep result hint                     | Current exposure/scope intersected with caller allowed-tools | A bare identifier is only a heuristic; recommend available alternatives rather than force rerouting |
 
-| Layer                     | Injection point                                                                     | Content                                                                                                                                                                                                                              | Condition                                                                                                |
-| ------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
-| ① System-prompt section   | `build_system_prompt_section` (api/conversation/context.rs, injected every request) | `## Language Servers`: server list + run state (running / starts on first use) + capability-grouped `lsp-*` tool list + Routing rules (scenario → tool hard bindings) + prewarm (background spawn kills first-call cold start)       | injected while a server is available                                                                     |
-| ② Substitute-tool counter | `collect.rs` (rewrites the grep-search description during per-turn tool collection) | "Semantic queries are NOT grep's job" + scenario → tool routing list (goto/references/hover/workspace-symbols/diagnostics); names only the tools actually exposed (workspace-symbols rendered conditionally)                         | injected while `lsp_active`; original description otherwise (other projects and prompt cache unaffected) |
-| ③ Tool timing triggers    | `tool_schemas()` (lsp/mod.rs static schemas)                                        | goto ("Use INSTEAD OF grep to locate a definition"), references ("Run this BEFORE renaming/removing any shared symbol"), hover ("Cheaper than filesystem-read when you only need a type"), workspace-symbols ("Use INSTEAD OF grep") | lsp tools only exist while active → conditionally effective by construction                              |
-
-Routing rules (inside the system-prompt section, rewritten scenario-first on 2026-09-24; priority preamble added 2026-09-25):
-
-- **Priority preamble**: every code-semantics question (symbols, usages, types, impact, structure) starts with `lsp-*`; the generic read-only tools (grep, direct file reads) are the fallback for what LSP cannot answer — literal text and raw file content.
-- Locating a symbol's definition → `lsp-goto`; all usages / impact before a rename → `lsp-references`; a symbol's type or signature → `lsp-hover`; finding symbols by name → `lsp-workspace-symbols` (the last two render conditionally per merged capabilities).
-- `grep-search` matches same-named symbols in unrelated modules, comments and strings — **literal text only** (log text, config keys, comments); semantic queries are forbidden.
-- Getting line/column: the 1-indexed line numbers already shown by `lsp-symbols` / `filesystem-read` feed straight into the `line`/`column` params of `lsp-goto` / `lsp-references` (combo move, lowers parameter cost).
-- After editing code → run `lsp-diagnostics` on the changed files (`filePaths` batch, <=30).
-
-Design constraints: injection conditions must match tool visibility (a mismatch invites calls to invisible tools); within one project the injected text stays stable while lsp state is unchanged (prompt-cache friendly).
+Apply the conditional MUST for actually visible tools supporting the target language/operation (§0.6). For unsupported or failed operations, use visible fallbacks and explain their limits. Text matches are not semantic references; language-server diagnostics do not replace project builds/tests. See §0 for workspace scope, partial-result safety and pending acceptance checks.
 
 ## 9. Degradation & Error Strategy
 
@@ -447,7 +523,7 @@ Design constraints: injection conditions must match tool visibility (a mismatch 
 | **No language stack (§7.2, 2026-09-24)** | Error: `no {lang} stack marker found in the project (Cargo.toml, …). LSP servers only start when the stack truly exists: verify the stack lives inside this project, or check the file path against the project root` — the exposure layer applies the same decision (§8.0 "exposed = callable"), so this call normally never reaches the model                                             |
 | Enabled but not installed (§8.6)         | PATH probe before session start → error + `installCommand` hint (no need to wait for spawn ENOENT)                                                                                                                                                                                                                                                                                          |
 | Command missing (spawn ENOENT)           | Error + `installCommand` hint (e.g. `rustup component add rust-analyzer`)                                                                                                                                                                                                                                                                                                                   |
-| initialize timeout / crash ≥2            | Error: `language server xxx failed to start; check installation & configuration`; mark init_failed; next call retries                                                                                                                                                                                                                                                                       |
+| initialize timeout / crash ≥2            | Error: `language server xxx failed to start; check installation & configuration`; mark failed and enter startup backoff; no immediate restart during cooldown; retry after runtime health/configuration checks                                                                                                                                                                              |
 | Pull unsupported                         | Auto fallback push (transparent)                                                                                                                                                                                                                                                                                                                                                            |
 | Request timeout                          | Error: `lsp request timed out (10s)`                                                                                                                                                                                                                                                                                                                                                        |
 | Config JSON corrupt                      | Error with fix hint for `~/.snow/lsp-config.json` (config tool validates writes; should not normally happen)                                                                                                                                                                                                                                                                                |
@@ -771,38 +847,16 @@ Phase 8 and Phase 9 establish the complete **Symbol Address Resolver & Global Ro
 1. Coverage extends across `lsp-hover`, `lsp-goto`, `lsp-references`, `lsp-rename`, `lsp-call-hierarchy`, and `lsp-type-hierarchy`;
 2. Comprehensive optional `filePath` support — passing `symbol` alone automatically queries and resolves across active language servers matching project technology stacks.
 
-### F-2 Multi-Tier Resolution & Ambiguity Safety
+### F-2 Multi-tier resolution and ambiguity safety (revised 2026-09-26)
 
-1. **Tier 0 Physical Coordinate Passthrough**: If explicit `(line, column)` (>0) are supplied, resolution is bypassed completely with zero overhead for strict backwards compatibility.
-2. **Tier 1 Single-File AST Query (with filePath)**: When `filePath` and `symbol` are passed without coordinates, the resolver queries single-file `document_symbols` and recursively traverses the AST (supporting both nested `DocumentSymbol` and flat `SymbolInformation`, preferring `selection.start` over `range.start`). If exactly 1 match is found, it immediately resolves to `Exact(line, column)`.
-3. **Tier 2 Workspace-Global Query (omitted filePath or single-file missed)**:
-   - When `filePath` is omitted, the engine invokes `resolve_symbol_workspace_global`;
-   - Strictly obeys Single Source of Truth (SSOT): selects servers based on `lang_supports_tool("workspace-symbols")`, `is_command_installed_cached`, and `detect::find_lang_root` for languages with real project stack markers;
-   - Queries `workspace_symbols` across candidate language servers and aggregates exact symbol matches;
-   - If exactly 1 match is found across the entire workspace, it identifies the target language and file, invokes `ensure_open` to establish context, and proceeds straight into the requested tool operation.
-4. **Ambiguity Guard (Strict Non-Guessing Discipline)**: If multiple symbols match the name in the file or workspace, the engine **never guesses silently**. It concurrently reads source preview snippets using `read_line_context` and returns a structured ambiguity result:
-   ```json
-   {
-     "status": "ambiguous_symbol",
-     "symbol": "target_name",
-     "count": 2,
-     "message": "Found 2 symbols named 'target_name' across the project workspace. Please re-call using (line, column) and filePath from the candidates below:",
-     "candidates": [
-       {
-         "filePath": "...",
-         "line": 15,
-         "column": 9,
-         "kind": "method",
-         "container": "MyClass",
-         "preview": "..."
-       }
-     ]
-   }
-   ```
-   The UI (`LspToolCall.tsx`) renders ambiguity alerts and candidate cards, guiding the agent to re-call with exact coordinates and `filePath`.
-5. **Zero Matches**: Returns actionable error guidance (suggesting checking spelling or using `lsp-workspace-symbols` for fuzzy matching).
-6. **Result Metadata Injection**: On exact symbol resolution, `resolvedSymbol: { symbol, filePath, line, column }` is injected into the tool output JSON map for transparency.
-7. **Grep Smart Interception & Direct Routing (Conditional Injection)**:
-   - Only when `is_lsp_tooling_active(project_id)` evaluates to true (LSP actually available) are `semanticRoutingHint` and updated `grep-search` description hints appended;
-   - Expressly guides calling `lsp-goto(symbol="...")` or `lsp-hover(symbol="...")` across the workspace directly without coordinates or file paths;
-   - Never injected when LSP is disabled or lacks matching language stacks, guaranteeing prompt stability and cross-project cache efficiency.
+Phases 8/9 record feature introduction. The following revised safety boundary replaces the early behavior that treated a unique ordinary range as an exact address.
+
+1. **Coordinate addressing:** explicit `filePath` and valid 1-indexed `line/column` skip name lookup. Document synchronization, permissions and server-capability checks still apply; the entire call is not zero-overhead.
+2. **Single-file name lookup:** read the complete `document_symbols` response. Only a unique valid `selectionRange` yields Exact. An ordinary flat range is a navigation hint requiring `requiresExplicitCoordinates`, not a safe identifier coordinate at the declaration block's start.
+3. **Workspace name lookup:** `resolve_symbol_workspace_global_in_root` uses explicit `workspaceRoot` or the current project root and enumerates candidate language stacks inside that root. The root must be an existing absolute local directory. Internal candidates are not restricted to the first 50 display items; operation support is checked and failed/unsupported stacks are recorded.
+4. **Completeness before uniqueness:** scan limits, failures, timeouts and clipped results are not a complete search. Return `partial_symbol_search`, `incomplete` and warnings; even one visible candidate must not auto-resolve. Complete searches with multiple matches return `ambiguous_symbol`.
+5. **Location verification:** workspace symbol locations must be checked against the target file's selection range after `ensure_open` synchronizes current content. If precision cannot be established, request explicit coordinates instead of silently renaming.
+6. **Result metadata:** attach `resolvedSymbol` only after successful resolution. The UI shows candidates, scope and partial/failure information. Complete zero matches and unfinished queries must remain distinguishable.
+7. **Grep routing:** descriptions come from final-request `ToolSnapshot`; result hints intersect call-time scope with allowed-tools. Filter every recommended tool individually. Bare identifiers are an advisory heuristic, not proof that every language or semantic operation is covered.
+
+Acceptance includes repeated candidates beyond display caps, flat/overloaded candidates, partially failed multi-root searches, invalid explicit roots, hover-only visibility and sub-agent restrictions. See §0.5; this document is not evidence that those scenarios have passed runtime checks.

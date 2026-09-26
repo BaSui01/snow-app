@@ -1,7 +1,7 @@
 //! LSP 响应 → agent 友好输出（JSON + Markdown，见设计文档 §8.1/§8.2）。
 
 use lsp_types::{
-    CallHierarchyIncomingCall, CallHierarchyItem, CallHierarchyOutgoingCall, CodeActionOrCommand,
+    CallHierarchyIncomingCall, CallHierarchyItem, CallHierarchyOutgoingCall,
     Diagnostic, DiagnosticSeverity, DocumentChanges, DocumentSymbol, DocumentSymbolResponse,
     GotoDefinitionResponse, Hover, HoverContents, Location, LocationLink, MarkedString,
     NumberOrString, OneOf, SymbolInformation, TextEdit, TypeHierarchyItem, Url, WorkspaceEdit,
@@ -297,13 +297,6 @@ fn symbol_information_to_json(symbol: &SymbolInformation) -> Value {
     })
 }
 
-/// WorkspaceEdit 是否「空」（三字段全 None）。任意 JSON 对象经 serde 解析
-/// （未知字段默认忽略）都会得到空 WorkspaceEdit——execute_command 用它区分
-/// 真实空编辑与「非 WorkspaceEdit 的普通结果对象」，避免谎报 applied:true（H2）。
-pub fn workspace_edit_is_empty(edit: &WorkspaceEdit) -> bool {
-    edit.changes.is_none() && edit.document_changes.is_none()
-}
-
 /// 从 WorkspaceEdit 提取 (uri, TextEdit 列表)：优先 `document_changes::Edits`，
 /// 回退 `changes` 映射；`Operations` 类变更（create/rename/delete file）不支持
 /// 自动应用 → 返回明确的 Unsupported 错误（不得静默丢弃，R1.2）。
@@ -387,42 +380,6 @@ pub fn workspace_edit_to_value(edit: &WorkspaceEdit) -> Value {
         value["unsupportedOperations"] = json!(true);
     }
     value
-}
-
-/// codeAction 响应 → 工具输出 JSON（只描述 action，不执行 command）。
-pub fn code_actions_to_value(language: &str, actions: Vec<CodeActionOrCommand>) -> Value {
-    let list: Vec<Value> = actions
-        .iter()
-        .map(|action| match action {
-            CodeActionOrCommand::CodeAction(ca) => json!({
-                "title": ca.title,
-                "kind": ca.kind.as_ref().map(|k| k.as_str().to_string()),
-                "isPreferred": ca.is_preferred,
-                "hasEdit": ca.edit.is_some(),
-                "command": ca.command.as_ref().map(|command| json!({
-                    "command": command.command,
-                    "title": command.title,
-                    "arguments": command.arguments,
-                })),
-            }),
-            CodeActionOrCommand::Command(command) => json!({
-                "title": command.title,
-                "kind": null,
-                "isPreferred": null,
-                "hasEdit": false,
-                "command": json!({
-                    "command": command.command,
-                    "title": command.title,
-                    "arguments": command.arguments,
-                }),
-            }),
-        })
-        .collect();
-    json!({
-        "language": language,
-        "count": list.len(),
-        "actions": list,
-    })
 }
 
 /// workspace/symbol 响应 → 工具输出 JSON（跨文件符号搜索，上限 50 条）。

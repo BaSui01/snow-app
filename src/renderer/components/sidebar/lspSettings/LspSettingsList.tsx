@@ -20,7 +20,7 @@ export type LspSettingsListItem = {
   /** 继承自全局配置（项目作用域下 id 无 project: 前缀的条目）：交互禁用 */
   inherited: boolean;
   /** 运行时会话状态（仅项目作用域且已安装时有效）: running | idle | dead | exited */
-  runtimeStatus?: "running" | "idle" | "dead" | "exited";
+  runtimeStatus?: "running" | "idle" | "dead" | "exited" | "unknown";
   /** 运行时错误描述（dead / exited 时） */
   runtimeError?: string;
   /** 最近活跃时间戳 */
@@ -123,21 +123,19 @@ export function LspSettingsList({
                 className={`system-prompt-item ${server.enabled ? "active" : ""}`}
               >
                 <div className="system-prompt-item-main">
-                  <label
-                    className="toggle-switch system-prompt-switch"
-                    aria-label={activeLabel}
+                  <button
+                    type="button"
+                    role="switch"
+                    className="lsp-accessible-switch"
+                    aria-label={`${activeLabel}: ${server.lang}`}
+                    aria-checked={server.enabled}
                     title={switchTitle}
+                    onClick={() => onToggleEnabled(server)}
+                    disabled={isBusy}
                   >
-                    <input
-                      type="checkbox"
-                      checked={server.enabled}
-                      onChange={() => onToggleEnabled(server)}
-                      disabled={isBusy}
-                      hidden
-                    />
-                    <span className="toggle-slider" />
+                    <span className="toggle-slider" aria-hidden="true" />
                     <span>{activeStateLabel}</span>
-                  </label>
+                  </button>
                   <div className="system-prompt-item-info">
                     <div className="lsp-item-title-row">
                       <strong>{server.lang}</strong>
@@ -168,75 +166,80 @@ export function LspSettingsList({
                         ? t("settings.lspStatusRunning", {
                             defaultValue: "Running",
                           })
-                        : server.runtimeStatus === "dead" ||
-                            server.runtimeStatus === "exited"
-                          ? t("settings.lspStatusDead", {
-                              defaultValue: "Stopped",
-                            })
-                          : t("settings.lspStatusIdle", {
-                              defaultValue: "Idle",
-                            })}
+                        : server.runtimeStatus === "unknown"
+                          ? t("settings.lspStatusUnknown")
+                          : server.runtimeStatus === "dead" ||
+                              server.runtimeStatus === "exited"
+                            ? t("settings.lspStatusDead", {
+                                defaultValue: "Stopped",
+                              })
+                            : t("settings.lspStatusIdle", {
+                                defaultValue: "Idle",
+                              })}
                     </span>
                   )}
-                  {isProjectScope && installed === true && server.enabled && (
-                    <div className="lsp-runtime-actions">
-                      {operatingLang === server.lang ? (
-                        <button
-                          className="icon-btn ghost"
-                          type="button"
-                          disabled
-                        >
-                          <Loader2 size={14} className="animate-spin" />
-                        </button>
-                      ) : server.runtimeStatus === "running" ? (
-                        <>
+                  {isProjectScope &&
+                    installed === true &&
+                    server.enabled &&
+                    server.runtimeStatus !== "unknown" && (
+                      <div className="lsp-runtime-actions">
+                        {operatingLang === server.lang ? (
                           <button
                             className="icon-btn ghost"
-                            onClick={() => onRestart?.(server)}
                             type="button"
-                            aria-label={t("settings.lspRestart", {
-                              defaultValue: "Restart & refresh cache",
+                            disabled
+                          >
+                            <Loader2 size={14} className="animate-spin" />
+                          </button>
+                        ) : server.runtimeStatus === "running" ? (
+                          <>
+                            <button
+                              className="icon-btn ghost"
+                              onClick={() => onRestart?.(server)}
+                              type="button"
+                              aria-label={t("settings.lspRestart", {
+                                defaultValue: "Restart & refresh cache",
+                              })}
+                              title={t("settings.lspRestart", {
+                                defaultValue: "Restart & refresh cache",
+                              })}
+                              disabled={isBusy}
+                            >
+                              <RotateCw size={14} strokeWidth={1.9} />
+                            </button>
+                            <button
+                              className="icon-btn ghost"
+                              onClick={() => onStop?.(server)}
+                              type="button"
+                              aria-label={t("settings.lspStop", {
+                                defaultValue: "Stop",
+                              })}
+                              title={t("settings.lspStop", {
+                                defaultValue: "Stop",
+                              })}
+                              disabled={isBusy}
+                            >
+                              <Square size={14} strokeWidth={1.9} />
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            className="icon-btn ghost"
+                            onClick={() => onStart?.(server)}
+                            type="button"
+                            aria-label={t("settings.lspStart", {
+                              defaultValue: "Start",
                             })}
-                            title={t("settings.lspRestart", {
-                              defaultValue: "Restart & refresh cache",
+                            title={t("settings.lspStart", {
+                              defaultValue: "Start",
                             })}
                             disabled={isBusy}
                           >
-                            <RotateCw size={14} strokeWidth={1.9} />
+                            <Play size={14} strokeWidth={1.9} />
                           </button>
-                          <button
-                            className="icon-btn ghost"
-                            onClick={() => onStop?.(server)}
-                            type="button"
-                            aria-label={t("settings.lspStop", {
-                              defaultValue: "Stop",
-                            })}
-                            title={t("settings.lspStop", {
-                              defaultValue: "Stop",
-                            })}
-                            disabled={isBusy}
-                          >
-                            <Square size={14} strokeWidth={1.9} />
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          className="icon-btn ghost"
-                          onClick={() => onStart?.(server)}
-                          type="button"
-                          aria-label={t("settings.lspStart", {
-                            defaultValue: "Start",
-                          })}
-                          title={t("settings.lspStart", {
-                            defaultValue: "Start",
-                          })}
-                          disabled={isBusy}
-                        >
-                          <Play size={14} strokeWidth={1.9} />
-                        </button>
-                      )}
-                    </div>
-                  )}
+                        )}
+                      </div>
+                    )}
                   {installLabel && (
                     <span
                       className={`lsp-install-badge ${

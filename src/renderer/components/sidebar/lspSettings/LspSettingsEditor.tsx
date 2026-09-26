@@ -128,7 +128,7 @@ export function LspSettingsEditor({
               onClick={() => applyPresetTemplate("python")}
               disabled={isBusy}
             >
-              Pyright (推荐)
+              {t("settings.lspPythonRecommended")}
             </button>
             <button
               type="button"
@@ -175,22 +175,21 @@ export function LspSettingsEditor({
             rows={4}
           />
         </label>
-        <label className="toggle-switch mcp-enabled-switch">
-          <input
-            type="checkbox"
-            checked={draft.enabled}
-            onChange={(event) =>
-              onDraftChange({ enabled: event.target.checked })
-            }
-            disabled={isBusy}
-          />
-          <span className="toggle-slider" />
+        <button
+          type="button"
+          role="switch"
+          className="lsp-accessible-switch"
+          aria-checked={draft.enabled}
+          onClick={() => onDraftChange({ enabled: !draft.enabled })}
+          disabled={isBusy}
+        >
+          <span className="toggle-slider" aria-hidden="true" />
           <span>
             {t("settings.lspServerEnabled", {
               defaultValue: "Enable language server",
             })}
           </span>
-        </label>
+        </button>
       </div>
 
       <McpStringListEditor

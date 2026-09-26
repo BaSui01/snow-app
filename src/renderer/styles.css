@@ -13033,6 +13033,10 @@ body.is-panel-resizing * {
   background: var(--accent-green, #22c55e);
 }
 
+.tool-call-lsp.lsp-result-partial .tcn-dot--completed {
+  background: var(--accent-yellow, #d97706);
+}
+
 .tcn-dot--running {
   background: var(--accent-blue, #3b82f6);
   box-shadow: 0 0 0 2px
@@ -39981,6 +39985,166 @@ pre.file-viewer-code {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 10.5px;
+  color: var(--accent-red-text);
+}
+
+/* LSP-only controls and lazy result views. Do not change shared switch semantics. */
+.lsp-accessible-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 3px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+.lsp-accessible-switch[aria-checked="true"] .toggle-slider {
+  background: var(--text-primary);
+  border-color: var(--text-primary);
+}
+.lsp-accessible-switch[aria-checked="true"] .toggle-slider::after {
+  transform: translateX(14px);
+  background: var(--on-solid);
+}
+.lsp-accessible-switch:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.lsp-accessible-switch:focus-visible,
+.lsp-status-badge:focus-visible,
+.tool-call-lsp-show-more:focus-visible,
+.tool-call-lsp-tree-branch > summary:focus-visible,
+.tool-call-lsp-diag-file > summary:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+.lsp-runtime-badge.unknown {
+  color: var(--accent-amber-text);
+}
+.lsp-status-row.stale .lsp-status-dot {
+  background: var(--warning, #f59e0b);
+}
+.tool-call-lsp-result-notice {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.tool-call-lsp-result-notice p {
+  margin: 4px 0;
+}
+.tool-call-lsp-result-notice p > svg {
+  vertical-align: middle;
+  margin-right: 5px;
+}
+.tool-call-lsp-result-notice ul {
+  padding-left: 20px;
+  max-height: 240px;
+  overflow: auto;
+}
+.tool-call-lsp-result-notice [role="alert"] {
+  color: var(--accent-red-text);
+}
+.tool-call-lsp-symbol-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.tool-call-lsp-tree-branch > .tool-call-lsp-symbol-tree {
+  margin-left: 16px;
+  border-left: 1px solid var(--border-light);
+  padding-left: 7px;
+}
+.tool-call-lsp-tree-branch > summary,
+.tool-call-lsp-tree-leaf {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.tool-call-lsp-tree-branch > summary,
+.tool-call-lsp-diag-file > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.tool-call-lsp-tree-branch > summary::-webkit-details-marker,
+.tool-call-lsp-diag-file > summary::-webkit-details-marker {
+  display: none;
+}
+.tool-call-lsp-tree-branch[open] > summary > svg:first-child,
+.tool-call-lsp-diag-file[open] > summary > svg:first-child {
+  transform: rotate(90deg);
+}
+.tool-call-lsp-show-more {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 5px 10px;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+.tool-call-lsp-diag-file .tool-call-error {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 8px;
+}
+
+.lsp-diagnostics-summary {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 7px 9px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+}
+.lsp-diagnostics-summary.is-compact {
+  padding: 0;
+  border: 0;
+  font-size: 10px;
+}
+.lsp-diagnostic-file-status {
+  flex-shrink: 0;
+  font-size: 11px;
+}
+.tool-call-lsp-diag-file-header {
+  flex-wrap: wrap;
+}
+.lsp-diagnostic-warning-badge {
+  font-size: 10px;
+  color: var(--accent-amber-text);
+}
+.lsp-diagnostic-partial .lsp-diagnostic-file-status,
+.tool-call-lsp-file-notice {
+  color: var(--accent-amber-text);
+}
+.lsp-diagnostic-failed .lsp-diagnostic-file-status {
+  color: var(--accent-red-text);
+}
+.tool-call-lsp-file-notice {
+  margin: 4px 8px;
+  font-size: 11px;
+}
+.tool-call-lsp-rename-safety {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.tool-call-lsp-rename-safety p {
+  margin: 5px 0;
+}
+.tool-call-lsp-rename-safety ul {
+  max-height: 240px;
+  overflow: auto;
+}
+.tool-call-lsp-rename-safety [role="alert"] {
   color: var(--accent-red-text);
 }
 

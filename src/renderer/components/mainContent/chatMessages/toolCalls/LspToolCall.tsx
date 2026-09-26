@@ -10,11 +10,9 @@ import {
   Hash,
   Languages,
   ListPlus,
-  ListTree,
   Loader2,
   PencilLine,
   ScanSearch,
-  Shield,
   ShieldAlert,
   Sigma,
   Terminal,
@@ -24,6 +22,24 @@ import {
 import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
+import { readLspResultMeta, type LspResultMeta } from "./lspResultMeta";
+import {
+  readLspDiagnostics,
+  type LspDiagnosticsResult,
+} from "./lspDiagnostics";
+export type { BatchDiagnosticsFile } from "./lspDiagnostics";
+import {
+  readLspRenameSafety,
+  sanitizeLspResult,
+  type LspRenameSafety,
+} from "./lspRenameSafety";
+import {
+  LspResultNotice,
+  LspSymbolTree,
+  LspDiagnosticsFiles,
+  LspDiagnosticsSummaryView,
+  LspRenameNotice,
+} from "./LspResultViews";
 
 type LspToolCallProps = {
   toolCall: ToolCallInfo;
@@ -200,39 +216,8 @@ type HierarchyCall = {
   }[];
 };
 
-type DiagnosticItem = {
-  severity?: string;
-  message: string;
-  source?: string;
-  code?: string;
-  line: number;
-  column: number;
-  endLine?: number;
-  endColumn?: number;
-};
-
-type BatchDiagnosticsFile = {
-  filePath: string;
-  language?: string;
-  summary?: string;
-  diagnostics?: DiagnosticItem[];
-  error?: string;
-};
-
 type ParsedResult =
-  | {
-      type: "diagnostics";
-      language?: string;
-      filePath?: string;
-      summary?: string;
-      count: number;
-      diagnostics: DiagnosticItem[];
-    }
-  | {
-      type: "diagnostics-batch";
-      fileCount: number;
-      files: BatchDiagnosticsFile[];
-    }
+  | LspDiagnosticsResult
   | {
       type: "completion";
       language?: string;
@@ -243,6 +228,7 @@ type ParsedResult =
     }
   | {
       type: "rename";
+      safety: LspRenameSafety;
       language?: string;
       applied: boolean;
       dryRun: boolean;
@@ -357,7 +343,7 @@ type ReferenceLocation = {
   context?: string;
 };
 
-type DocumentSymbolNode = {
+export type DocumentSymbolNode = {
   name: string;
   kind: string;
   detail?: string | null;
@@ -583,13 +569,14 @@ const parseArgs = (
 
     if (operation === "goto") {
       const kind = parseString(parsed, "kind") as GotoArgs["kind"];
-      return { filePath, line, column, kind };
+      return { filePath, line, column, symbol, kind };
     }
     if (operation === "references") {
       return {
         filePath,
         line,
         column,
+        symbol,
         includeDeclaration: parseBoolean(parsed, "includeDeclaration") ?? true,
       };
     }
@@ -609,6 +596,7 @@ const parseArgs = (
         filePath,
         line,
         column,
+        symbol,
         only: Array.isArray(onlyValue)
           ? onlyValue.filter((item): item is string => typeof item === "string")
           : undefined,
@@ -715,19 +703,62 @@ const parseSignature = (value: unknown): SignatureInfo | null => {
 const parseResult = (
   result: string | undefined,
   operation: LspOperation | null,
+  decoded: unknown,
+  fallbackFilePath = "",
 ): ParsedResult => {
   if (!result || result.trim().length === 0) return { type: "empty" };
 
   try {
-    const parsed: unknown = JSON.parse(result);
-    if (!isRecord(parsed)) return { type: "raw", text: result };
+    const parsed: unknown = decoded;
+    if (!isRecord(parsed))
+      return {
+        type: "raw",
+        text: isRecord(decoded) ? JSON.stringify(decoded, null, 2) : result,
+      };
+
+    if (
+      (operation === "diagnostics" || operation === "workspace-diagnostics") &&
+      (Array.isArray(parsed.files) ||
+        Array.isArray(parsed.diagnostics) ||
+        typeof parsed.filePath === "string" ||
+        (fallbackFilePath &&
+          typeof parsed.error === "string" &&
+          parsed.error.trim()))
+    ) {
+      return readLspDiagnostics(parsed, fallbackFilePath);
+    }
+    // Partial application must retain appliedFiles and the failure, not collapse into a generic error.
+    if (
+      operation === "rename" &&
+      (Array.isArray(parsed.files) ||
+        Array.isArray(parsed.appliedFiles) ||
+        typeof parsed.previewId === "string" ||
+        typeof parsed.dryRun === "boolean" ||
+        parsed.partiallyApplied === true)
+    ) {
+      const files = Array.isArray(parsed.files) ? parsed.files : [];
+      return {
+        type: "rename",
+        language: parseString(parsed, "language"),
+        applied: parseBoolean(parsed, "applied") ?? false,
+        dryRun: parseBoolean(parsed, "dryRun") ?? false,
+        changeCount: parseNumber(parsed, "changeCount") ?? files.length,
+        files: files
+          .map(parseWorkspaceFile)
+          .filter((file): file is WorkspaceFile => file !== null),
+        safety: readLspRenameSafety(parsed),
+      };
+    }
 
     // napi 错误包装为 { "error": "... " }。
     const errorStr = parseString(parsed, "error");
     if (errorStr) return { type: "error", message: errorStr };
 
     // 符号寻址歧义响应（多重命中）
-    if (parsed.status === "ambiguous_symbol") {
+    if (
+      parsed.status === "ambiguous_symbol" ||
+      parsed.status === "partial_symbol_search"
+    ) {
       const candidates = Array.isArray(parsed.candidates)
         ? parsed.candidates
             .filter(isRecord)
@@ -894,54 +925,6 @@ const parseResult = (
       };
     }
 
-    // workspace-diagnostics: { count, files, languages, warnings }
-    if (operation === "workspace-diagnostics" && Array.isArray(parsed.files)) {
-      const files = parsed.files
-        .filter(isRecord)
-        .map((item): BatchDiagnosticsFile | null => {
-          const filePath = parseString(item, "filePath");
-          if (!filePath) return null;
-          const errorStr = parseString(item, "error");
-          const rawDiag = Array.isArray(item.diagnostics)
-            ? item.diagnostics
-            : [];
-          const diagnostics = rawDiag
-            .filter(isRecord)
-            .map((d): DiagnosticItem | null => {
-              const message = parseString(d, "message");
-              const line = parseNumber(d, "line");
-              const column = parseNumber(d, "column");
-              if (!message || line === undefined || column === undefined) {
-                return null;
-              }
-              return {
-                severity: parseString(d, "severity"),
-                message,
-                source: parseString(d, "source"),
-                code: parseString(d, "code"),
-                line,
-                column,
-                endLine: parseNumber(d, "endLine"),
-                endColumn: parseNumber(d, "endColumn"),
-              };
-            })
-            .filter((d): d is DiagnosticItem => d !== null);
-          return {
-            filePath,
-            language: parseString(item, "language"),
-            summary: parseString(item, "summary"),
-            diagnostics,
-            error: errorStr,
-          };
-        })
-        .filter((item): item is BatchDiagnosticsFile => item !== null);
-      return {
-        type: "diagnostics-batch",
-        fileCount: parseNumber(parsed, "count") ?? files.length,
-        files,
-      };
-    }
-
     // vulncheck
     if (operation === "vulncheck" && Array.isArray(parsed.findings)) {
       const findings = parsed.findings
@@ -983,100 +966,6 @@ const parseResult = (
       return {
         type: "execute-command",
         resultText: JSON.stringify(parsed, null, 2),
-      };
-    }
-
-    // 单文件诊断（含 summary + diagnostics 列表）。
-    if (operation === "diagnostics" && Array.isArray(parsed.diagnostics)) {
-      const diagnostics = parsed.diagnostics
-        .filter(isRecord)
-        .map((item): DiagnosticItem | null => {
-          const message = parseString(item, "message");
-          const line = parseNumber(item, "line");
-          const column = parseNumber(item, "column");
-          if (!message || line === undefined || column === undefined) {
-            return null;
-          }
-          return {
-            severity: parseString(item, "severity"),
-            message,
-            source: parseString(item, "source"),
-            code: parseString(item, "code"),
-            line,
-            column,
-            endLine: parseNumber(item, "endLine"),
-            endColumn: parseNumber(item, "endColumn"),
-          };
-        })
-        .filter((item): item is DiagnosticItem => item !== null);
-      return {
-        type: "diagnostics",
-        language,
-        filePath: parseString(parsed, "filePath"),
-        summary: parseString(parsed, "summary"),
-        count: parseNumber(parsed, "count") ?? diagnostics.length,
-        diagnostics,
-      };
-    }
-
-    // 批量诊断（batch: files[]，含单文件 error）。
-    if (operation === "diagnostics" && Array.isArray(parsed.files)) {
-      const files = parsed.files
-        .filter(isRecord)
-        .map((item): BatchDiagnosticsFile | null => {
-          const filePath = parseString(item, "filePath");
-          if (!filePath) return null;
-          const errorStr = parseString(item, "error");
-          const rawDiag = Array.isArray(item.diagnostics)
-            ? item.diagnostics
-            : [];
-          const diagnostics = rawDiag
-            .filter(isRecord)
-            .map((d): DiagnosticItem | null => {
-              const message = parseString(d, "message");
-              const line = parseNumber(d, "line");
-              const column = parseNumber(d, "column");
-              if (!message || line === undefined || column === undefined) {
-                return null;
-              }
-              return {
-                severity: parseString(d, "severity"),
-                message,
-                source: parseString(d, "source"),
-                code: parseString(d, "code"),
-                line,
-                column,
-                endLine: parseNumber(d, "endLine"),
-                endColumn: parseNumber(d, "endColumn"),
-              };
-            })
-            .filter((d): d is DiagnosticItem => d !== null);
-          return {
-            filePath,
-            language: parseString(item, "language"),
-            summary: parseString(item, "summary"),
-            diagnostics,
-            error: errorStr,
-          };
-        })
-        .filter((item): item is BatchDiagnosticsFile => item !== null);
-      return {
-        type: "diagnostics-batch",
-        fileCount: parseNumber(parsed, "fileCount") ?? files.length,
-        files,
-      };
-    }
-
-    if (operation === "rename" && Array.isArray(parsed.files)) {
-      return {
-        type: "rename",
-        language,
-        applied: parseBoolean(parsed, "applied") ?? false,
-        dryRun: parseBoolean(parsed, "dryRun") ?? true,
-        changeCount: parseNumber(parsed, "changeCount") ?? parsed.files.length,
-        files: parsed.files
-          .map(parseWorkspaceFile)
-          .filter((file): file is WorkspaceFile => file !== null),
       };
     }
 
@@ -1303,9 +1192,15 @@ const parseResult = (
     const messageStr = parseString(parsed, "message");
     if (messageStr) return { type: "error", message: messageStr };
 
-    return { type: "raw", text: result };
+    return {
+      type: "raw",
+      text: isRecord(decoded) ? JSON.stringify(decoded, null, 2) : result,
+    };
   } catch {
-    return { type: "raw", text: result };
+    return {
+      type: "raw",
+      text: isRecord(decoded) ? JSON.stringify(decoded, null, 2) : result,
+    };
   }
 };
 
@@ -1323,85 +1218,49 @@ export const LspToolCall = ({
     () => (operation ? parseArgs(toolCall.arguments, operation) : null),
     [toolCall.arguments, operation],
   );
+  const decodedResult = useMemo<unknown>(() => {
+    try {
+      return toolCall.result
+        ? sanitizeLspResult(JSON.parse(toolCall.result))
+        : null;
+    } catch {
+      return null;
+    }
+  }, [toolCall.result]);
+  const resultMeta = useMemo(
+    () => readLspResultMeta(decodedResult),
+    [decodedResult],
+  );
   const parsedResult = useMemo(
     () =>
       operation
-        ? parseResult(toolCall.result, operation)
+        ? parseResult(
+            toolCall.result,
+            operation,
+            decodedResult,
+            hasFilePath(parsedArgs) ? parsedArgs.filePath : "",
+          )
         : ({ type: "empty" } as ParsedResult),
-    [toolCall.result, operation],
+    [toolCall.result, operation, decodedResult, parsedArgs],
   );
 
-  const isRunning = toolCall.status === "running";
   const hasError = parsedResult.type === "error";
-  const effectiveStatus = hasError ? "error" : toolCall.status;
+  const effectiveStatus =
+    hasError || resultMeta.status === "failed" ? "error" : toolCall.status;
 
-  // 运行耗时计算（每 200ms 刷新一次）
-  const startedAt = toolCall.startedAt;
-  const [elapsedMs, setElapsedMs] = useState<number>(0);
-  useEffect(() => {
-    if (!isRunning) {
-      setElapsedMs(0);
-      return;
-    }
-    const start = startedAt ?? Date.now();
-    const update = () => {
-      setElapsedMs(Math.max(0, Date.now() - start));
-    };
-    update();
-    const timer = setInterval(update, 200);
-    return () => clearInterval(timer);
-  }, [isRunning, startedAt]);
-
-  const timeoutSec = useMemo(() => {
-    switch (operation) {
-      case "hover":
-        return 5;
-      case "diagnostics":
-      case "workspace-diagnostics":
-        return 30;
-      case "vulncheck":
-        return 120;
-      default:
-        return 10;
-    }
-  }, [operation]);
-
-  const phaseDescription = useMemo(() => {
-    switch (operation) {
-      case "diagnostics":
-        return t("toolCall.lsp.progress.diagnostics");
-      case "workspace-diagnostics":
-        return t("toolCall.lsp.progress.workspaceDiagnostics");
-      case "workspace-symbols":
-        return t("toolCall.lsp.progress.workspaceSymbols");
-      case "symbols":
-        return t("toolCall.lsp.progress.symbols");
-      case "rename":
-        return t("toolCall.lsp.progress.rename");
-      case "code-action":
-        return t("toolCall.lsp.progress.codeAction");
-      case "execute-command":
-        return t("toolCall.lsp.progress.executeCommand");
-      case "call-hierarchy":
-        return t("toolCall.lsp.progress.callHierarchy");
-      case "type-hierarchy":
-        return t("toolCall.lsp.progress.typeHierarchy");
-      case "hover":
-        return t("toolCall.lsp.progress.hover");
-      case "goto":
-        return t("toolCall.lsp.progress.goto");
-      case "references":
-        return t("toolCall.lsp.progress.references");
-      case "vulncheck":
-        return t("toolCall.lsp.progress.vulncheck");
-      default:
-        return t("toolCall.lsp.progress.default");
-    }
-  }, [operation, t]);
-
-  const badgeName = operation
-    ? t(BADGE_KEYS[operation])
-    : t("toolCall.lsp.name");
+  const navigationKind =
+    operation === "goto" && parsedArgs && "kind" in parsedArgs
+      ? parsedArgs.kind
+      : undefined;
+  const badgeName =
+    operation === "goto" &&
+    (navigationKind === "definition" ||
+      navigationKind === "type-definition" ||
+      navigationKind === "implementation")
+      ? t(`toolCall.lsp.goto.${navigationKind}`)
+      : operation
+        ? t(BADGE_KEYS[operation])
+        : t("toolCall.lsp.name");
 
   const filePath = hasFilePath(parsedArgs)
     ? parsedArgs.filePath
@@ -1410,7 +1269,7 @@ export const LspToolCall = ({
   const resolvedTarget = useMemo(() => {
     if (!toolCall.result) return null;
     try {
-      const obj: unknown = JSON.parse(toolCall.result);
+      const obj: unknown = decodedResult;
       if (isRecord(obj) && isRecord(obj.resolvedSymbol)) {
         const fp = parseString(obj.resolvedSymbol, "filePath");
         const line = parseNumber(obj.resolvedSymbol, "line");
@@ -1423,7 +1282,7 @@ export const LspToolCall = ({
     } catch {
       return null;
     }
-  }, [toolCall.result]);
+  }, [decodedResult, toolCall.result]);
 
   const effectiveFilePath = filePath || resolvedTarget?.filePath || "";
   const displayName = effectiveFilePath
@@ -1445,7 +1304,6 @@ export const LspToolCall = ({
         typeof parsedArgs.pattern === "string" &&
         parsedArgs.pattern) ||
       undefined;
-  const position = isPositionArgs(parsedArgs) ? parsedArgs : null;
 
   // Header meta：语言 badge + 结果计数 badge。
   const meta = useMemo(() => {
@@ -1458,7 +1316,6 @@ export const LspToolCall = ({
       parsedResult.type === "workspace-symbols" ||
       parsedResult.type === "call-hierarchy" ||
       parsedResult.type === "type-hierarchy" ||
-      parsedResult.type === "diagnostics" ||
       parsedResult.type === "hover" ||
       parsedResult.type === "references" ||
       parsedResult.type === "symbols"
@@ -1569,7 +1426,9 @@ export const LspToolCall = ({
             >
               {parsedResult.applied
                 ? t("toolCall.lsp.renameApplied")
-                : t("toolCall.lsp.dryRun")}
+                : parsedResult.dryRun
+                  ? t("toolCall.lsp.dryRun")
+                  : t("toolCall.lsp.notApplied")}
             </span>
           ) : null}
         </>
@@ -1589,7 +1448,9 @@ export const LspToolCall = ({
           >
             {parsedResult.applied
               ? t("toolCall.lsp.renameApplied")
-              : t("toolCall.lsp.dryRun")}
+              : parsedResult.dryRun
+                ? t("toolCall.lsp.dryRun")
+                : t("toolCall.lsp.notApplied")}
           </span>
           <span className="tool-call-codelens-count tool-call-codelens-count-muted">
             {t("toolCall.lsp.changeCount", {
@@ -1724,39 +1585,9 @@ export const LspToolCall = ({
         </>
       );
     }
-    if (parsedResult.type === "diagnostics") {
-      return (
-        <>
-          {langBadge}
-          <span
-            className={`tool-call-codelens-count ${
-              parsedResult.count > 0
-                ? "tool-call-codelens-count-error"
-                : "tool-call-codelens-count-ok"
-            }`}
-          >
-            {t("toolCall.lsp.diagnosticsCount", {
-              values: { count: parsedResult.count },
-            })}
-          </span>
-        </>
-      );
-    }
     if (parsedResult.type === "diagnostics-batch") {
       return (
-        <>
-          <span
-            className={`tool-call-codelens-count ${
-              parsedResult.fileCount > 0
-                ? "tool-call-codelens-count-info"
-                : "tool-call-codelens-count-muted"
-            }`}
-          >
-            {t("toolCall.lsp.batchCount", {
-              values: { count: parsedResult.fileCount },
-            })}
-          </span>
-        </>
+        <LspDiagnosticsSummaryView summary={parsedResult.summary} compact />
       );
     }
     return langBadge;
@@ -1771,1138 +1602,1227 @@ export const LspToolCall = ({
       displayNameTitle={effectiveFilePath || undefined}
       displayNameDataPath={effectiveFilePath || undefined}
       status={effectiveStatus}
-      meta={meta}
-      className="tool-call-lsp"
+      meta={
+        <>
+          {parsedResult.type === "diagnostics-batch" ||
+          (resultMeta.status !== "failed" && resultMeta.status !== "partial")
+            ? meta
+            : null}
+          {resultMeta.status === "partial" || resultMeta.status === "failed" ? (
+            <span className="tool-call-codelens-count tool-call-codelens-count-error">
+              {t(`toolCall.lsp.resultStatus.${resultMeta.status}`)}
+            </span>
+          ) : null}
+        </>
+      }
+      className={`tool-call-lsp${resultMeta.status === "partial" ? " lsp-result-partial" : ""}`}
+      lazyBody
     >
-      <div className="tool-call-body tool-call-lsp-body">
-        {/* Parameters */}
-        {parsedArgs ? (
-          <div className="tool-call-codelens-params">
-            {"query" in parsedArgs && typeof parsedArgs.query === "string" ? (
+      <LspToolBody
+        toolCall={toolCall}
+        operation={operation}
+        parsedArgs={parsedArgs}
+        parsedResult={parsedResult}
+        resultMeta={resultMeta}
+        effectiveFilePath={effectiveFilePath}
+        displayName={displayName}
+        resolvedTarget={resolvedTarget}
+      />
+    </ToolCallNode>
+  );
+};
+
+type LspToolBodyProps = {
+  toolCall: ToolCallInfo;
+  operation: LspOperation | null;
+  parsedArgs: ParsedArgs;
+  parsedResult: ParsedResult;
+  resultMeta: LspResultMeta;
+  effectiveFilePath: string;
+  displayName?: string;
+  resolvedTarget: { filePath: string; line: number; column: number } | null;
+};
+
+function LspToolBody({
+  toolCall,
+  operation,
+  parsedArgs,
+  parsedResult,
+  resultMeta,
+  effectiveFilePath,
+  displayName,
+  resolvedTarget,
+}: LspToolBodyProps): React.JSX.Element {
+  const { t } = useI18n();
+  const isRunning = toolCall.status === "running";
+  const hasError = parsedResult.type === "error";
+  const position = isPositionArgs(parsedArgs) ? parsedArgs : null;
+  return (
+    <div className="tool-call-body tool-call-lsp-body">
+      {/* Parameters */}
+      {parsedArgs ? (
+        <div className="tool-call-codelens-params">
+          {"filePaths" in parsedArgs && Array.isArray(parsedArgs.filePaths) && (
+            <details className="tool-call-lsp-requested-files">
+              <summary>
+                {t("toolCall.lsp.requestedFiles", {
+                  values: { count: parsedArgs.filePaths.length },
+                })}
+              </summary>
+              <ul>
+                {parsedArgs.filePaths
+                  .filter((path): path is string => typeof path === "string")
+                  .map((path, index) => (
+                    <li key={`${path}:${index}`}>
+                      <code>{path}</code>
+                    </li>
+                  ))}
+              </ul>
+            </details>
+          )}
+          {"query" in parsedArgs && typeof parsedArgs.query === "string" ? (
+            <div className="tool-call-codelens-param-item">
+              <ScanSearch size={11} aria-hidden="true" />
+              <span className="tool-call-codelens-param-label">
+                {t("toolCall.lsp.query")}
+              </span>
+              <code className="tool-call-codelens-param-value">
+                {parsedArgs.query}
+              </code>
+            </div>
+          ) : null}
+          {"command" in parsedArgs && typeof parsedArgs.command === "string" ? (
+            <div className="tool-call-codelens-param-item">
+              <Terminal size={11} aria-hidden="true" />
+              <span className="tool-call-codelens-param-label">
+                {t("toolCall.lsp.command")}
+              </span>
+              <code className="tool-call-codelens-param-value">
+                {parsedArgs.command}
+              </code>
+            </div>
+          ) : null}
+          {"dir" in parsedArgs && typeof parsedArgs.dir === "string" ? (
+            <div className="tool-call-codelens-param-item">
+              <FileCode size={11} aria-hidden="true" />
+              <span className="tool-call-codelens-param-label">
+                {t("toolCall.lsp.dir")}
+              </span>
+              <span className="tool-call-codelens-param-value">
+                {parsedArgs.dir}
+              </span>
+            </div>
+          ) : null}
+          {"pattern" in parsedArgs && typeof parsedArgs.pattern === "string" ? (
+            <div className="tool-call-codelens-param-item">
+              <ScanSearch size={11} aria-hidden="true" />
+              <span className="tool-call-codelens-param-label">
+                {t("toolCall.lsp.pattern")}
+              </span>
+              <code className="tool-call-codelens-param-value">
+                {parsedArgs.pattern}
+              </code>
+            </div>
+          ) : null}
+          {"maxFiles" in parsedArgs &&
+          typeof parsedArgs.maxFiles === "number" ? (
+            <div className="tool-call-codelens-param-item">
+              <Hash size={11} aria-hidden="true" />
+              <span className="tool-call-codelens-param-label">
+                {t("toolCall.lsp.maxFiles")}
+              </span>
+              <code className="tool-call-codelens-param-value">
+                {parsedArgs.maxFiles}
+              </code>
+            </div>
+          ) : null}
+          {parsedArgs &&
+          "symbol" in parsedArgs &&
+          typeof parsedArgs.symbol === "string" ? (
+            <div className="tool-call-codelens-param-item">
+              <ScanSearch size={11} aria-hidden="true" />
+              <span className="tool-call-codelens-param-label">
+                {t("toolCall.lsp.symbol")}
+              </span>
+              <code className="tool-call-codelens-param-value">
+                {parsedArgs.symbol}
+              </code>
+            </div>
+          ) : null}
+          {effectiveFilePath ? (
+            <div className="tool-call-codelens-param-item">
+              <FileCode size={11} aria-hidden="true" />
+              <span className="tool-call-codelens-param-label">
+                {t("toolCall.lsp.filePath")}
+              </span>
+              <span
+                className="tool-call-codelens-param-value"
+                title={effectiveFilePath}
+              >
+                {effectiveFilePath}
+              </span>
+            </div>
+          ) : null}
+          {position &&
+          position.line !== undefined &&
+          position.column !== undefined ? (
+            <div className="tool-call-codelens-param-item">
+              <Crosshair size={11} aria-hidden="true" />
+              <span className="tool-call-codelens-param-label">
+                {t("toolCall.lsp.position")}
+              </span>
+              <code className="tool-call-codelens-param-value">
+                {position.line}:{position.column}
+              </code>
+            </div>
+          ) : resolvedTarget ? (
+            <div className="tool-call-codelens-param-item">
+              <Crosshair size={11} aria-hidden="true" />
+              <span className="tool-call-codelens-param-label">
+                {t("toolCall.lsp.position")}
+              </span>
+              <code className="tool-call-codelens-param-value">
+                {resolvedTarget.line}:{resolvedTarget.column}
+              </code>
+            </div>
+          ) : null}
+          {"kind" in parsedArgs && typeof parsedArgs.kind === "string" ? (
+            <div className="tool-call-codelens-param-item">
+              <span className="tool-call-codelens-param-label">
+                {t("toolCall.lsp.kind")}
+              </span>
+              <span className="tool-call-lsp-kind-badge">
+                {parsedArgs.kind}
+              </span>
+            </div>
+          ) : null}
+          {isRenameArgs(parsedArgs) ? (
+            <>
               <div className="tool-call-codelens-param-item">
-                <ScanSearch size={11} aria-hidden="true" />
+                <PencilLine size={11} aria-hidden="true" />
                 <span className="tool-call-codelens-param-label">
-                  {t("toolCall.lsp.query")}
+                  {t("toolCall.lsp.newName")}
                 </span>
                 <code className="tool-call-codelens-param-value">
-                  {parsedArgs.query}
+                  {parsedArgs.newName ?? ""}
                 </code>
               </div>
-            ) : null}
-            {"command" in parsedArgs &&
-            typeof parsedArgs.command === "string" ? (
-              <div className="tool-call-codelens-param-item">
-                <Terminal size={11} aria-hidden="true" />
-                <span className="tool-call-codelens-param-label">
-                  {t("toolCall.lsp.command")}
-                </span>
-                <code className="tool-call-codelens-param-value">
-                  {parsedArgs.command}
-                </code>
-              </div>
-            ) : null}
-            {"dir" in parsedArgs && typeof parsedArgs.dir === "string" ? (
-              <div className="tool-call-codelens-param-item">
-                <FileCode size={11} aria-hidden="true" />
-                <span className="tool-call-codelens-param-label">
-                  {t("toolCall.lsp.dir")}
-                </span>
-                <span className="tool-call-codelens-param-value">
-                  {parsedArgs.dir}
-                </span>
-              </div>
-            ) : null}
-            {"pattern" in parsedArgs &&
-            typeof parsedArgs.pattern === "string" ? (
-              <div className="tool-call-codelens-param-item">
-                <ScanSearch size={11} aria-hidden="true" />
-                <span className="tool-call-codelens-param-label">
-                  {t("toolCall.lsp.pattern")}
-                </span>
-                <code className="tool-call-codelens-param-value">
-                  {parsedArgs.pattern}
-                </code>
-              </div>
-            ) : null}
-            {"maxFiles" in parsedArgs &&
-            typeof parsedArgs.maxFiles === "number" ? (
-              <div className="tool-call-codelens-param-item">
-                <Hash size={11} aria-hidden="true" />
-                <span className="tool-call-codelens-param-label">
-                  {t("toolCall.lsp.maxFiles")}
-                </span>
-                <code className="tool-call-codelens-param-value">
-                  {parsedArgs.maxFiles}
-                </code>
-              </div>
-            ) : null}
-            {parsedArgs &&
-            "symbol" in parsedArgs &&
-            typeof parsedArgs.symbol === "string" ? (
-              <div className="tool-call-codelens-param-item">
-                <ScanSearch size={11} aria-hidden="true" />
-                <span className="tool-call-codelens-param-label">
-                  {t("toolCall.lsp.symbol")}
-                </span>
-                <code className="tool-call-codelens-param-value">
-                  {parsedArgs.symbol}
-                </code>
-              </div>
-            ) : null}
-            {effectiveFilePath ? (
-              <div className="tool-call-codelens-param-item">
-                <FileCode size={11} aria-hidden="true" />
-                <span className="tool-call-codelens-param-label">
-                  {t("toolCall.lsp.filePath")}
-                </span>
-                <span
-                  className="tool-call-codelens-param-value"
-                  title={effectiveFilePath}
-                >
-                  {effectiveFilePath}
-                </span>
-              </div>
-            ) : null}
-            {position &&
-            position.line !== undefined &&
-            position.column !== undefined ? (
-              <div className="tool-call-codelens-param-item">
-                <Crosshair size={11} aria-hidden="true" />
-                <span className="tool-call-codelens-param-label">
-                  {t("toolCall.lsp.position")}
-                </span>
-                <code className="tool-call-codelens-param-value">
-                  {position.line}:{position.column}
-                </code>
-              </div>
-            ) : resolvedTarget ? (
-              <div className="tool-call-codelens-param-item">
-                <Crosshair size={11} aria-hidden="true" />
-                <span className="tool-call-codelens-param-label">
-                  {t("toolCall.lsp.position")}
-                </span>
-                <code className="tool-call-codelens-param-value">
-                  {resolvedTarget.line}:{resolvedTarget.column}
-                </code>
-              </div>
-            ) : null}
-            {"kind" in parsedArgs && typeof parsedArgs.kind === "string" ? (
-              <div className="tool-call-codelens-param-item">
-                <span className="tool-call-codelens-param-label">
-                  {t("toolCall.lsp.kind")}
-                </span>
-                <span className="tool-call-lsp-kind-badge">
-                  {parsedArgs.kind}
-                </span>
-              </div>
-            ) : null}
-            {isRenameArgs(parsedArgs) ? (
-              <>
+              {parsedArgs.dryRun !== undefined ? (
                 <div className="tool-call-codelens-param-item">
-                  <PencilLine size={11} aria-hidden="true" />
+                  <ShieldAlert size={11} aria-hidden="true" />
                   <span className="tool-call-codelens-param-label">
-                    {t("toolCall.lsp.newName")}
+                    {t("toolCall.lsp.dryRun")}
+                  </span>
+                  <span className="tool-call-codelens-param-value">
+                    {parsedArgs.dryRun ? "true" : "false"}
+                  </span>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+
+          {isCodeActionArgs(parsedArgs) ? (
+            <>
+              {parsedArgs.only && parsedArgs.only.length > 0 ? (
+                <div className="tool-call-codelens-param-item">
+                  <Wand2 size={11} aria-hidden="true" />
+                  <span className="tool-call-codelens-param-label">
+                    {t("toolCall.lsp.only")}
                   </span>
                   <code className="tool-call-codelens-param-value">
-                    {parsedArgs.newName ?? ""}
+                    {parsedArgs.only.join(", ")}
                   </code>
                 </div>
-                {parsedArgs.dryRun !== undefined ? (
-                  <div className="tool-call-codelens-param-item">
-                    <ShieldAlert size={11} aria-hidden="true" />
-                    <span className="tool-call-codelens-param-label">
-                      {t("toolCall.lsp.dryRun")}
-                    </span>
-                    <span className="tool-call-codelens-param-value">
-                      {parsedArgs.dryRun ? "true" : "false"}
-                    </span>
-                  </div>
-                ) : null}
-              </>
-            ) : null}
-
-            {isCodeActionArgs(parsedArgs) ? (
-              <>
-                {parsedArgs.only && parsedArgs.only.length > 0 ? (
-                  <div className="tool-call-codelens-param-item">
-                    <Wand2 size={11} aria-hidden="true" />
-                    <span className="tool-call-codelens-param-label">
-                      {t("toolCall.lsp.only")}
-                    </span>
-                    <code className="tool-call-codelens-param-value">
-                      {parsedArgs.only.join(", ")}
-                    </code>
-                  </div>
-                ) : null}
-                {parsedArgs.apply !== undefined ? (
-                  <div className="tool-call-codelens-param-item">
-                    <Wand2 size={11} aria-hidden="true" />
-                    <span className="tool-call-codelens-param-label">
-                      {t("toolCall.lsp.apply")}
-                    </span>
-                    <span className="tool-call-codelens-param-value">
-                      {parsedArgs.apply ? "true" : "false"}
-                    </span>
-                  </div>
-                ) : null}
-              </>
-            ) : null}
-          </div>
-        ) : null}
-
-        {/* Error */}
-        {hasError ? (
-          <div className="tool-call-error">
-            <AlertCircle size={12} aria-hidden="true" />
-            <span>{parsedResult.message}</span>
-          </div>
-        ) : null}
-
-        {/* Ambiguous Symbol Candidates view */}
-        {parsedResult.type === "ambiguous-symbol" ? (
-          <div className="tool-call-lsp-ambiguous-block">
-            <div className="tool-call-lsp-ambiguous-banner">
-              <AlertCircle size={13} aria-hidden="true" />
-              <span>{parsedResult.message}</span>
-            </div>
-            {parsedResult.candidates.length > 0 ? (
-              <div className="tool-call-lsp-ambiguous-list">
-                {parsedResult.candidates.map((cand, idx) => (
-                  <div
-                    key={`${cand.filePath}-${cand.line}-${cand.column}-${idx}`}
-                    className="tool-call-lsp-ambiguous-candidate"
-                  >
-                    <div className="tool-call-lsp-ambiguous-header">
-                      <span className="tool-call-lsp-kind-badge">
-                        {cand.kind}
-                      </span>
-                      <span
-                        className="tool-call-lsp-ambiguous-file"
-                        title={cand.filePath}
-                      >
-                        {getFileName(cand.filePath)}
-                      </span>
-                      <span className="tool-call-lsp-ambiguous-loc">
-                        <Hash size={9} aria-hidden="true" />
-                        {cand.line}:{cand.column}
-                      </span>
-                      {cand.container ? (
-                        <span className="tool-call-lsp-ambiguous-container">
-                          ({cand.container})
-                        </span>
-                      ) : null}
-                    </div>
-                    {cand.preview ? (
-                      <pre className="tool-call-lsp-ambiguous-preview">
-                        <code>{cand.preview}</code>
-                      </pre>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
-        {/* Completion view */}
-        {parsedResult.type === "completion" ? (
-          parsedResult.items.length > 0 ? (
-            <div className="tool-call-lsp-completion-list">
-              {parsedResult.isIncomplete ? (
-                <div className="tool-call-lsp-incomplete-note">
-                  {t("toolCall.lsp.incomplete")}
-                </div>
               ) : null}
-              {parsedResult.items.map((item, idx) => (
-                <div
-                  key={`${item.label}-${idx}`}
-                  className="tool-call-lsp-completion-item"
-                >
-                  <span className="tool-call-lsp-completion-label">
-                    <ListPlus size={11} aria-hidden="true" />
-                    <code>{item.label}</code>
+              {parsedArgs.apply !== undefined ? (
+                <div className="tool-call-codelens-param-item">
+                  <Wand2 size={11} aria-hidden="true" />
+                  <span className="tool-call-codelens-param-label">
+                    {t("toolCall.lsp.apply")}
                   </span>
-                  {item.kind ? (
-                    <span className="tool-call-lsp-kind-badge">
-                      {item.kind}
-                    </span>
-                  ) : null}
-                  {item.detail ? (
-                    <span
-                      className="tool-call-lsp-completion-detail"
-                      title={item.detail}
-                    >
-                      {item.detail}
-                    </span>
-                  ) : null}
-                  {item.documentation ? (
-                    <span
-                      className="tool-call-lsp-completion-doc"
-                      title={item.documentation}
-                    >
-                      {truncateText(item.documentation)}
-                    </span>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="tool-call-codelens-no-results">
-              <XCircle size={14} aria-hidden="true" />
-              <span>{t("toolCall.lsp.noCompletions")}</span>
-            </div>
-          )
-        ) : null}
-
-        {/* Rename view */}
-        {parsedResult.type === "rename" ? (
-          parsedResult.files.length > 0 ? (
-            <div className="tool-call-lsp-rename-list">
-              {!parsedResult.applied ? (
-                <div className="tool-call-lsp-preview-note">
-                  <ShieldAlert size={12} aria-hidden="true" />
-                  <span>{t("toolCall.lsp.renamePreview")}</span>
+                  <span className="tool-call-codelens-param-value">
+                    {parsedArgs.apply ? "true" : "false"}
+                  </span>
                 </div>
               ) : null}
-              {parsedResult.files.map((file, fileIdx) => (
-                <div
-                  key={`${file.uri}-${fileIdx}`}
-                  className="tool-call-lsp-rename-file"
-                >
-                  <div
-                    className="tool-call-lsp-rename-file-header"
-                    title={uriToPath(file.uri)}
-                  >
-                    <FileCode size={12} aria-hidden="true" />
-                    <span className="tool-call-lsp-rename-file-name">
-                      {getFileName(uriToPath(file.uri))}
-                    </span>
-                    <span className="tool-call-lsp-rename-file-path">
-                      {uriToPath(file.uri)}
-                    </span>
-                    {file.applied !== undefined ? (
-                      <span
-                        className={`tool-call-lsp-rename-applied ${
-                          file.applied ? "applied" : "skipped"
-                        }`}
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
+      {parsedResult.type !== "empty" && <LspResultNotice meta={resultMeta} />}
+      {parsedResult.type === "diagnostics-batch" && (
+        <LspDiagnosticsFiles
+          files={parsedResult.files}
+          summary={parsedResult.summary}
+          complete={resultMeta.status === "complete"}
+        />
+      )}
+      {parsedResult.type === "rename" && (
+        <LspRenameNotice
+          safety={parsedResult.safety}
+          applied={parsedResult.applied}
+          dryRun={parsedResult.dryRun}
+          blocked={resultMeta.unsupportedOperations}
+        />
+      )}
+      {/* Error */}
+      {hasError ? (
+        <div className="tool-call-error">
+          <AlertCircle size={12} aria-hidden="true" />
+          <span>{parsedResult.message}</span>
+        </div>
+      ) : null}
+
+      {(resultMeta.status !== "failed" || parsedResult.type === "rename") &&
+        !resultMeta.unsupportedOperations && (
+          <>
+            {/* Ambiguous Symbol Candidates view */}
+            {parsedResult.type === "ambiguous-symbol" ? (
+              <div className="tool-call-lsp-ambiguous-block">
+                <div className="tool-call-lsp-ambiguous-banner">
+                  <AlertCircle size={13} aria-hidden="true" />
+                  <span>{parsedResult.message}</span>
+                </div>
+                {parsedResult.candidates.length > 0 ? (
+                  <div className="tool-call-lsp-ambiguous-list">
+                    {parsedResult.candidates.map((cand, idx) => (
+                      <div
+                        key={`${cand.filePath}-${cand.line}-${cand.column}-${idx}`}
+                        className="tool-call-lsp-ambiguous-candidate"
                       >
-                        {file.applied
-                          ? t("toolCall.lsp.renameApplied")
-                          : t("toolCall.lsp.noChanges")}
-                      </span>
-                    ) : (
-                      <span className="tool-call-codelens-ref-file-count">
-                        {t("toolCall.lsp.editCount", {
-                          values: { count: file.editCount },
-                        })}
-                      </span>
-                    )}
-                  </div>
-                  {file.edits && file.edits.length > 0 ? (
-                    <div className="tool-call-lsp-edit-list">
-                      {file.edits.map((edit, editIdx) => (
-                        <div
-                          key={`${edit.startLine}-${edit.startColumn}-${editIdx}`}
-                          className="tool-call-lsp-edit-row"
-                        >
-                          <span className="tool-call-lsp-edit-loc">
-                            <Hash size={9} aria-hidden="true" />
-                            {edit.startLine}:{edit.startColumn} → {edit.endLine}
-                            :{edit.endColumn}
+                        <div className="tool-call-lsp-ambiguous-header">
+                          <span className="tool-call-lsp-kind-badge">
+                            {cand.kind}
                           </span>
-                          <code
-                            className="tool-call-lsp-edit-text"
-                            title={edit.newText}
+                          <span
+                            className="tool-call-lsp-ambiguous-file"
+                            title={cand.filePath}
                           >
-                            {truncateText(edit.newText, 160)}
-                          </code>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="tool-call-codelens-no-results">
-              <XCircle size={14} aria-hidden="true" />
-              <span>{t("toolCall.lsp.noChanges")}</span>
-            </div>
-          )
-        ) : null}
-
-        {/* Signature help view */}
-        {parsedResult.type === "signature-help" ? (
-          parsedResult.signatures.length > 0 ? (
-            <div className="tool-call-lsp-signature-list">
-              {parsedResult.signatures.map((signature, sigIdx) => {
-                const isActive =
-                  parsedResult.activeSignature === sigIdx ||
-                  (parsedResult.activeSignature === null && sigIdx === 0);
-                return (
-                  <div
-                    key={`${signature.label}-${sigIdx}`}
-                    className={`tool-call-lsp-signature-item ${
-                      isActive ? "active" : ""
-                    }`}
-                  >
-                    <div className="tool-call-lsp-signature-label">
-                      <Sigma size={12} aria-hidden="true" />
-                      <code>{signature.label}</code>
-                      {isActive ? (
-                        <span className="tool-call-lsp-active-badge">
-                          {t("toolCall.lsp.activeSignature")}
-                        </span>
-                      ) : null}
-                    </div>
-                    {signature.documentation ? (
-                      <div
-                        className="tool-call-lsp-signature-doc"
-                        title={signature.documentation}
-                      >
-                        {truncateText(signature.documentation)}
-                      </div>
-                    ) : null}
-                    {signature.parameters.length > 0 ? (
-                      <div className="tool-call-lsp-param-list">
-                        {signature.parameters.map((param, paramIdx) => {
-                          const isActiveParam =
-                            isActive &&
-                            (parsedResult.activeParameter === paramIdx ||
-                              (parsedResult.activeParameter === null &&
-                                paramIdx === 0));
-                          return (
-                            <span
-                              key={`${param.label}-${paramIdx}`}
-                              className={`tool-call-lsp-param-chip ${
-                                isActiveParam ? "active" : ""
-                              }`}
-                              title={param.documentation}
-                            >
-                              {param.label || `#${paramIdx + 1}`}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="tool-call-codelens-no-results">
-              <XCircle size={14} aria-hidden="true" />
-              <span>{t("toolCall.lsp.noSignatures")}</span>
-            </div>
-          )
-        ) : null}
-
-        {/* Code action view */}
-        {parsedResult.type === "code-action" ? (
-          parsedResult.actions.length > 0 ||
-          parsedResult.applied.length > 0 ||
-          parsedResult.deferred.length > 0 ? (
-            <div className="tool-call-lsp-action-list">
-              {parsedResult.actions.map((action, idx) => {
-                const appliedAction = parsedResult.applied.find(
-                  (applied) => applied.title === action.title,
-                );
-                return (
-                  <div
-                    key={`${action.title}-${idx}`}
-                    className="tool-call-lsp-action-item"
-                  >
-                    <span className="tool-call-lsp-action-title">
-                      <Wand2 size={11} aria-hidden="true" />
-                      {action.title}
-                    </span>
-                    {action.kind ? (
-                      <span className="tool-call-lsp-kind-badge">
-                        {action.kind}
-                      </span>
-                    ) : null}
-                    {action.isPreferred ? (
-                      <span className="tool-call-lsp-preferred-badge">
-                        {t("toolCall.lsp.preferred")}
-                      </span>
-                    ) : null}
-                    {action.hasEdit ? (
-                      <span className="tool-call-lsp-edit-badge">
-                        {t("toolCall.lsp.editsAvailable")}
-                      </span>
-                    ) : null}
-                    {action.command ? (
-                      <span
-                        className="tool-call-lsp-command-badge"
-                        title={action.command.command}
-                      >
-                        <ShieldAlert size={10} aria-hidden="true" />
-                        {t("toolCall.lsp.commandNotExecuted")}
-                      </span>
-                    ) : null}
-                    {appliedAction ? (
-                      <span className="tool-call-lsp-applied-badge">
-                        <CheckCircle2 size={10} aria-hidden="true" />
-                        {t("toolCall.lsp.changeCount", {
-                          values: { count: appliedAction.changeCount },
-                        })}
-                      </span>
-                    ) : null}
-                  </div>
-                );
-              })}
-              {parsedResult.applied.length > 0 ? (
-                <div className="tool-call-lsp-result-section">
-                  <span className="tool-call-lsp-section-label">
-                    <CheckCircle2 size={11} aria-hidden="true" />
-                    {t("toolCall.lsp.appliedSection")}
-                  </span>
-                  {parsedResult.applied.map((action, idx) => (
-                    <div
-                      key={`applied-${action.title}-${idx}`}
-                      className="tool-call-lsp-action-item"
-                    >
-                      <span className="tool-call-lsp-action-title">
-                        <CheckCircle2 size={11} aria-hidden="true" />
-                        {action.title}
-                      </span>
-                      {action.kind ? (
-                        <span className="tool-call-lsp-kind-badge">
-                          {action.kind}
-                        </span>
-                      ) : null}
-                      <span className="tool-call-lsp-applied-badge">
-                        {t("toolCall.lsp.changeCount", {
-                          values: { count: action.changeCount },
-                        })}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-              {parsedResult.deferred.length > 0 ? (
-                <div className="tool-call-lsp-result-section">
-                  <span className="tool-call-lsp-section-label">
-                    <ShieldAlert size={11} aria-hidden="true" />
-                    {t("toolCall.lsp.deferredSection")}
-                  </span>
-                  {parsedResult.deferred.map((item, idx) => (
-                    <div
-                      key={`deferred-${item.title}-${idx}`}
-                      className="tool-call-lsp-action-item"
-                    >
-                      <span className="tool-call-lsp-action-title">
-                        <ShieldAlert size={11} aria-hidden="true" />
-                        {item.title}
-                      </span>
-                      {item.note ? (
-                        <span className="tool-call-lsp-command-badge">
-                          {item.note}
-                        </span>
-                      ) : (
-                        <span className="tool-call-lsp-command-badge">
-                          {t("toolCall.lsp.commandNotExecuted")}
-                        </span>
-                      )}
-                      {item.command ? (
-                        <code
-                          className="tool-call-lsp-deferred-command"
-                          title={item.command}
-                        >
-                          {item.command}
-                        </code>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          ) : (
-            <div className="tool-call-codelens-no-results">
-              <XCircle size={14} aria-hidden="true" />
-              <span>{t("toolCall.lsp.noActions")}</span>
-            </div>
-          )
-        ) : null}
-
-        {/* Definition jump view（goto definition / type-definition / implementation） */}
-        {parsedResult.type === "definition-jump" ? (
-          parsedResult.definitions.length > 0 ? (
-            <div className="tool-call-lsp-def-list">
-              {parsedResult.definitions.map((def, idx) => (
-                <div
-                  key={`${def.filePath}-${def.line}-${idx}`}
-                  className="tool-call-lsp-def-item"
-                >
-                  <div
-                    className="tool-call-lsp-def-header"
-                    title={def.filePath}
-                  >
-                    <Crosshair size={11} aria-hidden="true" />
-                    <span className="tool-call-lsp-def-name">
-                      {getFileName(def.filePath)}
-                    </span>
-                    <span className="tool-call-lsp-def-path">
-                      {def.filePath}
-                    </span>
-                    <span className="tool-call-codelens-ref-file-count">
-                      <Hash size={9} aria-hidden="true" />
-                      {def.line}:{def.column}
-                      {def.endLine !== undefined && def.endColumn !== undefined
-                        ? ` → ${def.endLine}:${def.endColumn}`
-                        : ""}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="tool-call-codelens-no-results">
-              <XCircle size={14} aria-hidden="true" />
-              <span>{t("toolCall.lsp.noDefinitions")}</span>
-            </div>
-          )
-        ) : null}
-
-        {/* Workspace symbols view */}
-        {parsedResult.type === "workspace-symbols" ? (
-          parsedResult.symbols.length > 0 ? (
-            <div className="tool-call-lsp-symbol-list">
-              {parsedResult.symbols.map((symbol, idx) => (
-                <div
-                  key={`${symbol.name}-${symbol.filePath ?? ""}-${symbol.line ?? 0}-${idx}`}
-                  className="tool-call-lsp-symbol-item"
-                >
-                  <span className="tool-call-lsp-symbol-name">
-                    <ScanSearch size={11} aria-hidden="true" />
-                    <code>{symbol.name}</code>
-                  </span>
-                  {symbol.kind ? (
-                    <span className="tool-call-lsp-kind-badge">
-                      {symbol.kind}
-                    </span>
-                  ) : null}
-                  {symbol.detail ? (
-                    <span
-                      className="tool-call-lsp-symbol-detail"
-                      title={symbol.detail}
-                    >
-                      {symbol.detail}
-                    </span>
-                  ) : null}
-                  {symbol.filePath ? (
-                    <span
-                      className="tool-call-lsp-symbol-path"
-                      title={symbol.filePath}
-                    >
-                      {getFileName(symbol.filePath)}
-                      {symbol.line !== undefined && symbol.line > 0
-                        ? `:${symbol.line}:${symbol.column ?? 0}`
-                        : ""}
-                    </span>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="tool-call-codelens-no-results">
-              <XCircle size={14} aria-hidden="true" />
-              <span>{t("toolCall.lsp.noSymbols")}</span>
-            </div>
-          )
-        ) : null}
-
-        {/* Diagnostics view（单文件） */}
-        {parsedResult.type === "diagnostics" ? (
-          <div className="tool-call-lsp-diag-list">
-            {parsedResult.summary ? (
-              <div className="tool-call-lsp-diag-summary">
-                {parsedResult.summary}
-              </div>
-            ) : null}
-            {parsedResult.diagnostics.length > 0 ? (
-              parsedResult.diagnostics.map((diag, idx) => (
-                <div
-                  key={`${diag.line}-${diag.column}-${idx}`}
-                  className={`tool-call-lsp-diag-item severity-${diag.severity ?? "unknown"}`}
-                >
-                  <span className="tool-call-lsp-diag-sev">
-                    {diag.severity ?? "?"}
-                  </span>
-                  <span className="tool-call-lsp-diag-loc">
-                    <Hash size={9} aria-hidden="true" />
-                    {diag.line}:{diag.column}
-                  </span>
-                  <span
-                    className="tool-call-lsp-diag-message"
-                    title={diag.message}
-                  >
-                    {truncateText(diag.message, 200)}
-                  </span>
-                  {diag.source ? (
-                    <span className="tool-call-lsp-diag-source">
-                      {diag.source}
-                      {diag.code ? ` ${diag.code}` : ""}
-                    </span>
-                  ) : null}
-                </div>
-              ))
-            ) : (
-              <div className="tool-call-codelens-no-results">
-                <CheckCircle2 size={14} aria-hidden="true" />
-                <span>{t("toolCall.lsp.noDiagnostics")}</span>
-              </div>
-            )}
-          </div>
-        ) : null}
-
-        {/* Diagnostics view（批量） */}
-        {parsedResult.type === "diagnostics-batch" ? (
-          <div className="tool-call-lsp-diag-batch">
-            {parsedResult.files.map((file, idx) => (
-              <div
-                key={`${file.filePath}-${idx}`}
-                className="tool-call-lsp-diag-file"
-              >
-                <div className="tool-call-lsp-diag-file-header">
-                  <FileCode size={11} aria-hidden="true" />
-                  <span
-                    className="tool-call-lsp-diag-file-name"
-                    title={file.filePath}
-                  >
-                    {getFileName(file.filePath)}
-                  </span>
-                  {file.error ? (
-                    <span className="tool-call-lsp-diag-file-error">
-                      {truncateText(file.error, 120)}
-                    </span>
-                  ) : file.summary ? (
-                    <span className="tool-call-lsp-diag-file-summary">
-                      {file.summary}
-                    </span>
-                  ) : null}
-                </div>
-                {file.diagnostics && file.diagnostics.length > 0 ? (
-                  <div className="tool-call-lsp-diag-list">
-                    {file.diagnostics.map((diag, diagIdx) => (
-                      <div
-                        key={`${diag.line}-${diag.column}-${diagIdx}`}
-                        className={`tool-call-lsp-diag-item severity-${diag.severity ?? "unknown"}`}
-                      >
-                        <span className="tool-call-lsp-diag-sev">
-                          {diag.severity ?? "?"}
-                        </span>
-                        <span className="tool-call-lsp-diag-loc">
-                          <Hash size={9} aria-hidden="true" />
-                          {diag.line}:{diag.column}
-                        </span>
-                        <span
-                          className="tool-call-lsp-diag-message"
-                          title={diag.message}
-                        >
-                          {truncateText(diag.message, 200)}
-                        </span>
-                        {diag.source ? (
-                          <span className="tool-call-lsp-diag-source">
-                            {diag.source}
-                            {diag.code ? ` ${diag.code}` : ""}
+                            {getFileName(cand.filePath)}
                           </span>
+                          <span className="tool-call-lsp-ambiguous-loc">
+                            <Hash size={9} aria-hidden="true" />
+                            {cand.line}:{cand.column}
+                          </span>
+                          {cand.container ? (
+                            <span className="tool-call-lsp-ambiguous-container">
+                              ({cand.container})
+                            </span>
+                          ) : null}
+                        </div>
+                        {cand.preview ? (
+                          <pre className="tool-call-lsp-ambiguous-preview">
+                            <code>{cand.preview}</code>
+                          </pre>
                         ) : null}
                       </div>
                     ))}
                   </div>
                 ) : null}
               </div>
-            ))}
-          </div>
-        ) : null}
+            ) : null}
 
-        {/* Call hierarchy view */}
-        {parsedResult.type === "call-hierarchy" ? (
-          parsedResult.incoming.length > 0 ||
-          parsedResult.outgoing.length > 0 ? (
-            <div className="tool-call-lsp-hierarchy">
-              {parsedResult.incoming.length > 0 ? (
-                <div className="tool-call-lsp-hierarchy-section">
-                  <div className="tool-call-lsp-hierarchy-title">
-                    <ArrowUp size={11} aria-hidden="true" />
-                    {t("toolCall.lsp.callers")}
-                  </div>
-                  {parsedResult.incoming.map((call, idx) => (
-                    <div
-                      key={`in-${idx}`}
-                      className="tool-call-lsp-hierarchy-item"
-                    >
-                      <code className="tool-call-lsp-hierarchy-name">
-                        {call.caller?.name ?? "?"}
-                      </code>
-                      {call.caller?.kind ? (
-                        <span className="tool-call-lsp-kind-badge">
-                          {call.caller.kind}
-                        </span>
-                      ) : null}
-                      <span className="tool-call-lsp-hierarchy-loc">
-                        {call.caller?.filePath
-                          ? `${getFileName(call.caller.filePath)}:${call.caller.line ?? 0}`
-                          : ""}
-                      </span>
-                      <span className="tool-call-lsp-hierarchy-sites">
-                        {t("toolCall.lsp.callSites", {
-                          values: { count: call.callSites.length },
-                        })}
-                      </span>
+            {/* Completion view */}
+            {parsedResult.type === "completion" ? (
+              parsedResult.items.length > 0 ? (
+                <div className="tool-call-lsp-completion-list">
+                  {parsedResult.isIncomplete ? (
+                    <div className="tool-call-lsp-incomplete-note">
+                      {t("toolCall.lsp.incomplete")}
                     </div>
-                  ))}
-                </div>
-              ) : null}
-              {parsedResult.outgoing.length > 0 ? (
-                <div className="tool-call-lsp-hierarchy-section">
-                  <div className="tool-call-lsp-hierarchy-title">
-                    <ArrowDown size={11} aria-hidden="true" />
-                    {t("toolCall.lsp.callees")}
-                  </div>
-                  {parsedResult.outgoing.map((call, idx) => (
+                  ) : null}
+                  {parsedResult.items.map((item, idx) => (
                     <div
-                      key={`out-${idx}`}
-                      className="tool-call-lsp-hierarchy-item"
+                      key={`${item.label}-${idx}`}
+                      className="tool-call-lsp-completion-item"
                     >
-                      <code className="tool-call-lsp-hierarchy-name">
-                        {call.callee?.name ?? "?"}
-                      </code>
-                      {call.callee?.kind ? (
-                        <span className="tool-call-lsp-kind-badge">
-                          {call.callee.kind}
-                        </span>
-                      ) : null}
-                      <span className="tool-call-lsp-hierarchy-loc">
-                        {call.callee?.filePath
-                          ? `${getFileName(call.callee.filePath)}:${call.callee.line ?? 0}`
-                          : ""}
+                      <span className="tool-call-lsp-completion-label">
+                        <ListPlus size={11} aria-hidden="true" />
+                        <code>{item.label}</code>
                       </span>
-                      <span className="tool-call-lsp-hierarchy-sites">
-                        {t("toolCall.lsp.callSites", {
-                          values: { count: call.callSites.length },
-                        })}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          ) : (
-            <div className="tool-call-codelens-no-results">
-              <XCircle size={14} aria-hidden="true" />
-              <span>{t("toolCall.lsp.noHierarchy")}</span>
-            </div>
-          )
-        ) : null}
-
-        {/* Type hierarchy view */}
-        {parsedResult.type === "type-hierarchy" ? (
-          parsedResult.supertypes.length > 0 ||
-          parsedResult.subtypes.length > 0 ? (
-            <div className="tool-call-lsp-hierarchy">
-              {parsedResult.supertypes.length > 0 ? (
-                <div className="tool-call-lsp-hierarchy-section">
-                  <div className="tool-call-lsp-hierarchy-title">
-                    <ArrowUp size={11} aria-hidden="true" />
-                    {t("toolCall.lsp.supertypes")}
-                  </div>
-                  {parsedResult.supertypes.map((item, idx) => (
-                    <div
-                      key={`sup-${idx}`}
-                      className="tool-call-lsp-hierarchy-item"
-                    >
-                      <code className="tool-call-lsp-hierarchy-name">
-                        {item.name}
-                      </code>
                       {item.kind ? (
                         <span className="tool-call-lsp-kind-badge">
                           {item.kind}
                         </span>
                       ) : null}
-                      <span className="tool-call-lsp-hierarchy-loc">
-                        {item.filePath
-                          ? `${getFileName(item.filePath)}:${item.line ?? 0}`
-                          : ""}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-              {parsedResult.subtypes.length > 0 ? (
-                <div className="tool-call-lsp-hierarchy-section">
-                  <div className="tool-call-lsp-hierarchy-title">
-                    <ArrowDown size={11} aria-hidden="true" />
-                    {t("toolCall.lsp.subtypes")}
-                  </div>
-                  {parsedResult.subtypes.map((item, idx) => (
-                    <div
-                      key={`sub-${idx}`}
-                      className="tool-call-lsp-hierarchy-item"
-                    >
-                      <code className="tool-call-lsp-hierarchy-name">
-                        {item.name}
-                      </code>
-                      {item.kind ? (
-                        <span className="tool-call-lsp-kind-badge">
-                          {item.kind}
+                      {item.detail ? (
+                        <span
+                          className="tool-call-lsp-completion-detail"
+                          title={item.detail}
+                        >
+                          {item.detail}
                         </span>
                       ) : null}
-                      <span className="tool-call-lsp-hierarchy-loc">
-                        {item.filePath
-                          ? `${getFileName(item.filePath)}:${item.line ?? 0}`
-                          : ""}
-                      </span>
+                      {item.documentation ? (
+                        <span
+                          className="tool-call-lsp-completion-doc"
+                          title={item.documentation}
+                        >
+                          {truncateText(item.documentation)}
+                        </span>
+                      ) : null}
                     </div>
                   ))}
                 </div>
-              ) : null}
-            </div>
-          ) : (
-            <div className="tool-call-codelens-no-results">
-              <XCircle size={14} aria-hidden="true" />
-              <span>{t("toolCall.lsp.noHierarchy")}</span>
-            </div>
-          )
-        ) : null}
-
-        {/* Hover view */}
-        {parsedResult.type === "hover" ? (
-          <div className="tool-call-section">
-            <span className="tool-call-section-label">
-              {t("toolCall.lsp.result")}
-            </span>
-            <pre
-              className="tool-call-section-pre"
-              style={{
-                whiteSpace: "pre-wrap",
-                maxHeight: 320,
-                overflowY: "auto",
-              }}
-            >
-              {parsedResult.contents}
-            </pre>
-          </div>
-        ) : null}
-
-        {/* References view */}
-        {parsedResult.type === "references" ? (
-          parsedResult.references.length > 0 ? (
-            <div className="tool-call-codelens-ref-list">
-              {parsedResult.references.map((ref, idx) => (
-                <div
-                  key={`${ref.filePath}-${ref.line}-${idx}`}
-                  className="tool-call-codelens-ref-match"
-                  style={{ padding: "4px 8px" }}
-                >
-                  <span className="tool-call-codelens-ref-loc">
-                    <Hash size={9} aria-hidden="true" />
-                    {ref.filePath ? `${getFileName(ref.filePath)}:` : ""}
-                    {ref.line}:{ref.column}
-                  </span>
-                  {ref.context ? (
-                    <code
-                      className="tool-call-codelens-ref-access"
-                      style={{ marginLeft: 8 }}
-                    >
-                      {ref.context}
-                    </code>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="tool-call-codelens-no-results">
-              <XCircle size={14} aria-hidden="true" />
-              <span>{t("toolCall.lsp.noReferences")}</span>
-            </div>
-          )
-        ) : null}
-
-        {/* Symbols view */}
-        {parsedResult.type === "symbols" ? (
-          parsedResult.symbols.length > 0 ? (
-            <div className="tool-call-lsp-symbol-list">
-              {parsedResult.symbols.map((symbol, idx) => (
-                <div
-                  key={`${symbol.name}-${idx}`}
-                  className="tool-call-lsp-symbol-item"
-                >
-                  <span className="tool-call-lsp-symbol-name">
-                    <ListTree size={11} aria-hidden="true" />
-                    <code>{symbol.name}</code>
-                  </span>
-                  {symbol.kind ? (
-                    <span className="tool-call-lsp-kind-badge">
-                      {symbol.kind}
-                    </span>
-                  ) : null}
-                  {symbol.detail ? (
-                    <span
-                      className="tool-call-lsp-symbol-detail"
-                      title={symbol.detail}
-                    >
-                      {symbol.detail}
-                    </span>
-                  ) : null}
-                  <span className="tool-call-lsp-symbol-path">
-                    {symbol.range.start.line}:{symbol.range.start.column}
+              ) : (
+                <div className="tool-call-codelens-no-results">
+                  <XCircle size={14} aria-hidden="true" />
+                  <span>
+                    {t(
+                      resultMeta.status === "partial"
+                        ? "toolCall.lsp.incompleteEmpty"
+                        : "toolCall.lsp.noCompletions",
+                    )}
                   </span>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div className="tool-call-codelens-no-results">
-              <XCircle size={14} aria-hidden="true" />
-              <span>{t("toolCall.lsp.noSymbols")}</span>
-            </div>
-          )
-        ) : null}
+              )
+            ) : null}
 
-        {/* Vulncheck view */}
-        {parsedResult.type === "vulncheck" ? (
-          parsedResult.findings.length > 0 ? (
-            <div className="tool-call-lsp-action-list">
-              {parsedResult.summary ? (
-                <div className="tool-call-lsp-diag-summary">
-                  {parsedResult.summary}
-                </div>
-              ) : null}
-              {parsedResult.findings.map((finding) => (
-                <div key={finding.id} className="tool-call-lsp-action-item">
-                  <span className="tool-call-lsp-action-title">
-                    <ShieldAlert size={11} aria-hidden="true" />
-                    <code>{finding.id}</code>
-                  </span>
-                  {finding.affectedPackages.length > 0 ? (
-                    <span className="tool-call-lsp-kind-badge">
-                      {finding.affectedPackages.join(", ")}
-                    </span>
-                  ) : null}
-                  {finding.details ? (
+            {/* Rename view */}
+            {parsedResult.type === "rename" ? (
+              parsedResult.files.length > 0 ? (
+                <div className="tool-call-lsp-rename-list">
+                  {parsedResult.files.map((file, fileIdx) => (
                     <div
-                      className="tool-call-lsp-completion-doc"
-                      title={finding.details}
+                      key={`${file.uri}-${fileIdx}`}
+                      className="tool-call-lsp-rename-file"
                     >
-                      {truncateText(finding.details, 200)}
+                      <div
+                        className="tool-call-lsp-rename-file-header"
+                        title={uriToPath(file.uri)}
+                      >
+                        <FileCode size={12} aria-hidden="true" />
+                        <span className="tool-call-lsp-rename-file-name">
+                          {getFileName(uriToPath(file.uri))}
+                        </span>
+                        <span className="tool-call-lsp-rename-file-path">
+                          {uriToPath(file.uri)}
+                        </span>
+                        {file.applied !== undefined ? (
+                          <span
+                            className={`tool-call-lsp-rename-applied ${
+                              file.applied ? "applied" : "skipped"
+                            }`}
+                          >
+                            {file.applied
+                              ? t("toolCall.lsp.renameApplied")
+                              : t(
+                                  resultMeta.status === "partial"
+                                    ? "toolCall.lsp.incompleteEmpty"
+                                    : "toolCall.lsp.noChanges",
+                                )}
+                          </span>
+                        ) : (
+                          <span className="tool-call-codelens-ref-file-count">
+                            {t("toolCall.lsp.editCount", {
+                              values: { count: file.editCount },
+                            })}
+                          </span>
+                        )}
+                      </div>
+                      {file.edits && file.edits.length > 0 ? (
+                        <div className="tool-call-lsp-edit-list">
+                          {file.edits.map((edit, editIdx) => (
+                            <div
+                              key={`${edit.startLine}-${edit.startColumn}-${editIdx}`}
+                              className="tool-call-lsp-edit-row"
+                            >
+                              <span className="tool-call-lsp-edit-loc">
+                                <Hash size={9} aria-hidden="true" />
+                                {edit.startLine}:{edit.startColumn} →{" "}
+                                {edit.endLine}:{edit.endColumn}
+                              </span>
+                              <code
+                                className="tool-call-lsp-edit-text"
+                                title={edit.newText}
+                              >
+                                {truncateText(edit.newText, 160)}
+                              </code>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : parsedResult.safety.error ||
+                parsedResult.safety.appliedFiles.length > 0 ||
+                parsedResult.safety.requiresNewPreview ||
+                resultMeta.status === "failed" ? null : (
+                <div className="tool-call-codelens-no-results">
+                  <XCircle size={14} aria-hidden="true" />
+                  <span>
+                    {t(
+                      resultMeta.status === "partial"
+                        ? "toolCall.lsp.incompleteEmpty"
+                        : "toolCall.lsp.noChanges",
+                    )}
+                  </span>
+                </div>
+              )
+            ) : null}
+
+            {/* Signature help view */}
+            {parsedResult.type === "signature-help" ? (
+              parsedResult.signatures.length > 0 ? (
+                <div className="tool-call-lsp-signature-list">
+                  {parsedResult.signatures.map((signature, sigIdx) => {
+                    const isActive =
+                      parsedResult.activeSignature === sigIdx ||
+                      (parsedResult.activeSignature === null && sigIdx === 0);
+                    return (
+                      <div
+                        key={`${signature.label}-${sigIdx}`}
+                        className={`tool-call-lsp-signature-item ${
+                          isActive ? "active" : ""
+                        }`}
+                      >
+                        <div className="tool-call-lsp-signature-label">
+                          <Sigma size={12} aria-hidden="true" />
+                          <code>{signature.label}</code>
+                          {isActive ? (
+                            <span className="tool-call-lsp-active-badge">
+                              {t("toolCall.lsp.activeSignature")}
+                            </span>
+                          ) : null}
+                        </div>
+                        {signature.documentation ? (
+                          <div
+                            className="tool-call-lsp-signature-doc"
+                            title={signature.documentation}
+                          >
+                            {truncateText(signature.documentation)}
+                          </div>
+                        ) : null}
+                        {signature.parameters.length > 0 ? (
+                          <div className="tool-call-lsp-param-list">
+                            {signature.parameters.map((param, paramIdx) => {
+                              const isActiveParam =
+                                isActive &&
+                                (parsedResult.activeParameter === paramIdx ||
+                                  (parsedResult.activeParameter === null &&
+                                    paramIdx === 0));
+                              return (
+                                <span
+                                  key={`${param.label}-${paramIdx}`}
+                                  className={`tool-call-lsp-param-chip ${
+                                    isActiveParam ? "active" : ""
+                                  }`}
+                                  title={param.documentation}
+                                >
+                                  {param.label || `#${paramIdx + 1}`}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="tool-call-codelens-no-results">
+                  <XCircle size={14} aria-hidden="true" />
+                  <span>
+                    {t(
+                      resultMeta.status === "partial"
+                        ? "toolCall.lsp.incompleteEmpty"
+                        : "toolCall.lsp.noSignatures",
+                    )}
+                  </span>
+                </div>
+              )
+            ) : null}
+
+            {/* Code action view */}
+            {parsedResult.type === "code-action" ? (
+              parsedResult.actions.length > 0 ||
+              parsedResult.applied.length > 0 ||
+              parsedResult.deferred.length > 0 ? (
+                <div className="tool-call-lsp-action-list">
+                  {parsedResult.actions.map((action, idx) => {
+                    const appliedAction = parsedResult.applied.find(
+                      (applied) => applied.title === action.title,
+                    );
+                    return (
+                      <div
+                        key={`${action.title}-${idx}`}
+                        className="tool-call-lsp-action-item"
+                      >
+                        <span className="tool-call-lsp-action-title">
+                          <Wand2 size={11} aria-hidden="true" />
+                          {action.title}
+                        </span>
+                        {action.kind ? (
+                          <span className="tool-call-lsp-kind-badge">
+                            {action.kind}
+                          </span>
+                        ) : null}
+                        {action.isPreferred ? (
+                          <span className="tool-call-lsp-preferred-badge">
+                            {t("toolCall.lsp.preferred")}
+                          </span>
+                        ) : null}
+                        {action.hasEdit ? (
+                          <span className="tool-call-lsp-edit-badge">
+                            {t("toolCall.lsp.editsAvailable")}
+                          </span>
+                        ) : null}
+                        {action.command ? (
+                          <span
+                            className="tool-call-lsp-command-badge"
+                            title={action.command.command}
+                          >
+                            <ShieldAlert size={10} aria-hidden="true" />
+                            {t("toolCall.lsp.commandNotExecuted")}
+                          </span>
+                        ) : null}
+                        {appliedAction ? (
+                          <span className="tool-call-lsp-applied-badge">
+                            <CheckCircle2 size={10} aria-hidden="true" />
+                            {t("toolCall.lsp.changeCount", {
+                              values: { count: appliedAction.changeCount },
+                            })}
+                          </span>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                  {parsedResult.applied.length > 0 ? (
+                    <div className="tool-call-lsp-result-section">
+                      <span className="tool-call-lsp-section-label">
+                        <CheckCircle2 size={11} aria-hidden="true" />
+                        {t("toolCall.lsp.appliedSection")}
+                      </span>
+                      {parsedResult.applied.map((action, idx) => (
+                        <div
+                          key={`applied-${action.title}-${idx}`}
+                          className="tool-call-lsp-action-item"
+                        >
+                          <span className="tool-call-lsp-action-title">
+                            <CheckCircle2 size={11} aria-hidden="true" />
+                            {action.title}
+                          </span>
+                          {action.kind ? (
+                            <span className="tool-call-lsp-kind-badge">
+                              {action.kind}
+                            </span>
+                          ) : null}
+                          <span className="tool-call-lsp-applied-badge">
+                            {t("toolCall.lsp.changeCount", {
+                              values: { count: action.changeCount },
+                            })}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {parsedResult.deferred.length > 0 ? (
+                    <div className="tool-call-lsp-result-section">
+                      <span className="tool-call-lsp-section-label">
+                        <ShieldAlert size={11} aria-hidden="true" />
+                        {t("toolCall.lsp.deferredSection")}
+                      </span>
+                      {parsedResult.deferred.map((item, idx) => (
+                        <div
+                          key={`deferred-${item.title}-${idx}`}
+                          className="tool-call-lsp-action-item"
+                        >
+                          <span className="tool-call-lsp-action-title">
+                            <ShieldAlert size={11} aria-hidden="true" />
+                            {item.title}
+                          </span>
+                          {item.note ? (
+                            <span className="tool-call-lsp-command-badge">
+                              {item.note}
+                            </span>
+                          ) : (
+                            <span className="tool-call-lsp-command-badge">
+                              {t("toolCall.lsp.commandNotExecuted")}
+                            </span>
+                          )}
+                          {item.command ? (
+                            <code
+                              className="tool-call-lsp-deferred-command"
+                              title={item.command}
+                            >
+                              {item.command}
+                            </code>
+                          ) : null}
+                        </div>
+                      ))}
                     </div>
                   ) : null}
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div className="tool-call-codelens-no-results">
-              <CheckCircle2 size={14} aria-hidden="true" />
-              <span>{t("toolCall.lsp.noVulns")}</span>
-            </div>
-          )
-        ) : null}
-
-        {/* Execute command view */}
-        {parsedResult.type === "execute-command" ? (
-          parsedResult.files && parsedResult.files.length > 0 ? (
-            <div className="tool-call-lsp-rename-list">
-              {parsedResult.files.map((file, fileIdx) => (
-                <div
-                  key={`${file.uri}-${fileIdx}`}
-                  className="tool-call-lsp-rename-file"
-                >
-                  <div
-                    className="tool-call-lsp-rename-file-header"
-                    title={uriToPath(file.uri)}
-                  >
-                    <FileCode size={12} aria-hidden="true" />
-                    <span className="tool-call-lsp-rename-file-name">
-                      {getFileName(uriToPath(file.uri))}
-                    </span>
-                    <span className="tool-call-codelens-ref-file-count">
-                      {t("toolCall.lsp.editCount", {
-                        values: { count: file.editCount },
-                      })}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : parsedResult.resultText ? (
-            <div className="tool-call-section">
-              <pre className="tool-call-section-pre">
-                {parsedResult.resultText}
-              </pre>
-            </div>
-          ) : (
-            <div className="tool-call-codelens-no-results">
-              <CheckCircle2 size={14} aria-hidden="true" />
-              <span>{t("toolCall.lsp.renameApplied")}</span>
-            </div>
-          )
-        ) : null}
-
-        {/* Raw result fallback */}
-        {parsedResult.type === "raw" ? (
-          <section className="tool-call-section">
-            <span className="tool-call-section-label">
-              {t("toolCall.lsp.result")}
-            </span>
-            <pre className="tool-call-section-pre">{parsedResult.text}</pre>
-          </section>
-        ) : null}
-
-        {/* Pending / running state */}
-        {parsedResult.type === "empty" ? (
-          isRunning ? (
-            <div className="tool-call-lsp-progress-card">
-              <div className="tool-call-lsp-progress-header">
-                <Loader2
-                  className="tool-call-icon-spinning tool-call-lsp-progress-spinner"
-                  size={14}
-                  aria-hidden="true"
-                />
-                <div className="tool-call-lsp-progress-text">
-                  <span className="tool-call-lsp-progress-phase">
-                    {phaseDescription}
+              ) : (
+                <div className="tool-call-codelens-no-results">
+                  <XCircle size={14} aria-hidden="true" />
+                  <span>
+                    {t(
+                      resultMeta.status === "partial"
+                        ? "toolCall.lsp.incompleteEmpty"
+                        : "toolCall.lsp.noActions",
+                    )}
                   </span>
-                  {displayName ? (
-                    <span
-                      className="tool-call-lsp-progress-detail"
-                      title={filePath || displayName}
+                </div>
+              )
+            ) : null}
+
+            {/* Definition jump view（goto definition / type-definition / implementation） */}
+            {parsedResult.type === "definition-jump" ? (
+              parsedResult.definitions.length > 0 ? (
+                <div className="tool-call-lsp-def-list">
+                  {parsedResult.definitions.map((def, idx) => (
+                    <div
+                      key={`${def.filePath}-${def.line}-${idx}`}
+                      className="tool-call-lsp-def-item"
                     >
-                      {displayName}
-                    </span>
+                      <div
+                        className="tool-call-lsp-def-header"
+                        title={def.filePath}
+                      >
+                        <Crosshair size={11} aria-hidden="true" />
+                        <span className="tool-call-lsp-def-name">
+                          {getFileName(def.filePath)}
+                        </span>
+                        <span className="tool-call-lsp-def-path">
+                          {def.filePath}
+                        </span>
+                        <span className="tool-call-codelens-ref-file-count">
+                          <Hash size={9} aria-hidden="true" />
+                          {def.line}:{def.column}
+                          {def.endLine !== undefined &&
+                          def.endColumn !== undefined
+                            ? ` → ${def.endLine}:${def.endColumn}`
+                            : ""}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="tool-call-codelens-no-results">
+                  <XCircle size={14} aria-hidden="true" />
+                  <span>
+                    {t(
+                      resultMeta.status === "partial"
+                        ? "toolCall.lsp.incompleteEmpty"
+                        : "toolCall.lsp.noDefinitions",
+                    )}
+                  </span>
+                </div>
+              )
+            ) : null}
+
+            {/* Workspace symbols view */}
+            {parsedResult.type === "workspace-symbols" ? (
+              parsedResult.symbols.length > 0 ? (
+                <div className="tool-call-lsp-symbol-list">
+                  {parsedResult.symbols.map((symbol, idx) => (
+                    <div
+                      key={`${symbol.name}-${symbol.filePath ?? ""}-${symbol.line ?? 0}-${idx}`}
+                      className="tool-call-lsp-symbol-item"
+                    >
+                      <span className="tool-call-lsp-symbol-name">
+                        <ScanSearch size={11} aria-hidden="true" />
+                        <code>{symbol.name}</code>
+                      </span>
+                      {symbol.kind ? (
+                        <span className="tool-call-lsp-kind-badge">
+                          {symbol.kind}
+                        </span>
+                      ) : null}
+                      {symbol.detail ? (
+                        <span
+                          className="tool-call-lsp-symbol-detail"
+                          title={symbol.detail}
+                        >
+                          {symbol.detail}
+                        </span>
+                      ) : null}
+                      {symbol.filePath ? (
+                        <span
+                          className="tool-call-lsp-symbol-path"
+                          title={symbol.filePath}
+                        >
+                          {getFileName(symbol.filePath)}
+                          {symbol.line !== undefined && symbol.line > 0
+                            ? `:${symbol.line}:${symbol.column ?? 0}`
+                            : ""}
+                        </span>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="tool-call-codelens-no-results">
+                  <XCircle size={14} aria-hidden="true" />
+                  <span>
+                    {t(
+                      resultMeta.status === "partial"
+                        ? "toolCall.lsp.incompleteEmpty"
+                        : "toolCall.lsp.noSymbols",
+                    )}
+                  </span>
+                </div>
+              )
+            ) : null}
+
+            {/* Call hierarchy view */}
+            {parsedResult.type === "call-hierarchy" ? (
+              parsedResult.incoming.length > 0 ||
+              parsedResult.outgoing.length > 0 ? (
+                <div className="tool-call-lsp-hierarchy">
+                  {parsedResult.incoming.length > 0 ? (
+                    <div className="tool-call-lsp-hierarchy-section">
+                      <div className="tool-call-lsp-hierarchy-title">
+                        <ArrowUp size={11} aria-hidden="true" />
+                        {t("toolCall.lsp.callers")}
+                      </div>
+                      {parsedResult.incoming.map((call, idx) => (
+                        <div
+                          key={`in-${idx}`}
+                          className="tool-call-lsp-hierarchy-item"
+                        >
+                          <code className="tool-call-lsp-hierarchy-name">
+                            {call.caller?.name ?? "?"}
+                          </code>
+                          {call.caller?.kind ? (
+                            <span className="tool-call-lsp-kind-badge">
+                              {call.caller.kind}
+                            </span>
+                          ) : null}
+                          <span className="tool-call-lsp-hierarchy-loc">
+                            {call.caller?.filePath
+                              ? `${getFileName(call.caller.filePath)}:${call.caller.line ?? 0}`
+                              : ""}
+                          </span>
+                          <span className="tool-call-lsp-hierarchy-sites">
+                            {t("toolCall.lsp.callSites", {
+                              values: { count: call.callSites.length },
+                            })}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {parsedResult.outgoing.length > 0 ? (
+                    <div className="tool-call-lsp-hierarchy-section">
+                      <div className="tool-call-lsp-hierarchy-title">
+                        <ArrowDown size={11} aria-hidden="true" />
+                        {t("toolCall.lsp.callees")}
+                      </div>
+                      {parsedResult.outgoing.map((call, idx) => (
+                        <div
+                          key={`out-${idx}`}
+                          className="tool-call-lsp-hierarchy-item"
+                        >
+                          <code className="tool-call-lsp-hierarchy-name">
+                            {call.callee?.name ?? "?"}
+                          </code>
+                          {call.callee?.kind ? (
+                            <span className="tool-call-lsp-kind-badge">
+                              {call.callee.kind}
+                            </span>
+                          ) : null}
+                          <span className="tool-call-lsp-hierarchy-loc">
+                            {call.callee?.filePath
+                              ? `${getFileName(call.callee.filePath)}:${call.callee.line ?? 0}`
+                              : ""}
+                          </span>
+                          <span className="tool-call-lsp-hierarchy-sites">
+                            {t("toolCall.lsp.callSites", {
+                              values: { count: call.callSites.length },
+                            })}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   ) : null}
                 </div>
-                <div className="tool-call-lsp-progress-meta">
-                  <span
-                    className="tool-call-lsp-progress-elapsed"
-                    title={t("toolCall.lsp.progress.elapsedTitle")}
-                  >
-                    <Clock size={11} aria-hidden="true" />
-                    {(elapsedMs / 1000).toFixed(1)}s
-                  </span>
-                  <span
-                    className="tool-call-lsp-progress-timeout"
-                    title={t("toolCall.lsp.progress.timeoutHint", {
-                      values: { seconds: timeoutSec },
-                    })}
-                  >
-                    <Shield size={11} aria-hidden="true" />
-                    {timeoutSec}s
+              ) : (
+                <div className="tool-call-codelens-no-results">
+                  <XCircle size={14} aria-hidden="true" />
+                  <span>
+                    {t(
+                      resultMeta.status === "partial"
+                        ? "toolCall.lsp.incompleteEmpty"
+                        : "toolCall.lsp.noHierarchy",
+                    )}
                   </span>
                 </div>
+              )
+            ) : null}
+
+            {/* Type hierarchy view */}
+            {parsedResult.type === "type-hierarchy" ? (
+              parsedResult.supertypes.length > 0 ||
+              parsedResult.subtypes.length > 0 ? (
+                <div className="tool-call-lsp-hierarchy">
+                  {parsedResult.supertypes.length > 0 ? (
+                    <div className="tool-call-lsp-hierarchy-section">
+                      <div className="tool-call-lsp-hierarchy-title">
+                        <ArrowUp size={11} aria-hidden="true" />
+                        {t("toolCall.lsp.supertypes")}
+                      </div>
+                      {parsedResult.supertypes.map((item, idx) => (
+                        <div
+                          key={`sup-${idx}`}
+                          className="tool-call-lsp-hierarchy-item"
+                        >
+                          <code className="tool-call-lsp-hierarchy-name">
+                            {item.name}
+                          </code>
+                          {item.kind ? (
+                            <span className="tool-call-lsp-kind-badge">
+                              {item.kind}
+                            </span>
+                          ) : null}
+                          <span className="tool-call-lsp-hierarchy-loc">
+                            {item.filePath
+                              ? `${getFileName(item.filePath)}:${item.line ?? 0}`
+                              : ""}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {parsedResult.subtypes.length > 0 ? (
+                    <div className="tool-call-lsp-hierarchy-section">
+                      <div className="tool-call-lsp-hierarchy-title">
+                        <ArrowDown size={11} aria-hidden="true" />
+                        {t("toolCall.lsp.subtypes")}
+                      </div>
+                      {parsedResult.subtypes.map((item, idx) => (
+                        <div
+                          key={`sub-${idx}`}
+                          className="tool-call-lsp-hierarchy-item"
+                        >
+                          <code className="tool-call-lsp-hierarchy-name">
+                            {item.name}
+                          </code>
+                          {item.kind ? (
+                            <span className="tool-call-lsp-kind-badge">
+                              {item.kind}
+                            </span>
+                          ) : null}
+                          <span className="tool-call-lsp-hierarchy-loc">
+                            {item.filePath
+                              ? `${getFileName(item.filePath)}:${item.line ?? 0}`
+                              : ""}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="tool-call-codelens-no-results">
+                  <XCircle size={14} aria-hidden="true" />
+                  <span>
+                    {t(
+                      resultMeta.status === "partial"
+                        ? "toolCall.lsp.incompleteEmpty"
+                        : "toolCall.lsp.noHierarchy",
+                    )}
+                  </span>
+                </div>
+              )
+            ) : null}
+
+            {/* Hover view */}
+            {parsedResult.type === "hover" ? (
+              <div className="tool-call-section">
+                <span className="tool-call-section-label">
+                  {t("toolCall.lsp.result")}
+                </span>
+                <pre
+                  className="tool-call-section-pre"
+                  style={{
+                    whiteSpace: "pre-wrap",
+                    maxHeight: 320,
+                    overflowY: "auto",
+                  }}
+                >
+                  {parsedResult.contents}
+                </pre>
               </div>
-              <div className="tool-call-lsp-progress-track">
-                <div className="tool-call-lsp-progress-bar" />
-              </div>
-            </div>
-          ) : (
-            <div className="tool-call-codelens-pending">
-              <ScanSearch size={14} aria-hidden="true" />
-              <span>{t("toolCall.lsp.waiting")}</span>
-            </div>
-          )
-        ) : null}
-      </div>
-    </ToolCallNode>
+            ) : null}
+
+            {/* References view */}
+            {parsedResult.type === "references" ? (
+              parsedResult.references.length > 0 ? (
+                <div className="tool-call-codelens-ref-list">
+                  {parsedResult.references.map((ref, idx) => (
+                    <div
+                      key={`${ref.filePath}-${ref.line}-${idx}`}
+                      className="tool-call-codelens-ref-match"
+                      style={{ padding: "4px 8px" }}
+                    >
+                      <span className="tool-call-codelens-ref-loc">
+                        <Hash size={9} aria-hidden="true" />
+                        {ref.filePath ? `${getFileName(ref.filePath)}:` : ""}
+                        {ref.line}:{ref.column}
+                      </span>
+                      {ref.context ? (
+                        <code
+                          className="tool-call-codelens-ref-access"
+                          style={{ marginLeft: 8 }}
+                        >
+                          {ref.context}
+                        </code>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="tool-call-codelens-no-results">
+                  <XCircle size={14} aria-hidden="true" />
+                  <span>
+                    {t(
+                      resultMeta.status === "partial"
+                        ? "toolCall.lsp.incompleteEmpty"
+                        : "toolCall.lsp.noReferences",
+                    )}
+                  </span>
+                </div>
+              )
+            ) : null}
+
+            {parsedResult.type === "symbols" &&
+              (parsedResult.symbols.length > 0 ? (
+                <LspSymbolTree nodes={parsedResult.symbols} />
+              ) : (
+                <p>
+                  {t(
+                    resultMeta.status === "partial"
+                      ? "toolCall.lsp.incompleteEmpty"
+                      : "toolCall.lsp.noSymbols",
+                  )}
+                </p>
+              ))}
+
+            {/* Vulncheck view */}
+            {parsedResult.type === "vulncheck" ? (
+              parsedResult.findings.length > 0 ? (
+                <div className="tool-call-lsp-action-list">
+                  {parsedResult.summary ? (
+                    <div className="tool-call-lsp-diag-summary">
+                      {parsedResult.summary}
+                    </div>
+                  ) : null}
+                  {parsedResult.findings.map((finding) => (
+                    <div key={finding.id} className="tool-call-lsp-action-item">
+                      <span className="tool-call-lsp-action-title">
+                        <ShieldAlert size={11} aria-hidden="true" />
+                        <code>{finding.id}</code>
+                      </span>
+                      {finding.affectedPackages.length > 0 ? (
+                        <span className="tool-call-lsp-kind-badge">
+                          {finding.affectedPackages.join(", ")}
+                        </span>
+                      ) : null}
+                      {finding.details ? (
+                        <div
+                          className="tool-call-lsp-completion-doc"
+                          title={finding.details}
+                        >
+                          {truncateText(finding.details, 200)}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="tool-call-codelens-no-results">
+                  <CheckCircle2 size={14} aria-hidden="true" />
+                  <span>
+                    {t(
+                      resultMeta.status === "partial"
+                        ? "toolCall.lsp.incompleteEmpty"
+                        : "toolCall.lsp.noVulns",
+                    )}
+                  </span>
+                </div>
+              )
+            ) : null}
+
+            {/* Execute command view */}
+            {parsedResult.type === "execute-command" ? (
+              parsedResult.files && parsedResult.files.length > 0 ? (
+                <div className="tool-call-lsp-rename-list">
+                  {parsedResult.files.map((file, fileIdx) => (
+                    <div
+                      key={`${file.uri}-${fileIdx}`}
+                      className="tool-call-lsp-rename-file"
+                    >
+                      <div
+                        className="tool-call-lsp-rename-file-header"
+                        title={uriToPath(file.uri)}
+                      >
+                        <FileCode size={12} aria-hidden="true" />
+                        <span className="tool-call-lsp-rename-file-name">
+                          {getFileName(uriToPath(file.uri))}
+                        </span>
+                        <span className="tool-call-codelens-ref-file-count">
+                          {t("toolCall.lsp.editCount", {
+                            values: { count: file.editCount },
+                          })}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : parsedResult.resultText ? (
+                <div className="tool-call-section">
+                  <pre className="tool-call-section-pre">
+                    {parsedResult.resultText}
+                  </pre>
+                </div>
+              ) : (
+                <div className="tool-call-codelens-no-results">
+                  <CheckCircle2 size={14} aria-hidden="true" />
+                  <span>
+                    {t(
+                      parsedResult.applied
+                        ? "toolCall.lsp.renameApplied"
+                        : "toolCall.lsp.noChanges",
+                    )}
+                  </span>
+                </div>
+              )
+            ) : null}
+
+            {/* Raw result fallback */}
+            {parsedResult.type === "raw" ? (
+              <section className="tool-call-section">
+                <span className="tool-call-section-label">
+                  {t("toolCall.lsp.result")}
+                </span>
+                <pre className="tool-call-section-pre">{parsedResult.text}</pre>
+              </section>
+            ) : null}
+          </>
+        )}
+      {/* Pending / running state */}
+      {parsedResult.type === "empty" ? (
+        isRunning ? (
+          <LspProgress
+            operation={operation}
+            startedAt={toolCall.startedAt}
+            displayName={displayName}
+          />
+        ) : (
+          <div className="tool-call-codelens-pending">
+            <ScanSearch size={14} aria-hidden="true" />
+            <span>
+              {t(
+                toolCall.status === "pending"
+                  ? "toolCall.lsp.waiting"
+                  : toolCall.status === "error"
+                    ? "toolCall.lsp.failedEmpty"
+                    : "toolCall.lsp.completedEmpty",
+              )}
+            </span>
+          </div>
+        )
+      ) : null}
+    </div>
   );
-};
+}
+
+function LspProgress({
+  operation,
+  startedAt,
+  displayName,
+}: {
+  operation: LspOperation | null;
+  startedAt?: number;
+  displayName?: string;
+}): React.JSX.Element {
+  const { t } = useI18n();
+  const isRunning = true;
+  // 运行耗时计算（每 200ms 刷新一次）
+  const [elapsedMs, setElapsedMs] = useState<number>(0);
+  useEffect(() => {
+    if (!isRunning) {
+      setElapsedMs(0);
+      return;
+    }
+    const start = startedAt ?? Date.now();
+    const update = () => {
+      setElapsedMs(Math.max(0, Date.now() - start));
+    };
+    update();
+    const timer = setInterval(update, 200);
+    return () => clearInterval(timer);
+  }, [isRunning, startedAt]);
+
+  const phaseDescription = useMemo(() => {
+    switch (operation) {
+      case "diagnostics":
+        return t("toolCall.lsp.progress.diagnostics");
+      case "workspace-diagnostics":
+        return t("toolCall.lsp.progress.workspaceDiagnostics");
+      case "workspace-symbols":
+        return t("toolCall.lsp.progress.workspaceSymbols");
+      case "symbols":
+        return t("toolCall.lsp.progress.symbols");
+      case "rename":
+        return t("toolCall.lsp.progress.rename");
+      case "code-action":
+        return t("toolCall.lsp.progress.codeAction");
+      case "execute-command":
+        return t("toolCall.lsp.progress.executeCommand");
+      case "call-hierarchy":
+        return t("toolCall.lsp.progress.callHierarchy");
+      case "type-hierarchy":
+        return t("toolCall.lsp.progress.typeHierarchy");
+      case "hover":
+        return t("toolCall.lsp.progress.hover");
+      case "goto":
+        return t("toolCall.lsp.progress.goto");
+      case "references":
+        return t("toolCall.lsp.progress.references");
+      case "vulncheck":
+        return t("toolCall.lsp.progress.vulncheck");
+      default:
+        return t("toolCall.lsp.progress.default");
+    }
+  }, [operation, t]);
+
+  return (
+    <div className="tool-call-lsp-progress-card">
+      <div className="tool-call-lsp-progress-header">
+        <Loader2
+          className="tool-call-icon-spinning tool-call-lsp-progress-spinner"
+          size={14}
+          aria-hidden="true"
+        />
+        <div className="tool-call-lsp-progress-text">
+          <span className="tool-call-lsp-progress-phase">
+            {phaseDescription}
+          </span>
+          {displayName ? (
+            <span className="tool-call-lsp-progress-detail" title={displayName}>
+              {displayName}
+            </span>
+          ) : null}
+        </div>
+        <div className="tool-call-lsp-progress-meta">
+          <span
+            className="tool-call-lsp-progress-elapsed"
+            title={t("toolCall.lsp.progress.elapsedTitle")}
+          >
+            <Clock size={11} aria-hidden="true" />
+            {(elapsedMs / 1000).toFixed(1)}s
+          </span>
+        </div>
+      </div>
+      <div className="tool-call-lsp-progress-track">
+        <div className="tool-call-lsp-progress-bar" />
+      </div>
+    </div>
+  );
+}

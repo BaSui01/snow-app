@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use lsp_types::{
-    CallHierarchyIncomingCall, CallHierarchyOutgoingCall, CodeActionOrCommand, Diagnostic,
+    CallHierarchyIncomingCall, CallHierarchyOutgoingCall, Diagnostic,
     Location, TextEdit, WorkspaceEdit,
 };
 use serde_json::{json, Value};
@@ -40,6 +40,8 @@ pub struct ServerSession {
     /// mainloop 完成标志（M5/R2.2）：mainloop 结束（进程退出/管道断开）置位，
     /// 状态快照与 get_or_start 据此判定 dead，消除「running 但请求全失败」僵尸态。
     pub main_loop_done: Arc<AtomicBool>,
+    /// mainloop 异步任务句柄：会话销毁或初始化失败时主动 abort，防后台管道悬空
+    pub mainloop_task: tokio::task::JoinHandle<()>,
     socket: async_lsp::ServerSocket,
     opened_files: HashMap<PathBuf, i32>, // 已打开文件 → 当前 LSP 版本
     /// 服务器是否声明 pull 诊断支持（initialize 能力，§8.1）。
@@ -56,6 +58,12 @@ pub struct ServerSession {
     ///（Windows Job Object / Unix 进程组），消除 shim 后代孤儿进程。
     /// shutdown() 的显式 kill 逻辑不变；字段本身不读（下划线前缀抑制告警）。
     _process_tree_guard: ProcessTreeGuard,
+}
+
+impl Drop for ServerSession {
+    fn drop(&mut self) {
+        self.mainloop_task.abort();
+    }
 }
 
 fn now_ms() -> u64 {
@@ -76,7 +84,7 @@ impl ServerSession {
     ) -> Result<Self, LspError> {
         let (
             child,
-            _main_loop,
+            mainloop_task,
             socket,
             push_diagnostics,
             main_loop_done,
@@ -97,6 +105,7 @@ impl ServerSession {
             config,
             child,
             main_loop_done,
+            mainloop_task,
             socket,
             opened_files: HashMap::new(),
             pull_diagnostics_supported: false,
@@ -121,6 +130,8 @@ impl ServerSession {
         {
             Ok(value) => value,
             Err(error) => {
+                // 握手失败立即中止后台 mainloop 任务，避免 channel 关闭引发底层异常
+                session.mainloop_task.abort();
                 // 进程已提前退出（如 rustup shim 存在但组件缺失）：附加退出码与
                 // 行动指引，否则只有 "initialize failed: ServiceStopped"（D1）。
                 // tokio Child::try_wait 是同步方法（不阻塞，只查一次退出状态）。
@@ -134,6 +145,16 @@ impl ServerSession {
                             LspError::ServerFailed(message) => message.clone(),
                             other => format!("{other:?}"),
                         };
+                        eprintln!(
+                            "[lsp:{lang}] 服务器进程已提前退出 (exit code {code}): {base}"
+                        );
+                        // 若配置了 install_command 且提前退出，判定为组件缺失/不完整，引导安装
+                        if session.config.install_command.is_some() {
+                            return Err(LspError::ServerMissing(
+                                session.config.command.clone(),
+                                session.config.install_command.clone(),
+                            ));
+                        }
                         let hint = format!(
                             "。服务器进程已提前退出（exit code {code}），常见原因：组件未安装或运行环境不完整{}",
                             session
@@ -331,100 +352,6 @@ impl ServerSession {
         }))
     }
 
-    /// codeAction 查询：apply=false 返回 action 描述（command 类不执行）；
-    /// apply=true 应用 edits 类 action（command 类仍只返回描述，绝不隐式执行）。
-    ///
-    /// 请求前先拉取当前文件诊断（pull，带服务器端增量）作为
-    /// CodeActionContext.diagnostics——quickfix 类 action 依赖它。
-    pub async fn code_actions(
-        &mut self,
-        path: &Path,
-        line: u32,
-        column: u32,
-        only: Option<Vec<lsp_types::CodeActionKind>>,
-        apply: bool,
-    ) -> Result<Value, LspError> {
-        let diagnostics = {
-            let uri = lsp_types::Url::from_file_path(path)
-                .map_err(|_| LspError::Internal(format!("invalid file path: {}", path.display())))?;
-            // 双轨合并（与 spawn_await_task 的 prepare 语义一致，H4/R1.3）：
-            // pull 诊断 + push store 中该 uri 的条目——rust-analyzer 的 rustc/cargo
-            // 类型错误诊断只走 push（publishDiagnostics），只靠 pull 拿不到，
-            // quickfix（auto-import / replace-with）会因此缺失。
-            // 只合并当前 generation 的 push 条目（M6/R4.3，陈旧防护）。
-            let mut diagnostics = client::pull_diagnostics(&mut self.socket, &uri, REQUEST_TIMEOUT)
-                .await?
-                .unwrap_or_default();
-            let current_generation = self.push_generation.load(Ordering::Acquire);
-            if let Some(entry) = self.push_diagnostics.lock().await.get(&client::uri_key(&uri)) {
-                if entry.generation == current_generation {
-                    diagnostics.extend(entry.diagnostics.clone());
-                }
-            }
-            dedup_diagnostics(&mut diagnostics);
-            diagnostics
-        };
-        let result = client::code_actions(
-            &mut self.socket,
-            path,
-            line,
-            column,
-            only,
-            diagnostics,
-            REQUEST_TIMEOUT,
-        )
-        .await?;
-        self.touch();
-        let actions = result.unwrap_or_default();
-        if !apply {
-            return Ok(format::code_actions_to_value(&self.lang, actions));
-        }
-        let mut applied: Vec<Value> = Vec::new();
-        let mut deferred: Vec<Value> = Vec::new();
-        for action in actions {
-            match action {
-                CodeActionOrCommand::CodeAction(ca) => {
-                    if let Some(edit) = ca.edit {
-                        let files = apply_workspace_edit(self, &edit).await?;
-                        applied.push(json!({
-                            "title": ca.title,
-                            "kind": ca.kind.as_ref().map(|k| k.as_str().to_string()),
-                            "changeCount": files.len(),
-                            "files": files,
-                        }));
-                    } else if let Some(command) = ca.command {
-                        deferred.push(json!({
-                            "title": ca.title,
-                            "command": command.command,
-                            "arguments": command.arguments,
-                            "executed": false,
-                        }));
-                    } else {
-                        deferred.push(json!({
-                            "title": ca.title,
-                            "note": "action 无 edit/command，无法自动应用",
-                        }));
-                    }
-                }
-                CodeActionOrCommand::Command(command) => {
-                    deferred.push(json!({
-                        "title": command.title,
-                        "command": command.command,
-                        "arguments": command.arguments,
-                        "executed": false,
-                    }));
-                }
-            }
-        }
-        Ok(json!({
-            "language": self.lang,
-            "apply": true,
-            "appliedCount": applied.len(),
-            "applied": applied,
-            "deferredCommands": deferred,
-        }))
-    }
-
     /// typeDefinition 查询（跳到符号「类型」的定义；输出与 definition 对齐）。
     pub async fn type_definition(
         &mut self,
@@ -524,66 +451,6 @@ impl ServerSession {
             &supertypes,
             &subtypes,
         ))
-    }
-
-    /// workspace/executeCommand：执行服务器定义命令（重构/导入/SSR 等）。
-    ///
-    /// 命令名与参数为服务器私有格式——agent 通常从 `lsp-code-action` 返回的
-    /// action.command + arguments 原样透传。结果若是 WorkspaceEdit（如
-    /// rust-analyzer.applySourceChange）→ dryRun 默认预览多文件 edits、false
-    /// 应用写盘 + didChange 同步；其他结果原样返回。
-    pub async fn execute_command(
-        &mut self,
-        command: &str,
-        arguments: Vec<Value>,
-        dry_run: bool,
-    ) -> Result<Value, LspError> {
-        let result =
-            client::execute_command(&mut self.socket, command, arguments, REQUEST_TIMEOUT).await?;
-        self.touch();
-        let Some(value) = result else {
-            return Ok(json!({
-                "language": self.lang,
-                "command": command,
-                "result": null,
-            }));
-        };
-        // 尝试识别 WorkspaceEdit（服务器命令最常见的结构化返回）。
-        if let Ok(edit) = serde_json::from_value::<WorkspaceEdit>(value.clone()) {
-            // 空 WorkspaceEdit：任意 JSON 对象都会被 serde 解析成空编辑
-            //（三字段全 Option，未知字段默认忽略），必须视为非 WorkspaceEdit，
-            // 原样返回服务器结果——否则 dryRun=false 会谎报 applied:true（H2/R1.1）。
-            if format::workspace_edit_is_empty(&edit) {
-                return Ok(json!({
-                    "language": self.lang,
-                    "command": command,
-                    "result": value,
-                }));
-            }
-            if dry_run {
-                let mut preview = format::workspace_edit_to_value(&edit);
-                preview["language"] = json!(self.lang);
-                preview["command"] = json!(command);
-                preview["applied"] = json!(false);
-                preview["dryRun"] = json!(true);
-                return Ok(preview);
-            }
-            let files = apply_workspace_edit(self, &edit).await?;
-            return Ok(json!({
-                "language": self.lang,
-                "command": command,
-                "applied": true,
-                "dryRun": false,
-                "changeCount": files.len(),
-                "files": files,
-            }));
-        }
-        // 非 WorkspaceEdit：原样返回服务器结果（可能含光标移动等附加信息）。
-        Ok(json!({
-            "language": self.lang,
-            "command": command,
-            "result": value,
-        }))
     }
 
     /// workspaceSymbol 查询（跨文件按名搜索符号；无需 didOpen，输出上限 50）。
@@ -758,6 +625,7 @@ impl ServerSession {
     /// 优雅关闭：shutdown → 等待退出（≤3s）→ kill 兜底。
     pub async fn shutdown(&mut self) {
         self.dead = true;
+        self.mainloop_task.abort();
         let _ = self.socket.shutdown(()).await;
         let _ = self.socket.exit(());
         // 等待进程退出（≤3s），超时 kill。
@@ -894,7 +762,7 @@ impl ServerSession {
         .ok();
     }
 
-    /// 失效 DB 诊断缓存（文件被外部写盘后调用，如 format/rename/code-action 落盘）。
+    /// 失效 DB 诊断缓存（文件被外部写盘后调用，如 format/rename 落盘）。
     /// SQLite 操作移入 spawn_blocking（M7/R3.3）。
     async fn invalidate_cached_diagnostics(&self, path: &Path) {
         let key = self.cache_key(path);
@@ -1008,7 +876,7 @@ async fn read_reference_contexts(locations: &[Location], max: usize) -> Vec<Stri
 }
 
 /// 读取指定行（0-indexed）的 trim 文本。
-async fn read_line_context(path: &Path, line: u32) -> String {
+pub(crate) async fn read_line_context(path: &Path, line: u32) -> String {
     let Ok(text) = tokio::fs::read_to_string(path).await else {
         return String::new();
     };
@@ -1112,8 +980,7 @@ async fn apply_workspace_edit(
 ) -> Result<Vec<Value>, LspError> {
     let mut files: Vec<Value> = Vec::new();
     // Operations 类变更（create/rename/delete file）→ Unsupported 错误透传
-    //（R1.2）：rename / code-action(apply) / execute-command 三条路径统一经此
-    // 上报「文件操作未执行」，agent 不再看到 applied:true, changeCount:0。
+    //（R1.2）：rename 路径经此上报「文件操作未执行」，agent 不再看到 applied:true, changeCount:0。
     for (uri, edits) in format::workspace_edit_files(edit)? {
         let Ok(file_path) = uri.to_file_path() else {
             continue;

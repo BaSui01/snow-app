@@ -7,7 +7,7 @@
 //! - 并发上限：max_sessions（跨项目合计），超限 LRU 淘汰
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -333,6 +333,49 @@ impl ServerManager {
     ///
     /// 注意：这里只做**观察**，不修改任何会话状态（不触发回收/重启），
     /// 与 `get_or_start` 的懒加载语义完全解耦。
+    /// 内部状态快照转换逻辑。
+    fn build_session_status(
+        lang: &str,
+        project_root: &Path,
+        guard: &mut ServerSession,
+    ) -> SessionStatus {
+        let (status, error) = if guard.dead || guard.main_loop_done.load(Ordering::Acquire) {
+            let message = if guard.dead {
+                "会话已停止（空闲回收或关闭）".to_string()
+            } else {
+                "服务器主循环已结束（进程退出或崩溃），下次工具调用将自动重启".to_string()
+            };
+            ("dead".to_string(), Some(message))
+        } else if let Some(code) = guard.exited_code() {
+            (
+                "exited".to_string(),
+                Some(format!(
+                    "服务器进程已退出（exit code {code}），下次工具调用将自动重启"
+                )),
+            )
+        } else {
+            ("running".to_string(), None)
+        };
+        SessionStatus {
+            lang: lang.to_string(),
+            project_root: project_root.display().to_string(),
+            status,
+            restart_count: guard.restart_count,
+            last_used_ms: guard.last_used_ms.load(Ordering::Relaxed),
+            error,
+        }
+    }
+
+    /// 会话状态快照（供前端状态徽章实时展示，§10）：遍历全部 (语言 × 项目根)
+    /// 会话，动态检测进程退出状态；按 (lang, project_root) 排序保证输出稳定。
+    ///
+    /// `filter_project_root`：Some(root) 时只返回该项目根**及其子目录**下的
+    /// 会话（会话根可能是项目根之下的技术栈根，如 native/；前端徽章按当前
+    /// 项目过滤，§10）；None 返回全部会话。过滤在持有锁内做纯比较，
+    /// 不触发任何会话创建/回收。
+    ///
+    /// 注意：这里只做**观察**，不修改任何会话状态（不触发回收/重启），
+    /// 与 `get_or_start` 的懒加载语义完全解耦。
     pub async fn session_statuses(&self, filter_project_root: Option<&Path>) -> Vec<SessionStatus> {
         let sessions = self.sessions.lock().await;
         let mut statuses: Vec<SessionStatus> = Vec::with_capacity(sessions.len());
@@ -345,36 +388,79 @@ impl ServerManager {
                 }
             }
             let mut guard = session.lock().await;
-            // mainloop 完成（进程退出/管道断开）→ dead（R2.2）：状态徽章显示异常，
-            // 下次工具调用触发自动重启，不再出现「running 但请求全部失败」的僵尸态。
-            let (status, error) = if guard.dead || guard.main_loop_done.load(Ordering::Acquire) {
-                let message = if guard.dead {
-                    "会话已停止（空闲回收或关闭）".to_string()
-                } else {
-                    "服务器主循环已结束（进程退出或崩溃），下次工具调用将自动重启".to_string()
-                };
-                ("dead".to_string(), Some(message))
-            } else if let Some(code) = guard.exited_code() {
-                (
-                    "exited".to_string(),
-                    Some(format!(
-                        "服务器进程已退出（exit code {code}），下次工具调用将自动重启"
-                    )),
-                )
-            } else {
-                ("running".to_string(), None)
-            };
-            statuses.push(SessionStatus {
-                lang: lang.clone(),
-                project_root: project_root.display().to_string(),
-                status,
-                restart_count: guard.restart_count,
-                last_used_ms: guard.last_used_ms.load(Ordering::Relaxed),
-                error,
-            });
+            statuses.push(Self::build_session_status(lang, project_root, &mut guard));
         }
         statuses.sort_by(|a, b| a.lang.cmp(&b.lang).then(a.project_root.cmp(&b.project_root)));
         statuses
+    }
+
+    /// 手动停止指定 (语言 × 项目根) 的所有运行中会话。
+    ///
+    /// 在锁内将匹配的会话从 sessions 中移除，在锁外优雅 shutdown（≤3s，超时 kill）。
+    /// 返回实际关闭的会话数量。
+    pub async fn stop_session(&self, lang: &str, project_root: &Path) -> usize {
+        let victims: Vec<(SessionKey, Arc<Mutex<ServerSession>>)> = {
+            let mut sessions = self.sessions.lock().await;
+            let keys_to_remove: Vec<SessionKey> = sessions
+                .keys()
+                .filter(|(l, root)| l == lang && root.starts_with(project_root))
+                .cloned()
+                .collect();
+            let mut list = Vec::with_capacity(keys_to_remove.len());
+            for key in keys_to_remove {
+                if let Some(session) = sessions.remove(&key) {
+                    list.push((key, session));
+                }
+            }
+            list
+        };
+
+        let count = victims.len();
+        for (_key, victim) in victims {
+            victim.lock().await.shutdown().await;
+        }
+        count
+    }
+
+    /// 手动启动（预热）指定语言的 LSP 会话。
+    pub async fn start_session(
+        &self,
+        lang: &str,
+        project_root: &Path,
+        project_id: Option<&str>,
+    ) -> Result<SessionStatus, LspError> {
+        // 先确保配置最新
+        let _ = self.reload_configs(project_id).await;
+
+        let target_root = super::detect::find_lang_root(project_root, None, lang)
+            .unwrap_or_else(|| project_root.to_path_buf());
+
+        let session = self.get_or_start(lang, &target_root, project_id).await?;
+        let mut guard = session.lock().await;
+        Ok(Self::build_session_status(lang, &target_root, &mut guard))
+    }
+
+    /// 重启指定 (语言 × 项目根) 的 LSP 会话，可选清理该项目前缀的持久化诊断缓存。
+    pub async fn restart_session(
+        &self,
+        lang: &str,
+        project_root: &Path,
+        project_id: Option<&str>,
+        clear_cache: bool,
+    ) -> Result<SessionStatus, LspError> {
+        self.stop_session(lang, project_root).await;
+
+        if clear_cache {
+            if let Ok(storage_info) = crate::storage::initialize_app_storage() {
+                let db_path = PathBuf::from(storage_info.database_path);
+                let _ = crate::storage::services::lsp_diagnostic_cache::remove_by_prefix(
+                    &db_path,
+                    &project_root.to_string_lossy(),
+                );
+            }
+        }
+
+        self.start_session(lang, project_root, project_id).await
     }
 }
 

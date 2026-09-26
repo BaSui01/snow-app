@@ -12,6 +12,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   LspServerConfigRecord,
+  LspSessionStatus,
   ProjectStackDetection,
   WorkspaceDirectoryRecord,
 } from "../../../preload";
@@ -19,7 +20,10 @@ import { useI18n } from "../../i18n";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { Modal } from "../common/Modal";
-import { LspSettingsEditor, LspSettingsEditorActions } from "./lspSettings/LspSettingsEditor";
+import {
+  LspSettingsEditor,
+  LspSettingsEditorActions,
+} from "./lspSettings/LspSettingsEditor";
 import {
   LspSettingsList,
   type LspSettingsListItem,
@@ -63,6 +67,10 @@ export function LspSettingsPanel({
   const [installedByCommand, setInstalledByCommand] = useState<
     Record<string, boolean>
   >({});
+  const [sessionStatuses, setSessionStatuses] = useState<LspSessionStatus[]>(
+    [],
+  );
+  const [operatingLang, setOperatingLang] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isProbing, setIsProbing] = useState(false);
@@ -70,9 +78,8 @@ export function LspSettingsPanel({
     useState<LspSettingsListItem | null>(null);
   const [isInstalling, setIsInstalling] = useState(false);
   const [draft, setDraft] = useState<LspServerDraft | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<LspSettingsListItem | null>(
-    null
-  );
+  const [pendingDelete, setPendingDelete] =
+    useState<LspSettingsListItem | null>(null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [stackDetections, setStackDetections] = useState<
@@ -82,7 +89,12 @@ export function LspSettingsPanel({
   const loadGenerationRef = useRef(0);
 
   const isBusy =
-    isLoading || isSaving || isProbing || isInstalling || isDetecting;
+    isLoading ||
+    isSaving ||
+    isProbing ||
+    isInstalling ||
+    isDetecting ||
+    operatingLang !== null;
   const isGlobalScope = activeScope === "global";
   const operationProjectId = activeDirectory?.directoryId;
 
@@ -93,15 +105,18 @@ export function LspSettingsPanel({
     setError("");
 
     try {
-      const [items, probes] = await Promise.all([
+      const [items, probes, statuses] = await Promise.all([
         isGlobalScope
           ? window.snow.listLspServerConfigs()
           : operationProjectId
             ? window.snow.listEffectiveLspServerConfigs(operationProjectId)
             : Promise.resolve([]),
         window.snow.probeLspServerCommands(
-          isGlobalScope ? undefined : operationProjectId
+          isGlobalScope ? undefined : operationProjectId,
         ),
+        !isGlobalScope && operationProjectId
+          ? window.snow.listLspSessionStatuses(operationProjectId)
+          : Promise.resolve([]),
       ]);
       if (loadGenerationRef.current !== generation) {
         return;
@@ -109,9 +124,10 @@ export function LspSettingsPanel({
       setServers(items);
       setInstalledByCommand(
         Object.fromEntries(
-          probes.map((probe) => [probe.command, probe.installed])
-        )
+          probes.map((probe) => [probe.command, probe.installed]),
+        ),
       );
+      setSessionStatuses(statuses);
     } catch (loadError) {
       if (loadGenerationRef.current === generation) {
         setError(
@@ -119,7 +135,7 @@ export function LspSettingsPanel({
             ? loadError.message
             : t("settings.lspLoadError", {
                 defaultValue: "Failed to load LSP server configs",
-              })
+              }),
         );
       }
     } finally {
@@ -139,23 +155,49 @@ export function LspSettingsPanel({
     }
   }, [activeDirectory, activeScope]);
 
+  useEffect(() => {
+    if (isGlobalScope || !operationProjectId) {
+      setSessionStatuses([]);
+      return;
+    }
+    let disposed = false;
+    const fetchStatuses = async (): Promise<void> => {
+      try {
+        const statuses =
+          await window.snow.listLspSessionStatuses(operationProjectId);
+        if (!disposed) {
+          setSessionStatuses(statuses);
+        }
+      } catch {
+        // 静默失败
+      }
+    };
+    const intervalId = window.setInterval(() => {
+      void fetchStatuses();
+    }, 3000);
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalId);
+    };
+  }, [isGlobalScope, operationProjectId]);
+
   // 手动「重新检测」：只刷新安装状态，不重新加载列表（轻量）。
   const reprobe = useCallback(async (): Promise<void> => {
     setIsProbing(true);
     setError("");
     try {
       const probes = await window.snow.probeLspServerCommands(
-        isGlobalScope ? undefined : operationProjectId
+        isGlobalScope ? undefined : operationProjectId,
       );
       setInstalledByCommand(
         Object.fromEntries(
-          probes.map((probe) => [probe.command, probe.installed])
-        )
+          probes.map((probe) => [probe.command, probe.installed]),
+        ),
       );
       setStatus(
         t("settings.lspRecheckDone", {
           defaultValue: "Installation status refreshed.",
-        })
+        }),
       );
     } catch (probeError) {
       setError(
@@ -163,7 +205,7 @@ export function LspSettingsPanel({
           ? probeError.message
           : t("settings.lspProbeError", {
               defaultValue: "Failed to detect language servers",
-            })
+            }),
       );
     } finally {
       setIsProbing(false);
@@ -177,7 +219,7 @@ export function LspSettingsPanel({
     setError("");
     try {
       const detections = await window.snow.detectProjectStack(
-        activeDirectory.path
+        activeDirectory.path,
       );
       setStackDetections(detections);
     } catch (detectError) {
@@ -186,7 +228,7 @@ export function LspSettingsPanel({
           ? detectError.message
           : t("settings.lspStackDetectError", {
               defaultValue: "Failed to detect project stack",
-            })
+            }),
       );
     } finally {
       setIsDetecting(false);
@@ -207,41 +249,40 @@ export function LspSettingsPanel({
       t("settings.lspInstallRunning", {
         defaultValue: "Installing language server...",
         values: { lang: pending.lang },
-      })
+      }),
     );
     try {
       const result = await window.snow.installLspServer(
         pending.lang,
-        isGlobalScope ? undefined : operationProjectId
+        isGlobalScope ? undefined : operationProjectId,
       );
       if (result.exitCode === 0) {
         setStatus(
           t("settings.lspInstallSuccess", {
             defaultValue: "Installed language server for {{lang}}.",
             values: { lang: pending.lang },
-          })
+          }),
         );
       } else {
         setError(
           t("settings.lspInstallFailed", {
-            defaultValue:
-              "Install failed (exit {{code}}): {{output}}",
+            defaultValue: "Install failed (exit {{code}}): {{output}}",
             values: {
               lang: pending.lang,
               code: String(result.exitCode ?? "?"),
               output: result.output.trim().slice(-1500),
             },
-          })
+          }),
         );
       }
       // 安装后立即重新探测，徽标状态即时更新。
       const probes = await window.snow.probeLspServerCommands(
-        isGlobalScope ? undefined : operationProjectId
+        isGlobalScope ? undefined : operationProjectId,
       );
       setInstalledByCommand(
         Object.fromEntries(
-          probes.map((probe) => [probe.command, probe.installed])
-        )
+          probes.map((probe) => [probe.command, probe.installed]),
+        ),
       );
     } catch (installError) {
       setError(
@@ -249,7 +290,7 @@ export function LspSettingsPanel({
           ? installError.message
           : t("settings.lspInstallError", {
               defaultValue: "Failed to install language server",
-            })
+            }),
       );
     } finally {
       setIsInstalling(false);
@@ -266,7 +307,7 @@ export function LspSettingsPanel({
   const startAdd = (): void => {
     const maxSortOrder = servers.reduce(
       (max, server) => Math.max(max, server.sortOrder),
-      -1
+      -1,
     );
     setDraft({
       ...EMPTY_LSP_DRAFT,
@@ -295,17 +336,17 @@ export function LspSettingsPanel({
   const updateItem = (
     group: "args" | "fileExtensions",
     itemId: string,
-    value: string
+    value: string,
   ): void => {
     setDraft((previous) =>
       previous
         ? {
             ...previous,
             [group]: previous[group].map((item) =>
-              item.id === itemId ? { ...item, value } : item
+              item.id === itemId ? { ...item, value } : item,
             ),
           }
-        : null
+        : null,
     );
   };
 
@@ -313,13 +354,13 @@ export function LspSettingsPanel({
     setDraft((previous) =>
       previous
         ? { ...previous, [group]: [...previous[group], createLspStringItem()] }
-        : null
+        : null,
     );
   };
 
   const removeItem = (
     group: "args" | "fileExtensions",
-    itemId: string
+    itemId: string,
   ): void => {
     setDraft((previous) =>
       previous
@@ -327,7 +368,7 @@ export function LspSettingsPanel({
             ...previous,
             [group]: previous[group].filter((item) => item.id !== itemId),
           }
-        : null
+        : null,
     );
   };
 
@@ -339,7 +380,7 @@ export function LspSettingsPanel({
       setError(
         t("settings.lspLangRequired", {
           defaultValue: "Language is required.",
-        })
+        }),
       );
       setStatus("");
       return;
@@ -349,14 +390,14 @@ export function LspSettingsPanel({
       setError(
         t("settings.lspCommandRequired", {
           defaultValue: "Command is required.",
-        })
+        }),
       );
       setStatus("");
       return;
     }
 
     const initOptionsError = validateInitializationOptions(
-      draft.initializationOptions
+      draft.initializationOptions,
     );
     if (initOptionsError) {
       setError(initOptionsError);
@@ -370,7 +411,7 @@ export function LspSettingsPanel({
       (server) =>
         server.lang === lang &&
         server.id !== draft.id &&
-        (activeScope === "global" || server.id.startsWith("project:"))
+        (activeScope === "global" || server.id.startsWith("project:")),
     );
     if (duplicate) {
       setError(
@@ -378,7 +419,7 @@ export function LspSettingsPanel({
           defaultValue:
             "Language {{lang}} is already configured. Edit the existing entry instead.",
           values: { lang },
-        })
+        }),
       );
       setStatus("");
       return;
@@ -389,7 +430,7 @@ export function LspSettingsPanel({
       setError(
         t("settings.lspProjectRequired", {
           defaultValue: "Select a project before saving project LSP servers.",
-        })
+        }),
       );
       return;
     }
@@ -404,7 +445,7 @@ export function LspSettingsPanel({
           ? await window.snow.upsertLspServerConfig(toInput(draft))
           : await window.snow.upsertProjectLspServerConfig(
               operationProjectId as string,
-              toInput(draft)
+              toInput(draft),
             );
       setServers(items);
       setDraft(null);
@@ -415,7 +456,7 @@ export function LspSettingsPanel({
             })
           : t("settings.lspAddSuccess", {
               defaultValue: "Added language server.",
-            })
+            }),
       );
     } catch (saveError) {
       setError(
@@ -423,7 +464,7 @@ export function LspSettingsPanel({
           ? saveError.message
           : t("settings.lspSaveError", {
               defaultValue: "Failed to save language server",
-            })
+            }),
       );
     } finally {
       setIsSaving(false);
@@ -440,7 +481,9 @@ export function LspSettingsPanel({
       argsJson: server.argsJson,
       fileExtensionsJson: server.fileExtensionsJson,
       // napi Option<String> 不接受 null：空值省略字段
-      ...(server.installCommand ? { installCommand: server.installCommand } : {}),
+      ...(server.installCommand
+        ? { installCommand: server.installCommand }
+        : {}),
       ...(server.initializationOptionsJson
         ? { initializationOptionsJson: server.initializationOptionsJson }
         : {}),
@@ -454,7 +497,7 @@ export function LspSettingsPanel({
         ? await window.snow.upsertLspServerConfig(input)
         : await window.snow.upsertProjectLspServerConfig(
             operationProjectId as string,
-            input
+            input,
           );
       setServers(items);
     } catch (saveError) {
@@ -463,7 +506,7 @@ export function LspSettingsPanel({
           ? saveError.message
           : t("settings.lspSaveError", {
               defaultValue: "Failed to update language server",
-            })
+            }),
       );
     }
   };
@@ -491,12 +534,14 @@ export function LspSettingsPanel({
               ? { installCommand: existing.installCommand }
               : {}),
             ...(existing.initializationOptionsJson
-              ? { initializationOptionsJson: existing.initializationOptionsJson }
+              ? {
+                  initializationOptionsJson: existing.initializationOptionsJson,
+                }
               : {}),
             enabled: true,
             sortOrder: existing.sortOrder,
             source: "project",
-          }
+          },
         );
       }
       // 最后一次 upsert 返回的 effective 合并视图即为最新列表。
@@ -507,7 +552,7 @@ export function LspSettingsPanel({
           ? saveError.message
           : t("settings.lspSaveError", {
               defaultValue: "Failed to enable detected language servers",
-            })
+            }),
       );
     } finally {
       setIsSaving(false);
@@ -520,7 +565,7 @@ export function LspSettingsPanel({
     if (!operationProjectId || !stackDetections) return;
     const detectedLangs = new Set(stackDetections.map((d) => d.lang));
     const overrides = servers.filter(
-      (s) => s.id.startsWith("project:") && detectedLangs.has(s.lang)
+      (s) => s.id.startsWith("project:") && detectedLangs.has(s.lang),
     );
     if (overrides.length === 0) return;
     setIsSaving(true);
@@ -530,7 +575,7 @@ export function LspSettingsPanel({
       for (const server of overrides) {
         items = await window.snow.deleteProjectLspServerConfig(
           operationProjectId,
-          server.lang
+          server.lang,
         );
       }
       // 最后一次 delete 返回的 effective 合并视图即为最新列表。
@@ -541,7 +586,7 @@ export function LspSettingsPanel({
           ? deleteError.message
           : t("settings.lspDeleteError", {
               defaultValue: "Failed to remove detected overrides",
-            })
+            }),
       );
     } finally {
       setIsSaving(false);
@@ -581,13 +626,13 @@ export function LspSettingsPanel({
         ? await window.snow.deleteLspServerConfig(pending.lang)
         : await window.snow.deleteProjectLspServerConfig(
             operationProjectId as string,
-            pending.lang
+            pending.lang,
           );
       setServers(items);
       setStatus(
         t("settings.lspDeleteSuccess", {
           defaultValue: "Deleted language server.",
-        })
+        }),
       );
     } catch (deleteError) {
       setError(
@@ -595,23 +640,123 @@ export function LspSettingsPanel({
           ? deleteError.message
           : t("settings.lspDeleteError", {
               defaultValue: "Failed to delete language server",
-            })
+            }),
       );
     } finally {
       setIsSaving(false);
     }
   };
 
-  const listItems: LspSettingsListItem[] = servers.map((server) => ({
-    lang: server.lang,
-    command: server.command,
-    enabled: server.enabled,
-    detail: `${server.command}${server.argsJson && server.argsJson !== "[]" ? " " + server.argsJson : ""}`,
-    source: server.source,
-    installCommand: server.installCommand ?? undefined,
-    // 项目作用域下：id 不带 project: 前缀 = 继承自全局配置（不可在项目页签直接编辑）。
-    inherited: !server.id.startsWith("project:") && !isGlobalScope,
-  }));
+  const handleStart = async (server: LspSettingsListItem): Promise<void> => {
+    if (!operationProjectId) return;
+    setOperatingLang(server.lang);
+    setError("");
+    setStatus(t("settings.lspStarting", { defaultValue: "Starting…" }));
+    try {
+      await window.snow.startLspSession(operationProjectId, server.lang);
+      const items =
+        await window.snow.listLspSessionStatuses(operationProjectId);
+      setSessionStatuses(items);
+      setStatus(
+        t("settings.lspStartSuccess", {
+          values: { lang: server.lang },
+          defaultValue: `${server.lang} started.`,
+        }),
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : t("settings.lspOperationError", {
+              defaultValue: "LSP operation failed",
+            }),
+      );
+      setStatus("");
+    } finally {
+      setOperatingLang(null);
+    }
+  };
+
+  const handleStop = async (server: LspSettingsListItem): Promise<void> => {
+    if (!operationProjectId) return;
+    setOperatingLang(server.lang);
+    setError("");
+    setStatus(t("settings.lspStopping", { defaultValue: "Stopping…" }));
+    try {
+      await window.snow.stopLspSession(operationProjectId, server.lang);
+      const items =
+        await window.snow.listLspSessionStatuses(operationProjectId);
+      setSessionStatuses(items);
+      setStatus(
+        t("settings.lspStopSuccess", {
+          values: { lang: server.lang },
+          defaultValue: `${server.lang} stopped.`,
+        }),
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : t("settings.lspOperationError", {
+              defaultValue: "LSP operation failed",
+            }),
+      );
+      setStatus("");
+    } finally {
+      setOperatingLang(null);
+    }
+  };
+
+  const handleRestart = async (server: LspSettingsListItem): Promise<void> => {
+    if (!operationProjectId) return;
+    setOperatingLang(server.lang);
+    setError("");
+    setStatus(t("settings.lspRestarting", { defaultValue: "Restarting…" }));
+    try {
+      await window.snow.restartLspSession(
+        operationProjectId,
+        server.lang,
+        true,
+      );
+      const items =
+        await window.snow.listLspSessionStatuses(operationProjectId);
+      setSessionStatuses(items);
+      setStatus(
+        t("settings.lspRestartSuccess", {
+          values: { lang: server.lang },
+          defaultValue: `${server.lang} restarted and cache refreshed.`,
+        }),
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : t("settings.lspOperationError", {
+              defaultValue: "LSP operation failed",
+            }),
+      );
+      setStatus("");
+    } finally {
+      setOperatingLang(null);
+    }
+  };
+
+  const listItems: LspSettingsListItem[] = servers.map((server) => {
+    const session = sessionStatuses.find((s) => s.lang === server.lang);
+    return {
+      lang: server.lang,
+      command: server.command,
+      enabled: server.enabled,
+      detail: `${server.command}${server.argsJson && server.argsJson !== "[]" ? " " + server.argsJson : ""}`,
+      source: server.source,
+      installCommand: server.installCommand ?? undefined,
+      // 项目作用域下：id 不带 project: 前缀 = 继承自全局配置（不可在项目页签直接编辑）。
+      inherited: !server.id.startsWith("project:") && !isGlobalScope,
+      runtimeStatus: session?.status as LspSettingsListItem["runtimeStatus"],
+      runtimeError: session?.error ?? undefined,
+      lastUsedMs: session?.lastUsedMs,
+    };
+  });
   const enabledCount = listItems.filter((server) => server.enabled).length;
   const listTitle = t("settings.lspServerListTitle", {
     defaultValue: "Language servers",
@@ -624,7 +769,7 @@ export function LspSettingsPanel({
   // 检测结果与 effective 列表对比：可一键启用 = 存在已配置但未启用的 lang；
   // 可一键卸载 = 检测 lang 集合里存在项目覆盖条目。
   const detectedLangs = new Set(
-    (stackDetections ?? []).map((detection) => detection.lang)
+    (stackDetections ?? []).map((detection) => detection.lang),
   );
   const canEnableDetected =
     stackDetections !== null &&
@@ -636,7 +781,7 @@ export function LspSettingsPanel({
     stackDetections !== null &&
     servers.some(
       (server) =>
-        server.id.startsWith("project:") && detectedLangs.has(server.lang)
+        server.id.startsWith("project:") && detectedLangs.has(server.lang),
     );
 
   return (
@@ -777,7 +922,9 @@ export function LspSettingsPanel({
           disabled={!activeDirectory}
         >
           <Folder size={14} strokeWidth={1.8} />
-          <span>{t("settings.lspTabProject", { defaultValue: "Project" })}</span>
+          <span>
+            {t("settings.lspTabProject", { defaultValue: "Project" })}
+          </span>
         </button>
       </div>
 
@@ -800,9 +947,7 @@ export function LspSettingsPanel({
             </div>
             <div className="lsp-stack-detect-list">
               {stackDetections.map((detection) => {
-                const existing = servers.find(
-                  (s) => s.lang === detection.lang
-                );
+                const existing = servers.find((s) => s.lang === detection.lang);
                 const enabled = existing?.enabled === true;
                 const statusLabel = enabled
                   ? t("settings.lspStackGlobalEnabled", {
@@ -910,10 +1055,15 @@ export function LspSettingsPanel({
               listTitle={listTitle}
               emptyMessage={emptyMessage}
               installedByCommand={installedByCommand}
+              isProjectScope={!isGlobalScope}
+              operatingLang={operatingLang}
               onToggleEnabled={handleListToggle}
               onEdit={handleListEdit}
               onDelete={handleListDelete}
               onInstall={setPendingInstall}
+              onStart={handleStart}
+              onStop={handleStop}
+              onRestart={handleRestart}
             />
           )}
         </div>
@@ -924,7 +1074,10 @@ export function LspSettingsPanel({
         title={t("settings.lspEditorTitle", {
           defaultValue: "Language server editor",
         })}
-        description={draft?.lang || t("settings.lspAddNew", { defaultValue: "Add language" })}
+        description={
+          draft?.lang ||
+          t("settings.lspAddNew", { defaultValue: "Add language" })
+        }
         closeLabel={t("settings.cancel", { defaultValue: "Cancel" })}
         onClose={cancelDraft}
         closeDisabled={isBusy}

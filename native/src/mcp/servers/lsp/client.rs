@@ -14,12 +14,11 @@ use lsp_types::request::{WorkspaceConfiguration, WorkspaceFoldersRequest};
 use lsp_types::{
     CallHierarchyIncomingCall, CallHierarchyIncomingCallsParams, CallHierarchyItem,
     CallHierarchyOutgoingCall, CallHierarchyOutgoingCallsParams, CallHierarchyPrepareParams,
-    ClientCapabilities, CodeActionContext, CodeActionKind, CodeActionOrCommand, CodeActionParams,
-    CodeActionTriggerKind, Diagnostic, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
+    ClientCapabilities, Diagnostic, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
     DidSaveTextDocumentParams, DocumentDiagnosticParams, DocumentDiagnosticReport,
-    DocumentSymbolParams, DocumentSymbolResponse, ExecuteCommandParams, GotoDefinitionParams,
+    DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams,
     GotoDefinitionResponse, Hover, HoverParams, InitializeParams, InitializedParams, Location,
-    PartialResultParams, Position, ProgressParams, Range, ReferenceContext, ReferenceParams,
+    PartialResultParams, Position, ProgressParams, ReferenceContext, ReferenceParams,
     RenameParams, TextDocumentClientCapabilities, TextDocumentContentChangeEvent,
     TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, TypeHierarchyItem,
     TypeHierarchyPrepareParams, TypeHierarchySubtypesParams, TypeHierarchySupertypesParams, Url,
@@ -28,7 +27,6 @@ use lsp_types::{
 };
 use tokio::sync::Mutex;
 
-#[cfg(windows)]
 use super::probe;
 use super::types::{LspError, ServerConfig};
 use crate::utils::process_tree::ProcessTreeGuard;
@@ -190,12 +188,16 @@ pub fn spawn_client(
     #[cfg(windows)]
     let (program, parsed_args) = resolve_windows_spawn(&config.command, &config.args)?;
     #[cfg(not(windows))]
-    let (program, parsed_args) = (config.command.clone(), config.args.clone());
+    let (program, parsed_args) = (
+        probe::resolve_command(&config.command).unwrap_or_else(|| config.command.clone()),
+        config.args.clone(),
+    );
 
     let mut command = tokio::process::Command::new(program);
     command
         .args(parsed_args)
         .current_dir(project_root)
+        .env("PATH", probe::augmented_path_os_string())
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -361,9 +363,26 @@ pub fn spawn_client(
     let main_loop_done = Arc::new(AtomicBool::new(false));
     let done_flag = main_loop_done.clone();
     let mainloop_task = tokio::spawn(async move {
+        use futures::FutureExt;
         use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
-        if let Err(error) = mainloop.run_buffered(stdout.compat(), stdin.compat_write()).await {
-            eprintln!("[lsp:{lang_for_mainloop}] mainloop ended: {error}");
+        let run_fut = std::panic::AssertUnwindSafe(async {
+            mainloop.run_buffered(stdout.compat(), stdin.compat_write()).await
+        });
+        match run_fut.catch_unwind().await {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                eprintln!("[lsp:{lang_for_mainloop}] mainloop ended: {error}");
+            }
+            Err(panic_payload) => {
+                let msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "panic occurred".to_string()
+                };
+                eprintln!("[lsp:{lang_for_mainloop}] mainloop safely recovered from panic: {msg}");
+            }
         }
         // mainloop 结束 = 会话不可用（进程退出 / 管道断开）：置位供死亡检测。
         done_flag.store(true, Ordering::Release);
@@ -391,8 +410,11 @@ pub async fn initialize(
 ) -> Result<bool, LspError> {
     let workspace_uri = Url::from_file_path(project_root)
         .map_err(|_| LspError::Internal(format!("invalid project root: {}", project_root.display())))?;
+    #[allow(deprecated)]
     let params = InitializeParams {
         process_id: None,
+        root_path: Some(project_root.to_string_lossy().into_owned()),
+        root_uri: Some(workspace_uri.clone()),
         initialization_options,
         capabilities: ClientCapabilities {
             text_document: Some(TextDocumentClientCapabilities {
@@ -748,45 +770,6 @@ pub async fn rename(
     .map_err(|error| LspError::ServerFailed(format!("rename failed: {error:?}")))
 }
 
-/// codeAction 请求（诊断快速修复 / 重构建议；only 过滤 kind）。
-///
-/// diagnostics 为当前位置所在文件的诊断（quickfix 类 action 依赖
-/// CodeActionContext.diagnostics——VS Code 语义，rust-analyzer 等按此提供
-/// allow/import 修复；传空则只剩不依赖诊断的 refactor 类）。
-pub async fn code_actions(
-    socket: &mut async_lsp::ServerSocket,
-    path: &Path,
-    line: u32,
-    column: u32,
-    only: Option<Vec<CodeActionKind>>,
-    diagnostics: Vec<Diagnostic>,
-    timeout: Duration,
-) -> Result<Option<Vec<CodeActionOrCommand>>, LspError> {
-    let uri = Url::from_file_path(path)
-        .map_err(|_| LspError::Internal(format!("invalid file path: {}", path.display())))?;
-    let position = Position {
-        line: line.saturating_sub(1),
-        character: column.saturating_sub(1),
-    };
-    tokio::time::timeout(timeout, socket.code_action(CodeActionParams {
-        text_document: TextDocumentIdentifier { uri },
-        range: Range {
-            start: position,
-            end: position,
-        },
-        context: CodeActionContext {
-            diagnostics,
-            only,
-            trigger_kind: Some(CodeActionTriggerKind::INVOKED),
-        },
-        work_done_progress_params: WorkDoneProgressParams::default(),
-        partial_result_params: PartialResultParams::default(),
-    }))
-    .await
-    .map_err(|_| LspError::RequestTimeout("codeAction".into()))?
-    .map_err(|error| LspError::ServerFailed(format!("codeAction failed: {error:?}")))
-}
-
 /// typeDefinition 请求（跳到符号「类型」的定义；参数类型是 GotoDefinitionParams 别名）。
 pub async fn type_definition(
     socket: &mut async_lsp::ServerSocket,
@@ -943,24 +926,4 @@ pub async fn type_hierarchy_subtypes(
     .await
     .map_err(|_| LspError::RequestTimeout("typeHierarchy/subtypes".into()))?
     .map_err(|error| LspError::ServerFailed(format!("typeHierarchy/subtypes failed: {error:?}")))
-}
-
-/// workspace/executeCommand 请求：执行服务器定义命令（重构/导入等）。
-///
-/// 命令名与参数为服务器私有格式——agent 通常从 `lsp-code-action` 返回的
-/// action.command 原样透传（如 rust-analyzer.applySourceChange / gopls.add_import）。
-pub async fn execute_command(
-    socket: &mut async_lsp::ServerSocket,
-    command: &str,
-    arguments: Vec<serde_json::Value>,
-    timeout: Duration,
-) -> Result<Option<serde_json::Value>, LspError> {
-    tokio::time::timeout(timeout, socket.execute_command(ExecuteCommandParams {
-        command: command.to_string(),
-        arguments,
-        work_done_progress_params: WorkDoneProgressParams::default(),
-    }))
-    .await
-    .map_err(|_| LspError::RequestTimeout("executeCommand".into()))?
-    .map_err(|error| LspError::ServerFailed(format!("executeCommand failed: {error:?}")))
 }

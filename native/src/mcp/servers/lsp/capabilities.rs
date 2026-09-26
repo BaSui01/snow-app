@@ -4,17 +4,11 @@
 //! 这些服务器实际支持的工具子集（能力并集）。⚠️/🔒 能力按「不支持」处理
 //! （§8.7.3 维护约定），避免暴露必然失败的调用。
 
-/// 全部服务器都支持的核心工具（附录 F 底部行：诊断/hover/跳转/引用/大纲）。
+/// 冷启动核心能力估计；握手后必须按每个provider重新判断，不假定全支持。
 /// format 已移除（2026-08-14 工具精简，见下方注释）。
 /// definition 合并进 goto（2026-08-16 工具精简：lsp-goto{kind} 统一跳转
 /// 入口，kind=definition 全语言支持）。
-pub const CORE_TOOLS: &[&str] = &[
-    "diagnostics",
-    "hover",
-    "goto",
-    "references",
-    "symbols",
-];
+pub const CORE_TOOLS: &[&str] = &["diagnostics", "hover", "goto", "references", "symbols"];
 
 /// lang → 核心工具之外额外支持的工具（工具名与 `tool_schemas()` 的 name 一致）。
 ///
@@ -123,7 +117,75 @@ pub fn supported_tools_for_lang(lang: &str) -> Vec<&'static str> {
     tools
 }
 
-/// 某语言服务器是否支持指定工具（运行时二次校验，§8.7.1）。
+/// 冷启动能力估计；实际调用必须以ServerCapabilities为准。
 pub fn lang_supports_tool(lang: &str, tool_name: &str) -> bool {
     supported_tools_for_lang(lang).contains(&tool_name)
+}
+
+/// 握手后唯一能力事实源。静态语言表仅用于尚未启动的冷态提示。
+pub(crate) fn negotiated_tools(capabilities: &lsp_types::ServerCapabilities) -> Vec<String> {
+    let value = serde_json::to_value(capabilities).unwrap_or_default();
+    let enabled = |name: &str| {
+        matches!(
+            value.get(name),
+            Some(serde_json::Value::Bool(true) | serde_json::Value::Object(_))
+        )
+    };
+    let mut tools = Vec::new();
+    // LSP没有push诊断server capability位；存在文档同步时允许尝试push，
+    // 其结果仍必须遵守版本校验/超时/partial语义，不等于保证诊断成功。
+    let sync = value.get("textDocumentSync");
+    let has_sync = sync.is_some_and(|v| {
+        v.as_u64().is_some_and(|n| n > 0)
+            || v.get("openClose").and_then(serde_json::Value::as_bool) == Some(true)
+            || v.get("change")
+                .and_then(serde_json::Value::as_u64)
+                .is_some_and(|n| n > 0)
+    });
+    if enabled("diagnosticProvider") || has_sync {
+        tools.push("diagnostics".into());
+    }
+    for (tool, provider) in [
+        ("hover", "hoverProvider"),
+        ("goto", "definitionProvider"),
+        ("references", "referencesProvider"),
+        ("symbols", "documentSymbolProvider"),
+        ("rename", "renameProvider"),
+        ("type-definition", "typeDefinitionProvider"),
+        ("implementation", "implementationProvider"),
+        ("workspace-symbols", "workspaceSymbolProvider"),
+        ("call-hierarchy", "callHierarchyProvider"),
+        ("type-hierarchy", "typeHierarchyProvider"),
+    ] {
+        if enabled(provider) {
+            tools.push(tool.into());
+        }
+    }
+    if value
+        .get("diagnosticProvider")
+        .and_then(|v| v.get("workspaceDiagnostics"))
+        .and_then(serde_json::Value::as_bool)
+        == Some(true)
+    {
+        tools.push("workspace-diagnostics".into());
+    }
+    tools
+}
+
+#[cfg(test)]
+mod negotiated_tests {
+    use super::*;
+    #[test]
+    fn empty_handshake_does_not_inherit_core_tools() {
+        assert!(negotiated_tools(&lsp_types::ServerCapabilities::default()).is_empty());
+    }
+    #[test]
+    fn false_providers_and_workspace_diagnostic_flag_are_respected() {
+        let caps = serde_json::from_value(serde_json::json!({"hoverProvider":false,"renameProvider":{},"definitionProvider":true,"diagnosticProvider":{"interFileDependencies":true,"workspaceDiagnostics":false}})).unwrap();
+        let tools = negotiated_tools(&caps);
+        assert!(tools.contains(&"rename".into()));
+        assert!(tools.contains(&"goto".into()));
+        assert!(!tools.contains(&"hover".into()));
+        assert!(!tools.contains(&"workspace-diagnostics".into()));
+    }
 }

@@ -1227,6 +1227,8 @@ export type ResponsesApiRequest = {
   conversationId?: string;
   previousResponseId?: string;
   directoryId?: string;
+  /** Request-local analysis root, independent of directoryId's authorization scope. */
+  analysisWorkspaceRoot?: string;
   checkpointId?: string;
   contextCompaction?: boolean;
   /**

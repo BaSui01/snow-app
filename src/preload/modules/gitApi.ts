@@ -14,6 +14,7 @@ import type {
   GitRepoInfo,
   GitStageResult,
   GitStatusResult,
+  GitWorktree,
   ResponsesApiResult,
   ResponsesApiStreamChunk,
 } from "../types";
@@ -67,7 +68,12 @@ export const gitApi = {
     branchName: string,
     baseRef: string,
   ): Promise<GitWorktreeInfo> =>
-    ipcRenderer.invoke("git:worktrees:create", directoryId, branchName, baseRef),
+    ipcRenderer.invoke(
+      "git:worktrees:create",
+      directoryId,
+      branchName,
+      baseRef,
+    ),
   gitRemoveWorktree: (directoryId: string, worktreeId: string): Promise<void> =>
     ipcRenderer.invoke("git:worktrees:remove", directoryId, worktreeId),
   getConversationWorktree: (
@@ -78,7 +84,11 @@ export const gitApi = {
     conversationId: string,
     worktreeId: string | null,
   ): Promise<void> =>
-    ipcRenderer.invoke("git:worktrees:set-conversation", conversationId, worktreeId),
+    ipcRenderer.invoke(
+      "git:worktrees:set-conversation",
+      conversationId,
+      worktreeId,
+    ),
   gitStatus: (repoPath: string): Promise<GitStatusResult> =>
     ipcRenderer.invoke("git:status", repoPath),
   startGitWatch: (repoPath: string): Promise<void> =>
@@ -100,6 +110,8 @@ export const gitApi = {
     ipcRenderer.invoke("git:branches", repoPath),
   gitIdentity: (repoPath: string): Promise<GitIdentity> =>
     ipcRenderer.invoke("git:identity", repoPath),
+  gitWorktrees: (repoPath: string): Promise<GitWorktree[]> =>
+    ipcRenderer.invoke("git:worktrees", repoPath),
   gitStage: (repoPath: string, filePaths: string[]): Promise<GitStageResult> =>
     ipcRenderer.invoke("git:stage", repoPath, filePaths),
   gitUnstage: (

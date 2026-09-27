@@ -19,6 +19,7 @@ import type {
   GitRepoInfo,
   GitStageResult,
   GitStatusResult,
+  GitWorktree,
 } from "../../preload";
 
 // Timeout for network operations (push/pull/fetch). These may hang on a
@@ -346,9 +347,102 @@ const parseTrackInfo = (
   return { ahead, behind, isGone };
 };
 
+export const remoteGetGitWorktrees = async (
+  workspacePath: string,
+): Promise<GitWorktree[]> => {
+  let output: string;
+  try {
+    output = await runRemoteGit(workspacePath, [
+      "worktree",
+      "list",
+      "--porcelain",
+    ]);
+  } catch {
+    return [];
+  }
+
+  const worktrees: GitWorktree[] = [];
+  let currentPath: string | null = null;
+  let currentHead: string | null = null;
+  let currentBranch: string | null = null;
+  let isLocked = false;
+  let lockReason: string | null = null;
+  let isPrunable = false;
+
+  const normalizedWorkspace = workspacePath
+    .replace(/\\/g, "/")
+    .replace(/\/+$/, "")
+    .toLowerCase();
+
+  for (const rawLine of output.split("\n")) {
+    const trimmed = rawLine.trim();
+    if (!trimmed) {
+      if (currentPath && currentHead) {
+        const normPath = currentPath
+          .replace(/\\/g, "/")
+          .replace(/\/+$/, "")
+          .toLowerCase();
+        worktrees.push({
+          path: currentPath,
+          head: currentHead,
+          branch: currentBranch,
+          isCurrent: normPath === normalizedWorkspace,
+          isLocked,
+          lockReason,
+          isPrunable,
+        });
+        currentPath = null;
+        currentHead = null;
+        currentBranch = null;
+        isLocked = false;
+        lockReason = null;
+        isPrunable = false;
+      }
+      continue;
+    }
+
+    if (trimmed.startsWith("worktree ")) {
+      currentPath = trimmed.slice("worktree ".length).trim();
+    } else if (trimmed.startsWith("HEAD ")) {
+      currentHead = trimmed.slice("HEAD ".length).trim();
+    } else if (trimmed.startsWith("branch ")) {
+      const branchRef = trimmed.slice("branch ".length).trim();
+      currentBranch = branchRef.startsWith("refs/heads/")
+        ? branchRef.slice("refs/heads/".length)
+        : branchRef;
+    } else if (trimmed.startsWith("locked")) {
+      isLocked = true;
+      if (trimmed.startsWith("locked ")) {
+        lockReason = trimmed.slice("locked ".length).trim();
+      }
+    } else if (trimmed.startsWith("prunable")) {
+      isPrunable = true;
+    }
+  }
+
+  if (currentPath && currentHead) {
+    const normPath = currentPath
+      .replace(/\\/g, "/")
+      .replace(/\/+$/, "")
+      .toLowerCase();
+    worktrees.push({
+      path: currentPath,
+      head: currentHead,
+      branch: currentBranch,
+      isCurrent: normPath === normalizedWorkspace,
+      isLocked,
+      lockReason,
+      isPrunable,
+    });
+  }
+
+  return worktrees;
+};
+
 export const remoteGetGitBranches = async (
   workspacePath: string,
 ): Promise<GitBranch[]> => {
+  const worktreesPromise = remoteGetGitWorktrees(workspacePath).catch(() => []);
   let output: string;
   try {
     output = await runRemoteGit(workspacePath, [
@@ -359,6 +453,14 @@ export const remoteGetGitBranches = async (
     ]);
   } catch {
     return [];
+  }
+
+  const worktrees = await worktreesPromise;
+  const branchToWorktree = new Map<string, string>();
+  for (const wt of worktrees) {
+    if (wt.branch) {
+      branchToWorktree.set(wt.branch, wt.path);
+    }
   }
 
   const branches: GitBranch[] = [];
@@ -399,6 +501,7 @@ export const remoteGetGitBranches = async (
         ahead,
         behind,
         isGone,
+        worktreePath: branchToWorktree.get(name) ?? null,
       });
     } else if (refname.startsWith("refs/remotes/")) {
       const remotesPart = refname.slice("refs/remotes/".length);
@@ -423,6 +526,7 @@ export const remoteGetGitBranches = async (
         ahead: 0,
         behind: 0,
         isGone: false,
+        worktreePath: null,
       });
     }
   }

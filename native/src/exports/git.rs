@@ -11,7 +11,7 @@ use crate::api::responses::{ResponsesApiResult, ResponsesApiStreamCallback};
 use crate::storage::services::git::{
     GitBranch, GitCheckoutResult, GitCommitFile, GitCommitResult, GitDiffResult, GitIdentity,
     GitLogEntry, GitPushPullResult, GitRemoteInfo, GitRepoInfo, GitStageResult, GitStatusResult,
-    GitWorktreeInfo,
+    GitWorktree, GitWorktreeInfo,
 };
 use crate::storage::services::git_watcher::GitChangeCallback;
 use crate::utils::process::{kill_process_tree, poll_child_exit};
@@ -45,6 +45,15 @@ pub async fn get_git_identity(repo_path: String) -> napi::Result<GitIdentity> {
     .map_err(|join_error| {
         napi::Error::from_reason(format!("Failed to get git identity: {join_error}"))
     })?
+}
+
+#[napi]
+pub async fn get_git_worktrees(repo_path: String) -> napi::Result<Vec<GitWorktree>> {
+    tokio::task::spawn_blocking(move || crate::storage::services::git::get_git_worktrees(&repo_path))
+        .await
+        .map_err(|join_error| {
+            napi::Error::from_reason(format!("Failed to get git worktrees: {join_error}"))
+        })?
 }
 
 #[napi]

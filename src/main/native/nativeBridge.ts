@@ -1093,15 +1093,29 @@ export const loadNativeBridge = (): NativeBridge => {
         ),
       resolveLoginPathForTerminal: () => Promise.resolve(null),
       gitListWorktrees: () =>
-        Promise.reject(new Error("Rust native bridge is required for worktrees")),
+        Promise.reject(
+          new Error("Rust native bridge is required for worktrees"),
+        ),
       gitCreateWorktree: () =>
-        Promise.reject(new Error("Rust native bridge is required to create worktrees")),
+        Promise.reject(
+          new Error("Rust native bridge is required to create worktrees"),
+        ),
       gitRemoveWorktree: () =>
-        Promise.reject(new Error("Rust native bridge is required to remove worktrees")),
+        Promise.reject(
+          new Error("Rust native bridge is required to remove worktrees"),
+        ),
       getConversationWorktree: () =>
-        Promise.reject(new Error("Rust native bridge is required to get conversation worktrees")),
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to get conversation worktrees",
+          ),
+        ),
       setConversationWorktree: () =>
-        Promise.reject(new Error("Rust native bridge is required to set conversation worktrees")),
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to set conversation worktrees",
+          ),
+        ),
       getGitStatus: () => {
         throw new Error("Rust native bridge is required for git status");
       },
@@ -1110,6 +1124,9 @@ export const loadNativeBridge = (): NativeBridge => {
       },
       getGitIdentity: () => {
         throw new Error("Rust native bridge is required for git identity");
+      },
+      getGitWorktrees: () => {
+        throw new Error("Rust native bridge is required for git worktrees");
       },
       gitStageFiles: () => {
         throw new Error("Rust native bridge is required for git stage");

@@ -133,6 +133,7 @@ pub struct GitBranch {
     pub ahead: i32,
     pub behind: i32,
     pub is_gone: bool,
+    pub worktree_path: Option<String>,
 }
 
 #[napi(object)]
@@ -140,6 +141,18 @@ pub struct GitRemoteInfo {
     pub name: String,
     pub fetch_url: Option<String>,
     pub push_url: Option<String>,
+}
+
+#[napi(object)]
+#[derive(Clone, Debug)]
+pub struct GitWorktree {
+    pub path: String,
+    pub head: String,
+    pub branch: Option<String>,
+    pub is_current: bool,
+    pub is_locked: bool,
+    pub lock_reason: Option<String>,
+    pub is_prunable: bool,
 }
 
 #[napi(object)]

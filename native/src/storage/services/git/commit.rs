@@ -181,10 +181,10 @@ pub fn fetch_remote(repo_path: &str) -> Result<GitPushPullResult> {
 
 pub fn checkout_branch(repo_path: &str, branch_name: &str) -> Result<GitCheckoutResult> {
     let branch_name = branch_name.trim();
-    if branch_name.is_empty() {
+    if branch_name.is_empty() || branch_name.starts_with('-') {
         return Ok(GitCheckoutResult {
             success: false,
-            message: "Branch name cannot be empty".to_string(),
+            message: "Branch name cannot be empty or start with a dash".to_string(),
         });
     }
 
@@ -225,25 +225,21 @@ pub fn checkout_branch(repo_path: &str, branch_name: &str) -> Result<GitCheckout
                 }
             }
 
-            // 本地尚无对应分支：基于远程跟踪分支新建本地分支并建立跟踪
-            match run_git(repo_path, &["checkout", "-b", local_name, branch_name]) {
-                Ok(_) => {
-                    return Ok(GitCheckoutResult {
-                        success: true,
-                        message: format!("Switched to {local_name} (tracking {branch_name})"),
-                    })
-                }
-                Err(e) => {
-                    return Ok(GitCheckoutResult {
-                        success: false,
-                        message: format!("{e}"),
-                    })
-                }
-            }
+            // 本地无同名分支，创建并跟踪远程分支（如 git checkout -b feat/foo origin/feat/foo）
+            return match run_git(repo_path, &["checkout", "-b", local_name, branch_name]) {
+                Ok(_) => Ok(GitCheckoutResult {
+                    success: true,
+                    message: format!("Switched to {local_name} (tracking {branch_name})"),
+                }),
+                Err(e) => Ok(GitCheckoutResult {
+                    success: false,
+                    message: format!("{e}"),
+                }),
+            };
         }
     }
 
-    // 3. 兜底直接 checkout（例如 tag、commit hash 等）
+    // 3. 回退为直接 checkout 原名称（例如 tag、短 SHA 等由 git 自身解析）
     match run_git(repo_path, &["checkout", branch_name]) {
         Ok(_) => Ok(GitCheckoutResult {
             success: true,

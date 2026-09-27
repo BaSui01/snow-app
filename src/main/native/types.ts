@@ -1526,6 +1526,17 @@ export type GitBranch = {
   ahead?: number;
   behind?: number;
   isGone?: boolean;
+  worktreePath?: string | null;
+};
+
+export type GitWorktree = {
+  path: string;
+  head: string;
+  branch: string | null;
+  isCurrent: boolean;
+  isLocked: boolean;
+  lockReason: string | null;
+  isPrunable?: boolean;
 };
 
 export type GitDiffResult = {
@@ -2423,6 +2434,7 @@ export type NativeBridge = {
     statusLimit: number,
   ) => Promise<GitStatusResult>;
   getGitBranches: (repoPath: string) => Promise<GitBranch[]>;
+  getGitWorktrees?: (repoPath: string) => Promise<GitWorktree[]>;
   gitStageFiles: (
     repoPath: string,
     filePaths: string[],

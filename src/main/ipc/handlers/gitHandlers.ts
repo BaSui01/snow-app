@@ -15,6 +15,7 @@ import {
   remoteGetGitIdentity,
   remoteGetGitLog,
   remoteGetGitStatus,
+  remoteGetGitWorktrees,
   remoteGetRemotes,
   remoteGetStagedDiff,
   remotePullChanges,
@@ -204,6 +205,18 @@ export const registerGitHandlers = (native: NativeBridge): void => {
     return isSshPath(trimmed)
       ? remoteGetGitIdentity(trimmed)
       : native.getGitIdentity(trimmed);
+  });
+
+  ipcMain.handle("git:worktrees", async (_event, repoPath: unknown) => {
+    if (typeof repoPath !== "string" || !repoPath.trim()) {
+      throw new Error("Repository path is required");
+    }
+    const trimmed = repoPath.trim();
+    return isSshPath(trimmed)
+      ? remoteGetGitWorktrees(trimmed)
+      : native.getGitWorktrees
+        ? native.getGitWorktrees(trimmed)
+        : [];
   });
 
   ipcMain.handle(
@@ -568,11 +581,19 @@ export const registerGitHandlers = (native: NativeBridge): void => {
 
   ipcMain.handle(
     "git:worktrees:create",
-    async (_event, directoryId: unknown, branchName: unknown, baseRef: unknown) => {
+    async (
+      _event,
+      directoryId: unknown,
+      branchName: unknown,
+      baseRef: unknown,
+    ) => {
       if (
-        typeof directoryId !== "string" || !directoryId.trim() ||
-        typeof branchName !== "string" || !branchName.trim() ||
-        typeof baseRef !== "string" || !baseRef.trim()
+        typeof directoryId !== "string" ||
+        !directoryId.trim() ||
+        typeof branchName !== "string" ||
+        !branchName.trim() ||
+        typeof baseRef !== "string" ||
+        !baseRef.trim()
       ) {
         throw new Error("Directory ID, branch name, and base ref are required");
       }

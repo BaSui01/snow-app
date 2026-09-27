@@ -41,6 +41,17 @@ export type GitBranch = {
   ahead?: number;
   behind?: number;
   isGone?: boolean;
+  worktreePath?: string | null;
+};
+
+export type GitWorktree = {
+  path: string;
+  head: string;
+  branch: string | null;
+  isCurrent: boolean;
+  isLocked: boolean;
+  lockReason: string | null;
+  isPrunable?: boolean;
 };
 
 export type GitDiffResult = {

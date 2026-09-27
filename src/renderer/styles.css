@@ -29194,6 +29194,29 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.branch-dropdown-item-worktree-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  font-size: 9.5px;
+  color: #059669;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px dashed rgba(16, 185, 129, 0.4);
+  margin-left: 6px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+:root[data-theme="dark"] .branch-dropdown-item-worktree-badge {
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.18);
+  border-color: rgba(52, 211, 153, 0.4);
 }
 
 .branch-dropdown-item-check::before {
@@ -32737,19 +32760,62 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   font-weight: 500;
   white-space: nowrap;
   flex-shrink: 0;
-  max-width: 140px;
+  max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    opacity 0.15s ease,
+    filter 0.15s ease,
+    transform 0.1s ease;
 }
 
-.git-graph-ref svg {
-  flex-shrink: 0;
+.git-graph-ref:hover {
+  filter: brightness(1.15);
+  box-shadow: 0 0 0 1px currentColor;
+}
+
+.git-graph-ref:active {
+  transform: scale(0.98);
+}
+
+.git-graph-action-error {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 6px 12px;
+  font-size: 11px;
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.12);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.3);
+  cursor: pointer;
+  word-break: break-all;
+}
+
+:root[data-theme="dark"] .git-graph-action-error {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.18);
+  border-bottom-color: rgba(248, 113, 113, 0.3);
 }
 
 /* 本地分支（含当前 HEAD） */
 .git-graph-ref.local {
   background: var(--accent-blue-bg);
   color: var(--accent-blue-text);
+}
+
+/* 处于独立工作树的分支 */
+.git-graph-ref.worktree {
+  background: rgba(16, 185, 129, 0.15);
+  color: #059669;
+  border: 1px dashed rgba(16, 185, 129, 0.5);
+}
+
+:root[data-theme="dark"] .git-graph-ref.worktree {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border: 1px dashed rgba(52, 211, 153, 0.5);
 }
 
 /* 远端跟踪分支 */

@@ -6,6 +6,7 @@ import {
   Copy,
   X,
   Loader2,
+  FolderGit2,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GitBranch as GitBranchType } from "../../../../preload";
@@ -36,9 +37,12 @@ const isValidBranchName = (branch: string): boolean => {
   ) {
     return false;
   }
-  return branch.split("/").every((part) =>
-    part.length > 0 && !part.startsWith(".") && !part.endsWith(".lock"),
-  );
+  return branch
+    .split("/")
+    .every(
+      (part) =>
+        part.length > 0 && !part.startsWith(".") && !part.endsWith(".lock"),
+    );
 };
 
 export const BranchSelector = ({
@@ -58,8 +62,29 @@ export const BranchSelector = ({
     x: number;
     y: number;
   } | null>(null);
+  const [branchItemContextMenu, setBranchItemContextMenu] = useState<{
+    x: number;
+    y: number;
+    branch: GitBranchType;
+  } | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const createInputRef = useRef<HTMLInputElement>(null);
+
+  const isOtherWorktreePath = useCallback(
+    (wtPath: string | null | undefined): boolean => {
+      if (!wtPath) return false;
+      const normWt = wtPath
+        .replace(/\\/g, "/")
+        .replace(/\/+$/, "")
+        .toLowerCase();
+      const normRepo = repoPath
+        .replace(/\\/g, "/")
+        .replace(/\/+$/, "")
+        .toLowerCase();
+      return normWt !== normRepo;
+    },
+    [repoPath],
+  );
 
   /** 加载分支列表（打开下拉与右键刷新共用）。 */
   const loadBranches = useCallback(() => {
@@ -119,6 +144,23 @@ export const BranchSelector = ({
       return;
     }
 
+    const targetBranch = branches.find(
+      (b) => b.name === (branch.isRemote ? branch.name : branch.name),
+    );
+    if (isOtherWorktreePath(branch.worktreePath)) {
+      setCreateError(
+        t("git.branchCheckedOutInOtherWorktree", {
+          values: {
+            branch: branch.name,
+            path: branch.worktreePath || "",
+          },
+          defaultValue: `Branch '${branch.name}' is already checked out at: ${branch.worktreePath}`,
+        }),
+      );
+      setShowCreate(true);
+      return;
+    }
+
     const remoteName = branch.remoteName ?? "";
     const remotePrefix = remoteName ? `${remoteName}/` : "";
     const remoteBranchName =
@@ -131,12 +173,11 @@ export const BranchSelector = ({
         : branch.name
       : branch.name;
     const conflictingLocal = branch.isRemote
-      ? branches.find((item) => !item.isRemote && item.name === remoteBranchName)
+      ? branches.find(
+          (item) => !item.isRemote && item.name === remoteBranchName,
+        )
       : undefined;
-    if (
-      conflictingLocal &&
-      conflictingLocal.upstream !== target
-    ) {
+    if (conflictingLocal && conflictingLocal.upstream !== target) {
       setCreateError(
         t("git.branchTrackingConflict", {
           values: {
@@ -152,16 +193,22 @@ export const BranchSelector = ({
     const checkoutName = conflictingLocal?.name ?? target;
     window.snow
       .gitCheckout(repoPath, checkoutName)
-      .then((result) => {
-        if (!result.success) {
-          setCreateError(result.message || t("git.checkoutBranchFailed"));
-          return;
+      .then((res) => {
+        if (res.success) {
+          setIsOpen(false);
+          onBranchChanged();
+        } else {
+          setCreateError(res.message || t("git.operationFailedGeneric"));
+          setShowCreate(true);
         }
-        setIsOpen(false);
-        onBranchChanged();
       })
       .catch((cause: unknown) => {
-        setCreateError(cause instanceof Error ? cause.message : t("git.checkoutBranchFailed"));
+        setCreateError(
+          cause instanceof Error
+            ? cause.message
+            : t("git.operationFailedGeneric"),
+        );
+        setShowCreate(true);
       });
   };
 
@@ -220,6 +267,68 @@ export const BranchSelector = ({
     setCreateError(null);
   };
 
+  /** 单个分支项右键菜单：复制分支名 / 复制工作树路径 / 切换分支。 */
+  const buildBranchItemMenuItems = (
+    branch: GitBranchType,
+  ): ContextMenuItem[] => {
+    const isOtherWorktree = isOtherWorktreePath(branch.worktreePath);
+    const worktreeFolder = branch.worktreePath
+      ? branch.worktreePath.replace(/\\/g, "/").split("/").filter(Boolean).pop()
+      : null;
+
+    const items: ContextMenuItem[] = [
+      {
+        id: "copy-branch-name",
+        label: t("git.copyBranchName", { defaultValue: "Copy Branch Name" }),
+        icon: <Copy size={13} strokeWidth={1.8} />,
+        onClick: () => {
+          setBranchItemContextMenu(null);
+          void window.snow.writeClipboardText(branch.name).catch(() => {});
+        },
+      },
+    ];
+
+    if (branch.worktreePath) {
+      items.push({
+        id: "copy-worktree-path",
+        label: t("git.copyWorktreePath", {
+          defaultValue: "Copy Worktree Path",
+        }),
+        icon: <FolderGit2 size={13} strokeWidth={1.8} />,
+        onClick: () => {
+          setBranchItemContextMenu(null);
+          void window.snow
+            .writeClipboardText(branch.worktreePath!)
+            .catch(() => {});
+        },
+      });
+    }
+
+    if (!branch.isRemote) {
+      items.push({
+        id: "checkout-branch",
+        separator: true,
+        label: branch.isCurrent
+          ? t("git.currentBranch", { defaultValue: "Current Branch" })
+          : isOtherWorktree
+            ? `${t("git.worktreeCheckedOut", { defaultValue: "Checked out in Worktree" })}: ${worktreeFolder}`
+            : t("git.checkoutBranch", { defaultValue: "Checkout Branch" }),
+        icon: isOtherWorktree ? (
+          <FolderGit2 size={13} strokeWidth={1.8} />
+        ) : (
+          <GitBranch size={13} strokeWidth={1.8} />
+        ),
+        disabled: branch.isCurrent || isOtherWorktree,
+        onClick: () => {
+          setBranchItemContextMenu(null);
+          handleCheckout(branch.name);
+        },
+      });
+    }
+
+    return items;
+  };
+
   /** 右键菜单：复制分支名 / 新建分支 / 刷新分支列表。 */
   const buildMenuItems = (): ContextMenuItem[] => [
     {
@@ -267,6 +376,8 @@ export const BranchSelector = ({
         onClick={() => setIsOpen(!isOpen)}
         onContextMenu={(e) => {
           e.preventDefault();
+          e.stopPropagation();
+          setBranchItemContextMenu(null);
           setContextMenu({ x: e.clientX, y: e.clientY });
         }}
         title={currentBranch}
@@ -281,7 +392,9 @@ export const BranchSelector = ({
         <div className="branch-dropdown" ref={dropdownRef}>
           <div className="branch-dropdown-create">
             {createError && (
-              <div className="branch-create-error" role="alert">{createError}</div>
+              <div className="branch-create-error" role="alert">
+                {createError}
+              </div>
             )}
             {showCreate ? (
               <div className="branch-create-form">
@@ -344,6 +457,16 @@ export const BranchSelector = ({
                     {t("git.localBranches")}
                   </div>
                   {localBranches.map((branch) => {
+                    const isOtherWorktree = isOtherWorktreePath(
+                      branch.worktreePath,
+                    );
+                    const worktreeFolder = branch.worktreePath
+                      ? branch.worktreePath
+                          .replace(/\\/g, "/")
+                          .split("/")
+                          .filter(Boolean)
+                          .pop()
+                      : null;
                     const isUpstreamTracking =
                       branch.upstream?.startsWith("upstream/");
                     return (
@@ -353,12 +476,36 @@ export const BranchSelector = ({
                         className={`branch-dropdown-item${
                           branch.isCurrent ? " active" : ""
                         }`}
-onClick={() => handleCheckout(branch)}
+                        onClick={() => handleCheckout(branch)}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setContextMenu(null);
+                          setBranchItemContextMenu({
+                            x: e.clientX,
+                            y: e.clientY,
+                            branch,
+                          });
+                        }}
+                        title={
+                          isOtherWorktree
+                            ? `${branch.name}\n${t("git.worktreeCheckedOut")}: ${branch.worktreePath}`
+                            : branch.name
+                        }
                       >
                         <div className="branch-dropdown-item-left">
                           <span className="branch-dropdown-item-name">
                             {branch.name}
                           </span>
+                          {isOtherWorktree && (
+                            <span
+                              className="branch-dropdown-item-worktree-badge"
+                              title={branch.worktreePath || ""}
+                            >
+                              <FolderGit2 size={11} strokeWidth={1.8} />
+                              {worktreeFolder}
+                            </span>
+                          )}
                           {branch.upstream ? (
                             <span
                               className={`branch-dropdown-item-tracking${
@@ -435,7 +582,7 @@ onClick={() => handleCheckout(branch)}
                         className={`branch-dropdown-item${
                           branch.isCurrent ? " active" : ""
                         }`}
-onClick={() => handleCheckout(branch)}
+                        onClick={() => handleCheckout(branch)}
                       >
                         <div className="branch-dropdown-item-left">
                           <span className="branch-dropdown-item-name">
@@ -479,6 +626,14 @@ onClick={() => handleCheckout(branch)}
           y={contextMenu.y}
           items={buildMenuItems()}
           onClose={() => setContextMenu(null)}
+        />
+      )}
+      {branchItemContextMenu && (
+        <ContextMenu
+          x={branchItemContextMenu.x}
+          y={branchItemContextMenu.y}
+          items={buildBranchItemMenuItems(branchItemContextMenu.branch)}
+          onClose={() => setBranchItemContextMenu(null)}
         />
       )}
     </div>

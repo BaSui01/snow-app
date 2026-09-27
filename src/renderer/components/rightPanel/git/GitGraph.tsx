@@ -5,6 +5,7 @@ import {
   Eye,
   EyeOff,
   FileText,
+  FolderGit2,
   GitBranch,
   GitCommitHorizontal,
   Hash,
@@ -21,6 +22,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import type {
+  GitBranch as GitBranchType,
   GitCommitFile,
   GitFileStatus,
   GitLogEntry,
@@ -475,6 +477,72 @@ export const GitGraph = ({
     path: string;
   } | null>(null);
 
+  // 分支与工作树映射表（branchName -> GitBranchType）
+  const [branchMap, setBranchMap] = useState<Map<string, GitBranchType>>(
+    new Map(),
+  );
+
+  // 分支徽章专属菜单
+  const [branchContextMenu, setBranchContextMenu] = useState<{
+    x: number;
+    y: number;
+    ref: ParsedRef;
+  } | null>(null);
+
+  // 轻量操作反馈（如 checkout 失败的错误原因），自动淡出
+  const [actionError, setActionError] = useState<string | null>(null);
+  const actionErrorTimerRef = useRef<number | null>(null);
+
+  const showActionError = useCallback((msg: string) => {
+    setActionError(msg);
+    if (actionErrorTimerRef.current) {
+      window.clearTimeout(actionErrorTimerRef.current);
+    }
+    actionErrorTimerRef.current = window.setTimeout(() => {
+      setActionError(null);
+    }, 4000);
+  }, []);
+
+  const normalizedRepoPath = useMemo(
+    () => repoPath.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase(),
+    [repoPath],
+  );
+
+  const isOtherWorktreePath = useCallback(
+    (wtPath: string | null | undefined): boolean => {
+      if (!wtPath) return false;
+      const normalized = wtPath
+        .replace(/\\/g, "/")
+        .replace(/\/+$/, "")
+        .toLowerCase();
+      return normalized !== normalizedRepoPath;
+    },
+    [normalizedRepoPath],
+  );
+
+  const getWorktreeFolderName = useCallback((wtPath: string): string => {
+    const parts = wtPath.replace(/\\/g, "/").split("/").filter(Boolean);
+    return parts[parts.length - 1] || wtPath;
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.snow
+      .gitBranches(repoPath)
+      .then((branches) => {
+        if (cancelled) return;
+        const map = new Map<string, GitBranchType>();
+        for (const b of branches) {
+          map.set(b.name, b);
+        }
+        setBranchMap(map);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [repoPath, refreshKey]);
+
   const loadingRef = useRef(false);
   const loadedCountRef = useRef(0);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -908,10 +976,170 @@ export const GitGraph = ({
     setHoveredCommit(null);
   }, []);
 
+  /** 分支徽章专属菜单：复制分支名 / 复制工作树路径 / 切换分支。 */
+  const buildBranchMenuItems = (ref: ParsedRef): ContextMenuItem[] => {
+    const branchInfo = branchMap.get(ref.name);
+    const isCurrent = ref.isHead || branchInfo?.isCurrent;
+    const worktreePath = branchInfo?.worktreePath;
+    const isOtherWorktree = isOtherWorktreePath(worktreePath);
+    const worktreeFolder = worktreePath
+      ? getWorktreeFolderName(worktreePath)
+      : null;
+
+    const items: ContextMenuItem[] = [
+      {
+        id: "copy-branch-name",
+        label: t("git.copyBranchName", { defaultValue: "Copy Branch Name" }),
+        icon: <Copy size={13} strokeWidth={1.8} />,
+        onClick: () => {
+          setBranchContextMenu(null);
+          void window.snow.writeClipboardText(ref.name).catch(() => {});
+        },
+      },
+    ];
+
+    if (worktreePath) {
+      items.push({
+        id: "copy-worktree-path",
+        label: t("git.copyWorktreePath", {
+          defaultValue: "Copy Worktree Path",
+        }),
+        icon: <FolderGit2 size={13} strokeWidth={1.8} />,
+        onClick: () => {
+          setBranchContextMenu(null);
+          void window.snow.writeClipboardText(worktreePath).catch(() => {});
+        },
+      });
+      if (worktreeFolder) {
+        items.push({
+          id: "copy-worktree-name",
+          label: t("git.copyWorktreeName", {
+            defaultValue: "Copy Worktree Name",
+          }),
+          icon: <FileText size={13} strokeWidth={1.8} />,
+          onClick: () => {
+            setBranchContextMenu(null);
+            void window.snow.writeClipboardText(worktreeFolder).catch(() => {});
+          },
+        });
+      }
+    }
+
+    if (ref.kind === "local" && ref.name !== "HEAD") {
+      items.push({
+        id: "checkout-branch",
+        separator: true,
+        label: isCurrent
+          ? t("git.currentBranch", { defaultValue: "Current Branch" })
+          : isOtherWorktree
+            ? `${t("git.worktreeCheckedOut", { defaultValue: "Checked out in Worktree" })}: ${worktreeFolder}`
+            : t("git.checkoutBranch", { defaultValue: "Checkout Branch" }),
+        icon: isOtherWorktree ? (
+          <FolderGit2 size={13} strokeWidth={1.8} />
+        ) : (
+          <GitBranch size={13} strokeWidth={1.8} />
+        ),
+        disabled: isCurrent || isOtherWorktree,
+        onClick: () => {
+          setBranchContextMenu(null);
+          if (isCurrent || isOtherWorktree) return;
+          window.snow
+            .gitCheckout(repoPath, ref.name)
+            .then((res) => {
+              if (res.success) {
+                loadPage(0, true);
+              } else {
+                showActionError(res.message || t("git.operationFailedGeneric"));
+              }
+            })
+            .catch((err) => {
+              showActionError(String(err));
+            });
+        },
+      });
+    }
+
+    return items;
+  };
+
   /** 提交行右键菜单：复制哈希 / 提交信息，以及展开收起提交详情。 */
   const buildCommitMenuItems = (commit: GitLogEntry): ContextMenuItem[] => {
     const isExpanded = selectedHash === commit.hash;
-    return [
+    const commitRefs = parseRefs(commit.refs);
+    const localBranchRefs = commitRefs.filter(
+      (r) => r.kind === "local" && r.name !== "HEAD",
+    );
+
+    const items: ContextMenuItem[] = [];
+
+    // 若当前提交有关联的本地分支，优先呈现分支与工作树快捷操作（最多展开前 3 个，避免超长菜单）
+    for (const bRef of localBranchRefs.slice(0, 3)) {
+      const bInfo = branchMap.get(bRef.name);
+      const wtPath = bInfo?.worktreePath;
+      const isOtherWt = isOtherWorktreePath(wtPath);
+      const wtFolder = wtPath ? getWorktreeFolderName(wtPath) : null;
+
+      items.push({
+        id: `copy-branch-${bRef.name}`,
+        label: `${t("git.copyBranchName")}: ${bRef.name}`,
+        icon: <Copy size={13} strokeWidth={1.8} />,
+        onClick: () => {
+          setContextMenu(null);
+          void window.snow.writeClipboardText(bRef.name).catch(() => {});
+        },
+      });
+
+      if (wtPath) {
+        items.push({
+          id: `copy-wt-path-${bRef.name}`,
+          label: `${t("git.copyWorktreePath")}: ${wtFolder || wtPath}`,
+          icon: <FolderGit2 size={13} strokeWidth={1.8} />,
+          onClick: () => {
+            setContextMenu(null);
+            void window.snow.writeClipboardText(wtPath).catch(() => {});
+          },
+        });
+      }
+
+      if (!bRef.isHead) {
+        items.push({
+          id: `checkout-${bRef.name}`,
+          label: isOtherWt
+            ? `${t("git.worktreeCheckedOut")}: ${wtFolder}`
+            : `${t("git.checkoutBranch")}: ${bRef.name}`,
+          icon: isOtherWt ? (
+            <FolderGit2 size={13} strokeWidth={1.8} />
+          ) : (
+            <GitBranch size={13} strokeWidth={1.8} />
+          ),
+          disabled: isOtherWt,
+          onClick: () => {
+            setContextMenu(null);
+            if (isOtherWt) return;
+            window.snow
+              .gitCheckout(repoPath, bRef.name)
+              .then((res) => {
+                if (res.success) {
+                  loadPage(0, true);
+                } else {
+                  showActionError(
+                    res.message || t("git.operationFailedGeneric"),
+                  );
+                }
+              })
+              .catch((err) => {
+                showActionError(String(err));
+              });
+          },
+        });
+      }
+    }
+
+    if (items.length > 0) {
+      items[items.length - 1].separator = true;
+    }
+
+    items.push(
       {
         id: "copy-full-hash",
         label: t("git.copyFullHash", { defaultValue: "Copy Full Hash" }),
@@ -971,7 +1199,9 @@ export const GitGraph = ({
           handleRowClick(commit.hash);
         },
       },
-    ];
+    );
+
+    return items;
   };
 
   /** 提交内文件右键菜单：复制文件路径。 */
@@ -1029,7 +1259,14 @@ export const GitGraph = ({
 
   /** Renders one ref badge (local / remote / tag) with its original meaning. */
   const renderRefBadge = (ref: ParsedRef, worktree?: GitWorktreeInfo) => {
-    const title =
+    const branchInfo = branchMap.get(ref.name);
+    const worktreePath = worktree?.worktreePath ?? branchInfo?.worktreePath;
+    const isOtherWorktree = isOtherWorktreePath(worktreePath);
+    const worktreeFolder = worktreePath
+      ? getWorktreeFolderName(worktreePath)
+      : null;
+
+    let title =
       ref.kind === "remote"
         ? t("git.graphRemoteBranch", { defaultValue: "Remote branch" })
         : ref.kind === "tag"
@@ -1039,6 +1276,23 @@ export const GitGraph = ({
             : ref.isHead
               ? t("git.graphCurrentBranch", { defaultValue: "Current branch" })
               : t("git.graphLocalBranch", { defaultValue: "Local branch" });
+
+    if (worktree) {
+      title += `\n${t("git.graphWorktreeTooltip", {
+        values: {
+          path: worktree.worktreePath,
+          state: worktree.isDirty
+            ? t("git.worktreeDirty")
+            : t("git.graphWorktreeClean"),
+          validity: worktree.isValid
+            ? ""
+            : ` · ${t("git.graphWorktreeInvalid")}`,
+        },
+      })}`;
+    } else if (isOtherWorktree && worktreePath) {
+      title += `\n${t("git.worktreeCheckedOut")}: ${worktreePath}`;
+    }
+
     const icon =
       ref.kind === "remote" ? (
         <Cloud size={10} strokeWidth={2} />
@@ -1048,34 +1302,51 @@ export const GitGraph = ({
         <GitCommitHorizontal size={10} strokeWidth={2} />
       ) : ref.isHead ? (
         <CircleDot size={10} strokeWidth={2} />
+      ) : isOtherWorktree ? (
+        <FolderGit2 size={10} strokeWidth={2} />
       ) : (
         <GitBranch size={10} strokeWidth={2} />
       );
+
     const worktreeColor = worktree ? getWorktreeColor(worktree) : undefined;
+    const displayText =
+      isOtherWorktree && worktreeFolder
+        ? `${ref.name} (${worktreeFolder})`
+        : ref.name;
+
     return (
       <span
         key={`${ref.kind}/${ref.name}/${worktree?.worktreeId ?? ""}`}
-        className={`git-graph-ref ${ref.kind}`}
-        title={
-          worktree
-            ? `${title}\n${t("git.graphWorktreeTooltip", {
-                values: {
-                  path: worktree.worktreePath,
-                  state: worktree.isDirty
-                    ? t("git.worktreeDirty")
-                    : t("git.graphWorktreeClean"),
-                  validity: worktree.isValid
-                    ? ""
-                    : ` · ${t("git.graphWorktreeInvalid")}`,
-                },
-              })}`
-            : title
-        }
+        className={`git-graph-ref ${ref.kind}${isOtherWorktree ? " worktree" : ""}`}
+        title={title}
         style={
           worktreeColor
             ? { color: worktreeColor, borderColor: worktreeColor }
             : undefined
         }
+        onClick={(e) => {
+          e.stopPropagation();
+          hideTooltip();
+          setContextMenu(null);
+          setFileContextMenu(null);
+          setBranchContextMenu({
+            x: e.clientX,
+            y: e.clientY,
+            ref,
+          });
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          hideTooltip();
+          setContextMenu(null);
+          setFileContextMenu(null);
+          setBranchContextMenu({
+            x: e.clientX,
+            y: e.clientY,
+            ref,
+          });
+        }}
       >
         {worktreeColor && (
           <span
@@ -1090,7 +1361,7 @@ export const GitGraph = ({
           />
         )}
         {icon}
-        {ref.name}
+        {displayText}
       </span>
     );
   };
@@ -1121,6 +1392,15 @@ export const GitGraph = ({
 
   return (
     <div className="git-graph" ref={containerRef}>
+      {actionError && (
+        <div
+          className="git-graph-action-error"
+          onClick={() => setActionError(null)}
+          title={actionError}
+        >
+          <span>{actionError}</span>
+        </div>
+      )}
       {graphWorktrees.length > 0 && (
         <div
           role="group"
@@ -1264,6 +1544,7 @@ export const GitGraph = ({
               onContextMenu={(event) => {
                 event.preventDefault();
                 hideTooltip();
+                setBranchContextMenu(null);
                 setContextMenu({
                   x: event.clientX,
                   y: event.clientY,
@@ -1651,6 +1932,14 @@ export const GitGraph = ({
           y={fileContextMenu.y}
           items={buildCommitFileMenuItems(fileContextMenu.file)}
           onClose={() => setFileContextMenu(null)}
+        />
+      )}
+      {branchContextMenu && (
+        <ContextMenu
+          x={branchContextMenu.x}
+          y={branchContextMenu.y}
+          items={buildBranchMenuItems(branchContextMenu.ref)}
+          onClose={() => setBranchContextMenu(null)}
         />
       )}
     </div>

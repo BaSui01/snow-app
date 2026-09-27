@@ -62,16 +62,14 @@ Evaluate language coverage, negotiated capabilities and health per tool, not by 
 
 The 11 matching labels in `toolNames.lsp-*` and `toolCall.lsp.op.*` are File Diagnostics, Type and Documentation Lookup, Symbol Navigation, Find References, File Symbol Outline, Rename Symbol, Function Call Hierarchy, Type Hierarchy, Workspace Symbol Search, Workspace Diagnostics and Go Dependency Vulnerability Scan. All three locales stay synchronized; IDs and historical keys remain intact. `goto` may specialize to Go to Definition / Go to Type Definition / Find Implementations by kind. See the [ID mapping](../3-reference/2-builtin-tools-reference.md).
 
-### 0.7 Strict diagnostics batch contract
+### 0.7 Array-first batch contract
 
-- Supply a nonempty string `filePath` for one file, or `filePaths` with **1..30** nonempty path strings for a batch, mutually exclusively. Put every batch file in the list; do not also send a nonempty single path.
-- Reject wrong types, non-string entries, empty arrays/entries and oversized lists without silent filtering or truncation to 30. A legacy empty `filePath: ""` placeholder means omitted and may accompany a valid list; it does not bypass type/count validation. Validate count before deduplication.
-- Deduplicate by physical file identity, preserving first occurrence in the original request. Keep one result per deduplicated file, including failures.
-- Single `filePath` keeps the legacy top-level shape. A list request, even with one item, returns `batch:true`, `fileCount`, `requestedCount`, `duplicateCount`, `status: complete|partial|failed`, `summary` and `files`. The counts represent deduplicated files, original request entries and physical duplicates removed, respectively.
-- `summary` contains `completedFiles`, `partialFiles`, `failedFiles`, `errorCount` and `warningCount`. Each file retains `filePath`, `status`, `diagnostics`, `warnings`, `truncated`, `error` and related fields. `error:null` is not an error. Empty diagnostics or zero counts do not prove complete success; the UI shows summaries and per-file warnings/truncation.
-- Target bounded concurrency is **3** file tasks (being integrated in `diagnostics.rs`). Completion order must not change result order; same-server locks may still serialize work, so batch latency is not promised to equal a single file.
+- Diagnostics require `filePaths` with **1..30** entries; other read-only batch tools use arrays too: symbols `filePaths` 1..10, hover/goto `items` 1..10, references `items` 1..5. Even one target must be sent as a one-element array; single-target compatibility parameters are removed.
+- Reject missing arrays, wrong types, non-string paths, empty arrays/entries and oversized lists without silent filtering or truncation. Deduplicate path arrays by physical identity while preserving first occurrence; every requested target has a result. A target failure, ambiguity, warning, incomplete or truncated result must be surfaced per item and affect overall status.
+- All batches return `batch:true`, request/dedup counts, aggregate `status`, `summary`, and per-file/per-target results. Status is complete/partial/failed; ambiguity is never complete. Read operations use bounded concurrency 3 and preserve input order.
+- `lsp-rename` remains a single-symbol preview-then-capability operation; multi-file edits are not transactional and multiple renames must not be combined into one batch.
 
-These are synchronized contracts. Scheduling and related interfaces remain under integration; this is not a claim that builds, fixtures or live acceptance passed.
+This is the synchronized contract; do not infer build, fixture or live-runtime acceptance from this document.
 
 ### 0.8 Content-bound rename preview capabilities
 
@@ -349,10 +347,10 @@ Key points:
 ### 8.1 lsp-diagnostics (Phase 1, core)
 
 ```
-lsp-diagnostics filePath=<absolute path>
+lsp-diagnostics filePaths=[<path1>, <path2>]   # 1..30 file paths array (pass [<path>] for single file)
 ```
 
-**Batch contract (revised 2026-09-26):** see §0.7 for the legacy single-file shape, strict mutually exclusive 1..30 input, physical deduplication and stable ordering, request/duplicate counts, per-file status and summary, and target concurrency 3. Old abbreviated outputs do not enumerate all fields.
+**Batch contract (2026-09-27):** the legacy top-level single-file response has been removed. Responses always use the `batch:true` envelope in §0.7; even one file must be passed as `filePaths:[path]`. Diagnostics accepts only a 1..30 path array, deduplicates by physical identity and preserves order. Per-target status is retained, and aggregate status must not hide failure, incompleteness or ambiguity.
 
 Execution sequence (**revised per 2026-08-14 live testing**):
 
@@ -406,7 +404,7 @@ Current diagnostics neither read nor write `lsp_diagnostic_cache`, nor delete hi
 ### 8.2 lsp-hover (Phase 1)
 
 ```
-lsp-hover filePath=<absolute path> line=<1-based> column=<1-based>
+lsp-hover items=[{"filePath":"/absolute/path","line":12,"column":4}]
 ```
 
 Steps 0-3 same as above (file stays open via `opened_files` ref-counting for consecutive queries; closed on idle reclamation).
@@ -663,7 +661,7 @@ sequenceDiagram
     participant S as ServerSession
     participant P as Language server process
 
-    A->>C: lsp-diagnostics(filePath)
+    A->>C: lsp-diagnostics(filePaths)
     C->>M: reject SSH paths + resolve project root (project_id)
     C->>M: match language by fileExtensions
     alt language unconfigured

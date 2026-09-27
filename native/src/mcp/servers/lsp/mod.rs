@@ -15,6 +15,7 @@
 //!
 //! Design: docs/zh-CN/4-架构与开发/7-LSP外部语言服务器接入设计.md
 
+mod batch;
 pub(crate) mod capabilities;
 mod client;
 mod config;
@@ -153,11 +154,19 @@ impl LspService {
         if !scope_allowed {
             return Ok(None);
         }
-        // goto 需要注入 kind 参数（find_definition → kind=definition）。
-        let mut effective_args = args.clone();
-        if let Some(kind) = kind {
-            effective_args["kind"] = json!(kind);
-        }
+        // 构造数组入参分发给 batch 化的 LSP 工具
+        let effective_args = match lsp_tool {
+            "symbols" => json!({ "filePaths": [file_path] }),
+            "goto" => {
+                let mut item = args.clone();
+                if let Some(kind) = kind {
+                    item["kind"] = json!(kind);
+                }
+                json!({ "items": [item] })
+            }
+            "references" => json!({ "items": [args.clone()] }),
+            _ => args.clone(),
+        };
         let result = match self
             .execute_lsp_tool(lsp_tool, &effective_args, project_id)
             .await
@@ -176,15 +185,33 @@ impl LspService {
                 return Ok(None);
             }
         };
+        let single_result = match lsp_tool {
+            "goto" | "references" => result
+                .get("items")
+                .and_then(Value::as_array)
+                .and_then(|arr| arr.first())
+                .cloned()
+                .unwrap_or(result),
+            "symbols" => result
+                .get("files")
+                .and_then(Value::as_array)
+                .and_then(|arr| arr.first())
+                .cloned()
+                .unwrap_or(result),
+            _ => result,
+        };
+        if single_result.get("status").and_then(Value::as_str) != Some("complete") {
+            return Ok(None);
+        }
         let normalized = match lsp_tool {
-            "goto" => definition_to_codelens(file_path, result),
-            "references" => references_to_codelens(file_path, result),
-            _ => symbols_to_codelens(file_path, result),
+            "goto" => definition_to_codelens(file_path, single_result),
+            "references" => references_to_codelens(file_path, single_result),
+            _ => symbols_to_codelens(file_path, single_result),
         };
         Ok(Some(normalized))
     }
 
-    /// Single filePath or one batch filePaths; the dedicated module validates and schedules both.
+    /// Single filePaths batch; the dedicated module validates and schedules it.
     async fn execute_diagnostics(
         &self,
         args: &Value,
@@ -193,10 +220,42 @@ impl LspService {
         diagnostics::execute(self, args, project_id).await
     }
 
-    /// 单文件诊断准备（共享实现）：配置匹配 + 会话获取 + 缓存指纹检查 + didChange 触发。
-    /// 返回缓存命中（直接结果）或待等待（并发拉取所需信息）。
-    /// `configs` 由调用方提供（单文件路径自行 reload 一次；批量路径循环前
-    /// 统一加载一次，避免 n 次 DB 读）。
+    async fn execute_symbols(&self, args: &Value, project_id: Option<&str>) -> napi::Result<Value> {
+        batch::execute_symbols(self, args, project_id).await
+    }
+
+    pub(super) async fn execute_symbols_single(
+        &self,
+        file_path: &str,
+        project_id: Option<&str>,
+    ) -> napi::Result<Value> {
+        let path = tokio::fs::canonicalize(file_path).await.map_err(|error| {
+            Error::new(
+                Status::InvalidArg,
+                format!("Cannot resolve source file: {error}"),
+            )
+        })?;
+
+        if is_ssh_path(file_path) {
+            return Err(types::LspError::RemoteNotSupported.into());
+        }
+
+        let manager = manager::ServerManager::instance();
+        manager.reload_configs(project_id).await?;
+        let configs = manager.configs(project_id).await;
+        let (_config, lang) = config::match_config(&configs, &path)
+            .ok_or_else(|| types::LspError::NotConfigured(file_extension_label(&path)))?;
+        let project_root = resolve_lang_root(project_id, file_path, lang)?;
+
+        let session = manager
+            .get_or_start(lang, &project_root, project_id)
+            .await?;
+        let mut guard = session.lock().await;
+        guard.ensure_open(&path).await?;
+        Ok(guard.document_symbols(&path).await?)
+    }
+
+    /// 准备单文件诊断：配置匹配、会话获取并启动诊断请求。
     async fn prepare_single_with_configs(
         &self,
         file_path: &str,
@@ -366,8 +425,27 @@ impl LspService {
         }
     }
 
-    /// lsp-hover。
     async fn execute_hover(&self, args: &Value, project_id: Option<&str>) -> napi::Result<Value> {
+        batch::execute_hover(self, args, project_id).await
+    }
+
+    async fn execute_goto(&self, args: &Value, project_id: Option<&str>) -> napi::Result<Value> {
+        batch::execute_goto(self, args, project_id).await
+    }
+
+    async fn execute_references(
+        &self,
+        args: &Value,
+        project_id: Option<&str>,
+    ) -> napi::Result<Value> {
+        batch::execute_references(self, args, project_id).await
+    }
+
+    pub(super) async fn execute_hover_single(
+        &self,
+        args: &Value,
+        project_id: Option<&str>,
+    ) -> napi::Result<Value> {
         let resolved = self.resolve_target_location(args, project_id).await?;
         let (path, line, column, lang, symbol) = match resolved {
             ResolvedTargetLocation::Exact {
@@ -377,9 +455,8 @@ impl LspService {
                 lang,
                 symbol,
             } => (path, line, column, lang, symbol),
-            ResolvedTargetLocation::Ambiguous(val) => return Ok(val),
+            ResolvedTargetLocation::Ambiguous(value) => return Ok(value),
         };
-
         let manager = manager::ServerManager::instance();
         let project_root = resolve_lang_root(project_id, path.to_str().unwrap_or(""), &lang)?;
         let session = manager
@@ -387,29 +464,20 @@ impl LspService {
             .await?;
         let mut guard = session.lock().await;
         guard.ensure_open(&path).await?;
-
         let mut result = guard.hover(&path, line, column).await?;
-        if let Some(symbol_str) = symbol {
+        if let Some(symbol) = symbol {
             if let Value::Object(map) = &mut result {
-                map.insert(
-                    "resolvedSymbol".to_string(),
-                    json!({
-                        "symbol": symbol_str,
-                        "filePath": path.to_string_lossy(),
-                        "line": line,
-                        "column": column,
-                    }),
-                );
+                map.insert("resolvedSymbol".to_string(), json!({"symbol":symbol,"filePath":path.to_string_lossy(),"line":line,"column":column}));
             }
         }
         Ok(result)
     }
 
-    /// lsp-goto：统一跳转入口（definition / type-definition / implementation）。
-    ///
-    /// kind 默认 definition（全语言核心）；type-definition / implementation
-    /// 按能力表运行时校验（§8.7.1 兜底，能力标记保留在 capabilities.rs）。
-    async fn execute_goto(&self, args: &Value, project_id: Option<&str>) -> napi::Result<Value> {
+    pub(super) async fn execute_goto_single(
+        &self,
+        args: &Value,
+        project_id: Option<&str>,
+    ) -> napi::Result<Value> {
         let kind = args
             .get("kind")
             .and_then(Value::as_str)
@@ -417,7 +485,6 @@ impl LspService {
             .filter(|s| !s.is_empty())
             .unwrap_or("definition")
             .to_string();
-
         let resolved = self.resolve_target_location(args, project_id).await?;
         let (path, line, column, lang, symbol) = match resolved {
             ResolvedTargetLocation::Exact {
@@ -427,22 +494,14 @@ impl LspService {
                 lang,
                 symbol,
             } => (path, line, column, lang, symbol),
-            ResolvedTargetLocation::Ambiguous(val) => return Ok(val),
+            ResolvedTargetLocation::Ambiguous(value) => return Ok(value),
         };
-
-        match kind.as_str() {
-            // Actual support is checked by the initialized ServerSession.
-            "definition" | "type-definition" | "implementation" => {}
-            _ => {
-                return Err(Error::new(
-                    Status::InvalidArg,
-                    format!(
-                        "Unknown goto kind: \"{kind}\". Available kinds: [definition, type-definition, implementation]"
-                    ),
-                ))
-            }
+        if !matches!(
+            kind.as_str(),
+            "definition" | "type-definition" | "implementation"
+        ) {
+            return Err(Error::new(Status::InvalidArg, format!("Unknown goto kind: \"{kind}\". Available kinds: [definition, type-definition, implementation]")));
         }
-
         let manager = manager::ServerManager::instance();
         let project_root = resolve_lang_root(project_id, path.to_str().unwrap_or(""), &lang)?;
         let session = manager
@@ -450,31 +509,20 @@ impl LspService {
             .await?;
         let mut guard = session.lock().await;
         guard.ensure_open(&path).await?;
-
         let mut result = match kind.as_str() {
             "definition" => guard.goto_definition(&path, line, column).await?,
             "type-definition" => guard.type_definition(&path, line, column).await?,
             _ => guard.implementation(&path, line, column).await?,
         };
-
-        if let Some(symbol_str) = symbol {
+        if let Some(symbol) = symbol {
             if let Value::Object(map) = &mut result {
-                map.insert(
-                    "resolvedSymbol".to_string(),
-                    json!({
-                        "symbol": symbol_str,
-                        "filePath": path.to_string_lossy(),
-                        "line": line,
-                        "column": column,
-                    }),
-                );
+                map.insert("resolvedSymbol".to_string(), json!({"symbol":symbol,"filePath":path.to_string_lossy(),"line":line,"column":column}));
             }
         }
         Ok(result)
     }
 
-    /// lsp-references。
-    async fn execute_references(
+    pub(super) async fn execute_references_single(
         &self,
         args: &Value,
         project_id: Option<&str>,
@@ -483,7 +531,6 @@ impl LspService {
             .get("includeDeclaration")
             .and_then(Value::as_bool)
             .unwrap_or(true);
-
         let resolved = self.resolve_target_location(args, project_id).await?;
         let (path, line, column, lang, symbol) = match resolved {
             ResolvedTargetLocation::Exact {
@@ -493,9 +540,8 @@ impl LspService {
                 lang,
                 symbol,
             } => (path, line, column, lang, symbol),
-            ResolvedTargetLocation::Ambiguous(val) => return Ok(val),
+            ResolvedTargetLocation::Ambiguous(value) => return Ok(value),
         };
-
         let manager = manager::ServerManager::instance();
         let project_root = resolve_lang_root(project_id, path.to_str().unwrap_or(""), &lang)?;
         let session = manager
@@ -503,53 +549,15 @@ impl LspService {
             .await?;
         let mut guard = session.lock().await;
         guard.ensure_open(&path).await?;
-
         let mut result = guard
             .references(&path, line, column, include_declaration)
             .await?;
-        if let Some(symbol_str) = symbol {
+        if let Some(symbol) = symbol {
             if let Value::Object(map) = &mut result {
-                map.insert(
-                    "resolvedSymbol".to_string(),
-                    json!({
-                        "symbol": symbol_str,
-                        "filePath": path.to_string_lossy(),
-                        "line": line,
-                        "column": column,
-                    }),
-                );
+                map.insert("resolvedSymbol".to_string(), json!({"symbol":symbol,"filePath":path.to_string_lossy(),"line":line,"column":column}));
             }
         }
         Ok(result)
-    }
-
-    /// lsp-symbols。
-    async fn execute_symbols(&self, args: &Value, project_id: Option<&str>) -> napi::Result<Value> {
-        let file_path = required_string(args, "filePath")?;
-        let path = tokio::fs::canonicalize(&file_path).await.map_err(|error| {
-            Error::new(
-                Status::InvalidArg,
-                format!("Cannot resolve source file: {error}"),
-            )
-        })?;
-
-        if is_ssh_path(&file_path) {
-            return Err(types::LspError::RemoteNotSupported.into());
-        }
-
-        let manager = manager::ServerManager::instance();
-        manager.reload_configs(project_id).await?;
-        let configs = manager.configs(project_id).await;
-        let (_config, lang) = config::match_config(&configs, &path)
-            .ok_or_else(|| types::LspError::NotConfigured(file_extension_label(&path)))?;
-        let project_root = resolve_lang_root(project_id, &file_path, lang)?;
-
-        let session = manager
-            .get_or_start(lang, &project_root, project_id)
-            .await?;
-        let mut guard = session.lock().await;
-        guard.ensure_open(&path).await?;
-        Ok(guard.document_symbols(&path).await?)
     }
 
     /// lsp-rename。

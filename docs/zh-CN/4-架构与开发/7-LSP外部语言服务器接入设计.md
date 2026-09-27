@@ -59,16 +59,12 @@
 
 11 项名称在 `toolNames.lsp-*` 与 `toolCall.lsp.op.*` 保持一致，三语同步、工具 ID 和历史 key 不删除：文件诊断、类型与文档查询、符号导航、查找引用、文件符号大纲、符号重命名、函数调用关系、类型层次关系、全局符号搜索、工作区诊断、Go依赖漏洞扫描。`goto` 按 kind 可显示定位定义/定位类型定义/查找实现；完整 ID 映射见 [工具参考](../3-参考手册/2-内置工具参考.md)。
 
-### 0.7 严格诊断批次契约
+### 0.7 数组优先批量契约
 
-- 单文件传非空字符串 `filePath`；批量传含 **1..30** 个非空路径字符串的 `filePaths`，二者严格互斥。批量须将全部文件放进列表，不能再同时传非空单路径。
-- 拒绝错误类型、非字符串条目、空数组、空条目及超限，不静默过滤或截断到 30。旧空 `filePath: ""` 占位兼容为未提供，可与有效列表同传；不允许借此绕过类型/数量校验。数量在去重前检查。
-- 按物理文件身份去重，保留原请求中首次出现的顺序，每个去重后文件保留一个结果，包括失败结果。
-- 单 `filePath` 保留旧顶层形状；列表请求（即使只有一项）返回 `batch:true`、`fileCount`、`requestedCount`、`duplicateCount`、`status: complete|partial|failed`、`summary`、`files`。三种计数分别为去重后文件数、原请求条目数、物理重复条目数。
-- `summary` 包含 `completedFiles`、`partialFiles`、`failedFiles`、`errorCount`、`warningCount`。每个文件保留 `filePath`、`status`、`diagnostics`、`warnings`、`truncated`、`error` 等字段；`error:null` 不是错误。空诊断或零统计不等于完整成功，UI 展示汇总及逐文件警告/截断。
-- 文件任务目标有界并发为 **3**（本轮在 `diagnostics.rs` 整合），完成先后不改变结果顺序；同服务器会话锁仍可能串行化，不承诺批量耗时等于单文件。
-
-本节是同步契约，并发调度与相关接口仍在整合；不宣称本轮构建、fixture 或真实运行已通过。
+- 诊断仅接受 `filePaths` 数组，长度 **1..30**；其他批量只读工具也使用数组：symbols `filePaths` 1..10，hover/goto `items` 1..10，references `items` 1..5。即使单目标也必须传一项数组；不再提供单点参数兼容。
+- 拒绝缺失数组、错误类型、非字符串路径、空数组/条目及超限，不静默过滤或截断。数组项按物理身份去重，保留首次出现顺序；每个请求项均对应结果。单项目标失败、歧义、warning、incomplete 或 truncated 必须独立呈现并反映到总体状态。
+- 所有批次统一返回 `batch:true`、请求/去重计数、整体 `status`、`summary` 和逐文件/逐目标列表。状态为 complete/partial/failed；歧义作为非 complete 结果呈现。读操作有界并发 3，结果顺序保持稳定。
+- `lsp-rename` 保持单符号、先预览再凭证应用；跨文件 edits 不是事务，不允许把多个改名拼成一个批处理。
 
 ### 0.8 内容绑定的重命名预览凭证
 
@@ -346,11 +342,10 @@ flowchart LR
 ### 8.1 lsp-diagnostics（Phase 1，核心；2026-08-14 支持批量）
 
 ```
-lsp-diagnostics filePath=<绝对路径>            # 单文件
-lsp-diagnostics filePaths=[<路径1>, <路径2>]   # 批量（1..30 文件，严格互斥）
+lsp-diagnostics filePaths=[<路径1>, <路径2>]   # 1..30 文件数组（单文件也传 [<绝对路径>]）
 ```
 
-**批量契约（2026-09-26 修订）**：单文件顶层兼容、严格互斥的 1..30 输入、物理去重与稳定顺序、请求/去重计数、逐文件状态及 summary、目标并发 3，完整规则见 §0.7；旧缩略输出不代表全部字段。
+**批量契约（2026-09-27）**：旧实现的单文件顶层结果兼容已移除；当前始终返回 §0.7 所述 `batch:true` 封套，单文件也必须传 `filePaths:[path]`。诊断仅接受 1..30 个路径数组，按物理文件去重并保持顺序；每项目标保留状态，批次状态不得掩盖失败、不完整或歧义。
 
 执行序列（**已按 2026-08-14 实测修订**）：
 
@@ -404,7 +399,7 @@ severity 映射：`1=error, 2=warning, 3=information, 4=hint`（LSP DiagnosticSe
 ### 8.2 lsp-hover（Phase 1）
 
 ```
-lsp-hover filePath=<绝对路径> line=<1-based> column=<1-based>
+lsp-hover items=[{"filePath":"/absolute/path","line":12,"column":4}]
 ```
 
 1-3 同上（不 didClose，文件在会话内保持打开便于连续查询；改用引用计数：文件在多请求期间保持 open，`opened_files` 记录，空闲回收时统一关闭）。
@@ -691,7 +686,7 @@ sequenceDiagram
     participant S as ServerSession
     participant P as 语言服务器进程
 
-    A->>C: lsp-diagnostics(filePath)
+    A->>C: lsp-diagnostics(filePaths)
     C->>M: 校验非 SSH 路径 + 解析项目根 (project_id)
     C->>M: 按 fileExtensions 匹配语言
     alt 未配置该语言

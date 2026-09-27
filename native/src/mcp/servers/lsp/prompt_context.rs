@@ -14,16 +14,22 @@ pub(crate) struct ToolSnapshot {
 }
 
 const ROUTES: &[(&str, &str)] = &[
-    ("lsp-goto", "Locate a symbol's definition (kind=definition)"),
+    (
+        "lsp-goto",
+        "Locate symbol definitions, type definitions or implementations in batches (supply items: [target])",
+    ),
     (
         "lsp-references",
-        "Find symbol usages / assess impact before editing",
+        "Find symbol usages / assess impact in batches (supply items: [target])",
     ),
     (
         "lsp-hover",
-        "Inspect a symbol's type, signature and documentation",
+        "Inspect symbol types, signatures and documentation in batches (supply items: [target])",
     ),
-    ("lsp-symbols", "Read a file's symbol outline"),
+    (
+        "lsp-symbols",
+        "Read file symbol outlines in batches (supply filePaths: [path])",
+    ),
     (
         "lsp-workspace-symbols",
         "Find symbols by name across the workspace",
@@ -118,7 +124,7 @@ impl ToolSnapshot {
             lines.push("- For a supported semantic rename, you MUST preview `lsp-rename` with dryRun=true and review the edits before dryRun=false; pass the returned previewId and apply only with the required authorization and unchanged preview inputs/files.".to_string());
         }
         if self.has("lsp-diagnostics") {
-            lines.push("- After changing source code, you MUST check supported changed files with `lsp-diagnostics`: use filePath for one file or filePaths in batches of at most 30. This does not replace required builds/tests.".to_string());
+            lines.push("- After changing source code, you MUST check supported changed files with `lsp-diagnostics`: supply filePaths as an array of at most 30 paths (pass [path] for a single file). This does not replace required builds/tests.".to_string());
         }
         if !lines.is_empty() {
             lines.push("- Run only checks relevant to this change, not the whole tool suite every time. Reuse an existing complete, successful result only when the same document versions, relevant dependencies/configuration and analysis scope are unchanged. For unavailable/unsupported/failed checks, explain the limitation and use permitted fallbacks; never enable or bypass disabled tools, whitelist restrictions or authorization to satisfy a MUST.".to_string());
@@ -155,7 +161,7 @@ impl ToolSnapshot {
         .map(|name| format!("`{name}`"))
         .collect::<Vec<_>>();
         if !addressing.is_empty() {
-            lines.push(format!("- {} accept a symbol name or 1-indexed line/column coordinates. Specify filePath when known to narrow scope; handle ambiguity and partial results before drawing conclusions.", addressing.join(", ")));
+            lines.push(format!("- {} require an `items` array (use a 1-element array for one target); each item may use a symbol or 1-indexed line/column coordinates. Specify filePath when known to narrow scope; handle ambiguity and partial results before drawing conclusions.", addressing.join(", ")));
         }
         if self.has("grep-search") {
             lines.push("- `grep-search` is for literal strings/patterns (logs, config keys, comments); text matches are not proof of semantic references.".to_string());

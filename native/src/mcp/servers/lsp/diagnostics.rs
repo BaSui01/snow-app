@@ -12,7 +12,6 @@ const CONCURRENCY: usize = 3;
 #[derive(Debug, PartialEq)]
 struct Request {
     paths: Vec<String>,
-    batch: bool,
 }
 
 fn invalid(message: impl Into<String>) -> Error {
@@ -34,44 +33,22 @@ fn parse(args: &Value) -> napi::Result<Request> {
     if !args.is_object() {
         return Err(invalid("Diagnostic arguments must be an object"));
     }
-    // Accept the old empty single-path placeholder only when a real batch is supplied.
-    let single = match args.get("filePath") {
-        None | Some(Value::Null) => None,
-        Some(Value::String(path)) if path.trim().is_empty() => None,
-        Some(value) => Some(validate_path(value)?),
-    };
-    let batch = match args.get("filePaths") {
-        None => None,
-        Some(Value::Array(paths)) => {
-            if paths.is_empty() || paths.len() > MAX_FILES {
-                return Err(invalid(format!("filePaths must contain 1..={MAX_FILES} paths; split larger requests into batches (nothing was diagnosed)")));
-            }
-            Some(
-                paths
-                    .iter()
-                    .map(validate_path)
-                    .collect::<napi::Result<Vec<_>>>()?,
-            )
-        }
-        Some(_) => {
-            return Err(invalid(
-                "filePaths must be an array of absolute local paths",
-            ))
-        }
-    };
-    match (single, batch) {
-        (Some(_), Some(_)) => Err(invalid(
-            "filePath and filePaths are mutually exclusive; place all files in filePaths",
-        )),
-        (Some(path), None) => Ok(Request {
-            paths: vec![path],
-            batch: false,
-        }),
-        (None, Some(paths)) => Ok(Request { paths, batch: true }),
-        _ => Err(invalid(
-            "Provide filePath for one file or filePaths for 1..=30 files",
-        )),
+    let val = args
+        .get("filePaths")
+        .ok_or_else(|| invalid("filePaths is required and must contain 1..=30 absolute local paths (pass [\"/path/to/file\"] for a single file)"))?;
+    let paths = val
+        .as_array()
+        .ok_or_else(|| invalid("filePaths must be an array of absolute local paths"))?;
+    if paths.is_empty() || paths.len() > MAX_FILES {
+        return Err(invalid(format!(
+            "filePaths must contain 1..={MAX_FILES} paths; split larger requests into batches (nothing was diagnosed)"
+        )));
     }
+    let validated = paths
+        .iter()
+        .map(validate_path)
+        .collect::<napi::Result<Vec<_>>>()?;
+    Ok(Request { paths: validated })
 }
 
 fn identity(path: &Path) -> String {
@@ -237,15 +214,11 @@ pub(super) async fn execute(
         .collect::<Vec<_>>()
         .await;
     files.sort_by_key(|(index, _)| *index);
-    let mut files = files
+    let files = files
         .into_iter()
         .map(|(_, value)| value)
         .collect::<Vec<_>>();
-    if request.batch {
-        Ok(envelope(files, requested_count, duplicate_count))
-    } else {
-        Ok(files.remove(0))
-    }
+    Ok(envelope(files, requested_count, duplicate_count))
 }
 
 #[cfg(test)]
@@ -258,18 +231,18 @@ mod tests {
             .into_owned()
     }
     #[test]
-    fn single_and_batch_are_supported() {
-        assert!(!parse(&json!({"filePath":path("a.rs")})).unwrap().batch);
-        assert!(
+    fn filepaths_array_is_required_for_one_or_many_files() {
+        assert!(parse(&json!({"filePath":path("a.rs")})).is_err());
+        assert_eq!(
             parse(&json!({"filePaths":[path("a.rs"),path("b.rs")]}))
                 .unwrap()
-                .batch
+                .paths,
+            vec![path("a.rs"), path("b.rs")]
         );
-    }
-    #[test]
-    fn both_nonempty_inputs_are_rejected() {
-        assert!(parse(&json!({"filePath":path("a.rs"),"filePaths":[path("b.rs")]})).is_err());
-        assert!(parse(&json!({"filePath":"","filePaths":[path("b.rs")]})).is_ok());
+        assert_eq!(
+            parse(&json!({"filePaths":[path("a.rs")]})).unwrap().paths,
+            vec![path("a.rs")]
+        );
     }
     #[test]
     fn invalid_batches_are_not_silently_filtered_or_clipped() {

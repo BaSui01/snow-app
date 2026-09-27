@@ -2,6 +2,7 @@ import { Braces, CircleAlert, Loader2, Settings, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type { LspSessionStatus } from "../../../../preload";
 import { useI18n } from "../../../i18n";
+import { MCP_SERVER_STATE_CHANGED_EVENT } from "./mcpServerEvents";
 
 const POLL_INTERVAL_MS = 3000;
 const STATUS_LABEL_KEY: Record<LspSessionStatus["status"], string> = {
@@ -16,6 +17,43 @@ type Snapshot = {
   stale: boolean;
 };
 
+const LSP_SERVER_ID = "builtin:lsp";
+
+/** LSP 是默认关闭的内置服务器，只有项目 MCP 面板显式启用后入口才显示。 */
+const useLspServerEnabled = (projectId?: string): boolean => {
+  const [enabled, setEnabled] = useState(false);
+
+  useEffect(() => {
+    if (!projectId) {
+      setEnabled(false);
+      return;
+    }
+    let disposed = false;
+    const loadEnabled = async (): Promise<void> => {
+      try {
+        const servers =
+          await window.snow.listMcpProjectServersCached(projectId);
+        const server = servers.find((item) => item.id === LSP_SERVER_ID);
+        if (!disposed) {
+          setEnabled(Boolean(server?.globalEnabled && server.enabled));
+        }
+      } catch {
+        if (!disposed) {
+          setEnabled(false);
+        }
+      }
+    };
+    void loadEnabled();
+    window.addEventListener(MCP_SERVER_STATE_CHANGED_EVENT, loadEnabled);
+    return () => {
+      disposed = true;
+      window.removeEventListener(MCP_SERVER_STATE_CHANGED_EVENT, loadEnabled);
+    };
+  }, [projectId]);
+
+  return enabled;
+};
+
 /** This reports process liveness, not indexing or semantic-query readiness. */
 export function LspStatusBadge({
   projectId,
@@ -25,6 +63,7 @@ export function LspStatusBadge({
   onOpenSettings?: () => void;
 }): React.JSX.Element | null {
   const { t } = useI18n();
+  const lspEnabled = useLspServerEnabled(projectId);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -36,7 +75,7 @@ export function LspStatusBadge({
     let timer: ReturnType<typeof setTimeout> | undefined;
     setOpen(false);
     setSnapshot(null);
-    if (!projectId) return;
+    if (!projectId || !lspEnabled) return;
     const fetchStatuses = async (): Promise<void> => {
       try {
         const items = await window.snow.listLspSessionStatuses(projectId);
@@ -69,7 +108,7 @@ export function LspStatusBadge({
       disposed = true;
       clearTimeout(timer);
     };
-  }, [projectId]);
+  }, [lspEnabled, projectId]);
 
   useEffect(() => {
     if (!open) return;
@@ -95,7 +134,7 @@ export function LspStatusBadge({
     };
   }, [open]);
 
-  if (!projectId) return null;
+  if (!projectId || !lspEnabled) return null;
   // A scope switch hides the previous project's snapshot during the very first render.
   const current = snapshot?.projectId === projectId ? snapshot : null;
   const items = current?.items ?? [];

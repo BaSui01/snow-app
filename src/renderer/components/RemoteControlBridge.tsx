@@ -22,6 +22,7 @@ import {
   type SnowRemoteChatInputPublication,
 } from "./mainContent/chatInput/remoteControlChatInputRegistry";
 import type { ChatInputSendOptions } from "./mainContent/chatInput/types";
+import { notifyMcpServerStateChanged } from "./mainContent/chatInput/mcpServerEvents";
 import { redactSensitiveToolText } from "./remoteControlRedaction";
 import {
   replyRemoteWorkflow,
@@ -1074,6 +1075,7 @@ export const RemoteControlBridge = ({
             server.id,
             enabled,
           );
+          notifyMcpServerStateChanged();
           if (
             enabled &&
             [

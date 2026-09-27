@@ -323,16 +323,6 @@ async fn candidate_response(
     })
 }
 
-/// Backward-compatible entry point; explicit-root callers should use the function below.
-pub async fn resolve_symbol_workspace_global(
-    manager: &ServerManager,
-    configs: &[ServerConfig],
-    project_id: Option<&str>,
-    symbol: &str,
-) -> Result<GlobalResolvedTarget, LspError> {
-    resolve_symbol_workspace_global_in_root(manager, configs, project_id, symbol, None).await
-}
-
 pub async fn resolve_symbol_workspace_global_in_root(
     manager: &ServerManager,
     configs: &[ServerConfig],

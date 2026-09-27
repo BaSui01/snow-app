@@ -1,7 +1,6 @@
 //! Request-local tool visibility and pure routing text. No session/global cache.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
 
 pub(crate) use super::config::{resolve_analysis_workspace_root, tool_exposure_for_workspace};
 
@@ -214,48 +213,6 @@ pub(crate) fn append_tool_guidance(tools: &mut [McpTool]) {
             ));
         }
     }
-}
-
-/// Compatibility for callers without a prepared request. Request builders must
-/// use ToolSnapshot::from_tools instead, after applying the sub-agent whitelist.
-pub(crate) async fn build_system_prompt_section(
-    project_id: Option<&str>,
-    project_root: Option<&Path>,
-) -> String {
-    if project_root
-        .is_some_and(|root| super::super::remote_workspace::is_ssh_path(&root.to_string_lossy()))
-    {
-        return String::new();
-    }
-    let tools = crate::mcp::tools::collect_all_mcp_tools_for_workspace(
-        project_id,
-        project_root,
-        false,
-        false,
-    )
-    .await
-    .unwrap_or_default();
-    ToolSnapshot::from_tools(&tools).system_prompt_section()
-}
-
-pub(crate) async fn analysis_tools_line(
-    project_id: Option<&str>,
-    project_root: Option<&Path>,
-) -> Option<String> {
-    if project_root
-        .is_some_and(|root| super::super::remote_workspace::is_ssh_path(&root.to_string_lossy()))
-    {
-        return None;
-    }
-    let tools = crate::mcp::tools::collect_all_mcp_tools_for_workspace(
-        project_id,
-        project_root,
-        false,
-        false,
-    )
-    .await
-    .ok()?;
-    ToolSnapshot::from_tools(&tools).analysis_tools_line()
 }
 
 #[cfg(test)]

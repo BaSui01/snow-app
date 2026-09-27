@@ -240,18 +240,6 @@ pub(crate) fn detect_project_languages_cached(project_root: &str) -> ProjectLang
     profile
 }
 
-pub(crate) fn scan_project_file_extensions(project_root: &str) -> HashSet<String> {
-    scan_project_inventory(Path::new(project_root), MAX_SCAN_DEPTH)
-        .files
-        .iter()
-        .filter_map(|path| {
-            path.extension()
-                .and_then(|ext| ext.to_str())
-                .map(str::to_ascii_lowercase)
-        })
-        .collect()
-}
-
 pub(crate) fn dir_has_lang_marker(dir: &Path, markers: &[&str]) -> bool {
     // 固定标志直接检查；通配目录扫描有界，不能对大型依赖目录无限遍历。
     markers.iter().any(|marker| match marker.strip_prefix('*') {

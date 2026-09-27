@@ -9,12 +9,7 @@ pub fn get_git_branches(repo_path: &str) -> Result<Vec<GitBranch>> {
 
     let output = run_git(
         repo_path,
-        &[
-            "branch",
-            "--list",
-            "--all",
-            "--format=%(HEAD)%(refname:short) %(objectname:short) %(upstream:short)",
-        ],
+        &["branch", "--list", "--all", "--format=%(HEAD)%(refname)"],
     )?;
 
     let mut branches: Vec<GitBranch> = Vec::new();
@@ -26,35 +21,38 @@ pub fn get_git_branches(repo_path: &str) -> Result<Vec<GitBranch>> {
         }
 
         let is_current = trimmed.starts_with('*');
-        let rest = if is_current {
+        let refname = if is_current {
             trimmed[1..].trim_start()
         } else {
             trimmed
         };
 
-        let parts: Vec<&str> = rest.split_whitespace().collect();
-        let name = match parts.first() {
-            Some(n) => *n,
-            None => continue,
-        };
-
-        if name == "HEAD" {
+        if let Some(name) = refname.strip_prefix("refs/heads/") {
+            branches.push(GitBranch {
+                name: name.to_string(),
+                is_current,
+                is_remote: false,
+                remote_name: None,
+            });
             continue;
         }
 
-        let is_remote = name.contains('/');
-        let remote_name = if is_remote {
-            let slash_idx = name.find('/').unwrap();
-            Some(name[..slash_idx].to_string())
-        } else {
-            None
+        let Some(rest) = refname.strip_prefix("refs/remotes/") else {
+            continue;
         };
+        let Some((remote_name, branch_name)) = rest.split_once('/') else {
+            continue;
+        };
+        // refs/remotes/<remote>/HEAD 是符号引用，不作为分支展示。
+        if branch_name == "HEAD" {
+            continue;
+        }
 
         branches.push(GitBranch {
-            name: name.to_string(),
+            name: rest.to_string(),
             is_current,
-            is_remote,
-            remote_name,
+            is_remote: true,
+            remote_name: Some(remote_name.to_string()),
         });
     }
 

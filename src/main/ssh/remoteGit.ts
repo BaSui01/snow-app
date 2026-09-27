@@ -330,7 +330,7 @@ export const remoteGetGitBranches = async (
       "branch",
       "--list",
       "--all",
-      "--format=%(HEAD)%(refname:short) %(objectname:short) %(upstream:short)",
+      "--format=%(HEAD)%(refname)",
     ]);
   } catch {
     return [];
@@ -345,17 +345,35 @@ export const remoteGetGitBranches = async (
     }
 
     const isCurrent = trimmed.startsWith("*");
-    const rest = isCurrent ? trimmed.slice(1).trimStart() : trimmed;
-    const parts = rest.split(/\s+/);
-    const name = parts[0];
-    if (!name || name === "HEAD") {
+    const refname = isCurrent ? trimmed.slice(1).trimStart() : trimmed;
+
+    if (refname.startsWith("refs/heads/")) {
+      branches.push({
+        name: refname.slice("refs/heads/".length),
+        isCurrent,
+        isRemote: false,
+        remoteName: null,
+      });
       continue;
     }
 
-    const isRemote = name.includes("/");
-    const remoteName = isRemote ? name.slice(0, name.indexOf("/")) : null;
+    if (!refname.startsWith("refs/remotes/")) {
+      continue;
+    }
 
-    branches.push({ name, isCurrent, isRemote, remoteName });
+    const rest = refname.slice("refs/remotes/".length);
+    const slashIdx = rest.indexOf("/");
+    if (slashIdx <= 0) {
+      continue;
+    }
+
+    const remoteName = rest.slice(0, slashIdx);
+    const branchName = rest.slice(slashIdx + 1);
+    if (branchName === "HEAD") {
+      continue;
+    }
+
+    branches.push({ name: rest, isCurrent, isRemote: true, remoteName });
   }
 
   return branches;

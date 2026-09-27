@@ -721,7 +721,6 @@ impl ServerSession {
             client::did_save(&mut self.socket, path, &text).await?;
         }
         Ok(PrepareResult::Pending(PendingDiagnostics {
-            path: path.to_path_buf(),
             uri,
             expected_version: version,
             requested_at,
@@ -797,11 +796,6 @@ impl ServerSession {
         })
     }
 
-    /// 保留入口兼容性；不持久化无法证明依赖有效性的单文件诊断结果。
-    pub async fn store_diagnostics(&mut self, _path: &Path, _value: &Value) {
-        self.touch();
-    }
-
     /// 标记最近使用（供空闲回收 / LRU 淘汰）。
     pub fn touch(&self) {
         self.last_used_ms.store(now_ms(), Ordering::Relaxed);
@@ -862,7 +856,6 @@ pub enum PrepareResult {
 
 /// 待等待的诊断（锁外并发所需的最小信息集）。
 pub struct PendingDiagnostics {
-    pub path: PathBuf,
     pub uri: lsp_types::Url,
     expected_version: i32,
     requested_at: Instant,

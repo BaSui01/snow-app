@@ -19,6 +19,7 @@ import { builtinServerDescriptionKey } from "../../sidebar/mcpSettings/builtinSe
 import { builtinServerIcon } from "../../sidebar/mcpSettings/builtinServerIcons";
 import { Modal } from "../../common/Modal";
 import { LITE_MODE_CHANGED_EVENT } from "../chatMessages/hooks/useToolAuthorization";
+import { notifyMcpServerStateChanged } from "./mcpServerEvents";
 
 type ProjectMcpPanelProps = {
   open: boolean;
@@ -284,6 +285,7 @@ export const ProjectMcpPanel = ({
         server.id,
         enabled,
       );
+      notifyMcpServerStateChanged();
       // 手动启用被精简模式禁用的内置服务器（browser / app-control /
       // terminal / computer-use）时，Rust 侧会自动关闭精简模式；派发事件
       // 让会话层重新读取状态。

@@ -255,14 +255,6 @@ pub(crate) async fn is_codebase_available(project_id: Option<&str>) -> Result<bo
     })?
 }
 
-pub async fn collect_allowed_mcp_tools(
-    project_id: Option<&str>,
-    tools_json: &str,
-    allow_wildcard: bool,
-) -> Result<Vec<McpTool>> {
-    collect_allowed_mcp_tools_for_workspace(project_id, None, tools_json, allow_wildcard).await
-}
-
 pub async fn collect_allowed_mcp_tools_for_workspace(
     project_id: Option<&str>,
     analysis_root: Option<&Path>,

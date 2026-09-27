@@ -306,19 +306,10 @@ fn symbol_information_to_json(symbol: &SymbolInformation) -> Value {
     })
 }
 
-/// 从 WorkspaceEdit 提取 (uri, TextEdit 列表)：优先 `document_changes::Edits`，
-/// 回退 `changes` 映射；`Operations` 类变更（create/rename/delete file）不支持
-/// 自动应用 → 返回明确的 Unsupported 错误（不得静默丢弃，R1.2）。
-pub(crate) fn workspace_edit_files(
-    edit: &WorkspaceEdit,
-) -> Result<Vec<(Url, Vec<TextEdit>)>, LspError> {
-    Ok(workspace_edit_files_versioned(edit)?
-        .into_iter()
-        .map(|(uri, _, edits)| (uri, edits))
-        .collect())
-}
-
-/// 保留TextDocumentEdit版本用于安全预览；changes映射没有版本。
+/// 从 WorkspaceEdit 提取 (uri, 版本, TextEdit 列表)：优先 `document_changes::Edits`，
+/// 回退 `changes` 映射（无版本，仅预览）；`Operations` 类变更
+/// （create/rename/delete file）不支持自动应用 → 返回明确的 Unsupported 错误
+/// （不得静默丢弃，R1.2）。
 pub(crate) fn workspace_edit_files_versioned(
     edit: &WorkspaceEdit,
 ) -> Result<Vec<(Url, Option<i32>, Vec<TextEdit>)>, LspError> {

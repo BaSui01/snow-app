@@ -14,8 +14,8 @@ pub const CORE_TOOLS: &[&str] = &["diagnostics", "hover", "goto", "references", 
 ///
 /// 2026-08-16 工具精简后：`type-definition` / `implementation` 不再有独立
 /// schema（已合并进 `lsp-goto{kind}`），此处保留作为 **goto kind 能力标记**
-/// ——`execute_goto` 运行时校验 kind 用（lang_supports_tool），collect 过滤
-/// 时 schema 中不存在对应工具名，天然不会暴露。维护约定：新增语言时
+/// ——collect 阶段由 `supported_tools_for_lang` 聚合出 `lsp-goto` 可选 kind；
+/// schema 中不存在对应工具名，天然不会暴露。维护约定：新增语言时
 /// 若其支持 type-definition / implementation，仍需在此标记。
 ///
 /// 依据（附录 F-1 矩阵，2026-08-14 官方文档核实；2026-08-14 工具精简后更新；
@@ -115,11 +115,6 @@ pub fn supported_tools_for_lang(lang: &str) -> Vec<&'static str> {
     let mut tools = CORE_TOOLS.to_vec();
     tools.extend(extra_tools_for_lang(lang));
     tools
-}
-
-/// 冷启动能力估计；实际调用必须以ServerCapabilities为准。
-pub fn lang_supports_tool(lang: &str, tool_name: &str) -> bool {
-    supported_tools_for_lang(lang).contains(&tool_name)
 }
 
 /// 握手后唯一能力事实源。静态语言表仅用于尚未启动的冷态提示。

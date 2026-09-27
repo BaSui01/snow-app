@@ -29,9 +29,9 @@ pub struct LspToolExposure {
 const PROBE_TTL: Duration = Duration::from_secs(10);
 static PROBE_CACHE: OnceLock<Mutex<HashMap<String, (bool, Instant)>>> = OnceLock::new();
 
-/// 命令安装探测（带 TTL 缓存）。pub(crate)：collect 阶段（tool_exposure）
-/// 与系统提示词构建（build_system_prompt_section）复用同一缓存，避免每轮
-/// 请求重复全量 PATH 扫描。
+/// 命令安装探测（带 TTL 缓存）。pub(crate)：collect 阶段
+/// （tool_exposure_for_workspace）与工作区查询复用同一缓存，避免每轮请求
+/// 重复全量 PATH 扫描。
 pub(crate) fn is_command_installed_cached(command: &str) -> bool {
     let cache = PROBE_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     let now = Instant::now();
@@ -69,11 +69,6 @@ pub async fn load_configs(project_id: Option<&str>) -> napi::Result<Vec<ServerCo
             format!("Failed to load LSP server configs: {error}"),
         )
     })?
-}
-
-/// Compatibility entry: configuration scope and the default analysis root.
-pub async fn tool_exposure(project_id: Option<&str>) -> napi::Result<LspToolExposure> {
-    tool_exposure_for_workspace(project_id, None).await
 }
 
 /// Discover without starting servers. Explicit analysis roots never change the
@@ -227,14 +222,6 @@ fn effective_server_tools(
     tools.sort();
     tools.dedup();
     tools
-}
-
-/// Compatibility for callers without a request-specific analysis root.
-pub async fn lsp_covers_all_project_languages(project_id: Option<&str>) -> bool {
-    tool_exposure(project_id)
-        .await
-        .map(|exposure| exposure.codelens_covered)
-        .unwrap_or(false)
 }
 
 /// Deliberately conservative: an incomplete scan cannot justify hiding a fallback.

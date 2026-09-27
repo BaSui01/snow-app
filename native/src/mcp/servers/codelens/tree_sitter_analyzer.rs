@@ -574,35 +574,6 @@ pub fn find_references_by_name(
     references
 }
 
-/// Find the definition of a symbol by name within a single tree-sitter file.
-pub fn find_definition_by_name(
-    file_path: &str,
-    source_text: &str,
-    name: &str,
-) -> Option<SymbolInfo> {
-    let outline = build_file_outline(file_path, source_text);
-
-    for entry in outline {
-        if entry.name == name {
-            return Some(SymbolInfo {
-                name: entry.name,
-                kind: entry.kind,
-                location: SymbolLocation {
-                    file_path: file_path.to_string(),
-                    line: entry.line,
-                    column: entry.column,
-                    end_line: entry.end_line,
-                    end_column: entry.end_column,
-                },
-                container_name: entry.container_name,
-                is_exported: entry.is_exported,
-            });
-        }
-    }
-
-    None
-}
-
 fn collect_matching_identifiers(
     node: &Node,
     source: &str,

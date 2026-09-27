@@ -973,18 +973,6 @@ fn required_string(args: &Value, key: &str) -> napi::Result<String> {
         })
 }
 
-fn required_u32(args: &Value, key: &str) -> napi::Result<u32> {
-    args.get(key)
-        .and_then(|v| v.as_u64())
-        .map(|n| n as u32)
-        .ok_or_else(|| {
-            Error::new(
-                Status::InvalidArg,
-                format!("Missing or invalid number parameter: {key}"),
-            )
-        })
-}
-
 /// 检查 LSP 工具是否被用户允许（与 collect 阶段对 lsp-* 工具的判定一致）：
 /// 全局黑名单或项目 scope（builtin:lsp 服务器 / 具体 lsp-* 工具）禁用时
 /// 返回 false——用户禁用了 LSP 就不应把 codelens 调用转发过去。lsp 是

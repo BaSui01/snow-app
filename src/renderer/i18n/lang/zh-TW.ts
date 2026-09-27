@@ -2914,6 +2914,7 @@ export const zhTW = {
   "settings.themePresetSnow": "Snow",
   "settings.themePresetCream": "奶油",
   "settings.themePresetWin95": "Win95",
+  "settings.themePresetMacos": "Mac Platinum",
   "settings.themePresetMidnightBlue": "午夜藍",
   "settings.themePresetForestGreen": "森林綠",
   "settings.themePresetRosePink": "玫瑰粉",

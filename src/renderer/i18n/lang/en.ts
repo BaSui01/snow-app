@@ -3074,6 +3074,7 @@ export const en = {
   "settings.themePresetSnow": "Snow",
   "settings.themePresetCream": "Cream",
   "settings.themePresetWin95": "Win95",
+  "settings.themePresetMacos": "Mac Platinum",
   "settings.themePresetMidnightBlue": "Midnight Blue",
   "settings.themePresetForestGreen": "Forest Green",
   "settings.themePresetRosePink": "Rose Pink",

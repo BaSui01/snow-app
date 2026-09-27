@@ -2060,6 +2060,14 @@ const RAW_GROUPS: RawGroup[] = [
         ["preset", "复古"],
       ],
       [
+        "theme.preset.macos",
+        "field",
+        "settings.themePresetMacos",
+        "Mac Platinum",
+        [],
+        ["preset", "复古", "经典 mac"],
+      ],
+      [
         "theme.preset.cyberpunk",
         "field",
         "settings.themePresetCyberpunk",

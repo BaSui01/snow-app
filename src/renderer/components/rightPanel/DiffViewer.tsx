@@ -1,5 +1,3 @@
-import { ExternalLink, X } from "lucide-react";
-
 import { useI18n } from "../../i18n";
 import { GitDiffView } from "../common/GitDiffView";
 import { getFileTypeIcon } from "../../utils/fileIcons";
@@ -9,7 +7,6 @@ import type {
   GitFileStatus,
   GitImageDiff,
 } from "./git";
-import type { OpenDiffTabCallback } from "./types";
 
 type DiffViewerProps = {
   selectedFile: GitFileStatus;
@@ -17,8 +14,6 @@ type DiffViewerProps = {
   diffLoading: boolean;
   /** 图片文件的旧/新版本预览数据；非图片文件为 null。 */
   imageDiff?: GitImageDiff | null;
-  onOpenInTab?: OpenDiffTabCallback;
-  onClose?: () => void;
 };
 
 /** 图片内容转 data URL（svg 为 utf8 文本，其余为 base64）。 */
@@ -101,8 +96,6 @@ export function DiffViewer({
   diffResult,
   diffLoading,
   imageDiff,
-  onOpenInTab,
-  onClose,
 }: DiffViewerProps): React.JSX.Element {
   const { t } = useI18n();
 
@@ -118,34 +111,6 @@ export function DiffViewer({
         <span className="diff-viewer-file-name" title={selectedFile.path}>
           {selectedFile.path}
         </span>
-        {(onOpenInTab || onClose) && (
-          <div className="diff-viewer-actions">
-            {onOpenInTab && (
-              <button
-                type="button"
-                className="icon-btn"
-                title={t("rightPanel.openInNewTab")}
-                aria-label={t("rightPanel.openInNewTab")}
-                onClick={() =>
-                  onOpenInTab(selectedFile, diffResult, diffLoading, imageDiff)
-                }
-              >
-                <ExternalLink size={14} strokeWidth={1.8} />
-              </button>
-            )}
-            {onClose && (
-              <button
-                type="button"
-                className="icon-btn"
-                title={t("rightPanel.closeDiff")}
-                aria-label={t("rightPanel.closeDiff")}
-                onClick={onClose}
-              >
-                <X size={14} strokeWidth={1.8} />
-              </button>
-            )}
-          </div>
-        )}
       </div>
       {diffLoading ? (
         <div className="diff-viewer-loading">{t("rightPanel.loadingDiff")}</div>

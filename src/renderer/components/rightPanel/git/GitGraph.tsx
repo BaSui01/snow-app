@@ -2,7 +2,6 @@ import {
   CircleDot,
   Cloud,
   Copy,
-  ExternalLink,
   Eye,
   EyeOff,
   FileText,
@@ -12,7 +11,14 @@ import {
   MessageSquareText,
   Tag,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import type {
   GitCommitFile,
@@ -27,15 +33,6 @@ type GitGraphProps = {
   repoPath: string;
   /** Bump to force a full reload of the history from the first page. */
   refreshKey?: number;
-  /** Fired when an initial load (mount or external refresh) settles. */
-  onLoaded?: () => void;
-  /** Fired when a file in an expanded commit is clicked, requesting its
-      per-commit diff to be shown in the diff viewer. */
-  onCommitFileSelect?: (
-    file: GitCommitFile,
-    hash: string,
-    parentHash: string | null
-  ) => void;
   /** Opens a commit file's diff in a new right-panel tab. */
   onOpenInTab?: OpenDiffTabCallback;
 };
@@ -67,6 +64,8 @@ interface GraphRow {
 // --- Constants ---
 
 const PAGE_SIZE = 50;
+/** 增量刷新最多向前扫描的提交数；超过（新提交过多）则退回整体重载。 */
+const INCREMENTAL_MAX_COMMITS = 200;
 const LANE_WIDTH = 20;
 const ROW_HEIGHT = 28;
 const DOT_RADIUS = 4;
@@ -210,7 +209,11 @@ function computeGraph(commits: GitLogEntry[]): {
         // parent into lane 0 so the main axis stays straight; the parked
         // lane's line merges into lane 0 via a curve and the freed slot is
         // released for reuse.
-        if (isFirstParent && mainline.has(commit.hash) && parentLane !== dotLane) {
+        if (
+          isFirstParent &&
+          mainline.has(commit.hash) &&
+          parentLane !== dotLane
+        ) {
           curves.push({ from: parentLane, to: dotLane });
           lanes[parentLane] = null;
           hashToLane.set(parentHash, dotLane);
@@ -350,8 +353,6 @@ function parseRefs(refs: string): ParsedRef[] {
 export const GitGraph = ({
   repoPath,
   refreshKey,
-  onLoaded,
-  onCommitFileSelect,
   onOpenInTab,
 }: GitGraphProps): React.JSX.Element => {
   const { t } = useI18n();
@@ -372,6 +373,11 @@ export const GitGraph = ({
   const loadedCountRef = useRef(0);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  // 已加载提交的镜像：增量刷新需要拿它取锚点，但不能把 commits 放进
+  // useCallback 依赖（否则列表一变回调就重建）。
+  const commitsRef = useRef<GitLogEntry[]>([]);
+  // 增量前插前记录的内容高度：渲染后按高度差补偿滚动偏移，视口不跳动。
+  const scrollAnchorHeightRef = useRef<number | null>(null);
 
   const loadPage = useCallback(
     async (skip: number, isInitial: boolean) => {
@@ -401,31 +407,24 @@ export const GitGraph = ({
         setIsLoading(false);
       }
     },
-    [repoPath]
+    [repoPath],
   );
 
-  // Initial load + reset when repoPath changes or an external refresh
-  // (refreshKey bump) is requested.
-  // Uses a cancelled flag to survive React Strict Mode double-invoke.
-  useEffect(() => {
-    let cancelled = false;
-
-    setCommits([]);
-    setHasMore(true);
-    setError(null);
-    setIsLoading(true);
-    setSelectedHash(null);
-    setCommitFiles([]);
-    setViewedCommitFile(null);
-    loadedCountRef.current = 0;
-    loadingRef.current = false;
-
-    const doInitialLoad = async () => {
-      if (cancelled) return;
+  /** 从第一页整体重载：切换仓库，以及增量刷新找不到锚点时的兜底。 */
+  const reloadFromStart = useCallback(
+    async (isCancelled: () => boolean): Promise<void> => {
+      setCommits([]);
+      setHasMore(true);
+      setError(null);
+      setIsLoading(true);
+      setSelectedHash(null);
+      setCommitFiles([]);
+      setViewedCommitFile(null);
+      loadedCountRef.current = 0;
       loadingRef.current = true;
       try {
         const entries = await window.snow.gitLog(repoPath, 0, PAGE_SIZE);
-        if (cancelled) return;
+        if (isCancelled()) return;
         if (entries.length < PAGE_SIZE) {
           setHasMore(false);
         }
@@ -436,26 +435,149 @@ export const GitGraph = ({
           setHasMore(false);
         }
       } catch (err) {
-        if (!cancelled) {
+        if (!isCancelled()) {
           setError(String(err));
           setHasMore(false);
         }
       } finally {
-        if (!cancelled) {
+        if (!isCancelled()) {
           loadingRef.current = false;
           setIsLoading(false);
-          onLoaded?.();
         }
       }
-    };
+    },
+    [repoPath],
+  );
 
-    doInitialLoad();
-
+  // 切换仓库：清空后整体重载。cancelled 标记用于抵御 React Strict Mode
+  // 的双次调用（第一次的结果被丢弃）。
+  useEffect(() => {
+    let cancelled = false;
+    loadingRef.current = false;
+    void reloadFromStart(() => cancelled);
     return () => {
       cancelled = true;
       loadingRef.current = false;
     };
-  }, [repoPath, refreshKey, onLoaded]);
+  }, [reloadFromStart]);
+
+  /**
+   * 增量刷新：只拉取「已加载的最新提交」（锚点）之上的新提交并前插，同时用
+   * 同一批数据刷新锚点及其后已加载提交的引用徽章（推送会移动 origin/* 这类
+   * 远端跟踪分支）。找不到锚点（rebase / amend / force push 改写了历史）或
+   * 新增提交超过上限时，退回整体重载。
+   */
+  const refreshIncrementally = useCallback(
+    async (isCancelled: () => boolean): Promise<void> => {
+      const loaded = commitsRef.current;
+      const anchorHash = loaded[0]?.hash;
+      if (!anchorHash) {
+        await reloadFromStart(isCancelled);
+        return;
+      }
+
+      const scanned: GitLogEntry[] = [];
+      let newCount = -1;
+      try {
+        while (newCount === -1 && scanned.length < INCREMENTAL_MAX_COMMITS) {
+          const page = await window.snow.gitLog(
+            repoPath,
+            scanned.length,
+            PAGE_SIZE,
+          );
+          if (isCancelled()) return;
+          if (page.length === 0) break;
+          for (let i = 0; i < page.length; i++) {
+            if (page[i].hash === anchorHash) {
+              newCount = scanned.length;
+              // 锚点及其后同页条目都是已加载提交，用最新数据刷新引用徽章。
+              for (let j = i; j < page.length; j++) {
+                scanned.push(page[j]);
+              }
+              break;
+            }
+            scanned.push(page[i]);
+          }
+          if (newCount === -1 && page.length < PAGE_SIZE) break;
+        }
+      } catch {
+        // 取数失败：保持现状，等下次刷新。
+        return;
+      }
+
+      if (newCount === -1) {
+        await reloadFromStart(isCancelled);
+        return;
+      }
+
+      const freshRefs = new Map<string, string>();
+      for (let i = newCount; i < scanned.length; i++) {
+        freshRefs.set(scanned[i].hash, scanned[i].refs);
+      }
+      const refsChanged = loaded.some((commit) => {
+        const refs = freshRefs.get(commit.hash);
+        return refs !== undefined && refs !== commit.refs;
+      });
+      if (newCount === 0 && !refsChanged) {
+        return;
+      }
+
+      if (newCount > 0) {
+        scrollAnchorHeightRef.current =
+          containerRef.current?.offsetHeight ?? null;
+        loadedCountRef.current += newCount;
+      }
+      setCommits((prev) => {
+        const merged = prev.map((commit) => {
+          const refs = freshRefs.get(commit.hash);
+          return refs !== undefined && refs !== commit.refs
+            ? { ...commit, refs }
+            : commit;
+        });
+        return newCount > 0
+          ? [...scanned.slice(0, newCount), ...merged]
+          : merged;
+      });
+    },
+    [repoPath, reloadFromStart],
+  );
+
+  useEffect(() => {
+    commitsRef.current = commits;
+  }, [commits]);
+
+  // 外部刷新（提交 / 推送 / 拉取 / 手动刷新）：增量合并，保住滚动位置与展开
+  // 的提交详情；只有历史被改写时才整体重载。
+  const handledRefreshKeyRef = useRef(0);
+  useEffect(() => {
+    if (!refreshKey || handledRefreshKeyRef.current === refreshKey) {
+      return;
+    }
+    handledRefreshKeyRef.current = refreshKey;
+    let cancelled = false;
+    void refreshIncrementally(() => cancelled);
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey, refreshIncrementally]);
+
+  // 前插补偿：用户已向下滚动时按内容高度差推回滚动位置（视口内容保持不动）；
+  // 停留在顶部附近时不做补偿，让新提交直接出现在视野里。
+  useLayoutEffect(() => {
+    const before = scrollAnchorHeightRef.current;
+    if (before === null) {
+      return;
+    }
+    scrollAnchorHeightRef.current = null;
+    const scroller = containerRef.current?.parentElement;
+    if (!scroller) {
+      return;
+    }
+    const delta = (containerRef.current?.offsetHeight ?? before) - before;
+    if (delta > 0 && scroller.scrollTop > ROW_HEIGHT) {
+      scroller.scrollTop += delta;
+    }
+  }, [commits]);
 
   const loadMore = useCallback(() => {
     if (loadingRef.current || !hasMore) return;
@@ -463,10 +585,10 @@ export const GitGraph = ({
   }, [hasMore, loadPage]);
 
   // IntersectionObserver for infinite scroll.
-  // The scroll container is .git-control (parent), not .git-graph itself.
-  // Using viewport (null) as root works because .git-graph doesn't scroll
-  // on its own — scrolling happens in the parent .git-control, which moves
-  // the sentinel relative to the viewport.
+  // The scroll container is the panel pane (.git-panel-graph), not
+  // .git-graph itself. Using viewport (null) as root works because
+  // .git-graph doesn't scroll on its own — scrolling happens in the pane,
+  // which moves the sentinel relative to the viewport.
   //
   // IMPORTANT: this effect must re-run after the initial loading completes,
   // because the sentinel is only rendered in the non-loading branch. During
@@ -481,7 +603,7 @@ export const GitGraph = ({
           loadMore();
         }
       },
-      { rootMargin: "200px" }
+      { rootMargin: "200px" },
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
@@ -522,7 +644,7 @@ export const GitGraph = ({
 
   const { rows, maxLanes } = useMemo(
     () => computeGraph(reorderFirstParentFirst(commits)),
-    [commits]
+    [commits],
   );
   const graphWidth = Math.max(maxLanes * LANE_WIDTH, LANE_WIDTH);
 
@@ -555,7 +677,7 @@ export const GitGraph = ({
       event.dataTransfer.setData("application/json", JSON.stringify(tag));
       event.dataTransfer.effectAllowed = "copy";
     },
-    [repoPath]
+    [repoPath],
   );
 
   // Hover tooltip with the full commit details. Rendered in a portal with
@@ -573,13 +695,11 @@ export const GitGraph = ({
     y: number;
     commit: GitLogEntry;
   } | null>(null);
-  // 提交内文件右键菜单：在新标签页打开 Diff / 复制文件路径。
+  // 提交内文件右键菜单：复制文件路径（单击文件本身即在新标签页打开 Diff）。
   const [fileContextMenu, setFileContextMenu] = useState<{
     x: number;
     y: number;
     file: GitCommitFile;
-    hash: string;
-    parentHash: string | null;
   } | null>(null);
 
   const positionTooltip = useCallback((clientX: number, clientY: number) => {
@@ -610,7 +730,7 @@ export const GitGraph = ({
       // real dimensions for boundary detection.
       requestAnimationFrame(() => positionTooltip(clientX, clientY));
     },
-    [positionTooltip]
+    [positionTooltip],
   );
 
   const hideTooltip = useCallback(() => {
@@ -680,27 +800,10 @@ export const GitGraph = ({
     ];
   };
 
-  /** 提交内文件右键菜单：在新标签页打开 Diff / 复制文件路径。 */
-  const buildCommitFileMenuItems = (
-    file: GitCommitFile,
-    hash: string,
-    parentHash: string | null
-  ) => [
-    {
-      id: "open-diff-in-tab",
-      label: t("git.openDiffInNewTab", {
-        defaultValue: "Open Diff in New Tab",
-      }),
-      icon: <ExternalLink size={13} strokeWidth={1.8} />,
-      disabled: !repoPath || !onOpenInTab,
-      onClick: () => {
-        setFileContextMenu(null);
-        void openCommitFileDiffInTab(file, hash, parentHash);
-      },
-    },
+  /** 提交内文件右键菜单：复制文件路径。 */
+  const buildCommitFileMenuItems = (file: GitCommitFile) => [
     {
       id: "copy-path",
-      separator: true,
       label: t("git.copyPath", { defaultValue: "Copy Path" }),
       icon: <FileText size={13} strokeWidth={1.8} />,
       onClick: () => {
@@ -716,7 +819,7 @@ export const GitGraph = ({
   const openCommitFileDiffInTab = async (
     file: GitCommitFile,
     hash: string,
-    parentHash: string | null
+    parentHash: string | null,
   ): Promise<void> => {
     if (!repoPath || !onOpenInTab) {
       return;
@@ -733,13 +836,16 @@ export const GitGraph = ({
             ? window.snow.gitFileContent(repoPath, file.path, parentHash)
             : Promise.resolve(null),
         ]);
-        onOpenInTab(fileStatus, null, false, { old: oldContent, new: newContent });
+        onOpenInTab(fileStatus, null, false, {
+          old: oldContent,
+          new: newContent,
+        });
         return;
       }
       const result = await window.snow.gitCommitFileDiff(
         repoPath,
         hash,
-        file.path
+        file.path,
       );
       onOpenInTab(fileStatus, result, false);
     } catch {
@@ -823,7 +929,7 @@ export const GitGraph = ({
         // Skip such lines — the next row's top line continues them.
         const curveTargets = new Set(row.curves.map((c) => c.to));
         const bottomLines = row.bottomLines.filter(
-          (lane) => !(curveTargets.has(lane) && !row.topLines.includes(lane))
+          (lane) => !(curveTargets.has(lane) && !row.topLines.includes(lane)),
         );
         return (
           <div key={row.commit.hash}>
@@ -971,10 +1077,10 @@ export const GitGraph = ({
                               hash: row.commit.hash,
                               path: file.path,
                             });
-                            onCommitFileSelect?.(
+                            void openCommitFileDiffInTab(
                               file,
                               row.commit.hash,
-                              row.commit.parents[0] ?? null
+                              row.commit.parents[0] ?? null,
                             );
                           }}
                           onContextMenu={(event) => {
@@ -985,8 +1091,6 @@ export const GitGraph = ({
                               x: event.clientX,
                               y: event.clientY,
                               file,
-                              hash: row.commit.hash,
-                              parentHash: row.commit.parents[0] ?? null,
                             });
                           }}
                           title={t("git.viewCommitFileDiff", {
@@ -995,7 +1099,7 @@ export const GitGraph = ({
                         >
                           <span
                             className={`git-file-status ${getCommitFileColor(
-                              file.status
+                              file.status,
                             )}`}
                           >
                             {getCommitFileLabel(file.status)}
@@ -1048,9 +1152,7 @@ export const GitGraph = ({
               </span>
               <span className="git-graph-tooltip-value">
                 {hoveredCommit.author}
-                {hoveredCommit.email
-                  ? ` <${hoveredCommit.email}>`
-                  : ""}
+                {hoveredCommit.email ? ` <${hoveredCommit.email}>` : ""}
               </span>
             </div>
             <div className="git-graph-tooltip-row">
@@ -1110,7 +1212,7 @@ export const GitGraph = ({
             </div>
           </div>
         ) : null,
-        document.body
+        document.body,
       )}
       {contextMenu && (
         <ContextMenu
@@ -1124,11 +1226,7 @@ export const GitGraph = ({
         <ContextMenu
           x={fileContextMenu.x}
           y={fileContextMenu.y}
-          items={buildCommitFileMenuItems(
-            fileContextMenu.file,
-            fileContextMenu.hash,
-            fileContextMenu.parentHash
-          )}
+          items={buildCommitFileMenuItems(fileContextMenu.file)}
           onClose={() => setFileContextMenu(null)}
         />
       )}

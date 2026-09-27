@@ -1,50 +1,70 @@
 export const en = {
-  "toolCall.lsp.renameFailedFileMayBeModified": "The failed file may also have been modified; inspect its actual contents.",
+  "toolCall.lsp.renameFailedFileMayBeModified":
+    "The failed file may also have been modified; inspect its actual contents.",
   "toolCall.lsp.goto.definition": "Go to Definition",
   "toolCall.lsp.goto.type-definition": "Go to Type Definition",
   "toolCall.lsp.goto.implementation": "Find Implementations",
   "toolCall.lsp.fileStatus.complete": "Completed",
   "toolCall.lsp.fileStatus.partial": "Partially completed",
   "toolCall.lsp.fileStatus.failed": "Failed",
-  "toolCall.lsp.batchStatusCounts": "Completed {{completed}} · Partial {{partial}} · Failed {{failed}}",
-  "toolCall.lsp.batchDiagnosticCounts": "Errors {{errors}} · Warnings {{warnings}}",
+  "toolCall.lsp.batchStatusCounts":
+    "Completed {{completed}} · Partial {{partial}} · Failed {{failed}}",
+  "toolCall.lsp.batchDiagnosticCounts":
+    "Errors {{errors}} · Warnings {{warnings}}",
   "toolCall.lsp.requestedFiles": "Requested files: {{count}}",
   "toolCall.lsp.duplicateFiles": "Duplicates removed: {{count}}",
-  "toolCall.lsp.returnedDiagnosticsCounts": "Diagnostic counts use returned entries and may be incomplete when truncated.",
-  "toolCall.lsp.fileWarnings": "{{count}} query warning(s) for this file; expand for details.",
-  "toolCall.lsp.previewReady": "Preview is valid and awaiting explicit approval to apply; no files have been written.",
-  "toolCall.lsp.previewUnavailable": "No usable apply capability is available; generate a new preview before applying.",
-  "toolCall.lsp.previewExpired": "Preview expired and cannot be applied; generate a new preview.",
-  "toolCall.lsp.previewExpiryUnknown": "Preview expiry cannot be verified; generate a new preview before requesting application.",
+  "toolCall.lsp.returnedDiagnosticsCounts":
+    "Diagnostic counts use returned entries and may be incomplete when truncated.",
+  "toolCall.lsp.fileWarnings":
+    "{{count}} query warning(s) for this file; expand for details.",
+  "toolCall.lsp.previewReady":
+    "Preview is valid and awaiting explicit approval to apply; no files have been written.",
+  "toolCall.lsp.previewUnavailable":
+    "No usable apply capability is available; generate a new preview before applying.",
+  "toolCall.lsp.previewExpired":
+    "Preview expired and cannot be applied; generate a new preview.",
+  "toolCall.lsp.previewExpiryUnknown":
+    "Preview expiry cannot be verified; generate a new preview before requesting application.",
   "toolCall.lsp.previewExpires": "Preview expires: {{time}}",
-  "toolCall.lsp.renamePartialApplied": "Only some files were written; review applied files and do not reuse the old preview.",
+  "toolCall.lsp.renamePartialApplied":
+    "Only some files were written; review applied files and do not reuse the old preview.",
   "toolCall.lsp.renameFailedFile": "Failed file",
   "toolCall.lsp.renameAppliedFiles": "Written to {{count}} file(s)",
-  "toolCall.lsp.renameRequiresPreview": "A new preview is required before continuing.",
+  "toolCall.lsp.renameRequiresPreview":
+    "A new preview is required before continuing.",
   "toolCall.lsp.resultStatus.partial": "Incomplete / partially completed",
-  "toolCall.lsp.resultStatus.failed": "Query failed; complete results unavailable",
-  "toolCall.lsp.unsupportedOperations": "Unsupported file operations: cannot fully preview; not applied.",
-  "toolCall.lsp.resultTruncated": "Results truncated; this list is not exhaustive.",
-  "toolCall.lsp.resultIncomplete": "Analysis incomplete; absence of issues or matches cannot be concluded.",
+  "toolCall.lsp.resultStatus.failed":
+    "Query failed; complete results unavailable",
+  "toolCall.lsp.unsupportedOperations":
+    "Unsupported file operations: cannot fully preview; not applied.",
+  "toolCall.lsp.resultTruncated":
+    "Results truncated; this list is not exhaustive.",
+  "toolCall.lsp.resultIncomplete":
+    "Analysis incomplete; absence of issues or matches cannot be concluded.",
   "toolCall.lsp.checkedLanguages": "Languages with returned results",
   "toolCall.lsp.workspaceRoot": "Queried workspace",
   "toolCall.lsp.failedFiles": "Queries failed for {{count}} file(s)",
   "toolCall.lsp.showMore": "Show more ({{count}} remaining)",
-  "toolCall.lsp.incompleteEmpty": "No displayable results; query incomplete. Review warnings and retry.",
+  "toolCall.lsp.incompleteEmpty":
+    "No displayable results; query incomplete. Review warnings and retry.",
   "toolCall.lsp.failedEmpty": "Tool failed without error details.",
   "toolCall.lsp.completedEmpty": "Tool finished without result content.",
   "toolCall.lsp.notApplied": "Not applied",
-  "toolCall.lsp.requiresCoordinates": "Retry with explicit file path, line and column; no candidate was automatically selected.",
+  "toolCall.lsp.requiresCoordinates":
+    "Retry with explicit file path, line and column; no candidate was automatically selected.",
   "chatInput.lspBadgeLoading": "Loading LSP process status",
   "chatInput.lspBadgeStale": "Refresh failed; the last snapshot is stale",
   "chatInput.lspBadgeUnknown": "Current process status unknown",
   "chatInput.lspBadgeUpdated": "Last successful update: {{time}}",
-  "chatInput.lspBadgeProcessOnly": "Process status only; indexing or semantic analysis may not be ready.",
+  "chatInput.lspBadgeProcessOnly":
+    "Process status only; indexing or semantic analysis may not be ready.",
   "settings.lspStatusUnknown": "Unknown / stale status",
   "settings.lspStackEmpty": "No supported project stack detected.",
   "settings.lspStackProjectEnabled": "Enabled for this project",
-  "settings.lspInitializationInvalidJson": "Initialization options must be valid JSON.",
-  "settings.lspInitializationObjectRequired": "Initialization options must be a JSON object.",
+  "settings.lspInitializationInvalidJson":
+    "Initialization options must be valid JSON.",
+  "settings.lspInitializationObjectRequired":
+    "Initialization options must be a JSON object.",
   "settings.lspPythonRecommended": "Pyright (recommended)",
   "settings.lspPythonPresetHint": "Python preset:",
   "sidebar.pinned": "Pinned",
@@ -4206,10 +4226,11 @@ export const en = {
   "rightPanel.tabContextNewDrawing": "New Drawing Workspace",
   "rightPanel.openInNewWindow": "Open in new window",
   "rightPanel.openInLocalBrowser": "Open in local browser",
-  "rightPanel.closeDiff": "Close diff",
   "rightPanel.selectFileToViewDiff": "Select a file to view its diff",
   "rightPanel.noRepositorySelected": "No repository selected",
-  "rightPanel.resizeChangesAndDiff": "Resize changes and diff",
+  "rightPanel.resizeChangesAndGraph": "Resize changes and commit graph",
+  "rightPanel.collapseCommitGraph": "Collapse commit graph",
+  "rightPanel.expandCommitGraph": "Expand commit graph",
   "rightPanel.openInNewTab": "Open in new tab",
   "rightPanel.loadingDiff": "Loading diff...",
   "rightPanel.binaryFile": "Binary file",
@@ -4501,12 +4522,10 @@ export const en = {
   "git.createBranchExists": "Branch already exists",
   "git.createBranchFailed": "Failed to create branch",
   "git.getStatusError": "Failed to get git status",
-  "git.graph": "Git Graph",
   "git.graphLoading": "Loading commits...",
   "git.graphNoCommits": "No commits yet",
   "git.graphError": "Failed to load commit history",
   "git.viewCommitFileDiff": "View File Diff in This Commit",
-  "git.openDiffInNewTab": "Open Diff in New Tab",
   "git.graphTooltipHash": "Commit",
   "git.graphTooltipAuthor": "Author",
   "git.graphTooltipDate": "Date",

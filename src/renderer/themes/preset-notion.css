@@ -741,7 +741,7 @@
   );
 }
 
-:root[data-theme-preset="notion"] .git-panel-diff {
+:root[data-theme-preset="notion"] .git-panel-graph {
   background: var(--surface-island-muted);
 }
 

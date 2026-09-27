@@ -24857,6 +24857,13 @@ body.is-panel-resizing * {
   outline: none;
 }
 
+.abort-btn-glyph {
+  width: 12px;
+  height: 12px;
+  border-radius: 1px;
+  background: currentColor;
+}
+
 /* ===== File Mention Popup ===== */
 .file-mention-popup {
   position: absolute;
@@ -28301,11 +28308,10 @@ body.is-panel-resizing * {
   border-radius: 6px;
 }
 
-.git-panel-diff {
-  display: flex;
-  flex-direction: column;
+.git-panel-graph {
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .h-resizer {
@@ -28313,10 +28319,20 @@ body.is-panel-resizing * {
   z-index: 10;
   height: 14px;
   min-height: 14px;
-  cursor: row-resize;
+  cursor: grab;
   touch-action: none;
   -webkit-app-region: no-drag;
   flex-shrink: 0;
+}
+
+.h-resizer:active {
+  cursor: grabbing;
+}
+
+body.is-git-pane-resizing,
+body.is-git-pane-resizing * {
+  cursor: grabbing !important;
+  user-select: none;
 }
 
 .h-resizer::before {
@@ -28369,7 +28385,7 @@ body.is-panel-resizing * {
   transform: translate(-50%, -50%);
   opacity: 1;
   transition: color 0.15s ease;
-  pointer-events: none;
+  cursor: pointer;
   z-index: 2;
 }
 
@@ -32120,11 +32136,6 @@ body.is-panel-resizing * {
   padding: 0;
 }
 
-.git-graph {
-  flex: 1;
-  min-height: 0;
-}
-
 .git-graph-loading,
 .git-graph-error,
 .git-graph-empty {
@@ -34882,15 +34893,6 @@ body.ctrl-held [data-path] {
   text-decoration: underline dotted;
   text-underline-offset: 2px;
   text-decoration-color: var(--text-muted);
-}
-
-/* Diff Viewer Actions */
-.diff-viewer-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: auto;
-  flex-shrink: 0;
 }
 
 .diff-viewer-header {

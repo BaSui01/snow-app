@@ -1475,7 +1475,7 @@
   );
 }
 
-:root[data-theme-preset="google"] .git-panel-diff {
+:root[data-theme-preset="google"] .git-panel-graph {
   background: var(--google-surface-1);
 }
 

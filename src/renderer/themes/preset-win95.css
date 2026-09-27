@@ -849,7 +849,7 @@
   background: var(--w95-field-bg);
 }
 
-:root[data-theme-preset="win95"] .git-panel-diff {
+:root[data-theme-preset="win95"] .git-panel-graph {
   background: var(--w95-face);
 }
 

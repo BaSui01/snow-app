@@ -4,11 +4,9 @@ import {
   Check,
   ChevronDown,
   Copy,
-  Diff,
   FolderTree,
   FolderOpen,
   GitCommitHorizontal,
-  GitGraph as GitGraphIcon,
   List,
   Loader2,
   RefreshCw,
@@ -20,7 +18,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
 import { ContextMenu, type ContextMenuItem } from "../../common/ContextMenu";
 import type {
-  GitCommitFile,
   GitFileStatus,
   GitRepoInfo,
   GitStatusResult,
@@ -31,31 +28,23 @@ import { useGitStatus } from "./useGitStatus";
 import { useRemotePolling } from "./useRemotePolling";
 import { GitConfirmBubble, type GitConfirmAnchor } from "./GitConfirmBubble";
 import { GitFileList } from "./GitFileList";
-import { GitGraph } from "./GitGraph";
 import { RepoSelector } from "./RepoSelector";
-import type { OpenDiffTabCallback } from "../types";
 
 type GitControlProps = {
   repoPath: string | undefined | null;
   repos?: GitRepoInfo[];
   onRepoSelect?: (path: string) => void;
-  /** 点击变更区/暂存区文件：回调携带点击来源，供上层区分 diff 类型。 */
+  /** 点击变更区/暂存区文件：回调携带点击来源，供上层打开对应差异 tab。 */
   onFileSelect: (
     file: GitFileStatus | null,
     section?: "staged" | "unstaged",
-  ) => void;
-  /** 提交树中点击提交内文件，请求查看该提交中该文件的差异。 */
-  onCommitFileSelect?: (
-    file: GitCommitFile,
-    hash: string,
-    parentHash: string | null,
   ) => void;
   onStatusChange?: (status: GitStatusResult | null) => void;
   onOpenFile?: (filePath: string, fileName: string) => void;
   /** 在文件所在目录打开终端。 */
   onOpenTerminal?: (cwd: string) => void;
-  /** 在新标签页打开提交内文件的 Diff。 */
-  onOpenInTab?: OpenDiffTabCallback;
+  /** 手动刷新或历史发生变化（提交、推送、拉取成功）时触发，供上层刷新提交图。 */
+  onHistoryRefresh?: () => void;
 };
 
 const isSelectedKey = (section: "staged" | "unstaged", path: string) =>
@@ -94,11 +83,10 @@ export const GitControl = ({
   repos,
   onRepoSelect,
   onFileSelect,
-  onCommitFileSelect,
   onStatusChange,
   onOpenFile,
   onOpenTerminal,
-  onOpenInTab,
+  onHistoryRefresh,
 }: GitControlProps): React.JSX.Element => {
   const { t } = useI18n();
   const { status, isLoading, error, refresh } = useGitStatus(repoPath);
@@ -183,7 +171,6 @@ export const GitControl = ({
   // Set to true after a commit succeeds; the effect below resets scroll
   // to top once the refreshed status has been applied to the DOM.
   const commitPendingRef = useRef(false);
-  const [viewMode, setViewMode] = useState<"changes" | "graph">("changes");
   // 变更/暂存区文件展示方式：平铺列表或按目录分组的树，偏好存 localStorage。
   const [fileViewMode, setFileViewMode] = useState<"list" | "tree">(() => {
     try {
@@ -203,13 +190,8 @@ export const GitControl = ({
       return next;
     });
   }, []);
-  // Spins the toolbar refresh button until the current view's refresh
-  // settles: status fetch always, plus the GitGraph reload when the graph
-  // view is active. graphLoadedResolveRef bridges the GitGraph onLoaded
-  // callback into the refresh promise chain.
+  // 工具栏刷新按钮的旋转态：状态刷新结束时停止（提交图由上层另行重载）。
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [graphRefreshKey, setGraphRefreshKey] = useState(0);
-  const graphLoadedResolveRef = useRef<(() => void) | null>(null);
 
   // 渲染期间同步“当前显示的仓库”。repoPath 变化的那一次渲染里
   // currentRepoRef 先指向旧仓库、随即更新为新仓库；配合
@@ -380,45 +362,15 @@ export const GitControl = ({
     });
   }, [status]);
 
-  // Manual refresh: re-fetch status and, when the graph view is active,
-  // also force GitGraph to reload its history. The spinner runs until BOTH
-  // settle. GitGraph is only mounted in graph mode, so its onLoaded is
-  // bridged through graphLoadedResolveRef and only awaited there; in
-  // changes mode the status promise alone stops the spinner.
+  // Manual refresh: re-fetch the status and ask the parent to refresh the
+  // commit graph (both live in the same panel, but in separate panes).
   const handleRefresh = useCallback(() => {
     setIsRefreshing(true);
-    const statusPromise = refresh();
-    if (viewMode === "graph") {
-      setGraphRefreshKey((key) => key + 1);
-      const graphPromise = new Promise<void>((resolve) => {
-        graphLoadedResolveRef.current = resolve;
-      });
-      void Promise.all([statusPromise, graphPromise]).finally(() => {
-        setIsRefreshing(false);
-      });
-    } else {
-      void statusPromise.finally(() => {
-        setIsRefreshing(false);
-      });
-    }
-  }, [refresh, viewMode]);
-
-  const handleGraphLoaded = useCallback(() => {
-    const resolve = graphLoadedResolveRef.current;
-    graphLoadedResolveRef.current = null;
-    resolve?.();
-  }, []);
-
-  // Switching views unmounts GitGraph (graph -> changes), so its onLoaded
-  // callback will never fire; resolve any pending graph wait and stop the
-  // spinner regardless of direction — remounting into graph mode reloads
-  // on its own.
-  const handleToggleViewMode = useCallback(() => {
-    setViewMode((prev) => (prev === "graph" ? "changes" : "graph"));
-    graphLoadedResolveRef.current?.();
-    graphLoadedResolveRef.current = null;
-    setIsRefreshing(false);
-  }, []);
+    onHistoryRefresh?.();
+    void refresh().finally(() => {
+      setIsRefreshing(false);
+    });
+  }, [refresh, onHistoryRefresh]);
 
   const handleFileSelect = useCallback(
     (
@@ -606,6 +558,8 @@ export const GitControl = ({
         if (!result.success) {
           return;
         }
+        // 提交产生新历史，刷新提交图。
+        onHistoryRefresh?.();
         // 清空的是“该仓库”的草稿：若提交期间已切换项目，UI 不受影响。
         applyCommitMessage(repoPath, "");
         commitPendingRef.current = true;
@@ -618,6 +572,8 @@ export const GitControl = ({
       .then((pushResult) => {
         if (pushResult) {
           if (pushResult.success) {
+            // 推送会移动远端跟踪分支（提交图上的 origin/* 徽章），刷新提交图。
+            onHistoryRefresh?.();
             refresh();
           } else {
             reportGitError(t("git.pushFailed"), pushResult.message);
@@ -641,6 +597,7 @@ export const GitControl = ({
     t,
     applyCommitMessage,
     reportGitError,
+    onHistoryRefresh,
   ]);
 
   const handlePush = useCallback(() => {
@@ -652,6 +609,8 @@ export const GitControl = ({
       .gitPush(repoPath)
       .then((result) => {
         if (result.success) {
+          // 推送会移动远端跟踪分支（提交图上的 origin/* 徽章），刷新提交图。
+          onHistoryRefresh?.();
           refresh();
         } else {
           reportGitError(t("git.pushFailed"), result.message);
@@ -664,7 +623,7 @@ export const GitControl = ({
         );
       })
       .finally(() => setActionInProgress(null));
-  }, [repoPath, refresh, t, reportGitError]);
+  }, [repoPath, refresh, t, reportGitError, onHistoryRefresh]);
 
   const handlePull = useCallback(() => {
     if (!repoPath) {
@@ -676,6 +635,8 @@ export const GitControl = ({
       .then((result) => {
         if (result.success) {
           refresh();
+          // 拉取可能带入新提交，刷新提交图。
+          onHistoryRefresh?.();
         } else {
           reportGitError(t("git.pullFailed"), result.message);
         }
@@ -687,7 +648,7 @@ export const GitControl = ({
         );
       })
       .finally(() => setActionInProgress(null));
-  }, [repoPath, refresh, t, reportGitError]);
+  }, [repoPath, refresh, t, reportGitError, onHistoryRefresh]);
 
   // 拉取/推送入口：开关开启时先弹二次确认气泡，确认后才真正执行。
   const requestGitAction = useCallback(
@@ -955,80 +916,76 @@ export const GitControl = ({
           </div>
         )}
         <div className="git-control-header">
-          {viewMode === "changes" && (
-            <>
-              <div className="git-commit-input-wrapper">
-                <textarea
-                  ref={commitInputRef}
-                  className={`git-commit-input${
-                    isGeneratingCommitMsg ? " is-generating" : ""
-                  }`}
-                  placeholder={t("git.commitMessagePlaceholder")}
-                  value={displayedCommitMessage}
-                  onChange={(e) => applyCommitMessage(repoPath, e.target.value)}
-                  readOnly={isGeneratingCommitMsg}
-                  rows={1}
-                />
-                <div className="git-commit-input-actions">
-                  <button
-                    type="button"
-                    className="git-commit-btn git-ai-commit-btn"
-                    onClick={
-                      isGeneratingCommitMsg
-                        ? handleAbortCommitMessage
-                        : handleGenerateCommitMessage
-                    }
-                    disabled={
-                      !isGeneratingCommitMsg &&
-                      (actionInProgress !== null || stagedFiles.length === 0)
-                    }
-                  >
-                    {isGeneratingCommitMsg ? (
-                      <Square size={14} strokeWidth={1.8} />
-                    ) : (
-                      <Sparkles size={14} strokeWidth={1.8} />
-                    )}
-                  </button>
-                </div>
-              </div>
-              <div className="git-commit-split-btn">
-                <button
-                  type="button"
-                  className="git-commit-btn"
-                  onClick={handleCommit}
-                  disabled={
-                    actionInProgress !== null ||
-                    isGeneratingCommitMsg ||
-                    !displayedCommitMessage.trim() ||
-                    stagedFiles.length === 0
-                  }
-                >
-                  {actionInProgress === "commit" ? (
-                    <Loader2 size={14} strokeWidth={1.8} className="spin" />
-                  ) : (
-                    <GitCommitHorizontal size={14} strokeWidth={1.8} />
-                  )}
-                  <span>
-                    {commitMode === "commitAndPush"
-                      ? t("git.commitAndPush")
-                      : t("git.commit")}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="git-commit-mode-toggle"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setCommitModeMenu({ x: e.clientX, y: e.clientY });
-                  }}
-                  disabled={actionInProgress !== null || isGeneratingCommitMsg}
-                  title={t("git.commitMode")}
-                >
-                  <ChevronDown size={14} strokeWidth={1.8} />
-                </button>
-              </div>
-            </>
-          )}
+          <div className="git-commit-input-wrapper">
+            <textarea
+              ref={commitInputRef}
+              className={`git-commit-input${
+                isGeneratingCommitMsg ? " is-generating" : ""
+              }`}
+              placeholder={t("git.commitMessagePlaceholder")}
+              value={displayedCommitMessage}
+              onChange={(e) => applyCommitMessage(repoPath, e.target.value)}
+              readOnly={isGeneratingCommitMsg}
+              rows={1}
+            />
+            <div className="git-commit-input-actions">
+              <button
+                type="button"
+                className="git-commit-btn git-ai-commit-btn"
+                onClick={
+                  isGeneratingCommitMsg
+                    ? handleAbortCommitMessage
+                    : handleGenerateCommitMessage
+                }
+                disabled={
+                  !isGeneratingCommitMsg &&
+                  (actionInProgress !== null || stagedFiles.length === 0)
+                }
+              >
+                {isGeneratingCommitMsg ? (
+                  <Square size={14} strokeWidth={1.8} />
+                ) : (
+                  <Sparkles size={14} strokeWidth={1.8} />
+                )}
+              </button>
+            </div>
+          </div>
+          <div className="git-commit-split-btn">
+            <button
+              type="button"
+              className="git-commit-btn"
+              onClick={handleCommit}
+              disabled={
+                actionInProgress !== null ||
+                isGeneratingCommitMsg ||
+                !displayedCommitMessage.trim() ||
+                stagedFiles.length === 0
+              }
+            >
+              {actionInProgress === "commit" ? (
+                <Loader2 size={14} strokeWidth={1.8} className="spin" />
+              ) : (
+                <GitCommitHorizontal size={14} strokeWidth={1.8} />
+              )}
+              <span>
+                {commitMode === "commitAndPush"
+                  ? t("git.commitAndPush")
+                  : t("git.commit")}
+              </span>
+            </button>
+            <button
+              type="button"
+              className="git-commit-mode-toggle"
+              onClick={(e) => {
+                e.stopPropagation();
+                setCommitModeMenu({ x: e.clientX, y: e.clientY });
+              }}
+              disabled={actionInProgress !== null || isGeneratingCommitMsg}
+              title={t("git.commitMode")}
+            >
+              <ChevronDown size={14} strokeWidth={1.8} />
+            </button>
+          </div>
           <div
             className="git-control-actions"
             onContextMenu={(e) => {
@@ -1099,37 +1056,21 @@ export const GitControl = ({
             <button
               type="button"
               className={`icon-btn git-action-btn${
-                viewMode === "graph" ? " active" : ""
+                fileViewMode === "tree" ? " active" : ""
               }`}
-              onClick={handleToggleViewMode}
-              title={viewMode === "graph" ? t("git.changes") : t("git.graph")}
+              onClick={handleToggleFileViewMode}
+              title={
+                fileViewMode === "tree"
+                  ? t("git.showAsList", { defaultValue: "Show as List" })
+                  : t("git.showAsTree", { defaultValue: "Show as Tree" })
+              }
             >
-              {viewMode === "graph" ? (
-                <Diff size={14} strokeWidth={1.8} />
+              {fileViewMode === "tree" ? (
+                <List size={14} strokeWidth={1.8} />
               ) : (
-                <GitGraphIcon size={14} strokeWidth={1.8} />
+                <FolderTree size={14} strokeWidth={1.8} />
               )}
             </button>
-            {viewMode === "changes" && (
-              <button
-                type="button"
-                className={`icon-btn git-action-btn${
-                  fileViewMode === "tree" ? " active" : ""
-                }`}
-                onClick={handleToggleFileViewMode}
-                title={
-                  fileViewMode === "tree"
-                    ? t("git.showAsList", { defaultValue: "Show as List" })
-                    : t("git.showAsTree", { defaultValue: "Show as Tree" })
-                }
-              >
-                {fileViewMode === "tree" ? (
-                  <List size={14} strokeWidth={1.8} />
-                ) : (
-                  <FolderTree size={14} strokeWidth={1.8} />
-                )}
-              </button>
-            )}
           </div>
         </div>
 
@@ -1150,46 +1091,34 @@ export const GitControl = ({
       </div>
 
       <div className="git-control-scroll" ref={scrollRef}>
-        {viewMode === "changes" ? (
-          <>
-            <GitFileList
-              repoPath={repoPath}
-              files={unstagedFiles}
-              section="unstaged"
-              selectedPaths={selectedPaths}
-              actionInProgress={actionInProgress}
-              viewMode={fileViewMode}
-              onFileSelect={handleFileSelect}
-              onStageToggle={handleStageToggle}
-              onStageAll={handleStageAll}
-              onDiscard={handleDiscardRequest}
-              onOpenFile={handleOpenFile}
-              onOpenTerminal={onOpenTerminal}
-            />
+        <GitFileList
+          repoPath={repoPath}
+          files={stagedFiles}
+          section="staged"
+          selectedPaths={selectedPaths}
+          actionInProgress={actionInProgress}
+          viewMode={fileViewMode}
+          onFileSelect={handleFileSelect}
+          onStageToggle={handleStageToggle}
+          onUnstageAll={handleUnstageAll}
+          onOpenFile={handleOpenFile}
+          onOpenTerminal={onOpenTerminal}
+        />
 
-            <GitFileList
-              repoPath={repoPath}
-              files={stagedFiles}
-              section="staged"
-              selectedPaths={selectedPaths}
-              actionInProgress={actionInProgress}
-              viewMode={fileViewMode}
-              onFileSelect={handleFileSelect}
-              onStageToggle={handleStageToggle}
-              onUnstageAll={handleUnstageAll}
-              onOpenFile={handleOpenFile}
-              onOpenTerminal={onOpenTerminal}
-            />
-          </>
-        ) : (
-          <GitGraph
-            repoPath={repoPath}
-            refreshKey={graphRefreshKey}
-            onLoaded={handleGraphLoaded}
-            onCommitFileSelect={onCommitFileSelect}
-            onOpenInTab={onOpenInTab}
-          />
-        )}
+        <GitFileList
+          repoPath={repoPath}
+          files={unstagedFiles}
+          section="unstaged"
+          selectedPaths={selectedPaths}
+          actionInProgress={actionInProgress}
+          viewMode={fileViewMode}
+          onFileSelect={handleFileSelect}
+          onStageToggle={handleStageToggle}
+          onStageAll={handleStageAll}
+          onDiscard={handleDiscardRequest}
+          onOpenFile={handleOpenFile}
+          onOpenTerminal={onOpenTerminal}
+        />
       </div>
 
       <ConfirmDialog

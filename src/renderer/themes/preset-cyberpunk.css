@@ -818,7 +818,7 @@
   );
 }
 
-:root[data-theme-preset="cyberpunk"] .git-panel-diff {
+:root[data-theme-preset="cyberpunk"] .git-panel-graph {
   background: var(--surface-island-muted);
 }
 

@@ -1607,7 +1607,7 @@
   border-color: var(--border-light);
 }
 
-:root[data-theme-preset="compact"] :is(.git-panel-diff, .git-panel-changes) {
+:root[data-theme-preset="compact"] :is(.git-panel-graph, .git-panel-changes) {
   background: var(--surface-island-muted);
 }
 

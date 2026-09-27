@@ -1592,7 +1592,7 @@
   border-bottom: 1px solid rgba(139, 92, 246, 0.25);
 }
 
-:root[data-theme-preset="tesseract"] :is(.git-panel-diff, .git-panel-changes) {
+:root[data-theme-preset="tesseract"] :is(.git-panel-graph, .git-panel-changes) {
   background: var(--surface-island-muted);
 }
 

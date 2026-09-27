@@ -761,7 +761,7 @@
   );
 }
 
-:root[data-theme-preset="cream"] .git-panel-diff {
+:root[data-theme-preset="cream"] .git-panel-graph {
   background: var(--surface-island-muted);
 }
 

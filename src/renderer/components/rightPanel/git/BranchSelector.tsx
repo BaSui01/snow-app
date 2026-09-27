@@ -130,9 +130,7 @@ export const BranchSelector = ({
       return;
     }
 
-    const exists = branches.some(
-      (b) => b.name === trimmed || b.name === `origin/${trimmed}`,
-    );
+    const exists = branches.some((b) => !b.isRemote && b.name === trimmed);
     if (exists) {
       setCreateError(t("git.createBranchExists"));
       return;
@@ -227,7 +225,6 @@ export const BranchSelector = ({
         onClick={() => setIsOpen(!isOpen)}
         onContextMenu={(e) => {
           e.preventDefault();
-          e.stopPropagation();
           setContextMenu({ x: e.clientX, y: e.clientY });
         }}
         title={currentBranch}
@@ -304,23 +301,82 @@ export const BranchSelector = ({
                   <div className="branch-dropdown-label">
                     {t("git.localBranches")}
                   </div>
-                  {localBranches.map((branch) => (
-                    <button
-                      key={branch.name}
-                      type="button"
-                      className={`branch-dropdown-item${
-                        branch.isCurrent ? " active" : ""
-                      }`}
-                      onClick={() => handleCheckout(branch.name)}
-                    >
-                      <span className="branch-dropdown-item-name">
-                        {branch.name}
-                      </span>
-                      {branch.isCurrent && (
-                        <span className="branch-dropdown-item-check" />
-                      )}
-                    </button>
-                  ))}
+                  {localBranches.map((branch) => {
+                    const isUpstreamTracking =
+                      branch.upstream?.startsWith("upstream/");
+                    return (
+                      <button
+                        key={branch.name}
+                        type="button"
+                        className={`branch-dropdown-item${
+                          branch.isCurrent ? " active" : ""
+                        }`}
+                        onClick={() => handleCheckout(branch.name)}
+                      >
+                        <div className="branch-dropdown-item-left">
+                          <span className="branch-dropdown-item-name">
+                            {branch.name}
+                          </span>
+                          {branch.upstream ? (
+                            <span
+                              className={`branch-dropdown-item-tracking${
+                                isUpstreamTracking ? " is-upstream" : ""
+                              }`}
+                              title={
+                                isUpstreamTracking
+                                  ? `${t("git.upstreamRemoteTooltip")}: ${branch.upstream}`
+                                  : branch.upstream
+                              }
+                            >
+                              → {branch.upstream}
+                            </span>
+                          ) : (
+                            <span
+                              className="branch-badge branch-badge-local"
+                              title={t("git.localOnlyBadge")}
+                            >
+                              {t("git.localOnlyBadge")}
+                            </span>
+                          )}
+                        </div>
+                        <div className="branch-dropdown-item-right">
+                          {branch.isGone && (
+                            <span
+                              className="branch-badge branch-badge-gone"
+                              title={t("git.goneBadge")}
+                            >
+                              {t("git.goneBadge")}
+                            </span>
+                          )}
+                          {typeof branch.behind === "number" &&
+                            branch.behind > 0 && (
+                              <span
+                                className="branch-badge branch-badge-behind"
+                                title={t("git.behindTooltip", {
+                                  values: { count: branch.behind },
+                                })}
+                              >
+                                ↓{branch.behind}
+                              </span>
+                            )}
+                          {typeof branch.ahead === "number" &&
+                            branch.ahead > 0 && (
+                              <span
+                                className="branch-badge branch-badge-ahead"
+                                title={t("git.aheadTooltip", {
+                                  values: { count: branch.ahead },
+                                })}
+                              >
+                                ↑{branch.ahead}
+                              </span>
+                            )}
+                          {branch.isCurrent && (
+                            <span className="branch-dropdown-item-check" />
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
               {remoteBranches.length > 0 && (
@@ -328,23 +384,42 @@ export const BranchSelector = ({
                   <div className="branch-dropdown-label">
                     {t("git.remoteBranches")}
                   </div>
-                  {remoteBranches.map((branch) => (
-                    <button
-                      key={branch.name}
-                      type="button"
-                      className={`branch-dropdown-item${
-                        branch.isCurrent ? " active" : ""
-                      }`}
-                      onClick={() => handleCheckout(branch.name)}
-                    >
-                      <span className="branch-dropdown-item-name">
-                        {branch.name}
-                      </span>
-                      {branch.isCurrent && (
-                        <span className="branch-dropdown-item-check" />
-                      )}
-                    </button>
-                  ))}
+                  {remoteBranches.map((branch) => {
+                    const isUpstream = branch.remoteName === "upstream";
+                    return (
+                      <button
+                        key={branch.name}
+                        type="button"
+                        className={`branch-dropdown-item${
+                          branch.isCurrent ? " active" : ""
+                        }`}
+                        onClick={() => handleCheckout(branch.name)}
+                      >
+                        <div className="branch-dropdown-item-left">
+                          <span className="branch-dropdown-item-name">
+                            {branch.name}
+                          </span>
+                        </div>
+                        <div className="branch-dropdown-item-right">
+                          {isUpstream ? (
+                            <span
+                              className="branch-badge branch-badge-upstream"
+                              title={t("git.upstreamRemoteTooltip")}
+                            >
+                              {t("git.upstreamBadge")}
+                            </span>
+                          ) : branch.remoteName ? (
+                            <span className="branch-badge branch-badge-remote">
+                              {branch.remoteName}
+                            </span>
+                          ) : null}
+                          {branch.isCurrent && (
+                            <span className="branch-dropdown-item-check" />
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
               {branches.length === 0 && (

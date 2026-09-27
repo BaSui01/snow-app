@@ -828,7 +828,10 @@ export const GitGraph = ({
         icon: <MessageSquareText size={13} strokeWidth={1.8} />,
         onClick: () => {
           setContextMenu(null);
-          void window.snow.writeClipboardText(commit.message).catch(() => {
+          const fullMessage = commit.body
+            ? `${commit.message}\n\n${commit.body}`
+            : commit.message;
+          void window.snow.writeClipboardText(fullMessage).catch(() => {
             // 剪贴板写入失败时静默忽略。
           });
         },
@@ -1001,20 +1004,23 @@ export const GitGraph = ({
                   commit: row.commit,
                 });
               }}
+              onMouseEnter={(event) =>
+                showTooltip(row.commit, event.clientX, event.clientY)
+              }
+              onMouseMove={(event) =>
+                positionTooltip(event.clientX, event.clientY)
+              }
+              onMouseLeave={hideTooltip}
               draggable
-              onDragStart={(event) => handleRowDragStart(event, row.commit)}
+              onDragStart={(event) => {
+                hideTooltip();
+                handleRowDragStart(event, row.commit);
+              }}
             >
               <svg
                 className="git-graph-svg"
                 width={graphWidth}
                 height={ROW_HEIGHT}
-                onMouseEnter={(event) =>
-                  showTooltip(row.commit, event.clientX, event.clientY)
-                }
-                onMouseMove={(event) =>
-                  positionTooltip(event.clientX, event.clientY)
-                }
-                onMouseLeave={hideTooltip}
               >
                 {row.topLines.map((lane) => (
                   <line
@@ -1076,7 +1082,14 @@ export const GitGraph = ({
                 />
               </svg>
               <div className="git-graph-info">
-                <span className="git-graph-message" title={row.commit.message}>
+                <span
+                  className="git-graph-message"
+                  title={
+                    row.commit.body
+                      ? `${row.commit.message}\n\n${row.commit.body}`
+                      : row.commit.message
+                  }
+                >
                   {row.commit.message}
                 </span>
                 {parsedRefs.length > 0 && (
@@ -1117,6 +1130,11 @@ export const GitGraph = ({
                     />
                   ))}
                 </svg>
+                {row.commit.body && (
+                  <div className="git-graph-detail-message-body">
+                    {row.commit.body}
+                  </div>
+                )}
                 {commitFiles.length > 0 ? (
                   <div className="git-graph-detail-files">
                     {commitFiles.map((file, i) => {
@@ -1270,8 +1288,15 @@ export const GitGraph = ({
               </div>
             )}
             <div className="git-graph-tooltip-divider" />
-            <div className="git-graph-tooltip-message">
-              {hoveredCommit.message}
+            <div className="git-graph-tooltip-message-section">
+              <div className="git-graph-tooltip-subject">
+                {hoveredCommit.message}
+              </div>
+              {hoveredCommit.body && (
+                <div className="git-graph-tooltip-body">
+                  {hoveredCommit.body}
+                </div>
+              )}
             </div>
           </div>
         ) : null,

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import type { GitRemoteInfo } from "../../../../preload";
 
 /** 气泡锚点：触发按钮（或右键菜单点击处）在 viewport 中的位置。 */
 export type GitConfirmAnchor = {
@@ -15,15 +16,22 @@ type GitConfirmBubbleProps = {
   cancelLabel: string;
   onConfirm: () => void;
   onCancel: () => void;
+  remotes?: GitRemoteInfo[];
+  selectedRemote?: string;
+  onSelectRemote?: (remote: string) => void;
+  remoteLabel?: string;
+  showSetUpstreamOption?: boolean;
+  setUpstream?: boolean;
+  onToggleSetUpstream?: (checked: boolean) => void;
+  setUpstreamLabel?: string;
 };
 
-const BUBBLE_WIDTH = 168;
 const ARROW_SIZE = 8;
 const EDGE_GAP = 6;
 
 /**
  * Git 操作二次确认气泡：portal 渲染在触发按钮下方，箭头指向触发位置；
- * 点击气泡外部或按 Esc 取消。外观与右侧面板关闭标签页的确认气泡一致。
+ * 点击气泡外部或按 Esc 取消。支持多 remote 选择与 set-upstream 勾选。
  */
 export function GitConfirmBubble({
   anchor,
@@ -32,8 +40,20 @@ export function GitConfirmBubble({
   cancelLabel,
   onConfirm,
   onCancel,
+  remotes,
+  selectedRemote,
+  onSelectRemote,
+  remoteLabel = "Remote",
+  showSetUpstreamOption = false,
+  setUpstream = false,
+  onToggleSetUpstream,
+  setUpstreamLabel = "Set upstream (-u)",
 }: GitConfirmBubbleProps): React.JSX.Element {
   const bubbleRef = useRef<HTMLDivElement | null>(null);
+  const hasOptions =
+    (remotes && remotes.length > 1) ||
+    (showSetUpstreamOption && onToggleSetUpstream !== undefined);
+  const bubbleWidth = hasOptions ? 220 : 168;
 
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent): void => {
@@ -59,19 +79,22 @@ export function GitConfirmBubble({
 
   const left = Math.max(
     EDGE_GAP,
-    Math.min(anchor.right - BUBBLE_WIDTH, window.innerWidth - BUBBLE_WIDTH - EDGE_GAP),
+    Math.min(
+      anchor.right - bubbleWidth,
+      window.innerWidth - bubbleWidth - EDGE_GAP,
+    ),
   );
   const center = anchor.left + (anchor.right - anchor.left) / 2;
   const arrowLeft = Math.max(
     10,
-    Math.min(center - left - ARROW_SIZE / 2, BUBBLE_WIDTH - 18),
+    Math.min(center - left - ARROW_SIZE / 2, bubbleWidth - 18),
   );
 
   return createPortal(
     <div
       ref={bubbleRef}
-      className="git-confirm-bubble"
-      style={{ left, top: anchor.bottom + EDGE_GAP }}
+      className={`git-confirm-bubble${hasOptions ? " has-options" : ""}`}
+      style={{ left, top: anchor.bottom + EDGE_GAP, width: bubbleWidth }}
       role="tooltip"
     >
       <span
@@ -80,6 +103,34 @@ export function GitConfirmBubble({
         aria-hidden="true"
       />
       <span className="git-confirm-bubble-text">{message}</span>
+      {remotes && remotes.length > 1 && onSelectRemote && (
+        <div className="git-confirm-bubble-remote-row">
+          <span className="git-confirm-bubble-remote-label">
+            {remoteLabel}:
+          </span>
+          <select
+            value={selectedRemote}
+            onChange={(e) => onSelectRemote(e.target.value)}
+            className="git-confirm-bubble-select"
+          >
+            {remotes.map((r) => (
+              <option key={r.name} value={r.name}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      {showSetUpstreamOption && onToggleSetUpstream && (
+        <label className="git-confirm-bubble-checkbox-row">
+          <input
+            type="checkbox"
+            checked={setUpstream}
+            onChange={(e) => onToggleSetUpstream(e.target.checked)}
+          />
+          <span>{setUpstreamLabel}</span>
+        </label>
+      )}
       <div className="git-confirm-bubble-actions">
         <button
           type="button"

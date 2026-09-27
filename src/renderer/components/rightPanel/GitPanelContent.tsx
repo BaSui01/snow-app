@@ -44,14 +44,23 @@ export function GitPanelContent({
 
   const repoPath = selectedRepoPath;
 
-  /** 变更区/暂存区点击文件：在新的差异 tab 中打开（先加载态，再填充结果）。 */
+  // 切换仓库后旧的 status 立即失效（其中的 currentBranch 属于上一个仓库）：
+  // 在渲染期间同步清空（React 的「渲染期间调整 state」模式），避免旧分支名
+  // 被当成新仓库的分支传给提交图；新 status 由 GitControl 重新回报。
+  const [statusRepoPath, setStatusRepoPath] = useState(repoPath);
+  if (statusRepoPath !== repoPath) {
+    setStatusRepoPath(repoPath);
+    setGitStatus(null);
+  }
+
+  /** 变更区/暂存区双击文件：在新的差异 tab 中打开（先加载态，再填充结果）。 */
   const handleFileSelect = useCallback(
     (file: GitFileStatus | null, section?: "staged" | "unstaged") => {
       if (!repoPath || !file || !onOpenInTab) {
         return;
       }
-      // 点击来源优先：变更区 -> 工作区 diff；暂存区 -> `--cached` diff。
-      // 同一文件同时存在于两个区域时，indexStatus 无法区分点击位置，
+      // 双击来源优先：变更区 -> 工作区 diff；暂存区 -> `--cached` diff。
+      // 同一文件同时存在于两个区域时，indexStatus 无法区分双击位置，
       // 必须以 section 为准。
       const isStaged = section === "staged";
       onOpenInTab(file, null, true);
@@ -199,7 +208,11 @@ export function GitPanelContent({
         }}
       >
         {repoPath ? (
-          <GitGraph repoPath={repoPath} refreshKey={graphRefreshKey} />
+          <GitGraph
+            repoPath={repoPath}
+            branch={gitStatus?.currentBranch ?? null}
+            refreshKey={graphRefreshKey}
+          />
         ) : (
           <div className="git-graph-empty">
             {t("rightPanel.noRepositorySelected")}

@@ -1535,6 +1535,8 @@ export type GitLogEntry = {
   additions: number;
   /** 本次提交删除的行数（来自 git log --shortstat）。 */
   deletions: number;
+  /** 是否已推送到远端：被任一远端跟踪分支（refs/remotes/*）包含。 */
+  pushed: boolean;
 };
 export type GitCommitFile = {
   path: string;

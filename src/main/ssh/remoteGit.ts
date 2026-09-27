@@ -774,6 +774,38 @@ export const remoteDiscardChanges = async (
   return { success: true, message: "Changes discarded successfully" };
 };
 
+/**
+ * 远端仓库中「只提交到本地、尚未推送」的提交哈希集合（不被任何远端
+ * 跟踪分支包含）。无远端跟踪分支时返回空集合，全部提交视为已推送 ——
+ * 与 Rust 后端的 mark_pushed 行为一致。两条 git 命令拼进同一条 shell
+ * 语句执行，避免多一次 SSH 往返。
+ */
+const remoteUnpushedHashes = (workspacePath: string): Promise<Set<string>> =>
+  withSshSession(workspacePath, async (sessionId, remotePath) => {
+    const gitPrefix =
+      "git -c core.quotepath=false -c 'safe.directory=*' -c color.ui=false";
+    const remoteRefsProbe = `${gitPrefix} for-each-ref --count=1 --format='%(refname)' refs/remotes | grep -q .`;
+    const listUnpushed = `${gitPrefix} rev-list --all --not --remotes`;
+    try {
+      const output = await executeSshCommand(
+        sessionId,
+        `cd -- ${shellQuote(remotePath)} && (${remoteRefsProbe}) && ${listUnpushed} || true`,
+      );
+      return new Set(
+        output
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean),
+      );
+    } catch {
+      return new Set();
+    }
+  });
+
+/**
+ * 只遍历当前分支（HEAD）可达的提交（与 Rust 的 get_git_log 一致）：不用
+ * `--all`，避免其他分支（如其他 fork 远端的 main）独有的提交混进提交图。
+ */
 export const remoteGetGitLog = async (
   workspacePath: string,
   skip: number,
@@ -786,7 +818,7 @@ export const remoteGetGitLog = async (
   try {
     output = await runRemoteGitRaw(workspacePath, [
       "log",
-      "--all",
+      "HEAD",
       "--decorate=full",
       "--shortstat",
       "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ad%x1f%s%x1f%D%x1f%P",
@@ -800,6 +832,7 @@ export const remoteGetGitLog = async (
     return [];
   }
 
+  const unpushed = await remoteUnpushedHashes(workspacePath);
   const entries: GitLogEntry[] = [];
 
   // `--shortstat` appends a diffstat line (e.g. "1 file changed,
@@ -823,6 +856,7 @@ export const remoteGetGitLog = async (
         parents: parts[7].split(/\s+/).filter(Boolean),
         additions: 0,
         deletions: 0,
+        pushed: !unpushed.has(parts[0]),
       });
     } else {
       const lastEntry = entries[entries.length - 1];

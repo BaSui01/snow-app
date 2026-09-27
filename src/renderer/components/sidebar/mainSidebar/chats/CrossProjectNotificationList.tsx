@@ -3,8 +3,8 @@ import {
   ChevronRight,
   CircleAlert,
   Folder,
-  Loader2,
   MessageSquareMore,
+  Snowflake,
 } from "lucide-react";
 
 import { useI18n } from "../../../../i18n";
@@ -109,7 +109,11 @@ export function CrossProjectNotificationList({
                     {notification.isAttentionRequired ? (
                       <CircleAlert size={12} aria-hidden="true" />
                     ) : notification.isStreaming ? (
-                      <Loader2 size={11} className="spin" aria-hidden="true" />
+                      <Snowflake
+                        size={11}
+                        className="snowflake-spin"
+                        aria-hidden="true"
+                      />
                     ) : notification.isCompleted ? (
                       <CheckCircle2 size={12} aria-hidden="true" />
                     ) : (

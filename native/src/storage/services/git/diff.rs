@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::Path;
 
 use napi::bindgen_prelude::*;
@@ -178,6 +179,9 @@ pub fn get_git_log(repo_path: &str, skip: i32, limit: i32) -> Result<Vec<GitLogE
     // ("fatal: your current branch does not have any commits yet").
     // run_git_raw returns stdout regardless of exit code, so we get an empty
     // string for repos with no commits.
+    // 只遍历当前分支（HEAD）可达的提交，刻意不追加 `--all`：`--all` 会把其他
+    // 引用独占的提交一并拉进来（例如其他 fork 远端 main 分支上的同步合并），
+    // 混进提交图；被合并进当前分支的侧分支历史依然可达，照常显示。
     // `--decorate=full` emits unambiguous ref names (refs/heads/…,
     // refs/remotes/…, refs/tags/…) so the renderer can tell local branches,
     // remote-tracking branches and tags apart.
@@ -194,7 +198,7 @@ pub fn get_git_log(repo_path: &str, skip: i32, limit: i32) -> Result<Vec<GitLogE
         repo_path,
         &[
             "log",
-            "--all",
+            "HEAD",
             "--decorate=full",
             "--decorate-refs-exclude=refs/remotes/*/HEAD",
             "--shortstat",
@@ -229,6 +233,7 @@ pub fn get_git_log(repo_path: &str, skip: i32, limit: i32) -> Result<Vec<GitLogE
                 parents,
                 additions: 0,
                 deletions: 0,
+                pushed: true,
             });
         } else if let Some(entry) = entries.last_mut() {
             // shortstat line belonging to the commit parsed just above.
@@ -237,7 +242,45 @@ pub fn get_git_log(repo_path: &str, skip: i32, limit: i32) -> Result<Vec<GitLogE
         }
     }
 
+    mark_pushed(repo_path, &mut entries);
+
     Ok(entries)
+}
+
+/// 判定窗口内每个提交是否已推送到远端（被任一远端跟踪分支包含）。
+///
+/// 一条 `git rev-list --all --not --remotes` 即可列出全部「只在本地」的
+/// 提交：未推送的提交通常只有寥寥几个，rev-list 会在远端引用边界处剪枝，
+/// 远快于逐条提交做包含判断。仓库没有任何远端跟踪分支时直接跳过（全部
+/// 视为已推送），避免纯本地仓库满屏空心环。
+fn mark_pushed(repo_path: &str, entries: &mut [GitLogEntry]) {
+    if entries.is_empty() {
+        return;
+    }
+
+    let has_remote = run_git(
+        repo_path,
+        &[
+            "for-each-ref",
+            "--count=1",
+            "--format=%(refname)",
+            "refs/remotes",
+        ],
+    )
+    .map(|output| !output.trim().is_empty())
+    .unwrap_or(false);
+    if !has_remote {
+        return;
+    }
+
+    let unpushed: HashSet<String> =
+        run_git(repo_path, &["rev-list", "--all", "--not", "--remotes"])
+            .map(|output| output.split_whitespace().map(str::to_string).collect())
+            .unwrap_or_default();
+
+    for entry in entries {
+        entry.pushed = !unpushed.contains(&entry.hash);
+    }
 }
 
 /// Extracts the number preceding `keyword` in a git `--shortstat` line, e.g.

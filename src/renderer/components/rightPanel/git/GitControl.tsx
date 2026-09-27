@@ -34,7 +34,7 @@ type GitControlProps = {
   repoPath: string | undefined | null;
   repos?: GitRepoInfo[];
   onRepoSelect?: (path: string) => void;
-  /** 点击变更区/暂存区文件：回调携带点击来源，供上层打开对应差异 tab。 */
+  /** 双击变更区/暂存区文件：回调携带双击来源，供上层打开对应差异 tab。 */
   onFileSelect: (
     file: GitFileStatus | null,
     section?: "staged" | "unstaged",
@@ -444,13 +444,16 @@ export const GitControl = ({
         lastClickedSectionRef.current = section;
         return next;
       });
+    },
+    [status],
+  );
 
-      // Notify parent for diff display - send the clicked file and the
-      // section it was clicked in, so the parent can pick the right diff
-      // (staged vs worktree) even when the same path exists in both lists.
+  // 双击文件打开差异视图：来源 section 决定取工作区 diff 还是 --cached diff。
+  const handleFileActivate = useCallback(
+    (file: GitFileStatus, section: "staged" | "unstaged") => {
       onFileSelect(file, section);
     },
-    [status, onFileSelect],
+    [onFileSelect],
   );
 
   const handleOpenFile = useCallback(
@@ -1099,6 +1102,7 @@ export const GitControl = ({
           actionInProgress={actionInProgress}
           viewMode={fileViewMode}
           onFileSelect={handleFileSelect}
+          onFileActivate={handleFileActivate}
           onStageToggle={handleStageToggle}
           onUnstageAll={handleUnstageAll}
           onOpenFile={handleOpenFile}
@@ -1113,6 +1117,7 @@ export const GitControl = ({
           actionInProgress={actionInProgress}
           viewMode={fileViewMode}
           onFileSelect={handleFileSelect}
+          onFileActivate={handleFileActivate}
           onStageToggle={handleStageToggle}
           onStageAll={handleStageAll}
           onDiscard={handleDiscardRequest}

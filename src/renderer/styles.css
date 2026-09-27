@@ -8151,6 +8151,10 @@ body.is-panel-resizing * {
   animation: snow-spin 0.85s linear infinite;
 }
 
+.snowflake-spin {
+  animation: snow-spin 1.5s linear infinite;
+}
+
 @keyframes snow-spin {
   from {
     transform: rotate(0deg);
@@ -28292,6 +28296,7 @@ body.is-panel-resizing * {
   min-height: 0;
   overflow: hidden;
   padding: 10px 5px;
+  transition: flex-grow 0.24s cubic-bezier(0.33, 0, 0.2, 1);
 }
 
 .git-status-limit-hint {
@@ -28312,6 +28317,7 @@ body.is-panel-resizing * {
   min-height: 0;
   overflow-y: auto;
   scrollbar-gutter: stable;
+  transition: flex-grow 0.24s cubic-bezier(0.33, 0, 0.2, 1);
 }
 
 .h-resizer {
@@ -28333,6 +28339,10 @@ body.is-git-pane-resizing,
 body.is-git-pane-resizing * {
   cursor: grabbing !important;
   user-select: none;
+}
+
+body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
+  transition: none;
 }
 
 .h-resizer::before {

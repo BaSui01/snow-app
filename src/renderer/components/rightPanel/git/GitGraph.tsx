@@ -31,6 +31,9 @@ import type { OpenDiffTabCallback } from "../types";
 
 type GitGraphProps = {
   repoPath: string;
+  /** 当前分支名（来自 git status）：切换分支时提交图整体重载，因为图谱只
+   *  包含当前分支可达的提交，增量合并无法移除旧分支独有的提交。 */
+  branch?: string | null;
   /** Bump to force a full reload of the history from the first page. */
   refreshKey?: number;
   /** Opens a commit file's diff in a new right-panel tab. */
@@ -58,7 +61,7 @@ interface GraphRow {
   dotLane: number;
   topLines: number[];
   bottomLines: number[];
-  curves: { from: number; to: number }[];
+  curves: { from: number; to: number; colorLane: number }[];
 }
 
 // --- Constants ---
@@ -192,10 +195,11 @@ function computeGraph(commits: GitLogEntry[]): {
         topLines.push(i);
       }
     }
+    const dotLineFromTop = topLines.includes(dotLane);
 
     lanes[dotLane] = null;
 
-    const curves: { from: number; to: number }[] = [];
+    const curves: GraphRow["curves"] = [];
 
     for (let p = 0; p < commit.parents.length; p++) {
       const parentHash = commit.parents[p];
@@ -214,7 +218,7 @@ function computeGraph(commits: GitLogEntry[]): {
           mainline.has(commit.hash) &&
           parentLane !== dotLane
         ) {
-          curves.push({ from: parentLane, to: dotLane });
+          curves.push({ from: parentLane, to: dotLane, colorLane: parentLane });
           lanes[parentLane] = null;
           hashToLane.set(parentHash, dotLane);
           parentLane = dotLane;
@@ -235,7 +239,11 @@ function computeGraph(commits: GitLogEntry[]): {
       lanes[parentLane] = parentHash;
 
       if (parentLane !== dotLane) {
-        curves.push({ from: dotLane, to: parentLane });
+        curves.push({
+          from: dotLane,
+          to: parentLane,
+          colorLane: isFirstParent && dotLineFromTop ? dotLane : parentLane,
+        });
       }
     }
 
@@ -352,6 +360,7 @@ function parseRefs(refs: string): ParsedRef[] {
 
 export const GitGraph = ({
   repoPath,
+  branch,
   refreshKey,
   onOpenInTab,
 }: GitGraphProps): React.JSX.Element => {
@@ -378,6 +387,8 @@ export const GitGraph = ({
   const commitsRef = useRef<GitLogEntry[]>([]);
   // 增量前插前记录的内容高度：渲染后按高度差补偿滚动偏移，视口不跳动。
   const scrollAnchorHeightRef = useRef<number | null>(null);
+  // 数据世代：整体重载（切换仓库 / 分支）时自增，让并发中的增量合并结果作废。
+  const generationRef = useRef(0);
 
   const loadPage = useCallback(
     async (skip: number, isInitial: boolean) => {
@@ -410,9 +421,10 @@ export const GitGraph = ({
     [repoPath],
   );
 
-  /** 从第一页整体重载：切换仓库，以及增量刷新找不到锚点时的兜底。 */
+  /** 从第一页整体重载：切换仓库 / 分支，以及增量刷新找不到锚点时的兜底。 */
   const reloadFromStart = useCallback(
     async (isCancelled: () => boolean): Promise<void> => {
+      generationRef.current += 1;
       setCommits([]);
       setHasMore(true);
       setError(null);
@@ -449,8 +461,18 @@ export const GitGraph = ({
     [repoPath],
   );
 
-  // 切换仓库：清空后整体重载。cancelled 标记用于抵御 React Strict Mode
-  // 的双次调用（第一次的结果被丢弃）。
+  // 切换仓库或分支：清空后整体重载。分支切换必须整体重载——提交图只包含
+  // 当前分支可达的提交，增量合并无法移除旧分支独有的提交。`branch` 由
+  // git status 异步回报：从「未知」到已知只是首次登记（挂载与仓库切换时的
+  // 首屏加载取的就是当前 HEAD 的数据），不触发重载。cancelled 标记用于
+  // 抵御 React Strict Mode 的双次调用（第一次的结果被丢弃）。
+  const loadedBranchRef = useRef<string | null>(null);
+
+  // 切换仓库：上一仓库的分支记录作废，等新仓库的分支到位再比较。
+  useEffect(() => {
+    loadedBranchRef.current = null;
+  }, [repoPath]);
+
   useEffect(() => {
     let cancelled = false;
     loadingRef.current = false;
@@ -461,14 +483,35 @@ export const GitGraph = ({
     };
   }, [reloadFromStart]);
 
+  useEffect(() => {
+    const branchName = branch || null;
+    if (branchName === null) {
+      return;
+    }
+    const previous = loadedBranchRef.current;
+    loadedBranchRef.current = branchName;
+    if (previous === null || previous === branchName) {
+      return;
+    }
+
+    let cancelled = false;
+    loadingRef.current = false;
+    void reloadFromStart(() => cancelled);
+    return () => {
+      cancelled = true;
+      loadingRef.current = false;
+    };
+  }, [branch, reloadFromStart]);
+
   /**
    * 增量刷新：只拉取「已加载的最新提交」（锚点）之上的新提交并前插，同时用
-   * 同一批数据刷新锚点及其后已加载提交的引用徽章（推送会移动 origin/* 这类
-   * 远端跟踪分支）。找不到锚点（rebase / amend / force push 改写了历史）或
-   * 新增提交超过上限时，退回整体重载。
+   * 同一批数据刷新锚点及其后已加载提交的引用徽章与推送状态（推送会移动
+   * origin/* 这类远端跟踪分支，并使本地提交转为已推送）。找不到锚点
+   * （rebase / amend / force push 改写了历史）或新增提交超过上限时，退回整体重载。
    */
   const refreshIncrementally = useCallback(
     async (isCancelled: () => boolean): Promise<void> => {
+      const generation = generationRef.current;
       const loaded = commitsRef.current;
       const anchorHash = loaded[0]?.hash;
       if (!anchorHash) {
@@ -490,7 +533,7 @@ export const GitGraph = ({
           for (let i = 0; i < page.length; i++) {
             if (page[i].hash === anchorHash) {
               newCount = scanned.length;
-              // 锚点及其后同页条目都是已加载提交，用最新数据刷新引用徽章。
+              // 锚点及其后同页条目都是已加载提交，用最新数据刷新引用徽章与推送状态。
               for (let j = i; j < page.length; j++) {
                 scanned.push(page[j]);
               }
@@ -510,15 +553,25 @@ export const GitGraph = ({
         return;
       }
 
-      const freshRefs = new Map<string, string>();
+      const freshMeta = new Map<string, { refs: string; pushed: boolean }>();
       for (let i = newCount; i < scanned.length; i++) {
-        freshRefs.set(scanned[i].hash, scanned[i].refs);
+        freshMeta.set(scanned[i].hash, {
+          refs: scanned[i].refs,
+          pushed: scanned[i].pushed,
+        });
       }
-      const refsChanged = loaded.some((commit) => {
-        const refs = freshRefs.get(commit.hash);
-        return refs !== undefined && refs !== commit.refs;
+      const metaChanged = loaded.some((commit) => {
+        const fresh = freshMeta.get(commit.hash);
+        return (
+          fresh !== undefined &&
+          (fresh.refs !== commit.refs || fresh.pushed !== commit.pushed)
+        );
       });
-      if (newCount === 0 && !refsChanged) {
+      if (newCount === 0 && !metaChanged) {
+        return;
+      }
+      // 扫描期间若发生过整体重载（切换仓库 / 分支），本次合并已失效。
+      if (generationRef.current !== generation) {
         return;
       }
 
@@ -529,10 +582,13 @@ export const GitGraph = ({
       }
       setCommits((prev) => {
         const merged = prev.map((commit) => {
-          const refs = freshRefs.get(commit.hash);
-          return refs !== undefined && refs !== commit.refs
-            ? { ...commit, refs }
-            : commit;
+          const fresh = freshMeta.get(commit.hash);
+          if (fresh === undefined) {
+            return commit;
+          }
+          return fresh.refs === commit.refs && fresh.pushed === commit.pushed
+            ? commit
+            : { ...commit, refs: fresh.refs, pushed: fresh.pushed };
         });
         return newCount > 0
           ? [...scanned.slice(0, newCount), ...merged]
@@ -994,7 +1050,7 @@ export const GitGraph = ({
                         ROW_HEIGHT + LINE_WIDTH / 2
                       }`}
                       fill="none"
-                      stroke={LANE_COLORS[c.to % LANE_COLORS.length]}
+                      stroke={LANE_COLORS[c.colorLane % LANE_COLORS.length]}
                       strokeWidth={LINE_WIDTH}
                     />
                   );
@@ -1009,12 +1065,13 @@ export const GitGraph = ({
                     strokeWidth={1.5}
                   />
                 )}
+                {/* 已推送远端的提交保持实心圆，只提交到本地未推送的画空心环。 */}
                 <circle
                   cx={row.dotLane * LANE_WIDTH + LANE_WIDTH / 2}
                   cy={ROW_HEIGHT / 2}
                   r={DOT_RADIUS}
-                  fill={dotColor}
-                  stroke="var(--bg-primary)"
+                  fill={row.commit.pushed ? dotColor : "var(--bg-primary)"}
+                  stroke={row.commit.pushed ? "var(--bg-primary)" : dotColor}
                   strokeWidth={2}
                 />
               </svg>

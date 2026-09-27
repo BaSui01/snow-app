@@ -171,6 +171,8 @@ pub struct GitLogEntry {
     pub parents: Vec<String>,
     pub additions: i32,
     pub deletions: i32,
+    /// 是否已推送到远端：该提交被任一远端跟踪分支（refs/remotes/*）包含。
+    pub pushed: bool,
 }
 
 #[napi(object)]

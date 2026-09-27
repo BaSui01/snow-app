@@ -7,6 +7,7 @@ import {
   Loader2,
   MessageSquareMore,
   Pause,
+  Snowflake,
   Workflow,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -356,7 +357,11 @@ export function ChatItem({
             isPaused ? (
               <Pause size={11} aria-hidden="true" />
             ) : (
-              <Loader2 size={11} className="spin" aria-hidden="true" />
+              <Snowflake
+                size={11}
+                className="snowflake-spin"
+                aria-hidden="true"
+              />
             )
           ) : showCompletedStatus ? (
             <CheckCircle2 size={12} aria-hidden="true" />

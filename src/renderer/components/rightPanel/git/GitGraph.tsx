@@ -24,6 +24,7 @@ import type {
   GitCommitFile,
   GitFileStatus,
   GitLogEntry,
+  GitWorktreeInfo,
 } from "../../../../preload";
 import { useI18n } from "../../../i18n";
 import { ContextMenu, type ContextMenuItem } from "../../common/ContextMenu";
@@ -34,6 +35,8 @@ type GitGraphProps = {
   /** 当前分支名（来自 git status）：切换分支时提交图整体重载，因为图谱只
    *  包含当前分支可达的提交，增量合并无法移除旧分支独有的提交。 */
   branch?: string | null;
+  /** Worktrees whose branches/HEADs should be identified in the graph. */
+  worktrees?: GitWorktreeInfo[];
   /** Bump to force a full reload of the history from the first page. */
   refreshKey?: number;
   /** Opens a commit file's diff in a new right-panel tab. */
@@ -60,8 +63,10 @@ interface GraphRow {
   commit: GitLogEntry;
   dotLane: number;
   topLines: number[];
+  topColors: string[];
   bottomLines: number[];
-  curves: { from: number; to: number; colorLane: number }[];
+  bottomColors: string[];
+  curves: { from: number; to: number; color: string }[];
 }
 
 // --- Constants ---
@@ -124,8 +129,6 @@ function reorderFirstParentFirst(commits: GitLogEntry[]): GitLogEntry[] {
     }
   }
 
-  // Seeds = commits no loaded row references (ref tips). Pushed in reverse
-  // so the newest one (row 0) pops first.
   const stack: GitLogEntry[] = [];
   for (let i = commits.length - 1; i >= 0; i--) {
     if (childCount.get(commits[i].hash) === 0) {
@@ -137,11 +140,9 @@ function reorderFirstParentFirst(commits: GitLogEntry[]): GitLogEntry[] {
   while (stack.length > 0) {
     const commit = stack.pop()!;
     ordered.push(commit);
-    // Push parents in reverse so the FIRST parent pops next, keeping the
-    // first-parent chain contiguous.
     for (let i = commit.parents.length - 1; i >= 0; i--) {
       const remaining = childCount.get(commit.parents[i]);
-      if (remaining === undefined) continue; // parent beyond the loaded window
+      if (remaining === undefined) continue;
       if (remaining === 1) {
         stack.push(byHash.get(commit.parents[i])!);
       }
@@ -153,19 +154,17 @@ function reorderFirstParentFirst(commits: GitLogEntry[]): GitLogEntry[] {
 
 // --- Lane computation ---
 
-function computeGraph(commits: GitLogEntry[]): {
+function computeGraph(
+  commits: GitLogEntry[],
+  worktreeEdgeColors: Map<string, string>,
+): {
   rows: GraphRow[];
   maxLanes: number;
 } {
   const hashToLane = new Map<string, number>();
   const lanes: (string | null)[] = [];
+  const laneColors: (string | null)[] = [];
   const rows: GraphRow[] = [];
-
-  // The first-parent chain of the newest commit is the "main axis" and
-  // must stay in lane 0. A side branch can reference a mainline commit
-  // before the mainline reaches it (the branch's tail re-joins the
-  // mainline deep down), parking it in a side lane; the next mainline row
-  // that continues the chain then reclaims it below.
   const commitByHash = new Map(commits.map((c) => [c.hash, c]));
   const mainline = new Set<string>();
   for (
@@ -186,40 +185,46 @@ function computeGraph(commits: GitLogEntry[]): {
       dotLane = freeLane !== -1 ? freeLane : lanes.length;
       if (dotLane >= lanes.length) {
         lanes.push(null);
+        laneColors.push(null);
       }
     }
 
     const topLines: number[] = [];
     for (let i = 0; i < lanes.length; i++) {
-      if (lanes[i] !== null) {
-        topLines.push(i);
-      }
+      if (lanes[i] !== null) topLines.push(i);
     }
-    const dotLineFromTop = topLines.includes(dotLane);
+    const topColors = laneColors.map(
+      (color, lane) => color ?? LANE_COLORS[lane % LANE_COLORS.length],
+    );
 
     lanes[dotLane] = null;
-
-    const curves: GraphRow["curves"] = [];
+    laneColors[dotLane] = null;
+    const curves: { from: number; to: number; color: string }[] = [];
 
     for (let p = 0; p < commit.parents.length; p++) {
       const parentHash = commit.parents[p];
       const isFirstParent = p === 0;
+      const worktreeColor = worktreeEdgeColors.get(
+        `${commit.hash}\0${parentHash}`,
+      );
 
       let parentLane: number;
       if (hashToLane.has(parentHash)) {
         parentLane = hashToLane.get(parentHash)!;
-        // The dot is on the main axis but its first parent is parked in a
-        // side lane (a branch tail referenced it earlier). Reclaim the
-        // parent into lane 0 so the main axis stays straight; the parked
-        // lane's line merges into lane 0 via a curve and the freed slot is
-        // released for reuse.
         if (
           isFirstParent &&
           mainline.has(commit.hash) &&
           parentLane !== dotLane
         ) {
-          curves.push({ from: parentLane, to: dotLane, colorLane: parentLane });
+          curves.push({
+            from: parentLane,
+            to: dotLane,
+            color:
+              laneColors[parentLane] ??
+              LANE_COLORS[parentLane % LANE_COLORS.length],
+          });
           lanes[parentLane] = null;
+          laneColors[parentLane] = null;
           hashToLane.set(parentHash, dotLane);
           parentLane = dotLane;
         }
@@ -231,30 +236,38 @@ function computeGraph(commits: GitLogEntry[]): {
           parentLane = freeLane !== -1 ? freeLane : lanes.length;
           if (parentLane >= lanes.length) {
             lanes.push(null);
+            laneColors.push(null);
           }
         }
         hashToLane.set(parentHash, parentLane);
       }
 
+      const edgeColor =
+        worktreeColor ?? LANE_COLORS[parentLane % LANE_COLORS.length];
       lanes[parentLane] = parentHash;
-
+      laneColors[parentLane] = edgeColor;
       if (parentLane !== dotLane) {
-        curves.push({
-          from: dotLane,
-          to: parentLane,
-          colorLane: isFirstParent && dotLineFromTop ? dotLane : parentLane,
-        });
+        curves.push({ from: dotLane, to: parentLane, color: edgeColor });
       }
     }
 
     const bottomLines: number[] = [];
     for (let i = 0; i < lanes.length; i++) {
-      if (lanes[i] !== null) {
-        bottomLines.push(i);
-      }
+      if (lanes[i] !== null) bottomLines.push(i);
     }
+    const bottomColors = laneColors.map(
+      (color, lane) => color ?? LANE_COLORS[lane % LANE_COLORS.length],
+    );
 
-    rows.push({ commit, dotLane, topLines, bottomLines, curves });
+    rows.push({
+      commit,
+      dotLane,
+      topLines,
+      topColors,
+      bottomLines,
+      bottomColors,
+      curves,
+    });
   }
 
   return { rows, maxLanes: lanes.length };
@@ -356,11 +369,95 @@ function parseRefs(refs: string): ParsedRef[] {
   return parsed;
 }
 
+/** Stable per-worktree accent, independent of the topology lane assignment. */
+function getWorktreeColor(worktree: GitWorktreeInfo): string {
+  const identity =
+    worktree.worktreeId || worktree.branchName || worktree.headOid;
+  let hash = 2166136261;
+  for (let i = 0; i < identity.length; i++) {
+    hash = Math.imul(hash ^ identity.charCodeAt(i), 16777619);
+  }
+  const hue = (hash >>> 0) % 360;
+  return `hsl(${hue} 78% 62%)`;
+}
+
+/** Match only true local branch refs, or detached worktrees at their HEAD commit. */
+function getCommitWorktrees(
+  commit: GitLogEntry,
+  refs: ParsedRef[],
+  worktrees: GitWorktreeInfo[],
+): GitWorktreeInfo[] {
+  const localBranches = new Set(
+    refs
+      .filter((ref) => ref.kind === "local" && ref.name !== "HEAD")
+      .map((ref) => ref.name),
+  );
+  const oid = commit.hash.toLowerCase();
+  return worktrees.filter((worktree) =>
+    worktree.isDetached
+      ? worktree.headOid.toLowerCase() === oid
+      : !!worktree.branchName && localBranches.has(worktree.branchName),
+  );
+}
+
+/**
+ * Color only edges that are reachable from exactly one loaded worktree tip.
+ * Shared ancestry and edges outside the loaded history retain lane colors.
+ */
+function getWorktreeEdgeColors(
+  commits: GitLogEntry[],
+  worktrees: GitWorktreeInfo[],
+): Map<string, string> {
+  const byHash = new Map(commits.map((commit) => [commit.hash, commit]));
+  const memberships = new Map<string, Set<string>>();
+
+  for (const worktree of worktrees) {
+    const tips = commits.filter(
+      (commit) =>
+        getCommitWorktrees(commit, parseRefs(commit.refs), [worktree]).length >
+        0,
+    );
+    // Without every worktree tip in the loaded window, uniqueness cannot be
+    // established: an unseen tip may also reach any edge we would color.
+    if (tips.length === 0) return new Map();
+
+    const visited = new Set<string>();
+    const pending = tips.map((tip) => tip.hash);
+
+    while (pending.length > 0) {
+      const childHash = pending.pop()!;
+      if (visited.has(childHash)) continue;
+      visited.add(childHash);
+      const child = byHash.get(childHash);
+      if (!child) continue;
+
+      for (const parentHash of child.parents) {
+        if (!byHash.has(parentHash)) continue;
+        const edgeKey = `${childHash}\0${parentHash}`;
+        const edgeMembership = memberships.get(edgeKey) ?? new Set<string>();
+        edgeMembership.add(worktree.worktreeId);
+        memberships.set(edgeKey, edgeMembership);
+        pending.push(parentHash);
+      }
+    }
+  }
+
+  const colors = new Map<string, string>();
+  for (const [edgeKey, worktreeIds] of memberships) {
+    if (worktreeIds.size !== 1) continue;
+    const worktreeId = worktreeIds.values().next().value;
+    const worktree = worktrees.find((item) => item.worktreeId === worktreeId);
+    if (worktree) colors.set(edgeKey, getWorktreeColor(worktree));
+  }
+  return colors;
+}
+
 // --- Component ---
 
 export const GitGraph = ({
   repoPath,
   branch,
+  worktrees = [],
   refreshKey,
   onOpenInTab,
 }: GitGraphProps): React.JSX.Element => {
@@ -698,11 +795,29 @@ export const GitGraph = ({
     };
   }, [selectedHash, repoPath]);
 
+  const worktreeEdgeColors = useMemo(
+    () => getWorktreeEdgeColors(commits, worktrees),
+    [commits, worktrees],
+  );
   const { rows, maxLanes } = useMemo(
-    () => computeGraph(reorderFirstParentFirst(commits)),
-    [commits],
+    () => computeGraph(reorderFirstParentFirst(commits), worktreeEdgeColors),
+    [commits, worktreeEdgeColors],
   );
   const graphWidth = Math.max(maxLanes * LANE_WIDTH, LANE_WIDTH);
+  const graphWorktrees = worktrees;
+  const matchedWorktreeIds = useMemo(() => {
+    const matched = new Set<string>();
+    for (const row of rows) {
+      for (const worktree of getCommitWorktrees(
+        row.commit,
+        parseRefs(row.commit.refs),
+        worktrees,
+      )) {
+        matched.add(worktree.worktreeId);
+      }
+    }
+    return matched;
+  }, [rows, worktrees]);
 
   const handleRowClick = (hash: string) => {
     setSelectedHash((prev) => {
@@ -912,8 +1027,8 @@ export const GitGraph = ({
     }
   };
 
-  /** Renders one ref badge (local / remote / tag) with icon and tooltip. */
-  const renderRefBadge = (ref: ParsedRef) => {
+  /** Renders one ref badge (local / remote / tag) with its original meaning. */
+  const renderRefBadge = (ref: ParsedRef, worktree?: GitWorktreeInfo) => {
     const title =
       ref.kind === "remote"
         ? t("git.graphRemoteBranch", { defaultValue: "Remote branch" })
@@ -936,12 +1051,44 @@ export const GitGraph = ({
       ) : (
         <GitBranch size={10} strokeWidth={2} />
       );
+    const worktreeColor = worktree ? getWorktreeColor(worktree) : undefined;
     return (
       <span
-        key={`${ref.kind}/${ref.name}`}
+        key={`${ref.kind}/${ref.name}/${worktree?.worktreeId ?? ""}`}
         className={`git-graph-ref ${ref.kind}`}
-        title={title}
+        title={
+          worktree
+            ? `${title}\n${t("git.graphWorktreeTooltip", {
+                values: {
+                  path: worktree.worktreePath,
+                  state: worktree.isDirty
+                    ? t("git.worktreeDirty")
+                    : t("git.graphWorktreeClean"),
+                  validity: worktree.isValid
+                    ? ""
+                    : ` · ${t("git.graphWorktreeInvalid")}`,
+                },
+              })}`
+            : title
+        }
+        style={
+          worktreeColor
+            ? { color: worktreeColor, borderColor: worktreeColor }
+            : undefined
+        }
       >
+        {worktreeColor && (
+          <span
+            aria-hidden="true"
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              backgroundColor: worktreeColor,
+              flex: "0 0 auto",
+            }}
+          />
+        )}
         {icon}
         {ref.name}
       </span>
@@ -974,12 +1121,131 @@ export const GitGraph = ({
 
   return (
     <div className="git-graph" ref={containerRef}>
+      {graphWorktrees.length > 0 && (
+        <div
+          role="group"
+          aria-label={t("git.graphWorktreeLegend")}
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "4px 10px",
+            padding: "4px 8px 8px",
+          }}
+        >
+          <span style={{ color: "var(--text-secondary)", fontSize: 10 }}>
+            {t("git.graphWorktreeLegend")}
+          </span>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              fontSize: 10,
+            }}
+          >
+            <span
+              aria-hidden="true"
+              style={{
+                width: 12,
+                height: 2,
+                backgroundColor: getWorktreeColor(graphWorktrees[0]),
+              }}
+            />
+            {t("git.graphWorktreePathLegend")}
+          </span>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              fontSize: 10,
+            }}
+          >
+            <span
+              aria-hidden="true"
+              style={{
+                width: 12,
+                height: 2,
+                background: `linear-gradient(90deg, ${LANE_COLORS.slice(0, 3).join(", ")})`,
+              }}
+            />
+            {t("git.graphSharedAncestryLegend")}
+          </span>
+          {graphWorktrees.map((worktree) => {
+            const color = getWorktreeColor(worktree);
+            return (
+              <span
+                key={worktree.worktreeId}
+                title={`${t("git.graphWorktreeTooltip", {
+                  values: {
+                    path: worktree.worktreePath,
+                    state: worktree.isDirty
+                      ? t("git.worktreeDirty")
+                      : t("git.graphWorktreeClean"),
+                    validity: worktree.isValid
+                      ? ""
+                      : ` · ${t("git.graphWorktreeInvalid")}`,
+                  },
+                })}${
+                  matchedWorktreeIds.has(worktree.worktreeId)
+                    ? ""
+                    : `\n${t("git.graphWorktreeNotLoaded")}`
+                }`}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  color,
+                  fontSize: 10,
+                  opacity: worktree.isValid ? 1 : 0.7,
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: "50%",
+                    backgroundColor: color,
+                    outline: worktree.isValid
+                      ? undefined
+                      : "1px dashed var(--text-danger)",
+                  }}
+                />
+                {worktree.branchName ??
+                  `${t("git.graphDetachedHead")} ${worktree.headOid.slice(0, 7)}`}
+                {!worktree.isValid && (
+                  <span style={{ color: "var(--text-danger)" }}>
+                    ({t("git.graphWorktreeInvalid")})
+                  </span>
+                )}
+                {!matchedWorktreeIds.has(worktree.worktreeId) && (
+                  <span style={{ color: "var(--text-secondary)" }}>
+                    ({t("git.graphWorktreeNotLoaded")})
+                  </span>
+                )}
+              </span>
+            );
+          })}
+        </div>
+      )}
       {rows.map((row) => {
         const dotColor = LANE_COLORS[row.dotLane % LANE_COLORS.length];
         const isSelected = selectedHash === row.commit.hash;
-        // 当前本地 HEAD 所在提交：圆点外加光环突出本地位置。
+        // Current HEAD's halo and worktree markers are distinct from topology lane colors.
         const parsedRefs = parseRefs(row.commit.refs);
         const isHead = parsedRefs.some((ref) => ref.isHead);
+        const commitWorktrees = getCommitWorktrees(
+          row.commit,
+          parsedRefs,
+          worktrees,
+        );
+        const localRefWorktree = (ref: ParsedRef) =>
+          ref.kind === "local" && ref.name !== "HEAD"
+            ? commitWorktrees.find(
+                (worktree) => worktree.branchName === ref.name,
+              )
+            : undefined;
         // At a branch point (curve leaving the dot), the curve leads into
         // the target lane and only reaches it at the bottom of the row.
         // If that lane had no line coming from above, drawing its vertical
@@ -1029,7 +1295,7 @@ export const GitGraph = ({
                     y1={-LINE_WIDTH / 2}
                     x2={lane * LANE_WIDTH + LANE_WIDTH / 2}
                     y2={ROW_HEIGHT / 2}
-                    stroke={LANE_COLORS[lane % LANE_COLORS.length]}
+                    stroke={row.topColors[lane]}
                     strokeWidth={LINE_WIDTH}
                   />
                 ))}
@@ -1040,7 +1306,7 @@ export const GitGraph = ({
                     y1={ROW_HEIGHT / 2}
                     x2={lane * LANE_WIDTH + LANE_WIDTH / 2}
                     y2={ROW_HEIGHT + LINE_WIDTH / 2}
-                    stroke={LANE_COLORS[lane % LANE_COLORS.length]}
+                    stroke={row.bottomColors[lane]}
                     strokeWidth={LINE_WIDTH}
                   />
                 ))}
@@ -1056,7 +1322,7 @@ export const GitGraph = ({
                         ROW_HEIGHT + LINE_WIDTH / 2
                       }`}
                       fill="none"
-                      stroke={LANE_COLORS[c.colorLane % LANE_COLORS.length]}
+                      stroke={c.color}
                       strokeWidth={LINE_WIDTH}
                     />
                   );
@@ -1071,7 +1337,17 @@ export const GitGraph = ({
                     strokeWidth={1.5}
                   />
                 )}
-                {/* 已推送远端的提交保持实心圆，只提交到本地未推送的画空心环。 */}
+                {commitWorktrees.map((worktree, index) => (
+                  <circle
+                    key={`worktree-${worktree.worktreeId}`}
+                    cx={row.dotLane * LANE_WIDTH + LANE_WIDTH / 2}
+                    cy={ROW_HEIGHT / 2}
+                    r={DOT_RADIUS + 5 + index * 3}
+                    fill="none"
+                    stroke={getWorktreeColor(worktree)}
+                    strokeWidth={2}
+                  />
+                ))}
                 <circle
                   cx={row.dotLane * LANE_WIDTH + LANE_WIDTH / 2}
                   cy={ROW_HEIGHT / 2}
@@ -1092,9 +1368,41 @@ export const GitGraph = ({
                 >
                   {row.commit.message}
                 </span>
-                {parsedRefs.length > 0 && (
+                {(parsedRefs.length > 0 ||
+                  commitWorktrees.some((worktree) => worktree.isDetached)) && (
                   <span className="git-graph-refs">
-                    {parsedRefs.map(renderRefBadge)}
+                    {parsedRefs.map((ref) =>
+                      renderRefBadge(ref, localRefWorktree(ref)),
+                    )}
+                    {commitWorktrees
+                      .filter((worktree) => worktree.isDetached)
+                      .map((worktree) => {
+                        const color = getWorktreeColor(worktree);
+                        return (
+                          <span
+                            key={`detached-${worktree.worktreeId}`}
+                            className="git-graph-ref local"
+                            style={{ color, borderColor: color }}
+                            title={`${t("git.graphDetachedHead")}\n${t(
+                              "git.graphWorktreeTooltip",
+                              {
+                                values: {
+                                  path: worktree.worktreePath,
+                                  state: worktree.isDirty
+                                    ? t("git.worktreeDirty")
+                                    : t("git.graphWorktreeClean"),
+                                  validity: worktree.isValid
+                                    ? ""
+                                    : ` · ${t("git.graphWorktreeInvalid")}`,
+                                },
+                              },
+                            )}`}
+                          >
+                            <GitCommitHorizontal size={10} strokeWidth={2} />
+                            {t("git.graphDetachedHead")}
+                          </span>
+                        );
+                      })}
                   </span>
                 )}
                 <span className="git-graph-meta">
@@ -1125,7 +1433,7 @@ export const GitGraph = ({
                       y1="0%"
                       x2={lane * LANE_WIDTH + LANE_WIDTH / 2}
                       y2="100%"
-                      stroke={LANE_COLORS[lane % LANE_COLORS.length]}
+                      stroke={row.bottomColors[lane]}
                       strokeWidth={LINE_WIDTH}
                     />
                   ))}
@@ -1277,6 +1585,33 @@ export const GitGraph = ({
                 </span>
               </div>
             )}
+            {getCommitWorktrees(
+              hoveredCommit,
+              parseRefs(hoveredCommit.refs),
+              worktrees,
+            ).map((worktree) => (
+              <div
+                className="git-graph-tooltip-row"
+                key={`tooltip-worktree-${worktree.worktreeId}`}
+              >
+                <span className="git-graph-tooltip-label">
+                  {worktree.branchName ?? t("git.graphDetachedHead")}
+                </span>
+                <span className="git-graph-tooltip-value">
+                  {t("git.graphWorktreeTooltip", {
+                    values: {
+                      path: worktree.worktreePath,
+                      state: worktree.isDirty
+                        ? t("git.worktreeDirty")
+                        : t("git.graphWorktreeClean"),
+                      validity: worktree.isValid
+                        ? ""
+                        : ` · ${t("git.graphWorktreeInvalid")}`,
+                    },
+                  })}
+                </span>
+              </div>
+            ))}
             {hoveredCommit.parents.length > 0 && (
               <div className="git-graph-tooltip-row">
                 <span className="git-graph-tooltip-label">

@@ -45,7 +45,9 @@ export const resolveConversationWorkspacePath = async (
     return fallbackPath;
   }
   if (!conversationId.trim() || !directoryId?.trim()) {
-    throw new Error("WorkTree execution requires a conversation and project directory");
+    throw new Error(
+      "WorkTree execution requires a conversation and project directory",
+    );
   }
   const binding = await window.snow.getConversationWorktree(conversationId);
   if (

@@ -18,20 +18,27 @@ type BranchSelectorProps = {
   onBranchChanged: () => void;
 };
 
-// Git refname validation: cannot start with ".", "-", end with ".lock"/"/",
-// contain "..", "@{", or any of these chars: space ~ ^ : ? * [ \
-const BRANCH_NAME_REGEX = /^(?!\.)(?!-)[A-Za-z0-9._/-]+$/;
-const BRANCH_NAME_FORBIDDEN = /(?:\.\.|@|\{|}|[ ~^:?*\[\\]|\.lock$|\/$|^\.) /;
+const INVALID_REF_CHAR = /[\x00-\x20\x7f~^:?*\[\\]/;
 
-const isValidBranchName = (name: string): boolean => {
-  const trimmed = name.trim();
-  if (trimmed.length === 0 || trimmed.length > 200) {
+const isValidBranchName = (branch: string): boolean => {
+  if (
+    branch.length === 0 ||
+    branch.trim() !== branch ||
+    branch === "@" ||
+    branch.startsWith("-") ||
+    branch.startsWith("/") ||
+    branch.endsWith("/") ||
+    branch.endsWith(".") ||
+    branch.includes("//") ||
+    branch.includes("..") ||
+    branch.includes("@{") ||
+    INVALID_REF_CHAR.test(branch)
+  ) {
     return false;
   }
-  if (BRANCH_NAME_FORBIDDEN.test(trimmed)) {
-    return false;
-  }
-  return BRANCH_NAME_REGEX.test(trimmed);
+  return branch.split("/").every((part) =>
+    part.length > 0 && !part.startsWith(".") && !part.endsWith(".lock"),
+  );
 };
 
 export const BranchSelector = ({
@@ -106,26 +113,61 @@ export const BranchSelector = ({
     }
   }, [showCreate]);
 
-  const handleCheckout = (branchName: string): void => {
-    if (branchName === currentBranch) {
+  const handleCheckout = (branch: GitBranchType): void => {
+    if (branch.name === currentBranch && !branch.isRemote) {
       setIsOpen(false);
       return;
     }
 
+    const remoteName = branch.remoteName ?? "";
+    const remotePrefix = remoteName ? `${remoteName}/` : "";
+    const remoteBranchName =
+      branch.isRemote && remotePrefix && branch.name.startsWith(remotePrefix)
+        ? branch.name.slice(remotePrefix.length)
+        : branch.name;
+    const target = branch.isRemote
+      ? remotePrefix
+        ? `${remoteName}/${remoteBranchName}`
+        : branch.name
+      : branch.name;
+    const conflictingLocal = branch.isRemote
+      ? branches.find((item) => !item.isRemote && item.name === remoteBranchName)
+      : undefined;
+    if (
+      conflictingLocal &&
+      conflictingLocal.upstream !== target
+    ) {
+      setCreateError(
+        t("git.branchTrackingConflict", {
+          values: {
+            branch: conflictingLocal.name,
+            upstream: conflictingLocal.upstream || t("git.localOnlyBadge"),
+            target,
+          },
+        }),
+      );
+      return;
+    }
+
+    const checkoutName = conflictingLocal?.name ?? target;
     window.snow
-      .gitCheckout(repoPath, branchName)
-      .then(() => {
+      .gitCheckout(repoPath, checkoutName)
+      .then((result) => {
+        if (!result.success) {
+          setCreateError(result.message || t("git.checkoutBranchFailed"));
+          return;
+        }
         setIsOpen(false);
         onBranchChanged();
       })
-      .catch(() => {
-        // Silent fail
+      .catch((cause: unknown) => {
+        setCreateError(cause instanceof Error ? cause.message : t("git.checkoutBranchFailed"));
       });
   };
 
   const handleCreateBranch = (): void => {
     const trimmed = newBranchName.trim();
-    if (!isValidBranchName(trimmed)) {
+    if (!isValidBranchName(newBranchName)) {
       setCreateError(t("git.createBranchInvalid"));
       return;
     }
@@ -238,6 +280,9 @@ export const BranchSelector = ({
       {isOpen && (
         <div className="branch-dropdown" ref={dropdownRef}>
           <div className="branch-dropdown-create">
+            {createError && (
+              <div className="branch-create-error" role="alert">{createError}</div>
+            )}
             {showCreate ? (
               <div className="branch-create-form">
                 <div className="branch-create-input-row">
@@ -274,9 +319,6 @@ export const BranchSelector = ({
                 >
                   {creating ? t("git.loading") : t("git.createBranchSubmit")}
                 </button>
-                {createError && (
-                  <div className="branch-create-error">{createError}</div>
-                )}
               </div>
             ) : (
               <button
@@ -311,7 +353,7 @@ export const BranchSelector = ({
                         className={`branch-dropdown-item${
                           branch.isCurrent ? " active" : ""
                         }`}
-                        onClick={() => handleCheckout(branch.name)}
+onClick={() => handleCheckout(branch)}
                       >
                         <div className="branch-dropdown-item-left">
                           <span className="branch-dropdown-item-name">
@@ -393,7 +435,7 @@ export const BranchSelector = ({
                         className={`branch-dropdown-item${
                           branch.isCurrent ? " active" : ""
                         }`}
-                        onClick={() => handleCheckout(branch.name)}
+onClick={() => handleCheckout(branch)}
                       >
                         <div className="branch-dropdown-item-left">
                           <span className="branch-dropdown-item-name">

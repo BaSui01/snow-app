@@ -2410,6 +2410,7 @@ export type NativeBridge = {
     branchName: string,
     baseRef: string,
   ) => Promise<GitWorktreeInfo>;
+  gitRemoveWorktree: (directoryId: string, worktreeId: string) => Promise<void>;
   getConversationWorktree: (
     conversationId: string,
   ) => Promise<GitWorktreeInfo | null>;

@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, OptionalExtension, TransactionBehavior};
 
 use super::{is_git_repo, run_git};
 use crate::storage::{database, services::workspace_directories};
@@ -159,7 +159,7 @@ pub fn list_worktrees(database_path: &Path, directory_id: &str) -> Result<Vec<Gi
                 worktree_id,
                 directory_id: directory_id.to_string(),
                 repository_path: canonical(&repository_path),
-                worktree_path: path,
+                worktree_path: path.clone(),
                 branch_name: entry.branch,
                 head_oid: entry.head,
                 is_detached: entry.detached,
@@ -168,6 +168,9 @@ pub fn list_worktrees(database_path: &Path, directory_id: &str) -> Result<Vec<Gi
             }
         };
         persist_entry(database_path, directory_id, &info)?;
+        let mut info = info;
+        info.worktree_id = saved_id(database_path, directory_id, &path)?
+            .ok_or_else(|| Error::from_reason("Persisted worktree registry entry could not be read back"))?;
         result.push(info);
     }
 
@@ -203,6 +206,64 @@ pub fn list_worktrees(database_path: &Path, directory_id: &str) -> Result<Vec<Gi
     }
     transaction.commit().map_err(|error| database::database_error(database_path, "finish worktree reconciliation", error))?;
     Ok(result)
+}
+
+fn should_remove_created_branch(current_ref: Option<&str>, base_oid: &str, checked_out_elsewhere: bool) -> bool {
+    !checked_out_elsewhere && current_ref == Some(base_oid)
+}
+
+fn should_delete_created_registry_entry(preexisting_worktree_id: Option<&str>) -> bool {
+    preexisting_worktree_id.is_none()
+}
+
+fn delete_worktree_registry_entry(
+    database_path: &Path,
+    directory_id: &str,
+    worktree_path: &str,
+    created_worktree_id: &str,
+) -> Result<()> {
+    let mut connection = database::open_connection(database_path)
+        .map_err(|error| database::database_error(database_path, "open worktree registry for rollback", error))?;
+    let transaction = connection.transaction()
+        .map_err(|error| database::database_error(database_path, "begin worktree registry rollback", error))?;
+    transaction.execute(
+        "DELETE FROM git_worktrees WHERE directory_id = ?1 AND worktree_path = ?2 AND worktree_id = ?3",
+        params![directory_id, worktree_path, created_worktree_id],
+    ).map_err(|error| database::database_error(database_path, "delete rolled-back worktree registry entry", error))?;
+    transaction.commit()
+        .map_err(|error| database::database_error(database_path, "finish worktree registry rollback", error))
+}
+
+fn cleanup_empty_worktree_directories(target: &Path, manager_root: &Path) -> Vec<String> {
+    let mut failures = Vec::new();
+    match std::fs::remove_dir(target) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) if error.kind() == std::io::ErrorKind::DirectoryNotEmpty => {
+            failures.push(format!("{}: rollback directory is not empty", target.display()));
+            return failures;
+        }
+        Err(error) => {
+            failures.push(format!("{}: {error}", target.display()));
+            return failures;
+        }
+    }
+    let mut current = target.parent();
+    while let Some(path) = current {
+        if !path.starts_with(manager_root) {
+            break;
+        }
+        match std::fs::remove_dir(path) {
+            Ok(()) => current = path.parent(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => current = path.parent(),
+            Err(error) if error.kind() == std::io::ErrorKind::DirectoryNotEmpty => break,
+            Err(error) => {
+                failures.push(format!("{}: {error}", path.display()));
+                break;
+            }
+        }
+    }
+    failures
 }
 
 pub fn create_worktree(database_path: &Path, directory_id: &str, branch_name: &str, base_ref: &str) -> Result<GitWorktreeInfo> {
@@ -249,6 +310,8 @@ pub fn create_worktree(database_path: &Path, directory_id: &str, branch_name: &s
         return Err(Error::from_reason(format!("Worktree target already exists: {}", target.display())));
     }
     let target_string = target.to_string_lossy().into_owned();
+    let target_registry_path = canonical(&target_string);
+    let existing_worktree_id = saved_id(database_path, directory_id, &target_registry_path)?;
     if let Some(target_parent) = target.parent() {
         std::fs::create_dir_all(target_parent).map_err(|error| Error::from_reason(format!("Failed to create worktree manager directory: {error}")))?;
         let resolved_parent = std::fs::canonicalize(target_parent)
@@ -257,16 +320,167 @@ pub fn create_worktree(database_path: &Path, directory_id: &str, branch_name: &s
             return Err(Error::from_reason("Worktree manager directory must remain outside the repository"));
         }
     }
+    let created_worktree_id = crate::storage::database::create_snowflake_id();
     run_git(&repository_path, &["worktree", "add", "-b", branch_name, &target_string, base_oid])?;
 
-    let path = canonical(&target_string);
-    let entry = list_git_worktree_entries(&repository_path)?.into_iter()
-        .find(|entry| canonical(&entry.path) == path)
-        .ok_or_else(|| Error::from_reason("Git created the worktree but it was not present in the repository worktree list"))?;
-    let worktree_id = crate::storage::database::create_snowflake_id();
-    let info = inspect_entry(&repository_path, directory_id, entry, worktree_id)?;
-    persist_entry(database_path, directory_id, &info)?;
-    Ok(info)
+    let manager_root = parent.join(".snowapp-worktrees");
+    let creation_result: Result<GitWorktreeInfo> = (|| {
+        let path = canonical(&target_string);
+        let entry = list_git_worktree_entries(&repository_path)?.into_iter()
+            .find(|entry| canonical(&entry.path) == path)
+            .ok_or_else(|| Error::from_reason("Git created the worktree but it was not present in the repository worktree list"))?;
+        let info = inspect_entry(&repository_path, directory_id, entry, created_worktree_id.clone())?;
+        persist_entry(database_path, directory_id, &info)?;
+        let mut info = info;
+        info.worktree_id = saved_id(database_path, directory_id, &path)?
+            .ok_or_else(|| Error::from_reason("Persisted worktree registry entry could not be read back"))?;
+        Ok(info)
+    })();
+
+    match creation_result {
+        Ok(info) => Ok(info),
+        Err(original_error) => {
+            let mut compensation_failures = Vec::new();
+            let worktree_removed = match run_git(&repository_path, &["worktree", "remove", "--", &target_string]) {
+                Ok(_) => true,
+                Err(error) => {
+                    compensation_failures.push(format!(
+                        "worktree removal failed without force: {error}; preserved worktree contents and kept new branch '{branch_name}' because removal was not confirmed"
+                    ));
+                    false
+                }
+            };
+
+            if worktree_removed {
+                match list_git_worktree_entries(&repository_path) {
+                    Ok(entries) => {
+                        let checked_out_elsewhere = entries
+                            .iter()
+                            .any(|entry| entry.branch.as_deref() == Some(branch_name));
+                        let current_ref = run_git(
+                            &repository_path,
+                            &[
+                                "rev-parse",
+                                "--verify",
+                                "--end-of-options",
+                                &format!("refs/heads/{branch_name}"),
+                            ],
+                        )
+                        .ok()
+                        .map(|oid| oid.trim().to_string());
+                        if should_remove_created_branch(current_ref.as_deref(), base_oid, checked_out_elsewhere) {
+                            if let Err(error) = run_git(&repository_path, &["branch", "-d", "--", branch_name]) {
+                                compensation_failures.push(format!(
+                                    "new branch '{branch_name}' was retained because safe branch deletion failed: {error}"
+                                ));
+                            }
+                        } else if checked_out_elsewhere {
+                            compensation_failures.push(format!(
+                                "new branch '{branch_name}' was retained because another worktree still checks it out"
+                            ));
+                        } else if let Some(current_ref) = current_ref {
+                            compensation_failures.push(format!(
+                                "new branch '{branch_name}' was retained because its ref moved from base {base_oid} to {current_ref}"
+                            ));
+                        } else {
+                            compensation_failures.push(format!(
+                                "new branch '{branch_name}' was retained because its current ref could not be verified"
+                            ));
+                        }
+                    }
+                    Err(error) => compensation_failures.push(format!(
+                        "new branch '{branch_name}' was retained because worktree checkouts could not be verified after removal: {error}"
+                    )),
+                }
+            }
+
+            if should_delete_created_registry_entry(existing_worktree_id.as_deref()) {
+                if let Err(error) = delete_worktree_registry_entry(
+                    database_path,
+                    directory_id,
+                    &target_registry_path,
+                    &created_worktree_id,
+                ) {
+                    compensation_failures.push(format!("registry rollback failed: {error}"));
+                }
+            }
+            compensation_failures.extend(
+                cleanup_empty_worktree_directories(&target, &manager_root),
+            );
+            if compensation_failures.is_empty() {
+                Err(Error::from_reason(format!("{original_error}; newly created worktree was rolled back")))
+            } else {
+                Err(Error::from_reason(format!("{original_error}; rollback was incomplete: {}", compensation_failures.join("; "))))
+            }
+        }
+    }
+}
+
+fn ensure_worktree_has_no_bindings(
+    transaction: &rusqlite::Transaction<'_>,
+    database_path: &Path,
+    worktree_id: &str,
+) -> Result<()> {
+    let has_bindings: bool = transaction.query_row(
+        "SELECT EXISTS(SELECT 1 FROM conversation_worktree_bindings WHERE worktree_id = ?1)",
+        [worktree_id],
+        |row| row.get(0),
+    ).map_err(|error| database::database_error(database_path, "check worktree conversation bindings", error))?;
+    if has_bindings {
+        return Err(Error::from_reason(
+            "Cannot remove a worktree with bound conversations; unbind those conversations first",
+        ));
+    }
+    Ok(())
+}
+
+pub fn remove_worktree(database_path: &Path, directory_id: &str, worktree_id: &str) -> Result<()> {
+    let repository_path = project_repository(database_path, directory_id)?;
+    let mut connection = database::open_connection(database_path)
+        .map_err(|error| database::database_error(database_path, "open worktree registry for removal", error))?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|error| database::database_error(database_path, "begin worktree removal", error))?;
+    let worktree = transaction.query_row(
+        "SELECT repository_path, worktree_path FROM git_worktrees WHERE worktree_id = ?1 AND directory_id = ?2",
+        params![worktree_id, directory_id],
+        |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+    ).optional()
+        .map_err(|error| database::database_error(database_path, "find worktree to remove", error))?
+        .ok_or_else(|| Error::from_reason("Worktree was not found in this project"))?;
+    if canonical(&worktree.0) != canonical(&repository_path) {
+        return Err(Error::from_reason("Worktree registry entry belongs to a different repository"));
+    }
+    let registered_path = canonical(&worktree.1);
+    if registered_path == canonical(&repository_path) {
+        return Err(Error::from_reason("The main working tree cannot be removed"));
+    }
+    if is_team_worktree(&registered_path) {
+        return Err(Error::from_reason("Team worktrees cannot be removed here"));
+    }
+    ensure_worktree_has_no_bindings(&transaction, database_path, worktree_id)?;
+
+    if Path::new(&registered_path).exists() {
+        let entry = list_git_worktree_entries(&repository_path)?
+            .into_iter()
+            .find(|entry| canonical(&entry.path) == registered_path)
+            .ok_or_else(|| Error::from_reason("Registered path is not a worktree of this repository"))?;
+        if !is_git_repo(&entry.path) {
+            return Err(Error::from_reason("Cannot remove an invalid or missing Git worktree"));
+        }
+        let info = inspect_entry(&repository_path, directory_id, entry, worktree_id.to_string())?;
+        if info.is_dirty {
+            return Err(Error::from_reason("Cannot remove a dirty worktree; commit or discard its changes first"));
+        }
+        run_git(&repository_path, &["worktree", "remove", "--", &registered_path])
+            .map_err(|error| Error::from_reason(format!("Failed to remove Git worktree: {error}")))?;
+    }
+
+    transaction.execute(
+        "DELETE FROM git_worktrees WHERE worktree_id = ?1 AND directory_id = ?2",
+        params![worktree_id, directory_id],
+    ).map_err(|error| database::database_error(database_path, "delete worktree registry entry", error))?;
+    transaction.commit()
+        .map_err(|error| database::database_error(database_path, "finish worktree removal", error))
 }
 
 pub fn set_conversation_worktree(database_path: &Path, conversation_id: &str, worktree_id: Option<&str>) -> Result<()> {
@@ -361,4 +575,62 @@ pub fn get_conversation_worktree(database_path: &Path, conversation_id: &str) ->
         }));
     }
     inspect_entry(&repository_path, &directory_id, entry, worktree_id).map(Some)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        ensure_worktree_has_no_bindings, is_team_worktree, should_delete_created_registry_entry,
+        should_remove_created_branch,
+    };
+
+    #[test]
+    fn refuses_worktree_removal_when_a_conversation_is_bound() {
+        let mut connection = rusqlite::Connection::open_in_memory().unwrap();
+        connection.execute_batch(
+            "CREATE TABLE conversation_worktree_bindings (worktree_id TEXT NOT NULL);
+             INSERT INTO conversation_worktree_bindings (worktree_id) VALUES ('bound-worktree');",
+        ).unwrap();
+        let transaction = connection.transaction().unwrap();
+        assert!(ensure_worktree_has_no_bindings(
+            &transaction,
+            std::path::Path::new("in-memory"),
+            "bound-worktree",
+        ).is_err());
+    }
+
+    #[test]
+    fn allows_worktree_removal_when_no_conversation_is_bound() {
+        let mut connection = rusqlite::Connection::open_in_memory().unwrap();
+        connection.execute_batch(
+            "CREATE TABLE conversation_worktree_bindings (worktree_id TEXT NOT NULL);",
+        ).unwrap();
+        let transaction = connection.transaction().unwrap();
+        assert!(ensure_worktree_has_no_bindings(
+            &transaction,
+            std::path::Path::new("in-memory"),
+            "unbound-worktree",
+        ).is_ok());
+    }
+
+    #[test]
+    fn rollback_deletes_branch_only_when_ref_is_unchanged_and_unchecked_out() {
+        assert!(should_remove_created_branch(Some("base"), "base", false));
+        assert!(!should_remove_created_branch(Some("new-commit"), "base", false));
+        assert!(!should_remove_created_branch(Some("base"), "base", true));
+        assert!(!should_remove_created_branch(None, "base", false));
+    }
+
+    #[test]
+    fn rollback_preserves_a_preexisting_same_path_registry_entry() {
+        assert!(should_delete_created_registry_entry(None));
+        assert!(!should_delete_created_registry_entry(Some("existing-id")));
+    }
+
+    #[test]
+    fn identifies_team_worktree_paths_with_both_separator_styles() {
+        assert!(is_team_worktree("/repo/.snow/team-worktree/123"));
+        assert!(is_team_worktree("C:\\repo\\.snow\\team-worktree\\123"));
+        assert!(!is_team_worktree("/repo/.snow/worktrees/123"));
+    }
 }

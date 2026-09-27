@@ -585,6 +585,19 @@ export const registerGitHandlers = (native: NativeBridge): void => {
   );
 
   ipcMain.handle(
+    "git:worktrees:remove",
+    async (_event, directoryId: unknown, worktreeId: unknown) => {
+      if (typeof directoryId !== "string" || !directoryId.trim()) {
+        throw new Error("Directory ID is required");
+      }
+      if (typeof worktreeId !== "string" || !worktreeId.trim()) {
+        throw new Error("Worktree ID is required");
+      }
+      await native.gitRemoveWorktree(directoryId.trim(), worktreeId.trim());
+    },
+  );
+
+  ipcMain.handle(
     "git:worktrees:get-conversation",
     async (_event, conversationId: unknown) => {
       if (typeof conversationId !== "string" || !conversationId.trim()) {

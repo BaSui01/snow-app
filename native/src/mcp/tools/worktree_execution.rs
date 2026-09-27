@@ -60,6 +60,12 @@ pub(super) async fn load_conversation_worktree_binding(
     })?
 }
 
+pub(super) fn is_builtin_mcp_tool(tool_full_name: &str) -> bool {
+    super::BUILTIN_SERVER_IDS
+        .iter()
+        .any(|server_id| tool_full_name.starts_with(&format!("{server_id}-")))
+}
+
 fn worktree_path_is_within(root: &std::path::Path, candidate: &std::path::Path) -> bool {
     candidate.starts_with(root)
 }
@@ -247,5 +253,18 @@ pub(super) fn force_worktree_execution_args(
         args["cwd"] = Value::String(root.clone());
     }
     Ok(args)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_builtin_mcp_tool;
+
+    #[test]
+    fn worktree_scope_classifies_arbitrary_external_servers_as_unsupported() {
+        assert!(is_builtin_mcp_tool("filesystem-read"));
+        assert!(is_builtin_mcp_tool("terminal-open"));
+        assert!(!is_builtin_mcp_tool("my-custom-server-run"));
+        assert!(!is_builtin_mcp_tool("filesystem-custom-tool"));
+    }
 }
 

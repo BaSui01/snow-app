@@ -24,6 +24,7 @@ type GitConfirmBubbleProps = {
   setUpstream?: boolean;
   onToggleSetUpstream?: (checked: boolean) => void;
   setUpstreamLabel?: string;
+  confirmDisabled?: boolean;
 };
 
 const ARROW_SIZE = 8;
@@ -48,6 +49,7 @@ export function GitConfirmBubble({
   setUpstream = false,
   onToggleSetUpstream,
   setUpstreamLabel = "Set upstream (-u)",
+  confirmDisabled = false,
 }: GitConfirmBubbleProps): React.JSX.Element {
   const bubbleRef = useRef<HTMLDivElement | null>(null);
   const hasOptions =
@@ -136,6 +138,7 @@ export function GitConfirmBubble({
           type="button"
           className="git-confirm-bubble-btn primary"
           onClick={onConfirm}
+          disabled={confirmDisabled}
         >
           {confirmLabel}
         </button>

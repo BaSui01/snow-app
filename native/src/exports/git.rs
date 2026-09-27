@@ -803,6 +803,16 @@ pub async fn git_create_worktree(
 }
 
 #[napi]
+pub async fn git_remove_worktree(directory_id: String, worktree_id: String) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        let database_path = crate::storage::ensure_database_file()?;
+        crate::storage::services::git::remove_worktree(&database_path, &directory_id, &worktree_id)
+    })
+    .await
+    .map_err(|error| napi::Error::from_reason(format!("Failed to remove Git worktree: {error}")))?
+}
+
+#[napi]
 pub async fn get_conversation_worktree(
     conversation_id: String,
 ) -> napi::Result<Option<GitWorktreeInfo>> {

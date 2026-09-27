@@ -289,6 +289,13 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       const isFirstMessage =
         ctx.activeConversationIdRef.current === undefined &&
         !options.targetSessionKey;
+      if (
+        isFirstMessage &&
+        (existingRef?.worktreeMode ?? ctx.worktreeModeRef.current)
+      ) {
+        window.alert(t("git.worktreesPendingSessionHint"));
+        return;
+      }
       const rollbackState = isFirstMessage ? ctx.rollbackNewChatState : null;
       if (rollbackState) {
         capturedOptions = {
@@ -1159,8 +1166,12 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             // 的 checkpoint 上）。创建期间 run 被中止/顶替时 checkpoint
             // 已由 createFlushCheckpoint 删除，此处直接放弃刷新，队列
             // 保持原样交给后续 run 处理，避免消息悬空。
-            const flushDirPath =
-              directoryIdToPath(sessionDirId) ?? ctx.directoryPath;
+            const flushDirPath = await resolveConversationWorkspacePath(
+              response.conversationId ?? currentConversationId ?? "",
+              sessionDirId,
+              directoryIdToPath(sessionDirId) ?? ctx.directoryPath,
+              iterRef?.worktreeMode ?? false,
+            );
             const flushCheckpointId = await createFlushCheckpoint(
               effectiveKey,
               flushDirPath,
@@ -1562,8 +1573,12 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           // 与无工具刷新分支一致：先为待发消息建立专属 checkpoint，再
           // 消费队列。否则回滚到这条消息永远没有文件变更，且后续消息
           // 的变更会错记到更早的 checkpoint 上。
-          const flushDirPath =
-            directoryIdToPath(sessionDirId) ?? ctx.directoryPath;
+          const flushDirPath = await resolveConversationWorkspacePath(
+            response.conversationId ?? currentConversationId ?? "",
+            sessionDirId,
+            directoryIdToPath(sessionDirId) ?? ctx.directoryPath,
+            iterRef?.worktreeMode ?? false,
+          );
           pendingFlushCheckpointId = await createFlushCheckpoint(
             effectiveKey,
             flushDirPath,

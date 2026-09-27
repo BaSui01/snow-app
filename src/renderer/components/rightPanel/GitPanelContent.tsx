@@ -170,6 +170,7 @@ export function GitPanelContent({
         ) : null}
         <GitControl
           repoPath={repoPath}
+          directoryId={activeDirectory?.directoryId}
           repos={repos}
           onRepoSelect={setSelectedRepoPath}
           onFileSelect={handleFileSelect}

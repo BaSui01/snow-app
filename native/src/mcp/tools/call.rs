@@ -5,7 +5,9 @@ use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 use serde_json::Value;
 use uuid::Uuid;
 
-use super::worktree_execution::{force_worktree_execution_args, load_conversation_worktree_binding};
+use super::worktree_execution::{
+    force_worktree_execution_args, is_builtin_mcp_tool, load_conversation_worktree_binding,
+};
 use super::super::builtin::{execute_builtin_tool, sanitize_tool_full_name};
 use super::super::servers::app_control::{AppControlCallback, AppControlService};
 use super::super::servers::bash::{BashService, BashStreamCallback, BashStreamChunk};
@@ -115,22 +117,42 @@ pub async fn call_mcp_tool(
     }
 
     let args = parse_tool_args(&tool_full_name, &args_json)?;
-    let worktree_binding = if requires_workspace_context {
+    let conversation_modes = if let Some(conversation_id) = conversation_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+    {
+        let conversation_id = conversation_id.to_string();
+        Some(
+            tokio::task::spawn_blocking(move || {
+                crate::storage::get_conversation_modes(&conversation_id)
+            })
+            .await
+            .map_err(|error| {
+                Error::new(
+                    Status::GenericFailure,
+                    format!("Failed to resolve conversation workspace mode: {error}"),
+                )
+            })??,
+        )
+    } else {
+        None
+    };
+    let worktree_mode = conversation_modes
+        .as_ref()
+        .is_some_and(|modes| modes.worktree_mode.unwrap_or(false));
+    let worktree_binding = if worktree_mode || requires_workspace_context {
         let conversation_id = conversation_id
             .as_deref()
-            .expect("conversation id was validated above")
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| {
+                Error::new(
+                    Status::GenericFailure,
+                    "WorkTree execution requires a conversation id; refusing to use an unbound workspace".to_string(),
+                )
+            })?
             .to_string();
-        let modes = tokio::task::spawn_blocking({
-            let conversation_id = conversation_id.clone();
-            move || crate::storage::get_conversation_modes(&conversation_id)
-        })
-        .await
-        .map_err(|error| {
-            Error::new(
-                Status::GenericFailure,
-                format!("Failed to resolve conversation workspace mode: {error}"),
-            )
-        })??;
         let directory_id = project_id
             .as_deref()
             .map(str::trim)
@@ -146,10 +168,16 @@ pub async fn call_mcp_tool(
             directory_id.to_string(),
         )
         .await?;
-        if modes.worktree_mode.unwrap_or(false) && binding.is_none() {
+        if worktree_mode && binding.is_none() {
             return Err(Error::new(
                 Status::GenericFailure,
-                "WorkTree mode is enabled but this conversation has no persisted worktree binding".to_string(),
+                "WorkTree mode is enabled but this conversation has no persisted worktree binding. Bind a worktree before using WorkTree mode.".to_string(),
+            ));
+        }
+        if worktree_mode && !is_builtin_mcp_tool(&tool_full_name) {
+            return Err(Error::new(
+                Status::GenericFailure,
+                format!("External MCP tool '{tool_full_name}' was blocked: WorkTree mode cannot safely restrict arbitrary tool paths or side effects. Disable WorkTree mode or use a built-in tool with supported workspace scoping."),
             ));
         }
         binding

@@ -68,6 +68,8 @@ export const gitApi = {
     baseRef: string,
   ): Promise<GitWorktreeInfo> =>
     ipcRenderer.invoke("git:worktrees:create", directoryId, branchName, baseRef),
+  gitRemoveWorktree: (directoryId: string, worktreeId: string): Promise<void> =>
+    ipcRenderer.invoke("git:worktrees:remove", directoryId, worktreeId),
   getConversationWorktree: (
     conversationId: string,
   ): Promise<GitWorktreeInfo | null> =>

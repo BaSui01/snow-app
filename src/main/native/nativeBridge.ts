@@ -1096,6 +1096,8 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(new Error("Rust native bridge is required for worktrees")),
       gitCreateWorktree: () =>
         Promise.reject(new Error("Rust native bridge is required to create worktrees")),
+      gitRemoveWorktree: () =>
+        Promise.reject(new Error("Rust native bridge is required to remove worktrees")),
       getConversationWorktree: () =>
         Promise.reject(new Error("Rust native bridge is required to get conversation worktrees")),
       setConversationWorktree: () =>

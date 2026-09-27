@@ -361,7 +361,7 @@ body.is-panel-resizing * {
 .app-shell.sidebar-collapsed:not(.is-windows)
   .top-bar.sidebar-collapsed
   .top-bar-main-leading {
-  margin-left: var(--traffic-light-safe-area);
+  margin-left: var(--traffic-light-merged-offset);
 }
 
 .app-shell.right-panel-collapsed:not(.right-panel-fullscreen)

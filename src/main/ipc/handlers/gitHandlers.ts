@@ -15,6 +15,7 @@ import {
   remoteGetGitIdentity,
   remoteGetGitLog,
   remoteGetGitStatus,
+  remoteGetRemotes,
   remoteGetStagedDiff,
   remotePullChanges,
   remotePushChanges,
@@ -273,25 +274,56 @@ export const registerGitHandlers = (native: NativeBridge): void => {
     },
   );
 
-  ipcMain.handle("git:push", async (_event, repoPath: unknown) => {
+  ipcMain.handle("git:remotes", async (_event, repoPath: unknown) => {
     if (typeof repoPath !== "string" || !repoPath.trim()) {
       throw new Error("Repository path is required");
     }
     const trimmed = repoPath.trim();
     return isSshPath(trimmed)
-      ? remotePushChanges(trimmed)
-      : native.gitPush(trimmed);
+      ? remoteGetRemotes(trimmed)
+      : native.gitRemotes(trimmed);
   });
 
-  ipcMain.handle("git:pull", async (_event, repoPath: unknown) => {
-    if (typeof repoPath !== "string" || !repoPath.trim()) {
-      throw new Error("Repository path is required");
-    }
-    const trimmed = repoPath.trim();
-    return isSshPath(trimmed)
-      ? remotePullChanges(trimmed)
-      : native.gitPull(trimmed);
-  });
+  ipcMain.handle(
+    "git:push",
+    async (
+      _event,
+      repoPath: unknown,
+      remote?: unknown,
+      branch?: unknown,
+      setUpstream?: unknown,
+    ) => {
+      if (typeof repoPath !== "string" || !repoPath.trim()) {
+        throw new Error("Repository path is required");
+      }
+      const trimmed = repoPath.trim();
+      const r =
+        typeof remote === "string" && remote.trim() ? remote.trim() : undefined;
+      const b =
+        typeof branch === "string" && branch.trim() ? branch.trim() : undefined;
+      const u = typeof setUpstream === "boolean" ? setUpstream : undefined;
+      return isSshPath(trimmed)
+        ? remotePushChanges(trimmed, r, b, u)
+        : native.gitPush(trimmed, r, b, u);
+    },
+  );
+
+  ipcMain.handle(
+    "git:pull",
+    async (_event, repoPath: unknown, remote?: unknown, branch?: unknown) => {
+      if (typeof repoPath !== "string" || !repoPath.trim()) {
+        throw new Error("Repository path is required");
+      }
+      const trimmed = repoPath.trim();
+      const r =
+        typeof remote === "string" && remote.trim() ? remote.trim() : undefined;
+      const b =
+        typeof branch === "string" && branch.trim() ? branch.trim() : undefined;
+      return isSshPath(trimmed)
+        ? remotePullChanges(trimmed, r, b)
+        : native.gitPull(trimmed, r, b);
+    },
+  );
 
   ipcMain.handle("git:fetch", async (_event, repoPath: unknown) => {
     if (typeof repoPath !== "string" || !repoPath.trim()) {
@@ -524,6 +556,59 @@ export const registerGitHandlers = (native: NativeBridge): void => {
     );
     return normalized;
   });
+
+  // Worktree APIs are local-repository operations; SSH projects are rejected
+  // rather than silently routed through a different contract.
+  ipcMain.handle("git:worktrees:list", async (_event, directoryId: unknown) => {
+    if (typeof directoryId !== "string" || !directoryId.trim()) {
+      throw new Error("Directory ID is required");
+    }
+    return native.gitListWorktrees(directoryId.trim());
+  });
+
+  ipcMain.handle(
+    "git:worktrees:create",
+    async (_event, directoryId: unknown, branchName: unknown, baseRef: unknown) => {
+      if (
+        typeof directoryId !== "string" || !directoryId.trim() ||
+        typeof branchName !== "string" || !branchName.trim() ||
+        typeof baseRef !== "string" || !baseRef.trim()
+      ) {
+        throw new Error("Directory ID, branch name, and base ref are required");
+      }
+      return native.gitCreateWorktree(
+        directoryId.trim(),
+        branchName.trim(),
+        baseRef.trim(),
+      );
+    },
+  );
+
+  ipcMain.handle(
+    "git:worktrees:get-conversation",
+    async (_event, conversationId: unknown) => {
+      if (typeof conversationId !== "string" || !conversationId.trim()) {
+        throw new Error("Conversation ID is required");
+      }
+      return native.getConversationWorktree(conversationId.trim());
+    },
+  );
+
+  ipcMain.handle(
+    "git:worktrees:set-conversation",
+    async (_event, conversationId: unknown, worktreeId: unknown) => {
+      if (typeof conversationId !== "string" || !conversationId.trim()) {
+        throw new Error("Conversation ID is required");
+      }
+      if (worktreeId !== null && typeof worktreeId !== "string") {
+        throw new Error("Worktree ID must be a string or null");
+      }
+      await native.setConversationWorktree(
+        conversationId.trim(),
+        typeof worktreeId === "string" ? worktreeId : null,
+      );
+    },
+  );
 
   // ===== AI commit message generation =====
   ipcMain.handle(

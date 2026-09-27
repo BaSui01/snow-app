@@ -1,5 +1,6 @@
 import { ipcRenderer, type IpcRendererEvent } from "electron";
 import type {
+  GitWorktreeInfo,
   GitBranch,
   GitCheckoutResult,
   GitCommitFile,
@@ -9,6 +10,7 @@ import type {
   GitIdentity,
   GitLogEntry,
   GitPushPullResult,
+  GitRemoteInfo,
   GitRepoInfo,
   GitStageResult,
   GitStatusResult,
@@ -58,6 +60,23 @@ const normalizeStreamChunk = (
 };
 
 export const gitApi = {
+  gitListWorktrees: (directoryId: string): Promise<GitWorktreeInfo[]> =>
+    ipcRenderer.invoke("git:worktrees:list", directoryId),
+  gitCreateWorktree: (
+    directoryId: string,
+    branchName: string,
+    baseRef: string,
+  ): Promise<GitWorktreeInfo> =>
+    ipcRenderer.invoke("git:worktrees:create", directoryId, branchName, baseRef),
+  getConversationWorktree: (
+    conversationId: string,
+  ): Promise<GitWorktreeInfo | null> =>
+    ipcRenderer.invoke("git:worktrees:get-conversation", conversationId),
+  setConversationWorktree: (
+    conversationId: string,
+    worktreeId: string | null,
+  ): Promise<void> =>
+    ipcRenderer.invoke("git:worktrees:set-conversation", conversationId, worktreeId),
   gitStatus: (repoPath: string): Promise<GitStatusResult> =>
     ipcRenderer.invoke("git:status", repoPath),
   startGitWatch: (repoPath: string): Promise<void> =>
@@ -92,10 +111,21 @@ export const gitApi = {
     ipcRenderer.invoke("git:unstage-all", repoPath),
   gitCommit: (repoPath: string, message: string): Promise<GitCommitResult> =>
     ipcRenderer.invoke("git:commit", repoPath, message),
-  gitPush: (repoPath: string): Promise<GitPushPullResult> =>
-    ipcRenderer.invoke("git:push", repoPath),
-  gitPull: (repoPath: string): Promise<GitPushPullResult> =>
-    ipcRenderer.invoke("git:pull", repoPath),
+  gitRemotes: (repoPath: string): Promise<GitRemoteInfo[]> =>
+    ipcRenderer.invoke("git:remotes", repoPath),
+  gitPush: (
+    repoPath: string,
+    remote?: string,
+    branch?: string,
+    setUpstream?: boolean,
+  ): Promise<GitPushPullResult> =>
+    ipcRenderer.invoke("git:push", repoPath, remote, branch, setUpstream),
+  gitPull: (
+    repoPath: string,
+    remote?: string,
+    branch?: string,
+  ): Promise<GitPushPullResult> =>
+    ipcRenderer.invoke("git:pull", repoPath, remote, branch),
   gitFetch: (repoPath: string): Promise<GitPushPullResult> =>
     ipcRenderer.invoke("git:fetch", repoPath),
   gitCheckout: (

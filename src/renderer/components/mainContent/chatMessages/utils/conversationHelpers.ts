@@ -34,6 +34,69 @@ export const directoryIdToPath = (
   return directoryId;
 };
 
+/** Resolve the immutable execution/checkpoint root for a conversation. */
+export const resolveConversationWorkspacePath = async (
+  conversationId: string,
+  directoryId: string | undefined,
+  fallbackPath: string | undefined,
+  worktreeMode: boolean,
+): Promise<string | undefined> => {
+  if (!worktreeMode) {
+    return fallbackPath;
+  }
+  if (!conversationId.trim() || !directoryId?.trim()) {
+    throw new Error("WorkTree execution requires a conversation and project directory");
+  }
+  const binding = await window.snow.getConversationWorktree(conversationId);
+  if (
+    !binding ||
+    !binding.isValid ||
+    binding.directoryId !== directoryId ||
+    !binding.worktreePath.trim()
+  ) {
+    throw new Error(
+      "WorkTree binding is missing, invalid, or belongs to a different project directory",
+    );
+  }
+  return binding.worktreePath;
+};
+
+/** Persist the parent's binding for a child session before it can execute. */
+export const inheritConversationWorktreeBinding = async (
+  parentConversationId: string,
+  childConversationId: string,
+  directoryId: string,
+  worktreeMode: boolean,
+): Promise<boolean> => {
+  if (!worktreeMode) {
+    return false;
+  }
+  const binding = await window.snow.getConversationWorktree(parentConversationId);
+  if (
+    !binding ||
+    !binding.isValid ||
+    binding.directoryId !== directoryId ||
+    !binding.worktreePath.trim()
+  ) {
+    throw new Error(
+      "Parent WorkTree binding is missing, invalid, or belongs to a different project directory",
+    );
+  }
+  await window.snow.setConversationWorktree(
+    childConversationId,
+    binding.worktreeId,
+  );
+  await window.snow.setConversationModes(
+    childConversationId,
+    false,
+    false,
+    true,
+    false,
+    null,
+  );
+  return true;
+};
+
 /**
  * Kill every in-flight tool execution of a session (bash subprocesses, SSH
  * grep-search, remote filesystem commands, ...). Iterates the running tool

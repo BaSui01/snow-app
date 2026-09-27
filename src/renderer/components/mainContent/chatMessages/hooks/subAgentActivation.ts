@@ -14,7 +14,9 @@ import {
   formatMcpToolResultForModel,
   formatToolResultsContent,
   getErrorMessage,
+  inheritConversationWorktreeBinding,
   parseToolCalls,
+  resolveConversationWorkspacePath,
   updateFirstMatchingToolCall,
 } from "../utils/conversationHelpers";
 import { resolveResponseDisposition } from "../utils/responseDisposition";
@@ -132,19 +134,6 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
   const agentName = runtimeConfig.agentName;
   const subAgentToolsJson = runtimeConfig.toolsJson;
   const allowedTools = parseSubAgentTools(runtimeConfig.toolsJson);
-  // Capture once for this child runtime, including continue/force-send loops.
-  // Restored children inherit only their own parent, never the active UI project.
-  const analysisWorkspaceRoot =
-    ctx.sessionsRefData.current.get(subConvId)?.analysisWorkspaceRoot ??
-    ctx.sessionsRefData.current.get(parentConversationId)
-      ?.analysisWorkspaceRoot ??
-    directoryIdToPath(dirId) ??
-    "";
-  ctx.ensureSession(subConvId, dirId || undefined);
-  const analysisSession = ctx.sessionsRefData.current.get(subConvId);
-  if (analysisSession) {
-    analysisSession.analysisWorkspaceRoot = analysisWorkspaceRoot;
-  }
 
   // ---------------------------------------------------------------------
   // 子代理队友通信（sub-agents-listTeammates / sub-agents-sendMessage）
@@ -299,7 +288,6 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         messages: subMessages,
         conversationId: subConvId,
         directoryId: dirId,
-        analysisWorkspaceRoot,
         apiProfile: runtimeConfig.apiProfile,
         model: runtimeConfig.model,
         // Use the resolved per-run snapshot so restore/compaction cannot
@@ -309,10 +297,12 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         resumeAfterCompaction,
         subAgentToolsJson,
         subAgentSystemPrompt: runtimeConfig.systemPrompt || undefined,
-        // Sub-agents always use their own normal-mode prompt and tool set.
+        // Sub-agents always use their own normal-mode prompt and tool set;
+        // WorkTree Mode only carries the parent's persisted workspace binding.
         planMode: false,
         goalMode: false,
-        worktreeMode: false,
+        worktreeMode:
+          ctx.sessionsRefData.current.get(subConvId)?.worktreeMode ?? false,
       },
       subChunkHandler,
       createStreamIdHandler(ctx, subConvId, isSubCancelled),
@@ -702,7 +692,6 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         subToolCall.name,
         subToolCall.arguments,
         subConvId,
-        analysisWorkspaceRoot,
       );
       let subSensitiveAuthorizationToken: string | undefined;
       if (
@@ -1402,9 +1391,17 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
     const parentCheckpointIdsRef: CheckpointIdsRef = {
       current: activeCheckpointIds,
     };
+    const parentWorktreeMode =
+      ctx.sessionsRefData.current.get(parentConversationId)?.worktreeMode ?? false;
+    const projectSessionDirPath = directoryIdToPath(dirId) ?? ctx.directoryPath;
     const subCheckpointWorkDir =
       activeCheckpointIds.length > 0
-        ? (directoryIdToPath(dirId) ?? ctx.directoryPath)
+        ? await resolveConversationWorkspacePath(
+            parentConversationId,
+            dirId,
+            projectSessionDirPath,
+            parentWorktreeMode,
+          )
         : undefined;
 
     const parsedArgs = JSON.parse(argsJson) as Record<string, unknown>;
@@ -1434,6 +1431,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
     let forwardSubPendingQueue: (finishedSubConvId: string) => void = () => {};
     let finalizeSubAgentSession: SubAgentFinalizeFn | null = null;
     let subAgentSessionCreated = false;
+    let subWorktreeMode = false;
 
     try {
       // 项目级子代理优先：先查当前项目（dirId）下的配置，未命中再回退全局。
@@ -1509,6 +1507,12 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         runtimeConfig.effectiveResponsesFastMode,
       );
       subAgentSessionCreated = true;
+      subWorktreeMode = await inheritConversationWorktreeBinding(
+        parentConversationId,
+        subConversationId,
+        dirId,
+        parentWorktreeMode,
+      );
 
       await window.snow.updateSubAgentSessionStatus(
         subConversationId,
@@ -1591,12 +1595,11 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
       if (subSessionRef) {
         subSessionRef.isSending = true;
         subSessionRef.isAbortRequested = false;
-        // Sub-agents never run Plan/Goal Mode (Rust forces both off on the
-        // sub-agent request path). Zero the inherited defaults so the ref
-        // stays truthful for any future reader.
+        // Sub-agents never run Plan/Goal Mode. WorkTree binding is inherited
+        // from the parent so their MCP executor cannot fall back to the project root.
         subSessionRef.planMode = false;
         subSessionRef.goalMode = false;
-        subSessionRef.worktreeMode = false;
+        subSessionRef.worktreeMode = subWorktreeMode;
       }
       // Register this sub-agent on the parent session so aborting the main
       // flow can cascade the cancellation down to it (and its children).
@@ -1795,6 +1798,18 @@ const restoreSubAgentResumer = async (
   if (existingRef?.isSending && !existingRef.subAgentTerminated) {
     return null; // 运行中但无 resumer：不应发生，防御性拒绝
   }
+  const parentSessionRef =
+    ctx.sessionsRefData.current.get(parentConversationId);
+  const parentWorktreeMode = parentSessionRef?.worktreeMode ?? false;
+  const restoredWorktreeMode = await inheritConversationWorktreeBinding(
+    parentConversationId,
+    targetConvId,
+    dirId,
+    parentWorktreeMode,
+  );
+  if (parentSessionRef) {
+    parentSessionRef.childSubAgentIds.add(targetConvId);
+  }
   ctx.ensureSession(targetConvId, dirId || undefined);
   const restoredRef = ctx.sessionsRefData.current.get(targetConvId);
   if (restoredRef) {
@@ -1802,21 +1817,22 @@ const restoreSubAgentResumer = async (
     restoredRef.isSending = false;
     restoredRef.planMode = false;
     restoredRef.goalMode = false;
-    restoredRef.worktreeMode = false;
-  }
-  const parentSessionRef =
-    ctx.sessionsRefData.current.get(parentConversationId);
-  if (parentSessionRef) {
-    parentSessionRef.childSubAgentIds.add(targetConvId);
+    restoredRef.worktreeMode = restoredWorktreeMode;
   }
 
   // 6. 构建运行环境（与激活路径共用同一批工厂）。
   const parentCheckpointIdsRef: CheckpointIdsRef = {
     current: activeCheckpointIds,
   };
+  const parentProjectDirPath = directoryIdToPath(dirId) ?? ctx.directoryPath;
   const subCheckpointWorkDir =
     activeCheckpointIds.length > 0
-      ? (directoryIdToPath(dirId) ?? ctx.directoryPath)
+      ? await resolveConversationWorkspacePath(
+          parentConversationId,
+          dirId,
+          parentProjectDirPath,
+          parentWorktreeMode,
+        )
       : undefined;
   const subAgentRunLoop = createSubAgentRunLoop({
     ctx,

@@ -22,6 +22,7 @@ import {
   formatToolResultsContent,
   getErrorMessage,
   parseToolCalls,
+  resolveConversationWorkspacePath,
   updateFirstMatchingToolCall,
 } from "../utils/conversationHelpers";
 import { resolveResponseDisposition } from "../utils/responseDisposition";
@@ -317,14 +318,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       ctx.pendingDirectoryIdRef.current = undefined;
       const sessionDirId =
         existingRef?.directoryId ?? pendingDirId ?? ctx.directoryId;
-      // There is no selected worktree path in session state: worktreeMode is
-      // only a prompt mode. Capture the actual bound project's path, never text
-      // from the prompt or the active directory of an unrelated conversation.
-      const analysisWorkspaceRoot =
-        existingRef?.analysisWorkspaceRoot ??
-        (sessionDirId === ctx.directoryId ? ctx.directoryPath : undefined) ??
-        directoryIdToPath(sessionDirId) ??
-        "";
       // One-shot scheduled-task name (set by buildFromContent) consumed here so
       // the new session can show a "triggered by scheduled task" banner in the
       // message list. Cleared immediately — it applies to this send only.
@@ -359,7 +352,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         sessionRef.isSending = true;
         sessionRef.isAbortRequested = false;
         sessionRef.runId = currentRunId;
-        sessionRef.analysisWorkspaceRoot = analysisWorkspaceRoot;
       }
 
       // 宠物联动：本次 run 的唯一回合 id —— start/end 按 id 一一核销。
@@ -791,7 +783,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             responsesFastMode: capturedOptions.responsesFastMode,
             conversationId: currentConversationId,
             directoryId: sessionDirId,
-            analysisWorkspaceRoot,
             checkpointId,
             resumeAfterCompaction,
             disableTools,
@@ -1353,7 +1344,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           checkpointIds: checkpointId ? [checkpointId] : [],
           sessionDirId,
           directoryPath: ctx.directoryPath,
-          analysisWorkspaceRoot,
           responseId: response.id,
           isRunCancelled,
           awaitHookDecision,
@@ -1698,10 +1688,15 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         }
 
         let checkpointId: string | undefined;
-        // checkpoint 绑定会话自己的目录(而非运行时全局目录),保证
-        // manifest.work_dir 与工具执行的 cwd 始终一致。
-        const sessionDirPath =
+        // checkpoint 根目录跟随持久 WorkTree 绑定；绑定缺失/失效时 fail-closed。
+        const projectSessionDirPath =
           directoryIdToPath(sessionDirId) ?? ctx.directoryPath;
+        const sessionDirPath = await resolveConversationWorkspacePath(
+          isPendingSessionKey(sessionKey) ? "" : sessionKey,
+          sessionDirId,
+          projectSessionDirPath,
+          sessionRef?.worktreeMode ?? false,
+        );
         // createCheckpoint 是异步的：await 期间本 run 可能已被取消或被
         // 更新的 run 取代（停止按钮、PendingMessages 强制发送会先
         // handleAbort 再立即启动新 run）。两个 run 的 checkpoint 若按

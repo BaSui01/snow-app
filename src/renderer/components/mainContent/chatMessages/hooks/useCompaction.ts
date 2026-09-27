@@ -9,6 +9,7 @@ import {
   deleteCheckpoints,
   directoryIdToPath,
   formatMessageTime,
+  resolveConversationWorkspacePath,
 } from "../utils/conversationHelpers";
 import { appendHookExecutionToMessage, runHook } from "./hookOutcome";
 
@@ -31,15 +32,7 @@ export const useCompaction = (ctx: ConversationContextValue) => {
       responsesFastMode?: boolean | null,
     ): Promise<CompactionResult | null> => {
       const sessionRef = ctx.sessionsRefData.current.get(conversationId);
-      const analysisWorkspaceRoot =
-        sessionRef?.analysisWorkspaceRoot ??
-        directoryIdToPath(sessionRef?.directoryId) ??
-        (ctx.activeConversationIdRef.current === conversationId
-          ? ctx.directoryPath
-          : undefined) ??
-        "";
       if (sessionRef) {
-        sessionRef.analysisWorkspaceRoot = analysisWorkspaceRoot;
         sessionRef.isSending = true;
         sessionRef.isAbortRequested = false;
       }
@@ -64,10 +57,16 @@ export const useCompaction = (ctx: ConversationContextValue) => {
       // captures through the remote SFTP channel); creation failure falls back
       // to a checkpoint-less compaction.
       let checkpointId: string | undefined;
-      // checkpoint 绑定会话自己的目录,与工具执行的 cwd 保持一致。
-      const sessionDirPath =
-        directoryIdToPath(sessionRef?.directoryId ?? ctx.directoryId) ??
-        ctx.directoryPath;
+      // checkpoint 根目录跟随持久 WorkTree 绑定；绑定缺失/失效时 fail-closed。
+      const directoryId = sessionRef?.directoryId ?? ctx.directoryId;
+      const projectSessionDirPath =
+        directoryIdToPath(directoryId) ?? ctx.directoryPath;
+      const sessionDirPath = await resolveConversationWorkspacePath(
+        conversationId,
+        directoryId,
+        projectSessionDirPath,
+        sessionRef?.worktreeMode ?? false,
+      );
       if (sessionDirPath) {
         try {
           checkpointId = await window.snow.createCheckpoint(sessionDirPath);
@@ -90,7 +89,6 @@ export const useCompaction = (ctx: ConversationContextValue) => {
         model,
         conversationId,
         directoryId: sessionRef?.directoryId ?? ctx.directoryId,
-        analysisWorkspaceRoot,
         contextCompaction: true,
         checkpointId,
         // Per-conversation Goal Mode snapshot: the handoff prompt depends on

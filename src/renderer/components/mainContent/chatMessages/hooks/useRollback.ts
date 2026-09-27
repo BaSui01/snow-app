@@ -16,6 +16,7 @@ import {
   directoryIdToPath,
   getErrorMessage,
   killRunningToolExecutions,
+  resolveConversationWorkspacePath,
 } from "../utils/conversationHelpers";
 import {
   collectWorkflowFlowIdsFromMessages,
@@ -58,10 +59,11 @@ export const useRollback = (ctx: ConversationContextValue) => {
         ref.isSending = false;
         ref.runId += 1;
       }
-      // 回滚作用于会话自己的目录(而非运行时全局目录),确保 checkpoint
-      // manifest.work_dir 与恢复目录一致,切换项目后仍可回滚旧会话。
-      const sessionWorkDir =
+      // Rollback and checkpoint diff paths must match the original checkpoint root.
+      // The immutable WorkTree binding is resolved inside computeAndPreview below.
+      const projectSessionWorkDir =
         directoryIdToPath(ref?.directoryId) ?? ctx.directoryPath;
+      let sessionWorkDir = projectSessionWorkDir;
       ctx.updateSessionField(key, "isStreaming", false);
       ctx.updateSessionField(key, "streamStartedAt", 0);
       ctx.updateSessionField(key, "isAborting", false);
@@ -176,6 +178,13 @@ export const useRollback = (ctx: ConversationContextValue) => {
       // we set the preview state once the diff is ready.
       const computeAndPreview = async (): Promise<void> => {
         try {
+          sessionWorkDir =
+            (await resolveConversationWorkspacePath(
+              convId ?? "",
+              capturedSessionRef?.directoryId ?? ctx.directoryId,
+              projectSessionWorkDir,
+              capturedWorktreeMode,
+            )) ?? "";
           // WorkFlow 级联终止：中止运行中的节点（流/工具授权/子进程）并结算
           // 挂起的 workflow-generate，随后等待节点 runLoop 退出。回滚的数据
           // 删除与文件恢复绝不能与仍在写入工作区/数据库的节点并发执行。
@@ -399,6 +408,19 @@ export const useRollback = (ctx: ConversationContextValue) => {
             summaryPromise:
               ctx.sessionsRefData.current.get(key)?.summaryPromise ?? null,
           });
+        } catch (error) {
+          // A missing/invalid WorkTree binding must never preview or restore against
+          // the project root. Keep rollback closed and leave diagnostics in app logs.
+          if (rollbackRequestIdRef.current === requestId) {
+            ctx.setRollbackPreview(null);
+            void window.snow.writeLog("WARN", {
+              module: "checkpoint",
+              func: "handleRollback",
+              message: "Rollback workspace resolution failed; refusing project-root fallback",
+              context: JSON.stringify({ conversationId: convId ?? "" }),
+              error: getErrorMessage(error),
+            });
+          }
         } finally {
           if (rollbackRequestIdRef.current === requestId) {
             setPreparingMessageId(null);
@@ -406,9 +428,12 @@ export const useRollback = (ctx: ConversationContextValue) => {
         }
       };
 
-      void computeAndPreview();
+      void computeAndPreview().catch(() => {
+        // Any unexpected preview error is fail-closed: do not offer a fallback path.
+      });
     },
     [
+      ctx.directoryId,
       ctx.directoryPath,
       ctx.updateSessionField,
       ctx.removeStreamingId,

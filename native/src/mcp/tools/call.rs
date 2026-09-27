@@ -5,6 +5,7 @@ use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 use serde_json::Value;
 use uuid::Uuid;
 
+use super::worktree_execution::{force_worktree_execution_args, load_conversation_worktree_binding};
 use super::super::builtin::{execute_builtin_tool, sanitize_tool_full_name};
 use super::super::servers::app_control::{AppControlCallback, AppControlService};
 use super::super::servers::bash::{BashService, BashStreamCallback, BashStreamChunk};
@@ -72,6 +73,29 @@ pub async fn call_mcp_tool(
     // before any matching or whitelist check.
     let tool_full_name = sanitize_tool_full_name(&tool_full_name);
     let is_sub_agent_call = sub_agent_allowed_tools.is_some();
+    let requires_workspace_context =
+        tool_full_name.starts_with("terminal-")
+            || tool_full_name.starts_with("codelens-")
+            || tool_full_name.starts_with("lsp-")
+            || matches!(
+                tool_full_name.as_str(),
+                "filesystem-read"
+                    | "filesystem-replace_edit"
+                    | "filesystem-create"
+                    | "filesystem-copy"
+                    | "grep-search"
+                    | "bash-terminal-execute"
+            );
+    if requires_workspace_context
+        && conversation_id
+            .as_deref()
+            .map_or(true, |id| id.trim().is_empty())
+    {
+        return Err(Error::new(
+            Status::GenericFailure,
+            "Workspace tool execution requires a conversation id; refusing to use the process working directory".to_string(),
+        ));
+    }
 
     if tool_full_name == REQUEST_APPROVAL_FULL_NAME {
         if is_sub_agent_call {
@@ -91,10 +115,58 @@ pub async fn call_mcp_tool(
     }
 
     let args = parse_tool_args(&tool_full_name, &args_json)?;
-    // bash 未填 workingDirectory 时兜底为当前项目工作区目录：必须早于远程 /
-    // 本地路径解析，否则 SSH 项目会因缺少主路径被当作本机命令（checkpoint
-    // 也会落到本机分支）。
-    let args = default_bash_working_directory(&tool_full_name, args, project_id.as_deref()).await?;
+    let worktree_binding = if requires_workspace_context {
+        let conversation_id = conversation_id
+            .as_deref()
+            .expect("conversation id was validated above")
+            .to_string();
+        let modes = tokio::task::spawn_blocking({
+            let conversation_id = conversation_id.clone();
+            move || crate::storage::get_conversation_modes(&conversation_id)
+        })
+        .await
+        .map_err(|error| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to resolve conversation workspace mode: {error}"),
+            )
+        })??;
+        let directory_id = project_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| {
+                Error::new(
+                    Status::GenericFailure,
+                    "Workspace tool execution requires the conversation's project directory id".to_string(),
+                )
+            })?;
+        let binding = load_conversation_worktree_binding(
+            conversation_id,
+            directory_id.to_string(),
+        )
+        .await?;
+        if modes.worktree_mode.unwrap_or(false) && binding.is_none() {
+            return Err(Error::new(
+                Status::GenericFailure,
+                "WorkTree mode is enabled but this conversation has no persisted worktree binding".to_string(),
+            ));
+        }
+        binding
+    } else {
+        None
+    };
+    let args = if let Some(binding) = worktree_binding.as_ref() {
+        force_worktree_execution_args(&tool_full_name, args, binding)?
+    } else {
+        // bash 未填 workingDirectory 时兜底为当前会话项目目录。WorkTree
+        // 分支在上面先强制设置为 canonical worktree_path，不会走项目根 fallback。
+        default_bash_working_directory(&tool_full_name, args, project_id.as_deref()).await?
+    };
+    let checkpoint_work_dir = worktree_binding
+        .as_ref()
+        .map(|binding| binding.path.clone())
+        .or(checkpoint_work_dir);
     if plan_mode
         && !plan_approved
         && matches!(
@@ -414,21 +486,46 @@ pub async fn call_mcp_tool(
         } else {
             None
         };
-        if let Some(lsp_result) = lsp_result {
-            lsp_result
+        if worktree_binding.is_none() {
+            if let Some(lsp_result) = lsp_result {
+                lsp_result
+            } else {
+                let service = CodeLensService::new();
+                let mut fallback = match codelens_tool {
+                    "find_definition" => {
+                        service
+                            .execute_find_definition(&args, project_id.as_deref())
+                            .await?
+                    }
+                    "find_references" => {
+                        service
+                            .execute_find_references(&args, project_id.as_deref())
+                            .await?
+                    }
+                    "file_outline" => service.execute_file_outline(&args).await?,
+                    _ => {
+                        return Err(Error::new(
+                            Status::GenericFailure,
+                            format!(
+                                "Unknown codelens tool: \"{codelens_tool}\". Available tools: [find_definition, find_references, file_outline]"
+                            ),
+                        ));
+                    }
+                };
+                if let serde_json::Value::Object(map) = &mut fallback {
+                    map.insert("lspFallback".to_string(), serde_json::json!(true));
+                }
+                fallback
+            }
         } else {
             let service = CodeLensService::new();
-            let mut fallback = match codelens_tool {
-                "find_definition" => {
-                    service
-                        .execute_find_definition(&args, project_id.as_deref())
-                        .await?
-                }
-                "find_references" => {
-                    service
-                        .execute_find_references(&args, project_id.as_deref())
-                        .await?
-                }
+            match codelens_tool {
+                "find_definition" => service
+                    .execute_find_definition(&args, project_id.as_deref())
+                    .await?,
+                "find_references" => service
+                    .execute_find_references(&args, project_id.as_deref())
+                    .await?,
                 "file_outline" => service.execute_file_outline(&args).await?,
                 _ => {
                     return Err(Error::new(
@@ -438,15 +535,7 @@ pub async fn call_mcp_tool(
                         ),
                     ));
                 }
-            };
-            // 回退可见性（2026-08-15）：LSP 不可用/失败时结果来自静态分析，
-            // 附加标记让 agent 明确感知（前端 CodeLensToolCall 忽略额外字段，
-            // 渲染无感）。需要 LSP 语义结果时 agent 应改调 lsp-* 工具——其
-            // 错误信息会给出可行动的配置指引。
-            if let serde_json::Value::Object(map) = &mut fallback {
-                map.insert("lspFallback".to_string(), serde_json::json!(true));
             }
-            fallback
         }
     } else if let Some(lsp_tool) = tool_full_name.strip_prefix("lsp-") {
         let service = LspService::new();

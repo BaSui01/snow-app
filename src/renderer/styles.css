@@ -49517,3 +49517,186 @@ img.plugin-icon {
 .plugins-scripts-install-input::placeholder {
   color: var(--text-muted);
 }
+
+/* ===== Git Multi-Remote & Tracking Badges ===== */
+.branch-dropdown-item-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  flex: 1 1 auto;
+}
+
+.branch-dropdown-item-right {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.branch-dropdown-item-tracking {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, monospace);
+  opacity: 0.75;
+}
+
+.branch-dropdown-item-tracking.is-upstream {
+  color: #c084fc;
+  opacity: 0.9;
+}
+
+/* Branch Badges */
+.branch-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  line-height: 1.2;
+  font-weight: 500;
+  padding: 1.5px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.branch-badge-ahead {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  font-family: var(--font-mono, monospace);
+  font-weight: 600;
+}
+
+.branch-badge-behind {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  font-family: var(--font-mono, monospace);
+  font-weight: 600;
+}
+
+.branch-badge-upstream {
+  background: rgba(168, 85, 247, 0.16);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.38);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.branch-badge-remote {
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+  font-size: 10px;
+}
+
+.branch-badge-local {
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--text-muted);
+  font-size: 9.5px;
+}
+
+.branch-badge-gone {
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  border: 1px dashed rgba(239, 68, 68, 0.4);
+  font-size: 9.5px;
+}
+
+/* Git Graph Commit Details & Tooltip */
+.git-graph-tooltip-message-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.git-graph-tooltip-subject {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.git-graph-tooltip-body {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 6px 8px;
+  background: var(--bg-tertiary, rgba(0, 0, 0, 0.04));
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid var(--border-light);
+  max-height: 240px;
+  overflow-y: auto;
+  font-family: var(--font-mono, monospace);
+}
+
+.git-graph-detail-message-body {
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm, 4px);
+  max-height: 180px;
+  overflow-y: auto;
+  font-family: var(--font-mono, monospace);
+}
+
+/* Git Confirm Bubble Multi-Remote */
+.git-confirm-bubble.has-options {
+  width: 220px;
+}
+
+.git-confirm-bubble-remote-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.git-confirm-bubble-remote-label {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.git-confirm-bubble-select {
+  flex: 1;
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 11px;
+  outline: none;
+}
+
+.git-confirm-bubble-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.git-confirm-bubble-checkbox-row input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}

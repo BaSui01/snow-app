@@ -173,7 +173,7 @@ pub fn get_git_log(repo_path: &str, skip: i32, limit: i32) -> Result<Vec<GitLogE
     let max_count = if limit <= 0 { 50 } else { limit };
     let skip_str = skip_count.to_string();
     let max_count_str = max_count.to_string();
-    let format_arg = "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ad%x1f%s%x1f%D%x1f%P";
+    let format_arg = "--pretty=format:%x1e%H%x1f%h%x1f%an%x1f%ae%x1f%ad%x1f%s%x1f%D%x1f%P%x1f%b%x1f";
 
     // Use run_git_raw because `git log` on an empty repo exits with code 128
     // ("fatal: your current branch does not have any commits yet").
@@ -213,32 +213,44 @@ pub fn get_git_log(repo_path: &str, skip: i32, limit: i32) -> Result<Vec<GitLogE
 
     let mut entries: Vec<GitLogEntry> = Vec::new();
 
-    for line in output.lines() {
-        if line.is_empty() {
+    for chunk in output.split('\x1e') {
+        let chunk = chunk.trim_matches(|c| c == '\r' || c == '\n');
+        if chunk.is_empty() {
             continue;
         }
 
-        let parts: Vec<&str> = line.split('\x1f').collect();
-        if parts.len() >= 8 {
+        let parts: Vec<&str> = chunk.split('\x1f').collect();
+        if parts.len() >= 9 {
             let parents: Vec<String> = parts[7].split_whitespace().map(|s| s.to_string()).collect();
+            let body = parts[8].trim();
+            let body_opt = if body.is_empty() {
+                None
+            } else {
+                Some(body.to_string())
+            };
 
-            entries.push(GitLogEntry {
+            let mut entry = GitLogEntry {
                 hash: parts[0].to_string(),
                 short_hash: parts[1].to_string(),
                 author: parts[2].to_string(),
                 email: parts[3].to_string(),
                 date: parts[4].to_string(),
                 message: parts[5].to_string(),
+                body: body_opt,
                 refs: parts[6].to_string(),
                 parents,
                 additions: 0,
                 deletions: 0,
                 pushed: true,
-            });
-        } else if let Some(entry) = entries.last_mut() {
-            // shortstat line belonging to the commit parsed just above.
-            entry.additions = parse_shortstat_count(line, "insertion");
-            entry.deletions = parse_shortstat_count(line, "deletion");
+            };
+
+            if parts.len() > 9 {
+                let stat_text = parts[9];
+                entry.additions = parse_shortstat_count(stat_text, "insertion");
+                entry.deletions = parse_shortstat_count(stat_text, "deletion");
+            }
+
+            entries.push(entry);
         }
     }
 

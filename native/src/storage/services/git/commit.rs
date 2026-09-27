@@ -100,12 +100,50 @@ fn push_pull_result(
     })
 }
 
-pub fn push_changes(repo_path: &str) -> Result<GitPushPullResult> {
-    push_pull_result(repo_path, &["push"], "Push successful")
+pub fn push_changes(
+    repo_path: &str,
+    remote: Option<&str>,
+    branch: Option<&str>,
+    set_upstream: bool,
+) -> Result<GitPushPullResult> {
+    let mut args = vec!["push"];
+    if set_upstream {
+        args.push("-u");
+    }
+    if let Some(r) = remote {
+        let trimmed_remote = r.trim();
+        if !trimmed_remote.is_empty() {
+            args.push(trimmed_remote);
+            if let Some(b) = branch {
+                let trimmed_branch = b.trim();
+                if !trimmed_branch.is_empty() {
+                    args.push(trimmed_branch);
+                }
+            }
+        }
+    }
+    push_pull_result(repo_path, &args, "Push successful")
 }
 
-pub fn pull_changes(repo_path: &str) -> Result<GitPushPullResult> {
-    push_pull_result(repo_path, &["pull"], "Pull successful")
+pub fn pull_changes(
+    repo_path: &str,
+    remote: Option<&str>,
+    branch: Option<&str>,
+) -> Result<GitPushPullResult> {
+    let mut args = vec!["pull"];
+    if let Some(r) = remote {
+        let trimmed_remote = r.trim();
+        if !trimmed_remote.is_empty() {
+            args.push(trimmed_remote);
+            if let Some(b) = branch {
+                let trimmed_branch = b.trim();
+                if !trimmed_branch.is_empty() {
+                    args.push(trimmed_branch);
+                }
+            }
+        }
+    }
+    push_pull_result(repo_path, &args, "Pull successful")
 }
 
 /// Fetch from the remote without merging. Used by the UI to keep the
@@ -142,22 +180,52 @@ pub fn fetch_remote(repo_path: &str) -> Result<GitPushPullResult> {
 }
 
 pub fn checkout_branch(repo_path: &str, branch_name: &str) -> Result<GitCheckoutResult> {
-    // If the branch name contains '/', it's a remote tracking branch (e.g. "origin/main").
-    // Running `git checkout origin/main` would enter detached HEAD state.
-    // Instead, extract the local branch name and create a tracking branch.
-    if let Some(slash_idx) = branch_name.find('/') {
-        let local_name = &branch_name[slash_idx + 1..];
+    let branch_name = branch_name.trim();
+    if branch_name.is_empty() {
+        return Ok(GitCheckoutResult {
+            success: false,
+            message: "Branch name cannot be empty".to_string(),
+        });
+    }
+
+    // 1. 本地分支（refs/heads/<branch_name>）优先：
+    //    支持包含 '/' 的本地分支名（如 "fix/settings-scroll-jump"），不能仅根据是否含 '/' 切除前缀。
+    let local_ref = format!("refs/heads/{branch_name}");
+    if run_git(repo_path, &["show-ref", "--verify", "--quiet", &local_ref]).is_ok() {
+        return match run_git(repo_path, &["checkout", branch_name]) {
+            Ok(_) => Ok(GitCheckoutResult {
+                success: true,
+                message: format!("Switched to {branch_name}"),
+            }),
+            Err(e) => Ok(GitCheckoutResult {
+                success: false,
+                message: format!("{e}"),
+            }),
+        };
+    }
+
+    // 2. 远程跟踪分支（refs/remotes/<branch_name>，如 "origin/main" 或 "origin/feat/foo"）：
+    let remote_ref = format!("refs/remotes/{branch_name}");
+    if run_git(repo_path, &["show-ref", "--verify", "--quiet", &remote_ref]).is_ok() {
+        // 剥离 remote 仓库前缀获取本地对应分支名（例如 "origin/feat/foo" -> "feat/foo"）
+        let local_name = match branch_name.find('/') {
+            Some(slash_idx) => &branch_name[slash_idx + 1..],
+            None => branch_name,
+        };
 
         if !local_name.is_empty() {
-            // First, try to checkout the local branch (it may already exist).
-            if let Ok(_) = run_git(repo_path, &["checkout", local_name]) {
-                return Ok(GitCheckoutResult {
-                    success: true,
-                    message: format!("Switched to {local_name}"),
-                });
+            // 若本地已存在对应的分支，直接切换
+            let target_local_ref = format!("refs/heads/{local_name}");
+            if run_git(repo_path, &["show-ref", "--verify", "--quiet", &target_local_ref]).is_ok() {
+                if let Ok(_) = run_git(repo_path, &["checkout", local_name]) {
+                    return Ok(GitCheckoutResult {
+                        success: true,
+                        message: format!("Switched to {local_name}"),
+                    });
+                }
             }
 
-            // Local branch doesn't exist; create a new tracking branch.
+            // 本地尚无对应分支：基于远程跟踪分支新建本地分支并建立跟踪
             match run_git(repo_path, &["checkout", "-b", local_name, branch_name]) {
                 Ok(_) => {
                     return Ok(GitCheckoutResult {
@@ -175,7 +243,7 @@ pub fn checkout_branch(repo_path: &str, branch_name: &str) -> Result<GitCheckout
         }
     }
 
-    // Local branch: checkout directly.
+    // 3. 兜底直接 checkout（例如 tag、commit hash 等）
     match run_git(repo_path, &["checkout", branch_name]) {
         Ok(_) => Ok(GitCheckoutResult {
             success: true,

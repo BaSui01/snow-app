@@ -10,7 +10,8 @@ use crate::api::commit_message::generate_commit_message_stream;
 use crate::api::responses::{ResponsesApiResult, ResponsesApiStreamCallback};
 use crate::storage::services::git::{
     GitBranch, GitCheckoutResult, GitCommitFile, GitCommitResult, GitDiffResult, GitIdentity,
-    GitLogEntry, GitPushPullResult, GitRepoInfo, GitStageResult, GitStatusResult,
+    GitLogEntry, GitPushPullResult, GitRemoteInfo, GitRepoInfo, GitStageResult, GitStatusResult,
+    GitWorktreeInfo,
 };
 use crate::storage::services::git_watcher::GitChangeCallback;
 use crate::utils::process::{kill_process_tree, poll_child_exit};
@@ -101,28 +102,59 @@ pub async fn git_commit(repo_path: String, message: String) -> napi::Result<GitC
     .map_err(|join_error| napi::Error::from_reason(format!("Failed to commit: {join_error}")))?
 }
 
+#[napi]
+pub async fn git_remotes(repo_path: String) -> napi::Result<Vec<GitRemoteInfo>> {
+    tokio::task::spawn_blocking(move || crate::storage::services::git::get_git_remotes(&repo_path))
+        .await
+        .map_err(|join_error| {
+            napi::Error::from_reason(format!("Failed to get remotes: {join_error}"))
+        })?
+}
+
 /// Push local commits to the remote. Runs on the blocking thread pool
 /// because `git push` performs network I/O and may take seconds — it
 /// must never block the async runtime.
 #[napi]
-pub async fn git_push(repo_path: String) -> napi::Result<GitPushPullResult> {
-    tokio::task::spawn_blocking(move || crate::storage::services::git::push_changes(&repo_path))
-        .await
-        .map_err(|join_error| {
-            napi::Error::from_reason(format!("Failed to push to remote: {join_error}"))
-        })?
+pub async fn git_push(
+    repo_path: String,
+    remote: Option<String>,
+    branch: Option<String>,
+    set_upstream: Option<bool>,
+) -> napi::Result<GitPushPullResult> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::git::push_changes(
+            &repo_path,
+            remote.as_deref(),
+            branch.as_deref(),
+            set_upstream.unwrap_or(false),
+        )
+    })
+    .await
+    .map_err(|join_error| {
+        napi::Error::from_reason(format!("Failed to push to remote: {join_error}"))
+    })?
 }
 
 /// Pull changes from the remote. Runs on the blocking thread pool
 /// because `git pull` performs network I/O and may take seconds — it
 /// must never block the async runtime.
 #[napi]
-pub async fn git_pull(repo_path: String) -> napi::Result<GitPushPullResult> {
-    tokio::task::spawn_blocking(move || crate::storage::services::git::pull_changes(&repo_path))
-        .await
-        .map_err(|join_error| {
-            napi::Error::from_reason(format!("Failed to pull from remote: {join_error}"))
-        })?
+pub async fn git_pull(
+    repo_path: String,
+    remote: Option<String>,
+    branch: Option<String>,
+) -> napi::Result<GitPushPullResult> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::git::pull_changes(
+            &repo_path,
+            remote.as_deref(),
+            branch.as_deref(),
+        )
+    })
+    .await
+    .map_err(|join_error| {
+        napi::Error::from_reason(format!("Failed to pull from remote: {join_error}"))
+    })?
 }
 
 /// Fetch from the remote without merging. Runs on the blocking thread
@@ -739,4 +771,62 @@ fn derive_repo_name(repo_url: &str) -> Option<String> {
         .next()
         .filter(|segment| !segment.is_empty())
         .map(str::to_string)
+}
+
+#[napi]
+pub async fn git_list_worktrees(directory_id: String) -> napi::Result<Vec<GitWorktreeInfo>> {
+    tokio::task::spawn_blocking(move || {
+        let database_path = crate::storage::ensure_database_file()?;
+        crate::storage::services::git::list_worktrees(&database_path, &directory_id)
+    })
+    .await
+    .map_err(|error| napi::Error::from_reason(format!("Failed to list Git worktrees: {error}")))?
+}
+
+#[napi]
+pub async fn git_create_worktree(
+    directory_id: String,
+    branch_name: String,
+    base_ref: String,
+) -> napi::Result<GitWorktreeInfo> {
+    tokio::task::spawn_blocking(move || {
+        let database_path = crate::storage::ensure_database_file()?;
+        crate::storage::services::git::create_worktree(
+            &database_path,
+            &directory_id,
+            &branch_name,
+            &base_ref,
+        )
+    })
+    .await
+    .map_err(|error| napi::Error::from_reason(format!("Failed to create Git worktree: {error}")))?
+}
+
+#[napi]
+pub async fn get_conversation_worktree(
+    conversation_id: String,
+) -> napi::Result<Option<GitWorktreeInfo>> {
+    tokio::task::spawn_blocking(move || {
+        let database_path = crate::storage::ensure_database_file()?;
+        crate::storage::services::git::get_conversation_worktree(&database_path, &conversation_id)
+    })
+    .await
+    .map_err(|error| napi::Error::from_reason(format!("Failed to get conversation worktree: {error}")))?
+}
+
+#[napi]
+pub async fn set_conversation_worktree(
+    conversation_id: String,
+    worktree_id: Option<String>,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        let database_path = crate::storage::ensure_database_file()?;
+        crate::storage::services::git::set_conversation_worktree(
+            &database_path,
+            &conversation_id,
+            worktree_id.as_deref(),
+        )
+    })
+    .await
+    .map_err(|error| napi::Error::from_reason(format!("Failed to set conversation worktree: {error}")))?
 }

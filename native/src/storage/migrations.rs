@@ -98,7 +98,36 @@ pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<(
     migrate_workspace_directory_path_health(connection)?;
     migrate_userscripts_client_fields(connection)?;
     migrate_userscripts_icon(connection)?;
+    migrate_git_worktrees(connection)?;
     Ok(())
+}
+
+/// Creates persistent worktree registry and per-conversation bindings. Bindings
+/// intentionally do not reference chat_conversations so they survive moving a
+/// conversation to the cold archive database and can be used after restore.
+fn migrate_git_worktrees(connection: &Connection) -> rusqlite::Result<()> {
+    connection.execute_batch(
+        "CREATE TABLE IF NOT EXISTS git_worktrees (
+           worktree_id TEXT PRIMARY KEY NOT NULL,
+           directory_id TEXT NOT NULL,
+           repository_path TEXT NOT NULL,
+           worktree_path TEXT NOT NULL,
+           branch_name TEXT,
+           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+           updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+           UNIQUE(directory_id, worktree_path)
+         );
+         CREATE INDEX IF NOT EXISTS idx_git_worktrees_directory
+           ON git_worktrees(directory_id);
+         CREATE TABLE IF NOT EXISTS conversation_worktree_bindings (
+           conversation_id TEXT PRIMARY KEY NOT NULL,
+           worktree_id TEXT NOT NULL,
+           updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+           FOREIGN KEY(worktree_id) REFERENCES git_worktrees(worktree_id) ON DELETE CASCADE
+         );
+         CREATE INDEX IF NOT EXISTS idx_conversation_worktree_bindings_worktree
+           ON conversation_worktree_bindings(worktree_id);",
+    )
 }
 
 /// Adds the client-script columns (`target` / `view_json` / `surface_json` /

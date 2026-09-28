@@ -4,7 +4,6 @@ import { AlertTriangle, MoveVertical } from "lucide-react";
 import { useI18n } from "../../i18n";
 import type { GitDiffResult, GitFileStatus, GitStatusResult } from "./git";
 import { GitControl, GitGraph, useGitRepos } from "./git";
-import { WorktreeManager } from "./WorktreeManager";
 import type { OpenDiffTabCallback } from "./types";
 import type { RightPanelContentProps } from "./types";
 
@@ -146,9 +145,6 @@ export function GitPanelContent({
 
   return (
     <div className="git-panel-container" ref={containerRef}>
-      {activeDirectory?.directoryId ? (
-        <WorktreeManager directoryId={activeDirectory.directoryId} />
-      ) : null}
       <div
         className="git-panel-changes"
         style={{

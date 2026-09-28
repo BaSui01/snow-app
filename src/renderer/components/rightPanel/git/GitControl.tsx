@@ -27,6 +27,7 @@ import { useI18n } from "../../../i18n";
 import { GIT_SETTINGS_CHANGED_EVENT } from "../../../constants/gitEvents";
 import { useGitStatus } from "./useGitStatus";
 import { useRemotePolling } from "./useRemotePolling";
+import { BranchSelector } from "./BranchSelector";
 import { GitConfirmBubble, type GitConfirmAnchor } from "./GitConfirmBubble";
 import { GitFileList } from "./GitFileList";
 import { RepoSelector } from "./RepoSelector";
@@ -82,7 +83,7 @@ const endCommitMsgGeneration = (repo: string): void => {
 
 export const GitControl = ({
   repoPath,
-  directoryId: _directoryId,
+  directoryId,
   repos,
   onRepoSelect,
   onFileSelect,
@@ -1186,6 +1187,15 @@ export const GitControl = ({
           </div>
         )}
         <div className="git-control-header">
+          {repoPath && (
+            <BranchSelector
+              repoPath={repoPath}
+              currentBranch={status.currentBranch}
+              directoryId={directoryId}
+              onOpenTerminal={onOpenTerminal}
+              onBranchChanged={refresh}
+            />
+          )}
           <div className="git-commit-input-wrapper">
             <textarea
               ref={commitInputRef}

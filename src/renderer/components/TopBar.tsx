@@ -762,6 +762,7 @@ export const TopBar = ({
     <div className="top-bar-branch-info">
       <TopBarBranchSelector
         repoPath={activeDirectory?.path ?? null}
+        directoryId={activeDirectory?.directoryId}
         fallbackName={activeDirectory?.name}
       />
     </div>

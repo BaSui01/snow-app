@@ -110,6 +110,16 @@ impl ServerSession {
         config: ServerConfig,
         restart_count: u32,
     ) -> Result<Self, LspError> {
+        // 在启动进程之前解析 TypeScript：缺失安装直接报错，不让服务器尝试
+        // 使用全局安装或把初始化失败误判成语言服务器命令不存在。
+        let initialization_options = if lang == "typescript" {
+            client::typescript_initialization_options(
+                project_root,
+                config.initialization_options.clone(),
+            )?
+        } else {
+            config.initialization_options.clone()
+        };
         let (child, mainloop_task, socket, push_diagnostics, main_loop_done, process_tree_guard) =
             client::spawn_client(&config, project_root).map_err(|error| match error.kind() {
                 std::io::ErrorKind::NotFound => {
@@ -145,7 +155,7 @@ impl ServerSession {
         let server_capabilities = match client::initialize(
             &mut socket,
             project_root,
-            session.config.initialization_options.clone(),
+            initialization_options,
             timeout,
         )
         .await

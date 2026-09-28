@@ -4,6 +4,18 @@ use napi::{Error, Status};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
+
+static NEXT_QUERY_TRACE: AtomicU64 = AtomicU64::new(1);
+
+/// Log off the query's critical path: SQLite writes must not become part of
+/// the LSP response time we are trying to measure.
+fn queue_query_log(level: &'static str, func: &'static str, message: String) {
+    let _ = tokio::spawn(async move {
+        super::lsp_app_log(level, func, &message, None).await;
+    });
+}
 
 /// Configuration scope remains project_id; workspaceRoot only selects source files.
 pub(super) async fn root(args: &Value, project_id: Option<&str>) -> napi::Result<PathBuf> {
@@ -102,7 +114,122 @@ fn location_key(item: &Value) -> String {
     )
 }
 
+/// Return false only after a bounded scan proves that a parent tsconfig can see
+/// every relevant file. Ignore build output and dependencies just as stack
+/// discovery does; any unreadable entry, symlink, or budget limit is uncertain.
+fn child_covered_by_tsconfig(child: &Path, allow_js: bool) -> bool {
+    let mut directories = vec![child.to_path_buf()];
+    let mut visited = 0;
+    while let Some(directory) = directories.pop() {
+        let Ok(entries) = std::fs::read_dir(directory) else {
+            return false;
+        };
+        for entry in entries {
+            visited += 1;
+            if visited > 3000 {
+                return false;
+            }
+            let Ok(entry) = entry else { return false };
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with('.')
+                || matches!(
+                    name.as_ref(),
+                    "node_modules" | "dist" | "out" | "build" | "target" | "vendor" | "venv"
+                )
+            {
+                continue;
+            }
+            let Ok(kind) = entry.file_type() else {
+                return false;
+            };
+            if kind.is_symlink() {
+                return false;
+            }
+            if kind.is_dir() {
+                directories.push(entry.path());
+            } else if kind.is_file()
+                && (matches!(name.as_ref(), "tsconfig.json" | "jsconfig.json")
+                    || (!allow_js
+                        && matches!(
+                            entry.path().extension().and_then(|ext| ext.to_str()),
+                            Some("js" | "jsx" | "mjs" | "cjs")
+                        )))
+            {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Only coalesce a child package when a parent tsconfig explicitly includes its
+/// entire directory. Ambiguous JSONC, references, extends and excludes retain
+/// independent roots so a symbol cannot silently disappear from the search.
+fn coalesce_typescript_roots(roots: Vec<PathBuf>) -> (Vec<PathBuf>, usize) {
+    let mut retained: Vec<PathBuf> = Vec::new();
+    let mut covered = 0;
+    for child in roots {
+        let included_by_parent = retained.iter().any(|parent| {
+            if !child.starts_with(parent) || child == *parent {
+                return false;
+            }
+            let Ok(relative) = child.strip_prefix(parent) else {
+                return false;
+            };
+            // A child tsconfig/jsconfig can define a separate TypeScript project.
+            if child.join("tsconfig.json").exists() || child.join("jsconfig.json").exists() {
+                return false;
+            }
+            let Ok(text) = std::fs::read_to_string(parent.join("tsconfig.json")) else {
+                return false;
+            };
+            let Ok(tsconfig) = serde_json::from_str::<Value>(&text) else {
+                return false;
+            };
+            if tsconfig.get("extends").is_some()
+                || tsconfig.get("references").is_some()
+                || tsconfig.get("exclude").is_some()
+                || tsconfig["compilerOptions"].get("outDir").is_some()
+            {
+                return false;
+            }
+            tsconfig["include"].as_array().is_some_and(|includes| {
+                includes.iter().filter_map(Value::as_str).any(|include| {
+                    // Glob patterns and parent traversal need TypeScript's own
+                    // glob/config semantics; do not guess their coverage here.
+                    let prefix = Path::new(include);
+                    !include.contains('*')
+                        && !prefix.is_absolute()
+                        && prefix
+                            .components()
+                            .all(|part| matches!(part, std::path::Component::Normal(_)))
+                        && relative.starts_with(prefix)
+                })
+            }) && child_covered_by_tsconfig(
+                &child,
+                tsconfig["compilerOptions"]["allowJs"]
+                    .as_bool()
+                    .unwrap_or(false),
+            )
+        });
+        if included_by_parent {
+            covered += 1;
+        } else {
+            retained.push(child);
+        }
+    }
+    (retained, covered)
+}
+
 async fn query(args: &Value, project_id: Option<&str>, diagnostics: bool) -> napi::Result<Value> {
+    let query_started = Instant::now();
+    let trace = NEXT_QUERY_TRACE.fetch_add(1, Ordering::Relaxed);
+    let operation = if diagnostics {
+        "diagnostics"
+    } else {
+        "symbols"
+    };
     let root = root(args, project_id).await?;
     // The initialized session validates the selected operation.
     let query = if diagnostics {
@@ -128,8 +255,10 @@ async fn query(args: &Value, project_id: Option<&str>, diagnostics: bool) -> nap
         50
     };
     let manager = manager::ServerManager::instance();
+    let config_started = Instant::now();
     manager.reload_configs(project_id).await?;
     let configs = manager.configs(project_id).await;
+    let config_ms = config_started.elapsed().as_millis();
     let mut warnings = Vec::new();
     let mut languages = BTreeSet::new();
     let mut items: BTreeMap<String, Value> = BTreeMap::new();
@@ -141,10 +270,27 @@ async fn query(args: &Value, project_id: Option<&str>, diagnostics: bool) -> nap
     {
         let scan_root = root.clone();
         let lang = server.lang.clone();
-        let discovery =
-            tokio::task::spawn_blocking(move || detect::discover_lang_roots(&scan_root, &lang))
-                .await
-                .map_err(|err| Error::new(Status::GenericFailure, err.to_string()))?;
+        let scan_started = Instant::now();
+        let (discovery, coalesced) = tokio::task::spawn_blocking(move || {
+            let mut discovery = detect::discover_lang_roots(&scan_root, &lang);
+            let mut coalesced = 0;
+            if !diagnostics && lang == "typescript" {
+                let (roots, removed) =
+                    coalesce_typescript_roots(std::mem::take(&mut discovery.roots));
+                discovery.roots = roots;
+                coalesced = removed;
+            }
+            (discovery, coalesced)
+        })
+        .await
+        .map_err(|err| Error::new(Status::GenericFailure, err.to_string()))?;
+        let scan_ms = scan_started.elapsed().as_millis();
+        let root_count = discovery.roots.len();
+        queue_query_log(
+            "info",
+            "workspace_query_scan",
+            format!("trace={trace} op={operation} language={} scanMs={scan_ms} roots={root_count} coalesced={coalesced} incomplete={}", server.lang, discovery.incomplete),
+        );
         if discovery.incomplete {
             warnings.push(json!({"language":server.lang,"error":"Technology-stack discovery was incomplete; coverage is not guaranteed"}));
         }
@@ -163,18 +309,48 @@ async fn query(args: &Value, project_id: Option<&str>, diagnostics: bool) -> nap
             continue;
         }
         for lang_root in discovery.roots {
+            let root_started = Instant::now();
+            let mut session_ms = 0;
+            let mut lock_ms = 0;
+            let mut search_ms = 0;
+            let mut started = None;
             let result = async {
-                let session = manager
-                    .get_or_start(&server.lang, &lang_root, project_id)
-                    .await?;
+                let acquiring = Instant::now();
+                let acquired = manager
+                    .get_or_start_with_trace(&server.lang, &lang_root, project_id)
+                    .await;
+                session_ms = acquiring.elapsed().as_millis();
+                let (session, cold_start) = acquired?;
+                started = Some(cold_start);
+                let locking = Instant::now();
                 let mut guard = session.lock().await;
-                if diagnostics {
+                lock_ms = locking.elapsed().as_millis();
+                let searching = Instant::now();
+                let response = if diagnostics {
                     guard.workspace_diagnostics(limit).await
                 } else {
                     guard.workspace_symbols(&query).await
-                }
+                };
+                search_ms = searching.elapsed().as_millis();
+                response
             }
             .await;
+            let outcome = if result.is_ok() { "ok" } else { "failed" };
+            let root_label = lang_root
+                .strip_prefix(&root)
+                .map(|relative| {
+                    if relative.as_os_str().is_empty() {
+                        ".".to_string()
+                    } else {
+                        relative.display().to_string()
+                    }
+                })
+                .unwrap_or_else(|_| "<outside-workspace>".to_string());
+            queue_query_log(
+                if result.is_ok() { "info" } else { "warn" },
+                "workspace_query_root",
+                format!("trace={trace} op={operation} language={} root={root_label} sessionMs={session_ms} sessionNew={started:?} lockWaitMs={lock_ms} searchMs={search_ms} totalMs={} outcome={outcome}", server.lang, root_started.elapsed().as_millis()),
+            );
             match result {
                 Ok(value) => {
                     successful_roots += 1;
@@ -215,6 +391,7 @@ async fn query(args: &Value, project_id: Option<&str>, diagnostics: bool) -> nap
     results.truncate(limit);
     let incomplete = !warnings.is_empty() || clipped;
     let languages: Vec<String> = languages.into_iter().collect();
+    let warning_count = warnings.len();
     let mut output = json!({
         "language": if languages.len() == 1 { languages[0].as_str() } else { "multiple" },
         "languages": languages, "workspaceRoot":root, "status":state(successful_roots,incomplete),
@@ -231,6 +408,11 @@ async fn query(args: &Value, project_id: Option<&str>, diagnostics: bool) -> nap
         output["query"] = json!(query);
         output["symbols"] = json!(results);
     }
+    queue_query_log(
+        "info",
+        "workspace_query_total",
+        format!("trace={trace} op={operation} configMs={config_ms} totalMs={} successfulRoots={successful_roots} warningCount={warning_count} status={} resultCount={total}", query_started.elapsed().as_millis(), output["status"].as_str().unwrap_or("unknown")),
+    );
     Ok(output)
 }
 

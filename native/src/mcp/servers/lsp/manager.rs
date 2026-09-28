@@ -326,12 +326,34 @@ impl ServerManager {
     ///   mainloop 结束，R2.1/R2.2）、并发防重占位、空闲回收 + LRU 只收集 victim。
     /// - 段 2（锁外慢路径）：victim shutdown、配置查找、probe、spawn、
     ///   锁内插入 + 释放占位 + 唤醒等待者。
+    /// 获取会话并报告是复用现有进程还是新启动（仅工作区查询使用）。
+    pub async fn get_or_start_with_trace(
+        &self,
+        lang: &str,
+        project_root: &Path,
+        project_id: Option<&str>,
+    ) -> Result<(Arc<Mutex<ServerSession>>, bool), LspError> {
+        self.get_or_start_inner(lang, project_root, project_id)
+            .await
+    }
+
     pub async fn get_or_start(
         &self,
         lang: &str,
         project_root: &Path,
         project_id: Option<&str>,
     ) -> Result<Arc<Mutex<ServerSession>>, LspError> {
+        self.get_or_start_inner(lang, project_root, project_id)
+            .await
+            .map(|(session, _started)| session)
+    }
+
+    async fn get_or_start_inner(
+        &self,
+        lang: &str,
+        project_root: &Path,
+        project_id: Option<&str>,
+    ) -> Result<(Arc<Mutex<ServerSession>>, bool), LspError> {
         // 先验证本请求有效配置，禁止已有会话绕过禁用/覆盖配置。
         let config_key = project_id.unwrap_or("").trim().to_string();
         let config = self
@@ -385,7 +407,7 @@ impl ServerManager {
                         .get(&key)
                         .is_some_and(|current| Arc::ptr_eq(current, &session));
                     if current {
-                        return Ok(session);
+                        return Ok((session, false));
                     }
                     continue;
                 }
@@ -541,7 +563,7 @@ impl ServerManager {
         if let Some(notify) = own_notify {
             notify.notify_waiters();
         }
-        Ok(session)
+        Ok((session, true))
     }
 
     /// 释放 starting 占位并唤醒等待者（M1）。仅占位所有者执行；占位已被接管

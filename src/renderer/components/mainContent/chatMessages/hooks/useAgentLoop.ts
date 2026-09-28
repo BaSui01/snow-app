@@ -96,15 +96,14 @@ const captureChatInputSendOptions = (
  * 持久化一次；内存态（session ref / 输入区状态）始终是运行时权威，这里的
  * 写入只用于重启后恢复，以及标题摘要等后端内部请求读取持久绑定。
  */
-const persistConversationSelection = (
+const persistConversationSelection = async (
   conversationId: string,
   options: CapturedChatInputSendOptions,
-  sessionRef: ConversationSessionRef | undefined,
-): void => {
+  sessionRef?: ConversationSessionRef,
+): Promise<void> => {
   const recordFailure = (error: unknown): void => {
-    // 落库失败不阻断发送：本次请求已携带请求级快照，下次发送会重新写入。
     void window.snow.writeLog("WARN", {
-      module: "conversation-runtime",
+      module: "chat/useAgentLoop",
       func: "persistConversationSelection",
       message: "Failed to persist conversation selection",
       context: JSON.stringify({ conversationId }),
@@ -112,47 +111,39 @@ const persistConversationSelection = (
     });
   };
 
-  const writes: Promise<unknown>[] = [];
-  if (options.apiProfile) {
-    writes.push(
-      window.snow.updateConversationApiProfile(
+  try {
+    if (options.apiProfile) {
+      await window.snow.updateConversationApiProfile(
         conversationId,
         options.apiProfile,
-      ),
-    );
-  }
-  const runtimeOverride = options.conversationRuntimeConfigOverride;
-  if (runtimeOverride) {
-    writes.push(
-      window.snow.setConversationRuntimeConfig(
+      );
+    }
+    const runtimeOverride = options.conversationRuntimeConfigOverride;
+    if (runtimeOverride) {
+      await window.snow.setConversationRuntimeConfig(
         conversationId,
         runtimeOverride.thinkingStrength,
         runtimeOverride.responsesFastMode,
-      ),
-    );
-  }
-  if (sessionRef) {
-    writes.push(
-      window.snow.setConversationModes(
+      );
+    }
+    if (sessionRef) {
+      await window.snow.setConversationModes(
         conversationId,
         sessionRef.planMode,
         sessionRef.goalMode,
         sessionRef.worktreeMode,
         sessionRef.workflowMode,
         sessionRef.goalModeTokenBudget,
-      ),
-    );
-    if (sessionRef.worktreeId) {
-      writes.push(
-        window.snow.setConversationWorktree(
+      );
+      if (sessionRef.worktreeId) {
+        await window.snow.setConversationWorktree(
           conversationId,
           sessionRef.worktreeId,
-        ),
-      );
+        );
+      }
     }
-  }
-  for (const write of writes) {
-    write.catch(recordFailure);
+  } catch (error) {
+    recordFailure(error);
   }
 };
 
@@ -790,6 +781,20 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         // the live global refs — another conversation toggling its modes
         // must not alter the behaviour of a background-running loop.
         const iterRef = ctx.sessionsRefData.current.get(effectiveKey);
+        const effectiveWorktreeMode =
+          iterRef?.worktreeMode ?? ctx.worktreeModeRef.current;
+        const effectiveWorktreeId =
+          iterRef?.worktreeId ?? ctx.pendingWorktreeIdRef.current;
+        const projectSessionDirPath =
+          directoryIdToPath(sessionDirId) ?? ctx.directoryPath;
+        const effectiveExecutionWorkspaceRoot =
+          await resolveConversationWorkspacePath(
+            isPendingSessionKey(effectiveKey) ? "" : effectiveKey,
+            sessionDirId,
+            projectSessionDirPath,
+            effectiveWorktreeMode,
+            effectiveWorktreeId,
+          );
         const chunkHandler = createStreamChunkHandler(
           ctx,
           effectiveKey,
@@ -811,8 +816,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             internalRecoveryPrompt,
             planMode: iterRef?.planMode ?? ctx.planModeRef.current,
             goalMode: iterRef?.goalMode ?? ctx.goalModeRef.current,
-            worktreeMode: iterRef?.worktreeMode ?? ctx.worktreeModeRef.current,
+            worktreeMode: effectiveWorktreeMode,
             workflowMode: iterRef?.workflowMode ?? ctx.workflowModeRef.current,
+            executionWorkspaceRoot: effectiveExecutionWorkspaceRoot,
+            worktreeId: effectiveWorktreeId ?? undefined,
           },
           chunkHandler,
           createStreamIdHandler(ctx, effectiveKey, () =>
@@ -882,22 +889,14 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             );
             const effectiveWorktreeId =
               currentSession?.worktreeId || ctx.pendingWorktreeIdRef.current;
-            if (effectiveWorktreeId) {
-              if (currentSession) {
-                currentSession.worktreeId = effectiveWorktreeId;
-                currentSession.worktreeMode = true;
-              }
-              await window.snow
-                .setConversationWorktree(
-                  response.conversationId,
-                  effectiveWorktreeId,
-                )
-                .catch(() => {});
+            if (effectiveWorktreeId && currentSession) {
+              currentSession.worktreeId = effectiveWorktreeId;
+              currentSession.worktreeMode = true;
             }
             ctx.setPendingWorktreeId(null);
             // pending 会话的渠道/运行时/模式选择在拿到真实会话 id 后统一落库，
             // 使其在重启后仍能恢复（迁移前无 conversation_id 无法写入）。
-            persistConversationSelection(
+            await persistConversationSelection(
               response.conversationId,
               capturedOptions,
               ctx.sessionsRefData.current.get(response.conversationId),

@@ -30,7 +30,9 @@ export function WorktreeSessionSelector(): React.JSX.Element | null {
   const {
     activeConversationId,
     conversationDirectoryId,
-    worktreeMode,
+    setWorktreeMode,
+    pendingWorktreeId,
+    setPendingWorktreeId,
     isStreaming,
     isAborting,
     isCompacting,
@@ -52,7 +54,7 @@ export function WorktreeSessionSelector(): React.JSX.Element | null {
   };
 
   const isCurrentRequest = (
-    conversationId: string,
+    conversationId: string | undefined,
     directoryId: string,
     generation: number,
   ): boolean =>
@@ -63,25 +65,34 @@ export function WorktreeSessionSelector(): React.JSX.Element | null {
   useEffect(() => {
     const conversationId = activeConversationId;
     const directoryId = conversationDirectoryId;
-    if (!conversationId || !directoryId) {
+    if (!directoryId) {
       requestGenerationRef.current += 1;
       setCurrent(null);
       setWorktrees([]);
       return;
     }
 
-    setCurrent(null);
     const reload = (): void => {
       const generation = ++requestGenerationRef.current;
-      void Promise.all([
-        window.snow.gitListWorktrees(directoryId),
-        window.snow.getConversationWorktree(conversationId),
-      ])
+      const worktreesPromise = window.snow.gitListWorktrees(directoryId);
+      const boundPromise = conversationId
+        ? window.snow.getConversationWorktree(conversationId)
+        : Promise.resolve(null);
+
+      void Promise.all([worktreesPromise, boundPromise])
         .then(([items, bound]) => {
           if (!isCurrentRequest(conversationId, directoryId, generation))
             return;
           setWorktrees(items);
-          setCurrent(bound);
+          if (conversationId) {
+            setCurrent(bound);
+          } else {
+            const preselected = pendingWorktreeId
+              ? (items.find((item) => item.worktreeId === pendingWorktreeId) ??
+                null)
+              : null;
+            setCurrent(preselected);
+          }
         })
         .catch(() => {
           if (isCurrentRequest(conversationId, directoryId, generation)) {
@@ -96,7 +107,17 @@ export function WorktreeSessionSelector(): React.JSX.Element | null {
       requestGenerationRef.current += 1;
       window.removeEventListener("snow:worktrees-changed", reload);
     };
-  }, [activeConversationId, conversationDirectoryId]);
+  }, [activeConversationId, conversationDirectoryId, pendingWorktreeId]);
+
+  useEffect(() => {
+    if (!activeConversationId) {
+      const preselected = pendingWorktreeId
+        ? (worktrees.find((item) => item.worktreeId === pendingWorktreeId) ??
+          null)
+        : null;
+      setCurrent(preselected);
+    }
+  }, [pendingWorktreeId, activeConversationId, worktrees]);
 
   useEffect(() => {
     if (isSessionRunning && isOpen) {
@@ -122,18 +143,8 @@ export function WorktreeSessionSelector(): React.JSX.Element | null {
 
   if (!conversationDirectoryId) return null;
 
-  // 如果当前无活跃会话，仅在处于 worktreeMode 时展示提示
-  if (!activeConversationId) {
-    return worktreeMode ? (
-      <div className="worktree-session-selector is-pending" role="status">
-        <GitBranch size={12} aria-hidden="true" />
-        <span>{t("git.worktreesPendingSessionHint")}</span>
-      </div>
-    ) : null;
-  }
-
-  // 优化点：若当前项目没有任何 Worktree 且当前未绑定任何 Worktree，坚决隐藏此选择器，避免霸占底栏空间
-  if (worktrees.length === 0 && !current) {
+  // 优化点：若当前项目没有任何 Worktree 且当前未绑定或预选任何 Worktree，坚决隐藏此选择器，避免霸占底栏空间
+  if (worktrees.length === 0 && !current && !pendingWorktreeId) {
     return null;
   }
 
@@ -142,39 +153,61 @@ export function WorktreeSessionSelector(): React.JSX.Element | null {
     const conversationId = activeConversationId;
     const directoryId = conversationDirectoryId;
     const generation = ++requestGenerationRef.current;
-    void window.snow
-      .setConversationWorktree(conversationId, worktreeId)
-      .then(() => {
-        if (!isCurrentRequest(conversationId, directoryId, generation)) return;
-        setCurrent(
-          worktrees.find((item) => item.worktreeId === worktreeId) ?? null,
-        );
-        setIsOpen(false);
-      })
-      .catch(() => {
-        // Keep current state on fail
-      });
+
+    if (conversationId) {
+      void window.snow
+        .setConversationWorktree(conversationId, worktreeId)
+        .then(() => {
+          if (!isCurrentRequest(conversationId, directoryId, generation))
+            return;
+          setCurrent(
+            worktrees.find((item) => item.worktreeId === worktreeId) ?? null,
+          );
+          setIsOpen(false);
+        })
+        .catch(() => {
+          // Keep current state on fail
+        });
+    } else {
+      // 当前为新建会话状态（无活跃会话 ID）：作为待生效预选工作树
+      setPendingWorktreeId(worktreeId);
+      setWorktreeMode(Boolean(worktreeId));
+      setCurrent(
+        worktrees.find((item) => item.worktreeId === worktreeId) ?? null,
+      );
+      setIsOpen(false);
+    }
   };
 
   const branchName = current?.branchName ?? t("git.graphDetachedHead");
   const cleanedCurrentPath = current
     ? cleanWorktreePath(current.worktreePath)
     : "";
+  const isPendingPreselect = !activeConversationId && Boolean(current);
   const currentTitle = current
-    ? t("git.worktreesSessionStatus", {
-        values: {
-          path: cleanedCurrentPath,
-          branch: branchName,
-          dirty: current.isDirty ? ` · ${t("git.worktreeDirty")}` : "",
-        },
-      })
+    ? isPendingPreselect
+      ? t("git.worktreesSessionPreselectStatus", {
+          defaultValue: `已预选工作树: ${cleanedCurrentPath} (${branchName})${current.isDirty ? ` · ${t("git.worktreeDirty")}` : ""}（发送首条消息时自动绑定）`,
+          values: {
+            path: cleanedCurrentPath,
+            branch: branchName,
+            dirty: current.isDirty ? ` · ${t("git.worktreeDirty")}` : "",
+          },
+        })
+      : t("git.worktreesSessionStatus", {
+          values: {
+            path: cleanedCurrentPath,
+            branch: branchName,
+            dirty: current.isDirty ? ` · ${t("git.worktreeDirty")}` : "",
+          },
+        })
     : t("git.worktreesUnbound");
 
   return (
     <div className="worktree-session-selector-container" ref={dropdownRef}>
       <button
         type="button"
-        className={`worktree-session-pill-btn ${current ? "is-bound" : ""} ${isOpen ? "is-open" : ""} ${isSessionRunning ? "is-disabled" : ""}`}
+        className={`worktree-session-pill-btn ${current ? "is-bound" : ""} ${isPendingPreselect ? "is-pending-preselect" : ""} ${isOpen ? "is-open" : ""} ${isSessionRunning ? "is-disabled" : ""}`}
         disabled={isSessionRunning}
         onClick={() => {
           if (!isSessionRunning) {

@@ -12,6 +12,7 @@ import {
   Trash2,
   Check,
   Folder,
+  MessageSquarePlus,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
@@ -21,6 +22,7 @@ import type {
 import { useI18n } from "../../../i18n";
 import { ContextMenu, type ContextMenuItem } from "../../common/ContextMenu";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
+import { useChatConversationContext } from "../../mainContent/chatMessages";
 
 type BranchSelectorProps = {
   repoPath: string;
@@ -383,6 +385,49 @@ export const BranchSelector = ({
         setCopiedId((current) => (current === id ? null : current));
       }, 1500);
     });
+  };
+
+  let chatContext: ReturnType<typeof useChatConversationContext> | null = null;
+  try {
+    chatContext = useChatConversationContext();
+  } catch {
+    chatContext = null;
+  }
+
+  const handleSelectWorktreeForChat = (wt: GitWorktreeInfo): void => {
+    if (!chatContext) return;
+    if (chatContext.activeConversationId) {
+      void window.snow.setConversationWorktree(
+        chatContext.activeConversationId,
+        wt.worktreeId,
+      );
+    } else {
+      chatContext.setPendingWorktreeId(wt.worktreeId);
+      chatContext.setWorktreeMode(true);
+      const textarea = document.querySelector<HTMLTextAreaElement>(
+        ".chat-input-textarea",
+      );
+      textarea?.focus();
+    }
+    setIsOpen(false);
+  };
+
+  const handleStartNewChatInWorktree = (
+    e: React.MouseEvent,
+    wt: GitWorktreeInfo,
+  ): void => {
+    e.stopPropagation();
+    if (!chatContext) return;
+    chatContext.handleNewChat(directoryId || undefined);
+    chatContext.setPendingWorktreeId(wt.worktreeId);
+    chatContext.setWorktreeMode(true);
+    setIsOpen(false);
+    setTimeout(() => {
+      const textarea = document.querySelector<HTMLTextAreaElement>(
+        ".chat-input-textarea",
+      );
+      textarea?.focus();
+    }, 60);
   };
 
   /** 单个分支项右键菜单 */
@@ -829,7 +874,7 @@ export const BranchSelector = ({
                       />
                       <span>
                         {t("git.worktreesTitle", {
-                          defaultValue: "活跃工作树 (Worktrees)",
+                          defaultValue: "工作树",
                         })}
                       </span>
                       <span className="branch-group-badge">
@@ -851,7 +896,8 @@ export const BranchSelector = ({
                         <div
                           key={wt.worktreeId}
                           className={`branch-dropdown-item branch-dropdown-wt-item${isCurrent ? " active" : ""}`}
-                          title={`${wt.worktreePath}${wt.isDirty ? " · 包含未提交修改" : ""}`}
+                          title={`${wt.worktreePath}${wt.isDirty ? " · 包含未提交修改" : ""}\n${t("git.clickToBindWorktree", { defaultValue: "点击为此会话选择该工作树" })}`}
+                          onClick={() => handleSelectWorktreeForChat(wt)}
                         >
                           <div className="branch-dropdown-item-left">
                             <span className="branch-wt-folder-badge">
@@ -919,6 +965,20 @@ export const BranchSelector = ({
                                 })}
                               >
                                 <Terminal size={11} />
+                              </button>
+                            )}
+                            {chatContext && (
+                              <button
+                                type="button"
+                                className="branch-wt-action-btn"
+                                onClick={(e) =>
+                                  handleStartNewChatInWorktree(e, wt)
+                                }
+                                title={t("git.startNewChatInWorktree", {
+                                  defaultValue: "在此工作树开启新会话",
+                                })}
+                              >
+                                <MessageSquarePlus size={11} />
                               </button>
                             )}
                             {!isMain && (

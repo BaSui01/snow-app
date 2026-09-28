@@ -15,6 +15,7 @@ import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
 import { getToolCategory, type ToolCategory } from "./shared/ToolNameBadge";
 import { JsonTreeView } from "./shared/JsonTreeView";
+import { DataTableViewer } from "./shared/DataTableViewer";
 
 type GenericToolCallProps = {
   toolCall: ToolCallInfo;
@@ -184,18 +185,64 @@ const extractGenericSummary = (
   return {};
 };
 
-/** 单元格文字截断格式化 */
-const formatCell = (val: unknown): string => {
-  if (val === null || val === undefined) return "—";
-  if (typeof val === "boolean") return val ? "true" : "false";
-  if (typeof val === "object") {
-    try {
-      return truncate(JSON.stringify(val), 60);
-    } catch {
-      return "[Object]";
+/** 流式未闭合 JSON 兜底提前提取常见参数摘要 */
+const extractStreamingGenericSummary = (
+  args: string,
+): { label?: string; fullPath?: string } => {
+  if (!args) return {};
+  const fileMatch = args.match(
+    /"(?:filePath|path|file|fileName)"\s*:\s*"([^"]+)"/,
+  );
+  if (fileMatch) {
+    const p = fileMatch[1].replace(/\\/g, "/");
+    return { label: getFileName(p), fullPath: p };
+  }
+  const queryMatch = args.match(/"query"\s*:\s*"([^"]+)"/);
+  if (queryMatch) return { label: `"${truncate(queryMatch[1], 32)}"` };
+  const cmdMatch = args.match(/"command"\s*:\s*"([^"]+)"/);
+  if (cmdMatch) return { label: truncate(cmdMatch[1], 32) };
+  const urlMatch = args.match(/"url"\s*:\s*"([^"]+)"/);
+  if (urlMatch) return { label: truncate(urlMatch[1], 40) };
+  const serviceMatch = args.match(/"service"\s*:\s*"([^"]+)"/);
+  if (serviceMatch) return { label: `service: ${serviceMatch[1]}` };
+  return {};
+};
+
+/**
+ * 解包标准 MCP 响应包层 (如 content: [{ type: "text", text: "..." }])
+ * 若内层 text 为 JSON 字符串则进一步嗅探解析为结构化对象，否则返回合并文本
+ */
+const unwrapMcpPayload = (value: unknown): unknown => {
+  if (!isRecord(value)) return value;
+
+  let current: Record<string, unknown> = value;
+  if (isRecord(current.result)) {
+    current = current.result;
+  }
+
+  if (Array.isArray(current.content)) {
+    const textBlocks = current.content
+      .filter(
+        (b): b is Record<string, unknown> =>
+          isRecord(b) && b.type === "text" && typeof b.text === "string",
+      )
+      .map((b) => b.text as string);
+
+    if (textBlocks.length > 0) {
+      const combined = textBlocks.join("\n");
+      try {
+        const innerJson = JSON.parse(combined);
+        if (typeof innerJson === "object" && innerJson !== null) {
+          return innerJson;
+        }
+      } catch {
+        return combined;
+      }
+      return combined;
     }
   }
-  return truncate(String(val), 60);
+
+  return value;
 };
 
 export const GenericToolCall = ({
@@ -210,7 +257,7 @@ export const GenericToolCall = ({
   }, [toolCall.arguments]);
 
   const parsedResult = useMemo(
-    () => parseJsonSafe(toolCall.result),
+    () => unwrapMcpPayload(parseJsonSafe(toolCall.result)),
     [toolCall.result],
   );
 
@@ -251,7 +298,8 @@ export const GenericToolCall = ({
         ? "tree"
         : "raw";
 
-  const [mode, setMode] = useState<ViewMode>(defaultMode);
+  const [userMode, setUserMode] = useState<ViewMode | null>(null);
+  const mode: ViewMode = userMode ?? defaultMode;
 
   // 类别与图标
   const category: ToolCategory = useMemo(
@@ -260,10 +308,10 @@ export const GenericToolCall = ({
   );
 
   // 参数摘要
-  const { label: argsLabel, fullPath } = useMemo(
-    () => extractGenericSummary(parsedArgs),
-    [parsedArgs],
-  );
+  const { label: argsLabel, fullPath } = useMemo(() => {
+    if (parsedArgs) return extractGenericSummary(parsedArgs);
+    return extractStreamingGenericSummary(toolCall.arguments);
+  }, [parsedArgs, toolCall.arguments]);
 
   // 状态与结果判定
   const hasError = useMemo(() => {
@@ -383,6 +431,35 @@ export const GenericToolCall = ({
       );
     }
 
+    // 6. 启发式：HTTP / API 状态码检测
+    if (isRecord(parsedResult)) {
+      const statusNum =
+        typeof parsedResult.status === "number"
+          ? parsedResult.status
+          : typeof parsedResult.statusCode === "number"
+            ? parsedResult.statusCode
+            : undefined;
+      if (statusNum !== undefined) {
+        const isOk = statusNum >= 200 && statusNum < 300;
+        return (
+          <span
+            className={`tool-call-codelens-count ${
+              isOk
+                ? "tool-call-codelens-count-ok"
+                : "tool-call-codelens-count-error"
+            }`}
+          >
+            {isOk ? (
+              <CheckCircle2 size={10} aria-hidden="true" />
+            ) : (
+              <AlertCircle size={10} aria-hidden="true" />
+            )}
+            {`HTTP ${statusNum}`}
+          </span>
+        );
+      }
+    }
+
     return null;
   }, [toolCall.status, hasError, parsedResult, tableData, markdownText, t]);
 
@@ -437,7 +514,7 @@ export const GenericToolCall = ({
                     <button
                       type="button"
                       className={`tool-call-generic-tab ${mode === "table" ? "active" : ""}`}
-                      onClick={() => setMode("table")}
+                      onClick={() => setUserMode("table")}
                     >
                       <Table2 size={11} aria-hidden="true" />
                       {t("toolCall.generic.table", { defaultValue: "表格" })}
@@ -447,7 +524,7 @@ export const GenericToolCall = ({
                     <button
                       type="button"
                       className={`tool-call-generic-tab ${mode === "markdown" ? "active" : ""}`}
-                      onClick={() => setMode("markdown")}
+                      onClick={() => setUserMode("markdown")}
                     >
                       <FileText size={11} aria-hidden="true" />
                       {t("toolCall.generic.markdown", { defaultValue: "文档" })}
@@ -457,7 +534,7 @@ export const GenericToolCall = ({
                     <button
                       type="button"
                       className={`tool-call-generic-tab ${mode === "tree" ? "active" : ""}`}
-                      onClick={() => setMode("tree")}
+                      onClick={() => setUserMode("tree")}
                     >
                       <ListTree size={11} aria-hidden="true" />
                       {t("toolCall.generic.tree", { defaultValue: "JSON 树" })}
@@ -466,7 +543,7 @@ export const GenericToolCall = ({
                   <button
                     type="button"
                     className={`tool-call-generic-tab ${mode === "raw" ? "active" : ""}`}
-                    onClick={() => setMode("raw")}
+                    onClick={() => setUserMode("raw")}
                   >
                     <FileCode size={11} aria-hidden="true" />
                     {t("toolCall.generic.raw", { defaultValue: "原始" })}
@@ -501,47 +578,11 @@ export const GenericToolCall = ({
               <div className="tool-call-generic-content">
                 {mode === "table" && tableData ? (
                   <div className="tool-call-generic-table-wrapper">
-                    <table className="tool-call-generic-table">
-                      <thead>
-                        <tr>
-                          <th className="tool-call-generic-th-index">#</th>
-                          {tableData.columns.map((col, i) => (
-                            <th key={i} title={col}>
-                              {col}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {tableData.rows.slice(0, 100).map((row, rowIdx) => (
-                          <tr key={rowIdx}>
-                            <td className="tool-call-generic-td-index">
-                              {rowIdx + 1}
-                            </td>
-                            {tableData.columns.map((_, colIdx) => {
-                              const cellValue = row[colIdx];
-                              const formatted = formatCell(cellValue);
-                              return (
-                                <td
-                                  key={colIdx}
-                                  title={String(cellValue ?? "")}
-                                >
-                                  {formatted}
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    {tableData.rows.length > 100 && (
-                      <div className="tool-call-generic-table-more">
-                        {t("toolCall.generic.truncated", {
-                          values: { total: tableData.rows.length, shown: 100 },
-                          defaultValue: `已显示前 100 条（共 ${tableData.rows.length} 条）`,
-                        })}
-                      </div>
-                    )}
+                    <DataTableViewer
+                      columns={tableData.columns}
+                      rows={tableData.rows}
+                      maxInitialRows={50}
+                    />
                   </div>
                 ) : mode === "markdown" && markdownText ? (
                   <div className="tool-call-generic-markdown">

@@ -1201,6 +1201,22 @@ const ScreenshotView = ({
             >
               <button
                 type="button"
+                className="tool-call-imagegen-download"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (!imageSrc) return;
+                  const a = document.createElement("a");
+                  a.href = imageSrc;
+                  a.download = `browser-screenshot-${Date.now()}.png`;
+                  a.click();
+                }}
+                title="保存截图到本地"
+              >
+                <Download size={13} aria-hidden="true" />
+                <span>保存</span>
+              </button>
+              <button
+                type="button"
                 className="tool-call-imagegen-lightbox-close"
                 onClick={() => setIsLightboxOpen(false)}
                 aria-label={t("toolCall.imagegen.close")}

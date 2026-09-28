@@ -1,17 +1,19 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   Check,
+  ChevronDown,
   ChevronRight,
   Code,
   Copy,
   Crosshair,
   FileCode,
   Hash,
+  Languages,
   ListTree,
 } from "lucide-react";
 import { useI18n } from "../../../../i18n";
-import type { DocumentSymbolNode } from "./LspToolCall";
+import type { DocumentSymbolNode, SymbolFileResult } from "./LspToolCall";
 import type {
   BatchDiagnosticsFile,
   LspDiagnosticsSummary,
@@ -862,6 +864,234 @@ export function LspGotoListView({
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function SymbolFileItem({
+  file,
+  isOpen,
+  onToggle,
+}: {
+  file: SymbolFileResult;
+  isOpen: boolean;
+  onToggle: () => void;
+}): React.JSX.Element {
+  const { t } = useI18n();
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyPath = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!file.filePath) return;
+      navigator.clipboard.writeText(file.filePath);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    },
+    [file.filePath],
+  );
+
+  return (
+    <div
+      className={`tool-call-lsp-symbol-file-group ${
+        isOpen ? "is-open" : "is-closed"
+      } status-${file.status || "complete"}`}
+    >
+      <div
+        className="tool-call-lsp-symbol-file-header"
+        onClick={onToggle}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onToggle();
+          }
+        }}
+        title={file.filePath}
+      >
+        <ChevronRight
+          size={13}
+          aria-hidden="true"
+          className={`tool-call-lsp-symbol-file-arrow ${isOpen ? "open" : ""}`}
+        />
+        <FileCode
+          size={13}
+          aria-hidden="true"
+          className="tool-call-lsp-symbol-file-icon"
+        />
+        <span className="tool-call-lsp-symbol-file-name">
+          {getFileName(file.filePath) || t("toolCall.lsp.filePath")}
+        </span>
+        {file.filePath && (
+          <span className="tool-call-lsp-symbol-file-path">
+            {file.filePath}
+          </span>
+        )}
+        {file.filePath && (
+          <button
+            type="button"
+            className="tool-call-lsp-file-copy-btn"
+            onClick={handleCopyPath}
+            title={
+              copied
+                ? t("toolCall.lsp.copied", { defaultValue: "已复制" })
+                : t("common.copyPath", { defaultValue: "复制路径" })
+            }
+          >
+            {copied ? (
+              <Check size={11} className="copy-ok" />
+            ) : (
+              <Copy size={11} />
+            )}
+          </button>
+        )}
+        <div className="tool-call-lsp-symbol-file-meta-right">
+          {file.language && (
+            <span className="tool-call-lsp-lang-badge">
+              <Languages size={10} aria-hidden="true" />
+              {file.language}
+            </span>
+          )}
+          <span className="tool-call-lsp-symbol-file-count-badge">
+            {t("toolCall.lsp.symbolsCount", {
+              values: { shown: file.count, total: file.count },
+              defaultValue: `${file.count} 个符号`,
+            })}
+          </span>
+          {file.status && file.status !== "complete" && (
+            <span
+              className={`lsp-diagnostic-file-status status-${file.status}`}
+            >
+              {t(`toolCall.lsp.fileStatus.${file.status}`, {
+                defaultValue: file.status,
+              })}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {isOpen && (
+        <div className="tool-call-lsp-symbol-file-content">
+          {file.error ? (
+            <div className="tool-call-error" style={{ margin: "6px 8px" }}>
+              <AlertCircle size={12} aria-hidden="true" />
+              <span>{file.error}</span>
+            </div>
+          ) : file.symbols.length > 0 ? (
+            <LspSymbolTree nodes={file.symbols} />
+          ) : (
+            <div className="tool-call-lsp-symbol-file-empty">
+              <span>
+                {t("toolCall.lsp.noSymbols", {
+                  defaultValue: "该文件未解析到符号定义",
+                })}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 现代结构化 LSP 文件符号大纲多文件批处理视图 (LspBatchSymbolsView)
+ * 支持单文件/多文件统一展示、按文件折叠展开、快捷复制路径、语言与符号微标
+ */
+export function LspBatchSymbolsView({
+  files,
+  summary,
+}: {
+  files: SymbolFileResult[];
+  summary?: {
+    completedFiles?: number;
+    partialFiles?: number;
+    failedFiles?: number;
+    symbolCount?: number;
+  };
+}): React.JSX.Element {
+  const { t } = useI18n();
+  // 展开状态管理：默认展开第 1 个文件
+  const [openMap, setOpenMap] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    files.forEach((f, idx) => {
+      initial[f.filePath || String(idx)] = idx === 0;
+    });
+    return initial;
+  });
+
+  const allOpen = useMemo(() => {
+    return (
+      files.length > 0 &&
+      files.every((f, idx) => openMap[f.filePath || String(idx)])
+    );
+  }, [files, openMap]);
+
+  const toggleAll = useCallback(() => {
+    const nextState = !allOpen;
+    const updated: Record<string, boolean> = {};
+    files.forEach((f, idx) => {
+      updated[f.filePath || String(idx)] = nextState;
+    });
+    setOpenMap(updated);
+  }, [allOpen, files]);
+
+  const toggleFile = useCallback((key: string) => {
+    setOpenMap((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+
+  if (files.length === 0) {
+    return (
+      <div className="tool-call-codelens-no-results">
+        <AlertCircle size={14} aria-hidden="true" />
+        <span>{t("toolCall.lsp.noSymbols")}</span>
+      </div>
+    );
+  }
+
+  const totalSymbolCount =
+    summary?.symbolCount ?? files.reduce((acc, f) => acc + f.count, 0);
+
+  return (
+    <div className="tool-call-lsp-symbols-batch">
+      {files.length > 1 && (
+        <div className="tool-call-lsp-symbols-batch-toolbar">
+          <span className="tool-call-lsp-symbols-batch-summary">
+            {t("toolCall.lsp.batchSymbolsCount", {
+              values: {
+                files: files.length,
+                count: totalSymbolCount,
+              },
+              defaultValue: `${files.length} 文件 · ${totalSymbolCount} 符号`,
+            })}
+          </span>
+          <button
+            type="button"
+            className="tool-call-lsp-symbols-toggle-all-btn"
+            onClick={toggleAll}
+          >
+            {allOpen
+              ? t("toolCall.lsp.collapseAll", { defaultValue: "全部折叠" })
+              : t("toolCall.lsp.expandAll", { defaultValue: "全部展开" })}
+          </button>
+        </div>
+      )}
+
+      <div className="tool-call-lsp-symbols-batch-list">
+        {files.map((file, idx) => {
+          const key = file.filePath || String(idx);
+          const isOpen = openMap[key] ?? idx === 0;
+          return (
+            <SymbolFileItem
+              key={`${file.filePath}:${idx}`}
+              file={file}
+              isOpen={isOpen}
+              onToggle={() => toggleFile(key)}
+            />
+          );
+        })}
+      </div>
     </div>
   );
 }

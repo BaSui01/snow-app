@@ -73,6 +73,13 @@ type ParsedCodebaseResult =
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+/** 流式未闭合 JSON 兜底提前提取搜索词 */
+const extractStreamingQuery = (args: string): string | undefined => {
+  if (!args) return undefined;
+  const match = args.match(/"query"\s*:\s*"([^"]+)"/);
+  return match ? match[1] : undefined;
+};
+
 const parseArgs = (args: string): ParsedCodebaseArgs | null => {
   try {
     const parsed: unknown = JSON.parse(args);
@@ -282,7 +289,11 @@ export const CodebaseToolCall = ({
     });
   };
 
-  const query = parsedArgs?.query ?? "search";
+  const streamingQuery = useMemo(
+    () => (parsedArgs ? undefined : extractStreamingQuery(toolCall.arguments)),
+    [parsedArgs, toolCall.arguments],
+  );
+  const query = parsedArgs?.query ?? streamingQuery ?? "search";
   const hasError = parsedResult.type === "error";
   const effectiveStatus = hasError ? "error" : toolCall.status;
 

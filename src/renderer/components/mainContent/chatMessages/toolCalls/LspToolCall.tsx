@@ -42,6 +42,7 @@ import {
   LspHoverListView,
   LspReferencesListView,
   LspGotoListView,
+  LspBatchSymbolsView,
   type HoverItem,
   type ReferenceLocation,
   type ReferenceGroup,
@@ -95,7 +96,7 @@ type GotoArgs = PositionArgs & {
   kind?: "definition" | "type-definition" | "implementation";
 };
 type ReferencesArgs = PositionArgs & { includeDeclaration?: boolean };
-type SymbolsArgs = { filePath: string };
+type SymbolsArgs = { filePath?: string; filePaths?: string[] };
 type WorkspaceSymbolsArgs = { query: string };
 type DiagnosticsArgs = { filePath?: string; filePaths?: string[] };
 type WorkspaceDiagnosticsArgs = { maxFiles?: number };
@@ -288,6 +289,14 @@ type ParsedResult =
       language?: string;
       count: number;
       symbols: DocumentSymbolNode[];
+      files?: SymbolFileResult[];
+      fileCount?: number;
+      summary?: {
+        completedFiles?: number;
+        partialFiles?: number;
+        failedFiles?: number;
+        symbolCount?: number;
+      };
     }
   | {
       type: "vulncheck";
@@ -354,6 +363,15 @@ export type DocumentSymbolNode = {
     end: { line: number; column: number };
   };
   children?: DocumentSymbolNode[] | null;
+};
+
+export type SymbolFileResult = {
+  filePath: string;
+  language?: string;
+  count: number;
+  status: "complete" | "partial" | "failed" | string;
+  error?: string;
+  symbols: DocumentSymbolNode[];
 };
 
 type VulnFinding = {
@@ -484,7 +502,7 @@ const getFileName = (filePath: string): string =>
  */
 const extractFilePath = (args: string): string | undefined => {
   if (!args) return undefined;
-  const match = args.match(/"filePath"\s*:\s*"([^"]*)"/);
+  const match = args.match(/"filePaths?"\s*:\s*(?:\[\s*)?"([^"]*)"/);
   return match ? match[1].replace(/\\/g, "\\") : undefined;
 };
 
@@ -537,7 +555,14 @@ const parseArgs = (
 
     if (operation === "symbols") {
       const filePath = parseString(parsed, "filePath");
-      return filePath ? { filePath } : null;
+      const filePathsValue = parsed.filePaths;
+      const filePaths = Array.isArray(filePathsValue)
+        ? filePathsValue.filter(
+            (item): item is string => typeof item === "string",
+          )
+        : undefined;
+      if (!filePath && (!filePaths || filePaths.length === 0)) return null;
+      return filePath ? { filePath } : { filePaths: filePaths! };
     }
 
     // diagnostics：filePath 或 filePaths（批量）。
@@ -1011,8 +1036,13 @@ const parseResult = (
       };
     }
 
-    // symbols (file outline)
-    if (operation === "symbols" && Array.isArray(parsed.symbols)) {
+    // symbols (file outline) - 支持单文件与多文件批处理（batch）
+    if (
+      operation === "symbols" &&
+      (Array.isArray(parsed.symbols) ||
+        Array.isArray(parsed.files) ||
+        parsed.batch === true)
+    ) {
       const parseSymbolNode = (node: unknown): DocumentSymbolNode | null => {
         if (!isRecord(node)) return null;
         const name = parseString(node, "name");
@@ -1066,14 +1096,80 @@ const parseResult = (
           children,
         };
       };
-      const symbols = parsed.symbols
+
+      if (Array.isArray(parsed.files)) {
+        const symbolFiles: SymbolFileResult[] = parsed.files
+          .filter(isRecord)
+          .map((f): SymbolFileResult => {
+            const rawSymbols = Array.isArray(f.symbols) ? f.symbols : [];
+            const parsedSyms = rawSymbols
+              .map(parseSymbolNode)
+              .filter((s): s is DocumentSymbolNode => s !== null);
+            return {
+              filePath: parseString(f, "filePath") ?? fallbackFilePath ?? "",
+              language: parseString(f, "language"),
+              count: parseNumber(f, "count") ?? parsedSyms.length,
+              status: parseString(f, "status") ?? "complete",
+              error: parseString(f, "error"),
+              symbols: parsedSyms,
+            };
+          });
+
+        const summaryObj = isRecord(parsed.summary) ? parsed.summary : null;
+        const summary = summaryObj
+          ? {
+              completedFiles: parseNumber(summaryObj, "completedFiles"),
+              partialFiles: parseNumber(summaryObj, "partialFiles"),
+              failedFiles: parseNumber(summaryObj, "failedFiles"),
+              symbolCount: parseNumber(summaryObj, "symbolCount"),
+            }
+          : undefined;
+
+        const totalSymbols =
+          summary?.symbolCount ??
+          symbolFiles.reduce((acc, f) => acc + f.count, 0);
+
+        const firstLang =
+          symbolFiles.find((f) => f.language)?.language ??
+          language ??
+          parseString(parsed, "language");
+
+        const allSymbols = symbolFiles.flatMap((f) => f.symbols);
+
+        return {
+          type: "symbols",
+          language: firstLang,
+          count: totalSymbols,
+          symbols:
+            allSymbols.length > 0
+              ? allSymbols
+              : (symbolFiles[0]?.symbols ?? []),
+          files: symbolFiles,
+          fileCount: symbolFiles.length,
+          summary,
+        };
+      }
+
+      const symbols = (Array.isArray(parsed.symbols) ? parsed.symbols : [])
         .map(parseSymbolNode)
         .filter((s): s is DocumentSymbolNode => s !== null);
+      const count = parseNumber(parsed, "count") ?? symbols.length;
+
+      const singleFile: SymbolFileResult = {
+        filePath: fallbackFilePath,
+        language,
+        count,
+        status: "complete",
+        symbols,
+      };
+
       return {
         type: "symbols",
         language,
-        count: parseNumber(parsed, "count") ?? symbols.length,
+        count,
         symbols,
+        files: fallbackFilePath ? [singleFile] : undefined,
+        fileCount: 1,
       };
     }
 
@@ -1509,6 +1605,15 @@ export const LspToolCall = ({
         .filter((fp): fp is string => typeof fp === "string" && fp.length > 0);
       return Array.from(new Set(list));
     }
+    if (
+      "filePaths" in parsedArgs &&
+      Array.isArray((parsedArgs as { filePaths?: unknown }).filePaths)
+    ) {
+      const list = (parsedArgs as { filePaths: unknown[] }).filePaths.filter(
+        (fp): fp is string => typeof fp === "string" && fp.length > 0,
+      );
+      return Array.from(new Set(list));
+    }
     if (hasFilePath(parsedArgs)) return [parsedArgs.filePath];
     return [];
   }, [parsedArgs]);
@@ -1641,6 +1746,9 @@ export const LspToolCall = ({
       );
     }
     if (parsedResult.type === "symbols") {
+      const isBatch = Boolean(
+        parsedResult.files && parsedResult.files.length > 1,
+      );
       return (
         <>
           {langBadge}
@@ -1651,9 +1759,20 @@ export const LspToolCall = ({
                 : "tool-call-codelens-count-muted"
             }`}
           >
-            {t("toolCall.lsp.symbolsCount", {
-              values: { shown: parsedResult.count, total: parsedResult.count },
-            })}
+            {isBatch
+              ? t("toolCall.lsp.batchSymbolsCount", {
+                  values: {
+                    files: parsedResult.files!.length,
+                    count: parsedResult.count,
+                  },
+                  defaultValue: `${parsedResult.files!.length} 文件 · ${parsedResult.count} 符号`,
+                })
+              : t("toolCall.lsp.symbolsCount", {
+                  values: {
+                    shown: parsedResult.count,
+                    total: parsedResult.count,
+                  },
+                })}
           </span>
         </>
       );
@@ -2777,7 +2896,12 @@ function LspToolBody({
             ) : null}
 
             {parsedResult.type === "symbols" &&
-              (parsedResult.symbols.length > 0 ? (
+              (parsedResult.files && parsedResult.files.length > 0 ? (
+                <LspBatchSymbolsView
+                  files={parsedResult.files}
+                  summary={parsedResult.summary}
+                />
+              ) : parsedResult.symbols.length > 0 ? (
                 <LspSymbolTree nodes={parsedResult.symbols} />
               ) : (
                 <p>

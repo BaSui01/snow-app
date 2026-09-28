@@ -47,6 +47,13 @@ const parseArgs = (args: string): ParsedCreateArgs | null => {
   }
 };
 
+/** 流式未闭合 JSON 兜底提前提取文件路径 */
+const extractStreamingFilePath = (args: string): string | undefined => {
+  if (!args) return undefined;
+  const match = args.match(/"filePath"\s*:\s*"([^"]+)"/);
+  return match ? match[1].replace(/\\/g, "/") : undefined;
+};
+
 const parseResult = (result: string | undefined): ParsedCreateResult => {
   if (!result) {
     return { type: "empty" };
@@ -88,7 +95,12 @@ export const FilesystemCreateToolCall = ({
 
   const hasError = parsedResult.type === "error";
 
-  const filePath = parsedArgs?.filePath ?? "create";
+  const streamingPath = useMemo(
+    () =>
+      parsedArgs ? undefined : extractStreamingFilePath(toolCall.arguments),
+    [parsedArgs, toolCall.arguments],
+  );
+  const filePath = parsedArgs?.filePath ?? streamingPath ?? "create";
   const fileName = getFileName(filePath);
 
   const effectiveStatus = hasError ? "error" : toolCall.status;

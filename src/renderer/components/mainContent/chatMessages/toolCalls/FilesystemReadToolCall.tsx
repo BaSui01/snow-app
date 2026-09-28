@@ -3,6 +3,7 @@ import { AlertCircle, Hash } from "lucide-react";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { getFileTypeIcon } from "../../../../utils/fileIcons";
 import { ToolCallNode } from "./shared/ToolCallNode";
+import { CodeHighlightView } from "./shared/CodeHighlightView";
 
 type ParsedPathItem = {
   path: string;
@@ -39,7 +40,7 @@ type ParsedResult =
 const parsePathItems = (
   items: unknown[],
   defaultStartLine?: number,
-  defaultEndLine?: number
+  defaultEndLine?: number,
 ): ParsedPathItem[] => {
   return items
     .map((item): ParsedPathItem | null => {
@@ -137,7 +138,7 @@ const parseArgs = (args: string): ParsedArgs | null => {
 
 const parseSingleResultValue = (
   parsed: unknown,
-  resultText: string
+  resultText: string,
 ): SingleFileResult => {
   if (typeof parsed === "object" && parsed !== null) {
     const obj = parsed as Record<string, unknown>;
@@ -205,7 +206,7 @@ const parseResult = (result: string | undefined): ParsedResult => {
             filePath,
             result: parseSingleResultValue(file, JSON.stringify(file)),
           };
-        }
+        },
       );
       return { type: "multi", files };
     }
@@ -219,6 +220,13 @@ const parseResult = (result: string | undefined): ParsedResult => {
 
 const getFileName = (path: string): string =>
   path.split(/[\\/]/).filter(Boolean).pop() || path;
+
+/** 流式未闭合 JSON 兜底提前提取文件路径 */
+const extractStreamingFilePath = (args: string): string | undefined => {
+  if (!args) return undefined;
+  const match = args.match(/"(?:filePaths?|paths?)"\s*:\s*(?:\[\s*)?"([^"]+)"/);
+  return match ? match[1].replace(/\\/g, "/") : undefined;
+};
 
 const getSingleFileRangeLabel = (result: SingleFileResult): string => {
   if (result.type === "directory") {
@@ -236,7 +244,7 @@ const getSingleFileRangeLabel = (result: SingleFileResult): string => {
 
 const getLineRangeLabel = (
   parsedArgs: ParsedArgs | null,
-  parsedResult: ParsedResult
+  parsedResult: ParsedResult,
 ): string => {
   if (parsedResult.type === "multi") {
     return `${parsedResult.files.length} files`;
@@ -266,7 +274,8 @@ const getLineRangeLabel = (
 };
 
 const renderFileContent = (
-  result: SingleFileResult
+  result: SingleFileResult,
+  filePath?: string,
 ): React.JSX.Element | null => {
   switch (result.type) {
     case "error":
@@ -287,7 +296,7 @@ const renderFileContent = (
                   isDir ? entry.slice(0, -1) : entry,
                   isDir,
                   false,
-                  { size: 12, "aria-hidden": true }
+                  { size: 12, "aria-hidden": true },
                 )}
                 <span>{isDir ? entry.slice(0, -1) : entry}</span>
               </div>
@@ -297,16 +306,13 @@ const renderFileContent = (
       );
     case "file":
       return (
-        <div className="tool-call-file-result">
-          <div className="tool-call-file-meta">
-            <span>
-              Lines {result.startLine}-{result.endLine} of {result.totalLines}
-            </span>
-          </div>
-          <pre className="tool-call-section-pre tool-call-file-content">
-            {result.content}
-          </pre>
-        </div>
+        <CodeHighlightView
+          code={result.content}
+          filePath={filePath}
+          startLine={result.startLine}
+          totalLines={result.totalLines}
+          maxHeight={480}
+        />
       );
     case "image":
       return (
@@ -339,23 +345,28 @@ export const FilesystemReadToolCall = ({
 }: FilesystemReadToolCallProps): React.JSX.Element => {
   const parsedArgs = useMemo(
     () => parseArgs(toolCall.arguments),
-    [toolCall.arguments]
+    [toolCall.arguments],
   );
   const parsedResult = useMemo(
     () => parseResult(toolCall.result),
-    [toolCall.result]
+    [toolCall.result],
   );
 
   const isMulti = parsedArgs?.isMulti === true || parsedResult.type === "multi";
 
   const rangeLabel = getLineRangeLabel(parsedArgs, parsedResult);
 
-  const filePath = parsedArgs?.filePath ?? "read";
+  const streamingPath = useMemo(
+    () =>
+      parsedArgs ? undefined : extractStreamingFilePath(toolCall.arguments),
+    [parsedArgs, toolCall.arguments],
+  );
+  const filePath = parsedArgs?.filePath ?? streamingPath ?? "read";
   const fileName = getFileName(filePath);
 
   const fileCount = isMulti
-    ? parsedArgs?.paths?.length ??
-      (parsedResult.type === "multi" ? parsedResult.files.length : 0)
+    ? (parsedArgs?.paths?.length ??
+      (parsedResult.type === "multi" ? parsedResult.files.length : 0))
     : 0;
   const displayName = isMulti ? `${fileCount} files` : fileName;
 
@@ -378,7 +389,7 @@ export const FilesystemReadToolCall = ({
               {
                 size: 13,
                 "aria-hidden": true,
-              }
+              },
             )}
             {fileName}
           </>
@@ -436,7 +447,7 @@ export const FilesystemReadToolCall = ({
                   >
                     {file.filePath}
                   </div>
-                  {renderFileContent(file.result)}
+                  {renderFileContent(file.result, file.filePath)}
                 </div>
               );
             })}
@@ -472,7 +483,7 @@ export const FilesystemReadToolCall = ({
             <div className="tool-call-file-path" data-path={filePath}>
               {filePath}
             </div>
-            {renderFileContent(parsedResult)}
+            {renderFileContent(parsedResult, filePath)}
           </>
         )}
       </div>

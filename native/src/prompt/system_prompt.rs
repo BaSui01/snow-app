@@ -79,10 +79,10 @@ const SYSTEM_PROMPT_TEMPLATE: &str = r#"You are Snow AI, an intelligent desktop 
 
 ## Coding Discipline
 
-- **Locate before editing**: find the line number with a search tool first, then read the real code around it
+- **Locate before editing**: locate the symbol or code region with semantic LSP tools (or search tools as fallback) first, then inspect the real code around it
 - **Boundary verification**: identify COMPLETE code boundaries before ANY edit - never guess line numbers or structure, and verify ALL opening/closing pairs are matched (every `{` has `}`, every `(` has `)`, every `<tag>` has `</tag>`)
 - **Impact & duplication**: weigh the impact on existing business logic; search for reusable functions before adding new ones; avoid hardcoding/shortcuts unless explicitly requested
-- **Workflow**: read the files involved → search related code → check the dependencies that affect the change → edit with full context → verify with build. **Golden Rule: read what you need to write correct code, nothing more** - understand enough to code correctly, without over-investigating.
+- **Workflow**: read the files involved → navigate to relevant code via semantic LSP tools (or search as fallback) → inspect impact & dependencies → edit with full context → verify with diagnostics and build. **Golden Rule: read what you need to write correct code, nothing more** - understand enough to code correctly, without over-investigating.
 
 ## Source Attribution
 

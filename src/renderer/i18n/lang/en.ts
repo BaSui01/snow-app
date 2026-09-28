@@ -4644,7 +4644,35 @@ export const en = {
   "git.graphWorktreeTooltip": "{{path}} · {{state}}{{validity}}",
   "git.worktreesRefresh": "Refresh worktrees",
   "git.worktreeBranchName": "Branch name",
-  "git.worktreeBaseRef": "Start ref",
+  "git.worktreeBaseRef": "Base ref",
+  "git.worktreeBaseRefLabel": "Base ref (Start point)",
+  "git.worktreeBaseHeadTooltip":
+    "Based on current state, ideal for continuing current progress",
+  "git.worktreeBaseMainTooltip":
+    "Based on main branch, clean and isolated environment",
+  "git.worktreeBaseHeadHint":
+    "Starts from current state ({{branch}}), ideal for experimental work",
+  "git.worktreeBaseMainHint":
+    "Starts from main branch ({{branch}}), clean and isolated for new features",
+  "git.worktreeBaseBranchHint":
+    "Starts from latest commit of branch '{{branch}}'",
+  "git.worktreeBaseCustomHint": "Starts from custom ref or commit '{{ref}}'",
+  "git.worktreeBranchExists":
+    "Branch already exists locally; worktree requires a new branch name",
+  "git.worktreeBranchCheckedOut":
+    "Branch already checked out in another worktree",
+  "git.worktreeBranchInvalidFormat": "Branch name format is not valid for Git",
+  "git.worktreeSelectExistingBranch": "Select from existing branches...",
+  "git.worktreeCurrentTag": "current",
+  "git.worktreeMainTag": "main",
+  "git.worktreeBaseRecommended": "Recommended Base",
+  "git.worktreeBaseLocalBranches": "Existing Local Branches",
+  "git.worktreeBaseCustomOption": "Enter custom Commit/Tag/Ref...",
+  "git.worktreeBaseCustomPlaceholder":
+    "Enter commit hash, tag, or remote branch",
+  "git.worktreeBranchGenerate": "Auto-generate name",
+  "git.worktreeBranchPrefix": "Common prefix",
+  "git.worktreeSelectBaseRef": "Select base ref",
   "git.worktreeCreate": "Create",
   "git.worktreeDirty": "Uncommitted changes",
   "git.worktreeShareable": "Available for shared worktrees",

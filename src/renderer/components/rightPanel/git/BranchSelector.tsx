@@ -13,6 +13,9 @@ import {
   Check,
   Folder,
   MessageSquarePlus,
+  Info,
+  AlertCircle,
+  Sparkles,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
@@ -23,6 +26,7 @@ import { useI18n } from "../../../i18n";
 import { ContextMenu, type ContextMenuItem } from "../../common/ContextMenu";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
 import { useChatConversationContext } from "../../mainContent/chatMessages";
+import { WorktreeBaseRefSelect } from "./WorktreeBaseRefSelect";
 
 type BranchSelectorProps = {
   repoPath: string;
@@ -89,6 +93,7 @@ export const BranchSelector = ({
   const [newBranchName, setNewBranchName] = useState("");
   const [worktreeBranchName, setWorktreeBranchName] = useState("");
   const [worktreeBaseRef, setWorktreeBaseRef] = useState("HEAD");
+  const [isCustomBaseRef, setIsCustomBaseRef] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -115,6 +120,7 @@ export const BranchSelector = ({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const branchInputRef = useRef<HTMLInputElement>(null);
   const worktreeInputRef = useRef<HTMLInputElement>(null);
+  const customRefInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const isOtherWorktreePath = useCallback(
@@ -132,6 +138,122 @@ export const BranchSelector = ({
     },
     [repoPath],
   );
+
+  /** 本地主干分支检测 (main 或 master) */
+  const defaultMainBranch = useMemo(() => {
+    const local = branches.filter((b) => !b.isRemote).map((b) => b.name);
+    if (local.includes("main")) return "main";
+    if (local.includes("master")) return "master";
+    return null;
+  }, [branches]);
+
+  /** 全部本地分支名称 */
+  const allLocalBranchNames = useMemo(
+    () => branches.filter((b) => !b.isRemote).map((b) => b.name),
+    [branches],
+  );
+
+  const trimmedWorktreeBranchName = worktreeBranchName.trim();
+
+  /** 分支名称合法性与重复性即时校验 */
+  const isBranchNameExisting = useMemo(() => {
+    if (!trimmedWorktreeBranchName) return false;
+    return branches.some(
+      (b) => !b.isRemote && b.name === trimmedWorktreeBranchName,
+    );
+  }, [trimmedWorktreeBranchName, branches]);
+
+  const isBranchCheckedOutInWorktree = useMemo(() => {
+    if (!trimmedWorktreeBranchName) return false;
+    return worktrees.some((wt) => wt.branchName === trimmedWorktreeBranchName);
+  }, [trimmedWorktreeBranchName, worktrees]);
+
+  const isBranchNameFormatInvalid = useMemo(() => {
+    if (!trimmedWorktreeBranchName) return false;
+    return !isValidBranchName(trimmedWorktreeBranchName);
+  }, [trimmedWorktreeBranchName]);
+
+  const branchNameValidationError = useMemo(() => {
+    if (isBranchNameExisting) {
+      return t("git.worktreeBranchExists", {
+        defaultValue: "该分支在本地已存在，工作树需指定新分支",
+      });
+    }
+    if (isBranchCheckedOutInWorktree) {
+      return t("git.worktreeBranchCheckedOut", {
+        defaultValue: "该分支已在其他工作树检出",
+      });
+    }
+    if (isBranchNameFormatInvalid) {
+      return t("git.worktreeBranchInvalidFormat", {
+        defaultValue: "分支名称格式不符合 Git 规范",
+      });
+    }
+    return null;
+  }, [
+    isBranchNameExisting,
+    isBranchCheckedOutInWorktree,
+    isBranchNameFormatInvalid,
+    t,
+  ]);
+
+  /** 基线作用动态解析与说明 */
+  const baseRefDescription = useMemo(() => {
+    const trimmed = worktreeBaseRef.trim();
+    if (!trimmed || trimmed === "HEAD") {
+      return t("git.worktreeBaseHeadHint", {
+        values: { branch: currentBranch || "HEAD" },
+        defaultValue: `基于当前工作状态 (${currentBranch || "HEAD"}) 创建，适合延续进度的实验开发`,
+      });
+    }
+    if (defaultMainBranch && trimmed === defaultMainBranch) {
+      return t("git.worktreeBaseMainHint", {
+        values: { branch: defaultMainBranch },
+        defaultValue: `基于主干分支 (${defaultMainBranch}) 创建，纯净无污染，适合全新功能开发`,
+      });
+    }
+    const isKnownLocal = branches.some(
+      (b) => !b.isRemote && b.name === trimmed,
+    );
+    if (isKnownLocal) {
+      return t("git.worktreeBaseBranchHint", {
+        values: { branch: trimmed },
+        defaultValue: `基于本地分支 '${trimmed}' 的最新提交创建`,
+      });
+    }
+    return t("git.worktreeBaseCustomHint", {
+      values: { ref: trimmed },
+      defaultValue: `基于自定义引用/提交 '${trimmed}' 创建`,
+    });
+  }, [worktreeBaseRef, currentBranch, defaultMainBranch, branches, t]);
+
+  /** 智能生成未占用的唯一分支名 */
+  const handleGenerateBranchName = useCallback(
+    (prefix = "feature/"): void => {
+      const dateStr = new Date().toISOString().slice(5, 10).replace("-", "");
+      const randomSuffix = Math.random().toString(36).substring(2, 6);
+      let candidate = `${prefix}wt-${dateStr}-${randomSuffix}`;
+      let counter = 1;
+      while (
+        branches.some((b) => !b.isRemote && b.name === candidate) ||
+        worktrees.some((wt) => wt.branchName === candidate)
+      ) {
+        candidate = `${prefix}wt-${dateStr}-${randomSuffix}${counter++}`;
+      }
+      setWorktreeBranchName(candidate);
+      setCreateError(null);
+    },
+    [branches, worktrees],
+  );
+
+  /** 快捷添加或替换分支前缀 */
+  const handleApplyPrefix = useCallback((prefix: string): void => {
+    setWorktreeBranchName((prev) => {
+      const clean = prev.replace(/^(feature|fix|task|test|temp)\//, "");
+      return `${prefix}${clean}`;
+    });
+    worktreeInputRef.current?.focus();
+  }, []);
 
   /** 加载分支列表。 */
   const loadBranches = useCallback(() => {
@@ -318,13 +440,19 @@ export const BranchSelector = ({
 
   /** 新建独立工作树 */
   const handleCreateWorktree = (): void => {
-    if (!directoryId || !worktreeBranchName.trim() || creating) return;
+    if (
+      !directoryId ||
+      !trimmedWorktreeBranchName ||
+      creating ||
+      Boolean(branchNameValidationError)
+    )
+      return;
     setCreating(true);
     setCreateError(null);
     window.snow
       .gitCreateWorktree(
         directoryId,
-        worktreeBranchName.trim(),
+        trimmedWorktreeBranchName,
         worktreeBaseRef.trim() || "HEAD",
       )
       .then((created) => {
@@ -334,6 +462,7 @@ export const BranchSelector = ({
           created,
         ]);
         setWorktreeBranchName("");
+        setWorktreeBaseRef("HEAD");
         setCreateMode(null);
         loadBranches();
         onBranchChanged();
@@ -777,10 +906,46 @@ export const BranchSelector = ({
                 </span>
               </div>
               <div className="branch-worktree-form-grid">
+                {/* 1. 分支名称：支持快捷前缀与一键智能生成 */}
                 <div className="branch-worktree-form-field">
-                  <label className="branch-form-label">
-                    {t("git.worktreeBranchName", { defaultValue: "分支名称" })}
-                  </label>
+                  <div className="branch-form-label-row">
+                    <label className="branch-form-label">
+                      {t("git.worktreeBranchName", {
+                        defaultValue: "分支名称",
+                      })}
+                    </label>
+                    <button
+                      type="button"
+                      className="branch-name-action-btn"
+                      onClick={() => handleGenerateBranchName()}
+                      title={t("git.worktreeBranchGenerate", {
+                        defaultValue: "自动生成唯一分支名称",
+                      })}
+                    >
+                      <Sparkles size={10} />
+                      <span>
+                        {t("git.worktreeBranchGenerate", {
+                          defaultValue: "自动生成",
+                        })}
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* 常用前缀快捷选择 Chips */}
+                  <div className="branch-prefix-chips">
+                    {["feature/", "fix/", "task/", "test/"].map((prefix) => (
+                      <button
+                        key={prefix}
+                        type="button"
+                        className="branch-prefix-chip"
+                        onClick={() => handleApplyPrefix(prefix)}
+                        title={`填入前缀 ${prefix}`}
+                      >
+                        {prefix}
+                      </button>
+                    ))}
+                  </div>
+
                   <input
                     ref={worktreeInputRef}
                     type="text"
@@ -803,21 +968,137 @@ export const BranchSelector = ({
                     spellCheck={false}
                     autoComplete="off"
                   />
+                  {branchNameValidationError && (
+                    <div className="branch-form-validation-tip">
+                      <AlertCircle size={10} />
+                      <span>{branchNameValidationError}</span>
+                    </div>
+                  )}
                 </div>
+
+                {/* 2. 起始基线：纯点选优先，支持快捷Chips与全量分支下拉 */}
                 <div className="branch-worktree-form-field">
-                  <label className="branch-form-label">
-                    {t("git.worktreeBaseRef", { defaultValue: "基于基线" })}
-                  </label>
-                  <input
-                    type="text"
-                    className="branch-create-input"
-                    placeholder="HEAD / main / 分支名"
-                    value={worktreeBaseRef}
-                    onChange={(e) => setWorktreeBaseRef(e.target.value)}
-                    disabled={creating}
-                    spellCheck={false}
-                    autoComplete="off"
-                  />
+                  <div className="branch-form-label-row">
+                    <label className="branch-form-label">
+                      {t("git.worktreeBaseRefLabel", {
+                        defaultValue: "起始基线 (分叉起点)",
+                      })}
+                    </label>
+                  </div>
+
+                  {/* 快捷推荐 Chips */}
+                  <div className="branch-base-ref-chips">
+                    <button
+                      type="button"
+                      className={`branch-base-ref-chip${!isCustomBaseRef && worktreeBaseRef.trim() === "HEAD" ? " active" : ""}`}
+                      onClick={() => {
+                        setIsCustomBaseRef(false);
+                        setWorktreeBaseRef("HEAD");
+                      }}
+                      title={t("git.worktreeBaseHeadTooltip", {
+                        defaultValue: "基于当前分支状态创建，适合延续当前进度",
+                      })}
+                    >
+                      <span>HEAD</span>
+                      <span className="branch-base-ref-chip-sub">
+                        ({t("git.worktreeCurrentTag", { defaultValue: "当前" })}
+                        : {currentBranch || "HEAD"})
+                      </span>
+                    </button>
+                    {defaultMainBranch &&
+                      defaultMainBranch !== currentBranch && (
+                        <button
+                          type="button"
+                          className={`branch-base-ref-chip${!isCustomBaseRef && worktreeBaseRef.trim() === defaultMainBranch ? " active" : ""}`}
+                          onClick={() => {
+                            setIsCustomBaseRef(false);
+                            setWorktreeBaseRef(defaultMainBranch);
+                          }}
+                          title={t("git.worktreeBaseMainTooltip", {
+                            defaultValue: "基于主干分支创建，环境纯净独立",
+                          })}
+                        >
+                          <span>{defaultMainBranch}</span>
+                          <span className="branch-base-ref-chip-sub">
+                            (
+                            {t("git.worktreeMainTag", { defaultValue: "主干" })}
+                            )
+                          </span>
+                        </button>
+                      )}
+                  </div>
+
+                  {/* 核心基线选择器：美化自定义下拉，完全无 emoji */}
+                  <div className="branch-ref-input-wrapper">
+                    <WorktreeBaseRefSelect
+                      value={worktreeBaseRef}
+                      isCustom={isCustomBaseRef}
+                      currentBranch={currentBranch}
+                      mainBranch={defaultMainBranch}
+                      localBranches={allLocalBranchNames}
+                      disabled={creating}
+                      onSelect={(ref) => {
+                        setIsCustomBaseRef(false);
+                        setWorktreeBaseRef(ref);
+                      }}
+                      onSelectCustom={() => {
+                        setIsCustomBaseRef(true);
+                        setTimeout(
+                          () => customRefInputRef.current?.focus(),
+                          50,
+                        );
+                      }}
+                    />
+
+                    {/* 仅在用户选择自定义时才展开文本输入 */}
+                    {isCustomBaseRef && (
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: "4px",
+                          marginTop: "2px",
+                        }}
+                      >
+                        <input
+                          ref={customRefInputRef}
+                          type="text"
+                          className="branch-create-input"
+                          placeholder={t("git.worktreeBaseCustomPlaceholder", {
+                            defaultValue: "输入 Commit Hash、Tag 或远程分支",
+                          })}
+                          value={
+                            worktreeBaseRef === "HEAD" ? "" : worktreeBaseRef
+                          }
+                          onChange={(e) => setWorktreeBaseRef(e.target.value)}
+                          disabled={creating}
+                          spellCheck={false}
+                          autoComplete="off"
+                        />
+                        <button
+                          type="button"
+                          className="branch-create-cancel-btn"
+                          onClick={() => {
+                            setIsCustomBaseRef(false);
+                            setWorktreeBaseRef("HEAD");
+                          }}
+                          title={t("git.worktreeBaseHeadTooltip", {
+                            defaultValue: "恢复默认 HEAD",
+                          })}
+                        >
+                          HEAD
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 基线作用动态说明卡片 */}
+                  <div className="branch-worktree-helper-text">
+                    <Info
+                      size={11}
+                      className="branch-worktree-helper-icon text-blue-400"
+                    />
+                    <span>{baseRefDescription}</span>
+                  </div>
                 </div>
               </div>
               <div className="branch-worktree-form-actions">
@@ -833,7 +1114,11 @@ export const BranchSelector = ({
                   type="button"
                   className="branch-create-submit-btn"
                   onClick={handleCreateWorktree}
-                  disabled={creating || !worktreeBranchName.trim()}
+                  disabled={
+                    creating ||
+                    !trimmedWorktreeBranchName ||
+                    Boolean(branchNameValidationError)
+                  }
                 >
                   {creating ? (
                     <>

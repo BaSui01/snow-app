@@ -14,10 +14,13 @@ import {
   AlertCircle,
   CheckCircle2,
   Loader2,
+  Info,
+  Sparkles,
 } from "lucide-react";
 import type { GitWorktreeInfo } from "../../../preload";
 import { useI18n } from "../../i18n";
 import { ConfirmDialog } from "../common/ConfirmDialog";
+import { WorktreeBaseRefSelect } from "./git/WorktreeBaseRefSelect";
 
 /** 清理 Windows 拓展长路径前缀 \\?\ 或 //?/，还原为干净美观的本地绝对路径。 */
 const cleanWorktreePath = (rawPath: string): string => {
@@ -44,6 +47,7 @@ export function WorktreeManager({
   const [worktrees, setWorktrees] = useState<GitWorktreeInfo[]>([]);
   const [branchName, setBranchName] = useState("");
   const [baseRef, setBaseRef] = useState("HEAD");
+  const [isCustomBaseRef, setIsCustomBaseRef] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [removeTarget, setRemoveTarget] = useState<GitWorktreeInfo | null>(
@@ -60,6 +64,30 @@ export function WorktreeManager({
   });
 
   const branchInputRef = useRef<HTMLInputElement>(null);
+  const customRefInputRef = useRef<HTMLInputElement>(null);
+
+  const handleGenerateBranchName = useCallback(
+    (prefix = "feature/"): void => {
+      const dateStr = new Date().toISOString().slice(5, 10).replace("-", "");
+      const randomSuffix = Math.random().toString(36).substring(2, 6);
+      let candidate = `${prefix}wt-${dateStr}-${randomSuffix}`;
+      let counter = 1;
+      while (worktrees.some((wt) => wt.branchName === candidate)) {
+        candidate = `${prefix}wt-${dateStr}-${randomSuffix}${counter++}`;
+      }
+      setBranchName(candidate);
+      setError("");
+    },
+    [worktrees],
+  );
+
+  const handleApplyPrefix = useCallback((prefix: string): void => {
+    setBranchName((prev) => {
+      const clean = prev.replace(/^(feature|fix|task|test|temp)\//, "");
+      return `${prefix}${clean}`;
+    });
+    branchInputRef.current?.focus();
+  }, []);
 
   const toggleCollapsed = (): void => {
     setIsCollapsed((prev) => {
@@ -225,6 +253,49 @@ export function WorktreeManager({
               </div>
 
               <div className="git-worktree-create-fields">
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <span
+                    style={{ fontSize: "10px", color: "var(--text-muted)" }}
+                  >
+                    {t("git.worktreeBranchName")}
+                  </span>
+                  <button
+                    type="button"
+                    className="branch-name-action-btn"
+                    onClick={() => handleGenerateBranchName()}
+                    title={t("git.worktreeBranchGenerate", {
+                      defaultValue: "自动生成唯一分支名称",
+                    })}
+                  >
+                    <Sparkles size={10} />
+                    <span>
+                      {t("git.worktreeBranchGenerate", {
+                        defaultValue: "自动生成",
+                      })}
+                    </span>
+                  </button>
+                </div>
+
+                <div className="branch-prefix-chips">
+                  {["feature/", "fix/", "task/", "test/"].map((prefix) => (
+                    <button
+                      key={prefix}
+                      type="button"
+                      className="branch-prefix-chip"
+                      onClick={() => handleApplyPrefix(prefix)}
+                      title={`填入前缀 ${prefix}`}
+                    >
+                      {prefix}
+                    </button>
+                  ))}
+                </div>
+
                 <input
                   ref={branchInputRef}
                   type="text"
@@ -244,22 +315,141 @@ export function WorktreeManager({
                   spellCheck={false}
                   autoComplete="off"
                 />
-                <input
-                  type="text"
-                  aria-label={t("git.worktreeBaseRef")}
-                  placeholder={t("git.worktreeBaseRef") + " (默认 HEAD)"}
-                  value={baseRef}
-                  onChange={(event) => setBaseRef(event.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") {
-                      e.preventDefault();
-                      setShowCreate(false);
-                    }
+
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    marginTop: "2px",
                   }}
-                  disabled={busy}
-                  spellCheck={false}
-                  autoComplete="off"
-                />
+                >
+                  <span
+                    style={{ fontSize: "10px", color: "var(--text-muted)" }}
+                  >
+                    {t("git.worktreeBaseRefLabel", {
+                      defaultValue: "起始基线 (分叉起点)",
+                    })}
+                  </span>
+                </div>
+
+                <div className="git-worktree-base-chips">
+                  <button
+                    type="button"
+                    className={`git-worktree-base-chip${!isCustomBaseRef && baseRef.trim() === "HEAD" ? " active" : ""}`}
+                    onClick={() => {
+                      setIsCustomBaseRef(false);
+                      setBaseRef("HEAD");
+                    }}
+                    title={t("git.worktreeBaseHeadTooltip", {
+                      defaultValue: "基于当前分支状态创建，适合延续当前进度",
+                    })}
+                  >
+                    <span>HEAD</span>
+                    <span style={{ fontSize: "9px", opacity: 0.75 }}>
+                      ({t("git.worktreeCurrentTag", { defaultValue: "当前" })})
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`git-worktree-base-chip${!isCustomBaseRef && baseRef.trim() === "main" ? " active" : ""}`}
+                    onClick={() => {
+                      setIsCustomBaseRef(false);
+                      setBaseRef("main");
+                    }}
+                    title={t("git.worktreeBaseMainTooltip", {
+                      defaultValue: "基于主干分支创建，环境纯净独立",
+                    })}
+                  >
+                    <span>main</span>
+                    <span style={{ fontSize: "9px", opacity: 0.75 }}>
+                      ({t("git.worktreeMainTag", { defaultValue: "主干" })})
+                    </span>
+                  </button>
+                </div>
+
+                <div className="branch-ref-input-wrapper">
+                  <WorktreeBaseRefSelect
+                    value={baseRef}
+                    isCustom={isCustomBaseRef}
+                    currentBranch="HEAD"
+                    mainBranch="main"
+                    disabled={busy}
+                    onSelect={(ref) => {
+                      setIsCustomBaseRef(false);
+                      setBaseRef(ref);
+                    }}
+                    onSelectCustom={() => {
+                      setIsCustomBaseRef(true);
+                      setTimeout(() => customRefInputRef.current?.focus(), 50);
+                    }}
+                  />
+
+                  {isCustomBaseRef && (
+                    <div
+                      style={{ display: "flex", gap: "4px", marginTop: "2px" }}
+                    >
+                      <input
+                        ref={customRefInputRef}
+                        type="text"
+                        aria-label={t("git.worktreeBaseRef")}
+                        placeholder={t("git.worktreeBaseCustomPlaceholder", {
+                          defaultValue: "输入 Commit Hash、Tag 或远程分支",
+                        })}
+                        value={baseRef === "HEAD" ? "" : baseRef}
+                        onChange={(event) => setBaseRef(event.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Escape") {
+                            e.preventDefault();
+                            setShowCreate(false);
+                          }
+                        }}
+                        disabled={busy}
+                        spellCheck={false}
+                        autoComplete="off"
+                      />
+                      <button
+                        type="button"
+                        className="branch-create-cancel-btn"
+                        onClick={() => {
+                          setIsCustomBaseRef(false);
+                          setBaseRef("HEAD");
+                        }}
+                        title={t("git.worktreeBaseHeadTooltip", {
+                          defaultValue: "恢复默认 HEAD",
+                        })}
+                      >
+                        HEAD
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="git-worktree-helper-text">
+                  <Info
+                    size={11}
+                    style={{ flexShrink: 0, marginTop: "1px" }}
+                    className="text-blue-400"
+                  />
+                  <span>
+                    {baseRef.trim() === "HEAD"
+                      ? t("git.worktreeBaseHeadHint", {
+                          values: { branch: "HEAD" },
+                          defaultValue:
+                            "基于当前工作状态创建，适合延续当前进度",
+                        })
+                      : baseRef.trim() === "main" || baseRef.trim() === "master"
+                        ? t("git.worktreeBaseMainHint", {
+                            values: { branch: baseRef.trim() },
+                            defaultValue:
+                              "基于主干分支创建，纯净无污染，适合全新功能开发",
+                          })
+                        : t("git.worktreeBaseBranchHint", {
+                            values: { branch: baseRef.trim() },
+                            defaultValue: `基于 '${baseRef.trim()}' 创建`,
+                          })}
+                  </span>
+                </div>
               </div>
 
               <div className="git-worktree-create-footer">

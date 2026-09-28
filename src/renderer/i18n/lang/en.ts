@@ -5235,6 +5235,7 @@ export const en = {
   "plugins.createPlaceholder":
     "e.g. a panel that lists this project's recent git commits",
   "plugins.createAction": "Build with AI",
+  "plugins.createButton": "Generate with AI",
   "plugins.createPrompt":
     "Help me build a Snow App plugin.\n\nWhat I want: {{request}}\n\nPlease load the snow-app-docs skill (the built-in docs skill) first and read the plugin development & installation guide and the metadata domain reference at the paths it gives - follow the docs instead of searching the app source - then create a complete plugin folder following the spec (plugin.json, entry file, plus any icon assets, styles or locale files needed). Finally install and enable it with the config-set plugins scope (key=new, with sourceDir pointing at the absolute plugin folder path), and tell me how to use the plugin.",
   "plugins.enable": "Enable",

@@ -29,6 +29,8 @@ import type { CrossProjectNotificationGroup } from "./useCrossProjectNotificatio
 
 type ProjectsSectionProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
+  /** 当前活动会话 id：切换会话（含跨项目运行中会话）时重新展开所在合集 */
+  activeConversationId?: string;
   activeSessionDirectoryIds?: Set<string>;
   /** 跨项目通知（其他项目的运行中/需关注/已完成会话分组），用于项目条目徽标 */
   notificationGroups?: CrossProjectNotificationGroup[];
@@ -45,6 +47,7 @@ type ProjectsSectionProps = {
 
 export function ProjectsSection({
   activeDirectory: externalActiveDirectory,
+  activeConversationId,
   activeSessionDirectoryIds,
   notificationGroups,
   onActiveDirectoryChange,
@@ -87,6 +90,8 @@ export function ProjectsSection({
   } = directories;
 
   const collectionsApi = useProjectCollections({
+    activeConversationId,
+    activeDirectoryId: activeDirectory?.directoryId,
     setDirectoryError,
     setIsSavingDirectory,
   });

@@ -19,6 +19,7 @@ import {
 import { scriptEditorStore } from "../../userscripts/scriptEditorStore";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { useChatConversationContext } from "../mainContent/chatMessages";
+import { PluginCreateBox } from "./PluginCreateBox";
 
 /** 新建脚本时的最小模板：声明客户端作用域并给出锚点 / 插槽用法示例。 */
 const CLIENT_SCRIPT_TEMPLATE = `// ==UserScript==
@@ -87,6 +88,7 @@ export const PluginScriptsSection = ({
   const [error, setError] = useState<string | null>(null);
   const [installUrl, setInstallUrl] = useState("");
   const [createRequest, setCreateRequest] = useState("");
+  const [createOpen, setCreateOpen] = useState<boolean | null>(null);
   const [pendingDelete, setPendingDelete] = useState<UserscriptRecord | null>(
     null,
   );
@@ -106,6 +108,9 @@ export const PluginScriptsSection = ({
     }
     return map;
   }, [state.commands]);
+
+  const isEmpty = state.status === "ready" && state.scripts.length === 0;
+  const createBoxOpen = createOpen ?? isEmpty;
 
   const startCreate = useCallback((): void => {
     setError(null);
@@ -129,24 +134,6 @@ export const PluginScriptsSection = ({
       t("plugins.scripts.createPrompt", { values: { request: requirement } }),
     );
   }, [buildFromContent, createRequest, onClose, t]);
-
-  const handleCreateKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (event.key !== "Enter" || event.shiftKey) {
-        return;
-      }
-      const nativeEvent = event.nativeEvent as unknown as {
-        isComposing?: boolean;
-        keyCode?: number;
-      };
-      if (nativeEvent.isComposing || nativeEvent.keyCode === 229) {
-        return;
-      }
-      event.preventDefault();
-      handleCreateWithAi();
-    },
-    [handleCreateWithAi],
-  );
 
   const startEdit = useCallback(
     async (script: UserscriptRecord) => {
@@ -310,6 +297,16 @@ export const PluginScriptsSection = ({
           <RefreshCw size={14} strokeWidth={1.8} />
           <span>{t("plugins.refresh", { defaultValue: "Refresh" })}</span>
         </button>
+        <button
+          className={`plugins-toolbar-btn${createBoxOpen ? " active" : ""}`}
+          type="button"
+          onClick={() => setCreateOpen(!createBoxOpen)}
+        >
+          <Sparkles size={14} strokeWidth={1.8} />
+          <span>
+            {t("plugins.createButton", { defaultValue: "Generate with AI" })}
+          </span>
+        </button>
       </div>
 
       <div className="plugins-scripts-install">
@@ -338,6 +335,23 @@ export const PluginScriptsSection = ({
         </button>
       </div>
 
+      {!isEmpty && createBoxOpen && (
+        <PluginCreateBox
+          autoFocus
+          className="plugins-create-inline"
+          value={createRequest}
+          placeholder={t("plugins.scripts.createPlaceholder", {
+            defaultValue:
+              "e.g. a button next to the chat input that inserts a fixed prompt",
+          })}
+          submitLabel={t("plugins.scripts.createAction", {
+            defaultValue: "Build with AI",
+          })}
+          onChange={setCreateRequest}
+          onSubmit={handleCreateWithAi}
+        />
+      )}
+
       {error && <div className="plugins-error">{error}</div>}
 
       {state.status === "loading" && state.scripts.length === 0 && (
@@ -346,7 +360,7 @@ export const PluginScriptsSection = ({
         </div>
       )}
 
-      {state.status === "ready" && state.scripts.length === 0 && (
+      {isEmpty && (
         <div className="plugins-empty">
           <FileCode2 size={22} strokeWidth={1.6} />
           <span>
@@ -366,33 +380,20 @@ export const PluginScriptsSection = ({
                 "Client scripts run inside this desktop window (sandboxed by default). Use data-snow-anchor / data-snow-slot hooks; declare @grant unsafeWindow for full-permission mode.",
             })}
           </span>
-          <div className="plugins-create">
-            <textarea
-              className="plugins-create-input"
+          {createBoxOpen && (
+            <PluginCreateBox
               value={createRequest}
               placeholder={t("plugins.scripts.createPlaceholder", {
                 defaultValue:
                   "e.g. a button next to the chat input that inserts a fixed prompt",
               })}
-              onChange={(event) => setCreateRequest(event.target.value)}
-              onKeyDown={handleCreateKeyDown}
+              submitLabel={t("plugins.scripts.createAction", {
+                defaultValue: "Build with AI",
+              })}
+              onChange={setCreateRequest}
+              onSubmit={handleCreateWithAi}
             />
-            <div className="plugins-create-actions">
-              <button
-                className="plugins-toolbar-btn primary"
-                type="button"
-                disabled={createRequest.trim().length === 0}
-                onClick={handleCreateWithAi}
-              >
-                <Sparkles size={14} strokeWidth={1.8} />
-                <span>
-                  {t("plugins.scripts.createAction", {
-                    defaultValue: "Build with AI",
-                  })}
-                </span>
-              </button>
-            </div>
-          </div>
+          )}
         </div>
       )}
 

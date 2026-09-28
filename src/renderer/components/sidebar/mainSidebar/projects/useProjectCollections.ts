@@ -1,14 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ProjectCollectionRecord } from "../../../../../preload";
 import { useI18n } from "../../../../i18n";
 
 type UseProjectCollectionsOptions = {
+  activeDirectoryId?: string;
+  activeConversationId?: string;
   setDirectoryError: (message: string | null) => void;
   setIsSavingDirectory: (saving: boolean) => void;
 };
 
 export function useProjectCollections({
+  activeDirectoryId,
+  activeConversationId,
   setDirectoryError,
   setIsSavingDirectory,
 }: UseProjectCollectionsOptions) {
@@ -57,6 +61,38 @@ export function useProjectCollections({
     return ids;
   }, [collections]);
 
+  const lastAutoExpandSignatureRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!activeDirectoryId) {
+      return;
+    }
+    const containingCollectionIds = collections
+      .filter((collection) =>
+        collection.memberDirectoryIds.includes(activeDirectoryId),
+      )
+      .map((collection) => collection.collectionId);
+    if (containingCollectionIds.length === 0) {
+      return;
+    }
+    const signature = `${activeDirectoryId}:${activeConversationId ?? ""}:${containingCollectionIds.join(",")}`;
+    if (lastAutoExpandSignatureRef.current === signature) {
+      return;
+    }
+    lastAutoExpandSignatureRef.current = signature;
+    setExpandedCollectionIds((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const collectionId of containingCollectionIds) {
+        if (!next.has(collectionId)) {
+          next.add(collectionId);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [activeConversationId, activeDirectoryId, collections]);
+
   const handleToggleCollectionExpanded = (collectionId: string): void => {
     setExpandedCollectionIds((prev) => {
       const next = new Set(prev);
@@ -79,9 +115,8 @@ export function useProjectCollections({
     setDirectoryError(null);
 
     try {
-      const nextCollections = await window.snow.createProjectCollection(
-        trimmedName,
-      );
+      const nextCollections =
+        await window.snow.createProjectCollection(trimmedName);
       setCollections(nextCollections);
       return true;
     } catch (error) {

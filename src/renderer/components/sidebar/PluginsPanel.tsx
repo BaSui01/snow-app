@@ -24,6 +24,7 @@ import { describeWriteDomains } from "../../plugins/writes";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { PluginIcon } from "../common/PluginIcon";
 import { useChatConversationContext } from "../mainContent/chatMessages";
+import { PluginCreateBox } from "./PluginCreateBox";
 import { PluginMetadataCatalog } from "./PluginMetadataCatalog";
 import { PluginScriptsSection } from "./PluginScriptsSection";
 import {
@@ -49,6 +50,7 @@ export const PluginsPanel = ({
   );
   const [isUninstalling, setIsUninstalling] = useState(false);
   const [createRequest, setCreateRequest] = useState("");
+  const [createOpen, setCreateOpen] = useState<boolean | null>(null);
   const [activeTab, setActiveTab] = useState<"list" | "metadata">("list");
   const [listTab, setListTab] = useState<"plugins" | "scripts">("plugins");
   const clientScripts = useClientScriptStore();
@@ -58,6 +60,8 @@ export const PluginsPanel = ({
       state.plugins.find((item) => item.pluginId === metadataPluginId) ?? null,
     [state.plugins, metadataPluginId],
   );
+  const isEmpty = state.status === "ready" && state.plugins.length === 0;
+  const createBoxOpen = createOpen ?? isEmpty;
 
   // 进入页面时拉取最新插件清单（侧栏徽标只关心数量，清单随页面加载）。
   useEffect(() => {
@@ -195,24 +199,6 @@ export const PluginsPanel = ({
     );
   }, [buildFromContent, createRequest, onClose, t]);
 
-  const handleCreateKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (event.key !== "Enter" || event.shiftKey) {
-        return;
-      }
-      const nativeEvent = event.nativeEvent as unknown as {
-        isComposing?: boolean;
-        keyCode?: number;
-      };
-      if (nativeEvent.isComposing || nativeEvent.keyCode === 229) {
-        return;
-      }
-      event.preventDefault();
-      handleCreateWithAi();
-    },
-    [handleCreateWithAi],
-  );
-
   const scopeLabel = (scope: SensitiveScope): string =>
     t(`plugins.scopes.${scope}`, { defaultValue: scope });
 
@@ -333,7 +319,38 @@ export const PluginsPanel = ({
                         {t("plugins.refresh", { defaultValue: "Refresh" })}
                       </span>
                     </button>
+                    <button
+                      className={`plugins-toolbar-btn${
+                        createBoxOpen ? " active" : ""
+                      }`}
+                      type="button"
+                      onClick={() => setCreateOpen(!createBoxOpen)}
+                    >
+                      <Sparkles size={14} strokeWidth={1.8} />
+                      <span>
+                        {t("plugins.createButton", {
+                          defaultValue: "Generate with AI",
+                        })}
+                      </span>
+                    </button>
                   </div>
+
+                  {!isEmpty && createBoxOpen && (
+                    <PluginCreateBox
+                      autoFocus
+                      className="plugins-create-inline"
+                      value={createRequest}
+                      placeholder={t("plugins.createPlaceholder", {
+                        defaultValue:
+                          "e.g. a panel that lists this project's recent git commits",
+                      })}
+                      submitLabel={t("plugins.createAction", {
+                        defaultValue: "Build with AI",
+                      })}
+                      onChange={setCreateRequest}
+                      onSubmit={handleCreateWithAi}
+                    />
+                  )}
 
                   {error && <div className="plugins-error">{error}</div>}
 
@@ -343,7 +360,7 @@ export const PluginsPanel = ({
                     </div>
                   )}
 
-                  {state.status === "ready" && state.plugins.length === 0 && (
+                  {isEmpty && (
                     <div className="plugins-empty">
                       <Puzzle size={22} strokeWidth={1.6} />
                       <span>
@@ -357,35 +374,20 @@ export const PluginsPanel = ({
                             "Describe the plugin you want (Enter to send, Shift+Enter for a new line) and AI will build and install it.",
                         })}
                       </span>
-                      <div className="plugins-create">
-                        <textarea
-                          className="plugins-create-input"
+                      {createBoxOpen && (
+                        <PluginCreateBox
                           value={createRequest}
                           placeholder={t("plugins.createPlaceholder", {
                             defaultValue:
                               "e.g. a panel that lists this project's recent git commits",
                           })}
-                          onChange={(event) =>
-                            setCreateRequest(event.target.value)
-                          }
-                          onKeyDown={handleCreateKeyDown}
+                          submitLabel={t("plugins.createAction", {
+                            defaultValue: "Build with AI",
+                          })}
+                          onChange={setCreateRequest}
+                          onSubmit={handleCreateWithAi}
                         />
-                        <div className="plugins-create-actions">
-                          <button
-                            className="plugins-toolbar-btn primary"
-                            type="button"
-                            disabled={createRequest.trim().length === 0}
-                            onClick={handleCreateWithAi}
-                          >
-                            <Sparkles size={14} strokeWidth={1.8} />
-                            <span>
-                              {t("plugins.createAction", {
-                                defaultValue: "Build with AI",
-                              })}
-                            </span>
-                          </button>
-                        </div>
-                      </div>
+                      )}
                     </div>
                   )}
 

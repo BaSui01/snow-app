@@ -48162,6 +48162,16 @@ pre.file-viewer-code {
   gap: 8px;
 }
 
+.plugins-create-inline {
+  width: 100%;
+  margin-top: 0;
+}
+
+.plugins-toolbar-btn.active {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+
 .plugins-list {
   display: flex;
   min-height: 0;

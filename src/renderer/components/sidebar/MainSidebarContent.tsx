@@ -61,7 +61,7 @@ export function MainSidebarContent({
   onOpenSshWizard,
 }: SidebarContentProps): React.JSX.Element {
   const { t } = useI18n();
-  const { handleSelectConversation, handleNewChat } =
+  const { handleSelectConversation, handleNewChat, activeConversationId } =
     useChatConversationContext();
   const shortcutLabel = useShortcutLabel("newChat");
   const [isSwitchingDirectory, setIsSwitchingDirectory] = useState(false);
@@ -410,6 +410,7 @@ export function MainSidebarContent({
       </div>
       <ProjectsSection
         activeDirectory={activeDirectory}
+        activeConversationId={activeConversationId}
         activeSessionDirectoryIds={activeSessionDirectoryIds}
         notificationGroups={crossProjectNotifications}
         onActiveDirectoryChange={onActiveDirectoryChange}

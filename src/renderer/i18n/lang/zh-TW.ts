@@ -4944,6 +4944,7 @@ export const zhTW = {
     "描述你想要的插件（Enter 傳送，Shift+Enter 換行），AI 會讀文件、寫程式並安裝它。",
   "plugins.createPlaceholder": "例如：一個顯示目前專案最近 Git 提交的面板",
   "plugins.createAction": "讓 AI 製作",
+  "plugins.createButton": "AI 產生",
   "plugins.createPrompt":
     "幫我為 Snow App 製作一個外掛。\n\n我的需求：{{request}}\n\n請先載入 snow-app-docs 技能（內建文件技能），依它給出的路徑閱讀《外掛開發與安裝》與《外掛中繼資料域參考》兩篇文件，以文件為準而不是去搜應用原始碼；再依規範建立完整的外掛目錄（plugin.json、進入點檔案，以及需要的圖示資源、樣式與多語言檔案），最後用 config-set 的 plugins 領域安裝並啟用它（key 用 new，value 的 sourceDir 傳外掛目錄的絕對路徑），然後告訴我這個外掛怎麼用。",
   "plugins.enable": "啟用",

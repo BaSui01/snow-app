@@ -300,6 +300,95 @@ const buildShimSource = (
     });
   }
 
+  var nativeFetch = typeof window.fetch === "function" ? window.fetch.bind(window) : null;
+
+  function headersToObject(value) {
+    var result = {};
+    if (!value) return result;
+    if (typeof value.forEach === "function" && typeof value.get === "function") {
+      value.forEach(function (item, key) { result[String(key)] = String(item); });
+      return result;
+    }
+    if (Array.isArray(value)) {
+      for (var index = 0; index < value.length; index += 1) {
+        var pair = value[index];
+        if (pair && pair.length >= 2) result[String(pair[0])] = String(pair[1]);
+      }
+      return result;
+    }
+    if (typeof value === "object") {
+      for (var key in value) {
+        if (Object.prototype.hasOwnProperty.call(value, key)) result[String(key)] = String(value[key]);
+      }
+    }
+    return result;
+  }
+
+  function bodyToText(body) {
+    if (typeof body === "string") return body;
+    if (typeof URLSearchParams === "function" && body instanceof URLSearchParams) return String(body);
+    throw new TypeError("snow.fetch body only supports string or URLSearchParams");
+  }
+
+  function toCorsResponse(payload) {
+    var body = payload.responseText || "";
+    if (payload.responseBodyBase64) {
+      var binary = atob(payload.responseBodyBase64);
+      var bytes = new Uint8Array(binary.length);
+      for (var index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+      }
+      body = bytes;
+    }
+    var status = typeof payload.status === "number" && payload.status >= 200 && payload.status <= 599 ? payload.status : 200;
+    var noBody = status === 204 || status === 205 || status === 304;
+    var response = new Response(noBody ? null : body, {
+      status: status,
+      statusText: payload.statusText || "",
+      headers: payload.responseHeaders || {},
+    });
+    try {
+      Object.defineProperty(response, "url", { value: String(payload.finalUrl || ""), configurable: true });
+    } catch (error) {}
+    return response;
+  }
+
+  function corsFetch(input, init) {
+    var settings = init && typeof init === "object" ? init : {};
+    var raw = typeof input === "string" ? input : input && typeof input === "object" && typeof input.url === "string" ? input.url : "";
+    var method = settings.method ? String(settings.method) : "";
+    var headerSource = settings.headers || null;
+    if (input && typeof input === "object") {
+      if (!method && typeof input.method === "string") method = input.method;
+      if (!headerSource && input.headers) headerSource = input.headers;
+    }
+    var url = "";
+    try {
+      url = raw ? new URL(raw, location.href).href : "";
+    } catch (error) {
+      url = "";
+    }
+    if (!url || !/^https?:\\/\\//i.test(url)) {
+      if (nativeFetch) return nativeFetch(input, init);
+      return Promise.reject(new TypeError("fetch requires an http(s) url"));
+    }
+    method = (method || "GET").toUpperCase();
+    var data = null;
+    if (method !== "GET" && method !== "HEAD" && settings.body !== undefined && settings.body !== null) {
+      data = bodyToText(settings.body);
+    }
+    return call("gm-xhr", [{
+      url: url,
+      method: method,
+      headers: headersToObject(headerSource),
+      data: data,
+      responseType: "arraybuffer",
+    }]).then(function (payload) {
+      if (!payload) throw new TypeError("snow.fetch returned an empty response");
+      return toCorsResponse(payload);
+    });
+  }
+
   function reportError(error) {
     var message = error && error.stack ? String(error.stack) : String(error);
     try {
@@ -585,7 +674,7 @@ const buildShimSource = (
   }) : writeBase;
 
   var snow = {
-    version: "1.2",
+    version: "1.3",
     get isSandbox() { return INFO.sandbox; },
     get context() { return context; },
     GM_info: GM_info,
@@ -614,6 +703,7 @@ const buildShimSource = (
     },
     metadata: metadata,
     write: write,
+    fetch: corsFetch,
     client: {
       insertInputText: function (text) {
         call("client-action", [{ action: "insert-input-text", payload: { text: String(text) } }]).catch(function () {});
@@ -803,6 +893,12 @@ const buildShimSource = (
   window.GM = gm;
   window.snow = snow;
   window.__snowClientInfo = INFO;
+
+  if (INFO.sandbox) {
+    try {
+      window.fetch = corsFetch;
+    } catch (error) {}
+  }
 
   if (!INFO.sandbox) {
     // 主世界档：window 即页面 window，等价 Tampermonkey 的 unsafeWindow。

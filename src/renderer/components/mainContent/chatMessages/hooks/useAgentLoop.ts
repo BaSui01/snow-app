@@ -142,6 +142,14 @@ const persistConversationSelection = (
         sessionRef.goalModeTokenBudget,
       ),
     );
+    if (sessionRef.worktreeId) {
+      writes.push(
+        window.snow.setConversationWorktree(
+          conversationId,
+          sessionRef.worktreeId,
+        ),
+      );
+    }
   }
   for (const write of writes) {
     write.catch(recordFailure);
@@ -289,9 +297,12 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       const isFirstMessage =
         ctx.activeConversationIdRef.current === undefined &&
         !options.targetSessionKey;
+      const targetPendingWorktree =
+        ctx.pendingWorktreeIdRef.current || existingRef?.worktreeId;
       if (
         isFirstMessage &&
-        (existingRef?.worktreeMode ?? ctx.worktreeModeRef.current)
+        (existingRef?.worktreeMode ?? ctx.worktreeModeRef.current) &&
+        !targetPendingWorktree
       ) {
         window.alert(t("git.worktreesPendingSessionHint"));
         return;
@@ -347,6 +358,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
 
       ctx.ensureSession(sessionKey, sessionDirId);
       const sessionRef = ctx.sessionsRefData.current.get(sessionKey);
+      if (sessionRef && targetPendingWorktree) {
+        sessionRef.worktreeId = targetPendingWorktree;
+        sessionRef.worktreeMode = true;
+      }
       // 已有会话：发送时把当前选择统一落库（渠道绑定/思考强度/Fast Mode/模式）。
       // 切换这些选择本身不再写库；pending 会话在迁移拿到真实 id 后再写。
       if (!isPendingSessionKey(sessionKey)) {
@@ -862,6 +877,24 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             }
             ctx.migrateSession(effectiveKey, response.conversationId);
             ctx.setRollbackNewChatState(null);
+            const currentSession = ctx.sessionsRefData.current.get(
+              response.conversationId,
+            );
+            const effectiveWorktreeId =
+              currentSession?.worktreeId || ctx.pendingWorktreeIdRef.current;
+            if (effectiveWorktreeId) {
+              if (currentSession) {
+                currentSession.worktreeId = effectiveWorktreeId;
+                currentSession.worktreeMode = true;
+              }
+              void window.snow
+                .setConversationWorktree(
+                  response.conversationId,
+                  effectiveWorktreeId,
+                )
+                .catch(() => {});
+            }
+            ctx.setPendingWorktreeId(null);
             // pending 会话的渠道/运行时/模式选择在拿到真实会话 id 后统一落库，
             // 使其在重启后仍能恢复（迁移前无 conversation_id 无法写入）。
             persistConversationSelection(

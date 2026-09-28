@@ -1,10 +1,45 @@
-import { FolderPlus, Loader2, Palette, Plug } from "lucide-react";
-import { useCallback, useState } from "react";
+import {
+  AlertCircle,
+  Check,
+  CheckCircle2,
+  Copy,
+  Folder,
+  FolderGit2,
+  FolderPlus,
+  GitBranch,
+  Loader2,
+  Palette,
+  Plug,
+  Terminal,
+} from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 
 import type { MainContentView } from "./types";
-import type { WorkspaceDirectoryRecord } from "../../../preload";
+import type {
+  GitWorktreeInfo,
+  WorkspaceDirectoryRecord,
+} from "../../../preload";
 import { useI18n } from "../../i18n";
 import { PixelLogo } from "../common/PixelLogo";
+import { useChatConversationContext } from "./chatMessages";
+import { rightPanelEvents } from "../rightPanel/rightPanelEvents";
+
+/** 清理 Windows 拓展长路径前缀 \\\\?\\ 或 //?/，还原为干净美观的本地绝对路径。 */
+const cleanWorktreePath = (rawPath: string): string => {
+  if (!rawPath) return "";
+  let cleaned = rawPath.replace(/^[\\/]{2}\?[\\/]/, "");
+  cleaned = cleaned.replace(/^[\\/]+([a-zA-Z]:)/, "$1");
+  return cleaned;
+};
+
+/** 提取末级工作树文件夹名称。 */
+const getFolderName = (p: string): string => {
+  const parts = p.replace(/\\/g, "/").split("/").filter(Boolean);
+  return parts[parts.length - 1] || p;
+};
+
+const normPath = (p: string | null | undefined): string =>
+  (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 
 type EmptyChatGreetingProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
@@ -16,8 +51,72 @@ export function EmptyChatGreeting({
   onNavigateToView,
 }: EmptyChatGreetingProps): React.JSX.Element {
   const { t } = useI18n();
+  const { pendingWorktreeId, setPendingWorktreeId, setWorktreeMode } =
+    useChatConversationContext();
   const [isAddingProject, setIsAddingProject] = useState(false);
   const [addProjectError, setAddProjectError] = useState<string | null>(null);
+
+  const [worktrees, setWorktrees] = useState<GitWorktreeInfo[]>([]);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const dirId = activeDirectory?.directoryId;
+    if (!dirId) {
+      setWorktrees([]);
+      return;
+    }
+
+    const load = (): void => {
+      window.snow
+        .gitListWorktrees(dirId)
+        .then((items) => {
+          setWorktrees(items);
+        })
+        .catch(() => {
+          setWorktrees([]);
+        });
+    };
+
+    load();
+    window.addEventListener("snow:worktrees-changed", load);
+    return () => {
+      window.removeEventListener("snow:worktrees-changed", load);
+    };
+  }, [activeDirectory?.directoryId]);
+
+  const handleToggleWorktree = useCallback(
+    (worktreeId: string): void => {
+      if (pendingWorktreeId === worktreeId) {
+        setPendingWorktreeId(null);
+        setWorktreeMode(false);
+      } else {
+        setPendingWorktreeId(worktreeId);
+        setWorktreeMode(true);
+        const textarea = document.querySelector<HTMLTextAreaElement>(
+          ".chat-input-textarea",
+        );
+        textarea?.focus();
+      }
+    },
+    [pendingWorktreeId, setPendingWorktreeId, setWorktreeMode],
+  );
+
+  const handleCopyPath = useCallback((id: string, path: string): void => {
+    void window.snow.writeClipboardText(path).then(() => {
+      setCopiedId(id);
+      setTimeout(() => {
+        setCopiedId((current) => (current === id ? null : current));
+      }, 1500);
+    });
+  }, []);
+
+  const handleOpenTerminal = useCallback((cwd: string): void => {
+    rightPanelEvents.emit("open-terminal-command", {
+      cwd,
+      command: "",
+      title: getFolderName(cleanWorktreePath(cwd)),
+    });
+  }, []);
 
   const handleAddProject = useCallback(async (): Promise<void> => {
     if (isAddingProject) {
@@ -31,7 +130,7 @@ export function EmptyChatGreeting({
       const selectedPath = await window.snow.selectWorkspaceDirectory(
         t("sidebar.selectLocalDirectoryTitle", {
           defaultValue: "Select local workspace directory",
-        })
+        }),
       );
 
       if (selectedPath) {
@@ -54,7 +153,7 @@ export function EmptyChatGreeting({
           ? error.message
           : t("sidebar.addDirectoryError", {
               defaultValue: "Failed to add workspace directory",
-            })
+            }),
       );
     } finally {
       setIsAddingProject(false);
@@ -76,6 +175,150 @@ export function EmptyChatGreeting({
               defaultValue: "Select a workspace project to get started.",
             })}
       </p>
+      {worktrees.length > 0 && (
+        <div className="chat-empty-worktrees-section">
+          <div className="chat-empty-worktrees-header">
+            <div className="chat-empty-worktrees-title">
+              <FolderGit2
+                size={13}
+                className="chat-empty-worktrees-title-icon"
+              />
+              <span>{t("git.worktreesTitle", { defaultValue: "工作树" })}</span>
+              <span className="chat-empty-worktrees-badge">
+                {worktrees.length}
+              </span>
+            </div>
+            <span className="chat-empty-worktrees-hint">
+              {pendingWorktreeId
+                ? t("chat.worktreeSelectedHint", {
+                    defaultValue: "已预选工作树，发送消息将在此工作树下执行",
+                  })
+                : t("chat.selectWorktreeHint", {
+                    defaultValue: "选择工作树开启独立会话，或直接在输入框提问",
+                  })}
+            </span>
+          </div>
+
+          <div className="chat-empty-worktrees-grid">
+            {worktrees.map((wt) => {
+              const isSelected = pendingWorktreeId === wt.worktreeId;
+              const isMain =
+                normPath(wt.worktreePath) ===
+                normPath(activeDirectory?.path || "");
+              const cleanedPath = cleanWorktreePath(wt.worktreePath);
+              const folderName = getFolderName(cleanedPath);
+              const isCopied = copiedId === wt.worktreeId;
+
+              return (
+                <div
+                  key={wt.worktreeId}
+                  className={`chat-empty-worktree-card ${
+                    isSelected ? "is-selected" : ""
+                  } ${isMain ? "is-main" : ""}`}
+                  onClick={() => handleToggleWorktree(wt.worktreeId)}
+                  role="button"
+                  tabIndex={0}
+                  title={`${wt.branchName || t("git.graphDetachedHead", { defaultValue: "游离 HEAD" })}\n${cleanedPath}`}
+                >
+                  <div className="chat-empty-worktree-card-top">
+                    <div className="chat-empty-worktree-branch">
+                      <GitBranch
+                        size={13}
+                        className={
+                          isSelected ? "branch-icon-active" : "branch-icon"
+                        }
+                      />
+                      <span className="chat-empty-worktree-name">
+                        {wt.branchName ||
+                          t("git.graphDetachedHead", {
+                            defaultValue: "游离 HEAD",
+                          })}
+                      </span>
+                      {isMain && (
+                        <span className="chat-empty-worktree-main-badge">
+                          {t("git.mainDirectory", { defaultValue: "主目录" })}
+                        </span>
+                      )}
+                    </div>
+                    {wt.isDirty ? (
+                      <span
+                        className="chat-empty-worktree-status-badge is-dirty"
+                        title={t("git.worktreeDirty")}
+                      >
+                        <AlertCircle size={10} />
+                        <span>{t("git.worktreeDirty")}</span>
+                      </span>
+                    ) : (
+                      <span className="chat-empty-worktree-status-badge is-clean">
+                        <CheckCircle2 size={10} />
+                        <span>
+                          {t("git.graphWorktreeClean", {
+                            defaultValue: "干净",
+                          })}
+                        </span>
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="chat-empty-worktree-card-bottom">
+                    <div
+                      className="chat-empty-worktree-path-info"
+                      title={cleanedPath}
+                    >
+                      <Folder size={11} className="folder-icon" />
+                      <span className="chat-empty-worktree-folder-text">
+                        {folderName}
+                      </span>
+                    </div>
+                    <div
+                      className="chat-empty-worktree-actions"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        className="chat-empty-wt-action-btn"
+                        onClick={() =>
+                          handleCopyPath(wt.worktreeId, wt.worktreePath)
+                        }
+                        title={t("git.copyWorktreePath", {
+                          defaultValue: "复制完整路径",
+                        })}
+                      >
+                        {isCopied ? (
+                          <Check size={11} className="text-green-500" />
+                        ) : (
+                          <Copy size={11} />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        className="chat-empty-wt-action-btn"
+                        onClick={() => handleOpenTerminal(wt.worktreePath)}
+                        title={t("git.openTerminal", {
+                          defaultValue: "在此工作树打开终端",
+                        })}
+                      >
+                        <Terminal size={11} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {isSelected && (
+                    <div
+                      className="chat-empty-worktree-selected-indicator"
+                      title={t("chat.worktreeSelectedActive", {
+                        defaultValue: "当前已选定",
+                      })}
+                    >
+                      <Check size={11} strokeWidth={2.5} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
       <div className="chat-empty-quick-actions">
         <button
           className="chat-empty-quick-card"

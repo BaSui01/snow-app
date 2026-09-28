@@ -239,6 +239,7 @@ export const AiResponse = memo(
               count={toolCalls.length}
               timestamp={timestamp}
               isRunning={toolCalls.some((tc) => tc.status === "running")}
+              hasError={toolCalls.some((tc) => tc.status === "error")}
             >
               {groupedToolCalls.map((item) =>
                 item.type === "gallery" ? (

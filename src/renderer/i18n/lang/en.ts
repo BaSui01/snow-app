@@ -686,6 +686,11 @@ export const en = {
   "chat.subAgentInfo.launchedBy": 'Launched by parent "{{title}}"',
   "chat.subAgentInfo.prompt": "Prompt",
   "chat.quickActionAddProject": "Add a project",
+  "chat.worktreeSelectedHint":
+    "Worktree preselected; messages will execute within this worktree",
+  "chat.selectWorktreeHint":
+    "Select a worktree to start an isolated session, or ask directly below",
+  "chat.worktreeSelectedActive": "Currently selected",
   "chat.quickActionAddProjectDesc": "Open a local workspace directory",
   "chat.quickActionConfigApi": "Configure AI API",
   "chat.quickActionConfigApiDesc": "Set up providers, models and credentials",
@@ -1635,6 +1640,8 @@ export const en = {
   "toolCall.common.status.error": "Failed",
   "toolCall.group.steps": "{{count}} tools",
   "toolCall.group.runningSteps": "{{count}} tools",
+  "toolCall.group.completed": "Completed",
+  "toolCall.group.hasError": "Failed",
   "hookExecution.title": "Hooks",
   "hookExecution.count": "{{count}} hooks",
   "hookTypes.onUserMessage": "On user message",
@@ -4619,6 +4626,11 @@ export const en = {
   "git.worktreesUnbound": "No worktree bound",
   "git.worktreesSessionSelector": "Conversation worktree",
   "git.worktreesSessionStatus": "{{path}} · {{branch}}{{dirty}}",
+  "git.worktreesSessionPreselectStatus":
+    "Preselected worktree: {{path}} · {{branch}}{{dirty}} (will bind on first message)",
+  "git.startNewChatInWorktree": "Start new chat in this worktree",
+  "git.clickToBindWorktree":
+    "Click to select this worktree for current/new session",
   "git.worktreesSessionBound": "Joined · {{branch}}",
   "git.worktreesUnbind": "Unbind worktree",
   "git.worktreesOperationFailed": "Worktree operation failed",

@@ -164,6 +164,7 @@ export function WorktreeSessionSelector(): React.JSX.Element | null {
             worktrees.find((item) => item.worktreeId === worktreeId) ?? null,
           );
           setIsOpen(false);
+          void setWorktreeMode(Boolean(worktreeId));
         })
         .catch(() => {
           // Keep current state on fail

@@ -40,27 +40,51 @@ export const resolveConversationWorkspacePath = async (
   directoryId: string | undefined,
   fallbackPath: string | undefined,
   worktreeMode: boolean,
+  explicitWorktreeId?: string | null,
 ): Promise<string | undefined> => {
   if (!worktreeMode) {
     return fallbackPath;
   }
-  if (!conversationId.trim() || !directoryId?.trim()) {
-    throw new Error(
-      "WorkTree execution requires a conversation and project directory",
-    );
+  if (!directoryId?.trim()) {
+    throw new Error("WorkTree execution requires a valid project directory");
   }
-  const binding = await window.snow.getConversationWorktree(conversationId);
-  if (
-    !binding ||
-    !binding.isValid ||
-    binding.directoryId !== directoryId ||
-    !binding.worktreePath.trim()
-  ) {
+
+  // 1. 如果显式提供了预选或指定的 worktreeId，直接通过工作树列表验证并解析真实路径
+  if (explicitWorktreeId?.trim()) {
+    const list = await window.snow.gitListWorktrees(directoryId);
+    const matched = list.find((item) => item.worktreeId === explicitWorktreeId);
+    if (
+      matched &&
+      matched.isValid &&
+      matched.directoryId === directoryId &&
+      matched.worktreePath.trim()
+    ) {
+      return matched.worktreePath;
+    }
     throw new Error(
       "WorkTree binding is missing, invalid, or belongs to a different project directory",
     );
   }
-  return binding.worktreePath;
+
+  // 2. 如果存在持久化会话 ID，从数据库持久化绑定中获取
+  if (conversationId.trim()) {
+    const binding = await window.snow.getConversationWorktree(conversationId);
+    if (
+      !binding ||
+      !binding.isValid ||
+      binding.directoryId !== directoryId ||
+      !binding.worktreePath.trim()
+    ) {
+      throw new Error(
+        "WorkTree binding is missing, invalid, or belongs to a different project directory",
+      );
+    }
+    return binding.worktreePath;
+  }
+
+  throw new Error(
+    "WorkTree execution requires a conversation or preselected worktree, and project directory",
+  );
 };
 
 /** Persist the parent's binding for a child session before it can execute. */
@@ -73,7 +97,8 @@ export const inheritConversationWorktreeBinding = async (
   if (!worktreeMode) {
     return false;
   }
-  const binding = await window.snow.getConversationWorktree(parentConversationId);
+  const binding =
+    await window.snow.getConversationWorktree(parentConversationId);
   if (
     !binding ||
     !binding.isValid ||

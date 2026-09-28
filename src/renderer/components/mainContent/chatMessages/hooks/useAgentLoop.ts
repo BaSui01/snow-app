@@ -887,7 +887,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                 currentSession.worktreeId = effectiveWorktreeId;
                 currentSession.worktreeMode = true;
               }
-              void window.snow
+              await window.snow
                 .setConversationWorktree(
                   response.conversationId,
                   effectiveWorktreeId,
@@ -1204,6 +1204,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               sessionDirId,
               directoryIdToPath(sessionDirId) ?? ctx.directoryPath,
               iterRef?.worktreeMode ?? false,
+              iterRef?.worktreeId,
             );
             const flushCheckpointId = await createFlushCheckpoint(
               effectiveKey,
@@ -1611,6 +1612,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             sessionDirId,
             directoryIdToPath(sessionDirId) ?? ctx.directoryPath,
             iterRef?.worktreeMode ?? false,
+            iterRef?.worktreeId,
           );
           pendingFlushCheckpointId = await createFlushCheckpoint(
             effectiveKey,
@@ -1739,11 +1741,14 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         // checkpoint 根目录跟随持久 WorkTree 绑定；绑定缺失/失效时 fail-closed。
         const projectSessionDirPath =
           directoryIdToPath(sessionDirId) ?? ctx.directoryPath;
+        const effectiveWorktreeId =
+          sessionRef?.worktreeId || ctx.pendingWorktreeIdRef.current;
         const sessionDirPath = await resolveConversationWorkspacePath(
           isPendingSessionKey(sessionKey) ? "" : sessionKey,
           sessionDirId,
           projectSessionDirPath,
           sessionRef?.worktreeMode ?? false,
+          effectiveWorktreeId,
         );
         // createCheckpoint 是异步的：await 期间本 run 可能已被取消或被
         // 更新的 run 取代（停止按钮、PendingMessages 强制发送会先

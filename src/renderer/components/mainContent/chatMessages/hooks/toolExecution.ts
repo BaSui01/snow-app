@@ -126,17 +126,20 @@ export function createToolExecutor(
 
   // 工具 cwd / checkpoint 目录跟随会话自己的目录,而非运行时全局
   // activeDirectory。实际 WorkTree 模式在每轮执行开始时由持久绑定解析。
-  const projectSessionDirPath = directoryIdToPath(sessionDirId) ?? directoryPath;
+  const projectSessionDirPath =
+    directoryIdToPath(sessionDirId) ?? directoryPath;
 
   return async (
     toolCalls: ToolCallInfo[],
     authorizationDecisions: ToolAuthorizationDecision[],
   ): Promise<ToolExecutionResult | null> => {
+    const targetSession = ctx.sessionsRefData.current.get(effectiveKey);
     const sessionDirPath = await resolveConversationWorkspacePath(
       isPendingSessionKey(effectiveKey) ? "" : effectiveKey,
       sessionDirId,
       projectSessionDirPath,
-      ctx.sessionsRefData.current.get(effectiveKey)?.worktreeMode ?? false,
+      targetSession?.worktreeMode ?? false,
+      targetSession?.worktreeId,
     );
     // Per-conversation mode snapshot: the Rust write gate must see THIS
     // session's Plan Mode, never the live global ref (another conversation

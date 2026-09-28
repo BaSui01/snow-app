@@ -168,8 +168,9 @@ flowchart TD
 ```
 
 **Read-only query chain**: Renderer → `window.snow.xxxMethod` →
-`ipcRenderer.invoke` → `ipcMain.handle` → `native.xxx` (storageReady gate
-auto-waits) → rusqlite. `src/preload/index.ts` spreads each `*Api` object, so
+`ipcRenderer.invoke` → `ipcMain.handle` → `native.xxx` (database methods
+auto-wait on the storageReady gate; storage-independent ones such as git /
+filesystem run directly) → rusqlite. `src/preload/index.ts` spreads each `*Api` object, so
 the runtime API is flat.
 
 ## 6. Coding Conventions

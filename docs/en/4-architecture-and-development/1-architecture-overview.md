@@ -63,7 +63,7 @@ sequenceDiagram
 
 ### 3.2 The storageReady gate
 
-`loadNativeBridge()` loads `native/index.cjs` and retains the raw binding. The Proxy returned for normal calls waits for `storageReady`. Bootstrap initialization must use `getRawNative()`; otherwise initialization would wait for itself and deadlock.
+`loadNativeBridge()` loads `native/index.cjs` and retains the raw binding. The Proxy returned for database-backed calls waits for `storageReady`, while storage-independent methods (git, filesystem, process — see `STORAGE_INDEPENDENT_METHODS`) run directly, so startup requests are not all held behind one gate and released in the same instant. The gate opens as soon as `initializeAppStorage` returns; startup housekeeping (checkpoint layout migration, request-logging reset) runs after that. Bootstrap initialization must use `getRawNative()`; otherwise initialization would wait for itself and deadlock.
 
 ### 3.3 AI streaming events
 

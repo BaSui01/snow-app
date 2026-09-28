@@ -13,20 +13,13 @@ import {
 import { startDirectoryWatch, stopDirectoryWatch } from "../../utils/fsWatcher";
 import { startFileWatch, stopFileWatch } from "../../utils/fileWatcher";
 import { safeSend } from "../../utils/safeSend";
+import { broadcastWorkspaceDirectoryListChanged as broadcastDirectoryListChanged } from "../../utils/workspaceDirectoryBroadcast";
 
 const AGENT_SEARCH_PROGRESS_CHANNEL =
   "workspace-directories:search-files-by-agent:progress";
 
 const CLONE_PROGRESS_CHANNEL =
   "workspace-directories:clone-repository:progress";
-
-const broadcastDirectoryListChanged = (): void => {
-  for (const window of BrowserWindow.getAllWindows()) {
-    if (!window.isDestroyed() && window.webContents) {
-      safeSend(window.webContents, "workspace-directory-list:changed");
-    }
-  }
-};
 
 export const registerWorkspaceHandlers = (native: NativeBridge): void => {
   ipcMain.handle("workspace-directories:list", () =>

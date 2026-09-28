@@ -23,6 +23,7 @@ import {
   remoteUnstageFiles,
 } from "../../ssh/remoteGit";
 import { safeSend } from "../../utils/safeSend";
+import { isStorageReady } from "../../app/storageReady";
 
 const GIT_COMMIT_MSG_CHUNK_CHANNEL = "git:commit-msg:chunk";
 
@@ -174,7 +175,12 @@ export const registerGitHandlers = (native: NativeBridge): void => {
     if (isSshPath(trimmed)) {
       return remoteGetGitStatus(trimmed);
     }
-    const settings = await readGitScanSettings(native);
+    // 存储初始化期间不等待数据库：先用默认扫描参数返回状态，让 git 面板
+    // 与项目 / 会话列表各自加载；后续刷新（watcher / 轮询 / 手动）会读到
+    // 持久化设置。
+    const settings = isStorageReady()
+      ? await readGitScanSettings(native)
+      : DEFAULT_GIT_SCAN_SETTINGS;
     return native.getGitStatus(trimmed, settings.statusLimit);
   });
 

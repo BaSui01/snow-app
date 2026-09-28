@@ -371,6 +371,7 @@ export function ProjectsSection({
       <ProjectGridDialog
         activeDirectoryId={activeDirectory?.directoryId}
         collections={collections}
+        dragAndDrop={dragAndDrop}
         isActionLocked={
           isSavingDirectory || isReorderingDirectories || isSwitchingDirectory
         }

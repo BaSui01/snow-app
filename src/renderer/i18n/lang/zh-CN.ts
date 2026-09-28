@@ -76,6 +76,8 @@ export const zhCN = {
   "sidebar.clearProjectSearch": "清除搜索",
   "sidebar.projectGridNoMatch": "没有匹配的项目",
   "sidebar.projectGridUngrouped": "未分组项目",
+  "sidebar.projectGridUngroupedEmpty":
+    "暂无未分组项目 — 把项目拖到这里可移出合集",
   "sidebar.chooseDirectoryScheme": "选择添加方式",
   "sidebar.close": "关闭",
   "sidebar.addLocalDirectory": "添加本地目录",

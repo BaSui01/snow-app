@@ -1,5 +1,6 @@
-import { Check, Library, Search, Server, X } from "lucide-react";
+import { Check, GripVertical, Library, Search, Server, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { DragEvent } from "react";
 
 import { useI18n } from "../../../../../i18n";
 import { getFileTypeIcon } from "../../../../../utils/fileIcons";
@@ -9,10 +10,12 @@ import type {
 } from "../../../../../../preload";
 import { FormDialog } from "../../../../common/FormDialog";
 import { buildDirectoryDisplayNames } from "../../directoryDisplayName";
+import type { DirectoryDragDropController } from "../useDirectoryDragDrop";
 
 type ProjectGridDialogProps = {
   activeDirectoryId?: string;
   collections: ProjectCollectionRecord[];
+  dragAndDrop: DirectoryDragDropController;
   isActionLocked: boolean;
   onActivate: (directoryId: string) => void;
   onClose: () => void;
@@ -29,6 +32,7 @@ type ProjectGridGroup = {
 export function ProjectGridDialog({
   activeDirectoryId,
   collections,
+  dragAndDrop,
   isActionLocked,
   onActivate,
   onClose,
@@ -94,13 +98,20 @@ export function ProjectGridDialog({
         !memberIds.has(directory.directoryId) && matches(directory),
     );
 
-    const result = collectionGroups.filter(
-      (group) => group.directories.length > 0,
-    );
-    if (topLevelDirectories.length > 0) {
-      result.push({ collection: null, directories: topLevelDirectories });
+    if (normalizedQuery) {
+      const result = collectionGroups.filter(
+        (group) => group.directories.length > 0,
+      );
+      if (topLevelDirectories.length > 0) {
+        result.push({ collection: null, directories: topLevelDirectories });
+      }
+      return result;
     }
-    return result;
+
+    return [
+      ...collectionGroups,
+      { collection: null, directories: topLevelDirectories },
+    ];
   }, [collections, displayNames, query, workspaceDirectories]);
 
   const matchedCount = groups.reduce(
@@ -110,38 +121,178 @@ export function ProjectGridDialog({
   const isEmptyWorkspace = workspaceDirectories.length === 0;
   const hasCollectionGroups = groups.some((group) => group.collection !== null);
 
+  const isDragEnabled = !isActionLocked && query.trim().length === 0;
+  const draggedDirectoryId = dragAndDrop.draggedDirectoryId;
+  const dragOverDirectoryId = dragAndDrop.dragOverDirectoryId;
+
+  const collectionMemberIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const collection of collections) {
+      for (const directoryId of collection.memberDirectoryIds) {
+        ids.add(directoryId);
+      }
+    }
+    return ids;
+  }, [collections]);
+
+  const resolveDraggedId = (event: DragEvent<HTMLElement>): string | null =>
+    draggedDirectoryId || event.dataTransfer.getData("text/plain") || null;
+
+  const handleCardDragStart = (
+    event: DragEvent<HTMLDivElement>,
+    directoryId: string,
+  ): void => {
+    event.dataTransfer.effectAllowed = "copyMove";
+    event.dataTransfer.setData("text/plain", directoryId);
+    dragAndDrop.handleDirectoryDragStart(directoryId);
+  };
+
+  const handleCardDragOver = (
+    event: DragEvent<HTMLDivElement>,
+    directoryId: string,
+  ): void => {
+    if (!isDragEnabled || draggedDirectoryId === directoryId) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    dragAndDrop.handleDirectoryDragOver(directoryId);
+  };
+
+  const handleCardDrop = (
+    event: DragEvent<HTMLDivElement>,
+    group: ProjectGridGroup,
+    targetDirectoryId: string,
+  ): void => {
+    event.preventDefault();
+    const sourceId = resolveDraggedId(event);
+    if (!sourceId || sourceId === targetDirectoryId) {
+      dragAndDrop.handleDirectoryDragEnd();
+      return;
+    }
+    if (group.collection) {
+      dragAndDrop.handleCollectionMemberDrop(
+        group.collection.collectionId,
+        targetDirectoryId,
+        event.dataTransfer,
+      );
+      return;
+    }
+    dragAndDrop.handleDirectoryDrop(targetDirectoryId, event.dataTransfer);
+  };
+
+  const handleCollectionGroupDragOver = (
+    event: DragEvent<HTMLDivElement>,
+    collectionId: string,
+  ): void => {
+    if (event.defaultPrevented || !isDragEnabled || !draggedDirectoryId) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    dragAndDrop.handleCollectionDragOver(collectionId);
+  };
+
+  const handleCollectionGroupDrop = (
+    event: DragEvent<HTMLDivElement>,
+    collectionId: string,
+  ): void => {
+    if (event.defaultPrevented) {
+      return;
+    }
+    event.preventDefault();
+    const sourceId = resolveDraggedId(event);
+    if (!sourceId) {
+      dragAndDrop.handleDirectoryDragEnd();
+      return;
+    }
+    dragAndDrop.handleCollectionDrop(collectionId, sourceId);
+  };
+
+  const handleUngroupedDragOver = (event: DragEvent<HTMLDivElement>): void => {
+    if (event.defaultPrevented || !isDragEnabled || !draggedDirectoryId) {
+      return;
+    }
+    if (!collectionMemberIds.has(draggedDirectoryId)) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  };
+
+  const handleUngroupedDrop = (event: DragEvent<HTMLDivElement>): void => {
+    if (event.defaultPrevented) {
+      return;
+    }
+    event.preventDefault();
+    const sourceId = resolveDraggedId(event);
+    if (!sourceId) {
+      dragAndDrop.handleDirectoryDragEnd();
+      return;
+    }
+    dragAndDrop.handleDropOutside(sourceId);
+  };
+
   const renderCard = (
+    group: ProjectGridGroup,
     directory: WorkspaceDirectoryRecord,
   ): React.JSX.Element => {
     const isActive = directory.directoryId === activeDirectoryId;
     const displayName =
       displayNames.get(directory.directoryId) ?? directory.name;
+    const isDragging = draggedDirectoryId === directory.directoryId;
+    const isDragOver =
+      !isDragging && dragOverDirectoryId === directory.directoryId;
     return (
-      <button
-        className={`project-grid-card${isActive ? " active" : ""}`}
-        disabled={isActionLocked}
+      <div
+        className={`project-grid-card-slot${isDragging ? " dragging" : ""}${
+          isDragOver ? " drag-over" : ""
+        }`}
+        draggable={isDragEnabled}
         key={directory.directoryId}
-        onClick={() => onActivate(directory.directoryId)}
-        title={directory.path}
-        type="button"
+        onDragEnd={dragAndDrop.handleDirectoryDragEnd}
+        onDragOver={(event) => handleCardDragOver(event, directory.directoryId)}
+        onDragStart={(event) =>
+          handleCardDragStart(event, directory.directoryId)
+        }
+        onDrop={(event) => handleCardDrop(event, group, directory.directoryId)}
       >
-        <span className="project-grid-card-icon">
-          {directory.kind === "ssh" ? (
-            <Server className="list-icon list-icon--ssh" size={16} />
-          ) : (
-            getFileTypeIcon(directory.name, true, directory.isActive, {
-              size: 16,
-            })
-          )}
-        </span>
-        <span className="project-grid-card-body">
-          <span className="project-grid-card-name">{displayName}</span>
-          <span className="project-grid-card-path">{directory.path}</span>
-        </span>
-        {isActive ? (
-          <Check className="project-grid-card-check" size={14} />
-        ) : null}
-      </button>
+        <button
+          className={`project-grid-card${isActive ? " active" : ""}`}
+          disabled={isActionLocked}
+          onClick={() => onActivate(directory.directoryId)}
+          title={directory.path}
+          type="button"
+        >
+          <span className="project-grid-card-icon">
+            {directory.kind === "ssh" ? (
+              <Server className="list-icon list-icon--ssh" size={16} />
+            ) : (
+              getFileTypeIcon(directory.name, true, directory.isActive, {
+                size: 16,
+              })
+            )}
+          </span>
+          <span className="project-grid-card-body">
+            <span className="project-grid-card-name">{displayName}</span>
+            <span className="project-grid-card-path">{directory.path}</span>
+          </span>
+          {isDragEnabled ? (
+            <span
+              aria-label={t("sidebar.dragDirectory", {
+                defaultValue: "Drag to reorder",
+              })}
+              className="project-grid-card-grip"
+              role="img"
+            >
+              <GripVertical size={13} />
+            </span>
+          ) : null}
+          {isActive ? (
+            <Check className="project-grid-card-check" size={14} />
+          ) : null}
+        </button>
+      </div>
     );
   };
 
@@ -201,38 +352,78 @@ export function ProjectGridDialog({
                   })}
             </div>
           ) : (
-            groups.map((group) => (
-              <div
-                className="project-grid-group"
-                key={group.collection?.collectionId ?? "__top-level__"}
-              >
-                {group.collection ? (
-                  <div className="project-grid-group-header">
-                    <Library
-                      className="list-icon list-icon--collection"
-                      size={13}
-                    />
-                    <span className="project-grid-group-name">
-                      {group.collection.name}
-                    </span>
-                    <span className="project-grid-group-count">
-                      {group.directories.length}
-                    </span>
+            groups.map((group) => {
+              const collectionId = group.collection?.collectionId ?? null;
+              const isGroupDragOver =
+                collectionId !== null &&
+                dragAndDrop.dragOverCollectionId === collectionId;
+              const isDropOutTarget =
+                collectionId === null &&
+                isDragEnabled &&
+                draggedDirectoryId !== null &&
+                collectionMemberIds.has(draggedDirectoryId);
+              return (
+                <div
+                  className={`project-grid-group${
+                    isGroupDragOver ? " drag-over" : ""
+                  }${isDropOutTarget ? " drop-out-target" : ""}`}
+                  key={collectionId ?? "__top-level__"}
+                  onDragOver={
+                    collectionId
+                      ? (event) =>
+                          handleCollectionGroupDragOver(event, collectionId)
+                      : handleUngroupedDragOver
+                  }
+                  onDrop={
+                    collectionId
+                      ? (event) =>
+                          handleCollectionGroupDrop(event, collectionId)
+                      : handleUngroupedDrop
+                  }
+                >
+                  {group.collection ? (
+                    <div className="project-grid-group-header">
+                      <Library
+                        className="list-icon list-icon--collection"
+                        size={13}
+                      />
+                      <span className="project-grid-group-name">
+                        {group.collection.name}
+                      </span>
+                      <span className="project-grid-group-count">
+                        {group.directories.length}
+                      </span>
+                    </div>
+                  ) : hasCollectionGroups ? (
+                    <div className="project-grid-group-header">
+                      <span className="project-grid-group-name">
+                        {t("sidebar.projectGridUngrouped", {
+                          defaultValue: "Ungrouped projects",
+                        })}
+                      </span>
+                    </div>
+                  ) : null}
+                  <div className="project-grid-cards">
+                    {group.directories.map((directory) =>
+                      renderCard(group, directory),
+                    )}
                   </div>
-                ) : hasCollectionGroups ? (
-                  <div className="project-grid-group-header">
-                    <span className="project-grid-group-name">
-                      {t("sidebar.projectGridUngrouped", {
-                        defaultValue: "Ungrouped projects",
-                      })}
-                    </span>
-                  </div>
-                ) : null}
-                <div className="project-grid-cards">
-                  {group.directories.map(renderCard)}
+                  {group.directories.length === 0 ? (
+                    <div className="project-grid-drop-hint">
+                      {collectionId
+                        ? t("sidebar.collectionEmpty", {
+                            defaultValue:
+                              "No projects yet — drag one here to add it",
+                          })
+                        : t("sidebar.projectGridUngroupedEmpty", {
+                            defaultValue:
+                              "No ungrouped projects — drop one here to move it out of its collection",
+                          })}
+                    </div>
+                  ) : null}
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>

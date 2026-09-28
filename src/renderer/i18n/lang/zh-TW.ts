@@ -76,6 +76,8 @@ export const zhTW = {
   "sidebar.clearProjectSearch": "清除搜尋",
   "sidebar.projectGridNoMatch": "沒有符合的專案",
   "sidebar.projectGridUngrouped": "未分組專案",
+  "sidebar.projectGridUngroupedEmpty":
+    "暫無未分組專案 — 把專案拖到這裡可移出合集",
   "sidebar.chooseDirectoryScheme": "選擇新增方式",
   "sidebar.close": "關閉",
   "sidebar.addLocalDirectory": "新增本機目錄",

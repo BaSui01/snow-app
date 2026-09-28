@@ -85,6 +85,8 @@ export const en = {
   "sidebar.clearProjectSearch": "Clear search",
   "sidebar.projectGridNoMatch": "No matching projects",
   "sidebar.projectGridUngrouped": "Ungrouped projects",
+  "sidebar.projectGridUngroupedEmpty":
+    "No ungrouped projects — drop one here to move it out of its collection",
   "sidebar.chooseDirectoryScheme": "Choose add method",
   "sidebar.close": "Close",
   "sidebar.addLocalDirectory": "Add local directory",

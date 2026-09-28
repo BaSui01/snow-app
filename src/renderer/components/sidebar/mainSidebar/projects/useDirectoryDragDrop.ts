@@ -297,3 +297,7 @@ export function useDirectoryDragDrop({
     handleCollectionMemberDrop,
   };
 }
+
+export type DirectoryDragDropController = ReturnType<
+  typeof useDirectoryDragDrop
+>;

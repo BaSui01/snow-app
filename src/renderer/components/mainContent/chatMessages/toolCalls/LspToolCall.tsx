@@ -39,6 +39,14 @@ import {
   LspDiagnosticsFiles,
   LspDiagnosticsSummaryView,
   LspRenameNotice,
+  LspHoverListView,
+  LspReferencesListView,
+  LspGotoListView,
+  type HoverItem,
+  type ReferenceLocation,
+  type ReferenceGroup,
+  type DefinitionItem,
+  type GotoGroup,
 } from "./LspResultViews";
 
 type LspToolCallProps = {
@@ -72,6 +80,7 @@ type PositionArgs = {
   column?: number;
   symbol?: string;
   kind?: string;
+  items?: PositionArgs[];
 };
 type RenameArgs = {
   filePath?: string;
@@ -179,14 +188,6 @@ type DeferredCommand = {
   note?: string;
 };
 
-type DefinitionItem = {
-  filePath: string;
-  line: number;
-  column: number;
-  endLine?: number;
-  endColumn?: number;
-};
-
 type WorkspaceSymbolItem = {
   name: string;
   kind?: string;
@@ -257,7 +258,9 @@ type ParsedResult =
       language?: string;
       name?: string;
       count: number;
+      targetCount?: number;
       definitions: DefinitionItem[];
+      groups?: GotoGroup[];
       kind?: string;
     }
   | {
@@ -268,13 +271,17 @@ type ParsedResult =
         start: { line: number; column: number };
         end: { line: number; column: number };
       };
+      items: HoverItem[];
+      count: number;
     }
   | {
       type: "references";
       language?: string;
       symbol?: string;
       count: number;
+      targetCount?: number;
       references: ReferenceLocation[];
+      groups?: ReferenceGroup[];
     }
   | {
       type: "symbols";
@@ -333,15 +340,6 @@ type ParsedResult =
   | { type: "error"; message: string }
   | { type: "raw"; text: string }
   | { type: "empty" };
-
-type ReferenceLocation = {
-  filePath: string;
-  line: number;
-  column: number;
-  endLine?: number;
-  endColumn?: number;
-  context?: string;
-};
 
 export type DocumentSymbolNode = {
   name: string;
@@ -553,6 +551,28 @@ const parseArgs = (
         : undefined;
       if (!filePath && (!filePaths || filePaths.length === 0)) return null;
       return filePath ? { filePath } : { filePaths };
+    }
+
+    // 批处理 items 参数支持（lsp-hover, lsp-references, lsp-goto 等）
+    const rawItems = parsed.items;
+    if (Array.isArray(rawItems) && rawItems.length > 0) {
+      const items = rawItems.filter(isRecord).map((item) => ({
+        filePath: parseString(item, "filePath"),
+        line: parseNumber(item, "line"),
+        column: parseNumber(item, "column"),
+        symbol: parseString(item, "symbol"),
+        kind: parseString(item, "kind"),
+        includeDeclaration: parseBoolean(item, "includeDeclaration"),
+      }));
+      const first = items[0] || {};
+      return {
+        filePath: first.filePath,
+        line: first.line,
+        column: first.column,
+        symbol: first.symbol,
+        kind: first.kind,
+        items,
+      };
     }
 
     const filePath = parseString(parsed, "filePath");
@@ -792,70 +812,202 @@ const parseResult = (
 
     const language = parseString(parsed, "language");
 
-    // hover
-    if (operation === "hover" && typeof parsed.contents === "string") {
-      let range:
-        | {
-            start: { line: number; column: number };
-            end: { line: number; column: number };
+    // hover（单项或批处理 items）
+    if (
+      operation === "hover" &&
+      (typeof parsed.contents === "string" ||
+        Array.isArray(parsed.items) ||
+        parsed.batch === true)
+    ) {
+      let hoverItems: HoverItem[] = [];
+      if (Array.isArray(parsed.items)) {
+        hoverItems = parsed.items.filter(isRecord).map((item) => {
+          const target = isRecord(item.target)
+            ? {
+                filePath: parseString(item.target, "filePath"),
+                line: parseNumber(item.target, "line"),
+                column: parseNumber(item.target, "column"),
+                symbol: parseString(item.target, "symbol"),
+              }
+            : undefined;
+          const contents =
+            typeof item.contents === "string" ? item.contents : "";
+          let range:
+            | {
+                start: { line: number; column: number };
+                end: { line: number; column: number };
+              }
+            | undefined;
+          if (
+            isRecord(item.range) &&
+            isRecord(item.range.start) &&
+            isRecord(item.range.end)
+          ) {
+            const startLine = parseNumber(item.range.start, "line");
+            const startCol = parseNumber(item.range.start, "column");
+            const endLine = parseNumber(item.range.end, "line");
+            const endCol = parseNumber(item.range.end, "column");
+            if (
+              startLine !== undefined &&
+              startCol !== undefined &&
+              endLine !== undefined &&
+              endCol !== undefined
+            ) {
+              range = {
+                start: { line: startLine, column: startCol },
+                end: { line: endLine, column: endCol },
+              };
+            }
           }
-        | undefined;
-      if (
-        isRecord(parsed.range) &&
-        isRecord(parsed.range.start) &&
-        isRecord(parsed.range.end)
-      ) {
-        const startLine = parseNumber(parsed.range.start, "line");
-        const startCol = parseNumber(parsed.range.start, "column");
-        const endLine = parseNumber(parsed.range.end, "line");
-        const endCol = parseNumber(parsed.range.end, "column");
-        if (
-          startLine !== undefined &&
-          startCol !== undefined &&
-          endLine !== undefined &&
-          endCol !== undefined
-        ) {
-          range = {
-            start: { line: startLine, column: startCol },
-            end: { line: endLine, column: endCol },
+          return {
+            target,
+            language: parseString(item, "language"),
+            contents,
+            range,
+            status: parseString(item, "status") ?? "complete",
+            error: parseString(item, "error"),
           };
+        });
+      } else if (typeof parsed.contents === "string") {
+        let range:
+          | {
+              start: { line: number; column: number };
+              end: { line: number; column: number };
+            }
+          | undefined;
+        if (
+          isRecord(parsed.range) &&
+          isRecord(parsed.range.start) &&
+          isRecord(parsed.range.end)
+        ) {
+          const startLine = parseNumber(parsed.range.start, "line");
+          const startCol = parseNumber(parsed.range.start, "column");
+          const endLine = parseNumber(parsed.range.end, "line");
+          const endCol = parseNumber(parsed.range.end, "column");
+          if (
+            startLine !== undefined &&
+            startCol !== undefined &&
+            endLine !== undefined &&
+            endCol !== undefined
+          ) {
+            range = {
+              start: { line: startLine, column: startCol },
+              end: { line: endLine, column: endCol },
+            };
+          }
         }
+        hoverItems = [
+          {
+            language,
+            contents: parsed.contents,
+            range,
+            status: "complete",
+          },
+        ];
       }
+      const lang =
+        hoverItems.find((h) => h.language)?.language ??
+        language ??
+        parseString(parsed, "language");
       return {
         type: "hover",
-        language,
-        contents: parsed.contents,
-        range,
+        language: lang,
+        contents: hoverItems[0]?.contents ?? "",
+        range: hoverItems[0]?.range,
+        items: hoverItems,
+        count: hoverItems.length,
       };
     }
 
-    // references
-    if (operation === "references" && Array.isArray(parsed.references)) {
-      const references = parsed.references
-        .filter(isRecord)
-        .map((item): ReferenceLocation | null => {
-          const filePath = parseString(item, "filePath");
-          const line = parseNumber(item, "line");
-          const column = parseNumber(item, "column");
-          if (!filePath || line === undefined || column === undefined) {
-            return null;
-          }
+    // references（单项或批处理 items）
+    if (
+      operation === "references" &&
+      (Array.isArray(parsed.references) ||
+        Array.isArray(parsed.items) ||
+        parsed.batch === true)
+    ) {
+      let refGroups: ReferenceGroup[] = [];
+      if (Array.isArray(parsed.items)) {
+        refGroups = parsed.items.filter(isRecord).map((item) => {
+          const target = isRecord(item.target)
+            ? {
+                filePath: parseString(item.target, "filePath"),
+                line: parseNumber(item.target, "line"),
+                column: parseNumber(item.target, "column"),
+                symbol: parseString(item.target, "symbol"),
+              }
+            : undefined;
+          const rawRefs = Array.isArray(item.references) ? item.references : [];
+          const refs: ReferenceLocation[] = rawRefs
+            .filter(isRecord)
+            .map((r): ReferenceLocation | null => {
+              const fp = parseString(r, "filePath") ?? target?.filePath;
+              const line = parseNumber(r, "line");
+              const column = parseNumber(r, "column");
+              if (!fp || line === undefined || column === undefined)
+                return null;
+              return {
+                filePath: fp,
+                line,
+                column,
+                endLine: parseNumber(r, "endLine"),
+                endColumn: parseNumber(r, "endColumn"),
+                context: parseString(r, "context"),
+              };
+            })
+            .filter((r): r is ReferenceLocation => r !== null);
           return {
-            filePath,
-            line,
-            column,
-            endLine: parseNumber(item, "endLine"),
-            endColumn: parseNumber(item, "endColumn"),
-            context: parseString(item, "context"),
+            target,
+            language: parseString(item, "language"),
+            count: parseNumber(item, "count") ?? refs.length,
+            references: refs,
+            status: parseString(item, "status"),
+            error: parseString(item, "error"),
           };
-        })
-        .filter((item): item is ReferenceLocation => item !== null);
+        });
+      } else if (Array.isArray(parsed.references)) {
+        const refs: ReferenceLocation[] = parsed.references
+          .filter(isRecord)
+          .map((item): ReferenceLocation | null => {
+            const fp = parseString(item, "filePath");
+            const line = parseNumber(item, "line");
+            const column = parseNumber(item, "column");
+            if (!fp || line === undefined || column === undefined) return null;
+            return {
+              filePath: fp,
+              line,
+              column,
+              endLine: parseNumber(item, "endLine"),
+              endColumn: parseNumber(item, "endColumn"),
+              context: parseString(item, "context"),
+            };
+          })
+          .filter((item): item is ReferenceLocation => item !== null);
+        refGroups = [
+          {
+            language,
+            symbol: parseString(parsed, "symbol"),
+            count: parseNumber(parsed, "count") ?? refs.length,
+            references: refs,
+            status: "complete",
+          },
+        ];
+      }
+      const allReferences = refGroups.flatMap((g) => g.references);
+      const totalCount =
+        refGroups.reduce((acc, g) => acc + g.count, 0) || allReferences.length;
+      const lang =
+        refGroups.find((g) => g.language)?.language ??
+        language ??
+        parseString(parsed, "language");
       return {
         type: "references",
-        language,
-        symbol: parseString(parsed, "symbol"),
-        count: parseNumber(parsed, "count") ?? references.length,
-        references,
+        language: lang,
+        symbol: parseString(parsed, "symbol") ?? refGroups[0]?.target?.symbol,
+        count: totalCount,
+        targetCount: refGroups.length,
+        references: allReferences,
+        groups: refGroups,
       };
     }
 
@@ -1038,39 +1190,98 @@ const parseResult = (
       };
     }
 
-    // goto / type-definition / implementation：输出与 definition 对齐（name + definitions）。
+    // goto / type-definition / implementation（单项或批处理 items）
     if (
       (operation === "goto" ||
         operation === "type-definition" ||
         operation === "implementation") &&
-      Array.isArray(parsed.definitions)
+      (Array.isArray(parsed.definitions) ||
+        Array.isArray(parsed.items) ||
+        parsed.batch === true)
     ) {
-      const definitions = parsed.definitions
-        .filter(isRecord)
-        .map((item): DefinitionItem | null => {
-          const filePath = parseString(item, "filePath");
-          const line = parseNumber(item, "line");
-          const column = parseNumber(item, "column");
-          if (!filePath || line === undefined || column === undefined) {
-            return null;
-          }
-          const endLine = parseNumber(item, "endLine");
-          const endColumn = parseNumber(item, "endColumn");
+      let gotoGroups: GotoGroup[] = [];
+      if (Array.isArray(parsed.items)) {
+        gotoGroups = parsed.items.filter(isRecord).map((item) => {
+          const target = isRecord(item.target)
+            ? {
+                filePath: parseString(item.target, "filePath"),
+                line: parseNumber(item.target, "line"),
+                column: parseNumber(item.target, "column"),
+                symbol: parseString(item.target, "symbol"),
+                kind: parseString(item.target, "kind"),
+              }
+            : undefined;
+          const rawDefs = Array.isArray(item.definitions)
+            ? item.definitions
+            : [];
+          const defs: DefinitionItem[] = rawDefs
+            .filter(isRecord)
+            .map((def): DefinitionItem | null => {
+              const fp = parseString(def, "filePath") ?? target?.filePath;
+              const line = parseNumber(def, "line");
+              const column = parseNumber(def, "column");
+              if (!fp || line === undefined || column === undefined)
+                return null;
+              return {
+                filePath: fp,
+                line,
+                column,
+                endLine: parseNumber(def, "endLine"),
+                endColumn: parseNumber(def, "endColumn"),
+              };
+            })
+            .filter((d): d is DefinitionItem => d !== null);
           return {
-            filePath,
-            line,
-            column,
-            ...(endLine !== undefined ? { endLine } : {}),
-            ...(endColumn !== undefined ? { endColumn } : {}),
+            target,
+            language: parseString(item, "language"),
+            count: parseNumber(item, "count") ?? defs.length,
+            definitions: defs,
+            status: parseString(item, "status"),
+            error: parseString(item, "error"),
           };
-        })
-        .filter((item): item is DefinitionItem => item !== null);
+        });
+      } else if (Array.isArray(parsed.definitions)) {
+        const defs: DefinitionItem[] = parsed.definitions
+          .filter(isRecord)
+          .map((item): DefinitionItem | null => {
+            const fp = parseString(item, "filePath");
+            const line = parseNumber(item, "line");
+            const column = parseNumber(item, "column");
+            if (!fp || line === undefined || column === undefined) return null;
+            return {
+              filePath: fp,
+              line,
+              column,
+              endLine: parseNumber(item, "endLine"),
+              endColumn: parseNumber(item, "endColumn"),
+            };
+          })
+          .filter((item): item is DefinitionItem => item !== null);
+        gotoGroups = [
+          {
+            language,
+            count: parseNumber(parsed, "count") ?? defs.length,
+            definitions: defs,
+            status: "complete",
+          },
+        ];
+      }
+      const allDefs = gotoGroups.flatMap((g) => g.definitions);
+      const totalCount =
+        gotoGroups.reduce((acc, g) => acc + g.count, 0) || allDefs.length;
+      const lang =
+        gotoGroups.find((g) => g.language)?.language ??
+        language ??
+        parseString(parsed, "language");
       return {
         type: "definition-jump",
-        language,
-        name: parseString(parsed, "name"),
-        count: parseNumber(parsed, "count") ?? definitions.length,
-        definitions,
+        language: lang,
+        name: parseString(parsed, "name") ?? gotoGroups[0]?.target?.symbol,
+        count: totalCount,
+        targetCount: gotoGroups.length,
+        definitions: allDefs,
+        groups: gotoGroups,
+        kind: parseString(parsed, "kind"),
       };
     }
 
@@ -1285,25 +1496,50 @@ export const LspToolCall = ({
   }, [decodedResult, toolCall.result]);
 
   const effectiveFilePath = filePath || resolvedTarget?.filePath || "";
-  const displayName = effectiveFilePath
-    ? getFileName(effectiveFilePath)
-    : (parsedArgs &&
-        "symbol" in parsedArgs &&
-        typeof parsedArgs.symbol === "string" &&
-        parsedArgs.symbol) ||
-      (parsedArgs &&
-        "query" in parsedArgs &&
-        typeof parsedArgs.query === "string" &&
-        parsedArgs.query) ||
-      (parsedArgs &&
-        "command" in parsedArgs &&
-        typeof parsedArgs.command === "string" &&
-        parsedArgs.command) ||
-      (parsedArgs &&
-        "pattern" in parsedArgs &&
-        typeof parsedArgs.pattern === "string" &&
-        parsedArgs.pattern) ||
-      undefined;
+
+  // 提取所有涉及的目标文件列表（单项或多项）
+  const allArgFiles = useMemo(() => {
+    if (!parsedArgs) return [];
+    if (
+      "items" in parsedArgs &&
+      Array.isArray((parsedArgs as { items?: unknown }).items)
+    ) {
+      const list = (parsedArgs as { items: unknown[] }).items
+        .map((it) => (isRecord(it) ? parseString(it, "filePath") : undefined))
+        .filter((fp): fp is string => typeof fp === "string" && fp.length > 0);
+      return Array.from(new Set(list));
+    }
+    if (hasFilePath(parsedArgs)) return [parsedArgs.filePath];
+    return [];
+  }, [parsedArgs]);
+
+  const targetFileSummary =
+    allArgFiles.length > 1
+      ? `${getFileName(allArgFiles[0])} 等 ${allArgFiles.length} 个文件`
+      : allArgFiles.length === 1
+        ? getFileName(allArgFiles[0])
+        : undefined;
+
+  const displayName =
+    targetFileSummary ||
+    (effectiveFilePath ? getFileName(effectiveFilePath) : undefined) ||
+    (parsedArgs &&
+      "symbol" in parsedArgs &&
+      typeof parsedArgs.symbol === "string" &&
+      parsedArgs.symbol) ||
+    (parsedArgs &&
+      "query" in parsedArgs &&
+      typeof parsedArgs.query === "string" &&
+      parsedArgs.query) ||
+    (parsedArgs &&
+      "command" in parsedArgs &&
+      typeof parsedArgs.command === "string" &&
+      parsedArgs.command) ||
+    (parsedArgs &&
+      "pattern" in parsedArgs &&
+      typeof parsedArgs.pattern === "string" &&
+      parsedArgs.pattern) ||
+    undefined;
 
   // Header meta：语言 badge + 结果计数 badge。
   const meta = useMemo(() => {
@@ -1360,9 +1596,25 @@ export const LspToolCall = ({
       );
     }
     if (parsedResult.type === "hover") {
-      return langBadge;
+      const itemsCount = parsedResult.items?.length ?? 1;
+      return (
+        <>
+          {langBadge}
+          <span className="tool-call-codelens-count tool-call-codelens-count-info">
+            {itemsCount > 1
+              ? t("toolCall.lsp.hoverItemsCount", {
+                  values: { count: itemsCount },
+                  defaultValue: `${itemsCount} 项文档`,
+                })
+              : t("toolCall.lsp.hoverSingle", {
+                  defaultValue: "类型与文档",
+                })}
+          </span>
+        </>
+      );
     }
     if (parsedResult.type === "references") {
+      const targetCount = parsedResult.targetCount ?? 1;
       return (
         <>
           {langBadge}
@@ -1373,9 +1625,17 @@ export const LspToolCall = ({
                 : "tool-call-codelens-count-muted"
             }`}
           >
-            {t("toolCall.lsp.referencesCount", {
-              values: { count: parsedResult.count },
-            })}
+            {targetCount > 1
+              ? t("toolCall.lsp.batchReferencesCount", {
+                  values: {
+                    targets: targetCount,
+                    references: parsedResult.count,
+                  },
+                  defaultValue: `${targetCount} 目标 · ${parsedResult.count} 处引用`,
+                })
+              : t("toolCall.lsp.referencesCount", {
+                  values: { count: parsedResult.count },
+                })}
           </span>
         </>
       );
@@ -1511,9 +1771,19 @@ export const LspToolCall = ({
                 : "tool-call-codelens-count-muted"
             }`}
           >
-            {t("toolCall.lsp.definitionsCount", {
-              values: { count: parsedResult.count },
-            })}
+            {navigationKind === "implementation"
+              ? t("toolCall.lsp.implementationsCount", {
+                  values: { count: parsedResult.count },
+                  defaultValue: `${parsedResult.count} 处实现`,
+                })
+              : navigationKind === "type-definition"
+                ? t("toolCall.lsp.typeDefinitionsCount", {
+                    values: { count: parsedResult.count },
+                    defaultValue: `${parsedResult.count} 处类型定义`,
+                  })
+                : t("toolCall.lsp.definitionsCount", {
+                    values: { count: parsedResult.count },
+                  })}
           </span>
         </>
       );
@@ -2271,48 +2541,10 @@ function LspToolBody({
 
             {/* Definition jump view（goto definition / type-definition / implementation） */}
             {parsedResult.type === "definition-jump" ? (
-              parsedResult.definitions.length > 0 ? (
-                <div className="tool-call-lsp-def-list">
-                  {parsedResult.definitions.map((def, idx) => (
-                    <div
-                      key={`${def.filePath}-${def.line}-${idx}`}
-                      className="tool-call-lsp-def-item"
-                    >
-                      <div
-                        className="tool-call-lsp-def-header"
-                        title={def.filePath}
-                      >
-                        <Crosshair size={11} aria-hidden="true" />
-                        <span className="tool-call-lsp-def-name">
-                          {getFileName(def.filePath)}
-                        </span>
-                        <span className="tool-call-lsp-def-path">
-                          {def.filePath}
-                        </span>
-                        <span className="tool-call-codelens-ref-file-count">
-                          <Hash size={9} aria-hidden="true" />
-                          {def.line}:{def.column}
-                          {def.endLine !== undefined &&
-                          def.endColumn !== undefined
-                            ? ` → ${def.endLine}:${def.endColumn}`
-                            : ""}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="tool-call-codelens-no-results">
-                  <XCircle size={14} aria-hidden="true" />
-                  <span>
-                    {t(
-                      resultMeta.status === "partial"
-                        ? "toolCall.lsp.incompleteEmpty"
-                        : "toolCall.lsp.noDefinitions",
-                    )}
-                  </span>
-                </div>
-              )
+              <LspGotoListView
+                definitions={parsedResult.definitions}
+                groups={parsedResult.groups}
+              />
             ) : null}
 
             {/* Workspace symbols view */}
@@ -2533,61 +2765,15 @@ function LspToolBody({
 
             {/* Hover view */}
             {parsedResult.type === "hover" ? (
-              <div className="tool-call-section">
-                <span className="tool-call-section-label">
-                  {t("toolCall.lsp.result")}
-                </span>
-                <pre
-                  className="tool-call-section-pre"
-                  style={{
-                    whiteSpace: "pre-wrap",
-                    maxHeight: 320,
-                    overflowY: "auto",
-                  }}
-                >
-                  {parsedResult.contents}
-                </pre>
-              </div>
+              <LspHoverListView items={parsedResult.items} />
             ) : null}
 
             {/* References view */}
             {parsedResult.type === "references" ? (
-              parsedResult.references.length > 0 ? (
-                <div className="tool-call-codelens-ref-list">
-                  {parsedResult.references.map((ref, idx) => (
-                    <div
-                      key={`${ref.filePath}-${ref.line}-${idx}`}
-                      className="tool-call-codelens-ref-match"
-                      style={{ padding: "4px 8px" }}
-                    >
-                      <span className="tool-call-codelens-ref-loc">
-                        <Hash size={9} aria-hidden="true" />
-                        {ref.filePath ? `${getFileName(ref.filePath)}:` : ""}
-                        {ref.line}:{ref.column}
-                      </span>
-                      {ref.context ? (
-                        <code
-                          className="tool-call-codelens-ref-access"
-                          style={{ marginLeft: 8 }}
-                        >
-                          {ref.context}
-                        </code>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="tool-call-codelens-no-results">
-                  <XCircle size={14} aria-hidden="true" />
-                  <span>
-                    {t(
-                      resultMeta.status === "partial"
-                        ? "toolCall.lsp.incompleteEmpty"
-                        : "toolCall.lsp.noReferences",
-                    )}
-                  </span>
-                </div>
-              )
+              <LspReferencesListView
+                references={parsedResult.references}
+                groups={parsedResult.groups}
+              />
             ) : null}
 
             {parsedResult.type === "symbols" &&

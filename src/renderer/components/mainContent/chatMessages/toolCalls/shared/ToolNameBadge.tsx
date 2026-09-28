@@ -1,6 +1,8 @@
 import {
+  Activity,
   Bot,
   Copy,
+  Database,
   FilePen,
   FilePlus,
   FileText,
@@ -36,6 +38,8 @@ export type ToolCategory =
   | "lens"
   | "image"
   | "skill"
+  | "database"
+  | "telemetry"
   | "generic";
 
 const CATEGORY_ICONS: Record<ToolCategory, LucideIcon> = {
@@ -55,6 +59,8 @@ const CATEGORY_ICONS: Record<ToolCategory, LucideIcon> = {
   lens: ScanSearch,
   image: ImageIcon,
   skill: Sparkles,
+  database: Database,
+  telemetry: Activity,
   generic: Wrench,
 };
 
@@ -107,8 +113,37 @@ export const getToolCategory = (toolName: string): ToolCategory => {
     lower.includes("command")
   )
     return "terminal";
-  if (lower.includes("web") || lower.includes("fetch") || lower.includes("url"))
+  if (
+    lower.includes("db") ||
+    lower.includes("sql") ||
+    lower.includes("database") ||
+    lower.includes("table") ||
+    lower.includes("redis") ||
+    lower.includes("postgres") ||
+    lower.includes("mongo")
+  ) {
+    return "database";
+  }
+  if (
+    lower.includes("telemetry") ||
+    lower.includes("diagnos") ||
+    lower.includes("audit") ||
+    lower.includes("trace") ||
+    lower.includes("metric") ||
+    lower.includes("log")
+  ) {
+    return "telemetry";
+  }
+  if (
+    lower.includes("web") ||
+    lower.includes("fetch") ||
+    lower.includes("url") ||
+    lower.includes("firecrawl") ||
+    lower.includes("crawl") ||
+    lower.includes("scrape")
+  ) {
     return "web";
+  }
   if (lower.includes("imagegen") || lower.includes("generate-image"))
     return "image";
   if (lower.includes("git")) return "git";

@@ -31391,6 +31391,12 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 :root[data-theme="dark"] .branch-dropdown-wt-item:hover {
   background: rgba(16, 185, 129, 0.12);
 }
+.branch-dropdown-wt-item.is-disabled,
+.branch-dropdown-wt-item.is-disabled:hover,
+:root[data-theme="dark"] .branch-dropdown-wt-item.is-disabled:hover {
+  cursor: not-allowed;
+  background: transparent;
+}
 
 .branch-dropdown-item-left {
   display: flex;

@@ -523,8 +523,16 @@ export const BranchSelector = ({
     chatContext = null;
   }
 
+  const isSessionRunning = Boolean(
+    chatContext?.isStreaming ||
+      chatContext?.isAborting ||
+      chatContext?.isCompacting,
+  );
+
   const handleSelectWorktreeForChat = (wt: GitWorktreeInfo): void => {
-    if (!chatContext) return;
+    // Match the chat input selector: never change a running conversation's
+    // persisted binding while its tools and checkpoint use the current tree.
+    if (!chatContext || isSessionRunning) return;
     if (chatContext.activeConversationId) {
       void window.snow.setConversationWorktree(
         chatContext.activeConversationId,
@@ -1180,8 +1188,8 @@ export const BranchSelector = ({
                       return (
                         <div
                           key={wt.worktreeId}
-                          className={`branch-dropdown-item branch-dropdown-wt-item${isCurrent ? " active" : ""}`}
-                          title={`${wt.worktreePath}${wt.isDirty ? " · 包含未提交修改" : ""}\n${t("git.clickToBindWorktree", { defaultValue: "点击为此会话选择该工作树" })}`}
+                          className={`branch-dropdown-item branch-dropdown-wt-item${isCurrent ? " active" : ""}${isSessionRunning ? " is-disabled" : ""}`}
+                          title={`${wt.worktreePath}${wt.isDirty ? " · 包含未提交修改" : ""}\n${isSessionRunning ? t("plusMenu.modeLockedRunning", { defaultValue: "会话进行中，暂不可切换模式" }) : t("git.clickToBindWorktree", { defaultValue: "点击为此会话选择该工作树" })}`}
                           onClick={() => handleSelectWorktreeForChat(wt)}
                         >
                           <div className="branch-dropdown-item-left">

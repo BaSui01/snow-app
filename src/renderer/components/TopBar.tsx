@@ -829,10 +829,24 @@ export const TopBar = ({
             {sidebarActions}
           </div>
         ) : null}
-        <div className="header-title-group">
-          <h2 className="header-title">{pageTitle}</h2>
+        <div
+          className={`header-title-group${settingsPage ? " is-settings-page" : ""}${isTeamView ? " is-team-page" : ""}`}
+        >
+          <h2
+            className="header-title"
+            title={typeof pageTitle === "string" ? pageTitle : undefined}
+          >
+            {pageTitle}
+          </h2>
           {pageSubtitle ? (
-            <span className="header-subtitle">{pageSubtitle}</span>
+            <span
+              className="header-subtitle"
+              title={
+                typeof pageSubtitle === "string" ? pageSubtitle : undefined
+              }
+            >
+              {pageSubtitle}
+            </span>
           ) : null}
         </div>
         {featurePage ? (

@@ -59,7 +59,8 @@ const mobilePageAssetsPlugin = (): Plugin => {
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin(), mobilePageAssetsPlugin()],
+    // 规避 pnpm 下本地 vite 与 electron-vite 跨依赖树深层 rollup 类型细微出入引发的 TS2769
+    plugins: [externalizeDepsPlugin(), mobilePageAssetsPlugin() as any],
     build: {
       chunkSizeWarningLimit: 1200,
       rollupOptions: {

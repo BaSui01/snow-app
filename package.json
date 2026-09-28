@@ -81,6 +81,7 @@
   "build": {
     "appId": "com.snow.app",
     "productName": "Snow App",
+    "electronVersion": "37.10.3",
     "asar": true,
     "npmRebuild": false,
     "files": [

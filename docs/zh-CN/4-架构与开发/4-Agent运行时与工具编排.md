@@ -365,17 +365,20 @@ sequenceDiagram
 - Plan 未批准时，Renderer UX 与 Rust 写入拦截必须同时成立。
 - 模型交换先落库，工具结果在下一轮作为结构化 tool-role 历史进入。
 - 回滚前必须等待仍可能写库的异步任务收敛。
+- 工作树执行域一致性：处于工作树模式（WorkTree Mode）时，会话的物理执行根目录（`executionWorkspaceRoot`）必须在请求契约中自包含传递，并与底层 Checkpoint 记录目录（`manifest.work_dir`）及前端变更面板保持 100% 对称；系统提示词中的工作目录必须等于真实物理根目录。
+- 会话状态落库原子性：新会话升级落库（Session Migration）状态持久化必须顺序/原子执行，禁止并发向 SQLite 派发多个裸写事务；Rust 存储层所有写操作必须接入 `with_write_lock` 和 `with_write_retry`。
 
 ## 15. 源码锚点
 
-| 主题              | 文件                                                                                                              |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------- |
-| 主循环与流状态    | `src/renderer/components/mainContent/chatMessages/hooks/useAgentLoop.ts`、`agentLoopHelpers.ts`                   |
-| 工具执行与授权    | `toolExecution.ts`、`useToolAuthorization.ts`                                                                     |
-| Hooks             | `hooks/hookOutcome.ts`、`useToolAuthorization.ts`、`native/src/hooks/`                                            |
-| 子代理            | `hooks/subAgentActivation.ts`、`native/src/api/conversation/sub_agent.rs`、`native/src/mcp/servers/sub_agents.rs` |
-| 压缩与回滚        | `hooks/useCompaction.ts`、`hooks/useRollback.ts`、`native/src/exports/checkpoint.rs`                              |
-| 流 IPC            | `src/preload/modules/apiConfigApi.ts`、`src/main/ipc/handlers/chatHandlers.ts`、`src/main/utils/safeSend.ts`      |
-| Provider 分派     | `native/src/api/conversation/stream.rs`、`tool_messages.rs`                                                       |
-| MCP 发现与调用    | `native/src/mcp/builtin.rs`、`native/src/mcp/tools.rs`、`native/src/mcp/external/`                                |
-| 会话与 usage 存储 | `native/src/storage/services/chat_conversations.rs`、`usage_records.rs`                                           |
+| 主题               | 文件                                                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| 主循环与流状态     | `src/renderer/components/mainContent/chatMessages/hooks/useAgentLoop.ts`、`agentLoopHelpers.ts`                           |
+| 工具执行与授权     | `toolExecution.ts`、`useToolAuthorization.ts`                                                                             |
+| 工作树执行域与绑定 | `native/src/storage/services/git/worktrees.rs`、`utils/conversationHelpers.ts`、`chatInput/useConversationFileChanges.ts` |
+| Hooks              | `hooks/hookOutcome.ts`、`useToolAuthorization.ts`、`native/src/hooks/`                                                    |
+| 子代理             | `hooks/subAgentActivation.ts`、`native/src/api/conversation/sub_agent.rs`、`native/src/mcp/servers/sub_agents.rs`         |
+| 压缩与回滚         | `hooks/useCompaction.ts`、`hooks/useRollback.ts`、`native/src/exports/checkpoint.rs`                                      |
+| 流 IPC             | `src/preload/modules/apiConfigApi.ts`、`src/main/ipc/handlers/chatHandlers.ts`、`src/main/utils/safeSend.ts`              |
+| Provider 分派      | `native/src/api/conversation/stream.rs`、`tool_messages.rs`                                                               |
+| MCP 发现与调用     | `native/src/mcp/builtin.rs`、`native/src/mcp/tools.rs`、`native/src/mcp/external/`                                        |
+| 会话与 usage 存储  | `native/src/storage/services/chat_conversations.rs`、`usage_records.rs`                                                   |

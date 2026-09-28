@@ -132,6 +132,8 @@ async fn create_anthropic_response_async(
         system_prompt_ids_json: &api_config.system_prompt_ids_json,
         remote_role_content: request.remote_role_content.as_deref(),
         remote_include_global_rules: request.remote_include_global_rules,
+        execution_workspace_root: request.execution_workspace_root.as_deref(),
+        worktree_id: request.worktree_id.as_deref(),
     })
     .await?;
 

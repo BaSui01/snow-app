@@ -65,4 +65,8 @@ pub struct ConversationContextRequest<'a> {
     /// local workspaces, where the prompt builder reads the file directly.
     pub remote_role_content: Option<&'a str>,
     pub remote_include_global_rules: Option<bool>,
+    /// Explicit effective workspace execution root (e.g. worktree directory path).
+    pub execution_workspace_root: Option<&'a str>,
+    /// Selected or preselected worktree ID for the conversation.
+    pub worktree_id: Option<&'a str>,
 }

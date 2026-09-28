@@ -436,51 +436,94 @@ fn ensure_worktree_has_no_bindings(
 
 pub fn remove_worktree(database_path: &Path, directory_id: &str, worktree_id: &str) -> Result<()> {
     let repository_path = project_repository(database_path, directory_id)?;
-    let mut connection = database::open_connection(database_path)
-        .map_err(|error| database::database_error(database_path, "open worktree registry for removal", error))?;
-    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)
-        .map_err(|error| database::database_error(database_path, "begin worktree removal", error))?;
-    let worktree = transaction.query_row(
-        "SELECT repository_path, worktree_path FROM git_worktrees WHERE worktree_id = ?1 AND directory_id = ?2",
-        params![worktree_id, directory_id],
-        |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
-    ).optional()
-        .map_err(|error| database::database_error(database_path, "find worktree to remove", error))?
-        .ok_or_else(|| Error::from_reason("Worktree was not found in this project"))?;
-    if canonical(&worktree.0) != canonical(&repository_path) {
-        return Err(Error::from_reason("Worktree registry entry belongs to a different repository"));
-    }
-    let registered_path = canonical(&worktree.1);
-    if registered_path == canonical(&repository_path) {
-        return Err(Error::from_reason("The main working tree cannot be removed"));
-    }
-    if is_team_worktree(&registered_path) {
-        return Err(Error::from_reason("Team worktrees cannot be removed here"));
-    }
-    ensure_worktree_has_no_bindings(&transaction, database_path, worktree_id)?;
+    database::with_write_lock(|| {
+        database::with_write_retry(
+            || {
+                let mut connection = database::open_connection(database_path)?;
+                let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                let worktree = transaction.query_row(
+                    "SELECT repository_path, worktree_path FROM git_worktrees WHERE worktree_id = ?1 AND directory_id = ?2",
+                    params![worktree_id, directory_id],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+                ).optional()?;
+                let worktree = match worktree {
+                    Some(w) => w,
+                    None => return Err(rusqlite::Error::SqliteFailure(
+                        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
+                        Some("Worktree was not found in this project".to_string()),
+                    )),
+                };
+                if canonical(&worktree.0) != canonical(&repository_path) {
+                    return Err(rusqlite::Error::SqliteFailure(
+                        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
+                        Some("Worktree registry entry belongs to a different repository".to_string()),
+                    ));
+                }
+                let registered_path = canonical(&worktree.1);
+                if registered_path == canonical(&repository_path) {
+                    return Err(rusqlite::Error::SqliteFailure(
+                        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
+                        Some("The main working tree cannot be removed".to_string()),
+                    ));
+                }
+                if is_team_worktree(&registered_path) {
+                    return Err(rusqlite::Error::SqliteFailure(
+                        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
+                        Some("Team worktrees cannot be removed here".to_string()),
+                    ));
+                }
+                ensure_worktree_has_no_bindings(&transaction, database_path, worktree_id)
+                    .map_err(|err| rusqlite::Error::SqliteFailure(
+                        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
+                        Some(err.to_string()),
+                    ))?;
 
-    if Path::new(&registered_path).exists() {
-        let entry = list_git_worktree_entries(&repository_path)?
-            .into_iter()
-            .find(|entry| canonical(&entry.path) == registered_path)
-            .ok_or_else(|| Error::from_reason("Registered path is not a worktree of this repository"))?;
-        if !is_git_repo(&entry.path) {
-            return Err(Error::from_reason("Cannot remove an invalid or missing Git worktree"));
-        }
-        let info = inspect_entry(&repository_path, directory_id, entry, worktree_id.to_string())?;
-        if info.is_dirty {
-            return Err(Error::from_reason("Cannot remove a dirty worktree; commit or discard its changes first"));
-        }
-        run_git(&repository_path, &["worktree", "remove", "--", &registered_path])
-            .map_err(|error| Error::from_reason(format!("Failed to remove Git worktree: {error}")))?;
-    }
+                if Path::new(&registered_path).exists() {
+                    let entry = list_git_worktree_entries(&repository_path)
+                        .map_err(|err| rusqlite::Error::SqliteFailure(
+                            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
+                            Some(err.to_string()),
+                        ))?
+                        .into_iter()
+                        .find(|entry| canonical(&entry.path) == registered_path)
+                        .ok_or_else(|| rusqlite::Error::SqliteFailure(
+                            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
+                            Some("Registered path is not a worktree of this repository".to_string()),
+                        ))?;
+                    if !is_git_repo(&entry.path) {
+                        return Err(rusqlite::Error::SqliteFailure(
+                            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
+                            Some("Cannot remove an invalid or missing Git worktree".to_string()),
+                        ));
+                    }
+                    let info = inspect_entry(&repository_path, directory_id, entry, worktree_id.to_string())
+                        .map_err(|err| rusqlite::Error::SqliteFailure(
+                            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
+                            Some(err.to_string()),
+                        ))?;
+                    if info.is_dirty {
+                        return Err(rusqlite::Error::SqliteFailure(
+                            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
+                            Some("Cannot remove a dirty worktree; commit or discard its changes first".to_string()),
+                        ));
+                    }
+                    run_git(&repository_path, &["worktree", "remove", "--", &registered_path])
+                        .map_err(|error| rusqlite::Error::SqliteFailure(
+                            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
+                            Some(format!("Failed to remove Git worktree: {error}")),
+                        ))?;
+                }
 
-    transaction.execute(
-        "DELETE FROM git_worktrees WHERE worktree_id = ?1 AND directory_id = ?2",
-        params![worktree_id, directory_id],
-    ).map_err(|error| database::database_error(database_path, "delete worktree registry entry", error))?;
-    transaction.commit()
-        .map_err(|error| database::database_error(database_path, "finish worktree removal", error))
+                transaction.execute(
+                    "DELETE FROM git_worktrees WHERE worktree_id = ?1 AND directory_id = ?2",
+                    params![worktree_id, directory_id],
+                )?;
+                transaction.commit()
+            },
+            "remove worktree",
+        )
+    })
+    .map_err(|error| database::database_error(database_path, "remove worktree", error))
 }
 
 pub fn set_conversation_worktree(database_path: &Path, conversation_id: &str, worktree_id: Option<&str>) -> Result<()> {
@@ -488,42 +531,64 @@ pub fn set_conversation_worktree(database_path: &Path, conversation_id: &str, wo
     if conversation_id.is_empty() {
         return Err(Error::from_reason("Conversation id is required"));
     }
-    let mut connection = database::open_connection(database_path)
-        .map_err(|error| database::database_error(database_path, "open worktree binding database", error))?;
-    let transaction = connection.transaction()
-        .map_err(|error| database::database_error(database_path, "begin worktree binding", error))?;
-    let exists: bool = transaction.query_row("SELECT EXISTS(SELECT 1 FROM chat_conversations WHERE conversation_id = ?1)", [conversation_id], |row| row.get(0))
-        .map_err(|error| database::database_error(database_path, "validate conversation", error))?;
-    if !exists {
-        return Err(Error::from_reason("Conversation was not found in the active database"));
-    }
-    if let Some(worktree_id) = worktree_id {
-        let worktree = transaction.query_row(
-            "SELECT w.directory_id, w.repository_path, w.worktree_path
-               FROM git_worktrees w
-               JOIN chat_conversations c ON c.directory_id = w.directory_id
-              WHERE w.worktree_id = ?1 AND c.conversation_id = ?2",
-            params![worktree_id, conversation_id],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
-        ).optional()
-        .map_err(|error| database::database_error(database_path, "validate conversation worktree", error))?
-        .ok_or_else(|| Error::from_reason("Worktree was not found or belongs to another project"))?;
-        let path_matches = list_git_worktree_entries(&worktree.1)
-            .map(|entries| entries.into_iter().any(|entry| canonical(&entry.path) == canonical(&worktree.2)))
-            .unwrap_or(false);
-        if !path_matches || !is_git_repo(&worktree.2) {
-            return Err(Error::from_reason("Cannot bind an invalid or missing Git worktree"));
-        }
-        transaction.execute(
-            "INSERT INTO conversation_worktree_bindings (conversation_id, worktree_id, updated_at) VALUES (?1, ?2, datetime('now', 'localtime'))
-             ON CONFLICT(conversation_id) DO UPDATE SET worktree_id = excluded.worktree_id, updated_at = excluded.updated_at",
-            params![conversation_id, worktree_id],
-        ).map_err(|error| database::database_error(database_path, "bind conversation worktree", error))?;
-    } else {
-        transaction.execute("DELETE FROM conversation_worktree_bindings WHERE conversation_id = ?1", [conversation_id])
-            .map_err(|error| database::database_error(database_path, "unbind conversation worktree", error))?;
-    }
-    transaction.commit().map_err(|error| database::database_error(database_path, "finish worktree binding", error))
+    database::with_write_lock(|| {
+        database::with_write_retry(
+            || {
+                let mut connection = database::open_connection(database_path)?;
+                let transaction = connection.transaction()?;
+                let exists: bool = transaction.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM chat_conversations WHERE conversation_id = ?1)",
+                    [conversation_id],
+                    |row| row.get(0),
+                )?;
+                if !exists {
+                    return Err(rusqlite::Error::SqliteFailure(
+                        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
+                        Some("Conversation was not found in the active database".to_string()),
+                    ));
+                }
+                if let Some(worktree_id) = worktree_id {
+                    let worktree = transaction.query_row(
+                        "SELECT w.directory_id, w.repository_path, w.worktree_path
+                           FROM git_worktrees w
+                           JOIN chat_conversations c ON c.directory_id = w.directory_id
+                          WHERE w.worktree_id = ?1 AND c.conversation_id = ?2",
+                        params![worktree_id, conversation_id],
+                        |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
+                    ).optional()?;
+                    let (_directory_id, repository_path, worktree_path) = match worktree {
+                        Some(w) => w,
+                        None => return Err(rusqlite::Error::SqliteFailure(
+                            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
+                            Some("Worktree was not found or belongs to another project".to_string()),
+                        )),
+                    };
+                    let path_matches = list_git_worktree_entries(&repository_path)
+                        .map(|entries| entries.into_iter().any(|entry| canonical(&entry.path) == canonical(&worktree_path)))
+                        .unwrap_or(false);
+                    if !path_matches || !is_git_repo(&worktree_path) {
+                        return Err(rusqlite::Error::SqliteFailure(
+                            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
+                            Some("Cannot bind an invalid or missing Git worktree".to_string()),
+                        ));
+                    }
+                    transaction.execute(
+                        "INSERT INTO conversation_worktree_bindings (conversation_id, worktree_id, updated_at) VALUES (?1, ?2, datetime('now', 'localtime'))
+                         ON CONFLICT(conversation_id) DO UPDATE SET worktree_id = excluded.worktree_id, updated_at = excluded.updated_at",
+                        params![conversation_id, worktree_id],
+                    )?;
+                } else {
+                    transaction.execute(
+                        "DELETE FROM conversation_worktree_bindings WHERE conversation_id = ?1",
+                        [conversation_id],
+                    )?;
+                }
+                transaction.commit()
+            },
+            "bind conversation worktree",
+        )
+    })
+    .map_err(|error| database::database_error(database_path, "set conversation worktree", error))
 }
 
 pub fn get_conversation_worktree(database_path: &Path, conversation_id: &str) -> Result<Option<GitWorktreeInfo>> {
@@ -538,6 +603,57 @@ pub fn get_conversation_worktree(database_path: &Path, conversation_id: &str) ->
             ).optional()
         })
         .map_err(|error| database::database_error(database_path, "get conversation worktree", error))?;
+    let Some((worktree_id, directory_id, repository_path, worktree_path, branch_name)) = binding else {
+        return Ok(None);
+    };
+    let current = list_git_worktree_entries(&repository_path)
+        .ok()
+        .and_then(|entries| {
+            entries
+                .into_iter()
+                .find(|entry| canonical(&entry.path) == canonical(&worktree_path))
+        });
+    let Some(entry) = current else {
+        return Ok(Some(GitWorktreeInfo {
+            worktree_id,
+            directory_id,
+            repository_path,
+            worktree_path,
+            branch_name,
+            head_oid: String::new(),
+            is_detached: false,
+            is_dirty: false,
+            is_valid: false,
+        }));
+    };
+    if !is_git_repo(&entry.path) {
+        return Ok(Some(GitWorktreeInfo {
+            worktree_id,
+            directory_id,
+            repository_path: canonical(&repository_path),
+            worktree_path: canonical(&entry.path),
+            branch_name: entry.branch,
+            head_oid: entry.head,
+            is_detached: entry.detached,
+            is_dirty: false,
+            is_valid: false,
+        }));
+    }
+    inspect_entry(&repository_path, &directory_id, entry, worktree_id).map(Some)
+}
+
+pub fn get_worktree_by_id(database_path: &Path, worktree_id: &str) -> Result<Option<GitWorktreeInfo>> {
+    let binding = database::open_connection(database_path)
+        .and_then(|connection| {
+            connection.query_row(
+                "SELECT w.worktree_id, w.directory_id, w.repository_path, w.worktree_path, w.branch_name
+                   FROM git_worktrees w
+                  WHERE w.worktree_id = ?1",
+                [worktree_id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, String>(3)?, row.get::<_, Option<String>>(4)?)),
+            ).optional()
+        })
+        .map_err(|error| database::database_error(database_path, "get worktree by id", error))?;
     let Some((worktree_id, directory_id, repository_path, worktree_path, branch_name)) = binding else {
         return Ok(None);
     };

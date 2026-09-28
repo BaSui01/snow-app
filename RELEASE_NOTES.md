@@ -1,5 +1,29 @@
 # Release Notes
 
+## v0.4.10
+
+## New Features
+
+- **Typography and UI Zoom**: Theme settings gain typography controls (interface font size, weight, chat font size / line height, code font size); the interface font size uses full-page zoom, with new `mod+=` / `mod+-` / `mod+0` shortcuts to zoom in, out and reset.
+- **Project Grid View and Switch Targeting**: A grid view dialog in the sidebar project area (search, browse by collection group); switching projects jumps to the project's running session, creating a new one when none is running.
+- **Script Data APIs and CORS-Free Requests**: Client scripts support the `@snow-privacy` declaration and reuse panel-plugin metadata and write capabilities via `snow.metadata` / `snow.write`; new `snow.fetch` sends CORS-free requests from the main process, and sandboxed scripts get it as their global `fetch`.
+- **Language-Server Symbol Addressing and Runtime Controls**: LSP tools resolve targets directly from symbol names (hover, definition, references, rename, call/type hierarchy need no file coordinates; omitting the path resolves across the workspace with ambiguity candidates); the LSP settings panel shows per-server status with start / stop / restart.
+- **Mac Platinum Theme**: A new macOS-style theme preset (light and dark palettes).
+
+## Improvements
+
+- Git panel refactor: the commit graph is permanent, walks only the current branch and marks unpushed commits; diffs open in a new tab.
+- Settings pages move their title and actions to the top bar.
+- LSP semantic tooling hardened: the advertised tool list follows the final tool snapshot (permissions, workspace, server capabilities, health); diagnostics accept 1–30 files (deduplicated, concurrency 3, per-file outcomes and totals); renames require a preview plus a single-use previewId; the persistent diagnostic cache is gone, and result cards show complete / partial / failed counts with truncation warnings.
+- AI commit messages use the Conventional Commits format and strip code fences automatically.
+- Faster startup: the storage-ready gate is released earlier, so window, workspace and Git IPC no longer wait.
+- Plugin and script creation entries share one AI prompt box.
+
+## Bug Fixes
+
+- Fixed Git branch parsing: local branches containing `/` are no longer misread as remotes, and the symbolic `refs/remotes/*/HEAD` no longer appears as a branch.
+- Fixed the macOS traffic-light alignment offset when the sidebar is collapsed.
+
 ## v0.4.9
 
 ## New Features

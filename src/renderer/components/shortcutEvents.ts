@@ -39,7 +39,10 @@ export type ShortcutAction =
   | "open-settings"
   | "toggle-right-panel-fullscreen"
   | "show-shortcut-help"
-  | "toggle-message-time";
+  | "toggle-message-time"
+  | "ui-zoom-in"
+  | "ui-zoom-out"
+  | "ui-zoom-reset";
 
 type ListenerMap = {
   "toggle-search": Set<() => void>;
@@ -68,6 +71,9 @@ type ListenerMap = {
   "toggle-right-panel-fullscreen": Set<() => void>;
   "show-shortcut-help": Set<() => void>;
   "toggle-message-time": Set<() => void>;
+  "ui-zoom-in": Set<() => void>;
+  "ui-zoom-out": Set<() => void>;
+  "ui-zoom-reset": Set<() => void>;
 };
 
 const listeners: ListenerMap = {
@@ -97,6 +103,9 @@ const listeners: ListenerMap = {
   "toggle-right-panel-fullscreen": new Set(),
   "show-shortcut-help": new Set(),
   "toggle-message-time": new Set(),
+  "ui-zoom-in": new Set(),
+  "ui-zoom-out": new Set(),
+  "ui-zoom-reset": new Set(),
 };
 
 export const shortcutEvents = {

@@ -44,6 +44,8 @@ SSH workspaces do not use the local picker/drop flow. Select **Add SSH directory
 
 Use the conversation row's ellipsis button or right-click menu to pin/unpin, rename (also available by double-clicking the title), set an icon, export as Markdown/HTML/JSON/CSV, enter multi-select mode, or delete. Draft text and image chips are stored per conversation, restored when you switch back, and cleared after a successful send.
 
+When you switch projects, the chat area automatically opens that project's **running** conversation (streaming or waiting for attention; the first one in the running list when several exist), and starts a new conversation when none is running. A conversation opened explicitly (through a cross-project notification, system notification, or remote control) is never overridden.
+
 Single and batch deletion both require confirmation. Deleting a conversation also stops related streams, cascades to its sub-agent conversations, and clears its input draft. If a conversation references image-library items, the dialog shows a **Delete images too** option:
 
 - It is **off by default**, so deleting a conversation keeps its library images;

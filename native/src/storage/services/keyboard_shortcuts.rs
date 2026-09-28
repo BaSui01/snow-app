@@ -33,13 +33,14 @@ impl Default for KeyboardShortcutConfig {
 }
 
 /// 校验 key 是否合法：非空且仅含允许的字符集。
-/// 允许：字母 / 数字 / `mod` / `+` / `-` / 反引号 / 部分命名键。
+/// 允许：字母 / 数字 / `mod` / `+` / `-` / `=` / 反引号 / 部分命名键。
 fn is_valid_key(key: &str) -> bool {
     if key.trim().is_empty() {
         return false;
     }
-    key.chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '`' | ',' | '.' | '/'))
+    key.chars().all(|c| {
+        c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '=' | '`' | ',' | '.' | '/')
+    })
 }
 
 /// toggleWindow 的默认配置：mod+shift+h（macOS ⌘⇧H / 其他 Ctrl+Shift+H）。
@@ -216,7 +217,34 @@ fn default_open_plugins_config() -> KeyboardShortcutConfig {
     }
 }
 
-/// 完整快捷键设置：27 个快捷键各自的配置。
+/// uiZoomIn 的默认配置：mod+=（macOS ⌘= / 其他 Ctrl+=）。
+fn default_ui_zoom_in_config() -> KeyboardShortcutConfig {
+    KeyboardShortcutConfig {
+        key: DEFAULT_UI_ZOOM_IN_KEY.to_string(),
+        enabled: true,
+        foreground_only: true,
+    }
+}
+
+/// uiZoomOut 的默认配置：mod+-（macOS ⌘- / 其他 Ctrl+-）。
+fn default_ui_zoom_out_config() -> KeyboardShortcutConfig {
+    KeyboardShortcutConfig {
+        key: DEFAULT_UI_ZOOM_OUT_KEY.to_string(),
+        enabled: true,
+        foreground_only: true,
+    }
+}
+
+/// uiZoomReset 的默认配置：mod+0（macOS ⌘0 / 其他 Ctrl+0）。
+fn default_ui_zoom_reset_config() -> KeyboardShortcutConfig {
+    KeyboardShortcutConfig {
+        key: DEFAULT_UI_ZOOM_RESET_KEY.to_string(),
+        enabled: true,
+        foreground_only: true,
+    }
+}
+
+/// 完整快捷键设置：30 个快捷键各自的配置。
 /// 序列化为 JSON 存储在 system_settings 表中。
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -281,6 +309,18 @@ pub struct KeyboardShortcutsSettings {
     /// default_toggle_message_time_config）。
     #[serde(default = "default_toggle_message_time_config")]
     pub toggle_message_time: KeyboardShortcutConfig,
+    /// 放大界面字号（整页缩放）。旧 JSON 缺少该字段时回退到默认配置
+    /// （mod+=，见 default_ui_zoom_in_config）。
+    #[serde(default = "default_ui_zoom_in_config")]
+    pub ui_zoom_in: KeyboardShortcutConfig,
+    /// 缩小界面字号（整页缩放）。旧 JSON 缺少该字段时回退到默认配置
+    /// （mod+-，见 default_ui_zoom_out_config）。
+    #[serde(default = "default_ui_zoom_out_config")]
+    pub ui_zoom_out: KeyboardShortcutConfig,
+    /// 重置界面字号。旧 JSON 缺少该字段时回退到默认配置
+    /// （mod+0，见 default_ui_zoom_reset_config）。
+    #[serde(default = "default_ui_zoom_reset_config")]
+    pub ui_zoom_reset: KeyboardShortcutConfig,
 }
 
 impl Default for KeyboardShortcutsSettings {
@@ -341,11 +381,14 @@ impl Default for KeyboardShortcutsSettings {
             toggle_right_panel_fullscreen: default_toggle_right_panel_fullscreen_config(),
             show_shortcut_help: default_show_shortcut_help_config(),
             toggle_message_time: default_toggle_message_time_config(),
+            ui_zoom_in: default_ui_zoom_in_config(),
+            ui_zoom_out: default_ui_zoom_out_config(),
+            ui_zoom_reset: default_ui_zoom_reset_config(),
         }
     }
 }
 
-/// 12 个快捷键的默认按键绑定（与渲染层 useKeyboardShortcuts 原始硬编码一致）。
+/// 30 个快捷键的默认按键绑定（与渲染层 KeyboardShortcutsProvider 默认值一致）。
 /// `mod` 为平台主修饰键占位符（macOS=Cmd，其他=Ctrl）。
 /// cycleApiProfile 平台相关：macOS 用 Ctrl+P（Option/Alt 会输入特殊字符），
 /// 其他平台用 Alt+P。
@@ -386,6 +429,9 @@ const DEFAULT_COPY_LAST_RESPONSE_KEY: &str = "mod+shift+c";
 const DEFAULT_TOGGLE_RIGHT_PANEL_FULLSCREEN_KEY: &str = "mod+shift+f";
 const DEFAULT_SHOW_SHORTCUT_HELP_KEY: &str = "mod+/";
 const DEFAULT_TOGGLE_MESSAGE_TIME_KEY: &str = "mod+shift+y";
+const DEFAULT_UI_ZOOM_IN_KEY: &str = "mod+=";
+const DEFAULT_UI_ZOOM_OUT_KEY: &str = "mod+-";
+const DEFAULT_UI_ZOOM_RESET_KEY: &str = "mod+0";
 
 impl KeyboardShortcutsSettings {
     /// 规范化：对每个配置校验 key 合法性，不合法时回退到默认按键绑定。
@@ -478,16 +524,25 @@ impl KeyboardShortcutsSettings {
         if !is_valid_key(&self.toggle_message_time.key) {
             self.toggle_message_time.key = DEFAULT_TOGGLE_MESSAGE_TIME_KEY.to_string();
         }
+        if !is_valid_key(&self.ui_zoom_in.key) {
+            self.ui_zoom_in.key = DEFAULT_UI_ZOOM_IN_KEY.to_string();
+        }
+        if !is_valid_key(&self.ui_zoom_out.key) {
+            self.ui_zoom_out.key = DEFAULT_UI_ZOOM_OUT_KEY.to_string();
+        }
+        if !is_valid_key(&self.ui_zoom_reset.key) {
+            self.ui_zoom_reset.key = DEFAULT_UI_ZOOM_RESET_KEY.to_string();
+        }
     }
 }
 
-/// 默认值：27 个快捷键各自默认 key + enabled=true；除 toggleWindow 外
+/// 默认值：30 个快捷键各自默认 key + enabled=true；除 toggleWindow 外
 /// foreground_only=true，toggleWindow 默认 false（全局生效，窗口隐藏时
 /// 也要能呼出）。与 DEFAULT_*_KEY 常量保持一致；cycleApiProfile 的 key
 /// 平台相关，动态构造。
 fn default_keyboard_shortcuts_value() -> String {
     format!(
-        r#"{{"cancelSession":{{"key":"escape","enabled":true,"foregroundOnly":true}},"openSearch":{{"key":"mod+f","enabled":true,"foregroundOnly":true}},"openMemo":{{"key":"mod+b","enabled":true,"foregroundOnly":true}},"openTodo":{{"key":"mod+t","enabled":true,"foregroundOnly":true}},"cycleProject":{{"key":"mod+backtick","enabled":true,"foregroundOnly":true}},"openProjectExplorer":{{"key":"mod+d","enabled":true,"foregroundOnly":true}},"openProjectMemory":{{"key":"mod+shift+m","enabled":true,"foregroundOnly":true}},"openScheduledTasks":{{"key":"mod+shift+t","enabled":true,"foregroundOnly":true}},"openPlugins":{{"key":"mod+shift+x","enabled":true,"foregroundOnly":true}},"cycleApiProfile":{{"key":"{DEFAULT_CYCLE_API_PROFILE_KEY}","enabled":true,"foregroundOnly":true}},"toggleWindow":{{"key":"mod+shift+h","enabled":true,"foregroundOnly":false}},"togglePet":{{"key":"mod+shift+p","enabled":true,"foregroundOnly":true}},"focusInput":{{"key":"mod+i","enabled":true,"foregroundOnly":true}},"toggleSidebar":{{"key":"mod+shift+l","enabled":true,"foregroundOnly":true}},"toggleRightPanel":{{"key":"mod+shift+r","enabled":true,"foregroundOnly":true}},"newChat":{{"key":"mod+n","enabled":true,"foregroundOnly":true}},"sendMessage":{{"key":"mod+enter","enabled":true,"foregroundOnly":true}},"stopGeneration":{{"key":"mod+.","enabled":true,"foregroundOnly":true}},"prevConversation":{{"key":"alt+left","enabled":true,"foregroundOnly":true}},"nextConversation":{{"key":"alt+right","enabled":true,"foregroundOnly":true}},"scrollToTop":{{"key":"mod+up","enabled":true,"foregroundOnly":true}},"scrollToBottom":{{"key":"mod+down","enabled":true,"foregroundOnly":true}},"openSettings":{{"key":"mod+,","enabled":true,"foregroundOnly":true}},"copyLastResponse":{{"key":"mod+shift+c","enabled":true,"foregroundOnly":true}},"toggleRightPanelFullscreen":{{"key":"mod+shift+f","enabled":true,"foregroundOnly":true}},"showShortcutHelp":{{"key":"mod+/","enabled":true,"foregroundOnly":true}},"toggleMessageTime":{{"key":"mod+shift+y","enabled":true,"foregroundOnly":true}}}}"#
+        r#"{{"cancelSession":{{"key":"escape","enabled":true,"foregroundOnly":true}},"openSearch":{{"key":"mod+f","enabled":true,"foregroundOnly":true}},"openMemo":{{"key":"mod+b","enabled":true,"foregroundOnly":true}},"openTodo":{{"key":"mod+t","enabled":true,"foregroundOnly":true}},"cycleProject":{{"key":"mod+backtick","enabled":true,"foregroundOnly":true}},"openProjectExplorer":{{"key":"mod+d","enabled":true,"foregroundOnly":true}},"openProjectMemory":{{"key":"mod+shift+m","enabled":true,"foregroundOnly":true}},"openScheduledTasks":{{"key":"mod+shift+t","enabled":true,"foregroundOnly":true}},"openPlugins":{{"key":"mod+shift+x","enabled":true,"foregroundOnly":true}},"cycleApiProfile":{{"key":"{DEFAULT_CYCLE_API_PROFILE_KEY}","enabled":true,"foregroundOnly":true}},"toggleWindow":{{"key":"mod+shift+h","enabled":true,"foregroundOnly":false}},"togglePet":{{"key":"mod+shift+p","enabled":true,"foregroundOnly":true}},"focusInput":{{"key":"mod+i","enabled":true,"foregroundOnly":true}},"toggleSidebar":{{"key":"mod+shift+l","enabled":true,"foregroundOnly":true}},"toggleRightPanel":{{"key":"mod+shift+r","enabled":true,"foregroundOnly":true}},"newChat":{{"key":"mod+n","enabled":true,"foregroundOnly":true}},"sendMessage":{{"key":"mod+enter","enabled":true,"foregroundOnly":true}},"stopGeneration":{{"key":"mod+.","enabled":true,"foregroundOnly":true}},"prevConversation":{{"key":"alt+left","enabled":true,"foregroundOnly":true}},"nextConversation":{{"key":"alt+right","enabled":true,"foregroundOnly":true}},"scrollToTop":{{"key":"mod+up","enabled":true,"foregroundOnly":true}},"scrollToBottom":{{"key":"mod+down","enabled":true,"foregroundOnly":true}},"openSettings":{{"key":"mod+,","enabled":true,"foregroundOnly":true}},"copyLastResponse":{{"key":"mod+shift+c","enabled":true,"foregroundOnly":true}},"toggleRightPanelFullscreen":{{"key":"mod+shift+f","enabled":true,"foregroundOnly":true}},"showShortcutHelp":{{"key":"mod+/","enabled":true,"foregroundOnly":true}},"toggleMessageTime":{{"key":"mod+shift+y","enabled":true,"foregroundOnly":true}},"uiZoomIn":{{"key":"mod+=","enabled":true,"foregroundOnly":true}},"uiZoomOut":{{"key":"mod+-","enabled":true,"foregroundOnly":true}},"uiZoomReset":{{"key":"mod+0","enabled":true,"foregroundOnly":true}}}}"#
     )
 }
 

@@ -1,6 +1,7 @@
 import { clipboard, contextBridge, ipcRenderer, webFrame } from "electron";
 
 import type {
+  ClientScriptApiHostHandler,
   ClientScriptContext,
   ClientScriptPayload,
 } from "./types/userscripts";
@@ -196,6 +197,13 @@ const invokeHostMethod = async (
         typeof args[0] === "string" ? args[0] : "",
       );
       return "";
+    case "metadata-get":
+    case "metadata-domains":
+    case "metadata-subscribe":
+    case "metadata-unsubscribe":
+    case "write-run":
+    case "write-domains":
+      return requestClientScriptApi(scriptId, method, argsJson);
     case "client-action": {
       const request = (args[0] ?? {}) as {
         action?: unknown;
@@ -252,6 +260,8 @@ const buildShimSource = (
   var usedSlots = [];
   var menuCallbacks = new Map();
   var valueListeners = new Map();
+  var metadataSubscriptions = new Map();
+  var pendingMetadata = new Map();
   var notificationCallbacks = new Map();
   var downloadCallbacks = new Map();
   var requestId = 0;
@@ -277,6 +287,16 @@ const buildShimSource = (
         { source: REQUEST, token: token, scriptId: INFO.scriptId, id: id, method: method, argsJson: argsJson },
         "*"
       );
+    });
+  }
+
+  function callJson(method, args) {
+    return call(method, args).then(function (value) {
+      if (typeof value === "string") {
+        if (!value) return null;
+        try { return JSON.parse(value); } catch (error) { return null; }
+      }
+      return value === undefined ? null : value;
     });
   }
 
@@ -493,8 +513,79 @@ const buildShimSource = (
   // createElement / append / MutationObserver / addEventListener 等全部可用；
   // data-snow-anchor 与 data-snow-slot 只是稳定选择器（清单见文档）。
 
+  var metadata = {
+    get: function (domain, options) {
+      var domains = Array.isArray(domain) ? domain.map(String) : [String(domain)];
+      var settings = options && typeof options === "object" ? options : {};
+      return callJson("metadata-get", [{
+        domains: domains,
+        params: settings.params && typeof settings.params === "object" ? settings.params : {},
+      }]);
+    },
+    domains: function () {
+      return callJson("metadata-domains", []).then(function (value) {
+        return Array.isArray(value) ? value : [];
+      });
+    },
+    subscribe: function (domain, listener, options) {
+      if (typeof listener !== "function") {
+        return Promise.reject(new TypeError("metadata.subscribe requires a listener function"));
+      }
+      var settings = options && typeof options === "object" ? options : {};
+      return callJson("metadata-subscribe", [{
+        domain: String(domain),
+        params: settings.params && typeof settings.params === "object" ? settings.params : {},
+        intervalMs: settings.intervalMs,
+      }]).then(function (result) {
+        var subscriptionId = result && result.subscriptionId ? String(result.subscriptionId) : "";
+        if (!subscriptionId) throw new Error("Failed to subscribe metadata domain");
+        metadataSubscriptions.set(subscriptionId, { listener: listener });
+        var early = pendingMetadata.get(subscriptionId);
+        if (early !== undefined) {
+          pendingMetadata.delete(subscriptionId);
+          try { listener(early); } catch (error) { reportError(error); }
+        }
+        return {
+          unsubscribe: function () {
+            metadataSubscriptions.delete(subscriptionId);
+            callJson("metadata-unsubscribe", [subscriptionId]).catch(function () {});
+          },
+        };
+      });
+    },
+  };
+
+  var writeBase = {
+    run: function (actionId, params) {
+      return callJson("write-run", [{
+        actionId: String(actionId),
+        params: params && typeof params === "object" ? params : {},
+      }]);
+    },
+    domains: function () {
+      return callJson("write-domains", []).then(function (value) {
+        return Array.isArray(value) ? value : [];
+      });
+    },
+  };
+  var write = typeof Proxy === "function" ? new Proxy(writeBase, {
+    get: function (target, property) {
+      if (property in target) return target[property];
+      if (typeof property !== "string") return undefined;
+      if (property === "then" || property === "toJSON" || property === "constructor") return undefined;
+      var domain = property;
+      return new Proxy({}, {
+        get: function (_target, action) {
+          if (typeof action !== "string") return undefined;
+          if (action === "then" || action === "toJSON" || action === "constructor") return undefined;
+          return function (params) { return writeBase.run(domain + "." + action, params); };
+        },
+      });
+    },
+  }) : writeBase;
+
   var snow = {
-    version: "1.1",
+    version: "1.2",
     get isSandbox() { return INFO.sandbox; },
     get context() { return context; },
     GM_info: GM_info,
@@ -521,6 +612,8 @@ const buildShimSource = (
       if (element && usedSlots.indexOf(element) < 0) usedSlots.push(element);
       return element;
     },
+    metadata: metadata,
+    write: write,
     client: {
       insertInputText: function (text) {
         call("client-action", [{ action: "insert-input-text", payload: { text: String(text) } }]).catch(function () {});
@@ -560,6 +653,8 @@ const buildShimSource = (
     listeners.streamStart = [];
     listeners.streamEnd = [];
     listeners.themeChange = [];
+    metadataSubscriptions.clear();
+    pendingMetadata.clear();
   }
 
   function fire(event, argument) {
@@ -600,6 +695,16 @@ const buildShimSource = (
       return;
     }
     if (channel === "cleanup") { runCleanups(); return; }
+    if (channel === "data") {
+      var subscriptionId = data && data.subscriptionId;
+      var subscription = metadataSubscriptions.get(subscriptionId);
+      if (subscription && typeof subscription.listener === "function") {
+        try { subscription.listener(data.payload); } catch (error) { reportError(error); }
+      } else if (subscriptionId) {
+        pendingMetadata.set(subscriptionId, data.payload);
+      }
+      return;
+    }
     if (channel === "menu") {
       var menuCallback = menuCallbacks.get(data && data.id);
       if (typeof menuCallback === "function") {
@@ -745,6 +850,70 @@ const dispatchAll = (channel: string, data: unknown): void => {
   }
 };
 
+let clientScriptApiHandler: ClientScriptApiHostHandler | null = null;
+
+export const registerClientScriptApi = (
+  handler: ClientScriptApiHostHandler | null,
+): void => {
+  clientScriptApiHandler = typeof handler === "function" ? handler : null;
+};
+
+export const deliverClientScriptData = (
+  scriptId: string,
+  subscriptionId: string,
+  payloadJson: string,
+): void => {
+  const entry = injected.get(scriptId);
+  if (!entry) {
+    return;
+  }
+  let payload: unknown = null;
+  try {
+    payload = payloadJson ? (JSON.parse(payloadJson) as unknown) : null;
+  } catch {
+    payload = null;
+  }
+  dispatchToWorld(entry, "data", { subscriptionId, payload });
+};
+
+const requestClientScriptApi = (
+  scriptId: string,
+  method: string,
+  argsJson: string,
+): Promise<string> => {
+  const entry = injected.get(scriptId);
+  if (!entry) {
+    return Promise.reject(new Error("Client script is no longer active"));
+  }
+  if (!clientScriptApiHandler) {
+    return Promise.reject(
+      new Error("Client script data API is not available yet"),
+    );
+  }
+  const infoJson = JSON.stringify({
+    name: entry.payload.name,
+    version: entry.payload.version,
+    description: entry.payload.description,
+    privacy: entry.payload.privacy ?? [],
+  });
+  return Promise.resolve(
+    clientScriptApiHandler(scriptId, infoJson, method, argsJson),
+  );
+};
+
+const releaseClientScriptApi = (scriptId: string): void => {
+  if (!clientScriptApiHandler) {
+    return;
+  }
+  try {
+    void Promise.resolve(
+      clientScriptApiHandler(scriptId, "{}", "__release", "[]"),
+    ).catch(() => {});
+  } catch {
+    // 桥接回调已失效：无需处理。
+  }
+};
+
 const reportScriptError = (scriptId: string, message: string): void => {
   void ipcRenderer
     .invoke("userscripts:client-report-error", scriptId, message)
@@ -754,6 +923,7 @@ const reportScriptError = (scriptId: string, message: string): void => {
 const removeScript = (scriptId: string, entry: InjectedScript): void => {
   dispatchToWorld(entry, "cleanup", null);
   injected.delete(scriptId);
+  releaseClientScriptApi(scriptId);
 };
 
 const injectScript = (

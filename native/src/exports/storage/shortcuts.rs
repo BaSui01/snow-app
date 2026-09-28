@@ -3,7 +3,7 @@
 use super::*;
 
 // ============================================================================
-// Keyboard shortcuts — 快捷键设置，27 个快捷键各自 enabled + foregroundOnly。
+// Keyboard shortcuts — 快捷键设置，30 个快捷键各自 enabled + foregroundOnly。
 // ============================================================================
 
 #[napi(object)]
@@ -66,6 +66,9 @@ pub struct KeyboardShortcutsSettingsNapi {
     pub toggle_right_panel_fullscreen: KeyboardShortcutConfigNapi,
     pub show_shortcut_help: KeyboardShortcutConfigNapi,
     pub toggle_message_time: KeyboardShortcutConfigNapi,
+    pub ui_zoom_in: KeyboardShortcutConfigNapi,
+    pub ui_zoom_out: KeyboardShortcutConfigNapi,
+    pub ui_zoom_reset: KeyboardShortcutConfigNapi,
 }
 
 impl From<crate::storage::services::keyboard_shortcuts::KeyboardShortcutsSettings>
@@ -100,6 +103,9 @@ impl From<crate::storage::services::keyboard_shortcuts::KeyboardShortcutsSetting
             toggle_right_panel_fullscreen: s.toggle_right_panel_fullscreen.into(),
             show_shortcut_help: s.show_shortcut_help.into(),
             toggle_message_time: s.toggle_message_time.into(),
+            ui_zoom_in: s.ui_zoom_in.into(),
+            ui_zoom_out: s.ui_zoom_out.into(),
+            ui_zoom_reset: s.ui_zoom_reset.into(),
         }
     }
 }
@@ -136,6 +142,9 @@ impl From<KeyboardShortcutsSettingsNapi>
             toggle_right_panel_fullscreen: s.toggle_right_panel_fullscreen.into(),
             show_shortcut_help: s.show_shortcut_help.into(),
             toggle_message_time: s.toggle_message_time.into(),
+            ui_zoom_in: s.ui_zoom_in.into(),
+            ui_zoom_out: s.ui_zoom_out.into(),
+            ui_zoom_reset: s.ui_zoom_reset.into(),
         }
     }
 }

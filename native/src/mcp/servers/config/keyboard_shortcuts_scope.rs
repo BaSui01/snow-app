@@ -50,6 +50,9 @@ const ACTIONS: &[&str] = &[
     "toggleRightPanelFullscreen",
     "showShortcutHelp",
     "toggleMessageTime",
+    "uiZoomIn",
+    "uiZoomOut",
+    "uiZoomReset",
 ];
 
 /// 单个动作允许写入的字段。

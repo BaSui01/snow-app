@@ -147,6 +147,15 @@ export type ThemeStreamCursor = {
   iconSize: number;
 };
 
+/** 排版设置：界面字号（驱动整页缩放）+ 正文字重 + 聊天正文字号 / 行高 + 代码字号。 */
+export type ThemeTypography = {
+  fontSize: number;
+  fontWeight: number;
+  chatFontSize: number;
+  chatLineHeight: number;
+  codeFontSize: number;
+};
+
 export type ThemeSettings = {
   mode: ThemeMode;
   presetId: string;
@@ -154,6 +163,7 @@ export type ThemeSettings = {
   background: ThemeBackground;
   fontFamily: string;
   streamCursor: ThemeStreamCursor;
+  typography: ThemeTypography;
 };
 
 export type DetectedTerminal = {
@@ -523,7 +533,10 @@ export type KeyboardShortcutAction =
   | "copyLastResponse"
   | "toggleRightPanelFullscreen"
   | "showShortcutHelp"
-  | "toggleMessageTime";
+  | "toggleMessageTime"
+  | "uiZoomIn"
+  | "uiZoomOut"
+  | "uiZoomReset";
 
 export type KeyboardShortcutConfig = {
   /**
@@ -564,6 +577,9 @@ export type KeyboardShortcutsSettings = {
   toggleRightPanelFullscreen: KeyboardShortcutConfig;
   showShortcutHelp: KeyboardShortcutConfig;
   toggleMessageTime: KeyboardShortcutConfig;
+  uiZoomIn: KeyboardShortcutConfig;
+  uiZoomOut: KeyboardShortcutConfig;
+  uiZoomReset: KeyboardShortcutConfig;
 };
 
 // ===== App lock =====

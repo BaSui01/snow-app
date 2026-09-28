@@ -28,6 +28,7 @@ import type { MainContentView } from "./types";
 import type { RollbackMode } from "./chatMessages/utils/conversationTypes";
 import { useChatScrollFollow } from "./chatMessages/hooks/useChatScrollFollow";
 import { usePathClickOpen } from "./chatMessages/hooks/usePathClickOpen";
+import { useProjectSwitchAutoSelect } from "./chatMessages/hooks/useProjectSwitchAutoSelect";
 import {
   buildTextSnippetSummary,
   INSERT_QUOTE_TAG_EVENT,
@@ -114,7 +115,11 @@ const ChatContentBody = ({
     conversationVersion,
     conversationListVersion,
     subAgentSessionEvents,
+    sessions,
+    streamingConversationIds,
+    attentionRequiredConversationIds,
     handleSelectConversation,
+    handleNewChat,
     upsertedConversation,
   } = useChatConversationContext();
   const { t } = useI18n();
@@ -139,6 +144,16 @@ const ChatContentBody = ({
     }
   }, []);
   const hasMessages = messages.length > 0;
+
+  useProjectSwitchAutoSelect({
+    directoryId: activeDirectory?.directoryId ?? "",
+    activeConversationId,
+    sessions,
+    streamingConversationIds,
+    attentionRequiredConversationIds,
+    handleSelectConversation,
+    handleNewChat,
+  });
 
   // 悬浮只有两种形态：灵动岛胶囊（收起）/ 完整会话面板（展开）。
   // 默认收起为胶囊，流式状态一目了然；点击胶囊或切换会话即展开完整面板

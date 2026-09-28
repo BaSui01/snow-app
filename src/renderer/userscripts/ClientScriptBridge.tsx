@@ -7,6 +7,7 @@ import {
   type RuntimeSnapshot,
 } from "../plugins/runtimeSnapshot";
 import type { MainContentView } from "../components/mainContent/types";
+import { installClientScriptApi } from "./clientScriptApi";
 
 /** 客户端脚本可用的事件名（脚本经 snow.client.openView 触发）。 */
 const CLIENT_OPEN_VIEW_EVENT = "snow:client-open-view";
@@ -78,6 +79,8 @@ export const ClientScriptBridge = ({
   const panelsSignature = snapshot.panels.tabs.map((tab) => tab.type).join("|");
   const conversationId = snapshot.conversation?.conversationId ?? "";
   const isStreaming = snapshot.conversation?.isStreaming ?? false;
+
+  useEffect(() => installClientScriptApi(locale), [locale]);
 
   useEffect(() => {
     const publish = (): void => {

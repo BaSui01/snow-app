@@ -1,4 +1,4 @@
-import { ipcRenderer, type IpcRendererEvent } from "electron";
+import { ipcRenderer, webFrame, type IpcRendererEvent } from "electron";
 import type {
   ApiConfigExportFileResult,
   ApiConfigImportApplyResult,
@@ -222,6 +222,16 @@ export const apiConfigApi = {
     ipcRenderer.invoke("theme:set-background-color", color),
   setThemeTrafficLightY: (y: number): Promise<void> =>
     ipcRenderer.invoke("theme:set-traffic-light-y", y),
+  /**
+   * 界面字号缩放：对本渲染 frame 应用 webFrame zoom（等效界面缩放），
+   * 同步生效；范围收敛到 Electron 支持的 0.25–5。
+   */
+  setUiZoomFactor: (factor: number): void => {
+    if (!Number.isFinite(factor)) {
+      return;
+    }
+    webFrame.setZoomFactor(Math.min(Math.max(factor, 0.25), 5));
+  },
   listToolApprovalProjectApprovedTools: (
     projectId: string,
   ): Promise<string[]> =>

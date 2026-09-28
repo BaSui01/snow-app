@@ -8,6 +8,23 @@ use super::{
     DEFAULT_THEME_SETTING_NAME,
 };
 
+// 排版数值范围与默认值，与渲染层 themeSettingsUtils 的 typography 常量保持一致。
+const UI_FONT_SIZE_MIN: f64 = 12.0;
+const UI_FONT_SIZE_MAX: f64 = 18.0;
+const DEFAULT_UI_FONT_SIZE: f64 = 13.0;
+const FONT_WEIGHT_MIN: f64 = 100.0;
+const FONT_WEIGHT_MAX: f64 = 900.0;
+const DEFAULT_FONT_WEIGHT: f64 = 400.0;
+const CHAT_FONT_SIZE_MIN: f64 = 12.0;
+const CHAT_FONT_SIZE_MAX: f64 = 20.0;
+const DEFAULT_CHAT_FONT_SIZE: f64 = 15.0;
+const CHAT_LINE_HEIGHT_MIN: f64 = 1.2;
+const CHAT_LINE_HEIGHT_MAX: f64 = 2.4;
+const DEFAULT_CHAT_LINE_HEIGHT: f64 = 1.75;
+const CODE_FONT_SIZE_MIN: f64 = 10.0;
+const CODE_FONT_SIZE_MAX: f64 = 18.0;
+const DEFAULT_CODE_FONT_SIZE: f64 = 12.5;
+
 // ===== Theme settings =====
 
 /// 主题调色板，对应渲染层 CSS 变量。每个字段为合法 CSS 颜色字符串
@@ -184,7 +201,66 @@ impl ThemeStreamCursor {
     }
 }
 
-/// 完整主题设置：模式 + 预设 ID + 自定义调色板 + 背景图 + 字体 + 流式光标。
+/// 排版设置：界面字号（驱动整页缩放）+ 正文字重 + 聊天正文字号 /
+/// 行高 + 代码字号。数值范围与前端 typography 常量保持一致。
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ThemeTypography {
+    pub font_size: f64,
+    pub font_weight: f64,
+    pub chat_font_size: f64,
+    pub chat_line_height: f64,
+    pub code_font_size: f64,
+}
+
+impl Default for ThemeTypography {
+    fn default() -> Self {
+        Self {
+            font_size: DEFAULT_UI_FONT_SIZE,
+            font_weight: DEFAULT_FONT_WEIGHT,
+            chat_font_size: DEFAULT_CHAT_FONT_SIZE,
+            chat_line_height: DEFAULT_CHAT_LINE_HEIGHT,
+            code_font_size: DEFAULT_CODE_FONT_SIZE,
+        }
+    }
+}
+
+impl ThemeTypography {
+    fn normalize(&mut self) {
+        if !self.font_size.is_finite()
+            || self.font_size < UI_FONT_SIZE_MIN
+            || self.font_size > UI_FONT_SIZE_MAX
+        {
+            self.font_size = DEFAULT_UI_FONT_SIZE;
+        }
+        if !self.font_weight.is_finite()
+            || self.font_weight < FONT_WEIGHT_MIN
+            || self.font_weight > FONT_WEIGHT_MAX
+        {
+            self.font_weight = DEFAULT_FONT_WEIGHT;
+        }
+        if !self.chat_font_size.is_finite()
+            || self.chat_font_size < CHAT_FONT_SIZE_MIN
+            || self.chat_font_size > CHAT_FONT_SIZE_MAX
+        {
+            self.chat_font_size = DEFAULT_CHAT_FONT_SIZE;
+        }
+        if !self.chat_line_height.is_finite()
+            || self.chat_line_height < CHAT_LINE_HEIGHT_MIN
+            || self.chat_line_height > CHAT_LINE_HEIGHT_MAX
+        {
+            self.chat_line_height = DEFAULT_CHAT_LINE_HEIGHT;
+        }
+        if !self.code_font_size.is_finite()
+            || self.code_font_size < CODE_FONT_SIZE_MIN
+            || self.code_font_size > CODE_FONT_SIZE_MAX
+        {
+            self.code_font_size = DEFAULT_CODE_FONT_SIZE;
+        }
+    }
+}
+
+/// 完整主题设置：模式 + 预设 ID + 自定义调色板 + 背景图 + 字体 + 流式光标 + 排版。
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ThemeSettings {
@@ -194,6 +270,7 @@ pub struct ThemeSettings {
     pub background: ThemeBackground,
     pub font_family: String,
     pub stream_cursor: ThemeStreamCursor,
+    pub typography: ThemeTypography,
 }
 
 impl ThemeSettings {
@@ -210,6 +287,7 @@ impl ThemeSettings {
         self.background.normalize();
         self.font_family = self.font_family.trim().to_string();
         self.stream_cursor.normalize();
+        self.typography.normalize();
     }
 }
 

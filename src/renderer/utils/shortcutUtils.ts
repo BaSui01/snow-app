@@ -215,7 +215,7 @@ export const shouldPreventDefault = (key: string): boolean => {
 };
 
 /**
- * 12 个快捷键动作的有序列表。
+ * 30 个快捷键动作的有序列表。
  * 排列规则：台前生效的快捷键在前（默认 foregroundOnly=true），
  * 全局生效的 toggleWindow（默认 foregroundOnly=false）放最后。
  */
@@ -247,6 +247,9 @@ export const SHORTCUT_ACTIONS: KeyboardShortcutAction[] = [
   "toggleWindow",
   "showShortcutHelp",
   "toggleMessageTime",
+  "uiZoomIn",
+  "uiZoomOut",
+  "uiZoomReset",
 ];
 
 /**
@@ -394,6 +397,21 @@ export const SHORTCUT_META: Record<KeyboardShortcutAction, ShortcutMeta> = {
     descKey: "settings.shortcutToggleMessageTime",
     descDefault: "Show/hide message timestamps",
     group: "conversation",
+  },
+  uiZoomIn: {
+    descKey: "settings.shortcutUiZoomIn",
+    descDefault: "Increase UI font size",
+    group: "window",
+  },
+  uiZoomOut: {
+    descKey: "settings.shortcutUiZoomOut",
+    descDefault: "Decrease UI font size",
+    group: "window",
+  },
+  uiZoomReset: {
+    descKey: "settings.shortcutUiZoomReset",
+    descDefault: "Reset UI font size",
+    group: "window",
   },
 };
 

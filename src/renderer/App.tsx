@@ -39,6 +39,7 @@ import { CONVERSATION_SELECTED_EVENT } from "./components/mainContent/chatMessag
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useI18n } from "./i18n";
 import { useTheme } from "./hooks/useTheme";
+import { adjustUiFontSize, resetUiFontSize } from "./utils/uiZoom";
 import {
   CLOSE_BEHAVIOR_SETTING_CODE,
   CLOSE_BEHAVIOR_SETTING_NAME,
@@ -119,6 +120,9 @@ const GLOBAL_ACTION_EVENTS: Record<
   toggleRightPanelFullscreen: "toggle-right-panel-fullscreen",
   showShortcutHelp: "show-shortcut-help",
   toggleMessageTime: "toggle-message-time",
+  uiZoomIn: "ui-zoom-in",
+  uiZoomOut: "ui-zoom-out",
+  uiZoomReset: "ui-zoom-reset",
 };
 
 type PanelSizeStyle = CSSProperties & {
@@ -248,6 +252,15 @@ const ShortcutHandlerBridge = (): null => {
     const unsubToggleRightPanel = registerHandler("toggleRightPanel", () => {
       shortcutEvents.emit("toggle-right-panel");
     });
+    const unsubUiZoomIn = registerHandler("uiZoomIn", () => {
+      adjustUiFontSize(1);
+    });
+    const unsubUiZoomOut = registerHandler("uiZoomOut", () => {
+      adjustUiFontSize(-1);
+    });
+    const unsubUiZoomReset = registerHandler("uiZoomReset", () => {
+      resetUiFontSize();
+    });
 
     return () => {
       unsubCancel();
@@ -276,6 +289,9 @@ const ShortcutHandlerBridge = (): null => {
       unsubFocusInput();
       unsubToggleSidebar();
       unsubToggleRightPanel();
+      unsubUiZoomIn();
+      unsubUiZoomOut();
+      unsubUiZoomReset();
     };
   }, [registerHandler]);
 
@@ -296,11 +312,23 @@ const ShortcutHandlerBridge = (): null => {
         toggleMessageTimeVisible();
       },
     );
+    const unsubUiZoomIn = shortcutEvents.on("ui-zoom-in", () => {
+      adjustUiFontSize(1);
+    });
+    const unsubUiZoomOut = shortcutEvents.on("ui-zoom-out", () => {
+      adjustUiFontSize(-1);
+    });
+    const unsubUiZoomReset = shortcutEvents.on("ui-zoom-reset", () => {
+      resetUiFontSize();
+    });
     void ensureMessageTimeVisibilityLoaded();
     return () => {
       unsubStopGeneration();
       unsubTogglePet();
       unsubToggleMessageTime();
+      unsubUiZoomIn();
+      unsubUiZoomOut();
+      unsubUiZoomReset();
     };
   }, []);
 

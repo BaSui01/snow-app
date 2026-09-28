@@ -1,5 +1,5 @@
-import { ChevronRight, Loader2, Plus } from "lucide-react";
-import { useMemo } from "react";
+import { ChevronRight, LayoutGrid, Loader2, Plus } from "lucide-react";
+import { useMemo, useState } from "react";
 
 import { useI18n } from "../../../i18n";
 import type {
@@ -17,6 +17,7 @@ import { AddLocalDirectoryDialog } from "./projects/dialogs/AddLocalDirectoryDia
 import { CloneRepositoryDialog } from "./projects/dialogs/CloneRepositoryDialog";
 import { CreateCollectionDialog } from "./projects/dialogs/CreateCollectionDialog";
 import { CreateProjectDialog } from "./projects/dialogs/CreateProjectDialog";
+import { ProjectGridDialog } from "./projects/dialogs/ProjectGridDialog";
 import { RenameCollectionDialog } from "./projects/dialogs/RenameCollectionDialog";
 import { useDirectoryDragDrop } from "./projects/useDirectoryDragDrop";
 import { useDirectoryPagination } from "./projects/useDirectoryPagination";
@@ -53,6 +54,7 @@ export function ProjectsSection({
   isChatsCollapsed,
 }: ProjectsSectionProps): React.JSX.Element {
   const { t } = useI18n();
+  const [isProjectGridOpen, setIsProjectGridOpen] = useState(false);
 
   const directories = useWorkspaceDirectories({
     externalActiveDirectory,
@@ -228,18 +230,33 @@ export function ProjectsSection({
           {isLoadingDirectories || isSavingDirectory ? (
             <Loader2 className="spin" size={14} />
           ) : (
-            <button
-              aria-expanded={addFlow.isAddMenuOpen}
-              aria-haspopup="dialog"
-              aria-label={t("sidebar.addDirectoryScheme", {
-                defaultValue: "Add directory",
-              })}
-              className="icon-btn ghost"
-              onClick={addFlow.openAddMenu}
-              type="button"
-            >
-              <Plus size={14} />
-            </button>
+            <>
+              <button
+                aria-label={t("sidebar.openProjectGrid", {
+                  defaultValue: "Project grid",
+                })}
+                className="icon-btn ghost"
+                onClick={() => setIsProjectGridOpen(true)}
+                title={t("sidebar.openProjectGrid", {
+                  defaultValue: "Project grid",
+                })}
+                type="button"
+              >
+                <LayoutGrid size={14} />
+              </button>
+              <button
+                aria-expanded={addFlow.isAddMenuOpen}
+                aria-haspopup="dialog"
+                aria-label={t("sidebar.addDirectoryScheme", {
+                  defaultValue: "Add directory",
+                })}
+                className="icon-btn ghost"
+                onClick={addFlow.openAddMenu}
+                type="button"
+              >
+                <Plus size={14} />
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -344,6 +361,23 @@ export function ProjectsSection({
         directory={historyTarget}
         onCancel={() => setHistoryTarget(null)}
         onUndone={handleRelinkUndone}
+      />
+
+      <ProjectGridDialog
+        activeDirectoryId={activeDirectory?.directoryId}
+        collections={collections}
+        isActionLocked={
+          isSavingDirectory || isReorderingDirectories || isSwitchingDirectory
+        }
+        onActivate={(directoryId) => {
+          void handleActivateDirectory(directoryId);
+          if (directoryId !== activeDirectory?.directoryId) {
+            setIsProjectGridOpen(false);
+          }
+        }}
+        onClose={() => setIsProjectGridOpen(false)}
+        open={isProjectGridOpen}
+        workspaceDirectories={workspaceDirectories}
       />
 
       <SidebarCollapse open={!isProjectsCollapsed}>

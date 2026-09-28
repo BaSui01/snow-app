@@ -450,6 +450,17 @@ export const PluginScriptsSection = ({
                         })}
                       </span>
                     )}
+                    {script.privacy.length > 0 && (
+                      <span
+                        className="plugin-script-badge"
+                        title={script.privacy.join(", ")}
+                      >
+                        {t("plugins.scripts.badgePrivacy", {
+                          defaultValue: "Privacy: {{count}}",
+                          values: { count: script.privacy.length },
+                        })}
+                      </span>
+                    )}
                     {summary.map((item) => (
                       <span className="plugin-script-badge" key={item}>
                         {item}

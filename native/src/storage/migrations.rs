@@ -128,6 +128,7 @@ fn migrate_userscripts_client_fields(connection: &Connection) -> rusqlite::Resul
         ("surface_json", "TEXT NOT NULL DEFAULT '[]'"),
         ("scope", "TEXT NOT NULL DEFAULT ''"),
         ("sandbox", "INTEGER NOT NULL DEFAULT 1"),
+        ("privacy_json", "TEXT NOT NULL DEFAULT '[]'"),
     ];
     for (name, definition) in ADDITIONS {
         if columns.iter().any(|column| column == name) {

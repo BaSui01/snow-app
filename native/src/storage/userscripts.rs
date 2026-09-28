@@ -47,6 +47,7 @@ pub fn parse_meta(raw: &str) -> UserscriptMeta {
     let mut surfaces: Vec<String> = Vec::new();
     let mut scope = String::new();
     let mut sandbox = true;
+    let mut privacy: Vec<String> = Vec::new();
     let mut client_pattern = false;
 
     // 找到元数据块
@@ -139,6 +140,9 @@ pub fn parse_meta(raw: &str) -> UserscriptMeta {
                         "false" | "0" | "no"
                     );
                 }
+                "snow-privacy" | "snow_privacy" => {
+                    push_privacy_values(&mut privacy, &value);
+                }
                 "exclude" | "exclude-match" => {
                     if !value.is_empty() {
                         excludes.push(value);
@@ -192,6 +196,7 @@ pub fn parse_meta(raw: &str) -> UserscriptMeta {
         surfaces,
         scope,
         sandbox,
+        privacy,
     }
 }
 
@@ -211,6 +216,65 @@ fn push_list_values(target: &mut Vec<String>, value: &str) {
         let item = part.trim();
         if !item.is_empty() && !target.iter().any(|existing| existing == item) {
             target.push(item.to_string());
+        }
+    }
+}
+
+/// 敏感数据域规范名（与 `src/renderer/plugins/types.ts` 的 SENSITIVE_SCOPES 和
+/// `src/renderer/plugins/writes` 的动作 scope 对齐；`*` 表示全部）。
+const SENSITIVE_SCOPES: &[&str] = &[
+    "apiKeys",
+    "privacyConfig",
+    "systemPrompts",
+    "customHeaders",
+    "mcpSecrets",
+    "subAgents",
+    "personalization",
+    "conversations",
+    "messages",
+    "memos",
+    "memory",
+    "scheduledTasks",
+    "checkpoints",
+    "logs",
+    "usage",
+    "git",
+    "ssh",
+    "browserData",
+    "userscripts",
+    "remoteControl",
+    "plugins",
+    "terminal",
+    "filesystem",
+    "window",
+    "storage",
+    "updater",
+    "toolApproval",
+];
+
+/// 解析 `@snow-privacy apiKeys, conversations`：大小写不敏感，规范化到上表；
+/// 未知取值静默忽略，`*` 展开为全部敏感域。
+fn push_privacy_values(target: &mut Vec<String>, value: &str) {
+    for part in value.split([',', ' ', ';']) {
+        let item = part.trim();
+        if item.is_empty() {
+            continue;
+        }
+        if item == "*" {
+            for scope in SENSITIVE_SCOPES {
+                if !target.iter().any(|existing| existing == scope) {
+                    target.push((*scope).to_string());
+                }
+            }
+            continue;
+        }
+        if let Some(scope) = SENSITIVE_SCOPES
+            .iter()
+            .find(|scope| scope.eq_ignore_ascii_case(item))
+        {
+            if !target.iter().any(|existing| existing == scope) {
+                target.push((*scope).to_string());
+            }
         }
     }
 }
@@ -277,12 +341,12 @@ pub fn create_userscript(database_path: &Path, raw: &str) -> Result<UserscriptRe
                 script_id, name, version, description, namespace, author,
                 enabled, run_at, noframes, grant_json, matches_json,
                 includes_json, excludes_json, requires_json,
-                target, view_json, surface_json, scope, sandbox, file_path
+                target, view_json, surface_json, scope, sandbox, privacy_json, file_path
             ) VALUES (
                 ?1, ?2, ?3, ?4, ?5, ?6,
                 1, ?7, ?8, ?9, ?10,
                 ?11, ?12, ?13,
-                ?14, ?15, ?16, ?17, ?18, ?19
+                ?14, ?15, ?16, ?17, ?18, ?19, ?20
             )",
             params![
                 script_id,
@@ -303,6 +367,7 @@ pub fn create_userscript(database_path: &Path, raw: &str) -> Result<UserscriptRe
                 serde_json::to_string(&meta.surfaces).unwrap_or_else(|_| "[]".to_string()),
                 meta.scope,
                 meta.sandbox,
+                serde_json::to_string(&meta.privacy).unwrap_or_else(|_| "[]".to_string()),
                 file_path_str,
             ],
         )
@@ -343,7 +408,7 @@ pub fn update_userscript(database_path: &Path, script_id: &str, raw: &str) -> Re
                 includes_json = ?11, excludes_json = ?12,
                 requires_json = ?13,
                 target = ?14, view_json = ?15, surface_json = ?16,
-                scope = ?17, sandbox = ?18,
+                scope = ?17, sandbox = ?18, privacy_json = ?19,
                 updated_at = datetime('now', 'localtime')
             WHERE script_id = ?1",
             params![
@@ -365,6 +430,7 @@ pub fn update_userscript(database_path: &Path, script_id: &str, raw: &str) -> Re
                 serde_json::to_string(&meta.surfaces).unwrap_or_else(|_| "[]".to_string()),
                 meta.scope,
                 meta.sandbox,
+                serde_json::to_string(&meta.privacy).unwrap_or_else(|_| "[]".to_string()),
             ],
         )
         .map_err(|error| database::database_error(database_path, "update userscript", error))?;
@@ -529,7 +595,7 @@ fn query_userscript_record(connection: &Connection, script_id: &str) -> rusqlite
         "SELECT script_id, name, version, description, namespace, author,
                 enabled, run_at, noframes, grant_json, matches_json,
                 includes_json, excludes_json, requires_json,
-                target, view_json, surface_json, scope, sandbox, file_path,
+                target, view_json, surface_json, scope, sandbox, privacy_json, file_path,
                 created_at, updated_at
         FROM userscripts WHERE script_id = ?1",
         [script_id],
@@ -546,7 +612,8 @@ fn query_userscript_record(connection: &Connection, script_id: &str) -> rusqlite
                 row.get::<_, String>(16)?, row.get::<_, String>(17)?,
                 row.get::<_, bool>(18)?,
                 row.get::<_, String>(19)?,
-                row.get::<_, String>(20)?, row.get::<_, String>(21)?,
+                row.get::<_, String>(20)?,
+                row.get::<_, String>(21)?, row.get::<_, String>(22)?,
             ))
         },
     ).optional()?;
@@ -554,7 +621,7 @@ fn query_userscript_record(connection: &Connection, script_id: &str) -> rusqlite
     let Some((script_id, name, version, description, namespace, author,
               enabled, run_at, noframes, grant_json, matches_json,
               includes_json, excludes_json, requires_json,
-              target, view_json, surface_json, scope, sandbox, file_path,
+              target, view_json, surface_json, scope, sandbox, privacy_json, file_path,
               created_at, updated_at)) = row else {
         return Ok(None);
     };
@@ -579,6 +646,7 @@ fn query_userscript_record(connection: &Connection, script_id: &str) -> rusqlite
         surfaces: serde_json::from_str(&surface_json).unwrap_or_default(),
         scope,
         sandbox,
+        privacy: serde_json::from_str(&privacy_json).unwrap_or_default(),
         file_path,
         created_at,
         updated_at,

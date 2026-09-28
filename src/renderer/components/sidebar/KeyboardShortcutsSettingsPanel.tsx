@@ -59,6 +59,9 @@ const DEFAULT_KEYS: Record<KeyboardShortcutAction, string> = {
   toggleRightPanelFullscreen: "mod+shift+f",
   showShortcutHelp: "mod+/",
   toggleMessageTime: "mod+shift+y",
+  uiZoomIn: "mod+=",
+  uiZoomOut: "mod+-",
+  uiZoomReset: "mod+0",
 };
 
 export function KeyboardShortcutsSettingsPanel(): React.JSX.Element {

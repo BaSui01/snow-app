@@ -5,6 +5,7 @@ import {
   applyThemePresetToDocument,
   applyStreamCursorToDocument,
   applyThemeModeToDocument,
+  applyTypographyToDocument,
   DEFAULT_THEME_SETTINGS,
   normalizeThemeSettings,
   resolveActivePalette,
@@ -45,6 +46,7 @@ export const useTheme = (): {
       // 应用自定义字体和流式光标配置。
       applyFontFamilyToDocument(settings.fontFamily);
       applyStreamCursorToDocument(settings.streamCursor);
+      applyTypographyToDocument(settings.typography);
 
       // 将主题快照写入 localStorage，供下次启动时在 React 渲染前同步应用，
       // 消除从 Rust 后端异步加载主题期间的白屏闪烁。

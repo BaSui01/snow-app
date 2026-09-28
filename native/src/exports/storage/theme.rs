@@ -188,6 +188,39 @@ impl From<ThemeStreamCursorNapi> for ThemeStreamCursor {
 }
 
 #[napi(object)]
+pub struct ThemeTypographyNapi {
+    pub font_size: f64,
+    pub font_weight: f64,
+    pub chat_font_size: f64,
+    pub chat_line_height: f64,
+    pub code_font_size: f64,
+}
+
+impl From<ThemeTypography> for ThemeTypographyNapi {
+    fn from(t: ThemeTypography) -> Self {
+        ThemeTypographyNapi {
+            font_size: t.font_size,
+            font_weight: t.font_weight,
+            chat_font_size: t.chat_font_size,
+            chat_line_height: t.chat_line_height,
+            code_font_size: t.code_font_size,
+        }
+    }
+}
+
+impl From<ThemeTypographyNapi> for ThemeTypography {
+    fn from(t: ThemeTypographyNapi) -> Self {
+        ThemeTypography {
+            font_size: t.font_size,
+            font_weight: t.font_weight,
+            chat_font_size: t.chat_font_size,
+            chat_line_height: t.chat_line_height,
+            code_font_size: t.code_font_size,
+        }
+    }
+}
+
+#[napi(object)]
 pub struct ThemeSettingsNapi {
     pub mode: String,
     pub preset_id: String,
@@ -195,6 +228,7 @@ pub struct ThemeSettingsNapi {
     pub background: ThemeBackgroundNapi,
     pub font_family: String,
     pub stream_cursor: ThemeStreamCursorNapi,
+    pub typography: ThemeTypographyNapi,
 }
 
 impl From<ThemeSettings> for ThemeSettingsNapi {
@@ -206,6 +240,7 @@ impl From<ThemeSettings> for ThemeSettingsNapi {
             background: s.background.into(),
             font_family: s.font_family,
             stream_cursor: s.stream_cursor.into(),
+            typography: s.typography.into(),
         }
     }
 }
@@ -219,6 +254,7 @@ impl From<ThemeSettingsNapi> for ThemeSettings {
             background: s.background.into(),
             font_family: s.font_family,
             stream_cursor: s.stream_cursor.into(),
+            typography: s.typography.into(),
         }
     }
 }

@@ -13,7 +13,7 @@ pub(crate) use crate::storage::services::privacy_settings::{
     PrivacyApiConfig, PrivacySettings, PrivacyToolResultsConfig,
 };
 pub(crate) use crate::storage::services::theme_settings::{
-    CustomTheme, ThemeBackground, ThemePalette, ThemeSettings, ThemeStreamCursor,
+    CustomTheme, ThemeBackground, ThemePalette, ThemeSettings, ThemeStreamCursor, ThemeTypography,
 };
 pub(crate) use crate::storage::{
     ApiConfigInput, ApiConfigRecord, AppStorageInfo, ChatConversationPage, ChatConversationRecord,

@@ -735,6 +735,7 @@ CREATE TABLE IF NOT EXISTS userscripts (
             surface_json TEXT NOT NULL DEFAULT '[]',
             scope TEXT NOT NULL DEFAULT '',
             sandbox INTEGER NOT NULL DEFAULT 1,
+            privacy_json TEXT NOT NULL DEFAULT '[]',
             file_path TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))

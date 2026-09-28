@@ -45,6 +45,7 @@ body,
 body {
   font-family: var(--app-font-family, var(--font-sans));
   font-size: 13px;
+  font-weight: var(--app-font-weight, 400);
   line-height: 1.5;
   color: var(--text-primary);
   background: var(--bg-primary);
@@ -2711,12 +2712,19 @@ body.is-panel-resizing * {
   position: relative;
   max-height: 236px;
   overflow-y: auto;
-  padding-left: 10px;
-  padding-right: 2px;
   scrollbar-gutter: stable;
 }
 
-.workspace-directory-list::before {
+.workspace-directory-list-inner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-left: 10px;
+  padding-right: 2px;
+}
+
+.workspace-directory-list-inner::before {
   position: absolute;
   top: 8px;
   bottom: 8px;
@@ -3398,6 +3406,222 @@ body.is-panel-resizing * {
   height: 1px;
   margin: 4px 10px;
   background: var(--border-light);
+}
+
+/* ===== 项目网格视图对话框（项目多时的全量浏览入口） ===== */
+
+.form-dialog-card.project-grid-dialog-card {
+  width: min(960px, calc(100vw - 48px));
+  height: min(72vh, 640px);
+}
+
+.project-grid-dialog-card .form-dialog-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.project-grid-dialog {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.project-grid-search {
+  display: flex;
+  height: 34px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-secondary);
+  color: var(--text-tertiary);
+  transition: border-color 0.12s;
+}
+
+.project-grid-search:focus-within {
+  border-color: var(--accent-color);
+}
+
+.project-grid-search .project-grid-search-icon {
+  flex-shrink: 0;
+}
+
+/* 融合型搜索框：容器提供边框背景，内部 input 需抵抗主题预设的通用 input 规则 */
+.project-grid-search input {
+  flex: 1;
+  min-width: 0;
+  border: none !important;
+  outline: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+}
+
+.project-grid-search input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.project-grid-search-clear {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.project-grid-search-clear:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.project-grid-scroll {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  padding-right: 2px;
+  scrollbar-gutter: stable;
+}
+
+.project-grid-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.project-grid-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.project-grid-group-header svg {
+  flex-shrink: 0;
+}
+
+.project-grid-group-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-grid-group-count {
+  min-width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--bg-active);
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+  text-align: center;
+}
+
+.project-grid-cards {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+}
+
+.project-grid-card {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
+}
+
+.project-grid-card:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.project-grid-card:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.project-grid-card.active {
+  border-color: color-mix(in srgb, var(--accent-color) 45%, transparent);
+  background: color-mix(in srgb, var(--accent-color) 10%, transparent);
+}
+
+.project-grid-card-icon {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.project-grid-card-body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.project-grid-card-name {
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-grid-card-path {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-grid-card-check {
+  flex-shrink: 0;
+  color: var(--accent-color);
+}
+
+.project-grid-empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 0;
+  color: var(--text-tertiary);
+  font-size: 12px;
 }
 
 /* 目录行内重命名输入框：仿会话重命名输入框的紧凑样式 */
@@ -11116,8 +11340,8 @@ body.is-panel-resizing * {
   flex-direction: column;
   gap: 12px;
   color: var(--text-primary);
-  font-size: 15px;
-  line-height: 1.75;
+  font-size: var(--app-chat-font-size, 15px);
+  line-height: var(--app-chat-line-height, 1.75);
 }
 
 .ai-message-content {
@@ -12063,7 +12287,7 @@ body.is-panel-resizing * {
   background: var(--bg-tertiary);
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--app-code-font-size, 12.5px);
 }
 
 /* Handoff tag（工作流交接文档折叠块，由 markdown-it handoff_block 生成）：
@@ -12258,7 +12482,7 @@ body.is-panel-resizing * {
 .ai-message .code-block-wrapper pre code {
   padding: 0;
   background: transparent;
-  font-size: 12.5px;
+  font-size: var(--app-code-font-size, 12.5px);
   line-height: 1.6;
 }
 

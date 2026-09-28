@@ -368,6 +368,9 @@ export type KeyboardShortcutsSettings = {
   toggleRightPanelFullscreen: KeyboardShortcutConfig;
   showShortcutHelp: KeyboardShortcutConfig;
   toggleMessageTime: KeyboardShortcutConfig;
+  uiZoomIn: KeyboardShortcutConfig;
+  uiZoomOut: KeyboardShortcutConfig;
+  uiZoomReset: KeyboardShortcutConfig;
 };
 
 export type CodebaseEmbedProgress = {
@@ -2915,6 +2918,7 @@ export type UserscriptRecord = {
   scope: string;
   /** 是否隔离世界执行（沙箱档）；false = 主世界完全权限档。 */
   sandbox: boolean;
+  privacy: string[];
   /** 脚本文件在磁盘上的绝对路径。 */
   filePath: string;
   createdAt: string;

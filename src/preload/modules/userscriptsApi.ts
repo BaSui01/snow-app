@@ -1,5 +1,10 @@
 import { ipcRenderer } from "electron";
+import {
+  deliverClientScriptData,
+  registerClientScriptApi,
+} from "../clientScriptHost";
 import type {
+  ClientScriptApiHostHandler,
   ClientScriptCommand,
   ClientScriptContext,
   ClientScriptFailure,
@@ -59,6 +64,18 @@ export const userscriptsApi = {
   /** 客户端脚本运行失败记录（连续失败会被自动禁用）。 */
   getClientScriptFailures: (): Promise<ClientScriptFailure[]> =>
     ipcRenderer.invoke("userscripts:client-errors"),
+  registerClientScriptApi: (
+    handler: ClientScriptApiHostHandler | null,
+  ): void => {
+    registerClientScriptApi(handler);
+  },
+  pushClientScriptData: (
+    scriptId: string,
+    subscriptionId: string,
+    payloadJson: string,
+  ): void => {
+    deliverClientScriptData(scriptId, subscriptionId, payloadJson);
+  },
   /** 脚本集合变化广播：AI 经 config-set 安装 / 启停 / 删除时同样能感知。 */
   onUserscriptsChanged: (callback: () => void): (() => void) => {
     const handler = (): void => callback();

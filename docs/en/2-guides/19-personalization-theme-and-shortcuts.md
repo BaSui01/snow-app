@@ -116,6 +116,7 @@ The theme is stored as the `theme_settings` record in SQLite `system_settings`, 
 - `custom.light` and `custom.dark` palettes;
 - `background`;
 - `fontFamily`;
+- `typography` (UI font size, body font weight, chat font size / line height, code font size);
 - `streamCursor`.
 
 The renderer also keeps a fast localStorage theme cache to reduce startup flashing. SQLite remains the persistent settings source.
@@ -124,7 +125,7 @@ The renderer also keeps a fast localStorage theme cache to reduce startup flashi
 
 When you select a background image, Snow App copies it to `~/.snowapp/backgrounds/` and no longer continuously references the original file. The renderer reads the managed resource through the restricted `theme-bg://` protocol. Background settings include enabled state, opacity, and a blur value from 0 to 100.
 
-The font can use the system default or a selected family. The streaming cursor supports:
+The font can use the system default or a selected family. The same area also provides typography settings: UI font size (12–18 px, where 13 px = 100%, applied as whole-app zoom equivalent to Electron `webFrame.setZoomFactor`), body font weight (100–900, free input), chat font size (12–20 px), chat line height (1.2–2.4), and code font size (10–18 px, applied to chat code blocks and inline code); the UI font size can also be adjusted with keyboard shortcuts and persists immediately. The streaming cursor supports:
 
 - the default pulsing `dot`;
 - a built-in `lucide` icon;
@@ -170,8 +171,11 @@ active pet, and toggle between waking (showing on your desktop) and dismissing
 | Cycle project              | `Mod+Backtick`                          |
 | Open project explorer      | `Mod+D`                                 |
 | Cycle API profile          | macOS `Ctrl+P`; other platforms `Alt+P` |
+| Increase UI font size      | `Mod+=`                                 |
+| Decrease UI font size      | `Mod+-`                                 |
+| Reset UI font size         | `Mod+0`                                 |
 
-All seven shortcuts are enabled by default with `foregroundOnly=true`. Their JSON configuration is stored in the `keyboard_shortcuts` record in SQLite `system_settings`.
+These shortcuts are enabled by default with `foregroundOnly=true`. Their JSON configuration is stored in the `keyboard_shortcuts` record in SQLite `system_settings`.
 
 ### Rebinding, Conflicts, and Scope
 

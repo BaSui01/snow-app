@@ -42,6 +42,9 @@ const GLOBAL_ACTIONS = [
   "toggleRightPanelFullscreen",
   "showShortcutHelp",
   "toggleMessageTime",
+  "uiZoomIn",
+  "uiZoomOut",
+  "uiZoomReset",
 ] as const;
 
 type GlobalAction = (typeof GLOBAL_ACTIONS)[number];
@@ -108,6 +111,11 @@ export const keyToAccelerator = (key: string): string | null => {
     mainPart = ".";
   } else if (main === "/") {
     mainPart = "/";
+  } else if (main === "=") {
+    // Electron 将主键盘区的 = 命名为 Plus
+    mainPart = "Plus";
+  } else if (main === "-") {
+    mainPart = "-";
   } else if (main.length === 1 && /^[a-z0-9]$/i.test(main)) {
     mainPart = main.toUpperCase();
   } else {

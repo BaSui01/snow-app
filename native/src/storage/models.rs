@@ -324,6 +324,7 @@ pub struct UserscriptMeta {
     pub scope: String,
     /// 是否在隔离世界（沙箱档）执行；false = 主世界（完全权限档）。
     pub sandbox: bool,
+    pub privacy: Vec<String>,
 }
 
 /// 用户脚本完整记录（管理 UI 使用）。
@@ -353,6 +354,7 @@ pub struct UserscriptRecord {
     pub scope: String,
     /// 是否在隔离世界（沙箱档）执行；false = 主世界（完全权限档）。
     pub sandbox: bool,
+    pub privacy: Vec<String>,
     /// 脚本文件在磁盘上的绝对路径（~/.snowapp/browser-script/{script_id}.user.js）。
     pub file_path: String,
     pub created_at: String,

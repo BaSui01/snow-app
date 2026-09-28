@@ -33,6 +33,7 @@ type CachedUserscript = {
   surfaces: string[];
   scope: string;
   sandbox: boolean;
+  privacy: string[];
   code: string;
   raw: string;
   values: Record<string, string>;
@@ -120,6 +121,7 @@ const loadCache = async (native: NativeBridge): Promise<void> => {
         surfaces: record.surfaces,
         scope: record.scope,
         sandbox: record.sandbox,
+        privacy: record.privacy,
         code: extractCode(raw),
         raw,
         values,
@@ -348,6 +350,7 @@ export type ClientScriptPayload = {
   runAt: string;
   /** true = 隔离世界沙箱档；false = 主世界完全权限档。 */
   sandbox: boolean;
+  privacy: string[];
   /** `global` = 常驻脚本（应用启动执行，不随视图卸载）。 */
   scope: string;
   views: string[];
@@ -403,6 +406,7 @@ export const collectClientScripts = (): ClientScriptPayload[] => {
       description: item.description,
       runAt: item.runAt,
       sandbox: item.sandbox,
+      privacy: item.privacy,
       scope: item.scope,
       views: item.views,
       surfaces: item.surfaces,

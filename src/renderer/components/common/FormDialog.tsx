@@ -21,6 +21,8 @@ const FOCUSABLE_SELECTOR = [
 type FormDialogProps = {
   open: boolean;
   title: string;
+  /** 附加到对话框卡片的类名：用于宽版/自定义尺寸变体 */
+  cardClassName?: string;
   confirmLabel?: string;
   cancelLabel?: string;
   closeLabel?: string;
@@ -43,6 +45,7 @@ type FormDialogProps = {
 export function FormDialog({
   open,
   title,
+  cardClassName,
   confirmLabel,
   cancelLabel,
   closeLabel = "Close",
@@ -124,7 +127,7 @@ export function FormDialog({
       <div
         aria-labelledby={titleId}
         aria-modal="true"
-        className="form-dialog-card"
+        className={`form-dialog-card${cardClassName ? ` ${cardClassName}` : ""}`}
         onKeyDown={handleKeyDown}
         ref={dialogRef}
         role="dialog"

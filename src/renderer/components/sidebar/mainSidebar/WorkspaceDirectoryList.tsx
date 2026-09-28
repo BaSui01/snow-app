@@ -357,170 +357,177 @@ export function WorkspaceDirectoryList({
       onDrop={handleListRootDrop}
       ref={directoryListRef}
     >
-      {collections.length > 0 ? (
-        <div className="project-collections">
-          {collections.map((collection) => {
-            const isExpanded = expandedCollectionIds.has(
-              collection.collectionId,
-            );
-            const isDragOver = dragOverCollectionId === collection.collectionId;
-            return (
-              <div
-                className={`project-collection-group${
-                  isExpanded ? " expanded" : ""
-                }`}
-                key={collection.collectionId}
-              >
+      <div className="workspace-directory-list-inner">
+        {collections.length > 0 ? (
+          <div className="project-collections">
+            {collections.map((collection) => {
+              const isExpanded = expandedCollectionIds.has(
+                collection.collectionId,
+              );
+              const isDragOver =
+                dragOverCollectionId === collection.collectionId;
+              return (
                 <div
-                  className={`project-collection-row${
-                    isDragOver ? " drag-over" : ""
+                  className={`project-collection-group${
+                    isExpanded ? " expanded" : ""
                   }`}
-                  onDragOver={(event) =>
-                    handleCollectionDragOver(event, collection.collectionId)
-                  }
-                  onDrop={(event) =>
-                    handleCollectionDrop(event, collection.collectionId)
-                  }
+                  key={collection.collectionId}
                 >
-                  <button
-                    className="project-collection-toggle"
-                    disabled={isActionLocked}
-                    onClick={() => onToggleCollection(collection.collectionId)}
-                    title={collection.name}
-                    type="button"
+                  <div
+                    className={`project-collection-row${
+                      isDragOver ? " drag-over" : ""
+                    }`}
+                    onDragOver={(event) =>
+                      handleCollectionDragOver(event, collection.collectionId)
+                    }
+                    onDrop={(event) =>
+                      handleCollectionDrop(event, collection.collectionId)
+                    }
                   >
-                    <ChevronRight
-                      className={
-                        isExpanded ? "project-collection-chevron--open" : ""
+                    <button
+                      className="project-collection-toggle"
+                      disabled={isActionLocked}
+                      onClick={() =>
+                        onToggleCollection(collection.collectionId)
                       }
-                      size={12}
-                    />
-                    <Library
-                      className="list-icon list-icon--collection"
-                      size={15}
-                    />
-                    <span className="list-label">{collection.name}</span>
-                    <span
-                      className="project-collection-badge"
-                      title={t("sidebar.collectionMemberCount", {
-                        values: { count: collection.memberDirectoryIds.length },
-                        defaultValue: "{{count}} project(s)",
-                      })}
+                      title={collection.name}
+                      type="button"
                     >
-                      {collection.memberDirectoryIds.length}
+                      <ChevronRight
+                        className={
+                          isExpanded ? "project-collection-chevron--open" : ""
+                        }
+                        size={12}
+                      />
+                      <Library
+                        className="list-icon list-icon--collection"
+                        size={15}
+                      />
+                      <span className="list-label">{collection.name}</span>
+                      <span
+                        className="project-collection-badge"
+                        title={t("sidebar.collectionMemberCount", {
+                          values: {
+                            count: collection.memberDirectoryIds.length,
+                          },
+                          defaultValue: "{{count}} project(s)",
+                        })}
+                      >
+                        {collection.memberDirectoryIds.length}
+                      </span>
+                    </button>
+                    <span className="project-collection-actions">
+                      <button
+                        aria-label={t("sidebar.renameCollection", {
+                          defaultValue: "Rename collection",
+                        })}
+                        className="icon-btn ghost"
+                        disabled={isActionLocked}
+                        onClick={() => onRenameCollection(collection)}
+                        title={t("sidebar.renameCollection", {
+                          defaultValue: "Rename collection",
+                        })}
+                        type="button"
+                      >
+                        <Pencil size={12} />
+                      </button>
+                      <button
+                        aria-label={t("sidebar.deleteCollection", {
+                          defaultValue: "Delete collection",
+                        })}
+                        className="icon-btn ghost project-collection-delete-btn"
+                        disabled={isActionLocked}
+                        onClick={() => onDeleteCollection(collection)}
+                        title={t("sidebar.deleteCollection", {
+                          defaultValue: "Delete collection",
+                        })}
+                        type="button"
+                      >
+                        <Trash2 size={12} />
+                      </button>
                     </span>
-                  </button>
-                  <span className="project-collection-actions">
-                    <button
-                      aria-label={t("sidebar.renameCollection", {
-                        defaultValue: "Rename collection",
-                      })}
-                      className="icon-btn ghost"
-                      disabled={isActionLocked}
-                      onClick={() => onRenameCollection(collection)}
-                      title={t("sidebar.renameCollection", {
-                        defaultValue: "Rename collection",
-                      })}
-                      type="button"
-                    >
-                      <Pencil size={12} />
-                    </button>
-                    <button
-                      aria-label={t("sidebar.deleteCollection", {
-                        defaultValue: "Delete collection",
-                      })}
-                      className="icon-btn ghost project-collection-delete-btn"
-                      disabled={isActionLocked}
-                      onClick={() => onDeleteCollection(collection)}
-                      title={t("sidebar.deleteCollection", {
-                        defaultValue: "Delete collection",
-                      })}
-                      type="button"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </span>
+                  </div>
+                  <SidebarCollapse open={isExpanded}>
+                    {renderCollectionMembers(collection)}
+                  </SidebarCollapse>
                 </div>
-                <SidebarCollapse open={isExpanded}>
-                  {renderCollectionMembers(collection)}
-                </SidebarCollapse>
+              );
+            })}
+          </div>
+        ) : null}
+        {isLoadingDirectories ? (
+          <span className="empty-text">
+            {t("sidebar.loadingDirectories", {
+              defaultValue: "Loading directories...",
+            })}
+          </span>
+        ) : workspaceDirectories.length === 0 ? (
+          <span className="empty-text">
+            {t("sidebar.noDirectories", {
+              defaultValue: "No directories",
+            })}
+          </span>
+        ) : (
+          <>
+            {visibleDirectories.map((directory, index) => (
+              <WorkspaceDirectoryRow
+                activeDirectoryId={activeDirectoryId}
+                directory={directory}
+                displayName={displayNames.get(directory.directoryId)}
+                draggedDirectoryId={draggedDirectoryId}
+                dragOverDirectoryId={dragOverDirectoryId}
+                dropIndicatorSide={dropIndicatorSide}
+                editingValue={editingValue}
+                hasActiveSession={
+                  activeSessionDirectoryIds?.has(directory.directoryId) ?? false
+                }
+                index={index}
+                isActionLocked={isActionLocked}
+                isEditing={editingDirectoryId === directory.directoryId}
+                key={directory.directoryId}
+                notificationCount={
+                  notificationCountByDirectory?.[directory.directoryId] ?? 0
+                }
+                onActivate={onActivate}
+                onDelete={onDelete}
+                onDragEnd={onDragEnd}
+                onDragOver={onDragOver}
+                onDragStart={onDragStart}
+                onDrop={onDrop}
+                onEditingValueChange={setEditingValue}
+                onRenameCancel={handleRenameCancel}
+                onRenameStart={handleRenameStart}
+                onRenameSubmit={handleRenameSubmit}
+                onShowDetails={onShowDetails}
+                onShowRelinkHistory={onShowRelinkHistory}
+                totalCount={totalCount}
+              />
+            ))}
+            {hasMoreDirectories ? (
+              <div
+                aria-hidden="true"
+                className="workspace-directory-load-more"
+                ref={loadMoreRef}
+              >
+                <Loader2 className="spin" size={13} />
+                <span>
+                  {t("sidebar.loadingMoreDirectories", {
+                    defaultValue: "Loading more...",
+                  })}
+                </span>
               </div>
-            );
-          })}
-        </div>
-      ) : null}
-      {isLoadingDirectories ? (
-        <span className="empty-text">
-          {t("sidebar.loadingDirectories", {
-            defaultValue: "Loading directories...",
-          })}
-        </span>
-      ) : workspaceDirectories.length === 0 ? (
-        <span className="empty-text">
-          {t("sidebar.noDirectories", {
-            defaultValue: "No directories",
-          })}
-        </span>
-      ) : (
-        <>
-          {visibleDirectories.map((directory, index) => (
-            <WorkspaceDirectoryRow
-              activeDirectoryId={activeDirectoryId}
-              directory={directory}
-              displayName={displayNames.get(directory.directoryId)}
-              draggedDirectoryId={draggedDirectoryId}
-              dragOverDirectoryId={dragOverDirectoryId}
-              dropIndicatorSide={dropIndicatorSide}
-              editingValue={editingValue}
-              hasActiveSession={
-                activeSessionDirectoryIds?.has(directory.directoryId) ?? false
-              }
-              index={index}
-              isActionLocked={isActionLocked}
-              isEditing={editingDirectoryId === directory.directoryId}
-              key={directory.directoryId}
-              notificationCount={
-                notificationCountByDirectory?.[directory.directoryId] ?? 0
-              }
-              onActivate={onActivate}
-              onDelete={onDelete}
-              onDragEnd={onDragEnd}
-              onDragOver={onDragOver}
-              onDragStart={onDragStart}
-              onDrop={onDrop}
-              onEditingValueChange={setEditingValue}
-              onRenameCancel={handleRenameCancel}
-              onRenameStart={handleRenameStart}
-              onRenameSubmit={handleRenameSubmit}
-              onShowDetails={onShowDetails}
-              onShowRelinkHistory={onShowRelinkHistory}
-              totalCount={totalCount}
-            />
-          ))}
-          {hasMoreDirectories ? (
-            <div
-              aria-hidden="true"
-              className="workspace-directory-load-more"
-              ref={loadMoreRef}
-            >
-              <Loader2 className="spin" size={13} />
-              <span>
-                {t("sidebar.loadingMoreDirectories", {
-                  defaultValue: "Loading more...",
-                })}
-              </span>
-            </div>
-          ) : (
-            <div className="workspace-directory-end-line">
-              <span>
-                {t("sidebar.allDirectoriesLoaded", {
-                  defaultValue: "All directories loaded",
-                })}
-              </span>
-            </div>
-          )}
-        </>
-      )}
+            ) : (
+              <div className="workspace-directory-end-line">
+                <span>
+                  {t("sidebar.allDirectoriesLoaded", {
+                    defaultValue: "All directories loaded",
+                  })}
+                </span>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

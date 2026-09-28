@@ -17,7 +17,7 @@ import { isMacOS } from "../utils/shortcutUtils";
 
 /**
  * 所有快捷键的默认配置。当后端尚未 seed 或读取失败时使用。
- * 12 个快捷键默认 enabled=true；除 toggleWindow 外默认 foregroundOnly=true。
+ * 30 个快捷键默认 enabled=true；除 toggleWindow 外默认 foregroundOnly=true。
  * cycleApiProfile 的默认键平台相关：macOS 用 Ctrl+P（Alt 会输入特殊字符），
  * 其他平台用 Alt+P。
  * toggleWindow（mod+shift+h）默认 foregroundOnly=false：它由主进程
@@ -141,6 +141,9 @@ const DEFAULT_SETTINGS: KeyboardShortcutsSettings = {
     enabled: true,
     foregroundOnly: true,
   },
+  uiZoomIn: { key: "mod+=", enabled: true, foregroundOnly: true },
+  uiZoomOut: { key: "mod+-", enabled: true, foregroundOnly: true },
+  uiZoomReset: { key: "mod+0", enabled: true, foregroundOnly: true },
 };
 
 /**

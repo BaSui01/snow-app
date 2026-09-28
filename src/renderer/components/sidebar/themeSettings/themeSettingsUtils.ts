@@ -4,6 +4,7 @@ import type {
   ThemeSettings,
   ThemeMode,
   ThemeStreamCursor,
+  ThemeTypography,
 } from "./types";
 import {
   DEFAULT_THEME_PRESET_ID,
@@ -23,6 +24,23 @@ export const THEME_SETTING_CODE = "theme_settings";
  * ThemeSettingsPanel 预览 useEffect。
  */
 export const MAX_BACKGROUND_OPACITY = 0.6;
+
+/** 界面字号范围与默认值。字号以 13px 为 100% 基准驱动整页缩放。 */
+export const UI_FONT_SIZE_MIN = 12;
+export const UI_FONT_SIZE_MAX = 18;
+export const UI_FONT_SIZE_DEFAULT = 13;
+export const FONT_WEIGHT_MIN = 100;
+export const FONT_WEIGHT_MAX = 900;
+export const FONT_WEIGHT_DEFAULT = 400;
+export const CHAT_FONT_SIZE_MIN = 12;
+export const CHAT_FONT_SIZE_MAX = 20;
+export const CHAT_FONT_SIZE_DEFAULT = 15;
+export const CHAT_LINE_HEIGHT_MIN = 1.2;
+export const CHAT_LINE_HEIGHT_MAX = 2.4;
+export const CHAT_LINE_HEIGHT_DEFAULT = 1.75;
+export const CODE_FONT_SIZE_MIN = 10;
+export const CODE_FONT_SIZE_MAX = 18;
+export const CODE_FONT_SIZE_DEFAULT = 12.5;
 
 export const PALETTE_ROLE_TO_CSS_VAR: Record<keyof ThemePalette, string> = {
   bgPrimary: "--bg-primary",
@@ -242,6 +260,13 @@ export const DEFAULT_THEME_SETTINGS: ThemeSettings = {
     svgPath: "",
     iconSize: 14,
   },
+  typography: {
+    fontSize: UI_FONT_SIZE_DEFAULT,
+    fontWeight: FONT_WEIGHT_DEFAULT,
+    chatFontSize: CHAT_FONT_SIZE_DEFAULT,
+    chatLineHeight: CHAT_LINE_HEIGHT_DEFAULT,
+    codeFontSize: CODE_FONT_SIZE_DEFAULT,
+  },
 };
 
 export function emptyPalette(): ThemePalette {
@@ -351,6 +376,55 @@ export function normalizeThemeStreamCursor(value: unknown): ThemeStreamCursor {
   return { iconType, lucideName: "", svgPath, iconSize };
 }
 
+const pickInRange = (
+  value: unknown,
+  min: number,
+  max: number,
+  fallback: number,
+): number =>
+  typeof value === "number" &&
+  Number.isFinite(value) &&
+  value >= min &&
+  value <= max
+    ? value
+    : fallback;
+
+export function normalizeThemeTypography(value: unknown): ThemeTypography {
+  const source = isRecord(value) ? value : {};
+  return {
+    fontSize: pickInRange(
+      source.fontSize,
+      UI_FONT_SIZE_MIN,
+      UI_FONT_SIZE_MAX,
+      UI_FONT_SIZE_DEFAULT,
+    ),
+    fontWeight: pickInRange(
+      source.fontWeight,
+      FONT_WEIGHT_MIN,
+      FONT_WEIGHT_MAX,
+      FONT_WEIGHT_DEFAULT,
+    ),
+    chatFontSize: pickInRange(
+      source.chatFontSize,
+      CHAT_FONT_SIZE_MIN,
+      CHAT_FONT_SIZE_MAX,
+      CHAT_FONT_SIZE_DEFAULT,
+    ),
+    chatLineHeight: pickInRange(
+      source.chatLineHeight,
+      CHAT_LINE_HEIGHT_MIN,
+      CHAT_LINE_HEIGHT_MAX,
+      CHAT_LINE_HEIGHT_DEFAULT,
+    ),
+    codeFontSize: pickInRange(
+      source.codeFontSize,
+      CODE_FONT_SIZE_MIN,
+      CODE_FONT_SIZE_MAX,
+      CODE_FONT_SIZE_DEFAULT,
+    ),
+  };
+}
+
 export function normalizeThemeSettings(value: unknown): ThemeSettings {
   const source = isRecord(value) ? value : {};
   const rawMode = toText(source.mode) || "system";
@@ -364,6 +438,7 @@ export function normalizeThemeSettings(value: unknown): ThemeSettings {
     background: normalizeThemeBackground(source.background),
     fontFamily: toText(source.fontFamily),
     streamCursor: normalizeThemeStreamCursor(source.streamCursor),
+    typography: normalizeThemeTypography(source.typography),
   };
 }
 
@@ -452,6 +527,42 @@ export function applyStreamCursorToDocument(cursor: ThemeStreamCursor): void {
       "--stream-cursor-svg",
       `url("${themeBgUrl(cursor.svgPath)}")`,
     );
+  }
+}
+
+/** 当前生效的界面缩放因子，供 traffic light 坐标换算复用。 */
+let currentUiZoomFactor = 1;
+
+/**
+ * 应用排版设置：界面字号通过 webFrame zoom 实现整页缩放（13px 为 100% 基准），
+ * 字重 / 聊天正文字号 / 行高 / 代码字号写入 CSS 变量。
+ */
+export function applyTypographyToDocument(typography: ThemeTypography): void {
+  const root = document.documentElement;
+  root.style.setProperty("--app-font-weight", String(typography.fontWeight));
+  root.style.setProperty(
+    "--app-chat-font-size",
+    `${typography.chatFontSize}px`,
+  );
+  root.style.setProperty(
+    "--app-chat-line-height",
+    String(typography.chatLineHeight),
+  );
+  root.style.setProperty(
+    "--app-code-font-size",
+    `${typography.codeFontSize}px`,
+  );
+
+  const factor = typography.fontSize / UI_FONT_SIZE_DEFAULT;
+  // 缩放未变化时不重复调用 webFrame（避免无谓的整页重排）。
+  const zoomChanged = factor !== currentUiZoomFactor;
+  currentUiZoomFactor = factor;
+  if (
+    zoomChanged &&
+    typeof window !== "undefined" &&
+    typeof window.snow?.setUiZoomFactor === "function"
+  ) {
+    window.snow.setUiZoomFactor(factor);
   }
 }
 
@@ -557,6 +668,7 @@ export const applyThemeCacheToDocument = (): "light" | "dark" | null => {
   // 应用自定义字体和流式光标配置。
   applyFontFamilyToDocument(settings.fontFamily);
   applyStreamCursorToDocument(settings.streamCursor);
+  applyTypographyToDocument(settings.typography);
 
   // 同步背景图层 CSS 变量，避免启动时背景图延迟出现。
   const bg = settings.background;
@@ -590,7 +702,11 @@ export function syncMacTrafficLightPosition(): void {
     barRect && barRect.height > 0
       ? barRect.top + barRect.height / 2
       : DEFAULT_HEADER_CENTER_Y;
+  // rect 为 CSS px，主进程窗口坐标需按当前界面缩放换算。
+  const zoom = currentUiZoomFactor || 1;
   void window.snow
-    .setThemeTrafficLightY(Math.round(centerY - TRAFFIC_LIGHT_GROUP_HEIGHT / 2))
+    .setThemeTrafficLightY(
+      Math.round((centerY - TRAFFIC_LIGHT_GROUP_HEIGHT / 2) * zoom),
+    )
     .catch(() => undefined);
 }

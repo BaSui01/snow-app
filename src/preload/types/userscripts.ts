@@ -24,6 +24,7 @@ export type UserscriptRecord = {
   scope: string;
   /** 是否隔离世界执行（沙箱档）；false = 主世界完全权限档。 */
   sandbox: boolean;
+  privacy: string[];
   /** 脚本文件在磁盘上的绝对路径。 */
   filePath: string;
   createdAt: string;
@@ -54,6 +55,7 @@ export type ClientScriptPayload = {
   runAt: string;
   /** true = 隔离世界沙箱档；false = 主世界完全权限档。 */
   sandbox: boolean;
+  privacy: string[];
   /** `global` = 常驻脚本（应用启动执行，不随视图卸载）。 */
   scope: string;
   views: string[];
@@ -62,6 +64,13 @@ export type ClientScriptPayload = {
   raw: string;
   gmValues: Record<string, string>;
 };
+
+export type ClientScriptApiHostHandler = (
+  scriptId: string,
+  infoJson: string,
+  method: string,
+  argsJson: string,
+) => Promise<string>;
 
 /** 客户端脚本运行失败记录（管理面板展示）。 */
 export type ClientScriptFailure = {

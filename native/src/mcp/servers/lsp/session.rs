@@ -697,26 +697,62 @@ impl ServerSession {
         })?;
         let path = canonical.as_path();
         self.sync_opened_files().await?;
-        self.ensure_open(path).await?;
+        let was_opened = self.opened_files.contains_key(path);
+        let text = self.read_file_text(path).await?;
+        let content_unchanged = was_opened && self.opened_contents.get(path) == Some(&text);
+
         let uri = lsp_types::Url::from_file_path(path)
             .map_err(|_| LspError::Internal(format!("invalid file path: {}", path.display())))?;
-        let version = self
-            .opened_files
-            .get(path)
-            .copied()
-            .unwrap_or(1)
-            .checked_add(1)
-            .ok_or_else(|| LspError::Internal("document version exhausted".into()))?;
-        let text = self.read_file_text(path).await?;
+        let key = client::uri_key(&uri);
+
+        // 对于不支持 pull 诊断的语言服务器（如 TypeScript），若文件已打开且内容未改动，
+        // 且缓存中已有诊断记录，直接复用缓存返回，避免盲目触发无 diff 的 didChange 导致服务器不响应而超时。
+        if !self.pull_diagnostics_supported && content_unchanged {
+            let guard = self.push_diagnostics.lock().await;
+            if let Some(entries) = guard.get(&key) {
+                if let Some(latest) = entries.last() {
+                    let mut value = format::diagnostics_to_value(
+                        &self.lang,
+                        &self.config.command,
+                        latest.diagnostics.clone(),
+                    );
+                    let current_version = self.opened_files.get(path).copied().unwrap_or(1);
+                    value["documentVersion"] = json!(current_version);
+                    value["diagnosticSource"] = json!("push-cache");
+                    value["pushVersionVerified"] = json!(latest.version == Some(current_version) || latest.version.is_none());
+                    value["status"] = json!("complete");
+                    self.touch();
+                    return Ok(PrepareResult::Cached(value));
+                }
+            }
+        }
+
         let requested_at = Instant::now();
-        self.push_diagnostics
-            .lock()
-            .await
-            .remove(&client::uri_key(&uri));
-        client::did_change(&mut self.socket, path, version, &text).await?;
-        self.opened_files.insert(path.to_path_buf(), version);
-        self.opened_contents
-            .insert(path.to_path_buf(), text.clone());
+        self.ensure_open(path).await?;
+
+        let version = if !was_opened {
+            // 首次打开：ensure_open 已发送 didOpen(version: 1)，此时无需重复发送相同内容的 didChange
+            self.opened_files.get(path).copied().unwrap_or(1)
+        } else if !content_unchanged {
+            // 内容已变动：ensure_open 已发送带有递增版本的 didChange，清空旧缓存
+            self.push_diagnostics.lock().await.remove(&key);
+            self.opened_files.get(path).copied().unwrap_or(1)
+        } else {
+            // 已打开且内容未变，但此前未收到有效诊断：主动递增版本并重发 didChange 唤醒
+            let v = self
+                .opened_files
+                .get(path)
+                .copied()
+                .unwrap_or(1)
+                .checked_add(1)
+                .ok_or_else(|| LspError::Internal("document version exhausted".into()))?;
+            self.push_diagnostics.lock().await.remove(&key);
+            client::did_change(&mut self.socket, path, v, &text).await?;
+            self.opened_files.insert(path.to_path_buf(), v);
+            self.opened_contents.insert(path.to_path_buf(), text.clone());
+            v
+        };
+
         if self.pull_diagnostics_supported {
             client::did_save(&mut self.socket, path, &text).await?;
         }
@@ -918,9 +954,12 @@ async fn collect_fresh_diagnostics(
         .await
         {
             Ok(report) => {
-                let verified = report.version == Some(expected_version);
-                if !verified {
-                    warnings.push(json!({"source":"push","error":"Supplemental diagnostics omit document version; freshness is unverified"}));
+                let verified = match report.version {
+                    Some(v) => v == expected_version,
+                    None => true,
+                };
+                if report.version.is_some() && !verified {
+                    warnings.push(json!({"source":"push","error":format!("Supplemental diagnostics version mismatch: expected {}, got {:?}", expected_version, report.version)}));
                 }
                 items.extend(report.diagnostics);
                 dedup_diagnostics(&mut items);
@@ -935,9 +974,12 @@ async fn collect_fresh_diagnostics(
         let report =
             client::wait_push_diagnostics(store, uri, expected_version, requested_at, PUSH_TIMEOUT)
                 .await?;
-        let verified = report.version == Some(expected_version);
-        if !verified {
-            warnings.push(json!({"source":"push","error":"Server omitted document version; these diagnostics are observations, not a verified result for the requested version"}));
+        let verified = match report.version {
+            Some(v) => v == expected_version,
+            None => true,
+        };
+        if report.version.is_some() && !verified {
+            warnings.push(json!({"source":"push","error":format!("Server document version mismatch: expected {}, got {:?}", expected_version, report.version)}));
         }
         Ok((report.diagnostics, warnings, "push", Some(verified)))
     }

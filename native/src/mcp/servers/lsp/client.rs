@@ -71,15 +71,36 @@ pub fn uri_key(uri: &Url) -> String {
             .map(|p| {
                 #[cfg(windows)]
                 {
-                    p.to_lowercase()
+                    let clean = p.strip_prefix(r"\\?\").unwrap_or(p);
+                    clean.to_lowercase()
                 }
                 #[cfg(not(windows))]
                 {
                     p.to_string()
                 }
             })
-            .unwrap_or_else(|| uri.as_str().to_string()),
-        Err(_) => uri.as_str().to_string(),
+            .unwrap_or_else(|| {
+                let s = uri.as_str();
+                #[cfg(windows)]
+                {
+                    s.to_lowercase()
+                }
+                #[cfg(not(windows))]
+                {
+                    s.to_string()
+                }
+            }),
+        Err(_) => {
+            let s = uri.as_str();
+            #[cfg(windows)]
+            {
+                s.to_lowercase()
+            }
+            #[cfg(not(windows))]
+            {
+                s.to_string()
+            }
+        }
     }
 }
 

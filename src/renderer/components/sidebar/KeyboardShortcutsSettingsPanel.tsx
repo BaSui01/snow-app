@@ -1,4 +1,4 @@
-import { Keyboard, RotateCcw, X } from "lucide-react";
+import { Keyboard, RotateCcw } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -61,13 +61,7 @@ const DEFAULT_KEYS: Record<KeyboardShortcutAction, string> = {
   toggleMessageTime: "mod+shift+y",
 };
 
-type KeyboardShortcutsSettingsPanelProps = {
-  onClose: () => void;
-};
-
-export function KeyboardShortcutsSettingsPanel({
-  onClose,
-}: KeyboardShortcutsSettingsPanelProps): React.JSX.Element {
+export function KeyboardShortcutsSettingsPanel(): React.JSX.Element {
   const { t } = useI18n();
   const { settings, updateShortcutConfig } = useKeyboardShortcutsSettings();
   const [recordingAction, setRecordingAction] =
@@ -152,35 +146,6 @@ export function KeyboardShortcutsSettingsPanel({
 
   return (
     <div className="api-settings-page" role="region">
-      <div className="api-settings-page-header">
-        <div className="api-settings-title-group">
-          <strong>
-            {t("settings.keyboardShortcuts", {
-              defaultValue: "Keyboard shortcuts",
-            })}
-          </strong>
-          <span className="settings-item-description">
-            {t("settings.keyboardShortcutsInfo", {
-              defaultValue:
-                "Configure keyboard shortcuts. Each shortcut can be enabled independently and toggled to only work when the app is focused.",
-            })}
-          </span>
-        </div>
-        <button
-          className="icon-btn ghost"
-          onClick={onClose}
-          type="button"
-          aria-label={t("settings.closePanel", {
-            defaultValue: "Close",
-          })}
-          title={t("settings.closePanel", {
-            defaultValue: "Close",
-          })}
-        >
-          <X size={15} strokeWidth={1.8} />
-        </button>
-      </div>
-
       <div className="api-settings-manual-form">
         <div className="api-settings-manual-header">
           <strong>

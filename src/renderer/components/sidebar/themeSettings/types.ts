@@ -72,10 +72,6 @@ export type ThemePreset = {
   dark: ThemePalette;
 };
 
-export type ThemeSettingsPanelProps = {
-  onClose?: () => void;
-};
-
 export type ColorGroup = {
   titleKey: string;
   defaultTitle: string;

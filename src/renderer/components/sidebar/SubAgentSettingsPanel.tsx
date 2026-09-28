@@ -1,4 +1,4 @@
-import { Folder, Globe2, Loader2, Plus, RefreshCw, X } from "lucide-react";
+import { Folder, Globe2, Loader2, Plus, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   ApiConfigRecord,
@@ -9,7 +9,10 @@ import { AutoDismissNotice } from "../AutoDismissNotice";
 import { Modal } from "../common/Modal";
 import { useI18n } from "../../i18n";
 import { formatMcpError } from "./mcpSettings/mcpErrorMessages";
-import { SubAgentEditor, SubAgentEditorActions } from "./subAgent/SubAgentEditor";
+import {
+  SubAgentEditor,
+  SubAgentEditorActions,
+} from "./subAgent/SubAgentEditor";
 import { SubAgentList } from "./subAgent/SubAgentList";
 import { SubAgentSummary } from "./subAgent/SubAgentSummary";
 import {
@@ -26,7 +29,6 @@ import type {
 
 export function SubAgentSettingsPanel({
   activeDirectory,
-  onClose,
 }: SubAgentSettingsPanelProps): React.JSX.Element {
   const { t } = useI18n();
   const [agents, setAgents] = useState<SubAgentConfigRecord[]>([]);
@@ -43,7 +45,7 @@ export function SubAgentSettingsPanel({
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [activeScope, setActiveScope] = useState<"global" | "project">(
-    "global"
+    "global",
   );
   const toolCatalogGenerationRef = useRef(0);
   const modelCatalogGenerationRef = useRef(0);
@@ -65,7 +67,7 @@ export function SubAgentSettingsPanel({
       setAgents(
         isGlobalScope
           ? nextAgents.filter((agent) => !agent.projectId)
-          : nextAgents
+          : nextAgents,
       );
       setApiConfigs(nextApiConfigs);
     } catch (loadError) {
@@ -74,7 +76,7 @@ export function SubAgentSettingsPanel({
           ? loadError.message
           : t("settings.subAgentLoadError", {
               defaultValue: "Failed to load sub-agent configurations",
-            })
+            }),
       );
     } finally {
       setIsLoading(false);
@@ -95,7 +97,7 @@ export function SubAgentSettingsPanel({
     try {
       const servers = await window.snow.listMcpProjectServers(projectId);
       const availableServers = servers.filter(
-        (server) => server.globalEnabled && server.enabled && !server.error
+        (server) => server.globalEnabled && server.enabled && !server.error,
       );
       // Rust 侧 listMcpProjectServers 已并发发现各启用外部服务器的
       // 工具并随列表返回（进程内 TTL 缓存，重复打开面板直接命中），
@@ -158,7 +160,7 @@ export function SubAgentSettingsPanel({
     }
 
     const apiConfig = apiConfigs.find(
-      (config) => config.profileName === profileName
+      (config) => config.profileName === profileName,
     );
     if (!apiConfig) {
       setIsModelCatalogLoading(false);
@@ -186,7 +188,7 @@ export function SubAgentSettingsPanel({
               ? modelError.message
               : t("settings.subAgentModelsLoadError", {
                   defaultValue: "Failed to load models for this API profile",
-                })
+                }),
           );
         }
       })
@@ -200,7 +202,7 @@ export function SubAgentSettingsPanel({
   const startAdd = (): void => {
     const maxSortOrder = agents.reduce(
       (maximum, agent) => Math.max(maximum, agent.sortOrder),
-      -1
+      -1,
     );
     setDraft({
       ...EMPTY_SUB_AGENT_DRAFT,
@@ -228,7 +230,7 @@ export function SubAgentSettingsPanel({
       setError(
         t("settings.subAgentNameRequired", {
           defaultValue: "Sub-agent name is required.",
-        })
+        }),
       );
       return;
     }
@@ -239,7 +241,7 @@ export function SubAgentSettingsPanel({
       setError(
         t("settings.subAgentApiProfileUnavailable", {
           defaultValue: "The selected API profile is no longer available.",
-        })
+        }),
       );
       return;
     }
@@ -248,7 +250,7 @@ export function SubAgentSettingsPanel({
       setError(
         t("settings.subAgentToolsNoProject", {
           defaultValue: "Select a project before choosing MCP tools.",
-        })
+        }),
       );
       return;
     }
@@ -256,7 +258,7 @@ export function SubAgentSettingsPanel({
       setError(
         t("settings.subAgentToolsLoading", {
           defaultValue: "Loading project MCP tools...",
-        })
+        }),
       );
       return;
     }
@@ -273,7 +275,7 @@ export function SubAgentSettingsPanel({
         t("settings.subAgentToolsUnavailable", {
           defaultValue:
             "Some saved MCP tools are not enabled for the current project.",
-        })
+        }),
       );
       return;
     }
@@ -285,12 +287,12 @@ export function SubAgentSettingsPanel({
       const isExisting = Boolean(draft.agentId);
       const nextAgents = await window.snow.upsertSubAgentConfig(
         scopeProjectId,
-        toSubAgentInput(draft)
+        toSubAgentInput(draft),
       );
       setAgents(
         isGlobalScope
           ? nextAgents.filter((agent) => !agent.projectId)
-          : nextAgents
+          : nextAgents,
       );
       setDraft(null);
       setStatus(
@@ -300,7 +302,7 @@ export function SubAgentSettingsPanel({
             })
           : t("settings.subAgentAddSuccess", {
               defaultValue: "Added sub-agent configuration.",
-            })
+            }),
       );
     } catch (saveError) {
       setError(
@@ -308,7 +310,7 @@ export function SubAgentSettingsPanel({
           ? saveError.message
           : t("settings.subAgentSaveError", {
               defaultValue: "Failed to save sub-agent configuration",
-            })
+            }),
       );
     } finally {
       setIsSaving(false);
@@ -323,17 +325,17 @@ export function SubAgentSettingsPanel({
     try {
       const nextAgents = await window.snow.deleteSubAgentConfig(
         agent.agentId,
-        agent.projectId || undefined
+        agent.projectId || undefined,
       );
       setAgents(
         isGlobalScope
           ? nextAgents.filter((item) => !item.projectId)
-          : nextAgents
+          : nextAgents,
       );
       setStatus(
         t("settings.subAgentDeleteSuccess", {
           defaultValue: "Deleted sub-agent configuration.",
-        })
+        }),
       );
     } catch (deleteError) {
       setError(
@@ -341,7 +343,7 @@ export function SubAgentSettingsPanel({
           ? deleteError.message
           : t("settings.subAgentDeleteError", {
               defaultValue: "Failed to delete sub-agent configuration",
-            })
+            }),
       );
     } finally {
       setIsLoading(false);
@@ -350,36 +352,6 @@ export function SubAgentSettingsPanel({
 
   return (
     <div className="api-settings-page" role="region">
-      <div className="api-settings-page-header">
-        <div className="api-settings-title-group">
-          <strong>
-            {t("settings.subAgentTitle", {
-              defaultValue: "Sub-agent settings",
-            })}
-          </strong>
-          <span className="settings-item-description">
-            {t("settings.subAgentSettingsInfo", {
-              defaultValue: "Manage specialized AI sub-agents.",
-            })}
-          </span>
-        </div>
-        {onClose && (
-          <button
-            className="icon-btn ghost"
-            onClick={onClose}
-            type="button"
-            aria-label={t("settings.closeSubAgentSettings", {
-              defaultValue: "Close sub-agent settings",
-            })}
-            title={t("settings.closeSubAgentSettings", {
-              defaultValue: "Close sub-agent settings",
-            })}
-          >
-            <X size={15} strokeWidth={1.8} />
-          </button>
-        )}
-      </div>
-
       <SubAgentSummary
         agents={agents}
         availableToolCount={toolOptions.length}
@@ -527,7 +499,7 @@ export function SubAgentSettingsPanel({
             toolOptions={toolOptions}
             onDraftChange={(patch) =>
               setDraft((previous) =>
-                previous ? { ...previous, ...patch } : previous
+                previous ? { ...previous, ...patch } : previous,
               )
             }
             onCancel={cancelDraft}

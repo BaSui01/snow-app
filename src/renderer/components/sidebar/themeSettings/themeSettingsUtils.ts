@@ -575,3 +575,22 @@ export const applyThemeCacheToDocument = (): "light" | "dark" | null => {
 
   return isDark ? "dark" : "light";
 };
+
+const TRAFFIC_LIGHT_GROUP_HEIGHT = 16;
+const DEFAULT_HEADER_CENTER_Y = 36;
+
+export function syncMacTrafficLightPosition(): void {
+  if (typeof window === "undefined" || !window.snow) {
+    return;
+  }
+  const barRect = document
+    .querySelector<HTMLElement>(".top-bar")
+    ?.getBoundingClientRect();
+  const centerY =
+    barRect && barRect.height > 0
+      ? barRect.top + barRect.height / 2
+      : DEFAULT_HEADER_CENTER_Y;
+  void window.snow
+    .setThemeTrafficLightY(Math.round(centerY - TRAFFIC_LIGHT_GROUP_HEIGHT / 2))
+    .catch(() => undefined);
+}

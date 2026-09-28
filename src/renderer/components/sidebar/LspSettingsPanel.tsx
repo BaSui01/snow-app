@@ -7,7 +7,6 @@ import {
   RefreshCw,
   ScanSearch,
   Undo2,
-  X,
 } from "lucide-react";
 import { useState } from "react";
 import type { WorkspaceDirectoryRecord } from "../../../preload";
@@ -28,7 +27,6 @@ import {
 
 type LspSettingsPanelProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
-  onClose?: () => void;
 };
 
 export function LspSettingsPanel(
@@ -50,7 +48,6 @@ export function LspSettingsPanel(
 
 function LspSettingsScopePanel({
   activeDirectory,
-  onClose,
   activeScope,
   setActiveScope,
 }: LspSettingsPanelProps & {
@@ -108,35 +105,6 @@ function LspSettingsScopePanel({
 
   return (
     <div className="api-settings-page" role="region">
-      <div className="api-settings-page-header">
-        <div className="api-settings-title-group">
-          <strong>
-            {t("settings.lspTitle", { defaultValue: "LSP settings" })}
-          </strong>
-          <span className="settings-item-description">
-            {t("settings.lspSettingsInfo", {
-              defaultValue:
-                "Configure external language servers (rust-analyzer, gopls, pyright ...) for lsp-diagnostics / lsp-hover.",
-            })}
-          </span>
-        </div>
-        {onClose && (
-          <button
-            className="icon-btn ghost"
-            onClick={onClose}
-            type="button"
-            aria-label={t("settings.closeLspSettings", {
-              defaultValue: "Close LSP settings",
-            })}
-            title={t("settings.closeLspSettings", {
-              defaultValue: "Close LSP settings",
-            })}
-          >
-            <X size={15} strokeWidth={1.8} />
-          </button>
-        )}
-      </div>
-
       <LspSettingsSummary
         totalCount={listItems.length}
         enabledCount={enabledCount}

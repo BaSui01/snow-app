@@ -1,4 +1,4 @@
-import { Download, Loader2, X } from "lucide-react";
+import { Download, Loader2 } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -34,12 +34,9 @@ import {
 import type {
   CodebaseSettings,
   CodebaseSettingsForm as CodebaseSettingsFormValue,
-  CodebaseSettingsPanelProps,
 } from "./codebaseSettings/types";
 
-export function CodebaseSettingsPanel({
-  onClose,
-}: CodebaseSettingsPanelProps): React.JSX.Element {
+export function CodebaseSettingsPanel(): React.JSX.Element {
   const { t } = useI18n();
   const [form, setForm] = useState<CodebaseSettingsFormValue>(() =>
     toCodebaseForm(DEFAULT_CODEBASE_SETTINGS),
@@ -357,36 +354,6 @@ export function CodebaseSettingsPanel({
 
   return (
     <div className="api-settings-page" role="region">
-      <div className="api-settings-page-header">
-        <div className="api-settings-title-group">
-          <strong>
-            {t("settings.codebaseTitle", {
-              defaultValue: "Codebase settings",
-            })}
-          </strong>
-          <span className="settings-item-description">
-            {t("settings.codebaseSettingsInfo", {
-              defaultValue: "Manage indexing and workspace code search.",
-            })}
-          </span>
-        </div>
-        {onClose && (
-          <button
-            className="icon-btn ghost"
-            onClick={onClose}
-            type="button"
-            aria-label={t("settings.closeCodebaseSettings", {
-              defaultValue: "Close codebase settings",
-            })}
-            title={t("settings.closeCodebaseSettings", {
-              defaultValue: "Close codebase settings",
-            })}
-          >
-            <X size={15} strokeWidth={1.8} />
-          </button>
-        )}
-      </div>
-
       <CodebaseSettingsSummary preview={preview} lastSaved={lastSaved} />
 
       <div className="api-settings-actions">

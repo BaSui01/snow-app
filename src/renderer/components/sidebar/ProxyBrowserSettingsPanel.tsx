@@ -1,4 +1,4 @@
-import { Download, Loader2, X } from "lucide-react";
+import { Download, Loader2 } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -26,19 +26,16 @@ import {
 } from "./proxyBrowserSettings/proxyBrowserSettingsUtils";
 import type {
   ProxyBrowserSettingsForm as ProxyBrowserSettingsFormValue,
-  ProxyBrowserSettingsPanelProps,
   ProxyBrowserSettingsValue,
 } from "./proxyBrowserSettings/types";
 
-export function ProxyBrowserSettingsPanel({
-  onClose,
-}: ProxyBrowserSettingsPanelProps): React.JSX.Element {
+export function ProxyBrowserSettingsPanel(): React.JSX.Element {
   const { t } = useI18n();
   const [form, setForm] = useState<ProxyBrowserSettingsFormValue>(() =>
-    toProxyBrowserForm(DEFAULT_PROXY_BROWSER_SETTINGS)
+    toProxyBrowserForm(DEFAULT_PROXY_BROWSER_SETTINGS),
   );
   const [lastSaved, setLastSaved] = useState<ProxyBrowserSettingsValue>(
-    DEFAULT_PROXY_BROWSER_SETTINGS
+    DEFAULT_PROXY_BROWSER_SETTINGS,
   );
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -60,7 +57,7 @@ export function ProxyBrowserSettingsPanel({
 
     try {
       const value = await window.snow.getSystemSettingValue(
-        PROXY_BROWSER_SETTING_CODE
+        PROXY_BROWSER_SETTING_CODE,
       );
       const settings = readProxyBrowserSettingsJson(value);
       setForm(toProxyBrowserForm(settings));
@@ -71,7 +68,7 @@ export function ProxyBrowserSettingsPanel({
           ? e.message
           : t("settings.proxyBrowserLoadError", {
               defaultValue: "Failed to load proxy and browser settings",
-            })
+            }),
       );
     } finally {
       setIsLoading(false);
@@ -88,12 +85,12 @@ export function ProxyBrowserSettingsPanel({
     };
     window.addEventListener(
       PROXY_BROWSER_SETTINGS_CHANGED_EVENT,
-      handleSettingsChanged
+      handleSettingsChanged,
     );
     return () => {
       window.removeEventListener(
         PROXY_BROWSER_SETTINGS_CHANGED_EVENT,
-        handleSettingsChanged
+        handleSettingsChanged,
       );
     };
   }, [load]);
@@ -106,7 +103,7 @@ export function ProxyBrowserSettingsPanel({
     (
       event: ChangeEvent<
         HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
-      >
+      >,
     ) => {
       const value =
         event.target instanceof HTMLInputElement &&
@@ -119,7 +116,7 @@ export function ProxyBrowserSettingsPanel({
 
   const setValue = (
     field: keyof ProxyBrowserSettingsFormValue,
-    value: string
+    value: string,
   ) => {
     setForm((previous) => ({ ...previous, [field]: value }));
   };
@@ -129,7 +126,7 @@ export function ProxyBrowserSettingsPanel({
       const proxyPort = Number.parseInt(currentForm.port, 10);
       const browserDebugPort = Number.parseInt(
         currentForm.browserDebugPort,
-        10
+        10,
       );
 
       if (!Number.isInteger(proxyPort) || proxyPort < 1 || proxyPort > 65535) {
@@ -170,7 +167,7 @@ export function ProxyBrowserSettingsPanel({
 
       return null;
     },
-    [t]
+    [t],
   );
 
   const saveSettings = useCallback(
@@ -181,7 +178,7 @@ export function ProxyBrowserSettingsPanel({
         await window.snow.setSystemSetting(
           PROXY_BROWSER_SETTING_NAME,
           PROXY_BROWSER_SETTING_CODE,
-          JSON.stringify(settings)
+          JSON.stringify(settings),
         );
         // 通知主进程重新应用会话代理（net.fetch / electron-updater）
         void window.snow.applyProxySettings();
@@ -190,7 +187,7 @@ export function ProxyBrowserSettingsPanel({
           setStatus(
             t("settings.proxyBrowserSaveSuccess", {
               defaultValue: "Saved proxy and browser settings.",
-            })
+            }),
           );
         }
       } catch (e) {
@@ -200,7 +197,7 @@ export function ProxyBrowserSettingsPanel({
               ? e.message
               : t("settings.proxyBrowserSaveError", {
                   defaultValue: "Failed to save proxy and browser settings",
-                })
+                }),
           );
         }
       } finally {
@@ -209,7 +206,7 @@ export function ProxyBrowserSettingsPanel({
         }
       }
     },
-    [t]
+    [t],
   );
 
   // 失焦保存：输入框失焦或即时控件变更时立即保存，验证失败则不保存，卸载时立即冲刷避免丢失。
@@ -219,7 +216,7 @@ export function ProxyBrowserSettingsPanel({
     toProxyBrowserSettings,
     lastSaved,
     saveSettings,
-    setError
+    setError,
   );
 
   const handleImport = async () => {
@@ -235,7 +232,7 @@ export function ProxyBrowserSettingsPanel({
       setStatus(
         t("settings.proxyBrowserImportSuccess", {
           defaultValue: "Synced proxy settings from Snow CLI.",
-        })
+        }),
       );
     } catch (e) {
       setError(
@@ -243,7 +240,7 @@ export function ProxyBrowserSettingsPanel({
           ? e.message
           : t("settings.proxyBrowserImportError", {
               defaultValue: "Failed to sync Snow CLI proxy settings",
-            })
+            }),
       );
     } finally {
       setIsLoading(false);
@@ -268,7 +265,7 @@ export function ProxyBrowserSettingsPanel({
       const selectedPath = await window.snow.selectBrowserExecutable(
         t("settings.selectBrowserExecutableDialogTitle", {
           defaultValue: "Select browser executable",
-        })
+        }),
       );
 
       if (selectedPath) {
@@ -280,7 +277,7 @@ export function ProxyBrowserSettingsPanel({
           ? e.message
           : t("settings.browserExecutableSelectError", {
               defaultValue: "Failed to select browser executable",
-            })
+            }),
       );
     } finally {
       setIsSelectingBrowser(false);
@@ -289,36 +286,6 @@ export function ProxyBrowserSettingsPanel({
 
   return (
     <div className="api-settings-page" role="region">
-      <div className="api-settings-page-header">
-        <div className="api-settings-title-group">
-          <strong>
-            {t("settings.proxyBrowserTitle", {
-              defaultValue: "Proxy and search engine",
-            })}
-          </strong>
-          <span className="settings-item-description">
-            {t("settings.proxySettingsInfo", {
-              defaultValue: "Configure HTTP proxy and network access.",
-            })}
-          </span>
-        </div>
-        {onClose && (
-          <button
-            className="icon-btn ghost"
-            onClick={onClose}
-            type="button"
-            aria-label={t("settings.closeProxyBrowserSettings", {
-              defaultValue: "Close proxy and browser settings",
-            })}
-            title={t("settings.closeProxyBrowserSettings", {
-              defaultValue: "Close proxy and browser settings",
-            })}
-          >
-            <X size={15} strokeWidth={1.8} />
-          </button>
-        )}
-      </div>
-
       <ProxyBrowserSettingsSummary preview={preview} />
 
       <div className="api-settings-actions">

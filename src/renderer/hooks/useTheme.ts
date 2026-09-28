@@ -8,6 +8,7 @@ import {
   DEFAULT_THEME_SETTINGS,
   normalizeThemeSettings,
   resolveActivePalette,
+  syncMacTrafficLightPosition,
   writeThemeCache,
 } from "../components/sidebar/themeSettings/themeSettingsUtils";
 import type { ThemeSettings } from "../components/sidebar/themeSettings/types";
@@ -29,7 +30,7 @@ export const useTheme = (): {
   reloadTheme: () => Promise<void>;
 } => {
   const [themeSettings, setThemeSettings] = useState<ThemeSettings>(
-    DEFAULT_THEME_SETTINGS
+    DEFAULT_THEME_SETTINGS,
   );
 
   const applyTheme = useCallback(
@@ -57,6 +58,8 @@ export const useTheme = (): {
         });
       }
 
+      syncMacTrafficLightPosition();
+
       // 应用背景图层 CSS 变量。
       const bg2 = settings.background;
       const root = document.documentElement;
@@ -65,7 +68,7 @@ export const useTheme = (): {
         const blur = Math.max(0, bg2.blur);
         root.style.setProperty(
           "--theme-bg-image",
-          `url("${themeBgUrl(bg2.imagePath)}")`
+          `url("${themeBgUrl(bg2.imagePath)}")`,
         );
         root.style.setProperty("--theme-bg-opacity", String(opacity));
         root.style.setProperty("--theme-bg-blur", `${blur}px`);
@@ -77,7 +80,7 @@ export const useTheme = (): {
         root.removeAttribute("data-theme-bg");
       }
     },
-    []
+    [],
   );
 
   const reloadTheme = useCallback(async (): Promise<void> => {
@@ -86,7 +89,7 @@ export const useTheme = (): {
       const normalized = normalizeThemeSettings(raw);
       setThemeSettings(normalized);
       const systemDark = window.matchMedia(
-        "(prefers-color-scheme: dark)"
+        "(prefers-color-scheme: dark)",
       ).matches;
       applyTheme(normalized, systemDark);
     } catch (error) {

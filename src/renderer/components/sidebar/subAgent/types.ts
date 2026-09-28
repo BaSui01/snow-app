@@ -27,5 +27,4 @@ export type SubAgentItem = SubAgentConfigRecord;
 
 export type SubAgentSettingsPanelProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
-  onClose?: () => void;
 };

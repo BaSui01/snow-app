@@ -1,4 +1,4 @@
-import { Pencil, RotateCcw, Sparkles, X } from "lucide-react";
+import { Pencil, RotateCcw, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { CustomSelect } from "../common/CustomSelect";
@@ -17,6 +17,7 @@ import {
   normalizeThemeSettings,
   readThemeCache,
   resolveActivePalette,
+  syncMacTrafficLightPosition,
   writeThemeCache,
 } from "./themeSettings/themeSettingsUtils";
 import type {
@@ -24,7 +25,6 @@ import type {
   ThemeMode,
   ThemePalette,
   ThemeSettings,
-  ThemeSettingsPanelProps,
   ThemeStreamCursor,
 } from "./themeSettings/types";
 import { themeBgUrl } from "../../utils/themeBgUrl";
@@ -52,7 +52,7 @@ const SAVE_DEBOUNCE_MS = 1000;
 function computeThemeSaveValue(
   form: ThemeSettings,
   lastSaved: ThemeSettings,
-  isLoading: boolean
+  isLoading: boolean,
 ): ThemeSettings | null {
   if (isLoading) {
     return null;
@@ -63,16 +63,14 @@ function computeThemeSaveValue(
   return form;
 }
 
-export function ThemeSettingsPanel({
-  onClose,
-}: ThemeSettingsPanelProps): React.JSX.Element {
+export function ThemeSettingsPanel(): React.JSX.Element {
   const { t } = useI18n();
   // 初始值优先取 localStorage 主题缓存，避免加载完成前表单回退到默认主题导致预览闪烁。
   // isLoading 初始为 true：挂载必然要异步加载一次真实设置，期间跳过预览 useEffect，
   // 保留 useTheme 在进入面板前已应用到 document 的主题，避免出现"默认主题→真实主题"的切换。
   const initialSettings = useMemo<ThemeSettings>(
     () => readThemeCache() ?? DEFAULT_THEME_SETTINGS,
-    []
+    [],
   );
   const [form, setForm] = useState<ThemeSettings>(initialSettings);
   const [lastSaved, setLastSaved] = useState<ThemeSettings>(initialSettings);
@@ -107,7 +105,7 @@ export function ThemeSettingsPanel({
           ? e.message
           : t("settings.themeLoadError", {
               defaultValue: "Failed to load theme settings",
-            })
+            }),
       );
     } finally {
       setIsLoading(false);
@@ -147,6 +145,8 @@ export function ThemeSettingsPanel({
       });
     }
 
+    syncMacTrafficLightPosition();
+
     const bg = form.background;
     const root = document.documentElement;
     if (bg.enabled && bg.imagePath) {
@@ -154,7 +154,7 @@ export function ThemeSettingsPanel({
       const blur = Math.max(0, bg.blur);
       root.style.setProperty(
         "--theme-bg-image",
-        `url("${themeBgUrl(bg.imagePath)}")`
+        `url("${themeBgUrl(bg.imagePath)}")`,
       );
       root.style.setProperty("--theme-bg-opacity", String(opacity));
       root.style.setProperty("--theme-bg-blur", `${blur}px`);
@@ -300,7 +300,7 @@ export function ThemeSettingsPanel({
       t("settings.themeAiColorApplied", {
         defaultValue:
           "AI palette applied. Adjust colors in the editor if needed.",
-      })
+      }),
     );
     // AI 配色是一个完整的生成操作，应用后立即持久化，不依赖 600ms debounce，
     // 避免用户在 debounce 窗口内切换菜单导致保存丢失。
@@ -356,7 +356,7 @@ export function ThemeSettingsPanel({
           ? e.message
           : t("settings.themeStreamCursorSaveError", {
               defaultValue: "Failed to save stream cursor SVG",
-            })
+            }),
       );
     } finally {
       setIsBusy(false);
@@ -388,7 +388,7 @@ export function ThemeSettingsPanel({
           ? e.message
           : t("settings.themeStreamCursorDeleteError", {
               defaultValue: "Failed to delete stream cursor SVG",
-            })
+            }),
       );
     } finally {
       setIsBusy(false);
@@ -436,7 +436,7 @@ export function ThemeSettingsPanel({
           ? e.message
           : t("settings.themeBackgroundSaveError", {
               defaultValue: "Failed to save background image",
-            })
+            }),
       );
     } finally {
       setIsBusy(false);
@@ -468,7 +468,7 @@ export function ThemeSettingsPanel({
           ? e.message
           : t("settings.themeBackgroundDeleteError", {
               defaultValue: "Failed to delete background image",
-            })
+            }),
       );
     } finally {
       setIsBusy(false);
@@ -498,7 +498,7 @@ export function ThemeSettingsPanel({
           setStatus(
             t("settings.themeSaveSuccess", {
               defaultValue: "Theme settings saved.",
-            })
+            }),
           );
         }
       } catch (e) {
@@ -508,7 +508,7 @@ export function ThemeSettingsPanel({
               ? e.message
               : t("settings.themeSaveError", {
                   defaultValue: "Failed to save theme settings",
-                })
+                }),
           );
         }
       } finally {
@@ -517,13 +517,13 @@ export function ThemeSettingsPanel({
         }
       }
     },
-    [t]
+    [t],
   );
 
   // 修改即保存：表单变化后 debounce 保存，卸载时立即冲刷避免丢失。
   const saveValue = useMemo(
     () => computeThemeSaveValue(form, lastSaved, isLoading),
-    [form, lastSaved, isLoading]
+    [form, lastSaved, isLoading],
   );
   useDebouncedAutoSave(saveValue, saveSettings, SAVE_DEBOUNCE_MS);
 
@@ -551,36 +551,6 @@ export function ThemeSettingsPanel({
 
   return (
     <div className="api-settings-page" role="region">
-      <div className="api-settings-page-header">
-        <div className="api-settings-title-group">
-          <strong>
-            {t("settings.themeTitle", {
-              defaultValue: "Theme settings",
-            })}
-          </strong>
-          <span className="settings-item-description">
-            {t("settings.themeSettingsInfo", {
-              defaultValue: "Adjust appearance and color theme.",
-            })}
-          </span>
-        </div>
-        {onClose && (
-          <button
-            className="icon-btn ghost"
-            onClick={onClose}
-            type="button"
-            aria-label={t("settings.closeThemeSettings", {
-              defaultValue: "Close theme settings",
-            })}
-            title={t("settings.closeThemeSettings", {
-              defaultValue: "Close theme settings",
-            })}
-          >
-            <X size={15} strokeWidth={1.8} />
-          </button>
-        )}
-      </div>
-
       <AutoDismissNotice
         message={error || status}
         tone={error ? "error" : "success"}

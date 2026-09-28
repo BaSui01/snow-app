@@ -122,8 +122,7 @@
 :root[data-theme-preset="cyberpunk"] h3,
 :root[data-theme-preset="cyberpunk"] h4,
 :root[data-theme-preset="cyberpunk"] h5,
-:root[data-theme-preset="cyberpunk"] h6,
-:root[data-theme-preset="cyberpunk"] .api-settings-title-group strong {
+:root[data-theme-preset="cyberpunk"] h6 {
   font-family: var(--font-brand-display);
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -264,7 +263,6 @@
 
 :root[data-theme-preset="cyberpunk"] .sidebar-content-header,
 :root[data-theme-preset="cyberpunk"] .section-header,
-:root[data-theme-preset="cyberpunk"] .api-settings-page-header,
 :root[data-theme-preset="cyberpunk"] .codebase-panel-header,
 :root[data-theme-preset="cyberpunk"] .file-viewer-header,
 :root[data-theme-preset="cyberpunk"] .git-control-header {
@@ -798,7 +796,11 @@
     var(--cp-neon-pink) 42%,
     var(--border-color)
   );
-  background: var(--accent-orange-bg);
+  background: color-mix(
+    in srgb,
+    var(--cp-neon-pink) 14%,
+    var(--surface-island-strong)
+  );
   color: var(--accent-orange-text);
   box-shadow: var(--cp-glow-sm);
 }

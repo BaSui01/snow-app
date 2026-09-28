@@ -1,4 +1,4 @@
-import { RotateCcw, X } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -102,13 +102,7 @@ function computePrivacySaveValue(
   return form;
 }
 
-type PrivacySettingsPanelProps = {
-  onClose?: () => void;
-};
-
-export function PrivacySettingsPanel({
-  onClose,
-}: PrivacySettingsPanelProps): React.JSX.Element {
+export function PrivacySettingsPanel(): React.JSX.Element {
   const { t } = useI18n();
   const [form, setForm] = useState<PrivacySettings>(DEFAULT_PRIVACY_SETTINGS);
   const [lastSaved, setLastSaved] = useState<PrivacySettings>(
@@ -250,36 +244,6 @@ export function PrivacySettingsPanel({
 
   return (
     <div className="api-settings-page" role="region">
-      <div className="api-settings-page-header">
-        <div className="api-settings-title-group">
-          <strong>
-            {t("settings.privacyTitle", {
-              defaultValue: "Privacy settings",
-            })}
-          </strong>
-          <span className="settings-item-description">
-            {t("settings.privacySettingsInfo", {
-              defaultValue: "Redact sensitive data from tool results.",
-            })}
-          </span>
-        </div>
-        {onClose && (
-          <button
-            className="icon-btn ghost"
-            onClick={onClose}
-            type="button"
-            aria-label={t("settings.privacyClosePanel", {
-              defaultValue: "Close privacy settings",
-            })}
-            title={t("settings.privacyClosePanel", {
-              defaultValue: "Close privacy settings",
-            })}
-          >
-            <X size={15} strokeWidth={1.8} />
-          </button>
-        )}
-      </div>
-
       <AutoDismissNotice
         message={error || status}
         tone={error ? "error" : "success"}

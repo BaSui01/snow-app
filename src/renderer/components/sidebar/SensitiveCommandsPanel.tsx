@@ -7,7 +7,6 @@ import {
   Plus,
   RotateCcw,
   ShieldCheck,
-  X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkspaceDirectoryRecord } from "../../../preload";
@@ -52,7 +51,6 @@ import type {
 
 type SensitiveCommandsPanelProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
-  onClose?: () => void;
 };
 
 type SensitiveCommandScope = "global" | "project";
@@ -61,7 +59,6 @@ type SensitiveCommandPanelTab = "rules" | "assist";
 
 export function SensitiveCommandsPanel({
   activeDirectory,
-  onClose,
 }: SensitiveCommandsPanelProps): React.JSX.Element {
   const { t } = useI18n();
   /** 顶部标签页：命令规则 / 决策模型辅助。 */
@@ -616,36 +613,6 @@ export function SensitiveCommandsPanel({
 
   return (
     <div className="api-settings-page" role="region">
-      <div className="api-settings-page-header">
-        <div className="api-settings-title-group">
-          <strong>
-            {t("settings.sensitiveCommandTitle", {
-              defaultValue: "Sensitive commands",
-            })}
-          </strong>
-          <span className="settings-item-description">
-            {t("settings.sensitiveCommandsInfo", {
-              defaultValue: "Review command approval rules.",
-            })}
-          </span>
-        </div>
-        {onClose && (
-          <button
-            className="icon-btn ghost"
-            onClick={onClose}
-            type="button"
-            aria-label={t("settings.closeSensitiveCommandSettings", {
-              defaultValue: "Close sensitive command settings",
-            })}
-            title={t("settings.closeSensitiveCommandSettings", {
-              defaultValue: "Close sensitive command settings",
-            })}
-          >
-            <X size={15} strokeWidth={1.8} />
-          </button>
-        )}
-      </div>
-
       <div
         className="import-settings-tabs"
         role="tablist"

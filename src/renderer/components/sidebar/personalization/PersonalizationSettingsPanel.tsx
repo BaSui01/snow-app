@@ -1,4 +1,4 @@
-import { ChevronRight, FolderOpen, Globe, Info, X } from "lucide-react";
+import { ChevronRight, FolderOpen, Globe, Info } from "lucide-react";
 import { useState } from "react";
 import type { WorkspaceDirectoryRecord } from "../../../../preload";
 import { useI18n } from "../../../i18n";
@@ -8,7 +8,6 @@ import { ProjectRoleEditor } from "./ProjectRoleEditor";
 export type PersonalizationSettingsPanelProps = {
   /** 当前激活的工作区项目（项目规则只允许作用于当前项目）。 */
   activeDirectory?: WorkspaceDirectoryRecord | null;
-  onClose?: () => void;
 };
 
 /**
@@ -19,46 +18,14 @@ export type PersonalizationSettingsPanelProps = {
  */
 export function PersonalizationSettingsPanel({
   activeDirectory,
-  onClose,
 }: PersonalizationSettingsPanelProps): React.JSX.Element {
   const { t } = useI18n();
   const [activeScope, setActiveScope] = useState<"global" | "project">(
-    "project"
+    "project",
   );
 
   return (
     <div className="api-settings-page personalization-page" role="region">
-      <div className="api-settings-page-header">
-        <div className="api-settings-title-group">
-          <strong>
-            {t("settings.personalizationTitle", {
-              defaultValue: "Personalization & Rules",
-            })}
-          </strong>
-          <span className="settings-item-description">
-            {t("settings.personalizationSettingsInfo", {
-              defaultValue:
-                "Manage global and project-level behavior rules for the AI assistant.",
-            })}
-          </span>
-        </div>
-        {onClose && (
-          <button
-            className="icon-btn ghost"
-            onClick={onClose}
-            type="button"
-            aria-label={t("personalization.close", {
-              defaultValue: "Close personalization settings",
-            })}
-            title={t("personalization.close", {
-              defaultValue: "Close personalization settings",
-            })}
-          >
-            <X size={15} strokeWidth={1.8} />
-          </button>
-        )}
-      </div>
-
       <div className="personalization-workspace">
         <div className="personalization-scope-bar">
           <div className="personalization-scope-tabs" role="tablist">
@@ -70,7 +37,9 @@ export function PersonalizationSettingsPanel({
               type="button"
             >
               <Globe size={14} />
-              {t("personalization.globalTitle", { defaultValue: "Global rules" })}
+              {t("personalization.globalTitle", {
+                defaultValue: "Global rules",
+              })}
             </button>
             <button
               aria-selected={activeScope === "project"}
@@ -80,12 +49,15 @@ export function PersonalizationSettingsPanel({
               type="button"
             >
               <FolderOpen size={14} />
-              {t("personalization.projectTitle", { defaultValue: "Project rules" })}
+              {t("personalization.projectTitle", {
+                defaultValue: "Project rules",
+              })}
             </button>
           </div>
           <span className="personalization-scope-summary">
             {t("personalization.scopeSummary", {
-              defaultValue: "Global + project rules are loaded together by default",
+              defaultValue:
+                "Global + project rules are loaded together by default",
             })}
           </span>
         </div>
@@ -112,14 +84,28 @@ export function PersonalizationSettingsPanel({
       >
         <div className="personalization-rule-chain-label">
           <Info size={14} />
-          <span>{t("personalization.loadOrder", { defaultValue: "Load order" })}</span>
+          <span>
+            {t("personalization.loadOrder", { defaultValue: "Load order" })}
+          </span>
         </div>
         <div className="personalization-rule-chain-steps">
-          <span>{t("personalization.priorityGlobal", { defaultValue: "Global rules" })}</span>
+          <span>
+            {t("personalization.priorityGlobal", {
+              defaultValue: "Global rules",
+            })}
+          </span>
           <ChevronRight size={13} />
-          <span>{t("personalization.priorityProject", { defaultValue: "Project rules" })}</span>
+          <span>
+            {t("personalization.priorityProject", {
+              defaultValue: "Project rules",
+            })}
+          </span>
           <ChevronRight size={13} />
-          <span>{t("personalization.prioritySession", { defaultValue: "Conversation instructions" })}</span>
+          <span>
+            {t("personalization.prioritySession", {
+              defaultValue: "Conversation instructions",
+            })}
+          </span>
         </div>
         <small>
           {t("personalization.priorityNote", {

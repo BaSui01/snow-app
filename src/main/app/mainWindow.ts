@@ -137,6 +137,29 @@ const registerThemeBackgroundSync = (): void => {
 // 在模块加载时注册一次主题背景色同步 IPC。
 registerThemeBackgroundSync();
 
+const registerTrafficLightPositionSync = (): void => {
+  ipcMain.handle("theme:set-traffic-light-y", (event, y: unknown) => {
+    const win = getMainWindow();
+    if (
+      !isMacOS ||
+      typeof y !== "number" ||
+      !Number.isFinite(y) ||
+      !win ||
+      event.sender !== win.webContents
+    ) {
+      return Promise.resolve();
+    }
+    const clamped = Math.min(Math.max(y, 0), 120);
+    win.setWindowButtonPosition({
+      x: macTrafficLightPosition.x,
+      y: Math.round(clamped),
+    });
+    return Promise.resolve();
+  });
+};
+
+registerTrafficLightPositionSync();
+
 // DevTools 独立窗口由 Chromium 内部管理，默认显示 DevTools 默认图标而非应用图标。
 // Electron 的 DevTools 窗口同样关联了 owner BrowserWindow（NativeWindowViews），
 // 因此在 devtools-opened 时通过 fromWebContents 取到 DevTools 窗口并设置 Snow 图标，

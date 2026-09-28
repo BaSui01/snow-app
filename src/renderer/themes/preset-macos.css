@@ -313,7 +313,6 @@
 :root[data-theme-preset="macos"]
   :is(
     .section-header,
-    .api-settings-page-header,
     .codebase-panel-header,
     .file-viewer-header,
     .git-control-header
@@ -792,7 +791,15 @@
 :root[data-theme-preset="macos"]
   :is(
     .ai-message .code-block-wrapper,
-    .context-compaction-markdown .code-block-wrapper,
+    .context-compaction-markdown .code-block-wrapper
+  ) {
+  border: 1px solid var(--mac-edge);
+  border-radius: 8px;
+  background: var(--mac-well);
+}
+
+:root[data-theme-preset="macos"]
+  :is(
     .file-viewer,
     .diff-viewer,
     .git-diff-view,
@@ -800,8 +807,6 @@
     .browser-panel,
     .codebase-panel-table-wrap
   ) {
-  border: 1px solid var(--mac-edge);
-  border-radius: 8px;
   background: var(--mac-well);
 }
 
@@ -1007,10 +1012,6 @@
     inset 0 1px 0 var(--mac-hi);
 }
 
-:root[data-theme-preset="macos"] .diff-viewer {
-  background: var(--mac-well);
-}
-
 :root[data-theme-preset="macos"] .git-panel-graph {
   background: var(--mac-face);
 }
@@ -1174,7 +1175,8 @@
   box-shadow: var(--mac-menu-shadow);
 }
 
-:root[data-theme-preset="macos"] .send-key-menu-item:hover {
+:root[data-theme-preset="macos"] .send-key-menu-item:hover,
+:root[data-theme-preset="macos"] .send-key-menu-item.is-active {
   background: var(--mac-blue);
   color: #ffffff;
 }
@@ -1410,7 +1412,8 @@
 :root[data-theme-preset="macos"] .chat-scroll-to-bottom {
   border: 1px solid var(--mac-edge);
   border-radius: 50%;
-  background: linear-gradient(
+  background-color: var(--mac-face);
+  background-image: linear-gradient(
     180deg,
     var(--mac-btn-top),
     var(--mac-face) 60%,

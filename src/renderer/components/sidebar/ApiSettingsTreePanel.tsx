@@ -48,7 +48,6 @@ type PendingApiConfigImport = {
 const MAX_LISTED_CONFLICTS = 8;
 
 export function ApiSettingsTreePanel({
-  onClose,
   initialTab = "llm",
 }: ApiSettingsPanelProps): React.JSX.Element {
   const { t } = useI18n();
@@ -546,34 +545,6 @@ export function ApiSettingsTreePanel({
 
   return (
     <div className="api-settings-page api-settings-tree-page" role="region">
-      <div className="api-settings-page-header">
-        <div className="api-settings-title-group">
-          <strong>
-            {t("settings.apiTreeTitle", { defaultValue: "API configuration" })}
-          </strong>
-          <span className="settings-item-description">
-            {t("settings.apiSettingsInfo", {
-              defaultValue: "Configure providers, models, and credentials.",
-            })}
-          </span>
-        </div>
-        {onClose && (
-          <button
-            className="icon-btn ghost"
-            onClick={onClose}
-            type="button"
-            aria-label={t("settings.closeApiSettings", {
-              defaultValue: "Close API settings",
-            })}
-            title={t("settings.closeApiSettings", {
-              defaultValue: "Close API settings",
-            })}
-          >
-            <X size={15} strokeWidth={1.8} />
-          </button>
-        )}
-      </div>
-
       <div className="import-settings-tabs" role="tablist">
         <button
           type="button"

@@ -1,4 +1,4 @@
-import { Loader2, X } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AutoDismissNotice } from "../AutoDismissNotice";
@@ -24,10 +24,6 @@ type GitSettingsFormValue = {
   statusLimit: string;
   autoRefresh: boolean;
   confirmPullPush: boolean;
-};
-
-type GitSettingsPanelProps = {
-  onClose?: () => void;
 };
 
 const toSettings = (form: GitSettingsFormValue): GitScanSettings => {
@@ -59,9 +55,7 @@ const toForm = (settings: GitScanSettings): GitSettingsFormValue => ({
   confirmPullPush: settings.confirmPullPush,
 });
 
-export function GitSettingsPanel({
-  onClose,
-}: GitSettingsPanelProps): React.JSX.Element {
+export function GitSettingsPanel(): React.JSX.Element {
   const { t } = useI18n();
   const [form, setForm] = useState<GitSettingsFormValue>(() =>
     toForm({
@@ -180,29 +174,6 @@ export function GitSettingsPanel({
 
   return (
     <div className="api-settings-page" role="region">
-      <div className="api-settings-page-header">
-        <div className="api-settings-title-group">
-          <strong>
-            {t("settings.gitSettings", { defaultValue: "Git settings" })}
-          </strong>
-          <span className="settings-item-description">
-            {t("settings.gitSettingsInfo", {
-              defaultValue:
-                "Controls how git repositories are discovered inside a workspace directory. Changes are saved automatically.",
-            })}
-          </span>
-        </div>
-        <button
-          className="icon-btn ghost"
-          onClick={onClose}
-          type="button"
-          aria-label={t("settings.closePanel", { defaultValue: "Close" })}
-          title={t("settings.closePanel", { defaultValue: "Close" })}
-        >
-          <X size={15} strokeWidth={1.8} />
-        </button>
-      </div>
-
       <AutoDismissNotice
         message={error || status}
         tone={error ? "error" : "success"}

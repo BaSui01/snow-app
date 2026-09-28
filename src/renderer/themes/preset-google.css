@@ -69,8 +69,7 @@
   font-family: var(--app-font-family, var(--font-sans));
 }
 
-:root[data-theme-preset="google"]
-  :is(h1, h2, h3, h4, h5, h6, .api-settings-title-group strong) {
+:root[data-theme-preset="google"] :is(h1, h2, h3, h4, h5, h6) {
   font-family: var(--font-brand-display);
   letter-spacing: 0;
 }
@@ -594,8 +593,7 @@
   letter-spacing: 0.01em;
 }
 
-:root[data-theme-preset="google"]
-  :is(h1, h2, h3, h4, h5, h6, .api-settings-title-group strong) {
+:root[data-theme-preset="google"] :is(h1, h2, h3, h4, h5, h6) {
   font-family: var(--font-brand-display);
   font-weight: 500;
   letter-spacing: 0;
@@ -1456,7 +1454,11 @@
 
 :root[data-theme-preset="google"] .chat-scroll-to-bottom:hover {
   border-color: var(--google-blue);
-  background: var(--accent-blue-bg);
+  background: color-mix(
+    in srgb,
+    var(--google-blue) 16%,
+    var(--surface-island-strong)
+  );
   color: var(--google-blue);
   box-shadow: var(--google-elevation-2);
 }

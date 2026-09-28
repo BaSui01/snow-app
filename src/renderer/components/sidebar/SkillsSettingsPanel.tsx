@@ -10,7 +10,6 @@ import {
   RefreshCw,
   Trash2,
   Wrench,
-  X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
@@ -26,7 +25,6 @@ import { SkillEditModal } from "./SkillEditModal";
 
 type SkillsSettingsPanelProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
-  onClose?: () => void;
 };
 
 type SkillsScope = "global" | "project";
@@ -51,7 +49,6 @@ function isGitHubSource(input: string): boolean {
 
 export function SkillsSettingsPanel({
   activeDirectory,
-  onClose,
 }: SkillsSettingsPanelProps): React.JSX.Element {
   const { t } = useI18n();
   const [activeScope, setActiveScope] = useState<SkillsScope>("global");
@@ -351,34 +348,6 @@ export function SkillsSettingsPanel({
 
   return (
     <div className="api-settings-page skills-settings-page" role="region">
-      <div className="api-settings-page-header">
-        <div className="api-settings-title-group">
-          <strong>
-            {t("settings.skillsTitle", { defaultValue: "Skills settings" })}
-          </strong>
-          <span className="settings-item-description">
-            {t("settings.skillsSettingsInfo", {
-              defaultValue: "View effective project and global Skills.",
-            })}
-          </span>
-        </div>
-        {onClose && (
-          <button
-            className="icon-btn ghost"
-            onClick={onClose}
-            type="button"
-            aria-label={t("settings.closeSkillsSettings", {
-              defaultValue: "Close Skills settings",
-            })}
-            title={t("settings.closeSkillsSettings", {
-              defaultValue: "Close Skills settings",
-            })}
-          >
-            <X size={15} strokeWidth={1.8} />
-          </button>
-        )}
-      </div>
-
       <div className="api-settings-summary-grid skills-settings-summary-grid">
         <div className="api-settings-summary-card">
           <BookOpen size={15} strokeWidth={1.8} />

@@ -87,8 +87,7 @@
 :root[data-theme-preset="notion"] h3,
 :root[data-theme-preset="notion"] h4,
 :root[data-theme-preset="notion"] h5,
-:root[data-theme-preset="notion"] h6,
-:root[data-theme-preset="notion"] .api-settings-title-group strong {
+:root[data-theme-preset="notion"] h6 {
   font-family: var(--font-brand-display);
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -222,7 +221,6 @@
 
 :root[data-theme-preset="notion"] .sidebar-content-header,
 :root[data-theme-preset="notion"] .section-header,
-:root[data-theme-preset="notion"] .api-settings-page-header,
 :root[data-theme-preset="notion"] .codebase-panel-header,
 :root[data-theme-preset="notion"] .file-viewer-header,
 :root[data-theme-preset="notion"] .git-control-header {
@@ -722,7 +720,11 @@
 
 :root[data-theme-preset="notion"] .chat-scroll-to-bottom:hover {
   border-color: var(--border-subtle);
-  background: var(--surface-hover);
+  background: color-mix(
+    in srgb,
+    var(--nt-accent) 8%,
+    var(--surface-island-strong)
+  );
   color: var(--text-primary);
   box-shadow: var(--shadow-md);
 }

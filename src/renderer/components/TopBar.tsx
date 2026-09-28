@@ -21,6 +21,7 @@ import { useI18n } from "../i18n";
 import { useChatConversationContext } from "./mainContent/chatMessages";
 import { OPEN_PROJECT_CODEBASE_PANEL_EVENT } from "./mainContent/chatInput/ProjectCodebasePanel";
 import { CodebaseSyncIndicator } from "./TopBar/CodebaseSyncIndicator";
+import { SettingsPageTopBarActions } from "./TopBar/SettingsPageTopBarActions";
 import { TeamTopBarActions } from "./TopBar/TeamTopBarActions";
 import { TodoPanelButton } from "./TopBar/TodoPanelButton";
 import { TopBarBranchSelector } from "./TopBar/TopBarBranchSelector";
@@ -35,6 +36,7 @@ import { pluginStore, usePluginStore } from "../plugins/pluginStore";
 import { WindowControlsButtons } from "./WindowControls";
 import { useCodebaseWatcher } from "../hooks/useCodebaseWatcher";
 import { FEATURE_PAGE_TITLES, isFeaturePageView } from "./featurePages";
+import { getSettingsPageMeta } from "./settingsPages";
 import type { MainContentView } from "./mainContent/types";
 
 type TopBarProps = {
@@ -529,6 +531,30 @@ export const TopBar = ({
     ? t(featurePage.key, { defaultValue: featurePage.defaultValue })
     : "";
 
+  // 设置页同样把标题与关闭按钮交给 TopBar：标题取原面板头部文案，描述作为副标题。
+  const settingsPage = getSettingsPageMeta(activeView);
+  const settingsPageTitle = settingsPage
+    ? t(settingsPage.title.key, {
+        defaultValue: settingsPage.title.defaultValue,
+      })
+    : "";
+  const settingsPageDescription = settingsPage
+    ? t(settingsPage.description.key, {
+        defaultValue: settingsPage.description.defaultValue,
+      })
+    : "";
+
+  const pageTitle = featurePage
+    ? featurePageTitle
+    : settingsPage
+      ? settingsPageTitle
+      : headerTitle;
+  const pageSubtitle = featurePage
+    ? ""
+    : settingsPage
+      ? settingsPageDescription
+      : headerSubtitle;
+
   // 代码库功能已开启且当前项目嵌入完毕后，才在 Plus 菜单中提供“代码库”项。
   const canOpenCodebase =
     effectiveEnabled && codebaseIndexed && activeProjectId;
@@ -803,11 +829,9 @@ export const TopBar = ({
           </div>
         ) : null}
         <div className="header-title-group">
-          <h2 className="header-title">
-            {featurePage ? featurePageTitle : headerTitle}
-          </h2>
-          {!featurePage && headerSubtitle ? (
-            <span className="header-subtitle">{headerSubtitle}</span>
+          <h2 className="header-title">{pageTitle}</h2>
+          {pageSubtitle ? (
+            <span className="header-subtitle">{pageSubtitle}</span>
           ) : null}
         </div>
         {featurePage ? (
@@ -820,6 +844,11 @@ export const TopBar = ({
           >
             <X size={16} strokeWidth={1.8} />
           </button>
+        ) : settingsPage ? (
+          <SettingsPageTopBarActions
+            view={activeView}
+            onClose={() => onSelectView("chat")}
+          />
         ) : isTeamView ? (
           <TeamTopBarActions onClose={() => onSelectView("chat")} />
         ) : (

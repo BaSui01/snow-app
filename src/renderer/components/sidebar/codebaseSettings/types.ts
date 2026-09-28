@@ -1,9 +1,5 @@
 import type { CodebaseSettingsInput } from "../../../../preload";
 
-export type CodebaseSettingsPanelProps = {
-  onClose?: () => void;
-};
-
 export type CodebaseSettingsForm = {
   profileName: string;
   embeddingType: string;

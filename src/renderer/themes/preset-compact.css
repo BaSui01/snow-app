@@ -344,7 +344,6 @@
   :is(
     .sidebar-content-header,
     .section-header,
-    .api-settings-page-header,
     .codebase-panel-header,
     .file-viewer-header,
     .git-control-header
@@ -359,15 +358,6 @@
 :root[data-theme-preset="compact"] .api-settings-page {
   padding: 26px 36px 40px !important;
   gap: 18px !important;
-}
-
-:root[data-theme-preset="compact"] .api-settings-page-header {
-  margin-bottom: 10px !important;
-}
-
-:root[data-theme-preset="compact"] .api-settings-title-group strong {
-  font-size: 19px !important;
-  letter-spacing: -0.02em;
 }
 
 :root[data-theme-preset="compact"] .api-settings-description {
@@ -1296,7 +1286,11 @@
 
 :root[data-theme-preset="compact"] .chat-scroll-to-bottom:hover {
   border-color: var(--compact-accent);
-  background: var(--compact-accent-bg);
+  background: color-mix(
+    in srgb,
+    var(--compact-accent) 13%,
+    var(--surface-island-strong)
+  );
   color: var(--compact-accent-text);
   box-shadow: 0 4px 16px rgba(2, 132, 199, 0.25);
   transform: translateY(-1.5px);

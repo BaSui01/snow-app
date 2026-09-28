@@ -13,7 +13,6 @@ import {
   Trash2,
   Unplug,
   Wifi,
-  X,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -30,17 +29,11 @@ import { AutoDismissNotice } from "../AutoDismissNotice";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { CustomSelect, type CustomSelectOption } from "../common/CustomSelect";
 
-type RemoteControlSettingsPanelProps = {
-  onClose?: () => void;
-};
-
 type RemoteControlSettingsTab = "lan" | "wan";
 
 type RemoteWanMode = "deploy" | "import" | "manual";
 
-export function RemoteControlSettingsPanel({
-  onClose,
-}: RemoteControlSettingsPanelProps): React.JSX.Element {
+export function RemoteControlSettingsPanel(): React.JSX.Element {
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<RemoteControlSettingsTab>("lan");
   const authMethodOptions: CustomSelectOption[] = [
@@ -832,29 +825,6 @@ export function RemoteControlSettingsPanel({
       className="api-settings-page remote-control-settings-page"
       role="region"
     >
-      <div className="api-settings-page-header">
-        <div className="api-settings-title-group">
-          <strong>
-            {t("settings.remoteControl", { defaultValue: "手机远控" })}
-          </strong>
-          <span className="settings-item-description">
-            {t("remoteControl.subtitle", {
-              defaultValue: "同一局域网内，用手机浏览器连接这台 Snow。",
-            })}
-          </span>
-        </div>
-        {onClose ? (
-          <button
-            className="icon-btn ghost"
-            type="button"
-            onClick={onClose}
-            aria-label={t("common.close", { defaultValue: "关闭" })}
-          >
-            <X size={17} />
-          </button>
-        ) : null}
-      </div>
-
       <div className="remote-master-toggle">
         <div>
           <strong>

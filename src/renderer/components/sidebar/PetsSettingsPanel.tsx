@@ -6,7 +6,7 @@
  * 支持：唤醒/收起、安装 Codex 宠物包（.zip）、选择激活宠物、
  * 卸载 Snow App 安装的宠物、调整显示大小。
  */
-import { Loader2, PackagePlus, PawPrint, Trash2, X } from "lucide-react";
+import { Loader2, PackagePlus, PawPrint, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../../i18n";
 import type { PetManifest, PetSettings } from "../../../preload/types/pets";
@@ -14,13 +14,7 @@ import { PetPreview } from "../pet/PetPreview";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { RangeSlider } from "../common/RangeSlider";
 
-type PetsSettingsPanelProps = {
-  onClose?: () => void;
-};
-
-export function PetsSettingsPanel({
-  onClose,
-}: PetsSettingsPanelProps): React.JSX.Element {
+export function PetsSettingsPanel(): React.JSX.Element {
   const { t } = useI18n();
 
   const [pets, setPets] = useState<PetManifest[]>([]);
@@ -159,30 +153,6 @@ export function PetsSettingsPanel({
 
   return (
     <div className="api-settings-page" role="region">
-      <div className="api-settings-page-header">
-        <div className="api-settings-title-group">
-          <strong>{t("settings.pets", { defaultValue: "Desktop pet" })}</strong>
-          <span className="settings-item-description">
-            {t("settings.petsInfo", {
-              defaultValue:
-                "Install Codex pet packages (.zip) and let a desktop companion react to your AI work in real time.",
-            })}
-          </span>
-        </div>
-        {onClose && (
-          <button
-            className="icon-btn ghost"
-            onClick={onClose}
-            type="button"
-            aria-label={t("settings.petsClose", {
-              defaultValue: "Close pet settings",
-            })}
-          >
-            <X size={15} strokeWidth={1.8} />
-          </button>
-        )}
-      </div>
-
       {petInstallError && (
         <span className="settings-update-error">{petInstallError}</span>
       )}

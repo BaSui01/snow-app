@@ -16,7 +16,3 @@ export type UsageDateFilterProps = {
   onSinceDateChange: (value: string) => void;
   onUntilDateChange: (value: string) => void;
 };
-
-export type UsageSettingsPanelProps = {
-  onClose?: () => void;
-};

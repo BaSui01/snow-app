@@ -34,7 +34,6 @@ import { UserscriptsSection } from "./UserscriptsSection";
 import { DisplayDevicesSection } from "./DisplayDevicesSection";
 
 type BrowserSettingsPanelProps = {
-  onClose?: () => void;
   /** 初始 tab（菜单「自定义设备…」经 browser-devices view 直达设备 tab） */
   initialTab?: BrowserSettingsTab;
 };
@@ -93,7 +92,6 @@ const resolveSiteOrigin = (value: string): string | null => {
 };
 
 export function BrowserSettingsPanel({
-  onClose,
   initialTab = "settings",
 }: BrowserSettingsPanelProps): React.JSX.Element {
   const { t } = useI18n();
@@ -625,37 +623,6 @@ export function BrowserSettingsPanel({
 
   return (
     <div className="api-settings-page" role="region">
-      <div className="api-settings-page-header">
-        <div className="api-settings-title-group">
-          <strong>
-            {t("settings.browserSettingsTitle", {
-              defaultValue: "Browser settings",
-            })}
-          </strong>
-          <span className="settings-item-description">
-            {t("settings.browserSettingsInfo", {
-              defaultValue:
-                "Homepage, saved passwords and importing data from other browsers.",
-            })}
-          </span>
-        </div>
-        {onClose && (
-          <button
-            className="icon-btn ghost"
-            onClick={onClose}
-            type="button"
-            aria-label={t("settings.closeBrowserSettings", {
-              defaultValue: "Close browser settings",
-            })}
-            title={t("settings.closeBrowserSettings", {
-              defaultValue: "Close browser settings",
-            })}
-          >
-            <X size={15} strokeWidth={1.8} />
-          </button>
-        )}
-      </div>
-
       {/* 顶部 Tab：浏览器设置 / 显示尺寸设备 / 用户脚本 */}
       <div className="import-settings-tabs" role="tablist">
         <button

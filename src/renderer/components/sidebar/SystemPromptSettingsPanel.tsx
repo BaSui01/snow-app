@@ -1,4 +1,4 @@
-import { Download, Loader2, Plus, X } from "lucide-react";
+import { Download, Loader2, Plus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { Modal } from "../common/Modal";
@@ -10,15 +10,9 @@ import {
 import { SystemPromptList } from "./systemPrompt/SystemPromptList";
 import { SystemPromptSummary } from "./systemPrompt/SystemPromptSummary";
 import { EMPTY_SYSTEM_PROMPT_DRAFT } from "./systemPrompt/systemPromptConstants";
-import type {
-  PromptDraft,
-  SystemPromptItem,
-  SystemPromptSettingsPanelProps,
-} from "./systemPrompt/types";
+import type { PromptDraft, SystemPromptItem } from "./systemPrompt/types";
 
-export function SystemPromptSettingsPanel({
-  onClose,
-}: SystemPromptSettingsPanelProps): React.JSX.Element {
+export function SystemPromptSettingsPanel(): React.JSX.Element {
   const { t } = useI18n();
   const [prompts, setPrompts] = useState<SystemPromptItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -222,36 +216,6 @@ export function SystemPromptSettingsPanel({
 
   return (
     <div className="api-settings-page" role="region">
-      <div className="api-settings-page-header">
-        <div className="api-settings-title-group">
-          <strong>
-            {t("settings.systemPromptTitle", {
-              defaultValue: "System prompt",
-            })}
-          </strong>
-          <span className="settings-item-description">
-            {t("settings.systemPromptSettingsInfo", {
-              defaultValue: "Customize the assistant system prompt.",
-            })}
-          </span>
-        </div>
-        {onClose && (
-          <button
-            className="icon-btn ghost"
-            onClick={onClose}
-            type="button"
-            aria-label={t("settings.closeSystemPromptSettings", {
-              defaultValue: "Close system prompt settings",
-            })}
-            title={t("settings.closeSystemPromptSettings", {
-              defaultValue: "Close system prompt settings",
-            })}
-          >
-            <X size={15} strokeWidth={1.8} />
-          </button>
-        )}
-      </div>
-
       <SystemPromptSummary prompts={prompts} />
 
       <div className="api-settings-actions">

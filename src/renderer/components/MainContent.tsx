@@ -253,93 +253,61 @@ export const MainContent = ({
           ) : activeView === "plugins" ? (
             <PluginsPanel onClose={closePanel} />
           ) : activeView === "api-settings" ? (
-            <ApiSettingsTreePanel onClose={() => onSelectView("chat")} />
+            <ApiSettingsTreePanel />
           ) : activeView === "imagegen-settings" ? (
             // 「图像生成」并入 API 设置页标签页：独立视图 id 作为别名直达该 tab。
-            <ApiSettingsTreePanel
-              initialTab="imagegen"
-              onClose={() => onSelectView("chat")}
-            />
+            <ApiSettingsTreePanel initialTab="imagegen" />
           ) : activeView === "image-library" ? (
-            <ImageLibraryPanel onClose={() => onSelectView("chat")} />
+            <ImageLibraryPanel />
           ) : activeView === "browser-settings" ? (
-            <BrowserSettingsPanel onClose={() => onSelectView("chat")} />
+            <BrowserSettingsPanel />
           ) : activeView === "browser-devices" ? (
             // 菜单「自定义设备…」直达浏览器设置面板的设备 tab。
-            <BrowserSettingsPanel
-              initialTab="devices"
-              onClose={() => onSelectView("chat")}
-            />
+            <BrowserSettingsPanel initialTab="devices" />
           ) : activeView === "proxy-browser-settings" ? (
-            <ProxyBrowserSettingsPanel onClose={() => onSelectView("chat")} />
+            <ProxyBrowserSettingsPanel />
           ) : activeView === "codebase-settings" ? (
-            <CodebaseSettingsPanel onClose={() => onSelectView("chat")} />
+            <CodebaseSettingsPanel />
           ) : activeView === "git-settings" ? (
-            <GitSettingsPanel onClose={() => onSelectView("chat")} />
+            <GitSettingsPanel />
           ) : activeView === "system-prompt-settings" ? (
-            <SystemPromptSettingsPanel onClose={() => onSelectView("chat")} />
+            <SystemPromptSettingsPanel />
           ) : activeView === "personalization-settings" ? (
-            <PersonalizationSettingsPanel
-              activeDirectory={activeDirectory}
-              onClose={() => onSelectView("chat")}
-            />
+            <PersonalizationSettingsPanel activeDirectory={activeDirectory} />
           ) : activeView === "custom-headers-settings" ? (
-            <CustomHeadersSettingsPanel onClose={() => onSelectView("chat")} />
+            <CustomHeadersSettingsPanel />
           ) : activeView === "mcp-settings" ? (
-            <McpSettingsPanel
-              activeDirectory={activeDirectory}
-              onClose={() => onSelectView("chat")}
-            />
+            <McpSettingsPanel activeDirectory={activeDirectory} />
           ) : activeView === "lsp-settings" ? (
-            <LspSettingsPanel
-              activeDirectory={activeDirectory}
-              onClose={() => onSelectView("chat")}
-            />
+            <LspSettingsPanel activeDirectory={activeDirectory} />
           ) : activeView === "skills-settings" ? (
-            <SkillsSettingsPanel
-              activeDirectory={activeDirectory}
-              onClose={() => onSelectView("chat")}
-            />
+            <SkillsSettingsPanel activeDirectory={activeDirectory} />
           ) : activeView === "sub-agent-settings" ? (
-            <SubAgentSettingsPanel
-              activeDirectory={activeDirectory}
-              onClose={() => onSelectView("chat")}
-            />
+            <SubAgentSettingsPanel activeDirectory={activeDirectory} />
           ) : activeView === "sensitive-command-settings" ? (
-            <SensitiveCommandsPanel
-              activeDirectory={activeDirectory}
-              onClose={() => onSelectView("chat")}
-            />
+            <SensitiveCommandsPanel activeDirectory={activeDirectory} />
           ) : activeView === "custom-commands-settings" ? (
-            <CustomCommandsSettingsPanel
-              activeDirectory={activeDirectory}
-              onClose={() => onSelectView("chat")}
-            />
+            <CustomCommandsSettingsPanel activeDirectory={activeDirectory} />
           ) : activeView === "hooks-settings" ? (
-            <HooksSettingsPanel
-              activeDirectory={activeDirectory}
-              onClose={() => onSelectView("chat")}
-            />
+            <HooksSettingsPanel activeDirectory={activeDirectory} />
           ) : activeView === "terminal-settings" ? (
-            <TerminalSettingsPanel onClose={() => onSelectView("chat")} />
+            <TerminalSettingsPanel />
           ) : activeView === "theme-settings" ? (
-            <ThemeSettingsPanel onClose={() => onSelectView("chat")} />
+            <ThemeSettingsPanel />
           ) : activeView === "privacy-settings" ? (
-            <PrivacySettingsPanel onClose={() => onSelectView("chat")} />
+            <PrivacySettingsPanel />
           ) : activeView === "remote-control-settings" ? (
-            <RemoteControlSettingsPanel onClose={() => onSelectView("chat")} />
+            <RemoteControlSettingsPanel />
           ) : activeView === "keyboard-shortcuts-settings" ? (
-            <KeyboardShortcutsSettingsPanel
-              onClose={() => onSelectView("chat")}
-            />
+            <KeyboardShortcutsSettingsPanel />
           ) : activeView === "pets-settings" ? (
-            <PetsSettingsPanel onClose={() => onSelectView("chat")} />
+            <PetsSettingsPanel />
           ) : activeView === "usage-settings" ? (
-            <UsageSettingsPanel onClose={() => onSelectView("chat")} />
+            <UsageSettingsPanel />
           ) : activeView === "system-logs" ? (
-            <SystemLogsPanel onClose={() => onSelectView("chat")} />
+            <SystemLogsPanel />
           ) : activeView === "general-settings" ? (
-            <GeneralSettingsPanel onClose={() => onSelectView("chat")} />
+            <GeneralSettingsPanel />
           ) : null}
         </Suspense>
       )}

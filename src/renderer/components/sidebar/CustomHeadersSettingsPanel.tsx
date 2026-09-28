@@ -1,9 +1,12 @@
-import { Download, Loader2, Plus, X } from "lucide-react";
+import { Download, Loader2, Plus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "../../i18n";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { Modal } from "../common/Modal";
-import { CustomHeadersEditor, CustomHeadersEditorActions } from "./customHeaders/CustomHeadersEditor";
+import {
+  CustomHeadersEditor,
+  CustomHeadersEditorActions,
+} from "./customHeaders/CustomHeadersEditor";
 import { CustomHeadersSchemeList } from "./customHeaders/CustomHeadersSchemeList";
 import { CustomHeadersSummary } from "./customHeaders/CustomHeadersSummary";
 import {
@@ -15,13 +18,7 @@ import {
 } from "./customHeaders/customHeadersUtils";
 import type { CustomHeaderScheme, SchemeDraft } from "./customHeaders/types";
 
-type CustomHeadersSettingsPanelProps = {
-  onClose?: () => void;
-};
-
-export function CustomHeadersSettingsPanel({
-  onClose,
-}: CustomHeadersSettingsPanelProps): React.JSX.Element {
+export function CustomHeadersSettingsPanel(): React.JSX.Element {
   const { t } = useI18n();
   const [schemes, setSchemes] = useState<CustomHeaderScheme[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -45,7 +42,7 @@ export function CustomHeadersSettingsPanel({
           ? e.message
           : t("settings.customHeadersLoadError", {
               defaultValue: "Failed to load custom headers",
-            })
+            }),
       );
     } finally {
       setIsLoading(false);
@@ -68,7 +65,7 @@ export function CustomHeadersSettingsPanel({
       setStatus(
         t("settings.customHeadersImportSuccess", {
           defaultValue: "Synced custom headers from Snow CLI.",
-        })
+        }),
       );
     } catch (e) {
       setError(
@@ -76,7 +73,7 @@ export function CustomHeadersSettingsPanel({
           ? e.message
           : t("settings.customHeadersImportError", {
               defaultValue: "Failed to sync Snow CLI custom headers",
-            })
+            }),
       );
     } finally {
       setIsLoading(false);
@@ -111,17 +108,17 @@ export function CustomHeadersSettingsPanel({
   const updateHeaderPair = (
     pairId: string,
     field: "key" | "value",
-    value: string
+    value: string,
   ) => {
     setDraft((previous) =>
       previous
         ? {
             ...previous,
             headers: previous.headers.map((pair) =>
-              pair.id === pairId ? { ...pair, [field]: value } : pair
+              pair.id === pairId ? { ...pair, [field]: value } : pair,
             ),
           }
-        : null
+        : null,
     );
   };
 
@@ -129,7 +126,7 @@ export function CustomHeadersSettingsPanel({
     setDraft((previous) =>
       previous
         ? { ...previous, headers: [...previous.headers, createHeaderPair()] }
-        : null
+        : null,
     );
   };
 
@@ -143,7 +140,7 @@ export function CustomHeadersSettingsPanel({
                 ? previous.headers.filter((pair) => pair.id !== pairId)
                 : [createHeaderPair()],
           }
-        : null
+        : null,
     );
   };
 
@@ -155,7 +152,7 @@ export function CustomHeadersSettingsPanel({
       setError(
         t("settings.customHeadersNameRequired", {
           defaultValue: "Scheme name is required.",
-        })
+        }),
       );
       setStatus("");
       return;
@@ -165,7 +162,7 @@ export function CustomHeadersSettingsPanel({
       setError(
         t("settings.customHeadersDuplicateKey", {
           defaultValue: "Header names must be unique.",
-        })
+        }),
       );
       setStatus("");
       return;
@@ -177,14 +174,14 @@ export function CustomHeadersSettingsPanel({
 
     try {
       const isExisting = schemes.some(
-        (scheme) => scheme.schemeId === draft.schemeId
+        (scheme) => scheme.schemeId === draft.schemeId,
       );
       const existing = schemes.find(
-        (scheme) => scheme.schemeId === draft.schemeId
+        (scheme) => scheme.schemeId === draft.schemeId,
       );
       const maxSortOrder = schemes.reduce(
         (max, scheme) => Math.max(max, scheme.sortOrder),
-        -1
+        -1,
       );
 
       const items = await window.snow.upsertCustomHeaderScheme({
@@ -192,10 +189,10 @@ export function CustomHeadersSettingsPanel({
         name,
         headersJson: toHeadersJson(draft.headers),
         isActive: isExisting
-          ? existing?.isActive ?? false
+          ? (existing?.isActive ?? false)
           : schemes.length === 0,
         sortOrder: isExisting
-          ? existing?.sortOrder ?? maxSortOrder + 1
+          ? (existing?.sortOrder ?? maxSortOrder + 1)
           : maxSortOrder + 1,
       });
 
@@ -208,7 +205,7 @@ export function CustomHeadersSettingsPanel({
             })
           : t("settings.customHeadersAddSuccess", {
               defaultValue: "Added custom header scheme.",
-            })
+            }),
       );
     } catch (e) {
       setError(
@@ -216,7 +213,7 @@ export function CustomHeadersSettingsPanel({
           ? e.message
           : t("settings.customHeadersSaveError", {
               defaultValue: "Failed to save custom headers",
-            })
+            }),
       );
     } finally {
       setIsSaving(false);
@@ -242,7 +239,7 @@ export function CustomHeadersSettingsPanel({
           ? e.message
           : t("settings.customHeadersSaveError", {
               defaultValue: "Failed to update custom headers",
-            })
+            }),
       );
     }
   };
@@ -257,7 +254,7 @@ export function CustomHeadersSettingsPanel({
       setStatus(
         t("settings.customHeadersDeleteSuccess", {
           defaultValue: "Deleted custom header scheme.",
-        })
+        }),
       );
     } catch (e) {
       setError(
@@ -265,43 +262,13 @@ export function CustomHeadersSettingsPanel({
           ? e.message
           : t("settings.customHeadersDeleteError", {
               defaultValue: "Failed to delete custom headers",
-            })
+            }),
       );
     }
   };
 
   return (
     <div className="api-settings-page" role="region">
-      <div className="api-settings-page-header">
-        <div className="api-settings-title-group">
-          <strong>
-            {t("settings.customHeadersTitle", {
-              defaultValue: "Custom headers",
-            })}
-          </strong>
-          <span className="settings-item-description">
-            {t("settings.customHeadersSettingsInfo", {
-              defaultValue: "Add headers for API requests.",
-            })}
-          </span>
-        </div>
-        {onClose && (
-          <button
-            className="icon-btn ghost"
-            onClick={onClose}
-            type="button"
-            aria-label={t("settings.closeCustomHeadersSettings", {
-              defaultValue: "Close custom headers settings",
-            })}
-            title={t("settings.closeCustomHeadersSettings", {
-              defaultValue: "Close custom headers settings",
-            })}
-          >
-            <X size={15} strokeWidth={1.8} />
-          </button>
-        )}
-      </div>
-
       <CustomHeadersSummary schemes={schemes} />
 
       <div className="api-settings-actions">

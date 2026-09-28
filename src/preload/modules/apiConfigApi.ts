@@ -220,6 +220,8 @@ export const apiConfigApi = {
     ipcRenderer.invoke("theme:delete-stream-cursor-svg", svgPath),
   setThemeBackgroundColor: (color: string): Promise<void> =>
     ipcRenderer.invoke("theme:set-background-color", color),
+  setThemeTrafficLightY: (y: number): Promise<void> =>
+    ipcRenderer.invoke("theme:set-traffic-light-y", y),
   listToolApprovalProjectApprovedTools: (
     projectId: string,
   ): Promise<string[]> =>

@@ -79,8 +79,7 @@
 :root[data-theme-preset="cream"] h3,
 :root[data-theme-preset="cream"] h4,
 :root[data-theme-preset="cream"] h5,
-:root[data-theme-preset="cream"] h6,
-:root[data-theme-preset="cream"] .api-settings-title-group strong {
+:root[data-theme-preset="cream"] h6 {
   font-family: var(--font-brand-display);
 }
 
@@ -219,7 +218,6 @@
 
 :root[data-theme-preset="cream"] .sidebar-content-header,
 :root[data-theme-preset="cream"] .section-header,
-:root[data-theme-preset="cream"] .api-settings-page-header,
 :root[data-theme-preset="cream"] .codebase-panel-header,
 :root[data-theme-preset="cream"] .file-viewer-header,
 :root[data-theme-preset="cream"] .git-control-header {
@@ -742,7 +740,11 @@
     var(--accent-orange) 42%,
     var(--border-color)
   );
-  background: var(--accent-orange-bg);
+  background: color-mix(
+    in srgb,
+    var(--accent-orange) 14%,
+    var(--surface-island-strong)
+  );
   color: var(--accent-orange-text);
   box-shadow: var(--shadow-md);
 }

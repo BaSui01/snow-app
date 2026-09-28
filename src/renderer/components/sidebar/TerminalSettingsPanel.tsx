@@ -1,4 +1,3 @@
-import { X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -30,13 +29,10 @@ import {
 import type {
   DetectedTerminalOption,
   TerminalSettingsForm as TerminalSettingsFormValue,
-  TerminalSettingsPanelProps,
   TerminalSettingsValue,
 } from "./terminalSettings/types";
 
-export function TerminalSettingsPanel({
-  onClose,
-}: TerminalSettingsPanelProps): React.JSX.Element {
+export function TerminalSettingsPanel(): React.JSX.Element {
   const { t } = useI18n();
   const [form, setForm] = useState<TerminalSettingsFormValue>(() =>
     toTerminalForm(DEFAULT_TERMINAL_SETTINGS),
@@ -266,36 +262,6 @@ export function TerminalSettingsPanel({
 
   return (
     <div className="api-settings-page" role="region">
-      <div className="api-settings-page-header">
-        <div className="api-settings-title-group">
-          <strong>
-            {t("settings.terminalTitle", {
-              defaultValue: "Terminal settings",
-            })}
-          </strong>
-          <span className="settings-item-description">
-            {t("settings.terminalSettingsInfo", {
-              defaultValue: "Configure terminal shell, font, and appearance.",
-            })}
-          </span>
-        </div>
-        {onClose && (
-          <button
-            className="icon-btn ghost"
-            onClick={onClose}
-            type="button"
-            aria-label={t("settings.closeTerminalSettings", {
-              defaultValue: "Close terminal settings",
-            })}
-            title={t("settings.closeTerminalSettings", {
-              defaultValue: "Close terminal settings",
-            })}
-          >
-            <X size={15} strokeWidth={1.8} />
-          </button>
-        )}
-      </div>
-
       {isLoading ? (
         <div className="api-settings-manual-form">
           <div className="api-settings-manual-header">

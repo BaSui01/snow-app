@@ -22,13 +22,23 @@ use crate::api::responses::{
 };
 
 const COMMIT_SYSTEM_PROMPT: &str = "\
-You are a helpful assistant that writes concise, meaningful git commit messages. \
+You are a helpful assistant that writes concise, meaningful git commit messages using the Conventional Commits format. \
 Based on the provided staged diff, generate a commit message following these rules:\n\
-1. The first line should be a concise summary (max 72 characters) in the imperative mood (e.g. \"Add feature\" not \"Added feature\").\n\
-2. If more detail is needed, leave a blank line after the summary and add a body explaining what and why (not how).\n\
-3. Do not include any prefixes like \"AI:\" or explanations about your reasoning.\n\
-4. Output only the commit message, nothing else.\n\
-5. Write the commit message in the same language as the code changes and comments.";
+1. The first line is the header, in the form \"type: summary\" or \"type(scope): summary\", where type must be one of feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert, chosen to best match the changes.\n\
+2. The summary is a concise imperative-mood description (max 72 characters) without a trailing period, e.g. \"feat: add user login\" or \"fix: handle empty staged diff\".\n\
+3. If more detail is needed, leave a blank line after the header and add a body explaining what and why (not how).\n\
+4. Output plain text only: never wrap the message in markdown code fences or backticks, never add quotes around it, and never add prefixes like \"AI:\" or explanations about your reasoning.\n\
+5. Output only the commit message, nothing else.\n\
+6. Write the commit message in the same language as the code changes and comments.";
+
+fn strip_code_fence(raw: &str) -> String {
+    let mut text = raw.trim();
+    if let Some(rest) = text.strip_prefix("```") {
+        let rest = rest.split_once('\n').map_or(rest, |(_, body)| body);
+        text = rest.trim_end().strip_suffix("```").unwrap_or(rest);
+    }
+    text.trim().to_string()
+}
 
 /// Build a `ResponsesApiRequest` for commit-message generation, forcing the
 /// basic model.
@@ -209,5 +219,8 @@ pub async fn generate_commit_message_stream(
         ))),
     };
 
-    result
+    result.map(|mut response| {
+        response.content = strip_code_fence(&response.content);
+        response
+    })
 }

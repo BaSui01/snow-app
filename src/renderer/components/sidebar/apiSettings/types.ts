@@ -4,7 +4,6 @@ import type { ApiConfigRecord } from "../../../../preload";
 export type ApiSettingsTab = "llm" | "decision" | "retry" | "imagegen";
 
 export type ApiSettingsPanelProps = {
-  onClose?: () => void;
   /** 初始选中的标签页（绘图面板等外部入口直达指定 tab）。 */
   initialTab?: ApiSettingsTab;
 };

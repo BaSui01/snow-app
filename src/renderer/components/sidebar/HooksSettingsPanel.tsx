@@ -1,5 +1,5 @@
-import { Folder, Globe2, HelpCircle, Link, Loader2, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Folder, Globe2, HelpCircle, Link, Loader2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   HookConfigRecord,
   HookScope,
@@ -37,15 +37,17 @@ import {
   getHookDecisionConfirmationDoc,
 } from "./hooksSettings/hookDocsContent";
 import type { HookDocContent } from "./hooksSettings/hookDocsContent";
+import {
+  usePublishSettingsPageActions,
+  type SettingsPageAction,
+} from "../TopBar/settingsPageActionsStore";
 
 type HooksSettingsPanelProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
-  onClose?: () => void;
 };
 
 export function HooksSettingsPanel({
   activeDirectory,
-  onClose,
 }: HooksSettingsPanelProps): React.JSX.Element {
   const { t, locale } = useI18n();
   const [activeScope, setActiveScope] = useState<HookScope>("global");
@@ -62,6 +64,25 @@ export function HooksSettingsPanel({
   const loadGenerationRef = useRef(0);
 
   const isBusy = isLoading || isSaving;
+
+  const openDocs = useCallback((): void => setDocsOpen(true), []);
+
+  usePublishSettingsPageActions(
+    "hooks-settings",
+    useMemo<SettingsPageAction[]>(
+      () => [
+        {
+          id: "docs",
+          label: t("settings.hooksDocsTitle", {
+            defaultValue: "Hooks documentation",
+          }),
+          icon: HelpCircle,
+          onClick: openDocs,
+        },
+      ],
+      [t, openDocs],
+    ),
+  );
 
   const load = useCallback(async (): Promise<void> => {
     const generation = loadGenerationRef.current + 1;
@@ -92,7 +113,7 @@ export function HooksSettingsPanel({
             ? loadError.message
             : t("settings.hooksLoadError", {
                 defaultValue: "Failed to load hook configs",
-              })
+              }),
         );
       }
     } finally {
@@ -146,25 +167,25 @@ export function HooksSettingsPanel({
         hookType,
         scope: activeScope,
         projectId:
-          activeScope === "project" ? activeDirectory?.directoryId ?? "" : "",
+          activeScope === "project" ? (activeDirectory?.directoryId ?? "") : "",
         ruleCount: 0,
         enabledActionCount: 0,
         totalActionCount: 0,
         updatedAt: "",
       };
-    }
+    },
   );
 
   const configuredCount = activeListItems.filter(
-    (item) => item.ruleCount > 0
+    (item) => item.ruleCount > 0,
   ).length;
   const enabledCount = activeListItems.filter(
-    (item) => item.enabledActionCount > 0
+    (item) => item.enabledActionCount > 0,
   ).length;
 
   const startEdit = (hook: HookListItem): void => {
     const record = activeConfigs.find(
-      (item) => item.hookType === hook.hookType && item.scope === hook.scope
+      (item) => item.hookType === hook.hookType && item.scope === hook.scope,
     );
     if (record) {
       setDraft(toDraft(record));
@@ -173,7 +194,7 @@ export function HooksSettingsPanel({
         hookType: hook.hookType,
         scope: hook.scope,
         projectId:
-          hook.scope === "project" ? activeDirectory?.directoryId ?? "" : "",
+          hook.scope === "project" ? (activeDirectory?.directoryId ?? "") : "",
         rules: [],
         updatedAt: "",
       });
@@ -197,10 +218,10 @@ export function HooksSettingsPanel({
         ? {
             ...previous,
             rules: previous.rules.map((rule) =>
-              rule.id === ruleId ? { ...rule, ...patch } : rule
+              rule.id === ruleId ? { ...rule, ...patch } : rule,
             ),
           }
-        : null
+        : null,
     );
   };
 
@@ -208,7 +229,7 @@ export function HooksSettingsPanel({
     setDraft((previous) =>
       previous
         ? { ...previous, rules: [...previous.rules, createHookRuleDraft()] }
-        : null
+        : null,
     );
   };
 
@@ -219,14 +240,14 @@ export function HooksSettingsPanel({
             ...previous,
             rules: previous.rules.filter((rule) => rule.id !== ruleId),
           }
-        : null
+        : null,
     );
   };
 
   const updateAction = (
     ruleId: string,
     actionId: string,
-    patch: Partial<HookActionDraft>
+    patch: Partial<HookActionDraft>,
   ): void => {
     setDraft((previous) =>
       previous
@@ -237,13 +258,13 @@ export function HooksSettingsPanel({
                 ? {
                     ...rule,
                     hooks: rule.hooks.map((action) =>
-                      action.id === actionId ? { ...action, ...patch } : action
+                      action.id === actionId ? { ...action, ...patch } : action,
                     ),
                   }
-                : rule
+                : rule,
             ),
           }
-        : null
+        : null,
     );
   };
 
@@ -258,10 +279,10 @@ export function HooksSettingsPanel({
                     ...rule,
                     hooks: [...rule.hooks, createHookActionDraft()],
                   }
-                : rule
+                : rule,
             ),
           }
-        : null
+        : null,
     );
   };
 
@@ -275,13 +296,13 @@ export function HooksSettingsPanel({
                 ? {
                     ...rule,
                     hooks: rule.hooks.filter(
-                      (action) => action.id !== actionId
+                      (action) => action.id !== actionId,
                     ),
                   }
-                : rule
+                : rule,
             ),
           }
-        : null
+        : null,
     );
   };
 
@@ -299,7 +320,7 @@ export function HooksSettingsPanel({
       setError(
         t("settings.hooksProjectRequired", {
           defaultValue: "Select a project before saving project hooks.",
-        })
+        }),
       );
       return;
     }
@@ -320,7 +341,7 @@ export function HooksSettingsPanel({
 
       const items = await window.snow.listHookConfigs(
         operationScope,
-        operationProjectId
+        operationProjectId,
       );
       if (loadGenerationRef.current !== generation) {
         return;
@@ -336,7 +357,7 @@ export function HooksSettingsPanel({
       setStatus(
         t("settings.hooksSaveSuccess", {
           defaultValue: "Saved hook configuration.",
-        })
+        }),
       );
     } catch (saveError) {
       if (loadGenerationRef.current === generation) {
@@ -345,7 +366,7 @@ export function HooksSettingsPanel({
             ? saveError.message
             : t("settings.hooksSaveError", {
                 defaultValue: "Failed to save hook configuration",
-              })
+              }),
         );
       }
     } finally {
@@ -372,7 +393,7 @@ export function HooksSettingsPanel({
       await window.snow.deleteHookConfig(
         hook.hookType,
         operationScope,
-        operationProjectId
+        operationProjectId,
       );
       if (loadGenerationRef.current !== generation) {
         return;
@@ -380,7 +401,7 @@ export function HooksSettingsPanel({
 
       const items = await window.snow.listHookConfigs(
         operationScope,
-        operationProjectId
+        operationProjectId,
       );
       if (loadGenerationRef.current !== generation) {
         return;
@@ -398,7 +419,7 @@ export function HooksSettingsPanel({
       setStatus(
         t("settings.hooksDeleteSuccess", {
           defaultValue: "Deleted hook configuration.",
-        })
+        }),
       );
     } catch (deleteError) {
       if (loadGenerationRef.current === generation) {
@@ -407,7 +428,7 @@ export function HooksSettingsPanel({
             ? deleteError.message
             : t("settings.hooksDeleteError", {
                 defaultValue: "Failed to delete hook configuration",
-              })
+              }),
         );
       }
     } finally {
@@ -445,51 +466,6 @@ export function HooksSettingsPanel({
 
   return (
     <div className="api-settings-page" role="region">
-      <div className="api-settings-page-header">
-        <div className="api-settings-title-group">
-          <div className="docs-title-row">
-            <strong>
-              {t("settings.hooksTitle", {
-                defaultValue: "Hooks settings",
-              })}
-            </strong>
-            <button
-              className="icon-btn ghost"
-              type="button"
-              onClick={() => setDocsOpen(true)}
-              aria-label={t("settings.hooksDocsTitle", {
-                defaultValue: "Hooks documentation",
-              })}
-              title={t("settings.hooksDocsTitle", {
-                defaultValue: "Hooks documentation",
-              })}
-            >
-              <HelpCircle size={15} strokeWidth={1.8} />
-            </button>
-          </div>
-          <span className="settings-item-description">
-            {t("settings.hooksSettingsInfo", {
-              defaultValue: "Configure lifecycle hooks and automation.",
-            })}
-          </span>
-        </div>
-        {onClose && (
-          <button
-            className="icon-btn ghost"
-            onClick={onClose}
-            type="button"
-            aria-label={t("settings.closeHooksSettings", {
-              defaultValue: "Close hooks settings",
-            })}
-            title={t("settings.closeHooksSettings", {
-              defaultValue: "Close hooks settings",
-            })}
-          >
-            <X size={15} strokeWidth={1.8} />
-          </button>
-        )}
-      </div>
-
       <HooksSettingsSummary
         totalCount={SUPPORTED_HOOK_TYPES.length}
         configuredCount={configuredCount}
@@ -529,7 +505,7 @@ export function HooksSettingsPanel({
           <small>
             {
               globalConfigs.filter(
-                (item) => rulesFromJson(item.rulesJson).length > 0
+                (item) => rulesFromJson(item.rulesJson).length > 0,
               ).length
             }
           </small>
@@ -551,7 +527,7 @@ export function HooksSettingsPanel({
           <small>
             {
               projectConfigs.filter(
-                (item) => rulesFromJson(item.rulesJson).length > 0
+                (item) => rulesFromJson(item.rulesJson).length > 0,
               ).length
             }
           </small>

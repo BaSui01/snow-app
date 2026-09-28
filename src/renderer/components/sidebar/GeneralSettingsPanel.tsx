@@ -243,10 +243,6 @@ type ImageLibraryMigrationState = {
   total: number;
 };
 
-type GeneralSettingsPanelProps = {
-  onClose?: () => void;
-};
-
 type GeneralSettingsTab = "general" | "storage" | "privacy" | "about";
 
 /** 取文件路径的父目录（跨平台字符串处理，避免在渲染层引入 node:path）。 */
@@ -269,9 +265,7 @@ const formatBytes = (bytes: number): string => {
   return `${value.toFixed(digits)} ${units[unitIndex]}`;
 };
 
-export function GeneralSettingsPanel({
-  onClose,
-}: GeneralSettingsPanelProps): React.JSX.Element {
+export function GeneralSettingsPanel(): React.JSX.Element {
   const { locale, setLocale, supportedLocales, t } = useI18n();
   const [activeTab, setActiveTab] = useState<GeneralSettingsTab>("general");
   const [appVersion, setAppVersion] = useState<string>("");
@@ -1163,36 +1157,6 @@ export function GeneralSettingsPanel({
 
   return (
     <div className="api-settings-page" role="region">
-      <div className="api-settings-page-header">
-        <div className="api-settings-title-group">
-          <strong>
-            {t("settings.generalSettings", {
-              defaultValue: "General settings",
-            })}
-          </strong>
-          <span className="settings-item-description">
-            {t("settings.generalSettingsInfo", {
-              defaultValue: "Language, version and update management.",
-            })}
-          </span>
-        </div>
-        {onClose && (
-          <button
-            className="icon-btn ghost"
-            onClick={onClose}
-            type="button"
-            aria-label={t("settings.generalSettingsClosePanel", {
-              defaultValue: "Close general settings",
-            })}
-            title={t("settings.generalSettingsClosePanel", {
-              defaultValue: "Close general settings",
-            })}
-          >
-            <X size={15} strokeWidth={1.8} />
-          </button>
-        )}
-      </div>
-
       <div className="import-settings-tabs" role="tablist">
         <button
           type="button"

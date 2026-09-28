@@ -1,9 +1,5 @@
 import type { TerminalSettings, DetectedTerminal } from "../../../../preload";
 
-export type TerminalSettingsPanelProps = {
-  onClose?: () => void;
-};
-
 export type TerminalSettingsForm = {
   shellPath: string;
   fontFamily: string;

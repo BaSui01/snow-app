@@ -328,7 +328,6 @@
   :is(
     .sidebar-content-header,
     .section-header,
-    .api-settings-page-header,
     .codebase-panel-header,
     .file-viewer-header,
     .git-control-header
@@ -343,15 +342,6 @@
 :root[data-theme-preset="tesseract"] .api-settings-page {
   padding: 24px 32px 36px !important;
   gap: 16px !important;
-}
-
-:root[data-theme-preset="tesseract"] .api-settings-page-header {
-  margin-bottom: 8px !important;
-}
-
-:root[data-theme-preset="tesseract"] .api-settings-title-group strong {
-  font-size: 18px !important;
-  letter-spacing: 0.02em;
 }
 
 :root[data-theme-preset="tesseract"] .api-settings-description {
@@ -1282,7 +1272,11 @@
 
 :root[data-theme-preset="tesseract"] .chat-scroll-to-bottom:hover {
   border-color: var(--tesseract-purple);
-  background: var(--tesseract-purple-bg);
+  background: color-mix(
+    in srgb,
+    var(--tesseract-purple) 14%,
+    var(--surface-island-strong)
+  );
   color: var(--accent-blue-text);
   box-shadow: 0 0 12px var(--tesseract-purple-glow);
 }

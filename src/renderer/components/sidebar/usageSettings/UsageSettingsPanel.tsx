@@ -6,7 +6,6 @@ import {
   ChevronRight,
   RefreshCw,
   Trash2,
-  X,
 } from "lucide-react";
 import { AutoDismissNotice } from "../../AutoDismissNotice";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
@@ -15,6 +14,10 @@ import { DailyTrendChart } from "./DailyTrendChart";
 import { ModelDonutChart } from "./ModelDonutChart";
 import { UsageDateFilter } from "./UsageDateFilter";
 import { useI18n } from "../../../i18n";
+import {
+  usePublishSettingsPageActions,
+  type SettingsPageAction,
+} from "../../TopBar/settingsPageActionsStore";
 import type {
   DailyUsageBreakdown,
   ModelUsageBreakdown,
@@ -22,7 +25,7 @@ import type {
   UsageRecordPage,
   UsageSummary,
 } from "../../../../preload";
-import type { UsageDatePreset, UsageSettingsPanelProps } from "./types";
+import type { UsageDatePreset } from "./types";
 
 const PAGE_SIZE = 20;
 const ALL_PROFILES = "";
@@ -138,9 +141,7 @@ const MONTH_LABELS = [
   "Dec",
 ];
 
-export function UsageSettingsPanel({
-  onClose,
-}: UsageSettingsPanelProps): React.JSX.Element {
+export function UsageSettingsPanel(): React.JSX.Element {
   const { t } = useI18n();
   const [records, setRecords] = useState<UsageRecord[]>([]);
   const [total, setTotal] = useState(0);
@@ -298,6 +299,25 @@ export function UsageSettingsPanel({
     void loadSummaryAndHeatmap();
     void loadProfileNames();
   }, [loadRecords, loadSummaryAndHeatmap, loadProfileNames, offset]);
+
+  usePublishSettingsPageActions(
+    "usage-settings",
+    useMemo<SettingsPageAction[]>(
+      () => [
+        {
+          id: "refresh",
+          label: t("settings.usageRefresh", {
+            defaultValue: "Refresh usage data",
+          }),
+          icon: RefreshCw,
+          disabled: isLoading,
+          spinning: isLoading,
+          onClick: handleRefresh,
+        },
+      ],
+      [t, isLoading, handleRefresh],
+    ),
+  );
 
   const handleProfileFilterChange = useCallback((value: string) => {
     setProfileFilter(value);
@@ -800,55 +820,6 @@ export function UsageSettingsPanel({
 
   return (
     <div className="api-settings-page" role="region">
-      <div className="api-settings-page-header">
-        <div className="api-settings-title-group">
-          <strong>
-            {t("settings.usageTitle", { defaultValue: "Usage statistics" })}
-          </strong>
-          <span className="settings-item-description">
-            {t("settings.usageSettingsInfo", {
-              defaultValue:
-                "Track token usage across all API calls, including input, output, and cache statistics.",
-            })}
-          </span>
-        </div>
-        <div className="api-settings-header-actions">
-          <button
-            className="icon-btn ghost"
-            onClick={handleRefresh}
-            type="button"
-            disabled={isLoading}
-            aria-label={t("settings.usageRefresh", {
-              defaultValue: "Refresh usage data",
-            })}
-            title={t("settings.usageRefresh", {
-              defaultValue: "Refresh usage data",
-            })}
-          >
-            <RefreshCw
-              size={15}
-              strokeWidth={1.8}
-              className={isLoading ? "spin" : ""}
-            />
-          </button>
-          {onClose && (
-            <button
-              className="icon-btn ghost"
-              onClick={onClose}
-              type="button"
-              aria-label={t("settings.usageClosePanel", {
-                defaultValue: "Close usage statistics",
-              })}
-              title={t("settings.usageClosePanel", {
-                defaultValue: "Close usage statistics",
-              })}
-            >
-              <X size={15} strokeWidth={1.8} />
-            </button>
-          )}
-        </div>
-      </div>
-
       <AutoDismissNotice
         message={error}
         tone="error"

@@ -5,7 +5,6 @@ import {
   Loader2,
   Plus,
   RefreshCw,
-  X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
@@ -48,7 +47,6 @@ import type {
 
 type McpSettingsPanelProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
-  onClose?: () => void;
 };
 
 type McpScope = "global" | "project";
@@ -79,7 +77,6 @@ const mergeServerTools = (
 
 export function McpSettingsPanel({
   activeDirectory,
-  onClose,
 }: McpSettingsPanelProps): React.JSX.Element {
   const { t } = useI18n();
   const [activeScope, setActiveScope] = useState<McpScope>("global");
@@ -1080,34 +1077,6 @@ export function McpSettingsPanel({
 
   return (
     <div className="api-settings-page" role="region">
-      <div className="api-settings-page-header">
-        <div className="api-settings-title-group">
-          <strong>
-            {t("settings.mcpTitle", { defaultValue: "MCP settings" })}
-          </strong>
-          <span className="settings-item-description">
-            {t("settings.mcpSettingsInfo", {
-              defaultValue: "Configure MCP servers and tools.",
-            })}
-          </span>
-        </div>
-        {onClose && (
-          <button
-            className="icon-btn ghost"
-            onClick={onClose}
-            type="button"
-            aria-label={t("settings.closeMcpSettings", {
-              defaultValue: "Close MCP settings",
-            })}
-            title={t("settings.closeMcpSettings", {
-              defaultValue: "Close MCP settings",
-            })}
-          >
-            <X size={15} strokeWidth={1.8} />
-          </button>
-        )}
-      </div>
-
       <McpSettingsSummary
         totalCount={activeServers.length}
         enabledCount={enabledCount}

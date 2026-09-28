@@ -8,13 +8,16 @@ import {
   RefreshCw,
   Timer,
   Trash2,
-  X,
 } from "lucide-react";
 import { AutoDismissNotice } from "../../AutoDismissNotice";
 import { Modal } from "../../common/Modal";
 import { RangeSlider } from "../../common/RangeSlider";
 import { UsageDateFilter } from "../usageSettings/UsageDateFilter";
 import { useI18n } from "../../../i18n";
+import {
+  usePublishSettingsPageActions,
+  type SettingsPageAction,
+} from "../../TopBar/settingsPageActionsStore";
 import type { AppLogPage, AppLogRecord } from "../../../../preload";
 import type { UsageDatePreset } from "../usageSettings/types";
 
@@ -39,10 +42,6 @@ const formatCountdown = (ms: number): string => {
 type LogLevelFilter = "" | "DEBUG" | "INFO" | "WARN" | "ERROR";
 
 const LEVEL_FILTERS: LogLevelFilter[] = ["", "DEBUG", "INFO", "WARN", "ERROR"];
-
-type SystemLogsPanelProps = {
-  onClose?: () => void;
-};
 
 const formatDateForInput = (date: Date): string => {
   const year = date.getFullYear();
@@ -157,9 +156,7 @@ const hasDetail = (record: AppLogRecord): boolean =>
     record.error,
   );
 
-export function SystemLogsPanel({
-  onClose,
-}: SystemLogsPanelProps): React.JSX.Element {
+export function SystemLogsPanel(): React.JSX.Element {
   const { t } = useI18n();
   const [records, setRecords] = useState<AppLogRecord[]>([]);
   const [total, setTotal] = useState(0);
@@ -445,6 +442,38 @@ export function SystemLogsPanel({
     }
   }, [confirmingClear, levelFilter, loadLogs, t]);
 
+  usePublishSettingsPageActions(
+    "system-logs",
+    useMemo<SettingsPageAction[]>(
+      () => [
+        {
+          id: "refresh",
+          label: t("settings.systemLogsRefresh", {
+            defaultValue: "Refresh logs",
+          }),
+          icon: RefreshCw,
+          disabled: isLoading,
+          spinning: isLoading,
+          onClick: handleRefresh,
+        },
+        {
+          id: "clear",
+          label: t("settings.systemLogsClear", { defaultValue: "Clear logs" }),
+          text: confirmingClear
+            ? t("settings.systemLogsClearConfirm", {
+                defaultValue: "Confirm clear",
+              })
+            : t("settings.systemLogsClear", { defaultValue: "Clear logs" }),
+          icon: Trash2,
+          disabled: total === 0 && !confirmingClear,
+          danger: confirmingClear,
+          onClick: () => void handleClear(),
+        },
+      ],
+      [t, isLoading, handleRefresh, confirmingClear, total, handleClear],
+    ),
+  );
+
   const detailRows = useCallback(
     (record: AppLogRecord): { label: string; value: string }[] => {
       const rows: { label: string; value: string }[] = [];
@@ -491,72 +520,6 @@ export function SystemLogsPanel({
 
   return (
     <div className="api-settings-page system-logs-page" role="region">
-      <div className="api-settings-page-header">
-        <div className="api-settings-title-group">
-          <strong>
-            {t("settings.systemLogsTitle", { defaultValue: "System logs" })}
-          </strong>
-          <span className="settings-item-description">
-            {t("settings.systemLogsInfo", {
-              defaultValue:
-                "Unified diagnostic logs written by the main process and the renderer.",
-            })}
-          </span>
-        </div>
-        <div className="system-logs-header-actions">
-          <button
-            className="icon-btn ghost"
-            onClick={handleRefresh}
-            type="button"
-            disabled={isLoading}
-            aria-label={t("settings.systemLogsRefresh", {
-              defaultValue: "Refresh logs",
-            })}
-            title={t("settings.systemLogsRefresh", {
-              defaultValue: "Refresh logs",
-            })}
-          >
-            <RefreshCw
-              size={15}
-              strokeWidth={1.8}
-              className={isLoading ? "spin" : ""}
-            />
-          </button>
-          <button
-            className={`system-logs-clear-btn${
-              confirmingClear ? " confirming" : ""
-            }`}
-            onClick={() => void handleClear()}
-            type="button"
-            disabled={total === 0 && !confirmingClear}
-          >
-            <Trash2 size={14} strokeWidth={1.8} />
-            <span>
-              {confirmingClear
-                ? t("settings.systemLogsClearConfirm", {
-                    defaultValue: "Confirm clear",
-                  })
-                : t("settings.systemLogsClear", { defaultValue: "Clear logs" })}
-            </span>
-          </button>
-          {onClose && (
-            <button
-              className="icon-btn ghost"
-              onClick={onClose}
-              type="button"
-              aria-label={t("settings.systemLogsClosePanel", {
-                defaultValue: "Close system logs",
-              })}
-              title={t("settings.systemLogsClosePanel", {
-                defaultValue: "Close system logs",
-              })}
-            >
-              <X size={15} strokeWidth={1.8} />
-            </button>
-          )}
-        </div>
-      </div>
-
       <AutoDismissNotice
         message={error}
         tone="error"

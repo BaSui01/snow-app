@@ -42,6 +42,15 @@ export const zhTW: Record<string, string> = {
     "也可以直接掃描電腦端的 QR Code，掃碼會自動帶上權杖；權杖可在電腦端「手機遠控」複製。",
   "remote.unlock.reload": "重新載入頁面",
   "remote.unlock.open": "填寫權杖",
+  "remote.unlock.modeToken": "配對權杖",
+  "remote.unlock.modeTotp": "身分驗證器",
+  "remote.unlock.totpLead":
+    "在 Google 身分驗證器中查看 6 位動態碼，輸入後即可連線，無需配對權杖。",
+  "remote.unlock.totpPlaceholder": "6 位動態碼",
+  "remote.unlock.totpEmpty": "請輸入 6 位動態碼",
+  "remote.unlock.totpFailed": "動態碼無效，或未啟用驗證器解鎖，請確認後重試",
+  "remote.unlock.totpHint":
+    "動態碼每 30 秒更新；需在電腦端「設定 → 隱私 → 應用鎖」中開啟「允許用驗證器解鎖手機遠控」。",
 
   // 時間軸
   "remote.timeline.scrollToBottom": "捲動到底部",

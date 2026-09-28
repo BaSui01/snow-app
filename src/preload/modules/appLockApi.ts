@@ -12,6 +12,8 @@ export const appLockApi = {
     ipcRenderer.invoke("app-lock:get-state"),
   setAppLockDelay: (delayMs: number): Promise<void> =>
     ipcRenderer.invoke("app-lock:set-delay", delayMs),
+  setAppLockRemoteUnlock: (enabled: boolean): Promise<void> =>
+    ipcRenderer.invoke("app-lock:set-remote-unlock", enabled),
   beginAppLockTotpBinding: (): Promise<AppLockTotpBinding> =>
     ipcRenderer.invoke("app-lock:begin-totp-binding"),
   confirmAppLockTotpBinding: (

@@ -22,6 +22,9 @@ export const registerAppLockHandlers = (native: NativeBridge): void => {
         : 0,
     ),
   );
+  ipcMain.handle("app-lock:set-remote-unlock", (_event, enabled: unknown) =>
+    native.setAppLockRemoteUnlock(enabled === true),
+  );
   ipcMain.handle("app-lock:begin-totp-binding", () =>
     native.beginAppLockTotpBinding(),
   );

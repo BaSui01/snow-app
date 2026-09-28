@@ -905,6 +905,14 @@ export const en = {
   "toolCall.memory.kindValue.preference": "Preference",
   "toolCall.memory.kindValue.pitfall": "Pitfall",
   "toolCall.memory.kindValue.task_state": "Task State",
+  "toolCall.skill.skillId": "Skill ID",
+  "toolCall.skill.skillName": "Name",
+  "toolCall.skill.location": "Location",
+  "toolCall.skill.path": "Path",
+  "toolCall.skill.allowedTools": "Allowed tools",
+  "toolCall.skill.content": "Skill content",
+  "toolCall.skill.running": "Loading skill...",
+  "toolCall.skill.waiting": "Waiting to load skill",
   "toolCall.subAgent.name": "sub-agent",
   "toolCall.subAgent.unknownAgent": "Sub-agent",
   "toolCall.subAgent.prompt": "Prompt",
@@ -3347,6 +3355,12 @@ export const en = {
   "settings.appLockTotpBoundDone": "Google Authenticator bound",
   "settings.appLockTotpRequired":
     "Bind Google Authenticator before enabling the app lock.",
+  "settings.appLockRemoteUnlock":
+    "Unlock mobile remote control with the authenticator",
+  "settings.appLockRemoteUnlockInfo":
+    "While on, the LAN and public remote pages accept a 6-digit authenticator code in place of the pairing token; while off, only the pairing link or token works.",
+  "settings.appLockRemoteUnlockOn": "Authenticator remote unlock enabled",
+  "settings.appLockRemoteUnlockOff": "Authenticator remote unlock disabled",
   "settings.appLockEnableTitle": "Set a PIN and enable",
   "settings.appLockEnableInfo":
     "The PIN is 4-8 digits and is stored locally as a salted hash only - never in plain text.",

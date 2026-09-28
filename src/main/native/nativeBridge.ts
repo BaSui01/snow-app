@@ -133,6 +133,7 @@ export const loadNativeBridge = (): NativeBridge => {
         ),
       getAppLockState: unavailableAppLock,
       setAppLockDelay: unavailableAppLock,
+      setAppLockRemoteUnlock: unavailableAppLock,
       beginAppLockTotpBinding: unavailableAppLock,
       confirmAppLockTotpBinding: unavailableAppLock,
       clearAppLockTotp: unavailableAppLock,

@@ -12,6 +12,7 @@ const SETTING_NAME: &str = "App lock";
 const ENABLED_CODE: &str = "app_lock_enabled";
 const PIN_HASH_CODE: &str = "app_lock_pin_hash";
 const TOTP_SECRET_CODE: &str = "app_lock_totp_secret";
+const REMOTE_UNLOCK_CODE: &str = "app_lock_remote_unlock";
 const DELAY_CODE: &str = "app_lock_delay_ms";
 const LOCKED_CODE: &str = "app_lock_locked";
 const FAILURES_CODE: &str = "app_lock_failures";
@@ -43,6 +44,8 @@ pub struct AppLockState {
     pub enabled: bool,
     pub has_pin: bool,
     pub totp_bound: bool,
+    /// 手机远控是否接受身份验证器动态码代替配对令牌。
+    pub remote_unlock: bool,
     pub delay_ms: u32,
     pub locked: bool,
 }
@@ -63,6 +66,7 @@ pub struct AppLockTotpBinding {
 pub fn get_app_lock_state(database_path: &Path) -> Result<AppLockState> {
     let has_pin = !read_text(database_path, PIN_HASH_CODE)?.is_empty();
     let totp_bound = !read_text(database_path, TOTP_SECRET_CODE)?.is_empty();
+    let remote_unlock = totp_bound && remote_unlock_setting(database_path)?;
     let delay_ms = normalize_delay_ms(u32::try_from(read_u64(database_path, DELAY_CODE)?).unwrap_or(DEFAULT_DELAY_MS));
     // PIN 不允许脱离身份验证器独立生效：缺少 PIN 或绑定即视为未启用，避免找不回应用。
     let enabled = read_bool(database_path, ENABLED_CODE)? && has_pin && totp_bound;
@@ -71,6 +75,7 @@ pub fn get_app_lock_state(database_path: &Path) -> Result<AppLockState> {
         enabled,
         has_pin,
         totp_bound,
+        remote_unlock,
         delay_ms,
         locked,
     })
@@ -90,6 +95,34 @@ pub fn set_app_lock_delay(database_path: &Path, delay_ms: u32) -> Result<()> {
         DELAY_CODE,
         &normalize_delay_ms(delay_ms).to_string(),
     )
+}
+
+/// 手机远控是否允许用身份验证器动态码代替配对令牌：未绑定即不允许，
+/// 已绑定时未显式关闭即允许。
+pub fn remote_unlock_enabled(database_path: &Path) -> Result<bool> {
+    if read_text(database_path, TOTP_SECRET_CODE)?.is_empty() {
+        return Ok(false);
+    }
+    remote_unlock_setting(database_path)
+}
+
+pub fn set_app_lock_remote_unlock(database_path: &Path, enabled: bool) -> Result<()> {
+    write_setting(
+        database_path,
+        REMOTE_UNLOCK_CODE,
+        if enabled { "true" } else { "false" },
+    )
+}
+
+/// 校验远控解锁动态码：只比对动态码本身，不占用应用锁的尝试次数与冷却
+/// （远控 HTTP 侧另有独立的频率限制）。
+pub fn verify_remote_unlock_code(database_path: &Path, code: &str) -> Result<bool> {
+    let secret = read_text(database_path, TOTP_SECRET_CODE)?;
+    Ok(!secret.is_empty() && totp_matches(&secret, code))
+}
+
+fn remote_unlock_setting(database_path: &Path) -> Result<bool> {
+    Ok(read_text(database_path, REMOTE_UNLOCK_CODE)?.trim() != "false")
 }
 
 pub fn begin_app_lock_totp_binding() -> Result<AppLockTotpBinding> {

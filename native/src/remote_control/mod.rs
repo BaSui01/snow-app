@@ -11,7 +11,6 @@ pub mod bridge;
 pub mod server;
 pub mod unauthorized;
 
-use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, RwLock};
@@ -21,7 +20,7 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex as AsyncMutex;
 
 use auth::{encode_query_component, normalize_fixed_token, random_token, WanAuth};
-use server::{ServerContext, ServerPolicy};
+use server::{FailureGuard, ServerContext, ServerPolicy};
 
 /// 监听器关闭的等待上限（超过后强制中止任务）。
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
@@ -213,7 +212,8 @@ pub async fn start_server(options: StartOptions) -> Result<RemoteControlState, S
         lan_token: Some(token_shared.clone()),
         wan_auth: None,
         generation: generation.clone(),
-        unlock_failures: Mutex::new(VecDeque::new()),
+        unlock_tokens: FailureGuard::tokens(),
+        unlock_codes: FailureGuard::codes(),
     });
     let (shutdown, shutdown_rx) = tokio::sync::oneshot::channel();
     let app = server::router(context);
@@ -359,7 +359,8 @@ async fn start_wan_listener_locked(
         lan_token: None,
         wan_auth: Some(wan_auth.clone()),
         generation,
-        unlock_failures: Mutex::new(VecDeque::new()),
+        unlock_tokens: FailureGuard::tokens(),
+        unlock_codes: FailureGuard::codes(),
     });
     let (shutdown, shutdown_rx) = tokio::sync::oneshot::channel();
     let app = server::router(context);

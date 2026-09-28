@@ -12,6 +12,7 @@ import {
   MessageCircleQuestion,
   ScanSearch,
   Search,
+  Sparkles,
   Terminal,
   Workflow,
   Wrench,
@@ -34,6 +35,7 @@ export type ToolCategory =
   | "workflow"
   | "lens"
   | "image"
+  | "skill"
   | "generic";
 
 const CATEGORY_ICONS: Record<ToolCategory, LucideIcon> = {
@@ -52,6 +54,7 @@ const CATEGORY_ICONS: Record<ToolCategory, LucideIcon> = {
   workflow: Workflow,
   lens: ScanSearch,
   image: ImageIcon,
+  skill: Sparkles,
   generic: Wrench,
 };
 
@@ -70,12 +73,15 @@ const getToolIcon = (category: ToolCategory): LucideIcon =>
  *   "grep-search"                   -> "search"
  *   "terminal-execute"             -> "terminal"
  *   "websearch-search"             -> "web"
- *   "todo-manage"                  -> "generic"
+ *   "skills-skill-execute"         -> "skill"
  */
 export const getToolCategory = (toolName: string): ToolCategory => {
   const lower = toolName.toLowerCase();
   if (lower.includes("workflow")) {
     return "workflow";
+  }
+  if (lower.includes("skill")) {
+    return "skill";
   }
   if (
     lower.includes("sub-agent") ||

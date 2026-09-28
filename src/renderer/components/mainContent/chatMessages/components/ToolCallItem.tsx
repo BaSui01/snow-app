@@ -30,6 +30,7 @@ import {
   WorkflowToolCall,
 } from "../toolCalls";
 import { ToolCallNode } from "../toolCalls/shared/ToolCallNode";
+import { decodeEscapedNewlines } from "../toolCalls/shared/formatters";
 import { useI18n } from "../../../../i18n";
 
 type ToolCallItemProps = {
@@ -161,17 +162,6 @@ const getArgsSummary = (args: string): string | undefined => {
   } catch {
     return undefined;
   }
-};
-
-/** 解码转义存储的 `\n` / `\r\n` 为真实换行（仅当字符串不含真实换行时）。 */
-const decodeEscapedNewlines = (text: string): string => {
-  if (text.includes("\n") || !text.includes("\\n")) {
-    return text;
-  }
-  return text
-    .replace(/\\r\\n/g, "\n")
-    .replace(/\\n/g, "\n")
-    .replace(/\\t/g, "\t");
 };
 
 /** 常见的长文本字段名（按优先级）。外部 MCP 结果常把正文放在这些字段里。 */

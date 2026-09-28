@@ -9,6 +9,7 @@
 - **Script Data APIs and CORS-Free Requests**: Client scripts support the `@snow-privacy` declaration and reuse panel-plugin metadata and write capabilities via `snow.metadata` / `snow.write`; new `snow.fetch` sends CORS-free requests from the main process, and sandboxed scripts get it as their global `fetch`.
 - **Language-Server Symbol Addressing and Runtime Controls**: LSP tools resolve targets directly from symbol names (hover, definition, references, rename, call/type hierarchy need no file coordinates; omitting the path resolves across the workspace with ambiguity candidates); the LSP settings panel shows per-server status with start / stop / restart.
 - **Mac Platinum Theme**: A new macOS-style theme preset (light and dark palettes).
+- **Authenticator Unlock for Mobile Remote Control**: once Google Authenticator is bound to the app lock, the mobile LAN and public remote pages unlock with a 6-digit code instead of the pairing token (switch under Settings → Privacy → App lock).
 
 ## Improvements
 

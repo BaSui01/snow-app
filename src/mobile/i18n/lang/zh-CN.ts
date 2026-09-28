@@ -47,6 +47,15 @@ export const zhCN: Record<string, string> = {
     "也可以直接扫描电脑端的二维码，扫码会自动携带令牌；令牌可在电脑端「手机远控」中复制。",
   "remote.unlock.reload": "重新加载页面",
   "remote.unlock.open": "填写令牌",
+  "remote.unlock.modeToken": "配对令牌",
+  "remote.unlock.modeTotp": "身份验证器",
+  "remote.unlock.totpLead":
+    "在谷歌身份验证器中查看 6 位动态码，输入后即可连接，无需配对令牌。",
+  "remote.unlock.totpPlaceholder": "6 位动态码",
+  "remote.unlock.totpEmpty": "请输入 6 位动态码",
+  "remote.unlock.totpFailed": "动态码无效，或未启用验证器解锁，请核对后重试",
+  "remote.unlock.totpHint":
+    "动态码每 30 秒更新；需在电脑端「设置 → 隐私 → 应用锁」中开启“允许用验证器解锁手机远控”。",
 
   // 时间线
   "remote.timeline.scrollToBottom": "滚动到底部",

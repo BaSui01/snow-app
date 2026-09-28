@@ -31,6 +31,8 @@ const requiredExports = [
   "migrateCheckpointLayout",
   "listChatMessagesPaginated",
   "cancelRunningSubAgentSessions",
+  // 应用锁：允许用身份验证器动态码解锁手机远控
+  "setAppLockRemoteUnlock",
   // 本地数据清理（设置 → 存储与资源 → 数据清理）
   "scanCleanup",
   "deleteCleanupData",

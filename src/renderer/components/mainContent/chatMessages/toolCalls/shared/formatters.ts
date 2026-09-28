@@ -14,3 +14,14 @@ export const pathsReferToSameFile = (left: string, right: string): boolean => {
     path.trim().replace(/\\/g, "/").toLowerCase();
   return normalize(left) === normalize(right);
 };
+
+/** 解码转义存储的 `\n` / `\r\n` / `\t` 为真实字符（仅当字符串不含真实换行时）。 */
+export const decodeEscapedNewlines = (text: string): string => {
+  if (text.includes("\n") || !text.includes("\\n")) {
+    return text;
+  }
+  return text
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\\t/g, "\t");
+};

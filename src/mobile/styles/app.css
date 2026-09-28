@@ -3686,6 +3686,41 @@ html[data-i18n-pending] body {
   font-size: 13px;
   line-height: 1.75;
 }
+.unlock-modes {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+}
+.unlock-mode {
+  flex: 1;
+  height: 34px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.unlock-mode.is-active {
+  background: var(--secondary-control-bg);
+  color: var(--secondary-control-fg);
+}
+.unlock-modes[hidden],
+.unlock-form .unlock-paste[hidden] {
+  display: none;
+}
+.unlock-overlay.mode-code .unlock-form input {
+  -webkit-text-security: none;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.3em;
+}
 .unlock-form {
   display: flex;
   flex-direction: column;

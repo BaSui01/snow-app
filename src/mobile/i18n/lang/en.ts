@@ -45,6 +45,16 @@ export const en: Record<string, string> = {
     "You can also scan the QR code on your computer — it carries the token automatically. Copy the token from Mobile remote control on the desktop.",
   "remote.unlock.reload": "Reload page",
   "remote.unlock.open": "Enter token",
+  "remote.unlock.modeToken": "Pairing token",
+  "remote.unlock.modeTotp": "Authenticator",
+  "remote.unlock.totpLead":
+    "Open Google Authenticator for the 6-digit code and connect without a pairing token.",
+  "remote.unlock.totpPlaceholder": "6-digit code",
+  "remote.unlock.totpEmpty": "Enter the 6-digit code",
+  "remote.unlock.totpFailed":
+    "Invalid code, or authenticator unlock is off — check and try again",
+  "remote.unlock.totpHint":
+    "The code refreshes every 30 seconds; enable it on the computer under Settings → Privacy → App lock.",
 
   // Timeline
   "remote.timeline.scrollToBottom": "Scroll to bottom",

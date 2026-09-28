@@ -589,6 +589,7 @@ export type AppLockState = {
   enabled: boolean;
   hasPin: boolean;
   totpBound: boolean;
+  remoteUnlock: boolean;
   delayMs: number;
   locked: boolean;
 };

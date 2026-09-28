@@ -1657,6 +1657,7 @@ export type AppLockState = {
   enabled: boolean;
   hasPin: boolean;
   totpBound: boolean;
+  remoteUnlock: boolean;
   delayMs: number;
   locked: boolean;
 };
@@ -1684,6 +1685,7 @@ export type NativeBridge = {
   deleteSystemSetting: (settingCode: string) => Promise<void>;
   getAppLockState: () => Promise<AppLockState>;
   setAppLockDelay: (delayMs: number) => Promise<void>;
+  setAppLockRemoteUnlock: (enabled: boolean) => Promise<void>;
   beginAppLockTotpBinding: () => Promise<AppLockTotpBinding>;
   confirmAppLockTotpBinding: (
     secret: string,

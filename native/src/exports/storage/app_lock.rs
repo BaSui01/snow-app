@@ -9,6 +9,7 @@ pub struct AppLockStateNapi {
     pub enabled: bool,
     pub has_pin: bool,
     pub totp_bound: bool,
+    pub remote_unlock: bool,
     pub delay_ms: u32,
     pub locked: bool,
 }
@@ -19,6 +20,7 @@ impl From<AppLockState> for AppLockStateNapi {
             enabled: state.enabled,
             has_pin: state.has_pin,
             totp_bound: state.totp_bound,
+            remote_unlock: state.remote_unlock,
             delay_ms: state.delay_ms,
             locked: state.locked,
         }
@@ -72,6 +74,16 @@ pub async fn set_app_lock_delay(delay_ms: u32) -> napi::Result<()> {
     tokio::task::spawn_blocking(move || -> napi::Result<()> {
         let database_path = crate::storage::ensure_database_file()?;
         app_lock::set_app_lock_delay(&database_path, delay_ms)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn set_app_lock_remote_unlock(enabled: bool) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || -> napi::Result<()> {
+        let database_path = crate::storage::ensure_database_file()?;
+        app_lock::set_app_lock_remote_unlock(&database_path, enabled)
     })
     .await
     .map_err(map_spawn_error)?

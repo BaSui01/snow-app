@@ -25,6 +25,7 @@ use super::attachments::{self, AttachError, AttachmentKind, RemoteAttachmentCont
 use super::auth::{encode_query_component, now_ms, secret_matches, WanAuth};
 use super::bridge::{self, BridgeError};
 use super::unauthorized;
+use crate::storage::services::app_lock;
 
 /// 请求体上限（JSON 接口）。
 const MAX_BODY_BYTES: usize = 64 * 1024;
@@ -59,8 +60,13 @@ const MAX_ROLLBACK_DIFF_CHARS: usize = 20_000;
 /// 令牌解锁尝试限流：窗口与窗口内允许的失败次数。
 const UNLOCK_FAILURE_WINDOW_MS: i64 = 5 * 60 * 1000;
 const MAX_UNLOCK_FAILURES: usize = 10;
+/// 动态码解锁尝试限流：6 位码空间小，窗口内允许的失败次数必须比令牌更少。
+const CODE_FAILURE_WINDOW_MS: i64 = 5 * 60 * 1000;
+const MAX_CODE_FAILURES: usize = 5;
 /// 令牌长度上限（面板固定令牌与移动端输入都不得超过）。
 const MAX_UNLOCK_TOKEN_LENGTH: usize = 512;
+/// 动态码长度上限（手机端固定输入 6 位，留出容错余量）。
+const MAX_UNLOCK_CODE_LENGTH: usize = 12;
 /// 令牌解锁成功后写入的公网会话 Cookie 有效期（令牌本身不设过期）。
 const WAN_COOKIE_MAX_AGE: i64 = 365 * 24 * 60 * 60;
 
@@ -82,8 +88,69 @@ pub struct ServerContext {
     pub wan_auth: Option<Arc<WanAuth>>,
     /// 配对代数：令牌轮换 / 服务重启后自增，旧请求据此拒绝。
     pub generation: Arc<AtomicU64>,
-    /// 最近的令牌解锁失败时间戳，用于限流暴力尝试。
-    pub unlock_failures: Mutex<VecDeque<i64>>,
+    /// 配对令牌解锁失败限流。
+    pub unlock_tokens: FailureGuard,
+    /// 身份验证器动态码解锁失败限流。
+    pub unlock_codes: FailureGuard,
+}
+
+/// 解锁失败限流：滑动窗口内记录的失败时间戳，超窗自动放行。
+pub struct FailureGuard {
+    window_ms: i64,
+    max_failures: usize,
+    failures: Mutex<VecDeque<i64>>,
+}
+
+impl FailureGuard {
+    /// 配对令牌解锁失败限流。
+    pub const fn tokens() -> Self {
+        Self::new(UNLOCK_FAILURE_WINDOW_MS, MAX_UNLOCK_FAILURES)
+    }
+
+    /// 身份验证器动态码解锁失败限流。
+    pub const fn codes() -> Self {
+        Self::new(CODE_FAILURE_WINDOW_MS, MAX_CODE_FAILURES)
+    }
+
+    const fn new(window_ms: i64, max_failures: usize) -> Self {
+        Self {
+            window_ms,
+            max_failures,
+            failures: Mutex::new(VecDeque::new()),
+        }
+    }
+
+    /// 窗口内失败次数是否已达上限（顺带清理过期记录）。
+    fn blocked(&self) -> bool {
+        let now = now_ms();
+        let mut failures = self.lock();
+        while let Some(attempted_at) = failures.front().copied() {
+            if attempted_at <= now - self.window_ms {
+                failures.pop_front();
+            } else {
+                break;
+            }
+        }
+        failures.len() >= self.max_failures
+    }
+
+    fn record(&self) {
+        let mut failures = self.lock();
+        failures.push_back(now_ms());
+        while failures.len() > self.max_failures {
+            failures.pop_front();
+        }
+    }
+
+    fn clear(&self) {
+        self.lock().clear();
+    }
+
+    fn lock(&self) -> MutexGuard<'_, VecDeque<i64>> {
+        self.failures
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 }
 
 impl ServerContext {
@@ -105,38 +172,6 @@ impl ServerContext {
 
     fn generation(&self) -> u64 {
         self.generation.load(Ordering::SeqCst)
-    }
-
-    fn lock_unlock_failures(&self) -> MutexGuard<'_, VecDeque<i64>> {
-        self.unlock_failures
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
-    /// 限流窗口内失败次数是否已达上限（顺带清理过期记录）。
-    fn unlock_blocked(&self) -> bool {
-        let now = now_ms();
-        let mut failures = self.lock_unlock_failures();
-        while let Some(attempted_at) = failures.front().copied() {
-            if attempted_at <= now - UNLOCK_FAILURE_WINDOW_MS {
-                failures.pop_front();
-            } else {
-                break;
-            }
-        }
-        failures.len() >= MAX_UNLOCK_FAILURES
-    }
-
-    fn record_unlock_failure(&self) {
-        let mut failures = self.lock_unlock_failures();
-        failures.push_back(now_ms());
-        while failures.len() > MAX_UNLOCK_FAILURES {
-            failures.pop_front();
-        }
-    }
-
-    fn clear_unlock_failures(&self) {
-        self.lock_unlock_failures().clear();
     }
 }
 
@@ -633,6 +668,14 @@ async fn process(
         ));
     }
 
+    if method == Method::GET && path == "/api/unlock-methods" {
+        return Ok(json_response(
+            StatusCode::OK,
+            &json!({ "totp": totp_unlock_available().await }),
+            Vec::new(),
+        ));
+    }
+
     if method == Method::POST && path == "/api/unlock" {
         return handle_unlock(context, &headers, body.take()).await;
     }
@@ -806,14 +849,23 @@ async fn handle_unlock(
             Vec::new(),
         ));
     }
-    if context.unlock_blocked() {
+    let payload = read_json_body(body).await?;
+    let code = payload
+        .get("code")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if !code.is_empty() {
+        return unlock_with_code(context, &code).await;
+    }
+    if context.unlock_tokens.blocked() {
         return Ok(json_response(
             StatusCode::TOO_MANY_REQUESTS,
             &json!({ "error": "令牌错误次数过多，请稍后再试" }),
             Vec::new(),
         ));
     }
-    let payload = read_json_body(body).await?;
     let token = payload
         .get("token")
         .and_then(Value::as_str)
@@ -821,7 +873,7 @@ async fn handle_unlock(
         .trim()
         .to_string();
     if token.is_empty() || token.chars().count() > MAX_UNLOCK_TOKEN_LENGTH {
-        context.record_unlock_failure();
+        context.unlock_tokens.record();
         return Ok(json_response(
             StatusCode::BAD_REQUEST,
             &json!({ "error": "请输入有效的令牌" }),
@@ -830,7 +882,7 @@ async fn handle_unlock(
     }
     match session_cookie(context, &token) {
         Some(cookie) => {
-            context.clear_unlock_failures();
+            context.unlock_tokens.clear();
             Ok(json_response(
                 StatusCode::OK,
                 &json!({ "ok": true }),
@@ -838,7 +890,7 @@ async fn handle_unlock(
             ))
         }
         None => {
-            context.record_unlock_failure();
+            context.unlock_tokens.record();
             let message = if context.is_wan() {
                 "令牌无效或已过期"
             } else {
@@ -851,6 +903,77 @@ async fn handle_unlock(
             ))
         }
     }
+}
+
+/// 身份验证器动态码解锁：桌面端已绑定谷歌身份验证器并允许远控解锁时，
+/// 6 位动态码等价于持有配对令牌，校验通过即写入同一套会话 Cookie。
+async fn unlock_with_code(context: &ServerContext, code: &str) -> Result<Response<Body>, ApiError> {
+    if context.unlock_codes.blocked() {
+        return Ok(json_response(
+            StatusCode::TOO_MANY_REQUESTS,
+            &json!({ "error": "动态码错误次数过多，请稍后再试" }),
+            Vec::new(),
+        ));
+    }
+    if code.chars().count() > MAX_UNLOCK_CODE_LENGTH {
+        context.unlock_codes.record();
+        return Ok(json_response(
+            StatusCode::BAD_REQUEST,
+            &json!({ "error": "请输入 6 位动态码" }),
+            Vec::new(),
+        ));
+    }
+    let candidate = code.to_string();
+    let verified = tokio::task::spawn_blocking(move || -> napi::Result<bool> {
+        let database_path = crate::storage::ensure_database_file()?;
+        if !app_lock::remote_unlock_enabled(&database_path)? {
+            return Ok(false);
+        }
+        app_lock::verify_remote_unlock_code(&database_path, &candidate)
+    })
+    .await
+    .map(|result| result.unwrap_or(false))
+    .unwrap_or(false);
+    let cookie = if verified {
+        current_session_cookie(context)
+    } else {
+        None
+    };
+    let Some(cookie) = cookie else {
+        context.unlock_codes.record();
+        return Ok(json_response(
+            StatusCode::UNAUTHORIZED,
+            &json!({ "error": "动态码无效，或未启用验证器解锁" }),
+            Vec::new(),
+        ));
+    };
+    context.unlock_codes.clear();
+    Ok(json_response(
+        StatusCode::OK,
+        &json!({ "ok": true }),
+        vec![("Set-Cookie", cookie)],
+    ))
+}
+
+/// 当前监听器生效令牌对应的会话 Cookie。
+fn current_session_cookie(context: &ServerContext) -> Option<String> {
+    let candidate = if context.is_wan() {
+        context.wan_auth.as_ref()?.token()
+    } else {
+        context.current_token()
+    };
+    session_cookie(context, &candidate)
+}
+
+/// 手机端是否可用身份验证器动态码解锁（桌面端已绑定且未关闭开关）。
+async fn totp_unlock_available() -> bool {
+    tokio::task::spawn_blocking(|| -> napi::Result<bool> {
+        let database_path = crate::storage::ensure_database_file()?;
+        app_lock::remote_unlock_enabled(&database_path)
+    })
+    .await
+    .map(|result| result.unwrap_or(false))
+    .unwrap_or(false)
 }
 
 // ─── API 路由 ──────────────────────────────────────────────────────────────

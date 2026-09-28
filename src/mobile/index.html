@@ -635,7 +635,29 @@
           <span data-i18n="remote.unlock.badge"></span>
         </span>
         <h1 data-i18n="remote.unlock.title"></h1>
-        <p class="unlock-lead" data-i18n="remote.unlock.lead"></p>
+        <p
+          id="unlockLead"
+          class="unlock-lead"
+          data-i18n="remote.unlock.lead"
+        ></p>
+        <div id="unlockModes" class="unlock-modes" role="tablist" hidden>
+          <button
+            id="unlockModeToken"
+            class="unlock-mode is-active"
+            type="button"
+            role="tab"
+            aria-selected="true"
+            data-i18n="remote.unlock.modeToken"
+          ></button>
+          <button
+            id="unlockModeTotp"
+            class="unlock-mode"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            data-i18n="remote.unlock.modeTotp"
+          ></button>
+        </div>
         <form id="unlockForm" class="unlock-form" autocomplete="off">
           <div class="unlock-field">
             <input
@@ -666,7 +688,11 @@
           ></button>
         </form>
         <p id="unlockError" class="unlock-error" role="alert" hidden></p>
-        <p class="unlock-hint" data-i18n="remote.unlock.hint"></p>
+        <p
+          id="unlockHint"
+          class="unlock-hint"
+          data-i18n="remote.unlock.hint"
+        ></p>
         <button
           id="unlockReload"
           class="unlock-reload"

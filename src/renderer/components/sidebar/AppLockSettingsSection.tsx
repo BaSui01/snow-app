@@ -184,6 +184,29 @@ export function AppLockSettingsSection(): React.JSX.Element {
     }
   };
 
+  const handleRemoteUnlockChange = async (next: boolean): Promise<void> => {
+    setBusy(true);
+    setNotice(null);
+    try {
+      await window.snow.setAppLockRemoteUnlock(next);
+      await refresh();
+      setNotice({
+        tone: "success",
+        text: next
+          ? t("settings.appLockRemoteUnlockOn", {
+              defaultValue: "Remote unlock with the authenticator enabled",
+            })
+          : t("settings.appLockRemoteUnlockOff", {
+              defaultValue: "Remote unlock with the authenticator disabled",
+            }),
+      });
+    } catch (error) {
+      fail(error);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleLockNow = async (): Promise<void> => {
     setBusy(true);
     try {
@@ -590,6 +613,29 @@ export function AppLockSettingsSection(): React.JSX.Element {
             </span>
           </div>
 
+          {ready && totpBound && binding === null && (
+            <div className="settings-about-row">
+              <span className="settings-item-description">
+                {t("settings.appLockRemoteUnlock", {
+                  defaultValue:
+                    "Unlock mobile remote control with the authenticator",
+                })}
+              </span>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={state?.remoteUnlock === true}
+                  disabled={busy}
+                  onChange={(event) =>
+                    void handleRemoteUnlockChange(event.target.checked)
+                  }
+                  hidden
+                />
+                <span className="toggle-slider" aria-hidden="true" />
+              </label>
+            </div>
+          )}
+
           {!ready && (
             <div className="settings-update-actions">
               {loading && (
@@ -732,6 +778,14 @@ export function AppLockSettingsSection(): React.JSX.Element {
                   {t("settings.appLockTotpUnbindHint", {
                     defaultValue:
                       "Unbinding requires a code from the authenticator and also clears the PIN, so a forgotten PIN can always be reset here.",
+                  })}
+                </span>
+              )}
+              {ready && totpBound && (
+                <span className="settings-item-description">
+                  {t("settings.appLockRemoteUnlockInfo", {
+                    defaultValue:
+                      "While on, the LAN and public remote pages accept a 6-digit authenticator code in place of the pairing token; while off, only the pairing link or token works.",
                   })}
                 </span>
               )}

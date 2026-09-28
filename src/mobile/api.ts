@@ -334,9 +334,26 @@ export const runCommand = (commandId: string): Promise<{ ok: true }> =>
     body: JSON.stringify({ commandId }),
   });
 
-/** 令牌填写页提交访问令牌；校验通过后服务端写入会话 Cookie。 */
-export const unlock = (token: string): Promise<{ ok: true }> =>
-  request("/api/unlock", { method: "POST", body: JSON.stringify({ token }) });
+/** 手机端可用的解锁方式：totp 为 true 表示桌面端已绑定身份验证器并允许动态码解锁。 */
+export type RemoteUnlockMethods = { totp: boolean };
+
+export const fetchUnlockMethods = (): Promise<RemoteUnlockMethods> =>
+  request("/api/unlock-methods");
+
+/** 令牌填写页提交访问令牌或身份验证器动态码；校验通过后服务端写入会话 Cookie。 */
+export const unlock = (
+  credential:
+    | {
+        token: string;
+      }
+    | {
+        code: string;
+      },
+): Promise<{ ok: true }> =>
+  request("/api/unlock", {
+    method: "POST",
+    body: JSON.stringify(credential),
+  });
 
 export const uploadAttachment = (
   file: File,

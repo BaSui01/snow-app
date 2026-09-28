@@ -501,6 +501,14 @@ export const useChatScrollFollow = ({
     let rafId3 = 0;
 
     const scrollToBottom = (): void => {
+      // 首屏的延后校正仅用于内容初次落地；用户开始阅读后不能再抢视口。
+      if (
+        scrollRef.current !== container ||
+        !isInitialBottomPositioningRef.current ||
+        isUserScrollIntentRef.current
+      ) {
+        return;
+      }
       container.scrollTop = container.scrollHeight;
     };
 
@@ -508,12 +516,19 @@ export const useChatScrollFollow = ({
     isUserScrollIntentRef.current = false;
     shouldStickToBottomRef.current = true;
     setShowScrollToBottom(false);
+    if (autoScrollEnabledRef.current) {
+      followGraceUntilRef.current =
+        performance.now() + RUN_FINISH_FOLLOW_GRACE_MS;
+    }
     scrollToBottom();
     rafId1 = requestAnimationFrame(() => {
       scrollToBottom();
       rafId2 = requestAnimationFrame(() => {
         scrollToBottom();
-        rafId3 = requestAnimationFrame(scrollToBottom);
+        rafId3 = requestAnimationFrame(() => {
+          scrollToBottom();
+          isInitialBottomPositioningRef.current = false;
+        });
       });
     });
 
@@ -523,6 +538,9 @@ export const useChatScrollFollow = ({
       cancelAnimationFrame(rafId1);
       cancelAnimationFrame(rafId2);
       cancelAnimationFrame(rafId3);
+      if (scrollRef.current === container) {
+        isInitialBottomPositioningRef.current = false;
+      }
     };
   }, [
     activeConversationId,
@@ -581,28 +599,28 @@ export const useChatScrollFollow = ({
       // stick 的路径，避免「距底部一点却永不跟随、须手动触底」的死锁。
       if (
         !shouldStickToBottomRef.current &&
+        !isUserScrollIntentRef.current &&
         distanceFromBottom <= STICK_TO_BOTTOM_THRESHOLD &&
         isFollowActive
       ) {
         shouldStickToBottomRef.current = true;
       }
 
-      syncScrollButtonVisibility(container);
-
-      // 钉底仅在初始定位、流式输出及 run 收尾宽限期生效；几何变化一律不改跟随状态
+      // Follow first, then derive visibility from the final geometry: otherwise
+      // each streamed height change briefly mounts the button before pinToBottom
+      // hides it again, restarting its entrance animation every frame.
       if (
         shouldStickToBottomRef.current &&
         (isInitialBottomPositioningRef.current ||
           (autoScrollEnabledRef.current && isFollowActive))
       ) {
-        // 钉底即续期收尾宽限：定稿渲染逐帧晚到也持续被带到底部，
-        // 几何静默或用户上滚（stick=false）后窗口自然失效。
         if (autoScrollEnabledRef.current && isFollowActive) {
           followGraceUntilRef.current =
             performance.now() + RUN_FINISH_FOLLOW_GRACE_MS;
         }
         pinToBottom();
       }
+      syncScrollButtonVisibility(container);
     };
 
     const scheduleResizeCheck = (): void => {
@@ -1008,6 +1026,11 @@ export const useChatScrollFollow = ({
     isInitialBottomPositioningRef.current = false;
     lastUserScrollInputAtRef.current = performance.now();
     lastUserScrollInputDirectionRef.current = direction;
+    // A touch drag or scroll-to-top shortcut has no wheel delta. Relinquish
+    // follow immediately instead of letting the next streamed resize reclaim it.
+    if (direction <= 0 && (scrollRef.current?.scrollTop ?? 0) > 0) {
+      shouldStickToBottomRef.current = false;
+    }
 
     // 用户真实输入立即接管视口：停止在途的底部补间，
     // 避免下一帧写入把视口从用户正在查看的位置拽走。
@@ -1216,12 +1239,32 @@ export const useChatScrollFollow = ({
     isUserScrollIntentRef.current = false;
     lastUserScrollInputAtRef.current = -Infinity;
     lastUserScrollInputDirectionRef.current = 0;
-    isSmoothScrollingToBottomRef.current = true;
     setShowScrollToBottom(false);
+    // 手动吸底后的虚拟节点仍可能在下一帧展开；短暂保留跟随资格，
+    // 但不改变关闭自动滚动时的偏好。
+    if (autoScrollEnabledRef.current) {
+      followGraceUntilRef.current =
+        performance.now() + RUN_FINISH_FOLLOW_GRACE_MS;
+    }
 
     const startTop = container.scrollTop;
+    const initialMaxScrollTop = container.scrollHeight - container.clientHeight;
+    const initialDistance = initialMaxScrollTop - startTop;
+    // Streaming and long/virtualized timelines should never animate through
+    // placeholder expansion. Only a short, settled distance uses a tween.
+    if (
+      isStreamingRef.current ||
+      initialDistance > Math.min(container.clientHeight * 0.75, 480) ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      container.scrollTop = container.scrollHeight;
+      deriveFollowStateFromScroll(container);
+      return;
+    }
+
+    isSmoothScrollingToBottomRef.current = true;
     const startTimeMs = performance.now();
-    const durationMs = 350;
+    const durationMs = 220;
     let lastTop = startTop;
 
     const tick = (nowMs: number): void => {
@@ -1243,12 +1286,23 @@ export const useChatScrollFollow = ({
         return;
       }
 
+      // Content expanding while the tween runs makes a moving target; stop
+      // chasing it frame by frame and let normal bottom-follow take over.
+      if (Math.abs(maxScrollTop - initialMaxScrollTop) > 1) {
+        scrollToBottomAnimRef.current = 0;
+        isSmoothScrollingToBottomRef.current = false;
+        pinToBottom();
+        deriveFollowStateFromScroll(container);
+        return;
+      }
+
       const elapsed = nowMs - startTimeMs;
       const progress = Math.min(1, elapsed / durationMs);
-      // easeOutCubic — decelerates to the target, feels native.
       const eased = 1 - Math.pow(1 - progress, 3);
-      const currentTarget = startTop + (maxScrollTop - startTop) * eased;
-      const nextTop = Math.min(currentTarget, maxScrollTop);
+      const nextTop = Math.min(
+        Math.max(lastTop, startTop + initialDistance * eased),
+        maxScrollTop,
+      );
       container.scrollTop = nextTop;
       lastTop = nextTop;
 

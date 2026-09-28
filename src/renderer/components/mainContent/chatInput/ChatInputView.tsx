@@ -752,7 +752,7 @@ export const ChatInputView = ({
           onWithdraw={handleWithdrawPending}
           onSendNow={handleSendPendingNow}
         />
-        {isStreaming ? (
+        {isStreaming && (
           <div className="stream-metrics-bar">
             <StreamMetrics
               tokenCount={streamTokenCount}
@@ -764,7 +764,7 @@ export const ChatInputView = ({
               onResume={handleResume}
             />
           </div>
-        ) : null}
+        )}
         <TerminalMonitorBar
           monitoredTerminal={monitoredTerminal}
           monitoredLines={monitoredLines}

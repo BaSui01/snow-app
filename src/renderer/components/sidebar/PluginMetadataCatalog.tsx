@@ -1,4 +1,4 @@
-import { Database, Search, ShieldAlert } from "lucide-react";
+import { Database, Globe, Search, ShieldAlert } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { useI18n } from "../../i18n";
@@ -39,7 +39,13 @@ type MetadataDomainRow = {
   granted: boolean | null;
 };
 
-type CatalogTab = "metadata" | "write";
+type CatalogTab = "metadata" | "write" | "net";
+
+type NetCapabilityRow = {
+  id: string;
+  summary: string;
+  params: string[];
+};
 
 export const PluginMetadataCatalog = ({
   plugin,
@@ -95,6 +101,20 @@ export const PluginMetadataCatalog = ({
     );
   }, [locale, plugin]);
 
+  const netRows = useMemo<NetCapabilityRow[]>(
+    () => [
+      {
+        id: "api.net.fetch",
+        summary: t("plugins.net.fetchSummary", {
+          defaultValue:
+            "Sends an external HTTP request (http/https only): follows the app proxy settings, bypasses CORS, and sends no cookies.",
+        }),
+        params: ["url", "method", "headers", "body", "timeoutMs"],
+      },
+    ],
+    [t],
+  );
+
   const grantedCount = rows.filter((row) => row.granted).length;
   const writeGrantedCount = writeRows.filter((row) => row.granted).length;
 
@@ -119,6 +139,14 @@ export const PluginMetadataCatalog = ({
         ),
       )
     : writeRows;
+
+  const matchedNet = keyword
+    ? netRows.filter((row) =>
+        [row.id, row.summary, ...row.params].some((value) =>
+          value.toLowerCase().includes(keyword),
+        ),
+      )
+    : netRows;
 
   const sections = METADATA_DOMAIN_GROUP_IDS.map((group) => ({
     group,
@@ -176,6 +204,18 @@ export const PluginMetadataCatalog = ({
             defaultValue: "Writable",
           })}
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "net"}
+          className={`import-settings-tab ${activeTab === "net" ? "active" : ""}`}
+          onClick={() => setActiveTab("net")}
+        >
+          <Globe size={13} strokeWidth={1.8} />
+          {t("plugins.net.tabNet", {
+            defaultValue: "Network",
+          })}
+        </button>
       </div>
 
       <div className="plugin-metadata-toolbar">
@@ -200,13 +240,21 @@ export const PluginMetadataCatalog = ({
                 values: { matched: matched.length, total: rows.length },
                 defaultValue: "{{matched}} / {{total}} domains",
               })
-            : t("plugins.write.count", {
-                values: {
-                  matched: matchedWrites.length,
-                  total: writeRows.length,
-                },
-                defaultValue: "{{matched}} / {{total}} actions",
-              })}
+            : activeTab === "write"
+              ? t("plugins.write.count", {
+                  values: {
+                    matched: matchedWrites.length,
+                    total: writeRows.length,
+                  },
+                  defaultValue: "{{matched}} / {{total}} actions",
+                })
+              : t("plugins.net.count", {
+                  values: {
+                    matched: matchedNet.length,
+                    total: netRows.length,
+                  },
+                  defaultValue: "{{matched}} / {{total}} capabilities",
+                })}
         </span>
       </div>
 
@@ -357,7 +405,7 @@ export const PluginMetadataCatalog = ({
             })}
           </div>
         </>
-      ) : (
+      ) : activeTab === "write" ? (
         <>
           <div className="plugin-metadata-caption">
             {t("plugins.write.description", {
@@ -455,6 +503,64 @@ export const PluginMetadataCatalog = ({
                 })}
               </div>
             )}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="plugin-metadata-caption">
+            {t("plugins.net.description", {
+              defaultValue:
+                "External HTTP requests a plugin can send through api.net.fetch: forwarded by the main-process network stack, following the app proxy settings, bypassing CORS and sending no cookies; no privacy declaration is required.",
+            })}
+          </div>
+
+          <div className="plugin-metadata-list">
+            {matchedNet.map((row) => (
+              <div className="plugin-metadata-item" key={row.id}>
+                <div className="plugin-metadata-item-head">
+                  <code className="plugin-metadata-id">{row.id}</code>
+                  <div className="plugin-metadata-badges">
+                    <span className="plugin-metadata-badge public">
+                      {t("plugins.net.badge", {
+                        defaultValue: "No declaration",
+                      })}
+                    </span>
+                  </div>
+                </div>
+                {row.summary && (
+                  <div className="plugin-metadata-summary">{row.summary}</div>
+                )}
+                {row.params.length > 0 && (
+                  <div className="plugin-metadata-params">
+                    <span className="plugin-metadata-params-label">
+                      {t("plugins.metadata.params", {
+                        defaultValue: "Parameters",
+                      })}
+                    </span>
+                    {row.params.map((param) => (
+                      <code className="plugin-metadata-param" key={param}>
+                        {param}
+                      </code>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {matchedNet.length === 0 && (
+              <div className="plugin-metadata-empty">
+                {t("plugins.net.empty", {
+                  defaultValue: "No matching network capability",
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="plugin-metadata-hint">
+            {t("plugins.net.docHint", {
+              defaultValue:
+                "Full reference: the built-in plugin development guide ~/.snowapp/docs/en/2-guides/24-plugin-development-and-installation.md",
+            })}
           </div>
         </>
       )}

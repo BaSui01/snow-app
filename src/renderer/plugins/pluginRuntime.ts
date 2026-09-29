@@ -382,6 +382,17 @@ export const createIframePanel = async (params: {
             result = await api.assets.resolve(relativePath);
             break;
           }
+          case "net.fetch": {
+            const url = typeof payload?.url === "string" ? payload.url : "";
+            const options = (payload?.options ?? {}) as {
+              method?: string;
+              headers?: Record<string, string>;
+              body?: string;
+              timeoutMs?: number;
+            };
+            result = await api.net.fetch(url, options);
+            break;
+          }
           default:
             throw new Error(`Unsupported plugin request '${data.type}'`);
         }

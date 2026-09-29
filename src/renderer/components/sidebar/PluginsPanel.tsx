@@ -18,7 +18,7 @@ import {
   METADATA_DOMAINS,
   describeMetadataDomains,
 } from "../../plugins/metadata";
-import type { PluginView, SensitiveScope } from "../../plugins/types";
+import type { PluginView } from "../../plugins/types";
 import { pluginStore, usePluginStore } from "../../plugins/pluginStore";
 import { describeWriteDomains } from "../../plugins/writes";
 import { ConfirmDialog } from "../common/ConfirmDialog";
@@ -26,6 +26,11 @@ import { PluginIcon } from "../common/PluginIcon";
 import { useChatConversationContext } from "../mainContent/chatMessages";
 import { PluginCreateBox } from "./PluginCreateBox";
 import { PluginMetadataCatalog } from "./PluginMetadataCatalog";
+import { PluginPrivacyBadges } from "./PluginPrivacyBadges";
+import {
+  PluginPrivacyDialog,
+  type PluginPrivacyTarget,
+} from "./PluginPrivacyDialog";
 import { PluginScriptsSection } from "./PluginScriptsSection";
 import {
   clientScriptStore,
@@ -53,6 +58,8 @@ export const PluginsPanel = ({
   const [createOpen, setCreateOpen] = useState<boolean | null>(null);
   const [activeTab, setActiveTab] = useState<"list" | "metadata">("list");
   const [listTab, setListTab] = useState<"plugins" | "scripts">("plugins");
+  const [privacyTarget, setPrivacyTarget] =
+    useState<PluginPrivacyTarget | null>(null);
   const clientScripts = useClientScriptStore();
   const [metadataPluginId, setMetadataPluginId] = useState("");
   const metadataPlugin = useMemo(
@@ -77,6 +84,18 @@ export const PluginsPanel = ({
   const clearMetadataPlugin = useCallback(() => {
     setMetadataPluginId("");
   }, []);
+
+  const openPrivacy = useCallback(
+    (plugin: PluginView) => {
+      setPrivacyTarget({
+        name: resolveLocalized(plugin.name, locale) || plugin.pluginId,
+        source: "plugin",
+        scopes: plugin.privacy,
+        note: plugin.privacyNote,
+      });
+    },
+    [locale],
+  );
 
   const handleInstall = useCallback(async () => {
     setIsInstalling(true);
@@ -154,6 +173,10 @@ export const PluginsPanel = ({
   }, [pendingUninstall]);
 
   useEscapeClose(() => {
+    if (privacyTarget) {
+      setPrivacyTarget(null);
+      return;
+    }
     if (pendingUninstall) {
       setPendingUninstall(null);
       return;
@@ -198,25 +221,6 @@ export const PluginsPanel = ({
       }),
     );
   }, [buildFromContent, createRequest, onClose, t]);
-
-  const scopeLabel = (scope: SensitiveScope): string =>
-    t(`plugins.scopes.${scope}`, { defaultValue: scope });
-
-  const renderScopeTags = (plugin: PluginView): React.JSX.Element | null => {
-    if (plugin.privacy.length === 0) {
-      return null;
-    }
-    return (
-      <div className="plugins-privacy-tags">
-        <ShieldAlert size={12} strokeWidth={1.8} />
-        {plugin.privacy.map((scope) => (
-          <span className="plugins-privacy-tag" key={scope}>
-            {scopeLabel(scope)}
-          </span>
-        ))}
-      </div>
-    );
-  };
 
   return (
     <div className="feature-page">
@@ -499,11 +503,18 @@ export const PluginsPanel = ({
                             </div>
                           ) : null}
 
-                          {renderScopeTags(plugin)}
+                          <PluginPrivacyBadges
+                            scopes={plugin.privacy}
+                            onOpen={() => openPrivacy(plugin)}
+                          />
 
                           <button
                             className="plugins-metadata-link"
                             type="button"
+                            title={t("plugins.metadata.openHint", {
+                              defaultValue:
+                                "Open the metadata catalog to compare every domain",
+                            })}
                             onClick={() => openMetadata(plugin)}
                           >
                             <Database size={12} strokeWidth={1.8} />
@@ -521,6 +532,10 @@ export const PluginsPanel = ({
                           <button
                             className="plugins-metadata-link"
                             type="button"
+                            title={t("plugins.write.openHint", {
+                              defaultValue:
+                                "Open the metadata catalog to compare every write action",
+                            })}
                             onClick={() => openMetadata(plugin)}
                           >
                             <ShieldAlert size={12} strokeWidth={1.8} />
@@ -553,7 +568,10 @@ export const PluginsPanel = ({
                   </div>
                 </>
               ) : (
-                <PluginScriptsSection onClose={onClose} />
+                <PluginScriptsSection
+                  onClose={onClose}
+                  onOpenPrivacy={setPrivacyTarget}
+                />
               )}
             </div>
           </>
@@ -564,6 +582,11 @@ export const PluginsPanel = ({
           />
         )}
       </div>
+
+      <PluginPrivacyDialog
+        target={privacyTarget}
+        onClose={() => setPrivacyTarget(null)}
+      />
 
       <ConfirmDialog
         open={pendingUninstall !== null}

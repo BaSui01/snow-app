@@ -5252,8 +5252,6 @@ export const en = {
   "plugins.scripts.badgeSandbox": "Sandboxed",
   "plugins.scripts.badgeUnsafe": "Full permissions",
   "plugins.scripts.badgeGlobal": "Always on",
-  "plugins.scripts.badgePrivacy": "Privacy: {{count}}",
-  "plugins.scripts.badgeFailed": "Errors {{count}}",
   "plugins.scripts.edit": "Edit",
   "plugins.scripts.delete": "Delete",
   "plugins.scripts.deleteTitle": "Delete script",
@@ -5293,6 +5291,26 @@ export const en = {
   "plugins.panel.loadFailed": "Failed to load plugin panel",
   "plugins.panel.entryInvalid":
     "Plugin entry must export a React component as default or a mount(container, api) function",
+  "plugins.privacy.title": "Privacy scopes",
+  "plugins.privacy.viewHint": "View the declared privacy scopes",
+  "plugins.privacy.more": "+{{count}}",
+  "plugins.privacy.close": "Close privacy scopes",
+  "plugins.privacy.caption":
+    "“{{name}}” declares {{count}} sensitive scopes. Reading app metadata (api.metadata) and running write actions (api.write) are allowed only inside these declarations; undeclared sensitive scopes are denied.",
+  "plugins.privacy.empty": "No sensitive scope declared",
+  "plugins.privacy.emptyHint":
+    "Sensitive reads and writes for this target are denied; public domains are unaffected.",
+  "plugins.privacy.readTitle": "Readable metadata",
+  "plugins.privacy.writeTitle": "Writable actions",
+  "plugins.privacy.readCount": "{{count}} readable",
+  "plugins.privacy.writeCount": "{{count}} writable",
+  "plugins.privacy.fieldLevel": "fields: {{fields}}",
+  "plugins.privacy.sourcePlugin":
+    "Declared in the privacy field of plugin.json.",
+  "plugins.privacy.sourceScript":
+    "Declared in the script metadata header (@snow-privacy).",
+  "plugins.privacy.docHint":
+    "Field and action reference: the built-in doc ~/.snowapp/docs/en/3-reference/6-plugin-metadata-domains.md",
   "plugins.scopes.apiKeys": "API keys",
   "plugins.scopes.privacyConfig": "Privacy config",
   "plugins.scopes.systemPrompts": "System prompts",
@@ -5320,8 +5338,55 @@ export const en = {
   "plugins.scopes.storage": "Storage migration and cleanup",
   "plugins.scopes.updater": "App updates",
   "plugins.scopes.toolApproval": "Tool approval rules",
+  "plugins.scopes.desc.apiKeys":
+    "API profile keys (apiKey / visionApiKey), read and write.",
+  "plugins.scopes.desc.privacyConfig":
+    "Privacy filter config, proxy password and theme background fields.",
+  "plugins.scopes.desc.systemPrompts": "Read and maintain system prompts.",
+  "plugins.scopes.desc.customHeaders":
+    "Custom request-header schemes, including header values.",
+  "plugins.scopes.desc.mcpSecrets":
+    "MCP server env vars, headers and URLs, plus MCP tool calls.",
+  "plugins.scopes.desc.subAgents":
+    "Sub-agent config (system prompt and tool list).",
+  "plugins.scopes.desc.personalization":
+    "Global personalization rules (role and rules text).",
+  "plugins.scopes.desc.conversations":
+    "Conversation metadata and messages, plus create / rename / delete / send.",
+  "plugins.scopes.desc.messages":
+    "Conversation message bodies (read-only; declare conversations to write).",
+  "plugins.scopes.desc.memos": "Read and maintain memos.",
+  "plugins.scopes.desc.memory": "Read and maintain project memory entries.",
+  "plugins.scopes.desc.scheduledTasks":
+    "Prompt, pre-script and run history of scheduled tasks.",
+  "plugins.scopes.desc.checkpoints": "Create, restore and delete checkpoints.",
+  "plugins.scopes.desc.logs": "Read app logs and clear log files.",
+  "plugins.scopes.desc.usage": "Read usage statistics and clear usage records.",
+  "plugins.scopes.desc.git":
+    "Git repository info (branches, commits, diffs) and repo / team writes.",
+  "plugins.scopes.desc.ssh": "Manage SSH hosts, credentials and keys.",
+  "plugins.scopes.desc.browserData":
+    "Manage bookmarks, history, cookies, passwords and local browser data.",
+  "plugins.scopes.desc.userscripts":
+    "Userscript list, source, GM values, and install / update / delete / toggle.",
+  "plugins.scopes.desc.remoteControl":
+    "Remote-control configuration and pairing.",
+  "plugins.scopes.desc.plugins":
+    "Other plugins: list, install, replace and uninstall.",
+  "plugins.scopes.desc.terminal":
+    "Run terminal commands on this machine and manage sessions.",
+  "plugins.scopes.desc.filesystem":
+    "Write, move and delete local files or folders.",
+  "plugins.scopes.desc.window":
+    "Minimize, maximize, close, pin and reset the window state.",
+  "plugins.scopes.desc.storage": "Migrate, back up and clean app storage.",
+  "plugins.scopes.desc.updater": "Check, download and install app updates.",
+  "plugins.scopes.desc.toolApproval":
+    "Tool approval rules (no-confirm allow-list) and sensitive commands.",
   "plugins.write.entry": "Write {{granted}}/{{total}}",
   "plugins.write.title": "Writable capabilities",
+  "plugins.write.openHint":
+    "Open the metadata catalog (Writable) to compare every action and its declaration state",
   "plugins.write.description":
     "Write actions a plugin can call through api.write; sensitive ones require the same privacy declaration as reads.",
   "plugins.write.scopeHint":
@@ -5334,6 +5399,8 @@ export const en = {
   "plugins.write.pluginContext":
     "{{name}}: {{granted}} / {{total}} write actions declared",
   "plugins.metadata.action": "Metadata catalog",
+  "plugins.metadata.openHint":
+    "Open the metadata catalog (Reading) to compare every domain and its declaration state",
   "plugins.metadata.tabMetadata": "Reading",
   "plugins.metadata.contextClear": "Show all domains",
   "plugins.metadata.description":
@@ -5361,6 +5428,16 @@ export const en = {
   "plugins.metadata.groups.project": "Projects and code",
   "plugins.metadata.groups.connectivity": "Connections and assets",
   "plugins.metadata.groups.other": "Other",
+  "plugins.net.tabNet": "Network",
+  "plugins.net.description":
+    "External HTTP requests a plugin can send through api.net.fetch: forwarded by the main-process network stack, following the app proxy settings, bypassing CORS and sending no cookies; no privacy declaration is required.",
+  "plugins.net.count": "{{matched}} / {{total}} capabilities",
+  "plugins.net.badge": "No declaration",
+  "plugins.net.fetchSummary":
+    "Sends an external HTTP request (http/https only): follows the app proxy settings, bypasses CORS, and sends no cookies. Timeout defaults to 30 s (max 120 s), response body limit 5 MB; network failures never throw and are reported in the error field.",
+  "plugins.net.empty": "No matching network capability",
+  "plugins.net.docHint":
+    "Full reference: the built-in plugin development guide ~/.snowapp/docs/en/2-guides/24-plugin-development-and-installation.md",
   "chatCommand.customCommandsDescription":
     "Manage custom commands (Prompt / Bash)",
   "chatCommand.customPromptType": "Prompt",

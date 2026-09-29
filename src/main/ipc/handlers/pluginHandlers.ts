@@ -1,6 +1,19 @@
-import { BrowserWindow, dialog, ipcMain } from "electron";
+import { BrowserWindow, dialog, ipcMain, net } from "electron";
 import { extname } from "node:path";
 import type { NativeBridge, PluginRecord } from "../../native/types";
+
+const PLUGIN_HTTP_DEFAULT_TIMEOUT_MS = 30000;
+const PLUGIN_HTTP_MAX_TIMEOUT_MS = 120000;
+const PLUGIN_HTTP_MAX_BYTES = 5 * 1024 * 1024;
+const PLUGIN_HTTP_METHODS = new Set([
+  "GET",
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+  "HEAD",
+  "OPTIONS",
+]);
 
 const MIME_TYPES: Record<string, string> = {
   ".png": "image/png",
@@ -142,7 +155,12 @@ export const registerPluginHandlers = (native: NativeBridge): void => {
 
   ipcMain.handle(
     "plugins:set-value",
-    (_event, pluginId: unknown, key: unknown, value: unknown): Promise<void> => {
+    (
+      _event,
+      pluginId: unknown,
+      key: unknown,
+      value: unknown,
+    ): Promise<void> => {
       if (!isNonEmptyString(pluginId) || !isNonEmptyString(key)) {
         throw new Error("Plugin id and key are required");
       }
@@ -161,6 +179,122 @@ export const registerPluginHandlers = (native: NativeBridge): void => {
         throw new Error("Plugin id and key are required");
       }
       return native.deletePluginValue(pluginId.trim(), key.trim());
+    },
+  );
+
+  ipcMain.handle(
+    "plugins:http-request",
+    async (
+      _event,
+      payload: unknown,
+    ): Promise<{
+      ok: boolean;
+      status: number;
+      statusText: string;
+      headers: Record<string, string>;
+      body: string;
+      url: string;
+      error: string | null;
+    }> => {
+      if (payload === null || typeof payload !== "object") {
+        throw new Error("Invalid plugin http request payload");
+      }
+      const { url, method, headers, body, timeoutMs } = payload as {
+        url?: unknown;
+        method?: unknown;
+        headers?: unknown;
+        body?: unknown;
+        timeoutMs?: unknown;
+      };
+      if (!isNonEmptyString(url) || !/^https?:\/\//i.test(url)) {
+        throw new Error("Plugin http request url must be http(s)");
+      }
+      const requestMethod = (
+        isNonEmptyString(method) ? method : "GET"
+      ).toUpperCase();
+      if (!PLUGIN_HTTP_METHODS.has(requestMethod)) {
+        throw new Error(`Unsupported http method '${requestMethod}'`);
+      }
+      const timeout =
+        typeof timeoutMs === "number" && Number.isFinite(timeoutMs)
+          ? Math.min(
+              Math.max(Math.trunc(timeoutMs), 1000),
+              PLUGIN_HTTP_MAX_TIMEOUT_MS,
+            )
+          : PLUGIN_HTTP_DEFAULT_TIMEOUT_MS;
+      try {
+        const response = await net.fetch(url, {
+          method: requestMethod,
+          headers:
+            headers !== null && typeof headers === "object"
+              ? (headers as Record<string, string>)
+              : undefined,
+          body:
+            isNonEmptyString(body) &&
+            requestMethod !== "GET" &&
+            requestMethod !== "HEAD"
+              ? body
+              : undefined,
+          redirect: "follow",
+          credentials: "omit",
+          signal: AbortSignal.timeout(timeout),
+        });
+        const responseHeaders: Record<string, string> = {};
+        response.headers.forEach((value, key) => {
+          responseHeaders[key] = value;
+        });
+        const declaredLength = Number(
+          response.headers.get("content-length") ?? 0,
+        );
+        if (declaredLength > PLUGIN_HTTP_MAX_BYTES) {
+          return {
+            ok: false,
+            status: response.status,
+            statusText: response.statusText,
+            headers: responseHeaders,
+            body: "",
+            url: response.url,
+            error: "Response body exceeds the 5MB limit",
+          };
+        }
+        const buffer = await response.arrayBuffer();
+        if (buffer.byteLength > PLUGIN_HTTP_MAX_BYTES) {
+          return {
+            ok: false,
+            status: response.status,
+            statusText: response.statusText,
+            headers: responseHeaders,
+            body: "",
+            url: response.url,
+            error: "Response body exceeds the 5MB limit",
+          };
+        }
+        return {
+          ok: response.ok,
+          status: response.status,
+          statusText: response.statusText,
+          headers: responseHeaders,
+          body: new TextDecoder().decode(buffer),
+          url: response.url,
+          error: null,
+        };
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.name === "TimeoutError"
+              ? `Request timed out after ${timeout}ms`
+              : error.message
+            : String(error);
+        return {
+          ok: false,
+          status: 0,
+          statusText: "",
+          headers: {},
+          body: "",
+          url,
+          error: message,
+        };
+      }
     },
   );
 };

@@ -502,6 +502,41 @@ export const useChatInputController = ({
       return;
     }
 
+    // 程序化自动发送（buildFromContent 排队的一次性提示词）：只发送，绝不写进
+    // 输入框——写进去会在输入区实例重建时被卸载快照存成草稿，又被新实例的草稿
+    // 恢复逻辑写回输入框（表现为消息发出后提示词仍留在输入框）。
+    if (autoSendToken > 0) {
+      const autoSendTextarea = textareaRef.current;
+      if (autoSendTextarea) {
+        autoSendTextarea.innerHTML = "";
+        autoSendTextarea.dataset.empty = "true";
+        adjustHeight();
+      }
+      setValue("");
+      clearInputDraft?.(conversationId);
+      requestAnimationFrame(() => {
+        const message = draftToRestore.trim();
+        if (message) {
+          // Scheduled-task runs may carry one-shot profile/model/title-model
+          // overrides. The resolver never borrows selectedModel when a task
+          // names a profile, and this existing callback remains the sole
+          // consumption point so snapshots cannot leak into manual sends.
+          onSend?.(
+            message,
+            resolveAutoSendOptions({
+              autoSendOverride,
+              apiConfigs,
+              selectedModel,
+              selectedApiProfile,
+            }),
+          );
+        }
+        onAutoSendOverrideConsumed?.();
+      });
+      onDraftRestored?.();
+      return;
+    }
+
     setValue(draftToRestore);
 
     const textarea = textareaRef.current;
@@ -522,35 +557,6 @@ export const useChatInputController = ({
       requestAnimationFrame(() => {
         adjustHeight();
         focusEditableAtEnd(textarea);
-
-        // If autoSendToken is non-zero, this draft was queued by
-        // buildFromContent — automatically send it right after restore.
-        if (autoSendToken > 0) {
-          const message = draftToRestore.trim();
-          if (message) {
-            // Scheduled-task runs may carry one-shot profile/model/title-model
-            // overrides. The resolver never borrows selectedModel when a task
-            // names a profile, and this existing callback remains the sole
-            // consumption point so snapshots cannot leak into manual sends.
-            onSend?.(
-              message,
-              resolveAutoSendOptions({
-                autoSendOverride,
-                apiConfigs,
-                selectedModel,
-                selectedApiProfile,
-              }),
-            );
-          }
-          setValue("");
-          // The queued content was sent; do not keep it as a per-conversation
-          // draft (otherwise it would reappear after switching away/back).
-          clearInputDraft?.(conversationId);
-          textarea.innerHTML = "";
-          textarea.dataset.empty = "true";
-          adjustHeight();
-          onAutoSendOverrideConsumed?.();
-        }
       });
     }
 

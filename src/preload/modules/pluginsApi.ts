@@ -1,5 +1,10 @@
 import { ipcRenderer } from "electron";
-import type { PluginRecord, PluginStorageValue } from "../types/plugins";
+import type {
+  PluginHttpRequestOptions,
+  PluginHttpResponse,
+  PluginRecord,
+  PluginStorageValue,
+} from "../types/plugins";
 
 export const pluginsApi = {
   /** 列出全部已安装插件。 */
@@ -45,6 +50,10 @@ export const pluginsApi = {
   /** 删除插件的持久化 KV 数据。 */
   deletePluginValue: (pluginId: string, key: string): Promise<void> =>
     ipcRenderer.invoke("plugins:delete-value", pluginId, key),
+  requestPluginHttp: (
+    options: PluginHttpRequestOptions,
+  ): Promise<PluginHttpResponse> =>
+    ipcRenderer.invoke("plugins:http-request", options),
   /** 插件集合被 AI 侧改动（config-set / config-delete 的 plugins 作用域）后由主进程广播。 */
   onPluginsChanged: (callback: () => void): (() => void) => {
     const handler = (): void => {

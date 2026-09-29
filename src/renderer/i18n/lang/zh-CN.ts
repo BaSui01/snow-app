@@ -4951,8 +4951,6 @@ export const zhCN = {
   "plugins.scripts.badgeSandbox": "沙箱档",
   "plugins.scripts.badgeUnsafe": "完全权限",
   "plugins.scripts.badgeGlobal": "常驻",
-  "plugins.scripts.badgePrivacy": "隐私域 {{count}}",
-  "plugins.scripts.badgeFailed": "错误 {{count}} 次",
   "plugins.scripts.edit": "编辑",
   "plugins.scripts.delete": "删除",
   "plugins.scripts.deleteTitle": "删除脚本",
@@ -4989,6 +4987,24 @@ export const zhCN = {
   "plugins.panel.loadFailed": "插件面板加载失败",
   "plugins.panel.entryInvalid":
     "插件入口必须默认导出 React 组件，或导出 mount(container, api) 函数",
+  "plugins.privacy.title": "隐私域声明",
+  "plugins.privacy.viewHint": "查看隐私域声明详情",
+  "plugins.privacy.more": "+{{count}}",
+  "plugins.privacy.close": "关闭隐私域详情",
+  "plugins.privacy.caption":
+    "「{{name}}」声明了 {{count}} 个敏感域。读取应用元数据（api.metadata）与执行写操作（api.write）都只在这些声明内放行，未声明的敏感域会被拒绝。",
+  "plugins.privacy.empty": "未声明任何敏感域",
+  "plugins.privacy.emptyHint":
+    "该目标的敏感数据读写都会被拒绝，公开域不受影响。",
+  "plugins.privacy.readTitle": "可读元数据域",
+  "plugins.privacy.writeTitle": "可写能力",
+  "plugins.privacy.readCount": "可读 {{count}} 个域",
+  "plugins.privacy.writeCount": "可写 {{count}} 个动作",
+  "plugins.privacy.fieldLevel": "仅字段：{{fields}}",
+  "plugins.privacy.sourcePlugin": "声明位置：plugin.json 的 privacy 字段。",
+  "plugins.privacy.sourceScript": "声明位置：脚本元数据头的 @snow-privacy。",
+  "plugins.privacy.docHint":
+    "各域字段与写动作清单见内置文档 ~/.snowapp/docs/zh-CN/3-参考手册/6-插件元数据域参考.md",
   "plugins.scopes.apiKeys": "API 密钥",
   "plugins.scopes.privacyConfig": "隐私配置",
   "plugins.scopes.systemPrompts": "系统提示词",
@@ -5016,8 +5032,47 @@ export const zhCN = {
   "plugins.scopes.storage": "存储迁移与清理",
   "plugins.scopes.updater": "应用更新",
   "plugins.scopes.toolApproval": "工具授权规则",
+  "plugins.scopes.desc.apiKeys":
+    "读写 API 档案的密钥（apiKey / visionApiKey）。",
+  "plugins.scopes.desc.privacyConfig":
+    "隐私过滤配置、代理密码，以及主题背景等字段。",
+  "plugins.scopes.desc.systemPrompts": "系统提示词的读取与维护。",
+  "plugins.scopes.desc.customHeaders": "自定义请求头方案（含标头取值）。",
+  "plugins.scopes.desc.mcpSecrets":
+    "MCP 服务器的环境变量、请求头与地址，以及 MCP 工具调用。",
+  "plugins.scopes.desc.subAgents": "子代理配置（系统提示词与工具清单）。",
+  "plugins.scopes.desc.personalization": "个性化全局规则（角色与规则文本）。",
+  "plugins.scopes.desc.conversations":
+    "会话元数据、会话消息，以及新建 / 重命名 / 删除 / 发送消息等会话操作。",
+  "plugins.scopes.desc.messages":
+    "会话消息正文（只读；写入消息请声明 conversations）。",
+  "plugins.scopes.desc.memos": "备忘录内容的读取与维护。",
+  "plugins.scopes.desc.memory": "项目记忆条目的读取与维护。",
+  "plugins.scopes.desc.scheduledTasks":
+    "定时任务的提示词、预置脚本与执行记录。",
+  "plugins.scopes.desc.checkpoints": "检查点快照的创建、恢复与删除。",
+  "plugins.scopes.desc.logs": "系统日志读取与日志清理。",
+  "plugins.scopes.desc.usage": "用量统计的读取与清理。",
+  "plugins.scopes.desc.git":
+    "Git 仓库信息（分支、提交、差异）与仓库 / 团队写操作。",
+  "plugins.scopes.desc.ssh": "SSH 主机、凭据与密钥管理。",
+  "plugins.scopes.desc.browserData":
+    "浏览器书签、历史、Cookie、密码与本地浏览器数据的管理。",
+  "plugins.scopes.desc.userscripts":
+    "用户脚本的清单、源码、GM 值，以及安装 / 更新 / 删除 / 启停。",
+  "plugins.scopes.desc.remoteControl": "手机远程控制的配置与配对管理。",
+  "plugins.scopes.desc.plugins": "其他插件的清单、安装、替换与卸载。",
+  "plugins.scopes.desc.terminal": "在本机执行终端命令与管理终端会话。",
+  "plugins.scopes.desc.filesystem": "写入、移动与删除本机文件或目录。",
+  "plugins.scopes.desc.window": "窗口的最小化、最大化、关闭、置顶与状态重置。",
+  "plugins.scopes.desc.storage": "应用存储位置的迁移、备份与清理。",
+  "plugins.scopes.desc.updater": "应用更新的检查、下载与安装。",
+  "plugins.scopes.desc.toolApproval":
+    "工具授权规则（免确认白名单）与敏感命令配置。",
   "plugins.write.entry": "可写能力 {{granted}}/{{total}}",
   "plugins.write.title": "可写能力",
+  "plugins.write.openHint":
+    "在「元数据清单 → 可写能力」中查看全部动作与声明状态",
   "plugins.write.description":
     "插件可通过 api.write 调用的写操作；敏感写操作与读取一样需要隐私声明。",
   "plugins.write.scopeHint":
@@ -5030,6 +5085,8 @@ export const zhCN = {
   "plugins.write.pluginContext":
     "{{name}}：已声明 {{granted}} / {{total}} 个写动作",
   "plugins.metadata.action": "元数据清单",
+  "plugins.metadata.openHint":
+    "在「元数据清单 → 可读元数据」中查看全部域与声明状态",
   "plugins.metadata.tabMetadata": "可读元数据",
   "plugins.metadata.contextClear": "查看全部域",
   "plugins.metadata.description":
@@ -5057,6 +5114,16 @@ export const zhCN = {
   "plugins.metadata.groups.project": "项目与代码",
   "plugins.metadata.groups.connectivity": "连接与资产",
   "plugins.metadata.groups.other": "其他",
+  "plugins.net.tabNet": "网络能力",
+  "plugins.net.description":
+    "插件通过 api.net.fetch 发起外部 HTTP 请求的能力：由主进程网络栈转发，跟随应用代理设置、无 CORS 限制、不携带 Cookie，无需隐私声明。",
+  "plugins.net.count": "{{matched}} / {{total}} 个能力",
+  "plugins.net.badge": "无需声明",
+  "plugins.net.fetchSummary":
+    "发起外部 HTTP 请求（仅 http/https）：跟随应用代理设置、无 CORS 限制、不携带 Cookie。超时默认 30 秒（上限 120 秒），响应体上限 5MB；网络层失败不抛异常，以结果里的 error 字段返回。",
+  "plugins.net.empty": "没有匹配的网络能力",
+  "plugins.net.docHint":
+    "完整说明见内置文档 ~/.snowapp/docs/zh-CN/2-使用指南/24-插件开发与安装.md",
   "chatCommand.customCommandsDescription": "维护自定义指令（Prompt / Bash）",
   "chatCommand.customPromptType": "Prompt",
   "chatCommand.customBashType": "Bash",

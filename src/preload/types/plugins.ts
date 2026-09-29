@@ -38,3 +38,21 @@ export type PluginStorageValue = {
   key: string;
   value: string;
 };
+
+export type PluginHttpRequestOptions = {
+  url: string;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+  timeoutMs?: number;
+};
+
+export type PluginHttpResponse = {
+  ok: boolean;
+  status: number;
+  statusText: string;
+  headers: Record<string, string>;
+  body: string;
+  url: string;
+  error: string | null;
+};

@@ -141,6 +141,11 @@
         return request("assets.resolve", { path: relativePath });
       },
     },
+    net: {
+      fetch: function (url, options) {
+        return request("net.fetch", { url: url, options: options });
+      },
+    },
     on: function (event, handler) {
       var handlers = listeners.get(event) || [];
       handlers.push(handler);

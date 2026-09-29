@@ -297,7 +297,7 @@ Application data read/write shares the panel plugin engine (`api.metadata` / `ap
 | `snow.write.domains()`                                              | Lists write domains, actions, and authorization state                                                                                                                                                                |
 | `snow.write.<domain>.<action>(params)`                              | Write sugar, equivalent to `snow.write.run("<domain>.<action>", params)`, for example `snow.write.memos.create({ directoryId, content })`                                                                            |
 
-The domain and action lists plus the `scope` map live in [the plugin metadata domain reference](../3-reference/6-plugin-metadata-domains.md); when a sensitive scope is not declared in `@snow-privacy`, reads land in `denied` and writes return `write-declaration-missing` — scripts can audit themselves with `snow.metadata.domains()` / `snow.write.domains()`.
+The domain and action lists plus the `scope` map live in [the plugin metadata domain reference](../3-reference/6-plugin-metadata-domains.md); when a script declares `@snow-privacy`, its row under **Plugin list → Script plugins** lists those scopes as amber badges - click one to open the "Privacy scopes" dialog with each scope's purpose and the readable / writable surface it unlocks. When a sensitive scope is not declared in `@snow-privacy`, reads land in `denied` and writes return `write-declaration-missing` — scripts can audit themselves with `snow.metadata.domains()` / `snow.write.domains()`.
 
 ### Stable contract: anchors and slots
 

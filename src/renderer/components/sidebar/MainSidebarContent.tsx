@@ -14,6 +14,10 @@ import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "../../i18n";
 import { pluginStore, usePluginStore } from "../../plugins/pluginStore";
 import { runtimeSnapshot } from "../../plugins/runtimeSnapshot";
+import {
+  clientScriptStore,
+  useClientScriptStore,
+} from "../../userscripts/clientScriptStore";
 import { useChatConversationContext } from "../mainContent/chatMessages";
 import { shortcutEvents } from "../shortcutEvents";
 import { APP_CONTROL_MEMO_CREATED_EVENT } from "../../hooks/useAppControl";
@@ -77,9 +81,14 @@ export function MainSidebarContent({
   const activeDirectoryId = activeDirectory?.directoryId ?? "";
 
   const pluginState = usePluginStore();
+  const clientScriptState = useClientScriptStore();
+  const enabledPluginCount =
+    pluginState.plugins.filter((item) => item.enabled).length +
+    clientScriptState.scripts.filter((item) => item.enabled).length;
 
   useEffect(() => {
     void pluginStore.ensureLoaded();
+    void clientScriptStore.ensureLoaded();
   }, []);
 
   // 团队协作入口：仅在当前目录为 Git 仓库且团队协作开关开启时展示
@@ -397,10 +406,8 @@ export function MainSidebarContent({
         >
           <Puzzle size={16} strokeWidth={1.8} />
           <span>{t("plugins.sidebarEntry", { defaultValue: "Plugins" })}</span>
-          {pluginState.plugins.length > 0 && (
-            <span className="sidebar-memory-badge">
-              {pluginState.plugins.length}
-            </span>
+          {enabledPluginCount > 0 && (
+            <span className="sidebar-memory-badge">{enabledPluginCount}</span>
           )}
         </button>
         <div

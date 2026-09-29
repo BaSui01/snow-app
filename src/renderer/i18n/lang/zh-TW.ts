@@ -4961,8 +4961,6 @@ export const zhTW = {
   "plugins.scripts.badgeSandbox": "沙箱模式",
   "plugins.scripts.badgeUnsafe": "完整權限",
   "plugins.scripts.badgeGlobal": "常駐",
-  "plugins.scripts.badgePrivacy": "隱私域 {{count}}",
-  "plugins.scripts.badgeFailed": "錯誤 {{count}} 次",
   "plugins.scripts.edit": "編輯",
   "plugins.scripts.delete": "刪除",
   "plugins.scripts.deleteTitle": "刪除腳本",
@@ -4999,6 +4997,24 @@ export const zhTW = {
   "plugins.panel.loadFailed": "外掛面板載入失敗",
   "plugins.panel.entryInvalid":
     "外掛入口必須預設匯出 React 元件，或匯出 mount(container, api) 函式",
+  "plugins.privacy.title": "隱私域宣告",
+  "plugins.privacy.viewHint": "檢視隱私域宣告詳情",
+  "plugins.privacy.more": "+{{count}}",
+  "plugins.privacy.close": "關閉隱私域詳情",
+  "plugins.privacy.caption":
+    "「{{name}}」宣告了 {{count}} 個敏感域。讀取應用程式中繼資料（api.metadata）與執行寫入操作（api.write）都只在這些宣告內放行，未宣告的敏感域會被拒絕。",
+  "plugins.privacy.empty": "未宣告任何敏感域",
+  "plugins.privacy.emptyHint":
+    "該目標的敏感資料讀寫都會被拒絕，公開域不受影響。",
+  "plugins.privacy.readTitle": "可讀中繼資料域",
+  "plugins.privacy.writeTitle": "可寫能力",
+  "plugins.privacy.readCount": "可讀 {{count}} 個域",
+  "plugins.privacy.writeCount": "可寫 {{count}} 個動作",
+  "plugins.privacy.fieldLevel": "僅欄位：{{fields}}",
+  "plugins.privacy.sourcePlugin": "宣告位置：plugin.json 的 privacy 欄位。",
+  "plugins.privacy.sourceScript": "宣告位置：腳本標頭的 @snow-privacy。",
+  "plugins.privacy.docHint":
+    "欄位與動作清單見內建文件 ~/.snowapp/docs/zh-CN/3-参考手册/6-插件元数据域参考.md",
   "plugins.scopes.apiKeys": "API 金鑰",
   "plugins.scopes.privacyConfig": "隱私設定",
   "plugins.scopes.systemPrompts": "系統提示詞",
@@ -5026,8 +5042,47 @@ export const zhTW = {
   "plugins.scopes.storage": "儲存遷移與清理",
   "plugins.scopes.updater": "應用程式更新",
   "plugins.scopes.toolApproval": "工具授權規則",
+  "plugins.scopes.desc.apiKeys":
+    "讀寫 API 設定檔的金鑰（apiKey / visionApiKey）。",
+  "plugins.scopes.desc.privacyConfig":
+    "隱私過濾設定、代理密碼，以及主題背景等欄位。",
+  "plugins.scopes.desc.systemPrompts": "系統提示詞的讀取與維護。",
+  "plugins.scopes.desc.customHeaders": "自訂請求標頭方案（含標頭值）。",
+  "plugins.scopes.desc.mcpSecrets":
+    "MCP 伺服器的環境變數、請求標頭與位址，以及 MCP 工具呼叫。",
+  "plugins.scopes.desc.subAgents": "子代理設定（系統提示詞與工具清單）。",
+  "plugins.scopes.desc.personalization": "個人化全域規則（角色與規則文字）。",
+  "plugins.scopes.desc.conversations":
+    "工作階段中繼資料、工作階段訊息，以及新增 / 重新命名 / 刪除 / 傳送訊息等工作階段操作。",
+  "plugins.scopes.desc.messages":
+    "工作階段訊息內容（唯讀；寫入訊息請宣告 conversations）。",
+  "plugins.scopes.desc.memos": "備忘錄內容的讀取與維護。",
+  "plugins.scopes.desc.memory": "專案記憶項目的讀取與維護。",
+  "plugins.scopes.desc.scheduledTasks":
+    "排程任務的提示詞、預置指令碼與執行記錄。",
+  "plugins.scopes.desc.checkpoints": "檢查點快照的建立、還原與刪除。",
+  "plugins.scopes.desc.logs": "系統日誌讀取與日誌清理。",
+  "plugins.scopes.desc.usage": "用量統計的讀取與清理。",
+  "plugins.scopes.desc.git":
+    "Git 儲存庫資訊（分支、提交、差異）與儲存庫 / 團隊寫入操作。",
+  "plugins.scopes.desc.ssh": "SSH 主機、憑證與金鑰管理。",
+  "plugins.scopes.desc.browserData":
+    "瀏覽器書籤、歷史記錄、Cookie、密碼與本機瀏覽器資料的管理。",
+  "plugins.scopes.desc.userscripts":
+    "使用者腳本清單、原始碼、GM 值，以及安裝 / 更新 / 刪除 / 啟停。",
+  "plugins.scopes.desc.remoteControl": "手機遠端控制的設定與配對管理。",
+  "plugins.scopes.desc.plugins": "其他外掛的清單、安裝、替換與解除安裝。",
+  "plugins.scopes.desc.terminal": "在本機執行終端命令與管理終端工作階段。",
+  "plugins.scopes.desc.filesystem": "寫入、移動與刪除本機檔案或目錄。",
+  "plugins.scopes.desc.window": "視窗的最小化、最大化、關閉、置頂與狀態重設。",
+  "plugins.scopes.desc.storage": "應用程式儲存位置的遷移、備份與清理。",
+  "plugins.scopes.desc.updater": "應用程式更新的檢查、下載與安裝。",
+  "plugins.scopes.desc.toolApproval":
+    "工具授權規則（免確認白名單）與敏感命令設定。",
   "plugins.write.entry": "可寫能力 {{granted}}/{{total}}",
   "plugins.write.title": "可寫能力",
+  "plugins.write.openHint":
+    "在「中繼資料清單 → 可寫能力」中檢視全部動作與宣告狀態",
   "plugins.write.description":
     "外掛可透過 api.write 呼叫的寫入操作；敏感寫入與讀取一樣需要隱私宣告。",
   "plugins.write.scopeHint":
@@ -5040,6 +5095,8 @@ export const zhTW = {
   "plugins.write.pluginContext":
     "{{name}}：已宣告 {{granted}} / {{total}} 個寫入動作",
   "plugins.metadata.action": "中繼資料清單",
+  "plugins.metadata.openHint":
+    "在「中繼資料清單 → 可讀中繼資料」中檢視全部域與宣告狀態",
   "plugins.metadata.tabMetadata": "可讀中繼資料",
   "plugins.metadata.contextClear": "檢視全部域",
   "plugins.metadata.description":
@@ -5067,6 +5124,16 @@ export const zhTW = {
   "plugins.metadata.groups.project": "專案與程式碼",
   "plugins.metadata.groups.connectivity": "連線與資產",
   "plugins.metadata.groups.other": "其他",
+  "plugins.net.tabNet": "網路能力",
+  "plugins.net.description":
+    "外掛透過 api.net.fetch 發起外部 HTTP 請求的能力：由主行程網路堆疊轉發，跟隨應用代理設定、無 CORS 限制、不攜帶 Cookie，無需隱私宣告。",
+  "plugins.net.count": "{{matched}} / {{total}} 個能力",
+  "plugins.net.badge": "無需宣告",
+  "plugins.net.fetchSummary":
+    "發起外部 HTTP 請求（僅 http/https）：跟隨應用代理設定、無 CORS 限制、不攜帶 Cookie。逾時預設 30 秒（上限 120 秒），回應主體上限 5MB；網路層失敗不拋例外，以結果中的 error 欄位回傳。",
+  "plugins.net.empty": "沒有符合的網路能力",
+  "plugins.net.docHint":
+    "完整說明見內建文件 ~/.snowapp/docs/zh-CN/2-使用指南/24-插件开发与安装.md",
   "chatCommand.customCommandsDescription": "維護自訂指令（Prompt / Bash）",
   "chatCommand.customPromptType": "Prompt",
   "chatCommand.customBashType": "Bash",

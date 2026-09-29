@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { UserscriptRecord } from "../../../preload/types/userscripts";
 import { useI18n } from "../../i18n";
+import { isSensitiveScope } from "../../plugins/types";
 import {
   clientScriptStore,
   useClientScriptStore,
@@ -20,6 +21,8 @@ import { scriptEditorStore } from "../../userscripts/scriptEditorStore";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { useChatConversationContext } from "../mainContent/chatMessages";
 import { PluginCreateBox } from "./PluginCreateBox";
+import { PluginPrivacyBadges } from "./PluginPrivacyBadges";
+import type { PluginPrivacyTarget } from "./PluginPrivacyDialog";
 
 /** 新建脚本时的最小模板：声明客户端作用域并给出锚点 / 插槽用法示例。 */
 const CLIENT_SCRIPT_TEMPLATE = `// ==UserScript==
@@ -74,11 +77,13 @@ snow.onCleanup(() => observer.disconnect());
 
 type PluginScriptsSectionProps = {
   onClose: () => void;
+  onOpenPrivacy: (target: PluginPrivacyTarget) => void;
 };
 
 /** 「脚本插件」标签页：管理注入桌面窗口的客户端脚本（不改动浏览器油猴脚本）。 */
 export const PluginScriptsSection = ({
   onClose,
+  onOpenPrivacy,
 }: PluginScriptsSectionProps): React.JSX.Element => {
   const { t } = useI18n();
   const state = useClientScriptStore();
@@ -402,6 +407,7 @@ export const PluginScriptsSection = ({
           const isBusy = busyScriptId === script.scriptId;
           const failure = state.failures[script.scriptId];
           const commands = commandsByScript.get(script.scriptId) ?? [];
+          const privacyScopes = script.privacy.filter(isSensitiveScope);
           const summary = [
             ...script.views.map((view) =>
               t("plugins.scripts.viewBadge", {
@@ -451,17 +457,6 @@ export const PluginScriptsSection = ({
                         })}
                       </span>
                     )}
-                    {script.privacy.length > 0 && (
-                      <span
-                        className="plugin-script-badge"
-                        title={script.privacy.join(", ")}
-                      >
-                        {t("plugins.scripts.badgePrivacy", {
-                          defaultValue: "Privacy: {{count}}",
-                          values: { count: script.privacy.length },
-                        })}
-                      </span>
-                    )}
                     {summary.map((item) => (
                       <span className="plugin-script-badge" key={item}>
                         {item}
@@ -476,6 +471,17 @@ export const PluginScriptsSection = ({
                       </span>
                     )}
                   </div>
+                  <PluginPrivacyBadges
+                    scopes={privacyScopes}
+                    onOpen={() =>
+                      onOpenPrivacy({
+                        name: script.name,
+                        source: "script",
+                        scopes: privacyScopes,
+                        note: "",
+                      })
+                    }
+                  />
                 </div>
                 <div className="plugins-item-actions">
                   <button

@@ -45,6 +45,30 @@ export type PluginStorageApi = {
   setJson: (key: string, value: unknown) => Promise<void>;
 };
 
+export type PluginNetRequestOptions = {
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+  timeoutMs?: number;
+};
+
+export type PluginNetResponse = {
+  ok: boolean;
+  status: number;
+  statusText: string;
+  headers: Record<string, string>;
+  body: string;
+  url: string;
+  error: string | null;
+};
+
+export type PluginNetApi = {
+  fetch: (
+    url: string,
+    options?: PluginNetRequestOptions,
+  ) => Promise<PluginNetResponse>;
+};
+
 export type PluginWriteApi = {
   run: (
     actionId: string,
@@ -63,6 +87,7 @@ export type PluginRuntimeApi = {
   metadata: PluginMetadataApi;
   write: PluginWriteApi;
   storage: PluginStorageApi;
+  net: PluginNetApi;
   assets: { resolve: (relativePath: string) => Promise<string | null> };
   ui: {
     React: typeof ReactNamespace;
@@ -179,6 +204,10 @@ export const createPluginApi = async (params: {
     assets: {
       resolve: (relativePath) =>
         window.snow.readPluginAsset(plugin.pluginId, relativePath),
+    },
+    net: {
+      fetch: (url, options) =>
+        window.snow.requestPluginHttp({ ...(options ?? {}), url }),
     },
     ui: {
       React: ReactNamespace,

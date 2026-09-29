@@ -48642,6 +48642,18 @@ pre.file-viewer-code {
   color: var(--accent-color);
 }
 
+.plugin-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  line-height: 0;
+}
+
+img.plugin-icon {
+  display: block;
+}
+
 .plugins-list {
   display: flex;
   min-height: 0;

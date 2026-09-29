@@ -97,6 +97,7 @@ pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<(
     migrate_project_memories_response_id(connection)?;
     migrate_workspace_directory_path_health(connection)?;
     migrate_userscripts_client_fields(connection)?;
+    migrate_userscripts_icon(connection)?;
     Ok(())
 }
 
@@ -143,6 +144,26 @@ fn migrate_userscripts_client_fields(connection: &Connection) -> rusqlite::Resul
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_userscripts_target
            ON userscripts(target, enabled)",
+        [],
+    )?;
+    Ok(())
+}
+
+/// Adds the `icon` column (`@icon` / `@iconURL` metadata, shown in the script
+/// list) to `userscripts`. Idempotent: checked against `PRAGMA table_info`
+/// first; fresh databases get it from the `CREATE TABLE` statement.
+fn migrate_userscripts_icon(connection: &Connection) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA table_info(userscripts)")?;
+    let columns: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(statement);
+
+    if columns.iter().any(|column| column == "icon") {
+        return Ok(());
+    }
+    connection.execute(
+        "ALTER TABLE userscripts ADD COLUMN icon TEXT NOT NULL DEFAULT ''",
         [],
     )?;
     Ok(())

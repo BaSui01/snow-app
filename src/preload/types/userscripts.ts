@@ -6,6 +6,8 @@ export type UserscriptRecord = {
   description: string;
   namespace: string;
   author: string;
+  /** `@icon` / `@iconURL` 声明的脚本图标（`lucide:Name`、http(s) URL 或 data URI）。 */
+  icon: string;
   enabled: boolean;
   runAt: "document-start" | "document-end" | "document-idle";
   noframes: boolean;

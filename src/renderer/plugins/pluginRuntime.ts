@@ -35,6 +35,33 @@ export const loadLucideIcons = async (): Promise<Record<string, unknown>> => {
   return lucideIcons;
 };
 
+export type LucideIconComponent = (props: {
+  size?: number;
+  strokeWidth?: number;
+}) => ReactNamespace.ReactNode;
+
+const isRenderableIcon = (value: unknown): value is LucideIconComponent => {
+  if (typeof value === "function") {
+    return true;
+  }
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { $$typeof?: unknown }).$$typeof === "symbol"
+  );
+};
+
+export const resolveLucideIcon = async (
+  name: string,
+): Promise<LucideIconComponent | null> => {
+  if (!name) {
+    return null;
+  }
+  const icons = await loadLucideIcons();
+  const found = icons[name];
+  return isRenderableIcon(found) ? found : null;
+};
+
 export const injectPluginStyles = async (
   plugin: PluginView,
 ): Promise<() => void> => {

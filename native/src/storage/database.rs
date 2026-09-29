@@ -17,6 +17,7 @@ use super::{
 
 /// Bumped whenever the schema changes; written to `PRAGMA user_version` after
 /// a successful `create_schema` so the app can detect stale databases.
+/// 49: userscripts.icon column (@icon / @iconURL metadata for the script list icon).
 /// 48: diff_review_comments table (右侧面板 diff 行内评论).
 /// 47: userscripts.target / view_json / surface_json / scope / sandbox columns
 /// (client-side desktop UI userscripts via `@snow-target client`).
@@ -36,7 +37,7 @@ use super::{
 /// 32: api_configs canonical config_json migration plus conversation runtime config columns.
 /// 31: main's scheduled-tasks pre-script migration (30) + PR #65's three
 /// stream-interruption migrations (29 baseline + 4 total additions).
-const CURRENT_SCHEMA_VERSION: i64 = 48;
+const CURRENT_SCHEMA_VERSION: i64 = 49;
 const SNOWFLAKE_EPOCH_MS: u64 = 1_704_067_200_000;
 const SNOWFLAKE_WORKER_ID_BITS: u64 = 10;
 const SNOWFLAKE_SEQUENCE_BITS: u64 = 12;
@@ -723,6 +724,7 @@ CREATE TABLE IF NOT EXISTS userscripts (
             description TEXT NOT NULL DEFAULT '',
             namespace TEXT NOT NULL DEFAULT '',
             author TEXT NOT NULL DEFAULT '',
+            icon TEXT NOT NULL DEFAULT '',
             enabled INTEGER NOT NULL DEFAULT 1,
             run_at TEXT NOT NULL DEFAULT 'document-idle',
             noframes INTEGER NOT NULL DEFAULT 1,

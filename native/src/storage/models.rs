@@ -307,6 +307,8 @@ pub struct UserscriptMeta {
     pub description: String,
     pub namespace: String,
     pub author: String,
+    /// `@icon` / `@iconURL` 声明的脚本图标（`lucide:Name`、http(s) URL 或 data URI）。
+    pub icon: String,
     pub run_at: String,
     pub noframes: bool,
     pub grant: Vec<String>,
@@ -336,6 +338,8 @@ pub struct UserscriptRecord {
     pub description: String,
     pub namespace: String,
     pub author: String,
+    /// `@icon` / `@iconURL` 声明的脚本图标（`lucide:Name`、http(s) URL 或 data URI）。
+    pub icon: String,
     pub enabled: bool,
     pub run_at: String,
     pub noframes: bool,

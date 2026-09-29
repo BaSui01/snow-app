@@ -1,8 +1,11 @@
 import { Puzzle } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 
 import { resolvePluginIcon } from "../../plugins/manifest";
-import { loadLucideIcons } from "../../plugins/pluginRuntime";
+import {
+  resolveLucideIcon,
+  type LucideIconComponent,
+} from "../../plugins/pluginRuntime";
 
 type PluginIconProps = {
   icon: string;
@@ -19,9 +22,9 @@ export const PluginIcon = ({
   className,
 }: PluginIconProps): React.JSX.Element => {
   const [assetUrl, setAssetUrl] = useState<string | null>(null);
-  const [lucideIcon, setLucideIcon] = useState<
-    ((props: { size: number }) => ReactNode) | null
-  >(null);
+  const [lucideIcon, setLucideIcon] = useState<LucideIconComponent | null>(
+    null,
+  );
 
   useEffect(() => {
     const resolved = resolvePluginIcon(icon);
@@ -30,16 +33,10 @@ export const PluginIcon = ({
     setAssetUrl(null);
 
     if (resolved?.kind === "lucide") {
-      void loadLucideIcons().then((icons) => {
-        if (disposed) {
-          return;
+      void resolveLucideIcon(resolved.name).then((found) => {
+        if (!disposed) {
+          setLucideIcon(found);
         }
-        const found = icons[resolved.name];
-        setLucideIcon(
-          typeof found === "function"
-            ? (found as (props: { size: number }) => ReactNode)
-            : null,
-        );
       });
     } else if (resolved?.kind === "asset") {
       void window.snow
@@ -57,10 +54,12 @@ export const PluginIcon = ({
     };
   }, [icon, pluginId]);
 
+  const classes = className ? `plugin-icon ${className}` : "plugin-icon";
+
   if (assetUrl) {
     return (
       <img
-        className={className}
+        className={classes}
         src={assetUrl}
         width={size}
         height={size}
@@ -72,14 +71,14 @@ export const PluginIcon = ({
   if (lucideIcon) {
     const Icon = lucideIcon;
     return (
-      <span className={className}>
+      <span className={classes}>
         <Icon size={size} />
       </span>
     );
   }
 
   return (
-    <span className={className}>
+    <span className={classes}>
       <Puzzle size={size} />
     </span>
   );

@@ -19,6 +19,7 @@ import {
 } from "../../userscripts/clientScriptStore";
 import { scriptEditorStore } from "../../userscripts/scriptEditorStore";
 import { ConfirmDialog } from "../common/ConfirmDialog";
+import { UserscriptIcon } from "../common/UserscriptIcon";
 import { useChatConversationContext } from "../mainContent/chatMessages";
 import { PluginCreateBox } from "./PluginCreateBox";
 import { PluginPrivacyBadges } from "./PluginPrivacyBadges";
@@ -30,6 +31,7 @@ const CLIENT_SCRIPT_TEMPLATE = `// ==UserScript==
 // @namespace    snow-app
 // @version      1.0.0
 // @description  Customize the Snow desktop UI
+// @icon         lucide:Sparkles
 // @snow-target  client
 // @run-at       document-idle
 // @grant        GM_addStyle
@@ -426,7 +428,7 @@ export const PluginScriptsSection = ({
             <div className="plugins-item" key={script.scriptId}>
               <div className="plugins-item-head">
                 <span className="plugins-item-icon">
-                  <FileCode2 size={18} strokeWidth={1.6} />
+                  <UserscriptIcon icon={script.icon} size={18} />
                 </span>
                 <div className="plugins-item-title">
                   <span className="plugins-item-name">{script.name}</span>

@@ -35,6 +35,7 @@ pub fn parse_meta(raw: &str) -> UserscriptMeta {
     let mut description = String::new();
     let mut namespace = String::new();
     let mut author = String::new();
+    let mut icon = String::new();
     let mut run_at = String::from("document-idle");
     let mut noframes = true;
     let mut grant = Vec::new();
@@ -87,6 +88,11 @@ pub fn parse_meta(raw: &str) -> UserscriptMeta {
                 "description" => description = value,
                 "namespace" => namespace = value,
                 "author" => author = value,
+                "icon" | "iconurl" | "icon64" | "icon64url" => {
+                    if icon.is_empty() && !value.is_empty() {
+                        icon = value;
+                    }
+                }
                 "run-at" | "run_at" => {
                     let v = value.to_lowercase();
                     if matches!(v.as_str(), "document-start" | "document-end" | "document-idle") {
@@ -184,6 +190,7 @@ pub fn parse_meta(raw: &str) -> UserscriptMeta {
         description,
         namespace,
         author,
+        icon,
         run_at,
         noframes,
         grant,
@@ -338,15 +345,15 @@ pub fn create_userscript(database_path: &Path, raw: &str) -> Result<UserscriptRe
     connection
         .execute(
             "INSERT INTO userscripts (
-                script_id, name, version, description, namespace, author,
+                script_id, name, version, description, namespace, author, icon,
                 enabled, run_at, noframes, grant_json, matches_json,
                 includes_json, excludes_json, requires_json,
                 target, view_json, surface_json, scope, sandbox, privacy_json, file_path
             ) VALUES (
-                ?1, ?2, ?3, ?4, ?5, ?6,
-                1, ?7, ?8, ?9, ?10,
-                ?11, ?12, ?13,
-                ?14, ?15, ?16, ?17, ?18, ?19, ?20
+                ?1, ?2, ?3, ?4, ?5, ?6, ?7,
+                1, ?8, ?9, ?10, ?11,
+                ?12, ?13, ?14,
+                ?15, ?16, ?17, ?18, ?19, ?20, ?21
             )",
             params![
                 script_id,
@@ -355,6 +362,7 @@ pub fn create_userscript(database_path: &Path, raw: &str) -> Result<UserscriptRe
                 meta.description,
                 meta.namespace,
                 meta.author,
+                meta.icon,
                 meta.run_at,
                 meta.noframes,
                 serde_json::to_string(&meta.grant).unwrap_or_else(|_| "[]".to_string()),
@@ -402,13 +410,13 @@ pub fn update_userscript(database_path: &Path, script_id: &str, raw: &str) -> Re
         .execute(
             "UPDATE userscripts SET
                 name = ?2, version = ?3, description = ?4,
-                namespace = ?5, author = ?6,
-                run_at = ?7, noframes = ?8,
-                grant_json = ?9, matches_json = ?10,
-                includes_json = ?11, excludes_json = ?12,
-                requires_json = ?13,
-                target = ?14, view_json = ?15, surface_json = ?16,
-                scope = ?17, sandbox = ?18, privacy_json = ?19,
+                namespace = ?5, author = ?6, icon = ?7,
+                run_at = ?8, noframes = ?9,
+                grant_json = ?10, matches_json = ?11,
+                includes_json = ?12, excludes_json = ?13,
+                requires_json = ?14,
+                target = ?15, view_json = ?16, surface_json = ?17,
+                scope = ?18, sandbox = ?19, privacy_json = ?20,
                 updated_at = datetime('now', 'localtime')
             WHERE script_id = ?1",
             params![
@@ -418,6 +426,7 @@ pub fn update_userscript(database_path: &Path, script_id: &str, raw: &str) -> Re
                 meta.description,
                 meta.namespace,
                 meta.author,
+                meta.icon,
                 meta.run_at,
                 meta.noframes,
                 serde_json::to_string(&meta.grant).unwrap_or_else(|_| "[]".to_string()),
@@ -592,7 +601,7 @@ fn query_userscript(database_path: &Path, script_id: &str) -> Result<Option<User
 
 fn query_userscript_record(connection: &Connection, script_id: &str) -> rusqlite::Result<Option<UserscriptRecord>> {
     let row = connection.query_row(
-        "SELECT script_id, name, version, description, namespace, author,
+        "SELECT script_id, name, version, description, namespace, author, icon,
                 enabled, run_at, noframes, grant_json, matches_json,
                 includes_json, excludes_json, requires_json,
                 target, view_json, surface_json, scope, sandbox, privacy_json, file_path,
@@ -604,21 +613,22 @@ fn query_userscript_record(connection: &Connection, script_id: &str) -> rusqlite
                 row.get::<_, String>(0)?, row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?, row.get::<_, String>(3)?,
                 row.get::<_, String>(4)?, row.get::<_, String>(5)?,
-                row.get::<_, bool>(6)?, row.get::<_, String>(7)?,
-                row.get::<_, bool>(8)?, row.get::<_, String>(9)?,
-                row.get::<_, String>(10)?, row.get::<_, String>(11)?,
-                row.get::<_, String>(12)?, row.get::<_, String>(13)?,
-                row.get::<_, String>(14)?, row.get::<_, String>(15)?,
-                row.get::<_, String>(16)?, row.get::<_, String>(17)?,
-                row.get::<_, bool>(18)?,
-                row.get::<_, String>(19)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, bool>(7)?, row.get::<_, String>(8)?,
+                row.get::<_, bool>(9)?, row.get::<_, String>(10)?,
+                row.get::<_, String>(11)?, row.get::<_, String>(12)?,
+                row.get::<_, String>(13)?, row.get::<_, String>(14)?,
+                row.get::<_, String>(15)?, row.get::<_, String>(16)?,
+                row.get::<_, String>(17)?, row.get::<_, String>(18)?,
+                row.get::<_, bool>(19)?,
                 row.get::<_, String>(20)?,
-                row.get::<_, String>(21)?, row.get::<_, String>(22)?,
+                row.get::<_, String>(21)?,
+                row.get::<_, String>(22)?, row.get::<_, String>(23)?,
             ))
         },
     ).optional()?;
 
-    let Some((script_id, name, version, description, namespace, author,
+    let Some((script_id, name, version, description, namespace, author, icon,
               enabled, run_at, noframes, grant_json, matches_json,
               includes_json, excludes_json, requires_json,
               target, view_json, surface_json, scope, sandbox, privacy_json, file_path,
@@ -633,6 +643,7 @@ fn query_userscript_record(connection: &Connection, script_id: &str) -> rusqlite
         description,
         namespace,
         author,
+        icon,
         enabled,
         run_at,
         noframes,

@@ -280,7 +280,7 @@ export const METADATA_DOMAINS: MetadataDomainDefinition[] = [
         ? await safe(() => window.snow.gitBranches(projectPath(ctx)))
         : null,
       identity: projectPath(ctx)
-        ? await safe(() => window.snow.teamGetIdentity(projectPath(ctx)))
+        ? await safe(() => window.snow.gitIdentity(projectPath(ctx)))
         : null,
     }),
   },

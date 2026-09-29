@@ -275,9 +275,9 @@ export const METADATA_DOMAIN_CATALOG: Record<
     group: "project",
     params: ["projectPath", "projectId"],
     summary: {
-      en: "Repository status, branches and team identity",
-      "zh-CN": "仓库状态、分支与团队身份",
-      "zh-TW": "儲存庫狀態、分支與團隊身分",
+      en: "Repository status, branches and repo identity",
+      "zh-CN": "仓库状态、分支与仓库身份",
+      "zh-TW": "儲存庫狀態、分支與倉庫身分",
     },
   },
   codebase: {

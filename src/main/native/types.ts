@@ -1567,6 +1567,16 @@ export type GitRepoInfo = {
   currentBranch: string;
 };
 
+export type GitIdentity = {
+  isRepo: boolean;
+  repoPath: string;
+  name: string;
+  email: string;
+  remoteUrl: string;
+  hasIdentity: boolean;
+  error: string | null;
+};
+
 // ===== 团队协作（基于 Git 的共享数据平面） =====
 
 export type TeamIdentity = {
@@ -2432,6 +2442,7 @@ export type NativeBridge = {
     maxDepth: number,
     ignoredFolders: string[],
   ) => Promise<GitRepoInfo[]>;
+  getGitIdentity: (repoPath: string) => Promise<GitIdentity>;
   startGitWatch: (
     repoPath: string,
     debounceMs: number,

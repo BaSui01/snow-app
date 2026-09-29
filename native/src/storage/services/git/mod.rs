@@ -10,6 +10,7 @@ mod branches;
 mod commit;
 mod diff;
 mod discover;
+mod identity;
 mod staging;
 mod status;
 
@@ -17,6 +18,7 @@ pub use self::branches::*;
 pub use self::commit::*;
 pub use self::diff::*;
 pub use self::discover::*;
+pub use self::identity::*;
 pub use self::staging::*;
 pub use self::status::*;
 
@@ -186,6 +188,17 @@ pub struct GitRepoInfo {
     pub path: String,
     pub name: String,
     pub current_branch: String,
+}
+
+#[napi(object)]
+pub struct GitIdentity {
+    pub is_repo: bool,
+    pub repo_path: String,
+    pub name: String,
+    pub email: String,
+    pub remote_url: String,
+    pub has_identity: bool,
+    pub error: Option<String>,
 }
 
 // ===== Internal helpers =====

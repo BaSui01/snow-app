@@ -98,3 +98,13 @@ export type GitRepoInfo = {
   name: string;
   currentBranch: string;
 };
+
+export type GitIdentity = {
+  isRepo: boolean;
+  repoPath: string;
+  name: string;
+  email: string;
+  remoteUrl: string;
+  hasIdentity: boolean;
+  error: string | null;
+};

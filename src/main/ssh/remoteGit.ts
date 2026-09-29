@@ -12,6 +12,7 @@ import type {
   GitCommitResult,
   GitDiffResult,
   GitFileStatus,
+  GitIdentity,
   GitLogEntry,
   GitPushPullResult,
   GitRepoInfo,
@@ -377,6 +378,56 @@ export const remoteGetGitBranches = async (
   }
 
   return branches;
+};
+
+export const remoteGetGitIdentity = async (
+  workspacePath: string,
+): Promise<GitIdentity> => {
+  const emptyResult = (error: string): GitIdentity => ({
+    isRepo: false,
+    repoPath: "",
+    name: "",
+    email: "",
+    remoteUrl: "",
+    hasIdentity: false,
+    error,
+  });
+
+  let topLevel: string;
+  try {
+    topLevel = (
+      await runRemoteGit(workspacePath, ["rev-parse", "--show-toplevel"])
+    ).trim();
+  } catch {
+    return emptyResult("not a git repository");
+  }
+  if (!topLevel) {
+    return emptyResult("not a git repository");
+  }
+
+  const name = (
+    await runRemoteGitRaw(workspacePath, ["config", "user.name"])
+  ).trim();
+  const email = (
+    await runRemoteGitRaw(workspacePath, ["config", "user.email"])
+  ).trim();
+  const remoteUrl = (
+    await runRemoteGitRaw(workspacePath, ["remote", "get-url", "origin"])
+  ).trim();
+
+  const remoteRootPath = normalizeRemotePath(
+    parseSshUrl(workspacePath).remotePath,
+  );
+
+  return {
+    isRepo: true,
+    repoPath: buildRemoteWorkspaceUri(workspacePath, topLevel, remoteRootPath),
+    name,
+    email,
+    remoteUrl,
+    hasIdentity: Boolean(name && email),
+    error: null,
+  };
 };
 
 export const remoteStageFiles = async (

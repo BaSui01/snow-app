@@ -95,7 +95,7 @@ The `live` flag from `api.metadata.domains()` lets a panel distinguish "realtime
 | A scheduled task board                                   | `scheduledTasks`                                    | Task array (with `nextRunAt`, `runCount`)                   |
 | Usage charts                                             | `usage`                                             | `summary`, `daily[]`, `models[]`, `records`                 |
 | A log viewer                                             | `logs`                                              | `items[]`, `total`                                          |
-| Git status, branches, team identity                      | `git`                                               | `status`, `branches[]`, `identity`                          |
+| Git status, branches, repo identity                      | `git`                                               | `status`, `branches[]`, `identity`                          |
 | Codebase index progress and file list                    | `codebase`                                          | `indexStats`, `indexedFiles`, `resumableSessions[]`         |
 | API profile and model pickers                            | `apiProfiles`                                       | Profile array (`profileName`, `advancedModel`, ...)         |
 | Matching the app theme                                   | `theme`                                             | `mode`, `custom`, `fontFamily`                              |
@@ -147,7 +147,7 @@ The `live` flag from `api.metadata.domains()` lets a panel distinguish "realtime
 | `usage`           | `usage`             | No   | `since`, `until`, `profileName`, `limit`, `offset`     | Usage summary, daily/model breakdowns, and records                |
 | `logs`            | `logs`              | No   | `level`, `module`, `since`, `until`, `limit`, `offset` | Paged application logs                                            |
 | `projects`        | —                   | Yes  | `directoryId`                                          | Project list, collections, relinks, active project                |
-| `git`             | `git`               | Yes  | `projectPath`, `projectId`                             | Repository status, branches, team identity                        |
+| `git`             | `git`               | Yes  | `projectPath`, `projectId`                             | Repository status, branches, repo identity                        |
 | `ssh`             | `ssh`               | No   | `directoryId`                                          | SSH credentials, config hosts, remote drafts                      |
 | `remoteControl`   | `remoteControl`     | No   | —                                                      | Mobile pairing state and tunnel status                            |
 | `browser`         | `browserData`       | No   | —                                                      | Passwords, bookmarks, downloads, import sources                   |
@@ -483,7 +483,7 @@ No declaration · Live · Parameters: `directoryId`
 | `repoPath` | string           | Repository path used for the query                                                                                                                                                                       |
 | `status`   | object \| null   | `{ isRepo, currentBranch, upstream, ahead, behind, files[], stagedCount, unstagedCount, untrackedCount, statusLimitHit }`; `files[]` entries are `{ path, oldPath, indexStatus, workdirStatus, status }` |
 | `branches` | object[] \| null | `{ name, isCurrent, isRemote, remoteName }`                                                                                                                                                              |
-| `identity` | object \| null   | Team identity: `{ isRepo, repoPath, name, email, remoteUrl, hasIdentity, error }`                                                                                                                        |
+| `identity` | object \| null   | Repo identity (from git config and origin remote): `{ isRepo, repoPath, name, email, remoteUrl, hasIdentity, error }`                                                                                    |
 
 #### 4.4.3 `codebase`
 

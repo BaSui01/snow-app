@@ -6,6 +6,7 @@ import type {
   GitCommitResult,
   GitDiffResult,
   GitFileContentResult,
+  GitIdentity,
   GitLogEntry,
   GitPushPullResult,
   GitRepoInfo,
@@ -76,6 +77,8 @@ export const gitApi = {
   },
   gitBranches: (repoPath: string): Promise<GitBranch[]> =>
     ipcRenderer.invoke("git:branches", repoPath),
+  gitIdentity: (repoPath: string): Promise<GitIdentity> =>
+    ipcRenderer.invoke("git:identity", repoPath),
   gitStage: (repoPath: string, filePaths: string[]): Promise<GitStageResult> =>
     ipcRenderer.invoke("git:stage", repoPath, filePaths),
   gitUnstage: (

@@ -17,6 +17,7 @@ const STORAGE_INDEPENDENT_METHODS = new Set<string>([
   // Git（本地仓库子进程操作）
   "getGitStatus",
   "getGitBranches",
+  "getGitIdentity",
   "gitStageFiles",
   "gitUnstageFiles",
   "gitStageAll",
@@ -1096,6 +1097,9 @@ export const loadNativeBridge = (): NativeBridge => {
       },
       getGitBranches: () => {
         throw new Error("Rust native bridge is required for git branches");
+      },
+      getGitIdentity: () => {
+        throw new Error("Rust native bridge is required for git identity");
       },
       gitStageFiles: () => {
         throw new Error("Rust native bridge is required for git stage");

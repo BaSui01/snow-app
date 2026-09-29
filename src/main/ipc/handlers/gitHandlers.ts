@@ -12,6 +12,7 @@ import {
   remoteGetCommitFileDiff,
   remoteGetFileDiff,
   remoteGetGitBranches,
+  remoteGetGitIdentity,
   remoteGetGitLog,
   remoteGetGitStatus,
   remoteGetStagedDiff,
@@ -192,6 +193,16 @@ export const registerGitHandlers = (native: NativeBridge): void => {
     return isSshPath(trimmed)
       ? remoteGetGitBranches(trimmed)
       : native.getGitBranches(trimmed);
+  });
+
+  ipcMain.handle("git:identity", async (_event, repoPath: unknown) => {
+    if (typeof repoPath !== "string" || !repoPath.trim()) {
+      throw new Error("Repository path is required");
+    }
+    const trimmed = repoPath.trim();
+    return isSshPath(trimmed)
+      ? remoteGetGitIdentity(trimmed)
+      : native.getGitIdentity(trimmed);
   });
 
   ipcMain.handle(

@@ -2941,6 +2941,7 @@ export const zhCN = {
   "settings.themePresetNotion": "Notion",
   "settings.themePresetCompact": "无界",
   "settings.themePresetTesseract": "超立方",
+  "settings.themePresetRococo": "洛可可玫瑰",
   "settings.themeCustomTitle": "自定义主题",
   "settings.themeCustomInfo":
     "启用后可调整每一个颜色，浅色和深色调色板分别编辑。",

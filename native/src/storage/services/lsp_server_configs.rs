@@ -235,17 +235,21 @@ pub fn seed_defaults(database_path: &Path) -> Result<()> {
     }
 
     let seeds = default_seed_servers();
-    for seed in seeds {
+    for mut seed in seeds {
         if existing.contains(&seed.lang) {
             continue;
         }
+        // enabled 按真实安装状态（§8.6）：命令在 PATH 中可执行才默认启用；
+        // 未安装的服务器保留配置但停用，避免「启用但无法使用」的矛盾状态。
+        // 用户之后安装服务器后，可在设置页手动打开开关启用。
+        seed.enabled = probe::is_command_installed(&seed.command);
         upsert_lsp_server_config_with_connection(&connection, &seed)
             .map_err(|error| database::database_error(database_path, "seed LSP server config", error))?;
     }
     Ok(())
 }
 
-/// 存量数据校正（启动时执行，幂等、无副作用）：仅对 `source=seed`/`source=legacy`
+/// 存量数据校正（首次 LSP 探测时执行一次，不在启动路径，幂等）：仅对 `source=seed`/`source=legacy`
 /// 且 `enabled=true` 的记录探测命令是否可执行，未安装 → 置为 `enabled=false`。
 ///
 /// 覆盖修复旧版本种子/迁移写入的「启用但未安装」矛盾状态（§8.6）；不动
@@ -565,13 +569,6 @@ fn default_seed_servers() -> Vec<LspServerConfigInput> {
             sort_order: 11,
             source: "seed".into(),
         });
-    }
-
-    // enabled 按真实安装状态（§8.6）：命令在 PATH 中可执行才默认启用；
-    // 未安装的服务器保留配置但停用，避免「启用但无法使用」的矛盾状态。
-    // 用户之后安装服务器后，可在设置页手动打开开关启用。
-    for seed in &mut seeds {
-        seed.enabled = probe::is_command_installed(&seed.command);
     }
 
     seeds

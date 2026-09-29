@@ -3104,6 +3104,7 @@ export const en = {
   "settings.themePresetNotion": "Notion",
   "settings.themePresetCompact": "Horizon",
   "settings.themePresetTesseract": "Tesseract",
+  "settings.themePresetRococo": "Rose Rococo",
   "settings.themeCustomTitle": "Custom theme",
   "settings.themeCustomInfo":
     "Enable to fine-tune every color. Light and dark palettes are edited separately.",

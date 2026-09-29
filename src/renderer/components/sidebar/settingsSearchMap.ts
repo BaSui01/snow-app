@@ -2100,6 +2100,14 @@ const RAW_GROUPS: RawGroup[] = [
         ["preset", "预设"],
       ],
       [
+        "theme.preset.rococo",
+        "field",
+        "settings.themePresetRococo",
+        "洛可可玫瑰",
+        [],
+        ["preset", "洛可可", "玫瑰"],
+      ],
+      [
         "theme.custom",
         "section",
         "settings.themeCustomTitle",

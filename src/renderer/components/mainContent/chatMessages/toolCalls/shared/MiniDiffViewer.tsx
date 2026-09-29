@@ -43,18 +43,20 @@ export const MiniDiffViewer = memo(
     const wrapLines = useDiffWrapLines();
 
     return (
-      <div className="tool-call-diff-content">
-        <div className="tool-call-diff-view">
-          <GitDiffView
-            fileName={fileName}
-            oldContent={oldContent}
-            newContent={newContent}
-            fontSize={11}
-            oldStartLine={startLine}
-            newStartLine={startLine}
-            viewMode={viewMode}
-            wrapLines={wrapLines}
-          />
+      <div className="tool-call-diff-shell">
+        <div className="tool-call-diff-content">
+          <div className="tool-call-diff-view">
+            <GitDiffView
+              fileName={fileName}
+              oldContent={oldContent}
+              newContent={newContent}
+              fontSize={11}
+              oldStartLine={startLine}
+              newStartLine={startLine}
+              viewMode={viewMode}
+              wrapLines={wrapLines}
+            />
+          </div>
         </div>
         <div className="tool-call-diff-actions">
           <button

@@ -444,16 +444,16 @@ lsp-hover filePath=<绝对路径> line=<1-based> column=<1-based>
 
 **enabled 语义（修正后）**：`enabled` 只表示「用户意图启用该配置」，**不等于已安装**。实际可用性 = `enabled && installed`：
 
-- `installed`：命令是否在 PATH 中可执行（`probe.rs`，Windows 按 PATHEXT 生成候选、支持显式路径；**纯文件系统扫描、不 spawn 进程、无副作用**）。
+- `installed`：命令是否在 PATH 中可执行（`probe.rs`，Windows 按 PATHEXT 生成候选、支持显式路径；PATH 扫描不 spawn 进程，仅 `rust-analyzer` 额外执行一次 `--version` 做工具链完整性校验——经 `utils::process::cmd` 创建，Windows 下携带 `CREATE_NO_WINDOW`，不弹控制台窗口）。
 - 工具暴露判断（`has_enabled_server` / `collect_all_mcp_tools` 的 lsp 过滤）与会话启动（`manager.get_or_start` 配置查找）均要求 `enabled && installed`，未安装给出明确降级错误（§9）。
 
-**三个写入/校正路径**（全部幂等、无副作用）：
+**三个写入/校正路径**（全部幂等；命令探测仅在种子/迁移写入与首次 LSP 探测时执行）：
 
-| 路径                                    | 行为                                                                                                                                                          |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 种子 `default_seed_servers()`           | 写入时按 `probe::is_command_installed(command)` 设置 enabled——已装才默认启用                                                                                  |
-| 迁移 `migrate_legacy_file()`            | 同上（旧 lsp-config.json 无 enabled 概念，迁移即按环境定）                                                                                                    |
-| 存量校正 `reconcile_enabled_by_probe()` | 每次启动执行：仅对 `source=seed`/`source=legacy` 且 `enabled=true` 的记录探测，未安装 → `enabled=false`；**不动 `source=manual`**（用户手动配置）与已停用记录 |
+| 路径                                    | 行为                                                                                                                                                                                                                                                                         |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 种子 `seed_defaults()`                  | 写入时按 `probe::is_command_installed(command)` 设置 enabled——已装才默认启用（仅表为空时执行一次）                                                                                                                                                                           |
+| 迁移 `migrate_legacy_file()`            | 同上（旧 lsp-config.json 无 enabled 概念，迁移即按环境定）                                                                                                                                                                                                                   |
+| 存量校正 `reconcile_enabled_by_probe()` | 首次 LSP 探测（设置页 `probeLspServerCommands`）时执行一次（进程内 once，启动时不执行——LSP 默认关闭，探测会真实启动子进程）：仅对 `source=seed`/`source=legacy` 且 `enabled=true` 的记录探测，未安装 → `enabled=false`；**不动 `source=manual`**（用户手动配置）与已停用记录 |
 
 **校正边界**：只做「未安装 → 停用」单向校正，**绝不反向自动启用**——用户安装服务器后需在设置页手动打开开关（避免覆盖用户的明确意图；也避免用户故意停用已装服务器时被强制启用）。
 

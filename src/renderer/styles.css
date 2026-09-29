@@ -15705,14 +15705,20 @@ body.is-panel-resizing * {
   line-height: 1.5;
 }
 
+.tool-call-diff-shell {
+  position: relative;
+}
+
 .tool-call-diff-view {
   min-width: 0;
 }
 
+/* 定位在滚动容器之外的壳层上,横向滚动时按钮保持固定在可视区右侧 */
 .tool-call-diff-actions {
   position: absolute;
   top: 6px;
   right: 6px;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -15720,7 +15726,7 @@ body.is-panel-resizing * {
   transition: opacity 0.15s ease;
 }
 
-.tool-call-diff-content:hover .tool-call-diff-actions {
+.tool-call-diff-shell:hover .tool-call-diff-actions {
   opacity: 1;
 }
 

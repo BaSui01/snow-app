@@ -50,13 +50,15 @@ pub async fn detect_project_stack(
     .map_err(map_spawn_error)
 }
 
-/// 探测有效配置（含项目覆盖）中 enabled 服务器的命令是否已安装（PATH 扫描，
-/// 无副作用）。返回按 command 去重后的探测结果。
+/// 探测有效配置（含项目覆盖）中 enabled 服务器的命令是否已安装（PATH 扫描）。
+/// 首次调用先执行一次存量「启用但未安装」校正（延迟探测，启动时不执行）；
+/// 返回按 command 去重后的探测结果。
 #[napi]
 pub async fn probe_lsp_server_commands(
     project_id: Option<String>,
 ) -> napi::Result<Vec<LspCommandProbeResult>> {
     tokio::task::spawn_blocking(move || {
+        crate::storage::reconcile_lsp_server_install_state_once();
         let records = crate::storage::list_effective_lsp_server_configs(project_id)?;
         let commands: Vec<String> = records
             .into_iter()

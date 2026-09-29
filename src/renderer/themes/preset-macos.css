@@ -270,6 +270,10 @@
   background: var(--app-bg);
 }
 
+:root[data-theme-preset="macos"] .top-bar {
+  column-gap: 5px;
+}
+
 :root[data-theme-preset="macos"] .top-bar-left,
 :root[data-theme-preset="macos"] .top-bar-main,
 :root[data-theme-preset="macos"] .top-bar-right {
@@ -334,13 +338,18 @@
   top: 0 !important;
   bottom: 0 !important;
   width: 1px !important;
-  background: var(--mac-edge) !important;
-  transition: background 0.12s ease;
+  background: transparent !important;
+  transition:
+    background 0.12s ease,
+    width 0.12s ease,
+    box-shadow 0.12s ease;
 }
 
 :root[data-theme-preset="macos"] .panel-resizer:hover::before,
 :root[data-theme-preset="macos"] .panel-resizer.is-active::before {
+  width: 2px !important;
   background: var(--mac-blue) !important;
+  box-shadow: 0 0 6px 1px var(--mac-blue-soft) !important;
 }
 
 :root[data-theme-preset="macos"]
@@ -739,6 +748,16 @@
   ):hover {
   background: var(--mac-blue);
   color: #ffffff;
+}
+
+:root[data-theme-preset="macos"] .mention-entry.selected,
+:root[data-theme-preset="macos"] .mention-entry.checked.selected {
+  background: var(--mac-blue);
+  color: #ffffff;
+}
+
+:root[data-theme-preset="macos"] .mention-entry.selected * {
+  color: #ffffff !important;
 }
 
 :root[data-theme-preset="macos"] .user-message-bubble {

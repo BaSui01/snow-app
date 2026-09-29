@@ -33,6 +33,22 @@ pub fn delete_mcp_server_config(server_id: String) -> Result<()> {
     result
 }
 
+/// 存量 LSP 配置「启用但未安装」的校正延迟到首次 LSP 探测（设置页）执行一次，
+/// 应用启动不探测（builtin:lsp 默认关闭，探测会真实启动子进程拖慢启动）。
+pub fn reconcile_lsp_server_install_state_once() {
+    static RECONCILE_INIT: std::sync::Once = std::sync::Once::new();
+    RECONCILE_INIT.call_once(|| {
+        let Ok(storage_info) = initialize_app_storage() else {
+            return;
+        };
+        let database_path = PathBuf::from(storage_info.database_path);
+        if let Err(error) = services::lsp_server_configs::reconcile_enabled_by_probe(&database_path)
+        {
+            eprintln!("Failed to reconcile LSP server install state: {error}");
+        }
+    });
+}
+
 pub fn list_lsp_server_configs() -> Result<Vec<LspServerConfigRecord>> {
     // 必须走 initialize_app_storage：触发 LSP_CONFIG_SEED_INIT（迁移 + 种子 Once）。
     let storage_info = initialize_app_storage()?;

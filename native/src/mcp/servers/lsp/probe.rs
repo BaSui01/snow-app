@@ -6,6 +6,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::utils::process::cmd;
+
 /// 单条探测结果。
 #[derive(Clone, Debug)]
 pub struct ProbeResult {
@@ -58,8 +60,9 @@ pub fn is_executable_functional(full_path: &Path, command: &str) -> bool {
         || trimmed.ends_with("\\rust-analyzer.exe")
         || trimmed.ends_with("\\rust-analyzer")
     {
-        // 针对 rustup 等 shim 占位但组件实际未安装的情况（例如报错 "Unknown binary 'rust-analyzer'"）
-        let Ok(output) = std::process::Command::new(full_path)
+        // 针对 rustup 等 shim 占位但组件实际未安装的情况（例如报错 "Unknown binary 'rust-analyzer'"）。
+        // 经 utils::process::cmd 创建：Windows 下携带 CREATE_NO_WINDOW，避免弹控制台窗口。
+        let Ok(output) = cmd(full_path)
             .arg("--version")
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())

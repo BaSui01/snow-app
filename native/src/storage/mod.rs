@@ -114,16 +114,14 @@ pub fn initialize_app_storage() -> Result<AppStorageInfo> {
         }
     });
 
-    // Reconcile seed/legacy LSP configs against the real environment once
-    // per process: records that are enabled but whose command is not found
-    // on PATH are silently disabled (source=manual records are never
-    // touched). Probe is side-effect free and idempotent, so this also
-    // covers pre-existing databases seeded before §8.6 install probing.
+    // Seed install commands are plain string updates (no command probing) and
+    // stay on the startup path. The enabled/installed reconcile probe is NOT
+    // run at startup (LSP tools are off by default and probing spawns real
+    // processes): it is deferred to
+    // storage::reconcile_lsp_server_install_state_once(), which fires on the
+    // first LSP probe (settings page).
     LSP_CONFIG_RECONCILE_INIT.call_once(|| {
         let db_path = database_path.clone();
-        if let Err(error) = services::lsp_server_configs::reconcile_enabled_by_probe(&db_path) {
-            eprintln!("Failed to reconcile LSP server install state: {error}");
-        }
         if let Err(error) = services::lsp_server_configs::reconcile_seed_install_commands(&db_path) {
             eprintln!("Failed to reconcile LSP seed install commands: {error}");
         }

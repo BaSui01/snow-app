@@ -12,6 +12,14 @@
 
 [English](./README.md)
 
+## 友情链接
+
+- [Linux DO](https://linux.do)
+
+## QQ 群
+
+- 910298558
+
 ## 项目简介
 
 Snow App 是一款面向开发者的桌面应用，将 AI 对话、终端模拟、SSH 远程管理、Git 工具和内置浏览器面板整合到统一的工作空间中。它通过 Rust 原生模块处理性能关键型操作，包括 SQLite 存储、AI 流式传输、文件监控和 HTTP 请求。
@@ -175,10 +183,6 @@ Rust 原生模块（`snow_native`）通过 napi-rs 编译为 Node 插件（`.nod
 - **文件监控** - 通过 `notify` crate 实现文件系统监听
 - **HTTP 客户端** - 通过 reqwest 实现全功能 HTTP 客户端，支持压缩
 - **MCP 协议** - 模型上下文协议实现
-
-## 友情链接
-
-- [Linux DO](https://linux.do)
 
 ## 开源协议
 

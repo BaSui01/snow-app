@@ -12,6 +12,14 @@
 
 [中文文档](./README_zh.md)
 
+## Friendly links
+
+- [Linux DO](https://linux.do)
+
+## QQ Group
+
+- 910298558
+
 ## Overview
 
 Snow App is a developer-focused desktop application that integrates AI-powered chat, terminal emulation, SSH remote management, Git tooling, and a built-in browser panel into a single unified workspace. It leverages a Rust native module for performance-critical operations such as SQLite storage, AI streaming, file watching, and HTTP requests.
@@ -175,10 +183,6 @@ The Rust native module (`snow_native`) is compiled to a Node addon (`.node`) via
 - **File watching** - File system monitoring via the `notify` crate
 - **HTTP client** - Full-featured HTTP client via reqwest with compression support
 - **MCP protocol** - Model Context Protocol implementation
-
-## Friendly links
-
-- [Linux DO](https://linux.do)
 
 ## License
 

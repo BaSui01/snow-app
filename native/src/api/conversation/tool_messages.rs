@@ -14,7 +14,9 @@ use crate::storage::services::chat_conversations::ChatContextMessage;
 /// - **OpenAI Chat**: `{"id":"...","type":"function","function":{"name":"...","arguments":"..."}}`
 /// - **OpenAI Responses**: `{"type":"function_call","call_id":"...","name":"...","arguments":"..."}`
 /// - **Anthropic**: `{"type":"tool_use","id":"...","name":"...","input":{...}}`
-/// - **Gemini**: `{"functionCall":{"id":"...","name":"...","args":{...}}}`
+/// - **Gemini**: `{"functionCall":{"id":"...","name":"...","args":{...}}}`, or
+///   the raw functionCall object the Gemini event parser persists
+///   (`{"id":"...","name":"...","args":{...}}`)
 pub fn tool_calls_as_anthropic_blocks(tool_calls_json: &str) -> Vec<Value> {
     normalize_tool_calls(tool_calls_json)
         .into_iter()
@@ -226,7 +228,9 @@ pub(crate) struct NormalizedToolCall {
 /// - **OpenAI Chat**: `{"id":"...","type":"function","function":{"name":"...","arguments":"..."}}`
 /// - **OpenAI Responses**: `{"type":"function_call","call_id":"...","name":"...","arguments":"..."}`
 /// - **Anthropic**: `{"type":"tool_use","id":"...","name":"...","input":{...}}`
-/// - **Gemini**: `{"functionCall":{"id":"...","name":"...","args":{...}}}`
+/// - **Gemini**: `{"functionCall":{"id":"...","name":"...","args":{...}}}`, or
+///   the raw functionCall object the Gemini event parser persists
+///   (`{"id":"...","name":"...","args":{...}}`)
 pub(crate) fn normalize_tool_calls(tool_calls_json: &str) -> Vec<NormalizedToolCall> {
     let Ok(parsed) = serde_json::from_str::<Value>(tool_calls_json) else {
         return Vec::new();
@@ -283,7 +287,8 @@ pub(crate) fn normalize_tool_calls(tool_calls_json: &str) -> Vec<NormalizedToolC
             // Anthropic stores an object under "input". OpenAI Chat nests a
             // JSON string under "function.arguments"; OpenAI Responses uses a
             // top-level "arguments". Gemini stores an object under
-            // "functionCall.args".
+            // "functionCall.args", while the Gemini event parser persists the
+            // raw functionCall object with a top-level "args".
             let (input, has_valid_input) = if let Some(input_val) = call.get("input") {
                 if input_val.is_object() {
                     (input_val.clone(), true)
@@ -299,10 +304,13 @@ pub(crate) fn normalize_tool_calls(tool_calls_json: &str) -> Vec<NormalizedToolC
                 .get("function")
                 .and_then(|f| f.get("arguments"))
                 .or_else(|| call.get("arguments"))
+                .or_else(|| call.get("args"))
             {
                 // OpenAI Chat nests a JSON string under "function.arguments";
                 // OpenAI Responses uses a top-level "arguments" that is
-                // sometimes a parsed object instead of a string.
+                // sometimes a parsed object instead of a string. Gemini
+                // histories written by the event parser keep the arguments in
+                // a top-level "args" object (issue #170).
                 if arguments.is_object() {
                     (arguments.clone(), true)
                 } else if let Some(s) = arguments.as_str() {

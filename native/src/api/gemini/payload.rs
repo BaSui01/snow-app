@@ -473,6 +473,12 @@ fn replay_signed_function_call_parts(
         };
         let signed_id = signed_call.get("id").and_then(Value::as_str);
         let signed_name = signed_call.get("name").and_then(Value::as_str);
+        // 规范化结果可能因历史存储格式丢参；此时沿用签名 part 中上游返回的
+        // 原始 args，避免空参数覆盖完整参数（issue #170）。
+        let signed_args = signed_call
+            .get("args")
+            .filter(|args| args.as_object().is_some_and(|map| !map.is_empty()))
+            .cloned();
         let match_index = remaining_calls.iter().position(|function_call_part| {
             let function_call = function_call_part.get("functionCall");
             let call_id = function_call
@@ -489,8 +495,15 @@ fn replay_signed_function_call_parts(
         });
         if let Some(index) = match_index {
             let function_call_part = remaining_calls.remove(index);
+            let mut replay_call = function_call_part["functionCall"].clone();
+            if !function_call_has_usable_args(&replay_call) {
+                if let Some(call_object) = replay_call.as_object_mut() {
+                    call_object
+                        .insert("args".to_string(), signed_args.unwrap_or_else(|| json!({})));
+                }
+            }
             let mut replay_part = signed_part;
-            replay_part["functionCall"] = function_call_part["functionCall"].clone();
+            replay_part["functionCall"] = replay_call;
             replayed.push(replay_part);
         }
     }
@@ -499,6 +512,14 @@ fn replay_signed_function_call_parts(
     // calls in their normalized form rather than deleting usable history.
     replayed.extend(remaining_calls);
     replayed
+}
+
+/// functionCall 是否带有非空 args 对象。
+fn function_call_has_usable_args(function_call: &Value) -> bool {
+    function_call
+        .get("args")
+        .and_then(Value::as_object)
+        .is_some_and(|args| !args.is_empty())
 }
 
 fn has_replayable_gemini_signatures(thinking_blocks_json: Option<&str>) -> bool {

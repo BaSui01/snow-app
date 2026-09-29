@@ -462,13 +462,17 @@ export function resolveActivePalette(
 
 export function applyPaletteToDocument(palette: ThemePalette): void {
   const root = document.documentElement;
-  (Object.keys(palette) as (keyof ThemePalette)[]).forEach((key) => {
-    const cssVar = PALETTE_ROLE_TO_CSS_VAR[key];
-    const value = palette[key];
-    if (cssVar && value) {
-      root.style.setProperty(cssVar, value);
-    }
-  });
+  (Object.keys(PALETTE_ROLE_TO_CSS_VAR) as (keyof ThemePalette)[]).forEach(
+    (key) => {
+      const cssVar = PALETTE_ROLE_TO_CSS_VAR[key];
+      const value = palette[key];
+      if (value) {
+        root.style.setProperty(cssVar, value);
+      } else {
+        root.style.removeProperty(cssVar);
+      }
+    },
+  );
 }
 
 export function applyThemeModeToDocument(mode: ThemeMode): "light" | "dark" {

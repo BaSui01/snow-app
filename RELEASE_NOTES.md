@@ -1,5 +1,21 @@
 # Release Notes
 
+## v0.4.11
+
+## New Features
+
+- **Rose Rococo Theme**: A new Rococo-style theme preset (light and dark palettes) with scrollwork, swag and crest ornaments, a serif display face and a matching pixel-logo animation.
+- **Inline Diff Comments**: Comment on individual diff lines (old / new side) with edit, delete, copy, send one or all comments to the chat input and clear all; comments whose line content changed are flagged, unmatched ones are listed, and very large diffs turn commenting off; comments persist per project and file.
+- **Diff View Preferences**: Switch between unified / split / wrap-lines, shared between the right panel and in-chat diffs and remembered.
+- **Authenticator Unlock for Mobile Remote Control**: Once Google Authenticator is bound to the app lock, the mobile LAN and public remote pages unlock with a 6-digit code instead of the pairing token (switch under Settings → Privacy → App lock).
+- **Project Grid Drag-and-Drop Grouping**: Drag projects into a collection or back to the ungrouped area directly in the project grid view.
+
+## Improvements
+
+- LSP install-state reconciliation runs once on the first LSP probe from the settings page instead of at startup; seeded servers default to enabled only when their command exists on PATH, and Windows probes no longer flash a console window.
+- In-chat diff view-toggle buttons stay pinned to the top-right of the visible area while scrolling horizontally.
+- Skill tool cards render structured details: skill ID, name, location, path, allowed tools and skill content, with a loading state.
+
 ## v0.4.10
 
 ## New Features
@@ -9,7 +25,6 @@
 - **Script Data APIs and CORS-Free Requests**: Client scripts support the `@snow-privacy` declaration and reuse panel-plugin metadata and write capabilities via `snow.metadata` / `snow.write`; new `snow.fetch` sends CORS-free requests from the main process, and sandboxed scripts get it as their global `fetch`.
 - **Language-Server Symbol Addressing and Runtime Controls**: LSP tools resolve targets directly from symbol names (hover, definition, references, rename, call/type hierarchy need no file coordinates; omitting the path resolves across the workspace with ambiguity candidates); the LSP settings panel shows per-server status with start / stop / restart.
 - **Mac Platinum Theme**: A new macOS-style theme preset (light and dark palettes).
-- **Authenticator Unlock for Mobile Remote Control**: once Google Authenticator is bound to the app lock, the mobile LAN and public remote pages unlock with a 6-digit code instead of the pairing token (switch under Settings → Privacy → App lock).
 
 ## Improvements
 

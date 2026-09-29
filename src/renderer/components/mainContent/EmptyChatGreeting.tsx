@@ -51,7 +51,7 @@ export function EmptyChatGreeting({
   onNavigateToView,
 }: EmptyChatGreetingProps): React.JSX.Element {
   const { t } = useI18n();
-  const { pendingWorktreeId, setPendingWorktreeId, setWorktreeMode } =
+  const { pendingWorktreeId, setPendingWorktreeId } =
     useChatConversationContext();
   const [isAddingProject, setIsAddingProject] = useState(false);
   const [addProjectError, setAddProjectError] = useState<string | null>(null);
@@ -88,17 +88,15 @@ export function EmptyChatGreeting({
     (worktreeId: string): void => {
       if (pendingWorktreeId === worktreeId) {
         setPendingWorktreeId(null);
-        setWorktreeMode(false);
       } else {
         setPendingWorktreeId(worktreeId);
-        setWorktreeMode(true);
         const textarea = document.querySelector<HTMLTextAreaElement>(
           ".chat-input-textarea",
         );
         textarea?.focus();
       }
     },
-    [pendingWorktreeId, setPendingWorktreeId, setWorktreeMode],
+    [pendingWorktreeId, setPendingWorktreeId],
   );
 
   const handleCopyPath = useCallback((id: string, path: string): void => {

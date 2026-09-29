@@ -394,6 +394,8 @@ mod tests {
             previous_response_id: None,
             directory_id: None,
             analysis_workspace_root: None,
+            execution_workspace_root: None,
+            worktree_id: None,
             checkpoint_id: None,
             context_compaction: None,
             resume_after_compaction: None,

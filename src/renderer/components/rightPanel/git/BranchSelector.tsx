@@ -525,8 +525,8 @@ export const BranchSelector = ({
 
   const isSessionRunning = Boolean(
     chatContext?.isStreaming ||
-      chatContext?.isAborting ||
-      chatContext?.isCompacting,
+    chatContext?.isAborting ||
+    chatContext?.isCompacting,
   );
 
   const handleSelectWorktreeForChat = (wt: GitWorktreeInfo): void => {
@@ -540,7 +540,6 @@ export const BranchSelector = ({
       );
     } else {
       chatContext.setPendingWorktreeId(wt.worktreeId);
-      chatContext.setWorktreeMode(true);
       const textarea = document.querySelector<HTMLTextAreaElement>(
         ".chat-input-textarea",
       );
@@ -557,7 +556,6 @@ export const BranchSelector = ({
     if (!chatContext) return;
     chatContext.handleNewChat(directoryId || undefined);
     chatContext.setPendingWorktreeId(wt.worktreeId);
-    chatContext.setWorktreeMode(true);
     setIsOpen(false);
     setTimeout(() => {
       const textarea = document.querySelector<HTMLTextAreaElement>(

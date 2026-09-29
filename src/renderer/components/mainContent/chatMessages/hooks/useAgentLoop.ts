@@ -351,7 +351,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       const sessionRef = ctx.sessionsRefData.current.get(sessionKey);
       if (sessionRef && targetPendingWorktree) {
         sessionRef.worktreeId = targetPendingWorktree;
-        sessionRef.worktreeMode = true;
       }
       // 已有会话：发送时把当前选择统一落库（渠道绑定/思考强度/Fast Mode/模式）。
       // 切换这些选择本身不再写库；pending 会话在迁移拿到真实 id 后再写。
@@ -891,7 +890,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               currentSession?.worktreeId || ctx.pendingWorktreeIdRef.current;
             if (effectiveWorktreeId && currentSession) {
               currentSession.worktreeId = effectiveWorktreeId;
-              currentSession.worktreeMode = true;
             }
             ctx.setPendingWorktreeId(null);
             // pending 会话的渠道/运行时/模式选择在拿到真实会话 id 后统一落库，

@@ -30,7 +30,6 @@ export function WorktreeSessionSelector(): React.JSX.Element | null {
   const {
     activeConversationId,
     conversationDirectoryId,
-    setWorktreeMode,
     pendingWorktreeId,
     setPendingWorktreeId,
     isStreaming,
@@ -164,7 +163,6 @@ export function WorktreeSessionSelector(): React.JSX.Element | null {
             worktrees.find((item) => item.worktreeId === worktreeId) ?? null,
           );
           setIsOpen(false);
-          void setWorktreeMode(Boolean(worktreeId));
         })
         .catch(() => {
           // Keep current state on fail
@@ -172,7 +170,6 @@ export function WorktreeSessionSelector(): React.JSX.Element | null {
     } else {
       // 当前为新建会话状态（无活跃会话 ID）：作为待生效预选工作树
       setPendingWorktreeId(worktreeId);
-      setWorktreeMode(Boolean(worktreeId));
       setCurrent(
         worktrees.find((item) => item.worktreeId === worktreeId) ?? null,
       );

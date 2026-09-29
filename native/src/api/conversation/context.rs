@@ -220,7 +220,7 @@ pub async fn prepare_context_request(
         .flatten()
         .map(|path| path.to_string_lossy().into_owned())
         .unwrap_or_default()
-    } else if request.worktree_mode {
+    } else {
         let worktree_path = if let Some(wt_id) = request.worktree_id {
             crate::storage::services::git::get_worktree_by_id(request.database_path, wt_id)
                 .ok()
@@ -247,15 +247,6 @@ pub async fn prepare_context_request(
                 })
                 .unwrap_or_default()
         }
-    } else {
-        request
-            .directory_id
-            .and_then(|id| {
-                get_workspace_directory_path(request.database_path, id)
-                    .ok()
-                    .flatten()
-            })
-            .unwrap_or_default()
     };
 
     // Plan Mode: replace the built-in system prompt with the Plan Mode prompt

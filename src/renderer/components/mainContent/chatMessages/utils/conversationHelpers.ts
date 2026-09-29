@@ -39,14 +39,11 @@ export const resolveConversationWorkspacePath = async (
   conversationId: string,
   directoryId: string | undefined,
   fallbackPath: string | undefined,
-  worktreeMode: boolean,
+  worktreeMode?: boolean,
   explicitWorktreeId?: string | null,
 ): Promise<string | undefined> => {
-  if (!worktreeMode) {
-    return fallbackPath;
-  }
   if (!directoryId?.trim()) {
-    throw new Error("WorkTree execution requires a valid project directory");
+    return fallbackPath;
   }
 
   // 1. 如果显式提供了预选或指定的 worktreeId，直接通过工作树列表验证并解析真实路径
@@ -61,30 +58,39 @@ export const resolveConversationWorkspacePath = async (
     ) {
       return matched.worktreePath;
     }
-    throw new Error(
-      "WorkTree binding is missing, invalid, or belongs to a different project directory",
-    );
+    if (worktreeMode) {
+      throw new Error(
+        "WorkTree binding is missing, invalid, or belongs to a different project directory",
+      );
+    }
   }
 
   // 2. 如果存在持久化会话 ID，从数据库持久化绑定中获取
   if (conversationId.trim()) {
     const binding = await window.snow.getConversationWorktree(conversationId);
     if (
-      !binding ||
-      !binding.isValid ||
-      binding.directoryId !== directoryId ||
-      !binding.worktreePath.trim()
+      binding &&
+      binding.isValid &&
+      binding.directoryId === directoryId &&
+      binding.worktreePath.trim()
     ) {
+      return binding.worktreePath;
+    }
+    if (worktreeMode) {
       throw new Error(
         "WorkTree binding is missing, invalid, or belongs to a different project directory",
       );
     }
-    return binding.worktreePath;
   }
 
-  throw new Error(
-    "WorkTree execution requires a conversation or preselected worktree, and project directory",
-  );
+  // 3. 仅在显式开启 worktreeMode 且既无预选也无会话绑定时抛出错误
+  if (worktreeMode) {
+    throw new Error(
+      "WorkTree execution requires a conversation or preselected worktree, and project directory",
+    );
+  }
+
+  return fallbackPath;
 };
 
 /** Persist the parent's binding for a child session before it can execute. */
@@ -92,11 +98,8 @@ export const inheritConversationWorktreeBinding = async (
   parentConversationId: string,
   childConversationId: string,
   directoryId: string,
-  worktreeMode: boolean,
+  worktreeMode?: boolean,
 ): Promise<boolean> => {
-  if (!worktreeMode) {
-    return false;
-  }
   const binding =
     await window.snow.getConversationWorktree(parentConversationId);
   if (
@@ -105,23 +108,28 @@ export const inheritConversationWorktreeBinding = async (
     binding.directoryId !== directoryId ||
     !binding.worktreePath.trim()
   ) {
-    throw new Error(
-      "Parent WorkTree binding is missing, invalid, or belongs to a different project directory",
-    );
+    if (worktreeMode) {
+      throw new Error(
+        "Parent WorkTree binding is missing, invalid, or belongs to a different project directory",
+      );
+    }
+    return false;
   }
   await window.snow.setConversationWorktree(
     childConversationId,
     binding.worktreeId,
   );
-  await window.snow.setConversationModes(
-    childConversationId,
-    false,
-    false,
-    true,
-    false,
-    null,
-  );
-  return true;
+  if (worktreeMode) {
+    await window.snow.setConversationModes(
+      childConversationId,
+      false,
+      false,
+      true,
+      false,
+      null,
+    );
+  }
+  return Boolean(worktreeMode);
 };
 
 /**

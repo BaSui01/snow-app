@@ -2840,6 +2840,74 @@
   background-blend-mode: var(--rc-blend), normal;
 }
 
+/* ===== 追加：表单弹窗（FormDialog）同款框饰 ===== */
+
+:root[data-theme-preset="rococo"] .form-dialog-card {
+  position: relative;
+  border: 1px solid var(--rc-edge-strong);
+  border-radius: var(--rc-radius-lg);
+  background-color: var(--rc-menu);
+  background-image: var(--rc-velvet), var(--rc-swag);
+  background-position:
+    center,
+    center bottom 8px;
+  background-size:
+    auto,
+    auto 24px;
+  background-repeat: repeat, no-repeat;
+  background-blend-mode: normal, var(--rc-blend);
+  box-shadow:
+    inset 0 0 0 1px var(--rc-hi),
+    var(--rc-menu-shadow);
+}
+
+/* 描金内框画在内容之上，避免被页眉/页脚底色盖住 */
+:root[data-theme-preset="rococo"] .form-dialog-card::before {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  z-index: 2;
+  border: 1px solid var(--rc-gold-line);
+  border-radius: calc(var(--rc-radius-lg) - 3px);
+  pointer-events: none;
+}
+
+:root[data-theme-preset="rococo"] .form-dialog-card .form-dialog-header {
+  border-bottom: 1px solid var(--rc-gold-line);
+  background-color: var(--rc-menu);
+  background-image:
+    var(--rc-rosette), var(--rc-rosette), var(--rc-crest),
+    linear-gradient(180deg, var(--rc-face-top), var(--rc-face));
+  background-position:
+    calc(50% - 118px) 6px,
+    calc(50% + 118px) 6px,
+    center top 5px,
+    center;
+  background-size:
+    22px 22px,
+    22px 22px,
+    auto 21px,
+    auto;
+  background-repeat: no-repeat;
+  background-blend-mode:
+    var(--rc-blend), var(--rc-blend), var(--rc-blend), normal;
+}
+
+:root[data-theme-preset="rococo"] .form-dialog-card .form-dialog-footer {
+  border-top-color: var(--rc-gold-line);
+  background-color: var(--rc-menu);
+  background-image:
+    var(--rc-swag), linear-gradient(180deg, var(--rc-face-top), var(--rc-face));
+  background-position:
+    center bottom 10px,
+    center;
+  background-size:
+    auto 25px,
+    auto;
+  background-repeat: no-repeat;
+  background-blend-mode: var(--rc-blend), normal;
+}
+
 /* 确认弹窗：同款框饰的小尺寸版本 */
 
 :root[data-theme-preset="rococo"] .confirm-dialog {

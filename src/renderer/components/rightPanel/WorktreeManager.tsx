@@ -36,6 +36,11 @@ const getFolderName = (p: string): string => {
   return parts[parts.length - 1] || p;
 };
 
+const normPath = (p: string | null | undefined): string => {
+  if (!p) return "";
+  return p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+};
+
 export function WorktreeManager({
   directoryId,
   onOpenTerminal,
@@ -55,6 +60,13 @@ export function WorktreeManager({
   );
   const [showCreate, setShowCreate] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // 错误提示 6 秒后自动清除
+  useEffect(() => {
+    if (!error) return;
+    const timer = setTimeout(() => setError(""), 6000);
+    return () => clearTimeout(timer);
+  }, [error]);
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem("snow:git:worktree-collapsed") === "true";
@@ -490,7 +502,15 @@ export function WorktreeManager({
           {error ? (
             <div role="alert" className="git-worktrees-error">
               <AlertCircle size={13} className="flex-shrink-0" />
-              <span>{error}</span>
+              <span className="flex-1 min-w-0">{error}</span>
+              <button
+                type="button"
+                className="git-worktrees-error-close"
+                onClick={() => setError("")}
+                title={t("common.close", { defaultValue: "关闭提示" })}
+              >
+                <X size={11} />
+              </button>
             </div>
           ) : null}
 
@@ -500,6 +520,10 @@ export function WorktreeManager({
                 const cleanedPath = cleanWorktreePath(item.worktreePath);
                 const folderName = getFolderName(cleanedPath);
                 const isCopied = copiedId === item.worktreeId;
+                const isMain =
+                  normPath(item.worktreePath) === normPath(item.repositoryPath);
+                const isCurrent =
+                  normPath(item.worktreePath) === normPath(directoryId);
 
                 return (
                   <li
@@ -610,16 +634,38 @@ export function WorktreeManager({
                           </button>
                         )}
 
-                        <button
-                          type="button"
-                          className="git-worktree-action-btn is-danger"
-                          disabled={busy}
-                          title={t("git.worktreeRemove")}
-                          aria-label={t("git.worktreeRemove")}
-                          onClick={() => setRemoveTarget(item)}
-                        >
-                          <Trash2 size={12} />
-                        </button>
+                        {!isMain && (
+                          <button
+                            type="button"
+                            className={`git-worktree-action-btn is-danger${isCurrent ? " is-disabled" : ""}`}
+                            disabled={busy || isCurrent}
+                            title={
+                              isCurrent
+                                ? t("git.cannotRemoveCurrentWorktree", {
+                                    defaultValue:
+                                      "当前所在工作树无法删除，请先切换到其他分支或工作树",
+                                  })
+                                : t("git.worktreeRemove")
+                            }
+                            aria-label={t("git.worktreeRemove")}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!isCurrent) {
+                                setRemoveTarget(item);
+                              }
+                            }}
+                          >
+                            {busy &&
+                            removeTarget?.worktreeId === item.worktreeId ? (
+                              <Loader2
+                                size={12}
+                                className="spin text-red-400"
+                              />
+                            ) : (
+                              <Trash2 size={12} />
+                            )}
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -663,8 +709,11 @@ export function WorktreeManager({
         })}
         confirmLabel={t("git.worktreeRemove")}
         cancelLabel={t("common.cancel")}
+        isConfirming={busy}
         onConfirm={remove}
-        onCancel={() => setRemoveTarget(null)}
+        onCancel={() => {
+          if (!busy) setRemoveTarget(null);
+        }}
       />
     </section>
   );

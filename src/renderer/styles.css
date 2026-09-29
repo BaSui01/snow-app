@@ -30344,6 +30344,7 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 .git-worktrees-error {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
   padding: 6px 9px;
   border-radius: var(--radius-sm, 4px);
@@ -30352,6 +30353,24 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   color: #ef4444;
   font-size: 10.5px;
   line-height: 1.4;
+}
+
+.git-worktrees-error-close {
+  background: transparent;
+  border: none;
+  color: currentColor;
+  padding: 2px;
+  cursor: pointer;
+  opacity: 0.7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm, 4px);
+  flex-shrink: 0;
+}
+.git-worktrees-error-close:hover {
+  opacity: 1;
+  background: rgba(239, 68, 68, 0.18);
 }
 
 /* Branch Dropdown Search Filter */
@@ -30800,24 +30819,45 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
+  gap: 8px;
   padding: 6px 10px;
-  background: rgba(239, 68, 68, 0.1);
+  background: rgba(239, 68, 68, 0.12);
   border-bottom: 1px solid rgba(239, 68, 68, 0.25);
   font-size: 11px;
   color: var(--accent-red, #ef4444);
+}
+
+.branch-create-error-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  overflow: hidden;
+  max-height: 52px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.branch-create-error-text {
+  word-break: break-word;
+  line-height: 1.35;
 }
 
 .branch-create-error-close {
   background: transparent;
   border: none;
   color: currentColor;
-  padding: 1px;
+  padding: 2px;
   cursor: pointer;
   opacity: 0.7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm, 4px);
+  flex-shrink: 0;
 }
 .branch-create-error-close:hover {
   opacity: 1;
+  background: rgba(239, 68, 68, 0.18);
 }
 
 .branch-inline-create-box {
@@ -31471,6 +31511,28 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 .branch-wt-action-delete:hover {
   background: rgba(239, 68, 68, 0.15);
   color: var(--accent-red, #ef4444);
+}
+
+.branch-wt-action-delete.is-disabled {
+  opacity: 0.35 !important;
+  cursor: not-allowed !important;
+  pointer-events: auto !important;
+}
+
+.branch-wt-action-delete.is-disabled:hover {
+  background: transparent !important;
+  color: var(--text-muted) !important;
+}
+
+.git-worktree-action-btn.is-danger.is-disabled {
+  opacity: 0.35 !important;
+  cursor: not-allowed !important;
+  pointer-events: auto !important;
+}
+
+.git-worktree-action-btn.is-danger.is-disabled:hover {
+  background: transparent !important;
+  color: var(--text-muted) !important;
 }
 
 .branch-dropdown-item-name {

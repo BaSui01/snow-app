@@ -123,20 +123,14 @@ export const BranchSelector = ({
   const customRefInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  const normalizedRepoPath = useMemo(() => normPath(repoPath), [repoPath]);
+
   const isOtherWorktreePath = useCallback(
     (wtPath: string | null | undefined): boolean => {
       if (!wtPath) return false;
-      const normWt = wtPath
-        .replace(/\\/g, "/")
-        .replace(/\/+$/, "")
-        .toLowerCase();
-      const normRepo = repoPath
-        .replace(/\\/g, "/")
-        .replace(/\/+$/, "")
-        .toLowerCase();
-      return normWt !== normRepo;
+      return normPath(wtPath) !== normalizedRepoPath;
     },
-    [repoPath],
+    [normalizedRepoPath],
   );
 
   /** 本地主干分支检测 (main 或 master) */
@@ -697,10 +691,23 @@ export const BranchSelector = ({
     },
   ];
 
-  const normalizedSearch = searchQuery.trim().toLowerCase();
+  // 错误提示自动在 6 秒后淡出清除
+  useEffect(() => {
+    if (!createError) return;
+    const timer = setTimeout(() => {
+      setCreateError(null);
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, [createError]);
 
-  // 过滤工作树
+  const normalizedSearch = useMemo(
+    () => searchQuery.trim().toLowerCase(),
+    [searchQuery],
+  );
+
+  // 过滤工作树 (基于已缓存的规范化搜索词)
   const filteredWorktrees = useMemo(() => {
+    if (!worktrees.length) return [];
     if (!normalizedSearch) return worktrees;
     return worktrees.filter(
       (wt) =>
@@ -713,22 +720,25 @@ export const BranchSelector = ({
     );
   }, [worktrees, normalizedSearch]);
 
-  // 本地分支
-  const localBranches = useMemo(() => {
-    return branches.filter(
-      (b) =>
-        !b.isRemote &&
-        (!normalizedSearch || b.name.toLowerCase().includes(normalizedSearch)),
-    );
-  }, [branches, normalizedSearch]);
-
-  // 远程分支
-  const remoteBranches = useMemo(() => {
-    return branches.filter(
-      (b) =>
-        b.isRemote &&
-        (!normalizedSearch || b.name.toLowerCase().includes(normalizedSearch)),
-    );
+  // 本地分支与远程分支单次遍历完成分类与检索过滤，避免两遍全量遍历
+  const { localBranches, remoteBranches } = useMemo(() => {
+    const local: GitBranchType[] = [];
+    const remote: GitBranchType[] = [];
+    for (let i = 0; i < branches.length; i++) {
+      const b = branches[i];
+      if (
+        normalizedSearch &&
+        !b.name.toLowerCase().includes(normalizedSearch)
+      ) {
+        continue;
+      }
+      if (b.isRemote) {
+        remote.push(b);
+      } else {
+        local.push(b);
+      }
+    }
+    return { localBranches: local, remoteBranches: remote };
   }, [branches, normalizedSearch]);
 
   return (
@@ -849,11 +859,20 @@ export const BranchSelector = ({
           {/* 错误提示条 */}
           {createError && (
             <div className="branch-create-error" role="alert">
-              <span className="branch-create-error-text">{createError}</span>
+              <div className="branch-create-error-content">
+                <AlertCircle
+                  size={12}
+                  className="branch-create-error-icon shrink-0"
+                />
+                <span className="branch-create-error-text" title={createError}>
+                  {createError}
+                </span>
+              </div>
               <button
                 type="button"
                 className="branch-create-error-close"
                 onClick={() => setCreateError(null)}
+                title={t("common.close", { defaultValue: "关闭提示" })}
               >
                 <X size={11} />
               </button>
@@ -1285,13 +1304,51 @@ export const BranchSelector = ({
                             {!isMain && (
                               <button
                                 type="button"
-                                className="branch-wt-action-btn branch-wt-action-delete"
-                                onClick={() => setRemoveWorktreeTarget(wt)}
-                                title={t("git.removeWorktree", {
+                                className={`branch-wt-action-btn branch-wt-action-delete${isCurrent || (isSessionRunning && chatContext?.pendingWorktreeId === wt.worktreeId) ? " is-disabled" : ""}`}
+                                disabled={
+                                  removingWorktree ||
+                                  isCurrent ||
+                                  (isSessionRunning &&
+                                    chatContext?.pendingWorktreeId ===
+                                      wt.worktreeId)
+                                }
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (!isCurrent) {
+                                    setRemoveWorktreeTarget(wt);
+                                  }
+                                }}
+                                title={
+                                  isCurrent
+                                    ? t("git.cannotRemoveCurrentWorktree", {
+                                        defaultValue:
+                                          "当前所在工作树无法删除，请先切换到其他分支或工作树",
+                                      })
+                                    : isSessionRunning &&
+                                        chatContext?.pendingWorktreeId ===
+                                          wt.worktreeId
+                                      ? t("git.cannotRemoveRunningWorktree", {
+                                          defaultValue:
+                                            "当前会话正在运行中，暂不可移除该工作树",
+                                        })
+                                      : t("git.removeWorktree", {
+                                          defaultValue: "移除此工作树",
+                                        })
+                                }
+                                aria-label={t("git.removeWorktree", {
                                   defaultValue: "移除此工作树",
                                 })}
                               >
-                                <Trash2 size={11} />
+                                {removingWorktree &&
+                                removeWorktreeTarget?.worktreeId ===
+                                  wt.worktreeId ? (
+                                  <Loader2
+                                    size={11}
+                                    className="spin text-red-400"
+                                  />
+                                ) : (
+                                  <Trash2 size={11} />
+                                )}
                               </button>
                             )}
                             {isCurrent && (
@@ -1498,9 +1555,14 @@ export const BranchSelector = ({
           })}
           confirmLabel={t("common.delete", { defaultValue: "删除" })}
           cancelLabel={t("common.cancel", { defaultValue: "取消" })}
+          isConfirming={removingWorktree}
           variant="danger"
           onConfirm={handleConfirmRemoveWorktree}
-          onCancel={() => setRemoveWorktreeTarget(null)}
+          onCancel={() => {
+            if (!removingWorktree) {
+              setRemoveWorktreeTarget(null);
+            }
+          }}
         />
       )}
 

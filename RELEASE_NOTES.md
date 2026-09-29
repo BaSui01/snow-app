@@ -1,5 +1,22 @@
 # Release Notes
 
+## v0.4.12
+
+## New Features
+
+- **Plugin Network Requests (`api.net.fetch`)**: The plugin runtime gains external HTTP requests issued from the main process — they follow the app proxy settings, bypass CORS and send no cookies — returning status, headers and body, with network failures reported through the `error` field instead of throwing; available to ESM and iframe plugins alike, and the metadata catalog gains a Network sub-tab.
+- **Privacy Scope Dialog**: Privacy declarations on plugins and scripts become clickable amber badges that open a "Privacy scopes" dialog explaining each scope's purpose, the metadata domains it unlocks (field-level declarations name the exact fields) and its writable capabilities, plus where it is declared.
+- **Client Script Icons**: Script metadata supports `@icon` / `@iconURL` (`@icon64` / `@icon64URL` as fallback) with `lucide:IconName`, an http(s) URL or a data URI, shown in the script list.
+
+## Improvements
+
+- The Rococo theme gives form dialogs the same framed ornament: a gilded inner frame, header rosettes and crest, and a footer swag.
+- Plugin `git` metadata now comes from a dedicated repo identity API (reading the repo's `git config` and origin remote) instead of the local team identity.
+
+## Bug Fixes
+
+- Fixed Gemini function calls losing their arguments: histories storing a functionCall with a top-level `args` object are restored correctly, and signed parts are replayed without overwriting complete arguments with empty ones (#170).
+
 ## v0.4.11
 
 ## New Features

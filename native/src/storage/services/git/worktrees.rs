@@ -416,24 +416,6 @@ pub fn create_worktree(database_path: &Path, directory_id: &str, branch_name: &s
     }
 }
 
-fn ensure_worktree_has_no_bindings(
-    transaction: &rusqlite::Transaction<'_>,
-    database_path: &Path,
-    worktree_id: &str,
-) -> Result<()> {
-    let has_bindings: bool = transaction.query_row(
-        "SELECT EXISTS(SELECT 1 FROM conversation_worktree_bindings WHERE worktree_id = ?1)",
-        [worktree_id],
-        |row| row.get(0),
-    ).map_err(|error| database::database_error(database_path, "check worktree conversation bindings", error))?;
-    if has_bindings {
-        return Err(Error::from_reason(
-            "Cannot remove a worktree with bound conversations; unbind those conversations first",
-        ));
-    }
-    Ok(())
-}
-
 pub fn remove_worktree(database_path: &Path, directory_id: &str, worktree_id: &str) -> Result<()> {
     let repository_path = project_repository(database_path, directory_id)?;
     database::with_write_lock(|| {
@@ -472,11 +454,6 @@ pub fn remove_worktree(database_path: &Path, directory_id: &str, worktree_id: &s
                         Some("Team worktrees cannot be removed here".to_string()),
                     ));
                 }
-                ensure_worktree_has_no_bindings(&transaction, database_path, worktree_id)
-                    .map_err(|err| rusqlite::Error::SqliteFailure(
-                        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
-                        Some(err.to_string()),
-                    ))?;
 
                 if Path::new(&registered_path).exists() {
                     let entry = list_git_worktree_entries(&repository_path)
@@ -514,6 +491,10 @@ pub fn remove_worktree(database_path: &Path, directory_id: &str, worktree_id: &s
                         ))?;
                 }
 
+                transaction.execute(
+                    "DELETE FROM conversation_worktree_bindings WHERE worktree_id = ?1",
+                    params![worktree_id],
+                )?;
                 transaction.execute(
                     "DELETE FROM git_worktrees WHERE worktree_id = ?1 AND directory_id = ?2",
                     params![worktree_id, directory_id],
@@ -696,38 +677,9 @@ pub fn get_worktree_by_id(database_path: &Path, worktree_id: &str) -> Result<Opt
 #[cfg(test)]
 mod tests {
     use super::{
-        ensure_worktree_has_no_bindings, is_team_worktree, should_delete_created_registry_entry,
+        is_team_worktree, should_delete_created_registry_entry,
         should_remove_created_branch,
     };
-
-    #[test]
-    fn refuses_worktree_removal_when_a_conversation_is_bound() {
-        let mut connection = rusqlite::Connection::open_in_memory().unwrap();
-        connection.execute_batch(
-            "CREATE TABLE conversation_worktree_bindings (worktree_id TEXT NOT NULL);
-             INSERT INTO conversation_worktree_bindings (worktree_id) VALUES ('bound-worktree');",
-        ).unwrap();
-        let transaction = connection.transaction().unwrap();
-        assert!(ensure_worktree_has_no_bindings(
-            &transaction,
-            std::path::Path::new("in-memory"),
-            "bound-worktree",
-        ).is_err());
-    }
-
-    #[test]
-    fn allows_worktree_removal_when_no_conversation_is_bound() {
-        let mut connection = rusqlite::Connection::open_in_memory().unwrap();
-        connection.execute_batch(
-            "CREATE TABLE conversation_worktree_bindings (worktree_id TEXT NOT NULL);",
-        ).unwrap();
-        let transaction = connection.transaction().unwrap();
-        assert!(ensure_worktree_has_no_bindings(
-            &transaction,
-            std::path::Path::new("in-memory"),
-            "unbound-worktree",
-        ).is_ok());
-    }
 
     #[test]
     fn rollback_deletes_branch_only_when_ref_is_unchanged_and_unchecked_out() {

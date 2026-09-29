@@ -274,6 +274,12 @@ pub fn delete_conversation(database_path: &Path, conversation_id: &str, delete_m
     for target_id in conversation_ids.iter().rev() {
         transaction
             .execute(
+                "DELETE FROM conversation_worktree_bindings WHERE conversation_id = ?1",
+                params![target_id],
+            )
+            .ok();
+        transaction
+            .execute(
                 "DELETE FROM chat_conversations WHERE conversation_id = ?1",
                 params![target_id],
             )
@@ -524,6 +530,14 @@ pub fn delete_conversations(
 
     for chunk in all_target_ids.chunks(MAX_VARIABLES) {
         let placeholders = in_clause_placeholders(chunk.len());
+        transaction
+            .execute(
+                &format!(
+                    "DELETE FROM conversation_worktree_bindings WHERE conversation_id IN ({placeholders})"
+                ),
+                params_from_iter(chunk.iter()),
+            )
+            .ok();
         transaction
             .execute(
                 &format!(

@@ -483,6 +483,11 @@ export const BranchSelector = ({
     window.snow
       .gitRemoveWorktree(directoryId, removeWorktreeTarget.worktreeId)
       .then(() => {
+        if (
+          chatContext?.pendingWorktreeId === removeWorktreeTarget.worktreeId
+        ) {
+          chatContext.setPendingWorktreeId(null);
+        }
         setRemoveWorktreeTarget(null);
         window.dispatchEvent(new Event("snow:worktrees-changed"));
         loadWorktrees();
@@ -490,7 +495,12 @@ export const BranchSelector = ({
         onBranchChanged();
       })
       .catch((cause: unknown) => {
-        const detail = cause instanceof Error ? cause.message : String(cause);
+        const rawDetail =
+          cause instanceof Error ? cause.message : String(cause);
+        const detail = rawDetail
+          .replace(/^Error invoking remote method '[^']+':\s*/i, "")
+          .replace(/^Error:\s*/i, "")
+          .trim();
         setCreateError(
           /dirty|modified|uncommitted|未提交|修改/i.test(detail)
             ? t("git.worktreeRemoveDirty", {

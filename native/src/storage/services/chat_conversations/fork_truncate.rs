@@ -554,6 +554,12 @@ fn truncate_conversation_from_id(
             })?;
         transaction
             .execute(
+                "DELETE FROM conversation_worktree_bindings WHERE conversation_id = ?1",
+                params![node_conversation_id],
+            )
+            .ok();
+        transaction
+            .execute(
                 "DELETE FROM chat_conversations WHERE conversation_id = ?1",
                 params![node_conversation_id],
             )

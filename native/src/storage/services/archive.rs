@@ -757,6 +757,12 @@ pub fn archive_conversations(
         let placeholders = in_clause_placeholders(chunk.len());
         transaction
             .execute(
+                &format!("DELETE FROM conversation_worktree_bindings WHERE conversation_id IN ({placeholders})"),
+                params_from_iter(chunk.iter()),
+            )
+            .ok();
+        transaction
+            .execute(
                 &format!("DELETE FROM chat_conversations WHERE conversation_id IN ({placeholders})"),
                 params_from_iter(chunk.iter()),
             )

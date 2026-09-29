@@ -765,6 +765,22 @@ pub struct MemoCountSummary {
     pub done: i32,
 }
 
+/// Diff 行内评论（diff_review_comments 表）。按 `directory_id` + `file_path`
+/// 隔离；`side` 为 old | new；`line_content` 为行内容快照，用于过期校验。
+#[napi(object)]
+pub struct DiffReviewCommentRecord {
+    pub id: String,
+    pub comment_id: String,
+    pub directory_id: String,
+    pub file_path: String,
+    pub side: String,
+    pub line_number: i32,
+    pub line_content: String,
+    pub content: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 /// 项目级持久记忆条目（project_memories 表）。按 `directory_id` 做项目
 /// 隔离；`kind` 为 fact | decision | preference | pitfall | task_state，
 /// `source` 为 agent（AI 工具写入）| auto（蒸馏）| user（手动），

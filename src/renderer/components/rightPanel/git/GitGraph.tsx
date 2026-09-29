@@ -372,7 +372,7 @@ export const GitGraph = ({
   const [selectedHash, setSelectedHash] = useState<string | null>(null);
   const [commitFiles, setCommitFiles] = useState<GitCommitFile[]>([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
-  // 当前正在查看差异的提交文件（hash + path），用于在文件列表中高亮。
+  // 当前选中的提交文件（hash + path），用于在文件列表中高亮。
   const [viewedCommitFile, setViewedCommitFile] = useState<{
     hash: string;
     path: string;
@@ -751,7 +751,7 @@ export const GitGraph = ({
     y: number;
     commit: GitLogEntry;
   } | null>(null);
-  // 提交内文件右键菜单：复制文件路径（单击文件本身即在新标签页打开 Diff）。
+  // 提交内文件右键菜单：复制文件路径（双击文件在新标签页打开 Diff）。
   const [fileContextMenu, setFileContextMenu] = useState<{
     x: number;
     y: number;
@@ -1129,7 +1129,13 @@ export const GitGraph = ({
                           className={`git-graph-detail-file${
                             isViewed ? " active" : ""
                           }`}
-                          onClick={() => {
+                          onClick={() =>
+                            setViewedCommitFile({
+                              hash: row.commit.hash,
+                              path: file.path,
+                            })
+                          }
+                          onDoubleClick={() => {
                             setViewedCommitFile({
                               hash: row.commit.hash,
                               path: file.path,

@@ -1498,6 +1498,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
                 diffResult={(tab.data as DiffTabData).diffResult}
                 diffLoading={(tab.data as DiffTabData).diffLoading}
                 imageDiff={(tab.data as DiffTabData).imageDiff ?? null}
+                directoryId={activeDirectory?.directoryId ?? null}
               />
             ) : null
           ) : tab.type === "file" ? (

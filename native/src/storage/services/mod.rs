@@ -16,6 +16,7 @@ pub mod context_attachments;
 pub mod conversation_export;
 pub mod custom_commands;
 pub mod custom_header_schemes;
+pub mod diff_review_comments;
 pub mod file_scanner;
 pub mod file_watcher;
 pub mod fs_explorer;

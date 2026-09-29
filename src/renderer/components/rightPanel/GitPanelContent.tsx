@@ -212,6 +212,7 @@ export function GitPanelContent({
             repoPath={repoPath}
             branch={gitStatus?.currentBranch ?? null}
             refreshKey={graphRefreshKey}
+            onOpenInTab={onOpenInTab}
           />
         ) : (
           <div className="git-graph-empty">

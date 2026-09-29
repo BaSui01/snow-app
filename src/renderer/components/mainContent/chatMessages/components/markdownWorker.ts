@@ -129,15 +129,18 @@ markdown.renderer.rules.fence = (tokens, idx, options): string => {
 
 // Wrap tables in a scrollable container so that wide tables are horizontally
 // scrollable instead of being clipped by overflow:hidden on the table element.
-// The wrapper also carries a floating download button (CSV / XLSX export,
-// dispatched by the React layer via `data-table-action`).
+// .table-scroll is the only scrolling box: the floating download button (CSV /
+// XLSX export, dispatched by the React layer via `data-table-action`) sits in
+// the non-scrolling .table-wrapper so it stays pinned to the right edge.
 markdown.renderer.rules.table_open = (): string =>
   '<div class="table-wrapper">' +
   `<button class="table-download-btn" type="button" data-table-action="download" title="下载表格">` +
   `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>` +
   `</button>` +
+  '<div class="table-scroll">' +
   "\n<table>\n";
-markdown.renderer.rules.table_close = (): string => "</table>\n</div>\n";
+markdown.renderer.rules.table_close = (): string =>
+  "</table>\n</div>\n</div>\n";
 
 /**
  * 工作流交接文档块：<handoff>...</handoff>（标签独占行）渲染为可折叠的

@@ -15,6 +15,7 @@ import { registerWindowHandlers } from "./handlers/windowHandlers";
 import { registerNotificationHandlers } from "./handlers/notificationHandlers";
 import { registerMemoHandlers } from "./handlers/memoHandlers";
 import { registerMemoryHandlers } from "./handlers/memoryHandlers";
+import { registerDiffCommentHandlers } from "./handlers/diffCommentHandlers";
 import { registerScheduledTaskHandlers } from "./handlers/scheduledTaskHandlers";
 import { registerPersonalizationHandlers } from "./handlers/personalizationHandlers";
 import { registerImageHandlers } from "./handlers/imageHandlers";
@@ -44,6 +45,7 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
   registerNotificationHandlers();
   registerMemoHandlers(native);
   registerMemoryHandlers(native);
+  registerDiffCommentHandlers(native);
   registerScheduledTaskHandlers(native);
   registerPersonalizationHandlers();
   registerImageHandlers(native);

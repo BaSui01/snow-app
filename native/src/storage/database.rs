@@ -17,6 +17,7 @@ use super::{
 
 /// Bumped whenever the schema changes; written to `PRAGMA user_version` after
 /// a successful `create_schema` so the app can detect stale databases.
+/// 48: diff_review_comments table (右侧面板 diff 行内评论).
 /// 47: userscripts.target / view_json / surface_json / scope / sandbox columns
 /// (client-side desktop UI userscripts via `@snow-target client`).
 /// 46: chat_messages per-request token usage columns (rollback restores the
@@ -35,7 +36,7 @@ use super::{
 /// 32: api_configs canonical config_json migration plus conversation runtime config columns.
 /// 31: main's scheduled-tasks pre-script migration (30) + PR #65's three
 /// stream-interruption migrations (29 baseline + 4 total additions).
-const CURRENT_SCHEMA_VERSION: i64 = 47;
+const CURRENT_SCHEMA_VERSION: i64 = 48;
 const SNOWFLAKE_EPOCH_MS: u64 = 1_704_067_200_000;
 const SNOWFLAKE_WORKER_ID_BITS: u64 = 10;
 const SNOWFLAKE_SEQUENCE_BITS: u64 = 12;
@@ -1054,6 +1055,23 @@ CREATE TABLE IF NOT EXISTS app_plugins (
            ON memos(directory_id, status, created_at DESC, id DESC);
          CREATE INDEX IF NOT EXISTS idx_memos_directory_created
            ON memos(directory_id, created_at DESC, id DESC);
+
+         -- Diff 行内评论：按 directory_id + file_path 隔离；side 为
+         -- old | new；line_content 为行内容快照，用于展示时过期校验。
+         CREATE TABLE IF NOT EXISTS diff_review_comments (
+           id TEXT PRIMARY KEY NOT NULL,
+           comment_id TEXT NOT NULL UNIQUE,
+           directory_id TEXT NOT NULL DEFAULT '',
+           file_path TEXT NOT NULL DEFAULT '',
+           side TEXT NOT NULL DEFAULT 'new',
+           line_number INTEGER NOT NULL DEFAULT 0,
+           line_content TEXT NOT NULL DEFAULT '',
+           content TEXT NOT NULL DEFAULT '',
+           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+           updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+         );
+         CREATE INDEX IF NOT EXISTS idx_diff_review_comments_file
+           ON diff_review_comments(directory_id, file_path, created_at ASC, id ASC);
 
          CREATE TABLE IF NOT EXISTS scheduled_tasks (
            id TEXT PRIMARY KEY NOT NULL,

@@ -12262,14 +12262,19 @@ body.is-panel-resizing * {
   cursor: zoom-in;
 }
 
-/* Table — wrapper provides scroll + border so wide tables scroll instead of clip */
+/* Table — .table-wrapper 只负责外框与定位，内层 .table-scroll 才承担横向滚动，
+   这样右上角下载按钮不会被滚动带走，始终贴在容器最右侧 */
 :is(.ai-message, .context-compaction-markdown) .table-wrapper {
   width: 100%;
   margin: 0 0 14px;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
+}
+
+:is(.ai-message, .context-compaction-markdown) .table-scroll {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  border-radius: inherit;
 }
 
 .ai-message table {
@@ -15704,10 +15709,22 @@ body.is-panel-resizing * {
   min-width: 0;
 }
 
-.tool-call-diff-open-tab {
+.tool-call-diff-actions {
   position: absolute;
   top: 6px;
   right: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.tool-call-diff-content:hover .tool-call-diff-actions {
+  opacity: 1;
+}
+
+.tool-call-diff-action-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -15719,19 +15736,15 @@ body.is-panel-resizing * {
   background: var(--bg-secondary);
   color: var(--text-secondary);
   cursor: pointer;
-  opacity: 0;
-  transition:
-    opacity 0.15s ease,
-    background 0.15s ease,
-    color 0.15s ease;
 }
 
-.tool-call-diff-content:hover .tool-call-diff-open-tab {
-  opacity: 1;
-}
-
-.tool-call-diff-open-tab:hover {
+.tool-call-diff-action-btn:hover {
   background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.tool-call-diff-action-btn.active {
+  background: var(--bg-active);
   color: var(--text-primary);
 }
 
@@ -32847,6 +32860,292 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   line-height: 1.5;
 }
 
+/* 就地切换 diff 显示模式与评论操作 */
+.diff-viewer-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.diff-viewer-wrap-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 22px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.diff-viewer-wrap-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.diff-viewer-wrap-btn.active {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.diff-viewer-mode-switch {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.diff-viewer-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.diff-viewer-mode-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.diff-viewer-mode-btn.active {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.diff-viewer-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.diff-viewer-action-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+/* 删除全部评论的二次确认态 */
+.diff-viewer-action-btn.danger {
+  color: var(--accent-red-text);
+  border-color: var(--accent-red-text);
+  background: var(--accent-red-bg);
+}
+
+/* ===== Diff 行内评论 ===== */
+.diff-comments-disabled-hint {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--surface-island-muted);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.diff-comment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 10px;
+}
+
+.diff-comment-card {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.diff-comment-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.diff-comment-card-meta {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+
+.diff-comment-card-outdated {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-amber-bg);
+  color: var(--accent-amber-text);
+  font-size: 10px;
+}
+
+.diff-comment-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.diff-comment-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.diff-comment-icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.diff-comment-icon-btn.danger:hover {
+  background: var(--accent-red-bg);
+  color: var(--accent-red-text);
+}
+
+.diff-comment-card-body {
+  padding: 6px 8px;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.diff-comment-card-editor {
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.diff-comment-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--accent-color);
+  background: var(--bg-secondary);
+  font-family: var(--font-sans);
+}
+
+.diff-comment-composer-target {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.diff-comment-composer-side {
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-active);
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+.diff-comment-composer-input {
+  width: 100%;
+  min-height: 52px;
+  resize: vertical;
+  padding: 6px 8px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.5;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.diff-comment-composer-input:focus {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.diff-comment-composer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.diff-comment-action-btn {
+  height: 22px;
+  padding: 0 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.diff-comment-action-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.diff-comment-action-btn.primary {
+  border-color: var(--accent-color);
+  background: var(--accent-color);
+  color: var(--on-solid);
+}
+
+/* 覆盖通用 hover 背景,保持主题色实心与白字（否则白字落在 bg-hover 浅底上不可见） */
+.diff-comment-action-btn.primary:hover:not(:disabled) {
+  border-color: var(--accent-color);
+  background: var(--accent-color);
+  color: var(--on-solid);
+  opacity: 0.9;
+}
+
+.diff-comment-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.diff-comment-orphans {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border-top: 1px dashed var(--border-subtle);
+  background: var(--surface-island-muted);
+}
+
+.diff-comment-orphans-title {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 /* 图片 diff：旧/新版本并排渲染 */
 .diff-viewer-images {
   flex: 1;
@@ -32959,6 +33258,23 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 
 .incremental-diff-content [data-diff-highlight] {
   border-radius: 0.2em;
+}
+
+/* 关闭自动换行：内容按最长行撑开,由外层容器横向滚动 */
+.incremental-diff-wrapper[data-wrap="false"],
+.incremental-diff-wrapper[data-wrap="false"] .diff-style-root {
+  width: max-content;
+  min-width: 100%;
+}
+
+.incremental-diff-wrapper[data-wrap="false"] .incremental-diff-line {
+  width: max-content;
+  min-width: 100%;
+}
+
+.incremental-diff-wrapper[data-wrap="false"] .incremental-diff-content {
+  white-space: pre;
+  word-break: normal;
 }
 
 /* patch 无法解析（非标准 diff 文本）时的兜底提示，避免纯空白 */

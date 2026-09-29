@@ -16,6 +16,8 @@ const APPEND_THRESHOLD = 600;
 type IncrementalUnifiedDiffViewProps = {
   diffFile: DiffFile;
   fontSize: number;
+  /** 自动换行;关闭后长行保持单行,由外层容器横向滚动 */
+  enableWrap?: boolean;
 };
 
 type LineTemplate = {
@@ -100,6 +102,7 @@ export const IncrementalUnifiedDiffView = memo(
   ({
     diffFile,
     fontSize,
+    enableWrap = true,
   }: IncrementalUnifiedDiffViewProps): React.JSX.Element => {
     const [visibleCount, setVisibleCount] = useState(RENDER_BATCH);
     const rootRef = useRef<HTMLDivElement | null>(null);
@@ -154,6 +157,7 @@ export const IncrementalUnifiedDiffView = memo(
         data-component="git-diff-view"
         data-theme={diffFile._getTheme() || "light"}
         data-highlighter={diffFile._getHighlighterName()}
+        data-wrap={enableWrap ? "true" : "false"}
       >
         <div
           className="diff-style-root"

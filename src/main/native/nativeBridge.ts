@@ -1594,6 +1594,26 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to count memos"),
         ),
+      listDiffReviewComments: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to list diff comments"),
+        ),
+      createDiffReviewComment: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to create diff comments"),
+        ),
+      updateDiffReviewComment: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to update diff comments"),
+        ),
+      deleteDiffReviewComment: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to delete diff comments"),
+        ),
+      deleteDiffReviewCommentsForFile: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to clear diff comments"),
+        ),
       upsertProjectMemory: () =>
         Promise.reject(
           new Error("Rust native bridge is required to save project memories"),

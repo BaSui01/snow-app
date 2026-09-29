@@ -1,7 +1,14 @@
 import { memo } from "react";
-import { ExternalLink } from "lucide-react";
+import { Columns2, ExternalLink, Rows3, WrapText } from "lucide-react";
 
 import { GitDiffView } from "../../../../common/GitDiffView";
+import {
+  setDiffViewMode,
+  setDiffWrapLines,
+  useDiffViewMode,
+  useDiffWrapLines,
+} from "../../../../common/diffViewPreferences";
+import { useI18n } from "../../../../../i18n";
 
 type MiniDiffViewerProps = {
   fileName: string;
@@ -20,7 +27,7 @@ type MiniDiffViewerProps = {
 
 /**
  * 工具调用消息中的紧凑差异视图。
- * 基于 @git-diff-view/react 渲染,支持语法高亮与自动单/双列切换。
+ * 基于 @git-diff-view/react 渲染,支持语法高亮、单/双列与换行切换。
  */
 export const MiniDiffViewer = memo(
   ({
@@ -30,31 +37,73 @@ export const MiniDiffViewer = memo(
     startLine,
     onOpenInTab,
     openInTabLabel,
-  }: MiniDiffViewerProps): React.JSX.Element => (
-    <div className="tool-call-diff-content">
-      <div className="tool-call-diff-view">
-        <GitDiffView
-          fileName={fileName}
-          oldContent={oldContent}
-          newContent={newContent}
-          fontSize={11}
-          oldStartLine={startLine}
-          newStartLine={startLine}
-        />
+  }: MiniDiffViewerProps): React.JSX.Element => {
+    const { t } = useI18n();
+    const viewMode = useDiffViewMode();
+    const wrapLines = useDiffWrapLines();
+
+    return (
+      <div className="tool-call-diff-content">
+        <div className="tool-call-diff-view">
+          <GitDiffView
+            fileName={fileName}
+            oldContent={oldContent}
+            newContent={newContent}
+            fontSize={11}
+            oldStartLine={startLine}
+            newStartLine={startLine}
+            viewMode={viewMode}
+            wrapLines={wrapLines}
+          />
+        </div>
+        <div className="tool-call-diff-actions">
+          <button
+            type="button"
+            className={`tool-call-diff-action-btn${
+              viewMode === "unified" ? " active" : ""
+            }`}
+            title={t("diffViewer.unifiedMode")}
+            aria-label={t("diffViewer.unifiedMode")}
+            onClick={() => setDiffViewMode("unified")}
+          >
+            <Rows3 size={12} strokeWidth={1.8} />
+          </button>
+          <button
+            type="button"
+            className={`tool-call-diff-action-btn${
+              viewMode === "split" ? " active" : ""
+            }`}
+            title={t("diffViewer.splitMode")}
+            aria-label={t("diffViewer.splitMode")}
+            onClick={() => setDiffViewMode("split")}
+          >
+            <Columns2 size={12} strokeWidth={1.8} />
+          </button>
+          <button
+            type="button"
+            className={`tool-call-diff-action-btn${wrapLines ? " active" : ""}`}
+            title={t("diffViewer.wrapLines")}
+            aria-label={t("diffViewer.wrapLines")}
+            aria-pressed={wrapLines}
+            onClick={() => setDiffWrapLines(!wrapLines)}
+          >
+            <WrapText size={12} strokeWidth={1.8} />
+          </button>
+          {onOpenInTab ? (
+            <button
+              type="button"
+              className="tool-call-diff-action-btn"
+              title={openInTabLabel}
+              aria-label={openInTabLabel}
+              onClick={onOpenInTab}
+            >
+              <ExternalLink size={12} strokeWidth={1.8} />
+            </button>
+          ) : null}
+        </div>
       </div>
-      {onOpenInTab ? (
-        <button
-          type="button"
-          className="tool-call-diff-open-tab"
-          onClick={onOpenInTab}
-          title={openInTabLabel}
-          aria-label={openInTabLabel}
-        >
-          <ExternalLink size={11} strokeWidth={1.8} />
-        </button>
-      ) : null}
-    </div>
-  )
+    );
+  },
 );
 
 MiniDiffViewer.displayName = "MiniDiffViewer";

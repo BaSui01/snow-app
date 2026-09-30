@@ -315,12 +315,15 @@ export const zhCN: Record<string, string> = {
   "remote.review.note": "启动审查请在桌面确认",
 
   // 变更摘要
+  "remote.changes.summary": "本会话修改了 {{count}} 个文件",
+  "remote.changes.summaryMain": "主代理 {{count}}",
+  "remote.changes.summarySub": "子代理 {{count}}",
   "remote.changes.empty": "当前会话暂无文件变更",
-  "remote.changes.kindCreate": "新增",
+  "remote.changes.kindCreate": "新建",
   "remote.changes.kindEdit": "修改",
   "remote.changes.kindDelete": "删除",
   "remote.changes.agentSub": "子代理",
-  "remote.changes.agentMain": "主会话",
+  "remote.changes.agentMain": "主代理",
 
   // 消息渲染
   "remote.message.thinkingActive": "Snow 正在思考",

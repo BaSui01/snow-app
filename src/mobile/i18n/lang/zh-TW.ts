@@ -310,12 +310,15 @@ export const zhTW: Record<string, string> = {
   "remote.review.note": "啟動審查請在桌面確認",
 
   // 變更摘要
+  "remote.changes.summary": "本次工作階段修改了 {{count}} 個檔案",
+  "remote.changes.summaryMain": "主代理 {{count}}",
+  "remote.changes.summarySub": "子代理 {{count}}",
   "remote.changes.empty": "目前工作階段暫無檔案變更",
   "remote.changes.kindCreate": "新增",
   "remote.changes.kindEdit": "修改",
   "remote.changes.kindDelete": "刪除",
   "remote.changes.agentSub": "子代理",
-  "remote.changes.agentMain": "主工作階段",
+  "remote.changes.agentMain": "主代理",
 
   // 訊息渲染
   "remote.message.thinkingActive": "Snow 正在思考",

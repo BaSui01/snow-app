@@ -1777,6 +1777,76 @@ textarea:focus-visible {
   font-size: 10px;
   margin-top: 3px;
 }
+/* 变更摘要面板：摘要行（总数 + 主/子代理徽标）与变更行（类型图标 / 路径 /
+   类型·代理 / 增减行数），信息与桌面 FileChangesPanel 对齐。 */
+.changes-summary b {
+  font-weight: 600;
+}
+.changes-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 5px;
+}
+.changes-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+.changes-badge.is-main {
+  border-color: var(--blue);
+  background: rgba(120, 168, 255, 0.14);
+  color: var(--blue);
+}
+.changes-badge.is-sub {
+  border-color: var(--purple);
+  background: rgba(179, 157, 255, 0.14);
+  color: var(--purple);
+}
+.change-row {
+  align-items: flex-start;
+  gap: 9px;
+}
+.change-row-icon {
+  display: inline-flex;
+  flex: none;
+  margin-top: 1px;
+  color: var(--muted);
+}
+.change-row-icon .icn {
+  width: 13px;
+  height: 13px;
+}
+.change-row-main {
+  flex: 1;
+  min-width: 0;
+}
+.change-row-main b {
+  font-weight: 500;
+  line-height: 1.35;
+}
+.change-stats {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  margin-top: 1px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.change-stat.add {
+  color: var(--green);
+}
+.change-stat.del {
+  color: var(--red);
+}
 .remote-toggle {
   border: 1px solid var(--line);
   background: #292c31;

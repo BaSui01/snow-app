@@ -37,12 +37,6 @@ export const messageTime = (value: string | null | undefined): string => {
     : "";
 };
 
-export const formatClockTime = (timestamp: number): string =>
-  new Date(timestamp).toLocaleTimeString(localeBcp47(), {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
 const formatTokenAmount = (n: number): string =>
   n >= 1000000
     ? (n / 1000000).toFixed(1) + "M"

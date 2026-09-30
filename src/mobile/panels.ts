@@ -1,4 +1,5 @@
 import type {
+  SnowRemoteChange,
   SnowRemoteChatInputState,
   SnowRemoteMcpServer,
   SnowRemoteSkill,
@@ -18,9 +19,9 @@ import {
   setSkillEnabled,
 } from "./api";
 import { $, escapeHtml } from "./dom";
-import { formatBytes, formatClockTime } from "./format";
+import { formatBytes } from "./format";
 import { t } from "./i18n";
-import { iconMarkup } from "./icons";
+import { iconMarkup, type MobileIconName } from "./icons";
 import { initModelPanel, renderModelPanel } from "./modelPanel";
 import { showNotice } from "./notice";
 import {
@@ -365,6 +366,68 @@ const loadReview = async (): Promise<void> => {
   }
 };
 
+/** 变更行类型图标：对应桌面 FileChangesPanel 的 FilePlus2 / FilePen / FileMinus2。 */
+const CHANGE_KIND_ICON: Record<SnowRemoteChange["kind"], MobileIconName> = {
+  create: "file-plus",
+  edit: "file-pen",
+  delete: "trash-2",
+};
+
+const changeKindLabel = (kind: SnowRemoteChange["kind"]): string =>
+  kind === "create"
+    ? t("remote.changes.kindCreate")
+    : kind === "delete"
+      ? t("remote.changes.kindDelete")
+      : t("remote.changes.kindEdit");
+
+/** 代理归属：子代理优先显示自己的名字（与桌面行一致）。 */
+const changeAgentLabel = (change: SnowRemoteChange): string =>
+  change.agent === "sub"
+    ? change.subAgentName || t("remote.changes.agentSub")
+    : t("remote.changes.agentMain");
+
+/** 单条变更行：类型图标 + 路径 + 「类型 · 代理」+ 增减行数。 */
+const changeRowHtml = (change: SnowRemoteChange): string => {
+  const stats: string[] = [];
+  if (change.additions > 0) {
+    stats.push(`<span class="change-stat add">+${change.additions}</span>`);
+  }
+  if (change.deletions > 0) {
+    stats.push(`<span class="change-stat del">-${change.deletions}</span>`);
+  }
+  const icon = CHANGE_KIND_ICON[change.kind] ?? "file-pen";
+  return (
+    `<div class="remote-row change-row">` +
+    `<span class="change-row-icon" aria-hidden="true">${iconMarkup(icon)}</span>` +
+    `<span class="change-row-main"><b>${escapeHtml(change.path)}</b>` +
+    `<small>${escapeHtml(`${changeKindLabel(change.kind)} · ${changeAgentLabel(change)}`)}</small></span>` +
+    (stats.length > 0
+      ? `<span class="change-stats">${stats.join("")}</span>`
+      : "") +
+    `</div>`
+  );
+};
+
+/** 摘要行：文件总数 + 主代理 / 子代理归属计数（与桌面面板同一口径）。 */
+const changesSummaryHtml = (items: SnowRemoteChange[]): string => {
+  const mainCount = items.filter((change) => change.agent !== "sub").length;
+  const subCount = items.length - mainCount;
+  const badges = [
+    `<span class="changes-badge is-main">${escapeHtml(t("remote.changes.summaryMain", { count: mainCount }))}</span>`,
+  ];
+  if (subCount > 0) {
+    badges.push(
+      `<span class="changes-badge is-sub">${escapeHtml(t("remote.changes.summarySub", { count: subCount }))}</span>`,
+    );
+  }
+  return (
+    `<div class="remote-row changes-summary"><span>` +
+    `<b>${escapeHtml(t("remote.changes.summary", { count: items.length }))}</b>` +
+    `<small class="changes-badges">${badges.join("")}</small>` +
+    `</span></div>`
+  );
+};
+
 const loadChanges = async (ctx: AppContext): Promise<void> => {
   $("changesList").innerHTML =
     `<div class="empty">${t("remote.loading.changes")}</div>`;
@@ -374,23 +437,10 @@ const loadChanges = async (ctx: AppContext): Promise<void> => {
     );
     const items = Array.isArray(result.changes) ? result.changes : [];
     $("changesList").innerHTML =
-      items
-        .map((change) => {
-          const kind =
-            change.kind === "create"
-              ? t("remote.changes.kindCreate")
-              : change.kind === "edit"
-                ? t("remote.changes.kindEdit")
-                : change.kind === "delete"
-                  ? t("remote.changes.kindDelete")
-                  : change.kind;
-          const agent =
-            change.agent === "sub"
-              ? t("remote.changes.agentSub")
-              : t("remote.changes.agentMain");
-          return `<div class="remote-row"><span><b>${escapeHtml(change.path)}</b><small>${escapeHtml(kind + " · " + agent)}</small></span><time>${escapeHtml(formatClockTime(change.timestamp))}</time></div>`;
-        })
-        .join("") || `<div class="empty">${t("remote.changes.empty")}</div>`;
+      items.length > 0
+        ? changesSummaryHtml(items) +
+          items.map((change) => changeRowHtml(change)).join("")
+        : `<div class="empty">${t("remote.changes.empty")}</div>`;
   } catch (error) {
     $("changesList").innerHTML = panelErrorHtml(
       t("remote.error.loadChanges"),

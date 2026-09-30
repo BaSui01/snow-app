@@ -8,7 +8,13 @@ import type { MainContentView } from "./mainContent/types";
 import { useChatConversationContext } from "./mainContent/chatMessages";
 import { parseTodoResult } from "./mainContent/chatMessages/hooks/useTodoPanel";
 import {
+  collectConversationFileChanges,
+  countFileChangeLines,
+} from "./mainContent/chatMessages/hooks/fileChangeTracking";
+import { resolveConversationChangeChain } from "./mainContent/chatMessages/hooks/conversationChangeChain";
+import {
   buildConversationMessages,
+  directoryIdToPath,
   ensureMessageLoaded,
   type MessageLoadBudget,
 } from "./mainContent/chatMessages/utils/conversationHelpers";
@@ -1098,42 +1104,64 @@ export const RemoteControlBridge = ({
         }
         return { ok: true };
       },
+      /**
+       * 变更面板（/changes）数据：与桌面 FileChangesPanel 同源 —— 回滚链才是
+       * 「本会话修改了哪些文件」的权威口径，工具记录只用于补齐代理归属（链
+       * 不可用时回退成完整清单，与桌面同一兜底）。这里只下发链路描述（检查点
+       * + 工作目录）与归属数据；逐文件 diff 与 +/- 统计由 Rust 原生检查点服务
+       * 直接计算（含 SSH/SFTP 通道），避免慢遍历卡在桥的 12 秒超时上。
+       */
       getChanges: async (expectedConversationId = null) => {
-        const current = stateRef.current;
-        const conversationId =
-          current.conversation.activeConversationId ?? null;
+        const conversation = stateRef.current.conversation;
+        const conversationId = conversation.activeConversationId ?? null;
         if (
           expectedConversationId !== null &&
           expectedConversationId !== conversationId
         ) {
           throw new Error("会话已切换，请重新打开变更");
         }
-        if (!conversationId) return { conversationId: null, changes: [] };
-        const records =
-          current.conversation.fileChangeStats[conversationId] ?? [];
-        const changes: SnowRemoteChange[] = records
-          .slice()
-          .sort((left, right) => right.timestamp - left.timestamp)
-          .slice(0, 200)
-          .map((record) => {
-            const normalized = record.filePath.replaceAll("\\\\", "/");
-            const relative = normalized.replace(/^([A-Za-z]:)?\/+/, "");
-            const path =
-              relative.split("/").filter(Boolean).slice(-4).join("/") ||
-              "未命名文件";
-            return {
-              path: truncateTo(path, 240) ?? "未命名文件",
-              kind: record.kind,
-              agent: record.agent,
-              timestamp: record.timestamp,
-            };
-          });
+        if (!conversationId) {
+          return {
+            conversationId: null,
+            checkpointIds: [],
+            workDir: "",
+            changes: [],
+          };
+        }
+        const changes: SnowRemoteChange[] = collectConversationFileChanges(
+          conversation.fileChangeStats,
+          conversationId,
+        ).map((record) => ({
+          path: truncateTo(record.filePath, MAX_ROLLBACK_PATH_LENGTH) ?? "",
+          kind: record.kind,
+          agent: record.agent,
+          subAgentName: record.subAgentName
+            ? (truncateTo(record.subAgentName, MAX_IDENTIFIER_LENGTH) ??
+              undefined)
+            : undefined,
+          ...countFileChangeLines([record]),
+        }));
+        const chain = await resolveConversationChangeChain({
+          conversationId,
+          checkpointIds: conversation.checkpointIds,
+          baselineCheckpointId: conversation.baselineCheckpointId,
+          workDir: directoryIdToPath(conversation.conversationDirectoryId),
+          messages: conversation.messages,
+          worktreeMode: conversation.worktreeMode,
+          worktreeId: conversation.pendingWorktreeId,
+          directoryId: conversation.conversationDirectoryId,
+        });
         if (
           stateRef.current.conversation.activeConversationId !== conversationId
         ) {
           throw new Error("会话已切换，请重新打开变更");
         }
-        return { conversationId, changes };
+        return {
+          conversationId,
+          checkpointIds: chain?.checkpointIds ?? [],
+          workDir: chain?.workDir ?? "",
+          changes: changes.filter((change) => change.path),
+        };
       },
       /**
        * 会话待办变更：复用桌面真实 todo-todo-manage 工具（add / update /

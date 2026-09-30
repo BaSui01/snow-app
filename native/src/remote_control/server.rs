@@ -57,6 +57,8 @@ const MAX_ROLLBACK_CHECKPOINTS: usize = 300;
 const MAX_ROLLBACK_DIFF_FILES: usize = 50;
 /// 单个文件 diff 下发给手机端的字符上限（手机屏幕消费不了更长的内容）。
 const MAX_ROLLBACK_DIFF_CHARS: usize = 20_000;
+/// 变更面板单条文件路径的长度上限（与桥的回滚清单一致）。
+const MAX_CHANGE_PATH_LENGTH: usize = 400;
 /// 令牌解锁尝试限流：窗口与窗口内允许的失败次数。
 const UNLOCK_FAILURE_WINDOW_MS: i64 = 5 * 60 * 1000;
 const MAX_UNLOCK_FAILURES: usize = 10;
@@ -500,6 +502,133 @@ fn is_checkpoint_id(value: &str) -> bool {
 
 fn truncate_chars(value: &str, max: usize) -> String {
     value.chars().take(max).collect()
+}
+
+/// 变更归属匹配用的路径规范化：与桌面 normalizePath 一致
+/// （反斜杠转正斜杠、去掉开头 ./、统一小写）。
+fn normalize_change_path(path: &str) -> String {
+    let slashed = path.replace('\\', "/").to_lowercase();
+    match slashed.strip_prefix("./") {
+        Some(rest) => rest.trim_start_matches('/').to_string(),
+        None => slashed,
+    }
+}
+
+/// 工具记录归属查找：与桌面 findFallbackChange 同语义（全等或 tool 路径以
+/// 「/检查点路径」结尾）。
+fn find_change_attribution<'a>(
+    normalized: &str,
+    fallback: &'a [(String, Value)],
+) -> Option<&'a Value> {
+    fallback
+        .iter()
+        .find(|(path, _)| path == normalized || path.ends_with(&format!("/{normalized}")))
+        .map(|(_, item)| item)
+}
+
+/// 变更行数统计：与桌面 countFileChangeLines 一致（跳过前两行 diff 头，
+/// 二进制内容不统计）。
+fn count_patch_lines(content: &str, is_binary: bool) -> (usize, usize) {
+    if is_binary {
+        return (0, 0);
+    }
+    let mut additions = 0;
+    let mut deletions = 0;
+    for line in content.split('\n').skip(2) {
+        if line.starts_with('+') {
+            additions += 1;
+        } else if line.starts_with('-') {
+            deletions += 1;
+        }
+    }
+    (additions, deletions)
+}
+
+/// 检查点变更类型映射：与桌面 toFileChangeKind 一致。
+fn change_kind(change_type: &str) -> &'static str {
+    match change_type {
+        "added" => "create",
+        "deleted" => "delete",
+        _ => "edit",
+    }
+}
+
+/// /changes 面板数据：桥下发的回滚链描述 + 原生检查点 diff。
+/// 与桌面 FileChangesPanel 同源（includeAll=false，只列出回滚真正会恢复的
+/// 文件），diff 由原生检查点服务直接计算（含 SSH/SFTP 通道），不把渲染进程
+/// 拉进这次只读查询；代理归属按桌面规则从桥下发的工具记录匹配，链路不可用
+/// 或计算失败时整份退回工具记录（与桌面同一兜底）。
+async fn build_changes_payload(descriptor: Value) -> Value {
+    let conversation_id = descriptor
+        .get("conversationId")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let fallback = descriptor
+        .get("changes")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let checkpoint_ids: Vec<String> = descriptor
+        .get("checkpointIds")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    let work_dir = descriptor
+        .get("workDir")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let chain_usable = !work_dir.is_empty()
+        && !checkpoint_ids.is_empty()
+        && checkpoint_ids.len() <= MAX_ROLLBACK_CHECKPOINTS
+        && checkpoint_ids.iter().all(|id| is_checkpoint_id(id));
+
+    if chain_usable {
+        if let Ok(diffs) =
+            crate::exports::checkpoint::list_checkpoint_diffs_batch(checkpoint_ids, work_dir, Some(false))
+                .await
+        {
+            let attributed: Vec<(String, Value)> = fallback
+                .iter()
+                .map(|item| {
+                    (
+                        normalize_change_path(
+                            item.get("path").and_then(Value::as_str).unwrap_or_default(),
+                        ),
+                        item.clone(),
+                    )
+                })
+                .collect();
+            let changes: Vec<Value> = diffs
+                .into_iter()
+                .map(|diff| {
+                    let normalized = normalize_change_path(&diff.path);
+                    let matched = find_change_attribution(&normalized, &attributed);
+                    let (additions, deletions) = count_patch_lines(&diff.content, diff.is_binary);
+                    json!({
+                        "path": truncate_chars(&diff.path, MAX_CHANGE_PATH_LENGTH),
+                        "kind": change_kind(&diff.change_type),
+                        "agent": matched
+                            .and_then(|item| item.get("agent").and_then(Value::as_str))
+                            .unwrap_or("main"),
+                        "subAgentName": matched
+                            .and_then(|item| item.get("subAgentName").and_then(Value::as_str)),
+                        "additions": additions,
+                        "deletions": deletions,
+                    })
+                })
+                .collect();
+            return json!({ "conversationId": conversation_id, "changes": changes });
+        }
+    }
+
+    json!({ "conversationId": conversation_id, "changes": fallback })
 }
 
 async fn read_json_body(body: Option<Body>) -> Result<Value, ApiError> {
@@ -1211,7 +1340,10 @@ async fn handle_api(
             }
         }
         let argument = conversation_id.map(Value::String).unwrap_or(Value::Null);
-        let value = bridge_call("getChanges", json!([argument])).await?;
+        // 桥只回链路描述与工具记录；diff 与 +/- 统计在原生侧算（SSH 下可能
+        // 超过桥调用的 12 秒上限）。
+        let descriptor = bridge_call("getChanges", json!([argument])).await?;
+        let value = build_changes_payload(descriptor).await;
         return Ok(json_response(StatusCode::OK, &value, Vec::new()));
     }
 

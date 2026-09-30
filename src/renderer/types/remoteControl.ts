@@ -193,7 +193,11 @@ export type SnowRemoteChange = {
   path: string;
   kind: "create" | "edit" | "delete";
   agent: "main" | "sub";
-  timestamp: number;
+  /** 子代理名称（agent 为 sub 时下发；缺失回退到通用文案）。 */
+  subAgentName?: string;
+  /** 新增行数 / 删除行数（无 diff 时均为 0）。 */
+  additions: number;
+  deletions: number;
 };
 
 export type SnowRemoteTodoStatus = "pending" | "inProgress" | "completed";
@@ -438,8 +442,18 @@ export type SnowRemoteControlApi = {
     enabled: boolean,
     expectedDirectoryId: string,
   ) => Promise<{ ok: true }>;
+  /**
+   * 会话文件变更（/changes 面板）：与桌面 FileChangesPanel 同源的回滚链
+   * 描述 + 工具记录兜底。检查点 diff 由 Rust 侧原生计算（含 SSH 通道），
+   * 这里只回链路描述与归属数据，避免慢遍历卡在桥超时上。
+   */
   getChanges: (expectedConversationId?: string | null) => Promise<{
     conversationId: string | null;
+    /** 回滚链检查点（消息级 + WorkFlow flow 级）。 */
+    checkpointIds: string[];
+    /** 检查点 diff 的基准目录（worktree 模式为实际工作树路径）。 */
+    workDir: string;
+    /** 工具记录的变更：代理归属兜底；检查点不可用时为完整清单。 */
     changes: SnowRemoteChange[];
   }>;
   /**

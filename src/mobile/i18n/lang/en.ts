@@ -328,12 +328,15 @@ export const en: Record<string, string> = {
   "remote.review.note": "Start reviews on the desktop",
 
   // Changes summary
+  "remote.changes.summary": "{{count}} file(s) modified in this session",
+  "remote.changes.summaryMain": "Main agent {{count}}",
+  "remote.changes.summarySub": "Sub-agents {{count}}",
   "remote.changes.empty": "No file changes in this conversation",
   "remote.changes.kindCreate": "Created",
   "remote.changes.kindEdit": "Modified",
   "remote.changes.kindDelete": "Deleted",
   "remote.changes.agentSub": "Sub-agent",
-  "remote.changes.agentMain": "Main session",
+  "remote.changes.agentMain": "Main agent",
 
   // Message rendering
   "remote.message.thinkingActive": "Snow is thinking",

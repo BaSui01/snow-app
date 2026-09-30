@@ -148,10 +148,13 @@ export const setMcpEnabled = (
     body: JSON.stringify({ target, id, enabled, directoryId }),
   });
 
+/** 会话文件变更（/changes 面板）：diff 由 Rust 检查点服务计算，SSH 下放宽超时。 */
 export const fetchChanges = (
   conversationId: string,
 ): Promise<ChangesResponse> =>
-  request(`/api/changes?conversationId=${encodeURIComponent(conversationId)}`);
+  request(`/api/changes?conversationId=${encodeURIComponent(conversationId)}`, {
+    timeoutMs: 60_000,
+  });
 
 export const fetchPermissions = (): Promise<PermissionsSummary> =>
   request("/api/permissions");

@@ -3,8 +3,7 @@ import type {
   ChatConversationMessage,
   FileChangeRecord,
 } from "../chatMessages/utils/conversationTypes";
-import { resolveConversationWorkspacePath } from "../chatMessages/utils/conversationHelpers";
-import { resolveWorkflowFlowImpact } from "../chatMessages/utils/rollbackChain";
+import { resolveConversationChangeChain } from "../chatMessages/hooks/conversationChangeChain";
 
 type UseConversationFileChangesParams = {
   conversationId?: string;
@@ -139,65 +138,27 @@ export const useConversationFileChanges = ({
 
     let cancelled = false;
     const loadCheckpointDiffs = async (): Promise<void> => {
-      let ids = orderedCheckpointIds;
-      if (conversationId) {
-        try {
-          const fullHistory =
-            await window.snow.listChatMessages(conversationId);
-          const persistedIds = fullHistory
-            .filter((record) => record.role === "user" && record.checkpointId)
-            .map((record) => record.checkpointId as string);
-          if (persistedIds.length > 0) {
-            ids = [...new Set(persistedIds)];
-          }
-        } catch {
-          // 使用已缓存的消息顺序，避免历史读取失败时隐藏面板内容。
-        }
-      }
-      if (ids.length === 0) {
-        ids = messageCheckpointIds;
-      }
-      if (ids.length === 0 && baselineCheckpointId) {
-        ids = [baselineCheckpointId];
-      }
-
-      let flowCheckpointIds: string[] = [];
-      if (conversationId) {
-        flowCheckpointIds = (
-          await resolveWorkflowFlowImpact(conversationId, null)
-        ).flowCheckpointIds;
-      }
-      const chainIds = [...new Set([...ids, ...flowCheckpointIds])];
-      if (chainIds.length === 0) {
-        if (!cancelled) {
-          setCheckpointState({ conversationKey, diffs: null });
-        }
-        return;
-      }
-
-      let effectiveWorkDir = workDir;
-      if (worktreeMode || worktreeId) {
-        try {
-          const resolved = await resolveConversationWorkspacePath(
-            conversationId ?? "",
-            directoryId,
-            workDir,
-            Boolean(worktreeMode),
-            worktreeId,
-          );
-          if (resolved) {
-            effectiveWorkDir = resolved;
-          }
-        } catch {
-          // Keep existing workDir fallback
-        }
-      }
-
       try {
+        const chain = await resolveConversationChangeChain({
+          conversationId,
+          checkpointIds: orderedCheckpointIds,
+          baselineCheckpointId,
+          workDir,
+          messages,
+          worktreeMode,
+          worktreeId,
+          directoryId,
+        });
+        if (!chain) {
+          if (!cancelled) {
+            setCheckpointState({ conversationKey, diffs: null });
+          }
+          return;
+        }
         // includeAll=false：与回滚弹窗同一语义，只列出回滚真正会恢复的文件。
         const diffs = await window.snow.listCheckpointDiffsBatch(
-          chainIds,
-          effectiveWorkDir,
+          chain.checkpointIds,
+          chain.workDir,
           false,
         );
         if (!cancelled) {

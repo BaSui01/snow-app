@@ -490,6 +490,7 @@ export const zhCN = {
   "sidebar.chatActionUnpin": "取消置顶",
   "sidebar.chatActionRename": "重命名",
   "sidebar.chatActionDelete": "删除",
+  "sidebar.chatActionCopyConversationId": "复制会话 ID",
   "sidebar.chatActionArchive": "归档",
   "sidebar.chatActionExport": "导出",
   "sidebar.chatActionIcon": "图标",

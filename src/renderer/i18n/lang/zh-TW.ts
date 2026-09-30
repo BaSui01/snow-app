@@ -491,6 +491,7 @@ export const zhTW = {
   "sidebar.chatActionUnpin": "取消置頂",
   "sidebar.chatActionRename": "重新命名",
   "sidebar.chatActionDelete": "刪除",
+  "sidebar.chatActionCopyConversationId": "複製會話 ID",
   "sidebar.chatActionArchive": "歸檔",
   "sidebar.chatActionExport": "匯出",
   "sidebar.chatActionIcon": "圖示",

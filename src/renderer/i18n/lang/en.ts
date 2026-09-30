@@ -516,6 +516,7 @@ export const en = {
   "sidebar.chatActionUnpin": "Unpin",
   "sidebar.chatActionRename": "Rename",
   "sidebar.chatActionDelete": "Delete",
+  "sidebar.chatActionCopyConversationId": "Copy conversation ID",
   "sidebar.chatActionArchive": "Archive",
   "sidebar.chatActionExport": "Export",
   "sidebar.chatActionIcon": "Icon",

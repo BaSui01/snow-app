@@ -824,17 +824,16 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     const handleOpenTerminalCommandEvent = useCallback(
       (payload: OpenTerminalCommandPayload) => {
         const command = payload.command.trim();
-        if (!command) {
-          return;
-        }
         const cwd = payload.cwd.trim() || activeDirectory?.path || "";
         const tabId = handleOpenTerminalTab(cwd, undefined, {
           title: payload.title?.trim() || undefined,
         });
         rightPanelEvents.emit("request-expand");
-        void runCommandInTerminal(tabId, command).catch((error: unknown) => {
-          console.error("Failed to run command in terminal", error);
-        });
+        if (command) {
+          void runCommandInTerminal(tabId, command).catch((error: unknown) => {
+            console.error("Failed to run command in terminal", error);
+          });
+        }
       },
       [activeDirectory?.path, handleOpenTerminalTab],
     );

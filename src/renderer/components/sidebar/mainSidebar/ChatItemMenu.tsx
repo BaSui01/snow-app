@@ -11,6 +11,7 @@ import {
   ListChecks,
   Archive,
   GitFork,
+  Copy,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -222,6 +223,17 @@ export function ChatItemMenu({
     onContextMenuCloseRef.current?.();
   };
 
+  const handleCopyConversationId = async (): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(conversationId);
+    } catch {
+      // Clipboard permissions can be unavailable in sandboxed/remote windows.
+    } finally {
+      setIsButtonOpen(false);
+      onContextMenuCloseRef.current?.();
+    }
+  };
+
   const handleMultiSelect = (): void => {
     onEnterMultiSelect?.();
     setIsButtonOpen(false);
@@ -376,6 +388,19 @@ export function ChatItemMenu({
                     <span>
                       {t("sidebar.chatActionRename", {
                         defaultValue: "Rename",
+                      })}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="chat-item-menu-item"
+                    onClick={() => void handleCopyConversationId()}
+                    role="menuitem"
+                  >
+                    <Copy size={13} />
+                    <span>
+                      {t("sidebar.chatActionCopyConversationId", {
+                        defaultValue: "Copy conversation ID",
                       })}
                     </span>
                   </button>

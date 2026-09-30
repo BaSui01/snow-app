@@ -12,6 +12,7 @@ pub struct IdeInfo {
 /// 已知 IDE 识别表：(id, 显示名, 匹配关键字列表)。
 /// 匹配规则：先做精确匹配（例如 "Visual Studio Code Insiders" 精确命中
 /// vscode-insiders 而不会被 vscode 抢先包含匹配），再做包含匹配。
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 const KNOWN_IDES: &[(&str, &str, &[&str])] = &[
     ("vscode", "Visual Studio Code", &["visual studio code"]),
     (
@@ -42,6 +43,7 @@ const KNOWN_IDES: &[(&str, &str, &[&str])] = &[
 ];
 
 /// 根据小写名称匹配已知 IDE，精确匹配优先，其次按列表顺序做包含匹配。
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn match_known_ide(
     lower_name: &str,
 ) -> Option<&'static (&'static str, &'static str, &'static [&'static str])> {
@@ -56,6 +58,7 @@ fn match_known_ide(
         .find(|(_, _, keys)| keys.iter().any(|key| lower_name.contains(key)))
 }
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn to_ide_info(matched: &(&str, &str, &[&str]), executable: &Path) -> IdeInfo {
     IdeInfo {
         id: matched.0.to_string(),

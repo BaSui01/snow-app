@@ -12,12 +12,11 @@ flowchart LR
     R[Renderer logs] --> L
     Q[Temporary raw request logging] --> L
     L --> LS[System Logs page]
-    F[File logger] --> D[~/.snow/log/]
-    D --> CFG[config logs scope]
+    F[Snow CLI file logs] --> D[~/.snow/log/]
     B[Background bash task] --> W[workspace .snow/logs/]
 ```
 
-Both `usage_records` and `app_logs` live in `~/.snowapp/snowapp.db`. File logs under `~/.snow/log/` and background-task output under `<workspace>/.snow/logs/` are not part of that database. Their cleanup operations are independent.
+Both `usage_records` and Snow App's `app_logs` are stored in Snow App's data directory, `~/.snowapp/snowapp.db` (SQLite). Keep the directory ownership clear: `~/.snowapp/` is Snow App's application-data directory, while `~/.snow/` is Snow CLI's user configuration/log directory. Files under `~/.snow/log/` are not Snow App's SQLite system logs. `<workspace>/.snow/logs/` contains workspace background-task output and is not an App log either. These sources have independent cleanup lifecycles.
 
 ## Usage Statistics
 
@@ -53,10 +52,10 @@ Date ranges use local-day boundaries: `00:00:00` on the first day and `23:59:59`
 
 > **Important: the date filter does not uniformly filter every area on the page.**
 
-| Page area | Actual range |
-|---|---|
-| Summary cards | Affected by the selected date range |
-| Daily heatmap | Always requests roughly one year and does not follow the top date filter |
+| Page area                  | Actual range                                                                                  |
+| -------------------------- | --------------------------------------------------------------------------------------------- |
+| Summary cards              | Affected by the selected date range                                                           |
+| Daily heatmap              | Always requests roughly one year and does not follow the top date filter                      |
 | Usage Records detail table | Currently requests all records, 20 per page, without date, conversation, or directory filters |
 
 The summary-card totals therefore do not directly correspond to the rows on the current detail-table page.
@@ -77,37 +76,32 @@ The clear button uses two-step confirmation: the first click enters a confirmati
 
 ## Raw API Request Logging
 
-When request logging is enabled, the complete raw API request JSON is written to `app_logs` as:
-
-- level: `DEBUG`;
-- module: `api_request`;
-- func: provider;
-- message: endpoint;
-- input: complete payload JSON.
+When request logging is enabled, the serialized API request-body JSON is written to `app_logs` as `input` on an `api_request` row. Request headers are not recorded. Sensitive-name fields and exact occurrences of the active API key are redacted before persistence; this is not a guarantee that every possible credential format will be detected.
 
 The payload may contain system prompts, user content, tool inputs, file fragments, and other sensitive data. The UI therefore asks for confirmation before enabling it.
 
 ### Automatic Shutoff
 
-- The default duration is 10 minutes;
-- presets are 3, 5, 10, 15, 30, and 60 minutes;
-- the slider range is 3–60 minutes;
+- The default duration is 5 minutes;
+- presets are 1, 5, 10, 15, and 30 minutes;
+- the slider range is 1–30 minutes;
 - enabling first persists the expiry and then turns on the switch;
 - the UI updates the countdown every second and disables logging at expiry;
 - the Rust write path also enforces the expiry, so logging stops and the switch is reset even when the log page is closed.
 
 The switch and expiry are stored in SQLite `system_settings`. Enable raw request logging only briefly when ordinary logs are insufficient, reproduce once, disable it immediately, and remove sensitive logs that are no longer needed.
 
-## File Logs: `~/.snow/log/`
+## Snow CLI File Logs: `~/.snow/log/`
 
-The `logs` scope in the AI `config` tool operates on daily level files under `~/.snow/log/`, such as `2026-08-03-error.log`. Valid names follow `YYYY-MM-DD-(debug|info|warn|error).log`.
+`~/.snow/log/` belongs to **Snow CLI**, not Snow App's data directory. Snow App's `config` logs scope has been removed; it does not read or delete this directory. CLI file logs are for troubleshooting Snow CLI itself. To diagnose an App/session error, use Settings → System Logs or the read-only built-in `config-logs-read` tool, which queries the `app_logs` table in `~/.snowapp/snowapp.db`.
 
-- `config-list`: lists files in reverse filename order with `file`, `date`, `level`, `size`, and `lastModified`, plus total-file, total-byte, and latest-error-file summaries;
-- `config-get`: accepts an exact filename or `debug` / `info` / `warn` / `error` for today's file; it returns the last 200 lines by default and at most 2,000; a missing file returns `exists: false`;
-- `config-set`: unsupported because `logs` is a read-only diagnostic scope;
-- `config-delete`: accepts only an exact filename and requires explicit user confirmation first; a missing file returns `deleted: false`.
+## Snow App Built-in Log Tool: `config-logs-read`
 
-The filename allowlist and directory join prevent path traversal. Deleting one file does not clear SQLite `app_logs`.
+The tool performs read-only queries against Snow App SQLite `app_logs`, with filters for `level`, `module`, time range, and pagination (up to 100 rows per page). Empty/whitespace optional string filters are treated as omitted. `items`, `total`, and `hasMore` remain restricted to the calling conversation; the runtime overwrites any model-supplied `conversationId`. An additional `systemSummary` provides application-wide counts under the same level/module/time filters, without pagination: `total`, `withoutConversationId`, fixed `bySource.main/renderer` and `byLevel.DEBUG/INFO/WARN/ERROR` counts. It never returns identifiers, text, context/errors, paths or request/response bodies from other conversations or unassociated rows. Rows without a conversation ID may be newly written application logs, not necessarily legacy records; they contribute only to counts, not details. A current-conversation `total=0` therefore does not imply there are no system logs; compare `systemSummary.total`.
+
+Current-conversation API request/response records include bounded `requestBody` / `responseBody` fields, with secret-named fields and the active API key redacted before persistence. Request headers are never logged. The response body is a normalized provider result, not a byte-for-byte copy of the streamed wire response. Current-conversation `context` and `error` may still contain paths or user data, so redact before sharing.
+
+To inspect full log entries, use Settings → System Logs manually. The AI tool shows only the current conversation and redacted/truncated API bodies. Request logging can capture user content and prompts; it starts for 5 minutes by default (maximum 30 minutes) and turns itself off. Use it only briefly, then disable it after reproducing the issue.
 
 ## Background-Task Logs: `<workspace>/.snow/logs/`
 
@@ -120,11 +114,11 @@ Stopping a task does not necessarily delete its log file. Before diagnosing or c
 1. Record the time, project, API profile, model, and reproduction steps.
 2. In Usage Statistics, confirm whether the request was recorded, whether its status is error, and whether token values look unusual.
 3. Remember that the date filter affects only the summary; it does not filter the heatmap or current detail table.
-4. In System Logs, filter the current day by `ERROR` and `WARN`.
+4. Filter System Logs by today and `ERROR` / `WARN`, or call `config-logs-read` with time, level, and module filters. The tool injects the current `conversationId` and includes redacted/truncated request/response bodies for API rows.
 5. Expand `module`, `func`, `context`, `error`, and related fields; inspect for secrets before copying.
 6. Enable raw request logging briefly only when ordinary logs are insufficient.
 7. Reproduce once, then disable request logging immediately.
-8. If necessary, use the config `logs` scope to inspect `~/.snow/log/`.
+8. `~/.snow/log/` is Snow CLI's file-log directory, not Snow App logs; Snow App no longer exposes a config scope for reading it.
 9. If the problem came from a background command, inspect `<workspace>/.snow/logs/` in the current workspace.
 
 ## Redaction Before Sharing
@@ -141,12 +135,12 @@ Before sharing logs, screenshots, or a database, remove at least:
 
 ## Lifecycle and Deletion Boundaries
 
-| Data source | Storage location | Lifecycle | Deletion boundary |
-|---|---|---|---|
-| Usage records | SQLite `usage_records` | No automatic retention period is defined in source; retained until database migration, recovery, or a future explicit cleanup | The current Usage page has no clear action |
-| System and request logs | SQLite `app_logs` | No automatic rotation is defined; grows until the user clears it or the database is replaced | UI clear deletes all log rows; filters do not limit deletion |
-| Request-logging switch | SQLite `system_settings` | Automatically turns off and resets at expiry | Turning off the switch does not delete payloads already written |
-| Config file logs | `~/.snow/log/` | Independent files with no unified automatic retention found | `config-delete` removes one exact file per confirmed operation |
-| Background-task logs | `<workspace>/.snow/logs/` | Retained with workspace files | Not affected by the System Logs UI or config `logs` deletion |
+| Data source             | Storage location          | Lifecycle                                                                                                                     | Deletion boundary                                                          |
+| ----------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Usage records           | SQLite `usage_records`    | No automatic retention period is defined in source; retained until database migration, recovery, or a future explicit cleanup | The current Usage page has no clear action                                 |
+| System and request logs | SQLite `app_logs`         | No automatic rotation is defined; grows until the user clears it or the database is replaced                                  | UI clear deletes all log rows; filters do not limit deletion               |
+| Request-logging switch  | SQLite `system_settings`  | Automatically turns off and resets at expiry                                                                                  | Turning off the switch does not delete payloads already written            |
+| Snow CLI file logs      | `~/.snow/log/`            | Independent CLI files; Snow App does not read/delete them                                                                     | Managed by Snow CLI                                                        |
+| Background-task logs    | `<workspace>/.snow/logs/` | Retained with workspace files                                                                                                 | Not affected by the System Logs UI; workspace files are managed separately |
 
 For complete backup and storage boundaries, see [Data Storage Locations](../3-reference/4-data-storage-locations.md).

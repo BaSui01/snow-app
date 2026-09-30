@@ -337,6 +337,11 @@ export const TerminalPanelContent = ({
     // - 无选中文本时 Ctrl+C = 发送中断给 shell（pwsh 7 行为：仅取消当前行）
     // - Ctrl+V / Ctrl+Shift+V / Shift+Insert = 粘贴
     term.attachCustomKeyEventHandler((event) => {
+      // xterm invokes this handler for both keydown and keyup; clipboard I/O
+      // must run only once per physical shortcut.
+      if (event.type !== "keydown") {
+        return true;
+      }
       const current = termRef.current;
       if (!current) {
         return true;

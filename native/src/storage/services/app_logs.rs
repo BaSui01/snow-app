@@ -45,15 +45,23 @@ pub struct AppLogPage {
     pub total: i32,
 }
 
+fn context_conversation_id(context: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(context)
+        .ok()?
+        .get("conversation_id")?
+        .as_str()
+        .map(ToString::to_string)
+}
+
 pub fn insert_app_log(database_path: &Path, input: &AppLogInput) -> Result<()> {
     database::open_connection(database_path)
         .and_then(|connection| {
             connection.execute(
                 "INSERT INTO app_logs (
                    id, level, module, func, line, message,
-                   input, output, duration, context, error, source, created_at
+                   input, output, duration, context, error, conversation_id, source, created_at
                  ) VALUES (
-                   ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+                   ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
                    datetime('now', 'localtime')
                  )",
                 params![
@@ -68,6 +76,11 @@ pub fn insert_app_log(database_path: &Path, input: &AppLogInput) -> Result<()> {
                     input.duration.as_deref().unwrap_or("").trim(),
                     input.context.as_deref().unwrap_or("").trim(),
                     input.error.as_deref().unwrap_or("").trim(),
+                    input
+                        .context
+                        .as_deref()
+                        .and_then(context_conversation_id)
+                        .unwrap_or_default(),
                     input.source.trim(),
                 ],
             )
@@ -227,42 +240,108 @@ pub async fn maybe_log_api_request(
     endpoint: String,
     payload_json: String,
 ) {
-    let db_path = database_path;
-    let provider = provider;
-    let endpoint = redact_request_endpoint(&endpoint);
-    let payload_json = payload_json;
+    maybe_log_api_payload(
+        database_path,
+        provider,
+        endpoint,
+        payload_json,
+        None,
+        None,
+        false,
+    )
+    .await;
+}
 
+pub async fn maybe_log_api_request_for_conversation(
+    database_path: PathBuf,
+    provider: String,
+    endpoint: String,
+    payload_json: String,
+    conversation_id: String,
+    api_key: String,
+) {
+    maybe_log_api_payload(
+        database_path,
+        provider,
+        endpoint,
+        payload_json,
+        Some(conversation_id),
+        Some(api_key),
+        false,
+    )
+    .await;
+}
+
+pub async fn maybe_log_api_response_for_conversation(
+    database_path: PathBuf,
+    provider: String,
+    endpoint: String,
+    response_json: String,
+    conversation_id: String,
+    api_key: String,
+) {
+    maybe_log_api_payload(
+        database_path,
+        provider,
+        endpoint,
+        response_json,
+        Some(conversation_id),
+        Some(api_key),
+        true,
+    )
+    .await;
+}
+
+async fn maybe_log_api_payload(
+    database_path: PathBuf,
+    provider: String,
+    endpoint: String,
+    body_json: String,
+    conversation_id: Option<String>,
+    api_key: Option<String>,
+    is_response: bool,
+) {
     tokio::task::spawn_blocking(move || {
-        let enabled = system_settings::get_request_logging(&db_path).unwrap_or(false);
+        let enabled = system_settings::get_request_logging(&database_path).unwrap_or(false);
         if !enabled {
             return;
         }
-        // 强制校验自动关闭时间：即使渲染进程的倒计时未运行（面板关闭/视图切换），
-        // 到期后 Rust 写入路径也会拒绝记录，并顺手复位开关与过期时间。
-        let expires_at_ms = system_settings::get_request_logging_expiry(&db_path).unwrap_or(0);
+        let expires_at_ms =
+            system_settings::get_request_logging_expiry(&database_path).unwrap_or(0);
         if expires_at_ms > 0 {
             let now_ms = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|duration| duration.as_millis() as i64)
                 .unwrap_or(0);
             if now_ms >= expires_at_ms {
-                let _ = system_settings::set_request_logging(&db_path, false);
-                let _ = system_settings::set_request_logging_expiry(&db_path, 0);
+                let _ = system_settings::set_request_logging(&database_path, false);
+                let _ = system_settings::set_request_logging_expiry(&database_path, 0);
                 return;
             }
         }
+
+        let endpoint = redact_request_endpoint(&endpoint);
+        let body_json = redact_payload_json(&body_json, api_key.as_deref().unwrap_or(""));
+        let context = conversation_id.map(|conversation_id| {
+            serde_json::json!({"conversation_id": conversation_id}).to_string()
+        });
         let _ = insert_app_log(
-            &db_path,
+            &database_path,
             &AppLogInput {
                 level: "DEBUG".to_string(),
-                module: "api_request".to_string(),
+                module: if is_response {
+                    "api_response"
+                } else {
+                    "api_request"
+                }
+                .to_string(),
                 func: provider,
                 line: None,
                 message: endpoint,
-                input: Some(payload_json),
-                output: None,
+                input: (!is_response).then_some(body_json.clone()),
+                output: is_response.then_some(body_json),
                 duration: None,
-                context: None,
+                context,
                 error: None,
                 source: "main".to_string(),
             },
@@ -270,6 +349,40 @@ pub async fn maybe_log_api_request(
     })
     .await
     .ok();
+}
+
+fn redact_payload_json(body: &str, api_key: &str) -> String {
+    fn redact_value(value: &mut serde_json::Value, api_key: &str) {
+        match value {
+            serde_json::Value::Object(object) => {
+                for (name, value) in object.iter_mut() {
+                    if is_sensitive_query_name(name) {
+                        *value = serde_json::Value::String("[REDACTED]".to_string());
+                    } else {
+                        redact_value(value, api_key);
+                    }
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    redact_value(item, api_key);
+                }
+            }
+            serde_json::Value::String(text) if !api_key.is_empty() => {
+                *text = text.replace(api_key, "[REDACTED]");
+            }
+            _ => {}
+        }
+    }
+
+    match serde_json::from_str::<serde_json::Value>(body) {
+        Ok(mut value) => {
+            redact_value(&mut value, api_key);
+            serde_json::to_string(&value).unwrap_or_else(|_| "[BODY REDACTION FAILED]".to_string())
+        }
+        Err(_) if !api_key.is_empty() => body.replace(api_key, "[REDACTED]"),
+        Err(_) => body.to_string(),
+    }
 }
 
 const REDACTED_QUERY_VALUE: &str = "[REDACTED]";

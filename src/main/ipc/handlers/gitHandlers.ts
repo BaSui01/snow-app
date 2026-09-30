@@ -1,4 +1,5 @@
 import { ipcMain } from "electron";
+import { manageGitBranch } from "./gitBranchManagement";
 import type { NativeBridge, ResponsesApiStreamChunk } from "../../native/types";
 import {
   remoteCheckoutBranch,
@@ -135,6 +136,32 @@ const readGitScanSettings = async (
 const isSshPath = (path: string): boolean => path.startsWith("ssh://");
 
 export const registerGitHandlers = (native: NativeBridge): void => {
+  ipcMain.handle(
+    "git:manage-branch",
+    async (
+      event,
+      repoPath: unknown,
+      action: unknown,
+      branch: unknown,
+      name: unknown,
+      remote: unknown,
+    ) => {
+      if (
+        typeof repoPath !== "string" ||
+        !repoPath.trim() ||
+        typeof branch !== "string" ||
+        (action !== "create" && action !== "rename" && action !== "delete") ||
+        (name !== undefined && typeof name !== "string") ||
+        typeof remote !== "boolean"
+      ) {
+        throw new Error("Invalid branch management arguments");
+      }
+      const path = repoPath.trim();
+      const result = await manageGitBranch(path, action, branch, name, remote);
+      if (result.success) safeSend(event.sender, "git:status-changed", path);
+      return result;
+    },
+  );
   // ===== Git file watcher handlers =====
   ipcMain.handle("git:start-watch", async (event, repoPath: unknown) => {
     if (typeof repoPath !== "string" || !repoPath.trim()) {

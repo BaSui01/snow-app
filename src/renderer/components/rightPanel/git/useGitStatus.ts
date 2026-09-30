@@ -172,5 +172,13 @@ export const useGitStatus = (
     return fetchStatus();
   }, [fetchStatus]);
 
+  useEffect(() => {
+    const changed = (event: Event): void => {
+      if ((event as CustomEvent<string>).detail === repoPath) void refresh();
+    };
+    window.addEventListener("snow:branches-changed", changed);
+    return () => window.removeEventListener("snow:branches-changed", changed);
+  }, [repoPath, refresh]);
+
   return { status, isLoading, error, refresh };
 };

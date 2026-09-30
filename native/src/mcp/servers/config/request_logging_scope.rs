@@ -22,10 +22,10 @@ use crate::storage::services::system_settings::{
 /// 单例键：本作用域只有一个设置对象。
 const REQUEST_LOGGING_KEY: &str = "settings";
 /// 未指定过期时间时默认开启时长（分钟）。
-const DEFAULT_EXPIRES_IN_MINUTES: i64 = 30;
+const DEFAULT_EXPIRES_IN_MINUTES: i64 = 5;
 const MIN_EXPIRES_IN_MINUTES: i64 = 1;
-/// 上限 24 小时：请求日志体积很大，超过一天没有排障价值。
-const MAX_EXPIRES_IN_MINUTES: i64 = 24 * 60;
+/// 上限 30 分钟：请求/响应体仅用于短时排障，避免日志长期留存。
+const MAX_EXPIRES_IN_MINUTES: i64 = 30;
 
 const TOOL_GET: &str = "get";
 const TOOL_SET: &str = "set";

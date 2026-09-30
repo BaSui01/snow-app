@@ -24,10 +24,10 @@ import type { UsageDatePreset } from "../usageSettings/types";
 const PAGE_SIZE = 50;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
-// 请求日志开启时长（分钟）：默认 10，最小 3，最大 60。
-const DURATION_MIN = 3;
-const DURATION_MAX = 60;
-const DURATION_PRESETS = [3, 5, 10, 15, 30, 60];
+// 请求日志开启时长（分钟）：默认 5，最小 1，最大 30。
+const DURATION_MIN = 1;
+const DURATION_MAX = 30;
+const DURATION_PRESETS = [1, 5, 10, 15, 30];
 
 const formatCountdown = (ms: number): string => {
   const totalSeconds = Math.ceil(ms / 1000);
@@ -172,7 +172,7 @@ export function SystemLogsPanel(): React.JSX.Element {
   const [requestLoggingEnabled, setRequestLoggingEnabled] = useState(false);
   const [showRequestLoggingDialog, setShowRequestLoggingDialog] =
     useState(false);
-  const [durationMinutes, setDurationMinutes] = useState(10);
+  const [durationMinutes, setDurationMinutes] = useState(5);
   const [loggingExpiresAt, setLoggingExpiresAt] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [copiedRowLabel, setCopiedRowLabel] = useState<string | null>(null);

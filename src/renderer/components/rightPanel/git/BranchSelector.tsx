@@ -27,6 +27,7 @@ import { ContextMenu, type ContextMenuItem } from "../../common/ContextMenu";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
 import { useChatConversationContext } from "../../mainContent/chatMessages";
 import { WorktreeBaseRefSelect } from "./WorktreeBaseRefSelect";
+import { BRANCHES_CHANGED, useBranchManagement } from "./useBranchManagement";
 
 type BranchSelectorProps = {
   repoPath: string;
@@ -81,6 +82,36 @@ export const BranchSelector = ({
   onOpenTerminal,
 }: BranchSelectorProps): React.JSX.Element => {
   const { t } = useI18n();
+  const management = useBranchManagement(repoPath, () => {
+    setIsOpen(false);
+  });
+  const branchRequestRef = useRef(0);
+  const worktreeRequestRef = useRef(0);
+  const activeRepoRef = useRef(repoPath);
+  activeRepoRef.current = repoPath;
+  useEffect(() => {
+    setBranchItemContextMenu(null);
+    setContextMenu(null);
+    setIsOpen(false);
+    setBranches([]);
+    setWorktrees([]);
+    setCreateMode(null);
+    setNewBranchName("");
+    setLoading(false);
+    setCreateError(null);
+    const changed = (event: Event): void => {
+      if ((event as CustomEvent<string>).detail === repoPath) {
+        loadBranches();
+        onBranchChanged();
+      }
+    };
+    window.addEventListener(BRANCHES_CHANGED, changed);
+    return () => {
+      branchRequestRef.current++;
+      worktreeRequestRef.current++;
+      window.removeEventListener(BRANCHES_CHANGED, changed);
+    };
+  }, [repoPath]);
   const [branches, setBranches] = useState<GitBranchType[]>([]);
   const [worktrees, setWorktrees] = useState<GitWorktreeInfo[]>([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -249,33 +280,49 @@ export const BranchSelector = ({
     worktreeInputRef.current?.focus();
   }, []);
 
-  /** 加载分支列表。 */
+  /** 加载分支列表，丢弃项目切换或更新请求之前的响应。 */
   const loadBranches = useCallback(() => {
+    const request = ++branchRequestRef.current;
     setLoading(true);
     window.snow
       .gitBranches(repoPath)
       .then((result) => {
-        setBranches(result);
+        if (
+          request === branchRequestRef.current &&
+          activeRepoRef.current === repoPath
+        )
+          setBranches(result);
       })
-      .catch(() => {
-        // Silent fail
+      .catch((cause) => {
+        if (
+          request === branchRequestRef.current &&
+          activeRepoRef.current === repoPath
+        )
+          setCreateError(String(cause));
       })
       .finally(() => {
-        setLoading(false);
+        if (
+          request === branchRequestRef.current &&
+          activeRepoRef.current === repoPath
+        )
+          setLoading(false);
       });
   }, [repoPath]);
 
   /** 加载工作树列表。 */
   const loadWorktrees = useCallback(() => {
+    const request = ++worktreeRequestRef.current;
     if (!directoryId) {
       setWorktrees([]);
       return;
     }
     window.snow
       .gitListWorktrees(directoryId)
-      .then(setWorktrees)
+      .then((items) => {
+        if (request === worktreeRequestRef.current) setWorktrees(items);
+      })
       .catch(() => {
-        setWorktrees([]);
+        if (request === worktreeRequestRef.current) setWorktrees([]);
       });
   }, [directoryId]);
 
@@ -329,75 +376,16 @@ export const BranchSelector = ({
   }, [createMode]);
 
   const handleCheckout = (branch: GitBranchType): void => {
-    if (branch.name === currentBranch && !branch.isRemote) {
+    if (branch.isCurrent) {
       setIsOpen(false);
       return;
     }
-
-    if (isOtherWorktreePath(branch.worktreePath)) {
-      setCreateError(
-        t("git.branchCheckedOutInOtherWorktree", {
-          values: {
-            branch: branch.name,
-            path: branch.worktreePath || "",
-          },
-          defaultValue: `分支 '${branch.name}' 已在工作树检出: ${branch.worktreePath}`,
-        }),
-      );
-      return;
-    }
-
-    const remoteName = branch.remoteName ?? "";
-    const remotePrefix = remoteName ? `${remoteName}/` : "";
-    const remoteBranchName =
-      branch.isRemote && remotePrefix && branch.name.startsWith(remotePrefix)
-        ? branch.name.slice(remotePrefix.length)
-        : branch.name;
-    const target = branch.isRemote
-      ? remotePrefix
-        ? `${remoteName}/${remoteBranchName}`
-        : branch.name
-      : branch.name;
-    const conflictingLocal = branch.isRemote
-      ? branches.find(
-          (item) => !item.isRemote && item.name === remoteBranchName,
-        )
-      : undefined;
-    if (conflictingLocal && conflictingLocal.upstream !== target) {
-      setCreateError(
-        t("git.branchTrackingConflict", {
-          values: {
-            branch: conflictingLocal.name,
-            upstream: conflictingLocal.upstream || t("git.localOnlyBadge"),
-            target,
-          },
-        }),
-      );
-      return;
-    }
-
-    const checkoutName = conflictingLocal?.name ?? target;
-    window.snow
-      .gitCheckout(repoPath, checkoutName)
-      .then((res) => {
-        if (res.success) {
-          setIsOpen(false);
-          onBranchChanged();
-        } else {
-          setCreateError(res.message || t("git.operationFailedGeneric"));
-        }
-      })
-      .catch((cause: unknown) => {
-        setCreateError(
-          cause instanceof Error
-            ? cause.message
-            : t("git.operationFailedGeneric"),
-        );
-      });
+    management.checkout(branch);
   };
 
   /** 新建普通分支 */
   const handleCreateBranch = (): void => {
+    if (management.busy || management.sessionRunning || creating) return;
     const trimmed = newBranchName.trim();
     if (!isValidBranchName(newBranchName)) {
       setCreateError(t("git.createBranchInvalid"));
@@ -629,7 +617,11 @@ export const BranchSelector = ({
         ) : (
           <GitBranch size={13} strokeWidth={1.8} />
         ),
-        disabled: branch.isCurrent || isOtherWorktree,
+        disabled:
+          branch.isCurrent ||
+          isOtherWorktree ||
+          management.busy ||
+          management.sessionRunning,
         onClick: () => {
           setBranchItemContextMenu(null);
           handleCheckout(branch);
@@ -637,7 +629,10 @@ export const BranchSelector = ({
       });
     }
 
-    return items;
+    return [
+      ...items,
+      ...management.menuItems(branch, () => setBranchItemContextMenu(null)),
+    ];
   };
 
   /** 外层按钮右键菜单 */
@@ -662,6 +657,17 @@ export const BranchSelector = ({
         setCreateMode("branch");
       },
     },
+    ...(currentBranch && currentBranch !== "HEAD"
+      ? management.menuItems(
+          {
+            name: currentBranch,
+            isCurrent: true,
+            isRemote: false,
+            remoteName: null,
+          },
+          () => setContextMenu(null),
+        )
+      : []),
     ...(directoryId
       ? [
           {
@@ -1501,6 +1507,15 @@ export const BranchSelector = ({
                           type="button"
                           className={`branch-dropdown-item${branch.isCurrent ? " active" : ""}`}
                           onClick={() => handleCheckout(branch)}
+                          onContextMenu={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            setBranchItemContextMenu({
+                              x: event.clientX,
+                              y: event.clientY,
+                              branch,
+                            });
+                          }}
                         >
                           <div className="branch-dropdown-item-left">
                             <span className="branch-dropdown-item-name">
@@ -1541,6 +1556,7 @@ export const BranchSelector = ({
         </div>
       )}
 
+      {management.dialog}
       {/* 删除工作树确认对话框 */}
       {removeWorktreeTarget && (
         <ConfirmDialog

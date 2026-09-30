@@ -2,6 +2,7 @@
   "name": "snow-app",
   "version": "0.4.12",
   "description": "Snow App The best AI Agent client in the universe",
+  "desktopName": "snow-app",
   "author": {
     "name": "Mufasa",
     "email": "mufasa@snow.app"
@@ -189,6 +190,7 @@
     "linux": {
       "icon": "resources/icon.png",
       "maintainer": "MayDay <mufasa@snow.app>",
+      "syncDesktopName": true,
       "extraResources": [
         {
           "from": "resources/remote-control/frp/linux-x64",

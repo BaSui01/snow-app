@@ -1,4 +1,5 @@
 pub mod app_control;
+pub mod app_logs;
 pub mod bash;
 pub mod browser;
 pub mod codebase;

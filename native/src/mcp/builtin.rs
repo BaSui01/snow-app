@@ -5,6 +5,7 @@ use napi::bindgen_prelude::*;
 use serde_json::Value;
 
 use super::servers::app_control::AppControlService;
+// AppLogsService is exposed under the config server namespace.
 use super::servers::bash::BashService;
 use super::servers::browser::BrowserService;
 use super::servers::codebase::CodebaseService;
@@ -50,6 +51,7 @@ fn builtin_services_in_order() -> Vec<Arc<dyn McpService>> {
         Arc::new(WorkflowService::new()),
         Arc::new(MemoryService::new()),
         Arc::new(ComputerUseService::new()),
+        // Logs are exposed as config-logs-read; no separate MCP server.
         // NOTE: new services must be appended to the END of this list to keep
         // the tool order stable (prompt cache); never insert in the middle.
         //
@@ -97,6 +99,7 @@ pub const READONLY_TOOL_NAMES: &[&str] = &[
     "app-control-listMemos",
     "app-control-getMemo",
     "app-control-getBlockedPatterns",
+    "config-logs-read",
     "imagegen-image-describe",
     "codebase-search",
     "todo-todo-manage",

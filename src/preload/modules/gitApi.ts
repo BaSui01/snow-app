@@ -106,6 +106,21 @@ export const gitApi = {
       ipcRenderer.removeListener("git:status-changed", handler);
     };
   },
+  gitManageBranch: (
+    repoPath: string,
+    action: "create" | "rename" | "delete",
+    branch: string,
+    name?: string,
+    remote = false,
+  ): Promise<GitCheckoutResult> =>
+    ipcRenderer.invoke(
+      "git:manage-branch",
+      repoPath,
+      action,
+      branch,
+      name,
+      remote,
+    ),
   gitBranches: (repoPath: string): Promise<GitBranch[]> =>
     ipcRenderer.invoke("git:branches", repoPath),
   gitIdentity: (repoPath: string): Promise<GitIdentity> =>

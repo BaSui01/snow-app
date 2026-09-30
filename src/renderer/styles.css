@@ -20647,6 +20647,230 @@ body.is-panel-resizing * {
   border-top: 1px solid var(--border-light);
 }
 
+.tool-call-app-logs-body {
+  gap: 8px;
+}
+
+.tool-call-logs-breakdown-label {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.tool-call-logs-summary {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.4fr) repeat(4, minmax(54px, 1fr));
+  gap: 6px;
+}
+
+.tool-call-logs-total,
+.tool-call-logs-stat {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+}
+
+.tool-call-logs-total strong,
+.tool-call-logs-stat strong {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tool-call-logs-total span {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-call-log-level {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  border-radius: 4px;
+  padding: 2px 5px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.tool-call-log-level-error {
+  background: var(--accent-red-bg);
+  color: var(--accent-red-text);
+}
+
+.tool-call-log-level-warn {
+  background: var(--accent-yellow-bg);
+  color: var(--accent-yellow-text);
+}
+
+.tool-call-log-level-info {
+  background: var(--accent-blue-bg);
+  color: var(--accent-blue-text);
+}
+
+.tool-call-log-level-debug {
+  color: var(--text-tertiary);
+}
+
+.tool-call-logs-meta,
+.tool-call-log-subline,
+.tool-call-log-trace {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+
+.tool-call-logs-meta > span,
+.tool-call-log-trace > span {
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  padding: 2px 7px;
+}
+
+.tool-call-logs-list {
+  display: flex;
+  max-height: 560px;
+  flex-direction: column;
+  gap: 6px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.tool-call-log-entry {
+  min-width: 0;
+  border: 1px solid var(--border-light);
+  border-left: 3px solid var(--border-medium, var(--border-light));
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  padding: 7px 9px;
+}
+
+.tool-call-log-entry-error {
+  border-left-color: var(--accent-red-text);
+}
+
+.tool-call-log-entry-warn {
+  border-left-color: var(--accent-yellow-text);
+}
+
+.tool-call-log-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.tool-call-log-module,
+.tool-call-log-head code,
+.tool-call-log-subline code,
+.tool-call-log-trace code {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.tool-call-log-message {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-call-log-subline {
+  margin-top: 4px;
+}
+
+.tool-call-log-subline time {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tool-call-log-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin-top: 6px;
+  color: var(--accent-red-text);
+  font-size: 10.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tool-call-log-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.tool-call-log-field {
+  min-width: 0;
+  max-width: 100%;
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+.tool-call-log-field summary {
+  cursor: pointer;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  padding: 2px 6px;
+  user-select: none;
+}
+
+.tool-call-log-pre {
+  max-height: 240px;
+  max-width: 100%;
+  overflow: auto;
+  margin: 4px 0 0;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  padding: 7px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tool-call-logs-empty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-tertiary);
+  padding: 10px 2px;
+  font-size: 11px;
+}
+
+.tool-call-logs-hint {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+
+@media (max-width: 520px) {
+  .tool-call-logs-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .tool-call-dbx-meta {
   display: inline-flex;
   align-items: center;

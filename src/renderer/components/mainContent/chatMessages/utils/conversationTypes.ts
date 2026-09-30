@@ -356,6 +356,8 @@ export type ConversationSessionRef = {
   runRequestCount: number;
   /** Whether WorkTree Mode was active when this session was last used. */
   worktreeMode: boolean;
+  /** WorkTree id bound or pending for this session. */
+  worktreeId?: string | null;
   /** Whether WorkFlow Mode was active when this session was last used. */
   workflowMode: boolean;
   /** Whether Goal Mode was active when this session was last used. */
@@ -634,6 +636,9 @@ export type ConversationContextValue = {
   workflowMode: boolean;
   isUpdatingWorkflowMode: boolean;
   goalModeTokenBudget: number;
+  /** 无会话时预选的 WorkTree ID，新会话发送首条消息时自动完成绑定。 */
+  pendingWorktreeId: string | null;
+  setPendingWorktreeId: (worktreeId: string | null) => void;
   pendingToolAuthorizations: ToolCallInfo[];
   activePendingMessages: string[];
   compactionPreview: string;
@@ -706,6 +711,7 @@ export type ConversationContextValue = {
   planModeRef: RefValue<boolean>;
   goalModeRef: RefValue<boolean>;
   worktreeModeRef: RefValue<boolean>;
+  pendingWorktreeIdRef: RefValue<string | null>;
   workflowModeRef: RefValue<boolean>;
   /** Global Plan/Goal Mode defaults (persisted settings). New and
    *  never-configured conversations inherit these; switches never write them. */
@@ -1004,6 +1010,8 @@ export type UseChatConversationResult = {
   refreshGoalMode: () => Promise<boolean>;
   worktreeMode: boolean;
   isUpdatingWorktreeMode: boolean;
+  pendingWorktreeId: string | null;
+  setPendingWorktreeId: (worktreeId: string | null) => void;
   setWorktreeMode: (enabled: boolean) => Promise<void>;
   refreshWorktreeMode: () => Promise<boolean>;
   workflowMode: boolean;

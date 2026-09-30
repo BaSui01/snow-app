@@ -132,6 +132,15 @@ const normalizeResponsesApiRequest = (value: unknown): ResponsesApiRequest => {
       typeof source.workflowMode === "boolean"
         ? source.workflowMode
         : undefined,
+    executionWorkspaceRoot:
+      typeof source.executionWorkspaceRoot === "string" &&
+      source.executionWorkspaceRoot.trim()
+        ? source.executionWorkspaceRoot.trim()
+        : undefined,
+    worktreeId:
+      typeof source.worktreeId === "string" && source.worktreeId.trim()
+        ? source.worktreeId.trim()
+        : undefined,
     thinkingStrength:
       typeof source.thinkingStrength === "string" &&
       source.thinkingStrength.trim()

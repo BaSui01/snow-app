@@ -1158,12 +1158,13 @@
 }
 
 /* ==========================================================================
-   14. Horizontal Resizer (上下分栏拖拽条)
+   14. Project activity: stable CNC splitter & commit timeline
    ========================================================================== */
 
 :root[data-theme-preset="tesseract"] .h-resizer {
   height: 16px;
   min-height: 16px;
+  background: var(--surface-island-muted);
 }
 
 :root[data-theme-preset="tesseract"] .h-resizer::before {
@@ -1178,28 +1179,80 @@
   border-radius: var(--radius-sm);
   background: var(--surface-island-strong);
   box-shadow: none;
-  transition: all 0.12s ease;
+  /* Never animate geometry: pointer drag must track the line precisely. */
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
 }
 
 :root[data-theme-preset="tesseract"] .h-resizer:hover::before,
-:root[data-theme-preset="tesseract"] .h-resizer:active::before {
-  background: var(--tesseract-purple);
+:root[data-theme-preset="tesseract"] .h-resizer:active::before,
+:root[data-theme-preset="tesseract"]
+  body.is-git-pane-resizing
+  .h-resizer::before {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--tesseract-purple) 25%,
+    var(--tesseract-cyan) 50%,
+    var(--tesseract-purple) 75%,
+    transparent 100%
+  );
+  box-shadow: 0 0 6px rgba(139, 92, 246, 0.5);
 }
 
 :root[data-theme-preset="tesseract"] .h-resizer:hover::after,
-:root[data-theme-preset="tesseract"] .h-resizer:active::after {
+:root[data-theme-preset="tesseract"] .h-resizer:active::after,
+:root[data-theme-preset="tesseract"]
+  body.is-git-pane-resizing
+  .h-resizer::after {
   border-color: var(--tesseract-purple);
-  background: var(--tesseract-purple-bg);
-  box-shadow: 0 0 8px var(--tesseract-purple-glow);
+  background: var(--surface-island-strong);
+  box-shadow:
+    0 0 10px var(--tesseract-purple-glow),
+    inset 0 0 4px var(--tesseract-purple-bg);
 }
 
 :root[data-theme-preset="tesseract"] .h-resizer-icon {
   color: var(--text-tertiary);
+  transition: color 0.12s ease;
 }
 
 :root[data-theme-preset="tesseract"] .h-resizer:hover .h-resizer-icon,
-:root[data-theme-preset="tesseract"] .h-resizer:active .h-resizer-icon {
+:root[data-theme-preset="tesseract"] .h-resizer:active .h-resizer-icon,
+:root[data-theme-preset="tesseract"] body.is-git-pane-resizing .h-resizer-icon {
   color: var(--accent-blue-text);
+}
+
+:root[data-theme-preset="tesseract"] .h-resizer:focus-visible {
+  outline: 2px solid var(--tesseract-purple);
+  outline-offset: -2px;
+}
+
+:root[data-theme-preset="tesseract"] .git-panel-graph {
+  background: var(--surface-island-strong);
+}
+
+:root[data-theme-preset="tesseract"] .git-graph-row {
+  transition: background 0.12s ease;
+}
+
+:root[data-theme-preset="tesseract"] .git-graph-row:hover {
+  background: var(--surface-island-muted);
+}
+
+:root[data-theme-preset="tesseract"] .git-graph-row.selected {
+  background: var(--tesseract-purple-bg);
+}
+
+:root[data-theme-preset="tesseract"] .git-graph-ref.local:not(.worktree) {
+  background: var(--tesseract-purple-bg);
+  color: var(--accent-blue-text);
+}
+
+:root[data-theme-preset="tesseract"] .git-graph-message {
+  color: var(--text-primary);
 }
 
 /* ==========================================================================

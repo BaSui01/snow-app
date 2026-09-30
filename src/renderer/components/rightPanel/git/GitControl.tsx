@@ -14,11 +14,12 @@ import {
   Square,
   Terminal as TerminalIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
 import { ContextMenu, type ContextMenuItem } from "../../common/ContextMenu";
 import type {
   GitFileStatus,
+  GitRemoteInfo,
   GitRepoInfo,
   GitStatusResult,
 } from "../../../../preload";
@@ -32,6 +33,7 @@ import { RepoSelector } from "./RepoSelector";
 
 type GitControlProps = {
   repoPath: string | undefined | null;
+  directoryId?: string;
   repos?: GitRepoInfo[];
   onRepoSelect?: (path: string) => void;
   /** 双击变更区/暂存区文件：回调携带双击来源，供上层打开对应差异 tab。 */
@@ -147,9 +149,42 @@ export const GitControl = ({
   const [discardTarget, setDiscardTarget] = useState<GitFileStatus[]>([]);
   // 拉取/推送二次确认：开关值来自 Git 设置面板，保存后通过自定义事件同步。
   const [confirmPullPush, setConfirmPullPush] = useState(true);
+  const [remotes, setRemotes] = useState<GitRemoteInfo[]>([]);
+  const remotesRequestIdRef = useRef(0);
+  const [remotesLoaded, setRemotesLoaded] = useState(false);
+  const [manualRemoteOverrides, setManualRemoteOverrides] = useState<
+    Map<string, string>
+  >(() => new Map());
+  const selectedRemote = useMemo(() => {
+    const manualRemote = repoPath
+      ? manualRemoteOverrides.get(repoPath)
+      : undefined;
+    if (
+      manualRemote &&
+      remotes.some((remote) => remote.name === manualRemote)
+    ) {
+      return manualRemote;
+    }
+    const upstream = status?.upstream;
+    const trackingRemote = upstream
+      ? remotes
+          .filter((remote) => upstream.startsWith(`${remote.name}/`))
+          .sort((left, right) => right.name.length - left.name.length)[0]
+      : undefined;
+    return (
+      trackingRemote?.name ??
+      remotes.find((remote) => remote.name === "origin")?.name ??
+      remotes[0]?.name ??
+      ""
+    );
+  }, [manualRemoteOverrides, remotes, repoPath, status?.upstream]);
+  const [setUpstream, setSetUpstream] = useState<boolean>(false);
   const [gitActionConfirm, setGitActionConfirm] = useState<{
-    action: "pull" | "push";
+    action: "pull" | "push" | "commitAndPush";
     anchor: GitConfirmAnchor;
+    branch?: string;
+    commitMessage?: string;
+    remote?: string;
   } | null>(null);
   const [operationError, setOperationError] = useState<{
     title: string;
@@ -362,8 +397,34 @@ export const GitControl = ({
     });
   }, [status]);
 
-  // Manual refresh: re-fetch the status and ask the parent to refresh the
-  // commit graph (both live in the same panel, but in separate panes).
+  // Load remotes; the selected destination is derived from a manual per-repo
+  // override or, otherwise, the current upstream and the configured fallback.
+  const loadRemotes = useCallback(() => {
+    const requestId = ++remotesRequestIdRef.current;
+    setRemotes([]);
+    setRemotesLoaded(false);
+    if (!repoPath) {
+      setRemotesLoaded(true);
+      return;
+    }
+    window.snow
+      .gitRemotes(repoPath)
+      .then((list) => {
+        if (requestId !== remotesRequestIdRef.current) return;
+        setRemotes(list);
+        setRemotesLoaded(true);
+      })
+      .catch(() => {
+        if (requestId === remotesRequestIdRef.current) {
+          setRemotesLoaded(true);
+        }
+        // Silent fail
+      });
+  }, [repoPath]);
+
+  useEffect(() => {
+    loadRemotes();
+  }, [loadRemotes]);
   const handleRefresh = useCallback(() => {
     setIsRefreshing(true);
     onHistoryRefresh?.();
@@ -549,138 +610,305 @@ export const GitControl = ({
     [t],
   );
 
-  const handleCommit = useCallback(() => {
-    if (!repoPath || !displayedCommitMessage.trim()) {
-      return;
-    }
-    setActionInProgress("commit");
-    const shouldPush = commitMode === "commitAndPush";
-    window.snow
-      .gitCommit(repoPath, displayedCommitMessage)
-      .then((result) => {
-        if (!result.success) {
-          return;
-        }
-        // 提交产生新历史，刷新提交图。
-        onHistoryRefresh?.();
-        // 清空的是“该仓库”的草稿：若提交期间已切换项目，UI 不受影响。
-        applyCommitMessage(repoPath, "");
-        commitPendingRef.current = true;
-        // 提交并推送模式下，提交成功后紧接着推送。
-        if (shouldPush) {
-          return window.snow.gitPush(repoPath);
-        }
-        return null;
-      })
-      .then((pushResult) => {
-        if (pushResult) {
+  const runCommit = useCallback(
+    (
+      message: string,
+      pushAfterCommit: boolean,
+      targetRemote: string,
+      targetBranch: string,
+      targetSetUpstream: boolean,
+    ): void => {
+      if (!repoPath || !message.trim()) return;
+      setActionInProgress("commit");
+      let committed = false;
+      void (async () => {
+        try {
+          const commitResult = await window.snow.gitCommit(repoPath, message);
+          if (!commitResult.success) {
+            reportGitError(t("git.commitFailed"), commitResult.message);
+            return;
+          }
+          committed = true;
+          // 提交产生新历史，刷新提交图。
+          onHistoryRefresh?.();
+          applyCommitMessage(repoPath, "");
+          commitPendingRef.current = true;
+          refresh();
+          if (!pushAfterCommit) return;
+
+          setActionInProgress("push");
+          const pushResult = await window.snow.gitPush(
+            repoPath,
+            targetRemote || undefined,
+            targetBranch || undefined,
+            targetSetUpstream,
+          );
           if (pushResult.success) {
             // 推送会移动远端跟踪分支（提交图上的 origin/* 徽章），刷新提交图。
             onHistoryRefresh?.();
             refresh();
+            loadRemotes();
           } else {
             reportGitError(t("git.pushFailed"), pushResult.message);
           }
-        } else {
-          refresh();
+        } catch (err: unknown) {
+          reportGitError(
+            committed ? t("git.pushFailed") : t("git.commitFailed"),
+            err instanceof Error ? err.message : String(err),
+          );
+        } finally {
+          setActionInProgress(null);
         }
-      })
-      .catch((err: unknown) => {
-        reportGitError(
-          t("git.pushFailed"),
-          err instanceof Error ? err.message : String(err),
-        );
-      })
-      .finally(() => setActionInProgress(null));
-  }, [
-    repoPath,
-    displayedCommitMessage,
-    commitMode,
-    refresh,
-    t,
-    applyCommitMessage,
-    reportGitError,
-    onHistoryRefresh,
-  ]);
+      })();
+    },
+    [
+      repoPath,
+      applyCommitMessage,
+      refresh,
+      loadRemotes,
+      t,
+      reportGitError,
+      onHistoryRefresh,
+    ],
+  );
 
-  const handlePush = useCallback(() => {
-    if (!repoPath) {
-      return;
-    }
-    setActionInProgress("push");
-    window.snow
-      .gitPush(repoPath)
-      .then((result) => {
-        if (result.success) {
-          // 推送会移动远端跟踪分支（提交图上的 origin/* 徽章），刷新提交图。
-          onHistoryRefresh?.();
-          refresh();
-        } else {
-          reportGitError(t("git.pushFailed"), result.message);
+  const handleCommit = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      const message = displayedCommitMessage;
+      if (!repoPath || !message.trim()) return;
+      const branch = status?.currentBranch ?? "";
+      if (commitMode === "commitAndPush") {
+        if (remotesLoaded && remotes.length === 0) {
+          reportGitError(t("git.pushFailed"), t("team.header.noRemote"));
+          return;
         }
-      })
-      .catch((err: unknown) => {
-        reportGitError(
-          t("git.pushFailed"),
-          err instanceof Error ? err.message : String(err),
-        );
-      })
-      .finally(() => setActionInProgress(null));
-  }, [repoPath, refresh, t, reportGitError, onHistoryRefresh]);
-
-  const handlePull = useCallback(() => {
-    if (!repoPath) {
-      return;
-    }
-    setActionInProgress("pull");
-    window.snow
-      .gitPull(repoPath)
-      .then((result) => {
-        if (result.success) {
-          refresh();
-          // 拉取可能带入新提交，刷新提交图。
-          onHistoryRefresh?.();
+        const rect = event.currentTarget.getBoundingClientRect();
+        const trackingRemote = status?.upstream?.split("/", 1)[0] ?? "";
+        const shouldSetUpstream =
+          !status?.upstream || trackingRemote !== selectedRemote;
+        setSetUpstream(shouldSetUpstream);
+        if (!confirmPullPush && remotesLoaded && remotes.length <= 1) {
+          runCommit(message, true, selectedRemote, branch, shouldSetUpstream);
         } else {
-          reportGitError(t("git.pullFailed"), result.message);
-        }
-      })
-      .catch((err: unknown) => {
-        reportGitError(
-          t("git.pullFailed"),
-          err instanceof Error ? err.message : String(err),
-        );
-      })
-      .finally(() => setActionInProgress(null));
-  }, [repoPath, refresh, t, reportGitError, onHistoryRefresh]);
-
-  // 拉取/推送入口：开关开启时先弹二次确认气泡，确认后才真正执行。
-  const requestGitAction = useCallback(
-    (action: "pull" | "push", anchor: GitConfirmAnchor) => {
-      if (!confirmPullPush) {
-        if (action === "pull") {
-          handlePull();
-        } else {
-          handlePush();
+          setGitActionConfirm({
+            action: "commitAndPush",
+            anchor: { left: rect.left, right: rect.right, bottom: rect.bottom },
+            commitMessage: message,
+            branch,
+            remote: selectedRemote,
+          });
         }
         return;
       }
-      setGitActionConfirm({ action, anchor });
+      runCommit(message, false, "", branch, false);
     },
-    [confirmPullPush, handlePull, handlePush],
+    [
+      repoPath,
+      displayedCommitMessage,
+      status?.currentBranch,
+      commitMode,
+      selectedRemote,
+      status?.upstream,
+      confirmPullPush,
+      remotes.length,
+      remotesLoaded,
+      setUpstream,
+      setSetUpstream,
+      setGitActionConfirm,
+      runCommit,
+      reportGitError,
+      t,
+    ],
+  );
+
+  const handlePush = useCallback(
+    (overrideRemote?: string, overrideSetUpstream?: boolean) => {
+      if (!repoPath) return;
+      const targetRemote = overrideRemote ?? selectedRemote;
+      const targetSetUpstream = overrideSetUpstream ?? setUpstream;
+      const targetBranch = status?.currentBranch ?? "";
+      setActionInProgress("push");
+      void window.snow
+        .gitPush(
+          repoPath,
+          targetRemote || undefined,
+          targetBranch || undefined,
+          targetSetUpstream,
+        )
+        .then((result) => {
+          if (result.success) {
+            // 推送会移动远端跟踪分支（提交图上的 origin/* 徽章），刷新提交图。
+            onHistoryRefresh?.();
+            refresh();
+            loadRemotes();
+          } else {
+            reportGitError(t("git.pushFailed"), result.message);
+          }
+        })
+        .catch((err: unknown) => {
+          reportGitError(
+            t("git.pushFailed"),
+            err instanceof Error ? err.message : String(err),
+          );
+        })
+        .finally(() => setActionInProgress(null));
+    },
+    [
+      repoPath,
+      selectedRemote,
+      setUpstream,
+      status?.currentBranch,
+      refresh,
+      loadRemotes,
+      t,
+      reportGitError,
+      onHistoryRefresh,
+    ],
+  );
+
+  const handlePull = useCallback(
+    (overrideRemote?: string) => {
+      if (!repoPath) return;
+      const targetRemote = overrideRemote ?? selectedRemote;
+      const targetBranch = status?.currentBranch ?? "";
+      setActionInProgress("pull");
+      void window.snow
+        .gitPull(repoPath, targetRemote || undefined, targetBranch || undefined)
+        .then((result) => {
+          if (result.success) {
+            // 拉取可能带入新提交，刷新提交图。
+            onHistoryRefresh?.();
+            refresh();
+            loadRemotes();
+          } else {
+            reportGitError(t("git.pullFailed"), result.message);
+          }
+        })
+        .catch((err: unknown) => {
+          reportGitError(
+            t("git.pullFailed"),
+            err instanceof Error ? err.message : String(err),
+          );
+        })
+        .finally(() => setActionInProgress(null));
+    },
+    [
+      repoPath,
+      selectedRemote,
+      status?.currentBranch,
+      refresh,
+      loadRemotes,
+      t,
+      reportGitError,
+      onHistoryRefresh,
+    ],
+  );
+
+  // Always confirm when multiple remotes exist; the selected destination is captured and reused.
+  const requestGitAction = useCallback(
+    (
+      action: "pull" | "push" | "commitAndPush",
+      anchor: GitConfirmAnchor,
+      overrideRemote?: string,
+      commitMessage?: string,
+      branch?: string,
+    ) => {
+      const targetRemote = overrideRemote ?? selectedRemote;
+      if (overrideRemote !== undefined && repoPath) {
+        setManualRemoteOverrides((previous) =>
+          new Map(previous).set(repoPath, overrideRemote),
+        );
+      }
+      const trackingRemote = status?.upstream?.split("/", 1)[0] ?? "";
+      const shouldSetUpstream =
+        !status?.upstream || trackingRemote !== targetRemote;
+      setSetUpstream(shouldSetUpstream);
+      if (!confirmPullPush && remotesLoaded && remotes.length <= 1) {
+        if (action === "pull") handlePull(targetRemote);
+        else if (action === "push") handlePush(targetRemote, shouldSetUpstream);
+        else
+          runCommit(
+            commitMessage ?? "",
+            true,
+            targetRemote,
+            branch ?? status?.currentBranch ?? "",
+            shouldSetUpstream,
+          );
+        return;
+      }
+      setGitActionConfirm({
+        action,
+        anchor,
+        branch,
+        commitMessage,
+        remote: targetRemote,
+      });
+    },
+    [
+      confirmPullPush,
+      remotes.length,
+      remotesLoaded,
+      selectedRemote,
+      repoPath,
+      status?.upstream,
+      status?.currentBranch,
+      handlePull,
+      handlePush,
+      runCommit,
+    ],
   );
 
   const handleConfirmGitAction = useCallback(() => {
     const pending = gitActionConfirm;
+    if (!pending) return;
     setGitActionConfirm(null);
-    if (!pending) {
+    if (
+      pending.action === "commitAndPush" &&
+      remotesLoaded &&
+      remotes.length === 0
+    ) {
+      reportGitError(t("git.pushFailed"), t("team.header.noRemote"));
       return;
     }
+    const targetRemote = selectedRemote || pending.remote || "";
     if (pending.action === "pull") {
-      handlePull();
+      handlePull(targetRemote);
+    } else if (pending.action === "push") {
+      handlePush(targetRemote, setUpstream);
     } else {
-      handlePush();
+      runCommit(
+        pending.commitMessage ?? "",
+        true,
+        targetRemote,
+        pending.branch ?? "",
+        setUpstream,
+      );
     }
-  }, [gitActionConfirm, handlePull, handlePush]);
+  }, [
+    gitActionConfirm,
+    remotesLoaded,
+    remotes.length,
+    selectedRemote,
+    setUpstream,
+    handlePull,
+    handlePush,
+    runCommit,
+    reportGitError,
+    t,
+  ]);
+
+  const handleSelectConfirmRemote = useCallback(
+    (remote: string): void => {
+      if (repoPath) {
+        setManualRemoteOverrides((previous) =>
+          new Map(previous).set(repoPath, remote),
+        );
+      }
+      const trackingRemote = status?.upstream?.split("/", 1)[0] ?? "";
+      setSetUpstream(!status?.upstream || trackingRemote !== remote);
+    },
+    [repoPath, status?.upstream],
+  );
 
   const handleCancelGitAction = useCallback(() => {
     setGitActionConfirm(null);
@@ -732,38 +960,76 @@ export const GitControl = ({
           handleRefresh();
         },
       },
-      {
-        id: "pull",
-        label: t("git.pull"),
-        icon: <ArrowDownToLine size={13} strokeWidth={1.8} />,
-        disabled: busy,
-        onClick: () => {
-          const anchorX = actionsContextMenu?.x ?? 0;
-          const anchorY = actionsContextMenu?.y ?? 0;
-          setActionsContextMenu(null);
-          requestGitAction("pull", {
-            left: anchorX,
-            right: anchorX,
-            bottom: anchorY,
-          });
-        },
-      },
-      {
-        id: "push",
-        label: t("git.push"),
-        icon: <ArrowUpFromLine size={13} strokeWidth={1.8} />,
-        disabled: busy,
-        onClick: () => {
-          const anchorX = actionsContextMenu?.x ?? 0;
-          const anchorY = actionsContextMenu?.y ?? 0;
-          setActionsContextMenu(null);
-          requestGitAction("push", {
-            left: anchorX,
-            right: anchorX,
-            bottom: anchorY,
-          });
-        },
-      },
+      ...(remotes.length > 1
+        ? remotes.map((r) => ({
+            id: `pull-${r.name}`,
+            label: `${t("git.pull")} (${r.name})`,
+            icon: <ArrowDownToLine size={13} strokeWidth={1.8} />,
+            disabled: busy,
+            onClick: () => {
+              const anchorX = actionsContextMenu?.x ?? 0;
+              const anchorY = actionsContextMenu?.y ?? 0;
+              setActionsContextMenu(null);
+              requestGitAction(
+                "pull",
+                { left: anchorX, right: anchorX, bottom: anchorY },
+                r.name,
+              );
+            },
+          }))
+        : [
+            {
+              id: "pull",
+              label: t("git.pull"),
+              icon: <ArrowDownToLine size={13} strokeWidth={1.8} />,
+              disabled: busy,
+              onClick: () => {
+                const anchorX = actionsContextMenu?.x ?? 0;
+                const anchorY = actionsContextMenu?.y ?? 0;
+                setActionsContextMenu(null);
+                requestGitAction("pull", {
+                  left: anchorX,
+                  right: anchorX,
+                  bottom: anchorY,
+                });
+              },
+            },
+          ]),
+      ...(remotes.length > 1
+        ? remotes.map((r) => ({
+            id: `push-${r.name}`,
+            label: `${t("git.push")} → ${r.name}${selectedRemote === r.name ? " ✓" : ""}`,
+            icon: <ArrowUpFromLine size={13} strokeWidth={1.8} />,
+            disabled: busy,
+            onClick: () => {
+              const anchorX = actionsContextMenu?.x ?? 0;
+              const anchorY = actionsContextMenu?.y ?? 0;
+              setActionsContextMenu(null);
+              requestGitAction(
+                "push",
+                { left: anchorX, right: anchorX, bottom: anchorY },
+                r.name,
+              );
+            },
+          }))
+        : [
+            {
+              id: "push",
+              label: t("git.push"),
+              icon: <ArrowUpFromLine size={13} strokeWidth={1.8} />,
+              disabled: busy,
+              onClick: () => {
+                const anchorX = actionsContextMenu?.x ?? 0;
+                const anchorY = actionsContextMenu?.y ?? 0;
+                setActionsContextMenu(null);
+                requestGitAction("push", {
+                  left: anchorX,
+                  right: anchorX,
+                  bottom: anchorY,
+                });
+              },
+            },
+          ]),
       {
         id: "copy-repo-path",
         separator: true,
@@ -1193,9 +1459,15 @@ export const GitControl = ({
         <GitConfirmBubble
           anchor={gitActionConfirm.anchor}
           message={
-            gitActionConfirm.action === "pull"
-              ? t("git.confirmPull")
-              : t("git.confirmPush")
+            gitActionConfirm.action === "commitAndPush"
+              ? t("git.confirmCommitAndPush")
+              : gitActionConfirm.action === "pull"
+                ? remotes.length > 1
+                  ? t("git.confirmPullFromRemote")
+                  : t("git.confirmPull")
+                : remotes.length > 1
+                  ? t("git.confirmPushToRemote")
+                  : t("git.confirmPush")
           }
           confirmLabel={
             gitActionConfirm.action === "pull"
@@ -1205,6 +1477,15 @@ export const GitControl = ({
           cancelLabel={t("common.cancel")}
           onConfirm={handleConfirmGitAction}
           onCancel={handleCancelGitAction}
+          remotes={remotes}
+          selectedRemote={selectedRemote}
+          onSelectRemote={handleSelectConfirmRemote}
+          remoteLabel={t("git.targetRemote")}
+          showSetUpstreamOption={gitActionConfirm.action !== "pull"}
+          setUpstream={setUpstream}
+          onToggleSetUpstream={setSetUpstream}
+          setUpstreamLabel={t("git.setUpstreamLabel")}
+          confirmDisabled={!remotesLoaded || actionInProgress !== null}
         />
       )}
 

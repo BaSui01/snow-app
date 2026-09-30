@@ -167,6 +167,14 @@ export const useChatConversation = (
   const [workflowMode, setWorkflowModeState] = useState(false);
   const [isUpdatingWorkflowMode, setIsUpdatingWorkflowMode] = useState(false);
   const [goalModeTokenBudget, setGoalModeTokenBudgetState] = useState(2000000);
+  const [pendingWorktreeId, setPendingWorktreeIdState] = useState<
+    string | null
+  >(null);
+  const pendingWorktreeIdRef = useRef<string | null>(null);
+  const setPendingWorktreeId = useCallback((worktreeId: string | null) => {
+    pendingWorktreeIdRef.current = worktreeId;
+    setPendingWorktreeIdState(worktreeId);
+  }, []);
   const [pendingToolAuthorizations, setPendingToolAuthorizations] = useState<
     ConversationContextValue["pendingToolAuthorizations"]
   >([]);
@@ -343,6 +351,8 @@ export const useChatConversation = (
       setGoalModeState(false);
       worktreeModeRef.current = false;
       setWorktreeModeState(false);
+      pendingWorktreeIdRef.current = null;
+      setPendingWorktreeIdState(null);
       workflowModeRef.current = false;
       setWorkflowModeState(false);
       setGoalModeTokenBudgetState(2000000);
@@ -487,6 +497,8 @@ export const useChatConversation = (
     workflowMode,
     isUpdatingWorkflowMode,
     goalModeTokenBudget,
+    pendingWorktreeId,
+    setPendingWorktreeId,
     pendingToolAuthorizations,
     activePendingMessages,
     compactionPreview,
@@ -515,6 +527,7 @@ export const useChatConversation = (
     planModeRef,
     goalModeRef,
     worktreeModeRef,
+    pendingWorktreeIdRef,
     workflowModeRef,
     globalModeDefaultsRef,
     alwaysApprovedToolsRef,
@@ -860,6 +873,8 @@ export const useChatConversation = (
     refreshGoalMode: toolAuthApi.refreshGoalMode,
     worktreeMode,
     isUpdatingWorktreeMode,
+    pendingWorktreeId,
+    setPendingWorktreeId,
     setWorktreeMode: toolAuthApi.setWorktreeMode,
     refreshWorktreeMode: toolAuthApi.refreshWorktreeMode,
     workflowMode,

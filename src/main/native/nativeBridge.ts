@@ -1092,6 +1092,30 @@ export const loadNativeBridge = (): NativeBridge => {
           new Error("Rust native bridge is required to detect terminals"),
         ),
       resolveLoginPathForTerminal: () => Promise.resolve(null),
+      gitListWorktrees: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required for worktrees"),
+        ),
+      gitCreateWorktree: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to create worktrees"),
+        ),
+      gitRemoveWorktree: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to remove worktrees"),
+        ),
+      getConversationWorktree: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to get conversation worktrees",
+          ),
+        ),
+      setConversationWorktree: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to set conversation worktrees",
+          ),
+        ),
       getGitStatus: () => {
         throw new Error("Rust native bridge is required for git status");
       },
@@ -1100,6 +1124,9 @@ export const loadNativeBridge = (): NativeBridge => {
       },
       getGitIdentity: () => {
         throw new Error("Rust native bridge is required for git identity");
+      },
+      getGitWorktrees: () => {
+        throw new Error("Rust native bridge is required for git worktrees");
       },
       gitStageFiles: () => {
         throw new Error("Rust native bridge is required for git stage");
@@ -1156,6 +1183,9 @@ export const loadNativeBridge = (): NativeBridge => {
         ),
       gitCommit: () => {
         throw new Error("Rust native bridge is required for git commit");
+      },
+      gitRemotes: () => {
+        throw new Error("Rust native bridge is required for git remotes");
       },
       gitPush: () => {
         throw new Error("Rust native bridge is required for git push");

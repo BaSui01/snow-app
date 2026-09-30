@@ -186,14 +186,24 @@ export const TodoToolCall = ({
       status={effectiveStatus}
       meta={
         parsedResult.type === "success" ? (
-          <span className="tool-call-todo-count">
-            {t("toolCall.todo.itemCount", {
-              values: {
-                total: parsedResult.todoCount,
-                completed: parsedResult.completedCount,
-              },
-            })}
-          </span>
+          <div className="tool-call-todo-meta-wrap">
+            <span className="tool-call-todo-count">
+              {t("toolCall.todo.itemCount", {
+                values: {
+                  total: parsedResult.todoCount,
+                  completed: parsedResult.completedCount,
+                },
+              })}
+            </span>
+            {parsedResult.todoCount > 0 && (
+              <span className="tool-call-todo-progress-pill">
+                {Math.round(
+                  (parsedResult.completedCount / parsedResult.todoCount) * 100,
+                )}
+                %
+              </span>
+            )}
+          </div>
         ) : null
       }
       className="tool-call-todo"
@@ -222,6 +232,24 @@ export const TodoToolCall = ({
             )
           ) : null}
         </div>
+
+        {/* 线性完成度进度条 */}
+        {parsedResult.type === "success" && parsedResult.todoCount > 0 && (
+          <div className="tool-call-todo-progress-track">
+            <div
+              className="tool-call-todo-progress-fill"
+              style={{
+                width: `${Math.min(
+                  100,
+                  Math.round(
+                    (parsedResult.completedCount / parsedResult.todoCount) *
+                      100,
+                  ),
+                )}%`,
+              }}
+            />
+          </div>
+        )}
 
         {/* Arguments */}
         {parsedArgs ? (

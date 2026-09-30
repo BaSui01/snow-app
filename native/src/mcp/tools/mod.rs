@@ -56,6 +56,7 @@ mod collect;
 mod plan_write;
 mod result_limit;
 mod serialize;
+mod worktree_execution;
 
 pub use super::servers::sub_agents::SUB_AGENT_COMMS_TOOL_FULL_NAMES;
 pub use call::call_mcp_tool;

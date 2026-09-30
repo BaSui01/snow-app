@@ -71,15 +71,36 @@ pub fn uri_key(uri: &Url) -> String {
             .map(|p| {
                 #[cfg(windows)]
                 {
-                    p.to_lowercase()
+                    let clean = p.strip_prefix(r"\\?\").unwrap_or(p);
+                    clean.to_lowercase()
                 }
                 #[cfg(not(windows))]
                 {
                     p.to_string()
                 }
             })
-            .unwrap_or_else(|| uri.as_str().to_string()),
-        Err(_) => uri.as_str().to_string(),
+            .unwrap_or_else(|| {
+                let s = uri.as_str();
+                #[cfg(windows)]
+                {
+                    s.to_lowercase()
+                }
+                #[cfg(not(windows))]
+                {
+                    s.to_string()
+                }
+            }),
+        Err(_) => {
+            let s = uri.as_str();
+            #[cfg(windows)]
+            {
+                s.to_lowercase()
+            }
+            #[cfg(not(windows))]
+            {
+                s.to_string()
+            }
+        }
     }
 }
 
@@ -407,6 +428,78 @@ pub fn spawn_client(
         main_loop_done,
         process_tree_guard,
     ))
+}
+
+/// 只沿当前工作区根及其祖先目录查找 TypeScript；不能依赖 LSP 进程的
+/// 安装目录或全局 PATH（pnpm 子包通常没有自己的 node_modules/typescript）。
+pub(crate) fn typescript_initialization_options(
+    project_root: &Path,
+    initialization_options: Option<serde_json::Value>,
+) -> Result<Option<serde_json::Value>, LspError> {
+    let mut options = initialization_options.unwrap_or_else(|| serde_json::json!({}));
+    let object = options.as_object_mut().ok_or_else(|| {
+        LspError::ServerFailed("TypeScript initializationOptions must be an object".into())
+    })?;
+    let tsserver = object
+        .entry("tsserver")
+        .or_insert_with(|| serde_json::json!({}));
+    let tsserver = tsserver.as_object_mut().ok_or_else(|| {
+        LspError::ServerFailed("TypeScript initializationOptions.tsserver must be an object".into())
+    })?;
+    // 用户显式配置的路径优先；自动发现只处理未配置路径的情况。
+    if tsserver
+        .get("path")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|path| !path.trim().is_empty())
+    {
+        return Ok(Some(options));
+    }
+    // 仅在同一个工作区或仓库内上行查找；没有可验证的边界时只用
+    // 当前根，避免误用父目录里另一项目的 TypeScript 安装。
+    let boundary = project_root
+        .ancestors()
+        .find(|directory| {
+            directory.join("pnpm-workspace.yaml").is_file()
+                || directory.join(".git").exists()
+                || std::fs::read_to_string(directory.join("package.json"))
+                    .ok()
+                    .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+                    .is_some_and(|package| package.get("workspaces").is_some())
+        })
+        .unwrap_or(project_root);
+    let boundary_real = boundary.canonicalize().map_err(|error| {
+        LspError::ServerFailed(format!(
+            "Cannot resolve TypeScript workspace boundary: {error}"
+        ))
+    })?;
+    let path = project_root
+        .ancestors()
+        .take_while(|directory| directory.starts_with(boundary))
+        .find_map(|directory| {
+            let modules = directory.join("node_modules");
+            let package = modules.join("typescript");
+            let server = package.join("lib").join("tsserver.js");
+            // pnpm 的链接应落在同一 node_modules/.pnpm 下；不追随指向别的项目
+            // 或全局安装目录的链接，防止工作区意外使用其他项目的 TypeScript。
+            let local = modules.canonicalize().ok()?;
+            let resolved = server.canonicalize().ok()?;
+            (local.starts_with(&boundary_real)
+                && package.join("package.json").is_file()
+                && resolved.is_file()
+                && resolved.starts_with(local))
+            .then_some(server)
+        });
+    let path = path.ok_or_else(|| {
+        LspError::ServerFailed(format!(
+            "TypeScript installation not found for workspace {}: install typescript in this workspace or an ancestor's node_modules, or configure initializationOptions.tsserver.path",
+            project_root.display()
+        ))
+    })?;
+    tsserver.insert(
+        "path".into(),
+        serde_json::Value::String(path.to_string_lossy().into_owned()),
+    );
+    Ok(Some(options))
 }
 
 /// LSP initialize 握手（带超时）。

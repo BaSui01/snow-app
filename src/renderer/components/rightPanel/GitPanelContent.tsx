@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, MoveVertical } from "lucide-react";
 
 import { useI18n } from "../../i18n";
@@ -36,6 +36,23 @@ export function GitPanelContent({
   // 增量合并（历史被改写时它自行退回整体重载）。
   const [graphRefreshKey, setGraphRefreshKey] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
+  const changesRef = useRef<HTMLDivElement>(null);
+  const graphRef = useRef<HTMLDivElement>(null);
+  const resizeCleanupRef = useRef<(() => void) | null>(null);
+  const resumeFrameRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      resizeCleanupRef.current?.();
+      if (resumeFrameRef.current !== null) {
+        cancelAnimationFrame(resumeFrameRef.current);
+      }
+      document.body.classList.remove("is-git-pane-resizing");
+      changesRef.current?.style.removeProperty("transition");
+      graphRef.current?.style.removeProperty("transition");
+    },
+    [],
+  );
 
   const workspacePath = activeDirectory?.path ? activeDirectory.path : null;
 
@@ -86,59 +103,89 @@ export function GitPanelContent({
     setGraphRefreshKey((key) => key + 1);
   }, []);
 
-  // 分隔条同时承担「拖拽调整高度」与「点击收起/展开提交图」：位移超过阈值
-  // 才算拖拽，否则抬起指针时切换收起状态。
+  // 点击切换折叠；拖动以当前容器坐标计算位置，窗口尺寸变化时仍跟随指针。
   const startSplitResize = useCallback(
     (event: React.PointerEvent<HTMLDivElement>): void => {
-      if (event.button !== 0) {
+      if (event.button !== 0 || resizeCleanupRef.current) {
         return;
       }
-      event.preventDefault();
       const container = containerRef.current;
       if (!container) {
         return;
       }
+      event.preventDefault();
+      if (resumeFrameRef.current !== null) {
+        cancelAnimationFrame(resumeFrameRef.current);
+        resumeFrameRef.current = null;
+      }
 
+      const resizer = event.currentTarget;
+      const pointerId = event.pointerId;
       const startY = event.clientY;
-      const containerHeight = container.clientHeight;
-      // 收起状态下拖动：从 0 开始展开，提交图跟着指针长出来。
       const wasCollapsed = graphCollapsed;
-      const startRatio = wasCollapsed ? 0 : splitRatio;
+      const grabOffset = startY - resizer.getBoundingClientRect().top;
       let moved = false;
 
       const handlePointerMove = (pointerEvent: PointerEvent): void => {
+        if (pointerEvent.pointerId !== pointerId) return;
         const deltaY = pointerEvent.clientY - startY;
         if (!moved) {
-          if (Math.abs(deltaY) < DRAG_THRESHOLD) {
+          if (
+            Math.abs(deltaY) < DRAG_THRESHOLD ||
+            (wasCollapsed && deltaY > 0)
+          ) {
             return;
           }
           moved = true;
-          if (wasCollapsed) {
-            setGraphCollapsed(false);
-          }
+          // 禁止 flex-grow 过渡追赶指针，否则每帧都会出现视觉滞后和回弹。
+          changesRef.current?.style.setProperty("transition", "none");
+          graphRef.current?.style.setProperty("transition", "none");
+          document.body.classList.add("is-git-pane-resizing");
+          if (wasCollapsed) setGraphCollapsed(false);
         }
-        const newRatio = startRatio + deltaY / containerHeight;
-        setSplitRatio(clamp(newRatio, SPLIT_MIN, SPLIT_MAX));
+        const rect = container.getBoundingClientRect();
+        const height = Math.max(
+          1,
+          container.clientHeight - resizer.offsetHeight,
+        );
+        const ratio = (pointerEvent.clientY - rect.top - grabOffset) / height;
+        setSplitRatio(
+          clamp(
+            ratio,
+            SPLIT_MIN,
+            wasCollapsed ? 1 : Math.max(SPLIT_MAX, splitRatio),
+          ),
+        );
       };
 
       const cleanup = (): void => {
         document.removeEventListener("pointermove", handlePointerMove);
         document.removeEventListener("pointerup", handlePointerUp);
-        document.removeEventListener("pointercancel", cleanup);
-        document.body.classList.remove("is-git-pane-resizing");
+        document.removeEventListener("pointercancel", handlePointerCancel);
+        window.removeEventListener("blur", cleanup);
+        resizeCleanupRef.current = null;
+        // 在最终一帧布局完成后再恢复过渡，避免松手时分割线反弹。
+        resumeFrameRef.current = requestAnimationFrame(() => {
+          document.body.classList.remove("is-git-pane-resizing");
+          changesRef.current?.style.removeProperty("transition");
+          graphRef.current?.style.removeProperty("transition");
+          resumeFrameRef.current = null;
+        });
       };
-
-      const handlePointerUp = (): void => {
+      const handlePointerUp = (pointerEvent: PointerEvent): void => {
+        if (pointerEvent.pointerId !== pointerId) return;
         cleanup();
-        if (!moved) {
-          setGraphCollapsed((prev) => !prev);
-        }
+        if (!moved) setGraphCollapsed((prev) => !prev);
+      };
+      const handlePointerCancel = (pointerEvent: PointerEvent): void => {
+        if (pointerEvent.pointerId === pointerId) cleanup();
       };
 
-      document.body.classList.add("is-git-pane-resizing");
+      resizeCleanupRef.current = cleanup;
       document.addEventListener("pointermove", handlePointerMove);
       document.addEventListener("pointerup", handlePointerUp);
-      document.addEventListener("pointercancel", cleanup);
+      document.addEventListener("pointercancel", handlePointerCancel);
+      window.addEventListener("blur", cleanup);
     },
     [splitRatio, graphCollapsed],
   );
@@ -146,6 +193,7 @@ export function GitPanelContent({
   return (
     <div className="git-panel-container" ref={containerRef}>
       <div
+        ref={changesRef}
         className="git-panel-changes"
         style={{
           flexGrow: graphCollapsed ? 1 : splitRatio,
@@ -166,6 +214,7 @@ export function GitPanelContent({
         ) : null}
         <GitControl
           repoPath={repoPath}
+          directoryId={activeDirectory?.directoryId}
           repos={repos}
           onRepoSelect={setSelectedRepoPath}
           onFileSelect={handleFileSelect}
@@ -182,6 +231,15 @@ export function GitPanelContent({
         aria-label={t("rightPanel.resizeChangesAndGraph")}
         aria-orientation="horizontal"
         aria-expanded={!graphCollapsed}
+        aria-controls="git-panel-commit-graph"
+        aria-valuemin={15}
+        aria-valuemax={100}
+        aria-valuenow={Math.round((graphCollapsed ? 1 : splitRatio) * 100)}
+        aria-valuetext={
+          graphCollapsed
+            ? t("rightPanel.expandCommitGraph")
+            : `${Math.round(splitRatio * 100)}%`
+        }
         tabIndex={0}
         title={
           graphCollapsed

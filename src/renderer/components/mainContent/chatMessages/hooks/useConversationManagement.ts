@@ -190,6 +190,7 @@ export const useConversationManagement = (
         ctx.worktreeModeRef.current = targetWorktreeMode;
         ctx.setWorktreeModeState(targetWorktreeMode);
       }
+      ctx.setPendingWorktreeId(null);
       if (ctx.planModeRef.current !== targetPlanMode) {
         ctx.planModeRef.current = targetPlanMode;
         ctx.setPlanModeState(targetPlanMode);
@@ -695,6 +696,7 @@ export const useConversationManagement = (
         ctx.worktreeModeRef.current = defaults.worktreeMode;
         ctx.setWorktreeModeState(defaults.worktreeMode);
       }
+      ctx.setPendingWorktreeId(null);
 
       // Reset WorkFlow Mode so a new chat starts with the global default.
       if (ctx.workflowModeRef.current !== defaults.workflowMode) {

@@ -28,7 +28,8 @@ fn executable_candidates(command: &str) -> Vec<String> {
         if trimmed.contains('\\') || trimmed.contains('/') {
             return vec![trimmed.to_string()];
         }
-        let pathext = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
+        let pathext =
+            std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
         let mut candidates = vec![trimmed.to_string()];
         for ext in pathext.split(';') {
             let ext = ext.trim();

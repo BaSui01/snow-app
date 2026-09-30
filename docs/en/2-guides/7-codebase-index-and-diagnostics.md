@@ -105,11 +105,12 @@ Common tools include `lsp-diagnostics` (file diagnostics), `lsp-hover` (types/do
 Project configurations override global configurations for the same language; Global/Project scopes are managed separately in LSP settings. These are parameter examples only: replace paths with real absolute local paths and first check tool visibility.
 
 ```text
-lsp-diagnostics filePath=/absolute/project/src/main.rs
-lsp-goto filePath=/absolute/project/src/main.rs line=12 column=4 kind=definition
+lsp-diagnostics filePaths=["/absolute/project/src/main.rs"]
+lsp-symbols filePaths=["/absolute/project/src/main.rs"]
+lsp-goto items=[{"filePath":"/absolute/project/src/main.rs","line":12,"column":4,"kind":"definition"}]
 lsp-workspace-symbols query=TargetName workspaceRoot=/absolute/project
 lsp-workspace-diagnostics workspaceRoot=/absolute/project
-lsp-hover symbol=TargetName workspaceRoot=/absolute/project
+lsp-hover items=[{"symbol":"TargetName","workspaceRoot":"/absolute/project"}]
 ```
 
 For partial or ambiguous results, address warnings, narrow scope and verify coordinates instead of assuming uniqueness. Preview rename edits with `dryRun=true` first.
@@ -136,7 +137,7 @@ Collapsing large UI results reduces rendering work without removing warnings or 
 | Error "no LSP server configured for x"         | File extension in the server's `fileExtensions`                                 | Add the extension (e.g. missing `.tsx`); confirm the project language matches the server                                              |
 | Project has no programming language / mismatch | Project has matching language files (no Language Servers section in the prompt) | Language detection = project markers (Cargo.toml etc.) + extension scan; no match → not injected nor exposed                          |
 | SSH remote project                             | `ssh://` path                                                                   | LSP is local-only; SSH projects never expose lsp-* tools                                                                              |
-| `crashed; restarts on next use`                | Session crashed (≥2 consecutive restarts error out)                             | Check installation/configuration and startup backoff; do not loop during cooldown                                                                         |
+| `crashed; restarts on next use`                | Session crashed (≥2 consecutive restarts error out)                             | Check installation/configuration and startup backoff; do not loop during cooldown                                                     |
 | Dig deeper                                     | App logs                                                                        | `config-get scope=logs` reads `~/.snow/log` (main-process logs); in dev, native `[lsp]`-prefixed fallback logs appear in the terminal |
 
 **Logging**: LSP fallback/failure reasons are written to the **app log table
@@ -154,20 +155,18 @@ The 11 semantic labels match across both i18n families and all three locales, wi
 These are parameter examples, not execution records. Replace paths with real absolute local files:
 
 ```json
-{ "filePath": "/absolute/project/src/a.ts" }
+{ "filePaths": ["/absolute/project/src/a.ts"] }
 ```
 
 ```json
 { "filePaths": ["/absolute/project/src/a.ts", "/absolute/project/src/b.ts"] }
 ```
 
-Put every batch file in the list and do not also provide a nonempty `filePath`. The list strictly contains 1..30 nonempty path strings; wrong types, empty arrays/entries and oversized lists are rejected, not silently truncated. A legacy empty `filePath:""` placeholder only means omitted. Validate count before physical-file deduplication, preserving first occurrence in the original request.
-
-Single-file results stay top-level. Batches return `batch:true`, `fileCount/requestedCount/duplicateCount`, status, per-file results and summary (`completedFiles/partialFiles/failedFiles/errorCount/warningCount`). Read completed/partial/failed totals before expanding file warnings and truncation. `error:null` is not an error; empty diagnostics do not prove complete success. Target file-task concurrency is 3 without changing result order; one server may still serialize work.
+Diagnostics require a `filePaths` array; use a one-item array for one file too. Only 1..30 nonempty path strings are accepted; wrong types, empty arrays/entries and oversized lists are rejected. Paths are deduplicated by physical file identity while preserving first occurrence. Responses always use a `batch:true` envelope with aggregate status, summary and per-file results; individual failures, ambiguities and partial results remain visible.
 
 For rename, first use `dryRun=true`, inspect edits, then pass the returned `previewId` with `dryRun=false` through normal approval. The capability has a 5-minute TTL, at most 32 per session, is single-use and content-bound. Do not paste its raw value into reports. Changed files, expiry, missing/consumed capabilities or `requiresNewPreview` require another preview; the UI never applies automatically. Multi-file writes are not transactional: inspect `appliedFiles/failedFile/error/failedFileMayBeModified`, never claim rollback, and do not replay a capability when files may already have changed.
 
-Concurrency-3 scheduling and related interfaces are under integration. These instructions do not claim builds, fixtures or live acceptance passed; see [LSP design §0.6–0.8](../4-architecture-and-development/7-lsp-external-language-server-design.md).
+Read-only batches are capped at concurrency 3 and preserve input order. The Rust LSP module tests pass; live language-server runtime acceptance was outside this validation scope. See [LSP design §0.6–0.8](../4-architecture-and-development/7-lsp-external-language-server-design.md) for the full contract.
 
 ## 3. Typical workflow
 

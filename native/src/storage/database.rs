@@ -17,6 +17,7 @@ use super::{
 
 /// Bumped whenever the schema changes; written to `PRAGMA user_version` after
 /// a successful `create_schema` so the app can detect stale databases.
+/// 50: combines userscripts.icon and persistent Git worktree bindings.
 /// 49: userscripts.icon column (@icon / @iconURL metadata for the script list icon).
 /// 48: diff_review_comments table (右侧面板 diff 行内评论).
 /// 47: userscripts.target / view_json / surface_json / scope / sandbox columns
@@ -37,7 +38,7 @@ use super::{
 /// 32: api_configs canonical config_json migration plus conversation runtime config columns.
 /// 31: main's scheduled-tasks pre-script migration (30) + PR #65's three
 /// stream-interruption migrations (29 baseline + 4 total additions).
-const CURRENT_SCHEMA_VERSION: i64 = 49;
+const CURRENT_SCHEMA_VERSION: i64 = 50;
 const SNOWFLAKE_EPOCH_MS: u64 = 1_704_067_200_000;
 const SNOWFLAKE_WORKER_ID_BITS: u64 = 10;
 const SNOWFLAKE_SEQUENCE_BITS: u64 = 12;
@@ -597,12 +598,33 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
            updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
          );
-         CREATE INDEX IF NOT EXISTS idx_workspace_directories_active
-           ON workspace_directories(is_active);
-         CREATE INDEX IF NOT EXISTS idx_workspace_directories_kind
-           ON workspace_directories(kind);
+          CREATE INDEX IF NOT EXISTS idx_workspace_directories_active
+            ON workspace_directories(is_active);
+          CREATE INDEX IF NOT EXISTS idx_workspace_directories_kind
+            ON workspace_directories(kind);
 
-         CREATE TABLE IF NOT EXISTS workspace_directory_relinks (
+          CREATE TABLE IF NOT EXISTS git_worktrees (
+            worktree_id TEXT PRIMARY KEY NOT NULL,
+            directory_id TEXT NOT NULL,
+            repository_path TEXT NOT NULL,
+            worktree_path TEXT NOT NULL,
+            branch_name TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            UNIQUE(directory_id, worktree_path)
+          );
+          CREATE INDEX IF NOT EXISTS idx_git_worktrees_directory
+            ON git_worktrees(directory_id);
+          CREATE TABLE IF NOT EXISTS conversation_worktree_bindings (
+            conversation_id TEXT PRIMARY KEY NOT NULL,
+            worktree_id TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            FOREIGN KEY(worktree_id) REFERENCES git_worktrees(worktree_id) ON DELETE CASCADE
+          );
+          CREATE INDEX IF NOT EXISTS idx_conversation_worktree_bindings_worktree
+            ON conversation_worktree_bindings(worktree_id);
+
+          CREATE TABLE IF NOT EXISTS workspace_directory_relinks (
            id TEXT PRIMARY KEY NOT NULL,
            old_directory_id TEXT NOT NULL,
            new_directory_id TEXT NOT NULL,

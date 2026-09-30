@@ -1,6 +1,6 @@
 # 7-LSP 外部语言服务器接入设计（lsp MCP 服务）
 
-> 状态：当前行为说明 + 历史设计档案（2026-09-26 修订）
+> 状态：当前行为说明 + 历史设计档案（2026-09-28 修订）
 > 对应版本：v0.2.x
 > 下文带日期的 Phase、性能实测与早期结构示例是历史记录；与现状冲突时以 §0、§8.10 和当前代码为准。本文不声明本轮构建、测试或运行时验收已通过。
 
@@ -59,16 +59,12 @@
 
 11 项名称在 `toolNames.lsp-*` 与 `toolCall.lsp.op.*` 保持一致，三语同步、工具 ID 和历史 key 不删除：文件诊断、类型与文档查询、符号导航、查找引用、文件符号大纲、符号重命名、函数调用关系、类型层次关系、全局符号搜索、工作区诊断、Go依赖漏洞扫描。`goto` 按 kind 可显示定位定义/定位类型定义/查找实现；完整 ID 映射见 [工具参考](../3-参考手册/2-内置工具参考.md)。
 
-### 0.7 严格诊断批次契约
+### 0.7 数组优先批量契约
 
-- 单文件传非空字符串 `filePath`；批量传含 **1..30** 个非空路径字符串的 `filePaths`，二者严格互斥。批量须将全部文件放进列表，不能再同时传非空单路径。
-- 拒绝错误类型、非字符串条目、空数组、空条目及超限，不静默过滤或截断到 30。旧空 `filePath: ""` 占位兼容为未提供，可与有效列表同传；不允许借此绕过类型/数量校验。数量在去重前检查。
-- 按物理文件身份去重，保留原请求中首次出现的顺序，每个去重后文件保留一个结果，包括失败结果。
-- 单 `filePath` 保留旧顶层形状；列表请求（即使只有一项）返回 `batch:true`、`fileCount`、`requestedCount`、`duplicateCount`、`status: complete|partial|failed`、`summary`、`files`。三种计数分别为去重后文件数、原请求条目数、物理重复条目数。
-- `summary` 包含 `completedFiles`、`partialFiles`、`failedFiles`、`errorCount`、`warningCount`。每个文件保留 `filePath`、`status`、`diagnostics`、`warnings`、`truncated`、`error` 等字段；`error:null` 不是错误。空诊断或零统计不等于完整成功，UI 展示汇总及逐文件警告/截断。
-- 文件任务目标有界并发为 **3**（本轮在 `diagnostics.rs` 整合），完成先后不改变结果顺序；同服务器会话锁仍可能串行化，不承诺批量耗时等于单文件。
-
-本节是同步契约，并发调度与相关接口仍在整合；不宣称本轮构建、fixture 或真实运行已通过。
+- 诊断仅接受 `filePaths` 数组，长度 **1..30**；其他批量只读工具也使用数组：symbols `filePaths` 1..10，hover/goto `items` 1..10，references `items` 1..5。即使单目标也必须传一项数组；不再提供单点参数兼容。
+- 拒绝缺失数组、错误类型、非字符串路径、空数组/条目及超限，不静默过滤或截断。数组项按物理身份去重，保留首次出现顺序；每个请求项均对应结果。单项目标失败、歧义、warning、incomplete 或 truncated 必须独立呈现并反映到总体状态。
+- 所有批次统一返回 `batch:true`、请求/去重计数、整体 `status`、`summary` 和逐文件/逐目标列表。状态为 complete/partial/failed；歧义作为非 complete 结果呈现。读操作有界并发 3，结果顺序保持稳定。
+- `lsp-rename` 保持单符号、先预览再凭证应用；跨文件 edits 不是事务，不允许把多个改名拼成一个批处理。
 
 ### 0.8 内容绑定的重命名预览凭证
 
@@ -346,11 +342,10 @@ flowchart LR
 ### 8.1 lsp-diagnostics（Phase 1，核心；2026-08-14 支持批量）
 
 ```
-lsp-diagnostics filePath=<绝对路径>            # 单文件
-lsp-diagnostics filePaths=[<路径1>, <路径2>]   # 批量（1..30 文件，严格互斥）
+lsp-diagnostics filePaths=[<路径1>, <路径2>]   # 1..30 文件数组（单文件也传 [<绝对路径>]）
 ```
 
-**批量契约（2026-09-26 修订）**：单文件顶层兼容、严格互斥的 1..30 输入、物理去重与稳定顺序、请求/去重计数、逐文件状态及 summary、目标并发 3，完整规则见 §0.7；旧缩略输出不代表全部字段。
+**批量契约（2026-09-27）**：旧实现的单文件顶层结果兼容已移除；当前始终返回 §0.7 所述 `batch:true` 封套，单文件也必须传 `filePaths:[path]`。诊断仅接受 1..30 个路径数组，按物理文件去重并保持顺序；每项目标保留状态，批次状态不得掩盖失败、不完整或歧义。
 
 执行序列（**已按 2026-08-14 实测修订**）：
 
@@ -404,7 +399,7 @@ severity 映射：`1=error, 2=warning, 3=information, 4=hint`（LSP DiagnosticSe
 ### 8.2 lsp-hover（Phase 1）
 
 ```
-lsp-hover filePath=<绝对路径> line=<1-based> column=<1-based>
+lsp-hover items=[{"filePath":"/absolute/path","line":12,"column":4}]
 ```
 
 1-3 同上（不 didClose，文件在会话内保持打开便于连续查询；改用引用计数：文件在多请求期间保持 open，`opened_files` 记录，空闲回收时统一关闭）。
@@ -527,7 +522,7 @@ lsp-hover filePath=<绝对路径> line=<1-based> column=<1-based>
 3. **语言定位**：filePath 可选——提供时按扩展名匹配语言并 ensure_open；缺省时仅当**恰好一个**启用服务器才可直接调用（多服务器场景报错提示传 filePath）。
 4. **能力过滤（§8.7）**：code-action 按附录 F ✅ 语言标记（typescript/python/go/rust/c/java/ruby）；execute-command 当前标记 rust/go（2026-08-15 实测核实），其他语言待核实后补充。命令执行有副作用——dryRun 默认 true，false 需 agent 显式传参。
 
-### 8.10 请求级动态提示词（2026-09-26）
+### 8.10 请求级动态提示词与三类参数契约全覆盖（2026-09-28）
 
 历史上的“LSP 域激活后固定推荐一组工具”已改为最终请求工具集合驱动。五个 provider 先收集一次，再将同一列表交给 payload 与上下文；`ToolSnapshot` 不查询或缓存另一套可见性。
 
@@ -537,6 +532,29 @@ lsp-hover filePath=<绝对路径> line=<1-based> column=<1-based>
 | Plan / Goal / WorkFlow 分析清单 | 最终快照中的 LSP、grep、read、codebase、CodeLens | 禁用工具无对应行，不保留固定底行                        |
 | grep 描述                       | `collect.rs` 最终过滤后调用纯路由生成器          | 显式白名单和通配子代理都在最终集合形成后注入            |
 | grep 结果提示                   | 当前暴露/scope 与调用方 allowed-tools 的交集     | 裸标识符只是启发式；提示可用替代项，不强制改道          |
+
+#### 8.10.1 核心 LSP 工具架构矩阵与三类参数契约（11 个工具）
+
+在 Rust 原生后端（`prompt_context.rs`），针对当前请求可见的 LSP 工具，系统动态提示词注入（`## Language Servers`）全面且准确地覆盖系统注册的全部 11 个核心 LSP 工具，并按入参 Schema 结构严格划分为三大参数契约形态：
+
+| 分类形态                                      | 包含工具                                                                                                                                  | 入参 Schema 结构                                      | 核心入参属性                                                                                                                     | 契约逻辑与最佳场景                                                                                                                                                                             |
+| :-------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1. 批量目标数组类**<br>`items: [...]` (3个) | `lsp-hover`<br>`lsp-goto`<br>`lsp-references`                                                                                             | `items: [...]` 数组 (1..10，references 为 1..5)       | `symbol`, `filePath`, `line`, `column`, `kind`, `includeDeclaration`                                                             | 必须以 `items` 数组包裹（单目标亦传单元素数组 `[target]`）；支持 `symbol` 符号名直接寻址或 `filePath` + 物理坐标寻址；禁止以 grep 猜测签名，公共符号改动前强制调用 references 评估影响。       |
+| **2. 路径数组类**<br>`filePaths: [...]` (2个) | `lsp-symbols`<br>`lsp-diagnostics`                                                                                                        | `filePaths: [...]` 数组 (1..10，diagnostics 为 1..30) | `filePaths` (绝对路径数组)                                                                                                       | 必须以 `filePaths` 数组包裹（单文件亦传单元素数组 `[path]`）；用于提取文件大纲树或在代码变更后执行强制类型与编译诊断（MUST）。                                                                 |
+| **3. 顶层直接平铺类**<br>`flat args` (6个)    | `lsp-workspace-symbols`<br>`lsp-call-hierarchy`<br>`lsp-type-hierarchy`<br>`lsp-rename`<br>`lsp-workspace-diagnostics`<br>`lsp-vulncheck` | 顶层单对象平铺 (flat)                                 | `query`, `workspaceRoot`, `symbol`, `filePath`, `line`, `column`, `newName`, `dryRun`, `previewId`, `maxFiles`, `dir`, `pattern` | 参数直接平铺于顶层入参对象，**严禁**被 `items` 或 `filePaths` 包裹；涵盖全局免坐标符号直达（First-step locator）、调用与继承拓扑分析、两阶段安全重命名、工作区全局诊断汇总与 Go 依赖安全扫描。 |
+
+#### 8.10.2 动态提示词注入与快照隔离红线
+
+动态系统提示词生成严格遵循 **单测快照隔离与过滤安全性（Strict Snapshot Isolation）**：
+
+1. **严格可见性守卫**：所有反引号包裹的工具名（如 `` `lsp-goto` ``、`` `grep-search` ``）必须处于 `self.has(name)` 守卫块中，或通过 `.filter(|name| self.has(name))` 动态拼接；绝不硬编码静态工具名称，绝不泄露快照中未挂载或未启用的工具。
+2. **场景化精准路由**：逐项由 `self.has(...)` 守卫，提供入参形态、核心字段说明及使用契约约束。将 `lsp-workspace-symbols` 与 `lsp-goto` 设为代码导航首选。
+3. **工作流强制条件约束（Conditional workflow requirements）**：
+   - 修改公共符号前强制 `lsp-references` 检查；
+   - 代码改动后强制 `lsp-diagnostics` 检查；
+   - 符号重命名强制两阶段 `lsp-rename`（`dryRun=true` 预览获取 `previewId` 后再应用）；
+   - 代码定位与导航强制优先使用 `lsp-workspace-symbols` 或 `lsp-goto`。
+4. **反制文本盲搜（Grep Counter-measure）**：当挂载 `grep-search` 时，在工具描述与系统提示词末尾注入强约束提示，明确声明 grep 仅用于非代码文本搜索（日志、配置文件、自然语言），严禁用于替代代码语义工具。
 
 对实际可见且目标语言/操作受支持的语义任务执行条件 MUST（见 §0.6）；不支持、退避或失败时使用可见兜底并说明局限。文本命中不证明语义引用；语言服务器诊断不替代项目构建和测试。具体工作区范围、partial 安全和待验收项见 §0。
 
@@ -586,6 +604,7 @@ lsp-hover filePath=<绝对路径> line=<1-based> column=<1-based>
 | **Phase 7**   | **LSP 工具集清理与 agent 引导强化（2026-09-25，数据驱动）**：① 全链路移除 `lsp-code-action` 与 `lsp-execute-command`（全量会话库统计 2026-08-14 ~ 09-25 共 3,761 次 `lsp-*` 调用中 0 次命中；二者为编辑器向光标交互模型，与 agent 场景结构性不匹配；工具总数 13→11）；② §8.9 废止；重新引入前置条件：出现真实调用需求证据或交互形态变化，须单独提案评审；③ Routing rules 场景绑定扩容（rename / type-hierarchy / call-hierarchy / vulncheck / workspace-diagnostics 条件渲染）+ rename/hover 工具描述触发器强化。 | ✅ 已完成（2026-09-25）：全链路代码/UI/i18n/文档/样式同步清理，编译检查 0 警告，单测与构建通过                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | **Phase 8**   | **符号名直接寻址引擎首发（2026-09-25）**：`lsp-hover`、`lsp-references`、`lsp-rename` 引入 `symbol` 参数，AST 优先推测匹配 + 歧义安全拦截（附录 G）。                                                                                                                                                                                                                                                                                                                                                             | ✅ 已完成（2026-09-25）：单测全绿，前端歧义卡片与预览行支持。                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | **Phase 9**   | **符号直接寻址全覆盖与工作区全局直达（2026-09-25）**：① 寻址覆盖扩展——`symbol` 扩展至 `lsp-goto`、`lsp-call-hierarchy` 与 `lsp-type-hierarchy`；② `filePath` 全面设为可选——支持仅传 `symbol` 跨工作区技术栈自动定位，单命中直达，多命中结构化歧义卡片，零命中精准报错；③ Grep 工具智能反弹与快速直达——严格基于 `is_lsp_tooling_active` 条件注入 `symbol` 直达指引；④ 前端 LspToolCall.tsx 适配无 filePath 展示。                                                                                                  | ✅ 已完成（2026-09-25）：Rust/TS/文档三端一致，单元测试 6/6 全绿，tsc/vite build 全绿。                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **Phase 10**  | **11 个核心 LSP 工具动态提示词闭环与三类参数契约完备化（2026-09-28）**：① `prompt_context.rs` 动态提示词全量覆盖 11 个 LSP 工具，补全 6 个平铺入参工具（direct flat args），建立 3 items / 2 filePaths / 6 direct flat 三大形态矩阵；② 严格单测快照隔离红线（全量覆盖测试 + 独立过滤测试 + 纯 hover 隔离测试全绿通过）；③ 基座系统提示词（`system_prompt.rs`）Coding Discipline 协同优化，提倡语义工具优先；④ 中英文架构与参考文档全量同步。                                                                      | ✅ 已完成（2026-09-28）：Rust 编译检查 0 错误 0 警告，prompt_context 单元测试 9/9 全绿，三端文档保持严格一致。                                                                                                                                                                                                                                                                                                                                                                                                               |
 
 **实施红线**：
 
@@ -691,7 +710,7 @@ sequenceDiagram
     participant S as ServerSession
     participant P as 语言服务器进程
 
-    A->>C: lsp-diagnostics(filePath)
+    A->>C: lsp-diagnostics(filePaths)
     C->>M: 校验非 SSH 路径 + 解析项目根 (project_id)
     C->>M: 按 fileExtensions 匹配语言
     alt 未配置该语言

@@ -155,6 +155,7 @@ export const ChatInputView = ({
     isPaused,
     handlePause,
     handleResume,
+    pendingWorktreeId,
   } = useChatConversationContext();
   // 双击 ESC 打开的回滚目标列表（子代理会话不支持回滚）。
   const rollbackPicker = useRollbackPicker({
@@ -191,6 +192,9 @@ export const ChatInputView = ({
     messages,
     conversationVersion,
     fallbackChanges: fallbackFileChanges,
+    worktreeMode,
+    worktreeId: pendingWorktreeId,
+    directoryId: conversationDirectoryId,
   });
   const [isProjectMcpOpen, setIsProjectMcpOpen] = useState(false);
   const [isProjectSensitiveCommandsOpen, setIsProjectSensitiveCommandsOpen] =
@@ -748,7 +752,7 @@ export const ChatInputView = ({
           onWithdraw={handleWithdrawPending}
           onSendNow={handleSendPendingNow}
         />
-        {isStreaming ? (
+        {isStreaming && (
           <div className="stream-metrics-bar">
             <StreamMetrics
               tokenCount={streamTokenCount}
@@ -760,7 +764,7 @@ export const ChatInputView = ({
               onResume={handleResume}
             />
           </div>
-        ) : null}
+        )}
         <TerminalMonitorBar
           monitoredTerminal={monitoredTerminal}
           monitoredLines={monitoredLines}
@@ -860,7 +864,6 @@ export const ChatInputView = ({
             }}
           />
           <ChatInputToolbar
-            projectId={projectId}
             plusMenuSections={plusMenuSections}
             commandTriggerRef={commandTriggerRef}
             isCommandOpen={isCommandOpen}

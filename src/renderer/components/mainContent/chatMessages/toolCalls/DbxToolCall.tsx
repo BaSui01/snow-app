@@ -28,6 +28,7 @@ import {
 import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
+import { DataTableViewer } from "./shared/DataTableViewer";
 
 type DbxToolCallProps = {
   toolCall: ToolCallInfo;
@@ -75,19 +76,6 @@ const parseResult = (result: string | undefined): ParsedResult => {
 const truncate = (value: string, max = 56): string =>
   value.length > max ? `${value.slice(0, max)}...` : value;
 
-/** 单元格值显示：null -> NULL，对象/数组 -> JSON，长字符串截断。 */
-const cellText = (value: unknown): string => {
-  if (value === null || value === undefined) return "NULL";
-  if (typeof value === "object") {
-    try {
-      return truncate(JSON.stringify(value), 40);
-    } catch {
-      return String(value);
-    }
-  }
-  return truncate(String(value), 40);
-};
-
 /**
  * 从查询结果中提取表格结构。
  *
@@ -98,11 +86,11 @@ const cellText = (value: unknown): string => {
  *     `data.rows` 等常见包装字段
  */
 const parseQueryTable = (
-  data: Record<string, unknown>
+  data: Record<string, unknown>,
 ): { columns: string[]; rows: unknown[][] } | null => {
   /** 从候选对象中提取 { rows, columns }，提取不到返回 null。 */
   const extract = (
-    candidate: unknown
+    candidate: unknown,
   ): { rows: unknown[]; columns: unknown[] | null } | null => {
     if (!isRecord(candidate)) {
       return null;
@@ -155,7 +143,7 @@ const parseQueryTable = (
   const columns =
     rawColumns && rawColumns.length > 0
       ? rawColumns.map(String)
-      : firstRow?.map((_: unknown, index: number) => `col${index + 1}`) ?? [];
+      : (firstRow?.map((_: unknown, index: number) => `col${index + 1}`) ?? []);
   const rows = rawRows.map((row) => (Array.isArray(row) ? row : [row]));
   return { columns, rows };
 };
@@ -168,7 +156,7 @@ const parseQueryTable = (
  * 返回 { columns, rows }；不是表格则返回 null。
  */
 const parseMarkdownTable = (
-  text: string
+  text: string,
 ): { columns: string[]; rows: unknown[][] } | null => {
   const lines = text
     .split("\n")
@@ -211,13 +199,11 @@ const contentText = (data: Record<string, unknown>): string | undefined => {
 
 /** 从 content 包装中提取 Markdown 表格（DBX 实际返回格式）。 */
 const parseContentTable = (
-  data: Record<string, unknown>
+  data: Record<string, unknown>,
 ): { columns: string[]; rows: unknown[][] } | null => {
   const text = contentText(data);
   return text ? parseMarkdownTable(text) : null;
 };
-
-const MAX_TABLE_ROWS = 8;
 
 export const DbxToolCall = ({
   toolCall,
@@ -236,11 +222,11 @@ export const DbxToolCall = ({
 
   const parsedArgs = useMemo(
     () => parseArgs(toolCall.arguments),
-    [toolCall.arguments]
+    [toolCall.arguments],
   );
   const parsedResult = useMemo(
     () => parseResult(toolCall.result),
-    [toolCall.result]
+    [toolCall.result],
   );
 
   const effectiveStatus =
@@ -255,10 +241,10 @@ export const DbxToolCall = ({
    * 等）都能渲染成表格，非表格文本自然解析失败保持原样。
    */
   const queryTable = data
-    ? parseQueryTable(data) ?? parseContentTable(data)
+    ? (parseQueryTable(data) ?? parseContentTable(data))
     : parsedResult.type === "raw"
-    ? parseMarkdownTable(parsedResult.text)
-    : null;
+      ? parseMarkdownTable(parsedResult.text)
+      : null;
   const queryRowCount = queryTable?.rows.length;
 
   /* 折叠态头部摘要。 */
@@ -276,8 +262,8 @@ export const DbxToolCall = ({
           typeof data.rowCount === "number"
             ? data.rowCount
             : Array.isArray(data.rows)
-            ? data.rows.length
-            : queryRowCount;
+              ? data.rows.length
+              : queryRowCount;
         meta =
           rowCount !== undefined ? (
             <span className="tool-call-dbx-meta tool-call-dbx-meta-ok">
@@ -457,18 +443,18 @@ export const DbxToolCall = ({
     operation === "execute-query" || operation === "execute-and-show"
       ? asString(parsedArgs?.sql)
       : operation === "execute-redis-command"
-      ? asString(parsedArgs?.command)
-      : undefined;
+        ? asString(parsedArgs?.command)
+        : undefined;
 
   const resultText =
     parsedResult.type === "success"
       ? // content 包装优先取原始文本（保留真实换行，如 list-tables 的表名列表），
         // 无 content 时才回退 JSON 序列化。
-        (data ? contentText(data) : undefined) ??
-        JSON.stringify(parsedResult.data, null, 2)
+        ((data ? contentText(data) : undefined) ??
+        JSON.stringify(parsedResult.data, null, 2))
       : parsedResult.type === "raw"
-      ? parsedResult.text
-      : "";
+        ? parsedResult.text
+        : "";
 
   return (
     <ToolCallNode
@@ -494,46 +480,11 @@ export const DbxToolCall = ({
 
         {queryTable ? (
           <div className="tool-call-dbx-table-wrap">
-            <table className="tool-call-dbx-table">
-              <thead>
-                <tr>
-                  {queryTable.columns.map((column) => (
-                    <th key={column}>{column}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {queryTable.rows.slice(0, MAX_TABLE_ROWS).map((row, index) => (
-                  <tr key={index}>
-                    {row.map((cell, cellIndex) => {
-                      const text = cellText(cell);
-                      const isNull = cell === null || cell === undefined;
-                      return (
-                        <td
-                          key={cellIndex}
-                          title={text}
-                          className={
-                            isNull ? "tool-call-dbx-cell-null" : undefined
-                          }
-                        >
-                          {text}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {queryTable.rows.length > MAX_TABLE_ROWS ? (
-              <div className="tool-call-dbx-table-more">
-                {t("toolCall.dbx.moreRows", {
-                  values: {
-                    shown: MAX_TABLE_ROWS,
-                    total: queryTable.rows.length,
-                  },
-                })}
-              </div>
-            ) : null}
+            <DataTableViewer
+              columns={queryTable.columns}
+              rows={queryTable.rows}
+              maxInitialRows={20}
+            />
           </div>
         ) : data && Array.isArray(data.rows) && data.rows.length === 0 ? (
           <div className="tool-call-dbx-empty">

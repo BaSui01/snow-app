@@ -17,7 +17,9 @@ import {
   formatMessageTime,
   formatToolResultsContent,
   getErrorMessage,
+  inheritConversationWorktreeBinding,
   parseToolCalls,
+  resolveConversationWorkspacePath,
   updateFirstMatchingToolCall,
 } from "../utils/conversationHelpers";
 import { resolveResponseDisposition } from "../utils/responseDisposition";
@@ -956,7 +958,13 @@ export function createWorkflowRunner(
     // checkpoint（回滚仅清理会话数据，不影响文件）。
     const createFlowCheckpoint = async (): Promise<string> => {
       try {
-        const workDir = directoryIdToPath(options.directoryId);
+        const projectSessionDirPath = directoryIdToPath(options.directoryId);
+        const workDir = await resolveConversationWorkspacePath(
+          options.parentConversationId,
+          options.directoryId,
+          projectSessionDirPath,
+          ctx.sessionsRefData.current.get(key)?.worktreeMode ?? false,
+        );
         if (!workDir) {
           return "";
         }
@@ -1608,13 +1616,9 @@ export function createWorkflowRunner(
   }> => {
     const parentConversationId = options.parentConversationId;
     const dirId = options.directoryId;
+    const parentWorktreeMode =
+      ctx.sessionsRefData.current.get(parentConversationId)?.worktreeMode ?? false;
     const conversationId = resume?.conversationId ?? createNodeConversationId();
-    const analysisWorkspaceRoot =
-      ctx.sessionsRefData.current.get(conversationId)?.analysisWorkspaceRoot ??
-      ctx.sessionsRefData.current.get(parentConversationId)
-        ?.analysisWorkspaceRoot ??
-      directoryIdToPath(dirId) ??
-      "";
     // 登记活跃节点：主会话中断/删除时据此级联停止本节点。
     let set = activeNodeSessions.get(parentConversationId);
     if (!set) {
@@ -1647,6 +1651,14 @@ export function createWorkflowRunner(
         effectiveApiProfile,
         effectiveModel,
       );
+    }
+    const nodeWorktreeMode = await inheritConversationWorktreeBinding(
+      parentConversationId,
+      conversationId,
+      dirId,
+      parentWorktreeMode,
+    );
+    if (!resume) {
       options.onNodeConversationCreated?.(conversationId);
     }
     await window.snow.updateWorkflowNodeSession(
@@ -1678,9 +1690,9 @@ export function createWorkflowRunner(
     ctx.ensureSession(conversationId, dirId || undefined);
     const sessionRef = ctx.sessionsRefData.current.get(conversationId);
     if (sessionRef) {
-      sessionRef.analysisWorkspaceRoot = analysisWorkspaceRoot;
       sessionRef.isSending = true;
       sessionRef.isAbortRequested = false;
+      sessionRef.worktreeMode = nodeWorktreeMode;
     }
     ctx.updateSessionField(conversationId, "isStreaming", true);
     resetRunStreamMetrics(ctx, conversationId);
@@ -1869,12 +1881,11 @@ export function createWorkflowRunner(
               messages: requestMessages,
               conversationId,
               directoryId: dirId || undefined,
-              analysisWorkspaceRoot,
               apiProfile: effectiveApiProfile || undefined,
               model: effectiveModel || undefined,
               planMode: false,
               goalMode: false,
-              worktreeMode: false,
+              worktreeMode: nodeWorktreeMode,
               workflowMode: false,
               resumeAfterCompaction,
             },
@@ -2227,7 +2238,6 @@ export function createWorkflowRunner(
             toolCall.name,
             toolCall.arguments,
             conversationId,
-            analysisWorkspaceRoot,
           );
           // 敏感命令确认后签发授权 token（与子代理一致）。
           let sensitiveAuthorizationToken: string | undefined;

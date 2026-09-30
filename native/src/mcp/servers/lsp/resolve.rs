@@ -55,12 +55,69 @@ fn positive_u32(value: Option<&Value>) -> Option<u32> {
         .filter(|n| *n > 0)
 }
 
+/// 智能符号名匹配：
+/// 1. 严格全等：candidate == requested
+/// 2. 规范化 Go 接收器语法后全等：例如 "(*Repository).Method" 与 "Repository.Method" 规范化后一致
+/// 3. 请求短符号名时匹配限定名末尾：例如 requested 为 "ResetMemberPoints"，匹配 "(*Repository).ResetMemberPoints"、"Repository.ResetMemberPoints"、"pkg::Repository::ResetMemberPoints"
+pub(crate) fn symbol_matches(candidate: &str, requested: &str) -> bool {
+    let candidate = candidate.trim();
+    let requested = requested.trim();
+    if candidate.is_empty() || requested.is_empty() {
+        return false;
+    }
+    if candidate == requested {
+        return true;
+    }
+    if normalize_symbol_qualifier(candidate) == normalize_symbol_qualifier(requested) {
+        return true;
+    }
+    if !requested.contains('.') && !requested.contains("::") {
+        if let Some(base) = extract_symbol_basename(candidate) {
+            if base == requested {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// 规范化符号限定符（主要用于 Go 语言指针/值接收器括号及星号剥离）。
+/// 例如 "(*Repository).Method" -> "Repository.Method"
+///     "(Repository).Method"   -> "Repository.Method"
+fn normalize_symbol_qualifier(s: &str) -> String {
+    s.replace("(*", "").replace(['(', ')'], "")
+}
+
+/// 提取限定名的末尾短符号名（支持 "::" 与 "." 分隔符，并剥离可能附带的参数括号）。
+/// 例如 "(*Repository).ResetMemberPoints" -> "ResetMemberPoints"
+///     "billing::Repository::ResetMemberPoints" -> "ResetMemberPoints"
+fn extract_symbol_basename(s: &str) -> Option<&str> {
+    let part = if let Some((_, right)) = s.rsplit_once("::") {
+        right
+    } else if let Some((_, right)) = s.rsplit_once('.') {
+        right
+    } else {
+        s
+    };
+    let unparenthesized = part.split('(').next().unwrap_or(part);
+    let trimmed = unparenthesized.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
+}
+
 fn collect_matching_document_symbols(symbols: &Value, name: &str, out: &mut Vec<MatchItem>) {
     let Some(items) = symbols.as_array() else {
         return;
     };
     for item in items {
-        if item.get("name").and_then(Value::as_str) == Some(name) {
+        if item
+            .get("name")
+            .and_then(Value::as_str)
+            .is_some_and(|item_name| symbol_matches(item_name, name))
+        {
             let selection = item.get("selection").and_then(|s| s.get("start"));
             let position = selection.or_else(|| item.get("range").and_then(|r| r.get("start")));
             let line = positive_u32(position.and_then(|p| p.get("line")));
@@ -256,7 +313,10 @@ pub(crate) fn collect_matching_workspace_symbols(
         return;
     };
     for item in items {
-        if item.get("name").and_then(Value::as_str) != Some(symbol) {
+        let Some(item_name) = item.get("name").and_then(Value::as_str) else {
+            continue;
+        };
+        if !symbol_matches(item_name, symbol) {
             continue;
         }
         let Some(raw) = item
@@ -497,5 +557,107 @@ mod tests {
         );
         assert_eq!(matches.len(), 1);
         assert_eq!(PathBuf::from(&matches[0].file_path), root.join("src/a.rs"));
+    }
+    #[test]
+    fn symbol_matches_supports_go_receivers_and_qualified_names() {
+        // 1. 完全精确匹配
+        assert!(symbol_matches("ResetMemberPoints", "ResetMemberPoints"));
+        // 2. Go 指针接收器方法
+        assert!(symbol_matches(
+            "(*Repository).ResetMemberPoints",
+            "ResetMemberPoints"
+        ));
+        // 3. Go 值接收器方法
+        assert!(symbol_matches(
+            "(Repository).ResetMemberPoints",
+            "ResetMemberPoints"
+        ));
+        // 4. 带包路径的 Go 方法
+        assert!(symbol_matches(
+            "persistence.(*Repository).ResetMemberPoints",
+            "ResetMemberPoints"
+        ));
+        // 5. Go workspace_symbol 限定名
+        assert!(symbol_matches(
+            "Repository.ResetMemberPoints",
+            "ResetMemberPoints"
+        ));
+        // 6. C++/Rust 作用域限定名
+        assert!(symbol_matches(
+            "billing::Repository::ResetMemberPoints",
+            "ResetMemberPoints"
+        ));
+        // 7. 规范化 Go 接收器相互匹配
+        assert!(symbol_matches(
+            "(*Repository).ResetMemberPoints",
+            "Repository.ResetMemberPoints"
+        ));
+        assert!(symbol_matches(
+            "Repository.ResetMemberPoints",
+            "(*Repository).ResetMemberPoints"
+        ));
+        // 8. 附带括号参数
+        assert!(symbol_matches(
+            "ResetMemberPoints(ctx)",
+            "ResetMemberPoints"
+        ));
+        // 9. 前缀/后缀不完整或不匹配场景（严防误伤）
+        assert!(!symbol_matches(
+            "OtherResetMemberPoints",
+            "ResetMemberPoints"
+        ));
+        assert!(!symbol_matches(
+            "ResetMemberPointsHelper",
+            "ResetMemberPoints"
+        ));
+        assert!(!symbol_matches(
+            "RepoA.ResetMemberPoints",
+            "RepoB.ResetMemberPoints"
+        ));
+        // 10. 空白与边界
+        assert!(!symbol_matches("", "ResetMemberPoints"));
+        assert!(!symbol_matches("ResetMemberPoints", ""));
+    }
+    #[test]
+    fn document_symbols_match_go_receiver_method() {
+        let payload = json!([
+            {
+                "name": "(*Repository).ResetMemberPoints",
+                "selection": { "start": { "line": 274, "column": 22 } },
+                "kind": "method"
+            }
+        ]);
+        let mut matches = Vec::new();
+        collect_matching_document_symbols(&payload, "ResetMemberPoints", &mut matches);
+        assert_eq!(matches.len(), 1);
+        assert!(matches[0].precise);
+        assert_eq!((matches[0].line, matches[0].column), (274, 22));
+    }
+    #[test]
+    fn workspace_symbols_match_go_qualified_method() {
+        let payload = json!({
+            "symbols": [
+                {
+                    "name": "Repository.ResetMemberPoints",
+                    "filePath": "backend/internal/billing/repo.go",
+                    "line": 274,
+                    "column": 22,
+                    "kind": "method"
+                }
+            ]
+        });
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut matches = Vec::new();
+        collect_matching_workspace_symbols(
+            &payload,
+            "ResetMemberPoints",
+            "go",
+            Some(root),
+            &mut HashSet::new(),
+            &mut matches,
+        );
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].line, 274);
+        assert_eq!(matches[0].column, 22);
     }
 }

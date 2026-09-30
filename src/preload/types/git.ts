@@ -1,3 +1,15 @@
+export type GitWorktreeInfo = {
+  worktreeId: string;
+  directoryId: string;
+  repositoryPath: string;
+  worktreePath: string;
+  branchName: string | null;
+  headOid: string;
+  isDetached: boolean;
+  isDirty: boolean;
+  isValid: boolean;
+};
+
 export type GitFileStatus = {
   path: string;
   oldPath: string | null;
@@ -25,6 +37,21 @@ export type GitBranch = {
   isCurrent: boolean;
   isRemote: boolean;
   remoteName: string | null;
+  upstream?: string | null;
+  ahead?: number;
+  behind?: number;
+  isGone?: boolean;
+  worktreePath?: string | null;
+};
+
+export type GitWorktree = {
+  path: string;
+  head: string;
+  branch: string | null;
+  isCurrent: boolean;
+  isLocked: boolean;
+  lockReason: string | null;
+  isPrunable?: boolean;
 };
 
 export type GitDiffResult = {
@@ -79,6 +106,7 @@ export type GitLogEntry = {
   email: string;
   date: string;
   message: string;
+  body?: string | null;
   refs: string;
   parents: string[];
   /** 本次提交新增的行数（来自 git log --shortstat）。 */
@@ -107,4 +135,10 @@ export type GitIdentity = {
   remoteUrl: string;
   hasIdentity: boolean;
   error: string | null;
+};
+
+export type GitRemoteInfo = {
+  name: string;
+  fetchUrl: string | null;
+  pushUrl: string | null;
 };

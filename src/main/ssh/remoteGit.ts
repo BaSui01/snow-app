@@ -15,9 +15,11 @@ import type {
   GitIdentity,
   GitLogEntry,
   GitPushPullResult,
+  GitRemoteInfo,
   GitRepoInfo,
   GitStageResult,
   GitStatusResult,
+  GitWorktree,
 } from "../../preload";
 
 // Timeout for network operations (push/pull/fetch). These may hang on a
@@ -322,59 +324,211 @@ export const remoteGetGitStatus = async (
   };
 };
 
+const parseTrackInfo = (
+  track: string,
+): { ahead: number; behind: number; isGone: boolean } => {
+  let ahead = 0;
+  let behind = 0;
+  let isGone = false;
+
+  for (const part of track.split(",")) {
+    const trimmed = part.trim();
+    if (trimmed === "gone") {
+      isGone = true;
+    } else if (trimmed.startsWith("ahead ")) {
+      const num = parseInt(trimmed.slice("ahead ".length).trim(), 10);
+      if (!Number.isNaN(num)) ahead = num;
+    } else if (trimmed.startsWith("behind ")) {
+      const num = parseInt(trimmed.slice("behind ".length).trim(), 10);
+      if (!Number.isNaN(num)) behind = num;
+    }
+  }
+
+  return { ahead, behind, isGone };
+};
+
+export const remoteGetGitWorktrees = async (
+  workspacePath: string,
+): Promise<GitWorktree[]> => {
+  let output: string;
+  try {
+    output = await runRemoteGit(workspacePath, [
+      "worktree",
+      "list",
+      "--porcelain",
+    ]);
+  } catch {
+    return [];
+  }
+
+  const worktrees: GitWorktree[] = [];
+  let currentPath: string | null = null;
+  let currentHead: string | null = null;
+  let currentBranch: string | null = null;
+  let isLocked = false;
+  let lockReason: string | null = null;
+  let isPrunable = false;
+
+  const normalizedWorkspace = workspacePath
+    .replace(/\\/g, "/")
+    .replace(/\/+$/, "")
+    .toLowerCase();
+
+  for (const rawLine of output.split("\n")) {
+    const trimmed = rawLine.trim();
+    if (!trimmed) {
+      if (currentPath && currentHead) {
+        const normPath = currentPath
+          .replace(/\\/g, "/")
+          .replace(/\/+$/, "")
+          .toLowerCase();
+        worktrees.push({
+          path: currentPath,
+          head: currentHead,
+          branch: currentBranch,
+          isCurrent: normPath === normalizedWorkspace,
+          isLocked,
+          lockReason,
+          isPrunable,
+        });
+        currentPath = null;
+        currentHead = null;
+        currentBranch = null;
+        isLocked = false;
+        lockReason = null;
+        isPrunable = false;
+      }
+      continue;
+    }
+
+    if (trimmed.startsWith("worktree ")) {
+      currentPath = trimmed.slice("worktree ".length).trim();
+    } else if (trimmed.startsWith("HEAD ")) {
+      currentHead = trimmed.slice("HEAD ".length).trim();
+    } else if (trimmed.startsWith("branch ")) {
+      const branchRef = trimmed.slice("branch ".length).trim();
+      currentBranch = branchRef.startsWith("refs/heads/")
+        ? branchRef.slice("refs/heads/".length)
+        : branchRef;
+    } else if (trimmed.startsWith("locked")) {
+      isLocked = true;
+      if (trimmed.startsWith("locked ")) {
+        lockReason = trimmed.slice("locked ".length).trim();
+      }
+    } else if (trimmed.startsWith("prunable")) {
+      isPrunable = true;
+    }
+  }
+
+  if (currentPath && currentHead) {
+    const normPath = currentPath
+      .replace(/\\/g, "/")
+      .replace(/\/+$/, "")
+      .toLowerCase();
+    worktrees.push({
+      path: currentPath,
+      head: currentHead,
+      branch: currentBranch,
+      isCurrent: normPath === normalizedWorkspace,
+      isLocked,
+      lockReason,
+      isPrunable,
+    });
+  }
+
+  return worktrees;
+};
+
 export const remoteGetGitBranches = async (
   workspacePath: string,
 ): Promise<GitBranch[]> => {
+  const worktreesPromise = remoteGetGitWorktrees(workspacePath).catch(() => []);
   let output: string;
   try {
     output = await runRemoteGit(workspacePath, [
       "branch",
       "--list",
       "--all",
-      "--format=%(HEAD)%(refname)",
+      "--format=%(HEAD)\t%(refname)\t%(refname:short)\t%(upstream:short)\t%(upstream:track,nobracket)",
     ]);
   } catch {
     return [];
   }
 
+  const worktrees = await worktreesPromise;
+  const branchToWorktree = new Map<string, string>();
+  for (const wt of worktrees) {
+    if (wt.branch) {
+      branchToWorktree.set(wt.branch, wt.path);
+    }
+  }
+
   const branches: GitBranch[] = [];
 
-  for (const rawLine of output.split("\n")) {
-    const trimmed = rawLine.trim();
-    if (!trimmed) {
+  for (const rawLine of output.split(/\r?\n/)) {
+    const line = rawLine.replace(/[\r\n]+$/, "");
+    if (!line.trim()) {
       continue;
     }
 
-    const isCurrent = trimmed.startsWith("*");
-    const refname = isCurrent ? trimmed.slice(1).trimStart() : trimmed;
+    const parts = line.split("\t");
+    if (parts.length < 2) {
+      continue;
+    }
+
+    const isCurrent = parts[0].includes("*");
+    const refname = parts[1].trim();
+    const upstreamRaw = parts[3]?.trim() ?? "";
+    const trackRaw = parts[4]?.trim() ?? "";
+
+    // 排除空引用、本地 HEAD 符号引用以及远程 HEAD 符号引用（如 refs/remotes/origin/HEAD）
+    if (!refname || refname === "HEAD" || refname.endsWith("/HEAD")) {
+      continue;
+    }
 
     if (refname.startsWith("refs/heads/")) {
+      const name = refname.slice("refs/heads/".length);
+      if (!name) {
+        continue;
+      }
+      const { ahead, behind, isGone } = parseTrackInfo(trackRaw);
       branches.push({
-        name: refname.slice("refs/heads/".length),
+        name,
         isCurrent,
         isRemote: false,
         remoteName: null,
+        upstream: upstreamRaw || null,
+        ahead,
+        behind,
+        isGone,
+        worktreePath: branchToWorktree.get(name) ?? null,
       });
-      continue;
+    } else if (refname.startsWith("refs/remotes/")) {
+      const remotesPart = refname.slice("refs/remotes/".length);
+      if (!remotesPart) {
+        continue;
+      }
+      const slashIdx = remotesPart.indexOf("/");
+      if (slashIdx <= 0) {
+        continue;
+      }
+      const remoteName = remotesPart.slice(0, slashIdx);
+      const branchName = remotesPart.slice(slashIdx + 1);
+      if (branchName === "HEAD") {
+        continue;
+      }
+      branches.push({
+        name: remotesPart,
+        isCurrent,
+        isRemote: true,
+        remoteName,
+        upstream: null,
+        ahead: 0,
+        behind: 0,
+        isGone: false,
+        worktreePath: null,
+      });
     }
-
-    if (!refname.startsWith("refs/remotes/")) {
-      continue;
-    }
-
-    const rest = refname.slice("refs/remotes/".length);
-    const slashIdx = rest.indexOf("/");
-    if (slashIdx <= 0) {
-      continue;
-    }
-
-    const remoteName = rest.slice(0, slashIdx);
-    const branchName = rest.slice(slashIdx + 1);
-    if (branchName === "HEAD") {
-      continue;
-    }
-
-    branches.push({ name: rest, isCurrent, isRemote: true, remoteName });
   }
 
   return branches;
@@ -527,13 +681,70 @@ export const remoteCommitChanges = async (
   }
 };
 
+export const remoteGetRemotes = async (
+  workspacePath: string,
+): Promise<GitRemoteInfo[]> => {
+  try {
+    const stdout = await runRemoteGit(workspacePath, ["remote", "-v"]);
+    const lines = stdout.split("\n");
+    const remotesMap = new Map<
+      string,
+      { fetchUrl?: string; pushUrl?: string }
+    >();
+    const order: string[] = [];
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      const parts = line.split(/\s+/);
+      if (parts.length < 2) continue;
+      const name = parts[0];
+      const url = parts[1];
+      const kind = parts[2] || "";
+      if (!remotesMap.has(name)) {
+        order.push(name);
+        remotesMap.set(name, {});
+      }
+      const entry = remotesMap.get(name)!;
+      if (kind.includes("fetch")) {
+        entry.fetchUrl = url;
+      } else if (kind.includes("push")) {
+        entry.pushUrl = url;
+      } else {
+        if (!entry.fetchUrl) entry.fetchUrl = url;
+        if (!entry.pushUrl) entry.pushUrl = url;
+      }
+    }
+    return order.map((name) => {
+      const entry = remotesMap.get(name)!;
+      return {
+        name,
+        fetchUrl: entry.fetchUrl ?? entry.pushUrl ?? null,
+        pushUrl: entry.pushUrl ?? entry.fetchUrl ?? null,
+      };
+    });
+  } catch {
+    return [];
+  }
+};
+
 export const remotePushChanges = async (
   workspacePath: string,
+  remote?: string,
+  branch?: string,
+  setUpstream?: boolean,
 ): Promise<GitPushPullResult> => {
   try {
-    const stdout = await withNetworkTimeout(
-      runRemoteGit(workspacePath, ["push"]),
-    );
+    const args = ["push"];
+    if (setUpstream) {
+      args.push("-u");
+    }
+    if (remote && remote.trim()) {
+      args.push(remote.trim());
+      if (branch && branch.trim()) {
+        args.push(branch.trim());
+      }
+    }
+    const stdout = await withNetworkTimeout(runRemoteGit(workspacePath, args));
     const message = stdout.trim() ? stdout.trim() : "Push successful";
     return { success: true, message };
   } catch (err) {
@@ -546,11 +757,18 @@ export const remotePushChanges = async (
 
 export const remotePullChanges = async (
   workspacePath: string,
+  remote?: string,
+  branch?: string,
 ): Promise<GitPushPullResult> => {
   try {
-    const stdout = await withNetworkTimeout(
-      runRemoteGit(workspacePath, ["pull"]),
-    );
+    const args = ["pull"];
+    if (remote && remote.trim()) {
+      args.push(remote.trim());
+      if (branch && branch.trim()) {
+        args.push(branch.trim());
+      }
+    }
+    const stdout = await withNetworkTimeout(runRemoteGit(workspacePath, args));
     const message = stdout.trim() ? stdout.trim() : "Pull successful";
     return { success: true, message };
   } catch (err) {
@@ -585,6 +803,11 @@ export const remoteCheckoutBranch = async (
   workspacePath: string,
   branchName: string,
 ): Promise<GitCheckoutResult> => {
+  const trimmed = branchName.trim();
+  if (!trimmed) {
+    return { success: false, message: "Branch name cannot be empty" };
+  }
+
   const tryCheckout = async (name: string): Promise<GitCheckoutResult> => {
     try {
       await runRemoteGit(workspacePath, ["checkout", name]);
@@ -597,26 +820,46 @@ export const remoteCheckoutBranch = async (
     }
   };
 
-  // Remote tracking branch (e.g. "origin/main") — checkout the local name,
-  // creating a tracking branch if it does not exist yet.
-  const slashIdx = branchName.indexOf("/");
-  if (slashIdx >= 0) {
-    const localName = branchName.slice(slashIdx + 1);
+  const refExists = async (ref: string): Promise<boolean> => {
+    try {
+      await runRemoteGit(workspacePath, [
+        "show-ref",
+        "--verify",
+        "--quiet",
+        ref,
+      ]);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // 1. 本地分支优先：支持带 '/' 的本地分支名（如 fix/xxx）
+  if (await refExists(`refs/heads/${trimmed}`)) {
+    return tryCheckout(trimmed);
+  }
+
+  // 2. 远程分支：创建或切换对应本地跟踪分支
+  if (await refExists(`refs/remotes/${trimmed}`)) {
+    const slashIdx = trimmed.indexOf("/");
+    const localName = slashIdx >= 0 ? trimmed.slice(slashIdx + 1) : trimmed;
     if (localName) {
-      const localResult = await tryCheckout(localName);
-      if (localResult.success) {
-        return localResult;
+      if (await refExists(`refs/heads/${localName}`)) {
+        const localResult = await tryCheckout(localName);
+        if (localResult.success) {
+          return localResult;
+        }
       }
       try {
         await runRemoteGit(workspacePath, [
           "checkout",
           "-b",
           localName,
-          branchName,
+          trimmed,
         ]);
         return {
           success: true,
-          message: `Switched to ${localName} (tracking ${branchName})`,
+          message: `Switched to ${localName} (tracking ${trimmed})`,
         };
       } catch (err) {
         return {
@@ -627,7 +870,8 @@ export const remoteCheckoutBranch = async (
     }
   }
 
-  return tryCheckout(branchName);
+  // 3. 兜底直接 checkout
+  return tryCheckout(trimmed);
 };
 
 export const remoteCreateBranch = async (
@@ -872,7 +1116,7 @@ export const remoteGetGitLog = async (
       "HEAD",
       "--decorate=full",
       "--shortstat",
-      "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ad%x1f%s%x1f%D%x1f%P",
+      "--pretty=format:%x1e%H%x1f%h%x1f%an%x1f%ae%x1f%ad%x1f%s%x1f%D%x1f%P%x1f%b%x1f",
       "--date=iso",
       "--skip",
       String(skipCount),
@@ -890,12 +1134,15 @@ export const remoteGetGitLog = async (
   // 5 insertions(+), 2 deletions(-)") after each commit's pretty line so the
   // renderer can show per-commit added/removed line counts. Merge commits
   // with no changes produce no shortstat line (counts stay 0).
-  for (const line of output.split("\n")) {
-    if (!line) {
+  for (const chunk of output.split("\x1e")) {
+    const trimmed = chunk.replace(/^[\r\n]+|[\r\n]+$/g, "");
+    if (!trimmed) {
       continue;
     }
-    const parts = line.split("\x1f");
-    if (parts.length >= 8) {
+    const parts = trimmed.split("\x1f");
+    if (parts.length >= 9) {
+      const bodyRaw = parts[8].trim();
+      const statText = parts[9] ?? "";
       entries.push({
         hash: parts[0],
         shortHash: parts[1],
@@ -903,18 +1150,13 @@ export const remoteGetGitLog = async (
         email: parts[3],
         date: parts[4],
         message: parts[5],
+        body: bodyRaw || null,
         refs: parts[6],
         parents: parts[7].split(/\s+/).filter(Boolean),
-        additions: 0,
-        deletions: 0,
+        additions: parseShortstatCount(statText, "insertion"),
+        deletions: parseShortstatCount(statText, "deletion"),
         pushed: !unpushed.has(parts[0]),
       });
-    } else {
-      const lastEntry = entries[entries.length - 1];
-      if (lastEntry) {
-        lastEntry.additions = parseShortstatCount(line, "insertion");
-        lastEntry.deletions = parseShortstatCount(line, "deletion");
-      }
     }
   }
 

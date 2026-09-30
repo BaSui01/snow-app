@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertCircle,
+  Check,
+  Copy,
   FileText,
   Info,
   Send,
@@ -12,6 +14,7 @@ import { Tooltip } from "../../../common/Tooltip";
 import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
+import { AnsiOutput } from "./shared/AnsiOutput";
 
 type BashToolCallProps = {
   toolCall: ToolCallInfo;
@@ -221,6 +224,7 @@ export const BashToolCall = ({
   const effectiveStatus = hasFailed ? "error" : toolCall.status;
 
   const isRunning = toolCall.status === "running";
+  const [cmdCopied, setCmdCopied] = useState(false);
   const timeoutMs = parsedArgs?.timeout ?? DEFAULT_TIMEOUT_MS;
   const startedAt = toolCall.startedAt;
   const isInteractive = parsedArgs?.isInteractive === true;
@@ -597,6 +601,23 @@ export const BashToolCall = ({
               $
             </span>
             <code>{command}</code>
+            <button
+              type="button"
+              className="tool-call-bash-cmd-copy"
+              onClick={(e) => {
+                e.stopPropagation();
+                navigator.clipboard.writeText(command);
+                setCmdCopied(true);
+                setTimeout(() => setCmdCopied(false), 1500);
+              }}
+              title={t("common.copy", { defaultValue: "复制命令" })}
+            >
+              {cmdCopied ? (
+                <Check size={11} aria-hidden="true" />
+              ) : (
+                <Copy size={11} aria-hidden="true" />
+              )}
+            </button>
           </pre>
 
           {parsedResult.type === "detached" && parsedResult.logPath ? (
@@ -611,15 +632,20 @@ export const BashToolCall = ({
           ) : null}
 
           {hasOutput ? (
-            <pre className="tool-call-bash-output-pre">
-              {output}
-              {isRunning ? (
+            isRunning ? (
+              <pre className="tool-call-bash-output-pre">
+                {output}
                 <span
                   className="tool-call-bash-stream-cursor"
                   aria-hidden="true"
                 />
-              ) : null}
-            </pre>
+              </pre>
+            ) : (
+              <AnsiOutput
+                text={output}
+                defaultFilterErrors={parsedResult.type === "error"}
+              />
+            )
           ) : isEmpty ? (
             <div
               className={`tool-call-bash-pending ${

@@ -94,6 +94,21 @@ const parseArgs = (args: string): ParsedCopyArgs | null => {
   }
 };
 
+/** 流式未闭合 JSON 兜底提前提取目标或源文件路径 */
+const extractStreamingCopyPath = (
+  args: string,
+): { filePath?: string; sourceFilePath?: string } => {
+  if (!args) return {};
+  const targetMatch = args.match(/"filePath"\s*:\s*"([^"]+)"/);
+  const sourceMatch = args.match(/"sourceFilePath"\s*:\s*"([^"]+)"/);
+  return {
+    filePath: targetMatch ? targetMatch[1].replace(/\\/g, "/") : undefined,
+    sourceFilePath: sourceMatch
+      ? sourceMatch[1].replace(/\\/g, "/")
+      : undefined,
+  };
+};
+
 const parseResult = (result: string | undefined): ParsedCopyResult => {
   if (!result) {
     return { type: "empty" };
@@ -165,9 +180,18 @@ export const FilesystemCopyToolCall = ({
   const mode = success?.mode ?? args?.mode ?? "insert";
   const position = success?.position ?? args?.position ?? "before";
 
-  const filePath = args?.filePath ?? success?.targetFilePath ?? "copy";
+  const streaming = useMemo(
+    () => (args ? undefined : extractStreamingCopyPath(toolCall.arguments)),
+    [args, toolCall.arguments],
+  );
+  const filePath =
+    args?.filePath ?? success?.targetFilePath ?? streaming?.filePath ?? "copy";
   const fileName = getFileName(filePath);
-  const sourceFilePath = success?.sourceFilePath || args?.sourceFilePath || "";
+  const sourceFilePath =
+    success?.sourceFilePath ||
+    args?.sourceFilePath ||
+    streaming?.sourceFilePath ||
+    "";
   const sourceFileName = sourceFilePath ? getFileName(sourceFilePath) : "";
   const sourceRange = formatLineRange(
     success?.sourceLineStart ?? args?.sourceStartLine,

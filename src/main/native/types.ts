@@ -1268,6 +1268,10 @@ export type ResponsesApiRequest = {
   goalMode?: boolean;
   worktreeMode?: boolean;
   workflowMode?: boolean;
+  /** Explicit effective workspace execution root (e.g. worktree directory path). */
+  executionWorkspaceRoot?: string;
+  /** Selected or preselected worktree ID for the conversation. */
+  worktreeId?: string;
   /** Per-request thinking strength override ("none" | "low" | "medium" |
    *  "high" | custom). Applied in-memory over the resolved profile's
    *  config_json; never mutates the stored profile. */
@@ -1483,6 +1487,18 @@ export type AppControlCommand = {
   payloadJson: string;
 };
 
+export type GitWorktreeInfo = {
+  worktreeId: string;
+  directoryId: string;
+  repositoryPath: string;
+  worktreePath: string;
+  branchName: string | null;
+  headOid: string;
+  isDetached: boolean;
+  isDirty: boolean;
+  isValid: boolean;
+};
+
 export type GitFileStatus = {
   path: string;
   oldPath: string | null;
@@ -1510,6 +1526,21 @@ export type GitBranch = {
   isCurrent: boolean;
   isRemote: boolean;
   remoteName: string | null;
+  upstream?: string | null;
+  ahead?: number;
+  behind?: number;
+  isGone?: boolean;
+  worktreePath?: string | null;
+};
+
+export type GitWorktree = {
+  path: string;
+  head: string;
+  branch: string | null;
+  isCurrent: boolean;
+  isLocked: boolean;
+  lockReason: string | null;
+  isPrunable?: boolean;
 };
 
 export type GitDiffResult = {
@@ -1547,6 +1578,7 @@ export type GitLogEntry = {
   email: string;
   date: string;
   message: string;
+  body?: string | null;
   refs: string;
   parents: string[];
   /** 本次提交新增的行数（来自 git log --shortstat）。 */
@@ -1575,6 +1607,12 @@ export type GitIdentity = {
   remoteUrl: string;
   hasIdentity: boolean;
   error: string | null;
+};
+
+export type GitRemoteInfo = {
+  name: string;
+  fetchUrl: string | null;
+  pushUrl: string | null;
 };
 
 // ===== 团队协作（基于 Git 的共享数据平面） =====
@@ -2381,11 +2419,26 @@ export type NativeBridge = {
   detectTerminals: () => Promise<DetectedTerminal[]>;
   /** 解析登录 PATH（注册表 + 继承的合并值），PTY 创建时刷新用 */
   resolveLoginPathForTerminal: () => Promise<string | null>;
+  gitListWorktrees: (directoryId: string) => Promise<GitWorktreeInfo[]>;
+  gitCreateWorktree: (
+    directoryId: string,
+    branchName: string,
+    baseRef: string,
+  ) => Promise<GitWorktreeInfo>;
+  gitRemoveWorktree: (directoryId: string, worktreeId: string) => Promise<void>;
+  getConversationWorktree: (
+    conversationId: string,
+  ) => Promise<GitWorktreeInfo | null>;
+  setConversationWorktree: (
+    conversationId: string,
+    worktreeId: string | null,
+  ) => Promise<void>;
   getGitStatus: (
     repoPath: string,
     statusLimit: number,
   ) => Promise<GitStatusResult>;
   getGitBranches: (repoPath: string) => Promise<GitBranch[]>;
+  getGitWorktrees?: (repoPath: string) => Promise<GitWorktree[]>;
   gitStageFiles: (
     repoPath: string,
     filePaths: string[],
@@ -2397,8 +2450,18 @@ export type NativeBridge = {
   gitStageAll: (repoPath: string) => Promise<GitStageResult>;
   gitUnstageAll: (repoPath: string) => Promise<GitStageResult>;
   gitCommit: (repoPath: string, message: string) => Promise<GitCommitResult>;
-  gitPush: (repoPath: string) => Promise<GitPushPullResult>;
-  gitPull: (repoPath: string) => Promise<GitPushPullResult>;
+  gitRemotes: (repoPath: string) => Promise<GitRemoteInfo[]>;
+  gitPush: (
+    repoPath: string,
+    remote?: string,
+    branch?: string,
+    setUpstream?: boolean,
+  ) => Promise<GitPushPullResult>;
+  gitPull: (
+    repoPath: string,
+    remote?: string,
+    branch?: string,
+  ) => Promise<GitPushPullResult>;
   gitFetch: (repoPath: string) => Promise<GitPushPullResult>;
   gitCheckout: (
     repoPath: string,

@@ -208,7 +208,9 @@ pub async fn prepare_context_request(
     );
 
     // Inject the built-in system prompt as the first message.
-    let working_directory = if let Some(root) = request.analysis_workspace_root {
+    let working_directory = if let Some(exec_root) = request.execution_workspace_root {
+        exec_root.trim().to_string()
+    } else if let Some(root) = request.analysis_workspace_root {
         crate::mcp::servers::lsp::prompt_context::resolve_analysis_workspace_root(
             request.directory_id,
             Some(Path::new(root)),
@@ -219,14 +221,32 @@ pub async fn prepare_context_request(
         .map(|path| path.to_string_lossy().into_owned())
         .unwrap_or_default()
     } else {
-        request
-            .directory_id
-            .and_then(|id| {
-                get_workspace_directory_path(request.database_path, id)
-                    .ok()
-                    .flatten()
-            })
-            .unwrap_or_default()
+        let worktree_path = if let Some(wt_id) = request.worktree_id {
+            crate::storage::services::git::get_worktree_by_id(request.database_path, wt_id)
+                .ok()
+                .flatten()
+                .map(|w| w.worktree_path)
+        } else if let Some(conv_id) = request.conversation_id {
+            crate::storage::services::git::get_conversation_worktree(request.database_path, conv_id)
+                .ok()
+                .flatten()
+                .map(|w| w.worktree_path)
+        } else {
+            None
+        };
+
+        if let Some(path) = worktree_path {
+            path
+        } else {
+            request
+                .directory_id
+                .and_then(|id| {
+                    get_workspace_directory_path(request.database_path, id)
+                        .ok()
+                        .flatten()
+                })
+                .unwrap_or_default()
+        }
     };
 
     // Plan Mode: replace the built-in system prompt with the Plan Mode prompt

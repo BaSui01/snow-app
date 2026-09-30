@@ -3,6 +3,7 @@ import {
   formatMcpToolResultForModel,
   getErrorMessage,
   isUserQuestionCancellationResult,
+  resolveConversationWorkspacePath,
   updateFirstMatchingToolCall,
   validateToolCall,
 } from "../utils/conversationHelpers";
@@ -63,7 +64,6 @@ export type ToolExecutorDeps = {
   checkpointIds: string[];
   sessionDirId: string | undefined;
   directoryPath: string | undefined;
-  analysisWorkspaceRoot: string;
   responseId: string | undefined;
   isRunCancelled: (key: string) => boolean;
   awaitHookDecision: (
@@ -113,7 +113,6 @@ export function createToolExecutor(
     checkpointIds,
     sessionDirId,
     directoryPath,
-    analysisWorkspaceRoot,
     responseId,
     isRunCancelled,
     awaitHookDecision,
@@ -126,14 +125,22 @@ export function createToolExecutor(
   } = deps;
 
   // 工具 cwd / checkpoint 目录跟随会话自己的目录,而非运行时全局
-  // activeDirectory:切换项目后旧会话仍在自己的目录执行,checkpoint
-  // 与 cwd 天然一致,不会被后端以目录不匹配拦截。
-  const sessionDirPath = directoryIdToPath(sessionDirId) ?? directoryPath;
+  // activeDirectory。实际 WorkTree 模式在每轮执行开始时由持久绑定解析。
+  const projectSessionDirPath =
+    directoryIdToPath(sessionDirId) ?? directoryPath;
 
   return async (
     toolCalls: ToolCallInfo[],
     authorizationDecisions: ToolAuthorizationDecision[],
   ): Promise<ToolExecutionResult | null> => {
+    const targetSession = ctx.sessionsRefData.current.get(effectiveKey);
+    const sessionDirPath = await resolveConversationWorkspacePath(
+      isPendingSessionKey(effectiveKey) ? "" : effectiveKey,
+      sessionDirId,
+      projectSessionDirPath,
+      targetSession?.worktreeMode ?? false,
+      targetSession?.worktreeId,
+    );
     // Per-conversation mode snapshot: the Rust write gate must see THIS
     // session's Plan Mode, never the live global ref (another conversation
     // toggling its modes must not weaken or strengthen this session's gate).
@@ -550,12 +557,7 @@ export function createToolExecutor(
             } else {
               parallelResult = await window.snow.callMcpTool(
                 parallelToolCall.name,
-                injectSessionIdIntoToolArgs(
-                  parallelToolCall.name,
-                  parallelToolCall.arguments,
-                  isPendingSessionKey(effectiveKey) ? undefined : effectiveKey,
-                  analysisWorkspaceRoot,
-                ),
+                parallelToolCall.arguments,
                 sessionDirId,
                 checkpointIds,
                 checkpointIds.length > 0 ? sessionDirPath : undefined,
@@ -952,7 +954,6 @@ export function createToolExecutor(
               toolCall.name,
               toolArgs,
               isPendingSessionKey(effectiveKey) ? undefined : effectiveKey,
-              analysisWorkspaceRoot,
             );
 
             // Persist conversation and tool-call binding so bash commands can

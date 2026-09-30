@@ -3,6 +3,7 @@ import type {
   ChatConversationMessage,
   FileChangeRecord,
 } from "../chatMessages/utils/conversationTypes";
+import { resolveConversationWorkspacePath } from "../chatMessages/utils/conversationHelpers";
 import { resolveWorkflowFlowImpact } from "../chatMessages/utils/rollbackChain";
 
 type UseConversationFileChangesParams = {
@@ -13,6 +14,9 @@ type UseConversationFileChangesParams = {
   messages: ChatConversationMessage[];
   conversationVersion: number;
   fallbackChanges: FileChangeRecord[];
+  worktreeMode?: boolean;
+  worktreeId?: string | null;
+  directoryId?: string;
 };
 
 type CheckpointDiffs = Awaited<
@@ -68,6 +72,9 @@ export const useConversationFileChanges = ({
   messages,
   conversationVersion,
   fallbackChanges,
+  worktreeMode,
+  worktreeId,
+  directoryId,
 }: UseConversationFileChangesParams): FileChangeRecord[] => {
   const completedToolSignature = useMemo(
     () =>
@@ -168,11 +175,29 @@ export const useConversationFileChanges = ({
         return;
       }
 
+      let effectiveWorkDir = workDir;
+      if (worktreeMode || worktreeId) {
+        try {
+          const resolved = await resolveConversationWorkspacePath(
+            conversationId ?? "",
+            directoryId,
+            workDir,
+            Boolean(worktreeMode),
+            worktreeId,
+          );
+          if (resolved) {
+            effectiveWorkDir = resolved;
+          }
+        } catch {
+          // Keep existing workDir fallback
+        }
+      }
+
       try {
         // includeAll=false：与回滚弹窗同一语义，只列出回滚真正会恢复的文件。
         const diffs = await window.snow.listCheckpointDiffsBatch(
           chainIds,
-          workDir,
+          effectiveWorkDir,
           false,
         );
         if (!cancelled) {
@@ -190,7 +215,15 @@ export const useConversationFileChanges = ({
     return () => {
       cancelled = true;
     };
-  }, [canUseCheckpoint, checkpointRequestKey, workDir]);
+  }, [
+    canUseCheckpoint,
+    checkpointRequestKey,
+    workDir,
+    worktreeMode,
+    worktreeId,
+    directoryId,
+    conversationId,
+  ]);
 
   return useMemo(() => {
     if (

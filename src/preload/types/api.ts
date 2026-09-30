@@ -138,6 +138,10 @@ export type ResponsesApiRequest = {
   goalMode?: boolean | null;
   worktreeMode?: boolean | null;
   workflowMode?: boolean | null;
+  /** Explicit effective workspace execution root (e.g. worktree directory path). */
+  executionWorkspaceRoot?: string | null;
+  /** Selected or preselected worktree ID for the conversation. */
+  worktreeId?: string | null;
   /** Per-request thinking strength override ("none" | "low" | "medium" |
    *  "high" | custom). Applied in-memory over the resolved profile's
    *  config_json; never mutates the stored profile. */

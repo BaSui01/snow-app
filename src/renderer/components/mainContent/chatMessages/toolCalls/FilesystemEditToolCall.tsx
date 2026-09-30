@@ -59,6 +59,13 @@ const parseArgs = (args: string): ParsedEditArgs | null => {
   }
 };
 
+/** 流式未闭合 JSON 兜底提前提取文件路径 */
+const extractStreamingFilePath = (args: string): string | undefined => {
+  if (!args) return undefined;
+  const match = args.match(/"filePath"\s*:\s*"([^"]+)"/);
+  return match ? match[1].replace(/\\/g, "/") : undefined;
+};
+
 const parseResult = (result: string | undefined): ParsedEditResult => {
   if (!result) {
     return { type: "empty" };
@@ -126,10 +133,26 @@ export const FilesystemEditToolCall = ({
     );
   }, [showDiff, parsedArgs]);
 
-  const filePath = parsedArgs?.filePath ?? "edit";
+  const streamingPath = useMemo(
+    () =>
+      parsedArgs ? undefined : extractStreamingFilePath(toolCall.arguments),
+    [parsedArgs, toolCall.arguments],
+  );
+  const filePath = parsedArgs?.filePath ?? streamingPath ?? "edit";
   const fileName = getFileName(filePath);
 
   const effectiveStatus = hasError ? "error" : toolCall.status;
+
+  const closestMatch = useMemo(() => {
+    if (!hasError || parsedResult.type !== "error") return null;
+    const msg = parsedResult.message;
+    const marker = "closest matching region";
+    const idx = msg.indexOf(marker);
+    if (idx !== -1) {
+      return msg.slice(idx).trim();
+    }
+    return null;
+  }, [hasError, parsedResult]);
 
   const { t } = useI18n();
 
@@ -189,6 +212,16 @@ export const FilesystemEditToolCall = ({
         {hasError ? (
           <div className="tool-call-error">
             <span>{parsedResult.message}</span>
+            {closestMatch && (
+              <div className="tool-call-edit-closest-hint">
+                <div className="tool-call-edit-closest-title">
+                  💡 未匹配到目标代码，文件中最接近的上下文片段：
+                </div>
+                <pre className="tool-call-section-pre tool-call-edit-closest-pre">
+                  {closestMatch}
+                </pre>
+              </div>
+            )}
           </div>
         ) : null}
 

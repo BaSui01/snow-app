@@ -50,6 +50,19 @@ type ParsedGrepResult =
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+/** 流式未闭合 JSON 兜底提前提取描述或搜索词 */
+const extractStreamingGrep = (
+  args: string,
+): { description?: string; pattern?: string } => {
+  if (!args) return {};
+  const descMatch = args.match(/"description"\s*:\s*"([^"]+)"/);
+  const patMatch = args.match(/"pattern"\s*:\s*"([^"]+)"/);
+  return {
+    description: descMatch ? descMatch[1] : undefined,
+    pattern: patMatch ? patMatch[1] : undefined,
+  };
+};
+
 const parseArgs = (args: string): ParsedGrepArgs | null => {
   try {
     const parsed: unknown = JSON.parse(args);
@@ -157,8 +170,13 @@ export const GrepToolCall = ({
 
   const isRunning = toolCall.status === "running";
 
-  const pattern = parsedArgs?.pattern ?? "search";
+  const streamingGrep = useMemo(
+    () => (parsedArgs ? undefined : extractStreamingGrep(toolCall.arguments)),
+    [parsedArgs, toolCall.arguments],
+  );
+  const pattern = parsedArgs?.pattern ?? streamingGrep?.pattern ?? "search";
   const searchPath = parsedArgs?.path ?? ".";
+  const description = parsedArgs?.description ?? streamingGrep?.description;
   const hasError = parsedResult.type === "error";
   const effectiveStatus = hasError ? "error" : toolCall.status;
 
@@ -188,10 +206,10 @@ export const GrepToolCall = ({
       badgeName={t("toolCall.grep.name")}
       category="search"
       displayName={
-        parsedArgs?.description ??
+        description ??
         (pattern.length > 60 ? `${pattern.slice(0, 60)}...` : pattern)
       }
-      displayNameTitle={parsedArgs?.description ? pattern : undefined}
+      displayNameTitle={description ? pattern : undefined}
       status={effectiveStatus}
       meta={
         parsedResult.type === "success" ? (

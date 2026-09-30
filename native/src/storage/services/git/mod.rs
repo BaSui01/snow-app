@@ -11,16 +11,20 @@ mod commit;
 mod diff;
 mod discover;
 mod identity;
+mod remotes;
 mod staging;
 mod status;
+mod worktrees;
 
 pub use self::branches::*;
 pub use self::commit::*;
 pub use self::diff::*;
 pub use self::discover::*;
 pub use self::identity::*;
+pub use self::remotes::*;
 pub use self::staging::*;
 pub use self::status::*;
+pub use self::worktrees::*;
 
 /// Git 可执行文件缺失时给用户的明确提示，避免与误导性的
 /// "not a git repository" 混淆。
@@ -125,6 +129,30 @@ pub struct GitBranch {
     pub is_current: bool,
     pub is_remote: bool,
     pub remote_name: Option<String>,
+    pub upstream: Option<String>,
+    pub ahead: i32,
+    pub behind: i32,
+    pub is_gone: bool,
+    pub worktree_path: Option<String>,
+}
+
+#[napi(object)]
+pub struct GitRemoteInfo {
+    pub name: String,
+    pub fetch_url: Option<String>,
+    pub push_url: Option<String>,
+}
+
+#[napi(object)]
+#[derive(Clone, Debug)]
+pub struct GitWorktree {
+    pub path: String,
+    pub head: String,
+    pub branch: Option<String>,
+    pub is_current: bool,
+    pub is_locked: bool,
+    pub lock_reason: Option<String>,
+    pub is_prunable: bool,
 }
 
 #[napi(object)]
@@ -169,6 +197,7 @@ pub struct GitLogEntry {
     pub email: String,
     pub date: String,
     pub message: String,
+    pub body: Option<String>,
     pub refs: String,
     pub parents: Vec<String>,
     pub additions: i32,

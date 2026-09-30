@@ -149,9 +149,9 @@ LSP 文档同步与结果可信度是另一层边界：`ensure_open` 比较实�
 
 语义任务在对应工具实际可见且支持目标语言/操作时 **MUST** 使用 LSP；禁用、权限排除、未覆盖、启动退避或健康失败时说明原因并使用可见兜底。逐工具判断语言覆盖、协商能力和健康，不把全局语言并集或 running 当成全部能力就绪。失败启动进入退避，冷却期避免反复 spawn；grep 仍用于字面检索。11 个语义显示名称及两组 i18n key 与 [工具参考](../3-参考手册/2-内置工具参考.md) 同步，ID 和历史 key 不改。
 
-诊断严格接受互斥 `filePath` 或 1..30 项 `filePaths`，错误类型/空数组/空条目/超限拒绝不截断，旧空 `filePath:""` 占位视为缺省。批量须把全部文件放进列表，不能额外传非空单路径。按物理文件去重、保留原请求首次出现顺序；单文件保持顶层形状，批次携带 `requestedCount/duplicateCount/fileCount`、每文件 status 与 summary（`completedFiles/partialFiles/failedFiles/errorCount/warningCount`）。文件任务目标并发 3，不改变结果顺序。
+诊断使用 `filePaths` 数组（1..30），其他只读批量工具同样采用数组：symbols `filePaths`（1..10），hover/goto `items`（各 1..10），references `items`（1..5）；只有一项时也必须用数组，不兼容单点字段。拒绝缺失/错误数组、空数组或空路径及超限；路径按物理文件去重并保持顺序。每文件/目标分别报告状态，批次汇总 status 与 summary；歧义、部分或失败结果不能归为 complete。只读批次并发上限 3。
 
-重命名 apply 必须消费内容绑定的 `previewId`（TTL 5 分钟、每会话最多 32 个、单次），仍须写入授权；内容改变要重做预览。UI 不展示原值、不自动 apply。跨文件应用非事务，模型和 UI 必须保留 `appliedFiles/error/requiresNewPreview`，不得假称回滚。并发与相关接口正在整合，这里不是运行通过声明；完整契约见 [LSP 设计 §0.6–0.8](7-LSP外部语言服务器接入设计.md)。
+重命名 apply 必须消费内容绑定的 `previewId`（TTL 5 分钟、每会话最多 32 个、单次），仍须写入授权；内容改变要重做预览。UI 不展示原值、不自动 apply。跨文件应用非事务，模型和 UI 必须保留 `appliedFiles/error/requiresNewPreview`，不得假称回滚。只读批次并发上限为 3、按输入顺序返回；模块测试已验证批次契约，但未在真实语言服务器会话中验收。完整契约见 [LSP 设计 §0.6–0.8](7-LSP外部语言服务器接入设计.md)。
 
 ## 6. 工具调用与 checkpoint
 
@@ -365,17 +365,20 @@ sequenceDiagram
 - Plan 未批准时，Renderer UX 与 Rust 写入拦截必须同时成立。
 - 模型交换先落库，工具结果在下一轮作为结构化 tool-role 历史进入。
 - 回滚前必须等待仍可能写库的异步任务收敛。
+- 工作树执行域一致性：处于工作树模式（WorkTree Mode）时，会话的物理执行根目录（`executionWorkspaceRoot`）必须在请求契约中自包含传递，并与底层 Checkpoint 记录目录（`manifest.work_dir`）及前端变更面板保持 100% 对称；系统提示词中的工作目录必须等于真实物理根目录。
+- 会话状态落库原子性：新会话升级落库（Session Migration）状态持久化必须顺序/原子执行，禁止并发向 SQLite 派发多个裸写事务；Rust 存储层所有写操作必须接入 `with_write_lock` 和 `with_write_retry`。
 
 ## 15. 源码锚点
 
-| 主题              | 文件                                                                                                              |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------- |
-| 主循环与流状态    | `src/renderer/components/mainContent/chatMessages/hooks/useAgentLoop.ts`、`agentLoopHelpers.ts`                   |
-| 工具执行与授权    | `toolExecution.ts`、`useToolAuthorization.ts`                                                                     |
-| Hooks             | `hooks/hookOutcome.ts`、`useToolAuthorization.ts`、`native/src/hooks/`                                            |
-| 子代理            | `hooks/subAgentActivation.ts`、`native/src/api/conversation/sub_agent.rs`、`native/src/mcp/servers/sub_agents.rs` |
-| 压缩与回滚        | `hooks/useCompaction.ts`、`hooks/useRollback.ts`、`native/src/exports/checkpoint.rs`                              |
-| 流 IPC            | `src/preload/modules/apiConfigApi.ts`、`src/main/ipc/handlers/chatHandlers.ts`、`src/main/utils/safeSend.ts`      |
-| Provider 分派     | `native/src/api/conversation/stream.rs`、`tool_messages.rs`                                                       |
-| MCP 发现与调用    | `native/src/mcp/builtin.rs`、`native/src/mcp/tools.rs`、`native/src/mcp/external/`                                |
-| 会话与 usage 存储 | `native/src/storage/services/chat_conversations.rs`、`usage_records.rs`                                           |
+| 主题               | 文件                                                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| 主循环与流状态     | `src/renderer/components/mainContent/chatMessages/hooks/useAgentLoop.ts`、`agentLoopHelpers.ts`                           |
+| 工具执行与授权     | `toolExecution.ts`、`useToolAuthorization.ts`                                                                             |
+| 工作树执行域与绑定 | `native/src/storage/services/git/worktrees.rs`、`utils/conversationHelpers.ts`、`chatInput/useConversationFileChanges.ts` |
+| Hooks              | `hooks/hookOutcome.ts`、`useToolAuthorization.ts`、`native/src/hooks/`                                                    |
+| 子代理             | `hooks/subAgentActivation.ts`、`native/src/api/conversation/sub_agent.rs`、`native/src/mcp/servers/sub_agents.rs`         |
+| 压缩与回滚         | `hooks/useCompaction.ts`、`hooks/useRollback.ts`、`native/src/exports/checkpoint.rs`                                      |
+| 流 IPC             | `src/preload/modules/apiConfigApi.ts`、`src/main/ipc/handlers/chatHandlers.ts`、`src/main/utils/safeSend.ts`              |
+| Provider 分派      | `native/src/api/conversation/stream.rs`、`tool_messages.rs`                                                               |
+| MCP 发现与调用     | `native/src/mcp/builtin.rs`、`native/src/mcp/tools.rs`、`native/src/mcp/external/`                                        |
+| 会话与 usage 存储  | `native/src/storage/services/chat_conversations.rs`、`usage_records.rs`                                                   |

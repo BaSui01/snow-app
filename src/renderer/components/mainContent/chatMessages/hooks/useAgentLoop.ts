@@ -22,6 +22,7 @@ import {
   formatToolResultsContent,
   getErrorMessage,
   parseToolCalls,
+  resolveConversationWorkspacePath,
   updateFirstMatchingToolCall,
 } from "../utils/conversationHelpers";
 import { resolveResponseDisposition } from "../utils/responseDisposition";
@@ -95,15 +96,14 @@ const captureChatInputSendOptions = (
  * 持久化一次；内存态（session ref / 输入区状态）始终是运行时权威，这里的
  * 写入只用于重启后恢复，以及标题摘要等后端内部请求读取持久绑定。
  */
-const persistConversationSelection = (
+const persistConversationSelection = async (
   conversationId: string,
   options: CapturedChatInputSendOptions,
-  sessionRef: ConversationSessionRef | undefined,
-): void => {
+  sessionRef?: ConversationSessionRef,
+): Promise<void> => {
   const recordFailure = (error: unknown): void => {
-    // 落库失败不阻断发送：本次请求已携带请求级快照，下次发送会重新写入。
     void window.snow.writeLog("WARN", {
-      module: "conversation-runtime",
+      module: "chat/useAgentLoop",
       func: "persistConversationSelection",
       message: "Failed to persist conversation selection",
       context: JSON.stringify({ conversationId }),
@@ -111,39 +111,39 @@ const persistConversationSelection = (
     });
   };
 
-  const writes: Promise<unknown>[] = [];
-  if (options.apiProfile) {
-    writes.push(
-      window.snow.updateConversationApiProfile(
+  try {
+    if (options.apiProfile) {
+      await window.snow.updateConversationApiProfile(
         conversationId,
         options.apiProfile,
-      ),
-    );
-  }
-  const runtimeOverride = options.conversationRuntimeConfigOverride;
-  if (runtimeOverride) {
-    writes.push(
-      window.snow.setConversationRuntimeConfig(
+      );
+    }
+    const runtimeOverride = options.conversationRuntimeConfigOverride;
+    if (runtimeOverride) {
+      await window.snow.setConversationRuntimeConfig(
         conversationId,
         runtimeOverride.thinkingStrength,
         runtimeOverride.responsesFastMode,
-      ),
-    );
-  }
-  if (sessionRef) {
-    writes.push(
-      window.snow.setConversationModes(
+      );
+    }
+    if (sessionRef) {
+      await window.snow.setConversationModes(
         conversationId,
         sessionRef.planMode,
         sessionRef.goalMode,
         sessionRef.worktreeMode,
         sessionRef.workflowMode,
         sessionRef.goalModeTokenBudget,
-      ),
-    );
-  }
-  for (const write of writes) {
-    write.catch(recordFailure);
+      );
+      if (sessionRef.worktreeId) {
+        await window.snow.setConversationWorktree(
+          conversationId,
+          sessionRef.worktreeId,
+        );
+      }
+    }
+  } catch (error) {
+    recordFailure(error);
   }
 };
 
@@ -288,6 +288,16 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       const isFirstMessage =
         ctx.activeConversationIdRef.current === undefined &&
         !options.targetSessionKey;
+      const targetPendingWorktree =
+        ctx.pendingWorktreeIdRef.current || existingRef?.worktreeId;
+      if (
+        isFirstMessage &&
+        (existingRef?.worktreeMode ?? ctx.worktreeModeRef.current) &&
+        !targetPendingWorktree
+      ) {
+        window.alert(t("git.worktreesPendingSessionHint"));
+        return;
+      }
       const rollbackState = isFirstMessage ? ctx.rollbackNewChatState : null;
       if (rollbackState) {
         capturedOptions = {
@@ -317,14 +327,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       ctx.pendingDirectoryIdRef.current = undefined;
       const sessionDirId =
         existingRef?.directoryId ?? pendingDirId ?? ctx.directoryId;
-      // There is no selected worktree path in session state: worktreeMode is
-      // only a prompt mode. Capture the actual bound project's path, never text
-      // from the prompt or the active directory of an unrelated conversation.
-      const analysisWorkspaceRoot =
-        existingRef?.analysisWorkspaceRoot ??
-        (sessionDirId === ctx.directoryId ? ctx.directoryPath : undefined) ??
-        directoryIdToPath(sessionDirId) ??
-        "";
       // One-shot scheduled-task name (set by buildFromContent) consumed here so
       // the new session can show a "triggered by scheduled task" banner in the
       // message list. Cleared immediately — it applies to this send only.
@@ -347,6 +349,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
 
       ctx.ensureSession(sessionKey, sessionDirId);
       const sessionRef = ctx.sessionsRefData.current.get(sessionKey);
+      if (sessionRef && targetPendingWorktree) {
+        sessionRef.worktreeId = targetPendingWorktree;
+      }
       // 已有会话：发送时把当前选择统一落库（渠道绑定/思考强度/Fast Mode/模式）。
       // 切换这些选择本身不再写库；pending 会话在迁移拿到真实 id 后再写。
       if (!isPendingSessionKey(sessionKey)) {
@@ -359,7 +364,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         sessionRef.isSending = true;
         sessionRef.isAbortRequested = false;
         sessionRef.runId = currentRunId;
-        sessionRef.analysisWorkspaceRoot = analysisWorkspaceRoot;
       }
 
       // 宠物联动：本次 run 的唯一回合 id —— start/end 按 id 一一核销。
@@ -776,6 +780,20 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         // the live global refs — another conversation toggling its modes
         // must not alter the behaviour of a background-running loop.
         const iterRef = ctx.sessionsRefData.current.get(effectiveKey);
+        const effectiveWorktreeMode =
+          iterRef?.worktreeMode ?? ctx.worktreeModeRef.current;
+        const effectiveWorktreeId =
+          iterRef?.worktreeId ?? ctx.pendingWorktreeIdRef.current;
+        const projectSessionDirPath =
+          directoryIdToPath(sessionDirId) ?? ctx.directoryPath;
+        const effectiveExecutionWorkspaceRoot =
+          await resolveConversationWorkspacePath(
+            isPendingSessionKey(effectiveKey) ? "" : effectiveKey,
+            sessionDirId,
+            projectSessionDirPath,
+            effectiveWorktreeMode,
+            effectiveWorktreeId,
+          );
         const chunkHandler = createStreamChunkHandler(
           ctx,
           effectiveKey,
@@ -791,15 +809,16 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             responsesFastMode: capturedOptions.responsesFastMode,
             conversationId: currentConversationId,
             directoryId: sessionDirId,
-            analysisWorkspaceRoot,
             checkpointId,
             resumeAfterCompaction,
             disableTools,
             internalRecoveryPrompt,
             planMode: iterRef?.planMode ?? ctx.planModeRef.current,
             goalMode: iterRef?.goalMode ?? ctx.goalModeRef.current,
-            worktreeMode: iterRef?.worktreeMode ?? ctx.worktreeModeRef.current,
+            worktreeMode: effectiveWorktreeMode,
             workflowMode: iterRef?.workflowMode ?? ctx.workflowModeRef.current,
+            executionWorkspaceRoot: effectiveExecutionWorkspaceRoot,
+            worktreeId: effectiveWorktreeId ?? undefined,
           },
           chunkHandler,
           createStreamIdHandler(ctx, effectiveKey, () =>
@@ -864,9 +883,18 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             }
             ctx.migrateSession(effectiveKey, response.conversationId);
             ctx.setRollbackNewChatState(null);
+            const currentSession = ctx.sessionsRefData.current.get(
+              response.conversationId,
+            );
+            const effectiveWorktreeId =
+              currentSession?.worktreeId || ctx.pendingWorktreeIdRef.current;
+            if (effectiveWorktreeId && currentSession) {
+              currentSession.worktreeId = effectiveWorktreeId;
+            }
+            ctx.setPendingWorktreeId(null);
             // pending 会话的渠道/运行时/模式选择在拿到真实会话 id 后统一落库，
             // 使其在重启后仍能恢复（迁移前无 conversation_id 无法写入）。
-            persistConversationSelection(
+            await persistConversationSelection(
               response.conversationId,
               capturedOptions,
               ctx.sessionsRefData.current.get(response.conversationId),
@@ -1168,8 +1196,13 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             // 的 checkpoint 上）。创建期间 run 被中止/顶替时 checkpoint
             // 已由 createFlushCheckpoint 删除，此处直接放弃刷新，队列
             // 保持原样交给后续 run 处理，避免消息悬空。
-            const flushDirPath =
-              directoryIdToPath(sessionDirId) ?? ctx.directoryPath;
+            const flushDirPath = await resolveConversationWorkspacePath(
+              response.conversationId ?? currentConversationId ?? "",
+              sessionDirId,
+              directoryIdToPath(sessionDirId) ?? ctx.directoryPath,
+              iterRef?.worktreeMode ?? false,
+              iterRef?.worktreeId,
+            );
             const flushCheckpointId = await createFlushCheckpoint(
               effectiveKey,
               flushDirPath,
@@ -1353,7 +1386,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           checkpointIds: checkpointId ? [checkpointId] : [],
           sessionDirId,
           directoryPath: ctx.directoryPath,
-          analysisWorkspaceRoot,
           responseId: response.id,
           isRunCancelled,
           awaitHookDecision,
@@ -1572,8 +1604,13 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           // 与无工具刷新分支一致：先为待发消息建立专属 checkpoint，再
           // 消费队列。否则回滚到这条消息永远没有文件变更，且后续消息
           // 的变更会错记到更早的 checkpoint 上。
-          const flushDirPath =
-            directoryIdToPath(sessionDirId) ?? ctx.directoryPath;
+          const flushDirPath = await resolveConversationWorkspacePath(
+            response.conversationId ?? currentConversationId ?? "",
+            sessionDirId,
+            directoryIdToPath(sessionDirId) ?? ctx.directoryPath,
+            iterRef?.worktreeMode ?? false,
+            iterRef?.worktreeId,
+          );
           pendingFlushCheckpointId = await createFlushCheckpoint(
             effectiveKey,
             flushDirPath,
@@ -1698,10 +1735,18 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         }
 
         let checkpointId: string | undefined;
-        // checkpoint 绑定会话自己的目录(而非运行时全局目录),保证
-        // manifest.work_dir 与工具执行的 cwd 始终一致。
-        const sessionDirPath =
+        // checkpoint 根目录跟随持久 WorkTree 绑定；绑定缺失/失效时 fail-closed。
+        const projectSessionDirPath =
           directoryIdToPath(sessionDirId) ?? ctx.directoryPath;
+        const effectiveWorktreeId =
+          sessionRef?.worktreeId || ctx.pendingWorktreeIdRef.current;
+        const sessionDirPath = await resolveConversationWorkspacePath(
+          isPendingSessionKey(sessionKey) ? "" : sessionKey,
+          sessionDirId,
+          projectSessionDirPath,
+          sessionRef?.worktreeMode ?? false,
+          effectiveWorktreeId,
+        );
         // createCheckpoint 是异步的：await 期间本 run 可能已被取消或被
         // 更新的 run 取代（停止按钮、PendingMessages 强制发送会先
         // handleAbort 再立即启动新 run）。两个 run 的 checkpoint 若按

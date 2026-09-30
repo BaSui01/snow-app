@@ -53,7 +53,32 @@ flowchart TD
 
 > **AI collaboration**: after the AI changes files, use `/file-changes` in chat or the Git panel to inspect and stage them. Asking the AI to execute Git commands in a terminal is separate from using these panel controls and remains subject to tool authorization and sensitive-command policy.
 
-### 1.5 Git Repository Settings
+### 1.5 Git Worktree Management & Isolated Commit Flow
+
+Git WorkTree allows a single repository to mount multiple physical directories checked out at different branches simultaneously. This eliminates the need for frequent `git stash` and checkout steps, completely isolating feature experiments and concurrent task development.
+
+#### 1. Worktree Awareness & Branch Selector Integration
+
+- **Active Worktrees Pinning**: opening the branch selector in the Git panel or global TopBar displays an **Active Worktrees** group at the top, showing the checked-out branch, folder name, and dirty status (`Clean` / `Dirty`);
+- **Quick Actions**:
+  - **Copy Path**: copy the absolute filesystem path of the worktree;
+  - **Open Terminal**: launch an interactive terminal pinned to the worktree path as its `cwd`;
+  - **Safe Deletion**: remove temporary worktrees (main worktree is protected; dirty worktrees require confirmation; worktrees bound to active sessions cannot be deleted);
+- **Create Worktree**: choose **New Worktree** from the branch menu, supply the new branch name and destination path, and Snow automatically executes `git worktree add` and tracks it.
+
+#### 2. Welcome Screen Worktree Cards & Session Binding
+
+- **Welcome Grid**: on an empty chat screen ("What do you want to work on in xxx?"), Snow scans and displays all current worktrees as interactive cards;
+- **One-Click Session Binding**: clicking any worktree card (e.g. `ui` directory on branch `feature/ui-performance`) immediately creates a dedicated conversation bound to that worktree;
+- **Visual Badge**: the bottom-left chat toolbar displays a green branch badge reflecting the bound worktree, ensuring all tool operations and prompts operate strictly inside that directory.
+
+#### 3. Development, Diff, and Commits in a Worktree
+
+- **Physical Root Isolation**: file tools and terminal execution take `executionWorkspaceRoot` as their working directory;
+- **Accurate Diff & Checkpoints**: `/file-changes` and checkpoint snapshots only track modifications within this worktree, preventing bleed across branches;
+- **AI Commit & Push**: stage modified files in the Git panel, click the sparkle button to generate a clean, standard commit message, and choose **Commit only** or **Commit and push**.
+
+### 1.6 Git Repository Settings
 
 **Settings → Git Repository Settings** (settings page id: `git-settings`) configures repository status scanning and refresh behavior:
 

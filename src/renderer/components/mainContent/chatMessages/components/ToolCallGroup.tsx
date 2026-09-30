@@ -1,4 +1,4 @@
-import { ChevronRight } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronRight } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useI18n } from "../../../../i18n";
 import { MessageTimestamp } from "./MessageTimestamp";
@@ -9,6 +9,8 @@ type ToolCallGroupProps = {
   timestamp?: string;
   /** Whether any tool in the group is still running. */
   isRunning?: boolean;
+  /** Whether any tool encountered an error */
+  hasError?: boolean;
   /** The tool call nodes. */
   children: ReactNode;
 };
@@ -17,6 +19,7 @@ export const ToolCallGroup = ({
   count,
   timestamp,
   isRunning = false,
+  hasError = false,
   children,
 }: ToolCallGroupProps): React.JSX.Element => {
   const { t } = useI18n();
@@ -33,7 +36,7 @@ export const ToolCallGroup = ({
       });
 
   return (
-    <div className="tcg">
+    <div className={`tcg ${hasError ? "tcg--has-error" : ""}`}>
       <button
         type="button"
         className="tcg-toggle"
@@ -41,6 +44,29 @@ export const ToolCallGroup = ({
         aria-expanded={isOpen}
       >
         <span className="tcg-label">{label}</span>
+        {count > 1 && !isRunning && (
+          <span
+            className={`tcg-summary-pill ${
+              hasError ? "tcg-summary-pill--err" : "tcg-summary-pill--ok"
+            }`}
+          >
+            {hasError ? (
+              <>
+                <AlertCircle size={10} aria-hidden="true" />
+                <span>
+                  {t("toolCall.group.hasError", { defaultValue: "异常" })}
+                </span>
+              </>
+            ) : (
+              <>
+                <CheckCircle2 size={10} aria-hidden="true" />
+                <span>
+                  {t("toolCall.group.completed", { defaultValue: "已完成" })}
+                </span>
+              </>
+            )}
+          </span>
+        )}
         <MessageTimestamp timestamp={timestamp} className="tcg-time" />
         <ChevronRight
           className={`tcg-chevron ${isOpen ? "tcg-chevron--open" : ""}`}

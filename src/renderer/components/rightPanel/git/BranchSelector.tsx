@@ -6,55 +6,250 @@ import {
   Copy,
   X,
   Loader2,
+  FolderGit2,
+  Search,
+  Terminal,
+  Trash2,
+  Check,
+  Folder,
+  MessageSquarePlus,
+  Info,
+  AlertCircle,
+  Sparkles,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { GitBranch as GitBranchType } from "../../../../preload";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  GitBranch as GitBranchType,
+  GitWorktreeInfo,
+} from "../../../../preload";
 import { useI18n } from "../../../i18n";
 import { ContextMenu, type ContextMenuItem } from "../../common/ContextMenu";
+import { ConfirmDialog } from "../../common/ConfirmDialog";
+import { useChatConversationContext } from "../../mainContent/chatMessages";
+import { WorktreeBaseRefSelect } from "./WorktreeBaseRefSelect";
 
 type BranchSelectorProps = {
   repoPath: string;
   currentBranch: string;
+  directoryId?: string | null;
   onBranchChanged: () => void;
+  onOpenTerminal?: (cwd: string) => void;
 };
 
-// Git refname validation: cannot start with ".", "-", end with ".lock"/"/",
-// contain "..", "@{", or any of these chars: space ~ ^ : ? * [ \
-const BRANCH_NAME_REGEX = /^(?!\.)(?!-)[A-Za-z0-9._/-]+$/;
-const BRANCH_NAME_FORBIDDEN = /(?:\.\.|@|\{|}|[ ~^:?*\[\\]|\.lock$|\/$|^\.) /;
+const INVALID_REF_CHAR = /[\x00-\x20\x7f~^:?*\[\\]/;
 
-const isValidBranchName = (name: string): boolean => {
-  const trimmed = name.trim();
-  if (trimmed.length === 0 || trimmed.length > 200) {
+const isValidBranchName = (branch: string): boolean => {
+  if (
+    branch.length === 0 ||
+    branch.trim() !== branch ||
+    branch === "@" ||
+    branch.startsWith("-") ||
+    branch.startsWith("/") ||
+    branch.endsWith("/") ||
+    branch.endsWith(".") ||
+    branch.includes("//") ||
+    branch.includes("..") ||
+    branch.includes("@{") ||
+    INVALID_REF_CHAR.test(branch)
+  ) {
     return false;
   }
-  if (BRANCH_NAME_FORBIDDEN.test(trimmed)) {
-    return false;
-  }
-  return BRANCH_NAME_REGEX.test(trimmed);
+  return branch
+    .split("/")
+    .every(
+      (part) =>
+        part.length > 0 && !part.startsWith(".") && !part.endsWith(".lock"),
+    );
+};
+
+/** 提取末级工作树文件夹名称（如 chat, clone 等）。 */
+const getFolderName = (p: string): string => {
+  const parts = p.replace(/\\/g, "/").split("/").filter(Boolean);
+  return parts[parts.length - 1] || p;
+};
+
+const normPath = (p: string | null | undefined): string => {
+  if (!p) return "";
+  return p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 };
 
 export const BranchSelector = ({
   repoPath,
   currentBranch,
+  directoryId,
   onBranchChanged,
+  onOpenTerminal,
 }: BranchSelectorProps): React.JSX.Element => {
   const { t } = useI18n();
   const [branches, setBranches] = useState<GitBranchType[]>([]);
+  const [worktrees, setWorktrees] = useState<GitWorktreeInfo[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [showCreate, setShowCreate] = useState(false);
+
+  // 创建面板状态：null 不显示, 'branch' 新建分支, 'worktree' 新建工作树
+  const [createMode, setCreateMode] = useState<"branch" | "worktree" | null>(
+    null,
+  );
   const [newBranchName, setNewBranchName] = useState("");
+  const [worktreeBranchName, setWorktreeBranchName] = useState("");
+  const [worktreeBaseRef, setWorktreeBaseRef] = useState("HEAD");
+  const [isCustomBaseRef, setIsCustomBaseRef] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  // 删除工作树确认
+  const [removeWorktreeTarget, setRemoveWorktreeTarget] =
+    useState<GitWorktreeInfo | null>(null);
+  const [removingWorktree, setRemovingWorktree] = useState(false);
+
+  // 剪贴板复制提示
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // 右键菜单状态
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
   } | null>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const createInputRef = useRef<HTMLInputElement>(null);
+  const [branchItemContextMenu, setBranchItemContextMenu] = useState<{
+    x: number;
+    y: number;
+    branch: GitBranchType;
+  } | null>(null);
 
-  /** 加载分支列表（打开下拉与右键刷新共用）。 */
+  const [searchQuery, setSearchQuery] = useState("");
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const branchInputRef = useRef<HTMLInputElement>(null);
+  const worktreeInputRef = useRef<HTMLInputElement>(null);
+  const customRefInputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const normalizedRepoPath = useMemo(() => normPath(repoPath), [repoPath]);
+
+  const isOtherWorktreePath = useCallback(
+    (wtPath: string | null | undefined): boolean => {
+      if (!wtPath) return false;
+      return normPath(wtPath) !== normalizedRepoPath;
+    },
+    [normalizedRepoPath],
+  );
+
+  /** 本地主干分支检测 (main 或 master) */
+  const defaultMainBranch = useMemo(() => {
+    const local = branches.filter((b) => !b.isRemote).map((b) => b.name);
+    if (local.includes("main")) return "main";
+    if (local.includes("master")) return "master";
+    return null;
+  }, [branches]);
+
+  /** 全部本地分支名称 */
+  const allLocalBranchNames = useMemo(
+    () => branches.filter((b) => !b.isRemote).map((b) => b.name),
+    [branches],
+  );
+
+  const trimmedWorktreeBranchName = worktreeBranchName.trim();
+
+  /** 分支名称合法性与重复性即时校验 */
+  const isBranchNameExisting = useMemo(() => {
+    if (!trimmedWorktreeBranchName) return false;
+    return branches.some(
+      (b) => !b.isRemote && b.name === trimmedWorktreeBranchName,
+    );
+  }, [trimmedWorktreeBranchName, branches]);
+
+  const isBranchCheckedOutInWorktree = useMemo(() => {
+    if (!trimmedWorktreeBranchName) return false;
+    return worktrees.some((wt) => wt.branchName === trimmedWorktreeBranchName);
+  }, [trimmedWorktreeBranchName, worktrees]);
+
+  const isBranchNameFormatInvalid = useMemo(() => {
+    if (!trimmedWorktreeBranchName) return false;
+    return !isValidBranchName(trimmedWorktreeBranchName);
+  }, [trimmedWorktreeBranchName]);
+
+  const branchNameValidationError = useMemo(() => {
+    if (isBranchNameExisting) {
+      return t("git.worktreeBranchExists", {
+        defaultValue: "该分支在本地已存在，工作树需指定新分支",
+      });
+    }
+    if (isBranchCheckedOutInWorktree) {
+      return t("git.worktreeBranchCheckedOut", {
+        defaultValue: "该分支已在其他工作树检出",
+      });
+    }
+    if (isBranchNameFormatInvalid) {
+      return t("git.worktreeBranchInvalidFormat", {
+        defaultValue: "分支名称格式不符合 Git 规范",
+      });
+    }
+    return null;
+  }, [
+    isBranchNameExisting,
+    isBranchCheckedOutInWorktree,
+    isBranchNameFormatInvalid,
+    t,
+  ]);
+
+  /** 基线作用动态解析与说明 */
+  const baseRefDescription = useMemo(() => {
+    const trimmed = worktreeBaseRef.trim();
+    if (!trimmed || trimmed === "HEAD") {
+      return t("git.worktreeBaseHeadHint", {
+        values: { branch: currentBranch || "HEAD" },
+        defaultValue: `基于当前工作状态 (${currentBranch || "HEAD"}) 创建，适合延续进度的实验开发`,
+      });
+    }
+    if (defaultMainBranch && trimmed === defaultMainBranch) {
+      return t("git.worktreeBaseMainHint", {
+        values: { branch: defaultMainBranch },
+        defaultValue: `基于主干分支 (${defaultMainBranch}) 创建，纯净无污染，适合全新功能开发`,
+      });
+    }
+    const isKnownLocal = branches.some(
+      (b) => !b.isRemote && b.name === trimmed,
+    );
+    if (isKnownLocal) {
+      return t("git.worktreeBaseBranchHint", {
+        values: { branch: trimmed },
+        defaultValue: `基于本地分支 '${trimmed}' 的最新提交创建`,
+      });
+    }
+    return t("git.worktreeBaseCustomHint", {
+      values: { ref: trimmed },
+      defaultValue: `基于自定义引用/提交 '${trimmed}' 创建`,
+    });
+  }, [worktreeBaseRef, currentBranch, defaultMainBranch, branches, t]);
+
+  /** 智能生成未占用的唯一分支名 */
+  const handleGenerateBranchName = useCallback(
+    (prefix = "feature/"): void => {
+      const dateStr = new Date().toISOString().slice(5, 10).replace("-", "");
+      const randomSuffix = Math.random().toString(36).substring(2, 6);
+      let candidate = `${prefix}wt-${dateStr}-${randomSuffix}`;
+      let counter = 1;
+      while (
+        branches.some((b) => !b.isRemote && b.name === candidate) ||
+        worktrees.some((wt) => wt.branchName === candidate)
+      ) {
+        candidate = `${prefix}wt-${dateStr}-${randomSuffix}${counter++}`;
+      }
+      setWorktreeBranchName(candidate);
+      setCreateError(null);
+    },
+    [branches, worktrees],
+  );
+
+  /** 快捷添加或替换分支前缀 */
+  const handleApplyPrefix = useCallback((prefix: string): void => {
+    setWorktreeBranchName((prev) => {
+      const clean = prev.replace(/^(feature|fix|task|test|temp)\//, "");
+      return `${prefix}${clean}`;
+    });
+    worktreeInputRef.current?.focus();
+  }, []);
+
+  /** 加载分支列表。 */
   const loadBranches = useCallback(() => {
     setLoading(true);
     window.snow
@@ -70,12 +265,35 @@ export const BranchSelector = ({
       });
   }, [repoPath]);
 
+  /** 加载工作树列表。 */
+  const loadWorktrees = useCallback(() => {
+    if (!directoryId) {
+      setWorktrees([]);
+      return;
+    }
+    window.snow
+      .gitListWorktrees(directoryId)
+      .then(setWorktrees)
+      .catch(() => {
+        setWorktrees([]);
+      });
+  }, [directoryId]);
+
+  useEffect(() => {
+    loadWorktrees();
+    window.addEventListener("snow:worktrees-changed", loadWorktrees);
+    return () => {
+      window.removeEventListener("snow:worktrees-changed", loadWorktrees);
+    };
+  }, [loadWorktrees]);
+
   useEffect(() => {
     if (!isOpen) {
       return;
     }
     loadBranches();
-  }, [isOpen, loadBranches]);
+    loadWorktrees();
+  }, [isOpen, loadBranches, loadWorktrees]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -88,9 +306,11 @@ export const BranchSelector = ({
         !dropdownRef.current.contains(event.target as Node)
       ) {
         setIsOpen(false);
-        setShowCreate(false);
+        setCreateMode(null);
         setNewBranchName("");
+        setWorktreeBranchName("");
         setCreateError(null);
+        setSearchQuery("");
       }
     };
 
@@ -101,38 +321,90 @@ export const BranchSelector = ({
   }, [isOpen]);
 
   useEffect(() => {
-    if (showCreate) {
-      createInputRef.current?.focus();
+    if (createMode === "branch") {
+      branchInputRef.current?.focus();
+    } else if (createMode === "worktree") {
+      worktreeInputRef.current?.focus();
     }
-  }, [showCreate]);
+  }, [createMode]);
 
-  const handleCheckout = (branchName: string): void => {
-    if (branchName === currentBranch) {
+  const handleCheckout = (branch: GitBranchType): void => {
+    if (branch.name === currentBranch && !branch.isRemote) {
       setIsOpen(false);
       return;
     }
 
+    if (isOtherWorktreePath(branch.worktreePath)) {
+      setCreateError(
+        t("git.branchCheckedOutInOtherWorktree", {
+          values: {
+            branch: branch.name,
+            path: branch.worktreePath || "",
+          },
+          defaultValue: `分支 '${branch.name}' 已在工作树检出: ${branch.worktreePath}`,
+        }),
+      );
+      return;
+    }
+
+    const remoteName = branch.remoteName ?? "";
+    const remotePrefix = remoteName ? `${remoteName}/` : "";
+    const remoteBranchName =
+      branch.isRemote && remotePrefix && branch.name.startsWith(remotePrefix)
+        ? branch.name.slice(remotePrefix.length)
+        : branch.name;
+    const target = branch.isRemote
+      ? remotePrefix
+        ? `${remoteName}/${remoteBranchName}`
+        : branch.name
+      : branch.name;
+    const conflictingLocal = branch.isRemote
+      ? branches.find(
+          (item) => !item.isRemote && item.name === remoteBranchName,
+        )
+      : undefined;
+    if (conflictingLocal && conflictingLocal.upstream !== target) {
+      setCreateError(
+        t("git.branchTrackingConflict", {
+          values: {
+            branch: conflictingLocal.name,
+            upstream: conflictingLocal.upstream || t("git.localOnlyBadge"),
+            target,
+          },
+        }),
+      );
+      return;
+    }
+
+    const checkoutName = conflictingLocal?.name ?? target;
     window.snow
-      .gitCheckout(repoPath, branchName)
-      .then(() => {
-        setIsOpen(false);
-        onBranchChanged();
+      .gitCheckout(repoPath, checkoutName)
+      .then((res) => {
+        if (res.success) {
+          setIsOpen(false);
+          onBranchChanged();
+        } else {
+          setCreateError(res.message || t("git.operationFailedGeneric"));
+        }
       })
-      .catch(() => {
-        // Silent fail
+      .catch((cause: unknown) => {
+        setCreateError(
+          cause instanceof Error
+            ? cause.message
+            : t("git.operationFailedGeneric"),
+        );
       });
   };
 
+  /** 新建普通分支 */
   const handleCreateBranch = (): void => {
     const trimmed = newBranchName.trim();
-    if (!isValidBranchName(trimmed)) {
+    if (!isValidBranchName(newBranchName)) {
       setCreateError(t("git.createBranchInvalid"));
       return;
     }
 
-    const exists = branches.some(
-      (b) => b.name === trimmed || b.name === `origin/${trimmed}`,
-    );
+    const exists = branches.some((b) => !b.isRemote && b.name === trimmed);
     if (exists) {
       setCreateError(t("git.createBranchExists"));
       return;
@@ -144,7 +416,7 @@ export const BranchSelector = ({
       .gitCreateBranch(repoPath, trimmed)
       .then((result) => {
         if (result.success) {
-          setShowCreate(false);
+          setCreateMode(null);
           setNewBranchName("");
           setIsOpen(false);
           onBranchChanged();
@@ -160,64 +432,314 @@ export const BranchSelector = ({
       });
   };
 
-  const handleCreateInputKeyDown = (
-    event: React.KeyboardEvent<HTMLInputElement>,
-  ): void => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      handleCreateBranch();
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      setShowCreate(false);
-      setNewBranchName("");
-      setCreateError(null);
-    }
-  };
-
-  const handleToggleCreate = (): void => {
-    setShowCreate(!showCreate);
-    setNewBranchName("");
+  /** 新建独立工作树 */
+  const handleCreateWorktree = (): void => {
+    if (
+      !directoryId ||
+      !trimmedWorktreeBranchName ||
+      creating ||
+      Boolean(branchNameValidationError)
+    )
+      return;
+    setCreating(true);
     setCreateError(null);
+    window.snow
+      .gitCreateWorktree(
+        directoryId,
+        trimmedWorktreeBranchName,
+        worktreeBaseRef.trim() || "HEAD",
+      )
+      .then((created) => {
+        window.dispatchEvent(new Event("snow:worktrees-changed"));
+        setWorktrees((items) => [
+          ...items.filter((item) => item.worktreeId !== created.worktreeId),
+          created,
+        ]);
+        setWorktreeBranchName("");
+        setWorktreeBaseRef("HEAD");
+        setCreateMode(null);
+        loadBranches();
+        onBranchChanged();
+      })
+      .catch((cause: unknown) => {
+        setCreateError(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => {
+        setCreating(false);
+      });
   };
 
-  /** 右键菜单：复制分支名 / 新建分支 / 刷新分支列表。 */
+  /** 删除工作树 */
+  const handleConfirmRemoveWorktree = (): void => {
+    if (!directoryId || !removeWorktreeTarget || removingWorktree) return;
+    setRemovingWorktree(true);
+    setCreateError(null);
+    window.snow
+      .gitRemoveWorktree(directoryId, removeWorktreeTarget.worktreeId)
+      .then(() => {
+        if (
+          chatContext?.pendingWorktreeId === removeWorktreeTarget.worktreeId
+        ) {
+          chatContext.setPendingWorktreeId(null);
+        }
+        setRemoveWorktreeTarget(null);
+        window.dispatchEvent(new Event("snow:worktrees-changed"));
+        loadWorktrees();
+        loadBranches();
+        onBranchChanged();
+      })
+      .catch((cause: unknown) => {
+        const rawDetail =
+          cause instanceof Error ? cause.message : String(cause);
+        const detail = rawDetail
+          .replace(/^Error invoking remote method '[^']+':\s*/i, "")
+          .replace(/^Error:\s*/i, "")
+          .trim();
+        setCreateError(
+          /dirty|modified|uncommitted|未提交|修改/i.test(detail)
+            ? t("git.worktreeRemoveDirty", {
+                defaultValue: "工作树包含未提交的修改，无法安全删除",
+              })
+            : detail ||
+                t("git.worktreeRemoveFailed", {
+                  defaultValue: "删除工作树失败",
+                }),
+        );
+      })
+      .finally(() => {
+        setRemovingWorktree(false);
+      });
+  };
+
+  const handleCopyPath = (id: string, path: string): void => {
+    void window.snow.writeClipboardText(path).then(() => {
+      setCopiedId(id);
+      setTimeout(() => {
+        setCopiedId((current) => (current === id ? null : current));
+      }, 1500);
+    });
+  };
+
+  let chatContext: ReturnType<typeof useChatConversationContext> | null = null;
+  try {
+    chatContext = useChatConversationContext();
+  } catch {
+    chatContext = null;
+  }
+
+  const isSessionRunning = Boolean(
+    chatContext?.isStreaming ||
+    chatContext?.isAborting ||
+    chatContext?.isCompacting,
+  );
+
+  const handleSelectWorktreeForChat = (wt: GitWorktreeInfo): void => {
+    // Match the chat input selector: never change a running conversation's
+    // persisted binding while its tools and checkpoint use the current tree.
+    if (!chatContext || isSessionRunning) return;
+    if (chatContext.activeConversationId) {
+      void window.snow.setConversationWorktree(
+        chatContext.activeConversationId,
+        wt.worktreeId,
+      );
+    } else {
+      chatContext.setPendingWorktreeId(wt.worktreeId);
+      const textarea = document.querySelector<HTMLTextAreaElement>(
+        ".chat-input-textarea",
+      );
+      textarea?.focus();
+    }
+    setIsOpen(false);
+  };
+
+  const handleStartNewChatInWorktree = (
+    e: React.MouseEvent,
+    wt: GitWorktreeInfo,
+  ): void => {
+    e.stopPropagation();
+    if (!chatContext) return;
+    chatContext.handleNewChat(directoryId || undefined);
+    chatContext.setPendingWorktreeId(wt.worktreeId);
+    setIsOpen(false);
+    setTimeout(() => {
+      const textarea = document.querySelector<HTMLTextAreaElement>(
+        ".chat-input-textarea",
+      );
+      textarea?.focus();
+    }, 60);
+  };
+
+  /** 单个分支项右键菜单 */
+  const buildBranchItemMenuItems = (
+    branch: GitBranchType,
+  ): ContextMenuItem[] => {
+    const isOtherWorktree = isOtherWorktreePath(branch.worktreePath);
+    const worktreeFolder = branch.worktreePath
+      ? getFolderName(branch.worktreePath)
+      : null;
+
+    const items: ContextMenuItem[] = [
+      {
+        id: "copy-branch-name",
+        label: t("git.copyBranchName", { defaultValue: "复制分支名称" }),
+        icon: <Copy size={13} strokeWidth={1.8} />,
+        onClick: () => {
+          setBranchItemContextMenu(null);
+          void window.snow.writeClipboardText(branch.name).catch(() => {});
+        },
+      },
+    ];
+
+    if (branch.worktreePath) {
+      items.push({
+        id: "copy-worktree-path",
+        label: t("git.copyWorktreePath", { defaultValue: "复制工作树路径" }),
+        icon: <FolderGit2 size={13} strokeWidth={1.8} />,
+        onClick: () => {
+          setBranchItemContextMenu(null);
+          void window.snow
+            .writeClipboardText(branch.worktreePath!)
+            .catch(() => {});
+        },
+      });
+      if (onOpenTerminal) {
+        items.push({
+          id: "open-worktree-terminal",
+          label: t("git.openTerminal", { defaultValue: "在此工作树打开终端" }),
+          icon: <Terminal size={13} strokeWidth={1.8} />,
+          onClick: () => {
+            setBranchItemContextMenu(null);
+            onOpenTerminal(branch.worktreePath!);
+          },
+        });
+      }
+    }
+
+    if (!branch.isRemote) {
+      items.push({
+        id: "checkout-branch",
+        separator: true,
+        label: branch.isCurrent
+          ? t("git.currentBranch", { defaultValue: "当前分支" })
+          : isOtherWorktree
+            ? `${t("git.worktreeCheckedOut", { defaultValue: "已在工作树检出" })}: ${worktreeFolder}`
+            : t("git.checkoutBranch", { defaultValue: "切换至该分支" }),
+        icon: isOtherWorktree ? (
+          <FolderGit2 size={13} strokeWidth={1.8} />
+        ) : (
+          <GitBranch size={13} strokeWidth={1.8} />
+        ),
+        disabled: branch.isCurrent || isOtherWorktree,
+        onClick: () => {
+          setBranchItemContextMenu(null);
+          handleCheckout(branch);
+        },
+      });
+    }
+
+    return items;
+  };
+
+  /** 外层按钮右键菜单 */
   const buildMenuItems = (): ContextMenuItem[] => [
     {
       id: "copy-branch",
-      label: t("git.copyBranchName", { defaultValue: "Copy Branch Name" }),
+      label: t("git.copyBranchName", { defaultValue: "复制分支名称" }),
       icon: <Copy size={13} strokeWidth={1.8} />,
       onClick: () => {
         setContextMenu(null);
-        void window.snow.writeClipboardText(currentBranch).catch(() => {
-          // 剪贴板写入失败时静默忽略。
-        });
+        void window.snow.writeClipboardText(currentBranch).catch(() => {});
       },
     },
     {
       id: "create-branch",
       separator: true,
-      label: t("git.createBranch"),
+      label: t("git.createBranch", { defaultValue: "新建分支..." }),
       icon: <GitBranchPlus size={13} strokeWidth={1.8} />,
       onClick: () => {
         setContextMenu(null);
-        // 打开下拉并进入创建分支表单。
         setIsOpen(true);
-        setShowCreate(true);
+        setCreateMode("branch");
       },
     },
+    ...(directoryId
+      ? [
+          {
+            id: "create-worktree",
+            label: t("git.createWorktree", {
+              defaultValue: "新建工作树 (Worktree)...",
+            }),
+            icon: <FolderGit2 size={13} strokeWidth={1.8} />,
+            onClick: () => {
+              setContextMenu(null);
+              setIsOpen(true);
+              setCreateMode("worktree");
+            },
+          },
+        ]
+      : []),
     {
       id: "refresh-branches",
-      label: t("git.refreshBranches", { defaultValue: "Refresh Branches" }),
+      separator: true,
+      label: t("git.refreshBranches", { defaultValue: "刷新分支与工作树" }),
       icon: <RefreshCw size={13} strokeWidth={1.8} />,
       onClick: () => {
         setContextMenu(null);
         loadBranches();
+        loadWorktrees();
       },
     },
   ];
 
-  const localBranches = branches.filter((b) => !b.isRemote);
-  const remoteBranches = branches.filter((b) => b.isRemote);
+  // 错误提示自动在 6 秒后淡出清除
+  useEffect(() => {
+    if (!createError) return;
+    const timer = setTimeout(() => {
+      setCreateError(null);
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, [createError]);
+
+  const normalizedSearch = useMemo(
+    () => searchQuery.trim().toLowerCase(),
+    [searchQuery],
+  );
+
+  // 过滤工作树 (基于已缓存的规范化搜索词)
+  const filteredWorktrees = useMemo(() => {
+    if (!worktrees.length) return [];
+    if (!normalizedSearch) return worktrees;
+    return worktrees.filter(
+      (wt) =>
+        (wt.branchName &&
+          wt.branchName.toLowerCase().includes(normalizedSearch)) ||
+        getFolderName(wt.worktreePath)
+          .toLowerCase()
+          .includes(normalizedSearch) ||
+        wt.worktreePath.toLowerCase().includes(normalizedSearch),
+    );
+  }, [worktrees, normalizedSearch]);
+
+  // 本地分支与远程分支单次遍历完成分类与检索过滤，避免两遍全量遍历
+  const { localBranches, remoteBranches } = useMemo(() => {
+    const local: GitBranchType[] = [];
+    const remote: GitBranchType[] = [];
+    for (let i = 0; i < branches.length; i++) {
+      const b = branches[i];
+      if (
+        normalizedSearch &&
+        !b.name.toLowerCase().includes(normalizedSearch)
+      ) {
+        continue;
+      }
+      if (b.isRemote) {
+        remote.push(b);
+      } else {
+        local.push(b);
+      }
+    }
+    return { localBranches: local, remoteBranches: remote };
+  }, [branches, normalizedSearch]);
 
   return (
     <div className="branch-selector">
@@ -228,140 +750,837 @@ export const BranchSelector = ({
         onContextMenu={(e) => {
           e.preventDefault();
           e.stopPropagation();
+          setBranchItemContextMenu(null);
           setContextMenu({ x: e.clientX, y: e.clientY });
         }}
-        title={currentBranch}
+        title={`${currentBranch}${worktrees.length > 0 ? ` · ${worktrees.length} 个工作树` : ""}`}
       >
-        <GitBranch size={14} strokeWidth={1.8} />
+        <GitBranch
+          size={13}
+          strokeWidth={1.8}
+          className="branch-selector-main-icon"
+        />
         <span className="branch-selector-name">
           {currentBranch || t("git.unknownBranch")}
         </span>
-        <ChevronDown size={12} strokeWidth={1.8} />
+        {worktrees.length > 0 && (
+          <span
+            className="branch-selector-wt-pill"
+            title={t("git.worktreesCountTooltip", {
+              values: { count: worktrees.length },
+              defaultValue: `当前存在 ${worktrees.length} 个活跃工作树`,
+            })}
+          >
+            <FolderGit2 size={11} strokeWidth={1.8} />
+            <span>{worktrees.length}</span>
+          </span>
+        )}
+        <ChevronDown
+          size={11}
+          strokeWidth={1.8}
+          className="branch-selector-arrow"
+        />
       </button>
+
       {isOpen && (
         <div className="branch-dropdown" ref={dropdownRef}>
-          <div className="branch-dropdown-create">
-            {showCreate ? (
-              <div className="branch-create-form">
-                <div className="branch-create-input-row">
-                  <input
-                    ref={createInputRef}
-                    type="text"
-                    className="branch-create-input"
-                    placeholder={t("git.createBranchPlaceholder")}
-                    value={newBranchName}
-                    onChange={(e) => {
-                      setNewBranchName(e.target.value);
-                      setCreateError(null);
-                    }}
-                    onKeyDown={handleCreateInputKeyDown}
-                    disabled={creating}
-                    spellCheck={false}
-                    autoComplete="off"
-                  />
-                  <button
-                    type="button"
-                    className="branch-create-cancel-btn"
-                    onClick={handleToggleCreate}
-                    disabled={creating}
-                    title={t("git.discardCancelBtn")}
-                  >
-                    <X size={14} strokeWidth={1.8} />
-                  </button>
-                </div>
+          {/* 顶部搜索与快捷创建按钮组 */}
+          <div className="branch-dropdown-header-bar">
+            <div className="branch-dropdown-search">
+              <Search size={12} className="branch-search-icon" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                className="branch-search-input"
+                placeholder={t("git.searchBranchesOrWorktrees", {
+                  defaultValue: "搜索分支或工作树...",
+                })}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape" && searchQuery) {
+                    e.stopPropagation();
+                    setSearchQuery("");
+                  }
+                }}
+                spellCheck={false}
+                autoComplete="off"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  className="branch-search-clear-btn"
+                  onClick={() => setSearchQuery("")}
+                  title={t("common.clear", { defaultValue: "清空" })}
+                >
+                  <X size={11} />
+                </button>
+              )}
+            </div>
+
+            <div className="branch-dropdown-header-actions">
+              <button
+                type="button"
+                className={`branch-header-action-btn${createMode === "branch" ? " active" : ""}`}
+                onClick={() => {
+                  setCreateError(null);
+                  setCreateMode((prev) =>
+                    prev === "branch" ? null : "branch",
+                  );
+                }}
+                title={t("git.createBranch", { defaultValue: "新建分支" })}
+              >
+                <GitBranchPlus size={12} strokeWidth={1.8} />
+                <span>{t("git.branchShort", { defaultValue: "分支" })}</span>
+              </button>
+              {directoryId && (
+                <button
+                  type="button"
+                  className={`branch-header-action-btn${createMode === "worktree" ? " active" : ""}`}
+                  onClick={() => {
+                    setCreateError(null);
+                    setCreateMode((prev) =>
+                      prev === "worktree" ? null : "worktree",
+                    );
+                  }}
+                  title={t("git.createWorktree", {
+                    defaultValue: "新建工作树",
+                  })}
+                >
+                  <FolderGit2 size={12} strokeWidth={1.8} />
+                  <span>
+                    {t("git.worktreeShort", { defaultValue: "工作树" })}
+                  </span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 错误提示条 */}
+          {createError && (
+            <div className="branch-create-error" role="alert">
+              <div className="branch-create-error-content">
+                <AlertCircle
+                  size={12}
+                  className="branch-create-error-icon shrink-0"
+                />
+                <span className="branch-create-error-text" title={createError}>
+                  {createError}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="branch-create-error-close"
+                onClick={() => setCreateError(null)}
+                title={t("common.close", { defaultValue: "关闭提示" })}
+              >
+                <X size={11} />
+              </button>
+            </div>
+          )}
+
+          {/* 新建分支表单面板 */}
+          {createMode === "branch" && (
+            <div className="branch-inline-create-box">
+              <div className="branch-inline-create-title">
+                <GitBranchPlus size={13} strokeWidth={1.8} />
+                <span>
+                  {t("git.createBranchTitle", { defaultValue: "新建本地分支" })}
+                </span>
+              </div>
+              <div className="branch-create-input-row">
+                <input
+                  ref={branchInputRef}
+                  type="text"
+                  className="branch-create-input"
+                  placeholder={t("git.createBranchPlaceholder", {
+                    defaultValue: "分支名称 (例如: feature/login)",
+                  })}
+                  value={newBranchName}
+                  onChange={(e) => {
+                    setNewBranchName(e.target.value);
+                    setCreateError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleCreateBranch();
+                    } else if (e.key === "Escape") {
+                      setCreateMode(null);
+                    }
+                  }}
+                  disabled={creating}
+                  spellCheck={false}
+                  autoComplete="off"
+                />
                 <button
                   type="button"
                   className="branch-create-submit-btn"
                   onClick={handleCreateBranch}
-                  disabled={creating || newBranchName.trim().length === 0}
+                  disabled={creating || !newBranchName.trim()}
                 >
-                  {creating ? t("git.loading") : t("git.createBranchSubmit")}
+                  {creating ? (
+                    <Loader2 size={12} className="spin" />
+                  ) : (
+                    t("common.create", { defaultValue: "创建" })
+                  )}
                 </button>
-                {createError && (
-                  <div className="branch-create-error">{createError}</div>
-                )}
+              </div>
+            </div>
+          )}
+
+          {/* 新建工作树表单面板 */}
+          {createMode === "worktree" && directoryId && (
+            <div className="branch-inline-create-box branch-inline-worktree-box">
+              <div className="branch-inline-create-title">
+                <FolderGit2 size={13} strokeWidth={1.8} />
+                <span>
+                  {t("git.createWorktreeTitle", {
+                    defaultValue: "新建独立工作树 (Worktree)",
+                  })}
+                </span>
+              </div>
+              <div className="branch-worktree-form-grid">
+                {/* 1. 分支名称：支持快捷前缀与一键智能生成 */}
+                <div className="branch-worktree-form-field">
+                  <div className="branch-form-label-row">
+                    <label className="branch-form-label">
+                      {t("git.worktreeBranchName", {
+                        defaultValue: "分支名称",
+                      })}
+                    </label>
+                    <button
+                      type="button"
+                      className="branch-name-action-btn"
+                      onClick={() => handleGenerateBranchName()}
+                      title={t("git.worktreeBranchGenerate", {
+                        defaultValue: "自动生成唯一分支名称",
+                      })}
+                    >
+                      <Sparkles size={10} />
+                      <span>
+                        {t("git.worktreeBranchGenerate", {
+                          defaultValue: "自动生成",
+                        })}
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* 常用前缀快捷选择 Chips */}
+                  <div className="branch-prefix-chips">
+                    {["feature/", "fix/", "task/", "test/"].map((prefix) => (
+                      <button
+                        key={prefix}
+                        type="button"
+                        className="branch-prefix-chip"
+                        onClick={() => handleApplyPrefix(prefix)}
+                        title={`填入前缀 ${prefix}`}
+                      >
+                        {prefix}
+                      </button>
+                    ))}
+                  </div>
+
+                  <input
+                    ref={worktreeInputRef}
+                    type="text"
+                    className="branch-create-input"
+                    placeholder="例如: feature/chat-redesign"
+                    value={worktreeBranchName}
+                    onChange={(e) => {
+                      setWorktreeBranchName(e.target.value);
+                      setCreateError(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleCreateWorktree();
+                      } else if (e.key === "Escape") {
+                        setCreateMode(null);
+                      }
+                    }}
+                    disabled={creating}
+                    spellCheck={false}
+                    autoComplete="off"
+                  />
+                  {branchNameValidationError && (
+                    <div className="branch-form-validation-tip">
+                      <AlertCircle size={10} />
+                      <span>{branchNameValidationError}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. 起始基线：纯点选优先，支持快捷Chips与全量分支下拉 */}
+                <div className="branch-worktree-form-field">
+                  <div className="branch-form-label-row">
+                    <label className="branch-form-label">
+                      {t("git.worktreeBaseRefLabel", {
+                        defaultValue: "起始基线 (分叉起点)",
+                      })}
+                    </label>
+                  </div>
+
+                  {/* 快捷推荐 Chips */}
+                  <div className="branch-base-ref-chips">
+                    <button
+                      type="button"
+                      className={`branch-base-ref-chip${!isCustomBaseRef && worktreeBaseRef.trim() === "HEAD" ? " active" : ""}`}
+                      onClick={() => {
+                        setIsCustomBaseRef(false);
+                        setWorktreeBaseRef("HEAD");
+                      }}
+                      title={t("git.worktreeBaseHeadTooltip", {
+                        defaultValue: "基于当前分支状态创建，适合延续当前进度",
+                      })}
+                    >
+                      <span>HEAD</span>
+                      <span className="branch-base-ref-chip-sub">
+                        ({t("git.worktreeCurrentTag", { defaultValue: "当前" })}
+                        : {currentBranch || "HEAD"})
+                      </span>
+                    </button>
+                    {defaultMainBranch &&
+                      defaultMainBranch !== currentBranch && (
+                        <button
+                          type="button"
+                          className={`branch-base-ref-chip${!isCustomBaseRef && worktreeBaseRef.trim() === defaultMainBranch ? " active" : ""}`}
+                          onClick={() => {
+                            setIsCustomBaseRef(false);
+                            setWorktreeBaseRef(defaultMainBranch);
+                          }}
+                          title={t("git.worktreeBaseMainTooltip", {
+                            defaultValue: "基于主干分支创建，环境纯净独立",
+                          })}
+                        >
+                          <span>{defaultMainBranch}</span>
+                          <span className="branch-base-ref-chip-sub">
+                            (
+                            {t("git.worktreeMainTag", { defaultValue: "主干" })}
+                            )
+                          </span>
+                        </button>
+                      )}
+                  </div>
+
+                  {/* 核心基线选择器：美化自定义下拉，完全无 emoji */}
+                  <div className="branch-ref-input-wrapper">
+                    <WorktreeBaseRefSelect
+                      value={worktreeBaseRef}
+                      isCustom={isCustomBaseRef}
+                      currentBranch={currentBranch}
+                      mainBranch={defaultMainBranch}
+                      localBranches={allLocalBranchNames}
+                      disabled={creating}
+                      onSelect={(ref) => {
+                        setIsCustomBaseRef(false);
+                        setWorktreeBaseRef(ref);
+                      }}
+                      onSelectCustom={() => {
+                        setIsCustomBaseRef(true);
+                        setTimeout(
+                          () => customRefInputRef.current?.focus(),
+                          50,
+                        );
+                      }}
+                    />
+
+                    {/* 仅在用户选择自定义时才展开文本输入 */}
+                    {isCustomBaseRef && (
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: "4px",
+                          marginTop: "2px",
+                        }}
+                      >
+                        <input
+                          ref={customRefInputRef}
+                          type="text"
+                          className="branch-create-input"
+                          placeholder={t("git.worktreeBaseCustomPlaceholder", {
+                            defaultValue: "输入 Commit Hash、Tag 或远程分支",
+                          })}
+                          value={
+                            worktreeBaseRef === "HEAD" ? "" : worktreeBaseRef
+                          }
+                          onChange={(e) => setWorktreeBaseRef(e.target.value)}
+                          disabled={creating}
+                          spellCheck={false}
+                          autoComplete="off"
+                        />
+                        <button
+                          type="button"
+                          className="branch-create-cancel-btn"
+                          onClick={() => {
+                            setIsCustomBaseRef(false);
+                            setWorktreeBaseRef("HEAD");
+                          }}
+                          title={t("git.worktreeBaseHeadTooltip", {
+                            defaultValue: "恢复默认 HEAD",
+                          })}
+                        >
+                          HEAD
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 基线作用动态说明卡片 */}
+                  <div className="branch-worktree-helper-text">
+                    <Info
+                      size={11}
+                      className="branch-worktree-helper-icon text-blue-400"
+                    />
+                    <span>{baseRefDescription}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="branch-worktree-form-actions">
+                <button
+                  type="button"
+                  className="branch-create-cancel-btn"
+                  onClick={() => setCreateMode(null)}
+                  disabled={creating}
+                >
+                  {t("common.cancel", { defaultValue: "取消" })}
+                </button>
+                <button
+                  type="button"
+                  className="branch-create-submit-btn"
+                  onClick={handleCreateWorktree}
+                  disabled={
+                    creating ||
+                    !trimmedWorktreeBranchName ||
+                    Boolean(branchNameValidationError)
+                  }
+                >
+                  {creating ? (
+                    <>
+                      <Loader2 size={12} className="spin" />
+                      <span>
+                        {t("git.creatingWorktree", {
+                          defaultValue: "创建中...",
+                        })}
+                      </span>
+                    </>
+                  ) : (
+                    t("git.createWorktreeSubmit", {
+                      defaultValue: "创建并检出工作树",
+                    })
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 分支与工作树内容列表 */}
+          <div className="branch-dropdown-content-scroll">
+            {loading ? (
+              <div className="branch-dropdown-loading">
+                <Loader2 size={14} strokeWidth={1.8} className="spin" />
+                <span>{t("git.loading")}</span>
               </div>
             ) : (
-              <button
-                type="button"
-                className="branch-create-toggle-btn"
-                onClick={handleToggleCreate}
-              >
-                <GitBranchPlus size={14} strokeWidth={1.8} />
-                <span>{t("git.createBranch")}</span>
-              </button>
+              <>
+                {/* 1. 活跃工作树分组 (置顶) */}
+                {filteredWorktrees.length > 0 && (
+                  <div className="branch-dropdown-group branch-dropdown-group-worktrees">
+                    <div className="branch-dropdown-label">
+                      <FolderGit2
+                        size={12}
+                        strokeWidth={1.8}
+                        className="branch-group-label-icon"
+                      />
+                      <span>
+                        {t("git.worktreesTitle", {
+                          defaultValue: "工作树",
+                        })}
+                      </span>
+                      <span className="branch-group-badge">
+                        {filteredWorktrees.length}
+                      </span>
+                    </div>
+
+                    {filteredWorktrees.map((wt) => {
+                      const folderName = getFolderName(wt.worktreePath);
+                      const isMain =
+                        normPath(wt.worktreePath) ===
+                        normPath(wt.repositoryPath);
+                      const isCurrent =
+                        normPath(wt.worktreePath) === normPath(repoPath) ||
+                        (!isMain && wt.branchName === currentBranch);
+                      const isCopied = copiedId === wt.worktreeId;
+
+                      return (
+                        <div
+                          key={wt.worktreeId}
+                          className={`branch-dropdown-item branch-dropdown-wt-item${isCurrent ? " active" : ""}${isSessionRunning ? " is-disabled" : ""}`}
+                          title={`${wt.worktreePath}${wt.isDirty ? " · 包含未提交修改" : ""}\n${isSessionRunning ? t("plusMenu.modeLockedRunning", { defaultValue: "会话进行中，暂不可切换模式" }) : t("git.clickToBindWorktree", { defaultValue: "点击为此会话选择该工作树" })}`}
+                          onClick={() => handleSelectWorktreeForChat(wt)}
+                        >
+                          <div className="branch-dropdown-item-left">
+                            <span className="branch-wt-folder-badge">
+                              <Folder size={11} strokeWidth={1.8} />
+                              <span>{folderName}</span>
+                            </span>
+                            <span className="branch-wt-branch-badge">
+                              <GitBranch size={11} strokeWidth={1.8} />
+                              <span className="truncate max-w-[130px]">
+                                {wt.branchName ||
+                                  t("git.graphDetachedHead", {
+                                    defaultValue: "游离 HEAD",
+                                  })}
+                              </span>
+                            </span>
+                            {isMain && (
+                              <span
+                                className="branch-badge branch-badge-main"
+                                title={t("git.mainWorktreeTooltip", {
+                                  defaultValue: "主工作区目录",
+                                })}
+                              >
+                                {t("git.mainDirectory", {
+                                  defaultValue: "主目录",
+                                })}
+                              </span>
+                            )}
+                            {wt.isDirty && (
+                              <span
+                                className="branch-wt-dirty-dot"
+                                title={t("git.worktreeDirtyTooltip", {
+                                  defaultValue: "该工作树包含未提交的修改",
+                                })}
+                              />
+                            )}
+                          </div>
+
+                          <div
+                            className="branch-dropdown-item-right branch-wt-actions"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button
+                              type="button"
+                              className="branch-wt-action-btn"
+                              onClick={() =>
+                                handleCopyPath(wt.worktreeId, wt.worktreePath)
+                              }
+                              title={t("git.copyWorktreePath", {
+                                defaultValue: "复制完整路径",
+                              })}
+                            >
+                              {isCopied ? (
+                                <Check size={11} className="text-green-500" />
+                              ) : (
+                                <Copy size={11} />
+                              )}
+                            </button>
+                            {onOpenTerminal && (
+                              <button
+                                type="button"
+                                className="branch-wt-action-btn"
+                                onClick={() => onOpenTerminal(wt.worktreePath)}
+                                title={t("git.openTerminal", {
+                                  defaultValue: "在此工作树打开终端",
+                                })}
+                              >
+                                <Terminal size={11} />
+                              </button>
+                            )}
+                            {chatContext && (
+                              <button
+                                type="button"
+                                className="branch-wt-action-btn"
+                                onClick={(e) =>
+                                  handleStartNewChatInWorktree(e, wt)
+                                }
+                                title={t("git.startNewChatInWorktree", {
+                                  defaultValue: "在此工作树开启新会话",
+                                })}
+                              >
+                                <MessageSquarePlus size={11} />
+                              </button>
+                            )}
+                            {!isMain && (
+                              <button
+                                type="button"
+                                className={`branch-wt-action-btn branch-wt-action-delete${isCurrent || (isSessionRunning && chatContext?.pendingWorktreeId === wt.worktreeId) ? " is-disabled" : ""}`}
+                                disabled={
+                                  removingWorktree ||
+                                  isCurrent ||
+                                  (isSessionRunning &&
+                                    chatContext?.pendingWorktreeId ===
+                                      wt.worktreeId)
+                                }
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (!isCurrent) {
+                                    setRemoveWorktreeTarget(wt);
+                                  }
+                                }}
+                                title={
+                                  isCurrent
+                                    ? t("git.cannotRemoveCurrentWorktree", {
+                                        defaultValue:
+                                          "当前所在工作树无法删除，请先切换到其他分支或工作树",
+                                      })
+                                    : isSessionRunning &&
+                                        chatContext?.pendingWorktreeId ===
+                                          wt.worktreeId
+                                      ? t("git.cannotRemoveRunningWorktree", {
+                                          defaultValue:
+                                            "当前会话正在运行中，暂不可移除该工作树",
+                                        })
+                                      : t("git.removeWorktree", {
+                                          defaultValue: "移除此工作树",
+                                        })
+                                }
+                                aria-label={t("git.removeWorktree", {
+                                  defaultValue: "移除此工作树",
+                                })}
+                              >
+                                {removingWorktree &&
+                                removeWorktreeTarget?.worktreeId ===
+                                  wt.worktreeId ? (
+                                  <Loader2
+                                    size={11}
+                                    className="spin text-red-400"
+                                  />
+                                ) : (
+                                  <Trash2 size={11} />
+                                )}
+                              </button>
+                            )}
+                            {isCurrent && (
+                              <span className="branch-dropdown-item-check" />
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* 2. 本地分支分组 */}
+                {localBranches.length > 0 && (
+                  <div className="branch-dropdown-group">
+                    <div className="branch-dropdown-label">
+                      <GitBranch
+                        size={12}
+                        strokeWidth={1.8}
+                        className="branch-group-label-icon"
+                      />
+                      <span>{t("git.localBranches")}</span>
+                      <span className="branch-group-badge">
+                        {localBranches.length}
+                      </span>
+                    </div>
+
+                    {localBranches.map((branch) => {
+                      const isOtherWorktree = isOtherWorktreePath(
+                        branch.worktreePath,
+                      );
+                      const worktreeFolder = branch.worktreePath
+                        ? getFolderName(branch.worktreePath)
+                        : null;
+                      const isUpstreamTracking =
+                        branch.upstream?.startsWith("upstream/");
+
+                      return (
+                        <button
+                          key={branch.name}
+                          type="button"
+                          className={`branch-dropdown-item${branch.isCurrent ? " active" : ""}`}
+                          onClick={() => handleCheckout(branch)}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setContextMenu(null);
+                            setBranchItemContextMenu({
+                              x: e.clientX,
+                              y: e.clientY,
+                              branch,
+                            });
+                          }}
+                          title={
+                            isOtherWorktree
+                              ? `${branch.name}\n${t("git.worktreeCheckedOut")}: ${branch.worktreePath}`
+                              : branch.name
+                          }
+                        >
+                          <div className="branch-dropdown-item-left">
+                            <span className="branch-dropdown-item-name">
+                              {branch.name}
+                            </span>
+                            {isOtherWorktree && (
+                              <span
+                                className="branch-dropdown-item-worktree-badge"
+                                title={branch.worktreePath || ""}
+                              >
+                                <FolderGit2 size={11} strokeWidth={1.8} />
+                                {worktreeFolder}
+                              </span>
+                            )}
+                            {branch.upstream ? (
+                              <span
+                                className={`branch-dropdown-item-tracking${
+                                  isUpstreamTracking ? " is-upstream" : ""
+                                }`}
+                                title={
+                                  isUpstreamTracking
+                                    ? `${t("git.upstreamRemoteTooltip")}: ${branch.upstream}`
+                                    : branch.upstream
+                                }
+                              >
+                                → {branch.upstream}
+                              </span>
+                            ) : (
+                              <span
+                                className="branch-badge branch-badge-local"
+                                title={t("git.localOnlyBadge")}
+                              >
+                                {t("git.localOnlyBadge")}
+                              </span>
+                            )}
+                          </div>
+                          <div className="branch-dropdown-item-right">
+                            {branch.isGone && (
+                              <span
+                                className="branch-badge branch-badge-gone"
+                                title={t("git.goneBadge")}
+                              >
+                                {t("git.goneBadge")}
+                              </span>
+                            )}
+                            {typeof branch.behind === "number" &&
+                              branch.behind > 0 && (
+                                <span
+                                  className="branch-badge branch-badge-behind"
+                                  title={t("git.behindTooltip", {
+                                    values: { count: branch.behind },
+                                  })}
+                                >
+                                  ↓{branch.behind}
+                                </span>
+                              )}
+                            {typeof branch.ahead === "number" &&
+                              branch.ahead > 0 && (
+                                <span
+                                  className="branch-badge branch-badge-ahead"
+                                  title={t("git.aheadTooltip", {
+                                    values: { count: branch.ahead },
+                                  })}
+                                >
+                                  ↑{branch.ahead}
+                                </span>
+                              )}
+                            {branch.isCurrent && (
+                              <span className="branch-dropdown-item-check" />
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* 3. 远程分支分组 */}
+                {remoteBranches.length > 0 && (
+                  <div className="branch-dropdown-group">
+                    <div className="branch-dropdown-label">
+                      <span>{t("git.remoteBranches")}</span>
+                      <span className="branch-group-badge">
+                        {remoteBranches.length}
+                      </span>
+                    </div>
+                    {remoteBranches.map((branch) => {
+                      const isUpstream = branch.remoteName === "upstream";
+                      return (
+                        <button
+                          key={branch.name}
+                          type="button"
+                          className={`branch-dropdown-item${branch.isCurrent ? " active" : ""}`}
+                          onClick={() => handleCheckout(branch)}
+                        >
+                          <div className="branch-dropdown-item-left">
+                            <span className="branch-dropdown-item-name">
+                              {branch.name}
+                            </span>
+                          </div>
+                          <div className="branch-dropdown-item-right">
+                            {isUpstream ? (
+                              <span
+                                className="branch-badge branch-badge-upstream"
+                                title={t("git.upstreamRemoteTooltip")}
+                              >
+                                {t("git.upstreamBadge")}
+                              </span>
+                            ) : branch.remoteName ? (
+                              <span className="branch-badge branch-badge-remote">
+                                {branch.remoteName}
+                              </span>
+                            ) : null}
+                            {branch.isCurrent && (
+                              <span className="branch-dropdown-item-check" />
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {branches.length === 0 && filteredWorktrees.length === 0 && (
+                  <div className="branch-dropdown-empty">
+                    {t("git.noBranches")}
+                  </div>
+                )}
+              </>
             )}
           </div>
-          {loading ? (
-            <div className="branch-dropdown-loading">
-              <Loader2 size={14} strokeWidth={1.8} className="spin" />
-              <span>{t("git.loading")}</span>
-            </div>
-          ) : (
-            <>
-              {localBranches.length > 0 && (
-                <div className="branch-dropdown-group">
-                  <div className="branch-dropdown-label">
-                    {t("git.localBranches")}
-                  </div>
-                  {localBranches.map((branch) => (
-                    <button
-                      key={branch.name}
-                      type="button"
-                      className={`branch-dropdown-item${
-                        branch.isCurrent ? " active" : ""
-                      }`}
-                      onClick={() => handleCheckout(branch.name)}
-                    >
-                      <span className="branch-dropdown-item-name">
-                        {branch.name}
-                      </span>
-                      {branch.isCurrent && (
-                        <span className="branch-dropdown-item-check" />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {remoteBranches.length > 0 && (
-                <div className="branch-dropdown-group">
-                  <div className="branch-dropdown-label">
-                    {t("git.remoteBranches")}
-                  </div>
-                  {remoteBranches.map((branch) => (
-                    <button
-                      key={branch.name}
-                      type="button"
-                      className={`branch-dropdown-item${
-                        branch.isCurrent ? " active" : ""
-                      }`}
-                      onClick={() => handleCheckout(branch.name)}
-                    >
-                      <span className="branch-dropdown-item-name">
-                        {branch.name}
-                      </span>
-                      {branch.isCurrent && (
-                        <span className="branch-dropdown-item-check" />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {branches.length === 0 && (
-                <div className="branch-dropdown-empty">
-                  {t("git.noBranches")}
-                </div>
-              )}
-            </>
-          )}
         </div>
       )}
+
+      {/* 删除工作树确认对话框 */}
+      {removeWorktreeTarget && (
+        <ConfirmDialog
+          open={Boolean(removeWorktreeTarget)}
+          title={t("git.removeWorktreeTitle", { defaultValue: "删除工作树" })}
+          message={t("git.removeWorktreeConfirmMsg", {
+            values: {
+              path: removeWorktreeTarget.worktreePath,
+              branch: removeWorktreeTarget.branchName || "",
+            },
+            defaultValue: `确定要移除工作树 ${getFolderName(removeWorktreeTarget.worktreePath)} 吗？本地磁盘目录和未暂存修改将被清理。`,
+          })}
+          confirmLabel={t("common.delete", { defaultValue: "删除" })}
+          cancelLabel={t("common.cancel", { defaultValue: "取消" })}
+          isConfirming={removingWorktree}
+          variant="danger"
+          onConfirm={handleConfirmRemoveWorktree}
+          onCancel={() => {
+            if (!removingWorktree) {
+              setRemoveWorktreeTarget(null);
+            }
+          }}
+        />
+      )}
+
+      {/* 右键菜单 */}
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
           items={buildMenuItems()}
           onClose={() => setContextMenu(null)}
+        />
+      )}
+      {branchItemContextMenu && (
+        <ContextMenu
+          x={branchItemContextMenu.x}
+          y={branchItemContextMenu.y}
+          items={buildBranchItemMenuItems(branchItemContextMenu.branch)}
+          onClose={() => setBranchItemContextMenu(null)}
         />
       )}
     </div>

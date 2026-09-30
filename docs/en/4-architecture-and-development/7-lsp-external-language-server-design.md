@@ -1,6 +1,6 @@
 # 7-LSP External Language Server Integration Design (lsp MCP service)
 
-> Status: Current behavior and historical design archive (revised 2026-09-26)
+> Status: Current behavior and historical design archive (revised 2026-09-28)
 > Target version: v0.2.x
 > Chinese original: `docs/zh-CN/4-架构与开发/7-LSP外部语言服务器接入设计.md`
 > Dated phases, performance measurements and early structure examples below are historical. Where they conflict, §0, §8.10 and current code take precedence. This document does not claim that this change has passed builds, tests or runtime acceptance.
@@ -62,16 +62,14 @@ Evaluate language coverage, negotiated capabilities and health per tool, not by 
 
 The 11 matching labels in `toolNames.lsp-*` and `toolCall.lsp.op.*` are File Diagnostics, Type and Documentation Lookup, Symbol Navigation, Find References, File Symbol Outline, Rename Symbol, Function Call Hierarchy, Type Hierarchy, Workspace Symbol Search, Workspace Diagnostics and Go Dependency Vulnerability Scan. All three locales stay synchronized; IDs and historical keys remain intact. `goto` may specialize to Go to Definition / Go to Type Definition / Find Implementations by kind. See the [ID mapping](../3-reference/2-builtin-tools-reference.md).
 
-### 0.7 Strict diagnostics batch contract
+### 0.7 Array-first batch contract
 
-- Supply a nonempty string `filePath` for one file, or `filePaths` with **1..30** nonempty path strings for a batch, mutually exclusively. Put every batch file in the list; do not also send a nonempty single path.
-- Reject wrong types, non-string entries, empty arrays/entries and oversized lists without silent filtering or truncation to 30. A legacy empty `filePath: ""` placeholder means omitted and may accompany a valid list; it does not bypass type/count validation. Validate count before deduplication.
-- Deduplicate by physical file identity, preserving first occurrence in the original request. Keep one result per deduplicated file, including failures.
-- Single `filePath` keeps the legacy top-level shape. A list request, even with one item, returns `batch:true`, `fileCount`, `requestedCount`, `duplicateCount`, `status: complete|partial|failed`, `summary` and `files`. The counts represent deduplicated files, original request entries and physical duplicates removed, respectively.
-- `summary` contains `completedFiles`, `partialFiles`, `failedFiles`, `errorCount` and `warningCount`. Each file retains `filePath`, `status`, `diagnostics`, `warnings`, `truncated`, `error` and related fields. `error:null` is not an error. Empty diagnostics or zero counts do not prove complete success; the UI shows summaries and per-file warnings/truncation.
-- Target bounded concurrency is **3** file tasks (being integrated in `diagnostics.rs`). Completion order must not change result order; same-server locks may still serialize work, so batch latency is not promised to equal a single file.
+- Diagnostics require `filePaths` with **1..30** entries; other read-only batch tools use arrays too: symbols `filePaths` 1..10, hover/goto `items` 1..10, references `items` 1..5. Even one target must be sent as a one-element array; single-target compatibility parameters are removed.
+- Reject missing arrays, wrong types, non-string paths, empty arrays/entries and oversized lists without silent filtering or truncation. Deduplicate path arrays by physical identity while preserving first occurrence; every requested target has a result. A target failure, ambiguity, warning, incomplete or truncated result must be surfaced per item and affect overall status.
+- All batches return `batch:true`, request/dedup counts, aggregate `status`, `summary`, and per-file/per-target results. Status is complete/partial/failed; ambiguity is never complete. Read operations use bounded concurrency 3 and preserve input order.
+- `lsp-rename` remains a single-symbol preview-then-capability operation; multi-file edits are not transactional and multiple renames must not be combined into one batch.
 
-These are synchronized contracts. Scheduling and related interfaces remain under integration; this is not a claim that builds, fixtures or live acceptance passed.
+This is the synchronized contract; do not infer build, fixture or live-runtime acceptance from this document.
 
 ### 0.8 Content-bound rename preview capabilities
 
@@ -349,10 +347,10 @@ Key points:
 ### 8.1 lsp-diagnostics (Phase 1, core)
 
 ```
-lsp-diagnostics filePath=<absolute path>
+lsp-diagnostics filePaths=[<path1>, <path2>]   # 1..30 file paths array (pass [<path>] for single file)
 ```
 
-**Batch contract (revised 2026-09-26):** see §0.7 for the legacy single-file shape, strict mutually exclusive 1..30 input, physical deduplication and stable ordering, request/duplicate counts, per-file status and summary, and target concurrency 3. Old abbreviated outputs do not enumerate all fields.
+**Batch contract (2026-09-27):** the legacy top-level single-file response has been removed. Responses always use the `batch:true` envelope in §0.7; even one file must be passed as `filePaths:[path]`. Diagnostics accepts only a 1..30 path array, deduplicates by physical identity and preserves order. Per-target status is retained, and aggregate status must not hide failure, incompleteness or ambiguity.
 
 Execution sequence (**revised per 2026-08-14 live testing**):
 
@@ -406,7 +404,7 @@ Current diagnostics neither read nor write `lsp_diagnostic_cache`, nor delete hi
 ### 8.2 lsp-hover (Phase 1)
 
 ```
-lsp-hover filePath=<absolute path> line=<1-based> column=<1-based>
+lsp-hover items=[{"filePath":"/absolute/path","line":12,"column":4}]
 ```
 
 Steps 0-3 same as above (file stays open via `opened_files` ref-counting for consecutive queries; closed on idle reclamation).
@@ -501,7 +499,7 @@ Output (hover content is itself Markdown; pass through + wrap):
 3. **Language targeting**: filePath is optional — when provided it matches the language by extension and ensures the file is open; without it, the call only succeeds when **exactly one** server is enabled (multi-server setups get an error asking for filePath).
 4. **Capability filtering (§8.7)**: code-action is marked per Appendix F ✅ languages (typescript/python/go/rust/c/java/ruby); execute-command is currently marked for rust/go (verified live on 2026-08-15), other languages pending verification. Command execution has side effects — dryRun defaults to true; false requires an explicit argument.
 
-### 8.10 Request-local dynamic prompts (2026-09-26)
+### 8.10 Request-local dynamic prompts and three-tier argument contracts (2026-09-28)
 
 The historical “active LSP domain implies a fixed recommendation list” is replaced by final-request-tool rendering. All five providers collect once and pass the same list to payload and context construction; `ToolSnapshot` neither queries nor caches a separate visibility decision.
 
@@ -511,6 +509,29 @@ The historical “active LSP domain implies a fixed recommendation list” is re
 | Plan / Goal / WorkFlow analysis list | LSP, grep, read, codebase and CodeLens in the final snapshot | Disabled tools have no line; no fixed baseline                                                      |
 | Grep description                     | Pure routing renderer after final filtering in `collect.rs`  | Explicit and wildcard sub-agents both render after final set formation                              |
 | Grep result hint                     | Current exposure/scope intersected with caller allowed-tools | A bare identifier is only a heuristic; recommend available alternatives rather than force rerouting |
+
+#### 8.10.1 Core LSP tool matrix and three-tier argument contracts (11 tools)
+
+In the Rust native backend (`prompt_context.rs`), dynamic prompt injection (`## Language Servers`) comprehensively and accurately covers all 11 registered core LSP tools for currently exposed servers, strictly categorized into three argument archetype contracts based on their JSON schemas:
+
+| Category Archetype                                      | Included Tools                                                                                                                            | Input Schema Structure                                  | Core Input Properties                                                                                                            | Contract Logic & Best Scenario                                                                                                                                                                                                                                                                                          |
+| :------------------------------------------------------ | :---------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1. Batched Target Array**<br>`items: [...]` (3 tools) | `lsp-hover`<br>`lsp-goto`<br>`lsp-references`                                                                                             | `items: [...]` array (1..10, 1..5 for references)       | `symbol`, `filePath`, `line`, `column`, `kind`, `includeDeclaration`                                                             | Must be wrapped in an `items` array (supply a 1-element array `[target]` for a single target); supports direct `symbol` resolution or `filePath` + physical coordinate resolution; guessing signatures via grep is prohibited; inspecting references before altering shared symbols is a mandatory MUST.                |
+| **2. Path Array**<br>`filePaths: [...]` (2 tools)       | `lsp-symbols`<br>`lsp-diagnostics`                                                                                                        | `filePaths: [...]` array (1..10, 1..30 for diagnostics) | `filePaths` (array of absolute paths)                                                                                            | Must be wrapped in a `filePaths` array (supply a 1-element array `[path]` for a single file); used to extract structural symbol outlines or run mandatory compilation and type diagnostics after modifying code (MUST).                                                                                                 |
+| **3. Direct Top-level Flat**<br>`flat args` (6 tools)   | `lsp-workspace-symbols`<br>`lsp-call-hierarchy`<br>`lsp-type-hierarchy`<br>`lsp-rename`<br>`lsp-workspace-diagnostics`<br>`lsp-vulncheck` | Top-level flat object                                   | `query`, `workspaceRoot`, `symbol`, `filePath`, `line`, `column`, `newName`, `dryRun`, `previewId`, `maxFiles`, `dir`, `pattern` | Arguments are supplied directly at the top level, **never** wrapped inside `items` or `filePaths`; covers coordinate-free workspace symbol discovery (First-step locator), call and type inheritance topology, two-stage safe rename, workspace-wide diagnostics aggregation, and Go dependency vulnerability scanning. |
+
+#### 8.10.2 Dynamic prompt injection and strict snapshot isolation
+
+Dynamic system prompt generation strictly adheres to **Strict Snapshot Isolation**:
+
+1. **Strict visibility guards**: All backtick-wrapped tool names (such as `` `lsp-goto` ``, `` `grep-search` ``) must reside inside `self.has(name)` guards or be dynamically joined via `.filter(|name| self.has(name))`; static hardcoding of tool names is strictly forbidden to prevent leaking unmounted or disabled tools.
+2. **Scenario-driven routing**: Each tool route is guarded individually by `self.has(...)`, providing argument structure and workflow constraints; `lsp-workspace-symbols` and `lsp-goto` are established as the primary code navigation entry points.
+3. **Conditional workflow requirements (MUSTs)**:
+   - Mandatory `lsp-references` impact check before modifying shared symbols;
+   - Mandatory `lsp-diagnostics` check after changing source code;
+   - Mandatory two-phase `lsp-rename` (obtain `previewId` with `dryRun=true` first before applying);
+   - Mandatory code navigation prioritization using `lsp-workspace-symbols` or `lsp-goto`.
+4. **Grep counter-measure**: When `grep-search` is mounted, a strict restriction warning is appended to both its tool description and the system prompt section, declaring grep strictly for literal non-code text (logs, configuration, natural language) and forbidding it from replacing semantic code tools.
 
 Apply the conditional MUST for actually visible tools supporting the target language/operation (§0.6). For unsupported or failed operations, use visible fallbacks and explain their limits. Text matches are not semantic references; language-server diagnostics do not replace project builds/tests. See §0 for workspace scope, partial-result safety and pending acceptance checks.
 
@@ -559,6 +580,7 @@ Apply the conditional MUST for actually visible tools supporting the target lang
 | **Phase 7**   | **LSP tool-set cleanup & agent prompt hardening (2026-09-25, data-driven)**: ① Fully removed `lsp-code-action` & `lsp-execute-command` across stack (session analytics from 2026-08-14 to 09-25 recorded 0 hits in 3,761 `lsp-*` calls; editor cursor-based interaction model structurally mismatched with agent scenarios; tool count 13→11); ② §8.9 deprecated; re-introduction prerequisite: empirical invocation demand evidence or interaction model changes with a dedicated proposal review; ③ Routing rules expanded (rename / type-hierarchy / call-hierarchy / vulncheck / workspace-diagnostics conditional rendering) + rename/hover tool description trigger hardening. | ✅ done (2026-09-25): full-stack code/UI/i18n/docs/styles cleaned up, compiler checks 0 warnings, unit tests & build pass                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | **Phase 8**   | **Symbol-name direct addressing engine debut (2026-09-25)**: `lsp-hover`, `lsp-references`, `lsp-rename` gained the `symbol` parameter with AST-first speculative matching + ambiguity safety interception (Appendix F).                                                                                                                                                                                                                                                                                                                                                                                                                                                             | ✅ done (2026-09-25): unit tests green, UI ambiguity card & line preview rendering added.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | **Phase 9**   | **Full symbol direct addressing & workspace-global routing (2026-09-25)**: ① Expanded coverage — `symbol` extended to `lsp-goto`, `lsp-call-hierarchy`, and `lsp-type-hierarchy`; ② Optional `filePath` across all symbol-addressing operations — auto-resolves across workspace language stacks; ③ Grep smart interception & fast routing conditionally injected via `is_lsp_tooling_active`; ④ Frontend LspToolCall.tsx adapted for path-free symbol display.                                                                                                                                                                                                                      | ✅ done (2026-09-25): Rust/TS/docs synced, 6/6 unit tests green, tsc/vite build clean.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| **Phase 10**  | **11-tool dynamic prompt injection & 3-tier argument contract completion (2026-09-28)**: ① Full 11-tool coverage in `prompt_context.rs` dynamic prompts, completing all 6 direct flat argument tools into a complete 3 items / 2 filePaths / 6 direct flat archetype matrix; ② Strict unit test snapshot isolation red lines (full snapshot coverage + independent single-tool filtering + hover-only isolation tests green); ③ Base system prompt (`system_prompt.rs`) Coding Discipline harmonized for semantic priority; ④ Full-stack English and Chinese architecture/reference documentation synced.                                                                            | ✅ done (2026-09-28): Rust compiler checks 0 errors 0 warnings, prompt_context unit tests 9/9 green, docs synchronized across all languages.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
 **Red lines**:
 
@@ -663,7 +685,7 @@ sequenceDiagram
     participant S as ServerSession
     participant P as Language server process
 
-    A->>C: lsp-diagnostics(filePath)
+    A->>C: lsp-diagnostics(filePaths)
     C->>M: reject SSH paths + resolve project root (project_id)
     C->>M: match language by fileExtensions
     alt language unconfigured

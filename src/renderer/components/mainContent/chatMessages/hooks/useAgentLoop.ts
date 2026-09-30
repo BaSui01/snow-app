@@ -892,16 +892,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               currentSession.worktreeId = effectiveWorktreeId;
             }
             ctx.setPendingWorktreeId(null);
-            // pending 会话的渠道/运行时/模式选择在拿到真实会话 id 后统一落库，
-            // 使其在重启后仍能恢复（迁移前无 conversation_id 无法写入）。
-            await persistConversationSelection(
-              response.conversationId,
-              capturedOptions,
-              ctx.sessionsRefData.current.get(response.conversationId),
-            );
-            effectiveKey = response.conversationId;
-            finalSessionKey = response.conversationId;
-
             if (
               ctx.activeSessionKeyRef.current === migratingPendingKey &&
               !ctx.newChatRequestedRef.current
@@ -913,6 +903,16 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                 preserveViewKey: true,
               });
             }
+
+            // pending 会话的渠道/运行时/模式选择在拿到真实会话 id 后统一落库，
+            // 使其在重启后仍能恢复（迁移前无 conversation_id 无法写入）。
+            await persistConversationSelection(
+              response.conversationId,
+              capturedOptions,
+              ctx.sessionsRefData.current.get(response.conversationId),
+            );
+            effectiveKey = response.conversationId;
+            finalSessionKey = response.conversationId;
 
             // First message: replace the pending placeholder with the real
             // conversation record. This runs only once on session migration;

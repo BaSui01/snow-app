@@ -144,7 +144,7 @@ flowchart TD
     K --> L[Discover tools with up to four servers concurrently]
     L --> M[Auto server/discover negotiation]
     M -->|Success| N[tools/list]
-    M -->|Legacy or ten-second silence| O[Reconnect with legacy initialize]
+    M -->|Legacy or three-second silence| O[Reconnect with legacy initialize]
     O --> N
     N --> P[Normalize and deduplicate public names]
     P --> Q[Filter project-disabled tools]
@@ -161,9 +161,10 @@ Snow App uses the same lifecycle strategy for `stdio` and HTTP:
 2. The SDK automatically downgrades on standard `Method Not Found` / `Unsupported Protocol Version` responses;
 3. For other negotiation JSON-RPC errors or a connection closed during discovery, Snow App reconnects with legacy `initialize`;
 4. If the `server/discover` probe itself fails at the transport level (for example a session-only `2024-11-05` server answers `discover` with HTTP 400/404/405 and a body that is not a valid JSON-RPC error), it is also treated as "no stateless discovery support" and falls back to legacy `initialize`;
-5. If `server/discover` is **silent for 10 seconds**, it is also treated as a legacy server and reconnected;
-6. After connection, Snow App calls `tools/list`;
-7. If a tool call reports `Transport closed`, Snow App reconnects with the legacy handshake and retries once. If the retry fails, it preserves the original transport error for diagnosis.
+5. If `server/discover` is **silent for 3 seconds**, it is also treated as a legacy server and reconnected;
+6. After a successful fallback the server is remembered as legacy-only (keyed by URL for HTTP and by launch command for `stdio`), so later connections go straight to `initialize` without probing again — this keeps legacy servers, and servers that answer `server/discover` with a non-standard error (e.g. Exa, issue #172), from paying the probe wait on every connection. The memo lives in memory only, so a restart negotiates once more;
+7. After connection, Snow App calls `tools/list`;
+8. If a tool call reports `Transport closed`, Snow App reconnects with the legacy handshake and retries once. If the retry fails, it preserves the original transport error for diagnosis.
 
 Up to four servers are discovered concurrently. One server's failure is logged and skipped without preventing tools from other servers from registering.
 
@@ -225,7 +226,7 @@ Project MCP uses a database full-replace flow and should not rely on the file ba
 | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | stdio reports no command                             | `type` is `stdio` but `command` is empty; check executable resolution and JSON path escaping.                                                                                                                                                         |
 | HTTP reports no URL                                  | `type` is `http` but `url` is empty; verify that the endpoint is MCP Streamable HTTP.                                                                                                                                                                 |
-| `server/discover` times out                          | The client retries legacy after 10 seconds; if that also fails, inspect server logs, protocol support, and networking.                                                                                                                                |
+| `server/discover` times out                          | The client retries legacy after 3 seconds; if that also fails, inspect server logs, protocol support, and networking.                                                                                                                                 |
 | HTTP server answers `discover` with HTTP 400/404/405 | Common for session-only legacy servers (e.g. Chat2DB's embedded Spring MCP): treated as "no stateless discovery support" and automatically falls back to legacy `initialize`; if the fallback also fails, inspect server logs and auth configuration. |
 | Discovery exceeds `timeoutMs`                        | Connection and `tools/list` share the budget; increase the positive value carefully or fix slow server startup.                                                                                                                                       |
 | One server fails while others work                   | Discovery is isolated per server; diagnose only the failing server instead of restarting everything.                                                                                                                                                  |

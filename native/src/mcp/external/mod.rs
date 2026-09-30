@@ -32,7 +32,9 @@ const TOOL_NAME_MAX_LEN: usize = 24;
 ///   瞬时故障（网络抖动、进程启动失败）缓存成固定错误）。
 /// - 配置写入路径（MCP 服务器新增/修改/删除）只失效**被改动的那台
 ///   服务器**（见 `invalidate_server_discovery_cache`），不牵连其他
-///   服务器的缓存；TTL 作为兜底保证最长 60 秒内自然刷新。服务器与
+///   服务器的缓存；TTL 作为兜底保证最长 5 分钟内自然刷新（issue #172：
+///   外部服务器工具列表极少变化，延长 TTL 减少重复握手；需要立刻看到
+///   远端变更时用 MCP 设置页的「刷新工具」force 请求）。服务器与
 ///   工具的启停是 scope 黑名单，读取时才应用（见
 ///   `to_project_tool_statuses` / `tool_is_enabled`），与缓存内容无关，
 ///   因此启停不失效缓存，避免无关服务器被重新连接。
@@ -41,7 +43,8 @@ const TOOL_NAME_MAX_LEN: usize = 24;
 ///   后复用带旧前缀的工具列表。
 /// - `force` 请求（MCP 设置页手动「刷新工具」）绕过缓存直接实时发现，
 ///   结果不写回缓存（保留原条目，由 TTL 自然刷新）。
-const DISCOVERY_CACHE_TTL: Duration = Duration::from_secs(60);
+/// 外部服务器工具列表极少变化，TTL 取 5 分钟减少重复握手（issue #172）。
+const DISCOVERY_CACHE_TTL: Duration = Duration::from_secs(300);
 /// 缓存条目数上限，超过后整体清空（与项目内其他 TTL 缓存一致）。
 const DISCOVERY_CACHE_MAX_ENTRIES: usize = 256;
 
@@ -644,6 +647,32 @@ macro_rules! impl_client_handle {
 
 impl_client_handle!(stdio::StdioMcpClient);
 impl_client_handle!(http::HttpMcpClient);
+
+/// 服务器协商结果记忆：key -> 该服务器不支持 server/discover、只支持
+/// legacy initialize 握手（HTTP 的 key 为 URL，stdio 为命令指纹）。
+/// 部分旧服务器对探测返回 id 为 null 的 JSON-RPC 错误，rmcp 无法把该
+/// 回复路由给等待中的请求，探测只能等到超时（如 Exa，issue #172）；另
+/// 一些服务器则静默不响应。探测失败回退 legacy 成功后记录，后续连接
+/// 直接走 legacy 握手，省下每次连接的探测等待。仅进程内记忆，应用
+/// 重启后重新探测一次。
+static LEGACY_HANDSHAKE_SERVERS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+
+fn legacy_handshake_servers() -> &'static Mutex<HashSet<String>> {
+    LEGACY_HANDSHAKE_SERVERS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+pub(super) fn requires_legacy_handshake(key: &str) -> bool {
+    legacy_handshake_servers()
+        .lock()
+        .map(|servers| servers.contains(key))
+        .unwrap_or(false)
+}
+
+pub(super) fn remember_legacy_handshake(key: &str) {
+    if let Ok(mut servers) = legacy_handshake_servers().lock() {
+        servers.insert(key.to_string());
+    }
+}
 
 /// Returns true when an `Auto`-mode negotiation failed in a way that a retry
 /// with the legacy `initialize` handshake is worthwhile:

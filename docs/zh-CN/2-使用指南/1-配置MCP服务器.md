@@ -144,7 +144,7 @@ flowchart TD
     K --> L[并发发现工具 最多四个服务器]
     L --> M[Auto 协商 server/discover]
     M -->|成功| N[tools/list]
-    M -->|旧协议或十秒静默| O[legacy initialize 重连]
+    M -->|旧协议或三秒静默| O[legacy initialize 重连]
     O --> N
     N --> P[规范化并去重公开工具名]
     P --> Q[过滤项目级禁用工具]
@@ -161,9 +161,10 @@ Snow App 对 `stdio` 和 HTTP 使用相同的生命周期策略：
 2. SDK 对规范的 `Method Not Found` / `Unsupported Protocol Version` 进行自动降级；
 3. 对其他协商 JSON-RPC 错误或发现阶段连接关闭，Snow App 重新建立连接并使用 legacy `initialize`；
 4. `server/discover` 探测请求本身在传输层失败（如仅支持 `2024-11-05` 会话式的服务器对 `discover` 回 HTTP 400/404/405，且响应体不是合法 JSON-RPC 错误）时，同样视为不支持无状态发现，回退 legacy `initialize`；
-5. 若 `server/discover` **10 秒无响应**，也按旧服务器处理并重连；
-6. 连接成功后调用 `tools/list`；
-7. 工具调用若报 `Transport closed`，用 legacy 握手重连并重试一次；若重试仍失败，保留原始传输错误以便诊断。
+5. 若 `server/discover` **3 秒无响应**，也按旧服务器处理并重连；
+6. 回退成功后记住该服务器只支持 legacy 握手（HTTP 按 URL、`stdio` 按启动命令区分），此后的连接直接走 `initialize`，不再重复探测——旧服务器与对 `server/discover` 返回非标准错误的服务器（如 Exa，issue #172）因此不再每次连接都付出探测等待。记忆只在进程内保留，应用重启后重新协商一次；
+7. 连接成功后调用 `tools/list`；
+8. 工具调用若报 `Transport closed`，用 legacy 握手重连并重试一次；若重试仍失败，保留原始传输错误以便诊断。
 
 发现多个服务器时最多并行 4 个。单个服务器失败会记录错误并跳过，不阻止其他服务器工具注册。
 
@@ -225,7 +226,7 @@ Snow App 的隐私遮罩只有在隐私设置已启用，并且该完整工具�
 | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | stdio 报没有 command                         | `type` 为 `stdio`，但 `command` 为空；检查 JSON 路径转义和可执行文件。                                                                           |
 | HTTP 报没有 URL                              | `type` 为 `http`，但 `url` 为空；确认端点是 MCP Streamable HTTP。                                                                                |
-| `server/discover` 超时                       | 客户端会在 10 秒后尝试 legacy；仍失败则检查服务器日志、协议支持和网络。                                                                          |
+| `server/discover` 超时                       | 客户端会在 3 秒后尝试 legacy；仍失败则检查服务器日志、协议支持和网络。                                                                           |
 | HTTP 服务器对 `discover` 回 HTTP 400/404/405 | 仅会话式旧服务器常见（如 Chat2DB 内置 Spring MCP）：视为不支持无状态发现，自动回退 legacy `initialize`；回退后仍失败则检查服务器日志与鉴权配置。 |
 | 整体发现超过 `timeoutMs`                     | 连接与 `tools/list` 共用预算；适度增大正整数，或修复慢启动服务器。                                                                               |
 | 某服务器失败但其他工具正常                   | 发现按服务器隔离；查看失败服务器错误，不要重启所有服务。                                                                                         |

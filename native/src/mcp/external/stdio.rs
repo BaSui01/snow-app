@@ -13,6 +13,16 @@ use super::super::protocol::RemoteMcpTool;
 
 pub(super) type StdioRunningClient = RunningService<rmcp::RoleClient, ClientInfo>;
 
+fn legacy_handshake_key(config: &McpServerConfigRecord) -> String {
+    let fingerprint = format!(
+        "{}\n{}\n{}",
+        config.command.trim(),
+        config.args_json,
+        config.env_json
+    );
+    format!("stdio:{}", blake3::hash(fingerprint.as_bytes()).to_hex())
+}
+
 pub(super) struct StdioMcpClient {
     client: StdioRunningClient,
     /// 进程树回收句柄（Job Object / 进程组），避免 gopls 等后代残留（issue #88）
@@ -26,6 +36,15 @@ impl StdioMcpClient {
                 "External MCP server {} has no command",
                 config.name
             )));
+        }
+
+        let memory_key = legacy_handshake_key(config);
+        if super::requires_legacy_handshake(&memory_key) {
+            eprintln!(
+                "[MCP] stdio server {} is known to require the legacy initialize handshake, skipping server/discover probe",
+                config.name
+            );
+            return Self::connect_legacy(config).await;
         }
 
         // 优先尝试 2026-07-28 无状态协议。SDK 的 Auto 模式只对规范协商错误
@@ -43,8 +62,10 @@ impl StdioMcpClient {
         // 旧 SDK 服务器（如 fastmcp 构建的 firecrawl-mcp）对带 `_meta` 的
         // `server/discover` 探测会静默不响应——既不返回 JSON-RPC 错误也不
         // 关闭连接，导致 Auto 协商无限挂起。加超时：超时视为服务器不支持
-        // 2026-07-28 无状态协议，回退 legacy initialize 握手重连。
-        const DISCOVER_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+        // 2026-07-28 无状态协议，回退 legacy initialize 握手重连。取 3 秒
+        // （issue #172）：正常探测往返远小于该值，超时即回退；响应慢的
+        // 服务器可能被误判，但 legacy 握手仍可正常使用，且结果被记忆。
+        const DISCOVER_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
         let (transport, guard) = spawn_transport(config).await?;
         let auto_result = tokio::time::timeout(
             DISCOVER_PROBE_TIMEOUT,
@@ -70,7 +91,10 @@ impl StdioMcpClient {
                 );
                 drop(guard);
                 match Self::connect_legacy(config).await {
-                    Ok(client) => Ok(client),
+                    Ok(client) => {
+                        super::remember_legacy_handshake(&memory_key);
+                        Ok(client)
+                    }
                     // 重试失败时保留原始 Auto 错误（含版本协商诊断信息）
                     Err(_) => Err(Error::from_reason(format!(
                         "Failed to initialize external MCP stdio server {}: {error}",
@@ -86,7 +110,10 @@ impl StdioMcpClient {
                 // 探测超时：guard 回收已启动的进程树后，connect_legacy 重新 spawn
                 drop(guard);
                 match Self::connect_legacy(config).await {
-                    Ok(client) => Ok(client),
+                    Ok(client) => {
+                        super::remember_legacy_handshake(&memory_key);
+                        Ok(client)
+                    }
                     Err(_) => Err(Error::from_reason(format!(
                         "Failed to initialize external MCP stdio server {}: Auto negotiate timed out (no response to server/discover), legacy initialize handshake also failed",
                         config.name

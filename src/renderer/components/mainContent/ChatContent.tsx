@@ -116,6 +116,7 @@ const ChatContentBody = ({
     conversationListVersion,
     subAgentSessionEvents,
     sessions,
+    newChatRequested,
     streamingConversationIds,
     attentionRequiredConversationIds,
     handleSelectConversation,
@@ -148,6 +149,7 @@ const ChatContentBody = ({
   useProjectSwitchAutoSelect({
     directoryId: activeDirectory?.directoryId ?? "",
     activeConversationId,
+    newChatRequested,
     sessions,
     streamingConversationIds,
     attentionRequiredConversationIds,

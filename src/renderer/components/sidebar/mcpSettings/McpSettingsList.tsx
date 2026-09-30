@@ -137,15 +137,9 @@ export function McpSettingsList({
                 tool.name.toLowerCase().includes(normalizedFilter) ||
                 tool.description.toLowerCase().includes(normalizedFilter),
             );
-            const fetchToolsLabel = globallyUnavailable
-              ? t("settings.mcpGloballyDisabled", {
-                  defaultValue: "Disabled in global scope",
-                })
-              : server.enabled
-                ? t("settings.mcpFetchTools", { defaultValue: "Fetch tools" })
-                : t("settings.mcpEnableBeforeFetchTools", {
-                    defaultValue: "Enable this server before fetching tools",
-                  });
+            const fetchToolsLabel = t("settings.mcpFetchTools", {
+              defaultValue: "Fetch tools",
+            });
 
             return (
               <div
@@ -187,12 +181,7 @@ export function McpSettingsList({
                     type="button"
                     aria-label={fetchToolsLabel}
                     title={fetchToolsLabel}
-                    disabled={
-                      isBusy ||
-                      isFetchingTools ||
-                      !server.enabled ||
-                      globallyUnavailable
-                    }
+                    disabled={isBusy || isFetchingTools}
                   >
                     {isFetchingTools ? (
                       <Loader2 size={13} className="spin" />

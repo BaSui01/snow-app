@@ -227,8 +227,6 @@ export const ProjectMcpPanel = ({
       if (
         !projectId ||
         server.source === "system" ||
-        !server.globalEnabled ||
-        !server.enabled ||
         server.tools.length > 0 ||
         requestedToolServerIdsRef.current.has(server.id)
       ) {
@@ -401,7 +399,7 @@ export const ProjectMcpPanel = ({
             ? t(descriptionKey)
             : undefined;
           const serverDisabled = !server.globalEnabled;
-          const toolsUnavailable = serverDisabled || !server.enabled;
+          const toolsReadOnly = !serverDisabled && !server.enabled;
           // 「特殊模式」标注：这些服务器/工具即使开关处于启用状态，也只有在
           // 对应模式生效时才会真正加入请求体。模式未生效时给出醒目提示，
           // 避免「开关是开的、工具却不存在」的误解。
@@ -457,17 +455,15 @@ export const ProjectMcpPanel = ({
                       </span>
                     ) : null}
                   </span>
-                  {toolsUnavailable ? null : (
-                    <span className="project-mcp-tool-count">
-                      {toolsRetrying
-                        ? t("projectMcp.loadingToolsShort")
-                        : server.toolsPending
-                          ? t("projectMcp.toolsPending")
-                          : t("projectMcp.toolCount", {
-                              values: { count: tools.length },
-                            })}
-                    </span>
-                  )}
+                  <span className="project-mcp-tool-count">
+                    {toolsRetrying
+                      ? t("projectMcp.loadingToolsShort")
+                      : server.toolsPending
+                        ? t("projectMcp.toolsPending")
+                        : t("projectMcp.toolCount", {
+                            values: { count: tools.length },
+                          })}
+                  </span>
                 </button>
                 <label className="toggle-switch">
                   <input
@@ -497,7 +493,7 @@ export const ProjectMcpPanel = ({
                 <div className="project-mcp-server-error">
                   <AlertCircle size={14} />
                   <span>{formatServerError(discoveryError, t)}</span>
-                  {canRetry && !serverDisabled ? (
+                  {canRetry ? (
                     <button
                       className="project-mcp-tool-retry"
                       disabled={toolsRetrying}
@@ -512,16 +508,13 @@ export const ProjectMcpPanel = ({
               ) : null}
               {expanded ? (
                 <div className="project-mcp-tools">
-                  {toolsUnavailable ? (
-                    <div className="project-mcp-tools-state">
-                      <AlertCircle size={15} />
-                      <span>
-                        {serverDisabled
-                          ? t("projectMcp.globalDisabled")
-                          : t("projectMcp.serverDisabledNote")}
-                      </span>
+                  {toolsReadOnly ? (
+                    <div className="project-mcp-mode-note">
+                      <PowerOff size={13} />
+                      <span>{t("projectMcp.serverDisabledNote")}</span>
                     </div>
-                  ) : toolsLoading ? (
+                  ) : null}
+                  {toolsLoading ? (
                     <div className="project-mcp-tools-state">
                       <Loader2 className="spin" size={15} />
                       <span>{t("projectMcp.loadingTools")}</span>

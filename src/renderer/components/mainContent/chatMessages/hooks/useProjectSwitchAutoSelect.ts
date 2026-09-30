@@ -12,6 +12,7 @@ import { isPendingSessionKey } from "../utils/conversationTypes";
 type UseProjectSwitchAutoSelectParams = {
   directoryId: string;
   activeConversationId: string | undefined;
+  newChatRequested: boolean;
   sessions: Record<string, ConversationSessionState>;
   streamingConversationIds: Set<string>;
   attentionRequiredConversationIds: Set<string>;
@@ -35,6 +36,7 @@ const toTokenUsage = (record: ChatConversationRecord): TokenUsage => ({
 export const useProjectSwitchAutoSelect = ({
   directoryId,
   activeConversationId,
+  newChatRequested,
   sessions,
   streamingConversationIds,
   attentionRequiredConversationIds,
@@ -44,12 +46,14 @@ export const useProjectSwitchAutoSelect = ({
   const requestIdRef = useRef(0);
   const sessionsRef = useRef(sessions);
   const activeConversationIdRef = useRef(activeConversationId);
+  const newChatRequestedRef = useRef(newChatRequested);
   const streamingIdsRef = useRef(streamingConversationIds);
   const attentionIdsRef = useRef(attentionRequiredConversationIds);
   const handleSelectConversationRef = useRef(handleSelectConversation);
   const handleNewChatRef = useRef(handleNewChat);
   sessionsRef.current = sessions;
   activeConversationIdRef.current = activeConversationId;
+  newChatRequestedRef.current = newChatRequested;
   streamingIdsRef.current = streamingConversationIds;
   attentionIdsRef.current = attentionRequiredConversationIds;
   handleSelectConversationRef.current = handleSelectConversation;
@@ -82,6 +86,9 @@ export const useProjectSwitchAutoSelect = ({
     };
 
     const shouldKeepDisplayedConversation = async (): Promise<boolean> => {
+      if (newChatRequestedRef.current) {
+        return true;
+      }
       const displayedId = activeConversationIdRef.current;
       if (!displayedId) {
         return false;
@@ -162,6 +169,9 @@ export const useProjectSwitchAutoSelect = ({
         return;
       }
       if (!isCurrentRequest()) {
+        return;
+      }
+      if (newChatRequestedRef.current) {
         return;
       }
 

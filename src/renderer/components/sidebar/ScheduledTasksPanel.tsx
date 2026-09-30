@@ -25,6 +25,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useEscapeClose } from "../../hooks/useEscapeClose";
 import { useI18n } from "../../i18n";
 import { useScheduledTasks } from "../../hooks/useScheduledTasks";
+import { useSplitResize } from "../../hooks/useSplitResize";
 import { validateSchedule } from "../../hooks/scheduledTasksStore";
 import type {
   ApiConfigRecord,
@@ -272,6 +273,15 @@ export function ScheduledTasksPanel({
   onClose,
 }: ScheduledTasksPanelProps): React.JSX.Element {
   const { locale, t } = useI18n();
+  const {
+    containerRef: layoutRef,
+    width: sidebarWidth,
+    onResizeStart: handleResizeStart,
+  } = useSplitResize({
+    variableName: "--scheduled-tasks-split-width",
+    storageKey: "snow:scheduled-tasks:sidebar-width",
+    defaultWidth: 320,
+  });
   const {
     tasks,
     createTask,
@@ -2481,7 +2491,15 @@ export function ScheduledTasksPanel({
 
   return (
     <div className="feature-page">
-      <div className="scheduled-tasks-panel-layout">
+      <div
+        className="scheduled-tasks-panel-layout"
+        ref={layoutRef}
+        style={
+          {
+            "--scheduled-tasks-split-width": `${sidebarWidth}px`,
+          } as React.CSSProperties
+        }
+      >
         <aside className="scheduled-tasks-sidebar">
           <div className="scheduled-tasks-sidebar-header">
             <div
@@ -2602,6 +2620,16 @@ export function ScheduledTasksPanel({
             </div>
           </div>
         </aside>
+
+        <div
+          className="panel-resizer layout-resizer split-resizer scheduled-tasks-split-resizer"
+          role="separator"
+          aria-label={t("scheduledTask.resizeSidebar", {
+            defaultValue: "Resize list panel",
+          })}
+          aria-orientation="vertical"
+          onPointerDown={handleResizeStart}
+        />
 
         <main className="scheduled-tasks-content">
           {panelMode === "create" ? renderCreateForm() : renderDetails()}

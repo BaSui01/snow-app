@@ -440,9 +440,7 @@ export function McpSettingsEditor({
                 className="api-settings-form-btn secondary compact"
                 onClick={onFetchTools}
                 type="button"
-                disabled={
-                  isBusy || isFetchingTools || !draft.serverId || !draft.enabled
-                }
+                disabled={isBusy || isFetchingTools || !draft.serverId}
                 title={
                   draft.serverId
                     ? t("settings.mcpFetchTools", {

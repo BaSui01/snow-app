@@ -858,6 +858,8 @@ export type UseChatConversationResult = {
   sessionViewKey: string;
   /** Renderer-only generation incremented for every new-chat lifecycle. */
   newChatGeneration: number;
+  /** 用户显式点击「新建会话」后为 true；发送首条消息或选中其他会话时复位。 */
+  newChatRequested: boolean;
   conversationDirectoryId: string | undefined;
   tokenUsage: TokenUsage | null;
   /** Real-time token probe for the current agent-loop iteration.

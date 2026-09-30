@@ -769,6 +769,7 @@ export const useChatConversation = (
     activeConversationId,
     sessionViewKey,
     newChatGeneration,
+    newChatRequested,
     conversationDirectoryId: activeSession?.directoryId,
     tokenUsage: activeSession?.tokenUsage ?? null,
     runTokenUsage: activeSession?.runTokenUsage ?? null,

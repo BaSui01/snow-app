@@ -3816,7 +3816,7 @@ export const en = {
   "projectMcp.globalDisabled":
     "Disabled globally. Enable it in Settings before using it in this project.",
   "projectMcp.serverDisabledNote":
-    "This service is disabled. Enable it to browse and configure its tools.",
+    "This service is disabled, so its tools are excluded from requests. Enable it to toggle individual tools.",
   "projectMcp.serverErrorImagegenNotConfigured":
     "No image generation channel configured. Configure at least one channel in Settings -> Image generation.",
   "projectMcp.modeNoteWorkflow":

@@ -14,6 +14,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useEscapeClose } from "../../hooks/useEscapeClose";
+import { useSplitResize } from "../../hooks/useSplitResize";
 import { useI18n } from "../../i18n";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { CustomSelect } from "../common/CustomSelect";
@@ -197,6 +198,15 @@ export function MemoPanel({
 }: MemoPanelProps): React.JSX.Element {
   const { t } = useI18n();
   const { buildFromContent } = useChatConversationContext();
+  const {
+    containerRef: layoutRef,
+    width: sidebarWidth,
+    onResizeStart: handleResizeStart,
+  } = useSplitResize({
+    variableName: "--memo-split-width",
+    storageKey: "snow:memo:sidebar-width",
+    defaultWidth: 340,
+  });
   const [memos, setMemos] = useState<MemoRecord[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [hasMore, setHasMore] = useState(false);
@@ -1114,7 +1124,13 @@ export function MemoPanel({
 
   return (
     <div className="feature-page">
-      <div className="memo-panel-layout">
+      <div
+        className="memo-panel-layout"
+        ref={layoutRef}
+        style={
+          { "--memo-split-width": `${sidebarWidth}px` } as React.CSSProperties
+        }
+      >
         <div className="memo-sidebar">
           <div className="memo-sidebar-header">
             <div className="memo-filter-tabs">
@@ -1251,6 +1267,15 @@ export function MemoPanel({
           </div>
           {renderBody()}
         </div>
+        <div
+          className="panel-resizer layout-resizer split-resizer"
+          role="separator"
+          aria-label={t("memo.resizeSidebar", {
+            defaultValue: "Resize list panel",
+          })}
+          aria-orientation="vertical"
+          onPointerDown={handleResizeStart}
+        />
         <div className="memo-content">{renderEditor()}</div>
       </div>
       <ConfirmDialog

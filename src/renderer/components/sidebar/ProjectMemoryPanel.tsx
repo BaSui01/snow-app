@@ -29,6 +29,7 @@ import type {
   ConversationNavigationOutcome,
   ConversationNavigationTarget,
 } from "../../hooks/useConversationNavigation";
+import { useSplitResize } from "../../hooks/useSplitResize";
 import {
   consumeProjectMemorySearchSeed,
   OPEN_PROJECT_MEMORY_PANEL_EVENT,
@@ -250,6 +251,15 @@ export function ProjectMemoryPanel({
   onClose,
 }: ProjectMemoryPanelProps): React.JSX.Element {
   const { t } = useI18n();
+  const {
+    containerRef: layoutRef,
+    width: sidebarWidth,
+    onResizeStart: handleResizeStart,
+  } = useSplitResize({
+    variableName: "--memo-split-width",
+    storageKey: "snow:project-memory:sidebar-width",
+    defaultWidth: 360,
+  });
   const [memories, setMemories] = useState<MemoryRecord[]>([]);
   const [stats, setStats] = useState<MemoryStats | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -1259,8 +1269,23 @@ export function ProjectMemoryPanel({
 
   return (
     <div className="feature-page">
-      <div className="memo-panel-layout">
+      <div
+        className="memo-panel-layout"
+        ref={layoutRef}
+        style={
+          { "--memo-split-width": `${sidebarWidth}px` } as React.CSSProperties
+        }
+      >
         {renderSidebar()}
+        <div
+          className="panel-resizer layout-resizer split-resizer"
+          role="separator"
+          aria-label={t("memory.resizeSidebar", {
+            defaultValue: "Resize list panel",
+          })}
+          aria-orientation="vertical"
+          onPointerDown={handleResizeStart}
+        />
         <div className="memory-content">{renderContent()}</div>
       </div>
       <ConfirmDialog

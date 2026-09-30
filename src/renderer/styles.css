@@ -137,6 +137,12 @@ body.is-panel-resizing * {
   flex-shrink: 0;
 }
 
+/* 功能页双栏（备忘录 / 项目记忆 / 定时任务）的中轴拖拽条 */
+.split-resizer {
+  flex-shrink: 0;
+  align-self: stretch;
+}
+
 /* ===== Top Bar ===== */
 .top-bar {
   position: relative;
@@ -22834,7 +22840,14 @@ body.is-panel-resizing * {
   width: 100%;
   height: 100%;
   min-height: 0;
-  gap: 10px;
+  gap: 0;
+}
+
+/* 左栏宽度由中轴拖拽条写入的 CSS 变量控制（useSplitResize）；
+   原先的 10px 栅格间距改由拖拽条承担。 */
+.memo-panel-layout > .memo-sidebar {
+  width: var(--memo-split-width, 340px);
+  min-width: 0;
 }
 
 /* 列表栏做成嵌套圆角卡片：背景改用主题表面色（与主岛同源、可融入毛玻璃），
@@ -23700,12 +23713,15 @@ body.is-panel-resizing * {
 
 .scheduled-tasks-panel-layout {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
+  /* 列宽：左栏（可拖拽）/ 中轴拖拽条 / 内容区 */
+  grid-template-columns:
+    var(--scheduled-tasks-split-width, 320px) auto
+    minmax(0, 1fr);
   width: 100%;
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  gap: 10px;
+  gap: 0;
 }
 
 /* 列表栏做成嵌套圆角卡片（同备忘录页），内容区用与主岛一致的表面色 */
@@ -24858,6 +24874,11 @@ body.is-panel-resizing * {
   .scheduled-tasks-panel-layout {
     display: flex;
     flex-direction: column;
+  }
+
+  /* 窄屏改为上下堆叠，左栏不再可拖拽 */
+  .scheduled-tasks-split-resizer {
+    display: none;
   }
 
   .scheduled-tasks-sidebar {
@@ -50173,7 +50194,7 @@ pre.file-viewer-code {
 /* ============================================================ */
 
 .memory-sidebar {
-  width: 360px;
+  width: var(--memo-split-width, 360px);
 }
 
 .memory-sidebar-subrow {

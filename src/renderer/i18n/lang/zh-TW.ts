@@ -3536,7 +3536,8 @@ export const zhTW = {
   "projectMcp.loadToolsFailed": "工具載入失敗",
   "projectMcp.retryTools": "重試",
   "projectMcp.globalDisabled": "此服務已在全域設定中停用，請先在設定頁啟用。",
-  "projectMcp.serverDisabledNote": "此服務已停用，啟用後可檢視並設定工具。",
+  "projectMcp.serverDisabledNote":
+    "此服務已停用，工具不會傳送給模型；啟用後可切換工具開關。",
   "projectMcp.serverErrorImagegenNotConfigured":
     "未配置圖像生成渠道，請在「設定 -> 圖像生成」中配置至少一個渠道。",
   "projectMcp.modeNoteWorkflow":

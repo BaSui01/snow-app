@@ -52709,6 +52709,8 @@ img.plugin-icon {
 }
 
 .git-confirm-bubble-checkbox-row input[type="checkbox"] {
+  flex-shrink: 0;
   margin: 0;
+  accent-color: var(--accent-color, #4a9eff);
   cursor: pointer;
 }

@@ -532,7 +532,15 @@ export const UserMessageRail = memo(
           // grows, pushing the target down. We re-scroll and repeat until the
           // target's offsetTop no longer changes between frames.
           let prevOffsetTop = -1;
+          let prevScrollHeight = -1;
+          let stableSince = performance.now();
           for (let i = 0; i < 30; i++) {
+            if (
+              scrollContainerRef.current !== container ||
+              !container.isConnected
+            ) {
+              break;
+            }
             el = findMessageElement(container, messageId);
             if (!el) break;
             el.scrollIntoView({ block: "start", behavior: "auto" });
@@ -540,11 +548,32 @@ export const UserMessageRail = memo(
             await nextFrame();
             const elNow = findMessageElement(container, messageId);
             if (!elNow) break;
-            const currentOffsetTop = elNow.offsetTop;
-            if (currentOffsetTop === prevOffsetTop) {
+            const currentOffsetTop =
+              elNow.getBoundingClientRect().top -
+              container.getBoundingClientRect().top +
+              container.scrollTop;
+            const currentScrollHeight = container.scrollHeight;
+            const containerRect = container.getBoundingClientRect();
+            const viewportTop = containerRect.top + container.clientTop;
+            const viewportBottom = viewportTop + container.clientHeight;
+            const hasVisiblePlaceholder = Array.from(
+              container.querySelectorAll<HTMLElement>(".is-placeholder"),
+            ).some((node) => {
+              const rect = node.getBoundingClientRect();
+              return rect.bottom > viewportTop && rect.top < viewportBottom;
+            });
+            const isReady =
+              !elNow.classList.contains("is-placeholder") &&
+              !hasVisiblePlaceholder &&
+              Math.abs(currentOffsetTop - prevOffsetTop) <= 0.5 &&
+              currentScrollHeight === prevScrollHeight;
+            if (!isReady) {
+              stableSince = performance.now();
+            } else if (performance.now() - stableSince >= 200) {
               break;
             }
             prevOffsetTop = currentOffsetTop;
+            prevScrollHeight = currentScrollHeight;
           }
         } finally {
           if (needsPaging) {

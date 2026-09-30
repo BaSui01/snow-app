@@ -1,17 +1,13 @@
-import {
-  Brain,
-  CalendarClock,
-  Download,
-  LoaderCircle,
-  NotebookText,
-  Puzzle,
-  Search,
-  Settings,
-  SquarePen,
-} from "lucide-react";
+import { Download, LoaderCircle, Settings } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { useI18n } from "../../i18n";
+import { AnimatedMemoIcon } from "../icons/AnimatedMemoIcon";
+import { AnimatedNewChatIcon } from "../icons/AnimatedNewChatIcon";
+import { AnimatedPluginsIcon } from "../icons/AnimatedPluginsIcon";
+import { AnimatedProjectMemoryIcon } from "../icons/AnimatedProjectMemoryIcon";
+import { AnimatedScheduledTasksIcon } from "../icons/AnimatedScheduledTasksIcon";
+import { AnimatedSearchIcon } from "../icons/AnimatedSearchIcon";
 import { pluginStore, usePluginStore } from "../../plugins/pluginStore";
 import { runtimeSnapshot } from "../../plugins/runtimeSnapshot";
 import {
@@ -326,7 +322,7 @@ export function MainSidebarContent({
           onClick={() => setIsSearchOpen(true)}
           type="button"
         >
-          <Search size={16} strokeWidth={1.8} />
+          <AnimatedSearchIcon size={16} strokeWidth={1.8} />
           <span>
             {t("sidebar.search", {
               defaultValue: "Search",
@@ -340,7 +336,7 @@ export function MainSidebarContent({
           title={`${t("sidebar.newChat", { defaultValue: "New Chat" })} (${shortcutLabel})`}
           type="button"
         >
-          <SquarePen size={16} strokeWidth={1.8} />
+          <AnimatedNewChatIcon size={16} strokeWidth={1.8} />
           <span>{t("sidebar.newChat", { defaultValue: "New Chat" })}</span>
           <ShortcutHint action="newChat" />
         </button>
@@ -353,7 +349,7 @@ export function MainSidebarContent({
           title={t("memo.sidebarEntry", { defaultValue: "Memos" })}
           type="button"
         >
-          <NotebookText size={16} strokeWidth={1.8} />
+          <AnimatedMemoIcon size={16} strokeWidth={1.8} />
           <span>{t("memo.sidebarEntry", { defaultValue: "Memos" })}</span>
           {pendingMemoCount > 0 && (
             <span className="sidebar-memo-badge">{pendingMemoCount}</span>
@@ -368,7 +364,7 @@ export function MainSidebarContent({
           title={t("memory.sidebarEntry", { defaultValue: "Project Memory" })}
           type="button"
         >
-          <Brain size={16} strokeWidth={1.8} />
+          <AnimatedProjectMemoryIcon size={16} strokeWidth={1.8} />
           <span>
             {t("memory.sidebarEntry", { defaultValue: "Project Memory" })}
           </span>
@@ -386,7 +382,7 @@ export function MainSidebarContent({
           })}
           type="button"
         >
-          <CalendarClock size={16} strokeWidth={1.8} />
+          <AnimatedScheduledTasksIcon size={16} strokeWidth={1.8} />
           <span>
             {t("scheduledTask.sidebarEntry", {
               defaultValue: "Scheduled Tasks",
@@ -404,7 +400,7 @@ export function MainSidebarContent({
           title={t("plugins.sidebarEntry", { defaultValue: "Plugins" })}
           type="button"
         >
-          <Puzzle size={16} strokeWidth={1.8} />
+          <AnimatedPluginsIcon size={16} strokeWidth={1.8} />
           <span>{t("plugins.sidebarEntry", { defaultValue: "Plugins" })}</span>
           {enabledPluginCount > 0 && (
             <span className="sidebar-memory-badge">{enabledPluginCount}</span>

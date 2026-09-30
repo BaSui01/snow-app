@@ -51,6 +51,7 @@ import {
 /** Extra pixels above/below the viewport that stay rendered, so fast scrolls
  * do not flash empty placeholders before the observer catches up. */
 const VIEWPORT_BUFFER_PX = 600;
+const VIEWPORT_EXIT_BUFFER_PX = 720;
 
 /** Fallback height for a message that was never measured before being
  *  virtualized out. Matches the CSS contain-intrinsic-size estimate so
@@ -131,6 +132,7 @@ export const useViewportVirtualization = (
 
   // Shared observers, lazily created once the scroll container is available.
   const intersectionObserverRef = useRef<IntersectionObserver | null>(null);
+  const exitObserverRef = useRef<IntersectionObserver | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
   // Bidirectional maps so we can clean up either by node or by id.
@@ -237,71 +239,106 @@ export const useViewportVirtualization = (
     flushVisibleIds();
   }, [eagerVisibleIds, flushVisibleIds]);
 
+  const updateHeights = useCallback((updates: Array<[string, number]>) => {
+    if (updates.length === 0) return;
+    setHeights((prev) => {
+      let next: Map<string, number> | undefined;
+      for (const [id, height] of updates) {
+        if (prev.get(id) === height) continue;
+        next ??= new Map(prev);
+        next.set(id, height);
+      }
+      return next ?? prev;
+    });
+  }, []);
+
   // IntersectionObserver callback factory. Kept as a stable function so both
   // the lazy creation path and the container-change path share one impl.
   const handleIntersection = useCallback(
     (entries: IntersectionObserverEntry[]) => {
+      const container = scrollContainerRef.current;
+      if (!container) return;
+      const rootRect = container.getBoundingClientRect();
+      const viewportTop = rootRect.top + container.clientTop;
+      const viewportBottom = viewportTop + container.clientHeight;
+      const viewportLeft = rootRect.left + container.clientLeft;
+      const viewportRight = viewportLeft + container.clientWidth;
       const intersecting = intersectingIdsRef.current;
+      const updates: Array<[string, number]> = [];
       let changed = false;
       for (const entry of entries) {
-        const id = nodeToIdRef.current.get(entry.target as HTMLElement);
-        if (!id) continue;
+        const node = entry.target as HTMLElement;
+        const id = nodeToIdRef.current.get(node);
+        if (!id || !container.contains(node)) continue;
+        const wasVisible =
+          intersecting.has(id) ||
+          visibleIdsRef.current === null ||
+          visibleIdsRef.current.has(id);
+        const rect = node.getBoundingClientRect();
+        const margin = wasVisible
+          ? VIEWPORT_EXIT_BUFFER_PX
+          : VIEWPORT_BUFFER_PX;
+        const isVisibleNow =
+          rect.bottom >= viewportTop - margin &&
+          rect.top <= viewportBottom + margin &&
+          rect.right >= viewportLeft &&
+          rect.left <= viewportRight;
         // The observer has produced its authoritative verdict for this id —
         // the force-visible escape hatch (prepended pages) is no longer needed.
         if (forceVisibleIdsRef.current.delete(id)) {
           changed = true;
         }
-        if (entry.isIntersecting) {
+        if (isVisibleNow) {
           if (!intersecting.has(id)) {
             intersecting.add(id);
             changed = true;
           }
         } else {
-          if (intersecting.has(id)) {
-            intersecting.delete(id);
+          if (!node.classList.contains("is-placeholder") && rect.height > 0) {
+            lastMeasureAtRef.current.set(id, Date.now());
+            updates.push([id, rect.height]);
+          }
+          if (intersecting.delete(id) || wasVisible) {
             changed = true;
           }
         }
       }
+      updateHeights(updates);
       if (changed) {
         flushVisibleIds();
       }
     },
-    [flushVisibleIds],
+    [flushVisibleIds, scrollContainerRef, updateHeights],
   );
 
   // ResizeObserver callback factory.
-  const handleResize = useCallback((entries: ResizeObserverEntry[]) => {
-    const now = Date.now();
-    const updates: Array<[string, number]> = [];
-    for (const entry of entries) {
-      const node = entry.target as HTMLElement;
-      // 占位符的高度来自 inline style（缓存值或 80px 默认值），不是内容的
-      // 真实高度。「真实 → 占位符」切换触发的 resize 若写回缓存，会把已
-      // 测得的真实高度覆盖成占位符高度，此后该消息每次进出 buffer 都令
-      // 文档高度剧烈伸缩——向上慢滚时表现为滚动位置反复跳变。
-      if (node.classList.contains("is-placeholder")) continue;
-      const id = nodeToIdRef.current.get(node);
-      if (!id) continue;
-      // Throttle per-id writes so streaming bursts (which fire ResizeObserver
-      // on every chunk) do not flood state updates.
-      const lastAt = lastMeasureAtRef.current.get(id) ?? 0;
-      if (now - lastAt < HEIGHT_MEASURE_THROTTLE_MS) continue;
-      lastMeasureAtRef.current.set(id, now);
-      const height = Math.round(entry.contentRect.height);
-      if (height <= 0) continue;
-      updates.push([id, height]);
-    }
-    if (updates.length > 0) {
-      setHeights((prev) => {
-        const next = new Map(prev);
-        for (const [id, h] of updates) {
-          next.set(id, h);
-        }
-        return next;
-      });
-    }
-  }, []);
+  const handleResize = useCallback(
+    (entries: ResizeObserverEntry[]) => {
+      const now = Date.now();
+      const updates: Array<[string, number]> = [];
+      for (const entry of entries) {
+        const node = entry.target as HTMLElement;
+        // 占位符的高度来自 inline style（缓存值或 80px 默认值），不是内容的
+        // 真实高度。「真实 → 占位符」切换触发的 resize 若写回缓存，会把已
+        // 测得的真实高度覆盖成占位符高度，此后该消息每次进出 buffer 都令
+        // 文档高度剧烈伸缩——向上慢滚时表现为滚动位置反复跳变。
+        if (node.classList.contains("is-placeholder")) continue;
+        const id = nodeToIdRef.current.get(node);
+        if (!id) continue;
+        // Throttle per-id writes so streaming bursts (which fire ResizeObserver
+        // on every chunk) do not flood state updates.
+        const lastAt = lastMeasureAtRef.current.get(id) ?? 0;
+        if (now - lastAt < HEIGHT_MEASURE_THROTTLE_MS) continue;
+        const height =
+          entry.borderBoxSize[0]?.blockSize ?? entry.contentRect.height;
+        if (height <= 0) continue;
+        lastMeasureAtRef.current.set(id, now);
+        updates.push([id, height]);
+      }
+      updateHeights(updates);
+    },
+    [updateHeights],
+  );
 
   // (Re)build the observers against the current scroll container and re-observe
   // all currently registered nodes. Called on mount and whenever the container
@@ -311,20 +348,34 @@ export const useViewportVirtualization = (
     if (!root) return;
 
     intersectionObserverRef.current?.disconnect();
+    exitObserverRef.current?.disconnect();
     resizeObserverRef.current?.disconnect();
     intersectingIdsRef.current.clear();
 
-    const intersection = new IntersectionObserver(handleIntersection, {
-      root,
-      rootMargin: `${VIEWPORT_BUFFER_PX}px 0px ${VIEWPORT_BUFFER_PX}px 0px`,
-      threshold: 0,
-    });
+    const intersection = new IntersectionObserver(
+      (entries) => handleIntersection(entries),
+      {
+        root,
+        rootMargin: `${VIEWPORT_BUFFER_PX}px 0px ${VIEWPORT_BUFFER_PX}px 0px`,
+        threshold: 0,
+      },
+    );
+    const exit = new IntersectionObserver(
+      (entries) => handleIntersection(entries),
+      {
+        root,
+        rootMargin: `${VIEWPORT_EXIT_BUFFER_PX}px 0px ${VIEWPORT_EXIT_BUFFER_PX}px 0px`,
+        threshold: 0,
+      },
+    );
     const resize = new ResizeObserver(handleResize);
     intersectionObserverRef.current = intersection;
+    exitObserverRef.current = exit;
     resizeObserverRef.current = resize;
 
     for (const node of nodeToIdRef.current.keys()) {
       intersection.observe(node);
+      exit.observe(node);
       resize.observe(node);
     }
     // Let the observer settle asynchronously; flushVisibleIds will run from
@@ -338,8 +389,10 @@ export const useViewportVirtualization = (
     rebuildObservers();
     return () => {
       intersectionObserverRef.current?.disconnect();
+      exitObserverRef.current?.disconnect();
       resizeObserverRef.current?.disconnect();
       intersectionObserverRef.current = null;
+      exitObserverRef.current = null;
       resizeObserverRef.current = null;
     };
   }, [rebuildObservers]);
@@ -351,10 +404,12 @@ export const useViewportVirtualization = (
     (id: string, node: HTMLElement | null): void => {
       const oldNode = idToNodeRef.current.get(id);
       const intersection = intersectionObserverRef.current;
+      const exit = exitObserverRef.current;
       const resize = resizeObserverRef.current;
 
       if (oldNode && oldNode !== node) {
         if (intersection) intersection.unobserve(oldNode);
+        if (exit) exit.unobserve(oldNode);
         if (resize) resize.unobserve(oldNode);
         nodeToIdRef.current.delete(oldNode);
       }
@@ -363,10 +418,11 @@ export const useViewportVirtualization = (
         idToNodeRef.current.set(id, node);
         nodeToIdRef.current.set(node, id);
         // Ensure observers exist (container may mount after first register).
-        if (!intersection || !resize) {
+        if (!intersection || !exit || !resize) {
           rebuildObservers();
         }
         intersectionObserverRef.current?.observe(node);
+        exitObserverRef.current?.observe(node);
         resizeObserverRef.current?.observe(node);
 
         // Eagerly measure and cache the height so that when the
@@ -394,21 +450,13 @@ export const useViewportVirtualization = (
               for (const [mid, mnode] of idToNodeRef.current) {
                 if (mnode.classList.contains("is-placeholder")) continue;
                 if (lastMeasureAtRef.current.has(mid)) continue;
-                const h = Math.round(mnode.getBoundingClientRect().height);
-                if (h > 0) {
+                const height = mnode.getBoundingClientRect().height;
+                if (height > 0) {
                   lastMeasureAtRef.current.set(mid, Date.now());
-                  pending.push([mid, h]);
+                  pending.push([mid, height]);
                 }
               }
-              if (pending.length > 0) {
-                setHeights((prev) => {
-                  const next = new Map(prev);
-                  for (const [mid, h] of pending) {
-                    next.set(mid, h);
-                  }
-                  return next;
-                });
-              }
+              updateHeights(pending);
             });
           }
         }
@@ -417,7 +465,7 @@ export const useViewportVirtualization = (
         forceVisibleIdsRef.current.delete(id);
       }
     },
-    [rebuildObservers],
+    [rebuildObservers, updateHeights],
   );
 
   // Final teardown on unmount.

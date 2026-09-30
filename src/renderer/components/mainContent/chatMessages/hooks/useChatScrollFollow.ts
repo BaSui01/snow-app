@@ -205,7 +205,14 @@ export const useChatScrollFollow = ({
     if (!container) {
       return;
     }
-    container.scrollTop = container.scrollHeight - container.clientHeight;
+    const distanceFromBottom =
+      container.scrollHeight - container.clientHeight - container.scrollTop;
+    if (Math.abs(distanceFromBottom) > 1) {
+      container.scrollTop = container.scrollHeight;
+    }
+    lastScrollTopRef.current = container.scrollTop;
+    lastScrollHeightRef.current = container.scrollHeight;
+    lastClientHeightRef.current = container.clientHeight;
   }, []);
 
   // 结束一轮翻页滚动恢复：释放在途标记并唤醒等待该轮收敛的调用方（用户消息

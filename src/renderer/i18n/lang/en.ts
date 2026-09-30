@@ -1640,8 +1640,6 @@ export const en = {
   "toolCall.common.status.error": "Failed",
   "toolCall.group.steps": "{{count}} tools",
   "toolCall.group.runningSteps": "{{count}} tools",
-  "toolCall.group.completed": "Completed",
-  "toolCall.group.hasError": "Failed",
   "hookExecution.title": "Hooks",
   "hookExecution.count": "{{count}} hooks",
   "hookTypes.onUserMessage": "On user message",

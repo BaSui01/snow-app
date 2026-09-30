@@ -1,4 +1,4 @@
-import { AlertCircle, CheckCircle2, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useI18n } from "../../../../i18n";
 import { MessageTimestamp } from "./MessageTimestamp";
@@ -44,29 +44,6 @@ export const ToolCallGroup = ({
         aria-expanded={isOpen}
       >
         <span className="tcg-label">{label}</span>
-        {count > 1 && !isRunning && (
-          <span
-            className={`tcg-summary-pill ${
-              hasError ? "tcg-summary-pill--err" : "tcg-summary-pill--ok"
-            }`}
-          >
-            {hasError ? (
-              <>
-                <AlertCircle size={10} aria-hidden="true" />
-                <span>
-                  {t("toolCall.group.hasError", { defaultValue: "异常" })}
-                </span>
-              </>
-            ) : (
-              <>
-                <CheckCircle2 size={10} aria-hidden="true" />
-                <span>
-                  {t("toolCall.group.completed", { defaultValue: "已完成" })}
-                </span>
-              </>
-            )}
-          </span>
-        )}
         <MessageTimestamp timestamp={timestamp} className="tcg-time" />
         <ChevronRight
           className={`tcg-chevron ${isOpen ? "tcg-chevron--open" : ""}`}

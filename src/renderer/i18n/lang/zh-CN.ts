@@ -1562,8 +1562,6 @@ export const zhCN = {
   "toolCall.common.status.error": "执行失败",
   "toolCall.group.steps": "{{count}} 个工具",
   "toolCall.group.runningSteps": "{{count}} 个工具",
-  "toolCall.group.completed": "已完成",
-  "toolCall.group.hasError": "异常",
   "hookExecution.title": "钩子执行",
   "hookExecution.count": "{{count}} 项",
   "hookTypes.onUserMessage": "收到用户消息时",

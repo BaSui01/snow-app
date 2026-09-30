@@ -221,6 +221,22 @@ const parseResult = (result: string | undefined): ParsedResult => {
 const getFileName = (path: string): string =>
   path.split(/[\\/]/).filter(Boolean).pop() || path;
 
+const stripLineNumberPrefixes = (
+  content: string,
+  startLine: number,
+): string => {
+  const lines = content.split(/\r?\n/);
+  const stripped: string[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const match = lines[i].match(/^\s*(\d+):\s?(.*)$/);
+    if (!match || Number(match[1]) !== startLine + i) {
+      return content;
+    }
+    stripped.push(match[2]);
+  }
+  return stripped.join("\n");
+};
+
 /** 流式未闭合 JSON 兜底提前提取文件路径 */
 const extractStreamingFilePath = (args: string): string | undefined => {
   if (!args) return undefined;
@@ -304,16 +320,18 @@ const renderFileContent = (
           })}
         </div>
       );
-    case "file":
+    case "file": {
+      const code = stripLineNumberPrefixes(result.content, result.startLine);
       return (
         <CodeHighlightView
-          code={result.content}
+          code={code}
           filePath={filePath}
           startLine={result.startLine}
           totalLines={result.totalLines}
           maxHeight={480}
         />
       );
+    }
     case "image":
       return (
         <div className="tool-call-image-result">

@@ -15205,27 +15205,6 @@ body.is-panel-resizing * {
    Enhanced Tool Call Rendering Styles
    ============================================================ */
 
-/* ToolCallGroup Summary Pills */
-.tcg-summary-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 10px;
-  font-weight: 500;
-  padding: 1px 6px;
-  border-radius: var(--radius-sm, 4px);
-  margin-left: 6px;
-  line-height: 1.4;
-}
-.tcg-summary-pill--ok {
-  color: var(--success, #3fb950);
-  background: color-mix(in srgb, var(--success, #3fb950) 10%, transparent);
-}
-.tcg-summary-pill--err {
-  color: var(--error, #f85149);
-  background: color-mix(in srgb, var(--error, #f85149) 10%, transparent);
-}
-
 /* Bash Command Copy Button */
 .tool-call-bash-command {
   position: relative;
@@ -30373,49 +30352,6 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   background: rgba(239, 68, 68, 0.18);
 }
 
-/* Branch Dropdown Search Filter */
-.branch-dropdown-search {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--border-light);
-  background: var(--bg-secondary);
-}
-
-.branch-search-icon {
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.branch-search-input {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  background: transparent;
-  color: var(--text-primary);
-  font-size: 11.5px;
-  outline: none;
-}
-
-.branch-search-clear-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: var(--bg-hover);
-  color: var(--text-tertiary);
-  cursor: pointer;
-}
-
-.branch-search-clear-btn:hover {
-  color: var(--text-primary);
-}
-
 /* Toolbar Worktree Session Selector (Bottom Chat Toolbar) */
 .worktree-session-selector-container {
   position: relative;
@@ -30773,11 +30709,21 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 .branch-search-clear-btn {
   position: absolute;
   right: 6px;
-  padding: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
   border: none;
+  border-radius: 50%;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
+}
+
+.branch-search-clear-btn:hover {
+  color: var(--text-primary);
 }
 
 .branch-dropdown-header-actions {
@@ -35133,9 +35079,9 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 }
 
 /* Floating tooltip with the full commit details. Rendered in a portal with
-   fixed positioning so the scroll container cannot clip it; it opens to the
-   LEFT of the cursor because the git panel sits on the right edge of the
-   window (flips right only when the left edge of the viewport is hit). */
+   fixed positioning so the scroll container cannot clip it; it is anchored
+   to the hovered row (vertically centered on it, opened on the side that has
+   room) with an arrow pointing back at that row. */
 .git-graph-tooltip {
   position: fixed;
   z-index: 1000;
@@ -35149,7 +35095,32 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   font-size: 11px;
   line-height: 1.5;
   color: var(--text-secondary);
-  pointer-events: none;
+  /* 面板可交互：提交说明可能带滚动条，需要鼠标进入滚动。 */
+  pointer-events: auto;
+}
+
+/* 指向悬停行的箭头（45 度旋转方块）：data-side=left 表示面板在行右侧、
+   箭头贴面板左缘；反之贴右缘。纵向位置由 --tooltip-arrow-top 给出。 */
+.git-graph-tooltip-arrow {
+  position: absolute;
+  top: var(--tooltip-arrow-top, 20px);
+  margin-top: -5px;
+  width: 10px;
+  height: 10px;
+  background: var(--bg-secondary);
+  transform: rotate(45deg);
+}
+
+.git-graph-tooltip[data-side="left"] .git-graph-tooltip-arrow {
+  left: -6px;
+  border-left: 1px solid var(--border-light);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.git-graph-tooltip[data-side="right"] .git-graph-tooltip-arrow {
+  right: -6px;
+  border-top: 1px solid var(--border-light);
+  border-right: 1px solid var(--border-light);
 }
 
 .git-graph-tooltip-row {
@@ -52507,6 +52478,8 @@ img.plugin-icon {
   border: 1px solid var(--border-light);
   max-height: 240px;
   overflow-y: auto;
+  /* 滚到底不把滚动传递给面板背后的界面。 */
+  overscroll-behavior: contain;
   font-family: var(--font-mono, monospace);
 }
 

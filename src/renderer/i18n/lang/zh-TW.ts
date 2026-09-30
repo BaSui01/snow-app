@@ -1563,8 +1563,6 @@ export const zhTW = {
   "toolCall.common.status.error": "執行失敗",
   "toolCall.group.steps": "{{count}} 個工具",
   "toolCall.group.runningSteps": "{{count}} 個工具",
-  "toolCall.group.completed": "已完成",
-  "toolCall.group.hasError": "異常",
   "hookExecution.title": "鉤子執行",
   "hookExecution.count": "{{count}} 項",
   "hookTypes.onUserMessage": "收到使用者訊息時",

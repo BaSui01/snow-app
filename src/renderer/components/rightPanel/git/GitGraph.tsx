@@ -921,13 +921,13 @@ export const GitGraph = ({
 
   // Hover tooltip with the full commit details. Rendered in a portal with
   // fixed positioning so the scroll container (.git-control-scroll) cannot
-  // clip it. The git panel sits on the right edge of the window, so the
-  // tooltip opens to the LEFT of the cursor and only flips right when it
-  // would run off the left edge of the viewport. Mousemove updates the
-  // position directly on the DOM node (no re-render); only entering a
-  // different commit triggers a render.
+  // clip it, and anchored to the hovered row: vertically centered on that
+  // row, opening towards whichever side has room, with an arrow pointing
+  // back at the row it belongs to.
   const [hoveredCommit, setHoveredCommit] = useState<GitLogEntry | null>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
+  // 悬停锚点：被悬停的提交行元素。
+  const tooltipAnchorRef = useRef<HTMLElement | null>(null);
   // 提交行右键菜单：复制哈希 / 提交信息，以及展开收起提交详情。
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -941,40 +941,104 @@ export const GitGraph = ({
     file: GitCommitFile;
   } | null>(null);
 
-  const positionTooltip = useCallback((clientX: number, clientY: number) => {
+  /**
+   * 面板贴着悬停行定位：纵向与行中心对齐（越界时夹紧在视口内），横向优先
+   * 落在空间更大的一侧，箭头始终指向该行。位置直接写在 DOM 上（不触发重渲染）。
+   */
+  const positionTooltip = useCallback(() => {
     const node = tooltipRef.current;
-    if (!node) return;
+    const anchor = tooltipAnchorRef.current;
+    if (!node || !anchor) return;
     const margin = 12;
+    const gap = 10;
     const rect = node.getBoundingClientRect();
+    const anchorRect = anchor.getBoundingClientRect();
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    let left = clientX - rect.width - margin;
-    let top = clientY + margin;
-    if (left < margin) {
-      left = clientX + margin;
+
+    const anchorCenterY = anchorRect.top + anchorRect.height / 2;
+    const maxTop = Math.max(vh - rect.height - margin, margin);
+    const top = Math.min(
+      Math.max(anchorCenterY - rect.height / 2, margin),
+      maxTop,
+    );
+
+    // data-side 表示箭头所在的面板边缘：left 即面板贴在行的右侧。
+    let arrowSide: "left" | "right" = "left";
+    let left = anchorRect.right + gap;
+    if (
+      left + rect.width > vw - margin &&
+      anchorRect.left - rect.width - gap >= margin
+    ) {
+      left = anchorRect.left - rect.width - gap;
+      arrowSide = "right";
     }
-    if (top + rect.height > vh - margin) {
-      top = clientY - rect.height - margin;
-    }
-    if (top < margin) top = margin;
+    left = Math.max(margin, Math.min(left, vw - rect.width - margin));
+
     node.style.left = `${left}px`;
     node.style.top = `${top}px`;
+    node.dataset.side = arrowSide;
+    // 箭头对准行中心，同时保证完整落在面板边缘内。
+    const arrowTop = Math.min(
+      Math.max(anchorCenterY - top, 14),
+      Math.max(rect.height - 14, 14),
+    );
+    node.style.setProperty("--tooltip-arrow-top", `${arrowTop}px`);
+  }, []);
+
+  // 面板可交互（提交说明可能带滚动条），所以指针离开提交行后延迟隐藏，
+  // 留出移动到面板的间隙；指针进入面板即取消隐藏。
+  const tooltipHideTimerRef = useRef<number | null>(null);
+
+  const cancelHideTooltip = useCallback(() => {
+    if (tooltipHideTimerRef.current !== null) {
+      window.clearTimeout(tooltipHideTimerRef.current);
+      tooltipHideTimerRef.current = null;
+    }
   }, []);
 
   const showTooltip = useCallback(
-    (commit: GitLogEntry, clientX: number, clientY: number) => {
+    (commit: GitLogEntry, anchor: HTMLElement) => {
+      cancelHideTooltip();
+      tooltipAnchorRef.current = anchor;
       // Skip the re-render when hovering within the same commit.
       setHoveredCommit((prev) => (prev === commit ? prev : commit));
-      // Position once the node is visible so getBoundingClientRect() reports
-      // real dimensions for boundary detection.
-      requestAnimationFrame(() => positionTooltip(clientX, clientY));
     },
-    [positionTooltip],
+    [cancelHideTooltip],
   );
 
   const hideTooltip = useCallback(() => {
+    cancelHideTooltip();
     setHoveredCommit(null);
-  }, []);
+  }, [cancelHideTooltip]);
+
+  const scheduleHideTooltip = useCallback(() => {
+    cancelHideTooltip();
+    tooltipHideTimerRef.current = window.setTimeout(() => {
+      tooltipHideTimerRef.current = null;
+      setHoveredCommit(null);
+    }, 240);
+  }, [cancelHideTooltip]);
+
+  useEffect(() => cancelHideTooltip, [cancelHideTooltip]);
+
+  // 首次定位在布局阶段完成（绘制前就位，不会闪到默认位置）。
+  useLayoutEffect(() => {
+    if (!hoveredCommit) return;
+    positionTooltip();
+  }, [hoveredCommit, positionTooltip]);
+
+  // 面板打开期间跟随行的滚动 / 窗口尺寸变化重新定位。
+  useEffect(() => {
+    if (!hoveredCommit) return;
+    const reposition = () => positionTooltip();
+    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", reposition, true);
+    return () => {
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", reposition, true);
+    };
+  }, [hoveredCommit, positionTooltip]);
 
   /** 分支徽章专属菜单：复制分支名 / 复制工作树路径 / 切换分支。 */
   const buildBranchMenuItems = (ref: ParsedRef): ContextMenuItem[] => {
@@ -1552,12 +1616,9 @@ export const GitGraph = ({
                 });
               }}
               onMouseEnter={(event) =>
-                showTooltip(row.commit, event.clientX, event.clientY)
+                showTooltip(row.commit, event.currentTarget)
               }
-              onMouseMove={(event) =>
-                positionTooltip(event.clientX, event.clientY)
-              }
-              onMouseLeave={hideTooltip}
+              onMouseLeave={scheduleHideTooltip}
               draggable
               onDragStart={(event) => {
                 hideTooltip();
@@ -1639,16 +1700,7 @@ export const GitGraph = ({
                 />
               </svg>
               <div className="git-graph-info">
-                <span
-                  className="git-graph-message"
-                  title={
-                    row.commit.body
-                      ? `${row.commit.message}\n\n${row.commit.body}`
-                      : row.commit.message
-                  }
-                >
-                  {row.commit.message}
-                </span>
+                <span className="git-graph-message">{row.commit.message}</span>
                 {(parsedRefs.length > 0 ||
                   commitWorktrees.some((worktree) => worktree.isDetached)) && (
                   <span className="git-graph-refs">
@@ -1807,7 +1859,13 @@ export const GitGraph = ({
       />
       {createPortal(
         hoveredCommit ? (
-          <div className="git-graph-tooltip" ref={tooltipRef}>
+          <div
+            className="git-graph-tooltip"
+            ref={tooltipRef}
+            onMouseEnter={cancelHideTooltip}
+            onMouseLeave={scheduleHideTooltip}
+          >
+            <span className="git-graph-tooltip-arrow" aria-hidden="true" />
             <div className="git-graph-tooltip-row">
               <span className="git-graph-tooltip-label">
                 {t("git.graphTooltipHash")}

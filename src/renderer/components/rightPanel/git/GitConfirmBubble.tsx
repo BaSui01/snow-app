@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import { CustomSelect } from "../../common/CustomSelect";
 import type { GitRemoteInfo } from "../../../../preload";
 
 /** 气泡锚点：触发按钮（或右键菜单点击处）在 viewport 中的位置。 */
@@ -110,17 +111,16 @@ export function GitConfirmBubble({
           <span className="git-confirm-bubble-remote-label">
             {remoteLabel}:
           </span>
-          <select
-            value={selectedRemote}
-            onChange={(e) => onSelectRemote(e.target.value)}
-            className="git-confirm-bubble-select"
-          >
-            {remotes.map((r) => (
-              <option key={r.name} value={r.name}>
-                {r.name}
-              </option>
-            ))}
-          </select>
+          <div className="git-confirm-bubble-select">
+            <CustomSelect
+              value={selectedRemote ?? ""}
+              options={remotes.map((remote) => ({
+                value: remote.name,
+                label: remote.name,
+              }))}
+              onChange={onSelectRemote}
+            />
+          </div>
         </div>
       )}
       {showSetUpstreamOption && onToggleSetUpstream && (

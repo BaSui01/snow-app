@@ -52717,14 +52717,14 @@ img.plugin-icon {
 
 .git-confirm-bubble-select {
   flex: 1;
+  min-width: 0;
+}
+
+.git-confirm-bubble-select .custom-select-trigger {
   height: 22px;
-  padding: 0 4px;
-  border: 1px solid var(--border-color);
+  padding: 0 6px;
   border-radius: var(--radius-sm);
-  background: var(--bg-primary);
-  color: var(--text-primary);
   font-size: 11px;
-  outline: none;
 }
 
 .git-confirm-bubble-checkbox-row {

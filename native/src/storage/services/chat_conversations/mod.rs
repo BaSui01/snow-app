@@ -6,10 +6,7 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 
 use super::super::database;
 use super::super::ChatConversationRecord;
-use crate::api::conversation::images::{
-    expand_command_tags_in_content, expand_conversation_tags_in_content,
-    expand_element_tags_in_content, expand_review_tags_in_content,
-};
+use crate::api::conversation::images::expand_display_tags_in_content;
 
 mod fork_truncate;
 mod messages;
@@ -836,22 +833,10 @@ fn create_title(messages: &[ChatContextMessage]) -> String {
                 .find(|message| !message.content.trim().is_empty())
         })
         .map(|message| {
-            // 展开 @@review: / @@command: / @@element: / @@conversation: 标签，
-            // 避免标题显示 base64/JSON 外壳；其余消息原文不变。
-            let mut content = message.content.clone();
-            if let Some(expanded) = expand_review_tags_in_content(&content) {
-                content = expanded;
-            }
-            if let Some(expanded) = expand_command_tags_in_content(&content) {
-                content = expanded;
-            }
-            if let Some(expanded) = expand_element_tags_in_content(&content) {
-                content = expanded;
-            }
-            if let Some(expanded) = expand_conversation_tags_in_content(&content) {
-                content = expanded;
-            }
-            content
+            // chip 标签折叠为人类可读文本（与侧边栏 pending 占位记录同一套
+            // 展示语义），避免路径 / base64 / JSON 外壳污染标题。
+            expand_display_tags_in_content(&message.content)
+                .unwrap_or_else(|| message.content.clone())
         })
         .unwrap_or_else(|| "新对话".to_string());
 

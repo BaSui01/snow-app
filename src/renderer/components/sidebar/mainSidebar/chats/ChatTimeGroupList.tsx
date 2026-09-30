@@ -12,6 +12,7 @@ type ChatTimeGroupListProps = {
   isMultiSelectMode: boolean;
   selectedIds: Set<string>;
   getGroupLabel: (key: TimeGroupKey) => string;
+  getConversationKey: (conversation: ChatConversationRecord) => string;
   onToggleGroupCollapsed: (key: TimeGroupKey) => void;
   isMultiSelectable: (conversation: ChatConversationRecord) => boolean;
   onToggleGroupSelect: (group: TimeGroup) => void;
@@ -24,6 +25,7 @@ export function ChatTimeGroupList({
   isMultiSelectMode,
   selectedIds,
   getGroupLabel,
+  getConversationKey,
   onToggleGroupCollapsed,
   isMultiSelectable,
   onToggleGroupSelect,
@@ -113,7 +115,7 @@ export function ChatTimeGroupList({
             </button>
             <SidebarCollapse open={!isGroupCollapsed}>
               {group.conversations.map((conversation) => (
-                <Fragment key={conversation.conversationId}>
+                <Fragment key={getConversationKey(conversation)}>
                   {renderRow(conversation)}
                 </Fragment>
               ))}

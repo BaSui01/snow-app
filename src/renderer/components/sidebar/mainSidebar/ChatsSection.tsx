@@ -63,6 +63,7 @@ export function ChatsSection({
     handleForkConversation,
     handleNewChat,
     activeConversationId,
+    activeSessionKeyRef,
     abortConversation,
     sessions,
     streamingConversationIds,
@@ -314,9 +315,16 @@ export function ChatsSection({
     conversation: ChatConversationRecord,
   ): React.JSX.Element => {
     const conversationId = conversation.conversationId;
+    const conversationKey = list.getConversationKey(conversation);
+    const isActive =
+      conversationId === activeConversationId ||
+      conversationKey === activeSessionKeyRef.current ||
+      (activeConversationId !== undefined &&
+        pendingToRealConversationIdRef.current.get(conversationKey) ===
+          activeConversationId);
     return (
       <ChatConversationRow
-        activeConversationId={activeConversationId}
+        activeConversationId={isActive ? conversationId : activeConversationId}
         attentionRequiredConversationIds={attentionRequiredConversationIds}
         completedConversationIds={completedConversationIds}
         conversation={conversation}
@@ -475,6 +483,7 @@ export function ChatsSection({
                 <ChatTimeGroupList
                   collapsedGroupKeys={layout.collapsedGroupKeys}
                   getGroupLabel={layout.getGroupLabel}
+                  getConversationKey={list.getConversationKey}
                   groups={[runningGroup]}
                   isMultiSelectable={selection.isMultiSelectable}
                   isMultiSelectMode={selection.isMultiSelectMode}
@@ -498,6 +507,7 @@ export function ChatsSection({
                 <ChatTimeGroupList
                   collapsedGroupKeys={layout.collapsedGroupKeys}
                   getGroupLabel={layout.getGroupLabel}
+                  getConversationKey={list.getConversationKey}
                   groups={pinnedGroups}
                   isMultiSelectable={selection.isMultiSelectable}
                   isMultiSelectMode={selection.isMultiSelectMode}
@@ -523,6 +533,7 @@ export function ChatsSection({
             <ChatTimeGroupList
               collapsedGroupKeys={layout.collapsedGroupKeys}
               getGroupLabel={layout.getGroupLabel}
+              getConversationKey={list.getConversationKey}
               groups={contentGroups}
               isMultiSelectable={selection.isMultiSelectable}
               isMultiSelectMode={selection.isMultiSelectMode}

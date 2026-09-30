@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 
 import type { ChatConversationRecord } from "../../../../../preload";
@@ -41,8 +41,49 @@ export function useChatConversationList({
   sectionListRef,
 }: UseChatConversationListOptions) {
   const { t } = useI18n();
-  const [conversations, setConversations] = useState<ChatConversationRecord[]>(
-    [],
+  const [storedConversations, setConversations] = useState<
+    ChatConversationRecord[]
+  >([]);
+  const conversations = useMemo(() => {
+    const pendingToReal = pendingToRealConversationIdRef.current;
+    const persistedIds = new Set(
+      storedConversations
+        .filter((item) => !isPendingSessionKey(item.conversationId))
+        .map((item) => item.conversationId),
+    );
+    let changed = false;
+    const resolved: ChatConversationRecord[] = [];
+    for (const conversation of storedConversations) {
+      const realId = pendingToReal.get(conversation.conversationId);
+      if (!realId) {
+        resolved.push(conversation);
+        continue;
+      }
+      changed = true;
+      if (!persistedIds.has(realId)) {
+        persistedIds.add(realId);
+        resolved.push({ ...conversation, conversationId: realId });
+      }
+    }
+    return changed ? resolved : storedConversations;
+  }, [
+    storedConversations,
+    runningConversationIds,
+    pendingToRealConversationIdRef,
+  ]);
+  const getConversationKey = useCallback(
+    (conversation: ChatConversationRecord): string => {
+      for (const [
+        pendingKey,
+        realId,
+      ] of pendingToRealConversationIdRef.current) {
+        if (realId === conversation.conversationId) {
+          return pendingKey;
+        }
+      }
+      return conversation.conversationId;
+    },
+    [pendingToRealConversationIdRef],
   );
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
@@ -60,7 +101,9 @@ export function useChatConversationList({
   runningIdsRef.current = runningConversationIds;
   // 内存会话状态的实时镜像：合并抓取结果时据此重建运行中 pending 槽位的
   // 占位记录（跨项目切换会保留后台流式槽位的会话状态）。
-  const sessionsMirrorRef = useRef<Record<string, ConversationSessionState>>({});
+  const sessionsMirrorRef = useRef<Record<string, ConversationSessionState>>(
+    {},
+  );
   sessionsMirrorRef.current = sessions;
 
   const conversationIdsKey = conversations
@@ -376,6 +419,7 @@ export function useChatConversationList({
     hasMore,
     conversationIdsKey,
     conversationsRef,
+    getConversationKey,
     loadMore,
     loadMoreRef,
   };

@@ -179,19 +179,11 @@ fn try_expand_command_tag(value: &str) -> Option<String> {
 /// base64 解码失败时返回 None，调用方保留原始标签、不破坏消息内容。
 fn try_expand_element_tag(value: &str) -> Option<String> {
     let parsed: serde_json::Value = serde_json::from_str(value).ok()?;
-    let tag = parsed.get("tag").and_then(|v| v.as_str()).unwrap_or("");
-    let label = parsed.get("label").and_then(|v| v.as_str()).unwrap_or("");
-    let url = parsed.get("url").and_then(|v| v.as_str()).unwrap_or("");
-    let decode_field = |key: &str| -> String {
-        parsed
-            .get(key)
-            .and_then(|v| v.as_str())
-            .and_then(|b64| base64::engine::general_purpose::STANDARD.decode(b64).ok())
-            .and_then(|bytes| String::from_utf8(bytes).ok())
-            .unwrap_or_default()
-    };
-    let text = decode_field("text");
-    let note = decode_field("note");
+    let tag = json_text(&parsed, "tag");
+    let label = json_text(&parsed, "label");
+    let url = json_text(&parsed, "url");
+    let text = json_base64_text(&parsed, "text");
+    let note = json_base64_text(&parsed, "note");
 
     let display = if !label.is_empty() { label } else { tag };
     let mut parts: Vec<String> = Vec::new();
@@ -240,137 +232,48 @@ fn try_expand_conversation_tag(
     Some(rendered.trim().to_string())
 }
 
-/// 展开消息内容中所有 `@@element:...@@` 标签为人类可读的元素描述文本。
-///
-/// 用于会话标题等展示场景：避免 base64 JSON 外壳污染侧边栏文字。
-/// 内容不含 element 标签时返回 None，调用方沿用原文。
-pub(crate) fn expand_element_tags_in_content(content: &str) -> Option<String> {
-    const ELEMENT_TAG_PREFIX: &str = "@@element:";
-    if !content.contains(ELEMENT_TAG_PREFIX) {
-        return None;
-    }
-    let mut result = String::with_capacity(content.len());
-    let mut remaining = content;
-    while let Some(tag_start) = remaining.find(ELEMENT_TAG_PREFIX) {
-        result.push_str(&remaining[..tag_start]);
-        let value_start = tag_start + ELEMENT_TAG_PREFIX.len();
-        let value_and_rest = &remaining[value_start..];
-        let Some(tag_end) = value_and_rest.find("@@") else {
-            result.push_str(&remaining[tag_start..]);
-            return Some(result);
-        };
-        let value = &value_and_rest[..tag_end];
-        let full_tag_end = value_start + tag_end + 2;
-        match try_expand_element_tag(value) {
-            Some(description) => result.push_str(&description),
-            None => result.push_str(&remaining[tag_start..full_tag_end]),
-        }
-        remaining = &remaining[full_tag_end..];
-    }
-    result.push_str(remaining);
-    Some(result)
-}
+/// 展示型 chip 标签前缀（与前端 fileTagUtils 的 encode* 编码格式一一对应）。
+const DISPLAY_TAG_PREFIXES: [&str; 13] = [
+    "@@file:",
+    "@@dir:",
+    "@@image:",
+    "@@commit:",
+    "@@change:",
+    "@@text-snippet:",
+    "@@review:",
+    "@@element:",
+    "@@web:",
+    "@@conversation:",
+    "@@quote:",
+    "@@command:",
+    "@@skill:",
+];
 
-/// 展开消息内容中所有 `@@command:...@@` 标签为自定义指令的 prompt 原文。
+/// 把消息内容里的所有 chip 标签折叠为人类可读文本，用于会话标题、单行预览等
+/// 展示场景，语义与前端 `summarizeContentAsPlainText` 一致：文件取「名称:L7-L9」、
+/// 图片取 `[image.png]`、提交取短 hash、片段/引用/审查取摘要、网页取「标题 URL」、
+/// 元素取「标签: 备注」、技能取名称，编码外壳（绝对路径、base64、JSON）不显示。
 ///
-/// 用于会话标题等展示场景：避免 base64 JSON 外壳污染侧边栏文字。
-/// 内容不含 command 标签时返回 None，调用方沿用原文。
-pub(crate) fn expand_command_tags_in_content(content: &str) -> Option<String> {
-    const COMMAND_TAG_PREFIX: &str = "@@command:";
-    if !content.contains(COMMAND_TAG_PREFIX) {
-        return None;
-    }
-    let mut result = String::with_capacity(content.len());
-    let mut remaining = content;
-    while let Some(tag_start) = remaining.find(COMMAND_TAG_PREFIX) {
-        result.push_str(&remaining[..tag_start]);
-        let value_start = tag_start + COMMAND_TAG_PREFIX.len();
-        let value_and_rest = &remaining[value_start..];
-        let Some(tag_end) = value_and_rest.find("@@") else {
-            result.push_str(&remaining[tag_start..]);
-            return Some(result);
-        };
-        let value = &value_and_rest[..tag_end];
-        let full_tag_end = value_start + tag_end + 2;
-        match try_expand_command_tag(value) {
-            Some(prompt) => result.push_str(&prompt),
-            None => result.push_str(&remaining[tag_start..full_tag_end]),
-        }
-        remaining = &remaining[full_tag_end..];
-    }
-    result.push_str(remaining);
-    Some(result)
-}
-
-/// 展开消息内容中所有 `@@review:...@@` 标签为完整审查提示词文本。
-///
-/// 用于会话标题等展示场景：避免 base64 外壳污染侧边栏文字。
-/// 内容不含 review 标签时返回 None，调用方沿用原文。
-pub(crate) fn expand_review_tags_in_content(content: &str) -> Option<String> {
-    const REVIEW_TAG_PREFIX: &str = "@@review:";
-    if !content.contains(REVIEW_TAG_PREFIX) {
-        return None;
-    }
-    let mut result = String::with_capacity(content.len());
-    let mut remaining = content;
-    while let Some(tag_start) = remaining.find(REVIEW_TAG_PREFIX) {
-        result.push_str(&remaining[..tag_start]);
-        let value_start = tag_start + REVIEW_TAG_PREFIX.len();
-        let value_and_rest = &remaining[value_start..];
-        let Some(tag_end) = value_and_rest.find("@@") else {
-            result.push_str(&remaining[tag_start..]);
-            return Some(result);
-        };
-        let value = &value_and_rest[..tag_end];
-        let full_tag_end = value_start + tag_end + 2;
-        match try_expand_review_tag(value) {
-            Some(prompt) => result.push_str(&prompt),
-            None => result.push_str(&remaining[tag_start..full_tag_end]),
-        }
-        remaining = &remaining[full_tag_end..];
-    }
-    result.push_str(remaining);
-    Some(result)
-}
-
-/// 尝试从 `@@conversation:{...}@@` 标签 JSON 中还原会话显示名（title 为 base64）。
-fn try_expand_conversation_tag_label(value: &str) -> Option<String> {
-    let parsed: serde_json::Value = serde_json::from_str(value).ok()?;
-    if parsed
-        .get("conversationId")
-        .and_then(|v| v.as_str())
-        .map(|id| id.trim().is_empty())
-        .unwrap_or(true)
+/// 内容不含任何标签时返回 None，调用方沿用原文；单个标签外壳损坏时保留该标签
+/// 原文，不破坏消息内容。
+pub(crate) fn expand_display_tags_in_content(content: &str) -> Option<String> {
+    if !DISPLAY_TAG_PREFIXES
+        .iter()
+        .any(|prefix| content.contains(prefix))
     {
         return None;
     }
-    let title = parsed
-        .get("title")
-        .and_then(|v| v.as_str())
-        .and_then(|b64| base64::engine::general_purpose::STANDARD.decode(b64).ok())
-        .and_then(|bytes| String::from_utf8(bytes).ok())
-        .unwrap_or_default();
-    Some(if title.trim().is_empty() {
-        "未命名会话".to_string()
-    } else {
-        title
-    })
-}
 
-/// 展开消息内容中所有 `@@conversation:...@@` 标签为「[引用会话：标题]」文本。
-///
-/// 用于会话标题等展示场景：避免 base64 JSON 外壳污染侧边栏文字。
-/// 内容不含 conversation 标签时返回 None，调用方沿用原文。
-pub(crate) fn expand_conversation_tags_in_content(content: &str) -> Option<String> {
-    const CONVERSATION_TAG_PREFIX: &str = "@@conversation:";
-    if !content.contains(CONVERSATION_TAG_PREFIX) {
-        return None;
-    }
     let mut result = String::with_capacity(content.len());
     let mut remaining = content;
-    while let Some(tag_start) = remaining.find(CONVERSATION_TAG_PREFIX) {
+    while let Some(tag_start) = find_earliest_tag(remaining, &DISPLAY_TAG_PREFIXES) {
         result.push_str(&remaining[..tag_start]);
-        let value_start = tag_start + CONVERSATION_TAG_PREFIX.len();
+        let prefix = DISPLAY_TAG_PREFIXES
+            .iter()
+            .find(|candidate| remaining[tag_start..].starts_with(**candidate))
+            .copied()
+            .unwrap_or(DISPLAY_TAG_PREFIXES[0]);
+        let value_start = tag_start + prefix.len();
         let value_and_rest = &remaining[value_start..];
         let Some(tag_end) = value_and_rest.find("@@") else {
             result.push_str(&remaining[tag_start..]);
@@ -378,14 +281,217 @@ pub(crate) fn expand_conversation_tags_in_content(content: &str) -> Option<Strin
         };
         let value = &value_and_rest[..tag_end];
         let full_tag_end = value_start + tag_end + 2;
-        match try_expand_conversation_tag_label(value) {
-            Some(title) => result.push_str(&format!("[引用会话：{title}]")),
+        match display_text_for_tag(prefix, value) {
+            Some(text) => result.push_str(&text),
             None => result.push_str(&remaining[tag_start..full_tag_end]),
         }
         remaining = &remaining[full_tag_end..];
     }
     result.push_str(remaining);
     Some(result)
+}
+
+/// 单个标签的展示文本；标签外壳无法解析时返回 None（调用方保留标签原文）。
+fn display_text_for_tag(prefix: &str, value: &str) -> Option<String> {
+    match prefix {
+        "@@file:" | "@@dir:" => return Some(display_file_reference(value, prefix == "@@dir:")),
+        "@@image:" => return Some(format!("[image.{}]", image_tag_extension(value))),
+        _ => {}
+    }
+
+    let parsed: serde_json::Value = serde_json::from_str(value).ok()?;
+    match prefix {
+        "@@commit:" => Some(display_commit_reference(&parsed)),
+        "@@change:" => Some(file_name_of_path(&json_text(&parsed, "path"))),
+        "@@text-snippet:" | "@@quote:" => Some(display_snippet_reference(&parsed)),
+        "@@review:" => Some(display_review_reference(&parsed)),
+        "@@element:" => Some(display_element_reference(&parsed)),
+        "@@web:" => {
+            let url = json_text(&parsed, "url");
+            if url.is_empty() {
+                return None;
+            }
+            let title = json_text(&parsed, "title");
+            Some(if title.is_empty() {
+                url
+            } else {
+                format!("{title} {url}")
+            })
+        }
+        "@@conversation:" => {
+            if json_text(&parsed, "conversationId").trim().is_empty() {
+                return None;
+            }
+            let title = json_base64_text(&parsed, "title");
+            Some(if title.trim().is_empty() {
+                "未命名会话".to_string()
+            } else {
+                title
+            })
+        }
+        "@@command:" => {
+            let name = json_text(&parsed, "name");
+            if name.trim().is_empty() {
+                return None;
+            }
+            Some(format!("/{}", name.trim()))
+        }
+        "@@skill:" => {
+            let name = json_text(&parsed, "name");
+            if !name.trim().is_empty() {
+                return Some(name);
+            }
+            let skill_id = json_text(&parsed, "skillId");
+            if skill_id.trim().is_empty() {
+                return None;
+            }
+            Some(skill_id)
+        }
+        _ => None,
+    }
+}
+
+/// 文件/目录引用的展示文本：`名称` 或 `名称:L7-L9`（行号后缀由编码端
+/// 规范化，原样保留）。
+fn display_file_reference(value: &str, is_directory: bool) -> String {
+    let (path, lines) = if is_directory {
+        (value, "")
+    } else if let Some((path, lines)) = split_line_suffix(value) {
+        (path, lines)
+    } else {
+        (value, "")
+    };
+    let name = file_name_of_path(path);
+    if lines.is_empty() {
+        name
+    } else {
+        format!("{name}:{lines}")
+    }
+}
+
+/// 拆出文件引用末尾的行号后缀（`:L7-L9,L47`）。Windows 路径自带冒号
+/// （盘符 `C:`），因此只有整段形如行号列表的尾部才视为后缀。
+fn split_line_suffix(value: &str) -> Option<(&str, &str)> {
+    let separator = value.rfind(':')?;
+    let suffix = &value[separator + 1..];
+    if suffix.split(',').all(is_line_reference) {
+        Some((&value[..separator], suffix))
+    } else {
+        None
+    }
+}
+
+/// 形如 `L7` / `L7-L9` 的单段行号引用。
+fn is_line_reference(part: &str) -> bool {
+    let valid = |segment: &str| {
+        segment
+            .strip_prefix('L')
+            .map(|digits| !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()))
+            .unwrap_or(false)
+    };
+    let mut segments = part.split('-');
+    segments.next().map(valid).unwrap_or(false) && segments.all(valid)
+}
+
+/// 图片标签的展示扩展名：data URL 的 MIME 优先（`svg+xml` 取 `svg`），
+/// 其次取路径扩展名，都没有时按 png。
+fn image_tag_extension(value: &str) -> String {
+    let value = value.trim();
+    if let Some(rest) = value.strip_prefix("data:image/") {
+        match rest.split(|c| c == ';' || c == '+').next() {
+            Some(subtype) if !subtype.is_empty() => return subtype.to_ascii_lowercase(),
+            _ => {}
+        }
+    }
+    let path = value.split(|c| c == '?' || c == '#').next().unwrap_or(value);
+    Path::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .filter(|extension| !extension.is_empty())
+        .map(|extension| extension.to_ascii_lowercase())
+        .unwrap_or_else(|| "png".to_string())
+}
+
+/// 取路径的最后一段（兼容 Windows 反斜杠与 POSIX 斜杠），无有效段时返回原文。
+fn file_name_of_path(path: &str) -> String {
+    path.split(|c| c == '/' || c == '\\')
+        .filter(|segment| !segment.is_empty())
+        .next_back()
+        .unwrap_or(path)
+        .to_string()
+}
+
+/// 提交引用的展示文本：短 hash（缺失时退回完整 hash 前 7 位）。
+fn display_commit_reference(parsed: &serde_json::Value) -> String {
+    let short_hash = json_text(parsed, "shortHash");
+    if !short_hash.is_empty() {
+        return short_hash;
+    }
+    json_text(parsed, "hash").chars().take(7).collect()
+}
+
+/// 文本片段/划词引用的展示文本：摘要字段优先，缺失时退回正文首段。
+fn display_snippet_reference(parsed: &serde_json::Value) -> String {
+    let summary = json_text(parsed, "summary");
+    if !summary.trim().is_empty() {
+        return summary;
+    }
+    collapse_snippet(&json_text(parsed, "content"), 30)
+}
+
+/// 审查引用的展示文本：摘要字段优先，缺失时退回提示词（base64）首段。
+fn display_review_reference(parsed: &serde_json::Value) -> String {
+    let summary = json_text(parsed, "summary");
+    if !summary.trim().is_empty() {
+        return summary;
+    }
+    collapse_snippet(&json_base64_text(parsed, "prompt"), 30)
+}
+
+/// 元素引用的展示文本：`标签: 备注`（无备注时仅标签）。
+fn display_element_reference(parsed: &serde_json::Value) -> String {
+    let label = json_text(parsed, "label");
+    let display = if label.is_empty() {
+        json_text(parsed, "tag")
+    } else {
+        label
+    };
+    let note = json_base64_text(parsed, "note");
+    if note.is_empty() {
+        display
+    } else {
+        format!("{display}: {note}")
+    }
+}
+
+/// 读取标签 JSON 的字符串字段，缺失或非字符串时返回空串。
+fn json_text(parsed: &serde_json::Value, key: &str) -> String {
+    parsed
+        .get(key)
+        .and_then(|field| field.as_str())
+        .unwrap_or("")
+        .to_string()
+}
+
+/// 读取标签 JSON 中以 base64 承载的自由文本字段（解码失败返回空串）。
+fn json_base64_text(parsed: &serde_json::Value, key: &str) -> String {
+    parsed
+        .get(key)
+        .and_then(|field| field.as_str())
+        .and_then(|encoded| base64::engine::general_purpose::STANDARD.decode(encoded).ok())
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .unwrap_or_default()
+}
+
+/// 折叠空白并截断的片段文本（摘要字段缺失时的展示回退）。
+fn collapse_snippet(text: &str, max_chars: usize) -> String {
+    let compact = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut chars = compact.chars();
+    let mut snippet: String = chars.by_ref().take(max_chars).collect();
+    if chars.next().is_some() {
+        snippet.push('…');
+    }
+    snippet
 }
 
 fn parse_image_tag_value(value: &str, database_path: &Path) -> Result<Option<ChatImage>> {

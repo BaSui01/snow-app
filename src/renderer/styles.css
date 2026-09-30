@@ -9466,8 +9466,17 @@ body.is-panel-resizing * {
 .chat-message-skeleton-line {
   height: 12px;
   border-radius: var(--radius-sm);
-  background: var(--bg-hover);
-  animation: skeleton-pulse 1.4s ease-in-out infinite;
+  background-image: linear-gradient(
+    90deg,
+    var(--bg-hover) 0%,
+    var(--bg-hover) 42%,
+    var(--border-subtle) 50%,
+    var(--bg-hover) 58%,
+    var(--bg-hover) 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: repeat;
+  animation: skeleton-shimmer 1.5s linear infinite;
 }
 
 .chat-message-skeleton-line.is-primary {
@@ -9483,7 +9492,14 @@ body.is-panel-resizing * {
 }
 
 .chat-message-skeleton.is-user .chat-message-skeleton-line {
-  background: var(--bg-tertiary);
+  background-image: linear-gradient(
+    90deg,
+    var(--bg-tertiary) 0%,
+    var(--bg-tertiary) 42%,
+    var(--border-subtle) 50%,
+    var(--bg-tertiary) 58%,
+    var(--bg-tertiary) 100%
+  );
 }
 
 .chat-message-skeleton.is-user .chat-message-skeleton-line.is-primary {
@@ -9492,6 +9508,15 @@ body.is-panel-resizing * {
 
 .chat-message-skeleton.is-user .chat-message-skeleton-line.is-secondary {
   width: 28%;
+}
+
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
 }
 
 .chat-empty-greeting {
@@ -12258,14 +12283,17 @@ body.is-panel-resizing * {
   width: 84%;
   height: 10px;
   border-radius: var(--radius-sm);
-  background: linear-gradient(
+  background-image: linear-gradient(
     90deg,
-    var(--bg-tertiary) 20%,
-    var(--bg-hover) 50%,
-    var(--bg-tertiary) 80%
+    var(--bg-tertiary) 0%,
+    var(--bg-tertiary) 42%,
+    var(--border-subtle) 50%,
+    var(--bg-tertiary) 58%,
+    var(--bg-tertiary) 100%
   );
-  background-size: 220% 100%;
-  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  background-size: 200% 100%;
+  background-repeat: repeat;
+  animation: skeleton-shimmer 1.5s linear infinite;
 }
 
 .context-compaction-placeholder span:nth-child(2) {
@@ -26439,31 +26467,32 @@ body.is-panel-resizing * {
   padding: 5px 12px;
 }
 
+.mention-skeleton-icon,
+.mention-skeleton-line {
+  background-image: linear-gradient(
+    90deg,
+    var(--bg-hover) 0%,
+    var(--bg-hover) 42%,
+    var(--border-subtle) 50%,
+    var(--bg-hover) 58%,
+    var(--bg-hover) 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: repeat;
+  animation: skeleton-shimmer 1.5s linear infinite;
+}
+
 .mention-skeleton-icon {
   flex-shrink: 0;
   width: 14px;
   height: 14px;
   border-radius: var(--radius-sm);
-  background: var(--bg-hover);
-  animation: skeleton-pulse 1.4s ease-in-out infinite;
 }
 
 .mention-skeleton-line {
   flex: 1;
   height: 10px;
   border-radius: var(--radius-sm);
-  background: var(--bg-hover);
-  animation: skeleton-pulse 1.4s ease-in-out infinite;
-}
-
-@keyframes skeleton-pulse {
-  0%,
-  100% {
-    opacity: 0.4;
-  }
-  50% {
-    opacity: 0.8;
-  }
 }
 
 .file-mention-count {

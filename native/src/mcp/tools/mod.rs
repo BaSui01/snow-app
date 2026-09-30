@@ -142,6 +142,7 @@ const PROJECT_SERVER_DISCOVERY_CONCURRENCY: usize = 4;
 pub const BUILTIN_SERVER_IDS: &[&str] = &[
     "user-interaction",
     "computer-use",
+    // App logs are read through config-logs-read.
     "app-control",
     "filesystem",
     "sub-agents",

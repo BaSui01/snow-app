@@ -9,16 +9,16 @@ flowchart TB
     APP[Snow App]
     APP --> N[Native app data ~/.snowapp]
     APP --> E[Electron userData]
-    APP --> G[Global Snow configuration ~/.snow]
+    APP --> G[Snow CLI user data ~/.snow]
     APP --> W[Project workspace]
-    N --> DB[(snowapp.db SQLite WAL)]
+    N --> DB[(~/.snowapp/snowapp.db SQLite WAL)]
     N --> RES[Images backgrounds checkpoints password vault login state]
     E --> CH[Chromium session window state]
-    G --> CFG[CLI config ROLE Skills file logs]
+    G --> CFG[CLI config ROLE Skills CLI file logs]
     W --> PROJ[ROLE .snow/settings Skills background logs]
 ```
 
-These layers do not replace one another. The database stores indexes and structured records, resource directories store binary files, Electron `userData` stores browser runtime data and main-process files, and `~/.snow/` plus workspaces store CLI, rule, and project-scoped files.
+Keep Snow's data directories distinct: `~/.snow/` is **Snow CLI's** user configuration and CLI file-log directory; `~/.snowapp/` is **Snow App's** application-data directory, and Snow App's SQLite database is `~/.snowapp/snowapp.db`. Snow App system logs are stored in the database's `app_logs` table, not in `~/.snow/log/` files. The database holds structured records and indexes, resource directories hold binary files, Electron `userData` holds runtime browser data and main-process files, and workspace `.snow/` directories hold project-scoped rules/CLI data and background-task logs.
 
 ## 1. Native App Data: `~/.snowapp/`
 
@@ -51,7 +51,7 @@ Representative tables include:
 | `usage_records`                                     | Token usage, status, model, and project associations                                                                                                                                                                          |
 | `userscripts` / `userscript_values`                 | Built-in browser Tampermonkey-compatible userscript metadata and `GM_*` persistent values; script source files are stored separately under `~/.snowapp/browser-script/`, not sensitive but may hold credential-like GM values |
 | `app_plugins` / `app_plugin_values`                 | Plugin registry (manifest fields, enabled state, install and source paths) and plugin-private persisted values; plugin folders live under `~/.snowapp/plugins/<pluginId>/`                                                    |
-| `app_logs`                                          | System logs and optional raw API request payloads                                                                                                                                                                             |
+| `app_logs`                                          | System logs and optional API request/normalized response bodies (sensitive fields redacted)                                                                                                                                                                             |
 | `image_library`                                     | Image-library index; files live in the default or custom root                                                                                                                                                                 |
 | `codebase_embed_sessions` / `codebase_embeddings_*` | Codebase embedding state and dynamically created per-project vector tables                                                                                                                                                    |
 
@@ -201,7 +201,7 @@ This directory is shared with Snow CLI and the `config` tool. Main entries inclu
 | `ROLE.md`                          | Global personalization rules                                                                                                                                                                  |
 | `skills/` / `skills-registry.json` | Global skills and registration metadata                                                                                                                                                       |
 | `docs/`                            | Deprecated (the built-in documentation copy now lives in `~/.snowapp/docs/`; this legacy folder is cleaned up automatically on the next launch)                                               |
-| `log/`                             | Daily level files for the config `logs` scope                                                                                                                                                 |
+| `log/`                             | Snow CLI daily level files (Snow App does not expose a config scope to read this directory)                                                                                                   |
 | `.config-backups/`                 | Temporary pre-write safety net used by the config tool and removed after success                                                                                                              |
 
 ## 6. Project Workspace
@@ -217,13 +217,14 @@ This directory is shared with Snow CLI and the `config` tool. Main entries inclu
 
 ## 7. Do Not Confuse the Three Log Sources
 
-| Log source           | Location                  | Cleanup behavior                                                   |
-| -------------------- | ------------------------- | ------------------------------------------------------------------ |
-| Settings System Logs | SQLite `app_logs`         | Two-step UI confirmation deletes all log rows                      |
-| Config file logs     | `~/.snow/log/`            | `config-delete` removes one exact file after explicit confirmation |
-| Background-task logs | `<workspace>/.snow/logs/` | Independent workspace files unaffected by the other two            |
+| Log source           | Location          | Cleanup behavior                                                             |
+| -------------------- | ----------------- | ---------------------------------------------------------------------------- |
+| Settings System Logs | SQLite `app_logs` | Two-step UI confirmation deletes all log rows                                |
+| Snow CLI file logs   | `~/.snow/log/`    | Independent files managed by Snow CLI; Snow App does not read or delete them |
 
-Raw API request logging writes to the first source and may include complete request payloads. Redact all three log types before sharing.
+| Background-task logs | `<workspace>/.snow/logs/` | Independent workspace files unaffected by the other two |
+
+Time-limited request logging writes request and normalized response bodies to the first source after redacting secret-named fields and the active API key. The AI log tool additionally bounds each body and scopes results to the current conversation. Redact all three log types before sharing.
 
 ## 8. Lifecycle and Deletion Boundaries
 

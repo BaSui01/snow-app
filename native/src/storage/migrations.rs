@@ -99,9 +99,32 @@ pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<(
     migrate_userscripts_client_fields(connection)?;
     migrate_userscripts_icon(connection)?;
     migrate_git_worktrees(connection)?;
+    migrate_app_logs_conversation_id(connection)?;
     Ok(())
 }
 
+/// Adds exact conversation ownership to app_logs for reliable per-session diagnostics.
+/// Existing rows receive the empty value and remain searchable through ordinary filters.
+fn migrate_app_logs_conversation_id(connection: &Connection) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA table_info(app_logs)")?;
+    let columns: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(statement);
+
+    if !columns.iter().any(|column| column == "conversation_id") {
+        connection.execute(
+            "ALTER TABLE app_logs ADD COLUMN conversation_id TEXT NOT NULL DEFAULT ''",
+            [],
+        )?;
+    }
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_app_logs_conversation_created
+           ON app_logs(conversation_id, created_at DESC, id DESC)",
+        [],
+    )?;
+    Ok(())
+}
 /// Creates persistent worktree registry and per-conversation bindings. Bindings
 /// intentionally do not reference chat_conversations so they survive moving a
 /// conversation to the cold archive database and can be used after restore.

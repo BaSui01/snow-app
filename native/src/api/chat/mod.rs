@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use napi::bindgen_prelude::*;
+use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use crate::api::config::resolve_advanced_model;
@@ -26,7 +27,10 @@ use crate::api::retry::{
     classify_final_stream_warning, resolve_stream_idle_timeout_sec, FinalStreamWarningDisposition,
     RetryOptions,
 };
-use crate::storage::services::app_logs::{log_api_error, log_api_warning, maybe_log_api_request};
+use crate::storage::services::app_logs::{
+    log_api_error, log_api_warning, maybe_log_api_request_for_conversation,
+    maybe_log_api_response_for_conversation,
+};
 use crate::storage::services::chat_conversations::{
     store_chat_exchange, ChatContextMessage, StoreChatExchangeInput,
 };
@@ -196,11 +200,13 @@ async fn create_chat_completion_response_async(
         resolve_stream_idle_timeout_sec(api_config.stream_idle_timeout_sec);
 
     let request_payload_json = serde_json::to_string(&payload).unwrap_or_default();
-    maybe_log_api_request(
+    maybe_log_api_request_for_conversation(
         database_path.clone(),
         "chat".to_string(),
         endpoint.clone(),
         request_payload_json,
+        prepared_request.conversation_id.clone(),
+        api_key.to_string(),
     )
     .await;
 
@@ -219,6 +225,15 @@ async fn create_chat_completion_response_async(
     {
         Ok(result) => result,
         Err(error) => {
+            maybe_log_api_response_for_conversation(
+                database_path.clone(),
+                "chat".to_string(),
+                endpoint.clone(),
+                serde_json::json!({"error": error.reason}).to_string(),
+                prepared_request.conversation_id.clone(),
+                api_key.to_string(),
+            )
+            .await;
             log_api_error(
                 &database_path,
                 "create_chat_completion_response_stream",
@@ -229,6 +244,29 @@ async fn create_chat_completion_response_async(
             return Err(error);
         }
     };
+    let response_body_json = serde_json::json!({
+        "id": streamed_response.id,
+        "model": streamed_response.model,
+        "status": streamed_response.status,
+        "content": streamed_response.content,
+        "thinking": streamed_response.thinking,
+        "tool_calls": serde_json::from_str::<Value>(&streamed_response.tool_calls_json)
+            .unwrap_or_else(|_| serde_json::json!([])),
+        "usage": {
+            "input_tokens": streamed_response.token_usage.input_tokens,
+            "output_tokens": streamed_response.token_usage.output_tokens,
+        },
+    });
+    maybe_log_api_response_for_conversation(
+        database_path.clone(),
+        "chat".to_string(),
+        endpoint.clone(),
+        serde_json::to_string(&response_body_json).unwrap_or_default(),
+        prepared_request.conversation_id.clone(),
+        api_key.to_string(),
+    )
+    .await;
+
     // The full SSE chunk array (raw_events) used to be serialized into
     // raw_response_json and persisted into chat_messages.raw_json for assistant
     // messages. That column is only read back for tool-role messages (to

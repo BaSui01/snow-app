@@ -398,6 +398,33 @@ pub async fn create_response_stream(
                 });
                 return Err(error);
             }
+            let failure_log_db = failure_database_path.clone();
+            let failure_log_context = serde_json::json!({
+                "conversation_id": failure_conversation_id.clone(),
+                "model": failure_model.clone(),
+                "directory_id": failure_directory_id.clone(),
+                "api_profile": failure_api_profile.clone(),
+            })
+            .to_string();
+            let failure_log_error = error.to_string();
+            tokio::task::spawn_blocking(move || {
+                let _ = insert_app_log(
+                    &failure_log_db,
+                    &AppLogInput {
+                        level: "ERROR".to_string(),
+                        module: "api".to_string(),
+                        func: "create_response_stream".to_string(),
+                        line: None,
+                        message: "Conversation API request failed".to_string(),
+                        input: None,
+                        output: None,
+                        duration: None,
+                        context: Some(failure_log_context),
+                        error: Some(failure_log_error),
+                        source: "main".to_string(),
+                    },
+                );
+            });
             let error_message = error.to_string();
             let persisted_error_message = error_message.clone();
             let persisted_failure_model = failure_model.clone();

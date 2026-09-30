@@ -471,6 +471,30 @@ pub async fn call_mcp_tool(
         UserInteractionService::new()
             .execute_async(&args, &on_user_question)
             .await?
+    } else if tool_full_name == "config-logs-read" {
+        let conversation_id = conversation_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| {
+                Error::new(
+                    Status::GenericFailure,
+                    "Reading Snow App logs requires the current conversation ID",
+                )
+            })?;
+        let mut scoped_args = args.clone();
+        scoped_args["conversationId"] = serde_json::json!(conversation_id);
+        let service = super::super::servers::app_logs::AppLogsService::new();
+        tokio::task::spawn_blocking(move || {
+            super::super::service::McpService::execute(&service, "logs-read", &scoped_args)
+        })
+            .await
+            .map_err(|error| {
+                Error::new(
+                    Status::GenericFailure,
+                    format!("App log query task failed: {error}"),
+                )
+            })??
     } else if let Some(app_control_tool) = tool_full_name.strip_prefix("app-control-") {
         AppControlService::new()
             .execute_async(app_control_tool, &args, &on_app_control, &on_user_question)

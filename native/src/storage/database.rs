@@ -17,6 +17,7 @@ use super::{
 
 /// Bumped whenever the schema changes; written to `PRAGMA user_version` after
 /// a successful `create_schema` so the app can detect stale databases.
+/// 51: app_logs adds exact conversation_id correlation for AI-readable session diagnostics.
 /// 50: combines userscripts.icon and persistent Git worktree bindings.
 /// 49: userscripts.icon column (@icon / @iconURL metadata for the script list icon).
 /// 48: diff_review_comments table (右侧面板 diff 行内评论).
@@ -38,7 +39,7 @@ use super::{
 /// 32: api_configs canonical config_json migration plus conversation runtime config columns.
 /// 31: main's scheduled-tasks pre-script migration (30) + PR #65's three
 /// stream-interruption migrations (29 baseline + 4 total additions).
-const CURRENT_SCHEMA_VERSION: i64 = 50;
+const CURRENT_SCHEMA_VERSION: i64 = 51;
 const SNOWFLAKE_EPOCH_MS: u64 = 1_704_067_200_000;
 const SNOWFLAKE_WORKER_ID_BITS: u64 = 10;
 const SNOWFLAKE_SEQUENCE_BITS: u64 = 12;
@@ -1055,16 +1056,17 @@ CREATE TABLE IF NOT EXISTS app_plugins (
            output TEXT NOT NULL DEFAULT '',
            duration TEXT NOT NULL DEFAULT '',
            context TEXT NOT NULL DEFAULT '',
-           error TEXT NOT NULL DEFAULT '',
-           source TEXT NOT NULL DEFAULT 'main',
+            error TEXT NOT NULL DEFAULT '',
+            conversation_id TEXT NOT NULL DEFAULT '',
+            source TEXT NOT NULL DEFAULT 'main',
            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
          );
          CREATE INDEX IF NOT EXISTS idx_app_logs_created_at
            ON app_logs(created_at DESC, id DESC);
          CREATE INDEX IF NOT EXISTS idx_app_logs_level
            ON app_logs(level);
-         CREATE INDEX IF NOT EXISTS idx_app_logs_module
-           ON app_logs(module);
+          CREATE INDEX IF NOT EXISTS idx_app_logs_module
+            ON app_logs(module);
 
          CREATE TABLE IF NOT EXISTS memos (
            id TEXT PRIMARY KEY NOT NULL,

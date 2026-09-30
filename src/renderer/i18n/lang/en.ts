@@ -1,4 +1,19 @@
 export const en = {
+  "git.manageActions": "Manage branch…",
+  "git.manageCreate": "Create branch from here…",
+  "git.manageTrack": "Create local tracking branch…",
+  "git.manageRename": "Rename local branch…",
+  "git.manageDelete": "Delete local branch…",
+  "git.manageDeleteConfirm":
+    "Delete local branch '{{branch}}'? Only merged branches can be deleted. The remote server is not affected; force deletion is not performed.",
+  "git.manageSource": "Source branch: {{branch}}",
+  "git.manageName": "New branch name",
+  "git.manageOccupied":
+    "The branch is current or checked out in a worktree and cannot be modified.",
+  "git.manageMissing": "The branch no longer exists. Refresh the branch list.",
+  "git.manageTrackingConflict":
+    "An existing local branch has a different upstream or is checked out. Create a tracking branch with a new name instead.",
+  "git.manageBusy": "Branch operation in progress…",
   "toolCall.lsp.renameFailedFileMayBeModified":
     "The failed file may also have been modified; inspect its actual contents.",
   "toolCall.lsp.goto.definition": "Go to Definition",

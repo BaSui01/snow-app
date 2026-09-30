@@ -62,7 +62,10 @@ const SKIP_DIRS = new Set([
  * user (e.g. root-owned repos) are not rejected by git's dubious-ownership
  * check, keeping behaviour consistent with the local backend.
  */
-const runRemoteGit = (workspacePath: string, args: string[]): Promise<string> =>
+export const runRemoteGit = (
+  workspacePath: string,
+  args: string[],
+): Promise<string> =>
   withSshSession(workspacePath, async (sessionId, remotePath) => {
     const gitCommand = [
       "git",

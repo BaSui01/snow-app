@@ -1,4 +1,18 @@
 export const zhTW = {
+  "git.manageActions": "管理分支…",
+  "git.manageCreate": "從此分支建立分支…",
+  "git.manageTrack": "建立本機追蹤分支…",
+  "git.manageRename": "重新命名本機分支…",
+  "git.manageDelete": "刪除本機分支…",
+  "git.manageDeleteConfirm":
+    "確定刪除本機分支「{{branch}}」？僅允許刪除已合併分支，不影響遠端伺服器，不執行強制刪除。",
+  "git.manageSource": "來源分支：{{branch}}",
+  "git.manageName": "新分支名稱",
+  "git.manageOccupied": "分支為目前分支或已被工作樹檢出，無法修改。",
+  "git.manageMissing": "分支已不存在，請重新整理分支清單。",
+  "git.manageTrackingConflict":
+    "同名本機分支的上游不同或已被檢出，請使用新名稱建立追蹤分支。",
+  "git.manageBusy": "正在執行分支操作…",
   "toolCall.lsp.renameFailedFileMayBeModified":
     "失敗檔案也可能已被部分修改，請檢查其實際內容。",
   "toolCall.lsp.goto.definition": "定位定義",

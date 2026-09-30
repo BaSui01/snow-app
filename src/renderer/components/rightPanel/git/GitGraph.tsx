@@ -31,6 +31,7 @@ import type {
 import { useI18n } from "../../../i18n";
 import { ContextMenu, type ContextMenuItem } from "../../common/ContextMenu";
 import type { OpenDiffTabCallback } from "../types";
+import { BRANCHES_CHANGED, useBranchManagement } from "./useBranchManagement";
 
 type GitGraphProps = {
   repoPath: string;
@@ -464,6 +465,30 @@ export const GitGraph = ({
   onOpenInTab,
 }: GitGraphProps): React.JSX.Element => {
   const { t } = useI18n();
+  const management = useBranchManagement(repoPath, () => {});
+  useEffect(() => {
+    setBranchContextMenu(null);
+    const changed = (event: Event): void => {
+      if ((event as CustomEvent<string>).detail === repoPath) {
+        void reloadFromStart(() => cancelled);
+        window.snow
+          .gitBranches(repoPath)
+          .then((items) => {
+            if (!cancelled)
+              setBranchMap(new Map(items.map((item) => [item.name, item])));
+          })
+          .catch((cause) => {
+            if (!cancelled) showActionError(String(cause));
+          });
+      }
+    };
+    let cancelled = false;
+    window.addEventListener(BRANCHES_CHANGED, changed);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(BRANCHES_CHANGED, changed);
+    };
+  }, [repoPath]);
   const [commits, setCommits] = useState<GitLogEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hasMore, setHasMore] = useState(true);
@@ -1103,26 +1128,42 @@ export const GitGraph = ({
         ) : (
           <GitBranch size={13} strokeWidth={1.8} />
         ),
-        disabled: isCurrent || isOtherWorktree,
+        disabled:
+          isCurrent ||
+          isOtherWorktree ||
+          management.busy ||
+          management.sessionRunning,
         onClick: () => {
           setBranchContextMenu(null);
           if (isCurrent || isOtherWorktree) return;
-          window.snow
-            .gitCheckout(repoPath, ref.name)
-            .then((res) => {
-              if (res.success) {
-                loadPage(0, true);
-              } else {
-                showActionError(res.message || t("git.operationFailedGeneric"));
-              }
-            })
-            .catch((err) => {
-              showActionError(String(err));
-            });
+          management.checkout({
+            name: ref.name,
+            isCurrent: Boolean(isCurrent),
+            isRemote: false,
+            remoteName: null,
+            worktreePath,
+          });
         },
       });
     }
 
+    if (
+      (ref.kind === "local" || ref.kind === "remote") &&
+      ref.name !== "HEAD"
+    ) {
+      items.push(
+        ...management.menuItems(
+          {
+            name: ref.name,
+            isCurrent: Boolean(isCurrent),
+            isRemote: ref.kind === "remote",
+            remoteName: branchInfo?.remoteName ?? null,
+            worktreePath,
+          },
+          () => setBranchContextMenu(null),
+        ),
+      );
+    }
     return items;
   };
 
@@ -1136,67 +1177,19 @@ export const GitGraph = ({
 
     const items: ContextMenuItem[] = [];
 
-    // 若当前提交有关联的本地分支，优先呈现分支与工作树快捷操作（最多展开前 3 个，避免超长菜单）
+    // Open the same branch menu instead of expanding several long menus at once.
     for (const bRef of localBranchRefs.slice(0, 3)) {
-      const bInfo = branchMap.get(bRef.name);
-      const wtPath = bInfo?.worktreePath;
-      const isOtherWt = isOtherWorktreePath(wtPath);
-      const wtFolder = wtPath ? getWorktreeFolderName(wtPath) : null;
-
       items.push({
-        id: `copy-branch-${bRef.name}`,
-        label: `${t("git.copyBranchName")}: ${bRef.name}`,
-        icon: <Copy size={13} strokeWidth={1.8} />,
+        id: `manage-branch:${bRef.name}`,
+        label: `${t("git.manageActions")}: ${bRef.name}`,
+        icon: <GitBranch size={13} />,
         onClick: () => {
+          const position = contextMenu;
           setContextMenu(null);
-          void window.snow.writeClipboardText(bRef.name).catch(() => {});
+          if (position)
+            setBranchContextMenu({ x: position.x, y: position.y, ref: bRef });
         },
       });
-
-      if (wtPath) {
-        items.push({
-          id: `copy-wt-path-${bRef.name}`,
-          label: `${t("git.copyWorktreePath")}: ${wtFolder || wtPath}`,
-          icon: <FolderGit2 size={13} strokeWidth={1.8} />,
-          onClick: () => {
-            setContextMenu(null);
-            void window.snow.writeClipboardText(wtPath).catch(() => {});
-          },
-        });
-      }
-
-      if (!bRef.isHead) {
-        items.push({
-          id: `checkout-${bRef.name}`,
-          label: isOtherWt
-            ? `${t("git.worktreeCheckedOut")}: ${wtFolder}`
-            : `${t("git.checkoutBranch")}: ${bRef.name}`,
-          icon: isOtherWt ? (
-            <FolderGit2 size={13} strokeWidth={1.8} />
-          ) : (
-            <GitBranch size={13} strokeWidth={1.8} />
-          ),
-          disabled: isOtherWt,
-          onClick: () => {
-            setContextMenu(null);
-            if (isOtherWt) return;
-            window.snow
-              .gitCheckout(repoPath, bRef.name)
-              .then((res) => {
-                if (res.success) {
-                  loadPage(0, true);
-                } else {
-                  showActionError(
-                    res.message || t("git.operationFailedGeneric"),
-                  );
-                }
-              })
-              .catch((err) => {
-                showActionError(String(err));
-              });
-          },
-        });
-      }
     }
 
     if (items.length > 0) {
@@ -1992,6 +1985,7 @@ export const GitGraph = ({
           onClose={() => setFileContextMenu(null)}
         />
       )}
+      {management.dialog}
       {branchContextMenu && (
         <ContextMenu
           x={branchContextMenu.x}

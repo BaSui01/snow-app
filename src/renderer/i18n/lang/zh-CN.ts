@@ -1,4 +1,18 @@
 export const zhCN = {
+  "git.manageActions": "管理分支…",
+  "git.manageCreate": "从此分支创建分支…",
+  "git.manageTrack": "创建本地跟踪分支…",
+  "git.manageRename": "重命名本地分支…",
+  "git.manageDelete": "删除本地分支…",
+  "git.manageDeleteConfirm":
+    "确定删除本地分支“{{branch}}”？仅允许删除已合并分支，不影响远程服务器，不执行强制删除。",
+  "git.manageSource": "源分支：{{branch}}",
+  "git.manageName": "新分支名称",
+  "git.manageOccupied": "分支为当前分支或已被工作树检出，不能修改。",
+  "git.manageMissing": "分支已不存在，请刷新分支列表。",
+  "git.manageTrackingConflict":
+    "同名本地分支的上游不同或已被检出，请改用新名称创建跟踪分支。",
+  "git.manageBusy": "正在执行分支操作…",
   "toolCall.lsp.renameFailedFileMayBeModified":
     "失败文件也可能已被部分修改，请检查其实际内容。",
   "toolCall.lsp.goto.definition": "定位定义",

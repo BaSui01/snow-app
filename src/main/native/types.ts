@@ -2874,6 +2874,26 @@ export type NativeBridge = {
     sourceId: string,
     profile: string,
   ) => Promise<ImportedBrowserBookmark[]>;
+  // ── 内置浏览器访问历史（地址栏补全 / 设置页管理）────────────────────
+  /** 记录一次访问（同 URL 累加次数并刷新标题），非 http(s) 返回 false */
+  browserHistoryRecord: (url: string, title: string) => Promise<boolean>;
+  /** 页面标题迟到更新（只改标题，不计入访问次数） */
+  browserHistoryUpdateTitle: (url: string, title: string) => Promise<boolean>;
+  /** 地址栏补全检索：按匹配度 + 访问次数 + 最近访问排序 */
+  browserHistorySearch: (
+    query: string,
+    limit: number,
+  ) => Promise<BrowserHistoryEntry[]>;
+  /** 设置页历史列表（查询过滤 + 分页，返回命中总数） */
+  browserHistoryList: (
+    query: string,
+    offset: number,
+    limit: number,
+  ) => Promise<BrowserHistoryPage>;
+  /** 删除单条历史记录 */
+  browserHistoryDelete: (id: string) => Promise<boolean>;
+  /** 清空全部历史记录，返回删除数量 */
+  browserHistoryClear: () => Promise<number>;
   // ── Codex 宠物系统 ────────────────────────────────────────────────
   /** 安装 Codex 宠物包（zip），返回安装后的宠物清单 */
   installPetFromZip: (zipPath: string) => Promise<PetManifestRecord>;
@@ -2976,6 +2996,22 @@ export type ImportedBrowserBookmark = {
   title: string;
   url: string;
   folder: string;
+};
+
+/** 访问历史条目（时间戳单位：毫秒）。 */
+export type BrowserHistoryEntry = {
+  id: string;
+  url: string;
+  title: string;
+  visitCount: number;
+  createdAt: number;
+  lastVisitAt: number;
+};
+
+/** 访问历史分页结果（total 为命中查询的全部条目数）。 */
+export type BrowserHistoryPage = {
+  items: BrowserHistoryEntry[];
+  total: number;
 };
 
 /** Codex 宠物清单（pet.json 解析结果 + 安装位置信息）。 */

@@ -4095,6 +4095,7 @@ export const en = {
   "browser.clearBrowsingData": "Clear browsing data",
   "browser.clearCache": "Clear cache",
   "browser.clearCookies": "Clear cookies",
+  "browser.clearHistory": "Clear history",
   "browser.zoom": "Zoom",
   "browser.zoomIn": "Zoom in",
   "browser.zoomOut": "Zoom out",
@@ -4112,6 +4113,9 @@ export const en = {
   "browser.forward": "Forward",
   "browser.reload": "Reload",
   "browser.addressPlaceholder": "Enter URL or search...",
+  "browser.suggestionsTitle": "Address suggestions",
+  "browser.suggestionVisits": "{{count}} visits",
+  "browser.suggestionRemove": "Remove from history",
   "browser.cut": "Cut",
   "browser.copy": "Copy",
   "browser.paste": "Paste",
@@ -4175,6 +4179,25 @@ export const en = {
   "settings.browserBookmarkBatchDeleteMessage":
     "Delete the {{count}} selected bookmarks? This action cannot be undone.",
   "settings.browserBookmarkSelectRecord": "Select this bookmark",
+  "settings.browserHistory": "History",
+  "settings.browserHistoryManageTitle": "Browsing history",
+  "settings.browserHistoryHint":
+    "Pages visited in the embedded browser, used for address bar autocomplete",
+  "settings.browserHistoryEmpty":
+    "No history yet. Pages you open in the embedded browser are recorded here automatically",
+  "settings.browserHistorySearch": "Search title or address",
+  "settings.browserHistorySearchEmpty": "No history matches your search",
+  "settings.browserHistoryTitle": "Title",
+  "settings.browserHistoryUrl": "Address",
+  "settings.browserHistoryVisitedAt": "Last visited",
+  "settings.browserHistoryVisitCount": "{{count}} visits",
+  "settings.browserHistoryOpen": "Open in embedded browser",
+  "settings.browserHistoryDeleteOne": "Delete this entry",
+  "settings.browserHistoryClearAll": "Clear history",
+  "settings.browserHistoryClearTitle": "Clear history",
+  "settings.browserHistoryClearMessage":
+    "Clear all browsing history? This action cannot be undone.",
+  "settings.browserHistoryLoadMore": "Load more",
   "settings.browserHomepage": "Homepage",
   "settings.browserHomepagePlaceholder":
     "Enter URL, leave empty for blank page",

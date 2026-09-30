@@ -1,5 +1,6 @@
 pub mod anthropic;
 pub mod browser_import;
+pub mod browser_history;
 pub mod cancel;
 pub mod chat;
 pub mod codebase_review;

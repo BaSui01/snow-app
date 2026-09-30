@@ -92,6 +92,13 @@ const requiredExports = [
   "teamSetAvatarColor",
   // 退出前落盘尚未执行的自动格式化（延迟格式化调度器，见 filesystem/format.rs）
   "flushPendingFileFormats",
+  // 内置浏览器访问历史（地址栏补全 / 设置页历史管理）
+  "browserHistoryRecord",
+  "browserHistoryUpdateTitle",
+  "browserHistorySearch",
+  "browserHistoryList",
+  "browserHistoryDelete",
+  "browserHistoryClear",
 ];
 
 const platformName = platformMap[`${process.platform}-${process.arch}`];

@@ -38417,6 +38417,101 @@ body.ctrl-held [data-path] {
   color: var(--text-tertiary);
 }
 
+/* 地址栏补全下拉：portal 到 body 的 fixed 定位（与 BrowserMenu 同模式），
+   宽度对齐地址栏、超长内部滚动，不被浏览器面板的 overflow 裁剪。 */
+.browser-address-suggestions {
+  position: fixed;
+  z-index: 9999;
+  padding: 4px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg, 8px);
+  background: var(--bg-secondary);
+  box-shadow: var(--island-shadow, 0 4px 16px rgba(0, 0, 0, 0.12));
+}
+
+.browser-address-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.browser-address-suggestion.is-highlighted {
+  background: var(--bg-hover);
+}
+
+.browser-address-suggestion-icon {
+  color: var(--text-tertiary);
+}
+
+.browser-address-suggestion-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+
+.browser-address-suggestion-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.browser-address-suggestion-url {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.browser-address-suggestion-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+}
+
+/* 单条删除按钮仅 hover / 高亮该行时显示 */
+.browser-address-suggestion-remove {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.browser-address-suggestion:hover .browser-address-suggestion-remove,
+.browser-address-suggestion.is-highlighted .browser-address-suggestion-remove {
+  display: flex;
+}
+
+.browser-address-suggestion-remove:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 .browser-element-pick-btn.is-active,
 .browser-element-pick-btn.is-active:hover:not(:disabled) {
   color: var(--text-primary);
@@ -39877,6 +39972,59 @@ body.ctrl-held [data-path] {
 
 .browser-settings-table tbody tr.is-selected td:first-child {
   box-shadow: inset 2px 0 0 var(--text-primary);
+}
+
+/* ===== 浏览器设置页：访问历史表格 ===== */
+.browser-history-title-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+}
+
+.browser-history-favicon {
+  color: var(--text-tertiary);
+}
+
+.browser-history-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.browser-history-url-cell {
+  max-width: 240px;
+}
+
+.browser-history-url {
+  display: block;
+  width: 100%;
+  max-width: 240px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.browser-history-url:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+.browser-history-time-cell {
+  white-space: nowrap;
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+}
+
+.browser-history-visits {
+  color: var(--text-muted);
 }
 
 .browser-settings-batch-bar {

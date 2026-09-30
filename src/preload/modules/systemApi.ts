@@ -199,6 +199,22 @@ export type BrowserBookmark = {
   createdAt: number;
 };
 
+/** 内置浏览器访问历史条目（时间戳单位：毫秒）。 */
+export type BrowserHistoryEntry = {
+  id: string;
+  url: string;
+  title: string;
+  visitCount: number;
+  createdAt: number;
+  lastVisitAt: number;
+};
+
+/** 访问历史分页结果（total 为命中查询的全部条目数）。 */
+export type BrowserHistoryPage = {
+  items: BrowserHistoryEntry[];
+  total: number;
+};
+
 type BrowserBookmarksChangedSubscriber = () => void;
 
 const browserBookmarksSubscribers =
@@ -1552,6 +1568,31 @@ export const windowApi = {
       browserBookmarksSubscribers.delete(callback);
     };
   },
+  /** 记录一次内置浏览器的页面访问（非 http(s) 地址会被忽略）。 */
+  browserHistoryRecord: (url: string, title: string): Promise<boolean> =>
+    ipcRenderer.invoke("browser-history:record", url, title),
+  /** 页面标题迟到更新：只改标题，不计入访问次数。 */
+  browserHistoryUpdateTitle: (url: string, title: string): Promise<boolean> =>
+    ipcRenderer.invoke("browser-history:update-title", url, title),
+  /** 地址栏补全检索（查询为空时返回最近访问）。 */
+  browserHistorySearch: (
+    query: string,
+    limit = 8,
+  ): Promise<BrowserHistoryEntry[]> =>
+    ipcRenderer.invoke("browser-history:search", query, limit),
+  /** 设置页历史列表（查询过滤 + 分页）。 */
+  browserHistoryList: (
+    query: string,
+    offset = 0,
+    limit = 50,
+  ): Promise<BrowserHistoryPage> =>
+    ipcRenderer.invoke("browser-history:list", query, offset, limit),
+  /** 删除单条历史记录。 */
+  browserHistoryDelete: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke("browser-history:delete", id),
+  /** 清空全部历史记录，返回删除数量。 */
+  browserHistoryClear: (): Promise<number> =>
+    ipcRenderer.invoke("browser-history:clear"),
   /** 执行白名单内的 CDP 命令（Accessibility.getFullAXTree / DOM.resolveNode / Runtime.callFunctionOn）。 */
   browserCdpCommand: (
     webContentsId: number,

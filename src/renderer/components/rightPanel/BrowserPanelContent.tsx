@@ -287,6 +287,9 @@ export const BrowserPanelContent = ({
   // 本实例 webview 的 guest webContents id：主进程 browser:open-tab 事件
   // 按此判断发起请求的 guest 是否属于本实例。
   const guestWebContentsIdRef = useRef<number | null>(null);
+  // 最近一次已写入访问历史的 URL：同 URL 去重（页面内跳转重复触发），
+  // 标题迟到更新也据此判断页面是否仍是同一页。
+  const lastRecordedUrlRef = useRef("");
   const consoleMessagesRef = useRef<unknown[]>([]);
   const [zoomFactor, setZoomFactor] = useState(1);
   const [findVisible, setFindVisible] = useState(false);
@@ -393,6 +396,21 @@ export const BrowserPanelContent = ({
   }, [activeDeviceSize, applyDeviceEmulation]);
 
   /**
+   * 记录一次页面访问（仅 http/https，同 URL 去重）。标题先留空，由
+   * page-title-updated 回填：did-navigate 提交时文档标题还是上一页的。
+   */
+  const recordVisit = useCallback((url: string): void => {
+    if (!/^https?:\/\//i.test(url)) {
+      return;
+    }
+    if (lastRecordedUrlRef.current === url) {
+      return;
+    }
+    lastRecordedUrlRef.current = url;
+    void window.snow.browserHistoryRecord(url, "").catch(() => {});
+  }, []);
+
+  /**
    * 为本实例唯一的 webview 绑定事件监听（元素挂载时调用一次）。
    * handler 通过 refs 读取最新状态，闭包仅捕获 instanceId 与 webview。
    */
@@ -426,6 +444,8 @@ export const BrowserPanelContent = ({
         // 使 screenshot 等 MCP 操作恢复正常执行。
         recordMainFrameNavigationSuccess(instanceId, e.url);
         setAddressInput(e.url);
+        // 访问历史：导航提交即记录（标题由页面标题更新事件回填）。
+        recordVisit(e.url);
         handleNavigationStateUpdate();
         // Keep the menu's zoom display in sync with the webview's actual zoom
         // (Electron persists zoom per webContents across navigations).
@@ -438,9 +458,32 @@ export const BrowserPanelContent = ({
         setIsLoading(true);
       };
 
+      /** 回填访问历史标题（只更新标题，不计入访问次数）。 */
+      const syncHistoryTitle = (): void => {
+        let currentUrl = "";
+        let currentTitle = "";
+        try {
+          currentUrl = webview.getURL();
+          currentTitle = webview.getTitle();
+        } catch {
+          return;
+        }
+        if (!currentUrl || !currentTitle) {
+          return;
+        }
+        if (lastRecordedUrlRef.current !== currentUrl) {
+          return;
+        }
+        void window.snow
+          .browserHistoryUpdateTitle(currentUrl, currentTitle)
+          .catch(() => {});
+      };
+
       const handleDidStopLoading = (): void => {
         setIsLoading(false);
         handleNavigationStateUpdate();
+        // 加载完成时补一次标题回填：覆盖标题事件早于导航提交到达的情况。
+        syncHistoryTitle();
       };
 
       const handlePageTitleUpdated = (
@@ -449,6 +492,7 @@ export const BrowserPanelContent = ({
         setTitle(e.title);
         if (e.title) {
           onTitleChangeRef.current?.(e.title);
+          syncHistoryTitle();
         }
       };
 
@@ -527,7 +571,7 @@ export const BrowserPanelContent = ({
       // guest 内点击上报 → 宿主合成外部点击，收起已展开的下拉/浮层。
       attachGuestPointerDismiss(webview);
     },
-    [instanceId, applyMutedState],
+    [instanceId, applyMutedState, recordVisit],
   );
 
   /**
@@ -874,6 +918,11 @@ export const BrowserPanelContent = ({
     webviewRef.current?.reload();
   };
 
+  // 清空访问历史（地址栏补全与设置页历史的数据源）。
+  const handleClearHistory = (): void => {
+    void window.snow.browserHistoryClear().catch(() => {});
+  };
+
   // 跳转到浏览器设置页（起始页 / 密码管理 / 用户脚本 / 导入）。
   const handleOpenSettings = (): void => {
     window.dispatchEvent(
@@ -1013,6 +1062,7 @@ export const BrowserPanelContent = ({
         isPickingElement={isPicking}
         onAddressChange={handleAddressChange}
         onAddressKeyDown={handleAddressKeyDown}
+        onNavigateToUrl={handleNavigate}
         onBack={handleBack}
         onForward={handleForward}
         onReload={handleReload}
@@ -1024,6 +1074,7 @@ export const BrowserPanelContent = ({
         menuDevices={menuDevices}
         onClearCache={handleClearCache}
         onClearCookies={handleClearCookies}
+        onClearHistory={handleClearHistory}
         onOpenSettings={handleOpenSettings}
         onManageDevices={handleManageDevices}
         onZoomIn={handleZoomIn}

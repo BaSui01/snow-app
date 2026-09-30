@@ -1922,6 +1922,32 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to import browser bookmarks",
           ),
         ),
+      browserHistoryRecord: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to record browser history"),
+        ),
+      browserHistoryUpdateTitle: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to update browser history titles",
+          ),
+        ),
+      browserHistorySearch: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to search browser history"),
+        ),
+      browserHistoryList: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to list browser history"),
+        ),
+      browserHistoryDelete: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to delete browser history"),
+        ),
+      browserHistoryClear: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to clear browser history"),
+        ),
       installPetFromZip: () =>
         Promise.reject(
           new Error("Rust native bridge is required to install pets"),

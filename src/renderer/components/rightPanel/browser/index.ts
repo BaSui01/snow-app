@@ -20,3 +20,8 @@ export type { BrowserBookmarksBarProps } from "./BrowserBookmarksBar";
 export { useBrowserBookmarks } from "./useBrowserBookmarks";
 export { WebsiteFavicon } from "./WebsiteFavicon";
 export type { WebsiteFaviconProps } from "./WebsiteFavicon";
+export { BrowserAddressSuggestions } from "./BrowserAddressSuggestions";
+export type {
+  AddressSuggestion,
+  BrowserAddressSuggestionsProps,
+} from "./BrowserAddressSuggestions";

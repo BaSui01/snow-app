@@ -15,6 +15,7 @@ import {
   EllipsisVertical,
   Eraser,
   Globe,
+  History,
   Loader2,
   Minus,
   PanelLeft,
@@ -42,6 +43,8 @@ export type BrowserMenuProps = {
   menuDevices: readonly BrowserDisplayDevice[];
   onClearCache: () => void;
   onClearCookies: () => void;
+  /** 清空内置浏览器的访问历史（地址栏补全数据源） */
+  onClearHistory: () => void;
   onOpenSettings: () => void;
   /** 直达浏览器设置面板的「显示尺寸设备」tab（设备 flyout 管理入口） */
   onManageDevices: () => void;
@@ -103,6 +106,7 @@ export const BrowserMenu = ({
   menuDevices,
   onClearCache,
   onClearCookies,
+  onClearHistory,
   onOpenSettings,
   onManageDevices,
   onZoomIn,
@@ -332,6 +336,17 @@ export const BrowserMenu = ({
                       <Cookie size={14} strokeWidth={1.8} />
                       <span className="browser-menu-label">
                         {t("browser.clearCookies")}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="browser-menu-item"
+                      role="menuitem"
+                      onClick={() => runAction(onClearHistory)}
+                    >
+                      <History size={14} strokeWidth={1.8} />
+                      <span className="browser-menu-label">
+                        {t("browser.clearHistory")}
                       </span>
                     </button>
                   </div>

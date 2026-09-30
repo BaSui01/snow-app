@@ -8,6 +8,7 @@ import {
   Eye,
   EyeOff,
   Globe,
+  History,
   KeyRound,
   Loader2,
   Pencil,
@@ -32,14 +33,15 @@ import {
 } from "../../icons/browserLogos";
 import { UserscriptsSection } from "./UserscriptsSection";
 import { DisplayDevicesSection } from "./DisplayDevicesSection";
+import { HistorySection } from "./HistorySection";
 
 type BrowserSettingsPanelProps = {
   /** 初始 tab（菜单「自定义设备…」经 browser-devices view 直达设备 tab） */
   initialTab?: BrowserSettingsTab;
 };
 
-/** 面板顶部 tab：浏览器设置 / 显示尺寸设备 / 用户脚本 */
-type BrowserSettingsTab = "settings" | "devices" | "userscripts";
+/** 面板顶部 tab：浏览器设置 / 显示尺寸设备 / 用户脚本 / 历史记录 */
+type BrowserSettingsTab = "settings" | "devices" | "userscripts" | "history";
 
 type PasswordRecord = {
   id: string;
@@ -658,12 +660,26 @@ export function BrowserSettingsPanel({
           <TampermonkeyIcon size={13} />
           {t("userscripts.title")}
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "history"}
+          className={`import-settings-tab ${
+            activeTab === "history" ? "active" : ""
+          }`}
+          onClick={() => setActiveTab("history")}
+        >
+          <History size={13} strokeWidth={1.8} />
+          {t("settings.browserHistory")}
+        </button>
       </div>
 
       {activeTab === "userscripts" ? (
         <UserscriptsSection />
       ) : activeTab === "devices" ? (
         <DisplayDevicesSection />
+      ) : activeTab === "history" ? (
+        <HistorySection />
       ) : (
         <>
           {/* 概览卡片 */}

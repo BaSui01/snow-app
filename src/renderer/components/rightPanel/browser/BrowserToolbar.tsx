@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -8,12 +8,70 @@ import {
   RotateCw,
 } from "lucide-react";
 import { ContextMenu, type ContextMenuItem } from "../../common/ContextMenu";
-import type { BrowserDownloadItemEvent } from "../../../../preload/modules/systemApi";
+import type {
+  BrowserBookmark,
+  BrowserDownloadItemEvent,
+  BrowserHistoryEntry,
+} from "../../../../preload/modules/systemApi";
 import { BrowserMenu } from "./BrowserMenu";
 import type { BrowserDisplayDevice } from "./browserDeviceSize";
 import { BrowserDownloadsPanel } from "./BrowserDownloadsPanel";
 import { WebsiteFavicon } from "./WebsiteFavicon";
+import { BrowserAddressSuggestions } from "./BrowserAddressSuggestions";
+import type { AddressSuggestion } from "./BrowserAddressSuggestions";
+import { useBrowserBookmarks } from "./useBrowserBookmarks";
 import { useI18n } from "../../../i18n";
+
+/** 地址栏补全下拉的建议条数上限 */
+const MAX_ADDRESS_SUGGESTIONS = 8;
+
+/** 合并历史命中与未重复的书签命中（历史在前，已按检索分值排序）。 */
+const buildAddressSuggestions = (
+  query: string,
+  history: readonly BrowserHistoryEntry[],
+  bookmarks: readonly BrowserBookmark[],
+): AddressSuggestion[] => {
+  const trimmed = query.trim().toLowerCase();
+  const items: AddressSuggestion[] = [];
+  const seen = new Set<string>();
+  for (const entry of history) {
+    if (seen.has(entry.url)) {
+      continue;
+    }
+    seen.add(entry.url);
+    items.push({
+      key: `history:${entry.id}`,
+      kind: "history",
+      id: entry.id,
+      url: entry.url,
+      title: entry.title,
+      visitCount: entry.visitCount,
+      lastVisitAt: entry.lastVisitAt,
+    });
+  }
+  for (const bookmark of bookmarks) {
+    if (seen.has(bookmark.url)) {
+      continue;
+    }
+    if (
+      trimmed &&
+      !`${bookmark.title} ${bookmark.url}`.toLowerCase().includes(trimmed)
+    ) {
+      continue;
+    }
+    seen.add(bookmark.url);
+    items.push({
+      key: `bookmark:${bookmark.id}`,
+      kind: "bookmark",
+      id: "",
+      url: bookmark.url,
+      title: bookmark.title,
+      visitCount: 0,
+      lastVisitAt: 0,
+    });
+  }
+  return items.slice(0, MAX_ADDRESS_SUGGESTIONS);
+};
 
 export type BrowserToolbarProps = {
   canGoBack: boolean;
@@ -26,6 +84,8 @@ export type BrowserToolbarProps = {
   isPickingElement: boolean;
   onAddressChange: (value: string) => void;
   onAddressKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  /** 选择补全建议（历史/书签）后导航到该地址 */
+  onNavigateToUrl: (url: string) => void;
   onBack: () => void;
   onForward: () => void;
   onReload: () => void;
@@ -40,6 +100,8 @@ export type BrowserToolbarProps = {
   menuDevices: readonly BrowserDisplayDevice[];
   onClearCache: () => void;
   onClearCookies: () => void;
+  /** 清空内置浏览器的访问历史（地址栏补全数据源） */
+  onClearHistory: () => void;
   onOpenSettings: () => void;
   /** 直达浏览器设置面板的「显示尺寸设备」tab */
   onManageDevices: () => void;
@@ -76,6 +138,7 @@ export const BrowserToolbar = ({
   isPickingElement,
   onAddressChange,
   onAddressKeyDown,
+  onNavigateToUrl,
   onBack,
   onForward,
   onReload,
@@ -87,6 +150,7 @@ export const BrowserToolbar = ({
   menuDevices,
   onClearCache,
   onClearCookies,
+  onClearHistory,
   onOpenSettings,
   onManageDevices,
   onZoomIn,
@@ -169,6 +233,186 @@ export const BrowserToolbar = ({
     return !!input && (input.selectionStart ?? 0) !== (input.selectionEnd ?? 0);
   })();
 
+  // ---- 地址栏补全：历史记录 + 书签建议 ----
+  const addressBarRef = useRef<HTMLDivElement>(null);
+  const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [highlighted, setHighlighted] = useState(-1);
+  // 连续输入时丢弃过期查询结果（只认最后一次请求）。
+  const suggestionsRequestRef = useRef(0);
+  const suggestionsTimerRef = useRef<number | null>(null);
+  const { bookmarks } = useBrowserBookmarks();
+  const bookmarksRef = useRef(bookmarks);
+  bookmarksRef.current = bookmarks;
+
+  useEffect(
+    () => () => {
+      if (suggestionsTimerRef.current !== null) {
+        window.clearTimeout(suggestionsTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  const loadSuggestions = useCallback(async (query: string): Promise<void> => {
+    const requestId = suggestionsRequestRef.current + 1;
+    suggestionsRequestRef.current = requestId;
+    let history: BrowserHistoryEntry[] = [];
+    try {
+      history = await window.snow.browserHistorySearch(
+        query,
+        MAX_ADDRESS_SUGGESTIONS,
+      );
+    } catch {
+      history = [];
+    }
+    if (requestId !== suggestionsRequestRef.current) {
+      return;
+    }
+    setSuggestions(
+      buildAddressSuggestions(query, history, bookmarksRef.current),
+    );
+    setHighlighted(-1);
+  }, []);
+
+  const scheduleSuggestions = useCallback(
+    (query: string, delay: number): void => {
+      if (suggestionsTimerRef.current !== null) {
+        window.clearTimeout(suggestionsTimerRef.current);
+        suggestionsTimerRef.current = null;
+      }
+      if (delay <= 0) {
+        void loadSuggestions(query);
+        return;
+      }
+      suggestionsTimerRef.current = window.setTimeout(() => {
+        suggestionsTimerRef.current = null;
+        void loadSuggestions(query);
+      }, delay);
+    },
+    [loadSuggestions],
+  );
+
+  const closeSuggestions = useCallback((): void => {
+    setSuggestionsOpen(false);
+    setHighlighted(-1);
+  }, []);
+
+  // 点击下拉与地址栏以外的任何位置（含 guest 内点击经 browserGuestDismiss
+  // 合成的 body mousedown）都收起下拉。
+  useEffect(() => {
+    if (!suggestionsOpen) {
+      return;
+    }
+    const handlePointerDown = (event: MouseEvent): void => {
+      const target = event.target;
+      if (target instanceof Element) {
+        if (addressBarRef.current?.contains(target)) {
+          return;
+        }
+        if (target.closest("#browser-address-suggestions")) {
+          return;
+        }
+      }
+      closeSuggestions();
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [suggestionsOpen, closeSuggestions]);
+
+  // 聚焦先给最近访问（空查询），继续输入再按内容检索。
+  const handleAddressFocus = (): void => {
+    setSuggestionsOpen(true);
+    scheduleSuggestions("", 0);
+  };
+
+  const handleAddressInputChange = (value: string): void => {
+    onAddressChange(value);
+    setSuggestionsOpen(true);
+    scheduleSuggestions(value, 120);
+  };
+
+  const selectSuggestion = useCallback(
+    (suggestion: AddressSuggestion): void => {
+      closeSuggestions();
+      onAddressChange(suggestion.url);
+      onNavigateToUrl(suggestion.url);
+    },
+    [closeSuggestions, onAddressChange, onNavigateToUrl],
+  );
+
+  const removeSuggestion = useCallback(
+    (suggestion: AddressSuggestion): void => {
+      if (suggestion.kind !== "history" || !suggestion.id) {
+        return;
+      }
+      const next = suggestions.filter((item) => item.key !== suggestion.key);
+      setSuggestions(next);
+      setHighlighted((index) =>
+        index >= next.length ? next.length - 1 : index,
+      );
+      void window.snow.browserHistoryDelete(suggestion.id).catch(() => {});
+    },
+    [suggestions],
+  );
+
+  /** 已消费按键返回 true（不再下发给导航逻辑）。 */
+  const handleSuggestionKeyDown = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+  ): boolean => {
+    // 输入法组合期间的方向键/回车属于候选词操作，交回默认处理。
+    if (e.nativeEvent.isComposing || e.keyCode === 229) {
+      return false;
+    }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (!suggestionsOpen) {
+        setSuggestionsOpen(true);
+        scheduleSuggestions(addressInput, 0);
+        return true;
+      }
+      if (suggestions.length === 0) {
+        return true;
+      }
+      setHighlighted((prev) => {
+        const next = prev + (e.key === "ArrowDown" ? 1 : -1);
+        if (next < -1) {
+          return suggestions.length - 1;
+        }
+        if (next >= suggestions.length) {
+          return -1;
+        }
+        return next;
+      });
+      return true;
+    }
+    if (e.key === "Escape" && suggestionsOpen) {
+      e.preventDefault();
+      closeSuggestions();
+      return true;
+    }
+    if (e.key === "Enter" && suggestionsOpen && highlighted >= 0) {
+      const suggestion = suggestions[highlighted];
+      if (suggestion) {
+        e.preventDefault();
+        selectSuggestion(suggestion);
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const handleAddressKeyDown = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+  ): void => {
+    if (handleSuggestionKeyDown(e)) {
+      return;
+    }
+    onAddressKeyDown(e);
+  };
+
   const addressMenuItems: ContextMenuItem[] = [
     {
       id: "cut",
@@ -229,7 +473,7 @@ export const BrowserToolbar = ({
           <RotateCw size={15} strokeWidth={1.8} />
         )}
       </button>
-      <div className="browser-address-bar">
+      <div className="browser-address-bar" ref={addressBarRef}>
         <WebsiteFavicon
           url={addressInput}
           size={13}
@@ -240,13 +484,34 @@ export const BrowserToolbar = ({
           type="text"
           className="browser-address-input"
           value={addressInput}
-          onChange={(e) => onAddressChange(e.target.value)}
-          onKeyDown={onAddressKeyDown}
+          onChange={(e) => handleAddressInputChange(e.target.value)}
+          onKeyDown={handleAddressKeyDown}
+          onFocus={handleAddressFocus}
+          onBlur={closeSuggestions}
           onContextMenu={handleAddressContextMenu}
           placeholder={t("browser.addressPlaceholder")}
           spellCheck={false}
+          role="combobox"
+          aria-expanded={suggestionsOpen && suggestions.length > 0}
+          aria-controls="browser-address-suggestions"
+          aria-autocomplete="list"
+          aria-activedescendant={
+            highlighted >= 0
+              ? `browser-address-suggestion-${highlighted}`
+              : undefined
+          }
         />
       </div>
+      {suggestionsOpen && suggestions.length > 0 && (
+        <BrowserAddressSuggestions
+          anchor={addressBarRef.current}
+          suggestions={suggestions}
+          highlightedIndex={highlighted}
+          onHighlight={setHighlighted}
+          onSelect={selectSuggestion}
+          onRemove={removeSuggestion}
+        />
+      )}
       {canPickElement && (
         <button
           type="button"
@@ -285,6 +550,7 @@ export const BrowserToolbar = ({
         onScreenshot={onScreenshot}
         onClearCache={onClearCache}
         onClearCookies={onClearCookies}
+        onClearHistory={onClearHistory}
         onOpenSettings={onOpenSettings}
         onManageDevices={onManageDevices}
         onZoomIn={onZoomIn}

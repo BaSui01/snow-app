@@ -181,3 +181,13 @@ An ordinary directory backup is not a reliable cross-machine password recovery p
 | Cookie leakage is suspected         | Revoke affected sessions from each website, remove Snow session data, and rotate passwords                 |
 
 For window isolation, third-party tools, and user responsibility, read [Security, Privacy, and Tool Authorization](16-security-privacy-and-tool-authorization.md) and [Security and Trust Boundaries](../3-reference/5-security-and-trust-boundaries.md). For a storage-directory overview, see [Data Storage Locations](../3-reference/4-data-storage-locations.md).
+
+## 13. Browsing history and address bar completion
+
+The embedded browser records page visits (address, title, visit count, last-visit time) and uses them for address bar completion:
+
+- Stored in `~/.snowapp/browser-history.json` (plain JSON, capped at 3000 entries; the entries with the oldest last-visit time are dropped beyond that).
+- Focusing the address bar or typing a keyword opens a dropdown with matching history entries and bookmarks: `Up` / `Down` to move, `Enter` to open, `Esc` to dismiss; the `x` at the row end removes that history entry.
+- The "Browser settings -> History" tab supports searching by title or address, deleting single entries, paged loading, and clearing everything.
+- The "Clear browsing data -> Clear history" menu item wipes the history directly; clearing cache or cookies does not affect it.
+- Only http/https pages are recorded; internal addresses such as `about:` and `file:` are ignored.

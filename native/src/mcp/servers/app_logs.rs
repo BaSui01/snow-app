@@ -29,14 +29,25 @@ impl AppLogsService {
             ));
         }
         let module = optional_string(args, "module")?;
-        let conversation_id = optional_string(args, "conversationId")?
-            .filter(|id| !id.is_empty())
-            .ok_or_else(|| {
-                Error::new(
-                    Status::InvalidArg,
-                    "config-logs-read requires an internally scoped conversationId",
-                )
-            })?;
+        let scope = optional_string(args, "scope")?.unwrap_or_else(|| "all".to_string());
+        if !matches!(scope.as_str(), "all" | "current") {
+            return Err(Error::new(
+                Status::InvalidArg,
+                "scope must be all or current",
+            ));
+        }
+        let conversation_id = optional_string(args, "conversationId")?;
+        if scope == "current" && conversation_id.is_none() {
+            return Err(Error::new(
+                Status::InvalidArg,
+                "current scope requires the runtime-provided conversationId",
+            ));
+        }
+        let max_field_chars = args
+            .get("maxFieldChars")
+            .and_then(Value::as_u64)
+            .unwrap_or(MAX_FIELD_CHARS as u64)
+            .clamp(1, 50_000) as usize;
         let since = optional_string(args, "since")?.map(|value| normalize_date_bound(value, false));
         let until = optional_string(args, "until")?.map(|value| normalize_date_bound(value, true));
         let limit = args
@@ -116,10 +127,16 @@ impl AppLogsService {
                 )
             })?;
 
-        // The detailed query remains strictly scoped by the runtime-provided ID.
-        filters.push("conversation_id = ?".to_string());
-        values.push(rusqlite::types::Value::Text(conversation_id));
-        let where_sql = format!(" WHERE {}", filters.join(" AND "));
+        // Full-log scope is requested explicitly by the caller; current scope keeps the runtime conversation boundary.
+        if scope == "current" {
+            filters.push("conversation_id = ?".to_string());
+            values.push(rusqlite::types::Value::Text(conversation_id.unwrap()));
+        }
+        let where_sql = if filters.is_empty() {
+            String::new()
+        } else {
+            format!(" WHERE {}", filters.join(" AND "))
+        };
         let count_sql = format!("SELECT COUNT(*) FROM app_logs{where_sql}");
         let total: i64 = connection
             .query_row(
@@ -135,13 +152,20 @@ impl AppLogsService {
             })?;
 
         let query_sql = format!(
-            "SELECT id, created_at, level, module, func, message, conversation_id, context, error, input, output \
+            "SELECT id, created_at, level, module, func, message, conversation_id, context, error, input, output, line, duration, source \
              FROM app_logs{where_sql} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?"
         );
         values.push(rusqlite::types::Value::Integer(limit as i64));
         values.push(rusqlite::types::Value::Integer(
             offset.min(i64::MAX as u64) as i64
         ));
+        let api_keys: Vec<String> =
+            crate::storage::services::api_configs::list_api_configs(database_path)
+                .unwrap_or_default()
+                .into_iter()
+                .flat_map(|profile| [profile.api_key, profile.vision_api_key])
+                .filter(|key| !key.is_empty())
+                .collect();
         let mut statement = connection.prepare(&query_sql).map_err(|err| {
             Error::new(
                 Status::GenericFailure,
@@ -151,34 +175,28 @@ impl AppLogsService {
         let rows = statement
             .query_map(rusqlite::params_from_iter(values.iter()), |row| {
                 let module: String = row.get(3)?;
-                let error: String = row.get(8)?;
-                let request_body = if module == "api_request" {
-                    truncate(row.get::<_, String>(9)?, MAX_FIELD_CHARS)
-                } else {
-                    String::new()
-                };
-                let response_body = if module == "api_response" {
-                    truncate(row.get::<_, String>(10)?, MAX_FIELD_CHARS)
-                } else {
-                    String::new()
-                };
-                let error = if module == "api" {
-                    String::new()
-                } else {
-                    truncate(error, MAX_FIELD_CHARS)
-                };
+                let input = redact_and_truncate(row.get::<_, String>(9)?, &api_keys, max_field_chars);
+                let output = redact_and_truncate(row.get::<_, String>(10)?, &api_keys, max_field_chars);
+                let error = redact_and_truncate(row.get::<_, String>(8)?, &api_keys, max_field_chars);
+                let conversation_id: String = row.get(6)?;
                 Ok(json!({
                     "id": row.get::<_, String>(0)?,
+                    "traceKey": if conversation_id.is_empty() { row.get::<_, String>(0)? } else { conversation_id.clone() },
                     "createdAt": row.get::<_, String>(1)?,
                     "level": row.get::<_, String>(2)?,
                     "module": module,
                     "function": row.get::<_, String>(4)?,
-                    "message": row.get::<_, String>(5)?,
-                    "conversationId": row.get::<_, String>(6)?,
-                    "context": truncate(row.get::<_, String>(7)?, MAX_FIELD_CHARS),
-                    "error": if module == "api" { String::new() } else { truncate(error, MAX_FIELD_CHARS) },
-                    "requestBody": request_body,
-                    "responseBody": response_body,
+                    "line": row.get::<_, Option<i32>>(11)?,
+                    "message": redact_and_truncate(row.get::<_, String>(5)?, &api_keys, max_field_chars),
+                    "conversationId": conversation_id,
+                    "context": redact_and_truncate(row.get::<_, String>(7)?, &api_keys, max_field_chars),
+                    "error": error,
+                    "input": input,
+                    "output": output,
+                    "requestBody": if module == "api_request" { redact_and_truncate(row.get::<_, String>(9)?, &api_keys, max_field_chars) } else { String::new() },
+                    "responseBody": if module == "api_response" { redact_and_truncate(row.get::<_, String>(10)?, &api_keys, max_field_chars) } else { String::new() },
+                    "duration": row.get::<_, String>(12)?,
+                    "source": row.get::<_, String>(13)?,
                 }))
             })
             .map_err(|err| {
@@ -204,8 +222,10 @@ impl AppLogsService {
             "offset": offset,
             "hasMore": offset.saturating_add(returned as u64) < total as u64,
             "systemSummary": system_summary,
-            "detailScope": "current_conversation",
-            "note": "systemSummary contains application-wide counts only under the same level/module/time filters, without pagination. items/total/hasMore are restricted to the current conversation; unassociated system/legacy rows and other conversations are excluded from details. A zero detail total does not mean the application has no logs. API bodies are truncated and secret fields/API-key strings are redacted before persistence."
+            "detailScope": if scope == "all" { "all_application_logs" } else { "current_conversation" },
+            "maxFieldChars": max_field_chars,
+            "traceHint": "Group by traceKey/conversationId, then order by createdAt; API request and response rows share the conversation trace when associated. Unassociated rows use their own id as traceKey; no dedicated per-request trace id is currently persisted.",
+            "note": "Returns level, module, function/line, message, input/output, duration, source, context and error; API request/response bodies are exposed as input/output and requestBody/responseBody. scope=all includes all conversations and unassociated logs. Fields are capped by maxFieldChars. API payloads are redacted before persistence; log text outside payloads may also contain sensitive values."
         }))
     }
 }
@@ -238,6 +258,13 @@ fn optional_string(args: &Value, key: &str) -> napi::Result<Option<String>> {
     }
 }
 
+fn redact_and_truncate(mut value: String, api_keys: &[String], limit: usize) -> String {
+    for key in api_keys {
+        value = value.replace(key, "[API_KEY_REDACTED]");
+    }
+    truncate(value, limit)
+}
+
 fn truncate(value: String, limit: usize) -> String {
     let mut chars = value.chars();
     let text: String = chars.by_ref().take(limit).collect();
@@ -257,17 +284,19 @@ impl McpService for AppLogsService {
         vec![McpTool {
             server_id: SERVER_ID.to_string(),
             name: TOOL_READ.to_string(),
-            description: "Read Snow App's SQLite system logs via config-logs-read. Read-only: systemSummary returns application-wide counts only (including unassociated/legacy logs), never other conversations' text, identifiers or payloads. items/total/hasMore remain restricted to the runtime-injected current conversation; total=0 does not mean there are no application logs. Supports level/module/time filters (empty strings mean omitted) and bounded detail pagination. Current-conversation API bodies are truncated; secret fields/API keys are redacted before persistence. Request logging is separately controlled by config-set scope=requestLogging with a default 5-minute expiry.".to_string(),
+            description: "Read detailed Snow App SQLite system logs across conversations by default. Returns severity, module/function/line, timestamps, conversation trace key, messages, contexts, errors, inputs/outputs, API request/response bodies, duration and source. API payloads are redacted at persistence; text fields are bounded by maxFieldChars (up to 50000 chars). API bodies may contain prompts and user content, but stored API keys are redacted.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "level": {"type":"string", "enum":["","DEBUG","INFO","WARN","ERROR"], "description":"Optional exact log level; empty string means all levels."},
-                    "module": {"type":"string", "description":"Optional exact module filter (for example api, lsp, hooks)."},
+                    "scope": {"type":"string", "enum":["all","current"], "description":"Detail scope; defaults to all application logs, including rows from other conversations and unassociated system logs."},
+                    "level": {"type":"string", "enum":["","DEBUG","INFO","WARN","ERROR"], "description":"Optional exact severity level; empty means all levels."},
+                    "module": {"type":"string", "description":"Optional exact subsystem filter (for example api, api_request, api_response, lsp, hooks)."},
                     "conversationId": {"type":"string", "description":"Runtime-scoped by Snow App to the current conversation; any caller-supplied value is overwritten."},
                     "since": {"type":"string", "description":"Optional local datetime lower bound: YYYY-MM-DD or YYYY-MM-DD HH:MM:SS."},
                     "until": {"type":"string", "description":"Optional local datetime upper bound: YYYY-MM-DD or YYYY-MM-DD HH:MM:SS."},
                     "limit": {"type":"integer", "minimum":1, "maximum":100, "description":"Page size, defaults to 50."},
-                    "offset": {"type":"integer", "minimum":0, "description":"Pagination offset, defaults to 0."}
+                    "offset": {"type":"integer", "minimum":0, "description":"Pagination offset, defaults to 0."},
+                    "maxFieldChars": {"type":"integer", "minimum":1, "maximum":50000, "description":"Maximum characters for each text field; defaults to 4000."}
                 }
             }),
         }]

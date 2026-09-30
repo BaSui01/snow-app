@@ -24,6 +24,7 @@ import {
   ComputerUseToolCall,
   SkillToolCall,
   ConfigToolCall,
+  AppLogsToolCall,
   AppControlToolCall,
   DbxToolCall,
   MemoryToolCall,
@@ -163,6 +164,10 @@ export const ToolCallItem = memo(
 
     if (toolCall.name === "skills-skill-execute") {
       return <SkillToolCall toolCall={toolCall} />;
+    }
+
+    if (toolCall.name === "config-logs-read") {
+      return <AppLogsToolCall toolCall={toolCall} />;
     }
 
     if (toolCall.name.startsWith("config-")) {

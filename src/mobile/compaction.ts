@@ -1,8 +1,10 @@
 import type { SnowRemoteState } from "../renderer/types/remoteControl";
+import { copyTextToClipboard } from "./clipboard";
 import { escapeHtml } from "./dom";
 import { t } from "./i18n";
 import { iconMarkup } from "./icons";
 import { renderMarkdown } from "./markdown";
+import { showNotice } from "./notice";
 
 let node: HTMLElement | null = null;
 let lastSig = "";
@@ -20,8 +22,30 @@ const streamMarkup = (preview: string): string =>
 const errorMarkup = (error: string): string =>
   `<div class="compaction-error" role="alert">${iconMarkup("circle-alert")}<span>${t("remote.compaction.failed")}: ${escapeHtml(error)}</span></div>`;
 
-export const compactionCardHtml = (content: string): string =>
-  `<details class="compaction-card"><summary class="compaction-card-header"><span class="compaction-card-icon">${iconMarkup("minimize-2")}</span><span class="compaction-card-copy"><strong>${t("remote.compaction.summary")}</strong><span class="compaction-card-desc">${t("remote.compaction.compacted")}</span></span><span class="compaction-card-action">${iconMarkup("chevron-down")}</span></summary><div class="compaction-card-body"><div class="markdown">${renderMarkdown(content)}</div></div></details>`;
+export const compactionCardHtml = (
+  messageId: string,
+  content: string,
+): string => {
+  const copyLabel = escapeHtml(t("remote.compaction.copy"));
+  return `<details class="compaction-card" data-compaction="${escapeHtml(messageId)}"><summary class="compaction-card-header"><span class="compaction-card-icon">${iconMarkup("minimize-2")}</span><span class="compaction-card-copy"><strong>${t("remote.compaction.summary")}</strong><span class="compaction-card-desc">${t("remote.compaction.compacted")}</span></span><button class="compaction-card-copy-btn" type="button" data-compaction-copy aria-label="${copyLabel}" title="${copyLabel}">${iconMarkup("copy")}</button><span class="compaction-card-action">${iconMarkup("chevron-down")}</span></summary><div class="compaction-card-body"><div class="markdown">${renderMarkdown(content)}</div></div></details>`;
+};
+
+export const copyCompactionContent = async (
+  button: HTMLElement,
+  content: string,
+): Promise<void> => {
+  if (!content) return;
+  const copied = await copyTextToClipboard(content);
+  if (!copied) {
+    showNotice(t("remote.compaction.copyFailed"), true);
+    return;
+  }
+  showNotice(t("remote.compaction.copied"));
+  button.innerHTML = iconMarkup("check");
+  window.setTimeout(() => {
+    button.innerHTML = iconMarkup("copy");
+  }, 1500);
+};
 
 export const syncCompactionNode = (
   state: SnowRemoteState,

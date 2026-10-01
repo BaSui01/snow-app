@@ -195,6 +195,9 @@ export const zhCN: Record<string, string> = {
   "remote.compaction.failed": "上下文压缩失败",
   "remote.compaction.summary": "上下文摘要",
   "remote.compaction.compacted": "上下文已压缩，后续 AI 请求将忽略隔断前消息",
+  "remote.compaction.copy": "复制摘要",
+  "remote.compaction.copied": "已复制",
+  "remote.compaction.copyFailed": "复制失败",
 
   // 面板框架
   "remote.panels.commands.title": "指令",

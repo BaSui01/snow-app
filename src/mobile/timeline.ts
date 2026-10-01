@@ -4,7 +4,11 @@ import type {
   SnowRemoteToolCall,
 } from "../renderer/types/remoteControl";
 import { fetchOlderMessages } from "./api";
-import { compactionCardHtml, syncCompactionNode } from "./compaction";
+import {
+  compactionCardHtml,
+  copyCompactionContent,
+  syncCompactionNode,
+} from "./compaction";
 import { $, escapeHtml } from "./dom";
 import { messageTime } from "./format";
 import { t } from "./i18n";
@@ -477,7 +481,7 @@ const buildMessageBlocks = (
       htmlToElement(
         role === "user"
           ? Boolean(message.isContextCompaction)
-            ? compactionCardHtml(body)
+            ? compactionCardHtml(message.id, body)
             : userContentBlocksHtml(message)
           : `<div class="markdown">${renderMarkdown(body)}</div>`,
       ),
@@ -1226,6 +1230,17 @@ export const initTimeline = (): void => {
     const rollback = target.closest<HTMLElement>("[data-rollback]");
     if (rollback) {
       void openRollbackSheet(rollback.dataset.rollback ?? "", rollback);
+      return;
+    }
+    const compactionCopy = target.closest<HTMLElement>(
+      "[data-compaction-copy]",
+    );
+    if (compactionCopy) {
+      event.preventDefault();
+      const card = compactionCopy.closest<HTMLElement>("[data-compaction]");
+      const messageId = card?.dataset.compaction ?? "";
+      const message = knownList.find((item) => item.id === messageId);
+      void copyCompactionContent(compactionCopy, message?.content ?? "");
       return;
     }
     // 折叠块：.tc-more 切换展开态并同步按钮文案。

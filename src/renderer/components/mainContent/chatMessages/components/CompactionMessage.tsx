@@ -2,6 +2,7 @@ import { memo, useState } from "react";
 import { ChevronDown, Loader2, Minimize2, Undo2 } from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import { MarkdownBlock } from "./markdownRenderer";
+import { MessageCopyButton } from "./MessageCopyButton";
 
 type CompactionMessageProps = {
   content: string;
@@ -64,6 +65,10 @@ export const CompactionMessage = memo(
               />
             </span>
           </button>
+          <MessageCopyButton
+            content={content}
+            className="context-compaction-message-copy-btn"
+          />
           {canRollback && !isStreaming ? (
             <button
               className="context-compaction-message-rollback"
@@ -92,7 +97,7 @@ export const CompactionMessage = memo(
         ) : null}
       </article>
     );
-  }
+  },
 );
 
 CompactionMessage.displayName = "CompactionMessage";

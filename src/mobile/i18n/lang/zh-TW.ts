@@ -190,6 +190,9 @@ export const zhTW: Record<string, string> = {
   "remote.compaction.failed": "上下文壓縮失敗",
   "remote.compaction.summary": "上下文摘要",
   "remote.compaction.compacted": "上下文已壓縮，後續 AI 請求將忽略分隔前訊息",
+  "remote.compaction.copy": "複製摘要",
+  "remote.compaction.copied": "已複製",
+  "remote.compaction.copyFailed": "複製失敗",
 
   // 面板框架
   "remote.panels.commands.title": "指令",

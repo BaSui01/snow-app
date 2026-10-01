@@ -849,7 +849,7 @@
     .explorer-entry-context-menu,
     .context-menu,
     .api-model-combobox-menu,
-    .ai-response-copy-menu
+    .message-copy-menu
   ) {
   border: 1px solid rgba(139, 92, 246, 0.35) !important;
   border-radius: var(--radius-md) !important;
@@ -872,7 +872,7 @@
     .explorer-entry-context-menu-item,
     .context-menu-item,
     .api-model-combobox-option,
-    .ai-response-copy-menu-item
+    .message-copy-menu-item
   ) {
   border-radius: var(--radius-xs) !important;
   transition: all 0.1s ease;
@@ -892,7 +892,7 @@
     .explorer-entry-context-menu-item,
     .context-menu-item,
     .api-model-combobox-option,
-    .ai-response-copy-menu-item
+    .message-copy-menu-item
   ):hover {
   background: var(--tesseract-purple-bg) !important;
   color: var(--text-primary) !important;

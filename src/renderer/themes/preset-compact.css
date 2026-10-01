@@ -911,7 +911,7 @@
     .explorer-entry-context-menu,
     .context-menu,
     .api-model-combobox-menu,
-    .ai-response-copy-menu
+    .message-copy-menu
   ) {
   border-color: var(--border-light);
   border-radius: var(--radius-lg);
@@ -934,7 +934,7 @@
     .explorer-entry-context-menu-item,
     .context-menu-item,
     .api-model-combobox-option,
-    .ai-response-copy-menu-item
+    .message-copy-menu-item
   ) {
   border-radius: var(--radius-sm);
   transition:
@@ -956,7 +956,7 @@
     .explorer-entry-context-menu-item,
     .context-menu-item,
     .api-model-combobox-option,
-    .ai-response-copy-menu-item
+    .message-copy-menu-item
   ):hover {
   background: var(--compact-accent-bg);
   color: var(--text-primary);

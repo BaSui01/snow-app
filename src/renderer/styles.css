@@ -11745,7 +11745,7 @@ body.is-panel-resizing * {
 
 /* Copy submenu rendered via portal (document.body) so it is never clipped by
    overflow: hidden ancestors. Follows the same pattern as BrowserMenu. */
-.ai-response-copy-menu {
+.message-copy-menu {
   position: fixed;
   min-width: 160px;
   padding: 4px;
@@ -11756,7 +11756,7 @@ body.is-panel-resizing * {
   z-index: 9999;
 }
 
-.ai-response-copy-menu-item {
+.message-copy-menu-item {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -11773,16 +11773,16 @@ body.is-panel-resizing * {
   transition: background 0.1s ease;
 }
 
-.ai-response-copy-menu-item:hover {
+.message-copy-menu-item:hover {
   background: var(--bg-hover);
 }
 
-.ai-response-copy-menu-label {
+.message-copy-menu-label {
   flex: 1;
   line-height: 1.4;
 }
 
-.ai-response-copy-menu-item svg {
+.message-copy-menu-item svg {
   flex-shrink: 0;
 }
 
@@ -11898,7 +11898,8 @@ body.is-panel-resizing * {
   background: var(--bg-hover);
 }
 
-.context-compaction-message-rollback {
+.context-compaction-message-rollback,
+.context-compaction-message-copy-btn {
   display: inline-flex;
   width: 42px;
   flex: 0 0 auto;
@@ -11914,7 +11915,13 @@ body.is-panel-resizing * {
     color 0.12s;
 }
 
-.context-compaction-message-rollback:hover {
+.context-compaction-message-rollback:hover,
+.context-compaction-message-copy-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.context-compaction-message-copy-btn.is-open {
   background: var(--bg-hover);
   color: var(--text-secondary);
 }

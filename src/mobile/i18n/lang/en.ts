@@ -65,6 +65,9 @@ export const en: Record<string, string> = {
   "remote.compaction.summary": "Context summary",
   "remote.compaction.compacted":
     "Context compacted — later AI requests ignore messages before the separator",
+  "remote.compaction.copy": "Copy summary",
+  "remote.compaction.copied": "Copied",
+  "remote.compaction.copyFailed": "Copy failed",
 
   // Composer
   "remote.composer.placeholder":

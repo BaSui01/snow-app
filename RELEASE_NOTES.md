@@ -1,5 +1,31 @@
 # Release Notes
 
+## v0.4.13
+
+## New Features
+
+- **Conversation Worktrees**: A conversation can run inside a dedicated Git worktree — tool calls, file-change watching, checkpoints and rollback, diff tracking, and sub-agent / workflow cascades all stay isolated inside it, so parallel conversations no longer clobber each other; the Git panel gains a worktree manager card (create, delete, dirty-state badges, open in terminal or file manager), the chat input footer switches the binding at any time, and the branch selector searches branches and worktrees together.
+- **Multi-Remote and Branch Management**: Push / pull can pick the target remote and set upstream (-u); branches show ahead / behind counters and gone markers; a unified branch context menu covers copy, checkout, create-from-branch, rename and safe delete (the current branch and any branch checked out in a worktree are protected).
+- **Tool Card Overhaul**: Bash cards render real ANSI colors, database query results become an interactive table (filter, sort, CSV export), file read-write cards highlight code, LSP result cards support batch semantics, symbol outlines and hover tooltips, and image description gains a dedicated card; external MCP tools get a generic enhanced card (table / JSON-tree / markdown views, smart classification and one-click copy).
+- **System Log Viewer**: A dedicated system-log tool card and the read-only `config-logs-read` tool filter logs by level, module, time and conversation, with an app-level summary and secret redaction; the conversation menu can copy the conversation ID.
+- **Built-in Browser History**: The built-in browser records visit history and powers address-bar completion; browser settings add a History panel (search, delete one, clear all, reopen).
+- **LSP Batch Semantic Queries**: Semantic tools can query many symbols / files in one call, with complete argument contracts for all 11 tools and dynamic prompt injection, plus better Go receiver-method resolution and workspace TypeScript resolution.
+
+## Improvements
+
+- Mobile remote control computes file changes from native checkpoints (SSH included) and shows a summary with additions / deletions and main / sub-agent attribution; a guide appears when antivirus software blocks the built-in frpc tunnel component.
+- Sidebar icons play a stroke animation on hover and streaming scroll-follow is steadier; chip tags (files, images, commits, quotes, ...) in conversation titles and lists collapse into readable text.
+- Feature pages (memos, project memory, scheduled tasks) accept a drag-resizable dual-column layout; disabled MCP servers can still have their tools inspected.
+- The Git commit graph and tooltips show full commit messages and file-read line numbers render better; the confirm bubble uses the custom select.
+- A shared message copy button supports Markdown / plain text and compaction summaries; the file-mention popup hints "AI search starts when you stop typing", and API profiles show a provider icon for the request method.
+
+## Bug Fixes
+
+- Fixed external MCP servers repeating handshakes and probe waits: the discovery cache now lasts 5 minutes, legacy-only servers are remembered and connect via the legacy handshake, and duplicate discovery scans are skipped (#172).
+- Fixed Windows packaging failing with electron-builder EPERM (new patch script); the Electron build version is now pinned.
+- Fixed worktree edge cases: deleting a worktree bound to a conversation cascade-unbinds it, a running conversation cannot be rebound, and storage write locks were hardened.
+- Fixed terminal behavior: opening with an empty command only creates a tab, xterm shortcuts no longer fire copy / paste twice, and the Linux desktop name is unified.
+
 ## v0.4.12
 
 ## New Features

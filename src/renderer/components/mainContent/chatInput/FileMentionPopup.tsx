@@ -185,6 +185,7 @@ export const FileMentionPopup = forwardRef<
   const [skills, setSkills] = useState<SkillDefinition[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isLoadingInitial, setIsLoadingInitial] = useState(false);
+  const [isAgentPending, setIsAgentPending] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [checkedPaths, setCheckedPaths] = useState<Set<string>>(new Set());
   // 自然语言搜索的 agent 执行过程（每次工具调用一条）。
@@ -369,11 +370,12 @@ export const FileMentionPopup = forwardRef<
       if (!activeDirectory || isSshPath(activeDirectory.path) || !nlQuery) {
         ++searchSeqRef.current;
         setIsSearching(false);
+        setIsAgentPending(false);
         setEntries([]);
         setSelectedIndex(0);
         setAgentProgress([]);
         setAgentError(false);
-        lastQueryRef.current = trimmed;
+        lastQueryRef.current = "";
         return;
       }
 
@@ -382,7 +384,8 @@ export const FileMentionPopup = forwardRef<
       }
       lastQueryRef.current = trimmed;
 
-      setIsSearching(true);
+      setIsSearching(false);
+      setIsAgentPending(true);
       setAgentProgress([]);
       setAgentError(false);
       const seq = ++searchSeqRef.current;
@@ -392,6 +395,9 @@ export const FileMentionPopup = forwardRef<
         if (seq !== searchSeqRef.current) {
           return;
         }
+
+        setIsAgentPending(false);
+        setIsSearching(true);
 
         try {
           const results = await window.snow.searchFilesByAgent(
@@ -780,6 +786,9 @@ export const FileMentionPopup = forwardRef<
           ? t("fileMention.aiHint")
           : t("fileMention.typeToSearch");
       }
+      if (isNaturalLanguage && isAgentPending) {
+        return t("fileMention.aiPending");
+      }
       return isNaturalLanguage
         ? t("fileMention.aiNoResults")
         : t("fileMention.noResults");
@@ -792,6 +801,7 @@ export const FileMentionPopup = forwardRef<
     isNaturalLanguage,
     naturalLanguageQuery,
     agentError,
+    isAgentPending,
     t,
   ]);
 
@@ -834,9 +844,11 @@ export const FileMentionPopup = forwardRef<
             ))}
           </div>
         )}
-        {(isSearching || displayEntries.length > 0 || skills.length > 0) && (
+        {(displayEntries.length > 0 || skills.length > 0) && (
           <span className="file-mention-count">
-            {isSearching && <Loader2 className="spin" size={11} />}
+            {isSearching && displayEntries.length > 0 && (
+              <Loader2 className="spin" size={11} />
+            )}
             {displayEntries.length > 0 &&
               t("fileMention.results", {
                 values: { count: displayEntries.length },

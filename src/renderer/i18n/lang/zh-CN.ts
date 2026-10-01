@@ -3317,6 +3317,7 @@ export const zhCN = {
   "fileMention.aiSearching": "AI 正在搜索文件...",
   "fileMention.aiNoResults": "未找到相关文件",
   "fileMention.aiHint": "用自然语言描述你要找的文件",
+  "fileMention.aiPending": "停止输入后开始 AI 搜索",
   "fileMention.aiError": "AI 搜索失败，请检查 API 配置后重试",
   "fileMention.results": "{{count}} 个结果",
   "fileMention.selected": "已选 {{count}}",

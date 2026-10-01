@@ -10,6 +10,7 @@ import { useI18n } from "../../../i18n";
 import { ApiModelCombobox } from "./ApiModelCombobox";
 import { CustomSelect } from "../../common/CustomSelect";
 import { RangeSlider } from "../../common/RangeSlider";
+import { RequestMethodIcon } from "./RequestMethodIcon";
 import { SystemPromptSelect } from "./SystemPromptSelect";
 import { TokenPresetInput, type TokenPreset } from "./TokenPresetInput";
 import {
@@ -259,6 +260,16 @@ export function ApiSettingsFormFields({
     data.toolResultTokenLimit,
   );
 
+  const renderRequestMethodOption = (option: {
+    value: string;
+    label: string;
+  }): React.JSX.Element => (
+    <span className="request-method-option">
+      <RequestMethodIcon method={option.value} />
+      <span>{option.label}</span>
+    </span>
+  );
+
   const renderModelField = (
     field: ModelField,
     label: string,
@@ -375,6 +386,8 @@ export function ApiSettingsFormFields({
                 value: method,
                 label: method,
               }))}
+              renderOption={renderRequestMethodOption}
+              renderLabel={renderRequestMethodOption}
               onChange={(value) => onChange("requestMethod", value)}
               disabled={disabled}
             />

@@ -3510,6 +3510,7 @@ export const en = {
   "fileMention.aiSearching": "AI is searching files...",
   "fileMention.aiNoResults": "No matching files found",
   "fileMention.aiHint": "Describe the file with natural language",
+  "fileMention.aiPending": "AI search starts when you stop typing",
   "fileMention.aiError": "AI search failed. Check the API settings and retry.",
   "fileMention.results": "{{count}} results",
   "fileMention.selected": "{{count}} selected",

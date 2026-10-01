@@ -6550,6 +6550,13 @@ body.is-panel-resizing * {
   min-width: 0;
 }
 
+.request-method-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
 .custom-select-empty,
 .model-dropdown-empty {
   padding: 10px 8px;

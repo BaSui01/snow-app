@@ -3288,6 +3288,7 @@ export const zhTW = {
   "rollbackPicker.close": "關閉",
   "fileMention.aiError": "AI 搜尋失敗，請檢查 API 配置後重試",
   "fileMention.aiHint": "用自然語言描述你要找的檔案",
+  "fileMention.aiPending": "停止輸入後開始 AI 搜尋",
   "fileMention.aiNoResults": "未找到相關檔案",
   "fileMention.aiSearching": "AI 正在搜尋檔案...",
   "plusMenu.label": "新增",

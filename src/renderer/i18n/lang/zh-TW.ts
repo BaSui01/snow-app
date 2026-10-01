@@ -1135,6 +1135,15 @@ export const zhTW = {
   "toolCall.imagegen.error.inputTooLarge": "參考圖片過大或數量超限",
   "toolCall.imagegen.error.fallback": "圖片生成失敗",
   "toolCall.imagegen.result": "結果",
+  "toolCall.imagegen.describeName": "圖片理解",
+  "toolCall.imagegen.describeImage": "圖片",
+  "toolCall.imagegen.describePrompt": "分析提示詞",
+  "toolCall.imagegen.describeResult": "描述內容",
+  "toolCall.imagegen.describeAnalyzing": "正在分析圖片...",
+  "toolCall.imagegen.describeWaiting": "等待分析",
+  "toolCall.imagegen.describeCopy": "複製描述",
+  "toolCall.imagegen.describeCopied": "已複製",
+  "toolCall.imagegen.describeChars": "{{count}} 字",
   "toolCall.browser.newTab": "新標籤頁",
   "toolCall.browser.allTabs": "所有標籤頁",
   "toolCall.browser.timeout": "逾時",
@@ -1488,6 +1497,7 @@ export const zhTW = {
   "toolNames.websearch-websearch-search": "搜尋網頁",
   "toolNames.websearch-websearch-fetch": "擷取網頁",
   "toolNames.imagegen-generate": "生圖",
+  "toolNames.imagegen-image-describe": "圖片理解",
   "toolNames.codebase-search": "程式碼庫",
   "toolNames.codelens-find_definition": "前往定義",
   "toolNames.codelens-find_references": "尋找參考",
@@ -4905,6 +4915,16 @@ export const zhTW = {
   "remoteControl.endpointFailed": "未通過",
   "remoteControl.secureStorageUnavailable":
     "系統安全儲存無法使用。為避免以明文儲存憑證，公網遠端控制已停用。",
+  "remoteControl.frpcBlockedTitle": "內建通道元件被防毒軟體攔截",
+  "remoteControl.frpcBlockedDescription":
+    "公網連線依賴內建的 frpc 通道元件；部分防毒軟體會將它誤判為風險程式並攔截執行、刪除或隔離。",
+  "remoteControl.frpcBlockedCopyPath": "複製路徑",
+  "remoteControl.frpcBlockedStepTrust":
+    "在防毒軟體的信任區或排除項目中加入上述目錄；",
+  "remoteControl.frpcBlockedStepRestore":
+    "若元件已被刪除或隔離，請重新執行 Snow 安裝程式覆蓋安裝以還原；",
+  "remoteControl.frpcBlockedStepRetry": "完成後點擊「連線公網」重新建立通道。",
+  "remoteControl.noticeFrpcDirCopied": "目錄路徑已複製",
   "remoteControl.guideSummary": "第一次公網部署（共 4 步，由 Snow 安裝）",
   "remoteControl.guideCalloutTitle": "只在同一個 Wi-Fi 使用時，不需要伺服器。",
   "remoteControl.guideCalloutText":

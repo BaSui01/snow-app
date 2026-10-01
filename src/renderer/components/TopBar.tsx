@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkspaceDirectoryRecord } from "../../preload";
-import appIcon from "../assets/app-icon.png";
 import { useI18n } from "../i18n";
 import { useChatConversationContext } from "./mainContent/chatMessages";
 import { OPEN_PROJECT_CODEBASE_PANEL_EVENT } from "./mainContent/chatInput/ProjectCodebasePanel";
@@ -30,6 +29,7 @@ import { useTeamTopBarSnapshot } from "./TopBar/teamTopBarStore";
 import { ContextMenu, type ContextMenuItem } from "./common/ContextMenu";
 import { PlusMenuButton, type PlusMenuItem } from "./common/PlusMenuButton";
 import { PluginIcon } from "./common/PluginIcon";
+import { SnowLogo } from "./common/SnowLogo";
 import { Puzzle } from "lucide-react";
 import { resolveLocalized } from "../plugins/manifest";
 import { pluginStore, usePluginStore } from "../plugins/pluginStore";
@@ -706,9 +706,7 @@ export const TopBar = ({
     }
   };
 
-  const topBarLogo = isWindows ? (
-    <img className="top-bar-logo" src={appIcon} alt="Snow" draggable={false} />
-  ) : null;
+  const topBarLogo = isWindows ? <SnowLogo className="top-bar-logo" /> : null;
 
   const sidebarActions = (
     <div className="top-bar-sidebar-actions" aria-label="Sidebar actions">

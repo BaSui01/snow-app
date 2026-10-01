@@ -139,4 +139,5 @@ export type RemoteTunnelStatus = {
     checkedAt: number | null;
   };
   error: { code: string; message: string } | null;
+  frpc: { present: boolean; dir: string };
 };

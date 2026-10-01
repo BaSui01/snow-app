@@ -9,6 +9,7 @@ import {
   Save,
   Server,
   Settings2,
+  ShieldAlert,
   Smartphone,
   Trash2,
   Unplug,
@@ -32,6 +33,12 @@ import { CustomSelect, type CustomSelectOption } from "../common/CustomSelect";
 type RemoteControlSettingsTab = "lan" | "wan";
 
 type RemoteWanMode = "deploy" | "import" | "manual";
+
+const FRPC_BLOCKED_CODES = new Set([
+  "FRPC_FILE_MISSING",
+  "FRPC_FILE_TAMPERED",
+  "FRPC_FILE_BLOCKED",
+]);
 
 export function RemoteControlSettingsPanel(): React.JSX.Element {
   const { t } = useI18n();
@@ -369,6 +376,33 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
       });
     }
   };
+
+  const copyFrpcDir = async (value: string): Promise<void> => {
+    if (!value) return;
+    try {
+      await window.snow.writeClipboardText(value);
+      setNotice({
+        message: t("remoteControl.noticeFrpcDirCopied", {
+          defaultValue: "目录路径已复制",
+        }),
+        tone: "success",
+      });
+    } catch (error) {
+      setNotice({
+        message:
+          error instanceof Error
+            ? error.message
+            : t("remoteControl.noticeCopyFailed", { defaultValue: "复制失败" }),
+        tone: "error",
+      });
+    }
+  };
+
+  const frpcBlocked = Boolean(
+    tunnel &&
+    (!tunnel.frpc.present ||
+      (tunnel.error !== null && FRPC_BLOCKED_CODES.has(tunnel.error.code))),
+  );
 
   const saveFixedToken = async (
     kind: "lan" | "wan",
@@ -2171,7 +2205,59 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
                 </section>
               </section>
             ) : null}
-            {tunnel?.error ? (
+            {tunnel && frpcBlocked ? (
+              <div className="remote-frpc-blocked" role="alert">
+                <div className="remote-frpc-blocked-head">
+                  <ShieldAlert size={16} strokeWidth={1.9} />
+                  <strong>
+                    {t("remoteControl.frpcBlockedTitle", {
+                      defaultValue: "内置隧道组件被杀毒软件拦截",
+                    })}
+                  </strong>
+                </div>
+                <p>
+                  {t("remoteControl.frpcBlockedDescription", {
+                    defaultValue:
+                      "公网连接依赖内置的 frpc 隧道组件；部分杀毒软件会把它误判为风险程序并拦截运行、删除或隔离。",
+                  })}
+                </p>
+                <div className="remote-token-value">
+                  <code title={tunnel.frpc.dir}>{tunnel.frpc.dir}</code>
+                  <button
+                    type="button"
+                    className="api-settings-action-btn secondary"
+                    onClick={() => void copyFrpcDir(tunnel.frpc.dir)}
+                  >
+                    <Copy size={15} strokeWidth={1.9} />
+                    <span>
+                      {t("remoteControl.frpcBlockedCopyPath", {
+                        defaultValue: "复制路径",
+                      })}
+                    </span>
+                  </button>
+                </div>
+                <ol className="remote-frpc-blocked-steps">
+                  <li>
+                    {t("remoteControl.frpcBlockedStepTrust", {
+                      defaultValue:
+                        "在杀毒软件的信任区或排除项中添加上述目录；",
+                    })}
+                  </li>
+                  <li>
+                    {t("remoteControl.frpcBlockedStepRestore", {
+                      defaultValue:
+                        "若组件已被删除或隔离，请重新运行 Snow 安装程序覆盖安装以恢复；",
+                    })}
+                  </li>
+                  <li>
+                    {t("remoteControl.frpcBlockedStepRetry", {
+                      defaultValue: "完成后点击「连接公网」重新建立隧道。",
+                    })}
+                  </li>
+                </ol>
+              </div>
+            ) : null}
+            {tunnel?.error && !frpcBlocked ? (
               <div className="remote-pairing-message error" role="alert">
                 {tunnel.error.message}
               </div>

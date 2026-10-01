@@ -17,6 +17,7 @@ export { CodeLensToolCall } from "./CodeLensToolCall";
 export { LspToolCall } from "./LspToolCall";
 export { WebSearchToolCall } from "./WebSearchToolCall";
 export { ImageGenToolCall } from "./ImageGenToolCall";
+export { ImageDescribeToolCall } from "./ImageDescribeToolCall";
 export { ImageGenGallery } from "./ImageGenGallery";
 export { BrowserToolCall } from "./BrowserToolCall";
 export { TerminalToolCall } from "./TerminalToolCall";

@@ -49,12 +49,24 @@ export type RemoteTunnelStatus = {
     checkedAt: number | null;
   };
   error: { code: string; message: string } | null;
+  frpc: { present: boolean; dir: string };
 };
 
 type FrpcManifest = {
   version: string;
   executable: { file: string; sha256: string; size: number };
 };
+
+type FrpcBundleFailureCode = "FRPC_FILE_MISSING" | "FRPC_FILE_TAMPERED";
+
+class FrpcBundleError extends Error {
+  readonly code: FrpcBundleFailureCode;
+
+  constructor(code: FrpcBundleFailureCode, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
 
 const VERIFY_TIMEOUT_MS = 10_000;
 const ENDPOINT_TIMEOUT_MS = 5_000;
@@ -145,6 +157,14 @@ const publicError = (
   message,
 });
 
+const FRPC_SPAWN_BLOCKED_CODES = ["EPERM", "EACCES", "EBUSY"];
+
+const isFrpcSpawnBlocked = (error: unknown): boolean => {
+  if (!(error instanceof Error)) return false;
+  const code = (error as NodeJS.ErrnoException).code;
+  return typeof code === "string" && FRPC_SPAWN_BLOCKED_CODES.includes(code);
+};
+
 const FAILURE_DETAIL_MAX = 240;
 const FAILURE_DETAIL_HINT =
   /(error|fail|x509|token|certificate|tls|refused|timeout|timed out|unreachable|denied|reject)/i;
@@ -181,7 +201,7 @@ export class RemoteTunnelManager {
   private logTail = "";
   private exitHandling: Promise<void> | null = null;
   private operation: Promise<void> = Promise.resolve();
-  private status: Omit<RemoteTunnelStatus, "config"> = {
+  private status: Omit<RemoteTunnelStatus, "config" | "frpc"> = {
     stage: "stopped",
     listenerPort: 0,
     attempt: 0,
@@ -203,6 +223,7 @@ export class RemoteTunnelManager {
     return {
       config: toRemoteTunnelConfigView(stored),
       ...this.status,
+      frpc: this.describeFrpcBundle(),
       error:
         this.status.error ??
         (configError
@@ -239,7 +260,9 @@ export class RemoteTunnelManager {
       const message = redactTunnelText(
         error instanceof Error ? error.message : String(error),
       );
-      if (isPermanentFrpcFailure(message)) throw error;
+      if (error instanceof FrpcBundleError || isPermanentFrpcFailure(message)) {
+        throw error;
+      }
       const delay = STARTUP_RETRY_DELAYS_MS[this.startupAttempts];
       if (delay === undefined) throw error;
       this.startupAttempts += 1;
@@ -345,8 +368,8 @@ export class RemoteTunnelManager {
     return next;
   }
 
-  private resolveBundle(): { executable: string; manifest: FrpcManifest } {
-    const root = app.isPackaged
+  private resolveFrpcRoot(): string {
+    return app.isPackaged
       ? join(
           process.resourcesPath,
           "remote-control",
@@ -360,6 +383,25 @@ export class RemoteTunnelManager {
           "frp",
           FRPC_PLATFORM_DIRECTORY,
         );
+  }
+
+  private describeFrpcBundle(): { present: boolean; dir: string } {
+    const root = this.resolveFrpcRoot();
+    try {
+      const manifest = JSON.parse(
+        readFileSync(join(root, "manifest.json"), "utf8"),
+      ) as FrpcManifest;
+      return {
+        present: existsSync(join(root, manifest.executable.file)),
+        dir: root,
+      };
+    } catch {
+      return { present: false, dir: root };
+    }
+  }
+
+  private resolveBundle(): { executable: string; manifest: FrpcManifest } {
+    const root = this.resolveFrpcRoot();
     const manifestPath = join(root, "manifest.json");
     if (!existsSync(manifestPath)) {
       throw new Error(
@@ -371,15 +413,19 @@ export class RemoteTunnelManager {
     ) as FrpcManifest;
     const bundled = join(root, manifest.executable.file);
     if (!existsSync(bundled)) {
-      throw new Error(
-        `安装包缺少 ${FRPC_PLATFORM_DIRECTORY} 平台的 frpc 可执行文件`,
+      throw new FrpcBundleError(
+        "FRPC_FILE_MISSING",
+        `内置隧道组件 ${manifest.executable.file} 缺失，可能被杀毒软件删除或隔离`,
       );
     }
     if (
       this.verifiedBinaryPath !== bundled &&
       !matchesFrpcDigest(bundled, manifest)
     ) {
-      throw new Error("内置 frpc 完整性校验失败");
+      throw new FrpcBundleError(
+        "FRPC_FILE_TAMPERED",
+        `内置隧道组件 ${manifest.executable.file} 完整性校验失败，可能被杀毒软件隔离或修改`,
+      );
     }
     this.verifiedBinaryPath = bundled;
     return {
@@ -535,7 +581,15 @@ export class RemoteTunnelManager {
       await stopRemoteWanListener();
       this.status.stage = "failed";
       this.status.endpoint = { stage: "failed", checkedAt: Date.now() };
-      this.status.error = publicError("CONNECT_FAILED", message);
+      this.status.error =
+        error instanceof FrpcBundleError
+          ? { code: error.code, message }
+          : isFrpcSpawnBlocked(error)
+            ? publicError(
+                "FRPC_FILE_BLOCKED",
+                "内置隧道组件无法启动，可能被杀毒软件拦截",
+              )
+            : publicError("CONNECT_FAILED", message);
       throw error;
     }
   }

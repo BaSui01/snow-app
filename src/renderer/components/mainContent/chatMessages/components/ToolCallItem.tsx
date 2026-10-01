@@ -19,6 +19,7 @@ import {
   LspToolCall,
   WebSearchToolCall,
   ImageGenToolCall,
+  ImageDescribeToolCall,
   BrowserToolCall,
   TerminalToolCall,
   ComputerUseToolCall,
@@ -148,6 +149,10 @@ export const ToolCallItem = memo(
 
     if (toolCall.name === "imagegen-generate") {
       return <ImageGenToolCall toolCall={toolCall} />;
+    }
+
+    if (toolCall.name === "imagegen-image-describe") {
+      return <ImageDescribeToolCall toolCall={toolCall} />;
     }
 
     if (toolCall.name.startsWith("browser-")) {

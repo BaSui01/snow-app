@@ -130,6 +130,8 @@ Check layer by layer instead of mistaking "the process exists" for "public acces
 
 Certificate errors or a wrong FRP token must be treated as configuration failures; do not disable verification or retry indefinitely. Caddy requests and renews the site certificate automatically, but DNS, the reachability of ports 80/443, and the renewal logs still have to be monitored by the VPS administrator.
 
+Some antivirus tools misflag the bundled frpc as risky and block, delete, or quarantine it; this false positive is a long-standing issue upstream in frp. When Snow detects that the component is missing, modified, or unable to start, the settings page shows a trust-zone guide with the exact directory to whitelist; follow it, reinstall Snow if the component was deleted, and click "Connect public access" again.
+
 ## Upgrade and rollback
 
 Before upgrading, review the official security advisories and changelogs of frp/Caddy, update the version, asset names and SHA-256 values in `versions.json`, and run `frps verify`, `frpc verify` and `caddy validate` separately. Back up the old binaries first; if the full proxy chain fails acceptance on the new version, restore the old binaries and restart the corresponding services. Configuration files and the token do not need to be rotated for an ordinary binary rollback; if a leak is suspected, rotate the FRP token separately, revoke the Snow public pairing, and re-issue the related certificates.

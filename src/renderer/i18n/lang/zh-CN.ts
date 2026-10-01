@@ -1134,6 +1134,15 @@ export const zhCN = {
   "toolCall.imagegen.error.inputTooLarge": "参考图片过大或数量超限",
   "toolCall.imagegen.error.fallback": "图片生成失败",
   "toolCall.imagegen.result": "结果",
+  "toolCall.imagegen.describeName": "图片理解",
+  "toolCall.imagegen.describeImage": "图片",
+  "toolCall.imagegen.describePrompt": "分析提示词",
+  "toolCall.imagegen.describeResult": "描述内容",
+  "toolCall.imagegen.describeAnalyzing": "正在分析图片...",
+  "toolCall.imagegen.describeWaiting": "等待分析",
+  "toolCall.imagegen.describeCopy": "复制描述",
+  "toolCall.imagegen.describeCopied": "已复制",
+  "toolCall.imagegen.describeChars": "{{count}} 字",
   "toolCall.browser.newTab": "新标签页",
   "toolCall.browser.allTabs": "所有标签页",
   "toolCall.browser.timeout": "超时",
@@ -1487,6 +1496,7 @@ export const zhCN = {
   "toolNames.websearch-websearch-search": "搜索网页",
   "toolNames.websearch-websearch-fetch": "抓取网页",
   "toolNames.imagegen-generate": "生图",
+  "toolNames.imagegen-image-describe": "图片理解",
   "toolNames.codebase-search": "代码库",
   "toolNames.codelens-find_definition": "前往定义",
   "toolNames.codelens-find_references": "查找引用",
@@ -4899,6 +4909,16 @@ export const zhCN = {
   "remoteControl.endpointFailed": "未通过",
   "remoteControl.secureStorageUnavailable":
     "系统安全存储不可用。为避免明文保存凭据，公网远控已禁用。",
+  "remoteControl.frpcBlockedTitle": "内置隧道组件被杀毒软件拦截",
+  "remoteControl.frpcBlockedDescription":
+    "公网连接依赖内置的 frpc 隧道组件；部分杀毒软件会把它误判为风险程序并拦截运行、删除或隔离。",
+  "remoteControl.frpcBlockedCopyPath": "复制路径",
+  "remoteControl.frpcBlockedStepTrust":
+    "在杀毒软件的信任区或排除项中添加上述目录；",
+  "remoteControl.frpcBlockedStepRestore":
+    "若组件已被删除或隔离，请重新运行 Snow 安装程序覆盖安装以恢复；",
+  "remoteControl.frpcBlockedStepRetry": "完成后点击「连接公网」重新建立隧道。",
+  "remoteControl.noticeFrpcDirCopied": "目录路径已复制",
   "remoteControl.guideSummary": "第一次公网部署（共 4 步，Snow 负责安装）",
   "remoteControl.guideCalloutTitle": "只在同一 Wi-Fi 使用时，不需要服务器。",
   "remoteControl.guideCalloutText":

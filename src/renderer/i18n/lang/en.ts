@@ -1208,6 +1208,15 @@ export const en = {
     "Reference image too large or too many images",
   "toolCall.imagegen.error.fallback": "Image generation failed",
   "toolCall.imagegen.result": "Result",
+  "toolCall.imagegen.describeName": "Describe image",
+  "toolCall.imagegen.describeImage": "Image",
+  "toolCall.imagegen.describePrompt": "Prompt",
+  "toolCall.imagegen.describeResult": "Description",
+  "toolCall.imagegen.describeAnalyzing": "Analyzing image...",
+  "toolCall.imagegen.describeWaiting": "Waiting to analyze",
+  "toolCall.imagegen.describeCopy": "Copy description",
+  "toolCall.imagegen.describeCopied": "Copied",
+  "toolCall.imagegen.describeChars": "{{count}} chars",
   "toolCall.browser.newTab": "New tab",
   "toolCall.browser.allTabs": "All tabs",
   "toolCall.browser.timeout": "Timeout",
@@ -1567,6 +1576,7 @@ export const en = {
   "toolNames.websearch-websearch-search": "Search web",
   "toolNames.websearch-websearch-fetch": "Fetch page",
   "toolNames.imagegen-generate": "Generate image",
+  "toolNames.imagegen-image-describe": "Describe image",
   "toolNames.codebase-search": "Codebase",
   "toolNames.codelens-find_definition": "Find definition",
   "toolNames.codelens-find_references": "Find references",
@@ -5193,6 +5203,18 @@ export const en = {
   "remoteControl.endpointFailed": "Failed",
   "remoteControl.secureStorageUnavailable":
     "System secure storage is unavailable. Public remote control is disabled to avoid storing credentials in plaintext.",
+  "remoteControl.frpcBlockedTitle":
+    "Bundled tunnel component blocked by antivirus",
+  "remoteControl.frpcBlockedDescription":
+    "The public connection relies on the bundled frpc tunnel component; some antivirus tools misflag it as risky and block, delete, or quarantine it.",
+  "remoteControl.frpcBlockedCopyPath": "Copy path",
+  "remoteControl.frpcBlockedStepTrust":
+    "Add the directory above to your antivirus trust zone or exclusion list;",
+  "remoteControl.frpcBlockedStepRestore":
+    "If the component was deleted or quarantined, run the Snow installer again to restore it;",
+  "remoteControl.frpcBlockedStepRetry":
+    "Then click “Connect public access” to rebuild the tunnel.",
+  "remoteControl.noticeFrpcDirCopied": "Directory path copied",
   "remoteControl.guideSummary":
     "First public deployment (4 steps, installed by Snow)",
   "remoteControl.guideCalloutTitle":

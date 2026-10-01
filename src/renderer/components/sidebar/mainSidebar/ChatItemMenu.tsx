@@ -4,7 +4,7 @@ import {
   PinOff,
   Pencil,
   Trash2,
-  Download,
+  Share,
   ChevronRight,
   ChevronLeft,
   SmilePlus,
@@ -450,7 +450,7 @@ export function ChatItemMenu({
                     aria-expanded={showExport}
                     aria-haspopup="menu"
                   >
-                    <Download size={13} />
+                    <Share size={13} />
                     <span>
                       {t("sidebar.chatActionExport", {
                         defaultValue: "Export",
